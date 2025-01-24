@@ -173,6 +173,9 @@ h2{
     bottom: 0;
     z-index: 10;
     pointer-events: none;
+    @include rwd($md,min-width){
+        display: none;
+    }
 }
 .aboutMember{
     .member{
@@ -410,7 +413,7 @@ h2{
     position: relative;
     background:#000 url('https://mir-s3-cdn-cf.behance.net/project_modules/fs/968599198340321.66461e9a46731.png') no-repeat center bottom;
     // opacity: 0.5;
-    background-size: cover;
+    background-size: contain;
     @include rwd($md){
         display: none;
     }

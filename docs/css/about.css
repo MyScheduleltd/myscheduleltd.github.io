@@ -235,6 +235,11 @@ h2 {
   z-index: 10;
   pointer-events: none;
 }
+@media all and (min-width: 920px) {
+  .mob-member-bg {
+    display: none;
+  }
+}
 
 .aboutMember .member {
   z-index: 10;
@@ -485,7 +490,7 @@ h2 {
           align-items: center;
   position: relative;
   background: #000 url("https://mir-s3-cdn-cf.behance.net/project_modules/fs/968599198340321.66461e9a46731.png") no-repeat center bottom;
-  background-size: cover;
+  background-size: contain;
 }
 @media all and (max-width: 920px) {
   .contact-us {
