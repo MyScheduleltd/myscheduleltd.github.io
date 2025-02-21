@@ -97,11 +97,11 @@ $(function async(){
         function updateIframe() {
             let currentIndex = swiper.activeIndex;
             let currentDate = profilo[i].profilo[currentIndex].date;
-            if(currentDate){
-                $('.profilo-text').text(currentDate)
-            }else{
-                $('.profilo-text').text('')
-            }
+            // if(currentDate){
+            //     $('.profilo-text').text(currentDate)
+            // }else{
+            //     $('.profilo-text').text('')
+            // }
 
             if(storeForIframe.indexOf(currentIndex) !== -1) {
 
