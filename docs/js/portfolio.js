@@ -19,7 +19,7 @@ $(function async(){
     }
     let storeIndex = []
     let currentSwiper = {}
-    let currentProfilo = profilo.map((current) => current.profilo.sort((a,b) => Number(b.date) - Number(a.date)))
+    let currentProfilo = profilo
     console.log(currentProfilo);
     const initVideos = (i)=>{
         
