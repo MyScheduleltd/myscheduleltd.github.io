@@ -62,7 +62,7 @@ let data = {
       },
       {
         id:'member9',
-        title:'MICHAEL BAE',
+        title:'MICHAEL.',
         jobPos:'Audio Engineer',
         member: `./assets/member/202308239405.jpg`,
       },
@@ -89,27 +89,37 @@ let data = {
     drBeautyVideos:[
       {
         id: 'about-videos1',
-        title: '【壞爸爸 Bad Daddy】',
-        url:'https://www.youtube.com/embed/KH4HNQBlP7U?si=Z0u3VcozzcY2vQfi'
+      title: '【李包比自傳feat. 簡道生】',
+        url:'https://www.youtube.com/embed/lhAvlkYlFc4?si=Cyhpl9w_LkARqhxp'
       },{
         id: 'about-videos2',
-        title: '【李包比自傳feat. 簡道生】',
-        url:'https://www.youtube.com/embed/lhAvlkYlFc4?si=Cyhpl9w_LkARqhxp'
+        title: '【美麗本人 ft. 謝乾】',
+        url:'https://www.youtube.com/embed/TH4iVLVqXAc?si=ayK-S5fg7CVtmEvI'
       },
       {
         id: 'about-videos3',
-        title: '【喵 Meou】',
-        url:'https://www.youtube.com/embed/cO8-gJBgm1A?si=vpzR0CtgwEjD8HYP'
+        title: '【你是我的Bae feat. 李千娜 You are my bae feat. Nana Lee】',
+        url:'https://www.youtube.com/watch?v=hXhatbZ5j4k'
+      },
+      {
+        id: 'about-videos4',
+        title: '【我每一天都愛你的西文叫做Te amo todos los días - 盧廣仲 Crowd Lu & 美麗本人 Dr. Beauty】',
+        url:'https://www.youtube.com/watch?v=tLvj_eC8tQQ'
       },
       {
         id: 'about-videos5',
+        title: '【壞爸爸 Bad Daddy】',
+        url:'https://www.youtube.com/embed/KH4HNQBlP7U?si=Z0u3VcozzcY2vQfi'
+      },
+      {
+        id: 'about-videos6',
         title: '【禿頭爸爸 Bald Head Daddy】',
         url:'https://www.youtube.com/embed/xZEdoCuxuA0?si=sr0f2fOFNgaTe3W7'
       },
       {
-        id: 'about-videos6',
-        title: '【美麗本人 ft. 謝乾】',
-        url:'https://www.youtube.com/embed/TH4iVLVqXAc?si=ayK-S5fg7CVtmEvI'
+        id: 'about-videos7',
+        title: '【禿油肥To Your Face feat. DJ GROUND】',
+        url:'https://www.youtube.com/watch?v=U2-OzFANCiA'
       },
     ],
     // Contact Page
