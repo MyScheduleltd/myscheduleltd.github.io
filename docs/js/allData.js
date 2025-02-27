@@ -89,9 +89,10 @@ let data = {
     drBeautyVideos:[
       {
         id: 'about-videos1',
-      title: '【李包比自傳feat. 簡道生】',
+        title: '【李包比自傳feat. 簡道生】',
         url:'https://www.youtube.com/embed/lhAvlkYlFc4?si=Cyhpl9w_LkARqhxp'
-      },{
+      },
+      {
         id: 'about-videos2',
         title: '【美麗本人 ft. 謝乾】',
         url:'https://www.youtube.com/embed/TH4iVLVqXAc?si=ayK-S5fg7CVtmEvI'
