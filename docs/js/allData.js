@@ -334,36 +334,30 @@ let data = {
             date:2021
           }, {
             id: 'musicvideos26',
-            title: "STRAIGHT UP BOYZ - Sebine.Tu",
-            url:'https://www.youtube.com/watch?v=0QzlgXD0F84',
-            author: '莎賓涂Sebine. Tu',
-            date:2022
-          }, {
-            id: 'musicvideos27',
             title: "阿達A/DA 水樂男孩STRAIGHT UP BOYZ 【吉娃娃】Office Music Video",
             url:'https://www.youtube.com/watch?v=bnOjr-SMTbc',
             author: '莎賓涂Sebine. Tu',
             date:2022
           }, {
-            id: 'musicvideos28',
+            id: 'musicvideos27',
             title: "不捨不得 - Sebine.Tu",
             url:'https://www.youtube.com/watch?v=F6XaLvhpGog',
             author: '莎賓涂Sebine. Tu',
             date:2022
           }, {
-            id: 'musicvideos29',
+            id: 'musicvideos28',
             title: "忘記關火 - Sebine.Tu",
             url:'https://www.youtube.com/watch?v=T1wgDk9MEOU',
             author: '莎賓涂Sebine. Tu',
             date: 2022
           }, {
-            id: 'musicvideos30',
+            id: 'musicvideos29',
             title: "To Your Face - Sebine.Tu",
             url:'https://www.youtube.com/watch?v=U2-OzFANCiA',
             author: '莎賓涂Sebine. Tu',
             date: 2023
           }, {
-            id: 'musicvideos31',
+            id: 'musicvideos30',
             title: "11th hour - Sebine.Tu",
             url:'https://www.youtube.com/watch?v=xndA9Geu4eg',
             author: '莎賓涂Sebine. Tu',
