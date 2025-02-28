@@ -89,32 +89,32 @@ let data = {
     drBeautyVideos:[
       {
         id: 'about-videos1',
-        title: '【李包比自傳feat. 簡道生】',
+        title: '李包比自傳feat. 簡道生',
         url:'https://www.youtube.com/embed/lhAvlkYlFc4?si=Cyhpl9w_LkARqhxp'
       },
       {
         id: 'about-videos2',
-        title: '【美麗本人 ft. 謝乾】',
+        title: '美麗本人 ft. 謝乾',
         url:'https://www.youtube.com/embed/TH4iVLVqXAc?si=ayK-S5fg7CVtmEvI'
       },
       {
         id: 'about-videos3',
-        title: '【你是我的Bae feat. 李千娜 You are my bae feat. Nana Lee】',
+        title: '你是我的Bae feat. 李千娜',
         url:'https://www.youtube.com/watch?v=hXhatbZ5j4k'
       },
       {
         id: 'about-videos4',
-        title: '【Te amo todos los días-盧廣仲&美麗本人】',
+        title: 'Te amo todos los días 盧廣仲&美麗本人',
         url:'https://www.youtube.com/watch?v=tLvj_eC8tQQ'
       },
       {
         id: 'about-videos5',
-        title: '【壞爸爸 Bad Daddy】',
+        title: '壞爸爸 Bad Daddy',
         url:'https://www.youtube.com/embed/KH4HNQBlP7U?si=Z0u3VcozzcY2vQfi'
       },
       {
         id: 'about-videos6',
-        title: '【禿油肥To Your Face feat. DJ GROUND】',
+        title: '禿油肥To Your Face feat. DJ GROUND',
         url:'https://www.youtube.com/watch?v=U2-OzFANCiA'
       },
     ],
