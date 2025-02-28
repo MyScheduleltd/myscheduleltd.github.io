@@ -346,18 +346,12 @@ let data = {
             date:2022
           }, {
             id: 'musicvideos28',
-            title: "忘記關火 - Sebine.Tu",
-            url:'https://www.youtube.com/watch?v=T1wgDk9MEOU',
-            author: '莎賓涂Sebine. Tu',
-            date: 2022
-          }, {
-            id: 'musicvideos29',
             title: "To Your Face - Sebine.Tu",
             url:'https://www.youtube.com/watch?v=U2-OzFANCiA',
             author: '莎賓涂Sebine. Tu',
             date: 2023
           }, {
-            id: 'musicvideos30',
+            id: 'musicvideos29',
             title: "11th hour - Sebine.Tu",
             url:'https://www.youtube.com/watch?v=xndA9Geu4eg',
             author: '莎賓涂Sebine. Tu',
