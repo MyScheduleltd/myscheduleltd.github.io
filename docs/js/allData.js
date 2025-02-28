@@ -104,7 +104,7 @@ let data = {
       },
       {
         id: 'about-videos4',
-        title: '【我每一天都愛你的西文叫做Te amo todos los días-盧廣仲&美麗本人】',
+        title: '【Te amo todos los días-盧廣仲&美麗本人】',
         url:'https://www.youtube.com/watch?v=tLvj_eC8tQQ'
       },
       {
@@ -346,12 +346,6 @@ let data = {
             date:2022
           }, {
             id: 'musicvideos28',
-            title: "To Your Face - Sebine.Tu",
-            url:'https://www.youtube.com/watch?v=U2-OzFANCiA',
-            author: '莎賓涂Sebine. Tu',
-            date: 2023
-          }, {
-            id: 'musicvideos29',
             title: "11th hour - Sebine.Tu",
             url:'https://www.youtube.com/watch?v=xndA9Geu4eg',
             author: '莎賓涂Sebine. Tu',
