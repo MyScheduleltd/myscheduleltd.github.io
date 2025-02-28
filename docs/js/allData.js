@@ -104,7 +104,7 @@ let data = {
       },
       {
         id: 'about-videos4',
-        title: '【我每一天都愛你的西文叫做Te amo todos los días - 盧廣仲 Crowd Lu & 美麗本人 Dr. Beauty】',
+        title: '【我每一天都愛你的西文叫做Te amo todos los días-盧廣仲&美麗本人】',
         url:'https://www.youtube.com/watch?v=tLvj_eC8tQQ'
       },
       {
