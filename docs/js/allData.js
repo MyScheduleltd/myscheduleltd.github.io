@@ -114,11 +114,6 @@ let data = {
       },
       {
         id: 'about-videos6',
-        title: '【禿頭爸爸 Bald Head Daddy】',
-        url:'https://www.youtube.com/embed/xZEdoCuxuA0?si=sr0f2fOFNgaTe3W7'
-      },
-      {
-        id: 'about-videos7',
         title: '【禿油肥To Your Face feat. DJ GROUND】',
         url:'https://www.youtube.com/watch?v=U2-OzFANCiA'
       },
