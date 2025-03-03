@@ -193,159 +193,165 @@ let data = {
             date:2023
           }, {
             id: 'musicvideos3',
+            title: 'Toxic Boss - ZC',
+            url:'https://www.youtube.com/watch?v=tsahcnnUzMw',
+            author: 'ZC',
+            date: 2024
+          }, {
+            id: 'musicvideos4',
             title: 'Whatever - Xieh Gan',
             url:'https://www.youtube.com/watch?v=QuNc8b7DxyY',
             author: '謝乾',
             date: 2018
           }, {
-            id: 'musicvideos4',
+            id: 'musicvideos5',
             title: "Way Up - Xieh Gan",
             url:'https://youtu.be/JfS8YZD5eSA?si=qsG-ra6E1AK0jkd_',
             author: '謝乾',
             date:2021
           }, {
-            id: 'musicvideos5',
+            id: 'musicvideos6',
             title: 'iGO ASIA REMIX - Xieh Gan',
             url:'https://www.youtube.com/watch?v=FcCtOYGxf1Y',
             author: '謝乾',
             date:2020
           }, {
-            id: 'musicvideos6',
+            id: 'musicvideos7',
             title: 'CHANGE - Xieh Gan',
             url:'https://youtu.be/HTRQ0n4yjfs?si=8hTSvMuQIE9jt8di',
             author: '謝乾',
             date:2020
           }, {
-            id: 'musicvideos7',
+            id: 'musicvideos8',
             title: "You Don't Need To Know - ZC",
             url:'https://www.youtube.com/watch?v=fKd-qQto3gk',
             author: 'ZC',
             date:2024
           }, {
-            id: 'musicvideos8',
+            id: 'musicvideos9',
             title: '早上PAPAPA - Xieh Gan',
             url:'https://www.youtube.com/watch?v=yOEpwDu7OB4',
             author: '謝乾',
             date:2018
           }, {
-            id: 'musicvideos9',
+            id: 'musicvideos10',
             title: "Soul Away - Xieh Gan",
             url:'https://youtu.be/XPQzKjisTbI?si=5nf461Nqtr4OBYrq',
             author: '謝乾',
             date:2019
           }, {
-            id: 'musicvideos10',
+            id: 'musicvideos11',
             title: "Don't Ask - Xieh Gan",
             url:'https://www.youtube.com/watch?v=tRa3fOlnN7k',
             author: '謝乾',
             date: 2018
           }, {
-            id: 'musicvideos11',
+            id: 'musicvideos12',
             title: "DON - Xieh Gan",
             url:'https://youtu.be/fIXTRr22_II?si=Gl0mOerB1ZkRWj3V',
             author: '謝乾',
             date:2018
           }, {
-            id: 'musicvideos12',
+            id: 'musicvideos13',
             title: "Moment - Xieh Gan",
             url:'https://www.youtube.com/watch?v=F5XjLbMTo38',
             author: '謝乾',
             date: 2019
           }, {
-            id: 'musicvideos13',
+            id: 'musicvideos14',
             title: 'YouTube Music Night with NICKTHEREAL 十週年線上演唱會 - Xieh Gan',
             url:'https://www.youtube.com/watch?v=hQkQ2AzdNaY',
             author: '謝乾',
             date:2020
           }, {
-            id: 'musicvideos14',
+            id: 'musicvideos15',
             title: 'She Ain’t Watchin’ - Xieh Gan',
             url:'https://youtu.be/smFGZKPS5yc?si=n9wlzWOOYr7ovyHk',
             author: '謝乾',
             date:2020
           }, {
-            id: 'musicvideos15',
+            id: 'musicvideos16',
             title: 'Follow You - Xieh Gan',
             url:'https://youtu.be/U1G4lKnYf4o?si=SqjZtQoEYG2Ervyc',
             author: '謝乾',
             date:2020
           }, {
-            id: 'musicvideos16',
+            id: 'musicvideos17',
             title: 'PRAISE - Xieh Gan',
             url:'https://youtu.be/YgNGl442hgg?si=QsEi1O32Scs5sj_R',
             author: '謝乾',
             date:2020
           }, {
-            id: 'musicvideos17',
+            id: 'musicvideos18',
             title: "C'MON - Xieh Gan",
             url:'https://www.youtube.com/watch?v=0Yi4WAR-9hM',
             author: '謝乾',
             date:2021
           }, {
-            id: 'musicvideos18',
+            id: 'musicvideos19',
             title: "Weirdo - Xieh Gan",
             url:'https://youtu.be/9eOQsGYs70c?si=FoHoPQN0-w2Roak0',
             author: '謝乾',
             date:2021
           }, {
-            id: 'musicvideos19',
+            id: 'musicvideos20',
             title: "Sweet Baby - Xieh Gan",
             url:'https://youtu.be/NDDa_AV8cks?si=RdAgARz5QULyqtdh',
             author: '謝乾',
             date:2021
           }, {
-            id: 'musicvideos20',
+            id: 'musicvideos21',
             title: "Help - ZC",
             url:'https://youtu.be/HqhQR3adbok?si=CH0pu9G5xhJw0-iR',
             author: 'ZC',
             date:2020
           }, {
-            id: 'musicvideos21',
+            id: 'musicvideos22',
             title: "NO! 不良示範 - ZC",
             chinese_title: "J.Sheon - NO! 不良示範 (Official Music Video)",
             url:'https://youtu.be/O2EZ6Tys0x8?si=8w3-iQqDIIdwXyfH',
             author: 'ZC',
             date:2022
           }, {
-            id: 'musicvideos22',
+            id: 'musicvideos23',
             title:'麻克與林送夫 Remix - ZC',
             chinese_title: "BSB - 麻克與林送夫 Remix (Official MV)",
             url:'https://youtu.be/Et-TvF_4fa4?si=NeMWObX4kFhhMBzU',
             author: 'ZC',
             date:2024
           }, {
-            id: 'musicvideos23',
+            id: 'musicvideos24',
             title:'KEEP IT ONE HUNNIT - Sebine.Tu',
             chinese_title: "CHRISFLOW唐仲彣 - 【KEEP IT ONE HUNNIT】 Official M/V",
             url:'https://www.youtube.com/watch?v=MckFYCuEaCE',
             author: '莎賓涂Sebine. Tu',
             date:2020
           }, {
-            id: 'musicvideos24',
+            id: 'musicvideos25',
             title: "魯肉飯 - Sebine.Tu",
             url:'https://www.youtube.com/watch?v=jJQdTp8xdEM',
             author: '莎賓涂Sebine. Tu',
             date:2020
           }, {
-            id: 'musicvideos25',
+            id: 'musicvideos26',
             title: "I’m Your Fool - Sebine.Tu",
             url:'https://www.youtube.com/watch?v=1KIqZo1d5hA',
             author: '莎賓涂Sebine. Tu',
             date:2021
           }, {
-            id: 'musicvideos26',
+            id: 'musicvideos27',
             title: "阿達A/DA 水樂男孩STRAIGHT UP BOYZ 【吉娃娃】Office Music Video",
             url:'https://www.youtube.com/watch?v=bnOjr-SMTbc',
             author: '莎賓涂Sebine. Tu',
             date:2022
           }, {
-            id: 'musicvideos27',
+            id: 'musicvideos28',
             title: "不捨不得 - Sebine.Tu",
             url:'https://www.youtube.com/watch?v=F6XaLvhpGog',
             author: '莎賓涂Sebine. Tu',
             date:2022
           }, {
-            id: 'musicvideos28',
+            id: 'musicvideos29',
             title: "11th hour - Sebine.Tu",
             url:'https://www.youtube.com/watch?v=xndA9Geu4eg',
             author: '莎賓涂Sebine. Tu',
