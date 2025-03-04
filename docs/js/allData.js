@@ -97,20 +97,20 @@ let data = {
         url:'https://www.youtube.com/embed/TH4iVLVqXAc?si=ayK-S5fg7CVtmEvI'
       },{
         id: 'about-videos3',
-        title: '你是我的Bae feat. 李千娜',
-        url:'https://youtu.be/hXhatbZ5j4k?si=-7yOSWhk7n9o35Qk'
-      },{
-        id: 'about-videos4',
         title: 'Te amo todos los días 盧廣仲&美麗本人',
         url:'https://youtu.be/tLvj_eC8tQQ?si=NFx2UsY1U7CY71A1'
       },{
-        id: 'about-videos5',
-        title: '壞爸爸 Bad Daddy',
-        url:'https://www.youtube.com/embed/KH4HNQBlP7U?si=Z0u3VcozzcY2vQfi'
+        id: 'about-videos4',
+        title: '你是我的Bae feat. 李千娜',
+        url:'https://youtu.be/hXhatbZ5j4k?si=-7yOSWhk7n9o35Qk'
       },{
-        id: 'about-videos6',
+        id: 'about-videos5',
         title: '禿油肥To Your Face feat. DJ GROUND',
         url:'https://youtu.be/U2-OzFANCiA?si=cjTRXgvLbw4ZMwX5'
+      },{
+        id: 'about-videos6',
+        title: '壞爸爸 Bad Daddy',
+        url:'https://www.youtube.com/embed/KH4HNQBlP7U?si=Z0u3VcozzcY2vQfi'
       },
     ],
     // Contact Page
@@ -316,37 +316,18 @@ let data = {
             date:2024
           }, {
             id: 'musicvideos24',
-            title:'KEEP IT ONE HUNNIT - Sebine.Tu',
-            chinese_title: "CHRISFLOW唐仲彣 - 【KEEP IT ONE HUNNIT】 Official M/V",
-            url:'https://www.youtube.com/watch?v=MckFYCuEaCE',
-            author: '莎賓涂Sebine. Tu',
-            date:2020
-          }, {
-            id: 'musicvideos25',
-            title: "魯肉飯 - Sebine.Tu",
-            url:'https://www.youtube.com/watch?v=jJQdTp8xdEM',
-            author: '莎賓涂Sebine. Tu',
-            date:2020
-          }, {
-            id: 'musicvideos26',
-            title: "I’m Your Fool - Sebine.Tu",
-            url:'https://www.youtube.com/watch?v=1KIqZo1d5hA',
-            author: '莎賓涂Sebine. Tu',
-            date:2021
-          }, {
-            id: 'musicvideos27',
             title: "阿達A/DA 水樂男孩STRAIGHT UP BOYZ 【吉娃娃】Office Music Video",
             url:'https://www.youtube.com/watch?v=bnOjr-SMTbc',
             author: '莎賓涂Sebine. Tu',
             date:2022
           }, {
-            id: 'musicvideos28',
+            id: 'musicvideos25',
             title: "不捨不得 - Sebine.Tu",
             url:'https://www.youtube.com/watch?v=F6XaLvhpGog',
             author: '莎賓涂Sebine. Tu',
             date:2022
           }, {
-            id: 'musicvideos29',
+            id: 'musicvideos26',
             title: "11th hour - Sebine.Tu",
             url:'https://www.youtube.com/watch?v=xndA9Geu4eg',
             author: '莎賓涂Sebine. Tu',
