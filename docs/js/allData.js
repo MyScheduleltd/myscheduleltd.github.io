@@ -98,15 +98,15 @@ let data = {
       },{
         id: 'about-videos3',
         title: 'Te amo todos los días 盧廣仲&美麗本人',
-        url:'https://youtu.be/tLvj_eC8tQQ?si=NFx2UsY1U7CY71A1'
+        url:'https://www.youtube.com/embed/tLvj_eC8tQQ?si=AiryLVBuNZmzpk4l'
       },{
         id: 'about-videos4',
         title: '你是我的Bae feat. 李千娜',
-        url:'https://youtu.be/hXhatbZ5j4k?si=-7yOSWhk7n9o35Qk'
+        url:'https://www.youtube.com/embed/hXhatbZ5j4k?si=d_cjccYjBbdfdOyG'
       },{
         id: 'about-videos5',
         title: '禿油肥To Your Face feat. DJ GROUND',
-        url:'https://youtu.be/U2-OzFANCiA?si=cjTRXgvLbw4ZMwX5'
+        url:'https://www.youtube.com/embed/U2-OzFANCiA?si=guJKZgQC2Wuy7eXb'
       },{
         id: 'about-videos6',
         title: '壞爸爸 Bad Daddy',
