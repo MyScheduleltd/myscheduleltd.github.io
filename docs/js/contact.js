@@ -12,7 +12,7 @@ $(function async(){
 
     $('#submit').on('click', function(event){
         event.preventDefault();
-        let email = 'myschedulestudio@gmail.com';
+        let email = 'santana30541@gmail.com';
         let subject = $('#subject')[0].value || '';
         let emailBody = $('#message')[0].value || '';
         window.location = 'mailto:' + email + '?subject=' + subject + '&body=' + emailBody;
