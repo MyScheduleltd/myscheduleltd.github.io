@@ -24,6 +24,7 @@ body{
     border-top:1px solid $white;
     position: relative;
     z-index: 100;
+    background:#000;
     @include rwd($md){
         display: none;
     }
@@ -32,6 +33,7 @@ body{
         padding: 15px 30px;
         justify-content: space-between;
         flex:1;
+        align-items: center;
         .logo{
             width:80px;
             height:80px;
@@ -39,12 +41,21 @@ body{
         .contact{
             display: flex;
             flex-direction: column;
-            text-align: center;
+            text-align: left;
             flex:1;
             position: absolute;
             margin:auto;
             right:0;
             left:0;
+            top:0;
+            bottom:0;
+            line-height: 0;
+            justify-content: center;
+            width:fit-content;
+            p{
+                margin:0;
+                line-height: 1rem;
+            }
         }
 
     }
