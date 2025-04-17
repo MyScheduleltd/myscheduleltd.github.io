@@ -170,7 +170,7 @@ let data = {
         ]
       },
       {
-        name:'MUSIC VIDOE',
+        name:'MUSIC VIDEO',
         profilo:[
           {
             id: 'musicvideos1',
