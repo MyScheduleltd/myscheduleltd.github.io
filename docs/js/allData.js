@@ -174,7 +174,7 @@ let data = {
         profilo:[
           {
             id: 'musicvideos1',
-            title:'Surfer's Love Story - ZC',
+            title:"Surfer's Love Story - ZC",
             chinese_title: "張震嶽 Ayal Komod - 浪人的 Surfer's Love Story",
             url:'https://www.youtube.com/embed/ZIvWrKYdMQE?si=LIrwVBb43wagBJDn',
             author: 'ZC',
