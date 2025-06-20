@@ -88,6 +88,10 @@ body.overflow{
         border-radius: 15px;
         max-height: 100vh;
         margin: auto;
+        width: 90%;
+        @include rwd($md){
+            width: 100%;
+        }
         .content{
             display: flex;
             flex-direction: column;
@@ -280,6 +284,10 @@ h2{
         .swiper-pagination-bullet{
             margin:20px;
             background-color: transparent;
+            
+            &.swiper-pagination-bullet-active-main{
+                visibility: visible;
+            }
         }
         @include rwd($md){
             display:flex;
@@ -310,7 +318,7 @@ h2{
         }
 
         span{
-            font-size:15pt;
+            font-size:1.2rem;
             color:$white;
         }
     }

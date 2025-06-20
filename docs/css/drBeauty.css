@@ -131,6 +131,12 @@ body.overflow {
   border-radius: 15px;
   max-height: 100vh;
   margin: auto;
+  width: 90%;
+}
+@media all and (max-width: 920px) {
+  .drBeautyDialog .drBeautyContext {
+    width: 100%;
+  }
 }
 .drBeautyDialog .drBeautyContext .content {
   display: -webkit-box;
@@ -360,6 +366,9 @@ h2 {
   margin: 20px;
   background-color: transparent;
 }
+.profilo #swiper-pagination .swiper-pagination-bullet.swiper-pagination-bullet-active-main {
+  visibility: visible;
+}
 @media all and (max-width: 920px) {
   .profilo #swiper-pagination {
     display: -webkit-box;
@@ -393,7 +402,7 @@ h2 {
   background-color: transparent;
 }
 .profilo #swiper-pagination span {
-  font-size: 15pt;
+  font-size: 1.2rem;
   color: #FFF5EE;
 }
 

@@ -49,18 +49,20 @@ $(function async(){
 
         let swiper = new Swiper(`.videos[data-set="${profilo[i].name}"]`, {
             slidesPerView:1,
-            spaceBetween: 0,
+            spaceBetween: 5,
             // loop: true,
             // mousewheel: true,
             // observer: true
             direction: 'vertical',
             // loop: true,
             // mousewheel: true,
-            // observer: true,
+            observer: true,
             pagination: {
                 el: ".swiper-pagination",
                 clickable: true,
                 dynamicBullets: true,
+                dynamicBullets: true,
+                dynamicMainBullets: 5
                 // renderBullet: function (index, className) {
                 //     return `
                 //         <div class="pagination-subtitle ${className}" >

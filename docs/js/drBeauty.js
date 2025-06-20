@@ -22,6 +22,7 @@ $(function async(){
             slidesPerView:1,
             spaceBetween: 0,
             direction: 'vertical',
+            
             // loop: true,
             // mousewheel: true,
             // observer: true,
@@ -29,7 +30,7 @@ $(function async(){
                 el: ".swiper-pagination",
                 clickable: true,
                 dynamicBullets: true,
-
+                dynamicMainBullets: 5
             },
             breakpoints: {
                 988: {

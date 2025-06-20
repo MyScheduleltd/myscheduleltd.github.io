@@ -198,7 +198,7 @@
   cursor: pointer;
 }
 .profilo .swiper-pagination-bullets.swiper-pagination .swiper-pagination-bullet {
-  margin: 20px;
+  margin: 15px;
   background-color: transparent;
 }
 @media all and (max-width: 920px) {
