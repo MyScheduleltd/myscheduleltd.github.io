@@ -198,7 +198,8 @@
   cursor: pointer;
 }
 .profilo .swiper-pagination-bullets.swiper-pagination .swiper-pagination-bullet {
-  margin: 15px;
+  padding: 1rem 0;
+  margin: 2rem 1rem;
   background-color: transparent;
 }
 @media all and (max-width: 920px) {
@@ -210,6 +211,7 @@
     border-radius: 10px;
     -webkit-transform: translateX(10px) translateY(-50%);
             transform: translateX(10px) translateY(-50%);
+    overflow: hidden;
   }
   .profilo .swiper-pagination-bullets.swiper-pagination .swiper-pagination-bullet {
     margin: 5px;
@@ -217,6 +219,9 @@
     margin-bottom: 10px;
     min-height: 8px;
     min-width: 8px;
+  }
+  .profilo .swiper-pagination-bullets.swiper-pagination .swiper-pagination-bullet .text {
+    display: none;
   }
   .profilo .swiper-pagination-bullets.swiper-pagination .swiper-pagination-bullet.swiper-pagination-bullet-active {
     background: #fff;
@@ -229,11 +234,25 @@
   width: -webkit-fit-content;
   width: -moz-fit-content;
   width: fit-content;
+  height: 1rem;
+  text-align: left;
+}
+@media all and (max-width: 920px) {
+  .profilo .swiper-pagination-bullets.swiper-pagination .pagination-subtitle {
+    height: 8px;
+    width: 8px;
+    padding: 0;
+    margin: 15px 5px;
+  }
+}
+.profilo .swiper-pagination-bullets.swiper-pagination .pagination-subtitle .text {
+  position: relative;
+  top: -1.5rem;
 }
 .profilo .swiper-pagination-bullets.swiper-pagination .swiper-pagination-bullet-active {
   background-color: transparent;
 }
 .profilo .swiper-pagination-bullets.swiper-pagination span {
-  font-size: 15pt;
+  font-size: 2rem;
   color: #FFF5EE;
 }

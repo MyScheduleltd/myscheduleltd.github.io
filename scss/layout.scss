@@ -335,3 +335,32 @@ body{
     }
 }
 // footer
+
+// swiper bullet 
+.swiper-pagination-bullets-dynamic{
+    .swiper-pagination-bullet-active-prev-prev,.swiper-pagination-bullet-active-next-next{
+        transform:scale(1);
+        .text{
+            font-size:.5rem !important;
+        }
+    }
+    .swiper-pagination-bullet-active-prev,.swiper-pagination-bullet-active-next{
+       transform: scale(1);
+        .text{
+            font-size:1.2rem !important;
+        }
+    }
+}
+.auto-height-pagination{
+    @include rwd($md,min-width){
+        height:auto !important;
+        overflow: visible;
+        .swiper-pagination-bullet:only-child{
+            .text{
+                top:0 !important;
+            }
+        }
+
+    }
+    
+}

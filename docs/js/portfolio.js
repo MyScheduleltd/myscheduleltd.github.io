@@ -46,11 +46,16 @@ $(function async(){
             </div>`
             )
         })
-
+        let  isEnableLoop = profilo[i].profilo.length < 5;
+        // debugger;
+        if(isEnableLoop){
+            $(`.videos[data-set="${profilo[i].name}"]`).parent().find('.swiper-pagination').addClass(`auto-height-pagination`)
+        }
+        
+        // debugger;
         let swiper = new Swiper(`.videos[data-set="${profilo[i].name}"]`, {
             slidesPerView:1,
-            spaceBetween: 5,
-            // loop: true,
+           
             // mousewheel: true,
             // observer: true
             direction: 'vertical',
@@ -61,15 +66,14 @@ $(function async(){
                 el: ".swiper-pagination",
                 clickable: true,
                 dynamicBullets: true,
-                dynamicBullets: true,
-                dynamicMainBullets: 5
-                // renderBullet: function (index, className) {
-                //     return `
-                //         <div class="pagination-subtitle ${className}" >
-                //             <span class="text"> ${profilo[i].profilo[index].title}</span>
-                //         </div>
-                //     `;
-                // }
+                // dynamicMainBullets: 3,
+                renderBullet: function (index, className) {
+                    return `
+                        <div class="pagination-subtitle ${className}" >
+                            <span class="text"> ${profilo[i].profilo[index].title}</span>
+                        </div>
+                    `;
+                }
             },
 
             breakpoints: {
@@ -78,10 +82,12 @@ $(function async(){
                         el: ".swiper-pagination",
                         clickable: true,
                         dynamicBullets: true,
+                         spaceBetween: 15,
                         renderBullet: function (index, className) {
+                            const title = profilo[i].profilo[index].title;
                             return `
                                 <div class="pagination-subtitle ${className}" >
-                                    <span class="text"> ${profilo[i].profilo[index].title}</span>
+                                    <span class="text ${title.length > 30 ? 'small' : ''}"> ${title}</span>
                                 </div>
                             `;
                         }
@@ -144,7 +150,7 @@ $(function async(){
         swiper.on('slideChange', async function() {
             // console.log(swiper.activeIndex,profilo[i],'test')
            
-            debounceSwiper();
+            await debounceSwiper();
             // let currentIndex = swiper.activeIndex;
             // let currentUrl = profilo[i].profilo[currentIndex].url;
             // videosElement.find(`.videos[data-set="${profilo[i].name}"]`).find('.swiper-wrapper').find(`.wrapper${currentIndex}`).append(`

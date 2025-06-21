@@ -136,8 +136,10 @@
         max-width: 40vw;
         height:fit-content;
         cursor: pointer;
+        // overflow: visible;
         .swiper-pagination-bullet{
-            margin:15px;
+            padding:1rem 0;
+            margin:2rem 1rem;
             background-color: transparent;
 
         }
@@ -146,13 +148,16 @@
             background-color: #444444;
             border-radius: 10px;
             transform: translateX(10px) translateY(-50%);
-          
+            overflow: hidden;
             .swiper-pagination-bullet{
                 margin:5px;
                 background:#eee;
                 margin-bottom: 10px;
                 min-height: 8px;
                 min-width: 8px;
+                .text{
+                    display: none;
+                }
                 &.swiper-pagination-bullet-active{
                     background:#fff;
                 }
@@ -161,14 +166,25 @@
         .pagination-subtitle{
             display: flex;
             width:fit-content;
-           
+            height:1rem;
+            text-align: left;
+            @include rwd($md){
+                height:8px;
+                width:8px;
+                padding:0;
+                margin:15px 5px;
+            }
+           .text{
+            position: relative;
+            top:-1.5rem;
+           }
         }
         .swiper-pagination-bullet-active{
            
             background-color: transparent;
         }
         span{
-            font-size:15pt;
+            font-size:2rem;
             color:$white;
         }
     }
