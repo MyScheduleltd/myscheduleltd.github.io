@@ -100,8 +100,10 @@ $(function () {
         if (menuSwiper) menuSwiper.destroy(true, true);
         menuSwiper = new Swiper('.profilo-swiper', {
             spaceBetween: 0,
-            slidesPerView: 'auto',
+            slidesPerView: 4,
+            // slidesPerView: 'auto',
             slideToClickedSlide: true,
+            
             direction: getMenuSwiperDirection(),
         });
     }

@@ -356,7 +356,6 @@ h2 {
   width: -webkit-fit-content;
   width: -moz-fit-content;
   width: fit-content;
-  max-width: 350px;
   height: -webkit-fit-content;
   height: -moz-fit-content;
   height: fit-content;
@@ -365,9 +364,59 @@ h2 {
 .profilo #swiper-pagination .swiper-pagination-bullet {
   margin: 20px;
   background-color: transparent;
+  padding: 10px;
+}
+@media all and (max-width: 920px) {
+  .profilo #swiper-pagination .swiper-pagination-bullet {
+    padding: 0;
+  }
 }
 .profilo #swiper-pagination .swiper-pagination-bullet.swiper-pagination-bullet-active-main {
   visibility: visible;
+}
+.profilo #swiper-pagination .pagination-subtitle {
+  display: -webkit-box;
+  display: -ms-flexbox;
+  display: flex;
+  width: -webkit-fit-content;
+  width: -moz-fit-content;
+  width: fit-content;
+}
+.profilo #swiper-pagination .swiper-pagination-bullet-active {
+  background-color: transparent;
+}
+.profilo #swiper-pagination .text {
+  font-size: 2rem;
+  color: #FFF5EE;
+  position: relative;
+  top: -15px;
+}
+.profilo #swiper-pagination .pagination-subtitle {
+  display: -webkit-box;
+  display: -ms-flexbox;
+  display: flex;
+  width: -webkit-fit-content;
+  width: -moz-fit-content;
+  width: fit-content;
+  height: 1rem;
+  text-align: left;
+  -webkit-transform: scale(1);
+          transform: scale(1);
+}
+.profilo #swiper-pagination .pagination-subtitle:not(.swiper-pagination-bullet-active) .text {
+  font-size: 0.3rem;
+}
+@media all and (max-width: 920px) {
+  .profilo #swiper-pagination .pagination-subtitle {
+    height: 8px;
+    width: 8px;
+    padding: 0;
+    margin: 15px 5px;
+  }
+}
+.profilo #swiper-pagination .pagination-subtitle .text {
+  position: relative;
+  line-height: 1.5rem;
 }
 @media all and (max-width: 920px) {
   .profilo #swiper-pagination {
@@ -389,21 +438,6 @@ h2 {
   .profilo #swiper-pagination .swiper-pagination-bullet.swiper-pagination-bullet-active {
     background: #fff;
   }
-}
-.profilo #swiper-pagination .pagination-subtitle {
-  display: -webkit-box;
-  display: -ms-flexbox;
-  display: flex;
-  width: -webkit-fit-content;
-  width: -moz-fit-content;
-  width: fit-content;
-}
-.profilo #swiper-pagination .swiper-pagination-bullet-active {
-  background-color: transparent;
-}
-.profilo #swiper-pagination span {
-  font-size: 1.2rem;
-  color: #FFF5EE;
 }
 
 .profilo-swiper {

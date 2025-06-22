@@ -17,8 +17,11 @@
     top: 0;
     width: 100%;
     padding: 15px;
-    padding-left: 350px;
+    padding-left: 50%;
     // border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+    @include rwd($md){
+        padding-left:0;
+    }
     position: fixed;
     background-image: linear-gradient(180deg, rgba(black,.9) 60%, transparent 100%);
     &:after{
@@ -168,6 +171,13 @@
             width:fit-content;
             height:1rem;
             text-align: left;
+            transform: scale(1);
+            &:not(.swiper-pagination-bullet-active){
+                .text{
+            font-size:.3rem;
+                }
+
+           }
             @include rwd($md){
                 height:8px;
                 width:8px;
@@ -176,8 +186,11 @@
             }
            .text{
             position: relative;
+            // line-height: 1.5rem;
             top:-1.5rem;
+           
            }
+
         }
         .swiper-pagination-bullet-active{
            

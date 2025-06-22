@@ -41,7 +41,6 @@ $(function () {
                 el: ".swiper-pagination",
                 clickable: true,
                 dynamicBullets: true,
-                dynamicMainBullets: 1,
                 renderBullet: function (index, className) {
                     return `
                         <div class="pagination-subtitle ${className}">
@@ -55,7 +54,6 @@ $(function () {
                 el: ".swiper-pagination",
                 clickable: true,
                 dynamicBullets: true,
-                dynamicMainBullets: 1
                 // 預設圓點
             };
         }

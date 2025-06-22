@@ -40,10 +40,15 @@
   top: 0;
   width: 100%;
   padding: 15px;
-  padding-left: 350px;
+  padding-left: 50%;
   position: fixed;
   background-image: -webkit-gradient(linear, left top, left bottom, color-stop(60%, rgba(0, 0, 0, 0.9)), to(transparent));
   background-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9) 60%, transparent 100%);
+}
+@media all and (max-width: 920px) {
+  #portfolio-header {
+    padding-left: 0;
+  }
 }
 #portfolio-header:after {
   content: "";
@@ -236,6 +241,11 @@
   width: fit-content;
   height: 1rem;
   text-align: left;
+  -webkit-transform: scale(1);
+          transform: scale(1);
+}
+.profilo .swiper-pagination-bullets.swiper-pagination .pagination-subtitle:not(.swiper-pagination-bullet-active) .text {
+  font-size: 0.3rem;
 }
 @media all and (max-width: 920px) {
   .profilo .swiper-pagination-bullets.swiper-pagination .pagination-subtitle {
