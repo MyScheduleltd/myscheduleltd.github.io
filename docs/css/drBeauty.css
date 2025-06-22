@@ -362,12 +362,17 @@ h2 {
   cursor: pointer;
 }
 .profilo #swiper-pagination .swiper-pagination-bullet {
-  margin: 20px;
+  padding: 1rem 0;
+  margin: 2rem 1rem;
   background-color: transparent;
-  padding: 10px;
 }
 @media all and (max-width: 920px) {
   .profilo #swiper-pagination .swiper-pagination-bullet {
+    margin: 5px;
+    background: #eee;
+    margin-bottom: 10px;
+    min-height: 8px;
+    min-width: 8px;
     padding: 0;
   }
 }
@@ -405,14 +410,6 @@ h2 {
 }
 .profilo #swiper-pagination .pagination-subtitle:not(.swiper-pagination-bullet-active) .text {
   font-size: 0.3rem;
-}
-@media all and (max-width: 920px) {
-  .profilo #swiper-pagination .pagination-subtitle {
-    height: 8px;
-    width: 8px;
-    padding: 0;
-    margin: 15px 5px;
-  }
 }
 .profilo #swiper-pagination .pagination-subtitle .text {
   position: relative;

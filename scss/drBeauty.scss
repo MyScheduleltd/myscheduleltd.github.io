@@ -282,10 +282,15 @@ h2{
         height:fit-content;
         cursor: pointer;
         .swiper-pagination-bullet{
-            margin:20px;
+            padding:1rem 0;
+            margin:2rem 1rem;
             background-color: transparent;
-            padding:10px;
             @include rwd($md){
+                margin:5px;
+                background:#eee;
+                margin-bottom: 10px;
+                min-height: 8px;
+                min-width: 8px;
                 padding:0;
             }
             span.text{
@@ -323,12 +328,12 @@ h2{
                 }
 
            }
-            @include rwd($md){
-                height:8px;
-                width:8px;
-                padding:0;
-                margin:15px 5px;
-            }
+            // @include rwd($md){
+            //     height:8px;
+            //     width:8px;
+            //     padding:0;
+            //     margin:15px 5px;
+            // }
            .text{
             position: relative;
             line-height: 1.5rem;
