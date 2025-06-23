@@ -540,6 +540,10 @@ body {
   font-size: 1.2rem !important;
 }
 
+.auto-height-pagination .pagination-subtitle:not(.swiper-pagination-bullet-active):not(.swiper-pagination-bullet-active-prev):not(.swiper-pagination-bullet-active-next):not(.swiper-pagination-bullet-active-prev-prev):not(.swiper-pagination-bullet-active-next-next) .text {
+  font-size: 0.3rem;
+  visibility: hidden;
+}
 @media all and (min-width: 920px) {
   .auto-height-pagination {
     height: auto !important;

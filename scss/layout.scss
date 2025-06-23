@@ -352,6 +352,14 @@ body{
     }
 }
 .auto-height-pagination{
+    .pagination-subtitle:not(.swiper-pagination-bullet-active):not( .swiper-pagination-bullet-active-prev):not( .swiper-pagination-bullet-active-next):not(.swiper-pagination-bullet-active-prev-prev):not( .swiper-pagination-bullet-active-next-next){
+        
+        .text{
+            font-size:0.3rem;
+            visibility: hidden;
+        }
+        // display: none;
+    }
     @include rwd($md,min-width){
         height:auto !important;
         overflow: visible;

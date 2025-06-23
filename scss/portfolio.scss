@@ -174,7 +174,8 @@
             transform: scale(1);
             &:not(.swiper-pagination-bullet-active){
                 .text{
-            font-size:.3rem;
+                    font-size:.3rem;
+                    // visibility: hidden;
                 }
 
            }
