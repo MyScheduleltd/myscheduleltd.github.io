@@ -88,6 +88,10 @@ body.overflow{
         border-radius: 15px;
         max-height: 100vh;
         margin: auto;
+        width: 90%;
+        @include rwd($md){
+            width: 100%;
+        }
         .content{
             display: flex;
             flex-direction: column;
@@ -274,12 +278,69 @@ h2{
         display: flex;
         flex-direction: column;
         width:fit-content;
-        max-width: 350px;
+        // max-width: 350px;
         height:fit-content;
         cursor: pointer;
         .swiper-pagination-bullet{
-            margin:20px;
+            padding:1rem 0;
+            margin:2rem 1rem;
             background-color: transparent;
+            @include rwd($md){
+                margin:5px;
+                background:#eee;
+                margin-bottom: 10px;
+                min-height: 8px;
+                min-width: 8px;
+                padding:0;
+            }
+            span.text{
+
+            }
+            &.swiper-pagination-bullet-active-main{
+                visibility: visible;
+            }
+        }
+
+        .pagination-subtitle{
+            display: flex;
+            width:fit-content;
+           
+        }
+        .swiper-pagination-bullet-active{
+            background-color: transparent;
+        }
+
+        .text{
+            font-size:2rem;
+            color:$white;
+            position: relative;
+            top:-15px;
+        }
+        .pagination-subtitle{
+            display: flex;
+            width:fit-content;
+            height:1rem;
+            text-align: left;
+            transform: scale(1);
+            &:not(.swiper-pagination-bullet-active){
+                .text{
+            font-size:.3rem;
+                }
+
+           }
+            // @include rwd($md){
+            //     height:8px;
+            //     width:8px;
+            //     padding:0;
+            //     margin:15px 5px;
+            // }
+           .text{
+            position: relative;
+            line-height: 1.5rem;
+            
+            // top: -1.5rem;;
+           }
+
         }
         @include rwd($md){
             display:flex;
@@ -297,21 +358,8 @@ h2{
                 &.swiper-pagination-bullet-active{
                     background:#fff;
                 }
-            }
-        }
-        .pagination-subtitle{
-            display: flex;
-            width:fit-content;
-           
-        }
-        .swiper-pagination-bullet-active{
-           
-            background-color: transparent;
-        }
 
-        span{
-            font-size:15pt;
-            color:$white;
+            }
         }
     }
 }

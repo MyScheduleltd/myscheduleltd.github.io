@@ -17,8 +17,11 @@
     top: 0;
     width: 100%;
     padding: 15px;
-    padding-left: 350px;
+    padding-left: 50%;
     // border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+    @include rwd($md){
+        padding-left:0;
+    }
     position: fixed;
     background-image: linear-gradient(180deg, rgba(black,.9) 60%, transparent 100%);
     &:after{
@@ -136,8 +139,10 @@
         max-width: 40vw;
         height:fit-content;
         cursor: pointer;
+        // overflow: visible;
         .swiper-pagination-bullet{
-            margin:20px;
+            padding:1rem 0;
+            margin:2rem 1rem;
             background-color: transparent;
 
         }
@@ -146,13 +151,16 @@
             background-color: #444444;
             border-radius: 10px;
             transform: translateX(10px) translateY(-50%);
-          
+            overflow: hidden;
             .swiper-pagination-bullet{
                 margin:5px;
                 background:#eee;
                 margin-bottom: 10px;
                 min-height: 8px;
                 min-width: 8px;
+                .text{
+                    display: none;
+                }
                 &.swiper-pagination-bullet-active{
                     background:#fff;
                 }
@@ -161,14 +169,36 @@
         .pagination-subtitle{
             display: flex;
             width:fit-content;
+            height:1rem;
+            text-align: left;
+            transform: scale(1);
+            &:not(.swiper-pagination-bullet-active){
+                .text{
+                    font-size:.3rem;
+                    // visibility: hidden;
+                }
+
+           }
+            @include rwd($md){
+                height:8px;
+                width:8px;
+                padding:0;
+                margin:15px 5px;
+            }
+           .text{
+            position: relative;
+            // line-height: 1.5rem;
+            top:-1.5rem;
            
+           }
+
         }
         .swiper-pagination-bullet-active{
            
             background-color: transparent;
         }
         span{
-            font-size:15pt;
+            font-size:2rem;
             color:$white;
         }
     }

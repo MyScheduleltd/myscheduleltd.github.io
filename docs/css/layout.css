@@ -524,3 +524,32 @@ body {
 .button.button-resume {
   cursor: pointer;
 }
+
+.swiper-pagination-bullets-dynamic .swiper-pagination-bullet-active-prev-prev, .swiper-pagination-bullets-dynamic .swiper-pagination-bullet-active-next-next {
+  -webkit-transform: scale(1);
+          transform: scale(1);
+}
+.swiper-pagination-bullets-dynamic .swiper-pagination-bullet-active-prev-prev .text, .swiper-pagination-bullets-dynamic .swiper-pagination-bullet-active-next-next .text {
+  font-size: 0.5rem !important;
+}
+.swiper-pagination-bullets-dynamic .swiper-pagination-bullet-active-prev, .swiper-pagination-bullets-dynamic .swiper-pagination-bullet-active-next {
+  -webkit-transform: scale(1);
+          transform: scale(1);
+}
+.swiper-pagination-bullets-dynamic .swiper-pagination-bullet-active-prev .text, .swiper-pagination-bullets-dynamic .swiper-pagination-bullet-active-next .text {
+  font-size: 1.2rem !important;
+}
+
+.auto-height-pagination .pagination-subtitle:not(.swiper-pagination-bullet-active):not(.swiper-pagination-bullet-active-prev):not(.swiper-pagination-bullet-active-next):not(.swiper-pagination-bullet-active-prev-prev):not(.swiper-pagination-bullet-active-next-next) .text {
+  font-size: 0.3rem;
+  visibility: hidden;
+}
+@media all and (min-width: 920px) {
+  .auto-height-pagination {
+    height: auto !important;
+    overflow: visible;
+  }
+  .auto-height-pagination .swiper-pagination-bullet:only-child .text {
+    top: 0 !important;
+  }
+}
