@@ -127,25 +127,25 @@ let data = {
         profilo:[
           {
             id: 'COMMERCIAL1',
-            title: '718 Cayman Style Edition|Powered by Style - Xieh Gan',
+            title: '718 Cayman Style Edition|Powered by Style'
             url:'https://youtu.be/5pSwEJw53Y8?si=pBYFulqXjsLLFrC3',
             author: '謝乾',
             date: 2023
           },{
             id: 'COMMERCIAL2',
-            title: '潮我展現變視度│Galaxy Z Fold2 5G樂趣潮展開 - Xieh Gan',
+            title: '潮我展現變視度│Galaxy Z Fold2 5G樂趣潮展開',
             url:'https://www.youtube.com/watch?v=jeqkAGA_3n0',
             author: '謝乾',
             date: 2021
           },{
             id: 'COMMERCIAL3',
-            title: 'CYTO® WE ALL EVOLVE - Kenny Lu',
+            title: 'CYTO® WE ALL EVOLVE',
             url:'https://youtu.be/KD5dGYzk9Bo?si=9yBOVzBiK7tFSr-w',
             author: '肯尼',
             date: 2023
           },{
             id: 'COMMERCIAL4',
-            title: '第一屆金狼獎 入圍類別影片 - Loui Lin',
+            title: '第一屆金狼獎 入圍類別影片',
             url:'https://www.youtube.com/watch?v=qyMIdPT4K4Q',
             author: 'Loui',
             date:2024
@@ -156,13 +156,13 @@ let data = {
         profilo:[
           {
             id: 'tv1',
-            title: 'The King of Nightmarket - Bo En Lee',
+            title: 'The King of Nightmarket',
             url:'https://www.youtube.com/watch?v=TmvklnJYWA4&t=2492s',
             author: 'Po En Lee',
             date:2024
           },{
             id: 'tv2',
-            title: 'The Rappers 2 - Xieh Gan',
+            title: 'The Rappers 2',
             url:'https://youtu.be/PrE9j9r0Ewo?si=0xUo6Ol8yvwvrrcy',
             author: 'Xieh Gan',
             date:2023
@@ -174,196 +174,196 @@ let data = {
         profilo:[
           {
              id: 'musicvideos1',
-            title:"Skibidi - Loui&Kenny Lu",
+            title:"Skibidi - JJ Lin Ft. Jakie Chen",
             chinese_title: "林俊傑 Ft.成龍 - Skibidi",
             url:'https://www.youtube.com/embed/jiawzYgfkuI?si=FrGUfJw5TAjUjr8J',
             author: 'Loui&Kenny Lu',
             date:2025
           }, {
             id: 'musicvideos2',
-            title:"Surfer's Love Story - ZC",
+            title:"Surfer's Love Story - 張震嶽 Ayal Komod",
             chinese_title: "張震嶽 Ayal Komod - 浪人的 Surfer's Love Story",
             url:'https://www.youtube.com/embed/ZIvWrKYdMQE?si=LIrwVBb43wagBJDn',
             author: 'ZC',
             date:2025
           }, {
             id: 'musicvideos3',
-            title:'LOVE ME OR NOT - Michael.',
+            title:'LOVE ME OR NOT - 薔薔 MAZE',
             chinese_title: "薔薔 MAZE - LOVE ME OR NOT",
             url:'https://www.youtube.com/embed/SRbsIUYB0dc?si=4H6J3h5UDDcx3dS1',
             author: 'Michael.',
             date:2025
           }, {
             id: 'musicvideos4',
-            title:'Signal - Loui',
+            title:'Signal - 陳勢安 Andrew Tan',
             chinese_title: "陳勢安 Andrew Tan - 你的暗號 Signal",
             url:'https://www.youtube.com/embed/DJmHJB-hHC8?si=nCpY2TQaau2fSR1j',
             author: 'Loui',
             date:2025
           }, {
             id: 'musicvideos5',
-            title:'A Thousand Words - LEE PO EN',
+            title:'A Thousand Words - 陶喆 David Tao',
             chinese_title: "陶喆 David Tao - 千言萬語 A Thousand Words",
             url:'https://www.youtube.com/embed/cgnPinA7D8U?si=IHaNB2I9gJLdPScI',
             author: 'LEE PO EN',
             date:2025
           }, {
             id: 'musicvideos6',
-            title: "Mei Mei - ZC",
+            title: "Mei Mei - 瘦子 E.SO",
             chinese_title: "瘦子E.SO【妹妹 Mei Mei】Official Music Video",
             url:'https://youtu.be/Df9lbCJNhGU?si=96PI0Tv9fHYH_nEq',
             author: 'ZC',
             date:2022
           }, {
             id: 'musicvideos7',
-            title:'ONE SONG - ZC',
+            title:'ONE SONG - 婁峻碩 SHOU,派偉俊 Patrick Brasca',
             chinese_title: "婁峻碩SHOU,派偉俊Patrick Brasca - 一首歌 ONE SONG M/V",
             url:'https://youtu.be/QvydPXEfk0M?si=NsdRQ_-qTdblw2iQ',
             author: 'ZC',
             date:2023
           }, {
             id: 'musicvideos8',
-            title: 'Toxic Boss - ZC',
+            title: 'Toxic Boss - J.Sheon',
             url:'https://www.youtube.com/watch?v=tsahcnnUzMw',
             author: 'ZC',
             date: 2024
           }, {
             id: 'musicvideos9',
-            title: 'Whatever - Xieh Gan',
+            title: 'Whatever - 張惠妹 aMEI feat.瘦子 E-SO',
             url:'https://www.youtube.com/watch?v=QuNc8b7DxyY',
             author: '謝乾',
             date: 2018
           }, {
             id: 'musicvideos10',
-            title: "Way Up - Xieh Gan",
+            title: "Way Up - 瘦子 E-SO",
             url:'https://youtu.be/JfS8YZD5eSA?si=qsG-ra6E1AK0jkd_',
             author: '謝乾',
             date:2021
           }, {
             id: 'musicvideos11',
-            title: 'iGO ASIA REMIX - Xieh Gan',
+            title: 'iGO ASIA REMIX - 周湯豪 NICKTHEREAL feat SIK-K JP THE WAVY',
             url:'https://www.youtube.com/watch?v=FcCtOYGxf1Y',
             author: '謝乾',
             date:2020
           }, {
             id: 'musicvideos12',
-            title: 'CHANGE - Xieh Gan',
+            title: 'CHANGE - 瘦子 E-SO',
             url:'https://youtu.be/HTRQ0n4yjfs?si=8hTSvMuQIE9jt8di',
             author: '謝乾',
             date:2020
           }, {
             id: 'musicvideos13',
-            title: "You Don't Need To Know - ZC",
+            title: "You Don't Need To Know - J.Sheon",
             url:'https://www.youtube.com/watch?v=fKd-qQto3gk',
             author: 'ZC',
             date:2024
           }, {
             id: 'musicvideos14',
-            title: '早上PAPAPA - Xieh Gan',
+            title: '早上PAPAPA - Starr Chen Feat. J. Sheon',
             url:'https://www.youtube.com/watch?v=yOEpwDu7OB4',
             author: '謝乾',
             date:2018
           }, {
             id: 'musicvideos15',
-            title: "Soul Away - Xieh Gan",
+            title: "Soul Away - 瘦子 E-SO",
             url:'https://youtu.be/XPQzKjisTbI?si=5nf461Nqtr4OBYrq',
             author: '謝乾',
             date:2019
           }, {
             id: 'musicvideos16',
-            title: "Don't Ask - Xieh Gan",
+            title: "Don't Ask - J. Sheon",
             url:'https://www.youtube.com/watch?v=tRa3fOlnN7k',
             author: '謝乾',
             date: 2018
           }, {
             id: 'musicvideos17',
-            title: "DON - Xieh Gan",
+            title: "DON - 頑童 MJ116",
             url:'https://youtu.be/fIXTRr22_II?si=Gl0mOerB1ZkRWj3V',
             author: '謝乾',
             date:2018
           }, {
             id: 'musicvideos18',
-            title: "Moment - Xieh Gan",
+            title: "Moment - 蘇運瑩",
             url:'https://www.youtube.com/watch?v=F5XjLbMTo38',
             author: '謝乾',
             date: 2019
           }, {
             id: 'musicvideos19',
-            title: 'YouTube Music Night with NICKTHEREAL 十週年線上演唱會 - Xieh Gan',
+            title: 'YouTube Music Night with NICKTHEREAL 十週年線上演唱會',
             url:'https://www.youtube.com/watch?v=hQkQ2AzdNaY',
             author: '謝乾',
             date:2020
           }, {
             id: 'musicvideos20',
-            title: 'She Ain’t Watchin’ - Xieh Gan',
+            title: 'She Ain’t Watchin’ - 瘦子 E-SO',
             url:'https://youtu.be/smFGZKPS5yc?si=n9wlzWOOYr7ovyHk',
             author: '謝乾',
             date:2020
           }, {
             id: 'musicvideos21',
-            title: 'Follow You - Xieh Gan',
+            title: 'Follow You - 瘦子 E-SO',
             url:'https://youtu.be/U1G4lKnYf4o?si=SqjZtQoEYG2Ervyc',
             author: '謝乾',
             date:2020
           }, {
             id: 'musicvideos22',
-            title: 'PRAISE - Xieh Gan',
+            title: 'PRAISE - 瘦子 E-SO',
             url:'https://youtu.be/YgNGl442hgg?si=QsEi1O32Scs5sj_R',
             author: '謝乾',
             date:2020
           }, {
             id: 'musicvideos23',
-            title: "C'MON - Xieh Gan",
+            title: "C'MON - 盧廣仲 Crowd Lu",
             url:'https://www.youtube.com/watch?v=0Yi4WAR-9hM',
             author: '謝乾',
             date:2021
           }, {
             id: 'musicvideos24',
-            title: "Weirdo - Xieh Gan",
+            title: "Weirdo - HUR ft.G5SH",
             url:'https://youtu.be/9eOQsGYs70c?si=FoHoPQN0-w2Roak0',
             author: '謝乾',
             date:2021
           }, {
             id: 'musicvideos25',
-            title: "Sweet Baby - Xieh Gan",
+            title: "Sweet Baby - 瘦子 E-SO",
             url:'https://youtu.be/NDDa_AV8cks?si=RdAgARz5QULyqtdh',
             author: '謝乾',
             date:2021
           }, {
             id: 'musicvideos26',
-            title: "Help - ZC",
+            title: "Help - 草屯囝仔 Caotun Boyz",
             url:'https://youtu.be/HqhQR3adbok?si=CH0pu9G5xhJw0-iR',
             author: 'ZC',
             date:2020
           }, {
             id: 'musicvideos27',
-            title: "NO! 不良示範 - ZC",
+            title: "NO! 不良示範 - J.Sheon",
             chinese_title: "J.Sheon - NO! 不良示範 (Official Music Video)",
             url:'https://youtu.be/O2EZ6Tys0x8?si=8w3-iQqDIIdwXyfH',
             author: 'ZC',
             date:2022
           }, {
             id: 'musicvideos28',
-            title:'麻克與林送夫 Remix - ZC',
+            title:'麻克與林送夫 Remix - 𝗕𝗦𝗕',
             chinese_title: "BSB - 麻克與林送夫 Remix (Official MV)",
             url:'https://youtu.be/Et-TvF_4fa4?si=NeMWObX4kFhhMBzU',
             author: 'ZC',
             date:2024
           }, {
             id: 'musicvideos29',
-            title: "阿達A/DA 水樂男孩STRAIGHT UP BOYZ 【吉娃娃】Office Music Video",
+            title: "吉娃娃 - 阿達 A/DA 水樂男孩 STRAIGHT UP BOYZ",
             url:'https://www.youtube.com/watch?v=bnOjr-SMTbc',
             author: '莎賓涂Sebine. Tu',
             date:2022
           }, {
             id: 'musicvideos30',
-            title: "不捨不得 - Sebine.Tu",
+            title: "不捨不得 - 異鄉人 Outlander & 大寶 DaBao",
             url:'https://www.youtube.com/watch?v=F6XaLvhpGog',
             author: '莎賓涂Sebine. Tu',
             date:2022
           }, {
             id: 'musicvideos31',
-            title: "11th hour - Sebine.Tu",
+            title: "11th hour - 阿部瑪利亞 Maria Abe",
             url:'https://www.youtube.com/watch?v=xndA9Geu4eg',
             author: '莎賓涂Sebine. Tu',
             date:2023
@@ -376,12 +376,6 @@ let data = {
         profilo:[
           {
             id: 'other1',
-            title: "My Schedule LTD showreel 2025 - Michael.",
-            url:'https://www.youtube.com/embed/hxPHwouNZ8w?si=SSzj_k20KlKzZbuo',
-            author: 'Michael.',
-            date:2025
-          }, {
-            id: 'other2',
             title: 'My Schedule LTD showreel 2018 - Xieh Gan',
             url:'https://www.youtube.com/watch?v=Ffli-o0ocT0',
             author: '謝乾',
