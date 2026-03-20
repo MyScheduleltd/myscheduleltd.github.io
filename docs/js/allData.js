@@ -182,7 +182,7 @@ let data = {
         profilo:[
           {
              id: 'musicvideos1',
-            title:"Skibidi - JJ Lin Ft. Jakie Chen",
+            title:"Skibidi - JJ Lin Ft. Jackie Chen",
             chinese_title: "林俊傑 Ft.成龍 - Skibidi",
             url:'https://www.youtube.com/embed/jiawzYgfkuI?si=FrGUfJw5TAjUjr8J',
             author: 'Loui&Kenny Lu',
@@ -203,174 +203,181 @@ let data = {
             date:2025
           }, {
             id: 'musicvideos4',
-            title:'Signal - 陳勢安 Andrew Tan',
-            chinese_title: "陳勢安 Andrew Tan - 你的暗號 Signal",
-            url:'https://www.youtube.com/embed/DJmHJB-hHC8?si=nCpY2TQaau2fSR1j',
+            title:'got.to.believe - 葛仲珊 Miss Ko',
+            chinese_title: "葛仲珊 Miss Ko - got.to.believe",
+            url:'https://www.youtube.com/embed/i5YVMS1noIo?si=3z-vEmNaOsicyuHX',
             author: 'Loui',
             date:2025
           }, {
             id: 'musicvideos5',
-            title:'A Thousand Words - David Tao',
-            chinese_title: "陶喆 David Tao - 千言萬語 A Thousand Words",
-            url:'https://www.youtube.com/embed/cgnPinA7D8U?si=IHaNB2I9gJLdPScI',
-            author: 'LEE PO EN',
-            date:2025
-          }, {
-            id: 'musicvideos6',
             title: "Mei Mei - 瘦子 E.SO",
             chinese_title: "瘦子E.SO【妹妹 Mei Mei】Official Music Video",
             url:'https://youtu.be/Df9lbCJNhGU?si=96PI0Tv9fHYH_nEq',
             author: 'ZC',
             date:2022
           }, {
+            id: 'musicvideos6',
+            title:'Signal - 陳勢安 Andrew Tan',
+            chinese_title: "陳勢安 Andrew Tan - 你的暗號 Signal",
+            url:'https://www.youtube.com/embed/DJmHJB-hHC8?si=nCpY2TQaau2fSR1j',
+            author: 'Loui',
+            date:2025
+          }, {
             id: 'musicvideos7',
+            title:'A Thousand Words - David Tao',
+            chinese_title: "陶喆 David Tao - 千言萬語 A Thousand Words",
+            url:'https://www.youtube.com/embed/cgnPinA7D8U?si=IHaNB2I9gJLdPScI',
+            author: 'LEE PO EN',
+            date:2025
+          }, {
+            id: 'musicvideos8',
             title:'ONE SONG - 婁峻碩 SHOU,派偉俊 Patrick Brasca',
             chinese_title: "婁峻碩SHOU,派偉俊Patrick Brasca - 一首歌 ONE SONG M/V",
             url:'https://youtu.be/QvydPXEfk0M?si=NsdRQ_-qTdblw2iQ',
             author: 'ZC',
             date:2023
           }, {
-            id: 'musicvideos8',
+            id: 'musicvideos9',
             title: 'Toxic Boss - J.Sheon',
             url:'https://www.youtube.com/watch?v=tsahcnnUzMw',
             author: 'ZC',
             date: 2024
           }, {
-            id: 'musicvideos9',
+            id: 'musicvideos10',
             title: 'Whatever - 張惠妹 aMEI feat.瘦子 E-SO',
             url:'https://www.youtube.com/watch?v=QuNc8b7DxyY',
             author: '謝乾',
             date: 2018
           }, {
-            id: 'musicvideos10',
+            id: 'musicvideos11',
             title: "Way Up - 瘦子 E-SO",
             url:'https://youtu.be/JfS8YZD5eSA?si=qsG-ra6E1AK0jkd_',
             author: '謝乾',
             date:2021
           }, {
-            id: 'musicvideos11',
+            id: 'musicvideos12',
             title: 'iGO ASIA REMIX - 周湯豪 NICKTHEREAL feat SIK-K JP THE WAVY',
             url:'https://www.youtube.com/watch?v=FcCtOYGxf1Y',
             author: '謝乾',
             date:2020
           }, {
-            id: 'musicvideos12',
+            id: 'musicvideos13',
             title: 'CHANGE - 瘦子 E-SO',
             url:'https://youtu.be/HTRQ0n4yjfs?si=8hTSvMuQIE9jt8di',
             author: '謝乾',
             date:2020
           }, {
-            id: 'musicvideos13',
+            id: 'musicvideos14',
             title: "You Don't Need To Know - J.Sheon",
             url:'https://www.youtube.com/watch?v=fKd-qQto3gk',
             author: 'ZC',
             date:2024
           }, {
-            id: 'musicvideos14',
+            id: 'musicvideos15',
             title: '早上PAPAPA - Starr Chen Feat. J. Sheon',
             url:'https://www.youtube.com/watch?v=yOEpwDu7OB4',
             author: '謝乾',
             date:2018
           }, {
-            id: 'musicvideos15',
+            id: 'musicvideos16',
             title: "Soul Away - 瘦子 E-SO",
             url:'https://youtu.be/XPQzKjisTbI?si=5nf461Nqtr4OBYrq',
             author: '謝乾',
             date:2019
           }, {
-            id: 'musicvideos16',
+            id: 'musicvideos17',
             title: "Don't Ask - J. Sheon",
             url:'https://www.youtube.com/watch?v=tRa3fOlnN7k',
             author: '謝乾',
             date: 2018
           }, {
-            id: 'musicvideos17',
+            id: 'musicvideos18',
             title: "DON - 頑童 MJ116",
             url:'https://youtu.be/fIXTRr22_II?si=Gl0mOerB1ZkRWj3V',
             author: '謝乾',
             date:2018
           }, {
-            id: 'musicvideos18',
+            id: 'musicvideos19',
             title: "Moment - 蘇運瑩",
             url:'https://www.youtube.com/watch?v=F5XjLbMTo38',
             author: '謝乾',
             date: 2019
           }, {
-            id: 'musicvideos19',
+            id: 'musicvideos20',
             title: 'YouTube Music Night with NICKTHEREAL 十週年線上演唱會',
             url:'https://www.youtube.com/watch?v=hQkQ2AzdNaY',
             author: '謝乾',
             date:2020
           }, {
-            id: 'musicvideos20',
+            id: 'musicvideos21',
             title: 'She Ain’t Watchin’ - 瘦子 E-SO',
             url:'https://youtu.be/smFGZKPS5yc?si=n9wlzWOOYr7ovyHk',
             author: '謝乾',
             date:2020
           }, {
-            id: 'musicvideos21',
+            id: 'musicvideos22',
             title: 'Follow You - 瘦子 E-SO',
             url:'https://youtu.be/U1G4lKnYf4o?si=SqjZtQoEYG2Ervyc',
             author: '謝乾',
             date:2020
           }, {
-            id: 'musicvideos22',
+            id: 'musicvideos23',
             title: 'PRAISE - 瘦子 E-SO',
             url:'https://youtu.be/YgNGl442hgg?si=QsEi1O32Scs5sj_R',
             author: '謝乾',
             date:2020
           }, {
-            id: 'musicvideos23',
+            id: 'musicvideos24',
             title: "C'MON - 盧廣仲 Crowd Lu",
             url:'https://www.youtube.com/watch?v=0Yi4WAR-9hM',
             author: '謝乾',
             date:2021
           }, {
-            id: 'musicvideos24',
+            id: 'musicvideos25',
             title: "Weirdo - HUR ft.G5SH",
             url:'https://youtu.be/9eOQsGYs70c?si=FoHoPQN0-w2Roak0',
             author: '謝乾',
             date:2021
           }, {
-            id: 'musicvideos25',
+            id: 'musicvideos26',
             title: "Sweet Baby - 瘦子 E-SO",
             url:'https://youtu.be/NDDa_AV8cks?si=RdAgARz5QULyqtdh',
             author: '謝乾',
             date:2021
           }, {
-            id: 'musicvideos26',
+            id: 'musicvideos27',
             title: "Help - 草屯囝仔 Caotun Boyz",
             url:'https://youtu.be/HqhQR3adbok?si=CH0pu9G5xhJw0-iR',
             author: 'ZC',
             date:2020
           }, {
-            id: 'musicvideos27',
+            id: 'musicvideos28',
             title: "NO! 不良示範 - J.Sheon",
             chinese_title: "J.Sheon - NO! 不良示範 (Official Music Video)",
             url:'https://youtu.be/O2EZ6Tys0x8?si=8w3-iQqDIIdwXyfH',
             author: 'ZC',
             date:2022
           }, {
-            id: 'musicvideos28',
+            id: 'musicvideos29',
             title:'麻克與林送夫 Remix - 𝗕𝗦𝗕',
             chinese_title: "BSB - 麻克與林送夫 Remix (Official MV)",
             url:'https://youtu.be/Et-TvF_4fa4?si=NeMWObX4kFhhMBzU',
             author: 'ZC',
             date:2024
           }, {
-            id: 'musicvideos29',
+            id: 'musicvideos30',
             title: "吉娃娃 - 阿達 A/DA 水樂男孩 STRAIGHT UP BOYZ",
             url:'https://www.youtube.com/watch?v=bnOjr-SMTbc',
             author: '莎賓涂Sebine. Tu',
             date:2022
           }, {
-            id: 'musicvideos30',
+            id: 'musicvideos31',
             title: "不捨不得 - 異鄉人 Outlander & 大寶 DaBao",
             url:'https://www.youtube.com/watch?v=F6XaLvhpGog',
             author: '莎賓涂Sebine. Tu',
             date:2022
           }, {
-            id: 'musicvideos31',
+            id: 'musicvideos32',
             title: "11th hour - 阿部瑪利亞 Maria Abe",
             url:'https://www.youtube.com/watch?v=xndA9Geu4eg',
             author: '莎賓涂Sebine. Tu',
