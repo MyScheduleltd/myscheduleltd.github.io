@@ -89,26 +89,34 @@ let data = {
     drBeautyVideos:[
       {
         id: 'about-videos1',
+        title: '更年期 Midlife Crisis feat. 手天使 Hand Angel & 謝乾 $hitGanGan',
+        url:'https://www.youtube.com/embed/De33mCT9OW0?si=_x4e_HUOsuOsEWue'
+      },{
+        id: 'about-videos2',
+        title: 'Okay Okay',
+        url:'https://www.youtube.com/embed/rMicadJVzH8?si=7VHCVG6c2Qylv6cH'
+      },{
+        id: 'about-videos3',
         title: '李包比自傳feat. 簡道生',
         url:'https://www.youtube.com/embed/lhAvlkYlFc4?si=Cyhpl9w_LkARqhxp'
       },{
-        id: 'about-videos2',
-        title: '美麗本人 ft. 謝乾',
+        id: 'about-videos4',
+        title: '美麗本人 247 Live ft. 謝乾',
         url:'https://www.youtube.com/embed/TH4iVLVqXAc?si=ayK-S5fg7CVtmEvI'
       },{
-        id: 'about-videos3',
+        id: 'about-videos5',
         title: 'Te amo todos los días 盧廣仲&美麗本人',
         url:'https://www.youtube.com/embed/tLvj_eC8tQQ?si=AiryLVBuNZmzpk4l'
       },{
-        id: 'about-videos4',
+        id: 'about-videos6',
         title: '你是我的Bae feat. 李千娜',
         url:'https://www.youtube.com/embed/hXhatbZ5j4k?si=d_cjccYjBbdfdOyG'
       },{
-        id: 'about-videos5',
+        id: 'about-videos7',
         title: '禿油肥To Your Face feat. DJ GROUND',
         url:'https://www.youtube.com/embed/U2-OzFANCiA?si=guJKZgQC2Wuy7eXb'
       },{
-        id: 'about-videos6',
+        id: 'about-videos8',
         title: '壞爸爸 Bad Daddy',
         url:'https://www.youtube.com/embed/KH4HNQBlP7U?si=Z0u3VcozzcY2vQfi'
       },
