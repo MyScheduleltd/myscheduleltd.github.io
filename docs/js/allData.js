@@ -135,13 +135,13 @@ let data = {
         profilo:[
           {
             id: 'COMMERCIAL1',
-            title: '718 Cayman Style Edition|Powered by Style'
-            url:'https://youtu.be/5pSwEJw53Y8?si=pBYFulqXjsLLFrC3',
+            title: 'Porsche - 718 Cayman Style Edition',
+            url:'https://www.youtube.com/watch?v=jeqkAGA_3n0',
             author: '謝乾',
-            date: 2023
+            date: 2021
           },{
             id: 'COMMERCIAL2',
-            title: '潮我展現變視度│Galaxy Z Fold2 5G樂趣潮展開',
+            title: 'Galaxy Z Fold2 5G',
             url:'https://www.youtube.com/watch?v=jeqkAGA_3n0',
             author: '謝乾',
             date: 2021
@@ -384,7 +384,7 @@ let data = {
         profilo:[
           {
             id: 'other1',
-            title: 'My Schedule LTD showreel 2018 - Xieh Gan',
+            title: 'My Schedule LTD showreel 2018',
             url:'https://www.youtube.com/watch?v=Ffli-o0ocT0',
             author: '謝乾',
             date:2018
