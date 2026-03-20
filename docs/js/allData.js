@@ -136,7 +136,7 @@ let data = {
           {
             id: 'COMMERCIAL1',
             title: 'Porsche - 718 Cayman Style Edition',
-            url:'https://www.youtube.com/watch?v=jeqkAGA_3n0',
+            url:'https://www.youtube.com/embed/5pSwEJw53Y8?si=Fbax8QodKECYtN9j',
             author: '謝乾',
             date: 2021
           },{
@@ -210,7 +210,7 @@ let data = {
             date:2025
           }, {
             id: 'musicvideos5',
-            title:'A Thousand Words - 陶喆 David Tao',
+            title:'A Thousand Words - David Tao',
             chinese_title: "陶喆 David Tao - 千言萬語 A Thousand Words",
             url:'https://www.youtube.com/embed/cgnPinA7D8U?si=IHaNB2I9gJLdPScI',
             author: 'LEE PO EN',
