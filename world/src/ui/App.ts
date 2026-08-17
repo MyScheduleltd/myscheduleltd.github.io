@@ -6,6 +6,7 @@ import {
   type VenueKey,
 } from '../data/catalogue';
 import companyLogoUrl from '../assets/company-logo.png';
+import { DJ_BY_VENUE, djProfileFor } from '../data/djProfiles';
 import {
   FestivalClient,
   type AdminState,
@@ -1141,8 +1142,14 @@ export class App {
           <button type="button" class="dj-tracklist__private" data-private-track="${this.escapeAttribute(film.youtubeId)}">${zh ? '私人聆聽' : 'PRIVATE'}</button>
         </div>`;
       }).join('')}</div>
-      <button class="seat-menu__back" type="button" data-seat-back>${zh ? '離開' : 'BACK TO THE FLOOR'}</button>`;
+      <div class="seat-menu__actions">
+        ${DJ_BY_VENUE[venue] ? `<button type="button" data-dj-about>${zh ? `認識 ${this.escapeHtml(djName)}` : `ABOUT ${this.escapeHtml(djName)}`}</button>` : ''}
+        <button class="seat-menu__back" type="button" data-seat-back>${zh ? '離開' : 'BACK TO THE FLOOR'}</button>
+      </div>`;
 
+    menu.querySelector<HTMLButtonElement>('[data-dj-about]')?.addEventListener('click', () => {
+      this.openDjAbout(djName, venue);
+    });
     menu.querySelectorAll<HTMLButtonElement>('[data-request-track]').forEach((button) => {
       button.addEventListener('click', () => {
         const youtubeId = button.dataset.requestTrack ?? '';
@@ -1177,6 +1184,68 @@ export class App {
     menu.querySelector<HTMLButtonElement>('[data-seat-back]')?.addEventListener('click', () => {
       this.openDjBooth = undefined;
       this.hideSeatMenu();
+    });
+  }
+
+  /**
+   * The resident's introduction, opened from their booth. Visitors read it;
+   * STAFF get an edit form under it. The form only appears with a service
+   * connected, because there is nowhere to save an edit without one — the
+   * introduction itself always shows, since the build carries a copy.
+   */
+  private openDjAbout(djName: string, venue: 'club' | 'rooftop'): void {
+    const menu = this.root.querySelector<HTMLElement>('#seat-menu');
+    if (!menu) return;
+    const zh = this.language === 'zh-TW';
+    const profile = djProfileFor(venue, this.networkState?.djProfiles, djName);
+    if (!profile) return;
+    this.openDjBooth = { name: djName, venue };
+    const canEdit = Boolean(this.staffKey) && this.festivalClient.online;
+    const paragraphs = (text: string) => text
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => `<p>${this.escapeHtml(line)}</p>`)
+      .join('');
+    menu.hidden = false;
+    menu.innerHTML = `
+      <p class="eyebrow">${this.escapeHtml(this.venueName(venue))} · ${zh ? '駐場介紹' : 'RESIDENT'}</p>
+      <h2 id="seat-menu-title">${this.escapeHtml(profile.name)}</h2>
+      <p class="dj-about__role">${this.escapeHtml(zh ? profile.roleZh : profile.role)}</p>
+      <div class="dj-about__body">${paragraphs(zh ? profile.introductionZh : profile.introduction)}</div>
+      ${canEdit ? `
+      <form class="dj-about__edit" data-dj-edit>
+        <p class="eyebrow">${zh ? 'STAFF 編輯' : 'STAFF EDIT'}</p>
+        <label><span>${zh ? '頭銜（中）' : 'ROLE (ZH)'}</span><input name="roleZh" value="${this.escapeAttribute(profile.roleZh)}" maxlength="120" required /></label>
+        <label><span>${zh ? '頭銜（英）' : 'ROLE (EN)'}</span><input name="role" value="${this.escapeAttribute(profile.role)}" maxlength="120" required /></label>
+        <label><span>${zh ? '介紹（中）' : 'INTRODUCTION (ZH)'}</span><textarea name="introductionZh" rows="5" maxlength="1200" required>${this.escapeHtml(profile.introductionZh)}</textarea></label>
+        <label><span>${zh ? '介紹（英）' : 'INTRODUCTION (EN)'}</span><textarea name="introduction" rows="5" maxlength="1200" required>${this.escapeHtml(profile.introduction)}</textarea></label>
+        <button type="submit">${zh ? '儲存介紹' : 'SAVE INTRODUCTION'}</button>
+      </form>` : ''}
+      <button class="seat-menu__back" type="button" data-dj-back>${zh ? '回到點歌' : 'BACK TO REQUESTS'}</button>`;
+
+    menu.querySelector<HTMLButtonElement>('[data-dj-back]')?.addEventListener('click', () => {
+      this.openDjRequest(djName, venue);
+    });
+    menu.querySelector<HTMLFormElement>('[data-dj-edit]')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const data = new FormData(form);
+      const submit = form.querySelector('button[type=submit]');
+      if (submit instanceof HTMLButtonElement) submit.disabled = true;
+      void this.festivalClient.updateDjProfile(this.staffKey, {
+        id: profile.id,
+        role: String(data.get('role') ?? ''),
+        roleZh: String(data.get('roleZh') ?? ''),
+        introduction: String(data.get('introduction') ?? ''),
+        introductionZh: String(data.get('introductionZh') ?? ''),
+      }).then(() => {
+        this.showWorldAlert(zh ? '介紹已更新' : 'INTRODUCTION SAVED');
+        this.openDjAbout(djName, venue);
+      }).catch((error: unknown) => {
+        if (submit instanceof HTMLButtonElement) submit.disabled = false;
+        this.showWorldAlert(error instanceof Error ? error.message : (zh ? '儲存失敗' : 'COULD NOT SAVE'));
+      });
     });
   }
 

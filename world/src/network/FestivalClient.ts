@@ -118,6 +118,7 @@ export interface FestivalState {
   npcNames: NpcNames;
   npcProfiles: NpcProfile[];
   pamphlet: PamphletContent;
+  djProfiles: DjProfiles;
   trackTempos: TrackTempos;
 }
 
@@ -135,8 +136,22 @@ export interface AdminState {
   npcNames: NpcNames;
   npcProfiles: NpcProfile[];
   pamphlet: PamphletContent;
+  djProfiles: DjProfiles;
   trackTempos: TrackTempos;
 }
+
+/** A resident DJ's introduction, shown from their booth. */
+export interface DjProfile {
+  id: string;
+  name: string;
+  role: string;
+  roleZh: string;
+  introduction: string;
+  introductionZh: string;
+  updatedAt: number;
+}
+
+export type DjProfiles = Record<string, DjProfile>;
 
 export interface PublicConfig {
   schedule: ProgrammeSchedule;
@@ -146,6 +161,7 @@ export interface PublicConfig {
   npcNames: NpcNames;
   npcProfiles: NpcProfile[];
   pamphlet: PamphletContent;
+  djProfiles: DjProfiles;
   trackTempos: TrackTempos;
 }
 
@@ -340,6 +356,19 @@ export class FestivalClient {
     introductionZh: string;
   }): Promise<void> {
     await this.adminRequest('/api/admin/pamphlet', key, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateDjProfile(key: string, payload: {
+    id: string;
+    role: string;
+    roleZh: string;
+    introduction: string;
+    introductionZh: string;
+  }): Promise<void> {
+    await this.adminRequest('/api/admin/dj-profile', key, {
       method: 'POST',
       body: JSON.stringify(payload),
     });

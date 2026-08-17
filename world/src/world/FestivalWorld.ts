@@ -126,7 +126,20 @@ interface ProjectorSurface {
   lastAdvanceAt?: number;
   currentTime?: number;
   currentTimeAt?: number;
+  duration?: number;
   playing?: boolean;
+}
+
+/**
+ * Where a venue's programme had got to when its player was last torn down, and
+ * when that was. A screening is not restarted from the top just because the
+ * attendee walked out of the room and back in.
+ */
+interface Playhead {
+  youtubeId: string;
+  seconds: number;
+  at: number;
+  duration?: number;
 }
 
 interface NpcAvatar {
@@ -538,6 +551,7 @@ export class FestivalWorld {
   private readonly remoteNpcControls = new Map<string, RemoteVisitorVisual>();
   private readonly occupiedSeats = new Set<string>();
   private readonly projectors = new Map<VenueKey, ProjectorSurface>();
+  private readonly playheads = new Map<VenueKey, Playhead>();
   private readonly clubLights: THREE.Mesh[] = [];
   private readonly clubFloorPanels: THREE.Mesh[] = [];
   private readonly clubBeatLights: THREE.SpotLight[] = [];
@@ -585,6 +599,8 @@ export class FestivalWorld {
   private readonly waterTextures: THREE.CanvasTexture[] = [];
   private readonly waterReflections: WaterReflectionVisual[] = [];
   private stylizedWater?: THREE.Mesh;
+  private waterVolume?: THREE.Mesh;
+  private waveSurface?: THREE.Mesh;
   private stylizedWaterMaterial?: THREE.ShaderMaterial;
   private readonly cameraOrbit = {
     follow: { yaw: 0, pitch: Math.atan2(3.4, 10) },
@@ -1268,6 +1284,16 @@ export class FestivalWorld {
   private releaseProjector(venue: VenueKey): void {
     const projector = this.projectors.get(venue);
     if (!projector?.iframe) return;
+    // Note where the programme had got to before the player goes away, so the
+    // next one can pick it up rather than start the work again.
+    if (projector.youtubeId && projector.currentTime !== undefined && projector.currentTimeAt !== undefined) {
+      this.playheads.set(venue, {
+        youtubeId: projector.youtubeId,
+        seconds: projector.currentTime + (performance.now() - projector.currentTimeAt) / 1000,
+        at: Date.now(),
+        duration: projector.duration,
+      });
+    }
     projector.element.replaceChildren();
     projector.iframe = undefined;
     projector.signature = undefined;
@@ -1309,7 +1335,7 @@ export class FestivalWorld {
     playerUrl.searchParams.set('rel', '0');
     playerUrl.searchParams.set('enablejsapi', '1');
     playerUrl.searchParams.set('modestbranding', '1');
-    playerUrl.searchParams.set('start', String(Math.max(0, Math.floor(offsetSeconds))));
+    playerUrl.searchParams.set('start', String(this.resumeOffset(venue, film.youtubeId, offsetSeconds)));
     const playlist = playlistIds.filter(Boolean);
     if (playlist.length) {
       playerUrl.searchParams.set('playlist', playlist.join(','));
@@ -1333,6 +1359,26 @@ export class FestivalWorld {
     });
     projector.element.replaceChildren(iframe);
     projector.iframe = iframe;
+  }
+
+  /**
+   * Where to start a venue's player. A programme clock from the festival
+   * service wins, because it is the same for everyone in the room. Without one
+   * the offset arrives as zero, so fall back to where this venue had got to
+   * when its player was last torn down, carried forward by the time since —
+   * otherwise walking out and back in replays the work from the top.
+   */
+  private resumeOffset(venue: VenueKey, youtubeId: string, offsetSeconds: number): number {
+    const scheduled = Math.max(0, Math.floor(offsetSeconds));
+    if (scheduled > 0) return scheduled;
+    const playhead = this.playheads.get(venue);
+    if (!playhead || playhead.youtubeId !== youtubeId) return scheduled;
+    const elapsed = playhead.seconds + (Date.now() - playhead.at) / 1000;
+    if (!Number.isFinite(elapsed) || elapsed < 0) return scheduled;
+    // Past the end of the work with no way to know what came next while the
+    // player was gone, so wrap within it rather than seek out of range.
+    const wrapped = playhead.duration && playhead.duration > 1 ? elapsed % playhead.duration : elapsed;
+    return Math.max(0, Math.floor(wrapped));
   }
 
   setVenueName(venue: VenueKey, name: string): void {
@@ -1701,13 +1747,23 @@ export class FestivalWorld {
 
   private readonly projectorMessage = (event: MessageEvent): void => {
     if (!String(event.origin).includes('youtube.com') && !String(event.origin).includes('youtube-nocookie.com')) return;
-    let payload: { event?: string; info?: number | { playerState?: number; errorCode?: number; currentTime?: number } };
+    let payload: {
+      event?: string;
+      info?: number | { playerState?: number; errorCode?: number; currentTime?: number; duration?: number };
+    };
     try {
       payload = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
     } catch {
       return;
     }
     const info = typeof payload.info === 'object' ? payload.info : undefined;
+    if (info && typeof info.duration === 'number' && info.duration > 0) {
+      for (const projector of this.projectors.values()) {
+        if (!projector.iframe || projector.iframe.contentWindow !== event.source) continue;
+        projector.duration = info.duration;
+        break;
+      }
+    }
     if (info && typeof info.currentTime === 'number') {
       // The projector is the only thing that knows where the public screening
       // actually is. Record it so a maximized screening can join in progress.
@@ -1980,6 +2036,7 @@ export class FestivalWorld {
       side: THREE.DoubleSide,
     }));
     waterVolume.userData.projectorBackground = true;
+    this.waterVolume = waterVolume;
     // Cel-shaded surface for 一般 graphics. 精簡 keeps the cheaper textured
     // water below, so the shader never costs anything on the low setting.
     const stylised = createStylizedWaterMaterial();
@@ -2002,6 +2059,7 @@ export class FestivalWorld {
       depthWrite: false,
     }));
     waveSurface.userData.projectorBackground = true;
+    this.waveSurface = waveSurface;
     const reflectionTexture = createWaterReflectionTexture();
     for (const kind of ['sun', 'moon'] as const) {
       const reflectionMaterial = new THREE.MeshBasicMaterial({
@@ -2148,6 +2206,10 @@ export class FestivalWorld {
         if (x < 0 && z <= -18 && z >= -30) continue;
         // Clear of the rooftop stair, which lands on the road-facing side.
         if (x > 0 && z >= rooftopBounds.stairMinZ - 8 && z <= rooftopBounds.stairMaxZ + 8) continue;
+        // Nothing stands in the crossing itself. At z = -14 the east-west
+        // street cuts across the promenade, and a post on either side of it
+        // ends up planted in the middle of the junction.
+        if (z === -14) continue;
         // The turning post throws its light west; the rest wash the roadway.
         const targetX = x < 0 && z === clubTurningZ ? clubBounds.buildingMaxX : 0;
         this.createLampPost(x, z, lampMaterial, z === 3, PROMENADE_LAMP_HEIGHT, targetX);
@@ -2708,6 +2770,9 @@ export class FestivalWorld {
     this.addCollider(stageX, stageZ + 0.6, 17, 5, 0.05, belowGround, 'stage');
     this.mesh([5.4, 1.3, 1.6], [stageX, floor + 1.55, stageZ - 1.6], material(0x24242b, 0.5, 0.4));
     this.mesh([5.7, 0.16, 1.9], [stageX, floor + 2.25, stageZ - 1.6], material(0x35353f, 0.4, 0.5));
+    // The decks stand proud of the stage front, so they need holding on their
+    // own account — the stage collider stops short of them.
+    this.addCollider(stageX, stageZ - 1.6, 5.7, 1.9, 0.12, belowGround, 'club-booth');
     for (const side of [-1, 1]) {
       this.mesh([1.2, 0.12, 1.2], [stageX + side * 1.5, floor + 2.37, stageZ - 1.6], material(0x0d0d10, 0.35, 0.55));
       this.mesh([0.52, 0.14, 0.52], [stageX + side * 1.5, floor + 2.47, stageZ - 1.6], material(0xd8d3c6, 0.4, 0.4));
@@ -2850,7 +2915,11 @@ export class FestivalWorld {
     // of this footprint, so the block needs no opening cut through it.
     this.mesh([width, ROOF_Y, deckDepth], [centerX, ROOF_Y / 2, deckCenterZ], brick);
     this.addCollider(centerX, deckCenterZ, width, deckDepth, 0.2, { minY: -0.4, maxY: ROOF_Y - 2 });
-    this.mesh([width + 1.2, 0.6, depth + 1.2], [centerX, ROOF_Y + 0.3, (r.minZ + r.maxZ) / 2], warmConcrete);
+    // Roof slab, with its overhang reading as a cornice from the street. It
+    // sits under the deck's finished floor: carried at ROOF_Y + 0.3 its top
+    // was 0.6 above the level everything on the deck is set out from, so the
+    // avatar stood shin-deep in it and the floor lights were buried entirely.
+    this.mesh([width + 1.2, 0.6, depth + 1.2], [centerX, ROOF_Y - 0.35, (r.minZ + r.maxZ) / 2], warmConcrete);
 
     // Garage bay: floor, side walls, open to the south.
     this.mesh([width, 0.5, bayDepth], [centerX, 0.1, bayCenterZ], material(0x453b33, 0.7, 0.15));
@@ -2918,9 +2987,13 @@ export class FestivalWorld {
     this.mesh([10, 0.7, 3.6], [centerX, ROOF_Y + 0.35, boothZ], material(0x3d2a24, 0.6, 0.3));
     this.mesh([4.6, 1.2, 1.5], [centerX, ROOF_Y + 1.3, boothZ + 0.8], material(0x2b2b33, 0.5, 0.4));
     this.mesh([4.9, 0.16, 1.8], [centerX, ROOF_Y + 1.95, boothZ + 0.8], material(0x3a3a44, 0.4, 0.5));
+    // The booth is furniture, not scenery: the plinth carries the decks and an
+    // attendee has to walk round it rather than through the DJ.
+    this.addCollider(centerX, boothZ, 10, 3.6, 0.12, onDeck, 'rooftop-booth');
     for (const side of [-1, 1]) {
       this.mesh([1.1, 0.12, 1.1], [centerX + side * 1.35, ROOF_Y + 2.06, boothZ + 0.8], material(0x0d0d10, 0.35, 0.55));
       this.mesh([2, 2.4, 1.8], [centerX + side * 7.4, ROOF_Y + 1.2, boothZ], material(0x241d1a, 0.7, 0.2));
+      this.addCollider(centerX + side * 7.4, boothZ, 2, 1.8, 0.12, onDeck, 'rooftop-speaker');
     }
 
     // Floor lights around the deck edge rather than bulbs hanging in the air.
@@ -3065,8 +3138,8 @@ export class FestivalWorld {
     // A kerb across the foot of the run, so the bottom step reads as a step.
     this.mesh([stairWidth + 1, 0.16, 2.4], [centerX, 0.08, r.stairMinZ - 1.2], treadMaterial);
 
-    // Lights set into the kerb, washing the treads from the side rather than
-    // hanging over the run.
+    // Lights on the building face, opposite the handrail. Fixed to the one
+    // side of the run that is a solid wall, washing the treads across it.
     for (const [z, y] of [
       [r.stairMinZ + 2.5, ROOF_RISER * 5],
       [r.stairLandingMinZ + 1.8, halfHeight],
@@ -3074,12 +3147,12 @@ export class FestivalWorld {
       [r.stairTopZ + 1.4, ROOF_Y],
     ] as Array<[number, number]>) {
       this.mesh(
-        [0.16, 0.2, 1.2],
-        [r.stairMinX + 0.08, y + 0.2, z],
+        [0.16, 0.34, 1.2],
+        [r.stairMaxX - 0.08, y + 1.5, z],
         new THREE.MeshBasicMaterial({ color: 0xffb066 }),
       );
-      const glow = new THREE.PointLight(0xffb066, 16, 12, 1.5);
-      glow.position.set(r.stairMinX + 0.6, y + 0.4, z);
+      const glow = new THREE.PointLight(0xffb066, 18, 13, 1.5);
+      glow.position.set(r.stairMaxX - 0.6, y + 1.3, z);
       this.scene.add(glow);
     }
   }
@@ -3630,6 +3703,7 @@ export class FestivalWorld {
     const dayNight = this.dayNight.update();
     this.updateWaterReflections(elapsed);
     this.updateStylizedWater(elapsed);
+    this.updateWaterLayers();
     this.updateClubBeat(elapsed);
     this.updateLampPool();
     this.camera.layers.set(0);
@@ -3723,6 +3797,40 @@ export class FestivalWorld {
    * whichever of the sun or moon is up, so the light on the water tracks the
    * body that is actually casting it.
    */
+  /**
+   * The sea is drawn as several stacked sheets: a body, a surface, a cel-shaded
+   * top and the sun's glitter, none of which write depth. Seen from the
+   * promenade they cover a strip of the screen and cost nothing to speak of.
+   * Swimming puts the camera on the waterline, where every one of them fills
+   * the whole frame at once and the page is left shading the same pixels five
+   * times over — geometry is only four thousand triangles, so this is the
+   * entire cost. Close to the surface, only the sheets that can actually be
+   * told apart are drawn.
+   */
+  private updateWaterLayers(): void {
+    const stylised = this.stylizedWater?.visible !== false && this.graphicsMode === 'normal';
+    // Height of the eye above the water, not the avatar's: the camera is what
+    // decides how much of the screen these sheets cover.
+    const eyeAboveWater = this.camera.position.y - 0.14;
+    const nearSurface = eyeAboveWater < 2.6 && this.camera.position.z < -40;
+    if (this.waterVolume) {
+      // The body below the surface. From above it gives the sea its depth;
+      // from the waterline it is edge-on and doubles the fill for nothing,
+      // and it is double-sided, so it costs twice again.
+      this.waterVolume.visible = !nearSurface;
+    }
+    if (this.waveSurface) {
+      // Ripple detail that only reads under the cel-shaded top. With that in
+      // place at eye level it is a second full-screen wash of the same colour.
+      this.waveSurface.visible = !(nearSurface && stylised);
+    }
+    for (const reflection of this.waterReflections) {
+      // Glitter is a highlight seen across a surface. At eye level it is a
+      // full-screen additive pass and reads as haze.
+      if (nearSurface) reflection.mesh.visible = false;
+    }
+  }
+
   private updateStylizedWater(elapsed: number): void {
     const material = this.stylizedWaterMaterial;
     if (!material || !this.stylizedWater?.visible) return;

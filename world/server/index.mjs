@@ -153,6 +153,30 @@ const npcTitles = {
   DRBEAUTY: 'Rooftop DJ',
 };
 const publicNpcProfiles = () => Object.keys(npcNames).map((id) => ({ id, name: npcNames[id], title: npcTitles[id] }));
+const djProfiles = {
+  XIEHGAN: {
+    id: 'XIEHGAN',
+    name: 'XIEH GAN',
+    role: 'Resident DJ · The Basement',
+    roleZh: '駐場 DJ · 皇宮地下室',
+    // Left for STAFF to write. Inventing a biography for a real person is not
+    // this file's job, so the placeholder says plainly that it is one.
+    introduction: 'Resident DJ at The Basement. STAFF have not written this introduction yet — open the booth with a STAFF pass to fill it in.',
+    introductionZh: '皇宮地下室的駐場 DJ。這段介紹尚未由 STAFF 撰寫，請以 STAFF 通行證開啟後編輯。',
+    updatedAt: 0,
+  },
+  DRBEAUTY: {
+    id: 'DRBEAUTY',
+    name: 'DR.BEAUTY',
+    role: 'Rooftop DJ · Artist, rapper, music producer, host, YouTuber',
+    roleZh: '頂樓 DJ · 藝人、饒舌歌手、音樂製作人、主持人、YouTuber',
+    // Taken from the DR.BEAUTY page on myscheduleltd.com rather than written
+    // here, so the world and the site say the same thing.
+    introduction: 'Li Baobi — artist, rapper, music producer, host, influencer, YouTuber and party mascot. Opened the 美麗本人 YouTube channel in 2019, known for reaction videos to Mandarin music videos shot with animation and effects, and for putting "R爆" and the 醬擠 gesture into everyday use among younger audiences.',
+    introductionZh: '李包比，藝人、饒舌歌手、音樂製作人、主持人、網美、YouTuber、派對吉祥物。2019 年開立『美麗本人』YouTube 頻道，以浮誇且具幽默感的表演方式對華語歌曲 MV 做 Reaction 影片，加入動畫及特效，並以一句「R爆」跟經典手勢「醬擠」在年輕族群間瘋傳。',
+    updatedAt: 0,
+  },
+};
 const pamphletContent = {
   youtubeId: 'Ffli-o0ocT0',
   eyebrow: 'MY SCHEDULE LTD.',
@@ -277,6 +301,7 @@ const persistedSnapshot = () => ({
   npcNames,
   npcTitles,
   pamphlet: pamphletContent,
+  djProfiles,
   trackTempos,
   adminKeyDigest,
   messages,
@@ -456,6 +481,20 @@ const restorePersistedState = () => {
     gateBackground.updatedAt = clampNumber(saved.gateBackground.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0);
   }
 
+  const savedDjProfiles = saved.djProfiles;
+  if (savedDjProfiles && typeof savedDjProfiles === 'object') {
+    for (const id of Object.keys(djProfiles)) {
+      const entry = savedDjProfiles[id];
+      if (!entry || typeof entry !== 'object') continue;
+      Object.assign(djProfiles[id], {
+        role: safeText(entry.role, 120) || djProfiles[id].role,
+        roleZh: safeText(entry.roleZh, 120) || djProfiles[id].roleZh,
+        introduction: safeText(entry.introduction, 1200) || djProfiles[id].introduction,
+        introductionZh: safeText(entry.introductionZh, 1200) || djProfiles[id].introductionZh,
+        updatedAt: clampNumber(entry.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
+      });
+    }
+  }
   const pamphlet = saved.pamphlet;
   if (pamphlet && validYoutubeId(pamphlet.youtubeId)) {
     const restored = {
@@ -571,6 +610,7 @@ const stateFor = (visitor) => ({
   npcNames,
   npcProfiles: publicNpcProfiles(),
   pamphlet: pamphletContent,
+  djProfiles,
   trackTempos,
 });
 
@@ -635,7 +675,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'GET' && url.pathname === '/api/config') {
-      return json(response, 200, { schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, trackTempos, clubRequest, venueQueues });
+      return json(response, 200, { schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, trackTempos, clubRequest, venueQueues });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
@@ -887,6 +927,7 @@ const server = createServer(async (request, response) => {
           npcNames,
           npcProfiles: publicNpcProfiles(),
           pamphlet: pamphletContent,
+          djProfiles,
           trackTempos,
         });
       }
@@ -1079,6 +1120,21 @@ const server = createServer(async (request, response) => {
         scheduleBroadcast();
         persist();
         return json(response, 200, { ok: true, pamphlet: pamphletContent });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/dj-profile') {
+        const id = safeText(payload.id, 40).toUpperCase();
+        if (!Object.prototype.hasOwnProperty.call(djProfiles, id)) return apiError(response, 400, 'Unknown DJ.');
+        const role = safeText(payload.role, 120);
+        const roleZh = safeText(payload.roleZh, 120);
+        const introduction = safeText(payload.introduction, 1200);
+        const introductionZh = safeText(payload.introductionZh, 1200);
+        if (!role || !roleZh || !introduction || !introductionZh) {
+          return apiError(response, 400, 'Complete all DJ introduction fields.');
+        }
+        Object.assign(djProfiles[id], { role, roleZh, introduction, introductionZh, updatedAt: Date.now() });
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true, djProfiles });
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/videos') {
         const venue = String(payload.venue ?? '');
