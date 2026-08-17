@@ -1,0 +1,1206 @@
+import { createServer } from 'node:http';
+import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { readFile, rename, writeFile } from 'node:fs/promises';
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { extname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import legacySource from '../../docs/js/allData.js';
+
+const HOST = process.env.FESTIVAL_HOST ?? '127.0.0.1';
+const PORT = Number(process.env.FESTIVAL_PORT ?? 8787);
+const isProduction = process.env.NODE_ENV === 'production';
+const ADMIN_KEY = process.env.FESTIVAL_ADMIN_KEY ?? (isProduction ? '' : 'myschedule-local-admin');
+const DIST_DIR = fileURLToPath(new URL('../dist/', import.meta.url));
+// STAFF settings outlive a service restart. Set FESTIVAL_STATE_FILE=off for a
+// throwaway instance that always boots from the built-in festival defaults.
+const configuredStateFile = (process.env.FESTIVAL_STATE_FILE ?? '').trim();
+const persistenceEnabled = configuredStateFile !== 'off';
+const STATE_FILE = configuredStateFile && persistenceEnabled
+  ? resolve(configuredStateFile)
+  : fileURLToPath(new URL('./festival-state.json', import.meta.url));
+const configuredOrigins = (process.env.FESTIVAL_ALLOWED_ORIGINS ?? 'http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+
+if (isProduction && !ADMIN_KEY) {
+  throw new Error('FESTIVAL_ADMIN_KEY is required when NODE_ENV=production.');
+}
+
+const visitors = new Map();
+const seats = new Map();
+const messages = [];
+// Chat restored from a previous run has no live author to measure proximity
+// against, so it is shown to everyone rather than silently disappearing.
+const restoredMessageIds = new Set();
+const streams = new Map();
+const DISCONNECTED_SESSION_GRACE_MS = 120_000;
+const youtubeIdFromUrl = (value) => {
+  try {
+    const parsed = new URL(value);
+    if (parsed.hostname === 'youtu.be') return parsed.pathname.split('/').filter(Boolean)[0] ?? '';
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    if (['embed', 'shorts', 'live'].includes(parts[0])) return parts[1] ?? '';
+    return parsed.searchParams.get('v') ?? '';
+  } catch {
+    return '';
+  }
+};
+
+const programmeCategoryForVenue = {
+  palace: 'COMMERCIAL',
+  'drive-in': 'TELEVISION',
+  shore: 'MUSIC VIDEO',
+  club: 'ORIGINALS',
+  rooftop: 'ORIGINALS',
+};
+const defaultVenueNames = {
+  palace: 'THE PALACE',
+  'drive-in': 'DRIVE-IN 88',
+  shore: 'THE SHORE',
+  club: 'THE BASEMENT',
+  rooftop: 'THE ROOFTOP',
+};
+const VENUES = Object.keys(programmeCategoryForVenue);
+const isVenue = (value) => VENUES.includes(value);
+// The club spins the DR.BEAUTY originals, which live outside the portfolio
+// categories in the legacy data.
+const legacyFilmsForCategory = (category) => (category === 'ORIGINALS'
+  ? legacySource.drBeautyVideos ?? []
+  : legacySource.profilo.find((entry) => entry.name === category)?.profilo ?? []);
+const programmeIdsByVenue = Object.fromEntries(
+  Object.entries(programmeCategoryForVenue).map(([venue, category]) => [
+    venue,
+    legacyFilmsForCategory(category).map((film) => youtubeIdFromUrl(film.url)).filter(Boolean),
+  ]),
+);
+const customVideosByVenue = {
+  palace: [],
+  'drive-in': [],
+  shore: [],
+  club: [],
+  rooftop: [],
+};
+const DEFAULT_TRACK_TEMPO = 120;
+// The club's lights cannot listen to a cross-origin player, so each track
+// carries a tempo and every attendee strobes off the shared programme clock.
+const trackTempos = {};
+const programmeSchedule = Object.fromEntries(
+  Object.keys(programmeCategoryForVenue).map((venue) => {
+    const order = [...programmeIdsByVenue[venue]];
+    return [venue, {
+      name: defaultVenueNames[venue],
+      order,
+      currentIndex: 0,
+      youtubeId: order[0],
+      mode: 'continuous',
+      special: null,
+      activeSpecialYoutubeId: null,
+      // Every client computes its playback position from this, so the service
+      // is the single clock for a public screening.
+      startedAt: Date.now(),
+      pausedAt: null,
+      updatedAt: 0,
+    }];
+  }),
+);
+const siteStyle = {
+  brandFontSize: 21,
+  brandScaleY: 1,
+  brandScaleX: 1,
+  brandOffsetX: 0,
+  brandOffsetY: 0,
+  updatedAt: 0,
+};
+const gateBackground = {
+  youtubeId: 'Ffli-o0ocT0',
+  updatedAt: 0,
+};
+let mentorCarrierId = null;
+const CLUB_REQUEST_COOLDOWN_MS = 30_000;
+const CLUB_QUEUE_LIMIT = 12;
+// Requested tracks waiting their turn. Live session state, so it is not saved:
+// the attendees who asked are gone after a restart anyway.
+const venueQueues = { club: [], rooftop: [] };
+const isDjVenue = (value) => Object.prototype.hasOwnProperty.call(venueQueues, value);
+// The most recent request, so every client can credit whoever asked.
+let clubRequest = null;
+const defaultNpcNames = {
+  MENTOR: 'MENTOR',
+  KENNY: 'KENNY',
+  NUNO: 'NUNO',
+  MICHAEL: 'MICHAEL',
+  SEBINE: 'SEBINE',
+  ZC: 'ZC',
+  LOUI: 'LOUI',
+  MINYUN: 'MINYUN',
+  VIOLA: 'VIOLA',
+  XIEHGAN: 'XIEH GAN',
+  DRBEAUTY: 'DR.BEAUTY',
+};
+const npcNames = { ...defaultNpcNames };
+const npcTitles = {
+  MENTOR: 'Video Editor',
+  KENNY: 'Director',
+  NUNO: 'Sound Engineer',
+  MICHAEL: 'Director',
+  SEBINE: 'Director',
+  ZC: 'Director',
+  LOUI: 'Director',
+  MINYUN: 'Director Manager',
+  VIOLA: 'Project Manager',
+  XIEHGAN: 'Resident DJ',
+  DRBEAUTY: 'Rooftop DJ',
+};
+const publicNpcProfiles = () => Object.keys(npcNames).map((id) => ({ id, name: npcNames[id], title: npcTitles[id] }));
+const pamphletContent = {
+  youtubeId: 'Ffli-o0ocT0',
+  eyebrow: 'MY SCHEDULE LTD.',
+  title: 'MY SCHEDULE',
+  titleZh: '我的檔期',
+  introduction: 'This is MY SCHEDULE LTD. We are a creative video production company based in Taipei, Taiwan. Operating globally, we are dedicated to producing top-quality visuals. Our creative team specializes in a variety of video productions, including movies, music videos, television shows, commercials, and occasionally unconventional YouTube content.',
+  introductionZh: '這是我的檔期有限公司。我們是位於台灣台北的創意影像製作公司，服務遍及全球，致力製作高品質影像。團隊擅長電影、音樂錄影帶、電視節目、廣告，以及不定期的非典型 YouTube 內容。',
+  updatedAt: 0,
+};
+let broadcastTimer;
+
+const validSeats = new Set([
+  ...Array.from({ length: 3 }, (_, row) => Array.from({ length: 5 }, (_, column) => `PALACE-${row + 1}-${column + 1}`)).flat(),
+  ...Array.from({ length: 2 }, (_, row) => Array.from({ length: 3 }, (_, column) => `DRIVE-${row + 1}-${column + 1}`)).flat(),
+  ...Array.from({ length: 3 }, (_, row) => Array.from({ length: 7 }, (_, column) => `SHORE-${row + 1}-${column + 1}`)).flat(),
+  // Bar stools in the club.
+  ...Array.from({ length: 6 }, (_, column) => `CLUB-1-${column + 1}`),
+]);
+
+const json = (response, status, payload) => {
+  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+  response.end(JSON.stringify(payload));
+};
+
+const allowedOrigin = (request) => {
+  const origin = request.headers.origin;
+  if (!origin) return undefined;
+  const forwardedProtocol = String(request.headers['x-forwarded-proto'] ?? 'http').split(',')[0].trim();
+  const sameOrigin = `${forwardedProtocol}://${request.headers.host ?? ''}`;
+  let localDevelopmentOrigin = false;
+  if (!isProduction) {
+    try {
+      const parsedOrigin = new URL(origin);
+      localDevelopmentOrigin = ['127.0.0.1', 'localhost'].includes(parsedOrigin.hostname) &&
+        ['http:', 'https:'].includes(parsedOrigin.protocol);
+    } catch {
+      localDevelopmentOrigin = false;
+    }
+  }
+  return configuredOrigins.includes(origin) || origin === sameOrigin || localDevelopmentOrigin ? origin : null;
+};
+
+const cors = (request, response) => {
+  response.setHeader('x-content-type-options', 'nosniff');
+  response.setHeader('referrer-policy', 'strict-origin-when-cross-origin');
+  response.setHeader('permissions-policy', 'camera=(), microphone=(), geolocation=()');
+  response.setHeader('cross-origin-opener-policy', 'same-origin-allow-popups');
+  const origin = allowedOrigin(request);
+  if (origin === null) return false;
+  if (origin) {
+    response.setHeader('access-control-allow-origin', origin);
+    response.setHeader('vary', 'Origin');
+  }
+  response.setHeader('access-control-allow-headers', 'content-type, authorization, x-festival-session, x-festival-admin-key');
+  response.setHeader('access-control-allow-methods', 'GET, POST, DELETE, OPTIONS');
+  return true;
+};
+
+const contentTypes = {
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+};
+
+const serveStatic = async (url, response) => {
+  const requestedPath = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
+  const filePath = resolve(DIST_DIR, `.${requestedPath}`);
+  if (!filePath.startsWith(resolve(DIST_DIR))) return false;
+  try {
+    const file = await readFile(filePath);
+    const extension = extname(filePath);
+    response.writeHead(200, {
+      'content-type': contentTypes[extension] ?? 'application/octet-stream',
+      'content-length': file.byteLength,
+      'cache-control': requestedPath.startsWith('/assets/')
+        ? 'public, max-age=31536000, immutable'
+        : 'no-cache',
+    });
+    response.end(file);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const body = async (request) => {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > 16_384) throw new Error('Request body is too large.');
+    chunks.push(chunk);
+  }
+  if (!chunks.length) return {};
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+};
+
+const safeText = (value, max) => String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').slice(0, max);
+const safePalette = (value = {}) => {
+  const color = (slot, fallback) => /^#[0-9a-f]{6}$/i.test(value[slot] ?? '') ? value[slot] : fallback;
+  return {
+    skin: color('skin', '#9d5f43'),
+    hair: color('hair', '#171315'),
+    top: color('top', '#9f1720'),
+    bottoms: color('bottoms', '#20242c'),
+    swimwear: color('swimwear', '#d5b23f'),
+  };
+};
+
+const persistedSnapshot = () => ({
+  version: 1,
+  savedAt: Date.now(),
+  schedule: programmeSchedule,
+  siteStyle,
+  gateBackground,
+  customVideos: customVideosByVenue,
+  npcNames,
+  npcTitles,
+  pamphlet: pamphletContent,
+  trackTempos,
+  adminKeyDigest,
+  messages,
+});
+
+let persistTimer;
+let persistQueue = Promise.resolve();
+let unsavedSettings = false;
+
+const writeStateFile = (payload) => {
+  const temporaryFile = `${STATE_FILE}.${process.pid}.tmp`;
+  return writeFile(temporaryFile, payload, 'utf8').then(() => rename(temporaryFile, STATE_FILE));
+};
+
+// Settings changes are debounced and written through a temporary file so an
+// interrupted save can never leave a half-written festival state behind.
+const persist = () => {
+  if (!persistenceEnabled) return;
+  unsavedSettings = true;
+  if (persistTimer) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = undefined;
+    const payload = JSON.stringify(persistedSnapshot(), null, 2);
+    unsavedSettings = false;
+    persistQueue = persistQueue
+      .then(() => writeStateFile(payload))
+      .catch((error) => {
+        unsavedSettings = true;
+        console.error('Festival settings could not be saved:', error.message);
+      });
+  }, 200);
+};
+
+// Only a shutdown that would otherwise lose a STAFF edit writes the file, so a
+// service that changed nothing never recreates a settings file an operator
+// deliberately removed.
+const persistNow = () => {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = undefined;
+  }
+  if (!persistenceEnabled || !unsavedSettings) return;
+  unsavedSettings = false;
+  try {
+    const temporaryFile = `${STATE_FILE}.${process.pid}.tmp`;
+    writeFileSync(temporaryFile, JSON.stringify(persistedSnapshot(), null, 2), 'utf8');
+    renameSync(temporaryFile, STATE_FILE);
+  } catch (error) {
+    console.error('Festival settings could not be saved:', error.message);
+  }
+};
+
+const clampNumber = (value, min, max, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+};
+
+const validYoutubeId = (value) => /^[A-Za-z0-9_-]{6,20}$/.test(String(value ?? ''));
+
+const restoreCustomVideos = (saved) => {
+  for (const venue of Object.keys(customVideosByVenue)) {
+    const entries = Array.isArray(saved?.[venue]) ? saved[venue] : [];
+    const restored = [];
+    for (const entry of entries) {
+      const youtubeId = String(entry?.youtubeId ?? '').trim();
+      const title = safeText(entry?.title, 100);
+      if (!validYoutubeId(youtubeId) || !title) continue;
+      if (programmeIdsByVenue[venue].includes(youtubeId)) continue;
+      if (restored.some((video) => video.youtubeId === youtubeId)) continue;
+      const year = Number(entry?.year);
+      restored.push({
+        id: `custom-${venue}-${youtubeId}`,
+        title,
+        titleZh: safeText(entry?.titleZh, 100) || undefined,
+        creator: safeText(entry?.creator, 80) || undefined,
+        year: Number.isInteger(year) && year >= 1888 && year <= 2200 ? year : undefined,
+        category: programmeCategoryForVenue[venue],
+        venue,
+        youtubeId,
+        embedUrl: `https://www.youtube-nocookie.com/embed/${youtubeId}`,
+        sourceUrl: `https://www.youtube.com/watch?v=${youtubeId}`,
+      });
+    }
+    customVideosByVenue[venue] = restored;
+  }
+};
+
+const restoreSchedule = (saved) => {
+  for (const venue of Object.keys(programmeSchedule)) {
+    const entry = saved?.[venue];
+    if (!entry) continue;
+    const allowedIds = new Set([
+      ...programmeIdsByVenue[venue],
+      ...customVideosByVenue[venue].map((video) => video.youtubeId),
+    ]);
+    const order = (Array.isArray(entry.order) ? entry.order : [])
+      .map((value) => String(value).trim())
+      .filter((value, index, list) => allowedIds.has(value) && list.indexOf(value) === index);
+    if (!order.length) continue;
+    const currentIndex = clampNumber(entry.currentIndex, 0, order.length - 1, 0);
+    const special = validYoutubeId(entry.special?.youtubeId)
+      ? { youtubeId: entry.special.youtubeId, startsAt: clampNumber(entry.special.startsAt, 0, Number.MAX_SAFE_INTEGER, Date.now()) }
+      : null;
+    programmeSchedule[venue] = {
+      name: safeText(entry.name, 32) || defaultVenueNames[venue],
+      order,
+      currentIndex: Math.round(currentIndex),
+      youtubeId: order[Math.round(currentIndex)],
+      mode: ['continuous', 'paused', 'recurring', 'scheduled-loop'].includes(entry.mode) ? entry.mode : 'continuous',
+      special,
+      // Whichever special was mid-roll belongs to the previous process.
+      activeSpecialYoutubeId: null,
+      startedAt: Date.now(),
+      pausedAt: entry.mode === 'paused' ? Date.now() : null,
+      updatedAt: clampNumber(entry.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
+    };
+  }
+};
+
+const restoreMessages = (saved) => {
+  if (!Array.isArray(saved)) return;
+  for (const entry of saved.slice(-500)) {
+    const id = safeText(entry?.id, 64);
+    const author = safeText(entry?.author, 16);
+    const text = safeText(entry?.text, 160);
+    const timestamp = Number(entry?.timestamp);
+    if (!id || !author || !text || !Number.isFinite(timestamp)) continue;
+    if (!['NEARBY', 'VENUE', 'FESTIVAL'].includes(entry.channel)) continue;
+    messages.push({
+      id,
+      authorId: safeText(entry?.authorId, 64),
+      author,
+      channel: entry.channel,
+      text,
+      timestamp,
+    });
+    restoredMessageIds.add(id);
+  }
+};
+
+const restoreNpcs = (savedNames, savedTitles) => {
+  for (const [id, name] of Object.entries(savedNames ?? {})) {
+    if (!/^[A-Z0-9_]{1,24}$/.test(id)) continue;
+    // Only the current roster and NPCs STAFF added are restored. A default
+    // that has since been renamed would otherwise return as a stray.
+    if (!(id in npcNames) && !/^NPC_\d+$/.test(id)) continue;
+    if (Object.keys(npcNames).length >= 24 && !(id in npcNames)) continue;
+    const safeName = safeText(name, 16);
+    if (!safeName) continue;
+    npcNames[id] = safeName;
+    npcTitles[id] = safeText(savedTitles?.[id], 40) || npcTitles[id] || 'Director';
+  }
+};
+
+const restorePersistedState = () => {
+  if (!persistenceEnabled) return;
+  let saved;
+  try {
+    saved = JSON.parse(readFileSync(STATE_FILE, 'utf8'));
+  } catch {
+    // A missing or unreadable file simply means the festival boots from defaults.
+    return;
+  }
+  if (!saved || typeof saved !== 'object') return;
+
+  if (saved.siteStyle) {
+    siteStyle.brandFontSize = clampNumber(saved.siteStyle.brandFontSize, 12, 42, siteStyle.brandFontSize);
+    siteStyle.brandScaleY = clampNumber(saved.siteStyle.brandScaleY, 0.5, 2, siteStyle.brandScaleY);
+    siteStyle.brandScaleX = clampNumber(saved.siteStyle.brandScaleX, 0.5, 2, siteStyle.brandScaleX);
+    siteStyle.brandOffsetX = clampNumber(saved.siteStyle.brandOffsetX, -120, 240, siteStyle.brandOffsetX);
+    siteStyle.brandOffsetY = clampNumber(saved.siteStyle.brandOffsetY, -80, 80, siteStyle.brandOffsetY);
+    siteStyle.updatedAt = clampNumber(saved.siteStyle.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0);
+  }
+
+  if (validYoutubeId(saved.gateBackground?.youtubeId)) {
+    gateBackground.youtubeId = saved.gateBackground.youtubeId;
+    gateBackground.updatedAt = clampNumber(saved.gateBackground.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0);
+  }
+
+  const pamphlet = saved.pamphlet;
+  if (pamphlet && validYoutubeId(pamphlet.youtubeId)) {
+    const restored = {
+      youtubeId: pamphlet.youtubeId,
+      eyebrow: safeText(pamphlet.eyebrow, 60),
+      title: safeText(pamphlet.title, 80),
+      titleZh: safeText(pamphlet.titleZh, 80),
+      introduction: safeText(pamphlet.introduction, 1200),
+      introductionZh: safeText(pamphlet.introductionZh, 1200),
+      updatedAt: clampNumber(pamphlet.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
+    };
+    if (restored.eyebrow && restored.title && restored.titleZh && restored.introduction && restored.introductionZh) {
+      Object.assign(pamphletContent, restored);
+    }
+  }
+
+  for (const [youtubeId, bpm] of Object.entries(saved.trackTempos ?? {})) {
+    const tempo = Number(bpm);
+    if (!validYoutubeId(youtubeId) || !Number.isFinite(tempo) || tempo < 40 || tempo > 220) continue;
+    trackTempos[youtubeId] = Math.round(tempo);
+  }
+  if (saved.adminKeyDigest
+    && typeof saved.adminKeyDigest.salt === 'string'
+    && typeof saved.adminKeyDigest.hash === 'string'
+    && /^[0-9a-f]{32}$/.test(saved.adminKeyDigest.salt)
+    && /^[0-9a-f]{128}$/.test(saved.adminKeyDigest.hash)) {
+    adminKeyDigest = { salt: saved.adminKeyDigest.salt, hash: saved.adminKeyDigest.hash };
+  }
+  restoreMessages(saved.messages);
+  restoreNpcs(saved.npcNames, saved.npcTitles);
+  restoreCustomVideos(saved.customVideos);
+  restoreSchedule(saved.schedule);
+};
+
+const tokenMatches = (candidate, expected) => {
+  if (!candidate || !expected) return false;
+  const a = Buffer.from(candidate);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+};
+
+const bearer = (request) => request.headers.authorization?.replace(/^Bearer\s+/i, '') ?? '';
+const sessionFor = (request) => {
+  const id = request.headers['x-festival-session'];
+  const visitor = typeof id === 'string' ? visitors.get(id) : undefined;
+  return visitor && tokenMatches(bearer(request), visitor.token) ? visitor : undefined;
+};
+
+// { salt, hash } once STAFF have set their own key; null while the environment
+// key is still in force.
+let adminKeyDigest = null;
+
+const hashAdminKey = (key, salt) => scryptSync(key, salt, 64).toString('hex');
+
+const adminKeyMatches = (candidate) => {
+  if (!candidate) return false;
+  if (!adminKeyDigest) return tokenMatches(candidate, ADMIN_KEY);
+  return tokenMatches(hashAdminKey(candidate, adminKeyDigest.salt), adminKeyDigest.hash);
+};
+
+const adminAllowed = (request) => adminKeyMatches(String(request.headers['x-festival-admin-key'] ?? ''));
+
+const createVisitor = (name, palette) => ({
+  id: randomUUID(),
+  token: randomBytes(24).toString('base64url'),
+  name,
+  originalName: name,
+  palette: safePalette(palette),
+  presence: { x: 0, z: 22, rotation: 0, location: 'FESTIVAL GATE', state: 'walking', moving: false, venue: 'shore' },
+  joinedAt: Date.now(),
+  lastSeen: Date.now(),
+  mutedUntil: 0,
+  chatTimes: [],
+});
+
+const publicVisitor = (visitor) => ({
+  id: visitor.id,
+  name: visitor.name,
+  originalName: visitor.originalName,
+  palette: visitor.palette,
+  presence: visitor.presence,
+  impersonationOrigin: visitor.impersonationOrigin,
+  seatedAt: visitor.seatedAt,
+  mutedUntil: visitor.mutedUntil,
+  joinedAt: visitor.joinedAt,
+  npcId: visitor.npcId,
+});
+
+const canSeeMessage = (viewer, message) => {
+  if (message.authorId === viewer.id || message.channel === 'FESTIVAL') return true;
+  if (restoredMessageIds.has(message.id)) return true;
+  const author = visitors.get(message.authorId);
+  if (!author) return message.channel !== 'NEARBY';
+  if (message.channel === 'VENUE') return author.presence.venue === viewer.presence.venue;
+  const dx = author.presence.x - viewer.presence.x;
+  const dz = author.presence.z - viewer.presence.z;
+  return Math.hypot(dx, dz) <= 14;
+};
+
+const stateFor = (visitor) => ({
+  serverTime: Date.now(),
+  selfId: visitor.id,
+  visitors: [...visitors.values()].map(publicVisitor),
+  seats: [...seats.entries()].map(([seatId, visitorId]) => ({ seatId, visitorId })),
+  messages: messages.filter((message) => canSeeMessage(visitor, message)).slice(-100),
+  schedule: programmeSchedule,
+  siteStyle,
+  gateBackground,
+  mentorCarrierId,
+  clubRequest,
+  venueQueues,
+  customVideos: customVideosByVenue,
+  npcNames,
+  npcProfiles: publicNpcProfiles(),
+  pamphlet: pamphletContent,
+  trackTempos,
+});
+
+const writeEvent = (response, event, data) => {
+  response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+};
+
+const broadcast = () => {
+  broadcastTimer = undefined;
+  for (const [sessionId, responseSet] of streams) {
+    const visitor = visitors.get(sessionId);
+    if (!visitor) continue;
+    const state = stateFor(visitor);
+    for (const response of responseSet) writeEvent(response, 'state', state);
+  }
+};
+
+const scheduleBroadcast = () => {
+  if (!broadcastTimer) broadcastTimer = setTimeout(broadcast, 50);
+};
+
+const releaseSeat = (visitor) => {
+  if (!visitor.seatedAt) return;
+  if (seats.get(visitor.seatedAt) === visitor.id) seats.delete(visitor.seatedAt);
+  visitor.seatedAt = undefined;
+};
+
+const removeVisitor = (visitor, reason = 'left') => {
+  releaseSeat(visitor);
+  if (mentorCarrierId === visitor.id) mentorCarrierId = null;
+  for (const queue of Object.values(venueQueues)) {
+    for (let index = queue.length - 1; index >= 0; index -= 1) {
+      if (queue[index].requestedBy === visitor.name) queue.splice(index, 1);
+    }
+  }
+  visitors.delete(visitor.id);
+  const responseSet = streams.get(visitor.id);
+  if (responseSet) {
+    for (const response of responseSet) {
+      writeEvent(response, reason === 'kicked' ? 'kicked' : 'closed', { reason });
+      response.end();
+    }
+  }
+  streams.delete(visitor.id);
+  scheduleBroadcast();
+};
+
+const apiError = (response, status, message) => json(response, status, { error: message });
+
+const server = createServer(async (request, response) => {
+  if (!cors(request, response)) return apiError(response, 403, 'Origin is not allowed.');
+  if (request.method === 'OPTIONS') {
+    response.writeHead(204);
+    return response.end();
+  }
+
+  const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
+
+  try {
+    if (request.method === 'GET' && url.pathname === '/health') {
+      return json(response, 200, { ok: true, visitors: visitors.size, uptime: Math.floor(process.uptime()) });
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/config') {
+      return json(response, 200, { schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, trackTempos, clubRequest, venueQueues });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/session') {
+      const payload = await body(request);
+      const name = safeText(payload.name, 16);
+      if (!name) return apiError(response, 400, 'A festival name is required.');
+      const duplicate = [...visitors.values()].some((visitor) => visitor.name.toLocaleUpperCase('en-US') === name.toLocaleUpperCase('en-US'));
+      if (duplicate) return apiError(response, 409, 'That festival name is already connected.');
+      const visitor = createVisitor(name, payload.palette);
+      visitors.set(visitor.id, visitor);
+      scheduleBroadcast();
+      return json(response, 201, { session: { id: visitor.id, token: visitor.token }, state: stateFor(visitor) });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/session/recover') {
+      const payload = await body(request);
+      const name = safeText(payload.name, 16);
+      const previousId = safeText(payload.session?.id, 64);
+      const previousToken = safeText(payload.session?.token, 128);
+      if (!name || !previousId || !previousToken) return apiError(response, 400, 'Session recovery details are required.');
+
+      const existing = visitors.get(previousId);
+      if (existing) {
+        if (!tokenMatches(previousToken, existing.token)) return apiError(response, 401, 'Invalid festival session.');
+        existing.palette = safePalette(payload.palette ?? existing.palette);
+        existing.lastSeen = Date.now();
+        return json(response, 200, {
+          session: { id: existing.id, token: existing.token },
+          state: stateFor(existing),
+        });
+      }
+
+      const duplicate = [...visitors.values()].some((visitor) => visitor.name.toLocaleUpperCase('en-US') === name.toLocaleUpperCase('en-US'));
+      if (duplicate) return apiError(response, 409, 'That festival name is already connected.');
+      const recovered = createVisitor(name, payload.palette);
+      visitors.set(recovered.id, recovered);
+      scheduleBroadcast();
+      return json(response, 201, {
+        session: { id: recovered.id, token: recovered.token },
+        state: stateFor(recovered),
+      });
+    }
+
+    const visitor = sessionFor(request);
+
+    if (request.method === 'GET' && url.pathname === '/api/events') {
+      if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+      response.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache, no-transform',
+        connection: 'keep-alive',
+        'x-accel-buffering': 'no',
+      });
+      response.write(': connected\n\n');
+      const responseSet = streams.get(visitor.id) ?? new Set();
+      responseSet.add(response);
+      streams.set(visitor.id, responseSet);
+      visitor.lastSeen = Date.now();
+      writeEvent(response, 'state', stateFor(visitor));
+      request.on('close', () => {
+        responseSet.delete(response);
+        if (!responseSet.size) streams.delete(visitor.id);
+      });
+      return;
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/presence') {
+      if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+      const payload = await body(request);
+      visitor.presence = {
+        x: Math.max(-50, Math.min(50, Number(payload.x) || 0)),
+        z: Math.max(-80, Math.min(30, Number(payload.z) || 0)),
+        rotation: Number(payload.rotation) || 0,
+        location: safeText(payload.location, 40) || 'FESTIVAL GATE',
+        state: ['walking', 'seated', 'swimming'].includes(payload.state) ? payload.state : 'walking',
+        moving: payload.moving === true,
+        venue: isVenue(payload.venue) ? payload.venue : 'shore',
+        gesture: ['wave', 'feed', 'tail-wag', 'dance', 'drink'].includes(payload.gesture) ? payload.gesture : undefined,
+        carriedItem: payload.carriedItem === 'MENTOR'
+          ? (mentorCarrierId === visitor.id ? 'MENTOR' : undefined)
+          : ['POPCORN', 'DRINK', 'HOTDOG', 'PIZZA', 'CHICKEN'].includes(payload.carriedItem)
+            ? payload.carriedItem
+            : undefined,
+      };
+      visitor.palette = safePalette(payload.palette ?? visitor.palette);
+      visitor.lastSeen = Date.now();
+      scheduleBroadcast();
+      return json(response, 202, { ok: true });
+    }
+
+    // A request to the resident DJ. Unlike a private screening this changes
+    // what the whole room hears, which is the point of asking a DJ.
+    const requestMatch = url.pathname.match(/^\/api\/(club|rooftop)\/request$/);
+    if (request.method === 'POST' && requestMatch) {
+      if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+      const payload = await body(request);
+      const djVenue = requestMatch[1];
+      const clubQueue = venueQueues[djVenue];
+      const youtubeId = String(payload.youtubeId ?? '').trim();
+      const schedule = programmeSchedule[djVenue];
+      if (!schedule.order.includes(youtubeId)) return apiError(response, 404, 'That track is not in the box.');
+      const now = Date.now();
+      if (visitor.trackRequestAt && now - visitor.trackRequestAt < CLUB_REQUEST_COOLDOWN_MS) {
+        const seconds = Math.ceil((CLUB_REQUEST_COOLDOWN_MS - (now - visitor.trackRequestAt)) / 1000);
+        return apiError(response, 429, `The DJ is still mixing. Try again in ${seconds}s.`);
+      }
+      if (schedule.youtubeId === youtubeId) return apiError(response, 409, 'That one is already playing.');
+      if (clubQueue.length >= CLUB_QUEUE_LIMIT) return apiError(response, 409, 'The queue is full. Try again shortly.');
+      if (clubQueue.some((entry) => entry.youtubeId === youtubeId)) {
+        return apiError(response, 409, 'That one is already in the queue.');
+      }
+      visitor.trackRequestAt = now;
+      clubQueue.push({ youtubeId, requestedBy: visitor.name, at: now });
+      clubRequest = { venue: djVenue, youtubeId, requestedBy: visitor.name, at: now, position: clubQueue.length };
+      visitor.lastSeen = now;
+      scheduleBroadcast();
+      return json(response, 200, {
+        ok: true,
+        position: clubQueue.length,
+        clubQueue: venueQueues[djVenue],
+      });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/mentor/pick-up') {
+      if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+      if (visitor.npcId === 'MENTOR') return apiError(response, 409, 'MENTOR cannot pick up himself.');
+      if (mentorCarrierId && mentorCarrierId !== visitor.id) {
+        return apiError(response, 409, 'MENTOR is already being carried.');
+      }
+      mentorCarrierId = visitor.id;
+      visitor.presence = { ...visitor.presence, carriedItem: 'MENTOR', gesture: undefined };
+      for (const controlledVisitor of visitors.values()) {
+        if (controlledVisitor.npcId !== 'MENTOR') continue;
+        controlledVisitor.presence = {
+          ...controlledVisitor.presence,
+          state: 'walking',
+          moving: false,
+          gesture: undefined,
+          carriedItem: undefined,
+        };
+      }
+      visitor.lastSeen = Date.now();
+      scheduleBroadcast();
+      return json(response, 200, { ok: true, mentorCarrierId });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/mentor/put-down') {
+      if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+      if (mentorCarrierId !== visitor.id) return apiError(response, 409, 'You are not carrying MENTOR.');
+      mentorCarrierId = null;
+      visitor.presence = { ...visitor.presence, carriedItem: undefined };
+      visitor.lastSeen = Date.now();
+      scheduleBroadcast();
+      return json(response, 200, { ok: true, mentorCarrierId });
+    }
+
+    const seatMatch = url.pathname.match(/^\/api\/seats\/([^/]+)\/(claim|release)$/);
+    if (request.method === 'POST' && seatMatch) {
+      if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+      const seatId = decodeURIComponent(seatMatch[1]).toUpperCase();
+      if (!validSeats.has(seatId)) return apiError(response, 404, 'Unknown seat.');
+      if (seatMatch[2] === 'claim') {
+        const owner = seats.get(seatId);
+        if (owner && owner !== visitor.id) return apiError(response, 409, 'That seat is occupied.');
+        releaseSeat(visitor);
+        seats.set(seatId, visitor.id);
+        visitor.seatedAt = seatId;
+      } else if (seats.get(seatId) === visitor.id) {
+        releaseSeat(visitor);
+      }
+      visitor.lastSeen = Date.now();
+      scheduleBroadcast();
+      return json(response, 200, { ok: true, seatId });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/chat') {
+      if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+      const now = Date.now();
+      if (visitor.mutedUntil > now) return apiError(response, 403, 'You are temporarily muted by festival staff.');
+      visitor.chatTimes = visitor.chatTimes.filter((timestamp) => timestamp > now - 10_000);
+      if (visitor.chatTimes.length >= 5) return apiError(response, 429, 'Please wait before sending another message.');
+      const payload = await body(request);
+      const text = safeText(payload.text, 160);
+      const channel = ['NEARBY', 'VENUE', 'FESTIVAL'].includes(payload.channel) ? payload.channel : 'NEARBY';
+      if (!text) return apiError(response, 400, 'Message is empty.');
+      visitor.chatTimes.push(now);
+      messages.push({ id: randomUUID(), authorId: visitor.id, author: visitor.name, channel, text, timestamp: now });
+      if (messages.length > 500) messages.splice(0, messages.length - 500);
+      scheduleBroadcast();
+      persist();
+      return json(response, 201, { ok: true });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/session/leave') {
+      if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+      removeVisitor(visitor);
+      return json(response, 200, { ok: true });
+    }
+
+    const advanceMatch = url.pathname.match(/^\/api\/programme\/(palace|drive-in|shore|club|rooftop)\/advance$/);
+    if (request.method === 'POST' && advanceMatch) {
+      if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+      const payload = await body(request);
+      const venue = advanceMatch[1];
+      const schedule = programmeSchedule[venue];
+      const expectedYoutubeId = String(payload.youtubeId ?? '');
+      const currentYoutubeId = schedule.activeSpecialYoutubeId ?? schedule.order[schedule.currentIndex];
+      if (expectedYoutubeId !== currentYoutubeId || schedule.mode === 'paused') {
+        return json(response, 200, { ok: true, advanced: false, schedule: programmeSchedule });
+      }
+
+      const queued = isDjVenue(venue) ? venueQueues[venue].shift() : undefined;
+      if (queued) {
+        // A requested track takes precedence over the standing order.
+        schedule.activeSpecialYoutubeId = null;
+        schedule.currentIndex = Math.max(0, schedule.order.indexOf(queued.youtubeId));
+      } else if (schedule.activeSpecialYoutubeId) {
+        schedule.activeSpecialYoutubeId = null;
+        schedule.currentIndex = (schedule.currentIndex + 1) % schedule.order.length;
+      } else if (schedule.special && schedule.special.startsAt <= Date.now()) {
+        schedule.activeSpecialYoutubeId = schedule.special.youtubeId;
+        schedule.special = null;
+      } else {
+        schedule.currentIndex = (schedule.currentIndex + 1) % schedule.order.length;
+      }
+      schedule.youtubeId = schedule.activeSpecialYoutubeId ?? schedule.order[schedule.currentIndex];
+      schedule.startedAt = Date.now();
+      schedule.pausedAt = null;
+      schedule.updatedAt = Date.now();
+      scheduleBroadcast();
+      persist();
+      return json(response, 200, { ok: true, advanced: true, schedule: programmeSchedule, venueQueues });
+    }
+
+    if (url.pathname.startsWith('/api/admin/')) {
+      if (!adminAllowed(request)) return apiError(response, 401, 'Invalid staff key.');
+      if (request.method === 'GET' && url.pathname === '/api/admin/state') {
+        return json(response, 200, {
+          visitors: [...visitors.values()].map(publicVisitor),
+          seats: [...seats.entries()].map(([seatId, visitorId]) => ({ seatId, visitorId })),
+          messages: messages.slice(-100),
+          schedule: programmeSchedule,
+          siteStyle,
+          gateBackground,
+          mentorCarrierId,
+          clubRequest,
+          venueQueues,
+          customVideos: customVideosByVenue,
+          npcNames,
+          npcProfiles: publicNpcProfiles(),
+          pamphlet: pamphletContent,
+          trackTempos,
+        });
+      }
+      const payload = await body(request);
+      if (request.method === 'POST' && url.pathname === '/api/admin/schedule') {
+        const venue = String(payload.venue ?? '');
+        if (!isVenue(venue)) return apiError(response, 400, 'Unknown venue.');
+        const current = programmeSchedule[venue];
+        const allowedIds = new Set([
+          ...programmeIdsByVenue[venue],
+          ...customVideosByVenue[venue].map((video) => video.youtubeId),
+        ]);
+        let order = Array.isArray(payload.order)
+          ? payload.order.map((value) => String(value).trim()).filter((value, index, list) => list.indexOf(value) === index)
+          : [...current.order];
+        const legacyStart = String(payload.youtubeId ?? '').trim();
+        if (legacyStart && allowedIds.has(legacyStart)) order = [legacyStart, ...order.filter((id) => id !== legacyStart)];
+        if (!order.length || order.some((id) => !allowedIds.has(id))) return apiError(response, 400, 'Invalid programme order.');
+        const requestedCurrent = String(payload.currentYoutubeId ?? legacyStart ?? '').trim();
+        const currentIndex = requestedCurrent && order.includes(requestedCurrent)
+          ? order.indexOf(requestedCurrent)
+          : Math.max(0, order.indexOf(current.youtubeId));
+        const mode = ['continuous', 'paused', 'recurring', 'scheduled-loop'].includes(payload.mode)
+          ? payload.mode
+          : current.mode;
+        let startedAt = current.youtubeId === order[currentIndex] && current.startedAt ? current.startedAt : Date.now();
+        let pausedAt = current.pausedAt ?? null;
+        if (mode === 'paused' && current.mode !== 'paused') {
+          pausedAt = Date.now();
+        } else if (mode !== 'paused' && current.mode === 'paused') {
+          if (pausedAt) startedAt += Date.now() - pausedAt;
+          pausedAt = null;
+        }
+        const name = safeText(payload.name ?? current.name, 32) || defaultVenueNames[venue];
+        const requestedSpecialSource = ['none', 'library', 'youtube'].includes(payload.specialSource)
+          ? payload.specialSource
+          : (payload.specialYoutubeUrl ? 'youtube' : payload.specialYoutubeId ? 'library' : 'none');
+        const specialYoutubeUrl = requestedSpecialSource === 'youtube' ? safeText(payload.specialYoutubeUrl, 300) : '';
+        const specialYoutubeId = requestedSpecialSource === 'youtube'
+          ? youtubeIdFromUrl(specialYoutubeUrl)
+          : requestedSpecialSource === 'library'
+            ? String(payload.specialYoutubeId ?? '').trim()
+            : '';
+        if (requestedSpecialSource === 'library' && specialYoutubeId && !order.includes(specialYoutubeId)) {
+          return apiError(response, 400, 'Special screening is not in this venue.');
+        }
+        const specialStartsAt = Date.parse(String(payload.specialStartsAt ?? ''));
+        if (specialYoutubeId && !/^[A-Za-z0-9_-]{6,20}$/.test(specialYoutubeId)) {
+          return apiError(response, 400, 'Invalid special screening.');
+        }
+        programmeSchedule[venue] = {
+          name,
+          order,
+          currentIndex,
+          youtubeId: order[currentIndex],
+          mode,
+          special: specialYoutubeId ? {
+            youtubeId: specialYoutubeId,
+            startsAt: Number.isFinite(specialStartsAt) ? specialStartsAt : Date.now(),
+          } : null,
+          activeSpecialYoutubeId: null,
+          startedAt,
+          pausedAt,
+          updatedAt: Date.now(),
+        };
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true, schedule: programmeSchedule });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/style') {
+        siteStyle.brandFontSize = Math.max(12, Math.min(42, Number(payload.brandFontSize) || siteStyle.brandFontSize));
+        siteStyle.brandScaleY = Math.max(0.5, Math.min(2, Number(payload.brandScaleY) || siteStyle.brandScaleY));
+        siteStyle.brandScaleX = Math.max(0.5, Math.min(2, Number(payload.brandScaleX) || siteStyle.brandScaleX));
+        siteStyle.brandOffsetX = Math.max(-120, Math.min(240, Number(payload.brandOffsetX) || 0));
+        siteStyle.brandOffsetY = Math.max(-80, Math.min(80, Number(payload.brandOffsetY) || 0));
+        siteStyle.updatedAt = Date.now();
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true, siteStyle });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/gate-background') {
+        const youtubeUrl = safeText(payload.youtubeUrl, 300);
+        const youtubeId = youtubeIdFromUrl(youtubeUrl);
+        if (!youtubeId || !/^[A-Za-z0-9_-]{6,20}$/.test(youtubeId)) return apiError(response, 400, 'Invalid YouTube link.');
+        gateBackground.youtubeId = youtubeId;
+        gateBackground.updatedAt = Date.now();
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true, gateBackground });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/key') {
+        // The header already proved the caller holds the current key, but the
+        // change is re-authenticated from the body so a shared or forgotten
+        // browser session cannot rotate it on its own.
+        const currentKey = String(payload.currentKey ?? '');
+        const nextKey = String(payload.nextKey ?? '');
+        if (!adminKeyMatches(currentKey)) return apiError(response, 403, 'The current staff key is incorrect.');
+        if (nextKey.length < 12) return apiError(response, 400, 'The new staff key needs at least 12 characters.');
+        if (nextKey.length > 128) return apiError(response, 400, 'The new staff key is too long.');
+        if (!/^[\x21-\x7e]+$/.test(nextKey)) return apiError(response, 400, 'Use printable characters with no spaces.');
+        if (adminKeyMatches(nextKey)) return apiError(response, 409, 'That is already the staff key.');
+        const salt = randomBytes(16).toString('hex');
+        adminKeyDigest = { salt, hash: hashAdminKey(nextKey, salt) };
+        persist();
+        return json(response, 200, { ok: true });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/tempo') {
+        const youtubeId = String(payload.youtubeId ?? '').trim();
+        if (!validYoutubeId(youtubeId)) return apiError(response, 400, 'Unknown track.');
+        const bpm = Number(payload.bpm);
+        if (!Number.isFinite(bpm) || bpm < 40 || bpm > 220) {
+          return apiError(response, 400, 'Choose a tempo between 40 and 220 BPM.');
+        }
+        trackTempos[youtubeId] = Math.round(bpm);
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true, trackTempos });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/npcs') {
+        const npcId = safeText(payload.npcId, 24).toUpperCase();
+        if (!(npcId in npcNames)) return apiError(response, 400, 'Unknown NPC.');
+        const name = safeText(payload.name, 16);
+        if (!name) return apiError(response, 400, 'An NPC name is required.');
+        const title = safeText(payload.title, 40);
+        if (!title) return apiError(response, 400, 'An NPC job title is required.');
+        const duplicate = Object.entries(npcNames).some(([id, currentName]) =>
+          id !== npcId && currentName.toLocaleUpperCase('en-US') === name.toLocaleUpperCase('en-US'));
+        if (duplicate) return apiError(response, 409, 'That NPC name is already in use.');
+        npcNames[npcId] = name;
+        npcTitles[npcId] = title;
+        for (const controlledVisitor of visitors.values()) {
+          if (controlledVisitor.npcId === npcId) controlledVisitor.name = name;
+        }
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true, npcNames, npcProfiles: publicNpcProfiles() });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/npcs/add') {
+        if (Object.keys(npcNames).length >= 24) return apiError(response, 409, 'The NPC limit has been reached.');
+        const name = safeText(payload.name, 16);
+        if (!name) return apiError(response, 400, 'An NPC name is required.');
+        const title = safeText(payload.title, 40);
+        if (!title) return apiError(response, 400, 'An NPC job title is required.');
+        const duplicate = Object.values(npcNames).some((currentName) =>
+          currentName.toLocaleUpperCase('en-US') === name.toLocaleUpperCase('en-US'));
+        if (duplicate) return apiError(response, 409, 'That NPC name is already in use.');
+        let sequence = Object.keys(npcNames).length + 1;
+        while (`NPC_${sequence}` in npcNames) sequence += 1;
+        const npcId = `NPC_${sequence}`;
+        npcNames[npcId] = name;
+        npcTitles[npcId] = title;
+        scheduleBroadcast();
+        persist();
+        return json(response, 201, { ok: true, npcId, npcNames, npcProfiles: publicNpcProfiles() });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/impersonate') {
+        if (!visitor) return apiError(response, 401, 'A live festival session is required.');
+        const npcId = safeText(payload.npcId, 24).toUpperCase();
+        if (npcId && !(npcId in npcNames)) return apiError(response, 400, 'Unknown NPC.');
+        if (npcId && !visitor.npcId) {
+          visitor.impersonationOrigin = { ...visitor.presence, gesture: undefined };
+          if (visitor.seatedAt) seats.delete(visitor.seatedAt);
+          visitor.seatedAt = undefined;
+        }
+        if (!npcId && visitor.npcId && visitor.impersonationOrigin) {
+          visitor.presence = { ...visitor.impersonationOrigin, gesture: undefined, state: 'walking', moving: false };
+          visitor.impersonationOrigin = undefined;
+        }
+        visitor.npcId = npcId || undefined;
+        visitor.name = npcId ? npcNames[npcId] : visitor.originalName;
+        visitor.lastSeen = Date.now();
+        scheduleBroadcast();
+        return json(response, 200, { name: visitor.name, originalName: visitor.originalName, npcId: visitor.npcId });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/pamphlet') {
+        const youtubeUrl = safeText(payload.youtubeUrl, 300);
+        const youtubeId = youtubeIdFromUrl(youtubeUrl);
+        if (!youtubeId || !/^[A-Za-z0-9_-]{6,20}$/.test(youtubeId)) return apiError(response, 400, 'Invalid YouTube link.');
+        const eyebrow = safeText(payload.eyebrow, 60);
+        const title = safeText(payload.title, 80);
+        const titleZh = safeText(payload.titleZh, 80);
+        const introduction = safeText(payload.introduction, 1200);
+        const introductionZh = safeText(payload.introductionZh, 1200);
+        if (!eyebrow || !title || !titleZh || !introduction || !introductionZh) {
+          return apiError(response, 400, 'Complete all pamphlet fields.');
+        }
+        Object.assign(pamphletContent, {
+          youtubeId, eyebrow, title, titleZh, introduction, introductionZh, updatedAt: Date.now(),
+        });
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true, pamphlet: pamphletContent });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/videos') {
+        const venue = String(payload.venue ?? '');
+        if (!isVenue(venue)) return apiError(response, 400, 'Unknown venue.');
+        const youtubeUrl = safeText(payload.youtubeUrl, 300);
+        const youtubeId = youtubeIdFromUrl(youtubeUrl);
+        if (!youtubeId || !/^[A-Za-z0-9_-]{6,20}$/.test(youtubeId)) return apiError(response, 400, 'Invalid YouTube link.');
+        const duplicate = [
+          ...programmeIdsByVenue[venue],
+          ...customVideosByVenue[venue].map((video) => video.youtubeId),
+        ].includes(youtubeId);
+        if (duplicate) return apiError(response, 409, 'That video is already in this venue.');
+        const title = safeText(payload.title, 100);
+        if (!title) return apiError(response, 400, 'A video title is required.');
+        const yearValue = Number(payload.year);
+        const category = programmeCategoryForVenue[venue];
+        const entry = {
+          id: `custom-${venue}-${youtubeId}`,
+          title,
+          titleZh: safeText(payload.titleZh, 100) || undefined,
+          creator: safeText(payload.creator, 80) || undefined,
+          year: Number.isInteger(yearValue) && yearValue >= 1888 && yearValue <= 2200 ? yearValue : undefined,
+          category,
+          venue,
+          youtubeId,
+          embedUrl: `https://www.youtube-nocookie.com/embed/${youtubeId}`,
+          sourceUrl: `https://www.youtube.com/watch?v=${youtubeId}`,
+        };
+        customVideosByVenue[venue].push(entry);
+        programmeSchedule[venue].order.push(youtubeId);
+        programmeSchedule[venue].updatedAt = Date.now();
+        scheduleBroadcast();
+        persist();
+        return json(response, 201, { ok: true, video: entry, schedule: programmeSchedule });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/videos/remove') {
+        const venue = String(payload.venue ?? '');
+        if (!isVenue(venue)) return apiError(response, 400, 'Unknown venue.');
+        const youtubeId = String(payload.youtubeId ?? '').trim();
+        const schedule = programmeSchedule[venue];
+        if (!schedule.order.includes(youtubeId)) return apiError(response, 404, 'Video is not in this venue.');
+        if (schedule.order.length <= 1) return apiError(response, 409, 'A venue must keep at least one video.');
+
+        const previousCurrentYoutubeId = schedule.activeSpecialYoutubeId ?? schedule.order[schedule.currentIndex];
+        schedule.order = schedule.order.filter((id) => id !== youtubeId);
+        if (schedule.activeSpecialYoutubeId === youtubeId) schedule.activeSpecialYoutubeId = null;
+        if (schedule.special?.youtubeId === youtubeId) schedule.special = null;
+        schedule.currentIndex = previousCurrentYoutubeId !== youtubeId && schedule.order.includes(previousCurrentYoutubeId)
+          ? schedule.order.indexOf(previousCurrentYoutubeId)
+          : Math.min(schedule.currentIndex, schedule.order.length - 1);
+        schedule.youtubeId = schedule.activeSpecialYoutubeId ?? schedule.order[schedule.currentIndex];
+        if (previousCurrentYoutubeId === youtubeId) schedule.startedAt = Date.now();
+        schedule.updatedAt = Date.now();
+
+        const customIndex = customVideosByVenue[venue].findIndex((video) => video.youtubeId === youtubeId);
+        if (customIndex >= 0) customVideosByVenue[venue].splice(customIndex, 1);
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true, schedule: programmeSchedule, customVideos: customVideosByVenue });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/mute') {
+        const target = visitors.get(String(payload.visitorId));
+        if (!target) return apiError(response, 404, 'Visitor not found.');
+        target.mutedUntil = Date.now() + Math.max(1, Math.min(60, Number(payload.minutes) || 5)) * 60_000;
+        scheduleBroadcast();
+        return json(response, 200, { ok: true });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/kick') {
+        const target = visitors.get(String(payload.visitorId));
+        if (!target) return apiError(response, 404, 'Visitor not found.');
+        removeVisitor(target, 'kicked');
+        return json(response, 200, { ok: true });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/delete-message') {
+        const index = messages.findIndex((message) => message.id === payload.messageId);
+        if (index < 0) return apiError(response, 404, 'Message not found.');
+        restoredMessageIds.delete(payload.messageId);
+        messages.splice(index, 1);
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true });
+      }
+    }
+
+    if ((request.method === 'GET' || request.method === 'HEAD') && isProduction && await serveStatic(url, response)) return;
+    return apiError(response, 404, 'Not found.');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unexpected server error.';
+    return apiError(response, 400, message);
+  }
+});
+
+const heartbeat = setInterval(() => {
+  const now = Date.now();
+  for (const responseSet of streams.values()) {
+    for (const response of responseSet) response.write(': heartbeat\n\n');
+  }
+  for (const visitor of visitors.values()) {
+    // An open event stream is itself proof that the attendee remains live.
+    // Only expire disconnected sessions, and leave enough room for a
+    // background tab or brief network interruption to recover.
+    if (streams.get(visitor.id)?.size) {
+      visitor.lastSeen = now;
+      continue;
+    }
+    if (now - visitor.lastSeen > DISCONNECTED_SESSION_GRACE_MS) removeVisitor(visitor, 'timeout');
+  }
+}, 10_000);
+
+restorePersistedState();
+
+server.listen(PORT, HOST, () => {
+  console.log(`myschedule festival server listening on http://${HOST}:${PORT}`);
+});
+
+const shutdown = () => {
+  clearInterval(heartbeat);
+  if (broadcastTimer) clearTimeout(broadcastTimer);
+  persistNow();
+  for (const visitor of [...visitors.values()]) removeVisitor(visitor, 'shutdown');
+  server.close(() => process.exit(0));
+};
+
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);

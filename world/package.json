@@ -1,0 +1,25 @@
+{
+  "name": "myschedule-festival-world",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:client": "vite --host 127.0.0.1",
+    "server": "node server/index.mjs",
+    "start": "NODE_ENV=production node server/index.mjs",
+    "build": "tsc --noEmit && vite build",
+    "build:beta": "tsc --noEmit && vite build --outDir ../docs/beta --emptyOutDir",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "node --test server/server.test.mjs",
+    "verify": "npm run test && npm run build"
+  },
+  "dependencies": {
+    "three": "^0.179.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.179.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.2"
+  }
+}

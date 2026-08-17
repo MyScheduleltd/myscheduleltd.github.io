@@ -10,6 +10,12 @@ lerna-debug.log*
 node_modules
 
 dist-ssr
+world/dist
+# Image-to-3D working files. Reference crops and specs for building the
+# MENTOR model; nothing the site serves imports them.
+world/.img2threejs
+world/server/festival-state.json
+world/server/festival-state.json.*.tmp
 *.local
 
 # Editor directories and files
