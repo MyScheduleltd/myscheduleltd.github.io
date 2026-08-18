@@ -1359,13 +1359,32 @@ export class App {
       : 'Another STAFF member has just changed this introduction.');
     const reload = document.createElement('button');
     reload.type = 'button';
-    reload.textContent = zh ? '載入他們的版本' : 'LOAD THEIRS';
+    const resting = zh ? '載入他們的版本' : 'LOAD THEIRS';
+    reload.textContent = resting;
+    // Their version replaces what is being written and there is no getting it
+    // back, so the button asks once before it does it. A native dialog is no
+    // use here: this sits over a pointer-locked world.
+    let armed = false;
+    const disarm = (): void => {
+      if (!armed) return;
+      armed = false;
+      delete reload.dataset.armed;
+      reload.textContent = resting;
+    };
     reload.addEventListener('click', () => {
-      // Their version replaces what is being typed, which is why it is asked
-      // for rather than done.
+      if (!armed) {
+        armed = true;
+        reload.dataset.armed = '';
+        reload.textContent = zh ? '確定？會蓋掉你寫的' : 'SURE? REPLACES YOURS';
+        return;
+      }
       this.djIntroductionTouched = false;
       this.openDjAbout(djName, venue);
     });
+    // Going back to writing puts the safety on again, so a stray second click
+    // minutes later cannot take the text.
+    form.addEventListener('input', disarm);
+    reload.addEventListener('blur', disarm);
     notice.append(reload);
     form.prepend(notice);
   }
