@@ -268,10 +268,12 @@ const STUMBLE_IMPACT = 14;
 // off an edge rather than walking down a step. A rooftop tread is 0.35, so this
 // clears a staircase without turning it into a series of little hops.
 const LEDGE_DROP = 0.75;
-// How far a rider stands above the road: the height of a deck on its trucks.
-// Without it the board has to sit where the feet already are, and the soles
-// come through the top of it.
-const SKATE_LIFT = 0.18;
+// How far a rider stands above the road: the exact height of this board from
+// the road to the top of its deck — wheel bottom at -0.46 under the hips, deck
+// top at -0.09, so 0.37. Anything less and the board cannot fit between the
+// soles and the ground: either the soles come through the deck or the wheels
+// go under the road.
+const SKATE_LIFT = 0.37;
 const CAMERA_ZOOM_KEY = 'myschedule-camera-zoom-v1';
 const CAMERA_ZOOM_MIN = 0.45;
 const CAMERA_ZOOM_MAX = 2.2;
@@ -3864,7 +3866,7 @@ export class FestivalWorld {
     };
     const dogRig = profile.id === 'MENTOR' ? createMentorDog() : undefined;
     // MENTOR rides too, on a board cut down to a dog's length.
-    const dogBoard = dogRig ? this.createSkateboard(dogRig.root, 0.72, 0.24) : undefined;
+    const dogBoard = dogRig ? this.createSkateboard(dogRig.root, 0.72, -0.04) : undefined;
     const rig = dogRig ? undefined : this.createAvatarRig(npc, npcPalette);
     if (dogRig) npc.add(dogRig.root);
     const remoteCarriedProp = new THREE.Group();
@@ -4201,12 +4203,14 @@ export class FestivalWorld {
     rig.leftLeg.rotation.z = 0.12;
     rig.rightLeg.rotation.x = 0.16 + bob * 0.04;
     rig.rightLeg.rotation.z = -0.1;
-    // Straight out to the sides. Rolling them forward as well is what had the
-    // arms looking wrung out rather than spread.
+    // Straight out to the sides. A positive rotation about z swings an arm
+    // towards +x, so the left arm needs a negative one to go outward — with
+    // the signs the other way round both arms folded across the chest and
+    // disappeared inside the torso, which is what read as arms cut off.
     rig.leftArm.rotation.x = bob * 0.06;
     rig.rightArm.rotation.x = -bob * 0.06;
-    rig.leftArm.rotation.z = 1.46 + bob * 0.05;
-    rig.rightArm.rotation.z = -1.46 + bob * 0.05;
+    rig.leftArm.rotation.z = -1.42 - bob * 0.05;
+    rig.rightArm.rotation.z = 1.42 + bob * 0.05;
     rig.board.visible = true;
   }
 
