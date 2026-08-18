@@ -268,6 +268,10 @@ const STUMBLE_IMPACT = 14;
 // off an edge rather than walking down a step. A rooftop tread is 0.35, so this
 // clears a staircase without turning it into a series of little hops.
 const LEDGE_DROP = 0.75;
+// How far a rider stands above the road: the height of a deck on its trucks.
+// Without it the board has to sit where the feet already are, and the soles
+// come through the top of it.
+const SKATE_LIFT = 0.18;
 const CAMERA_ZOOM_KEY = 'myschedule-camera-zoom-v1';
 const CAMERA_ZOOM_MIN = 0.45;
 const CAMERA_ZOOM_MAX = 2.2;
@@ -701,6 +705,7 @@ export class FestivalWorld {
   private lastDonationAt = 0;
   private verticalVelocity = 0;
   private airborne = false;
+  private skating = false;
   /** While recovering from a heavy landing: slower, and shown staggering. */
   private stumbleUntil = 0;
 
@@ -3237,9 +3242,17 @@ export class FestivalWorld {
       map: createTextTexture([this.templeSignText.name, this.templeSignText.label]),
     });
     const templeSign = new THREE.Mesh(new THREE.PlaneGeometry(8.4, 2.4), this.templeSignMaterial);
-    // Stood clear of the lintel. Set flush against it, the timber swallowed the
-    // lettering and left nothing but a blank panel over the door.
-    templeSign.position.set(t.minX - 1.35, t.podium + wallHeight + 0.9, centerZ);
+    // Hung outside the building on a bracket, clear of the eaves. Held tight to
+    // the wall it sat back under the overhanging roof, in its shadow and half
+    // hidden by it; a temple banner belongs out in front where it can be read
+    // from the forecourt.
+    templeSign.position.set(t.minX - 4.6, t.podium + wallHeight - 1.4, centerZ);
+    const signBracket = material(0x4a3a2a, 0.7, 0.1);
+    this.mesh([4.4, 0.26, 0.26], [t.minX - 2.4, t.podium + wallHeight + 0.5, centerZ], signBracket);
+    for (const side of [-1, 1]) {
+      this.mesh([0.16, 1.5, 0.16], [t.minX - 4.6, t.podium + wallHeight - 0.25, centerZ + side * 3.9], signBracket);
+    }
+    this.mesh([0.3, 0.3, 8.6], [t.minX - 4.6, t.podium + wallHeight + 0.4, centerZ], signBracket);
     templeSign.rotation.y = -Math.PI / 2;
     this.scene.add(templeSign);
 
@@ -3298,12 +3311,15 @@ export class FestivalWorld {
     const halo = this.mesh(
       [3.4, 3.4, 0.16],
       [0, 3.9, -0.75],
-      new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.42, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.24, depthWrite: false }),
     );
     halo.rotation.y = 0;
     this.templeAura = halo;
-    const auraLight = new THREE.PointLight(0xffcf8a, 90, 34, 1.5);
-    auraLight.position.set(altarX - 1, t.podium + 4.2, centerZ);
+    // Set at ninety a arm's length from her, this washed the gilding out to
+    // white and lost every edge of the figure. Enough to lift her off the wall
+    // and no more; the lanterns light the room.
+    const auraLight = new THREE.PointLight(0xffcf8a, 26, 20, 1.7);
+    auraLight.position.set(altarX - 2.6, t.podium + 4.6, centerZ);
     this.scene.add(auraLight);
     this.addCollider(altarX + 1, centerZ, 6, 12.6, 0.2, { minY: -0.4, maxY: 60 }, 'temple-altar');
     this.templeAltar = { x: altarX, z: centerZ };
@@ -3848,7 +3864,7 @@ export class FestivalWorld {
     };
     const dogRig = profile.id === 'MENTOR' ? createMentorDog() : undefined;
     // MENTOR rides too, on a board cut down to a dog's length.
-    const dogBoard = dogRig ? this.createSkateboard(dogRig.root, 0.72, 0.0) : undefined;
+    const dogBoard = dogRig ? this.createSkateboard(dogRig.root, 0.72, 0.24) : undefined;
     const rig = dogRig ? undefined : this.createAvatarRig(npc, npcPalette);
     if (dogRig) npc.add(dogRig.root);
     const remoteCarriedProp = new THREE.Group();
@@ -4129,37 +4145,39 @@ export class FestivalWorld {
    * A board under the feet, kept out of sight until someone runs. Built in the
    * same blocky idiom as everything else: a deck, two trucks, four wheels.
    */
-  private createSkateboard(parent: THREE.Object3D, scale = 1, dropTo = 0.02): THREE.Group {
+  private createSkateboard(parent: THREE.Object3D, scale = 1, lift = 0): THREE.Group {
     const board = new THREE.Group();
     board.scale.setScalar(scale);
-    // Sat on the road rather than in it: the deck rides on trucks and wheels,
-    // and the whole assembly is lifted so the wheels touch and nothing else.
-    board.position.set(0, dropTo, 0);
+    board.position.set(0, lift, 0);
     const deckWood = material(0x3a2f2a, 0.62, 0.12);
     const grip = material(0x14151a, 0.95, 0.02);
     const truck = material(0x9aa1ab, 0.32, 0.68);
     const wheel = material(0xe8e2d2, 0.5, 0.1);
-    // Turned across the direction of travel: the board runs under the stance,
+    // Turned across the direction of travel: the board runs under the stance
     // and the rider stands sideways on it.
     board.rotation.y = Math.PI / 2;
 
-    const deckY = 0.3;
-    // Waist of the deck, then the nose and tail rising off each end.
+    // Measured down from the hips. The rider is lifted by SKATE_LIFT while
+    // riding, which puts the road at -0.46 here: the wheels meet it, the deck
+    // top meets the soles at -0.09, and nothing passes through anything.
+    const deckY = -0.135;
+    const baseplateY = -0.21;
+    const hangerY = -0.28;
+    const axleY = -0.33;
     this.mesh([2.0, 0.09, 0.66], [0, deckY, 0], deckWood, board);
-    this.mesh([1.86, 0.03, 0.6], [0, deckY + 0.06, 0], grip, board);
+    this.mesh([1.86, 0.025, 0.6], [0, deckY + 0.055, 0], grip, board);
     for (const end of [-1, 1]) {
-      const lift = this.mesh([0.52, 0.09, 0.62], [end * 1.16, deckY + 0.1, 0], deckWood, board);
-      lift.rotation.z = -end * 0.46;
-      const liftGrip = this.mesh([0.46, 0.03, 0.56], [end * 1.16, deckY + 0.155, 0], grip, board);
-      liftGrip.rotation.z = -end * 0.46;
+      const kick = this.mesh([0.52, 0.09, 0.62], [end * 1.16, deckY + 0.1, 0], deckWood, board);
+      kick.rotation.z = -end * 0.46;
+      const kickGrip = this.mesh([0.46, 0.025, 0.56], [end * 1.16, deckY + 0.145, 0], grip, board);
+      kickGrip.rotation.z = -end * 0.46;
     }
-    // Trucks: a baseplate under the deck, a hanger across it, and the axle.
     for (const end of [-1, 1]) {
-      this.mesh([0.34, 0.07, 0.42], [end * 0.66, deckY - 0.08, 0], truck, board);
-      this.mesh([0.16, 0.12, 0.56], [end * 0.66, deckY - 0.17, 0], truck, board);
-      this.mesh([0.1, 0.09, 0.86], [end * 0.66, deckY - 0.22, 0], truck, board);
+      this.mesh([0.34, 0.07, 0.42], [end * 0.66, baseplateY, 0], truck, board);
+      this.mesh([0.16, 0.12, 0.52], [end * 0.66, hangerY, 0], truck, board);
+      this.mesh([0.1, 0.07, 0.84], [end * 0.66, axleY, 0], truck, board);
       for (const side of [-1, 1]) {
-        this.mesh([0.2, 0.26, 0.26], [end * 0.66, deckY - 0.22, side * 0.4], wheel, board);
+        this.mesh([0.19, 0.26, 0.26], [end * 0.66, axleY, side * 0.39], wheel, board);
       }
     }
     board.visible = false;
@@ -4168,29 +4186,27 @@ export class FestivalWorld {
   }
 
   /**
-   * Regular stance: standing across the board, left foot forward over the
-   * front truck, right foot over the tail, shoulders square along it. The
-   * body turns a quarter so the feet sit on the deck rather than astride it.
+   * Regular stance: standing across the board, left foot over the front truck,
+   * right over the tail, arms spread wide for balance.
    */
   private poseRigSkating(rig: AvatarRig, phase: number): void {
     const bob = Math.sin(phase * 1.6);
-    // Legs swing forward and back, so to stand sideways on the board the whole
-    // body turns and the stance is set with the hips.
     rig.torso.rotation.y = 0;
-    rig.torso.rotation.x = 0.17 + bob * 0.03;
+    rig.torso.rotation.x = 0.15 + bob * 0.03;
     rig.torso.rotation.z = 0;
     // Looking along the board, over the leading shoulder.
     rig.head.rotation.set(0, -0.62, 0);
-    // Front knee driven forward and bent, back leg trailing over the tail.
-    rig.leftLeg.rotation.x = -0.46 - bob * 0.06;
-    rig.leftLeg.rotation.z = 0.16;
-    rig.rightLeg.rotation.x = 0.38 + bob * 0.06;
-    rig.rightLeg.rotation.z = -0.14;
-    // Arms out across the board for balance, the leading one further out.
-    rig.leftArm.rotation.x = -0.34 + bob * 0.16;
-    rig.rightArm.rotation.x = 0.22 - bob * 0.16;
-    rig.leftArm.rotation.z = 1.22;
-    rig.rightArm.rotation.z = -0.86;
+    // Knees soft, the front one driven a little further forward.
+    rig.leftLeg.rotation.x = -0.2 - bob * 0.04;
+    rig.leftLeg.rotation.z = 0.12;
+    rig.rightLeg.rotation.x = 0.16 + bob * 0.04;
+    rig.rightLeg.rotation.z = -0.1;
+    // Straight out to the sides. Rolling them forward as well is what had the
+    // arms looking wrung out rather than spread.
+    rig.leftArm.rotation.x = bob * 0.06;
+    rig.rightArm.rotation.x = -bob * 0.06;
+    rig.leftArm.rotation.z = 1.46 + bob * 0.05;
+    rig.rightArm.rotation.z = -1.46 + bob * 0.05;
     rig.board.visible = true;
   }
 
@@ -4544,7 +4560,7 @@ export class FestivalWorld {
         this.airborne = true;
         this.verticalVelocity = 0;
       } else {
-        this.player.position.y = ground;
+        this.player.position.y = ground + (this.skating ? SKATE_LIFT : 0);
       }
       this.player.rotation.x = 0;
       this.player.rotation.z = 0;
@@ -4566,6 +4582,7 @@ export class FestivalWorld {
         : (moving ? (running ? 1.02 : 0.72) : 0.035);
       // On land a run is a ride; in the water it stays a swim.
       const skating = running && this.playerState === 'walking';
+      this.skating = skating;
       this.animateRig(this.playerRig, this.clock.elapsedTime * cadence, stride, gesture, skating);
       if (running && !skating && this.playerState !== 'swimming') {
         // Leaning into the run, and the arms driving rather than swinging.
