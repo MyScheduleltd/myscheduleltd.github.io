@@ -856,6 +856,11 @@ export class App {
     }
     if (action.type === 'punch') {
       const zh = this.language === 'zh-TW';
+      // A resident is settled here and now; another attendee is the service's
+      // call, so that answer arrives a moment later and outranks this one.
+      if (action.struck) {
+        this.showWorldAlert(zh ? `打中了 ${action.struck}` : `LANDED ONE ON ${action.struck}`);
+      }
       void this.festivalClient.throwPunch().then((result) => {
         if (!result.hit) return;
         this.showWorldAlert(zh ? `打中了 ${result.hit.name}` : `LANDED ONE ON ${result.hit.name}`);

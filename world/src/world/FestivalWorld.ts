@@ -56,7 +56,7 @@ export type WorldAction =
   | { type: 'ate' }
   | { type: 'drank'; drinks: number; drunk: boolean }
   | { type: 'donate'; target?: string; deity?: string }
-  | { type: 'punch' }
+  | { type: 'punch'; struck?: string }
   | { type: 'punched'; droppedMentor: boolean };
 
 export interface AvatarPalette {
@@ -1887,6 +1887,26 @@ export class FestivalWorld {
     this.onAction({ type: 'donate', target, deity: target ? undefined : this.templeSignText.name });
   }
 
+  /** The nearest resident within reach and in front, never one behind. */
+  private nearestNpcInFront(reach: number): NpcAvatar | undefined {
+    const facingX = Math.sin(this.player.rotation.y);
+    const facingZ = Math.cos(this.player.rotation.y);
+    let nearest: NpcAvatar | undefined;
+    let closest = reach;
+    for (const npc of this.npcs) {
+      if (npc.id === this.controlledNpcId) continue;
+      const dx = npc.group.position.x - this.player.position.x;
+      const dz = npc.group.position.z - this.player.position.z;
+      if (Math.abs(npc.group.position.y - this.player.position.y) > 2.6) continue;
+      const distance = Math.hypot(dx, dz);
+      if (distance > closest || distance < 0.001) continue;
+      if ((dx / distance) * facingX + (dz / distance) * facingZ < 0.55) continue;
+      closest = distance;
+      nearest = npc;
+    }
+    return nearest;
+  }
+
   private nearestNpcWithin(reach: number): NpcAvatar | undefined {
     let nearest: NpcAvatar | undefined;
     let nearestDistance = reach;
@@ -2000,7 +2020,17 @@ export class FestivalWorld {
     this.dancing = false;
     this.playerGesture = 'punch';
     this.playerGestureUntil = now + 420;
-    this.onAction({ type: 'punch' });
+    // Residents are ours to settle: they exist only in this client, so unlike a
+    // blow aimed at another attendee there is nobody else to arbitrate it.
+    const npc = this.nearestNpcInFront(3.2);
+    if (npc) {
+      npc.gesture = 'hit';
+      npc.gestureUntil = now + 620;
+      // Knocked out of whatever they were doing, and off their route for a
+      // moment, so the blow reads as landing rather than passing through.
+      npc.waitUntil = now + 700;
+    }
+    this.onAction({ type: 'punch', struck: npc?.name });
   }
 
   /** Taking one: the body recoils, and anything carried is let go of. */
@@ -4976,6 +5006,7 @@ export class FestivalWorld {
         moving,
         gesture === 'tail-wag',
         now < npc.eatUntil,
+        gesture === 'hit',
       );
       const distance = npc.group.position.distanceTo(this.player.position);
       if (distance < nearestDistance) {
@@ -5249,7 +5280,7 @@ export class FestivalWorld {
     rig.body.rotation.x = 0.06;
   }
 
-  private animateMentorDog(rig: MentorDogRig, phase: number, moving: boolean, greeting: boolean, eating: boolean): void {
+  private animateMentorDog(rig: MentorDogRig, phase: number, moving: boolean, greeting: boolean, eating: boolean, flinching = false): void {
     const stride = moving ? Math.sin(phase) * 0.48 : Math.sin(phase * 0.35) * 0.018;
     rig.leftFrontLeg.rotation.x = stride;
     rig.rightFrontLeg.rotation.x = -stride;
@@ -5260,6 +5291,13 @@ export class FestivalWorld {
     rig.head.rotation.x = eating ? 0.46 + Math.sin(phase * 1.65) * 0.12 : 0;
     rig.head.rotation.y = Math.sin(phase * 0.24) * 0.08;
     rig.tail.rotation.z = Math.sin(phase * (greeting ? 3.8 : 0.7)) * (greeting ? 0.62 : 0.18);
+    if (flinching) {
+      // No humanoid rig to snap back, so the dog drops and turns its head away.
+      rig.body.rotation.x = 0.3;
+      rig.head.rotation.x = -0.42;
+      rig.head.rotation.y = 0.5;
+      rig.tail.rotation.z = 0;
+    }
     // MENTOR greets only with his tail; the front legs remain a dog walk/idle
     // rather than mimicking the human wave pose.
     rig.rightFrontLeg.rotation.z = 0;
