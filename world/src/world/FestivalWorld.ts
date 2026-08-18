@@ -9,7 +9,7 @@ import { createMentorDog, type MentorDogRig } from './MentorDog';
 export type GraphicsMode = 'normal' | 'lite';
 export type CameraMode = 'follow' | 'perspective' | 'first-person' | 'screening';
 export type PlayerState = 'walking' | 'seated' | 'swimming';
-export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink';
+export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink' | 'jump';
 export type CarriedItem = 'POPCORN' | 'MENTOR' | 'DRINK' | 'HOTDOG' | 'PIZZA' | 'CHICKEN';
 export const NPC_NAMES = ['MENTOR', 'KENNY', 'NUNO', 'MICHAEL', 'SEBINE', 'ZC', 'LOUI', 'MINYUN', 'VIOLA', 'XIEHGAN', 'DRBEAUTY'] as const;
 export type NpcId = string;
@@ -176,7 +176,13 @@ interface RemoteAvatar {
   group: THREE.Group;
   badge: THREE.Sprite;
   target: THREE.Vector3;
+  /** Where this body was told to be before the update now being played out. */
+  previousTarget: THREE.Vector3;
+  /** When that update landed, and how long the one before it took to arrive. */
+  targetAt: number;
+  updateInterval: number;
   targetRotation: number;
+  previousRotation: number;
   state: PlayerState;
   rig: AvatarRig;
   carriedProp: THREE.Group;
@@ -238,6 +244,28 @@ const pamphletPosition = new THREE.Vector3(4.2, 0, 8);
 // the same height, and they fought for the same pixels along the whole shore.
 const SHORE_Z = -58;
 const AVATAR_GROUND_Y = 0.28;
+// A leap of about 1.6 units — knee height on a 3.46-unit body, near enough to
+// 0.8m. Enough to clear a bench and to carry someone off the deck's edge.
+const JUMP_SPEED = 9.2;
+const GRAVITY = 26;
+// How far the ground has to fall away underfoot before it counts as stepping
+// off an edge rather than walking down a step. A rooftop tread is 0.35, so this
+// clears a staircase without turning it into a series of little hops.
+const LEDGE_DROP = 0.75;
+const CAMERA_ZOOM_KEY = 'myschedule-camera-zoom-v1';
+const CAMERA_ZOOM_MIN = 0.45;
+const CAMERA_ZOOM_MAX = 2.2;
+/** How far back the camera sat last visit, if the browser still remembers. */
+const readStoredZoom = (): number => {
+  try {
+    const saved = Number(window.localStorage.getItem(CAMERA_ZOOM_KEY));
+    if (!Number.isFinite(saved) || saved <= 0) return 1;
+    return Math.min(CAMERA_ZOOM_MAX, Math.max(CAMERA_ZOOM_MIN, saved));
+  } catch {
+    // Private browsing refuses storage; the default distance is no loss.
+    return 1;
+  }
+};
 const AVATAR_SWIM_Y = -2.08;
 // The underside of the avatar's torso, measured from its group origin. Put the
 // origin this far below a seat pad and the avatar rests on it.
@@ -635,7 +663,9 @@ export class FestivalWorld {
    * distance. Held between a shoulder-close view and roughly twice the default,
    * which is as far as the world reads before the walls start intruding.
    */
-  private cameraZoom = 1;
+  private cameraZoom = readStoredZoom();
+  private verticalVelocity = 0;
+  private airborne = false;
 
   private animationFrame = 0;
   private cameraMode: CameraMode = 'follow';
@@ -801,6 +831,8 @@ export class FestivalWorld {
     const x = atDj ? 36 : 30;
     const z = atDj ? rooftopBounds.deckMinZ + 9 : 30;
     this.player.position.set(x, this.groundHeightAt(x, z), z);
+    this.airborne = false;
+    this.verticalVelocity = 0;
     this.player.rotation.y = 0;
     this.cameraMode = 'follow';
     this.cameraOrbit.follow.yaw = Math.PI;
@@ -814,6 +846,8 @@ export class FestivalWorld {
     const x = b.buildingMaxX - 5;
     const z = (b.stairMinZ + b.stairMaxZ) / 2;
     this.player.position.set(x, this.groundHeightAt(x, z), z);
+    this.airborne = false;
+    this.verticalVelocity = 0;
     this.player.rotation.y = -Math.PI / 2;
     this.cameraMode = 'follow';
     this.cameraOrbit.follow.yaw = Math.PI / 2;
@@ -825,6 +859,8 @@ export class FestivalWorld {
     const x = atDj ? -68 : -66;
     const z = atDj ? 18.5 + CLUB_Z : -9 + CLUB_Z;
     this.player.position.set(x, this.groundHeightAt(x, z), z);
+    this.airborne = false;
+    this.verticalVelocity = 0;
     this.player.rotation.y = 0;
     this.cameraMode = 'follow';
     this.cameraOrbit.follow.yaw = Math.PI;
@@ -1281,6 +1317,20 @@ export class FestivalWorld {
       const reportedY = typeof displayVisitor.y === 'number' && Number.isFinite(displayVisitor.y)
         ? displayVisitor.y
         : (displayVisitor.state === 'swimming' ? AVATAR_SWIM_Y : AVATAR_GROUND_Y);
+      // Play the body from where it was to where it now is, over the time the
+      // next update is expected to take. Easing toward the latest position
+      // instead made everyone sprint to their last known spot, stop dead, and
+      // jump again — at a run that is nearly three units of stutter per step,
+      // and it is what reads as another visitor being in the wrong place even
+      // when they are standing in the same room.
+      const arrivedAt = performance.now();
+      const sinceLast = arrivedAt - avatar.targetAt;
+      if (sinceLast > 20) {
+        avatar.previousTarget.copy(avatar.group.position);
+        avatar.previousRotation = avatar.group.rotation.y;
+        avatar.updateInterval = THREE.MathUtils.clamp(sinceLast, 90, 600);
+        avatar.targetAt = arrivedAt;
+      }
       avatar.target.set(displayVisitor.x, reportedY, displayVisitor.z);
       avatar.targetRotation = displayVisitor.rotation;
       avatar.state = displayVisitor.state;
@@ -1726,11 +1776,26 @@ export class FestivalWorld {
     }
     if (key === ' ' && !event.repeat) {
       event.preventDefault();
-      this.toggleDancing();
+      this.jump();
     }
+    if (key === 'b' && !event.repeat) this.toggleDancing();
     if (key === 't' && !event.repeat) this.toggleCameraMode();
     if (key === 'e' && !event.repeat) this.interact(event.shiftKey);
   };
+
+  /**
+   * A standing jump. Refused while seated or swimming, and while already in
+   * the air, so it cannot be used to climb by repetition.
+   */
+  private jump(): void {
+    if (this.playerState === 'seated' || this.playerState === 'swimming') return;
+    if (this.airborne || this.isMentorControlLocked()) return;
+    this.dancing = false;
+    this.airborne = true;
+    this.verticalVelocity = JUMP_SPEED;
+    this.playerGesture = 'jump';
+    this.playerGestureUntil = performance.now() + 900;
+  }
 
   private readonly keyUp = (event: KeyboardEvent): void => {
     this.running = event.shiftKey;
@@ -1802,7 +1867,12 @@ export class FestivalWorld {
     // and a pinch sends smaller ones still, so the pinch is scaled up to cover
     // the same ground in one comfortable movement.
     const step = event.deltaY * lines * (event.ctrlKey ? 0.006 : 0.0005);
-    this.cameraZoom = THREE.MathUtils.clamp(this.cameraZoom * Math.exp(step), 0.45, 2.2);
+    this.cameraZoom = THREE.MathUtils.clamp(this.cameraZoom * Math.exp(step), CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX);
+    try {
+      window.localStorage.setItem(CAMERA_ZOOM_KEY, String(this.cameraZoom));
+    } catch {
+      // Not being able to remember it is not worth interrupting anyone over.
+    }
   };
 
   private readonly cameraPointerUp = (event: PointerEvent): void => {
@@ -2996,6 +3066,10 @@ export class FestivalWorld {
     const warmConcrete = material(0x4a3d35, 0.75, 0.12);
     const aboveGround = { minY: -0.4, maxY: 60 };
     const onDeck = { minY: ROOF_Y - 1, maxY: 60 };
+    // The parapet is 1.5 tall and was solid all the way to the sky, so there
+    // was no way off the deck but the stair. Topped at its own coping, a
+    // running jump carries over it and the attendee falls to the street.
+    const parapet = { minY: ROOF_Y - 1, maxY: ROOF_Y + 1.5 };
 
     const forecourt = this.mesh([width + 18, 0.16, 22], [centerX, 0.04, r.minZ - 9], material(0x3a352f, 0.7, 0.2));
     forecourt.receiveShadow = true;
@@ -3077,7 +3151,7 @@ export class FestivalWorld {
     // stair's top landing: that gap is the door onto the deck, and the reason
     // arriving at the head of the stair no longer walks into a wall.
     this.mesh([0.6, 1.5, deckDepth], [r.maxX + 0.3, ROOF_Y + 0.75, deckCenterZ], warmConcrete);
-    this.addCollider(r.maxX + 0.3, deckCenterZ, 0.6, deckDepth, 0.16, onDeck);
+    this.addCollider(r.maxX + 0.3, deckCenterZ, 0.6, deckDepth, 0.16, parapet);
     // Between stairMinZ and stairTopZ the stair's own stringer wall stands in
     // the parapet's place and is built with the run.
     for (const [from, to] of [
@@ -3087,12 +3161,12 @@ export class FestivalWorld {
       const span = to - from;
       if (span <= 0) continue;
       this.mesh([0.6, 1.5, span], [r.minX - 0.3, ROOF_Y + 0.75, (from + to) / 2], warmConcrete);
-      this.addCollider(r.minX - 0.3, (from + to) / 2, 0.6, span, 0.16, onDeck);
+      this.addCollider(r.minX - 0.3, (from + to) / 2, 0.6, span, 0.16, parapet);
     }
     this.mesh([width + 1.2, 1.5, 0.6], [centerX, ROOF_Y + 0.75, r.maxZ + 0.3], warmConcrete);
-    this.addCollider(centerX, r.maxZ + 0.3, width + 1.2, 0.6, 0.16, onDeck);
+    this.addCollider(centerX, r.maxZ + 0.3, width + 1.2, 0.6, 0.16, parapet);
     this.mesh([width + 1.2, 1.5, 0.6], [centerX, ROOF_Y + 0.75, r.deckMinZ - 0.3], warmConcrete);
-    this.addCollider(centerX, r.deckMinZ - 0.3, width + 1.2, 0.6, 0.16, onDeck);
+    this.addCollider(centerX, r.deckMinZ - 0.3, width + 1.2, 0.6, 0.16, parapet);
 
     // Screen at the deck's south edge, back to the Drive-In, watched northward.
     this.createProjectorSurface('rooftop');
@@ -3135,7 +3209,9 @@ export class FestivalWorld {
     // Benches, low enough to sit on.
     for (const [benchIndex, [x, z]] of ([[centerX - 11, deckCenterZ + 4], [centerX + 11, deckCenterZ + 2], [centerX - 3, deckCenterZ + 7]] as Array<[number, number]>).entries()) {
       this.mesh([2.4, 0.8, 2], [x, ROOF_Y + 0.4, z], material(0x4d3a2c, 0.6, 0.2));
-      this.addCollider(x, z, 2.4, 2, 0.1, onDeck, 'rooftop-bench');
+      // Topped at the seat rather than at the sky, so a jump clears the bench
+      // instead of stopping dead against it.
+      this.addCollider(x, z, 2.4, 2, 0.1, { minY: ROOF_Y - 1, maxY: ROOF_Y + 0.8 }, 'rooftop-bench');
       this.seats.push({
         // Numbered by position in this list rather than by how many benches
         // happen to exist, so the ids stay put and keep matching the service's
@@ -3738,7 +3814,14 @@ export class FestivalWorld {
     this.positionPopcornProp(carriedProp);
     carriedProp.visible = visitor.state !== 'swimming' && visitor.carriedItem === 'POPCORN';
     group.add(carriedProp);
-    group.position.set(visitor.x, visitor.state === 'swimming' ? AVATAR_SWIM_Y : AVATAR_GROUND_Y, visitor.z);
+    // A new body starts at the height it was reported at, not at street level.
+    group.position.set(
+      visitor.x,
+      typeof visitor.y === 'number' && Number.isFinite(visitor.y)
+        ? visitor.y
+        : (visitor.state === 'swimming' ? AVATAR_SWIM_Y : AVATAR_GROUND_Y),
+      visitor.z,
+    );
     group.rotation.y = visitor.rotation;
     group.userData.remoteVisitor = true;
     group.traverse((child) => child.layers.enable(1));
@@ -3747,7 +3830,11 @@ export class FestivalWorld {
       group,
       badge,
       target: group.position.clone(),
+      previousTarget: group.position.clone(),
+      targetAt: performance.now(),
+      updateInterval: 220,
       targetRotation: visitor.rotation,
+      previousRotation: visitor.rotation,
       state: visitor.state,
       rig,
       carriedProp,
@@ -4069,7 +4156,24 @@ export class FestivalWorld {
       this.player.rotation.x = 0;
       this.player.rotation.z = Math.sin(this.clock.elapsedTime * 2.1) * 0.025;
     } else {
-      this.player.position.y = this.groundHeightAt(this.player.position.x, this.player.position.z);
+      const ground = this.groundHeightAt(this.player.position.x, this.player.position.z);
+      if (this.airborne) {
+        this.verticalVelocity -= GRAVITY * delta;
+        this.player.position.y += this.verticalVelocity * delta;
+        if (this.player.position.y <= ground) {
+          this.player.position.y = ground;
+          this.verticalVelocity = 0;
+          this.airborne = false;
+        }
+      } else if (this.player.position.y - ground > LEDGE_DROP) {
+        // Walked off an edge. The body used to be pinned to whatever floor was
+        // underneath it, so stepping off the deck teleported the attendee to
+        // the street; now they fall.
+        this.airborne = true;
+        this.verticalVelocity = 0;
+      } else {
+        this.player.position.y = ground;
+      }
       this.player.rotation.x = 0;
       this.player.rotation.z = 0;
     }
@@ -4151,9 +4255,26 @@ export class FestivalWorld {
     // through the club's underground walls: one pace past the room, the ground
     // height is the surface again, so the wall's own height band no longer
     // matched and the collider was skipped.
-    const blocked = (x: number, z: number): boolean =>
-      this.staticCollides(x, z, this.groundHeightAt(x, z)) ||
-      this.staticCollides(x, z, this.player.position.y);
+    // Already standing inside something. That is where a STAFF member lands
+    // when they take over a resident stationed behind their own decks: every
+    // direction reads as blocked and there is no way out of the booth. When the
+    // ground underfoot is refused already, movement is allowed so the body can
+    // walk itself clear.
+    const stuck = this.staticCollides(this.player.position.x, this.player.position.z, this.player.position.y) ||
+      this.staticCollides(this.player.position.x, this.player.position.z, this.groundHeightAt(this.player.position.x, this.player.position.z));
+    // A step has to be clear at the height being left as well as the height
+    // being arrived at. Testing only the destination let an attendee walk out
+    // through the club's underground walls: one pace past the room, the ground
+    // height is the surface again, so the wall's own height band no longer
+    // matched and the collider was skipped. In the air only the body's own
+    // height is tested, which is what lets a jump carry over anything the world
+    // has given a top to.
+    const blocked = (x: number, z: number): boolean => {
+      if (stuck) return false;
+      if (this.airborne) return this.staticCollides(x, z, this.player.position.y);
+      return this.staticCollides(x, z, this.groundHeightAt(x, z)) ||
+        this.staticCollides(x, z, this.player.position.y);
+    };
     if (!blocked(nextX, this.player.position.z)) {
       this.player.position.x = nextX;
     }
@@ -4359,21 +4480,27 @@ export class FestivalWorld {
   }
 
   private updateRemoteAvatars(delta: number, elapsed: number): void {
-    const smoothing = 1 - Math.exp(-delta * 8);
     for (const avatar of this.remoteAvatars.values()) {
-      const positionError = avatar.target.distanceTo(avatar.group.position);
-      // Easing looks right for walking and wrong for everything else. Taking a
-      // seat, going down to the basement, coming up to the deck: those move an
-      // attendee further than they could walk between updates, and easing sent
-      // the body gliding through the scenery to catch up, which is most of what
-      // reads as another visitor being in the wrong place.
-      if (positionError > 6) avatar.group.position.copy(avatar.target);
-      else avatar.group.position.lerp(avatar.target, smoothing);
-      const rotationDelta = Math.atan2(
-        Math.sin(avatar.targetRotation - avatar.group.rotation.y),
-        Math.cos(avatar.targetRotation - avatar.group.rotation.y),
-      );
-      avatar.group.rotation.y += rotationDelta * smoothing;
+      const positionError = avatar.previousTarget.distanceTo(avatar.target);
+      // Taking a seat, going down to the basement, coming up to the deck: those
+      // move an attendee further than they could walk between updates, and
+      // playing them out sent the body gliding through the scenery to catch up.
+      if (positionError > 6) {
+        avatar.group.position.copy(avatar.target);
+        avatar.group.rotation.y = avatar.targetRotation;
+      } else {
+        const played = THREE.MathUtils.clamp(
+          (performance.now() - avatar.targetAt) / avatar.updateInterval,
+          0,
+          1,
+        );
+        avatar.group.position.lerpVectors(avatar.previousTarget, avatar.target, played);
+        const rotationDelta = Math.atan2(
+          Math.sin(avatar.targetRotation - avatar.previousRotation),
+          Math.cos(avatar.targetRotation - avatar.previousRotation),
+        );
+        avatar.group.rotation.y = avatar.previousRotation + rotationDelta * played;
+      }
       if (avatar.state === 'swimming') avatar.group.position.y += Math.sin(elapsed * 3.1) * 0.025;
       const moving = avatar.moving || positionError > 0.055;
       avatar.animationPhase += delta * (moving ? 8.2 : 1.4);
@@ -4418,6 +4545,20 @@ export class FestivalWorld {
       rig.rightArm.rotation.z = -0.1;
     } else if (gesture === 'dance') {
       this.poseRigDance(rig);
+      return;
+    } else if (gesture === 'jump') {
+      // A tuck: arms thrown up for the lift, knees drawn in under the body.
+      // Read from the body's own height rather than a clock, so the pose
+      // follows the arc — arms highest off the ground, legs straightening as
+      // the feet come back down.
+      const lift = THREE.MathUtils.clamp(this.verticalVelocity / JUMP_SPEED, -1, 1);
+      rig.leftArm.rotation.x = -2.1 - lift * 0.5;
+      rig.rightArm.rotation.x = -2.1 - lift * 0.5;
+      rig.leftArm.rotation.z = 0.3;
+      rig.rightArm.rotation.z = -0.3;
+      rig.leftLeg.rotation.x = -0.85 + lift * 0.35;
+      rig.rightLeg.rotation.x = -0.4 + lift * 0.2;
+      rig.torso.rotation.x = 0.12;
       return;
     } else if (gesture === 'drink') {
       // Raise the glass to the mouth and tip it back.

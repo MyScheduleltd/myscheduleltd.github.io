@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "capturedAt": "2026-08-18T10:05:56.667Z",
+  "capturedAt": "2026-08-18T11:48:39.252Z",
   "capturedFrom": "https://myschedule-festival.onrender.com",
   "schedule": {
     "palace": {
@@ -12,10 +12,10 @@
         "KD5dGYzk9Bo",
         "qyMIdPT4K4Q"
       ],
-      "currentIndex": 0,
+      "currentIndex": 3,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787047347038
+      "updatedAt": 1787053603484
     },
     "drive-in": {
       "name": "DRIVE-IN 88",
@@ -27,7 +27,7 @@
       "currentIndex": 0,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787047347038
+      "updatedAt": 1787051708483
     },
     "shore": {
       "name": "THE SHORE",
@@ -66,10 +66,10 @@
         "F6XaLvhpGog",
         "xndA9Geu4eg"
       ],
-      "currentIndex": 9,
+      "currentIndex": 19,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787047393860
+      "updatedAt": 1787053557695
     },
     "club": {
       "name": "THE BASEMENT",
@@ -82,10 +82,10 @@
         "XZ9YCADCko8",
         "VRr6fb4kmOk"
       ],
-      "currentIndex": 1,
+      "currentIndex": 0,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787047186668
+      "updatedAt": 1787053480531
     },
     "rooftop": {
       "name": "THE ROOFTOP",
@@ -101,10 +101,10 @@
         "U2-OzFANCiA",
         "KH4HNQBlP7U"
       ],
-      "currentIndex": 2,
+      "currentIndex": 8,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787047487137
+      "updatedAt": 1787053563804
     }
   },
   "customVideos": {
@@ -176,12 +176,12 @@
     ]
   },
   "siteStyle": {
-    "brandFontSize": 21,
-    "brandScaleY": 1,
-    "brandScaleX": 1,
+    "brandFontSize": 41,
+    "brandScaleY": 1.35,
+    "brandScaleX": 0.65,
     "brandOffsetX": 0,
-    "brandOffsetY": 0,
-    "updatedAt": 0
+    "brandOffsetY": 4,
+    "updatedAt": 1787051404114
   },
   "gateBackground": {
     "youtubeId": "Ffli-o0ocT0",
@@ -193,7 +193,7 @@
     "title": "MY THEATRE",
     "titleZh": "我的戲院",
     "intro": "Follow the programme, take a seat, watch the work.",
-    "introZh": "跟著節目表、入座，觀看作品。",
+    "introZh": "跟著節目表、入座,觀看作品。",
     "nameLabel": "ATTENDEE NAME",
     "nameLabelZh": "觀影者名稱",
     "updatedAt": 0
@@ -211,7 +211,7 @@
       "role": "Resident DJ · The Basement",
       "roleZh": "駐場 DJ · 皇宮地下室",
       "introduction": "Resident DJ at The Basement. STAFF have not written this introduction yet — open the booth with a STAFF pass to fill it in.",
-      "introductionZh": "皇宮地下室的駐場 DJ。這段介紹尚未由 STAFF 撰寫，請以 STAFF 通行證開啟後編輯。",
+      "introductionZh": "皇宮地下室的駐場 DJ。這段介紹尚未由 STAFF 撰寫,請以 STAFF 通行證開啟後編輯。",
       "updatedAt": 0
     },
     "DRBEAUTY": {
@@ -220,7 +220,7 @@
       "role": "Rooftop DJ · Artist, rapper, music producer, host, YouTuber",
       "roleZh": "頂樓 DJ · 藝人、饒舌歌手、音樂製作人、主持人、YouTuber",
       "introduction": "Li Baobi — artist, rapper, music producer, host, influencer, YouTuber and party mascot. Opened the 美麗本人 YouTube channel in 2019, known for reaction videos to Mandarin music videos shot with animation and effects, and for putting \"R爆\" and the 醬擠 gesture into everyday use among younger audiences.",
-      "introductionZh": "李包比，藝人、饒舌歌手、音樂製作人、主持人、網美、YouTuber、派對吉祥物。2019 年開立『美麗本人』YouTube 頻道，以浮誇且具幽默感的表演方式對華語歌曲 MV 做 Reaction 影片，加入動畫及特效，並以一句「R爆」跟經典手勢「醬擠」在年輕族群間瘋傳。",
+      "introductionZh": "李包比,藝人、饒舌歌手、音樂製作人、主持人、網美、YouTuber、派對吉祥物。2019 年開立『美麗本人』YouTube 頻道,以浮誇且具幽默感的表演方式對華語歌曲 MV 做 Reaction 影片,加入動畫及特效,並以一句「R爆」跟經典手勢「醬擠」在年輕族群間瘋傳。",
       "updatedAt": 0
     }
   },
@@ -243,7 +243,7 @@
     "title": "MY SCHEDULE",
     "titleZh": "我的檔期",
     "introduction": "This is MY SCHEDULE LTD. We are a creative video production company based in Taipei, Taiwan. Operating globally, we are dedicated to producing top-quality visuals. Our creative team specializes in a variety of video productions, including movies, music videos, television shows, commercials, and occasionally unconventional YouTube content.",
-    "introductionZh": "這是我的檔期有限公司。我們是位於台灣台北的創意影像製作公司，服務遍及全球，致力製作高品質影像。團隊擅長電影、音樂錄影帶、電視節目、廣告，以及不定期的非典型 YouTube 內容。",
+    "introductionZh": "這是我的檔期有限公司。我們是位於台灣台北的創意影像製作公司,服務遍及全球,致力製作高品質影像。團隊擅長電影、音樂錄影帶、電視節目、廣告,以及不定期的非典型 YouTube 內容。",
     "updatedAt": 0
   },
   "trackTempos": {}
