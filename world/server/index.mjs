@@ -722,6 +722,8 @@ const publicVisitor = (visitor) => ({
   originalName: visitor.originalName,
   palette: visitor.palette,
   presence: visitor.presence,
+  hitAt: visitor.hitAt ?? 0,
+  hitBy: visitor.hitBy,
   impersonationOrigin: visitor.impersonationOrigin,
   seatedAt: visitor.seatedAt,
   mutedUntil: visitor.mutedUntil,
@@ -983,7 +985,7 @@ const server = createServer(async (request, response) => {
         moving: payload.moving === true,
         running: payload.running === true,
         venue: isVenue(payload.venue) ? payload.venue : 'shore',
-        gesture: ['wave', 'feed', 'tail-wag', 'dance', 'drink', 'jump', 'stumble', 'offer', 'bow'].includes(payload.gesture) ? payload.gesture : undefined,
+        gesture: ['wave', 'feed', 'tail-wag', 'dance', 'drink', 'jump', 'stumble', 'offer', 'bow', 'punch', 'hit'].includes(payload.gesture) ? payload.gesture : undefined,
         carriedItem: payload.carriedItem === 'MENTOR'
           ? (mentorCarrierId === visitor.id ? 'MENTOR' : undefined)
           : ['POPCORN', 'DRINK', 'HOTDOG', 'PIZZA', 'CHICKEN'].includes(payload.carriedItem)
@@ -994,6 +996,48 @@ const server = createServer(async (request, response) => {
       visitor.lastSeen = Date.now();
       scheduleBroadcast();
       return json(response, 202, { ok: true });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/punch') {
+      if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+      const now = Date.now();
+      // Rate limited so a held mouse button cannot become a machine gun.
+      if (visitor.punchedAt && now - visitor.punchedAt < 600) {
+        return json(response, 200, { ok: true, hit: null });
+      }
+      visitor.punchedAt = now;
+      const from = visitor.presence;
+      // Facing is the rotation the attendee publishes; reach is a little over
+      // an arm's length, and the blow only lands on what is in front of it.
+      const facingX = Math.sin(from.rotation);
+      const facingZ = Math.cos(from.rotation);
+      let struck;
+      let closest = 3.2;
+      for (const other of visitors.values()) {
+        if (other.id === visitor.id) continue;
+        const dx = other.presence.x - from.x;
+        const dz = other.presence.z - from.z;
+        if (Math.abs((other.presence.y ?? 0) - (from.y ?? 0)) > 2.6) continue;
+        const distance = Math.hypot(dx, dz);
+        if (distance > closest || distance < 0.001) continue;
+        if ((dx / distance) * facingX + (dz / distance) * facingZ < 0.55) continue;
+        closest = distance;
+        struck = other;
+      }
+      if (!struck) return json(response, 200, { ok: true, hit: null });
+      struck.hitAt = now;
+      struck.hitBy = visitor.name;
+      // Whatever they were holding, they are not holding it now.
+      let droppedMentor = false;
+      if (mentorCarrierId === struck.id) {
+        mentorCarrierId = null;
+        droppedMentor = true;
+      }
+      if (struck.presence.carriedItem) {
+        struck.presence = { ...struck.presence, carriedItem: undefined };
+      }
+      scheduleBroadcast();
+      return json(response, 200, { ok: true, hit: { id: struck.id, name: struck.name, droppedMentor } });
     }
 
     // A request to the resident DJ. Unlike a private screening this changes

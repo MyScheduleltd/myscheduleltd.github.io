@@ -215,6 +215,8 @@ export class App {
   private serverClockOffset = 0;
   private activeVenue: VenueKey = 'shore';
   private activeSeatId = 'CURRENT SEAT';
+  /** The last blow this attendee took, so one is played out only once. */
+  private lastHitAt = 0;
   private privateProgress?: PrivateProgress;
   private chatChannel: ChatChannel = 'NEARBY';
   private chatMessages: ChatMessage[];
@@ -850,6 +852,21 @@ export class App {
       this.showWorldAlert(action.gesture === 'tail-wag'
         ? (this.language === 'zh-TW' ? `向 ${action.target} 搖尾巴` : `WAGGING TAIL AT ${action.target}`)
         : `${this.language === 'zh-TW' ? '向' : 'WAVING TO'} ${action.target}${this.language === 'zh-TW' ? '揮手' : ''}`);
+      return;
+    }
+    if (action.type === 'punch') {
+      const zh = this.language === 'zh-TW';
+      void this.festivalClient.throwPunch().then((result) => {
+        if (!result.hit) return;
+        this.showWorldAlert(zh ? `打中了 ${result.hit.name}` : `LANDED ONE ON ${result.hit.name}`);
+      });
+      return;
+    }
+    if (action.type === 'punched') {
+      const zh = this.language === 'zh-TW';
+      this.showWorldAlert(action.droppedMentor
+        ? (zh ? '被打中 · MENTOR 掉了' : 'HIT — YOU DROPPED MENTOR')
+        : (zh ? '被打中了' : 'YOU TOOK ONE'));
       return;
     }
     if (action.type === 'donate') {
@@ -1585,6 +1602,12 @@ export class App {
     }
     this.applySiteStyle();
     this.world?.setNpcProfiles(this.npcProfiles);
+    const self = state.visitors.find((visitor) => visitor.id === state.selfId);
+    const hitAt = self?.hitAt ?? 0;
+    if (hitAt && hitAt > this.lastHitAt) {
+      this.lastHitAt = hitAt;
+      this.world?.takeHit();
+    }
     if (state.templeSign) this.world?.setTempleSign(state.templeSign.name, state.templeSign.label);
     this.world?.setSharedMentorCarrier(state.mentorCarrierId, state.selfId);
     const remoteVisitors = state.visitors
@@ -1600,7 +1623,7 @@ export class App {
         state: visitor.presence.state,
         moving: visitor.presence.moving,
         running: visitor.presence.running,
-        gesture: visitor.presence.gesture,
+        gesture: visitor.hitAt && Date.now() - visitor.hitAt < 620 ? 'hit' : visitor.presence.gesture,
         carriedItem: visitor.presence.carriedItem,
         npcId: visitor.npcId,
         originalName: visitor.originalName,
@@ -1856,7 +1879,7 @@ export class App {
           <button class="panel-button" data-camera-toggle>${this.language === 'zh-TW' ? '切換視角鏡頭' : 'TOGGLE PERSPECTIVE CAMERA'}</button>`;
       case 'controls':
         return `
-          <dl class="controls-list"><div><dt>WASD / 方向鍵</dt><dd>${this.language === 'zh-TW' ? '移動／游泳' : 'Move / swim'}</dd></div><div><dt>E</dt><dd>${this.language === 'zh-TW' ? '互動／餵 MENTOR 吃點心' : 'Interact / give MENTOR a treat'}</dd></div><div><dt>SHIFT + E</dt><dd>${this.language === 'zh-TW' ? '抱起 MENTOR' : 'Pick up MENTOR'}</dd></div><div><dt>SHIFT</dt><dd>${this.language === 'zh-TW' ? '奔跑' : 'Run'}</dd></div><div><dt>SPACE</dt><dd>${this.language === 'zh-TW' ? '跳躍（可從高處跳下）' : 'Jump — and drop from high places'}</dd></div><div><dt>B</dt><dd>${this.language === 'zh-TW' ? '跳舞' : 'Dance'}</dd></div><div><dt>O</dt><dd>${this.language === 'zh-TW' ? '供養／佈施：在神像前或 NPC 旁' : 'Make an offering — at the altar or beside an NPC'}</dd></div><div><dt>T</dt><dd>${this.language === 'zh-TW' ? '切換鏡頭' : 'Change camera'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滑鼠拖曳' : 'DRAG MOUSE'}</dt><dd>${this.language === 'zh-TW' ? '轉動視角' : 'Turn the view'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滾輪／觸控板縮放' : 'WHEEL / PINCH'}</dt><dd>${this.language === 'zh-TW' ? '鏡頭遠近' : 'Move the camera in and out'}</dd></div><div><dt>ENTER</dt><dd>${this.language === 'zh-TW' ? '開啟聊天' : 'Open chat'}</dd></div><div><dt>PASS</dt><dd>${this.language === 'zh-TW' ? '開啟選單' : 'Open menu'}</dd></div></dl>`;
+          <dl class="controls-list"><div><dt>WASD / 方向鍵</dt><dd>${this.language === 'zh-TW' ? '移動／游泳' : 'Move / swim'}</dd></div><div><dt>E</dt><dd>${this.language === 'zh-TW' ? '互動／餵 MENTOR 吃點心' : 'Interact / give MENTOR a treat'}</dd></div><div><dt>SHIFT + E</dt><dd>${this.language === 'zh-TW' ? '抱起 MENTOR' : 'Pick up MENTOR'}</dd></div><div><dt>SHIFT</dt><dd>${this.language === 'zh-TW' ? '奔跑' : 'Run'}</dd></div><div><dt>SPACE</dt><dd>${this.language === 'zh-TW' ? '跳躍（可從高處跳下）' : 'Jump — and drop from high places'}</dd></div><div><dt>B</dt><dd>${this.language === 'zh-TW' ? '跳舞' : 'Dance'}</dd></div><div><dt>O</dt><dd>${this.language === 'zh-TW' ? '供養／佈施：在神像前或 NPC 旁' : 'Make an offering — at the altar or beside an NPC'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滑鼠左鍵' : 'LEFT CLICK'}</dt><dd>${this.language === 'zh-TW' ? '出拳（被打中會鬆手放開 MENTOR）' : 'Throw a punch — anyone hit drops MENTOR'}</dd></div><div><dt>T</dt><dd>${this.language === 'zh-TW' ? '切換鏡頭' : 'Change camera'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滑鼠拖曳' : 'DRAG MOUSE'}</dt><dd>${this.language === 'zh-TW' ? '轉動視角' : 'Turn the view'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滾輪／觸控板縮放' : 'WHEEL / PINCH'}</dt><dd>${this.language === 'zh-TW' ? '鏡頭遠近' : 'Move the camera in and out'}</dd></div><div><dt>ENTER</dt><dd>${this.language === 'zh-TW' ? '開啟聊天' : 'Open chat'}</dd></div><div><dt>PASS</dt><dd>${this.language === 'zh-TW' ? '開啟選單' : 'Open menu'}</dd></div></dl>`;
       case 'contact':
         return `
           <div class="contact-list">

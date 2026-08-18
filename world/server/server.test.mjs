@@ -1000,3 +1000,52 @@ test('staff letter the temple sign and everyone is told', async () => {
   });
   assert.equal(unauthorised.status, 401, 'and only STAFF may letter it');
 });
+
+test('a punch lands on whoever is in front of it, and shakes MENTOR loose', async () => {
+  const thrower = await join('THROWER');
+  const target = await join('TARGET');
+  const stand = async (session, x, z, rotation) => {
+    const response = await fetch(`${baseUrl}/api/presence`, {
+      method: 'POST',
+      headers: auth(session),
+      body: JSON.stringify({
+        x, y: 0.28, z, rotation, location: 'MY SQUARE',
+        state: 'walking', moving: false, running: false, venue: 'shore',
+      }),
+    });
+    assert.equal(response.status, 202);
+  };
+
+  // Face to face, an arm's length apart, the thrower looking at the target.
+  await stand(thrower, 0, 0, 0);
+  await stand(target, 0, 2, 0);
+  const landed = await (await fetch(`${baseUrl}/api/punch`, { method: 'POST', headers: auth(thrower) })).json();
+  assert.equal(landed.hit?.name, 'TARGET', 'the blow finds whoever is in front of it');
+
+  // Turned away from them it finds nobody, however close they are standing.
+  await stand(thrower, 0, 0, Math.PI);
+  await new Promise((resolve) => setTimeout(resolve, 650));
+  const missed = await (await fetch(`${baseUrl}/api/punch`, { method: 'POST', headers: auth(thrower) })).json();
+  assert.equal(missed.hit, null, 'and nobody behind it');
+
+  // A held button cannot become a machine gun.
+  await stand(thrower, 0, 0, 0);
+  await new Promise((resolve) => setTimeout(resolve, 650));
+  await fetch(`${baseUrl}/api/punch`, { method: 'POST', headers: auth(thrower) });
+  const tooSoon = await (await fetch(`${baseUrl}/api/punch`, { method: 'POST', headers: auth(thrower) })).json();
+  assert.equal(tooSoon.hit, null, 'a second blow straight after lands nothing');
+
+  // Carrying MENTOR and taking one: MENTOR is let go of.
+  await fetch(`${baseUrl}/api/mentor/carry`, { method: 'POST', headers: auth(target) }).catch(() => undefined);
+  await new Promise((resolve) => setTimeout(resolve, 650));
+  const struck = await (await fetch(`${baseUrl}/api/punch`, { method: 'POST', headers: auth(thrower) })).json();
+  assert.equal(struck.hit?.name, 'TARGET');
+
+  // And everyone watching is told, so the recoil is not the victim's word alone.
+  const state = await (await fetch(`${baseUrl}/api/admin/state`, {
+    headers: { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173' },
+  })).json();
+  const hit = state.visitors.find((entry) => entry.name === 'TARGET');
+  assert.ok(hit.hitAt > 0, 'the blow is published with the rest of the state');
+  assert.equal(hit.hitBy, 'THROWER');
+});

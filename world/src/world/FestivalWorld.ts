@@ -9,7 +9,7 @@ import { createMentorDog, type MentorDogRig } from './MentorDog';
 export type GraphicsMode = 'normal' | 'lite';
 export type CameraMode = 'follow' | 'perspective' | 'first-person' | 'screening';
 export type PlayerState = 'walking' | 'seated' | 'swimming';
-export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink' | 'jump' | 'stumble' | 'offer' | 'bow';
+export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink' | 'jump' | 'stumble' | 'offer' | 'bow' | 'punch' | 'hit';
 export type CarriedItem = 'POPCORN' | 'MENTOR' | 'DRINK' | 'HOTDOG' | 'PIZZA' | 'CHICKEN';
 export const NPC_NAMES = ['MENTOR', 'KENNY', 'NUNO', 'MICHAEL', 'SEBINE', 'ZC', 'LOUI', 'MINYUN', 'VIOLA', 'XIEHGAN', 'DRBEAUTY'] as const;
 export type NpcId = string;
@@ -55,7 +55,9 @@ export type WorldAction =
   | { type: 'drinkOrdered' }
   | { type: 'ate' }
   | { type: 'drank'; drinks: number; drunk: boolean }
-  | { type: 'donate'; target?: string; deity?: string };
+  | { type: 'donate'; target?: string; deity?: string }
+  | { type: 'punch' }
+  | { type: 'punched'; droppedMentor: boolean };
 
 export interface AvatarPalette {
   skin: string;
@@ -706,6 +708,9 @@ export class FestivalWorld {
   private templeSignText = { name: '美麗本人', label: 'THE TEMPLE' };
   private templeAltar?: { x: number; z: number };
   private lastDonationAt = 0;
+  private lastPunchAt = 0;
+  private punchPointerX = 0;
+  private punchPointerY = 0;
   private verticalVelocity = 0;
   private airborne = false;
   private skating = false;
@@ -1908,6 +1913,8 @@ export class FestivalWorld {
     this.cameraPointerId = event.pointerId;
     this.cameraPointerX = event.clientX;
     this.cameraPointerY = event.clientY;
+    this.punchPointerX = event.clientX;
+    this.punchPointerY = event.clientY;
     this.canvas.classList.add('is-camera-dragging');
     this.canvas.setPointerCapture?.(event.pointerId);
   };
@@ -1976,8 +1983,36 @@ export class FestivalWorld {
 
   private readonly cameraPointerUp = (event: PointerEvent): void => {
     if (event.pointerId !== this.cameraPointerId) return;
+    // The same button turns the camera, so only a click that stayed put counts
+    // as a punch — a drag is someone looking around.
+    const travelled = Math.hypot(event.clientX - this.punchPointerX, event.clientY - this.punchPointerY);
+    if (event.button === 0 && travelled < 6) this.punch();
     this.cameraPointerReset();
   };
+
+  /** A jab. Whoever is in front of it is told by the service, not by us. */
+  private punch(): void {
+    if (this.playerState === 'seated' || this.playerState === 'swimming') return;
+    if (this.isMentorControlLocked()) return;
+    const now = performance.now();
+    if (now - this.lastPunchAt < 620) return;
+    this.lastPunchAt = now;
+    this.dancing = false;
+    this.playerGesture = 'punch';
+    this.playerGestureUntil = now + 420;
+    this.onAction({ type: 'punch' });
+  }
+
+  /** Taking one: the body recoils, and anything carried is let go of. */
+  takeHit(): void {
+    const now = performance.now();
+    this.playerGesture = 'hit';
+    this.playerGestureUntil = now + 620;
+    this.dancing = false;
+    const droppedMentor = this.carriedItem === 'MENTOR';
+    if (droppedMentor) this.putDownMentor();
+    this.onAction({ type: 'punched', droppedMentor });
+  }
 
   /** Releasing focus mid-stride would otherwise leave the avatar running. */
   private readonly clearRunning = (): void => {
@@ -5089,6 +5124,32 @@ export class FestivalWorld {
       rig.rightArm.rotation.z = -0.34;
       rig.leftLeg.rotation.x = 0;
       rig.rightLeg.rotation.x = 0;
+      return;
+    } else if (gesture === 'punch') {
+      // A straight right thrown from the shoulder, the left held up as a guard,
+      // the body turned into it.
+      const throwArc = Math.sin(THREE.MathUtils.clamp(phase * 3.4, 0, Math.PI));
+      rig.torso.rotation.y = -0.34 * throwArc;
+      rig.rightArm.rotation.x = -1.55 * throwArc;
+      rig.rightArm.rotation.z = -0.16;
+      rig.leftArm.rotation.x = -0.95;
+      rig.leftArm.rotation.z = 0.3;
+      rig.head.rotation.y = -0.2 * throwArc;
+      rig.leftLeg.rotation.x = -0.16;
+      rig.rightLeg.rotation.x = 0.16;
+      return;
+    } else if (gesture === 'hit') {
+      // Taking one: head snapped back, body folded away from it, arms flung up.
+      const recoil = Math.max(0, Math.sin(THREE.MathUtils.clamp(phase * 2.6, 0, Math.PI)));
+      rig.torso.rotation.x = -0.34 * recoil;
+      rig.torso.rotation.y = 0.26 * recoil;
+      rig.head.rotation.x = -0.44 * recoil;
+      rig.leftArm.rotation.x = -1.2 * recoil;
+      rig.rightArm.rotation.x = -1.05 * recoil;
+      rig.leftArm.rotation.z = 0.6 * recoil;
+      rig.rightArm.rotation.z = -0.5 * recoil;
+      rig.leftLeg.rotation.x = 0.22 * recoil;
+      rig.rightLeg.rotation.x = -0.14 * recoil;
       return;
     } else if (gesture === 'drink') {
       // Raise the glass to the mouth and tip it back.

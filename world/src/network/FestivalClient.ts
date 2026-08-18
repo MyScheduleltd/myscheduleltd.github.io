@@ -23,6 +23,8 @@ export interface NetworkPresence {
 export interface NetworkVisitor {
   id: string;
   name: string;
+  hitAt?: number;
+  hitBy?: string;
   originalName: string;
   palette: AvatarPalette;
   presence: NetworkPresence;
@@ -344,6 +346,15 @@ export class FestivalClient {
     this.lastPresence = payload;
     this.lastPresenceAt = now;
     await this.request('/api/presence', { method: 'POST', body: payload }, false);
+  }
+
+  async throwPunch(): Promise<{ hit?: { id: string; name: string; droppedMentor: boolean } | null }> {
+    if (!this.session || this.closed) return {};
+    try {
+      return await this.request('/api/punch', { method: 'POST' }) as { hit?: { id: string; name: string; droppedMentor: boolean } | null };
+    } catch {
+      return {};
+    }
   }
 
   async claimSeat(seatId: string): Promise<{ ok: boolean; message?: string }> {
