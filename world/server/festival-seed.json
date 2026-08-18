@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "capturedAt": "2026-08-18T14:46:51.416Z",
+  "capturedAt": "2026-08-18T14:53:18.683Z",
   "capturedFrom": "https://myschedule-festival.onrender.com",
   "schedule": {
     "palace": {
@@ -12,13 +12,13 @@
         "KD5dGYzk9Bo",
         "qyMIdPT4K4Q"
       ],
-      "currentIndex": 0,
+      "currentIndex": 2,
       "mode": "scheduled-loop",
       "special": {
         "youtubeId": "sc6P0k-PYcs",
         "startsAt": 1787149260000
       },
-      "updatedAt": 1787064291134
+      "updatedAt": 1787064576977
     },
     "drive-in": {
       "name": "DRIVE-IN 88",
@@ -69,10 +69,10 @@
         "F6XaLvhpGog",
         "xndA9Geu4eg"
       ],
-      "currentIndex": 29,
+      "currentIndex": 30,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787064400057
+      "updatedAt": 1787064641354
     },
     "club": {
       "name": "THE BASEMENT",
@@ -85,10 +85,10 @@
         "XZ9YCADCko8",
         "VRr6fb4kmOk"
       ],
-      "currentIndex": 1,
+      "currentIndex": 0,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787063421167
+      "updatedAt": 1787064715226
     },
     "rooftop": {
       "name": "THE ROOFTOP",
@@ -104,10 +104,10 @@
         "U2-OzFANCiA",
         "KH4HNQBlP7U"
       ],
-      "currentIndex": 6,
+      "currentIndex": 7,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787064371945
+      "updatedAt": 1787064572777
     }
   },
   "customVideos": {
@@ -244,6 +244,19 @@
     "VIOLA": "VIOLA",
     "XIEHGAN": "XIEH GAN",
     "DRBEAUTY": "DR.BEAUTY"
+  },
+  "npcTitles": {
+    "MENTOR": "Video Editor",
+    "KENNY": "Director",
+    "NUNO": "Sound Engineer",
+    "MICHAEL": "Director",
+    "SEBINE": "Director",
+    "ZC": "Director",
+    "LOUI": "Director",
+    "MINYUN": "Director Manager",
+    "VIOLA": "Project Manager",
+    "XIEHGAN": "Boss",
+    "DRBEAUTY": "Artist"
   },
   "pamphlet": {
     "youtubeId": "Ffli-o0ocT0",

@@ -679,6 +679,7 @@ export class FestivalWorld {
   private readonly cameraToProjector = new THREE.Vector3();
   private readonly clock = new THREE.Clock();
   private readonly projectorClipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 45.68);
+  private readonly projectorCornerView = new THREE.Vector3();
   private playerRig?: AvatarRig;
   private originalPlayerIdleRig?: AvatarRig;
   private programmeBoardMaterial?: THREE.MeshStandardMaterial;
@@ -2060,7 +2061,14 @@ export class FestivalWorld {
     let minY = viewportHeight;
     let maxX = 0;
     let maxY = 0;
+    let behindCamera = false;
     for (const corner of this.projectorCorners) {
+      // A corner behind the camera comes back through project() with its sign
+      // flipped, and the box built from it is nonsense — usually far too small.
+      // That is the hole the panel was painting through: outside this box
+      // nothing is redrawn over it, so it showed raw.
+      this.projectorCornerView.copy(corner).applyMatrix4(this.camera.matrixWorldInverse);
+      if (this.projectorCornerView.z > -0.05) behindCamera = true;
       corner.project(this.camera);
       const pixelX = (corner.x * 0.5 + 0.5) * viewportWidth;
       const pixelY = (corner.y * 0.5 + 0.5) * viewportHeight;
@@ -2069,7 +2077,26 @@ export class FestivalWorld {
       maxX = Math.max(maxX, pixelX);
       maxY = Math.max(maxY, pixelY);
     }
-    const padding = 8;
+    // The browser is the authority on where it actually paints the panel, so
+    // the box is never allowed to be smaller than the element's own rectangle.
+    const panel = this.projectors.get(venue)?.element.getBoundingClientRect();
+    if (panel && panel.width > 0 && panel.height > 0) {
+      minX = Math.min(minX, panel.left);
+      maxX = Math.max(maxX, panel.right);
+      // The element's rectangle counts down the page; the scissor counts up.
+      minY = Math.min(minY, viewportHeight - panel.bottom);
+      maxY = Math.max(maxY, viewportHeight - panel.top);
+    }
+    if (behindCamera) {
+      // Standing close enough that part of the screen is beside or behind the
+      // viewer. Nothing can be trusted about the corners then, so cover the
+      // whole viewport rather than guess a box and leave a hole in it.
+      minX = 0;
+      minY = 0;
+      maxX = viewportWidth;
+      maxY = viewportHeight;
+    }
+    const padding = 24;
     const left = Math.max(0, Math.floor(minX - padding));
     const bottom = Math.max(0, Math.floor(minY - padding));
     const right = Math.min(viewportWidth, Math.ceil(maxX + padding));

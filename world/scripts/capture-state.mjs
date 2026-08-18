@@ -59,6 +59,9 @@ const seed = {
   templeSign: live.templeSign,
   djProfiles: live.djProfiles,
   npcNames: live.npcNames,
+  // Job titles live on the profiles, not beside the names, and were being left
+  // behind — STAFF renaming a resident's title saw it reset on the next deploy.
+  npcTitles: Object.fromEntries((live.npcProfiles ?? []).map((profile) => [profile.id, profile.title])),
   pamphlet: live.pamphlet,
   trackTempos: live.trackTempos,
 };
