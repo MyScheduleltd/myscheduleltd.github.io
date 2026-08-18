@@ -238,6 +238,8 @@ const AVATAR_SWIM_Y = -2.08;
 // The underside of the avatar's torso, measured from its group origin. Put the
 // origin this far below a seat pad and the avatar rests on it.
 const AVATAR_SEAT_DROP = 1.09;
+/** The one tilt the camera holds while swimming. Turning is still free. */
+const SWIM_CAMERA_PITCH = 0.2;
 
 const clubLightColors = [0xff2f6d, 0x38e0ff, 0xffd23f, 0x8c4bff, 0x2fff9e, 0xff6a1f];
 // The street elevation is kept to the house colours: pink and orange.
@@ -1532,21 +1534,11 @@ export class FestivalWorld {
       // A bar stool is not a seat in an auditorium: it keeps the orbit camera,
       // so dragging still looks around the room rather than locking onto a
       // screen nobody sat down to watch.
-      if (seat.kind === 'screening' || seat.kind === undefined) this.cameraMode = 'screening';
+      this.cameraMode = 'screening';
+      this.screeningOrbit.yaw = 0;
+      this.screeningOrbit.pitch = 0;
       this.player.position.copy(this.seatAnchor(seat));
       this.player.rotation.y = seat.facing ?? Math.PI;
-      if (seat.kind === 'bar' || seat.kind === 'bench') {
-        // Orbit round to whichever side of the seat the screen is on, and sit
-        // the camera low enough to take it in.
-        const screen = venueScreens[seat.venue].position;
-        this.cameraOrbit.follow.yaw = Math.atan2(
-          this.player.position.x - screen[0],
-          this.player.position.z - screen[2],
-        );
-        this.cameraOrbit.follow.pitch = 0.06;
-        this.cameraOrbit.perspective.yaw = this.cameraOrbit.follow.yaw;
-        this.cameraOrbit.perspective.pitch = 0.06;
-      }
       this.onAction({ type: 'seated', seatId: seat.id, venue: seat.venue });
       return;
     }
@@ -1741,6 +1733,13 @@ export class FestivalWorld {
     // cameras sit above the avatar and must stay there — except on a seat,
     // where the screen is high on a far wall and a camera pinned above the
     // eyeline can never be tilted up far enough to find it.
+    // In the water the view is held at one height and only turns. Tilting the
+    // eye down towards the surface is what made the sea fill the whole frame,
+    // so the pitch is not the attendee's to change while swimming.
+    if (this.playerState === 'swimming') {
+      orbit.pitch = SWIM_CAMERA_PITCH;
+      return;
+    }
     const lowestPitch = this.playerState === 'seated' ? -0.42 : 0.12;
     orbit.pitch = this.cameraMode === 'first-person'
       ? THREE.MathUtils.clamp(orbit.pitch + deltaY * 0.0035, -0.85, 0.95)
@@ -3858,7 +3857,10 @@ export class FestivalWorld {
     // Height of the eye above the water, not the avatar's: the camera is what
     // decides how much of the screen these sheets cover.
     const eyeAboveWater = this.camera.position.y - 0.14;
-    const nearSurface = eyeAboveWater < 2.6 && this.camera.position.z < -40;
+    // Only when the eye is genuinely grazing the surface. The swimming camera
+    // is now held well above that, so the sea keeps all of its sheets — and its
+    // glitter — at the height an attendee actually sees it from.
+    const nearSurface = eyeAboveWater < 1.5 && this.camera.position.z < -40;
     if (this.waterVolume) {
       // The body below the surface. From above it gives the sea its depth;
       // from the waterline it is edge-on and doubles the fill for nothing,
@@ -4567,8 +4569,16 @@ export class FestivalWorld {
   private updateCamera(delta: number, _elapsed: number): void {
     const cameraTarget = this.player.position.clone();
     if (this.cameraMode === 'screening') {
-      cameraTarget.set(this.player.position.x, 3.6, this.player.position.z + 3.6);
       const venue = this.activeSeat?.venue ?? this.screeningVenue();
+      // Height is relative to the seat, not an absolute 3.6: the club's floor
+      // is sixteen units down, so a fixed height put the camera above the roof.
+      // The side comes from which way the screen faces, or the camera ends up
+      // behind it in the venues whose audience sits to the north.
+      cameraTarget.set(
+        this.player.position.x,
+        this.player.position.y + 3.3,
+        this.player.position.z + 2.6 * venueScreens[venue].facing,
+      );
       this.lookTarget.set(...venueScreens[venue].target);
       const viewingDistance = Math.max(9, this.lookTarget.distanceTo(cameraTarget));
       const forward = this.lookTarget.clone().sub(cameraTarget).normalize();
@@ -4662,10 +4672,10 @@ export class FestivalWorld {
   private confineCameraOverWater(cameraTarget: THREE.Vector3): void {
     if (this.playerState !== 'swimming') return;
     const waterline = 0.14;
-    cameraTarget.y = THREE.MathUtils.clamp(cameraTarget.y, waterline + 1.6, waterline + 5.2);
-    // Aim slightly down at the swimmer rather than out along the surface, so
-    // the sea reads as a floor under the camera instead of filling the frame.
-    this.lookTarget.y = Math.min(this.lookTarget.y, cameraTarget.y - 0.9);
+    cameraTarget.y = THREE.MathUtils.clamp(cameraTarget.y, waterline + 2.2, waterline + 3.6);
+    // The horizon stays where it is. Turning is free; the height and the tilt
+    // are fixed, which is the view that holds its frame rate over open water.
+    this.lookTarget.y = waterline + 1.15;
   }
 
   private confineCameraToClub(cameraTarget: THREE.Vector3): void {
@@ -4692,7 +4702,9 @@ export class FestivalWorld {
       ceiling = 4.2;
     }
 
-    if (this.cameraMode === 'first-person') return;
+    // A screening view is aimed at the screen on purpose; pulling its target
+    // back onto the attendee is what left the bar looking at the counter.
+    if (this.cameraMode === 'first-person' || this.cameraMode === 'screening') return;
     const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
     const dirX = Math.sin(orbit.yaw);
     const dirZ = Math.cos(orbit.yaw);
@@ -4932,6 +4944,8 @@ export class FestivalWorld {
     const wasSwimming = this.playerState === 'swimming';
     if (active && !wasSwimming) {
       this.playerState = 'swimming';
+      this.cameraOrbit.follow.pitch = SWIM_CAMERA_PITCH;
+      this.cameraOrbit.perspective.pitch = SWIM_CAMERA_PITCH;
       this.setOutfit(true);
       const stowedPopcorn = this.carriedItem === 'POPCORN';
       if (stowedPopcorn) {
