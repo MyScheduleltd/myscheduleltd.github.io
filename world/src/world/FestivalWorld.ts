@@ -829,6 +829,11 @@ export class FestivalWorld {
     // trackpad pinch arrives as a wheel event the browser would otherwise use
     // to zoom the whole document.
     this.canvas.addEventListener('wheel', this.cameraWheel, { passive: false });
+    // The browser offers its own menu over a canvas — save image, copy image,
+    // inspect — and on a trackpad it takes very little for a click to be read
+    // as the one that opens it. In a world you are playing, that menu is never
+    // what was wanted, and it swallows the punch.
+    this.canvas.addEventListener('contextmenu', this.suppressContextMenu);
     window.addEventListener('pointermove', this.cameraPointerMove);
     window.addEventListener('pointerup', this.cameraPointerUp);
     window.addEventListener('pointercancel', this.cameraPointerUp);
@@ -851,6 +856,7 @@ export class FestivalWorld {
     window.removeEventListener('message', this.projectorMessage);
     this.canvas.removeEventListener('pointerdown', this.cameraPointerDown);
     this.canvas.removeEventListener('wheel', this.cameraWheel);
+    this.canvas.removeEventListener('contextmenu', this.suppressContextMenu);
     window.removeEventListener('pointermove', this.cameraPointerMove);
     window.removeEventListener('pointerup', this.cameraPointerUp);
     window.removeEventListener('pointercancel', this.cameraPointerUp);
@@ -1926,8 +1932,14 @@ export class FestivalWorld {
     this.keys.delete(event.key.toLowerCase());
   };
 
+  private readonly suppressContextMenu = (event: Event): void => {
+    event.preventDefault();
+  };
+
   private readonly cameraPointerDown = (event: PointerEvent): void => {
-    if (event.pointerType !== 'mouse' || event.button !== 0) return;
+    // Pen and touch turn the camera and throw punches too; only the mouse's
+    // other buttons are left alone.
+    if (event.button !== 0) return;
     event.preventDefault();
     this.cameraDragging = true;
     this.cameraPointerId = event.pointerId;
@@ -2006,7 +2018,7 @@ export class FestivalWorld {
     // The same button turns the camera, so only a click that stayed put counts
     // as a punch — a drag is someone looking around.
     const travelled = Math.hypot(event.clientX - this.punchPointerX, event.clientY - this.punchPointerY);
-    if (event.button === 0 && travelled < 6) this.punch();
+    if (event.button === 0 && travelled < 8) this.punch();
     this.cameraPointerReset();
   };
 
