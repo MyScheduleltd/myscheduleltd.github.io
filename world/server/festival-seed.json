@@ -1,0 +1,250 @@
+{
+  "version": 1,
+  "capturedAt": "2026-08-18T10:05:56.667Z",
+  "capturedFrom": "https://myschedule-festival.onrender.com",
+  "schedule": {
+    "palace": {
+      "name": "THE PALACE",
+      "subtitle": "COMMERCIAL",
+      "order": [
+        "5pSwEJw53Y8",
+        "jeqkAGA_3n0",
+        "KD5dGYzk9Bo",
+        "qyMIdPT4K4Q"
+      ],
+      "currentIndex": 0,
+      "mode": "scheduled-loop",
+      "special": null,
+      "updatedAt": 1787047347038
+    },
+    "drive-in": {
+      "name": "DRIVE-IN 88",
+      "subtitle": "TELEVISION",
+      "order": [
+        "TmvklnJYWA4",
+        "PrE9j9r0Ewo"
+      ],
+      "currentIndex": 0,
+      "mode": "scheduled-loop",
+      "special": null,
+      "updatedAt": 1787047347038
+    },
+    "shore": {
+      "name": "THE SHORE",
+      "subtitle": "MUSIC VIDEO",
+      "order": [
+        "jiawzYgfkuI",
+        "ZIvWrKYdMQE",
+        "SRbsIUYB0dc",
+        "i5YVMS1noIo",
+        "Df9lbCJNhGU",
+        "DJmHJB-hHC8",
+        "cgnPinA7D8U",
+        "QvydPXEfk0M",
+        "tsahcnnUzMw",
+        "QuNc8b7DxyY",
+        "JfS8YZD5eSA",
+        "FcCtOYGxf1Y",
+        "HTRQ0n4yjfs",
+        "fKd-qQto3gk",
+        "yOEpwDu7OB4",
+        "XPQzKjisTbI",
+        "tRa3fOlnN7k",
+        "fIXTRr22_II",
+        "F5XjLbMTo38",
+        "hQkQ2AzdNaY",
+        "smFGZKPS5yc",
+        "U1G4lKnYf4o",
+        "YgNGl442hgg",
+        "0Yi4WAR-9hM",
+        "9eOQsGYs70c",
+        "NDDa_AV8cks",
+        "HqhQR3adbok",
+        "O2EZ6Tys0x8",
+        "Et-TvF_4fa4",
+        "bnOjr-SMTbc",
+        "F6XaLvhpGog",
+        "xndA9Geu4eg"
+      ],
+      "currentIndex": 9,
+      "mode": "scheduled-loop",
+      "special": null,
+      "updatedAt": 1787047393860
+    },
+    "club": {
+      "name": "THE BASEMENT",
+      "subtitle": "XIEH GAN",
+      "order": [
+        "m0RKB7HGHIo",
+        "TH4iVLVqXAc",
+        "De33mCT9OW0",
+        "ufwVeLYiqo0",
+        "XZ9YCADCko8",
+        "VRr6fb4kmOk"
+      ],
+      "currentIndex": 1,
+      "mode": "scheduled-loop",
+      "special": null,
+      "updatedAt": 1787047186668
+    },
+    "rooftop": {
+      "name": "THE ROOFTOP",
+      "subtitle": "DR.BEAUTY",
+      "order": [
+        "Wf9_Z7b5wwo",
+        "De33mCT9OW0",
+        "rMicadJVzH8",
+        "TH4iVLVqXAc",
+        "lhAvlkYlFc4",
+        "tLvj_eC8tQQ",
+        "hXhatbZ5j4k",
+        "U2-OzFANCiA",
+        "KH4HNQBlP7U"
+      ],
+      "currentIndex": 2,
+      "mode": "scheduled-loop",
+      "special": null,
+      "updatedAt": 1787047487137
+    }
+  },
+  "customVideos": {
+    "palace": [],
+    "drive-in": [],
+    "shore": [],
+    "club": [
+      {
+        "id": "custom-club-ufwVeLYiqo0",
+        "title": "Editing",
+        "titleZh": "剪輯",
+        "creator": "謝乾",
+        "year": 2025,
+        "category": "ORIGINALS",
+        "venue": "club",
+        "youtubeId": "ufwVeLYiqo0",
+        "embedUrl": "https://www.youtube-nocookie.com/embed/ufwVeLYiqo0",
+        "sourceUrl": "https://www.youtube.com/watch?v=ufwVeLYiqo0"
+      },
+      {
+        "id": "custom-club-XZ9YCADCko8",
+        "title": "Key Light",
+        "titleZh": "燈光",
+        "creator": "謝乾",
+        "year": 2026,
+        "category": "ORIGINALS",
+        "venue": "club",
+        "youtubeId": "XZ9YCADCko8",
+        "embedUrl": "https://www.youtube-nocookie.com/embed/XZ9YCADCko8",
+        "sourceUrl": "https://www.youtube.com/watch?v=XZ9YCADCko8"
+      },
+      {
+        "id": "custom-club-m0RKB7HGHIo",
+        "title": "Change the game / Key Light",
+        "titleZh": "Change the game / 燈光",
+        "creator": "謝乾",
+        "year": 2026,
+        "category": "ORIGINALS",
+        "venue": "club",
+        "youtubeId": "m0RKB7HGHIo",
+        "embedUrl": "https://www.youtube-nocookie.com/embed/m0RKB7HGHIo",
+        "sourceUrl": "https://www.youtube.com/watch?v=m0RKB7HGHIo"
+      },
+      {
+        "id": "custom-club-VRr6fb4kmOk",
+        "title": "Color Grading",
+        "titleZh": "調色",
+        "creator": "謝乾",
+        "year": 2022,
+        "category": "ORIGINALS",
+        "venue": "club",
+        "youtubeId": "VRr6fb4kmOk",
+        "embedUrl": "https://www.youtube-nocookie.com/embed/VRr6fb4kmOk",
+        "sourceUrl": "https://www.youtube.com/watch?v=VRr6fb4kmOk"
+      }
+    ],
+    "rooftop": [
+      {
+        "id": "custom-rooftop-Wf9_Z7b5wwo",
+        "title": "Get Down",
+        "creator": "Michael.",
+        "year": 2026,
+        "category": "ORIGINALS",
+        "venue": "rooftop",
+        "youtubeId": "Wf9_Z7b5wwo",
+        "embedUrl": "https://www.youtube-nocookie.com/embed/Wf9_Z7b5wwo",
+        "sourceUrl": "https://www.youtube.com/watch?v=Wf9_Z7b5wwo"
+      }
+    ]
+  },
+  "siteStyle": {
+    "brandFontSize": 21,
+    "brandScaleY": 1,
+    "brandScaleX": 1,
+    "brandOffsetX": 0,
+    "brandOffsetY": 0,
+    "updatedAt": 0
+  },
+  "gateBackground": {
+    "youtubeId": "Ffli-o0ocT0",
+    "updatedAt": 0
+  },
+  "gateCopy": {
+    "kicker": "BETA",
+    "kickerZh": "BETA",
+    "title": "MY THEATRE",
+    "titleZh": "我的戲院",
+    "intro": "Follow the programme, take a seat, watch the work.",
+    "introZh": "跟著節目表、入座，觀看作品。",
+    "nameLabel": "ATTENDEE NAME",
+    "nameLabelZh": "觀影者名稱",
+    "updatedAt": 0
+  },
+  "shopLink": {
+    "url": "",
+    "label": "THE POP-UP STORE",
+    "labelZh": "快閃服飾店",
+    "updatedAt": 0
+  },
+  "djProfiles": {
+    "XIEHGAN": {
+      "id": "XIEHGAN",
+      "name": "XIEH GAN",
+      "role": "Resident DJ · The Basement",
+      "roleZh": "駐場 DJ · 皇宮地下室",
+      "introduction": "Resident DJ at The Basement. STAFF have not written this introduction yet — open the booth with a STAFF pass to fill it in.",
+      "introductionZh": "皇宮地下室的駐場 DJ。這段介紹尚未由 STAFF 撰寫，請以 STAFF 通行證開啟後編輯。",
+      "updatedAt": 0
+    },
+    "DRBEAUTY": {
+      "id": "DRBEAUTY",
+      "name": "DR.BEAUTY",
+      "role": "Rooftop DJ · Artist, rapper, music producer, host, YouTuber",
+      "roleZh": "頂樓 DJ · 藝人、饒舌歌手、音樂製作人、主持人、YouTuber",
+      "introduction": "Li Baobi — artist, rapper, music producer, host, influencer, YouTuber and party mascot. Opened the 美麗本人 YouTube channel in 2019, known for reaction videos to Mandarin music videos shot with animation and effects, and for putting \"R爆\" and the 醬擠 gesture into everyday use among younger audiences.",
+      "introductionZh": "李包比，藝人、饒舌歌手、音樂製作人、主持人、網美、YouTuber、派對吉祥物。2019 年開立『美麗本人』YouTube 頻道，以浮誇且具幽默感的表演方式對華語歌曲 MV 做 Reaction 影片，加入動畫及特效，並以一句「R爆」跟經典手勢「醬擠」在年輕族群間瘋傳。",
+      "updatedAt": 0
+    }
+  },
+  "npcNames": {
+    "MENTOR": "MENTOR",
+    "KENNY": "KENNY",
+    "NUNO": "NUNO",
+    "MICHAEL": "MICHAEL",
+    "SEBINE": "SEBINE",
+    "ZC": "ZC",
+    "LOUI": "LOUI",
+    "MINYUN": "MINYUN",
+    "VIOLA": "VIOLA",
+    "XIEHGAN": "XIEH GAN",
+    "DRBEAUTY": "DR.BEAUTY"
+  },
+  "pamphlet": {
+    "youtubeId": "Ffli-o0ocT0",
+    "eyebrow": "MY SCHEDULE LTD.",
+    "title": "MY SCHEDULE",
+    "titleZh": "我的檔期",
+    "introduction": "This is MY SCHEDULE LTD. We are a creative video production company based in Taipei, Taiwan. Operating globally, we are dedicated to producing top-quality visuals. Our creative team specializes in a variety of video productions, including movies, music videos, television shows, commercials, and occasionally unconventional YouTube content.",
+    "introductionZh": "這是我的檔期有限公司。我們是位於台灣台北的創意影像製作公司，服務遍及全球，致力製作高品質影像。團隊擅長電影、音樂錄影帶、電視節目、廣告，以及不定期的非典型 YouTube 內容。",
+    "updatedAt": 0
+  },
+  "trackTempos": {}
+}

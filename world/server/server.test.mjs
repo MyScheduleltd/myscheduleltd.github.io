@@ -1,7 +1,7 @@
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join as joinPath } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -23,7 +23,7 @@ const freePort = () => new Promise((resolve, reject) => {
 
 // Every instance gets its own settings file so a previous run can never leak
 // persisted STAFF state into the next one.
-const startServer = async (port, stateFile) => {
+const startServer = async (port, stateFile, seedFile = 'off') => {
   const child = spawn(process.execPath, ['server/index.mjs'], {
     cwd: new URL('..', import.meta.url),
     env: {
@@ -32,6 +32,9 @@ const startServer = async (port, stateFile) => {
       FESTIVAL_ADMIN_KEY: 'test-admin-key',
       FESTIVAL_ALLOWED_ORIGINS: 'http://127.0.0.1:5173',
       FESTIVAL_STATE_FILE: stateFile,
+      // Assert on the festival the code ships with, never on the running order
+      // STAFF happen to have curated into the committed seed.
+      FESTIVAL_SEED_FILE: seedFile,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -827,6 +830,80 @@ test('staff can rotate the key, and only with the current one', async () => {
     const saved = JSON.parse(readFileSync(stateFile, 'utf8'));
     assert.equal(JSON.stringify(saved).includes('a-much-longer-key'), false, 'the key itself is never stored');
     assert.match(saved.adminKeyDigest.hash, /^[0-9a-f]{128}$/);
+  } finally {
+    await stopServer(instance);
+  }
+});
+
+test('a committed seed carries the festival across a deploy that keeps no disk', async () => {
+  const port = await freePort();
+  const seededUrl = `http://127.0.0.1:${port}`;
+  const seedFile = joinPath(temporaryDirectory, 'seed.json');
+  writeFileSync(seedFile, JSON.stringify({
+    version: 1,
+    schedule: {
+      club: {
+        name: 'THE CELLAR',
+        subtitle: 'GUEST NIGHT',
+        order: ['rMicadJVzH8', 'lhAvlkYlFc4'],
+        currentIndex: 1,
+        mode: 'scheduled-loop',
+      },
+    },
+    gateCopy: { title: 'MY THEATRE' },
+  }), 'utf8');
+
+  // A deploy leaves the instance with no state of its own, which is exactly the
+  // case this seed exists to cover.
+  const instance = await startServer(port, joinPath(temporaryDirectory, 'never-written.json'), seedFile);
+  try {
+    const config = await (await fetch(`${seededUrl}/api/config`)).json();
+    assert.equal(config.schedule.club.name, 'THE CELLAR', 'the seeded venue name is in force');
+    assert.equal(config.schedule.club.order.length, 2, 'the seeded running order is in force');
+    assert.equal(config.schedule.club.youtubeId, 'lhAvlkYlFc4', 'and it resumes at the seeded position');
+    assert.equal(config.gateCopy.title, 'MY THEATRE');
+    assert.equal(typeof config.schedule.club.startedAt, 'number', 'the clock is this process own');
+  } finally {
+    await stopServer(instance);
+  }
+});
+
+test('an instance that has settings of its own ignores the seed', async () => {
+  const port = await freePort();
+  const liveUrl = `http://127.0.0.1:${port}`;
+  const stateFile = joinPath(temporaryDirectory, 'outranks-seed.json');
+  const seedFile = joinPath(temporaryDirectory, 'outranked-seed.json');
+  writeFileSync(seedFile, JSON.stringify({
+    version: 1,
+    schedule: { club: { name: 'THE SEEDED ROOM', order: ['rMicadJVzH8'], currentIndex: 0 } },
+  }), 'utf8');
+
+  let instance = await startServer(port, stateFile, seedFile);
+  try {
+    const saved = await fetch(`${liveUrl}/api/admin/schedule`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-festival-admin-key': 'test-admin-key',
+        origin: 'http://127.0.0.1:5173',
+      },
+      body: JSON.stringify({
+        venue: 'club',
+        name: 'TONIGHT ONLY',
+        order: ['rMicadJVzH8'],
+        currentYoutubeId: 'rMicadJVzH8',
+        mode: 'continuous',
+      }),
+    });
+    assert.equal(saved.status, 200);
+  } finally {
+    await stopServer(instance);
+  }
+
+  instance = await startServer(port, stateFile, seedFile);
+  try {
+    const config = await (await fetch(`${liveUrl}/api/config`)).json();
+    assert.equal(config.schedule.club.name, 'TONIGHT ONLY', 'what STAFF set outranks the committed seed');
   } finally {
     await stopServer(instance);
   }

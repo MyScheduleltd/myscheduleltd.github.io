@@ -62,6 +62,16 @@ const persistenceEnabled = configuredStateFile !== 'off';
 const STATE_FILE = configuredStateFile && persistenceEnabled
   ? resolve(configuredStateFile)
   : fileURLToPath(new URL('./festival-state.json', import.meta.url));
+// The programme as committed, used when the instance has nothing of its own —
+// which on a disk-less plan is every single deploy. It never holds the STAFF
+// key or anyone's chat. FESTIVAL_SEED_FILE=off ignores it and boots the bare
+// built-in festival, which is what the tests want: they assert on the code's
+// own defaults and must not inherit whatever STAFF have curated in production.
+const configuredSeedFile = (process.env.FESTIVAL_SEED_FILE ?? '').trim();
+const seedEnabled = configuredSeedFile !== 'off';
+const SEED_FILE = configuredSeedFile && seedEnabled
+  ? resolve(configuredSeedFile)
+  : fileURLToPath(new URL('./festival-seed.json', import.meta.url));
 const configuredOrigins = (process.env.FESTIVAL_ALLOWED_ORIGINS ?? 'http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174')
   .split(',')
   .map((value) => value.trim())
@@ -550,8 +560,19 @@ const restorePersistedState = () => {
   try {
     saved = JSON.parse(readFileSync(STATE_FILE, 'utf8'));
   } catch {
-    // A missing or unreadable file simply means the festival boots from defaults.
-    return;
+    // Nothing written by this instance. Fall back to the programme committed to
+    // the repository, because the free plan gives the service no disk that
+    // survives a deploy: without this, every deploy would throw away the running
+    // order, the venue names and the works STAFF added, and hand attendees the
+    // bare defaults. Capture the live settings into it with
+    // `node world/scripts/capture-state.mjs` before deploying.
+    if (!seedEnabled) return;
+    try {
+      saved = JSON.parse(readFileSync(SEED_FILE, 'utf8'));
+    } catch {
+      // No seed either, so the festival boots from the built-in defaults.
+      return;
+    }
   }
   if (!saved || typeof saved !== 'object') return;
 
