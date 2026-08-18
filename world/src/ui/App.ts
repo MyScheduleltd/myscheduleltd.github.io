@@ -931,6 +931,7 @@ export class App {
     const index = Math.floor(Date.now() / 8_000) % venues.length;
     const countdown = this.root.querySelector<HTMLElement>('#programme-rotate-countdown');
     if (countdown) countdown.textContent = String(8 - Math.floor((Date.now() / 1000) % 8));
+    this.syncStaffNowPlaying();
     if (!force && index === this.programmeRotationIndex) return;
     this.programmeRotationIndex = index;
     const venue = venues[index];
@@ -944,6 +945,25 @@ export class App {
     ].filter(Boolean).join(' · ');
     this.world?.setProgrammeBoard(this.venueName(venue), this.filmTitle(film), metadata, this.filmTitle(next ?? film));
     if (this.activePanel === 'programme') this.updateProgrammeFocus(venue, film, next ?? film, filmIndex, playlist.length);
+  }
+
+  /**
+   * Keeps the STAFF panel's "now playing" selects on the work each projector is
+   * actually running. The panel is drawn once and then left open, so without
+   * this the selects report whatever was showing when it was opened.
+   */
+  private syncStaffNowPlaying(): void {
+    if (this.activePanel !== 'admin') return;
+    this.root.querySelectorAll<HTMLFormElement>('[data-programme-form]').forEach((form) => {
+      const select = form.querySelector<HTMLSelectElement>('select[name="currentYoutubeId"][data-follows-screen]');
+      if (!select) return;
+      const showing = this.publicFilm(form.dataset.programmeForm as VenueKey).youtubeId;
+      // Leave it alone if this venue is not running that work — a special
+      // screening plays outside the list, and is configured further down.
+      if (select.value !== showing && [...select.options].some((option) => option.value === showing)) {
+        select.value = showing;
+      }
+    });
   }
 
   private readonly globalShortcut = (event: KeyboardEvent): void => {
@@ -1523,13 +1543,22 @@ export class App {
       this.openPanel('chat');
     }
     if (this.activePanel === 'attendees' && previousAttendeeSignature !== this.attendeeListSignature(state, this.npcProfiles)) {
-      const previousScrollTop = this.root.querySelector<HTMLElement>('#panel .panel__body')?.scrollTop ?? 0;
-      this.openPanel('attendees');
-      const nextPanelBody = this.root.querySelector<HTMLElement>('#panel .panel__body');
-      if (nextPanelBody) {
-        nextPanelBody.scrollTop = Math.min(previousScrollTop, Math.max(0, nextPanelBody.scrollHeight - nextPanelBody.clientHeight));
-      }
+      this.reopenPanelKeepingPlace('attendees');
     }
+  }
+
+  /**
+   * Redraws an open panel without throwing the reader back to the top. Panels
+   * are rebuilt wholesale from markup, so anything that refreshes one — saving
+   * a venue, an attendee arriving — otherwise loses the scroll position, which
+   * is punishing in the STAFF panel where the save button sits a long way down.
+   */
+  private reopenPanelKeepingPlace(panelId: PanelId): void {
+    const previousScrollTop = this.root.querySelector<HTMLElement>('#panel .panel__body')?.scrollTop ?? 0;
+    this.openPanel(panelId);
+    const body = this.root.querySelector<HTMLElement>('#panel .panel__body');
+    if (!body) return;
+    body.scrollTop = Math.min(previousScrollTop, Math.max(0, body.scrollHeight - body.clientHeight));
   }
 
   private handleConnectionStatus(status: ConnectionStatus, detail?: string): void {
@@ -2031,6 +2060,12 @@ export class App {
         };
         form.querySelector<HTMLSelectElement>('select[name="specialSource"]')?.addEventListener('change', syncSpecialSource);
         syncSpecialSource();
+        // Until STAFF pick a work themselves this stays pinned to whatever the
+        // projector is showing, so it cannot go stale while the panel sits
+        // open. Their choice wins from the moment they make it.
+        form.querySelector<HTMLSelectElement>('select[name="currentYoutubeId"]')?.addEventListener('change', (event) => {
+          delete (event.currentTarget as HTMLSelectElement).dataset.followsScreen;
+        });
         form.querySelectorAll<HTMLButtonElement>('[data-order-move]').forEach((button) => {
           button.addEventListener('click', () => {
             const item = button.closest('li');
@@ -2068,6 +2103,8 @@ export class App {
           })
             .then(() => this.refreshAdminState())
             .catch((error) => {
+              // Deliberately jumps to the top: the failure message renders
+              // there, and keeping the reader's place would hide it.
               this.adminError = error instanceof Error ? error.message : 'Programme update failed.';
               this.openPanel('admin');
             });
@@ -2258,6 +2295,13 @@ export class App {
         const order = (schedule?.order ?? venueFilms.map((film) => film.youtubeId))
           .map((youtubeId) => venueFilms.find((film) => film.youtubeId === youtubeId))
           .filter((film): film is CatalogueEntry => Boolean(film));
+        // What the projector is actually showing, which is not always the
+        // position stored on the schedule: a special screening overrides it,
+        // and with no service running the venue keeps its own clock. This used
+        // to read the stored position, so it was only right at the instant the
+        // panel was drawn and drifted as the venue worked through its list.
+        const showing = this.publicFilm(venue).youtubeId;
+        const current = order.some((film) => film.youtubeId === showing) ? showing : schedule?.youtubeId ?? order[0]?.youtubeId;
         const specialTime = schedule?.special?.startsAt
           ? new Date(schedule.special.startsAt - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
           : '';
@@ -2271,8 +2315,8 @@ export class App {
               <label>${this.language === 'zh-TW' ? '模式' : 'MODE'}<select name="mode">
                 ${(['continuous', 'paused', 'recurring', 'scheduled-loop'] as ProgrammeMode[]).map((mode) => `<option value="${mode}"${schedule?.mode === mode ? ' selected' : ''}>${this.programmeModeLabel(mode)}</option>`).join('')}
               </select></label>
-              <label>${this.language === 'zh-TW' ? '現正放映' : 'NOW PLAYING'}<select name="currentYoutubeId">
-                ${order.map((film) => `<option value="${film.youtubeId}"${film.youtubeId === schedule?.youtubeId ? ' selected' : ''}>${this.escapeHtml(this.filmTitle(film))}</option>`).join('')}
+              <label>${this.language === 'zh-TW' ? '現正放映' : 'NOW PLAYING'}<select name="currentYoutubeId" data-follows-screen="on">
+                ${order.map((film) => `<option value="${film.youtubeId}"${film.youtubeId === current ? ' selected' : ''}>${this.escapeHtml(this.filmTitle(film))}</option>`).join('')}
               </select></label>
             </div>
             <p class="staff-programme__name">${this.escapeHtml(schedule?.name ?? defaultVenueLabels[venue])} · ${this.categoryLabel(catalogueByVenue[venue][0]?.category ?? '')}</p>
@@ -2389,7 +2433,7 @@ export class App {
       this.adminState = undefined;
       this.adminError = error instanceof Error ? error.message : 'Staff service is unavailable.';
     }
-    if (reopenPanel && this.activePanel === 'admin') this.openPanel('admin');
+    if (reopenPanel && this.activePanel === 'admin') this.reopenPanelKeepingPlace('admin');
   }
 
   private addChatMessage(message: ChatMessage): void {
