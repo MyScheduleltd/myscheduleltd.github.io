@@ -799,6 +799,18 @@ export class FestivalWorld {
       if (object.userData.projectorBackground) object.layers.disable(1);
       else object.layers.enable(1);
     });
+    // The sky belongs to the main render only. The pass that redraws geometry
+    // over the screens clears the depth buffer inside each screen's rectangle
+    // first, so anything of the sky left on its layer is painted over whatever
+    // is in that rectangle at full size — which is what the pale block over the
+    // timetable was: the moon, a hundred units of sky away, drawn on top of a
+    // board four units in front of the attendee. The lights above keep their
+    // layer, because layer 1 still has to be lit; it is only the discs and the
+    // stars that must not be drawn there.
+    this.dayNight.sunObject.layers.disable(1);
+    this.dayNight.moonObject.layers.disable(1);
+    this.dayNight.sunObject.traverse((object) => object.layers.disable(1));
+    this.dayNight.moonObject.traverse((object) => object.layers.disable(1));
     this.player.position.set(0, AVATAR_GROUND_Y, 22);
     this.camera.position.set(0, 5.2, 29);
 
