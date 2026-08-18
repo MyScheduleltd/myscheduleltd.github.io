@@ -2485,12 +2485,7 @@ export class FestivalWorld {
       emissiveMap: boardTexture,
       emissiveIntensity: 0.08,
     });
-    // Stood off the centre line. The Shore's screen is also on x = 0, forty
-    // units behind this, and the screens are DOM panels composited over the
-    // canvas rather than geometry in it — so when the two line up the panel
-    // draws straight through the board as a pale rectangle. West of the road
-    // nothing shares an axis with a screen.
-    const boardX = -15;
+    const boardX = 0;
     const board = new THREE.Mesh(new THREE.BoxGeometry(12.5, 6.1, 0.45), this.programmeBoardMaterial);
     board.position.set(boardX, 3.6, -3);
     board.castShadow = true;
@@ -3325,6 +3320,12 @@ export class FestivalWorld {
       new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.24, depthWrite: false }),
     );
     halo.rotation.y = 0;
+    // Kept out of the pass that redraws geometry over the screens. That pass
+    // clears the depth buffer inside each screen's rectangle before it renders,
+    // and this is the one object in the world that is both transparent and does
+    // not write depth — so it painted itself over whatever happened to be in
+    // that rectangle, a hundred units away, as a pale block.
+    halo.userData.projectorBackground = true;
     this.templeAura = halo;
     // Set at ninety a arm's length from her, this washed the gilding out to
     // white and lost every edge of the figure. Enough to lift her off the wall
