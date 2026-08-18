@@ -23,6 +23,10 @@ services:
     # Render restarts the service if this stops answering. /api/config is the
     # public settings payload and needs no credentials.
     healthCheckPath: /api/config
+    # Redeploy when main moves. Without this the service can sit on the build
+    # it was created with while the repository moves on, which is impossible to
+    # tell apart from a fix that did not work.
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
