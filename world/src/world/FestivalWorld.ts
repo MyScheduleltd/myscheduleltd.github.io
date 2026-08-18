@@ -775,7 +775,12 @@ export class FestivalWorld {
     this.foregroundRenderer.outputColorSpace = THREE.SRGBColorSpace;
     this.foregroundRenderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.foregroundRenderer.toneMappingExposure = 0.92;
-    this.foregroundRenderer.shadowMap.enabled = false;
+    // Matched to the main renderer. This pass redraws the same geometry over
+    // the finished picture, so any difference in how it is lit shows as a
+    // rectangle the shape of the scissor box: unshadowed, it laid a lit copy of
+    // the scene over the shadowed one, which is the pale block over the
+    // timetable — a board that stands in shadow.
+    this.foregroundRenderer.shadowMap.enabled = graphicsMode === 'normal';
     this.foregroundRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.foregroundRenderer.setClearColor(0x000000, 0);
     this.foregroundRenderer.clippingPlanes = [this.projectorClipPlane];
@@ -1302,6 +1307,7 @@ export class FestivalWorld {
     this.performanceFrameCount = 0;
     if (this.stylizedWater) this.stylizedWater.visible = mode === 'normal';
     this.renderer.shadowMap.enabled = mode === 'normal';
+    this.foregroundRenderer.shadowMap.enabled = mode === 'normal';
     this.dayNight.setShadowsEnabled(mode === 'normal');
     for (const spotlight of this.shadowSpotlights) spotlight.castShadow = mode === 'normal';
     this.applyRenderPixelRatios();
