@@ -514,8 +514,13 @@ export class FestivalClient {
     const response = await fetch(`${this.baseUrl}${path}`, { ...init, headers });
     const payload = await response.json().catch(() => ({})) as { error?: string };
     if (!response.ok) {
+      // A 404 on an admin route means one of two very different things, and
+      // telling somebody to restart a service they are not running is worse
+      // than saying nothing. A session only exists once a service has answered.
       const staleServer = response.status === 404
-        ? 'Staff server is outdated. Restart npm run dev.'
+        ? (this.session
+          ? 'This festival service is missing that feature. Restart it to pick up the latest build.'
+          : 'No festival service is connected, so STAFF tools are unavailable. This site is served as static files; the tools need the festival service running.')
         : undefined;
       throw new Error(payload.error === 'Not found.' ? staleServer : (payload.error ?? staleServer ?? 'Staff request failed.'));
     }

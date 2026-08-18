@@ -9,7 +9,7 @@
     "server": "node server/index.mjs",
     "start": "NODE_ENV=production node server/index.mjs",
     "build": "tsc --noEmit && vite build",
-    "build:beta": "tsc --noEmit && vite build --outDir ../docs/beta --emptyOutDir",
+    "build:beta": "tsc --noEmit && vite build && node scripts/publish-beta.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --test server/server.test.mjs",
     "verify": "npm run test && npm run build"
