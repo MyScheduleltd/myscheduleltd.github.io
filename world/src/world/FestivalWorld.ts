@@ -2165,13 +2165,11 @@ export class FestivalWorld {
       maxY = Math.max(maxY, viewportHeight - panel.top);
     }
     if (behindCamera) {
-      // Standing close enough that part of the screen is beside or behind the
-      // viewer. Nothing can be trusted about the corners then, so cover the
-      // whole viewport rather than guess a box and leave a hole in it.
-      minX = 0;
-      minY = 0;
-      maxX = viewportWidth;
-      maxY = viewportHeight;
+      // Part of the screen is beside or behind the viewer, so the corners are
+      // meaningless. Draw nothing rather than guess: this pass paints geometry
+      // over the main render, so an oversized box is not a safe default — it
+      // lays a washed-out copy of the scene across everything it covers.
+      return undefined;
     }
     const padding = 24;
     const left = Math.max(0, Math.floor(minX - padding));
