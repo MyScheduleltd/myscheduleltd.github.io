@@ -2218,7 +2218,10 @@ export class FestivalWorld {
     const terrain: Array<[number, number, number, number]> = [
       // [minX, maxX, minZ, maxZ] — four pieces leaving the club's plot open.
       [-104, c.buildingMinX, -49, 81],
-      [c.buildingMaxX, 92, -49, 81],
+      // Reaches past the temple with room to spare. It used to stop at 92,
+      // which left the eastern third of the building — and its roof overhang —
+      // hanging over the edge of the world.
+      [c.buildingMaxX, 124, -49, 81],
       [c.buildingMinX, c.buildingMaxX, -49, c.buildingMinZ],
       [c.buildingMinX, c.buildingMaxX, c.buildingMaxZ, 81],
     ];
