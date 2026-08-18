@@ -55,7 +55,7 @@ export type WorldAction =
   | { type: 'drinkOrdered' }
   | { type: 'ate' }
   | { type: 'drank'; drinks: number; drunk: boolean }
-  | { type: 'donate'; target?: string };
+  | { type: 'donate'; target?: string; deity?: string };
 
 export interface AvatarPalette {
   skin: string;
@@ -693,6 +693,8 @@ export class FestivalWorld {
    */
   private cameraZoom = readStoredZoom();
   private templeAura?: THREE.Mesh;
+  private templeSignMaterial?: THREE.MeshBasicMaterial;
+  private templeSignText = { name: '美麗本人', label: 'THE TEMPLE' };
   private templeAltar?: { x: number; z: number };
   private lastDonationAt = 0;
   private verticalVelocity = 0;
@@ -1857,7 +1859,7 @@ export class FestivalWorld {
     this.dancing = false;
     this.playerGesture = 'offer';
     this.playerGestureUntil = now + 1_500;
-    this.onAction({ type: 'donate', target });
+    this.onAction({ type: 'donate', target, deity: target ? undefined : this.templeSignText.name });
   }
 
   private nearestNpcWithin(reach: number): NpcAvatar | undefined {
@@ -3137,6 +3139,24 @@ export class FestivalWorld {
    * the corners, which is what reads as a temple at this resolution. Inside,
    * an altar to 美麗本人 — no figure, only the offering table and the light.
    */
+  /** Re-letters the temple sign when STAFF change it. */
+  setTempleSign(name: string, label: string): void {
+    this.templeSignText = {
+      name: name.trim() || this.templeSignText.name,
+      label: label.trim() || this.templeSignText.label,
+    };
+    if (!this.templeSignMaterial) return;
+    const previous = this.templeSignMaterial.map;
+    this.templeSignMaterial.map = createTextTexture([this.templeSignText.name, this.templeSignText.label]);
+    this.templeSignMaterial.needsUpdate = true;
+    previous?.dispose();
+  }
+
+  /** The god the altar is dedicated to, for the offering message. */
+  templeDeity(): string {
+    return this.templeSignText.name;
+  }
+
   private createTemple(): void {
     const t = TEMPLE;
     const centerX = (t.minX + t.maxX) / 2;
@@ -3210,10 +3230,10 @@ export class FestivalWorld {
     this.mesh([1.2, 1.8, 1.2], [centerX, t.podium + wallHeight + 5.4, centerZ], gold);
 
     // The name over the door.
-    const templeSign = new THREE.Mesh(
-      new THREE.PlaneGeometry(8.4, 2.4),
-      new THREE.MeshBasicMaterial({ map: createTextTexture(['美麗本人', 'THE TEMPLE']) }),
-    );
+    this.templeSignMaterial = new THREE.MeshBasicMaterial({
+      map: createTextTexture([this.templeSignText.name, this.templeSignText.label]),
+    });
+    const templeSign = new THREE.Mesh(new THREE.PlaneGeometry(8.4, 2.4), this.templeSignMaterial);
     templeSign.position.set(t.minX - 0.55, t.podium + wallHeight - 0.7, centerZ);
     templeSign.rotation.y = -Math.PI / 2;
     this.scene.add(templeSign);

@@ -236,6 +236,9 @@ const gateCopy = {
 };
 
 const shopLink = { url: '', label: 'THE POP-UP STORE', labelZh: '快閃服飾店', updatedAt: 0 };
+// The two lines carved over the temple door: who is worshipped there, and what
+// the building is called. STAFF own both, the way they own the venue signs.
+const templeSign = { name: '美麗本人', label: 'THE TEMPLE', updatedAt: 0 };
 const safeExternalUrl = (value) => {
   const text = safeText(value, 500);
   if (!text) return '';
@@ -401,6 +404,7 @@ const persistedSnapshot = () => ({
   pamphlet: pamphletContent,
   djProfiles,
   shopLink,
+  templeSign,
   gateCopy,
   trackTempos,
   trackDurations,
@@ -601,6 +605,14 @@ const restorePersistedState = () => {
     }
     gateCopy.updatedAt = clampNumber(saved.gateCopy.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0);
   }
+  if (saved.templeSign && typeof saved.templeSign === 'object') {
+    Object.assign(templeSign, {
+      name: safeText(saved.templeSign.name, 24) || templeSign.name,
+      label: safeText(saved.templeSign.label, 24) || templeSign.label,
+      updatedAt: clampNumber(saved.templeSign.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
+    });
+  }
+
   if (saved.shopLink && typeof saved.shopLink === 'object') {
     Object.assign(shopLink, {
       url: safeExternalUrl(saved.shopLink.url),
@@ -746,6 +758,7 @@ const stateFor = (visitor) => ({
   pamphlet: pamphletContent,
   djProfiles,
   shopLink,
+  templeSign,
   gateCopy,
   trackTempos,
 });
@@ -856,7 +869,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === 'GET' && url.pathname === '/api/config') {
       settleAllSchedules();
-      return json(response, 200, { schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, gateCopy, trackTempos, clubRequest, venueQueues });
+      return json(response, 200, { schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, gateCopy, trackTempos, clubRequest, venueQueues });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
@@ -1164,6 +1177,7 @@ const server = createServer(async (request, response) => {
           pamphlet: pamphletContent,
           djProfiles,
           shopLink,
+          templeSign,
           gateCopy,
           trackTempos,
         });
@@ -1388,6 +1402,19 @@ const server = createServer(async (request, response) => {
         scheduleBroadcast();
         persist();
         return json(response, 200, { ok: true, shopLink });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/temple-sign') {
+        const name = safeText(payload.name, 24);
+        const label = safeText(payload.label, 24);
+        if (!name && !label) return apiError(response, 400, 'The temple sign needs something on it.');
+        Object.assign(templeSign, {
+          name: name || templeSign.name,
+          label: label || templeSign.label,
+          updatedAt: Date.now(),
+        });
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true, templeSign });
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/dj-profile') {
         const id = safeText(payload.id, 40).toUpperCase();

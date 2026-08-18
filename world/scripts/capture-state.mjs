@@ -56,6 +56,7 @@ const seed = {
   gateBackground: live.gateBackground,
   gateCopy: live.gateCopy,
   shopLink: live.shopLink,
+  templeSign: live.templeSign,
   djProfiles: live.djProfiles,
   npcNames: live.npcNames,
   pamphlet: live.pamphlet,

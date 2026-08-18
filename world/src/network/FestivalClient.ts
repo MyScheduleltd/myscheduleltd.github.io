@@ -124,6 +124,7 @@ export interface FestivalState {
   pamphlet: PamphletContent;
   djProfiles: DjProfiles;
   shopLink: ShopLink;
+  templeSign: TempleSign;
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
 }
@@ -144,6 +145,7 @@ export interface AdminState {
   pamphlet: PamphletContent;
   djProfiles: DjProfiles;
   shopLink: ShopLink;
+  templeSign: TempleSign;
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
 }
@@ -184,6 +186,12 @@ export interface WaitingPlace {
   inside: number;
 }
 
+export interface TempleSign {
+  name: string;
+  label: string;
+  updatedAt: number;
+}
+
 export interface ShopLink {
   url: string;
   label: string;
@@ -201,6 +209,7 @@ export interface PublicConfig {
   pamphlet: PamphletContent;
   djProfiles: DjProfiles;
   shopLink: ShopLink;
+  templeSign: TempleSign;
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
 }
@@ -466,6 +475,13 @@ export class FestivalClient {
     introductionZh: string;
   }): Promise<void> {
     await this.adminRequest('/api/admin/dj-profile', key, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateTempleSign(key: string, payload: { name: string; label: string }): Promise<void> {
+    await this.adminRequest('/api/admin/temple-sign', key, {
       method: 'POST',
       body: JSON.stringify(payload),
     });

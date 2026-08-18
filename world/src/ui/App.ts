@@ -855,7 +855,8 @@ export class App {
     if (action.type === 'donate') {
       const zh = this.language === 'zh-TW';
       if (!action.target) {
-        this.showWorldAlert(zh ? '向美麗本人獻上供養' : 'AN OFFERING TO 美麗本人');
+        const deity = action.deity ?? '美麗本人';
+        this.showWorldAlert(zh ? `向${deity}獻上供養` : `AN OFFERING TO ${deity}`);
         return;
       }
       this.showWorldAlert(zh ? `向 ${action.target} 佈施` : `AN OFFERING TO ${action.target}`);
@@ -1584,6 +1585,7 @@ export class App {
     }
     this.applySiteStyle();
     this.world?.setNpcProfiles(this.npcProfiles);
+    if (state.templeSign) this.world?.setTempleSign(state.templeSign.name, state.templeSign.label);
     this.world?.setSharedMentorCarrier(state.mentorCarrierId, state.selfId);
     const remoteVisitors = state.visitors
       .filter((visitor) => visitor.id !== state.selfId)
@@ -1949,6 +1951,20 @@ export class App {
         }).finally(() => {
           if (button) button.disabled = false;
         });
+      });
+      const templeEditor = panel.querySelector<HTMLFormElement>('#temple-sign-editor');
+      templeEditor?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const data = new FormData(templeEditor);
+        void this.festivalClient.updateTempleSign(this.staffKey, {
+          name: String(data.get('name') ?? ''),
+          label: String(data.get('label') ?? ''),
+        })
+          .then(() => this.refreshAdminState())
+          .catch((error) => {
+            this.adminError = error instanceof Error ? error.message : 'Temple sign update failed.';
+            this.openPanel('admin');
+          });
       });
       const shopEditor = panel.querySelector<HTMLFormElement>('#shop-link-editor');
       shopEditor?.addEventListener('submit', (event) => {
@@ -2403,6 +2419,15 @@ export class App {
         <label><span>${this.language === 'zh-TW' ? '店名（中）' : 'STORE NAME (ZH)'}</span><input name="labelZh" maxlength="60" value="${this.escapeAttribute(this.adminState.shopLink?.labelZh ?? '')}" /></label>
         <label><span>${this.language === 'zh-TW' ? '店名（英）' : 'STORE NAME (EN)'}</span><input name="label" maxlength="60" value="${this.escapeAttribute(this.adminState.shopLink?.label ?? '')}" /></label>
         <button type="submit">${this.language === 'zh-TW' ? '儲存商店連結' : 'SAVE STORE LINK'}</button>
+      </form>`)}
+      ${this.staffSection('temple', this.language === 'zh-TW' ? '寺廟看板' : 'TEMPLE SIGN', `
+      <form class="staff-form" id="temple-sign-editor">
+        <p class="staff-note">${this.language === 'zh-TW'
+          ? '刻在寺廟門楣上的兩行字：所奉之神，以及建築名稱。'
+          : 'The two lines over the temple door: who is worshipped there, and what the building is called.'}</p>
+        <label><span>${this.language === 'zh-TW' ? '神名' : 'DEITY'}</span><input name="name" maxlength="24" value="${this.escapeAttribute(this.adminState.templeSign?.name ?? '')}" /></label>
+        <label><span>${this.language === 'zh-TW' ? '寺廟名稱' : 'TEMPLE NAME'}</span><input name="label" maxlength="24" value="${this.escapeAttribute(this.adminState.templeSign?.label ?? '')}" /></label>
+        <button type="submit">${this.language === 'zh-TW' ? '儲存寺廟看板' : 'SAVE TEMPLE SIGN'}</button>
       </form>`)}
       ${this.staffSection('programme', this.language === 'zh-TW' ? '節目與銀幕' : 'PROGRAMME & SCREENS', `
       <div class="staff-programmes">${VENUE_KEYS.map((venue) => {

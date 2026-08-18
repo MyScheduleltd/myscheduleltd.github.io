@@ -963,3 +963,40 @@ test('a rooftop bench is a seat the service knows about', async () => {
   const nonsense = await fetch(`${baseUrl}/api/seats/ROOFTOP-BENCH-9/claim`, { method: 'POST', headers: auth(session) });
   assert.equal(nonsense.status, 404, 'a bench that does not exist is still refused');
 });
+
+test('staff letter the temple sign and everyone is told', async () => {
+  const staffHeaders = {
+    'content-type': 'application/json',
+    'x-festival-admin-key': 'test-admin-key',
+    origin: 'http://127.0.0.1:5173',
+  };
+  const before = await (await fetch(`${baseUrl}/api/config`)).json();
+  assert.equal(before.templeSign.name, '美麗本人', 'the sign starts on the festival default');
+
+  const saved = await fetch(`${baseUrl}/api/admin/temple-sign`, {
+    method: 'POST',
+    headers: staffHeaders,
+    body: JSON.stringify({ name: '美麗真人', label: 'THE GREAT HALL' }),
+  });
+  assert.equal(saved.status, 200);
+
+  // The public settings carry it, which is how every attendee gets the change
+  // rather than only the STAFF member who made it.
+  const after = await (await fetch(`${baseUrl}/api/config`)).json();
+  assert.equal(after.templeSign.name, '美麗真人');
+  assert.equal(after.templeSign.label, 'THE GREAT HALL');
+
+  const blank = await fetch(`${baseUrl}/api/admin/temple-sign`, {
+    method: 'POST',
+    headers: staffHeaders,
+    body: JSON.stringify({ name: '', label: '' }),
+  });
+  assert.equal(blank.status, 400, 'an empty sign is refused rather than left blank');
+
+  const unauthorised = await fetch(`${baseUrl}/api/admin/temple-sign`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' },
+    body: JSON.stringify({ name: 'ANYONE', label: 'ANYTHING' }),
+  });
+  assert.equal(unauthorised.status, 401, 'and only STAFF may letter it');
+});
