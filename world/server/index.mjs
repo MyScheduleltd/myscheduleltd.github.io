@@ -697,7 +697,7 @@ const createVisitor = (name, palette) => ({
   name,
   originalName: name,
   palette: safePalette(palette),
-  presence: { x: 0, y: 0.28, z: 22, rotation: 0, location: 'FESTIVAL GATE', state: 'walking', moving: false, venue: 'shore' },
+  presence: { x: 0, y: 0.28, z: 22, rotation: 0, location: 'FESTIVAL GATE', state: 'walking', moving: false, running: false, venue: 'shore' },
   joinedAt: Date.now(),
   lastSeen: Date.now(),
   mutedUntil: 0,
@@ -968,6 +968,7 @@ const server = createServer(async (request, response) => {
         location: safeText(payload.location, 40) || 'FESTIVAL GATE',
         state: ['walking', 'seated', 'swimming'].includes(payload.state) ? payload.state : 'walking',
         moving: payload.moving === true,
+        running: payload.running === true,
         venue: isVenue(payload.venue) ? payload.venue : 'shore',
         gesture: ['wave', 'feed', 'tail-wag', 'dance', 'drink', 'jump', 'stumble'].includes(payload.gesture) ? payload.gesture : undefined,
         carriedItem: payload.carriedItem === 'MENTOR'

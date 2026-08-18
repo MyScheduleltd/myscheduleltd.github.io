@@ -308,6 +308,7 @@ test('staff NPC control preserves the original attendee and restores its positio
     location: 'MY SQUARE',
     state: 'walking',
     moving: false,
+    running: false,
     venue: 'shore',
   };
   const presence = await fetch(`${baseUrl}/api/presence`, {

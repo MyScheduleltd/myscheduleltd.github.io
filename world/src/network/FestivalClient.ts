@@ -14,6 +14,7 @@ export interface NetworkPresence {
   location: string;
   state: PlayerState;
   moving: boolean;
+  running: boolean;
   venue: VenueKey;
   gesture?: AvatarGesture;
   carriedItem?: CarriedItem;

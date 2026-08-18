@@ -84,6 +84,7 @@ export interface WorldSnapshot {
   z: number;
   rotation: number;
   moving: boolean;
+  running: boolean;
   gesture?: AvatarGesture;
 }
 
@@ -98,6 +99,7 @@ export interface RemoteVisitorVisual {
   rotation: number;
   state: PlayerState;
   moving: boolean;
+  running?: boolean;
   gesture?: AvatarGesture;
   carriedItem?: CarriedItem;
   npcId?: string;
@@ -154,6 +156,7 @@ interface NpcAvatar {
   badge: THREE.Sprite;
   rig?: AvatarRig;
   dogRig?: MentorDogRig;
+  dogBoard?: THREE.Group;
   remoteCarriedProp: THREE.Group;
   route: THREE.Vector3[];
   waypointIndex: number;
@@ -188,6 +191,7 @@ interface RemoteAvatar {
   carriedProp: THREE.Group;
   carriedItem?: CarriedItem;
   moving: boolean;
+  running: boolean;
   gestureUntil: number;
   gesture?: AvatarGesture;
   animationPhase: number;
@@ -201,6 +205,8 @@ interface AvatarRig {
   rightLeg: THREE.Group;
   torso: THREE.Mesh;
   treat: THREE.Mesh;
+  /** Under the feet, and only out while running. */
+  board: THREE.Group;
 }
 
 interface WaterReflectionVisual {
@@ -1344,6 +1350,7 @@ export class FestivalWorld {
       avatar.targetRotation = displayVisitor.rotation;
       avatar.state = displayVisitor.state;
       avatar.moving = displayVisitor.moving;
+      avatar.running = displayVisitor.running === true;
       avatar.carriedItem = displayVisitor.carriedItem;
       if (avatar.name !== displayVisitor.name) {
         avatar.name = displayVisitor.name;
@@ -3335,14 +3342,18 @@ export class FestivalWorld {
     );
     this.addCollider(
       landingCenterX, r.stairMaxZ + 0.25,
-      landingWidth, 0.5, 0.16, { minY: ROOF_Y - 1, maxY: 60 },
+      landingWidth, 0.5, 0.16, { minY: ROOF_Y - 1, maxY: ROOF_Y + 1.5 },
     );
 
     // The kerb and rail hold the open side for the whole climb; the building
     // face holds the other. Between them the run has no way off it.
     const runCenterZ = (r.stairMinZ + r.stairMaxZ) / 2;
     const runDepth = r.stairMaxZ - r.stairMinZ;
-    this.addCollider(railX, runCenterZ, kerbWidth, runDepth, 0.16, { minY: -0.4, maxY: 60 });
+    // Topped at the deck's coping rather than the sky. Anyone on the stair is
+    // below that and still held, but a jump from the deck carries over it —
+    // this kerb runs the length of the deck's west edge and was the invisible
+    // wall there.
+    this.addCollider(railX, runCenterZ, kerbWidth, runDepth, 0.16, { minY: -0.4, maxY: ROOF_Y + 1.5 });
     // Stringer wall between the flights and the shell, stopping short of the
     // top landing so the last step opens straight onto the deck.
     const stringerDepth = r.stairTopZ - r.stairMinZ;
@@ -3352,9 +3363,13 @@ export class FestivalWorld {
       [(r.stairMaxX + r.minX) / 2, stringerHeight / 2, r.stairMinZ + stringerDepth / 2],
       treadMaterial,
     );
+    // Blocked to the sky, though the wall itself stops at stringerHeight. It
+    // runs the length of the deck's west edge, so that overshoot was the
+    // invisible wall there. Held to its own height, the stair is still walled
+    // and a jump from the deck clears it.
     this.addCollider(
       (r.stairMaxX + r.minX) / 2, r.stairMinZ + stringerDepth / 2,
-      r.minX - r.stairMaxX, stringerDepth, 0.16, { minY: -0.4, maxY: 60 },
+      r.minX - r.stairMaxX, stringerDepth, 0.16, { minY: -0.4, maxY: stringerHeight },
     );
     // A kerb across the foot of the run, so the bottom step reads as a step.
     this.mesh([stairWidth + 1, 0.16, 2.4], [centerX, 0.08, r.stairMinZ - 1.2], treadMaterial);
@@ -3583,6 +3598,8 @@ export class FestivalWorld {
       swimwear: shirtColor,
     };
     const dogRig = profile.id === 'MENTOR' ? createMentorDog() : undefined;
+    // MENTOR rides too, on a board cut down to a dog's length.
+    const dogBoard = dogRig ? this.createSkateboard(dogRig.root, 0.72, 0.04) : undefined;
     const rig = dogRig ? undefined : this.createAvatarRig(npc, npcPalette);
     if (dogRig) npc.add(dogRig.root);
     const remoteCarriedProp = new THREE.Group();
@@ -3614,6 +3631,7 @@ export class FestivalWorld {
       badge,
       rig,
       dogRig,
+      dogBoard,
       remoteCarriedProp,
       route,
       waypointIndex: 1,
@@ -3846,6 +3864,7 @@ export class FestivalWorld {
       targetRotation: visitor.rotation,
       previousRotation: visitor.rotation,
       state: visitor.state,
+      running: visitor.running === true,
       rig,
       carriedProp,
       carriedItem: visitor.carriedItem,
@@ -3855,6 +3874,54 @@ export class FestivalWorld {
       animationPhase: 0,
       name: visitor.name,
     };
+  }
+
+  /**
+   * A board under the feet, kept out of sight until someone runs. Built in the
+   * same blocky idiom as everything else: a deck, two trucks, four wheels.
+   */
+  private createSkateboard(parent: THREE.Object3D, scale = 1, dropTo = -0.12): THREE.Group {
+    const board = new THREE.Group();
+    board.scale.setScalar(scale);
+    // The avatar's heels sit a shade below the group's origin, so the deck goes
+    // just under that and the wheels take it down to the road. MENTOR stands on
+    // four short legs and needs the deck brought up to meet them.
+    board.position.set(0, dropTo, 0);
+    this.mesh([0.62, 0.08, 2.1], [0, 0, 0], material(0x2a2f3a, 0.55, 0.25), board);
+    // Nose and tail kicked up, which is what reads as a skateboard rather than
+    // a plank at this size.
+    for (const end of [-1, 1]) {
+      const kick = this.mesh([0.58, 0.07, 0.42], [0, 0.07, end * 1.12], material(0x2a2f3a, 0.55, 0.25), board);
+      kick.rotation.x = end * 0.42;
+    }
+    for (const end of [-1, 1]) {
+      this.mesh([0.34, 0.09, 0.2], [0, -0.09, end * 0.66], material(0x8b8f98, 0.35, 0.6), board);
+      for (const side of [-1, 1]) {
+        this.mesh([0.13, 0.17, 0.17], [side * 0.24, -0.15, end * 0.66], material(0xd8d3c6, 0.6, 0.2), board);
+      }
+    }
+    board.visible = false;
+    parent.add(board);
+    return board;
+  }
+
+  /**
+   * Sideways stance, knees soft, arms out. The board carries the body, so the
+   * legs stop cycling — a running gait over a skateboard reads as skidding.
+   */
+  private poseRigSkating(rig: AvatarRig, phase: number): void {
+    const bob = Math.sin(phase * 1.6);
+    rig.torso.rotation.y = 0.58;
+    rig.torso.rotation.x = 0.14 + bob * 0.04;
+    rig.torso.rotation.z = 0;
+    rig.leftArm.rotation.x = -0.42 + bob * 0.22;
+    rig.rightArm.rotation.x = -0.24 - bob * 0.22;
+    rig.leftArm.rotation.z = 1.12;
+    rig.rightArm.rotation.z = -0.98;
+    // Front foot over the forward truck, back foot over the tail.
+    rig.leftLeg.rotation.x = -0.3 - bob * 0.05;
+    rig.rightLeg.rotation.x = 0.24 + bob * 0.05;
+    rig.board.visible = true;
   }
 
   private createAvatarRig(parent: THREE.Group, palette: AvatarPalette, markPalette = false): AvatarRig {
@@ -3901,7 +3968,8 @@ export class FestivalWorld {
     const rightLeg = limb(0.28, 1.16, [0.4, 1.25, 0.5], 'bottoms');
     const treat = this.mesh([0.16, 0.16, 0.22], [0, -1.2, 0.16], material(0xd18a35, 0.78), rightArm);
     treat.visible = false;
-    return { leftArm, rightArm, leftLeg, rightLeg, torso, treat };
+    const board = this.createSkateboard(parent);
+    return { leftArm, rightArm, leftLeg, rightLeg, torso, treat, board };
   }
 
   private createAtmosphere(): void {
@@ -4019,6 +4087,7 @@ export class FestivalWorld {
         z: this.player.position.z,
         rotation: this.player.rotation.y,
         moving: !this.isMentorControlLocked() && this.moveVector.lengthSq() > 0.0001,
+        running: this.running && !this.dancing && this.playerState === 'walking',
         gesture: this.dancing
           ? 'dance'
           : performance.now() < this.playerGestureUntil ? this.playerGesture : undefined,
@@ -4215,8 +4284,10 @@ export class FestivalWorld {
       const stride = this.playerState === 'swimming'
         ? (moving ? (running ? 0.42 : 0.3) : 0.025)
         : (moving ? (running ? 1.02 : 0.72) : 0.035);
-      this.animateRig(this.playerRig, this.clock.elapsedTime * cadence, stride, gesture);
-      if (running && this.playerState !== 'swimming') {
+      // On land a run is a ride; in the water it stays a swim.
+      const skating = running && this.playerState === 'walking';
+      this.animateRig(this.playerRig, this.clock.elapsedTime * cadence, stride, gesture, skating);
+      if (running && !skating && this.playerState !== 'swimming') {
         // Leaning into the run, and the arms driving rather than swinging.
         this.playerRig.torso.rotation.x = 0.16;
         this.playerRig.leftArm.rotation.x *= 1.25;
@@ -4251,7 +4322,11 @@ export class FestivalWorld {
     // The Rooftop's plot and the forecourt in front of it, east of the road.
     // The forecourt starts south of the promenade, so this band has to reach
     // past z = 0 to meet the strip below it.
-    if (z > -12 && z < 50) max = rooftopBounds.maxX + 4;
+    // Reaches as far north as The Basement's plot does on the other side of the
+    // road. It used to stop at 50, fourteen short of where an attendee leaving
+    // the deck's north edge lands, and the limit fell from 58 to 14 at that
+    // line — so crossing it dragged the body twenty-two units sideways.
+    if (z > -12 && z <= GATE_Z - 2) max = rooftopBounds.maxX + 4;
     return { min, max };
   }
 
@@ -4284,7 +4359,8 @@ export class FestivalWorld {
     // ground underfoot is refused already, movement is allowed so the body can
     // walk itself clear.
     const stuck = this.staticCollides(this.player.position.x, this.player.position.z, this.player.position.y) ||
-      this.staticCollides(this.player.position.x, this.player.position.z, this.groundHeightAt(this.player.position.x, this.player.position.z));
+      this.staticCollides(this.player.position.x, this.player.position.z,
+        this.groundHeightAt(this.player.position.x, this.player.position.z, this.player.position.y));
     // A step has to be clear at the height being left as well as the height
     // being arrived at. Testing only the destination let an attendee walk out
     // through the club's underground walls: one pace past the room, the ground
@@ -4295,7 +4371,7 @@ export class FestivalWorld {
     const blocked = (x: number, z: number): boolean => {
       if (stuck) return false;
       if (this.airborne) return this.staticCollides(x, z, this.player.position.y);
-      return this.staticCollides(x, z, this.groundHeightAt(x, z)) ||
+      return this.staticCollides(x, z, this.groundHeightAt(x, z, this.player.position.y)) ||
         this.staticCollides(x, z, this.player.position.y);
     };
     if (!blocked(nextX, this.player.position.z)) {
@@ -4304,9 +4380,13 @@ export class FestivalWorld {
     if (!blocked(this.player.position.x, nextZ)) {
       this.player.position.z = nextZ;
     }
+    // Depth first, then the width allowed at that depth. Taken the other way
+    // round, a stride that overshot the north limit read the width belonging to
+    // ground the attendee is never allowed to stand on, and slammed them
+    // sideways before the depth was pulled back.
+    this.player.position.z = THREE.MathUtils.clamp(this.player.position.z, -75, GATE_Z - 2);
     const reach = this.walkableXRange(this.player.position.z);
     this.player.position.x = THREE.MathUtils.clamp(this.player.position.x, reach.min, reach.max);
-    this.player.position.z = THREE.MathUtils.clamp(this.player.position.z, -75, GATE_Z - 2);
     this.resolvePlayerCrowdCollisions(previous);
     this.player.rotation.y = Math.atan2(this.moveVector.x, this.moveVector.z);
   }
@@ -4350,6 +4430,7 @@ export class FestivalWorld {
             moving ? elapsed * 8.5 : elapsed * 1.4,
             this.playerState === 'swimming' ? (moving ? 0.3 : 0.025) : (moving ? 0.72 : 0.035),
             gesture,
+            this.running && moving && !this.dancing && this.playerState === 'walking',
           );
           if (this.playerState === 'swimming' && moving && !gesture) this.poseRigSwimming(npc.rig, elapsed);
           if (this.playerState === 'seated') this.poseRigSeated(npc.rig);
@@ -4365,9 +4446,20 @@ export class FestivalWorld {
           );
           if (this.playerState === 'swimming') this.poseMentorDogSwimming(npc.dogRig, elapsed, moving);
           if (this.playerState === 'seated') this.poseMentorDogSeated(npc.dogRig);
+          // Riding: the legs stop paddling and the board carries the dog.
+          const dogSkating = this.running && moving && !this.dancing && this.playerState === 'walking';
+          if (npc.dogBoard) npc.dogBoard.visible = dogSkating;
+          if (dogSkating) {
+            npc.dogRig.leftFrontLeg.rotation.x = -0.22;
+            npc.dogRig.rightFrontLeg.rotation.x = -0.22;
+            npc.dogRig.leftBackLeg.rotation.x = 0.2;
+            npc.dogRig.rightBackLeg.rotation.x = 0.2;
+            npc.dogRig.body.rotation.z = 0.14;
+          }
         }
         continue;
       }
+      if (npc.dogBoard) npc.dogBoard.visible = false;
       const remoteController = this.remoteNpcControls.get(npc.id);
       if (remoteController) {
         npc.group.visible = true;
@@ -4535,6 +4627,7 @@ export class FestivalWorld {
         avatar.animationPhase,
         avatar.state === 'swimming' ? (moving ? 0.3 : 0.025) : (moving ? 0.62 : 0.025),
         gesture,
+        avatar.running && moving && avatar.state === 'walking',
       );
       if (avatar.state === 'swimming' && moving && !gesture) this.poseRigSwimming(avatar.rig, elapsed);
       if (avatar.state === 'seated') this.poseRigSeated(avatar.rig);
@@ -4544,7 +4637,14 @@ export class FestivalWorld {
     }
   }
 
-  private animateRig(rig: AvatarRig, phase: number, stride: number, gesture?: AvatarGesture): void {
+  private animateRig(rig: AvatarRig, phase: number, stride: number, gesture?: AvatarGesture, skating = false): void {
+    // Riding overrides the gait but not a gesture: someone waving from a board
+    // is still waving.
+    if (skating && !gesture) {
+      this.poseRigSkating(rig, phase);
+      return;
+    }
+    rig.board.visible = skating;
     const swing = Math.sin(phase) * stride;
     rig.leftLeg.rotation.x = swing;
     rig.rightLeg.rotation.x = -swing;
@@ -4762,9 +4862,18 @@ export class FestivalWorld {
     return AVATAR_GROUND_Y + half + half * progress;
   }
 
-  private groundHeightAt(x: number, z: number): number {
+  /**
+   * The floor under a given spot. `fromY` says which storey the body is on,
+   * which only matters where one walkable surface sits above another: the shop
+   * fills the garage bay and its roof carries on from the deck, so the same
+   * plan position is two different floors depending on who is asking.
+   */
+  private groundHeightAt(x: number, z: number, fromY = this.player.position.y): number {
     const r = rooftopBounds;
     if (x > r.minX && x < r.maxX && z >= r.deckMinZ && z < r.maxZ) return ROOF_AVATAR_Y;
+    // The slab over the shop, level with the deck it continues from. Only for
+    // a body already up there — at street level this is the shop's own floor.
+    if (x > r.minX && x < r.maxX && z > r.minZ && z < r.deckMinZ && fromY > ROOF_Y - 1) return ROOF_AVATAR_Y;
     const stair = this.rooftopStairHeight(x, z);
     if (stair !== undefined) return stair;
     if (this.inClubRoom(x, z)) return CLUB_AVATAR_Y;
