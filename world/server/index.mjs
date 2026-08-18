@@ -1006,7 +1006,16 @@ const server = createServer(async (request, response) => {
       const clubQueue = venueQueues[djVenue];
       const youtubeId = String(payload.youtubeId ?? '').trim();
       const schedule = programmeSchedule[djVenue];
-      if (!schedule.order.includes(youtubeId)) return apiError(response, 404, 'That track is not in the box.');
+      // Anything in the venue's library, not only what the running order
+      // happens to hold. STAFF curate the order down — the basement is six of
+      // its eight records — while the booth still offers the whole box, so
+      // every track they had cut was offered and then refused.
+      const boxed = new Set([
+        ...schedule.order,
+        ...(programmeIdsByVenue[djVenue] ?? []),
+        ...(customVideosByVenue[djVenue] ?? []).map((film) => film.youtubeId),
+      ]);
+      if (!boxed.has(youtubeId)) return apiError(response, 404, 'That track is not in the box.');
       const now = Date.now();
       if (visitor.trackRequestAt && now - visitor.trackRequestAt < CLUB_REQUEST_COOLDOWN_MS) {
         const seconds = Math.ceil((CLUB_REQUEST_COOLDOWN_MS - (now - visitor.trackRequestAt)) / 1000);
