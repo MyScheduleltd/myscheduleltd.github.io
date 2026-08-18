@@ -301,6 +301,8 @@ const GATE_Z = 62;
 const CLUB_FLOOR_Y = -16.5;
 const CLUB_ROOM_HEIGHT = 15;
 const CLUB_AVATAR_Y = CLUB_FLOOR_Y + AVATAR_GROUND_Y;
+/** How far the bar stands off the room's south wall, so a stool has room behind it. */
+const CLUB_BAR_STANDOFF = 4.4;
 // The club occupies a lot north-west of MY SQUARE, on ground the walkable area
 // did not previously reach. Attendees come through a door on the east face
 // into a ground-floor lobby, then down a stair run into the basement room.
@@ -2509,9 +2511,11 @@ export class FestivalWorld {
     }
 
     // Doorway dressing. Both leaves stand open against the jambs.
-    this.mesh([1.5, doorHeight, 0.6], [b.buildingMaxX + 0.3, doorHeight / 2, b.doorMinZ - 0.3], material(0x35141c, 0.6, 0.3));
-    this.mesh([1.5, doorHeight, 0.6], [b.buildingMaxX + 0.3, doorHeight / 2, b.doorMaxZ + 0.3], material(0x35141c, 0.6, 0.3));
-    this.mesh([1.6, 0.8, b.doorMaxZ - b.doorMinZ + 1.4], [b.buildingMaxX + 0.3, doorHeight + 0.4, doorCenterZ], material(0x35141c, 0.6, 0.3));
+    // Set a few centimetres proud of the wall. Flush, the dressing's faces and
+    // the wall's landed on the same planes and speckled around the opening.
+    this.mesh([1.5, doorHeight, 0.6], [b.buildingMaxX + 0.36, doorHeight / 2, b.doorMinZ - 0.36], material(0x35141c, 0.6, 0.3));
+    this.mesh([1.5, doorHeight, 0.6], [b.buildingMaxX + 0.36, doorHeight / 2, b.doorMaxZ + 0.36], material(0x35141c, 0.6, 0.3));
+    this.mesh([1.6, 0.8, b.doorMaxZ - b.doorMinZ + 1.5], [b.buildingMaxX + 0.36, doorHeight + 0.4, doorCenterZ], material(0x35141c, 0.6, 0.3));
     const leafWidth = (b.doorMaxZ - b.doorMinZ) / 2;
     for (const [z, side] of [[b.doorMinZ, -1], [b.doorMaxZ, 1]] as Array<[number, number]>) {
       const leafZ = z + side * 0.2;
@@ -2523,20 +2527,20 @@ export class FestivalWorld {
       this.addCollider(b.buildingMaxX + 1.15 + leafWidth / 2, leafZ, leafWidth, 0.28, 0.12, aboveGround);
     }
     // The jambs are solid too, so nobody walks through the frame.
-    for (const z of [b.doorMinZ - 0.3, b.doorMaxZ + 0.3]) {
-      this.addCollider(b.buildingMaxX + 0.3, z, 1.5, 0.6, 0.12, aboveGround);
+    for (const z of [b.doorMinZ - 0.36, b.doorMaxZ + 0.36]) {
+      this.addCollider(b.buildingMaxX + 0.36, z, 1.5, 0.6, 0.12, aboveGround);
     }
     // The venue sign is fixed to the wall above the doorway; the club has no
     // free-standing poster stand.
     const doorSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['THE BASEMENT', 'XIEH GAN']) });
     this.venueSignMaterials.set('club', doorSignMaterial);
-    const doorSign = new THREE.Mesh(new THREE.PlaneGeometry(9.6, 2.7), doorSignMaterial);
-    doorSign.position.set(b.buildingMaxX + 0.56, 7.15, doorCenterZ);
+    const doorSign = new THREE.Mesh(new THREE.PlaneGeometry(9.6, 2.2), doorSignMaterial);
+    doorSign.position.set(b.buildingMaxX + 0.56, 7.1, doorCenterZ);
     doorSign.rotation.y = Math.PI / 2;
     this.scene.add(doorSign);
     this.clubNeon = this.mesh(
       [0.22, 0.22, 9.8],
-      [b.buildingMaxX + 0.56, 5.6, doorCenterZ],
+      [b.buildingMaxX + 0.56, doorHeight + 0.1, doorCenterZ],
       new THREE.MeshBasicMaterial({ color: 0xff2f6d }),
     );
 
@@ -2637,10 +2641,12 @@ export class FestivalWorld {
     }
 
     // A kerb around the stair slot, so the drop is legible from across the room.
-    for (const z of [b.stairMinZ - 0.25, b.stairMaxZ + 0.25]) {
-      this.mesh([b.stairTopX - b.lobbyMinX, 0.5, 0.5], [(b.lobbyMinX + b.stairTopX) / 2, 0.3, z], kerb);
+    // Overhanging the slot by a few centimetres. Flush with the floor's own
+    // edge, the kerb's face and the slab's face shared a plane and speckled.
+    for (const z of [b.stairMinZ - 0.18, b.stairMaxZ + 0.18]) {
+      this.mesh([b.stairTopX - b.lobbyMinX, 0.5, 0.5], [(b.lobbyMinX + b.stairTopX) / 2, 0.34, z], kerb);
     }
-    this.mesh([0.5, 0.5, b.stairMaxZ - b.stairMinZ + 1], [b.stairTopX + 0.25, 0.3, (b.stairMinZ + b.stairMaxZ) / 2], kerb);
+    this.mesh([0.5, 0.5, b.stairMaxZ - b.stairMinZ + 1.36], [b.stairTopX + 0.18, 0.34, (b.stairMinZ + b.stairMaxZ) / 2], kerb);
 
     // House lighting for the ground floor. Every fitting is fixed flush to the
     // face of the wall it belongs to: the inner faces are half a wall thickness
@@ -2724,7 +2730,7 @@ export class FestivalWorld {
     const shaftTop = -0.18;
     const shaftHeight = shaftTop - floor;
     for (const z of [b.stairMinZ - 0.7, b.stairMaxZ + 0.7]) {
-      this.mesh([stairRun, shaftHeight, 0.6], [(b.stairTopX + b.stairBottomX) / 2, floor + shaftHeight / 2, z], concrete);
+      this.mesh([stairRun - 0.4, shaftHeight, 0.6], [(b.stairTopX + b.stairBottomX) / 2 + 0.2, floor + shaftHeight / 2, z], concrete);
       this.addCollider((b.stairTopX + b.stairBottomX) / 2, z, stairRun, 0.6, 0.16, { minY: floor - 1.5, maxY: 40 }, 'stair-balustrade');
     }
 
@@ -2748,8 +2754,11 @@ export class FestivalWorld {
     }
     // Fascia around the well, closing the storey-deep cavity between the room's
     // ceiling and the roof cap so the opening reads as one clean shaft.
-    const fasciaHeight = 0.22 - (ceilingY - 0.3);
-    const fasciaY = (0.22 + ceilingY - 0.3) / 2;
+    // Held a hair under the floor above rather than flush with it: two faces on
+    // the same plane shimmer, and this rim is the one the balcony looks over.
+    const fasciaTop = 0.1;
+    const fasciaHeight = fasciaTop - (ceilingY - 0.3);
+    const fasciaY = (fasciaTop + ceilingY - 0.3) / 2;
     for (const [x, z, sx, sz] of [
       [wellMinX, (wellMinZ + wellMaxZ) / 2, 0.8, wellMaxZ - wellMinZ],
       [(wellMinX + wellMaxX) / 2, wellMinZ, wellMaxX - wellMinX, 0.8],
@@ -2771,7 +2780,7 @@ export class FestivalWorld {
     // Header over that opening, above head height so it never blocks the way.
     this.mesh([0.9, 1.6, b.stairMaxZ - b.stairMinZ + 0.5], [b.roomMaxX + 0.45, floor + CLUB_ROOM_HEIGHT - 0.9, (b.stairMinZ + b.stairMaxZ) / 2], roomWall);
     for (const z of [b.roomMinZ - 0.4, b.roomMaxZ + 0.4]) {
-      this.mesh([roomWidth + 1.6, CLUB_ROOM_HEIGHT, 0.8], [roomCenterX, floor + CLUB_ROOM_HEIGHT / 2, z], roomWall);
+      this.mesh([roomWidth, CLUB_ROOM_HEIGHT, 0.8], [roomCenterX, floor + CLUB_ROOM_HEIGHT / 2, z], roomWall);
       this.addCollider(roomCenterX, z, roomWidth + 1.6, 0.8, 0.16, belowGround, 'room-end-wall');
     }
 
@@ -2826,8 +2835,11 @@ export class FestivalWorld {
     // are at the heights a bar actually uses: a 1.1m counter and a 0.75m stool,
     // which at this world's scale of roughly two units to the metre is 2.2 and
     // 1.5 above the walking surface.
-    const barZ = b.roomMinZ + 1.4;
-    const stoolZ = b.roomMinZ + 3.4;
+    // Stood off the wall rather than against it. Pushed up to the south wall
+    // there was nowhere behind a stool for a camera to sit, so a drinker's
+    // view of the screen was taken by the counter they were sitting at.
+    const barZ = b.roomMinZ + 1.4 + CLUB_BAR_STANDOFF;
+    const stoolZ = b.roomMinZ + 3.4 + CLUB_BAR_STANDOFF;
     const barFloor = floor + 0.25;
     const counterHeight = 2.2;
     const stoolHeight = 1.5;
@@ -2856,11 +2868,11 @@ export class FestivalWorld {
     for (let index = 0; index < 10; index += 1) {
       this.mesh(
         [0.28, 0.7 + (index % 3) * 0.18, 0.28],
-        [-77 + index * 1.9, floor + 1.9, b.roomMinZ + 0.5],
+        [-77 + index * 1.9, floor + 1.9, barZ - 0.9],
         material([0x8f5a2b, 0x2f6d4a, 0x8a1220][index % 3], 0.4, 0.3),
       );
     }
-    this.mesh([20, 1.8, 0.5], [-68, floor + 2.4, b.roomMinZ + 0.2], material(0x1c1720, 0.7, 0.2));
+    this.mesh([20, 1.8, 0.5], [-68, floor + 2.4, barZ - 1.2], material(0x1c1720, 0.7, 0.2));
 
     // Light rig over the floor.
     for (let index = 0; index < 8; index += 1) {
@@ -4880,7 +4892,7 @@ export class FestivalWorld {
   /** Within reach of the club's counter, from the room side of it. */
   private nearClubBar(): boolean {
     if (!this.inClubRoom(this.player.position.x, this.player.position.z)) return false;
-    const counterZ = clubBounds.roomMinZ + 1.4;
+    const counterZ = clubBounds.roomMinZ + 1.4 + CLUB_BAR_STANDOFF;
     return Math.abs(this.player.position.z - counterZ) < 3.8 &&
       this.player.position.x > -79 && this.player.position.x < -57;
   }

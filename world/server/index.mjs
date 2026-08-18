@@ -157,6 +157,20 @@ const publicNpcProfiles = () => Object.keys(npcNames).map((id) => ({ id, name: n
 // http(s) address: this string ends up in a link the visitor's browser follows,
 // so a javascript: or data: URL here would be script execution on every
 // visitor who walks up to the counter.
+// The words on the gate, in both languages. STAFF own these; the build carries
+// its own copy so the gate still reads before this is ever fetched.
+const gateCopy = {
+  kicker: 'BETA',
+  kickerZh: 'BETA',
+  title: 'MY THEATRE',
+  titleZh: '我的戲院',
+  intro: 'Follow the programme, take a seat, watch the work.',
+  introZh: '跟著節目表、入座，觀看作品。',
+  nameLabel: 'ATTENDEE NAME',
+  nameLabelZh: '觀影者名稱',
+  updatedAt: 0,
+};
+
 const shopLink = { url: '', label: 'THE POP-UP STORE', labelZh: '快閃服飾店', updatedAt: 0 };
 const safeExternalUrl = (value) => {
   const text = safeText(value, 500);
@@ -319,6 +333,7 @@ const persistedSnapshot = () => ({
   pamphlet: pamphletContent,
   djProfiles,
   shopLink,
+  gateCopy,
   trackTempos,
   adminKeyDigest,
   messages,
@@ -498,6 +513,13 @@ const restorePersistedState = () => {
     gateBackground.updatedAt = clampNumber(saved.gateBackground.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0);
   }
 
+  if (saved.gateCopy && typeof saved.gateCopy === 'object') {
+    for (const field of ['kicker', 'kickerZh', 'title', 'titleZh', 'intro', 'introZh', 'nameLabel', 'nameLabelZh']) {
+      const value = safeText(saved.gateCopy[field], field.startsWith('intro') ? 300 : 80);
+      if (value) gateCopy[field] = value;
+    }
+    gateCopy.updatedAt = clampNumber(saved.gateCopy.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0);
+  }
   if (saved.shopLink && typeof saved.shopLink === 'object') {
     Object.assign(shopLink, {
       url: safeExternalUrl(saved.shopLink.url),
@@ -637,6 +659,7 @@ const stateFor = (visitor) => ({
   pamphlet: pamphletContent,
   djProfiles,
   shopLink,
+  gateCopy,
   trackTempos,
 });
 
@@ -701,7 +724,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'GET' && url.pathname === '/api/config') {
-      return json(response, 200, { schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, trackTempos, clubRequest, venueQueues });
+      return json(response, 200, { schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, gateCopy, trackTempos, clubRequest, venueQueues });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
@@ -955,6 +978,7 @@ const server = createServer(async (request, response) => {
           pamphlet: pamphletContent,
           djProfiles,
           shopLink,
+          gateCopy,
           trackTempos,
         });
       }
@@ -1147,6 +1171,18 @@ const server = createServer(async (request, response) => {
         scheduleBroadcast();
         persist();
         return json(response, 200, { ok: true, pamphlet: pamphletContent });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/gate-copy') {
+        const next = {};
+        for (const field of ['kicker', 'kickerZh', 'title', 'titleZh', 'intro', 'introZh', 'nameLabel', 'nameLabelZh']) {
+          const value = safeText(payload[field], field.startsWith('intro') ? 300 : 80);
+          if (!value) return apiError(response, 400, 'Complete every gate field in both languages.');
+          next[field] = value;
+        }
+        Object.assign(gateCopy, next, { updatedAt: Date.now() });
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true, gateCopy });
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/shop-link') {
         // An empty string is allowed: that is how STAFF take the store down.

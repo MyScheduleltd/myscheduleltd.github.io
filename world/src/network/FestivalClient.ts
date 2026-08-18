@@ -120,6 +120,7 @@ export interface FestivalState {
   pamphlet: PamphletContent;
   djProfiles: DjProfiles;
   shopLink: ShopLink;
+  gateCopy: GateCopy;
   trackTempos: TrackTempos;
 }
 
@@ -139,6 +140,7 @@ export interface AdminState {
   pamphlet: PamphletContent;
   djProfiles: DjProfiles;
   shopLink: ShopLink;
+  gateCopy: GateCopy;
   trackTempos: TrackTempos;
 }
 
@@ -154,6 +156,19 @@ export interface DjProfile {
 }
 
 export type DjProfiles = Record<string, DjProfile>;
+
+/** The words on the gate, in both languages. */
+export interface GateCopy {
+  kicker: string;
+  kickerZh: string;
+  title: string;
+  titleZh: string;
+  intro: string;
+  introZh: string;
+  nameLabel: string;
+  nameLabelZh: string;
+  updatedAt: number;
+}
 
 /** Where the rooftop pop-up store sends a visitor. Empty until STAFF set it. */
 export interface ShopLink {
@@ -173,6 +188,7 @@ export interface PublicConfig {
   pamphlet: PamphletContent;
   djProfiles: DjProfiles;
   shopLink: ShopLink;
+  gateCopy: GateCopy;
   trackTempos: TrackTempos;
 }
 
@@ -391,6 +407,13 @@ export class FestivalClient {
     labelZh: string;
   }): Promise<void> {
     await this.adminRequest('/api/admin/shop-link', key, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateGateCopy(key: string, payload: Omit<GateCopy, 'updatedAt'>): Promise<void> {
+    await this.adminRequest('/api/admin/gate-copy', key, {
       method: 'POST',
       body: JSON.stringify(payload),
     });

@@ -15,6 +15,7 @@ import {
   type ConnectionStatus,
   type FestivalState,
   type GateBackground,
+  type GateCopy,
   type PamphletContent,
   type ProgrammeMode,
   type SiteStyle,
@@ -95,9 +96,9 @@ const defaultPalette: AvatarPalette = {
 
 const copy = {
   en: {
-    gateKicker: 'PHASE 5 · LIVE FESTIVAL READY',
-    gateTitle: 'ENTER THE FESTIVAL',
-    gateIntro: 'A film festival held by My Schedule.',
+    gateKicker: 'BETA',
+    gateTitle: 'MY THEATRE',
+    gateIntro: 'Follow the programme, take a seat, watch the work.',
     festivalId: 'ATTENDEE NAME',
     remember: 'REMEMBER ME ON THIS DEVICE',
     sound: 'ENTER WITH SOUND',
@@ -113,9 +114,9 @@ const copy = {
     gateNote: 'MOVE: WASD / ARROWS · CAMERA: T · CHAT: ENTER',
   },
   'zh-TW': {
-    gateKicker: '第五階段 · 即時影展預備版',
-    gateTitle: '進入影展',
-    gateIntro: '由我的檔期打造的永久電影城市。跟著節目表、入座，觀看作品。',
+    gateKicker: 'BETA',
+    gateTitle: '我的戲院',
+    gateIntro: '跟著節目表、入座，觀看作品。',
     festivalId: '觀影者名稱',
     remember: '記住此裝置',
     sound: '開啟聲音進入',
@@ -238,6 +239,7 @@ export class App {
   private npcProfiles: NpcProfile[] = DEFAULT_NPC_PROFILES.map((profile) => ({ ...profile }));
   private pamphlet: PamphletContent = { ...defaultPamphlet };
   private readonly programmeClock = new ProgrammeClock();
+  private gateCopy?: GateCopy;
   private controlledNpcId?: string;
 
   constructor(root: HTMLElement) {
@@ -263,13 +265,37 @@ export class App {
       this.gateBackground = { ...this.gateBackground, ...config.gateBackground };
       this.npcProfiles = this.normalizeNpcProfiles(config.npcProfiles, config.npcNames);
       this.pamphlet = { ...this.pamphlet, ...config.pamphlet };
+      if (config.gateCopy) {
+        this.gateCopy = config.gateCopy;
+        // The gate is already on screen by now, so it has to be redrawn.
+        if (this.root.querySelector('#gate-form')) this.renderGate();
+      }
       this.applySiteStyle();
       this.applyGateBackground();
     }).catch(() => undefined);
   }
 
+  /**
+   * The gate's wording: STAFF's if the service has any, the build's otherwise.
+   * The gate is drawn before the service is asked, so the build always has to
+   * carry a readable copy of its own.
+   */
+  private gateText(): { [K in keyof typeof copy[Language]]: string } {
+    const base = copy[this.language];
+    const staff = this.gateCopy;
+    if (!staff) return base;
+    const zh = this.language === 'zh-TW';
+    return {
+      ...base,
+      gateKicker: (zh ? staff.kickerZh : staff.kicker) || base.gateKicker,
+      gateTitle: (zh ? staff.titleZh : staff.title) || base.gateTitle,
+      gateIntro: (zh ? staff.introZh : staff.intro) || base.gateIntro,
+      festivalId: (zh ? staff.nameLabelZh : staff.nameLabel) || base.festivalId,
+    };
+  }
+
   private renderGate(): void {
-    const text = copy[this.language];
+    const text = this.gateText();
     document.documentElement.lang = this.language;
     this.root.innerHTML = `
       <section class="gate" aria-labelledby="gate-title">
@@ -1363,6 +1389,7 @@ export class App {
     this.gateBackground = { ...this.gateBackground, ...state.gateBackground };
     this.npcProfiles = this.normalizeNpcProfiles(state.npcProfiles, state.npcNames);
     this.pamphlet = { ...this.pamphlet, ...state.pamphlet };
+    if (state.gateCopy) this.gateCopy = state.gateCopy;
     const selfVisitor = state.visitors.find((visitor) => visitor.id === state.selfId);
     if (selfVisitor) {
       this.currentId = selfVisitor.name;
@@ -1711,6 +1738,27 @@ export class App {
     });
 
     if (panelId === 'admin') {
+      const gateEditor = panel.querySelector<HTMLFormElement>('#gate-copy-editor');
+      gateEditor?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const data = new FormData(gateEditor);
+        const button = gateEditor.querySelector<HTMLButtonElement>('button[type="submit"]');
+        if (button) button.disabled = true;
+        const field = (name: string) => String(data.get(name) ?? '');
+        void this.festivalClient.updateGateCopy(this.staffKey, {
+          kicker: field('kicker'), kickerZh: field('kickerZh'),
+          title: field('title'), titleZh: field('titleZh'),
+          intro: field('intro'), introZh: field('introZh'),
+          nameLabel: field('nameLabel'), nameLabelZh: field('nameLabelZh'),
+        }).then(async () => {
+          await this.refreshAdminState(false);
+          this.showWorldAlert(this.language === 'zh-TW' ? '入口文字已更新' : 'GATE COPY SAVED');
+        }).catch((error: unknown) => {
+          this.showWorldAlert(error instanceof Error ? error.message : (this.language === 'zh-TW' ? '儲存失敗' : 'COULD NOT SAVE'));
+        }).finally(() => {
+          if (button) button.disabled = false;
+        });
+      });
       const shopEditor = panel.querySelector<HTMLFormElement>('#shop-link-editor');
       shopEditor?.addEventListener('submit', (event) => {
         event.preventDefault();
@@ -2123,6 +2171,26 @@ export class App {
       </div>
       ${controlledNpcId ? `<div class="staff-identity"><span>${this.language === 'zh-TW' ? '目前扮演' : 'PLAYING AS'} · ${this.escapeHtml(this.npcProfiles.find((profile) => profile.id === controlledNpcId)?.name ?? controlledNpcId)}${mentorCarrierName ? ` · ${this.language === 'zh-TW' ? '由' : 'CARRIED BY'} ${this.escapeHtml(mentorCarrierName)}` : ''}</span><button type="button" data-npc-play="">${this.language === 'zh-TW' ? '回復本人' : 'RETURN TO SELF'}</button></div>` : ''}
       ${this.adminError ? `<p class="staff-error" role="alert">${this.escapeHtml(this.adminError)}</p>` : ''}
+      ${this.staffSection('gate', this.language === 'zh-TW' ? '入口文字' : 'GATE COPY', `
+      <form class="staff-form" id="gate-copy-editor">
+        <p class="staff-note">${this.language === 'zh-TW'
+          ? '訪客進入前看到的文字。兩種語言都要填寫。'
+          : 'What a visitor reads before entering. Both languages are required.'}</p>
+        ${([
+          ['kickerZh', '小標（中）', 'KICKER (ZH)'],
+          ['kicker', '小標（英）', 'KICKER (EN)'],
+          ['titleZh', '標題（中）', 'TITLE (ZH)'],
+          ['title', '標題（英）', 'TITLE (EN)'],
+          ['introZh', '說明（中）', 'INTRO (ZH)'],
+          ['intro', '說明（英）', 'INTRO (EN)'],
+          ['nameLabelZh', '名稱欄位（中）', 'NAME LABEL (ZH)'],
+          ['nameLabel', '名稱欄位（英）', 'NAME LABEL (EN)'],
+        ] as Array<[keyof GateCopy, string, string]>).map(([field, zhLabel, enLabel]) => {
+          const value = String(this.adminState?.gateCopy?.[field] ?? this.gateCopy?.[field] ?? '');
+          return `<label><span>${this.language === 'zh-TW' ? zhLabel : enLabel}</span><input name="${field}" maxlength="${String(field).startsWith('intro') ? 300 : 80}" value="${this.escapeAttribute(value)}" required /></label>`;
+        }).join('')}
+        <button type="submit">${this.language === 'zh-TW' ? '儲存入口文字' : 'SAVE GATE COPY'}</button>
+      </form>`)}
       ${this.staffSection('shop', this.language === 'zh-TW' ? '快閃服飾店' : 'POP-UP STORE', `
       <form class="staff-form" id="shop-link-editor">
         <p class="staff-note">${this.language === 'zh-TW'
