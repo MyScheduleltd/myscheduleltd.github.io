@@ -6,6 +6,8 @@ import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import legacySource from '../../docs/js/allData.js';
 
+/** The room remembers this many lines; older ones fall off the top. */
+const CHAT_HISTORY_LIMIT = 50;
 const isProduction = process.env.NODE_ENV === 'production';
 // Hosts hand a container its port in PORT and expect the process to bind every
 // interface. Reading only FESTIVAL_PORT and binding loopback is right for a
@@ -927,7 +929,7 @@ const server = createServer(async (request, response) => {
       if (!text) return apiError(response, 400, 'Message is empty.');
       visitor.chatTimes.push(now);
       messages.push({ id: randomUUID(), authorId: visitor.id, author: visitor.name, channel, text, timestamp: now });
-      if (messages.length > 500) messages.splice(0, messages.length - 500);
+      if (messages.length > CHAT_HISTORY_LIMIT) messages.splice(0, messages.length - CHAT_HISTORY_LIMIT);
       scheduleBroadcast();
       persist();
       return json(response, 201, { ok: true });
@@ -980,7 +982,7 @@ const server = createServer(async (request, response) => {
         return json(response, 200, {
           visitors: [...visitors.values()].map(publicVisitor),
           seats: [...seats.entries()].map(([seatId, visitorId]) => ({ seatId, visitorId })),
-          messages: messages.slice(-100),
+          messages: messages.slice(-CHAT_HISTORY_LIMIT),
           schedule: programmeSchedule,
           siteStyle,
           gateBackground,
