@@ -288,6 +288,10 @@ const validSeats = new Set([
   ...Array.from({ length: 3 }, (_, row) => Array.from({ length: 7 }, (_, column) => `SHORE-${row + 1}-${column + 1}`)).flat(),
   // Bar stools in the club.
   ...Array.from({ length: 6 }, (_, column) => `CLUB-1-${column + 1}`),
+  // Benches on the rooftop deck. These were built into the world without ever
+  // being registered here, so every attempt to sit on one was turned away as an
+  // unknown seat.
+  ...Array.from({ length: 3 }, (_, index) => `ROOFTOP-BENCH-${index + 1}`),
 ]);
 
 const json = (response, status, payload) => {
@@ -693,7 +697,7 @@ const createVisitor = (name, palette) => ({
   name,
   originalName: name,
   palette: safePalette(palette),
-  presence: { x: 0, z: 22, rotation: 0, location: 'FESTIVAL GATE', state: 'walking', moving: false, venue: 'shore' },
+  presence: { x: 0, y: 0.28, z: 22, rotation: 0, location: 'FESTIVAL GATE', state: 'walking', moving: false, venue: 'shore' },
   joinedAt: Date.now(),
   lastSeen: Date.now(),
   mutedUntil: 0,
@@ -951,8 +955,15 @@ const server = createServer(async (request, response) => {
       if (!visitor) return apiError(response, 401, 'Invalid festival session.');
       const payload = await body(request);
       visitor.presence = {
-        x: Math.max(-50, Math.min(50, Number(payload.x) || 0)),
-        z: Math.max(-80, Math.min(30, Number(payload.z) || 0)),
+        // These bounds have to cover every venue or attendees are dragged to
+        // the edge of them and drawn somewhere they are not. The world runs
+        // from the basement's west wall at -90 to the roof deck's east edge at
+        // 54, and from the far water at -58 to the club's south wall at 42.
+        x: Math.max(-95, Math.min(60, Number(payload.x) || 0)),
+        // Height, without which the roof deck seven units up and the basement
+        // sixteen down both drew their occupants standing in the street.
+        y: Math.max(-24, Math.min(14, Number(payload.y) || 0)),
+        z: Math.max(-85, Math.min(50, Number(payload.z) || 0)),
         rotation: Number(payload.rotation) || 0,
         location: safeText(payload.location, 40) || 'FESTIVAL GATE',
         state: ['walking', 'seated', 'swimming'].includes(payload.state) ? payload.state : 'walking',

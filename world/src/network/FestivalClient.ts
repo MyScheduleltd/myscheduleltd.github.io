@@ -7,6 +7,8 @@ export type ChatChannel = 'NEARBY' | 'VENUE' | 'FESTIVAL';
 
 export interface NetworkPresence {
   x: number;
+  /** Height above the street. The roof deck and the basement both need it. */
+  y: number;
   z: number;
   rotation: number;
   location: string;

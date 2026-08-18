@@ -300,6 +300,9 @@ test('staff NPC control preserves the original attendee and restores its positio
   const session = await join('CONTROL TEST');
   const startingPresence = {
     x: 6,
+    // Up on the roof deck, so restoring the attendee has to put the height back
+    // as well as the floor plan.
+    y: 7.28,
     z: -12,
     rotation: 0.75,
     location: 'MY SQUARE',
@@ -348,6 +351,7 @@ test('staff NPC control preserves the original attendee and restores its positio
   assert.deepEqual(controlledVisitor.impersonationOrigin, startingPresence);
   assert.equal(controlledVisitor.presence.x, 18);
   assert.equal(controlledVisitor.presence.z, -26);
+  assert.equal(controlledVisitor.presence.y, 7.28, 'height rides along with the rest of the presence');
   assert.equal(controlledVisitor.presence.state, 'seated');
   assert.equal(controlledVisitor.presence.moving, true);
   assert.equal(controlledVisitor.presence.carriedItem, 'POPCORN');
@@ -907,4 +911,54 @@ test('an instance that has settings of its own ignores the seed', async () => {
   } finally {
     await stopServer(instance);
   }
+});
+
+test('presence keeps attendees where they stand across the whole world', async () => {
+  const session = await join('EXTENT TEST');
+  // The basement's west end and the roof deck's east edge both used to fall
+  // outside what the service would accept, so attendees there were pinned to
+  // the boundary and drawn somewhere they were not.
+  const places = [
+    { label: 'the basement', x: -68, y: -16.22, z: 30 },
+    { label: 'the roof deck', x: 54, y: 7.28, z: 44 },
+    { label: 'the far water', x: 0, y: -2.08, z: -58 },
+  ];
+  for (const place of places) {
+    const response = await fetch(`${baseUrl}/api/presence`, {
+      method: 'POST',
+      headers: auth(session),
+      body: JSON.stringify({
+        x: place.x,
+        y: place.y,
+        z: place.z,
+        rotation: 0,
+        location: place.label,
+        state: 'walking',
+        moving: false,
+        venue: 'shore',
+      }),
+    });
+    assert.equal(response.status, 202);
+    const state = await (await fetch(`${baseUrl}/api/admin/state`, {
+      headers: { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173' },
+    })).json();
+    const mine = state.visitors.find((visitor) => visitor.id === session.id);
+    assert.equal(mine.presence.x, place.x, `x survives in ${place.label}`);
+    assert.equal(mine.presence.y, place.y, `height survives in ${place.label}`);
+    assert.equal(mine.presence.z, place.z, `z survives in ${place.label}`);
+  }
+});
+
+test('a rooftop bench is a seat the service knows about', async () => {
+  const session = await join('BENCH TEST');
+  // Built into the world but never registered here, so sitting was refused as
+  // an unknown seat.
+  for (const seatId of ['ROOFTOP-BENCH-1', 'ROOFTOP-BENCH-2', 'ROOFTOP-BENCH-3']) {
+    const claimed = await fetch(`${baseUrl}/api/seats/${seatId}/claim`, { method: 'POST', headers: auth(session) });
+    assert.equal(claimed.status, 200, `${seatId} can be claimed`);
+    const released = await fetch(`${baseUrl}/api/seats/${seatId}/release`, { method: 'POST', headers: auth(session) });
+    assert.equal(released.status, 200);
+  }
+  const nonsense = await fetch(`${baseUrl}/api/seats/ROOFTOP-BENCH-9/claim`, { method: 'POST', headers: auth(session) });
+  assert.equal(nonsense.status, 404, 'a bench that does not exist is still refused');
 });

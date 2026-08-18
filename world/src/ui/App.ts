@@ -715,6 +715,7 @@ export class App {
     this.syncVenueScreen(snapshot);
     void this.festivalClient.publishPresence({
       x: snapshot.x,
+      y: snapshot.y,
       z: snapshot.z,
       rotation: snapshot.rotation,
       location: snapshot.location,
@@ -1567,6 +1568,7 @@ export class App {
         name: visitor.name,
         palette: visitor.palette,
         x: visitor.presence.x,
+        y: visitor.presence.y,
         z: visitor.presence.z,
         rotation: visitor.presence.rotation,
         state: visitor.presence.state,

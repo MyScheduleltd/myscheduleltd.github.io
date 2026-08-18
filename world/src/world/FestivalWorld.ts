@@ -79,6 +79,8 @@ export interface WorldSnapshot {
   interaction?: string;
   canInteract: boolean;
   x: number;
+  /** Height matters: the deck is seven up and the basement sixteen down. */
+  y: number;
   z: number;
   rotation: number;
   moving: boolean;
@@ -91,6 +93,7 @@ export interface RemoteVisitorVisual {
   originalName: string;
   palette: AvatarPalette;
   x: number;
+  y?: number;
   z: number;
   rotation: number;
   state: PlayerState;
@@ -100,6 +103,7 @@ export interface RemoteVisitorVisual {
   npcId?: string;
   impersonationOrigin?: {
     x: number;
+    y?: number;
     z: number;
     rotation: number;
     moving?: boolean;
@@ -626,6 +630,12 @@ export class FestivalWorld {
     perspective: { yaw: Math.atan2(7.8, 7.2), pitch: Math.atan2(4.85, Math.hypot(7.8, 7.2)) },
   };
   private readonly screeningOrbit = { yaw: 0, pitch: 0 };
+  /**
+   * How far back the orbit cameras sit, as a multiple of their resting
+   * distance. Held between a shoulder-close view and roughly twice the default,
+   * which is as far as the world reads before the walls start intruding.
+   */
+  private cameraZoom = 1;
 
   private animationFrame = 0;
   private cameraMode: CameraMode = 'follow';
@@ -723,6 +733,10 @@ export class FestivalWorld {
     window.addEventListener('keyup', this.keyUp);
     window.addEventListener('message', this.projectorMessage);
     this.canvas.addEventListener('pointerdown', this.cameraPointerDown);
+    // passive: false because the page must not scroll under the world, and a
+    // trackpad pinch arrives as a wheel event the browser would otherwise use
+    // to zoom the whole document.
+    this.canvas.addEventListener('wheel', this.cameraWheel, { passive: false });
     window.addEventListener('pointermove', this.cameraPointerMove);
     window.addEventListener('pointerup', this.cameraPointerUp);
     window.addEventListener('pointercancel', this.cameraPointerUp);
@@ -744,6 +758,7 @@ export class FestivalWorld {
     window.removeEventListener('keyup', this.keyUp);
     window.removeEventListener('message', this.projectorMessage);
     this.canvas.removeEventListener('pointerdown', this.cameraPointerDown);
+    this.canvas.removeEventListener('wheel', this.cameraWheel);
     window.removeEventListener('pointermove', this.cameraPointerMove);
     window.removeEventListener('pointerup', this.cameraPointerUp);
     window.removeEventListener('pointercancel', this.cameraPointerUp);
@@ -1245,6 +1260,7 @@ export class FestivalWorld {
         ...visitor,
         name: visitor.originalName,
         x: idleOrigin.x,
+        y: idleOrigin.y,
         z: idleOrigin.z,
         rotation: idleOrigin.rotation,
         state: 'walking',
@@ -1257,7 +1273,15 @@ export class FestivalWorld {
         avatar = this.createRemoteAvatar(displayVisitor);
         this.remoteAvatars.set(visitor.id, avatar);
       }
-      avatar.target.set(displayVisitor.x, displayVisitor.state === 'swimming' ? AVATAR_SWIM_Y : AVATAR_GROUND_Y, displayVisitor.z);
+      // Everyone used to be drawn at ground level whatever height they were
+      // actually at, which put anyone on the roof deck seven units under their
+      // own feet and anyone in the basement sixteen units above the ceiling.
+      // An older client sends no height at all, so fall back to the floor it
+      // would have been drawn on rather than dropping it to zero.
+      const reportedY = typeof displayVisitor.y === 'number' && Number.isFinite(displayVisitor.y)
+        ? displayVisitor.y
+        : (displayVisitor.state === 'swimming' ? AVATAR_SWIM_Y : AVATAR_GROUND_Y);
+      avatar.target.set(displayVisitor.x, reportedY, displayVisitor.z);
       avatar.targetRotation = displayVisitor.rotation;
       avatar.state = displayVisitor.state;
       avatar.moving = displayVisitor.moving;
@@ -1758,6 +1782,27 @@ export class FestivalWorld {
     orbit.pitch = this.cameraMode === 'first-person'
       ? THREE.MathUtils.clamp(orbit.pitch + deltaY * 0.0035, -0.85, 0.95)
       : THREE.MathUtils.clamp(orbit.pitch + deltaY * 0.0035, lowestPitch, 1.08);
+  };
+
+  /**
+   * Wheel and trackpad pinch pull the camera in and push it out. A pinch on a
+   * trackpad reaches the page as a wheel event with ctrlKey set, and moves in
+   * much smaller steps than a mouse notch, so it is scaled up to feel the same
+   * under either hand.
+   */
+  private readonly cameraWheel = (event: WheelEvent): void => {
+    // Seated at a screen and in first person the distance is not the
+    // attendee's to set: one is framed on the screen, the other is an eyeline.
+    if (this.cameraMode === 'screening' || this.cameraMode === 'first-person') return;
+    event.preventDefault();
+    // Wheel deltas arrive in lines or pages depending on the device.
+    const lines = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1;
+    // Calibrated so the whole range takes about twenty-five notches of a mouse
+    // wheel rather than four. A trackpad sends many small deltas per gesture
+    // and a pinch sends smaller ones still, so the pinch is scaled up to cover
+    // the same ground in one comfortable movement.
+    const step = event.deltaY * lines * (event.ctrlKey ? 0.006 : 0.0005);
+    this.cameraZoom = THREE.MathUtils.clamp(this.cameraZoom * Math.exp(step), 0.45, 2.2);
   };
 
   private readonly cameraPointerUp = (event: PointerEvent): void => {
@@ -3088,11 +3133,14 @@ export class FestivalWorld {
       deckLightAt(r.maxX - parapetFace, z, [0.22, 0.42, 1.5]);
     }
     // Benches, low enough to sit on.
-    for (const [x, z] of [[centerX - 11, deckCenterZ + 4], [centerX + 11, deckCenterZ + 2], [centerX - 3, deckCenterZ + 7]] as Array<[number, number]>) {
+    for (const [benchIndex, [x, z]] of ([[centerX - 11, deckCenterZ + 4], [centerX + 11, deckCenterZ + 2], [centerX - 3, deckCenterZ + 7]] as Array<[number, number]>).entries()) {
       this.mesh([2.4, 0.8, 2], [x, ROOF_Y + 0.4, z], material(0x4d3a2c, 0.6, 0.2));
       this.addCollider(x, z, 2.4, 2, 0.1, onDeck, 'rooftop-bench');
       this.seats.push({
-        id: `ROOFTOP-BENCH-${this.seats.filter((seat) => seat.kind === 'bench').length + 1}`,
+        // Numbered by position in this list rather than by how many benches
+        // happen to exist, so the ids stay put and keep matching the service's
+        // register of seats.
+        id: `ROOFTOP-BENCH-${benchIndex + 1}`,
         venue: 'rooftop',
         // Perched on the block, facing the screen at the deck's south edge.
         position: new THREE.Vector3(x, ROOF_Y + 0.8 - AVATAR_SEAT_DROP, z),
@@ -3870,6 +3918,7 @@ export class FestivalWorld {
         interaction: this.interactionLabel(),
         canInteract: this.canInteract(),
         x: this.player.position.x,
+        y: this.player.position.y,
         z: this.player.position.z,
         rotation: this.player.rotation.y,
         moving: !this.isMentorControlLocked() && this.moveVector.lengthSq() > 0.0001,
@@ -4313,7 +4362,13 @@ export class FestivalWorld {
     const smoothing = 1 - Math.exp(-delta * 8);
     for (const avatar of this.remoteAvatars.values()) {
       const positionError = avatar.target.distanceTo(avatar.group.position);
-      avatar.group.position.lerp(avatar.target, smoothing);
+      // Easing looks right for walking and wrong for everything else. Taking a
+      // seat, going down to the basement, coming up to the deck: those move an
+      // attendee further than they could walk between updates, and easing sent
+      // the body gliding through the scenery to catch up, which is most of what
+      // reads as another visitor being in the wrong place.
+      if (positionError > 6) avatar.group.position.copy(avatar.target);
+      else avatar.group.position.lerp(avatar.target, smoothing);
       const rotationDelta = Math.atan2(
         Math.sin(avatar.targetRotation - avatar.group.rotation.y),
         Math.cos(avatar.targetRotation - avatar.group.rotation.y),
@@ -4579,6 +4634,11 @@ export class FestivalWorld {
   private resolvePlayerCrowdCollisions(previous: THREE.Vector3): void {
     const minimumDistance = 1.12;
     const separate = (position: THREE.Vector3, yieldNpc?: NpcAvatar) => {
+      // Floors are stacked in this world — the deck is seven up, the basement
+      // sixteen down — and this test is horizontal only. Without a height check
+      // someone standing directly overhead would shove the attendee sideways
+      // through a wall they cannot see.
+      if (Math.abs(position.y - this.player.position.y) > 2.6) return;
       let dx = this.player.position.x - position.x;
       let dz = this.player.position.z - position.z;
       let distance = Math.hypot(dx, dz);
@@ -4663,7 +4723,7 @@ export class FestivalWorld {
         this.cameraMode === 'perspective' ? 0 : -2.2,
       ));
       const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
-      const radius = this.cameraMode === 'perspective' ? 11.68 : 10.56;
+      const radius = (this.cameraMode === 'perspective' ? 11.68 : 10.56) * this.cameraZoom;
       const horizontalRadius = Math.cos(orbit.pitch) * radius;
       cameraTarget.copy(this.lookTarget).add(new THREE.Vector3(
         Math.sin(orbit.yaw) * horizontalRadius,
