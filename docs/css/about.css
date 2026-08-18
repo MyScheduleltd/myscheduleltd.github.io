@@ -189,14 +189,7 @@ h2 {
 
 .aboutMember {
   position: relative;
-  background: url("https://mir-s3-cdn-cf.behance.net/project_modules/1400/dda0dc198340321.6645fb865480b.png") repeat-x bottom center;
-  background-size: 1000px;
-  min-width: 1000px;
-}
-@media all and (max-width: 920px) {
-  .aboutMember {
-    display: none;
-  }
+  min-width: auto;
 }
 
 .aboutVideos2 h2:not(.mob) {
@@ -225,21 +218,6 @@ h2 {
   }
 }
 
-.mob-member-bg {
-  background: url(https://mir-s3-cdn-cf.behance.net/project_modules/fs/968599198340321.66461e9a46731.png) no-repeat center bottom;
-  background-size: cover;
-  height: 44%;
-  width: 100%;
-  position: fixed;
-  bottom: 0;
-  z-index: 10;
-  pointer-events: none;
-}
-@media all and (min-width: 920px) {
-  .mob-member-bg {
-    display: none;
-  }
-}
 
 .aboutMember .member {
   z-index: 10;
@@ -463,15 +441,6 @@ h2 {
   height: 1600px;
   margin-top: -30px;
 }
-.member-container:after {
-  content: "";
-  display: block;
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  background: url("https://mir-s3-cdn-cf.behance.net/project_modules/max_1200/06ae4e198340321.6645fb8653a7b.png") no-repeat bottom center;
-  top: 0;
-}
 .member-container .member img {
   width: 100%;
 }
@@ -489,8 +458,7 @@ h2 {
       -ms-flex-align: center;
           align-items: center;
   position: relative;
-  background: #000 url("https://mir-s3-cdn-cf.behance.net/project_modules/fs/968599198340321.66461e9a46731.png") no-repeat center bottom;
-  background-size: contain;
+  background: #000;
 }
 @media all and (max-width: 920px) {
   .contact-us {
