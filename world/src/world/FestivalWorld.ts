@@ -2485,13 +2485,19 @@ export class FestivalWorld {
       emissiveMap: boardTexture,
       emissiveIntensity: 0.08,
     });
+    // Stood off the centre line. The Shore's screen is also on x = 0, forty
+    // units behind this, and the screens are DOM panels composited over the
+    // canvas rather than geometry in it — so when the two line up the panel
+    // draws straight through the board as a pale rectangle. West of the road
+    // nothing shares an axis with a screen.
+    const boardX = -15;
     const board = new THREE.Mesh(new THREE.BoxGeometry(12.5, 6.1, 0.45), this.programmeBoardMaterial);
-    board.position.set(0, 3.6, -3);
+    board.position.set(boardX, 3.6, -3);
     board.castShadow = true;
     this.scene.add(board);
-    this.mesh([0.6, 3.2, 0.6], [-5.3, 1.5, -3], material(0x17171a));
-    this.mesh([0.6, 3.2, 0.6], [5.3, 1.5, -3], material(0x17171a));
-    this.addCollider(0, -3, 12.5, 1.2);
+    this.mesh([0.6, 3.2, 0.6], [boardX - 5.3, 1.5, -3], material(0x17171a));
+    this.mesh([0.6, 3.2, 0.6], [boardX + 5.3, 1.5, -3], material(0x17171a));
+    this.addCollider(boardX, -3, 12.5, 1.2);
   }
 
   private createShoreScreen(): void {
