@@ -2694,6 +2694,7 @@ export class App {
     if (value.includes('· OCCUPIED')) return value.replace('· OCCUPIED', '· 已有人');
     if (value.startsWith('E / TAKE SEAT')) return value.replace('E / TAKE SEAT', 'E／入座');
     if (value.startsWith('E TO SIT')) return value.replace('E TO SIT', 'E／入座');
+    if (value.startsWith('O / WORSHIP')) return value.replace('O / WORSHIP', 'O／參拜');
     if (value.startsWith('E / WAVE TO')) return value.replace('E / WAVE TO', 'E／揮手給');
     if (value.startsWith('E / WAG TAIL AT')) return value.replace('E / WAG TAIL AT', 'E／搖尾巴給');
     if (value === 'E / ORDER A DRINK') return 'E／點一杯';

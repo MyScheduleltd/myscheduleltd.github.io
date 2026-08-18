@@ -206,6 +206,8 @@ interface AvatarRig {
   rightLeg: THREE.Group;
   torso: THREE.Mesh;
   treat: THREE.Mesh;
+  /** Head, face and hair together, so a bow takes the whole of it. */
+  head: THREE.Group;
   /** Under the feet, and only out while running. */
   board: THREE.Group;
 }
@@ -302,12 +304,12 @@ const ROOF_AVATAR_Y = ROOF_Y + AVATAR_GROUND_Y;
 // already had but nobody was allowed to walk on. Approached from the west,
 // up three steps onto a raised podium.
 const TEMPLE = {
-  minX: 60,
-  maxX: 88,
-  minZ: -12,
-  maxZ: 20,
+  minX: 76,
+  maxX: 106,
+  minZ: -14,
+  maxZ: 22,
   podium: 1.2,
-  stepMinX: 55.4,
+  stepMinX: 71.4,
   wallThickness: 0.9,
   doorHalfWidth: 3.6,
 };
@@ -1843,9 +1845,7 @@ export class FestivalWorld {
     if (this.playerState === 'swimming' || this.airborne) return;
     const now = performance.now();
     if (now - this.lastDonationAt < 1_200) return;
-    const atAltar = this.templeAltar !== undefined &&
-      Math.hypot(this.player.position.x - this.templeAltar.x, this.player.position.z - this.templeAltar.z) < 7 &&
-      this.player.position.y > TEMPLE.podium - 0.5;
+    const atAltar = this.atTheAltar();
     let target: string | undefined;
     if (!atAltar) {
       const npc = this.nearestNpcWithin(5.2);
@@ -3199,12 +3199,15 @@ export class FestivalWorld {
     // Lintel over the doorway, so the opening reads as a door and not a hole.
     this.mesh([t.wallThickness + 0.4, 1.5, t.doorHalfWidth * 2], [t.minX, t.podium + wallHeight - 0.75, centerZ], timber);
 
-    // Columns down both flanks, inside the walls.
-    for (const z of [t.minZ + 6, centerZ, t.maxZ - 6]) {
-      for (const x of [t.minX + 4, t.maxX - 4]) {
-        this.mesh([1.1, wallHeight, 1.1], [x, wallY, z], lacquer);
-        this.mesh([1.5, 0.5, 1.5], [x, t.podium + wallHeight - 0.25, z], gold);
-        this.addCollider(x, z, 1.1, 1.1, 0.1, { minY: -0.4, maxY: 60 }, 'temple-column');
+    // One pillar to each corner, carrying the roof where it needs carrying.
+    // They used to march down the middle of both flanks, which put one squarely
+    // in the doorway.
+    for (const z of [t.minZ + 3.2, t.maxZ - 3.2]) {
+      for (const x of [t.minX + 3.2, t.maxX - 3.2]) {
+        this.mesh([1.3, wallHeight, 1.3], [x, wallY, z], lacquer);
+        this.mesh([1.8, 0.55, 1.8], [x, t.podium + wallHeight - 0.28, z], gold);
+        this.mesh([1.7, 0.4, 1.7], [x, t.podium + 0.2, z], stone);
+        this.addCollider(x, z, 1.3, 1.3, 0.1, { minY: -0.4, maxY: 60 }, 'temple-column');
       }
     }
 
@@ -3234,40 +3237,82 @@ export class FestivalWorld {
       map: createTextTexture([this.templeSignText.name, this.templeSignText.label]),
     });
     const templeSign = new THREE.Mesh(new THREE.PlaneGeometry(8.4, 2.4), this.templeSignMaterial);
-    templeSign.position.set(t.minX - 0.55, t.podium + wallHeight - 0.7, centerZ);
+    // Stood clear of the lintel. Set flush against it, the timber swallowed the
+    // lettering and left nothing but a blank panel over the door.
+    templeSign.position.set(t.minX - 1.35, t.podium + wallHeight + 0.9, centerZ);
     templeSign.rotation.y = -Math.PI / 2;
     this.scene.add(templeSign);
 
-    // The altar, at the far end facing the door. No figure stands on it: the
-    // offering table, the bowls and the light are the whole of it.
-    const altarX = t.maxX - 4.5;
-    this.mesh([2.2, 1.5, 11], [altarX, t.podium + 0.75, centerZ], stone);
-    this.mesh([2.8, 0.3, 12], [altarX, t.podium + 1.65, centerZ], timber);
-    for (const z of [centerZ - 2.4, centerZ, centerZ + 2.4]) {
-      this.mesh([0.9, 0.5, 0.9], [altarX, t.podium + 2.05, z], gold);
+    // The altar, at the far end facing the door: a low offering table with the
+    // god seated above it. Not a pillar — a figure, in the same blocky idiom as
+    // everyone who comes to see her.
+    const altarX = t.maxX - 5.5;
+    this.mesh([2.6, 1.1, 12], [altarX, t.podium + 0.55, centerZ], stone);
+    this.mesh([3.2, 0.28, 12.6], [altarX, t.podium + 1.24, centerZ], timber);
+    for (const z of [centerZ - 3, centerZ, centerZ + 3]) {
+      this.mesh([0.9, 0.45, 0.9], [altarX - 0.1, t.podium + 1.6, z], gold);
     }
     // Incense, three sticks with an ember at the tip.
-    for (const z of [centerZ - 1.2, centerZ, centerZ + 1.2]) {
-      this.mesh([0.08, 1.5, 0.08], [altarX - 0.8, t.podium + 2.55, z], timber);
-      this.mesh([0.16, 0.16, 0.16], [altarX - 0.8, t.podium + 3.35, z], material(0xff6a2a, 0.3, 0.1));
+    for (const z of [centerZ - 1.4, centerZ, centerZ + 1.4]) {
+      this.mesh([0.07, 1.3, 0.07], [altarX - 1.1, t.podium + 2.03, z], timber);
+      this.mesh([0.14, 0.14, 0.14], [altarX - 1.1, t.podium + 2.72, z], material(0xff6a2a, 0.3, 0.1));
     }
-    // The presence above the table: a glow rather than a body.
-    this.templeAura = this.mesh(
-      [3.2, 4.6, 3.2],
-      [altarX, t.podium + 4.4, centerZ],
-      new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.16, depthWrite: false }),
+
+    // 美麗本人 herself, seated on a lotus dais behind the table, facing the
+    // door. Gilded rather than skin-toned: this is an image of a god, not
+    // another attendee standing at the back of the room.
+    const deityBase = t.podium + 1.4;
+    const deity = new THREE.Group();
+    deity.position.set(altarX + 1.9, deityBase, centerZ);
+    deity.rotation.y = -Math.PI / 2;
+    this.scene.add(deity);
+    const petal = material(0xd8b34a, 0.42, 0.5);
+    for (const [ring, radius, height] of [[8, 1.9, 0.34], [6, 1.35, 0.3]] as Array<[number, number, number]>) {
+      for (let i = 0; i < ring; i += 1) {
+        const angle = (i / ring) * Math.PI * 2;
+        const leaf = this.mesh([0.8, height, 0.5], [Math.cos(angle) * radius, height / 2, Math.sin(angle) * radius], petal, deity);
+        leaf.rotation.y = -angle;
+        leaf.rotation.x = -0.32;
+      }
+    }
+    this.mesh([2.6, 0.4, 2.6], [0, 0.7, 0], gold, deity);
+    // Crossed legs, then the body, arms resting in the lap, and the head.
+    this.mesh([2.9, 0.6, 1.5], [0, 1.15, 0.15], gold, deity);
+    this.mesh([1.05, 0.55, 1.2], [-0.85, 1.5, 0.1], gold, deity);
+    this.mesh([1.05, 0.55, 1.2], [0.85, 1.5, 0.1], gold, deity);
+    this.mesh([1.7, 1.9, 1.1], [0, 2.35, -0.1], gold, deity);
+    this.mesh([0.45, 1.5, 0.5], [-1.05, 2.3, 0.05], gold, deity);
+    this.mesh([0.45, 1.5, 0.5], [1.05, 2.3, 0.05], gold, deity);
+    // Hands together in the lap.
+    this.mesh([0.9, 0.3, 0.7], [0, 1.62, 0.42], material(0xe6c766, 0.35, 0.55), deity);
+    this.mesh([1.15, 1.15, 1.05], [0, 3.85, -0.05], gold, deity);
+    // Hair, and a crown above it.
+    this.mesh([1.28, 0.42, 1.14], [0, 4.5, -0.06], material(0x3b2f1c, 0.7, 0.2), deity);
+    this.mesh([1.05, 0.5, 1.05], [0, 4.92, -0.06], petal, deity);
+    this.mesh([0.3, 0.55, 0.3], [0, 5.3, -0.06], petal, deity);
+    // Eyes, lowered.
+    for (const side of [-1, 1]) {
+      this.mesh([0.14, 0.06, 0.06], [side * 0.26, 3.82, 0.54], material(0x2a2118), deity);
+    }
+    // A halo behind the head, which is what carries the light in the room.
+    const halo = this.mesh(
+      [3.4, 3.4, 0.16],
+      [0, 3.9, -0.75],
+      new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.42, depthWrite: false }),
     );
-    const auraLight = new THREE.PointLight(0xffcf8a, 60, 30, 1.6);
-    auraLight.position.set(altarX - 1, t.podium + 4, centerZ);
+    halo.rotation.y = 0;
+    this.templeAura = halo;
+    const auraLight = new THREE.PointLight(0xffcf8a, 90, 34, 1.5);
+    auraLight.position.set(altarX - 1, t.podium + 4.2, centerZ);
     this.scene.add(auraLight);
-    this.addCollider(altarX, centerZ, 2.8, 12, 0.2, { minY: -0.4, maxY: 60 }, 'temple-altar');
+    this.addCollider(altarX + 1, centerZ, 6, 12.6, 0.2, { minY: -0.4, maxY: 60 }, 'temple-altar');
     this.templeAltar = { x: altarX, z: centerZ };
 
     // Lanterns down the aisle.
     for (const z of [centerZ - 5, centerZ + 5]) {
       for (const x of [t.minX + 8, t.maxX - 9]) {
         this.mesh([0.8, 1.1, 0.8], [x, t.podium + wallHeight - 1.4, z], material(0xd8452c, 0.5, 0.1));
-        const glow = new THREE.PointLight(0xff9a5a, 16, 14, 1.8);
+        const glow = new THREE.PointLight(0xff9a5a, 55, 26, 1.4);
         glow.position.set(x, t.podium + wallHeight - 1.9, z);
         this.scene.add(glow);
       }
@@ -3803,7 +3848,7 @@ export class FestivalWorld {
     };
     const dogRig = profile.id === 'MENTOR' ? createMentorDog() : undefined;
     // MENTOR rides too, on a board cut down to a dog's length.
-    const dogBoard = dogRig ? this.createSkateboard(dogRig.root, 0.72, 0.04) : undefined;
+    const dogBoard = dogRig ? this.createSkateboard(dogRig.root, 0.72, 0.0) : undefined;
     const rig = dogRig ? undefined : this.createAvatarRig(npc, npcPalette);
     if (dogRig) npc.add(dogRig.root);
     const remoteCarriedProp = new THREE.Group();
@@ -4084,24 +4129,37 @@ export class FestivalWorld {
    * A board under the feet, kept out of sight until someone runs. Built in the
    * same blocky idiom as everything else: a deck, two trucks, four wheels.
    */
-  private createSkateboard(parent: THREE.Object3D, scale = 1, dropTo = -0.12): THREE.Group {
+  private createSkateboard(parent: THREE.Object3D, scale = 1, dropTo = 0.02): THREE.Group {
     const board = new THREE.Group();
     board.scale.setScalar(scale);
-    // The avatar's heels sit a shade below the group's origin, so the deck goes
-    // just under that and the wheels take it down to the road. MENTOR stands on
-    // four short legs and needs the deck brought up to meet them.
+    // Sat on the road rather than in it: the deck rides on trucks and wheels,
+    // and the whole assembly is lifted so the wheels touch and nothing else.
     board.position.set(0, dropTo, 0);
-    this.mesh([0.62, 0.08, 2.1], [0, 0, 0], material(0x2a2f3a, 0.55, 0.25), board);
-    // Nose and tail kicked up, which is what reads as a skateboard rather than
-    // a plank at this size.
+    const deckWood = material(0x3a2f2a, 0.62, 0.12);
+    const grip = material(0x14151a, 0.95, 0.02);
+    const truck = material(0x9aa1ab, 0.32, 0.68);
+    const wheel = material(0xe8e2d2, 0.5, 0.1);
+    // Turned across the direction of travel: the board runs under the stance,
+    // and the rider stands sideways on it.
+    board.rotation.y = Math.PI / 2;
+
+    const deckY = 0.3;
+    // Waist of the deck, then the nose and tail rising off each end.
+    this.mesh([2.0, 0.09, 0.66], [0, deckY, 0], deckWood, board);
+    this.mesh([1.86, 0.03, 0.6], [0, deckY + 0.06, 0], grip, board);
     for (const end of [-1, 1]) {
-      const kick = this.mesh([0.58, 0.07, 0.42], [0, 0.07, end * 1.12], material(0x2a2f3a, 0.55, 0.25), board);
-      kick.rotation.x = end * 0.42;
+      const lift = this.mesh([0.52, 0.09, 0.62], [end * 1.16, deckY + 0.1, 0], deckWood, board);
+      lift.rotation.z = -end * 0.46;
+      const liftGrip = this.mesh([0.46, 0.03, 0.56], [end * 1.16, deckY + 0.155, 0], grip, board);
+      liftGrip.rotation.z = -end * 0.46;
     }
+    // Trucks: a baseplate under the deck, a hanger across it, and the axle.
     for (const end of [-1, 1]) {
-      this.mesh([0.34, 0.09, 0.2], [0, -0.09, end * 0.66], material(0x8b8f98, 0.35, 0.6), board);
+      this.mesh([0.34, 0.07, 0.42], [end * 0.66, deckY - 0.08, 0], truck, board);
+      this.mesh([0.16, 0.12, 0.56], [end * 0.66, deckY - 0.17, 0], truck, board);
+      this.mesh([0.1, 0.09, 0.86], [end * 0.66, deckY - 0.22, 0], truck, board);
       for (const side of [-1, 1]) {
-        this.mesh([0.13, 0.17, 0.17], [side * 0.24, -0.15, end * 0.66], material(0xd8d3c6, 0.6, 0.2), board);
+        this.mesh([0.2, 0.26, 0.26], [end * 0.66, deckY - 0.22, side * 0.4], wheel, board);
       }
     }
     board.visible = false;
@@ -4110,21 +4168,29 @@ export class FestivalWorld {
   }
 
   /**
-   * Sideways stance, knees soft, arms out. The board carries the body, so the
-   * legs stop cycling — a running gait over a skateboard reads as skidding.
+   * Regular stance: standing across the board, left foot forward over the
+   * front truck, right foot over the tail, shoulders square along it. The
+   * body turns a quarter so the feet sit on the deck rather than astride it.
    */
   private poseRigSkating(rig: AvatarRig, phase: number): void {
     const bob = Math.sin(phase * 1.6);
-    rig.torso.rotation.y = 0.58;
-    rig.torso.rotation.x = 0.14 + bob * 0.04;
+    // Legs swing forward and back, so to stand sideways on the board the whole
+    // body turns and the stance is set with the hips.
+    rig.torso.rotation.y = 0;
+    rig.torso.rotation.x = 0.17 + bob * 0.03;
     rig.torso.rotation.z = 0;
-    rig.leftArm.rotation.x = -0.42 + bob * 0.22;
-    rig.rightArm.rotation.x = -0.24 - bob * 0.22;
-    rig.leftArm.rotation.z = 1.12;
-    rig.rightArm.rotation.z = -0.98;
-    // Front foot over the forward truck, back foot over the tail.
-    rig.leftLeg.rotation.x = -0.3 - bob * 0.05;
-    rig.rightLeg.rotation.x = 0.24 + bob * 0.05;
+    // Looking along the board, over the leading shoulder.
+    rig.head.rotation.set(0, -0.62, 0);
+    // Front knee driven forward and bent, back leg trailing over the tail.
+    rig.leftLeg.rotation.x = -0.46 - bob * 0.06;
+    rig.leftLeg.rotation.z = 0.16;
+    rig.rightLeg.rotation.x = 0.38 + bob * 0.06;
+    rig.rightLeg.rotation.z = -0.14;
+    // Arms out across the board for balance, the leading one further out.
+    rig.leftArm.rotation.x = -0.34 + bob * 0.16;
+    rig.rightArm.rotation.x = 0.22 - bob * 0.16;
+    rig.leftArm.rotation.z = 1.22;
+    rig.rightArm.rotation.z = -0.86;
     rig.board.visible = true;
   }
 
@@ -4147,12 +4213,17 @@ export class FestivalWorld {
       return part;
     };
     const torso = addPart([1.02, 1.38, 0.62], [0, 1.78, 0], 'top');
-    addPart([0.8, 0.82, 0.72], [0, 2.85, 0], 'skin');
-    addPart([0.9, 0.34, 0.79], [0, 3.2, -0.02], 'hair');
-    addPart([0.78, 0.4, 0.16], [0, 2.98, 0.34], 'hair');
-    this.mesh([0.09, 0.1, 0.05], [-0.18, 2.84, 0.385], material(0x171315), parent);
-    this.mesh([0.09, 0.1, 0.05], [0.18, 2.84, 0.385], material(0x171315), parent);
-    this.mesh([0.24, 0.055, 0.05], [0, 2.64, 0.385], material(0x6f2e2b), parent);
+    // The head pivots at the neck. It used to be a handful of parts fixed to
+    // the body, so bowing tipped the torso and left the face pointing level.
+    const head = new THREE.Group();
+    head.position.set(0, 2.47, 0);
+    parent.add(head);
+    addPart([0.8, 0.82, 0.72], [0, 0.38, 0], 'skin', head);
+    addPart([0.9, 0.34, 0.79], [0, 0.73, -0.02], 'hair', head);
+    addPart([0.78, 0.4, 0.16], [0, 0.51, 0.34], 'hair', head);
+    this.mesh([0.09, 0.1, 0.05], [-0.18, 0.37, 0.385], material(0x171315), head);
+    this.mesh([0.09, 0.1, 0.05], [0.18, 0.37, 0.385], material(0x171315), head);
+    this.mesh([0.24, 0.055, 0.05], [0, 0.17, 0.385], material(0x6f2e2b), head);
 
     const limb = (
       x: number,
@@ -4173,7 +4244,7 @@ export class FestivalWorld {
     const treat = this.mesh([0.16, 0.16, 0.22], [0, -1.2, 0.16], material(0xd18a35, 0.78), rightArm);
     treat.visible = false;
     const board = this.createSkateboard(parent);
-    return { leftArm, rightArm, leftLeg, rightLeg, torso, treat, board };
+    return { leftArm, rightArm, leftLeg, rightLeg, torso, treat, head, board };
   }
 
   private createAtmosphere(): void {
@@ -4501,7 +4572,11 @@ export class FestivalWorld {
         this.playerRig.torso.rotation.x = 0.16;
         this.playerRig.leftArm.rotation.x *= 1.25;
         this.playerRig.rightArm.rotation.x *= 1.25;
-      } else if (this.playerState !== 'swimming') {
+      } else if (this.playerState !== 'swimming' && !gesture) {
+        // Only undoes the run's lean. Without the gesture check this also
+        // flattened every pose that bends the body — the bow, the offering,
+        // the stagger — leaving the head tipped over a torso stood bolt
+        // upright. animateRig already clears the lean when nothing is posed.
         this.playerRig.torso.rotation.x = 0;
       }
       if (this.playerState === 'swimming' && moving && !gesture) {
@@ -4538,7 +4613,7 @@ export class FestivalWorld {
     if (z > -12 && z <= GATE_Z - 2) max = rooftopBounds.maxX + 4;
     // The temple's ground was always drawn — the map reaches x = 92 — but the
     // festival stopped anyone at 58, so it could only ever be looked at.
-    if (z > TEMPLE.minZ - 6 && z < TEMPLE.maxZ + 6) max = TEMPLE.maxX + 4;
+    if (z > TEMPLE.minZ - 6 && z < TEMPLE.maxZ + 6) max = TEMPLE.maxX + 5;
     return { min, max };
   }
 
@@ -4780,7 +4855,14 @@ export class FestivalWorld {
         npc.stuckFor = 0;
         npc.waitUntil = now + 240;
       }
-      npc.group.position.y = AVATAR_GROUND_Y + Math.sin(elapsed * 1.35 + npc.phase) * 0.018;
+      // Stand on the floor underfoot, not on the street. Pinned to street
+      // height, a resident stationed on the roof deck sank through it — which
+      // is what put DR.BEAUTY waist-deep in the shop counter.
+      npc.group.position.y = this.groundHeightAt(
+        npc.group.position.x,
+        npc.group.position.z,
+        npc.group.position.y,
+      ) + Math.sin(elapsed * 1.35 + npc.phase) * 0.018;
       const gesture = now < npc.gestureUntil ? npc.gesture : undefined;
       if (npc.rig) this.animateRig(npc.rig, elapsed * 7.4 + npc.phase, moving ? 0.62 : 0.03, gesture);
       if (npc.dogRig) this.animateMentorDog(
@@ -4868,6 +4950,9 @@ export class FestivalWorld {
     rig.leftArm.rotation.z = 0;
     rig.torso.rotation.y = 0;
     rig.torso.rotation.x = 0;
+    rig.head.rotation.set(0, 0, 0);
+    rig.leftLeg.rotation.z = 0;
+    rig.rightLeg.rotation.z = 0;
     rig.treat.visible = gesture === 'feed';
     if (gesture === 'wave') {
       // Raise the arm away from the head, then wave front-to-back from the
@@ -4900,6 +4985,8 @@ export class FestivalWorld {
       // phase runs on, so the stagger reads as one movement rather than a loop.
       const recover = THREE.MathUtils.clamp(Math.sin(phase * 2.6), -1, 1);
       rig.torso.rotation.x = 0.5 - Math.abs(recover) * 0.16;
+      // Head up, looking where the feet are going rather than at them.
+      rig.head.rotation.x = -0.26 + recover * 0.08;
       rig.leftArm.rotation.x = -1.5 + recover * 0.4;
       rig.rightArm.rotation.x = -1.2 - recover * 0.4;
       rig.leftArm.rotation.z = 0.75;
@@ -4911,6 +4998,9 @@ export class FestivalWorld {
       // Both hands raised together and held out, the body bowed over them.
       const settle = THREE.MathUtils.clamp(Math.sin(phase * 1.5), -1, 1);
       rig.torso.rotation.x = 0.44 + settle * 0.05;
+      // The head goes with it, and a little further: an offering is made
+      // looking down at the hands, not out over them.
+      rig.head.rotation.x = 0.34 + settle * 0.04;
       rig.leftArm.rotation.x = -1.42 - settle * 0.06;
       rig.rightArm.rotation.x = -1.42 - settle * 0.06;
       rig.leftArm.rotation.z = 0.26;
@@ -4922,6 +5012,7 @@ export class FestivalWorld {
       // The bow returned: deeper at the waist, hands together at the chest.
       const dip = THREE.MathUtils.clamp(Math.sin(phase * 1.2), -1, 1);
       rig.torso.rotation.x = 0.62 + dip * 0.1;
+      rig.head.rotation.x = 0.4 + dip * 0.06;
       rig.leftArm.rotation.x = -1.2;
       rig.rightArm.rotation.x = -1.2;
       rig.leftArm.rotation.z = 0.34;
@@ -5446,7 +5537,18 @@ export class FestivalWorld {
     return 'THE SHORE';
   }
 
+  /** Whether the attendee is stood before the altar, close enough to worship. */
+  private atTheAltar(): boolean {
+    if (!this.templeAltar) return false;
+    if (this.player.position.y < TEMPLE.podium - 0.5) return false;
+    return Math.hypot(
+      this.player.position.x - this.templeAltar.x,
+      this.player.position.z - this.templeAltar.z,
+    ) < 7;
+  }
+
   private interactionLabel(): string | undefined {
+    if (this.atTheAltar()) return `O / WORSHIP ${this.templeSignText.name}`;
     if (this.playerState === 'seated') {
       if (this.carriedItem === 'DRINK') return 'SHIFT+E / DRINK UP';
       if (this.nearClubBar()) return 'E / ORDER A DRINK';
