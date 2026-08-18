@@ -9,7 +9,7 @@ import { createMentorDog, type MentorDogRig } from './MentorDog';
 export type GraphicsMode = 'normal' | 'lite';
 export type CameraMode = 'follow' | 'perspective' | 'first-person' | 'screening';
 export type PlayerState = 'walking' | 'seated' | 'swimming';
-export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink' | 'jump';
+export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink' | 'jump' | 'stumble';
 export type CarriedItem = 'POPCORN' | 'MENTOR' | 'DRINK' | 'HOTDOG' | 'PIZZA' | 'CHICKEN';
 export const NPC_NAMES = ['MENTOR', 'KENNY', 'NUNO', 'MICHAEL', 'SEBINE', 'ZC', 'LOUI', 'MINYUN', 'VIOLA', 'XIEHGAN', 'DRBEAUTY'] as const;
 export type NpcId = string;
@@ -244,10 +244,17 @@ const pamphletPosition = new THREE.Vector3(4.2, 0, 8);
 // the same height, and they fought for the same pixels along the whole shore.
 const SHORE_Z = -58;
 const AVATAR_GROUND_Y = 0.28;
-// A leap of about 1.6 units — knee height on a 3.46-unit body, near enough to
-// 0.8m. Enough to clear a bench and to carry someone off the deck's edge.
-const JUMP_SPEED = 9.2;
+// A leap of about 2.4 units — waist height on a 3.46-unit body, near enough to
+// 1.2m. Nearly nine tenths of a second in the air, which at a run carries the
+// best part of eleven units forward: enough to clear a gap rather than only an
+// obstacle.
+const JUMP_SPEED = 11.2;
 const GRAVITY = 26;
+// Landing harder than this staggers the body. A jump from flat ground arrives
+// at exactly its launch speed, so the threshold sits above it: only a drop of
+// roughly four units beyond the jump's own arc stumbles, which leaves hopping
+// off a bench clean and coming off the roof anything but.
+const STUMBLE_IMPACT = 14;
 // How far the ground has to fall away underfoot before it counts as stepping
 // off an edge rather than walking down a step. A rooftop tread is 0.35, so this
 // clears a staircase without turning it into a series of little hops.
@@ -666,6 +673,8 @@ export class FestivalWorld {
   private cameraZoom = readStoredZoom();
   private verticalVelocity = 0;
   private airborne = false;
+  /** While recovering from a heavy landing: slower, and shown staggering. */
+  private stumbleUntil = 0;
 
   private animationFrame = 0;
   private cameraMode: CameraMode = 'follow';
@@ -1790,6 +1799,7 @@ export class FestivalWorld {
   private jump(): void {
     if (this.playerState === 'seated' || this.playerState === 'swimming') return;
     if (this.airborne || this.isMentorControlLocked()) return;
+    if (performance.now() < this.stumbleUntil) return;
     this.dancing = false;
     this.airborne = true;
     this.verticalVelocity = JUMP_SPEED;
@@ -4141,7 +4151,10 @@ export class FestivalWorld {
       const speed = this.playerState === 'swimming'
         ? (running ? 6.2 : 4.1)
         : (running ? 12.4 : 7.2);
-      this.movePlayer(horizontal, vertical, speed * delta);
+      // Winded by the landing: the legs are under you again but not yet
+      // carrying you at full pace.
+      const recovering = performance.now() < this.stumbleUntil ? 0.42 : 1;
+      this.movePlayer(horizontal, vertical, speed * recovering * delta);
     }
 
     const shouldWearSwimwear = this.player.position.z < -58.2;
@@ -4161,9 +4174,19 @@ export class FestivalWorld {
         this.verticalVelocity -= GRAVITY * delta;
         this.player.position.y += this.verticalVelocity * delta;
         if (this.player.position.y <= ground) {
+          const impact = -this.verticalVelocity;
           this.player.position.y = ground;
           this.verticalVelocity = 0;
           this.airborne = false;
+          if (impact > STUMBLE_IMPACT) {
+            // The further the drop the longer the recovery, up to a limit: a
+            // fall from the roof should cost a moment, not a punishment.
+            const severity = THREE.MathUtils.clamp((impact - STUMBLE_IMPACT) / 10, 0, 1);
+            this.stumbleUntil = performance.now() + 320 + severity * 460;
+            this.playerGesture = 'stumble';
+            this.playerGestureUntil = this.stumbleUntil;
+            this.dancing = false;
+          }
         }
       } else if (this.player.position.y - ground > LEDGE_DROP) {
         // Walked off an edge. The body used to be pinned to whatever floor was
@@ -4559,6 +4582,18 @@ export class FestivalWorld {
       rig.leftLeg.rotation.x = -0.85 + lift * 0.35;
       rig.rightLeg.rotation.x = -0.4 + lift * 0.2;
       rig.torso.rotation.x = 0.12;
+      return;
+    } else if (gesture === 'stumble') {
+      // Caught on the front foot and recovering: the body straightens as the
+      // phase runs on, so the stagger reads as one movement rather than a loop.
+      const recover = THREE.MathUtils.clamp(Math.sin(phase * 2.6), -1, 1);
+      rig.torso.rotation.x = 0.5 - Math.abs(recover) * 0.16;
+      rig.leftArm.rotation.x = -1.5 + recover * 0.4;
+      rig.rightArm.rotation.x = -1.2 - recover * 0.4;
+      rig.leftArm.rotation.z = 0.75;
+      rig.rightArm.rotation.z = -0.62;
+      rig.leftLeg.rotation.x = -0.72 + recover * 0.22;
+      rig.rightLeg.rotation.x = 0.46 - recover * 0.18;
       return;
     } else if (gesture === 'drink') {
       // Raise the glass to the mouth and tip it back.
