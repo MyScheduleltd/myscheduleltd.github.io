@@ -8,6 +8,44 @@ import legacySource from '../../docs/js/allData.js';
 
 /** The room remembers this many lines; older ones fall off the top. */
 const CHAT_HISTORY_LIMIT = 50;
+/**
+ * How long each work runs, learned from the players that watch it. The
+ * catalogue comes from the site's video list and carries no durations, so
+ * until a work has been watched once its slot is a nominal guess.
+ */
+const trackDurations = {};
+const NOMINAL_TRACK_SECONDS = 240;
+/**
+ * How many attendees the world holds at once. Traffic grows with the square of
+ * this, because every attendee is sent a state that lists every attendee: at
+ * twenty the service pushes about 0.9 MB/s at a full house, which the free
+ * instance carries comfortably. Past that the room stops being pleasant before
+ * it stops working. Raise it with FESTIVAL_MAX_VISITORS on a larger instance.
+ */
+const MAX_VISITORS = Math.max(1, Number(process.env.FESTIVAL_MAX_VISITORS ?? 20));
+/**
+ * Everyone turned away, oldest first. A ticket holds a place while its owner
+ * keeps asking for it; stop asking and the place is given up.
+ */
+const waiting = new Map();
+const WAITING_TICKET_GRACE_MS = 20_000;
+
+const pruneWaiting = () => {
+  const now = Date.now();
+  for (const [ticket, entry] of waiting) {
+    if (now - entry.lastSeen > WAITING_TICKET_GRACE_MS) waiting.delete(ticket);
+  }
+};
+
+/** Where a ticket stands, counting from one. */
+const waitingPosition = (ticket) => {
+  let position = 0;
+  for (const key of waiting.keys()) {
+    position += 1;
+    if (key === ticket) return position;
+  }
+  return 0;
+};
 const isProduction = process.env.NODE_ENV === 'production';
 // Hosts hand a container its port in PORT and expect the process to bind every
 // interface. Reading only FESTIVAL_PORT and binding loopback is right for a
@@ -351,6 +389,7 @@ const persistedSnapshot = () => ({
   shopLink,
   gateCopy,
   trackTempos,
+  trackDurations,
   adminKeyDigest,
   messages,
 });
@@ -545,6 +584,12 @@ const restorePersistedState = () => {
       updatedAt: clampNumber(saved.shopLink.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
     });
   }
+  if (saved.trackDurations && typeof saved.trackDurations === 'object') {
+    for (const [id, value] of Object.entries(saved.trackDurations)) {
+      const seconds = clampNumber(value, 1, 86_400, 0);
+      if (/^[A-Za-z0-9_-]{6,20}$/.test(id) && seconds) trackDurations[id] = Math.round(seconds);
+    }
+  }
   const savedDjProfiles = saved.djProfiles;
   if (savedDjProfiles && typeof savedDjProfiles === 'object') {
     for (const id of Object.keys(djProfiles)) {
@@ -686,6 +731,7 @@ const writeEvent = (response, event, data) => {
 
 const broadcast = () => {
   broadcastTimer = undefined;
+  settleAllSchedules();
   for (const [sessionId, responseSet] of streams) {
     const visitor = visitors.get(sessionId);
     if (!visitor) continue;
@@ -693,6 +739,48 @@ const broadcast = () => {
     for (const response of responseSet) writeEvent(response, 'state', state);
   }
 };
+
+/**
+ * Walks a venue's programme forward to wherever its own clock says it should
+ * be. Until now the running order only moved when a player reported a work had
+ * ended, so a venue nobody was standing in never advanced: its start time
+ * stayed put while the elapsed time grew, and an attendee walking back in was
+ * handed an offset past the end of the work — or past the six-hour sanity
+ * limit, which sent it back to the beginning. That is the restart.
+ */
+const durationOf = (youtubeId) => trackDurations[youtubeId] ?? NOMINAL_TRACK_SECONDS;
+
+const settleSchedule = (venue) => {
+  const schedule = programmeSchedule[venue];
+  if (!schedule?.order?.length) return false;
+  if (schedule.mode === 'paused' || schedule.pausedAt) return false;
+  let moved = false;
+  // A programme left alone overnight can be many works behind; the bound stops
+  // a corrupt start time from spinning here.
+  let guard = schedule.order.length * 4 + 4;
+  while (guard > 0) {
+    guard -= 1;
+    const playing = schedule.activeSpecialYoutubeId ?? schedule.order[schedule.currentIndex];
+    const runs = durationOf(playing) * 1000;
+    if (Date.now() - schedule.startedAt < runs) break;
+    schedule.startedAt += runs;
+    if (schedule.activeSpecialYoutubeId) {
+      schedule.activeSpecialYoutubeId = null;
+      schedule.currentIndex = (schedule.currentIndex + 1) % schedule.order.length;
+    } else if (schedule.special && schedule.special.startsAt <= Date.now()) {
+      schedule.activeSpecialYoutubeId = schedule.special.youtubeId;
+      schedule.special = null;
+    } else {
+      schedule.currentIndex = (schedule.currentIndex + 1) % schedule.order.length;
+    }
+    schedule.youtubeId = schedule.activeSpecialYoutubeId ?? schedule.order[schedule.currentIndex];
+    schedule.updatedAt = Date.now();
+    moved = true;
+  }
+  return moved;
+};
+
+const settleAllSchedules = () => VENUES.map(settleSchedule).some(Boolean);
 
 const scheduleBroadcast = () => {
   if (!broadcastTimer) broadcastTimer = setTimeout(broadcast, 50);
@@ -705,6 +793,7 @@ const releaseSeat = (visitor) => {
 };
 
 const removeVisitor = (visitor, reason = 'left') => {
+  pruneWaiting();
   releaseSeat(visitor);
   if (mentorCarrierId === visitor.id) mentorCarrierId = null;
   for (const queue of Object.values(venueQueues)) {
@@ -741,6 +830,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'GET' && url.pathname === '/api/config') {
+      settleAllSchedules();
       return json(response, 200, { schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, gateCopy, trackTempos, clubRequest, venueQueues });
     }
 
@@ -750,6 +840,34 @@ const server = createServer(async (request, response) => {
       if (!name) return apiError(response, 400, 'A festival name is required.');
       const duplicate = [...visitors.values()].some((visitor) => visitor.name.toLocaleUpperCase('en-US') === name.toLocaleUpperCase('en-US'));
       if (duplicate) return apiError(response, 409, 'That festival name is already connected.');
+
+      pruneWaiting();
+      // STAFF are not queued: an admin locked out of a busy room cannot fix
+      // whatever made it busy.
+      const isStaff = adminAllowed(request);
+      const ticket = safeText(payload.waitTicket, 64);
+      if (!isStaff) {
+        const known = ticket && waiting.get(ticket);
+        if (known) known.lastSeen = Date.now();
+        const queueAhead = known ? waitingPosition(ticket) - 1 : waiting.size;
+        // A place only opens for the head of the queue, or the room would be
+        // taken by whoever happened to ask at the right moment.
+        const admitted = visitors.size + queueAhead < MAX_VISITORS;
+        if (!admitted) {
+          const issued = known ? ticket : randomUUID();
+          if (!known) waiting.set(issued, { lastSeen: Date.now() });
+          return json(response, 202, {
+            waiting: {
+              ticket: issued,
+              position: waitingPosition(issued),
+              ahead: Math.max(0, waitingPosition(issued) - 1),
+              capacity: MAX_VISITORS,
+              inside: visitors.size,
+            },
+          });
+        }
+        if (known) waiting.delete(ticket);
+      }
       const visitor = createVisitor(name, payload.palette);
       visitors.set(visitor.id, visitor);
       scheduleBroadcast();
@@ -938,6 +1056,24 @@ const server = createServer(async (request, response) => {
     if (request.method === 'POST' && url.pathname === '/api/session/leave') {
       if (!visitor) return apiError(response, 401, 'Invalid festival session.');
       removeVisitor(visitor);
+      return json(response, 200, { ok: true });
+    }
+
+    const durationMatch = url.pathname.match(/^\/api\/programme\/(palace|drive-in|shore|club|rooftop)\/duration$/);
+    if (request.method === 'POST' && durationMatch) {
+      const visitor = sessionFor(request);
+      if (!visitor) return apiError(response, 401, 'Unknown session.');
+      const durationPayload = await body(request);
+      const youtubeId = String(durationPayload.youtubeId ?? '').trim();
+      const seconds = clampNumber(durationPayload.seconds, 1, 86_400, 0);
+      if (!/^[A-Za-z0-9_-]{6,20}$/.test(youtubeId) || !seconds) {
+        return apiError(response, 400, 'Invalid track duration.');
+      }
+      const known = trackDurations[youtubeId];
+      if (!known || Math.abs(known - seconds) > 1) {
+        trackDurations[youtubeId] = Math.round(seconds);
+        persist();
+      }
       return json(response, 200, { ok: true });
     }
 
@@ -1328,6 +1464,8 @@ const server = createServer(async (request, response) => {
 
 const heartbeat = setInterval(() => {
   const now = Date.now();
+  // A venue's programme moves on whether or not anybody is standing in it.
+  if (settleAllSchedules()) scheduleBroadcast();
   for (const responseSet of streams.values()) {
     for (const response of responseSet) response.write(': heartbeat\n\n');
   }

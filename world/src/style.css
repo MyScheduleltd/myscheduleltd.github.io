@@ -553,3 +553,13 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
+
+/* Queue notice on the gate, shown while the world is full. */
+.gate-card__waiting{
+  margin:0 0 18px;
+  padding:12px 14px;
+  border-left:4px solid #9f1720;
+  background:rgba(159,23,32,.08);
+  font-size:15px;
+  line-height:1.5;
+}

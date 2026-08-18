@@ -172,6 +172,15 @@ export interface GateCopy {
 }
 
 /** Where the rooftop pop-up store sends a visitor. Empty until STAFF set it. */
+/** Turned away because the world is full, and where in the queue. */
+export interface WaitingPlace {
+  ticket: string;
+  position: number;
+  ahead: number;
+  capacity: number;
+  inside: number;
+}
+
 export interface ShopLink {
   url: string;
   label: string;
@@ -221,6 +230,7 @@ export class FestivalClient {
   private lastPresenceAt = 0;
   private lastPresence = '';
   private closed = false;
+  private waitTicket = '';
   private suspended = false;
   private recovering = false;
   private identity?: SessionIdentity;
@@ -234,7 +244,62 @@ export class FestivalClient {
     return Boolean(this.session) && !this.closed;
   }
 
+  /**
+   * Asks for a place without taking one. Returns the queue position when the
+   * world is full, so the gate can hold somebody rather than admitting them
+   * into a room that has no room. Passing the previous ticket keeps their spot.
+   */
+  async requestPlace(name: string, palette: AvatarPalette, adminKey = ''): Promise<
+    { admitted: true } | { admitted: false; waiting: WaitingPlace } | { admitted: false; error: string }
+  > {
+    try {
+      const headers = new Headers({ 'content-type': 'application/json' });
+      if (adminKey) headers.set('x-festival-admin-key', adminKey);
+      const response = await fetch(`${this.baseUrl}/api/session`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ name, palette, waitTicket: this.waitTicket, probe: true }),
+      });
+      const payload = await response.json() as {
+        session?: Session; state?: FestivalState; waiting?: WaitingPlace; error?: string;
+      };
+      if (response.status === 202 && payload.waiting) {
+        this.waitTicket = payload.waiting.ticket;
+        return { admitted: false, waiting: payload.waiting };
+      }
+      if (response.ok && payload.session && payload.state) {
+        // The place is ours; hold the session rather than taking another.
+        this.waitTicket = '';
+        this.session = payload.session;
+        this.reconnectAttempt = 0;
+        this.identity = { name, palette };
+        this.onState(payload.state);
+        this.onStatus('online');
+        void this.openEventStream();
+        return { admitted: true };
+      }
+      return { admitted: false, error: payload.error ?? 'The festival service refused the connection.' };
+    } catch {
+      // No service at all. The world runs on its own, so let them in.
+      return { admitted: true };
+    }
+  }
+
+  /** Length of a work, as the player that watched it reported. */
+  async reportTrackDuration(venue: VenueKey, youtubeId: string, seconds: number): Promise<void> {
+    if (!this.session) return;
+    await this.request(`/api/programme/${venue}/duration`, {
+      method: 'POST',
+      body: JSON.stringify({ youtubeId, seconds: Math.round(seconds) }),
+    }).catch(() => undefined);
+  }
+
   async connect(name: string, palette: AvatarPalette): Promise<void> {
+    // requestPlace may already have taken the place and opened the stream.
+    if (this.session) {
+      this.identity = { name, palette };
+      return;
+    }
     this.closed = false;
     this.suspended = false;
     this.identity = { name, palette };

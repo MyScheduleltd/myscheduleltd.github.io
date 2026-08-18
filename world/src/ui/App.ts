@@ -239,6 +239,7 @@ export class App {
   private npcProfiles: NpcProfile[] = DEFAULT_NPC_PROFILES.map((profile) => ({ ...profile }));
   private pamphlet: PamphletContent = { ...defaultPamphlet };
   private readonly programmeClock = new ProgrammeClock();
+  private waitTimer?: number;
   private gateCopy?: GateCopy;
   private controlledNpcId?: string;
 
@@ -313,6 +314,7 @@ export class App {
           <p class="eyebrow">${text.gateKicker}</p>
           <h1 id="gate-title">${text.gateTitle}</h1>
           <p class="gate-card__intro">${text.gateIntro}</p>
+          <p class="gate-card__waiting" id="gate-waiting" role="status" hidden></p>
 
           <label class="field-label" for="festival-id">${text.festivalId}</label>
           <input
@@ -413,8 +415,52 @@ export class App {
       if (remember) localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
       else localStorage.removeItem(PROFILE_KEY);
       this.currentId = id;
-      this.enterWorld(submitter?.dataset.audio === 'muted');
+      void this.enterWhenThereIsRoom(submitter?.dataset.audio === 'muted');
     });
+  }
+
+  /**
+   * Holds somebody at the gate while the world is full, rather than admitting
+   * them into a room with no room. Keeps asking on their behalf, showing where
+   * they are in the queue, and goes in the moment a place opens. With no
+   * service to ask, the world is single-player and everyone gets in.
+   */
+  private async enterWhenThereIsRoom(muted: boolean): Promise<void> {
+    const zh = this.language === 'zh-TW';
+    const form = this.root.querySelector<HTMLFormElement>('#gate-form');
+    const notice = this.root.querySelector<HTMLElement>('#gate-waiting');
+    const buttons = form?.querySelectorAll<HTMLButtonElement>('button[type="submit"]');
+    const stopWaiting = () => {
+      window.clearTimeout(this.waitTimer);
+      this.waitTimer = undefined;
+      buttons?.forEach((button) => { button.disabled = false; });
+      if (notice) notice.hidden = true;
+    };
+
+    const ask = async (): Promise<void> => {
+      const place = await this.festivalClient.requestPlace(this.currentId, this.palette, this.staffKey);
+      if ('waiting' in place && place.waiting) {
+        buttons?.forEach((button) => { button.disabled = true; });
+        if (notice) {
+          notice.hidden = false;
+          notice.textContent = zh
+            ? `影展目前已滿（${place.waiting.inside}/${place.waiting.capacity}）。你在候補第 ${place.waiting.position} 位，有人離開後就會自動進入。`
+            : `The festival is full (${place.waiting.inside}/${place.waiting.capacity}). You are number ${place.waiting.position} in the queue and will go in as soon as a place opens.`;
+        }
+        // Kept short so a place is taken up promptly once one opens, and well
+        // inside the ticket's grace so the spot is not lost between asks.
+        this.waitTimer = window.setTimeout(() => { void ask(); }, 4_000);
+        return;
+      }
+      stopWaiting();
+      if ('error' in place && place.error) {
+        if (notice) { notice.hidden = false; notice.textContent = place.error; }
+        return;
+      }
+      this.enterWorld(muted);
+    };
+
+    await ask();
   }
 
   private enterWorld(muted: boolean): void {
@@ -506,8 +552,11 @@ export class App {
         this.programmeClock.advance(venue, this.localOrder(venue));
         this.syncPublicProjectors();
       },
-      onProjectorDuration: (_venue, youtubeId, seconds) => {
+      onProjectorDuration: (venue, youtubeId, seconds) => {
         this.programmeClock.learnDuration(youtubeId, seconds);
+        // The service keeps every venue's programme moving whether or not
+        // anybody is in the room, and it needs the lengths to do it.
+        if (this.festivalClient.online) void this.festivalClient.reportTrackDuration(venue, youtubeId, seconds);
       },
     });
     this.world.setNpcProfiles(this.npcProfiles);

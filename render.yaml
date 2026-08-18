@@ -34,3 +34,9 @@ services:
       # dashboard when STAFF need it, and rotate it from inside the STAFF panel.
       - key: FESTIVAL_ADMIN_KEY
         generateValue: true
+      # How many attendees the world holds at once. Traffic grows with the
+      # square of this, because every attendee is sent a state listing every
+      # attendee: twenty is about 0.9 MB/s at a full house, which the free
+      # instance carries. Anyone past it waits at the gate.
+      - key: FESTIVAL_MAX_VISITORS
+        value: "20"
