@@ -61,6 +61,15 @@ const defaultVenueNames = {
   club: 'THE BASEMENT',
   rooftop: 'THE ROOFTOP',
 };
+// The second line on each venue's sign. STAFF own these the same way they own
+// the names above; the values here are only what a fresh service starts with.
+const defaultVenueSubtitles = {
+  palace: 'COMMERCIAL',
+  'drive-in': 'TELEVISION',
+  shore: 'MUSIC VIDEO',
+  club: 'XIEH GAN',
+  rooftop: 'DR.BEAUTY',
+};
 const VENUES = Object.keys(programmeCategoryForVenue);
 const isVenue = (value) => VENUES.includes(value);
 // The club spins the DR.BEAUTY originals, which live outside the portfolio
@@ -90,6 +99,7 @@ const programmeSchedule = Object.fromEntries(
     const order = [...programmeIdsByVenue[venue]];
     return [venue, {
       name: defaultVenueNames[venue],
+      subtitle: defaultVenueSubtitles[venue],
       order,
       currentIndex: 0,
       youtubeId: order[0],
@@ -439,6 +449,7 @@ const restoreSchedule = (saved) => {
       : null;
     programmeSchedule[venue] = {
       name: safeText(entry.name, 32) || defaultVenueNames[venue],
+      subtitle: safeText(entry.subtitle, 32) || defaultVenueSubtitles[venue],
       order,
       currentIndex: Math.round(currentIndex),
       youtubeId: order[Math.round(currentIndex)],
@@ -1013,6 +1024,7 @@ const server = createServer(async (request, response) => {
           pausedAt = null;
         }
         const name = safeText(payload.name ?? current.name, 32) || defaultVenueNames[venue];
+        const subtitle = safeText(payload.subtitle ?? current.subtitle, 32) || defaultVenueSubtitles[venue];
         const requestedSpecialSource = ['none', 'library', 'youtube'].includes(payload.specialSource)
           ? payload.specialSource
           : (payload.specialYoutubeUrl ? 'youtube' : payload.specialYoutubeId ? 'library' : 'none');
@@ -1031,6 +1043,7 @@ const server = createServer(async (request, response) => {
         }
         programmeSchedule[venue] = {
           name,
+          subtitle,
           order,
           currentIndex,
           youtubeId: order[currentIndex],

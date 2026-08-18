@@ -42,6 +42,7 @@ export interface NetworkMessage {
 export type ProgrammeMode = 'continuous' | 'paused' | 'recurring' | 'scheduled-loop';
 
 export interface ProgrammeScheduleEntry {
+  subtitle?: string;
   name: string;
   order: string[];
   currentIndex: number;
@@ -297,6 +298,7 @@ export class FestivalClient {
   async updateProgramme(key: string, payload: {
     venue: VenueKey;
     name: string;
+    subtitle: string;
     order: string[];
     currentYoutubeId: string;
     mode: ProgrammeMode;

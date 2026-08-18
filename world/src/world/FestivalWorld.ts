@@ -278,6 +278,14 @@ const rooftopBounds = {
   // parapet, so arriving at deck height is a step across, not a climb over.
   stairMaxZ: 36.5,
 };
+/** Second line on each venue's sign until STAFF change it. */
+const DEFAULT_VENUE_SUBTITLES: Record<VenueKey, string> = {
+  palace: 'COMMERCIAL',
+  'drive-in': 'TELEVISION',
+  shore: 'MUSIC VIDEO',
+  club: 'XIEH GAN',
+  rooftop: 'DR.BEAUTY',
+};
 const ROOF_RISER = 0.35;
 const ROOF_GOING = 0.56;
 // Where the crowd spends its time. Each haunt carries a small loop so an NPC
@@ -1391,14 +1399,12 @@ export class FestivalWorld {
     return Math.max(0, Math.floor(wrapped));
   }
 
-  setVenueName(venue: VenueKey, name: string): void {
+  /** The two lines on a venue's sign. Both are STAFF's to set. */
+  setVenueName(venue: VenueKey, name: string, subtitle?: string): void {
     venueScreens[venue].label = name;
     const signMaterial = this.venueSignMaterials.get(venue);
     if (!signMaterial) return;
-    const category = venue === 'palace'
-      ? 'COMMERCIAL'
-      : venue === 'drive-in' ? 'TELEVISION' : venue === 'club' ? 'XIEH GAN' : 'MUSIC VIDEO';
-    const next = createTextTexture([name, category]);
+    const next = createTextTexture([name, subtitle ?? DEFAULT_VENUE_SUBTITLES[venue]]);
     const previous = signMaterial.map;
     signMaterial.map = next;
     signMaterial.needsUpdate = true;
@@ -2868,11 +2874,11 @@ export class FestivalWorld {
     for (let index = 0; index < 10; index += 1) {
       this.mesh(
         [0.28, 0.7 + (index % 3) * 0.18, 0.28],
-        [-77 + index * 1.9, floor + 1.9, barZ - 0.9],
+        [-77 + index * 1.9, floor + 1.9, b.roomMinZ + 1.15],
         material([0x8f5a2b, 0x2f6d4a, 0x8a1220][index % 3], 0.4, 0.3),
       );
     }
-    this.mesh([20, 1.8, 0.5], [-68, floor + 2.4, barZ - 1.2], material(0x1c1720, 0.7, 0.2));
+    this.mesh([20, 1.8, 0.5], [-68, floor + 2.4, b.roomMinZ + 0.45], material(0x1c1720, 0.7, 0.2));
 
     // Light rig over the floor.
     for (let index = 0; index < 8; index += 1) {
@@ -2985,11 +2991,25 @@ export class FestivalWorld {
       new THREE.PlaneGeometry(11.2, 3),
       new THREE.MeshBasicMaterial({ map: createTextTexture(['THE POP-UP', 'CLOTHING STORE']) }),
     );
-    this.shopSign.position.set(centerX, 5.4, counterZ - 1.6);
+    // Forward of the rail and clear of the soffit. At 5.4 its top ran into the
+    // roof slab overhead, and a metre and a half out it sat almost on the stock.
+    this.shopSign.position.set(centerX, 4.5, counterZ - 4.2);
     this.shopSign.rotation.y = Math.PI;
     this.scene.add(this.shopSign);
     // Where an attendee stands to be served, in front of the frontage.
     this.shopCounter = { x: centerX, z: counterZ - 4.2 };
+
+    const rooftopSignMaterial = new THREE.MeshBasicMaterial({
+      map: createTextTexture(['THE ROOFTOP', DEFAULT_VENUE_SUBTITLES.rooftop]),
+    });
+    this.venueSignMaterials.set('rooftop', rooftopSignMaterial);
+    const rooftopSign = new THREE.Mesh(new THREE.PlaneGeometry(9.6, 2.6), rooftopSignMaterial);
+    rooftopSign.position.set(r.minX - 0.42, 4.6, bayCenterZ);
+    rooftopSign.rotation.y = -Math.PI / 2;
+    this.scene.add(rooftopSign);
+    const rooftopSignGlow = new THREE.PointLight(0xffcf94, 20, 16, 1.5);
+    rooftopSignGlow.position.set(r.minX - 2.2, 5.2, bayCenterZ);
+    this.scene.add(rooftopSignGlow);
 
     this.createRooftopStair(warmConcrete, brick);
 
@@ -3359,11 +3379,13 @@ export class FestivalWorld {
    * their own beat offset, otherwise the floor moves as one block.
    */
   private stationClubRegulars(): void {
+    // Kept north of the bar: the counter and its stools reach to about z = 9,
+    // and a regular standing in that band reads as wedged into a seat.
     const spots: Array<[string, number, number]> = [
-      ['SEBINE', -76, 2 + CLUB_Z],
-      ['ZC', -58, -3 + CLUB_Z],
-      ['LOUI', -68, -7 + CLUB_Z],
-      ['VIOLA', -54, 7 + CLUB_Z],
+      ['SEBINE', -78, 5 + CLUB_Z],
+      ['ZC', -58, 2 + CLUB_Z],
+      ['LOUI', -68, -1 + CLUB_Z],
+      ['VIOLA', -54, 9 + CLUB_Z],
     ];
     for (const [id, x, z] of spots) {
       const npc = this.npcs.find((candidate) => candidate.id === id && !candidate.dogRig);

@@ -871,7 +871,7 @@ export class App {
       const currentIndex = Math.max(0, venuePlaylist.findIndex((entry) => entry.id === film.id));
       const loopingOrder = [...venuePlaylist.slice(currentIndex + 1), ...venuePlaylist.slice(0, currentIndex + 1)]
         .map((entry) => entry.youtubeId);
-      this.world?.setVenueName(venue, this.venueName(venue));
+      this.world?.setVenueName(venue, this.venueName(venue), this.venueSubtitle(venue));
       this.world?.setPublicScreening(venue, film, this.publicOffset(venue), loopingOrder, `${schedule?.updatedAt ?? 0}|${schedule?.startedAt ?? 0}`);
       this.world?.setPublicScreenPaused(venue, schedule?.mode === 'paused');
     }
@@ -2005,6 +2005,7 @@ export class App {
             .map((item) => item.dataset.youtubeId ?? '')
             .filter(Boolean);
           const name = form.querySelector<HTMLInputElement>('input[name="venueName"]')?.value ?? defaultVenueLabels[venue];
+          const subtitle = form.querySelector<HTMLInputElement>('input[name="venueSubtitle"]')?.value ?? '';
           const mode = form.querySelector<HTMLSelectElement>('select[name="mode"]')?.value as ProgrammeMode;
           const currentYoutubeId = form.querySelector<HTMLSelectElement>('select[name="currentYoutubeId"]')?.value ?? order[0];
           const specialSource = (form.querySelector<HTMLSelectElement>('select[name="specialSource"]')?.value ?? 'none') as 'none' | 'library' | 'youtube';
@@ -2014,7 +2015,7 @@ export class App {
           if (!order.length || !currentYoutubeId) return;
           if (button) button.disabled = true;
           void this.festivalClient.updateProgramme(this.staffKey, {
-            venue, name, order, currentYoutubeId, mode, specialSource, specialYoutubeId, specialYoutubeUrl, specialStartsAt,
+            venue, name, subtitle, order, currentYoutubeId, mode, specialSource, specialYoutubeId, specialYoutubeUrl, specialStartsAt,
           })
             .then(() => this.refreshAdminState())
             .catch((error) => {
@@ -2217,6 +2218,7 @@ export class App {
           <form data-programme-form="${venue}">
             <div class="staff-programme__top">
               <label>${this.language === 'zh-TW' ? '影廳名稱' : 'VENUE NAME'}<input name="venueName" maxlength="32" value="${this.escapeAttribute(schedule?.name ?? defaultVenueLabels[venue])}" /></label>
+              <label>${this.language === 'zh-TW' ? '看板副標' : 'SIGN SUBTITLE'}<input name="venueSubtitle" maxlength="32" value="${this.escapeAttribute(schedule?.subtitle ?? '')}" /></label>
               <label>${this.language === 'zh-TW' ? '模式' : 'MODE'}<select name="mode">
                 ${(['continuous', 'paused', 'recurring', 'scheduled-loop'] as ProgrammeMode[]).map((mode) => `<option value="${mode}"${schedule?.mode === mode ? ' selected' : ''}>${this.programmeModeLabel(mode)}</option>`).join('')}
               </select></label>
@@ -2408,6 +2410,12 @@ export class App {
     return this.networkState?.schedule?.[venue]?.name
       ?? this.adminState?.schedule?.[venue]?.name
       ?? defaultVenueLabels[venue];
+  }
+
+  /** The second line on a venue's sign, if STAFF have set one. */
+  private venueSubtitle(venue: VenueKey): string | undefined {
+    return this.networkState?.schedule?.[venue]?.subtitle
+      ?? this.adminState?.schedule?.[venue]?.subtitle;
   }
 
   private filmTitle(film: CatalogueEntry): string {
