@@ -21,14 +21,9 @@ $(function async(){
           iframe.contentWindow.postMessage('{"event":"command","func":"' + 'pauseVideo' + '","args":""}', '*');
        });
     }
-    for(let i = 0; i < memberData.length; i++) {
-        $('.member-container').append(`
-            <div class="member">
-                <div class="member-profile member-profile${i + 1}">
-                </div>
-                <p class="title">${memberData[i].title}</p>
-            </div>
-        `);
+    // The team board is on hold. Its markup lives in the page now, so nothing
+    // is appended here; memberData is left in place for when it comes back.
+    for(let i = 0; i < 0; i++) {
 
         // $('.member-container').append(`
         //     <div class="member">

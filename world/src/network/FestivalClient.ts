@@ -119,6 +119,7 @@ export interface FestivalState {
   npcProfiles: NpcProfile[];
   pamphlet: PamphletContent;
   djProfiles: DjProfiles;
+  shopLink: ShopLink;
   trackTempos: TrackTempos;
 }
 
@@ -137,6 +138,7 @@ export interface AdminState {
   npcProfiles: NpcProfile[];
   pamphlet: PamphletContent;
   djProfiles: DjProfiles;
+  shopLink: ShopLink;
   trackTempos: TrackTempos;
 }
 
@@ -153,6 +155,14 @@ export interface DjProfile {
 
 export type DjProfiles = Record<string, DjProfile>;
 
+/** Where the rooftop pop-up store sends a visitor. Empty until STAFF set it. */
+export interface ShopLink {
+  url: string;
+  label: string;
+  labelZh: string;
+  updatedAt: number;
+}
+
 export interface PublicConfig {
   schedule: ProgrammeSchedule;
   siteStyle: SiteStyle;
@@ -162,6 +172,7 @@ export interface PublicConfig {
   npcProfiles: NpcProfile[];
   pamphlet: PamphletContent;
   djProfiles: DjProfiles;
+  shopLink: ShopLink;
   trackTempos: TrackTempos;
 }
 
@@ -369,6 +380,17 @@ export class FestivalClient {
     introductionZh: string;
   }): Promise<void> {
     await this.adminRequest('/api/admin/dj-profile', key, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateShopLink(key: string, payload: {
+    url: string;
+    label: string;
+    labelZh: string;
+  }): Promise<void> {
+    await this.adminRequest('/api/admin/shop-link', key, {
       method: 'POST',
       body: JSON.stringify(payload),
     });

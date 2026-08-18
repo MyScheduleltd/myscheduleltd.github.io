@@ -153,6 +153,22 @@ const npcTitles = {
   DRBEAUTY: 'Rooftop DJ',
 };
 const publicNpcProfiles = () => Object.keys(npcNames).map((id) => ({ id, name: npcNames[id], title: npcTitles[id] }));
+// The pop-up store's destination. Empty until STAFF set one, and only ever an
+// http(s) address: this string ends up in a link the visitor's browser follows,
+// so a javascript: or data: URL here would be script execution on every
+// visitor who walks up to the counter.
+const shopLink = { url: '', label: 'THE POP-UP STORE', labelZh: '快閃服飾店', updatedAt: 0 };
+const safeExternalUrl = (value) => {
+  const text = safeText(value, 500);
+  if (!text) return '';
+  try {
+    const parsed = new URL(text);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.toString() : '';
+  } catch {
+    return '';
+  }
+};
+
 const djProfiles = {
   XIEHGAN: {
     id: 'XIEHGAN',
@@ -302,6 +318,7 @@ const persistedSnapshot = () => ({
   npcTitles,
   pamphlet: pamphletContent,
   djProfiles,
+  shopLink,
   trackTempos,
   adminKeyDigest,
   messages,
@@ -481,6 +498,14 @@ const restorePersistedState = () => {
     gateBackground.updatedAt = clampNumber(saved.gateBackground.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0);
   }
 
+  if (saved.shopLink && typeof saved.shopLink === 'object') {
+    Object.assign(shopLink, {
+      url: safeExternalUrl(saved.shopLink.url),
+      label: safeText(saved.shopLink.label, 60) || shopLink.label,
+      labelZh: safeText(saved.shopLink.labelZh, 60) || shopLink.labelZh,
+      updatedAt: clampNumber(saved.shopLink.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
+    });
+  }
   const savedDjProfiles = saved.djProfiles;
   if (savedDjProfiles && typeof savedDjProfiles === 'object') {
     for (const id of Object.keys(djProfiles)) {
@@ -611,6 +636,7 @@ const stateFor = (visitor) => ({
   npcProfiles: publicNpcProfiles(),
   pamphlet: pamphletContent,
   djProfiles,
+  shopLink,
   trackTempos,
 });
 
@@ -675,7 +701,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'GET' && url.pathname === '/api/config') {
-      return json(response, 200, { schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, trackTempos, clubRequest, venueQueues });
+      return json(response, 200, { schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, trackTempos, clubRequest, venueQueues });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
@@ -928,6 +954,7 @@ const server = createServer(async (request, response) => {
           npcProfiles: publicNpcProfiles(),
           pamphlet: pamphletContent,
           djProfiles,
+          shopLink,
           trackTempos,
         });
       }
@@ -1120,6 +1147,23 @@ const server = createServer(async (request, response) => {
         scheduleBroadcast();
         persist();
         return json(response, 200, { ok: true, pamphlet: pamphletContent });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/shop-link') {
+        // An empty string is allowed: that is how STAFF take the store down.
+        const raw = safeText(payload.url, 500);
+        const link = raw ? safeExternalUrl(raw) : '';
+        if (raw && !link) return apiError(response, 400, 'The store link must be an http or https address.');
+        const label = safeText(payload.label, 60);
+        const labelZh = safeText(payload.labelZh, 60);
+        Object.assign(shopLink, {
+          url: link,
+          label: label || shopLink.label,
+          labelZh: labelZh || shopLink.labelZh,
+          updatedAt: Date.now(),
+        });
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true, shopLink });
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/dj-profile') {
         const id = safeText(payload.id, 40).toUpperCase();

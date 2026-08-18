@@ -43,6 +43,7 @@ export type WorldAction =
   | { type: 'seatUnavailable'; seatId: string }
   | { type: 'stood' }
   | { type: 'food'; item: CarriedItem }
+  | { type: 'shop' }
   | { type: 'pamphlet' }
   | { type: 'swim'; active: boolean; stowedPopcorn?: boolean }
   | { type: 'greet'; target: string; gesture: 'wave' | 'tail-wag' }
@@ -111,7 +112,7 @@ interface Seat {
   venue: VenueKey;
   position: THREE.Vector3;
   /** A bar stool faces the counter and keeps the ordinary camera. */
-  kind?: 'screening' | 'bar';
+  kind?: 'screening' | 'bar' | 'bench';
   facing?: number;
 }
 
@@ -218,6 +219,8 @@ interface WorldOptions {
   onSnapshot: (snapshot: WorldSnapshot) => void;
   onAction: (action: WorldAction) => void;
   onProjectorAdvance?: (venue: VenueKey, youtubeId: string) => void;
+  /** How long the work on a venue's screen runs, as the player reports it. */
+  onProjectorDuration?: (venue: VenueKey, youtubeId: string, seconds: number) => void;
 }
 
 const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
@@ -565,7 +568,8 @@ export class FestivalWorld {
   private clubBoothGlow?: THREE.Mesh;
   private clubBeat = { bpm: 120, startedAt: 0 };
   private dancing = false;
-  private readonly vendors: Array<{ kind: CarriedItem; x: number; z: number }> = [];
+  private shopSign?: THREE.Mesh;
+  private shopCounter?: { x: number; z: number };
   private drinks = 0;
   private carriedPropKind?: CarriedItem;
   private drinkUntil = 0;
@@ -577,6 +581,7 @@ export class FestivalWorld {
   private readonly onSnapshot: WorldOptions['onSnapshot'];
   private readonly onAction: WorldOptions['onAction'];
   private readonly onProjectorAdvance?: WorldOptions['onProjectorAdvance'];
+  private readonly onProjectorDuration?: WorldOptions['onProjectorDuration'];
   private readonly lookTarget = new THREE.Vector3();
   private readonly moveVector = new THREE.Vector3();
   private readonly npcControlTarget = new THREE.Vector3();
@@ -637,7 +642,7 @@ export class FestivalWorld {
   private cameraPointerX = 0;
   private cameraPointerY = 0;
 
-  constructor({ canvas, foregroundCanvas, cssLayer, graphicsMode, palette, onSnapshot, onAction, onProjectorAdvance }: WorldOptions) {
+  constructor({ canvas, foregroundCanvas, cssLayer, graphicsMode, palette, onSnapshot, onAction, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
     this.canvas = canvas;
     this.foregroundCanvas = foregroundCanvas;
     this.graphicsMode = graphicsMode;
@@ -645,6 +650,7 @@ export class FestivalWorld {
     this.onSnapshot = onSnapshot;
     this.onAction = onAction;
     this.onProjectorAdvance = onProjectorAdvance;
+    this.onProjectorDuration = onProjectorDuration;
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: graphicsMode === 'normal',
@@ -844,7 +850,7 @@ export class FestivalWorld {
     entryRoute: Array<{ x: number; y: number; blocked: boolean }>;
     npcHaunts: string[];
     nearBar: boolean;
-    nearVendor: string | null;
+    nearShop: boolean;
     openingHits: string[];
     roomBlockers: string[];
     rooftopRoute: Array<{ x: number; z: number; y: number; blocked: boolean }>;
@@ -888,7 +894,7 @@ export class FestivalWorld {
         .filter((npc) => !npc.station)
         .map((npc) => `${npc.id}:${npc.haunt ?? '-'}`),
       nearBar: this.nearClubBar(),
-      nearVendor: this.nearbyVendor()?.kind ?? null,
+      nearShop: this.nearShopCounter(),
       // What a ray dropped down the stair opening actually hits. The only
       // honest way to tell an opening from a floor that looks like one.
       openingHits: (() => {
@@ -1474,7 +1480,7 @@ export class FestivalWorld {
    * sat on from a little forward of it, at standing height.
    */
   private seatAnchor(seat: Seat): THREE.Vector3 {
-    if (seat.kind === 'bar') return seat.position.clone();
+    if (seat.kind === 'bar' || seat.kind === 'bench') return seat.position.clone();
     return seat.position.clone().add(new THREE.Vector3(0, AVATAR_GROUND_Y, 0.28));
   }
 
@@ -1526,9 +1532,21 @@ export class FestivalWorld {
       // A bar stool is not a seat in an auditorium: it keeps the orbit camera,
       // so dragging still looks around the room rather than locking onto a
       // screen nobody sat down to watch.
-      if (seat.kind !== 'bar') this.cameraMode = 'screening';
+      if (seat.kind === 'screening' || seat.kind === undefined) this.cameraMode = 'screening';
       this.player.position.copy(this.seatAnchor(seat));
       this.player.rotation.y = seat.facing ?? Math.PI;
+      if (seat.kind === 'bar' || seat.kind === 'bench') {
+        // Orbit round to whichever side of the seat the screen is on, and sit
+        // the camera low enough to take it in.
+        const screen = venueScreens[seat.venue].position;
+        this.cameraOrbit.follow.yaw = Math.atan2(
+          this.player.position.x - screen[0],
+          this.player.position.z - screen[2],
+        );
+        this.cameraOrbit.follow.pitch = 0.06;
+        this.cameraOrbit.perspective.yaw = this.cameraOrbit.follow.yaw;
+        this.cameraOrbit.perspective.pitch = 0.06;
+      }
       this.onAction({ type: 'seated', seatId: seat.id, venue: seat.venue });
       return;
     }
@@ -1560,13 +1578,8 @@ export class FestivalWorld {
       return;
     }
 
-    const vendor = this.nearbyVendor();
-    if (vendor && this.carriedItem !== vendor.kind) {
-      this.carriedItem = vendor.kind;
-      this.stowedItem = undefined;
-      this.syncCarriedPropAnchor();
-      this.pickupUntil = performance.now() + 700;
-      this.onAction({ type: 'food', item: vendor.kind });
+    if (this.nearShopCounter()) {
+      this.onAction({ type: 'shop' });
       return;
     }
 
@@ -1725,10 +1738,13 @@ export class FestivalWorld {
     const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
     orbit.yaw -= deltaX * 0.0042;
     // First person looks level and can tip below the horizon; the orbit
-    // cameras sit above the avatar and must stay there.
+    // cameras sit above the avatar and must stay there — except on a seat,
+    // where the screen is high on a far wall and a camera pinned above the
+    // eyeline can never be tilted up far enough to find it.
+    const lowestPitch = this.playerState === 'seated' ? -0.42 : 0.12;
     orbit.pitch = this.cameraMode === 'first-person'
       ? THREE.MathUtils.clamp(orbit.pitch + deltaY * 0.0035, -0.85, 0.95)
-      : THREE.MathUtils.clamp(orbit.pitch + deltaY * 0.0035, 0.12, 1.08);
+      : THREE.MathUtils.clamp(orbit.pitch + deltaY * 0.0035, lowestPitch, 1.08);
   };
 
   private readonly cameraPointerUp = (event: PointerEvent): void => {
@@ -1758,9 +1774,10 @@ export class FestivalWorld {
     }
     const info = typeof payload.info === 'object' ? payload.info : undefined;
     if (info && typeof info.duration === 'number' && info.duration > 0) {
-      for (const projector of this.projectors.values()) {
+      for (const [venue, projector] of this.projectors) {
         if (!projector.iframe || projector.iframe.contentWindow !== event.source) continue;
         projector.duration = info.duration;
+        if (projector.youtubeId) this.onProjectorDuration?.(venue, projector.youtubeId, info.duration);
         break;
       }
     }
@@ -2913,7 +2930,10 @@ export class FestivalWorld {
 
     // Mass under the deck, solid at street level. The stair now stands clear
     // of this footprint, so the block needs no opening cut through it.
-    this.mesh([width, ROOF_Y, deckDepth], [centerX, ROOF_Y / 2, deckCenterZ], brick);
+    // Stopped half a unit short of the deck's finished floor. Carried the whole
+    // way up, its top face and the deck's landed on exactly the same plane and
+    // the two fought for every pixel, which is what made the floor shimmer.
+    this.mesh([width, ROOF_Y - 0.5, deckDepth], [centerX, (ROOF_Y - 0.5) / 2, deckCenterZ], brick);
     this.addCollider(centerX, deckCenterZ, width, deckDepth, 0.2, { minY: -0.4, maxY: ROOF_Y - 2 });
     // Roof slab, with its overhang reading as a cornice from the street. It
     // sits under the deck's finished floor: carried at ROOF_Y + 0.3 its top
@@ -2928,30 +2948,37 @@ export class FestivalWorld {
       this.addCollider(x, bayCenterZ, 0.8, bayDepth, 0.16, aboveGround);
     }
 
-    // Three vendors along the back of the bay, counters facing the Drive-In.
-    const stalls: Array<[string, number, CarriedItem]> = [
-      ['HOT DOG', centerX - 12, 'HOTDOG'],
-      ['PIZZA', centerX, 'PIZZA'],
-      ['FRIED CHICKEN', centerX + 12, 'CHICKEN'],
-    ];
-    for (const [label, x, kind] of stalls) {
-      const counterZ = r.bayMaxZ - 2.4;
-      this.mesh([7, 2.3, 2.6], [x, 1.15, counterZ], material(0x2e2621, 0.7, 0.2));
-      this.mesh([7.6, 0.45, 3], [x, 2.55, counterZ], material(0xd8642c, 0.5, 0.25));
-      this.addCollider(x, counterZ, 7, 2.6, 0.16, { minY: -0.4, maxY: ROOF_Y });
-      const sign = new THREE.Mesh(
-        new THREE.PlaneGeometry(5.6, 1.5),
-        new THREE.MeshBasicMaterial({ map: createTextTexture([label, 'STREET FOOD']) }),
-      );
-      sign.position.set(x, 3.5, counterZ - 1.6);
-      sign.rotation.y = Math.PI;
-      this.scene.add(sign);
-      // The spot an attendee stands to be served, in front of the counter.
-      this.vendors.push({ kind, x, z: counterZ - 4.2 });
+    // The bay is a pop-up clothing store: one frontage across the three former
+    // counters, with the shopfront facing the Drive-In the way the stalls did.
+    const counterZ = r.bayMaxZ - 2.4;
+    this.mesh([31, 2.3, 2.6], [centerX, 1.15, counterZ], material(0x2e2621, 0.7, 0.2));
+    this.mesh([31.6, 0.45, 3], [centerX, 2.55, counterZ], material(0xd8642c, 0.5, 0.25));
+    this.addCollider(centerX, counterZ, 31, 2.6, 0.16, { minY: -0.4, maxY: ROOF_Y }, 'shop-counter');
+    for (const side of [-1, 0, 1]) {
+      const rail = this.mesh([6.4, 0.24, 0.24], [centerX + side * 10, 4.4, counterZ - 0.2], material(0x8a8f96, 0.4, 0.6));
+      rail.castShadow = false;
+      // Stock on the rail, so the frontage reads as a clothes shop.
+      for (let index = 0; index < 6; index += 1) {
+        const x = centerX + side * 10 - 2.6 + index * 1.05;
+        this.mesh(
+          [0.72, 1.5, 0.3],
+          [x, 3.55, counterZ - 0.2],
+          material([0x9f1720, 0x20242c, 0xd5b23f, 0x3f6d5a, 0x8a4b8f, 0xd8d3c6][index % 6], 0.8, 0.05),
+        );
+      }
       const stallLamp = new THREE.PointLight(0xffcf94, 22, 14, 1.4);
-      stallLamp.position.set(x, 3.4, counterZ - 3);
+      stallLamp.position.set(centerX + side * 10, 3.4, counterZ - 3);
       this.scene.add(stallLamp);
     }
+    this.shopSign = new THREE.Mesh(
+      new THREE.PlaneGeometry(11.2, 3),
+      new THREE.MeshBasicMaterial({ map: createTextTexture(['THE POP-UP', 'CLOTHING STORE']) }),
+    );
+    this.shopSign.position.set(centerX, 5.4, counterZ - 1.6);
+    this.shopSign.rotation.y = Math.PI;
+    this.scene.add(this.shopSign);
+    // Where an attendee stands to be served, in front of the frontage.
+    this.shopCounter = { x: centerX, z: counterZ - 4.2 };
 
     this.createRooftopStair(warmConcrete, brick);
 
@@ -2996,22 +3023,40 @@ export class FestivalWorld {
       this.addCollider(centerX + side * 7.4, boothZ, 2, 1.8, 0.12, onDeck, 'rooftop-speaker');
     }
 
-    // Floor lights around the deck edge rather than bulbs hanging in the air.
-    for (let index = 0; index < 10; index += 1) {
-      const x = r.minX + 2.5 + index * ((width - 5) / 9);
-      for (const z of [r.deckMinZ + 1.6, r.maxZ - 1.6]) {
-        this.mesh([1.6, 0.12, 0.7], [x, ROOF_Y + 0.06, z], new THREE.MeshBasicMaterial({ color: 0xffb066 }));
-      }
+    // Fittings on the inside face of the parapet, washing the deck from its
+    // edge. Set into the floor they were both too many and underfoot; up on the
+    // wall a quarter as many cover the same ground. They run off the same beat
+    // as the club's rig, so the roof answers the track it is playing.
+    const parapetFace = 0.34;
+    const lightY = ROOF_Y + 0.95;
+    const deckLightAt = (x: number, z: number, size: [number, number, number]): void => {
+      const light = this.mesh(size, [x, lightY, z], new THREE.MeshBasicMaterial({
+        color: clubLightColors[this.clubLights.length % clubLightColors.length],
+      }));
+      this.clubLights.push(light);
+    };
+    for (let index = 0; index < 4; index += 1) {
+      const x = r.minX + 4 + index * ((width - 8) / 3);
+      deckLightAt(x, r.deckMinZ + parapetFace, [1.5, 0.42, 0.22]);
+      deckLightAt(x, r.maxZ - parapetFace, [1.5, 0.42, 0.22]);
     }
-    for (let index = 0; index < 5; index += 1) {
-      const z = r.deckMinZ + 3.5 + index * ((deckDepth - 7) / 4);
-      for (const x of [r.minX + 1.5, r.maxX - 1.5]) {
-        this.mesh([0.7, 0.12, 1.6], [x, ROOF_Y + 0.06, z], new THREE.MeshBasicMaterial({ color: 0xffb066 }));
-      }
+    for (let index = 0; index < 3; index += 1) {
+      const z = r.deckMinZ + 5 + index * ((deckDepth - 10) / 2);
+      deckLightAt(r.minX + parapetFace, z, [0.22, 0.42, 1.5]);
+      deckLightAt(r.maxX - parapetFace, z, [0.22, 0.42, 1.5]);
     }
+    // Benches, low enough to sit on.
     for (const [x, z] of [[centerX - 11, deckCenterZ + 4], [centerX + 11, deckCenterZ + 2], [centerX - 3, deckCenterZ + 7]] as Array<[number, number]>) {
-      this.mesh([2, 0.8, 2], [x, ROOF_Y + 0.4, z], material(0x4d3a2c, 0.6, 0.2));
-      this.addCollider(x, z, 2, 2, 0.1, onDeck);
+      this.mesh([2.4, 0.8, 2], [x, ROOF_Y + 0.4, z], material(0x4d3a2c, 0.6, 0.2));
+      this.addCollider(x, z, 2.4, 2, 0.1, onDeck, 'rooftop-bench');
+      this.seats.push({
+        id: `ROOFTOP-BENCH-${this.seats.filter((seat) => seat.kind === 'bench').length + 1}`,
+        venue: 'rooftop',
+        // Perched on the block, facing the screen at the deck's south edge.
+        position: new THREE.Vector3(x, ROOF_Y + 0.8 - AVATAR_SEAT_DROP, z),
+        kind: 'bench',
+        facing: Math.PI,
+      });
     }
 
     for (const [x, z] of [[centerX - 9, deckCenterZ], [centerX + 9, deckCenterZ + 3]] as Array<[number, number]>) {
@@ -3144,7 +3189,8 @@ export class FestivalWorld {
       [r.stairMinZ + 2.5, ROOF_RISER * 5],
       [r.stairLandingMinZ + 1.8, halfHeight],
       [r.stairLandingMaxZ + 2.5, halfHeight + ROOF_RISER * 5],
-      [r.stairTopZ + 1.4, ROOF_Y],
+      // Nothing past stairTopZ: the stringer wall ends there and the fitting
+      // was left hanging in open air with no wall behind it.
     ] as Array<[number, number]>) {
       this.mesh(
         [0.16, 0.34, 1.2],
@@ -4558,6 +4604,7 @@ export class FestivalWorld {
       ));
     }
     this.confineCameraToClub(cameraTarget);
+    this.confineCameraOverWater(cameraTarget);
     const smoothing = 1 - Math.exp(-delta * 5.2);
     this.camera.position.lerp(cameraTarget, smoothing);
     this.camera.lookAt(this.lookTarget);
@@ -4604,6 +4651,23 @@ export class FestivalWorld {
    * wall, the view distance is cut to whatever fits and the camera lifts as it
    * is squeezed, easing into a look down over the floor.
    */
+  /**
+   * Holds the eye in a band above the waterline while swimming. Grazing the
+   * surface is what costs: at that angle the sea's sheets are seen almost
+   * edge-on, so each one covers the whole frame and the horizon stretches to
+   * the far edge of a 196-unit plane. Lifting the eye a little turns the same
+   * sheets back into a strip of the screen, which is the difference the
+   * attendee noticed between a smooth view and a stuttering one.
+   */
+  private confineCameraOverWater(cameraTarget: THREE.Vector3): void {
+    if (this.playerState !== 'swimming') return;
+    const waterline = 0.14;
+    cameraTarget.y = THREE.MathUtils.clamp(cameraTarget.y, waterline + 1.6, waterline + 5.2);
+    // Aim slightly down at the swimmer rather than out along the surface, so
+    // the sea reads as a floor under the camera instead of filling the frame.
+    this.lookTarget.y = Math.min(this.lookTarget.y, cameraTarget.y - 0.9);
+  }
+
   private confineCameraToClub(cameraTarget: THREE.Vector3): void {
     const { x, z } = this.player.position;
     if (!this.inClub(x, z)) return;
@@ -4748,6 +4812,7 @@ export class FestivalWorld {
     }
     if (this.carriedItem === 'DRINK') return 'SHIFT+E / DRINK UP';
     if (this.nearClubBar()) return 'E / ORDER A DRINK';
+    if (this.nearShopCounter()) return 'E / OPEN THE POP-UP STORE';
     const dj = this.nearbyDj();
     if (dj) return `E / REQUEST A TRACK FROM ${dj.name}`;
     const socialTarget = this.nearestSocialTarget();
@@ -4766,7 +4831,7 @@ export class FestivalWorld {
   private canInteract(): boolean {
     const seat = this.nearestSeat();
     return this.playerState === 'seated' || this.carriedItem === 'MENTOR' || this.nearbyMentor() !== undefined ||
-      this.carriedItem === 'DRINK' || this.nearClubBar() ||
+      this.carriedItem === 'DRINK' || this.nearClubBar() || this.nearShopCounter() ||
       this.nearbyDj() !== undefined ||
       (seat !== undefined && !this.occupiedSeats.has(seat.id)) ||
       this.nearestSocialTarget() !== undefined ||
@@ -4790,17 +4855,14 @@ export class FestivalWorld {
   }
 
   /**
-   * Whichever stall is in reach. Measured to the whole serving frontage rather
-   * than to one spot in front of it, so anywhere along a counter counts and the
-   * approach is not limited to a single angle.
+   * Within reach of the pop-up store's frontage. Measured to the whole counter
+   * rather than a point in front of it, so any approach along it works.
    */
-  private nearbyVendor(): { kind: CarriedItem; x: number; z: number } | undefined {
-    const halfFrontage = 3.5;
-    return this.vendors.find((vendor) => {
-      const alongCounter = Math.max(0, Math.abs(vendor.x - this.player.position.x) - halfFrontage);
-      const outFromCounter = this.player.position.z - vendor.z;
-      return Math.hypot(alongCounter, outFromCounter) < 4.6;
-    });
+  private nearShopCounter(): boolean {
+    if (!this.shopCounter) return false;
+    const alongCounter = Math.max(0, Math.abs(this.shopCounter.x - this.player.position.x) - 15);
+    const outFromCounter = this.player.position.z - this.shopCounter.z;
+    return Math.hypot(alongCounter, outFromCounter) < 4.6;
   }
 
   /** Within reach of the club's counter, from the room side of it. */

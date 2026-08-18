@@ -7,6 +7,7 @@ import {
 } from '../data/catalogue';
 import companyLogoUrl from '../assets/company-logo.png';
 import { DJ_BY_VENUE, djProfileFor } from '../data/djProfiles';
+import { ProgrammeClock } from '../data/programmeClock';
 import {
   FestivalClient,
   type AdminState,
@@ -236,6 +237,7 @@ export class App {
   private gateBackground: GateBackground = { ...defaultGateBackground };
   private npcProfiles: NpcProfile[] = DEFAULT_NPC_PROFILES.map((profile) => ({ ...profile }));
   private pamphlet: PamphletContent = { ...defaultPamphlet };
+  private readonly programmeClock = new ProgrammeClock();
   private controlledNpcId?: string;
 
   constructor(root: HTMLElement) {
@@ -470,7 +472,16 @@ export class App {
       onSnapshot: (snapshot) => this.updateSnapshot(snapshot),
       onAction: (action) => this.handleWorldAction(action),
       onProjectorAdvance: (venue, youtubeId) => {
-        if (this.festivalClient.online) void this.festivalClient.advanceProgramme(venue, youtubeId);
+        if (this.festivalClient.online) {
+          void this.festivalClient.advanceProgramme(venue, youtubeId);
+          return;
+        }
+        // No service to keep the running order, so the venue moves its own on.
+        this.programmeClock.advance(venue, this.localOrder(venue));
+        this.syncPublicProjectors();
+      },
+      onProjectorDuration: (_venue, youtubeId, seconds) => {
+        this.programmeClock.learnDuration(youtubeId, seconds);
       },
     });
     this.world.setNpcProfiles(this.npcProfiles);
@@ -711,6 +722,30 @@ export class App {
       }
       return;
     }
+    if (action.type === 'shop') {
+      const zh = this.language === 'zh-TW';
+      const link = this.networkState?.shopLink;
+      // Only ever an http(s) address, re-checked here as well as on the
+      // service: this string is handed straight to the browser to follow, and
+      // the world can be run against a service we do not control.
+      const safe = (() => {
+        if (!link?.url) return '';
+        try {
+          const parsed = new URL(link.url);
+          return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.toString() : '';
+        } catch {
+          return '';
+        }
+      })();
+      if (!safe) {
+        this.showWorldAlert(zh ? '快閃服飾店即將開幕' : 'THE POP-UP STORE OPENS SOON');
+        return;
+      }
+      const name = zh ? (link?.labelZh || '快閃服飾店') : (link?.label || 'THE POP-UP STORE');
+      this.showWorldAlert(zh ? `正在開啟 ${name}` : `OPENING ${name}`);
+      window.open(safe, '_blank', 'noopener,noreferrer');
+      return;
+    }
     if (action.type === 'pamphlet') {
       this.openPanel('pamphlet');
       return;
@@ -851,6 +886,11 @@ export class App {
     window.setTimeout(() => this.root.querySelector<HTMLInputElement>('#chat-message')?.focus(), 0);
   };
 
+  /** The order a venue works through when no service is dictating one. */
+  private localOrder(venue: VenueKey): string[] {
+    return this.venueFilms(venue).map((film) => film.youtubeId);
+  }
+
   private publicFilm(venue: VenueKey = this.activeVenue): CatalogueEntry {
     const verifiedLocalPublicUpload: Record<VenueKey, string> = {
       shore: 'SRbsIUYB0dc',
@@ -874,7 +914,13 @@ export class App {
         sourceUrl: `https://www.youtube.com/watch?v=${scheduledYoutubeId}`,
       };
     }
-    return catalogueByVenue[venue].find((film) => film.youtubeId === verifiedLocalPublicUpload[venue])
+    // No service, so the venue runs its own programme rather than sitting on
+    // one fixed work. Falls back to the known-good upload only if the running
+    // order somehow yields nothing.
+    const local = this.programmeClock.position(venue, this.localOrder(venue));
+    const playing = local && this.venueFilms(venue).find((film) => film.youtubeId === local.youtubeId);
+    return playing
+      ?? catalogueByVenue[venue].find((film) => film.youtubeId === verifiedLocalPublicUpload[venue])
       ?? catalogueByVenue[venue][0];
   }
 
@@ -885,7 +931,9 @@ export class App {
    */
   private publicOffset(venue: VenueKey): number {
     const schedule = this.networkState?.schedule?.[venue];
-    if (!schedule?.startedAt) return 0;
+    if (!schedule?.startedAt) {
+      return this.programmeClock.position(venue, this.localOrder(venue))?.offset ?? 0;
+    }
     const now = schedule.pausedAt ?? (Date.now() + this.serverClockOffset);
     const elapsed = Math.floor((now - schedule.startedAt) / 1000);
     // A stale start time, most often a programme left paused for a long time,
@@ -1078,7 +1126,7 @@ export class App {
     const venueResume = resumable?.venue === venue ? resumable : undefined;
     menu.hidden = false;
     menu.innerHTML = `
-      <p class="eyebrow">${this.venueName(venue)} · ${seatId}</p>
+      <p class="eyebrow">${this.escapeHtml(this.venueName(venue))} · ${this.escapeHtml(seatId)}</p>
       <h2 id="seat-menu-title">${this.language === 'zh-TW' ? '已入座' : 'YOU HAVE A SEAT'}</h2>
       <p>${this.language === 'zh-TW' ? '公開放映同步進行；私人選片只會更改你的畫面。' : 'Public playback stays synchronized. A private choice changes only your screen.'}</p>
       <div class="seat-menu__actions">
@@ -1255,7 +1303,7 @@ export class App {
     this.activeVenue = venue;
     menu.hidden = false;
     menu.innerHTML = `
-      <p class="eyebrow">${this.venueName(venue)} · ${this.language === 'zh-TW' ? '私人片單' : 'PERSONAL CATALOGUE'}</p>
+      <p class="eyebrow">${this.escapeHtml(this.venueName(venue))} · ${this.language === 'zh-TW' ? '私人片單' : 'PERSONAL CATALOGUE'}</p>
       <h2 id="seat-menu-title">${this.language === 'zh-TW' ? '選擇影片' : 'CHOOSE A FILM'}</h2>
       <div class="seat-film-grid">${this.venueFilms(venue).map((film) => `
         <button type="button" data-private-film="${film.id}">
@@ -1662,6 +1710,28 @@ export class App {
       });
     });
 
+    if (panelId === 'admin') {
+      const shopEditor = panel.querySelector<HTMLFormElement>('#shop-link-editor');
+      shopEditor?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const data = new FormData(shopEditor);
+        const button = shopEditor.querySelector<HTMLButtonElement>('button[type="submit"]');
+        if (button) button.disabled = true;
+        void this.festivalClient.updateShopLink(this.staffKey, {
+          url: String(data.get('url') ?? ''),
+          label: String(data.get('label') ?? ''),
+          labelZh: String(data.get('labelZh') ?? ''),
+        }).then(async () => {
+          await this.refreshAdminState(false);
+          this.showWorldAlert(this.language === 'zh-TW' ? '商店連結已更新' : 'STORE LINK SAVED');
+        }).catch((error: unknown) => {
+          this.showWorldAlert(error instanceof Error ? error.message : (this.language === 'zh-TW' ? '儲存失敗' : 'COULD NOT SAVE'));
+        }).finally(() => {
+          if (button) button.disabled = false;
+        });
+      });
+    }
+
     if (panelId === 'pamphlet') {
       const editor = panel.querySelector<HTMLFormElement>('#pamphlet-editor');
       panel.querySelector<HTMLButtonElement>('[data-pamphlet-edit-toggle]')?.addEventListener('click', () => {
@@ -2053,6 +2123,16 @@ export class App {
       </div>
       ${controlledNpcId ? `<div class="staff-identity"><span>${this.language === 'zh-TW' ? '目前扮演' : 'PLAYING AS'} · ${this.escapeHtml(this.npcProfiles.find((profile) => profile.id === controlledNpcId)?.name ?? controlledNpcId)}${mentorCarrierName ? ` · ${this.language === 'zh-TW' ? '由' : 'CARRIED BY'} ${this.escapeHtml(mentorCarrierName)}` : ''}</span><button type="button" data-npc-play="">${this.language === 'zh-TW' ? '回復本人' : 'RETURN TO SELF'}</button></div>` : ''}
       ${this.adminError ? `<p class="staff-error" role="alert">${this.escapeHtml(this.adminError)}</p>` : ''}
+      ${this.staffSection('shop', this.language === 'zh-TW' ? '快閃服飾店' : 'POP-UP STORE', `
+      <form class="staff-form" id="shop-link-editor">
+        <p class="staff-note">${this.language === 'zh-TW'
+          ? '屋頂快閃店的連結。留空即為尚未開張，訪客按 E 時會看到「即將開幕」。'
+          : 'Where the rooftop pop-up store sends visitors. Leave it empty and the store reads as not open yet.'}</p>
+        <label><span>${this.language === 'zh-TW' ? '商店網址' : 'STORE LINK'}</span><input name="url" type="url" inputmode="url" maxlength="500" placeholder="https://" value="${this.escapeAttribute(this.adminState.shopLink?.url ?? '')}" /></label>
+        <label><span>${this.language === 'zh-TW' ? '店名（中）' : 'STORE NAME (ZH)'}</span><input name="labelZh" maxlength="60" value="${this.escapeAttribute(this.adminState.shopLink?.labelZh ?? '')}" /></label>
+        <label><span>${this.language === 'zh-TW' ? '店名（英）' : 'STORE NAME (EN)'}</span><input name="label" maxlength="60" value="${this.escapeAttribute(this.adminState.shopLink?.label ?? '')}" /></label>
+        <button type="submit">${this.language === 'zh-TW' ? '儲存商店連結' : 'SAVE STORE LINK'}</button>
+      </form>`)}
       ${this.staffSection('programme', this.language === 'zh-TW' ? '節目與銀幕' : 'PROGRAMME & SCREENS', `
       <div class="staff-programmes">${VENUE_KEYS.map((venue) => {
         const schedule = this.adminState?.schedule?.[venue];
@@ -2307,6 +2387,7 @@ export class App {
     if (value.startsWith('E / WAVE TO')) return value.replace('E / WAVE TO', 'E／揮手給');
     if (value.startsWith('E / WAG TAIL AT')) return value.replace('E / WAG TAIL AT', 'E／搖尾巴給');
     if (value === 'E / ORDER A DRINK') return 'E／點一杯';
+    if (value === 'E / OPEN THE POP-UP STORE') return 'E／逛快閃服飾店';
     if (value === 'SHIFT+E / DRINK UP') return 'SHIFT+E／喝一口';
     if (value.startsWith('E / REQUEST A TRACK FROM')) return value.replace('E / REQUEST A TRACK FROM', 'E／向') + ' 點歌';
     if (value.startsWith('E / GIVE MENTOR A TREAT')) {
