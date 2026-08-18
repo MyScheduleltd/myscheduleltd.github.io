@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "capturedAt": "2026-08-18T11:48:39.252Z",
+  "capturedAt": "2026-08-18T14:46:51.416Z",
   "capturedFrom": "https://myschedule-festival.onrender.com",
   "schedule": {
     "palace": {
@@ -12,10 +12,13 @@
         "KD5dGYzk9Bo",
         "qyMIdPT4K4Q"
       ],
-      "currentIndex": 3,
+      "currentIndex": 0,
       "mode": "scheduled-loop",
-      "special": null,
-      "updatedAt": 1787053603484
+      "special": {
+        "youtubeId": "sc6P0k-PYcs",
+        "startsAt": 1787149260000
+      },
+      "updatedAt": 1787064291134
     },
     "drive-in": {
       "name": "DRIVE-IN 88",
@@ -27,7 +30,7 @@
       "currentIndex": 0,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787051708483
+      "updatedAt": 1787062228766
     },
     "shore": {
       "name": "THE SHORE",
@@ -66,10 +69,10 @@
         "F6XaLvhpGog",
         "xndA9Geu4eg"
       ],
-      "currentIndex": 19,
+      "currentIndex": 29,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787053557695
+      "updatedAt": 1787064400057
     },
     "club": {
       "name": "THE BASEMENT",
@@ -82,10 +85,10 @@
         "XZ9YCADCko8",
         "VRr6fb4kmOk"
       ],
-      "currentIndex": 0,
+      "currentIndex": 1,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787053480531
+      "updatedAt": 1787063421167
     },
     "rooftop": {
       "name": "THE ROOFTOP",
@@ -101,10 +104,10 @@
         "U2-OzFANCiA",
         "KH4HNQBlP7U"
       ],
-      "currentIndex": 8,
+      "currentIndex": 6,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787053563804
+      "updatedAt": 1787064371945
     }
   },
   "customVideos": {
@@ -199,10 +202,15 @@
     "updatedAt": 0
   },
   "shopLink": {
-    "url": "",
+    "url": "https://masterofthehouse.app1shop.com/",
     "label": "THE POP-UP STORE",
     "labelZh": "快閃服飾店",
-    "updatedAt": 0
+    "updatedAt": 1787063471568
+  },
+  "templeSign": {
+    "name": "美麗仙人",
+    "label": "THE TEMPLE",
+    "updatedAt": 1787064314373
   },
   "djProfiles": {
     "XIEHGAN": {
