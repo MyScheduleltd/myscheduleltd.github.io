@@ -6,9 +6,13 @@ import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import legacySource from '../../docs/js/allData.js';
 
-const HOST = process.env.FESTIVAL_HOST ?? '127.0.0.1';
-const PORT = Number(process.env.FESTIVAL_PORT ?? 8787);
 const isProduction = process.env.NODE_ENV === 'production';
+// Hosts hand a container its port in PORT and expect the process to bind every
+// interface. Reading only FESTIVAL_PORT and binding loopback is right for a
+// laptop and unreachable anywhere else, so both are accepted and production
+// binds outward by default.
+const HOST = process.env.FESTIVAL_HOST ?? (isProduction ? '0.0.0.0' : '127.0.0.1');
+const PORT = Number(process.env.FESTIVAL_PORT ?? process.env.PORT ?? 8787);
 const ADMIN_KEY = process.env.FESTIVAL_ADMIN_KEY ?? (isProduction ? '' : 'myschedule-local-admin');
 const DIST_DIR = fileURLToPath(new URL('../dist/', import.meta.url));
 // STAFF settings outlive a service restart. Set FESTIVAL_STATE_FILE=off for a
