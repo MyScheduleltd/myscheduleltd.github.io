@@ -535,7 +535,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .seat-menu { box-shadow: 8px 8px 0 rgba(0,0,0,.68); }
   .seat-menu__actions, .seat-film-grid { grid-template-columns: 1fr; }
   .world-alert { top: 72px; max-width: calc(100vw - 28px); text-align: center; }
-  .staff-toolbar, .staff-programme__top, .staff-special, .staff-style, .staff-video, .staff-gate-background, .pamphlet-editor { grid-template-columns: 1fr; }.staff-list article { align-items: flex-start; flex-direction: column; }.staff-login div { grid-template-columns: 1fr; }.pamphlet-editor__wide, .pamphlet-editor button { grid-column: 1; }
+  .staff-toolbar, .staff-programme__top, .staff-special, .staff-style, .staff-video, .staff-gate-background, .pamphlet-editor, .staff-form, .dj-about__edit { grid-template-columns: 1fr; }.staff-list article { align-items: flex-start; flex-direction: column; }.staff-login div { grid-template-columns: 1fr; }.pamphlet-editor__wide, .pamphlet-editor button { grid-column: 1; }
   .staff-npc-form { grid-template-columns: auto minmax(0, 1fr); }.staff-npc-form label, .staff-npc-form button { grid-column: 2; }
   .staff-npc-add { grid-template-columns: 1fr; }.staff-npc-add h4 { grid-column: 1; }
 }
@@ -563,3 +563,27 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   font-size:15px;
   line-height:1.5;
 }
+
+/* Every form where someone types prose into the world: the STAFF sections and
+   the resident's introduction under their booth. They share one rule set on
+   purpose — each was written without styles of its own and fell back to raw
+   browser controls, which is how they ended up looking nothing like the site
+   or like each other. Add a form, add it here. */
+.staff-form, .dj-about__edit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.dj-about__edit { margin-top: 16px; border-top: 2px solid var(--ink); padding-top: 16px; }
+.staff-form label, .dj-about__edit label { display: grid; gap: 5px; color: var(--red); font: 800 11px var(--condensed); letter-spacing: .08em; }
+.staff-form input, .staff-form textarea, .dj-about__edit input, .dj-about__edit textarea { box-sizing: border-box; width: 100%; min-width: 0; border: 2px solid var(--ink); padding: 10px 12px; color: var(--ink); background: var(--paper); font: 700 14px/1.35 sans-serif; }
+.staff-form input, .dj-about__edit input { height: 46px; }
+.staff-form textarea, .dj-about__edit textarea { min-height: 112px; resize: vertical; }
+.staff-form input:focus-visible, .staff-form textarea:focus-visible, .dj-about__edit input:focus-visible, .dj-about__edit textarea:focus-visible { outline: 2px solid var(--red); outline-offset: 1px; }
+.staff-form button, .dj-about__edit button { grid-column: 1 / -1; justify-self: start; min-height: 44px; border: 0; padding: 0 18px; color: white; background: var(--red); font: 800 12px var(--condensed); cursor: pointer; }
+.staff-form button:disabled, .dj-about__edit button:disabled { opacity: .55; cursor: default; }
+.staff-form__wide, .dj-about__wide { grid-column: 1 / -1; }
+.staff-note { grid-column: 1 / -1; margin: 0 0 2px; font: 400 13px/1.5 sans-serif; opacity: .72; }
+.dj-about__edit > .eyebrow { margin: 0; }
+
+/* The resident's introduction itself, which visitors read. */
+.dj-about__role { margin: 2px 0 12px; color: var(--red); font: 800 12px var(--condensed); letter-spacing: .08em; text-transform: uppercase; }
+.dj-about__body { margin-bottom: 4px; }
+.dj-about__body p { margin: 0 0 9px; font: 400 14px/1.55 sans-serif; }
+.dj-about__body p:last-child { margin-bottom: 0; }

@@ -206,7 +206,9 @@ export class App {
   private screenMode?: 'public' | 'private';
   private screenMaximized = false;
   private publicFilmId?: string;
-  private openDjBooth?: { name: string; venue: 'club' | 'rooftop' };
+  private openDjBooth?: { name: string; venue: 'club' | 'rooftop'; view: 'requests' | 'about' };
+  /** Set once STAFF touch the introduction, so no update can redraw over them. */
+  private djIntroductionTouched = false;
   private serverClockOffset = 0;
   private activeVenue: VenueKey = 'shore';
   private activeSeatId = 'CURRENT SEAT';
@@ -1251,7 +1253,7 @@ export class App {
   private openDjRequest(djName: string, venue: 'club' | 'rooftop' = 'club'): void {
     const menu = this.root.querySelector<HTMLElement>('#seat-menu');
     if (!menu) return;
-    this.openDjBooth = { name: djName, venue };
+    this.openDjBooth = { name: djName, venue, view: 'requests' };
     const zh = this.language === 'zh-TW';
     const nowPlaying = this.publicFilm(venue);
     const queue = this.networkState?.venueQueues?.[venue] ?? [];
@@ -1308,7 +1310,7 @@ export class App {
             return;
           }
           this.world?.acknowledgeDjRequest();
-          this.openDjBooth = { name: djName, venue };
+          this.openDjBooth = { name: djName, venue, view: 'requests' };
           this.showWorldAlert(zh
             ? `已排進待播清單：${trackTitle(youtubeId)}`
             : `QUEUED: ${trackTitle(youtubeId)}`);
@@ -1331,6 +1333,17 @@ export class App {
   }
 
   /**
+   * Whether the introduction is mid-edit. Redrawing then would wipe the text,
+   * the caret and the scroll of whoever is writing, so an arriving update has
+   * to wait — a profile changed elsewhere shows the next time it is opened.
+   */
+  private djIntroductionBeingEdited(): boolean {
+    const form = this.root.querySelector<HTMLFormElement>('[data-dj-edit]');
+    if (!form) return false;
+    return this.djIntroductionTouched || form.contains(document.activeElement);
+  }
+
+  /**
    * The resident's introduction, opened from their booth. Visitors read it;
    * STAFF get an edit form under it. The form only appears with a service
    * connected, because there is nowhere to save an edit without one — the
@@ -1342,7 +1355,7 @@ export class App {
     const zh = this.language === 'zh-TW';
     const profile = djProfileFor(venue, this.networkState?.djProfiles, djName);
     if (!profile) return;
-    this.openDjBooth = { name: djName, venue };
+    this.openDjBooth = { name: djName, venue, view: 'about' };
     const canEdit = Boolean(this.staffKey) && this.festivalClient.online;
     const paragraphs = (text: string) => text
       .split(/\n+/)
@@ -1358,15 +1371,19 @@ export class App {
       <div class="dj-about__body">${paragraphs(zh ? profile.introductionZh : profile.introduction)}</div>
       ${canEdit ? `
       <form class="dj-about__edit" data-dj-edit>
-        <p class="eyebrow">${zh ? 'STAFF 編輯' : 'STAFF EDIT'}</p>
+        <p class="eyebrow dj-about__wide">${zh ? 'STAFF 編輯' : 'STAFF EDIT'}</p>
         <label><span>${zh ? '頭銜（中）' : 'ROLE (ZH)'}</span><input name="roleZh" value="${this.escapeAttribute(profile.roleZh)}" maxlength="120" required /></label>
         <label><span>${zh ? '頭銜（英）' : 'ROLE (EN)'}</span><input name="role" value="${this.escapeAttribute(profile.role)}" maxlength="120" required /></label>
-        <label><span>${zh ? '介紹（中）' : 'INTRODUCTION (ZH)'}</span><textarea name="introductionZh" rows="5" maxlength="1200" required>${this.escapeHtml(profile.introductionZh)}</textarea></label>
-        <label><span>${zh ? '介紹（英）' : 'INTRODUCTION (EN)'}</span><textarea name="introduction" rows="5" maxlength="1200" required>${this.escapeHtml(profile.introduction)}</textarea></label>
+        <label class="dj-about__wide"><span>${zh ? '介紹（中）' : 'INTRODUCTION (ZH)'}</span><textarea name="introductionZh" rows="5" maxlength="1200" required>${this.escapeHtml(profile.introductionZh)}</textarea></label>
+        <label class="dj-about__wide"><span>${zh ? '介紹（英）' : 'INTRODUCTION (EN)'}</span><textarea name="introduction" rows="5" maxlength="1200" required>${this.escapeHtml(profile.introduction)}</textarea></label>
         <button type="submit">${zh ? '儲存介紹' : 'SAVE INTRODUCTION'}</button>
       </form>` : ''}
       <button class="seat-menu__back" type="button" data-dj-back>${zh ? '回到點歌' : 'BACK TO REQUESTS'}</button>`;
 
+    this.djIntroductionTouched = false;
+    menu.querySelector<HTMLFormElement>('[data-dj-edit]')?.addEventListener('input', () => {
+      this.djIntroductionTouched = true;
+    });
     menu.querySelector<HTMLButtonElement>('[data-dj-back]')?.addEventListener('click', () => {
       this.openDjRequest(djName, venue);
     });
@@ -1384,6 +1401,7 @@ export class App {
         introductionZh: String(data.get('introductionZh') ?? ''),
       }).then(() => {
         this.showWorldAlert(zh ? '介紹已更新' : 'INTRODUCTION SAVED');
+        this.djIntroductionTouched = false;
         this.openDjAbout(djName, venue);
       }).catch((error: unknown) => {
         if (submit instanceof HTMLButtonElement) submit.disabled = false;
@@ -1510,10 +1528,14 @@ export class App {
     this.syncClubBeat();
     if (this.openDjBooth && !this.root.querySelector<HTMLElement>('#seat-menu')?.hidden) {
       // Re-render from the state that has just arrived, so the queue the
-      // service holds is what the attendee sees.
+      // service holds is what the attendee sees. This used to redraw the
+      // requests page whichever page was actually open, so every update — and
+      // they arrive constantly — threw anyone reading the introduction back to
+      // the running order, mid-sentence and mid-keystroke.
       const booth = this.openDjBooth;
       this.networkState = state;
-      this.openDjRequest(booth.name, booth.venue);
+      if (booth.view === 'requests') this.openDjRequest(booth.name, booth.venue);
+      else if (!this.djIntroductionBeingEdited()) this.openDjAbout(booth.name, booth.venue);
     }
     const request = state.clubRequest;
     if (request && request.at > previousRequestAt && this.snapshot?.screeningVenue === (request.venue ?? 'club')) {
@@ -2274,7 +2296,10 @@ export class App {
           ['nameLabel', '名稱欄位（英）', 'NAME LABEL (EN)'],
         ] as Array<[keyof GateCopy, string, string]>).map(([field, zhLabel, enLabel]) => {
           const value = String(this.adminState?.gateCopy?.[field] ?? this.gateCopy?.[field] ?? '');
-          return `<label><span>${this.language === 'zh-TW' ? zhLabel : enLabel}</span><input name="${field}" maxlength="${String(field).startsWith('intro') ? 300 : 80}" value="${this.escapeAttribute(value)}" required /></label>`;
+          // The two intros run to 300 characters and cannot be read in half a
+          // row, so they take the full width the way the pamphlet editor does.
+          const wide = String(field).startsWith('intro') ? ' class="staff-form__wide"' : '';
+          return `<label${wide}><span>${this.language === 'zh-TW' ? zhLabel : enLabel}</span><input name="${field}" maxlength="${String(field).startsWith('intro') ? 300 : 80}" value="${this.escapeAttribute(value)}" required /></label>`;
         }).join('')}
         <button type="submit">${this.language === 'zh-TW' ? '儲存入口文字' : 'SAVE GATE COPY'}</button>
       </form>`)}
@@ -2283,7 +2308,7 @@ export class App {
         <p class="staff-note">${this.language === 'zh-TW'
           ? '屋頂快閃店的連結。留空即為尚未開張，訪客按 E 時會看到「即將開幕」。'
           : 'Where the rooftop pop-up store sends visitors. Leave it empty and the store reads as not open yet.'}</p>
-        <label><span>${this.language === 'zh-TW' ? '商店網址' : 'STORE LINK'}</span><input name="url" type="url" inputmode="url" maxlength="500" placeholder="https://" value="${this.escapeAttribute(this.adminState.shopLink?.url ?? '')}" /></label>
+        <label class="staff-form__wide"><span>${this.language === 'zh-TW' ? '商店網址' : 'STORE LINK'}</span><input name="url" type="url" inputmode="url" maxlength="500" placeholder="https://" value="${this.escapeAttribute(this.adminState.shopLink?.url ?? '')}" /></label>
         <label><span>${this.language === 'zh-TW' ? '店名（中）' : 'STORE NAME (ZH)'}</span><input name="labelZh" maxlength="60" value="${this.escapeAttribute(this.adminState.shopLink?.labelZh ?? '')}" /></label>
         <label><span>${this.language === 'zh-TW' ? '店名（英）' : 'STORE NAME (EN)'}</span><input name="label" maxlength="60" value="${this.escapeAttribute(this.adminState.shopLink?.label ?? '')}" /></label>
         <button type="submit">${this.language === 'zh-TW' ? '儲存商店連結' : 'SAVE STORE LINK'}</button>
