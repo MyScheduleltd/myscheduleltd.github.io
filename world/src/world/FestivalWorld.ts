@@ -9,7 +9,7 @@ import { createMentorDog, type MentorDogRig } from './MentorDog';
 export type GraphicsMode = 'normal' | 'lite';
 export type CameraMode = 'follow' | 'perspective' | 'first-person' | 'screening';
 export type PlayerState = 'walking' | 'seated' | 'swimming';
-export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink' | 'jump' | 'stumble';
+export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink' | 'jump' | 'stumble' | 'offer' | 'bow';
 export type CarriedItem = 'POPCORN' | 'MENTOR' | 'DRINK' | 'HOTDOG' | 'PIZZA' | 'CHICKEN';
 export const NPC_NAMES = ['MENTOR', 'KENNY', 'NUNO', 'MICHAEL', 'SEBINE', 'ZC', 'LOUI', 'MINYUN', 'VIOLA', 'XIEHGAN', 'DRBEAUTY'] as const;
 export type NpcId = string;
@@ -54,7 +54,8 @@ export type WorldAction =
   | { type: 'dance'; active: boolean }
   | { type: 'drinkOrdered' }
   | { type: 'ate' }
-  | { type: 'drank'; drinks: number; drunk: boolean };
+  | { type: 'drank'; drinks: number; drunk: boolean }
+  | { type: 'donate'; target?: string };
 
 export interface AvatarPalette {
   skin: string;
@@ -297,6 +298,20 @@ const DRUNK_DURATION_MS = 45_000;
 // no column has to carry two walkable floors.
 const ROOF_Y = 7;
 const ROOF_AVATAR_Y = ROOF_Y + AVATAR_GROUND_Y;
+// The temple stands where a featureless block used to, on ground the map
+// already had but nobody was allowed to walk on. Approached from the west,
+// up three steps onto a raised podium.
+const TEMPLE = {
+  minX: 60,
+  maxX: 88,
+  minZ: -12,
+  maxZ: 20,
+  podium: 1.2,
+  stepMinX: 55.4,
+  wallThickness: 0.9,
+  doorHalfWidth: 3.6,
+};
+const TEMPLE_FLOOR_Y = TEMPLE.podium + AVATAR_GROUND_Y;
 const rooftopBounds = {
   minX: 18,
   maxX: 54,
@@ -677,6 +692,9 @@ export class FestivalWorld {
    * which is as far as the world reads before the walls start intruding.
    */
   private cameraZoom = readStoredZoom();
+  private templeAura?: THREE.Mesh;
+  private templeAltar?: { x: number; z: number };
+  private lastDonationAt = 0;
   private verticalVelocity = 0;
   private airborne = false;
   /** While recovering from a heavy landing: slower, and shown staggering. */
@@ -1795,6 +1813,7 @@ export class FestivalWorld {
       this.jump();
     }
     if (key === 'b' && !event.repeat) this.toggleDancing();
+    if (key === 'o' && !event.repeat) this.donate();
     if (key === 't' && !event.repeat) this.toggleCameraMode();
     if (key === 'e' && !event.repeat) this.interact(event.shiftKey);
   };
@@ -1812,6 +1831,47 @@ export class FestivalWorld {
     this.verticalVelocity = JUMP_SPEED;
     this.playerGesture = 'jump';
     this.playerGestureUntil = performance.now() + 900;
+  }
+
+  /**
+   * An offering: to 美麗本人 when stood before the altar, otherwise to whoever
+   * is nearest. Nothing is counted or kept — the bow is the whole of it.
+   */
+  private donate(): void {
+    if (this.playerState === 'swimming' || this.airborne) return;
+    const now = performance.now();
+    if (now - this.lastDonationAt < 1_200) return;
+    const atAltar = this.templeAltar !== undefined &&
+      Math.hypot(this.player.position.x - this.templeAltar.x, this.player.position.z - this.templeAltar.z) < 7 &&
+      this.player.position.y > TEMPLE.podium - 0.5;
+    let target: string | undefined;
+    if (!atAltar) {
+      const npc = this.nearestNpcWithin(5.2);
+      if (!npc) return;
+      target = npc.name;
+      // They bow back, which is the only reply an offering needs.
+      npc.gesture = 'bow';
+      npc.gestureUntil = now + 1_500;
+    }
+    this.lastDonationAt = now;
+    this.dancing = false;
+    this.playerGesture = 'offer';
+    this.playerGestureUntil = now + 1_500;
+    this.onAction({ type: 'donate', target });
+  }
+
+  private nearestNpcWithin(reach: number): NpcAvatar | undefined {
+    let nearest: NpcAvatar | undefined;
+    let nearestDistance = reach;
+    for (const npc of this.npcs) {
+      if (npc.id === this.controlledNpcId) continue;
+      const distance = npc.group.position.distanceTo(this.player.position);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = npc;
+      }
+    }
+    return nearest;
   }
 
   private readonly keyUp = (event: KeyboardEvent): void => {
@@ -2324,13 +2384,12 @@ export class FestivalWorld {
     this.createConcession();
     this.createPamphletStand();
 
+    // Only the western block remains: the eastern one is the temple now.
     const buildingMat = material(0x26262a);
-    for (const side of [-1, 1]) {
-      const x = side < 0 ? -99 : 60;
-      this.mesh([8, 15, 27], [x, 7.5, 4], buildingMat);
-      this.mesh([7.2, 1.2, 0.3], [x, 10.2, 17.65], material(0xa31820));
-      this.addCollider(x, 4, 8, 27, 0.2, { minY: -0.4, maxY: 40 });
-    }
+    this.mesh([8, 15, 27], [-99, 7.5, 4], buildingMat);
+    this.mesh([7.2, 1.2, 0.3], [-99, 10.2, 17.65], material(0xa31820));
+    this.addCollider(-99, 4, 8, 27, 0.2, { minY: -0.4, maxY: 40 });
+    this.createTemple();
 
     const branchPromenade = this.mesh([93, 0.08, 12], [0, 0.13, -14], material(0x6d655b));
     branchPromenade.receiveShadow = true;
@@ -3068,6 +3127,131 @@ export class FestivalWorld {
     floorGlow.position.set(roomCenterX, floor + 6, 3 + CLUB_Z);
     this.scene.add(floorGlow);
     this.clubFloorLight = floorGlow;
+  }
+
+
+  /**
+   * A Buddhist-style temple on the festival's eastern edge, where a blank block
+   * stood. Built in the same voxel idiom as everything else: a stone podium,
+   * lacquered columns, and two tiers of tiled roof with the eaves kicked up at
+   * the corners, which is what reads as a temple at this resolution. Inside,
+   * an altar to 美麗本人 — no figure, only the offering table and the light.
+   */
+  private createTemple(): void {
+    const t = TEMPLE;
+    const centerX = (t.minX + t.maxX) / 2;
+    const centerZ = (t.minZ + t.maxZ) / 2;
+    const width = t.maxX - t.minX;
+    const depth = t.maxZ - t.minZ;
+    const stone = material(0xa9a094, 0.9, 0.04);
+    const paleStone = material(0xc3bbae, 0.88, 0.04);
+    const lacquer = material(0x8f1d1d, 0.6, 0.16);
+    const timber = material(0x5d2f22, 0.75, 0.08);
+    const tile = material(0x2f5a4a, 0.55, 0.28);
+    const gold = material(0xc9a227, 0.35, 0.62);
+
+    // Podium, and the three steps that climb it from the festival side.
+    this.mesh([width + 3, t.podium, depth + 3], [centerX, t.podium / 2, centerZ], stone);
+    this.mesh([width + 0.6, 0.12, depth + 0.6], [centerX, t.podium + 0.06, centerZ], paleStone);
+    for (let step = 0; step < 3; step += 1) {
+      const riseTop = (t.podium / 3) * (step + 1);
+      const x = t.minX - 1.5 - (2 - step) * 1.4;
+      this.mesh([1.5, riseTop, 13], [x, riseTop / 2, centerZ], stone);
+    }
+
+    const wallHeight = 6.4;
+    const wallY = t.podium + wallHeight / 2;
+    // North and south walls, then the east wall behind the altar.
+    for (const z of [t.minZ, t.maxZ]) {
+      this.mesh([width, wallHeight, t.wallThickness], [centerX, wallY, z], lacquer);
+      this.addCollider(centerX, z, width, t.wallThickness, 0.16, { minY: -0.4, maxY: 60 }, 'temple-wall');
+    }
+    this.mesh([t.wallThickness, wallHeight, depth], [t.maxX, wallY, centerZ], lacquer);
+    this.addCollider(t.maxX, centerZ, t.wallThickness, depth, 0.16, { minY: -0.4, maxY: 60 }, 'temple-wall');
+    // West front, open in the middle: that gap is the way in.
+    for (const side of [-1, 1]) {
+      const from = side < 0 ? t.minZ : centerZ + t.doorHalfWidth;
+      const to = side < 0 ? centerZ - t.doorHalfWidth : t.maxZ;
+      const span = to - from;
+      this.mesh([t.wallThickness, wallHeight, span], [t.minX, wallY, (from + to) / 2], lacquer);
+      this.addCollider(t.minX, (from + to) / 2, t.wallThickness, span, 0.16, { minY: -0.4, maxY: 60 }, 'temple-front');
+    }
+    // Lintel over the doorway, so the opening reads as a door and not a hole.
+    this.mesh([t.wallThickness + 0.4, 1.5, t.doorHalfWidth * 2], [t.minX, t.podium + wallHeight - 0.75, centerZ], timber);
+
+    // Columns down both flanks, inside the walls.
+    for (const z of [t.minZ + 6, centerZ, t.maxZ - 6]) {
+      for (const x of [t.minX + 4, t.maxX - 4]) {
+        this.mesh([1.1, wallHeight, 1.1], [x, wallY, z], lacquer);
+        this.mesh([1.5, 0.5, 1.5], [x, t.podium + wallHeight - 0.25, z], gold);
+        this.addCollider(x, z, 1.1, 1.1, 0.1, { minY: -0.4, maxY: 60 }, 'temple-column');
+      }
+    }
+
+    // Two tiers of roof. Each is a slab with a deeper slab under its eaves, and
+    // four kicked corners — the upturn is the whole silhouette of the thing.
+    const tier = (y: number, overhangX: number, overhangZ: number, thickness: number): void => {
+      const w = width + overhangX;
+      const d = depth + overhangZ;
+      this.mesh([w, thickness, d], [centerX, y, centerZ], tile);
+      this.mesh([w - 2, 0.35, d - 2], [centerX, y - thickness / 2 - 0.15, centerZ], timber);
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          const kick = this.mesh([3.4, thickness * 0.8, 3.4], [centerX + sx * (w / 2 - 1.2), y + 0.5, centerZ + sz * (d / 2 - 1.2)], tile);
+          kick.rotation.z = -sx * 0.34;
+          kick.rotation.x = sz * 0.34;
+        }
+      }
+    };
+    tier(t.podium + wallHeight + 0.5, 7, 7, 0.9);
+    this.mesh([width - 6, 2.6, depth - 6], [centerX, t.podium + wallHeight + 2.3, centerZ], lacquer);
+    tier(t.podium + wallHeight + 4.1, 1.5, 1.5, 0.8);
+    // Finial.
+    this.mesh([1.2, 1.8, 1.2], [centerX, t.podium + wallHeight + 5.4, centerZ], gold);
+
+    // The name over the door.
+    const templeSign = new THREE.Mesh(
+      new THREE.PlaneGeometry(8.4, 2.4),
+      new THREE.MeshBasicMaterial({ map: createTextTexture(['美麗本人', 'THE TEMPLE']) }),
+    );
+    templeSign.position.set(t.minX - 0.55, t.podium + wallHeight - 0.7, centerZ);
+    templeSign.rotation.y = -Math.PI / 2;
+    this.scene.add(templeSign);
+
+    // The altar, at the far end facing the door. No figure stands on it: the
+    // offering table, the bowls and the light are the whole of it.
+    const altarX = t.maxX - 4.5;
+    this.mesh([2.2, 1.5, 11], [altarX, t.podium + 0.75, centerZ], stone);
+    this.mesh([2.8, 0.3, 12], [altarX, t.podium + 1.65, centerZ], timber);
+    for (const z of [centerZ - 2.4, centerZ, centerZ + 2.4]) {
+      this.mesh([0.9, 0.5, 0.9], [altarX, t.podium + 2.05, z], gold);
+    }
+    // Incense, three sticks with an ember at the tip.
+    for (const z of [centerZ - 1.2, centerZ, centerZ + 1.2]) {
+      this.mesh([0.08, 1.5, 0.08], [altarX - 0.8, t.podium + 2.55, z], timber);
+      this.mesh([0.16, 0.16, 0.16], [altarX - 0.8, t.podium + 3.35, z], material(0xff6a2a, 0.3, 0.1));
+    }
+    // The presence above the table: a glow rather than a body.
+    this.templeAura = this.mesh(
+      [3.2, 4.6, 3.2],
+      [altarX, t.podium + 4.4, centerZ],
+      new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.16, depthWrite: false }),
+    );
+    const auraLight = new THREE.PointLight(0xffcf8a, 60, 30, 1.6);
+    auraLight.position.set(altarX - 1, t.podium + 4, centerZ);
+    this.scene.add(auraLight);
+    this.addCollider(altarX, centerZ, 2.8, 12, 0.2, { minY: -0.4, maxY: 60 }, 'temple-altar');
+    this.templeAltar = { x: altarX, z: centerZ };
+
+    // Lanterns down the aisle.
+    for (const z of [centerZ - 5, centerZ + 5]) {
+      for (const x of [t.minX + 8, t.maxX - 9]) {
+        this.mesh([0.8, 1.1, 0.8], [x, t.podium + wallHeight - 1.4, z], material(0xd8452c, 0.5, 0.1));
+        const glow = new THREE.PointLight(0xff9a5a, 16, 14, 1.8);
+        glow.position.set(x, t.podium + wallHeight - 1.9, z);
+        this.scene.add(glow);
+      }
+    }
   }
 
   private createRooftop(): void {
@@ -4008,6 +4192,11 @@ export class FestivalWorld {
     this.updateStylizedWater(elapsed);
     this.updateWaterLayers();
     this.updateClubBeat(elapsed);
+    if (this.templeAura) {
+      // The presence breathes rather than sitting there painted on.
+      const auraMaterial = this.templeAura.material as THREE.MeshBasicMaterial;
+      auraMaterial.opacity = 0.12 + Math.sin(elapsed * 0.9) * 0.05;
+    }
     this.updateLampPool();
     this.camera.layers.set(0);
     this.renderer.render(this.scene, this.camera);
@@ -4327,6 +4516,9 @@ export class FestivalWorld {
     // the deck's north edge lands, and the limit fell from 58 to 14 at that
     // line — so crossing it dragged the body twenty-two units sideways.
     if (z > -12 && z <= GATE_Z - 2) max = rooftopBounds.maxX + 4;
+    // The temple's ground was always drawn — the map reaches x = 92 — but the
+    // festival stopped anyone at 58, so it could only ever be looked at.
+    if (z > TEMPLE.minZ - 6 && z < TEMPLE.maxZ + 6) max = TEMPLE.maxX + 4;
     return { min, max };
   }
 
@@ -4695,6 +4887,28 @@ export class FestivalWorld {
       rig.leftLeg.rotation.x = -0.72 + recover * 0.22;
       rig.rightLeg.rotation.x = 0.46 - recover * 0.18;
       return;
+    } else if (gesture === 'offer') {
+      // Both hands raised together and held out, the body bowed over them.
+      const settle = THREE.MathUtils.clamp(Math.sin(phase * 1.5), -1, 1);
+      rig.torso.rotation.x = 0.44 + settle * 0.05;
+      rig.leftArm.rotation.x = -1.42 - settle * 0.06;
+      rig.rightArm.rotation.x = -1.42 - settle * 0.06;
+      rig.leftArm.rotation.z = 0.26;
+      rig.rightArm.rotation.z = -0.26;
+      rig.leftLeg.rotation.x = 0;
+      rig.rightLeg.rotation.x = 0;
+      return;
+    } else if (gesture === 'bow') {
+      // The bow returned: deeper at the waist, hands together at the chest.
+      const dip = THREE.MathUtils.clamp(Math.sin(phase * 1.2), -1, 1);
+      rig.torso.rotation.x = 0.62 + dip * 0.1;
+      rig.leftArm.rotation.x = -1.2;
+      rig.rightArm.rotation.x = -1.2;
+      rig.leftArm.rotation.z = 0.34;
+      rig.rightArm.rotation.z = -0.34;
+      rig.leftLeg.rotation.x = 0;
+      rig.rightLeg.rotation.x = 0;
+      return;
     } else if (gesture === 'drink') {
       // Raise the glass to the mouth and tip it back.
       rig.rightArm.rotation.x = -2.32 + Math.sin(phase * 1.4) * 0.08;
@@ -4876,6 +5090,15 @@ export class FestivalWorld {
     if (x > r.minX && x < r.maxX && z > r.minZ && z < r.deckMinZ && fromY > ROOF_Y - 1) return ROOF_AVATAR_Y;
     const stair = this.rooftopStairHeight(x, z);
     if (stair !== undefined) return stair;
+    if (x > TEMPLE.minX - 1.5 && x < TEMPLE.maxX + 1.5 && z > TEMPLE.minZ - 1.5 && z < TEMPLE.maxZ + 1.5) {
+      return TEMPLE_FLOOR_Y;
+    }
+    // The three steps on the temple's west face, taken as one ramp so the climb
+    // is smooth rather than a stutter of ledges.
+    if (x > TEMPLE.stepMinX && x <= TEMPLE.minX - 1.5 && z > TEMPLE.minZ && z < TEMPLE.maxZ) {
+      const climbed = (x - TEMPLE.stepMinX) / (TEMPLE.minX - 1.5 - TEMPLE.stepMinX);
+      return AVATAR_GROUND_Y + (TEMPLE_FLOOR_Y - AVATAR_GROUND_Y) * THREE.MathUtils.clamp(climbed, 0, 1);
+    }
     if (this.inClubRoom(x, z)) return CLUB_AVATAR_Y;
     if (this.onClubStairs(x, z)) {
       const b = clubBounds;

@@ -970,7 +970,7 @@ const server = createServer(async (request, response) => {
         moving: payload.moving === true,
         running: payload.running === true,
         venue: isVenue(payload.venue) ? payload.venue : 'shore',
-        gesture: ['wave', 'feed', 'tail-wag', 'dance', 'drink', 'jump', 'stumble'].includes(payload.gesture) ? payload.gesture : undefined,
+        gesture: ['wave', 'feed', 'tail-wag', 'dance', 'drink', 'jump', 'stumble', 'offer', 'bow'].includes(payload.gesture) ? payload.gesture : undefined,
         carriedItem: payload.carriedItem === 'MENTOR'
           ? (mentorCarrierId === visitor.id ? 'MENTOR' : undefined)
           : ['POPCORN', 'DRINK', 'HOTDOG', 'PIZZA', 'CHICKEN'].includes(payload.carriedItem)

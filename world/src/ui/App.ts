@@ -530,7 +530,7 @@ export class App {
           aria-live="polite"
           aria-atomic="false"
         ></section>
-          <div class="controls-hint"><span>${zh ? '移動' : 'MOVE'}</span> WASD / ARROWS <span>${zh ? '奔跑' : 'RUN'}</span> SHIFT <span>${zh ? '互動' : 'INTERACT'}</span> E · SHIFT+E ${zh ? '抱起 MENTOR' : 'PICK UP MENTOR'} <span>${zh ? '跳躍' : 'JUMP'}</span> SPACE <span>${zh ? '跳舞' : 'DANCE'}</span> B <span>${zh ? '視角' : 'LOOK'}</span> ${zh ? '拖曳滑鼠' : 'DRAG MOUSE'} · T</div>
+          <div class="controls-hint"><span>${zh ? '移動' : 'MOVE'}</span> WASD / ARROWS <span>${zh ? '奔跑' : 'RUN'}</span> SHIFT <span>${zh ? '互動' : 'INTERACT'}</span> E · SHIFT+E ${zh ? '抱起 MENTOR' : 'PICK UP MENTOR'} <span>${zh ? '跳躍' : 'JUMP'}</span> SPACE <span>${zh ? '跳舞' : 'DANCE'}</span> B <span>${zh ? '供養' : 'OFFER'}</span> O <span>${zh ? '視角' : 'LOOK'}</span> ${zh ? '拖曳滑鼠' : 'DRAG MOUSE'} · T</div>
       </section>
     `;
 
@@ -850,6 +850,29 @@ export class App {
       this.showWorldAlert(action.gesture === 'tail-wag'
         ? (this.language === 'zh-TW' ? `向 ${action.target} 搖尾巴` : `WAGGING TAIL AT ${action.target}`)
         : `${this.language === 'zh-TW' ? '向' : 'WAVING TO'} ${action.target}${this.language === 'zh-TW' ? '揮手' : ''}`);
+      return;
+    }
+    if (action.type === 'donate') {
+      const zh = this.language === 'zh-TW';
+      if (!action.target) {
+        this.showWorldAlert(zh ? '向美麗本人獻上供養' : 'AN OFFERING TO 美麗本人');
+        return;
+      }
+      this.showWorldAlert(zh ? `向 ${action.target} 佈施` : `AN OFFERING TO ${action.target}`);
+      // They bow back in the world and answer here, in whichever language the
+      // giver is reading.
+      const thanks = zh
+        ? ['謝謝你，願你平安。', '有心了，感激不盡。', '這份心意我收下了。']
+        : ['Thank you — may it come back to you.', 'That is kind of you.', 'I accept it with thanks.'];
+      this.chatMessages = [...this.chatMessages, {
+        id: `npc-thanks-${Date.now()}`,
+        author: action.target,
+        channel: 'NEARBY' as ChatChannel,
+        text: thanks[Math.floor(Math.random() * thanks.length)],
+        timestamp: Date.now(),
+        npc: true,
+      }].slice(-100);
+      this.renderChatStream();
       return;
     }
     if (action.type === 'dance') {
@@ -1831,7 +1854,7 @@ export class App {
           <button class="panel-button" data-camera-toggle>${this.language === 'zh-TW' ? '切換視角鏡頭' : 'TOGGLE PERSPECTIVE CAMERA'}</button>`;
       case 'controls':
         return `
-          <dl class="controls-list"><div><dt>WASD / 方向鍵</dt><dd>${this.language === 'zh-TW' ? '移動／游泳' : 'Move / swim'}</dd></div><div><dt>E</dt><dd>${this.language === 'zh-TW' ? '互動／餵 MENTOR 吃點心' : 'Interact / give MENTOR a treat'}</dd></div><div><dt>SHIFT + E</dt><dd>${this.language === 'zh-TW' ? '抱起 MENTOR' : 'Pick up MENTOR'}</dd></div><div><dt>SHIFT</dt><dd>${this.language === 'zh-TW' ? '奔跑' : 'Run'}</dd></div><div><dt>SPACE</dt><dd>${this.language === 'zh-TW' ? '跳躍（可從高處跳下）' : 'Jump — and drop from high places'}</dd></div><div><dt>B</dt><dd>${this.language === 'zh-TW' ? '跳舞' : 'Dance'}</dd></div><div><dt>T</dt><dd>${this.language === 'zh-TW' ? '切換鏡頭' : 'Change camera'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滑鼠拖曳' : 'DRAG MOUSE'}</dt><dd>${this.language === 'zh-TW' ? '轉動視角' : 'Turn the view'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滾輪／觸控板縮放' : 'WHEEL / PINCH'}</dt><dd>${this.language === 'zh-TW' ? '鏡頭遠近' : 'Move the camera in and out'}</dd></div><div><dt>ENTER</dt><dd>${this.language === 'zh-TW' ? '開啟聊天' : 'Open chat'}</dd></div><div><dt>PASS</dt><dd>${this.language === 'zh-TW' ? '開啟選單' : 'Open menu'}</dd></div></dl>`;
+          <dl class="controls-list"><div><dt>WASD / 方向鍵</dt><dd>${this.language === 'zh-TW' ? '移動／游泳' : 'Move / swim'}</dd></div><div><dt>E</dt><dd>${this.language === 'zh-TW' ? '互動／餵 MENTOR 吃點心' : 'Interact / give MENTOR a treat'}</dd></div><div><dt>SHIFT + E</dt><dd>${this.language === 'zh-TW' ? '抱起 MENTOR' : 'Pick up MENTOR'}</dd></div><div><dt>SHIFT</dt><dd>${this.language === 'zh-TW' ? '奔跑' : 'Run'}</dd></div><div><dt>SPACE</dt><dd>${this.language === 'zh-TW' ? '跳躍（可從高處跳下）' : 'Jump — and drop from high places'}</dd></div><div><dt>B</dt><dd>${this.language === 'zh-TW' ? '跳舞' : 'Dance'}</dd></div><div><dt>O</dt><dd>${this.language === 'zh-TW' ? '供養／佈施：在神像前或 NPC 旁' : 'Make an offering — at the altar or beside an NPC'}</dd></div><div><dt>T</dt><dd>${this.language === 'zh-TW' ? '切換鏡頭' : 'Change camera'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滑鼠拖曳' : 'DRAG MOUSE'}</dt><dd>${this.language === 'zh-TW' ? '轉動視角' : 'Turn the view'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滾輪／觸控板縮放' : 'WHEEL / PINCH'}</dt><dd>${this.language === 'zh-TW' ? '鏡頭遠近' : 'Move the camera in and out'}</dd></div><div><dt>ENTER</dt><dd>${this.language === 'zh-TW' ? '開啟聊天' : 'Open chat'}</dd></div><div><dt>PASS</dt><dd>${this.language === 'zh-TW' ? '開啟選單' : 'Open menu'}</dd></div></dl>`;
       case 'contact':
         return `
           <div class="contact-list">
