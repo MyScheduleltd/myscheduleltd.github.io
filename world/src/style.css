@@ -587,3 +587,6 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .dj-about__body { margin-bottom: 4px; }
 .dj-about__body p { margin: 0 0 9px; font: 400 14px/1.55 sans-serif; }
 .dj-about__body p:last-child { margin-bottom: 0; }
+.dj-about__hint { margin: 0; font: 400 12px/1.45 sans-serif; opacity: .68; }
+.dj-about__stale { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 0; border: 2px solid var(--red); padding: 10px 12px; font: 700 13px/1.4 sans-serif; }
+.dj-about__stale button { min-height: 34px; border: 0; padding: 0 12px; color: white; background: var(--red); font: 800 11px var(--condensed); letter-spacing: .06em; cursor: pointer; }

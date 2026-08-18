@@ -13,6 +13,7 @@ import {
   type AdminState,
   type ChatChannel,
   type ConnectionStatus,
+  type DjProfile,
   type FestivalState,
   type GateBackground,
   type GateCopy,
@@ -209,6 +210,8 @@ export class App {
   private openDjBooth?: { name: string; venue: 'club' | 'rooftop'; view: 'requests' | 'about' };
   /** Set once STAFF touch the introduction, so no update can redraw over them. */
   private djIntroductionTouched = false;
+  /** The introduction as it stood when drawn, to notice someone else changing it. */
+  private djIntroductionSignature = '';
   private serverClockOffset = 0;
   private activeVenue: VenueKey = 'shore';
   private activeSeatId = 'CURRENT SEAT';
@@ -1332,6 +1335,41 @@ export class App {
     });
   }
 
+  private djProfileSignature(profile: DjProfile): string {
+    return [profile.role, profile.roleZh, profile.introduction, profile.introductionZh].join('\u0000');
+  }
+
+  /**
+   * Offers a reload when another STAFF member changes an introduction that is
+   * open and mid-edit. Redrawing under them would throw their work away, and
+   * saying nothing would have them overwrite a colleague without knowing, so
+   * the choice is put in front of them and left there.
+   */
+  private noticeDjIntroductionChanged(djName: string, venue: 'club' | 'rooftop'): void {
+    const form = this.root.querySelector<HTMLFormElement>('[data-dj-edit]');
+    if (!form || form.querySelector('[data-dj-stale]')) return;
+    const profile = djProfileFor(venue, this.networkState?.djProfiles, djName);
+    if (!profile || this.djProfileSignature(profile) === this.djIntroductionSignature) return;
+    const zh = this.language === 'zh-TW';
+    const notice = document.createElement('p');
+    notice.className = 'dj-about__stale dj-about__wide';
+    notice.dataset.djStale = '';
+    notice.append(zh
+      ? '另一位工作人員剛更新了這份介紹。'
+      : 'Another STAFF member has just changed this introduction.');
+    const reload = document.createElement('button');
+    reload.type = 'button';
+    reload.textContent = zh ? '載入他們的版本' : 'LOAD THEIRS';
+    reload.addEventListener('click', () => {
+      // Their version replaces what is being typed, which is why it is asked
+      // for rather than done.
+      this.djIntroductionTouched = false;
+      this.openDjAbout(djName, venue);
+    });
+    notice.append(reload);
+    form.prepend(notice);
+  }
+
   /**
    * Whether the introduction is mid-edit. Redrawing then would wipe the text,
    * the caret and the scroll of whoever is writing, so an arriving update has
@@ -1371,16 +1409,18 @@ export class App {
       <div class="dj-about__body">${paragraphs(zh ? profile.introductionZh : profile.introduction)}</div>
       ${canEdit ? `
       <form class="dj-about__edit" data-dj-edit>
-        <p class="eyebrow dj-about__wide">${zh ? 'STAFF 編輯' : 'STAFF EDIT'}</p>
-        <label><span>${zh ? '頭銜（中）' : 'ROLE (ZH)'}</span><input name="roleZh" value="${this.escapeAttribute(profile.roleZh)}" maxlength="120" required /></label>
-        <label><span>${zh ? '頭銜（英）' : 'ROLE (EN)'}</span><input name="role" value="${this.escapeAttribute(profile.role)}" maxlength="120" required /></label>
-        <label class="dj-about__wide"><span>${zh ? '介紹（中）' : 'INTRODUCTION (ZH)'}</span><textarea name="introductionZh" rows="5" maxlength="1200" required>${this.escapeHtml(profile.introductionZh)}</textarea></label>
-        <label class="dj-about__wide"><span>${zh ? '介紹（英）' : 'INTRODUCTION (EN)'}</span><textarea name="introduction" rows="5" maxlength="1200" required>${this.escapeHtml(profile.introduction)}</textarea></label>
-        <button type="submit">${zh ? '儲存介紹' : 'SAVE INTRODUCTION'}</button>
+        <p class="eyebrow dj-about__wide">${zh ? 'STAFF 編輯 · 中文' : 'STAFF EDIT · ENGLISH'}</p>
+        <label class="dj-about__wide"><span>${zh ? '頭銜' : 'ROLE'}</span><input name="role" value="${this.escapeAttribute(zh ? profile.roleZh : profile.role)}" maxlength="120" required /></label>
+        <label class="dj-about__wide"><span>${zh ? '介紹' : 'INTRODUCTION'}</span><textarea name="introduction" rows="6" maxlength="1200" required>${this.escapeHtml(zh ? profile.introductionZh : profile.introduction)}</textarea></label>
+        <p class="dj-about__hint dj-about__wide">${zh
+          ? '這裡編輯的是中文版。切換到 EN 可編輯英文版，兩者分開儲存。'
+          : 'This edits the English version. Switch to 繁中 to edit the Chinese one; they are saved separately.'}</p>
+        <button type="submit">${zh ? '儲存中文介紹' : 'SAVE ENGLISH INTRODUCTION'}</button>
       </form>` : ''}
       <button class="seat-menu__back" type="button" data-dj-back>${zh ? '回到點歌' : 'BACK TO REQUESTS'}</button>`;
 
     this.djIntroductionTouched = false;
+    this.djIntroductionSignature = this.djProfileSignature(profile);
     menu.querySelector<HTMLFormElement>('[data-dj-edit]')?.addEventListener('input', () => {
       this.djIntroductionTouched = true;
     });
@@ -1393,12 +1433,16 @@ export class App {
       const data = new FormData(form);
       const submit = form.querySelector('button[type=submit]');
       if (submit instanceof HTMLButtonElement) submit.disabled = true;
+      const role = String(data.get('role') ?? '');
+      const introduction = String(data.get('introduction') ?? '');
+      // Only the language on screen was editable, so the other one is passed
+      // back exactly as it came rather than blanked.
       void this.festivalClient.updateDjProfile(this.staffKey, {
         id: profile.id,
-        role: String(data.get('role') ?? ''),
-        roleZh: String(data.get('roleZh') ?? ''),
-        introduction: String(data.get('introduction') ?? ''),
-        introductionZh: String(data.get('introductionZh') ?? ''),
+        role: zh ? profile.role : role,
+        roleZh: zh ? role : profile.roleZh,
+        introduction: zh ? profile.introduction : introduction,
+        introductionZh: zh ? introduction : profile.introductionZh,
       }).then(() => {
         this.showWorldAlert(zh ? '介紹已更新' : 'INTRODUCTION SAVED');
         this.djIntroductionTouched = false;
@@ -1536,6 +1580,7 @@ export class App {
       this.networkState = state;
       if (booth.view === 'requests') this.openDjRequest(booth.name, booth.venue);
       else if (!this.djIntroductionBeingEdited()) this.openDjAbout(booth.name, booth.venue);
+      else this.noticeDjIntroductionChanged(booth.name, booth.venue);
     }
     const request = state.clubRequest;
     if (request && request.at > previousRequestAt && this.snapshot?.screeningVenue === (request.venue ?? 'club')) {
