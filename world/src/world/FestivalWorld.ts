@@ -580,6 +580,8 @@ export class FestivalWorld {
   private clubBoothGlow?: THREE.Mesh;
   private clubBeat = { bpm: 120, startedAt: 0 };
   private dancing = false;
+  /** SHIFT held: the avatar runs, on land and in the water. */
+  private running = false;
   private shopSign?: THREE.Mesh;
   private shopCounter?: { x: number; z: number };
   private drinks = 0;
@@ -725,6 +727,7 @@ export class FestivalWorld {
     window.addEventListener('pointerup', this.cameraPointerUp);
     window.addEventListener('pointercancel', this.cameraPointerUp);
     window.addEventListener('blur', this.cameraPointerReset);
+    window.addEventListener('blur', this.clearRunning);
     this.resize();
   }
 
@@ -745,6 +748,7 @@ export class FestivalWorld {
     window.removeEventListener('pointerup', this.cameraPointerUp);
     window.removeEventListener('pointercancel', this.cameraPointerUp);
     window.removeEventListener('blur', this.cameraPointerReset);
+    window.removeEventListener('blur', this.clearRunning);
     this.renderer.dispose();
     this.foregroundRenderer.dispose();
     for (const projector of this.projectors.values()) projector.element.remove();
@@ -1686,6 +1690,7 @@ export class FestivalWorld {
   private readonly keyDown = (event: KeyboardEvent): void => {
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
     const key = event.key.toLowerCase();
+    this.running = event.shiftKey;
     if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd'].includes(key)) {
       event.preventDefault();
       this.keys.add(key);
@@ -1704,6 +1709,7 @@ export class FestivalWorld {
   };
 
   private readonly keyUp = (event: KeyboardEvent): void => {
+    this.running = event.shiftKey;
     this.keys.delete(event.key.toLowerCase());
   };
 
@@ -1757,6 +1763,11 @@ export class FestivalWorld {
   private readonly cameraPointerUp = (event: PointerEvent): void => {
     if (event.pointerId !== this.cameraPointerId) return;
     this.cameraPointerReset();
+  };
+
+  /** Releasing focus mid-stride would otherwise leave the avatar running. */
+  private readonly clearRunning = (): void => {
+    this.running = false;
   };
 
   private readonly cameraPointerReset = (): void => {
@@ -3990,7 +4001,10 @@ export class FestivalWorld {
     this.moveVector.set(horizontal, 0, vertical);
     if (this.moveVector.lengthSq() > 0) {
       this.dancing = false;
-      const speed = this.playerState === 'swimming' ? 4.1 : 7.2;
+      const running = this.running && !this.dancing;
+      const speed = this.playerState === 'swimming'
+        ? (running ? 6.2 : 4.1)
+        : (running ? 12.4 : 7.2);
       this.movePlayer(horizontal, vertical, speed * delta);
     }
 
@@ -4018,12 +4032,22 @@ export class FestivalWorld {
       const gesture = this.dancing
         ? 'dance'
         : performance.now() < this.playerGestureUntil ? this.playerGesture : undefined;
-      this.animateRig(
-        this.playerRig,
-        moving ? this.clock.elapsedTime * 8.5 : this.clock.elapsedTime * 1.4,
-        this.playerState === 'swimming' ? (moving ? 0.3 : 0.025) : (moving ? 0.72 : 0.035),
-        gesture,
-      );
+      // Running lengthens the stride and quickens the cadence together; only
+      // raising one reads as a walk played back at the wrong speed.
+      const running = this.running && moving && !this.dancing;
+      const cadence = moving ? (running ? 12.6 : 8.5) : 1.4;
+      const stride = this.playerState === 'swimming'
+        ? (moving ? (running ? 0.42 : 0.3) : 0.025)
+        : (moving ? (running ? 1.02 : 0.72) : 0.035);
+      this.animateRig(this.playerRig, this.clock.elapsedTime * cadence, stride, gesture);
+      if (running && this.playerState !== 'swimming') {
+        // Leaning into the run, and the arms driving rather than swinging.
+        this.playerRig.torso.rotation.x = 0.16;
+        this.playerRig.leftArm.rotation.x *= 1.25;
+        this.playerRig.rightArm.rotation.x *= 1.25;
+      } else if (this.playerState !== 'swimming') {
+        this.playerRig.torso.rotation.x = 0;
+      }
       if (this.playerState === 'swimming' && moving && !gesture) {
         const paddle = Math.sin(this.clock.elapsedTime * 6.6);
         this.playerRig.leftArm.rotation.x = paddle * 0.72;
