@@ -5519,6 +5519,9 @@ export class FestivalWorld {
             moving,
             gesture === 'tail-wag',
             now < npc.eatUntil,
+            gesture === 'hit',
+            gesture,
+            this.gestureProgress(gesture, this.playerGestureUntil),
           );
           if (this.playerState === 'swimming') this.poseMentorDogSwimming(npc.dogRig, elapsed, moving);
           if (this.playerState === 'seated') this.poseMentorDogSeated(npc.dogRig);
@@ -5707,6 +5710,8 @@ export class FestivalWorld {
         gesture === 'tail-wag',
         now < npc.eatUntil,
         gesture === 'hit',
+        gesture,
+        this.gestureProgress(gesture, npc.gestureUntil),
       );
       const distance = npc.group.position.distanceTo(this.player.position);
       if (distance < nearestDistance) {
@@ -6019,7 +6024,22 @@ export class FestivalWorld {
     rig.body.rotation.x = 0.06;
   }
 
-  private animateMentorDog(rig: MentorDogRig, phase: number, moving: boolean, greeting: boolean, eating: boolean, flinching = false): void {
+  /**
+   * MENTOR's own vocabulary for the three things the human avatars do on B, O
+   * and the left button. He has no arms and no spine to speak of, so none of
+   * the humanoid poses transfer: what a dog has is a front end it can lift,
+   * drop and drive forward, and a tail. Each action is built from those.
+   */
+  private animateMentorDog(
+    rig: MentorDogRig,
+    phase: number,
+    moving: boolean,
+    greeting: boolean,
+    eating: boolean,
+    flinching = false,
+    gesture?: AvatarGesture,
+    progress = 0,
+  ): void {
     const stride = moving ? Math.sin(phase) * 0.48 : Math.sin(phase * 0.35) * 0.018;
     rig.leftFrontLeg.rotation.x = stride;
     rig.rightFrontLeg.rotation.x = -stride;
@@ -6040,6 +6060,64 @@ export class FestivalWorld {
     // MENTOR greets only with his tail; the front legs remain a dog walk/idle
     // rather than mimicking the human wave pose.
     rig.rightFrontLeg.rotation.z = 0;
+
+    if (gesture === 'dance') {
+      // Up on the back legs, front paws paddling, tail going. The bounce is off
+      // the beat of the paws so the whole animal is never still at once.
+      const beat = Math.sin(phase * 2.1);
+      const paddle = Math.sin(phase * 4.2);
+      rig.body.rotation.x = -0.62 + beat * 0.12;
+      rig.leftFrontLeg.rotation.x = -0.95 + paddle * 0.55;
+      rig.rightFrontLeg.rotation.x = -0.95 - paddle * 0.55;
+      rig.leftBackLeg.rotation.x = 0.24 + beat * 0.1;
+      rig.rightBackLeg.rotation.x = 0.24 - beat * 0.1;
+      rig.head.rotation.x = -0.24 + beat * 0.1;
+      rig.head.rotation.y = Math.sin(phase * 1.05) * 0.3;
+      rig.tail.rotation.z = Math.sin(phase * 4.6) * 0.7;
+      return;
+    }
+
+    if (gesture === 'offer' || gesture === 'bow') {
+      // A play-bow: chest to the ground, front legs stretched out, rump up.
+      // Held through the middle of the gesture rather than swung through, so it
+      // reads as reverence and not as a stumble.
+      const depth = Math.min(1, Math.sin(Math.min(progress, 0.999) * Math.PI) * 1.6);
+      rig.body.rotation.x = 0.78 * depth;
+      rig.leftFrontLeg.rotation.x = -0.95 * depth;
+      rig.rightFrontLeg.rotation.x = -0.95 * depth;
+      rig.leftBackLeg.rotation.x = 0.14 * depth;
+      rig.rightBackLeg.rotation.x = 0.14 * depth;
+      rig.head.rotation.x = 0.42 * depth;
+      rig.head.rotation.y = 0;
+      rig.tail.rotation.z = Math.sin(phase * 3.2) * 0.5 * depth;
+      return;
+    }
+
+    if (gesture === 'punch') {
+      // Rearing up and snapping. Same shape of timing as the humans' cross —
+      // the weight gathers back over the hips, then the front end is thrown up
+      // and forward and the jaw closes at the top of it.
+      const coil = progress < 0.3
+        ? progress / 0.3
+        : Math.max(0, 1 - (progress - 0.3) / 0.16);
+      const strike = progress < 0.3
+        ? 0
+        : progress < 0.46
+          ? Math.pow((progress - 0.3) / 0.16, 0.5)
+          : Math.max(0, 1 - (progress - 0.46) / 0.54);
+      rig.body.rotation.x = 0.22 * coil - 1.05 * strike;
+      // Front legs tuck on the way up and reach on the way through.
+      rig.leftFrontLeg.rotation.x = 0.5 * coil - 1.5 * strike;
+      rig.rightFrontLeg.rotation.x = 0.5 * coil - 1.35 * strike;
+      // The back legs take the weight and drive.
+      rig.leftBackLeg.rotation.x = 0.3 * coil + 0.42 * strike;
+      rig.rightBackLeg.rotation.x = 0.3 * coil + 0.42 * strike;
+      // The head pulls back with the load and snaps down through the target.
+      rig.head.rotation.x = -0.4 * coil + 0.72 * strike;
+      rig.head.rotation.y = 0;
+      rig.tail.rotation.z = 0.2 * strike;
+      return;
+    }
   }
 
   /** True while the position is anywhere inside the club building. */
