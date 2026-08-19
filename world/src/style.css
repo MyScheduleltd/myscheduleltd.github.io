@@ -237,9 +237,12 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 .world-camera-hide[data-shown] { opacity: 1; pointer-events: auto; transition: opacity .12s ease-in; }
 /* Cleared: invisible, but still the corner that answers a press. */
 .world-camera-hide[data-armed] { opacity: 0; pointer-events: auto; transition: opacity .6s ease-out; }
-/* Film runs a sprocket strip across the top and the corner was sitting on it.
-   Dropped clear by exactly the height of that strip. */
-.world-shell[data-view="film"] > .world-camera-hide {
+/* One height for every camera mode. Film needed dropping because a sprocket
+   strip runs across its top; postcard needed it because the filter bar is up
+   there — and a control that moves between modes is a control you have to find
+   again each time. It sits at the same place in all three now, below anything
+   either mode puts along the top edge. */
+.world-shell[data-view] > .world-camera-hide {
   top: calc(14px + clamp(30px, 6vmin, 62px) + env(safe-area-inset-top));
 }
 /* Held in sight for a moment as it clears the frame, then allowed to go. Both
