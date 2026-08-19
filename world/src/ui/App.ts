@@ -20,6 +20,7 @@ import {
   type PamphletContent,
   type ProgrammeMode,
   type SiteStyle,
+  JukeboxState,
 } from '../network/FestivalClient';
 import {
   DEFAULT_NPC_NAMES,
@@ -2964,8 +2965,8 @@ export class App {
       <div class="staff-jukebox">
         <span class="eyebrow">${this.language === 'zh-TW' ? '播放中' : 'NOW PLAYING'}</span>
         <div class="staff-jukebox__now">
-          <strong>${this.adminState.jukebox?.nowPlaying
-            ? this.escapeHtml(this.adminState.jukebox.nowPlaying.title)
+          <strong>${this.staffJukebox()?.nowPlaying?.title
+            ? this.escapeHtml(this.staffJukebox()!.nowPlaying!.title)
             : (this.language === 'zh-TW' ? '安靜' : 'SILENT')}</strong>
           <span>
             <button type="button" data-jukebox-skip>${this.language === 'zh-TW' ? '跳過' : 'SKIP'}</button>
@@ -2974,7 +2975,7 @@ export class App {
         </div>
         <span class="eyebrow">${this.language === 'zh-TW' ? '等待中' : 'WAITING'}</span>
         <ol class="staff-jukebox__queue">
-          ${(this.adminState.jukebox?.queue ?? []).map((entry, index, all) => `<li>
+          ${(this.staffJukebox()?.queue ?? []).map((entry, index, all) => `<li>
             <strong>${this.escapeHtml(entry.title)}</strong>
             <small>${this.escapeHtml(entry.requestedByName ?? '')}</small>
             <span>
@@ -2986,7 +2987,7 @@ export class App {
         </ol>
         <span class="eyebrow">${this.language === 'zh-TW' ? '機器裡的唱片' : 'IN THE MACHINE'}</span>
         <ul class="staff-list">
-          ${(this.adminState.jukebox?.tracks ?? []).map((track) => `<li><strong>${this.escapeHtml(track.title)}</strong><button type="button" data-jukebox-remove="${this.escapeAttribute(track.id)}">${this.language === 'zh-TW' ? '取出' : 'REMOVE'}</button></li>`).join('')
+          ${(this.staffJukebox()?.tracks ?? []).map((track) => `<li><strong>${this.escapeHtml(track.title)}</strong><button type="button" data-jukebox-remove="${this.escapeAttribute(track.id)}">${this.language === 'zh-TW' ? '取出' : 'REMOVE'}</button></li>`).join('')
             || `<li><small>${this.language === 'zh-TW' ? '點唱機是空的。' : 'The jukebox is empty.'}</small></li>`}
         </ul>
       </div>`)}
@@ -3338,6 +3339,20 @@ export class App {
    * laid over it, and anything the service knows that this build does not —
    * residents STAFF added later — is appended.
    */
+  /**
+   * The jukebox as the STAFF panel should see it.
+   *
+   * It is published on two payloads: the one attendees are sent and the one
+   * STAFF are. A service can be running a build that has it on the first and
+   * not yet on the second — which is exactly the state the festival's own
+   * service is in, so the panel showed an empty machine while the square was
+   * playing out of a full one. There is no reason to prefer one source when
+   * both describe the same machine, so whichever has it wins.
+   */
+  private staffJukebox(): JukeboxState | undefined {
+    return this.adminState?.jukebox ?? this.networkState?.jukebox;
+  }
+
   private normalizeNpcProfiles(profiles: NpcProfile[] | undefined, names: NpcNames | undefined): NpcProfile[] {
     const served = new Map((profiles ?? []).slice(0, 24).map((profile) => [profile.id, profile]));
     const known = new Set<string>(NPC_NAMES);
