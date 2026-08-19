@@ -15,6 +15,12 @@ services:
   - type: web
     name: myschedule-festival
     runtime: node
+    # Named rather than left to the repository's default, so a synced
+    # Blueprint can never be pointed somewhere else without it being visible
+    # here. A service that does not redeploy leaves the world half-updated: the
+    # page is served by Pages and moves on, while every shared rule stays where
+    # it was, and the two disagree in ways that read as bugs in the world.
+    branch: main
     plan: free
     # Closest free region to Taipei.
     region: singapore

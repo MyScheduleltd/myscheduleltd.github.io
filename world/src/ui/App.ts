@@ -135,6 +135,14 @@ const copy = {
 } as const;
 
 /** The jukebox slider is the attendee's own, kept on their machine. */
+/**
+ * What it takes to go down, and how long a beating is remembered — held here as
+ * well as in the service so the page can stand in for a service too old to know
+ * about either. Kept level with HITS_TO_DIE and HIT_MEMORY_MS there.
+ */
+const LOCAL_HITS_TO_DIE = 5;
+const LOCAL_HIT_MEMORY_MS = 30_000;
+
 const JUKEBOX_VOLUME_KEY = 'myschedule-jukebox-volume-v1';
 const readStoredJukeboxVolume = (): number => {
   try {
@@ -229,6 +237,8 @@ export class App {
   /** The last blow this attendee took, so one is played out only once. */
   private lastHitAt = 0;
   private lastDeathAt = 0;
+  private localHitCount = 0;
+  private localHitAt = 0;
   private jukeboxVolume = readStoredJukeboxVolume();
   private jukeboxFrame?: HTMLIFrameElement;
   private jukeboxPlayingId?: string;
@@ -1714,11 +1724,31 @@ export class App {
     this.applySiteStyle();
     this.world?.setNpcProfiles(this.npcProfiles);
     const self = state.visitors.find((visitor) => visitor.id === state.selfId);
+    // Whether the service is new enough to rule on death itself. It publishes
+    // diedAt for every attendee once it can, even as a zero, so the field being
+    // a number at all is the test — not its value.
+    const serviceRulesOnDeath = typeof self?.diedAt === 'number';
     const hitAt = self?.hitAt ?? 0;
     if (hitAt && hitAt > this.lastHitAt) {
       this.lastHitAt = hitAt;
       this.world?.takeHit(self?.hitBy, self?.hitFromX, self?.hitFromZ);
+      // A service older than this page sends the blow and nothing else — it has
+      // no idea an attendee can go down. Rather than lose the whole thing to a
+      // deploy that has not happened, the page counts its own beating and drops
+      // on the fifth, on the same terms the service would use. It hands the
+      // ruling straight back the moment a service can make it, because death is
+      // shared and only the service can tell everybody else about it.
+      if (!serviceRulesOnDeath) {
+        if (hitAt - this.localHitAt > LOCAL_HIT_MEMORY_MS) this.localHitCount = 0;
+        this.localHitAt = hitAt;
+        this.localHitCount += 1;
+        if (this.localHitCount >= LOCAL_HITS_TO_DIE) {
+          this.localHitCount = 0;
+          this.world?.die(self?.hitBy);
+        }
+      }
     }
+    if (serviceRulesOnDeath) this.localHitCount = 0;
     const diedAt = self?.diedAt ?? 0;
     if (diedAt && diedAt > this.lastDeathAt) {
       this.lastDeathAt = diedAt;
