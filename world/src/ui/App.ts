@@ -813,6 +813,19 @@ export class App {
       const watchScale = () => {
         const button = this.root.querySelector<HTMLButtonElement>('[data-zoom-reset]');
         if (button) button.hidden = viewport.scale <= 1.02;
+        // How much of the window the on-screen keyboard is standing on. A phone
+        // shrinks what you can see when the keys come up but leaves the page
+        // believing it still has the whole window, so a panel measured against
+        // the window keeps its full height and puts the box you are typing in
+        // underneath the keyboard. Handed to the stylesheet so anything pinned
+        // to the bottom can sit on top of the keys instead of behind them.
+        const covered = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+        document.documentElement.style.setProperty('--keyboard-inset', `${Math.round(covered)}px`);
+        // Flagged as well as measured, so the layout can give up whatever it can
+        // spare while the keys are standing on most of the screen. Eighty is
+        // past anything a browser's own furniture accounts for.
+        if (covered > 80) document.documentElement.dataset.keyboard = 'up';
+        else delete document.documentElement.dataset.keyboard;
       };
       viewport.addEventListener('resize', watchScale);
       viewport.addEventListener('scroll', watchScale);

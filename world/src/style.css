@@ -124,7 +124,14 @@ input:focus, input:focus-visible, textarea:focus, textarea:focus-visible, select
 .brand-logo { display: block; width: 42px; height: 42px; object-fit: contain; background: #000; }
 .phase-badge { margin-left: auto; border: 1px solid currentColor; padding: 7px 10px; font-size: 12px; }
 
+/* A grid item keeps an automatic minimum the width of its own content, and
+   that minimum outranks the width asked for here — so the card was as wide as
+   the longest unbreakable thing inside it and spilled past the screen. Since
+   that longest thing is different in English and in Chinese, the card changed
+   size with the language. Told it may be narrower than its contents, it holds
+   the column it was given and the contents wrap inside it instead. */
 .gate-card {
+  min-width: 0; max-width: 100%;
   width: min(610px, 100%); margin: 0; padding: clamp(24px, 4vw, 48px);
   color: var(--ink); background: rgba(245,239,226,.96); border: 1px solid rgba(255,255,255,.7);
   box-shadow: 22px 22px 0 rgba(15,15,16,.7), 0 35px 90px rgba(0,0,0,.38);
@@ -1212,8 +1219,8 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      the top and just off the bottom edge. */
   .panel, .panel--chat {
     inset: calc(26px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right))
-           calc(6px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left));
-    max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+           calc(6px + env(safe-area-inset-bottom) + var(--keyboard-inset, 0px)) calc(8px + env(safe-area-inset-left));
+    max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--keyboard-inset, 0px));
     overflow: hidden;
   }
   .panel > * { min-height: 0; }
@@ -1244,6 +1251,12 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      channel already named in the row above it, and the messages themselves sit
      tighter. */
   .panel__body { padding: 8px 12px; }
+  /* With the keys up there is barely a strip of screen left, so the parts that
+     are not the conversation stand aside: the channel you are writing to is
+     already chosen, and its tabs are worth more as a line of what was said. */
+  :root[data-keyboard='up'] .chat-channels { display: none; }
+  :root[data-keyboard='up'] .panel__header { display: none; }
+  :root[data-keyboard='up'] .panel__body { padding: 6px 12px; }
   .chat-channels { margin-bottom: 5px; }
   .chat-form { margin-top: 6px; padding-block: 0; }
   .chat-form > label { display: none; }
