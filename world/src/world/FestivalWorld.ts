@@ -11,7 +11,7 @@ export type CameraMode = 'follow' | 'perspective' | 'first-person' | 'screening'
 export type PlayerState = 'walking' | 'seated' | 'swimming';
 export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink' | 'jump' | 'stumble' | 'offer' | 'bow' | 'punch' | 'hit';
 export type CarriedItem = 'POPCORN' | 'MENTOR' | 'DRINK' | 'HOTDOG' | 'PIZZA' | 'CHICKEN';
-export const NPC_NAMES = ['MENTOR', 'KENNY', 'NUNO', 'MICHAEL', 'SEBINE', 'ZC', 'LOUI', 'MINYUN', 'VIOLA', 'XIEHGAN', 'DRBEAUTY'] as const;
+export const NPC_NAMES = ['MENTOR', 'KENNY', 'NUNO', 'MICHAEL', 'SEBINE', 'ZC', 'LOUI', 'MINYUN', 'VIOLA', 'XIEHGAN', 'DRBEAUTY', 'YO'] as const;
 export type NpcId = string;
 export type NpcNames = Record<NpcId, string>;
 export interface NpcProfile {
@@ -32,6 +32,7 @@ export const NPC_TITLES: Record<NpcId, string> = {
   VIOLA: 'Project Manager',
   XIEHGAN: 'Resident DJ',
   DRBEAUTY: 'Rooftop DJ',
+  YO: 'Festival Videographer',
 };
 export const DEFAULT_NPC_PROFILES: NpcProfile[] = NPC_NAMES.map((id) => ({
   id,
@@ -57,7 +58,8 @@ export type WorldAction =
   | { type: 'drank'; drinks: number; drunk: boolean }
   | { type: 'donate'; target?: string; deity?: string }
   | { type: 'punch'; struck?: string; targetId?: string }
-  | { type: 'punched'; droppedMentor: boolean; by?: string };
+  | { type: 'punched'; droppedMentor: boolean; by?: string }
+  | { type: 'died'; by?: string };
 
 export interface AvatarPalette {
   skin: string;
@@ -172,6 +174,8 @@ interface NpcAvatar {
   stuckFor: number;
   /** Carried off the route by a punch, and spent over the next moment. */
   knockback: THREE.Vector3;
+  /** In the mood to dance at this stop of the round. Decided on arrival. */
+  dances?: boolean;
   /** Set for NPCs that hold a post rather than walking a route. */
   station?: { position: THREE.Vector3; rotationY: number };
   pose?: 'dj' | 'dance';
@@ -371,8 +375,34 @@ const NPC_HAUNTS: Record<string, Array<[number, number]>> = {
   driveIn: [[27, -14], [43, -14], [43, -30], [27, -30]],
   shore: [[-9, -30], [9, -30], [9, -40], [-9, -40]],
   clubFront: [[-16, 30], [-6, 30], [-6, 18], [-16, 18]],
+  // The three rooms the residents never actually went into. Written out rather
+  // than derived, because CLUB_Z, rooftopBounds and TEMPLE are all declared
+  // below this: the club room is x -88..-50 by z 1..42, the roof deck is
+  // x 18..54 by z 19..44, and the temple hall is x 76..106 by z -14..22.
+  clubFloor: [[-78, 14], [-58, 14], [-58, 30], [-78, 30]],
+  rooftopDeck: [[25, 25], [47, 25], [47, 38], [25, 38]],
+  temple: [[82, -6], [94, -6], [94, 14], [82, 14]],
 };
+/**
+ * The floor each haunt stands on. Everything outdoors is at street level; the
+ * club is sixteen down and the deck seven up, and a resident sent there has to
+ * arrive at that height or the ground under them is read as the street.
+ */
+const NPC_HAUNT_FLOOR: Record<string, number> = {
+  clubFloor: -16.5 + AVATAR_GROUND_Y,
+  rooftopDeck: 7 + AVATAR_GROUND_Y,
+  temple: 1.2 + AVATAR_GROUND_Y,
+};
+/** Rooms worth stopping to dance in. */
+const NPC_DANCE_HAUNTS = new Set(['clubFloor', 'rooftopDeck']);
 const NPC_HAUNT_KEYS = Object.keys(NPC_HAUNTS);
+/**
+ * The order a resident works round the festival. They used to jump to a haunt
+ * at random, which from any one spot looked like standing still and then
+ * vanishing; a fixed round with a different starting point each reads as a
+ * crowd circulating, and means every venue has somebody in it.
+ */
+const NPC_TOUR = ['gate', 'promenade', 'clubFront', 'clubFloor', 'square', 'temple', 'shore', 'palace', 'driveIn', 'rooftopDeck'];
 const NPC_DWELL_MIN_MS = 35_000;
 const NPC_DWELL_SPREAD_MS = 55_000;
 const CLUB_Z = 15;
@@ -717,6 +747,7 @@ export class FestivalWorld {
   private cameraShake = 0;
   private cameraShakePhase = 0;
   private readonly knockback = new THREE.Vector3();
+  private readonly cameraProbe = new THREE.Vector3();
   private punchPointerX = 0;
   private punchPointerY = 0;
   private verticalVelocity = 0;
@@ -2105,10 +2136,16 @@ export class FestivalWorld {
       orbit.pitch = SWIM_CAMERA_PITCH;
       return;
     }
-    const lowestPitch = this.playerState === 'seated' ? -0.42 : 0.12;
+    // On land the orbit cameras used to be held between 0.12 and 1.08 — barely
+    // seven degrees below the top of the arc and never able to look up at a
+    // roofline or down over an edge. The floor of that range existed because a
+    // camera swung below the avatar ends up in the road; now that the view is
+    // pulled clear of whatever it meets, including the ground, it can go where
+    // it is pointed. Kept off the poles, where the horizon rolls over.
+    const lowestPitch = this.playerState === 'seated' ? -0.6 : -0.5;
     orbit.pitch = this.cameraMode === 'first-person'
-      ? THREE.MathUtils.clamp(orbit.pitch + deltaY * 0.0035, -0.85, 0.95)
-      : THREE.MathUtils.clamp(orbit.pitch + deltaY * 0.0035, lowestPitch, 1.08);
+      ? THREE.MathUtils.clamp(orbit.pitch + deltaY * 0.0035, -1.25, 1.32)
+      : THREE.MathUtils.clamp(orbit.pitch + deltaY * 0.0035, lowestPitch, 1.36);
   };
 
   /**
@@ -2225,6 +2262,53 @@ export class FestivalWorld {
     const droppedMentor = this.carriedItem === 'MENTOR';
     if (droppedMentor) this.putDownMentor();
     this.onAction({ type: 'punched', droppedMentor, by });
+  }
+
+  /**
+   * Going down. The body is put on the floor, everything it held is let go of,
+   * and it wakes at the altar.
+   *
+   * There is no meter for this anywhere and there is not meant to be: what
+   * tells an attendee they are in trouble is that the last two blows shook the
+   * frame harder than the first three, and then the world goes out. Coming back
+   * in the temple is the whole of the punishment — the walk from the east edge
+   * of the festival to wherever they were is a long one.
+   */
+  die(by?: string): void {
+    const now = performance.now();
+    this.dancing = false;
+    this.playerGesture = 'stumble';
+    this.playerGestureUntil = now + 1_600;
+    this.cameraShake = 1.8;
+    this.knockback.set(0, 0, 0);
+    if (this.carriedItem === 'MENTOR') this.putDownMentor();
+    this.carriedItem = undefined;
+    this.stowedItem = undefined;
+    this.carriedProp.visible = false;
+    if (this.playerState === 'seated') this.standUp();
+    // Held on the floor for the length of the blackout, then set down before
+    // the altar facing her, which is the one place in the festival that reads
+    // as somewhere you are returned to rather than somewhere you walked.
+    this.stumbleUntil = now + 2_200;
+    window.setTimeout(() => this.respawnAtTemple(), 1_250);
+    this.onAction({ type: 'died', by });
+  }
+
+  private respawnAtTemple(): void {
+    const centerZ = (TEMPLE.minZ + TEMPLE.maxZ) / 2;
+    const x = TEMPLE.maxX - 13;
+    this.player.position.set(x, TEMPLE_FLOOR_Y, centerZ);
+    this.airborne = false;
+    this.verticalVelocity = 0;
+    this.knockback.set(0, 0, 0);
+    // Facing the altar, which is east of here.
+    this.player.rotation.y = Math.PI / 2;
+    this.cameraOrbit.follow.yaw = -Math.PI / 2;
+    this.cameraOrbit.perspective.yaw = -Math.PI / 2;
+    // The camera is eased towards its mark every frame; without this it flies
+    // the length of the festival to catch up with a body that has just been
+    // moved across it.
+    this.camera.position.set(x - 9, TEMPLE_FLOOR_Y + 4.4, centerZ);
   }
 
   /** Releasing focus mid-stride would otherwise leave the avatar running. */
@@ -4268,7 +4352,9 @@ export class FestivalWorld {
       phase: index * 0.81,
       stuckFor: 0,
       knockback: new THREE.Vector3(),
-      haunt: NPC_HAUNT_KEYS[index % NPC_HAUNT_KEYS.length],
+      // Spread round the circuit rather than bunched at its head, so every
+      // venue has somebody in it from the moment the world opens.
+      haunt: NPC_TOUR[index % NPC_TOUR.length],
       dwellUntil: performance.now() + NPC_DWELL_MIN_MS + index * 4_000,
     };
     this.npcs.push(avatar);
@@ -4423,14 +4509,47 @@ export class FestivalWorld {
    * Moves an NPC on to a different part of the festival once it has spent long
    * enough where it is. Stationed NPCs, the DJ among them, never shuffle.
    */
+  /**
+   * Moves a resident on to the next stop of their round once they have spent
+   * long enough at this one.
+   *
+   * Two changes from the version that picked a haunt at random. The order is
+   * now a fixed circuit, entered at a different point by each resident, so the
+   * festival reads as a crowd going round it rather than people blinking
+   * between spots. And the circuit takes in the club floor, the roof deck and
+   * the temple, which nobody had ever been inside.
+   *
+   * Those three are on floors of their own, reached through a door and a stair
+   * run that this routing cannot follow — it walks straight at the next
+   * waypoint and gives up on whatever it bumps into. So a resident bound for
+   * one of them is set down at its edge instead, and only while nobody is close
+   * enough to watch it happen; if somebody is, the move waits. It is the same
+   * bargain the crowd already makes at the edge of view, held to a distance
+   * where it cannot be seen.
+   */
   private shuffleNpcHaunt(npc: NpcAvatar, now: number): void {
     if (npc.station || !npc.dwellUntil || now < npc.dwellUntil) return;
-    const choices = NPC_HAUNT_KEYS.filter((key) => key !== npc.haunt);
-    const next = choices[Math.floor(Math.random() * choices.length)] ?? npc.haunt;
+    const current = NPC_TOUR.indexOf(npc.haunt ?? '');
+    const next = NPC_TOUR[(current + 1) % NPC_TOUR.length] ?? NPC_HAUNT_KEYS[0];
     if (!next) return;
+    const floor = NPC_HAUNT_FLOOR[next];
+    const arriving = NPC_HAUNTS[next];
+    if (floor !== undefined) {
+      // Somewhere on another storey. Wait for a clear moment rather than fold
+      // a body through a wall in front of somebody.
+      const entrance = arriving[0];
+      if (this.player.position.distanceTo(new THREE.Vector3(entrance[0], floor, entrance[1])) < 26) {
+        npc.dwellUntil = now + 6_000;
+        return;
+      }
+      npc.group.position.set(entrance[0], floor, entrance[1]);
+    }
     npc.haunt = next;
     npc.dwellUntil = now + NPC_DWELL_MIN_MS + Math.random() * NPC_DWELL_SPREAD_MS;
-    npc.route = NPC_HAUNTS[next].map(([x, z]) => new THREE.Vector3(x, AVATAR_GROUND_Y, z));
+    npc.route = arriving.map(([x, z]) => new THREE.Vector3(x, floor ?? AVATAR_GROUND_Y, z));
+    // Whether this one is in the mood, decided fresh on each visit so the same
+    // resident is not always the one dancing.
+    npc.dances = NPC_DANCE_HAUNTS.has(next) && Math.random() < 0.55;
     // Head for whichever end of the new loop is closest, so the walk across
     // the festival looks deliberate rather than doubling back.
     npc.waypointIndex = this.nearestRouteIndex(npc, npc.group.position);
@@ -5250,7 +5369,18 @@ export class FestivalWorld {
         }
       } else if (direction.lengthSq() <= 0.05) {
         npc.waypointIndex = (npc.waypointIndex + 1) % npc.route.length;
-        npc.waitUntil = now + 900 + ((npc.phase * 1000) % 1800);
+        // Reaching a corner of the club floor or the roof deck is where a
+        // resident in the mood stops and dances, rather than pacing the room
+        // like everywhere else. The pause and the gesture run together, so they
+        // are still rather than sliding along mid-step.
+        if (npc.dances && Math.random() < 0.7) {
+          const bout = 6_000 + Math.random() * 9_000;
+          npc.waitUntil = now + bout;
+          npc.gesture = 'dance';
+          npc.gestureUntil = now + bout;
+        } else {
+          npc.waitUntil = now + 900 + ((npc.phase * 1000) % 1800);
+        }
         npc.stuckFor = 0;
       }
       if (npc.stuckFor > 1.6 || this.staticCollides(npc.group.position.x, npc.group.position.z, npc.group.position.y)) {
@@ -5810,6 +5940,7 @@ export class FestivalWorld {
     }
     this.confineCameraToClub(cameraTarget);
     this.confineCameraOverWater(cameraTarget);
+    this.pullCameraClearOfWalls(cameraTarget);
     const smoothing = 1 - Math.exp(-delta * 5.2);
     this.camera.position.lerp(cameraTarget, smoothing);
     this.camera.lookAt(this.lookTarget);
@@ -5888,6 +6019,55 @@ export class FestivalWorld {
    * sheets back into a strip of the screen, which is the difference the
    * attendee noticed between a smooth view and a stuttering one.
    */
+  /**
+   * Keeps the camera on the attendee's side of whatever stands behind them.
+   *
+   * The orbit cameras are placed by trigonometry alone, ten units back along
+   * the view: walk up to a wall and that ten units is inside it, so the view
+   * passes through the wall and the world is seen from within the masonry. This
+   * walks out from the head towards where the camera wants to be and stops at
+   * the first thing in the way, which is what a chase camera has to do.
+   *
+   * It marches the world's own colliders rather than raycasting the scene:
+   * those boxes are what the body is already refused by, so the camera stops at
+   * exactly the surfaces that are solid, and none of the scenery that is not.
+   */
+  private pullCameraClearOfWalls(cameraTarget: THREE.Vector3): void {
+    if (this.playerState === 'swimming') return;
+    this.cameraProbe.subVectors(cameraTarget, this.lookTarget);
+    const reach = this.cameraProbe.length();
+    if (reach < 0.001) return;
+    this.cameraProbe.divideScalar(reach);
+    // A third of a unit is finer than the thinnest wall in the world, which is
+    // the temple's at 0.9, so nothing can be stepped over.
+    const step = 0.33;
+    // Held off the surface by a little more than the near plane, or the wall
+    // the camera has stopped against is itself clipped through.
+    const clearance = 0.55;
+    let safe = reach;
+    for (let travelled = clearance; travelled <= reach; travelled += step) {
+      const x = this.lookTarget.x + this.cameraProbe.x * travelled;
+      const y = this.lookTarget.y + this.cameraProbe.y * travelled;
+      const z = this.lookTarget.z + this.cameraProbe.z * travelled;
+      if (this.staticCollides(x, z, y)) {
+        safe = Math.max(1.1, travelled - clearance);
+        break;
+      }
+    }
+    // The ground counts too: tilting down used to bury the camera in the road.
+    for (let travelled = clearance; travelled <= safe; travelled += step) {
+      const x = this.lookTarget.x + this.cameraProbe.x * travelled;
+      const y = this.lookTarget.y + this.cameraProbe.y * travelled;
+      const z = this.lookTarget.z + this.cameraProbe.z * travelled;
+      if (y < this.groundHeightAt(x, z, this.player.position.y) + 0.45) {
+        safe = Math.max(1.1, travelled - step);
+        break;
+      }
+    }
+    if (safe >= reach) return;
+    cameraTarget.copy(this.lookTarget).addScaledVector(this.cameraProbe, safe);
+  }
+
   private confineCameraOverWater(cameraTarget: THREE.Vector3): void {
     if (this.playerState !== 'swimming') return;
     const waterline = 0.14;

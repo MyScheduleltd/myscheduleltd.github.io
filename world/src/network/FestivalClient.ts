@@ -28,6 +28,8 @@ export interface NetworkVisitor {
   /** Where the blow was thrown from, so the body can be thrown away from it. */
   hitFromX?: number;
   hitFromZ?: number;
+  diedAt?: number;
+  killedBy?: string;
   originalName: string;
   palette: AvatarPalette;
   presence: NetworkPresence;

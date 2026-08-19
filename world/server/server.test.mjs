@@ -30,6 +30,10 @@ const startServer = async (port, stateFile, seedFile = 'off') => {
       ...process.env,
       FESTIVAL_PORT: String(port),
       FESTIVAL_ADMIN_KEY: 'test-admin-key',
+      // Sessions accumulate across the whole file — nothing here logs out — so
+      // the cap has to clear the total the suite opens, not the twenty a real
+      // instance holds. The queue at the gate has a test of its own.
+      FESTIVAL_MAX_VISITORS: '120',
       FESTIVAL_ALLOWED_ORIGINS: 'http://127.0.0.1:5173',
       FESTIVAL_STATE_FILE: stateFile,
       // Assert on the festival the code ships with, never on the running order
@@ -1096,6 +1100,51 @@ test('the thrower names their target, and cannot name one across the festival', 
   // Naming yourself does nothing.
   await new Promise((resolve) => setTimeout(resolve, 650));
   assert.equal(await punchAt(thrower, thrower.id), null, 'nobody punches themselves');
+});
+
+test('five blows put an attendee down, and the sixth is refused while they are up', async () => {
+  const thrower = await join('KILLER');
+  const target = await join('VICTIM');
+  const stand = async (session, x, z) => {
+    await fetch(`${baseUrl}/api/presence`, {
+      method: 'POST',
+      headers: auth(session),
+      body: JSON.stringify({
+        x, y: 0.28, z, rotation: 0, location: 'MY SQUARE',
+        state: 'walking', moving: false, running: false, venue: 'shore',
+      }),
+    });
+  };
+  const punch = async () => (await (await fetch(`${baseUrl}/api/punch`, {
+    method: 'POST', headers: auth(thrower), body: JSON.stringify({ targetId: target.id }),
+  })).json()).hit;
+
+  await stand(thrower, 0, 0);
+  await stand(target, 0, 2);
+
+  // Four land and leave them standing.
+  for (let blow = 1; blow <= 4; blow += 1) {
+    const hit = await punch();
+    assert.equal(hit?.name, 'VICTIM', `blow ${blow} lands`);
+    assert.equal(hit?.died, false, `blow ${blow} does not put them down`);
+    await new Promise((resolve) => setTimeout(resolve, 650));
+  }
+
+  // The fifth does.
+  const fatal = await punch();
+  assert.equal(fatal?.died, true, 'the fifth blow puts them down');
+
+  // And they are left alone on the way back up.
+  await new Promise((resolve) => setTimeout(resolve, 650));
+  assert.equal(await punch(), null, 'nothing lands while they are getting up');
+
+  // Everyone is told, so the body can be moved to the temple by its own client.
+  const state = await (await fetch(`${baseUrl}/api/admin/state`, {
+    headers: { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173' },
+  })).json();
+  const dead = state.visitors.find((entry) => entry.name === 'VICTIM');
+  assert.ok(dead.diedAt > 0, 'the death is published with the rest of the state');
+  assert.equal(dead.killedBy, 'KILLER');
 });
 
 test('a punch lands in the temple, where the map used to stop', async () => {

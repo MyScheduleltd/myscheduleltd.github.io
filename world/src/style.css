@@ -153,6 +153,102 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 }
 .public-projector iframe { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; }
 .world-vignette { z-index: 3; background-image: radial-gradient(circle, transparent 46%, rgba(0,0,0,.5) 120%); opacity: 1; }
+/* Camera and postcard modes.
+   Everything the world draws over itself is instrumentation — the header, the
+   clock, the chat, the pass, the hint strip — and a screenshot wants none of
+   it. Rather than list what to hide, hide every direct child of the shell and
+   put back the three layers that are the world: the canvas, the screens
+   composited over it, and the vignette. Anything added later is hidden by
+   default, which is the right way round for this. */
+.world-shell[data-view] > * { display: none !important; }
+.world-shell[data-view] > canvas,
+.world-shell[data-view] > .world-css3d,
+.world-shell[data-view] > .world-vignette,
+.world-shell[data-view] > .world-impact,
+.world-shell[data-view] > .world-death,
+.world-shell[data-view] > .world-camera-hint { display: block !important; }
+.world-shell[data-view="postcard"] > .world-postcard { display: block !important; }
+
+/* The filters sit on the canvases only, so the postcard's own frame and
+   caption stay true while the picture inside them is graded. */
+.world-shell[data-filter="warm"] > canvas, .world-shell[data-filter="warm"] > .world-css3d { filter: sepia(.34) saturate(1.24) hue-rotate(-12deg) contrast(1.05); }
+.world-shell[data-filter="cold"] > canvas, .world-shell[data-filter="cold"] > .world-css3d { filter: saturate(.82) hue-rotate(14deg) brightness(1.04) contrast(1.08); }
+.world-shell[data-filter="mono"] > canvas, .world-shell[data-filter="mono"] > .world-css3d { filter: grayscale(1) contrast(1.12); }
+.world-shell[data-filter="faded"] > canvas, .world-shell[data-filter="faded"] > .world-css3d { filter: saturate(.68) contrast(.9) brightness(1.08); }
+
+.world-camera-hint {
+  position: fixed; z-index: 8; left: 0; right: 0; bottom: 26px; margin: 0;
+  text-align: center; font: 700 11px/1 var(--condensed, sans-serif);
+  letter-spacing: .3em; text-indent: .3em; color: rgba(245, 239, 226, .8);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, .8);
+  opacity: 0; transition: opacity .5s ease-out; pointer-events: none;
+}
+.world-camera-hint[data-shown] { opacity: 1; transition: opacity .12s ease-in; }
+
+.world-postcard { position: fixed; inset: 0; z-index: 7; display: none; }
+/* Drawn as one inset border rather than four bars, so it holds its proportions
+   at any window size without arithmetic. */
+.world-postcard__frame {
+  position: absolute; inset: 0; pointer-events: none;
+  border: clamp(18px, 3.4vmin, 46px) solid #f4efe3;
+  box-shadow: inset 0 0 0 1px rgba(20, 18, 16, .28), 0 0 90px rgba(0, 0, 0, .45);
+}
+.world-postcard__caption {
+  position: absolute; left: 0; right: 0; bottom: clamp(26px, 4.6vmin, 60px);
+  display: flex; justify-content: center; pointer-events: auto;
+}
+.world-postcard__caption input {
+  width: min(74%, 620px); padding: 10px 16px; text-align: center;
+  border: 0; border-bottom: 1px solid transparent;
+  background: transparent; color: #f4efe3; caret-color: #f4efe3;
+  font: 400 clamp(15px, 2.1vmin, 22px)/1.3 var(--condensed, serif);
+  letter-spacing: .06em; text-shadow: 0 1px 12px rgba(0, 0, 0, .85);
+  transition: background-color .2s ease, border-color .2s ease;
+}
+/* The writing line and its panel are for the person typing, not for the
+   picture. Once the caption is written and focus leaves, only the words are
+   left on the card — which is the whole point of the mode. */
+.world-postcard__caption input:focus {
+  outline: none; border-bottom-color: #a91c24;
+  background: rgba(20, 18, 16, .42); color: #f4efe3;
+}
+.world-postcard__caption input::placeholder { color: rgba(23, 20, 18, .38); letter-spacing: .2em; font-size: .8em; }
+.world-postcard__tools {
+  position: absolute; left: 0; right: 0; top: clamp(24px, 4.2vmin, 58px);
+  display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; pointer-events: auto;
+  /* Out of the way until reached for, so the picture is not taken with a row
+     of buttons across the top of it. */
+  opacity: .12; transition: opacity .25s ease;
+}
+.world-postcard__tools:hover, .world-postcard__tools:focus-within { opacity: 1; }
+.world-postcard__tools button {
+  padding: 6px 12px; border: 1px solid rgba(20, 18, 16, .26); cursor: pointer;
+  background: rgba(244, 239, 227, .9); color: #171412;
+  font: 700 10px/1 var(--condensed, sans-serif); letter-spacing: .18em;
+}
+.world-postcard__tools button.is-active { background: #a91c24; border-color: #a91c24; color: #f4efe3; }
+
+/* Going down. Black closes over the world, the words sit still in the middle
+   of it, and both fade. No meter, no tally — the whole point is that an
+   attendee reads their state off the shaking, not off a bar. */
+.world-death {
+  position: fixed; inset: 0; z-index: 6; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; text-align: center; opacity: 0; background: rgba(2, 2, 3, 0);
+  transition: opacity .9s ease-out, background-color .9s ease-out;
+}
+.world-death[data-shown] { opacity: 1; background: rgba(2, 2, 3, .88); transition: opacity .5s ease-in, background-color .5s ease-in; }
+.world-death strong {
+  font: 400 clamp(38px, 7vw, 92px)/1 var(--condensed, serif);
+  letter-spacing: .22em; text-indent: .22em; color: #b0141c;
+  text-shadow: 0 0 34px rgba(176, 20, 28, .45);
+}
+.world-death small {
+  font-size: 12px; letter-spacing: .3em; text-indent: .3em; color: rgba(245, 239, 226, .62);
+}
+@media (prefers-reduced-motion: reduce) {
+  .world-death { transition: opacity .3s linear, background-color .3s linear; }
+}
 /* Taking a punch. Red closes in from the edges rather than washing the middle,
    so the blow is unmistakable without hiding the thing that threw it. Sits over
    the vignette and under the header, and is inert until a hit sets --hit. */

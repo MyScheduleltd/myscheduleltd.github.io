@@ -217,7 +217,12 @@ export class App {
   private activeSeatId = 'CURRENT SEAT';
   /** The last blow this attendee took, so one is played out only once. */
   private lastHitAt = 0;
+  private lastDeathAt = 0;
+  private viewMode: 'normal' | 'camera' | 'postcard' = 'normal';
+  private postcardFilter = 'none';
+  private cameraHintTimer = 0;
   private impactTimer = 0;
+  private deathTimer = 0;
   private privateProgress?: PrivateProgress;
   private chatChannel: ChatChannel = 'NEARBY';
   private chatMessages: ChatMessage[];
@@ -480,6 +485,25 @@ export class App {
         <canvas id="world-foreground" aria-hidden="true"></canvas>
         <div class="world-vignette" aria-hidden="true"></div>
         <div class="world-impact" data-impact aria-hidden="true"></div>
+        <div class="world-death" aria-live="polite"></div>
+        <div class="world-postcard" aria-hidden="true">
+          <div class="world-postcard__frame"></div>
+          <div class="world-postcard__caption">
+            <input type="text" maxlength="64" data-postcard-caption
+              placeholder="${zh ? '寫下你的明信片…' : 'WRITE YOUR POSTCARD…'}"
+              aria-label="${zh ? '明信片文字' : 'Postcard caption'}" />
+          </div>
+          <div class="world-postcard__tools">
+            ${[
+              ['none', zh ? '原色' : 'AS SHOT'],
+              ['warm', zh ? '暖調' : 'WARM'],
+              ['cold', zh ? '冷調' : 'COLD'],
+              ['mono', zh ? '黑白' : 'MONO'],
+              ['faded', zh ? '褪色' : 'FADED'],
+            ].map(([value, label]) => `<button type="button" data-postcard-filter="${value}">${label}</button>`).join('')}
+          </div>
+        </div>
+        <p class="world-camera-hint" aria-hidden="true"></p>
         <header class="world-header">
           <div class="world-brand"><img class="brand-logo" src="${companyLogoUrl}" alt="我的檔期" /><span>MYSCHEDULE</span></div>
           <div class="status-cluster" id="connection-status" data-status="connecting">
@@ -534,7 +558,7 @@ export class App {
           aria-live="polite"
           aria-atomic="false"
         ></section>
-          <div class="controls-hint"><span>${zh ? '移動' : 'MOVE'}</span> WASD / ARROWS <span>${zh ? '奔跑' : 'RUN'}</span> SHIFT <span>${zh ? '互動' : 'INTERACT'}</span> E · SHIFT+E ${zh ? '抱起 MENTOR' : 'PICK UP MENTOR'} <span>${zh ? '跳躍' : 'JUMP'}</span> SPACE <span>${zh ? '跳舞' : 'DANCE'}</span> B <span>${zh ? '供養' : 'OFFER'}</span> O <span>${zh ? '視角' : 'LOOK'}</span> ${zh ? '拖曳滑鼠' : 'DRAG MOUSE'} · T</div>
+          <div class="controls-hint"><span>${zh ? '移動' : 'MOVE'}</span> WASD / ARROWS <span>${zh ? '奔跑' : 'RUN'}</span> SHIFT <span>${zh ? '互動' : 'INTERACT'}</span> E · SHIFT+E ${zh ? '抱起 MENTOR' : 'PICK UP MENTOR'} <span>${zh ? '跳躍' : 'JUMP'}</span> SPACE <span>${zh ? '跳舞' : 'DANCE'}</span> B <span>${zh ? '供養' : 'OFFER'}</span> O <span>${zh ? '視角' : 'LOOK'}</span> ${zh ? '拖曳滑鼠' : 'DRAG MOUSE'} · T <span>${zh ? '拍照' : 'PHOTO'}</span> C</div>
       </section>
     `;
 
@@ -646,6 +670,15 @@ export class App {
       button.addEventListener('pointerup', () => setActive(false));
       button.addEventListener('pointercancel', () => setActive(false));
       button.addEventListener('lostpointercapture', () => setActive(false));
+    });
+    this.root.querySelectorAll<HTMLButtonElement>('[data-postcard-filter]').forEach((button) => {
+      button.addEventListener('click', () => {
+        this.postcardFilter = button.dataset.postcardFilter ?? 'none';
+        const shell = this.root.querySelector<HTMLElement>('.world-shell');
+        if (shell) shell.dataset.filter = this.postcardFilter;
+        this.root.querySelectorAll<HTMLButtonElement>('[data-postcard-filter]')
+          .forEach((other) => other.classList.toggle('is-active', other === button));
+      });
     });
     this.root.querySelector<HTMLButtonElement>('[data-public-catalogue]')?.addEventListener('click', () => this.openFilmPicker(this.activeVenue));
     this.root.querySelector<HTMLButtonElement>('[data-public-fullscreen]')?.addEventListener('click', () => {
@@ -879,6 +912,15 @@ export class App {
       });
       return;
     }
+    if (action.type === 'died') {
+      const zh = this.language === 'zh-TW';
+      this.flashImpact('1');
+      this.showDeath(action.by);
+      this.showWorldAlert(action.by
+        ? (zh ? `你被 ${action.by} 打倒了` : `${action.by} PUT YOU DOWN`)
+        : (zh ? '你倒下了' : 'YOU WENT DOWN'));
+      return;
+    }
     if (action.type === 'punched') {
       const zh = this.language === 'zh-TW';
       this.flashImpact('1');
@@ -1039,6 +1081,21 @@ export class App {
     if (event.key === 'Escape' && this.screenMaximized) {
       event.preventDefault();
       this.setScreenMaximized(false);
+      return;
+    }
+    // Escape also leaves the camera, which is the other thing that fills the
+    // screen — and from inside the caption field it is the only way out, since
+    // C there is a letter being typed.
+    if (event.key === 'Escape' && this.viewMode !== 'normal') {
+      event.preventDefault();
+      this.setViewMode('normal');
+      return;
+    }
+    if ((event.key === 'c' || event.key === 'C') && !event.repeat) {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+      if (this.activePanel) return;
+      event.preventDefault();
+      this.cycleViewMode();
       return;
     }
     if (event.key !== 'Enter' || event.repeat) return;
@@ -1627,6 +1684,11 @@ export class App {
       this.lastHitAt = hitAt;
       this.world?.takeHit(self?.hitBy, self?.hitFromX, self?.hitFromZ);
     }
+    const diedAt = self?.diedAt ?? 0;
+    if (diedAt && diedAt > this.lastDeathAt) {
+      this.lastDeathAt = diedAt;
+      this.world?.die(self?.killedBy);
+    }
     if (state.templeSign) this.world?.setTempleSign(state.templeSign.name, state.templeSign.label);
     this.world?.setSharedMentorCarrier(state.mentorCarrierId, state.selfId);
     const remoteVisitors = state.visitors
@@ -1746,6 +1808,72 @@ export class App {
     this.hidePublicSeatHud();
     this.world?.forceStand();
     this.showWorldAlert(`${seatId} · ${result.message ?? 'SEAT IS UNAVAILABLE'}`);
+  }
+
+  /**
+   * C walks through three states: the world with its instruments, the world
+   * alone, and the world as a postcard. Sending it round in a ring rather than
+   * giving each its own key means the way out is the same key as the way in,
+   * which is the one thing somebody holding a camera needs to know.
+   */
+  private cycleViewMode(): void {
+    const order = ['normal', 'camera', 'postcard'] as const;
+    this.setViewMode(order[(order.indexOf(this.viewMode) + 1) % order.length]);
+  }
+
+  private setViewMode(mode: 'normal' | 'camera' | 'postcard'): void {
+    this.viewMode = mode;
+    const shell = this.root.querySelector<HTMLElement>('.world-shell');
+    if (!shell) return;
+    if (mode === 'normal') delete shell.dataset.view;
+    else shell.dataset.view = mode;
+    shell.dataset.filter = mode === 'postcard' ? this.postcardFilter : 'none';
+    const zh = this.language === 'zh-TW';
+    // The one thing left on screen in camera mode, and it goes too. Without it
+    // there is no way to discover that C is also the way back.
+    const hint = this.root.querySelector<HTMLElement>('.world-camera-hint');
+    if (hint) {
+      hint.textContent = mode === 'camera'
+        ? (zh ? 'C／明信片模式' : 'C / POSTCARD MODE')
+        : mode === 'postcard'
+          ? (zh ? 'C／離開' : 'C / EXIT')
+          : '';
+      window.clearTimeout(this.cameraHintTimer);
+      if (mode !== 'normal') {
+        hint.dataset.shown = 'on';
+        this.cameraHintTimer = window.setTimeout(() => {
+          delete hint.dataset.shown;
+        }, 2_600);
+      } else {
+        delete hint.dataset.shown;
+      }
+    }
+    if (mode === 'postcard') {
+      this.root.querySelector<HTMLInputElement>('[data-postcard-caption]')?.focus();
+    } else {
+      // Leaving the caption focused would swallow WASD.
+      (document.activeElement as HTMLElement | null)?.blur();
+    }
+  }
+
+  /**
+   * The death card. Deliberately just the words and the dark: no meter, no
+   * count of what it took, nothing to study afterwards. It clears itself.
+   */
+  private showDeath(by?: string): void {
+    const layer = document.querySelector<HTMLElement>('.world-death');
+    if (!layer) return;
+    const zh = this.language === 'zh-TW';
+    const line = zh ? '你死了' : 'YOU DIED';
+    const under = by
+      ? (zh ? `被 ${this.escapeHtml(by)} 打倒 · 於寺廟醒來` : `PUT DOWN BY ${this.escapeHtml(by)} · YOU WAKE IN THE TEMPLE`)
+      : (zh ? '於寺廟醒來' : 'YOU WAKE IN THE TEMPLE');
+    layer.innerHTML = `<strong>${line}</strong><small>${under}</small>`;
+    window.clearTimeout(this.deathTimer);
+    layer.dataset.shown = 'on';
+    this.deathTimer = window.setTimeout(() => {
+      delete layer.dataset.shown;
+    }, 3_400);
   }
 
   /**
@@ -1915,7 +2043,7 @@ export class App {
           <button class="panel-button" data-camera-toggle>${this.language === 'zh-TW' ? '切換視角鏡頭' : 'TOGGLE PERSPECTIVE CAMERA'}</button>`;
       case 'controls':
         return `
-          <dl class="controls-list"><div><dt>WASD / 方向鍵</dt><dd>${this.language === 'zh-TW' ? '移動／游泳' : 'Move / swim'}</dd></div><div><dt>E</dt><dd>${this.language === 'zh-TW' ? '互動／餵 MENTOR 吃點心' : 'Interact / give MENTOR a treat'}</dd></div><div><dt>SHIFT + E</dt><dd>${this.language === 'zh-TW' ? '抱起 MENTOR' : 'Pick up MENTOR'}</dd></div><div><dt>SHIFT</dt><dd>${this.language === 'zh-TW' ? '奔跑' : 'Run'}</dd></div><div><dt>SPACE</dt><dd>${this.language === 'zh-TW' ? '跳躍（可從高處跳下）' : 'Jump — and drop from high places'}</dd></div><div><dt>B</dt><dd>${this.language === 'zh-TW' ? '跳舞' : 'Dance'}</dd></div><div><dt>O</dt><dd>${this.language === 'zh-TW' ? '供養／佈施：在神像前或 NPC 旁' : 'Make an offering — at the altar or beside an NPC'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滑鼠左鍵' : 'LEFT CLICK'}</dt><dd>${this.language === 'zh-TW' ? '出拳（被打中會鬆手放開 MENTOR）' : 'Throw a punch — anyone hit drops MENTOR'}</dd></div><div><dt>T</dt><dd>${this.language === 'zh-TW' ? '切換鏡頭' : 'Change camera'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滑鼠拖曳' : 'DRAG MOUSE'}</dt><dd>${this.language === 'zh-TW' ? '轉動視角' : 'Turn the view'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滾輪／觸控板縮放' : 'WHEEL / PINCH'}</dt><dd>${this.language === 'zh-TW' ? '鏡頭遠近' : 'Move the camera in and out'}</dd></div><div><dt>ENTER</dt><dd>${this.language === 'zh-TW' ? '開啟聊天' : 'Open chat'}</dd></div><div><dt>PASS</dt><dd>${this.language === 'zh-TW' ? '開啟選單' : 'Open menu'}</dd></div></dl>`;
+          <dl class="controls-list"><div><dt>WASD / 方向鍵</dt><dd>${this.language === 'zh-TW' ? '移動／游泳' : 'Move / swim'}</dd></div><div><dt>E</dt><dd>${this.language === 'zh-TW' ? '互動／餵 MENTOR 吃點心' : 'Interact / give MENTOR a treat'}</dd></div><div><dt>SHIFT + E</dt><dd>${this.language === 'zh-TW' ? '抱起 MENTOR' : 'Pick up MENTOR'}</dd></div><div><dt>SHIFT</dt><dd>${this.language === 'zh-TW' ? '奔跑' : 'Run'}</dd></div><div><dt>SPACE</dt><dd>${this.language === 'zh-TW' ? '跳躍（可從高處跳下）' : 'Jump — and drop from high places'}</dd></div><div><dt>B</dt><dd>${this.language === 'zh-TW' ? '跳舞' : 'Dance'}</dd></div><div><dt>O</dt><dd>${this.language === 'zh-TW' ? '供養／佈施：在神像前或 NPC 旁' : 'Make an offering — at the altar or beside an NPC'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滑鼠左鍵' : 'LEFT CLICK'}</dt><dd>${this.language === 'zh-TW' ? '出拳（被打中會鬆手放開 MENTOR）' : 'Throw a punch — anyone hit drops MENTOR'}</dd></div><div><dt>T</dt><dd>${this.language === 'zh-TW' ? '切換鏡頭' : 'Change camera'}</dd></div><div><dt>C</dt><dd>${this.language === 'zh-TW' ? '拍照模式／明信片模式／離開' : 'Camera mode / postcard mode / exit'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滑鼠拖曳' : 'DRAG MOUSE'}</dt><dd>${this.language === 'zh-TW' ? '轉動視角' : 'Turn the view'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滾輪／觸控板縮放' : 'WHEEL / PINCH'}</dt><dd>${this.language === 'zh-TW' ? '鏡頭遠近' : 'Move the camera in and out'}</dd></div><div><dt>ENTER</dt><dd>${this.language === 'zh-TW' ? '開啟聊天' : 'Open chat'}</dd></div><div><dt>PASS</dt><dd>${this.language === 'zh-TW' ? '開啟選單' : 'Open menu'}</dd></div></dl>`;
       case 'contact':
         return `
           <div class="contact-list">

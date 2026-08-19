@@ -24,6 +24,15 @@ const NOMINAL_TRACK_SECONDS = 240;
  */
 const MAX_VISITORS = Math.max(1, Number(process.env.FESTIVAL_MAX_VISITORS ?? 20));
 /**
+ * How much a body takes before it goes down, how long it remembers a beating,
+ * and how long it is left alone afterwards. There is no meter anywhere in the
+ * world for any of this and there should not be: the attendee is meant to read
+ * their state off how hard the screen is shaking, not off a bar.
+ */
+const HITS_TO_DIE = 5;
+const HIT_MEMORY_MS = 30_000;
+const DEATH_GRACE_MS = 6_000;
+/**
  * Everyone turned away, oldest first. A ticket holds a place while its owner
  * keeps asking for it; stop asking and the place is given up.
  */
@@ -729,6 +738,8 @@ const publicVisitor = (visitor) => ({
   // backwards, whichever side it actually landed on.
   hitFromX: visitor.hitFromX,
   hitFromZ: visitor.hitFromZ,
+  diedAt: visitor.diedAt ?? 0,
+  killedBy: visitor.killedBy,
   impersonationOrigin: visitor.impersonationOrigin,
   seatedAt: visitor.seatedAt,
   mutedUntil: visitor.mutedUntil,
@@ -1064,10 +1075,27 @@ const server = createServer(async (request, response) => {
         }
       }
       if (!struck) return json(response, 200, { ok: true, hit: null });
+      // Just up off the floor. A moment where nothing lands, or whoever killed
+      // you can stand over the temple and do it again as you arrive.
+      if (struck.diedAt && now - struck.diedAt < DEATH_GRACE_MS) {
+        return json(response, 200, { ok: true, hit: null });
+      }
       struck.hitAt = now;
       struck.hitBy = visitor.name;
       struck.hitFromX = from.x;
       struck.hitFromZ = from.z;
+      // Blows only add up while they keep coming. Walk away from a fight for
+      // half a minute and it is over; nobody carries four hits around all
+      // evening waiting for a fifth from a stranger.
+      if (!struck.lastHitAt || now - struck.lastHitAt > HIT_MEMORY_MS) struck.hitCount = 0;
+      struck.lastHitAt = now;
+      struck.hitCount = (struck.hitCount ?? 0) + 1;
+      const died = struck.hitCount >= HITS_TO_DIE;
+      if (died) {
+        struck.hitCount = 0;
+        struck.diedAt = now;
+        struck.killedBy = visitor.name;
+      }
       // Whatever they were holding, they are not holding it now.
       let droppedMentor = false;
       if (mentorCarrierId === struck.id) {
@@ -1077,8 +1105,10 @@ const server = createServer(async (request, response) => {
       if (struck.presence.carriedItem) {
         struck.presence = { ...struck.presence, carriedItem: undefined };
       }
+      // A body on the floor is not sitting in a seat.
+      if (died && struck.seatedAt) struck.seatedAt = undefined;
       scheduleBroadcast();
-      return json(response, 200, { ok: true, hit: { id: struck.id, name: struck.name, droppedMentor } });
+      return json(response, 200, { ok: true, hit: { id: struck.id, name: struck.name, droppedMentor, died } });
     }
 
     // A request to the resident DJ. Unlike a private screening this changes
