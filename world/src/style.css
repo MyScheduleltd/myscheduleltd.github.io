@@ -1083,7 +1083,13 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
        to grab. Bounded by what is actually below the toggle, and given a
        scroller of its own so a drag inside it never becomes a drag on the
        world behind. */
+    /* vh on a phone is the tall viewport — the one that ignores the browser's
+       own toolbar — so a list measured against it reached down behind Safari's
+       chrome and the last entries could not be got at however far you dragged.
+       dvh is the height actually on screen. vh stays first as the fallback for
+       anything that does not know dvh. */
     max-height: calc(100vh - 76px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 76px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
     touch-action: pan-y;
   }
@@ -1097,7 +1103,10 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
     width: auto; max-width: min(84vw, 640px);
     flex-direction: row; align-items: center; gap: 12px;
   }
-  .public-seat-hud strong { font-size: 14px; max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Wraps rather than truncates: a title you cannot read is worse than a bar
+     one line taller, and the bar is only a caption under the picture. */
+  .public-seat-hud { flex-wrap: wrap; justify-content: center; row-gap: 6px; }
+  .public-seat-hud strong { font-size: 14px; max-width: min(72vw, 460px); white-space: normal; }
   .public-seat-hud > div:last-child { width: auto; }
   .public-seat-hud button { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
   /* The header did not allow for the notch and the pass did, so on a phone
@@ -1110,6 +1119,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .panel {
     inset: calc(44px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right))
            calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
+    max-height: calc(100dvh - 54px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     overflow: hidden;
   }
   .panel > * { min-height: 0; }

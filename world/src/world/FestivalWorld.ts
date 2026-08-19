@@ -1011,6 +1011,7 @@ export class FestivalWorld {
     window.addEventListener('pointercancel', this.cameraPointerUp);
     window.addEventListener('blur', this.cameraPointerReset);
     window.addEventListener('blur', this.clearRunning);
+    document.addEventListener('visibilitychange', this.resumeProjectorsOnReturn);
     this.resize();
   }
 
@@ -1034,6 +1035,7 @@ export class FestivalWorld {
     window.removeEventListener('pointercancel', this.cameraPointerUp);
     window.removeEventListener('blur', this.cameraPointerReset);
     window.removeEventListener('blur', this.clearRunning);
+    document.removeEventListener('visibilitychange', this.resumeProjectorsOnReturn);
     this.renderer.dispose();
     this.foregroundRenderer.dispose();
     for (const projector of this.projectors.values()) projector.element.remove();
@@ -1916,6 +1918,22 @@ export class FestivalWorld {
     signMaterial.needsUpdate = true;
     if (previous && previous !== next) previous.dispose();
   }
+
+  /**
+   * A phone stops whatever is playing the moment the browser goes away — a
+   * message, a call, the screen locking — and does not start it again on the
+   * way back. Coming back to a festival where every screen has quietly stopped
+   * is the thing that made the screenings feel like they pause on a phone and
+   * not on a desk.
+   */
+  private readonly resumeProjectorsOnReturn = (): void => {
+    if (document.hidden) return;
+    for (const projector of this.projectors.values()) {
+      projector.iframe?.contentWindow?.postMessage(JSON.stringify({
+        event: 'command', func: 'playVideo', args: [],
+      }), '*');
+    }
+  };
 
   setPublicScreenPaused(venue: VenueKey, paused: boolean): void {
     const projector = this.projectors.get(venue);
@@ -5328,11 +5346,24 @@ export class FestivalWorld {
       // playing at all. A screening you cannot see is not a saving, it is a
       // missing festival. Ninety keeps the square's screens live and still
       // drops the ones across the map.
-      const range = this.graphicsMode === 'normal' ? 120 : 90;
+      // One distance for every device now. A phone had a shorter reach than a
+      // desk, so the same walk up to the same screen showed a picture on one and
+      // an empty frame on the other — which is the difference that was being
+      // felt. Whatever a phone gives up, it should not be a different festival.
+      const range = 120;
       const withinRange = this.cameraToProjector.length() < range;
       const visible = roomMatches && withinRange &&
         (this.player.position.z - screen.position[2]) * screen.facing >= -0.02 &&
         screenIsInFront && screenTouchesViewport;
+      // Coming back into view, ask it to play. A player that a phone stopped
+      // while it was out of sight — or while the browser was in the background,
+      // which phones do on their own — otherwise stays stopped once it is
+      // looked at again, and the screen sits there showing a still.
+      if (visible && projector.element.style.visibility === 'hidden') {
+        projector.iframe?.contentWindow?.postMessage(JSON.stringify({
+          event: 'command', func: 'playVideo', args: [],
+        }), '*');
+      }
       projector.element.style.visibility = visible ? 'visible' : 'hidden';
       if (visible) visibleProjectors.push(venue);
     }
