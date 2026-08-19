@@ -153,6 +153,30 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 }
 .public-projector iframe { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; }
 .world-vignette { z-index: 3; background-image: radial-gradient(circle, transparent 46%, rgba(0,0,0,.5) 120%); opacity: 1; }
+/* The jukebox's player. It is only ever a source of sound — the picture is
+   irrelevant and must never be on screen — so it is parked off-canvas rather
+   than hidden with display:none, which stops playback in some browsers. */
+.jukebox-player {
+  position: fixed; width: 320px; height: 180px; left: -9999px; top: -9999px;
+  border: 0; pointer-events: none; opacity: 0;
+}
+.jukebox-now { display: flex; flex-direction: column; gap: 3px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.14); }
+.jukebox-now strong { font: 700 17px/1.2 var(--condensed, sans-serif); letter-spacing: .04em; }
+.jukebox-now small, .jukebox-queue small { opacity: .6; font-size: 11px; letter-spacing: .12em; }
+.jukebox-queue { padding: 10px 0; }
+.jukebox-queue ol { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 5px; }
+.jukebox-queue li { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.jukebox-queue li strong { font-weight: 600; font-size: 13px; }
+.jukebox-picks { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.jukebox-picks button {
+  padding: 9px 12px; text-align: left; cursor: pointer;
+  border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.05); color: inherit;
+  font: 600 13px/1.2 var(--condensed, sans-serif); letter-spacing: .05em;
+}
+.jukebox-picks button:hover:not(:disabled) { background: #a91c24; border-color: #a91c24; }
+.jukebox-picks button:disabled { opacity: .38; cursor: default; }
+.panel-note { margin: 6px 0 0; font-size: 11px; line-height: 1.5; opacity: .6; }
+
 /* Camera and postcard modes.
    Everything the world draws over itself is instrumentation — the header, the
    clock, the chat, the pass, the hint strip — and a screenshot wants none of

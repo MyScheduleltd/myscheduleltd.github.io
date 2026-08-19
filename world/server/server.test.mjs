@@ -1102,6 +1102,57 @@ test('the thrower names their target, and cannot name one across the festival', 
   assert.equal(await punchAt(thrower, thrower.id), null, 'nobody punches themselves');
 });
 
+test('the jukebox is stocked by staff and queued by whoever is standing at it', async () => {
+  const staff = { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173', 'content-type': 'application/json' };
+  const stock = (payload) => fetch(`${baseUrl}/api/admin/jukebox`, { method: 'POST', headers: staff, body: JSON.stringify(payload) });
+
+  // Only a link the service can actually read, and only with a title.
+  assert.equal((await stock({ url: 'https://example.com/not-a-video', title: 'NOPE' })).status, 400);
+  assert.equal((await stock({ url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', title: '' })).status, 400);
+
+  const added = await stock({ url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', title: 'FIRST RECORD' });
+  assert.equal(added.status, 200);
+  const second = await stock({ url: 'https://youtu.be/Ffli-o0ocT0', title: 'SECOND RECORD' });
+  assert.equal(second.status, 200);
+  // The same record twice is a mistake, not a request.
+  assert.equal((await stock({ url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', title: 'AGAIN' })).status, 409);
+
+  // With stock and nobody asking, the machine plays by itself.
+  const config = await (await fetch(`${baseUrl}/api/config`, { headers: { origin: 'http://127.0.0.1:5173' } })).json();
+  assert.equal(config.jukebox.tracks.length, 2);
+  assert.ok(config.jukebox.nowPlaying, 'a stocked jukebox is playing something');
+
+  // An attendee puts one on, and it is on the shared list under their name.
+  const listener = await join('LISTENER');
+  const queued = await fetch(`${baseUrl}/api/jukebox/request`, {
+    method: 'POST', headers: auth(listener), body: JSON.stringify({ trackId: 'Ffli-o0ocT0' }),
+  });
+  assert.equal(queued.status, 200);
+  const after = await queued.json();
+  assert.equal(after.jukebox.queue.length, 1);
+  assert.equal(after.jukebox.queue[0].requestedByName, 'LISTENER');
+  assert.equal(after.jukebox.queue[0].title, 'SECOND RECORD');
+
+  // One each, so a single attendee cannot fill the evening.
+  const again = await fetch(`${baseUrl}/api/jukebox/request`, {
+    method: 'POST', headers: auth(listener), body: JSON.stringify({ trackId: 'dQw4w9WgXcQ' }),
+  });
+  assert.equal(again.status, 409);
+
+  // A record that is not in the machine cannot be asked for.
+  const bogus = await fetch(`${baseUrl}/api/jukebox/request`, {
+    method: 'POST', headers: auth(listener), body: JSON.stringify({ trackId: 'not-a-track' }),
+  });
+  assert.equal(bogus.status, 400);
+
+  // Taking a record out takes its waiting copy with it.
+  const removed = await stock({ remove: 'Ffli-o0ocT0' });
+  assert.equal(removed.status, 200);
+  const left = await removed.json();
+  assert.equal(left.jukebox.tracks.length, 1);
+  assert.equal(left.jukebox.queue.length, 0, 'the waiting copy went with it');
+});
+
 test('five blows put an attendee down, and the sixth is refused while they are up', async () => {
   const thrower = await join('KILLER');
   const target = await join('VICTIM');

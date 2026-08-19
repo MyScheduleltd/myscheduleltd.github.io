@@ -59,7 +59,8 @@ export type WorldAction =
   | { type: 'donate'; target?: string; deity?: string }
   | { type: 'punch'; struck?: string; targetId?: string }
   | { type: 'punched'; droppedMentor: boolean; by?: string }
-  | { type: 'died'; by?: string };
+  | { type: 'died'; by?: string }
+  | { type: 'jukebox' };
 
 export interface AvatarPalette {
   skin: string;
@@ -739,6 +740,7 @@ export class FestivalWorld {
   private templeSignMaterial?: THREE.MeshBasicMaterial;
   private templeSignText = { name: '美麗本人', label: 'THE TEMPLE' };
   private templeAltar?: { x: number; z: number };
+  private jukebox?: { x: number; z: number };
   private lastDonationAt = 0;
   private lastPunchAt = 0;
   // A blow is felt three ways: the view is jolted, the body is thrown, and the
@@ -1857,6 +1859,11 @@ export class FestivalWorld {
       return;
     }
 
+    if (this.nearJukebox()) {
+      this.onAction({ type: 'jukebox' });
+      return;
+    }
+
     if (this.nearShopCounter()) {
       this.onAction({ type: 'shop' });
       return;
@@ -2782,6 +2789,7 @@ export class FestivalWorld {
     }
 
     this.createProgrammeBoard();
+    this.createJukebox();
     this.createShoreScreen();
     this.createPalace();
     this.createDriveIn();
@@ -2864,6 +2872,41 @@ export class FestivalWorld {
       }
     }
 
+  }
+
+  /**
+   * The jukebox, on the east side of the square between the timetable and the
+   * road. It is put where somebody crossing the square passes it rather than
+   * out on the edge of the map: this is the one object in the festival whose
+   * whole purpose is to be walked up to by strangers, and the square is where
+   * the strangers are. Clear of the road at x = 13, and clear of the board's
+   * posts, so it blocks nobody's way anywhere.
+   */
+  private createJukebox(): void {
+    const x = 13;
+    const z = 5;
+    const shell = material(0x2a1512, 0.62, 0.18);
+    const trim = material(0xc9a227, 0.34, 0.66);
+    const glass = new THREE.MeshStandardMaterial({
+      color: 0xff5a3c, emissive: 0xff4a2a, emissiveIntensity: 0.85, roughness: 0.4,
+    });
+    // A cabinet with a lit arch over it, which is the whole silhouette at this
+    // resolution — nobody needs to read the record titles off the object.
+    this.mesh([2.4, 0.5, 1.5], [x, 0.25, z], shell);
+    this.mesh([2.2, 2.4, 1.3], [x, 1.7, z], shell);
+    this.mesh([1.7, 0.9, 0.12], [x, 2.1, z - 0.68], glass);
+    this.mesh([2.4, 0.34, 1.5], [x, 3.1, z], trim);
+    this.mesh([1.9, 0.42, 1.1], [x, 3.42, z], glass);
+    for (const side of [-1, 1]) {
+      this.mesh([0.16, 2.2, 0.16], [x + side * 1.05, 1.85, z - 0.62], trim);
+    }
+    // The one light it throws, so the square has a warm corner after dark.
+    const glow = new THREE.PointLight(0xff7a44, 26, 15, 1.6);
+    glow.position.set(x, 2.6, z - 1.2);
+    this.scene.add(glow);
+    this.dayNight.addLampLight(glow, 1);
+    this.addCollider(x, z, 2.4, 1.5);
+    this.jukebox = { x, z };
   }
 
   private createProgrammeBoard(): void {
@@ -3872,6 +3915,14 @@ export class FestivalWorld {
     // Deck and parapet.
     const deck = this.mesh([width, 0.5, deckDepth], [centerX, ROOF_Y - 0.25, deckCenterZ], material(0x54463c, 0.7, 0.15));
     deck.receiveShadow = true;
+    // And it casts, which is not the default here — casting is opt-in because
+    // every caster is redrawn into the sun's shadow map each frame. The deck
+    // has to be one: the resident DJ stands on it, and with the floor under her
+    // absent from the shadow map the sun ran straight through it and printed
+    // her shadow on the soffit of the garage below, where she is not standing.
+    // A floor somebody stands on has to be in the map, or everything on it
+    // leaks through to whatever is underneath.
+    deck.castShadow = true;
     deck.userData.projectorBackground = true;
     // East parapet runs the whole depth. The west one is cut open across the
     // stair's top landing: that gap is the door onto the deck, and the reason
@@ -6234,6 +6285,7 @@ export class FestivalWorld {
     }
     if (this.carriedItem === 'DRINK') return 'SHIFT+E / DRINK UP';
     if (this.nearClubBar()) return 'E / ORDER A DRINK';
+    if (this.nearJukebox()) return 'E / PUT A RECORD ON';
     if (this.nearShopCounter()) return 'E / OPEN THE POP-UP STORE';
     const dj = this.nearbyDj();
     if (dj) return `E / REQUEST A TRACK FROM ${dj.name}`;
@@ -6280,6 +6332,16 @@ export class FestivalWorld {
    * Within reach of the pop-up store's frontage. Measured to the whole counter
    * rather than a point in front of it, so any approach along it works.
    */
+  /** Within arm's reach of the jukebox, on any side of it. */
+  private nearJukebox(): boolean {
+    if (!this.jukebox) return false;
+    if (Math.abs(this.player.position.y - AVATAR_GROUND_Y) > 2.6) return false;
+    return Math.hypot(
+      this.player.position.x - this.jukebox.x,
+      this.player.position.z - this.jukebox.z,
+    ) < 4.2;
+  }
+
   private nearShopCounter(): boolean {
     if (!this.shopCounter) return false;
     const alongCounter = Math.max(0, Math.abs(this.shopCounter.x - this.player.position.x) - 15);

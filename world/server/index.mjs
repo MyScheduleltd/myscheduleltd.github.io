@@ -195,6 +195,55 @@ const CLUB_QUEUE_LIMIT = 12;
 // Requested tracks waiting their turn. Live session state, so it is not saved:
 // the attendees who asked are gone after a restart anyway.
 const venueQueues = { club: [], rooftop: [] };
+/**
+ * The jukebox in the square. STAFF stock it by YouTube link; anyone standing at
+ * it puts a record on the end of one shared list, and the whole festival hears
+ * the same thing at the same point of it. That is what separates it from the DJ
+ * booths, which play to one room and take requests for that room only.
+ *
+ * Nothing is streamed from here. The service holds the running order and the
+ * moment the current record started, and each client plays from that offset, so
+ * somebody arriving late comes in partway through it as they would in a bar.
+ */
+const jukeboxTracks = [];
+const jukeboxQueue = [];
+let jukeboxNowPlaying = null;
+/** What a record is assumed to run for until a client that has it open says. */
+const JUKEBOX_DEFAULT_SECONDS = 215;
+const jukeboxDurations = new Map();
+
+const jukeboxSnapshot = () => ({
+  tracks: jukeboxTracks,
+  queue: jukeboxQueue,
+  nowPlaying: jukeboxNowPlaying,
+});
+
+/**
+ * Moves the jukebox on when the current record has run its length, and starts
+ * one if nothing is playing. Called wherever the state is about to be read, so
+ * the running order is right without a timer of its own ticking in the corner.
+ */
+const advanceJukebox = () => {
+  const now = Date.now();
+  if (jukeboxNowPlaying) {
+    const seconds = jukeboxDurations.get(jukeboxNowPlaying.youtubeId) ?? JUKEBOX_DEFAULT_SECONDS;
+    if (now - jukeboxNowPlaying.startedAt < seconds * 1000) return false;
+  }
+  const previousId = jukeboxNowPlaying?.youtubeId;
+  jukeboxNowPlaying = null;
+  const next = jukeboxQueue.shift();
+  if (next) {
+    jukeboxNowPlaying = { ...next, startedAt: now };
+    return true;
+  }
+  // Nothing requested. Work through the stock in order instead, so the square
+  // is never silent while there is anything in the machine to play.
+  if (!jukeboxTracks.length) return false;
+  const from = jukeboxTracks.findIndex((track) => track.youtubeId === previousId);
+  const pick = jukeboxTracks[(from + 1) % jukeboxTracks.length];
+  jukeboxNowPlaying = { ...pick, requestedBy: null, requestedByName: null, startedAt: now };
+  return true;
+};
 const isDjVenue = (value) => Object.prototype.hasOwnProperty.call(venueQueues, value);
 // The most recent request, so every client can credit whoever asked.
 let clubRequest = null;
@@ -419,6 +468,9 @@ const persistedSnapshot = () => ({
   trackDurations,
   adminKeyDigest,
   messages,
+  // The stock survives a restart; the running order does not, because a queue
+  // of requests from people who have since left is not worth restoring.
+  jukeboxTracks,
 });
 
 let persistTimer;
@@ -622,6 +674,16 @@ const restorePersistedState = () => {
     });
   }
 
+  if (Array.isArray(saved.jukeboxTracks)) {
+    for (const entry of saved.jukeboxTracks.slice(0, 120)) {
+      const youtubeId = safeText(entry?.youtubeId, 24);
+      const title = safeText(entry?.title, 120);
+      if (!validYoutubeId(youtubeId) || !title) continue;
+      if (jukeboxTracks.some((track) => track.youtubeId === youtubeId)) continue;
+      jukeboxTracks.push({ id: youtubeId, youtubeId, title });
+    }
+  }
+
   if (saved.shopLink && typeof saved.shopLink === 'object') {
     Object.assign(shopLink, {
       url: safeExternalUrl(saved.shopLink.url),
@@ -779,6 +841,7 @@ const stateFor = (visitor) => ({
   templeSign,
   gateCopy,
   trackTempos,
+  jukebox: jukeboxSnapshot(),
 });
 
 const writeEvent = (response, event, data) => {
@@ -788,6 +851,7 @@ const writeEvent = (response, event, data) => {
 const broadcast = () => {
   broadcastTimer = undefined;
   settleAllSchedules();
+  advanceJukebox();
   for (const [sessionId, responseSet] of streams) {
     const visitor = visitors.get(sessionId);
     if (!visitor) continue;
@@ -887,7 +951,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === 'GET' && url.pathname === '/api/config') {
       settleAllSchedules();
-      return json(response, 200, { schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, gateCopy, trackTempos, clubRequest, venueQueues });
+      return json(response, 200, { schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, gateCopy, trackTempos, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
@@ -1109,6 +1173,34 @@ const server = createServer(async (request, response) => {
       if (died && struck.seatedAt) struck.seatedAt = undefined;
       scheduleBroadcast();
       return json(response, 200, { ok: true, hit: { id: struck.id, name: struck.name, droppedMentor, died } });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/jukebox/request') {
+      if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+      const payload = await body(request);
+      const trackId = safeText(payload.trackId, 24);
+      const track = jukeboxTracks.find((entry) => entry.id === trackId);
+      if (!track) return apiError(response, 400, 'That record is not in the jukebox.');
+      // One at a time each, or a single attendee fills the evening.
+      if (jukeboxQueue.some((entry) => entry.requestedBy === visitor.id)) {
+        return apiError(response, 409, 'You already have a record waiting.');
+      }
+      if (jukeboxQueue.length >= 24) return apiError(response, 409, 'The jukebox is full.');
+      jukeboxQueue.push({ ...track, requestedBy: visitor.id, requestedByName: visitor.name });
+      advanceJukebox();
+      scheduleBroadcast();
+      return json(response, 200, { ok: true, jukebox: jukeboxSnapshot() });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/jukebox/duration') {
+      if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+      const payload = await body(request);
+      const youtubeId = safeText(payload.youtubeId, 24);
+      const seconds = clampNumber(payload.seconds, 5, 3600, 0);
+      // Whoever is actually playing it knows how long it runs; without this the
+      // running order moves on at a guess and everyone drifts apart.
+      if (validYoutubeId(youtubeId) && seconds) jukeboxDurations.set(youtubeId, seconds);
+      return json(response, 202, { ok: true });
     }
 
     // A request to the resident DJ. Unlike a private screening this changes
@@ -1539,6 +1631,34 @@ const server = createServer(async (request, response) => {
         scheduleBroadcast();
         persist();
         return json(response, 200, { ok: true, templeSign });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/jukebox') {
+        const remove = safeText(payload.remove, 24);
+        if (remove) {
+          const index = jukeboxTracks.findIndex((track) => track.id === remove);
+          if (index < 0) return apiError(response, 400, 'That record is not in the jukebox.');
+          jukeboxTracks.splice(index, 1);
+          // Anything of that record still waiting goes with it.
+          for (let at = jukeboxQueue.length - 1; at >= 0; at -= 1) {
+            if (jukeboxQueue[at].id === remove) jukeboxQueue.splice(at, 1);
+          }
+          scheduleBroadcast();
+          persist();
+          return json(response, 200, { ok: true, jukebox: jukeboxSnapshot() });
+        }
+        const youtubeId = youtubeIdFromUrl(safeText(payload.url, 300));
+        const title = safeText(payload.title, 120);
+        if (!validYoutubeId(youtubeId)) return apiError(response, 400, 'That is not a YouTube link this can read.');
+        if (!title) return apiError(response, 400, 'Give the record a title.');
+        if (jukeboxTracks.some((track) => track.youtubeId === youtubeId)) {
+          return apiError(response, 409, 'That record is already in the jukebox.');
+        }
+        if (jukeboxTracks.length >= 120) return apiError(response, 409, 'The jukebox is full.');
+        jukeboxTracks.push({ id: youtubeId, youtubeId, title });
+        advanceJukebox();
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true, jukebox: jukeboxSnapshot() });
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/dj-profile') {
         const id = safeText(payload.id, 40).toUpperCase();

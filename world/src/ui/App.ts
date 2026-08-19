@@ -37,7 +37,7 @@ import {
 } from '../world/FestivalWorld';
 
 type Language = 'en' | 'zh-TW';
-type PanelId = 'map' | 'programme' | 'chat' | 'attendees' | 'pamphlet' | 'character' | 'sound' | 'graphics' | 'controls' | 'contact' | 'admin';
+type PanelId = 'map' | 'programme' | 'jukebox' | 'chat' | 'attendees' | 'pamphlet' | 'character' | 'sound' | 'graphics' | 'controls' | 'contact' | 'admin';
 
 interface ChatMessage {
   id: string;
@@ -134,13 +134,24 @@ const copy = {
   },
 } as const;
 
+/** The jukebox slider is the attendee's own, kept on their machine. */
+const JUKEBOX_VOLUME_KEY = 'myschedule-jukebox-volume-v1';
+const readStoredJukeboxVolume = (): number => {
+  try {
+    const stored = Number(window.localStorage.getItem(JUKEBOX_VOLUME_KEY));
+    return Number.isFinite(stored) && stored >= 0 && stored <= 1 ? stored : 0.4;
+  } catch {
+    return 0.4;
+  }
+};
+
 const panelLabels: Record<Language, Record<PanelId, string>> = {
   en: {
-    map: 'MAP', programme: 'PROGRAMME', chat: 'CHAT', attendees: 'ATTENDEES', pamphlet: 'PAMPHLET', character: 'CHARACTER',
+    map: 'MAP', programme: 'PROGRAMME', jukebox: 'JUKEBOX', chat: 'CHAT', attendees: 'ATTENDEES', pamphlet: 'PAMPHLET', character: 'CHARACTER',
     sound: 'SOUND', graphics: 'GRAPHICS', controls: 'CONTROLS', contact: 'CONTACT', admin: 'STAFF',
   },
   'zh-TW': {
-    map: '地圖', programme: '節目表', chat: '聊天', attendees: '觀影者', pamphlet: '影展手冊', character: '角色',
+    map: '地圖', programme: '節目表', jukebox: '點唱機', chat: '聊天', attendees: '觀影者', pamphlet: '影展手冊', character: '角色',
     sound: '聲音', graphics: '畫質', controls: '操作', contact: '聯絡', admin: '工作人員',
   },
 };
@@ -218,6 +229,12 @@ export class App {
   /** The last blow this attendee took, so one is played out only once. */
   private lastHitAt = 0;
   private lastDeathAt = 0;
+  private jukeboxVolume = readStoredJukeboxVolume();
+  private jukeboxFrame?: HTMLIFrameElement;
+  private jukeboxPlayingId?: string;
+  private jukeboxStartedAt = 0;
+  private jukeboxSilenced = false;
+  private jukeboxRendered = '';
   private viewMode: 'normal' | 'camera' | 'postcard' = 'normal';
   private postcardFilter = 'none';
   private cameraHintTimer = 0;
@@ -756,6 +773,7 @@ export class App {
       inventory.innerHTML = chips.map((chip) => `<span>${chip}</span>`).join('');
     }
     this.syncVenueScreen(snapshot);
+    this.syncJukebox();
     void this.festivalClient.publishPresence({
       x: snapshot.x,
       y: snapshot.y,
@@ -845,6 +863,10 @@ export class App {
         }
         this.showWorldAlert(this.language === 'zh-TW' ? `${mentorName} 已放回地面` : `${mentorName} IS BACK ON THE GROUND`);
       }
+      return;
+    }
+    if (action.type === 'jukebox') {
+      this.openPanel('jukebox');
       return;
     }
     if (action.type === 'shop') {
@@ -1689,6 +1711,16 @@ export class App {
       this.lastDeathAt = diedAt;
       this.world?.die(self?.killedBy);
     }
+    // The running order is a shared thing that moves without this attendee
+    // touching anything, so an open jukebox panel has to follow it. Compared
+    // rather than redrawn every tick, or the list rebuilds under the cursor.
+    if (this.activePanel === 'jukebox') {
+      const signature = JSON.stringify(state.jukebox ?? null);
+      if (signature !== this.jukeboxRendered) {
+        this.jukeboxRendered = signature;
+        this.openPanel('jukebox');
+      }
+    }
     if (state.templeSign) this.world?.setTempleSign(state.templeSign.name, state.templeSign.label);
     this.world?.setSharedMentorCarrier(state.mentorCarrierId, state.selfId);
     const remoteVisitors = state.visitors
@@ -1853,6 +1885,90 @@ export class App {
     } else {
       // Leaving the caption focused would swallow WASD.
       (document.activeElement as HTMLElement | null)?.blur();
+    }
+  }
+
+  /**
+   * The jukebox's own player: one hidden YouTube frame, seeked to wherever the
+   * service says the record has got to, so everybody in the square is at the
+   * same bar of it however long ago they arrived.
+   *
+   * It is deliberately not part of the world's audio graph. That graph is for
+   * things with a place in the world — the sea, the room tone — and is ducked
+   * and panned accordingly. This is a record playing over the whole festival,
+   * and the only thing it answers to is the attendee's own slider.
+   */
+  private syncJukebox(): void {
+    const jukebox = this.networkState?.jukebox;
+    const playing = jukebox?.nowPlaying;
+    if (!playing) {
+      this.stopJukebox();
+      return;
+    }
+    // Inside a screening room the film is the point, so the square's record is
+    // not carried in there. Same in the club and on the deck, where a resident
+    // DJ is already playing to the room.
+    const venue = this.snapshot?.screeningVenue;
+    const inItsOwnRoom = Boolean(this.snapshot?.inTheater) || venue === 'club' || venue === 'rooftop';
+    const silenced = this.audioMuted || inItsOwnRoom;
+    if (silenced !== this.jukeboxSilenced) {
+      this.jukeboxSilenced = silenced;
+      this.applyJukeboxVolume();
+    }
+    if (this.jukeboxPlayingId === playing.youtubeId && this.jukeboxStartedAt === playing.startedAt) return;
+    this.jukeboxPlayingId = playing.youtubeId;
+    this.jukeboxStartedAt = playing.startedAt;
+    const offset = Math.max(0, Math.floor((Date.now() - playing.startedAt) / 1000));
+    this.mountJukeboxFrame(playing.youtubeId, offset);
+  }
+
+  private mountJukeboxFrame(youtubeId: string, offsetSeconds: number): void {
+    let frame = this.jukeboxFrame;
+    if (!frame) {
+      frame = document.createElement('iframe');
+      frame.className = 'jukebox-player';
+      frame.title = 'Festival jukebox';
+      frame.allow = 'autoplay; encrypted-media';
+      frame.setAttribute('aria-hidden', 'true');
+      this.root.querySelector('.world-shell')?.appendChild(frame);
+      this.jukeboxFrame = frame;
+    }
+    const url = new URL(`https://www.youtube.com/embed/${encodeURIComponent(youtubeId)}`);
+    url.searchParams.set('autoplay', '1');
+    // Browsers refuse to start audio that no gesture asked for. The attendee
+    // has already chosen sound or silence at the gate; when they chose silence
+    // this starts muted and the slider brings it up.
+    url.searchParams.set('mute', this.audioMuted ? '1' : '0');
+    url.searchParams.set('controls', '0');
+    url.searchParams.set('playsinline', '1');
+    url.searchParams.set('rel', '0');
+    url.searchParams.set('enablejsapi', '1');
+    url.searchParams.set('start', String(offsetSeconds));
+    if (window.location.origin !== 'null') url.searchParams.set('origin', window.location.origin);
+    frame.src = url.toString();
+    this.applyJukeboxVolume();
+  }
+
+  private stopJukebox(): void {
+    if (!this.jukeboxFrame) return;
+    this.jukeboxFrame.remove();
+    this.jukeboxFrame = undefined;
+    this.jukeboxPlayingId = undefined;
+    this.jukeboxStartedAt = 0;
+  }
+
+  private applyJukeboxVolume(): void {
+    const frame = this.jukeboxFrame?.contentWindow;
+    if (!frame) return;
+    const level = this.jukeboxSilenced || this.audioMuted ? 0 : Math.round(this.jukeboxVolume * 100);
+    const send = (func: string, args: unknown[] = []) => {
+      frame.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
+    };
+    send('setVolume', [level]);
+    if (level === 0) send('mute');
+    else {
+      send('unMute');
+      send('playVideo');
     }
   }
 
@@ -2027,11 +2143,46 @@ export class App {
           <div class="panel-palette">${paletteInputs
             .map((slot) => `<label><span>${paletteLabels[this.language][slot]}</span><input type="color" data-world-palette="${slot}" value="${this.palette[slot]}" /></label>`)
             .join('')}</div>`;
+      case 'jukebox': {
+        const zh = this.language === 'zh-TW';
+        const jukebox = this.networkState?.jukebox;
+        if (!jukebox || !jukebox.tracks.length) {
+          return `<p class="panel-intro">${zh
+            ? '點唱機還是空的。工作人員可以從工作人員面板放入唱片。'
+            : 'The jukebox is empty. STAFF stock it from the staff panel.'}</p>`;
+        }
+        const playing = jukebox.nowPlaying;
+        const mine = jukebox.queue.some((entry) => entry.requestedBy === this.networkState?.selfId);
+        return `
+          <p class="panel-intro">${zh
+            ? '整個影展一起聽同一張唱片。影廳、俱樂部與屋頂不受影響。'
+            : 'One record, heard across the whole festival. The theatres, the club and the rooftop are left alone.'}</p>
+          <div class="jukebox-now">
+            <span class="eyebrow">${zh ? '播放中' : 'NOW PLAYING'}</span>
+            <strong>${playing ? this.escapeHtml(playing.title) : (zh ? '安靜' : 'SILENT')}</strong>
+            ${playing?.requestedByName ? `<small>${zh ? '由' : 'FOR'} ${this.escapeHtml(playing.requestedByName)}</small>` : ''}
+          </div>
+          <div class="jukebox-queue">
+            <span class="eyebrow">${zh ? `等待中 · ${jukebox.queue.length}` : `WAITING · ${jukebox.queue.length}`}</span>
+            ${jukebox.queue.length
+              ? `<ol>${jukebox.queue.map((entry) => `<li><strong>${this.escapeHtml(entry.title)}</strong><small>${this.escapeHtml(entry.requestedByName ?? '')}</small></li>`).join('')}</ol>`
+              : `<p class="panel-note">${zh ? '沒有人排隊。' : 'Nobody is waiting.'}</p>`}
+          </div>
+          <span class="eyebrow">${zh ? '選一張' : 'PUT ONE ON'}</span>
+          ${mine ? `<p class="panel-note">${zh ? '你已經有一張在等了。' : 'You already have one waiting.'}</p>` : ''}
+          <div class="jukebox-picks">
+            ${jukebox.tracks.map((track) => `<button type="button" data-jukebox-pick="${this.escapeAttribute(track.id)}"${mine ? ' disabled' : ''}>${this.escapeHtml(track.title)}</button>`).join('')}
+          </div>`;
+      }
       case 'sound':
         return `
           <label class="range-field"><span>${this.language === 'zh-TW' ? '主音量' : 'MASTER'}</span><input data-volume="master" type="range" min="0" max="1" value="0.7" step="0.01" /></label>
           <label class="range-field"><span>${this.language === 'zh-TW' ? '環境音' : 'ENVIRONMENT'}</span><input data-volume="ambient" type="range" min="0" max="1" value="0.28" step="0.01" /></label>
           <label class="range-field"><span>${this.language === 'zh-TW' ? '放映音量' : 'SCREENING'}</span><input data-volume="screening" type="range" min="0" max="1" value="0.85" step="0.01" /></label>
+          <label class="range-field"><span>${this.language === 'zh-TW' ? '點唱機' : 'JUKEBOX'}</span><input data-volume="jukebox" type="range" min="0" max="1" value="${this.jukeboxVolume}" step="0.01" /></label>
+          <p class="panel-note">${this.language === 'zh-TW'
+            ? '點唱機音量只影響你自己，不會改變別人聽到的。'
+            : 'The jukebox slider is yours alone — it does not change what anybody else hears.'}</p>
           <button class="panel-button" data-mute="true">${this.audioMuted ? (this.language === 'zh-TW' ? '開啟聲音' : 'UNMUTE') : (this.language === 'zh-TW' ? '靜音' : 'MUTE')}</button>`;
       case 'graphics':
         return `
@@ -2096,11 +2247,32 @@ export class App {
         ? (this.language === 'zh-TW' ? '開啟聲音' : 'UNMUTE')
         : (this.language === 'zh-TW' ? '靜音' : 'MUTE');
     });
+    panel.querySelectorAll<HTMLButtonElement>('[data-jukebox-pick]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const trackId = button.dataset.jukeboxPick ?? '';
+        button.disabled = true;
+        void this.festivalClient.requestJukeboxTrack(trackId).then((result) => {
+          const zh = this.language === 'zh-TW';
+          if (!result.ok) {
+            button.disabled = false;
+            this.showWorldAlert(result.message ?? (zh ? '點播失敗' : 'THAT DID NOT GO ON'));
+            return;
+          }
+          this.showWorldAlert(zh ? '已排入點唱機' : 'QUEUED ON THE JUKEBOX');
+          if (this.activePanel === 'jukebox') this.openPanel('jukebox');
+        });
+      });
+    });
     panel.querySelectorAll<HTMLInputElement>('[data-volume]').forEach((input) => {
       input.addEventListener('input', () => {
         const value = Number(input.value);
         if (input.dataset.volume === 'master') this.world?.audio.setMasterVolume(value);
         if (input.dataset.volume === 'ambient') this.world?.audio.setAmbientVolume(value);
+        if (input.dataset.volume === 'jukebox') {
+          this.jukeboxVolume = value;
+          try { window.localStorage.setItem(JUKEBOX_VOLUME_KEY, String(value)); } catch { /* private mode */ }
+          this.applyJukeboxVolume();
+        }
         if (input.dataset.volume === 'screening') {
           this.world?.audio.setScreeningVolume(value);
           this.sendScreenCommand('setVolume', [Math.round(value * 100)]);
@@ -2137,6 +2309,30 @@ export class App {
           this.showWorldAlert(error instanceof Error ? error.message : (this.language === 'zh-TW' ? '儲存失敗' : 'COULD NOT SAVE'));
         }).finally(() => {
           if (button) button.disabled = false;
+        });
+      });
+      const jukeboxEditor = panel.querySelector<HTMLFormElement>('#jukebox-editor');
+      jukeboxEditor?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const data = new FormData(jukeboxEditor);
+        void this.festivalClient.updateJukebox(this.staffKey, {
+          url: String(data.get('url') ?? ''),
+          title: String(data.get('title') ?? ''),
+        })
+          .then(() => { this.adminError = ''; jukeboxEditor.reset(); return this.refreshAdminState(); })
+          .catch((error) => {
+            this.adminError = error instanceof Error ? error.message : 'Jukebox update failed.';
+            this.openPanel('admin');
+          });
+      });
+      panel.querySelectorAll<HTMLButtonElement>('[data-jukebox-remove]').forEach((button) => {
+        button.addEventListener('click', () => {
+          void this.festivalClient.updateJukebox(this.staffKey, { remove: button.dataset.jukeboxRemove ?? '' })
+            .then(() => { this.adminError = ''; return this.refreshAdminState(); })
+            .catch((error) => {
+              this.adminError = error instanceof Error ? error.message : 'Jukebox update failed.';
+              this.openPanel('admin');
+            });
         });
       });
       const templeEditor = panel.querySelector<HTMLFormElement>('#temple-sign-editor');
@@ -2607,6 +2803,19 @@ export class App {
         <label><span>${this.language === 'zh-TW' ? '店名（英）' : 'STORE NAME (EN)'}</span><input name="label" maxlength="60" value="${this.escapeAttribute(this.adminState.shopLink?.label ?? '')}" /></label>
         <button type="submit">${this.language === 'zh-TW' ? '儲存商店連結' : 'SAVE STORE LINK'}</button>
       </form>`)}
+      ${this.staffSection('jukebox', this.language === 'zh-TW' ? '點唱機' : 'JUKEBOX', `
+      <form class="staff-form" id="jukebox-editor">
+        <p class="panel-intro">${this.language === 'zh-TW'
+          ? '放入唱片：貼上 YouTube 連結並取個名字。整個影展的廣場都會聽到，影廳、俱樂部與屋頂不受影響。'
+          : 'Stock the machine with a YouTube link and a name. It plays across the square and the open festival; the theatres, the club and the rooftop are left alone.'}</p>
+        <label><span>${this.language === 'zh-TW' ? 'YOUTUBE 連結' : 'YOUTUBE LINK'}</span><input name="url" placeholder="https://www.youtube.com/watch?v=…" /></label>
+        <label><span>${this.language === 'zh-TW' ? '曲名' : 'TITLE'}</span><input name="title" maxlength="120" /></label>
+        <button class="panel-button" type="submit">${this.language === 'zh-TW' ? '放入點唱機' : 'ADD TO THE JUKEBOX'}</button>
+      </form>
+      <ul class="staff-list">
+        ${(this.adminState.jukebox?.tracks ?? []).map((track) => `<li><strong>${this.escapeHtml(track.title)}</strong><button type="button" data-jukebox-remove="${this.escapeAttribute(track.id)}">${this.language === 'zh-TW' ? '取出' : 'REMOVE'}</button></li>`).join('')
+          || `<li><small>${this.language === 'zh-TW' ? '點唱機是空的。' : 'The jukebox is empty.'}</small></li>`}
+      </ul>`)}
       ${this.staffSection('temple', this.language === 'zh-TW' ? '寺廟看板' : 'TEMPLE SIGN', `
       <form class="staff-form" id="temple-sign-editor">
         <p class="staff-note">${this.language === 'zh-TW'

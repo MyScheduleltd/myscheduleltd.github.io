@@ -132,6 +132,7 @@ export interface FestivalState {
   djProfiles: DjProfiles;
   shopLink: ShopLink;
   templeSign: TempleSign;
+  jukebox?: JukeboxState;
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
 }
@@ -155,6 +156,7 @@ export interface AdminState {
   templeSign: TempleSign;
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
+  jukebox?: JukeboxState;
 }
 
 /** A resident DJ's introduction, shown from their booth. */
@@ -191,6 +193,21 @@ export interface WaitingPlace {
   ahead: number;
   capacity: number;
   inside: number;
+}
+
+export interface JukeboxTrack {
+  id: string;
+  youtubeId: string;
+  title: string;
+}
+export interface JukeboxEntry extends JukeboxTrack {
+  requestedBy: string | null;
+  requestedByName: string | null;
+}
+export interface JukeboxState {
+  tracks: JukeboxTrack[];
+  queue: JukeboxEntry[];
+  nowPlaying: (JukeboxEntry & { startedAt: number }) | null;
 }
 
 export interface TempleSign {
@@ -351,6 +368,25 @@ export class FestivalClient {
     this.lastPresence = payload;
     this.lastPresenceAt = now;
     await this.request('/api/presence', { method: 'POST', body: payload }, false);
+  }
+
+  async requestJukeboxTrack(trackId: string): Promise<{ ok: boolean; message?: string }> {
+    return this.action('/api/jukebox/request', { trackId });
+  }
+
+  async reportJukeboxDuration(youtubeId: string, seconds: number): Promise<void> {
+    if (!this.session || this.closed) return;
+    await this.request('/api/jukebox/duration', {
+      method: 'POST',
+      body: JSON.stringify({ youtubeId, seconds }),
+    }, false).catch(() => undefined);
+  }
+
+  async updateJukebox(key: string, payload: { url?: string; title?: string; remove?: string }): Promise<void> {
+    await this.adminRequest('/api/admin/jukebox', key, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   }
 
   async throwPunch(targetId?: string): Promise<{ hit?: { id: string; name: string; droppedMentor: boolean } | null }> {
