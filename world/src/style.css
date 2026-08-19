@@ -108,6 +108,13 @@ input:focus, input:focus-visible, textarea:focus, textarea:focus-visible, select
   border-bottom: 1px solid rgba(255,255,255,.22); background: linear-gradient(rgba(6,7,8,.64), transparent);
 }
 .gate__brand { align-items: flex-end; }
+/* Belongs to the page, not to the window. Pinned, it stayed put while the card
+   scrolled up underneath it, so a card taller than the screen — which it is,
+   once the staff door is open — slid behind the banner and was clipped by it.
+   The gate is the thing that scrolls and this sits inside it, so being absolute
+   is enough to carry it along and out of the way. The world's own header keeps
+   its pin; only the gate's is loosened. */
+.gate__brand { position: absolute; }
 .gate__brand .phase-badge { align-self: center; }
 .gate__brand > span:not(.phase-badge), .world-brand > span {
   position: relative; left: var(--brand-offset-x); top: var(--brand-offset-y);
@@ -944,13 +951,6 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 @media (max-width: 780px), (pointer: coarse) and (hover: none) {
   body { overflow: auto; }
   .gate { align-items: start; padding: 104px 14px 28px; }
-  /* The sign-in banner was pinned to the window while everything else scrolled,
-     so the card's own title slid up underneath it and showed through — two
-     headings printed over each other. It belongs to the page here, not to the
-     window: it is inside the thing that scrolls, so making it absolute is
-     enough to carry it along. The world's header keeps its pin; only the gate's
-     is loosened, and it is the gate that scrolls. */
-  .gate__brand { position: absolute; }
   .gate__sun { left: -20%; top: 12%; }
   .gate__city { left: 18%; top: 27%; }
   .gate-card { margin: 0; padding: 24px 20px; box-shadow: 10px 10px 0 rgba(15,15,16,.7); }

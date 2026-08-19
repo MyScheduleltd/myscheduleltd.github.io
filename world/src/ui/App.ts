@@ -430,12 +430,13 @@ export class App {
             <span>${text.remember}</span>
           </label>
 
-          <details class="gate-staff">
+          ${App.staffEntranceAsked() ? `
+          <details class="gate-staff" open>
             <summary>${this.language === 'zh-TW' ? '工作人員入口' : 'STAFF ENTRANCE'}</summary>
-            <label class="field-label" for="gate-staff-key">${this.language === 'zh-TW' ? '工作人員金鑰（選填）' : 'STAFF KEY (OPTIONAL)'}</label>
+            <label class="field-label" for="gate-staff-key">${this.language === 'zh-TW' ? '工作人員金鑰' : 'STAFF KEY'}</label>
             <input id="gate-staff-key" type="password" autocomplete="off" spellcheck="false"
               placeholder="${this.language === 'zh-TW' ? '持金鑰可免排隊進場' : 'Skips the queue'}" />
-          </details>
+          </details>` : ''}
 
           <div class="gate-actions">
             <button class="button button--primary" type="submit" data-audio="sound">${text.sound}</button>
@@ -3788,6 +3789,21 @@ export class App {
    * touchscreen laptop has a coarse pointer and plenty of power, and a narrow
    * desktop window is still a desktop.
    */
+  /**
+   * Whether the gate should show its staff door. Asked for by name in the
+   * address — myscheduleltd.com/beta/?staff — so the entrance is not advertised
+   * to everybody arriving. It guards nothing on its own: the key is still the
+   * only thing that opens it, and the service is what checks that. This only
+   * keeps it out of sight of people it is no use to.
+   */
+  private static staffEntranceAsked(): boolean {
+    try {
+      return new URLSearchParams(window.location.search).has('staff');
+    } catch {
+      return false;
+    }
+  }
+
   private static looksLikeAPhone(): boolean {
     try {
       return window.matchMedia('(pointer: coarse)').matches && window.innerWidth < 900;
