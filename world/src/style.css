@@ -540,6 +540,13 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 .panel--chat .panel__body > .connection-note { flex: 0 0 auto; }
 .panel--chat .panel__body > .chat-feed {
   flex: 1 1 auto; min-height: 0;
+  /* The conversation carries a cap of forty-two per cent of the screen from
+     when the body was one long scroller and something had to stop it running
+     away. Inside a column that already bounds it, that cap only starves it:
+     the panel can be made as tall as you like and the messages stay in their
+     one hundred and sixty pixels while empty space collects underneath. It
+     takes whatever the panel has now. */
+  max-height: none;
   overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
   touch-action: pan-y;
 }
@@ -1106,7 +1113,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
    figure let some of them fall through to the desk layout — which is a chat
    panel sized for a screen twice as tall. Six hundred still cannot be reached
    by a tablet on its side. */
-@media (orientation: landscape) and (max-height: 600px) {
+@media (orientation: landscape) and (max-height: 600px), (orientation: landscape) and (pointer: coarse) {
   .touch-stick { width: 92px; height: 92px; left: calc(14px + env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom)); }
   .touch-stick__knob { width: 40px; height: 40px; }
   .touch-ring__hit { width: 50px; height: 50px; right: calc(35px + env(safe-area-inset-right)); bottom: calc(52px + env(safe-area-inset-bottom)); }
@@ -1169,10 +1176,14 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   /* A panel keeping its upright margins on a screen this short was left about
      two hundred pixels tall with its own input cut off the bottom. It takes the
      screen instead, below the header, and scrolls inside itself. */
-  .panel {
-    inset: calc(44px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right))
-           calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
-    max-height: calc(100dvh - 54px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  /* Named together so the chat cannot fall back to its own roomier insets: it
+     is the panel that most needs the height, and every pixel spent on a margin
+     here is a line of conversation not shown. Held just clear of the header at
+     the top and just off the bottom edge. */
+  .panel, .panel--chat {
+    inset: calc(36px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right))
+           calc(8px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
+    max-height: calc(100dvh - 44px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     overflow: hidden;
   }
   .panel > * { min-height: 0; }
@@ -1206,8 +1217,15 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .chat-channels { margin-bottom: 6px; }
   .chat-form { margin-top: 8px; padding-block: 0; }
   .chat-form > label { display: none; }
-  .chat-feed article { padding: 6px 9px; }
-  .chat-feed article + article { margin-top: 6px; }
+  /* Everything round the conversation gives up a little so the conversation
+     gets more: the tabs lose height, the panel's own title bar tightens, and a
+     message is set closer without shrinking so far that it stops being
+     readable at arm's length. */
+  .chat-channels button { min-height: 0; height: 32px; padding: 0 8px; font-size: 12px; }
+  .chat-feed article { padding: 5px 9px; }
+  .chat-feed article + article { margin-top: 5px; }
+  .chat-feed article header { font-size: 10px; }
+  .chat-feed article p { font-size: 13px; line-height: 1.25; }
   .connection-note { display: none; margin: 0; }
   .venue-screen { top: 62px; }
   .world-alert { top: 54px; }
