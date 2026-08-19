@@ -2915,7 +2915,19 @@ export class FestivalWorld {
     // answers in avatar origins, which is the floor plus AVATAR_GROUND_Y, so
     // that comes back off. The fromY is given explicitly because this runs
     // while the world is still being built and there is no player to read yet.
-    const floorY = this.groundHeightAt(x, z, 0) - AVATAR_GROUND_Y;
+    // Sampled at the four corners of the footprint, not just the middle. It
+    // stands where a kerb runs under one side of it, so the centre reads a
+    // height the far corner does not have and the low side was left cut off by
+    // the ground. Taking the highest of the four puts the whole cabinet on the
+    // upper surface; the skirt below deals with the rest.
+    const halfDepth = 0.75;
+    const halfWidth = 1.2;
+    const floorY = Math.max(
+      this.groundHeightAt(x - halfDepth, z - halfWidth, 0),
+      this.groundHeightAt(x + halfDepth, z - halfWidth, 0),
+      this.groundHeightAt(x - halfDepth, z + halfWidth, 0),
+      this.groundHeightAt(x + halfDepth, z + halfWidth, 0),
+    ) - AVATAR_GROUND_Y;
     cabinet.position.set(x, floorY, z);
     // Built facing -z; a quarter turn puts that front on -x, towards the road.
     cabinet.rotation.y = Math.PI / 2;
@@ -2927,7 +2939,12 @@ export class FestivalWorld {
     });
     // A cabinet with a lit arch over it, which is the whole silhouette at this
     // resolution — nobody needs to read the record titles off the object.
-    this.mesh([2.4, 0.5, 1.5], [0, 0.25, 0], shell, cabinet);
+    // The plinth runs a metre below the seating plane. groundHeightAt only
+    // knows the floors that can be walked on, and the lot here is dressed with
+    // kerbs and aprons it has never heard of, so the exact drop under any one
+    // corner is not knowable from here. A skirt buried in the ground reads as a
+    // cabinet standing on it; a cabinet cut off by it does not.
+    this.mesh([2.4, 2, 1.5], [0, -0.5, 0], shell, cabinet);
     this.mesh([2.2, 2.4, 1.3], [0, 1.7, 0], shell, cabinet);
     this.mesh([1.7, 0.9, 0.12], [0, 2.1, -0.68], glass, cabinet);
     this.mesh([2.4, 0.34, 1.5], [0, 3.1, 0], trim, cabinet);
@@ -5248,7 +5265,7 @@ export class FestivalWorld {
     );
     if (this.moveVector.lengthSq() === 0) return;
     this.moveVector.normalize().multiplyScalar(distance);
-    const previous = this.player.position.clone();
+
     const nextX = this.player.position.x + this.moveVector.x;
     const nextZ = this.player.position.z + this.moveVector.z;
     // A step has to be clear at the height being left as well as the height
@@ -5290,7 +5307,7 @@ export class FestivalWorld {
     this.player.position.z = THREE.MathUtils.clamp(this.player.position.z, -75, GATE_Z - 2);
     const reach = this.walkableXRange(this.player.position.z);
     this.player.position.x = THREE.MathUtils.clamp(this.player.position.x, reach.min, reach.max);
-    this.resolvePlayerCrowdCollisions(previous);
+    this.resolvePlayerCrowdCollisions();
     this.player.rotation.y = Math.atan2(this.moveVector.x, this.moveVector.z);
   }
 
@@ -5934,9 +5951,13 @@ export class FestivalWorld {
   private npcCollides(npc: NpcAvatar, x: number, z: number): boolean {
     if (this.staticCollides(x, z, npc.group.position.y)) return true;
     const radiusSq = 1.05 * 1.05;
+    // Wider than the separation distance the pass above enforces, so a resident
+    // stops short of an attendee rather than walking into them and being shoved
+    // out again — which is what made two bodies draw through each other.
+    const playerRadiusSq = 1.32 * 1.32;
     const playerDx = this.player.position.x - x;
     const playerDz = this.player.position.z - z;
-    if (playerDx * playerDx + playerDz * playerDz < radiusSq) return true;
+    if (playerDx * playerDx + playerDz * playerDz < playerRadiusSq) return true;
     for (const other of this.npcs) {
       if (other === npc) continue;
       if (other.id === this.controlledNpcId) continue;
@@ -5953,7 +5974,18 @@ export class FestivalWorld {
     return false;
   }
 
-  private resolvePlayerCrowdCollisions(previous: THREE.Vector3): void {
+  /**
+   * Holds bodies out of each other without ever being able to trap one.
+   *
+   * The rule that wedged people was the last resort below: when the shove that
+   * would separate two bodies ran into scenery, the attendee was put back where
+   * they had been at the start of the frame. Standing between a resident and a
+   * wall, that undid every step they took to walk out of it — the harder they
+   * pushed, the more reliably they were returned. Nothing now moves an attendee
+   * backwards; if there is nowhere to shove them, they are left where their own
+   * movement put them, which is always a way out.
+   */
+  private resolvePlayerCrowdCollisions(): void {
     const minimumDistance = 1.12;
     const separate = (position: THREE.Vector3, yieldNpc?: NpcAvatar) => {
       // Floors are stacked in this world — the deck is seven up, the basement
@@ -5976,10 +6008,15 @@ export class FestivalWorld {
 
       // NPCs yield a short step when possible, so a group cannot form a hard
       // ring around the attendee. Solid scenery still remains authoritative.
+      // A resident gives way first, and will step aside as well as back: with
+      // only the straight retreat to try, one standing against a wall had
+      // nowhere to go and the attendee wore the whole overlap.
       if (yieldNpc) {
-        const npcX = position.x - nx * overlap;
-        const npcZ = position.z - nz * overlap;
-        if (!this.staticCollides(npcX, npcZ, yieldNpc.group.position.y)) {
+        const escapes: Array<[number, number]> = [[-nx, -nz], [-nz, nx], [nz, -nx]];
+        for (const [ax, az] of escapes) {
+          const npcX = position.x + ax * overlap;
+          const npcZ = position.z + az * overlap;
+          if (this.staticCollides(npcX, npcZ, yieldNpc.group.position.y)) continue;
           yieldNpc.group.position.x = npcX;
           yieldNpc.group.position.z = npcZ;
           yieldNpc.waitUntil = performance.now() + 360;
@@ -5987,15 +6024,24 @@ export class FestivalWorld {
         }
       }
 
+      // Otherwise the attendee is moved out, sliding along whichever axis is
+      // free when the direct line is not.
       const playerX = this.player.position.x + nx * overlap;
       const playerZ = this.player.position.z + nz * overlap;
       if (!this.staticCollides(playerX, playerZ)) {
         this.player.position.x = playerX;
         this.player.position.z = playerZ;
-      } else {
-        this.player.position.x = previous.x;
-        this.player.position.z = previous.z;
+        return;
       }
+      if (!this.staticCollides(playerX, this.player.position.z)) {
+        this.player.position.x = playerX;
+        return;
+      }
+      if (!this.staticCollides(this.player.position.x, playerZ)) {
+        this.player.position.z = playerZ;
+      }
+      // Nowhere at all to put them: leave the body where it is. Overlapping for
+      // a moment is a great deal better than being pinned in place.
     };
 
     for (const npc of this.npcs) {
