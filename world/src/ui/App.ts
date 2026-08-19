@@ -69,6 +69,11 @@ interface SavedProfile {
  * short enough that it does not feel like the prompt is ignoring them.
  */
 const PROMPT_HOLD_MS = 450;
+/**
+ * How long the corner stays in sight after it clears the frame, so somebody
+ * learns where it is while they are still looking at it.
+ */
+const CAMERA_CORNER_CUE_MS = 1_100;
 
 const PROFILE_KEY = 'myschedule-festival-profile-v1';
 const PRIVATE_PROGRESS_KEY = 'myschedule-private-screening-v1';
@@ -236,6 +241,7 @@ export class App {
   private promptHoldTimer = 0;
   private promptHeld = false;
   private cameraHidden = false;
+  private cameraCornerCueTimer = 0;
   private publicFilmId?: string;
   private openDjBooth?: { name: string; venue: 'club' | 'rooftop'; view: 'requests' | 'about' };
   /** Set once STAFF touch the introduction, so no update can redraw over them. */
@@ -2120,16 +2126,27 @@ export class App {
     // still the one place that answers a press — so the same corner puts the
     // controls back, and there is nothing left over the picture to find.
     const corner = this.root.querySelector<HTMLElement>('.world-camera-hide');
-    if (corner) {
-      if (up) {
-        corner.dataset.shown = 'on';
-        delete corner.dataset.armed;
-      } else {
-        delete corner.dataset.shown;
-        if (this.viewMode !== 'normal') corner.dataset.armed = 'on';
-        else delete corner.dataset.armed;
-      }
+    if (!corner) return;
+    window.clearTimeout(this.cameraCornerCueTimer);
+    if (up) {
+      corner.dataset.shown = 'on';
+      delete corner.dataset.armed;
+      return;
     }
+    if (this.viewMode === 'normal') {
+      delete corner.dataset.shown;
+      delete corner.dataset.armed;
+      return;
+    }
+    // Clearing the frame holds the corner in place for a moment before it goes,
+    // so its position is taught at the one instant somebody is looking at it.
+    // An invisible control nobody can find again is not a clean frame, it is a
+    // lost one. It is pressable throughout, including while it fades.
+    corner.dataset.armed = 'on';
+    corner.dataset.shown = 'on';
+    this.cameraCornerCueTimer = window.setTimeout(() => {
+      if (this.cameraHidden) delete corner.dataset.shown;
+    }, CAMERA_CORNER_CUE_MS);
   }
 
   private setViewMode(mode: 'normal' | 'camera' | 'postcard' | 'film'): void {
