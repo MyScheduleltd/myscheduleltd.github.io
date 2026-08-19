@@ -622,7 +622,16 @@ button:active { filter: brightness(.88); scale: .96; }
 .panel__header p { margin: 0; font: 800 18px var(--condensed); letter-spacing: .04em; }
 .panel__header p span { color: #df3e47; }
 .panel__header button { width: 38px; height: 38px; border: 0; color: white; background: transparent; font-size: 30px; cursor: pointer; }
-.panel__body { flex: 1; overflow: auto; padding: clamp(20px, 4vw, 40px); }
+/* A flex item will not shrink below its own content unless it is told it may,
+   so this grew to the full height of whatever was in it and the overflow: auto
+   below never had anything to do — the panel simply clipped the rest and no
+   amount of dragging moved it. That is why the lists could not be scrolled: not
+   because the scrolling was blocked, but because nothing had been made
+   scrollable. It was only ever said inside the sideways rules, so the moment a
+   device fell outside those the lists were cut off again. Said once, for
+   everything. */
+.panel > * { min-height: 0; }
+.panel__body { flex: 1; min-height: 0; overflow: auto; padding: clamp(20px, 4vw, 40px); }
 .panel-intro { max-width: 62ch; margin: 0 0 24px; line-height: 1.55; }
 .map-card { position: relative; min-height: 420px; padding: 30px; color: white; background: #2b2c2d; overflow: hidden; }
 .map-card::before { content: ''; position: absolute; z-index: 0; top: 76px; bottom: 76px; left: 50%; width: 4px; transform: translateX(-50%); background: var(--paper); }
