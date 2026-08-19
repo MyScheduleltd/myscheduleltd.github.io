@@ -1224,17 +1224,28 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
     overflow: hidden;
   }
   .panel > * { min-height: 0; }
-  /* The whole body was one scroller, so the box you type into sat below the
-     fold and had to be scrolled down to — on a screen this short it was never
-     on screen at all. The conversation scrolls; the channels and the box you
-     write in hold their places at either end of it. */
-  .panel__body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-  .panel__body > .chat-channels, .panel__body > .chat-form, .panel__body > .connection-note { flex: 0 0 auto; }
+  /* Chat, and only chat. This column was written for the conversation — where
+     the writing box must hold the bottom while the messages scroll behind it —
+     and was left unnamed, so it took every other panel with it. Those have
+     nothing to pin: they are lists, and lists want to scroll. Holding them in
+     a column that hides its overflow put the programme's lower two-thirds
+     somewhere nobody could reach, which is not a scrolling fault but a
+     disappearing one. */
+  .panel--chat .panel__body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .panel--chat .panel__body > .chat-channels,
+  .panel--chat .panel__body > .chat-form,
+  .panel--chat .panel__body > .connection-note { flex: 0 0 auto; }
+  /* Everything that is not the conversation scrolls, and owns the direction so
+     a drag over a list is never taken for anything else. */
+  .panel:not(.panel--chat) .panel__body {
+    overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    touch-action: pan-y;
+  }
   /* Grows to fill, and is never allowed to disappear: on a channel with
      nothing said in it yet the feed has no content to hold it open, and it
      collapsed to a line between the tabs and the writing box, which reads as a
      broken panel rather than an empty room. */
-  .panel__body > .chat-feed {
+  .panel--chat .panel__body > .chat-feed {
     flex: 1 1 auto; min-height: 96px;
     overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
     /* Named so it beats the blanket rule that disables the double tap. That one
