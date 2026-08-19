@@ -310,6 +310,27 @@ const clubFacadeColors = [0xff2f6d, 0xff7a1f];
 // How far north the club sits, keeping it clear of the red carpet and road.
 const EDIBLE_ITEMS: CarriedItem[] = ['POPCORN', 'DRINK', 'HOTDOG', 'PIZZA', 'CHICKEN'];
 const DRUNK_DURATION_MS = 45_000;
+/**
+ * How long the struck gestures run for.
+ *
+ * These exist because animateRig is handed the walking phase — the world clock
+ * times a cadence — and a gesture cannot be posed from that. It has no idea
+ * when the gesture began, so anything written as sin(clamp(phase * k, 0, PI))
+ * saturated at PI within the first second the world was open and evaluated to
+ * zero for ever after. The punch's entire throwing action was that expression,
+ * so the arm never moved: all anybody ever saw was the static guard hand left
+ * hanging out in front, which reads as an offer to shake rather than a punch.
+ * The recoil from taking one was the same.
+ *
+ * Knowing the span, a rig can work out how far through it is from gestureUntil
+ * alone, which every caller already has.
+ */
+const GESTURE_SPAN_MS: Partial<Record<AvatarGesture, number>> = {
+  punch: 560,
+  hit: 620,
+};
+/** How far into the swing the fist arrives. */
+const PUNCH_CONTACT_MS = 200;
 // The rooftop venue, east across the street from The Basement. The deck sits
 // over the eastern part of the shell; the western bay is the open garage, so
 // no column has to carry two walkable floors.
@@ -745,6 +766,10 @@ export class FestivalWorld {
   private jukebox?: { x: number; z: number };
   private lastDonationAt = 0;
   private lastPunchAt = 0;
+  /** A landed blow's moment of contact, and what it is worth on the camera. */
+  private punchImpactAt = 0;
+  private punchImpactPower = 0;
+  private punchImpactNpc?: NpcAvatar;
   // A blow is felt three ways: the view is jolted, the body is thrown, and the
   // legs go for a moment. Shake decays on its own clock so a second punch
   // landing mid-shake adds to it rather than restarting it.
@@ -1582,8 +1607,16 @@ export class FestivalWorld {
         previousTexture?.dispose();
       }
       if (displayVisitor.gesture) {
-        avatar.gesture = displayVisitor.gesture;
-        avatar.gestureUntil = performance.now() + 900;
+        // Armed for the gesture's own length, and only when it is a new one or
+        // the last has run out. Presence arrives several times a second, and
+        // re-arming on each arrival pinned the body to the first frame of the
+        // action for as long as the service kept reporting it — which for a
+        // punch is its entire length, so nobody ever saw one land.
+        const span = GESTURE_SPAN_MS[displayVisitor.gesture] ?? 900;
+        if (avatar.gesture !== displayVisitor.gesture || performance.now() >= avatar.gestureUntil) {
+          avatar.gesture = displayVisitor.gesture;
+          avatar.gestureUntil = performance.now() + span;
+        }
         if (displayVisitor.gesture === 'feed') {
           const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
           if (mentor) {
@@ -2233,31 +2266,27 @@ export class FestivalWorld {
     this.lastPunchAt = now;
     this.dancing = false;
     this.playerGesture = 'punch';
-    this.playerGestureUntil = now + 420;
+    this.playerGestureUntil = now + (GESTURE_SPAN_MS.punch ?? 560);
     // Residents are ours to settle: they exist only in this client, so unlike a
     // blow aimed at another attendee there is nobody else to arbitrate it.
-    // The swing itself has weight even when it hits nothing — a small kick so
-    // the click is felt, not merely animated.
-    this.cameraShake = Math.min(1.4, this.cameraShake + 0.16);
+    // A small kick as the arm leaves, so the click is answered at once, and the
+    // real jolt held back until the fist arrives. Nearly all of what makes a
+    // blow feel heavy is that gap: a quiet wind-up and then a crack.
+    this.cameraShake = Math.min(1.4, this.cameraShake + 0.1);
     const npc = this.nearestNpcInFront(3.2);
+    // Residents are ours to settle: they exist only in this client.
+    this.punchImpactAt = now + PUNCH_CONTACT_MS;
+    this.punchImpactPower = npc ? 0.5 : 0.16;
+    this.punchImpactNpc = npc;
     if (npc) {
+      // The recoil is scheduled rather than played now. gestureProgress clamps
+      // below zero, so an end set beyond its own span simply holds the body at
+      // rest until contact — the resident does not fold up before being hit.
       npc.gesture = 'hit';
-      npc.gestureUntil = now + 620;
+      npc.gestureUntil = now + PUNCH_CONTACT_MS + (GESTURE_SPAN_MS.hit ?? 620);
       // Knocked out of whatever they were doing, and off their route for a
       // moment, so the blow reads as landing rather than passing through.
-      npc.waitUntil = now + 700;
-      // And knocked off their feet backwards, away from the fist.
-      const away = new THREE.Vector3(
-        npc.group.position.x - this.player.position.x,
-        0,
-        npc.group.position.z - this.player.position.z,
-      );
-      if (away.lengthSq() > 0.0001) {
-        away.normalize();
-        npc.knockback.copy(away).multiplyScalar(7.4);
-      }
-      // Landing one kicks harder than swinging at air.
-      this.cameraShake = Math.min(1.4, this.cameraShake + 0.34);
+      npc.waitUntil = now + PUNCH_CONTACT_MS + 700;
     }
     // Whoever the thrower can actually see in front of them. The service holds
     // positions that are up to a fifth of a second old and only sent while
@@ -2267,9 +2296,7 @@ export class FestivalWorld {
     // the pair are plausibly close rather than recompute the aim, is the only
     // version of this that answers to what the thrower saw.
     const struck = this.nearestVisitorInFront(3.2);
-    if (struck) {
-      this.cameraShake = Math.min(1.4, this.cameraShake + 0.34);
-    }
+    if (struck) this.punchImpactPower = Math.max(this.punchImpactPower, 0.5);
     this.onAction({ type: 'punch', struck: npc?.name, targetId: struck?.id });
   }
 
@@ -5235,7 +5262,10 @@ export class FestivalWorld {
       // On land a run is a ride; in the water it stays a swim.
       const skating = running && this.playerState === 'walking';
       this.skating = skating;
-      this.animateRig(this.playerRig, this.clock.elapsedTime * cadence, stride, gesture, skating);
+      this.animateRig(
+        this.playerRig, this.clock.elapsedTime * cadence, stride, gesture, skating,
+        this.gestureProgress(gesture, this.playerGestureUntil),
+      );
       if (running && !skating && this.playerState !== 'swimming') {
         // Leaning into the run, and the arms driving rather than swinging.
         this.playerRig.torso.rotation.x = 0.16;
@@ -5413,6 +5443,7 @@ export class FestivalWorld {
             this.playerState === 'swimming' ? (moving ? 0.3 : 0.025) : (moving ? 0.72 : 0.035),
             gesture,
             this.running && moving && !this.dancing && this.playerState === 'walking',
+            this.gestureProgress(gesture, this.playerGestureUntil),
           );
           if (this.playerState === 'swimming' && moving && !gesture) this.poseRigSwimming(npc.rig, elapsed);
           if (this.playerState === 'seated') this.poseRigSeated(npc.rig);
@@ -5469,6 +5500,8 @@ export class FestivalWorld {
             elapsed * 8.2,
             remoteController.state === 'swimming' ? (moving ? 0.3 : 0.025) : (moving ? 0.62 : 0.025),
             gesture,
+            false,
+            this.gestureProgress(gesture, npc.gestureUntil),
           );
           if (remoteController.state === 'swimming' && moving && !gesture) this.poseRigSwimming(npc.rig, elapsed);
           if (remoteController.state === 'seated') this.poseRigSeated(npc.rig);
@@ -5493,7 +5526,8 @@ export class FestivalWorld {
         npc.group.rotation.y = npc.station.rotationY;
         const stationGesture = now < npc.gestureUntil ? npc.gesture : undefined;
         if (npc.rig) {
-          this.animateRig(npc.rig, elapsed * 2.2, 0.03, stationGesture);
+          this.animateRig(npc.rig, elapsed * 2.2, 0.03, stationGesture, false,
+            this.gestureProgress(stationGesture, npc.gestureUntil));
           if (npc.pose === 'dj' && !stationGesture) this.poseRigDj(npc.rig, elapsed);
           if (npc.pose === 'dance' && !stationGesture) this.poseRigDance(npc.rig, npc.phase);
         }
@@ -5586,7 +5620,8 @@ export class FestivalWorld {
         npc.group.position.y,
       ) + Math.sin(elapsed * 1.35 + npc.phase) * 0.018;
       const gesture = now < npc.gestureUntil ? npc.gesture : undefined;
-      if (npc.rig) this.animateRig(npc.rig, elapsed * 7.4 + npc.phase, moving ? 0.62 : 0.03, gesture);
+      if (npc.rig) this.animateRig(npc.rig, elapsed * 7.4 + npc.phase, moving ? 0.62 : 0.03, gesture, false,
+        this.gestureProgress(gesture, npc.gestureUntil));
       if (npc.dogRig) this.animateMentorDog(
         npc.dogRig,
         elapsed * 7.4 + npc.phase,
@@ -5645,6 +5680,7 @@ export class FestivalWorld {
         avatar.state === 'swimming' ? (moving ? 0.3 : 0.025) : (moving ? 0.62 : 0.025),
         gesture,
         avatar.running && moving && avatar.state === 'walking',
+        this.gestureProgress(gesture, avatar.gestureUntil),
       );
       if (avatar.state === 'swimming' && moving && !gesture) this.poseRigSwimming(avatar.rig, elapsed);
       if (avatar.state === 'seated') this.poseRigSeated(avatar.rig);
@@ -5654,7 +5690,19 @@ export class FestivalWorld {
     }
   }
 
-  private animateRig(rig: AvatarRig, phase: number, stride: number, gesture?: AvatarGesture, skating = false): void {
+  /**
+   * How far through a timed gesture a body is, 0 to 1, worked out from the
+   * moment it ends. Clamping at the bottom is what lets a gesture be scheduled
+   * to begin later than it is set: give it an end further out than its span and
+   * it simply holds at rest until its own time comes.
+   */
+  private gestureProgress(gesture: AvatarGesture | undefined, until: number, now = performance.now()): number {
+    const span = gesture ? GESTURE_SPAN_MS[gesture] : undefined;
+    if (!span) return 0;
+    return THREE.MathUtils.clamp(1 - (until - now) / span, 0, 1);
+  }
+
+  private animateRig(rig: AvatarRig, phase: number, stride: number, gesture?: AvatarGesture, skating = false, progress = 0): void {
     // Riding overrides the gait but not a gesture: someone waving from a board
     // is still waving.
     if (skating && !gesture) {
@@ -5744,21 +5792,47 @@ export class FestivalWorld {
       rig.rightLeg.rotation.x = 0;
       return;
     } else if (gesture === 'punch') {
-      // A straight right thrown from the shoulder, the left held up as a guard,
-      // the body turned into it.
-      const throwArc = Math.sin(THREE.MathUtils.clamp(phase * 3.4, 0, Math.PI));
-      rig.torso.rotation.y = -0.34 * throwArc;
-      rig.rightArm.rotation.x = -1.55 * throwArc;
-      rig.rightArm.rotation.z = -0.16;
-      rig.leftArm.rotation.x = -0.95;
-      rig.leftArm.rotation.z = 0.3;
-      rig.head.rotation.y = -0.2 * throwArc;
-      rig.leftLeg.rotation.x = -0.16;
-      rig.rightLeg.rotation.x = 0.16;
+      // A cross. What makes a punch read as a punch rather than a reach is the
+      // shape of its timing: the body loads slowly, releases violently, and
+      // overruns the target before it gathers itself. An arm that simply
+      // travels out and back at one speed is a handshake however far it goes.
+      //
+      // coil rises through the wind-up and is spent by contact. strike is zero
+      // until the wind-up ends, snaps over in a fifth of the gesture — the
+      // exponent under one is what makes it leave rather than travel — and
+      // falls away over the whole of the rest.
+      const coil = progress < 0.3
+        ? progress / 0.3
+        : Math.max(0, 1 - (progress - 0.3) / 0.16);
+      const strike = progress < 0.3
+        ? 0
+        : progress < 0.46
+          ? Math.pow((progress - 0.3) / 0.16, 0.5)
+          : Math.max(0, 1 - (progress - 0.46) / 0.54);
+      // The rear hand: drawn back past the ribs, then thrown through.
+      rig.rightArm.rotation.x = 0.62 * coil - 2 * strike;
+      rig.rightArm.rotation.z = -0.12 - 0.26 * strike;
+      // The lead hand holds a guard at the chin and is pulled back as the other
+      // goes out, which is where the turn of the shoulders comes from.
+      rig.leftArm.rotation.x = -1.05 + 0.7 * strike;
+      rig.leftArm.rotation.z = 0.44 - 0.1 * strike;
+      // The whole body turns through it. Feet stay planted: this is all
+      // rotation, so nothing here can push the avatar through a wall.
+      rig.torso.rotation.y = 0.46 * coil - 0.66 * strike;
+      rig.torso.rotation.x = -0.12 * coil + 0.34 * strike;
+      rig.head.rotation.y = 0.22 * coil - 0.38 * strike;
+      rig.head.rotation.x = 0.16 * strike;
+      // Weight rolls off the back foot onto the front one.
+      rig.leftLeg.rotation.x = -0.12 - 0.3 * strike;
+      rig.rightLeg.rotation.x = 0.16 + 0.28 * strike;
       return;
     } else if (gesture === 'hit') {
       // Taking one: head snapped back, body folded away from it, arms flung up.
-      const recoil = Math.max(0, Math.sin(THREE.MathUtils.clamp(phase * 2.6, 0, Math.PI)));
+      // Snaps over in the first fifth and lets go slowly, the reverse of the
+      // punch that caused it.
+      const recoil = progress < 0.2
+        ? Math.pow(progress / 0.2, 0.45)
+        : Math.max(0, 1 - (progress - 0.2) / 0.8);
       rig.torso.rotation.x = -0.34 * recoil;
       rig.torso.rotation.y = 0.26 * recoil;
       rig.head.rotation.x = -0.44 * recoil;
@@ -6090,7 +6164,29 @@ export class FestivalWorld {
     for (const avatar of this.remoteAvatars.values()) separate(avatar.group.position);
   }
 
+  /**
+   * Lands a thrown punch at the moment the fist gets there rather than when the
+   * button went down: the jolt, the resident's recoil and the shove they take
+   * all belong to contact, not to the wind-up before it.
+   */
+  private settlePunchImpact(): void {
+    if (!this.punchImpactAt || performance.now() < this.punchImpactAt) return;
+    this.punchImpactAt = 0;
+    this.cameraShake = Math.min(1.8, this.cameraShake + this.punchImpactPower);
+    const npc = this.punchImpactNpc;
+    this.punchImpactNpc = undefined;
+    if (!npc) return;
+    const away = new THREE.Vector3(
+      npc.group.position.x - this.player.position.x,
+      0,
+      npc.group.position.z - this.player.position.z,
+    );
+    if (away.lengthSq() < 0.0001) return;
+    npc.knockback.copy(away.normalize()).multiplyScalar(7.4);
+  }
+
   private updateCamera(delta: number, _elapsed: number): void {
+    this.settlePunchImpact();
     const cameraTarget = this.player.position.clone();
     if (this.cameraMode === 'screening') {
       const venue = this.activeSeat?.venue ?? this.screeningVenue();
