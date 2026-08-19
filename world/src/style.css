@@ -279,6 +279,11 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
    without a keyboard, since camera mode hides every other control. */
 .world-camera-hint[data-shown] { pointer-events: auto; }
 .world-camera-hint[data-shown] { opacity: 1; transition: opacity .12s ease-in; }
+/* Postcard and film both write along the bottom of the frame, and this sat
+   straight on top of that box. It steps up above the caption in those two
+   modes; plain camera mode has nothing down there, so it stays put. */
+.world-shell[data-view="postcard"] > .world-camera-hint,
+.world-shell[data-view="film"] > .world-camera-hint { bottom: clamp(88px, 13vmin, 132px); }
 
 .world-postcard { position: fixed; inset: 0; z-index: 7; display: none; }
 /* Drawn as one inset border rather than four bars, so it holds its proportions
@@ -1017,15 +1022,34 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .interaction-toast { bottom: calc(16px + env(safe-area-inset-bottom)); max-width: min(46vw, 320px); height: 38px; }
   .world-camera-hint { bottom: calc(14px + env(safe-area-inset-bottom)); }
   /* Both bottom corners belong to the thumbs when the phone is on its side, so
-     the pass gives one up and goes to the top, where the header already is. */
+     the pass gives one up. It sits under the header rather than in it — the
+     online badge already holds that corner, and the two were printed on top of
+     each other. */
   .pass-toggle {
     width: 78px; height: 34px; font-size: 13px; bottom: auto;
-    top: calc(6px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right));
+    top: calc(50px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right));
   }
   .festival-pass {
-    bottom: auto; top: calc(46px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right));
-    max-height: calc(100vh - 60px); overflow-y: auto;
+    bottom: auto; top: calc(90px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right));
+    /* Was measured against the whole window, which on a phone lying down is
+       most of the screen and left the list running off the bottom with nothing
+       to grab. Bounded by what is actually below the toggle, and given a
+       scroller of its own so a drag inside it never becomes a drag on the
+       world behind. */
+    max-height: calc(100vh - 104px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    touch-action: pan-y;
   }
+  /* A screening's own panel spanned the full width and covered the picture it
+     was describing. Drawn in to the left, clear of the pass, and never more
+     than half the width. */
+  .public-seat-hud {
+    left: calc(10px + env(safe-area-inset-left)); right: auto;
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    width: min(52vw, 420px); gap: 6px;
+  }
+  .public-seat-hud strong { font-size: 14px; max-width: 100%; }
+  .public-seat-hud button { padding: 6px 10px; font-size: 12px; }
   .world-header { padding: 4px 10px; }
   .venue-screen { top: 62px; }
   .world-alert { top: 54px; }
