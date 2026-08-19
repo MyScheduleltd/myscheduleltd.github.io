@@ -3701,15 +3701,26 @@ export class FestivalWorld {
     // the wall it sat back under the overhanging roof, in its shadow and half
     // hidden by it; a temple banner belongs out in front where it can be read
     // from the forecourt.
-    // Hung at the door's height, not the wall's, so raising the hall does not
-    // carry the banner up out of reading range.
-    templeSign.position.set(t.minX - 4.6, t.podium + doorHeight - 1.4, centerZ);
+    // Hung high on the front, in the band of wall between the lintel and the
+    // eaves that opened up when the hall was raised. Tying it to the door's
+    // height kept it out of the roof but left it sitting on the lintel with
+    // three units of blank wall above it, which reads as a notice by the door
+    // rather than the name of the building.
+    //
+    // The ceiling on this is the bracket, not the sign: the arm reaches back
+    // under the eaves to meet the wall, and the timber band beneath the first
+    // roof tier comes down to 11.425. At 1.9 above the sign, the arm sets the
+    // highest the sign can hang at 9.5, and this leaves it half a unit clear.
+    // The sign itself stays four and a half units out from the wall, past the
+    // edge of the overhang, so the roof does not put it back in shadow.
+    const signY = t.podium + 7.9;
+    templeSign.position.set(t.minX - 4.6, signY, centerZ);
     const signBracket = material(0x4a3a2a, 0.7, 0.1);
-    this.mesh([4.4, 0.26, 0.26], [t.minX - 2.4, t.podium + doorHeight + 0.5, centerZ], signBracket);
+    this.mesh([4.4, 0.26, 0.26], [t.minX - 2.4, signY + 1.9, centerZ], signBracket);
     for (const side of [-1, 1]) {
-      this.mesh([0.16, 1.5, 0.16], [t.minX - 4.6, t.podium + doorHeight - 0.25, centerZ + side * 3.9], signBracket);
+      this.mesh([0.16, 1.5, 0.16], [t.minX - 4.6, signY + 1.15, centerZ + side * 3.9], signBracket);
     }
-    this.mesh([0.3, 0.3, 8.6], [t.minX - 4.6, t.podium + doorHeight + 0.4, centerZ], signBracket);
+    this.mesh([0.3, 0.3, 8.6], [t.minX - 4.6, signY + 1.8, centerZ], signBracket);
     templeSign.rotation.y = -Math.PI / 2;
     this.scene.add(templeSign);
 

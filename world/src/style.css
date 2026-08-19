@@ -237,20 +237,49 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
   background: rgba(20, 18, 16, .42); color: #f4efe3;
 }
 .world-postcard__caption input::placeholder { color: rgba(23, 20, 18, .38); letter-spacing: .2em; font-size: .8em; }
+/* The looks live behind one faint tab at the top of the card rather than in a
+   row across it. A row of five is five things in every screenshot; a tab is
+   one, and it earns its place by naming the look that is on. Reaching for the
+   top of the frame drops the rest of them down; moving away puts them back.
+
+   The container carries the padding, not the tab, so the space between the tab
+   and the menu under it is still inside the hover — otherwise the menu closes
+   in the gap on the way to it. */
 .world-postcard__tools {
-  position: absolute; left: 0; right: 0; top: clamp(24px, 4.2vmin, 58px);
-  display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; pointer-events: auto;
-  /* Out of the way until reached for, so the picture is not taken with a row
-     of buttons across the top of it. */
-  opacity: .12; transition: opacity .25s ease;
+  position: absolute; left: 50%; transform: translateX(-50%);
+  top: clamp(14px, 2.6vmin, 34px); padding: 10px 24px 30px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  pointer-events: auto;
 }
-.world-postcard__tools:hover, .world-postcard__tools:focus-within { opacity: 1; }
-.world-postcard__tools button {
-  padding: 6px 12px; border: 1px solid rgba(20, 18, 16, .26); cursor: pointer;
-  background: rgba(244, 239, 227, .9); color: #171412;
+.world-postcard__tab {
+  padding: 5px 14px; cursor: pointer;
+  border: 1px solid rgba(20, 18, 16, .2); background: rgba(244, 239, 227, .66); color: #171412;
+  font: 700 10px/1 var(--condensed, sans-serif); letter-spacing: .18em;
+  /* Faint enough to read as part of the card's border rather than as a
+     control, until it is reached for. */
+  opacity: .3; transition: opacity .25s ease;
+}
+.world-postcard__tools:hover .world-postcard__tab,
+.world-postcard__tools:focus-within .world-postcard__tab { opacity: 1; }
+.world-postcard__menu {
+  display: flex; flex-direction: column; gap: 4px;
+  opacity: 0; transform: translateY(-6px); pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease;
+}
+.world-postcard__tools:hover .world-postcard__menu,
+.world-postcard__tools:focus-within .world-postcard__menu {
+  opacity: 1; transform: none; pointer-events: auto;
+}
+.world-postcard__menu button {
+  min-width: 92px; padding: 6px 12px; cursor: pointer;
+  border: 1px solid rgba(20, 18, 16, .26); background: rgba(244, 239, 227, .94); color: #171412;
   font: 700 10px/1 var(--condensed, sans-serif); letter-spacing: .18em;
 }
-.world-postcard__tools button.is-active { background: #a91c24; border-color: #a91c24; color: #f4efe3; }
+.world-postcard__menu button:hover { background: #f4efe3; border-color: rgba(20, 18, 16, .5); }
+.world-postcard__menu button.is-active { background: #a91c24; border-color: #a91c24; color: #f4efe3; }
+@media (prefers-reduced-motion: reduce) {
+  .world-postcard__tab, .world-postcard__menu { transition-duration: .01ms; }
+}
 
 /* Going down. Black closes over the world, the words sit still in the middle
    of it, and both fade. No meter, no tally — the whole point is that an

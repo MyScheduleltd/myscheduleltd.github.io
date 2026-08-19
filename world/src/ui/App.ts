@@ -511,13 +511,16 @@ export class App {
               aria-label="${zh ? '明信片文字' : 'Postcard caption'}" />
           </div>
           <div class="world-postcard__tools">
-            ${[
-              ['none', zh ? '原色' : 'AS SHOT'],
-              ['warm', zh ? '暖調' : 'WARM'],
-              ['cold', zh ? '冷調' : 'COLD'],
-              ['mono', zh ? '黑白' : 'MONO'],
-              ['faded', zh ? '褪色' : 'FADED'],
-            ].map(([value, label]) => `<button type="button" data-postcard-filter="${value}">${label}</button>`).join('')}
+            <button type="button" class="world-postcard__tab" data-postcard-tab aria-haspopup="true">${zh ? '原色' : 'AS SHOT'}</button>
+            <div class="world-postcard__menu">
+              ${[
+                ['none', zh ? '原色' : 'AS SHOT'],
+                ['warm', zh ? '暖調' : 'WARM'],
+                ['cold', zh ? '冷調' : 'COLD'],
+                ['mono', zh ? '黑白' : 'MONO'],
+                ['faded', zh ? '褪色' : 'FADED'],
+              ].map(([value, label]) => `<button type="button" data-postcard-filter="${value}"${value === 'none' ? ' class="is-active"' : ''}>${label}</button>`).join('')}
+            </div>
           </div>
         </div>
         <p class="world-camera-hint" aria-hidden="true"></p>
@@ -695,6 +698,13 @@ export class App {
         if (shell) shell.dataset.filter = this.postcardFilter;
         this.root.querySelectorAll<HTMLButtonElement>('[data-postcard-filter]')
           .forEach((other) => other.classList.toggle('is-active', other === button));
+        // The tab is the only part of this left in the picture, so it says
+        // which look is on rather than something generic like FILTER.
+        const tab = this.root.querySelector<HTMLElement>('[data-postcard-tab]');
+        if (tab) tab.textContent = button.textContent;
+        // Let go, so the menu tucks itself away instead of sitting open under
+        // a pointer that has stopped moving.
+        button.blur();
       });
     });
     this.root.querySelector<HTMLButtonElement>('[data-public-catalogue]')?.addEventListener('click', () => this.openFilmPicker(this.activeVenue));
