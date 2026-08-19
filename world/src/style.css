@@ -820,11 +820,18 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .world-header { padding: 6px 12px; }
   .world-brand > span:not(.phase-badge) { display: none; }
   /* Clear of the jump button, and never wider than the gap between the pads. */
+  /* Sized and placed to match the pass beside it rather than spanning the gap
+     between the two pads. It was a full-width slab of box at twice the pass's
+     height, which read as the loudest thing on the screen for what is only a
+     hint. */
   .interaction-toast {
-    left: calc(150px + env(safe-area-inset-left));
-    right: calc(108px + env(safe-area-inset-right));
-    bottom: calc(24px + env(safe-area-inset-bottom));
+    left: auto;
+    right: calc(96px + env(safe-area-inset-right));
+    bottom: calc(14px + env(safe-area-inset-bottom));
     transform: none; text-align: center;
+    max-width: min(52vw, 240px); padding: 9px 12px;
+    font-size: 11px; letter-spacing: .06em; line-height: 1.2;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .venue-screen { left: 14px; right: 14px; top: 124px; width: auto; }
   .venue-screen--seated { inset: 70px 10px 74px; }

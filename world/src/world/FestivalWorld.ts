@@ -4464,7 +4464,8 @@ export class FestivalWorld {
     label.position.set(0, 0.75, 0.615);
     stand.add(label);
     this.scene.add(stand);
-    this.addCollider(pamphletPosition.x, pamphletPosition.z, 2.2, 1.35, 0.12);
+    // Chest height: the view rides over it rather than being stopped by it.
+    this.addCollider(pamphletPosition.x, pamphletPosition.z, 2.2, 1.35, 0.12, undefined, 'pamphlet', 2.1);
   }
 
   private createPlayer(palette: AvatarPalette): void {
@@ -5100,7 +5101,12 @@ export class FestivalWorld {
       // the far corners of the map — where it is a handful of pixels — and
       // leaves every view anybody actually stands in looking as it did. The
       // phone gives up more, which is the trade that was asked for there.
-      const range = this.graphicsMode === 'normal' ? 120 : 46;
+      // Forty-six was far too tight: standing in the square on a phone, every
+      // screen in the festival was outside it and nothing appeared to be
+      // playing at all. A screening you cannot see is not a saving, it is a
+      // missing festival. Ninety keeps the square's screens live and still
+      // drops the ones across the map.
+      const range = this.graphicsMode === 'normal' ? 120 : 90;
       const withinRange = this.cameraToProjector.length() < range;
       const visible = roomMatches && withinRange &&
         (this.player.position.z - screen.position[2]) * screen.facing >= -0.02 &&
@@ -6579,7 +6585,11 @@ export class FestivalWorld {
       const y = this.lookTarget.y + this.cameraProbe.y * travelled;
       const z = this.lookTarget.z + this.cameraProbe.z * travelled;
       if (this.blocksCamera(x, z, y)) {
-        safe = Math.max(1.1, travelled - clearance);
+        // Never closer than this. Some things in the world are honestly taller
+        // than a head — a market stall is — so they should hold the view off,
+        // but a unit and a tenth puts the camera inside the avatar's collar,
+        // which is what "zoomed in super close" has meant every time.
+        safe = Math.max(3.4, travelled - clearance);
         break;
       }
     }
