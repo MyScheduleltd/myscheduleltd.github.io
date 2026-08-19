@@ -2609,7 +2609,7 @@ export class App {
             : 'One record, heard across the whole festival. The theatres, the club and the rooftop are left alone.'}</p>
           <div class="jukebox-now">
             <span class="eyebrow">${zh ? '播放中' : 'NOW PLAYING'}</span>
-            <strong>${playing ? this.escapeHtml(playing.title) : (zh ? '安靜' : 'SILENT')}</strong>
+            <strong>${playing ? this.escapeHtml(playing.title) : (zh ? '目前沒唱片在播放' : 'NOTHING PLAYING')}</strong>
             ${playing?.requestedByName ? `<small>${zh ? '由' : 'FOR'} ${this.escapeHtml(playing.requestedByName)}</small>` : ''}
           </div>
           <div class="jukebox-queue">
@@ -3385,7 +3385,7 @@ export class App {
         <div class="staff-jukebox__now">
           <strong>${this.staffJukebox()?.nowPlaying?.title
             ? this.escapeHtml(this.staffJukebox()!.nowPlaying!.title)
-            : (this.language === 'zh-TW' ? '安靜' : 'SILENT')}</strong>
+            : (this.language === 'zh-TW' ? '目前沒唱片在播放' : 'NOTHING PLAYING')}</strong>
           <span>
             <button type="button" data-jukebox-skip>${this.language === 'zh-TW' ? '跳過' : 'SKIP'}</button>
             <button type="button" data-jukebox-stop>${this.language === 'zh-TW' ? '停止並清空' : 'STOP & CLEAR'}</button>

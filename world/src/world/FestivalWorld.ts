@@ -776,6 +776,7 @@ export class FestivalWorld {
   private readonly projectors = new Map<VenueKey, ProjectorSurface>();
   private mountedProjectorVenue?: VenueKey;
   private lastProjectorNudgeAt = 0;
+  private canvasSizeObserver?: ResizeObserver;
   private readonly playheads = new Map<VenueKey, Playhead>();
   private readonly clubLights: THREE.Mesh[] = [];
   private readonly clubFloorPanels: THREE.Mesh[] = [];
@@ -996,6 +997,17 @@ export class FestivalWorld {
     this.camera.position.set(0, 5.2, 29);
 
     window.addEventListener('resize', this.resize);
+    // The mask that hides the screens behind whatever stands in front of them is
+    // worked out from the camera against the size of the canvas, so the moment
+    // the world's idea of that size is wrong the mask lands in the wrong place
+    // and eats into the picture. It is wrong exactly once, at the start: the
+    // canvas is measured before the browser has laid it out, and a phone then
+    // folds its own toolbars away a moment later and changes it again. A window
+    // resize does not always follow either of those. Watching the canvas itself
+    // does, whatever moved it.
+    this.canvasSizeObserver = new ResizeObserver(() => this.resize());
+    this.canvasSizeObserver.observe(this.canvas);
+    window.visualViewport?.addEventListener('resize', this.resize);
     window.addEventListener('keydown', this.keyDown);
     window.addEventListener('keyup', this.keyUp);
     window.addEventListener('message', this.projectorMessage);
@@ -1028,6 +1040,8 @@ export class FestivalWorld {
     this.disposed = true;
     cancelAnimationFrame(this.animationFrame);
     window.removeEventListener('resize', this.resize);
+    this.canvasSizeObserver?.disconnect();
+    window.visualViewport?.removeEventListener('resize', this.resize);
     window.removeEventListener('keydown', this.keyDown);
     window.removeEventListener('keyup', this.keyUp);
     window.removeEventListener('message', this.projectorMessage);
