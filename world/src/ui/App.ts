@@ -435,9 +435,6 @@ export class App {
             <label class="field-label" for="gate-staff-key">${this.language === 'zh-TW' ? '工作人員金鑰（選填）' : 'STAFF KEY (OPTIONAL)'}</label>
             <input id="gate-staff-key" type="password" autocomplete="off" spellcheck="false"
               placeholder="${this.language === 'zh-TW' ? '持金鑰可免排隊進場' : 'Skips the queue'}" />
-            <p>${this.language === 'zh-TW'
-              ? '影展客滿時，工作人員仍可直接進場。金鑰錯誤者照常排隊。'
-              : 'STAFF go straight in when the festival is full. A key that is not recognised simply waits like anybody else.'}</p>
           </details>
 
           <div class="gate-actions">

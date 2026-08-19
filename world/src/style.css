@@ -142,6 +142,25 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .palette-picker label, .panel-palette label { display: grid; grid-template-columns: 1fr 32px; align-items: center; gap: 8px; font: 700 12px var(--condensed); }
 input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19,.3); padding: 2px; background: transparent; cursor: pointer; }
 .check-field { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; }
+/* Dressed like the rest of the card rather than left in the browser's own
+   clothes: the same ink rule under the field, the same condensed lettering, and
+   the heading given room so it stops sitting on the label beneath it. */
+.gate-staff { margin-top: 18px; border-top: 1px solid rgba(17,17,19,.18); padding-top: 14px; }
+.gate-staff > summary {
+  cursor: pointer; list-style: none; margin-bottom: 0;
+  font: 800 12px/1 var(--condensed); letter-spacing: .14em; color: var(--red);
+}
+.gate-staff > summary::-webkit-details-marker { display: none; }
+.gate-staff > summary::after { content: ' +'; }
+.gate-staff[open] > summary::after { content: ' –'; }
+.gate-staff[open] > summary { margin-bottom: 14px; }
+.gate-staff .field-label { margin-bottom: 6px; }
+.gate-staff input {
+  width: 100%; border: 0; border-bottom: 2px solid var(--ink); border-radius: 0; padding: 6px 2px;
+  color: var(--ink); background: transparent; font: 800 20px/1 var(--condensed); letter-spacing: .04em;
+}
+.gate-staff input::placeholder { color: rgba(17,17,19,.28); font-size: 15px; letter-spacing: .04em; }
+
 .check-field input { accent-color: var(--red); }
 .gate-actions { display: grid; grid-template-columns: 1.25fr 1fr; gap: 10px; margin-top: 23px; }
 .button { min-height: 52px; border: 2px solid var(--ink); font: 800 17px var(--condensed); letter-spacing: .04em; cursor: pointer; }
@@ -918,7 +937,11 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
    screen twice the height, which is what several of these reports turned out to
    be. A coarse pointer is a finger. The width clause stays for a narrow window
    on a desk, which should also tighten up. */
-@media (max-width: 780px), (pointer: coarse) {
+/* A phone has a finger and nothing that hovers. A laptop with a touchscreen
+   also reports a coarse pointer, but it still has a mouse — so it hovers, and
+   it should keep the desk site along with its keyboard. Both conditions
+   together are what actually distinguishes the two. */
+@media (max-width: 780px), (pointer: coarse) and (hover: none) {
   body { overflow: auto; }
   .gate { align-items: start; padding: 104px 14px 28px; }
   /* The sign-in banner was pinned to the window while everything else scrolled,
@@ -1120,7 +1143,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
    figure let some of them fall through to the desk layout — which is a chat
    panel sized for a screen twice as tall. Six hundred still cannot be reached
    by a tablet on its side. */
-@media (orientation: landscape) and (max-height: 600px), (orientation: landscape) and (pointer: coarse) {
+@media (orientation: landscape) and (max-height: 600px), (orientation: landscape) and (pointer: coarse) and (hover: none) {
   .touch-stick { width: 92px; height: 92px; left: calc(14px + env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom)); }
   .touch-stick__knob { width: 40px; height: 40px; }
   .touch-ring__hit { width: 50px; height: 50px; right: calc(35px + env(safe-area-inset-right)); bottom: calc(52px + env(safe-area-inset-bottom)); }
