@@ -911,7 +911,14 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   }
 }
 
-@media (max-width: 780px), (orientation: landscape) and (max-height: 600px) {
+/* A desk gets the desk site and a phone gets the phone site — decided by what
+   is pointing at the screen, not by how wide the window happens to be. Width
+   was never the question: a phone asked for the desktop site, or simply one
+   reporting a roomier viewport, was handed a layout built for a mouse and a
+   screen twice the height, which is what several of these reports turned out to
+   be. A coarse pointer is a finger. The width clause stays for a narrow window
+   on a desk, which should also tighten up. */
+@media (max-width: 780px), (pointer: coarse) {
   body { overflow: auto; }
   .gate { align-items: start; padding: 104px 14px 28px; }
   /* The sign-in banner was pinned to the window while everything else scrolled,
@@ -1181,9 +1188,9 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      here is a line of conversation not shown. Held just clear of the header at
      the top and just off the bottom edge. */
   .panel, .panel--chat {
-    inset: calc(36px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right))
-           calc(8px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
-    max-height: calc(100dvh - 44px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    inset: calc(26px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right))
+           calc(6px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left));
+    max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     overflow: hidden;
   }
   .panel > * { min-height: 0; }
@@ -1213,9 +1220,9 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      halves, the gaps close up, the form loses the label that only repeats the
      channel already named in the row above it, and the messages themselves sit
      tighter. */
-  .panel__body { padding: 10px 14px; }
-  .chat-channels { margin-bottom: 6px; }
-  .chat-form { margin-top: 8px; padding-block: 0; }
+  .panel__body { padding: 8px 12px; }
+  .chat-channels { margin-bottom: 5px; }
+  .chat-form { margin-top: 6px; padding-block: 0; }
   .chat-form > label { display: none; }
   /* Everything round the conversation gives up a little so the conversation
      gets more: the tabs lose height, the panel's own title bar tightens, and a

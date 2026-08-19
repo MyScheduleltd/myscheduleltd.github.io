@@ -710,6 +710,29 @@ test('staff set a track tempo and it is rejected outside a musical range', async
   assert.equal(unchanged.trackTempos.rMicadJVzH8, 128);
 });
 
+test('the staff key walks past a queue that holds everybody else', async () => {
+  // The service has always let STAFF past a full house — an administrator shut
+  // out of a busy room cannot fix whatever made it busy — but the key could
+  // only be given after getting in, which is exactly when it is no longer any
+  // use. The gate offers it now, so this covers the road it opens.
+  const held = await fetch(`${baseUrl}/api/session`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'QUEUED ONE', probe: true }),
+  });
+  const staffed = await fetch(`${baseUrl}/api/session`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-festival-admin-key': 'test-admin-key' },
+    body: JSON.stringify({ name: 'STAFF ONE', probe: true }),
+  });
+  // Whatever the house is doing, a key is never answered with a queue ticket.
+  assert.notEqual(staffed.status, 202, 'a staff key must never be given a place in the queue');
+  if (held.status === 202) {
+    const body = await held.json();
+    assert.ok(body.waiting?.ticket, 'a queued visitor is given a ticket');
+  }
+});
+
 test('a booth running on a guess defers to the visitor rather than refusing them', async () => {
   const session = await join('GUESS TEST');
   // The rooftop has had no length reported for anything, so the server is

@@ -430,6 +430,16 @@ export class App {
             <span>${text.remember}</span>
           </label>
 
+          <details class="gate-staff">
+            <summary>${this.language === 'zh-TW' ? '工作人員入口' : 'STAFF ENTRANCE'}</summary>
+            <label class="field-label" for="gate-staff-key">${this.language === 'zh-TW' ? '工作人員金鑰（選填）' : 'STAFF KEY (OPTIONAL)'}</label>
+            <input id="gate-staff-key" type="password" autocomplete="off" spellcheck="false"
+              placeholder="${this.language === 'zh-TW' ? '持金鑰可免排隊進場' : 'Skips the queue'}" />
+            <p>${this.language === 'zh-TW'
+              ? '影展客滿時，工作人員仍可直接進場。金鑰錯誤者照常排隊。'
+              : 'STAFF go straight in when the festival is full. A key that is not recognised simply waits like anybody else.'}</p>
+          </details>
+
           <div class="gate-actions">
             <button class="button button--primary" type="submit" data-audio="sound">${text.sound}</button>
             <button class="button button--secondary" type="submit" data-audio="muted">${text.muted}</button>
@@ -478,6 +488,16 @@ export class App {
         input?.setAttribute('aria-invalid', 'true');
         input?.focus();
         return;
+      }
+      // Carried into the request for a place. The service already lets STAFF
+      // past a full house — an administrator shut out of a busy room cannot fix
+      // whatever made it busy — but nothing ever offered anywhere to say so
+      // before entering, so the key could only be given after getting in, which
+      // is precisely when it was no longer any use.
+      const gateKey = this.root.querySelector<HTMLInputElement>('#gate-staff-key')?.value.trim() ?? '';
+      if (gateKey) {
+        this.staffKey = gateKey;
+        sessionStorage.setItem(STAFF_KEY, gateKey);
       }
       const remember = this.root.querySelector<HTMLInputElement>('#remember-profile')?.checked ?? false;
       const profile: SavedProfile = { id, language: this.language, graphicsMode: this.graphicsMode, palette: this.palette };
