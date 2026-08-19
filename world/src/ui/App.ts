@@ -2190,11 +2190,11 @@ export class App {
         delete hint.dataset.shown;
       }
     }
-    if (mode === 'postcard') {
-      this.root.querySelector<HTMLInputElement>('[data-postcard-caption]')?.focus();
-    } else if (mode === 'film') {
-      this.root.querySelector<HTMLInputElement>('[data-film-caption]')?.focus();
-    } else {
+    // The caption is no longer taken hold of on the way in. On a phone that put
+    // the keyboard over the picture before it had even been framed, and it is
+    // what made simply switching to film zoom the page — a field is focused, so
+    // Safari zooms to it. Anyone who wants to write taps the caption.
+    if (mode === 'normal') {
       // Leaving the caption focused would swallow WASD.
       (document.activeElement as HTMLElement | null)?.blur();
     }

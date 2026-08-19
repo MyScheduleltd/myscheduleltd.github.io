@@ -848,14 +848,12 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
    remains for a page that got there another way. */
 @media (pointer: coarse) {
   input, textarea, select { font-size: 16px; }
-  /* The captions style their own type far smaller, in rules more specific than
-     the blanket one above, so they slipped straight back under the threshold —
-     and film focuses its caption the moment the mode opens, which is why simply
-     switching to film zoomed the page with nothing touched. Named here so no
-     amount of styling elsewhere can put the trap back, because the cost of
-     losing this argument is a reader stuck at 3x with no way home. */
-  .world-film__edge input,
-  .world-postcard__caption input,
+  /* The chat box is written in constantly and keeps the safe size. The two
+     captions keep the small type the format is drawn around — they are part of
+     the picture, not furniture — and are no longer focused on the way in, which
+     is what was zooming the page unbidden. Tapping one to write still zooms;
+     that is a deliberate act with the reset button to hand, rather than
+     something that happened to you for changing mode. */
   .chat-form input, .chat-form textarea { font-size: 16px !important; }
 }
 
@@ -1058,48 +1056,50 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 @media (orientation: landscape) and (max-height: 500px) {
   .touch-stick { width: 92px; height: 92px; left: calc(14px + env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom)); }
   .touch-stick__knob { width: 40px; height: 40px; }
-  .touch-ring__hit { width: 50px; height: 50px; right: calc(35px + env(safe-area-inset-right)); bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .touch-ring__hit { width: 50px; height: 50px; right: calc(35px + env(safe-area-inset-right)); bottom: calc(52px + env(safe-area-inset-bottom)); }
   .touch-ring__key { width: 38px; height: 38px; }
-  /* The same fan, opened out to the left along the bottom edge rather than
-     climbing the screen, and on a wider circle so the smaller buttons still do
-     not touch. */
-  .touch-ring__key--a { right: calc(5px + env(safe-area-inset-right)); bottom: calc(102px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--b { right: calc(46px + env(safe-area-inset-right)); bottom: calc(110px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--c { right: calc(85px + env(safe-area-inset-right)); bottom: calc(98px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--d { right: calc(115px + env(safe-area-inset-right)); bottom: calc(70px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--e { right: calc(129px + env(safe-area-inset-right)); bottom: calc(31px + env(safe-area-inset-bottom)); }
+  /* The same fan, opened out to the left along the bottom edge, and lifted so
+     the whole cluster clears the pass in the corner beneath it. */
+  .touch-ring__key--a { right: calc(5px + env(safe-area-inset-right)); bottom: calc(138px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--b { right: calc(46px + env(safe-area-inset-right)); bottom: calc(146px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--c { right: calc(85px + env(safe-area-inset-right)); bottom: calc(134px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--d { right: calc(115px + env(safe-area-inset-right)); bottom: calc(106px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--e { right: calc(129px + env(safe-area-inset-right)); bottom: calc(67px + env(safe-area-inset-bottom)); }
   /* Between the two thumbs rather than above them — there is no room above. */
   .interaction-toast { bottom: calc(16px + env(safe-area-inset-bottom)); max-width: min(46vw, 320px); height: 38px; }
   .world-camera-hint { bottom: calc(14px + env(safe-area-inset-bottom)); }
-  /* Both bottom corners belong to the thumbs when the phone is on its side, so
-     the pass gives one up. It sits under the header rather than in it — the
-     online badge already holds that corner, and the two were printed on top of
-     each other. */
+  /* Back in the corner it belongs in. The ring is lifted instead, which is the
+     better trade: the pass is reached occasionally and wants the familiar
+     corner, the ring is reached constantly and does not mind being an inch
+     higher. */
   .pass-toggle {
-    width: 78px; height: 34px; font-size: 13px; bottom: auto;
-    top: calc(46px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right));
+    width: 78px; height: 34px; font-size: 13px;
+    bottom: calc(10px + env(safe-area-inset-bottom)); right: calc(10px + env(safe-area-inset-right));
   }
   .festival-pass {
-    bottom: auto; top: calc(90px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right));
+    bottom: calc(52px + env(safe-area-inset-bottom)); top: auto; right: calc(10px + env(safe-area-inset-right));
     /* Was measured against the whole window, which on a phone lying down is
        most of the screen and left the list running off the bottom with nothing
        to grab. Bounded by what is actually below the toggle, and given a
        scroller of its own so a drag inside it never becomes a drag on the
        world behind. */
-    max-height: calc(100vh - 104px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-height: calc(100vh - 76px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
     touch-action: pan-y;
   }
-  /* A screening's own panel spanned the full width and covered the picture it
-     was describing. Drawn in to the left, clear of the pass, and never more
-     than half the width. */
+  /* Centred and back on one line, the way it reads on a desk. Stacked into a
+     column it became a slab down the side of the picture it is describing; in a
+     row it is a caption under it. The pads are already hidden while seated, so
+     the bottom of the screen is free for it. */
   .public-seat-hud {
-    left: calc(10px + env(safe-area-inset-left)); right: auto;
+    left: 50%; right: auto; transform: translateX(-50%);
     bottom: calc(10px + env(safe-area-inset-bottom));
-    width: min(52vw, 420px); gap: 6px;
+    width: auto; max-width: min(84vw, 640px);
+    flex-direction: row; align-items: center; gap: 12px;
   }
-  .public-seat-hud strong { font-size: 14px; max-width: 100%; }
-  .public-seat-hud button { padding: 6px 10px; font-size: 12px; }
+  .public-seat-hud strong { font-size: 14px; max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .public-seat-hud > div:last-child { width: auto; }
+  .public-seat-hud button { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
   /* The header did not allow for the notch and the pass did, so on a phone
      with one the two were measured from different edges and never lined up.
      Both sit on the same inset now. */
