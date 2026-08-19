@@ -775,7 +775,13 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   75% { transform: translate3d(-4%, -2%, 0); }
   100% { transform: translate3d(1%, 4%, 0); }
 }
-@media (max-width: 780px) {
+/* Phones, whichever way up they are held. Width alone was the test, and a
+   phone turned on its side is wider than the threshold — so landscape fell all
+   the way back to the desk layout: no thumbstick, no ring, and the strip of key
+   names printed over the world for a device with no keys. The second clause
+   catches a phone on its side without catching a tablet, whose landscape height
+   is far greater. */
+@media (max-width: 780px), (orientation: landscape) and (max-height: 500px) {
   body { overflow: auto; }
   .gate { align-items: start; padding: 104px 14px 28px; }
   .gate__sun { left: -20%; top: 12%; }
@@ -959,3 +965,38 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .dj-about__stale { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 0; border: 2px solid var(--red); padding: 10px 12px; font: 700 13px/1.4 sans-serif; }
 .dj-about__stale button { min-height: 34px; border: 0; padding: 0 12px; color: white; background: var(--red); font: 800 11px var(--condensed); letter-spacing: .06em; cursor: pointer; }
 .dj-about__stale button[data-armed] { background: var(--ink); }
+
+/* A phone held sideways has barely four hundred pixels from top to bottom, and
+   the upright layout stacks the prompt, the ring and the pass through nearly
+   six hundred of them. Everything draws in toward the two bottom corners, where
+   the thumbs already are, and the middle of the screen is left as picture. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .touch-stick { width: 92px; height: 92px; left: calc(14px + env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom)); }
+  .touch-stick__knob { width: 40px; height: 40px; }
+  .touch-ring__hit { width: 50px; height: 50px; right: calc(35px + env(safe-area-inset-right)); bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .touch-ring__key { width: 38px; height: 38px; }
+  /* The same fan, opened out to the left along the bottom edge rather than
+     climbing the screen, and on a wider circle so the smaller buttons still do
+     not touch. */
+  .touch-ring__key--a { right: calc(5px + env(safe-area-inset-right)); bottom: calc(102px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--b { right: calc(46px + env(safe-area-inset-right)); bottom: calc(110px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--c { right: calc(85px + env(safe-area-inset-right)); bottom: calc(98px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--d { right: calc(115px + env(safe-area-inset-right)); bottom: calc(70px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--e { right: calc(129px + env(safe-area-inset-right)); bottom: calc(31px + env(safe-area-inset-bottom)); }
+  /* Between the two thumbs rather than above them — there is no room above. */
+  .interaction-toast { bottom: calc(16px + env(safe-area-inset-bottom)); max-width: min(46vw, 320px); height: 38px; }
+  .world-camera-hint { bottom: calc(14px + env(safe-area-inset-bottom)); }
+  /* Both bottom corners belong to the thumbs when the phone is on its side, so
+     the pass gives one up and goes to the top, where the header already is. */
+  .pass-toggle {
+    width: 78px; height: 34px; font-size: 13px; bottom: auto;
+    top: calc(6px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right));
+  }
+  .festival-pass {
+    bottom: auto; top: calc(46px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right));
+    max-height: calc(100vh - 60px); overflow-y: auto;
+  }
+  .world-header { padding: 4px 10px; }
+  .venue-screen { top: 62px; }
+  .world-alert { top: 54px; }
+}

@@ -69,6 +69,12 @@ interface SavedProfile {
  * short enough that it does not feel like the prompt is ignoring them.
  */
 const PROMPT_HOLD_MS = 450;
+/**
+ * How long the camera's own controls stay up before settling out of the
+ * picture. Long enough to reach for one, short enough that a photograph is not
+ * composed around them.
+ */
+const CAMERA_IDLE_MS = 2_600;
 const PROFILE_KEY = 'myschedule-festival-profile-v1';
 const PRIVATE_PROGRESS_KEY = 'myschedule-private-screening-v1';
 const CHAT_KEY = 'myschedule-local-chat-v2';
@@ -234,6 +240,7 @@ export class App {
   private screenMaximized = false;
   private promptHoldTimer = 0;
   private promptHeld = false;
+  private cameraIdleTimer = 0;
   private publicFilmId?: string;
   private openDjBooth?: { name: string; venue: 'club' | 'rooftop'; view: 'requests' | 'about' };
   /** Set once STAFF touch the introduction, so no update can redraw over them. */
@@ -250,6 +257,8 @@ export class App {
   private localHitAt = 0;
   private jukeboxVolume = readStoredJukeboxVolume();
   private jukeboxFrame?: HTMLIFrameElement;
+  /** Lengths already reported, so the same one is not sent on every message. */
+  private readonly jukeboxReportedDurations = new Map<string, number>();
   private jukeboxPlayingId?: string;
   private jukeboxStartedAt = 0;
   private jukeboxSilenced = false;
@@ -558,6 +567,7 @@ export class App {
           </div>
         </div>
         <button class="world-camera-hint" type="button" data-camera-step hidden></button>
+        <button class="zoom-reset" type="button" data-zoom-reset hidden>${zh ? '重設縮放' : 'RESET ZOOM'}</button>
         <header class="world-header">
           <div class="world-brand"><img class="brand-logo" src="${companyLogoUrl}" alt="我的檔期" /><span>MYSCHEDULE</span></div>
           <div class="status-cluster" id="connection-status" data-status="connecting">
@@ -756,6 +766,23 @@ export class App {
       });
     }
     window.addEventListener('keydown', this.globalShortcut);
+    // Pinching the page is allowed — it is the only way back from a browser
+    // that has decided to zoom on its own — but once zoomed there is no obvious
+    // way to say "put it back". This appears when the page is scaled and does
+    // exactly that.
+    const viewport = window.visualViewport;
+    if (viewport) {
+      const watchScale = () => {
+        const button = this.root.querySelector<HTMLButtonElement>('[data-zoom-reset]');
+        if (button) button.hidden = viewport.scale <= 1.02;
+      };
+      viewport.addEventListener('resize', watchScale);
+      viewport.addEventListener('scroll', watchScale);
+      watchScale();
+    }
+    this.root.querySelector<HTMLButtonElement>('[data-zoom-reset]')?.addEventListener('click', () => {
+      this.resetPageZoom();
+    });
     const stick = this.root.querySelector<HTMLElement>('[data-stick]');
     const knob = this.root.querySelector<HTMLElement>('[data-stick-knob]');
     if (stick && knob) {
@@ -802,6 +829,18 @@ export class App {
     // fire once, on the way down, so they answer as fast as a keyboard does.
     this.root.querySelector<HTMLButtonElement>('[data-camera-step]')?.addEventListener('click', () => {
       this.cycleViewMode();
+      this.wakeCameraControls();
+    });
+    // In a camera mode everything that is not the picture settles out of the
+    // way on its own — the filter tab and the way out both — and a touch on the
+    // frame calls them back. Nothing has to be dismissed and nothing is lost:
+    // the frame is clean while you are composing, and one tap has it all again.
+    this.root.addEventListener('pointerdown', (event) => {
+      if (this.viewMode === 'normal') return;
+      const target = event.target as HTMLElement | null;
+      // A press on a control is using it, not asking to see it.
+      if (target?.closest('.world-postcard__tools, .world-camera-hint')) return;
+      this.wakeCameraControls();
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-touch-act]').forEach((button) => {
       const act = button.dataset.touchAct;
@@ -2045,6 +2084,37 @@ export class App {
     this.setViewMode(order[(order.indexOf(this.viewMode) + 1) % order.length]);
   }
 
+  /**
+   * Bring the camera's controls back and start them settling again. Left alone
+   * they go, so the picture is the only thing on screen.
+   */
+  /**
+   * Put the page back to its own size. There is no API that sets the pinch
+   * scale, but a browser re-reads the viewport when it changes, so pinning the
+   * scale for a moment and then letting go snaps it back to one and leaves
+   * pinching available again afterwards.
+   */
+  private resetPageZoom(): void {
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+    if (!meta) return;
+    const original = meta.content;
+    meta.content = `${original}, maximum-scale=1.0, minimum-scale=1.0`;
+    window.setTimeout(() => {
+      meta.content = original;
+    }, 320);
+  }
+
+  private wakeCameraControls(): void {
+    const shell = this.root.querySelector<HTMLElement>('.world-shell');
+    if (!shell) return;
+    window.clearTimeout(this.cameraIdleTimer);
+    delete shell.dataset.cameraIdle;
+    if (this.viewMode === 'normal') return;
+    this.cameraIdleTimer = window.setTimeout(() => {
+      shell.dataset.cameraIdle = 'on';
+    }, CAMERA_IDLE_MS);
+  }
+
   private setViewMode(mode: 'normal' | 'camera' | 'postcard' | 'film'): void {
     this.viewMode = mode;
     const shell = this.root.querySelector<HTMLElement>('.world-shell');
@@ -2076,13 +2146,9 @@ export class App {
       window.clearTimeout(this.cameraHintTimer);
       if (mode !== 'normal') {
         hint.dataset.shown = 'on';
-        // On a phone it is the control, so it stays put. On a desk it is only a
-        // reminder that C does this, and gets out of the picture.
-        if (!touch) {
-          this.cameraHintTimer = window.setTimeout(() => {
-            delete hint.dataset.shown;
-          }, 2_600);
-        }
+        // Both go quiet together now, handled by the idle timer, so the way
+        // out and the filter tab never disagree about whether they are up.
+        this.wakeCameraControls();
       } else {
         delete hint.dataset.shown;
       }
@@ -2147,6 +2213,12 @@ export class App {
         this.applyJukeboxVolume();
         window.setTimeout(() => this.applyJukeboxVolume(), 600);
       });
+      // The festival moves the record on when it believes it has finished, and
+      // without being told how long one runs it fell back to a flat guess of
+      // three and a half minutes — so every record longer than that was cut off
+      // partway. The player knows the real length; nobody was ever asking it.
+      // The venue screens have always reported theirs; the jukebox never did.
+      window.addEventListener('message', this.jukeboxMessage);
       this.root.querySelector('.world-shell')?.appendChild(frame);
       this.jukeboxFrame = frame;
     }
@@ -2169,6 +2241,28 @@ export class App {
     frame.src = url.toString();
     this.applyJukeboxVolume();
   }
+
+  /**
+   * The jukebox player talking back. It volunteers the length of the record as
+   * soon as it has one, which is the only way the festival can move the running
+   * order on at the right moment rather than at a guess.
+   */
+  private readonly jukeboxMessage = (event: MessageEvent): void => {
+    if (!this.jukeboxFrame || event.source !== this.jukeboxFrame.contentWindow) return;
+    if (typeof event.data !== 'string') return;
+    let payload: { event?: string; info?: { duration?: number } };
+    try {
+      payload = JSON.parse(event.data) as typeof payload;
+    } catch {
+      return;
+    }
+    const seconds = payload?.info?.duration;
+    if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 5) return;
+    const youtubeId = this.jukeboxPlayingId;
+    if (!youtubeId || this.jukeboxReportedDurations.get(youtubeId) === Math.round(seconds)) return;
+    this.jukeboxReportedDurations.set(youtubeId, Math.round(seconds));
+    if (this.festivalClient.online) void this.festivalClient.reportJukeboxDuration(youtubeId, Math.round(seconds));
+  };
 
   private stopJukebox(): void {
     if (!this.jukeboxFrame) return;

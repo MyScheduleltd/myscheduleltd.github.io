@@ -189,6 +189,14 @@ interface NpcAvatar {
   /** Where this NPC is spending its time, and until when. */
   haunt?: string;
   dwellUntil?: number;
+  /**
+   * This resident's own lane. Every route in the festival is a shared list of
+   * points, so without an offset of their own every resident visiting a place
+   * walked the identical line through the identical spots and piled into
+   * whoever was already walking it. Fixed per resident so the lane is theirs
+   * and no two are ever the same.
+   */
+  lane: THREE.Vector2;
 }
 
 interface RemoteAvatar {
@@ -330,6 +338,15 @@ const PROJECTOR_WARM_MARGIN = 6;
  * out, so the pose is work nobody sees.
  */
 const NPC_ANIMATION_RANGE_SQ = 38 * 38;
+/**
+ * How far off a shared route a resident walks their own line. Ten places are
+ * shared between twelve residents, so the pairs that actually walk the same
+ * route are the ones ten apart in the round — and those sit 2.8 apart at this
+ * radius, twice the 1.35 two bodies are held at. Residents crossing between
+ * different places are still the separation pass's job; lanes only make sure
+ * nobody is asked to walk a line somebody else is already walking.
+ */
+const NPC_LANE_RADIUS = 2.6;
 const CAMERA_ZOOM_MIN = 0.45;
 const CAMERA_ZOOM_MAX = 2.2;
 /** How far back the camera sat last visit, if the browser still remembers. */
@@ -4763,26 +4780,26 @@ export class FestivalWorld {
     badge.visible = false;
     npc.add(badge);
     const routeTemplate = routes[index % routes.length];
-    const routeCycle = Math.floor(index / routes.length);
-    // There are ten routes and twelve residents, so two of them share a route
-    // with somebody and are meant to be nudged off it. The old arithmetic gave
-    // the second time round an offset of exactly (0, 0) — ((1 % 3) - 1) is
-    // zero, and floor(2 / 3) is zero — so YO was put down on precisely the spot
-    // KENNY already stood on, walking the same loop from the same corner. They
-    // were not getting stuck with each other; they started inside each other.
-    //
-    // Stepped round a circle instead. The angle is a turn that never lines back
-    // up with itself, so no two cycles land on the same offset however many
-    // residents are added later.
-    const spread = routeCycle * 2.399;
-    const offsetX = routeCycle === 0 ? 0 : Math.cos(spread) * 2.8;
-    const offsetZ = routeCycle === 0 ? 0 : Math.sin(spread) * 2.8;
-    const route = routeTemplate.map(([x, z]) => new THREE.Vector3(x + offsetX, AVATAR_GROUND_Y, z + offsetZ));
+    // A lane of this resident's own, kept for as long as they exist, and
+    // applied to every route they are ever handed. Ten places are shared
+    // between twelve residents, and the routes themselves are shared lists of
+    // points — so without this, everybody who visited a place walked the very
+    // same line through the very same spots and piled into whoever was already
+    // walking it. Stepped round a circle by a turn that never lines back up
+    // with itself, so no two residents are ever given the same lane. It also
+    // subsumes the old start-position nudge, which only moved the two that
+    // wrapped and left them on the shared line regardless.
+    const lane = new THREE.Vector2(
+      Math.cos(index * 2.399) * NPC_LANE_RADIUS,
+      Math.sin(index * 2.399) * NPC_LANE_RADIUS,
+    );
+    const route = routeTemplate.map(([x, z]) => this.laneAdjusted(x, z, lane, AVATAR_GROUND_Y));
     npc.position.copy(route[0]);
     this.scene.add(npc);
     const avatar: NpcAvatar = {
       id: profile.id,
       name: profile.name,
+      lane,
       group: npc,
       badge,
       rig,
@@ -4974,6 +4991,19 @@ export class FestivalWorld {
    * bargain the crowd already makes at the edge of view, held to a distance
    * where it cannot be seen.
    */
+  /**
+   * A point on a shared route, moved into one resident's own lane. Routes hug
+   * walls in places and a lane is a few metres wide, so where the offset would
+   * put somebody inside the scenery it is given up for that point rather than
+   * walking them into a building.
+   */
+  private laneAdjusted(x: number, z: number, lane: THREE.Vector2, y: number): THREE.Vector3 {
+    const shiftedX = x + lane.x;
+    const shiftedZ = z + lane.y;
+    if (this.staticCollides(shiftedX, shiftedZ)) return new THREE.Vector3(x, y, z);
+    return new THREE.Vector3(shiftedX, y, shiftedZ);
+  }
+
   private shuffleNpcHaunt(npc: NpcAvatar, now: number): void {
     if (npc.station || !npc.dwellUntil || now < npc.dwellUntil) return;
     const current = NPC_TOUR.indexOf(npc.haunt ?? '');
@@ -5006,7 +5036,10 @@ export class FestivalWorld {
     }
     npc.haunt = next;
     npc.dwellUntil = now + NPC_DWELL_MIN_MS + Math.random() * NPC_DWELL_SPREAD_MS;
-    npc.route = arriving.map(([x, z]) => new THREE.Vector3(x, floor ?? AVATAR_GROUND_Y, z));
+    // Was the bare list of points, identical for everybody who came here, so
+    // the whole festival traced one line through one set of spots. Each walks
+    // their own lane through it now.
+    npc.route = arriving.map(([x, z]) => this.laneAdjusted(x, z, npc.lane, floor ?? AVATAR_GROUND_Y));
     // Whether this one is in the mood, decided fresh on each visit so the same
     // resident is not always the one dancing.
     npc.dances = NPC_DANCE_HAUNTS.has(next) && Math.random() < 0.55;
