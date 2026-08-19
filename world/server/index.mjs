@@ -724,6 +724,11 @@ const publicVisitor = (visitor) => ({
   presence: visitor.presence,
   hitAt: visitor.hitAt ?? 0,
   hitBy: visitor.hitBy,
+  // Where the blow came from, so the struck client can throw the body the
+  // right way. Without it a punch can only ever knock someone straight
+  // backwards, whichever side it actually landed on.
+  hitFromX: visitor.hitFromX,
+  hitFromZ: visitor.hitFromZ,
   impersonationOrigin: visitor.impersonationOrigin,
   seatedAt: visitor.seatedAt,
   mutedUntil: visitor.mutedUntil,
@@ -971,14 +976,24 @@ const server = createServer(async (request, response) => {
       const payload = await body(request);
       visitor.presence = {
         // These bounds have to cover every venue or attendees are dragged to
-        // the edge of them and drawn somewhere they are not. The world runs
-        // from the basement's west wall at -90 to the roof deck's east edge at
-        // 54, and from the far water at -58 to the club's south wall at 42.
-        x: Math.max(-95, Math.min(60, Number(payload.x) || 0)),
+        // the edge of them and drawn somewhere they are not — and, because the
+        // punch is resolved here from these same figures, punched at somewhere
+        // they are not either.
+        //
+        // They must be kept level with walkableXRange and the depth clamp in
+        // FestivalWorld. The world now runs west to the basement's plot at -99,
+        // east to the temple's steps at +111, south to the far water at -75 and
+        // north to the gate at +60. The previous east and north limits, 60 and
+        // 50, were written before the temple and the gate approach existed:
+        // everyone inside the temple was filed at x = 60, some fifty units west
+        // of where they stood, and anyone up by the gate was pinned at z = 50.
+        // Two attendees standing together in either place could not touch each
+        // other, because to this process they were nowhere near each other.
+        x: Math.max(-104, Math.min(116, Number(payload.x) || 0)),
         // Height, without which the roof deck seven units up and the basement
         // sixteen down both drew their occupants standing in the street.
-        y: Math.max(-24, Math.min(14, Number(payload.y) || 0)),
-        z: Math.max(-85, Math.min(50, Number(payload.z) || 0)),
+        y: Math.max(-24, Math.min(16, Number(payload.y) || 0)),
+        z: Math.max(-80, Math.min(65, Number(payload.z) || 0)),
         rotation: Number(payload.rotation) || 0,
         location: safeText(payload.location, 40) || 'FESTIVAL GATE',
         state: ['walking', 'seated', 'swimming'].includes(payload.state) ? payload.state : 'walking',
@@ -1007,26 +1022,52 @@ const server = createServer(async (request, response) => {
       }
       visitor.punchedAt = now;
       const from = visitor.presence;
-      // Facing is the rotation the attendee publishes; reach is a little over
-      // an arm's length, and the blow only lands on what is in front of it.
-      const facingX = Math.sin(from.rotation);
-      const facingZ = Math.cos(from.rotation);
+      // The thrower names whoever they saw in front of them. Presence here is
+      // up to about two fifths of a second old — it is published every fifth of
+      // a second and only when something changes — so a body walking is a
+      // couple of units from where it was reported and a body running is five,
+      // which is further than the reach. Recomputing the aim from those figures
+      // therefore misses people who were plainly in range on the thrower's
+      // screen, which is what made this look as though it did not work at all.
+      //
+      // So the aim is the client's and the check is ours: the pair have to be
+      // near each other and on the same level. The tolerance is generous enough
+      // to cover the lag and no more — it is not a reach, it is a sanity bound,
+      // and it is the only thing standing between this and punching someone
+      // across the festival.
+      const payload = await body(request).catch(() => ({}));
+      const namedId = typeof payload?.targetId === 'string' ? payload.targetId : undefined;
+      const named = namedId && namedId !== visitor.id ? visitors.get(namedId) : undefined;
+      const PLAUSIBLE_REACH = 7;
       let struck;
-      let closest = 3.2;
-      for (const other of visitors.values()) {
-        if (other.id === visitor.id) continue;
-        const dx = other.presence.x - from.x;
-        const dz = other.presence.z - from.z;
-        if (Math.abs((other.presence.y ?? 0) - (from.y ?? 0)) > 2.6) continue;
-        const distance = Math.hypot(dx, dz);
-        if (distance > closest || distance < 0.001) continue;
-        if ((dx / distance) * facingX + (dz / distance) * facingZ < 0.55) continue;
-        closest = distance;
-        struck = other;
+      if (named) {
+        const dx = named.presence.x - from.x;
+        const dz = named.presence.z - from.z;
+        const sameLevel = Math.abs((named.presence.y ?? 0) - (from.y ?? 0)) <= 2.6;
+        if (sameLevel && Math.hypot(dx, dz) <= PLAUSIBLE_REACH) struck = named;
+      } else {
+        // No name given — an older client, or a swing at nobody in particular.
+        // Fall back to working it out from here, as this always did.
+        const facingX = Math.sin(from.rotation);
+        const facingZ = Math.cos(from.rotation);
+        let closest = 3.2;
+        for (const other of visitors.values()) {
+          if (other.id === visitor.id) continue;
+          const dx = other.presence.x - from.x;
+          const dz = other.presence.z - from.z;
+          if (Math.abs((other.presence.y ?? 0) - (from.y ?? 0)) > 2.6) continue;
+          const distance = Math.hypot(dx, dz);
+          if (distance > closest || distance < 0.001) continue;
+          if ((dx / distance) * facingX + (dz / distance) * facingZ < 0.55) continue;
+          closest = distance;
+          struck = other;
+        }
       }
       if (!struck) return json(response, 200, { ok: true, hit: null });
       struck.hitAt = now;
       struck.hitBy = visitor.name;
+      struck.hitFromX = from.x;
+      struck.hitFromZ = from.z;
       // Whatever they were holding, they are not holding it now.
       let droppedMentor = false;
       if (mentorCarrierId === struck.id) {

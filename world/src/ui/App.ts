@@ -217,6 +217,7 @@ export class App {
   private activeSeatId = 'CURRENT SEAT';
   /** The last blow this attendee took, so one is played out only once. */
   private lastHitAt = 0;
+  private impactTimer = 0;
   private privateProgress?: PrivateProgress;
   private chatChannel: ChatChannel = 'NEARBY';
   private chatMessages: ChatMessage[];
@@ -478,6 +479,7 @@ export class App {
         <div class="world-css3d" id="world-css3d" aria-hidden="true"></div>
         <canvas id="world-foreground" aria-hidden="true"></canvas>
         <div class="world-vignette" aria-hidden="true"></div>
+        <div class="world-impact" data-impact aria-hidden="true"></div>
         <header class="world-header">
           <div class="world-brand"><img class="brand-logo" src="${companyLogoUrl}" alt="我的檔期" /><span>MYSCHEDULE</span></div>
           <div class="status-cluster" id="connection-status" data-status="connecting">
@@ -584,6 +586,12 @@ export class App {
     } else if (reviewTarget === 'rooftop' || reviewTarget === 'rooftop-dj') {
       this.world.focusRooftopForReview(reviewTarget === 'rooftop-dj');
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.clubReviewSnapshot();
+    } else if (reviewTarget === 'gate' || reviewTarget === 'gate-approach') {
+      this.world.focusGateForReview(reviewTarget === 'gate-approach');
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.structureReviewSnapshot();
+    } else if (reviewTarget === 'temple' || reviewTarget === 'temple-altar') {
+      this.world.focusTempleForReview(reviewTarget === 'temple-altar');
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.structureReviewSnapshot();
     } else if (reviewTarget === 'club-lobby') {
       this.world.focusClubLobbyForReview();
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.clubReviewSnapshot();
@@ -856,12 +864,16 @@ export class App {
     }
     if (action.type === 'punch') {
       const zh = this.language === 'zh-TW';
+      // Landing one on another attendee deserves the same confirmation as
+      // landing one on a resident. struck is the resident's name; targetId is
+      // set when the thrower had another attendee in front of them.
+      this.flashImpact(action.struck || action.targetId ? '2' : undefined);
       // A resident is settled here and now; another attendee is the service's
       // call, so that answer arrives a moment later and outranks this one.
       if (action.struck) {
         this.showWorldAlert(zh ? `打中了 ${action.struck}` : `LANDED ONE ON ${action.struck}`);
       }
-      void this.festivalClient.throwPunch().then((result) => {
+      void this.festivalClient.throwPunch(action.targetId).then((result) => {
         if (!result.hit) return;
         this.showWorldAlert(zh ? `打中了 ${result.hit.name}` : `LANDED ONE ON ${result.hit.name}`);
       });
@@ -869,9 +881,11 @@ export class App {
     }
     if (action.type === 'punched') {
       const zh = this.language === 'zh-TW';
+      this.flashImpact('1');
+      const from = action.by ? (zh ? `被 ${action.by} 打中` : `${action.by} LANDED ONE ON YOU`) : (zh ? '被打中了' : 'YOU TOOK ONE');
       this.showWorldAlert(action.droppedMentor
-        ? (zh ? '被打中 · MENTOR 掉了' : 'HIT — YOU DROPPED MENTOR')
-        : (zh ? '被打中了' : 'YOU TOOK ONE'));
+        ? (zh ? `${from} · MENTOR 掉了` : `${from} — YOU DROPPED MENTOR`)
+        : from);
       return;
     }
     if (action.type === 'donate') {
@@ -1611,7 +1625,7 @@ export class App {
     const hitAt = self?.hitAt ?? 0;
     if (hitAt && hitAt > this.lastHitAt) {
       this.lastHitAt = hitAt;
-      this.world?.takeHit();
+      this.world?.takeHit(self?.hitBy, self?.hitFromX, self?.hitFromZ);
     }
     if (state.templeSign) this.world?.setTempleSign(state.templeSign.name, state.templeSign.label);
     this.world?.setSharedMentorCarrier(state.mentorCarrierId, state.selfId);
@@ -1732,6 +1746,23 @@ export class App {
     this.hidePublicSeatHud();
     this.world?.forceStand();
     this.showWorldAlert(`${seatId} · ${result.message ?? 'SEAT IS UNAVAILABLE'}`);
+  }
+
+  /**
+   * The screen's answer to a punch: '1' for taking one, '2' for landing one.
+   * Held on for a beat and then released, and the class does the fading — the
+   * page is doing nothing else at that moment, so this stays off the frame
+   * loop the world is running.
+   */
+  private flashImpact(kind?: '1' | '2'): void {
+    if (!kind) return;
+    const layer = document.querySelector<HTMLElement>('[data-impact]');
+    if (!layer) return;
+    window.clearTimeout(this.impactTimer);
+    layer.dataset.hit = kind;
+    this.impactTimer = window.setTimeout(() => {
+      delete layer.dataset.hit;
+    }, kind === '1' ? 120 : 70);
   }
 
   private showWorldAlert(message: string): void {

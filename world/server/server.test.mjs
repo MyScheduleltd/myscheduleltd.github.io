@@ -923,6 +923,15 @@ test('presence keeps attendees where they stand across the whole world', async (
     { label: 'the basement', x: -68, y: -16.22, z: 30 },
     { label: 'the roof deck', x: 54, y: 7.28, z: 44 },
     { label: 'the far water', x: 0, y: -2.08, z: -58 },
+    // Added after both were found pinned. The temple sits out at x = 76 to 106
+    // and the service stopped at 60, so everyone inside it was filed forty-odd
+    // units west of where they stood; the gate approach runs to z = 60 and the
+    // service stopped at 50. Positions are what the punch is resolved from, so
+    // in both places two attendees standing together could not touch.
+    { label: 'the temple', x: 98, y: 1.48, z: 4 },
+    { label: 'the temple steps', x: 73, y: 1.48, z: -10 },
+    { label: 'the festival gate', x: 0, y: 0.28, z: 60 },
+    { label: "the basement's west end", x: -99, y: -16.22, z: 30 },
   ];
   for (const place of places) {
     const response = await fetch(`${baseUrl}/api/presence`, {
@@ -1048,4 +1057,76 @@ test('a punch lands on whoever is in front of it, and shakes MENTOR loose', asyn
   const hit = state.visitors.find((entry) => entry.name === 'TARGET');
   assert.ok(hit.hitAt > 0, 'the blow is published with the rest of the state');
   assert.equal(hit.hitBy, 'THROWER');
+  // Where it came from, so the struck body can be thrown away from it rather
+  // than always straight backwards.
+  assert.equal(hit.hitFromX, 0);
+  assert.equal(hit.hitFromZ, 0);
+});
+
+test('the thrower names their target, and cannot name one across the festival', async () => {
+  const thrower = await join('NAMER');
+  const target = await join('NAMED');
+  const stand = async (session, x, z, rotation) => {
+    const response = await fetch(`${baseUrl}/api/presence`, {
+      method: 'POST',
+      headers: auth(session),
+      body: JSON.stringify({
+        x, y: 0.28, z, rotation, location: 'MY SQUARE',
+        state: 'walking', moving: false, running: false, venue: 'shore',
+      }),
+    });
+    assert.equal(response.status, 202);
+  };
+  const punchAt = async (session, targetId) => (await (await fetch(`${baseUrl}/api/punch`, {
+    method: 'POST', headers: auth(session), body: JSON.stringify({ targetId }),
+  })).json()).hit;
+
+  // Standing back to back. Working the aim out from these figures finds
+  // nobody — but the thrower's screen had them in reach a moment ago, which is
+  // the case the naming exists for.
+  await stand(thrower, 0, 0, Math.PI);
+  await stand(target, 0, 4, 0);
+  assert.equal((await punchAt(thrower, target.id))?.name, 'NAMED', 'a named target in reach is struck whichever way both are facing');
+
+  // Naming someone forty units off is not lag, it is a lie.
+  await new Promise((resolve) => setTimeout(resolve, 650));
+  await stand(target, 0, -40, 0);
+  assert.equal(await punchAt(thrower, target.id), null, 'and one across the festival is refused');
+
+  // Naming yourself does nothing.
+  await new Promise((resolve) => setTimeout(resolve, 650));
+  assert.equal(await punchAt(thrower, thrower.id), null, 'nobody punches themselves');
+});
+
+test('a punch lands in the temple, where the map used to stop', async () => {
+  // The whole reason this is its own test: hit detection reads the positions
+  // the service holds, and the service used to clamp everyone in the temple to
+  // the same spot forty units west. Two attendees standing face to face in
+  // front of the altar were, to this process, standing on top of each other at
+  // x = 60 — and a punch there found either nothing or the wrong person.
+  const thrower = await join('EAST THROWER');
+  const target = await join('EAST TARGET');
+  const stand = async (session, x, z, rotation) => {
+    const response = await fetch(`${baseUrl}/api/presence`, {
+      method: 'POST',
+      headers: auth(session),
+      body: JSON.stringify({
+        x, y: 1.48, z, rotation, location: 'THE TEMPLE',
+        state: 'walking', moving: false, running: false, venue: 'shore',
+      }),
+    });
+    assert.equal(response.status, 202);
+  };
+
+  await stand(thrower, 96, 4, 0);
+  await stand(target, 96, 6, 0);
+  const landed = await (await fetch(`${baseUrl}/api/punch`, { method: 'POST', headers: auth(thrower) })).json();
+  assert.equal(landed.hit?.name, 'EAST TARGET', 'a blow thrown in the temple lands there');
+
+  // And the far side of the world still works the same way.
+  await new Promise((resolve) => setTimeout(resolve, 650));
+  await stand(thrower, 0, 58, 0);
+  await stand(target, 0, 60, 0);
+  const atTheGate = await (await fetch(`${baseUrl}/api/punch`, { method: 'POST', headers: auth(thrower) })).json();
+  assert.equal(atTheGate.hit?.name, 'EAST TARGET', 'and one thrown at the gate lands there');
 });

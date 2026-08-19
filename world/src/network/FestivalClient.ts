@@ -25,6 +25,9 @@ export interface NetworkVisitor {
   name: string;
   hitAt?: number;
   hitBy?: string;
+  /** Where the blow was thrown from, so the body can be thrown away from it. */
+  hitFromX?: number;
+  hitFromZ?: number;
   originalName: string;
   palette: AvatarPalette;
   presence: NetworkPresence;
@@ -348,10 +351,13 @@ export class FestivalClient {
     await this.request('/api/presence', { method: 'POST', body: payload }, false);
   }
 
-  async throwPunch(): Promise<{ hit?: { id: string; name: string; droppedMentor: boolean } | null }> {
+  async throwPunch(targetId?: string): Promise<{ hit?: { id: string; name: string; droppedMentor: boolean } | null }> {
     if (!this.session || this.closed) return {};
     try {
-      return await this.request('/api/punch', { method: 'POST' }) as { hit?: { id: string; name: string; droppedMentor: boolean } | null };
+      return await this.request('/api/punch', {
+        method: 'POST',
+        body: JSON.stringify({ targetId }),
+      }) as { hit?: { id: string; name: string; droppedMentor: boolean } | null };
     } catch {
       return {};
     }

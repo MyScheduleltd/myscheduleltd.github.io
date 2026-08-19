@@ -56,8 +56,8 @@ export type WorldAction =
   | { type: 'ate' }
   | { type: 'drank'; drinks: number; drunk: boolean }
   | { type: 'donate'; target?: string; deity?: string }
-  | { type: 'punch'; struck?: string }
-  | { type: 'punched'; droppedMentor: boolean };
+  | { type: 'punch'; struck?: string; targetId?: string }
+  | { type: 'punched'; droppedMentor: boolean; by?: string };
 
 export interface AvatarPalette {
   skin: string;
@@ -170,6 +170,8 @@ interface NpcAvatar {
   eatUntil: number;
   phase: number;
   stuckFor: number;
+  /** Carried off the route by a punch, and spent over the next moment. */
+  knockback: THREE.Vector3;
   /** Set for NPCs that hold a post rather than walking a route. */
   station?: { position: THREE.Vector3; rotationY: number };
   pose?: 'dj' | 'dance';
@@ -709,6 +711,12 @@ export class FestivalWorld {
   private templeAltar?: { x: number; z: number };
   private lastDonationAt = 0;
   private lastPunchAt = 0;
+  // A blow is felt three ways: the view is jolted, the body is thrown, and the
+  // legs go for a moment. Shake decays on its own clock so a second punch
+  // landing mid-shake adds to it rather than restarting it.
+  private cameraShake = 0;
+  private cameraShakePhase = 0;
+  private readonly knockback = new THREE.Vector3();
   private punchPointerX = 0;
   private punchPointerY = 0;
   private verticalVelocity = 0;
@@ -910,6 +918,93 @@ export class FestivalWorld {
     this.cameraMode = 'follow';
     this.cameraOrbit.follow.yaw = Math.PI;
     this.cameraOrbit.follow.pitch = 0.3;
+  }
+
+  /**
+   * Loopback fixture standing on the approach road looking north at the gate,
+   * which is the one view of the sign every arrival gets.
+   */
+  focusGateForReview(fromOutside = false): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    // Two views, because the gate is read from both. Outside is where the sign
+    // faces and where the crossbar used to stand in front of it; inside is the
+    // view every attendee already in the festival has of the same structure.
+    const z = fromOutside ? GATE_Z - 4 : GATE_Z - 22;
+    this.player.position.set(0, this.groundHeightAt(0, z), z);
+    this.airborne = false;
+    this.verticalVelocity = 0;
+    this.player.rotation.y = fromOutside ? 0 : Math.PI;
+    this.cameraMode = 'follow';
+    // The zoom is remembered between visits, so a fixture that does not reset
+    // it is framed by whatever the last person did with the wheel.
+    this.cameraZoom = 1;
+    this.cameraOrbit.follow.yaw = fromOutside ? 0 : Math.PI;
+    this.cameraOrbit.follow.pitch = fromOutside ? 0.12 : -0.06;
+  }
+
+  /** Loopback fixture inside the temple, facing the altar down the hall. */
+  focusTempleForReview(atAltar = false): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    const centerZ = (TEMPLE.minZ + TEMPLE.maxZ) / 2;
+    // Far enough in that the camera, which sits ten behind, is inside the hall
+    // too — from the doorway it stood out on the forecourt looking at a wall.
+    const x = atAltar ? TEMPLE.maxX - 11 : TEMPLE.minX + 14;
+    this.player.position.set(x, this.groundHeightAt(x, centerZ), centerZ);
+    this.airborne = false;
+    this.verticalVelocity = 0;
+    this.player.rotation.y = Math.PI / 2;
+    // First person, because the hall is the thing being looked at and a
+    // third-person camera sits ten units behind the body — which in here is
+    // outside the building, through a wall, looking at the back of it.
+    this.cameraMode = 'first-person';
+    this.cameraZoom = 1;
+    // In first person the look vector is (-sin yaw, -sin pitch, -cos yaw), so
+    // this faces east, up the hall towards the altar.
+    this.cameraOrbit.follow.yaw = -Math.PI / 2;
+    this.cameraOrbit.follow.pitch = atAltar ? 0.02 : -0.06;
+  }
+
+  /**
+   * What the gate and the temple actually measure, for a loopback check. The
+   * headroom is the figure that matters in the temple: the hall was built at a
+   * height the god did not fit under.
+   */
+  structureReviewSnapshot(): {
+    player: { x: number; y: number; z: number };
+    templeFloorY: number;
+    templeCeilingY: number;
+    templeHeadroom: number;
+    altarTop: { minX: number; maxX: number; y: number };
+    deity: { x: number; lotusMinX: number; lotusMaxX: number; crownY: number };
+    gateSignZ: number[];
+    gateBarZ: { min: number; max: number };
+  } {
+    const wallHeight = 10.5;
+    const tierY = TEMPLE.podium + wallHeight + 0.5;
+    // Underside of the first roof tier, then the timber band slung beneath it.
+    const ceiling = tierY - 0.9 / 2 - 0.15 - 0.35 / 2;
+    const floor = TEMPLE.podium;
+    const altarX = TEMPLE.maxX - 5.5;
+    const tableCenterX = altarX + 1.3;
+    const tableWidth = 6.6;
+    const deityX = altarX + 1.9;
+    return {
+      player: { x: this.player.position.x, y: this.player.position.y, z: this.player.position.z },
+      templeFloorY: floor,
+      templeCeilingY: ceiling,
+      templeHeadroom: ceiling - floor,
+      altarTop: { minX: tableCenterX - tableWidth / 2, maxX: tableCenterX + tableWidth / 2, y: TEMPLE.podium + 1.38 },
+      // The lotus is the widest thing on the table and the part that was over
+      // the edge: eight petals on a 1.9 radius, each 0.8 across.
+      deity: {
+        x: deityX,
+        lotusMinX: deityX - 2.3,
+        lotusMaxX: deityX + 2.3,
+        crownY: TEMPLE.podium + 1.4 + 5.575,
+      },
+      gateSignZ: [GATE_Z - 0.9, GATE_Z + 0.9],
+      gateBarZ: { min: GATE_Z - 0.55, max: GATE_Z + 0.55 },
+    };
   }
 
   /** Loopback fixture standing in the lobby, looking at the stair opening. */
@@ -1919,6 +2014,29 @@ export class FestivalWorld {
     return nearest;
   }
 
+  /**
+   * The nearest other attendee in front of the thrower, judged on where their
+   * body is drawn rather than where it was last reported from.
+   */
+  private nearestVisitorInFront(reach: number): { id: string; name: string } | undefined {
+    const facingX = Math.sin(this.player.rotation.y);
+    const facingZ = Math.cos(this.player.rotation.y);
+    let nearest: { id: string; name: string } | undefined;
+    let closest = reach;
+    for (const [id, avatar] of this.remoteAvatars) {
+      if (!avatar.group.visible) continue;
+      const dx = avatar.group.position.x - this.player.position.x;
+      const dz = avatar.group.position.z - this.player.position.z;
+      if (Math.abs(avatar.group.position.y - this.player.position.y) > 2.6) continue;
+      const distance = Math.hypot(dx, dz);
+      if (distance > closest || distance < 0.001) continue;
+      if ((dx / distance) * facingX + (dz / distance) * facingZ < 0.55) continue;
+      closest = distance;
+      nearest = { id, name: avatar.name };
+    }
+    return nearest;
+  }
+
   private nearestNpcWithin(reach: number): NpcAvatar | undefined {
     let nearest: NpcAvatar | undefined;
     let nearestDistance = reach;
@@ -2040,6 +2158,9 @@ export class FestivalWorld {
     this.playerGestureUntil = now + 420;
     // Residents are ours to settle: they exist only in this client, so unlike a
     // blow aimed at another attendee there is nobody else to arbitrate it.
+    // The swing itself has weight even when it hits nothing — a small kick so
+    // the click is felt, not merely animated.
+    this.cameraShake = Math.min(1.4, this.cameraShake + 0.16);
     const npc = this.nearestNpcInFront(3.2);
     if (npc) {
       npc.gesture = 'hit';
@@ -2047,19 +2168,63 @@ export class FestivalWorld {
       // Knocked out of whatever they were doing, and off their route for a
       // moment, so the blow reads as landing rather than passing through.
       npc.waitUntil = now + 700;
+      // And knocked off their feet backwards, away from the fist.
+      const away = new THREE.Vector3(
+        npc.group.position.x - this.player.position.x,
+        0,
+        npc.group.position.z - this.player.position.z,
+      );
+      if (away.lengthSq() > 0.0001) {
+        away.normalize();
+        npc.knockback.copy(away).multiplyScalar(7.4);
+      }
+      // Landing one kicks harder than swinging at air.
+      this.cameraShake = Math.min(1.4, this.cameraShake + 0.34);
     }
-    this.onAction({ type: 'punch', struck: npc?.name });
+    // Whoever the thrower can actually see in front of them. The service holds
+    // positions that are up to a fifth of a second old and only sent while
+    // something changes, so at a walk its picture of a moving body trails the
+    // one on screen by a couple of units and at a run by five — further than
+    // the reach itself. Aiming at what is drawn, and letting the service check
+    // the pair are plausibly close rather than recompute the aim, is the only
+    // version of this that answers to what the thrower saw.
+    const struck = this.nearestVisitorInFront(3.2);
+    if (struck) {
+      this.cameraShake = Math.min(1.4, this.cameraShake + 0.34);
+    }
+    this.onAction({ type: 'punch', struck: npc?.name, targetId: struck?.id });
   }
 
-  /** Taking one: the body recoils, and anything carried is let go of. */
-  takeHit(): void {
+  /**
+   * Taking one: the view is jolted, the body is thrown off the blow's line, the
+   * legs go for half a second, and anything carried is let go of. `fromX`/
+   * `fromZ` are where the punch was thrown from; without them the body is
+   * thrown straight backwards.
+   */
+  takeHit(by?: string, fromX?: number, fromZ?: number): void {
     const now = performance.now();
     this.playerGesture = 'hit';
     this.playerGestureUntil = now + 620;
     this.dancing = false;
+    // Taking one is the loudest thing that happens to an attendee, so it gets
+    // the largest jolt in the world — more than the landing from a rooftop.
+    this.cameraShake = Math.min(1.8, this.cameraShake + 1.15);
+    // Thrown away from whoever swung. Falling back on the facing keeps this
+    // working against an older service that does not send the origin.
+    const away = new THREE.Vector3();
+    if (fromX !== undefined && fromZ !== undefined) {
+      away.set(this.player.position.x - fromX, 0, this.player.position.z - fromZ);
+    }
+    if (away.lengthSq() < 0.0001) {
+      away.set(-Math.sin(this.player.rotation.y), 0, -Math.cos(this.player.rotation.y));
+    }
+    this.knockback.copy(away.normalize()).multiplyScalar(9.6);
+    // Off balance rather than frozen: movement still answers, at the same
+    // reduced pace a bad landing costs, so nobody is held still to be hit again.
+    this.stumbleUntil = Math.max(this.stumbleUntil, now + 520);
     const droppedMentor = this.carriedItem === 'MENTOR';
     if (droppedMentor) this.putDownMentor();
-    this.onAction({ type: 'punched', droppedMentor });
+    this.onAction({ type: 'punched', droppedMentor, by });
   }
 
   /** Releasing focus mid-stride would otherwise leave the avatar running. */
@@ -2126,7 +2291,14 @@ export class FestivalWorld {
   }
 
   private foregroundPixelRatio(): number {
-    return Math.min(window.devicePixelRatio, this.graphicsMode === 'normal' ? 0.78 : 0.45);
+    // Matched to the main renderer. This pass redraws the same geometry over
+    // the finished picture, and the two only agree if they are shaded at the
+    // same resolution: at 0.78 against 1.25 the shadow bias, which is tuned for
+    // the main pass, came out as self-shadowing here — a rectangle of dimmed
+    // scene the shape of the scissor box, which is the block over the timetable.
+    // The pass only ever covers the screens' own rectangles, so this costs a
+    // fraction of a full-frame render.
+    return this.mainPixelRatio();
   }
 
   private projectorScissor(venue: VenueKey): { x: number; y: number; width: number; height: number } | undefined {
@@ -2476,12 +2648,30 @@ export class FestivalWorld {
     this.mesh([29, 1.1, 1.1], [0, 8.6, GATE_Z], gateMat);
     this.addCollider(-14, GATE_Z, 1.1, 1.1);
     this.addCollider(14, GATE_Z, 1.1, 1.1);
-    const gateSign = new THREE.Mesh(
-      new THREE.PlaneGeometry(22, 4.2),
-      new THREE.MeshBasicMaterial({ map: createTextTexture(['MYSCHEDULE', 'VIRTUAL FESTIVAL']) }),
-    );
-    gateSign.position.set(0, 8.6, GATE_Z - 0.65);
-    this.scene.add(gateSign);
+    // One sign on each face of the crossbar, each standing a third of a unit
+    // proud of it.
+    //
+    // There was a single panel, facing north, sunk two thirds of a unit into
+    // the bar's own one-unit thickness — so from the approach, which is the
+    // side it faces and the only side it could be read from, the bar stood
+    // between the reader and it and cut the second line off. The two are the
+    // same near-black at the same height, which is why it read as one object
+    // with a band across it rather than as two. Being a plane, it was also
+    // invisible from inside the festival, where the gate is seen just as often.
+    const gateSignTexture = createTextTexture(['MYSCHEDULE', 'VIRTUAL FESTIVAL']);
+    for (const facing of [1, -1]) {
+      const gateSign = new THREE.Mesh(
+        new THREE.PlaneGeometry(22, 4.2),
+        new THREE.MeshBasicMaterial({ map: gateSignTexture }),
+      );
+      gateSign.position.set(0, 8.6, GATE_Z + facing * 0.9);
+      if (facing < 0) gateSign.rotation.y = Math.PI;
+      this.scene.add(gateSign);
+      // Short stubs back to the bar, so the panel reads as mounted on it.
+      for (const side of [-1, 1]) {
+        this.mesh([0.24, 0.24, 0.9], [side * 9.4, 8.6, GATE_Z + facing * 0.45], gateMat);
+      }
+    }
 
     // The approach road now runs from the gate south past the club turning.
     const road = this.mesh([17, 0.06, GATE_Z - 4], [0, 0.2, (GATE_Z + 4) / 2 - 2], material(0x2f2d31, 0.8, 0.1));
@@ -3310,7 +3500,11 @@ export class FestivalWorld {
       this.mesh([1.5, riseTop, 13], [x, riseTop / 2, centerZ], stone);
     }
 
-    const wallHeight = 6.4;
+    // Raised from 6.4. At that height the eaves came down to about six units
+    // over the floor and the god's crown was inside the roof slab — a hall you
+    // stooped in. The doorway below does not follow it up; see doorHeight.
+    const wallHeight = 10.5;
+    const doorHeight = 7.2;
     const wallY = t.podium + wallHeight / 2;
     // North and south walls, then the east wall behind the altar.
     for (const z of [t.minZ, t.maxZ]) {
@@ -3328,7 +3522,15 @@ export class FestivalWorld {
       this.addCollider(t.minX, (from + to) / 2, t.wallThickness, span, 0.16, { minY: -0.4, maxY: 60 }, 'temple-front');
     }
     // Lintel over the doorway, so the opening reads as a door and not a hole.
-    this.mesh([t.wallThickness + 0.4, 1.5, t.doorHalfWidth * 2], [t.minX, t.podium + wallHeight - 0.75, centerZ], timber);
+    // It sits at the door's own height rather than the wall's: a taller hall
+    // should not mean a taller hole in the front of it.
+    this.mesh([t.wallThickness + 0.4, 1.5, t.doorHalfWidth * 2], [t.minX, t.podium + doorHeight - 0.75, centerZ], timber);
+    // The front wall carries on above the lintel to meet the eaves.
+    this.mesh(
+      [t.wallThickness, wallHeight - doorHeight, t.doorHalfWidth * 2],
+      [t.minX, t.podium + doorHeight + (wallHeight - doorHeight) / 2, centerZ],
+      lacquer,
+    );
 
     // One pillar to each corner, carrying the roof where it needs carrying.
     // They used to march down the middle of both flanks, which put one squarely
@@ -3372,13 +3574,15 @@ export class FestivalWorld {
     // the wall it sat back under the overhanging roof, in its shadow and half
     // hidden by it; a temple banner belongs out in front where it can be read
     // from the forecourt.
-    templeSign.position.set(t.minX - 4.6, t.podium + wallHeight - 1.4, centerZ);
+    // Hung at the door's height, not the wall's, so raising the hall does not
+    // carry the banner up out of reading range.
+    templeSign.position.set(t.minX - 4.6, t.podium + doorHeight - 1.4, centerZ);
     const signBracket = material(0x4a3a2a, 0.7, 0.1);
-    this.mesh([4.4, 0.26, 0.26], [t.minX - 2.4, t.podium + wallHeight + 0.5, centerZ], signBracket);
+    this.mesh([4.4, 0.26, 0.26], [t.minX - 2.4, t.podium + doorHeight + 0.5, centerZ], signBracket);
     for (const side of [-1, 1]) {
-      this.mesh([0.16, 1.5, 0.16], [t.minX - 4.6, t.podium + wallHeight - 0.25, centerZ + side * 3.9], signBracket);
+      this.mesh([0.16, 1.5, 0.16], [t.minX - 4.6, t.podium + doorHeight - 0.25, centerZ + side * 3.9], signBracket);
     }
-    this.mesh([0.3, 0.3, 8.6], [t.minX - 4.6, t.podium + wallHeight + 0.4, centerZ], signBracket);
+    this.mesh([0.3, 0.3, 8.6], [t.minX - 4.6, t.podium + doorHeight + 0.4, centerZ], signBracket);
     templeSign.rotation.y = -Math.PI / 2;
     this.scene.add(templeSign);
 
@@ -3386,8 +3590,15 @@ export class FestivalWorld {
     // god seated above it. Not a pillar — a figure, in the same blocky idiom as
     // everyone who comes to see her.
     const altarX = t.maxX - 5.5;
-    this.mesh([2.6, 1.1, 12], [altarX, t.podium + 0.55, centerZ], stone);
-    this.mesh([3.2, 0.28, 12.6], [altarX, t.podium + 1.24, centerZ], timber);
+    // The god sits 1.9 back from the offering line, and her lotus is 2.3
+    // across from the middle of it — on a table 3.2 wide she stood with most of
+    // the dais over the edge and nothing under it. The top now runs from in
+    // front of the offerings to clear behind her, and the stone base follows,
+    // set in so the top still reads as a top.
+    const tableCenterX = altarX + 1.3;
+    const tableWidth = 6.6;
+    this.mesh([tableWidth - 1.4, 1.1, 12], [tableCenterX, t.podium + 0.55, centerZ], stone);
+    this.mesh([tableWidth, 0.28, 12.6], [tableCenterX, t.podium + 1.24, centerZ], timber);
     for (const z of [centerZ - 3, centerZ, centerZ + 3]) {
       this.mesh([0.9, 0.45, 0.9], [altarX - 0.1, t.podium + 1.6, z], gold);
     }
@@ -3453,15 +3664,32 @@ export class FestivalWorld {
     const auraLight = new THREE.PointLight(0xffcf8a, 26, 20, 1.7);
     auraLight.position.set(altarX - 2.6, t.podium + 4.6, centerZ);
     this.scene.add(auraLight);
-    this.addCollider(altarX + 1, centerZ, 6, 12.6, 0.2, { minY: -0.4, maxY: 60 }, 'temple-altar');
+    this.addCollider(tableCenterX, centerZ, tableWidth, 12.6, 0.2, { minY: -0.4, maxY: 60 }, 'temple-altar');
     this.templeAltar = { x: altarX, z: centerZ };
 
-    // Lanterns down the aisle.
+    // Lanterns down the aisle, on cords from the ceiling.
+    //
+    // They used to be placed at a height measured up from the floor, which is
+    // how a lamp on a post is placed, not how a lantern is hung — so they sat
+    // in mid-air with a gap above them, and raising the hall only widened the
+    // gap. A hung thing is measured down from what holds it. The underside of
+    // the first roof tier is the ceiling of this room: the slab is centred at
+    // wallHeight + 0.5 and is 0.9 deep, with a 0.35 timber band slung 0.15
+    // under it, so the lowest thing overhead is at wallHeight + 0.5 - 0.625.
+    const ceilingY = t.podium + wallHeight + 0.5 - 0.9 / 2 - 0.15 - 0.35 / 2;
+    const lanternHeight = 1.1;
+    // Head height and above, well clear of the tallest attendee.
+    const lanternTopY = t.podium + 5.55;
     for (const z of [centerZ - 5, centerZ + 5]) {
       for (const x of [t.minX + 8, t.maxX - 9]) {
-        this.mesh([0.8, 1.1, 0.8], [x, t.podium + wallHeight - 1.4, z], material(0xd8452c, 0.5, 0.1));
+        const cordLength = ceilingY - lanternTopY;
+        this.mesh([0.09, cordLength, 0.09], [x, lanternTopY + cordLength / 2, z], material(0x2a2118, 0.8, 0.05));
+        this.mesh([0.8, lanternHeight, 0.8], [x, lanternTopY - lanternHeight / 2, z], material(0xd8452c, 0.5, 0.1));
+        // Cap where the cord meets the lantern, so the join is not a wire
+        // vanishing into a box.
+        this.mesh([0.34, 0.14, 0.34], [x, lanternTopY, z], material(0xc9a227, 0.4, 0.55));
         const glow = new THREE.PointLight(0xff9a5a, 55, 26, 1.4);
-        glow.position.set(x, t.podium + wallHeight - 1.9, z);
+        glow.position.set(x, lanternTopY - lanternHeight, z);
         this.scene.add(glow);
       }
     }
@@ -4039,6 +4267,7 @@ export class FestivalWorld {
       eatUntil: 0,
       phase: index * 0.81,
       stuckFor: 0,
+      knockback: new THREE.Vector3(),
       haunt: NPC_HAUNT_KEYS[index % NPC_HAUNT_KEYS.length],
       dwellUntil: performance.now() + NPC_DWELL_MIN_MS + index * 4_000,
     };
@@ -4655,6 +4884,7 @@ export class FestivalWorld {
       const recovering = performance.now() < this.stumbleUntil ? 0.42 : 1;
       this.movePlayer(horizontal, vertical, speed * recovering * delta);
     }
+    this.applyKnockback(delta);
 
     const shouldWearSwimwear = this.player.position.z < -58.2;
     if (shouldWearSwimwear !== (this.outfit === 'swimwear')) this.setOutfit(shouldWearSwimwear);
@@ -4827,6 +5057,32 @@ export class FestivalWorld {
     this.player.position.x = THREE.MathUtils.clamp(this.player.position.x, reach.min, reach.max);
     this.resolvePlayerCrowdCollisions(previous);
     this.player.rotation.y = Math.atan2(this.moveVector.x, this.moveVector.z);
+  }
+
+  /**
+   * Carries the body away from a punch that landed on it. Separate from
+   * movePlayer because a blow lands whether or not the struck attendee is
+   * pressing anything, and it has to answer the same walls and edges walking
+   * does — being punched should not put anyone through a wall.
+   */
+  private applyKnockback(delta: number): void {
+    if (this.knockback.lengthSq() < 0.0004) {
+      this.knockback.set(0, 0, 0);
+      return;
+    }
+    const nextX = this.player.position.x + this.knockback.x * delta;
+    const nextZ = this.player.position.z + this.knockback.z * delta;
+    if (this.staticCollides(nextX, nextZ, this.player.position.y)) {
+      // Put against a wall the blow stops there rather than pushing through it.
+      this.knockback.set(0, 0, 0);
+      return;
+    }
+    this.player.position.x = nextX;
+    this.player.position.z = nextZ;
+    this.player.position.z = THREE.MathUtils.clamp(this.player.position.z, -75, GATE_Z - 2);
+    const reach = this.walkableXRange(this.player.position.z);
+    this.player.position.x = THREE.MathUtils.clamp(this.player.position.x, reach.min, reach.max);
+    this.knockback.multiplyScalar(Math.exp(-delta * 8.2));
   }
 
   private updateNpcs(delta: number, elapsed: number): void {
@@ -5005,6 +5261,22 @@ export class FestivalWorld {
         }
         npc.stuckFor = 0;
         npc.waitUntil = now + 240;
+      }
+      // Carried off the route by a punch. Applied after the route step and
+      // before the floor is found, so a struck resident skids back over the
+      // ground they are standing on rather than through it.
+      if (npc.knockback.lengthSq() > 0.0004) {
+        const slideX = npc.group.position.x + npc.knockback.x * delta;
+        const slideZ = npc.group.position.z + npc.knockback.z * delta;
+        if (!this.staticCollides(slideX, slideZ, npc.group.position.y)) {
+          npc.group.position.x = slideX;
+          npc.group.position.z = slideZ;
+        } else {
+          npc.knockback.set(0, 0, 0);
+        }
+        npc.knockback.multiplyScalar(Math.exp(-delta * 7.5));
+      } else {
+        npc.knockback.set(0, 0, 0);
       }
       // Stand on the floor underfoot, not on the street. Pinned to street
       // height, a resident stationed on the roof deck sank through it — which
@@ -5519,6 +5791,7 @@ export class FestivalWorld {
       // Snap rather than ease, or the view lags a step behind the body.
       this.camera.position.copy(cameraTarget);
       this.camera.lookAt(this.lookTarget);
+      this.applyCameraShake(delta);
       return;
     } else {
       this.lookTarget.copy(this.player.position).add(new THREE.Vector3(
@@ -5540,7 +5813,31 @@ export class FestivalWorld {
     const smoothing = 1 - Math.exp(-delta * 5.2);
     this.camera.position.lerp(cameraTarget, smoothing);
     this.camera.lookAt(this.lookTarget);
+    this.applyCameraShake(delta);
     this.applyDrunkenView(delta);
+  }
+
+  /**
+   * The jolt of a punch, thrown or taken. Shakes the camera off its mark and
+   * rolls the horizon for a third of a second, then is gone. It accumulates
+   * rather than resets, so a flurry builds instead of flickering, and it is
+   * capped so the view is never thrown so far the world stops reading.
+   */
+  private applyCameraShake(delta: number): void {
+    if (this.cameraShake <= 0.001) {
+      this.cameraShake = 0;
+      return;
+    }
+    this.cameraShakePhase += delta * 44;
+    const amount = this.cameraShake;
+    this.camera.position.x += Math.sin(this.cameraShakePhase * 1.7) * amount * 0.4;
+    this.camera.position.y += Math.sin(this.cameraShakePhase * 2.3 + 1.1) * amount * 0.28;
+    this.camera.position.z += Math.cos(this.cameraShakePhase * 1.9) * amount * 0.4;
+    // Re-aimed after the shove, so the body stays in frame while the mount
+    // rattles around it. The roll goes on top, and is what sells the hit.
+    this.camera.lookAt(this.lookTarget);
+    this.camera.rotation.z += Math.sin(this.cameraShakePhase * 2.05) * amount * 0.055;
+    this.cameraShake = Math.max(0, amount - delta * 3.6);
   }
 
   /** How far gone the attendee is, 0 to 1, easing off as it wears away. */
