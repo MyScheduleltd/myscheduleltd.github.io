@@ -192,6 +192,13 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 .world-shell[data-view] > .world-death,
 .world-shell[data-view] > .world-camera-hint { display: block !important; }
 .world-shell[data-view="postcard"] > .world-postcard { display: block !important; }
+.world-shell[data-view="film"] > .world-film { display: block !important; }
+/* 35mm stock. A fixed grade belongs to the format rather than being chosen, so
+   the filter tab is not offered here and this is the only colour it has. */
+.world-shell[data-view="film"] > canvas,
+.world-shell[data-view="film"] > .world-css3d {
+  filter: sepia(.4) saturate(1.18) contrast(1.1) brightness(1.05) hue-rotate(-8deg);
+}
 
 /* The filters sit on the canvases only, so the postcard's own frame and
    caption stay true while the picture inside them is graded. */
@@ -279,6 +286,63 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 .world-postcard__menu button.is-active { background: #a91c24; border-color: #a91c24; color: #f4efe3; }
 @media (prefers-reduced-motion: reduce) {
   .world-postcard__tab, .world-postcard__menu { transition-duration: .01ms; }
+}
+
+/* A single 35mm frame: the picture in the gate, perforated film edges above and
+   below it, and whatever is written on it printed in the margin the way a hand
+   writes on the rebate. The holes are drawn with a repeating gradient rather
+   than as elements, so the strip costs nothing and holds its rhythm at any
+   width. */
+.world-film { position: fixed; inset: 0; z-index: 7; display: none; }
+.world-film__edge {
+  position: absolute; left: 0; right: 0; height: clamp(30px, 6vmin, 62px);
+  background: #14100c;
+  display: flex; align-items: center; justify-content: center;
+}
+.world-film__edge--top { top: 0; }
+.world-film__edge--bottom { bottom: 0; }
+/* The perforations. Rounded light rectangles at a fixed pitch, laid over the
+   film base and inset from both rims so the strip reads as stock, not a bar. */
+.world-film__edge::before {
+  content: ''; position: absolute; left: 0; right: 0; height: 42%;
+  top: 50%; transform: translateY(-50%);
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0 12px,
+    #cdc4b4 12px 30px,
+    transparent 30px 42px
+  );
+  -webkit-mask-image: linear-gradient(#000 0 100%);
+  opacity: .82;
+}
+.world-film__edge span, .world-film__edge input {
+  position: relative; z-index: 1; padding: 2px 14px; background: #14100c;
+  color: #e8a13c; font: 700 10px/1 var(--condensed, sans-serif); letter-spacing: .26em;
+}
+.world-film__edge input {
+  border: 0; outline: none; text-align: center; width: min(62%, 460px);
+  color: #f0e2c8; letter-spacing: .18em; font-size: clamp(10px, 1.5vmin, 13px);
+}
+.world-film__edge input::placeholder { color: rgba(240, 226, 200, .34); }
+/* Grain. One noise tile, scaled up and walked around each frame so it crawls
+   the way projected film does rather than sitting still like a texture. */
+.world-film__grain {
+  position: absolute; inset: 0; pointer-events: none; opacity: .46;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 220'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 190px 190px;
+  animation: film-grain .28s steps(1, end) infinite;
+}
+@keyframes film-grain {
+  0%   { background-position: 0 0; }
+  20%  { background-position: -38px 24px; }
+  40%  { background-position: 46px -30px; }
+  60%  { background-position: -26px -44px; }
+  80%  { background-position: 34px 40px; }
+  100% { background-position: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .world-film__grain { animation: none; }
 }
 
 /* Going down. Black closes over the world, the words sit still in the middle

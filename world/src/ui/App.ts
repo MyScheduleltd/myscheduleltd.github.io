@@ -245,7 +245,7 @@ export class App {
   private jukeboxStartedAt = 0;
   private jukeboxSilenced = false;
   private jukeboxRendered = '';
-  private viewMode: 'normal' | 'camera' | 'postcard' = 'normal';
+  private viewMode: 'normal' | 'camera' | 'postcard' | 'film' = 'normal';
   private postcardFilter = 'none';
   private cameraHintTimer = 0;
   private impactTimer = 0;
@@ -531,6 +531,15 @@ export class App {
                 ['faded', zh ? '褪色' : 'FADED'],
               ].map(([value, label]) => `<button type="button" data-postcard-filter="${value}"${value === 'none' ? ' class="is-active"' : ''}>${label}</button>`).join('')}
             </div>
+          </div>
+        </div>
+        <div class="world-film" aria-hidden="true">
+          <div class="world-film__edge world-film__edge--top"><span>MYSCHEDULE 400 · 35MM</span></div>
+          <div class="world-film__grain"></div>
+          <div class="world-film__edge world-film__edge--bottom">
+            <input type="text" maxlength="48" data-film-caption
+              placeholder="${zh ? '寫在片邊…' : 'WRITE ON THE EDGE…'}"
+              aria-label="${zh ? '底片文字' : 'Film caption'}" />
           </div>
         </div>
         <p class="world-camera-hint" aria-hidden="true"></p>
@@ -1893,16 +1902,18 @@ export class App {
    * which is the one thing somebody holding a camera needs to know.
    */
   private cycleViewMode(): void {
-    const order = ['normal', 'camera', 'postcard'] as const;
+    const order = ['normal', 'camera', 'postcard', 'film'] as const;
     this.setViewMode(order[(order.indexOf(this.viewMode) + 1) % order.length]);
   }
 
-  private setViewMode(mode: 'normal' | 'camera' | 'postcard'): void {
+  private setViewMode(mode: 'normal' | 'camera' | 'postcard' | 'film'): void {
     this.viewMode = mode;
     const shell = this.root.querySelector<HTMLElement>('.world-shell');
     if (!shell) return;
     if (mode === 'normal') delete shell.dataset.view;
     else shell.dataset.view = mode;
+    // Film brings its own grade, so the postcard's looks are not offered on
+    // top of it — a vintage stock that can be turned cold is not a stock.
     shell.dataset.filter = mode === 'postcard' ? this.postcardFilter : 'none';
     const zh = this.language === 'zh-TW';
     // The one thing left on screen in camera mode, and it goes too. Without it
@@ -1912,8 +1923,10 @@ export class App {
       hint.textContent = mode === 'camera'
         ? (zh ? 'C／明信片模式' : 'C / POSTCARD MODE')
         : mode === 'postcard'
-          ? (zh ? 'C／離開' : 'C / EXIT')
-          : '';
+          ? (zh ? 'C／底片模式' : 'C / 35MM FILM')
+          : mode === 'film'
+            ? (zh ? 'C／離開' : 'C / EXIT')
+            : '';
       window.clearTimeout(this.cameraHintTimer);
       if (mode !== 'normal') {
         hint.dataset.shown = 'on';
@@ -1926,6 +1939,8 @@ export class App {
     }
     if (mode === 'postcard') {
       this.root.querySelector<HTMLInputElement>('[data-postcard-caption]')?.focus();
+    } else if (mode === 'film') {
+      this.root.querySelector<HTMLInputElement>('[data-film-caption]')?.focus();
     } else {
       // Leaving the caption focused would swallow WASD.
       (document.activeElement as HTMLElement | null)?.blur();
