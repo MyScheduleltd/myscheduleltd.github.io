@@ -89,9 +89,9 @@ export class DayNightCycle {
   private readonly fixedCycleMinute?: number;
   private readonly lampMaterials: THREE.MeshStandardMaterial[] = [];
   private readonly lampLights: Array<{ light: THREE.Light; intensityScale: number }> = [];
-  private readonly sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffb75e, fog: false });
+  private readonly sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffb75e, fog: false, transparent: true });
   private readonly sunHaloMaterial: THREE.SpriteMaterial;
-  private readonly moonMaterial = new THREE.MeshBasicMaterial({ color: 0xe5edff, fog: false });
+  private readonly moonMaterial = new THREE.MeshBasicMaterial({ color: 0xe5edff, fog: false, transparent: true });
   private readonly moonHaloMaterial: THREE.SpriteMaterial;
   private shadowsEnabled = true;
   private state: DayNightState = {
@@ -263,33 +263,61 @@ export class DayNightCycle {
     // at minute 30, so golden-hour shadows and the sun disc share one source.
     const daylightProgress = THREE.MathUtils.clamp(cycleMinute / 30, 0, 1);
     const sunElevation = Math.sin(daylightProgress * Math.PI);
+    // The light keeps to the arc it always had. The disc is allowed to run a
+    // little past the end of it, because the arc finishes with the sun still
+    // eight units up: clamped there it stopped dead above the water and was
+    // then switched off outright at minute 31, which is a sun vanishing in
+    // mid-air rather than setting. Past the end it carries on down into the
+    // sea, which is where it was always heading.
+    const discProgress = THREE.MathUtils.clamp(cycleMinute / 30, 0, 1.12);
+    const alongArc = Math.min(discProgress, 1);
     const sunPosition = new THREE.Vector3(
       // Finish just right of the Shore screen, inside the audience's sea view.
-      THREE.MathUtils.lerp(-42, 24, daylightProgress),
-      8 + sunElevation * 56,
-      THREE.MathUtils.lerp(110, -180, daylightProgress),
+      THREE.MathUtils.lerp(-42, 24, alongArc),
+      8 + Math.sin(discProgress * Math.PI) * 56,
+      THREE.MathUtils.lerp(110, -180, alongArc),
     );
     this.sunObject.position.copy(sunPosition);
-    this.sunObject.visible = cycleMinute < 31;
+    // Faded by how far above the water it is, so it goes out as it goes under
+    // rather than at a minute chosen in advance. Nothing pops in or out.
+    const sunFade = THREE.MathUtils.clamp(sunPosition.y / 9, 0, 1);
+    this.sunObject.visible = sunFade > 0.002;
+    this.sunMaterial.opacity = sunFade;
     this.sunMaterial.color.copy(sun);
     this.sunHaloMaterial.color.copy(sun);
-    this.sunHaloMaterial.opacity = THREE.MathUtils.lerp(0.42, 0.82, 1 - sunElevation);
-    this.directionalLight.position.copy(sunPosition).multiplyScalar(0.48);
+    this.sunHaloMaterial.opacity = THREE.MathUtils.clamp(
+      THREE.MathUtils.lerp(0.42, 0.82, 1 - sunElevation), 0, 0.86,
+    ) * sunFade;
+    this.directionalLight.position
+      .set(
+        THREE.MathUtils.lerp(-42, 24, daylightProgress),
+        8 + sunElevation * 56,
+        THREE.MathUtils.lerp(110, -180, daylightProgress),
+      )
+      .multiplyScalar(0.48);
     this.directionalLight.target.position.set(0, 0, -18);
 
     // The moon follows its own full night arc and sets into the same sea
     // horizon. Its visible disc and directional light always share a source.
     const nightProgress = THREE.MathUtils.clamp((cycleMinute - 30) / 30, 0, 1);
     const moonElevation = Math.sin(nightProgress * Math.PI);
+    // Same on the way up: the moon's arc begins with it already seven units
+    // clear of the water, so switching it on at a fixed minute put a moon in
+    // the sky out of nothing. It now rises out of the sea the way the sun goes
+    // into it.
+    const moonDiscProgress = THREE.MathUtils.clamp((cycleMinute - 30) / 30, -0.12, 1.12);
+    const moonAlongArc = THREE.MathUtils.clamp(moonDiscProgress, 0, 1);
     const moonPosition = new THREE.Vector3(
-      THREE.MathUtils.lerp(-36, 20, nightProgress),
-      7 + moonElevation * 49,
-      THREE.MathUtils.lerp(105, -180, nightProgress),
+      THREE.MathUtils.lerp(-36, 20, moonAlongArc),
+      7 + Math.sin(moonDiscProgress * Math.PI) * 49,
+      THREE.MathUtils.lerp(105, -180, moonAlongArc),
     );
     this.moonObject.position.copy(moonPosition);
-    this.moonObject.visible = cycleMinute >= 29.5;
+    const moonFade = THREE.MathUtils.clamp(moonPosition.y / 9, 0, 1);
+    this.moonObject.visible = moonFade > 0.002;
+    this.moonMaterial.opacity = moonFade;
     this.moonMaterial.color.set(0xe5edff).lerp(new THREE.Color(0x91a7d7), 1 - moonElevation);
-    this.moonHaloMaterial.opacity = THREE.MathUtils.lerp(0.76, 0.42, moonElevation);
+    this.moonHaloMaterial.opacity = THREE.MathUtils.lerp(0.76, 0.42, moonElevation) * moonFade;
     this.moonLight.position.copy(moonPosition).multiplyScalar(0.5);
     this.moonLight.target.position.set(0, 0, -22);
 
