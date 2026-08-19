@@ -848,11 +848,27 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
    remains for a page that got there another way. */
 @media (pointer: coarse) {
   input, textarea, select { font-size: 16px; }
+  /* The captions style their own type far smaller, in rules more specific than
+     the blanket one above, so they slipped straight back under the threshold —
+     and film focuses its caption the moment the mode opens, which is why simply
+     switching to film zoomed the page with nothing touched. Named here so no
+     amount of styling elsewhere can put the trap back, because the cost of
+     losing this argument is a reader stuck at 3x with no way home. */
+  .world-film__edge input,
+  .world-postcard__caption input,
+  .chat-form input, .chat-form textarea { font-size: 16px !important; }
 }
 
 @media (max-width: 780px), (orientation: landscape) and (max-height: 500px) {
   body { overflow: auto; }
   .gate { align-items: start; padding: 104px 14px 28px; }
+  /* The sign-in banner was pinned to the window while everything else scrolled,
+     so the card's own title slid up underneath it and showed through — two
+     headings printed over each other. It belongs to the page here, not to the
+     window: it is inside the thing that scrolls, so making it absolute is
+     enough to carry it along. The world's header keeps its pin; only the gate's
+     is loosened, and it is the gate that scrolls. */
+  .gate__brand { position: absolute; }
   .gate__sun { left: -20%; top: 12%; }
   .gate__city { left: 18%; top: 27%; }
   .gate-card { margin: 0; padding: 24px 20px; box-shadow: 10px 10px 0 rgba(15,15,16,.7); }
