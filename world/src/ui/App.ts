@@ -1733,6 +1733,7 @@ export class App {
         this.openPanel('jukebox');
       }
     }
+    if (state.entranceSign) this.world?.setEntranceSign(state.entranceSign.title, state.entranceSign.subtitle);
     if (state.templeSign) this.world?.setTempleSign(state.templeSign.name, state.templeSign.label);
     this.world?.setSharedMentorCarrier(state.mentorCarrierId, state.selfId);
     const remoteVisitors = state.visitors
@@ -2347,6 +2348,20 @@ export class App {
             });
         });
       });
+      const entranceEditor = panel.querySelector<HTMLFormElement>('#entrance-sign-editor');
+      entranceEditor?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const data = new FormData(entranceEditor);
+        void this.festivalClient.updateEntranceSign(this.staffKey, {
+          title: String(data.get('title') ?? ''),
+          subtitle: String(data.get('subtitle') ?? ''),
+        })
+          .then(() => this.refreshAdminState())
+          .catch((error) => {
+            this.adminError = error instanceof Error ? error.message : 'Entrance sign update failed.';
+            this.openPanel('admin');
+          });
+      });
       const templeEditor = panel.querySelector<HTMLFormElement>('#temple-sign-editor');
       templeEditor?.addEventListener('submit', (event) => {
         event.preventDefault();
@@ -2782,7 +2797,7 @@ export class App {
       </div>
       ${controlledNpcId ? `<div class="staff-identity"><span>${this.language === 'zh-TW' ? '目前扮演' : 'PLAYING AS'} · ${this.escapeHtml(this.npcProfiles.find((profile) => profile.id === controlledNpcId)?.name ?? controlledNpcId)}${mentorCarrierName ? ` · ${this.language === 'zh-TW' ? '由' : 'CARRIED BY'} ${this.escapeHtml(mentorCarrierName)}` : ''}</span><button type="button" data-npc-play="">${this.language === 'zh-TW' ? '回復本人' : 'RETURN TO SELF'}</button></div>` : ''}
       ${this.adminError ? `<p class="staff-error" role="alert">${this.escapeHtml(this.adminError)}</p>` : ''}
-      ${this.staffSection('gate', this.language === 'zh-TW' ? '入口文字' : 'GATE COPY', `
+      ${this.staffSection('gate', this.language === 'zh-TW' ? '登入頁文字' : 'SIGN-IN PAGE', `
       <form class="staff-form" id="gate-copy-editor">
         <p class="staff-note">${this.language === 'zh-TW'
           ? '訪客進入前看到的文字。兩種語言都要填寫。'
@@ -2828,6 +2843,15 @@ export class App {
         ${(this.adminState.jukebox?.tracks ?? []).map((track) => `<li><strong>${this.escapeHtml(track.title)}</strong><button type="button" data-jukebox-remove="${this.escapeAttribute(track.id)}">${this.language === 'zh-TW' ? '取出' : 'REMOVE'}</button></li>`).join('')
           || `<li><small>${this.language === 'zh-TW' ? '點唱機是空的。' : 'The jukebox is empty.'}</small></li>`}
       </ul>`)}
+      ${this.staffSection('entrance', this.language === 'zh-TW' ? '影展拱門' : 'ENTRANCE ARCH', `
+      <form class="staff-form" id="entrance-sign-editor">
+        <p>${this.language === 'zh-TW'
+          ? '路口拱門上的兩行字。兩面相同，進場與離場都看得到。'
+          : 'The two lines on the arch over the road. Both faces carry the same words, read on the way in and on the way out.'}</p>
+        <label><span>${this.language === 'zh-TW' ? '主標' : 'TITLE'}</span><input name="title" maxlength="26" value="${this.escapeAttribute(this.adminState.entranceSign?.title ?? '')}" /></label>
+        <label><span>${this.language === 'zh-TW' ? '副標' : 'SUBTITLE'}</span><input name="subtitle" maxlength="34" value="${this.escapeAttribute(this.adminState.entranceSign?.subtitle ?? '')}" /></label>
+        <button class="panel-button" type="submit">${this.language === 'zh-TW' ? '更新拱門' : 'UPDATE THE ARCH'}</button>
+      </form>`)}
       ${this.staffSection('temple', this.language === 'zh-TW' ? '寺廟看板' : 'TEMPLE SIGN', `
       <form class="staff-form" id="temple-sign-editor">
         <p class="staff-note">${this.language === 'zh-TW'

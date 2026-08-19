@@ -1104,6 +1104,30 @@ test('the thrower names their target, and cannot name one across the festival', 
   assert.equal(await punchAt(thrower, thrower.id), null, 'nobody punches themselves');
 });
 
+test('staff letter the arch over the road, and both faces follow', async () => {
+  const staff = { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173', 'content-type': 'application/json' };
+  const put = (payload) => fetch(`${baseUrl}/api/admin/entrance-sign`, { method: 'POST', headers: staff, body: JSON.stringify(payload) });
+
+  // It ships with the festival's own name on it.
+  const before = await (await fetch(`${baseUrl}/api/config`, { headers: { origin: 'http://127.0.0.1:5173' } })).json();
+  assert.equal(before.entranceSign.title, 'MYSCHEDULE');
+
+  const changed = await put({ title: 'THE LAST NIGHT', subtitle: 'CLOSING PROGRAMME' });
+  assert.equal(changed.status, 200);
+  const after = await (await fetch(`${baseUrl}/api/config`, { headers: { origin: 'http://127.0.0.1:5173' } })).json();
+  assert.equal(after.entranceSign.title, 'THE LAST NIGHT');
+  assert.equal(after.entranceSign.subtitle, 'CLOSING PROGRAMME');
+
+  // One line on its own leaves the other as it was, rather than blanking it.
+  assert.equal((await put({ title: 'MYSCHEDULE', subtitle: '' })).status, 200);
+  const kept = await (await fetch(`${baseUrl}/api/config`, { headers: { origin: 'http://127.0.0.1:5173' } })).json();
+  assert.equal(kept.entranceSign.title, 'MYSCHEDULE');
+  assert.equal(kept.entranceSign.subtitle, 'CLOSING PROGRAMME');
+
+  // An arch with nothing on it is not a sign.
+  assert.equal((await put({ title: '', subtitle: '' })).status, 400);
+});
+
 test('the jukebox is stocked by staff and queued by whoever is standing at it', async () => {
   const staff = { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173', 'content-type': 'application/json' };
   const stock = (payload) => fetch(`${baseUrl}/api/admin/jukebox`, { method: 'POST', headers: staff, body: JSON.stringify(payload) });

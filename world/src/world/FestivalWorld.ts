@@ -739,6 +739,8 @@ export class FestivalWorld {
   private templeAura?: THREE.Mesh;
   private templeSignMaterial?: THREE.MeshBasicMaterial;
   private templeSignText = { name: '美麗本人', label: 'THE TEMPLE' };
+  private readonly entranceSignMaterials: THREE.MeshBasicMaterial[] = [];
+  private entranceSignText = { title: 'MYSCHEDULE', subtitle: 'VIRTUAL FESTIVAL' };
   private templeAltar?: { x: number; z: number };
   private jukebox?: { x: number; z: number };
   private lastDonationAt = 0;
@@ -2764,12 +2766,14 @@ export class FestivalWorld {
     // same near-black at the same height, which is why it read as one object
     // with a band across it rather than as two. Being a plane, it was also
     // invisible from inside the festival, where the gate is seen just as often.
-    const gateSignTexture = createTextTexture(['MYSCHEDULE', 'VIRTUAL FESTIVAL']);
     for (const facing of [1, -1]) {
       const gateSign = new THREE.Mesh(
         new THREE.PlaneGeometry(22, 4.2),
-        new THREE.MeshBasicMaterial({ map: gateSignTexture }),
+        new THREE.MeshBasicMaterial({
+          map: createTextTexture([this.entranceSignText.title, this.entranceSignText.subtitle]),
+        }),
       );
+      this.entranceSignMaterials.push(gateSign.material as THREE.MeshBasicMaterial);
       gateSign.position.set(0, 8.6, GATE_Z + facing * 0.9);
       if (facing < 0) gateSign.rotation.y = Math.PI;
       this.scene.add(gateSign);
@@ -2904,7 +2908,15 @@ export class FestivalWorld {
     const x = 17;
     const z = 17.4;
     const cabinet = new THREE.Group();
-    cabinet.position.set(x, 0, z);
+    // Stood on whatever the ground actually is here rather than on y = 0. The
+    // festival's floor is not one plane — kerbs, aprons and the lot around the
+    // rooftop all sit proud of the street — so a cabinet built from zero had
+    // its plinth buried wherever the ground was higher than that. groundHeightAt
+    // answers in avatar origins, which is the floor plus AVATAR_GROUND_Y, so
+    // that comes back off. The fromY is given explicitly because this runs
+    // while the world is still being built and there is no player to read yet.
+    const floorY = this.groundHeightAt(x, z, 0) - AVATAR_GROUND_Y;
+    cabinet.position.set(x, floorY, z);
     // Built facing -z; a quarter turn puts that front on -x, towards the road.
     cabinet.rotation.y = Math.PI / 2;
     this.scene.add(cabinet);
@@ -2925,7 +2937,7 @@ export class FestivalWorld {
     }
     // The one light it throws, so the foot of the stair has a warm corner.
     const glow = new THREE.PointLight(0xff7a44, 26, 15, 1.6);
-    glow.position.set(x - 1.2, 2.6, z);
+    glow.position.set(x - 1.2, floorY + 2.6, z);
     this.scene.add(glow);
     this.dayNight.addLampLight(glow, 1);
     // Turned a quarter, so the footprint's width and depth swap over.
@@ -3611,6 +3623,24 @@ export class FestivalWorld {
    * the corners, which is what reads as a temple at this resolution. Inside,
    * an altar to 美麗本人 — no figure, only the offering table and the light.
    */
+  /**
+   * Re-letters the arch over the road when STAFF change it. Both faces carry
+   * the same words, so both get a texture of their own rather than sharing one:
+   * a shared CanvasTexture disposed on one face is disposed for the other too.
+   */
+  setEntranceSign(title: string, subtitle: string): void {
+    this.entranceSignText = {
+      title: title.trim() || this.entranceSignText.title,
+      subtitle: subtitle.trim() || this.entranceSignText.subtitle,
+    };
+    for (const material of this.entranceSignMaterials) {
+      const previous = material.map;
+      material.map = createTextTexture([this.entranceSignText.title, this.entranceSignText.subtitle]);
+      material.needsUpdate = true;
+      previous?.dispose();
+    }
+  }
+
   /** Re-letters the temple sign when STAFF change it. */
   setTempleSign(name: string, label: string): void {
     this.templeSignText = {

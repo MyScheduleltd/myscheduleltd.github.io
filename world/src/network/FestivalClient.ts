@@ -132,6 +132,7 @@ export interface FestivalState {
   djProfiles: DjProfiles;
   shopLink: ShopLink;
   templeSign: TempleSign;
+  entranceSign?: EntranceSign;
   jukebox?: JukeboxState;
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
@@ -154,6 +155,7 @@ export interface AdminState {
   djProfiles: DjProfiles;
   shopLink: ShopLink;
   templeSign: TempleSign;
+  entranceSign?: EntranceSign;
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
   jukebox?: JukeboxState;
@@ -210,6 +212,13 @@ export interface JukeboxState {
   nowPlaying: (JukeboxEntry & { startedAt: number }) | null;
 }
 
+/** The two lines on the arch over the road, both faces alike. */
+export interface EntranceSign {
+  title: string;
+  subtitle: string;
+  updatedAt: number;
+}
+
 export interface TempleSign {
   name: string;
   label: string;
@@ -234,6 +243,7 @@ export interface PublicConfig {
   djProfiles: DjProfiles;
   shopLink: ShopLink;
   templeSign: TempleSign;
+  entranceSign?: EntranceSign;
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
 }
@@ -530,6 +540,13 @@ export class FestivalClient {
     introductionZh: string;
   }): Promise<void> {
     await this.adminRequest('/api/admin/dj-profile', key, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateEntranceSign(key: string, payload: { title: string; subtitle: string }): Promise<void> {
+    await this.adminRequest('/api/admin/entrance-sign', key, {
       method: 'POST',
       body: JSON.stringify(payload),
     });

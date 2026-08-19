@@ -332,6 +332,12 @@ const shopLink = { url: '', label: 'THE POP-UP STORE', labelZh: '快閃服飾店
 // The two lines carved over the temple door: who is worshipped there, and what
 // the building is called. STAFF own both, the way they own the venue signs.
 const templeSign = { name: '美麗本人', label: 'THE TEMPLE', updatedAt: 0 };
+/**
+ * The two lines on the arch over the road. Not to be confused with gateCopy,
+ * which is the wording on the sign-in page: this is the object in the world,
+ * and both of its faces carry the same thing.
+ */
+const entranceSign = { title: 'MYSCHEDULE', subtitle: 'VIRTUAL FESTIVAL', updatedAt: 0 };
 const safeExternalUrl = (value) => {
   const text = safeText(value, 500);
   if (!text) return '';
@@ -498,6 +504,7 @@ const persistedSnapshot = () => ({
   djProfiles,
   shopLink,
   templeSign,
+  entranceSign,
   gateCopy,
   trackTempos,
   trackDurations,
@@ -701,6 +708,14 @@ const restorePersistedState = () => {
     }
     gateCopy.updatedAt = clampNumber(saved.gateCopy.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0);
   }
+  if (saved.entranceSign && typeof saved.entranceSign === 'object') {
+    Object.assign(entranceSign, {
+      title: safeText(saved.entranceSign.title, 26) || entranceSign.title,
+      subtitle: safeText(saved.entranceSign.subtitle, 34) || entranceSign.subtitle,
+      updatedAt: clampNumber(saved.entranceSign.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
+    });
+  }
+
   if (saved.templeSign && typeof saved.templeSign === 'object') {
     Object.assign(templeSign, {
       name: safeText(saved.templeSign.name, 24) || templeSign.name,
@@ -874,6 +889,7 @@ const stateFor = (visitor) => ({
   djProfiles,
   shopLink,
   templeSign,
+  entranceSign,
   gateCopy,
   trackTempos,
   jukebox: jukeboxSnapshot(),
@@ -986,7 +1002,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === 'GET' && url.pathname === '/api/config') {
       settleAllSchedules();
-      return json(response, 200, { schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, gateCopy, trackTempos, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
+      return json(response, 200, { schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
@@ -1429,6 +1445,7 @@ const server = createServer(async (request, response) => {
           djProfiles,
           shopLink,
           templeSign,
+  entranceSign,
           gateCopy,
           trackTempos,
         });
@@ -1653,6 +1670,19 @@ const server = createServer(async (request, response) => {
         scheduleBroadcast();
         persist();
         return json(response, 200, { ok: true, shopLink });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/entrance-sign') {
+        const title = safeText(payload.title, 26);
+        const subtitle = safeText(payload.subtitle, 34);
+        if (!title && !subtitle) return apiError(response, 400, 'The entrance sign needs something on it.');
+        Object.assign(entranceSign, {
+          title: title || entranceSign.title,
+          subtitle: subtitle || entranceSign.subtitle,
+          updatedAt: Date.now(),
+        });
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true, entranceSign });
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/temple-sign') {
         const name = safeText(payload.name, 24);
