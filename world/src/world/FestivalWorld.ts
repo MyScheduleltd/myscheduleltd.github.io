@@ -136,6 +136,12 @@ interface ProjectorSurface {
   youtubeId?: string;
   signature?: string;
   muted: boolean;
+  /**
+   * The last screening the festival asked this venue to run, kept even while
+   * nobody is in the room, so walking in can start it straight away instead of
+   * waiting for the programme to be pushed round again.
+   */
+  pending?: { film: { id: string; title: string; embedUrl: string; youtubeId: string }; offsetSeconds: number; playlistIds: string[]; reloadToken: string };
   lastAdvanceAt?: number;
   currentTime?: number;
   currentTimeAt?: number;
@@ -312,6 +318,12 @@ const SKATE_LIFT = 0.37;
 const CAMERA_ZOOM_KEY = 'myschedule-camera-zoom-v1';
 /** Below this the frame is narrower than it is tall and the fov is widened. */
 const PORTRAIT_ASPECT = 1.35;
+/**
+ * How far outside a theatre's walls its player starts loading, in world units.
+ * About three strides — enough of a run-up to cover the fetch and the buffer,
+ * short enough that walking past a door does not start a film.
+ */
+const PROJECTOR_WARM_MARGIN = 6;
 const CAMERA_ZOOM_MIN = 0.45;
 const CAMERA_ZOOM_MAX = 2.2;
 /** How far back the camera sat last visit, if the browser still remembers. */
@@ -737,6 +749,7 @@ export class FestivalWorld {
   private readonly remoteNpcControls = new Map<string, RemoteVisitorVisual>();
   private readonly occupiedSeats = new Set<string>();
   private readonly projectors = new Map<VenueKey, ProjectorSurface>();
+  private mountedProjectorVenue?: VenueKey;
   private readonly playheads = new Map<VenueKey, Playhead>();
   private readonly clubLights: THREE.Mesh[] = [];
   private readonly clubFloorPanels: THREE.Mesh[] = [];
@@ -1740,6 +1753,52 @@ export class FestivalWorld {
     projector.currentTimeAt = undefined;
   }
 
+  /**
+   * The venue whose player should be loading. Deliberately wider than the room
+   * itself: a YouTube player has to fetch, hand-shake and buffer, and doing all
+   * of that only once somebody is through the door is exactly the wait that was
+   * noticeable on the way in. The club's lobby and stairs, the rooftop steps
+   * and a few strides outside each theatre door give it that run-up, so the
+   * picture is already running by the time they arrive. Once actually inside,
+   * the exact answer wins, so a warmed neighbour never holds the room's own
+   * screen off.
+   */
+  private projectorVenue(): VenueKey | undefined {
+    return this.activeProjectorVenue() ?? this.approachingVenue();
+  }
+
+  private approachingVenue(): VenueKey | undefined {
+    const { x, z } = this.player.position;
+    if (this.inClub(x, z)) return 'club';
+    if (this.onRooftop(x, z)) return 'rooftop';
+    const m = PROJECTOR_WARM_MARGIN;
+    if (z < -30 + m && z > -45.2 - m && Math.abs(x) < 12 + m) return 'shore';
+    if (x < -24 + m && x > -46 - m && z < -31 + m && z > -49.2 - m) return 'palace';
+    if (x > 24 - m && x < 46 + m && z < -17 + m && z > -35.2 - m) return 'drive-in';
+    return undefined;
+  }
+
+  /**
+   * Mounts and releases players as somebody walks about. Without this the only
+   * thing that started a screening was the festival pushing its programme
+   * round, so entering a room meant waiting for that to come round again and
+   * only then for the player to load — two waits stacked on each other.
+   */
+  private updateProjectorMounts(): void {
+    const wanted = this.projectorVenue();
+    if (wanted === this.mountedProjectorVenue) return;
+    this.mountedProjectorVenue = wanted;
+    for (const venue of this.projectors.keys()) {
+      if (venue === wanted) continue;
+      this.releaseProjector(venue);
+    }
+    if (!wanted) return;
+    const pending = this.projectors.get(wanted)?.pending;
+    if (pending) {
+      this.setPublicScreening(wanted, pending.film, pending.offsetSeconds, pending.playlistIds, pending.reloadToken);
+    }
+  }
+
   /** The venue whose screen is worth running a player for right now. */
   private activeProjectorVenue(): VenueKey | undefined {
     const { x, z } = this.player.position;
@@ -1757,7 +1816,8 @@ export class FestivalWorld {
   ): void {
     const projector = this.projectors.get(venue);
     if (!projector) return;
-    if (venue !== this.activeProjectorVenue()) {
+    projector.pending = { film, offsetSeconds, playlistIds, reloadToken };
+    if (venue !== this.projectorVenue()) {
       this.releaseProjector(venue);
       return;
     }
@@ -5166,6 +5226,9 @@ export class FestivalWorld {
     this.updateNpcs(delta, elapsed);
     this.updateRemoteAvatars(delta, elapsed);
     this.updateCamera(delta, elapsed);
+    // Cheap: it compares one venue key and returns, unless somebody has just
+    // walked into or out of a room.
+    this.updateProjectorMounts();
     const dayNight = this.dayNight.update();
     this.updateWaterReflections(elapsed);
     this.updateStylizedWater(elapsed);
