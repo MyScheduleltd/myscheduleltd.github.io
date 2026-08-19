@@ -839,6 +839,17 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
    names printed over the world for a device with no keys. The second clause
    catches a phone on its side without catching a tablet, whose landscape height
    is far greater. */
+/* Safari zooms the whole page in whenever it focuses a field whose type is
+   under sixteen pixels, and it does not zoom back out — one tap on a text box
+   and the page is left magnified with no way home. Keyed to the pointer rather
+   than the width, because a tablet does exactly the same thing and is far too
+   wide to be caught by a phone breakpoint. Nothing is forbidden here; the page
+   simply stops giving it a reason. Pinching still works, and the reset button
+   remains for a page that got there another way. */
+@media (pointer: coarse) {
+  input, textarea, select { font-size: 16px; }
+}
+
 @media (max-width: 780px), (orientation: landscape) and (max-height: 500px) {
   body { overflow: auto; }
   .gate { align-items: start; padding: 104px 14px 28px; }
@@ -921,13 +932,6 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      and the way in. The interaction prompt stays: it is the only thing that
      tells you a button will do something here. */
   .world-status, .inventory-status, .chat-stream, .controls-hint { display: none; }
-  /* Safari zooms the whole page in whenever a field it is about to focus has
-     type smaller than sixteen pixels, and it does not zoom back out afterwards
-     — which is the trap: one tap on the chat box and the page is left magnified
-     with no way home. Nothing is being forbidden here; the page is simply not
-     giving it a reason. Pinching still works, and the reset button remains for
-     a page that got there some other way. */
-  input, textarea, select { font-size: 16px; }
   .world-header { padding: 6px 12px; }
   .world-brand > span:not(.phase-badge) { display: none; }
   /* Clear of the jump button, and never wider than the gap between the pads. */
