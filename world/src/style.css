@@ -19,7 +19,16 @@
 
 * { box-sizing: border-box; }
 html, body, #app { width: 100%; min-height: 100%; margin: 0; }
-body { overflow: hidden; touch-action: manipulation; }
+body { overflow: hidden; }
+/* touch-action is not inherited, so putting it on the body only ever governed
+   taps that landed on the body itself — every panel, button and card below it
+   kept its own default and went on zooming on a double tap. Applied to
+   everything instead: manipulation still allows panning and still allows a
+   pinch, it only refuses the double tap. The canvas and the pads name their own
+   below and are more specific, so they keep theirs. */
+@media (pointer: coarse) {
+  * { touch-action: manipulation; }
+}
 button, input { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button:focus-visible, a:focus-visible { outline: 0; outline-offset: 0; box-shadow: inset 0 0 0 2px currentColor; }
@@ -1143,8 +1152,20 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
     flex: 1 1 auto; min-height: 0;
     overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
   }
-  .chat-form { padding-block: 6px; }
-  .connection-note { display: none; }
+  /* The conversation was down to ninety-nine pixels of a three-hundred-and-
+     ninety pixel screen — one message and a half — with the rest spent on
+     padding, gaps and a form that stacked its own label above itself. Lying
+     down, every one of those is worth more as conversation: the body's inset
+     halves, the gaps close up, the form loses the label that only repeats the
+     channel already named in the row above it, and the messages themselves sit
+     tighter. */
+  .panel__body { padding: 10px 14px; }
+  .chat-channels { margin-bottom: 6px; }
+  .chat-form { margin-top: 8px; padding-block: 0; }
+  .chat-form > label { display: none; }
+  .chat-feed article { padding: 6px 9px; }
+  .chat-feed article + article { margin-top: 6px; }
+  .connection-note { display: none; margin: 0; }
   .venue-screen { top: 62px; }
   .world-alert { top: 54px; }
 }

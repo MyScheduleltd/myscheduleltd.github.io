@@ -258,6 +258,7 @@ export class App {
   private localHitAt = 0;
   private jukeboxVolume = readStoredJukeboxVolume();
   private jukeboxFrame?: HTMLIFrameElement;
+  private lastJukeboxLiftAt = 0;
   /** Lengths already reported, so the same one is not sent on every message. */
   private readonly jukeboxReportedDurations = new Map<string, number>();
   private jukeboxPlayingId?: string;
@@ -769,6 +770,10 @@ export class App {
       });
     }
     window.addEventListener('keydown', this.globalShortcut);
+    window.addEventListener('pointerup', this.liftJukeboxOnGesture, true);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) this.applyJukeboxVolume();
+    });
     // Pinching the page is allowed — it is the only way back from a browser
     // that has decided to zoom on its own — but once zoomed there is no obvious
     // way to say "put it back". This appears when the page is scaled and does
@@ -2268,7 +2273,14 @@ export class App {
     // did not before, so every time the record changed the new frame was built
     // unmuted and played at full volume until the load handler caught up —
     // which is why sound came back a while after the volume was taken to zero.
-    url.searchParams.set('mute', this.audioMuted || this.jukeboxVolume <= 0 ? '1' : '0');
+    // Always starts muted, whatever the attendee chose. A phone flatly refuses
+    // to begin a sound that nobody asked for, so a record built to play aloud
+    // did not play at all — silence rather than music, which is why the jukebox
+    // could be ordered from and never heard. Muted, it is allowed to start; the
+    // volume is then brought up on load and on the first touch of the page,
+    // which is a gesture and so permitted. Anyone who chose silence simply has
+    // it left down.
+    url.searchParams.set('mute', '1');
     url.searchParams.set('controls', '0');
     url.searchParams.set('playsinline', '1');
     url.searchParams.set('rel', '0');
@@ -2308,6 +2320,19 @@ export class App {
     this.jukeboxPlayingId = undefined;
     this.jukeboxStartedAt = 0;
   }
+
+  /**
+   * A phone will not raise a sound that no finger asked for, and the record
+   * starts on the festival's clock rather than on a tap. So every touch of the
+   * page is taken as the permission it is, and the volume is put where it
+   * belongs. Throttled: fingers land often and this costs a round of messages.
+   */
+  private readonly liftJukeboxOnGesture = (): void => {
+    const now = performance.now();
+    if (now - this.lastJukeboxLiftAt < 1_200) return;
+    this.lastJukeboxLiftAt = now;
+    this.applyJukeboxVolume();
+  };
 
   private applyJukeboxVolume(): void {
     const frame = this.jukeboxFrame?.contentWindow;
