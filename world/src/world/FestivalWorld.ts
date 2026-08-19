@@ -136,6 +136,8 @@ interface ProjectorSurface {
   youtubeId?: string;
   signature?: string;
   muted: boolean;
+  /** Stopped by STAFF, and so not to be woken by any of the nudges. */
+  paused?: boolean;
   /**
    * The last screening the festival asked this venue to run, kept even while
    * nobody is in the room, so walking in can start it straight away instead of
@@ -773,6 +775,7 @@ export class FestivalWorld {
   private readonly occupiedSeats = new Set<string>();
   private readonly projectors = new Map<VenueKey, ProjectorSurface>();
   private mountedProjectorVenue?: VenueKey;
+  private lastProjectorNudgeAt = 0;
   private readonly playheads = new Map<VenueKey, Playhead>();
   private readonly clubLights: THREE.Mesh[] = [];
   private readonly clubFloorPanels: THREE.Mesh[] = [];
@@ -1012,6 +1015,7 @@ export class FestivalWorld {
     window.addEventListener('blur', this.cameraPointerReset);
     window.addEventListener('blur', this.clearRunning);
     document.addEventListener('visibilitychange', this.resumeProjectorsOnReturn);
+    window.addEventListener('pointerup', this.nudgeProjectorsOnGesture, true);
     this.resize();
   }
 
@@ -1036,6 +1040,7 @@ export class FestivalWorld {
     window.removeEventListener('blur', this.cameraPointerReset);
     window.removeEventListener('blur', this.clearRunning);
     document.removeEventListener('visibilitychange', this.resumeProjectorsOnReturn);
+    window.removeEventListener('pointerup', this.nudgeProjectorsOnGesture, true);
     this.renderer.dispose();
     this.foregroundRenderer.dispose();
     for (const projector of this.projectors.values()) projector.element.remove();
@@ -1928,20 +1933,50 @@ export class FestivalWorld {
    */
   private readonly resumeProjectorsOnReturn = (): void => {
     if (document.hidden) return;
-    for (const projector of this.projectors.values()) {
-      projector.iframe?.contentWindow?.postMessage(JSON.stringify({
-        event: 'command', func: 'playVideo', args: [],
-      }), '*');
-    }
+    this.nudgeProjectorsToPlay();
+  };
+
+  /**
+   * Any touch of the page is a chance a phone will now allow what it refused
+   * before, since it wants a gesture behind playback. Throttled, because it
+   * costs a message to each screen and fingers land often.
+   */
+  private readonly nudgeProjectorsOnGesture = (): void => {
+    const now = performance.now();
+    if (now - this.lastProjectorNudgeAt < 1_500) return;
+    this.lastProjectorNudgeAt = now;
+    this.nudgeProjectorsToPlay();
   };
 
   setPublicScreenPaused(venue: VenueKey, paused: boolean): void {
     const projector = this.projectors.get(venue);
-    projector?.iframe?.contentWindow?.postMessage(JSON.stringify({
+    if (!projector) return;
+    // Remembered, so that the nudges below never restart a venue STAFF have
+    // deliberately stopped. Everything else may be woken; this may not.
+    projector.paused = paused;
+    projector.iframe?.contentWindow?.postMessage(JSON.stringify({
       event: 'command',
       func: paused ? 'pauseVideo' : 'playVideo',
       args: [],
     }), '*');
+  }
+
+  /**
+   * Ask every screen that should be running to run. A phone will not start a
+   * video on its own account nearly as readily as a desk does — it stops them
+   * when the browser goes away, declines to start them out of sight, and in
+   * places wants a finger to have touched the page first — so rather than
+   * assume one autoplay took, the festival asks again whenever something has
+   * happened that might have changed the answer. Venues STAFF have stopped are
+   * left stopped.
+   */
+  private nudgeProjectorsToPlay(): void {
+    for (const projector of this.projectors.values()) {
+      if (projector.paused) continue;
+      projector.iframe?.contentWindow?.postMessage(JSON.stringify({
+        event: 'command', func: 'playVideo', args: [],
+      }), '*');
+    }
   }
 
   setProgrammeBoard(
@@ -5359,7 +5394,7 @@ export class FestivalWorld {
       // while it was out of sight — or while the browser was in the background,
       // which phones do on their own — otherwise stays stopped once it is
       // looked at again, and the screen sits there showing a still.
-      if (visible && projector.element.style.visibility === 'hidden') {
+      if (visible && projector.element.style.visibility === 'hidden' && !projector.paused) {
         projector.iframe?.contentWindow?.postMessage(JSON.stringify({
           event: 'command', func: 'playVideo', args: [],
         }), '*');

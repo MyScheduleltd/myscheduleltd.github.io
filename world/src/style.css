@@ -848,13 +848,23 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
    remains for a page that got there another way. */
 @media (pointer: coarse) {
   input, textarea, select { font-size: 16px; }
-  /* The chat box is written in constantly and keeps the safe size. The two
-     captions keep the small type the format is drawn around — they are part of
-     the picture, not furniture — and are no longer focused on the way in, which
-     is what was zooming the page unbidden. Tapping one to write still zooms;
-     that is a deliberate act with the reset button to hand, rather than
-     something that happened to you for changing mode. */
   .chat-form input, .chat-form textarea { font-size: 16px !important; }
+  /* The captions are set at sixteen — the size Safari will not zoom for — and
+     then scaled back down to the size their format is drawn around. Safari
+     decides whether to zoom from the type size, not from what the type ends up
+     looking like, so the page never gives it a reason while the caption still
+     reads as a caption. The width is divided by the same factor it is scaled
+     by, so the field covers the ground it used to. */
+  .world-film__edge input {
+    font-size: 16px !important;
+    transform: scale(.66); transform-origin: center;
+    width: calc(min(62%, 460px) / .66);
+  }
+  .world-postcard__caption input {
+    font-size: 16px !important;
+    transform: scale(.94); transform-origin: center;
+    width: calc(min(74%, 620px) / .94);
+  }
 }
 
 @media (max-width: 780px), (orientation: landscape) and (max-height: 500px) {
