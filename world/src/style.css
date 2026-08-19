@@ -237,13 +237,19 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 .world-camera-hide[data-shown] { opacity: 1; pointer-events: auto; transition: opacity .12s ease-in; }
 /* Cleared: invisible, but still the corner that answers a press. */
 .world-camera-hide[data-armed] { opacity: 0; pointer-events: auto; transition: opacity .6s ease-out; }
-/* One height for every camera mode. Film needed dropping because a sprocket
-   strip runs across its top; postcard needed it because the filter bar is up
-   there — and a control that moves between modes is a control you have to find
-   again each time. It sits at the same place in all three now, below anything
-   either mode puts along the top edge. */
+/* One position for every camera mode, inside the picture rather than on the
+   edge of it. The two modes frame the shot differently — film runs a sprocket
+   strip across the top, postcard lays a mat all the way round — so the offset
+   has to clear whichever is deeper, and horizontally the mat is the one that
+   matters since film's strips do not reach the sides. Written from the very
+   same expressions those two borders use, so they cannot drift apart. */
+.world-shell {
+  --film-strip: clamp(30px, 6vmin, 62px);
+  --postcard-mat: clamp(18px, 3.4vmin, 46px);
+}
 .world-shell[data-view] > .world-camera-hide {
-  top: calc(14px + clamp(30px, 6vmin, 62px) + env(safe-area-inset-top));
+  top: calc(env(safe-area-inset-top) + max(var(--film-strip), var(--postcard-mat)) + 12px);
+  left: calc(env(safe-area-inset-left) + var(--postcard-mat) + 12px);
 }
 /* Held in sight for a moment as it clears the frame, then allowed to go. Both
    flags carry the same weight, so this needs the extra one to win. */
@@ -915,6 +921,13 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      and the way in. The interaction prompt stays: it is the only thing that
      tells you a button will do something here. */
   .world-status, .inventory-status, .chat-stream, .controls-hint { display: none; }
+  /* Safari zooms the whole page in whenever a field it is about to focus has
+     type smaller than sixteen pixels, and it does not zoom back out afterwards
+     — which is the trap: one tap on the chat box and the page is left magnified
+     with no way home. Nothing is being forbidden here; the page is simply not
+     giving it a reason. Pinching still works, and the reset button remains for
+     a page that got there some other way. */
+  input, textarea, select { font-size: 16px; }
   .world-header { padding: 6px 12px; }
   .world-brand > span:not(.phase-badge) { display: none; }
   /* Clear of the jump button, and never wider than the gap between the pads. */
@@ -1044,7 +1057,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      each other. */
   .pass-toggle {
     width: 78px; height: 34px; font-size: 13px; bottom: auto;
-    top: calc(50px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right));
+    top: calc(46px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right));
   }
   .festival-pass {
     bottom: auto; top: calc(90px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right));
@@ -1067,7 +1080,31 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   }
   .public-seat-hud strong { font-size: 14px; max-width: 100%; }
   .public-seat-hud button { padding: 6px 10px; font-size: 12px; }
-  .world-header { padding: 4px 10px; }
+  /* The header did not allow for the notch and the pass did, so on a phone
+     with one the two were measured from different edges and never lined up.
+     Both sit on the same inset now. */
+  .world-header { padding: 4px calc(10px + env(safe-area-inset-right)) 4px calc(10px + env(safe-area-inset-left)); }
+  /* A panel keeping its upright margins on a screen this short was left about
+     two hundred pixels tall with its own input cut off the bottom. It takes the
+     screen instead, below the header, and scrolls inside itself. */
+  .panel {
+    inset: calc(44px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right))
+           calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
+    overflow: hidden;
+  }
+  .panel > * { min-height: 0; }
+  /* The whole body was one scroller, so the box you type into sat below the
+     fold and had to be scrolled down to — on a screen this short it was never
+     on screen at all. The conversation scrolls; the channels and the box you
+     write in hold their places at either end of it. */
+  .panel__body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .panel__body > .chat-channels, .panel__body > .chat-form, .panel__body > .connection-note { flex: 0 0 auto; }
+  .panel__body > .chat-feed {
+    flex: 1 1 auto; min-height: 0;
+    overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  }
+  .chat-form { padding-block: 6px; }
+  .connection-note { display: none; }
   .venue-screen { top: 62px; }
   .world-alert { top: 54px; }
 }
