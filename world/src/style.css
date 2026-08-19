@@ -221,20 +221,29 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 .world-shell[data-view] > .world-death,
 .world-shell[data-view] > .world-camera-hint:not([hidden]),
 .world-shell[data-view] > .world-camera-hide:not([hidden]) { display: block !important; }
+/* Out of the composition entirely: the bottom centre stays clear for framing,
+   and this sits in the top-left, the one corner nothing else claims — the pass
+   and the status are top-right, the thumbs are along the bottom. */
 .world-camera-hide {
-  position: fixed; z-index: 8; bottom: 26px; left: 50%; margin-left: 96px;
+  position: fixed; z-index: 9; display: grid; place-items: center;
+  top: calc(14px + env(safe-area-inset-top)); left: calc(14px + env(safe-area-inset-left));
+  width: 54px; height: 54px; border-radius: 50%;
   border: 1px solid rgba(255,255,255,.4); background: rgba(8,9,10,.72); color: rgba(245,239,226,.9);
-  padding: 10px 14px; cursor: pointer;
-  font: 700 11px/1 var(--condensed, sans-serif); letter-spacing: .2em; text-indent: .2em;
-  opacity: 0; transition: opacity .5s ease-out; pointer-events: none;
+  cursor: pointer;
+  font: 700 11px/1 var(--condensed, sans-serif); letter-spacing: .12em; text-indent: .12em;
+  opacity: 0; transition: opacity .3s ease-out; pointer-events: none;
 }
 .world-camera-hide[hidden] { display: none; }
 .world-camera-hide[data-shown] { opacity: 1; pointer-events: auto; transition: opacity .12s ease-in; }
+/* Cleared: invisible, but still the corner that answers a press. */
+.world-camera-hide[data-armed] { opacity: 0; pointer-events: auto; }
 .world-camera-hide:hover { background: var(--red); border-color: var(--red); }
 /* Cleared by choice: the filter tab and the way out both go, and nothing at all
    is left over the picture. A press on the frame brings them back. */
-.world-shell[data-camera-hidden] .world-camera-hint,
-.world-shell[data-camera-hidden] .world-camera-hide,
+/* Only the filter tab is driven from the shell. The exit and the corner read
+   their own flags, and this override — left over from when it drove all three —
+   was still winning here and holding the cleared corner unpressable, which is
+   the one thing it has to stay. */
 .world-shell[data-camera-hidden] .world-postcard__tools {
   opacity: 0 !important; pointer-events: none !important;
 }

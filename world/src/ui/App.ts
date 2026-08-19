@@ -562,7 +562,8 @@ export class App {
           </div>
         </div>
         <button class="world-camera-hint" type="button" data-camera-step hidden></button>
-        <button class="world-camera-hide" type="button" data-camera-hide hidden>${zh ? '隱藏介面' : 'HIDE UI'}</button>
+        <button class="world-camera-hide" type="button" data-camera-hide hidden
+          aria-label="${zh ? '顯示或隱藏相機介面' : 'Show or hide camera controls'}">${zh ? '隱藏' : 'HIDE'}</button>
         <button class="zoom-reset" type="button" data-zoom-reset hidden>${zh ? '重設縮放' : 'RESET ZOOM'}</button>
         <header class="world-header">
           <div class="world-brand"><img class="brand-logo" src="${companyLogoUrl}" alt="我的檔期" /><span>MYSCHEDULE</span></div>
@@ -830,14 +831,7 @@ export class App {
     // the filter tab and the way out off the picture together; a press on the
     // frame itself is what returns them.
     this.root.querySelector<HTMLButtonElement>('[data-camera-hide]')?.addEventListener('click', () => {
-      this.setCameraControlsHidden(true);
-    });
-    this.root.addEventListener('pointerdown', (event) => {
-      if (this.viewMode === 'normal' || !this.cameraHidden) return;
-      const target = event.target as HTMLElement | null;
-      // A press on a control is using it, not asking for it back.
-      if (target?.closest('.world-postcard__tools, .world-camera-hint, .world-camera-hide')) return;
-      this.setCameraControlsHidden(false);
+      this.setCameraControlsHidden(!this.cameraHidden);
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-touch-act]').forEach((button) => {
       const act = button.dataset.touchAct;
@@ -2117,11 +2111,24 @@ export class App {
     // in the first place, and it lost silently; setting the flag they actually
     // read cannot.
     const up = !this.cameraHidden && this.viewMode !== 'normal';
-    for (const selector of ['.world-camera-hint', '.world-camera-hide']) {
-      const element = this.root.querySelector<HTMLElement>(selector);
-      if (!element) continue;
-      if (up) element.dataset.shown = 'on';
-      else delete element.dataset.shown;
+    const hint = this.root.querySelector<HTMLElement>('.world-camera-hint');
+    if (hint) {
+      if (up) hint.dataset.shown = 'on';
+      else delete hint.dataset.shown;
+    }
+    // The corner never goes away, it only stops being visible. Cleared, it is
+    // still the one place that answers a press — so the same corner puts the
+    // controls back, and there is nothing left over the picture to find.
+    const corner = this.root.querySelector<HTMLElement>('.world-camera-hide');
+    if (corner) {
+      if (up) {
+        corner.dataset.shown = 'on';
+        delete corner.dataset.armed;
+      } else {
+        delete corner.dataset.shown;
+        if (this.viewMode !== 'normal') corner.dataset.armed = 'on';
+        else delete corner.dataset.armed;
+      }
     }
   }
 
