@@ -324,6 +324,12 @@ const PORTRAIT_ASPECT = 1.35;
  * short enough that walking past a door does not start a film.
  */
 const PROJECTOR_WARM_MARGIN = 6;
+/**
+ * How far away a resident stops being posed on a phone. Roughly the width of
+ * the square: past it a body is a few pixels tall and its limbs cannot be made
+ * out, so the pose is work nobody sees.
+ */
+const NPC_ANIMATION_RANGE_SQ = 38 * 38;
 const CAMERA_ZOOM_MIN = 0.45;
 const CAMERA_ZOOM_MAX = 2.2;
 /** How far back the camera sat last visit, if the browser still remembers. */
@@ -5922,7 +5928,17 @@ export class FestivalWorld {
         npc.group.position.y,
       ) + Math.sin(elapsed * 1.35 + npc.phase) * 0.018;
       const gesture = now < npc.gestureUntil ? npc.gesture : undefined;
-      if (npc.rig) this.animateRig(npc.rig, elapsed * 7.4 + npc.phase, moving ? 0.62 : 0.03, gesture, false,
+      // Posing a body writes ten bones, and it is the one per-resident cost
+      // paid every frame by every resident. Across the square that is what
+      // twelve of them costs a phone. Beyond this they are a few pixels tall
+      // and no arm swing on them can be made out — so on a phone the distant
+      // ones keep walking their routes and simply stop swinging, unless they
+      // are in the middle of a gesture somebody might be watching for. They
+      // stay present, which is the point; they just stop being animated at a
+      // range where nobody can see that they are.
+      const farAway = npc.group.position.distanceToSquared(this.player.position) > NPC_ANIMATION_RANGE_SQ;
+      const poseNpc = !farAway || gesture !== undefined || this.graphicsMode === 'normal';
+      if (npc.rig && poseNpc) this.animateRig(npc.rig, elapsed * 7.4 + npc.phase, moving ? 0.62 : 0.03, gesture, false,
         this.gestureProgress(gesture, npc.gestureUntil));
       if (npc.dogRig) this.animateMentorDog(
         npc.dogRig,

@@ -63,6 +63,12 @@ interface SavedProfile {
   palette: AvatarPalette;
 }
 
+/**
+ * How long a press on the prompt has to last to count as a hold rather than a
+ * tap. Long enough not to fire while somebody is simply pressing the button,
+ * short enough that it does not feel like the prompt is ignoring them.
+ */
+const PROMPT_HOLD_MS = 450;
 const PROFILE_KEY = 'myschedule-festival-profile-v1';
 const PRIVATE_PROGRESS_KEY = 'myschedule-private-screening-v1';
 const CHAT_KEY = 'myschedule-local-chat-v2';
@@ -226,6 +232,8 @@ export class App {
   private audioMuted = true;
   private screenMode?: 'public' | 'private';
   private screenMaximized = false;
+  private promptHoldTimer = 0;
+  private promptHeld = false;
   private publicFilmId?: string;
   private openDjBooth?: { name: string; venue: 'club' | 'rooftop'; view: 'requests' | 'about' };
   /** Set once STAFF touch the introduction, so no update can redraw over them. */
@@ -591,7 +599,6 @@ export class App {
         </section>
         <section class="seat-menu" id="seat-menu" aria-labelledby="seat-menu-title" hidden></section>
         <button class="interaction-toast" id="interaction-toast" type="button" hidden></button>
-        <button class="interaction-second" id="interaction-second" type="button" hidden>${zh ? '抱起 MENTOR' : 'PICK UP MENTOR'}</button>
         <div class="world-alert" id="world-alert" role="status" hidden></div>
         <div class="touch-controls" aria-hidden="true">
           <div class="touch-stick" data-stick><span class="touch-stick__knob" data-stick-knob></span></div>
@@ -715,13 +722,39 @@ export class App {
     // only way to reach what it offers.
     this.root.addEventListener('click', (event) => {
       const target = event.target as HTMLElement | null;
-      if (target?.closest('#interaction-second')) {
-        this.world?.triggerSecondaryPrompt();
+      if (!target?.closest('#interaction-toast')) return;
+      // A hold has already done the other half and cleared the tap.
+      if (this.promptHeld) {
+        this.promptHeld = false;
         return;
       }
-      if (!target?.closest('#interaction-toast')) return;
       this.world?.triggerPrompt();
     });
+
+    // Tap for the first thing the prompt offers, hold for the second. Only
+    // MENTOR offers two — a treat on a tap, the dog in your arms on a hold —
+    // and SHIFT+E, which is how a keyboard says it, is unsayable on a phone.
+    this.root.addEventListener('pointerdown', (event) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest('#interaction-toast')) return;
+      if (!this.world?.hasSecondaryPrompt()) return;
+      const toast = this.root.querySelector<HTMLElement>('#interaction-toast');
+      window.clearTimeout(this.promptHoldTimer);
+      this.promptHoldTimer = window.setTimeout(() => {
+        this.promptHeld = true;
+        toast?.classList.remove('is-holding');
+        this.world?.triggerSecondaryPrompt();
+      }, PROMPT_HOLD_MS);
+      toast?.classList.add('is-holding');
+    });
+    for (const done of ['pointerup', 'pointercancel', 'pointerleave'] as const) {
+      this.root.addEventListener(done, (event) => {
+        const target = event.target as HTMLElement | null;
+        if (!target?.closest('#interaction-toast')) return;
+        window.clearTimeout(this.promptHoldTimer);
+        this.root.querySelector<HTMLElement>('#interaction-toast')?.classList.remove('is-holding');
+      });
+    }
     window.addEventListener('keydown', this.globalShortcut);
     const stick = this.root.querySelector<HTMLElement>('[data-stick]');
     const knob = this.root.querySelector<HTMLElement>('[data-stick-knob]');
@@ -884,13 +917,13 @@ export class App {
     if (toast) {
       const publicHudVisible = !this.root.querySelector<HTMLElement>('#public-seat-hud')?.hidden;
       toast.hidden = !snapshot.interaction || publicHudVisible;
-      toast.textContent = this.localizeInteraction(snapshot.interaction ?? '');
+      toast.textContent = this.promptForTouch(this.localizeInteraction(snapshot.interaction ?? ''));
       toast.classList.toggle('is-actionable', snapshot.canInteract);
       toast.disabled = !snapshot.canInteract;
       // MENTOR is the one prompt that offers two things, and the second is
       // behind a key a phone does not have. It gets its own button.
-      const second = this.root.querySelector<HTMLButtonElement>('#interaction-second');
-      if (second) second.hidden = !snapshot.canInteract || !this.world?.hasSecondaryPrompt();
+      // The prompt says so itself rather than a second button saying it.
+      toast.classList.toggle('is-holdable', Boolean(snapshot.canInteract && this.world?.hasSecondaryPrompt()));
     }
     if (inventory) {
       const chips = [
@@ -3378,6 +3411,24 @@ export class App {
       'THE SHORE ENTRANCE': `${this.venueName('shore')}入口`,
       'MEDITERRANEAN SEA': '地中海',
     } as Record<string, string>)[value] ?? value;
+  }
+
+  /**
+   * The same prompt, said in what a thumb actually does. Key names mean nothing
+   * on a phone. A tap does whatever the prompt leads with — including the
+   * SHIFT+E ones, where that is the only thing on offer — and a hold is only
+   * mentioned where there genuinely is a second thing behind it, which is
+   * MENTOR and nothing else.
+   */
+  private promptForTouch(value: string): string {
+    if (!value || !App.looksLikeAPhone()) return value;
+    const zh = this.language === 'zh-TW';
+    const tap = zh ? '輕觸／' : 'TAP / ';
+    const hold = zh ? '長按／' : 'HOLD / ';
+    const twoParted = value.includes('·') && /SHIFT\+E/.test(value);
+    return value
+      .replace(/SHIFT\+E ?[／/] ?/g, twoParted ? hold : tap)
+      .replace(/(^|· )[EO] ?[／/] ?/g, (_match, lead: string) => `${lead}${tap}`);
   }
 
   private localizeInteraction(value: string): string {

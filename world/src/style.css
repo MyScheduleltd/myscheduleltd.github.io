@@ -662,13 +662,10 @@ button:active { filter: brightness(.88); scale: .96; }
 .seat-film-grid span { font: 800 17px var(--condensed); }.seat-film-grid small { opacity: .65; }
 .interaction-toast { position: fixed; z-index: 4; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 11px 15px; border: 1px solid rgba(255,255,255,.5); color: white; background: rgba(8,9,10,.82); font: 700 13px var(--condensed); letter-spacing: .04em; }
 .interaction-toast.is-actionable { cursor: pointer; border-color: #e04750; }.interaction-toast:disabled { opacity: 1; }
-.interaction-second {
-  position: fixed; z-index: 5; left: 50%; transform: translateX(-50%); bottom: 62px;
-  padding: 9px 14px; border: 1px solid #e04750; color: white; background: rgba(8,9,10,.86);
-  font: 700 12px var(--condensed); letter-spacing: .06em; cursor: pointer;
-}
-.interaction-second[hidden] { display: none; }
-.interaction-second:hover { background: var(--red); }
+/* A prompt with something behind a hold fills as it is held, so the press is
+   visibly on its way somewhere rather than seeming to do nothing. */
+.interaction-toast.is-holdable { background-image: linear-gradient(var(--red), var(--red)); background-repeat: no-repeat; background-size: 0 100%; }
+.interaction-toast.is-holding { background-size: 100% 100%; transition: background-size .45s linear; }
 .interaction-toast.is-actionable { animation: action-pulse 1.8s ease-in-out infinite; }
 .world-alert { position: fixed; z-index: 12; left: 50%; top: 86px; transform: translateX(-50%); border: 1px solid white; padding: 11px 15px; color: white; background: var(--red); font: 800 13px var(--condensed); letter-spacing: .05em; }
 .world-alert:not([hidden]) { animation: alert-in .24s ease-out; }
@@ -870,10 +867,6 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   /* Centred over the world, above both pads rather than wedged between them.
      Sized to the pass — same height, same type — so it reads as one of the
      furnishings and not as an announcement. */
-  .interaction-second {
-    bottom: calc(190px + env(safe-area-inset-bottom));
-    padding: 12px 18px; font-size: 12px;
-  }
   .interaction-toast {
     left: 50%; right: auto;
     bottom: calc(246px + env(safe-area-inset-bottom));
@@ -889,9 +882,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   #venue-screen:not([hidden]) ~ .touch-controls,
   #public-seat-hud:not([hidden]) ~ .touch-controls,
   #seat-menu:not([hidden]) ~ .touch-controls,
-  #venue-screen:not([hidden]) ~ .interaction-toast,
-  #venue-screen:not([hidden]) ~ .interaction-second,
-  #public-seat-hud:not([hidden]) ~ .interaction-second { display: none; }
+  #venue-screen:not([hidden]) ~ .interaction-toast { display: none; }
   .venue-screen { left: 14px; right: 14px; top: 124px; width: auto; }
   /* Same specificity as the rule above and written later in the file, so
      without this the phone's inset won and a maximised screening was never
