@@ -69,12 +69,7 @@ interface SavedProfile {
  * short enough that it does not feel like the prompt is ignoring them.
  */
 const PROMPT_HOLD_MS = 450;
-/**
- * How long the camera's own controls stay up before settling out of the
- * picture. Long enough to reach for one, short enough that a photograph is not
- * composed around them.
- */
-const CAMERA_IDLE_MS = 2_600;
+
 const PROFILE_KEY = 'myschedule-festival-profile-v1';
 const PRIVATE_PROGRESS_KEY = 'myschedule-private-screening-v1';
 const CHAT_KEY = 'myschedule-local-chat-v2';
@@ -240,7 +235,7 @@ export class App {
   private screenMaximized = false;
   private promptHoldTimer = 0;
   private promptHeld = false;
-  private cameraIdleTimer = 0;
+  private cameraHidden = false;
   private publicFilmId?: string;
   private openDjBooth?: { name: string; venue: 'club' | 'rooftop'; view: 'requests' | 'about' };
   /** Set once STAFF touch the introduction, so no update can redraw over them. */
@@ -567,6 +562,7 @@ export class App {
           </div>
         </div>
         <button class="world-camera-hint" type="button" data-camera-step hidden></button>
+        <button class="world-camera-hide" type="button" data-camera-hide hidden>${zh ? '隱藏介面' : 'HIDE UI'}</button>
         <button class="zoom-reset" type="button" data-zoom-reset hidden>${zh ? '重設縮放' : 'RESET ZOOM'}</button>
         <header class="world-header">
           <div class="world-brand"><img class="brand-logo" src="${companyLogoUrl}" alt="我的檔期" /><span>MYSCHEDULE</span></div>
@@ -829,18 +825,19 @@ export class App {
     // fire once, on the way down, so they answer as fast as a keyboard does.
     this.root.querySelector<HTMLButtonElement>('[data-camera-step]')?.addEventListener('click', () => {
       this.cycleViewMode();
-      this.wakeCameraControls();
     });
-    // In a camera mode everything that is not the picture settles out of the
-    // way on its own — the filter tab and the way out both — and a touch on the
-    // frame calls them back. Nothing has to be dismissed and nothing is lost:
-    // the frame is clean while you are composing, and one tap has it all again.
+    // Clearing the frame is a decision, and so is getting it back. This takes
+    // the filter tab and the way out off the picture together; a press on the
+    // frame itself is what returns them.
+    this.root.querySelector<HTMLButtonElement>('[data-camera-hide]')?.addEventListener('click', () => {
+      this.setCameraControlsHidden(true);
+    });
     this.root.addEventListener('pointerdown', (event) => {
-      if (this.viewMode === 'normal') return;
+      if (this.viewMode === 'normal' || !this.cameraHidden) return;
       const target = event.target as HTMLElement | null;
-      // A press on a control is using it, not asking to see it.
-      if (target?.closest('.world-postcard__tools, .world-camera-hint')) return;
-      this.wakeCameraControls();
+      // A press on a control is using it, not asking for it back.
+      if (target?.closest('.world-postcard__tools, .world-camera-hint, .world-camera-hide')) return;
+      this.setCameraControlsHidden(false);
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-touch-act]').forEach((button) => {
       const act = button.dataset.touchAct;
@@ -2104,15 +2101,28 @@ export class App {
     }, 320);
   }
 
-  private wakeCameraControls(): void {
+  /**
+   * Show or clear the camera's own controls. A decision, not a clock: nothing
+   * goes away on its own and nothing comes back on its own, so a shot is never
+   * half composed around a control that is about to disappear.
+   */
+  private setCameraControlsHidden(hidden: boolean): void {
     const shell = this.root.querySelector<HTMLElement>('.world-shell');
     if (!shell) return;
-    window.clearTimeout(this.cameraIdleTimer);
-    delete shell.dataset.cameraIdle;
-    if (this.viewMode === 'normal') return;
-    this.cameraIdleTimer = window.setTimeout(() => {
-      shell.dataset.cameraIdle = 'on';
-    }, CAMERA_IDLE_MS);
+    this.cameraHidden = hidden && this.viewMode !== 'normal';
+    if (this.cameraHidden) shell.dataset.cameraHidden = 'on';
+    else delete shell.dataset.cameraHidden;
+    // Driven through the same data-shown these two already use rather than
+    // overridden from the shell. An override has to out-argue whatever set them
+    // in the first place, and it lost silently; setting the flag they actually
+    // read cannot.
+    const up = !this.cameraHidden && this.viewMode !== 'normal';
+    for (const selector of ['.world-camera-hint', '.world-camera-hide']) {
+      const element = this.root.querySelector<HTMLElement>(selector);
+      if (!element) continue;
+      if (up) element.dataset.shown = 'on';
+      else delete element.dataset.shown;
+    }
   }
 
   private setViewMode(mode: 'normal' | 'camera' | 'postcard' | 'film'): void {
@@ -2143,12 +2153,14 @@ export class App {
             : '';
       hint.textContent = step && !touch ? `${zh ? 'C／' : 'C / '}${step}` : step;
       hint.hidden = mode === 'normal';
+      const hide = this.root.querySelector<HTMLElement>('[data-camera-hide]');
+      if (hide) hide.hidden = mode === 'normal';
       window.clearTimeout(this.cameraHintTimer);
       if (mode !== 'normal') {
         hint.dataset.shown = 'on';
-        // Both go quiet together now, handled by the idle timer, so the way
-        // out and the filter tab never disagree about whether they are up.
-        this.wakeCameraControls();
+        // Every mode starts with the controls up. Stepping into a mode you had
+        // cleared would otherwise leave you with no visible way out of it.
+        this.setCameraControlsHidden(false);
       } else {
         delete hint.dataset.shown;
       }
