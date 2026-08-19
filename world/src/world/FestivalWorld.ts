@@ -1013,6 +1013,7 @@ export class FestivalWorld {
     deity: { x: number; lotusMinX: number; lotusMaxX: number; crownY: number };
     gateSignZ: number[];
     gateBarZ: { min: number; max: number };
+    jukebox: { seatedAt: number; corners: number[]; probe: Array<{ dx: number; dz: number; y: number }> };
   } {
     const wallHeight = 10.5;
     const tierY = TEMPLE.podium + wallHeight + 0.5;
@@ -1039,6 +1040,22 @@ export class FestivalWorld {
       },
       gateSignZ: [GATE_Z - 0.9, GATE_Z + 0.9],
       gateBarZ: { min: GATE_Z - 0.55, max: GATE_Z + 0.55 },
+      jukebox: (() => {
+        const jx = this.jukebox?.x ?? 0;
+        const jz = this.jukebox?.z ?? 0;
+        const corners = [[-0.75, -1.2], [0.75, -1.2], [-0.75, 1.2], [0.75, 1.2]]
+          .map(([dx, dz]) => this.groundHeightAt(jx + dx, jz + dz, 0) - AVATAR_GROUND_Y);
+        // A wider sweep, to see whether anything around it stands higher than
+        // the four corners report — which is the only way the body can still be
+        // meeting ground after being seated on the highest of them.
+        const probe: Array<{ dx: number; dz: number; y: number }> = [];
+        for (let dx = -2; dx <= 2; dx += 1) {
+          for (let dz = -2; dz <= 2; dz += 1) {
+            probe.push({ dx, dz, y: this.groundHeightAt(jx + dx, jz + dz, 0) - AVATAR_GROUND_Y });
+          }
+        }
+        return { seatedAt: Math.max(...corners), corners, probe };
+      })(),
     };
   }
 
@@ -2928,7 +2945,13 @@ export class FestivalWorld {
       this.groundHeightAt(x - halfDepth, z + halfWidth, 0),
       this.groundHeightAt(x + halfDepth, z + halfWidth, 0),
     ) - AVATAR_GROUND_Y;
-    cabinet.position.set(x, floorY, z);
+    // Lifted clear of the dressing. Probing the ground around this spot returns
+    // 0 at every corner, but the surfaces actually drawn there — promenade,
+    // stripe, carpet — are thin slabs stacked a couple of tenths above that
+    // logical floor, and the cabinet seated on the floor had its bottom edge
+    // inside them. This clears the thickest of them. It cannot open a gap
+    // underneath, because the skirt still runs more than a unit below.
+    cabinet.position.set(x, floorY + 0.24, z);
     // Built facing -z; a quarter turn puts that front on -x, towards the road.
     cabinet.rotation.y = Math.PI / 2;
     this.scene.add(cabinet);
@@ -4670,12 +4693,25 @@ export class FestivalWorld {
     if (floor !== undefined) {
       // Somewhere on another storey. Wait for a clear moment rather than fold
       // a body through a wall in front of somebody.
-      const entrance = arriving[0];
-      if (this.player.position.distanceTo(new THREE.Vector3(entrance[0], floor, entrance[1])) < 26) {
+      // Spread round the loop rather than all put down on its first corner.
+      // Every resident arriving at a room landed on the same square metre and
+      // stood in whoever was already there — the separation pass only holds
+      // bodies apart once they are moving, and an arrival is not movement.
+      const spread = arriving[Math.floor(Math.random() * arriving.length)];
+      const jitterX = (Math.random() - 0.5) * 3.2;
+      const jitterZ = (Math.random() - 0.5) * 3.2;
+      const entrance = new THREE.Vector3(spread[0] + jitterX, floor, spread[1] + jitterZ);
+      if (this.player.position.distanceTo(entrance) < 26) {
         npc.dwellUntil = now + 6_000;
         return;
       }
-      npc.group.position.set(entrance[0], floor, entrance[1]);
+      // And never on top of somebody. If the spot is taken, wait and try again
+      // rather than fold two bodies together.
+      if (this.npcCollides(npc, entrance.x, entrance.z)) {
+        npc.dwellUntil = now + 2_500;
+        return;
+      }
+      npc.group.position.copy(entrance);
     }
     npc.haunt = next;
     npc.dwellUntil = now + NPC_DWELL_MIN_MS + Math.random() * NPC_DWELL_SPREAD_MS;
@@ -5950,7 +5986,9 @@ export class FestivalWorld {
 
   private npcCollides(npc: NpcAvatar, x: number, z: number): boolean {
     if (this.staticCollides(x, z, npc.group.position.y)) return true;
-    const radiusSq = 1.05 * 1.05;
+    // Bodies are close to a unit across, so 1.05 between centres left them
+    // visibly inside one another whenever two routes crossed.
+    const radiusSq = 1.35 * 1.35;
     // Wider than the separation distance the pass above enforces, so a resident
     // stops short of an attendee rather than walking into them and being shoved
     // out again — which is what made two bodies draw through each other.

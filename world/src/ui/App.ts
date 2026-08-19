@@ -638,6 +638,7 @@ export class App {
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.structureReviewSnapshot();
     } else if (reviewTarget === 'jukebox') {
       this.world.focusJukeboxForReview();
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.structureReviewSnapshot();
     } else if (reviewTarget === 'club-lobby') {
       this.world.focusClubLobbyForReview();
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.clubReviewSnapshot();
@@ -3175,19 +3176,38 @@ export class App {
     return this.npcProfiles.some((profile) => profile.id === author) ? this.npcName(author) : author;
   }
 
+  /**
+   * The roster the lists are drawn from, merged rather than replaced.
+   *
+   * The service's list used to win outright whenever it had anything in it, so
+   * a service running an older build than the page erased any resident it had
+   * not heard of — while the world, which builds its crowd from this client's
+   * own roster, went on drawing them. Somebody was walking the festival and
+   * absent from both the attendee list and the STAFF panel, which is exactly
+   * what happened to YO between his being added here and the service catching
+   * up. The two halves are deployed separately and will not always agree.
+   *
+   * So: this build's roster is the floor, the service's names and titles are
+   * laid over it, and anything the service knows that this build does not —
+   * residents STAFF added later — is appended.
+   */
   private normalizeNpcProfiles(profiles: NpcProfile[] | undefined, names: NpcNames | undefined): NpcProfile[] {
-    if (profiles?.length) {
-      return profiles.slice(0, 24).map((profile) => ({
-        id: profile.id,
-        name: profile.name?.trim() || profile.id,
-        title: profile.title?.trim() || NPC_TITLES[profile.id] || 'Festival Staff',
-      }));
-    }
-    return NPC_NAMES.map((id) => ({
+    const served = new Map((profiles ?? []).slice(0, 24).map((profile) => [profile.id, profile]));
+    const known = new Set<string>(NPC_NAMES);
+    const merged: NpcProfile[] = NPC_NAMES.map((id) => ({
       id,
-      name: names?.[id]?.trim() || DEFAULT_NPC_NAMES[id],
-      title: NPC_TITLES[id],
+      name: served.get(id)?.name?.trim() || names?.[id]?.trim() || DEFAULT_NPC_NAMES[id],
+      title: served.get(id)?.title?.trim() || NPC_TITLES[id],
     }));
+    for (const [id, profile] of served) {
+      if (known.has(id)) continue;
+      merged.push({
+        id,
+        name: profile.name?.trim() || id,
+        title: profile.title?.trim() || 'Festival Staff',
+      });
+    }
+    return merged.slice(0, 24);
   }
 
   private attendeeListSignature(state: FestivalState | undefined, profiles: NpcProfile[]): string {
