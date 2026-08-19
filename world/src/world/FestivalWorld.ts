@@ -236,6 +236,14 @@ interface Collider {
   /** Omitted for ordinary scenery, which blocks at every height. */
   minY?: number;
   maxY?: number;
+  /**
+   * How high the thing stands, where that differs from the band it is refused
+   * in. Those bands answer which storey a collider belongs to, not how tall it
+   * is, and the camera needs the second question: a waist-high DJ desk given
+   * the club room's whole height so that nobody on the street above walks into
+   * it read as floor-to-ceiling, and threw the view straight into the booth.
+   */
+  viewTop?: number;
 }
 
 interface WorldOptions {
@@ -2596,6 +2604,13 @@ export class FestivalWorld {
     padding = 0.35,
     heights?: { minY: number; maxY: number },
     label?: string,
+    // How high the thing actually stands, when that is not the same as the band
+    // it is refused in. Those bands say which storey a collider belongs to —
+    // the club's booth is given the room's whole height so that a body on the
+    // street above is not stopped by it — and that is not a claim about how
+    // tall the object is. The camera needs the second question answered: a
+    // waist-high desk described as floor-to-ceiling shoved the view into it.
+    viewTop?: number,
   ): void {
     this.colliders.push({
       label,
@@ -2605,6 +2620,7 @@ export class FestivalWorld {
       maxZ: z + depth / 2 + padding,
       minY: heights?.minY,
       maxY: heights?.maxY,
+      viewTop,
     });
   }
 
@@ -3605,7 +3621,7 @@ export class FestivalWorld {
     this.mesh([5.7, 0.16, 1.9], [stageX, floor + 2.25, stageZ - 1.6], material(0x35353f, 0.4, 0.5));
     // The decks stand proud of the stage front, so they need holding on their
     // own account — the stage collider stops short of them.
-    this.addCollider(stageX, stageZ - 1.6, 5.7, 1.9, 0.12, belowGround, 'club-booth');
+    this.addCollider(stageX, stageZ - 1.6, 5.7, 1.9, 0.12, belowGround, 'club-booth', CLUB_FLOOR_Y + 1.5);
     for (const side of [-1, 1]) {
       this.mesh([1.2, 0.12, 1.2], [stageX + side * 1.5, floor + 2.37, stageZ - 1.6], material(0x0d0d10, 0.35, 0.55));
       this.mesh([0.52, 0.14, 0.52], [stageX + side * 1.5, floor + 2.47, stageZ - 1.6], material(0xd8d3c6, 0.4, 0.4));
@@ -4133,11 +4149,11 @@ export class FestivalWorld {
     this.mesh([4.9, 0.16, 1.8], [centerX, ROOF_Y + 1.95, boothZ + 0.8], material(0x3a3a44, 0.4, 0.5));
     // The booth is furniture, not scenery: the plinth carries the decks and an
     // attendee has to walk round it rather than through the DJ.
-    this.addCollider(centerX, boothZ, 10, 3.6, 0.12, onDeck, 'rooftop-booth');
+    this.addCollider(centerX, boothZ, 10, 3.6, 0.12, onDeck, 'rooftop-booth', ROOF_Y + 1.4);
     for (const side of [-1, 1]) {
       this.mesh([1.1, 0.12, 1.1], [centerX + side * 1.35, ROOF_Y + 2.06, boothZ + 0.8], material(0x0d0d10, 0.35, 0.55));
       this.mesh([2, 2.4, 1.8], [centerX + side * 7.4, ROOF_Y + 1.2, boothZ], material(0x241d1a, 0.7, 0.2));
-      this.addCollider(centerX + side * 7.4, boothZ, 2, 1.8, 0.12, onDeck, 'rooftop-speaker');
+      this.addCollider(centerX + side * 7.4, boothZ, 2, 1.8, 0.12, onDeck, 'rooftop-speaker', ROOF_Y + 2.2);
     }
 
     // Fittings on the inside face of the parapet, washing the deck from its
@@ -6406,7 +6422,11 @@ export class FestivalWorld {
       (collider) =>
         x > collider.minX && x < collider.maxX && z > collider.minZ && z < collider.maxZ &&
         (collider.minY === undefined || y >= collider.minY) &&
-        (collider.maxY === undefined || (y <= collider.maxY && collider.maxY > headHeight)),
+        (collider.maxY === undefined || y <= collider.maxY) &&
+        // Where it really tops out, falling back to the band when nothing
+        // better is known. Undefined on both means a wall, which always counts.
+        ((collider.viewTop ?? collider.maxY) === undefined ||
+          (collider.viewTop ?? collider.maxY)! > headHeight),
     );
   }
 
