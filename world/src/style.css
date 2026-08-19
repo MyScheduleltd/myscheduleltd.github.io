@@ -650,7 +650,7 @@ button:active { filter: brightness(.88); scale: .96; }
 .world-alert:not([hidden]) { animation: alert-in .24s ease-out; }
 .controls-hint { position: fixed; z-index: 3; left: 22px; bottom: 22px; font: 700 11px var(--condensed); letter-spacing: .07em; text-shadow: 0 2px 8px black; }.controls-hint span { color: #ed434d; margin-right: 3px; }.controls-hint span:nth-child(2) { margin-left: 12px; }
 .touch-controls { display: none; }
-.touch-stick, .touch-jump { touch-action: none; -webkit-user-select: none; user-select: none; }
+.touch-stick, .touch-ring__hit, .touch-ring__key { touch-action: none; -webkit-user-select: none; user-select: none; }
 .chat-stream {
   position: fixed; z-index: 4; left: 22px; bottom: 52px; display: grid; gap: 6px;
   width: min(520px, calc(100vw - 44px)); max-height: 32vh; overflow: hidden; pointer-events: none;
@@ -799,16 +799,30 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
     background: rgba(245,239,226,.82); border: 1px solid rgba(8,9,10,.4);
     pointer-events: none;
   }
-  .touch-jump {
-    position: fixed; z-index: 6;
-    /* Above the pass, not on top of it: both live in the bottom-right corner
-       and the two were landing on each other. */
-    right: calc(18px + env(safe-area-inset-right)); bottom: calc(108px + env(safe-area-inset-bottom));
-    width: 78px; height: 78px; border-radius: 50%; border: 1px solid rgba(255,255,255,.45);
-    background: rgba(8,9,10,.5); color: var(--paper);
-    font: 800 13px var(--condensed); letter-spacing: .1em;
+  /* A ring rather than the single jump button: everything the keyboard offers
+     — hit, jump, run, dance, offer, photo — laid out on an arc that opens up
+     and to the left of the thumb, clear of the pass in the corner beneath it.
+     Hit sits at the middle, where it is easiest to find in a hurry. */
+  .touch-ring { display: contents; }
+  .touch-ring__hit, .touch-ring__key {
+    position: fixed; z-index: 6; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,.45); background: rgba(8,9,10,.5); color: var(--paper);
+    display: grid; place-items: center;
+    font: 800 11px var(--condensed); letter-spacing: .08em;
   }
-  .touch-jump:active { background: var(--red); border-color: var(--red); }
+  .touch-ring__hit {
+    right: calc(25px + env(safe-area-inset-right)); bottom: calc(89px + env(safe-area-inset-bottom));
+    width: 58px; height: 58px;
+    border-color: rgba(224,71,80,.85); background: rgba(224,71,80,.34);
+    font-size: 13px;
+  }
+  .touch-ring__key { width: 44px; height: 44px; }
+  .touch-ring__key--a { right: calc(9px + env(safe-area-inset-right)); bottom: calc(189px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--b { right: calc(57px + env(safe-area-inset-right)); bottom: calc(189px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--c { right: calc(99px + env(safe-area-inset-right)); bottom: calc(165px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--d { right: calc(124px + env(safe-area-inset-right)); bottom: calc(124px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--e { right: calc(126px + env(safe-area-inset-right)); bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .touch-ring__hit.is-active, .touch-ring__key.is-active { background: var(--red); border-color: var(--red); }
 
   /* A phone screen is mostly world. Everything that reports on the festival —
      the clock, where you are, what you are carrying, the chat log, the strip of
@@ -824,13 +838,16 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      between the two pads. It was a full-width slab of box at twice the pass's
      height, which read as the loudest thing on the screen for what is only a
      hint. */
+  /* Centred over the world, above both pads rather than wedged between them.
+     Sized to the pass — same height, same type — so it reads as one of the
+     furnishings and not as an announcement. */
   .interaction-toast {
-    left: auto;
-    right: calc(96px + env(safe-area-inset-right));
-    bottom: calc(14px + env(safe-area-inset-bottom));
-    transform: none; text-align: center;
-    max-width: min(52vw, 240px); padding: 9px 12px;
-    font-size: 11px; letter-spacing: .06em; line-height: 1.2;
+    left: 50%; right: auto;
+    bottom: calc(246px + env(safe-area-inset-bottom));
+    transform: translateX(-50%); text-align: center;
+    height: 44px; display: flex; align-items: center; justify-content: center;
+    max-width: min(72vw, 300px); padding: 0 15px;
+    font-size: 12px; letter-spacing: .06em; line-height: 1.2;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .venue-screen { left: 14px; right: 14px; top: 124px; width: auto; }

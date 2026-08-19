@@ -310,6 +310,8 @@ const LEDGE_DROP = 0.75;
 // go under the road.
 const SKATE_LIFT = 0.37;
 const CAMERA_ZOOM_KEY = 'myschedule-camera-zoom-v1';
+/** Below this the frame is narrower than it is tall and the fov is widened. */
+const PORTRAIT_ASPECT = 1.35;
 const CAMERA_ZOOM_MIN = 0.45;
 const CAMERA_ZOOM_MAX = 2.2;
 /** How far back the camera sat last visit, if the browser still remembers. */
@@ -862,6 +864,16 @@ export class FestivalWorld {
   private cameraPointerId?: number;
   private cameraPointerX = 0;
   private cameraPointerY = 0;
+  /** Every finger currently down on the world, so a pinch can be recognised. */
+  private readonly touchPoints = new Map<number, { x: number; y: number }>();
+  private pinchDistance = 0;
+  /**
+   * A camera's fov is its *vertical* one, so holding it at 58 on a phone held
+   * upright leaves barely twenty-eight degrees across — a slot, with the street
+   * either side of it out of frame. Recomputed on resize to keep roughly the
+   * width the desk view has.
+   */
+  private baseFov = 58;
 
   constructor({ canvas, foregroundCanvas, cssLayer, graphicsMode, palette, onSnapshot, onAction, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
     this.canvas = canvas;
@@ -2090,7 +2102,17 @@ export class FestivalWorld {
   private readonly resize = (): void => {
     const width = this.canvas.clientWidth || window.innerWidth;
     const height = this.canvas.clientHeight || window.innerHeight;
-    this.camera.aspect = width / Math.max(height, 1);
+    const aspect = width / Math.max(height, 1);
+    this.camera.aspect = aspect;
+    // Widened as the frame narrows, so turning a phone upright shows more of
+    // the world rather than a taller slice of the same slot. Not the full
+    // correction — that reaches a hundred and thirty degrees on a phone and
+    // bends every straight edge in the festival — but enough that the street
+    // reads. Landscape is left exactly as it was.
+    this.baseFov = aspect >= PORTRAIT_ASPECT
+      ? 58
+      : Math.min(74, THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(29)) * PORTRAIT_ASPECT / Math.max(aspect, 0.3))));
+    this.camera.fov = this.baseFov;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
     this.foregroundRenderer.setSize(width, height, false);
@@ -2125,6 +2147,23 @@ export class FestivalWorld {
    * the air, so it cannot be used to climb by repetition.
    */
   /** The touch pad's jump button. SPACE reaches jump() directly. */
+  /**
+   * The ring of buttons a phone gets in place of a keyboard. Each one is the
+   * key it stands for, so there is nothing a thumb cannot reach that a desk
+   * can.
+   */
+  punchFromTouch(): void {
+    this.punch();
+  }
+
+  offerFromTouch(): void {
+    this.donate();
+  }
+
+  setRunning(running: boolean): void {
+    this.running = running;
+  }
+
   jumpFromTouch(): void {
     this.jump();
   }
@@ -2237,6 +2276,18 @@ export class FestivalWorld {
     if (event.button !== 0) return;
     event.preventDefault();
     this.cameraDragging = true;
+    if (event.pointerType !== 'mouse') {
+      this.touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      // A second finger is a pinch, not a punch and not a turn. Turning stops
+      // so the view does not lurch as the hand spreads, and the punch is
+      // cancelled by moving its origin out of tapping range.
+      if (this.touchPoints.size === 2) {
+        const [a, b] = [...this.touchPoints.values()];
+        this.pinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
+        this.cameraDragging = false;
+        this.punchPointerX = Number.NaN;
+      }
+    }
     this.cameraPointerId = event.pointerId;
     this.cameraPointerX = event.clientX;
     this.cameraPointerY = event.clientY;
@@ -2247,8 +2298,30 @@ export class FestivalWorld {
   };
 
   private readonly cameraPointerMove = (event: PointerEvent): void => {
-    if (!this.cameraDragging || event.pointerType !== 'mouse' || event.pointerId !== this.cameraPointerId) return;
-    if ((event.buttons & 1) === 0) {
+    if (event.pointerType !== 'mouse' && this.touchPoints.has(event.pointerId)) {
+      this.touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (this.touchPoints.size >= 2) {
+        const [a, b] = [...this.touchPoints.values()];
+        const spread = Math.hypot(a.x - b.x, a.y - b.y);
+        if (this.pinchDistance > 0 && spread > 0 && this.cameraMode !== 'screening' && this.cameraMode !== 'first-person') {
+          // Fingers apart pulls the camera in, the way a pinch zooms a photo.
+          this.cameraZoom = THREE.MathUtils.clamp(
+            this.cameraZoom * (this.pinchDistance / spread),
+            CAMERA_ZOOM_MIN,
+            CAMERA_ZOOM_MAX,
+          );
+          this.rememberZoom();
+        }
+        this.pinchDistance = spread;
+        event.preventDefault();
+        return;
+      }
+    }
+    // Touch and pen turn the camera as the mouse does — the handler that put
+    // this pointer down said as much, but this one used to hand every finger
+    // straight back, so a phone could walk but never look.
+    if (!this.cameraDragging || event.pointerId !== this.cameraPointerId) return;
+    if (event.pointerType === 'mouse' && (event.buttons & 1) === 0) {
       this.cameraPointerReset();
       return;
     }
@@ -2307,19 +2380,36 @@ export class FestivalWorld {
     // the same ground in one comfortable movement.
     const step = event.deltaY * lines * (event.ctrlKey ? 0.006 : 0.0005);
     this.cameraZoom = THREE.MathUtils.clamp(this.cameraZoom * Math.exp(step), CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX);
+    this.rememberZoom();
+  };
+
+  private rememberZoom(): void {
     try {
       window.localStorage.setItem(CAMERA_ZOOM_KEY, String(this.cameraZoom));
     } catch {
       // Not being able to remember it is not worth interrupting anyone over.
     }
-  };
+  }
 
   private readonly cameraPointerUp = (event: PointerEvent): void => {
+    if (this.touchPoints.delete(event.pointerId)) {
+      // Coming off a pinch, whichever finger stays down starts a fresh drag
+      // from where it is rather than snapping the view to the old origin.
+      this.pinchDistance = 0;
+      const remaining = [...this.touchPoints.entries()][0];
+      if (remaining) {
+        this.cameraPointerId = remaining[0];
+        this.cameraPointerX = remaining[1].x;
+        this.cameraPointerY = remaining[1].y;
+        this.cameraDragging = true;
+        return;
+      }
+    }
     if (event.pointerId !== this.cameraPointerId) return;
     // The same button turns the camera, so only a click that stayed put counts
     // as a punch — a drag is someone looking around.
     const travelled = Math.hypot(event.clientX - this.punchPointerX, event.clientY - this.punchPointerY);
-    if (event.button === 0 && travelled < 8) this.punch();
+    if (event.button === 0 && travelled < 8 && !Number.isNaN(this.punchPointerX)) this.punch();
     this.cameraPointerReset();
   };
 
@@ -2456,6 +2546,8 @@ export class FestivalWorld {
     }
     this.cameraDragging = false;
     this.cameraPointerId = undefined;
+    this.touchPoints.clear();
+    this.pinchDistance = 0;
     this.canvas.classList.remove('is-camera-dragging');
   };
 
@@ -6502,8 +6594,8 @@ export class FestivalWorld {
     if (amount <= 0) {
       // Never touch the orientation when sober. lookAt has already set it, and
       // its roll is rarely zero, so nudging that value tilts the whole view.
-      if (Math.abs(this.camera.fov - 58) > 0.01) {
-        this.camera.fov += (58 - this.camera.fov) * 0.12;
+      if (Math.abs(this.camera.fov - this.baseFov) > 0.01) {
+        this.camera.fov += (this.baseFov - this.camera.fov) * 0.12;
         this.camera.updateProjectionMatrix();
       }
       return;
@@ -6513,7 +6605,7 @@ export class FestivalWorld {
     // orientation lookAt produced, never used to overwrite it.
     this.camera.rotation.z += Math.sin(this.drunkPhase) * 0.045 * amount;
     this.camera.position.x += Math.sin(this.drunkPhase * 0.8) * 0.12 * amount;
-    this.camera.fov += ((58 + amount * 3.5) - this.camera.fov) * 0.06;
+    this.camera.fov += ((this.baseFov + amount * 3.5) - this.camera.fov) * 0.06;
     this.camera.updateProjectionMatrix();
   }
 

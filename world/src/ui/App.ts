@@ -593,7 +593,14 @@ export class App {
         <div class="world-alert" id="world-alert" role="status" hidden></div>
         <div class="touch-controls" aria-hidden="true">
           <div class="touch-stick" data-stick><span class="touch-stick__knob" data-stick-knob></span></div>
-          <button type="button" class="touch-jump" data-touch-jump aria-label="Jump">${zh ? '跳' : 'JUMP'}</button>
+          <div class="touch-ring">
+            <button type="button" class="touch-ring__hit" data-touch-act="punch" aria-label="${zh ? '出拳' : 'Punch'}">${zh ? '拳' : 'HIT'}</button>
+            <button type="button" class="touch-ring__key touch-ring__key--a" data-touch-act="jump" aria-label="${zh ? '跳躍' : 'Jump'}">${zh ? '跳' : 'JUMP'}</button>
+            <button type="button" class="touch-ring__key touch-ring__key--b" data-touch-act="run" aria-label="${zh ? '奔跑' : 'Run'}">${zh ? '跑' : 'RUN'}</button>
+            <button type="button" class="touch-ring__key touch-ring__key--c" data-touch-act="dance" aria-label="${zh ? '跳舞' : 'Dance'}">${zh ? '舞' : 'DANCE'}</button>
+            <button type="button" class="touch-ring__key touch-ring__key--d" data-touch-act="offer" aria-label="${zh ? '供養' : 'Offer'}">${zh ? '供' : 'OFFER'}</button>
+            <button type="button" class="touch-ring__key touch-ring__key--e" data-touch-act="photo" aria-label="${zh ? '拍照' : 'Photo'}">${zh ? '影' : 'PHOTO'}</button>
+          </div>
         </div>
         <section
           class="chat-stream"
@@ -745,9 +752,31 @@ export class App {
         stick.addEventListener(done, release);
       }
     }
-    this.root.querySelector<HTMLButtonElement>('[data-touch-jump]')?.addEventListener('pointerdown', (event) => {
-      event.preventDefault();
-      this.world?.jumpFromTouch();
+    // Run is the one that holds — it is a shift key, not a press. The rest
+    // fire once, on the way down, so they answer as fast as a keyboard does.
+    this.root.querySelectorAll<HTMLButtonElement>('[data-touch-act]').forEach((button) => {
+      const act = button.dataset.touchAct;
+      const hold = act === 'run';
+      const end = () => {
+        if (!hold) return;
+        button.classList.remove('is-active');
+        this.world?.setRunning(false);
+      };
+      button.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        button.setPointerCapture?.(event.pointerId);
+        button.classList.add('is-active');
+        if (act === 'jump') this.world?.jumpFromTouch();
+        else if (act === 'punch') this.world?.punchFromTouch();
+        else if (act === 'dance') this.world?.toggleDancing();
+        else if (act === 'offer') this.world?.offerFromTouch();
+        else if (act === 'photo') this.cycleViewMode();
+        else if (act === 'run') this.world?.setRunning(true);
+        if (!hold) window.setTimeout(() => button.classList.remove('is-active'), 160);
+      });
+      for (const done of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) {
+        button.addEventListener(done, end);
+      }
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-move]').forEach((button) => {
       const key = button.dataset.move as 'w' | 'a' | 's' | 'd';
