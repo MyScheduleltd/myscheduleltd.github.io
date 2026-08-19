@@ -203,6 +203,8 @@ export interface JukeboxTrack {
   title: string;
 }
 export interface JukeboxEntry extends JukeboxTrack {
+  /** Its own id: the same record queued twice is two entries. */
+  queueId?: string;
   requestedBy: string | null;
   requestedByName: string | null;
 }
@@ -392,7 +394,10 @@ export class FestivalClient {
     }, false).catch(() => undefined);
   }
 
-  async updateJukebox(key: string, payload: { url?: string; title?: string; remove?: string }): Promise<void> {
+  async updateJukebox(key: string, payload: {
+    url?: string; title?: string; remove?: string;
+    reorder?: string; direction?: 'up' | 'down'; drop?: string; skip?: boolean; stop?: boolean;
+  }): Promise<void> {
     await this.adminRequest('/api/admin/jukebox', key, {
       method: 'POST',
       body: JSON.stringify(payload),

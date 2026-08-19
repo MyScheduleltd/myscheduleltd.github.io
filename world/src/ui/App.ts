@@ -1989,6 +1989,14 @@ export class App {
       frame.title = 'Festival jukebox';
       frame.allow = 'autoplay; encrypted-media';
       frame.setAttribute('aria-hidden', 'true');
+      // The player only listens once it has loaded, so a volume set before
+      // that lands nowhere — which is why the slider appeared to do nothing on
+      // the first record. Re-applied on load, and again shortly after, since a
+      // player can accept the connection a beat later than the load event.
+      frame.addEventListener('load', () => {
+        this.applyJukeboxVolume();
+        window.setTimeout(() => this.applyJukeboxVolume(), 600);
+      });
       this.root.querySelector('.world-shell')?.appendChild(frame);
       this.jukeboxFrame = frame;
     }
@@ -1997,7 +2005,11 @@ export class App {
     // Browsers refuse to start audio that no gesture asked for. The attendee
     // has already chosen sound or silence at the gate; when they chose silence
     // this starts muted and the slider brings it up.
-    url.searchParams.set('mute', this.audioMuted ? '1' : '0');
+    // The slider has a say in this, not just the choice made at the gate. It
+    // did not before, so every time the record changed the new frame was built
+    // unmuted and played at full volume until the load handler caught up —
+    // which is why sound came back a while after the volume was taken to zero.
+    url.searchParams.set('mute', this.audioMuted || this.jukeboxVolume <= 0 ? '1' : '0');
     url.searchParams.set('controls', '0');
     url.searchParams.set('playsinline', '1');
     url.searchParams.set('rel', '0');
@@ -2023,6 +2035,9 @@ export class App {
     const send = (func: string, args: unknown[] = []) => {
       frame.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
     };
+    // Announce this page as a listener first. Without it a player that has not
+    // been spoken to yet discards the commands that follow.
+    frame.postMessage(JSON.stringify({ event: 'listening', id: 'jukebox' }), '*');
     send('setVolume', [level]);
     if (level === 0) send('mute');
     else {
@@ -2297,6 +2312,9 @@ export class App {
     panel.querySelector<HTMLButtonElement>('[data-mute]')?.addEventListener('click', (event) => {
       this.audioMuted = !this.audioMuted;
       this.world?.audio.setMuted(this.audioMuted);
+      // The jukebox is its own player and was never told, so turning the
+      // festival's sound on left the square silent until the slider was moved.
+      this.applyJukeboxVolume();
       this.sendScreenCommand(this.audioMuted ? 'mute' : 'unMute');
       this.world?.setPublicScreenMuted(
         this.snapshot?.inTheater ? this.activeVenue : undefined,
@@ -2383,6 +2401,27 @@ export class App {
             this.adminError = error instanceof Error ? error.message : 'Jukebox update failed.';
             this.openPanel('admin');
           });
+      });
+      // Every jukebox control goes the same way: send it, then re-read the
+      // state so the panel shows what the service actually did.
+      const jukeboxAction = (payload: Parameters<typeof this.festivalClient.updateJukebox>[1]) => {
+        void this.festivalClient.updateJukebox(this.staffKey, payload)
+          .then(() => { this.adminError = ''; return this.refreshAdminState(); })
+          .catch((error) => {
+            this.adminError = error instanceof Error ? error.message : 'Jukebox update failed.';
+            this.openPanel('admin');
+          });
+      };
+      panel.querySelector<HTMLButtonElement>('[data-jukebox-skip]')?.addEventListener('click', () => jukeboxAction({ skip: true }));
+      panel.querySelector<HTMLButtonElement>('[data-jukebox-stop]')?.addEventListener('click', () => jukeboxAction({ stop: true }));
+      panel.querySelectorAll<HTMLButtonElement>('[data-jukebox-move]').forEach((button) => {
+        button.addEventListener('click', () => jukeboxAction({
+          reorder: button.dataset.jukeboxMove ?? '',
+          direction: button.dataset.direction === 'up' ? 'up' : 'down',
+        }));
+      });
+      panel.querySelectorAll<HTMLButtonElement>('[data-jukebox-drop]').forEach((button) => {
+        button.addEventListener('click', () => jukeboxAction({ drop: button.dataset.jukeboxDrop ?? '' }));
       });
       panel.querySelectorAll<HTMLButtonElement>('[data-jukebox-remove]').forEach((button) => {
         button.addEventListener('click', () => {
@@ -2922,10 +2961,35 @@ export class App {
         <label><span>${this.language === 'zh-TW' ? '曲名（可留空）' : 'TITLE (OPTIONAL)'}</span><input name="title" maxlength="120" placeholder="${this.language === 'zh-TW' ? '留空就用 YOUTUBE 上的標題' : "LEAVE BLANK FOR YOUTUBE'S OWN TITLE"}" /></label>
         <button class="panel-button" type="submit">${this.language === 'zh-TW' ? '放入點唱機' : 'ADD TO THE JUKEBOX'}</button>
       </form>
-      <ul class="staff-list">
-        ${(this.adminState.jukebox?.tracks ?? []).map((track) => `<li><strong>${this.escapeHtml(track.title)}</strong><button type="button" data-jukebox-remove="${this.escapeAttribute(track.id)}">${this.language === 'zh-TW' ? '取出' : 'REMOVE'}</button></li>`).join('')
-          || `<li><small>${this.language === 'zh-TW' ? '點唱機是空的。' : 'The jukebox is empty.'}</small></li>`}
-      </ul>`)}
+      <div class="staff-jukebox">
+        <span class="eyebrow">${this.language === 'zh-TW' ? '播放中' : 'NOW PLAYING'}</span>
+        <div class="staff-jukebox__now">
+          <strong>${this.adminState.jukebox?.nowPlaying
+            ? this.escapeHtml(this.adminState.jukebox.nowPlaying.title)
+            : (this.language === 'zh-TW' ? '安靜' : 'SILENT')}</strong>
+          <span>
+            <button type="button" data-jukebox-skip>${this.language === 'zh-TW' ? '跳過' : 'SKIP'}</button>
+            <button type="button" data-jukebox-stop>${this.language === 'zh-TW' ? '停止並清空' : 'STOP & CLEAR'}</button>
+          </span>
+        </div>
+        <span class="eyebrow">${this.language === 'zh-TW' ? '等待中' : 'WAITING'}</span>
+        <ol class="staff-jukebox__queue">
+          ${(this.adminState.jukebox?.queue ?? []).map((entry, index, all) => `<li>
+            <strong>${this.escapeHtml(entry.title)}</strong>
+            <small>${this.escapeHtml(entry.requestedByName ?? '')}</small>
+            <span>
+              <button type="button" data-jukebox-move="${this.escapeAttribute(entry.queueId ?? '')}" data-direction="up"${index === 0 ? ' disabled' : ''}>&uarr;</button>
+              <button type="button" data-jukebox-move="${this.escapeAttribute(entry.queueId ?? '')}" data-direction="down"${index === all.length - 1 ? ' disabled' : ''}>&darr;</button>
+              <button type="button" data-jukebox-drop="${this.escapeAttribute(entry.queueId ?? '')}">&times;</button>
+            </span>
+          </li>`).join('') || `<li class="is-empty"><small>${this.language === 'zh-TW' ? '沒有人排隊。' : 'Nobody is waiting.'}</small></li>`}
+        </ol>
+        <span class="eyebrow">${this.language === 'zh-TW' ? '機器裡的唱片' : 'IN THE MACHINE'}</span>
+        <ul class="staff-list">
+          ${(this.adminState.jukebox?.tracks ?? []).map((track) => `<li><strong>${this.escapeHtml(track.title)}</strong><button type="button" data-jukebox-remove="${this.escapeAttribute(track.id)}">${this.language === 'zh-TW' ? '取出' : 'REMOVE'}</button></li>`).join('')
+            || `<li><small>${this.language === 'zh-TW' ? '點唱機是空的。' : 'The jukebox is empty.'}</small></li>`}
+        </ul>
+      </div>`)}
       ${this.staffSection('entrance', this.language === 'zh-TW' ? '影展拱門' : 'ENTRANCE ARCH', `
       <form class="staff-form" id="entrance-sign-editor">
         <p>${this.language === 'zh-TW'

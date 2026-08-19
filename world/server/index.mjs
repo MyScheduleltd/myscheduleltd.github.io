@@ -258,21 +258,17 @@ const advanceJukebox = () => {
     const seconds = jukeboxDurations.get(jukeboxNowPlaying.youtubeId) ?? JUKEBOX_DEFAULT_SECONDS;
     if (now - jukeboxNowPlaying.startedAt < seconds * 1000) return false;
   }
-  const previousId = jukeboxNowPlaying?.youtubeId;
   jukeboxNowPlaying = null;
+  // Nothing waiting means silence. The machine does not work through its own
+  // stock to fill the gap: an empty queue is the square with no music in it
+  // until somebody puts a record on, which is what a jukebox is.
   const next = jukeboxQueue.shift();
-  if (next) {
-    jukeboxNowPlaying = { ...next, startedAt: now };
-    return true;
-  }
-  // Nothing requested. Work through the stock in order instead, so the square
-  // is never silent while there is anything in the machine to play.
-  if (!jukeboxTracks.length) return false;
-  const from = jukeboxTracks.findIndex((track) => track.youtubeId === previousId);
-  const pick = jukeboxTracks[(from + 1) % jukeboxTracks.length];
-  jukeboxNowPlaying = { ...pick, requestedBy: null, requestedByName: null, startedAt: now };
+  if (!next) return true;
+  jukeboxNowPlaying = { ...next, startedAt: now };
   return true;
 };
+
+let jukeboxQueueSeq = 0;
 const isDjVenue = (value) => Object.prototype.hasOwnProperty.call(venueQueues, value);
 // The most recent request, so every client can credit whoever asked.
 let clubRequest = null;
@@ -1232,12 +1228,18 @@ const server = createServer(async (request, response) => {
       const trackId = safeText(payload.trackId, 24);
       const track = jukeboxTracks.find((entry) => entry.id === trackId);
       if (!track) return apiError(response, 400, 'That record is not in the jukebox.');
-      // One at a time each, or a single attendee fills the evening.
-      if (jukeboxQueue.some((entry) => entry.requestedBy === visitor.id)) {
-        return apiError(response, 409, 'You already have a record waiting.');
-      }
-      if (jukeboxQueue.length >= 24) return apiError(response, 409, 'The jukebox is full.');
-      jukeboxQueue.push({ ...track, requestedBy: visitor.id, requestedByName: visitor.name });
+      // No limit per attendee: anyone may line up as many as they like, and the
+      // only ceiling is on the list as a whole.
+      if (jukeboxQueue.length >= 60) return apiError(response, 409, 'The jukebox is full.');
+      jukeboxQueueSeq += 1;
+      // Its own id, because the same record queued twice is two entries and
+      // STAFF have to be able to move or drop one without touching the other.
+      jukeboxQueue.push({
+        ...track,
+        queueId: `q${jukeboxQueueSeq}`,
+        requestedBy: visitor.id,
+        requestedByName: visitor.name,
+      });
       advanceJukebox();
       scheduleBroadcast();
       return json(response, 200, { ok: true, jukebox: jukeboxSnapshot() });
@@ -1698,6 +1700,41 @@ const server = createServer(async (request, response) => {
         return json(response, 200, { ok: true, templeSign });
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/jukebox') {
+        // Running order first: these act on what is waiting, not on the stock.
+        const reorder = safeText(payload.reorder, 24);
+        if (reorder) {
+          const at = jukeboxQueue.findIndex((entry) => entry.queueId === reorder);
+          if (at < 0) return apiError(response, 400, 'That record is no longer waiting.');
+          const to = payload.direction === 'up' ? at - 1 : at + 1;
+          if (to >= 0 && to < jukeboxQueue.length) {
+            const [entry] = jukeboxQueue.splice(at, 1);
+            jukeboxQueue.splice(to, 0, entry);
+          }
+          scheduleBroadcast();
+          return json(response, 200, { ok: true, jukebox: jukeboxSnapshot() });
+        }
+        const drop = safeText(payload.drop, 24);
+        if (drop) {
+          const at = jukeboxQueue.findIndex((entry) => entry.queueId === drop);
+          if (at < 0) return apiError(response, 400, 'That record is no longer waiting.');
+          jukeboxQueue.splice(at, 1);
+          scheduleBroadcast();
+          return json(response, 200, { ok: true, jukebox: jukeboxSnapshot() });
+        }
+        if (payload.skip === true) {
+          // Ends the current record now. advanceJukebox takes the next one, or
+          // leaves the square quiet if nothing is waiting.
+          jukeboxNowPlaying = null;
+          advanceJukebox();
+          scheduleBroadcast();
+          return json(response, 200, { ok: true, jukebox: jukeboxSnapshot() });
+        }
+        if (payload.stop === true) {
+          jukeboxNowPlaying = null;
+          jukeboxQueue.length = 0;
+          scheduleBroadcast();
+          return json(response, 200, { ok: true, jukebox: jukeboxSnapshot() });
+        }
         const remove = safeText(payload.remove, 24);
         if (remove) {
           const index = jukeboxTracks.findIndex((track) => track.id === remove);

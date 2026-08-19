@@ -160,6 +160,22 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
   position: fixed; width: 320px; height: 180px; left: -9999px; top: -9999px;
   border: 0; pointer-events: none; opacity: 0;
 }
+.staff-jukebox { display: grid; gap: 6px; }
+.staff-jukebox .eyebrow { margin-top: 8px; }
+.staff-jukebox__now { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(20,18,16,.16); }
+.staff-jukebox__now strong { font: 800 15px var(--condensed); }
+.staff-jukebox__queue { margin: 0; padding-left: 22px; display: grid; gap: 4px; }
+.staff-jukebox__queue li { display: flex; align-items: center; gap: 8px; }
+.staff-jukebox__queue li.is-empty { list-style: none; margin-left: -22px; opacity: .6; }
+.staff-jukebox__queue strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 13px var(--condensed); }
+.staff-jukebox__queue small { opacity: .55; font-size: 11px; letter-spacing: .1em; }
+.staff-jukebox button {
+  padding: 4px 9px; cursor: pointer; border: 1px solid var(--ink);
+  background: var(--paper); color: var(--ink); font: 800 11px var(--condensed); letter-spacing: .08em;
+}
+.staff-jukebox button:hover:not(:disabled) { background: var(--red); border-color: var(--red); color: var(--paper); }
+.staff-jukebox button:disabled { opacity: .3; cursor: default; }
+
 .jukebox-now { display: flex; flex-direction: column; gap: 3px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.14); }
 .jukebox-now strong { font: 700 17px/1.2 var(--condensed, sans-serif); letter-spacing: .04em; }
 .jukebox-now small, .jukebox-queue small { opacity: .6; font-size: 11px; letter-spacing: .12em; }

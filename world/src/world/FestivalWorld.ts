@@ -268,8 +268,13 @@ const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
  * another. They all read this now.
  */
 const programmeBoardPosition = new THREE.Vector3(0, 0, 1);
-const concessionPosition = new THREE.Vector3(-7.8, 0, 8);
-const pamphletPosition = new THREE.Vector3(-4.2, 0, 8);
+// Level with the first lamp up the road at z = 16, and pulled in off the kerb.
+// The stalls carry colliders wider than the stalls themselves — the popcorn
+// booth's is 3.4 across — so sitting at x = -7.8 its western edge reached -9.5
+// while the roadway stops at -8.5, and the thing everybody could see was a
+// stall standing in the red. Both now sit wholly on the asphalt.
+const concessionPosition = new THREE.Vector3(-6.6, 0, 16);
+const pamphletPosition = new THREE.Vector3(-3, 0, 16);
 // Where the sea meets the sand. Every water plane ends here and every piece of
 // beach starts here: overlapping the two put opaque sand and a water surface at
 // the same height, and they fought for the same pixels along the whole shore.
@@ -3162,7 +3167,7 @@ export class FestivalWorld {
         const z = -36.7 - row * 3.05;
         this.mesh([1.6, 0.28, 1.55], [x, 0.62, z], seatMaterial);
         this.mesh([1.6, 1.65, 0.22], [x, 1.35, z + 0.67], seatMaterial);
-        this.addCollider(x, z, 1.32, 1.25, 0.08);
+        this.addCollider(x, z, 1.32, 1.25, 0.08, { minY: -0.4, maxY: 2.2 });
         this.seats.push({
           id: `PALACE-${row + 1}-${column + 3}`,
           venue: 'palace',
@@ -3223,7 +3228,7 @@ export class FestivalWorld {
           this.mesh([0.45, 0.8, 0.85], [wheelX, 0.45, 1.05], material(0x090a0b), car);
         }
         this.scene.add(car);
-        this.addCollider(x, z, 4.35, 2.55, 0.08);
+        this.addCollider(x, z, 4.35, 2.55, 0.08, { minY: -0.4, maxY: 2.2 });
         this.seats.push({
           id: `DRIVE-${row + 1}-${column + 2}`,
           venue: 'drive-in',

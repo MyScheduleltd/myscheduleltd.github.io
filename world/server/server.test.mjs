@@ -1148,10 +1148,11 @@ test('the jukebox is stocked by staff and queued by whoever is standing at it', 
   // The same record twice is a mistake, not a request.
   assert.equal((await stock({ url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', title: 'AGAIN' })).status, 409);
 
-  // With stock and nobody asking, the machine plays by itself.
+  // Stock alone plays nothing. The machine does not work through its own
+  // shelf to fill a silence — an empty queue is an empty square.
   const config = await (await fetch(`${baseUrl}/api/config`, { headers: { origin: 'http://127.0.0.1:5173' } })).json();
   assert.equal(config.jukebox.tracks.length, 2);
-  assert.ok(config.jukebox.nowPlaying, 'a stocked jukebox is playing something');
+  assert.equal(config.jukebox.nowPlaying, null, 'a stocked jukebox with nothing asked for is silent');
 
   // An attendee puts one on, and it is on the shared list under their name.
   const listener = await join('LISTENER');
@@ -1160,15 +1161,27 @@ test('the jukebox is stocked by staff and queued by whoever is standing at it', 
   });
   assert.equal(queued.status, 200);
   const after = await queued.json();
-  assert.equal(after.jukebox.queue.length, 1);
-  assert.equal(after.jukebox.queue[0].requestedByName, 'LISTENER');
-  assert.equal(after.jukebox.queue[0].title, 'SECOND RECORD');
+  // Nothing was playing, so it goes straight on rather than into the queue.
+  assert.equal(after.jukebox.nowPlaying?.title, 'SECOND RECORD');
+  assert.equal(after.jukebox.nowPlaying?.requestedByName, 'LISTENER');
 
-  // One each, so a single attendee cannot fill the evening.
+  // The first request starts playing at once; a second from the same attendee
+  // is allowed and waits behind it.
   const again = await fetch(`${baseUrl}/api/jukebox/request`, {
     method: 'POST', headers: auth(listener), body: JSON.stringify({ trackId: 'dQw4w9WgXcQ' }),
   });
-  assert.equal(again.status, 409);
+  assert.equal(again.status, 200, 'anyone may line up as many as they like');
+  const lined = (await again.json()).jukebox;
+  assert.equal(lined.nowPlaying?.title, 'SECOND RECORD', 'the first goes on straight away');
+  assert.equal(lined.queue.length, 1, 'and the second waits');
+
+  // STAFF can drop a waiting record and stop the machine altogether.
+  const dropped = await stock({ drop: lined.queue[0].queueId });
+  assert.equal(dropped.status, 200);
+  assert.equal((await dropped.json()).jukebox.queue.length, 0);
+  const stopped = await stock({ stop: true });
+  assert.equal(stopped.status, 200);
+  assert.equal((await stopped.json()).jukebox.nowPlaying, null, 'stopping leaves the square silent');
 
   // A record that is not in the machine cannot be asked for.
   const bogus = await fetch(`${baseUrl}/api/jukebox/request`, {
@@ -1179,9 +1192,7 @@ test('the jukebox is stocked by staff and queued by whoever is standing at it', 
   // Taking a record out takes its waiting copy with it.
   const removed = await stock({ remove: 'Ffli-o0ocT0' });
   assert.equal(removed.status, 200);
-  const left = await removed.json();
-  assert.equal(left.jukebox.tracks.length, 1);
-  assert.equal(left.jukebox.queue.length, 0, 'the waiting copy went with it');
+  assert.equal((await removed.json()).jukebox.tracks.length, 1);
 });
 
 test('five blows put an attendee down, and the sixth is refused while they are up', async () => {
