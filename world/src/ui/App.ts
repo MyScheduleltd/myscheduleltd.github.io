@@ -2226,7 +2226,7 @@ export class App {
             : 'The jukebox is empty. STAFF stock it from the staff panel.'}</p>`;
         }
         const playing = jukebox.nowPlaying;
-        const mine = jukebox.queue.some((entry) => entry.requestedBy === this.networkState?.selfId);
+        const mine = jukebox.queue.filter((entry) => entry.requestedBy === this.networkState?.selfId).length;
         return `
           <p class="panel-intro">${zh
             ? '整個影展一起聽同一張唱片。影廳、俱樂部與屋頂不受影響。'
@@ -2243,9 +2243,9 @@ export class App {
               : `<p class="panel-note">${zh ? '沒有人排隊。' : 'Nobody is waiting.'}</p>`}
           </div>
           <span class="eyebrow">${zh ? '選一張' : 'PUT ONE ON'}</span>
-          ${mine ? `<p class="panel-note">${zh ? '你已經有一張在等了。' : 'You already have one waiting.'}</p>` : ''}
+          ${mine ? `<p class="panel-note">${zh ? `你有 ${mine} 張在等。` : `${mine} of yours waiting.`}</p>` : ''}
           <div class="jukebox-picks">
-            ${jukebox.tracks.map((track) => `<button type="button" data-jukebox-pick="${this.escapeAttribute(track.id)}"${mine ? ' disabled' : ''}>${this.escapeHtml(track.title)}</button>`).join('')}
+            ${jukebox.tracks.map((track) => `<button type="button" data-jukebox-pick="${this.escapeAttribute(track.id)}">${this.escapeHtml(track.title)}</button>`).join('')}
           </div>`;
       }
       case 'sound':

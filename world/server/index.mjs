@@ -1447,9 +1447,13 @@ const server = createServer(async (request, response) => {
           djProfiles,
           shopLink,
           templeSign,
-  entranceSign,
+          entranceSign,
           gateCopy,
           trackTempos,
+          // The STAFF panel reads this payload, not the one attendees get, so
+          // without it the running order and the shelf were always empty there
+          // however many records were in the machine.
+          jukebox: jukeboxSnapshot(),
         });
       }
       const payload = await body(request);

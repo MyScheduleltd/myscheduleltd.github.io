@@ -1190,6 +1190,15 @@ test('the jukebox is stocked by staff and queued by whoever is standing at it', 
   assert.equal(bogus.status, 400);
 
   // Taking a record out takes its waiting copy with it.
+  // The STAFF panel reads the admin payload, not the attendee one. It carried
+  // no jukebox at all, so the shelf and the running order were always empty
+  // there however many records were in the machine.
+  const adminState = await (await fetch(`${baseUrl}/api/admin/state`, {
+    headers: { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173' },
+  })).json();
+  assert.ok(adminState.jukebox, 'staff are told about the jukebox');
+  assert.equal(adminState.jukebox.tracks.length, 2, 'and can see what is in it');
+
   const removed = await stock({ remove: 'Ffli-o0ocT0' });
   assert.equal(removed.status, 200);
   assert.equal((await removed.json()).jukebox.tracks.length, 1);
