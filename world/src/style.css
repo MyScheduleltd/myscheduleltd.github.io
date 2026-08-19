@@ -738,6 +738,13 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
    browser controls, which is how they ended up looking nothing like the site
    or like each other. Add a form, add it here. */
 .staff-form, .dj-about__edit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+/* The form is a two-column grid, so anything in it that is not a field still
+   takes a cell — an explanatory line above the fields landed in the first
+   column and shunted the first field into the second, which left every label
+   below it out of step with the one beside it. Prose and the submit button
+   belong across the whole form; a label marked wide does too, for values like
+   a URL that have no business in half a column. */
+.staff-form > p, .staff-form > button, .staff-form > label.is-wide { grid-column: 1 / -1; }
 .dj-about__edit { margin-top: 16px; border-top: 2px solid var(--ink); padding-top: 16px; }
 .staff-form label, .dj-about__edit label { display: grid; gap: 5px; color: var(--red); font: 800 11px var(--condensed); letter-spacing: .08em; }
 .staff-form input, .staff-form textarea, .dj-about__edit input, .dj-about__edit textarea { box-sizing: border-box; width: 100%; min-width: 0; border: 2px solid var(--ink); padding: 10px 12px; color: var(--ink); background: var(--paper); font: 700 14px/1.35 sans-serif; }

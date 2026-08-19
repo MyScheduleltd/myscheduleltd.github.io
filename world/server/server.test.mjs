@@ -34,6 +34,8 @@ const startServer = async (port, stateFile, seedFile = 'off') => {
       // the cap has to clear the total the suite opens, not the twenty a real
       // instance holds. The queue at the gate has a test of its own.
       FESTIVAL_MAX_VISITORS: '120',
+      // These tests must not depend on YouTube answering.
+      FESTIVAL_YOUTUBE_TITLES: 'off',
       FESTIVAL_ALLOWED_ORIGINS: 'http://127.0.0.1:5173',
       FESTIVAL_STATE_FILE: stateFile,
       // Assert on the festival the code ships with, never on the running order
@@ -1108,7 +1110,12 @@ test('the jukebox is stocked by staff and queued by whoever is standing at it', 
 
   // Only a link the service can actually read, and only with a title.
   assert.equal((await stock({ url: 'https://example.com/not-a-video', title: 'NOPE' })).status, 400);
-  assert.equal((await stock({ url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', title: '' })).status, 400);
+  // A blank title is allowed: the record takes YouTube's own name for it, or
+  // its id when that lookup is off or unreachable, as it is here.
+  const untitled = await stock({ url: 'https://www.youtube.com/watch?v=UvynvnxZJ3Q', title: '' });
+  assert.equal(untitled.status, 200);
+  assert.equal((await untitled.json()).jukebox.tracks[0].title, 'UvynvnxZJ3Q');
+  assert.equal((await stock({ remove: 'UvynvnxZJ3Q' })).status, 200);
 
   const added = await stock({ url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', title: 'FIRST RECORD' });
   assert.equal(added.status, 200);

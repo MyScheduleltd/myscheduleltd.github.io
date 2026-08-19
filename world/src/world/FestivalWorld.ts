@@ -1040,6 +1040,21 @@ export class FestivalWorld {
     };
   }
 
+  /** Loopback fixture on the road, looking at the jukebox and the stair. */
+  focusJukeboxForReview(): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    const x = 12;
+    const z = 17.4;
+    this.player.position.set(x, this.groundHeightAt(x, z), z);
+    this.airborne = false;
+    this.verticalVelocity = 0;
+    this.player.rotation.y = Math.PI / 2;
+    this.cameraMode = 'follow';
+    this.cameraZoom = 1;
+    this.cameraOrbit.follow.yaw = -Math.PI / 2;
+    this.cameraOrbit.follow.pitch = 0.16;
+  }
+
   /** Loopback fixture standing in the lobby, looking at the stair opening. */
   focusClubLobbyForReview(): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
@@ -2875,16 +2890,24 @@ export class FestivalWorld {
   }
 
   /**
-   * The jukebox, on the east side of the square between the timetable and the
-   * road. It is put where somebody crossing the square passes it rather than
-   * out on the edge of the map: this is the one object in the festival whose
-   * whole purpose is to be walked up to by strangers, and the square is where
-   * the strangers are. Clear of the road at x = 13, and clear of the board's
-   * posts, so it blocks nobody's way anywhere.
+   * The jukebox, against the rooftop's west wall at the foot of its outside
+   * stair. The stair runs x 13.8 to 17.4 climbing north from z 20, alongside
+   * the building's wall at x = 18; this stands just south of the bottom step,
+   * back to the wall, so anybody walking up to the deck passes its front.
+   *
+   * It is built into a group and turned, rather than laid out along the axes
+   * like everything else in this world, because it has a front — the lit panel
+   * and the arch over it — and that front has to face the way people arrive
+   * from, which here is the road to the west.
    */
   private createJukebox(): void {
-    const x = 13;
-    const z = 5;
+    const x = 17;
+    const z = 17.4;
+    const cabinet = new THREE.Group();
+    cabinet.position.set(x, 0, z);
+    // Built facing -z; a quarter turn puts that front on -x, towards the road.
+    cabinet.rotation.y = Math.PI / 2;
+    this.scene.add(cabinet);
     const shell = material(0x2a1512, 0.62, 0.18);
     const trim = material(0xc9a227, 0.34, 0.66);
     const glass = new THREE.MeshStandardMaterial({
@@ -2892,20 +2915,21 @@ export class FestivalWorld {
     });
     // A cabinet with a lit arch over it, which is the whole silhouette at this
     // resolution — nobody needs to read the record titles off the object.
-    this.mesh([2.4, 0.5, 1.5], [x, 0.25, z], shell);
-    this.mesh([2.2, 2.4, 1.3], [x, 1.7, z], shell);
-    this.mesh([1.7, 0.9, 0.12], [x, 2.1, z - 0.68], glass);
-    this.mesh([2.4, 0.34, 1.5], [x, 3.1, z], trim);
-    this.mesh([1.9, 0.42, 1.1], [x, 3.42, z], glass);
+    this.mesh([2.4, 0.5, 1.5], [0, 0.25, 0], shell, cabinet);
+    this.mesh([2.2, 2.4, 1.3], [0, 1.7, 0], shell, cabinet);
+    this.mesh([1.7, 0.9, 0.12], [0, 2.1, -0.68], glass, cabinet);
+    this.mesh([2.4, 0.34, 1.5], [0, 3.1, 0], trim, cabinet);
+    this.mesh([1.9, 0.42, 1.1], [0, 3.42, 0], glass, cabinet);
     for (const side of [-1, 1]) {
-      this.mesh([0.16, 2.2, 0.16], [x + side * 1.05, 1.85, z - 0.62], trim);
+      this.mesh([0.16, 2.2, 0.16], [side * 1.05, 1.85, -0.62], trim, cabinet);
     }
-    // The one light it throws, so the square has a warm corner after dark.
+    // The one light it throws, so the foot of the stair has a warm corner.
     const glow = new THREE.PointLight(0xff7a44, 26, 15, 1.6);
-    glow.position.set(x, 2.6, z - 1.2);
+    glow.position.set(x - 1.2, 2.6, z);
     this.scene.add(glow);
     this.dayNight.addLampLight(glow, 1);
-    this.addCollider(x, z, 2.4, 1.5);
+    // Turned a quarter, so the footprint's width and depth swap over.
+    this.addCollider(x, z, 1.5, 2.4);
     this.jukebox = { x, z };
   }
 
@@ -6329,6 +6353,9 @@ export class FestivalWorld {
     const seat = this.nearestSeat();
     return this.playerState === 'seated' || this.carriedItem === 'MENTOR' || this.nearbyMentor() !== undefined ||
       this.carriedItem === 'DRINK' || this.nearClubBar() || this.nearShopCounter() ||
+      // Without this the jukebox had a label nobody was ever shown: interact()
+      // answered E at it, but the prompt that says so is gated on this list.
+      this.nearJukebox() ||
       this.nearbyDj() !== undefined ||
       (seat !== undefined && !this.occupiedSeats.has(seat.id)) ||
       this.nearestSocialTarget() !== undefined ||

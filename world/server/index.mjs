@@ -206,6 +206,35 @@ const venueQueues = { club: [], rooftop: [] };
  * somebody arriving late comes in partway through it as they would in a bar.
  */
 const jukeboxTracks = [];
+/**
+ * Asks YouTube what a video is called, so STAFF can paste a link and stop.
+ *
+ * oEmbed is the public, keyless endpoint for exactly this, and the only thing
+ * this service asks the outside world for. It is allowed to fail: a jukebox
+ * that will not take a record because a third party is slow is worse than one
+ * with a record in it named after its id, so every failure path returns empty
+ * and the caller falls back. Turned off in tests, which must not depend on
+ * YouTube being reachable.
+ */
+const youtubeTitleLookup = (process.env.FESTIVAL_YOUTUBE_TITLES ?? 'on') !== 'off';
+const fetchYoutubeTitle = async (youtubeId) => {
+  if (!youtubeTitleLookup) return '';
+  try {
+    const target = `https://www.youtube.com/watch?v=${encodeURIComponent(youtubeId)}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4_000);
+    const response = await fetch(
+      `https://www.youtube.com/oembed?url=${encodeURIComponent(target)}&format=json`,
+      { signal: controller.signal },
+    );
+    clearTimeout(timer);
+    if (!response.ok) return '';
+    const payload = await response.json();
+    return safeText(payload?.title, 120);
+  } catch {
+    return '';
+  }
+};
 const jukeboxQueue = [];
 let jukeboxNowPlaying = null;
 /** What a record is assumed to run for until a client that has it open says. */
@@ -1647,9 +1676,11 @@ const server = createServer(async (request, response) => {
           return json(response, 200, { ok: true, jukebox: jukeboxSnapshot() });
         }
         const youtubeId = youtubeIdFromUrl(safeText(payload.url, 300));
-        const title = safeText(payload.title, 120);
         if (!validYoutubeId(youtubeId)) return apiError(response, 400, 'That is not a YouTube link this can read.');
-        if (!title) return apiError(response, 400, 'Give the record a title.');
+        // A title is optional: left blank, the record takes the name YouTube
+        // gives it, and if that cannot be had it takes its own id rather than
+        // refusing the link.
+        const title = safeText(payload.title, 120) || await fetchYoutubeTitle(youtubeId) || youtubeId;
         if (jukeboxTracks.some((track) => track.youtubeId === youtubeId)) {
           return apiError(response, 409, 'That record is already in the jukebox.');
         }

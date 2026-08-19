@@ -636,6 +636,8 @@ export class App {
     } else if (reviewTarget === 'temple' || reviewTarget === 'temple-altar') {
       this.world.focusTempleForReview(reviewTarget === 'temple-altar');
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.structureReviewSnapshot();
+    } else if (reviewTarget === 'jukebox') {
+      this.world.focusJukeboxForReview();
     } else if (reviewTarget === 'club-lobby') {
       this.world.focusClubLobbyForReview();
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.clubReviewSnapshot();
@@ -2816,10 +2818,10 @@ export class App {
       ${this.staffSection('jukebox', this.language === 'zh-TW' ? '點唱機' : 'JUKEBOX', `
       <form class="staff-form" id="jukebox-editor">
         <p class="panel-intro">${this.language === 'zh-TW'
-          ? '放入唱片：貼上 YouTube 連結並取個名字。整個影展的廣場都會聽到，影廳、俱樂部與屋頂不受影響。'
-          : 'Stock the machine with a YouTube link and a name. It plays across the square and the open festival; the theatres, the club and the rooftop are left alone.'}</p>
-        <label><span>${this.language === 'zh-TW' ? 'YOUTUBE 連結' : 'YOUTUBE LINK'}</span><input name="url" placeholder="https://www.youtube.com/watch?v=…" /></label>
-        <label><span>${this.language === 'zh-TW' ? '曲名' : 'TITLE'}</span><input name="title" maxlength="120" /></label>
+          ? '放入唱片：貼上 YouTube 連結即可，曲名留空就用 YouTube 上的標題。整個影展都會聽到，影廳、俱樂部與屋頂不受影響。'
+          : "Stock the machine with a YouTube link. Leave the title blank and it takes YouTube's own. It plays across the open festival; the theatres, the club and the rooftop are left alone."}</p>
+        <label class="is-wide"><span>${this.language === 'zh-TW' ? 'YOUTUBE 連結' : 'YOUTUBE LINK'}</span><input name="url" placeholder="https://www.youtube.com/watch?v=…" /></label>
+        <label><span>${this.language === 'zh-TW' ? '曲名（可留空）' : 'TITLE (OPTIONAL)'}</span><input name="title" maxlength="120" placeholder="${this.language === 'zh-TW' ? '留空就用 YOUTUBE 上的標題' : "LEAVE BLANK FOR YOUTUBE'S OWN TITLE"}" /></label>
         <button class="panel-button" type="submit">${this.language === 'zh-TW' ? '放入點唱機' : 'ADD TO THE JUKEBOX'}</button>
       </form>
       <ul class="staff-list">
@@ -3105,6 +3107,7 @@ export class App {
     if (value.startsWith('E / WAG TAIL AT')) return value.replace('E / WAG TAIL AT', 'E／搖尾巴給');
     if (value === 'E / ORDER A DRINK') return 'E／點一杯';
     if (value === 'E / OPEN THE POP-UP STORE') return 'E／逛快閃服飾店';
+    if (value === 'E / PUT A RECORD ON') return 'E／點歌';
     if (value === 'SHIFT+E / DRINK UP') return 'SHIFT+E／喝一口';
     if (value.startsWith('E / REQUEST A TRACK FROM')) return value.replace('E / REQUEST A TRACK FROM', 'E／向') + ' 點歌';
     if (value.startsWith('E / GIVE MENTOR A TREAT')) {
