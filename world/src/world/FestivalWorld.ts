@@ -803,6 +803,8 @@ export class FestivalWorld {
   private cameraShakePhase = 0;
   private readonly knockback = new THREE.Vector3();
   private readonly cameraProbe = new THREE.Vector3();
+  /** How far back the view is actually sitting, eased towards where it may. */
+  private cameraReach = 0;
   private punchPointerX = 0;
   private punchPointerY = 0;
   private verticalVelocity = 0;
@@ -3106,7 +3108,7 @@ export class FestivalWorld {
         const z = -34.5 - row * 2.8;
         this.mesh([1.3, 0.18, 1.4], [x, 0.55, z], chairMaterial);
         this.mesh([1.3, 1.3, 0.16], [x, 1.15, z + 0.6], chairMaterial);
-        this.addCollider(x, z, 1.12, 1.15, 0.08);
+        this.addCollider(x, z, 1.12, 1.15, 0.08, { minY: -0.4, maxY: 1.8 });
         this.seats.push({
           id: `SHORE-${row + 1}-${column + 4}`,
           venue: 'shore',
@@ -6291,7 +6293,7 @@ export class FestivalWorld {
     }
     this.confineCameraToClub(cameraTarget);
     this.confineCameraOverWater(cameraTarget);
-    this.pullCameraClearOfWalls(cameraTarget);
+    this.pullCameraClearOfWalls(cameraTarget, delta);
     const smoothing = 1 - Math.exp(-delta * 5.2);
     this.camera.position.lerp(cameraTarget, smoothing);
     this.camera.lookAt(this.lookTarget);
@@ -6383,7 +6385,27 @@ export class FestivalWorld {
    * those boxes are what the body is already refused by, so the camera stops at
    * exactly the surfaces that are solid, and none of the scenery that is not.
    */
-  private pullCameraClearOfWalls(cameraTarget: THREE.Vector3): void {
+  /**
+   * What actually stands between the view and the body. A chair does not: the
+   * camera rides well above one and should ride over it. Only things that reach
+   * head height are treated as obstructions.
+   *
+   * Colliders with no top at all are walls and buildings and always count —
+   * which is also why the chairs had to be given a real one. Without it they
+   * were infinitely tall to this test, so standing anywhere in a seating block
+   * threw the camera in against the nearest seat back.
+   */
+  private blocksCamera(x: number, z: number, y: number): boolean {
+    const headHeight = this.player.position.y + 2.2;
+    return this.colliders.some(
+      (collider) =>
+        x > collider.minX && x < collider.maxX && z > collider.minZ && z < collider.maxZ &&
+        (collider.minY === undefined || y >= collider.minY) &&
+        (collider.maxY === undefined || (y <= collider.maxY && collider.maxY > headHeight)),
+    );
+  }
+
+  private pullCameraClearOfWalls(cameraTarget: THREE.Vector3, delta: number): void {
     if (this.playerState === 'swimming') return;
     // Not while seated at a screening. Everywhere else the look target is the
     // attendee's own head, so walking out from it towards the camera walks out
@@ -6412,7 +6434,7 @@ export class FestivalWorld {
       const x = this.lookTarget.x + this.cameraProbe.x * travelled;
       const y = this.lookTarget.y + this.cameraProbe.y * travelled;
       const z = this.lookTarget.z + this.cameraProbe.z * travelled;
-      if (this.staticCollides(x, z, y)) {
+      if (this.blocksCamera(x, z, y)) {
         safe = Math.max(1.1, travelled - clearance);
         break;
       }
@@ -6427,8 +6449,13 @@ export class FestivalWorld {
         break;
       }
     }
-    if (safe >= reach) return;
-    cameraTarget.copy(this.lookTarget).addScaledVector(this.cameraProbe, safe);
+    // The distance is eased rather than the position, so the view closes in
+    // behind something and opens again afterwards without either being a jump.
+    // Snapping it was what made walking past a seat feel like a shove.
+    if (this.cameraReach <= 0) this.cameraReach = safe;
+    else this.cameraReach += (safe - this.cameraReach) * (1 - Math.exp(-delta * 8.5));
+    if (this.cameraReach >= reach - 0.01) return;
+    cameraTarget.copy(this.lookTarget).addScaledVector(this.cameraProbe, this.cameraReach);
   }
 
   private confineCameraOverWater(cameraTarget: THREE.Vector3): void {
