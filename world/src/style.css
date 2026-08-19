@@ -233,6 +233,15 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 /* Out of the composition entirely: the bottom centre stays clear for framing,
    and this sits in the top-left, the one corner nothing else claims — the pass
    and the status are top-right, the thumbs are along the bottom. */
+.jukebox-sound {
+  position: fixed; z-index: 9; left: 50%; transform: translateX(-50%);
+  top: calc(64px + env(safe-area-inset-top));
+  padding: 10px 16px; border: 1px solid var(--red); cursor: pointer;
+  color: white; background: rgba(8,9,10,.88);
+  font: 800 12px var(--condensed); letter-spacing: .08em;
+}
+.jukebox-sound[hidden] { display: none; }
+.jukebox-sound:hover { background: var(--red); }
 .world-camera-hide {
   position: fixed; z-index: 9; display: grid; place-items: center;
   top: calc(14px + env(safe-area-inset-top)); left: calc(14px + env(safe-area-inset-left));
@@ -876,7 +885,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   }
 }
 
-@media (max-width: 780px), (orientation: landscape) and (max-height: 500px) {
+@media (max-width: 780px), (orientation: landscape) and (max-height: 600px) {
   body { overflow: auto; }
   .gate { align-items: start; padding: 104px 14px 28px; }
   /* The sign-in banner was pinned to the window while everything else scrolled,
@@ -1072,7 +1081,13 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
    the upright layout stacks the prompt, the ring and the pass through nearly
    six hundred of them. Everything draws in toward the two bottom corners, where
    the thumbs already are, and the middle of the screen is left as picture. */
-@media (orientation: landscape) and (max-height: 500px) {
+/* Six hundred, not five: a phone on its side sits anywhere between about
+   three hundred and thirty and five hundred and sixty depending on the model
+   and on how much of the browser's own furniture is showing, and the tighter
+   figure let some of them fall through to the desk layout — which is a chat
+   panel sized for a screen twice as tall. Six hundred still cannot be reached
+   by a tablet on its side. */
+@media (orientation: landscape) and (max-height: 600px) {
   .touch-stick { width: 92px; height: 92px; left: calc(14px + env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom)); }
   .touch-stick__knob { width: 40px; height: 40px; }
   .touch-ring__hit { width: 50px; height: 50px; right: calc(35px + env(safe-area-inset-right)); bottom: calc(52px + env(safe-area-inset-bottom)); }
@@ -1148,8 +1163,12 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      write in hold their places at either end of it. */
   .panel__body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .panel__body > .chat-channels, .panel__body > .chat-form, .panel__body > .connection-note { flex: 0 0 auto; }
+  /* Grows to fill, and is never allowed to disappear: on a channel with
+     nothing said in it yet the feed has no content to hold it open, and it
+     collapsed to a line between the tabs and the writing box, which reads as a
+     broken panel rather than an empty room. */
   .panel__body > .chat-feed {
-    flex: 1 1 auto; min-height: 0;
+    flex: 1 1 auto; min-height: 96px;
     overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
   }
   /* The conversation was down to ninety-nine pixels of a three-hundred-and-

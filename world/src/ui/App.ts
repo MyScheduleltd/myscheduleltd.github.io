@@ -259,6 +259,7 @@ export class App {
   private jukeboxVolume = readStoredJukeboxVolume();
   private jukeboxFrame?: HTMLIFrameElement;
   private lastJukeboxLiftAt = 0;
+  private jukeboxSoundConfirmed = false;
   /** Lengths already reported, so the same one is not sent on every message. */
   private readonly jukeboxReportedDurations = new Map<string, number>();
   private jukeboxPlayingId?: string;
@@ -572,6 +573,7 @@ export class App {
         <button class="world-camera-hide" type="button" data-camera-hide hidden
           aria-label="${zh ? '顯示或隱藏相機介面' : 'Show or hide camera controls'}">${zh ? '隱藏' : 'HIDE'}</button>
         <button class="zoom-reset" type="button" data-zoom-reset hidden>${zh ? '重設縮放' : 'RESET ZOOM'}</button>
+        <button class="jukebox-sound" type="button" data-jukebox-sound hidden>${zh ? '♪ 點一下開啟點唱機聲音' : '♪ TAP FOR JUKEBOX SOUND'}</button>
         <header class="world-header">
           <div class="world-brand"><img class="brand-logo" src="${companyLogoUrl}" alt="我的檔期" /><span>MYSCHEDULE</span></div>
           <div class="status-cluster" id="connection-status" data-status="connecting">
@@ -771,6 +773,14 @@ export class App {
     }
     window.addEventListener('keydown', this.globalShortcut);
     window.addEventListener('pointerup', this.liftJukeboxOnGesture, true);
+    this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]')?.addEventListener('click', () => {
+      this.jukeboxSoundConfirmed = true;
+      this.applyJukeboxVolume();
+      // Again a moment later: the player can accept the connection a beat after
+      // it is spoken to, and the press is the only permission we will get.
+      window.setTimeout(() => this.applyJukeboxVolume(), 400);
+      this.updateJukeboxSoundPrompt();
+    });
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) this.applyJukeboxVolume();
     });
@@ -2237,6 +2247,23 @@ export class App {
     this.jukeboxStartedAt = playing.startedAt;
     const offset = Math.max(0, Math.floor((Date.now() - playing.startedAt) / 1000));
     this.mountJukeboxFrame(playing.youtubeId, offset);
+    this.updateJukeboxSoundPrompt();
+  }
+
+  /**
+   * A phone will not let a page raise a sound on its own account, and quietly
+   * nudging the player from here does not help: the command crosses into
+   * YouTube's own frame, and a finger that touched this page is not a finger
+   * that touched that one. What it does honour is an unmute asked for in the
+   * moment somebody presses something. So there is something to press. It
+   * appears only when a record is actually playing, only where sound was asked
+   * for, and only until it has been used once.
+   */
+  private updateJukeboxSoundPrompt(): void {
+    const button = this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]');
+    if (!button) return;
+    const wantsSound = !this.audioMuted && !this.jukeboxSilenced && this.jukeboxVolume > 0;
+    button.hidden = this.jukeboxSoundConfirmed || !this.jukeboxPlayingId || !wantsSound;
   }
 
   private mountJukeboxFrame(youtubeId: string, offsetSeconds: number): void {
@@ -2314,6 +2341,8 @@ export class App {
   };
 
   private stopJukebox(): void {
+    this.jukeboxPlayingId = undefined;
+    this.updateJukeboxSoundPrompt();
     if (!this.jukeboxFrame) return;
     this.jukeboxFrame.remove();
     this.jukeboxFrame = undefined;
@@ -2344,6 +2373,7 @@ export class App {
     // Announce this page as a listener first. Without it a player that has not
     // been spoken to yet discards the commands that follow.
     frame.postMessage(JSON.stringify({ event: 'listening', id: 'jukebox' }), '*');
+    this.updateJukeboxSoundPrompt();
     send('setVolume', [level]);
     if (level === 0) send('mute');
     else {
