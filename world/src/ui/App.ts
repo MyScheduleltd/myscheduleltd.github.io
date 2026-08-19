@@ -585,11 +585,9 @@ export class App {
         <section class="seat-menu" id="seat-menu" aria-labelledby="seat-menu-title" hidden></section>
         <button class="interaction-toast" id="interaction-toast" type="button" hidden></button>
         <div class="world-alert" id="world-alert" role="status" hidden></div>
-        <div class="touch-controls" aria-label="Movement controls">
-          <button type="button" data-move="w" aria-label="Move forward">↑</button>
-          <button type="button" data-move="a" aria-label="Move left">←</button>
-          <button type="button" data-move="s" aria-label="Move backward">↓</button>
-          <button type="button" data-move="d" aria-label="Move right">→</button>
+        <div class="touch-controls" aria-hidden="true">
+          <div class="touch-stick" data-stick><span class="touch-stick__knob" data-stick-knob></span></div>
+          <button type="button" class="touch-jump" data-touch-jump aria-label="Jump">${zh ? '跳' : 'JUMP'}</button>
         </div>
         <section
           class="chat-stream"
@@ -699,6 +697,52 @@ export class App {
       this.world?.interact();
     });
     window.addEventListener('keydown', this.globalShortcut);
+    const stick = this.root.querySelector<HTMLElement>('[data-stick]');
+    const knob = this.root.querySelector<HTMLElement>('[data-stick-knob]');
+    if (stick && knob) {
+      // The stick reads as a direction and a distance, both taken from where
+      // the thumb is relative to where it first landed. Below a tenth it reads
+      // as nothing, so resting a thumb on the pad is not walking.
+      let holding = -1;
+      let originX = 0;
+      let originY = 0;
+      const reach = 46;
+      const release = () => {
+        holding = -1;
+        knob.style.transform = '';
+        this.world?.setMovementVector(0, 0);
+      };
+      stick.addEventListener('pointerdown', (event) => {
+        holding = event.pointerId;
+        originX = event.clientX;
+        originY = event.clientY;
+        stick.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      });
+      stick.addEventListener('pointermove', (event) => {
+        if (event.pointerId !== holding) return;
+        const dx = event.clientX - originX;
+        const dy = event.clientY - originY;
+        const distance = Math.hypot(dx, dy);
+        const scale = distance > reach ? reach / distance : 1;
+        knob.style.transform = `translate(${dx * scale}px, ${dy * scale}px)`;
+        const strength = Math.min(distance / reach, 1);
+        if (strength < 0.1) {
+          this.world?.setMovementVector(0, 0);
+          return;
+        }
+        const angle = Math.atan2(dy, dx);
+        // Screen down is forwards, which is what -vertical means to the world.
+        this.world?.setMovementVector(Math.cos(angle) * strength, Math.sin(angle) * strength);
+      });
+      for (const done of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) {
+        stick.addEventListener(done, release);
+      }
+    }
+    this.root.querySelector<HTMLButtonElement>('[data-touch-jump]')?.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      this.world?.jumpFromTouch();
+    });
     this.root.querySelectorAll<HTMLButtonElement>('[data-move]').forEach((button) => {
       const key = button.dataset.move as 'w' | 'a' | 's' | 'd';
       const setActive = (active: boolean) => {

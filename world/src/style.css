@@ -650,6 +650,7 @@ button:active { filter: brightness(.88); scale: .96; }
 .world-alert:not([hidden]) { animation: alert-in .24s ease-out; }
 .controls-hint { position: fixed; z-index: 3; left: 22px; bottom: 22px; font: 700 11px var(--condensed); letter-spacing: .07em; text-shadow: 0 2px 8px black; }.controls-hint span { color: #ed434d; margin-right: 3px; }.controls-hint span:nth-child(2) { margin-left: 12px; }
 .touch-controls { display: none; }
+.touch-stick, .touch-jump { touch-action: none; -webkit-user-select: none; user-select: none; }
 .chat-stream {
   position: fixed; z-index: 4; left: 22px; bottom: 52px; display: grid; gap: 6px;
   width: min(520px, calc(100vw - 44px)); max-height: 32vh; overflow: hidden; pointer-events: none;
@@ -782,11 +783,49 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .chat-stream { left: 14px; bottom: 112px; width: calc(100vw - 28px); max-height: 126px; }
   .chat-stream__item { padding-block: 6px; }
   .chat-stream__item:nth-child(-n+2) { display: none; }
-  .touch-controls { position: fixed; z-index: 6; left: 14px; bottom: 14px; display: grid; grid-template-columns: repeat(3, 42px); grid-template-rows: repeat(2, 42px); gap: 4px; touch-action: none; }
-  .touch-controls button { border: 1px solid rgba(255,255,255,.65); border-radius: 0; color: white; background: rgba(8,9,10,.7); font-size: 21px; touch-action: none; }
-  .touch-controls button[data-move='w'] { grid-column: 2; }.touch-controls button[data-move='a'] { grid-column: 1; grid-row: 2; }.touch-controls button[data-move='s'] { grid-column: 2; grid-row: 2; }.touch-controls button[data-move='d'] { grid-column: 3; grid-row: 2; }
-  .touch-controls button.is-active { background: var(--red); }
-  .interaction-toast { left: 14px; right: 128px; transform: none; text-align: left; }
+  /* A thumb pad rather than four arrows: the stick reads any direction and any
+     pace, which is what the world can now take. Both sit inside the safe area,
+     so neither lands under a home indicator or a rounded corner. */
+  .touch-controls { display: contents; }
+  .touch-stick {
+    position: fixed; z-index: 6;
+    left: calc(18px + env(safe-area-inset-left)); bottom: calc(22px + env(safe-area-inset-bottom));
+    width: 116px; height: 116px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,.34); background: rgba(8,9,10,.34);
+    display: grid; place-items: center;
+  }
+  .touch-stick__knob {
+    width: 50px; height: 50px; border-radius: 50%;
+    background: rgba(245,239,226,.82); border: 1px solid rgba(8,9,10,.4);
+    pointer-events: none;
+  }
+  .touch-jump {
+    position: fixed; z-index: 6;
+    /* Above the pass, not on top of it: both live in the bottom-right corner
+       and the two were landing on each other. */
+    right: calc(18px + env(safe-area-inset-right)); bottom: calc(108px + env(safe-area-inset-bottom));
+    width: 78px; height: 78px; border-radius: 50%; border: 1px solid rgba(255,255,255,.45);
+    background: rgba(8,9,10,.5); color: var(--paper);
+    font: 800 13px var(--condensed); letter-spacing: .1em;
+  }
+  .touch-jump:active { background: var(--red); border-color: var(--red); }
+
+  /* A phone screen is mostly world. Everything that reports on the festival —
+     the clock, where you are, what you are carrying, the chat log, the strip of
+     key names that mean nothing without a keyboard — folds behind the pass,
+     which is where it can all still be read. What is left is the two controls
+     and the way in. The interaction prompt stays: it is the only thing that
+     tells you a button will do something here. */
+  .world-status, .inventory-status, .chat-stream, .controls-hint { display: none; }
+  .world-header { padding: 6px 12px; }
+  .world-brand > span:not(.phase-badge) { display: none; }
+  /* Clear of the jump button, and never wider than the gap between the pads. */
+  .interaction-toast {
+    left: calc(150px + env(safe-area-inset-left));
+    right: calc(108px + env(safe-area-inset-right));
+    bottom: calc(24px + env(safe-area-inset-bottom));
+    transform: none; text-align: center;
+  }
   .venue-screen { left: 14px; right: 14px; top: 124px; width: auto; }
   .venue-screen--seated { inset: 70px 10px 74px; }
   .venue-screen footer { align-items: flex-start; flex-direction: column; }

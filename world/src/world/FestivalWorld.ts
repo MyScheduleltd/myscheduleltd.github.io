@@ -855,6 +855,8 @@ export class FestivalWorld {
   private performanceWindowStartedAt = performance.now();
   private performanceFrameCount = 0;
   private adaptiveRenderScale = 1;
+  private stickX = 0;
+  private stickY = 0;
   private disposed = false;
   private cameraDragging = false;
   private cameraPointerId?: number;
@@ -1536,6 +1538,16 @@ export class FestivalWorld {
     else this.keys.delete(key);
   }
 
+  /**
+   * A thumbstick's actual reading: any direction, and any pace up to a walk.
+   * The keyboard can only ever say yes or no in four directions, so it goes on
+   * being read as it was — this sits beside it and wins whenever it is pushed.
+   */
+  setMovementVector(horizontal: number, vertical: number): void {
+    this.stickX = THREE.MathUtils.clamp(horizontal, -1, 1);
+    this.stickY = THREE.MathUtils.clamp(vertical, -1, 1);
+  }
+
   setGraphicsMode(mode: GraphicsMode): void {
     this.graphicsMode = mode;
     this.adaptiveRenderScale = 1;
@@ -2112,6 +2124,11 @@ export class FestivalWorld {
    * A standing jump. Refused while seated or swimming, and while already in
    * the air, so it cannot be used to climb by repetition.
    */
+  /** The touch pad's jump button. SPACE reaches jump() directly. */
+  jumpFromTouch(): void {
+    this.jump();
+  }
+
   private jump(): void {
     if (this.playerState === 'seated' || this.playerState === 'swimming') return;
     if (this.airborne || this.isMentorControlLocked()) return;
@@ -5252,10 +5269,15 @@ export class FestivalWorld {
       }
       return;
     }
-    const horizontal = Number(this.keys.has('d') || this.keys.has('arrowright')) -
-      Number(this.keys.has('a') || this.keys.has('arrowleft'));
-    const vertical = Number(this.keys.has('s') || this.keys.has('arrowdown')) -
-      Number(this.keys.has('w') || this.keys.has('arrowup'));
+    const keyed = Math.hypot(this.stickX, this.stickY) < 0.001;
+    const horizontal = keyed
+      ? Number(this.keys.has('d') || this.keys.has('arrowright')) -
+        Number(this.keys.has('a') || this.keys.has('arrowleft'))
+      : this.stickX;
+    const vertical = keyed
+      ? Number(this.keys.has('s') || this.keys.has('arrowdown')) -
+        Number(this.keys.has('w') || this.keys.has('arrowup'))
+      : this.stickY;
     this.moveVector.set(horizontal, 0, vertical);
     if (this.moveVector.lengthSq() > 0) {
       this.dancing = false;
