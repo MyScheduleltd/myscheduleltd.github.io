@@ -6096,6 +6096,18 @@ export class FestivalWorld {
    */
   private pullCameraClearOfWalls(cameraTarget: THREE.Vector3): void {
     if (this.playerState === 'swimming') return;
+    // Not while seated at a screening. Everywhere else the look target is the
+    // attendee's own head, so walking out from it towards the camera walks out
+    // from the body — which is what this is for. In the screening view the look
+    // target is the screen itself, thirty-odd units away across the room, so
+    // the same walk started at the screen and stopped at the first thing it
+    // met, pinning the camera about a unit from the panel. That is why sitting
+    // down anywhere with a screen filled the whole frame with the film.
+    //
+    // The seated camera does not need this: it is placed at a known offset from
+    // a registered seat inside a room, and confineCameraToClub already holds it
+    // within the walls.
+    if (this.cameraMode === 'screening') return;
     this.cameraProbe.subVectors(cameraTarget, this.lookTarget);
     const reach = this.cameraProbe.length();
     if (reach < 0.001) return;
