@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "capturedAt": "2026-08-18T14:53:18.683Z",
+  "capturedAt": "2026-08-19T12:01:05.340Z",
   "capturedFrom": "https://myschedule-festival.onrender.com",
   "schedule": {
     "palace": {
@@ -12,13 +12,13 @@
         "KD5dGYzk9Bo",
         "qyMIdPT4K4Q"
       ],
-      "currentIndex": 2,
+      "currentIndex": 1,
       "mode": "scheduled-loop",
       "special": {
         "youtubeId": "sc6P0k-PYcs",
         "startsAt": 1787149260000
       },
-      "updatedAt": 1787064576977
+      "updatedAt": 1787140853945
     },
     "drive-in": {
       "name": "DRIVE-IN 88",
@@ -27,10 +27,10 @@
         "TmvklnJYWA4",
         "PrE9j9r0Ewo"
       ],
-      "currentIndex": 0,
+      "currentIndex": 1,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787062228766
+      "updatedAt": 1787140853945
     },
     "shore": {
       "name": "THE SHORE",
@@ -69,10 +69,10 @@
         "F6XaLvhpGog",
         "xndA9Geu4eg"
       ],
-      "currentIndex": 30,
+      "currentIndex": 1,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787064641354
+      "updatedAt": 1787140853945
     },
     "club": {
       "name": "THE BASEMENT",
@@ -85,10 +85,10 @@
         "XZ9YCADCko8",
         "VRr6fb4kmOk"
       ],
-      "currentIndex": 0,
+      "currentIndex": 1,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787064715226
+      "updatedAt": 1787140373910
     },
     "rooftop": {
       "name": "THE ROOFTOP",
@@ -104,10 +104,10 @@
         "U2-OzFANCiA",
         "KH4HNQBlP7U"
       ],
-      "currentIndex": 7,
+      "currentIndex": 8,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787064572777
+      "updatedAt": 1787140373910
     }
   },
   "customVideos": {
@@ -243,7 +243,8 @@
     "MINYUN": "MINYUN",
     "VIOLA": "VIOLA",
     "XIEHGAN": "XIEH GAN",
-    "DRBEAUTY": "DR.BEAUTY"
+    "DRBEAUTY": "DR.BEAUTY",
+    "YO": "YO"
   },
   "npcTitles": {
     "MENTOR": "Video Editor",
@@ -256,7 +257,8 @@
     "MINYUN": "Director Manager",
     "VIOLA": "Project Manager",
     "XIEHGAN": "Boss",
-    "DRBEAUTY": "Artist"
+    "DRBEAUTY": "Artist",
+    "YO": "Festival Videographer"
   },
   "pamphlet": {
     "youtubeId": "Ffli-o0ocT0",
@@ -267,5 +269,42 @@
     "introductionZh": "這是我的檔期有限公司。我們是位於台灣台北的創意影像製作公司,服務遍及全球,致力製作高品質影像。團隊擅長電影、音樂錄影帶、電視節目、廣告,以及不定期的非典型 YouTube 內容。",
     "updatedAt": 0
   },
-  "trackTempos": {}
+  "trackTempos": {},
+  "jukeboxTracks": [
+    {
+      "id": "x6QZn9xiuOE",
+      "youtubeId": "x6QZn9xiuOE",
+      "title": "Marvin Gaye - Let's Get It On"
+    },
+    {
+      "id": "V0gKh8OA0E0",
+      "youtubeId": "V0gKh8OA0E0",
+      "title": "Fred again.., CA7RIEL & Paco Amoroso - Beto’s Horns (Paris, 27th October 2025)"
+    },
+    {
+      "id": "dQw4w9WgXcQ",
+      "youtubeId": "dQw4w9WgXcQ",
+      "title": "Rick Astley - Never Gonna Give You Up"
+    },
+    {
+      "id": "bc0KhhjJP98",
+      "youtubeId": "bc0KhhjJP98",
+      "title": "Redbone - Come and Get Your Love"
+    },
+    {
+      "id": "UvynvnxZJ3Q",
+      "youtubeId": "UvynvnxZJ3Q",
+      "title": "I Want You Back · Jackson 5"
+    },
+    {
+      "id": "PkU5_6_KGps",
+      "youtubeId": "PkU5_6_KGps",
+      "title": "Milo J, Mercedes Sosa - Jangadero"
+    },
+    {
+      "id": "58RgLQ_0Ars",
+      "youtubeId": "58RgLQ_0Ars",
+      "title": "I Just Called To Say I Love You · Stevie Wonder"
+    }
+  ]
 }

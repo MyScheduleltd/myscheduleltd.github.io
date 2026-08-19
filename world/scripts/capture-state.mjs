@@ -64,6 +64,15 @@ const seed = {
   npcTitles: Object.fromEntries((live.npcProfiles ?? []).map((profile) => [profile.id, profile.title])),
   pamphlet: live.pamphlet,
   trackTempos: live.trackTempos,
+  // The jukebox's shelf, so records STAFF put in it outlive a deploy the way
+  // everything else here does. Only the shelf: the waiting list is requests
+  // made by people who are in the square at that moment, and bringing it back
+  // hours later would resume an evening belonging to nobody still there.
+  jukeboxTracks: (live.jukebox?.tracks ?? []).map((track) => ({
+    id: track.id,
+    youtubeId: track.youtubeId,
+    title: track.title,
+  })),
 };
 
 await writeFile(target, `${JSON.stringify(seed, null, 2)}\n`, 'utf8');
@@ -74,4 +83,5 @@ for (const [venue, entry] of Object.entries(seed.schedule)) {
   console.log(`  ${venue.padEnd(9)} ${String(entry.name ?? '').padEnd(14)} ${String(entry.order?.length ?? 0).padStart(2)} work(s), ${entry.mode}`);
 }
 console.log(`  ${customCount} work(s) STAFF added by hand`);
+console.log(`  ${seed.jukeboxTracks.length} record(s) on the jukebox's shelf`);
 console.log('Commit world/server/festival-seed.json for these to survive the next deploy.');
