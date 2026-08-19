@@ -354,6 +354,12 @@ const DRUNK_DURATION_MS = 45_000;
 const GESTURE_SPAN_MS: Partial<Record<AvatarGesture, number>> = {
   punch: 560,
   hit: 620,
+  // MENTOR's bow is posed from how far through the gesture it is, and a gesture
+  // with no span here reports zero for ever — so the dog's play-bow had a depth
+  // of nothing and O looked like it did not work at all. These are the lengths
+  // donate() actually sets.
+  offer: 1_500,
+  bow: 1_500,
 };
 /** How far into the swing the fist arrives. */
 const PUNCH_CONTACT_MS = 200;
