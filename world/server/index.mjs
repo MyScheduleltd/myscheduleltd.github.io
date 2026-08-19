@@ -288,6 +288,7 @@ const defaultNpcNames = {
   VIOLA: 'VIOLA',
   XIEHGAN: 'XIEH GAN',
   DRBEAUTY: 'DR.BEAUTY',
+  YO: 'YO',
 };
 const npcNames = { ...defaultNpcNames };
 const npcTitles = {
@@ -302,6 +303,11 @@ const npcTitles = {
   VIOLA: 'Project Manager',
   XIEHGAN: 'Resident DJ',
   DRBEAUTY: 'Rooftop DJ',
+  // The roster lives here as well as in the world. The world draws the crowd;
+  // this is what the attendee list and the STAFF panel read, and what STAFF
+  // renames persist against — so a resident added to only one of the two is in
+  // the festival but not on its books, which is how YO arrived.
+  YO: 'Festival Videographer',
 };
 const publicNpcProfiles = () => Object.keys(npcNames).map((id) => ({ id, name: npcNames[id], title: npcTitles[id] }));
 // The pop-up store's destination. Empty until STAFF set one, and only ever an
