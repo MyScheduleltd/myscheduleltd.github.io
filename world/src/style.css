@@ -527,6 +527,25 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
   position: fixed; z-index: 9; inset: clamp(72px, 10vh, 108px) max(22px, calc((100vw - 950px) / 2));
   display: flex; flex-direction: column; color: var(--ink); background: var(--paper); border: 1px solid white; box-shadow: 22px 22px 0 rgba(0,0,0,.62);
 }
+/* The conversation is laid out the same way at every size, rather than only on
+   a screen small enough to have been recognised as a phone. The panel is bound
+   to the screen either way, but its body used to be one scroller — so the box
+   you type in sat below everything else and went off the bottom, and whether it
+   was reachable came down to whether a height threshold had matched. It does
+   not depend on that any more: the conversation is the only part that scrolls,
+   and the tabs and the writing box hold their places at either end of it. */
+.panel--chat .panel__body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.panel--chat .panel__body > .chat-channels,
+.panel--chat .panel__body > .chat-form,
+.panel--chat .panel__body > .connection-note { flex: 0 0 auto; }
+.panel--chat .panel__body > .chat-feed {
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+/* And never taller than the screen it is on, measured against the height
+   actually visible rather than the tall viewport a phone reports. */
+.panel--chat { max-height: calc(100dvh - 24px); }
 .panel--chat {
   inset: clamp(78px, 11vh, 118px) max(22px, calc((100vw - 1080px) / 2)) max(76px, 9vh);
   color: white;

@@ -3688,6 +3688,13 @@ export class App {
     if (value === 'E / OPEN THE POP-UP STORE') return 'E／逛快閃服飾店';
     if (value === 'E / PUT A RECORD ON') return 'E／點歌';
     if (value === 'SHIFT+E / DRINK UP') return 'SHIFT+E／喝一口';
+    if (value.startsWith('E / EAT ')) {
+      const snacks: Record<string, string> = {
+        POPCORN: '爆米花', HOTDOG: '熱狗', PIZZA: '披薩', CHICKEN: '炸雞',
+      };
+      const item = value.slice('E / EAT '.length);
+      return `E／吃${snacks[item] ?? item}`;
+    }
     if (value.startsWith('E / REQUEST A TRACK FROM')) return value.replace('E / REQUEST A TRACK FROM', 'E／向') + ' 點歌';
     if (value.startsWith('E / GIVE MENTOR A TREAT')) {
       return value.includes('POPCORN WILL BE LOST')

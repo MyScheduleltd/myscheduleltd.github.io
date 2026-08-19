@@ -7108,10 +7108,11 @@ export class FestivalWorld {
     }
     if (this.carriedItem === 'MENTOR') return 'E / PUT MENTOR DOWN';
     if (this.player.position.distanceTo(concessionPosition) < 2.5) {
-      if (this.carriedItem) {
-        this.promptActionable = false;
-        return 'POPCORN COLLECTED';
-      }
+      // Was a dead end that only told you what you were holding. Eating has
+      // always been what E does with anything edible; nothing ever said so, and
+      // on a phone, where the prompt is the only way to reach an action, that
+      // meant it could not be done at all.
+      if (this.carriedItem) return this.eatingLabel() ?? 'POPCORN COLLECTED';
       return 'E / TAKE POPCORN';
     }
     if (this.nearbyMentor()) {
@@ -7124,6 +7125,9 @@ export class FestivalWorld {
       this.promptAction = 'shift';
       return 'SHIFT+E / DRINK UP';
     }
+    // Anything else edible, wherever you happen to be standing with it.
+    const eating = this.eatingLabel();
+    if (eating) return eating;
     if (this.nearClubBar()) return 'E / ORDER A DRINK';
     if (this.nearJukebox()) return 'E / PUT A RECORD ON';
     if (this.nearShopCounter()) return 'E / OPEN THE POP-UP STORE';
@@ -7156,6 +7160,17 @@ export class FestivalWorld {
    * than worked out again, so the two cannot disagree. Both snapshots ask for
    * the words immediately before asking this.
    */
+  /**
+   * What a carried thing offers to be done with it, if anything. A drink is
+   * poured with SHIFT+E and has its own prompt; everything else edible is eaten
+   * with plain E.
+   */
+  private eatingLabel(): string | undefined {
+    const item = this.carriedItem;
+    if (!item || item === 'DRINK' || !EDIBLE_ITEMS.includes(item)) return undefined;
+    return `E / EAT ${item}`;
+  }
+
   private canInteract(): boolean {
     return this.promptActionable;
   }
