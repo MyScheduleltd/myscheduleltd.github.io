@@ -373,9 +373,13 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
    turned at all. It lets pointers through now; the parts that are actually
    controls take theirs back. */
 .world-film { position: fixed; inset: 0; z-index: 7; display: none; pointer-events: none; }
+/* Only the box you type in, not the whole strip it sits on — giving the strips
+   themselves a claim on pointers turned the top and bottom of the frame into
+   dead ground where the view could not be turned. */
+.world-film__edge input { pointer-events: auto; }
 .world-film__edge {
   position: absolute; left: 0; right: 0; height: clamp(30px, 6vmin, 62px);
-  background: #14100c; pointer-events: auto;
+  background: #14100c;
   display: flex; align-items: center; justify-content: center;
 }
 .world-film__edge--top { top: 0; }

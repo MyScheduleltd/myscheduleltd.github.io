@@ -896,6 +896,8 @@ export class FestivalWorld {
   private stickX = 0;
   private stickY = 0;
   private disposed = false;
+  /** In a camera mode, where a tap on the frame is aiming rather than fighting. */
+  private photographing = false;
   private cameraDragging = false;
   private cameraPointerId?: number;
   private cameraPointerX = 0;
@@ -2235,6 +2237,10 @@ export class FestivalWorld {
    * key it stands for, so there is nothing a thumb cannot reach that a desk
    * can.
    */
+  setPhotographing(active: boolean): void {
+    this.photographing = active;
+  }
+
   punchFromTouch(): void {
     this.punch();
   }
@@ -2492,7 +2498,10 @@ export class FestivalWorld {
     // The same button turns the camera, so only a click that stayed put counts
     // as a punch — a drag is someone looking around.
     const travelled = Math.hypot(event.clientX - this.punchPointerX, event.clientY - this.punchPointerY);
-    if (event.button === 0 && travelled < 8 && !Number.isNaN(this.punchPointerX)) this.punch();
+    // Not while a picture is being composed. In a camera mode a tap on the
+    // frame is somebody adjusting the shot, and answering it with a fist put a
+    // swinging arm through the middle of the photograph they were taking.
+    if (event.button === 0 && travelled < 8 && !Number.isNaN(this.punchPointerX) && !this.photographing) this.punch();
     this.cameraPointerReset();
   };
 

@@ -2151,6 +2151,7 @@ export class App {
 
   private setViewMode(mode: 'normal' | 'camera' | 'postcard' | 'film'): void {
     this.viewMode = mode;
+    this.world?.setPhotographing(mode !== 'normal');
     const shell = this.root.querySelector<HTMLElement>('.world-shell');
     if (!shell) return;
     if (mode === 'normal') delete shell.dataset.view;
