@@ -710,6 +710,23 @@ test('staff set a track tempo and it is rejected outside a musical range', async
   assert.equal(unchanged.trackTempos.rMicadJVzH8, 128);
 });
 
+test('a booth running on a guess defers to the visitor rather than refusing them', async () => {
+  const session = await join('GUESS TEST');
+  // The rooftop has had no length reported for anything, so the server is
+  // running it on the nominal four minutes. That guess drifts — a little on
+  // every record and badly across a night — until the booth is certain it is
+  // playing something that finished long ago, and refuses a request for a
+  // record the visitor can plainly hear is over. Where it is guessing it should
+  // give way to the person in the room.
+  const rooftop = (await (await fetch(`${baseUrl}/api/config`)).json()).schedule.rooftop;
+  const answer = await fetch(`${baseUrl}/api/rooftop/request`, {
+    method: 'POST',
+    headers: auth(session),
+    body: JSON.stringify({ youtubeId: rooftop.youtubeId }),
+  });
+  assert.equal(answer.status, 200, 'a guessing booth should not claim to know what is on');
+});
+
 test('a request joins the queue rather than cutting the room off', async () => {
   const session = await join('DJ REQUEST');
   const before = (await (await fetch(`${baseUrl}/api/config`)).json()).schedule.club;
@@ -752,12 +769,19 @@ test('the booth turns down nonsense and back-to-back requests', async () => {
   });
   assert.equal(unknown.status, 404);
 
+// Told how long the record actually runs, the booth knows where the programme
+  // has got to and may refuse. A refusal costs nothing, so this goes first.
+  await fetch(`${baseUrl}/api/programme/club/duration`, {
+    method: 'POST',
+    headers: auth(session),
+    body: JSON.stringify({ youtubeId: club.youtubeId, seconds: 600 }),
+  });
   const alreadyOn = await fetch(`${baseUrl}/api/club/request`, {
     method: 'POST',
     headers: auth(session),
     body: JSON.stringify({ youtubeId: club.youtubeId }),
   });
-  assert.equal(alreadyOn.status, 409);
+  assert.equal(alreadyOn.status, 409, 'a booth that knows the length may refuse');
 
   const first = club.order.find((youtubeId) => youtubeId !== club.youtubeId);
   const accepted = await fetch(`${baseUrl}/api/club/request`, {

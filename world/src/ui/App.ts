@@ -274,6 +274,8 @@ export class App {
   private privateProgress?: PrivateProgress;
   private chatChannel: ChatChannel = 'NEARBY';
   private chatMessages: ChatMessage[];
+  /** Said here, not yet echoed by the service. Kept so it shows straight away. */
+  private pendingChat: ChatMessage[] = [];
   private chatStreamElement?: HTMLElement;
   private chatStreamSignature = '';
   private npcTimer?: number;
@@ -1987,11 +1989,18 @@ export class App {
     this.world?.setOccupiedSeats(
       state.seats.filter((seat) => seat.visitorId !== state.selfId).map((seat) => seat.seatId),
     );
+    // Anything said here and not yet come back from the service is kept on the
+    // end, so a line does not vanish between being sent and being echoed. Each
+    // is dropped the moment the service's own copy of it arrives.
+    const arrived = new Set(state.messages.map((message) => `${message.author}|${message.text}`));
+    this.pendingChat = this.pendingChat.filter((message) => !arrived.has(`${message.author}|${message.text}`));
     this.chatMessages = [
       ...initialChat,
       ...state.messages.map((message) => ({ ...message, npc: false })),
+      ...this.pendingChat,
     ].slice(-100);
     this.renderChatStream();
+    this.refreshOpenChatFeed();
     const previousRequestAt = this.networkState?.clubRequest?.at ?? 0;
     this.syncClubBeat();
     if (this.openDjBooth && !this.root.querySelector<HTMLElement>('#seat-menu')?.hidden) {
@@ -2884,8 +2893,27 @@ export class App {
           // drops the caret and closes the IME, so the line after every line
           // had to be started by clicking back into the box.
           if (input) input.readOnly = true;
-          void this.festivalClient.sendMessage(this.chatChannel, text.slice(0, 160)).then((result) => {
+          // Shown at once rather than waited for. It used to be sent and then
+          // waited on, so your own line only appeared once the service had taken
+          // it, broadcast it, and sent it back — which on a phone is long enough
+          // to believe it was lost and say it again.
+          const said = text.slice(0, 160);
+          const pending: ChatMessage = {
+            id: `pending-${Date.now()}`,
+            author: this.currentId,
+            channel: this.chatChannel,
+            text: said,
+            timestamp: Date.now(),
+          };
+          this.pendingChat = [...this.pendingChat, pending].slice(-8);
+          this.addChatMessage(pending);
+          void this.festivalClient.sendMessage(this.chatChannel, said).then((result) => {
             if (!result.ok) {
+              // It never got there, so it should stop looking as though it had.
+              this.pendingChat = this.pendingChat.filter((message) => message !== pending);
+              this.chatMessages = this.chatMessages.filter((message) => message.id !== pending.id);
+              this.renderChatStream();
+              this.refreshOpenChatFeed();
               this.showWorldAlert(result.message ?? 'MESSAGE COULD NOT BE SENT');
             } else if (input) {
               // Sent lines used to stay in the box, so the next one was typed
@@ -3196,8 +3224,35 @@ export class App {
     }
   }
 
-  private chatPanelContent(): string {
+  /**
+   * Just the messages, so they can be redrawn on their own. Rebuilding the
+   * whole panel to show one new line takes the box you are typing in with it,
+   * which is what it used to do and why those rebuilds were taken out — leaving
+   * the panel showing everything except what you had just said.
+   */
+  private chatFeedContent(): string {
     const visible = this.chatMessages.filter((message) => message.channel === this.chatChannel).slice(-100);
+    if (!visible.length) return `<p class="chat-empty">${this.language === 'zh-TW' ? '尚無訊息' : 'No messages yet.'}</p>`;
+    const time = new Intl.DateTimeFormat(this.language, { hour: '2-digit', minute: '2-digit' });
+    return visible.map((message) => `
+      <article><header><strong>${message.npc ? 'NPC · ' : ''}${this.escapeHtml(message.npc ? this.npcNameFromAuthor(message.author) : message.author)}</strong><time>${time.format(message.timestamp)}</time></header><p>${this.escapeHtml(this.localizeNpcChat(message.text))}</p></article>`).join('');
+  }
+
+  /**
+   * Put a newly arrived line into an open chat panel and follow it down, unless
+   * the reader has scrolled back through the history — in which case they are
+   * reading something and should not be yanked to the bottom.
+   */
+  private refreshOpenChatFeed(): void {
+    if (this.activePanel !== 'chat') return;
+    const feed = this.root.querySelector<HTMLElement>('#panel .chat-feed');
+    if (!feed) return;
+    const wasAtBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
+    feed.innerHTML = this.chatFeedContent();
+    if (wasAtBottom) feed.scrollTop = feed.scrollHeight;
+  }
+
+  private chatPanelContent(): string {
     const channelLabel: Record<ChatChannel, string> = this.language === 'zh-TW'
       ? { NEARBY: '附近', VENUE: '影廳', FESTIVAL: '全影展' }
       : { NEARBY: 'NEARBY', VENUE: 'VENUE', FESTIVAL: 'FESTIVAL' };
@@ -3206,10 +3261,7 @@ export class App {
         ${(['NEARBY', 'VENUE', 'FESTIVAL'] as ChatChannel[]).map((channel) => `
           <button type="button" data-chat-channel="${channel}" aria-pressed="${channel === this.chatChannel}">${channelLabel[channel]}</button>`).join('')}
       </div>
-      <div class="chat-feed" aria-live="polite">
-        ${visible.length ? visible.map((message) => `
-          <article><header><strong>${message.npc ? 'NPC · ' : ''}${this.escapeHtml(message.npc ? this.npcNameFromAuthor(message.author) : message.author)}</strong><time>${new Intl.DateTimeFormat(this.language, { hour: '2-digit', minute: '2-digit' }).format(message.timestamp)}</time></header><p>${this.escapeHtml(this.localizeNpcChat(message.text))}</p></article>`).join('') : `<p class="chat-empty">${this.language === 'zh-TW' ? '尚無訊息' : 'No messages yet.'}</p>`}
-      </div>
+      <div class="chat-feed" aria-live="polite">${this.chatFeedContent()}</div>
       <p class="connection-note" data-status="${this.connectionStatus}">${this.connectionStatus === 'online' ? (this.language === 'zh-TW' ? '即時聊天 · 伺服器管理' : 'LIVE CHAT · MODERATED') : (this.language === 'zh-TW' ? '離線聊天 · 僅此裝置' : 'OFFLINE CHAT · THIS DEVICE')}</p>
       <form class="chat-form" id="chat-form">
         <label for="chat-message">${this.language === 'zh-TW' ? '訊息' : 'MESSAGE'} · ${channelLabel[this.chatChannel]}</label>
@@ -3496,6 +3548,7 @@ export class App {
     this.chatMessages = [...this.chatMessages, message].slice(-100);
     sessionStorage.setItem(CHAT_KEY, JSON.stringify(this.chatMessages));
     this.renderChatStream();
+    this.refreshOpenChatFeed();
   }
 
   private renderChatStream(): void {

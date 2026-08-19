@@ -1263,6 +1263,10 @@ const server = createServer(async (request, response) => {
       if (!visitor) return apiError(response, 401, 'Invalid festival session.');
       const payload = await body(request);
       const djVenue = requestMatch[1];
+      // Bring the programme up to now before reading it. Otherwise the answer
+      // is whatever was true when the schedule was last touched, which between
+      // heartbeats can be ten seconds ago and across a quiet venue rather more.
+      settleSchedule(djVenue);
       const clubQueue = venueQueues[djVenue];
       const youtubeId = String(payload.youtubeId ?? '').trim();
       const schedule = programmeSchedule[djVenue];
@@ -1281,7 +1285,21 @@ const server = createServer(async (request, response) => {
         const seconds = Math.ceil((CLUB_REQUEST_COOLDOWN_MS - (now - visitor.trackRequestAt)) / 1000);
         return apiError(response, 429, `The DJ is still mixing. Try again in ${seconds}s.`);
       }
-      if (schedule.youtubeId === youtubeId) return apiError(response, 409, 'That one is already playing.');
+      // Only refuse when the server actually knows where the programme has got
+      // to. Without a real length for the record on air it is running the venue
+      // on a four-minute guess, and a guess drifts — a little on each track and
+      // badly across a night — until the booth is certain it is playing
+      // something that finished long ago. Telling somebody a record is on when
+      // they can hear that it is not is worse than letting them ask for it
+      // twice, so where the server is guessing it now defers to them. The last
+      // twenty seconds are given away for the same reason: by the time the
+      // request lands it will not be playing any more.
+      const onAir = schedule.activeSpecialYoutubeId ?? schedule.youtubeId;
+      const knownLength = trackDurations[onAir];
+      const remainingMs = knownLength ? (knownLength * 1000) - (now - schedule.startedAt) : 0;
+      if (onAir === youtubeId && knownLength && remainingMs > 20_000) {
+        return apiError(response, 409, 'That one is already playing.');
+      }
       if (clubQueue.length >= CLUB_QUEUE_LIMIT) return apiError(response, 409, 'The queue is full. Try again shortly.');
       if (clubQueue.some((entry) => entry.youtubeId === youtubeId)) {
         return apiError(response, 409, 'That one is already in the queue.');

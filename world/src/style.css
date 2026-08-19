@@ -1170,6 +1170,11 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .panel__body > .chat-feed {
     flex: 1 1 auto; min-height: 96px;
     overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    /* Named so it beats the blanket rule that disables the double tap. That one
+       allows panning in principle, but saying it here leaves no doubt which
+       direction this box owns, and stops a drag that begins over the messages
+       being read as anything other than reading them. */
+    touch-action: pan-y;
   }
   /* The conversation was down to ninety-nine pixels of a three-hundred-and-
      ninety pixel screen — one message and a half — with the rest spent on
