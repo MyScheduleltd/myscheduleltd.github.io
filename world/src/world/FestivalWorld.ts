@@ -255,8 +255,21 @@ const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
 // Keep the two service stands together on the inner half of the main road.
 // Their padded colliders retain a narrow walking gap, while the outer edge of
 // the popcorn booth no longer crowds the road boundary.
-const concessionPosition = new THREE.Vector3(7.8, 0, 8);
-const pamphletPosition = new THREE.Vector3(4.2, 0, 8);
+// Both stalls moved across to the western half of the roadway, keeping the
+// spacing and the inset from the kerb they had on the eastern one. They stay on
+// the asphalt: the road runs from z = 2 to the gate, so at z = 8 they are on it
+// and clear of the red carpet either side. Their fronts face +z, towards the
+// gate, which is the way arrivals come — mirroring them in x alone leaves that
+// facing correct, so nothing here needs turning.
+/**
+ * Where the timetable stands. Three separate places used to carry its position
+ * as a literal, so moving the board left the radius you can read it from behind
+ * on the old spot — the board in one place and the prompt to open it in
+ * another. They all read this now.
+ */
+const programmeBoardPosition = new THREE.Vector3(0, 0, 1);
+const concessionPosition = new THREE.Vector3(-7.8, 0, 8);
+const pamphletPosition = new THREE.Vector3(-4.2, 0, 8);
 // Where the sea meets the sand. Every water plane ends here and every piece of
 // beach starts here: overlapping the two put opaque sand and a water surface at
 // the same height, and they fought for the same pixels along the whole shore.
@@ -2000,7 +2013,7 @@ export class FestivalWorld {
       return;
     }
 
-    if (this.player.position.distanceTo(new THREE.Vector3(0, 0, -3)) < 7.2) {
+    if (this.player.position.distanceTo(programmeBoardPosition) < 7.2) {
       this.onAction({ type: 'programme' });
     }
   }
@@ -3025,14 +3038,21 @@ export class FestivalWorld {
       emissiveMap: boardTexture,
       emissiveIntensity: 0.08,
     });
-    const boardX = 0;
+    const boardX = programmeBoardPosition.x;
+    // Brought forward to where the carpet meets the road. The roadway stops at
+    // z = 2 and the carpet carries on south from there; standing four units
+    // back at z = -3 the timetable sat adrift in the middle of the red, with
+    // nothing to place it against. Here it reads as the thing at the end of the
+    // road. It is still walked around rather than into: the walkable width at
+    // this depth runs far wider than the board.
+    const boardZ = programmeBoardPosition.z;
     const board = new THREE.Mesh(new THREE.BoxGeometry(12.5, 6.1, 0.45), this.programmeBoardMaterial);
-    board.position.set(boardX, 3.6, -3);
+    board.position.set(boardX, 3.6, boardZ);
     board.castShadow = true;
     this.scene.add(board);
-    this.mesh([0.6, 3.2, 0.6], [boardX - 5.3, 1.5, -3], material(0x17171a));
-    this.mesh([0.6, 3.2, 0.6], [boardX + 5.3, 1.5, -3], material(0x17171a));
-    this.addCollider(boardX, -3, 12.5, 1.2);
+    this.mesh([0.6, 3.2, 0.6], [boardX - 5.3, 1.5, boardZ], material(0x17171a));
+    this.mesh([0.6, 3.2, 0.6], [boardX + 5.3, 1.5, boardZ], material(0x17171a));
+    this.addCollider(boardX, boardZ, 12.5, 1.2);
   }
 
   private createShoreScreen(): void {
@@ -6555,7 +6575,7 @@ export class FestivalWorld {
     }
     if (this.playerState === 'swimming') return 'SWIMMING · E / GREET WHEN AN ATTENDEE IS NEARBY';
     if (this.player.position.z < -45) return 'SWIMWEAR ON · ENTER WATER';
-    if (this.player.position.distanceTo(new THREE.Vector3(0, 0, -3)) < 7.2) return 'E / OPEN ROTATING PROGRAMME';
+    if (this.player.position.distanceTo(programmeBoardPosition) < 7.2) return 'E / OPEN ROTATING PROGRAMME';
     return undefined;
   }
 
@@ -6569,7 +6589,7 @@ export class FestivalWorld {
       this.nearbyDj() !== undefined ||
       (seat !== undefined && !this.occupiedSeats.has(seat.id)) ||
       this.nearestSocialTarget() !== undefined ||
-      this.player.position.distanceTo(new THREE.Vector3(0, 0, -3)) < 7.2 ||
+      this.player.position.distanceTo(programmeBoardPosition) < 7.2 ||
       this.player.position.distanceTo(pamphletPosition) < 2.35 ||
       (!this.carriedItem && this.player.position.distanceTo(concessionPosition) < 2.5);
   }
