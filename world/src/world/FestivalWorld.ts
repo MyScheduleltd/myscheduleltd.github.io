@@ -4443,7 +4443,11 @@ export class FestivalWorld {
     booth.add(sign);
     this.mesh([0.5, 0.75, 0.5], [0, 3.05, 0], material(0xffc93c), booth);
     this.scene.add(booth);
-    this.addCollider(concessionPosition.x, concessionPosition.z, 3.4, 2.8, 0.15);
+    // Head height, so the view rides over it. It is honestly taller than that,
+    // but it is a stall in the middle of a walkway: treating it as something
+    // that blocks the camera pulls the view in every time somebody passes it,
+    // which is what it has been doing.
+    this.addCollider(concessionPosition.x, concessionPosition.z, 3.4, 2.8, 0.15, undefined, 'concession', 2.4);
   }
 
   private createPamphletStand(): void {
@@ -4598,8 +4602,19 @@ export class FestivalWorld {
     npc.add(badge);
     const routeTemplate = routes[index % routes.length];
     const routeCycle = Math.floor(index / routes.length);
-    const offsetX = routeCycle === 0 ? 0 : ((routeCycle % 3) - 1) * 2.4;
-    const offsetZ = routeCycle === 0 ? 0 : -Math.floor((routeCycle + 1) / 3) * 2.4;
+    // There are ten routes and twelve residents, so two of them share a route
+    // with somebody and are meant to be nudged off it. The old arithmetic gave
+    // the second time round an offset of exactly (0, 0) — ((1 % 3) - 1) is
+    // zero, and floor(2 / 3) is zero — so YO was put down on precisely the spot
+    // KENNY already stood on, walking the same loop from the same corner. They
+    // were not getting stuck with each other; they started inside each other.
+    //
+    // Stepped round a circle instead. The angle is a turn that never lines back
+    // up with itself, so no two cycles land on the same offset however many
+    // residents are added later.
+    const spread = routeCycle * 2.399;
+    const offsetX = routeCycle === 0 ? 0 : Math.cos(spread) * 2.8;
+    const offsetZ = routeCycle === 0 ? 0 : Math.sin(spread) * 2.8;
     const route = routeTemplate.map(([x, z]) => new THREE.Vector3(x + offsetX, AVATAR_GROUND_Y, z + offsetZ));
     npc.position.copy(route[0]);
     this.scene.add(npc);
