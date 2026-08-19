@@ -364,8 +364,13 @@ const TEMPLE = {
 };
 const TEMPLE_FLOOR_Y = TEMPLE.podium + AVATAR_GROUND_Y;
 const rooftopBounds = {
-  minX: 18,
-  maxX: 54,
+  // Pulled four units east off the road. The stair runs down the outside of the
+  // west face and its kerb reached x = 13.3, while the red carpet's edge is at
+  // 14 — so the bottom flight stood in the red. The stair cannot move on its
+  // own without walking into the wall it hangs off, so the whole shell moved
+  // and took the stair, the deck, the garage and the shop with it.
+  minX: 22,
+  maxX: 58,
   minZ: 8,
   maxZ: 44,
   // The southern strip is the open garage, facing the Drive-In.
@@ -378,8 +383,8 @@ const rooftopBounds = {
   // proportion a stair is actually comfortable at. Twenty risers carry the
   // 7-unit climb, split into two flights of ten with a landing between them,
   // because no flight should run more than about sixteen risers unbroken.
-  stairMinX: 13.8,
-  stairMaxX: 17.4,
+  stairMinX: 17.8,
+  stairMaxX: 21.4,
   stairMinZ: 20,
   // Head of the lower flight, then the half-landing, then the upper flight.
   stairLandingMinZ: 25.04,
@@ -389,6 +394,14 @@ const rooftopBounds = {
   // parapet, so arriving at deck height is a step across, not a climb over.
   stairMaxZ: 36.5,
 };
+
+/**
+ * The middle of the roof deck. Four places used to write this as the literal
+ * 36 — the deck's screen, that screen's camera target, the fast-travel arrival
+ * and the resident DJ's post — so moving the building would have left the
+ * screen, the view of it and the DJ standing where the building used to be.
+ */
+const ROOFTOP_CENTER_X = (rooftopBounds.minX + rooftopBounds.maxX) / 2;
 /** Second line on each venue's sign until STAFF change it. */
 const DEFAULT_VENUE_SUBTITLES: Record<VenueKey, string> = {
   palace: 'COMMERCIAL',
@@ -415,7 +428,7 @@ const NPC_HAUNTS: Record<string, Array<[number, number]>> = {
   // below this: the club room is x -88..-50 by z 1..42, the roof deck is
   // x 18..54 by z 19..44, and the temple hall is x 76..106 by z -14..22.
   clubFloor: [[-78, 14], [-58, 14], [-58, 30], [-78, 30]],
-  rooftopDeck: [[25, 25], [47, 25], [47, 38], [25, 38]],
+  rooftopDeck: [[29, 25], [51, 25], [51, 38], [29, 38]],
   temple: [[82, -6], [94, -6], [94, 14], [82, 14]],
 };
 /**
@@ -510,8 +523,8 @@ const venueScreens: Record<VenueKey, {
   rooftop: {
     label: 'The Rooftop',
     // Hung at the deck's north edge, watched from the deck to the south.
-    position: [36, ROOF_Y + 6.6, 19.9],
-    target: [36, ROOF_Y + 6.3, 19.6],
+    position: [ROOFTOP_CENTER_X, ROOF_Y + 6.6, 19.9],
+    target: [ROOFTOP_CENTER_X, ROOF_Y + 6.3, 19.6],
     scale: 0.0088,
     facing: 1,
   },
@@ -982,7 +995,7 @@ export class FestivalWorld {
   /** Loopback fixture that drops the attendee on the rooftop deck. */
   focusRooftopForReview(atDj = false): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
-    const x = atDj ? 36 : 30;
+    const x = atDj ? ROOFTOP_CENTER_X : ROOFTOP_CENTER_X - 6;
     const z = atDj ? rooftopBounds.deckMinZ + 9 : 30;
     this.player.position.set(x, this.groundHeightAt(x, z), z);
     this.airborne = false;
@@ -1100,8 +1113,10 @@ export class FestivalWorld {
   /** Loopback fixture on the road, looking at the jukebox and the stair. */
   focusJukeboxForReview(): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
-    const x = 12;
-    const z = 17.4;
+    // Derived from where the jukebox actually is, so this cannot drift away
+    // from it the way it just did when the building moved.
+    const x = (this.jukebox?.x ?? 21) - 5;
+    const z = this.jukebox?.z ?? 13.5;
     this.player.position.set(x, this.groundHeightAt(x, z), z);
     this.airborne = false;
     this.verticalVelocity = 0;
@@ -1838,7 +1853,7 @@ export class FestivalWorld {
       'drive-in': new THREE.Vector3(35, AVATAR_GROUND_Y, -18),
       shore: new THREE.Vector3(0, AVATAR_GROUND_Y, -25),
       club: new THREE.Vector3(-15, AVATAR_GROUND_Y, 8.5 + CLUB_Z),
-      rooftop: new THREE.Vector3(36, AVATAR_GROUND_Y, 4),
+      rooftop: new THREE.Vector3(ROOFTOP_CENTER_X, AVATAR_GROUND_Y, 4),
     };
     this.player.position.copy(positions[destination]);
     this.setSwimming(false);
@@ -2962,8 +2977,13 @@ export class FestivalWorld {
    * from, which here is the road to the west.
    */
   private createJukebox(): void {
-    const x = 17;
-    const z = 17.4;
+    // Against the west wall, centred under the venue's own sign rather than
+    // parked beside the stair. The sign hangs at the middle of the garage bay,
+    // and read from the road the two now line up. Both follow the shell, so
+    // moving the building again carries them together.
+    const r = rooftopBounds;
+    const x = r.minX - 1;
+    const z = (r.minZ + r.bayMaxZ) / 2;
     const cabinet = new THREE.Group();
     // Stood on whatever the ground actually is here rather than on y = 0. The
     // festival's floor is not one plane — kerbs, aprons and the lot around the
@@ -4437,7 +4457,7 @@ export class FestivalWorld {
   private stationRooftopDj(): void {
     const dj = this.npcs.find((npc) => npc.id === 'DRBEAUTY');
     if (!dj) return;
-    const position = new THREE.Vector3(36, ROOF_AVATAR_Y, rooftopBounds.deckMinZ + 2.6);
+    const position = new THREE.Vector3(ROOFTOP_CENTER_X, ROOF_AVATAR_Y, rooftopBounds.deckMinZ + 2.6);
     dj.station = { position, rotationY: 0 };
     dj.pose = 'dj';
     dj.route = [position.clone()];
@@ -5607,13 +5627,28 @@ export class FestivalWorld {
         npc.stuckFor = 0;
       }
       if (npc.stuckFor > 1.6 || this.staticCollides(npc.group.position.x, npc.group.position.z, npc.group.position.y)) {
-        const safeIndex = npc.route.findIndex((point) => !this.staticCollides(point.x, point.z, npc.group.position.y));
+        // Somewhere free on the route, judged against the crowd as well as the
+        // scenery. Testing only the scenery is what piled them up: residents on
+        // one haunt share a route, so every one that got stuck was sent to the
+        // same corner of it, and they went there one inside another. The offset
+        // separates two recovering in the same instant, which would otherwise
+        // pick the identical point from an identical list.
+        const spread = (npc.phase % 1) * 2.4 - 1.2;
+        const safeIndex = npc.route.findIndex(
+          (point) => !this.npcCollides(npc, point.x + spread, point.z + spread),
+        );
         if (safeIndex >= 0) {
-          npc.group.position.copy(npc.route[safeIndex]);
+          const point = npc.route[safeIndex];
+          npc.group.position.set(point.x + spread, point.y, point.z + spread);
           npc.waypointIndex = (safeIndex + 1) % npc.route.length;
+          npc.stuckFor = 0;
+          npc.waitUntil = now + 240;
+        } else {
+          // The whole loop is occupied. Standing still until it clears is far
+          // better than landing on top of somebody to get unstuck.
+          npc.stuckFor = 0;
+          npc.waitUntil = now + 900;
         }
-        npc.stuckFor = 0;
-        npc.waitUntil = now + 240;
       }
       // Carried off the route by a punch. Applied after the route step and
       // before the floor is found, so a struck resident skids back over the
