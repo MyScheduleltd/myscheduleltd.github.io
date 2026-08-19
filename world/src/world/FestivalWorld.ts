@@ -4649,7 +4649,11 @@ export class FestivalWorld {
   }
 
   private createNpcCrowd(): void {
-    const count = this.graphicsMode === 'normal' ? DEFAULT_NPC_PROFILES.length : 5;
+    // The festival is its residents; a phone was being shown five of the twelve
+    // and a square that looked deserted. Lite mode still gives up shadows, draw
+    // scale and screen range, which is where the frames actually come from —
+    // seven more voxel figures is a far cheaper thing to buy back.
+    const count = DEFAULT_NPC_PROFILES.length;
     DEFAULT_NPC_PROFILES.slice(0, count).forEach((profile, index) => this.createNpcAvatar(profile, index));
     this.stationDj();
     this.stationRooftopDj();
@@ -6923,10 +6927,48 @@ export class FestivalWorld {
     ) < 7;
   }
 
+  /**
+   * What a tap on the prompt should do. Decided in the same breath as the words
+   * are chosen, so the two can never disagree — the prompt used to be wired
+   * straight to interact() whatever it said, which left the altar's O / WORSHIP
+   * doing nothing at all on a phone, and SHIFT+E / DRINK UP pouring nothing.
+   */
+  private promptAction: 'worship' | 'shift' | 'interact' = 'interact';
+  /**
+   * Whether the prompt is offering something or merely saying where you are.
+   * Recorded by the prompt itself: the list this used to be kept in was a
+   * second, hand-copied set of the same branches, and it had drifted — the
+   * altar was never added to it, so the button carrying O / WORSHIP was
+   * disabled and swallowed every tap. A phone has no O key, so the only way in
+   * was shut.
+   */
+  private promptActionable = false;
+  /**
+   * Whether the prompt offers a second thing behind SHIFT+E. Only MENTOR does:
+   * E gives a treat and SHIFT+E picks the dog up, and a phone can say neither
+   * of those without being given a button for it.
+   */
+  private promptSecondary = false;
+
+  /** Do whatever the prompt is currently offering. */
+  triggerPrompt(): void {
+    if (this.promptAction === 'worship') this.donate();
+    else this.interact(this.promptAction === 'shift');
+  }
+
   private interactionLabel(): string | undefined {
-    if (this.atTheAltar()) return `O / WORSHIP ${this.templeSignText.name}`;
+    this.promptAction = 'interact';
+    this.promptActionable = true;
+    this.promptSecondary = false;
+    if (this.atTheAltar()) {
+      this.promptAction = 'worship';
+      return `O / WORSHIP ${this.templeSignText.name}`;
+    }
     if (this.playerState === 'seated') {
-      if (this.carriedItem === 'DRINK') return 'SHIFT+E / DRINK UP';
+      if (this.carriedItem === 'DRINK') {
+        this.promptAction = 'shift';
+        return 'SHIFT+E / DRINK UP';
+      }
       if (this.nearClubBar()) return 'E / ORDER A DRINK';
       return 'E / STAND UP — private viewing pauses if active';
     }
@@ -6934,19 +6976,30 @@ export class FestivalWorld {
     // offer the seat as well. MENTOR stays on the attendee's head once seated.
     const seat = this.nearestSeat();
     if (seat) {
-      if (this.occupiedSeats.has(seat.id)) return `${seat.id} · OCCUPIED`;
+      if (this.occupiedSeats.has(seat.id)) {
+        this.promptActionable = false;
+        return `${seat.id} · OCCUPIED`;
+      }
       return this.carriedItem === 'MENTOR' ? `E TO SIT · ${seat.id}` : `E / TAKE SEAT ${seat.id}`;
     }
     if (this.carriedItem === 'MENTOR') return 'E / PUT MENTOR DOWN';
     if (this.player.position.distanceTo(concessionPosition) < 2.5) {
-      return this.carriedItem ? 'POPCORN COLLECTED' : 'E / TAKE POPCORN';
+      if (this.carriedItem) {
+        this.promptActionable = false;
+        return 'POPCORN COLLECTED';
+      }
+      return 'E / TAKE POPCORN';
     }
     if (this.nearbyMentor()) {
+      this.promptSecondary = true;
       return this.carriedItem === 'POPCORN'
         ? 'E / GIVE MENTOR A TREAT · SHIFT+E / PICK UP (POPCORN WILL BE LOST)'
         : 'E / GIVE MENTOR A TREAT · SHIFT+E / PICK UP';
     }
-    if (this.carriedItem === 'DRINK') return 'SHIFT+E / DRINK UP';
+    if (this.carriedItem === 'DRINK') {
+      this.promptAction = 'shift';
+      return 'SHIFT+E / DRINK UP';
+    }
     if (this.nearClubBar()) return 'E / ORDER A DRINK';
     if (this.nearJukebox()) return 'E / PUT A RECORD ON';
     if (this.nearShopCounter()) return 'E / OPEN THE POP-UP STORE';
@@ -6959,25 +7012,38 @@ export class FestivalWorld {
     if (this.player.position.distanceTo(pamphletPosition) < 2.35) {
       return this.hasPamphlet ? 'E / OPEN FESTIVAL PAMPHLET' : 'E / TAKE FESTIVAL PAMPHLET';
     }
-    if (this.playerState === 'swimming') return 'SWIMMING · E / GREET WHEN AN ATTENDEE IS NEARBY';
-    if (this.player.position.z < -45) return 'SWIMWEAR ON · ENTER WATER';
+    // Nothing to perform: these two describe where you are, they do not offer
+    // anything, so a tap on them should stay a tap on nothing.
+    if (this.playerState === 'swimming') {
+      this.promptActionable = false;
+      return 'SWIMMING · E / GREET WHEN AN ATTENDEE IS NEARBY';
+    }
+    if (this.player.position.z < -45) {
+      this.promptActionable = false;
+      return 'SWIMWEAR ON · ENTER WATER';
+    }
     if (this.player.position.distanceTo(programmeBoardPosition) < 7.2) return 'E / OPEN ROTATING PROGRAMME';
+    this.promptActionable = false;
     return undefined;
   }
 
+  /**
+   * Whether the prompt on screen can be pressed. Read from the prompt rather
+   * than worked out again, so the two cannot disagree. Both snapshots ask for
+   * the words immediately before asking this.
+   */
   private canInteract(): boolean {
-    const seat = this.nearestSeat();
-    return this.playerState === 'seated' || this.carriedItem === 'MENTOR' || this.nearbyMentor() !== undefined ||
-      this.carriedItem === 'DRINK' || this.nearClubBar() || this.nearShopCounter() ||
-      // Without this the jukebox had a label nobody was ever shown: interact()
-      // answered E at it, but the prompt that says so is gated on this list.
-      this.nearJukebox() ||
-      this.nearbyDj() !== undefined ||
-      (seat !== undefined && !this.occupiedSeats.has(seat.id)) ||
-      this.nearestSocialTarget() !== undefined ||
-      this.player.position.distanceTo(programmeBoardPosition) < 7.2 ||
-      this.player.position.distanceTo(pamphletPosition) < 2.35 ||
-      (!this.carriedItem && this.player.position.distanceTo(concessionPosition) < 2.5);
+    return this.promptActionable;
+  }
+
+  /** Whether the prompt also offers a SHIFT+E, which a phone has no way to say. */
+  hasSecondaryPrompt(): boolean {
+    return this.promptSecondary;
+  }
+
+  /** Do the SHIFT+E half of a prompt that offers both. */
+  triggerSecondaryPrompt(): void {
+    this.interact(true);
   }
 
   private nearestSocialTarget(): { name: string; npc?: NpcAvatar; remote?: RemoteAvatar } | undefined {

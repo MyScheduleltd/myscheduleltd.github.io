@@ -549,7 +549,7 @@ export class App {
               aria-label="${zh ? '底片文字' : 'Film caption'}" />
           </div>
         </div>
-        <p class="world-camera-hint" aria-hidden="true"></p>
+        <button class="world-camera-hint" type="button" data-camera-step hidden></button>
         <header class="world-header">
           <div class="world-brand"><img class="brand-logo" src="${companyLogoUrl}" alt="我的檔期" /><span>MYSCHEDULE</span></div>
           <div class="status-cluster" id="connection-status" data-status="connecting">
@@ -574,6 +574,7 @@ export class App {
         </nav>
         <section class="panel" id="panel" aria-live="polite" hidden></section>
         <section class="venue-screen" id="venue-screen" aria-label="Private festival screening" hidden>
+          <button class="venue-screen__close" type="button" data-screen-close aria-label="${zh ? '離開全螢幕' : 'Exit fullscreen'}">✕</button>
           <div class="venue-screen__frame" id="screen-frame"></div>
           <footer>
             <div><span id="screen-mode">PUBLIC SCREENING</span><strong id="screen-title">THE SHORE</strong></div>
@@ -590,6 +591,7 @@ export class App {
         </section>
         <section class="seat-menu" id="seat-menu" aria-labelledby="seat-menu-title" hidden></section>
         <button class="interaction-toast" id="interaction-toast" type="button" hidden></button>
+        <button class="interaction-second" id="interaction-second" type="button" hidden>${zh ? '抱起 MENTOR' : 'PICK UP MENTOR'}</button>
         <div class="world-alert" id="world-alert" role="status" hidden></div>
         <div class="touch-controls" aria-hidden="true">
           <div class="touch-stick" data-stick><span class="touch-stick__knob" data-stick-knob></span></div>
@@ -706,8 +708,19 @@ export class App {
       button.addEventListener('click', () => this.openPanel(button.dataset.panel as PanelId));
     });
 
-    this.root.querySelector<HTMLButtonElement>('#interaction-toast')?.addEventListener('click', () => {
-      this.world?.interact();
+    // Delegated rather than bound to the element: the prompt is re-rendered as
+    // the world changes around it, and a listener put on the button that was
+    // there at start-up is lost the first time that happens — which is why
+    // tapping the prompt did nothing at all on a phone, where tapping it is the
+    // only way to reach what it offers.
+    this.root.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('#interaction-second')) {
+        this.world?.triggerSecondaryPrompt();
+        return;
+      }
+      if (!target?.closest('#interaction-toast')) return;
+      this.world?.triggerPrompt();
     });
     window.addEventListener('keydown', this.globalShortcut);
     const stick = this.root.querySelector<HTMLElement>('[data-stick]');
@@ -754,6 +767,9 @@ export class App {
     }
     // Run is the one that holds — it is a shift key, not a press. The rest
     // fire once, on the way down, so they answer as fast as a keyboard does.
+    this.root.querySelector<HTMLButtonElement>('[data-camera-step]')?.addEventListener('click', () => {
+      this.cycleViewMode();
+    });
     this.root.querySelectorAll<HTMLButtonElement>('[data-touch-act]').forEach((button) => {
       const act = button.dataset.touchAct;
       const hold = act === 'run';
@@ -813,6 +829,12 @@ export class App {
     this.root.querySelector<HTMLButtonElement>('[data-public-fullscreen]')?.addEventListener('click', () => {
       this.openPublicScreenFullscreen();
     });
+    // The only way out of a filled screen used to be Escape, or a button in a
+    // row that scrolls sideways off the edge of a phone. Neither is reachable
+    // with a thumb, so a full screening was a room with the door painted over.
+    this.root.querySelector<HTMLButtonElement>('[data-screen-close]')?.addEventListener('click', () => {
+      this.setScreenMaximized(false);
+    });
     // Standing up is its own action. Routing it through interact() meant that at
     // the bar, where plain E orders a round, the STAND button bought a drink.
     this.root.querySelector<HTMLButtonElement>('[data-public-stand]')?.addEventListener('click', () => this.world?.forceStand());
@@ -865,6 +887,10 @@ export class App {
       toast.textContent = this.localizeInteraction(snapshot.interaction ?? '');
       toast.classList.toggle('is-actionable', snapshot.canInteract);
       toast.disabled = !snapshot.canInteract;
+      // MENTOR is the one prompt that offers two things, and the second is
+      // behind a key a phone does not have. It gets its own button.
+      const second = this.root.querySelector<HTMLButtonElement>('#interaction-second');
+      if (second) second.hidden = !snapshot.canInteract || !this.world?.hasSecondaryPrompt();
     }
     if (inventory) {
       const chips = [
@@ -2000,19 +2026,30 @@ export class App {
     // there is no way to discover that C is also the way back.
     const hint = this.root.querySelector<HTMLElement>('.world-camera-hint');
     if (hint) {
-      hint.textContent = mode === 'camera'
-        ? (zh ? 'C／明信片模式' : 'C / POSTCARD MODE')
+      // Camera mode hides every other control so the frame is clean, the ring
+      // of touch buttons among them — which on a phone left no way back out at
+      // all. This is that way: the same words, now a button, and on a touch
+      // screen it neither names a key nobody has nor fades away.
+      const touch = App.looksLikeAPhone();
+      const step = mode === 'camera'
+        ? (zh ? '明信片模式' : 'POSTCARD MODE')
         : mode === 'postcard'
-          ? (zh ? 'C／底片模式' : 'C / 35MM FILM')
+          ? (zh ? '底片模式' : '35MM FILM')
           : mode === 'film'
-            ? (zh ? 'C／離開' : 'C / EXIT')
+            ? (zh ? '離開' : 'EXIT')
             : '';
+      hint.textContent = step && !touch ? `${zh ? 'C／' : 'C / '}${step}` : step;
+      hint.hidden = mode === 'normal';
       window.clearTimeout(this.cameraHintTimer);
       if (mode !== 'normal') {
         hint.dataset.shown = 'on';
-        this.cameraHintTimer = window.setTimeout(() => {
-          delete hint.dataset.shown;
-        }, 2_600);
+        // On a phone it is the control, so it stays put. On a desk it is only a
+        // reminder that C does this, and gets out of the picture.
+        if (!touch) {
+          this.cameraHintTimer = window.setTimeout(() => {
+            delete hint.dataset.shown;
+          }, 2_600);
+        }
       } else {
         delete hint.dataset.shown;
       }
