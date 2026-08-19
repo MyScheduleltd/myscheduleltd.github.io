@@ -1688,13 +1688,10 @@ export class App {
   }
 
   private handleNetworkState(state: FestivalState): void {
-    const previousMessageId = this.networkState?.messages.at(-1)?.id;
-    const previousMessageCount = this.networkState?.messages.length;
     const previousSchedule = JSON.stringify(this.networkState?.schedule ?? {});
     const previousPamphletUpdatedAt = this.pamphlet.updatedAt;
     const previousMentorCarrierId = this.networkState?.mentorCarrierId ?? null;
     const previousAttendeeSignature = this.attendeeListSignature(this.networkState, this.npcProfiles);
-    const latestMessageId = state.messages.at(-1)?.id;
     // Attendee clocks drift and some are simply wrong. Programme positions are
     // measured against the service clock instead.
     if (state.serverTime) this.serverClockOffset = state.serverTime - Date.now();
@@ -1834,9 +1831,12 @@ export class App {
     if (this.activePanel === 'pamphlet' && previousPamphletUpdatedAt !== this.pamphlet.updatedAt) {
       this.openPanel('pamphlet');
     }
-    if (this.activePanel === 'chat' && (previousMessageId !== latestMessageId || previousMessageCount !== state.messages.length)) {
-      this.openPanel('chat');
-    }
+    // The stream was redrawn above, and that is the only part of this panel a
+    // new message changes. Rebuilding the whole thing threw away the field
+    // being typed into — its text, its caret and any half-finished characters
+    // an input method was still holding. Somebody writing Chinese lost the word
+    // in their hands every time a resident said anything, which is several
+    // times a minute, and that is what being cut off constantly was.
     if (this.activePanel === 'attendees' && previousAttendeeSignature !== this.attendeeListSignature(state, this.npcProfiles)) {
       this.reopenPanelKeepingPlace('attendees');
     }
@@ -2463,16 +2463,49 @@ export class App {
           this.openPanel('chat');
         });
       });
+      const chatInput = panel.querySelector<HTMLInputElement>('#chat-message');
+      // Writing Chinese puts an input method between the keyboard and the
+      // field: the keys type a reading, the IME offers characters, and ENTER
+      // accepts the one wanted. In several browsers that accepting keystroke
+      // reaches the form as an ordinary ENTER, so every time somebody chose a
+      // character the half-written line was sent and the field was emptied of
+      // its meaning — which is what being cut off constantly is. Nobody typing
+      // English ever saw it, because English never presses ENTER mid-word.
+      //
+      // Nothing is sent while a composition is open, nor in the moment after
+      // one closes: the order of compositionend against the keystroke that
+      // ended it is not the same in every browser, so the flag alone is not
+      // enough to catch it.
+      let composing = false;
+      let composedAt = 0;
+      chatInput?.addEventListener('compositionstart', () => { composing = true; });
+      chatInput?.addEventListener('compositionend', () => {
+        composing = false;
+        composedAt = performance.now();
+      });
       panel.querySelector<HTMLFormElement>('#chat-form')?.addEventListener('submit', (event) => {
         event.preventDefault();
-        const input = panel.querySelector<HTMLInputElement>('#chat-message');
+        if (composing || performance.now() - composedAt < 250) return;
+        const input = chatInput;
         const text = input?.value.trim() ?? '';
         if (!text) return;
         if (this.festivalClient.online) {
-          if (input) input.disabled = true;
+          // readOnly, not disabled. Disabling a focused field blurs it, which
+          // drops the caret and closes the IME, so the line after every line
+          // had to be started by clicking back into the box.
+          if (input) input.readOnly = true;
           void this.festivalClient.sendMessage(this.chatChannel, text.slice(0, 160)).then((result) => {
-            if (!result.ok) this.showWorldAlert(result.message ?? 'MESSAGE COULD NOT BE SENT');
-            if (input) input.disabled = false;
+            if (!result.ok) {
+              this.showWorldAlert(result.message ?? 'MESSAGE COULD NOT BE SENT');
+            } else if (input) {
+              // Sent lines used to stay in the box, so the next one was typed
+              // onto the end of the last.
+              input.value = '';
+            }
+            if (input) {
+              input.readOnly = false;
+              input.focus();
+            }
           });
         } else {
           this.addChatMessage({
@@ -2482,7 +2515,11 @@ export class App {
             text: text.slice(0, 160),
             timestamp: Date.now(),
           });
-          this.openPanel('chat');
+          // Redraw the stream rather than the panel: rebuilding the panel threw
+          // away the very field being typed into, focus and all.
+          if (input) input.value = '';
+          this.renderChatStream();
+          input?.focus();
         }
       });
     }
@@ -3098,7 +3135,8 @@ export class App {
       if (this.festivalClient.online) return;
       const [author, channel, text] = lines[index % lines.length];
       this.addChatMessage({ id: `ambient-${Date.now()}`, author, channel, text, timestamp: Date.now(), npc: true });
-      if (this.activePanel === 'chat') this.openPanel('chat');
+      // Redraw the stream, never the panel: see the note by the other one.
+      if (this.activePanel === 'chat') this.renderChatStream();
       index += 1;
     }, 18000);
   }
