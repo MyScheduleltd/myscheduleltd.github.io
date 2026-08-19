@@ -289,7 +289,13 @@ export class App {
     const saved = readProfile();
     const browserLanguage: Language = navigator.language.toLowerCase().startsWith('zh') ? 'zh-TW' : 'en';
     this.language = saved?.language ?? browserLanguage;
-    this.graphicsMode = saved?.graphicsMode ?? 'normal';
+    // A phone defaulted to the heaviest setting the world has: shadows on,
+    // every resident, full resolution. Nobody arriving on one had chosen that
+    // — it was simply what a fresh visitor got, and a fresh visitor is exactly
+    // who has not been to the graphics panel. A coarse pointer on a small
+    // screen starts light instead, and the 一般 / 精簡 switch still overrides
+    // it for anyone who wants to try.
+    this.graphicsMode = saved?.graphicsMode ?? (App.looksLikeAPhone() ? 'lite' : 'normal');
     this.palette = { ...defaultPalette, ...saved?.palette };
     this.currentId = saved?.id ?? '';
     this.privateProgress = readSession<PrivateProgress | undefined>(PRIVATE_PROGRESS_KEY, undefined);
@@ -3395,6 +3401,19 @@ export class App {
    */
   private staffJukebox(): JukeboxState | undefined {
     return this.adminState?.jukebox ?? this.networkState?.jukebox;
+  }
+
+  /**
+   * Whether this is a hand-held rather than a desk. Both halves matter: a
+   * touchscreen laptop has a coarse pointer and plenty of power, and a narrow
+   * desktop window is still a desktop.
+   */
+  private static looksLikeAPhone(): boolean {
+    try {
+      return window.matchMedia('(pointer: coarse)').matches && window.innerWidth < 900;
+    } catch {
+      return false;
+    }
   }
 
   private normalizeNpcProfiles(profiles: NpcProfile[] | undefined, names: NpcNames | undefined): NpcProfile[] {

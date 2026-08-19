@@ -5089,7 +5089,20 @@ export class FestivalWorld {
       const roomMatches = venue === 'club'
         ? this.inClubRoom(this.player.position.x, this.player.position.z)
         : venue === 'rooftop' ? onDeck : (!insideClub && !onDeck);
-      const visible = roomMatches &&
+      // Every live panel costs twice: once as a video composited over the
+      // canvas, and again in the pass that redraws scene geometry back over it.
+      // Standing in the square, three or four were being paid for at ranges
+      // where the picture is a few pixels across and nobody could tell what was
+      // on. Past this they are dropped; the programme itself is unaffected,
+      // because the running order is kept by the service and not by the panel.
+      // Generous on a desktop and tight on a phone. The festival is about a
+      // hundred and forty deep, so the desktop figure only drops a screen at
+      // the far corners of the map — where it is a handful of pixels — and
+      // leaves every view anybody actually stands in looking as it did. The
+      // phone gives up more, which is the trade that was asked for there.
+      const range = this.graphicsMode === 'normal' ? 120 : 46;
+      const withinRange = this.cameraToProjector.length() < range;
+      const visible = roomMatches && withinRange &&
         (this.player.position.z - screen.position[2]) * screen.facing >= -0.02 &&
         screenIsInFront && screenTouchesViewport;
       projector.element.style.visibility = visible ? 'visible' : 'hidden';
