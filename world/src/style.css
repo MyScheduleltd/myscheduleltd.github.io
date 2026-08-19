@@ -169,6 +169,19 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 .staff-jukebox__queue li.is-empty { list-style: none; margin-left: -22px; opacity: .6; }
 .staff-jukebox__queue strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 13px var(--condensed); }
 .staff-jukebox__queue small { opacity: .55; font-size: 11px; letter-spacing: .1em; }
+/* The shelf. Each record is a row with its title taking the slack and the
+   button pinned to the right, so the buttons line up in a column instead of
+   landing wherever the title happened to end. Scoped to the jukebox: the same
+   list class is used elsewhere in the panel and those are laid out to suit
+   their own contents. */
+.staff-jukebox .staff-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.staff-jukebox .staff-list li { display: flex; align-items: center; gap: 12px; }
+.staff-jukebox .staff-list li strong {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 700 13px var(--condensed);
+}
+.staff-jukebox .staff-list li button { flex: none; }
+
 .staff-jukebox button {
   padding: 4px 9px; cursor: pointer; border: 1px solid var(--ink);
   background: var(--paper); color: var(--ink); font: 800 11px var(--condensed); letter-spacing: .08em;
