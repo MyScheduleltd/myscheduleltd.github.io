@@ -775,6 +775,8 @@ export class FestivalWorld {
   private readonly occupiedSeats = new Set<string>();
   private readonly projectors = new Map<VenueKey, ProjectorSurface>();
   private mountedProjectorVenue?: VenueKey;
+  /** Loopback-only override for the timetable/projector overlap regression. */
+  private reviewProjectorVenue?: VenueKey;
   private lastProjectorNudgeAt = 0;
   private canvasSizeObserver?: ResizeObserver;
   private readonly playheads = new Map<VenueKey, Playhead>();
@@ -825,7 +827,7 @@ export class FestivalWorld {
   private readonly projectorCornerView = new THREE.Vector3();
   private playerRig?: AvatarRig;
   private originalPlayerIdleRig?: AvatarRig;
-  private programmeBoardMaterial?: THREE.MeshStandardMaterial;
+  private programmeBoardMaterial?: THREE.MeshBasicMaterial;
   private readonly venueSignMaterials = new Map<VenueKey, THREE.MeshBasicMaterial>();
   private readonly waterTextures: THREE.CanvasTexture[] = [];
   private readonly waterReflections: WaterReflectionVisual[] = [];
@@ -1126,8 +1128,9 @@ export class FestivalWorld {
    * The side-on MY SQUARE view where the Shore projector's second render pass
    * repeatedly left a translucent rectangle beside the programme board.
    */
-  focusTimetableForReview(): void {
+  focusTimetableForReview(withProjector = false): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    this.reviewProjectorVenue = withProjector ? 'shore' : undefined;
     this.player.position.set(-4.4, this.groundHeightAt(-4.4, 8), 8);
     this.airborne = false;
     this.verticalVelocity = 0;
@@ -1879,7 +1882,7 @@ export class FestivalWorld {
    * screen off.
    */
   private projectorVenue(): VenueKey | undefined {
-    return this.activeProjectorVenue() ?? this.approachingVenue();
+    return this.reviewProjectorVenue ?? this.activeProjectorVenue() ?? this.approachingVenue();
   }
 
   private approachingVenue(): VenueKey | undefined {
@@ -2066,7 +2069,6 @@ export class FestivalWorld {
     const texture = createProgrammeTexture(venue, title, details, nextTitle);
     const previous = this.programmeBoardMaterial.map;
     this.programmeBoardMaterial.map = texture;
-    this.programmeBoardMaterial.emissiveMap = texture;
     this.programmeBoardMaterial.needsUpdate = true;
     if (previous && previous !== texture) previous.dispose();
   }
@@ -3412,11 +3414,16 @@ export class FestivalWorld {
       'MUSIC VIDEO · LIVE LOOP',
       'ROTATING FESTIVAL TIMETABLE',
     );
-    this.programmeBoardMaterial = new THREE.MeshStandardMaterial({
+    // This is a luminous display, not a painted board. Keeping its face out of
+    // the lighting and tone-mapping pipelines also makes the main WebGL pass
+    // and the transparent projector-occlusion pass produce identical pixels.
+    // A lit material was shaded differently by the two renderers, revealing
+    // the projector's otherwise invisible scissor as a dark translucent block
+    // across the middle of the timetable.
+    this.programmeBoardMaterial = new THREE.MeshBasicMaterial({
       map: boardTexture,
-      emissive: 0xffffff,
-      emissiveMap: boardTexture,
-      emissiveIntensity: 0.08,
+      fog: false,
+      toneMapped: false,
     });
     const boardX = programmeBoardPosition.x;
     // Brought forward to where the carpet meets the road. The roadway stops at
@@ -3429,6 +3436,7 @@ export class FestivalWorld {
     const board = new THREE.Mesh(new THREE.BoxGeometry(12.5, 6.1, 0.45), this.programmeBoardMaterial);
     board.position.set(boardX, 3.6, boardZ);
     board.castShadow = true;
+    board.receiveShadow = false;
     this.scene.add(board);
     this.mesh([0.6, 3.2, 0.6], [boardX - 5.3, 1.5, boardZ], material(0x17171a));
     this.mesh([0.6, 3.2, 0.6], [boardX + 5.3, 1.5, boardZ], material(0x17171a));

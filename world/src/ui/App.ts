@@ -709,8 +709,8 @@ export class App {
     } else if (reviewTarget === 'rooftop' || reviewTarget === 'rooftop-dj') {
       this.world.focusRooftopForReview(reviewTarget === 'rooftop-dj');
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.clubReviewSnapshot();
-    } else if (reviewTarget === 'timetable') {
-      this.world.focusTimetableForReview();
+    } else if (reviewTarget === 'timetable' || reviewTarget === 'timetable-projector') {
+      this.world.focusTimetableForReview(reviewTarget === 'timetable-projector');
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.timetableReviewSnapshot();
     } else if (reviewTarget === 'gate' || reviewTarget === 'gate-approach') {
       this.world.focusGateForReview(reviewTarget === 'gate-approach');
