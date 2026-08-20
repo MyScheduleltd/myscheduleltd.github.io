@@ -723,6 +723,15 @@ export class App {
       window.setTimeout(() => {
         document.documentElement.dataset.timetableReview = JSON.stringify(this.world?.timetableReviewSnapshot());
       }, 500);
+    } else if (reviewTarget === 'projector-front' || reviewTarget === 'projector-rear') {
+      this.world.focusProjectorSideForReview(reviewTarget === 'projector-rear');
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () =>
+        this.world?.projectorSideReviewSnapshot();
+      window.setTimeout(() => {
+        document.documentElement.dataset.projectorSideReview = JSON.stringify(
+          this.world?.projectorSideReviewSnapshot(),
+        );
+      }, 500);
     } else if (reviewTarget === 'celestial') {
       this.world.focusCelestialForReview();
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.celestialReviewSnapshot();

@@ -1147,6 +1147,46 @@ export class FestivalWorld {
     this.cameraOrbit.follow.pitch = 0.2;
   }
 
+  /**
+   * Loopback-only views of the Shore projector from either side of its panel.
+   * The rear view catches the CSS3D/WebGL compositor drawing a portal through
+   * the otherwise opaque back; the front view makes sure fixing that does not
+   * suppress the film for its audience.
+   */
+  focusProjectorSideForReview(fromBehind: boolean): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    this.reviewProjectorVenue = 'shore';
+    const z = fromBehind ? -54 : -32;
+    this.player.position.set(0, this.groundHeightAt(0, z), z);
+    this.airborne = false;
+    this.verticalVelocity = 0;
+    this.player.rotation.y = fromBehind ? Math.PI : 0;
+    this.cameraMode = 'first-person';
+    this.cameraZoom = 1;
+    this.cameraOrbit.follow.yaw = fromBehind ? Math.PI : 0;
+    this.cameraOrbit.follow.pitch = 0;
+  }
+
+  projectorSideReviewSnapshot(): {
+    cameraZ: number;
+    screenZ: number;
+    cameraOnViewingSide: boolean;
+    iframeMounted: boolean;
+    cssVisibility: string;
+    foregroundVisibility: string;
+  } {
+    const screen = venueScreens.shore;
+    const projector = this.projectors.get('shore');
+    return {
+      cameraZ: this.camera.position.z,
+      screenZ: screen.position[2],
+      cameraOnViewingSide: (this.camera.position.z - screen.position[2]) * screen.facing > 0.02,
+      iframeMounted: Boolean(projector?.iframe),
+      cssVisibility: projector?.element.style.visibility || '',
+      foregroundVisibility: this.foregroundCanvas.style.visibility,
+    };
+  }
+
   timetableReviewSnapshot(): {
     player: { x: number; y: number; z: number };
     mountedProjectorVenue?: VenueKey;
@@ -5618,8 +5658,13 @@ export class FestivalWorld {
       // panel only repainted its scissor rectangle over nearby geometry — the
       // persistent translucent block beside the timetable — and paid for an
       // otherwise useless scene pass.
+      // Gate both compositor layers from the camera, not the avatar. Orbiting
+      // can put the camera behind a screen while the avatar remains in front;
+      // the CSS backface then disappears but the foreground mask keeps drawing,
+      // turning the black rear panel into a clipped portal through the venue.
+      const cameraOnViewingSide = (this.camera.position.z - screen.position[2]) * screen.facing > 0.02;
       const wantsVisible = Boolean(projector.iframe) && roomMatches && withinRange &&
-        (this.player.position.z - screen.position[2]) * screen.facing >= -0.02 &&
+        cameraOnViewingSide &&
         screenIsInFront && screenTouchesViewport;
       const compositorScissor = wantsVisible ? this.projectorScissor(venue) : undefined;
       // CSS3D video always sits above the main WebGL canvas. Its transparent
