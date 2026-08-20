@@ -292,6 +292,8 @@ const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
  * another. They all read this now.
  */
 const programmeBoardPosition = new THREE.Vector3(0, 0, 1);
+const programmeBoardSize = { width: 12.5, height: 6.1, depth: 0.45 } as const;
+const programmeBoardCenterY = 3.6;
 // Level with the first lamp up the road at z = 16, and pulled in off the kerb.
 // The stalls carry colliders wider than the stalls themselves — the popcorn
 // booth's is 3.4 across — so sitting at x = -7.8 its western edge reached -9.5
@@ -820,6 +822,7 @@ export class FestivalWorld {
     new THREE.Vector3(),
     new THREE.Vector3(),
   ];
+  private readonly programmeBoardCorners = Array.from({ length: 8 }, () => new THREE.Vector3());
   private readonly cameraDirection = new THREE.Vector3();
   private readonly cameraToProjector = new THREE.Vector3();
   private readonly clock = new THREE.Clock();
@@ -828,6 +831,7 @@ export class FestivalWorld {
   private playerRig?: AvatarRig;
   private originalPlayerIdleRig?: AvatarRig;
   private programmeBoardMaterial?: THREE.MeshBasicMaterial;
+  private reviewProgrammeBoardComposite?: { venue: VenueKey; width: number; height: number };
   private readonly venueSignMaterials = new Map<VenueKey, THREE.MeshBasicMaterial>();
   private readonly waterTextures: THREE.CanvasTexture[] = [];
   private readonly waterReflections: WaterReflectionVisual[] = [];
@@ -1128,7 +1132,7 @@ export class FestivalWorld {
    * The side-on MY SQUARE view where the Shore projector's second render pass
    * repeatedly left a translucent rectangle beside the programme board.
    */
-  focusTimetableForReview(withProjector = false): void {
+  focusTimetableForReview(withProjector = false, close = false): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
     this.reviewProjectorVenue = withProjector ? 'shore' : undefined;
     this.player.position.set(-4.4, this.groundHeightAt(-4.4, 8), 8);
@@ -1136,7 +1140,7 @@ export class FestivalWorld {
     this.verticalVelocity = 0;
     this.player.rotation.y = 0;
     this.cameraMode = 'follow';
-    this.cameraZoom = 1;
+    this.cameraZoom = close ? 0.56 : 1;
     this.cameraOrbit.follow.yaw = -0.2;
     this.cameraOrbit.follow.pitch = 0.2;
   }
@@ -1147,6 +1151,7 @@ export class FestivalWorld {
     iframeVenues: VenueKey[];
     visibleCssProjectors: VenueKey[];
     foregroundVisibility: string;
+    programmeBoardComposite?: { venue: VenueKey; width: number; height: number };
   } {
     return {
       player: { x: this.player.position.x, y: this.player.position.y, z: this.player.position.z },
@@ -1156,6 +1161,7 @@ export class FestivalWorld {
         .filter(([, projector]) => projector.element.style.visibility !== 'hidden')
         .map(([venue]) => venue),
       foregroundVisibility: this.foregroundCanvas.style.visibility,
+      programmeBoardComposite: this.reviewProgrammeBoardComposite,
     };
   }
 
@@ -2892,6 +2898,65 @@ export class FestivalWorld {
     return { x: left, y: bottom, width: right - left, height: top - bottom };
   }
 
+  /**
+   * The projector compositor normally redraws only the rectangle occupied by
+   * the CSS video. When that rectangle cuts across the timetable, the same
+   * board is consequently split between the main and foreground renderers and
+   * the renderer boundary becomes visible. This tight box lets the final pass
+   * repaint the whole board instead of only the projector-shaped slice.
+   */
+  private programmeBoardScissor(): { x: number; y: number; width: number; height: number } | undefined {
+    const viewportWidth = this.foregroundCanvas.clientWidth || window.innerWidth;
+    const viewportHeight = this.foregroundCanvas.clientHeight || window.innerHeight;
+    const halfWidth = programmeBoardSize.width / 2;
+    const halfHeight = programmeBoardSize.height / 2;
+    const halfDepth = programmeBoardSize.depth / 2;
+    let minX = viewportWidth;
+    let minY = viewportHeight;
+    let maxX = 0;
+    let maxY = 0;
+    let cornerIndex = 0;
+    for (const x of [-halfWidth, halfWidth]) {
+      for (const y of [programmeBoardCenterY - halfHeight, programmeBoardCenterY + halfHeight]) {
+        for (const z of [programmeBoardPosition.z - halfDepth, programmeBoardPosition.z + halfDepth]) {
+          const corner = this.programmeBoardCorners[cornerIndex++];
+          corner.set(programmeBoardPosition.x + x, y, z);
+          this.projectorCornerView.copy(corner).applyMatrix4(this.camera.matrixWorldInverse);
+          if (this.projectorCornerView.z > -0.05) return undefined;
+          corner.project(this.camera);
+          const pixelX = (corner.x * 0.5 + 0.5) * viewportWidth;
+          const pixelY = (corner.y * 0.5 + 0.5) * viewportHeight;
+          minX = Math.min(minX, pixelX);
+          minY = Math.min(minY, pixelY);
+          maxX = Math.max(maxX, pixelX);
+          maxY = Math.max(maxY, pixelY);
+        }
+      }
+    }
+    const padding = 8;
+    const left = Math.max(0, Math.floor(minX - padding));
+    const bottom = Math.max(0, Math.floor(minY - padding));
+    const right = Math.min(viewportWidth, Math.ceil(maxX + padding));
+    const top = Math.min(viewportHeight, Math.ceil(maxY + padding));
+    if (right <= left || top <= bottom) return undefined;
+    return { x: left, y: bottom, width: right - left, height: top - bottom };
+  }
+
+  private programmeBoardOccludesProjector(venue: VenueKey): boolean {
+    const screen = venueScreens[venue];
+    const cameraDistance = (this.camera.position.z - screen.position[2]) * screen.facing;
+    const boardDistance = (programmeBoardPosition.z - screen.position[2]) * screen.facing;
+    return boardDistance > 0.02 && boardDistance < cameraDistance;
+  }
+
+  private scissorsOverlap(
+    a: { x: number; y: number; width: number; height: number },
+    b: { x: number; y: number; width: number; height: number },
+  ): boolean {
+    return a.x < b.x + b.width && a.x + a.width > b.x &&
+      a.y < b.y + b.height && a.y + a.height > b.y;
+  }
+
   private applyRenderPixelRatios(): void {
     this.renderer.setPixelRatio(this.mainPixelRatio() * this.adaptiveRenderScale);
     this.foregroundRenderer.setPixelRatio(this.foregroundPixelRatio() * this.adaptiveRenderScale);
@@ -3433,14 +3498,17 @@ export class FestivalWorld {
     // road. It is still walked around rather than into: the walkable width at
     // this depth runs far wider than the board.
     const boardZ = programmeBoardPosition.z;
-    const board = new THREE.Mesh(new THREE.BoxGeometry(12.5, 6.1, 0.45), this.programmeBoardMaterial);
-    board.position.set(boardX, 3.6, boardZ);
+    const board = new THREE.Mesh(
+      new THREE.BoxGeometry(programmeBoardSize.width, programmeBoardSize.height, programmeBoardSize.depth),
+      this.programmeBoardMaterial,
+    );
+    board.position.set(boardX, programmeBoardCenterY, boardZ);
     board.castShadow = true;
     board.receiveShadow = false;
     this.scene.add(board);
     this.mesh([0.6, 3.2, 0.6], [boardX - 5.3, 1.5, boardZ], material(0x17171a));
     this.mesh([0.6, 3.2, 0.6], [boardX + 5.3, 1.5, boardZ], material(0x17171a));
-    this.addCollider(boardX, boardZ, 12.5, 1.2);
+    this.addCollider(boardX, boardZ, programmeBoardSize.width, 1.2);
   }
 
   private createShoreScreen(): void {
@@ -5524,6 +5592,7 @@ export class FestivalWorld {
     }
     if (visibleProjectors.length) this.cssRenderer.render(this.cssScene, this.camera);
     this.foregroundCanvas.style.visibility = visibleProjectors.length ? 'visible' : 'hidden';
+    this.reviewProgrammeBoardComposite = undefined;
     if (visibleProjectors.length) {
       const sceneBackground = this.scene.background;
       this.scene.background = null;
@@ -5535,9 +5604,15 @@ export class FestivalWorld {
       const farthestFirst = visibleProjectors.sort(
         (a, b) => venueScreens[a].position[2] - venueScreens[b].position[2],
       );
+      const boardScissor = this.programmeBoardScissor();
+      let boardCompositeVenue: VenueKey | undefined;
       for (const venue of farthestFirst) {
         const scissor = this.projectorScissor(venue);
         if (!scissor) continue;
+        if (!boardCompositeVenue && boardScissor && this.programmeBoardOccludesProjector(venue) &&
+          this.scissorsOverlap(scissor, boardScissor)) {
+          boardCompositeVenue = venue;
+        }
         // Keep the half of the scene between the screen and the viewer. Which
         // half that is depends on the side the screen is watched from.
         const facing = venueScreens[venue].facing;
@@ -5546,6 +5621,28 @@ export class FestivalWorld {
         this.foregroundRenderer.setScissor(scissor.x, scissor.y, scissor.width, scissor.height);
         this.foregroundRenderer.clear(true, true, false);
         this.foregroundRenderer.render(this.scene, this.camera);
+      }
+      if (boardCompositeVenue && boardScissor) {
+        // This is the deliberate full-size replacement for the small block the
+        // user saw: clear the sliced version and redraw every foreground object
+        // in the timetable's complete projected box. Because the scene has no
+        // background in this pass, pixels around the board remain transparent.
+        const facing = venueScreens[boardCompositeVenue].facing;
+        this.projectorClipPlane.normal.set(0, 0, facing);
+        this.projectorClipPlane.constant = -venueScreens[boardCompositeVenue].position[2] * facing;
+        this.foregroundRenderer.setScissor(
+          boardScissor.x,
+          boardScissor.y,
+          boardScissor.width,
+          boardScissor.height,
+        );
+        this.foregroundRenderer.clear(true, true, false);
+        this.foregroundRenderer.render(this.scene, this.camera);
+        this.reviewProgrammeBoardComposite = {
+          venue: boardCompositeVenue,
+          width: boardScissor.width,
+          height: boardScissor.height,
+        };
       }
       this.foregroundRenderer.setScissorTest(false);
       this.foregroundRenderer.autoClear = true;

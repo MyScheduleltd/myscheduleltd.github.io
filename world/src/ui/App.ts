@@ -709,9 +709,16 @@ export class App {
     } else if (reviewTarget === 'rooftop' || reviewTarget === 'rooftop-dj') {
       this.world.focusRooftopForReview(reviewTarget === 'rooftop-dj');
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.clubReviewSnapshot();
-    } else if (reviewTarget === 'timetable' || reviewTarget === 'timetable-projector') {
-      this.world.focusTimetableForReview(reviewTarget === 'timetable-projector');
+    } else if (reviewTarget === 'timetable' || reviewTarget === 'timetable-projector' ||
+      reviewTarget === 'timetable-projector-close') {
+      this.world.focusTimetableForReview(
+        reviewTarget === 'timetable-projector' || reviewTarget === 'timetable-projector-close',
+        reviewTarget === 'timetable-projector-close',
+      );
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.timetableReviewSnapshot();
+      window.setTimeout(() => {
+        document.documentElement.dataset.timetableReview = JSON.stringify(this.world?.timetableReviewSnapshot());
+      }, 500);
     } else if (reviewTarget === 'gate' || reviewTarget === 'gate-approach') {
       this.world.focusGateForReview(reviewTarget === 'gate-approach');
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.structureReviewSnapshot();
