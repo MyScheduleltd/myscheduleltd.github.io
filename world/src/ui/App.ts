@@ -238,6 +238,7 @@ export class App {
   private audioMuted = true;
   private screenMode?: 'public' | 'private';
   private screenMaximized = false;
+  private screenNativeFullscreen = false;
   private promptHoldTimer = 0;
   private promptHeld = false;
   private cameraHidden = false;
@@ -725,6 +726,15 @@ export class App {
       window.setTimeout(() => {
         document.documentElement.dataset.celestialReview = JSON.stringify(this.world?.celestialReviewSnapshot());
       }, 500);
+    } else if (reviewTarget === 'private-screening' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      const film = this.allFilms()[0];
+      if (film) this.startPrivateScreening(film);
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => ({
+        screenMode: this.screenMode,
+        screenMaximized: this.screenMaximized,
+        nativeFullscreenElement: this.fullscreenElement()?.id ?? null,
+        screenHidden: this.root.querySelector<HTMLElement>('#venue-screen')?.hidden,
+      });
     } else if (reviewTarget === 'gate' || reviewTarget === 'gate-approach') {
       this.world.focusGateForReview(reviewTarget === 'gate-approach');
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.structureReviewSnapshot();
@@ -815,6 +825,8 @@ export class App {
     }
     window.addEventListener('keydown', this.globalShortcut);
     window.addEventListener('pointerup', this.liftJukeboxOnGesture, true);
+    document.addEventListener('fullscreenchange', this.syncScreenFullscreenState);
+    document.addEventListener('webkitfullscreenchange', this.syncScreenFullscreenState);
     this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]')?.addEventListener('click', () => {
       this.jukeboxSoundConfirmed = true;
       this.applyJukeboxVolume();
@@ -972,7 +984,7 @@ export class App {
     // row that scrolls sideways off the edge of a phone. Neither is reachable
     // with a thumb, so a full screening was a room with the door painted over.
     this.root.querySelector<HTMLButtonElement>('[data-screen-close]')?.addEventListener('click', () => {
-      this.setScreenMaximized(false);
+      void this.setScreenMaximized(false);
     });
     // Standing up is its own action. Routing it through interact() meant that at
     // the bar, where plain E orders a round, the STAND button bought a drink.
@@ -984,6 +996,8 @@ export class App {
       }
       this.pausePrivateScreening();
       window.removeEventListener('keydown', this.globalShortcut);
+      document.removeEventListener('fullscreenchange', this.syncScreenFullscreenState);
+      document.removeEventListener('webkitfullscreenchange', this.syncScreenFullscreenState);
       if (this.programmeTimer) window.clearInterval(this.programmeTimer);
       void this.festivalClient.disconnect();
     });
@@ -1021,16 +1035,14 @@ export class App {
       phase.textContent = `${phaseNames[snapshot.dayNight.phase]} · ${cameraNames[snapshot.cameraMode]}`;
     }
     if (toast) {
-      // Shown whenever there is something to say. It used to be taken off the
-      // screen outright while the seat panel was up — and the seat panel is up
-      // for as long as you are sitting down, so every seated action lost the
-      // one thing that offers it: ordering a drink at the bar, drinking it,
-      // getting up. On a desk the keys still worked, so nobody noticed; on a
-      // phone the prompt is the action, so sitting down meant there was nothing
-      // to press. The panel and the prompt keep out of each other's way by
-      // where they sit, which is a matter for the stylesheet, not by one of
-      // them being removed.
-      toast.hidden = !snapshot.interaction;
+      // Theater screens already carry a persistent STAND button, so repeating
+      // E / STAND UP over the film is clutter. Other seated prompts stay: the
+      // basement bar still needs this button for ordering and drinking on a
+      // phone, where no keyboard shortcut exists.
+      const redundantTheaterStandPrompt = Boolean(
+        snapshot.inTheater && snapshot.playerState === 'seated' && snapshot.interaction?.startsWith('E / STAND UP'),
+      );
+      toast.hidden = !snapshot.interaction || redundantTheaterStandPrompt;
       toast.textContent = this.promptForTouch(this.localizeInteraction(snapshot.interaction ?? ''));
       toast.classList.toggle('is-actionable', snapshot.canInteract);
       toast.disabled = !snapshot.canInteract;
@@ -1385,7 +1397,7 @@ export class App {
     // screen, and the browser no longer handles it for us.
     if (event.key === 'Escape' && this.screenMaximized) {
       event.preventDefault();
-      this.setScreenMaximized(false);
+      void this.setScreenMaximized(false);
       return;
     }
     // Escape also leaves the camera, which is the other thing that fills the
@@ -1571,7 +1583,7 @@ export class App {
 
   private openPublicScreenFullscreen(): void {
     this.renderScreen(this.publicFilm(this.activeVenue), 'public', this.publicScreeningOffset(), true);
-    this.setScreenMaximized(true);
+    void this.setScreenMaximized(true);
   }
 
   private fullscreenLabel(): string {
@@ -1579,17 +1591,60 @@ export class App {
     return this.screenMaximized ? 'EXIT FULLSCREEN' : 'FULLSCREEN';
   }
 
-  /**
-   * The screening panel fills the viewport with its own layout instead of
-   * calling requestFullscreen. The YouTube player asks for real fullscreen on
-   * its own iframe, and an app-owned fullscreen underneath it only stacked:
-   * the player's exit button popped back to a panel that still covered the
-   * display, so it looked like the button did nothing. With nothing of ours on
-   * the fullscreen stack, the player's own button behaves natively again.
-   */
-  private setScreenMaximized(maximized: boolean): void {
+  private fullscreenElement(): Element | null {
+    const fullscreenDocument = document as Document & {
+      webkitFullscreenElement?: Element | null;
+      webkitCurrentFullScreenElement?: Element | null;
+    };
+    return document.fullscreenElement
+      ?? fullscreenDocument.webkitFullscreenElement
+      ?? fullscreenDocument.webkitCurrentFullScreenElement
+      ?? null;
+  }
+
+  private screenOwnsFullscreen(screen: HTMLElement): boolean {
+    const fullscreenElement = this.fullscreenElement();
+    return fullscreenElement === screen || (fullscreenElement !== null && screen.contains(fullscreenElement));
+  }
+
+  private async requestScreenFullscreen(screen: HTMLElement): Promise<boolean> {
+    const fullscreenScreen = screen as HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void> | void;
+      webkitRequestFullScreen?: () => Promise<void> | void;
+    };
+    const request = screen.requestFullscreen?.bind(screen)
+      ?? fullscreenScreen.webkitRequestFullscreen?.bind(fullscreenScreen)
+      ?? fullscreenScreen.webkitRequestFullScreen?.bind(fullscreenScreen);
+    if (!request) return false;
+    try {
+      await Promise.resolve(request());
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async exitScreenFullscreen(): Promise<void> {
+    const fullscreenDocument = document as Document & {
+      webkitExitFullscreen?: () => Promise<void> | void;
+      webkitCancelFullScreen?: () => Promise<void> | void;
+    };
+    const exit = document.exitFullscreen?.bind(document)
+      ?? fullscreenDocument.webkitExitFullscreen?.bind(fullscreenDocument)
+      ?? fullscreenDocument.webkitCancelFullScreen?.bind(fullscreenDocument);
+    if (!exit) return;
+    try {
+      await Promise.resolve(exit());
+    } catch {
+      // The CSS fallback still needs to be escapable if the browser refuses
+      // or has already dismissed its own fullscreen layer.
+    }
+  }
+
+  private applyScreenMaximized(maximized: boolean): void {
     const screen = this.root.querySelector<HTMLElement>('#venue-screen');
     if (!screen) return;
+    const wasMaximized = this.screenMaximized;
     this.screenMaximized = maximized;
     screen.classList.toggle('venue-screen--maximized', maximized);
     const fullscreenButton = this.root.querySelector<HTMLButtonElement>('[data-screen-fullscreen]');
@@ -1604,23 +1659,62 @@ export class App {
     }
     // Leaving a maximized public screening returns to the seated HUD, which is
     // where the attendee opened it from. A private screening keeps its panel.
-    if (this.screenMode === 'public' && this.snapshot?.playerState === 'seated') {
+    if (wasMaximized && this.screenMode === 'public' && this.snapshot?.playerState === 'seated') {
       this.hideVenueScreen(false);
       this.showPublicSeatHud();
     }
   }
 
+  /**
+   * Phones use the browser's real Fullscreen API so the video can leave the
+   * browser chrome behind. The same panel stays in the fullscreen tree, which
+   * keeps our close button reachable. Older WebKit builds fall back to the
+   * existing viewport-filling layout instead of leaving the button inert.
+   */
+  private async setScreenMaximized(maximized: boolean): Promise<void> {
+    const screen = this.root.querySelector<HTMLElement>('#venue-screen');
+    if (!screen) return;
+
+    if (maximized) {
+      this.applyScreenMaximized(true);
+      if (!App.usesMobileScreeningLayout()) return;
+      this.screenNativeFullscreen = await this.requestScreenFullscreen(screen);
+      return;
+    }
+
+    if (this.screenNativeFullscreen || this.screenOwnsFullscreen(screen)) {
+      await this.exitScreenFullscreen();
+    }
+    this.screenNativeFullscreen = false;
+    this.applyScreenMaximized(false);
+  }
+
+  private readonly syncScreenFullscreenState = (): void => {
+    const screen = this.root.querySelector<HTMLElement>('#venue-screen');
+    if (!screen) return;
+    if (this.screenOwnsFullscreen(screen)) {
+      this.screenNativeFullscreen = true;
+      this.applyScreenMaximized(true);
+      return;
+    }
+    if (!this.screenNativeFullscreen) return;
+    this.screenNativeFullscreen = false;
+    this.applyScreenMaximized(false);
+  };
+
   private toggleScreenFullscreen(): void {
-    this.setScreenMaximized(!this.screenMaximized);
+    void this.setScreenMaximized(!this.screenMaximized);
   }
 
   private hideVenueScreen(resetMode = true): void {
     const screen = this.root.querySelector<HTMLElement>('#venue-screen');
     const frame = this.root.querySelector<HTMLElement>('#screen-frame');
     if (screen) {
+      if (this.screenOwnsFullscreen(screen)) void this.exitScreenFullscreen();
       screen.hidden = true;
       screen.classList.remove('venue-screen--maximized');
     }
+    this.screenNativeFullscreen = false;
     this.root.querySelector<HTMLElement>('.world-shell')?.removeAttribute('data-screen-mode');
     this.screenMaximized = false;
     if (frame) frame.innerHTML = '';
@@ -3855,6 +3949,14 @@ export class App {
   private static looksLikeAPhone(): boolean {
     try {
       return window.matchMedia('(pointer: coarse)').matches && window.innerWidth < 900;
+    } catch {
+      return false;
+    }
+  }
+
+  private static usesMobileScreeningLayout(): boolean {
+    try {
+      return window.matchMedia('(max-width: 780px), (pointer: coarse) and (hover: none)').matches;
     } catch {
       return false;
     }

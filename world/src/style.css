@@ -1099,6 +1099,12 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      actually full — it stayed a panel with its controls off the edge. */
   .venue-screen--maximized { inset: 0; left: 0; right: 0; top: 0; width: 100vw; height: 100vh; }
   .venue-screen--seated { inset: 70px 10px 74px; }
+  /* In mobile fullscreen the YouTube player owns the display. The floating X
+     remains above it, so both the site button and the system exit gesture have
+     a visible way back to the screening panel. */
+  .venue-screen--maximized footer { display: none; }
+  .venue-screen:fullscreen footer { display: none; }
+  .venue-screen:-webkit-full-screen footer { display: none; }
   .venue-screen footer { align-items: flex-start; flex-direction: column; }
   .venue-screen__actions { width: 100%; overflow-x: auto; }
   .public-seat-hud { left: 10px; right: 10px; bottom: 74px; width: auto; transform: none; align-items: flex-start; flex-direction: column; gap: 8px; }
@@ -1321,6 +1327,9 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
     inset: calc(40px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right))
            calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
     width: auto; display: flex; flex-direction: row; gap: 10px; align-items: stretch;
+  }
+  .venue-screen.venue-screen--maximized {
+    inset: 0; width: 100vw; height: 100vh; flex-direction: column; gap: 0;
   }
   .venue-screen .venue-screen__frame,
   .venue-screen--seated .venue-screen__frame {

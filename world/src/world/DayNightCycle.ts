@@ -280,15 +280,14 @@ export class DayNightCycle {
     if (this.scene.fog instanceof THREE.Fog) this.scene.fog.color.copy(fog);
     this.directionalLight.color.copy(sun);
     this.hemisphereLight.intensity = ambientIntensity;
-    // One full solar orbit per festival cycle. At minute 0 the sun rises from
-    // the eastern (left) ocean horizon, reaches its zenith at 15, sets into the
-    // western (right) horizon at 30, then continues underneath the world until
-    // it reaches the east again. There is no reset jump and no opacity-based
-    // disappearance in mid-air.
+    // One full solar orbit per festival cycle. The world camera mirrors the
+    // ocean's x-axis on screen, so the positive-to-negative path is the one
+    // visitors read as sunrise on the left and sunset on the right. There is no
+    // reset jump and no opacity-based disappearance in mid-air.
     const solarAngle = (cycleMinute / CYCLE_MINUTES) * Math.PI * 2;
     const sunElevation = Math.sin(solarAngle);
     const sunPosition = new THREE.Vector3(
-      -Math.cos(solarAngle) * SUN_ORBIT_X,
+      Math.cos(solarAngle) * SUN_ORBIT_X,
       CELESTIAL_HORIZON_Y + sunElevation * SUN_ORBIT_Y,
       CELESTIAL_OCEAN_Z,
     );
@@ -312,7 +311,7 @@ export class DayNightCycle {
     const lunarAngle = solarAngle + Math.PI;
     const moonElevation = Math.sin(lunarAngle);
     const moonPosition = new THREE.Vector3(
-      -Math.cos(lunarAngle) * MOON_ORBIT_X,
+      Math.cos(lunarAngle) * MOON_ORBIT_X,
       CELESTIAL_HORIZON_Y + moonElevation * MOON_ORBIT_Y,
       CELESTIAL_OCEAN_Z,
     );
