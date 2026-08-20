@@ -2,6 +2,11 @@
 
 Last updated: 2026-08-15 (Asia/Taipei)
 
+> **Superseded.** Read `CODEX_HANDOFF.md` first. The instructions below not to publish,
+> and the reference to the `codex/pivot-exploration` branch, are both out of date: the
+> build now ships to `docs/beta` on `main` every turn. What remains useful here is the
+> older architectural description, not the process.
+
 ## Read this first
 
 Continue only inside:
