@@ -4007,34 +4007,53 @@ export class FestivalWorld {
     }
     this.mesh([20, 1.8, 0.5], [-68, floor + 2.4, b.roomMinZ + 0.45], material(0x1c1720, 0.7, 0.2));
 
-    // Light rig over the floor.
-    for (let index = 0; index < 8; index += 1) {
-      const x = -84 + index * 4.8;
-      const light = this.mesh(
-        [1.6, 0.36, 1.6],
-        [x, floor + CLUB_ROOM_HEIGHT - 1.2, 2 + CLUB_Z],
-        new THREE.MeshBasicMaterial({ color: clubLightColors[index % clubLightColors.length] }),
-      );
-      this.clubLights.push(light);
-      // Every other fixture in the overhead row carries a real lamp, so the
-      // rig lights the floor instead of only glowing at itself.
-      if (index % 2 === 0) {
-        const beam = new THREE.SpotLight(clubLightColors[index % clubLightColors.length], 0, 34, Math.PI * 0.3, 0.7, 1.3);
-        beam.position.set(x, floor + CLUB_ROOM_HEIGHT - 1.4, 2 + CLUB_Z);
-        beam.target.position.set(x, floor, 2 + CLUB_Z);
-        this.scene.add(beam, beam.target);
-        this.clubBeatLights.push(beam);
+    // Light rig over the floor. Three rows rather than one — a single line of
+    // eight left most of the ceiling dark — and every fixture hangs from a drop
+    // rod. They sat a metre and a bit below the ceiling with nothing between,
+    // which is what made them look like they were floating there.
+    const rigY = floor + CLUB_ROOM_HEIGHT - 1.2;
+    const rigCeilingY = floor + CLUB_ROOM_HEIGHT;
+    const rigRows = [-6 + CLUB_Z, 2 + CLUB_Z, 10 + CLUB_Z];
+    const rodMaterial = material(0x14121a, 0.6, 0.25);
+    for (const [row, z] of rigRows.entries()) {
+      for (let index = 0; index < 8; index += 1) {
+        // Staggered row to row, so the ceiling reads as a rig rather than a grid.
+        const x = -84 + index * 4.8 + (row % 2 === 1 ? 2.4 : 0);
+        const colour = clubLightColors[(index + row * 2) % clubLightColors.length];
+        // The drop, from the ceiling down to the top of the fixture.
+        this.mesh([0.14, rigCeilingY - rigY - 0.18, 0.14], [x, (rigCeilingY + rigY + 0.18) / 2, z], rodMaterial);
+        const light = this.mesh(
+          [1.6, 0.36, 1.6], [x, rigY, z], new THREE.MeshBasicMaterial({ color: colour }),
+        );
+        this.clubLights.push(light);
+        // Every other fixture in a row carries a real lamp, so the rig lights
+        // the floor instead of only glowing at itself. The middle row keeps the
+        // beams it always had; the outer rows glow, which costs nothing.
+        if (row === 1 && index % 2 === 0) {
+          const beam = new THREE.SpotLight(colour, 0, 34, Math.PI * 0.3, 0.7, 1.3);
+          beam.position.set(x, rigY - 0.2, z);
+          beam.target.position.set(x, floor, z);
+          this.scene.add(beam, beam.target);
+          this.clubBeatLights.push(beam);
+        }
       }
     }
     for (let index = 0; index < 5; index += 1) {
       const z = b.roomMinZ + 4 + index * 6.5;
       for (const side of [-1, 1]) {
         // The east wall is cut away for the stairs; a fixture there would hang
-        // in open air with nothing behind it.
-        if (side > 0 && z > b.stairMinZ - 2 && z < b.stairMaxZ + 2) continue;
+        // in open air with nothing behind it. The old margin was two, which let
+        // one through sitting exactly on the boundary — half of it on the wall
+        // and half over the opening, which is the fitting that was reported as
+        // clipping the edge. Four clears the cut properly.
+        if (side > 0 && z > b.stairMinZ - 4 && z < b.stairMaxZ + 4) continue;
         const light = this.mesh(
           [0.36, 1.2, 1.2],
-          [side < 0 ? b.roomMinX + 0.6 : b.roomMaxX - 0.6, floor + CLUB_ROOM_HEIGHT - 5, z],
+          // Stood off the wall rather than buried in it. At 0.6 the fitting
+          // straddled the inner face — the wall runs half a thickness either
+          // side of the room's edge — so most of the body was inside the wall
+          // and only a slice showed, which is why it read as growing out of it.
+          [side < 0 ? b.roomMinX + 0.95 : b.roomMaxX - 0.95, floor + CLUB_ROOM_HEIGHT - 5, z],
           new THREE.MeshBasicMaterial({ color: clubLightColors[(index + side + 5) % clubLightColors.length] }),
         );
         this.clubLights.push(light);

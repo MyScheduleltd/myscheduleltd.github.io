@@ -1002,8 +1002,16 @@ export class App {
       phase.textContent = `${phaseNames[snapshot.dayNight.phase]} · ${cameraNames[snapshot.cameraMode]}`;
     }
     if (toast) {
-      const publicHudVisible = !this.root.querySelector<HTMLElement>('#public-seat-hud')?.hidden;
-      toast.hidden = !snapshot.interaction || publicHudVisible;
+      // Shown whenever there is something to say. It used to be taken off the
+      // screen outright while the seat panel was up — and the seat panel is up
+      // for as long as you are sitting down, so every seated action lost the
+      // one thing that offers it: ordering a drink at the bar, drinking it,
+      // getting up. On a desk the keys still worked, so nobody noticed; on a
+      // phone the prompt is the action, so sitting down meant there was nothing
+      // to press. The panel and the prompt keep out of each other's way by
+      // where they sit, which is a matter for the stylesheet, not by one of
+      // them being removed.
+      toast.hidden = !snapshot.interaction;
       toast.textContent = this.promptForTouch(this.localizeInteraction(snapshot.interaction ?? ''));
       toast.classList.toggle('is-actionable', snapshot.canInteract);
       toast.disabled = !snapshot.canInteract;
