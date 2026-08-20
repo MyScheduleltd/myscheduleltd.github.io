@@ -1290,6 +1290,27 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .chat-feed article header { font-size: 10px; }
   .chat-feed article p { font-size: 13px; line-height: 1.25; }
   .connection-note { display: none; margin: 0; }
-  .venue-screen { top: 62px; }
+  /* Side by side rather than stacked. A screening panel stacks its picture above
+     its own controls, which upright is right — but lying down there is no
+     height to divide, so the picture was squeezed to the height of YouTube's
+     own control bar and the film itself had nowhere left to be. A wide screen
+     has width to spend instead: the picture takes it and keeps a proper shape,
+     and the title and buttons stand in a column beside it. */
+  .venue-screen, .venue-screen--seated {
+    inset: calc(40px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right))
+           calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
+    width: auto; display: flex; flex-direction: row; gap: 10px; align-items: stretch;
+  }
+  .venue-screen .venue-screen__frame,
+  .venue-screen--seated .venue-screen__frame {
+    flex: 1 1 auto; min-width: 0; min-height: 0; height: auto; aspect-ratio: auto;
+  }
+  .venue-screen footer {
+    flex: 0 0 min(34%, 260px); min-width: 0;
+    flex-direction: column; align-items: flex-start; justify-content: center;
+    gap: 8px; padding: 8px 10px; overflow-y: auto;
+  }
+  .venue-screen footer strong { white-space: normal; font-size: 14px; }
+  .venue-screen__actions { flex-wrap: wrap; width: 100%; }
   .world-alert { top: 54px; }
 }
