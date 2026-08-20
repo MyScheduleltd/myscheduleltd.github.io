@@ -143,7 +143,7 @@ interface ProjectorSurface {
    * nobody is in the room, so walking in can start it straight away instead of
    * waiting for the programme to be pushed round again.
    */
-  pending?: { film: { id: string; title: string; embedUrl: string; youtubeId: string }; offsetSeconds: number; playlistIds: string[]; reloadToken: string };
+  pending?: { film: { id: string; title: string; embedUrl: string; youtubeId: string }; offsetSeconds: number; reloadToken: string };
   lastAdvanceAt?: number;
   currentTime?: number;
   currentTimeAt?: number;
@@ -1122,6 +1122,40 @@ export class FestivalWorld {
     this.cameraOrbit.follow.pitch = fromOutside ? 0.12 : -0.06;
   }
 
+  /**
+   * The side-on MY SQUARE view where the Shore projector's second render pass
+   * repeatedly left a translucent rectangle beside the programme board.
+   */
+  focusTimetableForReview(): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    this.player.position.set(-4.4, this.groundHeightAt(-4.4, 8), 8);
+    this.airborne = false;
+    this.verticalVelocity = 0;
+    this.player.rotation.y = 0;
+    this.cameraMode = 'follow';
+    this.cameraZoom = 1;
+    this.cameraOrbit.follow.yaw = -0.2;
+    this.cameraOrbit.follow.pitch = 0.2;
+  }
+
+  timetableReviewSnapshot(): {
+    player: { x: number; y: number; z: number };
+    mountedProjectorVenue?: VenueKey;
+    iframeVenues: VenueKey[];
+    visibleCssProjectors: VenueKey[];
+    foregroundVisibility: string;
+  } {
+    return {
+      player: { x: this.player.position.x, y: this.player.position.y, z: this.player.position.z },
+      mountedProjectorVenue: this.mountedProjectorVenue,
+      iframeVenues: [...this.projectors].filter(([, projector]) => Boolean(projector.iframe)).map(([venue]) => venue),
+      visibleCssProjectors: [...this.projectors]
+        .filter(([, projector]) => projector.element.style.visibility !== 'hidden')
+        .map(([venue]) => venue),
+      foregroundVisibility: this.foregroundCanvas.style.visibility,
+    };
+  }
+
   /** Loopback fixture inside the temple, facing the altar down the hall. */
   focusTempleForReview(atAltar = false): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
@@ -1876,7 +1910,7 @@ export class FestivalWorld {
     if (!wanted) return;
     const pending = this.projectors.get(wanted)?.pending;
     if (pending) {
-      this.setPublicScreening(wanted, pending.film, pending.offsetSeconds, pending.playlistIds, pending.reloadToken);
+      this.setPublicScreening(wanted, pending.film, pending.offsetSeconds, pending.reloadToken);
     }
   }
 
@@ -1892,17 +1926,16 @@ export class FestivalWorld {
     venue: VenueKey,
     film: { id: string; title: string; embedUrl: string; youtubeId: string },
     offsetSeconds: number,
-    playlistIds: string[] = [],
     reloadToken = '',
   ): void {
     const projector = this.projectors.get(venue);
     if (!projector) return;
-    projector.pending = { film, offsetSeconds, playlistIds, reloadToken };
+    projector.pending = { film, offsetSeconds, reloadToken };
     if (venue !== this.projectorVenue()) {
       this.releaseProjector(venue);
       return;
     }
-    const signature = `${film.id}|${playlistIds.join(',')}|${reloadToken}`;
+    const signature = `${film.id}|${reloadToken}`;
     if (projector.signature === signature) return;
     projector.filmId = film.id;
     projector.youtubeId = film.youtubeId;
@@ -1916,11 +1949,6 @@ export class FestivalWorld {
     playerUrl.searchParams.set('enablejsapi', '1');
     playerUrl.searchParams.set('modestbranding', '1');
     playerUrl.searchParams.set('start', String(this.resumeOffset(venue, film.youtubeId, offsetSeconds)));
-    const playlist = playlistIds.filter(Boolean);
-    if (playlist.length) {
-      playerUrl.searchParams.set('playlist', playlist.join(','));
-      playerUrl.searchParams.set('loop', '1');
-    }
     if (window.location.origin !== 'null') playerUrl.searchParams.set('origin', window.location.origin);
     playerUrl.searchParams.set('widget_referrer', window.location.href);
     const iframe = document.createElement('iframe');
@@ -5465,7 +5493,13 @@ export class FestivalWorld {
       // felt. Whatever a phone gives up, it should not be a different festival.
       const range = 120;
       const withinRange = this.cameraToProjector.length() < range;
-      const visible = roomMatches && withinRange &&
+      // With no iframe there is no DOM picture to mask: the ordinary WebGL
+      // screen already supplies the black physical surface and occludes
+      // correctly on its own. Running the second renderer for an empty CSS
+      // panel only repainted its scissor rectangle over nearby geometry — the
+      // persistent translucent block beside the timetable — and paid for an
+      // otherwise useless scene pass.
+      const visible = Boolean(projector.iframe) && roomMatches && withinRange &&
         (this.player.position.z - screen.position[2]) * screen.facing >= -0.02 &&
         screenIsInFront && screenTouchesViewport;
       // Coming back into view, ask it to play. A player that a phone stopped

@@ -680,6 +680,9 @@ export class App {
         // No service to keep the running order, so the venue moves its own on.
         this.programmeClock.advance(venue, this.localOrder(venue));
         this.syncPublicProjectors();
+        if (this.screenMaximized && this.screenMode === 'public' && this.activeVenue === venue) {
+          this.renderScreen(this.publicFilm(venue), 'public', 0, true);
+        }
       },
       onProjectorDuration: (venue, youtubeId, seconds) => {
         this.programmeClock.learnDuration(youtubeId, seconds);
@@ -706,6 +709,9 @@ export class App {
     } else if (reviewTarget === 'rooftop' || reviewTarget === 'rooftop-dj') {
       this.world.focusRooftopForReview(reviewTarget === 'rooftop-dj');
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.clubReviewSnapshot();
+    } else if (reviewTarget === 'timetable') {
+      this.world.focusTimetableForReview();
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.timetableReviewSnapshot();
     } else if (reviewTarget === 'gate' || reviewTarget === 'gate-approach') {
       this.world.focusGateForReview(reviewTarget === 'gate-approach');
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.structureReviewSnapshot();
@@ -1310,15 +1316,13 @@ export class App {
     for (const venue of VENUE_KEYS) {
       const film = this.publicFilm(venue);
       const schedule = this.networkState?.schedule?.[venue];
-      const venueFilms = this.venueFilms(venue);
-      const venuePlaylist = (schedule?.order ?? venueFilms.map((entry) => entry.youtubeId))
-        .map((youtubeId) => venueFilms.find((entry) => entry.youtubeId === youtubeId))
-        .filter((entry): entry is CatalogueEntry => Boolean(entry));
-      const currentIndex = Math.max(0, venuePlaylist.findIndex((entry) => entry.id === film.id));
-      const loopingOrder = [...venuePlaylist.slice(currentIndex + 1), ...venuePlaylist.slice(0, currentIndex + 1)]
-        .map((entry) => entry.youtubeId);
       this.world?.setVenueName(venue, this.venueName(venue), this.venueSubtitle(venue));
-      this.world?.setPublicScreening(venue, film, this.publicOffset(venue), loopingOrder, `${schedule?.updatedAt ?? 0}|${schedule?.startedAt ?? 0}`);
+      // The service (or ProgrammeClock while offline) is the one sequencer.
+      // Giving YouTube a playlist as well let its iframe move first, then
+      // report the next work's duration while projector.youtubeId still named
+      // the previous one. That poisoned the shared duration table and made the
+      // service cut longer films off at the wrongly learned time.
+      this.world?.setPublicScreening(venue, film, this.publicOffset(venue), `${schedule?.updatedAt ?? 0}|${schedule?.startedAt ?? 0}`);
       this.world?.setPublicScreenPaused(venue, schedule?.mode === 'paused');
     }
   }
@@ -1503,8 +1507,13 @@ export class App {
     playerUrl.searchParams.set('rel', '0');
     playerUrl.searchParams.set('enablejsapi', '1');
     playerUrl.searchParams.set('start', String(Math.max(0, Math.floor(offset))));
-    playerUrl.searchParams.set('loop', '1');
-    playerUrl.searchParams.set('playlist', film.youtubeId);
+    // A private viewing owns its player and may loop. Public screenings must
+    // end cleanly so the shared programme can replace them with the next work;
+    // looping here would be a second sequencer competing with that clock.
+    if (mode === 'private') {
+      playerUrl.searchParams.set('loop', '1');
+      playerUrl.searchParams.set('playlist', film.youtubeId);
+    }
     if (window.location.origin !== 'null') playerUrl.searchParams.set('origin', window.location.origin);
     playerUrl.searchParams.set('widget_referrer', window.location.href);
     frame.innerHTML = `<iframe title="${this.escapeAttribute(film.title)}" src="${this.escapeAttribute(playerUrl.toString())}" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
