@@ -4007,6 +4007,26 @@ export class FestivalWorld {
     }
     this.mesh([20, 1.8, 0.5], [-68, floor + 2.4, b.roomMinZ + 0.45], material(0x1c1720, 0.7, 0.2));
 
+    // The end walls carry the same fittings as the sides, so the room is lit all
+    // the way round rather than down two flanks only.
+    //
+    // The north wall is the one the screen hangs on, so nothing goes across it:
+    // the screen is about eighteen units wide about its centre, and a fitting
+    // over it would be a lamp stuck to a picture. They flank it instead. The
+    // south wall is clear all the way along — the bar's counter stands well
+    // below this height — so it takes an even run.
+    const endWallY = floor + CLUB_ROOM_HEIGHT - 5;
+    const endWallLights: Array<[number, number]> = [];
+    for (const x of [-84, -79, -57, -52]) endWallLights.push([x, b.roomMaxZ - 0.95]);
+    for (const x of [-84, -76, -68, -60, -52]) endWallLights.push([x, b.roomMinZ + 0.95]);
+    for (const [index, [x, z]] of endWallLights.entries()) {
+      const light = this.mesh(
+        [1.2, 1.2, 0.36], [x, endWallY, z],
+        new THREE.MeshBasicMaterial({ color: clubLightColors[(index + 3) % clubLightColors.length] }),
+      );
+      this.clubLights.push(light);
+    }
+
     // The ceiling is left bare. It carried a rig of hanging fittings, and every
     // attempt to place them ran into the light well cut through the slab — a
     // fitting standing in that hole hangs from nothing. A clean ceiling is the
