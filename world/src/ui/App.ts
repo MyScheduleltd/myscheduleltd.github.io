@@ -157,12 +157,15 @@ const LOCAL_HITS_TO_DIE = 5;
 const LOCAL_HIT_MEMORY_MS = 30_000;
 
 const JUKEBOX_VOLUME_KEY = 'myschedule-jukebox-volume-v1';
+const DEFAULT_JUKEBOX_VOLUME = 0.4;
 const readStoredJukeboxVolume = (): number => {
   try {
-    const stored = Number(window.localStorage.getItem(JUKEBOX_VOLUME_KEY));
-    return Number.isFinite(stored) && stored >= 0 && stored <= 1 ? stored : 0.4;
+    const raw = window.localStorage.getItem(JUKEBOX_VOLUME_KEY);
+    if (raw === null) return DEFAULT_JUKEBOX_VOLUME;
+    const stored = Number(raw);
+    return Number.isFinite(stored) && stored >= 0 && stored <= 1 ? stored : DEFAULT_JUKEBOX_VOLUME;
   } catch {
-    return 0.4;
+    return DEFAULT_JUKEBOX_VOLUME;
   }
 };
 
@@ -594,7 +597,7 @@ export class App {
         <button class="world-camera-hide" type="button" data-camera-hide hidden
           aria-label="${zh ? '顯示或隱藏相機介面' : 'Show or hide camera controls'}">${zh ? '隱藏' : 'HIDE'}</button>
         <button class="zoom-reset" type="button" data-zoom-reset hidden>${zh ? '重設縮放' : 'RESET ZOOM'}</button>
-        <button class="jukebox-sound" type="button" data-jukebox-sound hidden>${zh ? '♪ 點一下開啟點唱機聲音' : '♪ TAP FOR JUKEBOX SOUND'}</button>
+        <button class="jukebox-sound" type="button" data-jukebox-sound hidden>DROP THE BEAT</button>
         <header class="world-header">
           <div class="world-brand"><img class="brand-logo" src="${companyLogoUrl}" alt="我的檔期" /><span>MYSCHEDULE</span></div>
           <div class="status-cluster" id="connection-status" data-status="connecting">
@@ -771,6 +774,24 @@ export class App {
     } else if (reviewTarget === 'temple' || reviewTarget === 'temple-altar') {
       this.world.focusTempleForReview(reviewTarget === 'temple-altar');
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.structureReviewSnapshot();
+    } else if (reviewTarget === 'jukebox-sound' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      this.world.focusJukeboxForReview();
+      this.jukeboxVolume = DEFAULT_JUKEBOX_VOLUME;
+      this.jukeboxPlayingId = 'review-jukebox-track';
+      window.setTimeout(() => {
+        this.audioMuted = false;
+        this.jukeboxSilenced = false;
+        this.updateJukeboxSoundPrompt();
+        document.documentElement.dataset.jukeboxSoundReview = JSON.stringify({
+          volume: this.jukeboxVolume,
+          promptHidden: this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]')?.hidden,
+        });
+      }, 0);
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => ({
+        volume: this.jukeboxVolume,
+        promptHidden: this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]')?.hidden,
+        promptText: this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]')?.textContent,
+      });
     } else if (reviewTarget === 'jukebox') {
       this.world.focusJukeboxForReview();
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.structureReviewSnapshot();
@@ -2425,6 +2446,15 @@ export class App {
    * and the only thing it answers to is the attendee's own slider.
    */
   private syncJukebox(): void {
+    // Keep the local browser-review fixture independent of whatever happens to
+    // be playing on a developer's already-running service. Without this guard,
+    // the next presence update can replace the simulated record before the
+    // prompt has been inspected.
+    const reviewTarget = new URLSearchParams(window.location.search).get('review');
+    if (reviewTarget === 'jukebox-sound' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      this.updateJukeboxSoundPrompt();
+      return;
+    }
     const jukebox = this.networkState?.jukebox;
     const playing = jukebox?.nowPlaying;
     if (!playing) {
