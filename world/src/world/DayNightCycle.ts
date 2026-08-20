@@ -35,6 +35,14 @@ interface LightingKeyframe {
 const CYCLE_MINUTES = 60;
 const CYCLE_MS = CYCLE_MINUTES * 60 * 1000;
 const SYNC_EPOCH = Date.UTC(2026, 0, 1, 0, 0, 0);
+const CELESTIAL_HORIZON_Y = 0.2;
+const CELESTIAL_OCEAN_Z = -170;
+const SUN_ORBIT_X = 72;
+const SUN_ORBIT_Y = 62;
+const SUN_RADIUS = 6.8;
+const MOON_ORBIT_X = 66;
+const MOON_ORBIT_Y = 54;
+const MOON_RADIUS = 5.2;
 
 const frame = (
   minute: number,
@@ -214,6 +222,24 @@ export class DayNightCycle {
     return this.waterReflectionState;
   }
 
+  getCelestialReviewState(): {
+    sun: { position: [number, number, number]; visible: boolean; opacity: number };
+    moon: { position: [number, number, number]; visible: boolean; opacity: number };
+  } {
+    return {
+      sun: {
+        position: [this.sunObject.position.x, this.sunObject.position.y, this.sunObject.position.z],
+        visible: this.sunObject.visible,
+        opacity: this.sunMaterial.opacity,
+      },
+      moon: {
+        position: [this.moonObject.position.x, this.moonObject.position.y, this.moonObject.position.z],
+        visible: this.moonObject.visible,
+        opacity: this.moonMaterial.opacity,
+      },
+    };
+  }
+
   update(now = Date.now()): DayNightState {
     const elapsed = ((now - SYNC_EPOCH) % CYCLE_MS + CYCLE_MS) % CYCLE_MS;
     const cycleMinute = this.fixedCycleMinute === undefined
@@ -253,71 +279,54 @@ export class DayNightCycle {
     this.scene.background = sky;
     if (this.scene.fog instanceof THREE.Fog) this.scene.fog.color.copy(fog);
     this.directionalLight.color.copy(sun);
-    this.directionalLight.intensity = sunIntensity;
     this.hemisphereLight.intensity = ambientIntensity;
-    this.moonLight.intensity = moonIntensity;
-    this.directionalLight.castShadow = this.shadowsEnabled && sunIntensity > 0.12;
-    this.moonLight.castShadow = this.shadowsEnabled && moonIntensity > 0.12;
-
-    // The visible daylight arc starts inland at dawn and finishes over the sea
-    // at minute 30, so golden-hour shadows and the sun disc share one source.
-    const daylightProgress = THREE.MathUtils.clamp(cycleMinute / 30, 0, 1);
-    const sunElevation = Math.sin(daylightProgress * Math.PI);
-    // The light keeps to the arc it always had. The disc is allowed to run a
-    // little past the end of it, because the arc finishes with the sun still
-    // eight units up: clamped there it stopped dead above the water and was
-    // then switched off outright at minute 31, which is a sun vanishing in
-    // mid-air rather than setting. Past the end it carries on down into the
-    // sea, which is where it was always heading.
-    const discProgress = THREE.MathUtils.clamp(cycleMinute / 30, 0, 1.12);
-    const alongArc = Math.min(discProgress, 1);
+    // One full solar orbit per festival cycle. At minute 0 the sun rises from
+    // the eastern (left) ocean horizon, reaches its zenith at 15, sets into the
+    // western (right) horizon at 30, then continues underneath the world until
+    // it reaches the east again. There is no reset jump and no opacity-based
+    // disappearance in mid-air.
+    const solarAngle = (cycleMinute / CYCLE_MINUTES) * Math.PI * 2;
+    const sunElevation = Math.sin(solarAngle);
     const sunPosition = new THREE.Vector3(
-      // Finish just right of the Shore screen, inside the audience's sea view.
-      THREE.MathUtils.lerp(-42, 24, alongArc),
-      8 + Math.sin(discProgress * Math.PI) * 56,
-      THREE.MathUtils.lerp(110, -180, alongArc),
+      -Math.cos(solarAngle) * SUN_ORBIT_X,
+      CELESTIAL_HORIZON_Y + sunElevation * SUN_ORBIT_Y,
+      CELESTIAL_OCEAN_Z,
     );
     this.sunObject.position.copy(sunPosition);
-    // Faded by how far above the water it is, so it goes out as it goes under
-    // rather than at a minute chosen in advance. Nothing pops in or out.
-    const sunFade = THREE.MathUtils.clamp(sunPosition.y / 9, 0, 1);
-    this.sunObject.visible = sunFade > 0.002;
-    this.sunMaterial.opacity = sunFade;
+    this.sunObject.visible = sunPosition.y > CELESTIAL_HORIZON_Y - SUN_RADIUS;
+    this.sunMaterial.opacity = 1;
     this.sunMaterial.color.copy(sun);
     this.sunHaloMaterial.color.copy(sun);
-    this.sunHaloMaterial.opacity = THREE.MathUtils.clamp(
-      THREE.MathUtils.lerp(0.42, 0.82, 1 - sunElevation), 0, 0.86,
-    ) * sunFade;
-    this.directionalLight.position
-      .set(
-        THREE.MathUtils.lerp(-42, 24, daylightProgress),
-        8 + sunElevation * 56,
-        THREE.MathUtils.lerp(110, -180, daylightProgress),
-      )
-      .multiplyScalar(0.48);
+    const sunAboveHorizon = THREE.MathUtils.smoothstep(sunElevation, -0.04, 0.08);
+    const visibleSunElevation = THREE.MathUtils.clamp(sunElevation, 0, 1);
+    this.sunHaloMaterial.opacity = sunPosition.y >= CELESTIAL_HORIZON_Y
+      ? THREE.MathUtils.lerp(0.82, 0.42, visibleSunElevation)
+      : 0;
+    this.directionalLight.intensity = sunIntensity * sunAboveHorizon;
+    this.directionalLight.castShadow = this.shadowsEnabled && this.directionalLight.intensity > 0.12;
+    this.directionalLight.position.copy(sunPosition).multiplyScalar(0.48);
     this.directionalLight.target.position.set(0, 0, -18);
 
-    // The moon follows its own full night arc and sets into the same sea
-    // horizon. Its visible disc and directional light always share a source.
-    const nightProgress = THREE.MathUtils.clamp((cycleMinute - 30) / 30, 0, 1);
-    const moonElevation = Math.sin(nightProgress * Math.PI);
-    // Same on the way up: the moon's arc begins with it already seven units
-    // clear of the water, so switching it on at a fixed minute put a moon in
-    // the sky out of nothing. It now rises out of the sea the way the sun goes
-    // into it.
-    const moonDiscProgress = THREE.MathUtils.clamp((cycleMinute - 30) / 30, -0.12, 1.12);
-    const moonAlongArc = THREE.MathUtils.clamp(moonDiscProgress, 0, 1);
+    // The moon runs the same continuous orbit half a cycle behind the sun: it
+    // rises as the sun sets, crosses the night sky, and sets as dawn arrives.
+    const lunarAngle = solarAngle + Math.PI;
+    const moonElevation = Math.sin(lunarAngle);
     const moonPosition = new THREE.Vector3(
-      THREE.MathUtils.lerp(-36, 20, moonAlongArc),
-      7 + Math.sin(moonDiscProgress * Math.PI) * 49,
-      THREE.MathUtils.lerp(105, -180, moonAlongArc),
+      -Math.cos(lunarAngle) * MOON_ORBIT_X,
+      CELESTIAL_HORIZON_Y + moonElevation * MOON_ORBIT_Y,
+      CELESTIAL_OCEAN_Z,
     );
     this.moonObject.position.copy(moonPosition);
-    const moonFade = THREE.MathUtils.clamp(moonPosition.y / 9, 0, 1);
-    this.moonObject.visible = moonFade > 0.002;
-    this.moonMaterial.opacity = moonFade;
-    this.moonMaterial.color.set(0xe5edff).lerp(new THREE.Color(0x91a7d7), 1 - moonElevation);
-    this.moonHaloMaterial.opacity = THREE.MathUtils.lerp(0.76, 0.42, moonElevation) * moonFade;
+    this.moonObject.visible = moonPosition.y > CELESTIAL_HORIZON_Y - MOON_RADIUS;
+    this.moonMaterial.opacity = 1;
+    const visibleMoonElevation = THREE.MathUtils.clamp(moonElevation, 0, 1);
+    this.moonMaterial.color.set(0xe5edff).lerp(new THREE.Color(0x91a7d7), 1 - visibleMoonElevation);
+    const moonAboveHorizon = THREE.MathUtils.smoothstep(moonElevation, -0.04, 0.08);
+    this.moonHaloMaterial.opacity = moonPosition.y >= CELESTIAL_HORIZON_Y
+      ? THREE.MathUtils.lerp(0.76, 0.42, visibleMoonElevation)
+      : 0;
+    this.moonLight.intensity = moonIntensity * moonAboveHorizon;
+    this.moonLight.castShadow = this.shadowsEnabled && this.moonLight.intensity > 0.12;
     this.moonLight.position.copy(moonPosition).multiplyScalar(0.5);
     this.moonLight.target.position.set(0, 0, -22);
 
@@ -327,17 +336,17 @@ export class DayNightCycle {
     const sunOverSea = THREE.MathUtils.smoothstep(-sunPosition.z, 18, 150);
     const moonOverSea = THREE.MathUtils.smoothstep(-moonPosition.z, 12, 145);
     this.waterReflectionState.sun.x = sunPosition.x;
-    this.waterReflectionState.sun.elevation = sunElevation;
+    this.waterReflectionState.sun.elevation = visibleSunElevation;
     this.waterReflectionState.sun.strength = THREE.MathUtils.clamp(
-      sunIntensity * sunOverSea * (0.2 + (1 - sunElevation) * 0.72),
+      sunIntensity * sunAboveHorizon * sunOverSea * (0.2 + (1 - visibleSunElevation) * 0.72),
       0,
       1,
     );
     this.waterReflectionState.sun.color.copy(sun).lerp(new THREE.Color(0xffe1a3), 0.28);
     this.waterReflectionState.moon.x = moonPosition.x;
-    this.waterReflectionState.moon.elevation = moonElevation;
+    this.waterReflectionState.moon.elevation = visibleMoonElevation;
     this.waterReflectionState.moon.strength = THREE.MathUtils.clamp(
-      moonIntensity * moonOverSea * (0.32 + (1 - moonElevation) * 0.68),
+      moonIntensity * moonAboveHorizon * moonOverSea * (0.32 + (1 - visibleMoonElevation) * 0.68),
       0,
       0.78,
     );

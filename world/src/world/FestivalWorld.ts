@@ -1167,6 +1167,25 @@ export class FestivalWorld {
     };
   }
 
+  /** Loopback-only ocean view for checking sunrise, sunset and moonrise. */
+  focusCelestialForReview(): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    this.player.position.set(0, this.groundHeightAt(0, -48), -48);
+    this.airborne = false;
+    this.verticalVelocity = 0;
+    this.player.rotation.y = 0;
+    this.cameraMode = 'first-person';
+    this.cameraOrbit.follow.yaw = 0;
+    this.cameraOrbit.follow.pitch = 0.04;
+  }
+
+  celestialReviewSnapshot(): unknown {
+    return {
+      dayNight: this.dayNight.getState(),
+      ...this.dayNight.getCelestialReviewState(),
+    };
+  }
+
   /** Loopback fixture inside the temple, facing the altar down the hall. */
   focusTempleForReview(atAltar = false): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;

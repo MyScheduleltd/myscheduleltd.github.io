@@ -719,6 +719,12 @@ export class App {
       window.setTimeout(() => {
         document.documentElement.dataset.timetableReview = JSON.stringify(this.world?.timetableReviewSnapshot());
       }, 500);
+    } else if (reviewTarget === 'celestial') {
+      this.world.focusCelestialForReview();
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.celestialReviewSnapshot();
+      window.setTimeout(() => {
+        document.documentElement.dataset.celestialReview = JSON.stringify(this.world?.celestialReviewSnapshot());
+      }, 500);
     } else if (reviewTarget === 'gate' || reviewTarget === 'gate-approach') {
       this.world.focusGateForReview(reviewTarget === 'gate-approach');
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.structureReviewSnapshot();
@@ -1529,6 +1535,7 @@ export class App {
       : (this.language === 'zh-TW' ? '私人放映 · 僅此裝置' : 'PRIVATE SCREENING · THIS DEVICE');
     title.textContent = this.filmTitle(film);
     screen.hidden = false;
+    this.root.querySelector<HTMLElement>('.world-shell')?.setAttribute('data-screen-mode', mode);
     screen.classList.toggle('venue-screen--seated', seated);
     screen.classList.toggle('venue-screen--maximized', this.screenMaximized);
 
@@ -1614,6 +1621,7 @@ export class App {
       screen.hidden = true;
       screen.classList.remove('venue-screen--maximized');
     }
+    this.root.querySelector<HTMLElement>('.world-shell')?.removeAttribute('data-screen-mode');
     this.screenMaximized = false;
     if (frame) frame.innerHTML = '';
     if (resetMode) this.screenMode = undefined;

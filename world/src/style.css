@@ -1007,6 +1007,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      pace, which is what the world can now take. Both sit inside the safe area,
      so neither lands under a home indicator or a rounded corner. */
   .touch-controls { display: contents; }
+  .world-shell[data-screen-mode='private'] .touch-controls { display: none; }
   .touch-stick {
     position: fixed; z-index: 6;
     left: calc(18px + env(safe-area-inset-left)); bottom: calc(22px + env(safe-area-inset-bottom));
