@@ -4007,21 +4007,21 @@ export class FestivalWorld {
     }
     this.mesh([20, 1.8, 0.5], [-68, floor + 2.4, b.roomMinZ + 0.45], material(0x1c1720, 0.7, 0.2));
 
-    // The end walls carry the same fittings as the sides, so the room is lit all
-    // the way round rather than down two flanks only.
+    // The wall behind the bar carries the same fittings as the sides. The wall
+    // opposite carries none: the screen hangs there, and lamps flanking a
+    // picture compete with it however clear of it they are.
     //
-    // The north wall is the one the screen hangs on, so nothing goes across it:
-    // the screen is about eighteen units wide about its centre, and a fitting
-    // over it would be a lamp stuck to a picture. They flank it instead. The
-    // south wall is clear all the way along — the bar's counter stands well
-    // below this height — so it takes an even run.
+    // Centred on the wall rather than merely spread across it. The first run
+    // sat five from one corner and three from the other, which is the kind of
+    // lean you do not notice until you look straight at it. Set out from the
+    // wall's own middle, so the formation is symmetrical whatever the room's
+    // width happens to be.
     const endWallY = floor + CLUB_ROOM_HEIGHT - 5;
-    const endWallLights: Array<[number, number]> = [];
-    for (const x of [-84, -79, -57, -52]) endWallLights.push([x, b.roomMaxZ - 0.95]);
-    for (const x of [-84, -76, -68, -60, -52]) endWallLights.push([x, b.roomMinZ + 0.95]);
-    for (const [index, [x, z]] of endWallLights.entries()) {
+    const barWallCentreX = (b.roomMinX + b.roomMaxX) / 2;
+    for (let index = 0; index < 5; index += 1) {
+      const x = barWallCentreX + (index - 2) * 7;
       const light = this.mesh(
-        [1.2, 1.2, 0.36], [x, endWallY, z],
+        [1.2, 1.2, 0.36], [x, endWallY, b.roomMinZ + 0.95],
         new THREE.MeshBasicMaterial({ color: clubLightColors[(index + 3) % clubLightColors.length] }),
       );
       this.clubLights.push(light);
