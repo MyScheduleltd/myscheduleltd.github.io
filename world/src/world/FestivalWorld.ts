@@ -4007,35 +4007,50 @@ export class FestivalWorld {
     }
     this.mesh([20, 1.8, 0.5], [-68, floor + 2.4, b.roomMinZ + 0.45], material(0x1c1720, 0.7, 0.2));
 
-    // Light rig over the floor. Three rows rather than one — a single line of
-    // eight left most of the ceiling dark — and every fixture hangs from a drop
-    // rod. They sat a metre and a bit below the ceiling with nothing between,
-    // which is what made them look like they were floating there.
+    // Light rig over the floor, laid across the whole ceiling rather than in a
+    // single line, and every fitting hung from a drop rod — they sat a metre
+    // below the slab with nothing between, which is what made them look like
+    // they were floating there.
+    //
+    // The ceiling is not a solid sheet: a light well is cut out of it so the
+    // balcony can look down onto the dance floor. A fitting standing in that
+    // hole has nothing above it to hang from, and its rod ends in mid-air —
+    // which is precisely the floating that was reported after the first
+    // attempt, nine of twenty-four of them. Each position is checked against
+    // the opening, and against the room's own walls, before anything is built.
     const rigY = floor + CLUB_ROOM_HEIGHT - 1.2;
     const rigCeilingY = floor + CLUB_ROOM_HEIGHT;
-    const rigRows = [-6 + CLUB_Z, 2 + CLUB_Z, 10 + CLUB_Z];
     const rodMaterial = material(0x14121a, 0.6, 0.25);
-    for (const [row, z] of rigRows.entries()) {
-      for (let index = 0; index < 8; index += 1) {
+    const fittingHalf = 0.8;
+    let rigIndex = 0;
+    for (let rowIndex = 0; rowIndex < 7; rowIndex += 1) {
+      const z = b.roomMinZ + 4 + rowIndex * 5.6;
+      for (let column = 0; column < 7; column += 1) {
         // Staggered row to row, so the ceiling reads as a rig rather than a grid.
-        const x = -84 + index * 4.8 + (row % 2 === 1 ? 2.4 : 0);
-        const colour = clubLightColors[(index + row * 2) % clubLightColors.length];
-        // The drop, from the ceiling down to the top of the fixture.
+        const x = b.roomMinX + 4 + column * 5.2 + (rowIndex % 2 === 1 ? 2.6 : 0);
+        const insideRoom = x - fittingHalf > b.roomMinX && x + fittingHalf < b.roomMaxX
+          && z - fittingHalf > b.roomMinZ && z + fittingHalf < b.roomMaxZ;
+        const clearOfWell = x + fittingHalf < wellMinX || x - fittingHalf > wellMaxX
+          || z + fittingHalf < wellMinZ || z - fittingHalf > wellMaxZ;
+        if (!insideRoom || !clearOfWell) continue;
+        const colour = clubLightColors[rigIndex % clubLightColors.length];
+        // The drop, from the ceiling down to the top of the fitting.
         this.mesh([0.14, rigCeilingY - rigY - 0.18, 0.14], [x, (rigCeilingY + rigY + 0.18) / 2, z], rodMaterial);
         const light = this.mesh(
           [1.6, 0.36, 1.6], [x, rigY, z], new THREE.MeshBasicMaterial({ color: colour }),
         );
         this.clubLights.push(light);
-        // Every other fixture in a row carries a real lamp, so the rig lights
-        // the floor instead of only glowing at itself. The middle row keeps the
-        // beams it always had; the outer rows glow, which costs nothing.
-        if (row === 1 && index % 2 === 0) {
+        // Only a few carry a real lamp: a spotlight apiece across thirty-odd
+        // fittings would cost a phone far more than the room gains. The rest
+        // glow, which is free.
+        if (rigIndex % 5 === 0) {
           const beam = new THREE.SpotLight(colour, 0, 34, Math.PI * 0.3, 0.7, 1.3);
           beam.position.set(x, rigY - 0.2, z);
           beam.target.position.set(x, floor, z);
           this.scene.add(beam, beam.target);
           this.clubBeatLights.push(beam);
         }
+        rigIndex += 1;
       }
     }
     for (let index = 0; index < 5; index += 1) {
