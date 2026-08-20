@@ -735,6 +735,31 @@ export class App {
         nativeFullscreenElement: this.fullscreenElement()?.id ?? null,
         screenHidden: this.root.querySelector<HTMLElement>('#venue-screen')?.hidden,
       });
+    } else if (reviewTarget === 'mobile-screening-controls' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      this.world.focusPublicScreeningForReview();
+      this.startPublicScreening(true);
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => {
+        const stick = this.root.querySelector<HTMLElement>('.touch-stick');
+        const hit = this.root.querySelector<HTMLElement>('.touch-ring__hit');
+        const actionKeys = [...this.root.querySelectorAll<HTMLElement>('.touch-ring__key:not(.touch-ring__key--e)')];
+        const camera = this.root.querySelector<HTMLElement>('.touch-ring__key--e');
+        const screeningBar = this.root.querySelector<HTMLElement>('#public-seat-hud');
+        const cameraBox = camera?.getBoundingClientRect();
+        const barBox = screeningBar?.getBoundingClientRect();
+        const overlaps = Boolean(cameraBox && barBox && !(
+          cameraBox.right <= barBox.left || cameraBox.left >= barBox.right ||
+          cameraBox.bottom <= barBox.top || cameraBox.top >= barBox.bottom
+        ));
+        return {
+          stickDisplay: stick ? getComputedStyle(stick).display : null,
+          hitDisplay: hit ? getComputedStyle(hit).display : null,
+          actionKeyDisplays: actionKeys.map((key) => getComputedStyle(key).display),
+          cameraDisplay: camera ? getComputedStyle(camera).display : null,
+          cameraBox: cameraBox ? { x: cameraBox.x, y: cameraBox.y, width: cameraBox.width, height: cameraBox.height } : null,
+          screeningBarBox: barBox ? { x: barBox.x, y: barBox.y, width: barBox.width, height: barBox.height } : null,
+          overlaps,
+        };
+      };
     } else if (reviewTarget === 'gate' || reviewTarget === 'gate-approach') {
       this.world.focusGateForReview(reviewTarget === 'gate-approach');
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.structureReviewSnapshot();

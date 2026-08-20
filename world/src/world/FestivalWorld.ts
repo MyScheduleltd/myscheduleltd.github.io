@@ -1585,6 +1585,21 @@ export class FestivalWorld {
     this.syncCarriedPropAnchor();
   }
 
+  /** Deterministic loopback fixture for the seated public-screening mobile UI. */
+  focusPublicScreeningForReview(): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    const seat = this.seats.find((candidate) => candidate.venue === 'shore');
+    if (!seat) return;
+    this.activeSeat = seat;
+    this.playerState = 'seated';
+    this.player.position.copy(this.seatAnchor(seat));
+    this.player.rotation.y = seat.facing ?? Math.PI;
+    this.previousCameraMode = 'follow';
+    this.cameraMode = 'screening';
+    this.screeningOrbit.yaw = 0;
+    this.screeningOrbit.pitch = 0;
+  }
+
   setCameraMode(mode: CameraMode): void {
     this.cameraMode = mode;
   }
