@@ -987,7 +987,10 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .world-status { top: 76px; left: 14px; }
   .inventory-status { left: 14px; top: 153px; }
   .world-header { padding-inline: 14px; }.status-cluster span:last-child { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-  .pass-toggle { right: 14px; bottom: 14px; }
+  .pass-toggle {
+    right: calc(14px + env(safe-area-inset-right));
+    bottom: calc(14px + env(safe-area-inset-bottom));
+  }
   .festival-pass { right: 14px; bottom: 73px; }
   .panel { inset: 70px 10px 74px; box-shadow: 8px 8px 0 rgba(0,0,0,.62); }
   .panel--chat { inset: 74px 10px 126px; box-shadow: 7px 7px 0 rgba(0,0,0,.25); }
@@ -1087,14 +1090,17 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
     display: none;
   }
   #seat-menu:not([hidden]) ~ .touch-controls { display: none; }
-  /* The screening bar owns the bottom of the phone. Put the remaining camera
-     key just below the header, where it stays clear of both the public bar and
-     a private screening's footer in portrait and landscape. */
+  /* The screening bar ends above the phone's persistent controls. Put the
+     remaining camera key opposite the pass on that bottom row: same height,
+     same safe-area baseline, one control in each corner. */
   #venue-screen:not([hidden]) ~ .touch-controls .touch-ring__key--e,
   #public-seat-hud:not([hidden]) ~ .touch-controls .touch-ring__key--e {
-    top: calc(82px + env(safe-area-inset-top));
-    right: calc(12px + env(safe-area-inset-right));
-    bottom: auto;
+    top: auto;
+    left: calc(14px + env(safe-area-inset-left));
+    right: auto;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    width: 44px;
+    height: 44px;
     z-index: 13;
   }
   /* Moved aside rather than taken away. Seated is precisely when the prompt has
@@ -1223,6 +1229,13 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .pass-toggle {
     width: 78px; height: 34px; font-size: 13px;
     bottom: calc(10px + env(safe-area-inset-bottom)); right: calc(10px + env(safe-area-inset-right));
+  }
+  #venue-screen:not([hidden]) ~ .touch-controls .touch-ring__key--e,
+  #public-seat-hud:not([hidden]) ~ .touch-controls .touch-ring__key--e {
+    left: calc(10px + env(safe-area-inset-left));
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    width: 34px;
+    height: 34px;
   }
   .festival-pass {
     bottom: calc(52px + env(safe-area-inset-bottom)); top: auto; right: calc(10px + env(safe-area-inset-right));

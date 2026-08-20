@@ -744,8 +744,10 @@ export class App {
         const actionKeys = [...this.root.querySelectorAll<HTMLElement>('.touch-ring__key:not(.touch-ring__key--e)')];
         const camera = this.root.querySelector<HTMLElement>('.touch-ring__key--e');
         const screeningBar = this.root.querySelector<HTMLElement>('#public-seat-hud');
+        const pass = this.root.querySelector<HTMLElement>('#pass-toggle');
         const cameraBox = camera?.getBoundingClientRect();
         const barBox = screeningBar?.getBoundingClientRect();
+        const passBox = pass?.getBoundingClientRect();
         const overlaps = Boolean(cameraBox && barBox && !(
           cameraBox.right <= barBox.left || cameraBox.left >= barBox.right ||
           cameraBox.bottom <= barBox.top || cameraBox.top >= barBox.bottom
@@ -757,6 +759,9 @@ export class App {
           cameraDisplay: camera ? getComputedStyle(camera).display : null,
           cameraBox: cameraBox ? { x: cameraBox.x, y: cameraBox.y, width: cameraBox.width, height: cameraBox.height } : null,
           screeningBarBox: barBox ? { x: barBox.x, y: barBox.y, width: barBox.width, height: barBox.height } : null,
+          passBox: passBox ? { x: passBox.x, y: passBox.y, width: passBox.width, height: passBox.height } : null,
+          cameraPassBottomDelta: cameraBox && passBox ? cameraBox.bottom - passBox.bottom : null,
+          cameraPassHeightDelta: cameraBox && passBox ? cameraBox.height - passBox.height : null,
           overlaps,
         };
       };
