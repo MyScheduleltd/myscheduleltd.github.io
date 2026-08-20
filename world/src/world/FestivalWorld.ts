@@ -1222,6 +1222,41 @@ export class FestivalWorld {
   }
 
   /** Loopback fixture standing in the lobby, looking at the stair opening. */
+  /**
+   * Sat on a stool at the basement bar, which is otherwise only reachable by
+   * walking there — and a browser that has suspended its frame loop cannot walk
+   * anywhere. Reasoning about this seat has been wrong three times; this is so
+   * it can be looked at instead.
+   */
+  focusClubBarForReview(): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    const stool = this.seats.find((seat) => seat.kind === 'bar');
+    if (!stool) return;
+    this.activeSeat = stool;
+    this.playerState = 'seated';
+    this.cameraMode = 'screening';
+    this.player.position.copy(this.seatAnchor(stool));
+    this.player.rotation.y = stool.facing ?? Math.PI;
+  }
+
+  /** What the prompt says and what a press on it would do, for review only. */
+  barReviewSnapshot(): unknown {
+    const stool = this.seats.find((seat) => seat.kind === 'bar');
+    return {
+      seatedOn: this.activeSeat?.id,
+      seatKind: this.activeSeat?.kind,
+      playerState: this.playerState,
+      playerXZ: [Number(this.player.position.x.toFixed(2)), Number(this.player.position.z.toFixed(2))],
+      stoolXZ: stool ? [Number(stool.position.x.toFixed(2)), Number(stool.position.z.toFixed(2))] : undefined,
+      inClubRoom: this.inClubRoom(this.player.position.x, this.player.position.z),
+      nearClubBar: this.nearClubBar(),
+      carriedItem: this.carriedItem,
+      interaction: this.interactionLabel(),
+      canInteract: this.canInteract(),
+      promptAction: this.promptAction,
+    };
+  }
+
   focusClubLobbyForReview(): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
     const b = clubBounds;
@@ -5585,8 +5620,18 @@ export class FestivalWorld {
       this.player.visible = !this.controlledNpcId;
       this.syncCarriedPropAnchor();
       if (this.playerRig) {
-        this.animateRig(this.playerRig, this.clock.elapsedTime * 1.2, 0.018);
-        this.poseRigSeated(this.playerRig);
+        // The gesture was never handed over, so a drink taken on a stool was
+        // felt — the glass left your hand, the count went up — and never seen.
+        const seatedGesture = performance.now() < this.playerGestureUntil ? this.playerGesture : undefined;
+        this.animateRig(
+          this.playerRig,
+          this.clock.elapsedTime * 1.2,
+          0.018,
+          seatedGesture,
+          false,
+          this.gestureProgress(seatedGesture, this.playerGestureUntil),
+        );
+        this.poseRigSeated(this.playerRig, seatedGesture);
       }
       return;
     }
@@ -5858,7 +5903,7 @@ export class FestivalWorld {
             this.gestureProgress(gesture, this.playerGestureUntil),
           );
           if (this.playerState === 'swimming' && moving && !gesture) this.poseRigSwimming(npc.rig, elapsed);
-          if (this.playerState === 'seated') this.poseRigSeated(npc.rig);
+          if (this.playerState === 'seated') this.poseRigSeated(npc.rig, gesture);
           if (now < this.pickupUntil) npc.rig.leftArm.rotation.x = -1.15;
         }
         if (npc.dogRig) {
@@ -5919,7 +5964,7 @@ export class FestivalWorld {
             this.gestureProgress(gesture, npc.gestureUntil),
           );
           if (remoteController.state === 'swimming' && moving && !gesture) this.poseRigSwimming(npc.rig, elapsed);
-          if (remoteController.state === 'seated') this.poseRigSeated(npc.rig);
+          if (remoteController.state === 'seated') this.poseRigSeated(npc.rig, gesture);
         }
         if (npc.dogRig) {
           this.animateMentorDog(
@@ -6125,7 +6170,7 @@ export class FestivalWorld {
         this.gestureProgress(gesture, avatar.gestureUntil),
       );
       if (avatar.state === 'swimming' && moving && !gesture) this.poseRigSwimming(avatar.rig, elapsed);
-      if (avatar.state === 'seated') this.poseRigSeated(avatar.rig);
+      if (avatar.state === 'seated') this.poseRigSeated(avatar.rig, gesture);
       avatar.carriedProp.visible = avatar.state !== 'swimming' && avatar.carriedItem === 'POPCORN';
       const distance = avatar.group.position.distanceTo(this.player.position);
       avatar.badge.visible = distance < 12;
@@ -6350,14 +6395,22 @@ export class FestivalWorld {
     rig.torso.rotation.x = bob * 0.07;
   }
 
-  private poseRigSeated(rig: AvatarRig): void {
+  /**
+   * Sitting overwrites the whole body, which is right for the legs and was
+   * quietly wrong for the arms: a drink raised at the bar was posed and then
+   * flattened back down in the same frame, so nobody sitting on a stool was
+   * ever seen to drink. The legs still fold under the seat whatever else is
+   * happening; the drinking arm is left where the gesture put it.
+   */
+  private poseRigSeated(rig: AvatarRig, gesture?: AvatarGesture): void {
     rig.leftLeg.rotation.x = -1.28;
     rig.rightLeg.rotation.x = -1.28;
     rig.leftArm.rotation.x = -0.12;
-    rig.rightArm.rotation.x = -0.12;
     rig.leftArm.rotation.z = 0;
-    rig.rightArm.rotation.z = 0;
     rig.torso.rotation.z = 0;
+    if (gesture === 'drink') return;
+    rig.rightArm.rotation.x = -0.12;
+    rig.rightArm.rotation.z = 0;
   }
 
   private poseRigSwimming(rig: AvatarRig, elapsed: number): void {

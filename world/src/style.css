@@ -784,7 +784,17 @@ button:active { filter: brightness(.88); scale: .96; }
   width: min(720px, calc(100vw - 280px)); transform: translateX(-50%); padding: 10px 12px; color: white; background: rgba(8,9,10,.88); border: 1px solid rgba(255,255,255,.5);
 }
 .public-seat-hud[hidden] { display: none; }
-.public-seat-hud:not([hidden]) ~ .interaction-toast { display: none; }
+/* The seat panel opens the moment you sit down, and this took the prompt off
+   the screen for as long as it was there — so every seated action lost the only
+   thing that offers it. At the basement bar that is ordering a drink and then
+   drinking it: the world has always answered both, and has always said so, but
+   the words were being displayed none. On a desk it went unnoticed because the
+   key works whether or not anything says so; on a phone the prompt is the
+   action, so there was simply no way to buy a drink sitting at a bar. It stands
+   aside instead — above the panel, which sits along the bottom. */
+.public-seat-hud:not([hidden]) ~ .interaction-toast {
+  bottom: auto; top: calc(74px + env(safe-area-inset-top));
+}
 .public-seat-hud span { display: block; color: #e04750; font: 800 10px var(--condensed); letter-spacing: .08em; }
 .public-seat-hud strong { display: block; max-width: 370px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 16px var(--condensed); }
 .public-seat-hud > div:last-child { display: flex; gap: 6px; }

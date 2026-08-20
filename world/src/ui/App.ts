@@ -715,6 +715,9 @@ export class App {
     } else if (reviewTarget === 'jukebox') {
       this.world.focusJukeboxForReview();
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.structureReviewSnapshot();
+    } else if (reviewTarget === 'club-bar') {
+      this.world.focusClubBarForReview();
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.barReviewSnapshot();
     } else if (reviewTarget === 'club-lobby') {
       this.world.focusClubLobbyForReview();
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.clubReviewSnapshot();
