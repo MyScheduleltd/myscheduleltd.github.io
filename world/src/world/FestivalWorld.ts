@@ -828,10 +828,12 @@ export class FestivalWorld {
   private readonly clock = new THREE.Clock();
   private readonly projectorClipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 45.68);
   private readonly projectorCornerView = new THREE.Vector3();
+  private readonly programmeBoardViewPosition = new THREE.Vector3();
+  private readonly projectorViewPosition = new THREE.Vector3();
   private playerRig?: AvatarRig;
   private originalPlayerIdleRig?: AvatarRig;
   private programmeBoardMaterial?: THREE.MeshBasicMaterial;
-  private reviewProgrammeBoardComposite?: { venue: VenueKey; width: number; height: number };
+  private reviewSuppressedProjectors: VenueKey[] = [];
   private readonly venueSignMaterials = new Map<VenueKey, THREE.MeshBasicMaterial>();
   private readonly waterTextures: THREE.CanvasTexture[] = [];
   private readonly waterReflections: WaterReflectionVisual[] = [];
@@ -1151,7 +1153,7 @@ export class FestivalWorld {
     iframeVenues: VenueKey[];
     visibleCssProjectors: VenueKey[];
     foregroundVisibility: string;
-    programmeBoardComposite?: { venue: VenueKey; width: number; height: number };
+    suppressedProjectorVenues: VenueKey[];
   } {
     return {
       player: { x: this.player.position.x, y: this.player.position.y, z: this.player.position.z },
@@ -1161,7 +1163,7 @@ export class FestivalWorld {
         .filter(([, projector]) => projector.element.style.visibility !== 'hidden')
         .map(([venue]) => venue),
       foregroundVisibility: this.foregroundCanvas.style.visibility,
-      programmeBoardComposite: this.reviewProgrammeBoardComposite,
+      suppressedProjectorVenues: this.reviewSuppressedProjectors,
     };
   }
 
@@ -2902,8 +2904,8 @@ export class FestivalWorld {
    * The projector compositor normally redraws only the rectangle occupied by
    * the CSS video. When that rectangle cuts across the timetable, the same
    * board is consequently split between the main and foreground renderers and
-   * the renderer boundary becomes visible. This tight box lets the final pass
-   * repaint the whole board instead of only the projector-shaped slice.
+   * the renderer boundary becomes visible. This tight box lets us detect that
+   * overlap and suppress the hidden projector composite altogether.
    */
   private programmeBoardScissor(): { x: number; y: number; width: number; height: number } | undefined {
     const viewportWidth = this.foregroundCanvas.clientWidth || window.innerWidth;
@@ -2942,11 +2944,15 @@ export class FestivalWorld {
     return { x: left, y: bottom, width: right - left, height: top - bottom };
   }
 
-  private programmeBoardOccludesProjector(venue: VenueKey): boolean {
-    const screen = venueScreens[venue];
-    const cameraDistance = (this.camera.position.z - screen.position[2]) * screen.facing;
-    const boardDistance = (programmeBoardPosition.z - screen.position[2]) * screen.facing;
-    return boardDistance > 0.02 && boardDistance < cameraDistance;
+  private programmeBoardIsInFrontOfProjector(venue: VenueKey): boolean {
+    this.programmeBoardViewPosition
+      .set(programmeBoardPosition.x, programmeBoardCenterY, programmeBoardPosition.z)
+      .applyMatrix4(this.camera.matrixWorldInverse);
+    this.projectorViewPosition.set(...venueScreens[venue].position).applyMatrix4(this.camera.matrixWorldInverse);
+    // Camera-space objects in front have a negative z; the value closer to
+    // zero is nearer to the camera. Unlike a world-z comparison, this remains
+    // correct when the attendee orbits the camera around the board.
+    return this.programmeBoardViewPosition.z > this.projectorViewPosition.z + 0.05;
   }
 
   private scissorsOverlap(
@@ -5530,6 +5536,9 @@ export class FestivalWorld {
     this.camera.layers.set(0);
     this.renderer.render(this.scene, this.camera);
     const visibleProjectors: VenueKey[] = [];
+    const visibleProjectorScissors = new Map<VenueKey, { x: number; y: number; width: number; height: number }>();
+    const boardScissor = this.programmeBoardScissor();
+    this.reviewSuppressedProjectors = [];
     for (const [venue, projector] of this.projectors) {
       const screen = venueScreens[venue];
       this.projectorWorldPosition.set(...screen.position);
@@ -5575,9 +5584,20 @@ export class FestivalWorld {
       // panel only repainted its scissor rectangle over nearby geometry — the
       // persistent translucent block beside the timetable — and paid for an
       // otherwise useless scene pass.
-      const visible = Boolean(projector.iframe) && roomMatches && withinRange &&
+      const wantsVisible = Boolean(projector.iframe) && roomMatches && withinRange &&
         (this.player.position.z - screen.position[2]) * screen.facing >= -0.02 &&
         screenIsInFront && screenTouchesViewport;
+      const compositorScissor = wantsVisible ? this.projectorScissor(venue) : undefined;
+      // CSS3D video always sits above the main WebGL canvas. Its transparent
+      // foreground mask is the hard rectangle the user kept seeing across the
+      // timetable. If the timetable is closer to the camera and their screen
+      // rectangles overlap, the video is genuinely hidden by the timetable;
+      // suppress both CSS video and mask until the camera moves clear. This
+      // removes the rectangle instead of trying to shade-match it.
+      const timetableBlocksProjector = Boolean(boardScissor && compositorScissor &&
+        this.programmeBoardIsInFrontOfProjector(venue) && this.scissorsOverlap(boardScissor, compositorScissor));
+      const visible = wantsVisible && Boolean(compositorScissor) && !timetableBlocksProjector;
+      if (wantsVisible && timetableBlocksProjector) this.reviewSuppressedProjectors.push(venue);
       // Coming back into view, ask it to play. A player that a phone stopped
       // while it was out of sight — or while the browser was in the background,
       // which phones do on their own — otherwise stays stopped once it is
@@ -5588,11 +5608,13 @@ export class FestivalWorld {
         }), '*');
       }
       projector.element.style.visibility = visible ? 'visible' : 'hidden';
-      if (visible) visibleProjectors.push(venue);
+      if (visible && compositorScissor) {
+        visibleProjectors.push(venue);
+        visibleProjectorScissors.set(venue, compositorScissor);
+      }
     }
     if (visibleProjectors.length) this.cssRenderer.render(this.cssScene, this.camera);
     this.foregroundCanvas.style.visibility = visibleProjectors.length ? 'visible' : 'hidden';
-    this.reviewProgrammeBoardComposite = undefined;
     if (visibleProjectors.length) {
       const sceneBackground = this.scene.background;
       this.scene.background = null;
@@ -5604,15 +5626,9 @@ export class FestivalWorld {
       const farthestFirst = visibleProjectors.sort(
         (a, b) => venueScreens[a].position[2] - venueScreens[b].position[2],
       );
-      const boardScissor = this.programmeBoardScissor();
-      let boardCompositeVenue: VenueKey | undefined;
       for (const venue of farthestFirst) {
-        const scissor = this.projectorScissor(venue);
+        const scissor = visibleProjectorScissors.get(venue);
         if (!scissor) continue;
-        if (!boardCompositeVenue && boardScissor && this.programmeBoardOccludesProjector(venue) &&
-          this.scissorsOverlap(scissor, boardScissor)) {
-          boardCompositeVenue = venue;
-        }
         // Keep the half of the scene between the screen and the viewer. Which
         // half that is depends on the side the screen is watched from.
         const facing = venueScreens[venue].facing;
@@ -5621,28 +5637,6 @@ export class FestivalWorld {
         this.foregroundRenderer.setScissor(scissor.x, scissor.y, scissor.width, scissor.height);
         this.foregroundRenderer.clear(true, true, false);
         this.foregroundRenderer.render(this.scene, this.camera);
-      }
-      if (boardCompositeVenue && boardScissor) {
-        // This is the deliberate full-size replacement for the small block the
-        // user saw: clear the sliced version and redraw every foreground object
-        // in the timetable's complete projected box. Because the scene has no
-        // background in this pass, pixels around the board remain transparent.
-        const facing = venueScreens[boardCompositeVenue].facing;
-        this.projectorClipPlane.normal.set(0, 0, facing);
-        this.projectorClipPlane.constant = -venueScreens[boardCompositeVenue].position[2] * facing;
-        this.foregroundRenderer.setScissor(
-          boardScissor.x,
-          boardScissor.y,
-          boardScissor.width,
-          boardScissor.height,
-        );
-        this.foregroundRenderer.clear(true, true, false);
-        this.foregroundRenderer.render(this.scene, this.camera);
-        this.reviewProgrammeBoardComposite = {
-          venue: boardCompositeVenue,
-          width: boardScissor.width,
-          height: boardScissor.height,
-        };
       }
       this.foregroundRenderer.setScissorTest(false);
       this.foregroundRenderer.autoClear = true;
