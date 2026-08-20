@@ -1071,7 +1071,17 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   #venue-screen:not([hidden]) ~ .touch-controls,
   #public-seat-hud:not([hidden]) ~ .touch-controls,
   #seat-menu:not([hidden]) ~ .touch-controls,
-  #venue-screen:not([hidden]) ~ .interaction-toast { display: none; }
+  /* Moved aside rather than taken away. Seated is precisely when the prompt has
+     something to say — order a drink at the bar, drink the one in your hand,
+     get up — and hiding it whenever a screening panel was open meant that on a
+     phone, where the prompt is the only way to reach an action, none of those
+     could be done at all. It stands in the corner instead, where the panel is
+     not, and it only appears when there is something to press. */
+  #venue-screen:not([hidden]) ~ .interaction-toast {
+    left: calc(12px + env(safe-area-inset-left)); right: auto; transform: none;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    max-width: min(44vw, 260px); z-index: 13;
+  }
   .venue-screen { left: 14px; right: 14px; top: 124px; width: auto; }
   /* Same specificity as the rule above and written later in the file, so
      without this the phone's inset won and a maximised screening was never
