@@ -192,6 +192,8 @@ interface NpcAvatar {
   dances?: boolean;
   /** Set for NPCs that hold a post rather than walking a route. */
   station?: { position: THREE.Vector3; rotationY: number };
+  /** A room this NPC belongs to and never tours away from. */
+  resident?: string;
   pose?: 'dj' | 'dance';
   /** Where this NPC is spending its time, and until when. */
   haunt?: string;
@@ -1186,6 +1188,44 @@ export class FestivalWorld {
    * own fixture; every other fixed place had none, which is why the pamphlet
    * being unreachable had to be reported rather than caught.
    */
+  /**
+   * The dog buried inside the popcorn booth, with its owner standing right
+   * beside it. Both halves matter: the escape used to require the owner to be
+   * more than seven units off, so a dog stuck in something you were looking at
+   * was a dog stuck for good.
+   */
+  focusMentorWedgedForReview(): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    const me = this.selfVisitorId ?? 'review-self';
+    this.selfVisitorId = me;
+    this.setSharedMentorCarrier(null, me);
+    this.setMentorFollower({ kind: 'visitor', id: me });
+    this.player.position.set(concessionPosition.x + 3.4, AVATAR_GROUND_Y, concessionPosition.z);
+    this.playerState = 'walking';
+    const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
+    if (mentor) {
+      mentor.group.position.set(concessionPosition.x, AVATAR_GROUND_Y, concessionPosition.z);
+      mentor.stuckFor = 0;
+    }
+  }
+
+  /** Whether the dog is standing inside scenery, and how far off its owner is. */
+  mentorWedgedReviewSnapshot(): unknown {
+    const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
+    if (!mentor) return { mentor: 'missing' };
+    return {
+      mentorXZ: [Number(mentor.group.position.x.toFixed(2)), Number(mentor.group.position.z.toFixed(2))],
+      insideScenery: this.staticCollides(
+        mentor.group.position.x,
+        mentor.group.position.z,
+        mentor.group.position.y,
+      ),
+      distanceToOwner: Number(mentor.group.position.distanceTo(this.player.position).toFixed(2)),
+      stuckFor: Number(mentor.stuckFor.toFixed(2)),
+      follows: this.mentorFollowsActiveAvatar(),
+    };
+  }
+
   focusMentorAtStandForReview(): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
     // The loyalty test compares the follower against this client's own id, so
@@ -1527,6 +1567,23 @@ export class FestivalWorld {
     this.cameraOrbit.follow.pitch = 0.5;
   }
 
+  /**
+   * The foot of the stair down from the lobby, looking back up the flight —
+   * the one view that shows whether the run has anything under it.
+   */
+  focusClubStairForReview(): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    const z = (clubBounds.stairMinZ + clubBounds.stairMaxZ) / 2;
+    const x = clubBounds.roomMaxX - 15;
+    this.player.position.set(x, this.groundHeightAt(x, z), z);
+    this.airborne = false;
+    this.verticalVelocity = 0;
+    this.player.rotation.y = Math.PI / 2;
+    this.cameraMode = 'follow';
+    this.cameraOrbit.follow.yaw = -Math.PI / 2;
+    this.cameraOrbit.follow.pitch = 0.12;
+  }
+
   focusClubForReview(atDj = false): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
     const x = atDj ? -68 : -66;
@@ -1578,6 +1635,30 @@ export class FestivalWorld {
   }
 
   /** Read-only loopback snapshot of the club room and its beat rig. */
+  /**
+   * Where the club's own regulars are standing. A still room is the symptom
+   * this exists to catch, and it is not one a single frame can show: it takes
+   * two readings a few seconds apart to tell dancing on the spot from walking.
+   */
+  clubRegularsReviewSnapshot(): Array<Record<string, unknown>> {
+    return this.npcs
+      .filter((npc) => npc.resident === 'clubFloor')
+      .map((npc) => ({
+        id: npc.id,
+        xz: [Number(npc.group.position.x.toFixed(2)), Number(npc.group.position.z.toFixed(2))] as [number, number],
+        stationed: npc.station !== undefined,
+        haunt: npc.haunt,
+        route: npc.route.length,
+        waypoint: npc.waypointIndex,
+        target: npc.route[npc.waypointIndex]
+          ? [Number(npc.route[npc.waypointIndex].x.toFixed(2)), Number(npc.route[npc.waypointIndex].z.toFixed(2))]
+          : undefined,
+        waitFor: Math.round(npc.waitUntil - performance.now()),
+        stuckFor: Number(npc.stuckFor.toFixed(2)),
+        blockedHere: this.npcCollides(npc, npc.group.position.x, npc.group.position.z),
+      }));
+  }
+
   clubReviewSnapshot(): {
     location: string;
     venue: VenueKey;
@@ -4247,7 +4328,17 @@ export class FestivalWorld {
     for (let step = 0; step < steps; step += 1) {
       const progress = (step + 0.5) / steps;
       const x = b.stairTopX - stairRun * progress;
-      this.mesh([stairRun / steps + 0.06, 0.4, stairWidth], [x, -progress * -floor - 0.2, (b.stairMinZ + b.stairMaxZ) / 2], darkConcrete);
+      // Each tread is masonry carried down to the room's floor, the way the
+      // rooftop flight already is. Drawn as thin slabs they left the whole run
+      // hanging over a void: the gap between one tread and the next looked
+      // clean through the flight, and under the lowest steps there was neither
+      // ground nor wall to see — just the outside.
+      const treadTop = progress * floor;
+      this.mesh(
+        [stairRun / steps + 0.06, treadTop - floor, stairWidth],
+        [x, (treadTop + floor) / 2, (b.stairMinZ + b.stairMaxZ) / 2],
+        darkConcrete,
+      );
     }
     // Shaft walls either side of the run, carried all the way up to the
     // underside of the ground floor. They used to stop a room's height short,
@@ -5213,7 +5304,7 @@ export class FestivalWorld {
     DEFAULT_NPC_PROFILES.slice(0, count).forEach((profile, index) => this.createNpcAvatar(profile, index));
     this.stationDj();
     this.stationRooftopDj();
-    this.stationClubRegulars();
+    this.clubRegularsWalkTheFloor();
   }
 
   /** DR.BEAUTY holds the rooftop booth. */
@@ -5233,25 +5324,48 @@ export class FestivalWorld {
    * A few regulars hold the dance floor so the room is never empty. They keep
    * their own beat offset, otherwise the floor moves as one block.
    */
-  private stationClubRegulars(): void {
+  /**
+   * The club's regulars. They used to be stationed — pinned to a point with the
+   * dance pose running on the spot — which left the dance floor as four bodies
+   * bobbing on the same four square metres for ever, and nobody else could make
+   * up the difference. A touring resident is only ever set down on another
+   * storey when there is no one within twenty-six units to watch it happen, and
+   * the whole dance floor lies inside that radius of anybody standing on it: so
+   * for as long as you are down there, no one new can arrive. The room was
+   * therefore permanently exactly as still as you first found it.
+   *
+   * So the regulars walk the room's own round instead, stopping to dance at its
+   * corners the way any visitor does, and the floor moves whether or not
+   * anybody else has come down.
+   */
+  private clubRegularsWalkTheFloor(): void {
     // Kept north of the bar: the counter and its stools reach to about z = 9,
-    // and a regular standing in that band reads as wedged into a seat.
+    // and a regular standing in that band reads as wedged into a seat. The
+    // round itself stays clear of it.
     const spots: Array<[string, number, number]> = [
       ['SEBINE', -78, 5 + CLUB_Z],
       ['ZC', -58, 2 + CLUB_Z],
       ['LOUI', -68, -1 + CLUB_Z],
       ['VIOLA', -54, 9 + CLUB_Z],
     ];
+    const round = NPC_HAUNTS.clubFloor;
+    const now = performance.now();
     for (const [id, x, z] of spots) {
       const npc = this.npcs.find((candidate) => candidate.id === id && !candidate.dogRig);
       if (!npc) continue;
-      const position = new THREE.Vector3(x, CLUB_AVATAR_Y, z);
-      npc.station = { position, rotationY: Math.atan2(-68 - x, 22.5 + CLUB_Z - z) };
-      npc.pose = 'dance';
-      npc.route = [position.clone()];
-      npc.waypointIndex = 0;
-      npc.group.position.copy(position);
-      npc.group.rotation.y = npc.station.rotationY;
+      npc.station = undefined;
+      npc.pose = undefined;
+      npc.resident = 'clubFloor';
+      npc.haunt = 'clubFloor';
+      npc.dances = true;
+      npc.group.position.set(x, CLUB_AVATAR_Y, z);
+      npc.group.rotation.y = Math.atan2(-68 - x, 22.5 + CLUB_Z - z);
+      npc.route = round.map(([px, pz]) => this.laneAdjusted(px, pz, npc.lane, CLUB_AVATAR_Y));
+      npc.waypointIndex = this.nearestRouteIndex(npc, npc.group.position);
+      // Staggered, so the four do not set off together on the same beat.
+      npc.dwellUntil = now + NPC_DWELL_MIN_MS + Math.random() * NPC_DWELL_SPREAD_MS;
+      npc.waitUntil = now + Math.random() * 2_400;
+      npc.stuckFor = 0;
     }
   }
 
@@ -5533,18 +5647,27 @@ export class FestivalWorld {
   private laneAdjusted(x: number, z: number, lane: THREE.Vector2, y: number): THREE.Vector3 {
     const shiftedX = x + lane.x;
     const shiftedZ = z + lane.y;
-    if (this.staticCollides(shiftedX, shiftedZ)) return new THREE.Vector3(x, y, z);
+    if (this.staticCollides(shiftedX, shiftedZ, y)) return new THREE.Vector3(x, y, z);
     return new THREE.Vector3(shiftedX, y, shiftedZ);
   }
 
   private shuffleNpcHaunt(npc: NpcAvatar, now: number): void {
     if (npc.station || !npc.dwellUntil || now < npc.dwellUntil) return;
     const current = NPC_TOUR.indexOf(npc.haunt ?? '');
-    const next = NPC_TOUR[(current + 1) % NPC_TOUR.length] ?? NPC_HAUNT_KEYS[0];
+    // A resident never leaves its room. It picks the room's own round up
+    // again, which re-rolls whether it feels like dancing this time round.
+    const next = npc.resident ?? NPC_TOUR[(current + 1) % NPC_TOUR.length] ?? NPC_HAUNT_KEYS[0];
     if (!next) return;
-    const floor = NPC_HAUNT_FLOOR[next];
+    const floor = NPC_HAUNT_FLOOR[next] ?? AVATAR_GROUND_Y;
     const arriving = NPC_HAUNTS[next];
-    if (floor !== undefined) {
+    // A move between storeys, in either direction. Asking only whether the
+    // destination was upstairs or down caught every arrival and no departure:
+    // a resident leaving the club for the square was handed a route at street
+    // level and walked into the club wall until the stuck-recovery threw it up
+    // through the ceiling. Comparing the two heights catches both ways — and
+    // leaves a resident already standing on that floor walking, rather than
+    // teleporting it one step across its own room.
+    if (Math.abs(npc.group.position.y - floor) > 1.5) {
       // Somewhere on another storey. Wait for a clear moment rather than fold
       // a body through a wall in front of somebody.
       // Spread round the loop rather than all put down on its first corner.
@@ -5572,7 +5695,7 @@ export class FestivalWorld {
     // Was the bare list of points, identical for everybody who came here, so
     // the whole festival traced one line through one set of spots. Each walks
     // their own lane through it now.
-    npc.route = arriving.map(([x, z]) => this.laneAdjusted(x, z, npc.lane, floor ?? AVATAR_GROUND_Y));
+    npc.route = arriving.map(([x, z]) => this.laneAdjusted(x, z, npc.lane, floor));
     // Whether this one is in the mood, decided fresh on each visit so the same
     // resident is not always the one dancing.
     npc.dances = NPC_DANCE_HAUNTS.has(next) && Math.random() < 0.55;
@@ -6508,7 +6631,15 @@ export class FestivalWorld {
   }
 
   private placeMentorNearFollower(mentor: NpcAvatar, target: THREE.Vector3): boolean {
-    const offsets: Array<[number, number]> = [[0, 2.4], [2.4, 0], [-2.4, 0], [0, -2.4]];
+    // Four points at arm's length are not enough to clear something as broad
+    // as the popcorn stand — every one of them can be inside it. The corners
+    // and a wider ring give the dog somewhere to land that the near ring does
+    // not reach.
+    const offsets: Array<[number, number]> = [
+      [0, 2.4], [2.4, 0], [-2.4, 0], [0, -2.4],
+      [1.8, 1.8], [-1.8, 1.8], [1.8, -1.8], [-1.8, -1.8],
+      [0, 4.2], [4.2, 0], [-4.2, 0], [0, -4.2],
+    ];
     for (const [offsetX, offsetZ] of offsets) {
       const x = target.x + offsetX;
       const z = Math.max(target.z + offsetZ, -57.3);
@@ -6534,10 +6665,20 @@ export class FestivalWorld {
     const dz = this.mentorTargetPosition.z - mentor.group.position.z;
     const distance = Math.hypot(dx, dz);
     const verticalGap = Math.abs(this.mentorTargetPosition.y - mentor.group.position.y);
-    if (distance > 32 || (verticalGap > 2.2 && distance < 18) || (mentor.stuckFor > 2.4 && distance > 7)) {
+    // Wedged inside the scenery is its own reason to move, whatever the
+    // distance. The escape used to ask for distance > 7 as well, so a dog stuck
+    // in something its owner was standing next to stayed stuck for good: close
+    // up it never qualified, and inside 2.25 the early return below cleared the
+    // stuck timer before it could ever reach the threshold.
+    const wedged = this.staticCollides(
+      mentor.group.position.x,
+      mentor.group.position.z,
+      mentor.group.position.y,
+    );
+    if (wedged || distance > 32 || (verticalGap > 2.2 && distance < 18) || mentor.stuckFor > 2.4) {
       if (this.placeMentorNearFollower(mentor, this.mentorTargetPosition)) return false;
     }
-    if (distance <= 2.25) {
+    if (distance <= 2.25 && !wedged) {
       mentor.stuckFor = 0;
       mentor.group.rotation.y = Math.atan2(dx, dz);
       return false;
