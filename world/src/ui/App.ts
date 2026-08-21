@@ -749,11 +749,21 @@ export class App {
       window.setTimeout(() => {
         document.documentElement.dataset.mentorReview = JSON.stringify(this.world?.mentorReviewSnapshot());
       }, 250);
-    } else if (reviewTarget === 'mentor-follow' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
-      this.world.focusMentorFollowerForReview();
-      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.mentorFollowerReviewSnapshot();
+    } else if ((reviewTarget === 'mentor-follow' || reviewTarget === 'mentor-follow-greeting') && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      if (reviewTarget === 'mentor-follow-greeting') {
+        this.world.focusMentorGreetingForReview();
+        // Gate/session recovery can finish on the next task and reconcile one
+        // last empty state. Restage the loopback-only fixture after that tick so
+        // it always measures the intended loyal-dog-plus-guest arrangement.
+        window.setTimeout(() => this.world?.focusMentorGreetingForReview(), 250);
+      } else this.world.focusMentorFollowerForReview();
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => reviewTarget === 'mentor-follow-greeting'
+        ? this.world?.mentorGreetingReviewSnapshot()
+        : this.world?.mentorFollowerReviewSnapshot();
       window.setInterval(() => {
-        document.documentElement.dataset.mentorFollowerReview = JSON.stringify(this.world?.mentorFollowerReviewSnapshot());
+        document.documentElement.dataset.mentorFollowerReview = JSON.stringify(reviewTarget === 'mentor-follow-greeting'
+          ? this.world?.mentorGreetingReviewSnapshot()
+          : this.world?.mentorFollowerReviewSnapshot());
       }, 250);
     } else if (reviewTarget === 'perf') {
       (window as Window & { __festivalPerf?: () => unknown }).__festivalPerf = () => this.world?.performanceSnapshot();

@@ -7,17 +7,16 @@ Last updated: 2026-08-21 (Asia/Taipei)
 > build now ships to `docs/beta` on `main` every turn. What remains useful here is the
 > older architectural description, not the process.
 
-The current unpublished `codex/fix-gate-entry-brand` worktree fixes the
-2026-08-21 cold-start gate regression and the subsequent integration reports:
-Enter opens the local world while one admission request finishes; the fallback
-wordmark uses production dimensions; fireworks use one fixed world light and
-far fewer active particles; a live objective counter appears under the top-left
-status; MENTOR feed responses immediately apply their authoritative count and
-follower; and the shared overlay explicitly distinguishes DJ menus from theater
-menus so queue updates cannot repaint a screening menu. The local browser
-fixtures `mentor-follow` and `menu-ownership` cover the latter movement/UI paths.
-See `CODEX_HANDOFF.md` for exact implementation and verification details. None
-of these working-tree changes has been published yet.
+Commit `8f478de` published the 2026-08-21 cold-start, fireworks-performance,
+objective-counter, MENTOR feed-sync and menu-ownership fixes. The current
+unpublished `codex/fix-gate-entry-brand` working tree adds the next mobile pass:
+the objective counter aligns beside the logo in landscape; the festival-pass
+menu scrolls in portrait and landscape; screening/order prompts, the camera
+control and reminder alerts no longer share the same slots; and another avatar
+can be greeted while a loyal MENTOR follows the local body. The loopback fixture
+`mentor-follow-greeting` verifies that a tap waves without feeding MENTOR. See
+`CODEX_HANDOFF.md` for exact implementation and browser measurements. Wait for
+the owner's explicit `publish` before shipping these new working-tree changes.
 
 ## Read this first
 

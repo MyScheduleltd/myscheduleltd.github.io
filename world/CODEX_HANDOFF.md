@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-08-21 · HEAD `8c480ab` + unpublished integration fixes · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-08-21 · HEAD `8f478de` + unpublished mobile interaction fixes · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` is **stale** (2026-08-15). It says the build must never be
 > published and names the branch `codex/pivot-exploration`. Both are long out of date —
@@ -47,7 +47,7 @@ Two related traps, both of which have cost hours:
 
 Deployment: **Pages** serves `docs/`. **Render** runs `world/server/index.mjs`.
 
-### Current unpublished integration fixes
+### Latest published foundation (`8f478de`)
 
 - A cold Render instance no longer holds the visitor on an apparently inert
   Enter button. If the public configuration wake-up request has not answered,
@@ -88,9 +88,29 @@ Deployment: **Pages** serves `docs/`. **Render** runs `world/server/index.mjs`.
   redraw only a visible DJ-owned menu. `?review=menu-ownership` deliberately
   opens a DJ request page and then a Shore seat; the final owner is `screening`
   and the title remains `已入座`.
-- These fixes are implemented and locally verified but **not published**. Run
-  `npm run verify` once more after any further edit, then wait for the owner's
-  explicit `publish`.
+- These fixes were published in `8f478de` and GitHub Pages served the new
+  `index-C9FAbyXK.js` bundle after its deployment completed.
+
+### Current unpublished mobile interaction fixes
+
+- On a landscape phone, the compact `任務 / OBJECTIVES` counter now shares the
+  header row with the 42px square logo. Its 25px height is vertically centred
+  beside the logo, while the connection badge keeps the right side.
+- The festival-pass menu owns a bounded `100dvh` scroller in every mobile
+  orientation. Browser drags reached the last item at both 760 × 390 landscape
+  (`356px` range) and 390 × 650 portrait (`114px` range).
+- During screenings, the camera control keeps the bottom-left corner and any
+  seated/order interaction prompt takes a smaller separate slot. Alerts use
+  the following row. At the basement-bar fixture the order/drink prompt and
+  camera did not intersect; ordering a drink placed the 34px prompt at y=52 and
+  its 42.5px reminder at y=96 with no overlap.
+- A loyal MENTOR no longer monopolizes E/tap whenever another attendee is in
+  greeting range. Both the label and the action prioritize the greeting while
+  the dog follows the locally controlled body; with nobody else nearby the
+  feed/pick-up prompt is unchanged. `?review=mentor-follow-greeting` stages the
+  collision and verified `gesture: "wave"`, `mentorEating: false` after a tap.
+- `npm run build` passes and all 41 server tests pass. These changes are locally
+  verified but **not published**; wait for an explicit `publish`.
 
 ---
 
@@ -121,7 +141,7 @@ around the stylesheet when one line of JavaScript was setting `hidden` on it.
 gate  gate-approach  temple  temple-altar  jukebox  perf
 club  club-dj  club-lobby  club-bar
 rooftop  rooftop-dj
-mentor  mentor-carry  mentor-npc-carry  mentor-follow  npc-control  npc-popcorn-seat
+mentor  mentor-carry  mentor-npc-carry  mentor-follow  mentor-follow-greeting  npc-control  npc-popcorn-seat
 quests  quests-complete  fireworks  menu-ownership
 ```
 

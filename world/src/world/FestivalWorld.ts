@@ -936,6 +936,9 @@ export class FestivalWorld {
   private controlledNpcId?: string;
   private mentorCarrierId?: string;
   private mentorFollower?: MentorFollowerTarget;
+  /** Keeps the loopback greeting fixture deterministic while a recovered dev
+      session finishes publishing its last empty follower state. */
+  private mentorGreetingReview = false;
   private selfVisitorId?: string;
   private mentorClaimPending = false;
   private mentorReleasePending = false;
@@ -1176,6 +1179,31 @@ export class FestivalWorld {
     const x = this.player.position.x + 13;
     const z = this.player.position.z - 2;
     mentor.group.position.set(x, this.groundHeightAt(x, z), z);
+  }
+
+  /** Loopback fixture with both a loyal MENTOR and a human greeting target. */
+  focusMentorGreetingForReview(): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    this.mentorGreetingReview = true;
+    this.focusMentorForReview(false);
+    this.setSharedMentorCarrier(null, 'review-self');
+    this.setMentorFollower({ kind: 'visitor', id: 'review-self' });
+    const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
+    const guest = this.npcs.find((npc) => npc.id !== 'MENTOR' && npc.pose !== 'dj');
+    if (!mentor || !guest) return;
+    mentor.group.position.set(
+      this.player.position.x - 1.8,
+      this.player.position.y,
+      this.player.position.z,
+    );
+    const guestPosition = new THREE.Vector3(
+      this.player.position.x + 1.8,
+      this.player.position.y,
+      this.player.position.z,
+    );
+    guest.station = { position: guestPosition, rotationY: -Math.PI / 2 };
+    guest.group.position.copy(guestPosition);
+    guest.group.rotation.y = guest.station.rotationY;
   }
 
   /** Deterministic loopback fixture that drops the attendee into the club. */
@@ -1669,6 +1697,26 @@ export class FestivalWorld {
     };
   }
 
+  mentorGreetingReviewSnapshot(): {
+    follower?: MentorFollowerTarget;
+    interaction?: string;
+    canInteract: boolean;
+    hasSecondaryPrompt: boolean;
+    gesture?: AvatarGesture;
+    mentorEating: boolean;
+  } | undefined {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return undefined;
+    const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
+    return {
+      follower: this.mentorFollower,
+      interaction: this.interactionLabel(),
+      canInteract: this.canInteract(),
+      hasSecondaryPrompt: this.promptSecondary,
+      gesture: performance.now() < this.playerGestureUntil ? this.playerGesture : undefined,
+      mentorEating: Boolean(mentor && performance.now() < mentor.eatUntil),
+    };
+  }
+
   /** Read-only loopback snapshot for the STAFF NPC-control handoff flow. */
   npcControlReviewSnapshot(): {
     controlledNpcId?: string;
@@ -1797,6 +1845,7 @@ export class FestivalWorld {
   }
 
   setSharedMentorCarrier(carrierId: string | null, selfVisitorId: string): void {
+    if (this.mentorGreetingReview && selfVisitorId !== 'review-self') return;
     this.mentorCarrierId = carrierId ?? undefined;
     this.selfVisitorId = selfVisitorId;
     if (carrierId === selfVisitorId) this.mentorClaimPending = false;
@@ -1822,6 +1871,7 @@ export class FestivalWorld {
   }
 
   setMentorFollower(follower: MentorFollowerTarget | null): void {
+    if (this.mentorGreetingReview && follower?.id !== 'review-self') return;
     this.mentorFollower = follower ?? undefined;
   }
 
@@ -2427,6 +2477,16 @@ export class FestivalWorld {
       return;
     }
 
+    // When MENTOR is loyal to the body being controlled he naturally stays in
+    // feeding range all the time. A nearby attendee must outrank that permanent
+    // dog prompt or the player can never greet anybody again. This is mirrored
+    // in interactionLabel(), so the words and the action stay in agreement.
+    const followerGreeting = this.mentorFollowsActiveAvatar() ? this.nearestSocialTarget() : undefined;
+    if (followerGreeting) {
+      this.greetSocialTarget(followerGreeting);
+      return;
+    }
+
     const mentor = this.nearbyMentor();
     if (mentor) {
       if (pickUpMentor) this.pickUpMentor();
@@ -2452,26 +2512,7 @@ export class FestivalWorld {
 
     const socialTarget = this.nearestSocialTarget();
     if (socialTarget) {
-      const now = performance.now();
-      const gesture: 'wave' | 'tail-wag' = this.controlledNpcId === 'MENTOR' ? 'tail-wag' : 'wave';
-      this.playerGesture = gesture;
-      this.playerGestureUntil = now + 1_400;
-      if (socialTarget.npc) {
-        socialTarget.npc.gesture = socialTarget.npc.id === 'MENTOR' ? 'tail-wag' : 'wave';
-        socialTarget.npc.gestureUntil = now + 1_600;
-      }
-      if (socialTarget.remote) {
-        socialTarget.remote.gesture = 'wave';
-        socialTarget.remote.gestureUntil = now + 1_600;
-      }
-      const targetPosition = socialTarget.npc?.group.position ?? socialTarget.remote?.group.position;
-      if (targetPosition) {
-        this.player.rotation.set(0, Math.atan2(
-          targetPosition.x - this.player.position.x,
-          targetPosition.z - this.player.position.z,
-        ), 0);
-      }
-      this.onAction({ type: 'greet', target: socialTarget.name, gesture });
+      this.greetSocialTarget(socialTarget);
       return;
     }
 
@@ -2499,6 +2540,29 @@ export class FestivalWorld {
       );
     }
     this.onAction({ type: 'treat', target: mentor.name });
+  }
+
+  private greetSocialTarget(target: { name: string; npc?: NpcAvatar; remote?: RemoteAvatar }): void {
+    const now = performance.now();
+    const gesture: 'wave' | 'tail-wag' = this.controlledNpcId === 'MENTOR' ? 'tail-wag' : 'wave';
+    this.playerGesture = gesture;
+    this.playerGestureUntil = now + 1_400;
+    if (target.npc) {
+      target.npc.gesture = target.npc.id === 'MENTOR' ? 'tail-wag' : 'wave';
+      target.npc.gestureUntil = now + 1_600;
+    }
+    if (target.remote) {
+      target.remote.gesture = 'wave';
+      target.remote.gestureUntil = now + 1_600;
+    }
+    const targetPosition = target.npc?.group.position ?? target.remote?.group.position;
+    if (targetPosition) {
+      this.player.rotation.set(0, Math.atan2(
+        targetPosition.x - this.player.position.x,
+        targetPosition.z - this.player.position.z,
+      ), 0);
+    }
+    this.onAction({ type: 'greet', target: target.name, gesture });
   }
 
   private readonly resize = (): void => {
@@ -7866,6 +7930,10 @@ export class FestivalWorld {
       if (this.carriedItem) return this.eatingLabel() ?? 'POPCORN COLLECTED';
       return 'E / TAKE POPCORN';
     }
+    const followerGreeting = this.mentorFollowsActiveAvatar() ? this.nearestSocialTarget() : undefined;
+    if (followerGreeting) return this.controlledNpcId === 'MENTOR'
+      ? `E / WAG TAIL AT ${followerGreeting.name}`
+      : `E / WAVE TO ${followerGreeting.name}`;
     if (this.nearbyMentor()) {
       this.promptSecondary = true;
       return this.carriedItem === 'POPCORN'
@@ -7948,6 +8016,15 @@ export class FestivalWorld {
       if (distance < 3.3 && (!nearest || distance < nearest.distance)) nearest = { name: remote.name, remote, distance };
     }
     return nearest;
+  }
+
+  /** Whether MENTOR's current loyalty target is the body this browser moves. */
+  private mentorFollowsActiveAvatar(): boolean {
+    if (!this.mentorFollower) return false;
+    if (this.controlledNpcId) {
+      return this.mentorFollower.kind === 'npc' && this.mentorFollower.id === this.controlledNpcId;
+    }
+    return this.mentorFollower.kind === 'visitor' && this.mentorFollower.id === this.selfVisitorId;
   }
 
   /**

@@ -1026,7 +1026,18 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
     right: calc(14px + env(safe-area-inset-right));
     bottom: calc(14px + env(safe-area-inset-bottom));
   }
-  .festival-pass { right: 14px; bottom: 73px; }
+  /* The pass is taller than a phone once every destination and the unlocked
+     fireworks action are present. Give the menu the visible viewport rather
+     than letting its last buttons run behind Safari's toolbar, and let a drag
+     inside it belong to the menu instead of the world. */
+  .festival-pass {
+    right: calc(14px + env(safe-area-inset-right));
+    bottom: calc(73px + env(safe-area-inset-bottom));
+    max-height: calc(100vh - 94px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 94px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    touch-action: pan-y;
+  }
   .panel { inset: 70px 10px 74px; box-shadow: 8px 8px 0 rgba(0,0,0,.62); }
   .panel--chat { inset: 74px 10px 126px; box-shadow: 7px 7px 0 rgba(0,0,0,.25); }
   .panel--character { inset: 76px 10px auto auto; width: min(320px, calc(100vw - 20px)); }
@@ -1147,8 +1158,18 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      not, and it only appears when there is something to press. */
   #venue-screen:not([hidden]) ~ .interaction-toast {
     left: calc(12px + env(safe-area-inset-left)); right: auto; transform: none;
-    bottom: calc(12px + env(safe-area-inset-bottom));
-    max-width: min(44vw, 260px); z-index: 13;
+    bottom: calc(68px + env(safe-area-inset-bottom));
+    width: auto; min-height: 36px; height: auto;
+    max-width: min(52vw, 220px); padding: 7px 10px; z-index: 13;
+    font-size: 11px; white-space: normal;
+  }
+  /* A public-screening prompt belongs below the header, not on the camera key
+     in the lower-left corner. It stays compact so neither the online badge nor
+     the film controls lose their room. */
+  #public-seat-hud:not([hidden]) ~ .interaction-toast {
+    top: calc(72px + env(safe-area-inset-top)); bottom: auto;
+    max-width: min(52vw, 220px); min-height: 36px; height: auto;
+    padding: 7px 10px; font-size: 11px; white-space: normal;
   }
   .venue-screen { left: 14px; right: 14px; top: 124px; width: auto; }
   /* Same specificity as the rule above and written later in the file, so
@@ -1168,7 +1189,10 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .public-seat-hud strong { max-width: 330px; }.public-seat-hud > div:last-child { width: 100%; overflow-x: auto; }
   .seat-menu { box-shadow: 8px 8px 0 rgba(0,0,0,.68); }
   .seat-menu__actions, .seat-film-grid { grid-template-columns: 1fr; }
-  .world-alert { top: 72px; max-width: calc(100vw - 28px); text-align: center; }
+  /* Alerts used to occupy the same top band as seated/order prompts. The
+     prompt is the action; the alert is the reminder, so it takes the next row
+     instead of hiding the button beneath it. */
+  .world-alert { top: calc(120px + env(safe-area-inset-top)); max-width: calc(100vw - 28px); text-align: center; }
   .staff-toolbar, .staff-programme__top, .staff-special, .staff-style, .staff-video, .staff-gate-background, .pamphlet-editor, .staff-form, .dj-about__edit { grid-template-columns: 1fr; }.staff-list article { align-items: flex-start; flex-direction: column; }.staff-login div { grid-template-columns: 1fr; }.pamphlet-editor__wide, .pamphlet-editor button { grid-column: 1; }
   .staff-npc-form { grid-template-columns: auto minmax(0, 1fr); }.staff-npc-form label, .staff-npc-form button { grid-column: 2; }
   .staff-npc-add { grid-template-columns: 1fr; }.staff-npc-add h4 { grid-column: 1; }
@@ -1272,6 +1296,26 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
     bottom: calc(10px + env(safe-area-inset-bottom));
     width: 34px;
     height: 34px;
+  }
+  /* The live objective count shares the header row with the square logo. The
+     logo is 42px tall and begins at 4px, so this centres the 25px button beside
+     it and leaves the right-hand connection badge untouched. */
+  .objective-count {
+    left: calc(62px + env(safe-area-inset-left));
+    top: calc(12px + env(safe-area-inset-top));
+  }
+  #venue-screen:not([hidden]) ~ .interaction-toast {
+    left: calc(10px + env(safe-area-inset-left));
+    bottom: calc(52px + env(safe-area-inset-bottom));
+    max-width: min(34vw, 200px); min-height: 34px;
+  }
+  #public-seat-hud:not([hidden]) ~ .interaction-toast {
+    top: calc(52px + env(safe-area-inset-top));
+    max-width: min(34vw, 200px); min-height: 34px;
+  }
+  .world-alert {
+    top: calc(96px + env(safe-area-inset-top));
+    max-width: min(52vw, 360px);
   }
   .festival-pass {
     bottom: calc(52px + env(safe-area-inset-bottom)); top: auto; right: calc(10px + env(safe-area-inset-right));
@@ -1406,5 +1450,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   }
   .venue-screen footer strong { white-space: normal; font-size: 14px; }
   .venue-screen__actions { flex-wrap: wrap; width: 100%; }
-  .world-alert { top: 54px; }
+  /* Keep the compact landscape override in the second row too; otherwise this
+     late rule puts reminders straight back underneath the seated prompt. */
+  .world-alert { top: calc(96px + env(safe-area-inset-top)); }
 }
