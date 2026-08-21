@@ -8,6 +8,19 @@ Last updated: 2026-08-21 · mobile DJ prompt + landscape task counter · branch 
 
 ---
 
+## 0. Where to work
+
+`/Users/myscheduleai/Desktop/myschedule-pivot/gate-entry-fix`, on branch
+`codex/fix-gate-entry-brand`. The owner confirmed this on 2026-08-21.
+
+It is a **git worktree** of the same repository as
+`/Users/myscheduleai/Desktop/myscheduleltd.github.io`, which holds `main`. Two
+checkouts, one repo — so work done in the wrong one is invisible in the other
+until somebody notices. Publishing pushes this branch to `main`
+(`git push origin HEAD:main`, a fast-forward), and the `main` worktree should be
+brought level afterwards with `git fetch && git merge --ff-only origin/main` so
+the two never drift.
+
 ## 1. The one rule that matters
 
 **Do not publish until the owner explicitly says `publish`.** Finish and verify the
