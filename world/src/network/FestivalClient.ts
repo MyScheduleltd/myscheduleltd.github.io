@@ -269,6 +269,11 @@ interface Session {
   token: string;
 }
 
+type PlaceResult =
+  | { admitted: true }
+  | { admitted: false; waiting: WaitingPlace }
+  | { admitted: false; error: string };
+
 interface SessionIdentity {
   name: string;
   palette: AvatarPalette;
@@ -296,6 +301,12 @@ export class FestivalClient {
   private suspended = false;
   private recovering = false;
   private identity?: SessionIdentity;
+  /**
+   * The gate may stop waiting for a cold hosted service and draw the world
+   * first. Keep that one admission request shareable so connect() waits for it
+   * instead of creating a second attendee for the same browser.
+   */
+  private placeRequest?: Promise<PlaceResult>;
 
   constructor({ onState, onStatus }: ClientOptions) {
     this.onState = onState;
@@ -311,9 +322,17 @@ export class FestivalClient {
    * world is full, so the gate can hold somebody rather than admitting them
    * into a room that has no room. Passing the previous ticket keeps their spot.
    */
-  async requestPlace(name: string, palette: AvatarPalette, adminKey = ''): Promise<
-    { admitted: true } | { admitted: false; waiting: WaitingPlace } | { admitted: false; error: string }
-  > {
+  requestPlace(name: string, palette: AvatarPalette, adminKey = ''): Promise<PlaceResult> {
+    if (this.placeRequest) return this.placeRequest;
+    const request = this.performPlaceRequest(name, palette, adminKey);
+    this.placeRequest = request;
+    void request.finally(() => {
+      if (this.placeRequest === request) this.placeRequest = undefined;
+    });
+    return request;
+  }
+
+  private async performPlaceRequest(name: string, palette: AvatarPalette, adminKey: string): Promise<PlaceResult> {
     try {
       const headers = new Headers({ 'content-type': 'application/json' });
       if (adminKey) headers.set('x-festival-admin-key', adminKey);
@@ -361,6 +380,16 @@ export class FestivalClient {
     if (this.session) {
       this.identity = { name, palette };
       return;
+    }
+    // If the gate opened locally while a cold service was waking, share that
+    // admission attempt. Starting a second POST here would create a duplicate
+    // attendee as soon as both requests eventually reached the service.
+    if (this.placeRequest) {
+      await this.placeRequest;
+      if (this.session) {
+        this.identity = { name, palette };
+        return;
+      }
     }
     this.closed = false;
     this.suspended = false;
@@ -517,7 +546,17 @@ export class FestivalClient {
   }
 
   async feedMentor(): Promise<{ ok: boolean; message?: string }> {
-    return this.action('/api/mentor/feed');
+    try {
+      const response = await this.request('/api/mentor/feed', { method: 'POST' });
+      const payload = await response.json() as { state?: FestivalState };
+      // Apply the feed count and loyalty target immediately. The service also
+      // broadcasts them to every attendee, but that stream is deliberately
+      // batched and may be reconnecting just as somebody feeds MENTOR.
+      if (payload.state) this.onState(payload.state);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Action failed.' };
+    }
   }
 
   async updateNpcProfile(key: string, npcId: NpcId, name: string, title: string): Promise<void> {

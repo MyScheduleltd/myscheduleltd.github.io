@@ -468,7 +468,11 @@ test('MENTOR follows the highest active feeder, pauses for STAFF control, and ra
   assert.equal(initial.mentorFeedCounts.visitors[first.id], 0);
   assert.equal(initial.mentorFeedCounts.npcs.MENTOR, undefined);
 
-  assert.equal((await feed(first)).status, 200);
+  const firstFeedResponse = await feed(first);
+  assert.equal(firstFeedResponse.status, 200);
+  const firstFeedPayload = await firstFeedResponse.json();
+  assert.equal(firstFeedPayload.state.mentorFeedCounts.visitors[first.id], 1);
+  assert.deepEqual(firstFeedPayload.state.mentorFollower, { kind: 'visitor', id: first.id });
   assert.deepEqual((await state()).mentorFollower, { kind: 'visitor', id: first.id });
 
   assert.equal((await feed(second)).status, 200);

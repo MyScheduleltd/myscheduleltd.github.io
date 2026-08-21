@@ -251,7 +251,6 @@ interface WaterReflectionVisual {
 interface FireworkRocket {
   mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
   trail: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
-  light: THREE.PointLight;
   velocity: number;
   targetY: number;
   colour: THREE.Color;
@@ -260,11 +259,12 @@ interface FireworkRocket {
 interface FireworkBurst {
   points: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
   velocities: Float32Array;
-  light: THREE.PointLight;
   reflection: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  origin: THREE.Vector3;
   age: number;
   lifetime: number;
   peakIntensity: number;
+  currentIntensity: number;
 }
 
 interface Collider {
@@ -865,6 +865,14 @@ export class FestivalWorld {
   private readonly waterReflections: WaterReflectionVisual[] = [];
   private readonly fireworkRockets: FireworkRocket[] = [];
   private readonly fireworkBursts: FireworkBurst[] = [];
+  /**
+   * One light exists for the lifetime of the world and follows the brightest
+   * firework. Adding and removing PointLights changes Three's shader defines,
+   * which made the first burst compile a succession of new scene programs and
+   * freeze the festival. A fixed light keeps the real illumination without
+   * changing the renderer's light count while the celebration is running.
+   */
+  private readonly fireworkWorldLight = new THREE.PointLight(0xffffff, 0, 82, 1.45);
   private fireworksUntil = 0;
   private nextFireworkAt = 0;
   private stylizedWater?: THREE.Mesh;
@@ -1012,6 +1020,8 @@ export class FestivalWorld {
     this.dayNight.moonLight.layers.enable(1);
     this.dayNight.sunObject.layers.enable(1);
     this.dayNight.moonObject.layers.enable(1);
+    this.fireworkWorldLight.castShadow = false;
+    this.scene.add(this.fireworkWorldLight);
     this.createEnvironment();
     this.createPlayer(palette);
     this.createNpcCrowd();
@@ -1115,15 +1125,17 @@ export class FestivalWorld {
     this.nextFireworkAt = 0;
     while (this.fireworkRockets.length) this.removeFireworkRocket(this.fireworkRockets.pop()!);
     while (this.fireworkBursts.length) this.removeFireworkBurst(this.fireworkBursts.pop()!);
+    this.fireworkWorldLight.intensity = 0;
   }
 
   /** Local QA summary: exposes counts, never the scene or mutable effect. */
-  fireworksReviewSnapshot(): { active: boolean; rockets: number; bursts: number; lights: number; reflections: number } {
+  fireworksReviewSnapshot(): { active: boolean; rockets: number; bursts: number; particles: number; lights: number; reflections: number } {
     return {
       active: this.fireworksUntil > performance.now(),
       rockets: this.fireworkRockets.length,
       bursts: this.fireworkBursts.length,
-      lights: this.fireworkRockets.length + this.fireworkBursts.length,
+      particles: this.fireworkBursts.reduce((total, burst) => total + burst.velocities.length / 3, 0),
+      lights: this.fireworkWorldLight.intensity > 0.01 ? 1 : 0,
       reflections: this.fireworkBursts.length,
     };
   }
@@ -1151,6 +1163,19 @@ export class FestivalWorld {
     this.cameraOrbit.follow.yaw = 0;
     this.cameraOrbit.follow.pitch = 0.4;
     if (carrying) this.pickUpMentor();
+  }
+
+  /** Loopback fixture for the autonomous loyalty walk toward this attendee. */
+  focusMentorFollowerForReview(): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    this.focusMentorForReview(false);
+    this.setSharedMentorCarrier(null, 'review-self');
+    this.setMentorFollower({ kind: 'visitor', id: 'review-self' });
+    const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
+    if (!mentor) return;
+    const x = this.player.position.x + 13;
+    const z = this.player.position.z - 2;
+    mentor.group.position.set(x, this.groundHeightAt(x, z), z);
   }
 
   /** Deterministic loopback fixture that drops the attendee into the club. */
@@ -1629,6 +1654,18 @@ export class FestivalWorld {
       hairBounds: { min: hairBounds.min.toArray(), max: hairBounds.max.toArray() },
       clearance: dogBounds.min.y - hairBounds.max.y,
       primitiveKinds: [...primitiveKinds],
+    };
+  }
+
+  mentorFollowerReviewSnapshot(): { follower?: MentorFollowerTarget; distance?: number } | undefined {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return undefined;
+    const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
+    const target = this.mentorFollowerObject();
+    if (!mentor || !target) return { follower: this.mentorFollower };
+    target.getWorldPosition(this.mentorTargetPosition);
+    return {
+      follower: this.mentorFollower,
+      distance: Number(mentor.group.position.distanceTo(this.mentorTargetPosition).toFixed(2)),
     };
   }
 
@@ -5909,13 +5946,13 @@ export class FestivalWorld {
 
   private updateFireworks(delta: number, now: number): void {
     const running = now < this.fireworksUntil;
-    const rocketCap = this.graphicsMode === 'normal' ? 3 : 2;
-    const burstCap = this.graphicsMode === 'normal' ? 8 : 4;
+    const rocketCap = this.graphicsMode === 'normal' ? 2 : 1;
+    const burstCap = this.graphicsMode === 'normal' ? 4 : 2;
     if (running && now >= this.nextFireworkAt && this.fireworkRockets.length < rocketCap && this.fireworkBursts.length < burstCap) {
       this.spawnFireworkRocket();
       const finale = this.fireworksUntil - now < 20_000;
-      const minimum = finale ? (this.graphicsMode === 'normal' ? 260 : 620) : (this.graphicsMode === 'normal' ? 720 : 1_100);
-      const spread = finale ? (this.graphicsMode === 'normal' ? 300 : 360) : (this.graphicsMode === 'normal' ? 520 : 540);
+      const minimum = finale ? (this.graphicsMode === 'normal' ? 520 : 900) : (this.graphicsMode === 'normal' ? 950 : 1_450);
+      const spread = finale ? (this.graphicsMode === 'normal' ? 380 : 520) : (this.graphicsMode === 'normal' ? 550 : 650);
       this.nextFireworkAt = now + minimum + Math.random() * spread;
     }
 
@@ -5923,8 +5960,6 @@ export class FestivalWorld {
       const rocket = this.fireworkRockets[index];
       rocket.mesh.position.y += rocket.velocity * delta;
       rocket.velocity -= 1.15 * delta;
-      rocket.light.position.copy(rocket.mesh.position);
-      rocket.light.intensity = 34 + Math.random() * 18;
       const positions = rocket.trail.geometry.getAttribute('position') as THREE.BufferAttribute;
       for (let trailIndex = 0; trailIndex < positions.count; trailIndex += 1) {
         positions.setXYZ(
@@ -5945,21 +5980,20 @@ export class FestivalWorld {
       burst.age += delta;
       const fade = Math.max(0, 1 - burst.age / burst.lifetime);
       const positions = burst.points.geometry.getAttribute('position') as THREE.BufferAttribute;
-      for (let particleIndex = 0; particleIndex < positions.count; particleIndex += 1) {
-        const offset = particleIndex * 3;
-        burst.velocities[offset] *= Math.pow(0.988, delta * 60);
-        burst.velocities[offset + 1] = burst.velocities[offset + 1] * Math.pow(0.991, delta * 60) - 3.1 * delta;
-        burst.velocities[offset + 2] *= Math.pow(0.988, delta * 60);
-        positions.setXYZ(
-          particleIndex,
-          positions.getX(particleIndex) + burst.velocities[offset] * delta,
-          positions.getY(particleIndex) + burst.velocities[offset + 1] * delta,
-          positions.getZ(particleIndex) + burst.velocities[offset + 2] * delta,
-        );
+      const positionArray = positions.array as Float32Array;
+      const horizontalDrag = Math.pow(0.988, delta * 60);
+      const verticalDrag = Math.pow(0.991, delta * 60);
+      for (let offset = 0; offset < positionArray.length; offset += 3) {
+        burst.velocities[offset] *= horizontalDrag;
+        burst.velocities[offset + 1] = burst.velocities[offset + 1] * verticalDrag - 3.1 * delta;
+        burst.velocities[offset + 2] *= horizontalDrag;
+        positionArray[offset] += burst.velocities[offset] * delta;
+        positionArray[offset + 1] += burst.velocities[offset + 1] * delta;
+        positionArray[offset + 2] += burst.velocities[offset + 2] * delta;
       }
       positions.needsUpdate = true;
       burst.points.material.opacity = Math.pow(fade, 1.35);
-      burst.light.intensity = burst.peakIntensity * Math.pow(fade, 2.2) * (0.82 + Math.random() * 0.18);
+      burst.currentIntensity = burst.peakIntensity * Math.pow(fade, 2.2) * (0.82 + Math.random() * 0.18);
       burst.reflection.material.opacity = 0.52 * Math.pow(fade, 1.7);
       burst.reflection.scale.x = 10 + burst.age * 4;
       burst.reflection.scale.y = 30 + burst.age * 8;
@@ -5967,6 +6001,28 @@ export class FestivalWorld {
       this.removeFireworkBurst(burst);
       this.fireworkBursts.splice(index, 1);
     }
+    this.updateFireworkWorldLight();
+  }
+
+  private updateFireworkWorldLight(): void {
+    let brightest: FireworkBurst | undefined;
+    for (const burst of this.fireworkBursts) {
+      if (!brightest || burst.currentIntensity > brightest.currentIntensity) brightest = burst;
+    }
+    if (brightest) {
+      this.fireworkWorldLight.position.copy(brightest.origin);
+      this.fireworkWorldLight.color.copy(brightest.points.material.color);
+      this.fireworkWorldLight.intensity = brightest.currentIntensity;
+      return;
+    }
+    const rocket = this.fireworkRockets[0];
+    if (rocket) {
+      this.fireworkWorldLight.position.copy(rocket.mesh.position);
+      this.fireworkWorldLight.color.copy(rocket.colour);
+      this.fireworkWorldLight.intensity = 34;
+      return;
+    }
+    this.fireworkWorldLight.intensity = 0;
   }
 
   private spawnFireworkRocket(): void {
@@ -5992,14 +6048,10 @@ export class FestivalWorld {
       toneMapped: false,
     }));
     trail.userData.projectorBackground = true;
-    const light = new THREE.PointLight(colour, 42, 42, 1.65);
-    light.position.copy(mesh.position);
-    light.castShadow = false;
-    this.scene.add(mesh, trail, light);
+    this.scene.add(mesh, trail);
     this.fireworkRockets.push({
       mesh,
       trail,
-      light,
       velocity: THREE.MathUtils.randFloat(16.5, 21.5),
       targetY: THREE.MathUtils.randFloat(13, 24),
       colour,
@@ -6009,7 +6061,7 @@ export class FestivalWorld {
   private explodeFirework(rocket: FireworkRocket): void {
     const origin = rocket.mesh.position.clone();
     this.removeFireworkRocket(rocket);
-    const count = this.graphicsMode === 'normal' ? 76 : 40;
+    const count = this.graphicsMode === 'normal' ? 40 : 24;
     const pattern = Math.floor(Math.random() * 4);
     const positions = new Float32Array(count * 3);
     const velocities = new Float32Array(count * 3);
@@ -6057,10 +6109,7 @@ export class FestivalWorld {
     }));
     points.userData.projectorBackground = true;
     points.frustumCulled = false;
-    const peakIntensity = this.graphicsMode === 'normal' ? 190 : 125;
-    const light = new THREE.PointLight(rocket.colour, peakIntensity, this.graphicsMode === 'normal' ? 92 : 70, 1.45);
-    light.position.copy(origin);
-    light.castShadow = false;
+    const peakIntensity = this.graphicsMode === 'normal' ? 165 : 110;
 
     const reflectionMaterial = new THREE.MeshBasicMaterial({
       color: rocket.colour,
@@ -6077,20 +6126,21 @@ export class FestivalWorld {
     reflection.scale.set(10, 30, 1);
     reflection.renderOrder = 5;
     reflection.userData.projectorBackground = true;
-    this.scene.add(points, light, reflection);
+    this.scene.add(points, reflection);
     this.fireworkBursts.push({
       points,
       velocities,
-      light,
       reflection,
+      origin,
       age: 0,
       lifetime: THREE.MathUtils.randFloat(2.4, 3.8),
       peakIntensity,
+      currentIntensity: peakIntensity,
     });
   }
 
   private removeFireworkRocket(rocket: FireworkRocket): void {
-    this.scene.remove(rocket.mesh, rocket.trail, rocket.light);
+    this.scene.remove(rocket.mesh, rocket.trail);
     rocket.mesh.geometry.dispose();
     rocket.mesh.material.dispose();
     rocket.trail.geometry.dispose();
@@ -6098,7 +6148,7 @@ export class FestivalWorld {
   }
 
   private removeFireworkBurst(burst: FireworkBurst): void {
-    this.scene.remove(burst.points, burst.light, burst.reflection);
+    this.scene.remove(burst.points, burst.reflection);
     burst.points.geometry.dispose();
     burst.points.material.dispose();
     burst.reflection.geometry.dispose();

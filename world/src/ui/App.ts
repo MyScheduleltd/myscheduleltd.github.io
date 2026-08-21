@@ -285,6 +285,8 @@ export class App {
   private chatStreamSignature = '';
   private npcTimer?: number;
   private readonly festivalClient: FestivalClient;
+  /** Public config is the lightweight wake-up request sent while the gate is drawn. */
+  private festivalServiceReady = false;
   private connectionStatus: ConnectionStatus = 'offline';
   private networkState?: FestivalState;
   private staffKey = sessionStorage.getItem(STAFF_KEY) ?? '';
@@ -296,11 +298,11 @@ export class App {
   );
   private programmeTimer?: number;
   private siteStyle: SiteStyle = {
-    brandFontSize: 21,
-    brandScaleY: 1,
-    brandScaleX: 1,
+    brandFontSize: 41,
+    brandScaleY: 1.35,
+    brandScaleX: 0.65,
     brandOffsetX: 0,
-    brandOffsetY: 0,
+    brandOffsetY: 4,
     updatedAt: 0,
   };
   private gateBackground: GateBackground = { ...defaultGateBackground };
@@ -339,6 +341,7 @@ export class App {
   mount(): void {
     this.renderGate();
     void this.festivalClient.publicConfig().then((config) => {
+      this.festivalServiceReady = true;
       this.siteStyle = { ...this.siteStyle, ...config.siteStyle };
       this.gateBackground = { ...this.gateBackground, ...config.gateBackground };
       this.npcProfiles = this.normalizeNpcProfiles(config.npcProfiles, config.npcNames);
@@ -532,8 +535,28 @@ export class App {
       if (notice) notice.hidden = true;
     };
 
+    // A click must acknowledge itself immediately. Previously the button
+    // looked inert for the whole cold-start delay, which made a working entry
+    // path indistinguishable from a broken one.
+    buttons?.forEach((button) => { button.disabled = true; });
+    if (notice) {
+      notice.hidden = false;
+      notice.textContent = zh ? '正在開啟影展…' : 'OPENING THE FESTIVAL…';
+    }
+
     const ask = async (): Promise<void> => {
-      const place = await this.festivalClient.requestPlace(this.currentId, this.palette, this.staffKey);
+      const placeRequest = this.festivalClient.requestPlace(this.currentId, this.palette, this.staffKey);
+      if (!this.festivalServiceReady) {
+        // The config request is also the service wake-up call. If it has not
+        // answered yet, do not hold the visitor behind hosting infrastructure:
+        // draw the local world now and let the single admission request attach
+        // multiplayer in the background. A ready service still gets to enforce
+        // its capacity and queue below.
+        stopWaiting();
+        this.enterWorldAfterGateFeedback(muted);
+        return;
+      }
+      const place = await placeRequest;
       if ('waiting' in place && place.waiting) {
         buttons?.forEach((button) => { button.disabled = true; });
         if (notice) {
@@ -552,10 +575,20 @@ export class App {
         if (notice) { notice.hidden = false; notice.textContent = place.error; }
         return;
       }
-      this.enterWorld(muted);
+      this.enterWorldAfterGateFeedback(muted);
     };
 
     await ask();
+  }
+
+  /**
+   * Give the disabled button and opening message one browser task to paint
+   * before Three.js builds the scene. Scene construction is intentionally
+   * synchronous, so entering it in the submit task made the click look dead
+   * even after the network wait was removed.
+   */
+  private enterWorldAfterGateFeedback(muted: boolean): void {
+    window.setTimeout(() => this.enterWorld(muted), 50);
   }
 
   private enterWorld(muted: boolean): void {
@@ -615,6 +648,9 @@ export class App {
           <p id="phase-label">${zh ? '同步影展光線' : 'SYNCING FESTIVAL LIGHT'}</p>
         </section>
         <div class="inventory-status" id="inventory-status" aria-live="polite"></div>
+        <button class="objective-count" type="button" data-panel="quests" aria-label="${zh ? '開啟任務進度' : 'Open objective progress'}">
+          <span>${zh ? '任務' : 'OBJECTIVES'}</span><strong data-objective-count>0/${QUEST_TOTAL}</strong>
+        </button>
         <button class="pass-toggle" id="pass-toggle" type="button" aria-expanded="false" aria-controls="festival-pass">
           <span>${zh ? '通行證' : 'PASS'}</span><span>+</span>
         </button>
@@ -713,6 +749,12 @@ export class App {
       window.setTimeout(() => {
         document.documentElement.dataset.mentorReview = JSON.stringify(this.world?.mentorReviewSnapshot());
       }, 250);
+    } else if (reviewTarget === 'mentor-follow' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      this.world.focusMentorFollowerForReview();
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.mentorFollowerReviewSnapshot();
+      window.setInterval(() => {
+        document.documentElement.dataset.mentorFollowerReview = JSON.stringify(this.world?.mentorFollowerReviewSnapshot());
+      }, 250);
     } else if (reviewTarget === 'perf') {
       (window as Window & { __festivalPerf?: () => unknown }).__festivalPerf = () => this.world?.performanceSnapshot();
     } else if (reviewTarget === 'rooftop' || reviewTarget === 'rooftop-dj') {
@@ -797,6 +839,17 @@ export class App {
           cameraPassBottomDelta: cameraBox && passBox ? cameraBox.bottom - passBox.bottom : null,
           cameraPassHeightDelta: cameraBox && passBox ? cameraBox.height - passBox.height : null,
           overlaps,
+        };
+      };
+    } else if (reviewTarget === 'menu-ownership' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      this.openDjRequest(this.npcName('XIEHGAN'), 'club');
+      this.openSeatMenu('SHORE-REVIEW', 'shore');
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => {
+        const menu = this.root.querySelector<HTMLElement>('#seat-menu');
+        return {
+          owner: menu?.dataset.menuOwner ?? null,
+          title: menu?.querySelector<HTMLElement>('#seat-menu-title')?.textContent ?? null,
+          djStateCleared: !this.openDjBooth,
         };
       };
     } else if (reviewTarget === 'gate' || reviewTarget === 'gate-approach') {
@@ -1859,6 +1912,8 @@ export class App {
   private openSeatMenu(seatId: string, venue: VenueKey = this.activeVenue): void {
     const menu = this.root.querySelector<HTMLElement>('#seat-menu');
     if (!menu) return;
+    this.openDjBooth = undefined;
+    menu.dataset.menuOwner = 'screening';
     this.activeVenue = venue;
     this.activeSeatId = seatId;
     const resumable = this.privateProgress
@@ -1898,6 +1953,7 @@ export class App {
     const menu = this.root.querySelector<HTMLElement>('#seat-menu');
     if (!menu) return;
     this.openDjBooth = { name: djName, venue, view: 'requests' };
+    menu.dataset.menuOwner = 'dj';
     const zh = this.language === 'zh-TW';
     const nowPlaying = this.publicFilm(venue);
     const queue = this.networkState?.venueQueues?.[venue] ?? [];
@@ -2054,6 +2110,7 @@ export class App {
     const profile = djProfileFor(venue, this.networkState?.djProfiles, djName);
     if (!profile) return;
     this.openDjBooth = { name: djName, venue, view: 'about' };
+    menu.dataset.menuOwner = 'dj';
     const canEdit = Boolean(this.staffKey) && this.festivalClient.online;
     const paragraphs = (text: string) => text
       .split(/\n+/)
@@ -2117,6 +2174,8 @@ export class App {
   private openFilmPicker(venue: VenueKey = this.activeVenue): void {
     const menu = this.root.querySelector<HTMLElement>('#seat-menu');
     if (!menu) return;
+    this.openDjBooth = undefined;
+    menu.dataset.menuOwner = 'screening';
     this.activeVenue = venue;
     menu.hidden = false;
     menu.innerHTML = `
@@ -2140,7 +2199,11 @@ export class App {
 
   private hideSeatMenu(): void {
     const menu = this.root.querySelector<HTMLElement>('#seat-menu');
-    if (menu) menu.hidden = true;
+    this.openDjBooth = undefined;
+    if (menu) {
+      menu.hidden = true;
+      delete menu.dataset.menuOwner;
+    }
   }
 
   private privateScreenOpen(): boolean {
@@ -2280,7 +2343,8 @@ export class App {
     this.refreshOpenChatFeed();
     const previousRequestAt = this.networkState?.clubRequest?.at ?? 0;
     this.syncClubBeat();
-    if (this.openDjBooth && !this.root.querySelector<HTMLElement>('#seat-menu')?.hidden) {
+    const openSeatMenu = this.root.querySelector<HTMLElement>('#seat-menu');
+    if (this.openDjBooth && openSeatMenu && !openSeatMenu.hidden && openSeatMenu.dataset.menuOwner === 'dj') {
       // Re-render from the state that has just arrived, so the queue the
       // service holds is what the attendee sees. This used to redraw the
       // requests page whichever page was actually open, so every update — and
@@ -2771,6 +2835,8 @@ export class App {
   private refreshQuestUi(): void {
     const count = this.root.querySelector<HTMLElement>('[data-quest-count]');
     if (count) count.textContent = `${this.completedQuests.size}/${QUEST_TOTAL}`;
+    const viewportCount = this.root.querySelector<HTMLElement>('[data-objective-count]');
+    if (viewportCount) viewportCount.textContent = `${this.completedQuests.size}/${QUEST_TOTAL}`;
     const replay = this.root.querySelector<HTMLButtonElement>('[data-replay-fireworks]');
     if (replay) replay.hidden = !this.questCelebrated;
     if (this.activePanel !== 'quests') return;

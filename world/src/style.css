@@ -10,11 +10,14 @@
   --ink: #111113;
   --line: rgba(245, 239, 226, 0.28);
   --condensed: 'Barlow Condensed', Impact, sans-serif;
-  --brand-font-size: 21px;
-  --brand-scale-y: 1;
-  --brand-scale-x: 1;
+  /* Match the established production lockup before the remote STAFF settings
+     arrive. The hosted service can need a moment to wake, and the old generic
+     fallback made the masthead visibly shrink during that interval. */
+  --brand-font-size: 41px;
+  --brand-scale-y: 1.35;
+  --brand-scale-x: .65;
   --brand-offset-x: 0px;
-  --brand-offset-y: 0px;
+  --brand-offset-y: 4px;
 }
 
 * { box-sizing: border-box; }
@@ -542,6 +545,13 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 #phase-label { margin-top: 4px; font: 700 11px var(--condensed); letter-spacing: .12em; }
 .inventory-status { position: fixed; z-index: 3; left: 16px; top: 132px; display: flex; flex-wrap: wrap; gap: 4px; max-width: 310px; pointer-events: none; }
 .inventory-status span { border: 1px solid rgba(255,255,255,.44); padding: 4px 7px; color: white; background: rgba(8,9,10,.48); font: 700 9px var(--condensed); letter-spacing: .07em; }
+.objective-count {
+  position: fixed; z-index: 3; left: 16px; top: 164px; display: inline-flex; align-items: center; gap: 7px;
+  min-height: 25px; padding: 4px 8px; border: 1px solid rgba(255,255,255,.44); color: white;
+  background: rgba(8,9,10,.58); font: 800 9px var(--condensed); letter-spacing: .09em; cursor: pointer;
+}
+.objective-count strong { color: #ff5264; font: inherit; }
+.objective-count:hover, .objective-count:focus-visible { border-color: #ff5264; background: rgba(8,9,10,.82); }
 .pass-toggle {
   position: fixed; z-index: 8; right: 16px; bottom: 16px; width: 92px; height: 44px; display: flex; justify-content: space-between; align-items: center;
   padding: 0 15px; border: 1px solid var(--paper); color: var(--paper); background: rgba(8,9,10,.85); font: 800 15px var(--condensed); cursor: pointer;
@@ -1010,6 +1020,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .palette-picker { grid-template-columns: repeat(2, 1fr); }
   .world-status { top: 76px; left: 14px; }
   .inventory-status { left: 14px; top: 153px; }
+  .objective-count { left: 14px; top: 185px; }
   .world-header { padding-inline: 14px; }.status-cluster span:last-child { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
   .pass-toggle {
     right: calc(14px + env(safe-area-inset-right));
@@ -1083,6 +1094,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      and the way in. The interaction prompt stays: it is the only thing that
      tells you a button will do something here. */
   .world-status, .inventory-status, .chat-stream, .controls-hint { display: none; }
+  .objective-count { top: 78px; }
   .world-header { padding: 6px 12px; }
   .world-brand > span:not(.phase-badge) { display: none; }
   /* Clear of the jump button, and never wider than the gap between the pads. */

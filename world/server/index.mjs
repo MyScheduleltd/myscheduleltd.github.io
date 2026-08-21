@@ -178,11 +178,11 @@ const programmeSchedule = Object.fromEntries(
   }),
 );
 const siteStyle = {
-  brandFontSize: 21,
-  brandScaleY: 1,
-  brandScaleX: 1,
+  brandFontSize: 41,
+  brandScaleY: 1.35,
+  brandScaleX: 0.65,
   brandOffsetX: 0,
-  brandOffsetY: 0,
+  brandOffsetY: 4,
   updatedAt: 0,
 };
 const gateBackground = {
@@ -1427,6 +1427,12 @@ const server = createServer(async (request, response) => {
         count,
         mentorFollower: mentorFollower(),
         mentorFeedCounts: mentorFeedCounts(),
+        // Return the caller's complete authoritative view as well as queuing
+        // the room broadcast. The feed counter and loyalty target should move
+        // in the same interaction frame; depending only on the SSE round trip
+        // left the attendee list stale and MENTOR wandering until a later
+        // presence update happened to arrive.
+        state: stateFor(visitor),
       });
     }
 

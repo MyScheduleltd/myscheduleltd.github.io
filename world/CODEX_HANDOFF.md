@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-08-21 · HEAD `0245d19` + unpublished working tree · branch `main`
+Last updated: 2026-08-21 · HEAD `8c480ab` + unpublished integration fixes · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` is **stale** (2026-08-15). It says the build must never be
 > published and names the branch `codex/pivot-exploration`. Both are long out of date —
@@ -47,6 +47,51 @@ Two related traps, both of which have cost hours:
 
 Deployment: **Pages** serves `docs/`. **Render** runs `world/server/index.mjs`.
 
+### Current unpublished integration fixes
+
+- A cold Render instance no longer holds the visitor on an apparently inert
+  Enter button. If the public configuration wake-up request has not answered,
+  the local world opens immediately and its single pending admission request
+  attaches multiplayer in the background. `FestivalClient.connect()` shares
+  that promise, so it cannot create a duplicate attendee.
+- The gate reports `正在開啟影展… / OPENING THE FESTIVAL…` and disables both
+  submit buttons as soon as one is clicked. Scene construction is deferred by
+  one short browser task so this acknowledgement can paint first.
+- The built-in wordmark fallback now matches the established production STAFF
+  values (`41px`, scale `0.65 × 1.35`, vertical offset `4px`), preventing the
+  top-left lockup from shrinking while Render wakes.
+- Verified with both `/api/config` and `/api/session` delayed by 15 seconds:
+  the fallback wordmark was already correct, the world opened before the
+  service response, and the same attendee later changed from CONNECTING to
+  LIVE without a duplicate request. `npm run verify` passes 41/41 tests and the
+  TypeScript/Vite production build.
+- Fireworks no longer add and remove a PointLight per rocket and burst. One
+  non-shadow-casting light is created with the world and follows the brightest
+  burst, so real world illumination remains while Three.js keeps a fixed light
+  count and does not recompile scene shaders as the show begins. Normal mode is
+  capped at 2 rockets, 4 bursts and 40 particles per burst (160 total); Lite is
+  capped at 1, 2 and 24. Burst integration now writes directly to its typed
+  position array. Browser snapshot during the opening showed 1 rocket, 3 bursts,
+  120 particles, 1 active light and 3 sea reflections.
+- A compact live `任務 / OBJECTIVES` counter sits below the top-left status chips,
+  opens the checklist, and is refreshed from the same `completedQuests` set as
+  the pass. Desktop browser measurement: 64 × 25 px at `(16, 164)`; it updated
+  from 0/25 to 2/25 during the fireworks fixture.
+- `POST /api/mentor/feed` returns the caller's complete authoritative state.
+  `FestivalClient.feedMentor()` applies it immediately, so the attendee feed
+  badge and `mentorFollower` do not wait for the batched SSE broadcast. The
+  service still broadcasts for everybody else. The server test asserts the
+  immediate count and follower; the `mentor-follow` browser fixture closed an
+  obstructed 11.88-unit separation to the natural 2.10-unit follow distance.
+- The shared overlay now carries `data-menu-owner="dj"` or `"screening"`.
+  Opening or hiding any theater menu clears stale DJ state, and queue broadcasts
+  redraw only a visible DJ-owned menu. `?review=menu-ownership` deliberately
+  opens a DJ request page and then a Shore seat; the final owner is `screening`
+  and the title remains `已入座`.
+- These fixes are implemented and locally verified but **not published**. Run
+  `npm run verify` once more after any further edit, then wait for the owner's
+  explicit `publish`.
+
 ---
 
 ## 3. Verification: read this before you trust a measurement
@@ -76,8 +121,8 @@ around the stylesheet when one line of JavaScript was setting `hidden` on it.
 gate  gate-approach  temple  temple-altar  jukebox  perf
 club  club-dj  club-lobby  club-bar
 rooftop  rooftop-dj
-mentor  mentor-carry  mentor-npc-carry  npc-control  npc-popcorn-seat
-quests  quests-complete  fireworks
+mentor  mentor-carry  mentor-npc-carry  mentor-follow  npc-control  npc-popcorn-seat
+quests  quests-complete  fireworks  menu-ownership
 ```
 
 `club-bar` seats an avatar on a bar stool and `__festivalReview()` reports the

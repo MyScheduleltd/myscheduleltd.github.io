@@ -1,11 +1,23 @@
 # Claude handoff — myschedule Virtual Festival
 
-Last updated: 2026-08-15 (Asia/Taipei)
+Last updated: 2026-08-21 (Asia/Taipei)
 
 > **Superseded.** Read `CODEX_HANDOFF.md` first. The instructions below not to publish,
 > and the reference to the `codex/pivot-exploration` branch, are both out of date: the
 > build now ships to `docs/beta` on `main` every turn. What remains useful here is the
 > older architectural description, not the process.
+
+The current unpublished `codex/fix-gate-entry-brand` worktree fixes the
+2026-08-21 cold-start gate regression and the subsequent integration reports:
+Enter opens the local world while one admission request finishes; the fallback
+wordmark uses production dimensions; fireworks use one fixed world light and
+far fewer active particles; a live objective counter appears under the top-left
+status; MENTOR feed responses immediately apply their authoritative count and
+follower; and the shared overlay explicitly distinguishes DJ menus from theater
+menus so queue updates cannot repaint a screening menu. The local browser
+fixtures `mentor-follow` and `menu-ownership` cover the latter movement/UI paths.
+See `CODEX_HANDOFF.md` for exact implementation and verification details. None
+of these working-tree changes has been published yet.
 
 ## Read this first
 
