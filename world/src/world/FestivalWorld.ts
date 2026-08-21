@@ -1181,6 +1181,45 @@ export class FestivalWorld {
     mentor.group.position.set(x, this.groundHeightAt(x, z), z);
   }
 
+  /**
+   * A loyal MENTOR standing at the pamphlet stand. The greeting case had its
+   * own fixture; every other fixed place had none, which is why the pamphlet
+   * being unreachable had to be reported rather than caught.
+   */
+  focusMentorAtStandForReview(): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    // The loyalty test compares the follower against this client's own id, so
+    // the fixture has to agree with it rather than invent a name.
+    const me = this.selfVisitorId ?? 'review-self';
+    this.selfVisitorId = me;
+    this.setSharedMentorCarrier(null, me);
+    this.setMentorFollower({ kind: 'visitor', id: me });
+    const stand = pamphletPosition;
+    this.player.position.set(stand.x + 1.2, AVATAR_GROUND_Y, stand.z + 1.2);
+    this.playerState = 'walking';
+    const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
+    if (mentor) {
+      mentor.group.position.set(
+        this.player.position.x - 1.4,
+        this.player.position.y,
+        this.player.position.z,
+      );
+    }
+  }
+
+  /** What the prompt offers while a loyal dog stands beside a fixed place. */
+  mentorAtStandReviewSnapshot(): unknown {
+    return {
+      mentorNearby: this.nearbyMentor() !== undefined,
+      mentorFollowsMe: this.mentorFollowsActiveAvatar(),
+      atAFixedPlace: this.atAFixedPlace(),
+      mentorGivesWay: this.mentorGivesWay(),
+      interaction: this.interactionLabel(),
+      promptAction: this.promptAction,
+      hasPamphlet: this.hasPamphlet,
+    };
+  }
+
   /** Loopback fixture with both a loyal MENTOR and a human greeting target. */
   focusMentorGreetingForReview(): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
@@ -2488,7 +2527,9 @@ export class FestivalWorld {
     }
 
     const mentor = this.nearbyMentor();
-    if (mentor) {
+    // SHIFT+E still means the dog wherever you are standing — asking for him
+    // explicitly should always reach him. Plain E gives way to the counter.
+    if (mentor && (pickUpMentor || !this.mentorGivesWay())) {
       if (pickUpMentor) this.pickUpMentor();
       else this.feedMentor(mentor);
       return;
@@ -7934,7 +7975,7 @@ export class FestivalWorld {
     if (followerGreeting) return this.controlledNpcId === 'MENTOR'
       ? `E / WAG TAIL AT ${followerGreeting.name}`
       : `E / WAVE TO ${followerGreeting.name}`;
-    if (this.nearbyMentor()) {
+    if (this.nearbyMentor() && !this.mentorGivesWay()) {
       this.promptSecondary = true;
       return this.carriedItem === 'POPCORN'
         ? 'E / GIVE MENTOR A TREAT · SHIFT+E / PICK UP (POPCORN WILL BE LOST)'
@@ -8069,6 +8110,28 @@ export class FestivalWorld {
       }
     }
     return nearest;
+  }
+
+  /**
+   * Whether the attendee is standing at one of the festival's fixed places — a
+   * counter, a booth, a stand, the board. A MENTOR who follows you is in
+   * feeding range every second of the day, so without this he stands in front
+   * of every one of them and the prompt never changes. The greeting had the
+   * same fault and was fixed on its own; this is the rest of the list, so the
+   * next one does not have to be reported separately.
+   */
+  private atAFixedPlace(): boolean {
+    return this.nearClubBar()
+      || this.nearJukebox()
+      || this.nearShopCounter()
+      || this.nearbyDj() !== undefined
+      || this.player.position.distanceTo(pamphletPosition) < 2.35
+      || this.player.position.distanceTo(programmeBoardPosition) < 7.2;
+  }
+
+  /** A following MENTOR gives way to whatever you have walked up to. */
+  private mentorGivesWay(): boolean {
+    return this.mentorFollowsActiveAvatar() && this.atAFixedPlace();
   }
 
   private nearbyMentor(): NpcAvatar | undefined {

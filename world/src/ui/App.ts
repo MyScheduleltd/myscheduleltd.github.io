@@ -749,6 +749,18 @@ export class App {
       window.setTimeout(() => {
         document.documentElement.dataset.mentorReview = JSON.stringify(this.world?.mentorReviewSnapshot());
       }, 250);
+    } else if (reviewTarget === 'mentor-at-stand' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      this.world.focusMentorAtStandForReview();
+      // Session recovery reconciles one last state after the gate closes and
+      // clears the staged follower, so the fixture is laid again behind it —
+      // and left callable, because how long that takes is not ours to know.
+      for (const delay of [0, 400, 1200]) {
+        window.setTimeout(() => this.world?.focusMentorAtStandForReview(), delay);
+      }
+      (window as Window & { __festivalRestage?: () => void }).__festivalRestage =
+        () => this.world?.focusMentorAtStandForReview();
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview =
+        () => this.world?.mentorAtStandReviewSnapshot();
     } else if ((reviewTarget === 'mentor-follow' || reviewTarget === 'mentor-follow-greeting') && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       if (reviewTarget === 'mentor-follow-greeting') {
         this.world.focusMentorGreetingForReview();
