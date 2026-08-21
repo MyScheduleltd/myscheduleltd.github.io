@@ -1864,7 +1864,16 @@ export class App {
     if (maximized) {
       this.applyScreenMaximized(true);
       if (!App.usesMobileScreeningLayout()) return;
-      this.screenNativeFullscreen = await this.requestScreenFullscreen(screen);
+      // The picture goes fullscreen, not the panel around it. Handing the whole
+      // panel to the browser filled the display with the panel's own layout —
+      // title, buttons and all — so the film kept its little box inside it and
+      // the button read as making the window slightly bigger. Fullscreening the
+      // frame gives the screen over to the player alone.
+      //
+      // screenOwnsFullscreen() already accepts any descendant of the panel, so
+      // the state sync and the exit path need no change for this.
+      const frame = this.root.querySelector<HTMLElement>('#screen-frame');
+      this.screenNativeFullscreen = await this.requestScreenFullscreen(frame ?? screen);
       return;
     }
 
