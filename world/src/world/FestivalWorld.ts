@@ -192,6 +192,8 @@ interface NpcAvatar {
   dances?: boolean;
   /** Set for NPCs that hold a post rather than walking a route. */
   station?: { position: THREE.Vector3; rotationY: number };
+  /** How far right of its direction of travel it walks, in world units. */
+  laneOffset: number;
   /** This resident's own circuit of venues, walked round and round for ever. */
   tour: string[];
   tourIndex: number;
@@ -1357,8 +1359,8 @@ export class FestivalWorld {
    * changed is one that took a stair.
    */
   residentsReviewSnapshot(): unknown {
+    // The dog is on the round too, so it belongs in the readout.
     return this.npcs
-      .filter((npc) => !npc.dogRig)
       .map((npc) => ({
         id: npc.id,
         xyz: [
@@ -1377,6 +1379,45 @@ export class FestivalWorld {
         ),
         tour: npc.tour.join('>'),
       }));
+  }
+
+  /**
+   * How close the crowd is actually getting. A pair inside the radius they
+   * collide at is a pair that is pushing, and a resident whose stuck timer is
+   * climbing is one that is not getting past whatever is in front of it.
+   */
+  crowdingReviewSnapshot(): unknown {
+    const walking = this.npcs.filter((npc) => !npc.station);
+    let closest = Number.POSITIVE_INFINITY;
+    let closestPair = '';
+    let touching = 0;
+    for (let i = 0; i < walking.length; i += 1) {
+      for (let j = i + 1; j < walking.length; j += 1) {
+        const gap = Math.hypot(
+          walking[i].group.position.x - walking[j].group.position.x,
+          walking[i].group.position.z - walking[j].group.position.z,
+        );
+        // Only counts as pushing if they are on the same storey.
+        if (Math.abs(walking[i].group.position.y - walking[j].group.position.y) > 2) continue;
+        if (gap < closest) {
+          closest = gap;
+          closestPair = `${walking[i].id}/${walking[j].id}`;
+        }
+        if (gap < 1.4) touching += 1;
+      }
+    }
+    return {
+      residents: walking.length,
+      closestGap: Number(closest.toFixed(2)),
+      closestPair,
+      pairsTouching: touching,
+      stuck: walking
+        .filter((npc) => npc.stuckFor > 1)
+        .map((npc) => `${npc.id}:${npc.stuckFor.toFixed(1)}s`),
+      insideScenery: walking
+        .filter((npc) => this.staticCollides(npc.group.position.x, npc.group.position.z, npc.group.position.y))
+        .map((npc) => npc.id),
+    };
   }
 
   navReviewSnapshot(): unknown {
@@ -5664,18 +5705,6 @@ export class FestivalWorld {
   }
 
   private createNpcAvatar(profile: NpcProfile, index: number): NpcAvatar {
-    const routes: Array<Array<[number, number]>> = [
-      [[-9, 15], [9, 15], [9, 6], [-9, 6]],
-      [[9, 11], [-9, 11], [-9, 2], [9, 2]],
-      [[-10, 0], [10, 0], [10, -9], [-10, -9]],
-      [[-8, -17], [8, -17], [8, -27], [-8, -27]],
-      [[-10, -30], [10, -30], [10, -40], [-10, -40]],
-      [[-17, -12], [-28, -14], [-35, -18], [-35, -26], [-27, -17]],
-      [[17, -12], [22, -12], [22, -32], [18, -21]],
-      [[-43, -25], [-35, -27], [-27, -22], [-35, -17]],
-      [[0, -20], [-8, -30], [0, -39], [8, -30]],
-      [[-4, 19], [4, 19], [8, 11], [-8, 11]],
-    ];
     const npc = new THREE.Group();
     const hue = (index * 0.13 + 0.02) % 1;
     const shirtColor = `#${new THREE.Color().setHSL(hue, 0.48, 0.34).getHexString()}`;
@@ -5706,7 +5735,15 @@ export class FestivalWorld {
     badge.scale.set(1.55, 0.39, 1);
     badge.visible = false;
     npc.add(badge);
-    const routeTemplate = routes[index % routes.length];
+    // Residents open on the venue they are spending their first dwell at, and
+    // on that venue's own loop. They used to start on a separate list of hand
+    // written rounds that nothing ever checked — and the first of them ran
+    // along z = 15 from x = -9 to 9, which is straight through the popcorn
+    // stand. MENTOR walked that one. Every loop here is walked by ?review=nav
+    // and known to be clear.
+    const startHaunt = NPC_TOUR[index % NPC_TOUR.length];
+    const startFloor = NPC_HAUNT_FLOOR[startHaunt] ?? AVATAR_GROUND_Y;
+    const routeTemplate = NPC_HAUNTS[startHaunt];
     // A lane of this resident's own, kept for as long as they exist, and
     // applied to every route they are ever handed. Ten places are shared
     // between twelve residents, and the routes themselves are shared lists of
@@ -5720,13 +5757,20 @@ export class FestivalWorld {
       Math.cos(index * 2.399) * NPC_LANE_RADIUS,
       Math.sin(index * 2.399) * NPC_LANE_RADIUS,
     );
-    const route = routeTemplate.map(([x, z]) => this.laneAdjusted(x, z, lane, AVATAR_GROUND_Y));
-    npc.position.copy(route[0]);
+    const route = routeTemplate.map(([x, z]) => this.laneAdjusted(x, z, lane, startFloor));
+    // Spread round the loop rather than all stood on its first corner.
+    npc.position.copy(route[index % route.length]);
     this.scene.add(npc);
     const avatar: NpcAvatar = {
       id: profile.id,
       name: profile.name,
       lane,
+      // How far to the right of its own line of travel this one walks. Applied
+      // across the direction of travel rather than in a fixed compass
+      // direction: the lane above is a fixed vector, so on a link that happens
+      // to run along it the offset slid a resident up and down the link
+      // instead of across it, and two of them ended up on the same line.
+      laneOffset: 0.5 + (index % 6) * 0.34,
       group: npc,
       badge,
       rig,
@@ -5928,6 +5972,24 @@ export class FestivalWorld {
    * put somebody inside the scenery it is given up for that point rather than
    * walking them into a building.
    */
+  /**
+   * A node, moved across the line of travel by as much of the given width as
+   * will fit. Corridors are not all the same width — the stair down to the club
+   * is eight across and the one up to the deck is under four — so a width that
+   * is fine on the road puts a body in the handrail on the stair. Rather than
+   * give the offset up entirely and put everybody back on one line, it is tried
+   * at decreasing fractions and the widest clear one is taken.
+   */
+  private laneShifted(x: number, z: number, perpX: number, perpZ: number, width: number): THREE.Vector3 {
+    for (const fraction of [1, 0.62, 0.34]) {
+      const shiftedX = x + perpX * width * fraction;
+      const shiftedZ = z + perpZ * width * fraction;
+      const y = this.groundHeightAt(shiftedX, shiftedZ);
+      if (!this.staticCollides(shiftedX, shiftedZ, y)) return new THREE.Vector3(shiftedX, y, shiftedZ);
+    }
+    return new THREE.Vector3(x, this.groundHeightAt(x, z), z);
+  }
+
   private laneAdjusted(x: number, z: number, lane: THREE.Vector2, y: number): THREE.Vector3 {
     const shiftedX = x + lane.x;
     const shiftedZ = z + lane.y;
@@ -5961,11 +6023,20 @@ export class FestivalWorld {
     const floor = NPC_HAUNT_FLOOR[next] ?? AVATAR_GROUND_Y;
     const from = npc.atNode ?? HAUNT_NODE[npc.haunt ?? ''] ?? destination;
     const path = navPath(from, destination);
+    // Each leg is walked to the right of its own centre line, by this
+    // resident's own width. Two residents meeting head-on therefore pass on
+    // opposite sides without having to agree on anything, and two going the
+    // same way are spread across the link rather than queued along it.
+    let fromX = npc.group.position.x;
+    let fromZ = npc.group.position.z;
     npc.transit = path.map((node) => {
       const [x, z] = NAV_POINTS[node];
-      // Each resident takes the link in its own lane, so two of them on the
-      // same stretch of road walk side by side instead of down one line.
-      return this.laneAdjusted(x, z, npc.lane, this.groundHeightAt(x, z, npc.group.position.y));
+      const runX = x - fromX;
+      const runZ = z - fromZ;
+      const run = Math.hypot(runX, runZ) || 1;
+      fromX = x;
+      fromZ = z;
+      return this.laneShifted(x, z, runZ / run, -runX / run, npc.laneOffset);
     });
     npc.atNode = destination;
     npc.haunt = next;
@@ -7258,9 +7329,30 @@ export class FestivalWorld {
           npc.group.rotation.y = Math.atan2(direction.x, direction.z);
           npc.stuckFor = 0;
         } else if (!this.staticCollides(next.x, next.z, npc.group.position.y)) {
-          // Let another attendee clear the path before resuming the route.
-          npc.waitUntil = now + 320 + ((npc.phase * 100) % 260);
-          npc.stuckFor += delta;
+          // Somebody in the way rather than something. Standing still was the
+          // whole trouble: two residents meeting head-on each waited for the
+          // other, both timed out together, and both set off into each other
+          // again — a jam that never cleared. Each steps round to its right
+          // instead, which for two of them meeting is opposite ways, so they
+          // pass. The step still keeps some of the forward run, so it reads as
+          // going round somebody rather than sidling sideways.
+          const dodgeX = npc.group.position.x + (direction.x * 0.45 + direction.z) * step;
+          const dodgeZ = npc.group.position.z + (direction.z * 0.45 - direction.x) * step;
+          if (
+            !this.npcCollides(npc, dodgeX, dodgeZ)
+            && !this.staticCollides(dodgeX, dodgeZ, npc.group.position.y)
+          ) {
+            npc.group.rotation.y = Math.atan2(dodgeX - npc.group.position.x, dodgeZ - npc.group.position.z);
+            npc.group.position.x = dodgeX;
+            npc.group.position.z = dodgeZ;
+            npc.stuckFor = 0;
+          } else {
+            // Boxed in on that side too. Wait, but for an interval of this
+            // resident's own, so a group held up at one spot does not try again
+            // all together on the same tick and box each other in afresh.
+            npc.waitUntil = now + 320 + ((npc.phase * 100) % 260);
+            npc.stuckFor += delta;
+          }
         } else if (!travelling) {
           npc.waypointIndex = (npc.waypointIndex + 1) % npc.route.length;
           npc.stuckFor += delta;

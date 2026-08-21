@@ -912,6 +912,8 @@ export class App {
         () => this.world?.navReviewSnapshot();
       (window as Window & { __festivalResidents?: () => unknown }).__festivalResidents =
         () => this.world?.residentsReviewSnapshot();
+      (window as Window & { __festivalCrowding?: () => unknown }).__festivalCrowding =
+        () => this.world?.crowdingReviewSnapshot();
     } else if (reviewTarget === 'mentor-wedged' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       this.world.focusMentorWedgedForReview();
       (window as Window & { __festivalRestage?: () => void }).__festivalRestage =
