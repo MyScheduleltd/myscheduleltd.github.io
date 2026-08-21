@@ -817,39 +817,6 @@ button:active { filter: brightness(.88); scale: .96; }
   display: flex; flex-direction: column; background: #000;
 }
 .venue-screen--maximized .venue-screen__frame { flex: 1; min-height: 0; aspect-ratio: auto; }
-/* Made fullscreen on a phone, the picture is framed rather than stretched. It
-   keeps sixteen-by-nine and is drawn as large as that shape fits: the full
-   width upright, the full height on its side. Nothing is cropped, nothing is
-   distorted, and the framing is the same whichever way the phone is held.
-   
-   The panel behind it is a plain dark ground, so what is left over reads as
-   a surround rather than as a picture that has been cut off.
-   
-   Worth knowing before changing this: iPhone Safari has no Fullscreen API for
-   anything but a video element, so asking the browser for real fullscreen there
-   does nothing at all and this layout is what is always shown. */
-@media (pointer: coarse) and (hover: none) {
-  .venue-screen--maximized {
-    /* Full bleed, so the framed picture has the whole screen to be centred in.
-       The panel otherwise keeps the insets it uses when it is a window, and a
-       picture sized to the display then hangs off the bottom of it. */
-    inset: 0; width: 100vw; height: 100dvh; max-height: none; border: 0;
-    display: flex; align-items: center; justify-content: center;
-    background: #08090a;
-  }
-  /* The panel's own title and buttons stand down while it is showing the
-     picture full size. Left in the column they take height from it, which
-     pushed the picture sixty-six pixels off the top of the screen — the
-     cut-off look, arriving from the one place nobody looks for it. The way out
-     is the round close button, which floats above and needs no room. */
-  .venue-screen--maximized footer { display: none; }
-  .venue-screen--maximized .venue-screen__frame {
-    flex: 0 0 auto;
-    width: min(100vw, calc(100dvh * 16 / 9));
-    height: min(calc(100vw * 9 / 16), 100dvh);
-    aspect-ratio: 16 / 9;
-  }
-}
 .venue-screen:fullscreen { inset: 0; width: 100vw; height: 100vh; border: 0; box-shadow: none; }
 .venue-screen:fullscreen .venue-screen__frame { flex: 1; min-height: 0; }
 .venue-screen:-webkit-full-screen { inset: 0; width: 100vw; height: 100vh; border: 0; box-shadow: none; }
@@ -1520,4 +1487,49 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   /* Keep the compact landscape override in the second row too; otherwise this
      late rule puts reminders straight back underneath the seated prompt. */
   .world-alert { top: calc(96px + env(safe-area-inset-top)); }
+}
+
+
+/* ---------------------------------------------------------------------------
+   A screening made fullscreen on a phone.
+
+   Written last on purpose. Everything about this box was being set again by
+   later mobile rules — the panel's own left inset and, worse, a height of
+   100vh. On a phone 100vh is the *large* viewport, the one that ignores the
+   browser's toolbars, so the panel stood taller than the screen and a picture
+   centred inside it sat low and ran off the bottom. 100vw has the same habit
+   across the other axis, which is the strip of world that showed down one side.
+
+   So no viewport units are used here at all. The panel is pinned to its own
+   four edges, and the picture is sized from the panel rather than the window:
+   sixteen-by-nine, never wider or taller than the box that holds it, centred in
+   what is left. That fits whatever the phone actually gives us, upright or on
+   its side, without needing to know what it gave us.
+   --------------------------------------------------------------------------- */
+@media (pointer: coarse) and (hover: none) {
+  .venue-screen--maximized {
+    inset: 0; width: auto; height: auto; max-width: none; max-height: none;
+    border: 0; border-radius: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0; background: #08090a;
+  }
+  /* The title and buttons stand down; the round close button floats over the
+     picture and takes no room from it. */
+  .venue-screen--maximized footer { display: none; }
+  /* The frame takes the whole panel and the player centres the picture inside
+     it. Fitting a sixteen-by-nine box by hand needs a size to start from, and
+     an empty box given only a ratio and auto width collapses to nothing — which
+     it duly did. The player already letterboxes onto black, and the panel
+     behind it is the same black, so the result is a centred picture on a plain
+     ground with nothing cropped and nothing off the edge. */
+  .venue-screen--maximized .venue-screen__frame {
+    flex: 1 1 auto;
+    width: 100%; height: 100%;
+    max-width: 100%; max-height: 100%;
+    aspect-ratio: auto;
+    min-width: 0; min-height: 0;
+  }
+  .venue-screen--maximized .venue-screen__frame iframe {
+    width: 100%; height: 100%; display: block;
+  }
 }
