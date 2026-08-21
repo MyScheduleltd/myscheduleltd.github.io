@@ -7,16 +7,22 @@ Last updated: 2026-08-21 (Asia/Taipei)
 > build now ships to `docs/beta` on `main` every turn. What remains useful here is the
 > older architectural description, not the process.
 
-Commit `8f478de` published the 2026-08-21 cold-start, fireworks-performance,
-objective-counter, MENTOR feed-sync and menu-ownership fixes. The current
-unpublished `codex/fix-gate-entry-brand` working tree adds the next mobile pass:
-the objective counter aligns beside the logo in landscape; the festival-pass
-menu scrolls in portrait and landscape; screening/order prompts, the camera
-control and reminder alerts no longer share the same slots; and another avatar
-can be greeted while a loyal MENTOR follows the local body. The loopback fixture
-`mentor-follow-greeting` verifies that a tap waves without feeding MENTOR. See
-`CODEX_HANDOFF.md` for exact implementation and browser measurements. Wait for
-the owner's explicit `publish` before shipping these new working-tree changes.
+Commits `10dba12` and `5ae3d39` define the current mobile continuation point.
+The festival-pass menu scrolls in portrait and landscape; screening/order
+prompts, the camera control and reminder alerts use separate slots; and another
+avatar can be greeted while a loyal MENTOR follows the local body. The loopback
+fixture `mentor-follow-greeting` verifies that a tap waves without feeding
+MENTOR.
+
+The focused `5ae3d39` follow-up moves the landscape `任務 / OBJECTIVES` counter
+under the 42px 我的檔期 logo instead of beside it. At 760 × 390 the button begins
+6.5px below the logo, with aligned left edges and no overlap. It also tags only
+`E / REQUEST A TRACK FROM ...` as `interaction-toast--dj`, preserving the prompt's
+current dimensions while centring it and aligning its bottom with the 通行證
+button. Direct browser measurements showed zero centre and bottom-baseline
+deltas at 390 × 650 and 760 × 390. `npm run verify` passes all 41 server tests and
+the TypeScript/Vite build. See `CODEX_HANDOFF.md` for the exact CSS, publication
+process and review-fixture notes.
 
 ## Read this first
 

@@ -1,11 +1,10 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-08-21 · HEAD `8f478de` + unpublished mobile interaction fixes · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-08-21 · mobile DJ prompt + landscape task counter · branch `codex/fix-gate-entry-brand`
 
-> `world/CLAUDE_HANDOFF.md` is **stale** (2026-08-15). It says the build must never be
-> published and names the branch `codex/pivot-exploration`. Both are long out of date —
-> we publish to `docs/beta` on `main` every turn now. Read this file instead; keep that
-> one only for the older architectural notes.
+> `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
+> below `Read this first` remains the older architectural record and still contains an
+> obsolete no-publish rule and branch name. Use this file for the active process.
 
 ---
 
@@ -17,7 +16,12 @@ whole accepted working tree together:
 
 ```bash
 cd world && npm run build:beta          # tsc --noEmit && vite build && publish to docs/beta
-cd .. && git add -A world docs/beta && git commit && git push origin main
+cd .. && git status --short
+# Stage only the confirmed source/handoff paths, docs/beta/index.html, and the
+# new hashed assets named by that index. Never broad-stage the worktree.
+git add -- <confirmed-paths>
+git diff --cached --check && git diff --cached --name-status
+git commit && git push origin main
 ```
 
 `npm run verify` (`node --test server/server.test.mjs && tsc --noEmit && vite build`)
@@ -91,11 +95,11 @@ Deployment: **Pages** serves `docs/`. **Render** runs `world/server/index.mjs`.
 - These fixes were published in `8f478de` and GitHub Pages served the new
   `index-C9FAbyXK.js` bundle after its deployment completed.
 
-### Current unpublished mobile interaction fixes
+### Current mobile interaction behavior
 
-- On a landscape phone, the compact `任務 / OBJECTIVES` counter now shares the
-  header row with the 42px square logo. Its 25px height is vertically centred
-  beside the logo, while the connection badge keeps the right side.
+- On a landscape phone, the compact `任務 / OBJECTIVES` counter sits under the
+  42px square logo with aligned left edges. At 760 × 390 its box was `(12, 54,
+  62.6, 25)`, leaving a 6.5px vertical gap and no overlap with the logo.
 - The festival-pass menu owns a bounded `100dvh` scroller in every mobile
   orientation. Browser drags reached the last item at both 760 × 390 landscape
   (`356px` range) and 390 × 650 portrait (`114px` range).
@@ -109,8 +113,17 @@ Deployment: **Pages** serves `docs/`. **Render** runs `world/server/index.mjs`.
   the dog follows the locally controlled body; with nobody else nearby the
   feed/pick-up prompt is unchanged. `?review=mentor-follow-greeting` stages the
   collision and verified `gesture: "wave"`, `mentorEating: false` after a tap.
-- `npm run build` passes and all 41 server tests pass. These changes are locally
-  verified but **not published**; wait for an explicit `publish`.
+- Commit `5ae3d39` gives only the DJ track-request prompt the
+  `interaction-toast--dj` layout hook. `App.updateSnapshot()` derives the hook
+  from the raw `E / REQUEST A TRACK FROM ...` interaction before localization,
+  so English and Traditional Chinese use the same rule without styling copy.
+  The prompt retains its current size, stays horizontally centred, and shares
+  the pass button's bottom baseline. Browser measurements were exact in both
+  portrait 390 × 650 (`44px` prompt, `0px` centre and bottom deltas) and
+  landscape 760 × 390 (`38px` prompt, `0px` centre and bottom deltas).
+- The previous mobile/pass/MENTOR fixes are in `10dba12`; the focused alignment
+  follow-up is `5ae3d39`. `npm run verify` passes all 41 server tests plus the
+  TypeScript/Vite production build.
 
 ---
 
