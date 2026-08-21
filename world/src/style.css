@@ -817,6 +817,29 @@ button:active { filter: brightness(.88); scale: .96; }
   display: flex; flex-direction: column; background: #000;
 }
 .venue-screen--maximized .venue-screen__frame { flex: 1; min-height: 0; aspect-ratio: auto; }
+/* A phone held upright cannot show a wide picture large. The frame already
+   takes the whole panel, so the black above and below is the player fitting
+   sixteen-by-nine into a tall box — the picture was already as big as that
+   shape allows, which is why making the panel fullscreen looked like nothing
+   had happened.
+   
+   iPhone Safari has no Fullscreen API for anything but a video element, so
+   asking the browser for real fullscreen there does nothing at all and we are
+   left with this layout whatever we request. The way a phone actually shows a
+   film full size is to turn it: the frame is laid on its side and sized to the
+   screen's other dimension, so the picture fills the display and the phone is
+   turned to watch it. Landscape needs none of this and keeps the plain fill. */
+@media (orientation: portrait) and (pointer: coarse) and (hover: none) {
+  .venue-screen--maximized .venue-screen__frame {
+    position: fixed; top: 50%; left: 50%;
+    width: 100dvh; height: 100dvw;
+    transform: translate(-50%, -50%) rotate(90deg);
+    transform-origin: center center;
+  }
+  /* The way out stays upright and where the thumb expects it, above the turned
+     picture. */
+  .venue-screen--maximized .venue-screen__close { z-index: 4; }
+}
 .venue-screen:fullscreen { inset: 0; width: 100vw; height: 100vh; border: 0; box-shadow: none; }
 .venue-screen:fullscreen .venue-screen__frame { flex: 1; min-height: 0; }
 .venue-screen:-webkit-full-screen { inset: 0; width: 100vw; height: 100vh; border: 0; box-shadow: none; }
