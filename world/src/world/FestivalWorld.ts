@@ -192,6 +192,10 @@ interface NpcAvatar {
   dances?: boolean;
   /** Set for NPCs that hold a post rather than walking a route. */
   station?: { position: THREE.Vector3; rotationY: number };
+  /** When it last stepped aside for somebody, so a review can see it happen. */
+  gaveWayAt?: number;
+  /** Whether that somebody was another visitor rather than this client. */
+  gaveWayToRemote?: boolean;
   /** How far right of its direction of travel it walks, in world units. */
   laneOffset: number;
   /** This resident's own circuit of venues, walked round and round for ever. */
@@ -1458,10 +1462,32 @@ export class FestivalWorld {
         if (gap < 1.4) touching += 1;
       }
     }
+    const now = performance.now();
     return {
       residents: walking.length,
+      // Everybody in the world besides this client, whether or not they are
+      // doing anything: residents give way to them the same either way.
+      otherVisitors: this.remoteAvatars.size,
+      givingWay: walking
+        .filter((npc) => npc.gaveWayAt !== undefined && now - npc.gaveWayAt < 2_000)
+        .map((npc) => `${npc.id}${npc.gaveWayToRemote ? ':guest' : ':you'}`),
       closestGap: Number(closest.toFixed(2)),
       closestPair,
+      // How near a resident has come to a visitor at all — without which a
+      // reading of "nobody gave way" says nothing about whether giving way
+      // works, only that nobody was close enough to need to.
+      closestToVisitor: Number(walking.reduce((nearest, npc) => {
+        const gaps = [this.player.position];
+        for (const avatar of this.remoteAvatars.values()) gaps.push(avatar.group.position);
+        for (const visitor of gaps) {
+          if (Math.abs(visitor.y - npc.group.position.y) > 2) continue;
+          nearest = Math.min(nearest, Math.hypot(
+            visitor.x - npc.group.position.x,
+            visitor.z - npc.group.position.z,
+          ));
+        }
+        return nearest;
+      }, Number.POSITIVE_INFINITY).toFixed(2)),
       pairsTouching: touching,
       stuck: walking
         .filter((npc) => npc.stuckFor > 1)
@@ -7411,18 +7437,8 @@ export class FestivalWorld {
         // resident with a visitor close ahead of it goes round early, while
         // there is still room to. Only ahead of it, and only on the same
         // storey: somebody behind, or on the floor above, is not in the way.
-        const toVisitorX = this.player.position.x - npc.group.position.x;
-        const toVisitorZ = this.player.position.z - npc.group.position.z;
-        const visitorGapSq = toVisitorX * toVisitorX + toVisitorZ * toVisitorZ;
-        const givingWay = visitorGapSq < 8
-          && Math.abs(this.player.position.y - npc.group.position.y) < 2
-          && toVisitorX * direction.x + toVisitorZ * direction.z > 0
-          // And genuinely in the way: nearer than the spot being walked to.
-          // Without this a resident gives way to somebody standing beside it
-          // and pacing a few steps, which is not somebody blocking the path —
-          // it just backs away, a step at a time, until it has left. The dog
-          // set down at your feet wandered eleven units off doing exactly that.
-          && visitorGapSq < targetGap * targetGap;
+        const givingWay = this.visitorInTheWay(npc, direction, targetGap);
+        if (givingWay) npc.gaveWayAt = now;
         if (!givingWay && !this.npcCollides(npc, next.x, next.z)) {
           npc.group.position.x = next.x;
           npc.group.position.z = next.z;
@@ -8080,6 +8096,43 @@ export class FestivalWorld {
         (collider.minY === undefined || y >= collider.minY) &&
         (collider.maxY === undefined || y <= collider.maxY),
     );
+  }
+
+  /**
+   * Whether a visitor is close enough ahead of this resident to be worth going
+   * round early — before a step is actually blocked, by which time somebody is
+   * already walking into you.
+   *
+   * Everybody in the world counts, not only whoever is at this keyboard: to a
+   * resident there is no difference between the two, and there is no reason for
+   * a guest to be the only one people step aside for.
+   *
+   * Three conditions. Ahead of it, because somebody behind is not in the way.
+   * On the same storey, because the club is under the promenade and the deck is
+   * over the garage. And nearer than the spot being walked to — without that
+   * last one a resident gives way to somebody merely standing beside it, and
+   * backs off a step at a time until it has left the place entirely.
+   */
+  private visitorInTheWay(npc: NpcAvatar, direction: THREE.Vector3, targetGap: number): boolean {
+    const reachSq = Math.min(8, targetGap * targetGap);
+    const ahead = (position: THREE.Vector3): boolean => {
+      const toVisitorX = position.x - npc.group.position.x;
+      const toVisitorZ = position.z - npc.group.position.z;
+      if (toVisitorX * toVisitorX + toVisitorZ * toVisitorZ >= reachSq) return false;
+      if (Math.abs(position.y - npc.group.position.y) >= 2) return false;
+      return toVisitorX * direction.x + toVisitorZ * direction.z > 0;
+    };
+    if (ahead(this.player.position)) {
+      npc.gaveWayToRemote = false;
+      return true;
+    }
+    for (const avatar of this.remoteAvatars.values()) {
+      if (ahead(avatar.group.position)) {
+        npc.gaveWayToRemote = true;
+        return true;
+      }
+    }
+    return false;
   }
 
   private npcCollides(npc: NpcAvatar, x: number, z: number): boolean {
