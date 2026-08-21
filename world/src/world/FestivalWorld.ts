@@ -690,6 +690,12 @@ const NPC_DANCE_HAUNTS = new Set(['clubFloor', 'rooftopDeck']);
  * crowd circulating, and means every venue has somebody in it.
  */
 const NPC_TOUR = ['gate', 'promenade', 'clubFront', 'clubFloor', 'square', 'temple', 'shore', 'palace', 'driveIn', 'rooftopDeck'];
+/**
+ * How long the dog stays where a visitor put it down before it picks its own
+ * round back up. Long enough that setting it down somewhere means something,
+ * short enough that it is not abandoned there.
+ */
+const MENTOR_LINGER_MS = 90_000;
 const NPC_DWELL_MIN_MS = 35_000;
 const NPC_DWELL_SPREAD_MS = 55_000;
 const CLUB_Z = 15;
@@ -1341,6 +1347,52 @@ export class FestivalWorld {
    * own fixture; every other fixed place had none, which is why the pamphlet
    * being unreachable had to be reported rather than caught.
    */
+  /** Picks the dog up and sets it straight back down, the way a visitor does. */
+  dropMentorForReview(): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    const me = this.selfVisitorId ?? 'review-self';
+    this.selfVisitorId = me;
+    this.setMentorFollower(null);
+    this.player.position.set(NAV_POINTS.square[0], AVATAR_GROUND_Y, NAV_POINTS.square[1]);
+    this.pickUpMentor();
+    // Told to the service, not just to us. A pick-up announces itself, so a
+    // put-down that stays quiet leaves the service still holding this visitor
+    // as the carrier — and it hands the dog straight back. What looked like a
+    // dog wandering eleven units off was a dog being carried there.
+    this.putDownMentor(true);
+    this.mentorClaimPending = false;
+    this.setSharedMentorCarrier(null, me);
+  }
+
+  /** Where the dog was left, and how long it means to stay there. */
+  mentorDropReviewSnapshot(): unknown {
+    const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
+    if (!mentor) return { mentor: 'missing' };
+    // World, not local: a carried dog is parented to whoever is carrying it, and
+    // its own position field is then a few centimetres from their hands.
+    const where = mentor.group.getWorldPosition(new THREE.Vector3());
+    return {
+      carried: this.carriedItem === 'MENTOR' || Boolean(this.mentorCarrierId),
+      parentedTo: mentor.group.parent?.type ?? 'none',
+      xz: [Number(where.x.toFixed(2)), Number(where.z.toFixed(2))],
+      fromDropPoint: Number(where.distanceTo(this.player.position).toFixed(2)),
+      // Infinite while it is walking somewhere, which is not a number worth
+      // printing.
+      lingerLeft: mentor.transit.length > 0
+        ? 'travelling'
+        : Math.round((mentor.dwellUntil ?? 0) - performance.now()),
+      pacingPoints: mentor.route.length,
+      travelling: mentor.transit.length,
+      atNode: mentor.atNode,
+      following: this.mentorFollower !== undefined,
+      insideScenery: this.staticCollides(
+        mentor.group.position.x,
+        mentor.group.position.z,
+        mentor.group.position.y,
+      ),
+    };
+  }
+
   /**
    * The dog buried inside the popcorn booth, with its owner standing right
    * beside it. Both halves matter: the escape used to require the owner to be
@@ -5904,7 +5956,17 @@ export class FestivalWorld {
     mentor.dogRig.rightBackLeg.rotation.set(0, 0, 0);
     mentor.group.position.set(dropPosition.x, AVATAR_GROUND_Y, dropPosition.z);
     mentor.group.rotation.set(0, this.player.rotation.y, 0);
+    // Set down is not the same as sent away. The dog stays where it was left
+    // and mills about there for a while before picking its round back up —
+    // otherwise putting it down somewhere on purpose was pointless, because it
+    // simply set off for the next venue on its circuit and left.
+    mentor.transit = [];
+    mentor.atNode = this.nearestNavNode(dropPosition);
+    mentor.route = this.smallLoopAround(dropPosition);
     mentor.waypointIndex = this.nearestRouteIndex(mentor, dropPosition);
+    mentor.dwellUntil = performance.now() + MENTOR_LINGER_MS;
+    mentor.dances = false;
+    mentor.recovering = false;
     mentor.waitUntil = performance.now() + 1250;
     mentor.stuckFor = 0;
     this.carriedItem = undefined;
@@ -6061,6 +6123,26 @@ export class FestivalWorld {
   }
 
   /** The network node nearest a point, by straight-line distance on the ground. */
+  /**
+   * A few paces' wander round a point, for a dog that has just been set down.
+   * Corners that turn out to be inside something are given up rather than
+   * walked into — the drop can be anywhere a visitor can stand, including
+   * tight against a wall, so a fixed square around it is not always free.
+   */
+  private smallLoopAround(centre: THREE.Vector3): THREE.Vector3[] {
+    const corners: Array<[number, number]> = [[1.6, 0], [0, 1.6], [-1.6, 0], [0, -1.6]];
+    const loop: THREE.Vector3[] = [];
+    for (const [offsetX, offsetZ] of corners) {
+      const x = centre.x + offsetX;
+      const z = Math.max(centre.z + offsetZ, -57.3);
+      const y = this.groundHeightAt(x, z, centre.y);
+      if (!this.staticCollides(x, z, y)) loop.push(new THREE.Vector3(x, y, z));
+    }
+    // Nowhere clear to pace: stand still rather than walk into the wall.
+    if (loop.length === 0) loop.push(centre.clone());
+    return loop;
+  }
+
   private nearestNavNode(position: THREE.Vector3): string {
     let nearest = 'square';
     let nearestDistance = Number.POSITIVE_INFINITY;
@@ -7320,10 +7402,28 @@ export class FestivalWorld {
       direction.y = 0;
       const moving = now >= npc.waitUntil && direction.lengthSq() > 0.05;
       if (moving) {
-        const step = Math.min(direction.length(), npc.speed * delta);
+        const targetGap = direction.length();
+        const step = Math.min(targetGap, npc.speed * delta);
         direction.normalize();
         const next = npc.group.position.clone().addScaledVector(direction, step);
-        if (!this.npcCollides(npc, next.x, next.z)) {
+        // Give way to a visitor. Stepping round only once a step is actually
+        // blocked is late — by then somebody is already walking into you — so a
+        // resident with a visitor close ahead of it goes round early, while
+        // there is still room to. Only ahead of it, and only on the same
+        // storey: somebody behind, or on the floor above, is not in the way.
+        const toVisitorX = this.player.position.x - npc.group.position.x;
+        const toVisitorZ = this.player.position.z - npc.group.position.z;
+        const visitorGapSq = toVisitorX * toVisitorX + toVisitorZ * toVisitorZ;
+        const givingWay = visitorGapSq < 8
+          && Math.abs(this.player.position.y - npc.group.position.y) < 2
+          && toVisitorX * direction.x + toVisitorZ * direction.z > 0
+          // And genuinely in the way: nearer than the spot being walked to.
+          // Without this a resident gives way to somebody standing beside it
+          // and pacing a few steps, which is not somebody blocking the path —
+          // it just backs away, a step at a time, until it has left. The dog
+          // set down at your feet wandered eleven units off doing exactly that.
+          && visitorGapSq < targetGap * targetGap;
+        if (!givingWay && !this.npcCollides(npc, next.x, next.z)) {
           npc.group.position.x = next.x;
           npc.group.position.z = next.z;
           npc.group.rotation.y = Math.atan2(direction.x, direction.z);
