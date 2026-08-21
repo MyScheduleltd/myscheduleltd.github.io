@@ -837,6 +837,13 @@ button:active { filter: brightness(.88); scale: .96; }
   bottom: auto; top: calc(74px + env(safe-area-inset-top));
 }
 .public-seat-hud span { display: block; color: #e04750; font: 800 10px var(--condensed); letter-spacing: .08em; }
+/* The reminder follows the prompt down rather than sharing its row. Both sit at
+   the top once somebody is seated, and the reminder's own placement knows
+   nothing about how tall the prompt turned out to be. */
+#public-seat-hud:not([hidden]) ~ .world-alert,
+#venue-screen:not([hidden]) ~ .world-alert {
+  top: calc(146px + env(safe-area-inset-top));
+}
 .public-seat-hud strong { display: block; max-width: 370px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 16px var(--condensed); }
 .public-seat-hud > div:last-child { display: flex; gap: 6px; }
 .public-seat-hud button { border: 1px solid rgba(255,255,255,.45); padding: 8px 10px; color: white; background: transparent; font: 700 11px var(--condensed); cursor: pointer; }
@@ -1189,9 +1196,16 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   /* A public-screening prompt belongs below the header, not on the camera key
      in the lower-left corner. It stays compact so neither the online badge nor
      the film controls lose their room. */
+  /* Seated, the prompt moves to the top of the screen — and the reminder that
+     follows it lives up there too. The reminder's place was set for a prompt
+     one line tall; this one wraps to two, so the two boxes met by a couple of
+     pixels. The prompt is given a stated ceiling here and the reminder is put
+     below that ceiling rather than below a guess, so a longer prompt cannot
+     walk into it again. */
   #public-seat-hud:not([hidden]) ~ .interaction-toast {
     top: calc(72px + env(safe-area-inset-top)); bottom: auto;
-    max-width: min(52vw, 220px); min-height: 36px; height: auto;
+    max-width: min(52vw, 220px); min-height: 36px; max-height: 62px; height: auto;
+    overflow: hidden;
     padding: 7px 10px; font-size: 11px; white-space: normal;
   }
   .venue-screen { left: 14px; right: 14px; top: 124px; width: auto; }
