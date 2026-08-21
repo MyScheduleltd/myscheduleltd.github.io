@@ -907,6 +907,11 @@ export class App {
     } else if (reviewTarget === 'club-lobby') {
       this.world.focusClubLobbyForReview();
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.clubReviewSnapshot();
+    } else if (reviewTarget === 'nav' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview =
+        () => this.world?.navReviewSnapshot();
+      (window as Window & { __festivalResidents?: () => unknown }).__festivalResidents =
+        () => this.world?.residentsReviewSnapshot();
     } else if (reviewTarget === 'mentor-wedged' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       this.world.focusMentorWedgedForReview();
       (window as Window & { __festivalRestage?: () => void }).__festivalRestage =

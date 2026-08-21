@@ -192,8 +192,19 @@ interface NpcAvatar {
   dances?: boolean;
   /** Set for NPCs that hold a post rather than walking a route. */
   station?: { position: THREE.Vector3; rotationY: number };
-  /** A room this NPC belongs to and never tours away from. */
-  resident?: string;
+  /** This resident's own circuit of venues, walked round and round for ever. */
+  tour: string[];
+  tourIndex: number;
+  /** The nodes still to walk through to reach the venue it is bound for. */
+  transit: THREE.Vector3[];
+  /** The network node it is standing on, or heading for. */
+  atNode?: string;
+  /**
+   * Shoved into the scenery by a punch and walking back out of it. Nothing
+   * else sets this: the network itself is verified clear, so a resident that
+   * follows it never needs rescuing.
+   */
+  recovering?: boolean;
   pose?: 'dj' | 'dance';
   /** Where this NPC is spending its time, and until when. */
   haunt?: string;
@@ -506,17 +517,158 @@ const NPC_HAUNTS: Record<string, Array<[number, number]>> = {
   square: [[-9, 8], [9, 8], [9, -4], [-9, -4]],
   promenade: [[-10, 30], [10, 30], [10, 18], [-10, 18]],
   palace: [[-42, -22], [-28, -22], [-28, -30], [-42, -30]],
-  driveIn: [[27, -14], [43, -14], [43, -30], [27, -30]],
-  shore: [[-9, -30], [9, -30], [9, -40], [-9, -40]],
-  clubFront: [[-16, 30], [-6, 30], [-6, 18], [-16, 18]],
+  driveIn: [[29, -13], [41, -13], [41, -18], [29, -18]],
+  shore: [[-8, -26], [8, -26], [8, -31], [-8, -31]],
+  clubFront: [[-14, 29], [-7, 29], [-7, 19], [-14, 19]],
   // The three rooms the residents never actually went into. Written out rather
   // than derived, because CLUB_Z, rooftopBounds and TEMPLE are all declared
   // below this: the club room is x -88..-50 by z 1..42, the roof deck is
   // x 18..54 by z 19..44, and the temple hall is x 76..106 by z -14..22.
   clubFloor: [[-78, 14], [-58, 14], [-58, 30], [-78, 30]],
-  rooftopDeck: [[29, 25], [51, 25], [51, 38], [29, 38]],
+  rooftopDeck: [[31, 28], [45, 28], [45, 36], [31, 36]],
   temple: [[82, -6], [94, -6], [94, 14], [82, 14]],
 };
+/**
+ * The walkable network of the festival.
+ *
+ * Residents cross the world on foot now, so every journey has to be expressible
+ * as a run of straight lines that a body can actually walk — through the club's
+ * doorway, down its stair, up the outside of the garage — rather than a jump
+ * from room to room. These are the corners those lines turn at.
+ *
+ * Nothing here is eyeballed. `?review=nav` samples every link end to end
+ * against the same collision the residents answer to, and names any link a body
+ * could not walk; the numbers below are what came back clean.
+ */
+const NAV_POINTS: Record<string, [number, number]> = {
+  gate: [2, 47],
+  promenade: [2, 24],
+  // East of the timetable board, which stands across the middle of the square
+  // and which the old spine walked straight into.
+  square: [9, 6],
+  southJunction: [9, -12],
+  shore: [0, -31],
+  palace: [-35, -26],
+  // The Drive-In is entered from its north side; coming at it across the
+  // diagonal walks into the back of the cars.
+  driveInApproach: [35, -12],
+  driveIn: [35, -16],
+  // West, into The Basement: across the forecourt, in at the door, then down
+  // the stair slot on its centre line.
+  clubFront: [-11, 24],
+  clubDoor: [-19, 23.5],
+  clubStairTop: [-26, 23.5],
+  clubStairFoot: [-52, 23.5],
+  clubFloor: [-68, 22],
+  // East, up the outside of The Rooftop. The flight runs north up the west
+  // face, so its foot and head share a centre line.
+  // The flight is approached along its own centre line from the south. From
+  // the west a body walks into the kerb the handrail stands on.
+  roofStairApproach: [19.6, 16],
+  roofStairFoot: [19.6, 21],
+  roofStairTop: [19.6, 35],
+  roofDeck: [36, 30],
+  // The long walk east to the temple, south of the garage's plot.
+  // Out past the square's east kerb before turning for the temple: straight
+  // from the square the line clips the furniture at its edge.
+  templeSpur: [20, 0],
+  templeApproach: [40, 4],
+  templeFoot: [73, 4],
+  templeHall: [88, 4],
+};
+const NAV_LINKS: Array<[string, string]> = [
+  ['gate', 'promenade'],
+  ['promenade', 'square'],
+  ['square', 'southJunction'],
+  ['southJunction', 'shore'],
+  ['southJunction', 'palace'],
+  ['southJunction', 'driveInApproach'],
+  ['driveInApproach', 'driveIn'],
+  ['promenade', 'clubFront'],
+  ['clubFront', 'clubDoor'],
+  ['clubDoor', 'clubStairTop'],
+  ['clubStairTop', 'clubStairFoot'],
+  ['clubStairFoot', 'clubFloor'],
+  ['promenade', 'roofStairApproach'],
+  ['roofStairApproach', 'roofStairFoot'],
+  ['roofStairFoot', 'roofStairTop'],
+  ['roofStairTop', 'roofDeck'],
+  ['square', 'templeSpur'],
+  ['templeSpur', 'templeApproach'],
+  ['templeApproach', 'templeFoot'],
+  ['templeFoot', 'templeHall'],
+];
+const NAV_ADJACENCY: Record<string, string[]> = (() => {
+  const map: Record<string, string[]> = {};
+  for (const [from, to] of NAV_LINKS) {
+    (map[from] ??= []).push(to);
+    (map[to] ??= []).push(from);
+  }
+  return map;
+})();
+
+/**
+ * The shortest run of links from one node to another, as the nodes to walk
+ * through — the node underfoot is not among them. An empty answer means the
+ * two are not connected at all, which is a fault in the network rather than
+ * something a resident should try to improvise around.
+ */
+function navPath(from: string, to: string): string[] {
+  if (from === to) return [];
+  const cameFrom: Record<string, string | undefined> = { [from]: undefined };
+  const queue: string[] = [from];
+  while (queue.length > 0) {
+    const at = queue.shift() as string;
+    for (const next of NAV_ADJACENCY[at] ?? []) {
+      if (next in cameFrom) continue;
+      cameFrom[next] = at;
+      if (next === to) {
+        const path: string[] = [];
+        let step: string | undefined = to;
+        while (step !== undefined && step !== from) {
+          path.unshift(step);
+          step = cameFrom[step];
+        }
+        return path;
+      }
+      queue.push(next);
+    }
+  }
+  return [];
+}
+
+/**
+ * One resident's own circuit, and it runs for ever: on reaching the end of the
+ * list it starts the list again, so nobody finishes touring and stops.
+ *
+ * Everybody walking the same ring in the same order turned the festival into a
+ * procession — one line of people arriving everywhere together and shouldering
+ * through each other at every corner. Taking a different stride through the
+ * ring gives each resident a different order of venues instead. The strides are
+ * the numbers coprime with the ring's length, which is what guarantees a stride
+ * visits every venue rather than looping early round a few of them.
+ */
+const TOUR_STRIDES = [1, 3, 7, 9];
+function tourFor(index: number): string[] {
+  const stride = TOUR_STRIDES[index % TOUR_STRIDES.length];
+  const start = index % NPC_TOUR.length;
+  return NPC_TOUR.map((_, step) => NPC_TOUR[(start + step * stride) % NPC_TOUR.length]);
+}
+
+/** The node a resident stands on when it arrives at each haunt. */
+const HAUNT_NODE: Record<string, string> = {
+  gate: 'gate',
+  promenade: 'promenade',
+  square: 'square',
+  shore: 'shore',
+  palace: 'palace',
+  driveIn: 'driveIn',
+  clubFront: 'clubFront',
+  clubFloor: 'clubFloor',
+  rooftopDeck: 'roofDeck',
+  temple: 'templeHall',
+};
+
 /**
  * The floor each haunt stands on. Everything outdoors is at street level; the
  * club is sixteen down and the deck seven up, and a resident sent there has to
@@ -529,7 +681,6 @@ const NPC_HAUNT_FLOOR: Record<string, number> = {
 };
 /** Rooms worth stopping to dance in. */
 const NPC_DANCE_HAUNTS = new Set(['clubFloor', 'rooftopDeck']);
-const NPC_HAUNT_KEYS = Object.keys(NPC_HAUNTS);
 /**
  * The order a resident works round the festival. They used to jump to a haunt
  * at random, which from any one spot looked like standing still and then
@@ -1194,6 +1345,135 @@ export class FestivalWorld {
    * more than seven units off, so a dog stuck in something you were looking at
    * was a dog stuck for good.
    */
+  /**
+   * Every link in the walkable network, walked end to end against the same
+   * collision a resident answers to. A link that reports a blocked sample is a
+   * link somebody will get stuck on, so this is what the node coordinates were
+   * chosen against rather than read off the plan.
+   */
+  /**
+   * Every resident: where it is, where it is bound, and how much of its walk is
+   * left. Two readings apart tell walking from standing, and a body whose y has
+   * changed is one that took a stair.
+   */
+  residentsReviewSnapshot(): unknown {
+    return this.npcs
+      .filter((npc) => !npc.dogRig)
+      .map((npc) => ({
+        id: npc.id,
+        xyz: [
+          Number(npc.group.position.x.toFixed(1)),
+          Number(npc.group.position.y.toFixed(1)),
+          Number(npc.group.position.z.toFixed(1)),
+        ],
+        haunt: npc.haunt,
+        legsLeft: npc.transit.length,
+        stationed: npc.station !== undefined,
+        recovering: npc.recovering === true,
+        insideScenery: this.staticCollides(
+          npc.group.position.x,
+          npc.group.position.z,
+          npc.group.position.y,
+        ),
+        tour: npc.tour.join('>'),
+      }));
+  }
+
+  navReviewSnapshot(): unknown {
+    const results: Array<Record<string, unknown>> = [];
+    for (const [from, to] of NAV_LINKS) {
+      const a = NAV_POINTS[from];
+      const b = NAV_POINTS[to];
+      const span = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const steps = Math.max(2, Math.ceil(span / 0.4));
+      let y = this.groundHeightAt(a[0], a[1]);
+      let blockedAt: [number, number] | undefined;
+      let blocked = 0;
+      let climb = 0;
+      for (let step = 0; step <= steps; step += 1) {
+        const t = step / steps;
+        const x = a[0] + (b[0] - a[0]) * t;
+        const z = a[1] + (b[1] - a[1]) * t;
+        const next = this.groundHeightAt(x, z, y);
+        climb = Math.max(climb, Math.abs(next - y));
+        y = next;
+        if (this.staticCollides(x, z, y)) {
+          blocked += 1;
+          if (!blockedAt) blockedAt = [Number(x.toFixed(1)), Number(z.toFixed(1))];
+        }
+      }
+      results.push({
+        link: `${from}->${to}`,
+        span: Number(span.toFixed(1)),
+        blocked,
+        firstBlock: blockedAt,
+        // A jump in the floor between two samples 0.4 apart is a ledge, not a
+        // slope: a resident would be walking up the side of something.
+        worstStep: Number(climb.toFixed(2)),
+        endY: Number(y.toFixed(2)),
+      });
+    }
+    const loops: Array<Record<string, unknown>> = [];
+    for (const [haunt, points] of Object.entries(NPC_HAUNTS)) {
+      const floor = NPC_HAUNT_FLOOR[haunt] ?? AVATAR_GROUND_Y;
+      let blocked = 0;
+      let firstBlock: [number, number] | undefined;
+      for (let corner = 0; corner < points.length; corner += 1) {
+        const a = points[corner];
+        const b = points[(corner + 1) % points.length];
+        const steps = Math.max(2, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.5));
+        for (let step = 0; step <= steps; step += 1) {
+          const t = step / steps;
+          const x = a[0] + (b[0] - a[0]) * t;
+          const z = a[1] + (b[1] - a[1]) * t;
+          if (this.staticCollides(x, z, floor)) {
+            blocked += 1;
+            if (!firstBlock) firstBlock = [Number(x.toFixed(1)), Number(z.toFixed(1))];
+          }
+        }
+      }
+      if (blocked > 0) loops.push({ haunt, blocked, firstBlock });
+    }
+    // Every journey the circuits can ask for, checked as a real run of links.
+    const venues = Object.keys(HAUNT_NODE);
+    const unroutable: string[] = [];
+    for (const from of venues) {
+      for (const to of venues) {
+        if (from === to) continue;
+        const path = navPath(HAUNT_NODE[from], HAUNT_NODE[to]);
+        if (path.length === 0) {
+          unroutable.push(`${from}->${to}`);
+          continue;
+        }
+        // Every hop has to be a link that exists, or the walk cuts a corner
+        // through whatever the network was routing around.
+        let at = HAUNT_NODE[from];
+        for (const hop of path) {
+          if (!(NAV_ADJACENCY[at] ?? []).includes(hop)) unroutable.push(`${from}->${to}@${at}-${hop}`);
+          at = hop;
+        }
+      }
+    }
+    return {
+      unroutableJourneys: unroutable,
+      journeysChecked: venues.length * (venues.length - 1),
+      // The stair links have to descend, or they are not stairs.
+      descents: results
+        .filter((r) => (r.link as string).includes('club') || (r.link as string).includes('roof'))
+        .map((r) => `${r.link} endY=${r.endY} step=${r.worstStep}`),
+      // A wander loop that runs through the scenery is where a resident spends
+      // its whole dwell, so it matters as much as the walk that got it there.
+      badLoops: loops,
+      // A haunt whose node is missing is a room nobody can be routed to.
+      unreachableHaunts: Object.entries(HAUNT_NODE)
+        .filter(([, node]) => !NAV_POINTS[node])
+        .map(([haunt]) => haunt),
+      bad: results.filter((r) => (r.blocked as number) > 0 || (r.worstStep as number) > 0.9),
+      clean: results.filter((r) => (r.blocked as number) === 0 && (r.worstStep as number) <= 0.9).length,
+      total: results.length,
+    };
+  }
+
   focusMentorWedgedForReview(): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
     const me = this.selfVisitorId ?? 'review-self';
@@ -1642,12 +1922,14 @@ export class FestivalWorld {
    */
   clubRegularsReviewSnapshot(): Array<Record<string, unknown>> {
     return this.npcs
-      .filter((npc) => npc.resident === 'clubFloor')
+      .filter((npc) => ['SEBINE', 'ZC', 'LOUI', 'VIOLA'].includes(npc.id))
       .map((npc) => ({
         id: npc.id,
         xz: [Number(npc.group.position.x.toFixed(2)), Number(npc.group.position.z.toFixed(2))] as [number, number],
         stationed: npc.station !== undefined,
         haunt: npc.haunt,
+        travelling: npc.transit.length,
+        tour: npc.tour.join('>'),
         route: npc.route.length,
         waypoint: npc.waypointIndex,
         target: npc.route[npc.waypointIndex]
@@ -5304,7 +5586,7 @@ export class FestivalWorld {
     DEFAULT_NPC_PROFILES.slice(0, count).forEach((profile, index) => this.createNpcAvatar(profile, index));
     this.stationDj();
     this.stationRooftopDj();
-    this.clubRegularsWalkTheFloor();
+    this.clubRegularsOpenTheFloor();
   }
 
   /** DR.BEAUTY holds the rooftop booth. */
@@ -5325,23 +5607,18 @@ export class FestivalWorld {
    * their own beat offset, otherwise the floor moves as one block.
    */
   /**
-   * The club's regulars. They used to be stationed — pinned to a point with the
-   * dance pose running on the spot — which left the dance floor as four bodies
-   * bobbing on the same four square metres for ever, and nobody else could make
-   * up the difference. A touring resident is only ever set down on another
-   * storey when there is no one within twenty-six units to watch it happen, and
-   * the whole dance floor lies inside that radius of anybody standing on it: so
-   * for as long as you are down there, no one new can arrive. The room was
-   * therefore permanently exactly as still as you first found it.
+   * Where the club's regulars start the evening. They used to be stationed —
+   * pinned to a point with the dance pose running — and then, briefly, pinned
+   * to the room by a resident flag. Neither let them leave, and a basement
+   * nobody can walk out of is as closed as one nobody can walk into.
    *
-   * So the regulars walk the room's own round instead, stopping to dance at its
-   * corners the way any visitor does, and the floor moves whether or not
-   * anybody else has come down.
+   * They are ordinary residents with ordinary circuits now. The club is simply
+   * the venue they happen to open on, and they walk out of it up the stair like
+   * anybody else when their dwell is up.
    */
-  private clubRegularsWalkTheFloor(): void {
+  private clubRegularsOpenTheFloor(): void {
     // Kept north of the bar: the counter and its stools reach to about z = 9,
-    // and a regular standing in that band reads as wedged into a seat. The
-    // round itself stays clear of it.
+    // and a regular standing in that band reads as wedged into a seat.
     const spots: Array<[string, number, number]> = [
       ['SEBINE', -78, 5 + CLUB_Z],
       ['ZC', -58, 2 + CLUB_Z],
@@ -5355,14 +5632,17 @@ export class FestivalWorld {
       if (!npc) continue;
       npc.station = undefined;
       npc.pose = undefined;
-      npc.resident = 'clubFloor';
       npc.haunt = 'clubFloor';
+      npc.atNode = HAUNT_NODE.clubFloor;
+      npc.transit = [];
+      npc.tourIndex = npc.tour.indexOf('clubFloor');
+      if (npc.tourIndex < 0) npc.tourIndex = 0;
       npc.dances = true;
       npc.group.position.set(x, CLUB_AVATAR_Y, z);
       npc.group.rotation.y = Math.atan2(-68 - x, 22.5 + CLUB_Z - z);
       npc.route = round.map(([px, pz]) => this.laneAdjusted(px, pz, npc.lane, CLUB_AVATAR_Y));
       npc.waypointIndex = this.nearestRouteIndex(npc, npc.group.position);
-      // Staggered, so the four do not set off together on the same beat.
+      // Staggered, so the four do not all climb the stair together.
       npc.dwellUntil = now + NPC_DWELL_MIN_MS + Math.random() * NPC_DWELL_SPREAD_MS;
       npc.waitUntil = now + Math.random() * 2_400;
       npc.stuckFor = 0;
@@ -5466,6 +5746,10 @@ export class FestivalWorld {
       // Spread round the circuit rather than bunched at its head, so every
       // venue has somebody in it from the moment the world opens.
       haunt: NPC_TOUR[index % NPC_TOUR.length],
+      tour: tourFor(index),
+      tourIndex: 0,
+      transit: [],
+      atNode: HAUNT_NODE[NPC_TOUR[index % NPC_TOUR.length]],
       dwellUntil: performance.now() + NPC_DWELL_MIN_MS + index * 4_000,
     };
     this.npcs.push(avatar);
@@ -5651,59 +5935,77 @@ export class FestivalWorld {
     return new THREE.Vector3(shiftedX, y, shiftedZ);
   }
 
-  private shuffleNpcHaunt(npc: NpcAvatar, now: number): void {
-    if (npc.station || !npc.dwellUntil || now < npc.dwellUntil) return;
-    const current = NPC_TOUR.indexOf(npc.haunt ?? '');
-    // A resident never leaves its room. It picks the room's own round up
-    // again, which re-rolls whether it feels like dancing this time round.
-    const next = npc.resident ?? NPC_TOUR[(current + 1) % NPC_TOUR.length] ?? NPC_HAUNT_KEYS[0];
-    if (!next) return;
-    const floor = NPC_HAUNT_FLOOR[next] ?? AVATAR_GROUND_Y;
+  /**
+   * Sets a resident off for the next venue on its own circuit, on foot.
+   *
+   * It used to be put down at the destination whenever that destination was on
+   * another storey and nobody was close enough to see it happen — which is why
+   * the club could never fill while you were standing in it, and why anybody
+   * leaving a room walked into its wall until the recovery threw them through
+   * the ceiling. There is no placement left anywhere in here. The route is a
+   * run of network links from the node underfoot to the node at the far end,
+   * and the resident walks every metre of it: out of the room, up the stair,
+   * along the road, and in through the next door.
+   *
+   * Reaching the end of the circuit wraps back to its start, so the round never
+   * finishes.
+   */
+  private advanceNpcJourney(npc: NpcAvatar, now: number): void {
+    if (npc.station || npc.transit.length > 0) return;
+    if (!npc.dwellUntil || now < npc.dwellUntil) return;
+    npc.tourIndex = (npc.tourIndex + 1) % npc.tour.length;
+    const next = npc.tour[npc.tourIndex];
     const arriving = NPC_HAUNTS[next];
-    // A move between storeys, in either direction. Asking only whether the
-    // destination was upstairs or down caught every arrival and no departure:
-    // a resident leaving the club for the square was handed a route at street
-    // level and walked into the club wall until the stuck-recovery threw it up
-    // through the ceiling. Comparing the two heights catches both ways — and
-    // leaves a resident already standing on that floor walking, rather than
-    // teleporting it one step across its own room.
-    if (Math.abs(npc.group.position.y - floor) > 1.5) {
-      // Somewhere on another storey. Wait for a clear moment rather than fold
-      // a body through a wall in front of somebody.
-      // Spread round the loop rather than all put down on its first corner.
-      // Every resident arriving at a room landed on the same square metre and
-      // stood in whoever was already there — the separation pass only holds
-      // bodies apart once they are moving, and an arrival is not movement.
-      const spread = arriving[Math.floor(Math.random() * arriving.length)];
-      const jitterX = (Math.random() - 0.5) * 3.2;
-      const jitterZ = (Math.random() - 0.5) * 3.2;
-      const entrance = new THREE.Vector3(spread[0] + jitterX, floor, spread[1] + jitterZ);
-      if (this.player.position.distanceTo(entrance) < 26) {
-        npc.dwellUntil = now + 6_000;
-        return;
-      }
-      // And never on top of somebody. If the spot is taken, wait and try again
-      // rather than fold two bodies together.
-      if (this.npcCollides(npc, entrance.x, entrance.z)) {
-        npc.dwellUntil = now + 2_500;
-        return;
-      }
-      npc.group.position.copy(entrance);
-    }
+    const destination = HAUNT_NODE[next];
+    if (!arriving || !destination) return;
+    const floor = NPC_HAUNT_FLOOR[next] ?? AVATAR_GROUND_Y;
+    const from = npc.atNode ?? HAUNT_NODE[npc.haunt ?? ''] ?? destination;
+    const path = navPath(from, destination);
+    npc.transit = path.map((node) => {
+      const [x, z] = NAV_POINTS[node];
+      // Each resident takes the link in its own lane, so two of them on the
+      // same stretch of road walk side by side instead of down one line.
+      return this.laneAdjusted(x, z, npc.lane, this.groundHeightAt(x, z, npc.group.position.y));
+    });
+    npc.atNode = destination;
     npc.haunt = next;
-    npc.dwellUntil = now + NPC_DWELL_MIN_MS + Math.random() * NPC_DWELL_SPREAD_MS;
-    // Was the bare list of points, identical for everybody who came here, so
-    // the whole festival traced one line through one set of spots. Each walks
-    // their own lane through it now.
+    // Held until it actually arrives, so a long walk is not cut short by the
+    // dwell it has not started yet.
+    npc.dwellUntil = Number.POSITIVE_INFINITY;
     npc.route = arriving.map(([x, z]) => this.laneAdjusted(x, z, npc.lane, floor));
-    // Whether this one is in the mood, decided fresh on each visit so the same
-    // resident is not always the one dancing.
-    npc.dances = NPC_DANCE_HAUNTS.has(next) && Math.random() < 0.55;
-    // Head for whichever end of the new loop is closest, so the walk across
-    // the festival looks deliberate rather than doubling back.
-    npc.waypointIndex = this.nearestRouteIndex(npc, npc.group.position);
+    npc.waypointIndex = 0;
+    npc.dances = false;
     npc.waitUntil = now;
     npc.stuckFor = 0;
+  }
+
+  /** Come to rest at the venue: wander its loop, and dance if the mood takes. */
+  private arriveAtHaunt(npc: NpcAvatar, now: number): void {
+    npc.dwellUntil = now + NPC_DWELL_MIN_MS + Math.random() * NPC_DWELL_SPREAD_MS;
+    // Whether this one is in the mood, decided fresh on each visit so the same
+    // resident is not always the one dancing.
+    npc.dances = NPC_DANCE_HAUNTS.has(npc.haunt ?? '') && Math.random() < 0.55;
+    npc.waypointIndex = this.nearestRouteIndex(npc, npc.group.position);
+    npc.stuckFor = 0;
+  }
+
+  /** The network node nearest a point, by straight-line distance on the ground. */
+  private nearestNavNode(position: THREE.Vector3): string {
+    let nearest = 'square';
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (const [node, [x, z]] of Object.entries(NAV_POINTS)) {
+      const distance = (x - position.x) ** 2 + (z - position.z) ** 2;
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = node;
+      }
+    }
+    return nearest;
+  }
+
+  private nearestNavPoint(position: THREE.Vector3): THREE.Vector3 {
+    const [x, z] = NAV_POINTS[this.nearestNavNode(position)];
+    return new THREE.Vector3(x, this.groundHeightAt(x, z, position.y), z);
   }
 
   private nearestRouteIndex(npc: NpcAvatar, position: THREE.Vector3): number {
@@ -6938,8 +7240,11 @@ export class FestivalWorld {
           continue;
         }
       }
-      this.shuffleNpcHaunt(npc, now);
-      const target = npc.route[npc.waypointIndex];
+      this.advanceNpcJourney(npc, now);
+      // Mid-journey a resident is walking the network, link by link; at rest it
+      // is wandering the venue's own loop. Same walk either way.
+      const travelling = npc.transit.length > 0;
+      const target = travelling ? npc.transit[0] : npc.route[npc.waypointIndex];
       const direction = target.clone().sub(npc.group.position);
       direction.y = 0;
       const moving = now >= npc.waitUntil && direction.lengthSq() > 0.05;
@@ -6956,11 +7261,26 @@ export class FestivalWorld {
           // Let another attendee clear the path before resuming the route.
           npc.waitUntil = now + 320 + ((npc.phase * 100) % 260);
           npc.stuckFor += delta;
-        } else {
+        } else if (!travelling) {
           npc.waypointIndex = (npc.waypointIndex + 1) % npc.route.length;
+          npc.stuckFor += delta;
+        } else {
+          // Scenery across a link. Skipping the link would cut the corner off
+          // the network and walk them through whatever the link was going
+          // round, so they wait for it instead.
+          npc.waitUntil = now + 420;
           npc.stuckFor += delta;
         }
       } else if (direction.lengthSq() <= 0.05) {
+        if (travelling) {
+          // One link done. The next begins from here, with no pause: stopping
+          // at every corner made the walk across the festival look like a
+          // series of errands rather than one journey.
+          npc.transit.shift();
+          if (npc.transit.length === 0) this.arriveAtHaunt(npc, now);
+          npc.stuckFor = 0;
+          continue;
+        }
         npc.waypointIndex = (npc.waypointIndex + 1) % npc.route.length;
         // Reaching a corner of the club floor or the roof deck is where a
         // resident in the mood stops and dances, rather than pacing the room
@@ -6976,29 +7296,43 @@ export class FestivalWorld {
         }
         npc.stuckFor = 0;
       }
-      if (npc.stuckFor > 1.6 || this.staticCollides(npc.group.position.x, npc.group.position.z, npc.group.position.y)) {
-        // Somewhere free on the route, judged against the crowd as well as the
-        // scenery. Testing only the scenery is what piled them up: residents on
-        // one haunt share a route, so every one that got stuck was sent to the
-        // same corner of it, and they went there one inside another. The offset
-        // separates two recovering in the same instant, which would otherwise
-        // pick the identical point from an identical list.
-        const spread = (npc.phase % 1) * 2.4 - 1.2;
-        const safeIndex = npc.route.findIndex(
-          (point) => !this.npcCollides(npc, point.x + spread, point.z + spread),
-        );
-        if (safeIndex >= 0) {
-          const point = npc.route[safeIndex];
-          npc.group.position.set(point.x + spread, point.y, point.z + spread);
-          npc.waypointIndex = (safeIndex + 1) % npc.route.length;
+      // Nothing here moves a body without walking it. The old recovery set the
+      // position outright — to a corner of the route, from anywhere, in front of
+      // anybody — which is what made residents blink across rooms. The network
+      // is verified clear end to end, so a resident following it does not need
+      // rescuing; the only way into the scenery now is to be punched into it,
+      // and the way back out is to walk.
+      if (this.staticCollides(npc.group.position.x, npc.group.position.z, npc.group.position.y)) {
+        npc.recovering = true;
+      }
+      if (npc.recovering) {
+        const refuge = this.nearestNavPoint(npc.group.position);
+        const out = refuge.clone().sub(npc.group.position);
+        out.y = 0;
+        if (out.lengthSq() < 0.25) {
+          npc.recovering = false;
           npc.stuckFor = 0;
-          npc.waitUntil = now + 240;
+          // Whatever it was doing was interrupted by the blow; pick the journey
+          // up again from where it now stands.
+          npc.transit = [];
+          npc.atNode = this.nearestNavNode(npc.group.position);
+          npc.dwellUntil = now;
         } else {
-          // The whole loop is occupied. Standing still until it clears is far
-          // better than landing on top of somebody to get unstuck.
-          npc.stuckFor = 0;
-          npc.waitUntil = now + 900;
+          // Walked, not placed: the same speed it walks everywhere else, so it
+          // reads as somebody picking themselves up rather than a body moving
+          // between frames.
+          out.normalize().multiplyScalar(Math.min(npc.speed * delta, out.length()));
+          npc.group.position.x += out.x;
+          npc.group.position.z += out.z;
+          npc.group.rotation.y = Math.atan2(out.x, out.z);
         }
+      } else if (npc.stuckFor > 4) {
+        // Held up too long by the crowd rather than the scenery. Re-plan from
+        // where it is instead of shoving through.
+        npc.transit = [];
+        npc.atNode = this.nearestNavNode(npc.group.position);
+        npc.dwellUntil = now;
+        npc.stuckFor = 0;
       }
       // Carried off the route by a punch. Applied after the route step and
       // before the floor is found, so a struck resident skids back over the
