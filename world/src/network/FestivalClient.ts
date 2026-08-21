@@ -113,6 +113,16 @@ export interface PamphletContent {
   updatedAt: number;
 }
 
+export interface MentorFollower {
+  kind: 'visitor' | 'npc';
+  id: string;
+}
+
+export interface MentorFeedCounts {
+  visitors: Record<string, number>;
+  npcs: Record<string, number>;
+}
+
 export interface FestivalState {
   serverTime: number;
   selfId: string;
@@ -123,6 +133,8 @@ export interface FestivalState {
   siteStyle: SiteStyle;
   gateBackground: GateBackground;
   mentorCarrierId: string | null;
+  mentorFollower: MentorFollower | null;
+  mentorFeedCounts: MentorFeedCounts;
   clubRequest: ClubRequest | null;
   venueQueues: Partial<Record<VenueKey, ClubQueueEntry[]>>;
   customVideos: CustomVideos;
@@ -146,6 +158,8 @@ export interface AdminState {
   siteStyle: SiteStyle;
   gateBackground: GateBackground;
   mentorCarrierId: string | null;
+  mentorFollower: MentorFollower | null;
+  mentorFeedCounts: MentorFeedCounts;
   clubRequest: ClubRequest | null;
   venueQueues: Partial<Record<VenueKey, ClubQueueEntry[]>>;
   customVideos: CustomVideos;
@@ -500,6 +514,10 @@ export class FestivalClient {
 
   async releaseMentor(): Promise<{ ok: boolean; message?: string }> {
     return this.action('/api/mentor/put-down');
+  }
+
+  async feedMentor(): Promise<{ ok: boolean; message?: string }> {
+    return this.action('/api/mentor/feed');
   }
 
   async updateNpcProfile(key: string, npcId: NpcId, name: string, title: string): Promise<void> {

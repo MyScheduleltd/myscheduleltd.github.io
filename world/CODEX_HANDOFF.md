@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-08-20 · HEAD `4e2b3a9` · branch `main`
+Last updated: 2026-08-21 · HEAD `0245d19` + unpublished working tree · branch `main`
 
 > `world/CLAUDE_HANDOFF.md` is **stale** (2026-08-15). It says the build must never be
 > published and names the branch `codex/pivot-exploration`. Both are long out of date —
@@ -11,9 +11,9 @@ Last updated: 2026-08-20 · HEAD `4e2b3a9` · branch `main`
 
 ## 1. The one rule that matters
 
-**Every change ships in the same turn it is made.** The owner verifies on the live
-site, never in the repo. Work left in the working tree reads to them as no work done —
-this has caused real friction before.
+**Do not publish until the owner explicitly says `publish`.** Finish and verify the
+working tree, report that it is ready, then wait. When approval arrives, publish the
+whole accepted working tree together:
 
 ```bash
 cd world && npm run build:beta          # tsc --noEmit && vite build && publish to docs/beta
@@ -21,7 +21,7 @@ cd .. && git add -A world docs/beta && git commit && git push origin main
 ```
 
 `npm run verify` (`node --test server/server.test.mjs && tsc --noEmit && vite build`)
-must pass first. There are **40 server tests**; they all pass at HEAD.
+must pass first. There are **41 server tests**; they all pass with the current working tree.
 
 Two related traps, both of which have cost hours:
 
@@ -42,7 +42,7 @@ Two related traps, both of which have cost hours:
 | `world/src/ui/App.ts` | All DOM/UI. Gate, panels, chat, staff tools, jukebox player, touch controls. |
 | `world/src/style.css` | All styling, including every mobile/landscape rule. |
 | `world/server/index.mjs` | Zero-dependency Node service. SSE presence, chat, seats, punches, jukebox, programme clock, staff admin. |
-| `world/server/server.test.mjs` | 40 tests. Run with `npm test`. |
+| `world/server/server.test.mjs` | 41 tests. Run with `npm test`. |
 | `world/scripts/publish-beta.mjs` | Copies the Vite build into `docs/beta`. |
 
 Deployment: **Pages** serves `docs/`. **Render** runs `world/server/index.mjs`.
@@ -77,6 +77,7 @@ gate  gate-approach  temple  temple-altar  jukebox  perf
 club  club-dj  club-lobby  club-bar
 rooftop  rooftop-dj
 mentor  mentor-carry  mentor-npc-carry  npc-control  npc-popcorn-seat
+quests  quests-complete  fireworks
 ```
 
 `club-bar` seats an avatar on a bar stool and `__festivalReview()` reports the
@@ -161,6 +162,55 @@ and the bar wall only.
 ---
 
 ## 7. Recent work (this session)
+
+### 2026-08-21 · Guided objectives and local fireworks (implemented, not published)
+
+- Added 25 bilingual visit-only objectives in `src/data/quests.ts`, grouped into
+  basic navigation, world exploration and festival activities. Completion is wired
+  to actual world/UI events rather than clicks on the checklist itself.
+- Progress exists only in the running `App` and is cleared on `pagehide`, including a
+  back/forward-cache departure. No quest key is written to local or session storage.
+- Finishing all objectives starts a 125-second personal fireworks show over the sea.
+  It never enters multiplayer state. Normal/Lite graphics cap active rockets, bursts
+  and particles separately.
+- Bursts use colored non-shadow-casting point lights so standard world materials
+  react, plus matching additive planes just above the sea for water reflections.
+- `REPLAY FIREWORKS` / `重播煙火` is hidden before completion and appears only in the
+  festival-pass menu afterwards; it adds nothing to the camera view.
+- Review fixtures: `?review=quests` (0/25), `?review=quests-complete` (25/25 + replay),
+  and `?review=fireworks` (Shore horizon + live rocket/burst/light/reflection counts).
+- Browser verified: real keyboard actions moved the pass counter to 3/25; leaving and
+  re-entering restored 0/25; replay was absent at 0/25 and visible inside the pass at
+  25/25; fireworks rendered over the sea with colored water response and no console
+  errors. `npm run build` passed and all **41/41** server tests passed.
+
+This work is intentionally still uncommitted/unpublished with the MENTOR feed-loyalty
+work below. Preserve the unrelated `M prepros.config` change.
+
+### 2026-08-21 · MENTOR feed loyalty (implemented, not published)
+
+- Feeding MENTOR now records one server-authoritative count for the visible actor:
+  ordinary attendees keep their own count; STAFF feeding while controlling an NPC
+  credits that NPC; MENTOR cannot credit himself.
+- The current positive leader stays leader on a tie. If that attendee leaves, the
+  next highest active attendee takes over. With no positive score MENTOR resumes his
+  free route.
+- While STAFF controls MENTOR, the service publishes no follower and autonomous
+  following stops. Releasing MENTOR restores the preserved highest-ranked target.
+- The attendee panel shows `FEED ×N` / `餵食 ×N` for attendees and every NPC except
+  MENTOR. Browser check: 13 rendered rows, no horizontal overflow, MENTOR row has no
+  feed badge.
+- MENTOR walks toward the shared leader, keeps a natural stopping distance, and uses
+  a catch-up placement only when stacked floors or a long separation make an ordinary
+  NPC route impossible.
+- Verification: `npm run build` passed; **41/41** server tests passed, including ties,
+  leader departure, zero-score freedom, NPC credit, MENTOR self-feed rejection, and
+  STAFF control suspension/resumption.
+
+The source changes are intentionally still uncommitted/unpublished. The owner has not
+yet asked to publish this feature. Preserve the unrelated `M prepros.config` change.
+
+### 2026-08-20
 
 Prompts on phones were the theme. A prompt is the *only* way to reach an action on
 touch, so anything that hid one removed the action entirely — while desktop kept

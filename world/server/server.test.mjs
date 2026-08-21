@@ -446,6 +446,82 @@ test('MENTOR pickup is exclusive and shared while STAFF control remains attached
   });
   assert.equal(released.status, 200);
   assert.equal((await released.json()).mentorCarrierId, null);
+
+  const restored = await fetch(`${baseUrl}/api/admin/impersonate`, {
+    method: 'POST',
+    headers: { ...auth(staff), 'x-festival-admin-key': 'test-admin-key' },
+    body: JSON.stringify({ npcId: '' }),
+  });
+  assert.equal(restored.status, 200);
+});
+
+test('MENTOR follows the highest active feeder, pauses for STAFF control, and ranks NPC feeds', async () => {
+  const first = await join('LOYALTY FIRST');
+  const second = await join('LOYALTY SECOND');
+  const staff = await join('LOYALTY STAFF');
+  const adminHeaders = { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173' };
+  const state = async () => (await (await fetch(`${baseUrl}/api/admin/state`, { headers: adminHeaders })).json());
+  const feed = async (session) => fetch(`${baseUrl}/api/mentor/feed`, { method: 'POST', headers: auth(session) });
+
+  const initial = await state();
+  assert.equal(initial.mentorFollower, null);
+  assert.equal(initial.mentorFeedCounts.visitors[first.id], 0);
+  assert.equal(initial.mentorFeedCounts.npcs.MENTOR, undefined);
+
+  assert.equal((await feed(first)).status, 200);
+  assert.deepEqual((await state()).mentorFollower, { kind: 'visitor', id: first.id });
+
+  assert.equal((await feed(second)).status, 200);
+  assert.deepEqual((await state()).mentorFollower, { kind: 'visitor', id: first.id }, 'the current leader keeps a tied rank');
+  assert.equal((await feed(second)).status, 200);
+  assert.deepEqual((await state()).mentorFollower, { kind: 'visitor', id: second.id });
+
+  const controlledMentor = await fetch(`${baseUrl}/api/admin/impersonate`, {
+    method: 'POST',
+    headers: { ...auth(staff), 'x-festival-admin-key': 'test-admin-key' },
+    body: JSON.stringify({ npcId: 'MENTOR' }),
+  });
+  assert.equal(controlledMentor.status, 200);
+  assert.equal((await state()).mentorFollower, null, 'STAFF control suspends autonomous following');
+
+  const restoredStaff = await fetch(`${baseUrl}/api/admin/impersonate`, {
+    method: 'POST',
+    headers: { ...auth(staff), 'x-festival-admin-key': 'test-admin-key' },
+    body: JSON.stringify({ npcId: '' }),
+  });
+  assert.equal(restoredStaff.status, 200);
+  assert.deepEqual((await state()).mentorFollower, { kind: 'visitor', id: second.id });
+
+  assert.equal((await fetch(`${baseUrl}/api/session/leave`, { method: 'POST', headers: auth(second) })).status, 200);
+  assert.deepEqual((await state()).mentorFollower, { kind: 'visitor', id: first.id }, 'the next ranked attendee takes over');
+  assert.equal((await fetch(`${baseUrl}/api/session/leave`, { method: 'POST', headers: auth(first) })).status, 200);
+  assert.equal((await state()).mentorFollower, null, 'no positive active score leaves MENTOR free');
+
+  const controlledNpc = await fetch(`${baseUrl}/api/admin/impersonate`, {
+    method: 'POST',
+    headers: { ...auth(staff), 'x-festival-admin-key': 'test-admin-key' },
+    body: JSON.stringify({ npcId: 'NUNO' }),
+  });
+  assert.equal(controlledNpc.status, 200);
+  assert.equal((await feed(staff)).status, 200);
+  const npcState = await state();
+  assert.equal(npcState.mentorFeedCounts.npcs.NUNO, 1);
+  assert.deepEqual(npcState.mentorFollower, { kind: 'npc', id: 'NUNO' });
+
+  const mentorSelfFeed = await fetch(`${baseUrl}/api/admin/impersonate`, {
+    method: 'POST',
+    headers: { ...auth(staff), 'x-festival-admin-key': 'test-admin-key' },
+    body: JSON.stringify({ npcId: 'MENTOR' }),
+  });
+  assert.equal(mentorSelfFeed.status, 200);
+  assert.equal((await feed(staff)).status, 409);
+
+  const finalRestore = await fetch(`${baseUrl}/api/admin/impersonate`, {
+    method: 'POST',
+    headers: { ...auth(staff), 'x-festival-admin-key': 'test-admin-key' },
+    body: JSON.stringify({ npcId: '' }),
+  });
+  assert.equal(finalRestore.status, 200);
 });
 
 test('staff can add a YouTube work to a venue queue', async () => {

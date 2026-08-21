@@ -19,6 +19,10 @@ export interface NpcProfile {
   name: string;
   title: string;
 }
+export interface MentorFollowerTarget {
+  kind: 'visitor' | 'npc';
+  id: string;
+}
 export const DEFAULT_NPC_NAMES: NpcNames = Object.fromEntries(NPC_NAMES.map((name) => [name, name]));
 export const NPC_TITLES: Record<NpcId, string> = {
   MENTOR: 'Video Editor',
@@ -60,7 +64,8 @@ export type WorldAction =
   | { type: 'punch'; struck?: string; targetId?: string }
   | { type: 'punched'; droppedMentor: boolean; by?: string }
   | { type: 'died'; by?: string }
-  | { type: 'jukebox' };
+  | { type: 'jukebox' }
+  | { type: 'jump' };
 
 export interface AvatarPalette {
   skin: string;
@@ -241,6 +246,25 @@ interface WaterReflectionVisual {
   mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   material: THREE.MeshBasicMaterial;
   kind: 'sun' | 'moon';
+}
+
+interface FireworkRocket {
+  mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
+  trail: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+  light: THREE.PointLight;
+  velocity: number;
+  targetY: number;
+  colour: THREE.Color;
+}
+
+interface FireworkBurst {
+  points: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
+  velocities: Float32Array;
+  light: THREE.PointLight;
+  reflection: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  age: number;
+  lifetime: number;
+  peakIntensity: number;
 }
 
 interface Collider {
@@ -814,6 +838,8 @@ export class FestivalWorld {
   private readonly lookTarget = new THREE.Vector3();
   private readonly moveVector = new THREE.Vector3();
   private readonly npcControlTarget = new THREE.Vector3();
+  private readonly mentorTargetPosition = new THREE.Vector3();
+  private readonly mentorStepPosition = new THREE.Vector3();
   private readonly projectorWorldPosition = new THREE.Vector3();
   private readonly projectorNdc = new THREE.Vector3();
   private readonly projectorCorners = [
@@ -837,6 +863,10 @@ export class FestivalWorld {
   private readonly venueSignMaterials = new Map<VenueKey, THREE.MeshBasicMaterial>();
   private readonly waterTextures: THREE.CanvasTexture[] = [];
   private readonly waterReflections: WaterReflectionVisual[] = [];
+  private readonly fireworkRockets: FireworkRocket[] = [];
+  private readonly fireworkBursts: FireworkBurst[] = [];
+  private fireworksUntil = 0;
+  private nextFireworkAt = 0;
   private stylizedWater?: THREE.Mesh;
   private waterVolume?: THREE.Mesh;
   private waveSurface?: THREE.Mesh;
@@ -897,6 +927,7 @@ export class FestivalWorld {
   private playerGesture?: AvatarGesture;
   private controlledNpcId?: string;
   private mentorCarrierId?: string;
+  private mentorFollower?: MentorFollowerTarget;
   private selfVisitorId?: string;
   private mentorClaimPending = false;
   private mentorReleasePending = false;
@@ -1063,9 +1094,38 @@ export class FestivalWorld {
     window.removeEventListener('blur', this.clearRunning);
     document.removeEventListener('visibilitychange', this.resumeProjectorsOnReturn);
     window.removeEventListener('pointerup', this.nudgeProjectorsOnGesture, true);
+    this.stopFireworks();
     this.renderer.dispose();
     this.foregroundRenderer.dispose();
     for (const projector of this.projectors.values()) projector.element.remove();
+  }
+
+  /**
+   * A celebration owned by this browser alone. Nothing enters presence or the
+   * festival service, so another attendee neither renders nor receives it.
+   */
+  startFireworks(durationMs = 125_000): void {
+    const now = performance.now();
+    this.fireworksUntil = now + Math.max(120_000, durationMs);
+    this.nextFireworkAt = now;
+  }
+
+  stopFireworks(): void {
+    this.fireworksUntil = 0;
+    this.nextFireworkAt = 0;
+    while (this.fireworkRockets.length) this.removeFireworkRocket(this.fireworkRockets.pop()!);
+    while (this.fireworkBursts.length) this.removeFireworkBurst(this.fireworkBursts.pop()!);
+  }
+
+  /** Local QA summary: exposes counts, never the scene or mutable effect. */
+  fireworksReviewSnapshot(): { active: boolean; rockets: number; bursts: number; lights: number; reflections: number } {
+    return {
+      active: this.fireworksUntil > performance.now(),
+      rockets: this.fireworkRockets.length,
+      bursts: this.fireworkBursts.length,
+      lights: this.fireworkRockets.length + this.fireworkBursts.length,
+      reflections: this.fireworkBursts.length,
+    };
   }
 
   /** Local review helper used by the in-app visual QA route. */
@@ -1724,6 +1784,10 @@ export class FestivalWorld {
     this.syncSharedMentorCarrier();
   }
 
+  setMentorFollower(follower: MentorFollowerTarget | null): void {
+    this.mentorFollower = follower ?? undefined;
+  }
+
   rejectMentorCarry(): void {
     this.mentorClaimPending = false;
     if (this.carriedItem === 'MENTOR') this.putDownMentor(false);
@@ -1806,7 +1870,9 @@ export class FestivalWorld {
   setRemoteVisitors(visitors: RemoteVisitorVisual[]): void {
     const limit = this.graphicsMode === 'normal' ? 32 : 12;
     const priorityVisitors = visitors.filter((visitor) =>
-      visitor.id === this.mentorCarrierId || Boolean(visitor.npcId));
+      visitor.id === this.mentorCarrierId ||
+      (this.mentorFollower?.kind === 'visitor' && visitor.id === this.mentorFollower.id) ||
+      Boolean(visitor.npcId));
     const visibleVisitors = [
       ...priorityVisitors,
       ...visitors.filter((visitor) => !priorityVisitors.includes(visitor)),
@@ -2480,6 +2546,7 @@ export class FestivalWorld {
     this.verticalVelocity = JUMP_SPEED;
     this.playerGesture = 'jump';
     this.playerGestureUntil = performance.now() + 900;
+    this.onAction({ type: 'jump' });
   }
 
   /**
@@ -5600,6 +5667,7 @@ export class FestivalWorld {
     this.updateWaterReflections(elapsed);
     this.updateStylizedWater(elapsed);
     this.updateWaterLayers();
+    this.updateFireworks(delta, performance.now());
     this.updateClubBeat(elapsed);
     if (this.templeAura) {
       // The presence breathes rather than sitting there painted on.
@@ -5839,6 +5907,204 @@ export class FestivalWorld {
     }
   }
 
+  private updateFireworks(delta: number, now: number): void {
+    const running = now < this.fireworksUntil;
+    const rocketCap = this.graphicsMode === 'normal' ? 3 : 2;
+    const burstCap = this.graphicsMode === 'normal' ? 8 : 4;
+    if (running && now >= this.nextFireworkAt && this.fireworkRockets.length < rocketCap && this.fireworkBursts.length < burstCap) {
+      this.spawnFireworkRocket();
+      const finale = this.fireworksUntil - now < 20_000;
+      const minimum = finale ? (this.graphicsMode === 'normal' ? 260 : 620) : (this.graphicsMode === 'normal' ? 720 : 1_100);
+      const spread = finale ? (this.graphicsMode === 'normal' ? 300 : 360) : (this.graphicsMode === 'normal' ? 520 : 540);
+      this.nextFireworkAt = now + minimum + Math.random() * spread;
+    }
+
+    for (let index = this.fireworkRockets.length - 1; index >= 0; index -= 1) {
+      const rocket = this.fireworkRockets[index];
+      rocket.mesh.position.y += rocket.velocity * delta;
+      rocket.velocity -= 1.15 * delta;
+      rocket.light.position.copy(rocket.mesh.position);
+      rocket.light.intensity = 34 + Math.random() * 18;
+      const positions = rocket.trail.geometry.getAttribute('position') as THREE.BufferAttribute;
+      for (let trailIndex = 0; trailIndex < positions.count; trailIndex += 1) {
+        positions.setXYZ(
+          trailIndex,
+          rocket.mesh.position.x,
+          rocket.mesh.position.y - trailIndex * 0.38,
+          rocket.mesh.position.z,
+        );
+      }
+      positions.needsUpdate = true;
+      if (rocket.mesh.position.y < rocket.targetY) continue;
+      this.explodeFirework(rocket);
+      this.fireworkRockets.splice(index, 1);
+    }
+
+    for (let index = this.fireworkBursts.length - 1; index >= 0; index -= 1) {
+      const burst = this.fireworkBursts[index];
+      burst.age += delta;
+      const fade = Math.max(0, 1 - burst.age / burst.lifetime);
+      const positions = burst.points.geometry.getAttribute('position') as THREE.BufferAttribute;
+      for (let particleIndex = 0; particleIndex < positions.count; particleIndex += 1) {
+        const offset = particleIndex * 3;
+        burst.velocities[offset] *= Math.pow(0.988, delta * 60);
+        burst.velocities[offset + 1] = burst.velocities[offset + 1] * Math.pow(0.991, delta * 60) - 3.1 * delta;
+        burst.velocities[offset + 2] *= Math.pow(0.988, delta * 60);
+        positions.setXYZ(
+          particleIndex,
+          positions.getX(particleIndex) + burst.velocities[offset] * delta,
+          positions.getY(particleIndex) + burst.velocities[offset + 1] * delta,
+          positions.getZ(particleIndex) + burst.velocities[offset + 2] * delta,
+        );
+      }
+      positions.needsUpdate = true;
+      burst.points.material.opacity = Math.pow(fade, 1.35);
+      burst.light.intensity = burst.peakIntensity * Math.pow(fade, 2.2) * (0.82 + Math.random() * 0.18);
+      burst.reflection.material.opacity = 0.52 * Math.pow(fade, 1.7);
+      burst.reflection.scale.x = 10 + burst.age * 4;
+      burst.reflection.scale.y = 30 + burst.age * 8;
+      if (burst.age < burst.lifetime) continue;
+      this.removeFireworkBurst(burst);
+      this.fireworkBursts.splice(index, 1);
+    }
+  }
+
+  private spawnFireworkRocket(): void {
+    const colours = [0xff3158, 0xffc83d, 0x62d6ff, 0x9f70ff, 0x52ed94, 0xff8a42];
+    const colour = new THREE.Color(colours[Math.floor(Math.random() * colours.length)]);
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(this.graphicsMode === 'normal' ? 0.16 : 0.2, 6, 5),
+      new THREE.MeshBasicMaterial({ color: colour, toneMapped: false }),
+    );
+    // Kept in the part of the horizon visible from the Shore: the earlier,
+    // wider arc was physically over the sea but most bursts opened just beyond
+    // a normal camera's vertical or horizontal field of view.
+    mesh.position.set(THREE.MathUtils.randFloat(-34, 34), 0.8, THREE.MathUtils.randFloat(-101, -88));
+    mesh.userData.projectorBackground = true;
+    const trailGeometry = new THREE.BufferGeometry();
+    trailGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(8 * 3), 3));
+    const trail = new THREE.Line(trailGeometry, new THREE.LineBasicMaterial({
+      color: colour,
+      transparent: true,
+      opacity: 0.78,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+    }));
+    trail.userData.projectorBackground = true;
+    const light = new THREE.PointLight(colour, 42, 42, 1.65);
+    light.position.copy(mesh.position);
+    light.castShadow = false;
+    this.scene.add(mesh, trail, light);
+    this.fireworkRockets.push({
+      mesh,
+      trail,
+      light,
+      velocity: THREE.MathUtils.randFloat(16.5, 21.5),
+      targetY: THREE.MathUtils.randFloat(13, 24),
+      colour,
+    });
+  }
+
+  private explodeFirework(rocket: FireworkRocket): void {
+    const origin = rocket.mesh.position.clone();
+    this.removeFireworkRocket(rocket);
+    const count = this.graphicsMode === 'normal' ? 76 : 40;
+    const pattern = Math.floor(Math.random() * 4);
+    const positions = new Float32Array(count * 3);
+    const velocities = new Float32Array(count * 3);
+    for (let index = 0; index < count; index += 1) {
+      const offset = index * 3;
+      positions[offset] = origin.x;
+      positions[offset + 1] = origin.y;
+      positions[offset + 2] = origin.z;
+      const speed = THREE.MathUtils.randFloat(5.2, 10.5);
+      if (pattern === 1) {
+        const angle = index / count * Math.PI * 2;
+        velocities[offset] = Math.cos(angle) * speed;
+        velocities[offset + 1] = Math.sin(angle) * speed;
+        velocities[offset + 2] = THREE.MathUtils.randFloatSpread(1.7);
+      } else if (pattern === 2) {
+        velocities[offset] = THREE.MathUtils.randFloatSpread(7.5);
+        velocities[offset + 1] = THREE.MathUtils.randFloat(3.5, 10.5);
+        velocities[offset + 2] = THREE.MathUtils.randFloatSpread(5.2);
+      } else if (pattern === 3) {
+        const spoke = index % 12 / 12 * Math.PI * 2;
+        const reach = THREE.MathUtils.randFloat(0.35, 1);
+        velocities[offset] = Math.cos(spoke) * speed * reach;
+        velocities[offset + 1] = (3.2 + Math.sin(spoke) * 4.2) * reach;
+        velocities[offset + 2] = THREE.MathUtils.randFloatSpread(2.8);
+      } else {
+        const vertical = THREE.MathUtils.randFloatSpread(2);
+        const angle = Math.random() * Math.PI * 2;
+        const horizontal = Math.sqrt(Math.max(0, 1 - vertical * vertical * 0.25));
+        velocities[offset] = Math.cos(angle) * horizontal * speed;
+        velocities[offset + 1] = vertical * speed * 0.5;
+        velocities[offset + 2] = Math.sin(angle) * horizontal * speed * 0.72;
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const points = new THREE.Points(geometry, new THREE.PointsMaterial({
+      color: rocket.colour,
+      size: this.graphicsMode === 'normal' ? 0.92 : 1.12,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 1,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+    }));
+    points.userData.projectorBackground = true;
+    points.frustumCulled = false;
+    const peakIntensity = this.graphicsMode === 'normal' ? 190 : 125;
+    const light = new THREE.PointLight(rocket.colour, peakIntensity, this.graphicsMode === 'normal' ? 92 : 70, 1.45);
+    light.position.copy(origin);
+    light.castShadow = false;
+
+    const reflectionMaterial = new THREE.MeshBasicMaterial({
+      color: rocket.colour,
+      transparent: true,
+      opacity: 0.52,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+      side: THREE.DoubleSide,
+    });
+    const reflection = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), reflectionMaterial);
+    reflection.rotation.x = -Math.PI / 2;
+    reflection.position.set(origin.x * 0.82, 0.158, THREE.MathUtils.clamp(origin.z + 21, -88, -66));
+    reflection.scale.set(10, 30, 1);
+    reflection.renderOrder = 5;
+    reflection.userData.projectorBackground = true;
+    this.scene.add(points, light, reflection);
+    this.fireworkBursts.push({
+      points,
+      velocities,
+      light,
+      reflection,
+      age: 0,
+      lifetime: THREE.MathUtils.randFloat(2.4, 3.8),
+      peakIntensity,
+    });
+  }
+
+  private removeFireworkRocket(rocket: FireworkRocket): void {
+    this.scene.remove(rocket.mesh, rocket.trail, rocket.light);
+    rocket.mesh.geometry.dispose();
+    rocket.mesh.material.dispose();
+    rocket.trail.geometry.dispose();
+    rocket.trail.material.dispose();
+  }
+
+  private removeFireworkBurst(burst: FireworkBurst): void {
+    this.scene.remove(burst.points, burst.light, burst.reflection);
+    burst.points.geometry.dispose();
+    burst.points.material.dispose();
+    burst.reflection.geometry.dispose();
+    burst.reflection.material.dispose();
+  }
+
   private updatePlayer(delta: number): void {
     if (this.originalPlayerIdle.visible && this.originalPlayerIdleRig) {
       this.animateRig(this.originalPlayerIdleRig, this.clock.elapsedTime * 1.2, 0.025);
@@ -6075,6 +6341,90 @@ export class FestivalWorld {
     this.player.rotation.y = Math.atan2(this.moveVector.x, this.moveVector.z);
   }
 
+  private mentorFollowerObject(): THREE.Object3D | undefined {
+    if (!this.mentorFollower) return undefined;
+    if (this.mentorFollower.kind === 'npc') {
+      return this.npcs.find((npc) => npc.id === this.mentorFollower?.id)?.group;
+    }
+    if (this.mentorFollower.id === this.selfVisitorId) {
+      return this.controlledNpcId && this.originalPlayerIdle.visible ? this.originalPlayerIdle : this.player;
+    }
+    return this.remoteAvatars.get(this.mentorFollower.id)?.group;
+  }
+
+  private placeMentorNearFollower(mentor: NpcAvatar, target: THREE.Vector3): boolean {
+    const offsets: Array<[number, number]> = [[0, 2.4], [2.4, 0], [-2.4, 0], [0, -2.4]];
+    for (const [offsetX, offsetZ] of offsets) {
+      const x = target.x + offsetX;
+      const z = Math.max(target.z + offsetZ, -57.3);
+      const y = this.groundHeightAt(x, z, target.y);
+      if (Math.abs(y - target.y) > 1.8 || this.staticCollides(x, z, y)) continue;
+      mentor.group.position.set(x, y, z);
+      mentor.waypointIndex = this.nearestRouteIndex(mentor, mentor.group.position);
+      mentor.stuckFor = 0;
+      mentor.waitUntil = performance.now() + 180;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Loyalty movement is rendered from one shared server target. A short
+   * catch-up placement handles stacked venue floors that ordinary NPC routes
+   * cannot traverse, while nearby movement still walks and respects scenery.
+   */
+  private updateMentorFollower(mentor: NpcAvatar, targetObject: THREE.Object3D, delta: number): boolean {
+    targetObject.getWorldPosition(this.mentorTargetPosition);
+    const dx = this.mentorTargetPosition.x - mentor.group.position.x;
+    const dz = this.mentorTargetPosition.z - mentor.group.position.z;
+    const distance = Math.hypot(dx, dz);
+    const verticalGap = Math.abs(this.mentorTargetPosition.y - mentor.group.position.y);
+    if (distance > 32 || (verticalGap > 2.2 && distance < 18) || (mentor.stuckFor > 2.4 && distance > 7)) {
+      if (this.placeMentorNearFollower(mentor, this.mentorTargetPosition)) return false;
+    }
+    if (distance <= 2.25) {
+      mentor.stuckFor = 0;
+      mentor.group.rotation.y = Math.atan2(dx, dz);
+      return false;
+    }
+
+    const travel = Math.min(distance - 2.1, Math.max(5.4, mentor.speed * 5.2) * delta);
+    const nx = dx / distance;
+    const nz = dz / distance;
+    this.mentorStepPosition.set(
+      mentor.group.position.x + nx * travel,
+      mentor.group.position.y,
+      mentor.group.position.z + nz * travel,
+    );
+    const nextY = this.groundHeightAt(this.mentorStepPosition.x, this.mentorStepPosition.z, mentor.group.position.y);
+    let moved = false;
+    if (!this.npcCollides(mentor, this.mentorStepPosition.x, this.mentorStepPosition.z)) {
+      mentor.group.position.set(this.mentorStepPosition.x, nextY, this.mentorStepPosition.z);
+      moved = true;
+    } else {
+      const nextX = mentor.group.position.x + nx * travel;
+      if (!this.npcCollides(mentor, nextX, mentor.group.position.z)) {
+        mentor.group.position.x = nextX;
+        moved = true;
+      }
+      const nextZ = mentor.group.position.z + nz * travel;
+      if (!this.npcCollides(mentor, mentor.group.position.x, nextZ)) {
+        mentor.group.position.z = nextZ;
+        moved = true;
+      }
+      if (moved) {
+        mentor.group.position.y = this.groundHeightAt(
+          mentor.group.position.x,
+          mentor.group.position.z,
+          mentor.group.position.y,
+        );
+      }
+    }
+    mentor.group.rotation.y = Math.atan2(nx, nz);
+    mentor.stuckFor = moved ? 0 : mentor.stuckFor + delta;
+    return moved;
+  }
+
   /**
    * Carries the body away from a punch that landed on it. Separate from
    * movePlayer because a blow lands whether or not the struck attendee is
@@ -6248,6 +6598,49 @@ export class FestivalWorld {
           this.animateMentorDog(npc.dogRig, elapsed * 5.4, false, carriedGesture === 'tail-wag', now < npc.eatUntil);
         }
         continue;
+      }
+      if (npc.id === 'MENTOR' && this.mentorFollower) {
+        const followerObject = this.mentorFollowerObject();
+        if (followerObject) {
+          let moving = false;
+          if (npc.knockback.lengthSq() > 0.0004) {
+            const slideX = npc.group.position.x + npc.knockback.x * delta;
+            const slideZ = npc.group.position.z + npc.knockback.z * delta;
+            if (!this.staticCollides(slideX, slideZ, npc.group.position.y)) {
+              npc.group.position.x = slideX;
+              npc.group.position.z = slideZ;
+              moving = true;
+            } else {
+              npc.knockback.set(0, 0, 0);
+            }
+            npc.knockback.multiplyScalar(Math.exp(-delta * 7.5));
+          } else {
+            npc.knockback.set(0, 0, 0);
+            moving = this.updateMentorFollower(npc, followerObject, delta);
+          }
+          npc.group.position.y = this.groundHeightAt(
+            npc.group.position.x,
+            npc.group.position.z,
+            npc.group.position.y,
+          ) + Math.sin(elapsed * 1.35 + npc.phase) * 0.018;
+          const gesture = now < npc.gestureUntil ? npc.gesture : undefined;
+          if (npc.dogRig) this.animateMentorDog(
+            npc.dogRig,
+            elapsed * 8.4 + npc.phase,
+            moving,
+            gesture === 'tail-wag',
+            now < npc.eatUntil,
+            gesture === 'hit',
+            gesture,
+            this.gestureProgress(gesture, npc.gestureUntil),
+          );
+          const distanceToPlayer = npc.group.position.distanceTo(this.player.position);
+          if (distanceToPlayer < nearestDistance) {
+            nearestDistance = distanceToPlayer;
+            nearestNpc = npc;
+          }
+          continue;
+        }
       }
       this.shuffleNpcHaunt(npc, now);
       const target = npc.route[npc.waypointIndex];

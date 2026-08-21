@@ -8,6 +8,7 @@ import {
 import companyLogoUrl from '../assets/company-logo.png';
 import { DJ_BY_VENUE, djProfileFor } from '../data/djProfiles';
 import { ProgrammeClock } from '../data/programmeClock';
+import { QUESTS, QUEST_SECTIONS, QUEST_TOTAL, type QuestId } from '../data/quests';
 import {
   FestivalClient,
   type AdminState,
@@ -38,7 +39,7 @@ import {
 } from '../world/FestivalWorld';
 
 type Language = 'en' | 'zh-TW';
-type PanelId = 'map' | 'programme' | 'jukebox' | 'chat' | 'attendees' | 'pamphlet' | 'character' | 'sound' | 'graphics' | 'controls' | 'contact' | 'admin';
+type PanelId = 'quests' | 'map' | 'programme' | 'jukebox' | 'chat' | 'attendees' | 'pamphlet' | 'character' | 'sound' | 'graphics' | 'controls' | 'contact' | 'admin';
 
 interface ChatMessage {
   id: string;
@@ -171,11 +172,11 @@ const readStoredJukeboxVolume = (): number => {
 
 const panelLabels: Record<Language, Record<PanelId, string>> = {
   en: {
-    map: 'MAP', programme: 'PROGRAMME', jukebox: 'JUKEBOX', chat: 'CHAT', attendees: 'ATTENDEES', pamphlet: 'PAMPHLET', character: 'CHARACTER',
+    quests: 'OBJECTIVES', map: 'MAP', programme: 'PROGRAMME', jukebox: 'JUKEBOX', chat: 'CHAT', attendees: 'ATTENDEES', pamphlet: 'PAMPHLET', character: 'CHARACTER',
     sound: 'SOUND', graphics: 'GRAPHICS', controls: 'CONTROLS', contact: 'CONTACT', admin: 'STAFF',
   },
   'zh-TW': {
-    map: '地圖', programme: '節目表', jukebox: '點唱機', chat: '聊天', attendees: '觀影者', pamphlet: '影展手冊', character: '角色',
+    quests: '任務', map: '地圖', programme: '節目表', jukebox: '點唱機', chat: '聊天', attendees: '觀影者', pamphlet: '影展手冊', character: '角色',
     sound: '聲音', graphics: '畫質', controls: '操作', contact: '聯絡', admin: '工作人員',
   },
 };
@@ -309,6 +310,9 @@ export class App {
   private waitTimer?: number;
   private gateCopy?: GateCopy;
   private controlledNpcId?: string;
+  /** Visit-only onboarding: deliberately absent from local/session storage. */
+  private readonly completedQuests = new Set<QuestId>();
+  private questCelebrated = false;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -617,8 +621,9 @@ export class App {
         <nav class="festival-pass" id="festival-pass" aria-label="Festival pass menu" hidden>
           <p class="festival-pass__title">${copy[this.language].menu}</p>
           ${Object.entries(panelLabels[this.language])
-            .map(([id, label], index) => `<button type="button" data-panel="${id}"><span>${String(index + 1).padStart(2, '0')}</span>${label}</button>`)
+            .map(([id, label], index) => `<button type="button" data-panel="${id}"><span>${String(index + 1).padStart(2, '0')}</span>${label}${id === 'quests' ? `<small data-quest-count>0/${QUEST_TOTAL}</small>` : ''}</button>`)
             .join('')}
+          <button type="button" class="festival-pass__fireworks" data-replay-fireworks hidden><span>★</span>${zh ? '重播煙火' : 'REPLAY FIREWORKS'}</button>
         </nav>
         <section class="panel" id="panel" aria-live="polite" hidden></section>
         <section class="venue-screen" id="venue-screen" aria-label="Private festival screening" hidden>
@@ -738,6 +743,23 @@ export class App {
       window.setTimeout(() => {
         document.documentElement.dataset.celestialReview = JSON.stringify(this.world?.celestialReviewSnapshot());
       }, 500);
+    } else if (reviewTarget === 'fireworks' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      this.world.focusCelestialForReview();
+      this.world.startFireworks();
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.fireworksReviewSnapshot();
+      window.setInterval(() => {
+        document.documentElement.dataset.fireworksReview = JSON.stringify(this.world?.fireworksReviewSnapshot());
+      }, 400);
+    } else if ((reviewTarget === 'quests' || reviewTarget === 'quests-complete') && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      if (reviewTarget === 'quests-complete') QUESTS.forEach((quest) => this.completeQuest(quest.id));
+      this.openPanel('quests');
+      const questReview = () => ({
+        completed: this.completedQuests.size,
+        total: QUEST_TOTAL,
+        replayUnlocked: this.questCelebrated,
+      });
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = questReview;
+      document.documentElement.dataset.questReview = JSON.stringify(questReview());
     } else if (reviewTarget === 'private-screening' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       const film = this.allFilms()[0];
       if (film) this.startPrivateScreening(film);
@@ -837,10 +859,17 @@ export class App {
       passToggle.setAttribute('aria-expanded', String(!isOpen));
       if (pass) pass.hidden = isOpen;
       passToggle.querySelector('span:last-child')!.textContent = isOpen ? '+' : '−';
+      if (!isOpen) this.completeQuest('pass');
     });
 
     this.root.querySelectorAll<HTMLButtonElement>('[data-panel]').forEach((button) => {
       button.addEventListener('click', () => this.openPanel(button.dataset.panel as PanelId));
+    });
+    this.root.querySelector<HTMLButtonElement>('[data-replay-fireworks]')?.addEventListener('click', () => {
+      if (!this.questCelebrated) return;
+      this.closeFestivalPass();
+      this.world?.startFireworks();
+      this.showWorldAlert(this.language === 'zh-TW' ? '煙火再次升空' : 'FIREWORKS LAUNCHED AGAIN');
     });
 
     // Delegated rather than bound to the element: the prompt is re-rendered as
@@ -1050,6 +1079,7 @@ export class App {
     // the bar, where plain E orders a round, the STAND button bought a drink.
     this.root.querySelector<HTMLButtonElement>('[data-public-stand]')?.addEventListener('click', () => this.world?.forceStand());
     window.addEventListener('pagehide', (event) => {
+      this.resetQuestProgress();
       if (event.persisted) {
         this.festivalClient.suspend();
         return;
@@ -1071,6 +1101,14 @@ export class App {
 
   private updateSnapshot(snapshot: WorldSnapshot): void {
     this.snapshot = snapshot;
+    if (snapshot.moving) this.completeQuest('walk');
+    if (snapshot.moving && snapshot.running) this.completeQuest('run');
+    if (snapshot.cameraMode !== 'follow' && snapshot.cameraMode !== 'screening') this.completeQuest('camera');
+    if (snapshot.location === 'THE PALACE') this.completeQuest('palace');
+    if (snapshot.location === 'DRIVE-IN 88') this.completeQuest('drive-in');
+    if (snapshot.location === 'THE SHORE' || snapshot.location === 'MEDITERRANEAN SEA') this.completeQuest('shore');
+    if (snapshot.location === 'THE BASEMENT') this.completeQuest('basement');
+    if (snapshot.location === 'THE ROOFTOP') this.completeQuest('rooftop');
     const location = this.root.querySelector<HTMLElement>('#location-label');
     const clock = this.root.querySelector<HTMLElement>('#festival-clock');
     const phase = this.root.querySelector<HTMLElement>('#phase-label');
@@ -1147,6 +1185,17 @@ export class App {
   }
 
   private handleWorldAction(action: WorldAction): void {
+    if (action.type === 'jump') this.completeQuest('jump');
+    if (action.type === 'dance' && action.active) this.completeQuest('dance');
+    if (action.type === 'greet') this.completeQuest('greet');
+    if (action.type === 'treat') this.completeQuest('feed-mentor');
+    if (action.type === 'mentor' && action.active) this.completeQuest('carry-mentor');
+    if (action.type === 'ate') this.completeQuest('eat');
+    if (action.type === 'drank') this.completeQuest('drink');
+    if (action.type === 'jukebox') this.completeQuest('jukebox');
+    if (action.type === 'pamphlet') this.completeQuest('pamphlet');
+    if (action.type === 'programme') this.completeQuest('programme');
+    if (action.type === 'donate' && !action.target) this.completeQuest('offering');
     if (action.type === 'seated' && action.seatId.startsWith('CLUB-')) {
       this.activeSeatId = action.seatId;
       this.closeFestivalPass();
@@ -1155,6 +1204,7 @@ export class App {
       return;
     }
     if (action.type === 'seated') {
+      this.completeQuest('public-screening');
       this.activeVenue = action.venue;
       this.activeSeatId = action.seatId;
       this.closeFestivalPass();
@@ -1263,6 +1313,11 @@ export class App {
       return;
     }
     if (action.type === 'treat') {
+      if (this.festivalClient.online) {
+        void this.festivalClient.feedMentor().then((result) => {
+          if (!result.ok) this.showWorldAlert(result.message ?? (this.language === 'zh-TW' ? '餵食未能記錄' : 'FEED COULD NOT BE RECORDED'));
+        });
+      }
       this.showWorldAlert(this.language === 'zh-TW'
         ? `正在餵 ${action.target} 吃點心`
         : `GIVING ${action.target} A TREAT`);
@@ -1561,6 +1616,7 @@ export class App {
   }
 
   private startPrivateScreening(film: CatalogueEntry, offset = 0): void {
+    this.completeQuest('private-screening');
     this.activeVenue = film.venue;
     this.privateProgress = { filmId: film.id, offset, startedAt: Date.now() };
     this.savePrivateProgress();
@@ -2185,6 +2241,7 @@ export class App {
     if (state.entranceSign) this.world?.setEntranceSign(state.entranceSign.title, state.entranceSign.subtitle);
     if (state.templeSign) this.world?.setTempleSign(state.templeSign.name, state.templeSign.label);
     this.world?.setSharedMentorCarrier(state.mentorCarrierId, state.selfId);
+    this.world?.setMentorFollower(state.mentorFollower);
     const remoteVisitors = state.visitors
       .filter((visitor) => visitor.id !== state.selfId)
       .map((visitor) => ({
@@ -2395,6 +2452,7 @@ export class App {
 
   private setViewMode(mode: 'normal' | 'camera' | 'postcard' | 'film'): void {
     this.viewMode = mode;
+    if (mode !== 'normal') this.completeQuest('photo');
     this.world?.setPhotographing(mode !== 'normal');
     const shell = this.root.querySelector<HTMLElement>('.world-shell');
     if (!shell) return;
@@ -2667,9 +2725,71 @@ export class App {
     }, 2200);
   }
 
+  private questPanelContent(): string {
+    const language = this.language;
+    const done = this.completedQuests.size;
+    return `
+      <div class="quest-progress" aria-label="${done} / ${QUEST_TOTAL}">
+        <p class="eyebrow">${language === 'zh-TW' ? '本次造訪' : 'THIS VISIT'}</p>
+        <strong>${done}<span> / ${QUEST_TOTAL}</span></strong>
+        <div><i style="width:${Math.round(done / QUEST_TOTAL * 100)}%"></i></div>
+        <p>${language === 'zh-TW'
+          ? '完成基本操作、探索場地並參與影展。離開世界後進度會重設。'
+          : 'Learn the controls, explore the venues and join the festival. Progress resets when you leave.'}</p>
+      </div>
+      ${QUEST_SECTIONS.map((section) => `
+        <section class="quest-section">
+          <h2>${section.title[language]}</h2>
+          <ol>
+            ${section.quests.map((item) => {
+              const complete = this.completedQuests.has(item.id);
+              return `<li class="${complete ? 'is-complete' : ''}">
+                <span class="quest-check" aria-hidden="true">${complete ? '✓' : '○'}</span>
+                <div><strong>${this.escapeHtml(item.title[language])}</strong><small>${this.escapeHtml(item.hint[language])}</small></div>
+              </li>`;
+            }).join('')}
+          </ol>
+        </section>`).join('')}
+      ${this.questCelebrated ? `<p class="quest-complete-note">${language === 'zh-TW'
+        ? '全部完成。煙火重播已解鎖於通行證選單。'
+        : 'ALL COMPLETE. FIREWORKS REPLAY IS UNLOCKED IN THE PASS MENU.'}</p>` : ''}`;
+  }
+
+  private completeQuest(id: QuestId): void {
+    if (this.completedQuests.has(id)) return;
+    this.completedQuests.add(id);
+    this.refreshQuestUi();
+    if (this.completedQuests.size < QUEST_TOTAL || this.questCelebrated) return;
+    this.questCelebrated = true;
+    this.refreshQuestUi();
+    this.world?.startFireworks();
+    this.showWorldAlert(this.language === 'zh-TW'
+      ? '任務全部完成 · 海上煙火升空'
+      : 'ALL OBJECTIVES COMPLETE · FIREWORKS OVER THE SEA');
+  }
+
+  private refreshQuestUi(): void {
+    const count = this.root.querySelector<HTMLElement>('[data-quest-count]');
+    if (count) count.textContent = `${this.completedQuests.size}/${QUEST_TOTAL}`;
+    const replay = this.root.querySelector<HTMLButtonElement>('[data-replay-fireworks]');
+    if (replay) replay.hidden = !this.questCelebrated;
+    if (this.activePanel !== 'quests') return;
+    const body = this.root.querySelector<HTMLElement>('#panel .panel__body');
+    if (body) body.innerHTML = this.questPanelContent();
+  }
+
+  private resetQuestProgress(): void {
+    this.completedQuests.clear();
+    this.questCelebrated = false;
+    this.world?.stopFireworks();
+    this.refreshQuestUi();
+  }
+
   private openPanel(panelId: PanelId): void {
     const panel = this.root.querySelector<HTMLElement>('#panel');
     if (!panel) return;
+    if (panelId === 'map') this.completeQuest('map');
+    if (panelId === 'programme') this.completeQuest('programme');
     this.closeFestivalPass();
     this.activePanel = panelId;
     panel.className = `panel${panelId === 'chat' ? ' panel--chat' : ''}${panelId === 'character' ? ' panel--character' : ''}`;
@@ -2700,6 +2820,8 @@ export class App {
 
   private panelContent(panelId: PanelId): string {
     switch (panelId) {
+      case 'quests':
+        return this.questPanelContent();
       case 'map':
         return `
           <p class="panel-intro">${this.language === 'zh-TW' ? '選擇入口即可快速移動。' : 'Choose an entrance to fast travel.'}</p>
@@ -2742,6 +2864,12 @@ export class App {
         return this.chatPanelContent();
       case 'attendees':
         {
+        const feedCounts = this.networkState?.mentorFeedCounts ?? { visitors: {}, npcs: {} };
+        const feedLabel = (count: number) => `<span class="attendee-feed-count">${this.language === 'zh-TW' ? '餵食' : 'FEED'} ×${count}</span>`;
+        const selfVisitor = this.networkState?.visitors.find((visitor) => visitor.id === this.networkState?.selfId);
+        const selfFeedCount = selfVisitor?.npcId && selfVisitor.npcId !== 'MENTOR'
+          ? feedCounts.npcs[selfVisitor.npcId] ?? 0
+          : feedCounts.visitors[this.networkState?.selfId ?? ''] ?? 0;
         const remoteVisitors = this.networkState?.visitors.filter((visitor) => visitor.id !== this.networkState?.selfId) ?? [];
         const visibleNpcProfiles = this.npcProfiles
           .slice(0, this.snapshot?.npcCount ?? 5)
@@ -2755,14 +2883,19 @@ export class App {
             ? (this.language === 'zh-TW' ? `${remoteVisitors.length + 1} 位線上觀影者` : `${remoteVisitors.length + 1} LIVE VISITOR${remoteVisitors.length ? 'S' : ''}`)
             : (this.language === 'zh-TW' ? '離線模式 · 正在重新連線' : 'OFFLINE · RECONNECTING')}</p>
           <ul class="attendee-list">
-            <li><span class="status-dot"></span><strong>${this.escapeHtml(this.currentId)}</strong><small>${this.localizeLocation(this.snapshot?.location ?? 'FESTIVAL GATE')}${window.innerWidth < 780 ? ` · ${this.language === 'zh-TW' ? '手機' : 'PHONE'}` : ''}</small></li>
-            ${remoteVisitors.map((visitor) => `<li><span class="status-dot"></span><strong>${this.escapeHtml(visitor.name)}</strong><small>${this.escapeHtml(this.localizeLocation(visitor.presence.location))}${visitor.seatedAt ? ` · ${this.escapeHtml(visitor.seatedAt)}` : ''}</small></li>`).join('')}
+            <li><span class="status-dot"></span><strong>${this.escapeHtml(this.currentId)}</strong><small>${this.localizeLocation(this.snapshot?.location ?? 'FESTIVAL GATE')}${window.innerWidth < 780 ? ` · ${this.language === 'zh-TW' ? '手機' : 'PHONE'}` : ''}${selfVisitor?.npcId === 'MENTOR' ? '' : feedLabel(selfFeedCount)}</small></li>
+            ${remoteVisitors.map((visitor) => {
+              const count = visitor.npcId && visitor.npcId !== 'MENTOR'
+                ? feedCounts.npcs[visitor.npcId] ?? 0
+                : feedCounts.visitors[visitor.id] ?? 0;
+              return `<li><span class="status-dot"></span><strong>${this.escapeHtml(visitor.name)}</strong><small>${this.escapeHtml(this.localizeLocation(visitor.presence.location))}${visitor.seatedAt ? ` · ${this.escapeHtml(visitor.seatedAt)}` : ''}${visitor.npcId === 'MENTOR' ? '' : feedLabel(count)}</small></li>`;
+            }).join('')}
             ${visibleNpcProfiles.map(({ profile, originalIndex }) => `<li><span class="npc-dot">NPC</span><strong>${this.escapeHtml(profile.name)}<em>${this.escapeHtml(profile.title)}</em></strong><small>${this.escapeHtml(this.localizeLocation(
               profile.id === 'XIEHGAN' ? 'THE BASEMENT'
                 : profile.id === 'DRBEAUTY' ? 'THE ROOFTOP'
                 : originalIndex < 4 ? 'MY SQUARE'
                   : originalIndex < 6 ? 'THE PALACE'
-                    : originalIndex < 8 ? 'DRIVE-IN 88' : 'THE SHORE'))}</small></li>`).join('')}
+                    : originalIndex < 8 ? 'DRIVE-IN 88' : 'THE SHORE'))}${profile.id === 'MENTOR' ? '' : feedLabel(feedCounts.npcs[profile.id] ?? 0)}</small></li>`).join('')}
           </ul>`;
         }
       case 'pamphlet':
@@ -3144,10 +3277,11 @@ export class App {
               this.renderChatStream();
               this.refreshOpenChatFeed();
               this.showWorldAlert(result.message ?? 'MESSAGE COULD NOT BE SENT');
-            } else if (input) {
+            } else {
               // Sent lines used to stay in the box, so the next one was typed
               // onto the end of the last.
-              input.value = '';
+              if (input) input.value = '';
+              this.completeQuest('chat');
             }
             if (input) {
               input.readOnly = false;
@@ -3162,6 +3296,7 @@ export class App {
             text: text.slice(0, 160),
             timestamp: Date.now(),
           });
+          this.completeQuest('chat');
           // Redraw the stream rather than the panel: rebuilding the panel threw
           // away the very field being typed into, focus and all.
           if (input) input.value = '';
@@ -4056,7 +4191,7 @@ export class App {
       .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
     const npcCount = this.snapshot?.npcCount ?? 5;
     const npcs = profiles.slice(0, npcCount).map((profile) => [profile.id, profile.name, profile.title]);
-    return JSON.stringify([this.language, visitors, npcs]);
+    return JSON.stringify([this.language, visitors, npcs, state?.mentorFeedCounts ?? null, state?.mentorFollower ?? null]);
   }
 
   private mentorName(): string {

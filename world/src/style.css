@@ -554,8 +554,12 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 .festival-pass[hidden], .panel[hidden], .interaction-toast[hidden] { display: none; }
 .festival-pass__title { margin: 5px 7px 10px; font: 900 23px var(--condensed); }
 .festival-pass button { width: 100%; display: flex; gap: 15px; border: 0; border-top: 1px solid rgba(17,17,19,.22); padding: 10px 7px; color: var(--ink); background: transparent; text-align: left; font: 800 18px var(--condensed); cursor: pointer; }
+.festival-pass button[hidden] { display: none; }
 .festival-pass button span { color: var(--red); font-size: 11px; }
 .festival-pass button:hover { padding-left: 13px; color: white; background: var(--ink); }
+.festival-pass button small { margin-left: auto; font: 800 11px var(--condensed); opacity: .62; }
+.festival-pass__fireworks { color: var(--red) !important; }
+.festival-pass__fireworks:hover { color: white !important; background: var(--red) !important; }
 .panel {
   position: fixed; z-index: 9; inset: clamp(72px, 10vh, 108px) max(22px, calc((100vw - 950px) / 2));
   display: flex; flex-direction: column; color: var(--ink); background: var(--paper); border: 1px solid white; box-shadow: 22px 22px 0 rgba(0,0,0,.62);
@@ -633,6 +637,24 @@ button:active { filter: brightness(.88); scale: .96; }
 .panel > * { min-height: 0; }
 .panel__body { flex: 1; min-height: 0; overflow: auto; padding: clamp(20px, 4vw, 40px); }
 .panel-intro { max-width: 62ch; margin: 0 0 24px; line-height: 1.55; }
+.quest-progress { margin: 0 0 28px; padding: 18px; color: var(--paper); background: var(--ink); }
+.quest-progress .eyebrow { margin: 0; color: var(--red); }
+.quest-progress > strong { display: block; margin: 4px 0 8px; font: 900 42px/1 var(--condensed); }
+.quest-progress > strong span { font-size: .52em; opacity: .55; }
+.quest-progress > div { height: 5px; background: rgba(255,255,255,.18); overflow: hidden; }
+.quest-progress > div i { display: block; height: 100%; background: var(--red); transition: width .25s ease; }
+.quest-progress > p:last-child { max-width: 62ch; margin: 12px 0 0; font-size: 12px; line-height: 1.5; opacity: .74; }
+.quest-section + .quest-section { margin-top: 28px; }
+.quest-section h2 { margin: 0 0 8px; font: 900 21px var(--condensed); }
+.quest-section ol { margin: 0; padding: 0; list-style: none; border-top: 1px solid rgba(17,17,19,.2); }
+.quest-section li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; padding: 11px 0; border-bottom: 1px solid rgba(17,17,19,.2); }
+.quest-check { color: var(--red); font: 900 20px/1 var(--condensed); }
+.quest-section li div { display: grid; gap: 3px; }
+.quest-section li strong { font: 900 16px var(--condensed); }
+.quest-section li small { max-width: 66ch; font-size: 11px; line-height: 1.35; opacity: .62; }
+.quest-section li.is-complete { opacity: .52; }
+.quest-section li.is-complete strong { text-decoration: line-through; text-decoration-thickness: 1px; }
+.quest-complete-note { margin: 26px 0 0; padding: 14px; border: 2px solid var(--red); color: var(--red); font: 900 15px/1.35 var(--condensed); }
 .map-card { position: relative; min-height: 420px; padding: 30px; color: white; background: #2b2c2d; overflow: hidden; }
 .map-card::before { content: ''; position: absolute; z-index: 0; top: 76px; bottom: 76px; left: 50%; width: 4px; transform: translateX(-50%); background: var(--paper); }
 .map-card button { z-index: 1; min-height: 66px; border: 2px solid white; padding: 8px 12px; color: white; background: var(--red); font: 800 18px var(--condensed); cursor: pointer; }
@@ -719,6 +741,8 @@ button:active { filter: brightness(.88); scale: .96; }
 .attendee-list li { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; border-block: 1px solid rgba(17,17,19,.2); padding: 15px 0; }
 .attendee-list strong { display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; }
 .attendee-list strong em { color: var(--red); font: 700 11px var(--condensed); letter-spacing: .08em; text-transform: uppercase; }
+.attendee-list small { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; text-align: right; }
+.attendee-feed-count { border: 1px solid currentColor; padding: 2px 5px; color: var(--red); font: 800 10px var(--condensed); letter-spacing: .06em; white-space: nowrap; }
 .pamphlet-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
 .pamphlet-video { width: 100%; overflow: hidden; border: 2px solid var(--ink); background: #050506; aspect-ratio: 16 / 9; }
 .pamphlet-video iframe { display: block; width: 100%; height: 100%; border: 0; }

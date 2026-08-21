@@ -190,6 +190,12 @@ const gateBackground = {
   updatedAt: 0,
 };
 let mentorCarrierId = null;
+// Feeding loyalty is live festival state, like attendee sessions. Visitor
+// scores disappear when they leave; NPC scores last until this service
+// restarts. The rank sequence gives ties a stable, server-authoritative order.
+const npcMentorFeeds = new Map();
+let mentorFeedSequence = 0;
+let mentorLoyaltyLeaderKey = null;
 const CLUB_REQUEST_COOLDOWN_MS = 30_000;
 const CLUB_QUEUE_LIMIT = 12;
 // Requested tracks waiting their turn. Live session state, so it is not saved:
@@ -831,6 +837,61 @@ const createVisitor = (name, palette) => ({
   lastSeen: Date.now(),
   mutedUntil: 0,
   chatTimes: [],
+  mentorFeeds: 0,
+  mentorFeedRank: 0,
+});
+
+const mentorActorKey = (visitor) => visitor.npcId && visitor.npcId !== 'MENTOR'
+  ? `npc:${visitor.npcId}`
+  : visitor.npcId === 'MENTOR' ? null : `visitor:${visitor.id}`;
+
+const mentorCandidate = (key) => {
+  if (!key) return undefined;
+  if (key.startsWith('visitor:')) {
+    const visitor = visitors.get(key.slice('visitor:'.length));
+    return visitor ? { key, count: visitor.mentorFeeds, rank: visitor.mentorFeedRank } : undefined;
+  }
+  if (key.startsWith('npc:')) {
+    const npcId = key.slice('npc:'.length);
+    if (npcId === 'MENTOR' || !(npcId in npcNames)) return undefined;
+    const feed = npcMentorFeeds.get(npcId) ?? { count: 0, rank: 0 };
+    return { key, ...feed };
+  }
+  return undefined;
+};
+
+const mentorCandidates = () => [
+  ...[...visitors.values()].map((visitor) => mentorCandidate(`visitor:${visitor.id}`)),
+  ...Object.keys(npcNames).filter((npcId) => npcId !== 'MENTOR').map((npcId) => mentorCandidate(`npc:${npcId}`)),
+].filter(Boolean);
+
+const refreshMentorLoyaltyLeader = () => {
+  const candidates = mentorCandidates();
+  const highest = Math.max(0, ...candidates.map((candidate) => candidate.count));
+  if (highest <= 0) {
+    mentorLoyaltyLeaderKey = null;
+    return;
+  }
+  const current = mentorCandidate(mentorLoyaltyLeaderKey);
+  if (current?.count === highest) return;
+  mentorLoyaltyLeaderKey = candidates
+    .filter((candidate) => candidate.count === highest)
+    .sort((left, right) => left.rank - right.rank)[0]?.key ?? null;
+};
+
+const mentorFollower = () => {
+  if ([...visitors.values()].some((visitor) => visitor.npcId === 'MENTOR')) return null;
+  const leader = mentorCandidate(mentorLoyaltyLeaderKey);
+  if (!leader || leader.count <= 0) return null;
+  if (leader.key.startsWith('visitor:')) return { kind: 'visitor', id: leader.key.slice('visitor:'.length) };
+  return { kind: 'npc', id: leader.key.slice('npc:'.length) };
+};
+
+const mentorFeedCounts = () => ({
+  visitors: Object.fromEntries([...visitors.values()].map((visitor) => [visitor.id, visitor.mentorFeeds])),
+  npcs: Object.fromEntries(Object.keys(npcNames)
+    .filter((npcId) => npcId !== 'MENTOR')
+    .map((npcId) => [npcId, npcMentorFeeds.get(npcId)?.count ?? 0])),
 });
 
 const publicVisitor = (visitor) => ({
@@ -876,6 +937,8 @@ const stateFor = (visitor) => ({
   siteStyle,
   gateBackground,
   mentorCarrierId,
+  mentorFollower: mentorFollower(),
+  mentorFeedCounts: mentorFeedCounts(),
   clubRequest,
   venueQueues,
   customVideos: customVideosByVenue,
@@ -969,6 +1032,7 @@ const removeVisitor = (visitor, reason = 'left') => {
     }
   }
   visitors.delete(visitor.id);
+  refreshMentorLoyaltyLeader();
   const responseSet = streams.get(visitor.id);
   if (responseSet) {
     for (const response of responseSet) {
@@ -1339,6 +1403,33 @@ const server = createServer(async (request, response) => {
       return json(response, 200, { ok: true, mentorCarrierId });
     }
 
+    if (request.method === 'POST' && url.pathname === '/api/mentor/feed') {
+      if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+      const actorKey = mentorActorKey(visitor);
+      if (!actorKey) return apiError(response, 409, 'MENTOR cannot feed himself.');
+      mentorFeedSequence += 1;
+      let count;
+      if (actorKey.startsWith('npc:')) {
+        const npcId = actorKey.slice('npc:'.length);
+        const current = npcMentorFeeds.get(npcId) ?? { count: 0, rank: 0 };
+        count = current.count + 1;
+        npcMentorFeeds.set(npcId, { count, rank: mentorFeedSequence });
+      } else {
+        visitor.mentorFeeds += 1;
+        visitor.mentorFeedRank = mentorFeedSequence;
+        count = visitor.mentorFeeds;
+      }
+      refreshMentorLoyaltyLeader();
+      visitor.lastSeen = Date.now();
+      scheduleBroadcast();
+      return json(response, 200, {
+        ok: true,
+        count,
+        mentorFollower: mentorFollower(),
+        mentorFeedCounts: mentorFeedCounts(),
+      });
+    }
+
     if (request.method === 'POST' && url.pathname === '/api/mentor/put-down') {
       if (!visitor) return apiError(response, 401, 'Invalid festival session.');
       if (mentorCarrierId !== visitor.id) return apiError(response, 409, 'You are not carrying MENTOR.');
@@ -1456,6 +1547,8 @@ const server = createServer(async (request, response) => {
           siteStyle,
           gateBackground,
           mentorCarrierId,
+          mentorFollower: mentorFollower(),
+          mentorFeedCounts: mentorFeedCounts(),
           clubRequest,
           venueQueues,
           customVideos: customVideosByVenue,
