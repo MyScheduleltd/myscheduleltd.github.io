@@ -1206,6 +1206,13 @@ export class App {
       toast.hidden = !snapshot.interaction || redundantTheaterStandPrompt;
       toast.textContent = this.promptForTouch(this.localizeInteraction(snapshot.interaction ?? ''));
       toast.classList.toggle('is-actionable', snapshot.canInteract);
+      // The DJ prompt has its own mobile slot on the pass row. Tag the raw
+      // interaction before localization so both languages share one reliable
+      // layout hook without coupling CSS to translated copy.
+      toast.classList.toggle(
+        'interaction-toast--dj',
+        Boolean(snapshot.interaction?.startsWith('E / REQUEST A TRACK FROM')),
+      );
       toast.disabled = !snapshot.canInteract;
       // MENTOR is the one prompt that offers two things, and the second is
       // behind a key a phone does not have. It gets its own button.

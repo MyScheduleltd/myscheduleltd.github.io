@@ -1125,6 +1125,14 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
     font-size: 12px; letter-spacing: .06em; line-height: 1.2;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  /* Requesting a song is a short navigation prompt, not part of the movement
+     pad. Keep its established compact size, centre it, and share the pass
+     button's bottom baseline so the two read as one quiet control row. */
+  .interaction-toast--dj {
+    left: 50%; right: auto;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+  }
   /* A screening has no use for movement, combat or gesture controls. Keep the
      photo key as the one deliberate exception, so a phone can still enter the
      camera modes without the entire pad sitting over the film and its bar. */
@@ -1297,12 +1305,15 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
     width: 34px;
     height: 34px;
   }
-  /* The live objective count shares the header row with the square logo. The
-     logo is 42px tall and begins at 4px, so this centres the 25px button beside
-     it and leaves the right-hand connection badge untouched. */
+  /* The landscape task count belongs under the square mark, not beside it.
+     The logo starts at 6px and is 42px tall; a 6px gap keeps both shapes
+     distinct while their left edges stay aligned. */
   .objective-count {
-    left: calc(62px + env(safe-area-inset-left));
-    top: calc(12px + env(safe-area-inset-top));
+    left: calc(12px + env(safe-area-inset-left));
+    top: calc(54px + env(safe-area-inset-top));
+  }
+  .interaction-toast--dj {
+    bottom: calc(10px + env(safe-area-inset-bottom));
   }
   #venue-screen:not([hidden]) ~ .interaction-toast {
     left: calc(10px + env(safe-area-inset-left));
