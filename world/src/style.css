@@ -1061,8 +1061,25 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
     overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
     touch-action: pan-y;
   }
-  .panel { inset: 70px 10px 74px; box-shadow: 8px 8px 0 rgba(0,0,0,.62); }
-  .panel--chat { inset: 74px 10px 126px; box-shadow: 7px 7px 0 rgba(0,0,0,.25); }
+  /* Held inside the screen you can actually see. These offsets are measured
+     from the layout viewport, and on a phone that runs on behind the browser's
+     own toolbars — so the foot of a panel, and with it the foot of whatever
+     scrolls inside it, sat underneath the bottom bar. Nothing there can be read
+     and nothing there can be dragged, which is a panel that will not scroll
+     even though its scroller is working perfectly.
+
+     svh is the height with the toolbars showing, so the panel fits whether they
+     are up or away. vh stays in front for anything that does not know svh. */
+  .panel {
+    inset: 70px 10px 74px; box-shadow: 8px 8px 0 rgba(0,0,0,.62);
+    max-height: calc(100vh - 144px);
+    max-height: calc(100svh - 144px);
+  }
+  .panel--chat {
+    inset: 74px 10px 126px; box-shadow: 7px 7px 0 rgba(0,0,0,.25);
+    max-height: calc(100vh - 200px);
+    max-height: calc(100svh - 200px);
+  }
   .panel--character { inset: 76px 10px auto auto; width: min(320px, calc(100vw - 20px)); }
   .panel__body { padding: 20px; }
   .map-card { display: grid; grid-template-columns: 1fr; gap: 10px; min-height: 0; padding: 18px 18px 112px; }
