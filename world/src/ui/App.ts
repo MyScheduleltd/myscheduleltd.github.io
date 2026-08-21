@@ -1270,7 +1270,13 @@ export class App {
       this.activeSeatId = action.seatId;
       this.closeFestivalPass();
       if (this.festivalClient.online) void this.confirmSeatClaim(action.seatId);
-      this.showWorldAlert(this.language === 'zh-TW' ? '坐上吧檯 · 按 E 點酒' : 'AT THE BAR · E TO ORDER');
+      // No reminder here. Sitting down always puts a prompt on screen — the
+      // seated branch of the world's own labelling has no path that returns
+      // nothing — so this said, in a second box a moment later, whatever the
+      // prompt was already saying. Two boxes for one action, close enough
+      // together to touch. The prompt is the better of the two: it is where
+      // every other action is offered, and on a phone it is the thing you
+      // press.
       return;
     }
     if (action.type === 'seated') {
@@ -1302,15 +1308,9 @@ export class App {
       return;
     }
     if (action.type === 'food') {
-      const zh = this.language === 'zh-TW';
-      const names: Record<string, [string, string]> = {
-        POPCORN: ['爆米花', 'POPCORN'],
-        HOTDOG: ['熱狗', 'A HOT DOG'],
-        PIZZA: ['披薩', 'PIZZA'],
-        CHICKEN: ['炸雞', 'FRIED CHICKEN'],
-      };
-      const [zhName, enName] = names[action.item] ?? names.POPCORN;
-      this.showWorldAlert(zh ? `拿到${zhName} · 按 E 吃` : `${enName} IN HAND · E TO EAT`);
+      // Nothing to announce. The prompt already offers to eat whatever has just
+      // been picked up, and names it — so a second box saying the same thing is
+      // one of two telling you one thing. The table of names went with it.
       return;
     }
     if (action.type === 'ate') {
@@ -1465,7 +1465,8 @@ export class App {
       return;
     }
     if (action.type === 'drinkOrdered') {
-      this.showWorldAlert(this.language === 'zh-TW' ? '調酒到手 · 按 SHIFT+E 喝' : 'DRINK IN HAND · SHIFT+E TO DRINK');
+      // The prompt turns to DRINK UP the moment the glass is in hand, so a box
+      // saying the same thing is the second of two telling you one thing.
       return;
     }
     if (action.type === 'drank') {
