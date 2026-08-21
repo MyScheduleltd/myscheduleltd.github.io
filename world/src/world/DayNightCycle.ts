@@ -64,16 +64,34 @@ const frame = (
   moonIntensity,
 });
 
+// Night was lit almost entirely by things that glow. The fill sat at 0.38
+// against daylight's 1.35, and the moon carried under 1, so anything that was
+// not a screen or a neon sign had almost nothing to reflect and went to black.
+// Three changes, and the order matters more than the numbers:
+//
+//   1. The fill is roughly doubled. This is what lets a wall be a wall after
+//      dark. It is still barely half of daylight, so night stays night.
+//   2. The moon is raised past the fill, so it reads as the key light. Fill
+//      alone lifts everything into a flat grey; a key gives a lit side and a
+//      shaded side, which is what makes a shape legible rather than merely
+//      visible.
+//   3. Sky and fog come up off black. Distance was dissolving into a void, and
+//      a void reads as darker than a dim sky does, whatever the lights nearby
+//      are doing.
+//
+// The lamps are untouched. They were already the brightest thing out there, and
+// raising them further would have lit pools on a black ground instead of a
+// world at night.
 const KEYFRAMES: LightingKeyframe[] = [
-  frame(0, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 0.78, 0.2, 0.18),
+  frame(0, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 0.78, 0.2, 0.30),
   frame(5, 0x9ab5c6, 0x899aa0, 0xffd3a6, 1.45, 1.05, 0.08, 0),
   frame(20, 0x83b4d1, 0xa1b3b5, 0xfff1d0, 2.2, 1.35, 0, 0),
   frame(25, 0xd28b62, 0xb28a76, 0xffa65c, 2.0, 0.95, 0.15, 0),
-  frame(30, 0x8e4c4b, 0x6e5259, 0xff5d38, 1.1, 0.66, 0.65, 0.08),
-  frame(35, 0x253652, 0x2b3448, 0x7889c7, 0.35, 0.48, 1.3, 0.28),
-  frame(42, 0x070b18, 0x0a0d16, 0x6072a8, 0.09, 0.4, 1.75, 0.82),
-  frame(52, 0x03050d, 0x080912, 0x4a5d8c, 0.04, 0.38, 1.9, 0.96),
-  frame(60, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 0.78, 0.2, 0.18),
+  frame(30, 0x8e4c4b, 0x6e5259, 0xff5d38, 1.1, 0.66, 0.65, 0.14),
+  frame(35, 0x2b3f5e, 0x334059, 0x7889c7, 0.35, 0.70, 1.3, 0.45),
+  frame(42, 0x101a2e, 0x161d30, 0x6072a8, 0.09, 0.76, 1.75, 1.15),
+  frame(52, 0x0b1220, 0x121828, 0x4a5d8c, 0.04, 0.74, 1.9, 1.35),
+  frame(60, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 0.78, 0.2, 0.30),
 ];
 
 const phaseAt = (minute: number): { phase: DayPhase; start: number; end: number } => {
@@ -88,7 +106,10 @@ const phaseAt = (minute: number): { phase: DayPhase; start: number; end: number 
 
 export class DayNightCycle {
   readonly directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-  readonly hemisphereLight = new THREE.HemisphereLight(0xb8d6ff, 0x28211d, 1);
+  // The lower half of the fill was very nearly black, so every underside and
+  // every face turned away from the moon fell out of the picture after dark.
+  // A dim cool bounce keeps them in it without lighting them from below.
+  readonly hemisphereLight = new THREE.HemisphereLight(0xb8d6ff, 0x39404f, 1);
   readonly moonLight = new THREE.DirectionalLight(0xaac8ff, 0);
   readonly sunObject = new THREE.Group();
   readonly moonObject = new THREE.Group();
