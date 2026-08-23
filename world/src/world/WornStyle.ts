@@ -134,3 +134,41 @@ export function wornStyleSettings(): { amount: number; steps: number } {
     steps: WORN_UNIFORMS.uWornSteps.value,
   };
 }
+
+/**
+ * Whether the geometry is restyled as well as the shading.
+ *
+ * Read from the URL rather than passed in, because the avatar rigs are built
+ * while the world is being constructed — long before the UI gets a chance to
+ * look at the query string. The world already reads `cycleMinute` the same way.
+ *
+ * On whenever the worn flag is present, and turned off again with `&meshes=0`
+ * so the shading pass can be judged on its own.
+ */
+export function wornMeshesRequested(): boolean {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('worn') === null) return false;
+  return params.get('meshes') !== '0';
+}
+
+/**
+ * A four-sided tapered prism — the low-poly workhorse.
+ *
+ * A box cannot taper, and a taper is most of what separates a figure from a
+ * stack of blocks. A cylinder of four radial segments is a box whose top and
+ * bottom can differ, which is exactly the primitive wanted, and it facets
+ * properly under flat shading. Turned an eighth so its faces sit square to the
+ * viewer rather than presenting a corner.
+ */
+export function taperedPrism(
+  topWidth: number,
+  bottomWidth: number,
+  height: number,
+  depthRatio = 1,
+): THREE.BufferGeometry {
+  const geometry = new THREE.CylinderGeometry(topWidth, bottomWidth, height, 4, 1);
+  geometry.rotateY(Math.PI / 4);
+  if (depthRatio !== 1) geometry.scale(1, 1, depthRatio);
+  return geometry;
+}

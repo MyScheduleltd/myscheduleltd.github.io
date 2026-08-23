@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { applyWornStyle, setWornStyle, wornStyleSettings } from './WornStyle';
+import { applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, taperedPrism } from './WornStyle';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import type { VenueKey } from '../data/catalogue';
 import { AmbientAudio } from './AmbientAudio';
@@ -6354,7 +6354,90 @@ export class FestivalWorld {
     rig.board.visible = true;
   }
 
+  /**
+   * The restyled figure — tier three, for the avatars only, behind the same
+   * flag as the shading.
+   *
+   * Every pivot keeps its name and its position, so animateRig, the seating,
+   * the skateboard, the gestures and the collision all carry on untouched. What
+   * changes is only the shape hanging underneath each one.
+   *
+   * Four moves, and the coat is not among them: the head drops to roughly a
+   * sixth of the height so the figure reads adult rather than childlike; a hard
+   * shoulder yoke sits proud of the torso as its own facet; the torso, arms and
+   * legs all taper, so nothing is a rectangle; and the face is a single dark
+   * band rather than modelled eyes and a mouth. The clothes stay ordinary and
+   * every colour is still the visitor's own choice.
+   */
+  private createStyledAvatarRig(parent: THREE.Group, palette: AvatarPalette, markPalette: boolean): AvatarRig {
+    window.setTimeout(() => this.castShadows(parent), 0);
+    const shade = (slot: keyof AvatarPalette) =>
+      material(Number.parseInt(palette[slot].replace('#', ''), 16), 0.86, 0.02);
+    const add = (
+      geometry: THREE.BufferGeometry,
+      position: [number, number, number],
+      slot: keyof AvatarPalette,
+      target: THREE.Object3D,
+    ) => {
+      const part = new THREE.Mesh(geometry, shade(slot));
+      part.position.set(...position);
+      // The gate's live preview recolours by this, so a restyled part has to
+      // carry it exactly as the old one did or the colour pickers go dead.
+      if (markPalette) part.userData.paletteSlot = slot;
+      target.add(part);
+      return part;
+    };
+
+    // Torso: shoulders wider than the waist, and flattened front to back.
+    const torso = add(taperedPrism(0.6, 0.44, 1.38, 0.62), [0, 1.78, 0], 'top', parent);
+    // The yoke is the silhouette. It is the one hard horizontal on the figure
+    // and it is what reads at fifty metres, where a face never would.
+    add(taperedPrism(0.68, 0.62, 0.2, 0.66), [0, 2.4, 0], 'top', parent);
+
+    const head = new THREE.Group();
+    head.position.set(0, 2.47, 0);
+    parent.add(head);
+    add(taperedPrism(0.3, 0.33, 0.58, 0.92), [0, 0.29, 0], 'skin', head);
+    add(taperedPrism(0.345, 0.32, 0.16, 0.95), [0, 0.55, -0.01], 'hair', head);
+    // No eyes, no mouth. One band where a face would be — more graphic than a
+    // painted face, and it never lands in the uncanny middle.
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.11, 0.04), material(0x121111, 0.9));
+    band.position.set(0, 0.3, 0.29);
+    head.add(band);
+
+    const limb = (
+      x: number,
+      y: number,
+      geometry: THREE.BufferGeometry,
+      height: number,
+      slot: keyof AvatarPalette,
+    ) => {
+      const pivot = new THREE.Group();
+      pivot.position.set(x, y, 0);
+      parent.add(pivot);
+      add(geometry, [0, -height / 2, 0], slot, pivot);
+      return pivot;
+    };
+
+    const leftArm = limb(-0.6, 2.24, taperedPrism(0.15, 0.1, 1.22, 0.9), 1.22, 'skin');
+    const rightArm = limb(0.6, 2.24, taperedPrism(0.15, 0.1, 1.22, 0.9), 1.22, 'skin');
+    const leftLeg = limb(-0.26, 1.16, taperedPrism(0.21, 0.15, 1.25, 0.86), 1.25, 'bottoms');
+    const rightLeg = limb(0.26, 1.16, taperedPrism(0.21, 0.15, 1.25, 0.86), 1.25, 'bottoms');
+    // Feet as their own facets, so the leg stops rather than simply ending.
+    for (const leg of [leftLeg, rightLeg]) {
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.46), material(0x14161a, 0.9));
+      foot.position.set(0, -1.19, 0.06);
+      leg.add(foot);
+    }
+
+    const treat = this.mesh([0.16, 0.16, 0.22], [0, -1.2, 0.16], material(0xd18a35, 0.78), rightArm);
+    treat.visible = false;
+    const board = this.createSkateboard(parent);
+    return { leftArm, rightArm, leftLeg, rightLeg, torso, treat, head, board };
+  }
+
   private createAvatarRig(parent: THREE.Group, palette: AvatarPalette, markPalette = false): AvatarRig {
+    if (wornMeshesRequested()) return this.createStyledAvatarRig(parent, palette, markPalette);
     // Avatars are the one thing whose shadow is always worth its cost.
     window.setTimeout(() => this.castShadows(parent), 0);
     const addPart = (
