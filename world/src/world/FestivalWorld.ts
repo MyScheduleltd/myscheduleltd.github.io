@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applyWornStyle, setWornStyle, wornStyleSettings } from './WornStyle';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import type { VenueKey } from '../data/catalogue';
 import { AmbientAudio } from './AmbientAudio';
@@ -1496,6 +1497,37 @@ export class FestivalWorld {
         .filter((npc) => this.staticCollides(npc.group.position.x, npc.group.position.z, npc.group.position.y))
         .map((npc) => npc.id),
     };
+  }
+
+  /**
+   * Tier one of the art direction, behind a flag. Nothing calls this unless the
+   * URL asks for it, so a visitor sees exactly the world they saw yesterday.
+   *
+   * Re-applied rather than applied once, because the world keeps building: the
+   * club's fittings, a remote visitor's avatar and the day's fireworks are all
+   * made after the opening pass, and an unpatched material in a patched world
+   * is more obvious than no patch at all.
+   */
+  applyWornStyleForReview(amount: number, steps: number): number {
+    const patched = applyWornStyle(this.scene);
+    setWornStyle(amount, steps);
+    return patched;
+  }
+
+  wornStyleReviewSnapshot(): unknown {
+    const settings = wornStyleSettings();
+    let materials = 0;
+    let flattened = 0;
+    this.scene.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.material) return;
+      const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const material of list) {
+        materials += 1;
+        if ((material as THREE.Material).userData?.wornFlattened === true) flattened += 1;
+      }
+    });
+    return { ...settings, materials, flattened };
   }
 
   navReviewSnapshot(): unknown {
