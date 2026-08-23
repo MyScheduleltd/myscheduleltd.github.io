@@ -82,7 +82,9 @@ export function dressBuildings(
   noCables: THREE.Box3[] = [],
   /** Structures that take no dressing at all — the theatres and their screens. */
   noDress: THREE.Box3[] = [],
-): { walls: number; refused: number; signs: number } {
+  /** The world's own collision, so a cable can be told what it would pass through. */
+  blocked: (x: number, z: number, y: number) => boolean = () => false,
+): { walls: number; refused: number; signs: number; cables: number; cablesFouled: number } {
   scene.updateMatrixWorld(true);
 
   // Everything unlit is a sign, a screen or a neon band — the things a visitor
@@ -437,6 +439,8 @@ export function dressBuildings(
     .filter(({ at }) => !noCables.some((box) => box.containsPoint(at)))
     .map(({ size, at }) => new THREE.Vector3(at.x, at.y + size.y / 2, at.z));
   const strung = new Set<number>();
+  let cables = 0;
+  let cablesFouled = 0;
   for (let index = 0; index < roofs.length; index += 1) {
     let nearest = -1;
     let nearestGap = 34;
@@ -454,15 +458,44 @@ export function dressBuildings(
     if (strung.has(pair)) continue;
     strung.add(pair);
 
-    const from = roofs[index];
-    const to = roofs[nearest];
-    const sag = Math.min(2.6, nearestGap * 0.12);
+    // Anchored a little over the parapet rather than level with the roof deck,
+    // so the line leaves the building instead of starting inside it.
+    const from = roofs[index].clone().setY(roofs[index].y + 0.7);
+    const to = roofs[nearest].clone().setY(roofs[nearest].y + 0.7);
+    const sag = Math.min(1.6, nearestGap * 0.07);
     const waypoints = [
       from,
       new THREE.Vector3().lerpVectors(from, to, 0.35).setY(Math.min(from.y, to.y) - sag),
       new THREE.Vector3().lerpVectors(from, to, 0.65).setY(Math.min(from.y, to.y) - sag),
       to,
     ];
+    // Nothing had ever asked what was between two roofs. A cable was drawn
+    // straight from one to the other and any building standing in the way — the
+    // deck most visibly — was simply passed through. The line is walked first
+    // and dropped whole if it would go through anything: a cable that stops
+    // halfway is worse than a pair of roofs with no cable between them.
+    let fouled = false;
+    for (let leg = 0; leg < waypoints.length - 1 && !fouled; leg += 1) {
+      const start = waypoints[leg];
+      const end = waypoints[leg + 1];
+      const steps = Math.max(3, Math.ceil(start.distanceTo(end) / 1.2));
+      for (let step = 0; step <= steps; step += 1) {
+        const t = step / steps;
+        const x = start.x + (end.x - start.x) * t;
+        const y = start.y + (end.y - start.y) * t;
+        const z = start.z + (end.z - start.z) * t;
+        if (blocked(x, z, y)) {
+          fouled = true;
+          break;
+        }
+      }
+    }
+    if (fouled) {
+      cablesFouled += 1;
+      continue;
+    }
+    cables += 1;
+
     for (let leg = 0; leg < waypoints.length - 1; leg += 1) {
       const start = waypoints[leg];
       const end = waypoints[leg + 1];
@@ -522,7 +555,7 @@ export function dressBuildings(
     scene.add(patch);
   }
 
-  return { walls: dressed, refused, signs: keepClear.length };
+  return { walls: dressed, refused, signs: keepClear.length, cables, cablesFouled };
 }
 
 /** A room the interior pass can dress, in world coordinates. */
@@ -620,7 +653,14 @@ export function dressInteriors(
         for (let index = 0; index < runs; index += 1) {
           const z = room.minZ + (spanZ * (index + 0.5)) / runs;
           const y = room.floorY + 2.9;
-          if (blocked(wallX, z, y)) continue;
+          // Tested along the run, not only at its middle. A four-metre length
+          // of conduit whose centre is clear can still cross a doorway at one
+          // end, which is how one came to run over the club's stair at head
+          // height.
+          const half = (spanZ / runs - 1.4) / 2;
+          if (blocked(wallX, z, y) || blocked(wallX, z - half, y) || blocked(wallX, z + half, y)) {
+            continue;
+          }
           put(0.16, 0.16, spanZ / runs - 1.4, wallX, y, z, fitting);
           // A box on the run, which is what makes it read as electrical rather
           // than as a stripe painted on the wall.

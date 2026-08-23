@@ -609,6 +609,11 @@ const NAV_POINTS: Record<string, [number, number]> = {
   roofStairApproach: [19.6, 16],
   roofStairFoot: [19.6, 21],
   roofStairTop: [19.6, 35],
+  // Straight in through the gap in the parapet before turning onto the deck.
+  // Cutting the corner diagonally clipped the parapet's end: a point slipped
+  // past it and a body does not, which is what verifying the network with a
+  // point and then walking it with a body hides.
+  roofDeckDoor: [24.5, 34.4],
   roofDeck: [36, 30],
   // The long walk east to the temple, south of the garage's plot.
   // Out past the square's east kerb before turning for the temple: straight
@@ -634,7 +639,8 @@ const NAV_LINKS: Array<[string, string]> = [
   ['promenade', 'roofStairApproach'],
   ['roofStairApproach', 'roofStairFoot'],
   ['roofStairFoot', 'roofStairTop'],
-  ['roofStairTop', 'roofDeck'],
+  ['roofStairTop', 'roofDeckDoor'],
+  ['roofDeckDoor', 'roofDeck'],
   ['square', 'templeSpur'],
   ['templeSpur', 'templeApproach'],
   ['templeApproach', 'templeFoot'],
@@ -1624,6 +1630,43 @@ export class FestivalWorld {
     ];
   }
 
+  /**
+   * Whether a point stands on a way through.
+   *
+   * A crate was put down at the foot of the club stair, and the collision test
+   * that was supposed to prevent it could not: a doorway is walkable, so
+   * nothing reports it occupied. Asking the world "is something here?" cannot
+   * answer "should anything be here?".
+   *
+   * The routing network already knows. Its links are, by construction, the
+   * lines along which everybody in this festival walks — through the door, down
+   * the stair, across the floor — so keeping the dressing off them keeps every
+   * entrance and every route clear without anybody listing the doorways by
+   * hand. The lists that had to be kept in step with something else have been
+   * wrong three times today; this one is derived.
+   */
+  private onAWayThrough(x: number, z: number, y: number, margin = 2.6): boolean {
+    for (const [from, to] of NAV_LINKS) {
+      const a = NAV_POINTS[from];
+      const b = NAV_POINTS[to];
+      const runX = b[0] - a[0];
+      const runZ = b[1] - a[1];
+      const lengthSq = runX * runX + runZ * runZ;
+      // How far along the link the point falls, clamped to its ends so a point
+      // beside a link is measured against the link and not against its line.
+      const t = lengthSq === 0
+        ? 0
+        : THREE.MathUtils.clamp(((x - a[0]) * runX + (z - a[1]) * runZ) / lengthSq, 0, 1);
+      const nearX = a[0] + runX * t;
+      const nearZ = a[1] + runZ * t;
+      if (Math.hypot(x - nearX, z - nearZ) > margin) continue;
+      // Same storey only: the club stair passes directly under the promenade,
+      // and a crate on the deck is not standing in the basement's doorway.
+      if (Math.abs(this.groundHeightAt(nearX, nearZ) - y) < 3.5) return true;
+    }
+    return false;
+  }
+
   private publicScreenBoxes(): THREE.Box3[] {
     const boxes: THREE.Box3[] = [];
     for (const projector of this.projectors.values()) {
@@ -1665,7 +1708,13 @@ export class FestivalWorld {
         ...this.venueVolumes(),
         ...this.publicScreenBoxes().map((box) => box.clone().expandByScalar(4)),
       ];
-      const dressing = dressBuildings(this.scene, this.publicScreenBoxes(), offLimits, offLimits);
+      const dressing = dressBuildings(
+        this.scene,
+        this.publicScreenBoxes(),
+        offLimits,
+        offLimits,
+        (x, z, y) => this.staticCollides(x, z, y),
+      );
       // After the dressing, so the cornices and shopfronts settle with the
       // walls they belong to rather than staying dead square against them.
       this.wornWarped += warpWorldGeometry(this.scene, this.wornWarpAmount, offLimits);
@@ -1701,12 +1750,14 @@ export class FestivalWorld {
             outdoor: true,
           },
         ],
-          (x, z, y) => this.staticCollides(x, z, y),
+            (x, z, y) => this.staticCollides(x, z, y) || this.onAWayThrough(x, z, y),
         );
       }
       this.wornBuildings += dressing.walls;
       this.wornSignsSpared += dressing.refused;
       this.wornSigns = dressing.signs;
+      this.wornCables = dressing.cables;
+      this.wornCablesFouled = dressing.cablesFouled;
     }
     const patched = applyWornStyle(this.scene);
     setWornStyle(amount, steps, grain);
@@ -1726,6 +1777,10 @@ export class FestivalWorld {
   private wornSignsSpared = 0;
 
   private wornSigns = 0;
+
+  private wornCables = 0;
+
+  private wornCablesFouled = 0;
 
   wornStyleReviewSnapshot(): unknown {
     const settings = wornStyleSettings();
@@ -1758,6 +1813,8 @@ export class FestivalWorld {
       dressableWalls: dressable,
       surfacesWarped: this.wornWarped,
       interiorPieces: this.wornInterior,
+      cablesStrung: this.wornCables,
+      cablesRefusedForFouling: this.wornCablesFouled,
       // Where the sole actually ends up, against the ground under it. The
       // arithmetic said one thing and the road said another, so this measures
       // the thing itself.
@@ -1797,7 +1854,10 @@ export class FestivalWorld {
         const next = this.groundHeightAt(x, z, y);
         climb = Math.max(climb, Math.abs(next - y));
         y = next;
-        if (this.staticCollides(x, z, y)) {
+        // Walked at the width a body actually has. Verifying the network with
+        // a point and then walking it with a body is how a corridor comes to be
+        // "clear" and impassable at the same time.
+        if (this.staticCollides(x, z, y, FestivalWorld.BODY_RADIUS)) {
           blocked += 1;
           if (!blockedAt) blockedAt = [Number(x.toFixed(1)), Number(z.toFixed(1))];
         }
@@ -1826,7 +1886,7 @@ export class FestivalWorld {
           const t = step / steps;
           const x = a[0] + (b[0] - a[0]) * t;
           const z = a[1] + (b[1] - a[1]) * t;
-          if (this.staticCollides(x, z, floor)) {
+          if (this.staticCollides(x, z, floor, FestivalWorld.BODY_RADIUS)) {
             blocked += 1;
             if (!firstBlock) firstBlock = [Number(x.toFixed(1)), Number(z.toFixed(1))];
           }
@@ -7669,7 +7729,7 @@ export class FestivalWorld {
     // direction reads as blocked and there is no way out of the booth. When the
     // ground underfoot is refused already, movement is allowed so the body can
     // walk itself clear.
-    const stuck = this.staticCollides(this.player.position.x, this.player.position.z, this.player.position.y) ||
+    const stuck = this.staticCollides(this.player.position.x, this.player.position.z, this.player.position.y, FestivalWorld.BODY_RADIUS) ||
       this.staticCollides(this.player.position.x, this.player.position.z,
         this.groundHeightAt(this.player.position.x, this.player.position.z, this.player.position.y));
     // A step has to be clear at the height being left as well as the height
@@ -7681,9 +7741,12 @@ export class FestivalWorld {
     // has given a top to.
     const blocked = (x: number, z: number): boolean => {
       if (stuck) return false;
-      if (this.airborne) return this.staticCollides(x, z, this.player.position.y);
-      return this.staticCollides(x, z, this.groundHeightAt(x, z, this.player.position.y)) ||
-        this.staticCollides(x, z, this.player.position.y);
+      // A visitor is as wide as a resident and was walking into walls up to the
+      // shoulders for the same reason.
+      const wide = FestivalWorld.BODY_RADIUS;
+      if (this.airborne) return this.staticCollides(x, z, this.player.position.y, wide);
+      return this.staticCollides(x, z, this.groundHeightAt(x, z, this.player.position.y), wide) ||
+        this.staticCollides(x, z, this.player.position.y, wide);
     };
     if (!blocked(nextX, this.player.position.z)) {
       this.player.position.x = nextX;
@@ -8049,12 +8112,30 @@ export class FestivalWorld {
         // storey: somebody behind, or on the floor above, is not in the way.
         const givingWay = this.visitorInTheWay(npc, direction, targetGap);
         if (givingWay) npc.gaveWayAt = now;
-        if (!givingWay && !this.npcCollides(npc, next.x, next.z)) {
+        // Held up long enough, a resident stops treating other bodies as solid.
+        //
+        // The pile-ups were never a heap; they were a queue. One resident gets
+        // blocked, the next stops behind it, and the line behind that one — and
+        // because every step out is blocked by the body in front, nobody can
+        // move and nothing resolves. Separation cannot help, because they are
+        // not overlapping. Re-planning cannot help, because the route is fine
+        // and the obstruction is a person standing on it.
+        //
+        // So after a few seconds a body stops being an obstacle. Two residents
+        // briefly occupying the same space is a far smaller fault than a line of
+        // eight standing still for ever, and the separation pass pushes them
+        // apart again within the second. Scenery is still solid: this lets a
+        // resident through a crowd, never through a wall.
+        const barging = npc.stuckFor > 2.5;
+        const stepBlocked = barging
+          ? this.staticCollides(next.x, next.z, npc.group.position.y, FestivalWorld.BODY_RADIUS)
+          : this.npcCollides(npc, next.x, next.z);
+        if (!givingWay && !stepBlocked) {
           npc.group.position.x = next.x;
           npc.group.position.z = next.z;
           npc.group.rotation.y = Math.atan2(direction.x, direction.z);
           npc.stuckFor = 0;
-        } else if (!this.staticCollides(next.x, next.z, npc.group.position.y)) {
+        } else if (!this.staticCollides(next.x, next.z, npc.group.position.y, FestivalWorld.BODY_RADIUS)) {
           // Somebody in the way rather than something. Standing still was the
           // whole trouble: two residents meeting head-on each waited for the
           // other, both timed out together, and both set off into each other
@@ -8066,7 +8147,7 @@ export class FestivalWorld {
           const dodgeZ = npc.group.position.z + (direction.z * 0.45 - direction.x) * step;
           if (
             !this.npcCollides(npc, dodgeX, dodgeZ)
-            && !this.staticCollides(dodgeX, dodgeZ, npc.group.position.y)
+            && !this.staticCollides(dodgeX, dodgeZ, npc.group.position.y, FestivalWorld.BODY_RADIUS)
           ) {
             npc.group.rotation.y = Math.atan2(dodgeX - npc.group.position.x, dodgeZ - npc.group.position.z);
             npc.group.position.x = dodgeX;
@@ -8120,7 +8201,12 @@ export class FestivalWorld {
       // is verified clear end to end, so a resident following it does not need
       // rescuing; the only way into the scenery now is to be punched into it,
       // and the way back out is to walk.
-      if (this.staticCollides(npc.group.position.x, npc.group.position.z, npc.group.position.y)) {
+      if (this.staticCollides(
+        npc.group.position.x,
+        npc.group.position.z,
+        npc.group.position.y,
+        FestivalWorld.BODY_RADIUS,
+      )) {
         npc.recovering = true;
       }
       if (npc.recovering) {
@@ -8925,14 +9011,37 @@ export class FestivalWorld {
     return AVATAR_GROUND_Y;
   }
 
-  private staticCollides(x: number, z: number, y = this.player.position.y): boolean {
+  /**
+   * Whether a body standing here is inside the scenery.
+   *
+   * The radius is the whole of what was missing. This tested one point — the
+   * body's own origin — and a body is not a point: it is about nine tenths of a
+   * unit across at the shoulders. So a wall whose collider the centre cleared
+   * still had an arm, a shoulder and half a head inside it, which is exactly
+   * what a resident clipping through a balustrade looks like. It is also why
+   * they got caught on things: a body that has walked until its centre is
+   * against a wall is already half buried, and the step that would free it is
+   * the one it just took.
+   *
+   * Every collider is grown by the radius instead of testing several points
+   * around the body. For axis-aligned boxes, which is all of them, that is the
+   * same answer exactly and it costs nothing.
+   *
+   * The default of zero keeps every existing caller — the network verifier, the
+   * dressing, the ground tests — asking the question they were written to ask.
+   */
+  private staticCollides(x: number, z: number, y = this.player.position.y, radius = 0): boolean {
     return this.colliders.some(
       (collider) =>
-        x > collider.minX && x < collider.maxX && z > collider.minZ && z < collider.maxZ &&
+        x > collider.minX - radius && x < collider.maxX + radius &&
+        z > collider.minZ - radius && z < collider.maxZ + radius &&
         (collider.minY === undefined || y >= collider.minY) &&
         (collider.maxY === undefined || y <= collider.maxY),
     );
   }
+
+  /** How wide a body is, for the purpose of not being inside a wall. */
+  private static readonly BODY_RADIUS = 0.42;
 
   /**
    * Whether a visitor is close enough ahead of this resident to be worth going
@@ -9018,11 +9127,11 @@ export class FestivalWorld {
         const push = (apart - gap) * 0.5 * ease;
         const nx = (dx / gap) * push;
         const nz = (dz / gap) * push;
-        if (!this.staticCollides(here.x - nx, here.z - nz, here.y)) {
+        if (!this.staticCollides(here.x - nx, here.z - nz, here.y, FestivalWorld.BODY_RADIUS)) {
           here.x -= nx;
           here.z -= nz;
         }
-        if (!this.staticCollides(there.x + nx, there.z + nz, there.y)) {
+        if (!this.staticCollides(there.x + nx, there.z + nz, there.y, FestivalWorld.BODY_RADIUS)) {
           there.x += nx;
           there.z += nz;
         }
@@ -9031,7 +9140,7 @@ export class FestivalWorld {
   }
 
   private npcCollides(npc: NpcAvatar, x: number, z: number): boolean {
-    if (this.staticCollides(x, z, npc.group.position.y)) return true;
+    if (this.staticCollides(x, z, npc.group.position.y, FestivalWorld.BODY_RADIUS)) return true;
     // Bodies are close to a unit across, so 1.05 between centres left them
     // visibly inside one another whenever two routes crossed.
     const radiusSq = 1.35 * 1.35;
