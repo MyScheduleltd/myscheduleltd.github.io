@@ -38,4 +38,8 @@ python3 -m fontTools.subset \
   --layout-features='' --no-hinting --desubroutinize \
   --drop-tables+=DSIG
 
-ls -l public/font/HanWangMing-subset.woff2
+# The world asks for /font/... which the dev server serves out of public/ and
+# the live site serves out of docs/font/, so the subset has to land in both or
+# it resolves in development and 404s in production.
+cp public/font/HanWangMing-subset.woff2 ../docs/font/
+ls -l public/font/HanWangMing-subset.woff2 ../docs/font/HanWangMing-subset.woff2
