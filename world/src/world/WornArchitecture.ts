@@ -84,7 +84,16 @@ export function dressBuildings(
   noDress: THREE.Box3[] = [],
   /** The world's own collision, so a cable can be told what it would pass through. */
   blocked: (x: number, z: number, y: number) => boolean = () => false,
-): { walls: number; refused: number; signs: number; cables: number; cablesFouled: number } {
+  /**
+   * The height of whatever surface is underfoot at a point.
+   *
+   * Collision cannot answer this. Roofs carry no colliders — nobody walks on
+   * most of them — so a cable drawn through one is blocked by nothing and the
+   * path test passes it happily. What catches it is asking how high the ground
+   * is there and noticing the cable is under it.
+   */
+  surfaceAt: (x: number, z: number, y: number) => number = () => -Infinity,
+): { walls: number; refused: number; signs: number; cables: number; cablesFouled: number; roofs: number } {
   scene.updateMatrixWorld(true);
 
   // Everything unlit is a sign, a screen or a neon band — the things a visitor
@@ -460,9 +469,22 @@ export function dressBuildings(
 
     // Anchored a little over the parapet rather than level with the roof deck,
     // so the line leaves the building instead of starting inside it.
-    const from = roofs[index].clone().setY(roofs[index].y + 0.7);
-    const to = roofs[nearest].clone().setY(roofs[nearest].y + 0.7);
-    const sag = Math.min(1.6, nearestGap * 0.07);
+    // Anchored above whichever is higher: the top of the wall, or the surface
+    // actually there. A wall is one mesh of several and its top is often below
+    // the roof it belongs to, which is how a cable came to start underneath a
+    // deck and climb out through it.
+    const from = roofs[index].clone();
+    from.setY(Math.max(from.y, surfaceAt(from.x, from.z, from.y)) + 2.4);
+    const to = roofs[nearest].clone();
+    to.setY(Math.max(to.y, surfaceAt(to.x, to.z, to.y)) + 2.4);
+    // Anchored well above the roof, and the sag kept shallow enough that the
+    // lowest point of the span still clears it.
+    //
+    // The first version anchored just over the parapet and then sagged further
+    // than that clearance, so the middle of every cable hung below the roof it
+    // had just left — and the surface test, correctly, refused all five of
+    // them. A cable is strung between two poles for exactly this reason.
+    const sag = Math.min(1.1, nearestGap * 0.05);
     const waypoints = [
       from,
       new THREE.Vector3().lerpVectors(from, to, 0.35).setY(Math.min(from.y, to.y) - sag),
@@ -484,7 +506,8 @@ export function dressBuildings(
         const x = start.x + (end.x - start.x) * t;
         const y = start.y + (end.y - start.y) * t;
         const z = start.z + (end.z - start.z) * t;
-        if (blocked(x, z, y)) {
+        // Through something solid, or underneath the surface it is crossing.
+        if (blocked(x, z, y) || y < surfaceAt(x, z, y) + 0.6) {
           fouled = true;
           break;
         }
@@ -555,7 +578,7 @@ export function dressBuildings(
     scene.add(patch);
   }
 
-  return { walls: dressed, refused, signs: keepClear.length, cables, cablesFouled };
+  return { walls: dressed, refused, signs: keepClear.length, cables, cablesFouled, roofs: roofs.length };
 }
 
 /** A room the interior pass can dress, in world coordinates. */
@@ -653,15 +676,27 @@ export function dressInteriors(
         for (let index = 0; index < runs; index += 1) {
           const z = room.minZ + (spanZ * (index + 0.5)) / runs;
           const y = room.floorY + 2.9;
-          // Tested along the run, not only at its middle. A four-metre length
-          // of conduit whose centre is clear can still cross a doorway at one
-          // end, which is how one came to run over the club's stair at head
-          // height.
-          const half = (spanZ / runs - 1.4) / 2;
-          if (blocked(wallX, z, y) || blocked(wallX, z - half, y) || blocked(wallX, z + half, y)) {
-            continue;
+          const length = spanZ / runs - 1.4;
+          // Walked end to end, not sampled at three points along it.
+          //
+          // Three was not enough and the way it failed is worth keeping: the
+          // centre of one run and both of its ends all fell just outside the
+          // margin around the club's stair, while the length of it lay straight
+          // across the opening at head height. A bar is not its endpoints. Every
+          // metre of it is now asked, and the ends are asked past themselves —
+          // a run that stops exactly at a doorway's edge still reads as barring
+          // the way, because a doorway is wider than the gap in the wall.
+          let fouls = false;
+          const steps = Math.max(4, Math.ceil(length));
+          for (let step = 0; step <= steps; step += 1) {
+            const along = z - length / 2 - 0.8 + (length + 1.6) * (step / steps);
+            if (blocked(wallX, along, y)) {
+              fouls = true;
+              break;
+            }
           }
-          put(0.16, 0.16, spanZ / runs - 1.4, wallX, y, z, fitting);
+          if (fouls) continue;
+          put(0.16, 0.16, length, wallX, y, z, fitting);
           // A box on the run, which is what makes it read as electrical rather
           // than as a stripe painted on the wall.
           put(0.34, 0.5, 0.4, wallX, y - 0.5, z, duct);

@@ -1644,8 +1644,12 @@ export class FestivalWorld {
    * entrance and every route clear without anybody listing the doorways by
    * hand. The lists that had to be kept in step with something else have been
    * wrong three times today; this one is derived.
+   *
+   * The margin is wider than a doorway, on purpose. A route is a line and a
+   * doorway is not: people fan out either side of the line as they come through
+   * one, so something that merely misses the line still stands in the way.
    */
-  private onAWayThrough(x: number, z: number, y: number, margin = 2.6): boolean {
+  private onAWayThrough(x: number, z: number, y: number, margin = 3.6): boolean {
     for (const [from, to] of NAV_LINKS) {
       const a = NAV_POINTS[from];
       const b = NAV_POINTS[to];
@@ -1714,6 +1718,7 @@ export class FestivalWorld {
         offLimits,
         offLimits,
         (x, z, y) => this.staticCollides(x, z, y),
+        (x, z, y) => this.groundHeightAt(x, z, y),
       );
       // After the dressing, so the cornices and shopfronts settle with the
       // walls they belong to rather than staying dead square against them.
@@ -1756,8 +1761,16 @@ export class FestivalWorld {
       this.wornBuildings += dressing.walls;
       this.wornSignsSpared += dressing.refused;
       this.wornSigns = dressing.signs;
-      this.wornCables = dressing.cables;
-      this.wornCablesFouled = dressing.cablesFouled;
+      // Accumulated, like the wall count above and for the same reason. This
+      // pass runs again as the world finishes building, and by the second run
+      // every wall is already marked dressed — so the later runs legitimately
+      // find nothing and report zero, and assigning their answer wipes the real
+      // one. Three separate counters in this file have now told me a working
+      // feature was doing nothing, which is a strong argument that a tally of
+      // work done should never be assigned, only added to.
+      this.wornCables += dressing.cables;
+      this.wornCablesFouled += dressing.cablesFouled;
+      this.wornRoofs += dressing.roofs;
     }
     const patched = applyWornStyle(this.scene);
     setWornStyle(amount, steps, grain);
@@ -1781,6 +1794,8 @@ export class FestivalWorld {
   private wornCables = 0;
 
   private wornCablesFouled = 0;
+
+  private wornRoofs = 0;
 
   wornStyleReviewSnapshot(): unknown {
     const settings = wornStyleSettings();
@@ -1815,6 +1830,7 @@ export class FestivalWorld {
       interiorPieces: this.wornInterior,
       cablesStrung: this.wornCables,
       cablesRefusedForFouling: this.wornCablesFouled,
+      roofsAvailable: this.wornRoofs,
       // Where the sole actually ends up, against the ground under it. The
       // arithmetic said one thing and the road said another, so this measures
       // the thing itself.
