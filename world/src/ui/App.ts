@@ -743,26 +743,35 @@ export class App {
     // gate — the point of it is to be looked at on a phone against the live
     // site, so it must not be loopback-only. Absent the flag nothing here runs
     // and the world is exactly the one visitors already have.
-    //   ?worn                    full strength
-    //   ?worn=0.5                half mixed in
-    //   ?worn=0.8&wornSteps=8    coarser colour depth
+    //   ?worn                     full strength
+    //   ?worn=0.5                 half mixed in
+    //   ?worn=1&wornSteps=8       coarser colour depth
+    //   ?worn=1&wornGrain=0       shading only, no surface grain
+    //   ?worn=1&meshes=0          surfaces only, boxes left alone
     const wornFlag = new URLSearchParams(window.location.search).get('worn');
     if (wornFlag !== null) {
       const world = this.world;
       const amount = wornFlag === '' ? 1 : Number.parseFloat(wornFlag);
       const stepsFlag = new URLSearchParams(window.location.search).get('wornSteps');
       const steps = stepsFlag === null ? 10 : Number.parseFloat(stepsFlag);
-      const dial = (nextAmount: number, nextSteps: number) => world.applyWornStyleForReview(
-        Number.isFinite(nextAmount) ? nextAmount : 1,
-        Number.isFinite(nextSteps) ? nextSteps : 10,
-      );
-      dial(amount, steps);
+      const grainFlag = new URLSearchParams(window.location.search).get('wornGrain');
+      const grain = grainFlag === null ? 1 : Number.parseFloat(grainFlag);
+      const dial = (nextAmount: number, nextSteps: number, nextGrain: number) =>
+        world.applyWornStyleForReview(
+          Number.isFinite(nextAmount) ? nextAmount : 1,
+          Number.isFinite(nextSteps) ? nextSteps : 10,
+          Number.isFinite(nextGrain) ? nextGrain : 1,
+        );
+      dial(amount, steps, grain);
       // The world keeps building after the gate closes — club fittings, remote
       // avatars, the evening's fireworks — so the pass runs again a few times
       // rather than once, and is left on the window to dial by hand.
-      for (const delay of [400, 1_600, 6_000]) window.setTimeout(() => dial(amount, steps), delay);
-      (window as Window & { __festivalWorn?: (a: number, s?: number) => unknown }).__festivalWorn =
-        (a: number, st?: number) => dial(a, st ?? steps);
+      for (const delay of [400, 1_600, 6_000]) {
+        window.setTimeout(() => dial(amount, steps, grain), delay);
+      }
+      (window as Window & {
+        __festivalWorn?: (a: number, s?: number, g?: number) => unknown;
+      }).__festivalWorn = (a: number, st?: number, g?: number) => dial(a, st ?? steps, g ?? grain);
       (window as Window & { __festivalWornSnapshot?: () => unknown }).__festivalWornSnapshot =
         () => world.wornStyleReviewSnapshot();
     }

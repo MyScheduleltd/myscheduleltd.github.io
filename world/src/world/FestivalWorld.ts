@@ -1508,9 +1508,9 @@ export class FestivalWorld {
    * made after the opening pass, and an unpatched material in a patched world
    * is more obvious than no patch at all.
    */
-  applyWornStyleForReview(amount: number, steps: number): number {
+  applyWornStyleForReview(amount: number, steps: number, grain: number): number {
     const patched = applyWornStyle(this.scene);
-    setWornStyle(amount, steps);
+    setWornStyle(amount, steps, grain);
     return patched;
   }
 
@@ -6388,21 +6388,31 @@ export class FestivalWorld {
       return part;
     };
 
-    // Torso: shoulders wider than the waist, and flattened front to back.
-    const torso = add(taperedPrism(0.6, 0.44, 1.38, 0.62), [0, 1.78, 0], 'top', parent);
-    // The yoke is the silhouette. It is the one hard horizontal on the figure
-    // and it is what reads at fifty metres, where a face never would.
-    add(taperedPrism(0.68, 0.62, 0.2, 0.66), [0, 2.4, 0], 'top', parent);
+    // Torso: a sharper taper than the first cut, so the waist is properly
+    // narrower than the chest rather than merely hinting at it, and flattened
+    // front to back because a person is not square in plan.
+    const torso = add(taperedPrism(0.58, 0.38, 1.4, 0.58), [0, 1.77, 0], 'top', parent);
+    // The yoke is the silhouette — the one hard horizontal on the figure, and
+    // what reads at fifty metres where a face never would. Thinner than the
+    // first attempt: it wants to be a line across the shoulders, not a slab
+    // sitting on them.
+    add(taperedPrism(0.66, 0.6, 0.14, 0.6), [0, 2.42, 0], 'top', parent);
+    // A neck, so the head sits on the body instead of resting against it.
+    add(taperedPrism(0.13, 0.16, 0.16, 1), [0, 2.5, 0], 'skin', parent);
 
     const head = new THREE.Group();
-    head.position.set(0, 2.47, 0);
+    head.position.set(0, 2.54, 0);
     parent.add(head);
-    add(taperedPrism(0.3, 0.33, 0.58, 0.92), [0, 0.29, 0], 'skin', head);
-    add(taperedPrism(0.345, 0.32, 0.16, 0.95), [0, 0.55, -0.01], 'hair', head);
+    // Smaller again — about a seventh of the height. Past this it stops reading
+    // as a stylised person and starts reading as a shop mannequin.
+    add(taperedPrism(0.25, 0.29, 0.5, 0.94), [0, 0.25, 0], 'skin', head);
+    // The hair is a distinct cap with its own overhang, which gives the head a
+    // second facet to catch light and stops it reading as a single lump.
+    add(taperedPrism(0.3, 0.275, 0.14, 0.98), [0, 0.47, -0.01], 'hair', head);
     // No eyes, no mouth. One band where a face would be — more graphic than a
     // painted face, and it never lands in the uncanny middle.
-    const band = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.11, 0.04), material(0x121111, 0.9));
-    band.position.set(0, 0.3, 0.29);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.37, 0.085, 0.035), material(0x121111, 0.9));
+    band.position.set(0, 0.27, 0.255);
     head.add(band);
 
     const limb = (
@@ -6419,14 +6429,20 @@ export class FestivalWorld {
       return pivot;
     };
 
-    const leftArm = limb(-0.6, 2.24, taperedPrism(0.15, 0.1, 1.22, 0.9), 1.22, 'skin');
-    const rightArm = limb(0.6, 2.24, taperedPrism(0.15, 0.1, 1.22, 0.9), 1.22, 'skin');
-    const leftLeg = limb(-0.26, 1.16, taperedPrism(0.21, 0.15, 1.25, 0.86), 1.25, 'bottoms');
-    const rightLeg = limb(0.26, 1.16, taperedPrism(0.21, 0.15, 1.25, 0.86), 1.25, 'bottoms');
+    const leftArm = limb(-0.58, 2.26, taperedPrism(0.125, 0.082, 1.24, 0.92), 1.24, 'skin');
+    const rightArm = limb(0.58, 2.26, taperedPrism(0.125, 0.082, 1.24, 0.92), 1.24, 'skin');
+    const leftLeg = limb(-0.24, 1.16, taperedPrism(0.195, 0.125, 1.28, 0.84), 1.28, 'bottoms');
+    const rightLeg = limb(0.24, 1.16, taperedPrism(0.195, 0.125, 1.28, 0.84), 1.28, 'bottoms');
+    // Hands, so an arm ends in something rather than tapering into nothing.
+    // Small enough to read as a mass at the wrist and no more.
+    for (const arm of [leftArm, rightArm]) {
+      const hand = add(taperedPrism(0.1, 0.075, 0.17, 0.95), [0, -1.31, 0], 'skin', arm);
+      hand.userData.paletteSlot = markPalette ? 'skin' : undefined;
+    }
     // Feet as their own facets, so the leg stops rather than simply ending.
     for (const leg of [leftLeg, rightLeg]) {
-      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.46), material(0x14161a, 0.9));
-      foot.position.set(0, -1.19, 0.06);
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.1, 0.44), material(0x14161a, 0.92));
+      foot.position.set(0, -1.24, 0.07);
       leg.add(foot);
     }
 

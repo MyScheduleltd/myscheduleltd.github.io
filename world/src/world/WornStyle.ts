@@ -35,15 +35,62 @@ import * as THREE from 'three';
 export const WORN_UNIFORMS = {
   uWornAmount: { value: 0 },
   uWornSteps: { value: 10 },
+  uWornGrain: { value: 0 },
 };
 
 /**
  * A 4x4 ordered dither built from two nested 2x2 matrices, which is far
  * cheaper than indexing a lookup array in GLSL.
  */
+/**
+ * Surface grain, computed from the fragment's position in the world.
+ *
+ * This is the answer to the honest flaw in the shading pass: a screen-space
+ * dither does not stick to anything, so the grain sits still while the wall
+ * slides underneath it. Sampling noise at the world position instead means the
+ * speckle belongs to the wall — walk past and it travels, exactly as a painted
+ * texture would, without a single texture being authored or a UV being unwrapped.
+ *
+ * Two scales, because one is never enough to read as a material. A hard cell
+ * hash at high frequency is the aggregate — the fine tooth of concrete or the
+ * chip in asphalt. A smooth octave at roughly two metres is the staining: the
+ * damp patch, the run under a sill, the place the sun has bleached. Together
+ * they do most of what a small painted texture would, and they cost no memory.
+ */
+const WORN_NOISE = /* glsl */ `
+  varying vec3 vWornWorld;
+  uniform float uWornAmount;
+  uniform float uWornSteps;
+  uniform float uWornGrain;
+
+  float wornHash(vec3 p) {
+    return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453123);
+  }
+
+  float wornSmoothNoise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float n00 = mix(wornHash(i + vec3(0.0, 0.0, 0.0)), wornHash(i + vec3(1.0, 0.0, 0.0)), f.x);
+    float n10 = mix(wornHash(i + vec3(0.0, 1.0, 0.0)), wornHash(i + vec3(1.0, 1.0, 0.0)), f.x);
+    float n01 = mix(wornHash(i + vec3(0.0, 0.0, 1.0)), wornHash(i + vec3(1.0, 0.0, 1.0)), f.x);
+    float n11 = mix(wornHash(i + vec3(0.0, 1.0, 1.0)), wornHash(i + vec3(1.0, 1.0, 1.0)), f.x);
+    return mix(mix(n00, n10, f.y), mix(n01, n11, f.y), f.z);
+  }
+`;
+
 const WORN_FRAGMENT = /* glsl */ `
   #ifdef WORN_STYLE
   {
+    // Surface first, so the dither below quantises a grained colour rather
+    // than laying grain over a quantised one.
+    if (uWornGrain > 0.0) {
+      float aggregate = wornHash(floor(vWornWorld * 26.0));
+      float staining = wornSmoothNoise(vWornWorld * 0.85);
+      float wear = mix(0.87, 1.05, aggregate) * mix(0.92, 1.05, staining);
+      gl_FragColor.rgb *= mix(1.0, wear, uWornGrain);
+    }
+
     vec2 wornCoord = gl_FragCoord.xy;
     vec2 wornCell = floor(wornCoord);
     float wornLow = fract(wornCell.x * 0.5 + wornCell.y * wornCell.y * 0.75);
@@ -84,11 +131,18 @@ function patchMaterial(material: PatchableMaterial): void {
     previous?.call(material, shader, renderer);
     shader.uniforms.uWornAmount = WORN_UNIFORMS.uWornAmount;
     shader.uniforms.uWornSteps = WORN_UNIFORMS.uWornSteps;
-    shader.fragmentShader = shader.fragmentShader
+    shader.uniforms.uWornGrain = WORN_UNIFORMS.uWornGrain;
+    // The world position has to be carried through from the vertex stage;
+    // nothing in the standard chunks hands it to the fragment shader unless a
+    // feature that needs it happens to be switched on.
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWornWorld;')
       .replace(
-        'void main() {',
-        'uniform float uWornAmount;\nuniform float uWornSteps;\nvoid main() {',
-      )
+        '#include <project_vertex>',
+        '#include <project_vertex>\n  vWornWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\n${WORN_NOISE}`)
       // After the colour space conversion the value is what the screen will
       // actually show, which is the only place quantising means anything.
       .replace('#include <colorspace_fragment>', `#include <colorspace_fragment>\n${WORN_FRAGMENT}`);
@@ -123,15 +177,17 @@ export function applyWornStyle(scene: THREE.Object3D): number {
  * Amount 0 leaves the world exactly as it was; 1 is the full treatment. Steps
  * is the number of levels per channel — eight is heavy, sixteen is subtle.
  */
-export function setWornStyle(amount: number, steps?: number): void {
+export function setWornStyle(amount: number, steps?: number, grain?: number): void {
   WORN_UNIFORMS.uWornAmount.value = THREE.MathUtils.clamp(amount, 0, 1);
   if (steps !== undefined) WORN_UNIFORMS.uWornSteps.value = Math.max(2, steps);
+  if (grain !== undefined) WORN_UNIFORMS.uWornGrain.value = THREE.MathUtils.clamp(grain, 0, 1);
 }
 
-export function wornStyleSettings(): { amount: number; steps: number } {
+export function wornStyleSettings(): { amount: number; steps: number; grain: number } {
   return {
     amount: WORN_UNIFORMS.uWornAmount.value,
     steps: WORN_UNIFORMS.uWornSteps.value,
+    grain: WORN_UNIFORMS.uWornGrain.value,
   };
 }
 
