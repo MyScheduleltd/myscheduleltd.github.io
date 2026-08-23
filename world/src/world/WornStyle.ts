@@ -165,7 +165,13 @@ function patchMaterial(material: PatchableMaterial): void {
   // A face is not a wall. Skin and hair take the shading and the dither but
   // never the surface grain, because grime on a person reads as unwashed
   // rather than as weathered.
-  if (material.userData.wornNoGrain === true) material.defines.WORN_NO_GRAIN = '';
+  //
+  // Neither is a sign. Everything unlit in this world is something meant to be
+  // read or to glow — the marquees, the screens, the neon, the stall boards —
+  // and a visitor has to be able to read them. Grime across lettering is the
+  // one place where the style actively costs somebody something.
+  const unlit = material instanceof THREE.MeshBasicMaterial;
+  if (material.userData.wornNoGrain === true || unlit) material.defines.WORN_NO_GRAIN = '';
   material.needsUpdate = true;
 }
 

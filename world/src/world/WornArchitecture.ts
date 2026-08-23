@@ -61,6 +61,21 @@ function isBuilding(mesh: THREE.Mesh, size: THREE.Vector3, at: THREE.Vector3): b
 export function dressBuildings(scene: THREE.Object3D): number {
   scene.updateMatrixWorld(true);
 
+  // Everything unlit is a sign, a screen or a neon band — the things a visitor
+  // has to be able to read. Their boxes are collected first so that nothing
+  // gets bolted across them; an air-con unit parked on the marquee eats the
+  // name of the venue, which is a far worse outcome than a bare wall.
+  const keepClear: THREE.Box3[] = [];
+  scene.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const surface = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+    if (!(surface instanceof THREE.MeshBasicMaterial)) return;
+    const box = new THREE.Box3().setFromObject(mesh);
+    if (!box.isEmpty()) keepClear.push(box.expandByScalar(1.1));
+  });
+  const overlapsSign = (at: THREE.Vector3) => keepClear.some((box) => box.containsPoint(at));
+
   const unitBox = new THREE.BoxGeometry(1, 1, 1);
   const concrete = new THREE.MeshStandardMaterial({ color: 0x4a4744, roughness: 0.94, metalness: 0.02 });
   const metal = new THREE.MeshStandardMaterial({ color: 0x6b6764, roughness: 0.62, metalness: 0.34 });
@@ -129,11 +144,16 @@ export function dressBuildings(scene: THREE.Object3D): number {
         const up = lowest + placedRandom(at, (salt += 1)) * Math.max(0.05, 0.44 - lowest);
         const out = 0.5 + 0.34 / (face.axis === 'z' ? size.z : size.x);
         const grilleOut = 0.5 + 0.66 / (face.axis === 'z' ? size.z : size.x);
+        const seat = face.axis === 'z'
+          ? place(along, up, face.sign * out)
+          : place(face.sign * out, up, along);
+        // Somewhere a sign already is. Leave the wall bare there.
+        if (overlapsSign(seat)) continue;
         if (face.axis === 'z') {
-          piece(1.05, 0.78, 0.62, place(along, up, face.sign * out), metal);
+          piece(1.05, 0.78, 0.62, seat, metal);
           piece(0.8, 0.55, 0.06, place(along, up, face.sign * grilleOut), dark);
         } else {
-          piece(0.62, 0.78, 1.05, place(face.sign * out, up, along), metal);
+          piece(0.62, 0.78, 1.05, seat, metal);
           piece(0.06, 0.55, 0.8, place(face.sign * grilleOut, up, along), dark);
         }
       }
@@ -144,13 +164,8 @@ export function dressBuildings(scene: THREE.Object3D): number {
     // does a great deal to break a flat wall.
     const cornerX = placedRandom(at, 41) > 0.5 ? 0.46 : -0.46;
     const cornerZ = placedRandom(at, 42) > 0.5 ? 1 : -1;
-    piece(
-      0.28,
-      size.y - 1.8,
-      0.28,
-      place(cornerX, 0, cornerZ * (0.5 + 0.18 / size.z)),
-      metal,
-    );
+    const runsAt = place(cornerX, 0, cornerZ * (0.5 + 0.18 / size.z));
+    if (!overlapsSign(runsAt)) piece(0.28, size.y - 1.8, 0.28, runsAt, metal);
   }
 
   return walls.length;

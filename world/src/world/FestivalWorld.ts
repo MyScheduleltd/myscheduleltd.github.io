@@ -261,6 +261,24 @@ interface AvatarRig {
   head: THREE.Group;
   /** Under the feet, and only out while running. */
   board: THREE.Group;
+  /**
+   * The second joint down each limb, on the restyled figure only.
+   *
+   * These are bones in every sense that matters here. A three.js Skeleton
+   * exists to *deform* one continuous mesh, and these limbs are rigid segments
+   * — so a hierarchy of pivots is not an approximation of a rig, it is the
+   * correct one, minus skinning weights that would have nothing to weight.
+   * What the old figure actually lacked was not bones but joints: a whole arm
+   * that swung as one piece could only ever pendulum. With an elbow and a knee
+   * in the chain the same walk gets a forearm that trails and a heel that
+   * lifts, and gestures can bend where a body bends.
+   *
+   * Absent on the original figure, so everything that drives them checks first.
+   */
+  leftElbow?: THREE.Group;
+  rightElbow?: THREE.Group;
+  leftKnee?: THREE.Group;
+  rightKnee?: THREE.Group;
 }
 
 interface WaterReflectionVisual {
@@ -6480,32 +6498,61 @@ export class FestivalWorld {
     // Each limb is upper and lower with a narrow joint between, which is the
     // single most futuristic thing on the figure and costs nothing: the pieces
     // hang off the same pivot, so nothing about the animation changes.
+    // Everything below the joint hangs off its own pivot, so the lower half of
+    // a limb can move relative to the upper half instead of riding along with
+    // it. The segments were already drawn this way; they simply had nothing to
+    // turn about.
     const arm = (side: number) => {
       const pivot = limb(side * 0.56, 2.28, taperedPrism(0.115, 0.08, 0.6, 0.94), 0.6, 'top');
-      shell(taperedPrism(0.075, 0.075, 0.09, 1), [0, -0.64, 0], pivot);
-      add(taperedPrism(0.088, 0.07, 0.56, 0.94), [0, -0.97, 0], 'skin', pivot);
-      shell(taperedPrism(0.085, 0.062, 0.16, 0.96), [0, -1.32, 0], pivot);
-      return pivot;
+      const elbow = new THREE.Group();
+      elbow.position.set(0, -0.64, 0);
+      pivot.add(elbow);
+      shell(taperedPrism(0.075, 0.075, 0.09, 1), [0, 0, 0], elbow);
+      add(taperedPrism(0.088, 0.07, 0.56, 0.94), [0, -0.33, 0], 'skin', elbow);
+      shell(taperedPrism(0.085, 0.062, 0.16, 0.96), [0, -0.68, 0], elbow);
+      return { pivot, joint: elbow };
     };
     const leg = (side: number) => {
       const pivot = limb(side * 0.24, 1.16, taperedPrism(0.185, 0.13, 0.66, 0.84), 0.66, 'bottoms');
-      shell(taperedPrism(0.115, 0.115, 0.1, 0.9), [0, -0.71, 0], pivot);
-      add(taperedPrism(0.132, 0.1, 0.5, 0.82), [0, -1.02, 0], 'bottoms', pivot);
+      const knee = new THREE.Group();
+      knee.position.set(0, -0.71, 0);
+      pivot.add(knee);
+      shell(taperedPrism(0.115, 0.115, 0.1, 0.9), [0, 0, 0], knee);
+      add(taperedPrism(0.132, 0.1, 0.5, 0.82), [0, -0.31, 0], 'bottoms', knee);
       const foot = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.11, 0.46), hardware);
-      foot.position.set(0, -1.31, 0.08);
-      pivot.add(foot);
-      return pivot;
+      foot.position.set(0, -0.6, 0.08);
+      knee.add(foot);
+      return { pivot, joint: knee };
     };
 
-    const leftArm = arm(-1);
-    const rightArm = arm(1);
-    const leftLeg = leg(-1);
-    const rightLeg = leg(1);
+    const left = arm(-1);
+    const right = arm(1);
+    const leftLower = leg(-1);
+    const rightLower = leg(1);
+    const leftArm = left.pivot;
+    const rightArm = right.pivot;
+    const leftLeg = leftLower.pivot;
+    const rightLeg = rightLower.pivot;
 
-    const treat = this.mesh([0.16, 0.16, 0.22], [0, -1.2, 0.16], material(0xd18a35, 0.78), rightArm);
+    // The treat rides the forearm now, so a held thing follows the hand rather
+    // than hanging in the air where the hand used to be.
+    const treat = this.mesh([0.16, 0.16, 0.22], [0, -0.56, 0.16], material(0xd18a35, 0.78), right.joint);
     treat.visible = false;
     const board = this.createSkateboard(parent);
-    return { leftArm, rightArm, leftLeg, rightLeg, torso, treat, head, board };
+    return {
+      leftArm,
+      rightArm,
+      leftLeg,
+      rightLeg,
+      torso,
+      treat,
+      head,
+      board,
+      leftElbow: left.joint,
+      rightElbow: right.joint,
+      leftKnee: leftLower.joint,
+      rightKnee: rightLower.joint,
+    };
   }
 
   private createAvatarRig(parent: THREE.Group, palette: AvatarPalette, markPalette = false): AvatarRig {
@@ -7873,15 +7920,33 @@ export class FestivalWorld {
     rig.head.rotation.set(0, 0, 0);
     rig.leftLeg.rotation.z = 0;
     rig.rightLeg.rotation.z = 0;
+    // A leg swings forward on a positive rotation about x, so the knee has to
+    // bend the other way — the shin trails the thigh through the forward half
+    // of the stride and the heel comes up, which is the difference between
+    // walking and swinging two planks from the hip. The arm gets a standing
+    // bend it never loses, because nobody walks with their elbows locked.
+    const armSwingLeft = -swing * 0.72;
+    const armSwingRight = swing * 0.72;
+    if (rig.leftElbow) rig.leftElbow.rotation.set(0.2 + Math.max(0, armSwingLeft) * 0.55, 0, 0);
+    if (rig.rightElbow) rig.rightElbow.rotation.set(0.2 + Math.max(0, armSwingRight) * 0.55, 0, 0);
+    if (rig.leftKnee) rig.leftKnee.rotation.set(-Math.max(0, swing) * 0.95, 0, 0);
+    if (rig.rightKnee) rig.rightKnee.rotation.set(-Math.max(0, -swing) * 0.95, 0, 0);
     rig.treat.visible = gesture === 'feed';
     if (gesture === 'wave') {
       // Raise the arm away from the head, then wave front-to-back from the
       // shoulder. The previous inward rotation intersected the face.
       rig.rightArm.rotation.z = 2.08 + Math.sin(phase * 2.2) * 0.1;
       rig.rightArm.rotation.x = -0.15 + Math.sin(phase * 2.2) * 0.07;
+      // With an elbow the wave comes from the forearm, which is where a wave
+      // actually comes from — the whole arm rocking at the shoulder always
+      // read as semaphore.
+      if (rig.rightElbow) {
+        rig.rightElbow.rotation.set(0.55, 0, Math.sin(phase * 2.6) * 0.42);
+      }
     } else if (gesture === 'feed') {
       // Reach forward with a visible bite-sized treat at hand level.
       rig.rightArm.rotation.x = -1.18 + Math.sin(phase * 1.7) * 0.06;
+      if (rig.rightElbow) rig.rightElbow.rotation.set(0.32, 0, 0);
       rig.rightArm.rotation.z = -0.1;
     } else if (gesture === 'dance') {
       this.poseRigDance(rig);
@@ -8005,6 +8070,13 @@ export class FestivalWorld {
    * clock, so a floor full of avatars moves together.
    */
   private poseRigDance(rig: AvatarRig, offset = 0): void {
+    // Joints are put back explicitly: a pose that does not mention them leaves
+    // whatever the last walking frame happened to set, and the body arrives at
+    // the dance floor still mid-stride.
+    if (rig.leftElbow) rig.leftElbow.rotation.set(0.62, 0, 0);
+    if (rig.rightElbow) rig.rightElbow.rotation.set(0.62, 0, 0);
+    if (rig.leftKnee) rig.leftKnee.rotation.set(0, 0, 0);
+    if (rig.rightKnee) rig.rightKnee.rotation.set(0, 0, 0);
     const beat = this.clubBeatPhase() * Math.PI * 2 + offset;
     const bounce = Math.sin(beat);
     const sway = Math.sin(beat / 2);
@@ -8043,6 +8115,13 @@ export class FestivalWorld {
    * with a bob that follows the same beat the lights use.
    */
   private poseRigDj(rig: AvatarRig, elapsed: number): void {
+    // Joints are put back explicitly: a pose that does not mention them leaves
+    // whatever the last walking frame happened to set, and the body arrives at
+    // the dance floor still mid-stride.
+    if (rig.leftElbow) rig.leftElbow.rotation.set(0.85, 0, 0);
+    if (rig.rightElbow) rig.rightElbow.rotation.set(0.85, 0, 0);
+    if (rig.leftKnee) rig.leftKnee.rotation.set(0, 0, 0);
+    if (rig.rightKnee) rig.rightKnee.rotation.set(0, 0, 0);
     const secondsPerBeat = 60 / this.clubBeat.bpm;
     const sinceStart = this.clubBeat.startedAt ? (Date.now() - this.clubBeat.startedAt) / 1000 : elapsed;
     const beat = (sinceStart / secondsPerBeat) * Math.PI * 2;
