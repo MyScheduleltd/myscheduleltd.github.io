@@ -1589,3 +1589,19 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
     width: 100%; height: 100%; display: block;
   }
 }
+
+/* The company's own faces, so the world can letter its signs in the same voice
+   the site does. Loaded here rather than fetched per sign: a canvas draws text
+   with whatever font is resolved at that instant, and a face that arrives late
+   is a face the sign never gets. */
+@font-face {
+  font-family: "BebasNeueBrand";
+  src: url("/font/BebasNeue-Regular.ttf") format("truetype");
+  font-display: block;
+}
+
+/* HanWangMingBlack is deliberately absent. The file is 8.9 MB — a Ming face
+   carries thousands of glyphs and this world uses a couple of dozen of them —
+   and shipping that to a phone to letter four subtitles is not a trade worth
+   making. Subset to the characters actually used it would be a few kilobytes,
+   which is the right fix and needs a tool this machine does not have. */

@@ -255,7 +255,16 @@ interface AvatarRig {
   rightArm: THREE.Group;
   leftLeg: THREE.Group;
   rightLeg: THREE.Group;
-  torso: THREE.Mesh;
+  /**
+   * What the poses bend when they bend "the torso".
+   *
+   * On the original figure this is the torso mesh itself, and rotating it turns
+   * a slab. On the restyled figure it is the spine — a pivot at the waist that
+   * the chest, shoulders, arms and head all hang from — so the same line of
+   * pose code that used to twist one box now leans the entire upper body over
+   * the hips, and every gesture already written gets a spine for free.
+   */
+  torso: THREE.Object3D;
   treat: THREE.Mesh;
   /** Head, face and hair together, so a bow takes the whole of it. */
   head: THREE.Group;
@@ -813,26 +822,63 @@ const material = (
   metalness = 0.05,
 ): THREE.MeshStandardMaterial => new THREE.MeshStandardMaterial({ color, roughness, metalness });
 
+/**
+ * The brand's own display face, and the one hard problem with putting a font on
+ * a sign: a canvas draws with whatever font is resolved at that instant, and a
+ * face still downloading is a face the sign silently never gets. Every marquee
+ * in the world is painted while the world is being built, which is far too
+ * early. So each sign registers how to repaint itself, and they are all redrawn
+ * once the face has actually arrived.
+ */
+const signRepaints: Array<() => void> = [];
+let brandFontLoaded = false;
+
+const loadBrandFont = (): void => {
+  if (brandFontLoaded || typeof document === 'undefined' || !document.fonts) return;
+  brandFontLoaded = true;
+  document.fonts.load('400 92px "BebasNeueBrand"')
+    .then(() => {
+      for (const repaint of signRepaints) repaint();
+    })
+    .catch(() => undefined);
+};
+
+const signFont = (size: number, heading: boolean): string => {
+  // Bebas has no lowercase and only one weight, so a heading asks for neither.
+  if (heading && brandFontLoaded) return `400 ${size}px "BebasNeueBrand", Impact, sans-serif`;
+  return heading ? `900 ${size}px sans-serif` : `700 ${size}px sans-serif`;
+};
+
 const createTextTexture = (lines: string[], foreground = '#f5efe2', background = '#151517') => {
   const canvas = document.createElement('canvas');
   canvas.width = 1024;
   canvas.height = 512;
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Canvas 2D context unavailable.');
-  context.fillStyle = background;
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.strokeStyle = '#b51f27';
-  context.lineWidth = 18;
-  context.strokeRect(22, 22, canvas.width - 44, canvas.height - 44);
-  context.fillStyle = foreground;
-  context.textAlign = 'center';
-  context.textBaseline = 'middle';
-  lines.forEach((line, index) => {
-    context.font = index === 0 ? '900 92px sans-serif' : '700 48px sans-serif';
-    context.fillText(line, canvas.width / 2, 150 + index * 115);
-  });
+  const paint = () => {
+    context.fillStyle = background;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.strokeStyle = '#b51f27';
+    context.lineWidth = 18;
+    context.strokeRect(22, 22, canvas.width - 44, canvas.height - 44);
+    context.fillStyle = foreground;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    lines.forEach((line, index) => {
+      const heading = index === 0;
+      context.font = signFont(heading ? 104 : 48, heading);
+      // Bebas is a condensed face and sits taller on the line than the old
+      // fallback, so the heading is nudged down to stay centred in its band.
+      context.fillText(line, canvas.width / 2, (heading ? 158 : 150) + index * 115);
+    });
+  };
+  paint();
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  signRepaints.push(() => {
+    paint();
+    texture.needsUpdate = true;
+  });
   return texture;
 };
 
@@ -1536,6 +1582,9 @@ export class FestivalWorld {
     // return value overwrote the real count with zero, which made a working
     // feature look like a broken one.
     if (wornMeshesRequested()) {
+      // Fetched here rather than on load, so a visitor who never asks for the
+      // style never pays for the font.
+      loadBrandFont();
       const dressing = dressBuildings(this.scene);
       this.wornBuildings += dressing.walls;
       this.wornSignsSpared += dressing.refused;
@@ -6388,6 +6437,9 @@ export class FestivalWorld {
    * right over the tail, arms spread wide for balance.
    */
   private poseRigSkating(rig: AvatarRig, phase: number): void {
+    // Riding is a crouch: the front knee stays folded and the back leg pushes
+    // straighter, with the arms out and loose for balance.
+    this.foldJoints(rig, 0.5, 0.5, 0.62 + Math.sin(phase) * 0.12, 0.3);
     const bob = Math.sin(phase * 1.6);
     rig.torso.rotation.y = 0;
     rig.torso.rotation.x = 0.15 + bob * 0.03;
@@ -6461,27 +6513,38 @@ export class FestivalWorld {
       return part;
     };
 
-    // ---- torso ---------------------------------------------------------
+    // ---- pelvis --------------------------------------------------------
+    // Stays on the body's own root, because a lean should bend above the waist
+    // and leave the hips where the legs are.
+    add(taperedPrism(0.42, 0.36, 0.42, 0.54), [0, 1.3, 0], 'bottoms', parent);
+
+    // ---- spine ---------------------------------------------------------
+    // Everything above the waist hangs off this, so bending it carries the
+    // chest, the shoulders, both arms and the head together — which is what
+    // separates a body leaning into a walk from a slab being twisted.
+    const spine = new THREE.Group();
+    spine.position.set(0, 1.55, 0);
+    parent.add(spine);
+
     // Chest and waist as two pieces meeting at a narrow join, rather than one
     // taper running the whole way. The break at the waist is what stops the
     // body reading as a single carved lump.
-    const torso = add(taperedPrism(0.56, 0.44, 0.86, 0.56), [0, 2.02, 0], 'top', parent);
-    shell(taperedPrism(0.43, 0.4, 0.14, 0.54), [0, 1.55, 0], parent);
-    add(taperedPrism(0.42, 0.36, 0.42, 0.54), [0, 1.3, 0], 'bottoms', parent);
+    add(taperedPrism(0.56, 0.44, 0.86, 0.56), [0, 0.47, 0], 'top', spine);
+    shell(taperedPrism(0.43, 0.4, 0.14, 0.54), [0, 0, 0], spine);
 
     // ---- shoulders -----------------------------------------------------
     // Caps that stand slightly proud of the body, which is the one silhouette
     // cue that reads at any distance and in any colour.
-    shell(taperedPrism(0.64, 0.58, 0.1, 0.58), [0, 2.44, 0], parent);
+    shell(taperedPrism(0.64, 0.58, 0.1, 0.58), [0, 0.89, 0], spine);
     for (const side of [-1, 1]) {
-      add(taperedPrism(0.2, 0.15, 0.22, 0.95), [side * 0.53, 2.36, 0], 'top', parent);
+      add(taperedPrism(0.2, 0.15, 0.22, 0.95), [side * 0.53, 0.81, 0], 'top', spine);
     }
 
     // ---- head ----------------------------------------------------------
-    shell(taperedPrism(0.12, 0.15, 0.15, 1), [0, 2.55, 0], parent);
+    shell(taperedPrism(0.12, 0.15, 0.15, 1), [0, 1.0, 0], spine);
     const head = new THREE.Group();
-    head.position.set(0, 2.6, 0);
-    parent.add(head);
+    head.position.set(0, 1.05, 0);
+    spine.add(head);
     add(taperedPrism(0.23, 0.27, 0.46, 0.94), [0, 0.23, 0], 'skin', head);
     add(taperedPrism(0.285, 0.26, 0.13, 0.98), [0, 0.43, -0.015], 'hair', head);
     // The band was always going to read as a visor, so it is one: wrapped
@@ -6497,10 +6560,11 @@ export class FestivalWorld {
       geometry: THREE.BufferGeometry,
       height: number,
       slot: keyof AvatarPalette,
+      root: THREE.Object3D,
     ) => {
       const pivot = new THREE.Group();
       pivot.position.set(x, y, 0);
-      parent.add(pivot);
+      root.add(pivot);
       add(geometry, [0, -height / 2, 0], slot, pivot);
       return pivot;
     };
@@ -6514,7 +6578,7 @@ export class FestivalWorld {
     // it. The segments were already drawn this way; they simply had nothing to
     // turn about.
     const arm = (side: number) => {
-      const pivot = limb(side * 0.56, 2.28, taperedPrism(0.115, 0.08, 0.6, 0.94), 0.6, 'top');
+      const pivot = limb(side * 0.56, 0.73, taperedPrism(0.115, 0.08, 0.6, 0.94), 0.6, 'top', spine);
       const elbow = new THREE.Group();
       elbow.position.set(0, -0.64, 0);
       pivot.add(elbow);
@@ -6524,7 +6588,7 @@ export class FestivalWorld {
       return { pivot, joint: elbow };
     };
     const leg = (side: number) => {
-      const pivot = limb(side * 0.24, 1.16, taperedPrism(0.185, 0.13, 0.66, 0.84), 0.66, 'bottoms');
+      const pivot = limb(side * 0.24, 1.16, taperedPrism(0.185, 0.13, 0.66, 0.84), 0.66, 'bottoms', parent);
       const knee = new THREE.Group();
       knee.position.set(0, -0.71, 0);
       pivot.add(knee);
@@ -6555,7 +6619,9 @@ export class FestivalWorld {
       rightArm,
       leftLeg,
       rightLeg,
-      torso,
+      // The spine stands in for the torso, so every pose already written bends
+      // the whole upper body without one line of those poses changing.
+      torso: spine,
       treat,
       head,
       board,
@@ -7604,6 +7670,12 @@ export class FestivalWorld {
         if (npc.rig) {
           this.animateRig(npc.rig, elapsed * 2.2, 0.03, stationGesture, false,
             this.gestureProgress(stationGesture, npc.gestureUntil));
+          // Somebody holding a post has nothing to do but look at whoever
+          // comes near, which is exactly when a still figure most needs to
+          // stop looking like furniture.
+          if (npc.group.position.distanceTo(this.player.position) < 11) {
+            this.glanceAt(npc.rig, npc.group, this.player.position, stationGesture);
+          }
           if (npc.pose === 'dj' && !stationGesture) this.poseRigDj(npc.rig, elapsed);
           if (npc.pose === 'dance' && !stationGesture) this.poseRigDance(npc.rig, npc.phase);
         }
@@ -7825,8 +7897,14 @@ export class FestivalWorld {
       // range where nobody can see that they are.
       const farAway = npc.group.position.distanceToSquared(this.player.position) > NPC_ANIMATION_RANGE_SQ;
       const poseNpc = !farAway || gesture !== undefined || this.graphicsMode === 'normal';
-      if (npc.rig && poseNpc) this.animateRig(npc.rig, elapsed * 7.4 + npc.phase, moving ? 0.62 : 0.03, gesture, false,
-        this.gestureProgress(gesture, npc.gestureUntil));
+      if (npc.rig && poseNpc) {
+        this.animateRig(npc.rig, elapsed * 7.4 + npc.phase, moving ? 0.62 : 0.03, gesture, false,
+          this.gestureProgress(gesture, npc.gestureUntil));
+        // And a resident walking past looks over at you as they go.
+        if (npc.group.position.distanceTo(this.player.position) < 9) {
+          this.glanceAt(npc.rig, npc.group, this.player.position, gesture);
+        }
+      }
       if (npc.dogRig) this.animateMentorDog(
         npc.dogRig,
         elapsed * 7.4 + npc.phase,
@@ -7909,6 +7987,51 @@ export class FestivalWorld {
     return THREE.MathUtils.clamp(1 - (until - now) / span, 0, 1);
   }
 
+  /**
+   * Folds the second joint of each limb. Every gesture written before the
+   * joints existed left them wherever the last frame put them, which showed up
+   * as a bowing figure with one leg still mid-stride.
+   *
+   * A knee only bends backwards and an elbow only bends forwards, so both are
+   * given as a positive amount here and the sign is applied in one place.
+   */
+  /**
+   * Turns a head toward somebody nearby.
+   *
+   * The cheapest thing on this whole board that makes a crowd feel inhabited,
+   * and it needs no geometry at all — only the neck that came with the spine.
+   * Applied after the body has been animated, because every pose writes the
+   * head's rotation and would otherwise overwrite this.
+   *
+   * Held to a comfortable arc: past that a person turns their shoulders too,
+   * and a head swivelling further than a neck goes is worse than one that never
+   * moves at all. Nobody glances while doing something else, so a gesture
+   * suppresses it.
+   */
+  private glanceAt(rig: AvatarRig, body: THREE.Object3D, target: THREE.Vector3, gesture?: AvatarGesture): void {
+    if (gesture !== undefined) return;
+    const toward = Math.atan2(target.x - body.position.x, target.z - body.position.z);
+    let turn = toward - body.rotation.y;
+    // Round the short way, or a body facing north-west whips its head round
+    // the long side of the circle to look at something just past north-east.
+    while (turn > Math.PI) turn -= Math.PI * 2;
+    while (turn < -Math.PI) turn += Math.PI * 2;
+    if (Math.abs(turn) > 1.9) return;
+    const held = THREE.MathUtils.clamp(turn, -0.85, 0.85);
+    // Eased rather than snapped, so a head that comes into range turns rather
+    // than teleports its gaze.
+    rig.head.rotation.y = THREE.MathUtils.lerp(rig.head.rotation.y, held, 0.12);
+    const rise = THREE.MathUtils.clamp((target.y - body.position.y - 2.4) * 0.4, -0.22, 0.22);
+    rig.head.rotation.x = THREE.MathUtils.lerp(rig.head.rotation.x, -rise, 0.12);
+  }
+
+  private foldJoints(rig: AvatarRig, leftElbow: number, rightElbow: number, leftKnee = 0, rightKnee = 0): void {
+    if (rig.leftElbow) rig.leftElbow.rotation.set(leftElbow, 0, 0);
+    if (rig.rightElbow) rig.rightElbow.rotation.set(rightElbow, 0, 0);
+    if (rig.leftKnee) rig.leftKnee.rotation.set(-leftKnee, 0, 0);
+    if (rig.rightKnee) rig.rightKnee.rotation.set(-rightKnee, 0, 0);
+  }
+
   private animateRig(rig: AvatarRig, phase: number, stride: number, gesture?: AvatarGesture, skating = false, progress = 0): void {
     // Riding overrides the gait but not a gesture: someone waving from a board
     // is still waving.
@@ -7975,6 +8098,10 @@ export class FestivalWorld {
       rig.leftLeg.rotation.x = -0.85 + lift * 0.35;
       rig.rightLeg.rotation.x = -0.4 + lift * 0.2;
       rig.torso.rotation.x = 0.12;
+      // A tuck is knees drawn up, which is a knee bend and not a hip rotation.
+      // Straightening as the feet come back down is what sells the landing.
+      const tuck = Math.max(0, 1 - Math.abs(lift)) * 0.5;
+      this.foldJoints(rig, 1.15, 1.15, 1.1 - tuck, 0.75 - tuck * 0.6);
       return;
     } else if (gesture === 'stumble') {
       // Caught on the front foot and recovering: the body straightens as the
@@ -7989,6 +8116,9 @@ export class FestivalWorld {
       rig.rightArm.rotation.z = -0.62;
       rig.leftLeg.rotation.x = -0.72 + recover * 0.22;
       rig.rightLeg.rotation.x = 0.46 - recover * 0.18;
+      // The trailing leg buckles and the leading one braces straight, which is
+      // what a stagger is: one leg failing and the other catching it.
+      this.foldJoints(rig, 0.95 - recover * 0.2, 0.7 + recover * 0.25, 0.12, 0.85 - recover * 0.2);
       return;
     } else if (gesture === 'offer') {
       // Both hands raised together and held out, the body bowed over them.
@@ -8003,6 +8133,9 @@ export class FestivalWorld {
       rig.rightArm.rotation.z = -0.26;
       rig.leftLeg.rotation.x = 0;
       rig.rightLeg.rotation.x = 0;
+      // Held out, not stuck out: the forearms come up so the offering sits in
+      // front of the chest rather than at the end of two straight arms.
+      this.foldJoints(rig, 0.72 + settle * 0.05, 0.72 + settle * 0.05);
       return;
     } else if (gesture === 'bow') {
       // The bow returned: deeper at the waist, hands together at the chest.
@@ -8015,6 +8148,8 @@ export class FestivalWorld {
       rig.rightArm.rotation.z = -0.34;
       rig.leftLeg.rotation.x = 0;
       rig.rightLeg.rotation.x = 0;
+      // Hands together at the chest, which needs the elbows well folded.
+      this.foldJoints(rig, 1.35, 1.35);
       return;
     } else if (gesture === 'punch') {
       // A cross. What makes a punch read as a punch rather than a reach is the
@@ -8050,6 +8185,11 @@ export class FestivalWorld {
       // Weight rolls off the back foot onto the front one.
       rig.leftLeg.rotation.x = -0.12 - 0.3 * strike;
       rig.rightLeg.rotation.x = 0.16 + 0.28 * strike;
+      // The punch is in the elbow. A cross is a folded arm thrown straight —
+      // the striking elbow snaps from tight to locked as it goes through, and
+      // the guard hand stays folded at the chin throughout. Rotating two rigid
+      // arms at the shoulder could never show that.
+      this.foldJoints(rig, 1.5 - 0.25 * strike, 1.45 * coil * (1 - strike), 0.14, 0.1);
       return;
     } else if (gesture === 'hit') {
       // Taking one: head snapped back, body folded away from it, arms flung up.
@@ -8155,6 +8295,11 @@ export class FestivalWorld {
    * happening; the drinking arm is left where the gesture put it.
    */
   private poseRigSeated(rig: AvatarRig, gesture?: AvatarGesture): void {
+    // Sitting is knees. The hips take the thighs forward and the knees drop the
+    // shins straight down — which a single-jointed leg simply cannot do, and is
+    // why seated figures used to look as though they were levitating in a
+    // crouch. Elbows rest folded on the lap.
+    this.foldJoints(rig, 0.8, 0.8, 1.5, 1.5);
     rig.leftLeg.rotation.x = -1.28;
     rig.rightLeg.rotation.x = -1.28;
     rig.leftArm.rotation.x = -0.12;
@@ -8166,6 +8311,8 @@ export class FestivalWorld {
   }
 
   private poseRigSwimming(rig: AvatarRig, elapsed: number): void {
+    // Arms reach nearly straight through a stroke and legs kick from the knee.
+    this.foldJoints(rig, 0.2, 0.2, 0.45 + Math.sin(elapsed * 5.2) * 0.35, 0.45 - Math.sin(elapsed * 5.2) * 0.35);
     const paddle = Math.sin(elapsed * 6.6);
     rig.leftArm.rotation.x = paddle * 0.72;
     rig.rightArm.rotation.x = -paddle * 0.72;
