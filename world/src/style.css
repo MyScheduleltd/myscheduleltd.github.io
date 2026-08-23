@@ -1600,8 +1600,14 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   font-display: block;
 }
 
-/* HanWangMingBlack is deliberately absent. The file is 8.9 MB — a Ming face
-   carries thousands of glyphs and this world uses a couple of dozen of them —
-   and shipping that to a phone to letter four subtitles is not a trade worth
-   making. Subset to the characters actually used it would be a few kilobytes,
-   which is the right fix and needs a tool this machine does not have. */
+/* HanWangMingBlack, cut down to the 545 characters this world can actually
+   display and re-wrapped as WOFF2: 8.47 MB becomes 140 KB, sixty-two times
+   smaller, with nothing the world can show left out. The full file carries
+   glyphs for essentially the whole CJK range and the festival uses a few
+   hundred of them, so shipping it whole to a phone was never the trade.
+   Rebuild with tools/subset-fonts.sh if the world gains new wording. */
+@font-face {
+  font-family: "HanWangMingBrand";
+  src: url("/font/HanWangMing-subset.woff2") format("woff2");
+  font-display: swap;
+}

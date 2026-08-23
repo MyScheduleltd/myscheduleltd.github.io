@@ -836,7 +836,13 @@ let brandFontLoaded = false;
 const loadBrandFont = (): void => {
   if (brandFontLoaded || typeof document === 'undefined' || !document.fonts) return;
   brandFontLoaded = true;
-  document.fonts.load('400 92px "BebasNeueBrand"')
+  // Both faces, and the repaint waits for both — a sign whose heading has
+  // arrived but whose subtitle has not would be redrawn once in the brand face
+  // and once in the fallback, and settle on whichever finished last.
+  Promise.allSettled([
+    document.fonts.load('400 92px "BebasNeueBrand"'),
+    document.fonts.load('400 48px "HanWangMingBrand"'),
+  ])
     .then(() => {
       for (const repaint of signRepaints) repaint();
     })
@@ -844,9 +850,15 @@ const loadBrandFont = (): void => {
 };
 
 const signFont = (size: number, heading: boolean): string => {
+  if (!brandFontLoaded) return `${heading ? 900 : 700} ${size}px sans-serif`;
   // Bebas has no lowercase and only one weight, so a heading asks for neither.
-  if (heading && brandFontLoaded) return `400 ${size}px "BebasNeueBrand", Impact, sans-serif`;
-  return heading ? `900 ${size}px sans-serif` : `700 ${size}px sans-serif`;
+  // The Ming carries the subtitles, and both stacks keep a system fallback
+  // behind them: the subset holds the wording this world ships with, and a
+  // character outside it — a staff member re-lettering a sign — falls back per
+  // glyph to something readable rather than to an empty box.
+  return heading
+    ? `400 ${size}px "BebasNeueBrand", Impact, sans-serif`
+    : `400 ${size}px "HanWangMingBrand", "BebasNeueBrand", sans-serif`;
 };
 
 const createTextTexture = (lines: string[], foreground = '#f5efe2', background = '#151517') => {
