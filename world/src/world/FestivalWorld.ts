@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, taperedPrism } from './WornStyle';
+import { dressBuildings } from './WornArchitecture';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import type { VenueKey } from '../data/catalogue';
 import { AmbientAudio } from './AmbientAudio';
@@ -1509,10 +1510,20 @@ export class FestivalWorld {
    * is more obvious than no patch at all.
    */
   applyWornStyleForReview(amount: number, steps: number, grain: number): number {
+    // Dressing first, so the clutter it hangs on the walls is picked up by the
+    // shading pass in the same sweep rather than staying smooth-shaded and
+    // ungrained among everything that is not.
+    // Accumulated, not assigned. The pass marks what it has already dressed, so
+    // the later re-runs correctly find nothing to do — and assigning their
+    // return value overwrote the real count with zero, which made a working
+    // feature look like a broken one.
+    if (wornMeshesRequested()) this.wornBuildings += dressBuildings(this.scene);
     const patched = applyWornStyle(this.scene);
     setWornStyle(amount, steps, grain);
     return patched;
   }
+
+  private wornBuildings = 0;
 
   wornStyleReviewSnapshot(): unknown {
     const settings = wornStyleSettings();
@@ -1527,7 +1538,23 @@ export class FestivalWorld {
         if ((material as THREE.Material).userData?.wornFlattened === true) flattened += 1;
       }
     });
-    return { ...settings, materials, flattened };
+    // How many walls are big enough to be worth dressing, against how many
+    // actually were. The two diverging is the fastest way to catch a selector
+    // that has stopped matching what the world is made of.
+    let dressable = 0;
+    this.scene.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const size = mesh.getWorldScale(new THREE.Vector3());
+      if (size.y >= 6 && Math.max(size.x, size.z) >= 5) dressable += 1;
+    });
+    return {
+      ...settings,
+      materials,
+      flattened,
+      buildingsDressed: this.wornBuildings,
+      dressableWalls: dressable,
+    };
   }
 
   navReviewSnapshot(): unknown {
