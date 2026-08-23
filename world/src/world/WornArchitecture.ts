@@ -611,41 +611,58 @@ export function dressInteriors(
     }
 
     // Conduit and junction boxes down the walls, at the height services run.
-    for (const wall of [
-      { x: room.minX + 0.55, z: 0, along: 'z' as const },
-      { x: room.maxX - 0.55, z: 0, along: 'z' as const },
-    ]) {
-      const runs = Math.max(2, Math.floor(spanZ / 9));
-      for (let index = 0; index < runs; index += 1) {
-        const z = room.minZ + (spanZ * (index + 0.5)) / runs;
-        const y = room.floorY + 2.9;
-        if (blocked(wall.x, z, y)) continue;
-        put(0.16, 0.16, spanZ / runs - 1.4, wall.x, y, z, fitting);
-        // A box on the run, which is what makes it read as electrical rather
-        // than as a stripe painted on the wall.
-        put(0.34, 0.5, 0.4, wall.x, y - 0.5, z, duct);
+    // Indoors only: a deck open to the sky has no walls to run them along, and
+    // they were hanging in mid-air over it like scaffolding poles somebody had
+    // dropped.
+    if (!room.outdoor) {
+      for (const wallX of [room.minX + 0.55, room.maxX - 0.55]) {
+        const runs = Math.max(2, Math.floor(spanZ / 9));
+        for (let index = 0; index < runs; index += 1) {
+          const z = room.minZ + (spanZ * (index + 0.5)) / runs;
+          const y = room.floorY + 2.9;
+          if (blocked(wallX, z, y)) continue;
+          put(0.16, 0.16, spanZ / runs - 1.4, wallX, y, z, fitting);
+          // A box on the run, which is what makes it read as electrical rather
+          // than as a stripe painted on the wall.
+          put(0.34, 0.5, 0.4, wallX, y - 0.5, z, duct);
+        }
       }
     }
 
-    // And the things stacked where nobody looks. Corners first, because that is
-    // where they end up.
-    for (let index = 0; index < 6; index += 1) {
-      const alongX = placedRandom(seed, (salt += 1)) > 0.5;
-      const nearMin = placedRandom(seed, (salt += 1)) > 0.5;
-      const x = alongX
-        ? room.minX + 1.4 + placedRandom(seed, (salt += 1)) * (spanX - 2.8)
-        : (nearMin ? room.minX + 1.2 : room.maxX - 1.2);
-      const z = alongX
-        ? (nearMin ? room.minZ + 1.2 : room.maxZ - 1.2)
-        : room.minZ + 1.4 + placedRandom(seed, (salt += 1)) * (spanZ - 2.8);
-      const height = 0.7 + placedRandom(seed, (salt += 1)) * 0.5;
-      if (blocked(x, z, room.floorY + height)) continue;
-      const spin = (placedRandom(seed, (salt += 1)) - 0.5) * 0.7;
-      put(1.1, height, 0.9, x, room.floorY + height / 2, z, crate, spin);
-      // Half of them are two high, because one crate is litter and two is
-      // storage.
-      if (placedRandom(seed, (salt += 1)) > 0.5) {
-        put(0.9, height * 0.8, 0.8, x + 0.1, room.floorY + height * 1.4, z - 0.08, crate, spin * 1.6);
+    // And the things stacked where nobody looks.
+    //
+    // The first cut scattered a dozen crates at random through the room, which
+    // on an open deck put them all over the floor people walk on — litter, not
+    // storage, and exactly the mess it was meant to avoid. Things do not end up
+    // *anywhere*; they end up out of the way. So there are two stacks per room,
+    // each tucked into a corner, each a tidy row squared to the wall it is
+    // against, with only enough turn on each box to show it was put down by
+    // hand rather than laid out.
+    const corners: Array<[number, number, number, number]> = [
+      [room.minX + 1.5, room.minZ + 1.5, 1, 1],
+      [room.maxX - 1.5, room.minZ + 1.5, -1, 1],
+      [room.maxX - 1.5, room.maxZ - 1.5, -1, -1],
+      [room.minX + 1.5, room.maxZ - 1.5, 1, -1],
+    ];
+    const first = Math.floor(placedRandom(seed, (salt += 1)) * 4);
+    for (const pick of [first, (first + 2) % 4]) {
+      const [cornerX, cornerZ, stepX, stepZ] = corners[pick];
+      // Along the longer wall of that corner, so the row lies against
+      // something rather than jutting into the room.
+      const alongZ = spanZ > spanX;
+      const boxes = 2 + Math.floor(placedRandom(seed, (salt += 1)) * 2);
+      for (let index = 0; index < boxes; index += 1) {
+        const x = cornerX + (alongZ ? 0 : stepX * index * 1.25);
+        const z = cornerZ + (alongZ ? stepZ * index * 1.25 : 0);
+        const height = 0.78;
+        if (blocked(x, z, room.floorY + height)) continue;
+        const spin = (placedRandom(seed, (salt += 1)) - 0.5) * 0.22;
+        put(1.1, height, 0.9, x, room.floorY + height / 2, z, crate, spin);
+        // The near end of a row is stacked two high, which is how a stack
+        // actually forms — never the far end, and never all of them.
+        if (index === 0) {
+          put(0.92, 0.62, 0.78, x + 0.06, room.floorY + height + 0.31, z - 0.05, crate, spin * 1.7);
+        }
       }
     }
   }

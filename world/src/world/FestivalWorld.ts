@@ -6791,12 +6791,22 @@ export class FestivalWorld {
     spine.add(head);
     add(taperedPrism(0.23, 0.27, 0.46, 0.94), [0, 0.23, 0], 'skin', head);
     add(taperedPrism(0.285, 0.26, 0.13, 0.98), [0, 0.43, -0.015], 'hair', head);
-    // The band was always going to read as a visor, so it is one: wrapped
-    // round the sides rather than stuck on the front, and in the same hardware
-    // as the joints so the whole figure hangs together.
-    const visor = new THREE.Mesh(taperedPrism(0.24, 0.25, 0.1, 1.02), hardware);
-    visor.position.set(0, 0.245, 0.012);
+    // The visor, on the front of the head and only the front.
+    //
+    // It was a prism a hair wider than the head, which is a ring — so it banded
+    // right around the back as a line across the skull, which is what a visor
+    // is not. "Wrapped round the sides" was the intention and a full revolution
+    // was what the shape actually did; a tapered prism has no front.
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.1, 0.07), hardware);
+    visor.position.set(0, 0.245, 0.22);
     head.add(visor);
+    // A short return down each side, which is the part that was worth keeping:
+    // it stops the visor reading as a sticker on a flat face.
+    for (const side of [-1, 1]) {
+      const wrap = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, 0.14), hardware);
+      wrap.position.set(side * 0.17, 0.245, 0.15);
+      head.add(wrap);
+    }
 
     const limb = (
       x: number,
@@ -7821,6 +7831,9 @@ export class FestivalWorld {
   }
 
   private updateNpcs(delta: number, elapsed: number): void {
+    // Last, after every body has taken its step, so it resolves the overlaps
+    // this frame actually produced rather than last frame's.
+    this.holdBodiesApart(delta);
     const now = performance.now();
     let nearestNpc: NpcAvatar | undefined;
     let nearestDistance = 6.5;
@@ -8937,6 +8950,11 @@ export class FestivalWorld {
    * backs off a step at a time until it has left the place entirely.
    */
   private visitorInTheWay(npc: NpcAvatar, direction: THREE.Vector3, targetGap: number): boolean {
+    // Courtesy has a limit. A resident that has been held up for more than a
+    // moment stops yielding and takes its step — otherwise a group standing
+    // among visitors gives way to them and to each other at once, nobody moves,
+    // and the politeness is what holds the knot together.
+    if (npc.stuckFor > 1.2) return false;
     const reachSq = Math.min(8, targetGap * targetGap);
     const ahead = (position: THREE.Vector3): boolean => {
       const toVisitorX = position.x - npc.group.position.x;
@@ -8956,6 +8974,60 @@ export class FestivalWorld {
       }
     }
     return false;
+  }
+
+  /**
+   * Pushes bodies that are already inside one another apart again.
+   *
+   * Everything before this was preventative: npcCollides refuses a step that
+   * would end inside somebody, and the step-around tries a way past. Neither
+   * can do anything about an overlap that already exists — and once a knot
+   * forms, every step out of it is blocked by the knot, so every resident in it
+   * waits for the others and the pile stands there for good. Preventing
+   * collisions is not the same as resolving them, and this world only ever had
+   * the first half.
+   *
+   * Two bodies exactly on top of each other have no direction to be pushed
+   * along, so they are given one rather than left to divide by zero.
+   *
+   * Scaled by the frame so it settles rather than snaps, and refused wherever
+   * the scenery says no — being shoved out of a crowd through a wall is worse
+   * than standing in the crowd.
+   */
+  private holdBodiesApart(delta: number): void {
+    const apart = 1.3;
+    const crowd = this.npcs.filter((npc) => !npc.station && npc.id !== this.controlledNpcId);
+    const ease = Math.min(1, delta * 9);
+    for (let index = 0; index < crowd.length; index += 1) {
+      for (let other = index + 1; other < crowd.length; other += 1) {
+        const here = crowd[index].group.position;
+        const there = crowd[other].group.position;
+        // Different storeys are not a crowd. The club sits under the promenade.
+        if (Math.abs(here.y - there.y) > 2) continue;
+        let dx = there.x - here.x;
+        let dz = there.z - here.z;
+        let gap = Math.hypot(dx, dz);
+        if (gap >= apart) continue;
+        if (gap < 0.001) {
+          // Exactly coincident. Any direction will do, but it has to be the
+          // same one every frame or they jitter in place instead of parting.
+          dx = Math.cos(crowd[index].phase * 7.3);
+          dz = Math.sin(crowd[index].phase * 7.3);
+          gap = 1;
+        }
+        const push = (apart - gap) * 0.5 * ease;
+        const nx = (dx / gap) * push;
+        const nz = (dz / gap) * push;
+        if (!this.staticCollides(here.x - nx, here.z - nz, here.y)) {
+          here.x -= nx;
+          here.z -= nz;
+        }
+        if (!this.staticCollides(there.x + nx, there.z + nz, there.y)) {
+          there.x += nx;
+          there.z += nz;
+        }
+      }
+    }
   }
 
   private npcCollides(npc: NpcAvatar, x: number, z: number): boolean {
