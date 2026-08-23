@@ -85,10 +85,21 @@ const WORN_FRAGMENT = /* glsl */ `
     // Surface first, so the dither below quantises a grained colour rather
     // than laying grain over a quantised one.
     if (uWornGrain > 0.0) {
-      float aggregate = wornHash(floor(vWornWorld * 26.0));
-      float staining = wornSmoothNoise(vWornWorld * 0.85);
-      float wear = mix(0.87, 1.05, aggregate) * mix(0.92, 1.05, staining);
-      gl_FragColor.rgb *= mix(1.0, wear, uWornGrain);
+      // Four scales, because grime is not one thing. Fine aggregate, a coarser
+      // speckle over it, runs stretched down the vertical so they read as
+      // something that has dripped rather than something sprayed on, and broad
+      // blotching underneath the lot for the damp corner and the bleached wall.
+      float aggregate = wornHash(floor(vWornWorld * 38.0));
+      float speckle = wornHash(floor(vWornWorld * 12.0 + 3.7));
+      float runs = wornSmoothNoise(vec3(vWornWorld.x * 3.4, vWornWorld.y * 0.32, vWornWorld.z * 3.4));
+      float blotch = wornSmoothNoise(vWornWorld * 0.52);
+      float wear = mix(0.66, 1.12, aggregate)
+        * mix(0.80, 1.08, speckle)
+        * mix(0.76, 1.10, runs)
+        * mix(0.82, 1.12, blotch);
+      // Past one this stops mixing and starts overshooting, which is the point:
+      // it is the dial for how far past plausible the grime is allowed to go.
+      gl_FragColor.rgb = clamp(gl_FragColor.rgb * mix(1.0, wear, uWornGrain), 0.0, 1.0);
     }
 
     vec2 wornCoord = gl_FragCoord.xy;
@@ -180,7 +191,7 @@ export function applyWornStyle(scene: THREE.Object3D): number {
 export function setWornStyle(amount: number, steps?: number, grain?: number): void {
   WORN_UNIFORMS.uWornAmount.value = THREE.MathUtils.clamp(amount, 0, 1);
   if (steps !== undefined) WORN_UNIFORMS.uWornSteps.value = Math.max(2, steps);
-  if (grain !== undefined) WORN_UNIFORMS.uWornGrain.value = THREE.MathUtils.clamp(grain, 0, 1);
+  if (grain !== undefined) WORN_UNIFORMS.uWornGrain.value = THREE.MathUtils.clamp(grain, 0, 2);
 }
 
 export function wornStyleSettings(): { amount: number; steps: number; grain: number } {

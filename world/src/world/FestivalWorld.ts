@@ -6387,33 +6387,50 @@ export class FestivalWorld {
       target.add(part);
       return part;
     };
+    // The hard, unpainted parts: joints, visor, sole. Not on the palette,
+    // because they are the through-line that holds a crowd of freely coloured
+    // figures together now that no single accent does.
+    const hardware = material(0x14161a, 0.62, 0.28);
+    const shell = (
+      geometry: THREE.BufferGeometry,
+      position: [number, number, number],
+      target: THREE.Object3D,
+    ) => {
+      const part = new THREE.Mesh(geometry, hardware);
+      part.position.set(...position);
+      target.add(part);
+      return part;
+    };
 
-    // Torso: a sharper taper than the first cut, so the waist is properly
-    // narrower than the chest rather than merely hinting at it, and flattened
-    // front to back because a person is not square in plan.
-    const torso = add(taperedPrism(0.58, 0.38, 1.4, 0.58), [0, 1.77, 0], 'top', parent);
-    // The yoke is the silhouette — the one hard horizontal on the figure, and
-    // what reads at fifty metres where a face never would. Thinner than the
-    // first attempt: it wants to be a line across the shoulders, not a slab
-    // sitting on them.
-    add(taperedPrism(0.66, 0.6, 0.14, 0.6), [0, 2.42, 0], 'top', parent);
-    // A neck, so the head sits on the body instead of resting against it.
-    add(taperedPrism(0.13, 0.16, 0.16, 1), [0, 2.5, 0], 'skin', parent);
+    // ---- torso ---------------------------------------------------------
+    // Chest and waist as two pieces meeting at a narrow join, rather than one
+    // taper running the whole way. The break at the waist is what stops the
+    // body reading as a single carved lump.
+    const torso = add(taperedPrism(0.56, 0.44, 0.86, 0.56), [0, 2.02, 0], 'top', parent);
+    shell(taperedPrism(0.43, 0.4, 0.14, 0.54), [0, 1.55, 0], parent);
+    add(taperedPrism(0.42, 0.36, 0.42, 0.54), [0, 1.3, 0], 'bottoms', parent);
 
+    // ---- shoulders -----------------------------------------------------
+    // Caps that stand slightly proud of the body, which is the one silhouette
+    // cue that reads at any distance and in any colour.
+    shell(taperedPrism(0.64, 0.58, 0.1, 0.58), [0, 2.44, 0], parent);
+    for (const side of [-1, 1]) {
+      add(taperedPrism(0.2, 0.15, 0.22, 0.95), [side * 0.53, 2.36, 0], 'top', parent);
+    }
+
+    // ---- head ----------------------------------------------------------
+    shell(taperedPrism(0.12, 0.15, 0.15, 1), [0, 2.55, 0], parent);
     const head = new THREE.Group();
-    head.position.set(0, 2.54, 0);
+    head.position.set(0, 2.6, 0);
     parent.add(head);
-    // Smaller again — about a seventh of the height. Past this it stops reading
-    // as a stylised person and starts reading as a shop mannequin.
-    add(taperedPrism(0.25, 0.29, 0.5, 0.94), [0, 0.25, 0], 'skin', head);
-    // The hair is a distinct cap with its own overhang, which gives the head a
-    // second facet to catch light and stops it reading as a single lump.
-    add(taperedPrism(0.3, 0.275, 0.14, 0.98), [0, 0.47, -0.01], 'hair', head);
-    // No eyes, no mouth. One band where a face would be — more graphic than a
-    // painted face, and it never lands in the uncanny middle.
-    const band = new THREE.Mesh(new THREE.BoxGeometry(0.37, 0.085, 0.035), material(0x121111, 0.9));
-    band.position.set(0, 0.27, 0.255);
-    head.add(band);
+    add(taperedPrism(0.23, 0.27, 0.46, 0.94), [0, 0.23, 0], 'skin', head);
+    add(taperedPrism(0.285, 0.26, 0.13, 0.98), [0, 0.43, -0.015], 'hair', head);
+    // The band was always going to read as a visor, so it is one: wrapped
+    // round the sides rather than stuck on the front, and in the same hardware
+    // as the joints so the whole figure hangs together.
+    const visor = new THREE.Mesh(taperedPrism(0.24, 0.25, 0.1, 1.02), hardware);
+    visor.position.set(0, 0.245, 0.012);
+    head.add(visor);
 
     const limb = (
       x: number,
@@ -6429,22 +6446,31 @@ export class FestivalWorld {
       return pivot;
     };
 
-    const leftArm = limb(-0.58, 2.26, taperedPrism(0.125, 0.082, 1.24, 0.92), 1.24, 'skin');
-    const rightArm = limb(0.58, 2.26, taperedPrism(0.125, 0.082, 1.24, 0.92), 1.24, 'skin');
-    const leftLeg = limb(-0.24, 1.16, taperedPrism(0.195, 0.125, 1.28, 0.84), 1.28, 'bottoms');
-    const rightLeg = limb(0.24, 1.16, taperedPrism(0.195, 0.125, 1.28, 0.84), 1.28, 'bottoms');
-    // Hands, so an arm ends in something rather than tapering into nothing.
-    // Small enough to read as a mass at the wrist and no more.
-    for (const arm of [leftArm, rightArm]) {
-      const hand = add(taperedPrism(0.1, 0.075, 0.17, 0.95), [0, -1.31, 0], 'skin', arm);
-      hand.userData.paletteSlot = markPalette ? 'skin' : undefined;
-    }
-    // Feet as their own facets, so the leg stops rather than simply ending.
-    for (const leg of [leftLeg, rightLeg]) {
-      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.1, 0.44), material(0x14161a, 0.92));
-      foot.position.set(0, -1.24, 0.07);
-      leg.add(foot);
-    }
+    // ---- limbs ---------------------------------------------------------
+    // Each limb is upper and lower with a narrow joint between, which is the
+    // single most futuristic thing on the figure and costs nothing: the pieces
+    // hang off the same pivot, so nothing about the animation changes.
+    const arm = (side: number) => {
+      const pivot = limb(side * 0.56, 2.28, taperedPrism(0.115, 0.08, 0.6, 0.94), 0.6, 'top');
+      shell(taperedPrism(0.075, 0.075, 0.09, 1), [0, -0.64, 0], pivot);
+      add(taperedPrism(0.088, 0.07, 0.56, 0.94), [0, -0.97, 0], 'skin', pivot);
+      shell(taperedPrism(0.085, 0.062, 0.16, 0.96), [0, -1.32, 0], pivot);
+      return pivot;
+    };
+    const leg = (side: number) => {
+      const pivot = limb(side * 0.24, 1.16, taperedPrism(0.185, 0.13, 0.66, 0.84), 0.66, 'bottoms');
+      shell(taperedPrism(0.115, 0.115, 0.1, 0.9), [0, -0.71, 0], pivot);
+      add(taperedPrism(0.132, 0.1, 0.5, 0.82), [0, -1.02, 0], 'bottoms', pivot);
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.11, 0.46), hardware);
+      foot.position.set(0, -1.31, 0.08);
+      pivot.add(foot);
+      return pivot;
+    };
+
+    const leftArm = arm(-1);
+    const rightArm = arm(1);
+    const leftLeg = leg(-1);
+    const rightLeg = leg(1);
 
     const treat = this.mesh([0.16, 0.16, 0.22], [0, -1.2, 0.16], material(0xd18a35, 0.78), rightArm);
     treat.visible = false;
