@@ -87,11 +87,21 @@ const KEYFRAMES: LightingKeyframe[] = [
   frame(5, 0x9ab5c6, 0x899aa0, 0xffd3a6, 1.45, 1.05, 0.08, 0),
   frame(20, 0x83b4d1, 0xa1b3b5, 0xfff1d0, 2.2, 1.35, 0, 0),
   frame(25, 0xd28b62, 0xb28a76, 0xffa65c, 2.0, 0.95, 0.15, 0),
-  frame(30, 0x8e4c4b, 0x6e5259, 0xff5d38, 1.1, 0.66, 0.65, 0.14),
-  frame(35, 0x2b3f5e, 0x334059, 0x7889c7, 0.35, 0.70, 1.3, 0.45),
-  frame(42, 0x101a2e, 0x161d30, 0x6072a8, 0.09, 0.76, 1.75, 1.15),
-  frame(52, 0x0b1220, 0x121828, 0x4a5d8c, 0.04, 0.74, 1.9, 1.35),
-  frame(60, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 0.78, 0.2, 0.30),
+  frame(30, 0x8e4c4b, 0x6e5259, 0xff5d38, 1.1, 0.78, 0.65, 0.14),
+  // The fill now runs at very nearly the strength it does at noon, and the
+  // thing that keeps this reading as night rather than day is its colour, not
+  // its weakness: a cool blue fill under a dark navy sky is a moonlit street,
+  // while the same street dimmed to a third is just a street nobody can see.
+  // The fill is the only light the street is guaranteed after dark. The sun is
+  // under the horizon and the moon only counts while it is over it, so on the
+  // stretch of the night the moon rides low there was nothing else out there —
+  // which is why the road kept reading black however high the moon went. The
+  // fill now carries the street on its own, and the moon is the shaping light
+  // on top of it rather than the thing holding the whole scene up.
+  frame(35, 0x3a5175, 0x445473, 0x7889c7, 0.35, 1.15, 1.3, 0.45),
+  frame(42, 0x1d2a49, 0x25304e, 0x6072a8, 0.09, 1.34, 1.75, 1.15),
+  frame(52, 0x192341, 0x222c46, 0x4a5d8c, 0.04, 1.32, 1.9, 1.35),
+  frame(60, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 0.84, 0.2, 0.30),
 ];
 
 const phaseAt = (minute: number): { phase: DayPhase; start: number; end: number } => {
@@ -109,7 +119,7 @@ export class DayNightCycle {
   // The lower half of the fill was very nearly black, so every underside and
   // every face turned away from the moon fell out of the picture after dark.
   // A dim cool bounce keeps them in it without lighting them from below.
-  readonly hemisphereLight = new THREE.HemisphereLight(0xb8d6ff, 0x39404f, 1);
+  readonly hemisphereLight = new THREE.HemisphereLight(0xb8d6ff, 0x4b5468, 1);
   readonly moonLight = new THREE.DirectionalLight(0xaac8ff, 0);
   readonly sunObject = new THREE.Group();
   readonly moonObject = new THREE.Group();
