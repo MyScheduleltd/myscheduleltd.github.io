@@ -11,7 +11,7 @@ import { createMentorDog, type MentorDogRig } from './MentorDog';
 export type GraphicsMode = 'normal' | 'lite';
 export type CameraMode = 'follow' | 'perspective' | 'first-person' | 'screening';
 export type PlayerState = 'walking' | 'seated' | 'swimming';
-export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink' | 'jump' | 'stumble' | 'offer' | 'bow' | 'punch' | 'hit';
+export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink' | 'jump' | 'stumble' | 'offer' | 'bow' | 'punch' | 'hit' | 'tumble';
 export type CarriedItem = 'POPCORN' | 'MENTOR' | 'DRINK' | 'HOTDOG' | 'PIZZA' | 'CHICKEN';
 export const NPC_NAMES = ['MENTOR', 'KENNY', 'NUNO', 'MICHAEL', 'SEBINE', 'ZC', 'LOUI', 'MINYUN', 'VIOLA', 'XIEHGAN', 'DRBEAUTY', 'YO'] as const;
 export type NpcId = string;
@@ -3060,6 +3060,19 @@ export class FestivalWorld {
     return seat.position.clone().add(new THREE.Vector3(0, AVATAR_GROUND_Y, 0.28));
   }
 
+  /** Takes the drink that is in hand. Written once; three paths reach it. */
+  private drinkInHand(): void {
+    this.drinkUntil = performance.now() + 1_500;
+    this.playerGesture = 'drink';
+    this.playerGestureUntil = this.drinkUntil;
+    this.carriedItem = undefined;
+    this.syncCarriedPropAnchor();
+    this.drinks += 1;
+    // Enough of them and the room starts to move on its own.
+    if (this.drinks >= 3) this.drunkUntil = performance.now() + DRUNK_DURATION_MS;
+    this.onAction({ type: 'drank', drinks: this.drinks, drunk: this.drinks >= 3 });
+  }
+
   interact(pickUpMentor = false): void {
     if (this.playerState === 'seated') {
       // SHIFT+E drinks without leaving the stool; plain E stands up.
@@ -3132,15 +3145,7 @@ export class FestivalWorld {
     }
 
     if (pickUpMentor && this.carriedItem === 'DRINK') {
-      this.drinkUntil = performance.now() + 1_500;
-      this.playerGesture = 'drink';
-      this.playerGestureUntil = this.drinkUntil;
-      this.carriedItem = undefined;
-      this.syncCarriedPropAnchor();
-      this.drinks += 1;
-      // Enough of them and the room starts to move on its own.
-      if (this.drinks >= 3) this.drunkUntil = performance.now() + DRUNK_DURATION_MS;
-      this.onAction({ type: 'drank', drinks: this.drinks, drunk: this.drinks >= 3 });
+      this.drinkInHand();
       return;
     }
 
@@ -3183,6 +3188,19 @@ export class FestivalWorld {
     const mentor = this.nearbyMentor();
     // SHIFT+E still means the dog wherever you are standing — asking for him
     // explicitly should always reach him. Plain E gives way to the counter.
+    // A drink in hand and a dog at your heel want the same key.
+    //
+    // The last attempt at this gave the drink the wording and left the action
+    // where it was, so the prompt read DRINK UP and the button picked the dog
+    // up — which is worse than the original fault, because at least that was
+    // consistent. They get a key each instead, and nothing is taken away:
+    // plain E lifts the dog, SHIFT+E drinks.
+    if (mentor && this.carriedItem === 'DRINK') {
+      if (pickUpMentor) this.drinkInHand();
+      else this.pickUpMentor();
+      return;
+    }
+
     if (mentor && (pickUpMentor || !this.mentorGivesWay())) {
       if (pickUpMentor) this.pickUpMentor();
       else this.feedMentor(mentor);
@@ -6458,14 +6476,48 @@ export class FestivalWorld {
     const baseplateY = -0.21;
     const hangerY = -0.28;
     const axleY = -0.33;
-    this.mesh([2.0, 0.09, 0.66], [0, deckY, 0], deckWood, board);
-    this.mesh([1.86, 0.025, 0.6], [0, deckY + 0.055, 0], grip, board);
-    for (const end of [-1, 1]) {
-      const kick = this.mesh([0.52, 0.09, 0.62], [end * 1.16, deckY + 0.1, 0], deckWood, board);
-      kick.rotation.z = -end * 0.46;
-      const kickGrip = this.mesh([0.46, 0.025, 0.56], [end * 1.16, deckY + 0.145, 0], grip, board);
-      kickGrip.rotation.z = -end * 0.46;
-    }
+    // One plank, not a stack of chunks.
+    //
+    // The deck used to be a flat slab with two separately rotated kick pieces
+    // laid over its ends and a grip strip on each — six parts pretending to be
+    // one board, and pretending badly: a rotated box does not meet a flat one
+    // along a straight line, so the joins showed as steps at the nose and tail
+    // and the thing read as assembled rather than cut.
+    //
+    // It is a single extrusion now. The side view of a deck is drawn once as a
+    // closed outline — flat through the middle, sweeping up at both ends — and
+    // pushed out to the width of the board. The kicks are part of the same
+    // surface as the middle because they are the same piece of wood, which is
+    // what a deck is.
+    const profile = new THREE.Shape();
+    profile.moveTo(-1.34, 0.2);
+    profile.lineTo(-1.04, 0.05);
+    profile.lineTo(-0.8, 0);
+    profile.lineTo(0.8, 0);
+    profile.lineTo(1.04, 0.05);
+    profile.lineTo(1.34, 0.2);
+    profile.lineTo(1.34, 0.11);
+    profile.lineTo(1.04, -0.04);
+    profile.lineTo(0.8, -0.09);
+    profile.lineTo(-0.8, -0.09);
+    profile.lineTo(-1.04, -0.04);
+    profile.lineTo(-1.34, 0.11);
+    profile.closePath();
+    const deckGeometry = new THREE.ExtrudeGeometry(profile, { depth: 0.66, bevelEnabled: false });
+    // Extrusion runs from z = 0 outward, so the board is centred by hand.
+    deckGeometry.translate(0, 0, -0.33);
+    const deck = new THREE.Mesh(deckGeometry, deckWood);
+    deck.position.set(0, deckY, 0);
+    board.add(deck);
+    // Grip is the one thing on a deck that genuinely is a separate object —
+    // a sheet stuck to the top — so it stays its own piece, cut from the same
+    // outline and inset so the wood shows at the edges as it does on a board.
+    const gripGeometry = new THREE.ExtrudeGeometry(profile, { depth: 0.58, bevelEnabled: false });
+    gripGeometry.translate(0, 0, -0.29);
+    gripGeometry.scale(0.985, 1, 1);
+    const gripSheet = new THREE.Mesh(gripGeometry, grip);
+    gripSheet.position.set(0, deckY + 0.022, 0);
+    board.add(gripSheet);
     for (const end of [-1, 1]) {
       this.mesh([0.34, 0.07, 0.42], [end * 0.66, baseplateY, 0], truck, board);
       this.mesh([0.16, 0.12, 0.52], [end * 0.66, hangerY, 0], truck, board);
@@ -7326,6 +7378,12 @@ export class FestivalWorld {
       if (this.airborne) {
         this.verticalVelocity -= GRAVITY * delta;
         this.player.position.y += this.verticalVelocity * delta;
+        // Past a certain speed the body stops falling and starts tumbling.
+        // Below it this is a hop, and a hop wants the tuck it already has.
+        if (this.verticalVelocity < -7 && this.playerGesture !== 'jump') {
+          this.playerGesture = 'tumble';
+          this.playerGestureUntil = Math.max(this.playerGestureUntil, performance.now() + 240);
+        }
         if (this.player.position.y <= ground) {
           const impact = -this.verticalVelocity;
           this.player.position.y = ground;
@@ -7335,10 +7393,19 @@ export class FestivalWorld {
             // The further the drop the longer the recovery, up to a limit: a
             // fall from the roof should cost a moment, not a punishment.
             const severity = THREE.MathUtils.clamp((impact - STUMBLE_IMPACT) / 10, 0, 1);
-            this.stumbleUntil = performance.now() + 320 + severity * 460;
-            this.playerGesture = 'stumble';
+            // A trip and a fall off the roof were the same little stagger. A
+            // real drop lands on the body, so past halfway up the scale it
+            // becomes a tumble: knees collapse, the weight goes over the front
+            // foot, a hand goes down, and it unwinds from there. The recovery
+            // is longer for the same reason.
+            const heavy = severity > 0.35;
+            this.stumbleUntil = performance.now() + 320 + severity * (heavy ? 900 : 460);
+            this.playerGesture = heavy ? 'tumble' : 'stumble';
             this.playerGestureUntil = this.stumbleUntil;
             this.dancing = false;
+          } else {
+            // A gentle landing should not leave the body mid-windmill.
+            if (this.playerGesture === 'tumble') this.playerGestureUntil = 0;
           }
         }
       } else if (this.player.position.y - ground > LEDGE_DROP) {
@@ -8212,6 +8279,70 @@ export class FestivalWorld {
       // Straightening as the feet come back down is what sells the landing.
       const tuck = Math.max(0, 1 - Math.abs(lift)) * 0.5;
       this.foldJoints(rig, 1.15, 1.15, 1.1 - tuck, 0.75 - tuck * 0.6);
+      return;
+    } else if (gesture === 'tumble') {
+      // A fall has two halves and they look nothing alike.
+      //
+      // In the air there is nothing under the feet, so nothing the body does
+      // is a step. The arms turn right over at the shoulder rather than
+      // swinging — a windmill, out of phase with each other so it never reads
+      // as a pose — the legs cycle loose beneath, and the whole body pitches
+      // further forward the faster the ground is coming. It is the pitch that
+      // makes it read as falling rather than as flapping.
+      //
+      // Only this client's own body is ever in the air; an NPC is always on
+      // the floor, so it always gets the landing half.
+      const falling = rig === this.playerRig && this.airborne;
+      if (falling) {
+        const spin = phase * 2.6;
+        const drop = THREE.MathUtils.clamp(-this.verticalVelocity / 20, 0, 1);
+        rig.leftArm.rotation.x = -1.5 + Math.sin(spin) * 1.7;
+        rig.rightArm.rotation.x = -1.5 + Math.sin(spin + 2.4) * 1.7;
+        rig.leftArm.rotation.z = 0.62;
+        rig.rightArm.rotation.z = -0.62;
+        rig.leftLeg.rotation.x = Math.sin(spin + 1.1) * 0.82;
+        rig.rightLeg.rotation.x = Math.sin(spin + 3.6) * 0.82;
+        rig.leftLeg.rotation.z = 0.12;
+        rig.rightLeg.rotation.z = -0.12;
+        rig.torso.rotation.set(-0.18 - drop * 0.42, Math.sin(spin * 0.5) * 0.24, 0);
+        rig.head.rotation.set(-0.24 - drop * 0.22, 0, 0);
+        // Limbs loose rather than braced: a body in the air is not holding
+        // anything, and locked joints are what made this look like a mannequin
+        // being dropped.
+        this.foldJoints(
+          rig,
+          0.7 + Math.sin(spin + 0.8) * 0.5,
+          0.7 + Math.sin(spin + 3.0) * 0.5,
+          0.5 + Math.max(0, Math.sin(spin + 1.1)) * 0.7,
+          0.5 + Math.max(0, Math.sin(spin + 3.6)) * 0.7,
+        );
+        return;
+      }
+      // And on the ground: everything collapses at once and then unwinds. The
+      // weight goes over the front foot, the knees fold under it, one hand
+      // goes down to catch, and the head comes up last — which is the order a
+      // person actually gets up in.
+      const spent = THREE.MathUtils.clamp(progress, 0, 1);
+      const collapse = Math.max(0, 1 - spent * 1.5);
+      const catching = Math.max(0, 1 - spent * 2.4);
+      rig.torso.rotation.set(0.16 + collapse * 0.86, collapse * 0.3, 0);
+      // Late: a fallen body looks at the floor first and only then looks up.
+      rig.head.rotation.set(0.3 - Math.min(1, spent * 1.9) * 0.62, -collapse * 0.24, 0);
+      rig.leftArm.rotation.x = -0.5 - catching * 1.5;
+      rig.rightArm.rotation.x = -0.3 - collapse * 0.9;
+      rig.leftArm.rotation.z = 0.5 + catching * 0.4;
+      rig.rightArm.rotation.z = -0.42 - collapse * 0.3;
+      rig.leftLeg.rotation.x = -0.62 * collapse;
+      rig.rightLeg.rotation.x = 0.34 * collapse;
+      rig.leftLeg.rotation.z = 0.14 * collapse;
+      rig.rightLeg.rotation.z = -0.1 * collapse;
+      this.foldJoints(
+        rig,
+        0.35 + catching * 0.9,
+        0.35 + collapse * 0.75,
+        0.2 + collapse * 1.5,
+        0.2 + collapse * 1.1,
+      );
       return;
     } else if (gesture === 'stumble') {
       // Caught on the front foot and recovering: the body straightens as the
@@ -9248,6 +9379,11 @@ export class FestivalWorld {
     if (followerGreeting) return this.controlledNpcId === 'MENTOR'
       ? `E / WAG TAIL AT ${followerGreeting.name}`
       : `E / WAVE TO ${followerGreeting.name}`;
+    // Both at once: a key each, and the prompt says which is which.
+    if (this.carriedItem === 'DRINK' && this.nearbyMentor()) {
+      this.promptSecondary = true;
+      return 'E / PICK UP MENTOR · SHIFT+E / DRINK UP';
+    }
     if (this.nearbyMentor() && !this.mentorGivesWay()) {
       this.promptSecondary = true;
       return this.carriedItem === 'POPCORN'
@@ -9405,11 +9541,6 @@ export class FestivalWorld {
   /** A following MENTOR gives way to whatever you have walked up to. */
   private mentorGivesWay(): boolean {
     if (!this.mentorFollowsActiveAvatar()) return false;
-    // And to a drink in your hand. MENTOR's prompt is offered before the
-    // drink's and takes the same SHIFT+E, so a following dog meant a drink
-    // could be bought and then never drunk — and unlike popcorn there is no
-    // choice being taken away here, because a dog cannot be handed a cocktail.
-    if (this.carriedItem === 'DRINK') return true;
     return this.atAFixedPlace();
   }
 
