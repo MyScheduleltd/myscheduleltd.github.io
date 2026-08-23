@@ -8749,17 +8749,22 @@ export class FestivalWorld {
    * with a bob that follows the same beat the lights use.
    */
   private poseRigDj(rig: AvatarRig, elapsed: number): void {
-    // Joints are put back explicitly: a pose that does not mention them leaves
-    // whatever the last walking frame happened to set, and the body arrives at
-    // the dance floor still mid-stride.
-    if (rig.leftElbow) rig.leftElbow.rotation.set(0.85, 0, 0);
-    if (rig.rightElbow) rig.rightElbow.rotation.set(0.85, 0, 0);
-    if (rig.leftKnee) rig.leftKnee.rotation.set(0, 0, 0);
-    if (rig.rightKnee) rig.rightKnee.rotation.set(0, 0, 0);
     const secondsPerBeat = 60 / this.clubBeat.bpm;
     const sinceStart = this.clubBeat.startedAt ? (Date.now() - this.clubBeat.startedAt) / 1000 : elapsed;
     const beat = (sinceStart / secondsPerBeat) * Math.PI * 2;
     const bob = Math.sin(beat);
+    // Folded through the one place that knows which way an elbow bends.
+    //
+    // This pose set the joints by hand, and it was written before the signs
+    // were found to be inverted — so when the walk and the dance were corrected
+    // this was left behind, bending the DJ's forearms out backwards over the
+    // decks. It is the argument for having a single method do this at all:
+    // anything that reaches past it inherits whichever mistake was current on
+    // the day it was written.
+    //
+    // Working hands: the platter hand rides the beat, the mixer hand holds a
+    // tighter, steadier fold.
+    this.foldJoints(rig, 1.0 + Math.sin(beat * 2) * 0.22, 1.25 + bob * 0.12, 0.16, 0.16);
     rig.leftArm.rotation.x = -1.15 + Math.sin(beat * 2) * 0.34;
     rig.leftArm.rotation.z = 0.28;
     rig.rightArm.rotation.x = -1.05 + Math.cos(beat) * 0.26;
