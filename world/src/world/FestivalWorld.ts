@@ -271,6 +271,13 @@ interface AvatarRig {
   /** Under the feet, and only out while running. */
   board: THREE.Group;
   /**
+   * How high the top of this head sits above the body's origin. MENTOR perches
+   * there, and the restyled figure's head is a quarter of a unit lower than the
+   * original's — so a carried dog placed at the old fixed height floated above
+   * it with nothing underneath.
+   */
+  headTop: number;
+  /**
    * The second joint down each limb, on the restyled figure only.
    *
    * These are bones in every sense that matters here. A three.js Skeleton
@@ -6066,8 +6073,10 @@ export class FestivalWorld {
     // inherits the hidden original avatar and disappears as soon as it is held.
     carrier.attach(mentor.group);
     // The dog is compact while carried and its four foot blocks rest just
-    // above the avatar's hair instead of intersecting the head geometry.
-    mentor.group.position.set(0, 3.52, 0.05);
+    // above the avatar's hair instead of intersecting the head geometry —
+    // measured from that carrier's own head rather than from a number that was
+    // only ever right for the figure the world used to have.
+    mentor.group.position.set(0, (this.rigFor(carrier)?.headTop ?? 3.37) + 0.15, 0.05);
     mentor.group.rotation.set(0, 0, 0);
     mentor.group.scale.setScalar(0.56);
     // Tuck all four legs inward into a compact perched pose. The leg pivots
@@ -6077,6 +6086,16 @@ export class FestivalWorld {
     mentor.dogRig.leftBackLeg.rotation.z = 1.08;
     mentor.dogRig.rightBackLeg.rotation.z = -1.08;
     mentor.badge.visible = false;
+  }
+
+  /**
+   * Whose rig belongs to this body — the visitor's own, or an NPC's. Both are
+   * optional: a dog rig has none, and a carrier can be gone by the time this
+   * is asked.
+   */
+  private rigFor(carrier: THREE.Group): AvatarRig | undefined {
+    if (carrier === this.player) return this.playerRig;
+    return this.npcs.find((npc) => npc.group === carrier)?.rig ?? this.playerRig;
   }
 
   private activeCarrierGroup(): THREE.Group {
@@ -6465,20 +6484,28 @@ export class FestivalWorld {
    * right over the tail, arms spread wide for balance.
    */
   private poseRigSkating(rig: AvatarRig, phase: number): void {
-    // Riding is a crouch: the front knee stays folded and the back leg pushes
-    // straighter, with the arms out and loose for balance.
-    this.foldJoints(rig, 0.5, 0.5, 0.62 + Math.sin(phase) * 0.12, 0.3);
+    // Regular stance. Nobody rides a board facing along it — the feet go across
+    // the deck and the body turns side-on, left foot leading over the front
+    // bolts and right foot back on the tail. Squaring up to the direction of
+    // travel is what made this look like someone standing on a plank.
+    this.foldJoints(rig, 0.55, 0.55, 0.68 + Math.sin(phase) * 0.1, 0.34);
+    // Feet turned across the deck: the front one angled over the bolts, the
+    // back one closer to square on the tail.
+    if (rig.leftKnee) rig.leftKnee.rotation.y = 0.55;
+    if (rig.rightKnee) rig.rightKnee.rotation.y = 1.2;
     const bob = Math.sin(phase * 1.6);
-    rig.torso.rotation.y = 0;
+    // Shoulders opened to the left, which is what puts the body side-on.
+    rig.torso.rotation.y = -0.92;
     rig.torso.rotation.x = 0.15 + bob * 0.03;
     rig.torso.rotation.z = 0;
-    // Looking along the board, over the leading shoulder.
-    rig.head.rotation.set(0, -0.62, 0);
-    // Knees soft, the front one driven a little further forward.
-    rig.leftLeg.rotation.x = -0.2 - bob * 0.04;
-    rig.leftLeg.rotation.z = 0.12;
-    rig.rightLeg.rotation.x = 0.16 + bob * 0.04;
-    rig.rightLeg.rotation.z = -0.1;
+    // And the head turns back along the board, which is where a rider looks.
+    rig.head.rotation.set(0, 0.86, 0);
+    // Left foot forward, right foot back, and further apart than a stance —
+    // a rider is planted across the deck, not mid-stride.
+    rig.leftLeg.rotation.x = -0.46 - bob * 0.04;
+    rig.leftLeg.rotation.z = 0.18;
+    rig.rightLeg.rotation.x = 0.38 + bob * 0.04;
+    rig.rightLeg.rotation.z = -0.16;
     // Straight out to the sides. A positive rotation about z swings an arm
     // towards +x, so the left arm needs a negative one to go outward — with
     // the signs the other way round both arms folded across the chest and
@@ -6652,6 +6679,9 @@ export class FestivalWorld {
       rightArm,
       leftLeg,
       rightLeg,
+      // Spine 1.55, head group at 1.05 above it, hair cap topping out 0.5 over
+      // that.
+      headTop: 3.1,
       // The spine stands in for the torso, so every pose already written bends
       // the whole upper body without one line of those poses changing.
       torso: spine,
@@ -6719,7 +6749,8 @@ export class FestivalWorld {
     const treat = this.mesh([0.16, 0.16, 0.22], [0, -1.2, 0.16], material(0xd18a35, 0.78), rightArm);
     treat.visible = false;
     const board = this.createSkateboard(parent);
-    return { leftArm, rightArm, leftLeg, rightLeg, torso, treat, head, board };
+    // Head group at 2.47, hair 0.73 above that and 0.17 thick.
+    return { leftArm, rightArm, leftLeg, rightLeg, torso, treat, head, board, headTop: 3.37 };
   }
 
   private createAtmosphere(): void {
@@ -6757,6 +6788,14 @@ export class FestivalWorld {
     // walked into or out of a room.
     this.updateProjectorMounts();
     const dayNight = this.dayNight.update();
+    // Exposed for the hour rather than fixed at noon's value. Raising lights
+    // only brightens what they reach, and after dark most of what is on screen
+    // is dark paint under a dim sky — so a wall lit harder is still a dark
+    // wall. This lifts the whole frame, materials included, which is what "too
+    // dark at night" actually describes. Both renderers, or the foreground
+    // pass composites at a different brightness from the world behind it.
+    this.renderer.toneMappingExposure = dayNight.exposure;
+    this.foregroundRenderer.toneMappingExposure = dayNight.exposure;
     this.updateWaterReflections(elapsed);
     this.updateStylizedWater(elapsed);
     this.updateWaterLayers();
@@ -8292,26 +8331,42 @@ export class FestivalWorld {
    * clock, so a floor full of avatars moves together.
    */
   private poseRigDance(rig: AvatarRig, offset = 0): void {
-    // Joints are put back explicitly: a pose that does not mention them leaves
-    // whatever the last walking frame happened to set, and the body arrives at
-    // the dance floor still mid-stride.
-    if (rig.leftElbow) rig.leftElbow.rotation.set(0.62, 0, 0);
-    if (rig.rightElbow) rig.rightElbow.rotation.set(0.62, 0, 0);
-    if (rig.leftKnee) rig.leftKnee.rotation.set(0, 0, 0);
-    if (rig.rightKnee) rig.rightKnee.rotation.set(0, 0, 0);
     const beat = this.clubBeatPhase() * Math.PI * 2 + offset;
     const bounce = Math.sin(beat);
     const sway = Math.sin(beat / 2);
+    // The elbows were folded by a fixed amount and in the wrong direction, so
+    // the forearms stuck out backwards and stayed there while the shoulders
+    // swung — which is what made the hands look broken. They ride the beat now,
+    // through foldJoints, which is the one place that knows which way an elbow
+    // bends.
+    //
+    // And the legs do something. They used to rock a few degrees at the hip
+    // while everything above them danced; a body whose whole lower half is
+    // rigid reads as a puppet held up by its shoulders. The knees now take the
+    // bounce, alternating, so the weight visibly drops onto one foot and then
+    // the other, and the hips swing across with the sway.
+    this.foldJoints(
+      rig,
+      0.85 + bounce * 0.45,
+      0.85 - bounce * 0.45,
+      0.28 + Math.max(0, bounce) * 0.5,
+      0.28 + Math.max(0, -bounce) * 0.5,
+    );
     // The limbs pivot from the shoulders and hips; the torso is a separate
     // mesh, so shifting its position would tear the body apart.
     rig.leftArm.rotation.x = -1.15 + bounce * 0.42;
     rig.rightArm.rotation.x = -1.15 - bounce * 0.42;
     rig.leftArm.rotation.z = 0.34 + bounce * 0.22;
     rig.rightArm.rotation.z = -0.34 + bounce * 0.22;
-    rig.leftLeg.rotation.x = bounce * 0.24;
-    rig.rightLeg.rotation.x = -bounce * 0.24;
+    rig.leftLeg.rotation.x = bounce * 0.3;
+    rig.rightLeg.rotation.x = -bounce * 0.3;
+    // Weight shifting from foot to foot, which is what stops a dance being a
+    // bob on the spot.
+    rig.leftLeg.rotation.z = 0.06 + sway * 0.1;
+    rig.rightLeg.rotation.z = -0.06 + sway * 0.1;
     rig.torso.rotation.y = sway * 0.3;
     rig.torso.rotation.z = bounce * 0.09;
+    rig.head.rotation.set(bounce * 0.1, sway * 0.22, 0);
     rig.treat.visible = false;
   }
 
@@ -9349,7 +9404,13 @@ export class FestivalWorld {
 
   /** A following MENTOR gives way to whatever you have walked up to. */
   private mentorGivesWay(): boolean {
-    return this.mentorFollowsActiveAvatar() && this.atAFixedPlace();
+    if (!this.mentorFollowsActiveAvatar()) return false;
+    // And to a drink in your hand. MENTOR's prompt is offered before the
+    // drink's and takes the same SHIFT+E, so a following dog meant a drink
+    // could be bought and then never drunk — and unlike popcorn there is no
+    // choice being taken away here, because a dog cannot be handed a cocktail.
+    if (this.carriedItem === 'DRINK') return true;
+    return this.atAFixedPlace();
   }
 
   private nearbyMentor(): NpcAvatar | undefined {

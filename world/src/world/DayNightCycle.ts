@@ -14,6 +14,8 @@ export interface DayNightState {
   progress: number;
   phase: DayPhase;
   phaseProgress: number;
+  /** What the renderer should be exposed at right now. See LightingKeyframe. */
+  exposure: number;
 }
 
 export interface WaterReflectionState {
@@ -30,6 +32,22 @@ interface LightingKeyframe {
   ambientIntensity: number;
   lampIntensity: number;
   moonIntensity: number;
+  /**
+   * How hard the whole frame is exposed at this hour.
+   *
+   * The lever the last few passes were missing. Raising a light only brightens
+   * what that light reaches, and after dark most of what a visitor is looking
+   * at is dark paint under a dim sky — so a wall lit harder is still a dark
+   * wall, and the fill had been pushed to daylight strength without the street
+   * ever looking lit.
+   *
+   * It also pays back what the styled shading takes. Flat shading gives every
+   * face its own true normal, so faces turned away from the light go properly
+   * dark instead of borrowing brightness from their neighbours through averaged
+   * ones. The world genuinely got darker when that arrived, and nothing had
+   * compensated for it.
+   */
+  exposure: number;
 }
 
 const CYCLE_MINUTES = 60;
@@ -53,6 +71,7 @@ const frame = (
   ambientIntensity: number,
   lampIntensity: number,
   moonIntensity: number,
+  exposure: number,
 ): LightingKeyframe => ({
   minute,
   sky: new THREE.Color(sky),
@@ -62,6 +81,7 @@ const frame = (
   ambientIntensity,
   lampIntensity,
   moonIntensity,
+  exposure,
 });
 
 // Night was lit almost entirely by things that glow. The fill sat at 0.38
@@ -83,11 +103,11 @@ const frame = (
 // raising them further would have lit pools on a black ground instead of a
 // world at night.
 const KEYFRAMES: LightingKeyframe[] = [
-  frame(0, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 0.78, 0.2, 0.30),
-  frame(5, 0x9ab5c6, 0x899aa0, 0xffd3a6, 1.45, 1.05, 0.08, 0),
-  frame(20, 0x83b4d1, 0xa1b3b5, 0xfff1d0, 2.2, 1.35, 0, 0),
-  frame(25, 0xd28b62, 0xb28a76, 0xffa65c, 2.0, 0.95, 0.15, 0),
-  frame(30, 0x8e4c4b, 0x6e5259, 0xff5d38, 1.1, 0.78, 0.65, 0.14),
+  frame(0, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 0.78, 0.2, 0.30, 1.08),
+  frame(5, 0x9ab5c6, 0x899aa0, 0xffd3a6, 1.45, 1.05, 0.08, 0, 0.96),
+  frame(20, 0x83b4d1, 0xa1b3b5, 0xfff1d0, 2.2, 1.35, 0, 0, 0.92),
+  frame(25, 0xd28b62, 0xb28a76, 0xffa65c, 2.0, 0.95, 0.15, 0, 0.96),
+  frame(30, 0x8e4c4b, 0x6e5259, 0xff5d38, 1.1, 0.86, 0.65, 0.14, 1.1),
   // The fill now runs at very nearly the strength it does at noon, and the
   // thing that keeps this reading as night rather than day is its colour, not
   // its weakness: a cool blue fill under a dark navy sky is a moonlit street,
@@ -98,10 +118,10 @@ const KEYFRAMES: LightingKeyframe[] = [
   // which is why the road kept reading black however high the moon went. The
   // fill now carries the street on its own, and the moon is the shaping light
   // on top of it rather than the thing holding the whole scene up.
-  frame(35, 0x3a5175, 0x445473, 0x7889c7, 0.35, 1.15, 1.3, 0.45),
-  frame(42, 0x1d2a49, 0x25304e, 0x6072a8, 0.09, 1.34, 1.75, 1.15),
-  frame(52, 0x192341, 0x222c46, 0x4a5d8c, 0.04, 1.32, 1.9, 1.35),
-  frame(60, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 0.84, 0.2, 0.30),
+  frame(35, 0x44608a, 0x516184, 0x7889c7, 0.35, 1.3, 1.3, 0.45, 1.3),
+  frame(42, 0x263760, 0x2f3d63, 0x6072a8, 0.09, 1.5, 1.75, 1.15, 1.42),
+  frame(52, 0x212f56, 0x2a375a, 0x4a5d8c, 0.04, 1.48, 1.9, 1.35, 1.42),
+  frame(60, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 0.84, 0.2, 0.30, 1.08),
 ];
 
 const phaseAt = (minute: number): { phase: DayPhase; start: number; end: number } => {
@@ -138,6 +158,7 @@ export class DayNightCycle {
     progress: 0,
     phase: 'dawn',
     phaseProgress: 0,
+    exposure: 1,
   };
   private readonly waterReflectionState: WaterReflectionState = {
     sun: { x: 0, strength: 0, elevation: 0, color: new THREE.Color(0xffb86b) },
@@ -306,6 +327,7 @@ export class DayNightCycle {
     );
     const lampIntensity = THREE.MathUtils.lerp(from.lampIntensity, to.lampIntensity, mix);
     const moonIntensity = THREE.MathUtils.lerp(from.moonIntensity, to.moonIntensity, mix);
+    const exposure = THREE.MathUtils.lerp(from.exposure, to.exposure, mix);
 
     this.scene.background = sky;
     if (this.scene.fog instanceof THREE.Fog) this.scene.fog.color.copy(fog);
@@ -395,6 +417,7 @@ export class DayNightCycle {
       progress: cycleMinute / CYCLE_MINUTES,
       phase: phaseData.phase,
       phaseProgress,
+      exposure,
     };
     return this.state;
   }
