@@ -58,7 +58,7 @@ function isBuilding(mesh: THREE.Mesh, size: THREE.Vector3, at: THREE.Vector3): b
   return true;
 }
 
-export function dressBuildings(scene: THREE.Object3D): number {
+export function dressBuildings(scene: THREE.Object3D): { walls: number; refused: number; signs: number } {
   scene.updateMatrixWorld(true);
 
   // Everything unlit is a sign, a screen or a neon band — the things a visitor
@@ -74,7 +74,12 @@ export function dressBuildings(scene: THREE.Object3D): number {
     const box = new THREE.Box3().setFromObject(mesh);
     if (!box.isEmpty()) keepClear.push(box.expandByScalar(1.1));
   });
-  const overlapsSign = (at: THREE.Vector3) => keepClear.some((box) => box.containsPoint(at));
+  let refused = 0;
+  const overlapsSign = (at: THREE.Vector3) => {
+    const clash = keepClear.some((box) => box.containsPoint(at));
+    if (clash) refused += 1;
+    return clash;
+  };
 
   const unitBox = new THREE.BoxGeometry(1, 1, 1);
   const concrete = new THREE.MeshStandardMaterial({ color: 0x4a4744, roughness: 0.94, metalness: 0.02 });
@@ -168,5 +173,5 @@ export function dressBuildings(scene: THREE.Object3D): number {
     if (!overlapsSign(runsAt)) piece(0.28, size.y - 1.8, 0.28, runsAt, metal);
   }
 
-  return walls.length;
+  return { walls: walls.length, refused, signs: keepClear.length };
 }

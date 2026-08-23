@@ -1535,13 +1535,22 @@ export class FestivalWorld {
     // the later re-runs correctly find nothing to do — and assigning their
     // return value overwrote the real count with zero, which made a working
     // feature look like a broken one.
-    if (wornMeshesRequested()) this.wornBuildings += dressBuildings(this.scene);
+    if (wornMeshesRequested()) {
+      const dressing = dressBuildings(this.scene);
+      this.wornBuildings += dressing.walls;
+      this.wornSignsSpared += dressing.refused;
+      this.wornSigns = dressing.signs;
+    }
     const patched = applyWornStyle(this.scene);
     setWornStyle(amount, steps, grain);
     return patched;
   }
 
   private wornBuildings = 0;
+
+  private wornSignsSpared = 0;
+
+  private wornSigns = 0;
 
   wornStyleReviewSnapshot(): unknown {
     const settings = wornStyleSettings();
@@ -1572,6 +1581,8 @@ export class FestivalWorld {
       flattened,
       buildingsDressed: this.wornBuildings,
       dressableWalls: dressable,
+      signsProtected: this.wornSigns,
+      placementsRefusedOverSigns: this.wornSignsSpared,
     };
   }
 
