@@ -1608,8 +1608,8 @@ export class FestivalWorld {
    * determines how large the picture is in the world.
    */
   /**
-   * The three theatres, which no cable may be tied to. A cinema is not a
-   * tenement, and lines strung off the Palace made it look like a squat.
+   * The three theatres, which take no street dressing. A cinema is not a
+   * tenement and should not grow air-con and fly-posting.
    *
    * Only the theatres: an earlier version listed every room as well and
    * refused all dressing inside them, which left one dressed wall out of
