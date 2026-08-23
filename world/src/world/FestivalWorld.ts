@@ -1654,10 +1654,15 @@ export class FestivalWorld {
       // Fetched here rather than on load, so a visitor who never asks for the
       // style never pays for the font.
       loadBrandFont();
-      const dressing = dressBuildings(this.scene, this.publicScreenBoxes(), this.venueVolumes());
+      const dressing = dressBuildings(
+        this.scene,
+        this.publicScreenBoxes(),
+        this.venueVolumes(),
+        this.venueVolumes(),
+      );
       // After the dressing, so the cornices and shopfronts settle with the
       // walls they belong to rather than staying dead square against them.
-      this.wornWarped += warpWorldGeometry(this.scene, this.wornWarpAmount);
+      this.wornWarped += warpWorldGeometry(this.scene, this.wornWarpAmount, this.venueVolumes());
       this.wornBuildings += dressing.walls;
       this.wornSignsSpared += dressing.refused;
       this.wornSigns = dressing.signs;

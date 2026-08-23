@@ -80,6 +80,8 @@ export function dressBuildings(
    * other building. They simply do not get washing lines.
    */
   noCables: THREE.Box3[] = [],
+  /** Structures that take no dressing at all — the theatres and their screens. */
+  noDress: THREE.Box3[] = [],
 ): { walls: number; refused: number; signs: number } {
   scene.updateMatrixWorld(true);
 
@@ -124,6 +126,10 @@ export function dressBuildings(
     const size = mesh.getWorldScale(new THREE.Vector3());
     const at = mesh.getWorldPosition(new THREE.Vector3());
     if (!isBuilding(mesh, size, at)) return;
+    // A cinema screen is not a tenement wall. It was being given a ledge across
+    // its face and air-con bolted to its frame, which is the most conspicuous
+    // surface in the festival to get wrong.
+    if (noDress.some((box) => box.containsPoint(at))) return;
     walls.push({ mesh, size, at });
   });
 
@@ -143,6 +149,19 @@ export function dressBuildings(
     if (placedRandom(at, 97) < 0.33) continue;
     dressed += 1;
     const spin = mesh.getWorldQuaternion(new THREE.Quaternion());
+    // Everything on this wall sits on the same storey grid.
+    //
+    // It all used to be placed independently — the ledge at one random height,
+    // air-con at another, paper at a third, windows on their own spacing — and
+    // independently placed is exactly what "added randomly" looks like. A real
+    // facade is organised by its floors: the ledge runs along one, the units
+    // hang under one, the windows sit between them. Nothing here is at a new
+    // height that some other element did not already establish.
+    const STOREY = 3.6;
+    const groundLine = Math.min(4.2, size.y * 0.3);
+    const floors = Math.max(1, Math.floor((size.y - groundLine - 1.2) / STOREY));
+    /** The height of a floor line, as a fraction of the wall, from its middle. */
+    const floorLine = (index: number) => -0.5 + (groundLine + index * STOREY) / size.y;
     // Local coordinates on the unit cube run -0.5 to 0.5, so this converts a
     // fraction of the wall into the point it actually occupies in the world.
     const place = (x: number, y: number, z: number) =>
@@ -188,7 +207,9 @@ export function dressBuildings(
     // ledge belongs behind those things, and the way to be behind them is not
     // to be there at all: the band is emitted as runs, and a run stops where a
     // sign, a lamp or a unit begins and picks up again on the far side.
-    const ledgeY = placedRandom(at, 5) * 0.16 - 0.02;
+    // The ledge is a floor line, not a height somebody picked. Which floor
+    // varies between buildings; that it is *a* floor does not.
+    const ledgeY = floorLine(Math.min(floors - 1, 1 + Math.floor(placedRandom(at, 5) * 2)));
     for (const ledge of [
       { axis: 'z' as const, sign: 1, span: size.x, thickness: size.z },
       { axis: 'z' as const, sign: -1, span: size.x, thickness: size.z },
@@ -251,16 +272,18 @@ export function dressBuildings(
       const spread = room / face.span;
       // Vertically the same: above head height, and far enough below the
       // cornice that the box is not pushed through the roof edge.
-      const lowest = 3.6 / size.y - 0.5;
+      // Units hang just under a floor line, the way a real one is bracketed off
+      // the slab. They used to be scattered anywhere above head height, which
+      // put four of them at four different heights on one wall.
       const highest = 0.5 - (UNIT_HEIGHT / 2 + 0.9) / size.y;
-      if (highest <= lowest) continue;
       for (let index = 0; index < units; index += 1) {
         // Spaced along the face rather than scattered, so two never land on
         // top of each other, with a little wander inside each slot.
         const slot = units === 1 ? 0 : (index / (units - 1) - 0.5) * 2;
         const wander = (placedRandom(at, (salt += 1)) - 0.5) * 0.3;
         const along = THREE.MathUtils.clamp(slot * spread * 0.82 + wander * spread, -spread, spread);
-        const up = lowest + placedRandom(at, (salt += 1)) * (highest - lowest);
+        const shelf = floorLine(Math.min(floors - 1, index % Math.max(1, floors)));
+        const up = Math.min(highest, shelf - (UNIT_HEIGHT / 2 + 0.35) / size.y);
         const out = 0.5 + 0.34 / face.thickness;
         const grilleOut = 0.5 + 0.66 / face.thickness;
         const seat = face.axis === 'z'
@@ -289,7 +312,7 @@ export function dressBuildings(
     // Dark glass with a frame, never lit — a lit window implies somebody in a
     // room, and none of these buildings have rooms. Unlit ones read as a
     // building at night, which is what this is.
-    const storeys = Math.max(1, Math.floor(size.y / 3.6) - 1);
+    const storeys = floors;
     for (const wall of [
       { axis: 'z' as const, sign: 1, span: size.x, thickness: size.z },
       { axis: 'z' as const, sign: -1, span: size.x, thickness: size.z },
@@ -306,7 +329,8 @@ export function dressBuildings(
       const frameOut = 0.5 + 0.08 / wall.thickness;
       const out = 0.5 - 0.02 / wall.thickness;
       for (let row = 0; row < storeys; row += 1) {
-        const up = -0.5 + (3.2 + row * 3.6) / size.y;
+        // Between the floor lines, which is where a window goes.
+        const up = floorLine(row) + (STOREY * 0.45) / size.y;
         if (up > 0.42) break;
         for (let column = 0; column < columns; column += 1) {
           const along = columns === 1 ? 0 : (column / (columns - 1) - 0.5) * ((wall.span - 3.4) / wall.span);
@@ -359,9 +383,10 @@ export function dressBuildings(
       const bills = Math.min(3, Math.floor(board.span / 9));
       for (let index = 0; index < bills; index += 1) {
         const along = (placedRandom(at, (salt += 1)) - 0.5) * 0.62;
-        // Pasted where a hand reaches, which is what makes it read as pasted
-        // rather than as installed.
-        const up = -0.5 + (1.4 + placedRandom(at, (salt += 1)) * 1.6) / size.y;
+        // Pasted on the shopfront, at the height a hand reaches. Bills go on
+        // the part of a building somebody walks past, never on its third floor.
+        const up = -0.5 + (1.5 + placedRandom(at, (salt += 1)) * 1.1) / size.y;
+        if (up * size.y + size.y / 2 > groundLine - 0.4) continue;
         const out = 0.5 + 0.03 / board.thickness;
         const seat = board.axis === 'z'
           ? place(along, up, board.sign * out)

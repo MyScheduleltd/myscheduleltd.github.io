@@ -287,7 +287,12 @@ export function taperedPrism(
  * move every wall in the festival identically. A cube is twenty-four vertices,
  * so a thousand of them is a rounding error.
  */
-export function warpWorldGeometry(scene: THREE.Object3D, amount = 1): number {
+export function warpWorldGeometry(
+  scene: THREE.Object3D,
+  amount = 1,
+  /** Structures that must stay true: the screens and the theatres holding them. */
+  keepTrue: THREE.Box3[] = [],
+): number {
   if (amount <= 0) return 0;
   let warped = 0;
 
@@ -309,14 +314,27 @@ export function warpWorldGeometry(scene: THREE.Object3D, amount = 1): number {
     // Big flat things only. A wall that has settled reads as age; a settled
     // handrail reads as a bug.
     if (Math.max(scale.x, scale.y, scale.z) < 2.4) return;
+    // The ground stays flat. A wall that is out of true reads as a building
+    // that has stood a long time; a road that is out of true reads as a fault
+    // in the renderer, because a floor is the one surface a person has an exact
+    // expectation of. Anything far wider than it is tall is a floor.
+    if (scale.y < Math.max(scale.x, scale.z) * 0.25) return;
+    const where = mesh.getWorldPosition(new THREE.Vector3());
+    // And a screen is a manufactured object hung on a frame. It was never going
+    // to have settled, and leaning one is the single most obviously wrong thing
+    // this pass can do — it is the flattest, straightest, most-looked-at surface
+    // in the festival.
+    if (keepTrue.some((box) => box.containsPoint(where))) return;
 
     mesh.userData.wornWarped = true;
     const own = geometry.clone();
-    const at = mesh.getWorldPosition(new THREE.Vector3());
+    const at = where;
     const position = own.attributes.position as THREE.BufferAttribute;
     // How far a corner may move, in world units, before this stops reading as
     // settlement and starts reading as a fault in the renderer.
-    const reach = 0.075 * amount;
+    // Halved from the first attempt, which read as damage rather than as age.
+    // The line between the two is much finer than it looks from the code.
+    const reach = 0.034 * amount;
 
     for (let index = 0; index < position.count; index += 1) {
       const x = position.getX(index);
