@@ -58,7 +58,16 @@ function isBuilding(mesh: THREE.Mesh, size: THREE.Vector3, at: THREE.Vector3): b
   return true;
 }
 
-export function dressBuildings(scene: THREE.Object3D): { walls: number; refused: number; signs: number } {
+export function dressBuildings(
+  scene: THREE.Object3D,
+  /**
+   * Places nothing may be bolted over that the scene itself cannot show us.
+   * The public screening screens are the reason this exists: they are CSS3D
+   * objects living in a second scene, so a sweep of the world's meshes never
+   * sees them, and an air-con unit parked across one covers the film.
+   */
+  keepClearExtra: THREE.Box3[] = [],
+): { walls: number; refused: number; signs: number } {
   scene.updateMatrixWorld(true);
 
   // Everything unlit is a sign, a screen or a neon band — the things a visitor
@@ -74,6 +83,7 @@ export function dressBuildings(scene: THREE.Object3D): { walls: number; refused:
     const box = new THREE.Box3().setFromObject(mesh);
     if (!box.isEmpty()) keepClear.push(box.expandByScalar(1.1));
   });
+  for (const box of keepClearExtra) keepClear.push(box.clone().expandByScalar(1.1));
   let refused = 0;
   const overlapsSign = (at: THREE.Vector3) => {
     const clash = keepClear.some((box) => box.containsPoint(at));
@@ -134,31 +144,53 @@ export function dressBuildings(scene: THREE.Object3D): { walls: number; refused:
 
     // Units bolted to the facades. Never below head height, so nothing ends up
     // somewhere a visitor could walk into it.
-    const faces: Array<{ axis: 'x' | 'z'; sign: number; span: number }> = [
-      { axis: 'z', sign: 1, span: size.x },
-      { axis: 'z', sign: -1, span: size.x },
-      { axis: 'x', sign: 1, span: size.z },
-      { axis: 'x', sign: -1, span: size.z },
+    const UNIT_WIDTH = 1.05;
+    const UNIT_HEIGHT = 0.78;
+    const faces: Array<{ axis: 'x' | 'z'; sign: number; span: number; thickness: number }> = [
+      { axis: 'z', sign: 1, span: size.x, thickness: size.z },
+      { axis: 'z', sign: -1, span: size.x, thickness: size.z },
+      { axis: 'x', sign: 1, span: size.z, thickness: size.x },
+      { axis: 'x', sign: -1, span: size.z, thickness: size.x },
     ];
     let salt = 0;
     for (const face of faces) {
-      const units = 1 + Math.floor(placedRandom(at, (salt += 1)) * 3);
+      // A unit has to fit on the wall it is bolted to, with a margin either
+      // side. Several of these walls are a single unit thick, and a unit wider
+      // than the face it sits on hangs off both ends into open air — which is
+      // what was overflowing. Anything that cannot take one is left bare.
+      const room = face.span / 2 - UNIT_WIDTH / 2 - 0.5;
+      if (room <= 0) continue;
+      // And how many is a question about how much wall there is, not a number
+      // picked at random. One per seven units of frontage, three at most: four
+      // faces each taking up to three regardless of size is what put a dozen
+      // air-conditioners on a shed.
+      const units = Math.min(3, Math.floor(face.span / 7));
+      if (units < 1) continue;
+      const spread = room / face.span;
+      // Vertically the same: above head height, and far enough below the
+      // cornice that the box is not pushed through the roof edge.
+      const lowest = 3.6 / size.y - 0.5;
+      const highest = 0.5 - (UNIT_HEIGHT / 2 + 0.9) / size.y;
+      if (highest <= lowest) continue;
       for (let index = 0; index < units; index += 1) {
-        const along = (placedRandom(at, (salt += 1)) - 0.5) * 0.7;
-        const lowest = 3.6 / size.y - 0.5;
-        const up = lowest + placedRandom(at, (salt += 1)) * Math.max(0.05, 0.44 - lowest);
-        const out = 0.5 + 0.34 / (face.axis === 'z' ? size.z : size.x);
-        const grilleOut = 0.5 + 0.66 / (face.axis === 'z' ? size.z : size.x);
+        // Spaced along the face rather than scattered, so two never land on
+        // top of each other, with a little wander inside each slot.
+        const slot = units === 1 ? 0 : (index / (units - 1) - 0.5) * 2;
+        const wander = (placedRandom(at, (salt += 1)) - 0.5) * 0.3;
+        const along = THREE.MathUtils.clamp(slot * spread * 0.82 + wander * spread, -spread, spread);
+        const up = lowest + placedRandom(at, (salt += 1)) * (highest - lowest);
+        const out = 0.5 + 0.34 / face.thickness;
+        const grilleOut = 0.5 + 0.66 / face.thickness;
         const seat = face.axis === 'z'
           ? place(along, up, face.sign * out)
           : place(face.sign * out, up, along);
-        // Somewhere a sign already is. Leave the wall bare there.
+        // Somewhere a sign or a screen already is. Leave the wall bare there.
         if (overlapsSign(seat)) continue;
         if (face.axis === 'z') {
-          piece(1.05, 0.78, 0.62, seat, metal);
+          piece(UNIT_WIDTH, UNIT_HEIGHT, 0.62, seat, metal);
           piece(0.8, 0.55, 0.06, place(along, up, face.sign * grilleOut), dark);
         } else {
-          piece(0.62, 0.78, 1.05, seat, metal);
+          piece(0.62, UNIT_HEIGHT, UNIT_WIDTH, seat, metal);
           piece(0.06, 0.55, 0.8, place(face.sign * grilleOut, up, along), dark);
         }
       }

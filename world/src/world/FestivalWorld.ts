@@ -1592,6 +1592,32 @@ export class FestivalWorld {
    * made after the opening pass, and an unpatched material in a patched world
    * is more obvious than no patch at all.
    */
+  /**
+   * The footprint of every public screening screen, as boxes.
+   *
+   * The screens are CSS3D objects living in their own scene, so a sweep of the
+   * world's meshes cannot see them at all — which is how an air-con unit came
+   * to be bolted across one. Their size comes from the element's own pixel
+   * dimensions taken through the object's scale, because that is what actually
+   * determines how large the picture is in the world.
+   */
+  private publicScreenBoxes(): THREE.Box3[] {
+    const boxes: THREE.Box3[] = [];
+    for (const projector of this.projectors.values()) {
+      const scale = projector.object.scale.x || 1;
+      const wide = (projector.element.offsetWidth || 1600) * scale;
+      const tall = (projector.element.offsetHeight || 900) * scale;
+      const at = projector.object.position;
+      // Generous through the screen's own depth: a unit does not have to be in
+      // front of the picture to spoil it, only near enough to be in shot.
+      boxes.push(new THREE.Box3(
+        new THREE.Vector3(at.x - wide / 2, at.y - tall / 2, at.z - 2.5),
+        new THREE.Vector3(at.x + wide / 2, at.y + tall / 2, at.z + 2.5),
+      ));
+    }
+    return boxes;
+  }
+
   applyWornStyleForReview(amount: number, steps: number, grain: number): number {
     // Dressing first, so the clutter it hangs on the walls is picked up by the
     // shading pass in the same sweep rather than staying smooth-shaded and
@@ -1604,7 +1630,7 @@ export class FestivalWorld {
       // Fetched here rather than on load, so a visitor who never asks for the
       // style never pays for the font.
       loadBrandFont();
-      const dressing = dressBuildings(this.scene);
+      const dressing = dressBuildings(this.scene, this.publicScreenBoxes());
       this.wornBuildings += dressing.walls;
       this.wornSignsSpared += dressing.refused;
       this.wornSigns = dressing.signs;
