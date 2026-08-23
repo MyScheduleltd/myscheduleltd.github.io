@@ -95,6 +95,9 @@ export function dressBuildings(
   const concrete = new THREE.MeshStandardMaterial({ color: 0x4a4744, roughness: 0.94, metalness: 0.02 });
   const metal = new THREE.MeshStandardMaterial({ color: 0x6b6764, roughness: 0.62, metalness: 0.34 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x24211f, roughness: 0.88, metalness: 0.06 });
+  // Dark and a little reflective, so a window catches the sky rather than
+  // sitting on the wall as a flat patch.
+  const glass = new THREE.MeshStandardMaterial({ color: 0x14171d, roughness: 0.24, metalness: 0.5 });
 
   const walls: Array<{ mesh: THREE.Mesh; size: THREE.Vector3; at: THREE.Vector3 }> = [];
   scene.traverse((object) => {
@@ -107,8 +110,20 @@ export function dressBuildings(
   });
 
   const added: THREE.Mesh[] = [];
+  // Counted as dressed, not as found. A third are deliberately skipped now, and
+  // a tally of what qualified would report a number nothing in the world
+  // matches — which is how a working feature came to look broken twice already.
+  let dressed = 0;
   for (const { mesh, size, at } of walls) {
     mesh.userData.wornDressed = true;
+    // A third of them are left alone.
+    //
+    // Dressing every wall the same way is its own kind of uniform — which is
+    // the thing the original note was about. A real street has a grubby block
+    // beside a plain one, and it is the contrast that makes the dressed ones
+    // read as deliberate rather than as a filter laid over everything.
+    if (placedRandom(at, 97) < 0.33) continue;
+    dressed += 1;
     const spin = mesh.getWorldQuaternion(new THREE.Quaternion());
     // Local coordinates on the unit cube run -0.5 to 0.5, so this converts a
     // fraction of the wall into the point it actually occupies in the world.
@@ -132,15 +147,64 @@ export function dressBuildings(
       return part;
     };
 
+    // Everything that wraps the building is held inside the padding that
+    // already surrounds its collider — 0.16 on each side — so none of it can be
+    // walked into. That is the whole answer to the missing colliders: a plinth
+    // that stands half a metre proud of a wall needs one, and a plinth that
+    // sits within the wall's own margin does not. Cheaper than adding colliders
+    // and impossible to get out of step with them.
+    const PROUD = 0.16;
+
     // A roof needs an edge. Without one a building simply stops, which is the
     // strongest single tell that a thing was made of boxes.
-    piece(size.x + 0.8, 0.55, size.z + 0.8, place(0, 0.5, 0), concrete);
+    piece(size.x + PROUD * 2, 0.55, size.z + PROUD * 2, place(0, 0.5, 0), concrete);
     // And a plinth, so the wall arrives at the ground rather than being pushed
     // into it.
-    piece(size.x + 0.5, 0.9, size.z + 0.5, place(0, -0.5, 0), dark);
-    // A ledge at a floor line, which gives the wall a horizontal to catch light
-    // and somewhere for a shadow to sit under.
-    piece(size.x + 0.34, 0.24, size.z + 0.34, place(0, placedRandom(at, 5) * 0.16 - 0.02, 0), concrete);
+    piece(size.x + PROUD * 2, 0.9, size.z + PROUD * 2, place(0, -0.5, 0), dark);
+
+    // The ledge is cut around whatever is already on the wall.
+    //
+    // It used to wrap the building as one unbroken box standing proud of the
+    // face, which put it in front of everything mounted there — it ran straight
+    // across THE ROOFTOP's sign and through the lamps beside the stair. A
+    // ledge belongs behind those things, and the way to be behind them is not
+    // to be there at all: the band is emitted as runs, and a run stops where a
+    // sign, a lamp or a unit begins and picks up again on the far side.
+    const ledgeY = placedRandom(at, 5) * 0.16 - 0.02;
+    for (const ledge of [
+      { axis: 'z' as const, sign: 1, span: size.x, thickness: size.z },
+      { axis: 'z' as const, sign: -1, span: size.x, thickness: size.z },
+      { axis: 'x' as const, sign: 1, span: size.z, thickness: size.x },
+      { axis: 'x' as const, sign: -1, span: size.z, thickness: size.x },
+    ]) {
+      const steps = Math.max(6, Math.round(ledge.span / 0.7));
+      const out = 0.5 + PROUD / ledge.thickness;
+      let runStart: number | undefined;
+      for (let step = 0; step <= steps; step += 1) {
+        const along = step / steps - 0.5;
+        const at3 = ledge.axis === 'z'
+          ? place(along, ledgeY, ledge.sign * out)
+          : place(ledge.sign * out, ledgeY, along);
+        // Sampled without counting: this is measuring the wall, not refusing a
+        // placement, and the refusal tally is about air-con.
+        const blocked = keepClear.some((box) => box.containsPoint(at3));
+        if (!blocked && runStart === undefined) runStart = along;
+        if ((blocked || step === steps) && runStart !== undefined) {
+          const runEnd = blocked ? (step - 1) / steps - 0.5 : along;
+          const length = (runEnd - runStart) * ledge.span;
+          // A stub of ledge reads as debris rather than as architecture.
+          if (length > 1.2) {
+            const middle = (runStart + runEnd) / 2;
+            const seat = ledge.axis === 'z'
+              ? place(middle, ledgeY, ledge.sign * out)
+              : place(ledge.sign * out, ledgeY, middle);
+            if (ledge.axis === 'z') piece(length, 0.24, PROUD * 2, seat, concrete);
+            else piece(PROUD * 2, 0.24, length, seat, concrete);
+          }
+          runStart = undefined;
+        }
+      }
+    }
 
     // Units bolted to the facades. Never below head height, so nothing ends up
     // somewhere a visitor could walk into it.
@@ -196,6 +260,51 @@ export function dressBuildings(
       }
     }
 
+    // Windows.
+    //
+    // The single biggest reason these read as slabs rather than as buildings:
+    // there is nothing on them at the scale of a person. A blank wall twenty
+    // metres wide has no way of telling you how big it is. Rows of openings at
+    // a storey's spacing give it a floor count, and a floor count gives it a
+    // size.
+    //
+    // Dark glass with a frame, never lit — a lit window implies somebody in a
+    // room, and none of these buildings have rooms. Unlit ones read as a
+    // building at night, which is what this is.
+    const storeys = Math.max(1, Math.floor(size.y / 3.6) - 1);
+    for (const wall of [
+      { axis: 'z' as const, sign: 1, span: size.x, thickness: size.z },
+      { axis: 'z' as const, sign: -1, span: size.x, thickness: size.z },
+      { axis: 'x' as const, sign: 1, span: size.z, thickness: size.x },
+      { axis: 'x' as const, sign: -1, span: size.z, thickness: size.x },
+    ]) {
+      const columns = Math.floor((wall.span - 2) / 3.4);
+      if (columns < 1) continue;
+      const out = 0.5 + 0.05 / wall.thickness;
+      const frameOut = 0.5 + 0.02 / wall.thickness;
+      for (let row = 0; row < storeys; row += 1) {
+        const up = -0.5 + (3.2 + row * 3.6) / size.y;
+        if (up > 0.42) break;
+        for (let column = 0; column < columns; column += 1) {
+          const along = columns === 1 ? 0 : (column / (columns - 1) - 0.5) * ((wall.span - 3.4) / wall.span);
+          const seat = wall.axis === 'z'
+            ? place(along, up, wall.sign * out)
+            : place(wall.sign * out, up, along);
+          if (keepClear.some((box) => box.containsPoint(seat))) continue;
+          const frameSeat = wall.axis === 'z'
+            ? place(along, up, wall.sign * frameOut)
+            : place(wall.sign * frameOut, up, along);
+          if (wall.axis === 'z') {
+            piece(1.9, 1.5, 0.16, frameSeat, concrete);
+            piece(1.5, 1.15, 0.1, seat, glass);
+          } else {
+            piece(0.16, 1.5, 1.9, frameSeat, concrete);
+            piece(0.1, 1.15, 1.5, seat, glass);
+          }
+        }
+      }
+    }
+
     // Conduit down one corner. Buildings in the places these references are
     // drawn from carry their services on the outside, and one vertical line
     // does a great deal to break a flat wall.
@@ -205,5 +314,62 @@ export function dressBuildings(
     if (!overlapsSign(runsAt)) piece(0.28, size.y - 1.8, 0.28, runsAt, metal);
   }
 
-  return { walls: walls.length, refused, signs: keepClear.length };
+  // Cables slung between roofs.
+  //
+  // Everything above dresses a building. This is the only thing that crosses
+  // the space *between* two of them, which is most of what makes a street read
+  // as a street rather than as a row of separate objects — it is the first
+  // thing the eye follows in the reference images, and the world has nothing
+  // like it.
+  //
+  // Each roof is joined to its nearest neighbour, once, and only where they are
+  // close enough that a cable would plausibly span the gap. A sag is drawn as
+  // three straight segments rather than a curve, because at this distance a
+  // catenary and a shallow triangle are the same picture and one of them is
+  // three boxes.
+  const cable = new THREE.MeshStandardMaterial({ color: 0x14151a, roughness: 0.9, metalness: 0.1 });
+  const roofs = walls
+    .filter(({ at }) => !at.equals(new THREE.Vector3()))
+    .map(({ size, at }) => new THREE.Vector3(at.x, at.y + size.y / 2, at.z));
+  const strung = new Set<number>();
+  for (let index = 0; index < roofs.length; index += 1) {
+    let nearest = -1;
+    let nearestGap = 34;
+    for (let other = 0; other < roofs.length; other += 1) {
+      if (other === index) continue;
+      const gap = roofs[index].distanceTo(roofs[other]);
+      if (gap > 9 && gap < nearestGap) {
+        nearestGap = gap;
+        nearest = other;
+      }
+    }
+    if (nearest < 0) continue;
+    // One cable per pair, not two.
+    const pair = Math.min(index, nearest) * 1000 + Math.max(index, nearest);
+    if (strung.has(pair)) continue;
+    strung.add(pair);
+
+    const from = roofs[index];
+    const to = roofs[nearest];
+    const sag = Math.min(2.6, nearestGap * 0.12);
+    const waypoints = [
+      from,
+      new THREE.Vector3().lerpVectors(from, to, 0.35).setY(Math.min(from.y, to.y) - sag),
+      new THREE.Vector3().lerpVectors(from, to, 0.65).setY(Math.min(from.y, to.y) - sag),
+      to,
+    ];
+    for (let leg = 0; leg < waypoints.length - 1; leg += 1) {
+      const start = waypoints[leg];
+      const end = waypoints[leg + 1];
+      const span = start.distanceTo(end);
+      const line = new THREE.Mesh(unitBox, cable);
+      line.scale.set(0.09, 0.09, span);
+      line.position.copy(start).lerp(end, 0.5);
+      line.lookAt(end);
+      line.userData.wornDressing = true;
+      scene.add(line);
+    }
+  }
+
+  return { walls: dressed, refused, signs: keepClear.length };
 }
