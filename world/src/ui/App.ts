@@ -1801,11 +1801,6 @@ export class App {
     if (window.location.origin !== 'null') playerUrl.searchParams.set('origin', window.location.origin);
     playerUrl.searchParams.set('widget_referrer', window.location.href);
     frame.innerHTML = `<iframe title="${this.escapeAttribute(film.title)}" src="${this.escapeAttribute(playerUrl.toString())}" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
-    // Which work this player was handed, and whether its length is worth
-    // reporting. A private viewing is nobody's business but this device's — it
-    // loops, and its offsets never touch the shared running order.
-    this.screenPlayingId = mode === 'public' ? film.youtubeId : undefined;
-    this.listenToScreenPlayer(frame.querySelector('iframe'));
     modeLabel.textContent = mode === 'public'
       ? (this.language === 'zh-TW' ? '公開放映 · 同步播放' : 'PUBLIC SCREENING · SYNCHRONIZED')
       : (this.language === 'zh-TW' ? '私人放映 · 僅此裝置' : 'PRIVATE SCREENING · THIS DEVICE');
@@ -2787,73 +2782,6 @@ export class App {
    * soon as it has one, which is the only way the festival can move the running
    * order on at the right moment rather than at a guess.
    */
-  /**
-   * Asks the venue player how long the work it is showing actually runs, and
-   * tells the festival.
-   *
-   * Without this the service has no idea and falls back to a flat four
-   * minutes for every work in every programme — so anything longer is cut off
-   * partway, everything shorter leaves the screen dead, and the running order
-   * drifts further out of step with every item. A track ordered at the club or
-   * the deck is placed against that same drifting clock, which is why a request
-   * arrives at the wrong moment rather than when it was scheduled.
-   *
-   * This existed once and was taken out for poisoning the shared table: the
-   * player moved to the next work on its own, then reported *that* length while
-   * the festival still believed the previous one was on. Two things stop that
-   * here. The player is never given a playlist, so it cannot move on by itself
-   * and one sequencer stays in charge; and a length is only sent while the id
-   * this frame was handed is still the id the festival is showing.
-   */
-  private screenPlayingId?: string;
-
-  private screenPlayerFrame?: HTMLIFrameElement;
-
-  private readonly reportedScreenDurations = new Map<string, number>();
-
-  private listenToScreenPlayer(frame: HTMLIFrameElement | null): void {
-    if (!frame) return;
-    this.screenPlayerFrame = frame;
-    if (!this.screenMessageBound) {
-      this.screenMessageBound = true;
-      window.addEventListener('message', this.screenPlayerMessage);
-    }
-    // YouTube says nothing until it is asked to. The handshake has to land
-    // after the player is up, and one attempt is not reliable on a cold frame.
-    const greet = () => frame.contentWindow?.postMessage(
-      JSON.stringify({ event: 'listening', id: 'venue-screen' }),
-      '*',
-    );
-    frame.addEventListener('load', greet);
-    for (const delay of [400, 1_200, 3_000]) window.setTimeout(greet, delay);
-  }
-
-  private screenMessageBound = false;
-
-  private readonly screenPlayerMessage = (event: MessageEvent): void => {
-    if (!this.screenPlayerFrame || event.source !== this.screenPlayerFrame.contentWindow) return;
-    if (typeof event.data !== 'string') return;
-    let payload: { info?: { duration?: number } };
-    try {
-      payload = JSON.parse(event.data) as typeof payload;
-    } catch {
-      return;
-    }
-    const seconds = payload?.info?.duration;
-    if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 5) return;
-    const youtubeId = this.screenPlayingId;
-    if (!youtubeId) return;
-    // Only while this is still the work the festival believes is on. Reporting
-    // after the programme has moved is exactly what poisoned this table before.
-    if (this.publicFilm(this.activeVenue)?.youtubeId !== youtubeId) return;
-    const rounded = Math.round(seconds);
-    if (this.reportedScreenDurations.get(youtubeId) === rounded) return;
-    this.reportedScreenDurations.set(youtubeId, rounded);
-    if (this.festivalClient.online) {
-      void this.festivalClient.reportProgrammeDuration(this.activeVenue, youtubeId, rounded);
-    }
-  };
-
   private readonly jukeboxMessage = (event: MessageEvent): void => {
     if (!this.jukeboxFrame || event.source !== this.jukeboxFrame.contentWindow) return;
     if (typeof event.data !== 'string') return;

@@ -429,23 +429,6 @@ export class FestivalClient {
     return this.action('/api/jukebox/request', { trackId });
   }
 
-  /**
-   * How long a venue's current work actually runs.
-   *
-   * A different endpoint from the jukebox's, and deliberately so: they write
-   * two different tables on the service. The jukebox's feeds the record
-   * player's own running order; this one feeds the programme clock that every
-   * venue screen is synchronised to. Sending a film's length to the jukebox
-   * endpoint puts it somewhere the programme never reads.
-   */
-  async reportProgrammeDuration(venue: string, youtubeId: string, seconds: number): Promise<void> {
-    if (!this.session || this.closed) return;
-    await this.request(`/api/programme/${encodeURIComponent(venue)}/duration`, {
-      method: 'POST',
-      body: JSON.stringify({ youtubeId, seconds }),
-    }, false).catch(() => undefined);
-  }
-
   async reportJukeboxDuration(youtubeId: string, seconds: number): Promise<void> {
     if (!this.session || this.closed) return;
     await this.request('/api/jukebox/duration', {

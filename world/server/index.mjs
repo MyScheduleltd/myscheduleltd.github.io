@@ -994,7 +994,20 @@ const settleSchedule = (venue) => {
     const runs = durationOf(playing) * 1000;
     if (Date.now() - schedule.startedAt < runs) break;
     schedule.startedAt += runs;
-    if (schedule.activeSpecialYoutubeId) {
+    // A requested track is taken first, exactly as the explicit advance does.
+    //
+    // This was the whole of why an ordered track did not arrive when it was
+    // meant to. The queue was only ever drained by /advance, which one client
+    // calls when it watches a work end — but a programme also moves on by the
+    // clock, here, whenever anybody reads it. Whichever happened first won, and
+    // when it was this one the queue was stepped straight past and the request
+    // was skipped outright. A venue nobody happened to be watching skipped
+    // every request made to it.
+    const waiting = isDjVenue(venue) ? venueQueues[venue].shift() : undefined;
+    if (waiting) {
+      schedule.activeSpecialYoutubeId = null;
+      schedule.currentIndex = Math.max(0, schedule.order.indexOf(waiting.youtubeId));
+    } else if (schedule.activeSpecialYoutubeId) {
       schedule.activeSpecialYoutubeId = null;
       schedule.currentIndex = (schedule.currentIndex + 1) % schedule.order.length;
     } else if (schedule.special && schedule.special.startsAt <= Date.now()) {
