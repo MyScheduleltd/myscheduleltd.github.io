@@ -524,3 +524,131 @@ export function dressBuildings(
 
   return { walls: dressed, refused, signs: keepClear.length };
 }
+
+/** A room the interior pass can dress, in world coordinates. */
+export interface DressableRoom {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  floorY: number;
+  ceilingY?: number;
+  /** Open to the sky: no ducts, and the clutter is weather-beaten. */
+  outdoor?: boolean;
+}
+
+/**
+ * Dressing for the rooms.
+ *
+ * Everything so far has been outdoors, and it left the interiors as the
+ * cleanest places in the festival — the club especially, which is where a
+ * visitor spends the most continuous time and which now reads as plainer than
+ * the street above it.
+ *
+ * A room takes a different vocabulary from a facade, and using the wrong one is
+ * how this goes wrong. No windows: there is nothing to see through them. No
+ * cornice: a room has no roofline. What a room has is services — the ducting
+ * and conduit that a building hides outside and shows inside — and the things
+ * that end up stacked against a wall because there is nowhere else to put them.
+ *
+ * Every piece is tested against the world's own collision before it is placed,
+ * so nothing lands in the bar, the booth, the stair or the dance floor. That
+ * test is the whole safety of this: the rooms are full of fittings this module
+ * knows nothing about.
+ */
+export function dressInteriors(
+  scene: THREE.Object3D,
+  rooms: DressableRoom[],
+  /** The world's own collision, so nothing is placed inside something. */
+  blocked: (x: number, z: number, y: number) => boolean,
+): number {
+  const unitBox = new THREE.BoxGeometry(1, 1, 1);
+  const duct = new THREE.MeshStandardMaterial({ color: 0x54504b, roughness: 0.66, metalness: 0.36 });
+  const fitting = new THREE.MeshStandardMaterial({ color: 0x2a2724, roughness: 0.84, metalness: 0.18 });
+  const crate = new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 0.93, metalness: 0.02 });
+
+  let placed = 0;
+  const put = (
+    width: number,
+    height: number,
+    depth: number,
+    x: number,
+    y: number,
+    z: number,
+    surface: THREE.Material,
+    spin = 0,
+  ) => {
+    const piece = new THREE.Mesh(unitBox, surface);
+    piece.scale.set(width, height, depth);
+    piece.position.set(x, y, z);
+    piece.rotation.y = spin;
+    piece.userData.wornDressing = true;
+    piece.receiveShadow = true;
+    scene.add(piece);
+    placed += 1;
+  };
+
+  for (const room of rooms) {
+    const seed = new THREE.Vector3(room.minX, room.floorY, room.minZ);
+    const spanX = room.maxX - room.minX;
+    const spanZ = room.maxZ - room.minZ;
+    let salt = 0;
+
+    // Services along the ceiling. Two runs, set in from the walls, with the
+    // hangers that hold them up — a duct floating with nothing carrying it is
+    // the tell that it was placed rather than installed.
+    if (!room.outdoor && room.ceilingY !== undefined) {
+      const under = room.ceilingY - 0.75;
+      for (const offset of [0.16, 0.78]) {
+        const z = room.minZ + spanZ * offset;
+        if (blocked(room.minX + spanX / 2, z, under)) continue;
+        put(spanX - 2.4, 0.5, 0.72, room.minX + spanX / 2, under, z, duct);
+        for (let hanger = 0; hanger < 4; hanger += 1) {
+          const x = room.minX + 1.6 + (spanX - 3.2) * (hanger / 3);
+          put(0.12, 0.62, 0.12, x, under + 0.55, z, fitting);
+        }
+      }
+    }
+
+    // Conduit and junction boxes down the walls, at the height services run.
+    for (const wall of [
+      { x: room.minX + 0.55, z: 0, along: 'z' as const },
+      { x: room.maxX - 0.55, z: 0, along: 'z' as const },
+    ]) {
+      const runs = Math.max(2, Math.floor(spanZ / 9));
+      for (let index = 0; index < runs; index += 1) {
+        const z = room.minZ + (spanZ * (index + 0.5)) / runs;
+        const y = room.floorY + 2.9;
+        if (blocked(wall.x, z, y)) continue;
+        put(0.16, 0.16, spanZ / runs - 1.4, wall.x, y, z, fitting);
+        // A box on the run, which is what makes it read as electrical rather
+        // than as a stripe painted on the wall.
+        put(0.34, 0.5, 0.4, wall.x, y - 0.5, z, duct);
+      }
+    }
+
+    // And the things stacked where nobody looks. Corners first, because that is
+    // where they end up.
+    for (let index = 0; index < 6; index += 1) {
+      const alongX = placedRandom(seed, (salt += 1)) > 0.5;
+      const nearMin = placedRandom(seed, (salt += 1)) > 0.5;
+      const x = alongX
+        ? room.minX + 1.4 + placedRandom(seed, (salt += 1)) * (spanX - 2.8)
+        : (nearMin ? room.minX + 1.2 : room.maxX - 1.2);
+      const z = alongX
+        ? (nearMin ? room.minZ + 1.2 : room.maxZ - 1.2)
+        : room.minZ + 1.4 + placedRandom(seed, (salt += 1)) * (spanZ - 2.8);
+      const height = 0.7 + placedRandom(seed, (salt += 1)) * 0.5;
+      if (blocked(x, z, room.floorY + height)) continue;
+      const spin = (placedRandom(seed, (salt += 1)) - 0.5) * 0.7;
+      put(1.1, height, 0.9, x, room.floorY + height / 2, z, crate, spin);
+      // Half of them are two high, because one crate is litter and two is
+      // storage.
+      if (placedRandom(seed, (salt += 1)) > 0.5) {
+        put(0.9, height * 0.8, 0.8, x + 0.1, room.floorY + height * 1.4, z - 0.08, crate, spin * 1.6);
+      }
+    }
+  }
+
+  return placed;
+}

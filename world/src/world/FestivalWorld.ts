@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, taperedPrism, warpWorldGeometry } from './WornStyle';
-import { dressBuildings } from './WornArchitecture';
+import { dressBuildings, dressInteriors } from './WornArchitecture';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import type { VenueKey } from '../data/catalogue';
 import { AmbientAudio } from './AmbientAudio';
@@ -1654,15 +1654,56 @@ export class FestivalWorld {
       // Fetched here rather than on load, so a visitor who never asks for the
       // style never pays for the font.
       loadBrandFont();
-      const dressing = dressBuildings(
-        this.scene,
-        this.publicScreenBoxes(),
-        this.venueVolumes(),
-        this.venueVolumes(),
-      );
+      // Every screen in the festival, not a hand-written list of plots.
+      //
+      // The list named the Palace, the Drive-In, the Shore and the temple, and
+      // quietly left out the club's screen and the deck's — so a cable was tied
+      // to the rooftop's. Derived from the screens themselves it cannot go out
+      // of step with them again, and a venue added later is covered without
+      // anybody remembering to add it here.
+      const offLimits = [
+        ...this.venueVolumes(),
+        ...this.publicScreenBoxes().map((box) => box.clone().expandByScalar(4)),
+      ];
+      const dressing = dressBuildings(this.scene, this.publicScreenBoxes(), offLimits, offLimits);
       // After the dressing, so the cornices and shopfronts settle with the
       // walls they belong to rather than staying dead square against them.
-      this.wornWarped += warpWorldGeometry(this.scene, this.wornWarpAmount, this.venueVolumes());
+      this.wornWarped += warpWorldGeometry(this.scene, this.wornWarpAmount, offLimits);
+      // The rooms, which every pass so far has walked straight past — they are
+      // now the cleanest places in the festival, and the club is where a
+      // visitor spends the most continuous time.
+      //
+      // Once, and only once. This whole pass is re-run several times as the
+      // world finishes building itself, which is right for the walls — a mesh
+      // that did not exist yet still needs dressing — but wrong for a room:
+      // rooms are all built before the gate closes, and running again simply
+      // stacked a second duct inside the first. The count said 188 where the
+      // arithmetic said 58, which is how I found it.
+      if (!this.wornRoomsDressed) {
+        this.wornRoomsDressed = true;
+        this.wornInterior += dressInteriors(
+        this.scene,
+        [
+          {
+            minX: clubBounds.roomMinX + 1,
+            maxX: clubBounds.roomMaxX - 1,
+            minZ: clubBounds.roomMinZ + 1,
+            maxZ: clubBounds.roomMaxZ - 1,
+            floorY: CLUB_FLOOR_Y,
+            ceilingY: CLUB_FLOOR_Y + CLUB_ROOM_HEIGHT,
+          },
+          {
+            minX: rooftopBounds.minX + 2,
+            maxX: rooftopBounds.maxX - 2,
+            minZ: rooftopBounds.deckMinZ + 2,
+            maxZ: rooftopBounds.maxZ - 2,
+            floorY: ROOF_Y,
+            outdoor: true,
+          },
+        ],
+          (x, z, y) => this.staticCollides(x, z, y),
+        );
+      }
       this.wornBuildings += dressing.walls;
       this.wornSignsSpared += dressing.refused;
       this.wornSigns = dressing.signs;
@@ -1675,6 +1716,10 @@ export class FestivalWorld {
   private wornBuildings = 0;
 
   private wornWarped = 0;
+
+  private wornInterior = 0;
+
+  private wornRoomsDressed = false;
 
   private wornWarpAmount = 1;
 
@@ -1712,6 +1757,7 @@ export class FestivalWorld {
       buildingsDressed: this.wornBuildings,
       dressableWalls: dressable,
       surfacesWarped: this.wornWarped,
+      interiorPieces: this.wornInterior,
       // Where the sole actually ends up, against the ground under it. The
       // arithmetic said one thing and the road said another, so this measures
       // the thing itself.
