@@ -1703,23 +1703,14 @@ export class FestivalWorld {
       loadBrandFont();
       // Every screen in the festival, not a hand-written list of plots.
       //
-      // The list named the Palace, the Drive-In, the Shore and the temple, and
-      // quietly left out the club's screen and the deck's — so a cable was tied
-      // to the rooftop's. Derived from the screens themselves it cannot go out
-      // of step with them again, and a venue added later is covered without
-      // anybody remembering to add it here.
+      // Derived from the screens themselves rather than named one by one, so it
+      // cannot go out of step with them, and a venue added later is covered
+      // without anybody remembering to come back here.
       const offLimits = [
         ...this.venueVolumes(),
         ...this.publicScreenBoxes().map((box) => box.clone().expandByScalar(4)),
       ];
-      const dressing = dressBuildings(
-        this.scene,
-        this.publicScreenBoxes(),
-        offLimits,
-        offLimits,
-        (x, z, y) => this.staticCollides(x, z, y),
-        (x, z, y) => this.groundHeightAt(x, z, y),
-      );
+      const dressing = dressBuildings(this.scene, this.publicScreenBoxes(), offLimits);
       // After the dressing, so the cornices and shopfronts settle with the
       // walls they belong to rather than staying dead square against them.
       this.wornWarped += warpWorldGeometry(this.scene, this.wornWarpAmount, offLimits);
@@ -1761,16 +1752,6 @@ export class FestivalWorld {
       this.wornBuildings += dressing.walls;
       this.wornSignsSpared += dressing.refused;
       this.wornSigns = dressing.signs;
-      // Accumulated, like the wall count above and for the same reason. This
-      // pass runs again as the world finishes building, and by the second run
-      // every wall is already marked dressed — so the later runs legitimately
-      // find nothing and report zero, and assigning their answer wipes the real
-      // one. Three separate counters in this file have now told me a working
-      // feature was doing nothing, which is a strong argument that a tally of
-      // work done should never be assigned, only added to.
-      this.wornCables += dressing.cables;
-      this.wornCablesFouled += dressing.cablesFouled;
-      this.wornRoofs += dressing.roofs;
     }
     const patched = applyWornStyle(this.scene);
     setWornStyle(amount, steps, grain);
@@ -1790,12 +1771,6 @@ export class FestivalWorld {
   private wornSignsSpared = 0;
 
   private wornSigns = 0;
-
-  private wornCables = 0;
-
-  private wornCablesFouled = 0;
-
-  private wornRoofs = 0;
 
   wornStyleReviewSnapshot(): unknown {
     const settings = wornStyleSettings();
@@ -1828,9 +1803,6 @@ export class FestivalWorld {
       dressableWalls: dressable,
       surfacesWarped: this.wornWarped,
       interiorPieces: this.wornInterior,
-      cablesStrung: this.wornCables,
-      cablesRefusedForFouling: this.wornCablesFouled,
-      roofsAvailable: this.wornRoofs,
       // Where the sole actually ends up, against the ground under it. The
       // arithmetic said one thing and the road said another, so this measures
       // the thing itself.

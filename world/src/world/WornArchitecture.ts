@@ -7,8 +7,8 @@ import * as THREE from 'three';
  * the slabs they always were. The instinct is to give them more interesting
  * shapes — but look at what the reference images actually do. The night-city
  * courtyard is built almost entirely from plain boxes. What makes it read as a
- * city is everything stuck to them: air-con units, railings, ledges, the
- * cables slung between one roof and the next. The silhouette is not the thing.
+ * city is everything stuck to them: air-con units, railings, ledges, the wear
+ * around a doorway. The silhouette is not the thing.
  * The clutter is the thing.
  *
  * So nothing here changes a building's shape. It finds the slabs already in the
@@ -67,33 +67,9 @@ export function dressBuildings(
    * sees them, and an air-con unit parked across one covers the film.
    */
   keepClearExtra: THREE.Box3[] = [],
-  /**
-   * Structures no cable may be tied to.
-   *
-   * A cinema is not a tenement, and lines strung off the Palace's roof made it
-   * look like a squat.
-   *
-   * Deliberately narrow. The first cut of this refused *all* dressing inside
-   * these volumes and left one wall standing out of twenty — because the large
-   * blocks in this world mostly are the venues, so excluding them excluded
-   * nearly everything. They still take cornices, windows and paper like any
-   * other building. They simply do not get washing lines.
-   */
-  noCables: THREE.Box3[] = [],
   /** Structures that take no dressing at all — the theatres and their screens. */
   noDress: THREE.Box3[] = [],
-  /** The world's own collision, so a cable can be told what it would pass through. */
-  blocked: (x: number, z: number, y: number) => boolean = () => false,
-  /**
-   * The height of whatever surface is underfoot at a point.
-   *
-   * Collision cannot answer this. Roofs carry no colliders — nobody walks on
-   * most of them — so a cable drawn through one is blocked by nothing and the
-   * path test passes it happily. What catches it is asking how high the ground
-   * is there and noticing the cable is under it.
-   */
-  surfaceAt: (x: number, z: number, y: number) => number = () => -Infinity,
-): { walls: number; refused: number; signs: number; cables: number; cablesFouled: number; roofs: number } {
+): { walls: number; refused: number; signs: number } {
   scene.updateMatrixWorld(true);
 
   // Everything unlit is a sign, a screen or a neon band — the things a visitor
@@ -429,156 +405,7 @@ export function dressBuildings(
     if (!overlapsSign(runsAt)) piece(0.28, size.y - 1.8, 0.28, runsAt, metal);
   }
 
-  // Cables slung between roofs.
-  //
-  // Everything above dresses a building. This is the only thing that crosses
-  // the space *between* two of them, which is most of what makes a street read
-  // as a street rather than as a row of separate objects — it is the first
-  // thing the eye follows in the reference images, and the world has nothing
-  // like it.
-  //
-  // Each roof is joined to its nearest neighbour, once, and only where they are
-  // close enough that a cable would plausibly span the gap. A sag is drawn as
-  // three straight segments rather than a curve, because at this distance a
-  // catenary and a shallow triangle are the same picture and one of them is
-  // three boxes.
-  const cable = new THREE.MeshStandardMaterial({ color: 0x14151a, roughness: 0.9, metalness: 0.1 });
-  const roofs = walls
-    .filter(({ at }) => !at.equals(new THREE.Vector3()))
-    .filter(({ at }) => !noCables.some((box) => box.containsPoint(at)))
-    .map(({ size, at }) => new THREE.Vector3(at.x, at.y + size.y / 2, at.z));
-  const strung = new Set<number>();
-  let cables = 0;
-  let cablesFouled = 0;
-  for (let index = 0; index < roofs.length; index += 1) {
-    let nearest = -1;
-    let nearestGap = 34;
-    for (let other = 0; other < roofs.length; other += 1) {
-      if (other === index) continue;
-      const gap = roofs[index].distanceTo(roofs[other]);
-      if (gap > 9 && gap < nearestGap) {
-        nearestGap = gap;
-        nearest = other;
-      }
-    }
-    if (nearest < 0) continue;
-    // One cable per pair, not two.
-    const pair = Math.min(index, nearest) * 1000 + Math.max(index, nearest);
-    if (strung.has(pair)) continue;
-    strung.add(pair);
-
-    // Anchored a little over the parapet rather than level with the roof deck,
-    // so the line leaves the building instead of starting inside it.
-    // Anchored above whichever is higher: the top of the wall, or the surface
-    // actually there. A wall is one mesh of several and its top is often below
-    // the roof it belongs to, which is how a cable came to start underneath a
-    // deck and climb out through it.
-    const from = roofs[index].clone();
-    from.setY(Math.max(from.y, surfaceAt(from.x, from.z, from.y)) + 2.4);
-    const to = roofs[nearest].clone();
-    to.setY(Math.max(to.y, surfaceAt(to.x, to.z, to.y)) + 2.4);
-    // Anchored well above the roof, and the sag kept shallow enough that the
-    // lowest point of the span still clears it.
-    //
-    // The first version anchored just over the parapet and then sagged further
-    // than that clearance, so the middle of every cable hung below the roof it
-    // had just left — and the surface test, correctly, refused all five of
-    // them. A cable is strung between two poles for exactly this reason.
-    const sag = Math.min(1.1, nearestGap * 0.05);
-    const waypoints = [
-      from,
-      new THREE.Vector3().lerpVectors(from, to, 0.35).setY(Math.min(from.y, to.y) - sag),
-      new THREE.Vector3().lerpVectors(from, to, 0.65).setY(Math.min(from.y, to.y) - sag),
-      to,
-    ];
-    // Nothing had ever asked what was between two roofs. A cable was drawn
-    // straight from one to the other and any building standing in the way — the
-    // deck most visibly — was simply passed through. The line is walked first
-    // and dropped whole if it would go through anything: a cable that stops
-    // halfway is worse than a pair of roofs with no cable between them.
-    let fouled = false;
-    for (let leg = 0; leg < waypoints.length - 1 && !fouled; leg += 1) {
-      const start = waypoints[leg];
-      const end = waypoints[leg + 1];
-      const steps = Math.max(3, Math.ceil(start.distanceTo(end) / 1.2));
-      for (let step = 0; step <= steps; step += 1) {
-        const t = step / steps;
-        const x = start.x + (end.x - start.x) * t;
-        const y = start.y + (end.y - start.y) * t;
-        const z = start.z + (end.z - start.z) * t;
-        // Through something solid, or underneath the surface it is crossing.
-        if (blocked(x, z, y) || y < surfaceAt(x, z, y) + 0.6) {
-          fouled = true;
-          break;
-        }
-      }
-    }
-    if (fouled) {
-      cablesFouled += 1;
-      continue;
-    }
-    cables += 1;
-
-    for (let leg = 0; leg < waypoints.length - 1; leg += 1) {
-      const start = waypoints[leg];
-      const end = waypoints[leg + 1];
-      const span = start.distanceTo(end);
-      const line = new THREE.Mesh(unitBox, cable);
-      line.scale.set(0.09, 0.09, span);
-      line.position.copy(start).lerp(end, 0.5);
-      line.lookAt(end);
-      line.userData.wornDressing = true;
-      scene.add(line);
-    }
-  }
-
-  // And the road itself.
-  //
-  // A street is not only its buildings. The reference's ground carries as much
-  // as its walls do — a manhole, a patch where it was dug up and filled badly,
-  // worn markings — and ours is an unbroken sheet of one colour from the gate
-  // to the shore, which is the flattest surface in the world and the one a
-  // visitor spends the whole time looking at.
-  //
-  // Laid down the road's own centre line at uneven intervals, and only where
-  // the ground is clear. Everything is a hair above the surface: coplanar with
-  // it would tie the depth buffer exactly as the windows did.
-  const asphalt = new THREE.MeshStandardMaterial({ color: 0x22242a, roughness: 0.97, metalness: 0.02 });
-  const iron = new THREE.MeshStandardMaterial({ color: 0x2e2b28, roughness: 0.82, metalness: 0.24 });
-  const roadZ = [-8, 4, 13, 22, 30, 38, 46];
-  let roadSalt = 500;
-  for (const z of roadZ) {
-    const seed = new THREE.Vector3(0, 0, z);
-    // Across the road rather than down its middle: the centre is where people
-    // walk, and a manhole in the middle of the carpet reads as a mistake.
-    const x = (placedRandom(seed, (roadSalt += 1)) - 0.5) * 22;
-    const y = 0.16;
-    if (placedRandom(seed, (roadSalt += 1)) > 0.45) {
-      const cover = new THREE.Mesh(unitBox, iron);
-      cover.scale.set(1.5, 0.06, 1.5);
-      cover.position.set(x, y, z);
-      cover.rotation.y = placedRandom(seed, roadSalt) * Math.PI;
-      cover.userData.wornDressing = true;
-      scene.add(cover);
-    }
-    // A patch, always, and never the same size twice.
-    const patch = new THREE.Mesh(unitBox, asphalt);
-    patch.scale.set(
-      2.4 + placedRandom(seed, (roadSalt += 1)) * 4,
-      0.04,
-      1.8 + placedRandom(seed, (roadSalt += 1)) * 3.4,
-    );
-    patch.position.set(
-      x + (placedRandom(seed, (roadSalt += 1)) - 0.5) * 9,
-      y - 0.02,
-      z + (placedRandom(seed, (roadSalt += 1)) - 0.5) * 5,
-    );
-    patch.rotation.y = (placedRandom(seed, roadSalt) - 0.5) * 0.3;
-    patch.userData.wornDressing = true;
-    scene.add(patch);
-  }
-
-  return { walls: dressed, refused, signs: keepClear.length, cables, cablesFouled, roofs: roofs.length };
+  return { walls: dressed, refused, signs: keepClear.length };
 }
 
 /** A room the interior pass can dress, in world coordinates. */
