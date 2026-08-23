@@ -1601,6 +1601,29 @@ export class FestivalWorld {
    * dimensions taken through the object's scale, because that is what actually
    * determines how large the picture is in the world.
    */
+  /**
+   * The three theatres, which no cable may be tied to. A cinema is not a
+   * tenement, and lines strung off the Palace made it look like a squat.
+   *
+   * Only the theatres: an earlier version listed every room as well and
+   * refused all dressing inside them, which left one dressed wall out of
+   * twenty — the large blocks in this world mostly are the venues.
+   */
+  private venueVolumes(): THREE.Box3[] {
+    const box = (minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number) =>
+      new THREE.Box3(new THREE.Vector3(minX, minY, minZ), new THREE.Vector3(maxX, maxY, maxZ));
+    return [
+      // The Palace, off its carpet at (-35, -39.5), 21 by 17.
+      box(-47, -2, -50, -23, 26, -29),
+      // The Drive-In, off its asphalt at (35, -24.5), 25 by 22.
+      box(21, -2, -37, 49, 26, -12),
+      // The Shore's screen and its two masts.
+      box(-12, -2, -50, 12, 26, -41),
+      // The temple, for the same reason.
+      box(TEMPLE.stepMinX - 2, -2, TEMPLE.minZ - 2, TEMPLE.maxX + 2, 26, TEMPLE.maxZ + 2),
+    ];
+  }
+
   private publicScreenBoxes(): THREE.Box3[] {
     const boxes: THREE.Box3[] = [];
     for (const projector of this.projectors.values()) {
@@ -1630,7 +1653,7 @@ export class FestivalWorld {
       // Fetched here rather than on load, so a visitor who never asks for the
       // style never pays for the font.
       loadBrandFont();
-      const dressing = dressBuildings(this.scene, this.publicScreenBoxes());
+      const dressing = dressBuildings(this.scene, this.publicScreenBoxes(), this.venueVolumes());
       this.wornBuildings += dressing.walls;
       this.wornSignsSpared += dressing.refused;
       this.wornSigns = dressing.signs;

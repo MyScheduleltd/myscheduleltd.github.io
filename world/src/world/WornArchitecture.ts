@@ -67,6 +67,19 @@ export function dressBuildings(
    * sees them, and an air-con unit parked across one covers the film.
    */
   keepClearExtra: THREE.Box3[] = [],
+  /**
+   * Structures no cable may be tied to.
+   *
+   * A cinema is not a tenement, and lines strung off the Palace's roof made it
+   * look like a squat.
+   *
+   * Deliberately narrow. The first cut of this refused *all* dressing inside
+   * these volumes and left one wall standing out of twenty — because the large
+   * blocks in this world mostly are the venues, so excluding them excluded
+   * nearly everything. They still take cornices, windows and paper like any
+   * other building. They simply do not get washing lines.
+   */
+  noCables: THREE.Box3[] = [],
 ): { walls: number; refused: number; signs: number } {
   scene.updateMatrixWorld(true);
 
@@ -98,6 +111,11 @@ export function dressBuildings(
   // Dark and a little reflective, so a window catches the sky rather than
   // sitting on the wall as a flat patch.
   const glass = new THREE.MeshStandardMaterial({ color: 0x14171d, roughness: 0.24, metalness: 0.5 });
+  // Two papers, because a wall of identical bills reads as wallpaper. Both are
+  // taken off the company's own seashell rather than invented, one of them
+  // sunned down toward the grey it would go outdoors.
+  const paper = new THREE.MeshStandardMaterial({ color: 0xd8cfc4, roughness: 0.96, metalness: 0 });
+  const paperAlt = new THREE.MeshStandardMaterial({ color: 0x9a8f86, roughness: 0.96, metalness: 0 });
 
   const walls: Array<{ mesh: THREE.Mesh; size: THREE.Vector3; at: THREE.Vector3 }> = [];
   scene.traverse((object) => {
@@ -280,8 +298,13 @@ export function dressBuildings(
     ]) {
       const columns = Math.floor((wall.span - 2) / 3.4);
       if (columns < 1) continue;
-      const out = 0.5 + 0.05 / wall.thickness;
-      const frameOut = 0.5 + 0.02 / wall.thickness;
+      // The frame stands proud and the glass sits back inside it. They used to
+      // be given depths and offsets that put their front faces on exactly the
+      // same plane, and two surfaces fighting over one plane is what the moire
+      // across the glass was — not a texture, a tie the depth buffer could not
+      // break. Now there is a clear tenth of a unit between them.
+      const frameOut = 0.5 + 0.08 / wall.thickness;
+      const out = 0.5 - 0.02 / wall.thickness;
       for (let row = 0; row < storeys; row += 1) {
         const up = -0.5 + (3.2 + row * 3.6) / size.y;
         if (up > 0.42) break;
@@ -295,13 +318,69 @@ export function dressBuildings(
             ? place(along, up, wall.sign * frameOut)
             : place(wall.sign * frameOut, up, along);
           if (wall.axis === 'z') {
-            piece(1.9, 1.5, 0.16, frameSeat, concrete);
-            piece(1.5, 1.15, 0.1, seat, glass);
+            piece(1.9, 1.5, 0.2, frameSeat, concrete);
+            piece(1.46, 1.1, 0.1, seat, glass);
           } else {
-            piece(0.16, 1.5, 1.9, frameSeat, concrete);
-            piece(0.1, 1.15, 1.5, seat, glass);
+            piece(0.2, 1.5, 1.9, frameSeat, concrete);
+            piece(0.1, 1.1, 1.46, seat, glass);
           }
         }
+      }
+    }
+
+    // A shopfront band at street level.
+    //
+    // The reference building is three distinct storeys and the shopfront is
+    // what makes the bottom one read as ground: a darker, deeper band with its
+    // own fascia over it, at the height a person actually meets a building.
+    // Ours are single extrusions, so the whole wall reads as one surface from
+    // the pavement to the roof, and nothing tells you where the door would be.
+    // This is the only piece here that changes a building's shape rather than
+    // hanging something on it.
+    const shopHeight = Math.min(4.2, size.y * 0.3);
+    const shopTop = -0.5 + shopHeight / size.y;
+    piece(size.x + PROUD * 1.4, shopHeight, size.z + PROUD * 1.4, place(0, -0.5 + shopHeight / (2 * size.y), 0), dark);
+    // The fascia over it, which is where a shop's name would go — proud of the
+    // band so it casts a line of shadow down the front.
+    piece(size.x + PROUD * 2, 0.42, size.z + PROUD * 2, place(0, shopTop, 0), concrete);
+
+    // Paper on the walls.
+    //
+    // Bills, posters, flyers: the layer of a street that nobody planned. They
+    // are abstract by instruction — blocks and bars, no lettering — because
+    // words on a wall in a world with two real languages either say something
+    // nobody chose or say nothing in a way that reads as a mistake.
+    for (const board of [
+      { axis: 'z' as const, sign: 1, span: size.x, thickness: size.z },
+      { axis: 'z' as const, sign: -1, span: size.x, thickness: size.z },
+      { axis: 'x' as const, sign: 1, span: size.z, thickness: size.x },
+      { axis: 'x' as const, sign: -1, span: size.z, thickness: size.x },
+    ]) {
+      const bills = Math.min(3, Math.floor(board.span / 9));
+      for (let index = 0; index < bills; index += 1) {
+        const along = (placedRandom(at, (salt += 1)) - 0.5) * 0.62;
+        // Pasted where a hand reaches, which is what makes it read as pasted
+        // rather than as installed.
+        const up = -0.5 + (1.4 + placedRandom(at, (salt += 1)) * 1.6) / size.y;
+        const out = 0.5 + 0.03 / board.thickness;
+        const seat = board.axis === 'z'
+          ? place(along, up, board.sign * out)
+          : place(board.sign * out, up, along);
+        if (keepClear.some((box) => box.containsPoint(seat))) continue;
+        const wide = 0.75 + placedRandom(at, (salt += 1)) * 0.5;
+        const tall = 1.0 + placedRandom(at, (salt += 1)) * 0.6;
+        const sheet = placedRandom(at, salt) > 0.5 ? paper : paperAlt;
+        if (board.axis === 'z') piece(wide, tall, 0.05, seat, sheet);
+        else piece(0.05, tall, wide, seat, sheet);
+        // One dark block on it, so it is a printed thing rather than a blank
+        // rectangle — the mark a poster makes at ten metres, which is all
+        // anybody ever sees of one.
+        const markOut = 0.5 + 0.06 / board.thickness;
+        const markSeat = board.axis === 'z'
+          ? place(along, up + 0.18 / size.y, board.sign * markOut)
+          : place(board.sign * markOut, up + 0.18 / size.y, along);
+        if (board.axis === 'z') piece(wide * 0.62, tall * 0.34, 0.03, markSeat, dark);
+        else piece(0.03, tall * 0.34, wide * 0.62, markSeat, dark);
       }
     }
 
@@ -330,6 +409,7 @@ export function dressBuildings(
   const cable = new THREE.MeshStandardMaterial({ color: 0x14151a, roughness: 0.9, metalness: 0.1 });
   const roofs = walls
     .filter(({ at }) => !at.equals(new THREE.Vector3()))
+    .filter(({ at }) => !noCables.some((box) => box.containsPoint(at)))
     .map(({ size, at }) => new THREE.Vector3(at.x, at.y + size.y / 2, at.z));
   const strung = new Set<number>();
   for (let index = 0; index < roofs.length; index += 1) {
@@ -369,6 +449,52 @@ export function dressBuildings(
       line.userData.wornDressing = true;
       scene.add(line);
     }
+  }
+
+  // And the road itself.
+  //
+  // A street is not only its buildings. The reference's ground carries as much
+  // as its walls do — a manhole, a patch where it was dug up and filled badly,
+  // worn markings — and ours is an unbroken sheet of one colour from the gate
+  // to the shore, which is the flattest surface in the world and the one a
+  // visitor spends the whole time looking at.
+  //
+  // Laid down the road's own centre line at uneven intervals, and only where
+  // the ground is clear. Everything is a hair above the surface: coplanar with
+  // it would tie the depth buffer exactly as the windows did.
+  const asphalt = new THREE.MeshStandardMaterial({ color: 0x22242a, roughness: 0.97, metalness: 0.02 });
+  const iron = new THREE.MeshStandardMaterial({ color: 0x2e2b28, roughness: 0.82, metalness: 0.24 });
+  const roadZ = [-8, 4, 13, 22, 30, 38, 46];
+  let roadSalt = 500;
+  for (const z of roadZ) {
+    const seed = new THREE.Vector3(0, 0, z);
+    // Across the road rather than down its middle: the centre is where people
+    // walk, and a manhole in the middle of the carpet reads as a mistake.
+    const x = (placedRandom(seed, (roadSalt += 1)) - 0.5) * 22;
+    const y = 0.16;
+    if (placedRandom(seed, (roadSalt += 1)) > 0.45) {
+      const cover = new THREE.Mesh(unitBox, iron);
+      cover.scale.set(1.5, 0.06, 1.5);
+      cover.position.set(x, y, z);
+      cover.rotation.y = placedRandom(seed, roadSalt) * Math.PI;
+      cover.userData.wornDressing = true;
+      scene.add(cover);
+    }
+    // A patch, always, and never the same size twice.
+    const patch = new THREE.Mesh(unitBox, asphalt);
+    patch.scale.set(
+      2.4 + placedRandom(seed, (roadSalt += 1)) * 4,
+      0.04,
+      1.8 + placedRandom(seed, (roadSalt += 1)) * 3.4,
+    );
+    patch.position.set(
+      x + (placedRandom(seed, (roadSalt += 1)) - 0.5) * 9,
+      y - 0.02,
+      z + (placedRandom(seed, (roadSalt += 1)) - 0.5) * 5,
+    );
+    patch.rotation.y = (placedRandom(seed, roadSalt) - 0.5) * 0.3;
+    patch.userData.wornDressing = true;
+    scene.add(patch);
   }
 
   return { walls: dressed, refused, signs: keepClear.length };
