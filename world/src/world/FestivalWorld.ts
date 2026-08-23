@@ -6384,6 +6384,9 @@ export class FestivalWorld {
       // The gate's live preview recolours by this, so a restyled part has to
       // carry it exactly as the old one did or the colour pickers go dead.
       if (markPalette) part.userData.paletteSlot = slot;
+      // A person is not a wall: skin and hair take the shading but not the
+      // surface grain.
+      if (slot === 'skin' || slot === 'hair') part.material.userData.wornNoGrain = true;
       target.add(part);
       return part;
     };
@@ -6495,6 +6498,9 @@ export class FestivalWorld {
         target,
       );
       if (markPalette) part.userData.paletteSlot = slot;
+      if (slot === 'skin' || slot === 'hair') {
+        (part.material as THREE.Material).userData.wornNoGrain = true;
+      }
       return part;
     };
     const torso = addPart([1.02, 1.38, 0.62], [0, 1.78, 0], 'top');

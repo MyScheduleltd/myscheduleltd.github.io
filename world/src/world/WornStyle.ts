@@ -84,23 +84,26 @@ const WORN_FRAGMENT = /* glsl */ `
   {
     // Surface first, so the dither below quantises a grained colour rather
     // than laying grain over a quantised one.
+    #ifndef WORN_NO_GRAIN
     if (uWornGrain > 0.0) {
-      // Four scales, because grime is not one thing. Fine aggregate, a coarser
-      // speckle over it, runs stretched down the vertical so they read as
-      // something that has dripped rather than something sprayed on, and broad
-      // blotching underneath the lot for the damp corner and the bleached wall.
-      float aggregate = wornHash(floor(vWornWorld * 38.0));
-      float speckle = wornHash(floor(vWornWorld * 12.0 + 3.7));
-      float runs = wornSmoothNoise(vec3(vWornWorld.x * 3.4, vWornWorld.y * 0.32, vWornWorld.z * 3.4));
-      float blotch = wornSmoothNoise(vWornWorld * 0.52);
-      float wear = mix(0.66, 1.12, aggregate)
-        * mix(0.80, 1.08, speckle)
-        * mix(0.76, 1.10, runs)
-        * mix(0.82, 1.12, blotch);
-      // Past one this stops mixing and starts overshooting, which is the point:
-      // it is the dial for how far past plausible the grime is allowed to go.
-      gl_FragColor.rgb = clamp(gl_FragColor.rgb * mix(1.0, wear, uWornGrain), 0.0, 1.0);
+      // Centred on zero, and added rather than multiplied.
+      //
+      // The first version got this wrong in a way that was guaranteed to read
+      // as filth: each of the four scales ran from about 0.7 up to 1.1, so
+      // every one of them darkened on average, and multiplying four together
+      // compounded that into deep blotches. Darkening a surface in patches is
+      // the definition of painting dirt onto it. A surface that is merely made
+      // of something varies *both ways* around its own colour — some grains
+      // catch the light, some sit in shadow — and the average stays where the
+      // colour was.
+      float aggregate = wornHash(floor(vWornWorld * 38.0)) - 0.5;
+      float speckle = wornHash(floor(vWornWorld * 12.0 + 3.7)) - 0.5;
+      float runs = wornSmoothNoise(vec3(vWornWorld.x * 3.4, vWornWorld.y * 0.32, vWornWorld.z * 3.4)) - 0.5;
+      float blotch = wornSmoothNoise(vWornWorld * 0.52) - 0.5;
+      float variation = aggregate * 0.11 + speckle * 0.05 + runs * 0.05 + blotch * 0.05;
+      gl_FragColor.rgb = clamp(gl_FragColor.rgb * (1.0 + variation * uWornGrain), 0.0, 1.0);
     }
+    #endif
 
     vec2 wornCoord = gl_FragCoord.xy;
     vec2 wornCell = floor(wornCoord);
@@ -159,6 +162,10 @@ function patchMaterial(material: PatchableMaterial): void {
       .replace('#include <colorspace_fragment>', `#include <colorspace_fragment>\n${WORN_FRAGMENT}`);
   };
   material.defines = { ...(material.defines ?? {}), WORN_STYLE: '' };
+  // A face is not a wall. Skin and hair take the shading and the dither but
+  // never the surface grain, because grime on a person reads as unwashed
+  // rather than as weathered.
+  if (material.userData.wornNoGrain === true) material.defines.WORN_NO_GRAIN = '';
   material.needsUpdate = true;
 }
 
