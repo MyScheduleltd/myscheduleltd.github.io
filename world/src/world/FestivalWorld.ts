@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, taperedPrism } from './WornStyle';
+import { applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, taperedPrism, warpWorldGeometry } from './WornStyle';
 import { dressBuildings } from './WornArchitecture';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import type { VenueKey } from '../data/catalogue';
@@ -1641,7 +1641,8 @@ export class FestivalWorld {
     return boxes;
   }
 
-  applyWornStyleForReview(amount: number, steps: number, grain: number): number {
+  applyWornStyleForReview(amount: number, steps: number, grain: number, warp = 1): number {
+    this.wornWarpAmount = warp;
     // Dressing first, so the clutter it hangs on the walls is picked up by the
     // shading pass in the same sweep rather than staying smooth-shaded and
     // ungrained among everything that is not.
@@ -1654,6 +1655,9 @@ export class FestivalWorld {
       // style never pays for the font.
       loadBrandFont();
       const dressing = dressBuildings(this.scene, this.publicScreenBoxes(), this.venueVolumes());
+      // After the dressing, so the cornices and shopfronts settle with the
+      // walls they belong to rather than staying dead square against them.
+      this.wornWarped += warpWorldGeometry(this.scene, this.wornWarpAmount);
       this.wornBuildings += dressing.walls;
       this.wornSignsSpared += dressing.refused;
       this.wornSigns = dressing.signs;
@@ -1664,6 +1668,10 @@ export class FestivalWorld {
   }
 
   private wornBuildings = 0;
+
+  private wornWarped = 0;
+
+  private wornWarpAmount = 1;
 
   private wornSignsSpared = 0;
 
@@ -1698,6 +1706,7 @@ export class FestivalWorld {
       flattened,
       buildingsDressed: this.wornBuildings,
       dressableWalls: dressable,
+      surfacesWarped: this.wornWarped,
       // Where the sole actually ends up, against the ground under it. The
       // arithmetic said one thing and the road said another, so this measures
       // the thing itself.
@@ -6635,6 +6644,29 @@ export class FestivalWorld {
    */
   private createStyledAvatarRig(parent: THREE.Group, palette: AvatarPalette, markPalette: boolean): AvatarRig {
     window.setTimeout(() => this.castShadows(parent), 0);
+    // Nobody is symmetrical.
+    //
+    // These figures were the cleanest objects left in the world, because I built
+    // them that way: two identical arms on two identical shoulders, mirrored to
+    // the millimetre. Bodies are not mirrored, and a crowd of twelve that all
+    // are reads as a set of copies however different their colours.
+    //
+    // So each body is bent slightly out of true, and the same way every time —
+    // seeded from the palette, so a visitor's figure is their figure and not a
+    // new one on every load. One shoulder rides higher, one arm is a shade
+    // longer, the head sits a degree off centre. All of it under two per cent,
+    // which is the difference between a person and a mannequin and is not
+    // visible as anything in itself.
+    const seed = Number.parseInt(palette.top.replace('#', ''), 16)
+      + Number.parseInt(palette.bottoms.replace('#', ''), 16);
+    const lean = (salt: number): number => {
+      const value = Math.sin(seed * 0.0007 + salt * 5.31) * 43758.5453;
+      return (value - Math.floor(value)) - 0.5;
+    };
+    const shoulderTilt = lean(1) * 0.055;
+    const armStretch = 1 + lean(2) * 0.035;
+    const legStretch = 1 + lean(3) * 0.025;
+    const headTilt = lean(4) * 0.07;
     const shade = (slot: keyof AvatarPalette) =>
       material(Number.parseInt(palette[slot].replace('#', ''), 16), 0.86, 0.02);
     const add = (
@@ -6693,13 +6725,18 @@ export class FestivalWorld {
     // cue that reads at any distance and in any colour.
     shell(taperedPrism(0.64, 0.58, 0.1, 0.58), [0, 0.89, 0], spine);
     for (const side of [-1, 1]) {
-      add(taperedPrism(0.2, 0.15, 0.22, 0.95), [side * 0.53, 0.81, 0], 'top', spine);
+      // One cap rides higher than the other, which is the single most human
+      // thing that can be done to a pair of shoulders.
+      add(taperedPrism(0.2, 0.15, 0.22, 0.95), [side * 0.53, 0.81 + side * shoulderTilt, 0], 'top', spine);
     }
 
     // ---- head ----------------------------------------------------------
     shell(taperedPrism(0.12, 0.15, 0.15, 1), [0, 1.0, 0], spine);
     const head = new THREE.Group();
     head.position.set(0, 1.05, 0);
+    // Carried a degree off straight, permanently. A head that is exactly level
+    // is the tell that nothing underneath it is alive.
+    head.rotation.z = headTilt;
     spine.add(head);
     add(taperedPrism(0.23, 0.27, 0.46, 0.94), [0, 0.23, 0], 'skin', head);
     add(taperedPrism(0.285, 0.26, 0.13, 0.98), [0, 0.43, -0.015], 'hair', head);
@@ -6734,7 +6771,8 @@ export class FestivalWorld {
     // it. The segments were already drawn this way; they simply had nothing to
     // turn about.
     const arm = (side: number) => {
-      const pivot = limb(side * 0.56, 0.73, taperedPrism(0.115, 0.08, 0.6, 0.94), 0.6, 'top', spine);
+      const reach = side < 0 ? armStretch : 2 - armStretch;
+      const pivot = limb(side * 0.56, 0.73 + side * shoulderTilt, taperedPrism(0.115, 0.08, 0.6 * reach, 0.94), 0.6 * reach, 'top', spine);
       const elbow = new THREE.Group();
       elbow.position.set(0, -0.64, 0);
       pivot.add(elbow);
@@ -6744,7 +6782,8 @@ export class FestivalWorld {
       return { pivot, joint: elbow };
     };
     const leg = (side: number) => {
-      const pivot = limb(side * 0.24, 1.16, taperedPrism(0.185, 0.13, 0.66, 0.84), 0.66, 'bottoms', parent);
+      const stand = side < 0 ? legStretch : 2 - legStretch;
+      const pivot = limb(side * 0.24, 1.16, taperedPrism(0.185, 0.13, 0.66 * stand, 0.84), 0.66 * stand, 'bottoms', parent);
       const knee = new THREE.Group();
       knee.position.set(0, -0.71, 0);
       pivot.add(knee);

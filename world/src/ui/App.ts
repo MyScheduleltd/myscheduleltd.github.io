@@ -747,6 +747,7 @@ export class App {
     //   ?worn=0.5                 half mixed in
     //   ?worn=1&wornSteps=8       coarser colour depth
     //   ?worn=1&wornGrain=0       shading only, no surface grain
+    //   ?worn=1&wornWarp=0        square corners kept, nothing settles
     //   ?worn=1&meshes=0          surfaces only, boxes left alone
     const wornFlag = new URLSearchParams(window.location.search).get('worn');
     if (wornFlag !== null) {
@@ -756,11 +757,14 @@ export class App {
       const steps = stepsFlag === null ? 10 : Number.parseFloat(stepsFlag);
       const grainFlag = new URLSearchParams(window.location.search).get('wornGrain');
       const grain = grainFlag === null ? 1 : Number.parseFloat(grainFlag);
+      const warpFlag = new URLSearchParams(window.location.search).get('wornWarp');
+      const warp = warpFlag === null ? 1 : Number.parseFloat(warpFlag);
       const dial = (nextAmount: number, nextSteps: number, nextGrain: number) =>
         world.applyWornStyleForReview(
           Number.isFinite(nextAmount) ? nextAmount : 1,
           Number.isFinite(nextSteps) ? nextSteps : 10,
           Number.isFinite(nextGrain) ? nextGrain : 1,
+          Number.isFinite(warp) ? warp : 1,
         );
       dial(amount, steps, grain);
       // The world keeps building after the gate closes — club fittings, remote

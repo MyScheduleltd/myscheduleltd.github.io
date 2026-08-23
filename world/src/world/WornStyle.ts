@@ -252,3 +252,94 @@ export function taperedPrism(
   if (depthRatio !== 1) geometry.scale(1, 1, depthRatio);
   return geometry;
 }
+
+/**
+ * Takes the square out of the world.
+ *
+ * Six rounds of dressing hung things on these buildings and it took them a long
+ * way, but it could never fix the underlying read, because every surface here
+ * is still a perfect rectangle with perfectly sharp corners. Look at the
+ * reference images and there is almost no straight line in them: walls lean,
+ * slabs have settled, parapets are uneven, nothing is quite square. That is not
+ * clutter on top of the geometry, it is the geometry.
+ *
+ * So each corner of each large surface is moved a few centimetres, and that is
+ * the whole idea. It is deliberately tiny — displacement you could measure but
+ * not point at — because the failure mode here is not subtlety, it is a world
+ * that reads as broken rather than as old.
+ *
+ * Three things make it work rather than look like damage:
+ *
+ *  - **Per corner, not per vertex.** A box carries each corner three times, once
+ *    for each face meeting there. Moving those copies independently tears the
+ *    box open at every seam. The offset is derived from which corner a vertex
+ *    belongs to, so all three copies move together and the box stays sealed.
+ *  - **Constant in the world, not in the model.** Every mesh here is one unit
+ *    cube stretched by its scale, so a fixed local offset would be multiplied
+ *    by that scale — a twenty-metre wall would lean a hundred times further
+ *    than a doorframe. The offset is divided by the scale first, so a corner
+ *    moves the same few centimetres whatever it belongs to.
+ *  - **Only what is big enough to read.** A lean says "this settled" on a wall
+ *    and "this is broken" on a handrail, so small objects keep their edges.
+ *
+ * Geometry is cloned per mesh, which is what makes this possible at all: the
+ * world shares one box between every surface in it, and displacing that would
+ * move every wall in the festival identically. A cube is twenty-four vertices,
+ * so a thousand of them is a rounding error.
+ */
+export function warpWorldGeometry(scene: THREE.Object3D, amount = 1): number {
+  if (amount <= 0) return 0;
+  let warped = 0;
+
+  const corner = (seed: THREE.Vector3, sx: number, sy: number, sz: number, salt: number): number => {
+    const value = Math.sin(
+      seed.x * 12.9898 + seed.y * 78.233 + seed.z * 37.719
+      + sx * 3.17 + sy * 7.31 + sz * 11.53 + salt * 4.7,
+    ) * 43758.5453;
+    return (value - Math.floor(value)) - 0.5;
+  };
+
+  scene.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    if (mesh.userData.wornWarped === true) return;
+    const geometry = mesh.geometry as THREE.BufferGeometry;
+    if (geometry?.type !== 'BoxGeometry') return;
+    const scale = mesh.getWorldScale(new THREE.Vector3());
+    // Big flat things only. A wall that has settled reads as age; a settled
+    // handrail reads as a bug.
+    if (Math.max(scale.x, scale.y, scale.z) < 2.4) return;
+
+    mesh.userData.wornWarped = true;
+    const own = geometry.clone();
+    const at = mesh.getWorldPosition(new THREE.Vector3());
+    const position = own.attributes.position as THREE.BufferAttribute;
+    // How far a corner may move, in world units, before this stops reading as
+    // settlement and starts reading as a fault in the renderer.
+    const reach = 0.075 * amount;
+
+    for (let index = 0; index < position.count; index += 1) {
+      const x = position.getX(index);
+      const y = position.getY(index);
+      const z = position.getZ(index);
+      const sx = Math.sign(x);
+      const sy = Math.sign(y);
+      const sz = Math.sign(z);
+      position.setXYZ(
+        index,
+        x + corner(at, sx, sy, sz, 1) * (reach / Math.max(scale.x, 0.001)),
+        // Vertical movement is halved: a wall that leans has settled, a wall
+        // whose top edge waves has melted.
+        y + corner(at, sx, sy, sz, 2) * (reach * 0.5 / Math.max(scale.y, 0.001)),
+        z + corner(at, sx, sy, sz, 3) * (reach / Math.max(scale.z, 0.001)),
+      );
+    }
+    position.needsUpdate = true;
+    // The faces are no longer square, so their old normals are lies.
+    own.computeVertexNormals();
+    mesh.geometry = own;
+    warped += 1;
+  });
+
+  return warped;
+}
