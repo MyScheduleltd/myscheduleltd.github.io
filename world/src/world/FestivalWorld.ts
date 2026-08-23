@@ -1630,6 +1630,22 @@ export class FestivalWorld {
       flattened,
       buildingsDressed: this.wornBuildings,
       dressableWalls: dressable,
+      // Where the sole actually ends up, against the ground under it. The
+      // arithmetic said one thing and the road said another, so this measures
+      // the thing itself.
+      soleAboveGround: (() => {
+        // Visible parts only. A Box3 over the whole body includes the hidden
+        // skateboard parked under the feet, which is lower than any sole and
+        // made the restyled figure and the original read identically wrong.
+        const box = new THREE.Box3();
+        this.player.traverseVisible((object) => {
+          const mesh = object as THREE.Mesh;
+          if (mesh.isMesh) box.expandByObject(mesh);
+        });
+        const ground = this.groundHeightAt(this.player.position.x, this.player.position.z)
+          - AVATAR_GROUND_Y;
+        return box.isEmpty() ? null : Number((box.min.y - ground).toFixed(3));
+      })(),
       signsProtected: this.wornSigns,
       placementsRefusedOverSigns: this.wornSignsSpared,
     };
@@ -6593,9 +6609,14 @@ export class FestivalWorld {
       knee.position.set(0, -0.71, 0);
       pivot.add(knee);
       shell(taperedPrism(0.115, 0.115, 0.1, 0.9), [0, 0, 0], knee);
-      add(taperedPrism(0.132, 0.1, 0.5, 0.82), [0, -0.31, 0], 'bottoms', knee);
+      // The original figure's foot bottoms out 0.09 below the body's origin,
+      // and the ground is placed against that. This leg was reaching to 0.205,
+      // so the restyled figure stood a tenth of a unit deeper than the world
+      // expected and its feet disappeared into the road. The shin is shortened
+      // to bring the sole back to where the ground actually is.
+      add(taperedPrism(0.132, 0.1, 0.39, 0.82), [0, -0.245, 0], 'bottoms', knee);
       const foot = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.11, 0.46), hardware);
-      foot.position.set(0, -0.6, 0.08);
+      foot.position.set(0, -0.485, 0.08);
       knee.add(foot);
       return { pivot, joint: knee };
     };
@@ -7673,9 +7694,8 @@ export class FestivalWorld {
           // Somebody holding a post has nothing to do but look at whoever
           // comes near, which is exactly when a still figure most needs to
           // stop looking like furniture.
-          if (npc.group.position.distanceTo(this.player.position) < 11) {
-            this.glanceAt(npc.rig, npc.group, this.player.position, stationGesture);
-          }
+          const seen = this.nearestBodyTo(npc.group.position, 11);
+          if (seen) this.glanceAt(npc.rig, npc.group, seen, stationGesture);
           if (npc.pose === 'dj' && !stationGesture) this.poseRigDj(npc.rig, elapsed);
           if (npc.pose === 'dance' && !stationGesture) this.poseRigDance(npc.rig, npc.phase);
         }
@@ -7900,10 +7920,11 @@ export class FestivalWorld {
       if (npc.rig && poseNpc) {
         this.animateRig(npc.rig, elapsed * 7.4 + npc.phase, moving ? 0.62 : 0.03, gesture, false,
           this.gestureProgress(gesture, npc.gestureUntil));
-        // And a resident walking past looks over at you as they go.
-        if (npc.group.position.distanceTo(this.player.position) < 9) {
-          this.glanceAt(npc.rig, npc.group, this.player.position, gesture);
-        }
+        // And a resident walking past looks over at whoever is nearest —
+        // another visitor counts the same as this one. To a resident there is
+        // no difference between the two.
+        const worthALook = this.nearestBodyTo(npc.group.position, 9);
+        if (worthALook) this.glanceAt(npc.rig, npc.group, worthALook, gesture);
       }
       if (npc.dogRig) this.animateMentorDog(
         npc.dogRig,
@@ -8008,6 +8029,28 @@ export class FestivalWorld {
    * moves at all. Nobody glances while doing something else, so a gesture
    * suppresses it.
    */
+  /**
+   * The nearest person to a point — this client or any other visitor — or
+   * nothing if the nearest is further off than the given reach.
+   */
+  private nearestBodyTo(from: THREE.Vector3, reach: number): THREE.Vector3 | undefined {
+    let nearest: THREE.Vector3 | undefined;
+    let nearestGap = reach;
+    const consider = (position: THREE.Vector3) => {
+      // Same storey only: the club is under the promenade, and somebody
+      // sixteen units below is not somebody to look at.
+      if (Math.abs(position.y - from.y) > 2.4) return;
+      const gap = from.distanceTo(position);
+      if (gap < nearestGap && gap > 0.2) {
+        nearestGap = gap;
+        nearest = position;
+      }
+    };
+    consider(this.player.position);
+    for (const avatar of this.remoteAvatars.values()) consider(avatar.group.position);
+    return nearest;
+  }
+
   private glanceAt(rig: AvatarRig, body: THREE.Object3D, target: THREE.Vector3, gesture?: AvatarGesture): void {
     if (gesture !== undefined) return;
     const toward = Math.atan2(target.x - body.position.x, target.z - body.position.z);
@@ -8026,10 +8069,21 @@ export class FestivalWorld {
   }
 
   private foldJoints(rig: AvatarRig, leftElbow: number, rightElbow: number, leftKnee = 0, rightKnee = 0): void {
-    if (rig.leftElbow) rig.leftElbow.rotation.set(leftElbow, 0, 0);
-    if (rig.rightElbow) rig.rightElbow.rotation.set(rightElbow, 0, 0);
-    if (rig.leftKnee) rig.leftKnee.rotation.set(-leftKnee, 0, 0);
-    if (rig.rightKnee) rig.rightKnee.rotation.set(-rightKnee, 0, 0);
+    // These avatars face +Z, not the -Z that three.js takes as forward. The
+    // movement code says so — rotation.y is atan2(x, z), which is zero when the
+    // body is travelling towards positive z — and so does the original head,
+    // which puts its eyes at z = +0.385.
+    //
+    // The first cut of these joints took the engine's default instead and had
+    // both of them bending the wrong way: elbows folding out behind the body
+    // and knees breaking forwards. Rotating by θ about x sends a hanging limb's
+    // end to -sin θ in z, so forward is a negative rotation here. An elbow
+    // folds the forearm forwards and a knee folds the shin backwards, which is
+    // why the two take opposite signs.
+    if (rig.leftElbow) rig.leftElbow.rotation.set(-leftElbow, 0, 0);
+    if (rig.rightElbow) rig.rightElbow.rotation.set(-rightElbow, 0, 0);
+    if (rig.leftKnee) rig.leftKnee.rotation.set(leftKnee, 0, 0);
+    if (rig.rightKnee) rig.rightKnee.rotation.set(rightKnee, 0, 0);
   }
 
   private animateRig(rig: AvatarRig, phase: number, stride: number, gesture?: AvatarGesture, skating = false, progress = 0): void {
@@ -8059,12 +8113,17 @@ export class FestivalWorld {
     // of the stride and the heel comes up, which is the difference between
     // walking and swinging two planks from the hip. The arm gets a standing
     // bend it never loses, because nobody walks with their elbows locked.
-    const armSwingLeft = -swing * 0.72;
-    const armSwingRight = swing * 0.72;
-    if (rig.leftElbow) rig.leftElbow.rotation.set(0.2 + Math.max(0, armSwingLeft) * 0.55, 0, 0);
-    if (rig.rightElbow) rig.rightElbow.rotation.set(0.2 + Math.max(0, armSwingRight) * 0.55, 0, 0);
-    if (rig.leftKnee) rig.leftKnee.rotation.set(-Math.max(0, swing) * 0.95, 0, 0);
-    if (rig.rightKnee) rig.rightKnee.rotation.set(-Math.max(0, -swing) * 0.95, 0, 0);
+    // A positive leg rotation carries that leg behind the body, so a leg is
+    // trailing when its own swing is positive — and that is the half of the
+    // stride where the knee folds and the heel comes up. The arms run opposite
+    // to the legs, and an elbow folds most as its arm comes forward.
+    this.foldJoints(
+      rig,
+      0.2 + Math.max(0, swing) * 0.5,
+      0.2 + Math.max(0, -swing) * 0.5,
+      Math.max(0, swing) * 0.95,
+      Math.max(0, -swing) * 0.95,
+    );
     rig.treat.visible = gesture === 'feed';
     if (gesture === 'wave') {
       // Raise the arm away from the head, then wave front-to-back from the
@@ -8075,12 +8134,12 @@ export class FestivalWorld {
       // actually comes from — the whole arm rocking at the shoulder always
       // read as semaphore.
       if (rig.rightElbow) {
-        rig.rightElbow.rotation.set(0.55, 0, Math.sin(phase * 2.6) * 0.42);
+        rig.rightElbow.rotation.set(-0.55, 0, Math.sin(phase * 2.6) * 0.42);
       }
     } else if (gesture === 'feed') {
       // Reach forward with a visible bite-sized treat at hand level.
       rig.rightArm.rotation.x = -1.18 + Math.sin(phase * 1.7) * 0.06;
-      if (rig.rightElbow) rig.rightElbow.rotation.set(0.32, 0, 0);
+      if (rig.rightElbow) rig.rightElbow.rotation.set(-0.32, 0, 0);
       rig.rightArm.rotation.z = -0.1;
     } else if (gesture === 'dance') {
       this.poseRigDance(rig);
