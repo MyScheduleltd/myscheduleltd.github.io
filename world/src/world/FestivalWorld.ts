@@ -9122,7 +9122,10 @@ export class FestivalWorld {
       const flush = (end: number) => {
         if (runStart === undefined) return;
         const width = end - runStart;
-        if (width >= 4) {
+        // Long enough to be a pavement. A four-unit run between two things it
+        // had to stop for is not a footway, it is a slab lying on the sand —
+        // which is exactly what the stub beside the Drive-In looked like.
+        if (width >= 10) {
           const stone = this.mesh(
             [width, 0.34, FestivalWorld.KERB_WIDTH],
             [(runStart + end) / 2, 0.13, z],
