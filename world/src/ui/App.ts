@@ -2825,6 +2825,23 @@ export class App {
       this.jukeboxSilenced = silenced;
       this.applyJukeboxVolume();
     }
+    // A silent player is still a player.
+    //
+    // The jukebox was turned down to nothing inside a venue and left running,
+    // which meant a visitor standing in a theatre had two YouTube players going
+    // at once: the screen's, and a jukebox nobody could hear. A desk shrugs at
+    // that. A phone does not — two embeds is two media pipelines, and the
+    // second one arriving is the moment the tab dies. It is also exactly what
+    // the report describes: a screening starting, or a record ordered while one
+    // is already on.
+    //
+    // So the jukebox lets go of its player rather than muting it, and takes it
+    // back on the way out. Nothing is lost: the record's position is worked out
+    // from when it started, so it returns to the right place in the song.
+    if (silenced) {
+      if (this.jukeboxFrame) this.stopJukebox();
+      return;
+    }
     if (this.jukeboxPlayingId === playing.youtubeId && this.jukeboxStartedAt === playing.startedAt) return;
     this.jukeboxPlayingId = playing.youtubeId;
     this.jukeboxStartedAt = playing.startedAt;
@@ -2927,6 +2944,17 @@ export class App {
     this.jukeboxPlayingId = undefined;
     this.updateJukeboxSoundPrompt();
     if (!this.jukeboxFrame) return;
+    // Stopped and blanked before it is detached. Removing an iframe does not
+    // reliably end what it was doing — WebKit keeps the media pipeline behind a
+    // YouTube embed alive after the element has left the document, so a player
+    // torn out this way goes on holding a decoder.
+    try {
+      this.jukeboxFrame.contentWindow?.postMessage(
+        JSON.stringify({ event: 'command', func: 'stopVideo', args: [] }),
+        '*',
+      );
+    } catch { /* a frame that has already gone */ }
+    this.jukeboxFrame.src = 'about:blank';
     this.jukeboxFrame.remove();
     this.jukeboxFrame = undefined;
     this.jukeboxPlayingId = undefined;

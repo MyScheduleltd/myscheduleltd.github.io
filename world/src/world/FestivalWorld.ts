@@ -3173,6 +3173,27 @@ export class FestivalWorld {
         duration: projector.duration,
       });
     }
+    // Stopped and blanked before it is detached, in that order.
+    //
+    // Detaching an iframe does not reliably end what it was doing. WebKit keeps
+    // the media pipeline behind a YouTube embed alive after the element leaves
+    // the document, so a player torn down this way can go on holding a decoder
+    // and the memory behind it. Every screening that starts and every track
+    // ordered from the jukebox swaps a player, so on a phone those pile up
+    // until the tab is killed — which is the crash, and it is why it happens on
+    // both betas and while the visitor is doing nothing but standing there.
+    //
+    // Telling it to stop first, then pointing it at nothing, gives WebKit an
+    // unambiguous instruction to release the decoder before the element goes.
+    const going = projector.iframe;
+    try {
+      going.contentWindow?.postMessage(
+        JSON.stringify({ event: 'command', func: 'stopVideo', args: [] }),
+        '*',
+      );
+    } catch { /* a cross-origin frame that has already gone */ }
+    going.src = 'about:blank';
+    going.removeAttribute('allow');
     projector.element.replaceChildren();
     projector.iframe = undefined;
     projector.signature = undefined;
