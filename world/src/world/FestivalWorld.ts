@@ -1275,6 +1275,8 @@ export class FestivalWorld {
     this.dayNight = new DayNightCycle(this.scene, localTimeOverride);
     this.dayNight.setShadowsEnabled(graphicsMode === 'normal');
     this.dayNight.setAmbientLift(graphicsMode === 'normal' ? 0 : 0.85);
+    this.watchForContextLoss(canvas);
+    this.watchForContextLoss(foregroundCanvas);
     // Kept up rather than done once. This world does not finish building at
     // load — the club's rig, the rooftop, the evening's fireworks all arrive
     // later — and three timeouts guessed at when that stops. It does not stop,
@@ -2502,6 +2504,9 @@ export class FestivalWorld {
     drawCalls: number;
     triangles: number;
     programs: number;
+    textures: number;
+    geometries: number;
+    heapMb: number;
     sceneObjects: number;
     lights: number;
     lampsLit: number;
@@ -2536,6 +2541,13 @@ export class FestivalWorld {
       drawCalls: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles,
       programs: this.renderer.info.programs?.length ?? 0,
+      // What the GPU is actually holding. Draw calls decide whether a frame
+      // fits in the time; these decide whether the page fits in the phone,
+      // which is a different question and the one that ends in a crash.
+      textures: this.renderer.info.memory.textures,
+      geometries: this.renderer.info.memory.geometries,
+      heapMb: Math.round(((performance as unknown as { memory?: { usedJSHeapSize: number } })
+        .memory?.usedJSHeapSize ?? 0) / 1048576),
       sceneObjects,
       lights,
       lampsLit,
@@ -4470,6 +4482,46 @@ export class FestivalWorld {
 
   /** How many placed lamps a light-setting device keeps. */
   private static readonly LITE_LAMPS = 6;
+
+  private contextLost = false;
+
+  /**
+   * Survives the graphics context being taken away.
+   *
+   * A phone does this routinely. iOS discards the WebGL context whenever it
+   * wants the memory back — while the tab is in the background, under pressure
+   * from another app, sometimes just because the screen locked — and it is not
+   * an error, it is housekeeping. Every page is expected to cope.
+   *
+   * This one did not listen for it at all, and the default behaviour when
+   * nobody listens is that the context is gone for good: the event must be
+   * cancelled for the browser to bother restoring it. So the first time a
+   * handset reclaimed some memory, the world stopped drawing and every frame
+   * after that issued commands at a dead context. From outside, the tab is
+   * black and unresponsive, which is the state Safari eventually gives up on
+   * and reports as a problem that repeatedly occurred.
+   *
+   * Cancel the loss so restoration is possible, stop the loop while there is
+   * nothing to draw on, and start again when the context comes back. Three.js
+   * re-uploads what it needs on the next frame; the world itself is built from
+   * code and holds no state on the GPU that it cannot rebuild.
+   */
+  private watchForContextLoss(canvas: HTMLCanvasElement): void {
+    canvas.addEventListener('webglcontextlost', (event) => {
+      // Without this the context is never restored, whatever else we do.
+      event.preventDefault();
+      this.contextLost = true;
+      if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
+      this.animationFrame = 0;
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      if (!this.contextLost) return;
+      this.contextLost = false;
+      this.renderer.resetState();
+      this.foregroundRenderer.resetState();
+      if (!this.animationFrame) this.animationFrame = requestAnimationFrame(this.render);
+    });
+  }
 
   private castShadows(root: THREE.Object3D): void {
     const on = this.graphicsMode === 'normal';

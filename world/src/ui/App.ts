@@ -79,6 +79,8 @@ const CAMERA_CORNER_CUE_MS = 1_100;
 const PROFILE_KEY = 'myschedule-festival-profile-v1';
 /** Set once a visitor is inside, so a discarded tab knows it was already in. */
 const INSIDE_KEY = 'myschedule-festival-inside-v1';
+/** How many times in a row this tab has let itself back in without settling. */
+const REJOIN_TRIES_KEY = 'myschedule-festival-rejoin-tries-v1';
 const PRIVATE_PROGRESS_KEY = 'myschedule-private-screening-v1';
 const CHAT_KEY = 'myschedule-local-chat-v2';
 const STAFF_KEY = 'myschedule-festival-staff-key-v1';
@@ -400,6 +402,27 @@ export class App {
     if (sessionStorage.getItem(INSIDE_KEY) !== '1') return;
     const saved = readProfile();
     if (!saved?.id || !isValidId(saved.id)) return;
+
+    // Never more than twice in a row without the world having settled.
+    //
+    // Walking straight back in is right for a tab the phone discarded. It is
+    // catastrophic for a tab that crashed, because the crash happens again and
+    // the reload walks straight back into it — a loop with no gate in it and no
+    // way for anybody to stop it from inside. That is what Safari's "a problem
+    // repeatedly occurred" is: it gave up before the visitor could.
+    //
+    // So each automatic entry is counted before it is attempted, and the count
+    // is cleared only once the world has stayed up for a few seconds. Two
+    // failures and the gate comes back — with the name already filled in, so
+    // the cost of being wrong is one tap, while the cost of not checking is a
+    // tab nobody can use.
+    const tries = Number(sessionStorage.getItem(REJOIN_TRIES_KEY) ?? '0');
+    if (tries >= 2) {
+      sessionStorage.removeItem(REJOIN_TRIES_KEY);
+      sessionStorage.removeItem(INSIDE_KEY);
+      return;
+    }
+    sessionStorage.setItem(REJOIN_TRIES_KEY, String(tries + 1));
     this.currentId = saved.id;
     void this.enterWhenThereIsRoom(true);
   }
@@ -634,6 +657,10 @@ export class App {
     // tab away while it is locked, the restored tab knows it was already in
     // and walks back rather than presenting a sign-in page.
     sessionStorage.setItem(INSIDE_KEY, '1');
+    // Settled: the world has been up long enough that whatever brought this
+    // page down is not going to. Until this fires, an automatic re-entry counts
+    // as a failed one.
+    window.setTimeout(() => sessionStorage.removeItem(REJOIN_TRIES_KEY), 8_000);
     const zh = this.language === 'zh-TW';
     this.root.innerHTML = `
       <section class="world-shell">
