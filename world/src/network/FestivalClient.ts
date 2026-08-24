@@ -311,6 +311,24 @@ export class FestivalClient {
   constructor({ onState, onStatus }: ClientOptions) {
     this.onState = onState;
     this.onStatus = onStatus;
+    // A stream that has gone quiet without ever failing.
+    //
+    // The read loop only notices a dead connection when the read itself errors,
+    // and on a mobile network it often does not: the carrier or the OS drops
+    // the socket, the fetch stays open, and nothing ever arrives again. From
+    // inside, that is indistinguishable from a very quiet festival — which is
+    // why it could sit there disconnected while believing it was fine.
+    //
+    // The server sends a heartbeat comment every ten seconds, so silence is a
+    // fact rather than an inference. Forty seconds of it means the socket is
+    // gone whatever the fetch believes.
+    window.setInterval(() => {
+      if (this.closed || this.suspended || !this.session || !this.streamAlive) return;
+      if (Date.now() - this.lastStreamAt < 40_000) return;
+      this.streamAlive = false;
+      this.abortController?.abort();
+      void this.openEventStream();
+    }, 15_000);
   }
 
   get online(): boolean {
@@ -405,12 +423,45 @@ export class FestivalClient {
       if (!response.ok || !payload.session || !payload.state) throw new Error(payload.error ?? 'Festival server is unavailable.');
       this.session = payload.session;
       this.reconnectAttempt = 0;
+      this.joinAttempt = 0;
       this.onState(payload.state);
       this.onStatus('online');
       void this.openEventStream();
     } catch (error) {
+      // Keep trying. This used to report offline and stop there, and stopping
+      // there was the whole of it: with no session, scheduleReconnect() and
+      // wake() both refuse to act, so a single failed join was permanent until
+      // somebody reloaded the page by hand.
+      //
+      // It is the likeliest failure on a phone and the rejoin-after-discard
+      // made it likelier still, because that fires the moment a restored tab
+      // loads — which on a waking handset is before the radio has data. One
+      // unlucky moment and the festival was offline for good.
       this.onStatus('offline', error instanceof Error ? error.message : 'Festival server is unavailable.');
+      this.scheduleJoinRetry();
     }
+  }
+
+  private joinRetryTimer: number | undefined;
+  private joinAttempt = 0;
+
+  /**
+   * Tries the join again, backing off, and never gives up.
+   *
+   * Backing off matters as much as retrying: a handset that has just woken can
+   * take a few seconds to have a route, and hammering the server through it
+   * helps nobody. Ten seconds is the ceiling, which is a long time to look at
+   * an offline badge but short enough that nobody reaches for reload.
+   */
+  private scheduleJoinRetry(): void {
+    if (this.closed || this.session || !this.identity || this.joinRetryTimer) return;
+    const delay = Math.min(10_000, 700 * 2 ** this.joinAttempt);
+    this.joinAttempt += 1;
+    this.joinRetryTimer = window.setTimeout(() => {
+      this.joinRetryTimer = undefined;
+      if (this.closed || this.session || !this.identity) return;
+      void this.connect(this.identity.name, this.identity.palette);
+    }, delay);
   }
 
   async publishPresence(presence: NetworkPresence, palette: AvatarPalette): Promise<void> {
@@ -705,13 +756,51 @@ export class FestivalClient {
    * desktop tab coming back into focus is untouched.
    */
   wake(): void {
-    if (this.closed || !this.session || this.streamAlive) return;
+    if (this.closed) return;
+    // Never joined, or joined and lost the session entirely. Picking the phone
+    // up is the best moment to try again, so the backoff starts over.
+    if (!this.session) {
+      if (!this.identity) return;
+      if (this.joinRetryTimer) window.clearTimeout(this.joinRetryTimer);
+      this.joinRetryTimer = undefined;
+      this.joinAttempt = 0;
+      void this.connect(this.identity.name, this.identity.palette);
+      return;
+    }
+    if (this.streamAlive) return;
     this.suspended = false;
+    // Take the pending retry with us rather than racing it.
+    //
+    // Without this, unlocking a phone opened a stream immediately while the
+    // backoff timer from the drop was still armed — and when it fired it
+    // aborted the stream that was already working, whose own error path then
+    // marked the connection dead. Every trip to the home screen added another
+    // one of these. It reads as a connection that will not settle, and it was
+    // one, caused by the fix for the last problem.
+    if (this.reconnectTimer) window.clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
+    // Somebody has just picked the phone up. That is the moment to try hardest,
+    // not to carry over a ten-second backoff earned while it was in a pocket.
+    this.reconnectAttempt = 0;
     void this.openEventStream();
   }
 
   /** Whether the read loop is still running. */
   private streamAlive = false;
+
+  /**
+   * Which stream is the current one.
+   *
+   * Opening a stream aborts the one before it, and the aborted one then runs
+   * its own cleanup — clearing the alive flag and asking for a reconnect that
+   * a perfectly healthy newer stream does not need. Each stream carries the
+   * number it was opened with and only acts on its own exit if it is still the
+   * current one.
+   */
+  private streamGeneration = 0;
+
+  /** When the stream last carried anything, heartbeat included. */
+  private lastStreamAt = 0;
 
   private headers(extra?: HeadersInit): Headers {
     const headers = new Headers(extra);
@@ -770,7 +859,10 @@ export class FestivalClient {
 
   private async openEventStream(): Promise<void> {
     if (!this.session || this.closed || this.suspended) return;
+    const generation = this.streamGeneration + 1;
+    this.streamGeneration = generation;
     this.streamAlive = true;
+    this.lastStreamAt = Date.now();
     this.abortController?.abort();
     this.abortController = new AbortController();
     try {
@@ -791,6 +883,7 @@ export class FestivalClient {
       while (!this.closed) {
         const { value, done } = await reader.read();
         if (done) break;
+        this.lastStreamAt = Date.now();
         buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
         let boundary = buffer.indexOf('\n\n');
         while (boundary >= 0) {
@@ -800,9 +893,11 @@ export class FestivalClient {
           boundary = buffer.indexOf('\n\n');
         }
       }
+      if (generation !== this.streamGeneration) return;
       this.streamAlive = false;
       if (!this.closed) this.scheduleReconnect();
     } catch (error) {
+      if (generation !== this.streamGeneration) return;
       this.streamAlive = false;
       if (!this.closed && !(error instanceof DOMException && error.name === 'AbortError')) this.scheduleReconnect();
     }
