@@ -844,8 +844,10 @@ export class App {
           ? this.world?.mentorGreetingReviewSnapshot()
           : this.world?.mentorFollowerReviewSnapshot());
       }, 250);
-    } else if (reviewTarget === 'sit') {
-      this.world.focusSeatForReview();
+    } else if (reviewTarget === 'sit' || reviewTarget === 'sit-rooftop' || reviewTarget === 'sit-drive') {
+      this.world.focusSeatForReview(
+        reviewTarget === 'sit-rooftop' ? 'rooftop' : reviewTarget === 'sit-drive' ? 'drive-in' : 'shore',
+      );
       (window as Window & { __festivalSeat?: () => unknown }).__festivalSeat =
         () => this.world?.seatReviewSnapshot();
     } else if (reviewTarget === 'kerb') {
@@ -1099,7 +1101,13 @@ export class App {
       this.updateJukeboxSoundPrompt();
     });
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) this.applyJukeboxVolume();
+      if (document.hidden) return;
+      this.applyJukeboxVolume();
+      // Coming back from a locked phone. Locking never fires pagehide, so
+      // nothing suspended the connection and nothing resumed it — the socket
+      // just died while the screen was off. This is the only event the device
+      // does send, and the client ignores it unless the stream really is gone.
+      this.festivalClient.wake();
     });
     // Pinching the page is allowed — it is the only way back from a browser
     // that has decided to zoom on its own — but once zoomed there is no obvious

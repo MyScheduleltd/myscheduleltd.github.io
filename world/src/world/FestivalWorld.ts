@@ -2075,13 +2075,16 @@ export class FestivalWorld {
    * Loopback fixture sitting the player in a Shore deck chair, and measuring
    * where the body actually lands against the pad it is supposed to rest on.
    */
-  focusSeatForReview(): void {
+  focusSeatForReview(venue: VenueKey = 'shore'): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
-    const seat = this.seats.find((candidate) => candidate.venue === 'shore');
+    const seat = this.seats.find((candidate) => candidate.venue === venue);
     if (!seat) return;
     this.activeSeat = seat;
     this.playerState = 'seated';
-    this.cameraMode = 'screening';
+    // Looking at the body, not at the film. The screening camera is what a
+    // visitor gets and it is the one view from which the thing this fixture
+    // exists to check cannot be seen at all.
+    this.cameraMode = 'follow';
     this.player.position.copy(this.seatAnchor(seat));
     this.player.rotation.y = seat.facing ?? Math.PI;
     if (this.playerRig) this.poseRigSeated(this.playerRig);
@@ -2143,10 +2146,32 @@ export class FestivalWorld {
     // lower than the feet do and was answering every question I asked it.
     const legBox = new THREE.Box3().setFromObject(rig.leftLeg);
     const footY = legBox.isEmpty() ? null : Number(legBox.min.y.toFixed(3));
+    // Whether the leg is inside the chair. The complaint was that it was, and
+    // "looks right in a screenshot" is not a test — this one either intersects
+    // or it does not.
+    let padBox: THREE.Box3 | undefined;
+    this.scene.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.visible) return;
+      for (let node: THREE.Object3D | null = mesh; node; node = node.parent) {
+        if (node === this.player) return;
+      }
+      const box = new THREE.Box3().setFromObject(mesh);
+      if (box.max.y > seat.position.y + 1.6 || box.max.y < seat.position.y - 0.5) return;
+      if (seat.position.x < box.min.x || seat.position.x > box.max.x) return;
+      if (seat.position.z < box.min.z || seat.position.z > box.max.z) return;
+      if (!padBox || box.max.y > padBox.max.y) padBox = box;
+    });
+    const legInPad = padBox && !legBox.isEmpty() ? legBox.intersectsBox(padBox) : null;
     const groundY = this.groundHeightAt(seat.position.x, seat.position.z) - AVATAR_GROUND_Y;
     return {
       seated: true,
       seatId: seat.id,
+      seatKind: seat.kind ?? 'chair',
+      // Whether a body standing where this fixture put it could actually reach
+      // the seat — which is the whole of the rooftop complaint, and is not
+      // something the seated snapshot would otherwise notice.
+      reachable: this.nearestSeat()?.id === seat.id,
       playerY: Number(this.player.position.y.toFixed(3)),
       padTop: Number.isFinite(padTop) ? Number(padTop.toFixed(3)) : null,
       hipY: Number(hip.y.toFixed(3)),
@@ -2154,6 +2179,7 @@ export class FestivalWorld {
       lowestVisibleY: body.isEmpty() ? null : Number(body.min.y.toFixed(3)),
       standingLow,
       footY,
+      legInPad,
       groundY: Number(groundY.toFixed(3)),
       footAboveGround: footY === null ? null : Number((footY - groundY).toFixed(3)),
       styled: wornMeshesRequested(),
@@ -3405,7 +3431,13 @@ export class FestivalWorld {
    * sat on from a little forward of it, at standing height.
    */
   private seatAnchor(seat: Seat): THREE.Vector3 {
+    // Bar stools and rooftop benches keep their authored spots. Both were placed
+    // by hand against something — a rail, a parapet — and both already carry
+    // AVATAR_SEAT_DROP, which was tuned for them. The rooftop complaint was that
+    // these could not be sat on at all, and that was reach, not height: nothing
+    // here was reported as sitting wrong, so nothing here changes.
     if (seat.kind === 'bar' || seat.kind === 'bench') return seat.position.clone();
+    const forward = 0.28;
     // Sat on the pad, not a fixed distance above the floor.
     //
     // This used to drop the body at the seat's own origin plus the standing
@@ -3419,12 +3451,16 @@ export class FestivalWorld {
     // the hip rise is read off the rig itself, so a chair at a different height
     // and a figure of different proportions both come out right without anybody
     // updating a number.
-    const padTop = this.seatPadTop(seat);
-    if (padTop === undefined) return seat.position.clone().add(new THREE.Vector3(0, AVATAR_GROUND_Y, 0.28));
+    // Probed under where the body ends up, not under the seat's own marker.
+    // The two are 0.28 apart, which is nothing on a cushion a metre and a half
+    // deep and everything on the back of a car.
+    const sitZ = seat.position.z + forward;
+    const padTop = this.seatPadTop(seat.position.x, sitZ, seat.position.y);
+    if (padTop === undefined) return seat.position.clone().add(new THREE.Vector3(0, AVATAR_GROUND_Y, forward));
     return new THREE.Vector3(
       seat.position.x,
       padTop + FestivalWorld.SEAT_THIGH - this.hipAboveOrigin(),
-      seat.position.z + 0.28,
+      sitZ,
     );
   }
 
@@ -3471,7 +3507,7 @@ export class FestivalWorld {
    * Bounded above and below so the search cannot wander onto the roof of the
    * building the chair is standing in.
    */
-  private seatPadTop(seat: Seat): number | undefined {
+  private seatPadTop(atX: number, atZ: number, fromY: number): number | undefined {
     let top = -Infinity;
     this.scene.traverse((object) => {
       const mesh = object as THREE.Mesh;
@@ -3480,9 +3516,9 @@ export class FestivalWorld {
         if (node === this.player) return;
       }
       const box = new THREE.Box3().setFromObject(mesh);
-      if (box.max.y > seat.position.y + 1.6 || box.max.y < seat.position.y - 0.5) return;
-      if (seat.position.x < box.min.x || seat.position.x > box.max.x) return;
-      if (seat.position.z < box.min.z || seat.position.z > box.max.z) return;
+      if (box.max.y > fromY + 1.6 || box.max.y < fromY - 0.5) return;
+      if (atX < box.min.x || atX > box.max.x) return;
+      if (atZ < box.min.z || atZ > box.max.z) return;
       top = Math.max(top, box.max.y);
     });
     return Number.isFinite(top) ? top : undefined;
@@ -5142,7 +5178,12 @@ export class FestivalWorld {
         this.seats.push({
           id: `DRIVE-${row + 1}-${column + 2}`,
           venue: 'drive-in',
-          position: new THREE.Vector3(x, 0, z + 1.9),
+          // On the back of the car, which is where anybody at a drive-in
+          // sits. The marker was 1.9 forward of the car's centre and the body
+          // is 1.45 deep, so this put people on the tarmac behind the bumper —
+          // sitting at a drive-in with their back to the film. 0.8 lands the
+          // body on the exposed deck behind the cabin, facing the screen.
+          position: new THREE.Vector3(x, 0, z + 0.8),
         });
         carIndex += 1;
       }
@@ -9167,11 +9208,18 @@ export class FestivalWorld {
    * happening; the drinking arm is left where the gesture put it.
    */
   private poseRigSeated(rig: AvatarRig, gesture?: AvatarGesture): void {
-    // Sitting is knees. The hips take the thighs forward and the knees drop the
-    // shins straight down — which a single-jointed leg simply cannot do, and is
-    // why seated figures used to look as though they were levitating in a
-    // crouch. Elbows rest folded on the lap.
-    this.foldJoints(rig, 0.8, 0.8, 1.5, 1.5);
+    // Sitting with the legs out, not folded under.
+    //
+    // The knees were folded 86 degrees, which drops the shin vertically from a
+    // knee that is still over the cushion — so the shins went down through the
+    // pad and the feet came out underneath it. Deck chairs and cinema seats are
+    // not stools: the leg goes forward.
+    //
+    // A gentle 29 degrees at the knee instead. The thigh clears the pad's front
+    // edge before it has dropped far enough to meet it, the shin carries on
+    // forward and down, and the soles finish on the ground in front of the
+    // chair rather than inside it.
+    this.foldJoints(rig, 0.8, 0.8, 0.5, 0.5);
     rig.leftLeg.rotation.x = -1.28;
     rig.rightLeg.rotation.x = -1.28;
     rig.leftArm.rotation.x = -0.12;
@@ -10367,9 +10415,38 @@ export class FestivalWorld {
     return mentor.group.getWorldPosition(new THREE.Vector3()).distanceTo(this.player.position) < 3.3 ? mentor : undefined;
   }
 
+  /**
+   * The seat within reach, if there is one.
+   *
+   * Reach is horizontal. Height only decides which storey a seat is on, and
+   * conflating the two is what made the rooftop benches impossible to sit on:
+   * the bench's seat sits about half a unit above standing height, and the
+   * straight-line test spent that half unit out of a budget of 1.55 — while the
+   * bench's own collider, grown by the body's radius, holds a visitor about
+   * 1.7 away. There was no position that satisfied both, so the prompt never
+   * appeared and the bench simply could not be used.
+   *
+   * Nearest rather than first, too. The chairs at the Shore are 2.25 apart, so
+   * a reach wide enough to get onto a bench is wide enough to catch a
+   * neighbour, and taking whichever came first in the list would sit somebody
+   * in the chair beside the one they walked up to.
+   */
   private nearestSeat(): Seat | undefined {
     if (this.playerState === 'swimming') return undefined;
-    return this.seats.find((seat) => seat.position.distanceTo(this.player.position) < 1.55);
+    let best: Seat | undefined;
+    let bestReach = Infinity;
+    for (const seat of this.seats) {
+      const rise = Math.abs(seat.position.y - this.player.position.y);
+      if (rise > 1.8) continue;
+      const reach = Math.hypot(
+        seat.position.x - this.player.position.x,
+        seat.position.z - this.player.position.z,
+      );
+      if (reach > 2.1 || reach >= bestReach) continue;
+      best = seat;
+      bestReach = reach;
+    }
+    return best;
   }
 
   private inTheater(): boolean {

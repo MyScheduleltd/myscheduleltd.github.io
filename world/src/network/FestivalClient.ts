@@ -679,6 +679,7 @@ export class FestivalClient {
   suspend(): void {
     if (this.closed) return;
     this.suspended = true;
+    this.streamAlive = false;
     if (this.reconnectTimer) window.clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
     this.abortController?.abort();
@@ -689,6 +690,28 @@ export class FestivalClient {
     this.suspended = false;
     if (this.session) void this.openEventStream();
   }
+
+  /**
+   * Reopens the stream after the device took it away without telling us.
+   *
+   * Locking a phone does not fire pagehide, so suspend() never runs and
+   * resume() — which refuses to act unless it was suspended — has nothing to
+   * act on. Meanwhile the operating system has closed the socket. The visitor
+   * unlocks to a festival that has quietly gone offline, which reads as being
+   * logged out and, as far as the live world is concerned, is.
+   *
+   * This asks the only question that matters — is there a session, and is the
+   * stream still running — and does nothing when the answer is yes, so a
+   * desktop tab coming back into focus is untouched.
+   */
+  wake(): void {
+    if (this.closed || !this.session || this.streamAlive) return;
+    this.suspended = false;
+    void this.openEventStream();
+  }
+
+  /** Whether the read loop is still running. */
+  private streamAlive = false;
 
   private headers(extra?: HeadersInit): Headers {
     const headers = new Headers(extra);
@@ -747,6 +770,7 @@ export class FestivalClient {
 
   private async openEventStream(): Promise<void> {
     if (!this.session || this.closed || this.suspended) return;
+    this.streamAlive = true;
     this.abortController?.abort();
     this.abortController = new AbortController();
     try {
@@ -776,8 +800,10 @@ export class FestivalClient {
           boundary = buffer.indexOf('\n\n');
         }
       }
+      this.streamAlive = false;
       if (!this.closed) this.scheduleReconnect();
     } catch (error) {
+      this.streamAlive = false;
       if (!this.closed && !(error instanceof DOMException && error.name === 'AbortError')) this.scheduleReconnect();
     }
   }
