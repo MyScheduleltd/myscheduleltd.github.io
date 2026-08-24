@@ -436,8 +436,17 @@ export class App {
               .join('')}
           </fieldset>
 
+          <!-- Ticked by default, which it was not.
+               The box only ever started ticked for somebody who had already
+               ticked it once, so a first visit never saved anything — and on a
+               phone that is not a small inconvenience. Mobile Safari discards
+               background tabs whenever it wants the memory, and every one of
+               those discards came back to an empty gate asking for a name
+               again. It reads as being logged out, over and over, and it was.
+               What it keeps is a name and five colours, in this browser, and
+               the box is still there to turn it off. -->
           <label class="check-field">
-            <input id="remember-profile" type="checkbox" ${this.currentId ? 'checked' : ''} />
+            <input id="remember-profile" type="checkbox" checked />
             <span>${text.remember}</span>
           </label>
 
@@ -835,6 +844,10 @@ export class App {
           ? this.world?.mentorGreetingReviewSnapshot()
           : this.world?.mentorFollowerReviewSnapshot());
       }, 250);
+    } else if (reviewTarget === 'sit') {
+      this.world.focusSeatForReview();
+      (window as Window & { __festivalSeat?: () => unknown }).__festivalSeat =
+        () => this.world?.seatReviewSnapshot();
     } else if (reviewTarget === 'kerb') {
       this.world.focusKerbForReview();
       (window as Window & { __festivalKerb?: () => unknown }).__festivalKerb =

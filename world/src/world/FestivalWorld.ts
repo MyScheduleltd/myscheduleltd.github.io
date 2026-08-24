@@ -2062,6 +2062,95 @@ export class FestivalWorld {
   }
 
   /**
+   * Loopback fixture sitting the player in a Shore deck chair, and measuring
+   * where the body actually lands against the pad it is supposed to rest on.
+   */
+  focusSeatForReview(): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    const seat = this.seats.find((candidate) => candidate.venue === 'shore');
+    if (!seat) return;
+    this.activeSeat = seat;
+    this.playerState = 'seated';
+    this.cameraMode = 'screening';
+    this.player.position.copy(this.seatAnchor(seat));
+    this.player.rotation.y = seat.facing ?? Math.PI;
+    if (this.playerRig) this.poseRigSeated(this.playerRig);
+    this.player.updateMatrixWorld(true);
+  }
+
+  /** Where a seated body sits, against the pad it is meant to sit on. */
+  seatReviewSnapshot(): Record<string, unknown> {
+    const seat = this.activeSeat;
+    const rig = this.playerRig;
+    if (!seat || !rig) return { seated: false };
+    this.poseRigSeated(rig);
+    this.player.updateMatrixWorld(true);
+    // The pad's own top, found by asking the scene what is under the seat
+    // rather than by repeating a number from where the chairs were built.
+    let padTop = -Infinity;
+    const here = new THREE.Vector2(seat.position.x, seat.position.z);
+    this.scene.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      // The body itself is standing in the same place and would otherwise be
+      // measured as the thing it is sitting on.
+      let inBody = false;
+      for (let node: THREE.Object3D | null = mesh; node; node = node.parent) {
+        if (node === this.player) { inBody = true; break; }
+      }
+      if (inBody) return;
+      const box = new THREE.Box3().setFromObject(mesh);
+      if (box.max.y > 2 || box.min.y < -0.5) return;
+      if (here.x < box.min.x || here.x > box.max.x) return;
+      if (here.y < box.min.z || here.y > box.max.z) return;
+      padTop = Math.max(padTop, box.max.y);
+    });
+    const extent = (): number | null => {
+      this.player.updateMatrixWorld(true);
+      const box = new THREE.Box3();
+      this.player.traverseVisible((object) => {
+        const mesh = object as THREE.Mesh;
+        if (mesh.isMesh) box.expandByObject(mesh);
+      });
+      return box.isEmpty() ? null : Number(box.min.y.toFixed(3));
+    };
+    // Straightened by hand rather than through a pose function, because the
+    // question is only how far the body reaches when the legs are down.
+    this.foldJoints(rig, 0, 0, 0, 0);
+    rig.leftLeg.rotation.x = 0;
+    rig.rightLeg.rotation.x = 0;
+    const standingLow = extent();
+    this.poseRigSeated(rig);
+    const body = new THREE.Box3();
+    this.player.updateMatrixWorld(true);
+    this.player.traverseVisible((object) => {
+      const mesh = object as THREE.Mesh;
+      if (mesh.isMesh) body.expandByObject(mesh);
+    });
+    const hip = rig.leftLeg.getWorldPosition(new THREE.Vector3());
+    // The leg on its own. The whole-body box kept reporting the same figure in
+    // both poses, which means something else parented to the avatar reaches
+    // lower than the feet do and was answering every question I asked it.
+    const legBox = new THREE.Box3().setFromObject(rig.leftLeg);
+    const footY = legBox.isEmpty() ? null : Number(legBox.min.y.toFixed(3));
+    const groundY = this.groundHeightAt(seat.position.x, seat.position.z) - AVATAR_GROUND_Y;
+    return {
+      seated: true,
+      seatId: seat.id,
+      playerY: Number(this.player.position.y.toFixed(3)),
+      padTop: Number.isFinite(padTop) ? Number(padTop.toFixed(3)) : null,
+      hipY: Number(hip.y.toFixed(3)),
+      hipAbovePad: Number.isFinite(padTop) ? Number((hip.y - padTop).toFixed(3)) : null,
+      lowestVisibleY: body.isEmpty() ? null : Number(body.min.y.toFixed(3)),
+      standingLow,
+      footY,
+      groundY: Number(groundY.toFixed(3)),
+      footAboveGround: footY === null ? null : Number((footY - groundY).toFixed(3)),
+      styled: wornMeshesRequested(),
+    };
+  }
+
+  /**
    * Loopback fixture standing on the cross street, which is the only road in
    * the festival and now the only place with a kerb to look at.
    */
@@ -3280,7 +3369,86 @@ export class FestivalWorld {
    */
   private seatAnchor(seat: Seat): THREE.Vector3 {
     if (seat.kind === 'bar' || seat.kind === 'bench') return seat.position.clone();
-    return seat.position.clone().add(new THREE.Vector3(0, AVATAR_GROUND_Y, 0.28));
+    // Sat on the pad, not a fixed distance above the floor.
+    //
+    // This used to drop the body at the seat's own origin plus the standing
+    // hip height, which quietly assumed two things: that every seat's cushion
+    // is the same distance off the ground, and that the hips are a fixed
+    // distance above the avatar's origin. The restyled figure is proportioned
+    // differently — its hip pivot is 1.16 above the origin where the constant
+    // said 0.28 — so everybody sat four fifths of a unit above the chair.
+    //
+    // Both halves are now measured: the pad is found by looking for it, and
+    // the hip rise is read off the rig itself, so a chair at a different height
+    // and a figure of different proportions both come out right without anybody
+    // updating a number.
+    const padTop = this.seatPadTop(seat);
+    if (padTop === undefined) return seat.position.clone().add(new THREE.Vector3(0, AVATAR_GROUND_Y, 0.28));
+    return new THREE.Vector3(
+      seat.position.x,
+      padTop + FestivalWorld.SEAT_THIGH - this.hipAboveOrigin(),
+      seat.position.z + 0.28,
+    );
+  }
+
+  /**
+   * Half the thickness of a thigh: how far the hip joint rides above a pad.
+   *
+   * Tuned against the measurement rather than guessed. At 0.12 the hips sat
+   * right and the feet finished 38mm under the sand; 0.16 puts the soles on
+   * the ground and the hips still within a thigh of the cushion.
+   */
+  private static readonly SEAT_THIGH = 0.16;
+
+  private hipRise: number | undefined;
+
+  /**
+   * How far the hip pivot stands above the avatar group's own origin.
+   *
+   * Read off the rig rather than written down, because there are two rigs in
+   * this world with different proportions and a third could follow. Posing does
+   * not move it — it is where the joint is, not where the leg is pointing — so
+   * one reading holds for every seat and every gesture.
+   */
+  private hipAboveOrigin(): number {
+    if (this.hipRise !== undefined) return this.hipRise;
+    const rig = this.playerRig;
+    if (!rig) return AVATAR_GROUND_Y;
+    this.player.updateMatrixWorld(true);
+    this.hipRise = rig.leftLeg.getWorldPosition(new THREE.Vector3()).y - this.player.position.y;
+    return this.hipRise;
+  }
+
+  /**
+   * The top of whatever the seat is: cushion, bonnet, bench.
+   *
+   * Found by looking rather than recorded when the chairs were built, so the
+   * five places that register seats do not each have to carry a number that has
+   * to stay true, and a seat added later needs nothing.
+   *
+   * Boxes rather than a ray. A ray is the obvious tool and it threw: this scene
+   * has sprites in it, which a raycaster refuses to test without a camera, and
+   * CSS objects, which have no geometry to hit at all — the exception came back
+   * up through the sit and took the whole interaction with it.
+   *
+   * Bounded above and below so the search cannot wander onto the roof of the
+   * building the chair is standing in.
+   */
+  private seatPadTop(seat: Seat): number | undefined {
+    let top = -Infinity;
+    this.scene.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.visible) return;
+      for (let node: THREE.Object3D | null = mesh; node; node = node.parent) {
+        if (node === this.player) return;
+      }
+      const box = new THREE.Box3().setFromObject(mesh);
+      if (box.max.y > seat.position.y + 1.6 || box.max.y < seat.position.y - 0.5) return;
+      if (seat.position.x < box.min.x || seat.position.x > box.max.x) return;
+      if (seat.position.z < box.min.z || seat.position.z > box.max.z) return;
+      top = Math.max(top, box.max.y);
+    });
+    return Number.isFinite(top) ? top : undefined;
   }
 
   /** Takes the drink that is in hand. Written once; three paths reach it. */
@@ -4178,9 +4346,41 @@ export class FestivalWorld {
   }
 
   /** Marks a group's meshes as shadow casters, for the few that earn it. */
+  /**
+   * Turns shadow casting on for a body, part by part — and leaves the small
+   * parts out of it.
+   *
+   * Every caster is drawn a second time into the shadow map, so a body costs
+   * its part count twice. The restyled figure has roughly double the parts of
+   * the one it replaced — segmented limbs, a yoke, shoulder caps, a visor and
+   * its two returns — and across a dozen residents that alone accounted for
+   * most of the rise from 361 casters to 582.
+   *
+   * None of the small parts change the silhouette. A shadow is an outline, and
+   * the outline of a person is their torso, their head and their limbs; a hand
+   * inside the arm's own shadow contributes nothing anybody can see. So the
+   * rule is size: anything under fifteen centimetres in every direction is
+   * lit, and receives, but does not cast.
+   */
   private castShadows(root: THREE.Object3D): void {
+    const on = this.graphicsMode === 'normal';
+    const size = new THREE.Vector3();
+    const scaled = new THREE.Vector3();
     root.traverse((object) => {
-      if ((object as THREE.Mesh).isMesh) object.castShadow = this.graphicsMode === 'normal';
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      if (!on) { mesh.castShadow = false; return; }
+      // Asked of the geometry as well as the scale. The world's own meshes are
+      // a unit cube stretched by scale, but the restyled rig sizes its parts in
+      // the geometry and leaves the scale at one — so a test that only read the
+      // scale found every hand and every visor to be a metre across and
+      // excluded nothing at all.
+      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+      const bounds = mesh.geometry.boundingBox;
+      if (!bounds) { mesh.castShadow = true; return; }
+      bounds.getSize(size);
+      const scale = mesh.getWorldScale(scaled);
+      mesh.castShadow = Math.max(size.x * scale.x, size.y * scale.y, size.z * scale.z) >= 0.15;
     });
   }
 
