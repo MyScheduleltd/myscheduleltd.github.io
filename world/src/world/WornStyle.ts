@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /**
  * Tier one of the art direction: the pass that makes the world look used.
@@ -135,17 +136,49 @@ const WORN_FRAGMENT = /* glsl */ `
       float wornUpright = 1.0 - smoothstep(0.35, 0.62, abs(wornN.y));
       if (wornUpright > 0.0) {
         vec2 wornPlane = abs(wornN.x) > abs(wornN.z) ? vWornWorld.zy : vWornWorld.xy;
-        // Long and low, offset half a block row to row, so it never resolves
-        // into graph paper.
-        vec2 wornCell = wornPlane / vec2(3.0, 1.6);
-        wornCell.x += floor(wornCell.y) * 0.5;
-        vec2 wornEdge = abs(fract(wornCell) - 0.5);
-        float wornJoint = min(0.5 - wornEdge.x, 0.5 - wornEdge.y);
+        float wornSeam = 0.0;
+        float wornArris = 0.0;
+        float wornDepth = 0.24;
+
+        // Four ways of being built, so the Palace is not made of the same
+        // stuff as the club. Which one a wall gets is fixed per material at
+        // patch time — a wall cannot change what it is made of halfway up.
+        #if WORN_MASONRY_KIND == 1
+          // Concrete panel: tall storey-sized bays, thin crisp joints.
+          vec2 wornCell = wornPlane / vec2(2.4, 3.6);
+          vec2 wornEdge = abs(fract(wornCell) - 0.5);
+          float wornJoint = min(0.5 - wornEdge.x, 0.5 - wornEdge.y);
+          wornSeam = 1.0 - smoothstep(0.0, 0.03, wornJoint);
+          wornArris = smoothstep(0.03, 0.06, wornJoint) * (1.0 - smoothstep(0.06, 0.1, wornJoint));
+          wornDepth = 0.3;
+        #elif WORN_MASONRY_KIND == 2
+          // Corrugated sheet: vertical ribs only, no courses at all. Reads as
+          // a shed or a lock-up rather than as something anybody laid by hand.
+          float wornRib = abs(fract(wornPlane.x / 0.34) - 0.5);
+          wornSeam = 1.0 - smoothstep(0.12, 0.5, wornRib);
+          wornArris = smoothstep(0.0, 0.12, wornRib) * (1.0 - smoothstep(0.12, 0.26, wornRib));
+          wornDepth = 0.17;
+        #elif WORN_MASONRY_KIND == 3
+          // Render on block: no joints, just the faint horizontal float lines
+          // a plasterer leaves. Almost nothing, which is the point — a street
+          // where every wall is emphatic has no quiet walls to set them off.
+          float wornFloat = abs(fract(wornPlane.y / 2.9) - 0.5);
+          wornSeam = (1.0 - smoothstep(0.0, 0.06, wornFloat)) * 0.5;
+          wornDepth = 0.1;
+        #else
+          // Block courses: long and low, offset half a block row to row so it
+          // never resolves into graph paper.
+          vec2 wornCell = wornPlane / vec2(3.0, 1.6);
+          wornCell.x += floor(wornCell.y) * 0.5;
+          vec2 wornEdge = abs(fract(wornCell) - 0.5);
+          float wornJoint = min(0.5 - wornEdge.x, 0.5 - wornEdge.y);
+          wornSeam = 1.0 - smoothstep(0.0, 0.05, wornJoint);
+          wornArris = smoothstep(0.05, 0.09, wornJoint) * (1.0 - smoothstep(0.09, 0.14, wornJoint));
+        #endif
+
         // A joint is a dark line with a lighter arris beside it, which is what
         // makes it read as a recess rather than as a stripe painted on.
-        float wornSeam = 1.0 - smoothstep(0.0, 0.05, wornJoint);
-        float wornArris = smoothstep(0.05, 0.09, wornJoint) * (1.0 - smoothstep(0.09, 0.14, wornJoint));
-        gl_FragColor.rgb *= 1.0 + (wornArris * 0.05 - wornSeam * 0.24) * uWornTexture * wornUpright;
+        gl_FragColor.rgb *= 1.0 + (wornArris * 0.05 - wornSeam * wornDepth) * uWornTexture * wornUpright;
       }
     }
     #endif
@@ -172,7 +205,7 @@ type PatchableMaterial = THREE.Material & {
   userData: Record<string, unknown>;
 };
 
-function patchMaterial(material: PatchableMaterial, masonry = false): void {
+function patchMaterial(material: PatchableMaterial, masonry: number | false = false): void {
   if (material.userData.wornPatched === true) return;
   material.userData.wornPatched = true;
 
@@ -204,12 +237,12 @@ function patchMaterial(material: PatchableMaterial, masonry = false): void {
       .replace(
         '#include <common>',
         '#include <common>\nvarying vec3 vWornWorld;'
-        + (masonry ? '\nvarying vec3 vWornNormal;' : ''),
+        + (masonry === false ? '' : '\nvarying vec3 vWornNormal;'),
       )
       .replace(
         '#include <project_vertex>',
         '#include <project_vertex>\n  vWornWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;'
-        + (masonry ? '\n  vWornNormal = mat3(modelMatrix) * objectNormal;' : ''),
+        + (masonry === false ? '' : '\n  vWornNormal = mat3(modelMatrix) * objectNormal;'),
       );
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${WORN_NOISE}`)
@@ -222,7 +255,7 @@ function patchMaterial(material: PatchableMaterial, masonry = false): void {
   material.defines = {
     ...(material.defines ?? {}),
     WORN_STYLE: '',
-    ...(masonry ? { WORN_MASONRY: '' } : {}),
+    ...(masonry === false ? {} : { WORN_MASONRY: '', WORN_MASONRY_KIND: String(masonry) }),
   };
   // A face is not a wall. Skin and hair take the shading and the dither but
   // never the surface grain, because grime on a person reads as unwashed
@@ -262,7 +295,13 @@ export function applyWornStyle(
       // Arrays are left alone: nothing in this world uses a multi-material
       // wall, and guessing which slot is the face would be a coin toss.
       if (!Array.isArray(mesh.material)) {
-        let variant = masonryVariants.get(source.uuid);
+        // Which way a wall is built comes from where it stands, not from its
+        // colour. Keying it on the material alone would have made every wall
+        // of the same colour identical, which is the failure this is meant to
+        // fix.
+        const kind = masonryKind(mesh);
+        const key = `${source.uuid}:${kind}`;
+        let variant = masonryVariants.get(key);
         if (!variant) {
           variant = source.clone() as PatchableMaterial;
           // A clone carries the original's defines and userData, which would
@@ -270,9 +309,9 @@ export function applyWornStyle(
           // the plain patch it was cloned from.
           variant.defines = {};
           variant.userData = { ...source.userData, wornPatched: false };
-          patchMaterial(variant, true);
+          patchMaterial(variant, kind);
           patched += 1;
-          masonryVariants.set(source.uuid, variant);
+          masonryVariants.set(key, variant);
         }
         mesh.material = variant;
         return;
@@ -288,6 +327,26 @@ export function applyWornStyle(
     }
   });
   return patched;
+}
+
+/**
+ * Which of the four ways of being built a wall gets: block, panel, sheet or
+ * render.
+ *
+ * Derived from where the building stands, snapped to a sixteen-metre cell.
+ * Placement is the one property that is stable across reloads and differs
+ * between neighbours — but it has to be coarse, because a building here is
+ * sometimes one volume and sometimes four separate wall slabs, and reading the
+ * exact position would have built one side of a room out of block and the
+ * facing side out of corrugated sheet. A cell wider than a building keeps its
+ * walls agreeing with each other.
+ */
+function masonryKind(mesh: THREE.Mesh): number {
+  const at = mesh.getWorldPosition(new THREE.Vector3());
+  const cellX = Math.round(at.x / 16);
+  const cellZ = Math.round(at.z / 16);
+  const value = Math.sin(cellX * 12.9898 + cellZ * 78.233) * 43758.5453;
+  return Math.floor((value - Math.floor(value)) * 4);
 }
 
 /**
@@ -485,4 +544,80 @@ export function warpWorldGeometry(
   });
 
   return warped;
+}
+
+/**
+ * Gives a building a base, a shaft and a cap.
+ *
+ * The single biggest reason these buildings read as blocks rather than as
+ * architecture is that they *are* blocks: one extruded rectangle, from the
+ * ground to the sky, with the same footprint the whole way up. Real buildings
+ * step. There is a plinth at the pavement where the wall is thicker and takes
+ * the knocks, and there is a cornice at the top where the roof oversails. Two
+ * steps is all it takes — the eye reads a base and a cap and stops asking.
+ *
+ * Done as geometry inside the mesh rather than as extra objects sitting on it,
+ * and that is a measurement rather than a preference. This world runs at 470
+ * draw calls and 5,800 triangles: draw calls are the budget, triangles are
+ * nowhere near it. Stacking a plinth and a cornice on 62 buildings as separate
+ * meshes would have cost 124 more draw calls; merged into the building's own
+ * geometry it costs none, and about 3,000 triangles that nothing will notice.
+ *
+ * Everything is figured in world units and divided back through the mesh's own
+ * scale, because every surface here is the same unit cube stretched to size —
+ * a fixed local inset would give a twenty-metre wall a two-metre plinth.
+ *
+ * The proud faces stay inside the collider padding the walls already carry, so
+ * this adds nothing to walk into. Nobody bumps a cornice.
+ */
+export function massBuildings(
+  scene: THREE.Object3D,
+  keepPlain: THREE.Box3[] = [],
+): number {
+  let massed = 0;
+  scene.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    if (mesh.userData.wornMassed === true) return;
+    if ((mesh.geometry as THREE.BufferGeometry)?.type !== 'BoxGeometry') return;
+    if (!isMasonry(mesh, keepPlain)) return;
+
+    const scale = mesh.getWorldScale(new THREE.Vector3());
+    // Not worth it on anything that is mostly plinth already.
+    if (scale.y < 4) return;
+
+    const proudX = 0.13 / scale.x;
+    const proudZ = 0.13 / scale.z;
+    // A plinth is about knee-to-waist, a cornice is a courtesy. Both are in
+    // world units first, then taken back through the scale.
+    const plinth = Math.min(1.1 / scale.y, 0.22);
+    const cornice = Math.min(0.5 / scale.y, 0.12);
+
+    const parts: THREE.BufferGeometry[] = [];
+
+    const shaft = new THREE.BoxGeometry(1, 1, 1);
+    parts.push(shaft);
+
+    const base = new THREE.BoxGeometry(1 + proudX * 2, plinth, 1 + proudZ * 2);
+    base.translate(0, -0.5 + plinth / 2, 0);
+    parts.push(base);
+
+    const cap = new THREE.BoxGeometry(1 + proudX * 2.6, cornice, 1 + proudZ * 2.6);
+    cap.translate(0, 0.5 - cornice / 2, 0);
+    parts.push(cap);
+
+    const merged = mergeGeometries(parts, false);
+    if (!merged) return;
+    for (const part of parts) part.dispose();
+
+    mesh.geometry = merged;
+    mesh.userData.wornMassed = true;
+    // The settle pass works corner by corner on a box, and a stepped profile
+    // is not one — running it here would pull the plinth away from the wall it
+    // belongs to. A massed building has a silhouette already; it does not also
+    // need to lean.
+    mesh.userData.wornWarped = true;
+    massed += 1;
+  });
+  return massed;
 }

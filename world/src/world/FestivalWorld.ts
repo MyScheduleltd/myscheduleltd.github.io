@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, taperedPrism, warpWorldGeometry } from './WornStyle';
+import { applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, taperedPrism, warpWorldGeometry, massBuildings } from './WornStyle';
 import { dressBuildings, dressInteriors } from './WornArchitecture';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import type { VenueKey } from '../data/catalogue';
@@ -1711,6 +1711,11 @@ export class FestivalWorld {
         ...this.publicScreenBoxes().map((box) => box.clone().expandByScalar(4)),
       ];
       const dressing = dressBuildings(this.scene, this.publicScreenBoxes(), offLimits);
+      // Before the settle, which then correctly skips what has been massed —
+      // its corner-by-corner offset assumes a plain box and would tear a
+      // stepped profile open at the plinth.
+      this.wornMassed += massBuildings(this.scene, this.publicScreenBoxes());
+      this.dressKerbs();
       // After the dressing, so the cornices and shopfronts settle with the
       // walls they belong to rather than staying dead square against them.
       this.wornWarped += warpWorldGeometry(this.scene, this.wornWarpAmount, offLimits);
@@ -1761,6 +1766,7 @@ export class FestivalWorld {
   private wornBuildings = 0;
 
   private wornWarped = 0;
+  private wornMassed = 0;
 
   private wornInterior = 0;
 
@@ -1830,6 +1836,7 @@ export class FestivalWorld {
         return box.isEmpty() ? null : Number((box.min.y - ground).toFixed(3));
       })(),
       masonrySurfaces,
+      buildingsMassed: this.wornMassed,
       masonryMaterials: masonryMaterials.size,
       signsProtected: this.wornSigns,
       placementsRefusedOverSigns: this.wornSignsSpared,
@@ -2038,6 +2045,39 @@ export class FestivalWorld {
     this.cameraMode = 'follow';
     this.cameraOrbit.follow.yaw = Math.PI;
     this.cameraOrbit.follow.pitch = 0.3;
+  }
+
+  /**
+   * Loopback fixture standing on the cross street, which is the only road in
+   * the festival and now the only place with a kerb to look at.
+   */
+  focusKerbForReview(): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    this.player.position.set(26, this.groundHeightAt(26, -14), -14);
+    this.airborne = false;
+    this.verticalVelocity = 0;
+    this.player.rotation.y = Math.PI / 2;
+    this.cameraMode = 'follow';
+  }
+
+  /** What the kerb does to a body walking across the roadway and up onto it. */
+  kerbReviewSnapshot(): { stones: Array<Record<string, number>>; walk: Array<Record<string, number>> } {
+    return {
+      stones: this.kerbStones.map((stone) => ({
+        minX: Number(stone.minX.toFixed(1)),
+        maxX: Number(stone.maxX.toFixed(1)),
+        z: Number(stone.z.toFixed(1)),
+      })),
+      walk: this.kerbWalkProbe(),
+    };
+  }
+
+  private kerbWalkProbe(): Array<Record<string, number>> {
+    return [-24.5, -23.6, -22.5, -21.2, -20.4, -19.6, -14, -8.4, -7.6, -6.8, -5.5, -4.4].map((z) => ({
+      z,
+      y: Number(this.groundHeightAt(26, z).toFixed(3)),
+      offCarpet: Number(this.groundHeightAt(4, z).toFixed(3)),
+    }));
   }
 
   /**
@@ -6851,22 +6891,39 @@ export class FestivalWorld {
     spine.add(head);
     add(taperedPrism(0.23, 0.27, 0.46, 0.94), [0, 0.23, 0], 'skin', head);
     add(taperedPrism(0.285, 0.26, 0.13, 0.98), [0, 0.43, -0.015], 'hair', head);
-    // The visor, on the front of the head and only the front.
+    // A painted face, which is how that console generation did faces.
     //
-    // It was a prism a hair wider than the head, which is a ring — so it banded
-    // right around the back as a line across the skull, which is what a visor
-    // is not. "Wrapped round the sides" was the intention and a full revolution
-    // was what the shape actually did; a tapered prism has no front.
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.1, 0.07), hardware);
-    visor.position.set(0, 0.245, 0.22);
-    head.add(visor);
-    // A short return down each side, which is the part that was worth keeping:
-    // it stops the visor reading as a sticker on a flat face.
-    for (const side of [-1, 1]) {
-      const wrap = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, 0.14), hardware);
-      wrap.position.set(side * 0.17, 0.245, 0.15);
-      head.add(wrap);
-    }
+    // The visor that stood here was the right answer to a different question.
+    // It solved "how do you avoid modelling a face out of boxes" by not having
+    // one — but the reference we are working from does have faces, and they are
+    // painted rather than modelled: flat features on a flat plane, no geometry
+    // at all. Six triangles instead of a modelled brow.
+    //
+    // One texture, shared by everybody, drawn on transparent ground so it sits
+    // over whatever skin tone the visitor chose rather than carrying a tone of
+    // its own. The features are deliberately unisex and unplaceable — no lashes,
+    // no lip colour, no jaw shading — because this face is worn by every
+    // resident of the world at once and by every visitor who has not thought
+    // about it. A face that reads as somebody in particular is the wrong face
+    // for that job.
+    const face = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.3, 0.28),
+      FestivalWorld.faceMaterial(),
+    );
+    // Sat 4mm proud of the front facet, and leaning back with it.
+    //
+    // Both numbers are worked from the head rather than guessed, and the first
+    // guess was wrong in a way worth recording: taperedPrism takes a *radius*,
+    // and a four-sided prism turned an eighth presents a flat face at r/√2, not
+    // at r. Reading it as a half-width buried the whole face 26mm inside the
+    // skull, where it rendered perfectly and was visible to nobody.
+    //
+    // The head also tapers, so its front is not vertical — a flat upright plane
+    // would sink in at the chin and float off at the brow. Leaning it by the
+    // taper's own angle keeps the gap even top to bottom.
+    face.position.set(0, 0.26, 0.168);
+    face.rotation.x = -0.059;
+    head.add(face);
 
     const limb = (
       x: number,
@@ -8990,6 +9047,110 @@ export class FestivalWorld {
    * fills the garage bay and its roof carries on from the deck, so the same
    * plan position is two different floors depending on who is asking.
    */
+  /** Kerbed roadway, laid once. */
+  private kerbsRaised = false;
+
+  /**
+   * Raises the pavement along the cross street.
+   *
+   * This was asked for as "kerbs on the street", and looking for the street is
+   * where it got interesting: the main approach is 29 units wide and the red
+   * carpet laid down it is 28. There is no pavement there to raise. That
+   * approach is a ceremonial forecourt, not a road, and a kerb line running
+   * underneath the carpet would not have read as a street — it would have read
+   * as a mistake.
+   *
+   * The cross street at z = -14 is a road: 93 long, 12 deep, with a painted
+   * line down the middle of it. That is where a kerb belongs, and it is the one
+   * place in the festival where the change does what it is supposed to do.
+   *
+   * Broken where the carpet crosses, because a kerb that runs through the
+   * middle of a forecourt is a trip hazard nobody would have built.
+   *
+   * No colliders. A kerb is a step, not a wall, and giving it one would have
+   * put a 93-unit barrier across the middle of the world — the residents tour
+   * on foot through exactly here. It is raised in the ground height instead, so
+   * a body walks up onto it the way a body does.
+   */
+  private dressKerbs(): void {
+    if (this.kerbsRaised) return;
+    this.kerbsRaised = true;
+    const kerbStone = material(0x8d8578, 0.94, 0.02);
+    const venues = this.venueVolumes();
+    for (const edge of [-1, 1]) {
+      // Outboard of the roadway, not cut out of it. Laid inside the road it
+      // was a lone raised stone with a drop either side, which is a kerb
+      // island rather than a footway — and it narrowed the only road in the
+      // festival by more than half.
+      const z = -14 + edge * (6 + FestivalWorld.KERB_WIDTH / 2);
+      // Walked end to end and laid only where there is room, rather than run
+      // from one hard-coded x to another. The hard-coded version put a raised
+      // pavement straight through the middle of the Drive-In's car park —
+      // which is the same lesson as the cables and the screen exclusions: a
+      // span somebody typed out goes stale the moment the world moves, and a
+      // span the world is asked about does not.
+      let runStart: number | undefined;
+      const flush = (end: number) => {
+        if (runStart === undefined) return;
+        const width = end - runStart;
+        if (width >= 4) {
+          const stone = this.mesh(
+            [width, 0.34, FestivalWorld.KERB_WIDTH],
+            [(runStart + end) / 2, 0.13, z],
+            kerbStone,
+          );
+          stone.receiveShadow = true;
+          this.kerbStones.push({ minX: runStart, maxX: end, z });
+        }
+        runStart = undefined;
+      };
+      for (let x = -46.5; x <= 46.5; x += 1) {
+        const clear = Math.abs(x) >= FestivalWorld.KERB_GAP
+          && !venues.some((box) => box.containsPoint(new THREE.Vector3(x, AVATAR_GROUND_Y, z)))
+          && !this.staticCollides(x, z, AVATAR_GROUND_Y, FestivalWorld.KERB_WIDTH / 2);
+        if (clear && runStart === undefined) runStart = x;
+        if (!clear) flush(x - 1);
+      }
+      flush(46.5);
+    }
+  }
+
+  /** Half the width of the gap left for the carpet to cross the roadway. */
+  private static readonly KERB_GAP = 15;
+  /** How deep the raised pavement strip is. */
+  private static readonly KERB_WIDTH = 3.4;
+  /** How far the pavement stands above the roadway. */
+  private static readonly KERB_RISE = 0.13;
+
+  /**
+   * How high a body stands on the kerb, and nothing if it is not on one.
+   *
+   * The rise is taken up over the last third of the strip rather than at its
+   * face, so walking onto the pavement is a step rather than a snap. A body
+   * that teleports up 13cm reads as a bug; a body that rises over half a stride
+   * reads as a kerb.
+   */
+  private kerbHeightAt(x: number, z: number): number | undefined {
+    if (!this.kerbsRaised) return undefined;
+    const from = Math.abs(z + 14);
+    if (from < 6 || from > 6 + FestivalWorld.KERB_WIDTH) return undefined;
+    // Asked of the stones that were actually laid, rather than worked out a
+    // second time from the same intentions. Two independent copies of "where
+    // the pavement is" is exactly how a body ends up standing 13cm above a
+    // road with no kerb under it.
+    const side = Math.sign(z + 14);
+    if (!this.kerbStones.some(
+      (stone) => stone.minX <= x && x <= stone.maxX && Math.sign(stone.z + 14) === side,
+    )) {
+      return undefined;
+    }
+    const climbed = THREE.MathUtils.clamp((from - 6) / 0.9, 0, 1);
+    return AVATAR_GROUND_Y + FestivalWorld.KERB_RISE * climbed;
+  }
+
+  /** Where the pavement actually got laid, rather than where it was meant to. */
+  private kerbStones: Array<{ minX: number; maxX: number; z: number }> = [];
+
   private groundHeightAt(x: number, z: number, fromY = this.player.position.y): number {
     const r = rooftopBounds;
     if (x > r.minX && x < r.maxX && z >= r.deckMinZ && z < r.maxZ) return ROOF_AVATAR_Y;
@@ -9007,6 +9168,8 @@ export class FestivalWorld {
       const climbed = (x - TEMPLE.stepMinX) / (TEMPLE.minX - 1.5 - TEMPLE.stepMinX);
       return AVATAR_GROUND_Y + (TEMPLE_FLOOR_Y - AVATAR_GROUND_Y) * THREE.MathUtils.clamp(climbed, 0, 1);
     }
+    const kerb = this.kerbHeightAt(x, z);
+    if (kerb !== undefined) return kerb;
     if (this.inClubRoom(x, z)) return CLUB_AVATAR_Y;
     if (this.onClubStairs(x, z)) {
       const b = clubBounds;
@@ -9046,6 +9209,87 @@ export class FestivalWorld {
   }
 
   /** How wide a body is, for the purpose of not being inside a wall. */
+  private static sharedFaceMaterial: THREE.MeshStandardMaterial | undefined;
+
+  /**
+   * The one face in the festival, painted once and worn by everybody.
+   *
+   * Drawn rather than modelled, which is the whole point of it — the era we are
+   * working from put faces on characters as bitmaps on a flat plane, and modelling
+   * this out of boxes is exactly the "kidult" read the note complained about.
+   *
+   * Shared, and that matters at this budget: the world runs at 470 draw calls,
+   * and a material per avatar would have added a program compile each. One
+   * material, one texture, one program, however many people are in the room.
+   *
+   * Everything is drawn on transparent ground and cut out with alphaTest rather
+   * than blended, so it needs no depth sorting and costs nothing to composite.
+   */
+  private static faceMaterial(): THREE.MeshStandardMaterial {
+    if (FestivalWorld.sharedFaceMaterial) return FestivalWorld.sharedFaceMaterial;
+    const size = 128;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, size, size);
+      const ink = '#241f1d';
+      // Brows first, and low. The distance between brow and eye is most of what
+      // makes a face read as adult rather than as a cartoon, and the mistake in
+      // every box-built face is putting them too far apart.
+      ctx.fillStyle = ink;
+      for (const side of [0, 1]) {
+        const x = side === 0 ? 26 : 74;
+        ctx.globalAlpha = 0.72;
+        ctx.fillRect(x, 44, 28, 5);
+        ctx.globalAlpha = 1;
+        // The eye: a dark almond with a single lighter catch in it. Two tones
+        // is the least that reads as an eye rather than as a hole.
+        ctx.beginPath();
+        ctx.ellipse(x + 14, 62, 14, 8, 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#efe6df';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(x + 14, 62, 6.5, 7, 0, 0, Math.PI * 2);
+        ctx.fillStyle = ink;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(x + 16, 59.5, 2, 2, 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.globalAlpha = 0.85;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = ink;
+      }
+      // A nose is one soft shadow down one side, never an outline. An outlined
+      // nose is a clown.
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = ink;
+      ctx.fillRect(60, 66, 4, 20);
+      ctx.globalAlpha = 0.26;
+      ctx.fillRect(54, 84, 16, 3);
+      // The mouth: closed, level, no colour of its own. A smile would be worn
+      // by twelve residents simultaneously for the rest of the festival.
+      ctx.globalAlpha = 0.55;
+      ctx.fillRect(48, 100, 32, 4);
+      ctx.globalAlpha = 1;
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    const material = new THREE.MeshStandardMaterial({
+      map: texture,
+      transparent: false,
+      alphaTest: 0.4,
+      roughness: 0.9,
+      metalness: 0,
+    });
+    FestivalWorld.sharedFaceMaterial = material;
+    return material;
+  }
+
   private static readonly BODY_RADIUS = 0.42;
 
   /**

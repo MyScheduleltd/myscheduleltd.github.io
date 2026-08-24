@@ -830,6 +830,10 @@ export class App {
           ? this.world?.mentorGreetingReviewSnapshot()
           : this.world?.mentorFollowerReviewSnapshot());
       }, 250);
+    } else if (reviewTarget === 'kerb') {
+      this.world.focusKerbForReview();
+      (window as Window & { __festivalKerb?: () => unknown }).__festivalKerb =
+        () => this.world?.kerbReviewSnapshot();
     } else if (reviewTarget === 'perf') {
       (window as Window & { __festivalPerf?: () => unknown }).__festivalPerf = () => this.world?.performanceSnapshot();
     } else if (reviewTarget === 'rooftop' || reviewTarget === 'rooftop-dj') {
