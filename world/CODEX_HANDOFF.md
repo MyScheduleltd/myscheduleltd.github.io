@@ -1,10 +1,149 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-08-21 · mobile DJ prompt + landscape task counter · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-08-25 · unresolved mobile crash + PS2 art direction · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
 > obsolete no-publish rule and branch name. Use this file for the active process.
+
+---
+
+## 0a. READ THIS FIRST — the mobile crash is not fixed
+
+The owner's phone crashes out of the world and lands back on the sign-in page.
+It is **unresolved**. A whole session was spent on it and none of the fixes
+below stopped it. Do not assume any of them was the cause; do not assume any of
+them was wasted either — several were real faults, they were just not *this*
+fault.
+
+**What the owner reports, in their words:** it happens on both `?era=ps2` and
+the plain beta; it happened "when the public screening initiates" and "when
+ordering a song from the jukebox"; and it happened again "walking around" while
+"not doing anything". Safari showed *"A problem repeatedly occurred"*, which is
+WebKit giving up on a tab that keeps dying — so it is a **tab crash**, not a
+network fault, and not a logout.
+
+**A black box is now fitted, and it is the most useful thing here.** The world
+writes one line about itself to `localStorage` every second (`App.startBlackBox`
+→ `FestivalWorld.diagnosticSample`). After a session that ended without saying
+goodbye, the next load paints that last line across the top of the page in red
+(`App.showLastBreath`, `.last-breath` in `style.css`). It is deliberately **not**
+loopback-gated — every other readout in this project is, and that is precisely
+why four rounds of debugging produced four wrong answers. Ask the owner to
+photograph the red line.
+
+How to read it:
+
+| Field | Means | What a large or rising value implicates |
+| --- | --- | --- |
+| `mounts` / `releases` | cumulative projector player mount/teardown | video player churn — cut harder, or stop autoplay on phones |
+| `live` / `frames` | players currently mounted / iframes in the DOM | more than one at a time is a bug; the rule is one |
+| `mats` / `geo` / `tex` / `progs` | scene material, geometry, texture, program counts | a leak — compare against the baselines below |
+| `draws` | draw calls that frame | speed, not crashes; 865 at night is high but survivable |
+| `lost` | WebGL context was lost | memory pressure got there first |
+| `up` / `x` / `z` / `venue` | seconds alive, position, venue | where and when it dies |
+
+**Desktop baselines, lite mode, night, `era=ps2`** (measured 2026-08-25):
+`draws 865 · progs 13 · tex 7 · geo 172 · mats 1935 · orphanedStyleMaterials 0`.
+Plain beta: `draws 778 · geo 17 · mats 1192`. If a phone's black box shows `mats`
+or `geo` far above these, something is accumulating that a desk does not show.
+
+**Ruled out by measurement, so do not re-derive:**
+
+- Texture memory. 7 textures either way; the style flag adds none.
+- The style flag as a memory cost. +3 MB of heap, identical texture count.
+- The live service. 70 seconds of stream held from a desk with heartbeats
+  every 10 s, two visitors, world not full.
+- Multiple simultaneous video players *by design* — the projector already
+  mounts one venue at a time, and the jukebox now releases rather than mutes.
+
+**Candidates never disproved:**
+
+1. Video player churn while walking. Phones no longer warm a screen on
+   approach (`FestivalWorld.projectorVenue`), but the owner still crashed after
+   that shipped.
+2. A leak that does not show on desktop Chromium at all.
+3. Something entirely outside these three, which is the honest default given
+   the strike rate.
+
+**The one thing not yet tried:** stop autoplaying venue video on phones
+altogether — show the existing `NOW PLAYING` card and require a tap. That is a
+product decision and the owner has not been asked for it.
+
+## 0b. What changed this session — 2026-08-24/25
+
+Thirty-two commits, `cc3b484` … `535b809`, every one published to Pages. **Two
+regressions were introduced and then fixed inside this session** — check these
+first if something looks wrong:
+
+- The styling pass cloned its own output on every re-run, abandoning 51
+  materials (`WornStyle.applyWornStyle`, guarded by `userData.wornMasonry`;
+  `orphanedStyleMaterials` in the worn snapshot exists to catch a recurrence).
+- The lamp cull ran 600 ms after load, forcing a recompile of ~1900 materials
+  after the first frames. It now runs in `FestivalWorld.start()`, before
+  anything has compiled. **Any light made invisible after first paint costs a
+  full scene shader rebuild — this is the trap to remember.**
+
+Art direction (all behind `?worn` / `?era=ps2`, never on for visitors):
+
+- `era=ps2` adds world-space **courses** on walls only, four kinds — block,
+  concrete panel, corrugated, render — chosen per 16 m cell, and per *room* for
+  interiors so a room agrees with itself. Doors, stalls and both staircases are
+  excluded (`userData.wornNoMasonry`); the size test asks for ≥4 tall and ≥6
+  wide, because 2.4 in both is a door.
+- 24 buildings **massed** with a plinth and cornice, merged into each mesh's own
+  geometry — draw calls are the budget here, triangles are not.
+- A **kerbed footway** on the cross street only, laid by walking it and asking
+  the world for room. The main approach is 29 wide and its carpet 28 — there is
+  no pavement there to raise.
+- The painted face was built, then reverted to the visor on the owner's
+  preference. The reasoning is kept in the comment where the visor is built.
+- The dither stays at the signed-off level under `era=ps2`. The argument for
+  standing it down was correct about the console and lost anyway.
+
+Mobile and connection work — all real, none of it the crash:
+
+- Shader hash rewritten to drop 18 `sin()` per fragment; the two smooth octaves
+  compile out on 精簡 (`WORN_CHEAP`). The owner confirmed screening lag improved.
+- 精簡 keeps 3 street lamps instead of 6 and hides all but 6 other placed lamps;
+  night ambient is lifted 0.85 to compensate (`DayNightCycle.setAmbientLift`).
+- WebGL **context loss is now handled** (`FestivalWorld.watchForContextLoss`).
+  Nothing listened before, and the default when nobody listens is that the
+  context never comes back.
+- Seating is measured rather than assumed: the pad is found by looking, the hip
+  rise is read off the rig. Drive-In seats sit on the car, not the tarmac
+  behind it. Seat reach is horizontal (`nearestSeat`) — the rooftop benches were
+  unreachable by arithmetic before.
+- Connection: join retries forever, streams carry a generation so a stale one
+  cannot kill a live one, a 40 s silence watchdog, `wake()` on
+  `visibilitychange`/`pageshow`, and `pagehide` is now **reversible** — it no
+  longer says goodbye, tears out listeners, or wipes quest progress.
+- Session id and token persist in `sessionStorage` so a discarded tab reclaims
+  its own visitor instead of colliding with its own name.
+
+## 0c. Owed to the owner
+
+1. **`world/server/index.mjs` has an undeployed change.** A name is now only
+   reserved while its holder has an open stream; a disconnected holder is stood
+   down (`claimName`). Two tests cover both halves. **Render needs a manual
+   deploy — the owner does this by hand, and pushing to `main` ships the client
+   only.** Until then the client half works and the server half does not.
+2. The art-direction board (`https://claude.ai/code/artifact/a2b69b4e-235a-4512-bbfd-9fcd58b46bcc`)
+   is three drafts stale. It still claims `era=ps2` stands the banding down.
+3. Closing a tab now leaves a ghost visitor for up to two minutes, which is the
+   accepted cost of not saying goodbye on backgrounding. `beforeunload` would
+   fix it if ghosts become a nuisance.
+
+## 0d. Corrections to the rest of this file
+
+- **There are 43 server tests now**, not 41. Two were added for the name rule.
+- The publish rule below says to wait for the word `publish`. **That is not how
+  this session ran** — the owner verifies on the live site and treats unpublished
+  work as no work, so every turn ended in a publish. Confirm which they want
+  rather than assuming either.
+- New review fixtures: `?review=sit`, `sit-rooftop`, `sit-drive` (seating
+  geometry, with `reachable` and `legInPad`), `?review=kerb` (the footway).
+  New flags: `?era=ps2`, `&wornTexture=N`.
 
 ---
 
@@ -59,7 +198,7 @@ Two related traps, both of which have cost hours:
 | `world/src/ui/App.ts` | All DOM/UI. Gate, panels, chat, staff tools, jukebox player, touch controls. |
 | `world/src/style.css` | All styling, including every mobile/landscape rule. |
 | `world/server/index.mjs` | Zero-dependency Node service. SSE presence, chat, seats, punches, jukebox, programme clock, staff admin. |
-| `world/server/server.test.mjs` | 41 tests. Run with `npm test`. |
+| `world/server/server.test.mjs` | 43 tests. Run with `npm test`. |
 | `world/scripts/publish-beta.mjs` | Copies the Vite build into `docs/beta`. |
 
 Deployment: **Pages** serves `docs/`. **Render** runs `world/server/index.mjs`.
