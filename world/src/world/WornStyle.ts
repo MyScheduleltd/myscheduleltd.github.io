@@ -308,6 +308,16 @@ function patchMaterial(material: PatchableMaterial, masonry: number | false = fa
  * built after the first call are picked up, and anything already patched is
  * left alone.
  */
+/**
+ * The masonry materials already built, kept across calls.
+ *
+ * Held at module scope rather than per call, because the pass runs several
+ * times as the world finishes building itself and a fresh cache each time
+ * meant fresh clones each time. Keyed on the original material, so a wall
+ * built later out of the same colour gets the one that already exists.
+ */
+const masonryVariants = new Map<string, PatchableMaterial>();
+
 export function applyWornStyle(
   scene: THREE.Object3D,
   /** Screens and their frames, which are manufactured objects and not masonry. */
@@ -316,10 +326,6 @@ export function applyWornStyle(
   rooms: MasonryRoom[] = [],
 ): number {
   let patched = 0;
-  // One masonry variant per source material, not one per wall. The world reuses
-  // a handful of colours across hundreds of surfaces, so keying on the material
-  // keeps the extra draw calls in the tens rather than the hundreds.
-  const masonryVariants = new Map<string, PatchableMaterial>();
 
   scene.traverse((object) => {
     const mesh = object as THREE.Mesh;
@@ -330,6 +336,17 @@ export function applyWornStyle(
       // Arrays are left alone: nothing in this world uses a multi-material
       // wall, and guessing which slot is the face would be a coin toss.
       if (!Array.isArray(mesh.material)) {
+        // Already built of something. Without this the pass cloned a clone.
+        //
+        // This runs again a few times after the world opens, because the world
+        // is still assembling itself — and on the second run the material it
+        // found was the variant the first run had just fitted. It cloned that,
+        // fitted the copy, and left the original hanging off nothing: not in
+        // the scene, not disposed, and holding a compiled shader program for
+        // the life of the page. Four runs, seventeen walls' worth of material,
+        // fifty-one programs abandoned on a phone in the first six seconds
+        // after somebody signed in.
+        if (source.userData.wornMasonry === true) return;
         // Which way a wall is built comes from where it stands, not from its
         // colour. Keying it on the material alone would have made every wall
         // of the same colour identical, which is the failure this is meant to
@@ -343,7 +360,7 @@ export function applyWornStyle(
           // hand it a `wornPatched` flag it has not earned and leave it with
           // the plain patch it was cloned from.
           variant.defines = {};
-          variant.userData = { ...source.userData, wornPatched: false };
+          variant.userData = { ...source.userData, wornPatched: false, wornMasonry: true };
           patchMaterial(variant, kind);
           patched += 1;
           masonryVariants.set(key, variant);
@@ -677,4 +694,28 @@ export function massBuildings(
     massed += 1;
   });
   return massed;
+}
+
+/**
+ * How many materials this pass built that nothing is using any more.
+ *
+ * Every variant it has ever made is remembered; anything not currently worn by
+ * a mesh in the scene was abandoned. A review-only count, and the only way to
+ * see this particular fault from outside — an orphan is invisible to a scene
+ * traverse precisely because it is no longer in the scene.
+ */
+export function wornOrphanCount(scene: THREE.Object3D): number {
+  const inUse = new Set<string>();
+  scene.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.material) return;
+    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      inUse.add((material as THREE.Material).uuid);
+    }
+  });
+  let orphans = 0;
+  for (const variant of masonryVariants.values()) {
+    if (!inUse.has(variant.uuid)) orphans += 1;
+  }
+  return orphans;
 }

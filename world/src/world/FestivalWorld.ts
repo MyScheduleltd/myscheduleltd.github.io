@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, taperedPrism, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
+import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, taperedPrism, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
 import { dressBuildings, dressInteriors } from './WornArchitecture';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import type { VenueKey } from '../data/catalogue';
@@ -1279,10 +1279,10 @@ export class FestivalWorld {
     this.watchForContextLoss(foregroundCanvas);
     // Kept up rather than done once. This world does not finish building at
     // load — the club's rig, the rooftop, the evening's fireworks all arrive
-    // later — and three timeouts guessed at when that stops. It does not stop,
-    // so the cull runs on a slow interval instead. It only writes when
-    // something new has appeared, so it costs a traverse and nothing else.
-    window.setTimeout(() => this.cullDecorativeLights(), 600);
+    // later — so the cull runs again on a slow interval. The first pass is in
+    // start(), before anything has compiled; these later ones only write when
+    // a new light has appeared, which is rare, so the recompile they can
+    // trigger is rare with them.
     window.setInterval(() => this.cullDecorativeLights(), 5_000);
     this.dayNight.directionalLight.layers.enable(1);
     this.dayNight.hemisphereLight.layers.enable(1);
@@ -1350,6 +1350,16 @@ export class FestivalWorld {
   }
 
   start(): void {
+    // Before the first frame, deliberately.
+    //
+    // Turning a light off changes the number of lights in the scene, and that
+    // makes three.js rebuild the shader for every material in it — about
+    // nineteen hundred here. Doing that six hundred milliseconds after the
+    // world opened meant a phone rendered a few frames, then stopped dead to
+    // recompile the entire world, seconds after somebody signed in. Done here
+    // nothing has compiled yet, so the lights that will never be used cost
+    // nothing to remove.
+    this.cullDecorativeLights();
     this.clock.start();
     this.render();
   }
@@ -1865,6 +1875,11 @@ export class FestivalWorld {
       masonrySurfaces,
       buildingsMassed: this.wornMassed,
       masonryMaterials: masonryMaterials.size,
+      // Materials the styling pass created and then left attached to nothing.
+      // Should be zero; anything else is a program held on the GPU for the
+      // life of the page, which is the shape of a crash on a phone rather than
+      // a slowdown on a desk.
+      orphanedStyleMaterials: wornOrphanCount(this.scene),
       signsProtected: this.wornSigns,
       placementsRefusedOverSigns: this.wornSignsSpared,
     };
