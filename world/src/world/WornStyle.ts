@@ -33,6 +33,18 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
  * Shared by every patched material, so the whole world dials together from one
  * place rather than needing a walk of the scene per change.
  */
+/**
+ * Whether the shader takes the cheap road: two hashes per fragment instead of
+ * eighteen. Set from the graphics mode before the pass runs, because it is a
+ * compile-time define rather than a uniform — a branch a phone still pays for
+ * is not a saving.
+ */
+let wornCheap = false;
+
+export function setWornCheap(cheap: boolean): void {
+  wornCheap = cheap;
+}
+
 export const WORN_UNIFORMS = {
   uWornAmount: { value: 0 },
   uWornSteps: { value: 10 },
@@ -69,8 +81,20 @@ const WORN_NOISE = /* glsl */ `
   uniform float uWornGrain;
   uniform float uWornTexture;
 
+  // No sin in here, and that is the point.
+  //
+  // The obvious hash is fract(sin(dot(p, k)) * big), and it was costing a
+  // transcendental per call — eighteen of them per fragment once the two smooth
+  // octaves are counted, on every lit surface in the world. A desktop GPU
+  // swallows that. A phone does not, and the place it showed was a screening,
+  // where a large lit surface fills the view and the video decoder is already
+  // competing for the same silicon.
+  //
+  // This one is multiplies and a fract. Same character, a fraction of the cost.
   float wornHash(vec3 p) {
-    return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453123);
+    vec3 q = fract(p * 0.3183099 + vec3(0.1, 0.13, 0.17));
+    q *= 17.0;
+    return fract(q.x * q.y * q.z * (q.x + q.y + q.z));
   }
 
   float wornSmoothNoise(vec3 p) {
@@ -104,9 +128,17 @@ const WORN_FRAGMENT = /* glsl */ `
       // colour was.
       float aggregate = wornHash(floor(vWornWorld * 38.0)) - 0.5;
       float speckle = wornHash(floor(vWornWorld * 12.0 + 3.7)) - 0.5;
+      // The two smooth octaves are eight hashes each — sixteen of the eighteen
+      // this shader used to run. They are the staining rather than the tooth:
+      // the damp patch, the run under a sill. On a phone the tooth is what
+      // reads at all, so the staining is what goes.
+      #ifdef WORN_CHEAP
+      float variation = aggregate * 0.13 + speckle * 0.06;
+      #else
       float runs = wornSmoothNoise(vec3(vWornWorld.x * 3.4, vWornWorld.y * 0.32, vWornWorld.z * 3.4)) - 0.5;
       float blotch = wornSmoothNoise(vWornWorld * 0.52) - 0.5;
       float variation = aggregate * 0.11 + speckle * 0.05 + runs * 0.05 + blotch * 0.05;
+      #endif
       gl_FragColor.rgb = clamp(gl_FragColor.rgb * (1.0 + variation * uWornGrain), 0.0, 1.0);
     }
     #endif
@@ -255,6 +287,7 @@ function patchMaterial(material: PatchableMaterial, masonry: number | false = fa
   material.defines = {
     ...(material.defines ?? {}),
     WORN_STYLE: '',
+    ...(wornCheap ? { WORN_CHEAP: '' } : {}),
     ...(masonry === false ? {} : { WORN_MASONRY: '', WORN_MASONRY_KIND: String(masonry) }),
   };
   // A face is not a wall. Skin and hair take the shading and the dither but

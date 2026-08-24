@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, taperedPrism, warpWorldGeometry, massBuildings } from './WornStyle';
+import { applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, taperedPrism, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
 import { dressBuildings, dressInteriors } from './WornArchitecture';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import type { VenueKey } from '../data/catalogue';
@@ -1274,6 +1274,13 @@ export class FestivalWorld {
       : undefined;
     this.dayNight = new DayNightCycle(this.scene, localTimeOverride);
     this.dayNight.setShadowsEnabled(graphicsMode === 'normal');
+    // Kept up rather than done once. This world does not finish building at
+    // load — the club's rig, the rooftop, the evening's fireworks all arrive
+    // later — and three timeouts guessed at when that stops. It does not stop,
+    // so the cull runs on a slow interval instead. It only writes when
+    // something new has appeared, so it costs a traverse and nothing else.
+    window.setTimeout(() => this.cullDecorativeLights(), 600);
+    window.setInterval(() => this.cullDecorativeLights(), 5_000);
     this.dayNight.directionalLight.layers.enable(1);
     this.dayNight.hemisphereLight.layers.enable(1);
     this.dayNight.moonLight.layers.enable(1);
@@ -1741,6 +1748,9 @@ export class FestivalWorld {
       this.wornSignsSpared += dressing.refused;
       this.wornSigns = dressing.signs;
     }
+    // Decided before the pass, not during it: the cheap path is a define, so a
+    // material patched under one setting keeps it until it is patched again.
+    setWornCheap(this.graphicsMode !== 'normal');
     const patched = applyWornStyle(this.scene, this.publicScreenBoxes(), this.interiorRooms());
     setWornStyle(amount, steps, grain, texture);
     return patched;
@@ -2490,6 +2500,11 @@ export class FestivalWorld {
     programs: number;
     sceneObjects: number;
     lights: number;
+    lampsLit: number;
+    lampsTotal: number;
+    lastCullSeen: number;
+    sinceCullMs: number | null;
+    mode: GraphicsMode;
     shadowCasters: number;
     livePlayers: number;
     colliders: number;
@@ -2498,10 +2513,19 @@ export class FestivalWorld {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return undefined;
     let sceneObjects = 0;
     let lights = 0;
+    let lampsLit = 0;
+    let lampsTotal = 0;
     let shadowCasters = 0;
     this.scene.traverse((object) => {
       sceneObjects += 1;
-      if ((object as THREE.Light).isLight) lights += 1;
+      const light = object as THREE.Light & { isPointLight?: boolean; isSpotLight?: boolean };
+      if (light.isLight) {
+        lights += 1;
+        if (light.isPointLight || light.isSpotLight) {
+          lampsTotal += 1;
+          if (light.visible) lampsLit += 1;
+        }
+      }
       if (object.castShadow) shadowCasters += 1;
     });
     return {
@@ -2510,6 +2534,11 @@ export class FestivalWorld {
       programs: this.renderer.info.programs?.length ?? 0,
       sceneObjects,
       lights,
+      lampsLit,
+      lampsTotal,
+      lastCullSeen: this.lastCullSeen,
+      sinceCullMs: this.lastCullAt ? Math.round(performance.now()) - this.lastCullAt : null,
+      mode: this.graphicsMode,
       shadowCasters,
       livePlayers: [...this.projectors.values()].filter((projector) => Boolean(projector.iframe)).length,
       colliders: this.colliders.length,
@@ -2931,6 +2960,14 @@ export class FestivalWorld {
 
   setGraphicsMode(mode: GraphicsMode): void {
     this.graphicsMode = mode;
+    if (mode === 'normal') {
+      this.scene.traverse((object) => {
+        const light = object as THREE.Light;
+        if (light.isLight) light.visible = true;
+      });
+    } else {
+      this.cullDecorativeLights();
+    }
     this.adaptiveRenderScale = 1;
     this.performanceWindowStartedAt = performance.now();
     this.performanceFrameCount = 0;
@@ -4362,6 +4399,59 @@ export class FestivalWorld {
    * rule is size: anything under fifteen centimetres in every direction is
    * lit, and receives, but does not cast.
    */
+  /**
+   * Turns off the decorative lamps on the light setting.
+   *
+   * Every light in a three.js scene is evaluated per pixel on every lit
+   * surface, whether or not it reaches that pixel. This world has forty-three,
+   * and 精簡 was dropping antialiasing, shadows, resolution and fog distance
+   * while leaving every one of them lit — so the setting meant for the weakest
+   * devices still carried the most expensive part of the frame.
+   *
+   * Kept by reach rather than by name: intensity times distance is how far a
+   * lamp actually throws, so the ones that light the world survive and the ones
+   * that are dressing on a post do not. The sun, the moon and the sky are never
+   * touched — they are what the world is lit by, and losing them is the dark
+   * night this is not allowed to cause.
+   *
+   * Idempotent, and run again after the club and the rooftop have finished
+   * building themselves, because lights added later would otherwise slip past.
+   */
+  private cullDecorativeLights(): void {
+    if (this.graphicsMode === 'normal') return;
+    const lamps: THREE.Light[] = [];
+    this.scene.traverse((object) => {
+      const light = object as THREE.Light & { distance?: number };
+      if (!light.isLight) return;
+      // Point and spot only. Ambient, hemisphere and directional light the
+      // whole world and cost one evaluation between them.
+      if (!(light as THREE.PointLight).isPointLight && !(light as THREE.SpotLight).isSpotLight) return;
+      // Never the street-lamp pool. That is already a fixed set of lights
+      // walked to whichever posts are nearest, and it re-asserts its own
+      // visibility four times a second — so culling its members was a fight
+      // this could only lose, and did: six lamps hidden, five back on within
+      // three seconds. The pool is made smaller where it is built instead.
+      if (this.lampPool.includes(light as THREE.SpotLight)) return;
+      lamps.push(light);
+    });
+    const reach = (light: THREE.Light) => {
+      const distance = (light as THREE.PointLight).distance || 30;
+      return light.intensity * distance;
+    };
+    lamps.sort((a, b) => reach(b) - reach(a));
+    lamps.forEach((light, index) => {
+      light.visible = index < FestivalWorld.LITE_LAMPS;
+    });
+    this.lastCullSeen = lamps.length;
+    this.lastCullAt = Math.round(performance.now());
+  }
+
+  private lastCullSeen = 0;
+  private lastCullAt = 0;
+
+  /** How many placed lamps a light-setting device keeps. */
+  private static readonly LITE_LAMPS = 6;
+
   private castShadows(root: THREE.Object3D): void {
     const on = this.graphicsMode === 'normal';
     const size = new THREE.Vector3();
@@ -4686,7 +4776,11 @@ export class FestivalWorld {
     clubRoad.userData.projectorBackground = true;
 
     // A fixed pool of lamp lights, reassigned to whichever posts are closest.
-    for (let index = 0; index < 6; index += 1) {
+    // Three on the light setting rather than six: every one of them is
+    // evaluated per pixel on every lit surface whether it reaches that pixel or
+    // not, and halving the pool halves that part of the frame outright.
+    const poolSize = this.graphicsMode === 'normal' ? 6 : 3;
+    for (let index = 0; index < poolSize; index += 1) {
       const light = this.addSpotlight([0, 5, 0], [0, 0, 0], index === 0 ? 46 : 38, 20, index === 0);
       this.lampPool.push(light);
     }
