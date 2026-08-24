@@ -1309,6 +1309,9 @@ export class App {
     });
     window.addEventListener('pageshow', (event) => {
       if (event.persisted) this.festivalClient.resume();
+      // And regardless: a pageshow means this page is on screen and running,
+      // which is the one fact that contradicts whatever pagehide concluded.
+      this.festivalClient.wake();
     });
     this.startNpcChat();
     this.syncProgrammeBoard(true);

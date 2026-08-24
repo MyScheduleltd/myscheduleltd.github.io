@@ -258,6 +258,16 @@ export class DayNightCycle {
     this.lampLights.push({ light, intensityScale });
   }
 
+  /**
+   * Extra sky at night, to stand in for lamps the light setting cannot afford.
+   * Zero on the full setting, which still has all of them.
+   */
+  private ambientLift = 0;
+
+  setAmbientLift(lift: number): void {
+    this.ambientLift = Math.max(0, lift);
+  }
+
   setShadowsEnabled(enabled: boolean): void {
     this.shadowsEnabled = enabled;
     if (!enabled) {
@@ -328,11 +338,29 @@ export class DayNightCycle {
     const lampIntensity = THREE.MathUtils.lerp(from.lampIntensity, to.lampIntensity, mix);
     const moonIntensity = THREE.MathUtils.lerp(from.moonIntensity, to.moonIntensity, mix);
     const exposure = THREE.MathUtils.lerp(from.exposure, to.exposure, mix);
+    // How far through the bright part of the cycle we are, for the night lift
+    // below. Taken from the keyframed sun rather than the solar angle, so it
+    // follows the look of the sky rather than the geometry of the orbit.
+    const sunElevationHint = THREE.MathUtils.clamp(
+      THREE.MathUtils.lerp(from.sunIntensity, to.sunIntensity, mix) / 1.2,
+      0,
+      1,
+    );
 
     this.scene.background = sky;
     if (this.scene.fog instanceof THREE.Fog) this.scene.fog.color.copy(fog);
     this.directionalLight.color.copy(sun);
-    this.hemisphereLight.intensity = ambientIntensity;
+    // Lifted where the placed lamps were taken away.
+    //
+    // The light setting keeps three street lamps instead of six and hides all
+    // but a handful of the rest, which bought most of the mobile frame back and
+    // took the streets with it. The lamps are what made a phone slow; the
+    // ambient is nearly free, because one hemisphere light costs the same
+    // whether it is bright or dim. So the setting that loses the lamps gets the
+    // sky turned up in their place, and only after dusk — daylight never needed
+    // them and does not want the lift.
+    const darkness = 1 - THREE.MathUtils.clamp(sunElevationHint, 0, 1);
+    this.hemisphereLight.intensity = ambientIntensity * (1 + this.ambientLift * darkness);
     // One full solar orbit per festival cycle. The world camera mirrors the
     // ocean's x-axis on screen, so the positive-to-negative path is the one
     // visitors read as sunrise on the left and sunset on the right. There is no

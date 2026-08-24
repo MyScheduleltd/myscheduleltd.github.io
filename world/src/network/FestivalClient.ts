@@ -756,6 +756,23 @@ export class FestivalClient {
    * desktop tab coming back into focus is untouched.
    */
   wake(): void {
+    // A page that is still running was not closed, whatever it was told.
+    //
+    // disconnect() sets a terminal flag, and pagehide calls it whenever the
+    // browser says the page is not going into the back/forward cache. On iOS
+    // that is not a promise the page is being destroyed — it is what Safari
+    // reports for any page it cannot cache, and holding an open event stream
+    // guarantees a page cannot be cached. So locking the phone said goodbye to
+    // the server and set the flag, and every route back — wake, reconnect,
+    // join retry — is guarded by that same flag. There was no way home.
+    //
+    // If there is still an identity, somebody is still here. Take the goodbye
+    // back and join again from scratch.
+    if (this.closed && this.identity) {
+      this.closed = false;
+      this.session = undefined;
+      this.streamAlive = false;
+    }
     if (this.closed) return;
     // Never joined, or joined and lost the session entirely. Picking the phone
     // up is the best moment to try again, so the backoff starts over.

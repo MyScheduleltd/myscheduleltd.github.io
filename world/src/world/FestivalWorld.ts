@@ -1274,6 +1274,7 @@ export class FestivalWorld {
       : undefined;
     this.dayNight = new DayNightCycle(this.scene, localTimeOverride);
     this.dayNight.setShadowsEnabled(graphicsMode === 'normal');
+    this.dayNight.setAmbientLift(graphicsMode === 'normal' ? 0 : 0.85);
     // Kept up rather than done once. This world does not finish building at
     // load — the club's rig, the rooftop, the evening's fireworks all arrive
     // later — and three timeouts guessed at when that stops. It does not stop,
@@ -2963,6 +2964,7 @@ export class FestivalWorld {
 
   setGraphicsMode(mode: GraphicsMode): void {
     this.graphicsMode = mode;
+    this.dayNight.setAmbientLift(mode === 'normal' ? 0 : 0.85);
     if (mode === 'normal') {
       this.scene.traverse((object) => {
         const light = object as THREE.Light;
