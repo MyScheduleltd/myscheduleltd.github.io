@@ -1753,7 +1753,7 @@ export class FestivalWorld {
       this.wornSignsSpared += dressing.refused;
       this.wornSigns = dressing.signs;
     }
-    const patched = applyWornStyle(this.scene);
+    const patched = applyWornStyle(this.scene, this.publicScreenBoxes());
     setWornStyle(amount, steps, grain, texture);
     return patched;
   }
@@ -1776,6 +1776,8 @@ export class FestivalWorld {
     const settings = wornStyleSettings();
     let materials = 0;
     let flattened = 0;
+    let masonrySurfaces = 0;
+    const masonryMaterials = new Set<string>();
     this.scene.traverse((object) => {
       const mesh = object as THREE.Mesh;
       if (!mesh.material) return;
@@ -1783,6 +1785,14 @@ export class FestivalWorld {
       for (const material of list) {
         materials += 1;
         if ((material as THREE.Material).userData?.wornFlattened === true) flattened += 1;
+        // Meshes carrying courses, and the distinct materials behind them. The
+        // pair is the check that matters: the first says the walls were found,
+        // the second says finding them did not cost a draw call each.
+        const defines = (material as { defines?: Record<string, unknown> }).defines;
+        if (defines?.WORN_MASONRY !== undefined) {
+          masonrySurfaces += 1;
+          masonryMaterials.add((material as THREE.Material).uuid);
+        }
       }
     });
     // How many walls are big enough to be worth dressing, against how many
@@ -1819,6 +1829,8 @@ export class FestivalWorld {
           - AVATAR_GROUND_Y;
         return box.isEmpty() ? null : Number((box.min.y - ground).toFixed(3));
       })(),
+      masonrySurfaces,
+      masonryMaterials: masonryMaterials.size,
       signsProtected: this.wornSigns,
       placementsRefusedOverSigns: this.wornSignsSpared,
     };

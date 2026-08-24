@@ -751,11 +751,12 @@ export class App {
     //   ?worn=1&meshes=0          surfaces only, boxes left alone
     //   ?worn=1&wornTexture=0     no courses or paving, plain planes
     //   ?era=ps2                  the later console: surface detail, no dither
-    // Two consoles, not one. The dither and the hard colour steps are a PS1
-    // tell; the generation after it dropped both and put the character into
-    // surface detail instead, which is what the GTA reference is made of. So
-    // `era=ps2` is the same pass with the banding stood down and the courses
-    // and paving brought up, rather than a second pass of its own.
+    // Two consoles, not one. The hard colour steps are a PS1 tell; the
+    // generation after it dropped them and put the character into surface
+    // detail instead, which is what the GTA reference is made of. So `era=ps2`
+    // is the same pass with the banding stood down and courses brought up,
+    // rather than a second pass of its own. The grain stays where it was —
+    // it is film grain rather than a console artefact, and it was signed off.
     const era = new URLSearchParams(window.location.search).get('era');
     const ps2 = era === 'ps2';
     const wornFlag = new URLSearchParams(window.location.search).get('worn') ?? (ps2 ? '' : null);
@@ -765,7 +766,7 @@ export class App {
       const stepsFlag = new URLSearchParams(window.location.search).get('wornSteps');
       const steps = stepsFlag === null ? (ps2 ? 64 : 10) : Number.parseFloat(stepsFlag);
       const grainFlag = new URLSearchParams(window.location.search).get('wornGrain');
-      const grain = grainFlag === null ? (ps2 ? 0.5 : 1) : Number.parseFloat(grainFlag);
+      const grain = grainFlag === null ? 1 : Number.parseFloat(grainFlag);
       const warpFlag = new URLSearchParams(window.location.search).get('wornWarp');
       const warp = warpFlag === null ? 1 : Number.parseFloat(warpFlag);
       const textureFlag = new URLSearchParams(window.location.search).get('wornTexture');

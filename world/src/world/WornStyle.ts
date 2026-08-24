@@ -60,7 +60,9 @@ export const WORN_UNIFORMS = {
  */
 const WORN_NOISE = /* glsl */ `
   varying vec3 vWornWorld;
+  #ifdef WORN_MASONRY
   varying vec3 vWornNormal;
+  #endif
   uniform float uWornAmount;
   uniform float uWornSteps;
   uniform float uWornGrain;
@@ -108,47 +110,43 @@ const WORN_FRAGMENT = /* glsl */ `
     }
     #endif
 
-    // Surface detail, in world space and squared to the surface it is on.
+    // Courses, in world space and squared to the wall they are on.
     //
     // This is the half of the reference the world has none of. What carries a
     // PS2-era street is not its shading — that is soft and unremarkable — it is
-    // that every plane has a bitmap on it: courses on a wall, slabs on a
-    // pavement, boards on a deck. Detail at the scale of a hand is what tells
-    // you a surface is made of something, and no amount of light on a blank
-    // plane will do it.
+    // that a wall is visibly made of something at the scale of a hand.
     //
-    // Projected on whichever axis the face points along, so the pattern lies
-    // flat on the plane instead of running across it at an angle. There are no
-    // usable UVs here to do it any other way: the world shares one unit cube
-    // between every surface, stretched by scale, so a texture mapped the
-    // ordinary way would be one tile smeared the length of a twenty-metre wall.
-    #ifdef WORN_LIT
+    // Walls only, and that is the whole of it. The first cut put slabs on every
+    // horizontal surface too, which meant courses on the road, on the red
+    // carpet, on the sand and across the awnings. Masonry on a beach is not a
+    // texture, it is a mistake — so the define is set per material, on building
+    // -sized upright volumes and on nothing else.
+    //
+    // Projected on whichever way the face points, so the pattern lies flat on
+    // the wall instead of running across it at an angle. There are no usable
+    // UVs here to do it any other way: the world shares one unit cube between
+    // every surface, stretched by scale, so a texture mapped the ordinary way
+    // would be one tile smeared the length of a twenty-metre wall.
+    #ifdef WORN_MASONRY
     if (uWornTexture > 0.0) {
       vec3 wornN = normalize(vWornNormal);
-      vec2 wornPlane;
-      float wornCourse;
-      if (abs(wornN.y) > 0.55) {
-        // Underfoot: paving, squared both ways.
-        wornPlane = vWornWorld.xz;
-        wornCourse = 2.2;
-      } else if (abs(wornN.x) > abs(wornN.z)) {
-        wornPlane = vWornWorld.zy;
-        wornCourse = 1.6;
-      } else {
-        wornPlane = vWornWorld.xy;
-        wornCourse = 1.6;
+      // A building's roof and soffit are not masonry either, so the courses
+      // fade out as the face turns to face the sky.
+      float wornUpright = 1.0 - smoothstep(0.35, 0.62, abs(wornN.y));
+      if (wornUpright > 0.0) {
+        vec2 wornPlane = abs(wornN.x) > abs(wornN.z) ? vWornWorld.zy : vWornWorld.xy;
+        // Long and low, offset half a block row to row, so it never resolves
+        // into graph paper.
+        vec2 wornCell = wornPlane / vec2(3.0, 1.6);
+        wornCell.x += floor(wornCell.y) * 0.5;
+        vec2 wornEdge = abs(fract(wornCell) - 0.5);
+        float wornJoint = min(0.5 - wornEdge.x, 0.5 - wornEdge.y);
+        // A joint is a dark line with a lighter arris beside it, which is what
+        // makes it read as a recess rather than as a stripe painted on.
+        float wornSeam = 1.0 - smoothstep(0.0, 0.05, wornJoint);
+        float wornArris = smoothstep(0.05, 0.09, wornJoint) * (1.0 - smoothstep(0.09, 0.14, wornJoint));
+        gl_FragColor.rgb *= 1.0 + (wornArris * 0.05 - wornSeam * 0.24) * uWornTexture * wornUpright;
       }
-      // Courses run long and low on a wall, like brick or block, and square on
-      // the ground. Offsetting alternate rows stops it reading as graph paper.
-      vec2 wornCell = wornPlane / vec2(wornCourse * 1.9, wornCourse);
-      wornCell.x += floor(wornCell.y) * 0.5;
-      vec2 wornEdge = abs(fract(wornCell) - 0.5);
-      float wornJoint = min(0.5 - wornEdge.x, 0.5 - wornEdge.y);
-      // A joint is a dark line with a lighter arris beside it, which is what
-      // makes it read as a recess rather than as a stripe.
-      float wornSeam = 1.0 - smoothstep(0.0, 0.045, wornJoint);
-      float wornArris = smoothstep(0.045, 0.085, wornJoint) * (1.0 - smoothstep(0.085, 0.13, wornJoint));
-      gl_FragColor.rgb *= 1.0 + (wornArris * 0.05 - wornSeam * 0.26) * uWornTexture;
     }
     #endif
 
@@ -174,7 +172,7 @@ type PatchableMaterial = THREE.Material & {
   userData: Record<string, unknown>;
 };
 
-function patchMaterial(material: PatchableMaterial): void {
+function patchMaterial(material: PatchableMaterial, masonry = false): void {
   if (material.userData.wornPatched === true) return;
   material.userData.wornPatched = true;
 
@@ -197,15 +195,21 @@ function patchMaterial(material: PatchableMaterial): void {
     // The world position has to be carried through from the vertex stage;
     // nothing in the standard chunks hands it to the fragment shader unless a
     // feature that needs it happens to be switched on.
+    // The normal is only declared where it is actually used, and that is not
+    // fussiness. `objectNormal` exists in the unlit vertex shader only under
+    // USE_ENVMAP or USE_SKINNING, so writing to it unconditionally failed to
+    // compile on every plain basic material in the world — which is every sign,
+    // every marquee and the timetable. They did not look wrong. They were gone.
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
-        '#include <common>\nvarying vec3 vWornWorld;\nvarying vec3 vWornNormal;',
+        '#include <common>\nvarying vec3 vWornWorld;'
+        + (masonry ? '\nvarying vec3 vWornNormal;' : ''),
       )
       .replace(
         '#include <project_vertex>',
         '#include <project_vertex>\n  vWornWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;'
-        + '\n  vWornNormal = mat3(modelMatrix) * objectNormal;',
+        + (masonry ? '\n  vWornNormal = mat3(modelMatrix) * objectNormal;' : ''),
       );
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${WORN_NOISE}`)
@@ -218,7 +222,7 @@ function patchMaterial(material: PatchableMaterial): void {
   material.defines = {
     ...(material.defines ?? {}),
     WORN_STYLE: '',
-    ...(lit ? { WORN_LIT: '' } : {}),
+    ...(masonry ? { WORN_MASONRY: '' } : {}),
   };
   // A face is not a wall. Skin and hair take the shading and the dither but
   // never the surface grain, because grime on a person reads as unwashed
@@ -238,11 +242,43 @@ function patchMaterial(material: PatchableMaterial): void {
  * built after the first call are picked up, and anything already patched is
  * left alone.
  */
-export function applyWornStyle(scene: THREE.Object3D): number {
+export function applyWornStyle(
+  scene: THREE.Object3D,
+  /** Screens and their frames, which are manufactured objects and not masonry. */
+  keepPlain: THREE.Box3[] = [],
+): number {
   let patched = 0;
+  // One masonry variant per source material, not one per wall. The world reuses
+  // a handful of colours across hundreds of surfaces, so keying on the material
+  // keeps the extra draw calls in the tens rather than the hundreds.
+  const masonryVariants = new Map<string, PatchableMaterial>();
+
   scene.traverse((object) => {
     const mesh = object as THREE.Mesh;
     if (!mesh.material) return;
+
+    if (mesh.isMesh && isMasonry(mesh, keepPlain)) {
+      const source = mesh.material as PatchableMaterial;
+      // Arrays are left alone: nothing in this world uses a multi-material
+      // wall, and guessing which slot is the face would be a coin toss.
+      if (!Array.isArray(mesh.material)) {
+        let variant = masonryVariants.get(source.uuid);
+        if (!variant) {
+          variant = source.clone() as PatchableMaterial;
+          // A clone carries the original's defines and userData, which would
+          // hand it a `wornPatched` flag it has not earned and leave it with
+          // the plain patch it was cloned from.
+          variant.defines = {};
+          variant.userData = { ...source.userData, wornPatched: false };
+          patchMaterial(variant, true);
+          patched += 1;
+          masonryVariants.set(source.uuid, variant);
+        }
+        mesh.material = variant;
+        return;
+      }
+    }
+
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const material of materials) {
       const target = material as PatchableMaterial;
@@ -252,6 +288,32 @@ export function applyWornStyle(scene: THREE.Object3D): number {
     }
   });
   return patched;
+}
+
+/**
+ * Whether a mesh is a wall or a building, as opposed to everything else.
+ *
+ * Deliberately crude, and deliberately about size rather than about names. The
+ * world has no notion of what a piece *is* — every surface in it is the same
+ * unit cube under a different scale — so any list of "these are the walls"
+ * would be hand-maintained and would be wrong the first time somebody added a
+ * building. Size is derived from the thing itself and cannot go stale.
+ *
+ * Tall enough to be a storey rules out the road, the red carpet, the sand and
+ * every awning, all of which are wide and flat. Wide enough to be a face rules
+ * out lamp posts, bollards and truss. What is left is walls and building
+ * volumes, which is exactly what should be made of blocks.
+ */
+function isMasonry(mesh: THREE.Mesh, keepPlain: THREE.Box3[]): boolean {
+  const material = mesh.material as THREE.Material;
+  // Unlit is a sign, a screen or a light. None of them are built of anything.
+  if (Array.isArray(material) || material instanceof THREE.MeshBasicMaterial) return false;
+  if (mesh.userData.wornNoMasonry === true) return false;
+  const scale = mesh.getWorldScale(new THREE.Vector3());
+  if (scale.y < 2.4) return false;
+  if (Math.max(scale.x, scale.z) < 2.4) return false;
+  const where = mesh.getWorldPosition(new THREE.Vector3());
+  return !keepPlain.some((box) => box.containsPoint(where));
 }
 
 /**
