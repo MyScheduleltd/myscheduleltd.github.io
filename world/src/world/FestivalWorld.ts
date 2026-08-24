@@ -1688,7 +1688,7 @@ export class FestivalWorld {
     return boxes;
   }
 
-  applyWornStyleForReview(amount: number, steps: number, grain: number, warp = 1): number {
+  applyWornStyleForReview(amount: number, steps: number, grain: number, warp = 1, texture = 1): number {
     this.wornWarpAmount = warp;
     // Dressing first, so the clutter it hangs on the walls is picked up by the
     // shading pass in the same sweep rather than staying smooth-shaded and
@@ -1754,7 +1754,7 @@ export class FestivalWorld {
       this.wornSigns = dressing.signs;
     }
     const patched = applyWornStyle(this.scene);
-    setWornStyle(amount, steps, grain);
+    setWornStyle(amount, steps, grain, texture);
     return patched;
   }
 

@@ -749,22 +749,34 @@ export class App {
     //   ?worn=1&wornGrain=0       shading only, no surface grain
     //   ?worn=1&wornWarp=0        square corners kept, nothing settles
     //   ?worn=1&meshes=0          surfaces only, boxes left alone
-    const wornFlag = new URLSearchParams(window.location.search).get('worn');
+    //   ?worn=1&wornTexture=0     no courses or paving, plain planes
+    //   ?era=ps2                  the later console: surface detail, no dither
+    // Two consoles, not one. The dither and the hard colour steps are a PS1
+    // tell; the generation after it dropped both and put the character into
+    // surface detail instead, which is what the GTA reference is made of. So
+    // `era=ps2` is the same pass with the banding stood down and the courses
+    // and paving brought up, rather than a second pass of its own.
+    const era = new URLSearchParams(window.location.search).get('era');
+    const ps2 = era === 'ps2';
+    const wornFlag = new URLSearchParams(window.location.search).get('worn') ?? (ps2 ? '' : null);
     if (wornFlag !== null) {
       const world = this.world;
       const amount = wornFlag === '' ? 1 : Number.parseFloat(wornFlag);
       const stepsFlag = new URLSearchParams(window.location.search).get('wornSteps');
-      const steps = stepsFlag === null ? 10 : Number.parseFloat(stepsFlag);
+      const steps = stepsFlag === null ? (ps2 ? 64 : 10) : Number.parseFloat(stepsFlag);
       const grainFlag = new URLSearchParams(window.location.search).get('wornGrain');
-      const grain = grainFlag === null ? 1 : Number.parseFloat(grainFlag);
+      const grain = grainFlag === null ? (ps2 ? 0.5 : 1) : Number.parseFloat(grainFlag);
       const warpFlag = new URLSearchParams(window.location.search).get('wornWarp');
       const warp = warpFlag === null ? 1 : Number.parseFloat(warpFlag);
+      const textureFlag = new URLSearchParams(window.location.search).get('wornTexture');
+      const texture = textureFlag === null ? (ps2 ? 1.25 : 1) : Number.parseFloat(textureFlag);
       const dial = (nextAmount: number, nextSteps: number, nextGrain: number) =>
         world.applyWornStyleForReview(
           Number.isFinite(nextAmount) ? nextAmount : 1,
           Number.isFinite(nextSteps) ? nextSteps : 10,
           Number.isFinite(nextGrain) ? nextGrain : 1,
           Number.isFinite(warp) ? warp : 1,
+          Number.isFinite(texture) ? texture : 1,
         );
       dial(amount, steps, grain);
       // The world keeps building after the gate closes — club fittings, remote

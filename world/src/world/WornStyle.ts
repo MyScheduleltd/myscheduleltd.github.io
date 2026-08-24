@@ -36,6 +36,7 @@ export const WORN_UNIFORMS = {
   uWornAmount: { value: 0 },
   uWornSteps: { value: 10 },
   uWornGrain: { value: 0 },
+  uWornTexture: { value: 0 },
 };
 
 /**
@@ -59,9 +60,11 @@ export const WORN_UNIFORMS = {
  */
 const WORN_NOISE = /* glsl */ `
   varying vec3 vWornWorld;
+  varying vec3 vWornNormal;
   uniform float uWornAmount;
   uniform float uWornSteps;
   uniform float uWornGrain;
+  uniform float uWornTexture;
 
   float wornHash(vec3 p) {
     return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453123);
@@ -102,6 +105,50 @@ const WORN_FRAGMENT = /* glsl */ `
       float blotch = wornSmoothNoise(vWornWorld * 0.52) - 0.5;
       float variation = aggregate * 0.11 + speckle * 0.05 + runs * 0.05 + blotch * 0.05;
       gl_FragColor.rgb = clamp(gl_FragColor.rgb * (1.0 + variation * uWornGrain), 0.0, 1.0);
+    }
+    #endif
+
+    // Surface detail, in world space and squared to the surface it is on.
+    //
+    // This is the half of the reference the world has none of. What carries a
+    // PS2-era street is not its shading — that is soft and unremarkable — it is
+    // that every plane has a bitmap on it: courses on a wall, slabs on a
+    // pavement, boards on a deck. Detail at the scale of a hand is what tells
+    // you a surface is made of something, and no amount of light on a blank
+    // plane will do it.
+    //
+    // Projected on whichever axis the face points along, so the pattern lies
+    // flat on the plane instead of running across it at an angle. There are no
+    // usable UVs here to do it any other way: the world shares one unit cube
+    // between every surface, stretched by scale, so a texture mapped the
+    // ordinary way would be one tile smeared the length of a twenty-metre wall.
+    #ifdef WORN_LIT
+    if (uWornTexture > 0.0) {
+      vec3 wornN = normalize(vWornNormal);
+      vec2 wornPlane;
+      float wornCourse;
+      if (abs(wornN.y) > 0.55) {
+        // Underfoot: paving, squared both ways.
+        wornPlane = vWornWorld.xz;
+        wornCourse = 2.2;
+      } else if (abs(wornN.x) > abs(wornN.z)) {
+        wornPlane = vWornWorld.zy;
+        wornCourse = 1.6;
+      } else {
+        wornPlane = vWornWorld.xy;
+        wornCourse = 1.6;
+      }
+      // Courses run long and low on a wall, like brick or block, and square on
+      // the ground. Offsetting alternate rows stops it reading as graph paper.
+      vec2 wornCell = wornPlane / vec2(wornCourse * 1.9, wornCourse);
+      wornCell.x += floor(wornCell.y) * 0.5;
+      vec2 wornEdge = abs(fract(wornCell) - 0.5);
+      float wornJoint = min(0.5 - wornEdge.x, 0.5 - wornEdge.y);
+      // A joint is a dark line with a lighter arris beside it, which is what
+      // makes it read as a recess rather than as a stripe.
+      float wornSeam = 1.0 - smoothstep(0.0, 0.045, wornJoint);
+      float wornArris = smoothstep(0.045, 0.085, wornJoint) * (1.0 - smoothstep(0.085, 0.13, wornJoint));
+      gl_FragColor.rgb *= 1.0 + (wornArris * 0.05 - wornSeam * 0.26) * uWornTexture;
     }
     #endif
 
@@ -146,14 +193,19 @@ function patchMaterial(material: PatchableMaterial): void {
     shader.uniforms.uWornAmount = WORN_UNIFORMS.uWornAmount;
     shader.uniforms.uWornSteps = WORN_UNIFORMS.uWornSteps;
     shader.uniforms.uWornGrain = WORN_UNIFORMS.uWornGrain;
+    shader.uniforms.uWornTexture = WORN_UNIFORMS.uWornTexture;
     // The world position has to be carried through from the vertex stage;
     // nothing in the standard chunks hands it to the fragment shader unless a
     // feature that needs it happens to be switched on.
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWornWorld;')
+      .replace(
+        '#include <common>',
+        '#include <common>\nvarying vec3 vWornWorld;\nvarying vec3 vWornNormal;',
+      )
       .replace(
         '#include <project_vertex>',
-        '#include <project_vertex>\n  vWornWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+        '#include <project_vertex>\n  vWornWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;'
+        + '\n  vWornNormal = mat3(modelMatrix) * objectNormal;',
       );
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${WORN_NOISE}`)
@@ -161,7 +213,13 @@ function patchMaterial(material: PatchableMaterial): void {
       // actually show, which is the only place quantising means anything.
       .replace('#include <colorspace_fragment>', `#include <colorspace_fragment>\n${WORN_FRAGMENT}`);
   };
-  material.defines = { ...(material.defines ?? {}), WORN_STYLE: '' };
+  // Surface detail needs a normal to know which way the plane faces, and only
+  // a lit material carries one.
+  material.defines = {
+    ...(material.defines ?? {}),
+    WORN_STYLE: '',
+    ...(lit ? { WORN_LIT: '' } : {}),
+  };
   // A face is not a wall. Skin and hair take the shading and the dither but
   // never the surface grain, because grime on a person reads as unwashed
   // rather than as weathered.
@@ -201,17 +259,19 @@ export function applyWornStyle(scene: THREE.Object3D): number {
  * Amount 0 leaves the world exactly as it was; 1 is the full treatment. Steps
  * is the number of levels per channel — eight is heavy, sixteen is subtle.
  */
-export function setWornStyle(amount: number, steps?: number, grain?: number): void {
+export function setWornStyle(amount: number, steps?: number, grain?: number, texture?: number): void {
   WORN_UNIFORMS.uWornAmount.value = THREE.MathUtils.clamp(amount, 0, 1);
   if (steps !== undefined) WORN_UNIFORMS.uWornSteps.value = Math.max(2, steps);
   if (grain !== undefined) WORN_UNIFORMS.uWornGrain.value = THREE.MathUtils.clamp(grain, 0, 2);
+  if (texture !== undefined) WORN_UNIFORMS.uWornTexture.value = THREE.MathUtils.clamp(texture, 0, 2);
 }
 
-export function wornStyleSettings(): { amount: number; steps: number; grain: number } {
+export function wornStyleSettings(): { amount: number; steps: number; grain: number; texture: number } {
   return {
     amount: WORN_UNIFORMS.uWornAmount.value,
     steps: WORN_UNIFORMS.uWornSteps.value,
     grain: WORN_UNIFORMS.uWornGrain.value,
+    texture: WORN_UNIFORMS.uWornTexture.value,
   };
 }
 
@@ -228,7 +288,10 @@ export function wornStyleSettings(): { amount: number; steps: number; grain: num
 export function wornMeshesRequested(): boolean {
   if (typeof window === 'undefined') return false;
   const params = new URLSearchParams(window.location.search);
-  if (params.get('worn') === null) return false;
+  // `era=ps2` turns the style on by itself, so asking only about `worn` here
+  // would have run the shading half without the dressing half — the same split
+  // decision, read in two places, disagreeing.
+  if (params.get('worn') === null && params.get('era') !== 'ps2') return false;
   return params.get('meshes') !== '0';
 }
 
