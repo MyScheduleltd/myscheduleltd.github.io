@@ -1616,3 +1616,15 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   src: url("/font/HanWangMing-subset.woff2") format("woff2");
   font-display: swap;
 }
+
+/* The black box, shown only after a session that ended without saying goodbye.
+   Deliberately plain and deliberately in the way: it exists to be read on a
+   phone and photographed, by somebody who has just been thrown out of the
+   world and is not in the mood to go looking for it. Tap to dismiss. */
+.last-breath {
+  position: fixed; inset: 0 0 auto 0; z-index: 40;
+  padding: 10px 14px; background: #8e1215; color: #fff5ee;
+  font: 500 11px/1.5 "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: .04em; word-break: break-word; cursor: pointer;
+  padding-top: max(10px, env(safe-area-inset-top));
+}

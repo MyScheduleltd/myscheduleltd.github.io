@@ -3195,6 +3195,7 @@ export class FestivalWorld {
     going.src = 'about:blank';
     going.removeAttribute('allow');
     projector.element.replaceChildren();
+    this.playerReleases += 1;
     projector.iframe = undefined;
     projector.signature = undefined;
     projector.currentTime = undefined;
@@ -3212,6 +3213,18 @@ export class FestivalWorld {
    * screen off.
    */
   private projectorVenue(): VenueKey | undefined {
+    // The run-up is a desk's luxury.
+    //
+    // Warming a venue's player while somebody is still walking towards it hides
+    // the buffering, and it costs one player mounted and released for every
+    // approach — a plaza ringed by venues means a walk past them starts and
+    // stops several. On a phone each of those is a media pipeline being built
+    // and torn down, and the report that matters says the crash comes while
+    // walking around and doing nothing else. So a phone loads a screen when its
+    // visitor is actually in the room, and waits the extra moment.
+    if (this.graphicsMode !== 'normal') {
+      return this.reviewProjectorVenue ?? this.activeProjectorVenue();
+    }
     return this.reviewProjectorVenue ?? this.activeProjectorVenue() ?? this.approachingVenue();
   }
 
@@ -3300,6 +3313,7 @@ export class FestivalWorld {
     });
     projector.element.replaceChildren(iframe);
     projector.iframe = iframe;
+    this.playerMounts += 1;
   }
 
   /**
@@ -4518,6 +4532,49 @@ export class FestivalWorld {
 
   /** How many placed lamps a light-setting device keeps. */
   private static readonly LITE_LAMPS = 6;
+
+  private playerMounts = 0;
+  private playerReleases = 0;
+
+  /**
+   * A compact record of what the world is doing, for the black box.
+   *
+   * Not loopback-gated, unlike every other readout here, and that is the point:
+   * the fault only happens on somebody else's phone, and four rounds of
+   * reasoning about phones in general have produced four wrong answers. This
+   * runs where the fault is.
+   *
+   * Deliberately small — it is written to storage once a second and has to
+   * survive the page dying mid-write.
+   */
+  diagnosticSample(): Record<string, number | string | boolean> {
+    return {
+      up: Math.round(performance.now() / 1000),
+      venue: this.projectorVenue() ?? '-',
+      mounts: this.playerMounts,
+      releases: this.playerReleases,
+      live: [...this.projectors.values()].filter((projector) => Boolean(projector.iframe)).length,
+      frames: document.querySelectorAll('iframe').length,
+      draws: this.renderer.info.render.calls,
+      progs: this.renderer.info.programs?.length ?? 0,
+      tex: this.renderer.info.memory.textures,
+      geo: this.renderer.info.memory.geometries,
+      mats: this.materialCountForDiagnostics(),
+      x: Math.round(this.player.position.x),
+      z: Math.round(this.player.position.z),
+      lost: this.contextLost,
+    };
+  }
+
+  private materialCountForDiagnostics(): number {
+    let count = 0;
+    this.scene.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.material) return;
+      count += Array.isArray(mesh.material) ? mesh.material.length : 1;
+    });
+    return count;
+  }
 
   private contextLost = false;
 

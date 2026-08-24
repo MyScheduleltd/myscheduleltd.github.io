@@ -186,54 +186,14 @@ export function dressBuildings(
     // into it.
     piece(size.x + PROUD * 2, 0.9, size.z + PROUD * 2, place(0, -0.5, 0), dark);
 
-    // The ledge is cut around whatever is already on the wall.
-    //
-    // It used to wrap the building as one unbroken box standing proud of the
-    // face, which put it in front of everything mounted there — it ran straight
-    // across THE ROOFTOP's sign and through the lamps beside the stair. A
-    // ledge belongs behind those things, and the way to be behind them is not
-    // to be there at all: the band is emitted as runs, and a run stops where a
-    // sign, a lamp or a unit begins and picks up again on the far side.
-    // The ledge is a floor line, not a height somebody picked. Which floor
-    // varies between buildings; that it is *a* floor does not.
-    const ledgeY = floorLine(Math.min(floors - 1, 1 + Math.floor(placedRandom(at, 5) * 2)));
-    for (const ledge of [
-      { axis: 'z' as const, sign: 1, span: size.x, thickness: size.z },
-      { axis: 'z' as const, sign: -1, span: size.x, thickness: size.z },
-      { axis: 'x' as const, sign: 1, span: size.z, thickness: size.x },
-      { axis: 'x' as const, sign: -1, span: size.z, thickness: size.x },
-    ]) {
-      const steps = Math.max(6, Math.round(ledge.span / 0.7));
-      const out = 0.5 + PROUD / ledge.thickness;
-      let runStart: number | undefined;
-      for (let step = 0; step <= steps; step += 1) {
-        const along = step / steps - 0.5;
-        const at3 = ledge.axis === 'z'
-          ? place(along, ledgeY, ledge.sign * out)
-          : place(ledge.sign * out, ledgeY, along);
-        // Sampled without counting: this is measuring the wall, not refusing a
-        // placement, and the refusal tally is about air-con.
-        const blocked = keepClear.some((box) => box.containsPoint(at3));
-        if (!blocked && runStart === undefined) runStart = along;
-        if ((blocked || step === steps) && runStart !== undefined) {
-          const runEnd = blocked ? (step - 1) / steps - 0.5 : along;
-          const length = (runEnd - runStart) * ledge.span;
-          // A stub of ledge reads as debris rather than as architecture.
-          if (length > 1.2) {
-            const middle = (runStart + runEnd) / 2;
-            const seat = ledge.axis === 'z'
-              ? place(middle, ledgeY, ledge.sign * out)
-              : place(ledge.sign * out, ledgeY, middle);
-            if (ledge.axis === 'z') piece(length, 0.24, PROUD * 2, seat, concrete);
-            else piece(PROUD * 2, 0.24, length, seat, concrete);
-          }
-          runStart = undefined;
-        }
-      }
-    }
-
     // Units bolted to the facades. Never below head height, so nothing ends up
     // somewhere a visitor could walk into it.
+    // Recorded as they go up, so the ledge below can be cut around them. They
+    // used to be bolted on after the band was already drawn, which meant the
+    // band had no way of knowing they were coming — and a unit hung just under
+    // a floor line sits at very nearly the height the ledge runs at, so the two
+    // ended up occupying the same piece of wall.
+    const unitBoxes: THREE.Box3[] = [];
     const UNIT_WIDTH = 1.05;
     const UNIT_HEIGHT = 0.78;
     const faces: Array<{ axis: 'x' | 'z'; sign: number; span: number; thickness: number }> = [
@@ -278,12 +238,65 @@ export function dressBuildings(
           : place(face.sign * out, up, along);
         // Somewhere a sign or a screen already is. Leave the wall bare there.
         if (overlapsSign(seat)) continue;
+        // Wide enough to keep the ledge clear of the brackets as well as the
+        // box, and tall enough that a band cannot squeeze under it.
+        unitBoxes.push(new THREE.Box3().setFromCenterAndSize(
+          seat,
+          new THREE.Vector3(UNIT_WIDTH + 1.2, UNIT_HEIGHT + 1.1, UNIT_WIDTH + 1.2),
+        ));
         if (face.axis === 'z') {
           piece(UNIT_WIDTH, UNIT_HEIGHT, 0.62, seat, metal);
           piece(0.8, 0.55, 0.06, place(along, up, face.sign * grilleOut), dark);
         } else {
           piece(0.62, UNIT_HEIGHT, UNIT_WIDTH, seat, metal);
           piece(0.06, 0.55, 0.8, place(face.sign * grilleOut, up, along), dark);
+        }
+      }
+    }
+
+    // The ledge is cut around whatever is already on the wall.
+    //
+    // It used to wrap the building as one unbroken box standing proud of the
+    // face, which put it in front of everything mounted there — it ran straight
+    // across THE ROOFTOP's sign and through the lamps beside the stair. A
+    // ledge belongs behind those things, and the way to be behind them is not
+    // to be there at all: the band is emitted as runs, and a run stops where a
+    // sign, a lamp or a unit begins and picks up again on the far side.
+    // The ledge is a floor line, not a height somebody picked. Which floor
+    // varies between buildings; that it is *a* floor does not.
+    const ledgeY = floorLine(Math.min(floors - 1, 1 + Math.floor(placedRandom(at, 5) * 2)));
+    for (const ledge of [
+      { axis: 'z' as const, sign: 1, span: size.x, thickness: size.z },
+      { axis: 'z' as const, sign: -1, span: size.x, thickness: size.z },
+      { axis: 'x' as const, sign: 1, span: size.z, thickness: size.x },
+      { axis: 'x' as const, sign: -1, span: size.z, thickness: size.x },
+    ]) {
+      const steps = Math.max(6, Math.round(ledge.span / 0.7));
+      const out = 0.5 + PROUD / ledge.thickness;
+      let runStart: number | undefined;
+      for (let step = 0; step <= steps; step += 1) {
+        const along = step / steps - 0.5;
+        const at3 = ledge.axis === 'z'
+          ? place(along, ledgeY, ledge.sign * out)
+          : place(ledge.sign * out, ledgeY, along);
+        // Sampled without counting: this is measuring the wall, not refusing a
+        // placement, and the refusal tally is about air-con.
+        const blocked = keepClear.some((box) => box.containsPoint(at3))
+          || unitBoxes.some((box) => box.containsPoint(at3));
+        if (!blocked && runStart === undefined) runStart = along;
+        if ((blocked || step === steps) && runStart !== undefined) {
+          const runEnd = blocked ? (step - 1) / steps - 0.5 : along;
+          const length = (runEnd - runStart) * ledge.span;
+          // A stub of ledge reads as debris rather than as architecture.
+          if (length > 1.2) {
+            const middle = (runStart + runEnd) / 2;
+            const seat = ledge.axis === 'z'
+              ? place(middle, ledgeY, ledge.sign * out)
+              : place(ledge.sign * out, ledgeY, middle);
+            if (ledge.axis === 'z') piece(length, 0.24, PROUD * 2, seat, concrete);
+            else piece(PROUD * 2, 0.24, length, seat, concrete);
+          }
+          runStart = undefined;
         }
       }
     }

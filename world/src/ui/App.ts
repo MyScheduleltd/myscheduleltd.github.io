@@ -81,6 +81,14 @@ const PROFILE_KEY = 'myschedule-festival-profile-v1';
 const INSIDE_KEY = 'myschedule-festival-inside-v1';
 /** How many times in a row this tab has let itself back in without settling. */
 const REJOIN_TRIES_KEY = 'myschedule-festival-rejoin-tries-v1';
+/**
+ * The last thing the world said before the page stopped.
+ *
+ * localStorage rather than sessionStorage: a tab that is killed outright and
+ * reopened may not get its session storage back, and the whole value of this is
+ * that it outlives the failure.
+ */
+const BLACK_BOX_KEY = 'myschedule-festival-blackbox-v1';
 const PRIVATE_PROGRESS_KEY = 'myschedule-private-screening-v1';
 const CHAT_KEY = 'myschedule-local-chat-v2';
 const STAFF_KEY = 'myschedule-festival-staff-key-v1';
@@ -343,6 +351,7 @@ export class App {
 
   mount(): void {
     this.renderGate();
+    this.showLastBreath();
     this.rejoinAfterDiscard();
     void this.festivalClient.publicConfig().then((config) => {
       this.festivalServiceReady = true;
@@ -425,6 +434,47 @@ export class App {
     sessionStorage.setItem(REJOIN_TRIES_KEY, String(tries + 1));
     this.currentId = saved.id;
     void this.enterWhenThereIsRoom(true);
+  }
+
+  /**
+   * Shows what the world was doing when it last stopped.
+   *
+   * A crash on somebody else's phone leaves nothing behind — no console, no
+   * stack, and by the time they can tell you about it the page has reloaded and
+   * forgotten. So the world writes a line about itself once a second, and the
+   * next load puts the last one on screen where it can be read or photographed.
+   *
+   * Shown only when the previous session ended without saying goodbye, so an
+   * ordinary visit never sees it.
+   */
+  private showLastBreath(): void {
+    let last: Record<string, unknown> | undefined;
+    try {
+      const raw = localStorage.getItem(BLACK_BOX_KEY);
+      last = raw ? JSON.parse(raw) as Record<string, unknown> : undefined;
+    } catch { /* private browsing */ }
+    if (!last || last.clean === true) return;
+    const line = Object.entries(last)
+      .filter(([key]) => key !== 'clean')
+      .map(([key, value]) => `${key} ${value}`)
+      .join('  ');
+    const banner = document.createElement('div');
+    banner.className = 'last-breath';
+    banner.textContent = `LAST SESSION ENDED AT — ${line}`;
+    banner.addEventListener('click', () => banner.remove());
+    this.root.prepend(banner);
+    try { localStorage.setItem(BLACK_BOX_KEY, JSON.stringify({ ...last, clean: true })); } catch { /* ignore */ }
+  }
+
+  /** Writes what the world is doing, once a second, where a crash cannot erase it. */
+  private startBlackBox(): void {
+    window.setInterval(() => {
+      const sample = this.world?.diagnosticSample();
+      if (!sample) return;
+      try {
+        localStorage.setItem(BLACK_BOX_KEY, JSON.stringify({ ...sample, clean: false }));
+      } catch { /* private browsing */ }
+    }, 1_000);
   }
 
   private renderGate(): void {
@@ -661,6 +711,7 @@ export class App {
     // page down is not going to. Until this fires, an automatic re-entry counts
     // as a failed one.
     window.setTimeout(() => sessionStorage.removeItem(REJOIN_TRIES_KEY), 8_000);
+    this.startBlackBox();
     const zh = this.language === 'zh-TW';
     this.root.innerHTML = `
       <section class="world-shell">
