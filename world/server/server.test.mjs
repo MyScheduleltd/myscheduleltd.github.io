@@ -1408,3 +1408,55 @@ test('a punch lands in the temple, where the map used to stop', async () => {
   const atTheGate = await (await fetch(`${baseUrl}/api/punch`, { method: 'POST', headers: auth(thrower) })).json();
   assert.equal(atTheGate.hit?.name, 'EAST TARGET', 'and one thrown at the gate lands there');
 });
+
+test('a name comes back to a visitor whose connection dropped', async () => {
+  // The lock-screen case, which is the one that mattered. A name was reserved
+  // for two minutes after a stream dropped, so a phone that had been locked
+  // came back, asked to join as itself, and was told its own name was taken by
+  // a visitor who was nobody: no stream, no presence, two minutes still to run.
+  const first = await join('LOCKED PHONE');
+  assert.ok(first.id, 'the first arrival gets a session');
+
+  // No event stream was ever opened for that session, which is the state a
+  // dropped connection leaves behind.
+  const again = await fetch(`${baseUrl}/api/session`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' },
+    body: JSON.stringify({ name: 'LOCKED PHONE' }),
+  });
+  assert.equal(again.status, 201, 'the same name is granted again to somebody with no live stream');
+  const second = (await again.json()).session;
+  assert.notEqual(second.id, first.id, 'and it is a new session rather than the old one revived');
+
+  // The old session is genuinely gone rather than left as a second holder of
+  // one name, which would put two of the same person in the room.
+  const stale = await fetch(`${baseUrl}/api/presence`, {
+    method: 'POST',
+    headers: auth(first),
+    body: JSON.stringify({
+      x: 0, y: 1.48, z: 0, rotation: 0, location: 'MY SQUARE',
+      state: 'walking', moving: false, running: false, venue: 'shore',
+    }),
+  });
+  assert.equal(stale.status, 401, 'the replaced session no longer counts as a visitor');
+});
+
+test('a name is refused while somebody is actually holding it', async () => {
+  // The other half: standing a live visitor down would let anybody take a name
+  // out from under somebody who is in the room using it.
+  const held = await join('LIVE HOLDER');
+  const stream = await fetch(`${baseUrl}/api/events`, {
+    headers: { ...auth(held), accept: 'text/event-stream' },
+  });
+  assert.equal(stream.status, 200, 'the holder has an open stream');
+  const reader = stream.body.getReader();
+  await reader.read();
+
+  const taken = await fetch(`${baseUrl}/api/session`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' },
+    body: JSON.stringify({ name: 'LIVE HOLDER' }),
+  });
+  assert.equal(taken.status, 409, 'a name in use is still refused');
+  await reader.cancel();
+});

@@ -1057,6 +1057,37 @@ const removeVisitor = (visitor, reason = 'left') => {
   scheduleBroadcast();
 };
 
+/**
+ * The visitor currently holding a name, if anybody is.
+ *
+ * "Holding" means having an open event stream. A name stays reserved for two
+ * minutes after a stream drops so that a brief interruption does not lose
+ * somebody their identity — but that same grace locked people out of their own
+ * name when the interruption was a phone being locked. The tab comes back, asks
+ * to join as itself, and is told the name is taken by a visitor who is nobody:
+ * no stream, no presence, and two minutes of silence still to run.
+ *
+ * So a name is only taken while somebody is actually there. A disconnected
+ * holder is stood down and the newcomer takes the name, which cannot take it
+ * from anyone live, because anyone live has a stream.
+ */
+const nameHeldBy = (name) => {
+  const wanted = name.toLocaleUpperCase('en-US');
+  for (const visitor of visitors.values()) {
+    if (visitor.name.toLocaleUpperCase('en-US') !== wanted) continue;
+    return visitor;
+  }
+  return undefined;
+};
+
+const claimName = (name) => {
+  const holder = nameHeldBy(name);
+  if (!holder) return true;
+  if (streams.get(holder.id)?.size) return false;
+  removeVisitor(holder, 'replaced');
+  return true;
+};
+
 const apiError = (response, status, message) => json(response, status, { error: message });
 
 const server = createServer(async (request, response) => {
@@ -1082,8 +1113,7 @@ const server = createServer(async (request, response) => {
       const payload = await body(request);
       const name = safeText(payload.name, 16);
       if (!name) return apiError(response, 400, 'A festival name is required.');
-      const duplicate = [...visitors.values()].some((visitor) => visitor.name.toLocaleUpperCase('en-US') === name.toLocaleUpperCase('en-US'));
-      if (duplicate) return apiError(response, 409, 'That festival name is already connected.');
+      if (!claimName(name)) return apiError(response, 409, 'That festival name is already connected.');
 
       pruneWaiting();
       // STAFF are not queued: an admin locked out of a busy room cannot fix
@@ -1136,8 +1166,7 @@ const server = createServer(async (request, response) => {
         });
       }
 
-      const duplicate = [...visitors.values()].some((visitor) => visitor.name.toLocaleUpperCase('en-US') === name.toLocaleUpperCase('en-US'));
-      if (duplicate) return apiError(response, 409, 'That festival name is already connected.');
+      if (!claimName(name)) return apiError(response, 409, 'That festival name is already connected.');
       const recovered = createVisitor(name, payload.palette);
       visitors.set(recovered.id, recovered);
       scheduleBroadcast();

@@ -286,6 +286,28 @@ interface ClientOptions {
 
 const defaultServerUrl = import.meta.env.DEV ? 'http://127.0.0.1:8787' : window.location.origin;
 
+/**
+ * Where this tab keeps its session between lives.
+ *
+ * sessionStorage rather than localStorage on purpose: it belongs to this tab
+ * and survives the tab being discarded and restored, which is the case that
+ * matters, while a second window still gets its own session rather than
+ * fighting this one for the same visitor.
+ */
+const SESSION_KEY = 'myschedule-festival-session-v1';
+
+const readStoredSession = (): { session: Session; name: string } | undefined => {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as { session?: Session; name?: string };
+    if (!parsed.session?.id || !parsed.session.token || !parsed.name) return undefined;
+    return { session: parsed.session, name: parsed.name };
+  } catch {
+    return undefined;
+  }
+};
+
 export class FestivalClient {
   private readonly baseUrl = (import.meta.env.VITE_FESTIVAL_SERVER_URL || defaultServerUrl).replace(/\/$/, '');
   private readonly onState: ClientOptions['onState'];
@@ -413,6 +435,16 @@ export class FestivalClient {
     this.suspended = false;
     this.identity = { name, palette };
     this.onStatus('connecting');
+    // Reclaim this tab's own visitor before asking for a new one.
+    //
+    // Joining fresh under a name the server still holds is refused with a 409,
+    // and it holds it for two minutes after the stream drops. So a phone that
+    // was locked long enough to have its tab discarded came back, tried to join
+    // as itself, and was told its own name was taken — over and over, for as
+    // long as the grace lasted. The recover endpoint exists for exactly this
+    // and takes the old id and token; they just had to survive the discard,
+    // which is what sessionStorage is for.
+    if (await this.reclaimStoredSession(name, palette)) return;
     try {
       const response = await fetch(`${this.baseUrl}/api/session`, {
         method: 'POST',
@@ -424,6 +456,7 @@ export class FestivalClient {
       this.session = payload.session;
       this.reconnectAttempt = 0;
       this.joinAttempt = 0;
+      this.rememberSession(name);
       this.onState(payload.state);
       this.onStatus('online');
       void this.openEventStream();
@@ -439,6 +472,53 @@ export class FestivalClient {
       // unlucky moment and the festival was offline for good.
       this.onStatus('offline', error instanceof Error ? error.message : 'Festival server is unavailable.');
       this.scheduleJoinRetry();
+    }
+  }
+
+  /** Keeps this tab's session where a discard cannot reach it. */
+  private rememberSession(name: string): void {
+    if (!this.session) return;
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ session: this.session, name }));
+    } catch { /* private browsing */ }
+  }
+
+  private forgetSession(): void {
+    try { sessionStorage.removeItem(SESSION_KEY); } catch { /* private browsing */ }
+  }
+
+  /**
+   * Takes back the visitor this tab already owns, if the server still has one.
+   *
+   * Returns true when it worked, and the caller stops there. A failure is not
+   * an error worth reporting — it simply means there is nothing to reclaim, and
+   * the ordinary join follows.
+   */
+  private async reclaimStoredSession(name: string, palette: AvatarPalette): Promise<boolean> {
+    const stored = readStoredSession();
+    if (!stored) return false;
+    if (stored.name.toLocaleUpperCase('en-US') !== name.toLocaleUpperCase('en-US')) {
+      this.forgetSession();
+      return false;
+    }
+    try {
+      const response = await fetch(`${this.baseUrl}/api/session/recover`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ session: stored.session, name, palette }),
+      });
+      const payload = await response.json() as { session?: Session; state?: FestivalState };
+      if (!response.ok || !payload.session || !payload.state) return false;
+      this.session = payload.session;
+      this.reconnectAttempt = 0;
+      this.joinAttempt = 0;
+      this.rememberSession(name);
+      this.onState(payload.state);
+      this.onStatus('online');
+      void this.openEventStream();
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -720,6 +800,7 @@ export class FestivalClient {
 
   async disconnect(): Promise<void> {
     this.closed = true;
+    this.forgetSession();
     this.suspended = false;
     if (this.reconnectTimer) window.clearTimeout(this.reconnectTimer);
     this.abortController?.abort();
@@ -934,6 +1015,7 @@ export class FestivalClient {
     if (event === 'kicked') {
       this.closed = true;
       this.session = undefined;
+      this.forgetSession();
       this.onStatus('kicked', 'Festival staff ended this session.');
     }
   }
@@ -952,6 +1034,7 @@ export class FestivalClient {
       if (!response.ok || !payload.session || !payload.state) throw new Error(payload.error ?? 'Session recovery failed.');
       this.session = payload.session;
       this.reconnectAttempt = 0;
+      if (this.identity) this.rememberSession(this.identity.name);
       this.onState(payload.state);
       this.onStatus('online');
       void this.openEventStream();

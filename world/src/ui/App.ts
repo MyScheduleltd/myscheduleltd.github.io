@@ -298,7 +298,6 @@ export class App {
   private readonly openStaffSections = new Set<string>(
     JSON.parse(sessionStorage.getItem(STAFF_SECTIONS_KEY) ?? '[]') as string[],
   );
-  private programmeTimer?: number;
   private siteStyle: SiteStyle = {
     brandFontSize: 41,
     brandScaleY: 1.35,
@@ -1294,18 +1293,30 @@ export class App {
     // Standing up is its own action. Routing it through interact() meant that at
     // the bar, where plain E orders a round, the STAND button bought a drink.
     this.root.querySelector<HTMLButtonElement>('[data-public-stand]')?.addEventListener('click', () => this.world?.forceStand());
-    window.addEventListener('pagehide', (event) => {
-      this.resetQuestProgress();
-      if (event.persisted) {
-        this.festivalClient.suspend();
-        return;
-      }
+    // Reversible only, because this fires when a phone is locked.
+    //
+    // pagehide means "this page may be going away", not "this page is going
+    // away", and iOS fires it for a lock screen. Everything that used to happen
+    // here assumed the stronger reading: it said goodbye to the server, tore
+    // out the keyboard handler, stopped the programme clock and wiped the
+    // visitor's quest progress.
+    //
+    // Every one of those is either pointless or harmful, and which one depends
+    // on the same fact. If the page really is closing, removing a listener and
+    // clearing a timer on it achieves nothing — it is about to stop existing.
+    // If the page is not closing, all of it is damage: progress gone, keys
+    // dead, and the world convinced this visitor had left. The quest reset is
+    // the clearest case, because in-memory progress dies with a page that
+    // closes, so resetting it could only ever have taken effect on a page that
+    // survived — which is exactly when nobody wanted it to.
+    //
+    // So: pause what can be paused, suspend the stream, keep the session. The
+    // server already holds a disconnected visitor for two minutes, which is far
+    // longer than a glance at a notification and long enough to walk back into
+    // the same festival rather than a new one.
+    window.addEventListener('pagehide', () => {
       this.pausePrivateScreening();
-      window.removeEventListener('keydown', this.globalShortcut);
-      document.removeEventListener('fullscreenchange', this.syncScreenFullscreenState);
-      document.removeEventListener('webkitfullscreenchange', this.syncScreenFullscreenState);
-      if (this.programmeTimer) window.clearInterval(this.programmeTimer);
-      void this.festivalClient.disconnect();
+      this.festivalClient.suspend();
     });
     window.addEventListener('pageshow', (event) => {
       if (event.persisted) this.festivalClient.resume();
@@ -1315,7 +1326,9 @@ export class App {
     });
     this.startNpcChat();
     this.syncProgrammeBoard(true);
-    this.programmeTimer = window.setInterval(() => this.syncProgrammeBoard(), 1_000);
+    // Never cleared: it lives as long as the page does, and the page is the
+    // only thing that could have stopped it.
+    window.setInterval(() => this.syncProgrammeBoard(), 1_000);
   }
 
   private updateSnapshot(snapshot: WorldSnapshot): void {
@@ -3025,13 +3038,6 @@ export class App {
     if (this.activePanel !== 'quests') return;
     const body = this.root.querySelector<HTMLElement>('#panel .panel__body');
     if (body) body.innerHTML = this.questPanelContent();
-  }
-
-  private resetQuestProgress(): void {
-    this.completedQuests.clear();
-    this.questCelebrated = false;
-    this.world?.stopFireworks();
-    this.refreshQuestUi();
   }
 
   private openPanel(panelId: PanelId): void {
