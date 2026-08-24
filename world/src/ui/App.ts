@@ -966,7 +966,50 @@ export class App {
       (window as Window & { __festivalKerb?: () => unknown }).__festivalKerb =
         () => this.world?.kerbReviewSnapshot();
     } else if (reviewTarget === 'perf') {
-      (window as Window & { __festivalPerf?: () => unknown }).__festivalPerf = () => this.world?.performanceSnapshot();
+      const performanceReview = () => this.world?.performanceSnapshot();
+      (window as Window & { __festivalPerf?: () => unknown }).__festivalPerf = performanceReview;
+      window.setTimeout(() => {
+        this.root.dataset.festivalPerf = JSON.stringify(performanceReview());
+      }, 1_000);
+    } else if (reviewTarget === 'mobile-stability' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      // Forces the phone GPU path on a desktop test browser, places the visitor
+      // at a live public screen and exposes both ordinary performance counters
+      // and the crash black box. This covers the exact moment the old second
+      // WebGL context first uploaded and redrew the complete scene.
+      this.world.focusPublicScreeningForReview();
+      document.documentElement.dataset.mobileStabilityRoute = 'active';
+      this.root.dataset.mobileStabilityRoute = 'active';
+      const mobileStabilityReview = () => ({
+        performance: this.world?.performanceSnapshot(),
+        diagnostic: this.world?.diagnosticSample(),
+      });
+      const stressSigns = (updates = 100) => {
+        const entrance = this.networkState?.entranceSign ?? { title: 'MYSCHEDULE', subtitle: 'VIRTUAL FESTIVAL' };
+        const temple = this.networkState?.templeSign ?? { name: '美麗本人', label: 'THE TEMPLE' };
+        for (let index = 0; index < updates; index += 1) {
+          this.world?.setEntranceSign(`STABILITY ${index}`, `UPDATE ${index}`);
+          this.world?.setTempleSign(`TEMPLE ${index}`, `UPDATE ${index}`);
+        }
+        this.world?.setEntranceSign(entrance.title, entrance.subtitle);
+        this.world?.setTempleSign(temple.name, temple.label);
+        return mobileStabilityReview();
+      };
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = mobileStabilityReview;
+      (window as Window & { __festivalStressSigns?: (updates?: number) => unknown }).__festivalStressSigns = stressSigns;
+      window.setTimeout(() => {
+        const report = JSON.stringify({
+          before: mobileStabilityReview(),
+          after: stressSigns(250),
+        });
+        document.documentElement.dataset.mobileStabilityReview = report;
+        this.root.dataset.mobileStabilityReview = report;
+      }, 750);
+      window.setInterval(() => {
+        const live = JSON.stringify(mobileStabilityReview());
+        document.documentElement.dataset.mobileStabilityLive = live;
+        this.root.dataset.mobileStabilityLive = live;
+      }, 5_000);
+      this.startPublicScreening(true);
     } else if (reviewTarget === 'rooftop' || reviewTarget === 'rooftop-dj') {
       this.world.focusRooftopForReview(reviewTarget === 'rooftop-dj');
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.clubReviewSnapshot();

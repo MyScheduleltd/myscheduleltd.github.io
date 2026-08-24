@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-08-25 · unresolved mobile crash + PS2 art direction · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-08-25 · mobile stability candidate + wall-conduit removal · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
@@ -8,69 +8,75 @@ Last updated: 2026-08-25 · unresolved mobile crash + PS2 art direction · branc
 
 ---
 
-## 0a. READ THIS FIRST — the mobile crash is not fixed
+## 0a. READ THIS FIRST — concrete mobile stability fix, awaiting phone confirmation
 
-The owner's phone crashes out of the world and lands back on the sign-in page.
-It is **unresolved**. A whole session was spent on it and none of the fixes
-below stopped it. Do not assume any of them was the cause; do not assume any of
-them was wasted either — several were real faults, they were just not *this*
-fault.
+The owner's Safari tab was repeatedly dying and returning to the sign-in page.
+This pass found and fixed two concrete causes of mobile memory/GPU pressure. The
+fix passes the local phone fixture, but it is **not yet confirmed on the owner's
+actual phone and has not been published**. Keep that distinction explicit.
 
-**What the owner reports, in their words:** it happens on both `?era=ps2` and
-the plain beta; it happened "when the public screening initiates" and "when
-ordering a song from the jukebox"; and it happened again "walking around" while
-"not doing anything". Safari showed *"A problem repeatedly occurred"*, which is
-WebKit giving up on a tab that keeps dying — so it is a **tab crash**, not a
-network fault, and not a logout.
+**The unbounded leak:** every ordinary multiplayer state packet calls
+`setEntranceSign` and `setTempleSign`. Those methods rebuilt 1024 × 512 canvas
+textures even when the text was unchanged. Worse, `createTextTexture` kept every
+font-repaint closure forever, so disposing a replaced texture did not release
+its canvas. An idle connected client therefore accumulated full-size canvases
+without any visible change. The fix:
 
-**A black box is now fitted, and it is the most useful thing here.** The world
-writes one line about itself to `localStorage` every second (`App.startBlackBox`
-→ `FestivalWorld.diagnosticSample`). After a session that ended without saying
-goodbye, the next load paints that last line across the top of the page in red
-(`App.showLastBreath`, `.last-breath` in `style.css`). It is deliberately **not**
-loopback-gated — every other readout in this project is, and that is precisely
-why four rounds of debugging produced four wrong answers. Ask the owner to
-photograph the red line.
+- deduplicates unchanged entrance, temple and venue lettering;
+- keeps pending font repaints in a `Set`, removes the repaint when its texture
+  is disposed, and clears the set after both brand fonts settle;
+- exposes `repaints` / `pendingSignRepaints` in the loopback diagnostics.
 
-How to read it:
+**The phone GPU spike:** the CSS3D projector video had a second
+`THREE.WebGLRenderer` above it to redraw occluding geometry. That meant two
+WebGL contexts, duplicate scene uploads and a second full draw pass exactly
+when the phone was also decoding video. Coarse, no-hover devices now retain the
+video but use only the main WebGL context; desktop keeps the exact two-context
+composition. The context-loss handler now tracks both desktop canvases and
+waits for every lost context to restore before drawing again.
 
-| Field | Means | What a large or rising value implicates |
-| --- | --- | --- |
-| `mounts` / `releases` | cumulative projector player mount/teardown | video player churn — cut harder, or stop autoplay on phones |
-| `live` / `frames` | players currently mounted / iframes in the DOM | more than one at a time is a bug; the rule is one |
-| `mats` / `geo` / `tex` / `progs` | scene material, geometry, texture, program counts | a leak — compare against the baselines below |
-| `draws` | draw calls that frame | speed, not crashes; 865 at night is high but survivable |
-| `lost` | WebGL context was lost | memory pressure got there first |
-| `up` / `x` / `z` / `venue` | seconds alive, position, venue | where and when it dies |
+Related lifecycle leaks fixed in the same audit: departing remote avatars now
+dispose their unique geometry, badge maps and materials, and the five-second
+light-cull timer is cleared when the world stops.
 
-**Desktop baselines, lite mode, night, `era=ps2`** (measured 2026-08-25):
-`draws 865 · progs 13 · tex 7 · geo 172 · mats 1935 · orphanedStyleMaterials 0`.
-Plain beta: `draws 778 · geo 17 · mats 1192`. If a phone's black box shows `mats`
-or `geo` far above these, something is accumulating that a desk does not show.
+**Local evidence, `?review=mobile-stability&era=ps2`, 390 × 650:**
 
-**Ruled out by measurement, so do not re-derive:**
+- 250 alternating entrance/temple sign updates: `repaints 0`, `textures 12`,
+  `programs 31`, `live 1`, `frames 1`, `ctx 1`, `lost false` before and after;
+- the same 250-update test on the plain world held its finite pre-font repaint
+  set at 11 before and after, with `textures 12`, `ctx 1` and `lost false`;
+- the public screening remained alive through 86 seconds of idle playback;
+  after renderer warm-up, geometry held at 354 for the final 40 seconds and
+  textures held at 12;
+- a desktop `?review=perf&era=ps2` run still reports `ctx 2` and
+  `mobileGpuConservation false`, so the desktop compositor was not removed;
+- `npm run verify` passes all 43 server tests and the TypeScript/Vite build.
 
-- Texture memory. 7 textures either way; the style flag adds none.
-- The style flag as a memory cost. +3 MB of heap, identical texture count.
-- The live service. 70 seconds of stream held from a desk with heartbeats
-  every 10 s, two visitors, world not full.
-- Multiple simultaneous video players *by design* — the projector already
-  mounts one venue at a time, and the jukebox now releases rather than mutes.
+The loopback fixture exposes `data-mobile-stability-review` (the 250-update
+before/after report) and `data-mobile-stability-live` (refreshed every five
+seconds) on `#app`. It also places the visitor at a live Shore screening and
+forces the one-context phone path even from a desktop test browser.
 
-**Candidates never disproved:**
+**The black box remains important.** It writes one diagnostic line to
+`localStorage` every second (`App.startBlackBox` →
+`FestivalWorld.diagnosticSample`). If the real phone still crashes, ask the
+owner to photograph the entire red `LAST SESSION ENDED AT` line on the next
+load. The new fields are `ctx`, `fgdraws`, `fgprogs` and `repaints`; more than
+one live iframe, a rising repaint count, or `lost true` would separate a
+remaining player/context fault from this fixed leak.
 
-1. Video player churn while walking. Phones no longer warm a screen on
-   approach (`FestivalWorld.projectorVenue`), but the owner still crashed after
-   that shipped.
-2. A leak that does not show on desktop Chromium at all.
-3. Something entirely outside these three, which is the honest default given
-   the strike rate.
-
-**The one thing not yet tried:** stop autoplaying venue video on phones
-altogether — show the existing `NOW PLAYING` card and require a tap. That is a
-product decision and the owner has not been asked for it.
+Phone video autoplay was **not** changed. Tap-to-start remains a possible
+fallback only if the owner's phone still fails after this build.
 
 ## 0b. What changed this session — 2026-08-24/25
+
+Current local, unpublished continuation:
+
+- removed the procedural exterior corner conduit in `WornArchitecture.ts`;
+  this was the thin bar/stick protruding through the building wall in the
+  owner's 2026-08-25 phone screenshot. No other wall dressing was moved;
+- implemented the mobile stability work documented in 0a, including the
+  loopback-only `mobile-stability` fixture and expanded black-box counters.
 
 Thirty-two commits, `cc3b484` … `535b809`, every one published to Pages. **Two
 regressions were introduced and then fixed inside this session** — check these

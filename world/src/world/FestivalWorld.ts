@@ -355,6 +355,26 @@ interface WorldOptions {
 }
 
 const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+
+/**
+ * Phones get one WebGL context, not two.
+ *
+ * The foreground compositor exists only to redraw scene geometry over CSS3D
+ * video. On WebKit a second renderer duplicates the scene's GPU resources and
+ * then replays every draw call when a screening becomes visible. That is a
+ * harsh trade on a handset already decoding video, and it was invisible to the
+ * main renderer's diagnostics. Touch-only devices keep the video and give up
+ * that final occlusion pass; desktop retains the exact composition it had.
+ */
+const shouldConserveMobileGpu = (): boolean => {
+  try {
+    const loopbackReview = ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+      && new URLSearchParams(window.location.search).get('review') === 'mobile-stability';
+    return loopbackReview || window.matchMedia('(pointer: coarse) and (hover: none)').matches;
+  } catch {
+    return false;
+  }
+};
 // Keep the two service stands together on the inner half of the main road.
 // Their padded colliders retain a narrow walking gap, while the outer edge of
 // the popcorn booth no longer crowds the road boundary.
@@ -843,12 +863,13 @@ const material = (
  * early. So each sign registers how to repaint itself, and they are all redrawn
  * once the face has actually arrived.
  */
-const signRepaints: Array<() => void> = [];
+const signRepaints = new Set<() => void>();
+let brandFontLoadStarted = false;
 let brandFontLoaded = false;
 
 const loadBrandFont = (): void => {
-  if (brandFontLoaded || typeof document === 'undefined' || !document.fonts) return;
-  brandFontLoaded = true;
+  if (brandFontLoadStarted || typeof document === 'undefined' || !document.fonts) return;
+  brandFontLoadStarted = true;
   // Both faces, and the repaint waits for both — a sign whose heading has
   // arrived but whose subtitle has not would be redrawn once in the brand face
   // and once in the fallback, and settle on whichever finished last.
@@ -857,7 +878,12 @@ const loadBrandFont = (): void => {
     document.fonts.load('400 48px "HanWangMingBrand"'),
   ])
     .then(() => {
+      brandFontLoaded = true;
       for (const repaint of signRepaints) repaint();
+      // The font settles once. Keeping these closures afterwards retains every
+      // canvas they have ever painted, including textures already disposed when
+      // live multiplayer copy changed.
+      signRepaints.clear();
     })
     .catch(() => undefined);
 };
@@ -900,10 +926,17 @@ const createTextTexture = (lines: string[], foreground = '#f5efe2', background =
   paint();
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  signRepaints.push(() => {
+  const repaint = () => {
     paint();
     texture.needsUpdate = true;
-  });
+  };
+  if (!brandFontLoaded) {
+    signRepaints.add(repaint);
+    // Material.dispose() does not dispose its maps, so callers explicitly
+    // dispose replaced sign textures. Drop the pending callback at that same
+    // moment or it becomes a permanent root for the old 1024 x 512 canvas.
+    texture.addEventListener('dispose', () => signRepaints.delete(repaint));
+  }
   return texture;
 };
 
@@ -1035,7 +1068,8 @@ export class FestivalWorld {
   private readonly canvas: HTMLCanvasElement;
   private readonly foregroundCanvas: HTMLCanvasElement;
   private readonly renderer: THREE.WebGLRenderer;
-  private readonly foregroundRenderer: THREE.WebGLRenderer;
+  private readonly foregroundRenderer?: THREE.WebGLRenderer;
+  private readonly conservesMobileGpu: boolean;
   private readonly cssRenderer: CSS3DRenderer;
   private readonly scene = new THREE.Scene();
   private readonly cssScene = new THREE.Scene();
@@ -1061,6 +1095,7 @@ export class FestivalWorld {
   private reviewProjectorVenue?: VenueKey;
   private lastProjectorNudgeAt = 0;
   private canvasSizeObserver?: ResizeObserver;
+  private lightCullTimer = 0;
   private readonly playheads = new Map<VenueKey, Playhead>();
   private readonly clubLights: THREE.Mesh[] = [];
   private readonly clubFloorPanels: THREE.Mesh[] = [];
@@ -1117,6 +1152,7 @@ export class FestivalWorld {
   private programmeBoardMaterial?: THREE.MeshBasicMaterial;
   private reviewSuppressedProjectors: VenueKey[] = [];
   private readonly venueSignMaterials = new Map<VenueKey, THREE.MeshBasicMaterial>();
+  private readonly venueSignSignatures = new Map<VenueKey, string>();
   private readonly waterTextures: THREE.CanvasTexture[] = [];
   private readonly waterReflections: WaterReflectionVisual[] = [];
   private readonly fireworkRockets: FireworkRocket[] = [];
@@ -1232,6 +1268,7 @@ export class FestivalWorld {
     this.onAction = onAction;
     this.onProjectorAdvance = onProjectorAdvance;
     this.onProjectorDuration = onProjectorDuration;
+    this.conservesMobileGpu = shouldConserveMobileGpu();
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: graphicsMode === 'normal',
@@ -1243,25 +1280,29 @@ export class FestivalWorld {
     this.renderer.shadowMap.enabled = graphicsMode === 'normal';
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.setPixelRatio(this.mainPixelRatio());
-    this.foregroundRenderer = new THREE.WebGLRenderer({
-      canvas: foregroundCanvas,
-      alpha: true,
-      antialias: false,
-      powerPreference: 'high-performance',
-    });
-    this.foregroundRenderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.foregroundRenderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.foregroundRenderer.toneMappingExposure = 0.92;
-    // Matched to the main renderer. This pass redraws the same geometry over
-    // the finished picture, so any difference in how it is lit shows as a
-    // rectangle the shape of the scissor box: unshadowed, it laid a lit copy of
-    // the scene over the shadowed one, which is the pale block over the
-    // timetable — a board that stands in shadow.
-    this.foregroundRenderer.shadowMap.enabled = graphicsMode === 'normal';
-    this.foregroundRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.foregroundRenderer.setClearColor(0x000000, 0);
-    this.foregroundRenderer.clippingPlanes = [this.projectorClipPlane];
-    this.foregroundRenderer.setPixelRatio(this.foregroundPixelRatio());
+    if (!this.conservesMobileGpu) {
+      this.foregroundRenderer = new THREE.WebGLRenderer({
+        canvas: foregroundCanvas,
+        alpha: true,
+        antialias: false,
+        powerPreference: 'high-performance',
+      });
+      this.foregroundRenderer.outputColorSpace = THREE.SRGBColorSpace;
+      this.foregroundRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+      this.foregroundRenderer.toneMappingExposure = 0.92;
+      // Matched to the main renderer. This pass redraws the same geometry over
+      // the finished picture, so any difference in how it is lit shows as a
+      // rectangle the shape of the scissor box: unshadowed, it laid a lit copy of
+      // the scene over the shadowed one, which is the pale block over the
+      // timetable — a board that stands in shadow.
+      this.foregroundRenderer.shadowMap.enabled = graphicsMode === 'normal';
+      this.foregroundRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      this.foregroundRenderer.setClearColor(0x000000, 0);
+      this.foregroundRenderer.clippingPlanes = [this.projectorClipPlane];
+      this.foregroundRenderer.setPixelRatio(this.foregroundPixelRatio());
+    } else {
+      foregroundCanvas.style.display = 'none';
+    }
     this.cssRenderer = new CSS3DRenderer({ element: cssLayer });
     this.cssRenderer.domElement.classList.add('world-css3d__renderer');
 
@@ -1276,14 +1317,14 @@ export class FestivalWorld {
     this.dayNight.setShadowsEnabled(graphicsMode === 'normal');
     this.dayNight.setAmbientLift(graphicsMode === 'normal' ? 0 : 0.85);
     this.watchForContextLoss(canvas);
-    this.watchForContextLoss(foregroundCanvas);
+    if (this.foregroundRenderer) this.watchForContextLoss(foregroundCanvas);
     // Kept up rather than done once. This world does not finish building at
     // load — the club's rig, the rooftop, the evening's fireworks all arrive
     // later — so the cull runs again on a slow interval. The first pass is in
     // start(), before anything has compiled; these later ones only write when
     // a new light has appeared, which is rare, so the recompile they can
     // trigger is rare with them.
-    window.setInterval(() => this.cullDecorativeLights(), 5_000);
+    this.lightCullTimer = window.setInterval(() => this.cullDecorativeLights(), 5_000);
     this.dayNight.directionalLight.layers.enable(1);
     this.dayNight.hemisphereLight.layers.enable(1);
     this.dayNight.moonLight.layers.enable(1);
@@ -1369,6 +1410,7 @@ export class FestivalWorld {
     cancelAnimationFrame(this.animationFrame);
     window.removeEventListener('resize', this.resize);
     this.canvasSizeObserver?.disconnect();
+    window.clearInterval(this.lightCullTimer);
     window.visualViewport?.removeEventListener('resize', this.resize);
     window.removeEventListener('keydown', this.keyDown);
     window.removeEventListener('keyup', this.keyUp);
@@ -1385,7 +1427,7 @@ export class FestivalWorld {
     window.removeEventListener('pointerup', this.nudgeProjectorsOnGesture, true);
     this.stopFireworks();
     this.renderer.dispose();
-    this.foregroundRenderer.dispose();
+    this.foregroundRenderer?.dispose();
     for (const projector of this.projectors.values()) projector.element.remove();
   }
 
@@ -2517,6 +2559,8 @@ export class FestivalWorld {
    */
   performanceSnapshot(): {
     drawCalls: number;
+    foregroundDrawCalls: number;
+    contexts: number;
     triangles: number;
     programs: number;
     textures: number;
@@ -2533,6 +2577,8 @@ export class FestivalWorld {
     livePlayers: number;
     colliders: number;
     npcs: number;
+    pendingSignRepaints: number;
+    mobileGpuConservation: boolean;
   } | undefined {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return undefined;
     let sceneObjects = 0;
@@ -2554,6 +2600,8 @@ export class FestivalWorld {
     });
     return {
       drawCalls: this.renderer.info.render.calls,
+      foregroundDrawCalls: this.foregroundRenderer?.info.render.calls ?? 0,
+      contexts: this.foregroundRenderer ? 2 : 1,
       triangles: this.renderer.info.render.triangles,
       programs: this.renderer.info.programs?.length ?? 0,
       // What the GPU is actually holding. Draw calls decide whether a frame
@@ -2574,6 +2622,8 @@ export class FestivalWorld {
       livePlayers: [...this.projectors.values()].filter((projector) => Boolean(projector.iframe)).length,
       colliders: this.colliders.length,
       npcs: this.npcs.length,
+      pendingSignRepaints: signRepaints.size,
+      mobileGpuConservation: this.conservesMobileGpu,
     };
   }
 
@@ -3005,7 +3055,7 @@ export class FestivalWorld {
     this.performanceFrameCount = 0;
     if (this.stylizedWater) this.stylizedWater.visible = mode === 'normal';
     this.renderer.shadowMap.enabled = mode === 'normal';
-    this.foregroundRenderer.shadowMap.enabled = mode === 'normal';
+    if (this.foregroundRenderer) this.foregroundRenderer.shadowMap.enabled = mode === 'normal';
     this.dayNight.setShadowsEnabled(mode === 'normal');
     for (const spotlight of this.shadowSpotlights) spotlight.castShadow = mode === 'normal';
     this.applyRenderPixelRatios();
@@ -3046,10 +3096,26 @@ export class FestivalWorld {
     for (const [id, avatar] of this.remoteAvatars) {
       if (activeIds.has(id)) continue;
       avatar.group.removeFromParent();
+      const disposedMaterials = new Set<THREE.Material>();
+      const disposedGeometries = new Set<THREE.BufferGeometry>();
       avatar.group.traverse((child) => {
         if (!(child instanceof THREE.Mesh || child instanceof THREE.Sprite)) return;
         const materials = Array.isArray(child.material) ? child.material : [child.material];
-        for (const item of materials) item.dispose();
+        for (const item of materials) {
+          if (disposedMaterials.has(item)) continue;
+          disposedMaterials.add(item);
+          const mapped = item as THREE.Material & { map?: THREE.Texture | null };
+          mapped.map?.dispose();
+          item.dispose();
+        }
+        // Plain rigs and carried props share the world's unit cube. Styled rigs
+        // build their own tapered pieces, and those buffers belong to this one
+        // remote body; without disposing them, attendee churn grows GPU memory
+        // even though the group has left the scene.
+        if (child instanceof THREE.Mesh && child.geometry !== boxGeometry && !disposedGeometries.has(child.geometry)) {
+          disposedGeometries.add(child.geometry);
+          child.geometry.dispose();
+        }
       });
       this.remoteAvatars.delete(id);
     }
@@ -3338,10 +3404,15 @@ export class FestivalWorld {
 
   /** The two lines on a venue's sign. Both are STAFF's to set. */
   setVenueName(venue: VenueKey, name: string, subtitle?: string): void {
-    venueScreens[venue].label = name;
+    const nextName = name.trim() || venueScreens[venue].label;
+    const nextSubtitle = subtitle?.trim() || DEFAULT_VENUE_SUBTITLES[venue];
+    const signature = `${nextName}\n${nextSubtitle}`;
+    if (this.venueSignSignatures.get(venue) === signature) return;
+    this.venueSignSignatures.set(venue, signature);
+    venueScreens[venue].label = nextName;
     const signMaterial = this.venueSignMaterials.get(venue);
     if (!signMaterial) return;
-    const next = createTextTexture([name, subtitle ?? DEFAULT_VENUE_SUBTITLES[venue]]);
+    const next = createTextTexture([nextName, nextSubtitle]);
     const previous = signMaterial.map;
     signMaterial.map = next;
     signMaterial.needsUpdate = true;
@@ -3803,7 +3874,7 @@ export class FestivalWorld {
     this.camera.fov = this.baseFov;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
-    this.foregroundRenderer.setSize(width, height, false);
+    this.foregroundRenderer?.setSize(width, height, false);
     this.cssRenderer.setSize(width, height);
   };
 
@@ -4429,7 +4500,7 @@ export class FestivalWorld {
 
   private applyRenderPixelRatios(): void {
     this.renderer.setPixelRatio(this.mainPixelRatio() * this.adaptiveRenderScale);
-    this.foregroundRenderer.setPixelRatio(this.foregroundPixelRatio() * this.adaptiveRenderScale);
+    this.foregroundRenderer?.setPixelRatio(this.foregroundPixelRatio() * this.adaptiveRenderScale);
   }
 
   private tuneRenderScale(now: number): void {
@@ -4556,13 +4627,17 @@ export class FestivalWorld {
       live: [...this.projectors.values()].filter((projector) => Boolean(projector.iframe)).length,
       frames: document.querySelectorAll('iframe').length,
       draws: this.renderer.info.render.calls,
+      fgdraws: this.foregroundRenderer?.info.render.calls ?? 0,
+      ctx: this.foregroundRenderer ? 2 : 1,
       progs: this.renderer.info.programs?.length ?? 0,
+      fgprogs: this.foregroundRenderer?.info.programs?.length ?? 0,
       tex: this.renderer.info.memory.textures,
       geo: this.renderer.info.memory.geometries,
       mats: this.materialCountForDiagnostics(),
+      repaints: signRepaints.size,
       x: Math.round(this.player.position.x),
       z: Math.round(this.player.position.z),
-      lost: this.contextLost,
+      lost: this.lostContexts.size > 0,
     };
   }
 
@@ -4576,7 +4651,7 @@ export class FestivalWorld {
     return count;
   }
 
-  private contextLost = false;
+  private readonly lostContexts = new Set<HTMLCanvasElement>();
 
   /**
    * Survives the graphics context being taken away.
@@ -4603,15 +4678,18 @@ export class FestivalWorld {
     canvas.addEventListener('webglcontextlost', (event) => {
       // Without this the context is never restored, whatever else we do.
       event.preventDefault();
-      this.contextLost = true;
+      this.lostContexts.add(canvas);
       if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
       this.animationFrame = 0;
     });
     canvas.addEventListener('webglcontextrestored', () => {
-      if (!this.contextLost) return;
-      this.contextLost = false;
+      if (!this.lostContexts.delete(canvas)) return;
+      // Two desktop contexts can be reclaimed together and restored one at a
+      // time. Resuming after the first would immediately draw through the other
+      // dead context, which is exactly the loop the loss handler exists to stop.
+      if (this.lostContexts.size > 0) return;
       this.renderer.resetState();
-      this.foregroundRenderer.resetState();
+      this.foregroundRenderer?.resetState();
       if (!this.animationFrame) this.animationFrame = requestAnimationFrame(this.render);
     });
   }
@@ -5864,10 +5942,12 @@ export class FestivalWorld {
    * a shared CanvasTexture disposed on one face is disposed for the other too.
    */
   setEntranceSign(title: string, subtitle: string): void {
-    this.entranceSignText = {
+    const next = {
       title: title.trim() || this.entranceSignText.title,
       subtitle: subtitle.trim() || this.entranceSignText.subtitle,
     };
+    if (next.title === this.entranceSignText.title && next.subtitle === this.entranceSignText.subtitle) return;
+    this.entranceSignText = next;
     for (const material of this.entranceSignMaterials) {
       const previous = material.map;
       material.map = createTextTexture([this.entranceSignText.title, this.entranceSignText.subtitle]);
@@ -5878,10 +5958,12 @@ export class FestivalWorld {
 
   /** Re-letters the temple sign when STAFF change it. */
   setTempleSign(name: string, label: string): void {
-    this.templeSignText = {
+    const next = {
       name: name.trim() || this.templeSignText.name,
       label: label.trim() || this.templeSignText.label,
     };
+    if (next.name === this.templeSignText.name && next.label === this.templeSignText.label) return;
+    this.templeSignText = next;
     if (!this.templeSignMaterial) return;
     const previous = this.templeSignMaterial.map;
     this.templeSignMaterial.map = createTextTexture([this.templeSignText.name, this.templeSignText.label]);
@@ -7597,7 +7679,7 @@ export class FestivalWorld {
     // dark at night" actually describes. Both renderers, or the foreground
     // pass composites at a different brightness from the world behind it.
     this.renderer.toneMappingExposure = dayNight.exposure;
-    this.foregroundRenderer.toneMappingExposure = dayNight.exposure;
+    if (this.foregroundRenderer) this.foregroundRenderer.toneMappingExposure = dayNight.exposure;
     this.updateWaterReflections(elapsed);
     this.updateStylizedWater(elapsed);
     this.updateWaterLayers();
@@ -7695,15 +7777,16 @@ export class FestivalWorld {
       }
     }
     if (visibleProjectors.length) this.cssRenderer.render(this.cssScene, this.camera);
-    this.foregroundCanvas.style.visibility = visibleProjectors.length ? 'visible' : 'hidden';
-    if (visibleProjectors.length) {
+    const foregroundRenderer = this.foregroundRenderer;
+    this.foregroundCanvas.style.visibility = visibleProjectors.length && foregroundRenderer ? 'visible' : 'hidden';
+    if (visibleProjectors.length && foregroundRenderer) {
       const sceneBackground = this.scene.background;
       this.scene.background = null;
       this.camera.layers.set(1);
-      this.foregroundRenderer.autoClear = false;
-      this.foregroundRenderer.setScissorTest(false);
-      this.foregroundRenderer.clear(true, true, false);
-      this.foregroundRenderer.setScissorTest(true);
+      foregroundRenderer.autoClear = false;
+      foregroundRenderer.setScissorTest(false);
+      foregroundRenderer.clear(true, true, false);
+      foregroundRenderer.setScissorTest(true);
       const farthestFirst = visibleProjectors.sort(
         (a, b) => venueScreens[a].position[2] - venueScreens[b].position[2],
       );
@@ -7715,12 +7798,12 @@ export class FestivalWorld {
         const facing = venueScreens[venue].facing;
         this.projectorClipPlane.normal.set(0, 0, facing);
         this.projectorClipPlane.constant = -venueScreens[venue].position[2] * facing;
-        this.foregroundRenderer.setScissor(scissor.x, scissor.y, scissor.width, scissor.height);
-        this.foregroundRenderer.clear(true, true, false);
-        this.foregroundRenderer.render(this.scene, this.camera);
+        foregroundRenderer.setScissor(scissor.x, scissor.y, scissor.width, scissor.height);
+        foregroundRenderer.clear(true, true, false);
+        foregroundRenderer.render(this.scene, this.camera);
       }
-      this.foregroundRenderer.setScissorTest(false);
-      this.foregroundRenderer.autoClear = true;
+      foregroundRenderer.setScissorTest(false);
+      foregroundRenderer.autoClear = true;
       this.camera.layers.set(0);
       this.scene.background = sceneBackground;
     }

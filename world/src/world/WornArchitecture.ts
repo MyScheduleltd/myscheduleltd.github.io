@@ -409,13 +409,6 @@ export function dressBuildings(
       }
     }
 
-    // Conduit down one corner. Buildings in the places these references are
-    // drawn from carry their services on the outside, and one vertical line
-    // does a great deal to break a flat wall.
-    const cornerX = placedRandom(at, 41) > 0.5 ? 0.46 : -0.46;
-    const cornerZ = placedRandom(at, 42) > 0.5 ? 1 : -1;
-    const runsAt = place(cornerX, 0, cornerZ * (0.5 + 0.18 / size.z));
-    if (!overlapsSign(runsAt)) piece(0.28, size.y - 1.8, 0.28, runsAt, metal);
   }
 
   return { walls: dressed, refused, signs: keepClear.length };

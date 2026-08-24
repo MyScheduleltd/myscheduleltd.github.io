@@ -1,11 +1,23 @@
 # Claude handoff — myschedule Virtual Festival
 
-Last updated: 2026-08-21 (Asia/Taipei)
+Last updated: 2026-08-25 (Asia/Taipei)
 
 > **Superseded.** Read `CODEX_HANDOFF.md` first. The instructions below not to publish,
 > and the reference to the `codex/pivot-exploration` branch, are both out of date: the
 > build now ships to `docs/beta` on `main` every turn. What remains useful here is the
 > older architectural description, not the process.
+
+Current continuation: the thin procedural exterior conduit that clipped
+through the wall in the owner's phone screenshot has been removed. The mobile
+crash audit found an unbounded sign-canvas retention leak driven by ordinary
+multiplayer state packets and a second WebGL renderer that duplicated the scene
+on phones when video appeared. Sign text is now deduplicated, disposed repaint
+closures are released, and coarse/no-hover devices use one WebGL context while
+desktop retains two. The `mobile-stability` fixture survived 250 sign changes
+and 86 seconds of live playback with one player/context, stable warmed GPU
+counts and no loss; all 43 server tests and the production build pass. This is
+locally verified but not yet confirmed on the owner's Safari and not published.
+See `CODEX_HANDOFF.md` section 0a for exact counters and follow-up diagnostics.
 
 Commits `10dba12` and `5ae3d39` define the current mobile continuation point.
 The festival-pass menu scrolls in portrait and landscape; screening/order
