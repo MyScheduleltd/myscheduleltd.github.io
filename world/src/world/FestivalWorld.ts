@@ -2098,26 +2098,17 @@ export class FestivalWorld {
     if (!seat || !rig) return { seated: false };
     this.poseRigSeated(rig);
     this.player.updateMatrixWorld(true);
-    // The pad's own top, found by asking the scene what is under the seat
-    // rather than by repeating a number from where the chairs were built.
-    let padTop = -Infinity;
-    const here = new THREE.Vector2(seat.position.x, seat.position.z);
-    this.scene.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      // The body itself is standing in the same place and would otherwise be
-      // measured as the thing it is sitting on.
-      let inBody = false;
-      for (let node: THREE.Object3D | null = mesh; node; node = node.parent) {
-        if (node === this.player) { inBody = true; break; }
-      }
-      if (inBody) return;
-      const box = new THREE.Box3().setFromObject(mesh);
-      if (box.max.y > 2 || box.min.y < -0.5) return;
-      if (here.x < box.min.x || here.x > box.max.x) return;
-      if (here.y < box.min.z || here.y > box.max.z) return;
-      padTop = Math.max(padTop, box.max.y);
-    });
+    // Asked of the same search the seating itself uses.
+    //
+    // This carried its own copy, with bounds written as absolute numbers —
+    // "anything topping out below 2" — which is a fair description of a deck
+    // chair and no description at all of a bench seven metres up on a roof. It
+    // reported the shop's roof at street level as the rooftop bench's cushion,
+    // and it would have gone on agreeing with itself forever. A second copy of
+    // a question is a second answer waiting to happen.
+    const sitZ = seat.position.z + (seat.kind === 'bench' || seat.kind === 'bar' ? 0 : 0.28);
+    const padBox = this.seatPad(seat.position.x, sitZ, seat.position.y);
+    const padTop = padBox ? padBox.max.y : -Infinity;
     const extent = (): number | null => {
       this.player.updateMatrixWorld(true);
       const box = new THREE.Box3();
@@ -2146,22 +2137,8 @@ export class FestivalWorld {
     // lower than the feet do and was answering every question I asked it.
     const legBox = new THREE.Box3().setFromObject(rig.leftLeg);
     const footY = legBox.isEmpty() ? null : Number(legBox.min.y.toFixed(3));
-    // Whether the leg is inside the chair. The complaint was that it was, and
-    // "looks right in a screenshot" is not a test — this one either intersects
-    // or it does not.
-    let padBox: THREE.Box3 | undefined;
-    this.scene.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (!mesh.isMesh || !mesh.visible) return;
-      for (let node: THREE.Object3D | null = mesh; node; node = node.parent) {
-        if (node === this.player) return;
-      }
-      const box = new THREE.Box3().setFromObject(mesh);
-      if (box.max.y > seat.position.y + 1.6 || box.max.y < seat.position.y - 0.5) return;
-      if (seat.position.x < box.min.x || seat.position.x > box.max.x) return;
-      if (seat.position.z < box.min.z || seat.position.z > box.max.z) return;
-      if (!padBox || box.max.y > padBox.max.y) padBox = box;
-    });
+    // Whether the leg is inside the chair — against the same pad the seating
+    // measured, not a third scan of the scene for the same box.
     const legInPad = padBox && !legBox.isEmpty() ? legBox.intersectsBox(padBox) : null;
     const groundY = this.groundHeightAt(seat.position.x, seat.position.z) - AVATAR_GROUND_Y;
     return {
@@ -3507,8 +3484,8 @@ export class FestivalWorld {
    * Bounded above and below so the search cannot wander onto the roof of the
    * building the chair is standing in.
    */
-  private seatPadTop(atX: number, atZ: number, fromY: number): number | undefined {
-    let top = -Infinity;
+  private seatPad(atX: number, atZ: number, fromY: number): THREE.Box3 | undefined {
+    let pad: THREE.Box3 | undefined;
     this.scene.traverse((object) => {
       const mesh = object as THREE.Mesh;
       if (!mesh.isMesh || !mesh.visible) return;
@@ -3519,9 +3496,13 @@ export class FestivalWorld {
       if (box.max.y > fromY + 1.6 || box.max.y < fromY - 0.5) return;
       if (atX < box.min.x || atX > box.max.x) return;
       if (atZ < box.min.z || atZ > box.max.z) return;
-      top = Math.max(top, box.max.y);
+      if (!pad || box.max.y > pad.max.y) pad = box;
     });
-    return Number.isFinite(top) ? top : undefined;
+    return pad;
+  }
+
+  private seatPadTop(atX: number, atZ: number, fromY: number): number | undefined {
+    return this.seatPad(atX, atZ, fromY)?.max.y;
   }
 
   /** Takes the drink that is in hand. Written once; three paths reach it. */

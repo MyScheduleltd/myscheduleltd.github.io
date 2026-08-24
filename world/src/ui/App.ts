@@ -77,6 +77,8 @@ const PROMPT_HOLD_MS = 450;
 const CAMERA_CORNER_CUE_MS = 1_100;
 
 const PROFILE_KEY = 'myschedule-festival-profile-v1';
+/** Set once a visitor is inside, so a discarded tab knows it was already in. */
+const INSIDE_KEY = 'myschedule-festival-inside-v1';
 const PRIVATE_PROGRESS_KEY = 'myschedule-private-screening-v1';
 const CHAT_KEY = 'myschedule-local-chat-v2';
 const STAFF_KEY = 'myschedule-festival-staff-key-v1';
@@ -340,6 +342,7 @@ export class App {
 
   mount(): void {
     this.renderGate();
+    this.rejoinAfterDiscard();
     void this.festivalClient.publicConfig().then((config) => {
       this.festivalServiceReady = true;
       this.siteStyle = { ...this.siteStyle, ...config.siteStyle };
@@ -373,6 +376,33 @@ export class App {
       gateIntro: (zh ? staff.introZh : staff.intro) || base.gateIntro,
       festivalId: (zh ? staff.nameLabelZh : staff.nameLabel) || base.festivalId,
     };
+  }
+
+  /**
+   * Walks straight back in for somebody the phone threw out.
+   *
+   * Remembering the profile fixed half of this: a returning visitor's name and
+   * colours are already in the box. It did not fix the half that matters, which
+   * is that they are looking at a sign-in page at all. iOS discards background
+   * tabs to reclaim memory, and it does it while the phone is simply locked in
+   * a pocket — so unlocking lands on the gate, every time, having done nothing.
+   *
+   * The signal is sessionStorage, not the saved profile. sessionStorage belongs
+   * to this tab and survives the discard, so its presence means *this tab was
+   * already inside the festival* — which is exactly the person to let back in.
+   * A fresh tab has none of it and gets the gate, as it should: somebody
+   * arriving for the first time, or opening a second window, still chooses
+   * their name and their colours.
+   *
+   * Muted, because it must be. Audio needs a gesture and there has not been
+   * one; the sound prompt is already on screen for exactly this case.
+   */
+  private rejoinAfterDiscard(): void {
+    if (sessionStorage.getItem(INSIDE_KEY) !== '1') return;
+    const saved = readProfile();
+    if (!saved?.id || !isValidId(saved.id)) return;
+    this.currentId = saved.id;
+    void this.enterWhenThereIsRoom(true);
   }
 
   private renderGate(): void {
@@ -601,6 +631,10 @@ export class App {
   }
 
   private enterWorld(muted: boolean): void {
+    // Marked as soon as somebody is inside, so that if the phone throws this
+    // tab away while it is locked, the restored tab knows it was already in
+    // and walks back rather than presenting a sign-in page.
+    sessionStorage.setItem(INSIDE_KEY, '1');
     const zh = this.language === 'zh-TW';
     this.root.innerHTML = `
       <section class="world-shell">
