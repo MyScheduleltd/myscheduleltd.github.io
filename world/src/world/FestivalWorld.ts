@@ -1733,24 +1733,7 @@ export class FestivalWorld {
         this.wornRoomsDressed = true;
         this.wornInterior += dressInteriors(
         this.scene,
-        [
-          {
-            minX: clubBounds.roomMinX + 1,
-            maxX: clubBounds.roomMaxX - 1,
-            minZ: clubBounds.roomMinZ + 1,
-            maxZ: clubBounds.roomMaxZ - 1,
-            floorY: CLUB_FLOOR_Y,
-            ceilingY: CLUB_FLOOR_Y + CLUB_ROOM_HEIGHT,
-          },
-          {
-            minX: rooftopBounds.minX + 2,
-            maxX: rooftopBounds.maxX - 2,
-            minZ: rooftopBounds.deckMinZ + 2,
-            maxZ: rooftopBounds.maxZ - 2,
-            floorY: ROOF_Y,
-            outdoor: true,
-          },
-        ],
+        this.interiorRooms(),
             (x, z, y) => this.staticCollides(x, z, y) || this.onAWayThrough(x, z, y),
         );
       }
@@ -1758,9 +1741,40 @@ export class FestivalWorld {
       this.wornSignsSpared += dressing.refused;
       this.wornSigns = dressing.signs;
     }
-    const patched = applyWornStyle(this.scene, this.publicScreenBoxes());
+    const patched = applyWornStyle(this.scene, this.publicScreenBoxes(), this.interiorRooms());
     setWornStyle(amount, steps, grain, texture);
     return patched;
+  }
+
+  /**
+   * The rooms a visitor stands inside, asked for in one place.
+   *
+   * Two passes need this list and they were not going to keep agreeing about it
+   * if each carried its own copy: the dressing hangs ducts and crates in here,
+   * and the masonry needs every wall of one room to be built of the same thing.
+   */
+  private interiorRooms(): Array<{
+    minX: number; maxX: number; minZ: number; maxZ: number;
+    floorY: number; ceilingY?: number; outdoor?: boolean;
+  }> {
+    return [
+      {
+        minX: clubBounds.roomMinX + 1,
+        maxX: clubBounds.roomMaxX - 1,
+        minZ: clubBounds.roomMinZ + 1,
+        maxZ: clubBounds.roomMaxZ - 1,
+        floorY: CLUB_FLOOR_Y,
+        ceilingY: CLUB_FLOOR_Y + CLUB_ROOM_HEIGHT,
+      },
+      {
+        minX: rooftopBounds.minX + 2,
+        maxX: rooftopBounds.maxX - 2,
+        minZ: rooftopBounds.deckMinZ + 2,
+        maxZ: rooftopBounds.maxZ - 2,
+        floorY: ROOF_Y,
+        outdoor: true,
+      },
+    ];
   }
 
   private wornBuildings = 0;
@@ -4317,6 +4331,7 @@ export class FestivalWorld {
     // The ceremonial carpet ends at the Shore entrance. The screening itself
     // sits directly on the beach rather than on a carpeted platform.
     const centralCarpet = this.mesh([28, 0.055, 65 + (GATE_Z - 29)], [0, 0.16, 7 + (GATE_Z - 29) / 2], carpetMaterial);
+    centralCarpet.userData.festivalCarpet = true;
     centralCarpet.receiveShadow = true;
     centralCarpet.userData.projectorBackground = true;
 
@@ -4499,11 +4514,13 @@ export class FestivalWorld {
     const branchStripe = this.mesh([93, 0.025, 1.6], [0, 0.185, -14], material(0xc4b69f));
     branchStripe.userData.projectorBackground = true;
     const branchCarpet = this.mesh([93, 0.055, 7.5], [0, 0.22, -14], carpetMaterial);
+    branchCarpet.userData.festivalCarpet = true;
     branchCarpet.receiveShadow = true;
     branchCarpet.userData.projectorBackground = true;
     // Connect the cross-town carpet to The Palace entrance. Its surface sits
     // a few millimetres above both adjoining pieces to prevent z-fighting.
     const palaceApproachCarpet = this.mesh([12, 0.055, 16], [-35, 0.225, -24], carpetMaterial);
+    palaceApproachCarpet.userData.festivalCarpet = true;
     palaceApproachCarpet.receiveShadow = true;
     palaceApproachCarpet.userData.projectorBackground = true;
 
@@ -5134,11 +5151,14 @@ export class FestivalWorld {
       // clean through the flight, and under the lowest steps there was neither
       // ground nor wall to see — just the outside.
       const treadTop = progress * floor;
+      // Left as built, like the rooftop flight and for the same reason: a tread
+      // carried to the floor is building-sized, and the styling passes measure
+      // rather than ask, so each one came out with its own plinth and cornice.
       this.mesh(
         [stairRun / steps + 0.06, treadTop - floor, stairWidth],
         [x, (treadTop + floor) / 2, (b.stairMinZ + b.stairMaxZ) / 2],
         darkConcrete,
-      );
+      ).userData.wornNoMasonry = true;
     }
     // Shaft walls either side of the run, carried all the way up to the
     // underside of the ground floor. They used to stop a room's height short,
@@ -5861,17 +5881,28 @@ export class FestivalWorld {
      * rather than a solid wall — a wall the height of a handrail turned the
      * whole flight into a sawtooth silhouette with the steps hidden behind it.
      */
+    // Left exactly as modelled: no courses, no massing, no settle.
+    const keepAsBuilt = (mesh: THREE.Mesh): THREE.Mesh => {
+      mesh.userData.wornNoMasonry = true;
+      return mesh;
+    };
     const flight = (footZ: number, footY: number): void => {
       for (let step = 0; step < 9; step += 1) {
         const top = footY + ROOF_RISER * (step + 1);
         const treadZ = footZ + ROOF_GOING * (step + 0.5);
-        this.mesh(
+        // Every tread is its own column carried to the ground, which means the
+        // upper ones are as tall and as wide as a building — and the styling
+        // passes, which decide what a building is by measuring it, took them
+        // for nine buildings standing shoulder to shoulder. Each got its own
+        // plinth and its own cornice, and the flight grew a row of ledges down
+        // its edge. A stair is a stair however large its parts are.
+        keepAsBuilt(this.mesh(
           [massWidth, top - ground, ROOF_GOING + 0.02],
           [massCenterX, (top + ground) / 2, treadZ],
           treadMaterial,
-        );
+        ));
         // Kerb along the open edge, low enough to leave the steps in view.
-        this.mesh([kerbWidth, 0.36, ROOF_GOING + 0.02], [railX, top + 0.18, treadZ], wallMaterial);
+        keepAsBuilt(this.mesh([kerbWidth, 0.36, ROOF_GOING + 0.02], [railX, top + 0.18, treadZ], wallMaterial));
       }
       // The pitch line runs nosing to nosing: nine goings across, nine risers
       // up, which is 32 degrees — the angle a stair is comfortable at.
@@ -6891,39 +6922,29 @@ export class FestivalWorld {
     spine.add(head);
     add(taperedPrism(0.23, 0.27, 0.46, 0.94), [0, 0.23, 0], 'skin', head);
     add(taperedPrism(0.285, 0.26, 0.13, 0.98), [0, 0.43, -0.015], 'hair', head);
-    // A painted face, which is how that console generation did faces.
+    // The visor, on the front of the head and only the front.
     //
-    // The visor that stood here was the right answer to a different question.
-    // It solved "how do you avoid modelling a face out of boxes" by not having
-    // one — but the reference we are working from does have faces, and they are
-    // painted rather than modelled: flat features on a flat plane, no geometry
-    // at all. Six triangles instead of a modelled brow.
+    // A painted face was tried here and taken back out. It is the more faithful
+    // answer to the reference — that generation drew faces rather than modelling
+    // them — but faithfulness to a reference is not the only thing at stake in a
+    // world where every resident and every visitor wears the same one, and the
+    // owner preferred this. Keeping the note because the reasoning is still
+    // sound and the decision could reasonably go the other way later.
     //
-    // One texture, shared by everybody, drawn on transparent ground so it sits
-    // over whatever skin tone the visitor chose rather than carrying a tone of
-    // its own. The features are deliberately unisex and unplaceable — no lashes,
-    // no lip colour, no jaw shading — because this face is worn by every
-    // resident of the world at once and by every visitor who has not thought
-    // about it. A face that reads as somebody in particular is the wrong face
-    // for that job.
-    const face = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.3, 0.28),
-      FestivalWorld.faceMaterial(),
-    );
-    // Sat 4mm proud of the front facet, and leaning back with it.
-    //
-    // Both numbers are worked from the head rather than guessed, and the first
-    // guess was wrong in a way worth recording: taperedPrism takes a *radius*,
-    // and a four-sided prism turned an eighth presents a flat face at r/√2, not
-    // at r. Reading it as a half-width buried the whole face 26mm inside the
-    // skull, where it rendered perfectly and was visible to nobody.
-    //
-    // The head also tapers, so its front is not vertical — a flat upright plane
-    // would sink in at the chin and float off at the brow. Leaning it by the
-    // taper's own angle keeps the gap even top to bottom.
-    face.position.set(0, 0.26, 0.168);
-    face.rotation.x = -0.059;
-    head.add(face);
+    // It was a prism a hair wider than the head, which is a ring — so it banded
+    // right around the back as a line across the skull, which is what a visor
+    // is not. "Wrapped round the sides" was the intention and a full revolution
+    // was what the shape actually did; a tapered prism has no front.
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.1, 0.07), hardware);
+    visor.position.set(0, 0.245, 0.22);
+    head.add(visor);
+    // A short return down each side, which is the part that was worth keeping:
+    // it stops the visor reading as a sticker on a flat face.
+    for (const side of [-1, 1]) {
+      const wrap = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, 0.14), hardware);
+      wrap.position.set(side * 0.17, 0.245, 0.15);
+      head.add(wrap);
+    }
 
     const limb = (
       x: number,
@@ -9077,6 +9098,14 @@ export class FestivalWorld {
     this.kerbsRaised = true;
     const kerbStone = material(0x8d8578, 0.94, 0.02);
     const venues = this.venueVolumes();
+    // Carpet is not roadway. The first pass laid a grey footway straight across
+    // the red approach to the Palace, which is the one piece of ground in the
+    // festival that exists to be walked down and looked at.
+    const carpets: THREE.Box3[] = [];
+    this.scene.traverse((object) => {
+      if (object.userData.festivalCarpet !== true) return;
+      carpets.push(new THREE.Box3().setFromObject(object).expandByScalar(1.5));
+    });
     for (const edge of [-1, 1]) {
       // Outboard of the roadway, not cut out of it. Laid inside the road it
       // was a lone raised stone with a drop either side, which is a kerb
@@ -9107,6 +9136,7 @@ export class FestivalWorld {
       for (let x = -46.5; x <= 46.5; x += 1) {
         const clear = Math.abs(x) >= FestivalWorld.KERB_GAP
           && !venues.some((box) => box.containsPoint(new THREE.Vector3(x, AVATAR_GROUND_Y, z)))
+          && !carpets.some((box) => x >= box.min.x && x <= box.max.x && z >= box.min.z && z <= box.max.z)
           && !this.staticCollides(x, z, AVATAR_GROUND_Y, FestivalWorld.KERB_WIDTH / 2);
         if (clear && runStart === undefined) runStart = x;
         if (!clear) flush(x - 1);
@@ -9209,87 +9239,6 @@ export class FestivalWorld {
   }
 
   /** How wide a body is, for the purpose of not being inside a wall. */
-  private static sharedFaceMaterial: THREE.MeshStandardMaterial | undefined;
-
-  /**
-   * The one face in the festival, painted once and worn by everybody.
-   *
-   * Drawn rather than modelled, which is the whole point of it — the era we are
-   * working from put faces on characters as bitmaps on a flat plane, and modelling
-   * this out of boxes is exactly the "kidult" read the note complained about.
-   *
-   * Shared, and that matters at this budget: the world runs at 470 draw calls,
-   * and a material per avatar would have added a program compile each. One
-   * material, one texture, one program, however many people are in the room.
-   *
-   * Everything is drawn on transparent ground and cut out with alphaTest rather
-   * than blended, so it needs no depth sorting and costs nothing to composite.
-   */
-  private static faceMaterial(): THREE.MeshStandardMaterial {
-    if (FestivalWorld.sharedFaceMaterial) return FestivalWorld.sharedFaceMaterial;
-    const size = 128;
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.clearRect(0, 0, size, size);
-      const ink = '#241f1d';
-      // Brows first, and low. The distance between brow and eye is most of what
-      // makes a face read as adult rather than as a cartoon, and the mistake in
-      // every box-built face is putting them too far apart.
-      ctx.fillStyle = ink;
-      for (const side of [0, 1]) {
-        const x = side === 0 ? 26 : 74;
-        ctx.globalAlpha = 0.72;
-        ctx.fillRect(x, 44, 28, 5);
-        ctx.globalAlpha = 1;
-        // The eye: a dark almond with a single lighter catch in it. Two tones
-        // is the least that reads as an eye rather than as a hole.
-        ctx.beginPath();
-        ctx.ellipse(x + 14, 62, 14, 8, 0, 0, Math.PI * 2);
-        ctx.fillStyle = '#efe6df';
-        ctx.fill();
-        ctx.beginPath();
-        ctx.ellipse(x + 14, 62, 6.5, 7, 0, 0, Math.PI * 2);
-        ctx.fillStyle = ink;
-        ctx.fill();
-        ctx.beginPath();
-        ctx.ellipse(x + 16, 59.5, 2, 2, 0, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.globalAlpha = 0.85;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = ink;
-      }
-      // A nose is one soft shadow down one side, never an outline. An outlined
-      // nose is a clown.
-      ctx.globalAlpha = 0.18;
-      ctx.fillStyle = ink;
-      ctx.fillRect(60, 66, 4, 20);
-      ctx.globalAlpha = 0.26;
-      ctx.fillRect(54, 84, 16, 3);
-      // The mouth: closed, level, no colour of its own. A smile would be worn
-      // by twelve residents simultaneously for the rest of the festival.
-      ctx.globalAlpha = 0.55;
-      ctx.fillRect(48, 100, 32, 4);
-      ctx.globalAlpha = 1;
-    }
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    const material = new THREE.MeshStandardMaterial({
-      map: texture,
-      transparent: false,
-      alphaTest: 0.4,
-      roughness: 0.9,
-      metalness: 0,
-    });
-    FestivalWorld.sharedFaceMaterial = material;
-    return material;
-  }
-
   private static readonly BODY_RADIUS = 0.42;
 
   /**

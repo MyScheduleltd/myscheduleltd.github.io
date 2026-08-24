@@ -279,6 +279,8 @@ export function applyWornStyle(
   scene: THREE.Object3D,
   /** Screens and their frames, which are manufactured objects and not masonry. */
   keepPlain: THREE.Box3[] = [],
+  /** Interiors, each of which should be built of one thing throughout. */
+  rooms: MasonryRoom[] = [],
 ): number {
   let patched = 0;
   // One masonry variant per source material, not one per wall. The world reuses
@@ -299,7 +301,7 @@ export function applyWornStyle(
         // colour. Keying it on the material alone would have made every wall
         // of the same colour identical, which is the failure this is meant to
         // fix.
-        const kind = masonryKind(mesh);
+        const kind = masonryKind(mesh, rooms);
         const key = `${source.uuid}:${kind}`;
         let variant = masonryVariants.get(key);
         if (!variant) {
@@ -341,13 +343,25 @@ export function applyWornStyle(
  * facing side out of corrugated sheet. A cell wider than a building keeps its
  * walls agreeing with each other.
  */
-function masonryKind(mesh: THREE.Mesh): number {
+function masonryKind(mesh: THREE.Mesh, rooms: MasonryRoom[]): number {
   const at = mesh.getWorldPosition(new THREE.Vector3());
+  // Inside a room, the room decides, and every wall around it agrees. A
+  // sixteen-metre cell is smaller than the club, so its four walls came out of
+  // four different cells and the room ended up built of four different
+  // materials — which is not a street full of variety, it is a room that looks
+  // like a mistake.
+  const roomIndex = rooms.findIndex(
+    (room) => at.x >= room.minX && at.x <= room.maxX && at.z >= room.minZ && at.z <= room.maxZ,
+  );
+  if (roomIndex >= 0) return roomIndex % 4;
   const cellX = Math.round(at.x / 16);
   const cellZ = Math.round(at.z / 16);
   const value = Math.sin(cellX * 12.9898 + cellZ * 78.233) * 43758.5453;
   return Math.floor((value - Math.floor(value)) * 4);
 }
+
+/** A room whose walls should all be built the same way. */
+export type MasonryRoom = { minX: number; maxX: number; minZ: number; maxZ: number };
 
 /**
  * Whether a mesh is a wall or a building, as opposed to everything else.
@@ -369,8 +383,13 @@ function isMasonry(mesh: THREE.Mesh, keepPlain: THREE.Box3[]): boolean {
   if (Array.isArray(material) || material instanceof THREE.MeshBasicMaterial) return false;
   if (mesh.userData.wornNoMasonry === true) return false;
   const scale = mesh.getWorldScale(new THREE.Vector3());
-  if (scale.y < 2.4) return false;
-  if (Math.max(scale.x, scale.z) < 2.4) return false;
+  // A storey and a half tall, and wide enough to be a face rather than a
+  // feature. The first cut asked for 2.4 in both, which is a door — and it put
+  // block courses on the club's front doors and on the popcorn stand, neither
+  // of which anybody built out of masonry. A door is tall but narrow; a stall
+  // is wide but short; a wall is both.
+  if (scale.y < 4) return false;
+  if (Math.max(scale.x, scale.z) < 6) return false;
   const where = mesh.getWorldPosition(new THREE.Vector3());
   return !keepPlain.some((box) => box.containsPoint(where));
 }
@@ -492,6 +511,10 @@ export function warpWorldGeometry(
     const mesh = object as THREE.Mesh;
     if (!mesh.isMesh) return;
     if (mesh.userData.wornWarped === true) return;
+    // Anything marked to be left as built. A stair whose treads have each
+    // settled a few centimetres in a different direction is not an old stair,
+    // it is a broken one.
+    if (mesh.userData.wornNoMasonry === true) return;
     const geometry = mesh.geometry as THREE.BufferGeometry;
     if (geometry?.type !== 'BoxGeometry') return;
     const scale = mesh.getWorldScale(new THREE.Vector3());
@@ -581,6 +604,7 @@ export function massBuildings(
     if (mesh.userData.wornMassed === true) return;
     if ((mesh.geometry as THREE.BufferGeometry)?.type !== 'BoxGeometry') return;
     if (!isMasonry(mesh, keepPlain)) return;
+    if (mesh.userData.wornNoMasonry === true) return;
 
     const scale = mesh.getWorldScale(new THREE.Vector3());
     // Not worth it on anything that is mostly plinth already.
