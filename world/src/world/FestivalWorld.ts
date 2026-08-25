@@ -138,6 +138,8 @@ interface Seat {
 interface ProjectorSurface {
   element: HTMLDivElement;
   object: CSS3DObject;
+  /** The screen-shaped aperture used by the one-context phone compositor. */
+  aperture: THREE.Mesh;
   iframe?: HTMLIFrameElement;
   filmId?: string;
   youtubeId?: string;
@@ -363,13 +365,15 @@ const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
  * video. On WebKit a second renderer duplicates the scene's GPU resources and
  * then replays every draw call when a screening becomes visible. That is a
  * harsh trade on a handset already decoding video, and it was invisible to the
- * main renderer's diagnostics. Touch-only devices keep the video and give up
- * that final occlusion pass; desktop retains the exact composition it had.
+ * main renderer's diagnostics. Touch-only devices keep the video below the
+ * main canvas and redraw only the resident DJ over it in that same context;
+ * desktop retains the exact composition it had.
  */
 const shouldConserveMobileGpu = (): boolean => {
   try {
+    const reviewTarget = new URLSearchParams(window.location.search).get('review');
     const loopbackReview = ['127.0.0.1', 'localhost'].includes(window.location.hostname)
-      && new URLSearchParams(window.location.search).get('review') === 'mobile-stability';
+      && ['mobile-stability', 'screen-rooftop', 'screen-club'].includes(reviewTarget ?? '');
     return loopbackReview || window.matchMedia('(pointer: coarse) and (hover: none)').matches;
   } catch {
     return false;
@@ -561,13 +565,6 @@ const rooftopBounds = {
  * screen, the view of it and the DJ standing where the building used to be.
  */
 const ROOFTOP_CENTER_X = (rooftopBounds.minX + rooftopBounds.maxX) / 2;
-/**
- * The video layer is deliberately drawn above the single mobile WebGL canvas.
- * Keep it beside the DJ rather than across her: restoring the old second
- * foreground canvas just to mask the film reintroduces the phone-GPU crash
- * that canvas was removed to solve. The original screen height stays intact.
- */
-const ROOFTOP_SCREEN_X = ROOFTOP_CENTER_X - 9;
 /** Second line on each venue's sign until STAFF change it. */
 const DEFAULT_VENUE_SUBTITLES: Record<VenueKey, string> = {
   palace: 'COMMERCIAL',
@@ -777,8 +774,6 @@ const GATE_Z = 62;
 const CLUB_FLOOR_Y = -16.5;
 const CLUB_ROOM_HEIGHT = 15;
 const CLUB_AVATAR_Y = CLUB_FLOOR_Y + AVATAR_GROUND_Y;
-/** The basement screen shares the back wall with the DJ, beside her booth. */
-const CLUB_SCREEN_X = -78;
 const CLUB_STAGE_X = -68;
 const CLUB_STAGE_Z = 22.5 + CLUB_Z;
 /**
@@ -854,20 +849,34 @@ const venueScreens: Record<VenueKey, {
   rooftop: {
     label: 'The Rooftop',
     // Hung at the deck's north edge, watched from the deck to the south.
-    position: [ROOFTOP_SCREEN_X, ROOF_Y + 6.6, 19.9],
-    target: [ROOFTOP_SCREEN_X, ROOF_Y + 6.3, 19.6],
+    position: [ROOFTOP_CENTER_X, ROOF_Y + 6.6, 19.9],
+    target: [ROOFTOP_CENTER_X, ROOF_Y + 6.3, 19.6],
     scale: 0.0088,
     facing: 1,
   },
   club: {
     label: 'The Basement',
     // Hung on the room's north wall, watched from the floor to the south.
-    position: [CLUB_SCREEN_X, CLUB_FLOOR_Y + CLUB_ROOM_HEIGHT / 2, 41.5],
-    target: [CLUB_SCREEN_X, CLUB_FLOOR_Y + CLUB_ROOM_HEIGHT / 2 - 0.3, 41.9],
+    position: [CLUB_STAGE_X, CLUB_FLOOR_Y + CLUB_ROOM_HEIGHT / 2, 41.5],
+    target: [CLUB_STAGE_X, CLUB_FLOOR_Y + CLUB_ROOM_HEIGHT / 2 - 0.3, 41.9],
     scale: 0.0092,
     facing: -1,
   },
 };
+
+// CSS width/height are content-box measurements; the 22px frame is part of
+// what has to be revealed through the phone's main canvas as well.
+const projectorApertureGeometry = new THREE.PlaneGeometry(1600 + 22 * 2, 900 + 22 * 2);
+const projectorApertureMaterial = new THREE.MeshBasicMaterial({
+  color: 0x000000,
+  transparent: true,
+  opacity: 0,
+  blending: THREE.NoBlending,
+  depthTest: false,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  toneMapped: false,
+});
 
 const material = (
   color: number,
@@ -1093,6 +1102,7 @@ export class FestivalWorld {
   private readonly cssRenderer: CSS3DRenderer;
   private readonly scene = new THREE.Scene();
   private readonly cssScene = new THREE.Scene();
+  private readonly projectorApertureScene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(58, 1, 0.1, 300);
   private readonly dayNight: DayNightCycle;
   private readonly player = new THREE.Group();
@@ -1258,6 +1268,9 @@ export class FestivalWorld {
   private lastSnapshotAt = 0;
   private performanceWindowStartedAt = performance.now();
   private performanceFrameCount = 0;
+  private mainDrawCalls = 0;
+  private mainTriangles = 0;
+  private singleContextForegroundDrawCalls = 0;
   private adaptiveRenderScale = 1;
   private stickX = 0;
   private stickY = 0;
@@ -1289,8 +1302,13 @@ export class FestivalWorld {
     this.onProjectorAdvance = onProjectorAdvance;
     this.onProjectorDuration = onProjectorDuration;
     this.conservesMobileGpu = shouldConserveMobileGpu();
+    canvas.closest('.world-shell')?.classList.toggle(
+      'world-shell--single-context-projectors',
+      this.conservesMobileGpu,
+    );
     this.renderer = new THREE.WebGLRenderer({
       canvas,
+      alpha: this.conservesMobileGpu,
       antialias: graphicsMode === 'normal',
       powerPreference: 'high-performance',
     });
@@ -1359,6 +1377,10 @@ export class FestivalWorld {
     this.scene.traverse((object) => {
       if (object.userData.projectorBackground) object.layers.disable(1);
       else object.layers.enable(1);
+      // Layer two is deliberately tiny: the phone redraws these lights and the
+      // two stationary DJs over the CSS video with the main renderer. No other
+      // scene geometry or second GPU context is involved.
+      if ((object as THREE.Light).isLight) object.layers.enable(2);
     });
     // The sky belongs to the main render only. The pass that redraws geometry
     // over the screens clears the depth buffer inside each screen's rectangle
@@ -2619,10 +2641,10 @@ export class FestivalWorld {
       if (object.castShadow) shadowCasters += 1;
     });
     return {
-      drawCalls: this.renderer.info.render.calls,
-      foregroundDrawCalls: this.foregroundRenderer?.info.render.calls ?? 0,
+      drawCalls: this.mainDrawCalls,
+      foregroundDrawCalls: this.foregroundRenderer?.info.render.calls ?? this.singleContextForegroundDrawCalls,
       contexts: this.foregroundRenderer ? 2 : 1,
-      triangles: this.renderer.info.render.triangles,
+      triangles: this.mainTriangles,
       programs: this.renderer.info.programs?.length ?? 0,
       // What the GPU is actually holding. Draw calls decide whether a frame
       // fits in the time; these decide whether the page fits in the phone,
@@ -2932,7 +2954,7 @@ export class FestivalWorld {
     this.screeningOrbit.pitch = 0;
   }
 
-  /** Measurements proving a mobile video rectangle no longer covers its DJ. */
+  /** Measurements proving a centred mobile screen composites behind its DJ. */
   djVenueReviewSnapshot(venue: 'club' | 'rooftop'): Record<string, unknown> | undefined {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return undefined;
     const djId = venue === 'club' ? 'XIEHGAN' : 'DRBEAUTY';
@@ -2944,6 +2966,7 @@ export class FestivalWorld {
     const screenWidth = 1600 * screen.scale;
     const screenLeft = screen.position[0] - screenWidth / 2;
     const screenRight = screen.position[0] + screenWidth / 2;
+    const venueCenterX = venue === 'club' ? CLUB_STAGE_X : ROOFTOP_CENTER_X;
     const screenDjGap = dj.group.position.x >= screen.position[0]
       ? djBounds.min.x - screenRight
       : screenLeft - djBounds.max.x;
@@ -2956,12 +2979,17 @@ export class FestivalWorld {
       screenX: Number(screen.position[0].toFixed(2)),
       screenY: Number(screen.position[1].toFixed(2)),
       screenWidth: Number(screenWidth.toFixed(2)),
+      venueCenterX: Number(venueCenterX.toFixed(2)),
+      screenCentered: Math.abs(screen.position[0] - venueCenterX) < 0.001,
       djId,
       djX: Number(dj.group.position.x.toFixed(2)),
       djMinX: Number(djBounds.min.x.toFixed(2)),
       djMaxX: Number(djBounds.max.x.toFixed(2)),
       screenDjGap: Number(screenDjGap.toFixed(2)),
-      screenClearOfDj: screenDjGap > 0,
+      screenOverlapsDj: screenDjGap <= 0,
+      djForegroundLayer: dj.group.layers.isEnabled(2),
+      singleContextComposite: this.conservesMobileGpu,
+      contexts: this.foregroundRenderer ? 2 : 1,
       stageDepth: venue === 'club' ? CLUB_STAGE_DEPTH : undefined,
       stageFrontZ: venue === 'club' ? Number(stageFrontZ.toFixed(2)) : undefined,
       boothFrontZ: venue === 'club' ? Number(boothFrontZ.toFixed(2)) : undefined,
@@ -4696,8 +4724,8 @@ export class FestivalWorld {
       releases: this.playerReleases,
       live: [...this.projectors.values()].filter((projector) => Boolean(projector.iframe)).length,
       frames: document.querySelectorAll('iframe').length,
-      draws: this.renderer.info.render.calls,
-      fgdraws: this.foregroundRenderer?.info.render.calls ?? 0,
+      draws: this.mainDrawCalls,
+      fgdraws: this.foregroundRenderer?.info.render.calls ?? this.singleContextForegroundDrawCalls,
       ctx: this.foregroundRenderer ? 2 : 1,
       progs: this.renderer.info.programs?.length ?? 0,
       fgprogs: this.foregroundRenderer?.info.programs?.length ?? 0,
@@ -4825,7 +4853,13 @@ export class FestivalWorld {
     if (screen.facing === -1) object.rotation.y = Math.PI;
     object.scale.setScalar(screen.scale);
     this.cssScene.add(object);
-    this.projectors.set(venue, { element, object, muted: true });
+    const aperture = new THREE.Mesh(projectorApertureGeometry, projectorApertureMaterial);
+    aperture.position.set(...screen.position);
+    if (screen.facing === -1) aperture.rotation.y = Math.PI;
+    aperture.scale.setScalar(screen.scale);
+    aperture.visible = false;
+    this.projectorApertureScene.add(aperture);
+    this.projectors.set(venue, { element, object, aperture, muted: true });
   }
 
   private addSpotlight(
@@ -5834,7 +5868,7 @@ export class FestivalWorld {
 
     // Back wall screen.
     this.createProjectorSurface('club');
-    this.mesh([17, 10.4, 0.4], [CLUB_SCREEN_X, floor + CLUB_ROOM_HEIGHT / 2, b.roomMaxZ - 0.25], material(0x050506, 0.72));
+    this.mesh([17, 10.4, 0.4], [CLUB_STAGE_X, floor + CLUB_ROOM_HEIGHT / 2, b.roomMaxZ - 0.25], material(0x050506, 0.72));
 
     // Stage, set back so the dance floor has the middle of the room.
     this.mesh([17, 0.9, CLUB_STAGE_DEPTH], [CLUB_STAGE_X, floor + 0.45, CLUB_STAGE_CENTER_Z], material(0x1f1622, 0.6, 0.35));
@@ -6397,7 +6431,7 @@ export class FestivalWorld {
 
     // Screen at the deck's south edge, back to the Drive-In, watched northward.
     this.createProjectorSurface('rooftop');
-    this.mesh([15, 8, 0.4], [ROOFTOP_SCREEN_X, ROOF_Y + 6.6, r.deckMinZ + 0.6], material(0x050506, 0.72));
+    this.mesh([15, 8, 0.4], [ROOFTOP_CENTER_X, ROOF_Y + 6.6, r.deckMinZ + 0.6], material(0x050506, 0.72));
     const boothZ = r.deckMinZ + 4.4;
     this.mesh([10, 0.7, 3.6], [centerX, ROOF_Y + 0.35, boothZ], material(0x3d2a24, 0.6, 0.3));
     this.mesh([4.6, 1.2, 1.5], [centerX, ROOF_Y + 1.3, boothZ + 0.8], material(0x2b2b33, 0.5, 0.4));
@@ -6762,6 +6796,7 @@ export class FestivalWorld {
     dj.waypointIndex = 0;
     dj.group.position.copy(position);
     dj.group.rotation.y = 0;
+    dj.group.traverse((child) => child.layers.enable(2));
   }
 
   /**
@@ -6823,6 +6858,7 @@ export class FestivalWorld {
     dj.waypointIndex = 0;
     dj.group.position.copy(position);
     dj.group.rotation.y = Math.PI;
+    dj.group.traverse((child) => child.layers.enable(2));
   }
 
   private createNpcAvatar(profile: NpcProfile, index: number): NpcAvatar {
@@ -7723,6 +7759,68 @@ export class FestivalWorld {
     this.scene.add(particles);
   }
 
+  /**
+   * Composites the two resident DJs over a phone's CSS projector without a
+   * second WebGL context. The transparent plane opens the exact projector in
+   * the already-rendered main canvas; layer two then redraws only the lights
+   * and stationary DJ rigs in front of that screen plane.
+   */
+  private compositeMobileDjs(
+    visibleProjectors: VenueKey[],
+    visibleProjectorScissors: Map<VenueKey, { x: number; y: number; width: number; height: number }>,
+  ): void {
+    this.singleContextForegroundDrawCalls = 0;
+    if (!this.conservesMobileGpu || !visibleProjectors.length) {
+      for (const projector of this.projectors.values()) projector.aperture.visible = false;
+      return;
+    }
+
+    const visibleSet = new Set(visibleProjectors);
+    for (const [venue, projector] of this.projectors) {
+      projector.aperture.visible = visibleSet.has(venue);
+    }
+
+    const sceneBackground = this.scene.background;
+    const autoClear = this.renderer.autoClear;
+    const shadowsEnabled = this.renderer.shadowMap.enabled;
+    const clippingPlanes = this.renderer.clippingPlanes;
+    try {
+      this.renderer.autoClear = false;
+      this.renderer.setScissorTest(false);
+      this.camera.layers.set(0);
+      this.renderer.render(this.projectorApertureScene, this.camera);
+      this.singleContextForegroundDrawCalls += this.renderer.info.render.calls;
+
+      this.scene.background = null;
+      this.camera.layers.set(2);
+      this.renderer.shadowMap.enabled = false;
+      this.renderer.clippingPlanes = [this.projectorClipPlane];
+      this.renderer.setScissorTest(true);
+      const farthestFirst = [...visibleProjectors].sort(
+        (a, b) => venueScreens[a].position[2] - venueScreens[b].position[2],
+      );
+      for (const venue of farthestFirst) {
+        const scissor = visibleProjectorScissors.get(venue);
+        if (!scissor) continue;
+        const facing = venueScreens[venue].facing;
+        this.projectorClipPlane.normal.set(0, 0, facing);
+        this.projectorClipPlane.constant = -venueScreens[venue].position[2] * facing;
+        this.renderer.setScissor(scissor.x, scissor.y, scissor.width, scissor.height);
+        this.renderer.clear(false, true, false);
+        this.renderer.render(this.scene, this.camera);
+        this.singleContextForegroundDrawCalls += this.renderer.info.render.calls;
+      }
+    } finally {
+      for (const projector of this.projectors.values()) projector.aperture.visible = false;
+      this.renderer.setScissorTest(false);
+      this.renderer.autoClear = autoClear;
+      this.renderer.shadowMap.enabled = shadowsEnabled;
+      this.renderer.clippingPlanes = clippingPlanes;
+      this.camera.layers.set(0);
+      this.scene.background = sceneBackground;
+    }
+  }
+
   private render = (): void => {
     if (this.disposed) return;
     const delta = Math.min(this.clock.getDelta(), 0.05);
@@ -7761,6 +7859,8 @@ export class FestivalWorld {
     this.updateLampPool();
     this.camera.layers.set(0);
     this.renderer.render(this.scene, this.camera);
+    this.mainDrawCalls = this.renderer.info.render.calls;
+    this.mainTriangles = this.renderer.info.render.triangles;
     const visibleProjectors: VenueKey[] = [];
     const visibleProjectorScissors = new Map<VenueKey, { x: number; y: number; width: number; height: number }>();
     const boardScissor = this.programmeBoardScissor();
@@ -7819,12 +7919,10 @@ export class FestivalWorld {
         cameraOnViewingSide &&
         screenIsInFront && screenTouchesViewport;
       const compositorScissor = wantsVisible ? this.projectorScissor(venue) : undefined;
-      // CSS3D video always sits above the main WebGL canvas. Its transparent
-      // foreground mask is the hard rectangle the user kept seeing across the
-      // timetable. If the timetable is closer to the camera and their screen
-      // rectangles overlap, the video is genuinely hidden by the timetable;
-      // suppress both CSS video and mask until the camera moves clear. This
-      // removes the rectangle instead of trying to shade-match it.
+      // Desktop CSS3D video sits above the main WebGL canvas. A phone reverses
+      // those two layers and opens an alpha aperture in the canvas instead.
+      // In either case, suppress the compositor if the timetable is closer and
+      // overlaps the projector, rather than painting a rectangular seam.
       const timetableBlocksProjector = Boolean(boardScissor && compositorScissor &&
         this.programmeBoardIsInFrontOfProjector(venue) && this.scissorsOverlap(boardScissor, compositorScissor));
       const visible = wantsVisible && Boolean(compositorScissor) && !timetableBlocksProjector;
@@ -7845,6 +7943,7 @@ export class FestivalWorld {
       }
     }
     if (visibleProjectors.length) this.cssRenderer.render(this.cssScene, this.camera);
+    this.compositeMobileDjs(visibleProjectors, visibleProjectorScissors);
     const foregroundRenderer = this.foregroundRenderer;
     this.foregroundCanvas.style.visibility = visibleProjectors.length && foregroundRenderer ? 'visible' : 'hidden';
     if (visibleProjectors.length && foregroundRenderer) {

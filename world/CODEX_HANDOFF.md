@@ -8,22 +8,24 @@ Last updated: 2026-08-25 · mobile DJ/screen, stage and zoom follow-up · branch
 
 ---
 
-## 0. READ THIS FIRST — screen-height correction published
+## 0. READ THIS FIRST — centred-screen foreground-DJ correction published
 
 The owner's live iPhone screenshots showed both resident DJs hidden by the CSS3D
 public-screening layer, the basement console hanging beyond its platform, and the
 complete page becoming permanently enlarged after rapid taps. Commit `e8ba163`
 published a first fix, but it solved the DJ overlap by raising both screens. The owner
-clarified that their original height was correct. The release containing this handoff
-restores that height and separates screen from DJ horizontally; the correction is in
-the beta Pages payload.
+clarified that their original height was correct. Commit `d93192e` then restored the
+height but moved both screens left; the owner rejected that too. The release containing
+this handoff restores the exact original centres and renders each DJ over the video.
+It is verified locally and included in the beta Pages payload.
 
-- The phone GPU path intentionally has no foreground WebGL compositor. Because the
-  CSS3D video therefore always wins over 3D geometry, the Rooftop and Basement screens
-  stay at their original heights and move left along the same back wall instead of
-  crossing the DJs. Full avatar bounds clear the video by 0.76 units on The Rooftop
-  and 1.81 in The Basement. Do not restore the second phone WebGL context to solve
-  occlusion.
+- Rooftop is centred at x=40, y=13.6; Basement is centred over its booth at x=-68,
+  y=-9. The physical backing meshes follow those exact positions.
+- Phones still use one WebGL context. On that path, the CSS3D video sits below an
+  alpha-enabled main canvas; a transparent screen-shaped plane opens the projector
+  rectangle, then layer 2 redraws only the two stationary DJ rigs and scene lights
+  over it with the existing renderer. It does not restore the duplicate renderer or
+  duplicate GPU resources. Desktop retains its established two-context compositor.
 - The basement stage is 7.2 units deep and reaches z=33.7. The console reaches
   z=34.95, leaving 1.25 units of visible platform in front instead of hanging 0.65
   units over the old slab. XIEHGAN's prompt radius is 8 units so the deeper obstacle
@@ -33,15 +35,20 @@ the beta Pages payload.
   camera gestures. A styled reset button remains for a Safari tab restored while it
   was already enlarged.
 - Loopback fixtures: `?review=screen-rooftop`, `?review=screen-club`, and the existing
-  `?review=club-dj`. `data-dj-venue-review` records the screen/DJ clearance;
+  `?review=club-dj`. The first two force the single-context path and
+  `data-dj-venue-review` records centre, foreground layer and context count;
   `data-club-review` records stage depth, front edge, console margin and prompt range.
-- Direct browser validation at 390 × 650 showed both DJs visibly beside their
-  screens at the original Y positions (13.6 rooftop, -9 basement). The published
-  zoom fix's eight forced rapid double-taps kept `visualViewport.scale === 1`, the
-  390 × 650 viewport unchanged, and the pass button at the same exact rectangle.
-  `npm run verify` passes all 43 server tests and the TypeScript/Vite build.
+- Direct browser validation at 390 × 650 showed both screens centred and both DJs
+  visibly drawn in front. Both fixtures report `screenCentered: true`,
+  `djForegroundLayer: true`, `singleContextComposite: true`, and `contexts: 1`.
+  A 35-second mobile-stability run held one iframe, 12 textures, 30 geometries,
+  one context and `lost: false`; the compositor added only two foreground draw calls.
+  All 43 server tests and the TypeScript/Vite build pass. The first combined verify
+  attempt hit the expected restricted-runner `listen EPERM` before assertions; the
+  suite passed in a normal local shell.
 
-The owner explicitly rejected changing screen height. Preserve these Y positions.
+The owner explicitly rejected changing either screen height or horizontal centre.
+Preserve both positions and the one-context phone compositor.
 
 ## 0a. Concrete mobile stability fix, published; awaiting phone confirmation
 

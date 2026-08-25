@@ -192,6 +192,13 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 .world-css3d { position: fixed; z-index: 1; inset: 0; overflow: hidden; pointer-events: none; }
 .world-css3d__renderer { position: absolute; inset: 0; pointer-events: none; }
 #world-foreground { z-index: 2; display: block; pointer-events: none; background: transparent; }
+/*
+ * A phone keeps one WebGL context. Its CSS video therefore sits below the
+ * alpha-enabled main canvas; FestivalWorld opens only the screen rectangle in
+ * that canvas and redraws the resident DJ over it with the same renderer.
+ */
+.world-shell--single-context-projectors #world-canvas { z-index: 1; background: transparent; }
+.world-shell--single-context-projectors .world-css3d { z-index: 0; }
 .public-projector {
   width: 1600px; height: 900px; overflow: hidden; pointer-events: none; backface-visibility: hidden;
   background: #030304; border: 22px solid #80131a; box-shadow: inset 0 0 65px rgba(0,0,0,.55);

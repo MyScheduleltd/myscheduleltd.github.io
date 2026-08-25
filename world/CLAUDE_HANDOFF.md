@@ -13,11 +13,14 @@ context. New live iPhone screenshots then showed both venue DJs hidden by the
 CSS3D video, the basement console overhanging its stage, and unrecoverable Safari
 page zoom after rapid taps. Published commit `e8ba163` incorrectly lifted the two
 screens; the owner clarified that their height was already correct. The current
-published correction restores the original screen Y positions and shifts the
-screens left on their back walls, giving the complete rooftop and basement DJ bounds
-0.76 and 1.81 units of horizontal clearance. The published stage expansion, prompt
-radius and page-zoom lock remain. See `CODEX_HANDOFF.md` section 0 for exact geometry,
-fixtures and epistemic status.
+published commit `d93192e` restored those Y positions but incorrectly shifted the
+screens left. The owner rejected that: both screens belong on their original centre
+lines, with the DJs composited in front. The release containing this handoff does
+exactly that using the phone's existing WebGL renderer: an alpha aperture reveals
+the CSS3D video beneath the main canvas and a dedicated layer redraws only the DJs over
+it. Mobile remains at one WebGL context. The published stage expansion, prompt radius
+and page-zoom lock remain. See `CODEX_HANDOFF.md` section 0 for exact geometry,
+fixtures, verification and epistemic status.
 
 Commits `10dba12` and `5ae3d39` define the current mobile continuation point.
 The festival-pass menu scrolls in portrait and landscape; screening/order
