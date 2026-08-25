@@ -8,18 +8,22 @@ Last updated: 2026-08-25 · mobile DJ/screen, stage and zoom follow-up · branch
 
 ---
 
-## 0. READ THIS FIRST — DJ/screen, stage and zoom follow-up published
+## 0. READ THIS FIRST — screen-height correction published
 
 The owner's live iPhone screenshots showed both resident DJs hidden by the CSS3D
 public-screening layer, the basement console hanging beyond its platform, and the
-complete page becoming permanently enlarged after rapid taps. These are fixed in the
-release containing this handoff and are now in the beta Pages payload.
+complete page becoming permanently enlarged after rapid taps. Commit `e8ba163`
+published a first fix, but it solved the DJ overlap by raising both screens. The owner
+clarified that their original height was correct. The release containing this handoff
+restores that height and separates screen from DJ horizontally; the correction is in
+the beta Pages payload.
 
 - The phone GPU path intentionally has no foreground WebGL compositor. Because the
   CSS3D video therefore always wins over 3D geometry, the Rooftop and Basement screens
-  are now hung higher on the same centre line instead of crossing the DJs. Measured
-  vertical clearances are 0.98 and 0.80 world units respectively. Do not restore the
-  second phone WebGL context to solve occlusion.
+  stay at their original heights and move left along the same back wall instead of
+  crossing the DJs. Full avatar bounds clear the video by 0.76 units on The Rooftop
+  and 1.81 in The Basement. Do not restore the second phone WebGL context to solve
+  occlusion.
 - The basement stage is 7.2 units deep and reaches z=33.7. The console reaches
   z=34.95, leaving 1.25 units of visible platform in front instead of hanging 0.65
   units over the old slab. XIEHGAN's prompt radius is 8 units so the deeper obstacle
@@ -31,14 +35,13 @@ release containing this handoff and are now in the beta Pages payload.
 - Loopback fixtures: `?review=screen-rooftop`, `?review=screen-club`, and the existing
   `?review=club-dj`. `data-dj-venue-review` records the screen/DJ clearance;
   `data-club-review` records stage depth, front edge, console margin and prompt range.
-- Direct browser validation at 390 × 650 showed both DJs visibly framed below their
-  screens. Eight forced rapid double-taps kept `visualViewport.scale === 1`, the
+- Direct browser validation at 390 × 650 showed both DJs visibly beside their
+  screens at the original Y positions (13.6 rooftop, -9 basement). The published
+  zoom fix's eight forced rapid double-taps kept `visualViewport.scale === 1`, the
   390 × 650 viewport unchanged, and the pass button at the same exact rectangle.
   `npm run verify` passes all 43 server tests and the TypeScript/Vite build.
 
-No blocking owner choice was needed: keeping the screens centred and lifting them is
-the smallest layout change that preserves the screening camera and makes each DJ
-visible at the same time.
+The owner explicitly rejected changing screen height. Preserve these Y positions.
 
 ## 0a. Concrete mobile stability fix, published; awaiting phone confirmation
 

@@ -11,13 +11,13 @@ Current continuation: the published `15c9354` baseline removed the clipping wall
 conduit and fixed mobile sign-canvas retention plus the phone's duplicate WebGL
 context. New live iPhone screenshots then showed both venue DJs hidden by the
 CSS3D video, the basement console overhanging its stage, and unrecoverable Safari
-page zoom after rapid taps. The published follow-up lifts the two
-screens above their centred DJs, deepens the basement stage with 1.25 units of
-floor beyond the console, expands XIEHGAN's prompt radius, and locks only the
-entered world against browser page zoom while keeping the game's camera gestures.
-Direct 390 × 650 browser checks show positive DJ/screen clearance in both venues
-and scale 1 after eight rapid double-taps. See `CODEX_HANDOFF.md` section 0 for
-exact geometry, fixtures and epistemic status.
+page zoom after rapid taps. Published commit `e8ba163` incorrectly lifted the two
+screens; the owner clarified that their height was already correct. The current
+published correction restores the original screen Y positions and shifts the
+screens left on their back walls, giving the complete rooftop and basement DJ bounds
+0.76 and 1.81 units of horizontal clearance. The published stage expansion, prompt
+radius and page-zoom lock remain. See `CODEX_HANDOFF.md` section 0 for exact geometry,
+fixtures and epistemic status.
 
 Commits `10dba12` and `5ae3d39` define the current mobile continuation point.
 The festival-pass menu scrolls in portrait and landscape; screening/order

@@ -563,11 +563,11 @@ const rooftopBounds = {
 const ROOFTOP_CENTER_X = (rooftopBounds.minX + rooftopBounds.maxX) / 2;
 /**
  * The video layer is deliberately drawn above the single mobile WebGL canvas.
- * Hang it above the DJ's head rather than across her: restoring the old second
+ * Keep it beside the DJ rather than across her: restoring the old second
  * foreground canvas just to mask the film reintroduces the phone-GPU crash
- * that canvas was removed to solve.
+ * that canvas was removed to solve. The original screen height stays intact.
  */
-const ROOFTOP_SCREEN_Y = ROOF_Y + 8.9;
+const ROOFTOP_SCREEN_X = ROOFTOP_CENTER_X - 9;
 /** Second line on each venue's sign until STAFF change it. */
 const DEFAULT_VENUE_SUBTITLES: Record<VenueKey, string> = {
   palace: 'COMMERCIAL',
@@ -777,8 +777,8 @@ const GATE_Z = 62;
 const CLUB_FLOOR_Y = -16.5;
 const CLUB_ROOM_HEIGHT = 15;
 const CLUB_AVATAR_Y = CLUB_FLOOR_Y + AVATAR_GROUND_Y;
-/** The basement screen shares the back wall with the DJ, above her head. */
-const CLUB_SCREEN_Y = CLUB_FLOOR_Y + 9.8;
+/** The basement screen shares the back wall with the DJ, beside her booth. */
+const CLUB_SCREEN_X = -78;
 const CLUB_STAGE_X = -68;
 const CLUB_STAGE_Z = 22.5 + CLUB_Z;
 /**
@@ -854,16 +854,16 @@ const venueScreens: Record<VenueKey, {
   rooftop: {
     label: 'The Rooftop',
     // Hung at the deck's north edge, watched from the deck to the south.
-    position: [ROOFTOP_CENTER_X, ROOFTOP_SCREEN_Y, 19.9],
-    target: [ROOFTOP_CENTER_X, ROOFTOP_SCREEN_Y - 0.3, 19.6],
+    position: [ROOFTOP_SCREEN_X, ROOF_Y + 6.6, 19.9],
+    target: [ROOFTOP_SCREEN_X, ROOF_Y + 6.3, 19.6],
     scale: 0.0088,
     facing: 1,
   },
   club: {
     label: 'The Basement',
     // Hung on the room's north wall, watched from the floor to the south.
-    position: [CLUB_STAGE_X, CLUB_SCREEN_Y, 41.5],
-    target: [CLUB_STAGE_X, CLUB_SCREEN_Y - 0.3, 41.9],
+    position: [CLUB_SCREEN_X, CLUB_FLOOR_Y + CLUB_ROOM_HEIGHT / 2, 41.5],
+    target: [CLUB_SCREEN_X, CLUB_FLOOR_Y + CLUB_ROOM_HEIGHT / 2 - 0.3, 41.9],
     scale: 0.0092,
     facing: -1,
   },
@@ -2942,8 +2942,11 @@ export class FestivalWorld {
     dj.group.updateMatrixWorld(true);
     const djBounds = new THREE.Box3().setFromObject(dj.group);
     const screenWidth = 1600 * screen.scale;
-    const screenBottomY = screen.position[1] - 450 * screen.scale;
-    const screenDjGap = screenBottomY - djBounds.max.y;
+    const screenLeft = screen.position[0] - screenWidth / 2;
+    const screenRight = screen.position[0] + screenWidth / 2;
+    const screenDjGap = dj.group.position.x >= screen.position[0]
+      ? djBounds.min.x - screenRight
+      : screenLeft - djBounds.max.x;
     const stageFrontZ = CLUB_STAGE_CENTER_Z - CLUB_STAGE_DEPTH / 2;
     const boothFrontZ = CLUB_BOOTH_Z - 1.9 / 2;
     return {
@@ -2955,7 +2958,8 @@ export class FestivalWorld {
       screenWidth: Number(screenWidth.toFixed(2)),
       djId,
       djX: Number(dj.group.position.x.toFixed(2)),
-      djTopY: Number(djBounds.max.y.toFixed(2)),
+      djMinX: Number(djBounds.min.x.toFixed(2)),
+      djMaxX: Number(djBounds.max.x.toFixed(2)),
       screenDjGap: Number(screenDjGap.toFixed(2)),
       screenClearOfDj: screenDjGap > 0,
       stageDepth: venue === 'club' ? CLUB_STAGE_DEPTH : undefined,
@@ -5830,7 +5834,7 @@ export class FestivalWorld {
 
     // Back wall screen.
     this.createProjectorSurface('club');
-    this.mesh([17, 10.4, 0.4], [CLUB_STAGE_X, CLUB_SCREEN_Y, b.roomMaxZ - 0.25], material(0x050506, 0.72));
+    this.mesh([17, 10.4, 0.4], [CLUB_SCREEN_X, floor + CLUB_ROOM_HEIGHT / 2, b.roomMaxZ - 0.25], material(0x050506, 0.72));
 
     // Stage, set back so the dance floor has the middle of the room.
     this.mesh([17, 0.9, CLUB_STAGE_DEPTH], [CLUB_STAGE_X, floor + 0.45, CLUB_STAGE_CENTER_Z], material(0x1f1622, 0.6, 0.35));
@@ -6393,7 +6397,7 @@ export class FestivalWorld {
 
     // Screen at the deck's south edge, back to the Drive-In, watched northward.
     this.createProjectorSurface('rooftop');
-    this.mesh([15, 8, 0.4], [ROOFTOP_CENTER_X, ROOFTOP_SCREEN_Y, r.deckMinZ + 0.6], material(0x050506, 0.72));
+    this.mesh([15, 8, 0.4], [ROOFTOP_SCREEN_X, ROOF_Y + 6.6, r.deckMinZ + 0.6], material(0x050506, 0.72));
     const boothZ = r.deckMinZ + 4.4;
     this.mesh([10, 0.7, 3.6], [centerX, ROOF_Y + 0.35, boothZ], material(0x3d2a24, 0.6, 0.3));
     this.mesh([4.6, 1.2, 1.5], [centerX, ROOF_Y + 1.3, boothZ + 0.8], material(0x2b2b33, 0.5, 0.4));
