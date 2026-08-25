@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-08-25 · mobile stability candidate + wall-conduit removal · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-08-25 · mobile DJ/screen, stage and zoom follow-up · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
@@ -8,12 +8,45 @@ Last updated: 2026-08-25 · mobile stability candidate + wall-conduit removal ·
 
 ---
 
-## 0a. READ THIS FIRST — concrete mobile stability fix, awaiting phone confirmation
+## 0. READ THIS FIRST — DJ/screen, stage and zoom follow-up published
+
+The owner's live iPhone screenshots showed both resident DJs hidden by the CSS3D
+public-screening layer, the basement console hanging beyond its platform, and the
+complete page becoming permanently enlarged after rapid taps. These are fixed in the
+release containing this handoff and are now in the beta Pages payload.
+
+- The phone GPU path intentionally has no foreground WebGL compositor. Because the
+  CSS3D video therefore always wins over 3D geometry, the Rooftop and Basement screens
+  are now hung higher on the same centre line instead of crossing the DJs. Measured
+  vertical clearances are 0.98 and 0.80 world units respectively. Do not restore the
+  second phone WebGL context to solve occlusion.
+- The basement stage is 7.2 units deep and reaches z=33.7. The console reaches
+  z=34.95, leaving 1.25 units of visible platform in front instead of hanging 0.65
+  units over the old slab. XIEHGAN's prompt radius is 8 units so the deeper obstacle
+  does not make the DJ action inaccessible.
+- `enterWorld()` now locks the document viewport at scale 1 and cancels Safari
+  gesture/double-click page scaling. The canvas still owns its in-world pointer
+  camera gestures. A styled reset button remains for a Safari tab restored while it
+  was already enlarged.
+- Loopback fixtures: `?review=screen-rooftop`, `?review=screen-club`, and the existing
+  `?review=club-dj`. `data-dj-venue-review` records the screen/DJ clearance;
+  `data-club-review` records stage depth, front edge, console margin and prompt range.
+- Direct browser validation at 390 × 650 showed both DJs visibly framed below their
+  screens. Eight forced rapid double-taps kept `visualViewport.scale === 1`, the
+  390 × 650 viewport unchanged, and the pass button at the same exact rectangle.
+  `npm run verify` passes all 43 server tests and the TypeScript/Vite build.
+
+No blocking owner choice was needed: keeping the screens centred and lifting them is
+the smallest layout change that preserves the screening camera and makes each DJ
+visible at the same time.
+
+## 0a. Concrete mobile stability fix, published; awaiting phone confirmation
 
 The owner's Safari tab was repeatedly dying and returning to the sign-in page.
 This pass found and fixed two concrete causes of mobile memory/GPU pressure. The
-fix passes the local phone fixture, but it is **not yet confirmed on the owner's
-actual phone and has not been published**. Keep that distinction explicit.
+fix passes the local phone fixture and was published in commit `15c9354`, but it is
+**not yet explicitly confirmed stable on the owner's actual phone**. Keep that
+distinction explicit.
 
 **The unbounded leak:** every ordinary multiplayer state packet calls
 `setEntranceSign` and `setTempleSign`. Those methods rebuilt 1024 × 512 canvas
@@ -70,7 +103,7 @@ fallback only if the owner's phone still fails after this build.
 
 ## 0b. What changed this session — 2026-08-24/25
 
-Current local, unpublished continuation:
+Published baseline before the current DJ/screen follow-up:
 
 - removed the procedural exterior corner conduit in `WornArchitecture.ts`;
   this was the thin bar/stick protruding through the building wall in the

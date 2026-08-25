@@ -75,6 +75,13 @@ const PROMPT_HOLD_MS = 450;
  * learns where it is while they are still looking at it.
  */
 const CAMERA_CORNER_CUE_MS = 1_100;
+/**
+ * Safari's rapid-tap zoom scales the complete interface, not the game camera,
+ * and can leave a standalone world with no usable way to return. Applied only
+ * after the gate: the canvas keeps its own two-finger camera gesture while the
+ * browser page itself remains at the designed scale.
+ */
+const WORLD_VIEWPORT_CONTENT = 'width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
 
 const PROFILE_KEY = 'myschedule-festival-profile-v1';
 /** Set once a visitor is inside, so a discarded tab knows it was already in. */
@@ -703,6 +710,7 @@ export class App {
   }
 
   private enterWorld(muted: boolean): void {
+    this.lockPageZoomForWorld();
     // Marked as soon as somebody is inside, so that if the phone throws this
     // tab away while it is locked, the restored tab knows it was already in
     // and walks back rather than presenting a sign-in page.
@@ -955,9 +963,9 @@ export class App {
           ? this.world?.mentorGreetingReviewSnapshot()
           : this.world?.mentorFollowerReviewSnapshot());
       }, 250);
-    } else if (reviewTarget === 'sit' || reviewTarget === 'sit-rooftop' || reviewTarget === 'sit-drive') {
+    } else if (reviewTarget === 'sit' || reviewTarget === 'sit-rooftop' || reviewTarget === 'sit-drive' || reviewTarget === 'sit-club') {
       this.world.focusSeatForReview(
-        reviewTarget === 'sit-rooftop' ? 'rooftop' : reviewTarget === 'sit-drive' ? 'drive-in' : 'shore',
+        reviewTarget === 'sit-rooftop' ? 'rooftop' : reviewTarget === 'sit-drive' ? 'drive-in' : reviewTarget === 'sit-club' ? 'club' : 'shore',
       );
       (window as Window & { __festivalSeat?: () => unknown }).__festivalSeat =
         () => this.world?.seatReviewSnapshot();
@@ -1010,6 +1018,18 @@ export class App {
         this.root.dataset.mobileStabilityLive = live;
       }, 5_000);
       this.startPublicScreening(true);
+    } else if ((reviewTarget === 'screen-rooftop' || reviewTarget === 'screen-club') && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      const venue = reviewTarget === 'screen-rooftop' ? 'rooftop' : 'club';
+      this.activeVenue = venue;
+      this.world.focusPublicScreeningForReview(venue);
+      this.startPublicScreening(true);
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () =>
+        this.world?.djVenueReviewSnapshot(venue);
+      window.setTimeout(() => {
+        document.documentElement.dataset.djVenueReview = JSON.stringify(
+          this.world?.djVenueReviewSnapshot(venue),
+        );
+      }, 400);
     } else if (reviewTarget === 'rooftop' || reviewTarget === 'rooftop-dj') {
       this.world.focusRooftopForReview(reviewTarget === 'rooftop-dj');
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.clubReviewSnapshot();
@@ -1246,6 +1266,13 @@ export class App {
     window.addEventListener('pointerup', this.liftJukeboxOnGesture, true);
     document.addEventListener('fullscreenchange', this.syncScreenFullscreenState);
     document.addEventListener('webkitfullscreenchange', this.syncScreenFullscreenState);
+    // iOS still emits its proprietary gesture events on some embedded/Safari
+    // paths even when touch-action has claimed the canvas. The world owns those
+    // gestures, so do not let the browser reinterpret them as page scaling.
+    const preventBrowserZoom = (event: Event) => event.preventDefault();
+    for (const type of ['gesturestart', 'gesturechange', 'gestureend', 'dblclick']) {
+      this.root.addEventListener(type, preventBrowserZoom, { passive: false });
+    }
     this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]')?.addEventListener('click', () => {
       this.jukeboxSoundConfirmed = true;
       this.applyJukeboxVolume();
@@ -1263,10 +1290,8 @@ export class App {
       // does send, and the client ignores it unless the stream really is gone.
       this.festivalClient.wake();
     });
-    // Pinching the page is allowed — it is the only way back from a browser
-    // that has decided to zoom on its own — but once zoomed there is no obvious
-    // way to say "put it back". This appears when the page is scaled and does
-    // exactly that.
+    // The lock above prevents a new page zoom. Keep the recovery control for a
+    // tab Safari restored while it was already scaled.
     const viewport = window.visualViewport;
     if (viewport) {
       const watchScale = () => {
@@ -2767,20 +2792,23 @@ export class App {
    * Bring the camera's controls back and start them settling again. Left alone
    * they go, so the picture is the only thing on screen.
    */
-  /**
-   * Put the page back to its own size. There is no API that sets the pinch
-   * scale, but a browser re-reads the viewport when it changes, so pinning the
-   * scale for a moment and then letting go snaps it back to one and leaves
-   * pinching available again afterwards.
-   */
+  /** Lock the entered world to the viewport while leaving the gate accessible. */
+  private lockPageZoomForWorld(): void {
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+    if (meta) meta.content = WORLD_VIEWPORT_CONTENT;
+  }
+
+  /** Put a restored, already-scaled Safari tab back to the world scale. */
   private resetPageZoom(): void {
     const meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
     if (!meta) return;
-    const original = meta.content;
-    meta.content = `${original}, maximum-scale=1.0, minimum-scale=1.0`;
+    // A real content change makes Safari re-read the viewport; the locked value
+    // is restored immediately after that reset and is intentionally retained.
+    meta.content = 'width=device-width, initial-scale=1.0, viewport-fit=cover';
     window.setTimeout(() => {
-      meta.content = original;
-    }, 320);
+      meta.content = WORLD_VIEWPORT_CONTENT;
+      window.scrollTo(0, 0);
+    }, 80);
   }
 
   /**

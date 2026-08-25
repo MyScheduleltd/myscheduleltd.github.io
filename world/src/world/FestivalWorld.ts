@@ -561,6 +561,13 @@ const rooftopBounds = {
  * screen, the view of it and the DJ standing where the building used to be.
  */
 const ROOFTOP_CENTER_X = (rooftopBounds.minX + rooftopBounds.maxX) / 2;
+/**
+ * The video layer is deliberately drawn above the single mobile WebGL canvas.
+ * Hang it above the DJ's head rather than across her: restoring the old second
+ * foreground canvas just to mask the film reintroduces the phone-GPU crash
+ * that canvas was removed to solve.
+ */
+const ROOFTOP_SCREEN_Y = ROOF_Y + 8.9;
 /** Second line on each venue's sign until STAFF change it. */
 const DEFAULT_VENUE_SUBTITLES: Record<VenueKey, string> = {
   palace: 'COMMERCIAL',
@@ -770,6 +777,19 @@ const GATE_Z = 62;
 const CLUB_FLOOR_Y = -16.5;
 const CLUB_ROOM_HEIGHT = 15;
 const CLUB_AVATAR_Y = CLUB_FLOOR_Y + AVATAR_GROUND_Y;
+/** The basement screen shares the back wall with the DJ, above her head. */
+const CLUB_SCREEN_Y = CLUB_FLOOR_Y + 9.8;
+const CLUB_STAGE_X = -68;
+const CLUB_STAGE_Z = 22.5 + CLUB_Z;
+/**
+ * Deep enough that the front of the decks has visible floor under it. The old
+ * five-unit slab ended at z=35.6 while the console reached to z=34.95.
+ */
+const CLUB_STAGE_DEPTH = 7.2;
+const CLUB_STAGE_CENTER_Z = CLUB_STAGE_Z - 0.2;
+const CLUB_BOOTH_Z = CLUB_STAGE_Z - 1.6;
+/** The deeper stage stops an attendee farther from the stationary DJ. */
+const CLUB_DJ_INTERACTION_RANGE = 8;
 /** How far the bar stands off the room's south wall, so a stool has room behind it. */
 const CLUB_BAR_STANDOFF = 4.4;
 // The club occupies a lot north-west of MY SQUARE, on ground the walkable area
@@ -834,16 +854,16 @@ const venueScreens: Record<VenueKey, {
   rooftop: {
     label: 'The Rooftop',
     // Hung at the deck's north edge, watched from the deck to the south.
-    position: [ROOFTOP_CENTER_X, ROOF_Y + 6.6, 19.9],
-    target: [ROOFTOP_CENTER_X, ROOF_Y + 6.3, 19.6],
+    position: [ROOFTOP_CENTER_X, ROOFTOP_SCREEN_Y, 19.9],
+    target: [ROOFTOP_CENTER_X, ROOFTOP_SCREEN_Y - 0.3, 19.6],
     scale: 0.0088,
     facing: 1,
   },
   club: {
     label: 'The Basement',
     // Hung on the room's north wall, watched from the floor to the south.
-    position: [-68, CLUB_FLOOR_Y + CLUB_ROOM_HEIGHT / 2, 41.5],
-    target: [-68, CLUB_FLOOR_Y + CLUB_ROOM_HEIGHT / 2 - 0.3, 41.9],
+    position: [CLUB_STAGE_X, CLUB_SCREEN_Y, 41.5],
+    target: [CLUB_STAGE_X, CLUB_SCREEN_Y - 0.3, 41.9],
     scale: 0.0092,
     facing: -1,
   },
@@ -2678,6 +2698,11 @@ export class FestivalWorld {
     camera: number[];
     lookAt: number[];
     playerXZ: number[];
+    stageDepth: number;
+    stageFrontZ: number;
+    boothFrontZ: number;
+    boothPlatformMargin: number;
+    clubDjInteractionRange: number;
     lightCount: number;
     litLights: number;
     bpm: number;
@@ -2698,6 +2723,13 @@ export class FestivalWorld {
       camera: this.camera.position.toArray().map((value) => Number(value.toFixed(2))),
       lookAt: this.lookTarget.toArray().map((value) => Number(value.toFixed(2))),
       playerXZ: [Number(this.player.position.x.toFixed(2)), Number(this.player.position.z.toFixed(2))],
+      stageDepth: CLUB_STAGE_DEPTH,
+      stageFrontZ: Number((CLUB_STAGE_CENTER_Z - CLUB_STAGE_DEPTH / 2).toFixed(2)),
+      boothFrontZ: Number((CLUB_BOOTH_Z - 1.9 / 2).toFixed(2)),
+      boothPlatformMargin: Number((
+        CLUB_BOOTH_Z - 1.9 / 2 - (CLUB_STAGE_CENTER_Z - CLUB_STAGE_DEPTH / 2)
+      ).toFixed(2)),
+      clubDjInteractionRange: CLUB_DJ_INTERACTION_RANGE,
       // Collision probe along the entry route, so the walk in can be checked
       // without driving the avatar frame by frame.
       entryRoute: [-19, -24, -30, -34, -38, -42, -46, -48, -52, -58, -66, -76]
@@ -2885,10 +2917,10 @@ export class FestivalWorld {
     this.syncCarriedPropAnchor();
   }
 
-  /** Deterministic loopback fixture for the seated public-screening mobile UI. */
-  focusPublicScreeningForReview(): void {
+  /** Deterministic loopback fixture for a venue's seated public-screening UI. */
+  focusPublicScreeningForReview(venue: VenueKey = 'shore'): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
-    const seat = this.seats.find((candidate) => candidate.venue === 'shore');
+    const seat = this.seats.find((candidate) => candidate.venue === venue);
     if (!seat) return;
     this.activeSeat = seat;
     this.playerState = 'seated';
@@ -2898,6 +2930,40 @@ export class FestivalWorld {
     this.cameraMode = 'screening';
     this.screeningOrbit.yaw = 0;
     this.screeningOrbit.pitch = 0;
+  }
+
+  /** Measurements proving a mobile video rectangle no longer covers its DJ. */
+  djVenueReviewSnapshot(venue: 'club' | 'rooftop'): Record<string, unknown> | undefined {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return undefined;
+    const djId = venue === 'club' ? 'XIEHGAN' : 'DRBEAUTY';
+    const dj = this.npcs.find((candidate) => candidate.id === djId);
+    const screen = venueScreens[venue];
+    if (!dj) return undefined;
+    dj.group.updateMatrixWorld(true);
+    const djBounds = new THREE.Box3().setFromObject(dj.group);
+    const screenWidth = 1600 * screen.scale;
+    const screenBottomY = screen.position[1] - 450 * screen.scale;
+    const screenDjGap = screenBottomY - djBounds.max.y;
+    const stageFrontZ = CLUB_STAGE_CENTER_Z - CLUB_STAGE_DEPTH / 2;
+    const boothFrontZ = CLUB_BOOTH_Z - 1.9 / 2;
+    return {
+      venue,
+      seated: this.playerState === 'seated',
+      cameraMode: this.cameraMode,
+      screenX: Number(screen.position[0].toFixed(2)),
+      screenY: Number(screen.position[1].toFixed(2)),
+      screenWidth: Number(screenWidth.toFixed(2)),
+      djId,
+      djX: Number(dj.group.position.x.toFixed(2)),
+      djTopY: Number(djBounds.max.y.toFixed(2)),
+      screenDjGap: Number(screenDjGap.toFixed(2)),
+      screenClearOfDj: screenDjGap > 0,
+      stageDepth: venue === 'club' ? CLUB_STAGE_DEPTH : undefined,
+      stageFrontZ: venue === 'club' ? Number(stageFrontZ.toFixed(2)) : undefined,
+      boothFrontZ: venue === 'club' ? Number(boothFrontZ.toFixed(2)) : undefined,
+      boothPlatformMargin: venue === 'club' ? Number((boothFrontZ - stageFrontZ).toFixed(2)) : undefined,
+      djInteractionRange: venue === 'club' ? CLUB_DJ_INTERACTION_RANGE : 6.5,
+    };
   }
 
   setCameraMode(mode: CameraMode): void {
@@ -5764,33 +5830,31 @@ export class FestivalWorld {
 
     // Back wall screen.
     this.createProjectorSurface('club');
-    this.mesh([23, 10.4, 0.4], [-68, floor + CLUB_ROOM_HEIGHT / 2, b.roomMaxZ - 0.25], material(0x050506, 0.72));
+    this.mesh([17, 10.4, 0.4], [CLUB_STAGE_X, CLUB_SCREEN_Y, b.roomMaxZ - 0.25], material(0x050506, 0.72));
 
     // Stage, set back so the dance floor has the middle of the room.
-    const stageX = -68;
-    const stageZ = 22.5 + CLUB_Z;
-    this.mesh([17, 0.9, 5], [stageX, floor + 0.45, stageZ + 0.6], material(0x1f1622, 0.6, 0.35));
-    this.addCollider(stageX, stageZ + 0.6, 17, 5, 0.05, belowGround, 'stage');
-    this.mesh([5.4, 1.3, 1.6], [stageX, floor + 1.55, stageZ - 1.6], material(0x24242b, 0.5, 0.4));
-    this.mesh([5.7, 0.16, 1.9], [stageX, floor + 2.25, stageZ - 1.6], material(0x35353f, 0.4, 0.5));
-    // The decks stand proud of the stage front, so they need holding on their
-    // own account — the stage collider stops short of them.
-    this.addCollider(stageX, stageZ - 1.6, 5.7, 1.9, 0.12, belowGround, 'club-booth', CLUB_FLOOR_Y + 1.5);
+    this.mesh([17, 0.9, CLUB_STAGE_DEPTH], [CLUB_STAGE_X, floor + 0.45, CLUB_STAGE_CENTER_Z], material(0x1f1622, 0.6, 0.35));
+    this.addCollider(CLUB_STAGE_X, CLUB_STAGE_CENTER_Z, 17, CLUB_STAGE_DEPTH, 0.05, belowGround, 'stage');
+    this.mesh([5.4, 1.3, 1.6], [CLUB_STAGE_X, floor + 1.55, CLUB_BOOTH_Z], material(0x24242b, 0.5, 0.4));
+    this.mesh([5.7, 0.16, 1.9], [CLUB_STAGE_X, floor + 2.25, CLUB_BOOTH_Z], material(0x35353f, 0.4, 0.5));
+    // The decks rise well above the stage slab, so they keep their own taller
+    // collider even though the expanded platform now carries their footprint.
+    this.addCollider(CLUB_STAGE_X, CLUB_BOOTH_Z, 5.7, 1.9, 0.12, belowGround, 'club-booth', CLUB_FLOOR_Y + 1.5);
     for (const side of [-1, 1]) {
-      this.mesh([1.2, 0.12, 1.2], [stageX + side * 1.5, floor + 2.37, stageZ - 1.6], material(0x0d0d10, 0.35, 0.55));
-      this.mesh([0.52, 0.14, 0.52], [stageX + side * 1.5, floor + 2.47, stageZ - 1.6], material(0xd8d3c6, 0.4, 0.4));
+      this.mesh([1.2, 0.12, 1.2], [CLUB_STAGE_X + side * 1.5, floor + 2.37, CLUB_BOOTH_Z], material(0x0d0d10, 0.35, 0.55));
+      this.mesh([0.52, 0.14, 0.52], [CLUB_STAGE_X + side * 1.5, floor + 2.47, CLUB_BOOTH_Z], material(0xd8d3c6, 0.4, 0.4));
     }
-    this.mesh([1.1, 0.14, 1.5], [stageX, floor + 2.37, stageZ - 1.6], material(0x17171c, 0.35, 0.5));
+    this.mesh([1.1, 0.14, 1.5], [CLUB_STAGE_X, floor + 2.37, CLUB_BOOTH_Z], material(0x17171c, 0.35, 0.5));
     this.clubBoothGlow = this.mesh(
       [5.1, 0.1, 0.12],
-      [stageX, floor + 1.02, stageZ - 2.5],
+      [CLUB_STAGE_X, floor + 1.02, CLUB_STAGE_Z - 2.5],
       new THREE.MeshBasicMaterial({ color: 0x38e0ff }),
     );
     for (const side of [-1, 1]) {
-      const x = stageX + side * 11;
-      this.mesh([2.2, 2, 2.4], [x, floor + 1, stageZ + 0.6], material(0x131317, 0.7, 0.2));
-      this.mesh([1.8, 1.7, 2], [x, floor + 2.85, stageZ + 0.6], material(0x131317, 0.7, 0.2));
-      this.addCollider(x, stageZ + 0.6, 2.2, 2.4, 0.1, belowGround, 'speaker');
+      const x = CLUB_STAGE_X + side * 11;
+      this.mesh([2.2, 2, 2.4], [x, floor + 1, CLUB_STAGE_Z + 0.6], material(0x131317, 0.7, 0.2));
+      this.mesh([1.8, 1.7, 2], [x, floor + 2.85, CLUB_STAGE_Z + 0.6], material(0x131317, 0.7, 0.2));
+      this.addCollider(x, CLUB_STAGE_Z + 0.6, 2.2, 2.4, 0.1, belowGround, 'speaker');
     }
 
     // Dance floor: lit panels across the open middle of the room.
@@ -6329,7 +6393,7 @@ export class FestivalWorld {
 
     // Screen at the deck's south edge, back to the Drive-In, watched northward.
     this.createProjectorSurface('rooftop');
-    this.mesh([15, 8, 0.4], [centerX, ROOF_Y + 6.6, r.deckMinZ + 0.6], material(0x050506, 0.72));
+    this.mesh([15, 8, 0.4], [ROOFTOP_CENTER_X, ROOFTOP_SCREEN_Y, r.deckMinZ + 0.6], material(0x050506, 0.72));
     const boothZ = r.deckMinZ + 4.4;
     this.mesh([10, 0.7, 3.6], [centerX, ROOF_Y + 0.35, boothZ], material(0x3d2a24, 0.6, 0.3));
     this.mesh([4.6, 1.2, 1.5], [centerX, ROOF_Y + 1.3, boothZ + 0.8], material(0x2b2b33, 0.5, 0.4));
@@ -6748,7 +6812,7 @@ export class FestivalWorld {
     const dj = this.npcs.find((npc) => npc.id === 'XIEHGAN');
     if (!dj) return;
     // Clear of the desk in front of them, not inside it.
-    const position = new THREE.Vector3(-68, CLUB_AVATAR_Y + 0.9, 23.6 + CLUB_Z);
+    const position = new THREE.Vector3(CLUB_STAGE_X, CLUB_AVATAR_Y + 0.9, 23.6 + CLUB_Z);
     dj.station = { position, rotationY: Math.PI };
     dj.pose = 'dj';
     dj.route = [position.clone()];
@@ -10583,11 +10647,12 @@ export class FestivalWorld {
   private nearbyDj(): NpcAvatar | undefined {
     // Both booths are candidates; whichever is in reach wins.
     let nearest: NpcAvatar | undefined;
-    let nearestDistance = 6.5;
+    let nearestDistance = Infinity;
     for (const npc of this.npcs) {
       if (npc.pose !== 'dj' || !npc.station || npc.id === this.controlledNpcId) continue;
       const distance = npc.group.position.distanceTo(this.player.position);
-      if (distance < nearestDistance) {
+      const interactionRange = npc.id === 'XIEHGAN' ? CLUB_DJ_INTERACTION_RANGE : 6.5;
+      if (distance < interactionRange && distance < nearestDistance) {
         nearestDistance = distance;
         nearest = npc;
       }

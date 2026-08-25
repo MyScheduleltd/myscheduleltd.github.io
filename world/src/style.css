@@ -278,6 +278,14 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 }
 .jukebox-sound[hidden] { display: none; }
 .jukebox-sound:hover { background: var(--red); }
+.zoom-reset {
+  position: fixed; z-index: 40; left: 50%; transform: translateX(-50%);
+  top: calc(72px + env(safe-area-inset-top));
+  padding: 10px 14px; border: 2px solid var(--red); cursor: pointer;
+  color: white; background: rgba(8,9,10,.94);
+  font: 800 12px var(--condensed); letter-spacing: .08em;
+}
+.zoom-reset[hidden] { display: none; }
 .world-camera-hide {
   position: fixed; z-index: 9; display: grid; place-items: center;
   top: calc(14px + env(safe-area-inset-top)); left: calc(14px + env(safe-area-inset-left));
@@ -1001,9 +1009,9 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
    under sixteen pixels, and it does not zoom back out — one tap on a text box
    and the page is left magnified with no way home. Keyed to the pointer rather
    than the width, because a tablet does exactly the same thing and is far too
-   wide to be caught by a phone breakpoint. Nothing is forbidden here; the page
-   simply stops giving it a reason. Pinching still works, and the reset button
-   remains for a page that got there another way. */
+   wide to be caught by a phone breakpoint. The gate remains pinchable; once
+   entered, App locks the world page and keeps a reset button for a tab Safari
+   restored while it was already enlarged. */
 @media (pointer: coarse) {
   input, textarea, select { font-size: 16px; }
   .chat-form input, .chat-form textarea { font-size: 16px !important; }

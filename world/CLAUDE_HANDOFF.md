@@ -7,17 +7,17 @@ Last updated: 2026-08-25 (Asia/Taipei)
 > build now ships to `docs/beta` on `main` every turn. What remains useful here is the
 > older architectural description, not the process.
 
-Current continuation: the thin procedural exterior conduit that clipped
-through the wall in the owner's phone screenshot has been removed. The mobile
-crash audit found an unbounded sign-canvas retention leak driven by ordinary
-multiplayer state packets and a second WebGL renderer that duplicated the scene
-on phones when video appeared. Sign text is now deduplicated, disposed repaint
-closures are released, and coarse/no-hover devices use one WebGL context while
-desktop retains two. The `mobile-stability` fixture survived 250 sign changes
-and 86 seconds of live playback with one player/context, stable warmed GPU
-counts and no loss; all 43 server tests and the production build pass. This is
-locally verified but not yet confirmed on the owner's Safari and not published.
-See `CODEX_HANDOFF.md` section 0a for exact counters and follow-up diagnostics.
+Current continuation: the published `15c9354` baseline removed the clipping wall
+conduit and fixed mobile sign-canvas retention plus the phone's duplicate WebGL
+context. New live iPhone screenshots then showed both venue DJs hidden by the
+CSS3D video, the basement console overhanging its stage, and unrecoverable Safari
+page zoom after rapid taps. The published follow-up lifts the two
+screens above their centred DJs, deepens the basement stage with 1.25 units of
+floor beyond the console, expands XIEHGAN's prompt radius, and locks only the
+entered world against browser page zoom while keeping the game's camera gestures.
+Direct 390 × 650 browser checks show positive DJ/screen clearance in both venues
+and scale 1 after eight rapid double-taps. See `CODEX_HANDOFF.md` section 0 for
+exact geometry, fixtures and epistemic status.
 
 Commits `10dba12` and `5ae3d39` define the current mobile continuation point.
 The festival-pass menu scrolls in portrait and landscape; screening/order
