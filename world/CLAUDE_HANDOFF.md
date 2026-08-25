@@ -15,12 +15,14 @@ page zoom after rapid taps. Published commit `e8ba163` incorrectly lifted the tw
 screens; the owner clarified that their height was already correct. The current
 published commit `d93192e` restored those Y positions but incorrectly shifted the
 screens left. The owner rejected that: both screens belong on their original centre
-lines, with the DJs composited in front. The release containing this handoff does
-exactly that using the phone's existing WebGL renderer: an alpha aperture reveals
-the CSS3D video beneath the main canvas and a dedicated layer redraws only the DJs over
-it. Mobile remains at one WebGL context. The published stage expansion, prompt radius
-and page-zoom lock remain. See `CODEX_HANDOFF.md` section 0 for exact geometry,
-fixtures, verification and epistemic status.
+lines, with the DJs composited in front. Published commit `3d38a0b` does that using the
+phone's existing WebGL renderer. The owner confirmed the DJs are correct but reported
+that ordinary NPC and visitor bodies still fall behind the screen. The release
+containing this handoff puts local/remote visitors, all residents and MENTOR on the same
+avatar-only foreground layer, selecting only projected bodies which intersect the
+screen before redrawing. Mobile remains at one WebGL context. The published stage
+expansion, prompt radius and page-zoom lock remain. See `CODEX_HANDOFF.md` section 0
+for exact geometry, fixtures, verification and epistemic status.
 
 Commits `10dba12` and `5ae3d39` define the current mobile continuation point.
 The festival-pass menu scrolls in portrait and landscape; screening/order

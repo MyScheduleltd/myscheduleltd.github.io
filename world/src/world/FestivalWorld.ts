@@ -366,7 +366,7 @@ const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
  * then replays every draw call when a screening becomes visible. That is a
  * harsh trade on a handset already decoding video, and it was invisible to the
  * main renderer's diagnostics. Touch-only devices keep the video below the
- * main canvas and redraw only the resident DJ over it in that same context;
+ * main canvas and redraw only overlapping avatars over it in that same context;
  * desktop retains the exact composition it had.
  */
 const shouldConserveMobileGpu = (): boolean => {
@@ -1177,10 +1177,16 @@ export class FestivalWorld {
   private readonly projectorCornerView = new THREE.Vector3();
   private readonly programmeBoardViewPosition = new THREE.Vector3();
   private readonly projectorViewPosition = new THREE.Vector3();
+  private readonly avatarForegroundWorldPosition = new THREE.Vector3();
+  private readonly avatarForegroundWorldScale = new THREE.Vector3();
+  private readonly avatarForegroundProbe = new THREE.Vector3();
   private playerRig?: AvatarRig;
   private originalPlayerIdleRig?: AvatarRig;
   private programmeBoardMaterial?: THREE.MeshBasicMaterial;
   private reviewSuppressedProjectors: VenueKey[] = [];
+  private projectorReviewNpcId?: string;
+  private projectorReviewVisitor?: RemoteAvatar;
+  private lastSingleContextAvatarIds: string[] = [];
   private readonly venueSignMaterials = new Map<VenueKey, THREE.MeshBasicMaterial>();
   private readonly venueSignSignatures = new Map<VenueKey, string>();
   private readonly waterTextures: THREE.CanvasTexture[] = [];
@@ -1377,9 +1383,9 @@ export class FestivalWorld {
     this.scene.traverse((object) => {
       if (object.userData.projectorBackground) object.layers.disable(1);
       else object.layers.enable(1);
-      // Layer two is deliberately tiny: the phone redraws these lights and the
-      // two stationary DJs over the CSS video with the main renderer. No other
-      // scene geometry or second GPU context is involved.
+      // Layer two is deliberately avatar-only: the phone redraws these lights
+      // and only bodies intersecting a screen with the main renderer. No scene
+      // architecture or second GPU context is involved.
       if ((object as THREE.Light).isLight) object.layers.enable(2);
     });
     // The sky belongs to the main render only. The pass that redraws geometry
@@ -2952,9 +2958,49 @@ export class FestivalWorld {
     this.cameraMode = 'screening';
     this.screeningOrbit.yaw = 0;
     this.screeningOrbit.pitch = 0;
+    if (venue === 'club' || venue === 'rooftop') this.stageAvatarForegroundReview(venue);
   }
 
-  /** Measurements proving a centred mobile screen composites behind its DJ. */
+  /** Places one ordinary resident and one visitor across the review screen. */
+  private stageAvatarForegroundReview(venue: 'club' | 'rooftop'): void {
+    const screen = venueScreens[venue];
+    const floorY = venue === 'club' ? CLUB_AVATAR_Y + 0.9 : ROOF_AVATAR_Y;
+    const z = screen.position[2] + screen.facing * 2.7;
+    const residentId = venue === 'club' ? 'LOUI' : 'MINYUN';
+    const resident = this.npcs.find((npc) => npc.id === residentId);
+    if (resident) {
+      const position = new THREE.Vector3(screen.position[0] + 3.2, floorY, z);
+      resident.station = { position, rotationY: screen.facing === 1 ? Math.PI : 0 };
+      resident.pose = undefined;
+      resident.route = [position.clone()];
+      resident.waypointIndex = 0;
+      resident.group.position.copy(position);
+      resident.group.rotation.y = resident.station.rotationY;
+      this.projectorReviewNpcId = resident.id;
+    }
+    if (!this.projectorReviewVisitor) {
+      this.projectorReviewVisitor = this.createRemoteAvatar({
+        id: 'projector-review-visitor',
+        name: 'VISITOR-QA',
+        originalName: 'VISITOR-QA',
+        palette: {
+          skin: '#9d5f43',
+          hair: '#171315',
+          top: '#1f8f91',
+          bottoms: '#20242c',
+          swimwear: '#d5b23f',
+        },
+        x: screen.position[0] - 3.2,
+        y: floorY,
+        z,
+        rotation: screen.facing === 1 ? Math.PI : 0,
+        state: 'walking',
+        moving: false,
+      });
+    }
+  }
+
+  /** Measurements proving a centred mobile screen composites behind avatars. */
   djVenueReviewSnapshot(venue: 'club' | 'rooftop'): Record<string, unknown> | undefined {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return undefined;
     const djId = venue === 'club' ? 'XIEHGAN' : 'DRBEAUTY';
@@ -2988,6 +3034,16 @@ export class FestivalWorld {
       screenDjGap: Number(screenDjGap.toFixed(2)),
       screenOverlapsDj: screenDjGap <= 0,
       djForegroundLayer: dj.group.layers.isEnabled(2),
+      localVisitorForegroundLayer: this.player.layers.isEnabled(2),
+      originalVisitorForegroundLayer: this.originalPlayerIdle.layers.isEnabled(2),
+      npcForegroundLayerCount: this.npcs.filter((npc) => npc.group.layers.isEnabled(2)).length,
+      npcCount: this.npcs.length,
+      remoteVisitorForegroundLayerCount: [...this.remoteAvatars.values()]
+        .filter((avatar) => avatar.group.layers.isEnabled(2)).length,
+      remoteVisitorCount: this.remoteAvatars.size,
+      reviewNpcId: this.projectorReviewNpcId,
+      reviewVisitorForegroundLayer: this.projectorReviewVisitor?.group.layers.isEnabled(2) ?? false,
+      compositedAvatarIds: this.lastSingleContextAvatarIds,
       singleContextComposite: this.conservesMobileGpu,
       contexts: this.foregroundRenderer ? 2 : 1,
       stageDepth: venue === 'club' ? CLUB_STAGE_DEPTH : undefined,
@@ -6749,6 +6805,22 @@ export class FestivalWorld {
     this.addCollider(pamphletPosition.x, pamphletPosition.z, 2.2, 1.35, 0.12, undefined, 'pamphlet', 2.1);
   }
 
+  /**
+   * Every body belongs to the projector-foreground layers. Ground shadows are
+   * scenery, not part of an avatar silhouette, so they stay behind the video.
+   */
+  private markAvatarForProjectorForeground(group: THREE.Object3D): void {
+    group.traverse((child) => {
+      if (child.userData.projectorBackground) {
+        child.layers.disable(1);
+        child.layers.disable(2);
+      } else {
+        child.layers.enable(1);
+        child.layers.enable(2);
+      }
+    });
+  }
+
   private createPlayer(palette: AvatarPalette): void {
     this.playerRig = this.createAvatarRig(this.player, palette, true);
     this.populatePopcornProp(this.carriedProp);
@@ -6758,6 +6830,7 @@ export class FestivalWorld {
     this.playerShadow.position.y = -AVATAR_GROUND_Y + 0.02;
     this.playerShadow.userData.projectorBackground = true;
     this.player.add(this.playerShadow);
+    this.markAvatarForProjectorForeground(this.player);
     this.scene.add(this.player);
 
     this.originalPlayerIdleRig = this.createAvatarRig(this.originalPlayerIdle, palette, true);
@@ -6770,6 +6843,7 @@ export class FestivalWorld {
     idleShadow.userData.projectorBackground = true;
     this.originalPlayerIdle.add(idleShadow);
     this.originalPlayerIdle.visible = false;
+    this.markAvatarForProjectorForeground(this.originalPlayerIdle);
     this.scene.add(this.originalPlayerIdle);
   }
 
@@ -6796,7 +6870,6 @@ export class FestivalWorld {
     dj.waypointIndex = 0;
     dj.group.position.copy(position);
     dj.group.rotation.y = 0;
-    dj.group.traverse((child) => child.layers.enable(2));
   }
 
   /**
@@ -6858,7 +6931,6 @@ export class FestivalWorld {
     dj.waypointIndex = 0;
     dj.group.position.copy(position);
     dj.group.rotation.y = Math.PI;
-    dj.group.traverse((child) => child.layers.enable(2));
   }
 
   private createNpcAvatar(profile: NpcProfile, index: number): NpcAvatar {
@@ -6917,6 +6989,7 @@ export class FestivalWorld {
     const route = routeTemplate.map(([x, z]) => this.laneAdjusted(x, z, lane, startFloor));
     // Spread round the loop rather than all stood on its first corner.
     npc.position.copy(route[index % route.length]);
+    this.markAvatarForProjectorForeground(npc);
     this.scene.add(npc);
     const avatar: NpcAvatar = {
       id: profile.id,
@@ -7318,7 +7391,7 @@ export class FestivalWorld {
     );
     group.rotation.y = visitor.rotation;
     group.userData.remoteVisitor = true;
-    group.traverse((child) => child.layers.enable(1));
+    this.markAvatarForProjectorForeground(group);
     this.scene.add(group);
     return {
       group,
@@ -7759,17 +7832,84 @@ export class FestivalWorld {
     this.scene.add(particles);
   }
 
+  private foregroundAvatarEntries(): Array<{ id: string; group: THREE.Object3D }> {
+    const entries: Array<{ id: string; group: THREE.Object3D }> = [
+      { id: 'LOCAL-VISITOR', group: this.player },
+      { id: 'LOCAL-VISITOR-IDLE', group: this.originalPlayerIdle },
+      ...this.npcs.map((npc) => ({ id: `NPC:${npc.id}`, group: npc.group })),
+      ...[...this.remoteAvatars.entries()].map(([id, avatar]) => ({
+        id: `VISITOR:${id}`,
+        group: avatar.group,
+      })),
+    ];
+    if (this.projectorReviewVisitor) {
+      entries.push({ id: 'VISITOR:projector-review-visitor', group: this.projectorReviewVisitor.group });
+    }
+    return entries;
+  }
+
+  /** Cheap conservative screen-space overlap, before paying to draw a rig. */
+  private avatarIntersectsProjector(
+    group: THREE.Object3D,
+    venue: VenueKey,
+    scissor: { x: number; y: number; width: number; height: number },
+  ): boolean {
+    if (!group.visible) return false;
+    group.getWorldPosition(this.avatarForegroundWorldPosition);
+    group.getWorldScale(this.avatarForegroundWorldScale);
+    const screen = venueScreens[venue];
+    const depthMargin = 1.5 * Math.max(
+      Math.abs(this.avatarForegroundWorldScale.x),
+      Math.abs(this.avatarForegroundWorldScale.z),
+    );
+    if ((this.avatarForegroundWorldPosition.z - screen.position[2]) * screen.facing < -depthMargin) {
+      return false;
+    }
+
+    const viewportWidth = this.foregroundCanvas.clientWidth || window.innerWidth;
+    const viewportHeight = this.foregroundCanvas.clientHeight || window.innerHeight;
+    const halfWidth = 1.35 * Math.max(
+      Math.abs(this.avatarForegroundWorldScale.x),
+      Math.abs(this.avatarForegroundWorldScale.z),
+    );
+    const bottom = this.avatarForegroundWorldPosition.y - 0.25;
+    const top = this.avatarForegroundWorldPosition.y + 4.05 * Math.abs(this.avatarForegroundWorldScale.y);
+    let minX = viewportWidth;
+    let minY = viewportHeight;
+    let maxX = 0;
+    let maxY = 0;
+    for (let xIndex = 0; xIndex < 2; xIndex += 1) {
+      const x = this.avatarForegroundWorldPosition.x + (xIndex === 0 ? -halfWidth : halfWidth);
+      for (let yIndex = 0; yIndex < 2; yIndex += 1) {
+        const y = yIndex === 0 ? bottom : top;
+        this.avatarForegroundProbe.set(x, y, this.avatarForegroundWorldPosition.z);
+        this.avatarForegroundProbe.applyMatrix4(this.camera.matrixWorldInverse);
+        if (this.avatarForegroundProbe.z > -0.05) return false;
+        this.avatarForegroundProbe.set(x, y, this.avatarForegroundWorldPosition.z).project(this.camera);
+        const pixelX = (this.avatarForegroundProbe.x * 0.5 + 0.5) * viewportWidth;
+        const pixelY = (this.avatarForegroundProbe.y * 0.5 + 0.5) * viewportHeight;
+        minX = Math.min(minX, pixelX);
+        minY = Math.min(minY, pixelY);
+        maxX = Math.max(maxX, pixelX);
+        maxY = Math.max(maxY, pixelY);
+      }
+    }
+    return maxX >= scissor.x && minX <= scissor.x + scissor.width &&
+      maxY >= scissor.y && minY <= scissor.y + scissor.height;
+  }
+
   /**
-   * Composites the two resident DJs over a phone's CSS projector without a
-   * second WebGL context. The transparent plane opens the exact projector in
-   * the already-rendered main canvas; layer two then redraws only the lights
-   * and stationary DJ rigs in front of that screen plane.
+   * Composites every avatar over a phone's CSS projector without a second
+   * WebGL context. The transparent plane opens the exact projector in the
+   * already-rendered main canvas; layer two then redraws only bodies whose
+   * projected bounds overlap that screen and which stand on its viewing side.
    */
-  private compositeMobileDjs(
+  private compositeMobileAvatars(
     visibleProjectors: VenueKey[],
     visibleProjectorScissors: Map<VenueKey, { x: number; y: number; width: number; height: number }>,
   ): void {
     this.singleContextForegroundDrawCalls = 0;
+    this.lastSingleContextAvatarIds = [];
     if (!this.conservesMobileGpu || !visibleProjectors.length) {
       for (const projector of this.projectors.values()) projector.aperture.visible = false;
       return;
@@ -7799,17 +7939,34 @@ export class FestivalWorld {
       const farthestFirst = [...visibleProjectors].sort(
         (a, b) => venueScreens[a].position[2] - venueScreens[b].position[2],
       );
+      const compositedAvatarIds = new Set<string>();
       for (const venue of farthestFirst) {
         const scissor = visibleProjectorScissors.get(venue);
         if (!scissor) continue;
-        const facing = venueScreens[venue].facing;
-        this.projectorClipPlane.normal.set(0, 0, facing);
-        this.projectorClipPlane.constant = -venueScreens[venue].position[2] * facing;
-        this.renderer.setScissor(scissor.x, scissor.y, scissor.width, scissor.height);
-        this.renderer.clear(false, true, false);
-        this.renderer.render(this.scene, this.camera);
-        this.singleContextForegroundDrawCalls += this.renderer.info.render.calls;
+        const avatarEntries = this.foregroundAvatarEntries();
+        const originalVisibility = avatarEntries.map(({ group }) => group.visible);
+        const selectedAvatarIds: string[] = [];
+        try {
+          avatarEntries.forEach(({ id, group }, index) => {
+            const selected = originalVisibility[index] && this.avatarIntersectsProjector(group, venue, scissor);
+            group.visible = selected;
+            if (selected) selectedAvatarIds.push(id);
+          });
+          const facing = venueScreens[venue].facing;
+          this.projectorClipPlane.normal.set(0, 0, facing);
+          this.projectorClipPlane.constant = -venueScreens[venue].position[2] * facing;
+          this.renderer.setScissor(scissor.x, scissor.y, scissor.width, scissor.height);
+          this.renderer.clear(false, true, false);
+          if (selectedAvatarIds.length) {
+            this.renderer.render(this.scene, this.camera);
+            this.singleContextForegroundDrawCalls += this.renderer.info.render.calls;
+            selectedAvatarIds.forEach((id) => compositedAvatarIds.add(id));
+          }
+        } finally {
+          avatarEntries.forEach(({ group }, index) => { group.visible = originalVisibility[index]; });
+        }
       }
+      this.lastSingleContextAvatarIds = [...compositedAvatarIds];
     } finally {
       for (const projector of this.projectors.values()) projector.aperture.visible = false;
       this.renderer.setScissorTest(false);
@@ -7943,7 +8100,7 @@ export class FestivalWorld {
       }
     }
     if (visibleProjectors.length) this.cssRenderer.render(this.cssScene, this.camera);
-    this.compositeMobileDjs(visibleProjectors, visibleProjectorScissors);
+    this.compositeMobileAvatars(visibleProjectors, visibleProjectorScissors);
     const foregroundRenderer = this.foregroundRenderer;
     this.foregroundCanvas.style.visibility = visibleProjectors.length && foregroundRenderer ? 'visible' : 'hidden';
     if (visibleProjectors.length && foregroundRenderer) {

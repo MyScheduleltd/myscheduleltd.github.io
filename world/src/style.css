@@ -195,7 +195,7 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 /*
  * A phone keeps one WebGL context. Its CSS video therefore sits below the
  * alpha-enabled main canvas; FestivalWorld opens only the screen rectangle in
- * that canvas and redraws the resident DJ over it with the same renderer.
+ * that canvas and redraws intersecting avatars over it with the same renderer.
  */
 .world-shell--single-context-projectors #world-canvas { z-index: 1; background: transparent; }
 .world-shell--single-context-projectors .world-css3d { z-index: 0; }

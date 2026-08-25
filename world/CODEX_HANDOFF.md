@@ -8,24 +8,31 @@ Last updated: 2026-08-25 · mobile DJ/screen, stage and zoom follow-up · branch
 
 ---
 
-## 0. READ THIS FIRST — centred-screen foreground-DJ correction published
+## 0. READ THIS FIRST — all-avatar foreground follow-up published
 
 The owner's live iPhone screenshots showed both resident DJs hidden by the CSS3D
 public-screening layer, the basement console hanging beyond its platform, and the
 complete page becoming permanently enlarged after rapid taps. Commit `e8ba163`
 published a first fix, but it solved the DJ overlap by raising both screens. The owner
 clarified that their original height was correct. Commit `d93192e` then restored the
-height but moved both screens left; the owner rejected that too. The release containing
-this handoff restores the exact original centres and renders each DJ over the video.
-It is verified locally and included in the beta Pages payload.
+height but moved both screens left; the owner rejected that too. Published commit
+`3d38a0b` restored the exact original centres and rendered each DJ over the video.
+The owner confirmed the DJs are correct, then reported that ordinary NPCs and visitor
+avatars still fell behind the CSS3D screen. This release extends the same foreground
+composition to every avatar. It is verified locally and included in the
+beta Pages payload.
 
 - Rooftop is centred at x=40, y=13.6; Basement is centred over its booth at x=-68,
   y=-9. The physical backing meshes follow those exact positions.
 - Phones still use one WebGL context. On that path, the CSS3D video sits below an
   alpha-enabled main canvas; a transparent screen-shaped plane opens the projector
-  rectangle, then layer 2 redraws only the two stationary DJ rigs and scene lights
-  over it with the existing renderer. It does not restore the duplicate renderer or
-  duplicate GPU resources. Desktop retains its established two-context compositor.
+  rectangle, then layer 2 redraws avatars over it with the existing renderer. Local
+  visitors, their idle bodies during STAFF control, remote visitors, every resident
+  NPC and MENTOR all belong to that layer. Before each pass, a conservative projected
+  bounds test selects only bodies which overlap that screen and stand on its viewing
+  side; the rest are temporarily culled. It does not restore the duplicate renderer,
+  duplicate GPU resources, or a full-scene foreground pass. Desktop retains its
+  established two-context compositor.
 - The basement stage is 7.2 units deep and reaches z=33.7. The console reaches
   z=34.95, leaving 1.25 units of visible platform in front instead of hanging 0.65
   units over the old slab. XIEHGAN's prompt radius is 8 units so the deeper obstacle
@@ -35,20 +42,24 @@ It is verified locally and included in the beta Pages payload.
   camera gestures. A styled reset button remains for a Safari tab restored while it
   was already enlarged.
 - Loopback fixtures: `?review=screen-rooftop`, `?review=screen-club`, and the existing
-  `?review=club-dj`. The first two force the single-context path and
-  `data-dj-venue-review` records centre, foreground layer and context count;
+  `?review=club-dj`. The first two force the single-context path and stage a DJ,
+  an ordinary resident and a visitor across the screen. `data-dj-venue-review`
+  records every avatar layer, the selected ids, centre and context count;
   `data-club-review` records stage depth, front edge, console margin and prompt range.
-- Direct browser validation at 390 × 650 showed both screens centred and both DJs
-  visibly drawn in front. Both fixtures report `screenCentered: true`,
-  `djForegroundLayer: true`, `singleContextComposite: true`, and `contexts: 1`.
-  A 35-second mobile-stability run held one iframe, 12 textures, 30 geometries,
-  one context and `lost: false`; the compositor added only two foreground draw calls.
-  All 43 server tests and the TypeScript/Vite build pass. The first combined verify
-  attempt hit the expected restricted-runner `listen EPERM` before assertions; the
-  suite passed in a normal local shell.
+- Direct browser validation at 390 × 650 showed DJ, ordinary NPC and visitor bodies
+  visibly drawn over both centred screens. Basement selected LOUI, XIEHGAN and the
+  review visitor; Rooftop selected the local visitor, MINYUN, DRBEAUTY and the review
+  visitor. Both fixtures report all 12 NPC parent groups plus both local visitor forms
+  on layer 2, `singleContextComposite: true`, and `contexts: 1`.
+- The mobile-stability fixture remained at one iframe, one context, 11 textures,
+  28 geometries, 17 programs and `lost: false` from 20 through 55 seconds. At The
+  Shore only the intersecting local visitor was redrawn: 12 foreground calls total,
+  including the aperture. Browser console reported no warnings or errors.
+  All 43 server tests and the TypeScript/Vite build pass.
 
 The owner explicitly rejected changing either screen height or horizontal centre.
-Preserve both positions and the one-context phone compositor.
+Preserve both positions, every avatar type in the foreground layer, and the
+one-context phone compositor.
 
 ## 0a. Concrete mobile stability fix, published; awaiting phone confirmation
 
