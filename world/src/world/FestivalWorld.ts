@@ -8,6 +8,11 @@ import { DayNightCycle, type DayNightState } from './DayNightCycle';
 import { createStylizedWaterMaterial, tintStylizedWater } from './StylizedWater';
 import { createMentorDog, type MentorDogRig } from './MentorDog';
 
+type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & {
+  requestPermission?: () => Promise<'granted' | 'denied'>;
+};
+type PhoneOrientationPermission = 'idle' | 'granted' | 'denied' | 'unavailable';
+
 export type GraphicsMode = 'normal' | 'lite';
 export type CameraMode = 'follow' | 'perspective' | 'first-person' | 'screening';
 export type PlayerState = 'walking' | 'seated' | 'swimming';
@@ -1192,6 +1197,18 @@ export class FestivalWorld {
   private xrSimulated = false;
   private xrYaw = 0;
   private xrSimPitch = 0;
+  private phoneOrientationEnabled = false;
+  private phoneOrientationReceived = false;
+  private phoneOrientationPermission: PhoneOrientationPermission = 'idle';
+  private phoneOrientationSamples = 0;
+  private phoneOrientationReferenceInverse?: THREE.Quaternion;
+  private readonly phoneOrientationTarget = new THREE.Quaternion();
+  private readonly phoneOrientationRaw = new THREE.Quaternion();
+  private readonly phoneOrientationScreen = new THREE.Quaternion();
+  private readonly phoneOrientationEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+  private readonly phoneOrientationScreenAxis = new THREE.Vector3(0, 0, 1);
+  private readonly phoneOrientationCorrection = new THREE.Quaternion()
+    .setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
   private xrSnapReady = true;
   private xrTeleportReady = true;
   private xrJumpReady = true;
@@ -1487,6 +1504,7 @@ export class FestivalWorld {
     this.disposed = true;
     this.renderer.setAnimationLoop(null);
     if (this.xrSession) void this.xrSession.end().catch(() => undefined);
+    this.stopPhoneOrientation();
     window.removeEventListener('resize', this.resize);
     this.canvasSizeObserver?.disconnect();
     window.clearInterval(this.lightCullTimer);
@@ -1540,6 +1558,98 @@ export class FestivalWorld {
     }
   }
 
+  private isPhoneOrientationReview(): boolean {
+    return ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+      && new URLSearchParams(window.location.search).get('review') === 'vr-phone';
+  }
+
+  private screenOrientationRadians(): number {
+    const legacyAngle = (window as Window & { orientation?: number }).orientation;
+    return THREE.MathUtils.degToRad(window.screen.orientation?.angle ?? legacyAngle ?? 0);
+  }
+
+  /** Convert the browser's intrinsic Z-X-Y device angles into a Three camera pose. */
+  private applyPhoneOrientation(alpha: number, beta: number, gamma: number, screenAngle: number): void {
+    this.phoneOrientationEuler.set(
+      THREE.MathUtils.degToRad(beta),
+      THREE.MathUtils.degToRad(alpha),
+      -THREE.MathUtils.degToRad(gamma),
+      'YXZ',
+    );
+    this.phoneOrientationRaw.setFromEuler(this.phoneOrientationEuler);
+    this.phoneOrientationRaw.multiply(this.phoneOrientationCorrection);
+    this.phoneOrientationScreen.setFromAxisAngle(this.phoneOrientationScreenAxis, -screenAngle);
+    this.phoneOrientationRaw.multiply(this.phoneOrientationScreen).normalize();
+
+    if (!this.phoneOrientationReferenceInverse) {
+      this.phoneOrientationReferenceInverse = this.phoneOrientationRaw.clone().invert();
+      this.phoneOrientationTarget.identity();
+    } else {
+      // The first valid pose is forward. Only the change from that pose moves
+      // the virtual head, so compass heading and the way the phone was held at
+      // permission time do not throw the visitor sideways.
+      this.phoneOrientationTarget
+        .copy(this.phoneOrientationReferenceInverse)
+        .multiply(this.phoneOrientationRaw)
+        .normalize();
+    }
+    this.phoneOrientationReceived = true;
+    this.phoneOrientationSamples += 1;
+  }
+
+  private readonly phoneOrientationChanged = (event: DeviceOrientationEvent): void => {
+    if (!this.phoneOrientationEnabled || event.alpha === null || event.beta === null || event.gamma === null) return;
+    this.applyPhoneOrientation(event.alpha, event.beta, event.gamma, this.screenOrientationRadians());
+  };
+
+  private readonly resetPhoneOrientationReference = (): void => {
+    this.phoneOrientationReferenceInverse = undefined;
+    this.phoneOrientationReceived = false;
+    this.phoneOrientationTarget.identity();
+  };
+
+  private async enablePhoneOrientation(): Promise<boolean> {
+    const review = this.isPhoneOrientationReview();
+    const orientationEvent = window.DeviceOrientationEvent as DeviceOrientationEventWithPermission | undefined;
+    if (!orientationEvent && !review) {
+      this.phoneOrientationPermission = 'unavailable';
+      return false;
+    }
+    try {
+      const permission = review
+        ? 'granted'
+        : orientationEvent?.requestPermission
+        ? await orientationEvent.requestPermission()
+        : 'granted';
+      if (permission !== 'granted') {
+        this.phoneOrientationPermission = 'denied';
+        return false;
+      }
+    } catch {
+      this.phoneOrientationPermission = 'denied';
+      return false;
+    }
+
+    this.phoneOrientationPermission = 'granted';
+    this.phoneOrientationEnabled = true;
+    this.phoneOrientationSamples = 0;
+    this.resetPhoneOrientationReference();
+    window.addEventListener('deviceorientation', this.phoneOrientationChanged, true);
+    window.addEventListener('orientationchange', this.resetPhoneOrientationReference);
+    window.screen.orientation?.addEventListener('change', this.resetPhoneOrientationReference);
+    return true;
+  }
+
+  private stopPhoneOrientation(): void {
+    window.removeEventListener('deviceorientation', this.phoneOrientationChanged, true);
+    window.removeEventListener('orientationchange', this.resetPhoneOrientationReference);
+    window.screen.orientation?.removeEventListener('change', this.resetPhoneOrientationReference);
+    this.phoneOrientationEnabled = false;
+    this.phoneOrientationReceived = false;
+    this.phoneOrientationReferenceInverse = undefined;
+    this.phoneOrientationTarget.identity();
+  }
+
   private beginXrPresentation(simulated: boolean): void {
     this.camera.getWorldDirection(this.cameraDirection);
     this.xrYaw = Math.atan2(-this.cameraDirection.x, -this.cameraDirection.z);
@@ -1570,10 +1680,18 @@ export class FestivalWorld {
   }
 
   /** Must be called directly from a visitor gesture for a real WebXR session. */
-  async enterVr(simulated = false): Promise<boolean> {
+  async enterVr(simulated = false, phoneMotion = false): Promise<boolean> {
     if (this.xrActive || this.xrSession) return true;
     if (simulated) {
+      if (phoneMotion && !await this.enablePhoneOrientation()) return false;
       this.beginXrPresentation(true);
+      if (phoneMotion && this.isPhoneOrientationReview()) {
+        // Two deterministic poses prove that calibration happened and that a
+        // subsequent turn reaches the camera without needing physical sensors
+        // in the desktop review browser.
+        this.applyPhoneOrientation(18, 72, 6, 0);
+        this.applyPhoneOrientation(46, 58, -9, 0);
+      }
       this.onXrSessionChange?.(true);
       return true;
     }
@@ -1625,6 +1743,7 @@ export class FestivalWorld {
     this.xrActive = false;
     this.xrSimulated = false;
     this.xrSimPitch = 0;
+    this.stopPhoneOrientation();
     this.xrRig.position.set(0, 0, 0);
     this.xrRig.rotation.set(0, 0, 0);
     this.xrControllers.forEach((controller) => controller.position.set(0, 0, 0));
@@ -1711,6 +1830,13 @@ export class FestivalWorld {
       eyeHeightFromFloor: this.xrSimulated ? Number(AVATAR_EYE_HEIGHT.toFixed(2)) : null,
       avatarPovHeightFromFloor: Number(AVATAR_EYE_HEIGHT.toFixed(2)),
       avatarEyeOffset: AVATAR_EYE_OFFSET,
+      phoneMotion: {
+        enabled: this.phoneOrientationEnabled,
+        permission: this.phoneOrientationPermission,
+        calibrated: Boolean(this.phoneOrientationReferenceInverse),
+        samples: this.phoneOrientationSamples,
+        targetQuaternion: this.phoneOrientationTarget.toArray().map((value) => Number(value.toFixed(4))),
+      },
       renderLoop: 'WebGLRenderer.setAnimationLoop',
       seat: this.activeSeat?.id ?? null,
     };
@@ -10653,7 +10779,12 @@ export class FestivalWorld {
       this.xrRig.rotation.y = this.xrYaw;
       if (this.xrSimulated) {
         this.camera.position.set(0, AVATAR_EYE_HEIGHT, 0);
-        this.camera.rotation.set(this.xrSimPitch, 0, 0);
+        if (this.phoneOrientationEnabled && this.phoneOrientationReceived) {
+          const motionSmoothing = 1 - Math.exp(-delta * 13);
+          this.camera.quaternion.slerp(this.phoneOrientationTarget, motionSmoothing);
+        } else {
+          this.camera.rotation.set(this.xrSimPitch, 0, 0);
+        }
       }
       this.player.visible = false;
       return;

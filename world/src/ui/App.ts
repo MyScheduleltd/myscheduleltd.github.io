@@ -153,6 +153,8 @@ const copy = {
     vrUnavailable: 'VR is available in Meta Quest Browser. Open this page inside your Quest headset to enable this checkbox.',
     vrDesktopMode: 'VR DESKTOP MODE',
     vrDesktopNote: 'Explore the VR view with keyboard and mouse. Quest Browser automatically uses immersive headset mode.',
+    vrPhoneMode: 'PHONE MOTION VR',
+    vrPhoneNote: 'Turn and tilt your phone to look around. Motion access is requested after you enter; touch drag remains available.',
     gateNote: 'MOVE: WASD / ARROWS · RUN: SHIFT · JUMP: SPACE · CAMERA: T · CHAT: ENTER',
   },
   'zh-TW': {
@@ -177,6 +179,8 @@ const copy = {
     vrUnavailable: 'VR 可在 Meta Quest Browser 使用。請用 Quest 頭戴式裝置開啟此頁面，即可勾選。',
     vrDesktopMode: 'VR 桌面模式',
     vrDesktopNote: '以鍵盤與滑鼠體驗 VR 視角。使用 Quest Browser 時會自動切換為沉浸式頭戴模式。',
+    vrPhoneMode: '手機動態 VR',
+    vrPhoneNote: '轉動及傾斜手機即可環顧世界。進入後會請求動態取向權限，仍可用手指拖曳視角。',
     gateNote: '移動：WASD／方向鍵 · 奔跑：SHIFT · 跳躍：SPACE · 鏡頭：T · 聊天：ENTER',
   },
 } as const;
@@ -407,7 +411,7 @@ export class App {
       this.vrSupported = loopbackFixture;
     }
     this.vrSupportChecked = true;
-    if (!this.vrSupported && !this.isDesktopVrPreviewAvailable()) {
+    if (!this.vrSupported && !this.isDesktopVrPreviewAvailable() && !this.isPhoneVrPreviewAvailable()) {
       this.vrRequested = false;
       sessionStorage.removeItem(VR_MODE_KEY);
     }
@@ -420,6 +424,7 @@ export class App {
     const title = field?.querySelector<HTMLElement>('[data-vr-gate-title]');
     const note = field?.querySelector<HTMLElement>('[data-vr-gate-note]');
     if (!field || !checkbox) return;
+    const phonePreview = this.usesPhoneVrSimulation();
     const preview = this.usesVrSimulation();
     const available = this.vrSupported || preview;
     const availability = !this.vrSupportChecked
@@ -433,19 +438,21 @@ export class App {
     checkbox.disabled = !available;
     checkbox.checked = this.vrRequested && available;
     if (title) {
-      title.textContent = preview ? this.gateText().vrDesktopMode : this.gateText().vrMode;
+      title.textContent = phonePreview
+        ? this.gateText().vrPhoneMode
+        : preview ? this.gateText().vrDesktopMode : this.gateText().vrMode;
     }
     if (note) {
       note.textContent = availability === 'checking'
         ? this.gateText().vrChecking
         : preview
-          ? this.gateText().vrDesktopNote
+          ? phonePreview ? this.gateText().vrPhoneNote : this.gateText().vrDesktopNote
           : availability === 'unavailable'
             ? this.gateText().vrUnavailable
             : this.gateText().vrNote;
     }
     document.documentElement.dataset.vrSupport = preview
-      ? 'desktop-preview'
+      ? phonePreview ? 'phone-preview' : 'desktop-preview'
       : this.vrSupported ? 'supported' : 'unavailable';
   }
 
@@ -453,17 +460,41 @@ export class App {
   private isLocalVrPreview(): boolean {
     const review = new URLSearchParams(window.location.search).get('review');
     return ['127.0.0.1', 'localhost'].includes(window.location.hostname)
-      && ['vr-gate', 'vr-entry', 'vr-screen'].includes(review ?? '');
+      && ['vr-gate', 'vr-entry', 'vr-screen', 'vr-phone'].includes(review ?? '');
   }
 
-  /** Keep the simulation off touch-only phones, whose stable path stays unchanged. */
+  private isLocalPhoneVrPreview(): boolean {
+    return ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+      && new URLSearchParams(window.location.search).get('review') === 'vr-phone';
+  }
+
+  /** The keyboard-and-mouse preview stays limited to an actual fine pointer. */
   private isDesktopVrPreviewAvailable(): boolean {
     return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
   }
 
+  /** A phone gets a motion-controlled preview, not a pretend immersive WebXR session. */
+  private isPhoneVrPreviewAvailable(): boolean {
+    return this.isLocalPhoneVrPreview() || (
+      window.isSecureContext &&
+      'DeviceOrientationEvent' in window &&
+      window.matchMedia('(pointer: coarse) and (hover: none)').matches
+    );
+  }
+
+  private usesPhoneVrSimulation(): boolean {
+    return this.isLocalPhoneVrPreview() || (
+      this.vrSupportChecked &&
+      !this.vrSupported &&
+      this.isPhoneVrPreviewAvailable()
+    );
+  }
+
   private usesVrSimulation(): boolean {
     return this.isLocalVrPreview()
-      || (this.vrSupportChecked && !this.vrSupported && this.isDesktopVrPreviewAvailable());
+      || (this.vrSupportChecked && !this.vrSupported && (
+        this.isDesktopVrPreviewAvailable() || this.isPhoneVrPreviewAvailable()
+      ));
   }
 
   private canRequestVr(): boolean {
@@ -836,6 +867,7 @@ export class App {
     this.startBlackBox();
     const zh = this.language === 'zh-TW';
     const vrPreview = this.usesVrSimulation();
+    const phoneVrPreview = this.usesPhoneVrSimulation();
     this.root.innerHTML = `
       <section class="world-shell">
         <canvas id="world-canvas" aria-label="Myschedule festival world"></canvas>
@@ -879,13 +911,19 @@ export class App {
         <button class="zoom-reset" type="button" data-zoom-reset hidden>${zh ? '重設縮放' : 'RESET ZOOM'}</button>
         <button class="jukebox-sound" type="button" data-jukebox-sound hidden>DROP THE BEAT</button>
         <section class="vr-entry" data-vr-entry hidden aria-live="polite">
-          <p class="eyebrow">${vrPreview ? 'DESKTOP SIMULATION · WEBXR' : 'META QUEST · WEBXR'}</p>
-          <h2>${vrPreview ? (zh ? '預覽 VR' : 'PREVIEW VR') : (zh ? '準備進入 VR' : 'READY FOR VR')}</h2>
-          <p data-vr-status>${vrPreview
-            ? (zh ? '以鍵盤與滑鼠預覽頭戴式視角。這不會啟動真正的沉浸階段。' : 'Preview the headset view with keyboard and mouse. This does not start a real immersive session.')
+          <p class="eyebrow">${phoneVrPreview ? 'PHONE MOTION · VR PREVIEW' : vrPreview ? 'DESKTOP SIMULATION · WEBXR' : 'META QUEST · WEBXR'}</p>
+          <h2>${phoneVrPreview
+            ? (zh ? '手機動態 VR' : 'PHONE MOTION VR')
+            : vrPreview ? (zh ? '預覽 VR' : 'PREVIEW VR') : (zh ? '準備進入 VR' : 'READY FOR VR')}</h2>
+          <p data-vr-status>${phoneVrPreview
+            ? (zh ? '允許動態取向後，現在的手機角度會設為正前方；轉動、傾斜或旋轉手機即可環顧世界。' : 'Allow motion access to set the current phone pose as forward, then turn, tilt or roll the phone to look around.')
+            : vrPreview
+              ? (zh ? '以鍵盤與滑鼠預覽頭戴式視角。這不會啟動真正的沉浸階段。' : 'Preview the headset view with keyboard and mouse. This does not start a real immersive session.')
             : (zh ? '戴上頭戴式裝置，以控制器確認進入。' : 'Put on your headset, then confirm with a controller.')}</p>
           <div>
-            <button class="button button--primary" type="button" data-vr-enter>${vrPreview ? (zh ? '開啟桌面預覽' : 'START DESKTOP PREVIEW') : (zh ? '進入 VR' : 'ENTER VR')}</button>
+            <button class="button button--primary" type="button" data-vr-enter>${phoneVrPreview
+              ? (zh ? '允許動態鏡頭' : 'ENABLE MOTION CAMERA')
+              : vrPreview ? (zh ? '開啟桌面預覽' : 'START DESKTOP PREVIEW') : (zh ? '進入 VR' : 'ENTER VR')}</button>
             <button class="button button--secondary" type="button" data-vr-dismiss>${zh ? '留在瀏覽器' : 'STAY IN BROWSER'}</button>
           </div>
         </section>
@@ -1074,7 +1112,7 @@ export class App {
       window.setTimeout(() => {
         document.documentElement.dataset.vrReview = JSON.stringify(this.vrReviewSnapshot());
       }, 400);
-    } else if ((reviewTarget === 'vr-entry' || reviewTarget === 'vr-gate') && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+    } else if ((reviewTarget === 'vr-entry' || reviewTarget === 'vr-gate' || reviewTarget === 'vr-phone') && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       (window as Window & { __festivalVrReview?: () => unknown }).__festivalVrReview = () => this.vrReviewSnapshot();
       document.documentElement.dataset.vrReview = JSON.stringify(this.vrReviewSnapshot());
     } else if (reviewTarget === 'mentor' || reviewTarget === 'mentor-carry' || reviewTarget === 'mentor-npc-carry') {
@@ -1997,11 +2035,16 @@ export class App {
   private async enterVr(): Promise<boolean> {
     if (!this.world) return false;
     this.vrError = '';
-    const entered = await this.world.enterVr(this.usesVrSimulation());
+    const phonePreview = this.usesPhoneVrSimulation();
+    const entered = await this.world.enterVr(this.usesVrSimulation(), phonePreview);
     if (!entered) {
-      this.vrError = this.language === 'zh-TW'
-        ? '無法開啟 VR。請在 Quest Browser 中重試，並允許頭戴式裝置存取權。'
-        : 'VR COULD NOT START. RETRY IN QUEST BROWSER AND ALLOW HEADSET ACCESS.';
+      this.vrError = phonePreview
+        ? this.language === 'zh-TW'
+          ? '無法啟用動態鏡頭。請在瀏覽器設定中允許動作與方向存取，然後再試一次。'
+          : 'MOTION CAMERA COULD NOT START. ALLOW MOTION AND ORIENTATION ACCESS IN YOUR BROWSER, THEN RETRY.'
+        : this.language === 'zh-TW'
+          ? '無法開啟 VR。請在 Quest Browser 中重試，並允許頭戴式裝置存取權。'
+          : 'VR COULD NOT START. RETRY IN QUEST BROWSER AND ALLOW HEADSET ACCESS.';
     }
     this.syncVrUi();
     return entered;
@@ -2038,7 +2081,8 @@ export class App {
       requested: this.vrRequested,
       active: this.vrActive,
       localPreview: this.isLocalVrPreview(),
-      desktopPreview: this.usesVrSimulation(),
+      desktopPreview: this.usesVrSimulation() && !this.usesPhoneVrSimulation(),
+      phonePreview: this.usesPhoneVrSimulation(),
       resumePending: this.vrResumePending,
       entryHidden: this.root.querySelector<HTMLElement>('[data-vr-entry]')?.hidden,
       resumeHidden: this.root.querySelector<HTMLButtonElement>('[data-vr-resume]')?.hidden,
