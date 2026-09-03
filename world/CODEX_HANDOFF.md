@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-03 · desktop VR eye height and live projector follow-up published · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-09-03 · desktop VR exit control alignment ready to publish · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
@@ -8,7 +8,23 @@ Last updated: 2026-09-03 · desktop VR eye height and live projector follow-up p
 
 ---
 
-## 0. READ THIS FIRST — desktop VR eye height and live YouTube published
+## 0. READ THIS FIRST — desktop VR exit control alignment
+
+The owner's desktop VR screenshot showed `離開 VR 預覽` sharing the header row
+with, and covering, the top-right connection-status box. The control now stays
+right-aligned but uses the same top coordinate as the left-side venue label:
+65px in the ordinary desktop layout and 76px in the existing narrow/coarse
+breakpoint. This aligns its top edge with `我的廣場` while leaving the connection
+status unobstructed. Safe-area inset support remains in both values.
+
+This is a CSS-only positioning follow-up. It does not change WebXR sessions,
+camera height, projector/video behavior, screen or avatar geometry, or the
+accepted exit-to-YouTube/resume-VR flow. All 43 server tests, TypeScript, the
+Vite production build and `git diff --check` pass. The owner explicitly approved
+publication on 2026-09-03. The beta payload references `index-Du5ZjJto.js`,
+`index-BpMAefXC.css` and the unchanged `three-Bb7Az0mP.js` runtime bundle.
+
+## 0a. Desktop VR eye height and live YouTube published
 
 The owner's desktop VR screenshots showed the preview camera below the avatar's
 established first-person eye line and WebGL title posters in place of the live
@@ -41,7 +57,7 @@ The owner approved publication on 2026-09-03. The beta payload references
 `index-7-GEqjQU.js`, `index-CfFYu65j.css` and the unchanged
 `three-Bb7Az0mP.js` runtime bundle.
 
-## 0a. Desktop VR access published
+## 0b. Desktop VR access published
 
 The owner asked to use the VR mode from a desktop so they can verify it without
 a Quest. A fine-pointer, hover-capable browser now receives an enabled
@@ -58,7 +74,7 @@ the TypeScript/Vite build and `git diff --check` passed. The owner approved
 publication on 2026-09-03; the beta payload references `index-Dj_j6JGO.js`,
 the unchanged `index-Dg2SpIlQ.css` and `three-Bb7Az0mP.js` bundles.
 
-## 0b. VR option visible on every gate, published
+## 0c. VR option visible on every gate, published
 
 The owner opened the published beta on a desktop browser and reasonably thought
 VR was absent: the capability check hid the entire option when `immersive-vr`
@@ -73,7 +89,7 @@ The owner approved publication on 2026-09-03. Its beta payload references
 `index-CeN7ts66.js`, `index-Dg2SpIlQ.css` and the unchanged
 `three-Bb7Az0mP.js` runtime bundle.
 
-## 0c. Quest/WebXR beta published
+## 0d. Quest/WebXR beta published
 
 The owner asked whether the festival could run on Meta Quest and chose YouTube
 embeds as the only screening source. They accepted this product compromise:
@@ -125,7 +141,7 @@ The owner approved publication on 2026-09-03. The beta payload references
 `index-D73Tb99w.js`, `index-BTLDz2Xy.css` and `three-Bb7Az0mP.js`. Real Quest
 headset behavior still requires the device QA listed above.
 
-## 0d. All-avatar foreground follow-up published
+## 0e. All-avatar foreground follow-up published
 
 The owner's live iPhone screenshots showed both resident DJs hidden by the CSS3D
 public-screening layer, the basement console hanging beyond its platform, and the

@@ -230,7 +230,9 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 }
 .vr-preview-exit {
   position: fixed; z-index: 18; right: max(18px, env(safe-area-inset-right));
-  top: max(18px, env(safe-area-inset-top)); min-height: 44px; border: 2px solid var(--paper);
+  /* Share the venue label's row instead of covering the connection status in
+     the header. The narrow-layout value is kept in sync below. */
+  top: calc(65px + env(safe-area-inset-top)); min-height: 44px; border: 2px solid var(--paper);
   padding: 0 18px; color: var(--paper); background: rgba(8,9,10,.86);
   font: 900 14px var(--condensed); letter-spacing: .05em; cursor: pointer;
 }
@@ -1099,6 +1101,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .vr-entry { padding: 20px; }
   .vr-entry h2 { font-size: 40px; }
   .vr-entry > div { grid-template-columns: 1fr; }
+  .vr-preview-exit { top: calc(76px + env(safe-area-inset-top)); }
   .world-status { top: 76px; left: 14px; }
   .inventory-status { left: 14px; top: 153px; }
   .objective-count { left: 14px; top: 185px; }
