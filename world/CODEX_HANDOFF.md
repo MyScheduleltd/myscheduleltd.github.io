@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-03 · desktop VR exit control alignment ready to publish · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-09-03 · desktop VR exit control alignment published · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
@@ -22,7 +22,10 @@ camera height, projector/video behavior, screen or avatar geometry, or the
 accepted exit-to-YouTube/resume-VR flow. All 43 server tests, TypeScript, the
 Vite production build and `git diff --check` pass. The owner explicitly approved
 publication on 2026-09-03. The beta payload references `index-Du5ZjJto.js`,
-`index-BpMAefXC.css` and the unchanged `three-Bb7Az0mP.js` runtime bundle.
+`index-BpMAefXC.css` and the unchanged `three-Bb7Az0mP.js` runtime bundle. The
+custom domain was then opened with a cache-busting release query and confirmed
+to serve those exact new JavaScript and CSS assets; the published desktop VR
+flow exposed both `我的廣場` and `離開 VR 預覽` with the updated stylesheet.
 
 ## 0a. Desktop VR eye height and live YouTube published
 
