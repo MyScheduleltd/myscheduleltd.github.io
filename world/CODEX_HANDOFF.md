@@ -89,8 +89,11 @@ of the rig. Outside VR the rig is at the origin and the two agree. Inside VR the
 rig carries the whole walk while the camera sits at the origin of it — so every
 `this.camera.position` read was measuring from the middle of the map. That put
 each screen's range, its facing-side test and the water's camera uniform in the
-wrong place the moment VR was entered; the club's screen, watched from −z, could
-never pass `cameraOnViewingSide` at all. Those reads now use
+wrong place the moment VR was entered. `cameraOnViewingSide` was the clearest
+case: with `camera.position.z` pinned at 0 it compared the **map origin** against
+each screen, so The Rooftop's, at z = +19.9 and watched from the south, could
+never pass it at all, while the three at negative z passed from either side —
+whichever side the visitor was really standing on. Those reads now use
 `camera.getWorldPosition(this.cameraWorldPosition)`. **Anything new that measures
 from the eye must do the same.**
 
