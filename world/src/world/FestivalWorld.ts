@@ -85,6 +85,8 @@ export interface AvatarPalette {
 
 export interface WorldSnapshot {
   cameraMode: CameraMode;
+  /** True after an active VR visitor has turned their head/view far enough to look around. */
+  vrLookedAround: boolean;
   location: string;
   dayNight: DayNightState;
   playerState: PlayerState;
@@ -1187,6 +1189,14 @@ export class FestivalWorld {
   ];
   private readonly programmeBoardCorners = Array.from({ length: 8 }, () => new THREE.Vector3());
   private readonly cameraDirection = new THREE.Vector3();
+  /**
+   * Where the eye actually is. `camera.position` is local to `xrRig`, and in a
+   * VR preview the rig carries the whole walk while the camera sits at the
+   * origin of it — so anything measured from `camera.position` in VR is
+   * measured from the middle of the map. That put every screen's range, facing
+   * side and water reading in the wrong place the moment VR was entered.
+   */
+  private readonly cameraWorldPosition = new THREE.Vector3();
   private readonly cameraToProjector = new THREE.Vector3();
   private readonly clock = new THREE.Clock();
   private readonly xrPreferred: boolean;
@@ -1196,14 +1206,22 @@ export class FestivalWorld {
   private xrActive = false;
   private xrSimulated = false;
   private xrYaw = 0;
+  private xrHomeYaw = 0;
   private xrSimPitch = 0;
+  private readonly xrYawAxis = new THREE.Vector3(0, 1, 0);
+  private xrLookedAround = false;
+  private xrLookReference?: THREE.Quaternion;
+  private readonly xrLookPose = new THREE.Quaternion();
   private phoneOrientationEnabled = false;
   private phoneOrientationReceived = false;
   private phoneOrientationPermission: PhoneOrientationPermission = 'idle';
   private phoneOrientationSamples = 0;
-  private phoneOrientationReferenceInverse?: THREE.Quaternion;
+  private phoneOrientationCalibrated = false;
+  private phoneOrientationYawRef = 0;
   private readonly phoneOrientationTarget = new THREE.Quaternion();
   private readonly phoneOrientationRaw = new THREE.Quaternion();
+  private readonly phoneOrientationHeading = new THREE.Quaternion();
+  private readonly phoneOrientationProbe = new THREE.Vector3();
   private readonly phoneOrientationScreen = new THREE.Quaternion();
   private readonly phoneOrientationEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   private readonly phoneOrientationScreenAxis = new THREE.Vector3(0, 0, 1);
@@ -1581,20 +1599,61 @@ export class FestivalWorld {
     this.phoneOrientationScreen.setFromAxisAngle(this.phoneOrientationScreenAxis, -screenAngle);
     this.phoneOrientationRaw.multiply(this.phoneOrientationScreen).normalize();
 
-    if (!this.phoneOrientationReferenceInverse) {
-      this.phoneOrientationReferenceInverse = this.phoneOrientationRaw.clone().invert();
-      this.phoneOrientationTarget.identity();
-    } else {
-      // The first valid pose is forward. Only the change from that pose moves
-      // the virtual head, so compass heading and the way the phone was held at
-      // permission time do not throw the visitor sideways.
-      this.phoneOrientationTarget
-        .copy(this.phoneOrientationReferenceInverse)
-        .multiply(this.phoneOrientationRaw)
-        .normalize();
-    }
+    if (!this.phoneOrientationCalibrated) this.calibratePhoneOrientation();
+    else this.updatePhoneOrientationTarget();
     this.phoneOrientationReceived = true;
     this.phoneOrientationSamples += 1;
+  }
+
+  /**
+   * The compass heading of a pose, in the same convention as `xrYaw`.
+   *
+   * Only a heading is ever removed from the sensor. Pitch and roll come from
+   * gravity and are absolute: rebasing the whole quaternion, which is what
+   * `reference^-1 * pose` does, carries whatever tilt the phone happened to
+   * have when it was calibrated into every later view, so the horizon leans
+   * further the more the visitor turns. That skew is the deviation between the
+   * picture and the device.
+   */
+  private wrapAngle(radians: number): number {
+    return Math.atan2(Math.sin(radians), Math.cos(radians));
+  }
+
+  private headingOf(quaternion: THREE.Quaternion): number {
+    this.phoneOrientationProbe.set(0, 0, -1).applyQuaternion(quaternion);
+    const horizontal = this.phoneOrientationProbe.x ** 2 + this.phoneOrientationProbe.z ** 2;
+    if (horizontal < 1e-6) {
+      // Aimed straight at the sky or the floor, where forward carries no
+      // heading at all. The top of the view is horizontal in exactly that
+      // case, so it carries the heading instead.
+      const aimedUp = this.phoneOrientationProbe.y > 0;
+      this.phoneOrientationProbe.set(0, 1, 0).applyQuaternion(quaternion);
+      if (aimedUp) this.phoneOrientationProbe.negate();
+    }
+    return Math.atan2(-this.phoneOrientationProbe.x, -this.phoneOrientationProbe.z);
+  }
+
+  /** Make the pose in hand forward, without disturbing the level of the world. */
+  private calibratePhoneOrientation(): void {
+    this.phoneOrientationYawRef = this.headingOf(this.phoneOrientationRaw);
+    this.phoneOrientationCalibrated = true;
+    this.updatePhoneOrientationTarget();
+  }
+
+  /**
+   * The pose the camera is set to: the device's own orientation, turned about
+   * the world's vertical axis by the one constant that lines the calibration
+   * heading up with the direction the visitor entered VR facing. Because the
+   * correction is a pure world yaw applied before the sensor pose, the sensor's
+   * axes are never skewed and every degree of turn, tilt and roll reaches the
+   * view one for one.
+   */
+  private updatePhoneOrientationTarget(): void {
+    this.phoneOrientationHeading.setFromAxisAngle(this.xrYawAxis, this.xrHomeYaw - this.phoneOrientationYawRef);
+    this.phoneOrientationTarget
+      .copy(this.phoneOrientationHeading)
+      .multiply(this.phoneOrientationRaw)
+      .normalize();
   }
 
   private readonly phoneOrientationChanged = (event: DeviceOrientationEvent): void => {
@@ -1603,7 +1662,8 @@ export class FestivalWorld {
   };
 
   private readonly resetPhoneOrientationReference = (): void => {
-    this.phoneOrientationReferenceInverse = undefined;
+    this.phoneOrientationCalibrated = false;
+    this.phoneOrientationYawRef = 0;
     this.phoneOrientationReceived = false;
     this.phoneOrientationTarget.identity();
   };
@@ -1635,25 +1695,29 @@ export class FestivalWorld {
     this.phoneOrientationSamples = 0;
     this.resetPhoneOrientationReference();
     window.addEventListener('deviceorientation', this.phoneOrientationChanged, true);
-    window.addEventListener('orientationchange', this.resetPhoneOrientationReference);
-    window.screen.orientation?.addEventListener('change', this.resetPhoneOrientationReference);
     return true;
   }
 
   private stopPhoneOrientation(): void {
     window.removeEventListener('deviceorientation', this.phoneOrientationChanged, true);
-    window.removeEventListener('orientationchange', this.resetPhoneOrientationReference);
-    window.screen.orientation?.removeEventListener('change', this.resetPhoneOrientationReference);
     this.phoneOrientationEnabled = false;
     this.phoneOrientationReceived = false;
-    this.phoneOrientationReferenceInverse = undefined;
+    this.phoneOrientationCalibrated = false;
+    this.phoneOrientationYawRef = 0;
     this.phoneOrientationTarget.identity();
   }
 
   private beginXrPresentation(simulated: boolean): void {
     this.camera.getWorldDirection(this.cameraDirection);
     this.xrYaw = Math.atan2(-this.cameraDirection.x, -this.cameraDirection.z);
+    this.xrHomeYaw = this.xrYaw;
     this.xrSimPitch = 0;
+    // The heading captured a moment ago in `enablePhoneOrientation` is the one
+    // the sensor was calibrated against; entering VR re-fixes forward, so any
+    // pose taken before this point has to be rebased against the new home.
+    if (this.phoneOrientationCalibrated) this.updatePhoneOrientationTarget();
+    this.xrLookedAround = false;
+    this.xrLookReference = undefined;
     this.xrSimulated = simulated;
     this.xrRig.rotation.y = this.xrYaw;
     this.camera.position.set(0, simulated ? AVATAR_EYE_HEIGHT : 0, 0);
@@ -1690,7 +1754,11 @@ export class FestivalWorld {
         // subsequent turn reaches the camera without needing physical sensors
         // in the desktop review browser.
         this.applyPhoneOrientation(18, 72, 6, 0);
-        this.applyPhoneOrientation(46, 58, -9, 0);
+        window.setTimeout(() => {
+          if (this.xrActive && this.phoneOrientationEnabled) {
+            this.applyPhoneOrientation(46, 58, -9, 0);
+          }
+        }, 120);
       }
       this.onXrSessionChange?.(true);
       return true;
@@ -1736,6 +1804,39 @@ export class FestivalWorld {
     } catch {
       this.xrEnded();
     }
+  }
+
+  /**
+   * Level the preview: whichever way the device is pointed now becomes the
+   * direction the visitor entered VR facing.
+   *
+   * A phone's heading is the one part of its pose that has no fixed meaning —
+   * it drifts on iOS, where it is relative to nothing in particular, and jumps
+   * on Android, where a magnetometer keeps correcting it. This is the visitor's
+   * own handle on that, and it moves nothing else: pitch and roll still come
+   * straight from gravity, so the horizon cannot be knocked over with it.
+   */
+  recenterVrView(): boolean {
+    if (!this.xrActive || !this.xrSimulated) return false;
+    this.xrLookReference = undefined;
+    if (this.phoneOrientationEnabled) {
+      if (!this.phoneOrientationSamples) {
+        // Nothing has come back from the sensor yet, so there is no pose to
+        // make forward. Let the first one that arrives calibrate instead.
+        this.resetPhoneOrientationReference();
+        return true;
+      }
+      this.calibratePhoneOrientation();
+      this.phoneOrientationReceived = true;
+      this.xrRig.rotation.y = 0;
+      this.camera.quaternion.copy(this.phoneOrientationTarget);
+      return true;
+    }
+    this.xrYaw = this.xrHomeYaw;
+    this.xrSimPitch = 0;
+    this.xrRig.rotation.y = this.xrYaw;
+    this.camera.rotation.set(0, 0, 0);
+    return true;
   }
 
   private readonly xrEnded = (): void => {
@@ -1833,10 +1934,21 @@ export class FestivalWorld {
       phoneMotion: {
         enabled: this.phoneOrientationEnabled,
         permission: this.phoneOrientationPermission,
-        calibrated: Boolean(this.phoneOrientationReferenceInverse),
+        calibrated: this.phoneOrientationCalibrated,
         samples: this.phoneOrientationSamples,
         targetQuaternion: this.phoneOrientationTarget.toArray().map((value) => Number(value.toFixed(4))),
+        cameraQuaternion: this.camera.quaternion.toArray().map((value) => Number(value.toFixed(4))),
+        headingOffset: Number((this.xrHomeYaw - this.phoneOrientationYawRef).toFixed(4)),
+        headingError: this.phoneOrientationCalibrated
+          ? Number(this.wrapAngle(this.headingOf(this.phoneOrientationTarget)
+            - this.headingOf(this.phoneOrientationRaw) - this.xrHomeYaw + this.phoneOrientationYawRef).toFixed(4))
+          : null,
+        mapping: 'yaw-rebased-device-pose',
       },
+      simYaw: Number(this.xrYaw.toFixed(4)),
+      simPitch: Number(this.xrSimPitch.toFixed(4)),
+      homeYaw: Number(this.xrHomeYaw.toFixed(4)),
+      lookedAround: this.xrLookedAround,
       renderLoop: 'WebGLRenderer.setAnimationLoop',
       seat: this.activeSeat?.id ?? null,
     };
@@ -4616,6 +4728,7 @@ export class FestivalWorld {
     this.cameraPointerY = event.clientY;
     if (Math.abs(deltaX) > 180 || Math.abs(deltaY) > 180) return;
     if (this.xrActive && this.xrSimulated) {
+      if (this.phoneOrientationEnabled && this.phoneOrientationReceived) return;
       this.xrYaw -= deltaX * 0.0042;
       this.xrSimPitch = THREE.MathUtils.clamp(this.xrSimPitch - deltaY * 0.0035, -0.75, 0.75);
       return;
@@ -8445,6 +8558,7 @@ export class FestivalWorld {
     const visibleProjectorScissors = new Map<VenueKey, { x: number; y: number; width: number; height: number }>();
     const immersiveXr = this.xrActive && !this.xrSimulated;
     const boardScissor = immersiveXr ? undefined : this.programmeBoardScissor();
+    this.camera.getWorldPosition(this.cameraWorldPosition);
     this.reviewSuppressedProjectors = [];
     for (const [venue, projector] of this.projectors) {
       if (immersiveXr) {
@@ -8454,7 +8568,7 @@ export class FestivalWorld {
       const screen = venueScreens[venue];
       this.projectorWorldPosition.set(...screen.position);
       this.camera.getWorldDirection(this.cameraDirection);
-      this.cameraToProjector.subVectors(this.projectorWorldPosition, this.camera.position);
+      this.cameraToProjector.subVectors(this.projectorWorldPosition, this.cameraWorldPosition);
       this.projectorNdc.copy(this.projectorWorldPosition).project(this.camera);
       const screenIsInFront = this.cameraToProjector.dot(this.cameraDirection) > 0;
       const screenTouchesViewport = Math.abs(this.projectorNdc.x) < 1.9 &&
@@ -8499,7 +8613,7 @@ export class FestivalWorld {
       // can put the camera behind a screen while the avatar remains in front;
       // the CSS backface then disappears but the foreground mask keeps drawing,
       // turning the black rear panel into a clipped portal through the venue.
-      const cameraOnViewingSide = (this.camera.position.z - screen.position[2]) * screen.facing > 0.02;
+      const cameraOnViewingSide = (this.cameraWorldPosition.z - screen.position[2]) * screen.facing > 0.02;
       const wantsVisible = Boolean(projector.iframe) && roomMatches && withinRange &&
         cameraOnViewingSide &&
         screenIsInFront && screenTouchesViewport;
@@ -8564,6 +8678,7 @@ export class FestivalWorld {
     if (now - this.lastSnapshotAt > 200) {
       this.onSnapshot({
         cameraMode: this.cameraMode,
+        vrLookedAround: this.xrLookedAround,
         location: this.locationName(),
         dayNight,
         playerState: this.playerState,
@@ -8609,11 +8724,12 @@ export class FestivalWorld {
     const stylised = this.stylizedWater?.visible !== false && this.graphicsMode === 'normal';
     // Height of the eye above the water, not the avatar's: the camera is what
     // decides how much of the screen these sheets cover.
-    const eyeAboveWater = this.camera.position.y - 0.14;
+    this.camera.getWorldPosition(this.cameraWorldPosition);
+    const eyeAboveWater = this.cameraWorldPosition.y - 0.14;
     // Only when the eye is genuinely grazing the surface. The swimming camera
     // is now held well above that, so the sea keeps all of its sheets — and its
     // glitter — at the height an attendee actually sees it from.
-    const nearSurface = eyeAboveWater < 1.5 && this.camera.position.z < -40;
+    const nearSurface = eyeAboveWater < 1.5 && this.cameraWorldPosition.z < -40;
     if (this.waterVolume) {
       // The body below the surface. From above it gives the sea its depth;
       // from the waterline it is edge-on and doubles the fill for nothing,
@@ -8636,7 +8752,8 @@ export class FestivalWorld {
     const material = this.stylizedWaterMaterial;
     if (!material || !this.stylizedWater?.visible) return;
     material.uniforms.uTime.value = elapsed;
-    (material.uniforms.uCamXZ.value as THREE.Vector2).set(this.camera.position.x, this.camera.position.z);
+    this.camera.getWorldPosition(this.cameraWorldPosition);
+    (material.uniforms.uCamXZ.value as THREE.Vector2).set(this.cameraWorldPosition.x, this.cameraWorldPosition.z);
 
     const state = this.dayNight.getWaterReflectionState();
     const night = state.moon.strength > state.sun.strength;
@@ -10776,15 +10893,30 @@ export class FestivalWorld {
     if (this.xrActive) {
       const floorY = this.groundHeightAt(this.player.position.x, this.player.position.z, this.player.position.y) - AVATAR_GROUND_Y;
       this.xrRig.position.set(this.player.position.x, floorY, this.player.position.z);
-      this.xrRig.rotation.y = this.xrYaw;
       if (this.xrSimulated) {
         this.camera.position.set(0, AVATAR_EYE_HEIGHT, 0);
         if (this.phoneOrientationEnabled && this.phoneOrientationReceived) {
-          const motionSmoothing = 1 - Math.exp(-delta * 13);
-          this.camera.quaternion.slerp(this.phoneOrientationTarget, motionSmoothing);
+          // The operating system has already fused and filtered these poses.
+          // A second easing layer here only made the picture trail the phone,
+          // which reads as the view disagreeing with the device, so the latest
+          // pose is applied whole. The rig stays unrotated because the heading
+          // correction is already inside the target; a rig yaw on top of it
+          // would turn the sensor's own axes along with the visitor.
+          this.xrRig.rotation.y = 0;
+          this.camera.quaternion.copy(this.phoneOrientationTarget);
         } else {
+          this.xrRig.rotation.y = this.xrYaw;
           this.camera.rotation.set(this.xrSimPitch, 0, 0);
         }
+      } else {
+        this.xrRig.rotation.y = this.xrYaw;
+      }
+      const xrView = this.xrSimulated ? this.camera : this.renderer.xr.getCamera();
+      xrView.getWorldQuaternion(this.xrLookPose);
+      if (!this.xrLookReference) {
+        this.xrLookReference = this.xrLookPose.clone();
+      } else if (!this.xrLookedAround && this.xrLookReference.angleTo(this.xrLookPose) >= THREE.MathUtils.degToRad(15)) {
+        this.xrLookedAround = true;
       }
       this.player.visible = false;
       return;

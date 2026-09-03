@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-03 · regular-phone motion VR preview ready to publish · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-09-04 · phone VR gyroscope tracking, calibration and return-to-VR · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
@@ -8,7 +8,123 @@ Last updated: 2026-09-03 · regular-phone motion VR preview ready to publish · 
 
 ---
 
-## 0. READ THIS FIRST — regular-phone motion VR preview
+## 0. READ THIS FIRST — phone VR tracks the gyroscope one for one
+
+The phone preview's camera now follows the device exactly: turn the phone thirty
+degrees and the view turns thirty degrees, tip it and the view tips with it, and
+the horizon stays level whatever angle the phone was held at when it started.
+A `CALIBRATE MOTION` / `校準動態鏡頭` control sits under `EXIT VR PREVIEW`, and
+leaving the preview — or turning the invitation down — now leaves `RESUME VR` on
+screen instead of ending VR for the visit.
+
+### What was wrong
+
+The fused sensor pose was being rebased against the **whole** calibration
+quaternion (`pose * reference^-1`), then post-multiplied by the entry heading.
+Two things followed, and both were visible:
+
+- **The phone's tilt never reached the picture.** Whatever pitch and roll the
+  phone had at calibration was subtracted from every later pose, so the view
+  came out permanently level: measured, pitch and roll read `0.00` at every
+  attitude. Pitch and roll come from gravity and are *absolute* — there is
+  nothing in them to rebase.
+- **Tipping the phone moved the view the wrong way.** Tipping thirty degrees
+  toward the floor moved the view **up** by 28.9°. That is the "not quite
+  accurate" report: the picture and the hand disagreed about which way was down.
+
+### What it does now
+
+Only the *heading* is rebased, and only ever by one constant world yaw:
+
+```
+camera = Ryaw(entryHeading − calibrationHeading) · devicePose
+```
+
+`devicePose` is three.js's own `DeviceOrientationControls` composition, unchanged
+(`YXZ(beta, alpha, −gamma)`, then `Rx(−90°)`, then `Rz(−screenAngle)`). Because
+the correction is a pure world yaw applied **before** it, the sensor's axes are
+never skewed, so every degree of turn, tilt and roll reaches the view one for
+one, and the horizon cannot lean. `headingOf()` reads a heading off a pose, with
+an up-vector fallback for a phone aimed straight at the sky or the floor.
+
+`xrRig.rotation.y` is held at 0 while the sensor is driving, because the heading
+correction is already inside the target; a rig yaw on top of it would turn the
+sensor's own frame along with the visitor. The per-frame `slerp` is gone — the
+operating system has already fused and filtered these poses, and a second easing
+layer only made the picture trail the phone.
+
+Turning the phone into landscape no longer resets the reference. The
+`screenAngle` term is that compensation, and resetting on top of it threw the
+heading away and spun the world for no reason the visitor had caused.
+
+### Calibrate / recentre
+
+`recenterVrView()` makes the pose in hand forward. On a phone it re-reads the
+heading only, so pitch and roll survive it — measured, calibrating from a pose
+pitched −38.95° left the pitch at −38.97° and moved the heading to exactly the
+entry heading. Without a sensor it returns the keyboard-and-mouse preview to its
+entry yaw and level pitch. The button is hidden outside a simulated session: a
+real headset recentres itself.
+
+A phone's heading is the one part of its pose with no fixed meaning — relative
+and drifting on iOS, magnetometer-corrected and jumpy on Android — so this is
+the visitor's own handle on it.
+
+### Getting back into VR
+
+`vrResumePending` is what puts `RESUME VR` / `回到 VR` on screen, and it is the
+only route back in: the VR checkbox lives at the sign-in gate, on the far side
+of a session the visitor is in the middle of. It is now set by **both** exits —
+`EXIT VR PREVIEW` and `STAY IN BROWSER` — each with a toast saying so. Resuming
+re-opts into VR (`vrRequested` and the session key), so the rest of the
+interface does not go on believing they left.
+
+`RESUME VR` sits above `PASS` rather than on top of it, and `PASS` is now z-index
+31 over the drawer's 30, so the drawer stays the frontmost menu.
+
+### The camera's position is not `camera.position` in VR
+
+`xrRig.add(this.camera)` runs at construction, so the camera is *always* a child
+of the rig. Outside VR the rig is at the origin and the two agree. Inside VR the
+rig carries the whole walk while the camera sits at the origin of it — so every
+`this.camera.position` read was measuring from the middle of the map. That put
+each screen's range, its facing-side test and the water's camera uniform in the
+wrong place the moment VR was entered; the club's screen, watched from −z, could
+never pass `cameraOnViewingSide` at all. Those reads now use
+`camera.getWorldPosition(this.cameraWorldPosition)`. **Anything new that measures
+from the eye must do the same.**
+
+### Verified
+
+- `?review=vr-phone`, driving real `deviceorientation` events into the live
+  world: `alpha +30/+90/+180/−90` moved the heading by exactly `+30.00 / +90.00 /
+  +180.00 / −90.00`, with pitch and roll unchanged to the hundredth of a degree;
+  `beta` and `gamma` moved pitch and roll with the correct sign and magnitude;
+  returning to the first pose returned the exact first attitude, with no drift.
+  `headingError` — the fixture's own check that the applied pose is the device
+  pose plus one constant — read `0` throughout.
+- Calibrate from two unrelated poses both landed the heading on the entry
+  heading and left pitch and roll alone.
+- `EXIT VR PREVIEW` → `RESUME VR` → back in VR, and `STAY IN BROWSER` →
+  `RESUME VR` → back in VR, both with the sensor re-enabled and re-calibrated.
+- `?review=vr-screen` on the keyboard-and-mouse path: one WebGL context, no
+  posters, the Shore iframe mounted and the music video playing on the in-world
+  screen, eye height 2.9 matching the avatar's POV. Dragging turned the view
+  (`simYaw −1.61`, `simPitch −0.34`) and `RECENTER VIEW` returned it to
+  `0 / 0` with the screen square in front.
+- 43/43 server tests, `tsc --noEmit`, the Vite production build and
+  `git diff --check` all pass.
+
+`xrReviewSnapshot()` now also reports `simYaw`, `simPitch` and `homeYaw`, because
+"did RECENTER move it" could previously only be eyeballed off a screenshot.
+
+**Still unconfirmed:** real iPhone and Android sensors and their permission UI.
+Everything above was measured with synthetic `deviceorientation` events, which
+exercise the whole path from the listener to the camera but cannot prove what a
+physical phone reports.
+
+## 0-prev. Regular-phone motion VR preview
+
 
 Regular phones can now select `PHONE MOTION VR` / `手機動態 VR` at the sign-in
 gate when the page is in a secure context and the browser exposes device

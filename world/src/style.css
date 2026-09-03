@@ -218,23 +218,34 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
   transform: translate(-50%, -50%); border: 2px solid var(--paper); padding: 24px;
   color: var(--paper); background: rgba(8,9,10,.95); box-shadow: 14px 14px 0 rgba(169,28,36,.72);
 }
-.vr-entry[hidden], .vr-resume[hidden], .vr-preview-exit[hidden], .check-field--vr[hidden] { display: none; }
+.vr-entry[hidden], .vr-resume[hidden], .vr-preview-exit[hidden], .vr-recenter[hidden], .check-field--vr[hidden] { display: none; }
 .vr-entry h2 { margin: 0; font: 900 48px/.9 var(--condensed); }
 .vr-entry p:not(.eyebrow) { margin: 14px 0 20px; font-size: 13px; line-height: 1.5; }
 .vr-entry > div { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .vr-entry .button--secondary { color: var(--paper); border-color: var(--paper); }
 .vr-resume {
   position: fixed; z-index: 18; right: max(18px, env(safe-area-inset-right));
-  bottom: max(18px, env(safe-area-inset-bottom)); min-height: 52px; border: 2px solid var(--paper);
+  /* PASS owns the bottom-right corner and must remain tappable. The resume
+     prompt sits directly above it instead of competing for the same pixels. */
+  bottom: calc(76px + env(safe-area-inset-bottom)); min-height: 52px; border: 2px solid var(--paper);
   padding: 0 22px; color: white; background: var(--red); font: 900 17px var(--condensed); cursor: pointer;
 }
 .vr-preview-exit {
-  position: fixed; z-index: 18; right: calc(16px + env(safe-area-inset-right));
+  /* This is an escape hatch for the world, not a modal action. Keep it above
+     the rendered venue but below PASS, panels and screening controls so it
+     cannot cover or intercept the interface opened over the world. */
+  position: fixed; z-index: 5; right: calc(16px + env(safe-area-inset-right));
   /* Share the venue label's row instead of covering the connection status in
      the header. The narrow-layout value is kept in sync below. */
   top: calc(65px + env(safe-area-inset-top)); min-height: 44px; border: 2px solid var(--paper);
   padding: 0 18px; color: var(--paper); background: rgba(8,9,10,.86);
   font: 900 14px var(--condensed); letter-spacing: .05em; cursor: pointer;
+}
+.vr-recenter {
+  position: fixed; z-index: 5; right: calc(16px + env(safe-area-inset-right));
+  top: calc(117px + env(safe-area-inset-top)); min-height: 38px; border: 1px solid var(--paper);
+  padding: 0 14px; color: var(--paper); background: rgba(8,9,10,.76);
+  font: 900 12px var(--condensed); letter-spacing: .05em; cursor: pointer;
 }
 .public-projector {
   width: 1600px; height: 900px; overflow: hidden; pointer-events: none; backface-visibility: hidden;
@@ -605,12 +616,14 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 .objective-count strong { color: #ff5264; font: inherit; }
 .objective-count:hover, .objective-count:focus-visible { border-color: #ff5264; background: rgba(8,9,10,.82); }
 .pass-toggle {
-  position: fixed; z-index: 8; right: 16px; bottom: 16px; width: 92px; height: 44px; display: flex; justify-content: space-between; align-items: center;
+  position: fixed; z-index: 31; right: 16px; bottom: 16px; width: 92px; height: 44px; display: flex; justify-content: space-between; align-items: center;
   padding: 0 15px; border: 1px solid var(--paper); color: var(--paper); background: rgba(8,9,10,.85); font: 800 15px var(--condensed); cursor: pointer;
 }
 .pass-toggle:hover { background: var(--red); }
 .festival-pass {
-  position: fixed; z-index: 7; right: 22px; bottom: 81px; width: min(320px, calc(100vw - 44px));
+  /* PASS is the global navigation drawer. It must remain the frontmost menu,
+     including when it is opened over an already-open settings or quest panel. */
+  position: fixed; z-index: 30; right: 22px; bottom: 81px; width: min(320px, calc(100vw - 44px));
   padding: 12px; color: var(--ink); background: var(--paper); box-shadow: 14px 14px 0 rgba(0,0,0,.6);
 }
 .festival-pass[hidden], .panel[hidden], .interaction-toast[hidden] { display: none; }
@@ -1102,6 +1115,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .vr-entry h2 { font-size: 40px; }
   .vr-entry > div { grid-template-columns: 1fr; }
   .vr-preview-exit { right: calc(14px + env(safe-area-inset-right)); top: calc(76px + env(safe-area-inset-top)); }
+  .vr-recenter { right: calc(14px + env(safe-area-inset-right)); top: calc(128px + env(safe-area-inset-top)); }
   .world-status { top: 76px; left: 14px; }
   .inventory-status { left: 14px; top: 153px; }
   .objective-count { left: 14px; top: 185px; }
@@ -1484,7 +1498,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   /* The header did not allow for the notch and the pass did, so on a phone
      with one the two were measured from different edges and never lined up.
      Both sit on the same inset now. */
-  .vr-preview-exit { right: calc(10px + env(safe-area-inset-right)); }
+  .vr-preview-exit, .vr-recenter { right: calc(10px + env(safe-area-inset-right)); }
   .world-header { padding: 4px calc(10px + env(safe-area-inset-right)) 4px calc(10px + env(safe-area-inset-left)); }
   /* A panel keeping its upright margins on a screen this short was left about
      two hundred pixels tall with its own input cut off the bottom. It takes the

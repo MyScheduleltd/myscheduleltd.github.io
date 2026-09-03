@@ -927,8 +927,11 @@ export class App {
             <button class="button button--secondary" type="button" data-vr-dismiss>${zh ? '留在瀏覽器' : 'STAY IN BROWSER'}</button>
           </div>
         </section>
-        <button class="vr-resume" type="button" data-vr-resume hidden>${zh ? '回到 VR 座位' : 'RESUME VR'}</button>
+        <button class="vr-resume" type="button" data-vr-resume hidden>${zh ? '回到 VR' : 'RESUME VR'}</button>
         <button class="vr-preview-exit" type="button" data-vr-preview-exit hidden>${zh ? '離開 VR 預覽' : 'EXIT VR PREVIEW'}</button>
+        <button class="vr-recenter" type="button" data-vr-recenter hidden>${phoneVrPreview
+          ? (zh ? '校準動態鏡頭' : 'CALIBRATE MOTION')
+          : (zh ? '重置 VR 視角' : 'RECENTER VIEW')}</button>
         <header class="world-header">
           <div class="world-brand"><img class="brand-logo" src="${companyLogoUrl}" alt="我的檔期" /><span>MYSCHEDULE</span></div>
           <div class="status-cluster" id="connection-status" data-status="connecting">
@@ -1620,12 +1623,24 @@ export class App {
       this.openPublicScreenFullscreen();
     });
     this.root.querySelector<HTMLButtonElement>('[data-vr-enter]')?.addEventListener('click', () => { void this.enterVr(); });
-    this.root.querySelector<HTMLButtonElement>('[data-vr-resume]')?.addEventListener('click', () => { void this.resumeVrFromYoutube(); });
-    this.root.querySelector<HTMLButtonElement>('[data-vr-preview-exit]')?.addEventListener('click', () => { void this.world?.exitVr(); });
+    this.root.querySelector<HTMLButtonElement>('[data-vr-resume]')?.addEventListener('click', () => { void this.resumeVr(); });
+    this.root.querySelector<HTMLButtonElement>('[data-vr-preview-exit]')?.addEventListener('click', () => { void this.exitVrPreview(); });
+    this.root.querySelector<HTMLButtonElement>('[data-vr-recenter]')?.addEventListener('click', () => {
+      if (!this.world?.recenterVrView()) return;
+      this.syncVrUi();
+      this.showWorldAlert(this.usesPhoneVrSimulation()
+        ? (this.language === 'zh-TW' ? '已校準 · 現在的手機方向就是正前方' : 'CALIBRATED · THIS PHONE POSE IS NOW FORWARD')
+        : (this.language === 'zh-TW' ? 'VR 視角已回正' : 'VR VIEW RECENTRED'));
+    });
     this.root.querySelector<HTMLButtonElement>('[data-vr-dismiss]')?.addEventListener('click', () => {
       this.vrRequested = false;
       sessionStorage.removeItem(VR_MODE_KEY);
+      // Turning the card down used to end VR for the whole visit: the gate is
+      // behind a sign-in and the checkbox is not on this side of it, so the
+      // only way back was to reload. Keep the offer standing instead.
+      this.vrResumePending = true;
       this.syncVrUi();
+      this.showWorldAlert(this.language === 'zh-TW' ? '想試 VR 時，按「回到 VR」' : 'TAP RESUME VR WHENEVER YOU WANT IT');
     });
     // The only way out of a filled screen used to be Escape, or a button in a
     // row that scrolls sideways off the edge of a phone. Neither is reachable
@@ -1683,7 +1698,11 @@ export class App {
     this.snapshot = snapshot;
     if (snapshot.moving) this.completeQuest('walk');
     if (snapshot.moving && snapshot.running) this.completeQuest('run');
-    if (snapshot.cameraMode !== 'follow' && snapshot.cameraMode !== 'screening') this.completeQuest('camera');
+    if (this.vrRequested) {
+      if (snapshot.vrLookedAround) this.completeQuest('camera');
+    } else if (snapshot.cameraMode !== 'follow' && snapshot.cameraMode !== 'screening') {
+      this.completeQuest('camera');
+    }
     if (snapshot.location === 'THE PALACE') this.completeQuest('palace');
     if (snapshot.location === 'DRIVE-IN 88') this.completeQuest('drive-in');
     if (snapshot.location === 'THE SHORE' || snapshot.location === 'MEDITERRANEAN SEA') this.completeQuest('shore');
@@ -2011,6 +2030,7 @@ export class App {
     this.vrActive = active;
     if (active) this.vrError = '';
     this.syncVrUi();
+    this.refreshQuestUi();
   }
 
   private syncVrUi(): void {
@@ -2018,6 +2038,7 @@ export class App {
     const entry = this.root.querySelector<HTMLElement>('[data-vr-entry]');
     const resume = this.root.querySelector<HTMLButtonElement>('[data-vr-resume]');
     const previewExit = this.root.querySelector<HTMLButtonElement>('[data-vr-preview-exit]');
+    const recenter = this.root.querySelector<HTMLButtonElement>('[data-vr-recenter]');
     const status = this.root.querySelector<HTMLElement>('[data-vr-status]');
     if (shell) {
       shell.dataset.vrActive = String(this.vrActive);
@@ -2026,6 +2047,7 @@ export class App {
     if (entry) entry.hidden = !this.vrRequested || this.vrActive || this.vrResumePending;
     if (resume) resume.hidden = !this.vrResumePending || this.vrActive || !this.root.querySelector('#venue-screen')?.hasAttribute('hidden');
     if (previewExit) previewExit.hidden = !this.vrActive || !this.usesVrSimulation();
+    if (recenter) recenter.hidden = !this.vrActive || !this.usesVrSimulation();
     if (status && this.vrError) status.textContent = this.vrError;
     if (this.world && this.usesVrSimulation()) {
       document.documentElement.dataset.vrReview = JSON.stringify(this.vrReviewSnapshot());
@@ -2064,9 +2086,29 @@ export class App {
     this.syncVrUi();
   }
 
-  private async resumeVrFromYoutube(): Promise<void> {
+  /**
+   * Leaving the preview is a pause, not an exit. `vrResumePending` is what puts
+   * `RESUME VR` on screen, and it is the only route back in — the VR checkbox
+   * lives at the sign-in gate, on the far side of a session the visitor is in
+   * the middle of.
+   */
+  private async exitVrPreview(): Promise<void> {
+    if (!this.world || !this.vrActive || !this.usesVrSimulation()) return;
+    this.vrResumePending = true;
+    await this.world.exitVr();
+    this.syncVrUi();
+    this.showWorldAlert(this.language === 'zh-TW' ? '已離開 VR · 按「回到 VR」可再進入' : 'LEFT VR · TAP RESUME VR TO GO BACK IN');
+  }
+
+  private async resumeVr(): Promise<void> {
     const entered = await this.enterVr();
     if (!entered) return;
+    // Coming back in re-opts into VR. Without this a visitor who had turned the
+    // card down would be in VR while the rest of the interface still believed
+    // they had left it, which is what decides the objective wording and what a
+    // reload of this session restores.
+    this.vrRequested = true;
+    sessionStorage.setItem(VR_MODE_KEY, '1');
     this.vrResumePending = false;
     this.hideVenueScreen();
     this.syncPublicProjectors();
@@ -2362,7 +2404,7 @@ export class App {
       this.toggleScreenFullscreen();
     });
     actions.querySelector<HTMLButtonElement>('[data-screen-resume-vr]')?.addEventListener('click', () => {
-      void this.resumeVrFromYoutube();
+      void this.resumeVr();
     });
     actions.querySelector<HTMLButtonElement>('[data-screen-stand]')?.addEventListener('pointerdown', () => {
       if (this.snapshot?.playerState === 'seated') {
@@ -3474,9 +3516,16 @@ export class App {
           <ol>
             ${section.quests.map((item) => {
               const complete = this.completedQuests.has(item.id);
+              const vrLookObjective = item.id === 'camera' && this.vrRequested;
+              const title = vrLookObjective
+                ? (language === 'zh-TW' ? '環顧 VR 世界' : 'LOOK AROUND IN VR')
+                : item.title[language];
+              const hint = vrLookObjective
+                ? (language === 'zh-TW' ? '轉動頭部或手機，環顧影展世界。' : 'Turn your head or phone to look around the festival.')
+                : item.hint[language];
               return `<li class="${complete ? 'is-complete' : ''}">
                 <span class="quest-check" aria-hidden="true">${complete ? '✓' : '○'}</span>
-                <div><strong>${this.escapeHtml(item.title[language])}</strong><small>${this.escapeHtml(item.hint[language])}</small></div>
+                <div><strong>${this.escapeHtml(title)}</strong><small>${this.escapeHtml(hint)}</small></div>
               </li>`;
             }).join('')}
           </ol>
