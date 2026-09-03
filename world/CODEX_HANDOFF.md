@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-03 · Quest/WebXR beta published · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-09-03 · VR gate visibility follow-up published · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
@@ -8,7 +8,22 @@ Last updated: 2026-09-03 · Quest/WebXR beta published · branch `codex/fix-gate
 
 ---
 
-## 0. READ THIS FIRST — Quest/WebXR beta published
+## 0. READ THIS FIRST — VR option visible on every gate, published
+
+The owner opened the published beta on a desktop browser and reasonably thought
+VR was absent: the capability check hid the entire option when `immersive-vr`
+was unavailable. The gate now always shows `QUEST VR MODE`. While WebXR support
+is being checked, and on browsers without a connected headset, the checkbox is
+disabled and its bilingual note explains that the page must be opened in Meta
+Quest Browser. On a supported Quest browser it becomes the same active checkbox
+as before. The local VR review fixture remains active and clearly labelled.
+
+This follow-up changes no WebXR session, projector, avatar or screen geometry.
+The owner approved publication on 2026-09-03. Its beta payload references
+`index-CeN7ts66.js`, `index-Dg2SpIlQ.css` and the unchanged
+`three-Bb7Az0mP.js` runtime bundle.
+
+## 0a. Quest/WebXR beta published
 
 The owner asked whether the festival could run on Meta Quest and chose YouTube
 embeds as the only screening source. They accepted this product compromise:

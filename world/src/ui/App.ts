@@ -149,6 +149,8 @@ const copy = {
     palette: 'CHARACTER COLORS',
     vrMode: 'QUEST VR MODE',
     vrNote: 'Walk the festival in VR. Screenings open in the standard YouTube player, then return you to the same seat.',
+    vrChecking: 'Checking this browser for a connected headset…',
+    vrUnavailable: 'VR is available in Meta Quest Browser. Open this page inside your Quest headset to enable this checkbox.',
     gateNote: 'MOVE: WASD / ARROWS · RUN: SHIFT · JUMP: SPACE · CAMERA: T · CHAT: ENTER',
   },
   'zh-TW': {
@@ -169,6 +171,8 @@ const copy = {
     palette: '角色配色',
     vrMode: 'QUEST VR 模式',
     vrNote: '以 VR 漫遊影展。放映會暫時開啟標準 YouTube 播放器，之後回到同一座位。',
+    vrChecking: '正在檢查瀏覽器是否連接頭戴式裝置…',
+    vrUnavailable: 'VR 可在 Meta Quest Browser 使用。請用 Quest 頭戴式裝置開啟此頁面，即可勾選。',
     gateNote: '移動：WASD／方向鍵 · 奔跑：SHIFT · 跳躍：SPACE · 鏡頭：T · 聊天：ENTER',
   },
 } as const;
@@ -409,9 +413,32 @@ export class App {
   private syncVrGateControl(): void {
     const field = this.root.querySelector<HTMLElement>('[data-vr-gate]');
     const checkbox = this.root.querySelector<HTMLInputElement>('#vr-mode');
+    const title = field?.querySelector<HTMLElement>('[data-vr-gate-title]');
+    const note = field?.querySelector<HTMLElement>('[data-vr-gate-note]');
     if (!field || !checkbox) return;
-    field.hidden = !this.vrSupportChecked || !this.vrSupported;
+    const preview = this.isLocalVrPreview();
+    const availability = !this.vrSupportChecked ? 'checking' : this.vrSupported ? 'supported' : 'unavailable';
+    field.hidden = false;
+    field.dataset.vrAvailability = availability;
+    field.setAttribute('aria-disabled', String(availability !== 'supported'));
+    checkbox.disabled = availability !== 'supported';
     checkbox.checked = this.vrRequested && this.vrSupported;
+    if (title) {
+      title.textContent = preview
+        ? (this.language === 'zh-TW' ? 'VR 桌面預覽' : 'VR DESKTOP PREVIEW')
+        : this.gateText().vrMode;
+    }
+    if (note) {
+      note.textContent = availability === 'checking'
+        ? this.gateText().vrChecking
+        : preview
+          ? (this.language === 'zh-TW'
+              ? '在桌面模擬 VR 畫面與放映流程。真正的沉浸模式需要 Quest Browser。'
+              : 'Simulates the VR view and screening flow on desktop. Immersive mode requires Quest Browser.')
+          : availability === 'unavailable'
+            ? this.gateText().vrUnavailable
+            : this.gateText().vrNote;
+    }
     document.documentElement.dataset.vrSupport = this.vrSupported ? 'supported' : 'unavailable';
   }
 
@@ -532,7 +559,6 @@ export class App {
 
   private renderGate(): void {
     const text = this.gateText();
-    const vrPreview = this.isLocalVrPreview();
     document.documentElement.lang = this.language;
     this.root.innerHTML = `
       <section class="gate" aria-labelledby="gate-title">
@@ -606,11 +632,9 @@ export class App {
             <span>${text.remember}</span>
           </label>
 
-          <label class="check-field check-field--vr" data-vr-gate hidden>
+          <label class="check-field check-field--vr" data-vr-gate>
             <input id="vr-mode" type="checkbox" ${this.vrRequested ? 'checked' : ''} />
-            <span><strong>${vrPreview ? (this.language === 'zh-TW' ? 'VR 桌面預覽' : 'VR DESKTOP PREVIEW') : text.vrMode}</strong><small>${vrPreview
-              ? (this.language === 'zh-TW' ? '在桌面模擬 VR 畫面與放映流程。真正的沉浸模式需要 Quest Browser。' : 'Simulates the VR view and screening flow on desktop. Immersive mode requires Quest Browser.')
-              : text.vrNote}</small></span>
+            <span><strong data-vr-gate-title>${text.vrMode}</strong><small data-vr-gate-note>${text.vrChecking}</small></span>
           </label>
 
           ${App.staffEntranceAsked() ? `
