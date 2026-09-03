@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-03 · VR gate visibility follow-up published · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-09-03 · desktop VR access published · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
@@ -8,7 +8,24 @@ Last updated: 2026-09-03 · VR gate visibility follow-up published · branch `co
 
 ---
 
-## 0. READ THIS FIRST — VR option visible on every gate, published
+## 0. READ THIS FIRST — desktop VR access published
+
+The owner asked to use the VR mode from a desktop so they can verify it without
+a Quest. A fine-pointer, hover-capable browser now receives an enabled
+`VR DESKTOP MODE` checkbox when immersive WebXR is unavailable. It enters the
+same single-context VR presentation through the existing simulated path, with
+keyboard/mouse navigation, WebGL projector posters and an explicit exit button.
+A Quest browser with `immersive-vr` support still enters real WebXR. Touch-only
+phones without WebXR stay disabled, preserving the mobile stability path.
+
+The ordinary desktop flow and Quest-support fixture passed in-browser; the
+desktop entered and exited its simulated presentation with one WebGL context,
+two controller stand-ins and all five projector posters. All 43 server tests,
+the TypeScript/Vite build and `git diff --check` passed. The owner approved
+publication on 2026-09-03; the beta payload references `index-Dj_j6JGO.js`,
+the unchanged `index-Dg2SpIlQ.css` and `three-Bb7Az0mP.js` bundles.
+
+## 0a. VR option visible on every gate, published
 
 The owner opened the published beta on a desktop browser and reasonably thought
 VR was absent: the capability check hid the entire option when `immersive-vr`
@@ -23,7 +40,7 @@ The owner approved publication on 2026-09-03. Its beta payload references
 `index-CeN7ts66.js`, `index-Dg2SpIlQ.css` and the unchanged
 `three-Bb7Az0mP.js` runtime bundle.
 
-## 0a. Quest/WebXR beta published
+## 0b. Quest/WebXR beta published
 
 The owner asked whether the festival could run on Meta Quest and chose YouTube
 embeds as the only screening source. They accepted this product compromise:
@@ -75,7 +92,7 @@ The owner approved publication on 2026-09-03. The beta payload references
 `index-D73Tb99w.js`, `index-BTLDz2Xy.css` and `three-Bb7Az0mP.js`. Real Quest
 headset behavior still requires the device QA listed above.
 
-## 0b. All-avatar foreground follow-up published
+## 0c. All-avatar foreground follow-up published
 
 The owner's live iPhone screenshots showed both resident DJs hidden by the CSS3D
 public-screening layer, the basement console hanging beyond its platform, and the

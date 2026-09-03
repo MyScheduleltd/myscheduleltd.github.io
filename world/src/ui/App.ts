@@ -151,6 +151,8 @@ const copy = {
     vrNote: 'Walk the festival in VR. Screenings open in the standard YouTube player, then return you to the same seat.',
     vrChecking: 'Checking this browser for a connected headset…',
     vrUnavailable: 'VR is available in Meta Quest Browser. Open this page inside your Quest headset to enable this checkbox.',
+    vrDesktopMode: 'VR DESKTOP MODE',
+    vrDesktopNote: 'Explore the VR view with keyboard and mouse. Quest Browser automatically uses immersive headset mode.',
     gateNote: 'MOVE: WASD / ARROWS · RUN: SHIFT · JUMP: SPACE · CAMERA: T · CHAT: ENTER',
   },
   'zh-TW': {
@@ -173,6 +175,8 @@ const copy = {
     vrNote: '以 VR 漫遊影展。放映會暫時開啟標準 YouTube 播放器，之後回到同一座位。',
     vrChecking: '正在檢查瀏覽器是否連接頭戴式裝置…',
     vrUnavailable: 'VR 可在 Meta Quest Browser 使用。請用 Quest 頭戴式裝置開啟此頁面，即可勾選。',
+    vrDesktopMode: 'VR 桌面模式',
+    vrDesktopNote: '以鍵盤與滑鼠體驗 VR 視角。使用 Quest Browser 時會自動切換為沉浸式頭戴模式。',
     gateNote: '移動：WASD／方向鍵 · 奔跑：SHIFT · 跳躍：SPACE · 鏡頭：T · 聊天：ENTER',
   },
 } as const;
@@ -402,11 +406,11 @@ export class App {
     } catch {
       this.vrSupported = loopbackFixture;
     }
-    if (!this.vrSupported) {
+    this.vrSupportChecked = true;
+    if (!this.vrSupported && !this.isDesktopVrPreviewAvailable()) {
       this.vrRequested = false;
       sessionStorage.removeItem(VR_MODE_KEY);
     }
-    this.vrSupportChecked = true;
     this.syncVrGateControl();
   }
 
@@ -416,30 +420,33 @@ export class App {
     const title = field?.querySelector<HTMLElement>('[data-vr-gate-title]');
     const note = field?.querySelector<HTMLElement>('[data-vr-gate-note]');
     if (!field || !checkbox) return;
-    const preview = this.isLocalVrPreview();
-    const availability = !this.vrSupportChecked ? 'checking' : this.vrSupported ? 'supported' : 'unavailable';
+    const preview = this.usesVrSimulation();
+    const available = this.vrSupported || preview;
+    const availability = !this.vrSupportChecked
+      ? 'checking'
+      : available
+        ? preview ? 'preview' : 'supported'
+        : 'unavailable';
     field.hidden = false;
     field.dataset.vrAvailability = availability;
-    field.setAttribute('aria-disabled', String(availability !== 'supported'));
-    checkbox.disabled = availability !== 'supported';
-    checkbox.checked = this.vrRequested && this.vrSupported;
+    field.setAttribute('aria-disabled', String(!available));
+    checkbox.disabled = !available;
+    checkbox.checked = this.vrRequested && available;
     if (title) {
-      title.textContent = preview
-        ? (this.language === 'zh-TW' ? 'VR 桌面預覽' : 'VR DESKTOP PREVIEW')
-        : this.gateText().vrMode;
+      title.textContent = preview ? this.gateText().vrDesktopMode : this.gateText().vrMode;
     }
     if (note) {
       note.textContent = availability === 'checking'
         ? this.gateText().vrChecking
         : preview
-          ? (this.language === 'zh-TW'
-              ? '在桌面模擬 VR 畫面與放映流程。真正的沉浸模式需要 Quest Browser。'
-              : 'Simulates the VR view and screening flow on desktop. Immersive mode requires Quest Browser.')
+          ? this.gateText().vrDesktopNote
           : availability === 'unavailable'
             ? this.gateText().vrUnavailable
             : this.gateText().vrNote;
     }
-    document.documentElement.dataset.vrSupport = this.vrSupported ? 'supported' : 'unavailable';
+    document.documentElement.dataset.vrSupport = preview
+      ? 'desktop-preview'
+      : this.vrSupported ? 'supported' : 'unavailable';
   }
 
   /** Local fixtures can show the VR composition without pretending a desktop is a headset. */
@@ -447,6 +454,20 @@ export class App {
     const review = new URLSearchParams(window.location.search).get('review');
     return ['127.0.0.1', 'localhost'].includes(window.location.hostname)
       && ['vr-gate', 'vr-entry'].includes(review ?? '');
+  }
+
+  /** Keep the simulation off touch-only phones, whose stable path stays unchanged. */
+  private isDesktopVrPreviewAvailable(): boolean {
+    return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  }
+
+  private usesVrSimulation(): boolean {
+    return this.isLocalVrPreview()
+      || (this.vrSupportChecked && !this.vrSupported && this.isDesktopVrPreviewAvailable());
+  }
+
+  private canRequestVr(): boolean {
+    return this.vrSupported || this.usesVrSimulation();
   }
 
   /**
@@ -684,7 +705,7 @@ export class App {
     this.syncVrGateControl();
     this.root.querySelector<HTMLInputElement>('#vr-mode')?.addEventListener('change', (event) => {
       const checked = (event.currentTarget as HTMLInputElement).checked;
-      this.vrRequested = checked && this.vrSupported;
+      this.vrRequested = checked && this.canRequestVr();
       if (this.vrRequested) {
         this.graphicsMode = 'lite';
         this.root.querySelectorAll<HTMLButtonElement>('[data-graphics]').forEach((button) =>
@@ -717,7 +738,7 @@ export class App {
         sessionStorage.setItem(STAFF_KEY, gateKey);
       }
       const remember = this.root.querySelector<HTMLInputElement>('#remember-profile')?.checked ?? false;
-      this.vrRequested = Boolean(this.root.querySelector<HTMLInputElement>('#vr-mode')?.checked && this.vrSupported);
+      this.vrRequested = Boolean(this.root.querySelector<HTMLInputElement>('#vr-mode')?.checked && this.canRequestVr());
       if (this.vrRequested) sessionStorage.setItem(VR_MODE_KEY, '1');
       else sessionStorage.removeItem(VR_MODE_KEY);
       const profile: SavedProfile = { id, language: this.language, graphicsMode: this.graphicsMode, palette: this.palette };
@@ -814,7 +835,7 @@ export class App {
     window.setTimeout(() => sessionStorage.removeItem(REJOIN_TRIES_KEY), 8_000);
     this.startBlackBox();
     const zh = this.language === 'zh-TW';
-    const vrPreview = this.isLocalVrPreview();
+    const vrPreview = this.usesVrSimulation();
     this.root.innerHTML = `
       <section class="world-shell">
         <canvas id="world-canvas" aria-label="Myschedule festival world"></canvas>
@@ -1954,9 +1975,9 @@ export class App {
     if (shell) shell.dataset.vrActive = String(this.vrActive);
     if (entry) entry.hidden = !this.vrRequested || this.vrActive || this.vrResumePending;
     if (resume) resume.hidden = !this.vrResumePending || this.vrActive || !this.root.querySelector('#venue-screen')?.hasAttribute('hidden');
-    if (previewExit) previewExit.hidden = !this.vrActive || !this.isLocalVrPreview();
+    if (previewExit) previewExit.hidden = !this.vrActive || !this.usesVrSimulation();
     if (status && this.vrError) status.textContent = this.vrError;
-    if (this.world && this.isLocalVrPreview()) {
+    if (this.world && this.usesVrSimulation()) {
       document.documentElement.dataset.vrReview = JSON.stringify(this.vrReviewSnapshot());
     }
   }
@@ -1964,7 +1985,7 @@ export class App {
   private async enterVr(): Promise<boolean> {
     if (!this.world) return false;
     this.vrError = '';
-    const entered = await this.world.enterVr(this.isLocalVrPreview());
+    const entered = await this.world.enterVr(this.usesVrSimulation());
     if (!entered) {
       this.vrError = this.language === 'zh-TW'
         ? '無法開啟 VR。請在 Quest Browser 中重試，並允許頭戴式裝置存取權。'
@@ -2005,6 +2026,7 @@ export class App {
       requested: this.vrRequested,
       active: this.vrActive,
       localPreview: this.isLocalVrPreview(),
+      desktopPreview: this.usesVrSimulation(),
       resumePending: this.vrResumePending,
       entryHidden: this.root.querySelector<HTMLElement>('[data-vr-entry]')?.hidden,
       resumeHidden: this.root.querySelector<HTMLButtonElement>('[data-vr-resume]')?.hidden,
