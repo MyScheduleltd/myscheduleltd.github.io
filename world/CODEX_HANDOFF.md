@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-03 · desktop VR exit control alignment published · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-09-03 · desktop VR exit control right edge published · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
@@ -8,7 +8,22 @@ Last updated: 2026-09-03 · desktop VR exit control alignment published · branc
 
 ---
 
-## 0. READ THIS FIRST — desktop VR exit control alignment
+## 0. READ THIS FIRST — desktop VR exit control right edge
+
+The owner's follow-up screenshot showed `離開 VR 預覽` a few pixels left of the
+top-right `線上 / …` status box. The exit control now uses the same right inset
+as the header at every layout that can show it: 16px on ordinary desktop, 14px
+at the narrow breakpoint and 10px plus the safe-area inset in short landscape.
+Its previously approved vertical alignment is unchanged.
+
+This remains a CSS-only follow-up. It changes no WebXR, projector/video, camera,
+avatar, or screen behavior. The local desktop-VR review entered successfully and
+exposed both controls. All 43 server tests, TypeScript, the Vite production build
+and `git diff --check` pass. The owner approved publication on 2026-09-03. The
+beta payload references `index-BxOjzBwv.js`, `index-Djeoze8P.css` and the
+unchanged `three-Bb7Az0mP.js` runtime bundle.
+
+## 0a. Desktop VR exit control vertical alignment
 
 The owner's desktop VR screenshot showed `離開 VR 預覽` sharing the header row
 with, and covering, the top-right connection-status box. The control now stays
@@ -27,7 +42,7 @@ custom domain was then opened with a cache-busting release query and confirmed
 to serve those exact new JavaScript and CSS assets; the published desktop VR
 flow exposed both `我的廣場` and `離開 VR 預覽` with the updated stylesheet.
 
-## 0a. Desktop VR eye height and live YouTube published
+## 0b. Desktop VR eye height and live YouTube published
 
 The owner's desktop VR screenshots showed the preview camera below the avatar's
 established first-person eye line and WebGL title posters in place of the live
@@ -60,7 +75,7 @@ The owner approved publication on 2026-09-03. The beta payload references
 `index-7-GEqjQU.js`, `index-CfFYu65j.css` and the unchanged
 `three-Bb7Az0mP.js` runtime bundle.
 
-## 0b. Desktop VR access published
+## 0c. Desktop VR access published
 
 The owner asked to use the VR mode from a desktop so they can verify it without
 a Quest. A fine-pointer, hover-capable browser now receives an enabled
@@ -77,7 +92,7 @@ the TypeScript/Vite build and `git diff --check` passed. The owner approved
 publication on 2026-09-03; the beta payload references `index-Dj_j6JGO.js`,
 the unchanged `index-Dg2SpIlQ.css` and `three-Bb7Az0mP.js` bundles.
 
-## 0c. VR option visible on every gate, published
+## 0d. VR option visible on every gate, published
 
 The owner opened the published beta on a desktop browser and reasonably thought
 VR was absent: the capability check hid the entire option when `immersive-vr`
@@ -92,7 +107,7 @@ The owner approved publication on 2026-09-03. Its beta payload references
 `index-CeN7ts66.js`, `index-Dg2SpIlQ.css` and the unchanged
 `three-Bb7Az0mP.js` runtime bundle.
 
-## 0d. Quest/WebXR beta published
+## 0e. Quest/WebXR beta published
 
 The owner asked whether the festival could run on Meta Quest and chose YouTube
 embeds as the only screening source. They accepted this product compromise:
@@ -144,7 +159,7 @@ The owner approved publication on 2026-09-03. The beta payload references
 `index-D73Tb99w.js`, `index-BTLDz2Xy.css` and `three-Bb7Az0mP.js`. Real Quest
 headset behavior still requires the device QA listed above.
 
-## 0e. All-avatar foreground follow-up published
+## 0f. All-avatar foreground follow-up published
 
 The owner's live iPhone screenshots showed both resident DJs hidden by the CSS3D
 public-screening layer, the basement console hanging beyond its platform, and the

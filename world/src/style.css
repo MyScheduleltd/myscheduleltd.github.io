@@ -229,7 +229,7 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
   padding: 0 22px; color: white; background: var(--red); font: 900 17px var(--condensed); cursor: pointer;
 }
 .vr-preview-exit {
-  position: fixed; z-index: 18; right: max(18px, env(safe-area-inset-right));
+  position: fixed; z-index: 18; right: calc(16px + env(safe-area-inset-right));
   /* Share the venue label's row instead of covering the connection status in
      the header. The narrow-layout value is kept in sync below. */
   top: calc(65px + env(safe-area-inset-top)); min-height: 44px; border: 2px solid var(--paper);
@@ -1101,7 +1101,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .vr-entry { padding: 20px; }
   .vr-entry h2 { font-size: 40px; }
   .vr-entry > div { grid-template-columns: 1fr; }
-  .vr-preview-exit { top: calc(76px + env(safe-area-inset-top)); }
+  .vr-preview-exit { right: calc(14px + env(safe-area-inset-right)); top: calc(76px + env(safe-area-inset-top)); }
   .world-status { top: 76px; left: 14px; }
   .inventory-status { left: 14px; top: 153px; }
   .objective-count { left: 14px; top: 185px; }
@@ -1484,6 +1484,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   /* The header did not allow for the notch and the pass did, so on a phone
      with one the two were measured from different edges and never lined up.
      Both sit on the same inset now. */
+  .vr-preview-exit { right: calc(10px + env(safe-area-inset-right)); }
   .world-header { padding: 4px calc(10px + env(safe-area-inset-right)) 4px calc(10px + env(safe-area-inset-left)); }
   /* A panel keeping its upright margins on a screen this short was left about
      two hundred pixels tall with its own input cut off the bottom. It takes the
