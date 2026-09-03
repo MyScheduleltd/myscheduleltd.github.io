@@ -100,6 +100,8 @@ const PRIVATE_PROGRESS_KEY = 'myschedule-private-screening-v1';
 const CHAT_KEY = 'myschedule-local-chat-v2';
 const STAFF_KEY = 'myschedule-festival-staff-key-v1';
 const STAFF_SECTIONS_KEY = 'myschedule-festival-staff-sections-v1';
+/** A Quest visitor's choice survives the gate and a discarded browser tab. */
+const VR_MODE_KEY = 'myschedule-festival-vr-mode-v1';
 
 const defaultPamphlet: PamphletContent = {
   youtubeId: 'Ffli-o0ocT0',
@@ -145,6 +147,8 @@ const copy = {
     menu: 'FESTIVAL PASS',
     local: 'PRE-LAUNCH BUILD',
     palette: 'CHARACTER COLORS',
+    vrMode: 'QUEST VR MODE',
+    vrNote: 'Walk the festival in VR. Screenings open in the standard YouTube player, then return you to the same seat.',
     gateNote: 'MOVE: WASD / ARROWS · RUN: SHIFT · JUMP: SPACE · CAMERA: T · CHAT: ENTER',
   },
   'zh-TW': {
@@ -163,6 +167,8 @@ const copy = {
     menu: '影展通行證',
     local: '上線前版本',
     palette: '角色配色',
+    vrMode: 'QUEST VR 模式',
+    vrNote: '以 VR 漫遊影展。放映會暫時開啟標準 YouTube 播放器，之後回到同一座位。',
     gateNote: '移動：WASD／方向鍵 · 奔跑：SHIFT · 跳躍：SPACE · 鏡頭：T · 聊天：ENTER',
   },
 } as const;
@@ -262,6 +268,12 @@ export class App {
   private screenMode?: 'public' | 'private';
   private screenMaximized = false;
   private screenNativeFullscreen = false;
+  private vrSupported = false;
+  private vrSupportChecked = false;
+  private vrRequested = sessionStorage.getItem(VR_MODE_KEY) === '1';
+  private vrActive = false;
+  private vrResumePending = false;
+  private vrError = '';
   private promptHoldTimer = 0;
   private promptHeld = false;
   private cameraHidden = false;
@@ -359,7 +371,7 @@ export class App {
   mount(): void {
     this.renderGate();
     this.showLastBreath();
-    this.rejoinAfterDiscard();
+    void this.detectVrSupport().finally(() => this.rejoinAfterDiscard());
     void this.festivalClient.publicConfig().then((config) => {
       this.festivalServiceReady = true;
       this.siteStyle = { ...this.siteStyle, ...config.siteStyle };
@@ -374,6 +386,40 @@ export class App {
       this.applySiteStyle();
       this.applyGateBackground();
     }).catch(() => undefined);
+  }
+
+  /** Ask the browser instead of guessing from a user-agent. */
+  private async detectVrSupport(): Promise<void> {
+    const review = new URLSearchParams(window.location.search).get('review');
+    const loopbackFixture = ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+      && ['vr-gate', 'vr-entry', 'vr-youtube'].includes(review ?? '');
+    try {
+      this.vrSupported = loopbackFixture || Boolean(await navigator.xr?.isSessionSupported('immersive-vr'));
+    } catch {
+      this.vrSupported = loopbackFixture;
+    }
+    if (!this.vrSupported) {
+      this.vrRequested = false;
+      sessionStorage.removeItem(VR_MODE_KEY);
+    }
+    this.vrSupportChecked = true;
+    this.syncVrGateControl();
+  }
+
+  private syncVrGateControl(): void {
+    const field = this.root.querySelector<HTMLElement>('[data-vr-gate]');
+    const checkbox = this.root.querySelector<HTMLInputElement>('#vr-mode');
+    if (!field || !checkbox) return;
+    field.hidden = !this.vrSupportChecked || !this.vrSupported;
+    checkbox.checked = this.vrRequested && this.vrSupported;
+    document.documentElement.dataset.vrSupport = this.vrSupported ? 'supported' : 'unavailable';
+  }
+
+  /** Local fixtures can show the VR composition without pretending a desktop is a headset. */
+  private isLocalVrPreview(): boolean {
+    const review = new URLSearchParams(window.location.search).get('review');
+    return ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+      && ['vr-gate', 'vr-entry'].includes(review ?? '');
   }
 
   /**
@@ -486,6 +532,7 @@ export class App {
 
   private renderGate(): void {
     const text = this.gateText();
+    const vrPreview = this.isLocalVrPreview();
     document.documentElement.lang = this.language;
     this.root.innerHTML = `
       <section class="gate" aria-labelledby="gate-title">
@@ -559,6 +606,13 @@ export class App {
             <span>${text.remember}</span>
           </label>
 
+          <label class="check-field check-field--vr" data-vr-gate hidden>
+            <input id="vr-mode" type="checkbox" ${this.vrRequested ? 'checked' : ''} />
+            <span><strong>${vrPreview ? (this.language === 'zh-TW' ? 'VR 桌面預覽' : 'VR DESKTOP PREVIEW') : text.vrMode}</strong><small>${vrPreview
+              ? (this.language === 'zh-TW' ? '在桌面模擬 VR 畫面與放映流程。真正的沉浸模式需要 Quest Browser。' : 'Simulates the VR view and screening flow on desktop. Immersive mode requires Quest Browser.')
+              : text.vrNote}</small></span>
+          </label>
+
           ${App.staffEntranceAsked() ? `
           <details class="gate-staff" open>
             <summary>${this.language === 'zh-TW' ? '工作人員入口' : 'STAFF ENTRANCE'}</summary>
@@ -603,6 +657,18 @@ export class App {
       });
     });
 
+    this.syncVrGateControl();
+    this.root.querySelector<HTMLInputElement>('#vr-mode')?.addEventListener('change', (event) => {
+      const checked = (event.currentTarget as HTMLInputElement).checked;
+      this.vrRequested = checked && this.vrSupported;
+      if (this.vrRequested) {
+        this.graphicsMode = 'lite';
+        this.root.querySelectorAll<HTMLButtonElement>('[data-graphics]').forEach((button) =>
+          setButtonPressed(button, button.dataset.graphics === 'lite'),
+        );
+      }
+    });
+
     const form = this.root.querySelector<HTMLFormElement>('#gate-form');
     form?.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -627,6 +693,9 @@ export class App {
         sessionStorage.setItem(STAFF_KEY, gateKey);
       }
       const remember = this.root.querySelector<HTMLInputElement>('#remember-profile')?.checked ?? false;
+      this.vrRequested = Boolean(this.root.querySelector<HTMLInputElement>('#vr-mode')?.checked && this.vrSupported);
+      if (this.vrRequested) sessionStorage.setItem(VR_MODE_KEY, '1');
+      else sessionStorage.removeItem(VR_MODE_KEY);
       const profile: SavedProfile = { id, language: this.language, graphicsMode: this.graphicsMode, palette: this.palette };
       if (remember) localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
       else localStorage.removeItem(PROFILE_KEY);
@@ -721,6 +790,7 @@ export class App {
     window.setTimeout(() => sessionStorage.removeItem(REJOIN_TRIES_KEY), 8_000);
     this.startBlackBox();
     const zh = this.language === 'zh-TW';
+    const vrPreview = this.isLocalVrPreview();
     this.root.innerHTML = `
       <section class="world-shell">
         <canvas id="world-canvas" aria-label="Myschedule festival world"></canvas>
@@ -763,6 +833,19 @@ export class App {
           aria-label="${zh ? '顯示或隱藏相機介面' : 'Show or hide camera controls'}">${zh ? '隱藏' : 'HIDE'}</button>
         <button class="zoom-reset" type="button" data-zoom-reset hidden>${zh ? '重設縮放' : 'RESET ZOOM'}</button>
         <button class="jukebox-sound" type="button" data-jukebox-sound hidden>DROP THE BEAT</button>
+        <section class="vr-entry" data-vr-entry hidden aria-live="polite">
+          <p class="eyebrow">${vrPreview ? 'DESKTOP SIMULATION · WEBXR' : 'META QUEST · WEBXR'}</p>
+          <h2>${vrPreview ? (zh ? '預覽 VR' : 'PREVIEW VR') : (zh ? '準備進入 VR' : 'READY FOR VR')}</h2>
+          <p data-vr-status>${vrPreview
+            ? (zh ? '以鍵盤與滑鼠預覽頭戴式視角。這不會啟動真正的沉浸階段。' : 'Preview the headset view with keyboard and mouse. This does not start a real immersive session.')
+            : (zh ? '戴上頭戴式裝置，以控制器確認進入。' : 'Put on your headset, then confirm with a controller.')}</p>
+          <div>
+            <button class="button button--primary" type="button" data-vr-enter>${vrPreview ? (zh ? '開啟桌面預覽' : 'START DESKTOP PREVIEW') : (zh ? '進入 VR' : 'ENTER VR')}</button>
+            <button class="button button--secondary" type="button" data-vr-dismiss>${zh ? '留在瀏覽器' : 'STAY IN BROWSER'}</button>
+          </div>
+        </section>
+        <button class="vr-resume" type="button" data-vr-resume hidden>${zh ? '回到 VR 座位' : 'RESUME VR'}</button>
+        <button class="vr-preview-exit" type="button" data-vr-preview-exit hidden>${zh ? '離開 VR 預覽' : 'EXIT VR PREVIEW'}</button>
         <header class="world-header">
           <div class="world-brand"><img class="brand-logo" src="${companyLogoUrl}" alt="我的檔期" /><span>MYSCHEDULE</span></div>
           <div class="status-cluster" id="connection-status" data-status="connecting">
@@ -843,8 +926,10 @@ export class App {
       cssLayer,
       graphicsMode: this.graphicsMode,
       palette: this.palette,
+      xrPreferred: this.vrRequested,
       onSnapshot: (snapshot) => this.updateSnapshot(snapshot),
       onAction: (action) => this.handleWorldAction(action),
+      onXrSessionChange: (active) => this.handleVrSessionChange(active),
       onProjectorAdvance: (venue, youtubeId) => {
         if (this.festivalClient.online) {
           void this.festivalClient.advanceProgramme(venue, youtubeId);
@@ -867,6 +952,7 @@ export class App {
     this.world.setNpcProfiles(this.npcProfiles);
     this.world.start();
     this.syncPublicProjectors();
+    this.syncVrUi();
     // Tier one of the art direction, behind its own flag rather than the review
     // gate — the point of it is to be looked at on a phone against the live
     // site, so it must not be loopback-only. Absent the flag nothing here runs
@@ -926,7 +1012,18 @@ export class App {
         () => world.wornStyleReviewSnapshot();
     }
     const reviewTarget = new URLSearchParams(window.location.search).get('review');
-    if (reviewTarget === 'mentor' || reviewTarget === 'mentor-carry' || reviewTarget === 'mentor-npc-carry') {
+    if (reviewTarget === 'vr-youtube' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      this.activeVenue = 'shore';
+      this.world.focusPublicScreeningForReview('shore');
+      void this.leaveVrForYoutube('shore');
+      (window as Window & { __festivalVrReview?: () => unknown }).__festivalVrReview = () => this.vrReviewSnapshot();
+      window.setTimeout(() => {
+        document.documentElement.dataset.vrReview = JSON.stringify(this.vrReviewSnapshot());
+      }, 400);
+    } else if ((reviewTarget === 'vr-entry' || reviewTarget === 'vr-gate') && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      (window as Window & { __festivalVrReview?: () => unknown }).__festivalVrReview = () => this.vrReviewSnapshot();
+      document.documentElement.dataset.vrReview = JSON.stringify(this.vrReviewSnapshot());
+    } else if (reviewTarget === 'mentor' || reviewTarget === 'mentor-carry' || reviewTarget === 'mentor-npc-carry') {
       this.world.focusMentorForReview(
         reviewTarget === 'mentor-carry' || reviewTarget === 'mentor-npc-carry',
         reviewTarget === 'mentor-npc-carry' ? 'KENNY' : undefined,
@@ -1430,10 +1527,23 @@ export class App {
     this.root.querySelector<HTMLButtonElement>('[data-public-fullscreen]')?.addEventListener('click', () => {
       this.openPublicScreenFullscreen();
     });
+    this.root.querySelector<HTMLButtonElement>('[data-vr-enter]')?.addEventListener('click', () => { void this.enterVr(); });
+    this.root.querySelector<HTMLButtonElement>('[data-vr-resume]')?.addEventListener('click', () => { void this.resumeVrFromYoutube(); });
+    this.root.querySelector<HTMLButtonElement>('[data-vr-preview-exit]')?.addEventListener('click', () => { void this.world?.exitVr(); });
+    this.root.querySelector<HTMLButtonElement>('[data-vr-dismiss]')?.addEventListener('click', () => {
+      this.vrRequested = false;
+      sessionStorage.removeItem(VR_MODE_KEY);
+      this.syncVrUi();
+    });
     // The only way out of a filled screen used to be Escape, or a button in a
     // row that scrolls sideways off the edge of a phone. Neither is reachable
     // with a thumb, so a full screening was a room with the door painted over.
     this.root.querySelector<HTMLButtonElement>('[data-screen-close]')?.addEventListener('click', () => {
+      if (this.vrResumePending) {
+        this.hideVenueScreen();
+        this.syncVrUi();
+        return;
+      }
       void this.setScreenMaximized(false);
     });
     // Standing up is its own action. Routing it through interact() meant that at
@@ -1570,6 +1680,10 @@ export class App {
   }
 
   private handleWorldAction(action: WorldAction): void {
+    if (action.type === 'vrWatch') {
+      void this.leaveVrForYoutube(action.venue);
+      return;
+    }
     if (action.type === 'jump') this.completeQuest('jump');
     if (action.type === 'dance' && action.active) this.completeQuest('dance');
     if (action.type === 'greet') this.completeQuest('greet');
@@ -1799,6 +1913,80 @@ export class App {
       this.openPanel('programme');
       return;
     }
+  }
+
+  private handleVrSessionChange(active: boolean): void {
+    this.vrActive = active;
+    if (active) this.vrError = '';
+    this.syncVrUi();
+  }
+
+  private syncVrUi(): void {
+    const shell = this.root.querySelector<HTMLElement>('.world-shell');
+    const entry = this.root.querySelector<HTMLElement>('[data-vr-entry]');
+    const resume = this.root.querySelector<HTMLButtonElement>('[data-vr-resume]');
+    const previewExit = this.root.querySelector<HTMLButtonElement>('[data-vr-preview-exit]');
+    const status = this.root.querySelector<HTMLElement>('[data-vr-status]');
+    if (shell) shell.dataset.vrActive = String(this.vrActive);
+    if (entry) entry.hidden = !this.vrRequested || this.vrActive || this.vrResumePending;
+    if (resume) resume.hidden = !this.vrResumePending || this.vrActive || !this.root.querySelector('#venue-screen')?.hasAttribute('hidden');
+    if (previewExit) previewExit.hidden = !this.vrActive || !this.isLocalVrPreview();
+    if (status && this.vrError) status.textContent = this.vrError;
+    if (this.world && this.isLocalVrPreview()) {
+      document.documentElement.dataset.vrReview = JSON.stringify(this.vrReviewSnapshot());
+    }
+  }
+
+  private async enterVr(): Promise<boolean> {
+    if (!this.world) return false;
+    this.vrError = '';
+    const entered = await this.world.enterVr(this.isLocalVrPreview());
+    if (!entered) {
+      this.vrError = this.language === 'zh-TW'
+        ? '無法開啟 VR。請在 Quest Browser 中重試，並允許頭戴式裝置存取權。'
+        : 'VR COULD NOT START. RETRY IN QUEST BROWSER AND ALLOW HEADSET ACCESS.';
+    }
+    this.syncVrUi();
+    return entered;
+  }
+
+  /**
+   * A YouTube iframe cannot become an in-world WebXR texture without replacing
+   * or extracting the player. End the immersive session, keep the seat in the
+   * world, and open YouTube's standard player instead.
+   */
+  private async leaveVrForYoutube(venue: VenueKey): Promise<void> {
+    this.activeVenue = venue;
+    this.vrResumePending = true;
+    await this.world?.exitVr();
+    this.renderScreen(this.publicFilm(venue), 'public', this.publicScreeningOffset(), true);
+    this.applyScreenMaximized(true);
+    this.syncVrUi();
+  }
+
+  private async resumeVrFromYoutube(): Promise<void> {
+    const entered = await this.enterVr();
+    if (!entered) return;
+    this.vrResumePending = false;
+    this.hideVenueScreen();
+    this.syncPublicProjectors();
+    this.syncVrUi();
+  }
+
+  private vrReviewSnapshot(): Record<string, unknown> {
+    const iframe = this.root.querySelector<HTMLIFrameElement>('#screen-frame iframe');
+    return {
+      supportChecked: this.vrSupportChecked,
+      supported: this.vrSupported,
+      requested: this.vrRequested,
+      active: this.vrActive,
+      localPreview: this.isLocalVrPreview(),
+      resumePending: this.vrResumePending,
+      entryHidden: this.root.querySelector<HTMLElement>('[data-vr-entry]')?.hidden,
+      resumeHidden: this.root.querySelector<HTMLButtonElement>('[data-vr-resume]')?.hidden,
+      youtubeHost: iframe ? new URL(iframe.src).hostname : null,
+      world: this.world?.xrReviewSnapshot(),
+    };
   }
 
   private syncVenueScreen(snapshot: WorldSnapshot): void {
@@ -2056,6 +2244,7 @@ export class App {
     actions.innerHTML = seated
       ? `<button type="button" data-screen-catalogue>${this.language === 'zh-TW' ? '片單' : 'CATALOGUE'}</button>
          ${mode === 'private' ? `<button type="button" data-screen-public>${this.language === 'zh-TW' ? '觀看公開放映' : 'WATCH PUBLIC'}</button>` : ''}
+         ${this.vrResumePending ? `<button type="button" data-screen-resume-vr>${this.language === 'zh-TW' ? '回到 VR' : 'RETURN TO VR'}</button>` : ''}
          <button type="button" data-screen-fullscreen>${this.fullscreenLabel()}</button>
          <button type="button" data-screen-stand>${this.snapshot?.playerState === 'seated'
            ? (this.language === 'zh-TW' ? '起身' : 'STAND')
@@ -2069,6 +2258,9 @@ export class App {
     });
     actions.querySelector<HTMLButtonElement>('[data-screen-fullscreen]')?.addEventListener('click', () => {
       this.toggleScreenFullscreen();
+    });
+    actions.querySelector<HTMLButtonElement>('[data-screen-resume-vr]')?.addEventListener('click', () => {
+      void this.resumeVrFromYoutube();
     });
     actions.querySelector<HTMLButtonElement>('[data-screen-stand]')?.addEventListener('pointerdown', () => {
       if (this.snapshot?.playerState === 'seated') {

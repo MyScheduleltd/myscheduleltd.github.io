@@ -67,6 +67,7 @@ export type WorldAction =
   | { type: 'punched'; droppedMentor: boolean; by?: string }
   | { type: 'died'; by?: string }
   | { type: 'jukebox' }
+  | { type: 'vrWatch'; venue: VenueKey }
   | { type: 'jump' };
 
 export interface AvatarPalette {
@@ -140,6 +141,8 @@ interface ProjectorSurface {
   object: CSS3DObject;
   /** The screen-shaped aperture used by the one-context phone compositor. */
   aperture: THREE.Mesh;
+  /** A lightweight, policy-safe sign used while DOM/YouTube is outside WebXR. */
+  xrPoster: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   iframe?: HTMLIFrameElement;
   filmId?: string;
   youtubeId?: string;
@@ -349,8 +352,10 @@ interface WorldOptions {
   cssLayer: HTMLElement;
   graphicsMode: GraphicsMode;
   palette: AvatarPalette;
+  xrPreferred?: boolean;
   onSnapshot: (snapshot: WorldSnapshot) => void;
   onAction: (action: WorldAction) => void;
+  onXrSessionChange?: (active: boolean) => void;
   onProjectorAdvance?: (venue: VenueKey, youtubeId: string) => void;
   /** How long the work on a venue's screen runs, as the player reports it. */
   onProjectorDuration?: (venue: VenueKey, youtubeId: string, seconds: number) => void;
@@ -1154,6 +1159,7 @@ export class FestivalWorld {
   private readonly shadowSpotlights: THREE.SpotLight[] = [];
   private readonly onSnapshot: WorldOptions['onSnapshot'];
   private readonly onAction: WorldOptions['onAction'];
+  private readonly onXrSessionChange?: WorldOptions['onXrSessionChange'];
   private readonly onProjectorAdvance?: WorldOptions['onProjectorAdvance'];
   private readonly onProjectorDuration?: WorldOptions['onProjectorDuration'];
   private readonly lookTarget = new THREE.Vector3();
@@ -1173,6 +1179,17 @@ export class FestivalWorld {
   private readonly cameraDirection = new THREE.Vector3();
   private readonly cameraToProjector = new THREE.Vector3();
   private readonly clock = new THREE.Clock();
+  private readonly xrPreferred: boolean;
+  private readonly xrRig = new THREE.Group();
+  private readonly xrControllers: THREE.Group[] = [];
+  private xrSession?: XRSession;
+  private xrActive = false;
+  private xrSimulated = false;
+  private xrYaw = 0;
+  private xrSimPitch = 0;
+  private xrSnapReady = true;
+  private xrTeleportReady = true;
+  private xrJumpReady = true;
   private readonly projectorClipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 45.68);
   private readonly projectorCornerView = new THREE.Vector3();
   private readonly programmeBoardViewPosition = new THREE.Vector3();
@@ -1248,7 +1265,6 @@ export class FestivalWorld {
   /** While recovering from a heavy landing: slower, and shown staggering. */
   private stumbleUntil = 0;
 
-  private animationFrame = 0;
   private cameraMode: CameraMode = 'follow';
   private graphicsMode: GraphicsMode;
   private palette: AvatarPalette;
@@ -1298,16 +1314,18 @@ export class FestivalWorld {
    */
   private baseFov = 58;
 
-  constructor({ canvas, foregroundCanvas, cssLayer, graphicsMode, palette, onSnapshot, onAction, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
+  constructor({ canvas, foregroundCanvas, cssLayer, graphicsMode, palette, xrPreferred = false, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
     this.canvas = canvas;
     this.foregroundCanvas = foregroundCanvas;
     this.graphicsMode = graphicsMode;
     this.palette = palette;
+    this.xrPreferred = xrPreferred;
     this.onSnapshot = onSnapshot;
     this.onAction = onAction;
+    this.onXrSessionChange = onXrSessionChange;
     this.onProjectorAdvance = onProjectorAdvance;
     this.onProjectorDuration = onProjectorDuration;
-    this.conservesMobileGpu = shouldConserveMobileGpu();
+    this.conservesMobileGpu = xrPreferred || shouldConserveMobileGpu();
     canvas.closest('.world-shell')?.classList.toggle(
       'world-shell--single-context-projectors',
       this.conservesMobileGpu,
@@ -1324,6 +1342,10 @@ export class FestivalWorld {
     this.renderer.shadowMap.enabled = graphicsMode === 'normal';
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.setPixelRatio(this.mainPixelRatio());
+    this.renderer.xr.enabled = true;
+    this.renderer.xr.setReferenceSpaceType('local-floor');
+    this.renderer.xr.setFramebufferScaleFactor(0.78);
+    this.renderer.xr.setFoveation(0.7);
     if (!this.conservesMobileGpu) {
       this.foregroundRenderer = new THREE.WebGLRenderer({
         canvas: foregroundCanvas,
@@ -1376,6 +1398,9 @@ export class FestivalWorld {
     this.dayNight.moonObject.layers.enable(1);
     this.fireworkWorldLight.castShadow = false;
     this.scene.add(this.fireworkWorldLight);
+    this.scene.add(this.xrRig);
+    this.xrRig.add(this.camera);
+    this.createXrControllers();
     this.createEnvironment();
     this.createPlayer(palette);
     this.createNpcCrowd();
@@ -1450,12 +1475,13 @@ export class FestivalWorld {
     // nothing to remove.
     this.cullDecorativeLights();
     this.clock.start();
-    this.render();
+    this.renderer.setAnimationLoop(this.render);
   }
 
   stop(): void {
     this.disposed = true;
-    cancelAnimationFrame(this.animationFrame);
+    this.renderer.setAnimationLoop(null);
+    if (this.xrSession) void this.xrSession.end().catch(() => undefined);
     window.removeEventListener('resize', this.resize);
     this.canvasSizeObserver?.disconnect();
     window.clearInterval(this.lightCullTimer);
@@ -1476,7 +1502,189 @@ export class FestivalWorld {
     this.stopFireworks();
     this.renderer.dispose();
     this.foregroundRenderer?.dispose();
-    for (const projector of this.projectors.values()) projector.element.remove();
+    for (const projector of this.projectors.values()) {
+      projector.element.remove();
+      projector.xrPoster.geometry.dispose();
+      projector.xrPoster.material.map?.dispose();
+      projector.xrPoster.material.dispose();
+    }
+  }
+
+  private createXrControllers(): void {
+    const rayGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(0, 0, -1),
+    ]);
+    for (let index = 0; index < 2; index += 1) {
+      const controller = this.renderer.xr.getController(index);
+      const ray = new THREE.Line(
+        rayGeometry.clone(),
+        new THREE.LineBasicMaterial({ color: index === 0 ? 0xffffff : 0xff4b55 }),
+      );
+      ray.scale.z = 2.6;
+      controller.add(ray);
+      controller.addEventListener('connected', (event) => {
+        controller.userData.inputSource = (event as THREE.Event & { data?: XRInputSource }).data;
+      });
+      controller.addEventListener('disconnected', () => {
+        delete controller.userData.inputSource;
+      });
+      controller.addEventListener('selectstart', this.xrSelect);
+      this.xrRig.add(controller);
+      this.xrControllers.push(controller);
+    }
+  }
+
+  private beginXrPresentation(simulated: boolean): void {
+    this.camera.getWorldDirection(this.cameraDirection);
+    this.xrYaw = Math.atan2(-this.cameraDirection.x, -this.cameraDirection.z);
+    this.xrSimPitch = 0;
+    this.xrSimulated = simulated;
+    this.xrRig.rotation.y = this.xrYaw;
+    this.camera.position.set(0, simulated ? 1.65 : 0, 0);
+    this.camera.rotation.set(0, 0, 0);
+    this.xrControllers.forEach((controller, index) => {
+      controller.position.set(simulated ? (index === 0 ? -0.24 : 0.24) : 0, simulated ? 1.22 : 0, simulated ? -0.35 : 0);
+    });
+    for (const [venue, projector] of this.projectors) {
+      this.releaseProjector(venue);
+      projector.xrPoster.visible = true;
+      projector.element.style.visibility = 'hidden';
+    }
+    this.mountedProjectorVenue = undefined;
+    this.xrActive = true;
+    this.player.visible = false;
+  }
+
+  /** Must be called directly from a visitor gesture for a real WebXR session. */
+  async enterVr(simulated = false): Promise<boolean> {
+    if (this.xrActive || this.xrSession) return true;
+    if (simulated) {
+      this.beginXrPresentation(true);
+      this.onXrSessionChange?.(true);
+      return true;
+    }
+    try {
+      const xr = navigator.xr;
+      const supported = await xr?.isSessionSupported('immersive-vr');
+      if (!xr || !supported) return false;
+      const session = await xr.requestSession('immersive-vr', {
+        requiredFeatures: ['local-floor'],
+        optionalFeatures: ['bounded-floor'],
+      });
+      this.xrSession = session;
+      session.addEventListener('end', this.xrEnded, { once: true });
+      this.beginXrPresentation(false);
+      await this.renderer.xr.setSession(session);
+      this.onXrSessionChange?.(true);
+      return true;
+    } catch {
+      const failedSession = this.xrSession;
+      if (failedSession) {
+        failedSession.removeEventListener('end', this.xrEnded);
+        try {
+          await failedSession.end();
+        } catch {
+          // The shared cleanup below also handles a rejected end request.
+        }
+      }
+      this.xrEnded();
+      return false;
+    }
+  }
+
+  async exitVr(): Promise<void> {
+    if (this.xrSimulated) {
+      this.xrEnded();
+      return;
+    }
+    const session = this.xrSession;
+    if (!session) return;
+    try {
+      await session.end();
+    } catch {
+      this.xrEnded();
+    }
+  }
+
+  private readonly xrEnded = (): void => {
+    this.xrSession = undefined;
+    this.xrActive = false;
+    this.xrSimulated = false;
+    this.xrSimPitch = 0;
+    this.xrRig.position.set(0, 0, 0);
+    this.xrRig.rotation.set(0, 0, 0);
+    this.xrControllers.forEach((controller) => controller.position.set(0, 0, 0));
+    for (const projector of this.projectors.values()) projector.xrPoster.visible = false;
+    this.player.visible = !this.controlledNpcId && this.cameraMode !== 'first-person';
+    this.onXrSessionChange?.(false);
+  };
+
+  private readonly xrSelect = (): void => {
+    if (!this.xrActive) return;
+    if (this.playerState === 'seated' && this.activeSeat?.kind !== 'bar') {
+      this.onAction({ type: 'vrWatch', venue: this.activeSeat?.venue ?? this.screeningVenue() });
+      return;
+    }
+    this.interact();
+  };
+
+  private updateXrInput(delta: number): void {
+    if (!this.xrActive || this.xrSimulated || !this.xrSession) return;
+    let moveX = 0;
+    let moveY = 0;
+    let turnX = 0;
+    let run = false;
+    let teleportPressed = false;
+    let jumpPressed = false;
+    for (const source of this.xrSession.inputSources) {
+      const gamepad = source.gamepad;
+      if (!gamepad) continue;
+      const axes = gamepad.axes;
+      const x = axes.length >= 4 ? axes[2] : (axes[0] ?? 0);
+      const y = axes.length >= 4 ? axes[3] : (axes[1] ?? 0);
+      if (source.handedness === 'left') {
+        moveX = Math.abs(x) > 0.16 ? x : 0;
+        moveY = Math.abs(y) > 0.16 ? y : 0;
+        run ||= Boolean(gamepad.buttons[1]?.pressed);
+        teleportPressed ||= Boolean(gamepad.buttons[3]?.pressed);
+        jumpPressed ||= Boolean(gamepad.buttons[4]?.pressed);
+      } else if (source.handedness === 'right') {
+        turnX = Math.abs(x) > 0.68 ? x : 0;
+        run ||= Boolean(gamepad.buttons[1]?.pressed);
+      }
+    }
+    if (turnX && this.xrSnapReady) {
+      this.xrYaw -= Math.sign(turnX) * THREE.MathUtils.degToRad(30);
+      this.xrSnapReady = false;
+    } else if (!turnX) this.xrSnapReady = true;
+    if (this.playerState !== 'seated' && (moveX || moveY)) {
+      const xrCamera = this.renderer.xr.getCamera();
+      const speed = run ? 7.4 : 4.4;
+      this.movePlayer(moveX, moveY, speed * delta, xrCamera);
+    }
+    if (teleportPressed && this.xrTeleportReady && this.playerState !== 'seated') {
+      this.movePlayer(0, -1, 2.4, this.renderer.xr.getCamera());
+      this.xrTeleportReady = false;
+    } else if (!teleportPressed) this.xrTeleportReady = true;
+    if (jumpPressed && this.xrJumpReady) {
+      this.jump();
+      this.xrJumpReady = false;
+    } else if (!jumpPressed) this.xrJumpReady = true;
+    this.running = run;
+  }
+
+  xrReviewSnapshot(): Record<string, unknown> {
+    return {
+      preferred: this.xrPreferred,
+      active: this.xrActive,
+      simulated: this.xrSimulated,
+      singleWebglContext: !this.foregroundRenderer,
+      controllers: this.xrControllers.length,
+      projectorPosters: [...this.projectors.values()].filter((projector) => projector.xrPoster.visible).length,
+      renderLoop: 'WebGLRenderer.setAnimationLoop',
+      seat: this.activeSeat?.id ?? null,
+    };
   }
 
   /**
@@ -3433,6 +3641,7 @@ export class FestivalWorld {
    * screen off.
    */
   private projectorVenue(): VenueKey | undefined {
+    if (this.xrActive) return undefined;
     // The run-up is a desk's luxury.
     //
     // Warming a venue's player while somebody is still walking towards it hides
@@ -3497,6 +3706,7 @@ export class FestivalWorld {
     const projector = this.projectors.get(venue);
     if (!projector) return;
     projector.pending = { film, offsetSeconds, reloadToken };
+    this.refreshXrPoster(venue, film.title);
     if (venue !== this.projectorVenue()) {
       this.releaseProjector(venue);
       return;
@@ -3564,6 +3774,7 @@ export class FestivalWorld {
     if (this.venueSignSignatures.get(venue) === signature) return;
     this.venueSignSignatures.set(venue, signature);
     venueScreens[venue].label = nextName;
+    this.refreshXrPoster(venue);
     const signMaterial = this.venueSignMaterials.get(venue);
     if (!signMaterial) return;
     const next = createTextTexture([nextName, nextSubtitle]);
@@ -4249,6 +4460,11 @@ export class FestivalWorld {
     this.cameraPointerX = event.clientX;
     this.cameraPointerY = event.clientY;
     if (Math.abs(deltaX) > 180 || Math.abs(deltaY) > 180) return;
+    if (this.xrActive && this.xrSimulated) {
+      this.xrYaw -= deltaX * 0.0042;
+      this.xrSimPitch = THREE.MathUtils.clamp(this.xrSimPitch - deltaY * 0.0035, -0.75, 0.75);
+      return;
+    }
     if (this.cameraMode === 'screening') {
       this.screeningOrbit.yaw = THREE.MathUtils.clamp(this.screeningOrbit.yaw - deltaX * 0.0034, -1.5, 1.5);
       this.screeningOrbit.pitch = THREE.MathUtils.clamp(this.screeningOrbit.pitch + deltaY * 0.0028, -0.3, 0.28);
@@ -4833,8 +5049,7 @@ export class FestivalWorld {
       // Without this the context is never restored, whatever else we do.
       event.preventDefault();
       this.lostContexts.add(canvas);
-      if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
-      this.animationFrame = 0;
+      this.renderer.setAnimationLoop(null);
     });
     canvas.addEventListener('webglcontextrestored', () => {
       if (!this.lostContexts.delete(canvas)) return;
@@ -4844,7 +5059,7 @@ export class FestivalWorld {
       if (this.lostContexts.size > 0) return;
       this.renderer.resetState();
       this.foregroundRenderer?.resetState();
-      if (!this.animationFrame) this.animationFrame = requestAnimationFrame(this.render);
+      this.renderer.setAnimationLoop(this.render);
     });
   }
 
@@ -4905,6 +5120,7 @@ export class FestivalWorld {
     element.setAttribute('aria-label', `${screen.label} public projector screen`);
     element.style.pointerEvents = 'none';
     const object = new CSS3DObject(element);
+    object.userData.venue = venue;
     object.position.set(...screen.position);
     if (screen.facing === -1) object.rotation.y = Math.PI;
     object.scale.setScalar(screen.scale);
@@ -4915,7 +5131,58 @@ export class FestivalWorld {
     aperture.scale.setScalar(screen.scale);
     aperture.visible = false;
     this.projectorApertureScene.add(aperture);
-    this.projectors.set(venue, { element, object, aperture, muted: true });
+    const xrPoster = new THREE.Mesh(
+      new THREE.PlaneGeometry(1600 * screen.scale, 900 * screen.scale),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, toneMapped: false }),
+    );
+    xrPoster.position.set(screen.position[0], screen.position[1], screen.position[2] + screen.facing * 0.025);
+    if (screen.facing === -1) xrPoster.rotation.y = Math.PI;
+    xrPoster.visible = false;
+    this.scene.add(xrPoster);
+    this.projectors.set(venue, { element, object, aperture, xrPoster, muted: true });
+    this.refreshXrPoster(venue, 'PUBLIC SCREENING');
+  }
+
+  private refreshXrPoster(venue: VenueKey, filmTitle?: string): void {
+    const projector = this.projectors.get(venue);
+    if (!projector) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 576;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.fillStyle = '#09090b';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.strokeStyle = '#e63d48';
+    context.lineWidth = 18;
+    context.strokeRect(18, 18, canvas.width - 36, canvas.height - 36);
+    context.fillStyle = '#e63d48';
+    context.font = '700 44px sans-serif';
+    context.fillText(`${venueScreens[venue].label.toUpperCase()} · YOUTUBE`, 62, 102);
+    context.fillStyle = '#ffffff';
+    context.font = '900 70px sans-serif';
+    const title = (filmTitle ?? projector.pending?.film.title ?? 'PUBLIC SCREENING').toUpperCase();
+    const words = title.split(/\s+/);
+    const lines: string[] = [];
+    let line = '';
+    for (const word of words) {
+      const proposed = line ? `${line} ${word}` : word;
+      if (context.measureText(proposed).width > 890 && line) {
+        lines.push(line);
+        line = word;
+      } else line = proposed;
+    }
+    if (line) lines.push(line);
+    lines.slice(0, 3).forEach((part, index) => context.fillText(part, 62, 205 + index * 82));
+    context.fillStyle = '#d0d0d3';
+    context.font = '700 34px sans-serif';
+    context.fillText('TAKE A SEAT · PRESS TRIGGER TO WATCH', 62, 510);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const previous = projector.xrPoster.material.map;
+    projector.xrPoster.material.map = texture;
+    projector.xrPoster.material.needsUpdate = true;
+    previous?.dispose();
   }
 
   private addSpotlight(
@@ -7987,6 +8254,7 @@ export class FestivalWorld {
     this.waterTextures[0]?.offset.set((elapsed * 0.004) % 1, (elapsed * 0.0015) % 1);
     this.waterTextures[1]?.offset.set((-elapsed * 0.006) % 1, (elapsed * 0.003) % 1);
     this.tuneRenderScale(performance.now());
+    this.updateXrInput(delta);
     this.updatePlayer(delta);
     this.updateNpcs(delta, elapsed);
     this.updateRemoteAvatars(delta, elapsed);
@@ -8020,9 +8288,13 @@ export class FestivalWorld {
     this.mainTriangles = this.renderer.info.render.triangles;
     const visibleProjectors: VenueKey[] = [];
     const visibleProjectorScissors = new Map<VenueKey, { x: number; y: number; width: number; height: number }>();
-    const boardScissor = this.programmeBoardScissor();
+    const boardScissor = this.xrActive ? undefined : this.programmeBoardScissor();
     this.reviewSuppressedProjectors = [];
     for (const [venue, projector] of this.projectors) {
+      if (this.xrActive) {
+        projector.element.style.visibility = 'hidden';
+        continue;
+      }
       const screen = venueScreens[venue];
       this.projectorWorldPosition.set(...screen.position);
       this.camera.getWorldDirection(this.cameraDirection);
@@ -8160,7 +8432,6 @@ export class FestivalWorld {
       });
       this.lastSnapshotAt = now;
     }
-    this.animationFrame = requestAnimationFrame(this.render);
   };
 
   /**
@@ -8478,7 +8749,7 @@ export class FestivalWorld {
     }
     if (this.playerState === 'seated') {
       this.moveVector.set(0, 0, 0);
-      this.player.visible = !this.controlledNpcId;
+      this.player.visible = !this.xrActive && !this.controlledNpcId;
       this.syncCarriedPropAnchor();
       if (this.playerRig) {
         // The gesture was never handed over, so a drink taken on a stool was
@@ -8577,7 +8848,7 @@ export class FestivalWorld {
       this.player.rotation.x = 0;
       this.player.rotation.z = 0;
     }
-    this.player.visible = !this.controlledNpcId && this.cameraMode !== 'first-person';
+    this.player.visible = !this.xrActive && !this.controlledNpcId && this.cameraMode !== 'first-person';
     this.player.scale.setScalar(1);
     this.syncCarriedPropAnchor();
     if (this.playerRig) {
@@ -8649,10 +8920,10 @@ export class FestivalWorld {
     return { min, max };
   }
 
-  private movePlayer(horizontal: number, vertical: number, distance: number): void {
+  private movePlayer(horizontal: number, vertical: number, distance: number, view: THREE.Object3D = this.camera): void {
     // Third-person controls are always camera-relative: W advances toward the
     // current view, S retreats, and A/D strafe along its right vector.
-    this.camera.getWorldDirection(this.cameraDirection);
+    view.getWorldDirection(this.cameraDirection);
     this.cameraDirection.y = 0;
     this.cameraDirection.normalize();
     const rightX = -this.cameraDirection.z;
@@ -10346,6 +10617,17 @@ export class FestivalWorld {
 
   private updateCamera(delta: number, _elapsed: number): void {
     this.settlePunchImpact();
+    if (this.xrActive) {
+      const floorY = this.groundHeightAt(this.player.position.x, this.player.position.z, this.player.position.y) - AVATAR_GROUND_Y;
+      this.xrRig.position.set(this.player.position.x, floorY, this.player.position.z);
+      this.xrRig.rotation.y = this.xrYaw;
+      if (this.xrSimulated) {
+        this.camera.position.set(0, 1.65, 0);
+        this.camera.rotation.set(this.xrSimPitch, 0, 0);
+      }
+      this.player.visible = false;
+      return;
+    }
     const cameraTarget = this.player.position.clone();
     if (this.cameraMode === 'screening') {
       const venue = this.activeSeat?.venue ?? this.screeningVenue();

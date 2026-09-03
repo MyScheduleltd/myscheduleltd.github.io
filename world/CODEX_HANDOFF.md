@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-08-25 · mobile DJ/screen, stage and zoom follow-up · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-09-03 · Quest/WebXR beta published · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
@@ -8,7 +8,59 @@ Last updated: 2026-08-25 · mobile DJ/screen, stage and zoom follow-up · branch
 
 ---
 
-## 0. READ THIS FIRST — all-avatar foreground follow-up published
+## 0. READ THIS FIRST — Quest/WebXR beta published
+
+The owner asked whether the festival could run on Meta Quest and chose YouTube
+embeds as the only screening source. They accepted this product compromise:
+the venue itself is immersive and walkable; selecting a screening ends the
+immersive session and opens the untouched standard YouTube iframe, then a
+`RESUME VR` action requests a new immersive session and returns to the same
+world position and seat.
+
+- The gate detects `immersive-vr` support with `navigator.xr.isSessionSupported`.
+  It does not user-agent sniff. Supported browsers receive a bilingual
+  `QUEST VR MODE` option; selecting it forces Lite graphics and stores only a
+  per-tab preference. Entry into WebXR still has its own explicit button after
+  the world loads because the browser requires a direct user gesture.
+- The world uses Three's `WebGLRenderer.setAnimationLoop`, a `local-floor`
+  reference space, 0.78 framebuffer scale and fixed foveation. Quest mode keeps
+  one WebGL renderer/context and never constructs the desktop foreground
+  renderer.
+- Quest Touch controls: left stick moves, either grip runs, right stick snap
+  turns 30 degrees, left stick click steps/teleports forward, X jumps, and the
+  trigger uses the ordinary interaction. At a screening seat, the trigger sends
+  the visitor to the standard YouTube player instead.
+- CSS3D/iframe projectors are unavailable inside an immersive WebXR layer. Each
+  venue therefore has a lightweight WebGL poster at the exact existing screen
+  centre with the current title and the instruction to sit/press trigger. The
+  normal DOM projector is released while VR is active, avoiding a competing
+  video decoder. No screen geometry or approved avatar compositor changed.
+- Local fixtures: `?review=vr-gate`, `?review=vr-entry`, `?review=vr-youtube`.
+  On loopback only, `vr-gate` and `vr-entry` now launch a clearly labelled
+  desktop simulation instead of making a doomed immersive-session request.
+  Keyboard/mouse navigation, the WebGL screening posters and exit flow can
+  therefore be reviewed without a headset; this simulation is never enabled
+  by a production URL.
+  `data-vr-review` reports support, the standard YouTube hostname, preserved
+  seat, controller count, render-loop type and whether Quest mode retained one
+  WebGL context.
+- Locally verified: the gate option renders at 1024 x 768; checking it and
+  entering muted reaches the VR-ready card; the desktop preview enters and
+  exits with one WebGL context, two controller stand-ins and five WebGL
+  screening posters; the YouTube fixture opens a
+  maximized `www.youtube.com` iframe from `SHORE-1-1`; closing it reveals
+  `RESUME VR`; the existing 390 x 844 mobile-stability fixture still reports
+  `contexts: 1`, one live player and no console warnings/errors. All 43 server
+  tests, TypeScript/Vite build and `git diff --check` pass.
+- Not locally verifiable: actual Quest headset permission, stereoscopic frame
+  timing, Touch-controller mappings and the end-session/resume gesture on Quest
+  Browser. Treat these as device QA, not confirmed behavior.
+
+The owner approved publication on 2026-09-03. The beta payload references
+`index-D73Tb99w.js`, `index-BTLDz2Xy.css` and `three-Bb7Az0mP.js`. Real Quest
+headset behavior still requires the device QA listed above.
+
+## 0b. All-avatar foreground follow-up published
 
 The owner's live iPhone screenshots showed both resident DJs hidden by the CSS3D
 public-screening layer, the basement console hanging beyond its platform, and the
