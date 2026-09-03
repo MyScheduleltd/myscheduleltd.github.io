@@ -211,8 +211,8 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
  */
 .world-shell--single-context-projectors #world-canvas { z-index: 1; background: transparent; }
 .world-shell--single-context-projectors .world-css3d { z-index: 0; }
-.world-shell[data-vr-active='true'] .world-css3d,
-.world-shell[data-vr-active='true'] #world-foreground { visibility: hidden !important; }
+.world-shell[data-vr-active='true'][data-vr-simulated='false'] .world-css3d,
+.world-shell[data-vr-active='true'][data-vr-simulated='false'] #world-foreground { visibility: hidden !important; }
 .vr-entry {
   position: fixed; z-index: 18; left: 50%; top: 50%; width: min(470px, calc(100vw - 32px));
   transform: translate(-50%, -50%); border: 2px solid var(--paper); padding: 24px;

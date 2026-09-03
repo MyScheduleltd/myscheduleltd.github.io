@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-03 · desktop VR access published · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-09-03 · desktop VR eye height and live projector follow-up published · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
@@ -8,7 +8,40 @@ Last updated: 2026-09-03 · desktop VR access published · branch `codex/fix-gat
 
 ---
 
-## 0. READ THIS FIRST — desktop VR access published
+## 0. READ THIS FIRST — desktop VR eye height and live YouTube published
+
+The owner's desktop VR screenshots showed the preview camera below the avatar's
+established first-person eye line and WebGL title posters in place of the live
+public-screening videos. The local follow-up fixes both without changing screen
+geometry, the avatar foreground compositor or the true Quest media compromise.
+
+- Desktop VR now uses the same 2.90-world-unit height above the floor as the
+  avatar's first-person POV. That value is derived from the 0.28 avatar rig
+  origin plus its existing 2.62 eye offset, so the two views cannot drift apart.
+- A simulated desktop VR session keeps the ordinary CSS3D YouTube projector
+  mounted, visible and playing. It no longer releases the iframe, enables the
+  five WebGL poster substitutes or hides the CSS projector layer.
+- A real immersive Quest session still releases the iframe and uses the WebGL
+  posters. Cross-origin YouTube embeds cannot be drawn into an immersive WebXR
+  texture; seated Quest playback therefore retains the already accepted flow
+  that exits the immersive session to YouTube and offers `RESUME VR` afterward.
+  The owner explicitly chose to keep this exit/resume flow for now on
+  2026-09-03; no direct-video or WebXR media-layer experiment was added.
+- `?review=vr-screen` is a loopback-only deterministic fixture. It seats the
+  visitor at the Shore, uses a verified embeddable catalogue item and reports
+  the active projector mode, iframe/playback state and both eye heights through
+  `data-vr-review`.
+- Verified locally in the browser: desktop VR was active with one WebGL context,
+  no WebGL posters, the Shore iframe mounted and `playing: true`; both the
+  simulated eye height and avatar POV height reported 2.9. The rendered review
+  frame showed the live music video on the in-world screen. All 43 server tests,
+  TypeScript, the Vite production build and `git diff --check` pass.
+
+The owner approved publication on 2026-09-03. The beta payload references
+`index-7-GEqjQU.js`, `index-CfFYu65j.css` and the unchanged
+`three-Bb7Az0mP.js` runtime bundle.
+
+## 0a. Desktop VR access published
 
 The owner asked to use the VR mode from a desktop so they can verify it without
 a Quest. A fine-pointer, hover-capable browser now receives an enabled
@@ -25,7 +58,7 @@ the TypeScript/Vite build and `git diff --check` passed. The owner approved
 publication on 2026-09-03; the beta payload references `index-Dj_j6JGO.js`,
 the unchanged `index-Dg2SpIlQ.css` and `three-Bb7Az0mP.js` bundles.
 
-## 0a. VR option visible on every gate, published
+## 0b. VR option visible on every gate, published
 
 The owner opened the published beta on a desktop browser and reasonably thought
 VR was absent: the capability check hid the entire option when `immersive-vr`
@@ -40,7 +73,7 @@ The owner approved publication on 2026-09-03. Its beta payload references
 `index-CeN7ts66.js`, `index-Dg2SpIlQ.css` and the unchanged
 `three-Bb7Az0mP.js` runtime bundle.
 
-## 0b. Quest/WebXR beta published
+## 0c. Quest/WebXR beta published
 
 The owner asked whether the festival could run on Meta Quest and chose YouTube
 embeds as the only screening source. They accepted this product compromise:
@@ -92,7 +125,7 @@ The owner approved publication on 2026-09-03. The beta payload references
 `index-D73Tb99w.js`, `index-BTLDz2Xy.css` and `three-Bb7Az0mP.js`. Real Quest
 headset behavior still requires the device QA listed above.
 
-## 0c. All-avatar foreground follow-up published
+## 0d. All-avatar foreground follow-up published
 
 The owner's live iPhone screenshots showed both resident DJs hidden by the CSS3D
 public-screening layer, the basement console hanging beyond its platform, and the

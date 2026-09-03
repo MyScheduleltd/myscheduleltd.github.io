@@ -414,6 +414,11 @@ const pamphletPosition = new THREE.Vector3(-3, 0, 16);
 // the same height, and they fought for the same pixels along the whole shore.
 const SHORE_Z = -58;
 const AVATAR_GROUND_Y = 0.28;
+// The first-person camera is this far above the avatar rig's origin. Since the
+// rig origin itself sits AVATAR_GROUND_Y above the floor, a floor-anchored XR
+// rig needs their sum to reproduce the exact same point of view.
+const AVATAR_EYE_OFFSET = 2.62;
+const AVATAR_EYE_HEIGHT = AVATAR_GROUND_Y + AVATAR_EYE_OFFSET;
 // A leap of about 2.4 units — waist height on a 3.46-unit body, near enough to
 // 1.2m. Nearly nine tenths of a second in the air, which at a run carries the
 // best part of eleven units forward: enough to clear a gap rather than only an
@@ -1541,17 +1546,25 @@ export class FestivalWorld {
     this.xrSimPitch = 0;
     this.xrSimulated = simulated;
     this.xrRig.rotation.y = this.xrYaw;
-    this.camera.position.set(0, simulated ? 1.65 : 0, 0);
+    this.camera.position.set(0, simulated ? AVATAR_EYE_HEIGHT : 0, 0);
     this.camera.rotation.set(0, 0, 0);
     this.xrControllers.forEach((controller, index) => {
       controller.position.set(simulated ? (index === 0 ? -0.24 : 0.24) : 0, simulated ? 1.22 : 0, simulated ? -0.35 : 0);
     });
     for (const [venue, projector] of this.projectors) {
+      // A desktop preview is still an ordinary browser composition, so its
+      // CSS3D YouTube player can stay on the in-world screen. A real immersive
+      // WebXR layer cannot contain that cross-origin iframe; only that path
+      // swaps to the lightweight WebGL poster and releases its decoder.
+      if (simulated) {
+        projector.xrPoster.visible = false;
+        continue;
+      }
       this.releaseProjector(venue);
       projector.xrPoster.visible = true;
       projector.element.style.visibility = 'hidden';
     }
-    this.mountedProjectorVenue = undefined;
+    if (!simulated) this.mountedProjectorVenue = undefined;
     this.xrActive = true;
     this.player.visible = false;
   }
@@ -1675,6 +1688,9 @@ export class FestivalWorld {
   }
 
   xrReviewSnapshot(): Record<string, unknown> {
+    const mountedProjector = this.mountedProjectorVenue
+      ? this.projectors.get(this.mountedProjectorVenue)
+      : undefined;
     return {
       preferred: this.xrPreferred,
       active: this.xrActive,
@@ -1682,6 +1698,19 @@ export class FestivalWorld {
       singleWebglContext: !this.foregroundRenderer,
       controllers: this.xrControllers.length,
       projectorPosters: [...this.projectors.values()].filter((projector) => projector.xrPoster.visible).length,
+      projectorMode: this.xrActive
+        ? (this.xrSimulated ? 'youtube-css3d' : 'webgl-posters')
+        : 'standard',
+      mountedProjector: this.mountedProjectorVenue ?? null,
+      projectorPlayback: mountedProjector ? {
+        youtubeId: mountedProjector.youtubeId ?? null,
+        iframeMounted: Boolean(mountedProjector.iframe),
+        playing: mountedProjector.playing ?? null,
+        staffPaused: mountedProjector.paused,
+      } : null,
+      eyeHeightFromFloor: this.xrSimulated ? Number(AVATAR_EYE_HEIGHT.toFixed(2)) : null,
+      avatarPovHeightFromFloor: Number(AVATAR_EYE_HEIGHT.toFixed(2)),
+      avatarEyeOffset: AVATAR_EYE_OFFSET,
       renderLoop: 'WebGLRenderer.setAnimationLoop',
       seat: this.activeSeat?.id ?? null,
     };
@@ -3641,7 +3670,7 @@ export class FestivalWorld {
    * screen off.
    */
   private projectorVenue(): VenueKey | undefined {
-    if (this.xrActive) return undefined;
+    if (this.xrActive && !this.xrSimulated) return undefined;
     // The run-up is a desk's luxury.
     //
     // Warming a venue's player while somebody is still walking towards it hides
@@ -8288,10 +8317,11 @@ export class FestivalWorld {
     this.mainTriangles = this.renderer.info.render.triangles;
     const visibleProjectors: VenueKey[] = [];
     const visibleProjectorScissors = new Map<VenueKey, { x: number; y: number; width: number; height: number }>();
-    const boardScissor = this.xrActive ? undefined : this.programmeBoardScissor();
+    const immersiveXr = this.xrActive && !this.xrSimulated;
+    const boardScissor = immersiveXr ? undefined : this.programmeBoardScissor();
     this.reviewSuppressedProjectors = [];
     for (const [venue, projector] of this.projectors) {
-      if (this.xrActive) {
+      if (immersiveXr) {
         projector.element.style.visibility = 'hidden';
         continue;
       }
@@ -10622,7 +10652,7 @@ export class FestivalWorld {
       this.xrRig.position.set(this.player.position.x, floorY, this.player.position.z);
       this.xrRig.rotation.y = this.xrYaw;
       if (this.xrSimulated) {
-        this.camera.position.set(0, 1.65, 0);
+        this.camera.position.set(0, AVATAR_EYE_HEIGHT, 0);
         this.camera.rotation.set(this.xrSimPitch, 0, 0);
       }
       this.player.visible = false;
@@ -10648,7 +10678,7 @@ export class FestivalWorld {
       this.lookTarget.y -= this.screeningOrbit.pitch * viewingDistance * 0.68;
     } else if (this.cameraMode === 'first-person') {
       const orbit = this.cameraOrbit.follow;
-      const eye = this.player.position.clone().add(new THREE.Vector3(0, 2.62, 0));
+      const eye = this.player.position.clone().add(new THREE.Vector3(0, AVATAR_EYE_OFFSET, 0));
       cameraTarget.copy(eye);
       this.lookTarget.copy(eye).add(new THREE.Vector3(
         -Math.sin(orbit.yaw) * 6,

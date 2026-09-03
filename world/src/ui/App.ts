@@ -400,7 +400,7 @@ export class App {
   private async detectVrSupport(): Promise<void> {
     const review = new URLSearchParams(window.location.search).get('review');
     const loopbackFixture = ['127.0.0.1', 'localhost'].includes(window.location.hostname)
-      && ['vr-gate', 'vr-entry', 'vr-youtube'].includes(review ?? '');
+      && ['vr-gate', 'vr-entry', 'vr-youtube', 'vr-screen'].includes(review ?? '');
     try {
       this.vrSupported = loopbackFixture || Boolean(await navigator.xr?.isSessionSupported('immersive-vr'));
     } catch {
@@ -453,7 +453,7 @@ export class App {
   private isLocalVrPreview(): boolean {
     const review = new URLSearchParams(window.location.search).get('review');
     return ['127.0.0.1', 'localhost'].includes(window.location.hostname)
-      && ['vr-gate', 'vr-entry'].includes(review ?? '');
+      && ['vr-gate', 'vr-entry', 'vr-screen'].includes(review ?? '');
   }
 
   /** Keep the simulation off touch-only phones, whose stable path stays unchanged. */
@@ -1057,7 +1057,16 @@ export class App {
         () => world.wornStyleReviewSnapshot();
     }
     const reviewTarget = new URLSearchParams(window.location.search).get('review');
-    if (reviewTarget === 'vr-youtube' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+    if (reviewTarget === 'vr-screen' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      this.activeVenue = 'shore';
+      this.world.focusPublicScreeningForReview('shore');
+      const reviewFilm = this.venueFilms('shore').find((film) => film.youtubeId === 'SRbsIUYB0dc');
+      if (reviewFilm) this.world.setPublicScreening('shore', reviewFilm, 0, 'vr-screen-review');
+      (window as Window & { __festivalVrReview?: () => unknown }).__festivalVrReview = () => this.vrReviewSnapshot();
+      window.setTimeout(() => {
+        document.documentElement.dataset.vrReview = JSON.stringify(this.vrReviewSnapshot());
+      }, 400);
+    } else if (reviewTarget === 'vr-youtube' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       this.activeVenue = 'shore';
       this.world.focusPublicScreeningForReview('shore');
       void this.leaveVrForYoutube('shore');
@@ -1972,7 +1981,10 @@ export class App {
     const resume = this.root.querySelector<HTMLButtonElement>('[data-vr-resume]');
     const previewExit = this.root.querySelector<HTMLButtonElement>('[data-vr-preview-exit]');
     const status = this.root.querySelector<HTMLElement>('[data-vr-status]');
-    if (shell) shell.dataset.vrActive = String(this.vrActive);
+    if (shell) {
+      shell.dataset.vrActive = String(this.vrActive);
+      shell.dataset.vrSimulated = String(this.vrActive && this.usesVrSimulation());
+    }
     if (entry) entry.hidden = !this.vrRequested || this.vrActive || this.vrResumePending;
     if (resume) resume.hidden = !this.vrResumePending || this.vrActive || !this.root.querySelector('#venue-screen')?.hasAttribute('hidden');
     if (previewExit) previewExit.hidden = !this.vrActive || !this.usesVrSimulation();
