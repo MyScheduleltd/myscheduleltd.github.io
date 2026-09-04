@@ -1149,6 +1149,8 @@ export class App {
     if (['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       (window as Window & { __festivalMentor?: () => unknown }).__festivalMentor =
         () => this.world?.mentorFollowerReviewSnapshot();
+      (window as Window & { __festivalProjectors?: () => unknown }).__festivalProjectors =
+        () => this.world?.projectorAlignmentSnapshot();
     }
     if (reviewTarget === 'vr-screen' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       this.activeVenue = 'shore';

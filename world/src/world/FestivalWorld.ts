@@ -5277,6 +5277,61 @@ export class FestivalWorld {
     return this.mainPixelRatio();
   }
 
+  /**
+   * Where each mounted screen actually is on the page, against where the world
+   * says it should be.
+   *
+   * The picture is a CSS3D panel and the frame around it is WebGL, drawn from
+   * the same camera through two entirely different pipelines. Nothing else
+   * reports whether the two agree, so a drift between them can only be argued
+   * about from screenshots.
+   */
+  projectorAlignmentSnapshot(): Record<string, unknown> {
+    const width = this.foregroundCanvas.clientWidth || window.innerWidth;
+    const height = this.foregroundCanvas.clientHeight || window.innerHeight;
+    const round = (value: number) => Number(value.toFixed(1));
+    const screens: Record<string, unknown> = {};
+    for (const [venue, projector] of this.projectors) {
+      if (!projector.iframe || projector.element.style.visibility === 'hidden') continue;
+      const screen = venueScreens[venue];
+      // The four corners, projected and turned into page pixels — the same
+      // rectangle the browser's own layout of the CSS panel should produce.
+      // Comparing a projected *centre* against a bounding box does not work:
+      // perspective turns the quad into a trapezoid whose box is not centred on
+      // it, so the two disagree by tens of pixels with nothing wrong at all.
+      const halfWidth = 800 * screen.scale;
+      const halfHeight = 450 * screen.scale;
+      const [sx, sy, sz] = screen.position;
+      let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+      for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as Array<[number, number]>) {
+        const corner = new THREE.Vector3(sx + dx * halfWidth, sy + dy * halfHeight, sz).project(this.camera);
+        const pixelX = (corner.x * 0.5 + 0.5) * width;
+        const pixelY = (-corner.y * 0.5 + 0.5) * height;
+        minX = Math.min(minX, pixelX); maxX = Math.max(maxX, pixelX);
+        minY = Math.min(minY, pixelY); maxY = Math.max(maxY, pixelY);
+      }
+      const rect = projector.element.getBoundingClientRect();
+      screens[venue] = {
+        expected: [round(minX), round(minY), round(maxX - minX), round(maxY - minY)],
+        actual: [round(rect.left), round(rect.top), round(rect.width), round(rect.height)],
+        driftPx: [round(rect.left - minX), round(rect.top - minY)],
+        sizeErrorPx: [round(rect.width - (maxX - minX)), round(rect.height - (maxY - minY))],
+      };
+    }
+    return {
+      xr: this.xrActive ? (this.xrSimulated ? 'simulated' : 'immersive') : 'off',
+      headTracking: this.headTrackingEnabled(),
+      yaw: Number(this.xrRig.rotation.y.toFixed(3)),
+      // A symmetric frustum leaves these at zero; the head-coupled view does not,
+      // and CSS `perspective` has no way to express an off-centre one.
+      frustumSkew: [
+        Number(this.camera.projectionMatrix.elements[8].toFixed(4)),
+        Number(this.camera.projectionMatrix.elements[9].toFixed(4)),
+      ],
+      screens,
+    };
+  }
+
   private projectorScissor(venue: VenueKey): { x: number; y: number; width: number; height: number } | undefined {
     const screen = venueScreens[venue];
     const viewportWidth = this.foregroundCanvas.clientWidth || window.innerWidth;
