@@ -8,7 +8,54 @@ Last updated: 2026-09-04 · phone VR gyroscope, webcam head tracking, jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — grain that shows, and one honest number
+## 0. READ THIS FIRST — grain that looks like film, and shorter presence lag
+
+### Grain, second pass
+
+Reported as too heavy and not film-like. Three things fixed it, and the *blend
+mode is not one of them* — that was last pass:
+
+- **`numOctaves='1'`.** The extra octaves add low-frequency components, and those
+  are what clump noise into blotches. Real grain is uniform.
+- **`baseFrequency='1.6'` against a 160px tile.** Particles land at about a
+  pixel, which is where film grain sits.
+- **`feColorMatrix type='saturate' values='0'`.** `feTurbulence` produces
+  *coloured* noise, and coloured speckle is the single thing that most says
+  "sensor" rather than "emulsion".
+
+Opacity .22, and the shift runs at eight steps over .4s — twenty jumps a second
+rather than five, because grain resolves anew every frame of film and anything
+slower reads as a pulsing overlay. Eight offsets, not four: with four the eye
+starts to recognise the cycle.
+
+### Why other visitors looked behind
+
+Three delays stacked, and the fix takes something off each:
+
+| | was | now |
+| --- | --- | --- |
+| sender's presence throttle | 220ms flat | **140ms while moving**, 220 otherwise |
+| server broadcast batch | 50ms | unchanged |
+| receiver's playback buffer | one full measured interval, capped at 600ms | **0.8 of it**, capped at 400ms |
+
+That last one is the subtle one. `updateRemoteAvatars` replays previous → target
+across the whole expected interval, which buys perfectly smooth motion at the
+price of always rendering a body one full interval behind where its owner said
+it was. Finishing early arrives sooner and costs a short hold before the next
+update, which is much harder to see than the delay was.
+
+**What not to do instead:** ease toward the latest position. There is a comment
+in the file about this and it is right — everyone sprints to their last known
+spot and stops dead, nearly three units of stutter per step at a run.
+
+Idle visitors cost nothing extra: the identical-payload rule already holds a
+still body to one post every three seconds, so the faster rate only applies to
+somebody actually walking.
+
+**This is reasoned tuning, not a measurement.** Two browsers against the live
+service is the only way to judge it, and that needs the owner.
+
+## 0-prev. Grain that shows, and one honest number
 
 ### Soft-light grain over a dark world is invisible
 

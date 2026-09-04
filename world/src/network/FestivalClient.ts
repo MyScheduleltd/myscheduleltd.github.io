@@ -550,7 +550,13 @@ export class FestivalClient {
     const payload = JSON.stringify({ ...presence, palette });
     const now = performance.now();
     if (payload === this.lastPresence && now - this.lastPresenceAt < 3_000) return;
-    if (now - this.lastPresenceAt < 220) return;
+    // Twice as often while actually walking. The old flat 220ms was the largest
+    // single term in how far behind another visitor appeared, and a body in
+    // motion is the only time anybody can see the difference — standing still,
+    // the identical-payload rule above already holds it to one post every three
+    // seconds, so this costs nothing for a room full of people watching a film.
+    const interval = presence.moving ? 140 : 220;
+    if (now - this.lastPresenceAt < interval) return;
     this.lastPresence = payload;
     this.lastPresenceAt = now;
     await this.request('/api/presence', { method: 'POST', body: payload }, false);

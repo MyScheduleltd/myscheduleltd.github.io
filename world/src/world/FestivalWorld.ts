@@ -4098,7 +4098,10 @@ export class FestivalWorld {
       if (sinceLast > 20) {
         avatar.previousTarget.copy(avatar.group.position);
         avatar.previousRotation = avatar.group.rotation.y;
-        avatar.updateInterval = THREE.MathUtils.clamp(sinceLast, 90, 600);
+        // Capped at 400 rather than 600. The ceiling is what a body falls back
+        // to when one packet is slow, and six hundred milliseconds of crawling
+        // to catch up is long enough to watch.
+        avatar.updateInterval = THREE.MathUtils.clamp(sinceLast, 90, 400);
         avatar.targetAt = arrivedAt;
       }
       avatar.target.set(displayVisitor.x, reportedY, displayVisitor.z);
@@ -10187,8 +10190,21 @@ export class FestivalWorld {
         avatar.group.position.copy(avatar.target);
         avatar.group.rotation.y = avatar.targetRotation;
       } else {
+        // Played out over rather less than the gap it was measured across.
+        //
+        // Replaying previous → target across the *whole* expected interval buys
+        // perfectly smooth motion at the price of always rendering a body one
+        // full interval behind where its owner said it was — and that buffer,
+        // stacked on the send throttle and the broadcast batch, is what reads as
+        // other visitors lagging. Finishing the move early arrives sooner and
+        // costs a short hold before the next update, which is far harder to see
+        // than the delay was.
+        //
+        // Easing toward the latest position instead is the thing not to do: it
+        // makes everyone sprint to their last known spot and stop dead, which
+        // at a run is nearly three units of stutter per step.
         const played = THREE.MathUtils.clamp(
-          (performance.now() - avatar.targetAt) / avatar.updateInterval,
+          (performance.now() - avatar.targetAt) / (avatar.updateInterval * 0.8),
           0,
           1,
         );

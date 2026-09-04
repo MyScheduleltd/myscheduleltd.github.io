@@ -340,14 +340,24 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
  */
 .world-grain {
   position: absolute; inset: -60px; z-index: 4; pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.42'/%3E%3C/svg%3E");
+  /* Three things make this read as 35mm rather than as digital noise.
+     `numOctaves='1'` — the extra octaves were adding low-frequency components,
+     and those are what clump the noise into blotches; real grain is uniform.
+     A high `baseFrequency` against a small tile puts the particles at about a
+     pixel, which is where film grain actually sits. And `saturate 0`, because
+     `feTurbulence` produces coloured noise, and coloured speckle is the single
+     thing that most says "sensor" instead of "emulsion". */
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='1' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
   /* `screen`, not `soft-light`. Soft-light leaves dark pixels almost exactly
      where it found them, and this world is dark — which is why the grain was
      invisible at full opacity and read as missing. Screen adds light, so the
      noise lands as bright specks over the shadows, the way grain does on a
      dark print. */
-  mix-blend-mode: screen; opacity: .5;
-  animation: film-grain-shift .72s steps(4, end) infinite;
+  mix-blend-mode: screen; opacity: .22;
+  /* Twenty jumps a second rather than five. Grain resolves anew every frame of
+     film; slow enough to follow, it reads as a pulsing overlay instead. */
+  animation: film-grain-shift .4s steps(8, end) infinite;
   will-change: background-position;
 }
 .world-shell[data-world-quality='lite'] .world-grain { display: none; }
@@ -1148,12 +1158,20 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 @keyframes phone-open { from { opacity: 0; transform: translateY(18px) scale(.98); } to { opacity: 1; transform: none; } }
 @keyframes alert-in { from { opacity: 0; transform: translate(-50%, -14px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @keyframes action-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(224,71,80,0); } 50% { box-shadow: 0 0 0 5px rgba(224,71,80,.18); } }
+/* Eight unrelated offsets: with only four the eye starts to recognise the
+   cycle, which is the opposite of what grain should do. Kept small, because a
+   large jump reads as the whole picture shifting rather than the emulsion
+   resolving again. */
 @keyframes film-grain-shift {
-  0% { transform: translate3d(-3%, 2%, 0); }
-  25% { transform: translate3d(2%, -4%, 0); }
-  50% { transform: translate3d(4%, 3%, 0); }
-  75% { transform: translate3d(-4%, -2%, 0); }
-  100% { transform: translate3d(1%, 4%, 0); }
+  0% { transform: translate3d(-2%, 1%, 0); }
+  12.5% { transform: translate3d(1.5%, -2.5%, 0); }
+  25% { transform: translate3d(-3%, -1%, 0); }
+  37.5% { transform: translate3d(2.5%, 2%, 0); }
+  50% { transform: translate3d(-1%, 3%, 0); }
+  62.5% { transform: translate3d(3%, -1.5%, 0); }
+  75% { transform: translate3d(-2.5%, -3%, 0); }
+  87.5% { transform: translate3d(2%, 2.5%, 0); }
+  100% { transform: translate3d(-1.5%, -2%, 0); }
 }
 /* Phones, whichever way up they are held. Width alone was the test, and a
    phone turned on its side is wider than the threshold — so landscape fell all
