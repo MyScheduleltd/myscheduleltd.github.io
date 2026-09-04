@@ -8,7 +8,29 @@ Last updated: 2026-09-04 · webcam head tracking behind `?headtrack`; jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — security pass, 2026-09-04
+## 0. READ THIS FIRST — a jump you can see
+
+In VR the rig was placed at `groundHeightAt(...)`, the floor **under** the
+visitor, rather than at the visitor. Standing, the two agree, because
+`player.position.y` is set from that same floor — so nothing looked wrong until
+somebody jumped, and the avatar went up while the view stayed exactly where it
+was. On a desk, on a phone and in a headset alike.
+
+`this.player.position.y - AVATAR_GROUND_Y` now. The same line also puts the eye
+on the waterline while swimming in VR, where the ground had been holding it a
+body's height above the sea.
+
+**Verified in both simulated paths.** Desktop: eye 2.90 → 3.458 → 3.804 → back
+to 2.90 on landing, with `eyeY - playerY` pinned at 2.62 throughout — the
+avatar's own eye offset, so the view and the body can no longer drift apart.
+Phone motion: 2.90 → 3.463 on the same press. `xrReviewSnapshot()` reports
+`eyeY`, `playerY` and `airborne` so this stays measurable.
+
+**Whenever anything in VR looks pinned, check whether it reads the ground
+instead of the body.** That is the shape of this bug, and the rig is the only
+thing standing between the two.
+
+## 0-prev. Security pass, 2026-09-04
 
 Asked for a review of the camera, of what could reach a visitor's machine, and
 of anything exposed on the service. Five things changed; the rest held up.

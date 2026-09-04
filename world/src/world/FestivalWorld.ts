@@ -2153,6 +2153,11 @@ export class FestivalWorld {
           : null,
         mapping: 'yaw-rebased-device-pose',
       },
+      // The eye's height above the world, and the body's. A jump has to move
+      // the first; it used to move only the second.
+      eyeY: Number(this.camera.getWorldPosition(new THREE.Vector3()).y.toFixed(3)),
+      playerY: Number(this.player.position.y.toFixed(3)),
+      airborne: this.airborne,
       simYaw: Number(this.xrYaw.toFixed(4)),
       simPitch: Number(this.xrSimPitch.toFixed(4)),
       homeYaw: Number(this.xrHomeYaw.toFixed(4)),
@@ -11191,8 +11196,17 @@ export class FestivalWorld {
   private updateCamera(delta: number, _elapsed: number): void {
     this.settlePunchImpact();
     if (this.xrActive) {
-      const floorY = this.groundHeightAt(this.player.position.x, this.player.position.z, this.player.position.y) - AVATAR_GROUND_Y;
-      this.xrRig.position.set(this.player.position.x, floorY, this.player.position.z);
+      // Where the body actually is, not the floor under it.
+      //
+      // This read `groundHeightAt(...)`, which is the ground beneath the
+      // visitor — so a jump raised the avatar and left the view exactly where
+      // it was, on a desk, on a phone and in a headset alike. Standing, the two
+      // agree, because `player.position.y` is set from that same floor; in the
+      // air they do not, and it is the difference that is the jump. It also
+      // puts the eye on the waterline while swimming, where the ground was
+      // holding it a body's height above the sea.
+      const eyeFloorY = this.player.position.y - AVATAR_GROUND_Y;
+      this.xrRig.position.set(this.player.position.x, eyeFloorY, this.player.position.z);
       if (this.xrSimulated) {
         this.camera.position.set(0, AVATAR_EYE_HEIGHT, 0);
         if (this.headTrackingEnabled()) {
