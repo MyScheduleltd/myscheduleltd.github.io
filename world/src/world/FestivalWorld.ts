@@ -485,6 +485,13 @@ const readStoredZoom = (): number => {
   }
 };
 const AVATAR_SWIM_Y = -2.08;
+/**
+ * North of this the ground gives out and a body is in the sea. The visitor's
+ * own `shouldSwim` has always used it; residents now read the same number, so
+ * a dog paddling behind its owner and the owner start swimming on the same
+ * step rather than one of them walking on the water.
+ */
+const SWIM_Z = -60;
 // The underside of the avatar's torso, measured from its group origin. Put the
 // origin this far below a seat pad and the avatar rests on it.
 const AVATAR_SEAT_DROP = 1.09;
@@ -2009,12 +2016,39 @@ export class FestivalWorld {
     if (carrying) this.pickUpMentor();
   }
 
+  /**
+   * Loopback fixture: the visitor and a loyal MENTOR out past the beach.
+   *
+   * The sea is a ninety-unit walk from anywhere the travel menu will take you,
+   * and the shore theatre stands across the direct line, so watching what a dog
+   * does in the water any other way is a two-minute drive that ends against a
+   * collider. The dog is fed rather than assigned, because the service owns the
+   * follower and reconciles an assigned one away within the second.
+   */
+  focusMentorSwimForReview(): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
+    if (!mentor) return;
+    this.setSharedMentorCarrier(null, this.selfVisitorId ?? 'review-self');
+    this.player.position.set(0, AVATAR_SWIM_Y, -64);
+    this.playerState = 'swimming';
+    mentor.group.position.set(1.6, AVATAR_GROUND_Y, -63);
+    mentor.waitUntil = 0;
+    this.feedMentor(mentor);
+  }
+
   /** Loopback fixture for the autonomous loyalty walk toward this attendee. */
   focusMentorFollowerForReview(): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
     this.focusMentorForReview(false);
-    this.setSharedMentorCarrier(null, 'review-self');
-    this.setMentorFollower({ kind: 'visitor', id: 'review-self' });
+    // The visitor's real id, not a literal. `mentorFollowerObject()` resolves a
+    // follower by matching it against `selfVisitorId`, so a fixture that names
+    // itself 'review-self' against a live session follows nobody, and the dog
+    // walks its ordinary route while the fixture reports an empty object.
+    const me = this.selfVisitorId ?? 'review-self';
+    this.selfVisitorId = me;
+    this.setSharedMentorCarrier(null, me);
+    this.setMentorFollower({ kind: 'visitor', id: me });
     const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
     if (!mentor) return;
     const x = this.player.position.x + 13;
@@ -2619,8 +2653,14 @@ export class FestivalWorld {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
     this.mentorGreetingReview = true;
     this.focusMentorForReview(false);
-    this.setSharedMentorCarrier(null, 'review-self');
-    this.setMentorFollower({ kind: 'visitor', id: 'review-self' });
+    // The visitor's real id, not a literal. `mentorFollowerObject()` resolves a
+    // follower by matching it against `selfVisitorId`, so a fixture that names
+    // itself 'review-self' against a live session follows nobody, and the dog
+    // walks its ordinary route while the fixture reports an empty object.
+    const me = this.selfVisitorId ?? 'review-self';
+    this.selfVisitorId = me;
+    this.setSharedMentorCarrier(null, me);
+    this.setMentorFollower({ kind: 'visitor', id: me });
     const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
     const guest = this.npcs.find((npc) => npc.id !== 'MENTOR' && npc.pose !== 'dj');
     if (!mentor || !guest) return;
@@ -3335,7 +3375,7 @@ export class FestivalWorld {
     };
   }
 
-  mentorFollowerReviewSnapshot(): { follower?: MentorFollowerTarget; distance?: number } | undefined {
+  mentorFollowerReviewSnapshot(): Record<string, unknown> | undefined {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return undefined;
     const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
     const target = this.mentorFollowerObject();
@@ -3344,6 +3384,15 @@ export class FestivalWorld {
     return {
       follower: this.mentorFollower,
       distance: Number(mentor.group.position.distanceTo(this.mentorTargetPosition).toFixed(2)),
+      // Where the dog is and what it is doing there. Whether it swims or walks
+      // on the sea could otherwise only be judged from a screenshot, and the
+      // difference is a couple of hundred millimetres of height.
+      mentorAt: mentor.group.position.toArray().map((value) => Number(value.toFixed(2))),
+      mentorSwimming: this.isOverWater(mentor.group.position.z),
+      mentorRoll: Number(mentor.group.rotation.z.toFixed(3)),
+      mentorFrontLeg: mentor.dogRig ? Number(mentor.dogRig.leftFrontLeg.rotation.x.toFixed(3)) : null,
+      playerAt: this.player.position.toArray().map((value) => Number(value.toFixed(2))),
+      playerSwimming: this.playerState === 'swimming',
     };
   }
 
@@ -9467,7 +9516,13 @@ export class FestivalWorld {
         npc.badge.visible = false;
         this.npcControlTarget.set(
           remoteController.x,
-          remoteController.state === 'swimming' ? AVATAR_SWIM_Y : AVATAR_GROUND_Y,
+          // A dog floats higher than a person does. Sunk to the human
+          // waterline, a STAFF-driven MENTOR sat two units lower on everybody
+          // else's screen than on its driver's — the same dog at two depths,
+          // depending on who was looking.
+          remoteController.state === 'swimming'
+            ? (npc.dogRig ? AVATAR_GROUND_Y - 0.52 : AVATAR_SWIM_Y)
+            : AVATAR_GROUND_Y,
           remoteController.z,
         );
         const positionError = npc.group.position.distanceTo(this.npcControlTarget);
@@ -9560,11 +9615,8 @@ export class FestivalWorld {
             npc.knockback.set(0, 0, 0);
             moving = this.updateMentorFollower(npc, followerObject, delta);
           }
-          npc.group.position.y = this.groundHeightAt(
-            npc.group.position.x,
-            npc.group.position.z,
-            npc.group.position.y,
-          ) + Math.sin(elapsed * 1.35 + npc.phase) * 0.018;
+          npc.group.position.y = this.npcBodyY(npc, elapsed);
+          const swimming = this.isOverWater(npc.group.position.z);
           const gesture = now < npc.gestureUntil ? npc.gesture : undefined;
           if (npc.dogRig) this.animateMentorDog(
             npc.dogRig,
@@ -9576,6 +9628,8 @@ export class FestivalWorld {
             gesture,
             this.gestureProgress(gesture, npc.gestureUntil),
           );
+          if (swimming) this.poseNpcSwimming(npc, elapsed, moving);
+          else npc.group.rotation.z = 0;
           const distanceToPlayer = npc.group.position.distanceTo(this.player.position);
           if (distanceToPlayer < nearestDistance) {
             nearestDistance = distanceToPlayer;
@@ -9749,11 +9803,8 @@ export class FestivalWorld {
       // Stand on the floor underfoot, not on the street. Pinned to street
       // height, a resident stationed on the roof deck sank through it — which
       // is what put DR.BEAUTY waist-deep in the shop counter.
-      npc.group.position.y = this.groundHeightAt(
-        npc.group.position.x,
-        npc.group.position.z,
-        npc.group.position.y,
-      ) + Math.sin(elapsed * 1.35 + npc.phase) * 0.018;
+      npc.group.position.y = this.npcBodyY(npc, elapsed);
+      const swimming = this.isOverWater(npc.group.position.z);
       const gesture = now < npc.gestureUntil ? npc.gesture : undefined;
       // Posing a body writes ten bones, and it is the one per-resident cost
       // paid every frame by every resident. Across the square that is what
@@ -9784,6 +9835,8 @@ export class FestivalWorld {
         gesture,
         this.gestureProgress(gesture, npc.gestureUntil),
       );
+      if (swimming) this.poseNpcSwimming(npc, elapsed, moving);
+      else npc.group.rotation.z = 0;
       const distance = npc.group.position.distanceTo(this.player.position);
       if (distance < nearestDistance) {
         nearestDistance = distance;
@@ -10323,6 +10376,46 @@ export class FestivalWorld {
     rig.leftFrontLeg.rotation.x = 0;
     rig.rightFrontLeg.rotation.x = 0;
     rig.body.rotation.x = -0.08;
+  }
+
+  /** True where the ground has given out and a body is in the sea. */
+  private isOverWater(z: number): boolean {
+    return z < SWIM_Z;
+  }
+
+  /**
+   * Where a resident's body sits this frame: afloat over the sea, on the floor
+   * underfoot everywhere else.
+   *
+   * MENTOR followed swimmers straight out past the beach and kept walking,
+   * because the only body that had ever floated was one the visitor was
+   * steering. The two heights here are the ones a steered body already uses,
+   * so a dog paddling after its owner sits exactly where a dog being driven
+   * does, and a human resident matches the visitor's own waterline.
+   */
+  private npcBodyY(npc: NpcAvatar, elapsed: number): number {
+    if (this.isOverWater(npc.group.position.z)) {
+      return (npc.dogRig ? AVATAR_GROUND_Y - 0.52 : AVATAR_SWIM_Y)
+        + Math.sin(elapsed * 3.2 + npc.phase) * 0.035;
+    }
+    return this.groundHeightAt(
+      npc.group.position.x,
+      npc.group.position.z,
+      npc.group.position.y,
+    ) + Math.sin(elapsed * 1.35 + npc.phase) * 0.018;
+  }
+
+  /**
+   * Paddle instead of walk, for whichever rig this resident has, and roll
+   * gently with the swell. Runs *after* the walk cycle, which writes every leg
+   * this overwrites; ahead of it the stride would win and the body would stride
+   * through the water. The roll is cleared on land because nothing else writes
+   * that axis, so a body that swam once would keep the list for ever.
+   */
+  private poseNpcSwimming(npc: NpcAvatar, elapsed: number, moving: boolean): void {
+    if (npc.dogRig) this.poseMentorDogSwimming(npc.dogRig, elapsed, moving);
+    else if (npc.rig) this.poseRigSwimming(npc.rig, elapsed + npc.phase);
+    npc.group.rotation.z = Math.sin(elapsed * 2.1 + npc.phase) * 0.025;
   }
 
   private poseMentorDogSwimming(rig: MentorDogRig, elapsed: number, moving: boolean): void {

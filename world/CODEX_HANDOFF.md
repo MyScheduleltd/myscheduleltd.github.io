@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-04 · phone VR gyroscope tracking, calibration and return-to-VR · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-09-04 · jukebox sound after a screening, MENTOR swimming, one VR corner · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
@@ -8,7 +8,89 @@ Last updated: 2026-09-04 · phone VR gyroscope tracking, calibration and return-
 
 ---
 
-## 0. READ THIS FIRST — phone VR tracks the gyroscope one for one
+## 0. READ THIS FIRST — the jukebox, a swimming dog, and one VR corner
+
+### The square went silent after every screening
+
+Leaving a venue rebuilt the jukebox player but never got sound out of it again,
+and nothing on screen admitted it. The state machine was fine — the frame is torn
+down going in and rebuilt coming out, measured — so the fault was one line
+further on.
+
+Every jukebox frame is built **muted**, because that is the only way a phone
+lets it start at all, and the unmute that follows may or may not be granted.
+`DROP THE BEAT` exists to ask for it with a real tap. That prompt was latched
+shut by a flag set the first time it was pressed, and **the flag outlived the
+player it was pressed for**: walking into a venue destroys the frame, walking out
+builds a new one that needs the same permission, and the only control that could
+ask had been retired for the rest of the visit.
+
+The prompt is now driven by the player's own report rather than by a memory of
+a past press. `infoDelivery` carries `muted` and `volume` on the same channel as
+the length the service already reads, so:
+
+```
+hidden = no record on || sound not wanted || player says it is audible
+```
+
+It follows reality in both directions — measured live: audible → hidden; the
+player silenced under it → **shown again**; pressed → unmuted → hidden. On a desk,
+where the load-handler unmute is granted, it never appears at all.
+
+`stopJukebox()` also now drops the old player's report and removes the `message`
+listener it added — one was being added per frame built, so per venue walked into,
+for the length of the visit.
+
+**Note when reading a "no music" report:** an empty queue is not this bug. A
+record ends on the service's clock, and with nothing waiting the square is
+genuinely quiet. `data-jukebox-review` reports `nowPlaying` first for that reason.
+
+### MENTOR walks on water no more
+
+The dog followed swimmers out past the beach and kept walking on the surface.
+Only a body the visitor was *steering* had ever floated; a resident on its own —
+following or on its route — was pinned to `groundHeightAt()`.
+
+`SWIM_Z = -60` is now one constant shared with the visitor's own `shouldSwim`, so
+owner and dog start swimming on the same step. `npcBodyY()` returns the float
+height over the sea and the floor everywhere else, and `poseNpcSwimming()`
+paddles whichever rig the resident has and rolls it with the swell — **after** the
+walk cycle, which writes every leg it overwrites, and cleared on land, because
+nothing else writes that roll axis.
+
+A dog floats higher than a person: `AVATAR_GROUND_Y - 0.52` against
+`AVATAR_SWIM_Y`. A STAFF-driven MENTOR was sunk to the human waterline on every
+screen but its driver's; that now matches too.
+
+`?review=mentor-swim` puts the visitor and a loyal MENTOR out past the beach.
+It **feeds** the dog rather than assigning the follower, because the service owns
+`mentorFollower` and reconciles an assigned one away within the second — which is
+why `?review=mentor-follow` had been reporting an empty object and measuring
+nothing at all. Both MENTOR fixtures now stage against the visitor's real id
+instead of the literal `'review-self'`, and `window.__festivalMentor()` reports
+the dog from **every** loopback page, not just its own fixture.
+
+Verified: `mentorSwimming: true`, dog at `y = -0.21` against the swimmer's
+`-2.05`, `mentorFrontLeg: 0.08` (the still-water paddle, not the walk cycle),
+`mentorRoll: -0.025`. On screen, dog and visitor sit at the same waterline.
+
+### One corner for RESUME VR and EXIT VR PREVIEW
+
+They are never on screen together, so they now share a rule: same corner, same
+insets, same box, at all three breakpoints. `RESUME VR` had been in the opposite
+corner above `PASS`, so the control jumped across the screen as it changed its
+mind about which it was. It keeps the red fill, because it is an invitation
+rather than an exit.
+
+### Gate copy
+
+The three VR notes are one short sentence each in both languages. The desktop
+note's second clause explained that Quest Browser switches to immersive mode —
+which the checkbox's own title already says, because a Quest browser is shown
+`QUEST VR MODE` instead.
+
+## 0-prev. Phone VR tracks the gyroscope one for one
+
 
 The phone preview's camera now follows the device exactly: turn the phone thirty
 degrees and the view turns thirty degrees, tip it and the view tips with it, and
@@ -665,12 +747,19 @@ around the stylesheet when one line of JavaScript was setting `hidden` on it.
 `?review=<name>` on `127.0.0.1` only. Several expose `window.__festivalReview()`.
 
 ```
-gate  gate-approach  temple  temple-altar  jukebox  perf
+gate  gate-approach  temple  temple-altar  jukebox  jukebox-sound  perf
 club  club-dj  club-lobby  club-bar
 rooftop  rooftop-dj
-mentor  mentor-carry  mentor-npc-carry  mentor-follow  mentor-follow-greeting  npc-control  npc-popcorn-seat
+mentor  mentor-carry  mentor-npc-carry  mentor-follow  mentor-follow-greeting  mentor-swim
+npc-control  npc-popcorn-seat
 quests  quests-complete  fireworks  menu-ownership
+vr-gate  vr-entry  vr-phone  vr-screen  vr-youtube
 ```
+
+Two of these report from anywhere on loopback rather than from their own page:
+`window.__festivalMentor()` (where MENTOR is, and whether it is swimming) and
+`document.documentElement.dataset.jukeboxReview` (every input the record's fate
+depends on). Reach for those before staging a fixture at all.
 
 `club-bar` seats an avatar on a bar stool and `__festivalReview()` reports the
 interaction label, `nearClubBar`, `canInteract` and `promptAction`. **Write more of

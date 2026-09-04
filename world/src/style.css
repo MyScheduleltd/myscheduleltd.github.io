@@ -223,24 +223,25 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 .vr-entry p:not(.eyebrow) { margin: 14px 0 20px; font-size: 13px; line-height: 1.5; }
 .vr-entry > div { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .vr-entry .button--secondary { color: var(--paper); border-color: var(--paper); }
-.vr-resume {
-  position: fixed; z-index: 18; right: max(18px, env(safe-area-inset-right));
-  /* PASS owns the bottom-right corner and must remain tappable. The resume
-     prompt sits directly above it instead of competing for the same pixels. */
-  bottom: calc(76px + env(safe-area-inset-bottom)); min-height: 52px; border: 2px solid var(--paper);
-  padding: 0 22px; color: white; background: var(--red); font: 900 17px var(--condensed); cursor: pointer;
-}
-.vr-preview-exit {
-  /* This is an escape hatch for the world, not a modal action. Keep it above
-     the rendered venue but below PASS, panels and screening controls so it
-     cannot cover or intercept the interface opened over the world. */
+.vr-resume, .vr-preview-exit {
+  /* One slot, shared. These two are never on screen together — one is the way
+     out of VR and the other the way back in — so they take the same corner,
+     the same insets and the same box, and the control does not jump across the
+     screen as it changes its mind about which it is.
+
+     They are escape hatches for the world, not modal actions: above the
+     rendered venue, below PASS, the panels and the screening controls, so they
+     cannot cover or intercept the interface opened over the world.
+
+     The top shares the venue label's row instead of covering the connection
+     status in the header. Every value here has a narrow-layout twin below. */
   position: fixed; z-index: 5; right: calc(16px + env(safe-area-inset-right));
-  /* Share the venue label's row instead of covering the connection status in
-     the header. The narrow-layout value is kept in sync below. */
   top: calc(65px + env(safe-area-inset-top)); min-height: 44px; border: 2px solid var(--paper);
-  padding: 0 18px; color: var(--paper); background: rgba(8,9,10,.86);
-  font: 900 14px var(--condensed); letter-spacing: .05em; cursor: pointer;
+  padding: 0 18px; font: 900 14px var(--condensed); letter-spacing: .05em; cursor: pointer;
 }
+.vr-preview-exit { color: var(--paper); background: rgba(8,9,10,.86); }
+/* Filled, because this one is an invitation rather than an exit. */
+.vr-resume { color: white; background: var(--red); }
 .vr-recenter {
   position: fixed; z-index: 5; right: calc(16px + env(safe-area-inset-right));
   top: calc(117px + env(safe-area-inset-top)); min-height: 38px; border: 1px solid var(--paper);
@@ -1114,7 +1115,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .vr-entry { padding: 20px; }
   .vr-entry h2 { font-size: 40px; }
   .vr-entry > div { grid-template-columns: 1fr; }
-  .vr-preview-exit { right: calc(14px + env(safe-area-inset-right)); top: calc(76px + env(safe-area-inset-top)); }
+  .vr-resume, .vr-preview-exit { right: calc(14px + env(safe-area-inset-right)); top: calc(76px + env(safe-area-inset-top)); }
   .vr-recenter { right: calc(14px + env(safe-area-inset-right)); top: calc(128px + env(safe-area-inset-top)); }
   .world-status { top: 76px; left: 14px; }
   .inventory-status { left: 14px; top: 153px; }
@@ -1498,7 +1499,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   /* The header did not allow for the notch and the pass did, so on a phone
      with one the two were measured from different edges and never lined up.
      Both sit on the same inset now. */
-  .vr-preview-exit, .vr-recenter { right: calc(10px + env(safe-area-inset-right)); }
+  .vr-resume, .vr-preview-exit, .vr-recenter { right: calc(10px + env(safe-area-inset-right)); }
   .world-header { padding: 4px calc(10px + env(safe-area-inset-right)) 4px calc(10px + env(safe-area-inset-left)); }
   /* A panel keeping its upright margins on a screen this short was left about
      two hundred pixels tall with its own input cut off the bottom. It takes the

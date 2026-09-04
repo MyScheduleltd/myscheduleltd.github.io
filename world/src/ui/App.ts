@@ -148,13 +148,13 @@ const copy = {
     local: 'PRE-LAUNCH BUILD',
     palette: 'CHARACTER COLORS',
     vrMode: 'QUEST VR MODE',
-    vrNote: 'Walk the festival in VR. Screenings open in the standard YouTube player, then return you to the same seat.',
+    vrNote: 'Walk the festival in your headset.',
     vrChecking: 'Checking this browser for a connected headset…',
     vrUnavailable: 'VR is available in Meta Quest Browser. Open this page inside your Quest headset to enable this checkbox.',
     vrDesktopMode: 'VR DESKTOP MODE',
-    vrDesktopNote: 'Explore the VR view with keyboard and mouse. Quest Browser automatically uses immersive headset mode.',
+    vrDesktopNote: 'Explore the VR view with keyboard and mouse.',
     vrPhoneMode: 'PHONE MOTION VR',
-    vrPhoneNote: 'Turn and tilt your phone to look around. Motion access is requested after you enter; touch drag remains available.',
+    vrPhoneNote: 'Turn and tilt your phone to look around.',
     gateNote: 'MOVE: WASD / ARROWS · RUN: SHIFT · JUMP: SPACE · CAMERA: T · CHAT: ENTER',
   },
   'zh-TW': {
@@ -174,13 +174,13 @@ const copy = {
     local: '上線前版本',
     palette: '角色配色',
     vrMode: 'QUEST VR 模式',
-    vrNote: '以 VR 漫遊影展。放映會暫時開啟標準 YouTube 播放器，之後回到同一座位。',
+    vrNote: '戴上頭戴式裝置漫遊影展。',
     vrChecking: '正在檢查瀏覽器是否連接頭戴式裝置…',
     vrUnavailable: 'VR 可在 Meta Quest Browser 使用。請用 Quest 頭戴式裝置開啟此頁面，即可勾選。',
     vrDesktopMode: 'VR 桌面模式',
-    vrDesktopNote: '以鍵盤與滑鼠體驗 VR 視角。使用 Quest Browser 時會自動切換為沉浸式頭戴模式。',
+    vrDesktopNote: '用鍵盤與滑鼠體驗 VR 視角。',
     vrPhoneMode: '手機動態 VR',
-    vrPhoneNote: '轉動及傾斜手機即可環顧世界。進入後會請求動態取向權限，仍可用手指拖曳視角。',
+    vrPhoneNote: '轉動與傾斜手機即可環顧四周。',
     gateNote: '移動：WASD／方向鍵 · 奔跑：SHIFT · 跳躍：SPACE · 鏡頭：T · 聊天：ENTER',
   },
 } as const;
@@ -307,7 +307,14 @@ export class App {
   private jukeboxVolume = readStoredJukeboxVolume();
   private jukeboxFrame?: HTMLIFrameElement;
   private lastJukeboxLiftAt = 0;
-  private jukeboxSoundConfirmed = false;
+  /**
+   * What the player says about itself. A jukebox frame is always built muted,
+   * because that is the only way a phone will let it start at all, and the
+   * unmute that follows may or may not be granted. Only the player knows which,
+   * and it volunteers both on every command.
+   */
+  private jukeboxReportedMuted?: boolean;
+  private jukeboxReportedVolume?: number;
   /** Lengths already reported, so the same one is not sent on every message. */
   private readonly jukeboxReportedDurations = new Map<string, number>();
   private jukeboxPlayingId?: string;
@@ -1098,6 +1105,15 @@ export class App {
         () => world.wornStyleReviewSnapshot();
     }
     const reviewTarget = new URLSearchParams(window.location.search).get('review');
+    // Where MENTOR is and what it is doing, on every loopback page rather than
+    // on one fixture. The dog's own fixture stages a follower the service then
+    // reconciles away, so the only way to watch a real, service-blessed follow
+    // — walking it into the sea, for instance — is from whichever page the walk
+    // started on.
+    if (['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      (window as Window & { __festivalMentor?: () => unknown }).__festivalMentor =
+        () => this.world?.mentorFollowerReviewSnapshot();
+    }
     if (reviewTarget === 'vr-screen' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       this.activeVenue = 'shore';
       this.world.focusPublicScreeningForReview('shore');
@@ -1139,6 +1155,13 @@ export class App {
         () => this.world?.focusMentorAtStandForReview();
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview =
         () => this.world?.mentorAtStandReviewSnapshot();
+    } else if (reviewTarget === 'mentor-swim' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      this.world.focusMentorSwimForReview();
+      for (const delay of [400, 1200, 2200]) {
+        window.setTimeout(() => this.world?.focusMentorSwimForReview(), delay);
+      }
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview =
+        () => this.world?.mentorFollowerReviewSnapshot();
     } else if ((reviewTarget === 'mentor-follow' || reviewTarget === 'mentor-follow-greeting') && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       if (reviewTarget === 'mentor-follow-greeting') {
         this.world.focusMentorGreetingForReview();
@@ -1146,7 +1169,16 @@ export class App {
         // last empty state. Restage the loopback-only fixture after that tick so
         // it always measures the intended loyal-dog-plus-guest arrangement.
         window.setTimeout(() => this.world?.focusMentorGreetingForReview(), 250);
-      } else this.world.focusMentorFollowerForReview();
+      } else {
+        // Restaged behind session recovery, like the greeting and stand
+        // fixtures beside it. Recovery reconciles one last state after the gate
+        // closes, and that reconciliation cleared the staged follower — so this
+        // fixture reported an empty object and measured nothing at all.
+        this.world.focusMentorFollowerForReview();
+        for (const delay of [250, 900, 1800]) {
+          window.setTimeout(() => this.world?.focusMentorFollowerForReview(), delay);
+        }
+      }
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => reviewTarget === 'mentor-follow-greeting'
         ? this.world?.mentorGreetingReviewSnapshot()
         : this.world?.mentorFollowerReviewSnapshot();
@@ -1466,7 +1498,6 @@ export class App {
       this.root.addEventListener(type, preventBrowserZoom, { passive: false });
     }
     this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]')?.addEventListener('click', () => {
-      this.jukeboxSoundConfirmed = true;
       this.applyJukeboxVolume();
       // Again a moment later: the player can accept the connection a beat after
       // it is spoken to, and the press is the only permission we will get.
@@ -3258,6 +3289,36 @@ export class App {
    * and the only thing it answers to is the attendee's own slider.
    */
   private syncJukebox(): void {
+    this.syncJukeboxPlayer();
+    if (['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      document.documentElement.dataset.jukeboxReview = JSON.stringify(this.jukeboxReviewSnapshot());
+    }
+  }
+
+  /**
+   * Every input the record's fate depends on, in one place. Whether the square
+   * goes quiet on the way into a venue and comes back on the way out is decided
+   * by four booleans and two ids, and none of them were visible from outside.
+   */
+  private jukeboxReviewSnapshot(): Record<string, unknown> {
+    const frame = this.jukeboxFrame;
+    return {
+      nowPlaying: this.networkState?.jukebox?.nowPlaying?.youtubeId ?? null,
+      inTheater: this.snapshot?.inTheater ?? null,
+      screeningVenue: this.snapshot?.screeningVenue ?? null,
+      audioMuted: this.audioMuted,
+      silenced: this.jukeboxSilenced,
+      volume: this.jukeboxVolume,
+      reportedMuted: this.jukeboxReportedMuted ?? null,
+      reportedVolume: this.jukeboxReportedVolume ?? null,
+      playingId: this.jukeboxPlayingId ?? null,
+      frameMounted: Boolean(frame),
+      frameSrcId: frame?.src.includes('/embed/') ? frame.src.split('/embed/')[1]?.split('?')[0] ?? null : null,
+      promptHidden: this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]')?.hidden ?? null,
+    };
+  }
+
+  private syncJukeboxPlayer(): void {
     // Keep the local browser-review fixture independent of whatever happens to
     // be playing on a developer's already-running service. Without this guard,
     // the next presence update can replace the simulated record before the
@@ -3321,7 +3382,20 @@ export class App {
     const button = this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]');
     if (!button) return;
     const wantsSound = !this.audioMuted && !this.jukeboxSilenced && this.jukeboxVolume > 0;
-    button.hidden = this.jukeboxSoundConfirmed || !this.jukeboxPlayingId || !wantsSound;
+    // The player itself is the only honest witness to whether the square can be
+    // heard, so the prompt is offered exactly while a record is on, sound was
+    // asked for, and the player says it is making none.
+    //
+    // This used to be latched by a flag set the first time the prompt was
+    // pressed, and that flag outlived the player it was pressed for. Walking
+    // into a venue tears the jukebox frame down — deliberately, because a phone
+    // will not carry the screening's player and this one at once — and walking
+    // out builds a new one, muted like every other. The new player needed the
+    // same permission the old one had been given, and the only control that
+    // could ask for it had been retired for the rest of the visit. So the
+    // square came back silent, with nothing on screen admitting it.
+    const audible = this.jukeboxReportedMuted === false && (this.jukeboxReportedVolume ?? 0) > 0;
+    button.hidden = !this.jukeboxPlayingId || !wantsSound || audible;
   }
 
   private mountJukeboxFrame(youtubeId: string, offsetSeconds: number): void {
@@ -3372,6 +3446,10 @@ export class App {
     url.searchParams.set('enablejsapi', '1');
     url.searchParams.set('start', String(offsetSeconds));
     if (window.location.origin !== 'null') url.searchParams.set('origin', window.location.origin);
+    // Whatever the last record said about itself does not describe this one:
+    // the frame is being pointed at a new video and starts muted again.
+    this.jukeboxReportedMuted = undefined;
+    this.jukeboxReportedVolume = undefined;
     frame.src = url.toString();
     this.applyJukeboxVolume();
   }
@@ -3384,12 +3462,18 @@ export class App {
   private readonly jukeboxMessage = (event: MessageEvent): void => {
     if (!this.jukeboxFrame || event.source !== this.jukeboxFrame.contentWindow) return;
     if (typeof event.data !== 'string') return;
-    let payload: { event?: string; info?: { duration?: number } };
+    let payload: { event?: string; info?: { duration?: number; muted?: boolean; volume?: number } };
     try {
       payload = JSON.parse(event.data) as typeof payload;
     } catch {
       return;
     }
+    // Volume and mute arrive on the same channel as the length, sometimes in a
+    // payload carrying nothing else, so they are read before the length check
+    // has a chance to drop the message.
+    if (typeof payload?.info?.muted === 'boolean') this.jukeboxReportedMuted = payload.info.muted;
+    if (typeof payload?.info?.volume === 'number') this.jukeboxReportedVolume = payload.info.volume;
+    if (payload?.info && ('muted' in payload.info || 'volume' in payload.info)) this.updateJukeboxSoundPrompt();
     const seconds = payload?.info?.duration;
     if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 5) return;
     const youtubeId = this.jukeboxPlayingId;
@@ -3414,9 +3498,15 @@ export class App {
     } catch { /* a frame that has already gone */ }
     this.jukeboxFrame.src = 'about:blank';
     this.jukeboxFrame.remove();
+    // Added once per frame built, so without this the listeners pile up one
+    // per venue walked into for the length of the visit.
+    window.removeEventListener('message', this.jukeboxMessage);
     this.jukeboxFrame = undefined;
     this.jukeboxPlayingId = undefined;
     this.jukeboxStartedAt = 0;
+    this.jukeboxReportedMuted = undefined;
+    this.jukeboxReportedVolume = undefined;
+    this.updateJukeboxSoundPrompt();
   }
 
   /**
