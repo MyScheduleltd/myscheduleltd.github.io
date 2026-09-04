@@ -262,9 +262,9 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
   top: calc(205px + env(safe-area-inset-top)); width: min(340px, calc(100vw - 32px));
   padding: 16px; color: var(--paper); background: rgba(8,9,10,.94); border: 2px solid var(--paper);
 }
-.head-track p { margin: 0 0 10px; font-size: 12px; line-height: 1.5; }
-/* The whole title row is the fold handle: a strip that wide is easier to hit
-   than a chevron, and it reads as the thing you press to put the panel away. */
+.head-track p { margin: 0 0 12px; font-size: 12px; line-height: 1.55; }
+/* The whole title row is the handle: a strip that wide is easier to hit than a
+   chevron, and it reads as the thing you press to put the panel away. */
 .head-track__fold {
   display: flex; justify-content: space-between; align-items: center; gap: 12px;
   width: 100%; margin: 0 0 10px; padding: 0; border: 0; background: none;
@@ -273,11 +273,22 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 .head-track__fold .eyebrow { margin: 0; }
 .head-track__fold span:last-child { font: 900 16px/1 var(--condensed); }
 .head-track__fold:hover, .head-track__fold:focus-visible { color: #ff5264; }
-.head-track [data-head-track-body][hidden] { display: none; }
-.head-track > div { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+/* The body is an ordinary stack. It used to be caught by a `.head-track > div`
+   rule meant for the button row, which laid the explanation and the camera
+   picker out as two columns of a grid and left the note wrapping four words to
+   a line beside a select box. Both are addressed by class now, so neither can
+   pick up the other's layout. */
+.head-track__body { display: block; }
+.head-track__actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: stretch; }
+.head-track__actions .button { padding: 10px 12px; font-size: 13px; white-space: nowrap; }
 .head-track .button--secondary { color: var(--paper); border-color: var(--paper); }
-.head-track label { display: grid; gap: 4px; margin: 0 0 10px; font: 900 11px var(--condensed); letter-spacing: .05em; }
-.head-track select { width: 100%; padding: 6px; font-size: 12px; }
+.head-track label { display: grid; gap: 5px; margin: 0 0 12px; font: 900 11px var(--condensed); letter-spacing: .05em; }
+/* An author `display` outranks the browser's own rule for the `hidden`
+   attribute, so the camera picker was on screen — empty, because a browser will
+   not name its cameras until access has been granted — before tracking had
+   started. Set the attribute and the class both, every time. */
+.head-track label[hidden] { display: none; }
+.head-track select { width: 100%; max-width: 100%; padding: 7px; font-size: 12px; }
 .head-track__readout {
   margin: 10px 0 0; font: 700 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 0; color: #ffd7db; overflow-wrap: anywhere;

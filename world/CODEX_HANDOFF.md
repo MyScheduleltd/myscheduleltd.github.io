@@ -8,7 +8,40 @@ Last updated: 2026-09-04 · webcam head tracking behind `?headtrack`; jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — head tracking is in the beta, and the gate says what a headset gets
+## 0. READ THIS FIRST — the head-tracking panel, tidied
+
+The owner confirmed on 2026-09-04 that the tracking itself works well, so it is
+no longer labelled an experiment: the panel's title is `HEAD TRACKING` /
+`頭部追蹤`.
+
+### The panel was laying itself out with a rule meant for two buttons
+
+`.head-track > div { grid-template-columns: 1fr auto }` was written for the
+button row. Wrapping the body in a `div` handed that grid to the **whole panel**,
+so the explanation and the camera picker became two columns: the note wrapped
+four words to a line down a narrow left column while a select box sat beside it.
+
+Both are addressed by class now — `.head-track__body` is a plain block,
+`.head-track__actions` carries the two-column grid — so neither can pick up the
+other's layout. Measured after: every child 304px inside a 340px panel, one
+column, nothing colliding.
+
+**And the camera picker was on screen when it was meant to be hidden.** It is a
+`<label>`, and `.head-track label { display: grid }` outranks the browser's own
+rule for the `hidden` attribute, so setting `hidden` did nothing visible — an
+empty select, because a browser will not name its cameras until access has been
+granted. `.head-track label[hidden] { display: none }` fixes it. This is the
+third time this trap has cost a session: **when an element will not hide, check
+whether an author `display` is beating the attribute.**
+
+### Folding goes all the way back to the button
+
+It used to leave a strip carrying the title and the readout, which was neither
+the panel nor the button and read as a third thing on screen. The title row now
+simply closes the panel. Tracking, if it is running, keeps running — the
+`HEAD TRACKING` button turns red to say so.
+
+## 0-prev. Head tracking is in the beta, and the gate says what a headset gets
 
 ### No flag any more
 

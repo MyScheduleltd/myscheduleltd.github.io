@@ -299,12 +299,6 @@ export class App {
   private readonly headTrackRequested =
     new URLSearchParams(window.location.search).get('headtrack') !== 'off';
   private headTrackPanelOpen = false;
-  /**
-   * Folded, the panel keeps its title and its live readout and gives the rest
-   * of the screen back. The explanation and the camera picker are read once;
-   * the numbers are the part worth watching while the world is moving.
-   */
-  private headTrackFolded = false;
   private readonly headTrackDeskQuery =
     window.matchMedia('(min-width: 781px) and (hover: hover) and (pointer: fine)');
   private headTrackReadoutTimer?: number;
@@ -964,16 +958,16 @@ export class App {
           : (zh ? '重置 VR 視角' : 'RECENTER VIEW')}</button>
         <section class="head-track" data-head-track hidden>
           <button class="head-track__fold" type="button" data-head-track-fold
-            aria-label="${zh ? '摺疊或展開' : 'Fold or unfold'}">
-            <span class="eyebrow">${zh ? '實驗中 · 頭部追蹤' : 'EXPERIMENT · HEAD TRACKING'}</span>
-            <span data-head-track-chevron aria-hidden="true">−</span>
+            aria-label="${zh ? '收起' : 'Fold away'}">
+            <span class="eyebrow">${zh ? '頭部追蹤' : 'HEAD TRACKING'}</span>
+            <span aria-hidden="true">−</span>
           </button>
-          <div data-head-track-body>
+          <div class="head-track__body">
           <p data-head-track-note>${zh
             ? '用電腦的攝影機追蹤你的頭部，讓螢幕變成一扇可以探頭看的窗。影像只在這台電腦上處理，不會離開你的裝置。首次啟用會下載約 15MB 的追蹤模型。'
             : 'Track your head with your computer\u2019s camera so the screen becomes a window you can lean around. The video is processed on this machine and never leaves your device. Enabling it downloads a ~15MB tracker once.'}</p>
           <label data-head-track-pick hidden><span>${zh ? '攝影機' : 'CAMERA'}</span><select data-head-track-camera></select></label>
-          <div>
+          <div class="head-track__actions">
             <button class="button button--primary" type="button" data-head-track-start>${zh ? '開啟頭部追蹤' : 'ENABLE HEAD TRACKING'}</button>
             <button class="button button--secondary" type="button" data-head-track-stop>${zh ? '關閉' : 'TURN OFF'}</button>
           </div>
@@ -1731,7 +1725,9 @@ export class App {
       this.syncHeadTrackUi();
     });
     this.root.querySelector<HTMLButtonElement>('[data-head-track-fold]')?.addEventListener('click', () => {
-      this.headTrackFolded = !this.headTrackFolded;
+      // All the way back to the button it came out of. Tracking, if it is
+      // running, keeps running: the button turns red to say so.
+      this.headTrackPanelOpen = false;
       this.syncHeadTrackUi();
     });
     this.root.querySelector<HTMLButtonElement>('[data-head-track-start]')?.addEventListener('click', () => {
@@ -2201,10 +2197,6 @@ export class App {
       toggle.dataset.active = String(tracking);
     }
     if (panel) panel.hidden = !offered || !this.headTrackPanelOpen;
-    const body = this.root.querySelector<HTMLElement>('[data-head-track-body]');
-    const chevron = this.root.querySelector<HTMLElement>('[data-head-track-chevron]');
-    if (body) body.hidden = this.headTrackFolded;
-    if (chevron) chevron.textContent = this.headTrackFolded ? '+' : '−';
     if (pick) pick.hidden = !tracking;
     if (readout) {
       const state = this.world?.headTrackingSnapshot();
