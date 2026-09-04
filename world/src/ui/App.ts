@@ -152,9 +152,9 @@ const copy = {
     vrChecking: 'Checking this browser for a connected headset…',
     vrUnavailable: 'VR is available in Meta Quest Browser. Open this page inside your Quest headset to enable this checkbox.',
     vrDesktopMode: 'VR DESKTOP MODE',
-    vrDesktopNote: 'Explore the VR view with keyboard and mouse.',
+    vrDesktopNote: 'Explore the VR view with keyboard and mouse — open this page in a Meta Quest headset for full VR.',
     vrPhoneMode: 'PHONE MOTION VR',
-    vrPhoneNote: 'Turn and tilt your phone to look around.',
+    vrPhoneNote: 'Turn and tilt your phone to look around — open this page in a Meta Quest headset for full VR.',
     gateNote: 'MOVE: WASD / ARROWS · RUN: SHIFT · JUMP: SPACE · CAMERA: T · CHAT: ENTER',
   },
   'zh-TW': {
@@ -178,9 +178,9 @@ const copy = {
     vrChecking: '正在檢查瀏覽器是否連接頭戴式裝置…',
     vrUnavailable: 'VR 可在 Meta Quest Browser 使用。請用 Quest 頭戴式裝置開啟此頁面，即可勾選。',
     vrDesktopMode: 'VR 桌面模式',
-    vrDesktopNote: '用鍵盤與滑鼠體驗 VR 視角。',
+    vrDesktopNote: '用鍵盤與滑鼠體驗 VR 視角；在 Meta Quest 頭戴裝置開啟本頁即可進入完整 VR。',
     vrPhoneMode: '手機動態 VR',
-    vrPhoneNote: '轉動與傾斜手機即可環顧四周。',
+    vrPhoneNote: '轉動與傾斜手機即可環顧四周；在 Meta Quest 頭戴裝置開啟本頁即可進入完整 VR。',
     gateNote: '移動：WASD／方向鍵 · 奔跑：SHIFT · 跳躍：SPACE · 鏡頭：T · 聊天：ENTER',
   },
 } as const;
@@ -286,12 +286,18 @@ export class App {
   private vrActive = false;
   private vrResumePending = false;
   /**
-   * The webcam head-tracking experiment. Off unless `?headtrack` is on the URL,
-   * so the published beta carries the code and offers it to nobody: no camera
-   * prompt, no multi-megabyte model, nothing on screen.
+   * Webcam head tracking, now part of the beta rather than hidden behind a
+   * flag. `?headtrack=off` is kept as a way out: this reaches for a camera and
+   * a fifteen-megabyte download, and a browser that misbehaves at either should
+   * be switchable off without a deploy.
+   *
+   * Nothing happens on its own. The control only appears inside a desktop VR
+   * session, opening the panel downloads nothing, and the camera is not asked
+   * for until the enable button is pressed — which is when the browser puts up
+   * its own permission prompt as well.
    */
   private readonly headTrackRequested =
-    new URLSearchParams(window.location.search).has('headtrack');
+    new URLSearchParams(window.location.search).get('headtrack') !== 'off';
   private headTrackPanelOpen = false;
   /**
    * Folded, the panel keeps its title and its live readout and gives the rest
@@ -1894,7 +1900,7 @@ export class App {
     // not fire under a viewport change during review, and a control that has
     // stopped being appropriate should not wait for the next VR state change to
     // notice. Costs nothing for anyone without the flag.
-    if (this.headTrackRequested) this.syncHeadTrackUi();
+    if (this.headTrackRequested && this.vrActive) this.syncHeadTrackUi();
     void this.festivalClient.publishPresence({
       x: snapshot.x,
       y: snapshot.y,

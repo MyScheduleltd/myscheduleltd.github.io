@@ -8,7 +8,31 @@ Last updated: 2026-09-04 · webcam head tracking behind `?headtrack`; jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — two mirrored head axes, and a foldable panel
+## 0. READ THIS FIRST — head tracking is in the beta, and the gate says what a headset gets
+
+### No flag any more
+
+Head tracking is a normal part of the beta. `?headtrack=1` is no longer needed
+and still works; **`?headtrack=off` is the way out**, kept because this reaches
+for a camera and a fifteen-megabyte download and a browser that misbehaves at
+either should be switchable off without a deploy.
+
+Nothing happens on its own, which is what makes shipping it safe: the control
+only exists inside a desktop VR session, opening the panel downloads nothing,
+and the camera is not asked for until the enable button is pressed — at which
+point the browser puts up its own permission prompt as well. Two presses and a
+browser dialog stand between an ordinary visitor and a camera.
+
+The per-tick gate re-check is now guarded on `vrActive` as well, so it costs
+nothing for the overwhelming majority who never enter VR at all.
+
+### The gate says what a headset gets
+
+Both preview notes now end with the thing neither of them said: a real headset
+gives the full thing. One line each, in both languages. The Quest-detected note
+and the unavailable note already covered it.
+
+## 0-prev. Two mirrored head axes, and a foldable panel
 
 ### The signs, settled against a real face
 
