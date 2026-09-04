@@ -433,7 +433,14 @@ const AVATAR_GROUND_Y = 0.28;
 // The first-person camera is this far above the avatar rig's origin. Since the
 // rig origin itself sits AVATAR_GROUND_Y above the floor, a floor-anchored XR
 // rig needs their sum to reproduce the exact same point of view.
-const AVATAR_EYE_OFFSET = 2.62;
+//
+// **Measured against the rig, not chosen.** The head pivots at 2.47 and the two
+// eye blocks sit at 0.37 above that, so an avatar's eyes are at 2.84. This was
+// 2.62 — a fifth of a unit low, which is a small number and a very visible one:
+// standing in a crowd the view came up at everybody else's chin, and the owner
+// reported it as being shorter than everyone despite every body being the same
+// height. If the head or the face ever moves, this moves with it.
+const AVATAR_EYE_OFFSET = 2.84;
 const AVATAR_EYE_HEIGHT = AVATAR_GROUND_Y + AVATAR_EYE_OFFSET;
 // A leap of about 2.4 units — waist height on a 3.46-unit body, near enough to
 // 1.2m. Nearly nine tenths of a second in the air, which at a run carries the
@@ -11220,6 +11227,27 @@ export class FestivalWorld {
     for (const avatar of this.remoteAvatars.values()) {
       if (ahead(avatar.group.position)) {
         npc.gaveWayToRemote = true;
+        return true;
+      }
+    }
+    // Residents step around **each other** too, and until now they did not.
+    //
+    // The dodge below was always written for two of them meeting head-on — each
+    // goes round to its right, which for a pair is opposite ways, so they pass.
+    // But nothing ever set `givingWay` for another resident, so that path only
+    // opened once `npcCollides` refused a step: by then the two are already
+    // touching, the sidestep is often blocked as well, and both fall through to
+    // waiting. That is the knot the owner keeps seeing.
+    //
+    // Anticipating it instead gives them the room to steer, which is the whole
+    // difference between avoiding somebody and recovering from walking into
+    // them. Deliberately **no tiebreak** on who yields: both stepping right is
+    // what makes a head-on pass work, and letting only one give way would leave
+    // the other still walking into it.
+    for (const other of this.npcs) {
+      if (other === npc) continue;
+      if (ahead(other.group.position)) {
+        npc.gaveWayToRemote = false;
         return true;
       }
     }

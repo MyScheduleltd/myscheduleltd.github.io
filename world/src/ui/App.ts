@@ -374,6 +374,8 @@ export class App {
   private lookSensitivity = readStoredLookSensitivity();
   private gamepadBindings = readStoredGamepadBindings();
   private rebinding?: GamepadActionId;
+  /** Which control categories the visitor has opened. */
+  private readonly openControlSections = new Set<string>(['gamepad']);
   private headTrackRemember = readStoredHeadTrackRemember();
   private jukeboxFrame?: HTMLIFrameElement;
   private lastJukeboxLiftAt = 0;
@@ -1188,15 +1190,28 @@ export class App {
     if (wornFlag !== null) {
       const world = this.world;
       const amount = wornFlag === '' ? 1 : Number.parseFloat(wornFlag);
-      // The period look keeps its old numbers; the default keeps only the grain.
+      // **The default is now exactly `?era=ps2`.**
+      //
+      // Stripping it back to "grain only" was the wrong read, twice. The tooth
+      // the owner keeps pointing at is not the grain term on its own: the
+      // shader adds the surface variation and *then* quantises it, so the
+      // dither is what crunches a smooth continuous speckle into hard specks.
+      // At `wornSteps: 64` there is nothing to crunch it, and the same grain
+      // value reads as a soft wash — which is precisely the difference they
+      // could see between the default and the flag and I could not explain
+      // away. The courses carry the rest of it: a wall visibly made of
+      // something at the scale of a hand.
+      //
+      // So there is one look now, and the flag is kept only because it is
+      // documented above and costs nothing.
       const stepsFlag = new URLSearchParams(window.location.search).get('wornSteps');
-      const steps = stepsFlag === null ? (ps2 ? 10 : 64) : Number.parseFloat(stepsFlag);
+      const steps = stepsFlag === null ? 10 : Number.parseFloat(stepsFlag);
       const grainFlag = new URLSearchParams(window.location.search).get('wornGrain');
-      const grain = grainFlag === null ? (ps2 ? 1 : 2) : Number.parseFloat(grainFlag);
+      const grain = grainFlag === null ? 1 : Number.parseFloat(grainFlag);
       const warpFlag = new URLSearchParams(window.location.search).get('wornWarp');
-      const warp = warpFlag === null ? (ps2 ? 1 : 0) : Number.parseFloat(warpFlag);
+      const warp = warpFlag === null ? 1 : Number.parseFloat(warpFlag);
       const textureFlag = new URLSearchParams(window.location.search).get('wornTexture');
-      const texture = textureFlag === null ? (ps2 ? 1.25 : 0) : Number.parseFloat(textureFlag);
+      const texture = textureFlag === null ? 1.25 : Number.parseFloat(textureFlag);
       const dial = (nextAmount: number, nextSteps: number, nextGrain: number) =>
         world.applyWornStyleForReview(
           Number.isFinite(nextAmount) ? nextAmount : 1,
@@ -4178,8 +4193,16 @@ export class App {
         const zh = this.language === 'zh-TW';
         const row = (key: string, what: string) =>
           `<div><dt>${this.escapeHtml(key)}</dt><dd>${this.escapeHtml(what)}</dd></div>`;
-        const group = (title: string, rows: string, extra = '') =>
-          `<section class="setting-group"><h3>${title}</h3>${extra}<dl class="controls-list">${rows}</dl></section>`;
+        const group = (id: string, title: string, rows: string, extra = '') => {
+          // `staffSection` already solved this: a `<details>` whose open state is
+          // remembered, because the panel re-renders on every rebind and a
+          // section that closed itself would take the row being edited with it.
+          const open = this.openControlSections.has(id) ? ' open' : '';
+          return `<details class="staff-section" data-control-section="${id}"${open}>
+            <summary><span>${title}</span></summary>
+            <div class="staff-section__body">${extra}<dl class="controls-list">${rows}</dl></div>
+          </details>`;
+        };
 
         const keyboard = [
           ['WASD / ' + (zh ? '方向鍵' : 'ARROWS'), zh ? '移動／游泳' : 'Move / swim'],
@@ -4242,12 +4265,16 @@ export class App {
           [zh ? '按住扳機' : 'HOLD TRIGGER', zh ? '奔跑' : 'Run'],
         ].map(([k, v]) => row(k, v)).join('');
 
+        const padExtra = `${padStatus}<p class="setting-hint">${zh
+          ? '每個動作各綁一個鍵。改過之後可以一鍵還原成預設。'
+          : 'One button per action. Changed something you regret? Put them all back below.'}</p>`;
+        const padReset = `<div class="controls-reset"><button class="panel-button" type="button" data-rebind-reset${Object.keys(this.gamepadBindings).length ? '' : ' disabled'}>${zh ? '還原預設按鍵' : 'RESET TO DEFAULTS'}</button></div>`;
         return `
-          ${group(zh ? '鍵盤' : 'KEYBOARD', keyboard)}
-          ${group(zh ? '滑鼠' : 'MOUSE', mouse)}
-          ${group(zh ? '觸控螢幕' : 'TOUCHSCREEN', touch)}
-          ${group(zh ? '遊戲手把' : 'GAME CONTROLLER', padRows, padStatus)}
-          ${group(zh ? 'VR 頭戴裝置' : 'VR HEADSET', quest, `<p class="setting-hint">${zh ? 'Meta Quest Touch 控制器。' : 'Meta Quest Touch controllers.'}</p>`)}`;
+          ${group('keyboard', zh ? '鍵盤' : 'KEYBOARD', keyboard)}
+          ${group('mouse', zh ? '滑鼠' : 'MOUSE', mouse)}
+          ${group('touch', zh ? '觸控螢幕' : 'TOUCHSCREEN', touch)}
+          ${group('gamepad', zh ? '遊戲手把' : 'GAME CONTROLLER', padRows + `<div>${padReset}</div>`, padExtra)}
+          ${group('vr', zh ? 'VR 頭戴裝置' : 'VR HEADSET', quest, `<p class="setting-hint">${zh ? 'Meta Quest Touch 控制器。' : 'Meta Quest Touch controllers.'}</p>`)}`;
       }
       case 'contact':
         return `
@@ -4289,6 +4316,21 @@ export class App {
           setButtonPressed(candidate, candidate === button),
         );
       });
+    });
+    panel.querySelectorAll<HTMLDetailsElement>('[data-control-section]').forEach((section) => {
+      section.addEventListener('toggle', () => {
+        const id = section.dataset.controlSection ?? '';
+        if (section.open) this.openControlSections.add(id);
+        else this.openControlSections.delete(id);
+      });
+    });
+    panel.querySelector<HTMLButtonElement>('[data-rebind-reset]')?.addEventListener('click', () => {
+      this.gamepadBindings = {};
+      for (const action of GAMEPAD_ACTIONS) this.world?.gamepad.setBinding(action, DEFAULT_BINDINGS[action]);
+      try { window.localStorage.removeItem(GAMEPAD_BINDINGS_KEY); } catch { /* private mode */ }
+      this.rebinding = undefined;
+      this.world?.gamepad.cancelListening();
+      this.openPanel('controls');
     });
     panel.querySelectorAll<HTMLButtonElement>('[data-rebind]').forEach((button) => {
       button.addEventListener('click', () => {

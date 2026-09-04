@@ -8,7 +8,51 @@ Last updated: 2026-09-04 · phone VR gyroscope, webcam head tracking, jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — game controllers
+## 0. READ THIS FIRST — eye height, NPC avoidance, one worn look
+
+### The VR view really was shorter than everybody
+
+`AVATAR_EYE_OFFSET` was **2.62**. Measured against the rig it should be **2.84**:
+the head pivots at 2.47 and the two eye blocks sit 0.37 above that. A fifth of a
+unit, and very visible — standing in a crowd the view came up at everyone else's
+chin, which is exactly how the owner described it. **If the head or the face ever
+moves, this moves with it.**
+
+### Residents never saw each other coming
+
+`visitorInTheWay()` checked the player and the remote avatars and **not the other
+NPCs**. The dodge below it was written for two of them meeting head-on — each
+goes round to its right, which for a pair is opposite ways — but nothing ever set
+`givingWay` for another resident, so that path only opened once `npcCollides`
+refused a step. By then they are already touching, the sidestep is often blocked
+too, and both fall through to waiting. That is the knot.
+
+They anticipate each other now. **Deliberately no tiebreak on who yields**: both
+stepping right is what makes a head-on pass work, and letting only one give way
+would leave the other still walking into it. The `stuckFor > 1.2` escape still
+stops a crowd yielding itself to a standstill.
+
+### One worn look, not two
+
+**The default is now exactly `?era=ps2`.** Stripping it back to "grain only" was
+the wrong read, twice, and the reason is in the shader: the surface variation is
+added and *then* quantised, so **the dither is what crunches a smooth speckle
+into hard specks**. At `wornSteps: 64` there is nothing to crunch it and the same
+grain value reads as a soft wash — the difference the owner could see and I kept
+explaining away. The courses carry the rest: a wall visibly made of something at
+the scale of a hand.
+
+Defaults are `steps 10, grain 1, warp 1, texture 1.25`. Every dial is still a URL
+parameter and `?worn=0` still turns it off.
+
+### Controls panel
+
+Folded into `<details>` sections the way `staffSection()` does it, with the open
+set remembered — the panel re-renders on every rebind, and a section that closed
+itself would take the row being edited with it. There is a reset to defaults,
+disabled until something has actually been changed.
+
+## 0-prev. Game controllers
 
 `src/world/GamepadInput.ts` polls the browser's Gamepad API. **Left stick walks,
 right stick looks**, and nine actions sit on buttons. Deliberately **world only**
