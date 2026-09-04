@@ -61,8 +61,16 @@ these signs live.
   thirty times a second, and easing is the difference between a window and a
   shiver.
 - MediaPipe is `import()`ed from a CDN the first time a visitor enables it —
-  several megabytes of WebAssembly and weights that nobody who came to watch a
-  film should pay for. The world bundle grew 12kB, not 12MB.
+  **about 15MB**: a 155kB library, an 11.7MB WebAssembly runtime and a 3.8MB
+  model. Nobody who came to watch a film should pay for that, so the world
+  bundle grew 12kB rather than 15MB, and the panel says the number before the
+  button is pressed.
+- **Pin the version against the registry, not against memory.** The first
+  published attempt used `@mediapipe/tasks-vision@0.10.22`, which does not
+  exist: the package left the `0.10.x` line for `1.0.x`, and the owner's first
+  press produced nothing but a 404. `?review=headtrack` now exposes
+  `window.__festivalHeadTrackLoad()`, which fetches all three and builds the
+  tracker with no camera involved — run it after touching any of those URLs.
 - The video element is never added to the document, and nothing is uploaded,
   stored or sent. The camera is released when VR ends and when the world stops:
   leaving the light on because the page is still open is exactly what makes

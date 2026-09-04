@@ -62,8 +62,15 @@ const LOST_AFTER_MS = 600;
 const TRANSLATION_DEADZONE_M = 0.004;
 const ROTATION_DEADZONE_RAD = 0.012;
 
-const VISION_BUNDLE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.mjs';
-const VISION_WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm';
+/**
+ * Pinned, and the pin is checked against the registry rather than remembered:
+ * `@mediapipe/tasks-vision` left the `0.10.x` line for `1.0.x`, and a version
+ * that never existed is a 404 the moment somebody presses the button. Confirm
+ * all three of these resolve before changing any of them.
+ */
+const VISION_VERSION = '1.0.1';
+const VISION_BUNDLE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VISION_VERSION}/vision_bundle.mjs`;
+const VISION_WASM = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VISION_VERSION}/wasm`;
 const FACE_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
 
 interface FaceLandmarkerResultLike {
@@ -101,6 +108,8 @@ export class HeadTracking {
    * the calibration, the easing, the world's window — is the live path.
    */
   private reviewMode = false;
+  /** Which of the three downloads was in flight, so a failure can name it. */
+  private loadStage = 'the tracker library';
 
   /** The raw reading, before the calibration pose is taken off it. */
   private readonly raw: HeadPose = { yaw: 0, pitch: 0, x: 0, y: 0, z: 0 };
@@ -113,6 +122,25 @@ export class HeadTracking {
 
   get running(): boolean {
     return this.reviewMode || Boolean(this.landmarker && this.stream);
+  }
+
+  /**
+   * Fetch the library, the runtime and the model, and build the tracker —
+   * without asking for a camera.
+   *
+   * This is the half that broke in the field: a pinned version that did not
+   * exist, so the first press produced a 404 and nothing else. A review browser
+   * has no face to offer, but it can prove every download resolves and that the
+   * tracker will build, which is what that failure actually was.
+   */
+  async loadForReview(): Promise<boolean> {
+    this.status = 'loading';
+    const landmarker = await this.loadLandmarker();
+    if (!landmarker) return false;
+    this.landmarker?.close();
+    this.landmarker = landmarker;
+    this.startForReview();
+    return true;
   }
 
   /** Loopback fixtures only: run the mapping with no camera behind it. */
@@ -185,8 +213,11 @@ export class HeadTracking {
       // Loaded only now, and only for a visitor who asked for it. It is several
       // megabytes of WebAssembly and model weights, which is not something to
       // spend on somebody who came to watch a film.
+      this.loadStage = 'the tracker library';
       const vision = await import(/* @vite-ignore */ VISION_BUNDLE) as unknown as VisionModule;
+      this.loadStage = 'the tracker runtime';
       const fileset = await vision.FilesetResolver.forVisionTasks(VISION_WASM);
+      this.loadStage = 'the face model';
       return await vision.FaceLandmarker.createFromOptions(fileset, {
         baseOptions: { modelAssetPath: FACE_MODEL, delegate: 'GPU' },
         runningMode: 'VIDEO',
@@ -198,7 +229,8 @@ export class HeadTracking {
       });
     } catch (error) {
       this.status = 'failed';
-      this.message = error instanceof Error ? error.message : 'The tracker could not be loaded.';
+      const detail = error instanceof Error ? error.message : String(error);
+      this.message = `Could not load ${this.loadStage}. ${detail}`;
       return undefined;
     }
   }

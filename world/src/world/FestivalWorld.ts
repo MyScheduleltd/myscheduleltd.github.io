@@ -1902,6 +1902,17 @@ export class FestivalWorld {
     if (this.xrActive && this.xrSimulated) this.applyHeadView();
   }
 
+  /**
+   * Loopback fixture: prove the tracker downloads and builds, with no camera.
+   * The three URLs it fetches are the part that broke in the field.
+   */
+  async headTrackLoadForReview(): Promise<boolean> {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return false;
+    const loaded = await this.headTracking.loadForReview();
+    this.headTrackingActive = loaded;
+    return loaded;
+  }
+
   /** The head pose and the view it produced, side by side. */
   headTrackReviewSnapshot(): Record<string, unknown> {
     const round = (value: number) => Number(value.toFixed(4));

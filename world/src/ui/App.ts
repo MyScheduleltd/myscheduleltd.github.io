@@ -951,8 +951,8 @@ export class App {
         <section class="head-track" data-head-track hidden>
           <p class="eyebrow">${zh ? '實驗中 · 頭部追蹤' : 'EXPERIMENT · HEAD TRACKING'}</p>
           <p data-head-track-note>${zh
-            ? '用電腦的攝影機追蹤你的頭部，讓螢幕變成一扇可以探頭看的窗。影像只在這台電腦上處理，不會離開你的裝置。'
-            : 'Track your head with your computer\u2019s camera so the screen becomes a window you can lean around. The video is processed on this machine and never leaves your device.'}</p>
+            ? '用電腦的攝影機追蹤你的頭部，讓螢幕變成一扇可以探頭看的窗。影像只在這台電腦上處理，不會離開你的裝置。首次啟用會下載約 15MB 的追蹤模型。'
+            : 'Track your head with your computer\u2019s camera so the screen becomes a window you can lean around. The video is processed on this machine and never leaves your device. Enabling it downloads a ~15MB tracker once.'}</p>
           <label data-head-track-pick hidden><span>${zh ? '攝影機' : 'CAMERA'}</span><select data-head-track-camera></select></label>
           <div>
             <button class="button button--primary" type="button" data-head-track-start>${zh ? '開啟頭部追蹤' : 'ENABLE HEAD TRACKING'}</button>
@@ -1178,6 +1178,13 @@ export class App {
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview =
         () => this.world?.mentorAtStandReviewSnapshot();
     } else if (reviewTarget === 'headtrack' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      (window as Window & {
+        __festivalHeadTrackLoad?: () => Promise<unknown>;
+      }).__festivalHeadTrackLoad = async () => {
+        const loaded = await this.world?.headTrackLoadForReview();
+        this.syncHeadTrackUi();
+        return { loaded, ...(this.world?.headTrackingSnapshot() ?? {}) };
+      };
       (window as Window & {
         __festivalHeadTrack?: (poses?: Array<Record<string, number>>) => unknown;
       }).__festivalHeadTrack = (poses = []) => {
