@@ -214,12 +214,12 @@ const readStoredHeadTrackRemember = (): boolean => {
   }
 };
 const LOOK_SENSITIVITY_KEY = 'myschedule-look-sensitivity-v2';
-const DEFAULT_LOOK_SENSITIVITY = 1;
+const DEFAULT_LOOK_SENSITIVITY = 0.2;
 const readStoredLookSensitivity = (): number => {
   try {
     const raw = window.localStorage.getItem(LOOK_SENSITIVITY_KEY);
     const value = raw === null ? Number.NaN : Number(raw);
-    return Number.isFinite(value) && value >= 0.3 && value <= 2 ? value : DEFAULT_LOOK_SENSITIVITY;
+    return Number.isFinite(value) && value >= 0.1 && value <= 2 ? value : DEFAULT_LOOK_SENSITIVITY;
   } catch {
     return DEFAULT_LOOK_SENSITIVITY;
   }
@@ -2289,7 +2289,9 @@ export class App {
   private lookSensitivityLabel(): string {
     const zh = this.language === 'zh-TW';
     const percent = Math.round(this.lookSensitivity * 100);
-    const shape = this.lookSensitivity <= 0.5
+    const shape = this.lookSensitivity <= 0.25
+      ? (zh ? '極緩和' : 'VERY SLOW')
+      : this.lookSensitivity <= 0.5
       ? (zh ? '很緩和' : 'VERY GENTLE')
       : this.lookSensitivity <= 0.85
         ? (zh ? '緩和' : 'GENTLE')
@@ -4118,9 +4120,9 @@ export class App {
         <section class="setting-group">
           <h3>${zh ? '鏡頭靈敏度' : 'LOOK SENSITIVITY'}</h3>
           <p class="panel-intro">${zh
-            ? '拖曳時鏡頭轉動的幅度，所有視角都適用。覺得暈就往左調；VR 本來就比平常再緩和一些。'
-            : 'How far a drag turns the view, in every camera. Move it left if looking around makes you dizzy — VR is already gentler than the flat world at the same setting.'}</p>
-          <label class="range-field"><span>${zh ? '靈敏度' : 'SENSITIVITY'}</span><input data-look-sensitivity type="range" min="0.3" max="2" value="${this.lookSensitivity}" step="0.05" /></label>
+            ? '拖曳時鏡頭轉動的幅度，所有視角都適用。覺得暈就往左調。'
+            : 'How far a drag turns the view, in every camera. Move it left if looking around makes you dizzy.'}</p>
+          <label class="range-field"><span>${zh ? '靈敏度' : 'SENSITIVITY'}</span><input data-look-sensitivity type="range" min="0.1" max="2" value="${this.lookSensitivity}" step="0.05" /></label>
           <p class="setting-readout" data-look-sensitivity-readout>${this.lookSensitivityLabel()}</p>
           <p class="setting-hint">${zh ? '關掉這個面板後拖曳畫面才看得出差別。' : 'Close this panel and drag the world to feel the difference.'}</p>
         </section>`;

@@ -340,8 +340,13 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
  */
 .world-grain {
   position: absolute; inset: -60px; z-index: 4; pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.24'/%3E%3C/svg%3E");
-  mix-blend-mode: soft-light; opacity: .3;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.42'/%3E%3C/svg%3E");
+  /* `screen`, not `soft-light`. Soft-light leaves dark pixels almost exactly
+     where it found them, and this world is dark — which is why the grain was
+     invisible at full opacity and read as missing. Screen adds light, so the
+     noise lands as bright specks over the shadows, the way grain does on a
+     dark print. */
+  mix-blend-mode: screen; opacity: .5;
   animation: film-grain-shift .72s steps(4, end) infinite;
   will-change: background-position;
 }

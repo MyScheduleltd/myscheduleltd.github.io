@@ -495,12 +495,7 @@ const AVATAR_SWIM_Y = -2.08;
  * step rather than one of them walking on the water.
  */
 const SWIM_Z = -60;
-/**
- * VR turns more gently than the flat world at the same setting. Reported as
- * dizziness, and a headset is where a view that outruns the head does the most
- * harm, so the comfort is in the default rather than only in the slider.
- */
-const VR_COMFORT = 0.6;
+
 /** The only origins a projector or jukebox player can legitimately speak from. */
 const PROJECTOR_ORIGINS = new Set([
   'https://www.youtube.com',
@@ -1301,7 +1296,7 @@ export class FestivalWorld {
    * and scaling that is what makes a picture disagree with the inner ear rather
    * than agree with it. This is for the controls that invent motion.
    */
-  private lookSensitivity = 1;
+  private lookSensitivity = 0.2;
   private xrSnapReady = true;
   private xrTeleportReady = true;
   private xrJumpReady = true;
@@ -1904,7 +1899,7 @@ export class FestivalWorld {
 
   /** 0.3 (gentle) to 2 (twitchy). 1 is the rate the world was built around. */
   setLookSensitivity(value: number): void {
-    this.lookSensitivity = THREE.MathUtils.clamp(value, 0.3, 2);
+    this.lookSensitivity = THREE.MathUtils.clamp(value, 0.1, 2);
   }
 
   /**
@@ -5035,13 +5030,12 @@ export class FestivalWorld {
     if (Math.abs(deltaX) > 180 || Math.abs(deltaY) > 180) return;
     if (this.xrActive && this.xrSimulated) {
       if (this.phoneOrientationEnabled && this.phoneOrientationReceived) return;
-      // VR carries a comfort factor of its own on top of the visitor's
-      // setting, because a headset view that swings further than the head did
-      // is the specific thing that makes people ill.
-      const vrRate = this.lookSensitivity * VR_COMFORT;
-      this.xrYaw -= deltaX * 0.0042 * vrRate;
+      // No hidden discount here any more. The slider is the whole of it, and
+      // the gentleness lives in a default of 20% rather than in a factor the
+      // visitor cannot see.
+      this.xrYaw -= deltaX * 0.0042 * this.lookSensitivity;
       this.xrSimPitch = THREE.MathUtils.clamp(
-        this.xrSimPitch - deltaY * 0.0035 * vrRate,
+        this.xrSimPitch - deltaY * 0.0035 * this.lookSensitivity,
         -0.75,
         0.75,
       );

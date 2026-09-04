@@ -8,7 +8,44 @@ Last updated: 2026-09-04 · phone VR gyroscope, webcam head tracking, jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — the sensitivity reaches the head, the skew is gone
+## 0. READ THIS FIRST — grain that shows, and one honest number
+
+### Soft-light grain over a dark world is invisible
+
+The grain was shipped at `mix-blend-mode: soft-light` and reported as missing.
+It was there, sized, painting, at full opacity — and doing **nothing**, because
+soft-light leaves dark pixels almost exactly where it finds them and this world
+is dark. `screen` at .5 instead: it adds light, so the noise lands as bright
+specks over the shadows, the way grain does on a dark print. Obvious on screen
+now.
+
+**Two numbers to tune it**, not one: the element's `opacity`, and the `opacity`
+on the `<rect>` inside the SVG noise. The blend mode decides whether either does
+anything at all.
+
+Still off in lite mode, and the shell's `data-world-quality` is what switches it.
+
+### The sensitivity is one number with nothing behind it
+
+`VR_COMFORT` is gone. A setting that reads 20% and behaves like 12% in the place
+the visitor cares most about is not a setting anybody can reason with, and the
+sentence explaining the discount went the same way at the owner's request. The
+gentleness lives in the **default of 0.2** instead. Range is 0.1–2.
+
+**This is a global default, and it is very slow on purpose.** At 20% a 160px
+drag turns the flat world about 7.7° — a half-turn takes most of a screen width
+of dragging. That is the owner's explicit choice, made after dizziness reports;
+do not quietly raise it.
+
+### `localhost` and `127.0.0.1` are different origins
+
+Three separate measurements in this session were confounded by clearing
+`localStorage` on one and loading the world from the other. `preview_start`
+opens `localhost:5173`; the review fixtures are documented against `127.0.0.1`.
+**Clear storage on the origin you are about to load**, or a stale slider value
+will look like a bug in the code that reads it.
+
+## 0-prev. The sensitivity reaches the head, the skew is gone
 
 ### Why the slider "still did nothing"
 
