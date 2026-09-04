@@ -1303,6 +1303,17 @@ export class App {
         this.syncHeadTrackUi();
         return this.world?.headTrackReviewSnapshot();
       };
+    } else if (reviewTarget === 'mentor-drop' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      this.world.focusMentorRemoteDropForReview();
+      (window as Window & {
+        __festivalDrop?: (x?: number, z?: number, yaw?: number) => unknown;
+      }).__festivalDrop = (x, z, yaw) => {
+        if (x !== undefined) this.world?.focusMentorRemoteDropForReview(x, z, yaw);
+        this.world?.releaseMentorRemoteDropForReview();
+        return this.world?.mentorRemoteDropSnapshot();
+      };
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview =
+        () => this.world?.mentorRemoteDropSnapshot();
     } else if (reviewTarget === 'menu' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       // The controller's menu navigation, reachable without a controller. The
       // pad half is polled from the render loop, which a headless or suspended

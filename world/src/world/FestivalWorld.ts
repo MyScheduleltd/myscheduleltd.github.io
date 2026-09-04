@@ -2459,6 +2459,69 @@ export class FestivalWorld {
   }
 
   /**
+   * Loopback fixture: MENTOR carried on somebody else's head, then let go.
+   *
+   * This is the case that goes wrong and the one hardest to reach by hand — it
+   * needs a second visitor, holding the dog, being hit. A stand-in remote
+   * avatar is built here with the transform a real one carries, the dog is
+   * attached to its head the way the sharing code does, and `release()` runs
+   * the same path a punch does. What comes back is the dog's world transform,
+   * so a body that ends up under the floor or lying on its side is a number
+   * and not an impression.
+   */
+  focusMentorRemoteDropForReview(x = 6, z = -46, yaw = 1.1): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
+    if (!mentor?.dogRig) return;
+    const carrier = new THREE.Group();
+    // A remote avatar stands on the floor underfoot, not on a fixed number.
+    carrier.position.set(x, this.groundHeightAt(x, z), z);
+    carrier.rotation.y = yaw;
+    this.scene.add(carrier);
+    this.attachMentorToCarrier(mentor, carrier);
+    this.player.position.set(x - 3, AVATAR_GROUND_Y, z + 2);
+  }
+
+  /** Let the stand-in carrier drop the dog, the way a punch does. */
+  releaseMentorRemoteDropForReview(): void {
+    const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
+    if (!mentor?.dogRig) return;
+    this.mentorCarrierId = undefined;
+    this.syncSharedMentorCarrier();
+  }
+
+  mentorRemoteDropSnapshot(): unknown {
+    const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
+    if (!mentor?.dogRig) return { mentor: 'missing' };
+    const round = (value: number) => Number(value.toFixed(3));
+    const worldOf = (object: THREE.Object3D) => {
+      const at = object.getWorldPosition(new THREE.Vector3());
+      return [round(at.x), round(at.y), round(at.z)];
+    };
+    const euler = new THREE.Euler().setFromQuaternion(
+      mentor.group.getWorldQuaternion(new THREE.Quaternion()),
+      'YXZ',
+    );
+    const scale = mentor.group.getWorldScale(new THREE.Vector3());
+    return {
+      parent: mentor.group.parent === this.scene ? 'scene' : (mentor.group.parent?.name || 'other'),
+      group: worldOf(mentor.group),
+      // The three that matter: a body under the floor and legs above it is
+      // exactly what "the body disappeared, the feet were still there" is.
+      body: worldOf(mentor.dogRig.body),
+      head: worldOf(mentor.dogRig.head),
+      frontFoot: worldOf(mentor.dogRig.leftFrontLeg),
+      groundHere: round(this.groundHeightAt(mentor.group.position.x, mentor.group.position.z)),
+      worldRotation: [round(euler.x), round(euler.y), round(euler.z)],
+      worldScale: round(scale.x),
+      bodyPitch: round(mentor.dogRig.body.rotation.x),
+      headPitch: round(mentor.dogRig.head.rotation.x),
+      legRoll: round(mentor.dogRig.leftFrontLeg.rotation.z),
+      badgeVisible: mentor.badge.visible,
+    };
+  }
+
+  /**
    * Loopback fixture: the visitor and a loyal MENTOR out past the beach.
    *
    * The sea is a ninety-unit walk from anywhere the travel menu will take you,
