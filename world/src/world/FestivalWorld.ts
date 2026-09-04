@@ -493,6 +493,13 @@ const AVATAR_SWIM_Y = -2.08;
  * step rather than one of them walking on the water.
  */
 const SWIM_Z = -60;
+/** The only origins a projector or jukebox player can legitimately speak from. */
+const PROJECTOR_ORIGINS = new Set([
+  'https://www.youtube.com',
+  'https://youtube.com',
+  'https://www.youtube-nocookie.com',
+  'https://youtube-nocookie.com',
+]);
 /**
  * Where MENTOR floats, and it is not a guess: the sea's surface sits at 0.14,
  * and the dog's body block runs from 0.39 to 1.09 above its own root. This puts
@@ -5201,7 +5208,12 @@ export class FestivalWorld {
   };
 
   private readonly projectorMessage = (event: MessageEvent): void => {
-    if (!String(event.origin).includes('youtube.com') && !String(event.origin).includes('youtube-nocookie.com')) return;
+    // Exact origins, not a substring. `origin.includes('youtube.com')` is also
+    // true of `https://youtube.com.example.net`, which anybody can register —
+    // and a page that has framed this one can post to it with its own origin.
+    // Nothing here does more than read playback numbers, but an origin test
+    // that can be spelled around is not an origin test.
+    if (!PROJECTOR_ORIGINS.has(event.origin)) return;
     let payload: {
       event?: string;
       info?: number | { playerState?: number; errorCode?: number; currentTime?: number; duration?: number };

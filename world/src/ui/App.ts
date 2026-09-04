@@ -152,9 +152,9 @@ const copy = {
     vrChecking: 'Checking this browser for a connected headset…',
     vrUnavailable: 'VR is available in Meta Quest Browser. Open this page inside your Quest headset to enable this checkbox.',
     vrDesktopMode: 'VR DESKTOP MODE',
-    vrDesktopNote: 'Explore the VR view with keyboard and mouse — open this page in a Meta Quest headset for full VR.',
+    vrDesktopNote: 'Keyboard and mouse VR; a Meta Quest gives full VR.',
     vrPhoneMode: 'PHONE MOTION VR',
-    vrPhoneNote: 'Turn and tilt your phone to look around — open this page in a Meta Quest headset for full VR.',
+    vrPhoneNote: 'Turn your phone to look around; a Meta Quest gives full VR.',
     gateNote: 'MOVE: WASD / ARROWS · RUN: SHIFT · JUMP: SPACE · CAMERA: T · CHAT: ENTER',
   },
   'zh-TW': {
@@ -178,9 +178,9 @@ const copy = {
     vrChecking: '正在檢查瀏覽器是否連接頭戴式裝置…',
     vrUnavailable: 'VR 可在 Meta Quest Browser 使用。請用 Quest 頭戴式裝置開啟此頁面，即可勾選。',
     vrDesktopMode: 'VR 桌面模式',
-    vrDesktopNote: '用鍵盤與滑鼠體驗 VR 視角；在 Meta Quest 頭戴裝置開啟本頁即可進入完整 VR。',
+    vrDesktopNote: '用鍵盤與滑鼠體驗 VR；Meta Quest 可進入完整 VR。',
     vrPhoneMode: '手機動態 VR',
-    vrPhoneNote: '轉動與傾斜手機即可環顧四周；在 Meta Quest 頭戴裝置開啟本頁即可進入完整 VR。',
+    vrPhoneNote: '轉動手機即可環顧四周；Meta Quest 可進入完整 VR。',
     gateNote: '移動：WASD／方向鍵 · 奔跑：SHIFT · 跳躍：SPACE · 鏡頭：T · 聊天：ENTER',
   },
 } as const;

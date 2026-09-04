@@ -8,7 +8,85 @@ Last updated: 2026-09-04 · webcam head tracking behind `?headtrack`; jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — the tracker never touches the disk
+## 0. READ THIS FIRST — security pass, 2026-09-04
+
+Asked for a review of the camera, of what could reach a visitor's machine, and
+of anything exposed on the service. Five things changed; the rest held up.
+
+### Fixed
+
+**1. The tracker's code is now weighed before it runs.** This is the one that
+mattered. Head tracking `import()`s JavaScript from a CDN and that code runs
+with everything the page has — including a camera it can hold open. A pinned
+version is not protection: a compromised CDN, a hijacked package or anything in
+the path would be a webcam in a stranger's hands, on a page whose own panel
+promises the video never leaves the machine. All four files are now checked
+against a recorded SHA-256 before anything is decoded or executed, and the load
+refuses outright on a mismatch. `<script integrity>` cannot do this — none of it
+arrives through a script tag — but the bytes are already fetched by hand for the
+no-store guarantee, so they can be weighed on the way past. **Verified both
+ways:** the real files load, and a deliberately wrong digest refused the load
+and named the file. Regenerate with
+`curl -s --compressed -L <url> | openssl dgst -sha256 -binary | openssl base64 -A`,
+and never by trusting what is served at the time.
+
+**2. Head tracking refuses to run inside a frame,** and the service now sends
+`X-Frame-Options: DENY` and `frame-ancestors 'none'`. A page that frames this
+one can put its own overlay over the panel and steer a visitor into pressing the
+one control that reaches for a camera. Pages cannot send headers, so the refusal
+is in the code as well as in the header.
+
+**3. `projectorMessage` checked its origin with `includes('youtube.com')`,**
+which is also true of `youtube.com.example.net` — a domain anybody can register.
+Exact allowlist now. Low impact (it only reads playback numbers) but an origin
+test that can be spelled around is not an origin test.
+
+**4. `serveStatic`'s escape check was missing a separator.** `resolve()` drops
+the trailing slash, so `startsWith(root)` also accepted a sibling directory
+whose name merely began with `dist`. Reachable, because a percent-encoded `..`
+survives URL normalisation and is only decoded inside that function. No such
+sibling exists today; the check is right now regardless.
+
+**5. `Permissions-Policy: camera=()` would have blocked head tracking** on the
+copy the service hosts — a split that would only ever show up there, never on
+the static beta. `camera=(self)` now: same-origin only, so the YouTube frames
+still get nothing.
+
+### Checked, and sound
+
+- **The staff key.** Compared with `timingSafeEqual`, sent as a header rather
+  than a query string, held in `sessionStorage` so it dies with the tab, and
+  absent from the built bundle. An unset `FESTIVAL_ADMIN_KEY` in production
+  leaves `ADMIN_KEY = ''`, and `tokenMatches` rejects an empty expectation — so
+  it **fails closed**, locking staff out rather than letting anyone in.
+- **The camera.** Permission is the browser's, secure-context only. The video
+  element is never added to the document, no frame is uploaded or stored, and
+  the tracks are stopped when VR ends and when the world stops.
+- **Chat.** Author and body both go through `escapeHtml` before reaching
+  `innerHTML`.
+- **The store link.** Validated to `http`/`https` on the service *and* again in
+  the client before the browser is asked to follow it, so a `javascript:` URL
+  cannot become a link.
+- **CORS.** Allowlist plus same-origin, loopback only outside production, and a
+  disallowed origin is refused rather than silently served. No credentialed
+  mode, and every authenticated route needs a custom header — so a cross-site
+  form post cannot reach one.
+- **Limits.** 16kB request bodies, five chat lines per ten seconds, a DJ
+  cooldown, and `MAX_VISITORS`.
+- **Storage.** Session token and staff key in `sessionStorage`; only the profile,
+  jukebox volume and black box in `localStorage`. Nothing sensitive, nothing
+  leaves the device.
+
+### Still the owner's to check
+
+- Whether `FESTIVAL_ADMIN_KEY` is set on Render, and whether it is strong. It
+  cannot be read from here. Note the fail-closed behaviour above means "staff
+  tools do not work" and "no key is set" look the same.
+- Whether `FESTIVAL_ALLOWED_ORIGINS` on Render lists only the real origins.
+- **The three service-side fixes need a manual Render deploy.** Until then the
+  static beta has the client-side ones and the service has none of its own.
+
+## 0-prev. The tracker never touches the disk
 
 The owner asked whether the download could be deleted when the site closes. It
 does better than that now: **it is never written down in the first place.**

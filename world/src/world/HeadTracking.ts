@@ -82,6 +82,32 @@ const VISION_WASM_LOADER = `${VISION_WASM}/vision_wasm_internal.js`;
 const VISION_WASM_BINARY = `${VISION_WASM}/vision_wasm_internal.wasm`;
 const FACE_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
 
+/**
+ * What each of those four files must hash to.
+ *
+ * This is the part that matters, and pinning a version is not a substitute for
+ * it. Code fetched from a CDN runs with everything this page has, and this page
+ * can hold a camera open — so a compromised CDN, a hijacked package or anything
+ * sitting between the visitor and jsDelivr would be a webcam in a stranger's
+ * hands, on a site whose own panel promises the video never leaves the machine.
+ *
+ * `<script integrity>` cannot help here: none of this arrives through a script
+ * tag. Because the bytes are fetched by hand for the no-store guarantee, they
+ * can be weighed before anything is allowed to run, which is the same promise
+ * Subresource Integrity makes and the reason the fetching is worth doing.
+ *
+ * Regenerate after changing any URL, and never by trusting what is served now:
+ *   curl -s --compressed -L <url> | openssl dgst -sha256 -binary | openssl base64 -A
+ * A mismatch means the file changed. It is not something to paper over by
+ * updating the digest without knowing why it moved.
+ */
+const INTEGRITY: Record<string, string> = {
+  [VISION_BUNDLE]: 'sha256-2IVjDCl8CyCx/oYJbLBikcTICAh28nhS5yTySsYDcT8=',
+  [VISION_WASM_LOADER]: 'sha256-4XDuZ91OFsGm/NiECiBmh+WlmyLCDkqQK8RFsJVFTXM=',
+  [VISION_WASM_BINARY]: 'sha256-jaJ3pzOSbqzQR0uHBLNnQtbsMjHFeoYMW4id/48d+IY=',
+  [FACE_MODEL]: 'sha256-ZBhOIpsmMQe8K4BMZiXbE0H/K7cxh0sLzC/mVE4Lyf8=',
+};
+
 interface FaceLandmarkerResultLike {
   facialTransformationMatrixes?: Array<{ data: number[] }>;
 }
@@ -205,6 +231,17 @@ export class HeadTracking {
         this.message = 'This browser will not open a camera on this page.';
         return false;
       }
+      // Not from inside somebody else's frame. A page that has framed this one
+      // can put its own overlay over this panel and steer a visitor into
+      // pressing the button underneath — and the one control on the page that
+      // reaches for a camera is exactly the one worth stealing a click on. The
+      // browser would still name the real origin in its own prompt, but the
+      // honest answer is that a festival has no business running in a frame.
+      if (window.top !== window.self) {
+        this.status = 'unsupported';
+        this.message = 'Head tracking is not available inside an embedded frame.';
+        return false;
+      }
       this.stop();
       this.status = 'loading';
       const landmarker = await this.loadLandmarker();
@@ -238,10 +275,28 @@ export class HeadTracking {
    * faster. Within one page it is fetched once and kept, so turning tracking
    * off and on again is free.
    */
-  private async fetchWithoutStoring(url: string, type: string): Promise<string> {
+  private async fetchWithoutStoring(url: string): Promise<ArrayBuffer> {
     const response = await fetch(url, { cache: 'no-store', mode: 'cors', credentials: 'omit' });
     if (!response.ok) throw new Error(`${response.status} ${response.statusText} — ${url}`);
-    const objectUrl = URL.createObjectURL(new Blob([await response.arrayBuffer()], { type }));
+    const bytes = await response.arrayBuffer();
+    const expected = INTEGRITY[url];
+    if (!expected) throw new Error(`No integrity digest is recorded for ${url}.`);
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+    let binary = '';
+    for (const byte of digest) binary += String.fromCharCode(byte);
+    const actual = `sha256-${btoa(binary)}`;
+    if (actual !== expected) {
+      // Nothing runs, nothing is decoded, and the visitor is told. A file that
+      // is not the one this was built against is not a file to execute beside
+      // an open camera.
+      throw new Error(`${url} did not match its recorded digest (${actual}).`);
+    }
+    return bytes;
+  }
+
+  /** A verified buffer, handed to the runtime as a URL it can load from. */
+  private toObjectUrl(bytes: ArrayBuffer, type: string): string {
+    const objectUrl = URL.createObjectURL(new Blob([bytes], { type }));
     this.objectUrls.push(objectUrl);
     return objectUrl;
   }
@@ -259,7 +314,10 @@ export class HeadTracking {
         // Imported from a blob rather than from the CDN URL directly, because
         // `import()` of a real URL is cached by the browser like any other
         // script and this must leave nothing behind.
-        const bundleUrl = await this.fetchWithoutStoring(VISION_BUNDLE, 'text/javascript');
+        const bundleUrl = this.toObjectUrl(
+          await this.fetchWithoutStoring(VISION_BUNDLE),
+          'text/javascript',
+        );
         this.bundle = await import(/* @vite-ignore */ bundleUrl) as unknown as VisionModule;
       }
       if (!this.wasmFileset) {
@@ -268,15 +326,19 @@ export class HeadTracking {
         // `FilesetResolver.forVisionTasks`, which fetches by URL itself and
         // would put the eleven-megabyte runtime straight into the disk cache.
         this.wasmFileset = {
-          wasmLoaderPath: await this.fetchWithoutStoring(VISION_WASM_LOADER, 'text/javascript'),
-          wasmBinaryPath: await this.fetchWithoutStoring(VISION_WASM_BINARY, 'application/wasm'),
+          wasmLoaderPath: this.toObjectUrl(
+            await this.fetchWithoutStoring(VISION_WASM_LOADER),
+            'text/javascript',
+          ),
+          wasmBinaryPath: this.toObjectUrl(
+            await this.fetchWithoutStoring(VISION_WASM_BINARY),
+            'application/wasm',
+          ),
         };
       }
       if (!this.modelBuffer) {
         this.loadStage = 'the face model';
-        const response = await fetch(FACE_MODEL, { cache: 'no-store', mode: 'cors', credentials: 'omit' });
-        if (!response.ok) throw new Error(`${response.status} ${response.statusText} — ${FACE_MODEL}`);
-        this.modelBuffer = new Uint8Array(await response.arrayBuffer());
+        this.modelBuffer = new Uint8Array(await this.fetchWithoutStoring(FACE_MODEL));
       }
       this.loadStage = 'the tracker';
       return await this.bundle.FaceLandmarker.createFromOptions(this.wasmFileset, {

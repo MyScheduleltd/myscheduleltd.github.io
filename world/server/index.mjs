@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { extname, resolve } from 'node:path';
+import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import legacySource from '../../docs/js/allData.js';
 
@@ -424,8 +424,19 @@ const allowedOrigin = (request) => {
 const cors = (request, response) => {
   response.setHeader('x-content-type-options', 'nosniff');
   response.setHeader('referrer-policy', 'strict-origin-when-cross-origin');
-  response.setHeader('permissions-policy', 'camera=(), microphone=(), geolocation=()');
+  // `camera=(self)`, not `camera=()`. The desktop VR preview asks for a camera
+  // for head tracking, and a blanket denial here would refuse it for anything
+  // this service serves — a difference that would only show up on the copy the
+  // service hosts, never on the static beta, which is exactly the kind of split
+  // nobody finds until someone reports the feature "just not working".
+  // Same-origin only: the YouTube frames still get nothing.
+  response.setHeader('permissions-policy', 'camera=(self), microphone=(), geolocation=()');
   response.setHeader('cross-origin-opener-policy', 'same-origin-allow-popups');
+  // Nothing here is meant to be embedded, and the page holds a camera open.
+  // The static beta on Pages cannot send headers at all, so head tracking also
+  // refuses to start inside a frame on its own account.
+  response.setHeader('x-frame-options', 'DENY');
+  response.setHeader('content-security-policy', "frame-ancestors 'none'");
   const origin = allowedOrigin(request);
   if (origin === null) return false;
   if (origin) {
@@ -451,7 +462,12 @@ const contentTypes = {
 const serveStatic = async (url, response) => {
   const requestedPath = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
   const filePath = resolve(DIST_DIR, `.${requestedPath}`);
-  if (!filePath.startsWith(resolve(DIST_DIR))) return false;
+  // The separator matters. `resolve` drops the trailing slash, so a bare
+  // prefix test would also accept any sibling directory whose name merely
+  // starts with "dist" — reachable, because a percent-encoded `..` survives URL
+  // normalisation and is only decoded here.
+  const root = resolve(DIST_DIR);
+  if (filePath !== root && !filePath.startsWith(root + sep)) return false;
   try {
     const file = await readFile(filePath);
     const extension = extname(filePath);
