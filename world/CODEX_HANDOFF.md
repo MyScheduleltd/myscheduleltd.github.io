@@ -8,7 +8,41 @@ Last updated: 2026-09-04 · phone VR gyroscope, webcam head tracking, jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — VR look sensitivity, and an unfinished drift hunt
+## 0. READ THIS FIRST — head tracking "stuck", and what it really was
+
+Reported as stuck on `正在載入追蹤模型…`. Measured here: the load **completes**,
+in **71.7 seconds**, over the blob path, with no error anywhere. The three-
+megabyte runtime is simply slow, and a minute of an unchanging label is
+indistinguishable from broken.
+
+So the fixes are about the wait, not about a crash:
+
+- **The label says how long.** "LOADING THE TRACKER — THIS CAN TAKE A MINUTE",
+  and the readout names which of the four steps it is on, so it visibly moves.
+- **Nothing waits for ever.** Every fetch has a deadline and every build has one,
+  so a load that truly hangs ends with a message naming the stage instead of a
+  frozen panel. `start()` resets its own guard in a `finally`, so the button
+  works again afterwards — before, one hung load bricked it for the visit.
+- **`FETCH_TIMEOUT_MS` is 120s on purpose.** The first attempt at this was 40s,
+  which would have killed the 71-second load above. **Do not tighten it**: the
+  complaint is a load that never ends, not one that takes a while, and cutting
+  off a slow connection punishes exactly the machines least able to spare it.
+- **A fallback for a genuinely broken runtime path.** The loader script is handed
+  over as a blob so nothing reaches the disk; Emscripten works out where to find
+  its own files from where that script came, and a blob URL resolves to nothing
+  useful — on some browsers it waits rather than failing. If the build times out,
+  it retries once through `FilesetResolver.forVisionTasks` on real URLs. That
+  lets the browser cache the runtime, which the panel promised it would not, so
+  `runtimeCached` is recorded and shown. The model — the larger half — still goes
+  in as a verified buffer either way.
+
+**A byte-counting progress readout was built and taken out again.** Reading the
+body chunk by chunk to measure it slowed the same 3MB download from ~20s to
+**85s**, and the number was wrong regardless: the reader sees the decompressed
+size (15.25MB) against a compressed total (~7MB). The stage costs nothing and
+answers the same question. Do not re-add it.
+
+## 0-prev. VR look sensitivity, and an unfinished drift hunt
 
 ### The camera panel
 

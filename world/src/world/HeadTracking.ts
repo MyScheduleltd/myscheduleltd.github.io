@@ -56,6 +56,15 @@ export interface HeadTrackingCamera {
 
 /** The tracker only runs this often. Sixty would spend frames on nothing. */
 const DETECT_INTERVAL_MS = 33;
+/**
+ * No single download may sit there for longer than this. Generous on purpose:
+ * the complaint being fixed is a load that never ends, not one that takes a
+ * while, and cutting off a slow connection mid-download would turn a working
+ * feature into a broken one on exactly the machines least able to spare it.
+ */
+const FETCH_TIMEOUT_MS = 120_000;
+/** Nor may building the tracker, which is where a bad runtime path hangs. */
+const BUILD_TIMEOUT_MS = 25_000;
 /** After this long with no face, ease back to centre rather than freeze. */
 const LOST_AFTER_MS = 600;
 /** Below this the reading is the sensor talking to itself. */
@@ -118,6 +127,7 @@ interface FaceLandmarkerLike {
 }
 
 interface VisionModule {
+  FilesetResolver: { forVisionTasks(path: string): Promise<unknown> };
   FaceLandmarker: {
     createFromOptions(fileset: unknown, options: Record<string, unknown>): Promise<FaceLandmarkerLike>;
   };
@@ -144,6 +154,12 @@ export class HeadTracking {
   private reviewMode = false;
   /** Which of the three downloads was in flight, so a failure can name it. */
   private loadStage = 'the tracker library';
+  /**
+   * Set when the runtime had to come the ordinary cached way. The panel says
+   * nothing is written to the visitor's machine, so on the rare path where that
+   * stops being wholly true, it has to be said rather than quietly dropped.
+   */
+  private runtimeCached = false;
   /**
    * The tracker, held in memory for as long as the page is open and written
    * nowhere. Kept across a stop and start so that turning tracking off and on
@@ -276,7 +292,21 @@ export class HeadTracking {
    * off and on again is free.
    */
   private async fetchWithoutStoring(url: string): Promise<ArrayBuffer> {
-    const response = await fetch(url, { cache: 'no-store', mode: 'cors', credentials: 'omit' });
+    // A request with no deadline is the reason a stuck load looked like a slow
+    // one for ever. Aborted rather than left hanging, so the failure has a name.
+    const abort = new AbortController();
+    const deadline = window.setTimeout(() => abort.abort(), FETCH_TIMEOUT_MS);
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        cache: 'no-store', mode: 'cors', credentials: 'omit', signal: abort.signal,
+      });
+    } catch (error) {
+      window.clearTimeout(deadline);
+      if (abort.signal.aborted) throw new Error(`Timed out fetching ${url}.`);
+      throw error;
+    }
+    window.clearTimeout(deadline);
     if (!response.ok) throw new Error(`${response.status} ${response.statusText} — ${url}`);
     const bytes = await response.arrayBuffer();
     const expected = INTEGRITY[url];
@@ -324,7 +354,7 @@ export class HeadTracking {
         this.loadStage = 'the tracker runtime';
         // Handed over as explicit paths rather than through
         // `FilesetResolver.forVisionTasks`, which fetches by URL itself and
-        // would put the eleven-megabyte runtime straight into the disk cache.
+        // would put the three-megabyte runtime straight into the disk cache.
         this.wasmFileset = {
           wasmLoaderPath: this.toObjectUrl(
             await this.fetchWithoutStoring(VISION_WASM_LOADER),
@@ -341,23 +371,70 @@ export class HeadTracking {
         this.modelBuffer = new Uint8Array(await this.fetchWithoutStoring(FACE_MODEL));
       }
       this.loadStage = 'the tracker';
-      return await this.bundle.FaceLandmarker.createFromOptions(this.wasmFileset, {
-        // The weights themselves, not a path to them. A path would be fetched
-        // by the runtime and cached the ordinary way.
-        baseOptions: { modelAssetBuffer: this.modelBuffer, delegate: 'GPU' },
-        runningMode: 'VIDEO',
-        numFaces: 1,
-        // The head's own pose, rather than four hundred landmarks we would then
-        // have to fit a pose to ourselves.
-        outputFacialTransformationMatrixes: true,
-        outputFaceBlendshapes: false,
-      });
+      return await this.buildLandmarker();
     } catch (error) {
       this.status = 'failed';
       const detail = error instanceof Error ? error.message : String(error);
       this.message = `Could not load ${this.loadStage}. ${detail}`;
       return undefined;
     }
+  }
+
+  /**
+   * Build the tracker, and do not accept silence for an answer.
+   *
+   * The runtime's loader script is handed over as a blob so that nothing of it
+   * reaches the disk. Emscripten works out where to look for its own files from
+   * where that script was loaded, and from a blob URL that resolves to nothing
+   * useful — on some browsers it then waits rather than failing, which is a hang
+   * with no error attached to it and is exactly how this was reported.
+   *
+   * So: a deadline, and one retry down the ordinary path with real URLs. That
+   * second attempt lets the browser cache the three-megabyte runtime, which the
+   * panel has promised it would not, so it is recorded and said out loud. The
+   * model — the larger half — still goes in as a buffer either way.
+   */
+  private async buildLandmarker(): Promise<FaceLandmarkerLike | undefined> {
+    const options = {
+      // The weights themselves, not a path to them. A path would be fetched by
+      // the runtime and cached the ordinary way.
+      baseOptions: { modelAssetBuffer: this.modelBuffer, delegate: 'GPU' },
+      runningMode: 'VIDEO',
+      numFaces: 1,
+      // The head's own pose, rather than four hundred landmarks we would then
+      // have to fit a pose to ourselves.
+      outputFacialTransformationMatrixes: true,
+      outputFaceBlendshapes: false,
+    };
+    const bundle = this.bundle;
+    if (!bundle) throw new Error('The tracker library did not load.');
+    try {
+      return await this.withDeadline(
+        bundle.FaceLandmarker.createFromOptions(this.wasmFileset, options),
+        BUILD_TIMEOUT_MS,
+      );
+    } catch {
+      this.loadStage = 'the tracker runtime, the ordinary way';
+      const fileset = await this.withDeadline(
+        bundle.FilesetResolver.forVisionTasks(VISION_WASM),
+        FETCH_TIMEOUT_MS,
+      );
+      const landmarker = await this.withDeadline(
+        bundle.FaceLandmarker.createFromOptions(fileset, options),
+        BUILD_TIMEOUT_MS,
+      );
+      this.runtimeCached = true;
+      return landmarker;
+    }
+  }
+
+  private withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+    return Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        window.setTimeout(() => reject(new Error(`Timed out on ${this.loadStage}.`)), ms);
+      }),
+    ]);
   }
 
   /**
@@ -533,6 +610,8 @@ export class HeadTracking {
       status: this.status,
       message: this.message,
       running: this.running,
+      loadStage: this.loadStage,
+      runtimeCached: this.runtimeCached,
       frames: this.frames,
       calibrated: Boolean(this.reference),
       cameraId: this.deviceId ?? null,

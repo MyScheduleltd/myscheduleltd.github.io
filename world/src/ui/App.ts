@@ -2271,7 +2271,7 @@ export class App {
     const status = String(state.status ?? 'idle');
     const words: Record<string, [string, string]> = {
       idle: ['OFF', '未啟用'],
-      loading: ['LOADING THE TRACKER…', '正在載入追蹤模型…'],
+      loading: ['LOADING THE TRACKER — THIS CAN TAKE A MINUTE', '正在載入追蹤模型，可能需要一分鐘'],
       requesting: ['ASKING FOR THE CAMERA…', '正在請求攝影機…'],
       denied: ['CAMERA REFUSED', '攝影機被拒絕'],
       unsupported: ['NOT AVAILABLE HERE', '此瀏覽器不支援'],
@@ -2282,7 +2282,20 @@ export class App {
     const label = (words[status] ?? words.idle)[zh ? 1 : 0];
     const pose = state.pose as Record<string, number> | undefined;
     const message = String(state.message ?? '');
+    // Which of the four steps it is on. Counting bytes was tried and taken out
+    // again: reading the body chunk by chunk to measure it slowed a three-
+    // megabyte download to eighty-five seconds, and the figure was wrong
+    // anyway — the reader sees the decompressed size, not what came over the
+    // wire. The stage costs nothing and answers the same question.
+    if (status === 'loading') {
+      const stage = String(state.loadStage ?? '');
+      return stage ? `${label} · ${stage}` : label;
+    }
     if (!pose || status !== 'tracking') return message ? `${label} · ${message}` : label;
+    if (state.runtimeCached === true) {
+      return `${label}${zh ? ' · 執行檔已由瀏覽器快取' : ' · runtime cached by the browser'} · `
+        + `${zh ? '轉' : 'yaw'} ${(pose.yaw * 180 / Math.PI).toFixed(1)}°`;
+    }
     const deg = (radians: number) => `${(radians * 180 / Math.PI).toFixed(1)}°`;
     const cm = (metres: number) => `${(metres * 100).toFixed(1)}cm`;
     return `${label} · ${zh ? '轉' : 'yaw'} ${deg(pose.yaw)} · ${zh ? '仰' : 'pitch'} ${deg(pose.pitch)}`
