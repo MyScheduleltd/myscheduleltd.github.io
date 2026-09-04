@@ -1303,7 +1303,15 @@ export class App {
         this.syncHeadTrackUi();
         return this.world?.headTrackReviewSnapshot();
       };
-    } else if (reviewTarget === 'mentor-drop' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+    } else if (reviewTarget === 'statue' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      this.world.focusStatueForReview();
+      (window as Window & {
+        __festivalStatue?: (distance?: number, yaw?: number, pitch?: number) => void;
+      }).__festivalStatue = (distance, yaw, pitch) => this.world?.focusStatueForReview(distance, yaw, pitch);
+      (window as Window & {
+        __festivalLookAt?: (x: number, z: number, distance?: number, yaw?: number, pitch?: number) => void;
+      }).__festivalLookAt = (x, z, distance, yaw, pitch) => this.world?.lookAtSpotForReview(x, z, distance, yaw, pitch);
+    } else if (reviewTarget === 'mentor-remote-drop' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       this.world.focusMentorRemoteDropForReview();
       (window as Window & {
         __festivalDrop?: (x?: number, z?: number, yaw?: number) => unknown;
@@ -2797,11 +2805,6 @@ export class App {
     const film = this.publicFilm(venue);
     const filmIndex = Math.max(0, playlist.findIndex((entry) => entry.id === film.id));
     const next = playlist[(filmIndex + 1) % playlist.length];
-    const metadata = [
-      film.creator,
-      film.year,
-    ].filter(Boolean).join(' · ');
-    this.world?.setProgrammeBoard(this.venueName(venue), this.filmTitle(film), metadata, this.filmTitle(next ?? film));
     if (this.activePanel === 'programme') this.updateProgrammeFocus(venue, film, next ?? film, filmIndex, playlist.length);
   }
 

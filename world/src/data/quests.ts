@@ -59,7 +59,7 @@ export const QUEST_SECTIONS: QuestSection[] = [
       quest('camera', 'CHANGE THE CAMERA', '切換鏡頭', 'Press T, or use the camera control on mobile.', '按 T，或使用手機鏡頭控制。'),
       quest('pass', 'OPEN YOUR FESTIVAL PASS', '開啟影展通行證', 'Open PASS / 通行證.', '開啟「通行證」。'),
       quest('map', 'READ THE MAP', '查看地圖', 'Open MAP from the festival pass.', '從通行證開啟「地圖」。'),
-      quest('programme', 'CHECK WHAT IS PLAYING', '查看節目表', 'Open PROGRAMME from the festival pass or a timetable.', '從通行證或場內節目表查看放映資訊。'),
+      quest('programme', 'CHECK WHAT IS PLAYING', '查看節目表', 'Open PROGRAMME from the festival pass.', '從通行證查看放映資訊。'),
     ],
   },
   {

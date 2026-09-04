@@ -10,6 +10,7 @@ import masterOfTheHouseLogo from '../assets/master-of-the-house.png';
 import { DayNightCycle, type DayNightState } from './DayNightCycle';
 import { createStylizedWaterMaterial, tintStylizedWater } from './StylizedWater';
 import { createMentorDog, type MentorDogRig } from './MentorDog';
+import { createGanganStatue, GANGAN_STATUE_SIZE } from './GanganStatue';
 
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>;
@@ -419,16 +420,28 @@ const shouldConserveMobileGpu = (): boolean => {
  * on the old spot — the board in one place and the prompt to open it in
  * another. They all read this now.
  */
-const programmeBoardPosition = new THREE.Vector3(0, 0, 1);
-const programmeBoardSize = { width: 12.5, height: 6.1, depth: 0.45 } as const;
-const programmeBoardCenterY = 3.6;
+const statuePosition = new THREE.Vector3(0, 0, 1);
+/**
+ * The box the statue fills, for the projector compositor alone. Not the
+ * collider and not the artwork — just how much of the screen it can cover, so
+ * a video is not painted over a horse standing in front of it.
+ */
+const statueBlockSize = { width: GANGAN_STATUE_SIZE.width, height: GANGAN_STATUE_SIZE.height, depth: GANGAN_STATUE_SIZE.depth } as const;
+const statueBlockCenterY = GANGAN_STATUE_SIZE.height / 2;
 // Level with the first lamp up the road at z = 16, and pulled in off the kerb.
 // The stalls carry colliders wider than the stalls themselves — the popcorn
 // booth's is 3.4 across — so sitting at x = -7.8 its western edge reached -9.5
 // while the roadway stops at -8.5, and the thing everybody could see was a
 // stall standing in the red. Both now sit wholly on the asphalt.
-const concessionPosition = new THREE.Vector3(-6.6, 0, 16);
-const pamphletPosition = new THREE.Vector3(-3, 0, 16);
+// Off the roadway entirely and up against SLAP AND POP's east wall, which
+// stands at x = -20. The carpet's edge is at x = -14, so at -17.4 the booth
+// and its 3.4-wide collider sit in the gap between the two with the red
+// untouched. Set south of the club door at z = 23.5 so it is passed on the way
+// in rather than standing in the doorway.
+const concessionPosition = new THREE.Vector3(-17.4, 0, 17.5);
+// In front of the statue, meaning between it and the gate: walking in from the
+// gate you meet the pamphlets first and the horse behind them.
+const pamphletPosition = new THREE.Vector3(0, 0, 7.4);
 // Where the sea meets the sand. Every water plane ends here and every piece of
 // beach starts here: overlapping the two put opaque sand and a water surface at
 // the same height, and they fought for the same pixels along the whole shore.
@@ -1114,46 +1127,6 @@ const createNameTexture = (name: string) => {
   return texture;
 };
 
-const createProgrammeTexture = (
-  venue: string,
-  title: string,
-  details: string,
-  nextTitle: string,
-) => {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1024;
-  canvas.height = 512;
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('Canvas 2D context unavailable.');
-  context.fillStyle = '#101012';
-  context.fillRect(0, 0, 1024, 512);
-  context.strokeStyle = '#b51f27';
-  context.lineWidth = 17;
-  context.strokeRect(22, 22, 980, 468);
-  context.textAlign = 'center';
-  context.textBaseline = 'middle';
-  context.fillStyle = '#df3e47';
-  context.font = '800 36px sans-serif';
-  context.fillText('NOW PLAYING', 512, 78);
-  context.fillStyle = '#f5efe2';
-  context.font = '900 67px sans-serif';
-  context.fillText(venue, 512, 145);
-  context.font = '800 43px sans-serif';
-  const shortTitle = title.length > 34 ? `${title.slice(0, 33)}…` : title;
-  context.fillText(shortTitle, 512, 235);
-  context.fillStyle = '#d4cabb';
-  context.font = '700 28px sans-serif';
-  context.fillText(details, 512, 300);
-  context.fillStyle = '#f5efe2';
-  context.font = '700 24px sans-serif';
-  const shortNext = nextTitle.length > 38 ? `${nextTitle.slice(0, 37)}…` : nextTitle;
-  context.fillText(`UP NEXT · ${shortNext}`, 512, 390);
-  context.fillStyle = '#df3e47';
-  context.fillRect(365, 446, 294, 7);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-};
 
 const createWaterTexture = (light = false) => {
   const canvas = document.createElement('canvas');
@@ -1293,7 +1266,7 @@ export class FestivalWorld {
     new THREE.Vector3(),
     new THREE.Vector3(),
   ];
-  private readonly programmeBoardCorners = Array.from({ length: 8 }, () => new THREE.Vector3());
+  private readonly statueCorners = Array.from({ length: 8 }, () => new THREE.Vector3());
   private readonly cameraDirection = new THREE.Vector3();
   /**
    * Where the eye actually is. `camera.position` is local to `xrRig`, and in a
@@ -1370,14 +1343,13 @@ export class FestivalWorld {
   private xrJumpReady = true;
   private readonly projectorClipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 45.68);
   private readonly projectorCornerView = new THREE.Vector3();
-  private readonly programmeBoardViewPosition = new THREE.Vector3();
+  private readonly statueViewPosition = new THREE.Vector3();
   private readonly projectorViewPosition = new THREE.Vector3();
   private readonly avatarForegroundWorldPosition = new THREE.Vector3();
   private readonly avatarForegroundWorldScale = new THREE.Vector3();
   private readonly avatarForegroundProbe = new THREE.Vector3();
   private playerRig?: AvatarRig;
   private originalPlayerIdleRig?: AvatarRig;
-  private programmeBoardMaterial?: THREE.MeshBasicMaterial;
   private reviewSuppressedProjectors: VenueKey[] = [];
   private projectorReviewNpcId?: string;
   private projectorReviewVisitor?: RemoteAvatar;
@@ -3377,6 +3349,41 @@ export class FestivalWorld {
    * The side-on MY SQUARE view where the Shore projector's second render pass
    * repeatedly left a translucent rectangle beside the programme board.
    */
+  /**
+   * Loopback fixture: the statue from where an arrival meets it.
+   *
+   * Standing up the road on the centre line, looking down at the horse. This
+   * is the one view the sculpture is composed for, so it is the one to judge
+   * it from — `?review=statue`, with an angle and a distance so a change to a
+   * limb can be compared against the last one rather than against a memory.
+   */
+  focusStatueForReview(distance = 13, yaw = 0, pitch = 0.1): void {
+    this.lookAtSpotForReview(statuePosition.x, statuePosition.z, distance, yaw, pitch);
+  }
+
+  /**
+   * Loopback fixture: stand off from a point in the world and look at it.
+   *
+   * First person, not follow. A follow camera hangs behind the body and gets
+   * pushed about by whatever it backs into — a stand, a kerb — so the framing
+   * changed between shots for reasons that had nothing to do with the thing
+   * being looked at. Yaw is which side to stand on, and the view always turns
+   * back towards the point, so two shots of the same spot are comparable.
+   */
+  lookAtSpotForReview(atX: number, atZ: number, distance = 13, yaw = 0, pitch = 0.1): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    const x = atX + Math.sin(yaw) * distance;
+    const z = atZ + Math.cos(yaw) * distance;
+    this.player.position.set(x, this.groundHeightAt(x, z), z);
+    this.airborne = false;
+    this.verticalVelocity = 0;
+    this.player.rotation.y = yaw;
+    this.cameraMode = 'first-person';
+    this.cameraZoom = 1;
+    this.cameraOrbit.follow.yaw = yaw;
+    this.cameraOrbit.follow.pitch = pitch;
+  }
+
   focusTimetableForReview(withProjector = false, close = false): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
     this.reviewProjectorVenue = withProjector ? 'shore' : undefined;
@@ -4705,19 +4712,6 @@ export class FestivalWorld {
     }
   }
 
-  setProgrammeBoard(
-    venue: string,
-    title: string,
-    details: string,
-    nextTitle: string,
-  ): void {
-    if (!this.programmeBoardMaterial) return;
-    const texture = createProgrammeTexture(venue, title, details, nextTitle);
-    const previous = this.programmeBoardMaterial.map;
-    this.programmeBoardMaterial.map = texture;
-    this.programmeBoardMaterial.needsUpdate = true;
-    if (previous && previous !== texture) previous.dispose();
-  }
 
   setPublicScreenMuted(audibleVenue: VenueKey | undefined, muted: boolean): void {
     for (const [venue, projector] of this.projectors) {
@@ -5040,9 +5034,6 @@ export class FestivalWorld {
       return;
     }
 
-    if (this.player.position.distanceTo(programmeBoardPosition) < 7.2) {
-      this.onAction({ type: 'programme' });
-    }
   }
 
   private feedMentor(mentor: NpcAvatar): void {
@@ -5763,22 +5754,22 @@ export class FestivalWorld {
    * the renderer boundary becomes visible. This tight box lets us detect that
    * overlap and suppress the hidden projector composite altogether.
    */
-  private programmeBoardScissor(): { x: number; y: number; width: number; height: number } | undefined {
+  private statueScissor(): { x: number; y: number; width: number; height: number } | undefined {
     const viewportWidth = this.foregroundCanvas.clientWidth || window.innerWidth;
     const viewportHeight = this.foregroundCanvas.clientHeight || window.innerHeight;
-    const halfWidth = programmeBoardSize.width / 2;
-    const halfHeight = programmeBoardSize.height / 2;
-    const halfDepth = programmeBoardSize.depth / 2;
+    const halfWidth = statueBlockSize.width / 2;
+    const halfHeight = statueBlockSize.height / 2;
+    const halfDepth = statueBlockSize.depth / 2;
     let minX = viewportWidth;
     let minY = viewportHeight;
     let maxX = 0;
     let maxY = 0;
     let cornerIndex = 0;
     for (const x of [-halfWidth, halfWidth]) {
-      for (const y of [programmeBoardCenterY - halfHeight, programmeBoardCenterY + halfHeight]) {
-        for (const z of [programmeBoardPosition.z - halfDepth, programmeBoardPosition.z + halfDepth]) {
-          const corner = this.programmeBoardCorners[cornerIndex++];
-          corner.set(programmeBoardPosition.x + x, y, z);
+      for (const y of [statueBlockCenterY - halfHeight, statueBlockCenterY + halfHeight]) {
+        for (const z of [statuePosition.z - halfDepth, statuePosition.z + halfDepth]) {
+          const corner = this.statueCorners[cornerIndex++];
+          corner.set(statuePosition.x + x, y, z);
           this.projectorCornerView.copy(corner).applyMatrix4(this.camera.matrixWorldInverse);
           if (this.projectorCornerView.z > -0.05) return undefined;
           corner.project(this.camera);
@@ -5800,15 +5791,15 @@ export class FestivalWorld {
     return { x: left, y: bottom, width: right - left, height: top - bottom };
   }
 
-  private programmeBoardIsInFrontOfProjector(venue: VenueKey): boolean {
-    this.programmeBoardViewPosition
-      .set(programmeBoardPosition.x, programmeBoardCenterY, programmeBoardPosition.z)
+  private statueIsInFrontOfProjector(venue: VenueKey): boolean {
+    this.statueViewPosition
+      .set(statuePosition.x, statueBlockCenterY, statuePosition.z)
       .applyMatrix4(this.camera.matrixWorldInverse);
     this.projectorViewPosition.set(...venueScreens[venue].position).applyMatrix4(this.camera.matrixWorldInverse);
     // Camera-space objects in front have a negative z; the value closer to
     // zero is nearer to the camera. Unlike a world-z comparison, this remains
     // correct when the attendee orbits the camera around the board.
-    return this.programmeBoardViewPosition.z > this.projectorViewPosition.z + 0.05;
+    return this.statueViewPosition.z > this.projectorViewPosition.z + 0.05;
   }
 
   private scissorsOverlap(
@@ -6405,7 +6396,7 @@ export class FestivalWorld {
       this.lampPool.push(light);
     }
 
-    this.createProgrammeBoard();
+    this.createGanganStatue();
     this.createJukebox();
     this.createShoreScreen();
     this.createPalace();
@@ -6573,43 +6564,26 @@ export class FestivalWorld {
     this.jukebox = { x, z };
   }
 
-  private createProgrammeBoard(): void {
-    const boardTexture = createProgrammeTexture(
-      'THE SHORE',
-      'PUBLIC PROGRAMME',
-      'MUSIC VIDEO · LIVE LOOP',
-      'ROTATING FESTIVAL TIMETABLE',
-    );
-    // This is a luminous display, not a painted board. Keeping its face out of
-    // the lighting and tone-mapping pipelines also makes the main WebGL pass
-    // and the transparent projector-occlusion pass produce identical pixels.
-    // A lit material was shaded differently by the two renderers, revealing
-    // the projector's otherwise invisible scissor as a dark translucent block
-    // across the middle of the timetable.
-    this.programmeBoardMaterial = new THREE.MeshBasicMaterial({
-      map: boardTexture,
-      fog: false,
-      toneMapped: false,
-    });
-    const boardX = programmeBoardPosition.x;
-    // Brought forward to where the carpet meets the road. The roadway stops at
-    // z = 2 and the carpet carries on south from there; standing four units
-    // back at z = -3 the timetable sat adrift in the middle of the red, with
-    // nothing to place it against. Here it reads as the thing at the end of the
-    // road. It is still walked around rather than into: the walkable width at
-    // this depth runs far wider than the board.
-    const boardZ = programmeBoardPosition.z;
-    const board = new THREE.Mesh(
-      new THREE.BoxGeometry(programmeBoardSize.width, programmeBoardSize.height, programmeBoardSize.depth),
-      this.programmeBoardMaterial,
-    );
-    board.position.set(boardX, programmeBoardCenterY, boardZ);
-    board.castShadow = true;
-    board.receiveShadow = false;
-    this.scene.add(board);
-    this.mesh([0.6, 3.2, 0.6], [boardX - 5.3, 1.5, boardZ], material(0x17171a));
-    this.mesh([0.6, 3.2, 0.6], [boardX + 5.3, 1.5, boardZ], material(0x17171a));
-    this.addCollider(boardX, boardZ, programmeBoardSize.width, 1.2);
+  /**
+   * GANGAN on his horse, where the rotating timetable used to stand.
+   *
+   * Same spot for the same reason the board was moved here: it is the thing at
+   * the end of the road, met square on by anyone walking in from the gate. The
+   * statue faces the gate rather than the theatres behind it, so arrivals are
+   * given the front of it and not the tail.
+   *
+   * The timetable itself has not gone anywhere — it lives in the festival pass,
+   * which is where anybody actually reads it.
+   */
+  private createGanganStatue(): void {
+    const statue = createGanganStatue();
+    statue.position.set(statuePosition.x, 0, statuePosition.z);
+    // Facing +z, up the road towards the gate.
+    statue.rotation.y = 0;
+    this.scene.add(statue);
+    // Walked around, not climbed. The plinth is the footprint; the horse
+    // overhangs it and nobody expects to be stopped by an overhang.
+    this.addCollider(statuePosition.x, statuePosition.z, 6.5, 4.7);
   }
 
   private createShoreScreen(): void {
@@ -7993,12 +7967,16 @@ export class FestivalWorld {
     sign.position.set(0, 2.1, 1.34);
     booth.add(sign);
     this.mesh([0.5, 0.75, 0.5], [0, 3.05, 0], material(0xffc93c), booth);
+    // Turned to face the road. Built facing +z, which was right when it stood
+    // on the roadway; against a wall that runs north to south its counter has
+    // to look east or it is serving the brickwork.
+    booth.rotation.y = Math.PI / 2;
     this.scene.add(booth);
     // Head height, so the view rides over it. It is honestly taller than that,
-    // but it is a stall in the middle of a walkway: treating it as something
-    // that blocks the camera pulls the view in every time somebody passes it,
-    // which is what it has been doing.
-    this.addCollider(concessionPosition.x, concessionPosition.z, 3.4, 2.8, 0.15, undefined, 'concession', 2.4);
+    // but it is a stall beside a walkway: treating it as something that blocks
+    // the camera pulls the view in every time somebody passes it, which is
+    // what it has been doing. Width and depth swap with the quarter turn.
+    this.addCollider(concessionPosition.x, concessionPosition.z, 2.8, 3.4, 0.15, undefined, 'concession', 2.4);
   }
 
   private createPamphletStand(): void {
@@ -9284,7 +9262,7 @@ export class FestivalWorld {
     const visibleProjectors: VenueKey[] = [];
     const visibleProjectorScissors = new Map<VenueKey, { x: number; y: number; width: number; height: number }>();
     const immersiveXr = this.xrActive && !this.xrSimulated;
-    const boardScissor = immersiveXr ? undefined : this.programmeBoardScissor();
+    const boardScissor = immersiveXr ? undefined : this.statueScissor();
     this.camera.getWorldPosition(this.cameraWorldPosition);
     this.reviewSuppressedProjectors = [];
     for (const [venue, projector] of this.projectors) {
@@ -9350,7 +9328,7 @@ export class FestivalWorld {
       // In either case, suppress the compositor if the timetable is closer and
       // overlaps the projector, rather than painting a rectangular seam.
       const timetableBlocksProjector = Boolean(boardScissor && compositorScissor &&
-        this.programmeBoardIsInFrontOfProjector(venue) && this.scissorsOverlap(boardScissor, compositorScissor));
+        this.statueIsInFrontOfProjector(venue) && this.scissorsOverlap(boardScissor, compositorScissor));
       const visible = wantsVisible && Boolean(compositorScissor) && !timetableBlocksProjector;
       if (wantsVisible && timetableBlocksProjector) this.reviewSuppressedProjectors.push(venue);
       // Coming back into view, ask it to play. A player that a phone stopped
@@ -12209,7 +12187,6 @@ export class FestivalWorld {
       this.promptActionable = false;
       return 'SWIMWEAR ON · ENTER WATER';
     }
-    if (this.player.position.distanceTo(programmeBoardPosition) < 7.2) return 'E / OPEN ROTATING PROGRAMME';
     this.promptActionable = false;
     return undefined;
   }
@@ -12326,7 +12303,7 @@ export class FestivalWorld {
       || this.nearShopCounter()
       || this.nearbyDj() !== undefined
       || this.player.position.distanceTo(pamphletPosition) < 2.35
-      || this.player.position.distanceTo(programmeBoardPosition) < 7.2;
+      ;
   }
 
   /** A following MENTOR gives way to whatever you have walked up to. */
