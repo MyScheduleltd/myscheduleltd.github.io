@@ -8,7 +8,43 @@ Last updated: 2026-09-04 · webcam head tracking behind `?headtrack`; jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — the head-tracking panel, tidied
+## 0. READ THIS FIRST — the tracker never touches the disk
+
+The owner asked whether the download could be deleted when the site closes. It
+does better than that now: **it is never written down in the first place.**
+
+All four files are fetched with `cache: 'no-store'`, which obliges the browser
+not to write the response to its HTTP cache, and are then held only in this
+tab's memory:
+
+- `vision_bundle.mjs` is fetched and `import()`ed **from a blob URL**. An
+  `import()` of a real URL is cached like any other script.
+- The WebAssembly runtime is handed over as explicit `wasmLoaderPath` /
+  `wasmBinaryPath` blob URLs instead of through
+  `FilesetResolver.forVisionTasks`, which fetches by URL itself and would put
+  the runtime straight into the disk cache.
+- The model goes in as `modelAssetBuffer` — the weights themselves — instead of
+  `modelAssetPath`, which the runtime would fetch and cache the ordinary way.
+
+`release()` revokes the object URLs and drops the buffers; `FestivalWorld.stop()`
+calls it. `stop()` alone does not, because the point of holding them is that
+leaving VR and going back in does not fetch them twice.
+
+**The size in the copy was wrong: it is about 7MB, not 15.** 2.98MB of runtime
+and 3.58MB of model, both already compressed in transit. The 11.7MB figure was
+the *uncompressed* wasm — measure `transferSize`, or `curl` with
+`Accept-Encoding: br, gzip`, not the file at the far end.
+
+Two honest limits. A copy cached by a visit from *before* this change is still
+on that machine until the browser evicts it or the visitor clears site data. And
+this covers the HTTP cache, which is what a page can control; it is not a claim
+about the whole operating system.
+
+**Verified:** loads end to end from blob URLs and an in-memory buffer, all four
+resources showing a non-zero `transferSize` (fetched, not read from cache), and
+every mapping unchanged afterwards.
+
+## 0-prev. The head-tracking panel, tidied
 
 The owner confirmed on 2026-09-04 that the tracking itself works well, so it is
 no longer labelled an experiment: the panel's title is `HEAD TRACKING` /

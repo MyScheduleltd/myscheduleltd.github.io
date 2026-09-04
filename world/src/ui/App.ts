@@ -964,8 +964,8 @@ export class App {
           </button>
           <div class="head-track__body">
           <p data-head-track-note>${zh
-            ? '用電腦的攝影機追蹤你的頭部，讓螢幕變成一扇可以探頭看的窗。影像只在這台電腦上處理，不會離開你的裝置。首次啟用會下載約 15MB 的追蹤模型。'
-            : 'Track your head with your computer\u2019s camera so the screen becomes a window you can lean around. The video is processed on this machine and never leaves your device. Enabling it downloads a ~15MB tracker once.'}</p>
+            ? '用電腦的攝影機追蹤你的頭部，讓螢幕變成一扇可以探頭看的窗。影像只在這台電腦上處理，不會離開你的裝置。約 7MB 的追蹤模型只存在記憶體中，關掉分頁就消失，不會寫進你的電腦。'
+            : 'Track your head with your computer\u2019s camera so the screen becomes a window you can lean around. The video is processed on this machine and never leaves your device. The ~7MB tracker is held in memory only — never written to your computer, and gone when you close the tab.'}</p>
           <label data-head-track-pick hidden><span>${zh ? '攝影機' : 'CAMERA'}</span><select data-head-track-camera></select></label>
           <div class="head-track__actions">
             <button class="button button--primary" type="button" data-head-track-start>${zh ? '開啟頭部追蹤' : 'ENABLE HEAD TRACKING'}</button>

@@ -1572,7 +1572,12 @@ export class FestivalWorld {
     this.renderer.setAnimationLoop(null);
     if (this.xrSession) void this.xrSession.end().catch(() => undefined);
     this.stopPhoneOrientation();
-    this.disableHeadTracking();
+    // Everything the tracker downloaded goes with the world. It was only ever
+    // in memory, but there is no reason to hold fifteen megabytes of it after
+    // the festival has closed.
+    this.headTracking.release();
+    this.headTrackingActive = false;
+    this.releaseHeadCoupledView();
     window.removeEventListener('resize', this.resize);
     this.canvasSizeObserver?.disconnect();
     window.clearInterval(this.lightCullTimer);

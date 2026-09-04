@@ -71,6 +71,15 @@ const ROTATION_DEADZONE_RAD = 0.012;
 const VISION_VERSION = '1.0.1';
 const VISION_BUNDLE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VISION_VERSION}/vision_bundle.mjs`;
 const VISION_WASM = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VISION_VERSION}/wasm`;
+/**
+ * The SIMD build, chosen rather than detected. `FilesetResolver.forVisionTasks`
+ * would feature-test and pick for us, but it does its own fetching by URL,
+ * which is the one thing this must not hand off — see `fetchWithoutStoring`.
+ * Every browser that can hold a camera open and run a WebGL festival has had
+ * WebAssembly SIMD for years; if one has not, the load fails and says so.
+ */
+const VISION_WASM_LOADER = `${VISION_WASM}/vision_wasm_internal.js`;
+const VISION_WASM_BINARY = `${VISION_WASM}/vision_wasm_internal.wasm`;
 const FACE_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
 
 interface FaceLandmarkerResultLike {
@@ -83,7 +92,6 @@ interface FaceLandmarkerLike {
 }
 
 interface VisionModule {
-  FilesetResolver: { forVisionTasks(path: string): Promise<unknown> };
   FaceLandmarker: {
     createFromOptions(fileset: unknown, options: Record<string, unknown>): Promise<FaceLandmarkerLike>;
   };
@@ -110,6 +118,15 @@ export class HeadTracking {
   private reviewMode = false;
   /** Which of the three downloads was in flight, so a failure can name it. */
   private loadStage = 'the tracker library';
+  /**
+   * The tracker, held in memory for as long as the page is open and written
+   * nowhere. Kept across a stop and start so that turning tracking off and on
+   * again does not fetch fifteen megabytes twice; it all goes when the tab does.
+   */
+  private modelBuffer?: Uint8Array;
+  private wasmFileset?: { wasmLoaderPath: string; wasmBinaryPath: string };
+  private bundle?: VisionModule;
+  private readonly objectUrls: string[] = [];
 
   /** The raw reading, before the calibration pose is taken off it. */
   private readonly raw: HeadPose = { yaw: 0, pitch: 0, x: 0, y: 0, z: 0 };
@@ -208,18 +225,64 @@ export class HeadTracking {
     }
   }
 
+  /**
+   * Fetch something without letting the browser keep a copy.
+   *
+   * `cache: 'no-store'` is a promise to the visitor, not an optimisation: the
+   * browser is required not to write the response to its HTTP cache, so nothing
+   * of the tracker lands on the disk of a machine whose owner only wanted to
+   * look around a film festival. What comes back is turned into an object URL
+   * that lives in this tab's memory and dies with it.
+   *
+   * The cost is real and deliberate: there is no second visit that starts
+   * faster. Within one page it is fetched once and kept, so turning tracking
+   * off and on again is free.
+   */
+  private async fetchWithoutStoring(url: string, type: string): Promise<string> {
+    const response = await fetch(url, { cache: 'no-store', mode: 'cors', credentials: 'omit' });
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText} — ${url}`);
+    const objectUrl = URL.createObjectURL(new Blob([await response.arrayBuffer()], { type }));
+    this.objectUrls.push(objectUrl);
+    return objectUrl;
+  }
+
   private async loadLandmarker(): Promise<FaceLandmarkerLike | undefined> {
     try {
-      // Loaded only now, and only for a visitor who asked for it. It is several
-      // megabytes of WebAssembly and model weights, which is not something to
-      // spend on somebody who came to watch a film.
-      this.loadStage = 'the tracker library';
-      const vision = await import(/* @vite-ignore */ VISION_BUNDLE) as unknown as VisionModule;
-      this.loadStage = 'the tracker runtime';
-      const fileset = await vision.FilesetResolver.forVisionTasks(VISION_WASM);
-      this.loadStage = 'the face model';
-      return await vision.FaceLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: FACE_MODEL, delegate: 'GPU' },
+      // Fetched only now, and only for a visitor who asked for it. About seven
+      // megabytes over the wire — a three-megabyte WebAssembly runtime and a
+      // three-and-a-half-megabyte model, both already compressed — which is not
+      // something to spend on somebody who came to watch a film. (The runtime
+      // is 11.7MB uncompressed; measure what is transferred, not what is on
+      // disk at the far end.)
+      if (!this.bundle) {
+        this.loadStage = 'the tracker library';
+        // Imported from a blob rather than from the CDN URL directly, because
+        // `import()` of a real URL is cached by the browser like any other
+        // script and this must leave nothing behind.
+        const bundleUrl = await this.fetchWithoutStoring(VISION_BUNDLE, 'text/javascript');
+        this.bundle = await import(/* @vite-ignore */ bundleUrl) as unknown as VisionModule;
+      }
+      if (!this.wasmFileset) {
+        this.loadStage = 'the tracker runtime';
+        // Handed over as explicit paths rather than through
+        // `FilesetResolver.forVisionTasks`, which fetches by URL itself and
+        // would put the eleven-megabyte runtime straight into the disk cache.
+        this.wasmFileset = {
+          wasmLoaderPath: await this.fetchWithoutStoring(VISION_WASM_LOADER, 'text/javascript'),
+          wasmBinaryPath: await this.fetchWithoutStoring(VISION_WASM_BINARY, 'application/wasm'),
+        };
+      }
+      if (!this.modelBuffer) {
+        this.loadStage = 'the face model';
+        const response = await fetch(FACE_MODEL, { cache: 'no-store', mode: 'cors', credentials: 'omit' });
+        if (!response.ok) throw new Error(`${response.status} ${response.statusText} — ${FACE_MODEL}`);
+        this.modelBuffer = new Uint8Array(await response.arrayBuffer());
+      }
+      this.loadStage = 'the tracker';
+      return await this.bundle.FaceLandmarker.createFromOptions(this.wasmFileset, {
+        // The weights themselves, not a path to them. A path would be fetched
+        // by the runtime and cached the ordinary way.
+        baseOptions: { modelAssetBuffer: this.modelBuffer, delegate: 'GPU' },
         runningMode: 'VIDEO',
         numFaces: 1,
         // The head's own pose, rather than four hundred landmarks we would then
@@ -233,6 +296,20 @@ export class HeadTracking {
       this.message = `Could not load ${this.loadStage}. ${detail}`;
       return undefined;
     }
+  }
+
+  /**
+   * Let go of the tracker itself. Separate from `stop()`, which runs every time
+   * a visitor leaves VR — the point of holding these is that going back in does
+   * not fetch them again.
+   */
+  release(): void {
+    this.stop();
+    for (const objectUrl of this.objectUrls) URL.revokeObjectURL(objectUrl);
+    this.objectUrls.length = 0;
+    this.modelBuffer = undefined;
+    this.wasmFileset = undefined;
+    this.bundle = undefined;
   }
 
   private async openCamera(deviceId?: string): Promise<MediaStream | undefined> {
