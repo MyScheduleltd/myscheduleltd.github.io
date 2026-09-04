@@ -8,7 +8,60 @@ Last updated: 2026-09-04 · phone VR gyroscope, webcam head tracking, jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — the grain moved into the shader
+## 0. READ THIS FIRST — game controllers
+
+`src/world/GamepadInput.ts` polls the browser's Gamepad API. **Left stick walks,
+right stick looks**, and nine actions sit on buttons. Deliberately **world only**
+— menus stay with the pointer, which is the owner's decision and is why there is
+no focus model in here.
+
+### How it reaches the world
+
+The look stick is converted into the same delta a pointer drag produces and
+pushed through `applyLookDelta`, which was split out of `cameraPointerMove` for
+exactly this. That matters: the VR preview, the seated screening camera and the
+two orbits all clamp differently, and a second copy of those branches would drift
+out of step the first time one of them changed. The stick therefore obeys the
+visitor's sensitivity setting for free. Multiplied by `delta`, so a slow frame
+does not turn further than a fast one.
+
+Buttons call the same `…FromTouch()` entry points the phone's ring uses. Photo
+mode is the exception — it belongs to the interface, so the world emits a
+`photoMode` action the way a seat emits `vrWatch`.
+
+Skipped entirely during an immersive session: a headset has its own controllers
+and `updateXrInput` already reads them.
+
+### Details worth keeping
+
+- **The indices are standard, the labels are not.** `buttonLabel()` prints Xbox
+  and PlayStation names — a panel that says "button 2" to somebody holding a
+  DualSense has told them nothing. Family is sniffed from `gamepad.id`.
+- **A radial deadzone, squared.** Per-axis leaks diagonals at the corners, and
+  without the curve the first movement past the threshold is a jump to eighteen
+  per cent rather than a nudge.
+- **A pad already held at page load never fires `gamepadconnected`**, so `pad()`
+  falls back to whatever `getGamepads()` lists.
+- **A browser will not list a pad until a button is pressed on it.** The panel
+  says so rather than looking broken.
+- Rebinding takes the *next* press instead of acting on it, and steals the
+  button from whatever held it, so nothing can end up bound twice.
+
+### The controls panel
+
+Grouped by what you are holding: keyboard, mouse, touchscreen, game controller,
+VR headset. Quest Touch is listed always, on the owner's instruction, even where
+nobody can use it. The controller rows carry their own rebind button, disabled
+until a pad is actually connected.
+
+**Verified with a synthetic pad** — `navigator.getGamepads` stubbed: left stick
+walked the avatar, right stick turned the camera 0.524 rad, the run trigger
+visibly lengthened the stride, and the panel rendered five groups, 34 rows and
+nine rebind buttons correctly disabled with no pad present. **Not verified with
+real hardware**; deadzone feel, stick curve and which button lands where need
+the owner's own pad.
+
+## 0-prev. The grain moved into the shader
 
 The owner asked for this texture a **third** time, pointing at `?era=ps2` and
 calling the CSS overlay standing in for it faded and wrong. They were right

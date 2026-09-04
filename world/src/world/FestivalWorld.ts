@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { HeadTracking } from './HeadTracking';
+import { GamepadInput, type GamepadActionId } from './GamepadInput';
 import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, taperedPrism, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
 import { dressBuildings, dressInteriors } from './WornArchitecture';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
@@ -74,6 +75,9 @@ export type WorldAction =
   | { type: 'died'; by?: string }
   | { type: 'jukebox' }
   | { type: 'vrWatch'; venue: VenueKey }
+  // The photo/postcard mode belongs to the interface, not to the world, so a
+  // controller asks for it the same way the seat asks to open a screening.
+  | { type: 'photoMode' }
   | { type: 'jump' };
 
 export interface AvatarPalette {
@@ -363,6 +367,8 @@ interface WorldOptions {
   xrPreferred?: boolean;
   /** The visitor's stored look sensitivity, if they have set one. */
   lookSensitivity?: number;
+  /** Any controller bindings the visitor has changed from the defaults. */
+  gamepadBindings?: Partial<Record<GamepadActionId, number>>;
   onSnapshot: (snapshot: WorldSnapshot) => void;
   onAction: (action: WorldAction) => void;
   onXrSessionChange?: (active: boolean) => void;
@@ -1279,6 +1285,11 @@ export class FestivalWorld {
    * for it: no camera is opened and no model is fetched before that.
    */
   readonly headTracking = new HeadTracking();
+  /** Left stick walks, right stick looks. Menus stay with the pointer. */
+  readonly gamepad = new GamepadInput();
+  private gamepadRunning = false;
+  private gamepadMoved = false;
+  private pendingGamepadBindings?: Partial<Record<GamepadActionId, number>>;
   private headTrackingActive = false;
   /**
    * How far a drag turns the view, as a multiple of the built-in rate. Applies
@@ -1424,13 +1435,14 @@ export class FestivalWorld {
    */
   private baseFov = 58;
 
-  constructor({ canvas, foregroundCanvas, cssLayer, graphicsMode, palette, xrPreferred = false, lookSensitivity, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
+  constructor({ canvas, foregroundCanvas, cssLayer, graphicsMode, palette, xrPreferred = false, lookSensitivity, gamepadBindings, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
     this.canvas = canvas;
     this.foregroundCanvas = foregroundCanvas;
     this.graphicsMode = graphicsMode;
     this.palette = palette;
     this.xrPreferred = xrPreferred;
     if (lookSensitivity !== undefined) this.setLookSensitivity(lookSensitivity);
+    this.pendingGamepadBindings = gamepadBindings;
     this.onSnapshot = onSnapshot;
     this.onAction = onAction;
     this.onXrSessionChange = onXrSessionChange;
@@ -1586,6 +1598,7 @@ export class FestivalWorld {
     // nothing to remove.
     this.cullDecorativeLights();
     this.clock.start();
+    this.gamepad.start(this.pendingGamepadBindings);
     this.renderer.setAnimationLoop(this.render);
   }
 
@@ -1597,6 +1610,7 @@ export class FestivalWorld {
     // Everything the tracker downloaded goes with the world. It was only ever
     // in memory, but there is no reason to hold fifteen megabytes of it after
     // the festival has closed.
+    this.gamepad.stop();
     this.headTracking.release();
     this.headTrackingActive = false;
     this.releaseHeadCoupledView();
@@ -2114,6 +2128,65 @@ export class FestivalWorld {
     }
     this.interact();
   };
+
+  /**
+   * Drive the world from a controller.
+   *
+   * The look stick is converted into the same delta a pointer drag produces and
+   * pushed through `applyLookDelta`, so it obeys the visitor's sensitivity and
+   * every camera's own clamps without knowing anything about either. Multiplied
+   * by `delta` so a slow frame does not turn further than a fast one.
+   *
+   * Skipped entirely during an immersive session: a headset has its own
+   * controllers and `updateXrInput` is already reading them.
+   */
+  private updateGamepad(delta: number): void {
+    if (this.xrActive && !this.xrSimulated) return;
+    const frame = this.gamepad.poll();
+    if (!frame) {
+      if (this.gamepadRunning) {
+        this.gamepadRunning = false;
+        this.setRunning(false);
+      }
+      return;
+    }
+    // Only when the stick is actually pushed, or a pad at rest would fight the
+    // keyboard and the touch stick for the same movement vector every frame.
+    if (frame.moveX !== 0 || frame.moveY !== 0) {
+      this.setMovementVector(frame.moveX, frame.moveY);
+    } else if (this.gamepadMoved) {
+      this.setMovementVector(0, 0);
+    }
+    this.gamepadMoved = frame.moveX !== 0 || frame.moveY !== 0;
+
+    if (frame.lookX !== 0 || frame.lookY !== 0) {
+      const rate = 900 * delta;
+      this.applyLookDelta(frame.lookX * rate, frame.lookY * rate);
+    }
+
+    const running = frame.held.has('run');
+    if (running !== this.gamepadRunning) {
+      this.gamepadRunning = running;
+      this.setRunning(running);
+    }
+
+    for (const action of frame.pressed) this.performGamepadAction(action);
+  }
+
+  private performGamepadAction(action: GamepadActionId): void {
+    switch (action) {
+      case 'jump': this.jumpFromTouch(); break;
+      case 'interact': this.interact(false); break;
+      case 'pickUp': this.interact(true); break;
+      case 'punch': this.punchFromTouch(); break;
+      case 'offer': this.offerFromTouch(); break;
+      case 'camera': this.toggleCameraMode(); break;
+      case 'photo': this.onAction({ type: 'photoMode' }); break;
+      case 'dance': this.toggleDancing(); break;
+      // `run` is a hold, handled above rather than as a press.
+      case 'run': break;
+    }
+  }
 
   private updateXrInput(delta: number): void {
     if (!this.xrActive || this.xrSimulated || !this.xrSession) return;
@@ -5031,6 +5104,18 @@ export class FestivalWorld {
     this.cameraPointerX = event.clientX;
     this.cameraPointerY = event.clientY;
     if (Math.abs(deltaX) > 180 || Math.abs(deltaY) > 180) return;
+    this.applyLookDelta(deltaX, deltaY);
+  };
+
+  /**
+   * Turn the view by a delta in the same units a pointer drag produces.
+   *
+   * Split out of the pointer handler so a right stick can reach exactly the
+   * same branches — the VR preview, the seated screening camera and the two
+   * orbits all clamp differently, and a second copy of that would drift out of
+   * step the first time one of them changed.
+   */
+  private applyLookDelta(deltaX: number, deltaY: number): void {
     if (this.xrActive && this.xrSimulated) {
       if (this.phoneOrientationEnabled && this.phoneOrientationReceived) return;
       // No hidden discount here any more. The slider is the whole of it, and
@@ -5074,7 +5159,7 @@ export class FestivalWorld {
     orbit.pitch = this.cameraMode === 'first-person'
       ? THREE.MathUtils.clamp(orbit.pitch + deltaY * 0.0035 * this.lookSensitivity, -1.25, 1.32)
       : THREE.MathUtils.clamp(orbit.pitch + deltaY * 0.0035 * this.lookSensitivity, lowestPitch, 1.36);
-  };
+  }
 
   /**
    * Wheel and trackpad pinch pull the camera in and push it out. A pinch on a
@@ -8898,6 +8983,7 @@ export class FestivalWorld {
     this.waterTextures[0]?.offset.set((elapsed * 0.004) % 1, (elapsed * 0.0015) % 1);
     this.waterTextures[1]?.offset.set((-elapsed * 0.006) % 1, (elapsed * 0.003) % 1);
     this.tuneRenderScale(performance.now());
+    this.updateGamepad(delta);
     this.updateXrInput(delta);
     this.updatePlayer(delta);
     this.updateNpcs(delta, elapsed);

@@ -277,6 +277,16 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 .setting-group .segmented { margin: 0 0 18px; }
 .setting-group .panel-button { margin: 0; }
 .setting-group .range-field { margin: 0 0 10px; }
+/* The controls panel is a reference sheet now, grouped by what you are holding.
+   Each gamepad row carries its own rebind button on the right of the action. */
+.controls-list dd { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.rebind {
+  flex: none; min-height: 30px; padding: 0 12px; border: 1px solid var(--ink);
+  background: none; color: var(--ink); font: 900 11px var(--condensed);
+  letter-spacing: .06em; cursor: pointer;
+}
+.rebind:hover:not(:disabled) { border-color: var(--red); color: var(--red); }
+.rebind:disabled { opacity: .3; cursor: not-allowed; }
 .setting-readout { margin: 0 0 6px; font: 900 13px var(--condensed); letter-spacing: .08em; color: var(--red); }
 .setting-hint { margin: 0; font-size: 12px; line-height: 1.5; opacity: .62; }
 .head-track p { margin: 0 0 12px; font-size: 12px; line-height: 1.55; }

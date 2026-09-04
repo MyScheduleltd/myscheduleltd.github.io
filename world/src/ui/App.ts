@@ -6,6 +6,7 @@ import {
   type VenueKey,
 } from '../data/catalogue';
 import companyLogoUrl from '../assets/company-logo.png';
+import { GAMEPAD_ACTIONS, DEFAULT_BINDINGS, buttonLabel, type GamepadActionId } from '../world/GamepadInput';
 import { DJ_BY_VENUE, djProfileFor } from '../data/djProfiles';
 import { ProgrammeClock } from '../data/programmeClock';
 import { QUESTS, QUEST_SECTIONS, QUEST_TOTAL, type QuestId } from '../data/quests';
@@ -213,6 +214,25 @@ const readStoredHeadTrackRemember = (): boolean => {
     return false;
   }
 };
+/** Any controller button the visitor has moved off its default. */
+const GAMEPAD_BINDINGS_KEY = 'myschedule-gamepad-bindings-v1';
+const readStoredGamepadBindings = (): Partial<Record<GamepadActionId, number>> => {
+  try {
+    const raw = window.localStorage.getItem(GAMEPAD_BINDINGS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const bindings: Partial<Record<GamepadActionId, number>> = {};
+    for (const action of GAMEPAD_ACTIONS) {
+      const value = parsed[action];
+      if (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < 20) {
+        bindings[action] = value;
+      }
+    }
+    return bindings;
+  } catch {
+    return {};
+  }
+};
 const LOOK_SENSITIVITY_KEY = 'myschedule-look-sensitivity-v2';
 const DEFAULT_LOOK_SENSITIVITY = 0.2;
 const readStoredLookSensitivity = (): number => {
@@ -352,6 +372,8 @@ export class App {
   private localHitAt = 0;
   private jukeboxVolume = readStoredJukeboxVolume();
   private lookSensitivity = readStoredLookSensitivity();
+  private gamepadBindings = readStoredGamepadBindings();
+  private rebinding?: GamepadActionId;
   private headTrackRemember = readStoredHeadTrackRemember();
   private jukeboxFrame?: HTMLIFrameElement;
   private lastJukeboxLiftAt = 0;
@@ -1094,6 +1116,7 @@ export class App {
       onAction: (action) => this.handleWorldAction(action),
       onXrSessionChange: (active) => this.handleVrSessionChange(active),
       lookSensitivity: this.lookSensitivity,
+      gamepadBindings: this.gamepadBindings,
       onProjectorAdvance: (venue, youtubeId) => {
         if (this.festivalClient.online) {
           void this.festivalClient.advanceProgramme(venue, youtubeId);
@@ -1986,6 +2009,10 @@ export class App {
   }
 
   private handleWorldAction(action: WorldAction): void {
+    if (action.type === 'photoMode') {
+      if (!this.activePanel) this.cycleViewMode();
+      return;
+    }
     if (action.type === 'vrWatch') {
       void this.leaveVrForYoutube(action.venue);
       return;
@@ -4147,9 +4174,81 @@ export class App {
           <p class="setting-hint">${zh ? '關掉這個面板後拖曳畫面才看得出差別。' : 'Close this panel and drag the world to feel the difference.'}</p>
         </section>`;
       }
-      case 'controls':
+      case 'controls': {
+        const zh = this.language === 'zh-TW';
+        const row = (key: string, what: string) =>
+          `<div><dt>${this.escapeHtml(key)}</dt><dd>${this.escapeHtml(what)}</dd></div>`;
+        const group = (title: string, rows: string, extra = '') =>
+          `<section class="setting-group"><h3>${title}</h3>${extra}<dl class="controls-list">${rows}</dl></section>`;
+
+        const keyboard = [
+          ['WASD / ' + (zh ? '方向鍵' : 'ARROWS'), zh ? '移動／游泳' : 'Move / swim'],
+          ['SHIFT', zh ? '奔跑' : 'Run'],
+          ['SPACE', zh ? '跳躍（可從高處跳下）' : 'Jump — and drop from high places'],
+          ['E', zh ? '互動／餵 MENTOR 吃點心' : 'Interact / give MENTOR a treat'],
+          ['SHIFT + E', zh ? '抱起 MENTOR' : 'Pick up MENTOR'],
+          ['B', zh ? '跳舞' : 'Dance'],
+          ['O', zh ? '供養／佈施：在神像前或 NPC 旁' : 'Make an offering — at the altar or beside an NPC'],
+          ['T', zh ? '切換鏡頭' : 'Change camera'],
+          ['C', zh ? '拍照模式／明信片模式／離開' : 'Camera mode / postcard mode / exit'],
+          ['ENTER', zh ? '開啟聊天' : 'Open chat'],
+        ].map(([k, v]) => row(k, v)).join('');
+
+        const mouse = [
+          [zh ? '滑鼠拖曳' : 'DRAG', zh ? '轉動視角' : 'Turn the view'],
+          [zh ? '滑鼠左鍵' : 'LEFT CLICK', zh ? '出拳（被打中會鬆手放開 MENTOR）' : 'Throw a punch — anyone hit drops MENTOR'],
+          [zh ? '滾輪／觸控板縮放' : 'WHEEL / PINCH', zh ? '鏡頭遠近' : 'Move the camera in and out'],
+        ].map(([k, v]) => row(k, v)).join('');
+
+        const touch = [
+          [zh ? '左側搖桿' : 'LEFT STICK', zh ? '移動' : 'Move'],
+          [zh ? '拖曳畫面' : 'DRAG THE VIEW', zh ? '轉動視角' : 'Turn the view'],
+          [zh ? '按鈕環' : 'BUTTON RING', zh ? '跑、跳、舞、供養、拍照' : 'Run, jump, dance, offer, photo'],
+          [zh ? '通行證' : 'PASS', zh ? '開啟選單' : 'Open the menu'],
+        ].map(([k, v]) => row(k, v)).join('');
+
+        const actionNames: Record<GamepadActionId, [string, string]> = {
+          jump: ['Jump', '跳躍'],
+          interact: ['Interact / feed MENTOR', '互動／餵 MENTOR'],
+          pickUp: ['Pick up MENTOR', '抱起 MENTOR'],
+          punch: ['Punch', '出拳'],
+          offer: ['Make an offering', '供養'],
+          camera: ['Change camera', '切換鏡頭'],
+          photo: ['Photo mode', '拍照模式'],
+          run: ['Run (hold)', '奔跑（按住）'],
+          dance: ['Dance', '跳舞'],
+        };
+        const family = this.world?.gamepad.family() ?? 'generic';
+        const padConnected = this.world?.gamepad.connected() ?? false;
+        const padName = this.world?.gamepad.name() ?? '';
+        const bindings = { ...DEFAULT_BINDINGS, ...this.gamepadBindings };
+        const padStatus = padConnected
+          ? `<p class="setting-readout">${zh ? '已連接' : 'CONNECTED'} · ${this.escapeHtml(padName.slice(0, 48))}</p>`
+          : `<p class="setting-hint">${zh
+            ? '尚未偵測到手把。接上後按任一鍵，瀏覽器才會認得它。'
+            : 'No controller yet. Plug one in and press any button — a browser will not list a pad until you do.'}</p>`;
+        const padRows = [
+          `<div><dt>${zh ? '左搖桿' : 'LEFT STICK'}</dt><dd>${zh ? '移動角色' : 'Move your avatar'}</dd></div>`,
+          `<div><dt>${zh ? '右搖桿' : 'RIGHT STICK'}</dt><dd>${zh ? '轉動視角' : 'Turn the camera'}</dd></div>`,
+          ...GAMEPAD_ACTIONS.map((action) => `<div><dt>${this.escapeHtml(buttonLabel(bindings[action], family))}</dt><dd>${this.escapeHtml(actionNames[action][zh ? 1 : 0])}<button class="rebind" type="button" data-rebind="${action}"${padConnected ? '' : ' disabled'}>${this.rebinding === action ? (zh ? '按一個鍵…' : 'PRESS A BUTTON…') : (zh ? '更改' : 'CHANGE')}</button></dd></div>`),
+        ].join('');
+
+        const quest = [
+          [zh ? '左搖桿' : 'LEFT STICK', zh ? '移動' : 'Move'],
+          [zh ? '右搖桿' : 'RIGHT STICK', zh ? '轉身（分段轉動）' : 'Turn — in snap steps'],
+          [zh ? '扳機／握把' : 'TRIGGER / GRIP', zh ? '互動：座位、MENTOR、放映' : 'Interact — seats, MENTOR, screenings'],
+          ['A / X', zh ? '跳躍' : 'Jump'],
+          ['B / Y', zh ? '向前傳送' : 'Teleport forward'],
+          [zh ? '按住扳機' : 'HOLD TRIGGER', zh ? '奔跑' : 'Run'],
+        ].map(([k, v]) => row(k, v)).join('');
+
         return `
-          <dl class="controls-list"><div><dt>WASD / 方向鍵</dt><dd>${this.language === 'zh-TW' ? '移動／游泳' : 'Move / swim'}</dd></div><div><dt>E</dt><dd>${this.language === 'zh-TW' ? '互動／餵 MENTOR 吃點心' : 'Interact / give MENTOR a treat'}</dd></div><div><dt>SHIFT + E</dt><dd>${this.language === 'zh-TW' ? '抱起 MENTOR' : 'Pick up MENTOR'}</dd></div><div><dt>SHIFT</dt><dd>${this.language === 'zh-TW' ? '奔跑' : 'Run'}</dd></div><div><dt>SPACE</dt><dd>${this.language === 'zh-TW' ? '跳躍（可從高處跳下）' : 'Jump — and drop from high places'}</dd></div><div><dt>B</dt><dd>${this.language === 'zh-TW' ? '跳舞' : 'Dance'}</dd></div><div><dt>O</dt><dd>${this.language === 'zh-TW' ? '供養／佈施：在神像前或 NPC 旁' : 'Make an offering — at the altar or beside an NPC'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滑鼠左鍵' : 'LEFT CLICK'}</dt><dd>${this.language === 'zh-TW' ? '出拳（被打中會鬆手放開 MENTOR）' : 'Throw a punch — anyone hit drops MENTOR'}</dd></div><div><dt>T</dt><dd>${this.language === 'zh-TW' ? '切換鏡頭' : 'Change camera'}</dd></div><div><dt>C</dt><dd>${this.language === 'zh-TW' ? '拍照模式／明信片模式／離開' : 'Camera mode / postcard mode / exit'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滑鼠拖曳' : 'DRAG MOUSE'}</dt><dd>${this.language === 'zh-TW' ? '轉動視角' : 'Turn the view'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滾輪／觸控板縮放' : 'WHEEL / PINCH'}</dt><dd>${this.language === 'zh-TW' ? '鏡頭遠近' : 'Move the camera in and out'}</dd></div><div><dt>ENTER</dt><dd>${this.language === 'zh-TW' ? '開啟聊天' : 'Open chat'}</dd></div><div><dt>PASS</dt><dd>${this.language === 'zh-TW' ? '開啟選單' : 'Open menu'}</dd></div></dl>`;
+          ${group(zh ? '鍵盤' : 'KEYBOARD', keyboard)}
+          ${group(zh ? '滑鼠' : 'MOUSE', mouse)}
+          ${group(zh ? '觸控螢幕' : 'TOUCHSCREEN', touch)}
+          ${group(zh ? '遊戲手把' : 'GAME CONTROLLER', padRows, padStatus)}
+          ${group(zh ? 'VR 頭戴裝置' : 'VR HEADSET', quest, `<p class="setting-hint">${zh ? 'Meta Quest Touch 控制器。' : 'Meta Quest Touch controllers.'}</p>`)}`;
+      }
       case 'contact':
         return `
           <div class="contact-list">
@@ -4189,6 +4288,31 @@ export class App {
         panel.querySelectorAll<HTMLButtonElement>('[data-world-graphics]').forEach((candidate) =>
           setButtonPressed(candidate, candidate === button),
         );
+      });
+    });
+    panel.querySelectorAll<HTMLButtonElement>('[data-rebind]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const action = button.dataset.rebind as GamepadActionId;
+        if (!this.world?.gamepad.connected()) return;
+        this.rebinding = action;
+        this.openPanel('controls');
+        // The pad takes the next press instead of acting on it. Nothing else
+        // can capture it, so there is no way to bind a button to two actions
+        // by accident — the previous holder simply loses it.
+        this.world.gamepad.listenForButton((index) => {
+          for (const other of GAMEPAD_ACTIONS) {
+            if (other !== action && (this.gamepadBindings[other] ?? DEFAULT_BINDINGS[other]) === index) {
+              delete this.gamepadBindings[other];
+            }
+          }
+          this.gamepadBindings[action] = index;
+          this.world?.gamepad.setBinding(action, index);
+          try {
+            window.localStorage.setItem(GAMEPAD_BINDINGS_KEY, JSON.stringify(this.gamepadBindings));
+          } catch { /* private mode */ }
+          this.rebinding = undefined;
+          if (this.activePanel === 'controls') this.openPanel('controls');
+        });
       });
     });
     panel.querySelector<HTMLInputElement>('[data-look-sensitivity]')?.addEventListener('input', (event) => {
