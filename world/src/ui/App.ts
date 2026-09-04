@@ -1312,6 +1312,12 @@ export class App {
         this.world?.releaseMentorRemoteDropForReview();
         return this.world?.mentorRemoteDropSnapshot();
       };
+      (window as Window & {
+        __festivalDispose?: (rescue?: boolean) => unknown;
+      }).__festivalDispose = (rescue = true) => ({
+        teardown: this.world?.disposeMentorCarrierForReview(rescue),
+        mentor: this.world?.mentorRemoteDropSnapshot(),
+      });
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview =
         () => this.world?.mentorRemoteDropSnapshot();
     } else if (reviewTarget === 'menu' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {

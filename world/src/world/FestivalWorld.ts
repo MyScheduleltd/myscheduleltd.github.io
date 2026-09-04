@@ -2490,6 +2490,33 @@ export class FestivalWorld {
     this.syncSharedMentorCarrier();
   }
 
+  /**
+   * The other way a carrier lets go: it stops existing. A phone that goes into
+   * a pocket drops its session, and the body it was driving is taken apart on
+   * everybody else's screen. This runs that teardown — the same sweep, on the
+   * same group — so the dog can be checked afterwards for the parts it used to
+   * lose to it.
+   */
+  disposeMentorCarrierForReview(rescue = true): unknown {
+    const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
+    const carrier = mentor?.group.parent;
+    if (!mentor?.dogRig || !carrier || carrier === this.scene) return { carrier: 'none' };
+    const held = rescue ? this.mentorHeldBy(carrier) : undefined;
+    if (held) {
+      this.standMentorOnGround(held, held.group.getWorldPosition(new THREE.Vector3()), held.group.rotation.y);
+    }
+    carrier.removeFromParent();
+    const disposed: string[] = [];
+    carrier.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      disposed.push(child.name || 'unnamed');
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const item of materials) item.dispose();
+      if (child.geometry !== boxGeometry) child.geometry.dispose();
+    });
+    return { rescued: Boolean(held), disposedMeshes: disposed };
+  }
+
   mentorRemoteDropSnapshot(): unknown {
     const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
     if (!mentor?.dogRig) return { mentor: 'missing' };
@@ -4278,6 +4305,21 @@ export class FestivalWorld {
     }
     for (const [id, avatar] of this.remoteAvatars) {
       if (activeIds.has(id)) continue;
+      // What a leaving visitor is carrying is not theirs to take with them.
+      //
+      // This is the dog coming apart when somebody holding it drops off — a
+      // phone backgrounding is enough. MENTOR is parented into the carrier's
+      // body while carried, so the sweep below walked straight into it and
+      // disposed the dog's own geometry and materials along with the avatar's.
+      // The two pieces that vanished were the body and the head, which are the
+      // two that share one material; the legs are on another and survived,
+      // which is exactly what "the body disappeared, its feet were still
+      // there" looks like.
+      const held = this.mentorHeldBy(avatar.group);
+      if (held) {
+        this.standMentorOnGround(held, held.group.getWorldPosition(new THREE.Vector3()), held.group.rotation.y);
+        held.waitUntil = performance.now() + 600;
+      }
       avatar.group.removeFromParent();
       const disposedMaterials = new Set<THREE.Material>();
       const disposedGeometries = new Set<THREE.BufferGeometry>();
@@ -8299,6 +8341,48 @@ export class FestivalWorld {
       Boolean(this.carriedItem) && this.carriedItem !== 'MENTOR';
   }
 
+  /**
+   * Stand the dog on the floor, wherever it has just come from.
+   *
+   * Every way of letting go used to write this out again slightly differently,
+   * and the differences were the bug: one of them kept the carrier's whole
+   * world rotation, another planted the dog at a fixed height rather than on
+   * the floor underneath it, and none of them put the body and head back the
+   * way the carried pose had bent them. A dog is a four-legged animal that
+   * stands on the ground; the only thing it should keep from whoever was
+   * holding it is where they were standing.
+   */
+  private standMentorOnGround(mentor: NpcAvatar, at: THREE.Vector3, yaw: number): void {
+    if (!mentor.dogRig) return;
+    this.scene.attach(mentor.group);
+    mentor.group.scale.setScalar(1);
+    // Yaw only. Inheriting pitch and roll from a carrier is how a dog ends up
+    // lying through the floor.
+    const z = Math.max(at.z, -57.3);
+    mentor.group.rotation.set(0, yaw, 0);
+    mentor.group.position.set(at.x, this.groundHeightAt(at.x, z), z);
+    mentor.dogRig.leftFrontLeg.rotation.set(0, 0, 0);
+    mentor.dogRig.rightFrontLeg.rotation.set(0, 0, 0);
+    mentor.dogRig.leftBackLeg.rotation.set(0, 0, 0);
+    mentor.dogRig.rightBackLeg.rotation.set(0, 0, 0);
+    mentor.dogRig.body.rotation.set(0, 0, 0);
+    mentor.dogRig.head.rotation.set(0, 0, 0);
+    mentor.knockback.set(0, 0, 0);
+  }
+
+  /**
+   * Is the dog somewhere inside this body? Asked before a departing visitor is
+   * taken apart, because what it is carrying is not its to take with it.
+   */
+  private mentorHeldBy(group: THREE.Object3D): NpcAvatar | undefined {
+    const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
+    if (!mentor) return undefined;
+    for (let node: THREE.Object3D | null = mentor.group.parent; node; node = node.parent) {
+      if (node === group) return mentor;
+    }
+    return undefined;
+  }
+
   private putDownMentor(emitAction = true): void {
     const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
     if (!mentor?.dogRig || this.carriedItem !== 'MENTOR') return;
@@ -8313,15 +8397,8 @@ export class FestivalWorld {
     const dropPosition = candidates.find((candidate) => !this.staticCollides(candidate.x, candidate.z)) ?? this.player.position.clone();
     // MENTOR always returns to solid ground, even if the attendee carries him
     // as far as the waterline before putting him down.
+    this.standMentorOnGround(mentor, dropPosition, this.player.rotation.y);
     dropPosition.z = Math.max(dropPosition.z, -57.3);
-    this.scene.attach(mentor.group);
-    mentor.group.scale.setScalar(1);
-    mentor.dogRig.leftFrontLeg.rotation.set(0, 0, 0);
-    mentor.dogRig.rightFrontLeg.rotation.set(0, 0, 0);
-    mentor.dogRig.leftBackLeg.rotation.set(0, 0, 0);
-    mentor.dogRig.rightBackLeg.rotation.set(0, 0, 0);
-    mentor.group.position.set(dropPosition.x, AVATAR_GROUND_Y, dropPosition.z);
-    mentor.group.rotation.set(0, this.player.rotation.y, 0);
     // Set down is not the same as sent away. The dog stays where it was left
     // and mills about there for a while before picking its round back up —
     // otherwise putting it down somewhere on purpose was pointless, because it
@@ -8348,15 +8425,11 @@ export class FestivalWorld {
     if (!this.mentorCarrierId) {
       if (mentor.group.parent !== this.scene && this.carriedItem !== 'MENTOR') {
         const worldPosition = mentor.group.getWorldPosition(new THREE.Vector3());
-        const worldRotation = mentor.group.getWorldQuaternion(new THREE.Quaternion());
-        this.scene.attach(mentor.group);
-        mentor.group.scale.setScalar(1);
-        mentor.group.position.set(worldPosition.x, AVATAR_GROUND_Y, Math.max(worldPosition.z, -57.3));
-        mentor.group.quaternion.copy(worldRotation);
-        mentor.dogRig.leftFrontLeg.rotation.set(0, 0, 0);
-        mentor.dogRig.rightFrontLeg.rotation.set(0, 0, 0);
-        mentor.dogRig.leftBackLeg.rotation.set(0, 0, 0);
-        mentor.dogRig.rightBackLeg.rotation.set(0, 0, 0);
+        const worldYaw = new THREE.Euler().setFromQuaternion(
+          mentor.group.getWorldQuaternion(new THREE.Quaternion()),
+          'YXZ',
+        ).y;
+        this.standMentorOnGround(mentor, worldPosition, worldYaw);
         mentor.waitUntil = performance.now() + 600;
       }
       return;
@@ -8365,7 +8438,19 @@ export class FestivalWorld {
     const carrier = this.mentorCarrierId === this.selfVisitorId
       ? this.activeCarrierGroup()
       : this.remoteAvatars.get(this.mentorCarrierId)?.group;
-    if (carrier && mentor.group.parent !== carrier) this.attachMentorToCarrier(mentor, carrier);
+    if (carrier) {
+      if (mentor.group.parent !== carrier) this.attachMentorToCarrier(mentor, carrier);
+      return;
+    }
+    // The service still says somebody is holding the dog, and that somebody is
+    // no longer on screen — a phone that went into a pocket, a connection that
+    // went away. The dog was parented to that body, so it left with it. Put it
+    // back on the floor rather than leave it holding on to a ghost.
+    if (this.mentorCarrierId !== this.selfVisitorId && mentor.group.parent !== this.scene) {
+      const worldPosition = mentor.group.getWorldPosition(new THREE.Vector3());
+      this.standMentorOnGround(mentor, worldPosition, mentor.group.rotation.y);
+      mentor.waitUntil = performance.now() + 600;
+    }
   }
 
   private isMentorControlLocked(): boolean {
