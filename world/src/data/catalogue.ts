@@ -37,9 +37,13 @@ interface LegacyData {
 const legacyData = legacySource as LegacyData;
 
 const venueForCategory = (category: string): VenueKey => {
-  if (category === 'COMMERCIAL') return 'palace';
-  if (category === 'TELEVISION') return 'drive-in';
-  if (category === 'MUSIC VIDEO') return 'shore';
+  // The three theatres traded catalogues. Kept in step with
+  // `programmeCategoryForVenue` in the service, which is the other half of
+  // this mapping — a venue holding one catalogue here and another there is a
+  // programme board that disagrees with the screen underneath it.
+  if (category === 'TELEVISION') return 'palace';
+  if (category === 'MUSIC VIDEO') return 'drive-in';
+  if (category === 'COMMERCIAL') return 'shore';
   // The DR.BEAUTY originals are the club's record box.
   if (category === 'ORIGINALS') return 'club';
   return 'shore';
@@ -92,9 +96,9 @@ const originalEntries = legacyData.drBeautyVideos
 export const catalogue = [...portfolioEntries, ...originalEntries];
 
 export const catalogueByVenue = {
-  palace: catalogue.filter((film) => film.category === 'COMMERCIAL'),
-  'drive-in': catalogue.filter((film) => film.category === 'TELEVISION'),
-  shore: catalogue.filter((film) => film.category === 'MUSIC VIDEO'),
+  palace: catalogue.filter((film) => film.category === 'TELEVISION'),
+  'drive-in': catalogue.filter((film) => film.category === 'MUSIC VIDEO'),
+  shore: catalogue.filter((film) => film.category === 'COMMERCIAL'),
   club: catalogue.filter((film) => film.category === 'ORIGINALS'),
   // The rooftop spins the same DR.BEAUTY box as the basement.
   rooftop: catalogue.filter((film) => film.category === 'ORIGINALS'),

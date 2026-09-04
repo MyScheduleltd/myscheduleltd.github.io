@@ -68,8 +68,8 @@ export const QUEST_SECTIONS: QuestSection[] = [
       quest('palace', 'VISIT THE PALACE', '造訪皇宮影廳', 'Walk there or use the map.', '步行前往，或使用地圖快速移動。'),
       quest('drive-in', 'VISIT DRIVE-IN 88', '造訪汽車戲院', 'Walk there or use the map.', '步行前往，或使用地圖快速移動。'),
       quest('shore', 'REACH THE SHORE', '抵達海岸', 'Follow the promenade towards the sea.', '沿著步道往海邊前進。'),
-      quest('basement', 'FIND THE BASEMENT', '找到地下俱樂部', 'Take the club entrance below MY SQUARE.', '從我的廣場找到地下俱樂部入口。'),
-      quest('rooftop', 'CLIMB TO THE ROOFTOP', '登上屋頂', 'Find the stairs up to THE ROOFTOP.', '找到通往屋頂的樓梯。'),
+      quest('basement', 'FIND SLAP AND POP', '找到地下俱樂部', 'Take the club entrance below MY SQUARE.', '從我的廣場找到地下俱樂部入口。'),
+      quest('rooftop', 'CLIMB TO NIMA ROOFTOP', '登上屋頂', 'Find the stairs up to NIMA ROOFTOP.', '找到通往屋頂的樓梯。'),
     ],
   },
   {

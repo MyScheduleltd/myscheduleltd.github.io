@@ -118,8 +118,8 @@ const defaultVenueLabels: Record<VenueKey, string> = {
   palace: 'THE PALACE',
   'drive-in': 'DRIVE-IN 88',
   shore: 'THE SHORE',
-  club: 'THE BASEMENT',
-  rooftop: 'THE ROOFTOP',
+  club: 'SLAP AND POP',
+  rooftop: 'NIMA ROOFTOP',
 };
 const VENUE_KEYS: VenueKey[] = ['palace', 'drive-in', 'shore', 'club', 'rooftop'];
 
@@ -2173,10 +2173,10 @@ export class App {
         }
       })();
       if (!safe) {
-        this.showWorldAlert(zh ? '快閃服飾店即將開幕' : 'THE POP-UP STORE OPENS SOON');
+        this.showWorldAlert(zh ? 'MASTER OF THE HOUSE 即將開幕' : 'MASTER OF THE HOUSE OPENS SOON');
         return;
       }
-      const name = zh ? (link?.labelZh || '快閃服飾店') : (link?.label || 'THE POP-UP STORE');
+      const name = zh ? (link?.labelZh || 'MASTER OF THE HOUSE') : (link?.label || 'MASTER OF THE HOUSE');
       this.showWorldAlert(zh ? `正在開啟 ${name}` : `OPENING ${name}`);
       window.open(safe, '_blank', 'noopener,noreferrer');
       return;
@@ -4278,10 +4278,10 @@ export class App {
             <div class="map-sea">${this.language === 'zh-TW' ? '地中海' : 'MEDITERRANEAN<br />SEA'}</div>
             <span class="map-branch" aria-hidden="true"></span>
             <button class="map-node map-node--gate" data-travel="gate">${this.language === 'zh-TW' ? '影展入口' : 'FESTIVAL GATE'}</button>
-            <button class="map-node map-node--palace" data-travel="palace">${this.escapeHtml(this.venueName('palace'))}<small>${this.categoryLabel('COMMERCIAL')}</small></button>
+            <button class="map-node map-node--palace" data-travel="palace">${this.escapeHtml(this.venueName('palace'))}<small>${this.categoryLabel('TELEVISION')}</small></button>
             <button class="map-node map-node--square" data-travel="square">${this.language === 'zh-TW' ? '我的廣場' : 'MY SQUARE'}</button>
-            <button class="map-node map-node--drive" data-travel="drive-in">${this.escapeHtml(this.venueName('drive-in'))}<small>${this.categoryLabel('TELEVISION')}</small></button>
-            <button class="map-node map-node--shore" data-travel="shore">${this.escapeHtml(this.venueName('shore'))}<small>${this.categoryLabel('MUSIC VIDEO')}</small></button>
+            <button class="map-node map-node--drive" data-travel="drive-in">${this.escapeHtml(this.venueName('drive-in'))}<small>${this.categoryLabel('MUSIC VIDEO')}</small></button>
+            <button class="map-node map-node--shore" data-travel="shore">${this.escapeHtml(this.venueName('shore'))}<small>${this.categoryLabel('COMMERCIAL')}</small></button>
             <button class="map-node map-node--rooftop" data-travel="rooftop">${this.escapeHtml(this.venueName('rooftop'))}<small>${this.categoryLabel('ORIGINALS')}</small></button>
             <button class="map-node map-node--club" data-travel="club">${this.escapeHtml(this.venueName('club'))}<small>${this.categoryLabel('ORIGINALS')}</small></button>
           </div>`;
@@ -4668,6 +4668,14 @@ export class App {
             button.disabled = false;
             this.showWorldAlert(result.message ?? (zh ? '點播失敗' : 'THAT DID NOT GO ON'));
             return;
+          }
+          // Put the record on now rather than when the broadcast catches up.
+          // The player itself still takes a second or two to buffer, and that
+          // is YouTube's to spend — but it may as well start spending it the
+          // moment the festival says yes.
+          if (result.jukebox && this.networkState) {
+            this.networkState = { ...this.networkState, jukebox: result.jukebox };
+            this.syncJukebox();
           }
           this.showWorldAlert(zh ? '已排入點唱機' : 'QUEUED ON THE JUKEBOX');
           if (this.activePanel === 'jukebox') this.openPanel('jukebox');
@@ -5321,7 +5329,7 @@ export class App {
         }).join('')}
         <button type="submit">${this.language === 'zh-TW' ? '儲存入口文字' : 'SAVE GATE COPY'}</button>
       </form>`)}
-      ${this.staffSection('shop', this.language === 'zh-TW' ? '快閃服飾店' : 'POP-UP STORE', `
+      ${this.staffSection('shop', 'MASTER OF THE HOUSE', `
       <form class="staff-form" id="shop-link-editor">
         <p class="staff-note">${this.language === 'zh-TW'
           ? '屋頂快閃店的連結。留空即為尚未開張，訪客按 E 時會看到「即將開幕」。'
@@ -5676,7 +5684,7 @@ export class App {
     if (value.startsWith('E / WAVE TO')) return value.replace('E / WAVE TO', 'E／揮手給');
     if (value.startsWith('E / WAG TAIL AT')) return value.replace('E / WAG TAIL AT', 'E／搖尾巴給');
     if (value === 'E / ORDER A DRINK') return 'E／點一杯';
-    if (value === 'E / OPEN THE POP-UP STORE') return 'E／逛快閃服飾店';
+    if (value === 'E / OPEN MASTER OF THE HOUSE') return 'E／逛 MASTER OF THE HOUSE';
     if (value === 'E / PUT A RECORD ON') return 'E／點歌';
     if (value === 'SHIFT+E / DRINK UP') return 'SHIFT+E／喝一口';
     if (value.startsWith('E / EAT ')) {

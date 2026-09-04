@@ -562,8 +562,24 @@ export class FestivalClient {
     await this.request('/api/presence', { method: 'POST', body: payload }, false);
   }
 
-  async requestJukeboxTrack(trackId: string): Promise<{ ok: boolean; message?: string }> {
-    return this.action('/api/jukebox/request', { trackId });
+  /**
+   * The reply carries the running order as it stands after the request, and
+   * that is the fastest the news can possibly travel. Waiting for the
+   * broadcast to come back around instead put a needless round trip between
+   * pressing a record and hearing it start.
+   */
+  async requestJukeboxTrack(
+    trackId: string,
+  ): Promise<{ ok: boolean; message?: string; jukebox?: JukeboxState }> {
+    try {
+      const reply = await this.request('/api/jukebox/request', {
+        method: 'POST',
+        body: JSON.stringify({ trackId }),
+      }) as { jukebox?: JukeboxState };
+      return { ok: true, jukebox: reply?.jukebox };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Action failed.' };
+    }
   }
 
   async reportJukeboxDuration(youtubeId: string, seconds: number): Promise<void> {

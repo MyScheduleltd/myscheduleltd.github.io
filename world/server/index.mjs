@@ -111,9 +111,9 @@ const youtubeIdFromUrl = (value) => {
 };
 
 const programmeCategoryForVenue = {
-  palace: 'COMMERCIAL',
-  'drive-in': 'TELEVISION',
-  shore: 'MUSIC VIDEO',
+  palace: 'TELEVISION',
+  'drive-in': 'MUSIC VIDEO',
+  shore: 'COMMERCIAL',
   club: 'ORIGINALS',
   rooftop: 'ORIGINALS',
 };
@@ -121,15 +121,30 @@ const defaultVenueNames = {
   palace: 'THE PALACE',
   'drive-in': 'DRIVE-IN 88',
   shore: 'THE SHORE',
-  club: 'THE BASEMENT',
-  rooftop: 'THE ROOFTOP',
+  club: 'SLAP AND POP',
+  rooftop: 'NIMA ROOFTOP',
+};
+/**
+ * What each venue was called and played before the three theatres traded
+ * catalogues. A saved state written by an older service carries the old names,
+ * and saved state beats these defaults — so without something to compare
+ * against, renaming a venue here would change nothing anybody can see.
+ * `migrateVenues` uses this to tell "STAFF chose that name" apart from "that is
+ * simply what it used to be called".
+ */
+const venuesBeforeTheSwap = {
+  palace: { name: 'THE PALACE', subtitle: 'COMMERCIAL' },
+  'drive-in': { name: 'DRIVE-IN 88', subtitle: 'TELEVISION' },
+  shore: { name: 'THE SHORE', subtitle: 'MUSIC VIDEO' },
+  club: { name: 'THE BASEMENT', subtitle: 'XIEH GAN' },
+  rooftop: { name: 'THE ROOFTOP', subtitle: 'DR.BEAUTY' },
 };
 // The second line on each venue's sign. STAFF own these the same way they own
 // the names above; the values here are only what a fresh service starts with.
 const defaultVenueSubtitles = {
-  palace: 'COMMERCIAL',
-  'drive-in': 'TELEVISION',
-  shore: 'MUSIC VIDEO',
+  palace: 'TELEVISION',
+  'drive-in': 'MUSIC VIDEO',
+  shore: 'COMMERCIAL',
   club: 'XIEH GAN',
   rooftop: 'DR.BEAUTY',
 };
@@ -262,16 +277,50 @@ const advanceJukebox = () => {
   const now = Date.now();
   if (jukeboxNowPlaying) {
     const seconds = jukeboxDurations.get(jukeboxNowPlaying.youtubeId) ?? JUKEBOX_DEFAULT_SECONDS;
-    if (now - jukeboxNowPlaying.startedAt < seconds * 1000) return false;
+    if (now - jukeboxNowPlaying.startedAt < seconds * 1000) {
+      armJukeboxTimer(jukeboxNowPlaying.startedAt + seconds * 1000 - now);
+      return false;
+    }
   }
   jukeboxNowPlaying = null;
   // Nothing waiting means silence. The machine does not work through its own
   // stock to fill the gap: an empty queue is the square with no music in it
   // until somebody puts a record on, which is what a jukebox is.
   const next = jukeboxQueue.shift();
-  if (!next) return true;
+  if (!next) {
+    clearJukeboxTimer();
+    return true;
+  }
   jukeboxNowPlaying = { ...next, startedAt: now };
+  const seconds = jukeboxDurations.get(jukeboxNowPlaying.youtubeId) ?? JUKEBOX_DEFAULT_SECONDS;
+  armJukeboxTimer(seconds * 1000);
   return true;
+};
+
+/**
+ * Wake up when this record ends.
+ *
+ * The running order used to move only inside a broadcast, and nothing asked for
+ * a broadcast when a record ran out — so in a quiet square the next one waited
+ * for whatever happened to come along next: somebody walking, a venue's
+ * programme settling, at worst the ten-second heartbeat. That silence between
+ * records is the gap people heard. One timer, re-armed each time the record
+ * changes, costs nothing and closes it.
+ */
+let jukeboxTimer;
+const clearJukeboxTimer = () => {
+  if (!jukeboxTimer) return;
+  clearTimeout(jukeboxTimer);
+  jukeboxTimer = undefined;
+};
+const armJukeboxTimer = (delay) => {
+  clearJukeboxTimer();
+  // A record that reports an implausible length must not become a busy loop.
+  jukeboxTimer = setTimeout(() => {
+    jukeboxTimer = undefined;
+    if (advanceJukebox()) scheduleBroadcast();
+  }, Math.max(250, Math.min(delay, 0x7fffffff)));
+  jukeboxTimer.unref?.();
 };
 
 let jukeboxQueueSeq = 0;
@@ -330,7 +379,7 @@ const gateCopy = {
   updatedAt: 0,
 };
 
-const shopLink = { url: '', label: 'THE POP-UP STORE', labelZh: '快閃服飾店', updatedAt: 0 };
+const shopLink = { url: '', label: 'MASTER OF THE HOUSE', labelZh: 'MASTER OF THE HOUSE', updatedAt: 0 };
 // The two lines carved over the temple door: who is worshipped there, and what
 // the building is called. STAFF own both, the way they own the venue signs.
 const templeSign = { name: '美麗本人', label: 'THE TEMPLE', updatedAt: 0 };
@@ -510,7 +559,9 @@ const safePalette = (value = {}) => {
 };
 
 const persistedSnapshot = () => ({
-  version: 1,
+  // 2: the three theatres traded catalogues, and the club and the deck were
+  // renamed. Read by `migrateVenues` on the way back in.
+  version: 2,
   savedAt: Date.now(),
   schedule: programmeSchedule,
   siteStyle,
@@ -812,6 +863,35 @@ const restorePersistedState = () => {
   restoreNpcs(saved.npcNames, saved.npcTitles);
   restoreCustomVideos(saved.customVideos);
   restoreSchedule(saved.schedule);
+  migrateVenues(saved.version);
+};
+
+/**
+ * Bring a state file written before the catalogue swap up to date.
+ *
+ * The three theatres need nothing: their saved running orders are lists of
+ * films from the catalogue they used to hold, none of which is allowed in the
+ * one they hold now, so `restoreSchedule` drops those entries and they come
+ * back on their fresh defaults — new name, new subtitle, new films.
+ *
+ * The club and the deck kept their catalogue, so their saved rows survived
+ * intact and carry the old names with them. Those are rewritten here, and only
+ * where the saved name is the old default: a name STAFF actually chose is
+ * theirs, and is left alone.
+ */
+const migrateVenues = (savedVersion) => {
+  if (Number(savedVersion) >= 2) return;
+  for (const [venue, before] of Object.entries(venuesBeforeTheSwap)) {
+    const entry = programmeSchedule[venue];
+    if (!entry) continue;
+    if (entry.name === before.name) entry.name = defaultVenueNames[venue];
+    if (entry.subtitle === before.subtitle) entry.subtitle = defaultVenueSubtitles[venue];
+  }
+  // The shop took a brand name at the same time, and its saved label has the
+  // same hold over the default that a venue's does.
+  if (shopLink.label === 'THE POP-UP STORE') shopLink.label = 'MASTER OF THE HOUSE';
+  if (shopLink.labelZh === '快閃服飾店') shopLink.labelZh = 'MASTER OF THE HOUSE';
+  persist();
 };
 
 const tokenMatches = (candidate, expected) => {
@@ -1374,7 +1454,15 @@ const server = createServer(async (request, response) => {
       const seconds = clampNumber(payload.seconds, 5, 3600, 0);
       // Whoever is actually playing it knows how long it runs; without this the
       // running order moves on at a guess and everyone drifts apart.
-      if (validYoutubeId(youtubeId) && seconds) jukeboxDurations.set(youtubeId, seconds);
+      if (validYoutubeId(youtubeId) && seconds) {
+        jukeboxDurations.set(youtubeId, seconds);
+        // The record on the deck was timed against a guess until this arrived.
+        // Re-arm against the real length, or a three-minute song sits in
+        // silence until the guessed three and a half minutes are up.
+        if (jukeboxNowPlaying?.youtubeId === youtubeId) {
+          armJukeboxTimer(jukeboxNowPlaying.startedAt + seconds * 1000 - Date.now());
+        }
+      }
       return json(response, 202, { ok: true });
     }
 

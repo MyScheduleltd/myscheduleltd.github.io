@@ -6,6 +6,7 @@ import { dressBuildings, dressInteriors } from './WornArchitecture';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import type { VenueKey } from '../data/catalogue';
 import { AmbientAudio } from './AmbientAudio';
+import masterOfTheHouseLogo from '../assets/master-of-the-house.png';
 import { DayNightCycle, type DayNightState } from './DayNightCycle';
 import { createStylizedWaterMaterial, tintStylizedWater } from './StylizedWater';
 import { createMentorDog, type MentorDogRig } from './MentorDog';
@@ -647,9 +648,9 @@ const rooftopBounds = {
 const ROOFTOP_CENTER_X = (rooftopBounds.minX + rooftopBounds.maxX) / 2;
 /** Second line on each venue's sign until STAFF change it. */
 const DEFAULT_VENUE_SUBTITLES: Record<VenueKey, string> = {
-  palace: 'COMMERCIAL',
-  'drive-in': 'TELEVISION',
-  shore: 'MUSIC VIDEO',
+  palace: 'TELEVISION',
+  'drive-in': 'MUSIC VIDEO',
+  shore: 'COMMERCIAL',
   club: 'XIEH GAN',
   rooftop: 'DR.BEAUTY',
 };
@@ -927,7 +928,7 @@ const venueScreens: Record<VenueKey, {
     facing: 1,
   },
   rooftop: {
-    label: 'The Rooftop',
+    label: 'Nima Rooftop',
     // Hung at the deck's north edge, watched from the deck to the south.
     position: [ROOFTOP_CENTER_X, ROOF_Y + 6.6, 19.9],
     target: [ROOFTOP_CENTER_X, ROOF_Y + 6.3, 19.6],
@@ -935,7 +936,7 @@ const venueScreens: Record<VenueKey, {
     facing: 1,
   },
   club: {
-    label: 'The Basement',
+    label: 'Slap and Pop',
     // Hung on the room's north wall, watched from the floor to the south.
     position: [CLUB_STAGE_X, CLUB_FLOOR_Y + CLUB_ROOM_HEIGHT / 2, 41.5],
     target: [CLUB_STAGE_X, CLUB_FLOOR_Y + CLUB_ROOM_HEIGHT / 2 - 0.3, 41.9],
@@ -1007,6 +1008,48 @@ const signFont = (size: number, heading: boolean): string => {
   return heading
     ? `400 ${size}px "BebasNeueBrand", Impact, sans-serif`
     : `400 ${size}px "HanWangMingBrand", "BebasNeueBrand", sans-serif`;
+};
+
+/**
+ * The same sign, with a picture on it instead of two lines of type.
+ *
+ * The panel and its red rule are the festival's, and every venue wears them —
+ * so the shop keeps them and only the contents change. The art is drawn to fit
+ * inside the rule at its own aspect ratio rather than stretched to the canvas,
+ * because a hand-drawn wordmark squashed to a 2:1 box stops looking hand-drawn.
+ */
+const createImageSignTexture = (source: string, background = '#151517'): THREE.CanvasTexture => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 512;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Canvas 2D context unavailable.');
+  const frame = () => {
+    context.fillStyle = background;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.strokeStyle = '#b51f27';
+    context.lineWidth = 18;
+    context.strokeRect(22, 22, canvas.width - 44, canvas.height - 44);
+  };
+  frame();
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const art = new Image();
+  art.decoding = 'async';
+  art.onload = () => {
+    frame();
+    // The supplied file carries a wide transparent margin, so fitting the
+    // whole bitmap would leave the logo small and adrift. Contain it in the
+    // panel's inner area and let the margin fall outside.
+    const inner = { x: 58, y: 58, width: canvas.width - 116, height: canvas.height - 116 };
+    const scale = Math.min(inner.width / art.width, inner.height / art.height);
+    const width = art.width * scale;
+    const height = art.height * scale;
+    context.drawImage(art, inner.x + (inner.width - width) / 2, inner.y + (inner.height - height) / 2, width, height);
+    texture.needsUpdate = true;
+  };
+  art.src = source;
+  return texture;
 };
 
 const createTextTexture = (lines: string[], foreground = '#f5efe2', background = '#151517') => {
@@ -6727,7 +6770,7 @@ export class FestivalWorld {
     }
     // The venue sign is fixed to the wall above the doorway; the club has no
     // free-standing poster stand.
-    const doorSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['THE BASEMENT', 'XIEH GAN']) });
+    const doorSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['SLAP AND POP', 'XIEH GAN']) });
     this.venueSignMaterials.set('club', doorSignMaterial);
     const doorSign = new THREE.Mesh(new THREE.PlaneGeometry(9.6, 2.2), doorSignMaterial);
     doorSign.position.set(b.buildingMaxX + 0.56, 7.1, doorCenterZ);
@@ -7498,7 +7541,7 @@ export class FestivalWorld {
     }
     this.shopSign = new THREE.Mesh(
       new THREE.PlaneGeometry(11.2, 3),
-      new THREE.MeshBasicMaterial({ map: createTextTexture(['THE POP-UP', 'CLOTHING STORE']) }),
+      new THREE.MeshBasicMaterial({ map: createImageSignTexture(masterOfTheHouseLogo) }),
     );
     // Forward of the rail and clear of the soffit. At 5.4 its top ran into the
     // roof slab overhead, and a metre and a half out it sat almost on the stock.
@@ -7509,7 +7552,7 @@ export class FestivalWorld {
     this.shopCounter = { x: centerX, z: counterZ - 4.2 };
 
     const rooftopSignMaterial = new THREE.MeshBasicMaterial({
-      map: createTextTexture(['THE ROOFTOP', DEFAULT_VENUE_SUBTITLES.rooftop]),
+      map: createTextTexture(['NIMA ROOFTOP', DEFAULT_VENUE_SUBTITLES.rooftop]),
     });
     this.venueSignMaterials.set('rooftop', rooftopSignMaterial);
     const rooftopSign = new THREE.Mesh(new THREE.PlaneGeometry(9.6, 2.6), rooftopSignMaterial);
@@ -11998,7 +12041,7 @@ export class FestivalWorld {
     if (eating) return eating;
     if (this.nearClubBar()) return 'E / ORDER A DRINK';
     if (this.nearJukebox()) return 'E / PUT A RECORD ON';
-    if (this.nearShopCounter()) return 'E / OPEN THE POP-UP STORE';
+    if (this.nearShopCounter()) return 'E / OPEN MASTER OF THE HOUSE';
     const dj = this.nearbyDj();
     if (dj) return `E / REQUEST A TRACK FROM ${dj.name}`;
     const socialTarget = this.nearestSocialTarget();

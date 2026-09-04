@@ -177,9 +177,11 @@ test('public programmes expose full queues and advance when a work ends', async 
   const configResponse = await fetch(`${baseUrl}/api/config`);
   assert.equal(configResponse.status, 200);
   const config = await configResponse.json();
-  assert.equal(config.schedule.palace.order.length, 4);
-  assert.equal(config.schedule['drive-in'].order.length, 2);
-  assert.equal(config.schedule.shore.order.length, 32);
+  // The three theatres traded catalogues: the palace took television, the
+  // drive-in took the music videos, the shore took the commercials.
+  assert.equal(config.schedule.palace.order.length, 2);
+  assert.equal(config.schedule['drive-in'].order.length, 32);
+  assert.equal(config.schedule.shore.order.length, 4);
 
   const currentYoutubeId = config.schedule.palace.youtubeId;
   const advanced = await fetch(`${baseUrl}/api/programme/palace/advance`, {
@@ -204,8 +206,8 @@ test('staff can reorder and rename a venue programme', async () => {
     body: JSON.stringify({
       venue: 'shore',
       name: 'THE TIDE',
-      currentYoutubeId: 'SRbsIUYB0dc',
-      order: ['SRbsIUYB0dc', 'jiawzYgfkuI'],
+      currentYoutubeId: '5pSwEJw53Y8',
+      order: ['5pSwEJw53Y8', 'qyMIdPT4K4Q'],
       mode: 'scheduled-loop',
       specialYoutubeUrl: 'https://youtu.be/KD5dGYzk9Bo',
       specialStartsAt: '2026-08-13T20:00:00+08:00',
@@ -218,8 +220,8 @@ test('staff can reorder and rename a venue programme', async () => {
   assert.equal(stateResponse.status, 200);
   const state = await stateResponse.json();
   assert.equal(state.schedule.shore.name, 'THE TIDE');
-  assert.deepEqual(state.schedule.shore.order, ['SRbsIUYB0dc', 'jiawzYgfkuI']);
-  assert.equal(state.schedule.shore.youtubeId, 'SRbsIUYB0dc');
+  assert.deepEqual(state.schedule.shore.order, ['5pSwEJw53Y8', 'qyMIdPT4K4Q']);
+  assert.equal(state.schedule.shore.youtubeId, '5pSwEJw53Y8');
   assert.equal(state.schedule.shore.mode, 'scheduled-loop');
   assert.equal(state.schedule.shore.special.youtubeId, 'KD5dGYzk9Bo');
   assert.ok(state.schedule.shore.updatedAt > 0);
@@ -755,7 +757,7 @@ test('pausing a venue freezes its programme clock and resuming shifts it', async
 test('the club is a full venue with the DR.BEAUTY records', async () => {
   const config = await (await fetch(`${baseUrl}/api/config`)).json();
   const club = config.schedule.club;
-  assert.equal(club.name, 'THE BASEMENT');
+  assert.equal(club.name, 'SLAP AND POP');
   assert.equal(club.order.length, 8, 'all eight DR.BEAUTY tracks are in the box');
   assert.equal(club.order.includes('rMicadJVzH8'), true);
   assert.equal(typeof club.startedAt, 'number', 'the club runs on the same programme clock');
