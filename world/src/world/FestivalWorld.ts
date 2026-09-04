@@ -11,6 +11,7 @@ import { DayNightCycle, type DayNightState } from './DayNightCycle';
 import { createStylizedWaterMaterial, tintStylizedWater } from './StylizedWater';
 import { createMentorDog, type MentorDogRig } from './MentorDog';
 import { createGanganStatue, GANGAN_STATUE_SIZE } from './GanganStatue';
+import { createBeachCouple, animateBeachCouple, type BeachCoupleRig } from './BeachCouple';
 
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>;
@@ -1392,6 +1393,8 @@ export class FestivalWorld {
   private entranceSignText = { title: 'MYSCHEDULE', subtitle: 'VIRTUAL FESTIVAL' };
   private templeAltar?: { x: number; z: number };
   private jukebox?: { x: number; z: number };
+  /** The beach easter egg. Scenery with one loop; not a resident. */
+  private beachCouple?: BeachCoupleRig;
   private lastDonationAt = 0;
   private lastPunchAt = 0;
   /** A landed blow's moment of contact, and what it is worth on the camera. */
@@ -7952,6 +7955,18 @@ export class FestivalWorld {
       this.mesh([4.4, 0.3, 4.4], [x, 3.3, z], material(0xc23b3b, 0.7, 0.05));
       this.addCollider(x, z, 0.4, 0.4, 0.2, { minY: -0.4, maxY: 40 });
     }
+
+    // Two people who came for each other rather than for the films, tucked in
+    // among the palms east of the drive-in. Off any path, behind planting, and
+    // found rather than presented.
+    const couple = createBeachCouple();
+    couple.root.position.set(60.5, 0.02, -31.5);
+    couple.root.rotation.y = -0.72;
+    this.scene.add(couple.root);
+    this.beachCouple = couple;
+    // Chest height at most: walked around rather than through, without the
+    // camera being shoved every time somebody passes behind the trees.
+    this.addCollider(60.5, -31.5, 4.6, 4.0, 0.1, undefined, undefined, 1.1);
   }
 
   private createConcession(): void {
@@ -9230,6 +9245,11 @@ export class FestivalWorld {
     this.updateXrInput(delta);
     this.updatePlayer(delta);
     this.updateNpcs(delta, elapsed);
+    // Only while somebody could see it. It is a joke behind some trees, not a
+    // thing worth a matrix update on every frame of the whole festival.
+    if (this.beachCouple && this.cameraWorldPosition.distanceToSquared(this.beachCouple.root.position) < 4900) {
+      animateBeachCouple(this.beachCouple, elapsed);
+    }
     this.updateRemoteAvatars(delta, elapsed);
     this.updateCamera(delta, elapsed);
     // Cheap: it compares one venue key and returns, unless somebody has just
