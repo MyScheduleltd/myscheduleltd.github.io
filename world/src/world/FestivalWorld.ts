@@ -493,6 +493,18 @@ const AVATAR_SWIM_Y = -2.08;
  * step rather than one of them walking on the water.
  */
 const SWIM_Z = -60;
+/**
+ * Where MENTOR floats, and it is not a guess: the sea's surface sits at 0.14,
+ * and the dog's body block runs from 0.39 to 1.09 above its own root. This puts
+ * the waterline about two thirds of the way up that block, so the head, the
+ * collar and the top of the back stay clear and the rest is under — the same
+ * proportion the human avatar swims at.
+ *
+ * The first attempt sank the dog half a unit from standing, which left the
+ * belly exactly on the surface: legs under, whole body and head above, still
+ * walking. Measured against the geometry rather than eyeballed this time.
+ */
+const MENTOR_SWIM_Y = -0.72;
 
 /**
  * Turning a monitor into a window: how far the view moves for how far the head
@@ -9634,7 +9646,7 @@ export class FestivalWorld {
         npc.badge.visible = false;
         npc.group.position.set(
           this.player.position.x,
-          this.playerState === 'swimming' ? (npc.dogRig ? AVATAR_GROUND_Y - 0.52 : AVATAR_SWIM_Y) : this.player.position.y,
+          this.playerState === 'swimming' ? (npc.dogRig ? MENTOR_SWIM_Y : AVATAR_SWIM_Y) : this.player.position.y,
           this.player.position.z,
         );
         npc.group.rotation.copy(this.player.rotation);
@@ -9696,7 +9708,7 @@ export class FestivalWorld {
           // else's screen than on its driver's — the same dog at two depths,
           // depending on who was looking.
           remoteController.state === 'swimming'
-            ? (npc.dogRig ? AVATAR_GROUND_Y - 0.52 : AVATAR_SWIM_Y)
+            ? (npc.dogRig ? MENTOR_SWIM_Y : AVATAR_SWIM_Y)
             : AVATAR_GROUND_Y,
           remoteController.z,
         );
@@ -10570,7 +10582,7 @@ export class FestivalWorld {
    */
   private npcBodyY(npc: NpcAvatar, elapsed: number): number {
     if (this.isOverWater(npc.group.position.z)) {
-      return (npc.dogRig ? AVATAR_GROUND_Y - 0.52 : AVATAR_SWIM_Y)
+      return (npc.dogRig ? MENTOR_SWIM_Y : AVATAR_SWIM_Y)
         + Math.sin(elapsed * 3.2 + npc.phase) * 0.035;
     }
     return this.groundHeightAt(

@@ -293,6 +293,8 @@ export class App {
   private readonly headTrackRequested =
     new URLSearchParams(window.location.search).has('headtrack');
   private headTrackPanelOpen = false;
+  private readonly headTrackDeskQuery =
+    window.matchMedia('(min-width: 781px) and (hover: hover) and (pointer: fine)');
   private headTrackReadoutTimer?: number;
   private vrError = '';
   private promptHoldTimer = 0;
@@ -1700,6 +1702,12 @@ export class App {
         ? (this.language === 'zh-TW' ? '已校準 · 現在的手機方向就是正前方' : 'CALIBRATED · THIS PHONE POSE IS NOW FORWARD')
         : (this.language === 'zh-TW' ? 'VR 視角已回正' : 'VR VIEW RECENTRED'));
     });
+    if (this.headTrackRequested) {
+      this.headTrackDeskQuery.addEventListener('change', () => {
+        if (!this.isHeadTrackingAvailable()) this.world?.disableHeadTracking();
+        this.syncHeadTrackUi();
+      });
+    }
     this.root.querySelector<HTMLButtonElement>('[data-head-track-toggle]')?.addEventListener('click', () => {
       this.headTrackPanelOpen = !this.headTrackPanelOpen;
       this.syncHeadTrackUi();
@@ -1865,6 +1873,12 @@ export class App {
     }
     this.syncVenueScreen(snapshot);
     this.syncJukebox();
+    // Re-checked from the world's own tick rather than from a media-query
+    // listener. The listener is kept, but it cannot be the only guard: it did
+    // not fire under a viewport change during review, and a control that has
+    // stopped being appropriate should not wait for the next VR state change to
+    // notice. Costs nothing for anyone without the flag.
+    if (this.headTrackRequested) this.syncHeadTrackUi();
     void this.festivalClient.publishPresence({
       x: snapshot.x,
       y: snapshot.y,
@@ -2157,7 +2171,7 @@ export class App {
     const readout = this.root.querySelector<HTMLElement>('[data-head-track-readout]');
     const pick = this.root.querySelector<HTMLElement>('[data-head-track-pick]');
     const offered = this.headTrackRequested && this.vrActive
-      && this.usesVrSimulation() && !this.usesPhoneVrSimulation();
+      && this.usesVrSimulation() && this.isHeadTrackingAvailable();
     if (!offered && this.headTrackPanelOpen) this.headTrackPanelOpen = false;
     const tracking = Boolean(this.world?.headTrackingEnabled());
     if (toggle) {
@@ -2183,6 +2197,22 @@ export class App {
       window.clearInterval(this.headTrackReadoutTimer);
       this.headTrackReadoutTimer = undefined;
     }
+  }
+
+  /**
+   * A desk, and nothing else. A mouse that hovers, and a window wide enough
+   * that the touch layout is not in force.
+   *
+   * `!usesPhoneVrSimulation()` was not the same test: a device can fail the
+   * phone-preview check — no device orientation, an insecure context, a
+   * trackpad reporting a fine pointer — and still be running the touch
+   * interface, which is how a joystick, a HIT button and a HEAD TRACKING
+   * control ended up on one screen. This matches the exact breakpoint the
+   * interface itself switches on, so the touch controls showing and head
+   * tracking being offered can never both be true.
+   */
+  private isHeadTrackingAvailable(): boolean {
+    return this.headTrackDeskQuery.matches;
   }
 
   private headTrackReadout(state: Record<string, unknown>): string {

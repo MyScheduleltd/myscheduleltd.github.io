@@ -8,7 +8,44 @@ Last updated: 2026-09-04 · webcam head tracking behind `?headtrack`; jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — webcam head tracking, behind a flag
+## 0. READ THIS FIRST — a measured waterline, and a desk-only experiment
+
+### MENTOR was still on top of the water
+
+The first fix sank the dog half a unit from standing, which was eyeballed and
+wrong: the sea's surface is at **0.14**, and the dog's body block runs from 0.39
+to 1.09 above its own root, so half a unit left the belly *exactly* on the
+surface — legs under, whole body and head above, still walking.
+
+`MENTOR_SWIM_Y = -0.72` is measured against that geometry: about **71% of the
+body under**, the collar and the top of the back clear, the head fully out. The
+human swims at 74% under by the same measure. Verified in the fixture, which now
+reports the numbers rather than leaving it to a screenshot.
+
+**Anything that floats should be derived from 0.14**, not from a subtraction off
+the standing height. `stylisedWater` sits at 0.14, `waveSurface` at 0.115 and the
+ocean slab's top at 0.095; the water is translucent with `depthWrite: false`, so
+a submerged body still shows through it — do not read "I can see its legs" as
+"it is not in the water".
+
+### Head tracking is a desk feature
+
+`!usesPhoneVrSimulation()` was the wrong gate and put a `HEAD TRACKING` button
+on a phone, beside the joystick and the HIT button. A device can fail the
+phone-preview check — no device orientation, an insecure context, a trackpad
+reporting a fine pointer — and still be running the touch interface.
+
+The gate is now `(min-width: 781px) and (hover: hover) and (pointer: fine)`,
+which is the **exact breakpoint the interface itself switches on**, so the touch
+controls showing and head tracking being offered can never both be true.
+
+It is re-checked from the world's own tick, not only from a `matchMedia`
+listener: that listener did not fire under a viewport change during review, and
+a control that has stopped being appropriate should not wait for the next VR
+state change to notice. Verified at 1280 (offered), 700 and 375 (hidden), and
+back again.
+
+## 0-prev. Webcam head tracking, behind a flag
 
 **Not offered to anybody.** The code ships in the beta bundle and is inert
 without `?headtrack` on the URL: no control on screen, no camera prompt, and
