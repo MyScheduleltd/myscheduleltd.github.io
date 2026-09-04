@@ -12,6 +12,7 @@ import { createStylizedWaterMaterial, tintStylizedWater } from './StylizedWater'
 import { createMentorDog, type MentorDogRig } from './MentorDog';
 import { createGanganStatue, GANGAN_STATUE_SIZE } from './GanganStatue';
 import { createBeachCouple, animateBeachCouple, type BeachCoupleRig } from './BeachCouple';
+import { addAvatarAccessories, applyAvatarAccessories } from './AvatarAccessories';
 
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>;
@@ -92,7 +93,22 @@ export interface AvatarPalette {
   top: string;
   bottoms: string;
   swimwear: string;
+  // Accessories. A colour means it is worn; absent means it is not, so one
+  // field carries both answers and an older client that has never heard of
+  // them simply sends nothing and wears nothing.
+  cap?: string;
+  chain?: string;
+  tattoo?: string;
+  backpack?: string;
 }
+
+/**
+ * The five colours a body itself is painted in — as opposed to the four a
+ * visitor may or may not be wearing over the top of it. Accessories are shown
+ * and hidden as whole groups rather than recoloured mesh by mesh, so the parts
+ * of the rig that walk the palette want to talk about these five only.
+ */
+export type AvatarColourSlot = 'skin' | 'hair' | 'top' | 'bottoms' | 'swimwear';
 
 export interface WorldSnapshot {
   cameraMode: CameraMode;
@@ -253,6 +269,8 @@ interface NpcAvatar {
 interface RemoteAvatar {
   group: THREE.Group;
   badge: THREE.Sprite;
+  /** What this body was last seen wearing, so a change can be noticed. */
+  wearing?: string;
   target: THREE.Vector3;
   /** Where this body was told to be before the update now being played out. */
   previousTarget: THREE.Vector3;
@@ -3360,6 +3378,49 @@ export class FestivalWorld {
    * it from — `?review=statue`, with an angle and a distance so a change to a
    * limb can be compared against the last one rather than against a memory.
    */
+  /**
+   * Loopback fixture: where the worn things actually ended up.
+   *
+   * Front and back are the whole question for a chain and a pack, and reading
+   * that off a screenshot of a figure eight pixels wide is guesswork. This
+   * reports each piece's offset from the body's own centre along the body's own
+   * forward axis, so "in front" and "behind" are signs and not impressions.
+   */
+  accessoryFitSnapshot(): Record<string, unknown> {
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.player.quaternion);
+    const origin = this.player.getWorldPosition(new THREE.Vector3());
+    const at = new THREE.Vector3();
+    const found: Record<string, unknown> = {};
+    this.player.updateMatrixWorld(true);
+    this.player.traverse((child) => {
+      const slot = child.userData.accessorySlot as string | undefined;
+      if (!slot) return;
+      // The group itself sits at its parent's origin; the pieces inside it are
+      // what actually has a place. Averaging those is what answers "in front
+      // or behind".
+      const rows = (found[slot] as Array<unknown> | undefined) ?? [];
+      const spans: number[] = [];
+      const heights: number[] = [];
+      for (const part of child.children) {
+        part.getWorldPosition(at);
+        const offset = at.clone().sub(origin);
+        spans.push(offset.dot(forward));
+        heights.push(offset.y);
+      }
+      const mean = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / (values.length || 1);
+      rows.push({
+        visible: child.visible,
+        height: Number(mean(heights).toFixed(2)),
+        // Positive is towards the face.
+        forward: Number(mean(spans).toFixed(2)),
+        span: [Number(Math.min(...spans).toFixed(2)), Number(Math.max(...spans).toFixed(2))],
+        parts: child.children.length,
+      });
+      found[slot] = rows;
+    });
+    return found;
+  }
+
   focusStatueForReview(distance = 13, yaw = 0, pitch = 0.1): void {
     this.lookAtSpotForReview(statuePosition.x, statuePosition.z, distance, yaw, pitch);
   }
@@ -4285,9 +4346,12 @@ export class FestivalWorld {
   setAvatarPalette(palette: AvatarPalette): void {
     this.palette = palette;
     for (const avatar of [this.player, this.originalPlayerIdle]) {
+      // Worn or not worn is a visibility question, not a colour one, so it is
+      // answered before the recolour walk rather than inside it.
+      applyAvatarAccessories(avatar, palette);
       avatar.traverse((child: THREE.Object3D) => {
         if (!(child instanceof THREE.Mesh)) return;
-        const slot = child.userData.paletteSlot as keyof AvatarPalette | undefined;
+        const slot = child.userData.paletteSlot as AvatarColourSlot | undefined;
         if (slot && child.material instanceof THREE.MeshStandardMaterial) {
           const color = this.outfit === 'swimwear' && (slot === 'top' || slot === 'bottoms')
             ? palette.swimwear
@@ -4383,6 +4447,17 @@ export class FestivalWorld {
       if (!avatar) {
         avatar = this.createRemoteAvatar(displayVisitor);
         this.remoteAvatars.set(visitor.id, avatar);
+      }
+      // A body built once and never looked at again is fine for colours, which
+      // nobody changes mid-visit — but a cap being taken off is exactly the
+      // kind of thing somebody does while standing in front of you. Compared
+      // rather than reapplied every frame, because this runs for everybody in
+      // the square on every update.
+      const wearing = `${displayVisitor.palette.cap ?? ''}|${displayVisitor.palette.chain ?? ''}`
+        + `|${displayVisitor.palette.tattoo ?? ''}|${displayVisitor.palette.backpack ?? ''}`;
+      if (avatar.wearing !== wearing) {
+        avatar.wearing = wearing;
+        applyAvatarAccessories(avatar.group, displayVisitor.palette);
       }
       // Everyone used to be drawn at ground level whatever height they were
       // actually at, which put anyone on the roof deck seven units under their
@@ -8825,12 +8900,12 @@ export class FestivalWorld {
     const armStretch = 1 + lean(2) * 0.035;
     const legStretch = 1 + lean(3) * 0.025;
     const headTilt = lean(4) * 0.07;
-    const shade = (slot: keyof AvatarPalette) =>
+    const shade = (slot: AvatarColourSlot) =>
       material(Number.parseInt(palette[slot].replace('#', ''), 16), 0.86, 0.02);
     const add = (
       geometry: THREE.BufferGeometry,
       position: [number, number, number],
-      slot: keyof AvatarPalette,
+      slot: AvatarColourSlot,
       target: THREE.Object3D,
     ) => {
       const part = new THREE.Mesh(geometry, shade(slot));
@@ -8927,7 +9002,7 @@ export class FestivalWorld {
       y: number,
       geometry: THREE.BufferGeometry,
       height: number,
-      slot: keyof AvatarPalette,
+      slot: AvatarColourSlot,
       root: THREE.Object3D,
     ) => {
       const pivot = new THREE.Group();
@@ -8989,6 +9064,7 @@ export class FestivalWorld {
     const treat = this.mesh([0.16, 0.16, 0.22], [0, -0.56, 0.16], material(0xd18a35, 0.78), right.joint);
     treat.visible = false;
     const board = this.createSkateboard(parent);
+    addAvatarAccessories({ head, torso: spine, leftArm, rightArm }, palette, markPalette);
     return {
       leftArm,
       rightArm,
@@ -9017,7 +9093,7 @@ export class FestivalWorld {
     const addPart = (
       size: [number, number, number],
       position: [number, number, number],
-      slot: keyof AvatarPalette,
+      slot: AvatarColourSlot,
       target: THREE.Object3D = parent,
     ) => {
       const part = this.mesh(
@@ -9049,7 +9125,7 @@ export class FestivalWorld {
       x: number,
       y: number,
       size: [number, number, number],
-      slot: keyof AvatarPalette,
+      slot: AvatarColourSlot,
     ) => {
       const pivot = new THREE.Group();
       pivot.position.set(x, y, 0);
@@ -9064,6 +9140,18 @@ export class FestivalWorld {
     const treat = this.mesh([0.16, 0.16, 0.22], [0, -1.2, 0.16], material(0xd18a35, 0.78), rightArm);
     treat.visible = false;
     const board = this.createSkateboard(parent);
+    // The chest here is one scaled mesh rather than a group, so the accessories
+    // hang off the body's own root and are told where the chest is.
+    addAvatarAccessories({
+      head,
+      torso: parent,
+      torsoBounds: new THREE.Box3(
+        new THREE.Vector3(-0.51, 1.09, -0.31),
+        new THREE.Vector3(0.51, 2.47, 0.31),
+      ),
+      leftArm,
+      rightArm,
+    }, palette, markPalette);
     // Head group at 2.47, hair 0.73 above that and 0.17 thick.
     return { leftArm, rightArm, leftLeg, rightLeg, torso, treat, head, board, headTop: 3.37 };
   }

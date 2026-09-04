@@ -157,6 +157,43 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .palette-picker { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 8px 0 21px; }
 .palette-picker legend { grid-column: 1 / -1; }
 .palette-picker label, .panel-palette label { display: grid; grid-template-columns: 1fr 32px; align-items: center; gap: 8px; font: 700 12px var(--condensed); }
+
+/* Appearance: the same eleven controls at the gate and in the character panel.
+   Two groups with a rule between them, because a flat list of colours and
+   checkboxes gives no clue which ones are the body and which are worn on it. */
+.appearance { display: grid; gap: 16px; }
+.appearance__group { display: grid; gap: 8px; }
+.appearance__group + .appearance__group { padding-top: 14px; border-top: 1px solid rgba(21, 23, 26, 0.14); }
+.swatch-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px 12px; }
+.swatch { display: grid; gap: 5px; font: 700 11px var(--condensed); letter-spacing: 0.06em; }
+.swatch input[type="color"] { width: 100%; height: 30px; }
+.wearable-list { display: grid; gap: 7px; }
+/* One row per accessory: worn, what it is, what colour. The colour keeps its
+   place while it is off rather than being removed, so ticking a box does not
+   move every row underneath it. */
+.wearable {
+  display: grid; grid-template-columns: 20px 1fr 44px; align-items: center; gap: 10px;
+  padding: 7px 10px; border: 1px solid rgba(21, 23, 26, 0.16); background: rgba(21, 23, 26, 0.03);
+  font: 700 12px var(--condensed); letter-spacing: 0.06em; cursor: pointer;
+}
+.wearable.is-worn { border-color: rgba(169, 28, 36, 0.5); background: rgba(169, 28, 36, 0.07); }
+.wearable input[type="checkbox"] { width: 17px; height: 17px; accent-color: #a91c24; margin: 0; }
+.wearable input[type="color"] { width: 44px; height: 26px; padding: 0; }
+.wearable input[type="color"]:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* The gate keeps all of it folded away: a door, not a form. */
+.gate-appearance { margin: 8px 0 18px; border: 1px solid rgba(21, 23, 26, 0.18); }
+.gate-appearance > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 13px; cursor: pointer; list-style: none;
+  font: 700 12px var(--condensed); letter-spacing: 0.1em; text-transform: uppercase;
+}
+.gate-appearance > summary::-webkit-details-marker { display: none; }
+.gate-appearance__sign { font-size: 16px; line-height: 1; }
+.gate-appearance[open] .gate-appearance__sign::after { content: ''; }
+.gate-appearance[open] .gate-appearance__sign { visibility: hidden; position: relative; }
+.gate-appearance[open] .gate-appearance__sign::before { content: '−'; visibility: visible; position: absolute; right: 0; }
+.gate-appearance > .appearance { padding: 0 13px 14px; }
 input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19,.3); padding: 2px; background: transparent; cursor: pointer; }
 .check-field { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; }
 /* Dressed like the rest of the card rather than left in the browser's own
@@ -825,8 +862,9 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 }
 .panel--character .panel__header { min-height: 46px; }
 .panel--character .panel__body { padding: 16px; }
-.panel--character .panel-palette { grid-template-columns: 1fr; gap: 8px; max-width: none; }
-.panel--character .panel-palette label { grid-template-columns: 1fr 38px; min-height: 40px; }
+.panel--character .appearance { gap: 18px; }
+.panel--character .swatch-row { grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); }
+.panel--character .wearable { grid-template-columns: 22px 1fr 52px; min-height: 42px; }
 button { transition: filter .14s ease, scale .14s ease, background-color .14s ease; }
 button:active { filter: brightness(.88); scale: .96; }
 .panel__header { display: flex; align-items: center; justify-content: space-between; min-height: 52px; padding: 0 15px; color: white; background: var(--ink); }

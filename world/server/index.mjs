@@ -549,13 +549,22 @@ const body = async (request) => {
 const safeText = (value, max) => String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').slice(0, max);
 const safePalette = (value = {}) => {
   const color = (slot, fallback) => /^#[0-9a-f]{6}$/i.test(value[slot] ?? '') ? value[slot] : fallback;
-  return {
+  const palette = {
     skin: color('skin', '#9d5f43'),
     hair: color('hair', '#171315'),
     top: color('top', '#9f1720'),
     bottoms: color('bottoms', '#20242c'),
     swimwear: color('swimwear', '#d5b23f'),
   };
+  // Accessories. A colour means worn, absent means not — so these are carried
+  // through only when they are actually set, and an older client that sends
+  // none simply has none. Validated the same way as the rest: whatever a
+  // client says is going straight onto everybody else's screen.
+  for (const slot of ['cap', 'chain', 'tattoo', 'backpack']) {
+    const worn = color(slot, '');
+    if (worn) palette[slot] = worn;
+  }
+  return palette;
 };
 
 const persistedSnapshot = () => ({

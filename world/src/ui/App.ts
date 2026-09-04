@@ -7,6 +7,7 @@ import {
 } from '../data/catalogue';
 import companyLogoUrl from '../assets/company-logo.png';
 import { GAMEPAD_ACTIONS, DEFAULT_BINDINGS, buttonLabel, type GamepadActionId } from '../world/GamepadInput';
+import { ACCESSORY_SLOTS, DEFAULT_ACCESSORY_COLOURS, type AccessorySlot } from '../world/AvatarAccessories';
 import { DJ_BY_VENUE, djProfileFor } from '../data/djProfiles';
 import { ProgrammeClock } from '../data/programmeClock';
 import { QUESTS, QUEST_SECTIONS, QUEST_TOTAL, type QuestId } from '../data/quests';
@@ -270,6 +271,10 @@ const panelLabels: Record<Language, Record<PanelId, string>> = {
 };
 
 const paletteInputs = ['skin', 'hair', 'top', 'bottoms', 'swimwear'] as const;
+const accessoryLabels: Record<Language, Record<AccessorySlot, string>> = {
+  en: { cap: 'BASEBALL CAP', chain: 'GOLD CHAIN', tattoo: 'ARM TATTOOS', backpack: 'BACKPACK' },
+  'zh-TW': { cap: '棒球帽', chain: '金項鍊', tattoo: '手臂刺青', backpack: '後背包' },
+};
 const paletteLabels: Record<Language, Record<(typeof paletteInputs)[number], string>> = {
   en: { skin: 'SKIN', hair: 'HAIR', top: 'TOP', bottoms: 'BOTTOMS', swimwear: 'SWIMWEAR' },
   'zh-TW': { skin: '膚色', hair: '髮色', top: '上衣', bottoms: '下身', swimwear: '泳裝' },
@@ -740,16 +745,14 @@ export class App {
             </fieldset>
           </div>
 
-          <fieldset class="palette-picker">
-            <legend>${text.palette}</legend>
-            ${paletteInputs
-              .map(
-                (slot) => `
-                  <label><span>${paletteLabels[this.language][slot]}</span><input type="color" data-palette="${slot}" value="${this.palette[slot]}" /></label>
-                `,
-              )
-              .join('')}
-          </fieldset>
+          <!-- Folded away. Eleven controls laid out flat under a name field
+               made the gate a form to fill in rather than a door to walk
+               through, and most people take the figure they are given. Opened
+               with one press for anybody who does not. -->
+          <details class="gate-appearance">
+            <summary><span>${text.palette}</span><span class="gate-appearance__sign" aria-hidden="true">+</span></summary>
+            ${this.appearanceFields('data-palette')}
+          </details>
 
           <!-- Ticked by default, which it was not.
                The box only ever started ticked for somebody who had already
@@ -807,12 +810,8 @@ export class App {
       });
     });
 
-    this.root.querySelectorAll<HTMLInputElement>('[data-palette]').forEach((input) => {
-      input.addEventListener('input', () => {
-        const slot = input.dataset.palette as keyof AvatarPalette;
-        this.palette = { ...this.palette, [slot]: input.value };
-      });
-    });
+    // Nothing to commit at the gate: the palette is not on a body yet.
+    this.bindAppearanceFields(this.root, 'data-palette', () => undefined);
 
     this.syncVrGateControl();
     this.root.querySelector<HTMLInputElement>('#vr-mode')?.addEventListener('change', (event) => {
@@ -1303,6 +1302,17 @@ export class App {
         this.syncHeadTrackUi();
         return this.world?.headTrackReviewSnapshot();
       };
+    } else if (reviewTarget === 'fit' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      (window as Window & { __festivalFit?: () => unknown }).__festivalFit =
+        () => this.world?.accessoryFitSnapshot();
+      (window as Window & { __festivalWear?: (slot: string, colour?: string) => unknown }).__festivalWear =
+        (slot, colour) => {
+          const next = { ...this.palette } as Record<string, string | undefined>;
+          if (colour) next[slot] = colour; else delete next[slot];
+          this.palette = next as unknown as AvatarPalette;
+          this.world?.setAvatarPalette(this.palette);
+          return this.world?.accessoryFitSnapshot();
+        };
     } else if (reviewTarget === 'statue' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       this.world.focusStatueForReview();
       (window as Window & {
@@ -4389,10 +4399,9 @@ export class App {
               <button type="submit">${this.language === 'zh-TW' ? '更新手冊' : 'UPDATE PAMPHLET'}</button>
             </form>` : ''}`;
       case 'character':
-        return `
-          <div class="panel-palette">${paletteInputs
-            .map((slot) => `<label><span>${paletteLabels[this.language][slot]}</span><input type="color" data-world-palette="${slot}" value="${this.palette[slot]}" /></label>`)
-            .join('')}</div>`;
+        // All on one page. The panel has the room the gate does not, and a
+        // fold here would only hide the thing the panel exists to show.
+        return this.appearanceFields('data-world-palette');
       case 'jukebox': {
         const zh = this.language === 'zh-TW';
         const jukebox = this.networkState?.jukebox;
@@ -4571,12 +4580,15 @@ export class App {
         panel.hidden = true;
       });
     });
-    panel.querySelectorAll<HTMLInputElement>('[data-world-palette]').forEach((input) => {
-      input.addEventListener('input', () => {
-        const slot = input.dataset.worldPalette as keyof AvatarPalette;
-        this.palette = { ...this.palette, [slot]: input.value };
-        this.world?.setAvatarPalette(this.palette);
-      });
+    // In the world the change has to reach the body in the square, the copy of
+    // it other people are looking at, and the saved profile — the last so a
+    // hat taken off here is still off on the next visit.
+    // The body in the square, and the saved profile. Everybody else's copy
+    // needs nothing here: presence already carries the palette, and a changed
+    // one makes the next payload differ, so it goes out on its own.
+    this.bindAppearanceFields(panel, 'data-world-palette', () => {
+      this.world?.setAvatarPalette(this.palette);
+      this.rememberPalette();
     });
     panel.querySelectorAll<HTMLButtonElement>('[data-world-graphics]').forEach((button) => {
       setButtonPressed(button, button.dataset.worldGraphics === this.graphicsMode);
@@ -5626,6 +5638,102 @@ export class App {
       if (this.activePanel === 'chat') this.renderChatStream();
       index += 1;
     }, 18000);
+  }
+
+  /**
+   * The colours and the accessories, written once.
+   *
+   * The gate and the character panel ask for exactly the same eleven things,
+   * and when they were written twice they drifted twice — a slot added in one
+   * and missing from the other reads as a bug in the world rather than in the
+   * markup. `attribute` is the only difference between them: the gate edits a
+   * palette nobody is wearing yet, the panel edits one somebody is standing in.
+   */
+  /**
+   * Keep a saved profile in step with a change made in the world.
+   *
+   * Only touches a profile that already exists: somebody who declined to be
+   * remembered at the gate has not changed their mind by putting a hat on.
+   */
+  private rememberPalette(): void {
+    try {
+      const saved = localStorage.getItem(PROFILE_KEY);
+      if (!saved) return;
+      const profile = JSON.parse(saved) as SavedProfile;
+      localStorage.setItem(PROFILE_KEY, JSON.stringify({ ...profile, palette: this.palette }));
+    } catch { /* private mode, or a profile we did not write */ }
+  }
+
+  private appearanceFields(attribute: 'data-palette' | 'data-world-palette'): string {
+    const zh = this.language === 'zh-TW';
+    const colours = paletteInputs
+      .map((slot) => `<label class="swatch"><span>${paletteLabels[this.language][slot]}</span><input type="color" ${attribute}="${slot}" value="${this.palette[slot]}" /></label>`)
+      .join('');
+    // One row per accessory: worn or not, and in what colour. The colour is
+    // disabled rather than hidden while it is off, so the row keeps its shape
+    // and the list does not jump about as things are ticked.
+    const worn = ACCESSORY_SLOTS
+      .map((slot) => {
+        const colour = this.palette[slot];
+        const value = colour ?? DEFAULT_ACCESSORY_COLOURS[slot];
+        return `<label class="wearable${colour ? ' is-worn' : ''}" data-wearable="${slot}">
+          <input type="checkbox" ${attribute}-wear="${slot}"${colour ? ' checked' : ''} />
+          <span>${accessoryLabels[this.language][slot]}</span>
+          <input type="color" ${attribute}="${slot}" value="${value}"${colour ? '' : ' disabled'} />
+        </label>`;
+      })
+      .join('');
+    return `
+      <div class="appearance">
+        <div class="appearance__group">
+          <span class="eyebrow">${zh ? '膚色與服裝' : 'SKIN AND CLOTHES'}</span>
+          <div class="swatch-row">${colours}</div>
+        </div>
+        <div class="appearance__group">
+          <span class="eyebrow">${zh ? '配件' : 'ACCESSORIES'}</span>
+          <div class="wearable-list">${worn}</div>
+        </div>
+      </div>`;
+  }
+
+  /**
+   * Wire one set of appearance controls, wherever it is drawn.
+   *
+   * `commit` is what the two callers do not share: at the gate the palette is
+   * only remembered, and in the world it has to reach the body standing in the
+   * square and everybody looking at it.
+   */
+  private bindAppearanceFields(scope: ParentNode, attribute: 'data-palette' | 'data-world-palette', commit: () => void): void {
+    scope.querySelectorAll<HTMLInputElement>(`[${attribute}]`).forEach((input) => {
+      if (input.type !== 'color') return;
+      input.addEventListener('input', () => {
+        const slot = input.getAttribute(attribute) as keyof AvatarPalette;
+        // A colour on an accessory that is switched off would turn it on, so
+        // the picker is disabled while it is off and this cannot happen — but
+        // the guard is here as well, because the two facts live apart.
+        if ((ACCESSORY_SLOTS as readonly string[]).includes(slot) && !this.palette[slot]) return;
+        this.palette = { ...this.palette, [slot]: input.value };
+        commit();
+      });
+    });
+    scope.querySelectorAll<HTMLInputElement>(`[${attribute}-wear]`).forEach((toggle) => {
+      toggle.addEventListener('change', () => {
+        const slot = toggle.getAttribute(`${attribute}-wear`) as AccessorySlot;
+        const row = toggle.closest<HTMLElement>('[data-wearable]');
+        const colour = row?.querySelector<HTMLInputElement>('input[type="color"]');
+        if (toggle.checked) {
+          const value = colour?.value || DEFAULT_ACCESSORY_COLOURS[slot];
+          this.palette = { ...this.palette, [slot]: value };
+        } else {
+          const next = { ...this.palette };
+          delete next[slot];
+          this.palette = next;
+        }
+        if (colour) colour.disabled = !toggle.checked;
+        row?.classList.toggle('is-worn', toggle.checked);
+        commit();
+      });
+    });
   }
 
   private venueName(venue: VenueKey): string {
