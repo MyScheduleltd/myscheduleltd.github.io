@@ -1899,8 +1899,11 @@ export class FestivalWorld {
       this.headTrackingActive = true;
     }
     for (const pose of poses) {
-      // The tracker's own space: centimetres from the lens, x to the visitor's
-      // right as the camera sees it, y up, z away from the lens.
+      // These are **sensor-space** values, not what the visitor feels: the
+      // tracker's own space, centimetres from the lens, x to the visitor's
+      // right as the camera sees it, y up, z away from the lens. Two of the
+      // four come out of `applyMatrix` mirrored, deliberately, so a positive
+      // sensor pitch here is the visitor's chin going *down*.
       const matrix = new THREE.Matrix4()
         .makeRotationFromEuler(new THREE.Euler(pose.pitch ?? 0, pose.yaw ?? 0, 0, 'YXZ'))
         .setPosition(-(pose.x ?? 0) * 100, (pose.y ?? 0) * 100, -((pose.z ?? 0) * 100) - 45);

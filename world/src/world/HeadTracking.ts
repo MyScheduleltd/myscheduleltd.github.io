@@ -39,7 +39,7 @@ export type HeadTrackingStatus =
 export interface HeadPose {
   /** Radians, positive when the head turns to the visitor's left. */
   yaw: number;
-  /** Radians, positive when the chin lifts. */
+  /** Radians, positive when the chin lifts and the view should rise with it. */
   pitch: number;
   /** Metres from the calibration pose, positive to the visitor's right. */
   x: number;
@@ -361,9 +361,20 @@ export class HeadTracking {
     this.matrix.fromArray(Array.from(data));
     this.euler.setFromRotationMatrix(this.matrix, 'YXZ');
     this.raw.yaw = this.euler.y;
-    this.raw.pitch = this.euler.x;
-    // Centimetres to metres. The camera is a mirror, so the x the tracker
-    // reports grows as the visitor moves to their own left.
+    // Confirmed against a real face on 2026-09-04: yaw came out the right way
+    // round, pitch did not — lifting the chin looked down. The tracker measures
+    // the face's own rotation in front of the lens, and the lens is looking
+    // back at it, so the vertical axis arrives mirrored where the horizontal
+    // one does not. This is the only place any of these signs live.
+    this.raw.pitch = -this.euler.x;
+    // Centimetres to metres, and every sign the visitor can feel is settled
+    // here so the deltas below are plain subtraction.
+    //
+    // Confirmed against a real face on 2026-09-04: side to side and up and
+    // down were already the right way round; **z was not** — leaning in pushed
+    // the view back. The lens is looking at the face rather than out with it,
+    // so both axes that point along its line — pitch above, and depth here —
+    // arrive mirrored, while the two across it do not.
     this.raw.x = -this.matrix.elements[12] / 100;
     this.raw.y = this.matrix.elements[13] / 100;
     this.raw.z = this.matrix.elements[14] / 100;
@@ -374,9 +385,7 @@ export class HeadTracking {
     this.target.pitch = deadzone(this.raw.pitch - reference.pitch, ROTATION_DEADZONE_RAD);
     this.target.x = deadzone(this.raw.x - reference.x, TRANSLATION_DEADZONE_M);
     this.target.y = deadzone(this.raw.y - reference.y, TRANSLATION_DEADZONE_M);
-    // Toward the lens is toward the screen, so the sign flips to read as
-    // "leaning in".
-    this.target.z = deadzone(-(this.raw.z - reference.z), TRANSLATION_DEADZONE_M);
+    this.target.z = deadzone(this.raw.z - reference.z, TRANSLATION_DEADZONE_M);
   }
 
   snapshot(): Record<string, unknown> {

@@ -8,7 +8,50 @@ Last updated: 2026-09-04 · webcam head tracking behind `?headtrack`; jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — a measured waterline, and a desk-only experiment
+## 0. READ THIS FIRST — two mirrored head axes, and a foldable panel
+
+### The signs, settled against a real face
+
+`?review=headtrack` proves the whole pipeline but cannot prove which way round a
+face reads, and two of the four axes were wrong. Confirmed by the owner on
+2026-09-04 and fixed in `HeadTracking.applyMatrix()`, which is still the only
+place any of these signs live:
+
+| axis | was | now |
+| --- | --- | --- |
+| yaw — look left/right | correct | unchanged |
+| **pitch — look up/down** | **inverted** | `raw.pitch = -euler.x` |
+| x — lean left/right | correct | unchanged |
+| y — lean up/down | correct | unchanged |
+| **z — lean in/out** | **inverted** | the negation at the target is gone |
+
+The pattern is worth keeping: the lens looks *at* the face rather than out with
+it, so the two axes along its line — pitch and depth — arrive mirrored, and the
+two across it do not. Every sign now lives in the raw extraction and the deltas
+below it are plain subtraction.
+
+The fixture takes **sensor-space** values, so after this a positive `pitch` fed
+to `headTrackForReview` is the visitor's chin going *down*. Verified: sensor
+pitch +15° now gives camera pitch −0.65 where it gave +0.65, sensor z +12cm
+gives +1.39 where it gave −1.39, and yaw and x are untouched.
+
+### The panel folds
+
+Its title row is a button. Folded, the panel keeps the title and the live
+readout and drops the explanation, the camera picker and the actions — 232px to
+90px, measured. The explanation is read once; the numbers are the part worth
+watching while the world is moving.
+
+### Narrow desktop windows
+
+The owner confirmed the phone-looking screenshot was a **narrow desktop
+window**. The gate is deliberately unchanged: it is the breakpoint the interface
+switches on, so a window narrow enough to raise the touch joystick does not also
+offer head tracking. Widening past 781px brings it back on its own. If that is
+ever unwanted, drop the `min-width` clause and keep the pointer test — but then
+the control returns to sitting beside the joystick, which is what was reported.
+
+## 0-prev. A measured waterline, and a desk-only experiment
 
 ### MENTOR was still on top of the water
 

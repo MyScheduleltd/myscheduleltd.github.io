@@ -263,6 +263,17 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
   padding: 16px; color: var(--paper); background: rgba(8,9,10,.94); border: 2px solid var(--paper);
 }
 .head-track p { margin: 0 0 10px; font-size: 12px; line-height: 1.5; }
+/* The whole title row is the fold handle: a strip that wide is easier to hit
+   than a chevron, and it reads as the thing you press to put the panel away. */
+.head-track__fold {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  width: 100%; margin: 0 0 10px; padding: 0; border: 0; background: none;
+  color: inherit; text-align: left; cursor: pointer;
+}
+.head-track__fold .eyebrow { margin: 0; }
+.head-track__fold span:last-child { font: 900 16px/1 var(--condensed); }
+.head-track__fold:hover, .head-track__fold:focus-visible { color: #ff5264; }
+.head-track [data-head-track-body][hidden] { display: none; }
 .head-track > div { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .head-track .button--secondary { color: var(--paper); border-color: var(--paper); }
 .head-track label { display: grid; gap: 4px; margin: 0 0 10px; font: 900 11px var(--condensed); letter-spacing: .05em; }
