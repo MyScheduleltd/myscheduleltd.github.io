@@ -195,6 +195,22 @@ const LOCAL_HITS_TO_DIE = 5;
 const LOCAL_HIT_MEMORY_MS = 30_000;
 
 const JUKEBOX_VOLUME_KEY = 'myschedule-jukebox-volume-v1';
+/**
+ * How far the view turns for a given drag in VR. Gentler than it was by
+ * default, because the report that brought this in was people feeling ill
+ * rather than people wanting a knob.
+ */
+const VR_SENSITIVITY_KEY = 'myschedule-vr-sensitivity-v1';
+const DEFAULT_VR_SENSITIVITY = 0.6;
+const readStoredVrSensitivity = (): number => {
+  try {
+    const raw = window.localStorage.getItem(VR_SENSITIVITY_KEY);
+    const value = raw === null ? Number.NaN : Number(raw);
+    return Number.isFinite(value) && value >= 0.3 && value <= 2 ? value : DEFAULT_VR_SENSITIVITY;
+  } catch {
+    return DEFAULT_VR_SENSITIVITY;
+  }
+};
 const DEFAULT_JUKEBOX_VOLUME = 0.4;
 const readStoredJukeboxVolume = (): number => {
   try {
@@ -210,11 +226,11 @@ const readStoredJukeboxVolume = (): number => {
 const panelLabels: Record<Language, Record<PanelId, string>> = {
   en: {
     quests: 'OBJECTIVES', map: 'MAP', programme: 'PROGRAMME', jukebox: 'JUKEBOX', chat: 'CHAT', attendees: 'ATTENDEES', pamphlet: 'PAMPHLET', character: 'CHARACTER',
-    sound: 'SOUND', graphics: 'GRAPHICS', controls: 'CONTROLS', contact: 'CONTACT', admin: 'STAFF',
+    sound: 'SOUND', graphics: 'CAMERA SETTING', controls: 'CONTROLS', contact: 'CONTACT', admin: 'STAFF',
   },
   'zh-TW': {
     quests: '任務', map: '地圖', programme: '節目表', jukebox: '點唱機', chat: '聊天', attendees: '觀影者', pamphlet: '影展手冊', character: '角色',
-    sound: '聲音', graphics: '畫質', controls: '操作', contact: '聯絡', admin: '工作人員',
+    sound: '聲音', graphics: '鏡頭設定', controls: '操作', contact: '聯絡', admin: '工作人員',
   },
 };
 
@@ -322,6 +338,7 @@ export class App {
   private localHitCount = 0;
   private localHitAt = 0;
   private jukeboxVolume = readStoredJukeboxVolume();
+  private vrSensitivity = readStoredVrSensitivity();
   private jukeboxFrame?: HTMLIFrameElement;
   private lastJukeboxLiftAt = 0;
   /**
@@ -1059,6 +1076,7 @@ export class App {
       onSnapshot: (snapshot) => this.updateSnapshot(snapshot),
       onAction: (action) => this.handleWorldAction(action),
       onXrSessionChange: (active) => this.handleVrSessionChange(active),
+      vrSensitivity: this.vrSensitivity,
       onProjectorAdvance: (venue, youtubeId) => {
         if (this.festivalClient.online) {
           void this.festivalClient.advanceProgramme(venue, youtubeId);
@@ -2233,6 +2251,19 @@ export class App {
    */
   private isHeadTrackingAvailable(): boolean {
     return this.headTrackDeskQuery.matches;
+  }
+
+  private vrSensitivityLabel(): string {
+    const zh = this.language === 'zh-TW';
+    const percent = Math.round(this.vrSensitivity * 100);
+    const shape = this.vrSensitivity <= 0.5
+      ? (zh ? '很緩和' : 'VERY GENTLE')
+      : this.vrSensitivity <= 0.85
+        ? (zh ? '緩和' : 'GENTLE')
+        : this.vrSensitivity <= 1.2
+          ? (zh ? '標準' : 'STANDARD')
+          : (zh ? '靈敏' : 'QUICK');
+    return `${shape} · ${percent}%`;
   }
 
   private headTrackReadout(state: Record<string, unknown>): string {
@@ -4014,14 +4045,19 @@ export class App {
             ? '點唱機音量只影響你自己，不會改變別人聽到的。'
             : 'The jukebox slider is yours alone — it does not change what anybody else hears.'}</p>
           <button class="panel-button" data-mute="true">${this.audioMuted ? (this.language === 'zh-TW' ? '開啟聲音' : 'UNMUTE') : (this.language === 'zh-TW' ? '靜音' : 'MUTE')}</button>`;
-      case 'graphics':
+      case 'graphics': {
+        const zh = this.language === 'zh-TW';
         return `
-          <p class="panel-intro">${this.language === 'zh-TW' ? '精簡模式可提升效能。' : 'Lite mode improves performance.'}</p>
+          <p class="panel-intro">${zh ? '精簡模式可提升效能。' : 'Lite mode improves performance.'}</p>
           <div class="segmented segmented--dark">
-            <button data-world-graphics="normal" aria-pressed="${this.graphicsMode === 'normal'}">${this.language === 'zh-TW' ? '一般' : 'NORMAL'}</button>
-            <button data-world-graphics="lite" aria-pressed="${this.graphicsMode === 'lite'}">${this.language === 'zh-TW' ? '精簡' : 'LITE'}</button>
+            <button data-world-graphics="normal" aria-pressed="${this.graphicsMode === 'normal'}">${zh ? '一般' : 'NORMAL'}</button>
+            <button data-world-graphics="lite" aria-pressed="${this.graphicsMode === 'lite'}">${zh ? '精簡' : 'LITE'}</button>
           </div>
-          <button class="panel-button" data-camera-toggle>${this.language === 'zh-TW' ? '切換視角鏡頭' : 'TOGGLE PERSPECTIVE CAMERA'}</button>`;
+          <button class="panel-button" data-camera-toggle>${zh ? '切換視角鏡頭' : 'TOGGLE PERSPECTIVE CAMERA'}</button>
+          <p class="panel-intro">${zh ? 'VR 鏡頭靈敏度：拖曳轉頭的幅度。覺得暈就往左調。' : 'VR look sensitivity — how far a drag turns your head. Move it left if VR makes you dizzy.'}</p>
+          <label class="range-field"><span>${zh ? '靈敏度' : 'SENSITIVITY'}</span><input data-vr-sensitivity type="range" min="0.3" max="2" value="${this.vrSensitivity}" step="0.05" /></label>
+          <p class="connection-note" data-vr-sensitivity-readout>${this.vrSensitivityLabel()}</p>`;
+      }
       case 'controls':
         return `
           <dl class="controls-list"><div><dt>WASD / 方向鍵</dt><dd>${this.language === 'zh-TW' ? '移動／游泳' : 'Move / swim'}</dd></div><div><dt>E</dt><dd>${this.language === 'zh-TW' ? '互動／餵 MENTOR 吃點心' : 'Interact / give MENTOR a treat'}</dd></div><div><dt>SHIFT + E</dt><dd>${this.language === 'zh-TW' ? '抱起 MENTOR' : 'Pick up MENTOR'}</dd></div><div><dt>SHIFT</dt><dd>${this.language === 'zh-TW' ? '奔跑' : 'Run'}</dd></div><div><dt>SPACE</dt><dd>${this.language === 'zh-TW' ? '跳躍（可從高處跳下）' : 'Jump — and drop from high places'}</dd></div><div><dt>B</dt><dd>${this.language === 'zh-TW' ? '跳舞' : 'Dance'}</dd></div><div><dt>O</dt><dd>${this.language === 'zh-TW' ? '供養／佈施：在神像前或 NPC 旁' : 'Make an offering — at the altar or beside an NPC'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滑鼠左鍵' : 'LEFT CLICK'}</dt><dd>${this.language === 'zh-TW' ? '出拳（被打中會鬆手放開 MENTOR）' : 'Throw a punch — anyone hit drops MENTOR'}</dd></div><div><dt>T</dt><dd>${this.language === 'zh-TW' ? '切換鏡頭' : 'Change camera'}</dd></div><div><dt>C</dt><dd>${this.language === 'zh-TW' ? '拍照模式／明信片模式／離開' : 'Camera mode / postcard mode / exit'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滑鼠拖曳' : 'DRAG MOUSE'}</dt><dd>${this.language === 'zh-TW' ? '轉動視角' : 'Turn the view'}</dd></div><div><dt>${this.language === 'zh-TW' ? '滾輪／觸控板縮放' : 'WHEEL / PINCH'}</dt><dd>${this.language === 'zh-TW' ? '鏡頭遠近' : 'Move the camera in and out'}</dd></div><div><dt>ENTER</dt><dd>${this.language === 'zh-TW' ? '開啟聊天' : 'Open chat'}</dd></div><div><dt>PASS</dt><dd>${this.language === 'zh-TW' ? '開啟選單' : 'Open menu'}</dd></div></dl>`;
@@ -4061,6 +4097,18 @@ export class App {
           setButtonPressed(candidate, candidate === button),
         );
       });
+    });
+    panel.querySelector<HTMLInputElement>('[data-vr-sensitivity]')?.addEventListener('input', (event) => {
+      const value = Number((event.currentTarget as HTMLInputElement).value);
+      if (!Number.isFinite(value)) return;
+      this.vrSensitivity = value;
+      this.world?.setVrSensitivity(value);
+      // The readout is rewritten in place rather than by re-rendering the
+      // panel, because re-rendering would take the slider out from under the
+      // thumb that is still moving it.
+      const readout = panel.querySelector<HTMLElement>('[data-vr-sensitivity-readout]');
+      if (readout) readout.textContent = this.vrSensitivityLabel();
+      try { window.localStorage.setItem(VR_SENSITIVITY_KEY, String(value)); } catch { /* private mode */ }
     });
     panel.querySelector<HTMLButtonElement>('[data-camera-toggle]')?.addEventListener('click', () => {
       this.world?.toggleCameraMode();

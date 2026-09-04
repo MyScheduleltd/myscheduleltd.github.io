@@ -8,7 +8,53 @@ Last updated: 2026-09-04 · phone VR gyroscope, webcam head tracking, jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — the 2026-09-04 session
+## 0. READ THIS FIRST — VR look sensitivity, and an unfinished drift hunt
+
+### The camera panel
+
+`panelLabels.graphics` is **CAMERA SETTING / 鏡頭設定** now. The gate's own
+`fieldset` legend still says GRAPHICS / 畫質 and should: that one really is a
+picture-quality choice, and it is a different copy key (`copy[lang].graphics`).
+
+It carries a **VR look sensitivity** slider, 0.3–2, stored per browser, and the
+default is **0.6** — visitors were feeling ill, so the shipped setting is gentler
+than what they had rather than the same with a knob beside it. Verified exact:
+the same drag turns 0.403 rad at 60% and 1.344 rad at 200%.
+
+It scales the VR **drag** only. It is deliberately **not** applied to the phone's
+gyroscope or to head tracking: those map a real movement of the body onto the
+same movement of the view, and scaling that is what makes a picture disagree with
+the inner ear rather than agree with it. If someone reports head tracking itself
+as sickening, that is a different knob and it needs saying so.
+
+### Screens shifting in VR — half diagnosed, not fixed
+
+Reported twice. `projectorAlignmentSnapshot()` — `__festivalProjectors()` on any
+loopback page — projects each screen's four corners into page pixels and sets
+that box against the panel's own rectangle.
+
+**Outside VR and in a simulated session it reports zero drift**, so the ordinary
+path is sound. Note the probe's first version compared a projected *centre*
+against a bounding *box*, which perspective makes disagree by ~80px with nothing
+wrong; corners against corners.
+
+**What is confirmed:** with head tracking on, leaning moves the projection
+matrix's off-centre terms to ∓0.126. CSS3DRenderer builds its transform from the
+vertical scale plus CSS `perspective()`, which is always centred — **it cannot
+express an off-centre frustum**. So WebGL draws the world skewed and the video
+panel unskewed, and the picture slides inside its frame exactly when a visitor
+leans. That is ours, introduced with the window-parallax effect.
+
+**What is not:** the owner sees it on **mobile too**, where there is no head
+tracking and no skew. That half is unreproduced. Do not claim this fixed.
+
+Options for the confirmed half, in the order worth trying: compensate with
+`perspective-origin` on the CSS3D layer (the skew terms are exactly the shift, in
+NDC); or drop the off-axis frustum and keep only the camera translation, which
+loses the window pinning but keeps a strong parallax and makes the projection
+symmetric again.
+
+## 0-prev. The 2026-09-04 session
 
 Everything below was confirmed working by the owner on 2026-09-04. Ten separate
 passes are folded into one section here; what is kept is what a later session

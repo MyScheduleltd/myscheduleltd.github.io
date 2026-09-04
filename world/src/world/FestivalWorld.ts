@@ -361,6 +361,8 @@ interface WorldOptions {
   graphicsMode: GraphicsMode;
   palette: AvatarPalette;
   xrPreferred?: boolean;
+  /** The visitor's stored VR look sensitivity, if they have set one. */
+  vrSensitivity?: number;
   onSnapshot: (snapshot: WorldSnapshot) => void;
   onAction: (action: WorldAction) => void;
   onXrSessionChange?: (active: boolean) => void;
@@ -1283,6 +1285,17 @@ export class FestivalWorld {
    */
   readonly headTracking = new HeadTracking();
   private headTrackingActive = false;
+  /**
+   * How fast a drag turns the head in a VR preview, as a multiple of what it
+   * used to be. Visitors reported the view moving further than they meant it
+   * to, and a turn nobody asked for is the shortest road to feeling ill.
+   *
+   * Deliberately **not** applied to the phone's gyroscope or to head tracking:
+   * those map a real movement of the body onto the same movement of the view,
+   * and scaling that is what makes a picture disagree with the inner ear rather
+   * than agree with it. This is for the controls that invent motion.
+   */
+  private vrSensitivity = 0.6;
   private xrSnapReady = true;
   private xrTeleportReady = true;
   private xrJumpReady = true;
@@ -1410,12 +1423,13 @@ export class FestivalWorld {
    */
   private baseFov = 58;
 
-  constructor({ canvas, foregroundCanvas, cssLayer, graphicsMode, palette, xrPreferred = false, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
+  constructor({ canvas, foregroundCanvas, cssLayer, graphicsMode, palette, xrPreferred = false, vrSensitivity, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
     this.canvas = canvas;
     this.foregroundCanvas = foregroundCanvas;
     this.graphicsMode = graphicsMode;
     this.palette = palette;
     this.xrPreferred = xrPreferred;
+    if (vrSensitivity !== undefined) this.setVrSensitivity(vrSensitivity);
     this.onSnapshot = onSnapshot;
     this.onAction = onAction;
     this.onXrSessionChange = onXrSessionChange;
@@ -1866,6 +1880,11 @@ export class FestivalWorld {
     } catch {
       this.xrEnded();
     }
+  }
+
+  /** 0.3 (gentle) to 2 (twitchy). 1 is what the drag used to do. */
+  setVrSensitivity(value: number): void {
+    this.vrSensitivity = THREE.MathUtils.clamp(value, 0.3, 2);
   }
 
   /**
@@ -4985,8 +5004,12 @@ export class FestivalWorld {
     if (Math.abs(deltaX) > 180 || Math.abs(deltaY) > 180) return;
     if (this.xrActive && this.xrSimulated) {
       if (this.phoneOrientationEnabled && this.phoneOrientationReceived) return;
-      this.xrYaw -= deltaX * 0.0042;
-      this.xrSimPitch = THREE.MathUtils.clamp(this.xrSimPitch - deltaY * 0.0035, -0.75, 0.75);
+      this.xrYaw -= deltaX * 0.0042 * this.vrSensitivity;
+      this.xrSimPitch = THREE.MathUtils.clamp(
+        this.xrSimPitch - deltaY * 0.0035 * this.vrSensitivity,
+        -0.75,
+        0.75,
+      );
       return;
     }
     if (this.cameraMode === 'screening') {
