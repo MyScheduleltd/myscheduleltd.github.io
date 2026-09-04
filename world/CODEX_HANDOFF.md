@@ -8,7 +8,51 @@ Last updated: 2026-09-04 · phone VR gyroscope, webcam head tracking, jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — head tracking "stuck", and what it really was
+## 0. READ THIS FIRST — one sensitivity for every camera
+
+### The slider was reported as doing nothing, and it was nearly true
+
+It scaled the **VR drag only**. Every other path — the follow and perspective
+orbits, the seated screening camera — had the rate hard-coded, so a visitor who
+moved it and dragged saw no change at all. Worse in VR, where the settings panel
+covers the canvas the drag would have to land on.
+
+`lookSensitivity` now scales **every drag-to-look path**, and VR carries a
+`VR_COMFORT = 0.6` factor of its own on top, so a headset stays gentler than the
+flat world at the same setting. Verified outside VR: the same drag turns
+−0.755 rad at 100% and −0.123 at 30%.
+
+The stored key went to **v2** deliberately. v1 meant a VR-only multiplier that
+defaulted to 0.6; carrying that number into a setting that now scales every
+camera would have quietly slowed the whole world for anyone who had touched it.
+Default is 1 — the rate the world was built around.
+
+**A control named CAMERA SETTING has to move the camera wherever the visitor is
+pointing at it.** That is the lesson, not the arithmetic.
+
+### Settings panels are grouped now
+
+`.setting-group` — a red rule-off heading, a rule between groups, real margins,
+and prose capped at 62ch. The camera panel was a stack of controls butted
+together in the top-left of a very large sheet. A panel with space to spend
+reads worse for hoarding it.
+
+### The download: parallel, early, and still dominated by one file
+
+All four files are fetched **at once** rather than in sequence — the 3.5MB model
+no longer waits on the 3MB runtime, which waited on a 44kB library. Opening the
+panel starts the fetch, so reading time is not dead time.
+
+Measured after: all four begin at the same instant, and the wasm alone still
+takes 95s **in the review pane**, which throttles background tabs — so the total
+is the biggest single file and nothing else. Parallelism is right and helps a
+real connection; it cannot beat one 3MB download.
+
+**The only thing that would truly make it fast is letting the browser keep it**,
+which is exactly what the no-store guarantee forbids. That is the owner's call,
+not a bug. Asked; unanswered.
+
+## 0-prev. Head tracking "stuck", and what it really was
 
 Reported as stuck on `正在載入追蹤模型…`. Measured here: the load **completes**,
 in **71.7 seconds**, over the blob path, with no error anywhere. The three-

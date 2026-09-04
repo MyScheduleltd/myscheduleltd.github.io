@@ -196,19 +196,23 @@ const LOCAL_HIT_MEMORY_MS = 30_000;
 
 const JUKEBOX_VOLUME_KEY = 'myschedule-jukebox-volume-v1';
 /**
- * How far the view turns for a given drag in VR. Gentler than it was by
- * default, because the report that brought this in was people feeling ill
- * rather than people wanting a knob.
+ * How far the view turns for a given drag, everywhere. 1 is the rate the world
+ * was built around; VR applies a comfort factor of its own on top, so the
+ * headset is gentler than the flat world at the same setting.
+ *
+ * v2 because v1 meant something else — a VR-only multiplier that defaulted to
+ * 0.6 — and carrying that number into a setting that now scales every camera
+ * would quietly slow the whole world down for anyone who had touched it.
  */
-const VR_SENSITIVITY_KEY = 'myschedule-vr-sensitivity-v1';
-const DEFAULT_VR_SENSITIVITY = 0.6;
-const readStoredVrSensitivity = (): number => {
+const LOOK_SENSITIVITY_KEY = 'myschedule-look-sensitivity-v2';
+const DEFAULT_LOOK_SENSITIVITY = 1;
+const readStoredLookSensitivity = (): number => {
   try {
-    const raw = window.localStorage.getItem(VR_SENSITIVITY_KEY);
+    const raw = window.localStorage.getItem(LOOK_SENSITIVITY_KEY);
     const value = raw === null ? Number.NaN : Number(raw);
-    return Number.isFinite(value) && value >= 0.3 && value <= 2 ? value : DEFAULT_VR_SENSITIVITY;
+    return Number.isFinite(value) && value >= 0.3 && value <= 2 ? value : DEFAULT_LOOK_SENSITIVITY;
   } catch {
-    return DEFAULT_VR_SENSITIVITY;
+    return DEFAULT_LOOK_SENSITIVITY;
   }
 };
 const DEFAULT_JUKEBOX_VOLUME = 0.4;
@@ -338,7 +342,7 @@ export class App {
   private localHitCount = 0;
   private localHitAt = 0;
   private jukeboxVolume = readStoredJukeboxVolume();
-  private vrSensitivity = readStoredVrSensitivity();
+  private lookSensitivity = readStoredLookSensitivity();
   private jukeboxFrame?: HTMLIFrameElement;
   private lastJukeboxLiftAt = 0;
   /**
@@ -1076,7 +1080,7 @@ export class App {
       onSnapshot: (snapshot) => this.updateSnapshot(snapshot),
       onAction: (action) => this.handleWorldAction(action),
       onXrSessionChange: (active) => this.handleVrSessionChange(active),
-      vrSensitivity: this.vrSensitivity,
+      lookSensitivity: this.lookSensitivity,
       onProjectorAdvance: (venue, youtubeId) => {
         if (this.festivalClient.online) {
           void this.festivalClient.advanceProgramme(venue, youtubeId);
@@ -1742,6 +1746,10 @@ export class App {
     }
     this.root.querySelector<HTMLButtonElement>('[data-head-track-toggle]')?.addEventListener('click', () => {
       this.headTrackPanelOpen = !this.headTrackPanelOpen;
+      // Opening it is enough of a signal to start the download. Seven megabytes
+      // is a long wait to begin only once somebody has finished reading why
+      // they might want it.
+      if (this.headTrackPanelOpen) this.world?.prefetchHeadTracking();
       this.syncHeadTrackUi();
     });
     this.root.querySelector<HTMLButtonElement>('[data-head-track-fold]')?.addEventListener('click', () => {
@@ -2253,14 +2261,14 @@ export class App {
     return this.headTrackDeskQuery.matches;
   }
 
-  private vrSensitivityLabel(): string {
+  private lookSensitivityLabel(): string {
     const zh = this.language === 'zh-TW';
-    const percent = Math.round(this.vrSensitivity * 100);
-    const shape = this.vrSensitivity <= 0.5
+    const percent = Math.round(this.lookSensitivity * 100);
+    const shape = this.lookSensitivity <= 0.5
       ? (zh ? '很緩和' : 'VERY GENTLE')
-      : this.vrSensitivity <= 0.85
+      : this.lookSensitivity <= 0.85
         ? (zh ? '緩和' : 'GENTLE')
-        : this.vrSensitivity <= 1.2
+        : this.lookSensitivity <= 1.2
           ? (zh ? '標準' : 'STANDARD')
           : (zh ? '靈敏' : 'QUICK');
     return `${shape} · ${percent}%`;
@@ -4061,15 +4069,24 @@ export class App {
       case 'graphics': {
         const zh = this.language === 'zh-TW';
         return `
+        <section class="setting-group">
+          <h3>${zh ? '畫質與視角' : 'PICTURE & VIEW'}</h3>
           <p class="panel-intro">${zh ? '精簡模式可提升效能。' : 'Lite mode improves performance.'}</p>
           <div class="segmented segmented--dark">
             <button data-world-graphics="normal" aria-pressed="${this.graphicsMode === 'normal'}">${zh ? '一般' : 'NORMAL'}</button>
             <button data-world-graphics="lite" aria-pressed="${this.graphicsMode === 'lite'}">${zh ? '精簡' : 'LITE'}</button>
           </div>
           <button class="panel-button" data-camera-toggle>${zh ? '切換視角鏡頭' : 'TOGGLE PERSPECTIVE CAMERA'}</button>
-          <p class="panel-intro">${zh ? 'VR 鏡頭靈敏度：拖曳轉頭的幅度。覺得暈就往左調。' : 'VR look sensitivity — how far a drag turns your head. Move it left if VR makes you dizzy.'}</p>
-          <label class="range-field"><span>${zh ? '靈敏度' : 'SENSITIVITY'}</span><input data-vr-sensitivity type="range" min="0.3" max="2" value="${this.vrSensitivity}" step="0.05" /></label>
-          <p class="connection-note" data-vr-sensitivity-readout>${this.vrSensitivityLabel()}</p>`;
+        </section>
+        <section class="setting-group">
+          <h3>${zh ? '鏡頭靈敏度' : 'LOOK SENSITIVITY'}</h3>
+          <p class="panel-intro">${zh
+            ? '拖曳時鏡頭轉動的幅度，所有視角都適用。覺得暈就往左調；VR 本來就比平常再緩和一些。'
+            : 'How far a drag turns the view, in every camera. Move it left if looking around makes you dizzy — VR is already gentler than the flat world at the same setting.'}</p>
+          <label class="range-field"><span>${zh ? '靈敏度' : 'SENSITIVITY'}</span><input data-look-sensitivity type="range" min="0.3" max="2" value="${this.lookSensitivity}" step="0.05" /></label>
+          <p class="setting-readout" data-look-sensitivity-readout>${this.lookSensitivityLabel()}</p>
+          <p class="setting-hint">${zh ? '關掉這個面板後拖曳畫面才看得出差別。' : 'Close this panel and drag the world to feel the difference.'}</p>
+        </section>`;
       }
       case 'controls':
         return `
@@ -4111,17 +4128,17 @@ export class App {
         );
       });
     });
-    panel.querySelector<HTMLInputElement>('[data-vr-sensitivity]')?.addEventListener('input', (event) => {
+    panel.querySelector<HTMLInputElement>('[data-look-sensitivity]')?.addEventListener('input', (event) => {
       const value = Number((event.currentTarget as HTMLInputElement).value);
       if (!Number.isFinite(value)) return;
-      this.vrSensitivity = value;
-      this.world?.setVrSensitivity(value);
+      this.lookSensitivity = value;
+      this.world?.setLookSensitivity(value);
       // The readout is rewritten in place rather than by re-rendering the
       // panel, because re-rendering would take the slider out from under the
       // thumb that is still moving it.
-      const readout = panel.querySelector<HTMLElement>('[data-vr-sensitivity-readout]');
-      if (readout) readout.textContent = this.vrSensitivityLabel();
-      try { window.localStorage.setItem(VR_SENSITIVITY_KEY, String(value)); } catch { /* private mode */ }
+      const readout = panel.querySelector<HTMLElement>('[data-look-sensitivity-readout]');
+      if (readout) readout.textContent = this.lookSensitivityLabel();
+      try { window.localStorage.setItem(LOOK_SENSITIVITY_KEY, String(value)); } catch { /* private mode */ }
     });
     panel.querySelector<HTMLButtonElement>('[data-camera-toggle]')?.addEventListener('click', () => {
       this.world?.toggleCameraMode();

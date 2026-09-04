@@ -160,6 +160,7 @@ export class HeadTracking {
    * stops being wholly true, it has to be said rather than quietly dropped.
    */
   private runtimeCached = false;
+  private prefetching = false;
   /**
    * The tracker, held in memory for as long as the page is open and written
    * nowhere. Kept across a stop and start so that turning tracking off and on
@@ -339,37 +340,7 @@ export class HeadTracking {
       // something to spend on somebody who came to watch a film. (The runtime
       // is 11.7MB uncompressed; measure what is transferred, not what is on
       // disk at the far end.)
-      if (!this.bundle) {
-        this.loadStage = 'the tracker library';
-        // Imported from a blob rather than from the CDN URL directly, because
-        // `import()` of a real URL is cached by the browser like any other
-        // script and this must leave nothing behind.
-        const bundleUrl = this.toObjectUrl(
-          await this.fetchWithoutStoring(VISION_BUNDLE),
-          'text/javascript',
-        );
-        this.bundle = await import(/* @vite-ignore */ bundleUrl) as unknown as VisionModule;
-      }
-      if (!this.wasmFileset) {
-        this.loadStage = 'the tracker runtime';
-        // Handed over as explicit paths rather than through
-        // `FilesetResolver.forVisionTasks`, which fetches by URL itself and
-        // would put the three-megabyte runtime straight into the disk cache.
-        this.wasmFileset = {
-          wasmLoaderPath: this.toObjectUrl(
-            await this.fetchWithoutStoring(VISION_WASM_LOADER),
-            'text/javascript',
-          ),
-          wasmBinaryPath: this.toObjectUrl(
-            await this.fetchWithoutStoring(VISION_WASM_BINARY),
-            'application/wasm',
-          ),
-        };
-      }
-      if (!this.modelBuffer) {
-        this.loadStage = 'the face model';
-        this.modelBuffer = new Uint8Array(await this.fetchWithoutStoring(FACE_MODEL));
-      }
+      await this.fetchAll();
       this.loadStage = 'the tracker';
       return await this.buildLandmarker();
     } catch (error) {
@@ -378,6 +349,61 @@ export class HeadTracking {
       this.message = `Could not load ${this.loadStage}. ${detail}`;
       return undefined;
     }
+  }
+
+  /**
+   * Pull down everything the tracker needs, **all four at once**.
+   *
+   * These used to come one after another, so seven megabytes was spent in
+   * single file: the three-megabyte runtime waited on a forty-four-kilobyte
+   * library, and the three-and-a-half-megabyte model waited on the runtime. The
+   * two big ones have nothing to say to each other and there is no reason for
+   * either to wait.
+   *
+   * Safe to call more than once and safe to call early — anything already in
+   * hand is skipped, so opening the panel can start this while the visitor is
+   * still reading it.
+   */
+  async fetchAll(): Promise<void> {
+    if (this.bundle && this.wasmFileset && this.modelBuffer) return;
+    this.loadStage = 'the tracker files (about 7 MB)';
+    const [bundleBytes, loaderBytes, wasmBytes, modelBytes] = await Promise.all([
+      this.bundle ? undefined : this.fetchWithoutStoring(VISION_BUNDLE),
+      this.wasmFileset ? undefined : this.fetchWithoutStoring(VISION_WASM_LOADER),
+      this.wasmFileset ? undefined : this.fetchWithoutStoring(VISION_WASM_BINARY),
+      this.modelBuffer ? undefined : this.fetchWithoutStoring(FACE_MODEL),
+    ]);
+    if (bundleBytes) {
+      // Imported from a blob rather than from the CDN URL directly, because an
+      // `import()` of a real URL is cached like any other script and this must
+      // leave nothing behind.
+      const bundleUrl = this.toObjectUrl(bundleBytes, 'text/javascript');
+      this.bundle = await import(/* @vite-ignore */ bundleUrl) as unknown as VisionModule;
+    }
+    if (loaderBytes && wasmBytes) {
+      // Explicit paths rather than `FilesetResolver.forVisionTasks`, which
+      // fetches by URL itself and would put the runtime straight into the disk
+      // cache.
+      this.wasmFileset = {
+        wasmLoaderPath: this.toObjectUrl(loaderBytes, 'text/javascript'),
+        wasmBinaryPath: this.toObjectUrl(wasmBytes, 'application/wasm'),
+      };
+    }
+    if (modelBytes) this.modelBuffer = new Uint8Array(modelBytes);
+  }
+
+  /**
+   * Start the download without asking for a camera, so the seconds a visitor
+   * spends reading the panel are not seconds they spend waiting afterwards.
+   * Failures are swallowed: this is an optimisation, and pressing the button is
+   * what is allowed to report one.
+   */
+  prefetch(): void {
+    if (this.prefetching || this.starting) return;
+    this.prefetching = true;
+    void this.fetchAll()
+      .catch(() => undefined)
+      .finally(() => { this.prefetching = false; });
   }
 
   /**

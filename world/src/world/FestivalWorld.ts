@@ -361,8 +361,8 @@ interface WorldOptions {
   graphicsMode: GraphicsMode;
   palette: AvatarPalette;
   xrPreferred?: boolean;
-  /** The visitor's stored VR look sensitivity, if they have set one. */
-  vrSensitivity?: number;
+  /** The visitor's stored look sensitivity, if they have set one. */
+  lookSensitivity?: number;
   onSnapshot: (snapshot: WorldSnapshot) => void;
   onAction: (action: WorldAction) => void;
   onXrSessionChange?: (active: boolean) => void;
@@ -495,6 +495,12 @@ const AVATAR_SWIM_Y = -2.08;
  * step rather than one of them walking on the water.
  */
 const SWIM_Z = -60;
+/**
+ * VR turns more gently than the flat world at the same setting. Reported as
+ * dizziness, and a headset is where a view that outruns the head does the most
+ * harm, so the comfort is in the default rather than only in the slider.
+ */
+const VR_COMFORT = 0.6;
 /** The only origins a projector or jukebox player can legitimately speak from. */
 const PROJECTOR_ORIGINS = new Set([
   'https://www.youtube.com',
@@ -1286,16 +1292,22 @@ export class FestivalWorld {
   readonly headTracking = new HeadTracking();
   private headTrackingActive = false;
   /**
-   * How fast a drag turns the head in a VR preview, as a multiple of what it
-   * used to be. Visitors reported the view moving further than they meant it
-   * to, and a turn nobody asked for is the shortest road to feeling ill.
+   * How far a drag turns the view, as a multiple of the built-in rate. Applies
+   * to **every** drag-to-look path — the orbit cameras, the seated screening
+   * camera and the VR preview.
+   *
+   * It was VR-only at first, and that was reported as the slider doing nothing:
+   * a visitor moves it, drags, and sees no change, because outside VR nothing
+   * was reading it — and inside VR the settings panel is over the canvas the
+   * drag would have to land on. A control named CAMERA SETTING has to move the
+   * camera wherever the visitor happens to be pointing at it.
    *
    * Deliberately **not** applied to the phone's gyroscope or to head tracking:
    * those map a real movement of the body onto the same movement of the view,
    * and scaling that is what makes a picture disagree with the inner ear rather
    * than agree with it. This is for the controls that invent motion.
    */
-  private vrSensitivity = 0.6;
+  private lookSensitivity = 1;
   private xrSnapReady = true;
   private xrTeleportReady = true;
   private xrJumpReady = true;
@@ -1423,13 +1435,13 @@ export class FestivalWorld {
    */
   private baseFov = 58;
 
-  constructor({ canvas, foregroundCanvas, cssLayer, graphicsMode, palette, xrPreferred = false, vrSensitivity, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
+  constructor({ canvas, foregroundCanvas, cssLayer, graphicsMode, palette, xrPreferred = false, lookSensitivity, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
     this.canvas = canvas;
     this.foregroundCanvas = foregroundCanvas;
     this.graphicsMode = graphicsMode;
     this.palette = palette;
     this.xrPreferred = xrPreferred;
-    if (vrSensitivity !== undefined) this.setVrSensitivity(vrSensitivity);
+    if (lookSensitivity !== undefined) this.setLookSensitivity(lookSensitivity);
     this.onSnapshot = onSnapshot;
     this.onAction = onAction;
     this.onXrSessionChange = onXrSessionChange;
@@ -1882,9 +1894,18 @@ export class FestivalWorld {
     }
   }
 
-  /** 0.3 (gentle) to 2 (twitchy). 1 is what the drag used to do. */
-  setVrSensitivity(value: number): void {
-    this.vrSensitivity = THREE.MathUtils.clamp(value, 0.3, 2);
+  /**
+   * Begin fetching the tracker without asking for a camera. Called when the
+   * panel opens, so the reading time is not dead time.
+   */
+  prefetchHeadTracking(): void {
+    if (!this.xrActive || !this.xrSimulated) return;
+    this.headTracking.prefetch();
+  }
+
+  /** 0.3 (gentle) to 2 (twitchy). 1 is the rate the world was built around. */
+  setLookSensitivity(value: number): void {
+    this.lookSensitivity = THREE.MathUtils.clamp(value, 0.3, 2);
   }
 
   /**
@@ -5004,21 +5025,27 @@ export class FestivalWorld {
     if (Math.abs(deltaX) > 180 || Math.abs(deltaY) > 180) return;
     if (this.xrActive && this.xrSimulated) {
       if (this.phoneOrientationEnabled && this.phoneOrientationReceived) return;
-      this.xrYaw -= deltaX * 0.0042 * this.vrSensitivity;
+      // VR carries a comfort factor of its own on top of the visitor's
+      // setting, because a headset view that swings further than the head did
+      // is the specific thing that makes people ill.
+      const vrRate = this.lookSensitivity * VR_COMFORT;
+      this.xrYaw -= deltaX * 0.0042 * vrRate;
       this.xrSimPitch = THREE.MathUtils.clamp(
-        this.xrSimPitch - deltaY * 0.0035 * this.vrSensitivity,
+        this.xrSimPitch - deltaY * 0.0035 * vrRate,
         -0.75,
         0.75,
       );
       return;
     }
     if (this.cameraMode === 'screening') {
-      this.screeningOrbit.yaw = THREE.MathUtils.clamp(this.screeningOrbit.yaw - deltaX * 0.0034, -1.5, 1.5);
-      this.screeningOrbit.pitch = THREE.MathUtils.clamp(this.screeningOrbit.pitch + deltaY * 0.0028, -0.3, 0.28);
+      this.screeningOrbit.yaw = THREE.MathUtils.clamp(
+        this.screeningOrbit.yaw - deltaX * 0.0034 * this.lookSensitivity, -1.5, 1.5);
+      this.screeningOrbit.pitch = THREE.MathUtils.clamp(
+        this.screeningOrbit.pitch + deltaY * 0.0028 * this.lookSensitivity, -0.3, 0.28);
       return;
     }
     const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
-    orbit.yaw -= deltaX * 0.0042;
+    orbit.yaw -= deltaX * 0.0042 * this.lookSensitivity;
     // First person looks level and can tip below the horizon; the orbit
     // cameras sit above the avatar and must stay there — except on a seat,
     // where the screen is high on a far wall and a camera pinned above the
@@ -5038,8 +5065,8 @@ export class FestivalWorld {
     // it is pointed. Kept off the poles, where the horizon rolls over.
     const lowestPitch = this.playerState === 'seated' ? -0.6 : -0.5;
     orbit.pitch = this.cameraMode === 'first-person'
-      ? THREE.MathUtils.clamp(orbit.pitch + deltaY * 0.0035, -1.25, 1.32)
-      : THREE.MathUtils.clamp(orbit.pitch + deltaY * 0.0035, lowestPitch, 1.36);
+      ? THREE.MathUtils.clamp(orbit.pitch + deltaY * 0.0035 * this.lookSensitivity, -1.25, 1.32)
+      : THREE.MathUtils.clamp(orbit.pitch + deltaY * 0.0035 * this.lookSensitivity, lowestPitch, 1.36);
   };
 
   /**
@@ -5344,7 +5371,10 @@ export class FestivalWorld {
     return {
       xr: this.xrActive ? (this.xrSimulated ? 'simulated' : 'immersive') : 'off',
       headTracking: this.headTrackingEnabled(),
-      yaw: Number(this.xrRig.rotation.y.toFixed(3)),
+      // The camera's own heading, not the rig's — the rig only turns in VR, and
+      // this has to answer "did the view move" everywhere.
+      yaw: Number(this.headingOf(this.camera.getWorldQuaternion(new THREE.Quaternion())).toFixed(4)),
+      rigYaw: Number(this.xrRig.rotation.y.toFixed(3)),
       // A symmetric frustum leaves these at zero; the head-coupled view does not,
       // and CSS `perspective` has no way to express an off-centre one.
       frustumSkew: [

@@ -262,6 +262,23 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
   top: calc(205px + env(safe-area-inset-top)); width: min(340px, calc(100vw - 32px));
   padding: 16px; color: var(--paper); background: rgba(8,9,10,.94); border: 2px solid var(--paper);
 }
+/* Settings panels were a stack of controls butted against each other with no
+   room to breathe. Grouped instead, with a rule and real space between groups,
+   because a panel that fills a large sheet has space to spend and reads worse
+   for hoarding it. */
+.setting-group { display: block; margin: 0 0 34px; }
+.setting-group:last-child { margin-bottom: 8px; }
+.setting-group + .setting-group { padding-top: 30px; border-top: 1px solid rgba(17,17,19,.14); }
+.setting-group h3 {
+  margin: 0 0 10px; font: 900 13px/1 var(--condensed); letter-spacing: .14em;
+  text-transform: uppercase; color: var(--red);
+}
+.setting-group .panel-intro { margin: 0 0 18px; max-width: 62ch; }
+.setting-group .segmented { margin: 0 0 18px; }
+.setting-group .panel-button { margin: 0; }
+.setting-group .range-field { margin: 0 0 10px; }
+.setting-readout { margin: 0 0 6px; font: 900 13px var(--condensed); letter-spacing: .08em; color: var(--red); }
+.setting-hint { margin: 0; font-size: 12px; line-height: 1.5; opacity: .62; }
 .head-track p { margin: 0 0 12px; font-size: 12px; line-height: 1.55; }
 /* The whole title row is the handle: a strip that wide is easier to hit than a
    chevron, and it reads as the thing you press to put the panel away. */
