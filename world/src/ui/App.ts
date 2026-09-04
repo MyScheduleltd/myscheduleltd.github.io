@@ -1140,20 +1140,40 @@ export class App {
     // up; the banding and the grain both stay exactly where they were signed
     // off, and `wornSteps` is still there for anyone who wants to see it
     // without them.
+    //
+    // **The surface grain is the world's own now, not a flag.** The owner asked
+    // for this texture a third time, pointing at `?era=ps2` and calling the CSS
+    // overlay that stood in for it faded and wrong — and they were right about
+    // the overlay: a full-screen noise layer slides over the picture, while
+    // this is sampled at the world position, so the speckle belongs to the wall
+    // and travels with it when you walk past. That is the whole difference
+    // between grain and a dirty screen.
+    //
+    // What comes on by default is the **grain only**, at `wornSteps: 64` so
+    // there is no colour banding, `wornWarp: 0` so no corner is rounded and no
+    // collider moves, and `wornTexture: 0` so no paving or courses are painted
+    // on. The world's shape and palette are untouched; it gains a tooth.
+    // `?era=ps2` still brings the whole period look, banding and all.
+    //
+    // Normal graphics only. This runs on every lit surface, and lite mode
+    // exists precisely to stop paying for passes like it.
     const era = new URLSearchParams(window.location.search).get('era');
     const ps2 = era === 'ps2';
-    const wornFlag = new URLSearchParams(window.location.search).get('worn') ?? (ps2 ? '' : null);
+    const wornDefault = this.graphicsMode === 'normal' ? '' : null;
+    const wornFlag = new URLSearchParams(window.location.search).get('worn')
+      ?? (ps2 ? '' : wornDefault);
     if (wornFlag !== null) {
       const world = this.world;
       const amount = wornFlag === '' ? 1 : Number.parseFloat(wornFlag);
+      // The period look keeps its old numbers; the default keeps only the grain.
       const stepsFlag = new URLSearchParams(window.location.search).get('wornSteps');
-      const steps = stepsFlag === null ? 10 : Number.parseFloat(stepsFlag);
+      const steps = stepsFlag === null ? (ps2 ? 10 : 64) : Number.parseFloat(stepsFlag);
       const grainFlag = new URLSearchParams(window.location.search).get('wornGrain');
-      const grain = grainFlag === null ? 1 : Number.parseFloat(grainFlag);
+      const grain = grainFlag === null ? (ps2 ? 1 : 2) : Number.parseFloat(grainFlag);
       const warpFlag = new URLSearchParams(window.location.search).get('wornWarp');
-      const warp = warpFlag === null ? 1 : Number.parseFloat(warpFlag);
+      const warp = warpFlag === null ? (ps2 ? 1 : 0) : Number.parseFloat(warpFlag);
       const textureFlag = new URLSearchParams(window.location.search).get('wornTexture');
-      const texture = textureFlag === null ? (ps2 ? 1.25 : 1) : Number.parseFloat(textureFlag);
+      const texture = textureFlag === null ? (ps2 ? 1.25 : 0) : Number.parseFloat(textureFlag);
       const dial = (nextAmount: number, nextSteps: number, nextGrain: number) =>
         world.applyWornStyleForReview(
           Number.isFinite(nextAmount) ? nextAmount : 1,

@@ -354,7 +354,10 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
      invisible at full opacity and read as missing. Screen adds light, so the
      noise lands as bright specks over the shadows, the way grain does on a
      dark print. */
-  mix-blend-mode: screen; opacity: .22;
+  /* Light now, because the real grain is in the shader and belongs to the
+     surfaces. This is only here so the sky and the screening panels — which
+     have no geometry to grain — are not the one clean thing in the frame. */
+  mix-blend-mode: screen; opacity: .1;
   /* Twenty jumps a second rather than five. Grain resolves anew every frame of
      film; slow enough to follow, it reads as a pulsing overlay instead. */
   animation: film-grain-shift .4s steps(8, end) infinite;

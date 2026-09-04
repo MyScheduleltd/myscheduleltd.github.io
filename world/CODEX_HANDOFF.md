@@ -8,7 +8,39 @@ Last updated: 2026-09-04 · phone VR gyroscope, webcam head tracking, jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — grain that looks like film, and shorter presence lag
+## 0. READ THIS FIRST — the grain moved into the shader
+
+The owner asked for this texture a **third** time, pointing at `?era=ps2` and
+calling the CSS overlay standing in for it faded and wrong. They were right
+about the overlay, and the reason is worth keeping: **a full-screen noise layer
+slides over the picture, while `WornStyle`'s grain is sampled at the world
+position** — the speckle belongs to the wall and travels with it when you walk
+past. That is the whole difference between grain and a dirty screen, and no
+amount of tuning opacity, blend mode, octaves or tile size on an overlay was
+ever going to close it. Two passes were spent finding that out.
+
+**The surface grain is on by default now.** Grain only:
+
+| dial | default | `?era=ps2` | why |
+| --- | --- | --- | --- |
+| `wornSteps` | **64** | 10 | no colour banding — the palette is untouched |
+| `wornGrain` | **2** | 1 | the contrast the owner asked for |
+| `wornWarp` | **0** | 1 | no corner rounded, **no collider moved** |
+| `wornTexture` | **0** | 1.25 | no courses or paving painted on |
+
+So the world's shape and palette are exactly what they were; it gains a tooth.
+`?era=ps2` still brings the whole period look, banding and all, and every dial is
+still a URL parameter — `?worn=0` turns it off.
+
+**Normal graphics only.** It runs on every lit surface, and lite mode exists to
+stop paying for passes like it. `setWornCheap()` already follows the graphics
+mode for the octave count.
+
+The CSS `.world-grain` overlay stays, at **opacity .1**, purely so the sky and
+the screening panels — which have no geometry to grain — are not the one clean
+thing in frame. It is no longer the effect.
+
+## 0-prev. Grain that looks like film, and shorter presence lag
 
 ### Grain, second pass
 
