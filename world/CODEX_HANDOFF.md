@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-04 · webcam head tracking behind `?headtrack`; jukebox, MENTOR swimming, VR corner · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-09-04 · phone VR gyroscope, webcam head tracking, jukebox, MENTOR swimming, a security pass · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
@@ -8,597 +8,234 @@ Last updated: 2026-09-04 · webcam head tracking behind `?headtrack`; jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — a jump you can see
+## 0. READ THIS FIRST — the 2026-09-04 session
 
-In VR the rig was placed at `groundHeightAt(...)`, the floor **under** the
-visitor, rather than at the visitor. Standing, the two agree, because
-`player.position.y` is set from that same floor — so nothing looked wrong until
-somebody jumped, and the avatar went up while the view stayed exactly where it
-was. On a desk, on a phone and in a headset alike.
+Everything below was confirmed working by the owner on 2026-09-04. Ten separate
+passes are folded into one section here; what is kept is what a later session
+would be sorry not to know.
 
-`this.player.position.y - AVATAR_GROUND_Y` now. The same line also puts the eye
-on the waterline while swimming in VR, where the ground had been holding it a
-body's height above the sea.
-
-**Verified in both simulated paths.** Desktop: eye 2.90 → 3.458 → 3.804 → back
-to 2.90 on landing, with `eyeY - playerY` pinned at 2.62 throughout — the
-avatar's own eye offset, so the view and the body can no longer drift apart.
-Phone motion: 2.90 → 3.463 on the same press. `xrReviewSnapshot()` reports
-`eyeY`, `playerY` and `airborne` so this stays measurable.
-
-**Whenever anything in VR looks pinned, check whether it reads the ground
-instead of the body.** That is the shape of this bug, and the rig is the only
-thing standing between the two.
-
-## 0-prev. Security pass, 2026-09-04
-
-Asked for a review of the camera, of what could reach a visitor's machine, and
-of anything exposed on the service. Five things changed; the rest held up.
-
-### Fixed
-
-**1. The tracker's code is now weighed before it runs.** This is the one that
-mattered. Head tracking `import()`s JavaScript from a CDN and that code runs
-with everything the page has — including a camera it can hold open. A pinned
-version is not protection: a compromised CDN, a hijacked package or anything in
-the path would be a webcam in a stranger's hands, on a page whose own panel
-promises the video never leaves the machine. All four files are now checked
-against a recorded SHA-256 before anything is decoded or executed, and the load
-refuses outright on a mismatch. `<script integrity>` cannot do this — none of it
-arrives through a script tag — but the bytes are already fetched by hand for the
-no-store guarantee, so they can be weighed on the way past. **Verified both
-ways:** the real files load, and a deliberately wrong digest refused the load
-and named the file. Regenerate with
-`curl -s --compressed -L <url> | openssl dgst -sha256 -binary | openssl base64 -A`,
-and never by trusting what is served at the time.
-
-**2. Head tracking refuses to run inside a frame,** and the service now sends
-`X-Frame-Options: DENY` and `frame-ancestors 'none'`. A page that frames this
-one can put its own overlay over the panel and steer a visitor into pressing the
-one control that reaches for a camera. Pages cannot send headers, so the refusal
-is in the code as well as in the header.
-
-**3. `projectorMessage` checked its origin with `includes('youtube.com')`,**
-which is also true of `youtube.com.example.net` — a domain anybody can register.
-Exact allowlist now. Low impact (it only reads playback numbers) but an origin
-test that can be spelled around is not an origin test.
-
-**4. `serveStatic`'s escape check was missing a separator.** `resolve()` drops
-the trailing slash, so `startsWith(root)` also accepted a sibling directory
-whose name merely began with `dist`. Reachable, because a percent-encoded `..`
-survives URL normalisation and is only decoded inside that function. No such
-sibling exists today; the check is right now regardless.
-
-**5. `Permissions-Policy: camera=()` would have blocked head tracking** on the
-copy the service hosts — a split that would only ever show up there, never on
-the static beta. `camera=(self)` now: same-origin only, so the YouTube frames
-still get nothing.
-
-### Checked, and sound
-
-- **The staff key.** Compared with `timingSafeEqual`, sent as a header rather
-  than a query string, held in `sessionStorage` so it dies with the tab, and
-  absent from the built bundle. An unset `FESTIVAL_ADMIN_KEY` in production
-  leaves `ADMIN_KEY = ''`, and `tokenMatches` rejects an empty expectation — so
-  it **fails closed**, locking staff out rather than letting anyone in.
-- **The camera.** Permission is the browser's, secure-context only. The video
-  element is never added to the document, no frame is uploaded or stored, and
-  the tracks are stopped when VR ends and when the world stops.
-- **Chat.** Author and body both go through `escapeHtml` before reaching
-  `innerHTML`.
-- **The store link.** Validated to `http`/`https` on the service *and* again in
-  the client before the browser is asked to follow it, so a `javascript:` URL
-  cannot become a link.
-- **CORS.** Allowlist plus same-origin, loopback only outside production, and a
-  disallowed origin is refused rather than silently served. No credentialed
-  mode, and every authenticated route needs a custom header — so a cross-site
-  form post cannot reach one.
-- **Limits.** 16kB request bodies, five chat lines per ten seconds, a DJ
-  cooldown, and `MAX_VISITORS`.
-- **Storage.** Session token and staff key in `sessionStorage`; only the profile,
-  jukebox volume and black box in `localStorage`. Nothing sensitive, nothing
-  leaves the device.
-
-### Still the owner's to check
-
-- Whether `FESTIVAL_ADMIN_KEY` is set on Render, and whether it is strong. It
-  cannot be read from here. Note the fail-closed behaviour above means "staff
-  tools do not work" and "no key is set" look the same.
-- Whether `FESTIVAL_ALLOWED_ORIGINS` on Render lists only the real origins.
-- **The three service-side fixes need a manual Render deploy.** Until then the
-  static beta has the client-side ones and the service has none of its own.
-
-## 0-prev. The tracker never touches the disk
-
-The owner asked whether the download could be deleted when the site closes. It
-does better than that now: **it is never written down in the first place.**
-
-All four files are fetched with `cache: 'no-store'`, which obliges the browser
-not to write the response to its HTTP cache, and are then held only in this
-tab's memory:
-
-- `vision_bundle.mjs` is fetched and `import()`ed **from a blob URL**. An
-  `import()` of a real URL is cached like any other script.
-- The WebAssembly runtime is handed over as explicit `wasmLoaderPath` /
-  `wasmBinaryPath` blob URLs instead of through
-  `FilesetResolver.forVisionTasks`, which fetches by URL itself and would put
-  the runtime straight into the disk cache.
-- The model goes in as `modelAssetBuffer` — the weights themselves — instead of
-  `modelAssetPath`, which the runtime would fetch and cache the ordinary way.
-
-`release()` revokes the object URLs and drops the buffers; `FestivalWorld.stop()`
-calls it. `stop()` alone does not, because the point of holding them is that
-leaving VR and going back in does not fetch them twice.
-
-**The size in the copy was wrong: it is about 7MB, not 15.** 2.98MB of runtime
-and 3.58MB of model, both already compressed in transit. The 11.7MB figure was
-the *uncompressed* wasm — measure `transferSize`, or `curl` with
-`Accept-Encoding: br, gzip`, not the file at the far end.
-
-Two honest limits. A copy cached by a visit from *before* this change is still
-on that machine until the browser evicts it or the visitor clears site data. And
-this covers the HTTP cache, which is what a page can control; it is not a claim
-about the whole operating system.
-
-**Verified:** loads end to end from blob URLs and an in-memory buffer, all four
-resources showing a non-zero `transferSize` (fetched, not read from cache), and
-every mapping unchanged afterwards.
-
-## 0-prev. The head-tracking panel, tidied
-
-The owner confirmed on 2026-09-04 that the tracking itself works well, so it is
-no longer labelled an experiment: the panel's title is `HEAD TRACKING` /
-`頭部追蹤`.
-
-### The panel was laying itself out with a rule meant for two buttons
-
-`.head-track > div { grid-template-columns: 1fr auto }` was written for the
-button row. Wrapping the body in a `div` handed that grid to the **whole panel**,
-so the explanation and the camera picker became two columns: the note wrapped
-four words to a line down a narrow left column while a select box sat beside it.
-
-Both are addressed by class now — `.head-track__body` is a plain block,
-`.head-track__actions` carries the two-column grid — so neither can pick up the
-other's layout. Measured after: every child 304px inside a 340px panel, one
-column, nothing colliding.
-
-**And the camera picker was on screen when it was meant to be hidden.** It is a
-`<label>`, and `.head-track label { display: grid }` outranks the browser's own
-rule for the `hidden` attribute, so setting `hidden` did nothing visible — an
-empty select, because a browser will not name its cameras until access has been
-granted. `.head-track label[hidden] { display: none }` fixes it. This is the
-third time this trap has cost a session: **when an element will not hide, check
-whether an author `display` is beating the attribute.**
-
-### Folding goes all the way back to the button
-
-It used to leave a strip carrying the title and the readout, which was neither
-the panel nor the button and read as a third thing on screen. The title row now
-simply closes the panel. Tracking, if it is running, keeps running — the
-`HEAD TRACKING` button turns red to say so.
-
-## 0-prev. Head tracking is in the beta, and the gate says what a headset gets
-
-### No flag any more
-
-Head tracking is a normal part of the beta. `?headtrack=1` is no longer needed
-and still works; **`?headtrack=off` is the way out**, kept because this reaches
-for a camera and a fifteen-megabyte download and a browser that misbehaves at
-either should be switchable off without a deploy.
-
-Nothing happens on its own, which is what makes shipping it safe: the control
-only exists inside a desktop VR session, opening the panel downloads nothing,
-and the camera is not asked for until the enable button is pressed — at which
-point the browser puts up its own permission prompt as well. Two presses and a
-browser dialog stand between an ordinary visitor and a camera.
-
-The per-tick gate re-check is now guarded on `vrActive` as well, so it costs
-nothing for the overwhelming majority who never enter VR at all.
-
-### The gate says what a headset gets
-
-Both preview notes now end with the thing neither of them said: a real headset
-gives the full thing. One line each, in both languages. The Quest-detected note
-and the unavailable note already covered it.
-
-## 0-prev. Two mirrored head axes, and a foldable panel
-
-### The signs, settled against a real face
-
-`?review=headtrack` proves the whole pipeline but cannot prove which way round a
-face reads, and two of the four axes were wrong. Confirmed by the owner on
-2026-09-04 and fixed in `HeadTracking.applyMatrix()`, which is still the only
-place any of these signs live:
-
-| axis | was | now |
-| --- | --- | --- |
-| yaw — look left/right | correct | unchanged |
-| **pitch — look up/down** | **inverted** | `raw.pitch = -euler.x` |
-| x — lean left/right | correct | unchanged |
-| y — lean up/down | correct | unchanged |
-| **z — lean in/out** | **inverted** | the negation at the target is gone |
-
-The pattern is worth keeping: the lens looks *at* the face rather than out with
-it, so the two axes along its line — pitch and depth — arrive mirrored, and the
-two across it do not. Every sign now lives in the raw extraction and the deltas
-below it are plain subtraction.
-
-The fixture takes **sensor-space** values, so after this a positive `pitch` fed
-to `headTrackForReview` is the visitor's chin going *down*. Verified: sensor
-pitch +15° now gives camera pitch −0.65 where it gave +0.65, sensor z +12cm
-gives +1.39 where it gave −1.39, and yaw and x are untouched.
-
-### The panel folds
-
-Its title row is a button. Folded, the panel keeps the title and the live
-readout and drops the explanation, the camera picker and the actions — 232px to
-90px, measured. The explanation is read once; the numbers are the part worth
-watching while the world is moving.
-
-### Narrow desktop windows
-
-The owner confirmed the phone-looking screenshot was a **narrow desktop
-window**. The gate is deliberately unchanged: it is the breakpoint the interface
-switches on, so a window narrow enough to raise the touch joystick does not also
-offer head tracking. Widening past 781px brings it back on its own. If that is
-ever unwanted, drop the `min-width` clause and keep the pointer test — but then
-the control returns to sitting beside the joystick, which is what was reported.
-
-## 0-prev. A measured waterline, and a desk-only experiment
-
-### MENTOR was still on top of the water
-
-The first fix sank the dog half a unit from standing, which was eyeballed and
-wrong: the sea's surface is at **0.14**, and the dog's body block runs from 0.39
-to 1.09 above its own root, so half a unit left the belly *exactly* on the
-surface — legs under, whole body and head above, still walking.
-
-`MENTOR_SWIM_Y = -0.72` is measured against that geometry: about **71% of the
-body under**, the collar and the top of the back clear, the head fully out. The
-human swims at 74% under by the same measure. Verified in the fixture, which now
-reports the numbers rather than leaving it to a screenshot.
-
-**Anything that floats should be derived from 0.14**, not from a subtraction off
-the standing height. `stylisedWater` sits at 0.14, `waveSurface` at 0.115 and the
-ocean slab's top at 0.095; the water is translucent with `depthWrite: false`, so
-a submerged body still shows through it — do not read "I can see its legs" as
-"it is not in the water".
-
-### Head tracking is a desk feature
-
-`!usesPhoneVrSimulation()` was the wrong gate and put a `HEAD TRACKING` button
-on a phone, beside the joystick and the HIT button. A device can fail the
-phone-preview check — no device orientation, an insecure context, a trackpad
-reporting a fine pointer — and still be running the touch interface.
-
-The gate is now `(min-width: 781px) and (hover: hover) and (pointer: fine)`,
-which is the **exact breakpoint the interface itself switches on**, so the touch
-controls showing and head tracking being offered can never both be true.
-
-It is re-checked from the world's own tick, not only from a `matchMedia`
-listener: that listener did not fire under a viewport change during review, and
-a control that has stopped being appropriate should not wait for the next VR
-state change to notice. Verified at 1280 (offered), 700 and 375 (hidden), and
-back again.
-
-## 0-prev. Webcam head tracking, behind a flag
-
-**Not offered to anybody.** The code ships in the beta bundle and is inert
-without `?headtrack` on the URL: no control on screen, no camera prompt, and
-not a byte of the tracker downloaded. Turn it on at
-`myscheduleltd.com/beta/?headtrack=1`, tick `VR DESKTOP MODE`, enter VR, and a
-third control appears under `RECENTER VIEW`.
-
-It went to the published beta rather than staying on loopback for one reason:
-**a review browser has no webcam**, so the owner's own face is the only way to
-find out whether this feels like anything. Everything downstream of the camera
-is proved by fixture; the camera itself is not.
-
-### What it does, and why it is not one-for-one
-
-A webcam loses a face around thirty-five degrees of turn. Mapping head angle to
-view angle one for one would leave the visitor looking around a sixty-degree
-cone and no further — useless. So the head does two jobs:
-
-- **Position is the window.** Leaning moves the eye *and rebuilds the frustum
-  around it*, so the screen's own rectangle stays pinned where it is in the
-  world. That second half is the whole effect: without it, leaning left swings
-  the scene instead of revealing what was behind the left edge. Measured: a
-  10cm lean right moves the camera 1.15 units and skews the frustum by
-  −0.093; centred, the skew is exactly zero and the view is the ordinary one.
-- **Rotation is amplified.** `HEAD_YAW_GAIN = 4`, `HEAD_PITCH_GAIN = 2.6`.
-  Measured: a 20° head turn sweeps 77° of world; a 15° chin lift, 37°.
-
-Mouse drag still owns the gross turn. Neither replaces the other — a webcam
-cannot turn you round, and a mouse cannot lean.
-
-**Roll is deliberately dropped.** Tilting your head at a monitor does not tilt
-the room; rolling the picture when it happens reads as a fault.
-
-### The one thing that is not verified
-
-Whether MediaPipe reports a head turned *left* as positive yaw, and a lean
-*right* as positive x. Those signs come from a real face, and there was none to
-hold up to the review browser. The panel therefore carries a **live numeric
-readout** — if an axis is inverted the owner can say "turning right looks left"
-and it is one constant. `HeadTracking.applyMatrix()` is the only place any of
-these signs live.
-
-### Shape
-
-`src/world/HeadTracking.ts` owns the camera, the model and the smoothed pose;
-`FestivalWorld` only consumes it. Points worth keeping:
-
-- **Unlike the phone's gyroscope, this one wants smoothing.** That was a fused,
-  filtered pose and had to be applied whole; this is a guess made from pixels
-  thirty times a second, and easing is the difference between a window and a
-  shiver.
-- MediaPipe is `import()`ed from a CDN the first time a visitor enables it —
-  **about 15MB**: a 155kB library, an 11.7MB WebAssembly runtime and a 3.8MB
-  model. Nobody who came to watch a film should pay for that, so the world
-  bundle grew 12kB rather than 15MB, and the panel says the number before the
-  button is pressed.
-- **Pin the version against the registry, not against memory.** The first
-  published attempt used `@mediapipe/tasks-vision@0.10.22`, which does not
-  exist: the package left the `0.10.x` line for `1.0.x`, and the owner's first
-  press produced nothing but a 404. `?review=headtrack` now exposes
-  `window.__festivalHeadTrackLoad()`, which fetches all three and builds the
-  tracker with no camera involved — run it after touching any of those URLs.
-- The video element is never added to the document, and nothing is uploaded,
-  stored or sent. The camera is released when VR ends and when the world stops:
-  leaving the light on because the page is still open is exactly what makes
-  people distrust a site that asked for a camera.
-- `RECENTER VIEW` re-centres the head as well as the view.
-- The camera picker is populated only *after* access is granted, because that
-  is when a browser will tell you what the devices are called.
-
-### Fixture
-
-`?review=headtrack` exposes `window.__festivalHeadTrack([pose])`, which feeds
-made-up poses through the tracker's own matrix format and returns the head pose
-and the view it produced side by side. It settles the easing and applies the
-view **synchronously**, because a review browser runs the page in a hidden tab
-where timers are clamped to about one a second — waiting for convergence over
-real frames turns a nine-pose sweep into a minute of nothing. Worth copying for
-any fixture that has to step through states.
-
-Verified through it: calibration zeroes cleanly, left and right are exact
-mirrors, leaning in widens without skewing, and returning to centre returns to
-exactly zero with no drift.
-
-## 0-prev. The jukebox, a swimming dog, and one VR corner
-
-
-### The square went silent after every screening
-
-Leaving a venue rebuilt the jukebox player but never got sound out of it again,
-and nothing on screen admitted it. The state machine was fine — the frame is torn
-down going in and rebuilt coming out, measured — so the fault was one line
-further on.
-
-Every jukebox frame is built **muted**, because that is the only way a phone
-lets it start at all, and the unmute that follows may or may not be granted.
-`DROP THE BEAT` exists to ask for it with a real tap. That prompt was latched
-shut by a flag set the first time it was pressed, and **the flag outlived the
-player it was pressed for**: walking into a venue destroys the frame, walking out
-builds a new one that needs the same permission, and the only control that could
-ask had been retired for the rest of the visit.
-
-The prompt is now driven by the player's own report rather than by a memory of
-a past press. `infoDelivery` carries `muted` and `volume` on the same channel as
-the length the service already reads, so:
-
-```
-hidden = no record on || sound not wanted || player says it is audible
-```
-
-It follows reality in both directions — measured live: audible → hidden; the
-player silenced under it → **shown again**; pressed → unmuted → hidden. On a desk,
-where the load-handler unmute is granted, it never appears at all.
-
-`stopJukebox()` also now drops the old player's report and removes the `message`
-listener it added — one was being added per frame built, so per venue walked into,
-for the length of the visit.
-
-**Note when reading a "no music" report:** an empty queue is not this bug. A
-record ends on the service's clock, and with nothing waiting the square is
-genuinely quiet. `data-jukebox-review` reports `nowPlaying` first for that reason.
-
-### MENTOR walks on water no more
-
-The dog followed swimmers out past the beach and kept walking on the surface.
-Only a body the visitor was *steering* had ever floated; a resident on its own —
-following or on its route — was pinned to `groundHeightAt()`.
-
-`SWIM_Z = -60` is now one constant shared with the visitor's own `shouldSwim`, so
-owner and dog start swimming on the same step. `npcBodyY()` returns the float
-height over the sea and the floor everywhere else, and `poseNpcSwimming()`
-paddles whichever rig the resident has and rolls it with the swell — **after** the
-walk cycle, which writes every leg it overwrites, and cleared on land, because
-nothing else writes that roll axis.
-
-A dog floats higher than a person: `AVATAR_GROUND_Y - 0.52` against
-`AVATAR_SWIM_Y`. A STAFF-driven MENTOR was sunk to the human waterline on every
-screen but its driver's; that now matches too.
-
-`?review=mentor-swim` puts the visitor and a loyal MENTOR out past the beach.
-It **feeds** the dog rather than assigning the follower, because the service owns
-`mentorFollower` and reconciles an assigned one away within the second — which is
-why `?review=mentor-follow` had been reporting an empty object and measuring
-nothing at all. Both MENTOR fixtures now stage against the visitor's real id
-instead of the literal `'review-self'`, and `window.__festivalMentor()` reports
-the dog from **every** loopback page, not just its own fixture.
-
-Verified: `mentorSwimming: true`, dog at `y = -0.21` against the swimmer's
-`-2.05`, `mentorFrontLeg: 0.08` (the still-water paddle, not the walk cycle),
-`mentorRoll: -0.025`. On screen, dog and visitor sit at the same waterline.
-
-### One corner for RESUME VR and EXIT VR PREVIEW
-
-They are never on screen together, so they now share a rule: same corner, same
-insets, same box, at all three breakpoints. `RESUME VR` had been in the opposite
-corner above `PASS`, so the control jumped across the screen as it changed its
-mind about which it was. It keeps the red fill, because it is an invitation
-rather than an exit.
-
-### Gate copy
-
-The three VR notes are one short sentence each in both languages. The desktop
-note's second clause explained that Quest Browser switches to immersive mode —
-which the checkbox's own title already says, because a Quest browser is shown
-`QUEST VR MODE` instead.
-
-## 0-prev. Phone VR tracks the gyroscope one for one
-
-
-The phone preview's camera now follows the device exactly: turn the phone thirty
-degrees and the view turns thirty degrees, tip it and the view tips with it, and
-the horizon stays level whatever angle the phone was held at when it started.
-A `CALIBRATE MOTION` / `校準動態鏡頭` control sits under `EXIT VR PREVIEW`, and
-leaving the preview — or turning the invitation down — now leaves `RESUME VR` on
-screen instead of ending VR for the visit.
-
-### What was wrong
+### Phone VR follows the gyroscope one for one
 
 The fused sensor pose was being rebased against the **whole** calibration
-quaternion (`pose * reference^-1`), then post-multiplied by the entry heading.
-Two things followed, and both were visible:
-
-- **The phone's tilt never reached the picture.** Whatever pitch and roll the
-  phone had at calibration was subtracted from every later pose, so the view
-  came out permanently level: measured, pitch and roll read `0.00` at every
-  attitude. Pitch and roll come from gravity and are *absolute* — there is
-  nothing in them to rebase.
-- **Tipping the phone moved the view the wrong way.** Tipping thirty degrees
-  toward the floor moved the view **up** by 28.9°. That is the "not quite
-  accurate" report: the picture and the hand disagreed about which way was down.
-
-### What it does now
-
-Only the *heading* is rebased, and only ever by one constant world yaw:
+quaternion (`pose · reference⁻¹`). Pitch and roll come from gravity and are
+absolute — there is nothing in them to rebase — so subtracting them meant the
+phone's tilt never reached the picture (measured: pitch and roll read `0.00` at
+every attitude) and **tipping the phone 30° toward the floor moved the view 28.9°
+up**. Only the heading is rebased now, by one constant world yaw applied *before*
+the device pose:
 
 ```
 camera = Ryaw(entryHeading − calibrationHeading) · devicePose
 ```
 
-`devicePose` is three.js's own `DeviceOrientationControls` composition, unchanged
-(`YXZ(beta, alpha, −gamma)`, then `Rx(−90°)`, then `Rz(−screenAngle)`). Because
-the correction is a pure world yaw applied **before** it, the sensor's axes are
-never skewed, so every degree of turn, tilt and roll reaches the view one for
-one, and the horizon cannot lean. `headingOf()` reads a heading off a pose, with
-an up-vector fallback for a phone aimed straight at the sky or the floor.
+`devicePose` is three.js's own `DeviceOrientationControls` composition,
+unchanged. Because the correction is a pure world yaw applied before it, the
+sensor's axes are never skewed: measured, `alpha ±30/90/180` moves the heading by
+exactly that, with pitch and roll unchanged to the hundredth. The per-frame
+`slerp` is gone — the OS has already fused these poses and a second easing layer
+only made the picture trail the phone. `xrRig.rotation.y` is held at 0 while the
+sensor drives, because the heading correction is already inside the target.
 
-`xrRig.rotation.y` is held at 0 while the sensor is driving, because the heading
-correction is already inside the target; a rig yaw on top of it would turn the
-sensor's own frame along with the visitor. The per-frame `slerp` is gone — the
-operating system has already fused and filtered these poses, and a second easing
-layer only made the picture trail the phone.
+Turning the phone to landscape does **not** reset the reference. The
+`screenAngle` term is that compensation; resetting on top of it threw the
+heading away.
 
-Turning the phone into landscape no longer resets the reference. The
-`screenAngle` term is that compensation, and resetting on top of it threw the
-heading away and spun the world for no reason the visitor had caused.
+`CALIBRATE MOTION` / `RECENTER VIEW` re-reads the heading only, so pitch and roll
+survive it. A phone's heading is the one part of its pose with no fixed meaning —
+relative and drifting on iOS, magnetometer-corrected and jumpy on Android — so
+this is the visitor's handle on that, and it cannot knock the horizon over.
 
-### Calibrate / recentre
+### `camera.position` is not where the camera is, in VR
 
-`recenterVrView()` makes the pose in hand forward. On a phone it re-reads the
-heading only, so pitch and roll survive it — measured, calibrating from a pose
-pitched −38.95° left the pitch at −38.97° and moved the heading to exactly the
-entry heading. Without a sensor it returns the keyboard-and-mouse preview to its
-entry yaw and level pitch. The button is hidden outside a simulated session: a
-real headset recentres itself.
-
-A phone's heading is the one part of its pose with no fixed meaning — relative
-and drifting on iOS, magnetometer-corrected and jumpy on Android — so this is
-the visitor's own handle on it.
-
-### Getting back into VR
-
-`vrResumePending` is what puts `RESUME VR` / `回到 VR` on screen, and it is the
-only route back in: the VR checkbox lives at the sign-in gate, on the far side
-of a session the visitor is in the middle of. It is now set by **both** exits —
-`EXIT VR PREVIEW` and `STAY IN BROWSER` — each with a toast saying so. Resuming
-re-opts into VR (`vrRequested` and the session key), so the rest of the
-interface does not go on believing they left.
-
-`RESUME VR` sits above `PASS` rather than on top of it, and `PASS` is now z-index
-31 over the drawer's 30, so the drawer stays the frontmost menu.
-
-### The camera's position is not `camera.position` in VR
-
-`xrRig.add(this.camera)` runs at construction, so the camera is *always* a child
-of the rig. Outside VR the rig is at the origin and the two agree. Inside VR the
-rig carries the whole walk while the camera sits at the origin of it — so every
-`this.camera.position` read was measuring from the middle of the map. That put
+`xrRig.add(this.camera)` runs at construction, so the camera is **always** a
+child of the rig. Outside VR the rig sits at the origin and the two agree. Inside
+VR the rig carries the whole walk while the camera sits at the origin of it — so
+every `this.camera.position` read measures from the middle of the map. That put
 each screen's range, its facing-side test and the water's camera uniform in the
-wrong place the moment VR was entered. `cameraOnViewingSide` was the clearest
-case: with `camera.position.z` pinned at 0 it compared the **map origin** against
-each screen, so The Rooftop's, at z = +19.9 and watched from the south, could
-never pass it at all, while the three at negative z passed from either side —
-whichever side the visitor was really standing on. Those reads now use
-`camera.getWorldPosition(this.cameraWorldPosition)`. **Anything new that measures
-from the eye must do the same.**
+wrong place the moment VR was entered; The Rooftop's screen, at z = +19.9 and
+watched from the south, could never pass `cameraOnViewingSide` at all. Those
+reads use `camera.getWorldPosition(this.cameraWorldPosition)`. **Anything new
+that measures from the eye must do the same.**
 
-### Verified
+The same confusion caused the jump bug: the rig was placed at
+`groundHeightAt(...)`, the floor **under** the visitor. Standing, that agrees with
+`player.position.y`; in the air it does not, and the difference *is* the jump — so
+the avatar rose and the view did not, on desk, phone and headset alike. It reads
+`player.position.y - AVATAR_GROUND_Y` now, which also puts the eye on the
+waterline while swimming. Measured: eye 2.90 → 3.80 → 2.90 across the arc, with
+`eyeY - playerY` pinned at 2.62 throughout. **Whenever something in VR looks
+pinned, check whether it is reading the ground instead of the body.**
 
-- `?review=vr-phone`, driving real `deviceorientation` events into the live
-  world: `alpha +30/+90/+180/−90` moved the heading by exactly `+30.00 / +90.00 /
-  +180.00 / −90.00`, with pitch and roll unchanged to the hundredth of a degree;
-  `beta` and `gamma` moved pitch and roll with the correct sign and magnitude;
-  returning to the first pose returned the exact first attitude, with no drift.
-  `headingError` — the fixture's own check that the applied pose is the device
-  pose plus one constant — read `0` throughout.
-- Calibrate from two unrelated poses both landed the heading on the entry
-  heading and left pitch and roll alone.
-- `EXIT VR PREVIEW` → `RESUME VR` → back in VR, and `STAY IN BROWSER` →
-  `RESUME VR` → back in VR, both with the sensor re-enabled and re-calibrated.
-- `?review=vr-screen` on the keyboard-and-mouse path: one WebGL context, no
-  posters, the Shore iframe mounted and the music video playing on the in-world
-  screen, eye height 2.9 matching the avatar's POV. Dragging turned the view
-  (`simYaw −1.61`, `simPitch −0.34`) and `RECENTER VIEW` returned it to
-  `0 / 0` with the screen square in front.
-- 43/43 server tests, `tsc --noEmit`, the Vite production build and
-  `git diff --check` all pass.
+### Leaving VR is never a one-way door
 
-`xrReviewSnapshot()` now also reports `simYaw`, `simPitch` and `homeYaw`, because
-"did RECENTER move it" could previously only be eyeballed off a screenshot.
+`vrResumePending` is what puts `RESUME VR` on screen and is the only route back
+in — the VR checkbox lives at the sign-in gate, on the far side of a session the
+visitor is in the middle of. Both exits set it: `EXIT VR PREVIEW` **and**
+`STAY IN BROWSER`. Resuming re-opts into VR so the rest of the interface does not
+go on believing they left. `RESUME VR` and `EXIT VR PREVIEW` are never on screen
+together, so they share one corner rule at all three breakpoints.
 
-**Still unconfirmed:** real iPhone and Android sensors and their permission UI.
-Everything above was measured with synthetic `deviceorientation` events, which
-exercise the whole path from the listener to the camera but cannot prove what a
-physical phone reports.
+### The square's record comes back after a screening
 
-## 0-prev. Regular-phone motion VR preview
+Every jukebox frame is built **muted** — the only way a phone lets one start —
+and `DROP THE BEAT` exists to ask for the unmute with a real tap. That prompt was
+latched shut by a flag set the first time it was pressed, and **the flag outlived
+the player it was pressed for**: walking into a venue destroys the frame, walking
+out builds a new one needing the same permission, and the only control that could
+ask had been retired for the visit.
 
+The prompt now follows the player's own report — `infoDelivery` carries `muted`
+and `volume` on the same channel as the length the service already reads:
 
-Regular phones can now select `PHONE MOTION VR` / `手機動態 VR` at the sign-in
-gate when the page is in a secure context and the browser exposes device
-orientation on a coarse, touch-only pointer. Real immersive Quest support still
-takes precedence. The post-entry `ENABLE MOTION CAMERA` button requests iOS
-motion/orientation permission from the required direct tap; browsers without the
-permission method attach the sensor listener immediately.
+```
+hidden = no record on || sound not wanted || the player says it is audible
+```
 
-- The first valid sensor pose becomes forward. Later alpha, beta and gamma values,
-  corrected for the current screen orientation, drive the preview camera's
-  quaternion with gentle frame-rate-independent smoothing.
-- Rotating the phone screen clears the reference so the next pose recalibrates.
-  Exiting VR or disposing the world removes every sensor listener and resets the
-  target. Touch drag remains available whenever sensor input is absent.
-- This remains a simulated phone presentation: it preserves the normal CSS3D
-  YouTube screens and the one-WebGL-context mobile stability path. True Quest
-  WebXR and its accepted exit-to-YouTube/resume-VR flow are unchanged.
-- The loopback-only `?review=vr-phone` fixture bypasses a desktop browser's missing
-  permission prompt and supplies two deterministic poses. It reported
-  `phonePreview: true`, granted permission, calibration, two samples, a non-identity
-  target quaternion, simulated VR at the established 2.9-unit eye height and one
-  WebGL context. Exiting removed the listener and reset the target.
-- The existing `?review=mobile-stability` fixture still reports one context, one
-  live player and `lost: false` after its stress pass. All 43 server tests,
-  TypeScript, the Vite production build and `git diff --check` pass.
+It follows reality in both directions and never appears on a desk, where the
+load-handler unmute is granted. **An empty queue is not this bug**: a record ends
+on the service's clock, and with nothing waiting the square is genuinely quiet.
+`data-jukeboxReview` reports `nowPlaying` first for that reason.
 
-The owner approved publication on 2026-09-03. The beta payload references
-`index-DDc4-veK.js`, the unchanged `index-Djeoze8P.css` and
-`three-CkM7uI3-.js`. Actual iPhone and Android permission UI and physical sensor
-direction still require confirmation on the owner's phones.
+### Residents swim
+
+Only a body the visitor was *steering* had ever floated; a resident on its own —
+following or on its route — was pinned to `groundHeightAt()`. `SWIM_Z = -60` is
+one constant shared with the visitor's own `shouldSwim`, so owner and dog start
+swimming on the same step. `poseNpcSwimming()` runs **after** the walk cycle,
+which writes every leg it overwrites, and its roll is cleared on land because
+nothing else writes that axis.
+
+`MENTOR_SWIM_Y = -0.72` is measured, not eyeballed: the sea's surface is at
+**0.14** and the dog's body block runs 0.39–1.09 above its own root, so this puts
+about 71% of the body under with the collar and the top of the back clear. The
+human swims at 74% by the same measure. A first attempt sank it half a unit from
+standing, which left the belly exactly on the surface — legs under, everything
+else above, still walking.
+
+**Anything that floats should be derived from 0.14.** The water is translucent
+with `depthWrite: false`, so a submerged body still shows through it — do not
+read "I can see its legs" as "it is not in the water".
+
+### Webcam head tracking
+
+Shipped, not behind a flag; `?headtrack=off` is the way out, because this reaches
+for a camera and a ~7MB download and a browser that misbehaves at either should
+be switchable off without a deploy.
+
+A webcam loses a face around 35° of turn, so head angle cannot drive view angle
+one for one — that would be a 60° cone and nothing beyond it. The head does two
+jobs:
+
+- **Position is the window.** Leaning moves the eye *and rebuilds the frustum
+  around it*, so the screen's own rectangle stays pinned in the world. That
+  second half is the whole effect: without it, leaning left swings the scene
+  rather than revealing what was behind the left edge.
+- **Rotation is amplified.** `HEAD_YAW_GAIN = 4`, `HEAD_PITCH_GAIN = 2.6`,
+  `HEAD_PARALLAX_UNITS_PER_METRE = 12`. The owner confirmed these feel right.
+
+Mouse drag still owns the gross turn. **Roll is deliberately dropped** — tilting
+your head at a monitor does not tilt the room.
+
+**Two of the four axes are mirrored, and that is not a bug.** The lens looks *at*
+the face rather than out with it, so the axes along its line — pitch and depth —
+arrive reversed, while the two across it do not. Both are corrected in
+`applyMatrix()`, which is the only place any of these signs live.
+
+Unlike a phone's gyroscope, this one **wants** smoothing: that was a fused,
+filtered pose to be applied whole; this is a guess made from pixels thirty times
+a second, and easing is the difference between a window and a shiver.
+
+**Desk only**, gated on `(min-width: 781px) and (hover: hover) and (pointer:
+fine)` — the exact breakpoint the interface switches on, so the touch controls
+showing and head tracking being offered can never both be true. Re-checked from
+the world's own tick, because a `matchMedia` listener did not fire under a
+viewport change during review. The panel's title row folds it away entirely.
+
+### The tracker never touches the disk
+
+All four files are fetched with `cache: 'no-store'` and held only in the tab's
+memory. Three things were needed to make that true rather than nearly true:
+
+- the library is `import()`ed **from a blob URL** — an `import()` of a real URL is
+  cached like any other script;
+- the runtime is handed over as explicit `wasmLoaderPath` / `wasmBinaryPath` blob
+  URLs, not through `FilesetResolver.forVisionTasks`, which fetches by URL itself;
+- the model goes in as `modelAssetBuffer`, not `modelAssetPath`, which the runtime
+  would fetch and cache the ordinary way.
+
+Held for the life of the page rather than the session, so leaving VR and going
+back in does not fetch it twice; `release()` drops it, and `FestivalWorld.stop()`
+calls it.
+
+**It is ~7MB over the wire, not 15.** 2.98MB of runtime and 3.58MB of model, both
+compressed in transit; the 11.7MB figure is the *uncompressed* wasm. Measure
+`transferSize`, or `curl --compressed`, not the file at the far end.
+
+**Pin versions against the registry, not against memory.** The first published
+attempt used `@mediapipe/tasks-vision@0.10.22`, which does not exist — the package
+left the `0.10.x` line for `1.0.x` — and the owner's first press produced a 404.
+
+### Security pass
+
+**The code is weighed before it runs.** Head tracking executes third-party
+JavaScript beside an open camera, and a pinned version is not protection: a
+compromised CDN or hijacked package would be a webcam in a stranger's hands, on a
+page whose own panel promises the video never leaves the machine. All four files
+are checked against a recorded SHA-256 before anything is decoded or executed.
+`<script integrity>` cannot reach any of this — none of it arrives through a
+script tag — but the bytes are already fetched by hand for the no-store
+guarantee, so they can be weighed on the way past. Verified in both directions,
+including that a wrong digest refuses. Regenerate with:
+
+```bash
+curl -s --compressed -L <url> | openssl dgst -sha256 -binary | openssl base64 -A
+```
+
+A mismatch means the file changed. **Do not paper over it by updating the digest
+without knowing why it moved.**
+
+Also fixed: head tracking refuses to run inside a frame (a page that frames this
+one can overlay the panel and steal the click that opens a camera), the service
+sends `X-Frame-Options: DENY` and `frame-ancestors 'none'`, `projectorMessage`
+compares exact origins instead of `includes('youtube.com')` — true of
+`youtube.com.example.net`, which anybody can register — `serveStatic`'s escape
+check gained the separator it needed, and `Permissions-Policy` became
+`camera=(self)` rather than `camera=()`, which would have broken head tracking on
+the service-hosted copy and nowhere else.
+
+**Checked and sound:** the staff key is compared with `timingSafeEqual`, sent as a
+header, kept in `sessionStorage`, absent from the bundle, and **fails closed** when
+unset in production. Chat escapes author and body. The store link is validated to
+http/https on the service *and* again in the client. CORS is an allowlist that
+refuses unknown origins, and every authenticated route needs a custom header, so a
+cross-site post cannot reach one. Bodies are capped at 16kB, chat is rate-limited,
+`MAX_VISITORS` bounds the rest.
+
+This was a code review, not a penetration test of the running service.
+
+### What the fixtures learned
+
+- `?review=mentor-swim` puts the visitor and a loyal MENTOR past the beach. It
+  **feeds** the dog rather than assigning the follower, because the service owns
+  `mentorFollower` and reconciles an assigned one away within the second — which
+  is why `?review=mentor-follow` had been reporting an empty object and measuring
+  nothing. Both MENTOR fixtures stage against the visitor's **real** id, not the
+  literal `'review-self'`.
+- `?review=headtrack` exposes `__festivalHeadTrack([pose])` and
+  `__festivalHeadTrackLoad()`. It settles the easing and applies the view
+  **synchronously**, because a review browser runs the page in a hidden tab where
+  **timers are clamped to about one a second** — waiting for convergence over real
+  frames turns a nine-pose sweep into a minute of nothing. Copy this for any
+  fixture that steps through states.
+- `window.__festivalMentor()` and `document.documentElement.dataset.jukeboxReview`
+  report from **every** loopback page, not just their own fixture. Reach for those
+  before staging anything.
+- **An author `display` outranks the browser's rule for the `hidden` attribute.**
+  `.head-track label { display: grid }` kept an empty camera picker on screen with
+  `hidden` set. Third time this trap has cost a session: when an element will not
+  hide, check for an author `display` before anything else.
+
+---
 
 ## 0a. Desktop VR exit control right edge
 
@@ -980,9 +617,16 @@ git commit && git push origin main
 ```
 
 `npm run verify` (`node --test server/server.test.mjs && tsc --noEmit && vite build`)
-must pass first. There are **41 server tests**; they all pass with the current working tree.
+must pass first. There are **43 server tests**; they all pass with the current working tree.
 
-Two related traps, both of which have cost hours:
+`git diff --cached --check` will flag trailing whitespace inside a regenerated
+`three-*.js` chunk. That is minified GLSL, not hand-written code — run the check
+with `-- . ':(exclude)docs/beta/assets/three-*.js'` and read the rest of it. When
+a rebuild produces a three chunk that differs only in whitespace under an
+unchanged filename hash, leave the committed one alone rather than adding a
+four-thousand-line no-op diff.
+
+Three related traps, all of which have cost hours:
 
 - **GitHub Pages caches `index.html` for 600s.** After a push, a browser can hold the
   old `index.html` pointing at the previous hashed bundle. When the owner says "your
@@ -990,6 +634,17 @@ Two related traps, both of which have cost hours:
   touching code.
 - **`docs/beta` keeps old asset files.** `ls docs/beta/assets/*.css | head -1` tells you
   nothing. Always resolve the bundle actually referenced by `docs/beta/index.html`.
+- **Confirm the publish landed, do not assume it.** Poll the live URL until it
+  serves the new bundle, then grep the served asset for the change itself:
+
+  ```bash
+  until curl -s "https://myscheduleltd.com/beta/index.html?cb=$(date +%s%N)" \
+    | grep -q '<new-bundle>.js'; do sleep 15; done
+  curl -s "https://myscheduleltd.com/beta/assets/<new-bundle>.js" | grep -c '<the change>'
+  ```
+
+  Propagation runs from under a minute to several. The custom domain is
+  **myscheduleltd.com** — `CNAME` says so; `myschedule.co` does not resolve.
 
 ---
 
@@ -997,14 +652,19 @@ Two related traps, both of which have cost hours:
 
 | Path | What it is |
 | --- | --- |
-| `world/src/world/FestivalWorld.ts` | The whole three.js world. ~7k lines. Geometry, colliders, NPCs, camera, projectors, interaction prompts. |
+| `world/src/world/FestivalWorld.ts` | The whole three.js world. ~11k lines. Geometry, colliders, NPCs, camera, projectors, interaction prompts, VR sessions and the phone's motion camera. |
+| `world/src/world/HeadTracking.ts` | Webcam head tracking for the desktop VR preview: the camera, the model, and the smoothed pose. `FestivalWorld` only consumes it. **Every axis sign and every integrity digest lives here.** |
 | `world/src/ui/App.ts` | All DOM/UI. Gate, panels, chat, staff tools, jukebox player, touch controls. |
 | `world/src/style.css` | All styling, including every mobile/landscape rule. |
 | `world/server/index.mjs` | Zero-dependency Node service. SSE presence, chat, seats, punches, jukebox, programme clock, staff admin. |
 | `world/server/server.test.mjs` | 43 tests. Run with `npm test`. |
 | `world/scripts/publish-beta.mjs` | Copies the Vite build into `docs/beta`. |
 
-Deployment: **Pages** serves `docs/`. **Render** runs `world/server/index.mjs`.
+Deployment: **Pages** serves `docs/` at **myscheduleltd.com** (see `CNAME`).
+**Render** runs `world/server/index.mjs`, **by hand** — pushing to main ships the
+static beta and nothing else, so any change under `world/server/` is live only
+after the owner deploys it from the Render dashboard. Say so plainly when a
+change is split across the two.
 
 ### Latest published foundation (`8f478de`)
 
@@ -1177,7 +837,11 @@ device outside them.
 | **Public screens clipping on entry (mobile)** | Canvas `ResizeObserver` shipped. **Reasoned, not observed** — the test browser cannot fire resize callbacks. Unconfirmed by the owner. Ask whether rotating the phone fixes it: if yes the diagnosis holds, if no the stale value is not the canvas size. |
 | **Camera-mode CSS consolidation** | Offered repeatedly, never done. **Nine bugs** in that area have come from one rule out-arguing another — a dead `data-camera-idle` flag, an `!important` beating the buttons, a leftover override freezing a control unpressable, flag ordering, a missing `pointer-events`. Worth doing as its own change with behaviour verified identical either side. |
 | **Collider height audit** | Offered, never done. The popcorn stand was one instance of furniture described as a full-height wall, which pulls the camera in. There are likely more. |
-| **Jukebox audio on iOS** | A tap-for-sound button exists because a gesture in the parent page does not grant a cross-origin YouTube iframe permission to play. Unconfirmed whether it works on the owner's device. |
+| **Jukebox audio on iOS** | A tap-for-sound button exists because a gesture in the parent page does not grant a cross-origin YouTube iframe permission to play. It is now driven by what the player reports about itself rather than by a latch, so it returns whenever the square actually goes quiet. Still unconfirmed on the owner's own phone. |
+| **Three security fixes await a Render deploy** | `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, `Permissions-Policy: camera=(self)` and the `serveStatic` separator fix are all in `server/index.mjs` and live nowhere. Pushing to main ships the static beta only. Nothing is worse than before; those three simply are not in force. |
+| **`FESTIVAL_ADMIN_KEY` on Render** | Cannot be read from here. It **fails closed**, so "staff tools do not work" and "no key is set" look identical from outside. If the tools do work, a key is set and the open question is whether it is a strong one. Same for `FESTIVAL_ALLOWED_ORIGINS`. |
+| **Jumping in a real headset** | The jump now moves the view, which is right on a desk and on a phone. In an immersive session, vertical camera motion with no matching inner-ear signal is a known way to make people queasy. Asked; not yet answered. Damping or suppressing it for `!xrSimulated` only would be a few lines. |
+| **Live-service penetration testing** | The 2026-09-04 pass was a code review plus reasoning about browser behaviour. The running Render service was never probed. Get the owner's explicit go-ahead before testing it. |
 
 ---
 
