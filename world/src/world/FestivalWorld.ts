@@ -522,17 +522,11 @@ const PROJECTOR_ORIGINS = new Set([
 const MENTOR_SWIM_Y = -0.72;
 
 /**
- * Turning a monitor into a window: how far the view moves for how far the head
- * does, and how far away the window is taken to be.
- *
- * A webcam gives roughly a hand's width of usable head travel, so one for one
- * would be imperceptible. The gain is world units per metre of real movement;
- * the distance is where the screen is assumed to sit in front of the eye, and
- * it is the number that decides how strongly the frustum skews — with the head
- * centred, this whole arrangement reproduces the ordinary view exactly.
+ * How far the viewpoint moves for how far the head does. A webcam gives roughly
+ * a hand's width of usable head travel, so one for one would be imperceptible;
+ * this is world units per metre of real movement.
  */
 const HEAD_PARALLAX_UNITS_PER_METRE = 12;
-const HEAD_SCREEN_DISTANCE = 14;
 /**
  * Rotation is the other half, and it cannot be one for one either: a face
  * leaves a webcam's useful range around thirty-five degrees, which would leave
@@ -1894,6 +1888,11 @@ export class FestivalWorld {
     }
   }
 
+  /** Let the browser keep the tracker between visits, or not. */
+  setHeadTrackingRemember(remember: boolean): void {
+    this.headTracking.setRemember(remember);
+  }
+
   /**
    * Begin fetching the tracker without asking for a camera. Called when the
    * panel opens, so the reading time is not dead time.
@@ -1997,8 +1996,12 @@ export class FestivalWorld {
     };
   }
 
-  /** Hand the ordinary symmetric frustum back. */
+  /**
+   * Put the eye back on the rig's own axis. The projection is never rewritten
+   * any more, so there is nothing to restore there.
+   */
   private releaseHeadCoupledView(): void {
+    this.camera.position.set(0, AVATAR_EYE_HEIGHT, 0);
     this.camera.updateProjectionMatrix();
   }
 
@@ -2008,43 +2011,50 @@ export class FestivalWorld {
    * cannot turn you round, and a mouse cannot lean.
    */
   private applyHeadView(): void {
-    this.xrRig.rotation.y = this.xrYaw + this.headTracking.pose.yaw * HEAD_YAW_GAIN;
-    this.camera.rotation.set(this.xrSimPitch + this.headTracking.pose.pitch * HEAD_PITCH_GAIN, 0, 0);
+    // Scaled by the visitor's setting like every other look control. Head
+    // tracking is not a one-to-one mapping to leave alone — it is already
+    // amplified four times over, because a webcam only sees about thirty-five
+    // degrees of turn — and that amplification is exactly what "camera speed"
+    // means to somebody using it. Leaving it out is why the slider was reported
+    // as doing nothing twice: with head tracking on, the head is what moves the
+    // camera, and the head was the one thing the slider did not touch.
+    const gain = this.lookSensitivity;
+    this.xrRig.rotation.y = this.xrYaw + this.headTracking.pose.yaw * HEAD_YAW_GAIN * gain;
+    this.camera.rotation.set(
+      this.xrSimPitch + this.headTracking.pose.pitch * HEAD_PITCH_GAIN * gain,
+      0,
+      0,
+    );
     this.applyHeadCoupledView();
   }
 
   /**
-   * The head-coupled view: the eye moves with the visitor's head, and the
-   * frustum is rebuilt around it so the screen's own rectangle stays pinned
-   * where it is in the world. That second half is what makes it a window
-   * rather than a camera on a stick — without it, leaning left swings the whole
-   * scene instead of revealing what was behind the left edge.
+   * The eye moves with the visitor's head: lean and the viewpoint leans, which
+   * is the parallax.
    *
-   * Rebuilt every frame, because a window resize recomputes the symmetric
-   * projection behind us.
+   * It used to rebuild the frustum off-axis around that eye as well, so the
+   * screen's own rectangle stayed pinned in the world — a proper window rather
+   * than a camera on a stick. **That had to go**, and the reason is worth
+   * keeping: the screening panels are CSS3D, and `CSS3DRenderer` builds its
+   * transform from the projection's vertical scale plus CSS `perspective()`,
+   * which is always centred. An off-centre frustum cannot be expressed in it at
+   * all. So WebGL drew the world skewed and the video unskewed, and the picture
+   * slid inside its own frame every time anybody leaned — reported twice, and
+   * measured at a skew of ∓0.126 for a ten-centimetre lean.
+   *
+   * Moving the eye is the larger half of the effect and CSS3D follows it
+   * exactly, which the alignment probe reports as zero drift. If the pinned
+   * window is ever wanted back, it needs `perspective-origin` on the CSS3D
+   * layer moved to the same principal point, and the layer's own content
+   * shifted with it — not a change to make without that probe open.
    */
   private applyHeadCoupledView(): void {
     const pose = this.headTracking.pose;
-    const offsetX = pose.x * HEAD_PARALLAX_UNITS_PER_METRE;
-    const offsetY = pose.y * HEAD_PARALLAX_UNITS_PER_METRE;
-    const offsetZ = pose.z * HEAD_PARALLAX_UNITS_PER_METRE;
-    this.camera.position.set(offsetX, AVATAR_EYE_HEIGHT + offsetY, -offsetZ);
-    const halfHeight = HEAD_SCREEN_DISTANCE * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) * 0.5);
-    const halfWidth = halfHeight * this.camera.aspect;
-    // Leaning in shortens the throw to the window, which is what widens the
-    // view. Floored so that leaning through the screen cannot invert it.
-    const distance = Math.max(1, HEAD_SCREEN_DISTANCE - offsetZ);
-    const scale = this.camera.near / distance;
-    this.camera.projectionMatrix.makePerspective(
-      (-halfWidth - offsetX) * scale,
-      (halfWidth - offsetX) * scale,
-      (halfHeight - offsetY) * scale,
-      (-halfHeight - offsetY) * scale,
-      this.camera.near,
-      this.camera.far,
-      this.camera.coordinateSystem,
+    this.camera.position.set(
+      pose.x * HEAD_PARALLAX_UNITS_PER_METRE,
+      AVATAR_EYE_HEIGHT + pose.y * HEAD_PARALLAX_UNITS_PER_METRE,
+      -pose.z * HEAD_PARALLAX_UNITS_PER_METRE,
     );
-    this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
   }
 
   /**

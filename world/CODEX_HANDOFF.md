@@ -8,7 +8,66 @@ Last updated: 2026-09-04 · phone VR gyroscope, webcam head tracking, jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — one sensitivity for every camera
+## 0. READ THIS FIRST — the sensitivity reaches the head, the skew is gone
+
+### Why the slider "still did nothing"
+
+Because the visitor had **head tracking on**, and the head was what was moving
+the camera — the one input the slider deliberately did not touch. The reasoning
+for leaving it out was that head tracking maps a real movement of the body onto
+the same movement of the view and scaling that makes the picture disagree with
+the inner ear. **That reasoning was wrong here:** head tracking is not one to
+one. It is amplified four times over, because a webcam only sees about
+thirty-five degrees of turn, and that amplification is exactly what "camera
+speed" means to somebody using it.
+
+`HEAD_YAW_GAIN` and `HEAD_PITCH_GAIN` are scaled by `lookSensitivity` now.
+Measured, for a 20° head turn: rig yaw 0.404 / 1.348 / 2.697 at 30% / 100% /
+200% — linear, exact. The **phone gyroscope** is still left alone, and that one
+really is one to one.
+
+### The screening frames no longer drift
+
+The off-axis frustum is **removed**. `applyHeadCoupledView()` now only moves the
+eye; it no longer rebuilds the projection around it.
+
+The screening panels are CSS3D, and `CSS3DRenderer` builds its transform from
+the projection's vertical scale plus CSS `perspective()`, which is always
+centred — an off-centre frustum cannot be expressed in it at all. So WebGL drew
+the world skewed and the video unskewed, and the picture slid inside its own
+frame whenever anybody leaned. Measured before: ∓0.126 of skew for a
+ten-centimetre lean. Measured after: `frustumSkew [0, 0]` while leaning, with
+the camera still moving (`camPos.x` 1.152 for the same lean), so the parallax —
+the larger half of the effect — is untouched and CSS3D follows it exactly.
+
+**If the pinned-window effect is ever wanted back**, it needs `perspective-origin`
+on the CSS3D layer moved to the same principal point *and* the layer's content
+shifted with it. Do not attempt it without `__festivalProjectors()` open.
+
+### The world has never had film grain
+
+`.world-vignette` shared the gate's grain rule and then overrode
+`background-image` with its gradient one line later, so the noise was shadowed
+from the world's very first commit. `.world-grain` is its own element now,
+because the two want different blending — grain is soft-light over the picture,
+the vignette is a plain darkening of the corners, and one element cannot be
+both. Inset −60px so the stepped shift never exposes an edge, and off in lite
+mode.
+
+The shell carries `data-world-quality`, **not** `data-graphics`: the latter is
+already the gate's own button selector and putting it on a `<section>` would
+hand that element to the button wiring.
+
+### Remembering the tracker
+
+`Remember on this computer` — off by default, stored per browser, and the panel
+states which of the two bargains it is in either way. On, the fetches use
+`cache: 'default'` and a second visit is quick; off, they stay `no-store` and
+every visit downloads about 7MB. The promise that nothing is written to a
+visitor's machine is only worth making if it is also visibly withdrawn when they
+choose otherwise.
+
+## 0-prev. One sensitivity for every camera
 
 ### The slider was reported as doing nothing, and it was nearly true
 

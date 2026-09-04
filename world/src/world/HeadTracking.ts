@@ -162,6 +162,14 @@ export class HeadTracking {
   private runtimeCached = false;
   private prefetching = false;
   /**
+   * Whether the visitor has said the browser may keep the tracker.
+   *
+   * Off by default, and the panel says which mode it is in either way: the
+   * promise that nothing is written to their machine is only worth making if it
+   * is also visibly withdrawn when they choose otherwise.
+   */
+  private remember = false;
+  /**
    * The tracker, held in memory for as long as the page is open and written
    * nowhere. Kept across a stop and start so that turning tracking off and on
    * again does not fetch fifteen megabytes twice; it all goes when the tab does.
@@ -292,6 +300,15 @@ export class HeadTracking {
    * faster. Within one page it is fetched once and kept, so turning tracking
    * off and on again is free.
    */
+  /** Let the browser keep the tracker between visits, or not. */
+  setRemember(remember: boolean): void {
+    this.remember = remember;
+  }
+
+  remembering(): boolean {
+    return this.remember;
+  }
+
   private async fetchWithoutStoring(url: string): Promise<ArrayBuffer> {
     // A request with no deadline is the reason a stuck load looked like a slow
     // one for ever. Aborted rather than left hanging, so the failure has a name.
@@ -300,7 +317,12 @@ export class HeadTracking {
     let response: Response;
     try {
       response = await fetch(url, {
-        cache: 'no-store', mode: 'cors', credentials: 'omit', signal: abort.signal,
+        // 'default' lets the browser store and reuse it, which is the whole
+        // point of the setting; 'no-store' obliges it not to.
+        cache: this.remember ? 'default' : 'no-store',
+        mode: 'cors',
+        credentials: 'omit',
+        signal: abort.signal,
       });
     } catch (error) {
       window.clearTimeout(deadline);
@@ -636,6 +658,7 @@ export class HeadTracking {
       status: this.status,
       message: this.message,
       running: this.running,
+      remember: this.remember,
       loadStage: this.loadStage,
       runtimeCached: this.runtimeCached,
       frames: this.frames,

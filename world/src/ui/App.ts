@@ -204,6 +204,15 @@ const JUKEBOX_VOLUME_KEY = 'myschedule-jukebox-volume-v1';
  * 0.6 — and carrying that number into a setting that now scales every camera
  * would quietly slow the whole world down for anyone who had touched it.
  */
+/** Opt-in, off by default: whether the browser may keep the tracker. */
+const HEAD_TRACK_REMEMBER_KEY = 'myschedule-head-track-remember-v1';
+const readStoredHeadTrackRemember = (): boolean => {
+  try {
+    return window.localStorage.getItem(HEAD_TRACK_REMEMBER_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
 const LOOK_SENSITIVITY_KEY = 'myschedule-look-sensitivity-v2';
 const DEFAULT_LOOK_SENSITIVITY = 1;
 const readStoredLookSensitivity = (): number => {
@@ -343,6 +352,7 @@ export class App {
   private localHitAt = 0;
   private jukeboxVolume = readStoredJukeboxVolume();
   private lookSensitivity = readStoredLookSensitivity();
+  private headTrackRemember = readStoredHeadTrackRemember();
   private jukeboxFrame?: HTMLIFrameElement;
   private lastJukeboxLiftAt = 0;
   /**
@@ -914,11 +924,12 @@ export class App {
     const vrPreview = this.usesVrSimulation();
     const phoneVrPreview = this.usesPhoneVrSimulation();
     this.root.innerHTML = `
-      <section class="world-shell">
+      <section class="world-shell" data-world-quality="${this.graphicsMode}">
         <canvas id="world-canvas" aria-label="Myschedule festival world"></canvas>
         <div class="world-css3d" id="world-css3d" aria-hidden="true"></div>
         <canvas id="world-foreground" aria-hidden="true"></canvas>
         <div class="world-vignette" aria-hidden="true"></div>
+        <div class="world-grain" aria-hidden="true"></div>
         <div class="world-impact" data-impact aria-hidden="true"></div>
         <div class="world-death" aria-live="polite"></div>
         <div class="world-postcard" aria-hidden="true">
@@ -985,8 +996,10 @@ export class App {
           </button>
           <div class="head-track__body">
           <p data-head-track-note>${zh
-            ? '用電腦的攝影機追蹤你的頭部，讓螢幕變成一扇可以探頭看的窗。影像只在這台電腦上處理，不會離開你的裝置。約 7MB 的追蹤模型只存在記憶體中，關掉分頁就消失，不會寫進你的電腦。'
-            : 'Track your head with your computer\u2019s camera so the screen becomes a window you can lean around. The video is processed on this machine and never leaves your device. The ~7MB tracker is held in memory only — never written to your computer, and gone when you close the tab.'}</p>
+            ? '用電腦的攝影機追蹤你的頭部，讓螢幕變成一扇可以探頭看的窗。影像只在這台電腦上處理，不會離開你的裝置。'
+            : 'Track your head with your computer\u2019s camera so the screen becomes a window you can lean around. The video is processed on this machine and never leaves your device.'}</p>
+          <label class="head-track__remember"><input type="checkbox" data-head-track-remember${this.headTrackRemember ? ' checked' : ''} /><span>${zh ? '記住在這台電腦上' : 'Remember on this computer'}</span></label>
+          <p class="head-track__mode" data-head-track-mode>${this.headTrackModeLabel()}</p>
           <label data-head-track-pick hidden><span>${zh ? '攝影機' : 'CAMERA'}</span><select data-head-track-camera></select></label>
           <div class="head-track__actions">
             <button class="button button--primary" type="button" data-head-track-start>${zh ? '開啟頭部追蹤' : 'ENABLE HEAD TRACKING'}</button>
@@ -1749,7 +1762,10 @@ export class App {
       // Opening it is enough of a signal to start the download. Seven megabytes
       // is a long wait to begin only once somebody has finished reading why
       // they might want it.
-      if (this.headTrackPanelOpen) this.world?.prefetchHeadTracking();
+      if (this.headTrackPanelOpen) {
+        this.world?.setHeadTrackingRemember(this.headTrackRemember);
+        this.world?.prefetchHeadTracking();
+      }
       this.syncHeadTrackUi();
     });
     this.root.querySelector<HTMLButtonElement>('[data-head-track-fold]')?.addEventListener('click', () => {
@@ -1757,6 +1773,15 @@ export class App {
       // running, keeps running: the button turns red to say so.
       this.headTrackPanelOpen = false;
       this.syncHeadTrackUi();
+    });
+    this.root.querySelector<HTMLInputElement>('[data-head-track-remember]')?.addEventListener('change', (event) => {
+      this.headTrackRemember = (event.currentTarget as HTMLInputElement).checked;
+      this.world?.setHeadTrackingRemember(this.headTrackRemember);
+      try {
+        window.localStorage.setItem(HEAD_TRACK_REMEMBER_KEY, this.headTrackRemember ? '1' : '0');
+      } catch { /* private mode */ }
+      const mode = this.root.querySelector<HTMLElement>('[data-head-track-mode]');
+      if (mode) mode.textContent = this.headTrackModeLabel();
     });
     this.root.querySelector<HTMLButtonElement>('[data-head-track-start]')?.addEventListener('click', () => {
       // Straight from the press. A browser will not open a camera on the back
@@ -2272,6 +2297,18 @@ export class App {
           ? (zh ? '標準' : 'STANDARD')
           : (zh ? '靈敏' : 'QUICK');
     return `${shape} · ${percent}%`;
+  }
+
+  /** Says plainly which of the two bargains the visitor is currently in. */
+  private headTrackModeLabel(): string {
+    const zh = this.language === 'zh-TW';
+    return this.headTrackRemember
+      ? (zh
+        ? '已開啟：約 7MB 的追蹤模型會存在這台電腦上，下次開啟就會很快。'
+        : 'ON — the ~7MB tracker is kept on this computer, so next time is quick.')
+      : (zh
+        ? '未開啟：追蹤模型只存在記憶體中，關掉分頁就消失，但每次都要重新下載。'
+        : 'OFF — the tracker is held in memory only and is gone when you close the tab, but every visit downloads it again.');
   }
 
   private headTrackReadout(state: Record<string, unknown>): string {
@@ -4123,6 +4160,10 @@ export class App {
       button.addEventListener('click', () => {
         this.graphicsMode = button.dataset.worldGraphics as GraphicsMode;
         this.world?.setGraphicsMode(this.graphicsMode);
+        // The grain is CSS, so it reads the mode off the shell rather than
+        // through the world.
+        const shell = this.root.querySelector<HTMLElement>('.world-shell');
+        if (shell) shell.dataset.worldQuality = this.graphicsMode;
         panel.querySelectorAll<HTMLButtonElement>('[data-world-graphics]').forEach((candidate) =>
           setButtonPressed(candidate, candidate === button),
         );
