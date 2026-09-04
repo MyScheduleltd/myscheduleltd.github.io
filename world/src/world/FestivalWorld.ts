@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { HeadTracking } from './HeadTracking';
 import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, taperedPrism, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
 import { dressBuildings, dressInteriors } from './WornArchitecture';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
@@ -492,6 +493,29 @@ const AVATAR_SWIM_Y = -2.08;
  * step rather than one of them walking on the water.
  */
 const SWIM_Z = -60;
+
+/**
+ * Turning a monitor into a window: how far the view moves for how far the head
+ * does, and how far away the window is taken to be.
+ *
+ * A webcam gives roughly a hand's width of usable head travel, so one for one
+ * would be imperceptible. The gain is world units per metre of real movement;
+ * the distance is where the screen is assumed to sit in front of the eye, and
+ * it is the number that decides how strongly the frustum skews — with the head
+ * centred, this whole arrangement reproduces the ordinary view exactly.
+ */
+const HEAD_PARALLAX_UNITS_PER_METRE = 12;
+const HEAD_SCREEN_DISTANCE = 14;
+/**
+ * Rotation is the other half, and it cannot be one for one either: a face
+ * leaves a webcam's useful range around thirty-five degrees, which would leave
+ * the visitor looking around a sixty-degree cone. A glance is multiplied into a
+ * sweep. Pitch is held lower than yaw because there is less vertical room in a
+ * head than horizontal, and because a view that pitches too eagerly is the part
+ * that makes people feel ill.
+ */
+const HEAD_YAW_GAIN = 4;
+const HEAD_PITCH_GAIN = 2.6;
 // The underside of the avatar's torso, measured from its group origin. Put the
 // origin this far below a seat pad and the avatar rests on it.
 const AVATAR_SEAT_DROP = 1.09;
@@ -1234,6 +1258,12 @@ export class FestivalWorld {
   private readonly phoneOrientationScreenAxis = new THREE.Vector3(0, 0, 1);
   private readonly phoneOrientationCorrection = new THREE.Quaternion()
     .setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+  /**
+   * The desktop preview's optional head tracking. Inert until a visitor asks
+   * for it: no camera is opened and no model is fetched before that.
+   */
+  readonly headTracking = new HeadTracking();
+  private headTrackingActive = false;
   private xrSnapReady = true;
   private xrTeleportReady = true;
   private xrJumpReady = true;
@@ -1530,6 +1560,7 @@ export class FestivalWorld {
     this.renderer.setAnimationLoop(null);
     if (this.xrSession) void this.xrSession.end().catch(() => undefined);
     this.stopPhoneOrientation();
+    this.disableHeadTracking();
     window.removeEventListener('resize', this.resize);
     this.canvasSizeObserver?.disconnect();
     window.clearInterval(this.lightCullTimer);
@@ -1814,6 +1845,131 @@ export class FestivalWorld {
   }
 
   /**
+   * Turn the webcam head tracking on for this preview. Must be reached from a
+   * visitor's own gesture — a browser will not hand over a camera otherwise.
+   */
+  async enableHeadTracking(deviceId?: string): Promise<boolean> {
+    if (!this.xrActive || !this.xrSimulated) return false;
+    const started = await this.headTracking.start(deviceId);
+    this.headTrackingActive = started;
+    if (!started) this.releaseHeadCoupledView();
+    return started;
+  }
+
+  disableHeadTracking(): void {
+    this.headTracking.stop();
+    this.headTrackingActive = false;
+    this.releaseHeadCoupledView();
+  }
+
+  headTrackingEnabled(): boolean {
+    return this.headTrackingActive && this.headTracking.running;
+  }
+
+  /** Everything the experiment knows about itself, for the on-screen readout. */
+  headTrackingSnapshot(): Record<string, unknown> {
+    return this.headTracking.snapshot();
+  }
+
+  /**
+   * Loopback fixture: run the head-coupled view against poses nobody had to
+   * sit in front of a camera for.
+   *
+   * A review browser has no webcam, so the only part of this that cannot be
+   * proved here is what a real face reports. Everything from that reading
+   * onward — calibration, deadzone, easing, the amplified turn and the skewed
+   * frustum — is the live path, driven by the tracker's own matrix format.
+   */
+  headTrackForReview(poses: Array<{ yaw?: number; pitch?: number; x?: number; y?: number; z?: number }>): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    if (!this.headTrackingActive) {
+      this.headTracking.startForReview();
+      this.headTrackingActive = true;
+    }
+    for (const pose of poses) {
+      // The tracker's own space: centimetres from the lens, x to the visitor's
+      // right as the camera sees it, y up, z away from the lens.
+      const matrix = new THREE.Matrix4()
+        .makeRotationFromEuler(new THREE.Euler(pose.pitch ?? 0, pose.yaw ?? 0, 0, 'YXZ'))
+        .setPosition(-(pose.x ?? 0) * 100, (pose.y ?? 0) * 100, -((pose.z ?? 0) * 100) - 45);
+      this.headTracking.applyMatrix(matrix.toArray());
+    }
+    // Settled and applied here rather than left to the render loop. A review
+    // browser runs the page in a hidden tab, where timers are clamped to about
+    // one a second, so waiting for the easing to converge over real frames
+    // turns a nine-pose sweep into a minute of nothing.
+    this.headTracking.update(performance.now(), 4);
+    if (this.xrActive && this.xrSimulated) this.applyHeadView();
+  }
+
+  /** The head pose and the view it produced, side by side. */
+  headTrackReviewSnapshot(): Record<string, unknown> {
+    const round = (value: number) => Number(value.toFixed(4));
+    const elements = this.camera.projectionMatrix.elements;
+    return {
+      ...this.headTracking.snapshot(),
+      active: this.headTrackingEnabled(),
+      cameraPosition: this.camera.position.toArray().map(round),
+      rigYaw: round(this.xrRig.rotation.y),
+      cameraPitch: round(this.camera.rotation.x),
+      // A symmetric frustum leaves these two at zero. Anything else is the
+      // window being skewed around the eye, which is the effect itself.
+      frustumSkewX: round(elements[8]),
+      frustumSkewY: round(elements[9]),
+    };
+  }
+
+  /** Hand the ordinary symmetric frustum back. */
+  private releaseHeadCoupledView(): void {
+    this.camera.updateProjectionMatrix();
+  }
+
+  /**
+   * Mouse drag still owns the gross turn; the head adds a glance on top of it
+   * and moves the eye inside the window. Neither replaces the other — a webcam
+   * cannot turn you round, and a mouse cannot lean.
+   */
+  private applyHeadView(): void {
+    this.xrRig.rotation.y = this.xrYaw + this.headTracking.pose.yaw * HEAD_YAW_GAIN;
+    this.camera.rotation.set(this.xrSimPitch + this.headTracking.pose.pitch * HEAD_PITCH_GAIN, 0, 0);
+    this.applyHeadCoupledView();
+  }
+
+  /**
+   * The head-coupled view: the eye moves with the visitor's head, and the
+   * frustum is rebuilt around it so the screen's own rectangle stays pinned
+   * where it is in the world. That second half is what makes it a window
+   * rather than a camera on a stick — without it, leaning left swings the whole
+   * scene instead of revealing what was behind the left edge.
+   *
+   * Rebuilt every frame, because a window resize recomputes the symmetric
+   * projection behind us.
+   */
+  private applyHeadCoupledView(): void {
+    const pose = this.headTracking.pose;
+    const offsetX = pose.x * HEAD_PARALLAX_UNITS_PER_METRE;
+    const offsetY = pose.y * HEAD_PARALLAX_UNITS_PER_METRE;
+    const offsetZ = pose.z * HEAD_PARALLAX_UNITS_PER_METRE;
+    this.camera.position.set(offsetX, AVATAR_EYE_HEIGHT + offsetY, -offsetZ);
+    const halfHeight = HEAD_SCREEN_DISTANCE * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) * 0.5);
+    const halfWidth = halfHeight * this.camera.aspect;
+    // Leaning in shortens the throw to the window, which is what widens the
+    // view. Floored so that leaning through the screen cannot invert it.
+    const distance = Math.max(1, HEAD_SCREEN_DISTANCE - offsetZ);
+    const scale = this.camera.near / distance;
+    this.camera.projectionMatrix.makePerspective(
+      (-halfWidth - offsetX) * scale,
+      (halfWidth - offsetX) * scale,
+      (halfHeight - offsetY) * scale,
+      (-halfHeight - offsetY) * scale,
+      this.camera.near,
+      this.camera.far,
+      this.camera.coordinateSystem,
+    );
+    this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
+  }
+
+  /**
    * Level the preview: whichever way the device is pointed now becomes the
    * direction the visitor entered VR facing.
    *
@@ -1826,6 +1982,9 @@ export class FestivalWorld {
   recenterVrView(): boolean {
     if (!this.xrActive || !this.xrSimulated) return false;
     this.xrLookReference = undefined;
+    // However the visitor is sitting now is the new straight-ahead, for the
+    // head as much as for the view.
+    if (this.headTrackingEnabled()) this.headTracking.recenter();
     if (this.phoneOrientationEnabled) {
       if (!this.phoneOrientationSamples) {
         // Nothing has come back from the sensor yet, so there is no pose to
@@ -1852,6 +2011,10 @@ export class FestivalWorld {
     this.xrSimulated = false;
     this.xrSimPitch = 0;
     this.stopPhoneOrientation();
+    // The camera light goes out with the session. Leaving it on because the
+    // page is still open is exactly the behaviour that makes people distrust a
+    // site that asked for a camera.
+    this.disableHeadTracking();
     this.xrRig.position.set(0, 0, 0);
     this.xrRig.rotation.set(0, 0, 0);
     this.xrControllers.forEach((controller) => controller.position.set(0, 0, 0));
@@ -1955,6 +2118,7 @@ export class FestivalWorld {
       simYaw: Number(this.xrYaw.toFixed(4)),
       simPitch: Number(this.xrSimPitch.toFixed(4)),
       homeYaw: Number(this.xrHomeYaw.toFixed(4)),
+      headTracking: this.headTrackingActive ? this.headTracking.snapshot() : null,
       lookedAround: this.xrLookedAround,
       renderLoop: 'WebGLRenderer.setAnimationLoop',
       seat: this.activeSeat?.id ?? null,
@@ -10988,7 +11152,10 @@ export class FestivalWorld {
       this.xrRig.position.set(this.player.position.x, floorY, this.player.position.z);
       if (this.xrSimulated) {
         this.camera.position.set(0, AVATAR_EYE_HEIGHT, 0);
-        if (this.phoneOrientationEnabled && this.phoneOrientationReceived) {
+        if (this.headTrackingEnabled()) {
+          this.headTracking.update(performance.now(), delta);
+          this.applyHeadView();
+        } else if (this.phoneOrientationEnabled && this.phoneOrientationReceived) {
           // The operating system has already fused and filtered these poses.
           // A second easing layer here only made the picture trail the phone,
           // which reads as the view disagreeing with the device, so the latest

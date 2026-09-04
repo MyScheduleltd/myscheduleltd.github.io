@@ -285,6 +285,15 @@ export class App {
   private vrRequested = sessionStorage.getItem(VR_MODE_KEY) === '1';
   private vrActive = false;
   private vrResumePending = false;
+  /**
+   * The webcam head-tracking experiment. Off unless `?headtrack` is on the URL,
+   * so the published beta carries the code and offers it to nobody: no camera
+   * prompt, no multi-megabyte model, nothing on screen.
+   */
+  private readonly headTrackRequested =
+    new URLSearchParams(window.location.search).has('headtrack');
+  private headTrackPanelOpen = false;
+  private headTrackReadoutTimer?: number;
   private vrError = '';
   private promptHoldTimer = 0;
   private promptHeld = false;
@@ -411,7 +420,7 @@ export class App {
   private async detectVrSupport(): Promise<void> {
     const review = new URLSearchParams(window.location.search).get('review');
     const loopbackFixture = ['127.0.0.1', 'localhost'].includes(window.location.hostname)
-      && ['vr-gate', 'vr-entry', 'vr-youtube', 'vr-screen'].includes(review ?? '');
+      && ['vr-gate', 'vr-entry', 'vr-youtube', 'vr-screen', 'headtrack'].includes(review ?? '');
     try {
       this.vrSupported = loopbackFixture || Boolean(await navigator.xr?.isSessionSupported('immersive-vr'));
     } catch {
@@ -467,7 +476,7 @@ export class App {
   private isLocalVrPreview(): boolean {
     const review = new URLSearchParams(window.location.search).get('review');
     return ['127.0.0.1', 'localhost'].includes(window.location.hostname)
-      && ['vr-gate', 'vr-entry', 'vr-screen', 'vr-phone'].includes(review ?? '');
+      && ['vr-gate', 'vr-entry', 'vr-screen', 'vr-phone', 'headtrack'].includes(review ?? '');
   }
 
   private isLocalPhoneVrPreview(): boolean {
@@ -939,6 +948,19 @@ export class App {
         <button class="vr-recenter" type="button" data-vr-recenter hidden>${phoneVrPreview
           ? (zh ? '校準動態鏡頭' : 'CALIBRATE MOTION')
           : (zh ? '重置 VR 視角' : 'RECENTER VIEW')}</button>
+        <section class="head-track" data-head-track hidden>
+          <p class="eyebrow">${zh ? '實驗中 · 頭部追蹤' : 'EXPERIMENT · HEAD TRACKING'}</p>
+          <p data-head-track-note>${zh
+            ? '用電腦的攝影機追蹤你的頭部，讓螢幕變成一扇可以探頭看的窗。影像只在這台電腦上處理，不會離開你的裝置。'
+            : 'Track your head with your computer\u2019s camera so the screen becomes a window you can lean around. The video is processed on this machine and never leaves your device.'}</p>
+          <label data-head-track-pick hidden><span>${zh ? '攝影機' : 'CAMERA'}</span><select data-head-track-camera></select></label>
+          <div>
+            <button class="button button--primary" type="button" data-head-track-start>${zh ? '開啟頭部追蹤' : 'ENABLE HEAD TRACKING'}</button>
+            <button class="button button--secondary" type="button" data-head-track-stop>${zh ? '關閉' : 'TURN OFF'}</button>
+          </div>
+          <p class="head-track__readout" data-head-track-readout></p>
+        </section>
+        <button class="head-track-toggle" type="button" data-head-track-toggle hidden>${zh ? '頭部追蹤' : 'HEAD TRACKING'}</button>
         <header class="world-header">
           <div class="world-brand"><img class="brand-logo" src="${companyLogoUrl}" alt="我的檔期" /><span>MYSCHEDULE</span></div>
           <div class="status-cluster" id="connection-status" data-status="connecting">
@@ -1155,6 +1177,14 @@ export class App {
         () => this.world?.focusMentorAtStandForReview();
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview =
         () => this.world?.mentorAtStandReviewSnapshot();
+    } else if (reviewTarget === 'headtrack' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      (window as Window & {
+        __festivalHeadTrack?: (poses?: Array<Record<string, number>>) => unknown;
+      }).__festivalHeadTrack = (poses = []) => {
+        this.world?.headTrackForReview(poses);
+        this.syncHeadTrackUi();
+        return this.world?.headTrackReviewSnapshot();
+      };
     } else if (reviewTarget === 'mentor-swim' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       this.world.focusMentorSwimForReview();
       for (const delay of [400, 1200, 2200]) {
@@ -1663,6 +1693,28 @@ export class App {
         ? (this.language === 'zh-TW' ? '已校準 · 現在的手機方向就是正前方' : 'CALIBRATED · THIS PHONE POSE IS NOW FORWARD')
         : (this.language === 'zh-TW' ? 'VR 視角已回正' : 'VR VIEW RECENTRED'));
     });
+    this.root.querySelector<HTMLButtonElement>('[data-head-track-toggle]')?.addEventListener('click', () => {
+      this.headTrackPanelOpen = !this.headTrackPanelOpen;
+      this.syncHeadTrackUi();
+    });
+    this.root.querySelector<HTMLButtonElement>('[data-head-track-start]')?.addEventListener('click', () => {
+      // Straight from the press. A browser will not open a camera on the back
+      // of anything else, and neither should this.
+      const chosen = this.root.querySelector<HTMLSelectElement>('[data-head-track-camera]')?.value;
+      void this.world?.enableHeadTracking(chosen || undefined).then(async (started) => {
+        if (started) await this.fillHeadTrackCameras();
+        this.syncHeadTrackUi();
+      });
+    });
+    this.root.querySelector<HTMLButtonElement>('[data-head-track-stop]')?.addEventListener('click', () => {
+      this.world?.disableHeadTracking();
+      this.syncHeadTrackUi();
+    });
+    this.root.querySelector<HTMLSelectElement>('[data-head-track-camera]')?.addEventListener('change', (event) => {
+      const deviceId = (event.currentTarget as HTMLSelectElement).value;
+      if (!this.world?.headTrackingEnabled()) return;
+      void this.world.enableHeadTracking(deviceId || undefined).then(() => this.syncHeadTrackUi());
+    });
     this.root.querySelector<HTMLButtonElement>('[data-vr-dismiss]')?.addEventListener('click', () => {
       this.vrRequested = false;
       sessionStorage.removeItem(VR_MODE_KEY);
@@ -2079,10 +2131,85 @@ export class App {
     if (resume) resume.hidden = !this.vrResumePending || this.vrActive || !this.root.querySelector('#venue-screen')?.hasAttribute('hidden');
     if (previewExit) previewExit.hidden = !this.vrActive || !this.usesVrSimulation();
     if (recenter) recenter.hidden = !this.vrActive || !this.usesVrSimulation();
+    this.syncHeadTrackUi();
     if (status && this.vrError) status.textContent = this.vrError;
     if (this.world && this.usesVrSimulation()) {
       document.documentElement.dataset.vrReview = JSON.stringify(this.vrReviewSnapshot());
     }
+  }
+
+  /**
+   * The experiment's own corner. Everything here stays hidden unless the flag
+   * is on the URL *and* the keyboard-and-mouse preview is actually running:
+   * there is nothing for a head to do in a phone's motion preview, and a real
+   * headset has its own.
+   */
+  private syncHeadTrackUi(): void {
+    const toggle = this.root.querySelector<HTMLButtonElement>('[data-head-track-toggle]');
+    const panel = this.root.querySelector<HTMLElement>('[data-head-track]');
+    const readout = this.root.querySelector<HTMLElement>('[data-head-track-readout]');
+    const pick = this.root.querySelector<HTMLElement>('[data-head-track-pick]');
+    const offered = this.headTrackRequested && this.vrActive
+      && this.usesVrSimulation() && !this.usesPhoneVrSimulation();
+    if (!offered && this.headTrackPanelOpen) this.headTrackPanelOpen = false;
+    const tracking = Boolean(this.world?.headTrackingEnabled());
+    if (toggle) {
+      toggle.hidden = !offered;
+      toggle.dataset.active = String(tracking);
+    }
+    if (panel) panel.hidden = !offered || !this.headTrackPanelOpen;
+    if (pick) pick.hidden = !tracking;
+    if (readout) {
+      const state = this.world?.headTrackingSnapshot();
+      readout.textContent = state ? this.headTrackReadout(state) : '';
+    }
+    // A live readout is the whole point of a prototype: if an axis is inverted
+    // it says so in numbers rather than in a feeling.
+    const wantsTicker = Boolean(offered && this.headTrackPanelOpen);
+    if (wantsTicker && this.headTrackReadoutTimer === undefined) {
+      this.headTrackReadoutTimer = window.setInterval(() => {
+        const element = this.root.querySelector<HTMLElement>('[data-head-track-readout]');
+        const state = this.world?.headTrackingSnapshot();
+        if (element && state) element.textContent = this.headTrackReadout(state);
+      }, 150);
+    } else if (!wantsTicker && this.headTrackReadoutTimer !== undefined) {
+      window.clearInterval(this.headTrackReadoutTimer);
+      this.headTrackReadoutTimer = undefined;
+    }
+  }
+
+  private headTrackReadout(state: Record<string, unknown>): string {
+    const zh = this.language === 'zh-TW';
+    const status = String(state.status ?? 'idle');
+    const words: Record<string, [string, string]> = {
+      idle: ['OFF', '未啟用'],
+      loading: ['LOADING THE TRACKER…', '正在載入追蹤模型…'],
+      requesting: ['ASKING FOR THE CAMERA…', '正在請求攝影機…'],
+      denied: ['CAMERA REFUSED', '攝影機被拒絕'],
+      unsupported: ['NOT AVAILABLE HERE', '此瀏覽器不支援'],
+      searching: ['LOOKING FOR A FACE…', '尋找臉部中…'],
+      tracking: ['TRACKING', '追蹤中'],
+      failed: ['FAILED', '失敗'],
+    };
+    const label = (words[status] ?? words.idle)[zh ? 1 : 0];
+    const pose = state.pose as Record<string, number> | undefined;
+    const message = String(state.message ?? '');
+    if (!pose || status !== 'tracking') return message ? `${label} · ${message}` : label;
+    const deg = (radians: number) => `${(radians * 180 / Math.PI).toFixed(1)}°`;
+    const cm = (metres: number) => `${(metres * 100).toFixed(1)}cm`;
+    return `${label} · ${zh ? '轉' : 'yaw'} ${deg(pose.yaw)} · ${zh ? '仰' : 'pitch'} ${deg(pose.pitch)}`
+      + ` · x ${cm(pose.x)} · y ${cm(pose.y)} · z ${cm(pose.z)}`;
+  }
+
+  private async fillHeadTrackCameras(): Promise<void> {
+    const select = this.root.querySelector<HTMLSelectElement>('[data-head-track-camera]');
+    if (!select || !this.world) return;
+    const cameras = await this.world.headTracking.cameras();
+    const current = select.value;
+    select.innerHTML = cameras
+      .map((camera) => `<option value="${this.escapeAttribute(camera.id)}">${this.escapeHtml(camera.label)}</option>`)
+      .join('');
+    if (current && cameras.some((camera) => camera.id === current)) select.value = current;
   }
 
   private async enterVr(): Promise<boolean> {

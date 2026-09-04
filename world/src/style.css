@@ -248,6 +248,30 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
   padding: 0 14px; color: var(--paper); background: rgba(8,9,10,.76);
   font: 900 12px var(--condensed); letter-spacing: .05em; cursor: pointer;
 }
+/* The head-tracking experiment. Same column as the other two VR controls, third
+   in the run, and marked as live when the camera is actually reading a face. */
+.head-track-toggle {
+  position: fixed; z-index: 5; right: calc(16px + env(safe-area-inset-right));
+  top: calc(163px + env(safe-area-inset-top)); min-height: 34px; border: 1px dashed var(--paper);
+  padding: 0 14px; color: var(--paper); background: rgba(8,9,10,.76);
+  font: 900 12px var(--condensed); letter-spacing: .05em; cursor: pointer;
+}
+.head-track-toggle[data-active='true'] { border-style: solid; background: var(--red); color: white; }
+.head-track {
+  position: fixed; z-index: 6; right: calc(16px + env(safe-area-inset-right));
+  top: calc(205px + env(safe-area-inset-top)); width: min(340px, calc(100vw - 32px));
+  padding: 16px; color: var(--paper); background: rgba(8,9,10,.94); border: 2px solid var(--paper);
+}
+.head-track p { margin: 0 0 10px; font-size: 12px; line-height: 1.5; }
+.head-track > div { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.head-track .button--secondary { color: var(--paper); border-color: var(--paper); }
+.head-track label { display: grid; gap: 4px; margin: 0 0 10px; font: 900 11px var(--condensed); letter-spacing: .05em; }
+.head-track select { width: 100%; padding: 6px; font-size: 12px; }
+.head-track__readout {
+  margin: 10px 0 0; font: 700 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0; color: #ffd7db; overflow-wrap: anywhere;
+}
+.head-track[hidden], .head-track-toggle[hidden] { display: none; }
 .public-projector {
   width: 1600px; height: 900px; overflow: hidden; pointer-events: none; backface-visibility: hidden;
   background: #030304; border: 22px solid #80131a; box-shadow: inset 0 0 65px rgba(0,0,0,.55);
@@ -1499,7 +1523,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   /* The header did not allow for the notch and the pass did, so on a phone
      with one the two were measured from different edges and never lined up.
      Both sit on the same inset now. */
-  .vr-resume, .vr-preview-exit, .vr-recenter { right: calc(10px + env(safe-area-inset-right)); }
+  .vr-resume, .vr-preview-exit, .vr-recenter, .head-track-toggle, .head-track { right: calc(10px + env(safe-area-inset-right)); }
   .world-header { padding: 4px calc(10px + env(safe-area-inset-right)) 4px calc(10px + env(safe-area-inset-left)); }
   /* A panel keeping its upright margins on a screen this short was left about
      two hundred pixels tall with its own input cut off the bottom. It takes the

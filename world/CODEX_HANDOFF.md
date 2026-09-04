@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-04 · jukebox sound after a screening, MENTOR swimming, one VR corner · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-09-04 · webcam head tracking behind `?headtrack`; jukebox, MENTOR swimming, VR corner · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
@@ -8,7 +8,85 @@ Last updated: 2026-09-04 · jukebox sound after a screening, MENTOR swimming, on
 
 ---
 
-## 0. READ THIS FIRST — the jukebox, a swimming dog, and one VR corner
+## 0. READ THIS FIRST — webcam head tracking, behind a flag
+
+**Not offered to anybody.** The code ships in the beta bundle and is inert
+without `?headtrack` on the URL: no control on screen, no camera prompt, and
+not a byte of the tracker downloaded. Turn it on at
+`myscheduleltd.com/beta/?headtrack=1`, tick `VR DESKTOP MODE`, enter VR, and a
+third control appears under `RECENTER VIEW`.
+
+It went to the published beta rather than staying on loopback for one reason:
+**a review browser has no webcam**, so the owner's own face is the only way to
+find out whether this feels like anything. Everything downstream of the camera
+is proved by fixture; the camera itself is not.
+
+### What it does, and why it is not one-for-one
+
+A webcam loses a face around thirty-five degrees of turn. Mapping head angle to
+view angle one for one would leave the visitor looking around a sixty-degree
+cone and no further — useless. So the head does two jobs:
+
+- **Position is the window.** Leaning moves the eye *and rebuilds the frustum
+  around it*, so the screen's own rectangle stays pinned where it is in the
+  world. That second half is the whole effect: without it, leaning left swings
+  the scene instead of revealing what was behind the left edge. Measured: a
+  10cm lean right moves the camera 1.15 units and skews the frustum by
+  −0.093; centred, the skew is exactly zero and the view is the ordinary one.
+- **Rotation is amplified.** `HEAD_YAW_GAIN = 4`, `HEAD_PITCH_GAIN = 2.6`.
+  Measured: a 20° head turn sweeps 77° of world; a 15° chin lift, 37°.
+
+Mouse drag still owns the gross turn. Neither replaces the other — a webcam
+cannot turn you round, and a mouse cannot lean.
+
+**Roll is deliberately dropped.** Tilting your head at a monitor does not tilt
+the room; rolling the picture when it happens reads as a fault.
+
+### The one thing that is not verified
+
+Whether MediaPipe reports a head turned *left* as positive yaw, and a lean
+*right* as positive x. Those signs come from a real face, and there was none to
+hold up to the review browser. The panel therefore carries a **live numeric
+readout** — if an axis is inverted the owner can say "turning right looks left"
+and it is one constant. `HeadTracking.applyMatrix()` is the only place any of
+these signs live.
+
+### Shape
+
+`src/world/HeadTracking.ts` owns the camera, the model and the smoothed pose;
+`FestivalWorld` only consumes it. Points worth keeping:
+
+- **Unlike the phone's gyroscope, this one wants smoothing.** That was a fused,
+  filtered pose and had to be applied whole; this is a guess made from pixels
+  thirty times a second, and easing is the difference between a window and a
+  shiver.
+- MediaPipe is `import()`ed from a CDN the first time a visitor enables it —
+  several megabytes of WebAssembly and weights that nobody who came to watch a
+  film should pay for. The world bundle grew 12kB, not 12MB.
+- The video element is never added to the document, and nothing is uploaded,
+  stored or sent. The camera is released when VR ends and when the world stops:
+  leaving the light on because the page is still open is exactly what makes
+  people distrust a site that asked for a camera.
+- `RECENTER VIEW` re-centres the head as well as the view.
+- The camera picker is populated only *after* access is granted, because that
+  is when a browser will tell you what the devices are called.
+
+### Fixture
+
+`?review=headtrack` exposes `window.__festivalHeadTrack([pose])`, which feeds
+made-up poses through the tracker's own matrix format and returns the head pose
+and the view it produced side by side. It settles the easing and applies the
+view **synchronously**, because a review browser runs the page in a hidden tab
+where timers are clamped to about one a second — waiting for convergence over
+real frames turns a nine-pose sweep into a minute of nothing. Worth copying for
+any fixture that has to step through states.
+
+Verified through it: calibration zeroes cleanly, left and right are exact
+mirrors, leaning in widens without skewing, and returning to centre returns to
+exactly zero with no drift.
+
+## 0-prev. The jukebox, a swimming dog, and one VR corner
+
 
 ### The square went silent after every screening
 
@@ -753,7 +831,7 @@ rooftop  rooftop-dj
 mentor  mentor-carry  mentor-npc-carry  mentor-follow  mentor-follow-greeting  mentor-swim
 npc-control  npc-popcorn-seat
 quests  quests-complete  fireworks  menu-ownership
-vr-gate  vr-entry  vr-phone  vr-screen  vr-youtube
+vr-gate  vr-entry  vr-phone  vr-screen  vr-youtube  headtrack
 ```
 
 Two of these report from anywhere on loopback rather than from their own page:
