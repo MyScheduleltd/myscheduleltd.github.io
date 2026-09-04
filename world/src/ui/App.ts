@@ -216,6 +216,8 @@ const readStoredHeadTrackRemember = (): boolean => {
 };
 /** Any controller button the visitor has moved off its default. */
 const GAMEPAD_BINDINGS_KEY = 'myschedule-gamepad-bindings-v1';
+/** No button. Nothing in the standard mapping has a negative index. */
+const UNBOUND = -1;
 const readStoredGamepadBindings = (): Partial<Record<GamepadActionId, number>> => {
   try {
     const raw = window.localStorage.getItem(GAMEPAD_BINDINGS_KEY);
@@ -1301,6 +1303,25 @@ export class App {
         this.syncHeadTrackUi();
         return this.world?.headTrackReviewSnapshot();
       };
+    } else if (reviewTarget === 'menu' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      // The controller's menu navigation, reachable without a controller. The
+      // pad half is polled from the render loop, which a headless or suspended
+      // page never runs; this exercises the half that decides where the
+      // highlight lands, which is the half with the choices in it.
+      (window as Window & {
+        __festivalMenuNav?: (nav: 'up' | 'down' | 'confirm' | 'back' | 'toggle') => unknown;
+      }).__festivalMenuNav = (nav) => {
+        this.handleGamepadMenu(nav);
+        return this.menuNavSnapshot();
+      };
+      // The pad is polled from the render loop, which a suspended page never
+      // runs. This is that one read, so rebinding can be exercised without one.
+      (window as Window & { __festivalPadPoll?: () => unknown }).__festivalPadPoll =
+        () => this.world?.gamepad.poll() ?? null;
+      (window as Window & { __festivalBindings?: () => unknown }).__festivalBindings =
+        () => this.world?.gamepad.currentBindings();
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview =
+        () => this.menuNavSnapshot();
     } else if (reviewTarget === 'mentor-swim' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       this.world.focusMentorSwimForReview();
       for (const delay of [400, 1200, 2200]) {
@@ -1580,6 +1601,7 @@ export class App {
       if (pass) pass.hidden = isOpen;
       passToggle.querySelector('span:last-child')!.textContent = isOpen ? '+' : '−';
       if (!isOpen) this.completeQuest('pass');
+      this.syncMenuCapture();
     });
 
     this.root.querySelectorAll<HTMLButtonElement>('[data-panel]').forEach((button) => {
@@ -1611,6 +1633,14 @@ export class App {
     // Tap for the first thing the prompt offers, hold for the second. Only
     // MENTOR offers two — a treat on a tap, the dog in your arms on a hold —
     // and SHIFT+E, which is how a keyboard says it, is unsayable on a phone.
+    // The controller's highlight belongs to the controller. Left standing after
+    // somebody picks up the mouse, it reads as a selection that is not there.
+    this.root.addEventListener('pointerdown', () => {
+      for (const marked of this.root.querySelectorAll('.is-gamepad-focus')) {
+        marked.classList.remove('is-gamepad-focus');
+      }
+    }, true);
+
     this.root.addEventListener('pointerdown', (event) => {
       const target = event.target as HTMLElement | null;
       if (!target?.closest('#interaction-toast')) return;
@@ -2024,6 +2054,10 @@ export class App {
   }
 
   private handleWorldAction(action: WorldAction): void {
+    if (action.type === 'gamepadMenu') {
+      this.handleGamepadMenu(action.nav);
+      return;
+    }
     if (action.type === 'photoMode') {
       if (!this.activePanel) this.cycleViewMode();
       return;
@@ -2346,6 +2380,186 @@ export class App {
    */
   private isHeadTrackingAvailable(): boolean {
     return this.headTrackDeskQuery.matches;
+  }
+
+  /**
+   * Move the highlight with the pad.
+   *
+   * Real DOM focus rather than an index of our own, so Enter, Tab and a
+   * screen reader all keep working and there is exactly one idea of "the thing
+   * you are on". `:focus-visible` will not fire for a programmatic focus, so
+   * the ring is painted with a class instead.
+   */
+  private handleGamepadMenu(nav: 'up' | 'down' | 'confirm' | 'back' | 'toggle'): void {
+    if (nav === 'toggle') {
+      if (this.activePanel) this.closePanel();
+      else this.openFestivalPass();
+      this.syncMenuCapture();
+      window.setTimeout(() => this.focusFirstMenuItem(), 60);
+      return;
+    }
+    const items = this.menuFocusables();
+    if (!items.length) return;
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    if (nav === 'back') {
+      // Out of the panel to the pass, and out of the pass to the world. Opening
+      // a panel hides the pass, so backing out has to put it back — otherwise
+      // one press of B leaves the screen with no menu on it at all and the pad
+      // is suddenly walking the avatar again, a level further out than asked.
+      if (this.activePanel) {
+        this.closePanel();
+        this.openFestivalPass();
+      } else {
+        this.closeFestivalPass();
+      }
+      this.syncMenuCapture();
+      window.setTimeout(() => this.focusFirstMenuItem(), 60);
+      return;
+    }
+    if (nav === 'confirm') {
+      const target = items[current] ?? items[0];
+      const wasPanel = this.activePanel;
+      target?.click();
+      window.setTimeout(() => {
+        // Only re-home the highlight when the press actually changed which list
+        // you are standing in. Unfolding a section, or following a link, leaves
+        // you where you were — and being thrown back to the top of a long panel
+        // every time you press A is its own kind of unusable.
+        if (this.activePanel !== wasPanel) this.focusFirstMenuItem();
+        else if (target && !this.focusMenuItem(target)) this.focusFirstMenuItem();
+      }, 60);
+      return;
+    }
+    const step = nav === 'down' ? 1 : -1;
+    let next = current < 0
+      ? (nav === 'down' ? 0 : items.length - 1)
+      : (current + step + items.length) % items.length;
+    // Keep walking if the browser will not take the focus. One unfocusable row
+    // used to wedge the highlight there for good: the ring moved, the focus did
+    // not, and every press after that recomputed the same position.
+    for (let tried = 0; tried < items.length; tried += 1) {
+      if (this.focusMenuItem(items[next])) return;
+      next = (next + step + items.length) % items.length;
+    }
+  }
+
+  /**
+   * Everything on screen a controller may land on, in the order it is painted.
+   * The open panel when there is one, the pass when there is not — never both,
+   * because a highlight that wanders behind the panel it is standing on is
+   * worse than no highlight at all.
+   */
+  private menuFocusables(): HTMLElement[] {
+    const selector = 'button:not([disabled]), summary, a[href], input:not([disabled]), select:not([disabled])';
+    const visible = (element: HTMLElement): boolean => {
+      if (element.getClientRects().length === 0) return false;
+      // A folded section still lays its rows out under this panel's CSS, so
+      // they measure as real boxes while the browser quietly refuses to focus
+      // them. Asking the geometry gets the wrong answer; asking whether they
+      // sit inside a closed <details> gets the right one. Without this the
+      // highlight walks into a folded section and the list stops moving.
+      const folded = element.closest('details:not([open])');
+      return !folded || element === folded.querySelector(':scope > summary');
+    };
+    if (this.activePanel) {
+      const panel = this.root.querySelector<HTMLElement>('#panel');
+      if (!panel || panel.hidden) return [];
+      // The panel's own contents first and its × last, even though the × is
+      // painted at the top. A controller that lands on the close button the
+      // instant a panel opens has made A mean "shut this again".
+      const body = [...(panel.querySelector('.panel__body')?.querySelectorAll<HTMLElement>(selector) ?? [])];
+      const close = panel.querySelector<HTMLElement>('#panel-close');
+      return [...body, ...(close ? [close] : [])].filter(visible);
+    }
+    const pass = this.root.querySelector<HTMLElement>('.festival-pass');
+    if (!pass || pass.hidden) return [];
+    return [...pass.querySelectorAll<HTMLElement>(selector)].filter(visible);
+  }
+
+  /** Returns whether the focus actually landed, so a caller can move on. */
+  private focusMenuItem(element?: HTMLElement): boolean {
+    if (!element) return false;
+    element.focus({ preventScroll: true });
+    if (document.activeElement !== element) return false;
+    for (const previous of this.root.querySelectorAll('.is-gamepad-focus')) {
+      previous.classList.remove('is-gamepad-focus');
+    }
+    element.classList.add('is-gamepad-focus');
+    element.scrollIntoView({ block: 'nearest' });
+    return true;
+  }
+
+  /** What the pad is looking at, for the `?review=menu` fixture. */
+  private menuNavSnapshot(): Record<string, unknown> {
+    const active = document.activeElement as HTMLElement | null;
+    const pass = this.root.querySelector<HTMLElement>('#festival-pass');
+    const panel = this.root.querySelector<HTMLElement>('#panel');
+    return {
+      passOpen: pass ? !pass.hidden : false,
+      panelOpen: panel ? !panel.hidden : false,
+      activePanel: this.activePanel ?? null,
+      focused: active && active !== document.body
+        ? (active.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 24)
+        : null,
+      focusIndex: active ? this.menuFocusables().indexOf(active) : -1,
+      items: this.menuFocusables().length,
+      ring: this.root.querySelectorAll('.is-gamepad-focus').length,
+    };
+  }
+
+  private focusFirstMenuItem(): void {
+    for (const item of this.menuFocusables()) if (this.focusMenuItem(item)) return;
+  }
+
+  private saveGamepadBindings(): void {
+    try {
+      window.localStorage.setItem(GAMEPAD_BINDINGS_KEY, JSON.stringify(this.gamepadBindings));
+    } catch { /* private mode */ }
+  }
+
+  /**
+   * Repaint one controller row where it stands: its button name, whether it is
+   * waiting for a press, and whether its own reset has anything to undo.
+   */
+  private paintBindingRow(action: GamepadActionId, options: { listening?: boolean } = {}): void {
+    const row = this.root.querySelector<HTMLElement>(`[data-binding-row="${action}"]`);
+    if (!row) return;
+    const zh = this.language === 'zh-TW';
+    const button = this.gamepadBindings[action] ?? DEFAULT_BINDINGS[action];
+    const label = row.querySelector<HTMLElement>('[data-binding-label]');
+    if (label) {
+      label.textContent = button < 0
+        ? (zh ? '未設定' : 'UNBOUND')
+        : buttonLabel(button, this.world?.gamepad.family() ?? 'generic');
+    }
+    const change = row.querySelector<HTMLButtonElement>('[data-rebind]');
+    if (change) change.textContent = options.listening ? (zh ? '按一個鍵…' : 'PRESS A BUTTON…') : (zh ? '更改' : 'CHANGE');
+    const undo = row.querySelector<HTMLButtonElement>('[data-rebind-one]');
+    if (undo) undo.disabled = this.gamepadBindings[action] === undefined;
+  }
+
+  /**
+   * Take a button away from whoever else holds it, and say so in their row.
+   * One button, one action: two rows reading `A` is a panel telling a lie
+   * about what the pad will do.
+   */
+  private displaceBinding(button: number, keep: GamepadActionId): void {
+    if (button < 0) return;
+    for (const other of GAMEPAD_ACTIONS) {
+      if (other === keep) continue;
+      if ((this.gamepadBindings[other] ?? DEFAULT_BINDINGS[other]) !== button) continue;
+      // Left unbound rather than deleted. Deleting it drops the action back to
+      // its default, which is very often the button that was just taken — so
+      // the press meant to move one binding quietly fired two actions instead.
+      this.gamepadBindings[other] = UNBOUND;
+      this.world?.gamepad.setBinding(other, UNBOUND);
+      this.paintBindingRow(other);
+    }
+  }
+
+  private syncRebindResetAll(): void {
+    const all = this.root.querySelector<HTMLButtonElement>('[data-rebind-reset]');
+    if (all) all.disabled = Object.keys(this.gamepadBindings).length === 0;
   }
 
   private lookSensitivityLabel(): string {
@@ -4001,12 +4215,45 @@ export class App {
       <div class="panel__body">${this.panelContent(panelId)}</div>
     `;
     panel.querySelector<HTMLButtonElement>('#panel-close')?.addEventListener('click', () => {
-      panel.hidden = true;
-      panel.className = 'panel';
-      this.activePanel = undefined;
+      this.closePanel();
+      this.syncMenuCapture();
     });
+    this.syncMenuCapture();
     this.bindPanelActions(panelId, panel);
     if (panelId === 'admin' && this.staffKey && !this.adminState && !this.adminError) void this.refreshAdminState();
+  }
+
+  private openFestivalPass(): void {
+    const toggle = this.root.querySelector<HTMLButtonElement>('#pass-toggle');
+    const pass = this.root.querySelector<HTMLElement>('#festival-pass');
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', 'true');
+      const sign = toggle.querySelector('span:last-child');
+      if (sign) sign.textContent = '−';
+    }
+    if (pass) pass.hidden = false;
+    this.completeQuest('pass');
+  }
+
+  /** Close whichever panel is open, the way its own × does. */
+  private closePanel(): void {
+    const panel = this.root.querySelector<HTMLElement>('#panel');
+    if (panel) {
+      panel.hidden = true;
+      panel.className = 'panel';
+    }
+    this.activePanel = undefined;
+  }
+
+  /**
+   * Tell the world whether the pad should be driving the menu or the avatar.
+   * Called wherever a panel or the pass opens or closes — if this ever falls out
+   * of step, the symptom is a controller that walks the avatar while a menu is
+   * on screen, or one that cannot move the highlight at all.
+   */
+  private syncMenuCapture(): void {
+    const pass = this.root.querySelector<HTMLElement>('#festival-pass');
+    this.world?.setMenuOpen(Boolean(this.activePanel) || (pass ? !pass.hidden : false));
   }
 
   private closeFestivalPass(): void {
@@ -4193,14 +4440,14 @@ export class App {
         const zh = this.language === 'zh-TW';
         const row = (key: string, what: string) =>
           `<div><dt>${this.escapeHtml(key)}</dt><dd>${this.escapeHtml(what)}</dd></div>`;
-        const group = (id: string, title: string, rows: string, extra = '') => {
+        const group = (id: string, title: string, rows: string, extra = '', after = '') => {
           // `staffSection` already solved this: a `<details>` whose open state is
           // remembered, because the panel re-renders on every rebind and a
           // section that closed itself would take the row being edited with it.
           const open = this.openControlSections.has(id) ? ' open' : '';
           return `<details class="staff-section" data-control-section="${id}"${open}>
             <summary><span>${title}</span></summary>
-            <div class="staff-section__body">${extra}<dl class="controls-list">${rows}</dl></div>
+            <div class="staff-section__body">${extra}<dl class="controls-list">${rows}</dl>${after}</div>
           </details>`;
         };
 
@@ -4240,6 +4487,9 @@ export class App {
           photo: ['Photo mode', '拍照模式'],
           run: ['Run (hold)', '奔跑（按住）'],
           dance: ['Dance', '跳舞'],
+          menuToggle: ['Open / close the menu', '開關選單'],
+          menuUp: ['Menu: up', '選單：上'],
+          menuDown: ['Menu: down', '選單：下'],
         };
         const family = this.world?.gamepad.family() ?? 'generic';
         const padConnected = this.world?.gamepad.connected() ?? false;
@@ -4253,7 +4503,10 @@ export class App {
         const padRows = [
           `<div><dt>${zh ? '左搖桿' : 'LEFT STICK'}</dt><dd>${zh ? '移動角色' : 'Move your avatar'}</dd></div>`,
           `<div><dt>${zh ? '右搖桿' : 'RIGHT STICK'}</dt><dd>${zh ? '轉動視角' : 'Turn the camera'}</dd></div>`,
-          ...GAMEPAD_ACTIONS.map((action) => `<div><dt>${this.escapeHtml(buttonLabel(bindings[action], family))}</dt><dd>${this.escapeHtml(actionNames[action][zh ? 1 : 0])}<button class="rebind" type="button" data-rebind="${action}"${padConnected ? '' : ' disabled'}>${this.rebinding === action ? (zh ? '按一個鍵…' : 'PRESS A BUTTON…') : (zh ? '更改' : 'CHANGE')}</button></dd></div>`),
+          ...GAMEPAD_ACTIONS.map((action) => {
+            const changed = this.gamepadBindings[action] !== undefined;
+            return `<div data-binding-row="${action}"><dt data-binding-label>${this.escapeHtml(bindings[action] < 0 ? (zh ? '未設定' : 'UNBOUND') : buttonLabel(bindings[action], family))}</dt><dd>${this.escapeHtml(actionNames[action][zh ? 1 : 0])}<span class="rebind-pair"><button class="rebind" type="button" data-rebind="${action}"${padConnected ? '' : ' disabled'}>${this.rebinding === action ? (zh ? '按一個鍵…' : 'PRESS A BUTTON…') : (zh ? '更改' : 'CHANGE')}</button><button class="rebind rebind--undo" type="button" data-rebind-one="${action}"${changed ? '' : ' disabled'} title="${zh ? '還原這個鍵' : 'Reset this one'}">${zh ? '還原' : 'RESET'}</button></span></dd></div>`;
+          }),
         ].join('');
 
         const quest = [
@@ -4268,12 +4521,14 @@ export class App {
         const padExtra = `${padStatus}<p class="setting-hint">${zh
           ? '每個動作各綁一個鍵。改過之後可以一鍵還原成預設。'
           : 'One button per action. Changed something you regret? Put them all back below.'}</p>`;
-        const padReset = `<div class="controls-reset"><button class="panel-button" type="button" data-rebind-reset${Object.keys(this.gamepadBindings).length ? '' : ' disabled'}>${zh ? '還原預設按鍵' : 'RESET TO DEFAULTS'}</button></div>`;
+        // Outside the list, not inside it: a bare `<div>` among the rows picked
+        // up the row divider and drew a line above nothing.
+        const padReset = `<button class="panel-button" type="button" data-rebind-reset${Object.keys(this.gamepadBindings).length ? '' : ' disabled'}>${zh ? '全部還原預設' : 'RESET ALL'}</button>`;
         return `
           ${group('keyboard', zh ? '鍵盤' : 'KEYBOARD', keyboard)}
           ${group('mouse', zh ? '滑鼠' : 'MOUSE', mouse)}
           ${group('touch', zh ? '觸控螢幕' : 'TOUCHSCREEN', touch)}
-          ${group('gamepad', zh ? '遊戲手把' : 'GAME CONTROLLER', padRows + `<div>${padReset}</div>`, padExtra)}
+          ${group('gamepad', zh ? '遊戲手把' : 'GAME CONTROLLER', padRows, padExtra, padReset)}
           ${group('vr', zh ? 'VR 頭戴裝置' : 'VR HEADSET', quest, `<p class="setting-hint">${zh ? 'Meta Quest Touch 控制器。' : 'Meta Quest Touch controllers.'}</p>`)}`;
       }
       case 'contact':
@@ -4330,30 +4585,46 @@ export class App {
       try { window.localStorage.removeItem(GAMEPAD_BINDINGS_KEY); } catch { /* private mode */ }
       this.rebinding = undefined;
       this.world?.gamepad.cancelListening();
-      this.openPanel('controls');
+      for (const action of GAMEPAD_ACTIONS) this.paintBindingRow(action);
+      this.syncRebindResetAll();
+    });
+    panel.querySelectorAll<HTMLButtonElement>('[data-rebind-one]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const action = button.dataset.rebindOne as GamepadActionId;
+        // Restoring one default can walk onto a button somebody else was moved
+        // to, so the same one-button-one-action rule applies here too.
+        this.displaceBinding(DEFAULT_BINDINGS[action], action);
+        delete this.gamepadBindings[action];
+        this.world?.gamepad.setBinding(action, DEFAULT_BINDINGS[action]);
+        this.saveGamepadBindings();
+        this.paintBindingRow(action);
+        this.syncRebindResetAll();
+      });
     });
     panel.querySelectorAll<HTMLButtonElement>('[data-rebind]').forEach((button) => {
       button.addEventListener('click', () => {
         const action = button.dataset.rebind as GamepadActionId;
         if (!this.world?.gamepad.connected()) return;
+        // Only one row can be waiting. Without this the row asked first kept
+        // saying "press a button" forever, while the press went elsewhere.
+        if (this.rebinding && this.rebinding !== action) this.paintBindingRow(this.rebinding);
         this.rebinding = action;
-        this.openPanel('controls');
+        // Repainted in place rather than by re-rendering the panel. Rebuilding
+        // it threw the reader back to the top of a long list every time a
+        // button changed, which is a poor trade for one line of text.
+        this.paintBindingRow(action, { listening: true });
         // The pad takes the next press instead of acting on it. Nothing else
         // can capture it, so there is no way to bind a button to two actions
         // by accident — the previous holder simply loses it.
         this.world.gamepad.listenForButton((index) => {
-          for (const other of GAMEPAD_ACTIONS) {
-            if (other !== action && (this.gamepadBindings[other] ?? DEFAULT_BINDINGS[other]) === index) {
-              delete this.gamepadBindings[other];
-            }
-          }
+          this.displaceBinding(index, action);
           this.gamepadBindings[action] = index;
           this.world?.gamepad.setBinding(action, index);
-          try {
-            window.localStorage.setItem(GAMEPAD_BINDINGS_KEY, JSON.stringify(this.gamepadBindings));
-          } catch { /* private mode */ }
+          this.saveGamepadBindings();
           this.rebinding = undefined;
-          if (this.activePanel === 'controls') this.openPanel('controls');
+          this.paintBindingRow(action);
+          for (const other of GAMEPAD_ACTIONS) if (other !== action) this.paintBindingRow(other);
+          this.syncRebindResetAll();
         });
       });
     });

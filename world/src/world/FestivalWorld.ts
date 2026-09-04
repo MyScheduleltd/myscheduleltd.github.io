@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { HeadTracking } from './HeadTracking';
-import { GamepadInput, type GamepadActionId } from './GamepadInput';
+import { GamepadInput, type GamepadActionId, type GamepadFrame } from './GamepadInput';
 import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, taperedPrism, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
 import { dressBuildings, dressInteriors } from './WornArchitecture';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
@@ -78,6 +78,9 @@ export type WorldAction =
   // The photo/postcard mode belongs to the interface, not to the world, so a
   // controller asks for it the same way the seat asks to open a screening.
   | { type: 'photoMode' }
+  // Menu navigation from a controller. The world owns the polling because it
+  // owns the frame loop; where the highlight goes is the interface's business.
+  | { type: 'gamepadMenu'; nav: 'up' | 'down' | 'confirm' | 'back' | 'toggle' }
   | { type: 'jump' };
 
 export interface AvatarPalette {
@@ -1297,6 +1300,10 @@ export class FestivalWorld {
   private gamepadRunning = false;
   private gamepadMoved = false;
   private pendingGamepadBindings?: Partial<Record<GamepadActionId, number>>;
+  /** True while a panel is open, so the pad drives the menu and not the world. */
+  private menuOpen = false;
+  private menuRepeatAt = 0;
+  private menuStickHeld = false;
   private headTrackingActive = false;
   /**
    * How far a drag turns the view, as a multiple of the built-in rate. Applies
@@ -1918,6 +1925,22 @@ export class FestivalWorld {
     this.headTracking.prefetch();
   }
 
+  /**
+   * Tell the world a panel is open. While it is, the pad stops walking the
+   * avatar and starts moving the highlight instead — pressing X to confirm a
+   * menu choice should not also feed MENTOR behind it.
+   */
+  setMenuOpen(open: boolean): void {
+    this.menuOpen = open;
+    if (open) {
+      this.setMovementVector(0, 0);
+      if (this.gamepadRunning) {
+        this.gamepadRunning = false;
+        this.setRunning(false);
+      }
+    }
+  }
+
   /** 0.3 (gentle) to 2 (twitchy). 1 is the rate the world was built around. */
   setLookSensitivity(value: number): void {
     this.lookSensitivity = THREE.MathUtils.clamp(value, 0.1, 2);
@@ -2157,6 +2180,16 @@ export class FestivalWorld {
       }
       return;
     }
+    // START opens and closes the menu, wherever you are. Without it a pad can
+    // reach every panel and never open one.
+    if (frame.pressed.has('menuToggle')) {
+      this.onAction({ type: 'gamepadMenu', nav: 'toggle' });
+      return;
+    }
+    if (this.menuOpen) {
+      this.driveMenu(frame);
+      return;
+    }
     // Only when the stick is actually pushed, or a pad at rest would fight the
     // keyboard and the touch stick for the same movement vector every frame.
     if (frame.moveX !== 0 || frame.moveY !== 0) {
@@ -2180,6 +2213,38 @@ export class FestivalWorld {
     for (const action of frame.pressed) this.performGamepadAction(action);
   }
 
+  /**
+   * Move the highlight rather than the avatar.
+   *
+   * The D-pad steps once per press; the left stick repeats while held, because
+   * a long list is miserable to walk one press at a time and nobody expects a
+   * stick to be a single-shot button. The first repeat waits longer than the
+   * rest, which is how every key-repeat anyone has used behaves.
+   */
+  private driveMenu(frame: GamepadFrame): void {
+    const now = performance.now();
+    if (frame.pressed.has('menuUp')) this.onAction({ type: 'gamepadMenu', nav: 'up' });
+    if (frame.pressed.has('menuDown')) this.onAction({ type: 'gamepadMenu', nav: 'down' });
+    if (frame.pressed.has('jump')) this.onAction({ type: 'gamepadMenu', nav: 'confirm' });
+    if (frame.pressed.has('punch')) this.onAction({ type: 'gamepadMenu', nav: 'back' });
+
+    const push = frame.moveY;
+    if (Math.abs(push) < 0.5) {
+      this.menuStickHeld = false;
+      return;
+    }
+    if (!this.menuStickHeld) {
+      this.menuStickHeld = true;
+      this.menuRepeatAt = now + 420;
+      this.onAction({ type: 'gamepadMenu', nav: push < 0 ? 'up' : 'down' });
+      return;
+    }
+    if (now >= this.menuRepeatAt) {
+      this.menuRepeatAt = now + 110;
+      this.onAction({ type: 'gamepadMenu', nav: push < 0 ? 'up' : 'down' });
+    }
+  }
+
   private performGamepadAction(action: GamepadActionId): void {
     switch (action) {
       case 'jump': this.jumpFromTouch(); break;
@@ -2190,8 +2255,10 @@ export class FestivalWorld {
       case 'camera': this.toggleCameraMode(); break;
       case 'photo': this.onAction({ type: 'photoMode' }); break;
       case 'dance': this.toggleDancing(); break;
-      // `run` is a hold, handled above rather than as a press.
-      case 'run': break;
+      // `run` is a hold, handled above rather than as a press. The three menu
+      // bindings never reach here — `updateGamepad` returns before this when a
+      // panel is open.
+      case 'run': case 'menuToggle': case 'menuUp': case 'menuDown': break;
     }
   }
 

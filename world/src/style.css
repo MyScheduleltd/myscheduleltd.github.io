@@ -280,6 +280,16 @@ input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19
 /* The controls panel is a reference sheet now, grouped by what you are holding.
    Each gamepad row carries its own rebind button on the right of the action. */
 .controls-list dd { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/* The controller's highlight. A programmatic `focus()` never triggers
+   `:focus-visible`, so the ring is a class — and it has to be loud, because on a
+   pad there is no cursor to tell you where you are. */
+.is-gamepad-focus {
+  outline: 3px solid var(--red) !important;
+  outline-offset: 2px;
+  border-radius: 1px;
+}
+.rebind-pair { display: flex; align-items: center; gap: 6px; flex: none; }
+.rebind--undo { border-style: dashed; }
 .rebind {
   flex: none; min-height: 30px; padding: 0 12px; border: 1px solid var(--ink);
   background: none; color: var(--ink); font: 900 11px var(--condensed);

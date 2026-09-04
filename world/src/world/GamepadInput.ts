@@ -1,10 +1,12 @@
 /**
  * Game controllers, through the browser's own Gamepad API.
  *
- * Deliberately about the **world** and not the interface: sticks walk and look,
- * buttons do the things `E`, `SPACE` and the touch ring already do. Menus stay
- * with the pointer, which is the owner's call and is why there is no focus
- * model in here.
+ * Sticks walk and look; buttons do the things `E`, `SPACE` and the touch ring
+ * already do. Three of the bindings are for menus instead — START opens PASS,
+ * the D-pad moves the highlight — and while a panel is open the world reads
+ * those and ignores the rest, so confirming a menu choice cannot also feed
+ * MENTOR behind it. Where the highlight actually goes belongs to the interface;
+ * this only reports the presses.
  *
  * Nothing is polled until a pad announces itself. `gamepadconnected` is the
  * signal; a browser will not even list a pad until a button has been pressed on
@@ -21,10 +23,16 @@ export type GamepadActionId =
   | 'camera'
   | 'photo'
   | 'run'
-  | 'dance';
+  | 'dance'
+  // Menu bindings. Listed here so they share the same rebinding machinery, but
+  // read only while a panel is open.
+  | 'menuToggle'
+  | 'menuUp'
+  | 'menuDown';
 
 export const GAMEPAD_ACTIONS: GamepadActionId[] = [
   'jump', 'interact', 'pickUp', 'punch', 'offer', 'camera', 'photo', 'run', 'dance',
+  'menuToggle', 'menuUp', 'menuDown',
 ];
 
 /**
@@ -42,6 +50,9 @@ export const DEFAULT_BINDINGS: Record<GamepadActionId, number> = {
   photo: 6,     // LT / L2
   run: 7,       // RT / R2 — held, which is what a trigger is for
   dance: 10,    // L3, the left stick pressed in
+  menuToggle: 9,  // MENU / OPTIONS — opens and closes PASS
+  menuUp: 12,     // D-pad up
+  menuDown: 13,   // D-pad down
 };
 
 /**
