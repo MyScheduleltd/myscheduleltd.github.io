@@ -169,14 +169,20 @@ export const createGanganStatue = (): THREE.Group => {
     block('fetlock', [0.32, 0.18, 0.34], [0, -1.56, 0.02], hideLit, knee);
     block('hoof', [0.36, 0.22, 0.44], [0, -1.74, 0.05], hideLit, knee);
   };
-  // Longer and further out than before, and no longer folded into a ball.
+  // The lift is **negative**, and that is the whole of the missing leg.
   //
-  // Two short legs bent to nearly two radians read as a pair of stumps tucked
-  // under the chest. What makes a rearing horse dramatic is the reach: the
-  // near leg thrown high and almost straight, the far one gathered under it.
-  // So the segments are longer and the knees give back most of the fold.
-  foreLeg(-1, 1.9, -0.72);
-  foreLeg(1, 1.15, -1.5);
+  // A leg hangs along its own -Y. Turning it by a positive angle about X swings
+  // that end towards -Z, which on this animal is backwards — so a lift of 1.9
+  // did not throw the leg forward and up, it threw it up and back, inside the
+  // barrel, where one of the two disappeared completely and the other showed
+  // as a stump. Forwards is the other sign.
+  //
+  // The near leg goes out almost horizontally with the lower half dangling
+  // from the knee; the far one is gathered under the chest. Reach is what
+  // makes a rear dramatic, and two legs doing different things is what stops
+  // the front end reading as one shape.
+  foreLeg(-1, -1.75, 1.35);
+  foreLeg(1, -1.1, 1.9);
 
   // Neck and head. The neck leans **forward** as it rises.
   //
@@ -220,23 +226,32 @@ export const createGanganStatue = (): THREE.Group => {
   // solves the other half of the complaint: hung straight down it reached
   // below the top of the plinth and disappeared into it. Curling upward it
   // cannot, at any point along its length.
+  // Streaming out behind, not hanging down between the legs.
+  //
+  // The dock was turned barely past the vertical, so the first segment fell
+  // straight down off the back of the rump — which on a rearing animal drops
+  // it right between the hind legs, and that is exactly what it looked like.
+  // Carried past a right angle it leaves the body horizontally instead, and
+  // the two segments after it turn back a little at a time so the whole thing
+  // arcs out and droops at the tip. Nothing along its length comes near the
+  // stone.
   const tail = new THREE.Group();
   tail.name = 'tail';
-  tail.position.set(0, 0.4, -0.55);
-  tail.rotation.x = 0.55;
+  tail.position.set(0, 0.45, -0.58);
+  tail.rotation.x = 2.0;
   horse.add(tail);
-  block('dock', [0.38, 0.5, 0.44], [0, -0.22, 0], hide, tail);
+  block('dock', [0.38, 0.52, 0.44], [0, -0.24, 0], hide, tail);
   const tailMid = new THREE.Group();
-  tailMid.position.set(0, -0.46, 0);
-  tailMid.rotation.x = -0.75;
+  tailMid.position.set(0, -0.5, 0);
+  tailMid.rotation.x = -0.5;
   tail.add(tailMid);
   block('tail', [0.32, 0.95, 0.4], [0, -0.46, 0], hideDeep, tailMid);
   const tailEnd = new THREE.Group();
   tailEnd.position.set(0, -0.92, 0);
-  tailEnd.rotation.x = -0.95;
+  tailEnd.rotation.x = -0.5;
   tailMid.add(tailEnd);
-  block('tail-tip', [0.26, 0.9, 0.32], [0, -0.44, 0], hideDeep, tailEnd);
-  block('tail-flick', [0.2, 0.5, 0.24], [0, -0.95, -0.08], hideDeep, tailEnd);
+  block('tail-tip', [0.28, 0.85, 0.34], [0, -0.42, 0], hideDeep, tailEnd);
+  block('tail-flick', [0.22, 0.55, 0.26], [0, -1.02, 0.06], hideDeep, tailEnd);
 
   // --- the rider ------------------------------------------------------------
   // Sat on the barrel, then turned partway back towards upright: the animal

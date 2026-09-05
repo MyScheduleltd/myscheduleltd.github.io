@@ -154,48 +154,65 @@ export const addAvatarAccessories = (
     const front = torsoBox.max.z;
     const back = torsoBox.min.z;
 
-    // A ring round the neck, and a short drop at the front. That is all.
+    // A necklace: round the back of the neck, and draped down the chest.
     //
-    // Two goes at this were elaborate and both were worse than nothing: a great
-    // chevron of strands across the chest, then eleven angled links laid on a
-    // curve, which at avatar scale is a handful of gold confetti sunk into
-    // somebody's shirt — and worse the moment the body moves, because half of
-    // it was inside the torso to begin with and the rest went in as soon as
-    // he leaned.
+    // The last one was a flat rectangle lying on the shoulders, which is a
+    // hoop and not a chain — a chain has to hang. So the back of it stays up
+    // at the neck and the front falls away from the shoulders in a curve onto
+    // the chest, which is the shape in the reference and the shape the word
+    // means.
     //
-    // So: four bars making a ring, sized to the neck rather than the chest,
-    // and every piece of it sitting **outside** the surface it lies on rather
-    // than crossing it. Nothing here can be inside the body, at any pose,
-    // because nothing here starts inside it.
+    // Neither rig has a neck: the head sits straight on the chest. That is why
+    // the back of the chain rides at the very top of the torso, in the band
+    // where there is head above and nothing either side of it — the only place
+    // on these bodies where something can go round a neck without going
+    // through a shoulder.
+    //
+    // Every link is the same size and turned only to follow the curve. The
+    // version before last gave each one its own three rotations and the result
+    // was gold confetti; a chain is a repeated thing, and it has to repeat.
     const chain = build('chain', anchors.torso);
     const chainMaterial = shade('chain');
-    // Neither of these rigs has a neck: the head sits straight on the chest. So
-    // the ring goes round the base of the head and rests on the shoulders,
-    // which is where a chain on a body built like this actually lies.
-    //
-    // Cut to clear the head rather than to match the chest. Sized off the
-    // chest it would have been buried in it, and sized to the head exactly it
-    // would have been inside that instead — so it is the head's half width
-    // plus the thickness of the bar, which puts every piece of it in open air.
-    const bar = Math.max(size.y * 0.045, 0.045);
+    const bar = Math.max(size.y * 0.05, 0.05);
     const headSize = headBox.isEmpty() ? new THREE.Vector3(size.x * 0.7, 0, size.z) : headBox.getSize(new THREE.Vector3());
-    const neckWidth = headSize.x * 0.5 + bar;
-    const neckDepth = headSize.z * 0.5 + bar;
-    // Standing on the top of the chest, not cutting through it.
-    const ringY = torsoBox.max.y + bar * 0.5;
-    for (const z of [neckDepth, -neckDepth]) {
-      piece([neckWidth * 2 + bar, bar, bar], [centre.x, ringY, z], chainMaterial, chain);
+    // Clear of the head, and above the chest rather than inside it.
+    const neckX = headSize.x * 0.5 + bar;
+    const neckZ = headSize.z * 0.5 + bar;
+    const collarY = torsoBox.max.y + bar * 0.4;
+    // How far it hangs. Short: this sits on the upper chest, not the navel.
+    const drop = size.y * 0.26;
+    // Where the front links lie — on the face of the chest, standing off it.
+    const chestZ = front + bar * 0.55;
+
+    const link = (x: number, y: number, z: number, tilt: number) => {
+      const piece3 = piece([bar * 1.5, bar * 1.5, bar * 1.15], [x, y, z], chainMaterial, chain);
+      piece3.rotation.z = tilt;
+      return piece3;
+    };
+
+    // The drape. Nine links from one shoulder to the other, falling away in a
+    // curve — squared rather than round, so it hangs the way weight hangs.
+    const FRONT_LINKS = 9;
+    for (let index = 0; index < FRONT_LINKS; index += 1) {
+      const across = (index / (FRONT_LINKS - 1)) * 2 - 1;
+      const hang = 1 - across * across;
+      link(
+        centre.x + across * neckX,
+        collarY - drop * hang,
+        // Beside the neck at the ends, out on the chest in the middle.
+        neckZ * 0.4 + (chestZ - neckZ * 0.4) * hang,
+        // Alternating, which is what tells a row of links from a row of beads.
+        index % 2 === 0 ? 0.5 : -0.2,
+      );
     }
-    for (const x of [neckWidth, -neckWidth]) {
-      piece([bar, bar, neckDepth * 2], [centre.x + x, ringY, 0], chainMaterial, chain);
+    // Round the back of the neck, closing the loop at collar height.
+    for (const [x, z] of [[-neckX * 0.7, -neckZ * 0.75], [0, -neckZ], [neckX * 0.7, -neckZ * 0.75]] as Array<[number, number]>) {
+      link(centre.x + x, collarY, z, 0.4);
     }
-    // The drop. Two links and a weight, laid on the front of the chest and
-    // standing off it, so it reads at a glance and never goes inside.
-    const chestFace = front + bar * 0.6;
-    piece([bar, size.y * 0.13, bar], [centre.x, ringY - size.y * 0.075, chestFace], chainMaterial, chain);
+    // The weight, hanging below the lowest link.
     piece(
-      [size.x * 0.16, size.y * 0.11, bar * 1.6],
-      [centre.x, ringY - size.y * 0.19, chestFace],
+      [size.x * 0.15, size.y * 0.1, bar * 1.4],
+      [centre.x, collarY - drop - size.y * 0.06, chestZ],
       chainMaterial,
       chain,
     );
