@@ -452,15 +452,16 @@ const statueBlockCenterY = GANGAN_STATUE_SIZE.height / 2;
 // booth's is 3.4 across — so sitting at x = -7.8 its western edge reached -9.5
 // while the roadway stops at -8.5, and the thing everybody could see was a
 // stall standing in the red. Both now sit wholly on the asphalt.
-// Off the roadway entirely and up against SLAP AND POP's east wall, which
-// stands at x = -20. The carpet's edge is at x = -14, so at -17.4 the booth
-// and its 3.4-wide collider sit in the gap between the two with the red
-// untouched. Set south of the club door at z = 23.5 so it is passed on the way
-// in rather than standing in the doorway.
-const concessionPosition = new THREE.Vector3(-17.4, 0, 17.5);
+// Out on the open ground in front of THE PALACE. The palace's own approach
+// carpet runs x = -41 to -29 and its east wall stands at -24.5, so at -25 the
+// booth sits in the bare space between the approach and the promenade — off
+// every piece of red, and clear of the doorway at z = -31.
+const concessionPosition = new THREE.Vector3(-25, 0, -24);
 // In front of the statue, meaning between it and the gate: walking in from the
-// gate you meet the pamphlets first and the horse behind them.
-const pamphletPosition = new THREE.Vector3(0, 0, 7.4);
+// gate you meet the pamphlets first and the horse behind them. Brought in
+// close, so the two read as one arrangement rather than two things that happen
+// to be on the same stretch of carpet.
+const pamphletPosition = new THREE.Vector3(0, 0, 0.6);
 // Where the sea meets the sand. Every water plane ends here and every piece of
 // beach starts here: overlapping the two put opaque sand and a water surface at
 // the same height, and they fought for the same pixels along the whole shore.
@@ -3417,6 +3418,46 @@ export class FestivalWorld {
         parts: child.children.length,
       });
       found[slot] = rows;
+    });
+    return found;
+  }
+
+  /**
+   * Loopback fixture: everything the statue's own volume touches.
+   *
+   * A pale rectangle was reported cutting through the sculpture, and hunting
+   * for it by reading the scene graph is guesswork — there are a dozen
+   * transparent planes in this world and any of them could be it. This asks
+   * the geometry instead: every mesh whose box overlaps the statue's, with
+   * enough about each to tell scenery from a rendering artefact.
+   */
+  statueIntrusionSnapshot(): Array<Record<string, unknown>> {
+    const statue = this.scene.getObjectByName('gangan-statue');
+    if (!statue) return [{ statue: 'missing' }];
+    this.scene.updateMatrixWorld(true);
+    const volume = new THREE.Box3().setFromObject(statue);
+    const found: Array<Record<string, unknown>> = [];
+    const box = new THREE.Box3();
+    this.scene.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      // Skip the statue's own pieces, and anything parented under it.
+      for (let node: THREE.Object3D | null = child; node; node = node.parent) {
+        if (node === statue) return;
+      }
+      box.setFromObject(child);
+      if (!box.intersectsBox(volume)) return;
+      const size = box.getSize(new THREE.Vector3());
+      const centre = box.getCenter(new THREE.Vector3());
+      const material = Array.isArray(child.material) ? child.material[0] : child.material;
+      found.push({
+        name: child.name || child.parent?.name || child.type,
+        size: [Number(size.x.toFixed(2)), Number(size.y.toFixed(2)), Number(size.z.toFixed(2))],
+        centre: [Number(centre.x.toFixed(2)), Number(centre.y.toFixed(2)), Number(centre.z.toFixed(2))],
+        transparent: (material as THREE.Material & { transparent?: boolean }).transparent ?? false,
+        opacity: (material as THREE.Material & { opacity?: number }).opacity ?? 1,
+        materialType: material?.type,
+        visible: child.visible,
+      });
     });
     return found;
   }
@@ -6656,12 +6697,16 @@ export class FestivalWorld {
   private createGanganStatue(): void {
     const statue = createGanganStatue();
     statue.position.set(statuePosition.x, 0, statuePosition.z);
-    // Facing +z, up the road towards the gate.
-    statue.rotation.y = 0;
+    // Turned a quarter, clockwise seen from above, so the horse stands across
+    // the road rather than down it. An arrival gets the animal in profile —
+    // the only view in which a horse reads as a horse — with GANGAN's own
+    // shoulders turned back out of that line towards them, which is the
+    // arrangement the painting uses.
+    statue.rotation.y = -Math.PI / 2;
     this.scene.add(statue);
-    // Walked around, not climbed. The plinth is the footprint; the horse
-    // overhangs it and nobody expects to be stopped by an overhang.
-    this.addCollider(statuePosition.x, statuePosition.z, 6.5, 4.7);
+    // Walked around, not climbed. The quarter turn swaps the plinth's sides,
+    // so the footprint is given the other way round.
+    this.addCollider(statuePosition.x, statuePosition.z, 4.9, 6.3);
   }
 
   private createShoreScreen(): void {
@@ -7582,10 +7627,18 @@ export class FestivalWorld {
       this.mesh([0.14, 0.06, 0.06], [side * 0.26, 3.82, 0.54], material(0x2a2118), deity);
     }
     // A halo behind the head, which is what carries the light in the room.
+    //
+    // Parented to the deity, which it was not. Every other piece of her passes
+    // `deity` as the parent and this one did not, so it was added to the scene
+    // instead — and the coordinates that put it behind her head inside the
+    // temple put it three and a half metres wide, four metres up, in the middle
+    // of the main road. A pale translucent square standing in the open where
+    // the timetable used to hide it, and now hanging through the statue.
     const halo = this.mesh(
       [3.4, 3.4, 0.16],
       [0, 3.9, -0.75],
       new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.24, depthWrite: false }),
+      deity,
     );
     halo.rotation.y = 0;
     // Kept out of the pass that redraws geometry over the screens. That pass
@@ -8035,7 +8088,7 @@ export class FestivalWorld {
     // among the palms east of the drive-in. Off any path, behind planting, and
     // found rather than presented.
     const couple = createBeachCouple();
-    couple.root.position.set(60.5, 0.02, -31.5);
+    couple.root.position.set(60.5, this.groundHeightAt(60.5, -31.5), -31.5);
     couple.root.rotation.y = -0.72;
     this.scene.add(couple.root);
     this.beachCouple = couple;
@@ -8057,16 +8110,16 @@ export class FestivalWorld {
     sign.position.set(0, 2.1, 1.34);
     booth.add(sign);
     this.mesh([0.5, 0.75, 0.5], [0, 3.05, 0], material(0xffc93c), booth);
-    // Turned to face the road. Built facing +z, which was right when it stood
-    // on the roadway; against a wall that runs north to south its counter has
-    // to look east or it is serving the brickwork.
-    booth.rotation.y = Math.PI / 2;
+    // Turned to face the cross street, which is the way anybody arrives at the
+    // palace. Built facing +z, so a quarter turn back the other way puts its
+    // counter towards the promenade rather than towards the palace wall.
+    booth.rotation.y = Math.PI;
     this.scene.add(booth);
     // Head height, so the view rides over it. It is honestly taller than that,
     // but it is a stall beside a walkway: treating it as something that blocks
     // the camera pulls the view in every time somebody passes it, which is
-    // what it has been doing. Width and depth swap with the quarter turn.
-    this.addCollider(concessionPosition.x, concessionPosition.z, 2.8, 3.4, 0.15, undefined, 'concession', 2.4);
+    // what it has been doing.
+    this.addCollider(concessionPosition.x, concessionPosition.z, 3.4, 2.8, 0.15, undefined, 'concession', 2.4);
   }
 
   private createPamphletStand(): void {

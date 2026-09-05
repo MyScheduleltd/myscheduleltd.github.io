@@ -154,23 +154,32 @@ export const addAvatarAccessories = (
     const front = torsoBox.max.z;
     const back = torsoBox.min.z;
 
-    // A ring around the neck reads as a collar. What reads as a chain is the
-    // V it hangs in and the weight on the end of it.
+    // A necklace, not a harness.
+    //
+    // The first attempt hung two long strands from the shoulders down to a
+    // pendant near the navel, and at avatar scale that is a great yellow
+    // chevron across the whole chest — it read as webbing somebody had been
+    // strapped into. A chain is a small thing high on the chest: a collar
+    // close under the jaw, a short drop, and a weight on the end of it.
     const chain = build('chain', anchors.torso);
     const chainMaterial = shade('chain');
-    const chainTop = torsoBox.max.y - size.y * 0.12;
-    const linkWidth = size.x * 0.1;
+    const collarY = torsoBox.max.y - size.y * 0.1;
+    const link = Math.min(size.x, size.y) * 0.055;
+    // The collar runs round the front of the neck rather than across the
+    // shoulders, so it sits where a chain sits and not where a yoke does.
+    piece([size.x * 0.34, link, link], [centre.x, collarY, front * 0.9], chainMaterial, chain);
     for (const side of [-1, 1]) {
-      const strand = new THREE.Group();
-      strand.position.set(side * size.x * 0.19, chainTop, front * 0.86);
-      strand.rotation.z = side * 0.42;
-      chain.add(strand);
-      piece([linkWidth, size.y * 0.4, linkWidth], [0, -size.y * 0.2, 0], chainMaterial, strand);
+      piece(
+        [link, link, size.z * 0.34],
+        [centre.x + side * size.x * 0.17, collarY, front * 0.72],
+        chainMaterial,
+        chain,
+      );
     }
-    piece([size.x * 0.34, linkWidth, linkWidth], [centre.x, chainTop, front * 0.86], chainMaterial, chain);
+    piece([link, size.y * 0.11, link], [centre.x, collarY - size.y * 0.055, front * 0.92], chainMaterial, chain);
     piece(
-      [size.x * 0.2, size.y * 0.14, linkWidth * 1.2],
-      [centre.x, chainTop - size.y * 0.38, front * 0.88],
+      [size.x * 0.13, size.y * 0.09, link * 1.4],
+      [centre.x, collarY - size.y * 0.14, front * 0.93],
       chainMaterial,
       chain,
     );

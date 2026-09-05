@@ -3,18 +3,24 @@ import * as THREE from 'three';
 /**
  * GANGAN, cast in gold, on a rearing horse.
  *
- * The pose is David's *Napoleon Crossing the Alps*: the horse up on its hind
- * legs with its head turned across, the rider settled back into the saddle,
- * one arm thrown up and the cloak caught behind him. What the painting does
- * with a diagonal, this does with a pitched body and a raised arm, because
- * that is all a pile of boxes has to work with.
+ * The pose is David's *Napoleon Crossing the Alps*, and the important thing
+ * about that painting is that the horse is in **profile** while the rider's
+ * body is turned out of it towards you. So the statue is set across the road
+ * rather than down it: an arrival gets the animal side on, which is the only
+ * view in which a horse is a horse, and GANGAN's chest and face turned to
+ * them.
  *
- * Local +Z is the direction the statue faces, and it is set up to be met head
- * on: the body opens towards whoever is walking up the road, and the horse's
- * head turns off that line so the silhouette is not flat.
+ * Local +Z is the way the horse points. Local +X is where the rider faces.
  *
- * Everything here is a scaled unit cube, like every other body in the
- * festival. A smooth statue among blocky people would read as an import.
+ * Built from the hind hooves up. The first version placed the body first and
+ * then hung legs off it downwards, which meant every change to the pitch left
+ * the feet somewhere new and the numbers were adjusted until the picture
+ * looked right — that is how the horse and the man ended up inside one
+ * another. Here the animal is drawn standing square, with its hind feet at the
+ * origin, and then the whole thing is tipped back about that origin. The feet
+ * cannot leave the stone, because they are the point it turns about.
+ *
+ * Everything is a scaled unit cube, like every other body in the festival.
  */
 
 const gold = (color: number, roughness: number, metalness: number) => new THREE.MeshStandardMaterial({
@@ -41,210 +47,261 @@ const block = (
   return mesh;
 };
 
-/** How far the horse is tipped back onto its hocks. */
-const REAR_PITCH = -0.46;
-/** Where the plinth stops and the sculpture starts. */
-export const GANGAN_PLINTH_TOP = 2.1;
-/** The box the thing occupies, for anything that needs to know what it hides. */
-export const GANGAN_STATUE_SIZE = { width: 6.3, height: 9.2, depth: 5.0 } as const;
+/** How far the animal is tipped back onto its hocks, about its hind feet. */
+const REAR_PITCH = -0.54;
+/** Where the plinth stops and the animal starts. */
+const PLINTH_TOP = 2.32;
+/** How far the rider's shoulders are turned out of the horse's line. */
+const RIDER_TURN = 1.16;
+
+/**
+ * The volume the piece fills, for the projector compositor alone — how much of
+ * the screen it can cover, so a film is not painted over a horse standing in
+ * front of it. Square in plan, because the statue is set at a right angle to
+ * the road and a box that swapped its sides with it would be a second thing to
+ * keep in step.
+ */
+export const GANGAN_STATUE_SIZE = { width: 7.2, height: 9.6, depth: 7.2 } as const;
 
 export const createGanganStatue = (): THREE.Group => {
   const root = new THREE.Group();
   root.name = 'gangan-statue';
 
-  // Bronze-gold rather than yellow. A single flat gold on every face turns a
-  // statue into a cut-out at any distance, so the metal is split three ways
-  // and the pieces that catch the light get the brightest of them.
+  // Metalness stays low. A properly metallic surface takes its colour almost
+  // entirely from what it has to reflect, and this world has no environment
+  // map — set honestly the whole statue comes out black. The gold has to live
+  // in the colour, not in the shading model.
   //
-  // Metalness is kept low on purpose. A properly metallic surface takes its
-  // colour almost entirely from what is around it to reflect, and there is no
-  // environment map in this world — set honestly to 0.85 the whole statue came
-  // out black. The festival's own materials are all near-dielectric for the
-  // same reason; the gold has to come from the colour, not the shading model.
-  const bronze = gold(0xb8862a, 0.44, 0.26);
-  const bronzeLit = gold(0xf2d47a, 0.30, 0.34);
-  const bronzeDeep = gold(0x6f4d14, 0.56, 0.2);
+  // Four tones, not three, and the horse and the rider are given different
+  // ones on purpose: at any distance the complaint was that you could not tell
+  // where the animal stopped and the man started, and no amount of modelling
+  // fixes that if both are the same yellow.
+  const hide = gold(0xa87a26, 0.48, 0.24);
+  const hideLit = gold(0xcfa03c, 0.4, 0.28);
+  const hideDeep = gold(0x6b4a12, 0.58, 0.18);
+  const man = gold(0xf0d071, 0.28, 0.36);
+  const manDeep = gold(0xbb9038, 0.42, 0.3);
   const stone = gold(0x2b2724, 0.92, 0.02);
-  const stoneLip = gold(0x3a352f, 0.88, 0.04);
+  const stoneLip = gold(0x3d382f, 0.86, 0.04);
 
-  // --- the plinth -----------------------------------------------------------
-  block('plinth-base', [5.6, 0.45, 4.0], [0, 0.225, 0], stoneLip, root);
-  block('plinth-die', [4.6, 1.35, 3.1], [0, 1.125, 0], stone, root);
-  block('plinth-cap', [5.0, 0.3, 3.5], [0, 1.95, 0], stoneLip, root);
-  // The outcrop the hind hooves are planted on, as in the painting.
-  block('crag', [2.6, 0.55, 1.7], [0, 2.38, -0.75], bronzeDeep, root);
-  block('crag-step', [1.5, 0.35, 1.0], [0.5, 2.4, 0.35], bronzeDeep, root);
+  // --- plinth ---------------------------------------------------------------
+  block('plinth-base', [6.0, 0.5, 4.6], [0, 0.25, 0], stoneLip, root);
+  block('plinth-die', [5.0, 1.5, 3.6], [0, 1.25, 0], stone, root);
+  block('plinth-cap', [5.4, 0.32, 4.0], [0, 2.16, 0], stoneLip, root);
 
   // --- the horse ------------------------------------------------------------
-  // One pitched group carries the barrel and everything growing out of it. The
-  // legs hang off the root instead, because a leg has to reach the stone and
-  // that is easier to say in the statue's own upright frame than in a tilted
-  // one.
+  // Origin at the hind hooves, on the stone, and the whole group pitched back
+  // about it. Nothing below is written in terms of the pitch.
   const horse = new THREE.Group();
   horse.name = 'horse';
-  horse.position.set(0, 4.5, -0.32);
+  horse.position.set(0, PLINTH_TOP, -1.15);
   horse.rotation.x = REAR_PITCH;
   root.add(horse);
 
-  block('barrel', [1.24, 1.28, 2.9], [0, 0, 0], bronze, horse);
-  block('rump', [1.18, 1.22, 0.85], [0, 0.04, -1.52], bronze, horse);
-  block('chest', [1.3, 1.22, 0.95], [0, 0.06, 1.44], bronzeLit, horse);
-  block('girth', [1.32, 0.5, 1.1], [0, -0.5, 0.55], bronzeDeep, horse);
+  // The outcrop the hind feet are dug into, which is what stops a rearing
+  // horse reading as a falling one. Pitched with the animal so it stays under
+  // the feet.
+  block('crag', [2.5, 0.5, 1.5], [0, 0.05, 0.1], hideDeep, horse);
 
-  // The neck rises out of the chest and the head turns off the centre line, so
-  // the animal is looking across its own shoulder rather than straight down
-  // the road. That turn is most of what stops this reading as a rocking horse.
+  // Hind legs. Standing height, drawn once and used twice; the two are given
+  // slightly different bends so the pair is not a mirror.
+  const hindLeg = (side: number, splay: number) => {
+    const leg = new THREE.Group();
+    leg.name = `${side < 0 ? 'left' : 'right'}-hind`;
+    leg.position.set(side * 0.44, 0, 0);
+    leg.rotation.x = splay;
+    horse.add(leg);
+    block('hoof', [0.36, 0.22, 0.44], [0, 0.11, 0.02], hideLit, leg);
+    block('cannon', [0.26, 1.0, 0.3], [0, 0.72, 0], hideDeep, leg);
+    block('hock', [0.34, 0.26, 0.38], [0, 1.32, -0.04], hideLit, leg);
+    block('gaskin', [0.46, 0.95, 0.6], [0, 1.92, 0.06], hide, leg);
+    return leg;
+  };
+  hindLeg(-1, 0.06);
+  hindLeg(1, -0.05);
+
+  // Body. Each piece butts up against the next rather than sitting inside it:
+  // rump ends where the barrel starts, barrel ends where the chest starts.
+  block('haunch', [1.22, 1.3, 1.15], [0, 2.42, 0.05], hide, horse);
+  block('barrel', [1.18, 1.3, 1.9], [0, 2.44, 1.58], hide, horse);
+  block('belly', [1.1, 0.42, 1.7], [0, 1.74, 1.6], hideDeep, horse);
+  block('chest', [1.24, 1.24, 0.8], [0, 2.42, 2.93], hideLit, horse);
+  block('shoulder', [1.3, 0.9, 0.7], [0, 2.72, 2.7], hide, horse);
+
+  // Front legs, folded up under the chest. Pivoted at the shoulder so the fold
+  // is two rotations and not four guessed positions.
+  const foreLeg = (side: number, lift: number, fold: number) => {
+    const leg = new THREE.Group();
+    leg.name = `${side < 0 ? 'left' : 'right'}-fore`;
+    leg.position.set(side * 0.43, 2.5, 2.86);
+    leg.rotation.x = lift;
+    horse.add(leg);
+    block('forearm', [0.42, 1.05, 0.52], [0, -0.52, 0], hide, leg);
+    const knee = new THREE.Group();
+    knee.position.set(0, -1.05, 0);
+    knee.rotation.x = fold;
+    leg.add(knee);
+    block('knee', [0.34, 0.26, 0.36], [0, -0.05, 0], hideLit, knee);
+    block('cannon', [0.26, 0.95, 0.3], [0, -0.66, 0], hideDeep, knee);
+    block('hoof', [0.34, 0.22, 0.42], [0, -1.24, 0.04], hideLit, knee);
+    return leg;
+  };
+  // One higher and tighter than the other, which is what a real rear looks
+  // like and what stops the front end reading as a single folded slab.
+  foreLeg(-1, 1.62, -1.5);
+  foreLeg(1, 1.05, -2.0);
+
+  // Neck and head. The neck rises out of the shoulder and the head turns off
+  // the centre line, so the animal looks across itself instead of straight
+  // ahead — most of what keeps the silhouette from going flat.
   const neck = new THREE.Group();
   neck.name = 'neck';
-  neck.position.set(0, 0.5, 1.68);
-  neck.rotation.set(-0.74, 0.18, 0.08);
+  neck.position.set(0, 2.95, 3.15);
+  neck.rotation.set(-0.34, 0.2, 0.05);
   horse.add(neck);
-  block('neck-block', [0.78, 2.1, 0.92], [0, 0.95, 0.06], bronze, neck);
-  block('crest', [0.44, 1.9, 0.34], [0, 1.0, -0.38], bronzeDeep, neck);
+  block('neck', [0.74, 1.85, 0.9], [0, 0.9, 0.1], hide, neck);
+  block('crest', [0.4, 1.75, 0.3], [0, 0.98, -0.36], hideDeep, neck);
+  for (const [y, length] of [[0.35, 0.5], [0.85, 0.62], [1.35, 0.52]] as Array<[number, number]>) {
+    block('mane', [0.26, length, 0.22], [0, y, -0.56], hideDeep, neck);
+  }
 
   const head = new THREE.Group();
   head.name = 'horse-head';
-  head.position.set(0, 1.95, 0.22);
-  head.rotation.set(1.02, 0.3, 0);
+  head.position.set(0, 1.85, 0.18);
+  head.rotation.set(0.62, 0.24, 0);
   neck.add(head);
-  block('horse-skull', [0.64, 0.66, 1.2], [0, 0, 0.34], bronze, head);
-  block('muzzle', [0.52, 0.48, 0.44], [0, -0.1, 1.06], bronzeLit, head);
-  block('nostril', [0.2, 0.14, 0.1], [0, -0.16, 1.3], bronzeDeep, head);
-  block('left-ear', [0.15, 0.36, 0.16], [-0.2, 0.44, -0.16], bronzeLit, head);
-  block('right-ear', [0.15, 0.36, 0.16], [0.2, 0.44, -0.16], bronzeLit, head);
-  block('forelock', [0.42, 0.2, 0.3], [0, 0.36, 0.06], bronzeDeep, head);
+  block('skull', [0.62, 0.66, 1.0], [0, 0, 0.28], hide, head);
+  block('cheek', [0.66, 0.5, 0.34], [0, -0.06, -0.02], hideLit, head);
+  block('muzzle', [0.5, 0.46, 0.46], [0, -0.12, 0.96], hideLit, head);
+  block('nostril', [0.2, 0.13, 0.09], [0, -0.2, 1.2], hideDeep, head);
+  block('blaze', [0.2, 0.1, 0.7], [0, 0.3, 0.4], hideLit, head);
+  block('left-ear', [0.14, 0.34, 0.16], [-0.19, 0.44, -0.14], hideLit, head);
+  block('right-ear', [0.14, 0.34, 0.16], [0.19, 0.44, -0.14], hideLit, head);
+  block('forelock', [0.36, 0.22, 0.26], [0, 0.36, 0.08], hideDeep, head);
+  // Bridle, which is where the reins in the rider's hand have to come from.
+  block('browband', [0.66, 0.08, 0.1], [0, 0.2, 0.14], manDeep, head);
+  block('noseband', [0.54, 0.09, 0.1], [0, -0.08, 0.78], manDeep, head);
+  for (const side of [-1, 1]) {
+    block('cheekpiece', [0.07, 0.5, 0.07], [side * 0.3, 0.02, 0.5], manDeep, head);
+  }
 
   const tail = new THREE.Group();
   tail.name = 'tail';
-  tail.position.set(0, 0.32, -1.88);
-  tail.rotation.x = 0.95;
+  tail.position.set(0, 2.75, -0.5);
+  tail.rotation.x = 0.62;
   horse.add(tail);
-  block('tail-block', [0.32, 1.5, 0.44], [0, -0.7, 0], bronzeDeep, tail);
-  block('tail-tip', [0.24, 0.6, 0.3], [0, -1.55, 0.18], bronzeDeep, tail);
-
-  // Hind legs: planted, taking the whole weight. Front legs: off the ground
-  // and folded, one higher than the other so the pair is not a mirror.
-  const leg = (
-    name: string,
-    hip: [number, number, number],
-    hipRotation: number,
-    upper: [number, number, number],
-    kneeRotation: number,
-    lower: [number, number, number],
-    hoof: boolean,
-  ): THREE.Group => {
-    const pivot = new THREE.Group();
-    pivot.name = name;
-    pivot.position.set(...hip);
-    pivot.rotation.x = hipRotation;
-    root.add(pivot);
-    block(`${name}-upper`, upper, [0, -upper[1] / 2, 0], bronze, pivot);
-    const knee = new THREE.Group();
-    knee.position.set(0, -upper[1], 0);
-    knee.rotation.x = kneeRotation;
-    pivot.add(knee);
-    block(`${name}-lower`, lower, [0, -lower[1] / 2, 0], bronzeDeep, knee);
-    if (hoof) block(`${name}-hoof`, [lower[0] + 0.1, 0.22, lower[2] + 0.14], [0, -lower[1] - 0.11, 0.04], bronzeLit, knee);
-    return pivot;
-  };
-
-  leg('left-hind', [-0.44, 3.86, -1.28], 0.34, [0.46, 1.05, 0.62], -0.42, [0.36, 0.92, 0.44], true);
-  leg('right-hind', [0.44, 3.86, -1.28], 0.2, [0.46, 1.05, 0.62], -0.3, [0.36, 0.92, 0.44], true);
-  leg('left-fore', [-0.48, 5.5, 1.12], 1.6, [0.4, 1.05, 0.5], -1.65, [0.32, 0.95, 0.38], true);
-  leg('right-fore', [0.48, 5.36, 1.0], 1.02, [0.4, 1.05, 0.5], -2.05, [0.32, 0.95, 0.38], true);
+  block('dock', [0.34, 0.5, 0.4], [0, -0.2, 0], hide, tail);
+  block('tail', [0.3, 1.5, 0.42], [0, -1.2, -0.1], hideDeep, tail);
+  block('tail-tip', [0.22, 0.6, 0.28], [0, -2.15, -0.28], hideDeep, tail);
 
   // --- the rider ------------------------------------------------------------
-  // Seated on the pitched barrel but held upright against it, which is the
-  // whole trick of the painting: the horse goes one way and the man does not.
+  // A child of the horse, so he goes up with it, then turned partway back
+  // towards upright — which is the whole trick of the painting: the animal
+  // goes one way and the man does not.
   const rider = new THREE.Group();
   rider.name = 'gangan';
-  rider.position.set(0, 5.5, -0.92);
-  rider.rotation.set(-0.14, -0.22, 0);
-  root.add(rider);
+  rider.position.set(0, 3.2, 1.62);
+  rider.rotation.x = 0.34;
+  horse.add(rider);
 
-  block('saddle', [1.36, 0.3, 1.5], [0, -0.62, 0.14], bronzeDeep, rider);
-  block('hips', [0.98, 0.5, 0.72], [0, -0.34, 0], bronze, rider);
-  block('torso', [1.0, 1.15, 0.66], [0, 0.42, 0.02], bronzeLit, rider);
-  block('collar', [1.06, 0.2, 0.72], [0, 0.98, 0.02], bronze, rider);
+  block('saddle', [1.3, 0.24, 1.4], [0, -0.08, 0.05], manDeep, rider);
+  block('cantle', [1.2, 0.34, 0.24], [0, 0.12, -0.68], manDeep, rider);
+  block('pommel', [0.9, 0.3, 0.22], [0, 0.1, 0.7], manDeep, rider);
+  block('hips', [0.86, 0.52, 0.7], [0, 0.34, 0], man, rider);
 
-  // Thighs down each flank, calves tucked back to the girth.
+  // Legs down the outside of the barrel, not through it. The barrel is 1.18
+  // across, so its face is at 0.59; a 0.4 thigh centred at 0.86 clears it with
+  // room to spare, which is what a leg on a horse actually does.
   for (const side of [-1, 1]) {
     const thigh = new THREE.Group();
-    thigh.position.set(side * 0.52, -0.42, 0.1);
-    thigh.rotation.set(0.95, 0, side * 0.16);
+    thigh.position.set(side * 0.86, 0.2, 0.16);
+    thigh.rotation.set(0.72, 0, side * 0.1);
     rider.add(thigh);
-    block(`${side < 0 ? 'left' : 'right'}-thigh`, [0.42, 1.0, 0.52], [0, -0.5, 0], bronze, thigh);
+    block('thigh', [0.4, 0.95, 0.48], [0, -0.46, 0], man, thigh);
     const shin = new THREE.Group();
-    shin.position.set(0, -1.0, 0);
-    shin.rotation.x = -1.5;
+    shin.position.set(0, -0.95, 0);
+    shin.rotation.x = -1.28;
     thigh.add(shin);
-    block(`${side < 0 ? 'left' : 'right'}-shin`, [0.36, 0.95, 0.42], [0, -0.48, 0], bronzeDeep, shin);
-    block(`${side < 0 ? 'left' : 'right'}-boot`, [0.4, 0.28, 0.62], [0, -1.02, 0.14], bronzeLit, shin);
+    block('shin', [0.34, 0.9, 0.4], [0, -0.44, 0], manDeep, shin);
+    block('boot', [0.38, 0.3, 0.6], [0, -0.98, 0.14], man, shin);
+    block('stirrup', [0.42, 0.12, 0.14], [0, -1.18, 0.1], hideDeep, shin);
   }
 
-  // The arm that does the pointing. Up and out, the way the painting sends the
-  // eye out of the top of the frame.
+  // Everything above the waist is turned out of the horse's line, towards
+  // whoever is walking up the road. Shoulders, arms, head and cloak all hang
+  // off this one group, so the turn is one number.
+  const upper = new THREE.Group();
+  upper.name = 'gangan-upper';
+  upper.position.set(0, 0.6, 0);
+  upper.rotation.y = RIDER_TURN;
+  rider.add(upper);
+
+  block('waist', [0.8, 0.34, 0.6], [0, 0.05, 0], manDeep, upper);
+  block('torso', [0.98, 1.0, 0.66], [0, 0.72, 0.02], man, upper);
+  block('chest-plate', [0.86, 0.44, 0.16], [0, 0.86, 0.36], manDeep, upper);
+  block('shoulders', [1.16, 0.28, 0.68], [0, 1.32, 0.02], man, upper);
+
+  // The arm that points. Up and out of the top of the frame, the way the
+  // painting sends the eye.
   const rightArm = new THREE.Group();
   rightArm.name = 'raised-arm';
-  rightArm.position.set(0.6, 0.82, 0.02);
-  rightArm.rotation.set(-0.35, 0, -2.35);
-  rider.add(rightArm);
-  block('right-upper-arm', [0.34, 0.95, 0.38], [0, -0.48, 0], bronzeLit, rightArm);
-  const rightForearm = new THREE.Group();
-  rightForearm.position.set(0, -0.95, 0);
-  rightForearm.rotation.set(0, 0, 0.42);
-  rightArm.add(rightForearm);
-  block('right-forearm', [0.3, 0.9, 0.34], [0, -0.45, 0], bronze, rightForearm);
-  block('right-hand', [0.3, 0.32, 0.32], [0, -0.98, 0.02], bronzeLit, rightForearm);
+  rightArm.position.set(0.62, 1.26, 0.02);
+  rightArm.rotation.set(-0.3, 0, -2.42);
+  upper.add(rightArm);
+  block('upper-arm', [0.32, 0.85, 0.36], [0, -0.44, 0], man, rightArm);
+  const forearm = new THREE.Group();
+  forearm.position.set(0, -0.85, 0);
+  forearm.rotation.z = 0.36;
+  rightArm.add(forearm);
+  block('forearm', [0.28, 0.8, 0.32], [0, -0.42, 0], manDeep, forearm);
+  block('hand', [0.3, 0.3, 0.3], [0, -0.95, 0.02], man, forearm);
+  block('finger', [0.12, 0.34, 0.12], [0, -1.24, 0.04], man, forearm);
 
-  // The other hand is down on the reins, which is what keeps the raised one
-  // from reading as a shrug.
+  // The other hand is down on the reins, which is what stops the raised one
+  // reading as a shrug.
   const leftArm = new THREE.Group();
   leftArm.name = 'rein-arm';
-  leftArm.position.set(-0.6, 0.8, 0.02);
-  leftArm.rotation.set(-0.85, 0.2, 0.3);
-  rider.add(leftArm);
-  block('left-upper-arm', [0.34, 0.9, 0.38], [0, -0.45, 0], bronze, leftArm);
+  leftArm.position.set(-0.62, 1.24, 0.02);
+  leftArm.rotation.set(-0.7, 0.5, 0.34);
+  upper.add(leftArm);
+  block('upper-arm', [0.32, 0.85, 0.36], [0, -0.44, 0], man, leftArm);
   const leftForearm = new THREE.Group();
-  leftForearm.position.set(0, -0.9, 0);
-  leftForearm.rotation.x = -0.5;
+  leftForearm.position.set(0, -0.85, 0);
+  leftForearm.rotation.x = -0.44;
   leftArm.add(leftForearm);
-  block('left-forearm', [0.3, 0.85, 0.34], [0, -0.42, 0], bronzeLit, leftForearm);
-  block('left-hand', [0.3, 0.3, 0.34], [0, -0.92, 0.04], bronze, leftForearm);
+  block('forearm', [0.28, 0.78, 0.32], [0, -0.4, 0], manDeep, leftForearm);
+  block('fist', [0.3, 0.28, 0.32], [0, -0.86, 0.04], man, leftForearm);
 
-  // Head, and the two things that make it him: the hair down to the collar and
-  // the cap over it.
+  // Head. Two things make it him: the hair down to the collar, and the cap.
   const head2 = new THREE.Group();
   head2.name = 'gangan-head';
-  head2.position.set(0, 1.42, 0.02);
-  head2.rotation.set(0.06, 0.34, 0);
-  rider.add(head2);
-  block('skull', [0.74, 0.76, 0.68], [0, 0, 0], bronzeLit, head2);
-  block('hair-back', [0.8, 0.72, 0.26], [0, -0.06, -0.4], bronze, head2);
-  block('hair-left', [0.16, 0.6, 0.6], [-0.42, -0.16, -0.06], bronze, head2);
-  block('hair-right', [0.16, 0.6, 0.6], [0.42, -0.16, -0.06], bronze, head2);
-  block('brow', [0.72, 0.12, 0.1], [0, 0.14, 0.34], bronzeDeep, head2);
-  block('moustache', [0.34, 0.1, 0.12], [0, -0.16, 0.35], bronzeDeep, head2);
-  block('beard', [0.3, 0.24, 0.16], [0, -0.34, 0.3], bronzeDeep, head2);
-  // The cap, worn forward: at the distance this is read from, a peak out front
-  // is the only part of it that says "cap" rather than "lump".
-  block('cap-crown', [0.8, 0.3, 0.74], [0, 0.5, -0.02], bronze, head2);
-  block('cap-peak', [0.78, 0.11, 0.44], [0, 0.38, 0.52], bronzeDeep, head2);
+  head2.position.set(0, 1.78, 0.02);
+  head2.rotation.set(0.04, 0.18, 0);
+  upper.add(head2);
+  block('skull', [0.7, 0.72, 0.66], [0, 0, 0], man, head2);
+  block('jaw', [0.6, 0.24, 0.56], [0, -0.4, 0.02], man, head2);
+  block('hair-back', [0.76, 0.66, 0.2], [0, -0.08, -0.4], manDeep, head2);
+  block('hair-left', [0.14, 0.56, 0.5], [-0.4, -0.18, -0.1], manDeep, head2);
+  block('hair-right', [0.14, 0.56, 0.5], [0.4, -0.18, -0.1], manDeep, head2);
+  block('brow', [0.66, 0.1, 0.09], [0, 0.14, 0.34], manDeep, head2);
+  block('moustache', [0.3, 0.09, 0.1], [0, -0.2, 0.34], manDeep, head2);
+  block('beard', [0.34, 0.22, 0.14], [0, -0.42, 0.3], manDeep, head2);
+  // The cap. The peak is the only part that reads as a cap in silhouette.
+  block('cap-crown', [0.76, 0.28, 0.7], [0, 0.5, 0], man, head2);
+  block('cap-peak', [0.72, 0.1, 0.42], [0, 0.37, 0.53], manDeep, head2);
 
-  // The cloak. It is the largest single shape in the painting and it is what
-  // fills the space behind a rider who is otherwise a thin vertical.
+  // The cloak. It is the largest shape in the painting, and it is what fills
+  // the space behind a rider who is otherwise a thin vertical. Hung off the
+  // shoulders and swept back, entirely behind the man and clear of the horse.
   const cloak = new THREE.Group();
   cloak.name = 'cloak';
-  cloak.position.set(-0.1, 0.5, -0.42);
-  cloak.rotation.set(0.22, 0.1, -0.26);
-  rider.add(cloak);
-  block('cloak-shoulder', [1.5, 0.5, 0.36], [0, 0.5, 0], bronzeLit, cloak);
-  block('cloak-fall', [1.34, 1.5, 0.3], [-0.12, -0.42, -0.16], bronze, cloak);
-  block('cloak-flare', [1.05, 1.1, 0.28], [-0.55, -1.35, -0.44], bronzeLit, cloak);
-  block('cloak-tail', [0.7, 0.85, 0.24], [-0.95, -2.15, -0.72], bronze, cloak);
+  cloak.position.set(0, 1.28, -0.4);
+  cloak.rotation.set(0.26, 0, -0.2);
+  upper.add(cloak);
+  block('cloak-collar', [1.2, 0.28, 0.24], [0, 0.06, 0], man, cloak);
+  block('cloak-back', [1.1, 1.3, 0.22], [-0.06, -0.66, -0.16], manDeep, cloak);
+  block('cloak-flare', [0.86, 1.0, 0.2], [-0.42, -1.7, -0.42], man, cloak);
+  block('cloak-tail', [0.58, 0.8, 0.18], [-0.78, -2.5, -0.7], manDeep, cloak);
 
-  // Read from the far end of a long road, so it is built at the size it needs
-  // to be seen at rather than the size it is comfortable to author at.
-  root.scale.setScalar(1.14);
   return root;
 };

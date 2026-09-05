@@ -1318,6 +1318,8 @@ export class App {
       (window as Window & {
         __festivalStatue?: (distance?: number, yaw?: number, pitch?: number) => void;
       }).__festivalStatue = (distance, yaw, pitch) => this.world?.focusStatueForReview(distance, yaw, pitch);
+      (window as Window & { __festivalIntrusions?: () => unknown }).__festivalIntrusions =
+        () => this.world?.statueIntrusionSnapshot();
       (window as Window & {
         __festivalLookAt?: (x: number, z: number, distance?: number, yaw?: number, pitch?: number) => void;
       }).__festivalLookAt = (x, z, distance, yaw, pitch) => this.world?.lookAtSpotForReview(x, z, distance, yaw, pitch);

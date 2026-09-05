@@ -194,7 +194,19 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .gate-appearance[open] .gate-appearance__sign { visibility: hidden; position: relative; }
 .gate-appearance[open] .gate-appearance__sign::before { content: '−'; visibility: visible; position: absolute; right: 0; }
 .gate-appearance > .appearance { padding: 0 13px 14px; }
-input[type='color'] { width: 32px; height: 32px; border: 1px solid rgba(17,17,19,.3); padding: 2px; background: transparent; cursor: pointer; }
+/* Square, everywhere. Safari draws a colour input as a rounded pill and keeps
+   drawing one however the element itself is sized — at 32 by 32 that read as a
+   rounded square and passed, but a wide swatch turns into an oval, which is
+   what it did on the phone. Killing the native appearance and squaring the
+   inner swatch is the only thing that actually settles it. */
+input[type='color'] {
+  -webkit-appearance: none; appearance: none;
+  width: 32px; height: 32px; border: 1px solid rgba(17,17,19,.3); border-radius: 0;
+  padding: 2px; background: transparent; cursor: pointer;
+}
+input[type='color']::-webkit-color-swatch-wrapper { padding: 0; }
+input[type='color']::-webkit-color-swatch { border: none; border-radius: 0; }
+input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
 .check-field { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; }
 /* Dressed like the rest of the card rather than left in the browser's own
    clothes: the same ink rule under the field, the same condensed lettering, and
