@@ -444,7 +444,7 @@ const shouldConserveMobileGpu = (): boolean => {
  * Here it is clear of the roadway by four units, on red the whole way round,
  * and it falls between the promenade lamp rows rather than level with one.
  */
-const statuePosition = new THREE.Vector3(0, 0, -9);
+const statuePosition = new THREE.Vector3(0, 0, -6.2);
 /**
  * The box the statue fills, for the projector compositor alone. Not the
  * collider and not the artwork — just how much of the screen it can cover, so
@@ -465,7 +465,7 @@ const concessionPosition = new THREE.Vector3(-25, 0, -24);
 // Right in front of the statue, on the gate side: walking in you meet the
 // pamphlets first and the horse behind them. Just clear of the statue's own
 // footprint, so the two read as one arrangement.
-const pamphletPosition = new THREE.Vector3(0, 0, -4.2);
+const pamphletPosition = new THREE.Vector3(0, 0, -1.4);
 // Where the sea meets the sand. Every water plane ends here and every piece of
 // beach starts here: overlapping the two put opaque sand and a water surface at
 // the same height, and they fought for the same pixels along the whole shore.

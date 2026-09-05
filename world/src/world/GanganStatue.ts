@@ -50,9 +50,15 @@ const block = (
 
 /** How far the body is tipped back. The legs do not go with it. */
 const REAR_PITCH = -0.5;
+/** The top of the plinth. Every hoof on the ground has to land here. */
+const PLINTH_TOP = 2.32;
 /** Where the hip sits above the stone, which is what the hind legs reach up to. */
 const HIP_Y = 4.5;
 const HIP_Z = -1.0;
+/** Hind leg segments, in the order they hang. */
+const THIGH = 1.3;
+const HIND_SHANK = 1.38;
+const HOOF_HALF = 0.1;
 
 /**
  * The volume the piece fills, for the projector compositor alone — how much of
@@ -97,26 +103,36 @@ export const createGanganStatue = (): THREE.Group => {
   // body pivots at the **hip**, and the legs are built downwards from that hip
   // to the stone, where they stay.
   //
-  // The numbers below are worked, not chosen: a thigh of 1.3 at 0.5 radians
-  // puts the hock at y = 4.5 − 1.3·cos(0.5) = 3.36 and z = −1.0 − 1.3·sin(0.5)
-  // = −1.62, and a cannon of 1.04 at −0.47 from there lands the hoof on
-  // 2.32 — the top of the plinth.
+  // The hock angle is **solved**, not chosen. Last time it was written down as
+  // a number with a comment claiming it landed the hoof on the stone, and it
+  // did not — it put the foot 0.27 under the plinth, because the working
+  // forgot that the hoof hangs further down the shank than the shank's own
+  // length. So the drop is computed from the pieces that actually make it up,
+  // and the angle comes out of that. Change any segment and the foot still
+  // lands on the stone.
   const hindLeg = (side: number, lean: number) => {
+    const hipAngle = 0.5 + lean;
+    const hockY = HIP_Y - THIGH * Math.cos(hipAngle);
+    // How far the shank has to drop for the underside of the hoof to be on the
+    // plinth, and the angle that gives it.
+    const wanted = (hockY - PLINTH_TOP - HOOF_HALF) / HIND_SHANK;
+    const shankAngle = -Math.acos(THREE.MathUtils.clamp(wanted, -1, 1));
+
     const hip = new THREE.Group();
     hip.name = `${side < 0 ? 'left' : 'right'}-hind`;
     hip.position.set(side * 0.46, HIP_Y, HIP_Z);
-    hip.rotation.x = 0.5 + lean;
+    hip.rotation.x = hipAngle;
     root.add(hip);
     block('haunch', [0.58, 0.5, 0.7], [0, -0.1, 0.1], hide, hip);
-    block('thigh', [0.5, 1.3, 0.62], [0, -0.65, 0], hide, hip);
+    block('thigh', [0.5, THIGH, 0.62], [0, -THIGH / 2, 0], hide, hip);
     const hock = new THREE.Group();
-    hock.position.set(0, -1.3, 0);
-    hock.rotation.x = -0.97 - lean;
+    hock.position.set(0, -THIGH, 0);
+    hock.rotation.x = shankAngle - hipAngle;
     hip.add(hock);
     block('hock', [0.36, 0.28, 0.42], [0, -0.06, -0.02], hideLit, hock);
-    block('cannon', [0.28, 1.04, 0.32], [0, -0.62, 0], hideDeep, hock);
-    block('fetlock', [0.32, 0.18, 0.34], [0, -1.2, 0.02], hideLit, hock);
-    block('hoof', [0.36, 0.2, 0.44], [0, -1.38, 0.04], hideLit, hock);
+    block('cannon', [0.28, HIND_SHANK - 0.34, 0.32], [0, -(HIND_SHANK - 0.34) / 2 - 0.14, 0], hideDeep, hock);
+    block('fetlock', [0.32, 0.18, 0.34], [0, -(HIND_SHANK - 0.16), 0.02], hideLit, hock);
+    block('hoof', [0.36, HOOF_HALF * 2, 0.44], [0, -HIND_SHANK, 0.04], hideLit, hock);
   };
   hindLeg(-1, 0.04);
   hindLeg(1, -0.03);
@@ -143,18 +159,24 @@ export const createGanganStatue = (): THREE.Group => {
     shoulder.position.set(side * 0.44, 0.1, 3.1);
     shoulder.rotation.x = lift;
     horse.add(shoulder);
-    block('forearm', [0.44, 1.05, 0.54], [0, -0.52, 0], hide, shoulder);
+    block('forearm', [0.44, 1.35, 0.54], [0, -0.67, 0], hide, shoulder);
     const knee = new THREE.Group();
-    knee.position.set(0, -1.05, 0);
+    knee.position.set(0, -1.35, 0);
     knee.rotation.x = fold;
     shoulder.add(knee);
-    block('knee', [0.36, 0.26, 0.38], [0, -0.06, 0], hideLit, knee);
-    block('cannon', [0.28, 0.95, 0.32], [0, -0.66, 0], hideDeep, knee);
-    block('hoof', [0.34, 0.2, 0.42], [0, -1.22, 0.04], hideLit, knee);
+    block('knee', [0.38, 0.28, 0.4], [0, -0.08, 0], hideLit, knee);
+    block('cannon', [0.3, 1.25, 0.34], [0, -0.86, 0], hideDeep, knee);
+    block('fetlock', [0.32, 0.18, 0.34], [0, -1.56, 0.02], hideLit, knee);
+    block('hoof', [0.36, 0.22, 0.44], [0, -1.74, 0.05], hideLit, knee);
   };
-  // One higher and tighter than the other, so the front end is not one slab.
-  foreLeg(-1, 1.55, -1.45);
-  foreLeg(1, 1.0, -1.95);
+  // Longer and further out than before, and no longer folded into a ball.
+  //
+  // Two short legs bent to nearly two radians read as a pair of stumps tucked
+  // under the chest. What makes a rearing horse dramatic is the reach: the
+  // near leg thrown high and almost straight, the far one gathered under it.
+  // So the segments are longer and the knees give back most of the fold.
+  foreLeg(-1, 1.9, -0.72);
+  foreLeg(1, 1.15, -1.5);
 
   // Neck and head. The neck leans **forward** as it rises.
   //
@@ -190,14 +212,31 @@ export const createGanganStatue = (): THREE.Group => {
     block('cheekpiece', [0.07, 0.52, 0.07], [side * 0.3, 0.02, 0.52], manDeep, head);
   }
 
+  // The tail is an arc, not a rope hanging off the back.
+  //
+  // Three segments, each turned further than the last, so it lifts away from
+  // the rump and flicks up at the end — which is what a tail does on an animal
+  // that is doing something, and reads as movement rather than weight. It also
+  // solves the other half of the complaint: hung straight down it reached
+  // below the top of the plinth and disappeared into it. Curling upward it
+  // cannot, at any point along its length.
   const tail = new THREE.Group();
   tail.name = 'tail';
-  tail.position.set(0, 0.35, -0.5);
-  tail.rotation.x = 0.5;
+  tail.position.set(0, 0.4, -0.55);
+  tail.rotation.x = 0.55;
   horse.add(tail);
-  block('dock', [0.36, 0.5, 0.42], [0, -0.2, 0], hide, tail);
-  block('tail', [0.32, 1.5, 0.44], [0, -1.2, -0.12], hideDeep, tail);
-  block('tail-tip', [0.24, 0.62, 0.3], [0, -2.16, -0.3], hideDeep, tail);
+  block('dock', [0.38, 0.5, 0.44], [0, -0.22, 0], hide, tail);
+  const tailMid = new THREE.Group();
+  tailMid.position.set(0, -0.46, 0);
+  tailMid.rotation.x = -0.75;
+  tail.add(tailMid);
+  block('tail', [0.32, 0.95, 0.4], [0, -0.46, 0], hideDeep, tailMid);
+  const tailEnd = new THREE.Group();
+  tailEnd.position.set(0, -0.92, 0);
+  tailEnd.rotation.x = -0.95;
+  tailMid.add(tailEnd);
+  block('tail-tip', [0.26, 0.9, 0.32], [0, -0.44, 0], hideDeep, tailEnd);
+  block('tail-flick', [0.2, 0.5, 0.24], [0, -0.95, -0.08], hideDeep, tailEnd);
 
   // --- the rider ------------------------------------------------------------
   // Sat on the barrel, then turned partway back towards upright: the animal
@@ -249,30 +288,42 @@ export const createGanganStatue = (): THREE.Group => {
   block('shoulders', [1.14, 0.28, 0.66], [0, 1.32, 0.01], man, upper);
 
   // The arm that points, up and out of the top of the frame.
+  // Up and forward, out past his own shoulder.
+  //
+  // It was rotated -2.1 about Z, which swings an arm hanging from the right
+  // shoulder up and across to the **left** — straight through the middle of
+  // his own head, which is exactly what it was doing. The lift belongs on X,
+  // where it takes the arm forward and up the way the painting does; the Z is
+  // a small outward tilt so it clears the shoulder rather than a swing across
+  // the body.
   const rightArm = new THREE.Group();
   rightArm.name = 'raised-arm';
   rightArm.position.set(0.62, 1.26, 0.02);
-  rightArm.rotation.set(-0.26, 0, -2.1);
+  rightArm.rotation.set(-2.48, 0, 0.38);
   upper.add(rightArm);
   block('upper-arm', [0.32, 0.85, 0.36], [0, -0.44, 0], man, rightArm);
   const forearm = new THREE.Group();
   forearm.position.set(0, -0.85, 0);
-  forearm.rotation.z = 0.3;
+  // A little more lift at the elbow, so the arm is not one straight bar.
+  forearm.rotation.set(-0.22, 0, 0.16);
   rightArm.add(forearm);
   block('forearm', [0.28, 0.8, 0.32], [0, -0.42, 0], manDeep, forearm);
   block('hand', [0.3, 0.3, 0.3], [0, -0.95, 0.02], man, forearm);
   block('finger', [0.12, 0.32, 0.12], [0, -1.22, 0.04], man, forearm);
 
   // The other hand is down on the reins.
+  // Down and a little forward onto the reins, and not much else. Two rotations
+  // near half a radian each plus a third put the elbow somewhere no elbow
+  // goes; one modest reach forward is what holding a rein looks like.
   const leftArm = new THREE.Group();
   leftArm.name = 'rein-arm';
   leftArm.position.set(-0.62, 1.24, 0.02);
-  leftArm.rotation.set(-0.62, 0.42, 0.3);
+  leftArm.rotation.set(-0.46, 0.12, 0.14);
   upper.add(leftArm);
   block('upper-arm', [0.32, 0.85, 0.36], [0, -0.44, 0], man, leftArm);
   const leftForearm = new THREE.Group();
   leftForearm.position.set(0, -0.85, 0);
-  leftForearm.rotation.x = -0.4;
+  leftForearm.rotation.x = -0.34;
   leftArm.add(leftForearm);
   block('forearm', [0.28, 0.78, 0.32], [0, -0.4, 0], manDeep, leftForearm);
   block('fist', [0.3, 0.28, 0.32], [0, -0.86, 0.04], man, leftForearm);

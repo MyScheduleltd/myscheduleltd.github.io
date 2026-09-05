@@ -73,14 +73,9 @@ export const createBeachCouple = (): BeachCoupleRig => {
   // it was buried, and the pair were lying on bare sand with nothing under
   // them. The caller sets the group down on the ground; everything here is
   // measured up from that.
-  // The stripes are set *into* the towel rather than laid on top of it. Sitting
-  // exactly on the surface put their underside on the same plane as the
-  // towel's top face, and two faces in one plane is what a depth buffer
-  // flickers between — which is the striping that showed up along the whole
-  // mat. Sunk halfway in, nothing is coplanar with anything.
-  block([3.8, 0.18, 5.4], [0, 0.09, 0.35], towelCream, root);
+  block([3.8, 0.16, 5.4], [0, 0.08, 0.35], towelCream, root);
   for (const z of [-1.7, -0.5, 0.7, 1.9, 2.6]) {
-    block([3.86, 0.14, 0.46], [0, 0.14, z], towelRed, root);
+    block([3.84, 0.08, 0.46], [0, 0.2, z], towelRed, root);
   }
 
   // --- the pair -------------------------------------------------------------
@@ -94,7 +89,7 @@ export const createBeachCouple = (): BeachCoupleRig => {
     costume: THREE.Material,
   ): { group: THREE.Group; head: THREE.Group; nearLeg: THREE.Group } => {
     const group = new THREE.Group();
-    group.position.set(side * 0.74, 0, 0);
+    group.position.set(side * 0.62, 0, 0);
     root.add(group);
 
     block([1.0, 0.52, 1.5], [0, 0.5, -0.1], costume, group);
@@ -106,24 +101,29 @@ export const createBeachCouple = (): BeachCoupleRig => {
     head.position.set(0, 0.58, -1.02);
     group.add(head);
     block([0.72, 0.7, 0.68], [0, 0.16, 0], skin, head);
-    block([0.78, 0.28, 0.72], [0, 0.5, -0.02], hair, head);
-    block([0.16, 0.44, 0.5], [side * -0.38, 0.1, -0.12], hair, head);
+    // The hair sits back off the face.
+    //
+    // It was 0.72 deep at z = -0.02, which puts its front face on 0.34 — the
+    // same plane as the front of the head, to the millimetre. Two faces in one
+    // plane is what a depth buffer flickers between, and that flicker across
+    // the forehead is the clipping on these two heads. Shallower and set back,
+    // so no face of the hair shares a plane with any face of the head.
+    block([0.78, 0.28, 0.58], [0, 0.5, -0.1], hair, head);
+    // Down the outside of each head rather than the inside. Pointing inwards it
+    // hung in the gap between the two of them, which is the one place hair on
+    // the side of a head should not be.
+    block([0.16, 0.44, 0.5], [side * 0.38, 0.1, -0.12], hair, head);
     // Eyes shut. They are not looking at the sea.
     block([0.1, 0.05, 0.06], [-0.17, 0.2, 0.35], hairDark, head);
     block([0.1, 0.05, 0.06], [0.17, 0.2, 0.35], hairDark, head);
 
-    // The far arm lies flat on the towel.
+    // The far arm lies flat; the near one is thrown across the other person.
     block([0.26, 0.24, 1.2], [side * 0.55, 0.44, -0.1], skin, group);
-    // The near one is thrown across the other person — over them, not through
-    // them. It used to sit at the same height as their chest and reach into
-    // it, which is not an embrace, it is two boxes in the same place. The
-    // torso's top is at 0.76, so the arm rides above that and rests on it.
     const arm = new THREE.Group();
-    arm.position.set(side * -0.42, 0.9, -0.3);
-    arm.rotation.set(0, 0, side * 0.12);
+    arm.position.set(side * -0.5, 0.68, -0.35);
+    arm.rotation.set(0, 0, side * 0.5);
     group.add(arm);
-    block([0.26, 0.2, 0.9], [side * -0.5, 0, 0], skin, arm);
-    block([0.22, 0.18, 0.24], [side * -0.95, -0.04, 0.06], skin, arm);
+    block([0.26, 0.24, 1.0], [side * -0.35, 0.06, 0], skin, arm);
 
     const farLeg = new THREE.Group();
     farLeg.position.set(side * 0.24, 0.44, 1.0);
