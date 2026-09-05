@@ -434,12 +434,17 @@ const shouldConserveMobileGpu = (): boolean => {
 // gate, which is the way arrivals come — mirroring them in x alone leaves that
 // facing correct, so nothing here needs turning.
 /**
- * Where the timetable stands. Three separate places used to carry its position
- * as a literal, so moving the board left the radius you can read it from behind
- * on the old spot — the board in one place and the prompt to open it in
- * another. They all read this now.
+ * Where the statue stands. Several places used to carry this as a literal, so
+ * moving it left the radius you could read it from on the old spot. They all
+ * read this now.
+ *
+ * Set well down the road towards the shore. The asphalt roadway starts at
+ * z = 2, and turned across the road the plinth is six deep — so at z = 1 a
+ * third of the base was standing on grey, which is what the owner kept seeing.
+ * Here it is clear of the roadway by four units, on red the whole way round,
+ * and it falls between the promenade lamp rows rather than level with one.
  */
-const statuePosition = new THREE.Vector3(0, 0, 1);
+const statuePosition = new THREE.Vector3(0, 0, -9);
 /**
  * The box the statue fills, for the projector compositor alone. Not the
  * collider and not the artwork — just how much of the screen it can cover, so
@@ -457,11 +462,10 @@ const statueBlockCenterY = GANGAN_STATUE_SIZE.height / 2;
 // booth sits in the bare space between the approach and the promenade — off
 // every piece of red, and clear of the doorway at z = -31.
 const concessionPosition = new THREE.Vector3(-25, 0, -24);
-// In front of the statue, meaning between it and the gate: walking in from the
-// gate you meet the pamphlets first and the horse behind them. Brought in
-// close, so the two read as one arrangement rather than two things that happen
-// to be on the same stretch of carpet.
-const pamphletPosition = new THREE.Vector3(0, 0, 0.6);
+// Right in front of the statue, on the gate side: walking in you meet the
+// pamphlets first and the horse behind them. Just clear of the statue's own
+// footprint, so the two read as one arrangement.
+const pamphletPosition = new THREE.Vector3(0, 0, -4.2);
 // Where the sea meets the sand. Every water plane ends here and every piece of
 // beach starts here: overlapping the two put opaque sand and a water surface at
 // the same height, and they fought for the same pixels along the whole shore.
@@ -1405,7 +1409,6 @@ export class FestivalWorld {
    * which is as far as the world reads before the walls start intruding.
    */
   private cameraZoom = readStoredZoom();
-  private templeAura?: THREE.Mesh;
   private templeSignMaterial?: THREE.MeshBasicMaterial;
   private templeSignText = { name: '美麗本人', label: 'THE TEMPLE' };
   private readonly entranceSignMaterials: THREE.MeshBasicMaterial[] = [];
@@ -7626,28 +7629,9 @@ export class FestivalWorld {
     for (const side of [-1, 1]) {
       this.mesh([0.14, 0.06, 0.06], [side * 0.26, 3.82, 0.54], material(0x2a2118), deity);
     }
-    // A halo behind the head, which is what carries the light in the room.
-    //
-    // Parented to the deity, which it was not. Every other piece of her passes
-    // `deity` as the parent and this one did not, so it was added to the scene
-    // instead — and the coordinates that put it behind her head inside the
-    // temple put it three and a half metres wide, four metres up, in the middle
-    // of the main road. A pale translucent square standing in the open where
-    // the timetable used to hide it, and now hanging through the statue.
-    const halo = this.mesh(
-      [3.4, 3.4, 0.16],
-      [0, 3.9, -0.75],
-      new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.24, depthWrite: false }),
-      deity,
-    );
-    halo.rotation.y = 0;
-    // Kept out of the pass that redraws geometry over the screens. That pass
-    // clears the depth buffer inside each screen's rectangle before it renders,
-    // and this is the one object in the world that is both transparent and does
-    // not write depth — so it painted itself over whatever happened to be in
-    // that rectangle, a hundred units away, as a pale block.
-    halo.userData.projectorBackground = true;
-    this.templeAura = halo;
+    // No halo. There was one, it was never parented to her, and it spent its
+    // life as a pale translucent square standing in the middle of the main
+    // road. Asked for and removed rather than moved.
     // Set at ninety a arm's length from her, this washed the gilding out to
     // white and lost every edge of the figure. Enough to lift her off the wall
     // and no more; the lanterns light the room.
@@ -8110,10 +8094,10 @@ export class FestivalWorld {
     sign.position.set(0, 2.1, 1.34);
     booth.add(sign);
     this.mesh([0.5, 0.75, 0.5], [0, 3.05, 0], material(0xffc93c), booth);
-    // Turned to face the cross street, which is the way anybody arrives at the
-    // palace. Built facing +z, so a quarter turn back the other way puts its
-    // counter towards the promenade rather than towards the palace wall.
-    booth.rotation.y = Math.PI;
+    // Facing the promenade and the road beyond it, which is the side anybody
+    // walks up from. Built facing +z, which is that side, so it needs no turn
+    // at all — the half turn it had put its counter against the palace.
+    booth.rotation.y = 0;
     this.scene.add(booth);
     // Head height, so the view rides over it. It is honestly taller than that,
     // but it is a stall beside a walkway: treating it as something that blocks
@@ -9410,11 +9394,6 @@ export class FestivalWorld {
     this.updateWaterLayers();
     this.updateFireworks(delta, performance.now());
     this.updateClubBeat(elapsed);
-    if (this.templeAura) {
-      // The presence breathes rather than sitting there painted on.
-      const auraMaterial = this.templeAura.material as THREE.MeshBasicMaterial;
-      auraMaterial.opacity = 0.12 + Math.sin(elapsed * 0.9) * 0.05;
-    }
     this.updateLampPool();
     this.camera.layers.set(0);
     this.renderer.render(this.scene, this.camera);
@@ -10473,7 +10452,8 @@ export class FestivalWorld {
         // resident with a visitor close ahead of it goes round early, while
         // there is still room to. Only ahead of it, and only on the same
         // storey: somebody behind, or on the floor above, is not in the way.
-        const givingWay = this.visitorInTheWay(npc, direction, targetGap);
+        const blocker = this.visitorInTheWay(npc, direction, targetGap);
+        const givingWay = blocker !== undefined;
         if (givingWay) npc.gaveWayAt = now;
         // Held up long enough, a resident stops treating other bodies as solid.
         //
@@ -10502,12 +10482,22 @@ export class FestivalWorld {
           // Somebody in the way rather than something. Standing still was the
           // whole trouble: two residents meeting head-on each waited for the
           // other, both timed out together, and both set off into each other
-          // again — a jam that never cleared. Each steps round to its right
-          // instead, which for two of them meeting is opposite ways, so they
-          // pass. The step still keeps some of the forward run, so it reads as
-          // going round somebody rather than sidling sideways.
-          const dodgeX = npc.group.position.x + (direction.x * 0.45 + direction.z) * step;
-          const dodgeZ = npc.group.position.z + (direction.z * 0.45 - direction.x) * step;
+          // again — a jam that never cleared.
+          //
+          // Which way to go round is decided by where the body actually is.
+          // Always going right is correct for two people meeting head on and
+          // wrong for everything else: in a group of six it turns the group
+          // into a slow carousel, everyone circling the same way and nobody
+          // getting out. Stepping away from whichever side the obstruction is
+          // on makes a cluster open outwards instead. Dead ahead has no side,
+          // and that is the head-on case, so it keeps the old answer — both
+          // going right means opposite ways, and they pass.
+          const toBlockerX = (blocker?.x ?? npc.group.position.x) - npc.group.position.x;
+          const toBlockerZ = (blocker?.z ?? npc.group.position.z) - npc.group.position.z;
+          const side = direction.x * toBlockerZ - direction.z * toBlockerX;
+          const hand = Math.abs(side) < 0.35 ? 1 : Math.sign(side);
+          const dodgeX = npc.group.position.x + (direction.x * 0.45 + direction.z * hand) * step;
+          const dodgeZ = npc.group.position.z + (direction.z * 0.45 - direction.x * hand) * step;
           if (
             !this.npcCollides(npc, dodgeX, dodgeZ)
             && !this.staticCollides(dodgeX, dodgeZ, npc.group.position.y, FestivalWorld.BODY_RADIUS)
@@ -11603,28 +11593,38 @@ export class FestivalWorld {
    * last one a resident gives way to somebody merely standing beside it, and
    * backs off a step at a time until it has left the place entirely.
    */
-  private visitorInTheWay(npc: NpcAvatar, direction: THREE.Vector3, targetGap: number): boolean {
+  private visitorInTheWay(npc: NpcAvatar, direction: THREE.Vector3, targetGap: number): THREE.Vector3 | undefined {
     // Courtesy has a limit. A resident that has been held up for more than a
     // moment stops yielding and takes its step — otherwise a group standing
     // among visitors gives way to them and to each other at once, nobody moves,
     // and the politeness is what holds the knot together.
-    if (npc.stuckFor > 1.2) return false;
+    if (npc.stuckFor > 1.2) return undefined;
     const reachSq = Math.min(8, targetGap * targetGap);
+    // A cone, not a half-plane.
+    //
+    // This asked whether a body was anywhere in the forward *half* of the
+    // world — which in a group is everybody walking beside you, and even
+    // somebody at right angles going the other way. So every resident in a
+    // crowd was permanently giving way to every other one, all of them
+    // sidestepping instead of walking, and the crowd never dispersed. Sixty
+    // degrees either side is what is actually in front of you.
     const ahead = (position: THREE.Vector3): boolean => {
       const toVisitorX = position.x - npc.group.position.x;
       const toVisitorZ = position.z - npc.group.position.z;
-      if (toVisitorX * toVisitorX + toVisitorZ * toVisitorZ >= reachSq) return false;
+      const distanceSq = toVisitorX * toVisitorX + toVisitorZ * toVisitorZ;
+      if (distanceSq >= reachSq || distanceSq < 0.0001) return false;
       if (Math.abs(position.y - npc.group.position.y) >= 2) return false;
-      return toVisitorX * direction.x + toVisitorZ * direction.z > 0;
+      const forward = (toVisitorX * direction.x + toVisitorZ * direction.z) / Math.sqrt(distanceSq);
+      return forward > 0.55;
     };
     if (ahead(this.player.position)) {
       npc.gaveWayToRemote = false;
-      return true;
+      return this.player.position;
     }
     for (const avatar of this.remoteAvatars.values()) {
       if (ahead(avatar.group.position)) {
         npc.gaveWayToRemote = true;
-        return true;
+        return avatar.group.position;
       }
     }
     // Residents step around **each other** too, and until now they did not.
@@ -11645,10 +11645,10 @@ export class FestivalWorld {
       if (other === npc) continue;
       if (ahead(other.group.position)) {
         npc.gaveWayToRemote = false;
-        return true;
+        return other.group.position;
       }
     }
-    return false;
+    return undefined;
   }
 
   /**
@@ -11670,7 +11670,16 @@ export class FestivalWorld {
    * than standing in the crowd.
    */
   private holdBodiesApart(delta: number): void {
-    const apart = 1.3;
+    // Wider than the distance a step is refused at, and that is the whole
+    // point of the number.
+    //
+    // This used to be 1.3 while `npcCollides` refused any step ending within
+    // 1.35 — so the separation pass pushed bodies to 1.3 and left them there,
+    // inside the band where every direction is blocked. Nothing could step
+    // out of the knot this had just tidied them into, and a queue formed
+    // behind each one. That is the pile-up: not a failure to avoid each other,
+    // but two rules a few centimetres out of agreement.
+    const apart = 1.62;
     const crowd = this.npcs.filter((npc) => !npc.station && npc.id !== this.controlledNpcId);
     const ease = Math.min(1, delta * 9);
     for (let index = 0; index < crowd.length; index += 1) {

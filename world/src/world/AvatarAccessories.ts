@@ -154,32 +154,50 @@ export const addAvatarAccessories = (
     const front = torsoBox.max.z;
     const back = torsoBox.min.z;
 
-    // A necklace, not a harness.
+    // A chain of links, hung round the neck.
     //
-    // The first attempt hung two long strands from the shoulders down to a
-    // pendant near the navel, and at avatar scale that is a great yellow
-    // chevron across the whole chest — it read as webbing somebody had been
-    // strapped into. A chain is a small thing high on the chest: a collar
-    // close under the jaw, a short drop, and a weight on the end of it.
+    // Two goes at this were wrong in opposite directions: first a great
+    // chevron of two long strands, which read as webbing somebody had been
+    // strapped into, and then three thin sticks and a blob, which read as a
+    // shirt button. What the reference actually shows is a rope of heavy links
+    // that goes round the neck and hangs in a U on the chest — thick, short,
+    // and obviously made of separate pieces.
+    //
+    // So it is built as links, placed round a curve. Each one is a small block
+    // set at its own angle along the arc, which is as close to a curb chain as
+    // a pile of boxes gets, and at avatar scale is exactly what reads.
     const chain = build('chain', anchors.torso);
     const chainMaterial = shade('chain');
-    const collarY = torsoBox.max.y - size.y * 0.1;
-    const link = Math.min(size.x, size.y) * 0.055;
-    // The collar runs round the front of the neck rather than across the
-    // shoulders, so it sits where a chain sits and not where a yoke does.
-    piece([size.x * 0.34, link, link], [centre.x, collarY, front * 0.9], chainMaterial, chain);
-    for (const side of [-1, 1]) {
-      piece(
-        [link, link, size.z * 0.34],
-        [centre.x + side * size.x * 0.17, collarY, front * 0.72],
-        chainMaterial,
-        chain,
-      );
+    // The neck's own width, not the chest's: a chain fits the throat.
+    const radiusX = size.x * 0.3;
+    // How far it hangs. A heavy chain sits well down the chest, which is what
+    // makes it a chain and not a collar.
+    const drop = size.y * 0.34;
+    const neckY = torsoBox.max.y - size.y * 0.05;
+    const link = Math.max(size.x * 0.11, 0.05);
+    const LINKS = 11;
+    for (let index = 0; index < LINKS; index += 1) {
+      // Across the throat and down: -1 at the left shoulder, +1 at the right,
+      // 0 at the bottom of the hang.
+      const across = (index / (LINKS - 1)) * 2 - 1;
+      const x = centre.x + across * radiusX;
+      // A hanging chain is not a semicircle. Its lowest stretch is flat and
+      // it turns up sharply at the ends, which a fourth power gives and a
+      // circle does not.
+      const y = neckY - drop * (1 - across ** 4);
+      // Round the body as well as across it, or the chain cuts a straight line
+      // through a chest that is curved.
+      const z = front * (0.78 + 0.16 * (1 - across * across));
+      const piece3 = piece([link * 1.25, link * 1.25, link], [x, y, z], chainMaterial, chain);
+      // Alternating quarter turns, which is how the links of a real chain sit
+      // and the one detail that stops this reading as a row of beads.
+      piece3.rotation.z = (index % 2 === 0 ? 0.42 : -0.42) + across * 0.5;
+      piece3.rotation.x = index % 2 === 0 ? 0.3 : -0.3;
     }
-    piece([link, size.y * 0.11, link], [centre.x, collarY - size.y * 0.055, front * 0.92], chainMaterial, chain);
+    // The weight on the end of it, hanging below the lowest link.
     piece(
-      [size.x * 0.13, size.y * 0.09, link * 1.4],
-      [centre.x, collarY - size.y * 0.14, front * 0.93],
+      [size.x * 0.17, size.y * 0.1, link * 1.3],
+      [centre.x, neckY - drop - size.y * 0.06, front * 0.95],
       chainMaterial,
       chain,
     );

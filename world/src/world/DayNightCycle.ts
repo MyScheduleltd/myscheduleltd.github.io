@@ -103,11 +103,21 @@ const frame = (
 // raising them further would have lit pools on a black ground instead of a
 // world at night.
 const KEYFRAMES: LightingKeyframe[] = [
-  frame(0, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 0.78, 0.2, 0.30, 1.08),
+  frame(0, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 1.05, 0.2, 0.30, 1.08),
   frame(5, 0x9ab5c6, 0x899aa0, 0xffd3a6, 1.45, 1.05, 0.08, 0, 0.96),
   frame(20, 0x83b4d1, 0xa1b3b5, 0xfff1d0, 2.2, 1.35, 0, 0, 0.92),
-  frame(25, 0xd28b62, 0xb28a76, 0xffa65c, 2.0, 0.95, 0.15, 0, 0.96),
-  frame(30, 0x8e4c4b, 0x6e5259, 0xff5d38, 1.1, 0.86, 0.65, 0.14, 1.1),
+  // Sunset and the half hour around it were the darkest the world ever got,
+  // and darker than the middle of the night — which is the wrong way round and
+  // is what the owner kept walking into.
+  //
+  // The trough is between these two frames. The sun drops from 2.2 to 1.1 over
+  // ten minutes, the fill was sitting at its own low point of 0.86 through
+  // exactly that stretch, and the lamps had not come up yet: nothing was
+  // holding the scene while the one light that had been carrying it went out.
+  // The fill and the lamps now come up as the sun goes down, so the handover
+  // happens rather than a gap opening in the middle of it.
+  frame(25, 0xd28b62, 0xb28a76, 0xffa65c, 2.0, 1.2, 0.4, 0, 0.98),
+  frame(30, 0x8e4c4b, 0x6e5259, 0xff5d38, 1.25, 1.3, 1.05, 0.14, 1.2),
   // The fill now runs at very nearly the strength it does at noon, and the
   // thing that keeps this reading as night rather than day is its colour, not
   // its weakness: a cool blue fill under a dark navy sky is a moonlit street,
@@ -118,10 +128,13 @@ const KEYFRAMES: LightingKeyframe[] = [
   // which is why the road kept reading black however high the moon went. The
   // fill now carries the street on its own, and the moon is the shaping light
   // on top of it rather than the thing holding the whole scene up.
-  frame(35, 0x44608a, 0x516184, 0x7889c7, 0.35, 1.3, 1.3, 0.45, 1.3),
+  frame(35, 0x44608a, 0x516184, 0x7889c7, 0.35, 1.4, 1.35, 0.45, 1.3),
   frame(42, 0x263760, 0x2f3d63, 0x6072a8, 0.09, 1.5, 1.75, 1.15, 1.42),
   frame(52, 0x212f56, 0x2a375a, 0x4a5d8c, 0.04, 1.48, 1.9, 1.35, 1.42),
-  frame(60, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 0.84, 0.2, 0.30, 1.08),
+  // The same instant as minute 0, so it carries the same numbers. It did not —
+  // the fill was 0.84 here and 0.78 there — and the cycle stepped every time it
+  // came round.
+  frame(60, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 1.05, 0.2, 0.30, 1.08),
 ];
 
 const phaseAt = (minute: number): { phase: DayPhase; start: number; end: number } => {
