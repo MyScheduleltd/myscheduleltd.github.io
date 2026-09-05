@@ -457,11 +457,15 @@ const statueBlockCenterY = GANGAN_STATUE_SIZE.height / 2;
 // booth's is 3.4 across — so sitting at x = -7.8 its western edge reached -9.5
 // while the roadway stops at -8.5, and the thing everybody could see was a
 // stall standing in the red. Both now sit wholly on the asphalt.
-// Out on the open ground in front of THE PALACE. The palace's own approach
-// carpet runs x = -41 to -29 and its east wall stands at -24.5, so at -25 the
-// booth sits in the bare space between the approach and the promenade — off
-// every piece of red, and clear of the doorway at z = -31.
-const concessionPosition = new THREE.Vector3(-25, 0, -24);
+// Out on the open ground in front of THE PALACE, and off the walking line.
+//
+// At z = -24 it stood on the route. The link from the south junction at
+// (9, -12) to the palace at (-35, -26) passes x = -25 at z = -22.8, which was
+// inside this stall's collider — so residents bound for the palace walked into
+// it, gave up, waited, and tried again for ever. Four units further south
+// leaves the corridor clear while keeping the booth in front of the entrance
+// at z = -31.
+const concessionPosition = new THREE.Vector3(-25, 0, -28);
 // Right in front of the statue, on the gate side: walking in you meet the
 // pamphlets first and the horse behind them. Just clear of the statue's own
 // footprint, so the two read as one arrangement.
@@ -3463,6 +3467,98 @@ export class FestivalWorld {
       });
     });
     return found;
+  }
+
+  /**
+   * Loopback fixture: walk the residents forward without drawing anything.
+   *
+   * The crowd can only be judged over time, and time in this world comes from
+   * the render loop — which does not run when the page is not being looked at.
+   * Every measurement of the crowd taken through the browser so far has been
+   * of a world that was standing still for that reason, and reported a frozen
+   * number that looked like a result. This drives the same update the loop
+   * drives, at a fixed step, so many seconds of walking can be measured in one
+   * call and the answer means something.
+   */
+  stepResidentsForReview(seconds: number, step = 1 / 60): Array<Record<string, unknown>> {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return [];
+    const before = new Map(this.npcs.map((npc) => [npc.id, npc.group.position.clone()]));
+    let elapsed = this.clock.elapsedTime;
+    // The walk schedules its own pauses against `performance.now()` — a
+    // resident that has just arrived somewhere waits before setting off again.
+    // Stepping the world in a synchronous loop advances no real time at all,
+    // so the first pause anybody took never ended and every resident stopped
+    // for good. That is the fixture's fault and not the world's, and it is
+    // worth being explicit about: without this the harness reports a frozen
+    // crowd and it looks exactly like the bug it was built to find.
+    const realNow = performance.now.bind(performance);
+    const startedAt = realNow();
+    let simulated = startedAt;
+    performance.now = () => simulated;
+    let report: Array<Record<string, unknown>> = [];
+    try {
+      for (let done = 0; done < seconds; done += step) {
+        simulated += step * 1000;
+        elapsed += step;
+        this.updateNpcs(step, elapsed);
+      }
+      // Read while the clock is still the one the world was run on. Reading
+      // afterwards compares deadlines set on the simulated clock against the
+      // real one, which is minutes behind, and every wait comes back looking
+      // like a minute and a half.
+      report = this.npcs.map((npc) => {
+        const from = before.get(npc.id);
+        const travelled = from
+          ? Math.hypot(npc.group.position.x - from.x, npc.group.position.z - from.z)
+          : 0;
+        const target = npc.transit.length > 0 ? npc.transit[0] : npc.route[npc.waypointIndex];
+        return {
+          id: npc.id,
+          stationed: Boolean(npc.station),
+          travelled: Number(travelled.toFixed(2)),
+          stuckFor: Number(npc.stuckFor.toFixed(2)),
+          // Telling a resident standing about for a while from one that cannot
+          // move: the first is waiting on a clock, the second on the world.
+          waitingFor: Number(Math.max(0, npc.waitUntil - simulated).toFixed(0)),
+          dwellingFor: Number(Math.max(0, (npc.dwellUntil ?? 0) - simulated).toFixed(0)),
+          travelling: npc.transit.length,
+          toTarget: target ? Number(target.distanceTo(npc.group.position).toFixed(2)) : null,
+        };
+      });
+    } finally {
+      performance.now = realNow;
+      // Every deadline the run set is on a clock that has just been thrown
+      // away. Left alone they sit minutes in the future against real time and
+      // the festival stands still for the rest of the session — the fixture
+      // would have caused the very thing it was measuring.
+      const drift = simulated - realNow();
+      for (const npc of this.npcs) {
+        npc.waitUntil -= drift;
+        if (npc.dwellUntil !== undefined) npc.dwellUntil -= drift;
+        npc.gestureUntil -= drift;
+        npc.eatUntil -= drift;
+      }
+    }
+    return report;
+  }
+
+  /** The closest two walking residents are standing, and how many are touching. */
+  crowdGapSnapshot(): Record<string, unknown> {
+    const walking = this.npcs.filter((npc) => !npc.station);
+    let closest = Number.POSITIVE_INFINITY;
+    let touching = 0;
+    for (let i = 0; i < walking.length; i += 1) {
+      for (let j = i + 1; j < walking.length; j += 1) {
+        if (Math.abs(walking[i].group.position.y - walking[j].group.position.y) > 2) continue;
+        const gap = Math.hypot(
+          walking[i].group.position.x - walking[j].group.position.x,
+          walking[i].group.position.z - walking[j].group.position.z,
+        );
+        if (gap < closest) closest = gap;
+        if (gap < 1.3) touching += 1;
+      }
+    }
+    return { walking: walking.length, closest: Number(closest.toFixed(2)), touching };
   }
 
   focusStatueForReview(distance = 13, yaw = 0, pitch = 0.1): void {
@@ -10434,6 +10530,32 @@ export class FestivalWorld {
           continue;
         }
       }
+      // Held up for this long, the route is the problem and not the moment.
+      //
+      // Everything else here is a way of getting past something for a second
+      // or two: wait and try again, step round it, and after a few seconds
+      // stop treating other bodies as solid. None of that helps against
+      // scenery, and a resident whose next link runs through a wall retries
+      // the same blocked step for the rest of the session — which is a body
+      // standing still with its legs going round, for ever.
+      //
+      // So there is a last resort: give up on the plan. Dropping the route
+      // sends it back through `advanceNpcJourney`, which lays a fresh one from
+      // wherever it is actually standing. It may pick the same way again, and
+      // that is fine — this is a way out of a permanent stall, not a
+      // pathfinder.
+      // Six seconds, and that number was measured rather than picked. At three
+      // and a half — a second past the point where it already stops treating
+      // other bodies as solid — residents gave up on their routes faster than
+      // they could walk them, re-planned into each other, and the whole crowd
+      // wound down to nothing inside seven minutes. Long enough that only a
+      // genuine dead end reaches it.
+      if (npc.stuckFor > 6) {
+        npc.transit = [];
+        npc.stuckFor = 0;
+        npc.waitUntil = now + 200;
+        npc.atNode = this.nearestNavNode(npc.group.position);
+      }
       this.advanceNpcJourney(npc, now);
       // Mid-journey a resident is walking the network, link by link; at rest it
       // is wandering the venue's own loop. Same walk either way.
@@ -10505,7 +10627,14 @@ export class FestivalWorld {
             npc.group.rotation.y = Math.atan2(dodgeX - npc.group.position.x, dodgeZ - npc.group.position.z);
             npc.group.position.x = dodgeX;
             npc.group.position.z = dodgeZ;
-            npc.stuckFor = 0;
+            // A step round is not progress, and clearing the count here was
+            // the bug people actually saw. A resident that can dodge but never
+            // advance kept resetting to zero, so it never reached the point of
+            // barging through bodies and never reached the point of giving up
+            // on its route — it just shuffled from side to side on the same
+            // square metre with its legs going round, indefinitely. Held at
+            // half rate: a dodge is worth something, just not everything.
+            npc.stuckFor += delta * 0.5;
           } else {
             // Boxed in on that side too. Wait, but for an interval of this
             // resident's own, so a group held up at one spot does not try again
@@ -11670,18 +11799,25 @@ export class FestivalWorld {
    * than standing in the crowd.
    */
   private holdBodiesApart(delta: number): void {
-    // Wider than the distance a step is refused at, and that is the whole
-    // point of the number.
+    // Just clear of the distance a step is refused at, and no further.
     //
-    // This used to be 1.3 while `npcCollides` refused any step ending within
-    // 1.35 — so the separation pass pushed bodies to 1.3 and left them there,
-    // inside the band where every direction is blocked. Nothing could step
-    // out of the knot this had just tidied them into, and a queue formed
-    // behind each one. That is the pile-up: not a failure to avoid each other,
-    // but two rules a few centimetres out of agreement.
-    const apart = 1.62;
+    // At 1.3 — below the 1.35 that `npcCollides` refuses a step within — this
+    // pushed bodies into exactly the band where every direction is blocked and
+    // left them wedged there. At 1.62 it cleared that band but became a
+    // standing repulsion between bodies that were already properly spaced,
+    // which is its own failure and a worse-looking one. A hair above the
+    // collision distance does the one job this has: get bodies out of each
+    // other, and then stop.
+    const apart = 1.42;
     const crowd = this.npcs.filter((npc) => !npc.station && npc.id !== this.controlledNpcId);
     const ease = Math.min(1, delta * 9);
+    // Gathered first and applied once, rather than shoved pair by pair. In a
+    // group of six each body takes five pushes, and applied as they came they
+    // added up to more than a walking step — so a resident walked forward and
+    // was put back the same distance every frame. The legs went round and the
+    // body stayed where it was, which is what walking on the spot is.
+    const nudgeX = new Float64Array(crowd.length);
+    const nudgeZ = new Float64Array(crowd.length);
     for (let index = 0; index < crowd.length; index += 1) {
       for (let other = index + 1; other < crowd.length; other += 1) {
         const here = crowd[index].group.position;
@@ -11702,15 +11838,25 @@ export class FestivalWorld {
         const push = (apart - gap) * 0.5 * ease;
         const nx = (dx / gap) * push;
         const nz = (dz / gap) * push;
-        if (!this.staticCollides(here.x - nx, here.z - nz, here.y, FestivalWorld.BODY_RADIUS)) {
-          here.x -= nx;
-          here.z -= nz;
-        }
-        if (!this.staticCollides(there.x + nx, there.z + nz, there.y, FestivalWorld.BODY_RADIUS)) {
-          there.x += nx;
-          there.z += nz;
-        }
+        nudgeX[index] -= nx;
+        nudgeZ[index] -= nz;
+        nudgeX[other] += nx;
+        nudgeZ[other] += nz;
       }
+    }
+    // Nothing is separated faster than it walks. This is the ceiling that
+    // makes the paragraph above true however many neighbours a body has.
+    const limit = 0.9 * delta;
+    for (let index = 0; index < crowd.length; index += 1) {
+      const length = Math.hypot(nudgeX[index], nudgeZ[index]);
+      if (length < 1e-6) continue;
+      const scale = Math.min(1, limit / length) ;
+      const at = crowd[index].group.position;
+      const x = at.x + nudgeX[index] * scale;
+      const z = at.z + nudgeZ[index] * scale;
+      if (this.staticCollides(x, z, at.y, FestivalWorld.BODY_RADIUS)) continue;
+      at.x = x;
+      at.z = z;
     }
   }
 

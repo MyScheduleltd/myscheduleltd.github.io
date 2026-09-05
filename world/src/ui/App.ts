@@ -1591,6 +1591,11 @@ export class App {
         () => this.world?.navReviewSnapshot();
       (window as Window & { __festivalResidents?: () => unknown }).__festivalResidents =
         () => this.world?.residentsReviewSnapshot();
+      (window as Window & {
+        __festivalStep?: (seconds: number) => unknown;
+      }).__festivalStep = (seconds) => this.world?.stepResidentsForReview(seconds);
+      (window as Window & { __festivalGaps?: () => unknown }).__festivalGaps =
+        () => this.world?.crowdGapSnapshot();
       (window as Window & { __festivalCrowding?: () => unknown }).__festivalCrowding =
         () => this.world?.crowdingReviewSnapshot();
     } else if (reviewTarget === 'mentor-drop' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
