@@ -1,6 +1,6 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-04 · phone VR gyroscope, webcam head tracking, jukebox, MENTOR swimming, a security pass · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-09-07 · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness · branch `codex/fix-gate-entry-brand`
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
@@ -8,7 +8,295 @@ Last updated: 2026-09-04 · phone VR gyroscope, webcam head tracking, jukebox, M
 
 ---
 
-## 0. READ THIS FIRST — eye height, NPC avoidance, one worn look
+## 0. READ THIS FIRST — the crowd, and how to measure anything at all
+
+### Every crowd measurement taken through the browser before 2026-09-07 was of a world standing still
+
+The in-app browser suspends `requestAnimationFrame` whenever the pane is not
+being looked at, and the pane counts as hidden far more often than you expect —
+including while it is nominally fronted. The world's render loop is
+`renderer.setAnimationLoop`, so **the world does not advance**, residents do not
+walk, and any snapshot you take comes back with a number in it. That number
+looks exactly like a result. It is a photograph of a stopped clock.
+
+This wasted most of three sessions and produced two confident "it is fixed"
+reports that were not true. `§3` has said the pane suspends rAF for a long time;
+what it did not say is that **a frozen reading is indistinguishable from a
+working one**, which is what makes it dangerous.
+
+**So: `?review=nav` now exposes a stepper.**
+
+```js
+window.__festivalStep(seconds)  // drives updateNpcs directly, returns per-resident rows
+window.__festivalGaps()         // closest pair, and how many are touching
+```
+
+`stepResidentsForReview` runs `updateNpcs` at a fixed step with no rendering, so
+eight simulated minutes take one call. Two things in it are load-bearing and
+both were found the hard way:
+
+- **It patches `performance.now()` forward.** The walk schedules its own pauses
+  against real time. Stepped synchronously, no real time passes, the first pause
+  anybody takes never ends and every resident stops for good — a frozen crowd
+  that looks precisely like the bug you are hunting.
+- **It rebases every deadline on the way out.** The deadlines set during a run
+  are on a clock that is then thrown away; left alone they sit minutes in the
+  future against real time and the festival stands still for the rest of the
+  session. The fixture would cause the very thing it measures.
+
+Read the report **inside** the patched window too. Reading `waitUntil - now`
+after restoring compares a simulated deadline against the real clock and every
+wait comes back looking like ninety seconds.
+
+### What was actually wrong with the crowd
+
+Three separate faults, found in this order. None of them was the avoidance logic
+that `§0-prev` credits.
+
+**1. Two numbers five centimetres apart.** `holdBodiesApart` pushed bodies to
+**1.3** apart while `npcCollides` refused any step ending within **1.35**. The
+separation pass tidied residents into exactly the band where every direction is
+blocked, and nothing could step out of the knot it had just made. A queue formed
+behind each one and stood there for good. Not a failure to avoid each other —
+two rules that disagreed.
+
+**2. Over-correcting it.** Raising separation to 1.62 cleared that band and
+created a standing repulsion between bodies that were already properly spaced. In
+a group of six each body takes five pushes a frame; applied one at a time they
+added up to more than a walking step, so a resident walked forward and was put
+back the same distance. **Legs going round, body still.** Now: `apart = 1.42`,
+gathered per body into one vector and applied once, and clamped to `0.9 * delta`
+so nothing is ever separated faster than it walks.
+
+**3. A step round reset the stuck counter.** This one had been there all along
+and is the one the owner kept seeing. A resident that could dodge but never
+advance therefore never accumulated any stuck time — so it never reached the
+point of barging through bodies (`stuckFor > 2.5`), never reached the point of
+giving up on its route, and shuffled side to side on one square metre
+indefinitely. A dodge now costs `delta * 0.5` rather than clearing the count.
+
+Alongside those:
+
+- `visitorInTheWay` was asking whether a body was anywhere in the forward
+  **half-plane**, which in a crowd is everybody walking beside you. It is a
+  sixty-degree cone now, and it returns *which* body so the dodge can use it.
+- The step round no longer always goes right. Always-right is correct for two
+  people meeting head-on and turns a group of six into a slow carousel. It steps
+  away from whichever side the obstruction is on, and keeps the old answer for
+  dead ahead, where there is no side and both going right is what makes them
+  pass.
+- **A last resort.** Held up for six seconds, a resident drops its route and lays
+  a new one from where it is standing. Waiting, stepping round and barging are
+  all ways past something for a second or two; none of them help against
+  scenery. **Six was measured.** At three and a half they gave up on routes
+  faster than they could walk them, re-planned into each other, and the whole
+  crowd wound down to zero moving inside seven minutes.
+
+**Where it stands.** Over eight simulated minutes the count of residents that
+travel in a thirty-second window dips to five and recovers to seven, and nothing
+is ever touching. Before, it fell to four and stayed. It is **not** perfect: two
+or three are stationary in any window, some of that legitimate dwelling and some
+of it still cycling through blocked-and-retrying. If the owner reports it again,
+ask **where**, and point the stepper at that spot rather than tuning thresholds.
+
+### Furniture on a walking line stops the festival
+
+The popcorn booth was moved in front of THE PALACE and landed on the route. The
+link from `southJunction (9, -12)` to `palace (-35, -26)` crosses `x = -25` at
+`z = -22.8`, which was inside the stall's collider — everyone bound for the
+palace walked into it and never got past. **Before placing anything on open
+ground, check it against `NAV_POINTS` and the links in that table.** A collider
+in a corridor is indistinguishable from a broken crowd.
+
+---
+
+## 0a. The statue, and the rule that finally made it work
+
+`src/world/GanganStatue.ts` — GANGAN in gold on a rearing horse, where the
+rotating timetable used to stand. The timetable itself is not gone; it lives in
+the festival pass, which is where anybody reads it.
+
+It took four passes and the owner called it "a mess" twice. What fixed it was a
+construction rule, not better numbers:
+
+> **Pivot at the joint that does not move, and solve the rest.**
+
+- The body pitches about the **hip**. The hind legs hang off the *root*, not the
+  body, so they stay standing. Two earlier versions tipped the whole animal —
+  first about its body, then about its hind feet — and both tipped the legs over
+  with it, which is two slabs leaning at thirty degrees and not a horse standing
+  on anything.
+- The hock angle is **computed** from the segment lengths so the hoof lands on
+  `PLINTH_TOP`. It was written down as a number once, with a comment claiming it
+  landed on the stone; it was 0.27 under, because the working forgot the hoof
+  hangs further down the shank than the shank's own length.
+
+Three separate sign errors are worth naming, because they are the same mistake
+each time — **a rotation about X moves the far end of a limb towards −Z**:
+
+| Symptom | Cause |
+| --- | --- |
+| Horse's head pulled back into the rider | Neck rotation negative, leaning the neck backwards over the withers |
+| One front leg missing entirely | Lift positive, throwing both legs up and **back into the barrel** |
+| Raised arm poking through his own head | `rotation.z = -2.1` swings an arm on the *right* shoulder up and across to the left |
+
+Orientation and placement: the statue is turned a quarter clockwise
+(`rotation.y = -Math.PI / 2`) so the horse stands **across** the road. That is
+the arrangement the painting uses — animal in profile, rider's shoulders turned
+back out of that line towards the viewer — and a horse only reads as a horse side
+on. It sits at `z = -6.2`; the asphalt roadway starts at `z = 2` and the plinth
+is six deep once turned, so anything nearer the gate puts stone on grey.
+
+`GANGAN_STATUE_SIZE` is square in plan on purpose: the projector compositor is
+given that box, and a box that had to swap its sides with the statue would be a
+second thing to keep in step.
+
+`?review=statue` stands off it at a fixed angle and distance so one pass can be
+compared with the last. `__festivalLookAt(x, z, distance, yaw, pitch)` does the
+same for any point. `__festivalIntrusions()` lists every mesh whose box overlaps
+the statue's — that is how the pale square through the sculpture was identified
+as **the temple deity's halo**, which had never been parented to her and had been
+standing in the middle of the main road since the temple was built. It is deleted
+now, at the owner's instruction, not reparented.
+
+---
+
+## 0b. Avatar accessories
+
+`src/world/AvatarAccessories.ts`. Four things to wear — cap, chain, arm tattoos,
+backpack — each with its own colour, toggled at the gate or from the character
+panel without leaving the square.
+
+**One field carries both answers.** `AvatarPalette` gains four *optional*
+strings: a colour means worn, absent means not. An older client that has never
+heard of them sends none and wears none, and there is no second flag to fall out
+of step with the first. `safePalette` in `server/index.mjs` passes them through
+only when set.
+
+**Nothing is measured by hand.** Two rigs are built here — the plain box figure
+and the styled one — and they are not the same size; a cap sized for one sits
+like a bucket on the other. Each piece is cut from the bounding box of the part
+it goes on, read off the rig that has just been built. The plain rig's chest is a
+single *scaled mesh* rather than a group, and hanging anything on a mesh inherits
+its scale, so that rig passes the avatar's root as the anchor and supplies
+`torsoBounds` instead.
+
+**Everything is built whether or not it is worn**, and shown from the palette.
+Rebuilding a body to put a hat on it means replacing a rig mid-walk-cycle, on
+every other visitor's screen as well as this one. Remote bodies compare a
+`wearing` signature and re-apply only when it changes.
+
+**The chain took four attempts.** Worth reading before touching it:
+
+1. Two long strands to a pendant near the navel — a great yellow chevron; read as
+   webbing somebody had been strapped into.
+2. Eleven links on a curve, each with its own three rotations — gold confetti,
+   half of it inside the shirt, and worse the moment the body moved.
+3. A flat rectangle on the shoulders — "a hoop, not a chain". A chain has to
+   **hang**.
+4. Current: a necklace. The back stays up at the neck, the front drapes onto the
+   chest, links are all one size and turned only to follow the curve.
+
+The constraint that matters: **neither rig has a neck.** The head sits straight
+on the chest. The back of the chain rides in the band at the very top of the
+torso — head above, nothing either side — which is the only place on these bodies
+that something can pass round a neck without passing through a shoulder. Sized to
+the head's half width *plus* the bar, so no part of it starts inside the body and
+no pose can push it in.
+
+`?review=fit` reports where each piece ended up along the body's own forward
+axis. Front and back are the whole question for a chain and a pack, and a
+screenshot of a figure eight pixels wide cannot answer it.
+
+---
+
+## 0c. Venue renames and the catalogue swap — and why a rename needs a deploy
+
+The three theatres traded catalogues and two venues were renamed:
+
+| Venue | Now shows | Called |
+| --- | --- | --- |
+| palace | TELEVISION | THE PALACE |
+| drive-in | MUSIC VIDEO | DRIVE-IN 88 |
+| shore | COMMERCIAL | THE SHORE |
+| club | ORIGINALS | **SLAP AND POP** |
+| rooftop | ORIGINALS | **NIMA ROOFTOP** |
+
+The shop is **MASTER OF THE HOUSE** and its sign carries the drawn logo
+(`src/assets/master-of-the-house.png`) instead of two lines of type.
+
+**Publishing the client renames nothing** — remember this the next time a venue
+is renamed, because it will look like the change simply did not work. Names and
+catalogues are STAFF's, and what STAFF own lives in the service's saved state,
+which beats any default in the code. Two halves:
+
+- The three theatres migrate themselves. Their saved running orders list films
+  from the catalogue they used to hold, none of which is allowed in the one they
+  hold now, so `restoreSchedule` drops those rows and they come back on fresh
+  defaults.
+- The club and the deck kept their record box, so their rows survived with the
+  old names inside them. `migrateVenues` rewrites those on the next start —
+  **only where the saved name is still the old default**, because a name STAFF
+  actually chose is theirs. Keyed on the persisted `version`, now 2.
+
+The mapping lives in **two** places and they have to agree:
+`programmeCategoryForVenue` in `server/index.mjs` and `venueForCategory` /
+`catalogueByVenue` in `src/data/catalogue.ts`. A venue holding one catalogue in
+one and another in the other is a programme board that disagrees with the screen
+underneath it.
+
+Confirmed applied on the live service on 2026-09-05.
+
+---
+
+## 0d. Smaller things from these sessions
+
+**The jukebox's silence between records** was a missing wake-up, not a delay. The
+running order only ever moved inside a broadcast, and nothing asked for a
+broadcast when a record ran out — so the next one waited for whatever came along
+next, at worst the ten-second heartbeat. One timer, armed when the record changes
+and re-armed when a client reports the real length. Ordering is quicker too: the
+POST reply already carried the running order and the page was throwing it away to
+wait for the same news to come round again.
+
+**MENTOR came apart when somebody holding it dropped off.** A carried dog is
+parented *inside* the carrier's body, and the sweep that tears down a departing
+visitor walks the whole subtree disposing every material and geometry it finds.
+It found the dog — all fifteen meshes. Which parts came back was down to what the
+renderer happened to re-upload, which is why it read as "the body disappeared,
+the feet were still there". What a leaving visitor is carrying is lifted out and
+stood on the floor before the sweep runs. `?review=mentor-remote-drop` stages it;
+`__festivalDispose(false)` runs the old teardown and names every mesh it
+destroys.
+
+While in there, the three ways of letting go were saying three different things —
+one kept the carrier's whole world rotation, one planted the dog at a fixed
+height rather than on the floor underneath it, none reset the carried pose. They
+all call `standMentorOnGround` now.
+
+**Sunset was darker than the middle of the night.** The trough sits between
+minute 20 and 30 of the cycle: the sun falls from 2.2 to 1.1 while the fill was at
+its own low of 0.86 and the lamps had not come up, so nothing held the scene
+during the handover. Fill and lamps now rise as the sun drops. Minutes 0 and 60
+are the same instant and had been given different fills, so the cycle stepped
+every time it wrapped.
+
+**The beach couple** (`src/world/BeachCouple.ts`) are an easter egg east of the
+drive-in: not residents, not in the attendee list, not in STAFF, nothing reaching
+the service. Two coplanar-face bugs were found in them, and both are the same
+lesson — **a face sharing a plane with another face is what a depth buffer
+flickers between**. The towel stripes sat exactly on the towel's top; the hair
+block's front face was on 0.34, the same plane as the front of the head, to the
+millimetre.
+
+**Colour swatches are square again.** Safari draws `input[type=color]` as a
+rounded pill however the element is sized; at 32×32 that read as a rounded square
+and passed, but a wide swatch became an oval on the phone. Killing the native
+appearance and squaring `::-webkit-color-swatch` settles it.
+
+---
+
+## 0-prev. Eye height, one worn look — and an NPC claim that was wrong
 
 ### The VR view really was shorter than everybody
 
@@ -31,6 +319,23 @@ They anticipate each other now. **Deliberately no tiebreak on who yields**: both
 stepping right is what makes a head-on pass work, and letting only one give way
 would leave the other still walking into it. The `stuckFor > 1.2` escape still
 stops a crowd yielding itself to a standstill.
+
+> **This section reported the crowd as fixed, and it was not.** Anticipation was
+> necessary and nowhere near sufficient — two numbers five centimetres apart were
+> holding the pile together underneath it, and the owner reported the same fault
+> twice more afterwards. Section 0 has the whole account. Do not read the
+> paragraph above as a finished story.
+
+> Also stale: "always right" is no longer how the step round chooses its side.
+
+## 0-prev. Game controllers reach the menus now
+
+The section below says the pad is **world only** and that menus stay with the
+pointer. That was the owner's decision at the time and they reversed it. START
+opens and closes the pass, the D-pad and the left stick move a highlight, A
+confirms and B steps back out — panel to pass, pass to world. It is real DOM
+focus with a painted ring, because `:focus-visible` does not fire for a focus
+nothing clicked.
 
 ### One worn look, not two
 
@@ -1152,6 +1457,13 @@ rendering steps. Everything below silently does not happen there:
 
 A `computer.screenshot` forces a single frame, which is often enough to sync the DOM.
 
+**The part that costs whole sessions**: a reading taken from a frozen world comes
+back as a plausible number, not as an error. Three separate crowd measurements
+were reported as evidence before anyone noticed the world had not moved between
+samples. If you are measuring anything that changes *over time*, either drive it
+yourself from a fixture (see `__festivalStep` in §0) or check that time actually
+passed — `requestAnimationFrame` tick count, or the world clock in the HUD.
+
 **Corollaries.** Measure geometry and computed styles, not animated values. Prefer a
 review fixture over driving the avatar. And when a UI element is invisible, check both
 CSS `display` **and** the `hidden` attribute — a whole session was lost moving a prompt
@@ -1166,10 +1478,27 @@ gate  gate-approach  temple  temple-altar  jukebox  jukebox-sound  perf
 club  club-dj  club-lobby  club-bar
 rooftop  rooftop-dj
 mentor  mentor-carry  mentor-npc-carry  mentor-follow  mentor-follow-greeting  mentor-swim
-npc-control  npc-popcorn-seat
-quests  quests-complete  fireworks  menu-ownership
+mentor-drop  mentor-remote-drop
+npc-control  npc-popcorn-seat  nav
+quests  quests-complete  fireworks  menu-ownership  menu
+statue  fit
 vr-gate  vr-entry  vr-phone  vr-screen  vr-youtube  headtrack
 ```
+
+The newer ones, and what each answers:
+
+| Target | Hooks | Answers |
+| --- | --- | --- |
+| `nav` | `__festivalStep(seconds)`, `__festivalGaps()`, `__festivalResidents()`, `__festivalCrowding()` | Does the crowd walk, and does it pile up — **without needing the render loop**. Read §0 before trusting anything else about the crowd. |
+| `statue` | `__festivalStatue(distance, yaw, pitch)`, `__festivalLookAt(x, z, …)`, `__festivalIntrusions()` | How the sculpture reads from a repeatable angle, and what is overlapping it. `__festivalLookAt` works for any point in the world. |
+| `fit` | `__festivalFit()`, `__festivalWear(slot, colour?)` | Where each accessory sits along the body's own forward axis, on either rig. |
+| `menu` | `__festivalMenuNav(nav)` | Controller menu navigation without a controller — the pad half is polled from the render loop, which a suspended page never runs. |
+| `mentor-remote-drop` | `__festivalDrop(x, z, yaw)`, `__festivalDispose(rescue)` | A remote carrier holding the dog and then being torn down. `__festivalDispose(false)` runs the *old* teardown and names every mesh it destroys. |
+
+**Note the name collision that nearly happened**: `mentor-drop` already existed.
+The new one is `mentor-remote-drop`. The `?review=` chain is a run of `else if`,
+so a duplicate silently shadows whichever comes later — **grep the chain before
+adding a target.**
 
 Two of these report from anywhere on loopback rather than from their own page:
 `window.__festivalMentor()` (where MENTOR is, and whether it is swimming) and
@@ -1238,6 +1567,11 @@ device outside them.
 | **`FESTIVAL_ADMIN_KEY` on Render** | Cannot be read from here. It **fails closed**, so "staff tools do not work" and "no key is set" look identical from outside. If the tools do work, a key is set and the open question is whether it is a strong one. Same for `FESTIVAL_ALLOWED_ORIGINS`. |
 | **Jumping in a real headset** | The jump now moves the view, which is right on a desk and on a phone. In an immersive session, vertical camera motion with no matching inner-ear signal is a known way to make people queasy. Asked; not yet answered. Damping or suppressing it for `!xrSimulated` only would be a few lines. |
 | **Live-service penetration testing** | The 2026-09-04 pass was a code review plus reasoning about browser behaviour. The running Render service was never probed. Get the owner's explicit go-ahead before testing it. |
+| **The crowd is better, not right** | Over eight simulated minutes it dips to five walking and recovers to seven, and nothing touches. Two or three are stationary in any thirty-second window — some legitimate dwelling, some still cycling through blocked-and-retrying below the six-second escape. **If the owner reports it again, ask where** and point `__festivalStep` at that spot. Do not tune the thresholds blind: 3.5s was tried and collapsed the whole crowd to zero. |
+| **Statue front legs** | Opened up considerably on the last pass — the near leg is high and nearly straight. Offered to pull it back; unanswered. Two numbers in `foreLeg`. |
+| **Statue scale** | ~9.8 units tall, taller than the timetable board it replaced. Offered to bring the whole piece down; unanswered. One scale factor. |
+| **Chain shape** | Fourth attempt. Asked whether a drape resting at the neck is what was wanted or whether it should lie flat on the chest; unanswered. Read the four-attempt list in §0 before changing it — three of the four failures are shapes, not sizes. |
+| **Accessories on NPCs** | Every NPC builds all four accessory groups hidden, because the rig builder is shared. Twelve residents × four groups of hidden meshes. Cheap (three.js skips invisible subtrees early) but not free, and it would let a resident wear something later. |
 
 ---
 
@@ -1257,7 +1591,18 @@ Recent decisions worth not re-litigating: all twelve NPCs render on mobile (dist
 ones stop being posed instead); the camera-mode controls hide behind one corner button,
 not a timer; the staff entrance at the gate is only shown for `?staff`; the basement
 ceiling stays bare, lit by invisible beat spotlights, with wall fittings on the sides
-and the bar wall only.
+and the bar wall only; the statue faces west with the horse in profile and GANGAN's
+shoulders turned out towards arrivals; the gate folds all eleven appearance controls
+behind one line while the character panel keeps them open; the temple deity has no
+halo.
+
+One more thing about how they read a fix. **They check the live site, and they are
+right to.** Several of these sessions ended with a confident report built on a
+measurement of a stopped world. If you cannot show the thing working — a number
+from a fixture that actually advanced time, a named mesh, a before-and-after —
+say so plainly instead. They take that better than a claim that turns out to be
+worth nothing, and the fastest way to lose their patience is to report the same
+bug fixed three times.
 
 ---
 
