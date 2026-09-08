@@ -16,7 +16,7 @@
  * derived from them except the check value itself.
  */
 
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, timingSafeEqual } from 'node:crypto';
 
 /**
  * PHP's `urlencode`, which is not any of the three encoders JavaScript ships.
@@ -102,4 +102,50 @@ export const verifyCheckMacValue = (params, hashKey, hashIV, method = 'SHA256') 
   const expected = checkMacValue(params, hashKey, hashIV, method);
   if (received.length !== expected.length) return false;
   return timingSafeEqual(Buffer.from(received, 'utf8'), Buffer.from(expected, 'utf8'));
+};
+
+/**
+ * The other encoder.
+ *
+ * AES services use plain PHP `urlencode` — **no** lowercasing and **none** of
+ * the seven .NET restorations. Mixing this up with `ecpayUrlEncode` is the
+ * documented way to get `TransCode ≠ 1` out of the invoice API with nothing
+ * else to go on, so the two live side by side here with their difference
+ * written down rather than being one function with a flag.
+ */
+const aesUrlEncode = (value) => phpUrlEncode(value);
+
+/**
+ * AES-128-CBC, which is what the invoice API speaks instead of check values.
+ *
+ * The key and IV are the ASCII bytes of the HashKey and HashIV, first sixteen
+ * of each. Node's default padding is PKCS7, which is what ECPay expects.
+ */
+export const aesEncryptRaw = (json, hashKey, hashIV) => {
+  const encoded = aesUrlEncode(json);
+  const cipher = createCipheriv(
+    'aes-128-cbc',
+    Buffer.from(hashKey, 'utf8').subarray(0, 16),
+    Buffer.from(hashIV, 'utf8').subarray(0, 16),
+  );
+  return Buffer.concat([cipher.update(encoded, 'utf8'), cipher.final()]).toString('base64');
+};
+
+/** The same, for a value that is still an object. */
+export const aesEncrypt = (data, hashKey, hashIV) => aesEncryptRaw(JSON.stringify(data), hashKey, hashIV);
+
+export const aesDecrypt = (cipherText, hashKey, hashIV) => {
+  const decipher = createDecipheriv(
+    'aes-128-cbc',
+    Buffer.from(hashKey, 'utf8').subarray(0, 16),
+    Buffer.from(hashIV, 'utf8').subarray(0, 16),
+  );
+  const plain = Buffer.concat([
+    decipher.update(Buffer.from(cipherText, 'base64')),
+    decipher.final(),
+  ]).toString('utf8');
+  // A `+` in the decrypted text is a space that `urlencode` turned into one.
+  // Handing it straight to `decodeURIComponent` leaves the pluses in place and
+  // every field with a space in it comes back wrong.
+  return JSON.parse(decodeURIComponent(plain.replace(/\+/g, '%20')));
 };

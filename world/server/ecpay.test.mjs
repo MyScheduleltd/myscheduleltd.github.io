@@ -14,7 +14,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkMacValue, verifyCheckMacValue, ecpayUrlEncode } from './ecpay.mjs';
+import { checkMacValue, verifyCheckMacValue, ecpayUrlEncode, aesEncryptRaw, aesDecrypt } from './ecpay.mjs';
 
 const VECTORS = [
   {
@@ -160,3 +160,71 @@ test('an existing check value is never part of its own input', () => {
     checkMacValue({ ...params, CheckMacValue: 'WHATEVER' }, key, iv),
   );
 });
+
+/**
+ * The AES-CBC vectors, from `test-vectors/aes-encryption.json`. The GCM ones
+ * are left out: that mode is for electronic receipts, which this festival does
+ * not issue.
+ *
+ * The vectors give a plaintext **string**, not an object, because JSON key
+ * order is part of what gets encrypted — so they go in as written rather than
+ * being round-tripped through a parse first. That is why `aesEncryptRaw`
+ * exists alongside `aesEncrypt`.
+ */
+const AES_VECTORS = [
+  {
+    "name": "基本測試（插入順序 JSON key）",
+    "hashKey": "ejCk326UnaZWKisg",
+    "hashIV": "q9jcZX8Ib9LM8wYk",
+    "plaintext_json": "{\"MerchantID\":\"2000132\",\"BarCode\":\"/1234567\"}",
+    "expected_base64": "XeEOdHpTRvxKEqs/JD9RSd16s7VtpyWVCN6AV44pKTW3DVa6yI7vKmjBRp2eulDhXoru/qBqFDBH3fEqlkMn3bbJfJBfGAq+v+SvttutYnc="
+  },
+  {
+    "name": "基本測試（字母序 JSON key）",
+    "hashKey": "ejCk326UnaZWKisg",
+    "hashIV": "q9jcZX8Ib9LM8wYk",
+    "plaintext_json": "{\"BarCode\":\"/1234567\",\"MerchantID\":\"2000132\"}",
+    "expected_base64": "r0JSyF9wVmywUav725b3rdJs3xp/ekrC/7PGb18zhKyXkPsamV9l4rPnBkaaraPcHtMSwrmSPP3wuS7b8g/aAKGs0iGiknpgpbdXKXvFrYM="
+  },
+  {
+    "name": "特殊字元測試（!*'()~）",
+    "hashKey": "ejCk326UnaZWKisg",
+    "hashIV": "q9jcZX8Ib9LM8wYk",
+    "plaintext_json": "{\"Name\":\"test!*'()~value\"}",
+    "expected_base64": "uvI4yrErM37XNQkXGAgRgBuDOiJoVs72Xn/rum9Ejl1DSna4HyLSoY7764PmhTR7JXb9jJWLSjCGcZEDeFiABg=="
+  },
+  {
+    "name": "PKCS7 16-byte 邊界測試（plaintext 剛好 32 bytes）",
+    "hashKey": "ejCk326UnaZWKisg",
+    "hashIV": "q9jcZX8Ib9LM8wYk",
+    "plaintext_json": "{\"N\":\"1234567890\"}",
+    "expected_base64": "gVwWJnIpl1m3ZDypcRAjiCctilYnQhHn4h8OzJP5IxQPov7HuysXX+jPONvrHS7Z"
+  },
+  {
+    "name": "UTF-8 中文字元測試",
+    "hashKey": "ejCk326UnaZWKisg",
+    "hashIV": "q9jcZX8Ib9LM8wYk",
+    "plaintext_json": "{\"MerchantID\":\"2000132\",\"ItemName\":\"綠界科技測試商品\"}",
+    "expected_base64": "XeEOdHpTRvxKEqs/JD9RSd16s7VtpyWVCN6AV44pKTVKsXddZRgV+Cle9oeB2PqsEC2O0oDi4kObiCtdGznG9aAX69Kj0//VjGXhieBYZ3RuGW9v20xQyBevaBwtOvg1lYjlDw6jsgfToGMUvlGsIJ2DO6/tbXjNZumnRgj2GCSj7LLDRBU3KlkUWji16nO1"
+  },
+  {
+    "name": "ECPG 金流帳號測試（GetTokenbyTrade 請求格式）",
+    "hashKey": "pwFHCqoQZGmho4w6",
+    "hashIV": "EkRm7iFT261dpevs",
+    "plaintext_json": "{\"MerchantID\":\"3002607\",\"RespondType\":\"JSON\"}",
+    "expected_base64": "udqjXgM+7Q6lCrrculcvzUFnN5zv0ibax1glKFxrORoO0sl6pcoib/QDYPKCAP57ME4+3Yo84XmyabVFnxriMTuy9JK/RXS7DtEOvF+PUoU="
+  }
+];
+
+for (const vector of AES_VECTORS) {
+  test(`AES-128-CBC — ${vector.name}`, () => {
+    assert.equal(
+      aesEncryptRaw(vector.plaintext_json, vector.hashKey, vector.hashIV),
+      vector.expected_base64,
+    );
+    assert.deepEqual(
+      aesDecrypt(vector.expected_base64, vector.hashKey, vector.hashIV),
+      JSON.parse(vector.plaintext_json),
+    );
+  });
+}

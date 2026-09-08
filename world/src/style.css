@@ -1889,3 +1889,62 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   letter-spacing: .04em; word-break: break-word; cursor: pointer;
   padding-top: max(10px, env(safe-area-inset-top));
 }
+
+
+/* ---- the offering sheet ---------------------------------------------------
+   Opened at the altar, on both a desk and a phone. It is a sheet rather than a
+   festival-pass panel because it belongs to one spot in the world: you can
+   only reach it by standing in front of 美麗本人 and worshipping. */
+.offering {
+  position: fixed; inset: 0; z-index: 60;
+  display: grid; place-items: center; padding: 20px;
+  background: rgba(8, 9, 11, 0.72);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+}
+.offering__card {
+  width: min(420px, 100%);
+  /* Small phones in landscape have less height than a form like this wants,
+     so the card scrolls rather than running off the bottom of the screen. */
+  max-height: min(92svh, 720px); overflow-y: auto; -webkit-overflow-scrolling: touch;
+  box-sizing: border-box; padding: 20px;
+  background: var(--paper, #f0e9dc); color: var(--ink, #15171a);
+  border: 2px solid var(--ink, #15171a);
+  display: grid; gap: 13px;
+}
+.offering__card header { display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 8px; }
+.offering__card header .eyebrow { grid-column: 1; margin: 0; }
+.offering__card h2 { grid-column: 1; margin: 0; font: 700 26px/1.1 var(--condensed); letter-spacing: 0.02em; }
+.offering__card header button {
+  grid-column: 2; grid-row: 1 / span 2;
+  width: 36px; height: 36px; border: 0; background: none;
+  font-size: 26px; line-height: 1; cursor: pointer; color: inherit;
+}
+.offering__amounts { display: grid; grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); gap: 8px; }
+.offering__amounts button {
+  /* Comfortably past the 44px a thumb needs. */
+  min-height: 46px; padding: 10px 6px; cursor: pointer;
+  border: 1px solid rgba(21, 23, 26, 0.3); background: rgba(21, 23, 26, 0.03);
+  font: 700 15px var(--condensed); letter-spacing: 0.04em; color: inherit;
+}
+.offering__amounts button.is-chosen { border-color: var(--red, #a91c24); background: rgba(169, 28, 36, 0.1); }
+.offering__field { display: grid; gap: 5px; font: 700 11px var(--condensed); letter-spacing: 0.08em; }
+.offering__field input {
+  box-sizing: border-box; width: 100%; min-height: 46px; padding: 10px 12px;
+  border: 1px solid rgba(21, 23, 26, 0.34); background: #fff; color: inherit;
+  /* 16px or larger, or iOS zooms the whole page in when the field is tapped
+     and never quite zooms back out. */
+  font: 600 16px/1.2 sans-serif;
+}
+.offering__note { margin: 0; font: 600 12px/1.5 sans-serif; opacity: 0.66; }
+.offering__note--test { opacity: 1; padding: 8px 10px; background: rgba(169, 28, 36, 0.1); border-left: 3px solid var(--red, #a91c24); }
+.offering__error { margin: 0; font: 700 13px/1.4 sans-serif; color: var(--red, #a91c24); }
+.offering__go {
+  min-height: 50px; border: 0; cursor: pointer;
+  background: var(--red, #a91c24); color: #f5efe2;
+  font: 700 15px var(--condensed); letter-spacing: 0.14em; text-transform: uppercase;
+}
+@media (max-width: 480px) {
+  .offering { padding: 12px; align-items: end; }
+  .offering__card { padding: 16px; gap: 11px; }
+  .offering__card h2 { font-size: 22px; }
+}

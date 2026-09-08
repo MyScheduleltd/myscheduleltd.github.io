@@ -222,6 +222,23 @@ export interface JukeboxEntry extends JukeboxTrack {
   requestedBy: string | null;
   requestedByName: string | null;
 }
+/** What ECPay's notification turns into, once it reaches this browser. */
+export interface DonationReceipt {
+  id: string;
+  amount: number;
+  /** The invoice number, when one has been issued — it arrives a moment later. */
+  invoice: string | null;
+}
+
+export interface DonationOptions {
+  enabled: boolean;
+  production: boolean;
+  presets: number[];
+  min: number;
+  max: number;
+  invoice: boolean;
+}
+
 export interface JukeboxState {
   tracks: JukeboxTrack[];
   queue: JukeboxEntry[];
@@ -282,6 +299,8 @@ interface SessionIdentity {
 interface ClientOptions {
   onState: (state: FestivalState) => void;
   onStatus: (status: ConnectionStatus, detail?: string) => void;
+  /** Optional: an offering completed, in whatever tab it was paid in. */
+  onDonation?: (receipt: DonationReceipt) => void;
 }
 
 const defaultServerUrl = import.meta.env.DEV ? 'http://127.0.0.1:8787' : window.location.origin;
@@ -312,6 +331,7 @@ export class FestivalClient {
   private readonly baseUrl = (import.meta.env.VITE_FESTIVAL_SERVER_URL || defaultServerUrl).replace(/\/$/, '');
   private readonly onState: ClientOptions['onState'];
   private readonly onStatus: ClientOptions['onStatus'];
+  private readonly onDonation: ClientOptions['onDonation'];
   private session?: Session;
   private abortController?: AbortController;
   private reconnectTimer?: number;
@@ -330,9 +350,10 @@ export class FestivalClient {
    */
   private placeRequest?: Promise<PlaceResult>;
 
-  constructor({ onState, onStatus }: ClientOptions) {
+  constructor({ onState, onStatus, onDonation }: ClientOptions) {
     this.onState = onState;
     this.onStatus = onStatus;
+    this.onDonation = onDonation;
     // A stream that has gone quiet without ever failing.
     //
     // The read loop only notices a dead connection when the read itself errors,
@@ -568,6 +589,21 @@ export class FestivalClient {
    * broadcast to come back around instead put a needless round trip between
    * pressing a record and hearing it start.
    */
+  /** Start an offering. Returns where the already-opened tab should go. */
+  async beginDonation(amount: number, email: string): Promise<{ id: string; checkoutUrl: string }> {
+    const response = await this.request('/api/donation', {
+      method: 'POST',
+      body: JSON.stringify({ amount, email }),
+    });
+    return await response.json() as { id: string; checkoutUrl: string };
+  }
+
+  async donationOptions(): Promise<DonationOptions> {
+    const response = await fetch(`${this.baseUrl}/api/donation/options`, { headers: { accept: 'application/json' } });
+    if (!response.ok) throw new Error('Offerings are unavailable.');
+    return await response.json() as DonationOptions;
+  }
+
   async requestJukeboxTrack(
     trackId: string,
   ): Promise<{ ok: boolean; message?: string; jukebox?: JukeboxState }> {
@@ -1040,6 +1076,10 @@ export class FestivalClient {
       this.forgetSession();
       this.onStatus('kicked', 'Festival staff ended this session.');
     }
+    // An offering completed. It arrives on this stream because the payment
+    // happened in a different tab entirely — this one has no other way to find
+    // out, short of asking over and over.
+    if (event === 'donation') this.onDonation?.(payload as DonationReceipt);
   }
 
   private async recoverSession(): Promise<void> {

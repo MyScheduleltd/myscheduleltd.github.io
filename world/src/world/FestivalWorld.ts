@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { HeadTracking } from './HeadTracking';
 import { GamepadInput, type GamepadActionId, type GamepadFrame } from './GamepadInput';
-import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, taperedPrism, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
+import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
 import { dressBuildings, dressInteriors } from './WornArchitecture';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import type { VenueKey } from '../data/catalogue';
@@ -12,7 +12,11 @@ import { createStylizedWaterMaterial, tintStylizedWater } from './StylizedWater'
 import { createMentorDog, type MentorDogRig } from './MentorDog';
 import { createGanganStatue, GANGAN_STATUE_SIZE } from './GanganStatue';
 import { createBeachCouple, animateBeachCouple, type BeachCoupleRig } from './BeachCouple';
-import { addAvatarAccessories, applyAvatarAccessories } from './AvatarAccessories';
+import { applyAvatarAccessories } from './AvatarAccessories';
+import { SEA_Y, TEMPLE_GRADE, SHORE_GRADE, CLUB_GRADE, HILL_WALK, terrainHeightAt, shorelineAt, isSwimmingDepth, createCoastalTerrain, createGroundRibbon } from './CoastalTerrain';
+import { CoastalScenery } from './CoastalScenery';
+import { createCoastalAvatar } from './CoastalAvatar';
+import { coastalRoof, createCoastalSedan } from './CoastalGeometry';
 
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>;
@@ -291,7 +295,7 @@ interface RemoteAvatar {
   name: string;
 }
 
-interface AvatarRig {
+export interface AvatarRig {
   leftArm: THREE.Group;
   rightArm: THREE.Group;
   leftLeg: THREE.Group;
@@ -545,14 +549,14 @@ const readStoredZoom = (): number => {
     return 1;
   }
 };
-const AVATAR_SWIM_Y = -2.08;
+const AVATAR_SWIM_Y = SEA_Y - 2.22;
 /**
  * North of this the ground gives out and a body is in the sea. The visitor's
  * own `shouldSwim` has always used it; residents now read the same number, so
  * a dog paddling behind its owner and the owner start swimming on the same
  * step rather than one of them walking on the water.
  */
-const SWIM_Z = -60;
+
 
 /** The only origins a projector or jukebox player can legitimately speak from. */
 const PROJECTOR_ORIGINS = new Set([
@@ -572,7 +576,7 @@ const PROJECTOR_ORIGINS = new Set([
  * belly exactly on the surface: legs under, whole body and head above, still
  * walking. Measured against the geometry rather than eyeballed this time.
  */
-const MENTOR_SWIM_Y = -0.72;
+const MENTOR_SWIM_Y = SEA_Y - 0.86;
 
 /**
  * How far the viewpoint moves for how far the head does. A webcam gives roughly
@@ -647,7 +651,7 @@ const TEMPLE = {
   wallThickness: 0.9,
   doorHalfWidth: 3.6,
 };
-const TEMPLE_FLOOR_Y = TEMPLE.podium + AVATAR_GROUND_Y;
+const TEMPLE_FLOOR_Y = TEMPLE_GRADE + TEMPLE.podium + AVATAR_GROUND_Y;
 const rooftopBounds = {
   // Pulled four units east off the road. The stair runs down the outside of the
   // west face and its kerb reached x = 13.3, while the red carpet's edge is at
@@ -702,10 +706,10 @@ const ROOF_GOING = 0.56;
 // in this list: it is underground and NPCs cannot use the stairs.
 const NPC_HAUNTS: Record<string, Array<[number, number]>> = {
   gate: [[-9, 52], [9, 52], [9, 44], [-9, 44]],
-  square: [[-9, 8], [9, 8], [9, -4], [-9, -4]],
+  square: [[-9, 8], [9, 8], [9, -12], [-9, -12]],
   promenade: [[-10, 30], [10, 30], [10, 18], [-10, 18]],
   palace: [[-42, -22], [-28, -22], [-28, -30], [-42, -30]],
-  driveIn: [[29, -13], [41, -13], [41, -18], [29, -18]],
+  driveIn: [[29, -13], [41, -13], [41, -16], [29, -16]],
   shore: [[-8, -26], [8, -26], [8, -31], [-8, -31]],
   clubFront: [[-14, 29], [-7, 29], [-7, 19], [-14, 19]],
   // The three rooms the residents never actually went into. Written out rather
@@ -737,6 +741,7 @@ const NAV_POINTS: Record<string, [number, number]> = {
   southJunction: [9, -12],
   shore: [0, -31],
   palace: [-35, -26],
+  westPromenade: [-21, -19],
   // The Drive-In is entered from its north side; coming at it across the
   // diagonal walks into the back of the cars.
   driveInApproach: [35, -12],
@@ -766,6 +771,8 @@ const NAV_POINTS: Record<string, [number, number]> = {
   // from the square the line clips the furniture at its edge.
   templeSpur: [20, 0],
   templeApproach: [40, 4],
+  hill1: [65, -4], hill2: [65, -32], hill3: [112,-32],
+  hill4: [116,-6], hill5: [114,28], hill6: [70,28], hill7: [70,4],
   templeFoot: [73, 4],
   templeHall: [88, 4],
 };
@@ -775,6 +782,8 @@ const NAV_LINKS: Array<[string, string]> = [
   ['square', 'southJunction'],
   ['southJunction', 'shore'],
   ['southJunction', 'palace'],
+  ['palace','westPromenade'],
+  ['westPromenade','shore'],
   ['southJunction', 'driveInApproach'],
   ['driveInApproach', 'driveIn'],
   ['promenade', 'clubFront'],
@@ -789,7 +798,8 @@ const NAV_LINKS: Array<[string, string]> = [
   ['roofDeckDoor', 'roofDeck'],
   ['square', 'templeSpur'],
   ['templeSpur', 'templeApproach'],
-  ['templeApproach', 'templeFoot'],
+  ['templeApproach','hill1'], ['hill1','hill2'], ['hill2','hill3'],
+  ['hill3','hill4'], ['hill4','hill5'], ['hill5','hill6'], ['hill6','hill7'], ['hill7','templeFoot'],
   ['templeFoot', 'templeHall'],
 ];
 const NAV_ADJACENCY: Record<string, string[]> = (() => {
@@ -869,9 +879,9 @@ const HAUNT_NODE: Record<string, string> = {
  * arrive at that height or the ground under them is read as the street.
  */
 const NPC_HAUNT_FLOOR: Record<string, number> = {
-  clubFloor: -16.5 + AVATAR_GROUND_Y,
+  clubFloor: CLUB_GRADE + AVATAR_GROUND_Y,
   rooftopDeck: 7 + AVATAR_GROUND_Y,
-  temple: 1.2 + AVATAR_GROUND_Y,
+  temple: TEMPLE_GRADE + 1.2 + AVATAR_GROUND_Y,
 };
 /** Rooms worth stopping to dance in. */
 const NPC_DANCE_HAUNTS = new Set(['clubFloor', 'rooftopDeck']);
@@ -893,7 +903,7 @@ const NPC_DWELL_SPREAD_MS = 55_000;
 const CLUB_Z = 15;
 // The gate sits north of the club, so attendees pass it on the way in.
 const GATE_Z = 62;
-const CLUB_FLOOR_Y = -16.5;
+const CLUB_FLOOR_Y = CLUB_GRADE;
 const CLUB_ROOM_HEIGHT = 15;
 const CLUB_AVATAR_Y = CLUB_FLOOR_Y + AVATAR_GROUND_Y;
 const CLUB_STAGE_X = -68;
@@ -949,8 +959,8 @@ const venueScreens: Record<VenueKey, {
 }> = {
   shore: {
     label: 'The Shore',
-    position: [0, 6.1, -45.68],
-    target: [0, 5.8, -46],
+    position: [0, 6.1 + SHORE_GRADE, -45.68],
+    target: [0, 5.8 + SHORE_GRADE, -46],
     scale: 0.0095,
     facing: 1,
   },
@@ -2600,7 +2610,7 @@ export class FestivalWorld {
     const me = this.selfVisitorId ?? 'review-self';
     this.selfVisitorId = me;
     this.setMentorFollower(null);
-    this.player.position.set(NAV_POINTS.square[0], AVATAR_GROUND_Y, NAV_POINTS.square[1]);
+    this.player.position.set(NAV_POINTS.square[0], this.groundHeightAt(...NAV_POINTS.square), NAV_POINTS.square[1]);
     this.pickUpMentor();
     // Told to the service, not just to us. A pick-up announces itself, so a
     // put-down that stays quiet leaves the service still holding this visitor
@@ -2849,7 +2859,7 @@ export class FestivalWorld {
     // the later re-runs correctly find nothing to do — and assigning their
     // return value overwrote the real count with zero, which made a working
     // feature look like a broken one.
-    if (wornMeshesRequested()) {
+    if (new URLSearchParams(window.location.search).get('legacyDressing') === '1') {
       // Fetched here rather than on load, so a visitor who never asks for the
       // style never pays for the font.
       loadBrandFont();
@@ -3056,7 +3066,6 @@ export class FestivalWorld {
     }
     const loops: Array<Record<string, unknown>> = [];
     for (const [haunt, points] of Object.entries(NPC_HAUNTS)) {
-      const floor = NPC_HAUNT_FLOOR[haunt] ?? AVATAR_GROUND_Y;
       let blocked = 0;
       let firstBlock: [number, number] | undefined;
       for (let corner = 0; corner < points.length; corner += 1) {
@@ -3067,6 +3076,7 @@ export class FestivalWorld {
           const t = step / steps;
           const x = a[0] + (b[0] - a[0]) * t;
           const z = a[1] + (b[1] - a[1]) * t;
+          const floor = this.groundHeightAt(x, z, NPC_HAUNT_FLOOR[haunt]);
           if (this.staticCollides(x, z, floor, FestivalWorld.BODY_RADIUS)) {
             blocked += 1;
             if (!firstBlock) firstBlock = [Number(x.toFixed(1)), Number(z.toFixed(1))];
@@ -3112,6 +3122,59 @@ export class FestivalWorld {
       bad: results.filter((r) => (r.blocked as number) > 0 || (r.worstStep as number) > 0.9),
       clean: results.filter((r) => (r.blocked as number) === 0 && (r.worstStep as number) <= 0.9).length,
       total: results.length,
+    };
+  }
+
+  focusCoastalForReview(view: string): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    const views: Record<string, [number, number, number, number, number]> = {
+      arrival: [0, 25, 27, 0, .18], square: [-7, -4, 20, .4, .16],
+      palace: [-35, -32, 18, 0, .04], shore: [0, -42, 18, .35, .06],
+      drive: [35, -28, 17, .2, .05], club: [-45, 23.5, 32, Math.PI / 2, .08],
+      temple: [88, 4, 24, -Math.PI / 2, .03], hill: [100, 0, 56, -2.3, -.08],
+      roof: [40, 28, 8, .6, .14],
+    };
+    this.lookAtSpotForReview(...(views[view] ?? views.square));
+    if (view === 'overview' || view === 'avatar') {
+      this.player.position.set(0, this.groundHeightAt(0, 10), 10);
+      this.cameraMode = 'follow';
+      this.cameraZoom = view === 'overview' ? 3.2 : .4;
+      this.cameraOrbit.follow.yaw = view === 'overview' ? -.35 : 0;
+      if (view === 'avatar') {
+        this.cameraMode = 'perspective'; this.cameraZoom = .5;
+        this.cameraOrbit.perspective.yaw = .14; this.cameraOrbit.perspective.pitch = .12;
+      }
+      this.cameraOrbit.follow.pitch = view === 'overview' ? .9 : .08;
+      this.player.rotation.y = 0;
+    }
+  }
+
+  coastalRigReview(): unknown {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    const seats = (['shore', 'palace', 'drive-in', 'rooftop', 'club'] as VenueKey[]).map(venue => {
+      this.focusSeatForReview(venue);
+      return { venue, ...this.seatReviewSnapshot() };
+    });
+    this.activeSeat = undefined; this.playerState = 'walking';
+    if (this.playerRig) this.animateRig(this.playerRig, 0, 0);
+    this.focusCoastalForReview('avatar');
+    return { seats, accessories: this.accessoryFitSnapshot() };
+  }
+
+  coastalReviewSnapshot(): unknown {
+    return {
+      navigation: this.navReviewSnapshot(),
+      performance: this.performanceSnapshot(),
+      style: this.wornStyleReviewSnapshot(),
+      sea: SEA_Y, clubFloor: CLUB_FLOOR_Y, templeFloor: TEMPLE_FLOOR_Y - AVATAR_GROUND_Y,
+      contourGrades: HILL_WALK.slice(1).map((b, i) => {
+        const a = HILL_WALK[i];
+        return Number((Math.abs(b[1]-a[1]) / Math.hypot(b[0]-a[0], b[2]-a[2])).toFixed(4));
+      }),
+      contourGroundError: Math.max(...HILL_WALK.map(([x,y,z]) => Math.abs(terrainHeightAt(x,z)-y))),
+      player: this.player.position.toArray(),
+      authoredMeshes: (() => { let count=0; this.scene.traverse(o => { if(o.userData.coastalAuthored) count++; }); return count; })(),
+      renderer: { calls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles },
     };
   }
 
@@ -3262,7 +3325,7 @@ export class FestivalWorld {
     // reported the shop's roof at street level as the rooftop bench's cushion,
     // and it would have gone on agreeing with itself forever. A second copy of
     // a question is a second answer waiting to happen.
-    const sitZ = seat.position.z + (seat.kind === 'bench' || seat.kind === 'bar' ? 0 : 0.28);
+    const sitZ = seat.position.z + (seat.kind === 'bar' ? 0 : seat.kind === 'bench' ? -.55 : -.3);
     const padBox = this.seatPad(seat.position.x, sitZ, seat.position.y);
     const padTop = padBox ? padBox.max.y : -Infinity;
     const extent = (): number | null => {
@@ -3295,7 +3358,18 @@ export class FestivalWorld {
     const footY = legBox.isEmpty() ? null : Number(legBox.min.y.toFixed(3));
     // Whether the leg is inside the chair — against the same pad the seating
     // measured, not a third scan of the scene for the same box.
-    const legInPad = padBox && !legBox.isEmpty() ? legBox.intersectsBox(padBox) : null;
+    // A whole-leg AABB contains empty space between thigh and shin. Test the
+    // actual posed triangles so an empty corner cannot report a chair collision.
+    let legInPad = false;
+    if (padBox) rig.leftLeg.traverseVisible(object => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const g=object.geometry, p=g.getAttribute('position'), indices=g.getIndex();
+      const triangle=new THREE.Triangle();
+      for(let i=0;i<(indices?.count ?? p.count);i+=3){
+        [triangle.a,triangle.b,triangle.c].forEach((v,j)=>v.fromBufferAttribute(p,indices?indices.getX(i+j):i+j).applyMatrix4(object.matrixWorld));
+        if(padBox.intersectsTriangle(triangle)) legInPad=true;
+      }
+    });
     const groundY = this.groundHeightAt(seat.position.x, seat.position.z) - AVATAR_GROUND_Y;
     return {
       seated: true,
@@ -4131,7 +4205,7 @@ export class FestivalWorld {
       // on the sea could otherwise only be judged from a screenshot, and the
       // difference is a couple of hundred millimetres of height.
       mentorAt: mentor.group.position.toArray().map((value) => Number(value.toFixed(2))),
-      mentorSwimming: this.isOverWater(mentor.group.position.z),
+      mentorSwimming: this.isOverWater(mentor.group.position.z,mentor.group.position.x),
       mentorRoll: Number(mentor.group.rotation.z.toFixed(3)),
       mentorFrontLeg: mentor.dogRig ? Number(mentor.dogRig.leftFrontLeg.rotation.x.toFixed(3)) : null,
       playerAt: this.player.position.toArray().map((value) => Number(value.toFixed(2))),
@@ -4363,13 +4437,13 @@ export class FestivalWorld {
 
     if (nextNpc) {
       this.player.position.copy(nextNpc.group.getWorldPosition(new THREE.Vector3()));
-      this.player.position.y = AVATAR_GROUND_Y;
+      this.player.position.y = this.groundHeightAt(this.player.position.x, this.player.position.z, this.player.position.y);
       this.player.quaternion.copy(nextNpc.group.getWorldQuaternion(new THREE.Quaternion()));
       this.playerState = 'walking';
       this.activeSeat = undefined;
     } else if (this.controlledNpcId) {
       this.player.position.copy(this.originalPlayerIdle.position);
-      this.player.position.y = AVATAR_GROUND_Y;
+      this.player.position.y = this.groundHeightAt(this.player.position.x, this.player.position.z, this.player.position.y);
       this.player.rotation.copy(this.originalPlayerIdle.rotation);
       this.playerState = 'walking';
       this.originalPlayerIdle.visible = false;
@@ -4606,7 +4680,7 @@ export class FestivalWorld {
       // would have been drawn on rather than dropping it to zero.
       const reportedY = typeof displayVisitor.y === 'number' && Number.isFinite(displayVisitor.y)
         ? displayVisitor.y
-        : (displayVisitor.state === 'swimming' ? AVATAR_SWIM_Y : AVATAR_GROUND_Y);
+        : (displayVisitor.state === 'swimming' ? AVATAR_SWIM_Y : this.groundHeightAt(displayVisitor.x, displayVisitor.z, 0));
       // Play the body from where it was to where it now is, over the time the
       // next update is expected to take. Easing toward the latest position
       // instead made everyone sprint to their last known spot, stop dead, and
@@ -4976,6 +5050,7 @@ export class FestivalWorld {
       rooftop: new THREE.Vector3(ROOFTOP_CENTER_X, AVATAR_GROUND_Y, 4),
     };
     this.player.position.copy(positions[destination]);
+    this.player.position.y = this.groundHeightAt(this.player.position.x, this.player.position.z, 0);
     this.setSwimming(false);
     this.setOutfit(false);
   }
@@ -4991,8 +5066,7 @@ export class FestivalWorld {
     // AVATAR_SEAT_DROP, which was tuned for them. The rooftop complaint was that
     // these could not be sat on at all, and that was reach, not height: nothing
     // here was reported as sitting wrong, so nothing here changes.
-    if (seat.kind === 'bar' || seat.kind === 'bench') return seat.position.clone();
-    const forward = 0.28;
+    const forward = seat.kind === 'bar' ? 0 : seat.kind === 'bench' ? -.55 : -.3;
     // Sat on the pad, not a fixed distance above the floor.
     //
     // This used to drop the body at the seat's own origin plus the standing
@@ -5026,7 +5100,7 @@ export class FestivalWorld {
    * right and the feet finished 38mm under the sand; 0.16 puts the soles on
    * the ground and the hips still within a thigh of the cushion.
    */
-  private static readonly SEAT_THIGH = 0.16;
+  private static readonly SEAT_THIGH = 0.22;
 
   private hipRise: number | undefined;
 
@@ -6376,13 +6450,14 @@ export class FestivalWorld {
     height = 4.8,
     targetX = x,
   ): void {
-    this.mesh([0.18, height, 0.18], [x, height / 2, z], material(0x2b2c30, 0.55, 0.7));
-    this.mesh([0.62, 0.48, 0.62], [x, height + 0.05, z], lampMaterial);
+    const base = terrainHeightAt(x, z);
+    this.mesh([0.18, height, 0.18], [x, base + height / 2, z], material(0x2b2c30, 0.55, 0.7));
+    this.mesh([0.62, 0.48, 0.62], [x, base + height + 0.05, z], lampMaterial);
     this.addCollider(x, z, 0.28, 0.28, 0.18, { minY: -0.4, maxY: 40 });
     // Every post is a light source, but the lights themselves come from a
     // fixed pool that follows the attendee. A dedicated light per post would
     // put the count back where it was tanking the frame rate.
-    this.lampPosts.push({ x, z, height, targetX, castsShadow });
+    this.lampPosts.push({ x, z, height: base + height, targetX, castsShadow });
   }
 
   /**
@@ -6409,50 +6484,29 @@ export class FestivalWorld {
       }
       light.visible = true;
       light.position.set(nearest.post.x, nearest.post.height, nearest.post.z);
-      light.target.position.set(nearest.post.targetX, 0, nearest.post.z - 0.9);
+      light.target.position.set(nearest.post.targetX, terrainHeightAt(nearest.post.targetX,nearest.post.z-.9), nearest.post.z - 0.9);
       light.target.updateMatrixWorld();
     });
   }
 
-  private createEnvironment(): void {
-    const groundMaterial = material(0x34312d);
-    const c = clubBounds;
-    const terrain: Array<[number, number, number, number]> = [
-      // [minX, maxX, minZ, maxZ] — four pieces leaving the club's plot open.
-      [-104, c.buildingMinX, -49, 81],
-      // Reaches past the temple with room to spare. It used to stop at 92,
-      // which left the eastern third of the building — and its roof overhang —
-      // hanging over the edge of the world.
-      [c.buildingMaxX, 124, -49, 81],
-      [c.buildingMinX, c.buildingMaxX, -49, c.buildingMinZ],
-      [c.buildingMinX, c.buildingMaxX, c.buildingMaxZ, 81],
-    ];
-    for (const [minX, maxX, minZ, maxZ] of terrain) {
-      const slab = this.mesh(
-        [maxX - minX, 0.4, maxZ - minZ],
-        [(minX + maxX) / 2, -0.25, (minZ + maxZ) / 2],
-        groundMaterial,
-      );
-      slab.receiveShadow = true;
-      slab.userData.projectorBackground = true;
+  private buildOnGrade(build: () => void, lift: number): void {
+    const previous=new Set(this.scene.children),seatStart=this.seats.length,solidStart=this.colliders.length;
+    build();
+    for(const object of this.scene.children) {
+      if(previous.has(object) || [...this.projectors.values()].some(p=>p.xrPoster===object)) continue;
+      object.position.y+=lift;
     }
+    for(const seat of this.seats.slice(seatStart)) seat.position.y+=lift;
+    for(const collider of this.colliders.slice(solidStart)) {
+      if(collider.minY!==undefined)collider.minY+=lift;
+      if(collider.maxY!==undefined)collider.maxY+=lift;
+      if(collider.viewTop!==undefined)collider.viewTop+=lift;
+    }
+  }
 
-    const promenade = this.mesh([29, 0.12, 83 + (GATE_Z - 29)], [0, 0.02, 2 + (GATE_Z - 29) / 2], material(0xa89d8c));
-    promenade.receiveShadow = true;
-    promenade.userData.projectorBackground = true;
-    // Stop the pale wayfinding stripe before the Shore beach venue so the
-    // screening floor remains visually uninterrupted.
-    // The pale wayfinding stripe belongs to the square only. End it before
-    // the Shore approach so the beach venue remains sand, chairs, and screen.
-    const promenadeStripe = this.mesh([2.2, 0.04, 31], [0, 0.1, 28], material(0xc4b69f));
-    promenadeStripe.userData.projectorBackground = true;
-    const carpetMaterial = material(0x941a22, 0.76, 0.04);
-    // The ceremonial carpet ends at the Shore entrance. The screening itself
-    // sits directly on the beach rather than on a carpeted platform.
-    const centralCarpet = this.mesh([28, 0.055, 65 + (GATE_Z - 29)], [0, 0.16, 7 + (GATE_Z - 29) / 2], carpetMaterial);
-    centralCarpet.userData.festivalCarpet = true;
-    centralCarpet.receiveShadow = true;
-    centralCarpet.userData.projectorBackground = true;
+  private createEnvironment(): void {
+    this.scene.add(createCoastalTerrain());
+    this.scene.add(createGroundRibbon('Festival square', [[0, 11], [0, -16]], 31, material(0xa79e87), .025));
 
     const deepWaterTexture = createWaterTexture(false);
     const surfaceWaterTexture = createWaterTexture(true);
@@ -6466,10 +6520,10 @@ export class FestivalWorld {
       opacity: 0.82,
       depthWrite: false,
     });
-    const ocean = this.mesh([196, 0.35, 52], [0, -0.08, -84], oceanMaterial);
+    const ocean = this.mesh([250, 0.35, 76], [0, SEA_Y - 0.22, -80], oceanMaterial);
     ocean.receiveShadow = true;
     ocean.userData.projectorBackground = true;
-    const waterVolume = this.mesh([196, 2.6, 52], [0, -1.48, -84], new THREE.MeshStandardMaterial({
+    const waterVolume = this.mesh([250, 2.6, 76], [0, SEA_Y - 1.62, -80], new THREE.MeshStandardMaterial({
       color: 0x052332,
       transparent: true,
       opacity: 0.2,
@@ -6482,16 +6536,16 @@ export class FestivalWorld {
     // Cel-shaded surface for 一般 graphics. 精簡 keeps the cheaper textured
     // water below, so the shader never costs anything on the low setting.
     const stylised = createStylizedWaterMaterial();
-    const stylisedWater = new THREE.Mesh(new THREE.PlaneGeometry(196, 52, 1, 1), stylised);
+    const stylisedWater = new THREE.Mesh(new THREE.PlaneGeometry(250, 76, 1, 1), stylised);
     stylisedWater.rotation.x = -Math.PI / 2;
-    stylisedWater.position.set(0, 0.14, -84);
+    stylisedWater.position.set(0, SEA_Y, -80);
     stylisedWater.userData.projectorBackground = true;
     stylisedWater.visible = this.graphicsMode === 'normal';
     this.scene.add(stylisedWater);
     this.stylizedWater = stylisedWater;
     this.stylizedWaterMaterial = stylised;
 
-    const waveSurface = this.mesh([196, 0.025, 52], [0, 0.115, -84], new THREE.MeshStandardMaterial({
+    const waveSurface = this.mesh([250, 0.025, 76], [0, SEA_Y - 0.025, -80], new THREE.MeshStandardMaterial({
       color: 0x5aa4b4,
       map: surfaceWaterTexture,
       transparent: true,
@@ -6516,44 +6570,21 @@ export class FestivalWorld {
       });
       const reflection = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), reflectionMaterial);
       reflection.rotation.x = -Math.PI / 2;
-      reflection.position.set(0, 0.145 + (kind === 'moon' ? 0.004 : 0), -70.5);
+      reflection.position.set(0, SEA_Y + 0.005 + (kind === 'moon' ? 0.004 : 0), -70.5);
       reflection.scale.set(11, 38, 1);
       reflection.renderOrder = kind === 'moon' ? 3 : 2;
       reflection.userData.projectorBackground = true;
       this.scene.add(reflection);
       this.waterReflections.push({ mesh: reflection, material: reflectionMaterial, kind });
     }
-    // The sand stops exactly on the waterline. It used to run a unit past it,
-    // under water planes at the same height, which is what made the sea and the
-    // beach interlock along the shore.
-    const beachDepth = -15 - SHORE_Z;
-    const beach = this.mesh([196, 0.23, beachDepth], [0, 0, SHORE_Z + beachDepth / 2], material(0xc4a979, 0.92, 0.02));
-    beach.userData.projectorBackground = true;
-    // Bands of slightly different sand, damp nearest the water, so the beach
-    // reads as a graded surface instead of one flat colour.
-    // The damp band ends on the waterline like the sand under it, and every
-    // band sits just clear of the water surface rather than level with it.
-    const sandBands: Array<[number, number, number]> = [
-      [-24, 8, 0xcbb184],
-      [-34, 12, 0xc0a377],
-      [-46, 12, 0xa98d68],
-      [SHORE_Z + 2.7, 5.4, 0x8c7355],
-    ];
-    for (const [z, depth, colour] of sandBands) {
-      const band = this.mesh([196, 0.02, depth], [0, 0.125, z], material(colour, 0.95, 0.02));
-      band.userData.projectorBackground = true;
-      band.receiveShadow = true;
-    }
-
-    this.createBeachPlanting();
-
     const buoyWhite = material(0xf3ead7);
     const buoyRed = material(0xa91c24);
     for (let x = -30; x <= 30; x += 7.5) {
-      this.mesh([1.15, 0.65, 1.15], [x, 0.1, -88], Math.abs(x / 7.5) % 2 === 0 ? buoyRed : buoyWhite);
+      this.mesh([1.15, 0.65, 1.15], [x, SEA_Y - 0.04, -88], Math.abs(x / 7.5) % 2 === 0 ? buoyRed : buoyWhite);
     }
 
-    const gateMat = material(0x16171a, 0.7, 0.25);
+    const gateStart = new Set(this.scene.children);
+    const gateMat = material(0x383c36, 0.9, 0.1);
     this.mesh([1.1, 9, 1.1], [-14, 4.5, GATE_Z], gateMat);
     this.mesh([1.1, 9, 1.1], [14, 4.5, GATE_Z], gateMat);
     this.mesh([29, 1.1, 1.1], [0, 8.6, GATE_Z], gateMat);
@@ -6586,23 +6617,8 @@ export class FestivalWorld {
       }
     }
 
-    // The approach road now runs from the gate south past the club turning.
-    const road = this.mesh([17, 0.06, GATE_Z - 4], [0, 0.2, (GATE_Z + 4) / 2 - 2], material(0x2f2d31, 0.8, 0.1));
-    road.receiveShadow = true;
-    road.userData.projectorBackground = true;
-    for (let z = 8; z < GATE_Z - 4; z += 6) {
-      const dash = this.mesh([0.5, 0.05, 2.4], [0, 0.24, z], material(0xd8d2c4, 0.6, 0.1));
-      dash.userData.projectorBackground = true;
-    }
-    // The turning that leads west to The Basement's forecourt.
-    const clubRoadWidth = Math.abs(clubBounds.buildingMaxX - -8);
-    const clubRoad = this.mesh(
-      [clubRoadWidth, 0.06, 11],
-      [(clubBounds.buildingMaxX + -8) / 2, 0.2, (clubBounds.doorMinZ + clubBounds.doorMaxZ) / 2],
-      material(0x2f2d31, 0.8, 0.1),
-    );
-    clubRoad.receiveShadow = true;
-    clubRoad.userData.projectorBackground = true;
+    const gateBase = terrainHeightAt(0, GATE_Z);
+    this.scene.children.filter(object => !gateStart.has(object)).forEach(object => { object.position.y += gateBase; });
 
     // A fixed pool of lamp lights, reassigned to whichever posts are closest.
     // Three on the light setting rather than six: every one of them is
@@ -6616,7 +6632,7 @@ export class FestivalWorld {
 
     this.createGanganStatue();
     this.createJukebox();
-    this.createShoreScreen();
+    this.buildOnGrade(() => this.createShoreScreen(), SHORE_GRADE);
     this.createPalace();
     this.createDriveIn();
     this.createClub();
@@ -6629,23 +6645,17 @@ export class FestivalWorld {
     this.mesh([8, 15, 27], [-99, 7.5, 4], buildingMat);
     this.mesh([7.2, 1.2, 0.3], [-99, 10.2, 17.65], material(0xa31820));
     this.addCollider(-99, 4, 8, 27, 0.2, { minY: -0.4, maxY: 40 });
-    this.createTemple();
+    this.buildOnGrade(() => this.createTemple(), TEMPLE_GRADE);
 
-    const branchPromenade = this.mesh([93, 0.08, 12], [0, 0.13, -14], material(0x6d655b));
-    branchPromenade.receiveShadow = true;
-    branchPromenade.userData.projectorBackground = true;
-    const branchStripe = this.mesh([93, 0.025, 1.6], [0, 0.185, -14], material(0xc4b69f));
-    branchStripe.userData.projectorBackground = true;
-    const branchCarpet = this.mesh([93, 0.055, 7.5], [0, 0.22, -14], carpetMaterial);
-    branchCarpet.userData.festivalCarpet = true;
-    branchCarpet.receiveShadow = true;
-    branchCarpet.userData.projectorBackground = true;
-    // Connect the cross-town carpet to The Palace entrance. Its surface sits
-    // a few millimetres above both adjoining pieces to prevent z-fighting.
-    const palaceApproachCarpet = this.mesh([12, 0.055, 16], [-35, 0.225, -24], carpetMaterial);
-    palaceApproachCarpet.userData.festivalCarpet = true;
-    palaceApproachCarpet.receiveShadow = true;
-    palaceApproachCarpet.userData.projectorBackground = true;
+    const scenery = new CoastalScenery(this.scene,
+      (x,z,w,d,base,top,label) => this.addCollider(x,z,w,d,.08,{minY:base-.4,maxY:top},label,top),
+      (x,z,radius) => !this.staticCollides(x,z,terrainHeightAt(x,z)+AVATAR_GROUND_Y,radius)
+        && !this.onAWayThrough(x,z,terrainHeightAt(x,z)+AVATAR_GROUND_Y,radius+1));
+    scenery.buildTown();
+    scenery.buildCirculation();
+    scenery.buildPlanting();
+    scenery.finish();
+    this.createBeachPlanting();
 
     const lampMaterial = new THREE.MeshStandardMaterial({
       color: 0xffd7a1,
@@ -6860,7 +6870,7 @@ export class FestivalWorld {
     carpet.receiveShadow = true;
     carpet.userData.projectorBackground = true;
 
-    const wallMaterial = material(0x171419, 0.72, 0.15);
+    const wallMaterial = material(0xb5ab92, 0.94, 0);
     this.mesh([1, 10, 18], [centerX - 10.5, 5, centerZ], wallMaterial);
     this.mesh([1, 10, 18], [centerX + 10.5, 5, centerZ], wallMaterial);
     this.addCollider(centerX - 10.5, centerZ, 1, 18, 0.16);
@@ -6944,17 +6954,10 @@ export class FestivalWorld {
       for (let column = -1; column <= 1; column += 1) {
         const x = centerX + column * 7.2;
         const z = -20.5 - row * 6.2;
-        const car = new THREE.Group();
+        const car = createCoastalSedan(carColors[carIndex % carColors.length]);
         car.position.set(x, 0, z);
-        const carMaterial = material(carColors[carIndex % carColors.length], 0.55, 0.35);
-        this.mesh([4.6, 1.05, 2.9], [0, 0.85, 0], carMaterial, car);
-        this.mesh([2.9, 0.95, 2.35], [0, 1.65, -0.2], material(0x17232d, 0.25, 0.4), car);
-        for (const wheelX of [-1.65, 1.65]) {
-          this.mesh([0.45, 0.8, 0.85], [wheelX, 0.45, -1.05], material(0x090a0b), car);
-          this.mesh([0.45, 0.8, 0.85], [wheelX, 0.45, 1.05], material(0x090a0b), car);
-        }
         this.scene.add(car);
-        this.addCollider(x, z, 4.35, 2.55, 0.08, { minY: -0.4, maxY: 2.2 });
+        this.addCollider(x, z, 2.8, 4.6, 0.08, { minY: -0.4, maxY: 2.2 });
         this.seats.push({
           id: `DRIVE-${row + 1}-${column + 2}`,
           venue: 'drive-in',
@@ -6963,7 +6966,7 @@ export class FestivalWorld {
           // is 1.45 deep, so this put people on the tarmac behind the bumper —
           // sitting at a drive-in with their back to the film. 0.8 lands the
           // body on the exposed deck behind the cabin, facing the screen.
-          position: new THREE.Vector3(x, 0, z + 0.8),
+          position: new THREE.Vector3(x, 0, z - 1.72),
         });
         carIndex += 1;
       }
@@ -6973,368 +6976,82 @@ export class FestivalWorld {
   private createClub(): void {
     const b = clubBounds;
     const floor = CLUB_FLOOR_Y;
-    const roomCenterX = (b.roomMinX + b.roomMaxX) / 2;
-    const roomCenterZ = (b.roomMinZ + b.roomMaxZ) / 2;
-    const roomWidth = b.roomMaxX - b.roomMinX;
-    const roomDepth = b.roomMaxZ - b.roomMinZ;
-    const buildingCenterX = (b.buildingMinX + b.buildingMaxX) / 2;
-    const buildingCenterZ = (b.buildingMinZ + b.buildingMaxZ) / 2;
-    const buildingWidth = b.buildingMaxX - b.buildingMinX;
-    const buildingDepth = b.buildingMaxZ - b.buildingMinZ;
-    const brick = material(0x2a2229, 0.8, 0.14);
-    const concrete = material(0x1b1b20, 0.82, 0.12);
-    const darkConcrete = material(0x121216, 0.86, 0.1);
-    // The room is sealed from the sky, so its surfaces are kept light enough
-    // to catch the lamps rather than swallowing them.
-    const roomWall = new THREE.MeshStandardMaterial({
-      color: 0x413a4a,
-      roughness: 0.72,
-      metalness: 0.18,
-      emissive: 0x2a2740,
-      emissiveIntensity: 1.2,
-    });
-    const roomShell = new THREE.MeshStandardMaterial({
-      color: 0x2b2733,
-      roughness: 0.6,
-      metalness: 0.3,
-      emissive: 0x211f30,
-      emissiveIntensity: 1.05,
-    });
-    const aboveGround = { minY: -0.4, maxY: 40 };
-    const belowGround = { minY: floor - 1.5, maxY: -0.5 };
-
-    // A paved forecourt so the new ground reads as a developed lot rather than
-    // the bare plane the walkable area was extended onto. Nothing is planted
-    // in front of the doors; lamps there blocked the way in.
-    const paving = material(0x2c2b30, 0.7, 0.2);
-    for (const [minX, maxX, minZ, maxZ] of [
-      // East of the doors, and a margin along each outside face.
-      [b.buildingMaxX, b.buildingMaxX + 14, b.buildingMinZ - 9, b.buildingMaxZ + 9],
-      [b.buildingMinX - 9, b.buildingMaxX, b.buildingMinZ - 9, b.buildingMinZ],
-      [b.buildingMinX - 9, b.buildingMaxX, b.buildingMaxZ, b.buildingMaxZ + 9],
-      [b.buildingMinX - 9, b.buildingMinX, b.buildingMinZ, b.buildingMaxZ],
-    ] as Array<[number, number, number, number]>) {
-      const slab = this.mesh(
-        [maxX - minX, 0.16, maxZ - minZ],
-        [(minX + maxX) / 2, 0.08, (minZ + maxZ) / 2],
-        paving,
-      );
-      slab.receiveShadow = true;
-      slab.userData.projectorBackground = true;
+    const roomCenterX = (b.roomMinX+b.roomMaxX)/2;
+    const roomCenterZ = (b.roomMinZ+b.roomMaxZ)/2;
+    const roomWidth=b.roomMaxX-b.roomMinX, roomDepth=b.roomMaxZ-b.roomMinZ;
+    const buildingCenterX=(b.buildingMinX+b.buildingMaxX)/2;
+    const buildingWidth=b.buildingMaxX-b.buildingMinX;
+    const buildingDepth=b.buildingMaxZ-b.buildingMinZ;
+    const ceiling=floor+CLUB_ROOM_HEIGHT;
+    const belowGround={minY:floor-1,maxY:ceiling};
+    const concrete=material(0x777c6f,.97,0);
+    const brick=material(0x8a6653,.94,0);
+    const iron=material(0x3b4b49,.9,.15);
+    const roomWall=new THREE.MeshStandardMaterial({color:0x778077,roughness:.93,emissive:0x222c32,emissiveIntensity:.2});
+    const roomShell=material(0x505950,.96,0);
+    const paving=material(0x9b9884,.95,0);
+    // Two floor levels within one supported warehouse volume. Its lower floor
+    // is above the sea; the 26-unit descent is a 3.85% ramp, not fourteen tall steps.
+    this.mesh([roomWidth,.45,roomDepth],[roomCenterX,floor-.225,roomCenterZ],roomShell).userData.projectorBackground=true;
+    for(const [from,to] of [[b.buildingMinZ,b.stairMinZ],[b.stairMaxZ,b.buildingMaxZ]]) {
+      this.mesh([30,.35,to-from],[-35,-.175,(from+to)/2],paving).userData.projectorBackground=true;
     }
-
-    // Shell. Built as four walls and a roof rather than one solid block, so
-    // the lobby is a real room instead of space carved out of a filled box.
-    const wallThickness = 1;
-    const wallHeight = 8.4;
-    const wallY = wallHeight / 2;
-    this.mesh([wallThickness, wallHeight, buildingDepth], [b.buildingMinX, wallY, buildingCenterZ], brick);
-    this.addCollider(b.buildingMinX, buildingCenterZ, wallThickness, buildingDepth, 0.2, aboveGround);
-    for (const z of [b.buildingMinZ, b.buildingMaxZ]) {
-      this.mesh([buildingWidth, wallHeight, wallThickness], [buildingCenterX, wallY, z], brick);
-      this.addCollider(buildingCenterX, z, buildingWidth, wallThickness, 0.2, aboveGround);
+    this.mesh([4,.35,7],[-22,-.175,23.5],paving).userData.projectorBackground=true;
+    const ramp=this.mesh([26,1,7],[-37,floor/2,23.5],concrete);
+    // A closed wedge, with its underside founded on the dance-floor slab.
+    ramp.geometry=new THREE.BufferGeometry();ramp.scale.set(1,1,1);ramp.position.set(0,0,0);
+    const wedge=[-50,floor,20,-50,floor,27,-24,0,20,-24,0,27,-24,floor,20,-24,floor,27];
+    ramp.geometry.setAttribute('position',new THREE.Float32BufferAttribute(wedge,3));
+    ramp.geometry.setIndex([0,1,2,2,1,3,0,2,4,1,5,3,2,3,4,4,3,5,0,4,1,1,4,5]);
+    ramp.geometry.computeVertexNormals();ramp.userData.wornNoMasonry=true;ramp.userData.projectorBackground=true;
+    for(const z of [19.6,27.4]){
+      const rail=this.mesh([26,1.6,.25],[-37,.8+floor/2,z],iron);
+      rail.rotation.z=Math.atan2(-floor,26);
+      this.addCollider(-37,z,26,.25,.1,{minY:floor-.4,maxY:2},'warehouse-ramp-rail',2);
     }
-    // East face, split around the doorway.
-    for (const [from, to] of [[b.buildingMinZ, b.doorMinZ], [b.doorMaxZ, b.buildingMaxZ]] as Array<[number, number]>) {
-      const span = Math.abs(to - from);
-      this.mesh([wallThickness, wallHeight, span], [b.buildingMaxX, wallY, (from + to) / 2], brick);
-      this.addCollider(b.buildingMaxX, (from + to) / 2, wallThickness, span, 0.2, aboveGround);
+    // The entrance has a paved landing; a person does not step from sloping soil into a doorway.
+    this.scene.add(createGroundRibbon('Club entry landing',[[-20,23.5],[-12,23.5]],6,paving,.03));
+    const wallHeight=ceiling-floor;
+    for(const z of [b.buildingMinZ,b.buildingMaxZ]){
+      this.mesh([buildingWidth,wallHeight,.8],[buildingCenterX,(floor+ceiling)/2,z],roomWall);
+      this.addCollider(buildingCenterX,z,buildingWidth,.8,.1,belowGround,'warehouse-end-wall');
     }
-    const doorCenterZ = (b.doorMinZ + b.doorMaxZ) / 2;
-    const doorHeight = 5.8;
-    // Header over the opening keeps the wall reading as continuous.
-    this.mesh([wallThickness, wallHeight - doorHeight, b.doorMaxZ - b.doorMinZ], [b.buildingMaxX, doorHeight + (wallHeight - doorHeight) / 2, doorCenterZ], brick);
-    this.mesh([buildingWidth + 1.6, 0.7, buildingDepth + 1.6], [buildingCenterX, wallHeight + 0.35, buildingCenterZ], concrete);
-    for (let index = 0; index < 7; index += 1) {
-      this.mesh([buildingWidth + 1.8, 0.5, 0.5], [buildingCenterX, wallHeight + 0.8, b.buildingMinZ + 2 + index * 3.8], darkConcrete);
+    this.mesh([.8,wallHeight,buildingDepth],[b.buildingMinX,(floor+ceiling)/2,roomCenterZ],roomWall);
+    this.addCollider(b.buildingMinX,roomCenterZ,.8,buildingDepth,.1,belowGround,'warehouse-west-wall');
+    const opening=(b.doorMinZ+b.doorMaxZ)/2;
+    for(const [from,to] of [[b.buildingMinZ,b.doorMinZ],[b.doorMaxZ,b.buildingMaxZ]]){
+      this.mesh([.8,wallHeight,to-from],[b.buildingMaxX,(floor+ceiling)/2,(from+to)/2],brick);
+      this.addCollider(b.buildingMaxX,(from+to)/2,.8,to-from,.1,belowGround,'warehouse-front-wall');
     }
-
-    // Doorway dressing. Both leaves stand open against the jambs.
-    // Set a few centimetres proud of the wall. Flush, the dressing's faces and
-    // the wall's landed on the same planes and speckled around the opening.
-    this.mesh([1.5, doorHeight, 0.6], [b.buildingMaxX + 0.36, doorHeight / 2, b.doorMinZ - 0.36], material(0x35141c, 0.6, 0.3));
-    this.mesh([1.5, doorHeight, 0.6], [b.buildingMaxX + 0.36, doorHeight / 2, b.doorMaxZ + 0.36], material(0x35141c, 0.6, 0.3));
-    this.mesh([1.6, 0.8, b.doorMaxZ - b.doorMinZ + 1.5], [b.buildingMaxX + 0.36, doorHeight + 0.4, doorCenterZ], material(0x35141c, 0.6, 0.3));
-    const leafWidth = (b.doorMaxZ - b.doorMinZ) / 2;
-    for (const [z, side] of [[b.doorMinZ, -1], [b.doorMaxZ, 1]] as Array<[number, number]>) {
-      const leafZ = z + side * 0.2;
-      this.mesh(
-        [leafWidth, doorHeight - 0.4, 0.28],
-        [b.buildingMaxX + 1.15 + leafWidth / 2, (doorHeight - 0.4) / 2, leafZ],
-        material(0x8a1220, 0.45, 0.4),
-      );
-      this.addCollider(b.buildingMaxX + 1.15 + leafWidth / 2, leafZ, leafWidth, 0.28, 0.12, aboveGround);
+    this.mesh([.8,ceiling-5.8,6],[b.buildingMaxX,(ceiling+5.8)/2,opening],brick);
+    // Repeated structural bays support a sawtooth roof profile and clerestories.
+    for(let bay=0;bay<7;bay++){
+      const x=-85+bay*10;
+      for(const z of [1,41])this.mesh([.7,wallHeight,.9],[x,(floor+ceiling)/2,z],iron);
+      const roof=this.mesh([10.5,.38,43],[x,ceiling+.5,21],concrete);
+      roof.rotation.z=.12;
+      this.mesh([.25,1.45,42],[x-5,ceiling+.1,21],iron);
+      this.mesh([.28,.7,35],[x-4.96,ceiling+.6,21],material(0x658484,.8,0));
     }
-    // The jambs are solid too, so nobody walks through the frame.
-    for (const z of [b.doorMinZ - 0.36, b.doorMaxZ + 0.36]) {
-      this.addCollider(b.buildingMaxX + 0.36, z, 1.5, 0.6, 0.12, aboveGround);
+    // Sunken floor retaining edge, with a clear opening for the ramp.
+    for(const [from,to] of [[0,19.6],[27.4,42]]){
+      this.mesh([.45,2.5,to-from],[-49.8,.25,(from+to)/2],iron);
+      this.addCollider(-49.8,(from+to)/2,.45,to-from,.1,{minY:floor-1,maxY:1.5},'gallery-balustrade',1.5);
     }
-    // The venue sign is fixed to the wall above the doorway; the club has no
-    // free-standing poster stand.
-    const doorSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['SLAP AND POP', 'XIEH GAN']) });
-    this.venueSignMaterials.set('club', doorSignMaterial);
-    const doorSign = new THREE.Mesh(new THREE.PlaneGeometry(9.6, 2.2), doorSignMaterial);
-    doorSign.position.set(b.buildingMaxX + 0.56, 7.1, doorCenterZ);
-    doorSign.rotation.y = Math.PI / 2;
-    this.scene.add(doorSign);
-    this.clubNeon = this.mesh(
-      [0.22, 0.22, 9.8],
-      [b.buildingMaxX + 0.56, doorHeight + 0.1, doorCenterZ],
-      new THREE.MeshBasicMaterial({ color: 0xff2f6d }),
-    );
-
-    // Club lighting across the south face, the elevation The Palace looks at.
-    // These are wall washers rather than street lamps, so nothing stands in
-    // the way of the doors.
-    const southZ = b.buildingMinZ - 0.62;
-    for (let index = 0; index < 9; index += 1) {
-      const x = b.buildingMinX + 3 + index * ((buildingWidth - 6) / 8);
-      const box = this.mesh([1.5, 0.9, 0.5], [x, 6.6, southZ], material(0x101014, 0.7, 0.2));
-      box.castShadow = false;
-      const lens = this.mesh(
-        [1.1, 0.5, 0.24],
-        [x, 6.6, southZ - 0.3],
-        new THREE.MeshBasicMaterial({ color: clubFacadeColors[index % clubFacadeColors.length] }),
-      );
+    const signMaterial=new THREE.MeshBasicMaterial({map:createTextTexture(['SLAP AND POP','WAREHOUSE · XIEH GAN'],'#ddd0b4','#344844')});
+    this.venueSignMaterials.set('club',signMaterial);
+    const sign=new THREE.Mesh(new THREE.PlaneGeometry(11,2.8),signMaterial);
+    sign.position.set(-19.5,8.1,opening);sign.rotation.y=Math.PI/2;this.scene.add(sign);
+    const entranceCanopy=this.mesh([4,.3,9],[-18.3,6.2,opening],iron);
+    entranceCanopy.userData.wornNoMasonry=true;
+    this.clubNeon=this.mesh([.16,.16,9.5],[-16.2,6.1,opening],new THREE.MeshBasicMaterial({color:0xe39865}));
+    for(let index=0;index<9;index++){
+      const x=-85+index*7.6;
+      const lens=this.mesh([1.2,.45,.2],[x,5.6,-.5],new THREE.MeshBasicMaterial({color:clubFacadeColors[index%2]}));
       this.clubFacadeLights.push(lens);
     }
-    // A neon band along the parapet, and uplights washing the brick.
-    for (const y of [8.1, 1.1]) {
-      const band = this.mesh(
-        [buildingWidth - 2, 0.26, 0.26],
-        [buildingCenterX, y, southZ - 0.2],
-        new THREE.MeshBasicMaterial({ color: y > 4 ? clubFacadeColors[0] : clubFacadeColors[1] }),
-      );
-      this.clubFacadeLights.push(band);
-    }
-    const facadeGlow = new THREE.PointLight(clubFacadeColors[0], 0, 34, 1.7);
-    facadeGlow.position.set(buildingCenterX, 5.4, southZ - 2);
-    this.scene.add(facadeGlow);
-    this.clubFacadeGlows.push(facadeGlow);
-
-    // Ground-floor lobby, running west as far as the room's east wall below it
-    // — the last line the floor has anything to stand on. Laid either side of
-    // the stair slot, so the hole in the floor is the only thing announcing the
-    // way down. No interior walls, no signage.
-    const groundFloorMaterial = material(0x3a3340, 0.6, 0.25);
-    // Full-width floor north and south of the opening.
-    for (const [from, to] of [
-      [b.buildingMinZ, b.stairMinZ],
-      [b.stairMaxZ, b.buildingMaxZ],
-    ] as Array<[number, number]>) {
-      const slab = this.mesh(
-        [b.buildingMaxX - b.lobbyMinX, 0.4, Math.abs(to - from)],
-        [(b.lobbyMinX + b.buildingMaxX) / 2, 0.02, (from + to) / 2],
-        groundFloorMaterial,
-      );
-      slab.receiveShadow = true;
-      slab.userData.projectorBackground = true;
-    }
-    // And the strip east of the opening, so the hole has floor on every side.
-    const eastStrip = this.mesh(
-      [b.buildingMaxX - b.stairTopX, 0.4, b.stairMaxZ - b.stairMinZ],
-      [(b.stairTopX + b.buildingMaxX) / 2, 0.02, (b.stairMinZ + b.stairMaxZ) / 2],
-      groundFloorMaterial,
-    );
-    eastStrip.receiveShadow = true;
-    eastStrip.userData.projectorBackground = true;
-    // The floor's west edge is a balcony over the room below, so it is closed
-    // with a waist-high balustrade rather than a wall: the point of standing
-    // there is to look down at the dance floor. The stair slot is left open —
-    // that is the way down. The guard reaches below ground level as well as
-    // above it, because the far side of it is a sixteen-unit drop.
-    const kerb = material(0x8a1220, 0.45, 0.4);
-    const balustradeX = b.roomMaxX - 0.2;
-    const balustradeHeight = 1.7;
-    for (const [from, to] of [
-      [b.buildingMinZ, b.stairMinZ - 0.7],
-      [b.stairMaxZ + 0.7, b.buildingMaxZ],
-    ] as Array<[number, number]>) {
-      const span = Math.abs(to - from);
-      this.mesh([0.4, balustradeHeight, span], [balustradeX, 0.22 + balustradeHeight / 2, (from + to) / 2], kerb);
-      this.mesh([0.62, 0.22, span], [balustradeX, 0.22 + balustradeHeight, (from + to) / 2], material(0x2b2733, 0.5, 0.35));
-      this.addCollider(balustradeX, (from + to) / 2, 0.4, span, 0.16, { minY: floor - 2, maxY: 40 }, 'gallery-balustrade');
-    }
-
-    // The plot's own surface west of the balcony is the club's roof. A light
-    // well is cut through it, and through the room's ceiling directly below,
-    // so the balcony has something to overlook: the drop lands on the dance
-    // floor rather than on a slab a metre down.
-    const wellMinX = -64;
-    const wellMaxX = b.roomMaxX;
-    const wellMinZ = 8;
-    const wellMaxZ = 34;
-    const capMaterial = material(0x2f2b33, 0.8, 0.12);
-    for (const [minX, maxX, minZ, maxZ] of [
-      [b.buildingMinX, wellMinX, b.buildingMinZ, b.buildingMaxZ],
-      [wellMinX, b.lobbyMinX, b.buildingMinZ, wellMinZ],
-      [wellMinX, b.lobbyMinX, wellMaxZ, b.buildingMaxZ],
-    ] as Array<[number, number, number, number]>) {
-      const cap = this.mesh(
-        [maxX - minX, 0.4, maxZ - minZ],
-        [(minX + maxX) / 2, 0.02, (minZ + maxZ) / 2],
-        capMaterial,
-      );
-      cap.receiveShadow = true;
-      cap.userData.projectorBackground = true;
-    }
-
-    // A kerb around the stair slot, so the drop is legible from across the room.
-    // Overhanging the slot by a few centimetres. Flush with the floor's own
-    // edge, the kerb's face and the slab's face shared a plane and speckled.
-    for (const z of [b.stairMinZ - 0.18, b.stairMaxZ + 0.18]) {
-      this.mesh([b.stairTopX - b.lobbyMinX, 0.5, 0.5], [(b.lobbyMinX + b.stairTopX) / 2, 0.34, z], kerb);
-    }
-    this.mesh([0.5, 0.5, b.stairMaxZ - b.stairMinZ + 1.36], [b.stairTopX + 0.18, 0.34, (b.stairMinZ + b.stairMaxZ) / 2], kerb);
-
-    // House lighting for the ground floor. Every fitting is fixed flush to the
-    // face of the wall it belongs to: the inner faces are half a wall thickness
-    // in from each wall's centre line, so the sconce body sits half its own
-    // depth further in again. They are spaced along those walls rather than
-    // grouped, which is what made the old lobby read as a corridor of lamps.
-    const sconce = new THREE.MeshBasicMaterial({ color: 0xffcf94 });
-    const sconceDepth = 0.4;
-    const eastFaceX = b.buildingMaxX - wallThickness / 2 - sconceDepth / 2;
-    const southFaceZ = b.buildingMinZ + wallThickness / 2 + sconceDepth / 2;
-    const northFaceZ = b.buildingMaxZ - wallThickness / 2 - sconceDepth / 2;
-    // East wall, clear of the doorway.
-    for (const z of [b.buildingMinZ + 7, b.buildingMaxZ - 7]) {
-      this.mesh([sconceDepth, 0.9, 2.2], [eastFaceX, 4.1, z], sconce);
-    }
-    // North and south walls, across the width of the floor.
-    for (const x of [b.lobbyMinX + 6, (b.lobbyMinX + b.buildingMaxX) / 2, b.buildingMaxX - 6]) {
-      this.mesh([2.2, 0.9, sconceDepth], [x, 4.1, southFaceZ], sconce);
-      this.mesh([2.2, 0.9, sconceDepth], [x, 4.1, northFaceZ], sconce);
-    }
-    // The west edge has no wall to fix anything to, so it is lit from the floor
-    // along the balcony instead.
-    for (let index = 0; index < 4; index += 1) {
-      const z = b.buildingMinZ + 6 + index * ((buildingDepth - 12) / 3);
-      if (z > b.stairMinZ - 2 && z < b.stairMaxZ + 2) continue;
-      this.mesh([1.1, 0.12, 0.5], [balustradeX + 0.9, 0.28, z], sconce);
-    }
-    for (const [x, z] of [
-      [b.lobbyMinX + 8, b.buildingMinZ + 11],
-      [b.lobbyMinX + 8, b.buildingMaxZ - 11],
-      [b.buildingMaxX - 8, b.buildingMinZ + 11],
-      [b.buildingMaxX - 8, b.buildingMaxZ - 11],
-    ] as Array<[number, number]>) {
-      const fill = new THREE.PointLight(0xffcf94, 26, 30, 1.4);
-      fill.position.set(x, 4.2, z);
-      this.scene.add(fill);
-    }
-    // Light for the descent. The head of the run is lit from the lobby ceiling
-    // directly over the opening; below that the fittings are fixed to the
-    // stairwell's own side walls. Nothing is left hanging in the middle of the
-    // shaft with no ceiling, rod or bracket holding it up.
-    const shaftLight = new THREE.MeshBasicMaterial({ color: 0xffd9a8 });
-    const openingCenterZ = (b.stairMinZ + b.stairMaxZ) / 2;
-    // A run of fittings down the ceiling over the slot rather than one panel
-    // the length of it, which is far too long to read as a light.
-    for (let index = 0; index < 3; index += 1) {
-      const x = b.stairTopX - 3.5 - index * 8;
-      this.mesh([3.4, 0.16, 3.4], [x, wallHeight - 0.08, openingCenterZ], shaftLight);
-      const ceilingLamp = new THREE.PointLight(0xffd9a8, 46, 26, 1.15);
-      ceilingLamp.position.set(x, wallHeight - 0.4, openingCenterZ);
-      this.scene.add(ceilingLamp);
-    }
-    // Side-wall fittings, low enough down the run that the shaft wall behind
-    // each one is still there to carry it.
-    for (const [fraction, side] of [[0.45, -1], [0.72, 1], [0.95, -1]] as Array<[number, number]>) {
-      const x = b.stairTopX - (b.stairTopX - b.stairBottomX) * fraction;
-      const y = this.groundHeightAt(x, openingCenterZ) + 3;
-      const z = side < 0 ? b.stairMinZ - 0.25 : b.stairMaxZ + 0.25;
-      this.mesh([1.6, 0.5, 0.3], [x, y, z], shaftLight);
-      const lamp = new THREE.PointLight(0xffd9a8, 42, 24, 1.15);
-      lamp.position.set(x, y, z - side * 0.6);
-      this.scene.add(lamp);
-    }
-
-    // The stair opening is left completely clear: a plain hole in the lobby
-    // floor with the steps visible in it, and nothing else to explain it.
-
-    // Stair run down to the room.
-    const stairWidth = b.stairMaxZ - b.stairMinZ;
-    const stairRun = b.stairTopX - b.stairBottomX;
-    const steps = 14;
-    for (let step = 0; step < steps; step += 1) {
-      const progress = (step + 0.5) / steps;
-      const x = b.stairTopX - stairRun * progress;
-      // Each tread is masonry carried down to the room's floor, the way the
-      // rooftop flight already is. Drawn as thin slabs they left the whole run
-      // hanging over a void: the gap between one tread and the next looked
-      // clean through the flight, and under the lowest steps there was neither
-      // ground nor wall to see — just the outside.
-      const treadTop = progress * floor;
-      // Left as built, like the rooftop flight and for the same reason: a tread
-      // carried to the floor is building-sized, and the styling passes measure
-      // rather than ask, so each one came out with its own plinth and cornice.
-      this.mesh(
-        [stairRun / steps + 0.06, treadTop - floor, stairWidth],
-        [x, (treadTop + floor) / 2, (b.stairMinZ + b.stairMaxZ) / 2],
-        darkConcrete,
-      ).userData.wornNoMasonry = true;
-    }
-    // Shaft walls either side of the run, carried all the way up to the
-    // underside of the ground floor. They used to stop a room's height short,
-    // leaving a slot of daylight along the steps and nothing for the stair's
-    // own light fittings to be mounted on.
-    const shaftTop = -0.18;
-    const shaftHeight = shaftTop - floor;
-    for (const z of [b.stairMinZ - 0.7, b.stairMaxZ + 0.7]) {
-      this.mesh([stairRun - 0.4, shaftHeight, 0.6], [(b.stairTopX + b.stairBottomX) / 2 + 0.2, floor + shaftHeight / 2, z], concrete);
-      this.addCollider((b.stairTopX + b.stairBottomX) / 2, z, stairRun, 0.6, 0.16, { minY: floor - 1.5, maxY: 40 }, 'stair-balustrade');
-    }
-
-    // The room.
-    const roomFloor = this.mesh([roomWidth, 0.5, roomDepth], [roomCenterX, floor - 0.25, roomCenterZ], roomShell);
-    roomFloor.receiveShadow = true;
-    roomFloor.userData.projectorBackground = true;
-    // Ceiling, opened under the balcony's light well. The two openings line up,
-    // so the balcony looks through both and lands on the dance floor.
-    const ceilingY = floor + CLUB_ROOM_HEIGHT;
-    for (const [minX, maxX, minZ, maxZ] of [
-      [b.roomMinX - 1, wellMinX, b.roomMinZ - 1, b.roomMaxZ + 1],
-      [wellMinX, b.roomMaxX + 1, b.roomMinZ - 1, wellMinZ],
-      [wellMinX, b.roomMaxX + 1, wellMaxZ, b.roomMaxZ + 1],
-    ] as Array<[number, number, number, number]>) {
-      this.mesh(
-        [maxX - minX, 0.6, maxZ - minZ],
-        [(minX + maxX) / 2, ceilingY, (minZ + maxZ) / 2],
-        roomShell,
-      );
-    }
-    // Fascia around the well, closing the storey-deep cavity between the room's
-    // ceiling and the roof cap so the opening reads as one clean shaft.
-    // Held a hair under the floor above rather than flush with it: two faces on
-    // the same plane shimmer, and this rim is the one the balcony looks over.
-    const fasciaTop = 0.1;
-    const fasciaHeight = fasciaTop - (ceilingY - 0.3);
-    const fasciaY = (fasciaTop + ceilingY - 0.3) / 2;
-    for (const [x, z, sx, sz] of [
-      [wellMinX, (wellMinZ + wellMaxZ) / 2, 0.8, wellMaxZ - wellMinZ],
-      [(wellMinX + wellMaxX) / 2, wellMinZ, wellMaxX - wellMinX, 0.8],
-      [(wellMinX + wellMaxX) / 2, wellMaxZ, wellMaxX - wellMinX, 0.8],
-    ] as Array<[number, number, number, number]>) {
-      this.mesh([sx, fasciaHeight, sz], [x, fasciaY, z], roomShell);
-    }
-    this.mesh([0.8, CLUB_ROOM_HEIGHT, roomDepth + 1.6], [b.roomMinX - 0.4, floor + CLUB_ROOM_HEIGHT / 2, roomCenterZ], roomWall);
-    this.addCollider(b.roomMinX - 0.4, roomCenterZ, 0.8, roomDepth + 1.6, 0.16, belowGround, 'room-west-wall');
-    // East wall, split around the foot of the stairs.
-    for (const [from, to] of [
-      [b.roomMinZ - 0.8, b.stairMinZ - 0.35],
-      [b.stairMaxZ + 0.35, b.roomMaxZ + 0.8],
-    ] as Array<[number, number]>) {
-      const span = Math.abs(to - from);
-      this.mesh([0.8, CLUB_ROOM_HEIGHT, span], [b.roomMaxX + 0.4, floor + CLUB_ROOM_HEIGHT / 2, (from + to) / 2], roomWall);
-      this.addCollider(b.roomMaxX + 0.4, (from + to) / 2, 0.8, span, 0.16, belowGround, 'room-east-wall');
-    }
-    // Header over that opening, above head height so it never blocks the way.
-    this.mesh([0.9, 1.6, b.stairMaxZ - b.stairMinZ + 0.5], [b.roomMaxX + 0.45, floor + CLUB_ROOM_HEIGHT - 0.9, (b.stairMinZ + b.stairMaxZ) / 2], roomWall);
-    for (const z of [b.roomMinZ - 0.4, b.roomMaxZ + 0.4]) {
-      this.mesh([roomWidth, CLUB_ROOM_HEIGHT, 0.8], [roomCenterX, floor + CLUB_ROOM_HEIGHT / 2, z], roomWall);
-      this.addCollider(roomCenterX, z, roomWidth + 1.6, 0.8, 0.16, belowGround, 'room-end-wall');
-    }
+    const facadeGlow=new THREE.PointLight(clubFacadeColors[0],0,34,1.7);
+    facadeGlow.position.set(-55,5,-2);this.scene.add(facadeGlow);this.clubFacadeGlows.push(facadeGlow);
 
     // Back wall screen.
     this.createProjectorSurface('club');
@@ -7619,15 +7336,11 @@ export class FestivalWorld {
     const tier = (y: number, overhangX: number, overhangZ: number, thickness: number): void => {
       const w = width + overhangX;
       const d = depth + overhangZ;
-      this.mesh([w, thickness, d], [centerX, y, centerZ], tile);
-      this.mesh([w - 2, 0.35, d - 2], [centerX, y - thickness / 2 - 0.15, centerZ], timber);
-      for (const sx of [-1, 1]) {
-        for (const sz of [-1, 1]) {
-          const kick = this.mesh([3.4, thickness * 0.8, 3.4], [centerX + sx * (w / 2 - 1.2), y + 0.5, centerZ + sz * (d / 2 - 1.2)], tile);
-          kick.rotation.z = -sx * 0.34;
-          kick.rotation.x = sz * 0.34;
-        }
-      }
+      const roof = new THREE.Mesh(coastalRoof(w, d, thickness * 2.6), tile);
+      roof.position.set(centerX, y, centerZ); roof.castShadow = true; roof.receiveShadow = true;
+      roof.userData.coastalAuthored = true; roof.userData.wornNoMasonry = true;
+      this.scene.add(roof);
+      this.mesh([w - 2, .35, d - 2], [centerX, y - thickness / 2 - .15, centerZ], timber);
     };
     tier(t.podium + wallHeight + 0.5, 7, 7, 0.9);
     this.mesh([width - 6, 2.6, depth - 6], [centerX, t.podium + wallHeight + 2.3, centerZ], lacquer);
@@ -7774,7 +7487,7 @@ export class FestivalWorld {
     const bayDepth = r.bayMaxZ - r.minZ;
     const deckCenterZ = (r.deckMinZ + r.maxZ) / 2;
     const deckDepth = r.maxZ - r.deckMinZ;
-    const brick = material(0x3a2f2c, 0.78, 0.14);
+    const brick = material(0x927a62, 0.95, 0);
     const warmConcrete = material(0x4a3d35, 0.75, 0.12);
     const aboveGround = { minY: -0.4, maxY: 60 };
     const onDeck = { minY: ROOF_Y - 1, maxY: 60 };
@@ -8115,55 +7828,6 @@ export class FestivalWorld {
    * against existing colliders before it is built.
    */
   private createBeachPlanting(): void {
-    const palmTrunk = material(0x6b4a2f, 0.85, 0.05);
-    const palmFrond = material(0x2f6d3f, 0.8, 0.05);
-    const grassBlade = material(0x5c7f43, 0.9, 0.02);
-    const dune = material(0xbfa176, 0.95, 0.02);
-
-    const palms: Array<[number, number, number]> = [
-      [-54, -26, 5.6], [-62, -30, 4.4], [-56, -36, 6.2], [-68, -25, 5],
-      [-74, -32, 4.2], [-66, -40, 5.4], [-82, -28, 5.2], [-78, -38, 4.8],
-      [54, -26, 5.4], [62, -30, 4.6], [56, -36, 4], [68, -25, 6],
-      [74, -32, 5], [66, -40, 5.2], [82, -28, 5.6], [78, -38, 4.6],
-      [-60, -48, 5], [60, -48, 5], [-72, -46, 4.4], [72, -46, 4.4],
-    ];
-    for (const [x, z, height] of palms) {
-      if (this.staticCollides(x, z, AVATAR_GROUND_Y)) continue;
-      this.mesh([0.5, height, 0.5], [x, height / 2, z], palmTrunk);
-      this.addCollider(x, z, 0.6, 0.6, 0.2, { minY: -0.4, maxY: 40 });
-      this.mesh([6.2, 0.22, 1.3], [x, height + 0.1, z], palmFrond);
-      this.mesh([1.3, 0.22, 6.2], [x, height + 0.02, z], palmFrond);
-      this.mesh([1.8, 0.5, 1.8], [x, height + 0.35, z], palmFrond);
-    }
-
-    const clumps: Array<[number, number]> = [
-      [-50, -22], [-58, -23], [-66, -22], [-74, -23], [-84, -22],
-      [50, -22], [58, -23], [66, -22], [74, -23], [84, -22],
-      [-52, -42], [-64, -44], [-76, -42],
-      [52, -42], [64, -44], [76, -42],
-      [-58, -54], [58, -54],
-    ];
-    for (const [x, z] of clumps) {
-      if (this.staticCollides(x, z, AVATAR_GROUND_Y)) continue;
-      this.mesh([2.6, 0.3, 2.2], [x, 0.16, z], dune);
-      const bladeCount = this.graphicsMode === 'normal' ? 5 : 2;
-      for (let blade = 0; blade < bladeCount; blade += 1) {
-        const angle = (blade / bladeCount) * Math.PI * 2;
-        const spread = 0.55 + (blade % 3) * 0.22;
-        this.mesh(
-          [0.16, 0.9 + (blade % 4) * 0.22, 0.16],
-          [x + Math.cos(angle) * spread, 0.55, z + Math.sin(angle) * spread],
-          grassBlade,
-        );
-      }
-    }
-
-    for (const [x, z] of [[-56, -20], [57, -20.4]] as Array<[number, number]>) {
-      this.mesh([0.22, 3.2, 0.22], [x, 1.6, z], material(0x8a7a63, 0.8, 0.05));
-      this.mesh([4.4, 0.3, 4.4], [x, 3.3, z], material(0xc23b3b, 0.7, 0.05));
-      this.addCollider(x, z, 0.4, 0.4, 0.2, { minY: -0.4, maxY: 40 });
-    }
-
     // Two people who came for each other rather than for the films, tucked in
     // among the palms east of the drive-in. Off any path, behind planting, and
     // found rather than presented.
@@ -8354,8 +8018,7 @@ export class FestivalWorld {
 
   private createNpcAvatar(profile: NpcProfile, index: number): NpcAvatar {
     const npc = new THREE.Group();
-    const hue = (index * 0.13 + 0.02) % 1;
-    const shirtColor = `#${new THREE.Color().setHSL(hue, 0.48, 0.34).getHexString()}`;
+    const shirtColor = ['#485f59', '#9b5644', '#d2bd8a', '#5c7186', '#7a7351', '#6d4351', '#bd7854', '#497574', '#a69c88', '#595963', '#797b49', '#986b73'][index % 12];
     const npcPalette: AvatarPalette = {
       skin: index % 2 ? '#7a4a35' : '#b77856',
       hair: index % 3 ? '#171315' : '#3a241d',
@@ -8705,10 +8368,12 @@ export class FestivalWorld {
   }
 
   private laneAdjusted(x: number, z: number, lane: THREE.Vector2, y: number): THREE.Vector3 {
-    const shiftedX = x + lane.x;
-    const shiftedZ = z + lane.y;
-    if (this.staticCollides(shiftedX, shiftedZ, y)) return new THREE.Vector3(x, y, z);
-    return new THREE.Vector3(shiftedX, y, shiftedZ);
+    const shiftedX=x+lane.x, shiftedZ=z+lane.y;
+    const ground=this.groundHeightAt(shiftedX,shiftedZ,y);
+    if(this.staticCollides(shiftedX,shiftedZ,ground,FestivalWorld.BODY_RADIUS)) {
+      return new THREE.Vector3(x,this.groundHeightAt(x,z,y),z);
+    }
+    return new THREE.Vector3(shiftedX,ground,shiftedZ);
   }
 
   /**
@@ -8848,7 +8513,7 @@ export class FestivalWorld {
       visitor.x,
       typeof visitor.y === 'number' && Number.isFinite(visitor.y)
         ? visitor.y
-        : (visitor.state === 'swimming' ? AVATAR_SWIM_Y : AVATAR_GROUND_Y),
+        : (visitor.state === 'swimming' ? AVATAR_SWIM_Y : this.groundHeightAt(visitor.x, visitor.z, 0)),
       visitor.z,
     );
     group.rotation.y = visitor.rotation;
@@ -9008,285 +8673,9 @@ export class FestivalWorld {
    * band rather than modelled eyes and a mouth. The clothes stay ordinary and
    * every colour is still the visitor's own choice.
    */
-  private createStyledAvatarRig(parent: THREE.Group, palette: AvatarPalette, markPalette: boolean): AvatarRig {
-    window.setTimeout(() => this.castShadows(parent), 0);
-    // Nobody is symmetrical.
-    //
-    // These figures were the cleanest objects left in the world, because I built
-    // them that way: two identical arms on two identical shoulders, mirrored to
-    // the millimetre. Bodies are not mirrored, and a crowd of twelve that all
-    // are reads as a set of copies however different their colours.
-    //
-    // So each body is bent slightly out of true, and the same way every time —
-    // seeded from the palette, so a visitor's figure is their figure and not a
-    // new one on every load. One shoulder rides higher, one arm is a shade
-    // longer, the head sits a degree off centre. All of it under two per cent,
-    // which is the difference between a person and a mannequin and is not
-    // visible as anything in itself.
-    const seed = Number.parseInt(palette.top.replace('#', ''), 16)
-      + Number.parseInt(palette.bottoms.replace('#', ''), 16);
-    const lean = (salt: number): number => {
-      const value = Math.sin(seed * 0.0007 + salt * 5.31) * 43758.5453;
-      return (value - Math.floor(value)) - 0.5;
-    };
-    const shoulderTilt = lean(1) * 0.055;
-    const armStretch = 1 + lean(2) * 0.035;
-    const legStretch = 1 + lean(3) * 0.025;
-    const headTilt = lean(4) * 0.07;
-    const shade = (slot: AvatarColourSlot) =>
-      material(Number.parseInt(palette[slot].replace('#', ''), 16), 0.86, 0.02);
-    const add = (
-      geometry: THREE.BufferGeometry,
-      position: [number, number, number],
-      slot: AvatarColourSlot,
-      target: THREE.Object3D,
-    ) => {
-      const part = new THREE.Mesh(geometry, shade(slot));
-      part.position.set(...position);
-      // The gate's live preview recolours by this, so a restyled part has to
-      // carry it exactly as the old one did or the colour pickers go dead.
-      if (markPalette) part.userData.paletteSlot = slot;
-      // A person is not a wall: skin and hair take the shading but not the
-      // surface grain.
-      if (slot === 'skin' || slot === 'hair') part.material.userData.wornNoGrain = true;
-      target.add(part);
-      return part;
-    };
-    // The hard, unpainted parts: joints, visor, sole. Not on the palette,
-    // because they are the through-line that holds a crowd of freely coloured
-    // figures together now that no single accent does.
-    const hardware = material(0x14161a, 0.62, 0.28);
-    const shell = (
-      geometry: THREE.BufferGeometry,
-      position: [number, number, number],
-      target: THREE.Object3D,
-    ) => {
-      const part = new THREE.Mesh(geometry, hardware);
-      part.position.set(...position);
-      target.add(part);
-      return part;
-    };
-
-    // ---- pelvis --------------------------------------------------------
-    // Stays on the body's own root, because a lean should bend above the waist
-    // and leave the hips where the legs are.
-    add(taperedPrism(0.42, 0.36, 0.42, 0.54), [0, 1.3, 0], 'bottoms', parent);
-
-    // ---- spine ---------------------------------------------------------
-    // Everything above the waist hangs off this, so bending it carries the
-    // chest, the shoulders, both arms and the head together — which is what
-    // separates a body leaning into a walk from a slab being twisted.
-    const spine = new THREE.Group();
-    spine.position.set(0, 1.55, 0);
-    parent.add(spine);
-
-    // Chest and waist as two pieces meeting at a narrow join, rather than one
-    // taper running the whole way. The break at the waist is what stops the
-    // body reading as a single carved lump.
-    add(taperedPrism(0.56, 0.44, 0.86, 0.56), [0, 0.47, 0], 'top', spine);
-    shell(taperedPrism(0.43, 0.4, 0.14, 0.54), [0, 0, 0], spine);
-
-    // ---- shoulders -----------------------------------------------------
-    // Caps that stand slightly proud of the body, which is the one silhouette
-    // cue that reads at any distance and in any colour.
-    shell(taperedPrism(0.64, 0.58, 0.1, 0.58), [0, 0.89, 0], spine);
-    for (const side of [-1, 1]) {
-      // One cap rides higher than the other, which is the single most human
-      // thing that can be done to a pair of shoulders.
-      add(taperedPrism(0.2, 0.15, 0.22, 0.95), [side * 0.53, 0.81 + side * shoulderTilt, 0], 'top', spine);
-    }
-
-    // ---- head ----------------------------------------------------------
-    shell(taperedPrism(0.12, 0.15, 0.15, 1), [0, 1.0, 0], spine);
-    const head = new THREE.Group();
-    head.position.set(0, 1.05, 0);
-    // Carried a degree off straight, permanently. A head that is exactly level
-    // is the tell that nothing underneath it is alive.
-    head.rotation.z = headTilt;
-    spine.add(head);
-    add(taperedPrism(0.23, 0.27, 0.46, 0.94), [0, 0.23, 0], 'skin', head);
-    add(taperedPrism(0.285, 0.26, 0.13, 0.98), [0, 0.43, -0.015], 'hair', head);
-    // The visor, on the front of the head and only the front.
-    //
-    // A painted face was tried here and taken back out. It is the more faithful
-    // answer to the reference — that generation drew faces rather than modelling
-    // them — but faithfulness to a reference is not the only thing at stake in a
-    // world where every resident and every visitor wears the same one, and the
-    // owner preferred this. Keeping the note because the reasoning is still
-    // sound and the decision could reasonably go the other way later.
-    //
-    // It was a prism a hair wider than the head, which is a ring — so it banded
-    // right around the back as a line across the skull, which is what a visor
-    // is not. "Wrapped round the sides" was the intention and a full revolution
-    // was what the shape actually did; a tapered prism has no front.
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.1, 0.07), hardware);
-    visor.position.set(0, 0.245, 0.22);
-    head.add(visor);
-    // A short return down each side, which is the part that was worth keeping:
-    // it stops the visor reading as a sticker on a flat face.
-    for (const side of [-1, 1]) {
-      const wrap = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, 0.14), hardware);
-      wrap.position.set(side * 0.17, 0.245, 0.15);
-      head.add(wrap);
-    }
-
-    const limb = (
-      x: number,
-      y: number,
-      geometry: THREE.BufferGeometry,
-      height: number,
-      slot: AvatarColourSlot,
-      root: THREE.Object3D,
-    ) => {
-      const pivot = new THREE.Group();
-      pivot.position.set(x, y, 0);
-      root.add(pivot);
-      add(geometry, [0, -height / 2, 0], slot, pivot);
-      return pivot;
-    };
-
-    // ---- limbs ---------------------------------------------------------
-    // Each limb is upper and lower with a narrow joint between, which is the
-    // single most futuristic thing on the figure and costs nothing: the pieces
-    // hang off the same pivot, so nothing about the animation changes.
-    // Everything below the joint hangs off its own pivot, so the lower half of
-    // a limb can move relative to the upper half instead of riding along with
-    // it. The segments were already drawn this way; they simply had nothing to
-    // turn about.
-    const arm = (side: number) => {
-      const reach = side < 0 ? armStretch : 2 - armStretch;
-      const pivot = limb(side * 0.56, 0.73 + side * shoulderTilt, taperedPrism(0.115, 0.08, 0.6 * reach, 0.94), 0.6 * reach, 'top', spine);
-      const elbow = new THREE.Group();
-      elbow.position.set(0, -0.64, 0);
-      pivot.add(elbow);
-      shell(taperedPrism(0.075, 0.075, 0.09, 1), [0, 0, 0], elbow);
-      add(taperedPrism(0.088, 0.07, 0.56, 0.94), [0, -0.33, 0], 'skin', elbow);
-      shell(taperedPrism(0.085, 0.062, 0.16, 0.96), [0, -0.68, 0], elbow);
-      return { pivot, joint: elbow };
-    };
-    const leg = (side: number) => {
-      const stand = side < 0 ? legStretch : 2 - legStretch;
-      const pivot = limb(side * 0.24, 1.16, taperedPrism(0.185, 0.13, 0.66 * stand, 0.84), 0.66 * stand, 'bottoms', parent);
-      const knee = new THREE.Group();
-      knee.position.set(0, -0.71, 0);
-      pivot.add(knee);
-      shell(taperedPrism(0.115, 0.115, 0.1, 0.9), [0, 0, 0], knee);
-      // The original figure's foot bottoms out 0.09 below the body's origin,
-      // and the ground is placed against that. This leg was reaching to 0.205,
-      // so the restyled figure stood a tenth of a unit deeper than the world
-      // expected and its feet disappeared into the road. The shin is shortened
-      // to bring the sole back to where the ground actually is.
-      add(taperedPrism(0.132, 0.1, 0.39, 0.82), [0, -0.245, 0], 'bottoms', knee);
-      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.11, 0.46), hardware);
-      foot.position.set(0, -0.485, 0.08);
-      knee.add(foot);
-      return { pivot, joint: knee };
-    };
-
-    const left = arm(-1);
-    const right = arm(1);
-    const leftLower = leg(-1);
-    const rightLower = leg(1);
-    const leftArm = left.pivot;
-    const rightArm = right.pivot;
-    const leftLeg = leftLower.pivot;
-    const rightLeg = rightLower.pivot;
-
-    // The treat rides the forearm now, so a held thing follows the hand rather
-    // than hanging in the air where the hand used to be.
-    const treat = this.mesh([0.16, 0.16, 0.22], [0, -0.56, 0.16], material(0xd18a35, 0.78), right.joint);
-    treat.visible = false;
-    const board = this.createSkateboard(parent);
-    addAvatarAccessories({ head, torso: spine, leftArm, rightArm }, palette, markPalette);
-    return {
-      leftArm,
-      rightArm,
-      leftLeg,
-      rightLeg,
-      // Spine 1.55, head group at 1.05 above it, hair cap topping out 0.5 over
-      // that.
-      headTop: 3.1,
-      // The spine stands in for the torso, so every pose already written bends
-      // the whole upper body without one line of those poses changing.
-      torso: spine,
-      treat,
-      head,
-      board,
-      leftElbow: left.joint,
-      rightElbow: right.joint,
-      leftKnee: leftLower.joint,
-      rightKnee: rightLower.joint,
-    };
-  }
-
   private createAvatarRig(parent: THREE.Group, palette: AvatarPalette, markPalette = false): AvatarRig {
-    if (wornMeshesRequested()) return this.createStyledAvatarRig(parent, palette, markPalette);
-    // Avatars are the one thing whose shadow is always worth its cost.
     window.setTimeout(() => this.castShadows(parent), 0);
-    const addPart = (
-      size: [number, number, number],
-      position: [number, number, number],
-      slot: AvatarColourSlot,
-      target: THREE.Object3D = parent,
-    ) => {
-      const part = this.mesh(
-        size,
-        position,
-        material(Number.parseInt(palette[slot].replace('#', ''), 16), 0.82, 0.03),
-        target,
-      );
-      if (markPalette) part.userData.paletteSlot = slot;
-      if (slot === 'skin' || slot === 'hair') {
-        (part.material as THREE.Material).userData.wornNoGrain = true;
-      }
-      return part;
-    };
-    const torso = addPart([1.02, 1.38, 0.62], [0, 1.78, 0], 'top');
-    // The head pivots at the neck. It used to be a handful of parts fixed to
-    // the body, so bowing tipped the torso and left the face pointing level.
-    const head = new THREE.Group();
-    head.position.set(0, 2.47, 0);
-    parent.add(head);
-    addPart([0.8, 0.82, 0.72], [0, 0.38, 0], 'skin', head);
-    addPart([0.9, 0.34, 0.79], [0, 0.73, -0.02], 'hair', head);
-    addPart([0.78, 0.4, 0.16], [0, 0.51, 0.34], 'hair', head);
-    this.mesh([0.09, 0.1, 0.05], [-0.18, 0.37, 0.385], material(0x171315), head);
-    this.mesh([0.09, 0.1, 0.05], [0.18, 0.37, 0.385], material(0x171315), head);
-    this.mesh([0.24, 0.055, 0.05], [0, 0.17, 0.385], material(0x6f2e2b), head);
-
-    const limb = (
-      x: number,
-      y: number,
-      size: [number, number, number],
-      slot: AvatarColourSlot,
-    ) => {
-      const pivot = new THREE.Group();
-      pivot.position.set(x, y, 0);
-      parent.add(pivot);
-      addPart(size, [0, -size[1] / 2, 0], slot, pivot);
-      return pivot;
-    };
-    const leftArm = limb(-0.68, 2.2, [0.3, 1.22, 0.38], 'skin');
-    const rightArm = limb(0.68, 2.2, [0.3, 1.22, 0.38], 'skin');
-    const leftLeg = limb(-0.28, 1.16, [0.4, 1.25, 0.5], 'bottoms');
-    const rightLeg = limb(0.28, 1.16, [0.4, 1.25, 0.5], 'bottoms');
-    const treat = this.mesh([0.16, 0.16, 0.22], [0, -1.2, 0.16], material(0xd18a35, 0.78), rightArm);
-    treat.visible = false;
-    const board = this.createSkateboard(parent);
-    // The chest here is one scaled mesh rather than a group, so the accessories
-    // hang off the body's own root and are told where the chest is.
-    addAvatarAccessories({
-      head,
-      torso: parent,
-      torsoBounds: new THREE.Box3(
-        new THREE.Vector3(-0.51, 1.09, -0.31),
-        new THREE.Vector3(0.51, 2.47, 0.31),
-      ),
-      leftArm,
-      rightArm,
-    }, palette, markPalette);
-    // Head group at 2.47, hair 0.73 above that and 0.17 thick.
-    return { leftArm, rightArm, leftLeg, rightLeg, torso, treat, head, board, headTop: 3.37 };
+    return createCoastalAvatar(parent, palette, markPalette, this.createSkateboard(parent));
   }
 
   private createAtmosphere(): void {
@@ -9666,7 +9055,7 @@ export class FestivalWorld {
     // Height of the eye above the water, not the avatar's: the camera is what
     // decides how much of the screen these sheets cover.
     this.camera.getWorldPosition(this.cameraWorldPosition);
-    const eyeAboveWater = this.cameraWorldPosition.y - 0.14;
+    const eyeAboveWater = this.cameraWorldPosition.y - SEA_Y;
     // Only when the eye is genuinely grazing the surface. The swimming camera
     // is now held well above that, so the sea keeps all of its sheets — and its
     // glitter — at the height an attendee actually sees it from.
@@ -9952,7 +9341,7 @@ export class FestivalWorld {
       const carrier = this.mentorCarrierId ? this.remoteAvatars.get(this.mentorCarrierId) : undefined;
       if (carrier) {
         const carrierPosition = carrier.group.getWorldPosition(new THREE.Vector3());
-        this.player.position.set(carrierPosition.x, AVATAR_GROUND_Y, carrierPosition.z);
+        this.player.position.set(carrierPosition.x, this.groundHeightAt(carrierPosition.x,carrierPosition.z), carrierPosition.z);
         this.player.rotation.y = carrier.group.rotation.y;
       }
       this.playerState = 'walking';
@@ -10004,9 +9393,9 @@ export class FestivalWorld {
     }
     this.applyKnockback(delta);
 
-    const shouldWearSwimwear = this.player.position.z < -58.2;
+    const shouldWearSwimwear = this.player.position.z < shorelineAt(this.player.position.x) + 1.5;
     if (shouldWearSwimwear !== (this.outfit === 'swimwear')) this.setOutfit(shouldWearSwimwear);
-    const shouldSwim = this.player.position.z < -60;
+    const shouldSwim = isSwimmingDepth(this.player.position.x,this.player.position.z);
     this.setSwimming(shouldSwim);
 
     if (this.playerState === 'swimming') {
@@ -10113,25 +9502,8 @@ export class FestivalWorld {
    * was snapped back onto the road, which is why the food stalls could only be
    * reached from one direction.
    */
-  private walkableXRange(z: number): { min: number; max: number } {
-    // The beach, The Palace and the Drive-In share one wide strip.
-    if (z < -8) return { min: -55, max: 55 };
-    let min = -14;
-    let max = 14;
-    // The Basement's plot, west of the road.
-    if (z > -11 && z < GATE_Z - 2) min = clubBounds.buildingMinX - 9;
-    // The Rooftop's plot and the forecourt in front of it, east of the road.
-    // The forecourt starts south of the promenade, so this band has to reach
-    // past z = 0 to meet the strip below it.
-    // Reaches as far north as The Basement's plot does on the other side of the
-    // road. It used to stop at 50, fourteen short of where an attendee leaving
-    // the deck's north edge lands, and the limit fell from 58 to 14 at that
-    // line — so crossing it dragged the body twenty-two units sideways.
-    if (z > -12 && z <= GATE_Z - 2) max = rooftopBounds.maxX + 4;
-    // The temple's ground was always drawn — the map reaches x = 92 — but the
-    // festival stopped anyone at 58, so it could only ever be looked at.
-    if (z > TEMPLE.minZ - 6 && z < TEMPLE.maxZ + 6) max = TEMPLE.maxX + 5;
-    return { min, max };
+  private walkableXRange(_z: number): { min: number; max: number } {
+    return { min: -110, max: 122 };
   }
 
   private movePlayer(horizontal: number, vertical: number, distance: number, view: THREE.Object3D = this.camera): void {
@@ -10508,7 +9880,7 @@ export class FestivalWorld {
             moving = this.updateMentorFollower(npc, followerObject, delta);
           }
           npc.group.position.y = this.npcBodyY(npc, elapsed);
-          const swimming = this.isOverWater(npc.group.position.z);
+          const swimming = this.isOverWater(npc.group.position.z,npc.group.position.x);
           const gesture = now < npc.gestureUntil ? npc.gesture : undefined;
           if (npc.dogRig) this.animateMentorDog(
             npc.dogRig,
@@ -10740,7 +10112,7 @@ export class FestivalWorld {
       // height, a resident stationed on the roof deck sank through it — which
       // is what put DR.BEAUTY waist-deep in the shop counter.
       npc.group.position.y = this.npcBodyY(npc, elapsed);
-      const swimming = this.isOverWater(npc.group.position.z);
+      const swimming = this.isOverWater(npc.group.position.z,npc.group.position.x);
       const gesture = now < npc.gestureUntil ? npc.gesture : undefined;
       // Posing a body writes ten bones, and it is the one per-resident cost
       // paid every frame by every resident. Across the square that is what
@@ -11300,9 +10672,24 @@ export class FestivalWorld {
     // edge before it has dropped far enough to meet it, the shin carries on
     // forward and down, and the soles finish on the ground in front of the
     // chair rather than inside it.
-    this.foldJoints(rig, 0.8, 0.8, 0.5, 0.5);
-    rig.leftLeg.rotation.x = -1.28;
-    rig.rightLeg.rotation.x = -1.28;
+    const origin=rig.leftLeg.parent?.getWorldPosition(new THREE.Vector3()) ?? this.player.position;
+    const ground=this.groundHeightAt(origin.x,origin.z,origin.y)-AVATAR_GROUND_Y;
+    // Solve the ankle angle against the real floor; low cinema seats need a
+    // different knee bend from high bar stools and car boots.
+    const footHeight=(knee:number)=>{
+      const angle=-1.5+knee;
+      return origin.y+rig.leftLeg.position.y-.71*Math.cos(1.5)
+        -.73*Math.cos(angle)-.16*Math.abs(Math.sin(angle));
+    };
+    let low=.03,high=1.5;
+    for(let i=0;i<12;i++){
+      const middle=(low+high)/2;
+      if(footHeight(middle)>ground+.02)low=middle;else high=middle;
+    }
+    const knee=(low+high)/2;
+    this.foldJoints(rig, 0.8, 0.8, knee, knee);
+    rig.leftLeg.rotation.x = -1.5;
+    rig.rightLeg.rotation.x = -1.5;
     rig.leftArm.rotation.x = -0.12;
     rig.leftArm.rotation.z = 0;
     rig.torso.rotation.z = 0;
@@ -11328,8 +10715,8 @@ export class FestivalWorld {
   }
 
   /** True where the ground has given out and a body is in the sea. */
-  private isOverWater(z: number): boolean {
-    return z < SWIM_Z;
+  private isOverWater(z: number, x = 0): boolean {
+    return isSwimmingDepth(x,z);
   }
 
   /**
@@ -11343,7 +10730,7 @@ export class FestivalWorld {
    * does, and a human resident matches the visitor's own waterline.
    */
   private npcBodyY(npc: NpcAvatar, elapsed: number): number {
-    if (this.isOverWater(npc.group.position.z)) {
+    if (this.isOverWater(npc.group.position.z,npc.group.position.x)) {
       return (npc.dogRig ? MENTOR_SWIM_Y : AVATAR_SWIM_Y)
         + Math.sin(elapsed * 3.2 + npc.phase) * 0.035;
     }
@@ -11660,10 +11047,12 @@ export class FestivalWorld {
     }
     // The three steps on the temple's west face, taken as one ramp so the climb
     // is smooth rather than a stutter of ledges.
-    if (x > TEMPLE.stepMinX && x <= TEMPLE.minX - 1.5 && z > TEMPLE.minZ && z < TEMPLE.maxZ) {
+    if (x > TEMPLE.stepMinX && x <= TEMPLE.minX - 1.5 && Math.abs(z - (TEMPLE.minZ + TEMPLE.maxZ) / 2) < 6.5) {
       const climbed = (x - TEMPLE.stepMinX) / (TEMPLE.minX - 1.5 - TEMPLE.stepMinX);
-      return AVATAR_GROUND_Y + (TEMPLE_FLOOR_Y - AVATAR_GROUND_Y) * THREE.MathUtils.clamp(climbed, 0, 1);
+      return TEMPLE_GRADE + AVATAR_GROUND_Y + TEMPLE.podium * THREE.MathUtils.clamp(climbed, 0, 1);
     }
+    if (x > -45.5 && x < -24.5 && z > -48 && z < -31) return .25 + AVATAR_GROUND_Y;
+    if (x > 22.5 && x < 47.5 && z > -35.5 && z < -13.5) return .11 + AVATAR_GROUND_Y;
     const kerb = this.kerbHeightAt(x, z);
     if (kerb !== undefined) return kerb;
     if (this.inClubRoom(x, z)) return CLUB_AVATAR_Y;
@@ -11672,7 +11061,8 @@ export class FestivalWorld {
       const progress = (b.stairTopX - x) / (b.stairTopX - b.stairBottomX);
       return AVATAR_GROUND_Y + (CLUB_AVATAR_Y - AVATAR_GROUND_Y) * THREE.MathUtils.clamp(progress, 0, 1);
     }
-    return AVATAR_GROUND_Y;
+    if (x > -50 && x < -20 && z > 0 && z < 42) return AVATAR_GROUND_Y;
+    return terrainHeightAt(x,z) + AVATAR_GROUND_Y;
   }
 
   /**
@@ -12256,7 +11646,7 @@ export class FestivalWorld {
 
   private confineCameraOverWater(cameraTarget: THREE.Vector3): void {
     if (this.playerState !== 'swimming') return;
-    const waterline = 0.14;
+    const waterline = SEA_Y;
     cameraTarget.y = THREE.MathUtils.clamp(cameraTarget.y, waterline + 2.2, waterline + 3.6);
     // The horizon stays where it is. Turning is free; the height and the tilt
     // are fixed, which is the view that holds its frame rate over open water.
@@ -12567,7 +11957,7 @@ export class FestivalWorld {
   /** Within arm's reach of the jukebox, on any side of it. */
   private nearJukebox(): boolean {
     if (!this.jukebox) return false;
-    if (Math.abs(this.player.position.y - AVATAR_GROUND_Y) > 2.6) return false;
+    if (Math.abs(this.player.position.y - this.groundHeightAt(this.player.position.x,this.player.position.z,0)) > 2.6) return false;
     return Math.hypot(
       this.player.position.x - this.jukebox.x,
       this.player.position.z - this.jukebox.z,
@@ -12713,7 +12103,7 @@ export class FestivalWorld {
       this.onAction({ type: 'swim', active: true, stowedPopcorn });
     } else if (!active && wasSwimming) {
       this.playerState = 'walking';
-      this.player.position.y = AVATAR_GROUND_Y;
+      this.player.position.y = this.groundHeightAt(this.player.position.x, this.player.position.z, this.player.position.y);
       this.player.rotation.x = 0;
       this.player.rotation.z = 0;
       this.player.visible = !this.controlledNpcId;
@@ -12723,7 +12113,7 @@ export class FestivalWorld {
         this.stowedItem = undefined;
       }
       this.syncCarriedPropAnchor();
-      if (this.player.position.z > -58.2) this.setOutfit(false);
+      if (this.player.position.z > shorelineAt(this.player.position.x) + 1.5) this.setOutfit(false);
       this.onAction({ type: 'swim', active: false });
     }
   }

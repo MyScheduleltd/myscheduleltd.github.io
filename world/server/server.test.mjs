@@ -41,6 +41,10 @@ const startServer = async (port, stateFile, seedFile = 'off') => {
       // Assert on the festival the code ships with, never on the running order
       // STAFF happen to have curated into the committed seed.
       FESTIVAL_SEED_FILE: seedFile,
+      // Offerings against ECPay's stage account, which is public and takes no
+      // money. Nothing here contacts ECPay: the tests exercise this service's
+      // own half — what it signs, what it accepts, and what it refuses.
+      ECPAY_PUBLIC_URL: `http://127.0.0.1:${port}`,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -1067,6 +1071,9 @@ test('presence keeps attendees where they stand across the whole world', async (
     { label: 'the temple steps', x: 73, y: 1.48, z: -10 },
     { label: 'the festival gate', x: 0, y: 0.28, z: 60 },
     { label: "the basement's west end", x: -99, y: -16.22, z: 30 },
+    { label: "the outer contour walk", x: 120, y: 4.6, z: -6 },
+    { label: "the west coastal edge", x: -109, y: .7, z: -30 },
+    { label: "the raised temple", x: 98, y: 6.28, z: 4 },
   ];
   for (const place of places) {
     const response = await fetch(`${baseUrl}/api/presence`, {
@@ -1461,4 +1468,115 @@ test('a name is refused while somebody is actually holding it', async () => {
   });
   assert.equal(taken.status, 409, 'a name in use is still refused');
   await reader.cancel();
+});
+
+
+test('an offering needs a session, an amount in range, and an email', async () => {
+  const anonymous = await fetch(`${baseUrl}/api/donation`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ amount: 100, email: 'donor@example.com' }),
+  });
+  assert.equal(anonymous.status, 401, 'nobody can give money without being in the festival');
+
+  const session = await join('OFFERING TEST');
+  const tooSmall = await fetch(`${baseUrl}/api/donation`, {
+    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 9, email: 'donor@example.com' }),
+  });
+  assert.equal(tooSmall.status, 400);
+  const tooLarge = await fetch(`${baseUrl}/api/donation`, {
+    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 10001, email: 'donor@example.com' }),
+  });
+  assert.equal(tooLarge.status, 400);
+  const noEmail = await fetch(`${baseUrl}/api/donation`, {
+    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 100, email: 'not-an-address' }),
+  });
+  assert.equal(noEmail.status, 400, 'the invoice has to go somewhere');
+
+  const started = await fetch(`${baseUrl}/api/donation`, {
+    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 100, email: 'donor@example.com' }),
+  });
+  assert.equal(started.status, 200);
+  const offering = await started.json();
+  assert.ok(offering.id);
+  assert.ok(offering.checkoutUrl.endsWith(`/api/donation/${offering.id}/checkout`));
+
+  const status = await (await fetch(`${baseUrl}/api/donation/${offering.id}`)).json();
+  assert.equal(status.state, 'pending');
+});
+
+test('the checkout page carries a signed form and never the key', async () => {
+  const session = await join('CHECKOUT TEST');
+  const started = await (await fetch(`${baseUrl}/api/donation`, {
+    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 300, email: 'donor@example.com' }),
+  })).json();
+  const page = await fetch(`${baseUrl}/api/donation/${started.id}/checkout`);
+  assert.equal(page.status, 200);
+  const markup = await page.text();
+  assert.match(markup, /payment-stage\.ecpay\.com\.tw/, 'stage, not production');
+  assert.match(markup, /name="CheckMacValue" value="[0-9A-F]{64}"/);
+  assert.match(markup, /name="TotalAmount" value="300"/);
+  // The secrets are the whole point of doing this server-side.
+  assert.equal(markup.includes('pwFHCqoQZGmho4w6'), false);
+  assert.equal(markup.includes('EkRm7iFT261dpevs'), false);
+});
+
+test('a forged payment notification is refused, and a real one is acknowledged', async () => {
+  const { checkMacValue } = await import('./ecpay.mjs');
+  const session = await join('NOTIFY TEST');
+  const started = await (await fetch(`${baseUrl}/api/donation`, {
+    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 500, email: 'donor@example.com' }),
+  })).json();
+
+  const forged = await fetch(`${baseUrl}/api/ecpay/notify`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ MerchantID: '3002607', RtnCode: '1', TradeAmt: '500', CustomField1: started.id, CheckMacValue: 'DEADBEEF' }).toString(),
+  });
+  assert.equal(forged.status, 400);
+  assert.equal(await forged.text(), '0|CheckMacValue');
+  const stillPending = await (await fetch(`${baseUrl}/api/donation/${started.id}`)).json();
+  assert.equal(stillPending.state, 'pending', 'a forgery must not mark anything paid');
+
+  // ECPay's own stage credentials, which is what the service is configured
+  // with when nothing else is set.
+  const notice = {
+    MerchantID: '3002607',
+    MerchantTradeNo: 'IGNORED',
+    RtnCode: '1',
+    RtnMsg: 'Succeeded',
+    TradeAmt: '500',
+    TradeNo: '2609090000000001',
+    PaymentDate: '2026/09/09 00:00:00',
+    PaymentType: 'Credit_CreditCard',
+    CustomField1: started.id,
+  };
+  const real = await fetch(`${baseUrl}/api/ecpay/notify`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      ...notice,
+      CheckMacValue: checkMacValue(notice, 'pwFHCqoQZGmho4w6', 'EkRm7iFT261dpevs'),
+    }).toString(),
+  });
+  assert.equal(real.status, 200);
+  assert.equal(await real.text(), '1|OK', 'anything else and ECPay retries for a day');
+  const paid = await (await fetch(`${baseUrl}/api/donation/${started.id}`)).json();
+  assert.equal(paid.state, 'paid');
+});
+
+test('the amount that counts is the one ECPay reports, not the one asked for', async () => {
+  const { checkMacValue } = await import('./ecpay.mjs');
+  const session = await join('AMOUNT TEST');
+  const started = await (await fetch(`${baseUrl}/api/donation`, {
+    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 1000, email: 'donor@example.com' }),
+  })).json();
+  const notice = { MerchantID: '3002607', RtnCode: '1', TradeAmt: '10', TradeNo: 'T2', CustomField1: started.id };
+  await fetch(`${baseUrl}/api/ecpay/notify`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ ...notice, CheckMacValue: checkMacValue(notice, 'pwFHCqoQZGmho4w6', 'EkRm7iFT261dpevs') }).toString(),
+  });
+  const settled = await (await fetch(`${baseUrl}/api/donation/${started.id}`)).json();
+  assert.equal(settled.amount, 10, 'a client that asks for 1000 and pays 10 has paid 10');
 });

@@ -5,6 +5,12 @@ import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import legacySource from '../../docs/js/allData.js';
+import { verifyCheckMacValue } from './ecpay.mjs';
+import {
+  DONATION_PRESETS, MAX_DONATION, MIN_DONATION,
+  buildInvoice, buildOrder, ecpayConfig, readInvoiceReply,
+  safeAmount, safeEmail, tradeNumber,
+} from './donations.mjs';
 
 /** The room remembers this many lines; older ones fall off the top. */
 const CHAT_HISTORY_LIMIT = 50;
@@ -1193,6 +1199,108 @@ const claimName = (name) => {
   return true;
 };
 
+/**
+ * Offerings in flight, and the ones that have landed.
+ *
+ * Held in memory on purpose. A record here is a *pending* payment plus a
+ * receipt for one that completed in this process's lifetime; the money itself
+ * is ECPay's record and theirs is the one that matters. Restarting the service
+ * loses nothing that anybody is owed — ECPay retries an unacknowledged
+ * notification for a day, and a donor's own invoice arrives by email from
+ * ECPay whatever happens here.
+ */
+const donations = new Map();
+const DONATION_TTL_MS = 45 * 60 * 1000;
+const ECPAY = ecpayConfig();
+
+/** Whether this visitor has an offering still open at ECPay. */
+const paying = (visitorId) => {
+  const now = Date.now();
+  for (const donation of donations.values()) {
+    if (donation.visitorId !== visitorId) continue;
+    if (donation.state !== 'pending') continue;
+    if (now - donation.createdAt > DONATION_TTL_MS) continue;
+    return true;
+  }
+  return false;
+};
+
+const forgetOldDonations = () => {
+  const now = Date.now();
+  for (const [id, donation] of donations) {
+    if (now - donation.createdAt > DONATION_TTL_MS) donations.delete(id);
+  }
+};
+
+/**
+ * ECPay posts its notification as a form, not as JSON, and `body()` only reads
+ * JSON. Kept separate rather than making that one clever: a parser that guesses
+ * at its input is a parser that can be talked into guessing wrong.
+ */
+const formBody = async (request) => {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > 32_768) throw new Error('Request body is too large.');
+    chunks.push(chunk);
+  }
+  const params = new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+  return Object.fromEntries(params.entries());
+};
+
+const html = (response, status, markup) => {
+  response.writeHead(status, {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
+  });
+  response.end(markup);
+};
+
+const escapeHtml = (value) => String(value)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+/** Tell one visitor's own open streams that their offering went through. */
+const tellVisitor = (visitorId, event, payload) => {
+  const responseSet = streams.get(visitorId);
+  if (!responseSet) return;
+  for (const response of responseSet) writeEvent(response, event, payload);
+};
+
+/**
+ * Ask ECPay for the invoice, once the money is in.
+ *
+ * Separate from the notification handler because the notification has to answer
+ * `1|OK` quickly and unconditionally: if this call is slow or fails, ECPay must
+ * still be told the payment was received, or it retries for a day.
+ */
+const issueInvoice = async (donation) => {
+  const { url, payload } = buildInvoice({
+    config: ECPAY,
+    relateNumber: donation.tradeNo,
+    email: donation.email,
+    amount: donation.paidAmount ?? donation.amount,
+    itemName: 'MYSCHEDULE 影展供養',
+  });
+  const reply = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).then((result) => result.json());
+  const outcome = readInvoiceReply(reply, ECPAY);
+  if (!outcome.ok) {
+    donation.invoiceError = `${outcome.stage}: ${outcome.message}`;
+    return;
+  }
+  donation.invoiceNo = outcome.invoiceNo;
+  tellVisitor(donation.visitorId, 'donation', {
+    id: donation.id,
+    amount: donation.paidAmount ?? donation.amount,
+    invoice: outcome.invoiceNo,
+  });
+};
+
 const apiError = (response, status, message) => json(response, status, { error: message });
 
 const server = createServer(async (request, response) => {
@@ -1283,6 +1391,157 @@ const server = createServer(async (request, response) => {
 
     const visitor = sessionFor(request);
 
+    // Placed after the session is resolved, because two of these read it.
+    // Reading a `const` before its own declaration throws, and the catch at
+    // the bottom of this handler turns that into a bare 400 that looks
+    // nothing like its cause — which is exactly how it presented.
+    // ---- offerings at the temple ------------------------------------------
+
+    if (request.method === 'GET' && url.pathname === '/api/donation/options') {
+      return json(response, 200, {
+        enabled: ECPAY.ready,
+        production: ECPAY.production,
+        presets: DONATION_PRESETS,
+        min: MIN_DONATION,
+        max: MAX_DONATION,
+        invoice: ECPAY.invoiceEnabled,
+      });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/donation') {
+      if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+      if (!ECPAY.ready) return apiError(response, 503, 'Offerings are not accepting payment yet.');
+      const payload = await body(request);
+      const amount = safeAmount(payload.amount);
+      if (!amount) return apiError(response, 400, `An offering is between ${MIN_DONATION} and ${MAX_DONATION} TWD.`);
+      const email = safeEmail(payload.email);
+      if (ECPAY.invoiceEnabled && !email) return apiError(response, 400, 'An email address is needed for the invoice.');
+      forgetOldDonations();
+      const id = randomUUID();
+      const tradeNo = tradeNumber();
+      donations.set(id, {
+        id,
+        tradeNo,
+        amount,
+        email,
+        visitorId: visitor.id,
+        visitorName: visitor.name,
+        createdAt: Date.now(),
+        state: 'pending',
+      });
+      // The tab that carries the payer is opened by their own tap, before this
+      // request is made, and then pointed here. It cannot be opened afterwards:
+      // a browser only allows a new window while it can still see the gesture
+      // that asked for one, and an await has already outlived that.
+      return json(response, 200, {
+        id,
+        checkoutUrl: `${ECPAY.publicUrl}/api/donation/${id}/checkout`,
+      });
+    }
+
+    // The page the new tab lands on. It exists only to carry a signed form to
+    // ECPay: the check value is computed here, in the one place the HashKey is
+    // allowed to be, and the browser never sees anything it could forge with.
+    {
+      const checkout = url.pathname.match(/^\/api\/donation\/([0-9a-f-]{36})\/checkout$/i);
+      if (request.method === 'GET' && checkout) {
+        const donation = donations.get(checkout[1]);
+        if (!donation || donation.state !== 'pending') {
+          return html(response, 404, '<!doctype html><meta charset="utf-8"><p>That offering has expired. Please try again from the temple.</p>');
+        }
+        const order = buildOrder({
+          config: ECPAY,
+          tradeNo: donation.tradeNo,
+          amount: donation.amount,
+          itemName: 'MYSCHEDULE 影展供養',
+          tradeDesc: 'MYSCHEDULE Virtual Festival',
+          custom: donation.id,
+        });
+        const inputs = Object.entries(order.fields)
+          .map(([name, value]) => `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`)
+          .join('');
+        return html(response, 200, `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>前往綠界付款 · MYSCHEDULE</title>
+<style>body{margin:0;display:grid;place-items:center;min-height:100vh;background:#15171a;color:#f5efe2;font:600 15px/1.5 system-ui,sans-serif}</style>
+</head><body><p>正在前往綠界付款頁…<br>Taking you to ECPay…</p>
+<form id="go" method="post" action="${escapeHtml(order.action)}">${inputs}</form>
+<script>document.getElementById('go').submit();</script>
+</body></html>`);
+      }
+    }
+
+    // ECPay's server-to-server notification. No session, no origin, and no
+    // second chance: it must answer `1|OK` or ECPay retries for a day.
+    if (request.method === 'POST' && url.pathname === '/api/ecpay/notify') {
+      const notice = await formBody(request);
+      if (!verifyCheckMacValue(notice, ECPAY.payment.hashKey, ECPAY.payment.hashIV)) {
+        // Anything that fails the check value did not come from ECPay. Answered
+        // plainly rather than with `1|OK`: pretending to accept a forgery would
+        // hide it, and a real notification never lands here.
+        response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+        return response.end('0|CheckMacValue');
+      }
+      const donation = donations.get(String(notice.CustomField1 ?? ''));
+      const paid = String(notice.RtnCode) === '1';
+      if (donation && donation.state === 'pending') {
+        // The amount is taken from ECPay, never from the browser. A tampered
+        // client can ask for any total it likes; only this number was paid.
+        const settled = Number(notice.TradeAmt);
+        donation.state = paid ? 'paid' : 'failed';
+        donation.paidAt = Date.now();
+        donation.paidAmount = Number.isFinite(settled) ? settled : donation.amount;
+        donation.ecpayTradeNo = String(notice.TradeNo ?? '');
+        if (paid) {
+          tellVisitor(donation.visitorId, 'donation', {
+            id: donation.id,
+            amount: donation.paidAmount,
+            invoice: null,
+          });
+          if (ECPAY.invoiceEnabled && donation.email) {
+            // Issued after the fact and never in the way: a failure here is a
+            // missing invoice, not a missing payment, and the visitor has
+            // already been thanked.
+            void issueInvoice(donation).catch((error) => {
+              donation.invoiceError = String(error?.message ?? error);
+            });
+          }
+        }
+      }
+      response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+      return response.end('1|OK');
+    }
+
+    // Where the payer's own tab ends up. The festival tab is a different tab
+    // and has already been told over its event stream, so this only has to say
+    // something kind and get out of the way.
+    if (request.method === 'GET' && url.pathname === '/api/donation/done') {
+      return html(response, 200, `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>謝謝你的供養 · MYSCHEDULE</title>
+<style>body{margin:0;display:grid;place-items:center;min-height:100vh;background:#15171a;color:#f5efe2;font:600 16px/1.7 system-ui,sans-serif;text-align:center;padding:24px}
+a{color:#e8b64a}</style>
+</head><body><div><p>謝謝你的供養。<br>Thank you for your offering.</p>
+<p style="opacity:.7;font-size:14px">你可以關掉這個分頁，回到影展。<br>You can close this tab and return to the festival.</p>
+<p><a href="${escapeHtml(ECPAY.returnTo)}">回到影展 · Back to the festival</a></p></div>
+<script>setTimeout(function(){ try { window.close(); } catch (error) { /* opened directly */ } }, 4000);</script>
+</body></html>`);
+    }
+
+    {
+      const status = url.pathname.match(/^\/api\/donation\/([0-9a-f-]{36})$/i);
+      if (request.method === 'GET' && status) {
+        const donation = donations.get(status[1]);
+        if (!donation) return apiError(response, 404, 'No such offering.');
+        return json(response, 200, {
+          id: donation.id,
+          state: donation.state,
+          amount: donation.paidAmount ?? donation.amount,
+          invoiceNo: donation.invoiceNo ?? null,
+        });
+      }
+    }
+
     if (request.method === 'GET' && url.pathname === '/api/events') {
       if (!visitor) return apiError(response, 401, 'Invalid festival session.');
       response.writeHead(200, {
@@ -1322,7 +1581,7 @@ const server = createServer(async (request, response) => {
         // of where they stood, and anyone up by the gate was pinned at z = 50.
         // Two attendees standing together in either place could not touch each
         // other, because to this process they were nowhere near each other.
-        x: Math.max(-104, Math.min(116, Number(payload.x) || 0)),
+        x: Math.max(-110, Math.min(122, Number(payload.x) || 0)),
         // Height, without which the roof deck seven units up and the basement
         // sixteen down both drew their occupants standing in the street.
         y: Math.max(-24, Math.min(16, Number(payload.y) || 0)),
@@ -2158,6 +2417,17 @@ const heartbeat = setInterval(() => {
     // Only expire disconnected sessions, and leave enough room for a
     // background tab or brief network interruption to recover.
     if (streams.get(visitor.id)?.size) {
+      visitor.lastSeen = now;
+      continue;
+    }
+    // Somebody paying is not somebody who left.
+    //
+    // A payment happens in a second tab, and on a phone that backgrounds the
+    // festival tab and its event stream with it. Two minutes is generous for a
+    // dropped connection and mean for typing card details, so an offering in
+    // flight holds the door open — for as long as that offering can still be
+    // completed, and no longer.
+    if (paying(visitor.id)) {
       visitor.lastSeen = now;
       continue;
     }

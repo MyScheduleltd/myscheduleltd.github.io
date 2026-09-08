@@ -463,6 +463,7 @@ export class App {
     this.festivalClient = new FestivalClient({
       onState: (state) => this.handleNetworkState(state),
       onStatus: (status, detail) => this.handleConnectionStatus(status, detail),
+      onDonation: (receipt) => this.thankTheOffering(receipt),
     });
   }
 
@@ -1246,7 +1247,18 @@ export class App {
       (window as Window & { __festivalProjectors?: () => unknown }).__festivalProjectors =
         () => this.world?.projectorAlignmentSnapshot();
     }
-    if (reviewTarget === 'vr-screen' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+    if (reviewTarget === 'coastal' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      const query = new URLSearchParams(window.location.search);
+      this.world.focusCoastalForReview(query.get('view') ?? 'square');
+      window.setTimeout(() => {
+        const crowd = query.get('audit') === '1' ? this.world?.stepResidentsForReview(480) : undefined;
+        document.documentElement.dataset.coastalReview = JSON.stringify({
+          rig: query.get('checks') === 'rig' ? this.world?.coastalRigReview() : undefined,
+          world: this.world?.coastalReviewSnapshot(), crowd,
+          gaps: query.get('audit') === '1' ? this.world?.crowdGapSnapshot() : undefined,
+        });
+      }, 800);
+    } else if (reviewTarget === 'vr-screen' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       this.activeVenue = 'shore';
       this.world.focusPublicScreeningForReview('shore');
       const reviewFilm = this.venueFilms('shore').find((film) => film.youtubeId === 'SRbsIUYB0dc');
@@ -2290,8 +2302,12 @@ export class App {
     if (action.type === 'donate') {
       const zh = this.language === 'zh-TW';
       if (!action.target) {
+        // At the altar the gesture is the beginning of something rather than
+        // the whole of it: the bow plays in the world and the offering opens
+        // here. Everywhere else — bowing to a resident — it stays a gesture.
         const deity = action.deity ?? '美麗本人';
         this.showWorldAlert(zh ? `向${deity}獻上供養` : `AN OFFERING TO ${deity}`);
+        void this.openOffering(deity);
         return;
       }
       this.showWorldAlert(zh ? `向 ${action.target} 佈施` : `AN OFFERING TO ${action.target}`);
@@ -4164,6 +4180,157 @@ export class App {
     this.impactTimer = window.setTimeout(() => {
       delete layer.dataset.hit;
     }, kind === '1' ? 120 : 70);
+  }
+
+  /**
+   * The offering sheet, opened by worshipping at the altar.
+   *
+   * Not a festival-pass panel. The pass is a list of places and settings, and
+   * this is a thing you do in one spot — it belongs to the altar, appears when
+   * you are stood at it, and goes away again. Putting it in the pass would mean
+   * anyone could give money from anywhere, which is not what worship is.
+   */
+  private async openOffering(deity: string): Promise<void> {
+    if (this.root.querySelector('#offering')) return;
+    const zh = this.language === 'zh-TW';
+    let options;
+    try {
+      options = await this.festivalClient.donationOptions();
+    } catch {
+      this.showWorldAlert(zh ? '供養暫時無法使用' : 'OFFERINGS ARE UNAVAILABLE');
+      return;
+    }
+    if (!options.enabled) {
+      this.showWorldAlert(zh ? '供養尚未開放' : 'OFFERINGS ARE NOT OPEN YET');
+      return;
+    }
+    const sheet = document.createElement('div');
+    sheet.id = 'offering';
+    sheet.className = 'offering';
+    sheet.innerHTML = `
+      <div class="offering__card" role="dialog" aria-modal="true" aria-labelledby="offering-title">
+        <header>
+          <p class="eyebrow">${zh ? '供養' : 'AN OFFERING'}</p>
+          <h2 id="offering-title">${this.escapeHtml(deity)}</h2>
+          <button type="button" data-offering-close aria-label="${zh ? '關閉' : 'Close'}">×</button>
+        </header>
+        ${options.production ? '' : `<p class="offering__note offering__note--test">${zh
+          ? '測試模式：這裡不會真的扣款。'
+          : 'TEST MODE — no money is taken here.'}</p>`}
+        <div class="offering__amounts">
+          ${options.presets.map((amount, index) => `<button type="button" data-offering-amount="${amount}"${index === 1 ? ' class="is-chosen"' : ''}>NT$${amount}</button>`).join('')}
+        </div>
+        <label class="offering__field"><span>${zh ? '自訂金額' : 'OR YOUR OWN'}</span>
+          <input type="number" inputmode="numeric" data-offering-custom min="${options.min}" max="${options.max}" step="1" placeholder="${options.min}–${options.max}" />
+        </label>
+        ${options.invoice ? `<label class="offering__field"><span>${zh ? '電子發票寄送信箱' : 'EMAIL FOR THE INVOICE'}</span>
+          <input type="email" inputmode="email" autocomplete="email" data-offering-email placeholder="you@example.com" /></label>
+        <p class="offering__note">${zh
+          ? '發票由綠界開立，寄到這個信箱。除此之外我們不留這個地址。'
+          : 'ECPay issues the invoice to this address. We keep it for nothing else.'}</p>` : ''}
+        <p class="offering__error" data-offering-error hidden></p>
+        <button type="button" class="offering__go" data-offering-go>${zh ? '前往付款' : 'GO TO PAYMENT'}</button>
+        <p class="offering__note">${zh
+          ? '付款會在新分頁開啟，影展保持連線。'
+          : 'Payment opens in a new tab. The festival stays connected.'}</p>
+      </div>`;
+    this.root.appendChild(sheet);
+
+    let chosen = options.presets[1] ?? options.min;
+    const custom = sheet.querySelector<HTMLInputElement>('[data-offering-custom]');
+    const email = sheet.querySelector<HTMLInputElement>('[data-offering-email]');
+    const error = sheet.querySelector<HTMLElement>('[data-offering-error]');
+    const close = () => sheet.remove();
+    const complain = (message: string) => {
+      if (!error) return;
+      error.textContent = message;
+      error.hidden = false;
+    };
+
+    sheet.querySelector('[data-offering-close]')?.addEventListener('click', close);
+    sheet.addEventListener('click', (event) => {
+      if (event.target === sheet) close();
+    });
+    sheet.querySelectorAll<HTMLButtonElement>('[data-offering-amount]').forEach((button) => {
+      button.addEventListener('click', () => {
+        chosen = Number(button.dataset.offeringAmount);
+        if (custom) custom.value = '';
+        sheet.querySelectorAll('[data-offering-amount]').forEach((other) => other.classList.toggle('is-chosen', other === button));
+      });
+    });
+    custom?.addEventListener('input', () => {
+      sheet.querySelectorAll('[data-offering-amount]').forEach((other) => other.classList.remove('is-chosen'));
+    });
+
+    sheet.querySelector('[data-offering-go]')?.addEventListener('click', () => {
+      const typed = custom?.value.trim();
+      const amount = typed ? Math.trunc(Number(typed)) : chosen;
+      if (!Number.isFinite(amount) || amount < options.min || amount > options.max) {
+        return complain(zh
+          ? `金額請介於 NT$${options.min} 到 NT$${options.max}。`
+          : `Choose between NT$${options.min} and NT$${options.max}.`);
+      }
+      const address = email?.value.trim() ?? '';
+      if (options.invoice && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+        return complain(zh ? '請填一個能收發票的信箱。' : 'An email address is needed for the invoice.');
+      }
+      // The tab is opened **here**, inside the tap, and pointed somewhere real
+      // only once the service answers. A browser allows a new window while it
+      // can still see the gesture that asked for one; open it after an await
+      // and the gesture is gone and the popup is blocked. This is the whole
+      // reason the service hands back a URL instead of the form itself.
+      const tab = window.open('', '_blank');
+      if (tab) tab.document.write('<!doctype html><meta charset="utf-8"><title>…</title><p style="font:600 15px system-ui;padding:24px">前往綠界付款… Taking you to ECPay…</p>');
+      void this.festivalClient.beginDonation(amount, address).then((started) => {
+        if (tab) tab.location.replace(started.checkoutUrl);
+        // No tab means a blocker took it. Rather than lose the offering, this
+        // one goes in the same window — the festival reloads on the way back,
+        // which is worse than a second tab and much better than nothing.
+        else window.location.assign(started.checkoutUrl);
+        close();
+      }).catch((failure: unknown) => {
+        tab?.close();
+        complain(failure instanceof Error ? failure.message : (zh ? '無法開始付款。' : 'Could not start the payment.'));
+      });
+    });
+  }
+
+  /**
+   * 美麗本人 answers, in the chat, in whichever language the giver is reading.
+   *
+   * This arrives over the event stream because the money was paid in a
+   * different tab: this one is never told by the browser and has no way to know
+   * otherwise. The invoice number follows a moment later as a second message —
+   * ECPay issues it after the payment, not with it.
+   */
+  private thankTheOffering(receipt: { id: string; amount: number; invoice: string | null }): void {
+    const zh = this.language === 'zh-TW';
+    const deity = this.networkState?.templeSign?.name ?? '美麗本人';
+    if (receipt.invoice) {
+      this.showWorldAlert(zh ? `電子發票 ${receipt.invoice}` : `INVOICE ${receipt.invoice}`);
+      this.pushNpcLine(deity, zh
+        ? `發票號碼 ${receipt.invoice}，已寄到你的信箱。`
+        : `Invoice ${receipt.invoice} — it is on its way to your inbox.`);
+      return;
+    }
+    this.showWorldAlert(zh ? `供養已收下 · NT$${receipt.amount}` : `OFFERING RECEIVED · NT$${receipt.amount}`);
+    this.pushNpcLine(deity, zh
+      ? `你的供養我收下了，NT$${receipt.amount}。願你平安。`
+      : `Your offering of NT$${receipt.amount} is accepted. May it come back to you.`);
+    this.completeQuest('offering');
+  }
+
+  /** One line in the nearby channel, from somebody who is not a visitor. */
+  private pushNpcLine(author: string, text: string): void {
+    this.chatMessages = [...this.chatMessages, {
+      id: `npc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      author,
+      channel: 'NEARBY' as ChatChannel,
+      text,
+      timestamp: Date.now(),
+      npc: true,
+    }].slice(-100);
+    this.renderChatStream();
   }
 
   private showWorldAlert(message: string): void {
