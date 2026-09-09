@@ -96,6 +96,19 @@ export const ecpayConfig = (env = process.env) => {
     // Invoices can be switched off without switching payments off.
     invoiceEnabled: (env.ECPAY_INVOICE ?? 'on').trim().toLowerCase() !== 'off',
     ready: Boolean(payment.merchantId && payment.hashKey && payment.hashIV && publicUrl),
+    /**
+     * Why it is off, when it is off.
+     *
+     * `enabled: false` and nothing else cost two rounds of "it still does not
+     * work" with no way to tell a missing address from an undeployed fix. This
+     * names the missing knob and never its value, which is the difference
+     * between a diagnosis and a leak.
+     */
+    blockedBy: !publicUrl
+      ? 'callback-url'
+      : !(payment.merchantId && payment.hashKey && payment.hashIV)
+        ? 'payment-credentials'
+        : '',
   };
 };
 

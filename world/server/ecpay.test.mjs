@@ -260,3 +260,16 @@ test('the callback address comes from the platform, never from a caller', () => 
   assert.equal(bare.publicUrl, '');
   assert.equal(bare.ready, false, 'no address means no payment may start');
 });
+
+test('being switched off says which knob is missing, and never its value', () => {
+  assert.equal(ecpayConfig({}).blockedBy, 'callback-url');
+  assert.equal(ecpayConfig({ ECPAY_PUBLIC_URL: 'https://example.test' }).blockedBy, '');
+  const unconfigured = ecpayConfig({ ECPAY_ENV: 'production', ECPAY_PUBLIC_URL: 'https://example.test' });
+  assert.equal(unconfigured.blockedBy, 'payment-credentials', 'production without keys is a different fault');
+  assert.equal(unconfigured.ready, false);
+  assert.equal(
+    JSON.stringify(unconfigured.blockedBy).includes('example'),
+    false,
+    'the reason names the knob, not what is in it',
+  );
+});

@@ -50,3 +50,21 @@ services:
       # instance carries. Anyone past it waits at the gate.
       - key: FESTIVAL_MAX_VISITORS
         value: "20"
+      # Where ECPay reports a completed payment to. Declared here rather than
+      # left to the dashboard because it is the switch that turns the temple's
+      # offering on, it holds no secret — it is this service's own public
+      # address — and a value only one person can see is a value nobody can
+      # debug. Without it the world says 供養尚未開放 and gives no reason, which
+      # is how the offering spent its first day live switched off.
+      #
+      # The service reads this first and falls back to Render's own
+      # RENDER_EXTERNAL_URL. Never to a request's Host header: ECPay reports
+      # payments to this address, and a caller who could name it would be
+      # naming where the money reports to.
+      - key: ECPAY_PUBLIC_URL
+        value: https://myschedule-festival.onrender.com
+      # Real money needs ECPAY_ENV=production plus ECPAY_MERCHANT_ID,
+      # ECPAY_HASH_KEY, ECPAY_HASH_IV and the three ECPAY_INVOICE_* keys. Those
+      # are secrets and belong in the dashboard, never in this file or the
+      # repository. Absent them the service stays on ECPay's stage environment
+      # with their published test credentials, where nothing can be charged.

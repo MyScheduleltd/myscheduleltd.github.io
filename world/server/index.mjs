@@ -1319,7 +1319,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === 'GET' && url.pathname === '/api/config') {
       settleAllSchedules();
-      return json(response, 200, { schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
+      // `build` is which commit is answering. Render fills RENDER_GIT_COMMIT in
+      // by itself, and without it there is no way from outside to tell a
+      // deployed fix that did not work from a fix that never deployed — which
+      // is a question this service has already cost two rounds of guessing.
+      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
@@ -1400,6 +1404,10 @@ const server = createServer(async (request, response) => {
     if (request.method === 'GET' && url.pathname === '/api/donation/options') {
       return json(response, 200, {
         enabled: ECPAY.ready,
+        // Says which knob is missing, never what is in it. Without this,
+        // "switched off" and "the fix is not deployed" look identical from
+        // outside, and both look like the payment being broken.
+        blockedBy: ECPAY.blockedBy,
         production: ECPAY.production,
         presets: DONATION_PRESETS,
         min: MIN_DONATION,
