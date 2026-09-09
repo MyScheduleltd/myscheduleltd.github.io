@@ -1247,18 +1247,7 @@ export class App {
       (window as Window & { __festivalProjectors?: () => unknown }).__festivalProjectors =
         () => this.world?.projectorAlignmentSnapshot();
     }
-    if (reviewTarget === 'coastal' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
-      const query = new URLSearchParams(window.location.search);
-      this.world.focusCoastalForReview(query.get('view') ?? 'square');
-      window.setTimeout(() => {
-        const crowd = query.get('audit') === '1' ? this.world?.stepResidentsForReview(480) : undefined;
-        document.documentElement.dataset.coastalReview = JSON.stringify({
-          rig: query.get('checks') === 'rig' ? this.world?.coastalRigReview() : undefined,
-          world: this.world?.coastalReviewSnapshot(), crowd,
-          gaps: query.get('audit') === '1' ? this.world?.crowdGapSnapshot() : undefined,
-        });
-      }, 800);
-    } else if (reviewTarget === 'vr-screen' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+    if (reviewTarget === 'vr-screen' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       this.activeVenue = 'shore';
       this.world.focusPublicScreeningForReview('shore');
       const reviewFilm = this.venueFilms('shore').find((film) => film.youtubeId === 'SRbsIUYB0dc');

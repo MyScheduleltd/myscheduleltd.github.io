@@ -1,10 +1,66 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-07 · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness · branch `codex/fix-gate-entry-brand`
+Last updated: 2026-09-09 · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
 > obsolete no-publish rule and branch name. Use this file for the active process.
+
+---
+
+## 00. READ THIS FIRST — there are two published worlds now
+
+### What went wrong, so it does not happen twice
+
+The coastal art redesign reached the live festival at `/beta/` on 2026-09-08. Nobody
+published it. It was sitting uncommitted in the same working tree as an unrelated
+change — the ECPay offering — and a `git add -A` swept it into commit `7ee113a`, whose
+message talks only about payments. It built, it passed, it went out, and the owner
+found a redesigned world where the festival used to be.
+
+The lesson is not "be careful". It is that **a shared working tree is not a place to
+leave unapproved work**, and that `git add -A` in a tree two agents touch will commit
+whatever the other one was in the middle of. Stage by path, or read `git status` before
+every commit and account for every line of it.
+
+### The arrangement now
+
+| URL | Directory | Source |
+| --- | --- | --- |
+| `https://myscheduleltd.com/beta/` | `docs/beta/` | this branch — the festival visitors get |
+| `https://myscheduleltd.com/beta/?era=ps2` | `docs/beta/ps2/` | the art redesign branch |
+
+`docs/beta/index.html` carries a small script in its `<head>` that sends `?era=ps2` to
+`ps2/` before a line of the main bundle runs. Two whole builds, each with its own
+`index.html` and its own hashed assets, so neither can invalidate the other's cache and
+neither can appear on the other's URL.
+
+Two builds rather than one bundle with a flag in it, because the redesign replaces the
+ground itself — terrain, colliders, the nav graph. There is no runtime switch between
+those two worlds that is not a second copy of the world.
+
+On loopback the redirect is skipped: there is no published channel to reach from a dev
+server, and `?era=ps2` keeps its older meaning there as the graphics flag documented in
+`App.ts`.
+
+### Publishing
+
+```
+npm run build:beta                                    # → /beta/   (the festival)
+npm run build && node scripts/publish-beta.mjs --channel ps2   # → /beta/?era=ps2
+```
+
+`publish-beta.mjs` **refuses** to publish to `/beta/` from a tree containing
+`src/world/Coastal*.ts`. That tripwire knows one name; rename the redesign's modules and
+it silently stops protecting anything, so the rule matters more than the check: the
+festival at `/beta/` is only ever published from a tree without the redesign in it.
+
+### When the redesign is approved
+
+Do not merge. The redesign branch and this one deliberately disagree about the contents
+of `world/src/world/` — merging this branch into the redesign would delete the redesign.
+Promotion is a file-level copy of the redesign's `world/src` and `world/index.html` onto
+this branch, and then a normal publish.
 
 ---
 

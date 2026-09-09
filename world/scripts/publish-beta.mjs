@@ -5,6 +5,12 @@ import { fileURLToPath } from 'node:url';
 /**
  * Copies a finished build into docs/beta for GitHub Pages.
  *
+ * Two channels live under that directory. `docs/beta` is the festival visitors
+ * get; `docs/beta/ps2` is the art redesign, reached by `?era=ps2`, which the
+ * published index.html redirects into. Pass `--channel ps2` to publish there
+ * instead. Each channel keeps its own index.html and its own hashed assets, so
+ * neither can invalidate the other's cache.
+ *
  * The point of copying rather than building straight into docs/beta is that the
  * previous build's files are left alone. Pages serves index.html with
  * `cache-control: max-age=600`, so for ten minutes after a deploy a returning
@@ -17,7 +23,12 @@ import { fileURLToPath } from 'node:url';
  */
 const here = dirname(fileURLToPath(import.meta.url));
 const source = resolve(here, '..', 'dist');
-const target = resolve(here, '..', '..', 'docs', 'beta');
+const flag = process.argv.indexOf('--channel');
+const channel = flag === -1 ? '' : (process.argv[flag + 1] ?? '');
+if (channel && !/^[a-z0-9-]+$/.test(channel)) {
+  throw new Error(`Not a channel name: ${channel}`);
+}
+const target = resolve(here, '..', '..', 'docs', 'beta', channel);
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 const listAssets = async (directory) => {
@@ -27,6 +38,34 @@ const listAssets = async (directory) => {
     return [];
   }
 };
+
+/**
+ * The tripwire.
+ *
+ * The redesign once reached the live festival not because anyone published it,
+ * but because it was sitting uncommitted in the same tree as an unrelated
+ * change and got swept into the commit. So the check is on the *source*, not on
+ * the build: if the redesign's modules are present, this build is the redesign,
+ * and the redesign does not go to the channel visitors land on.
+ *
+ * It knows one name. If the redesign is ever renamed, this stops protecting
+ * anything and says nothing about it — which is why the rule it enforces is
+ * written down here as well as encoded.
+ */
+if (!channel) {
+  const redesign = (await listAssets(resolve(here, '..', 'src', 'world')))
+    .filter((name) => name.startsWith('Coastal'));
+  if (redesign.length > 0) {
+    console.error(
+      `Refusing to publish: this tree carries the art redesign (${redesign.join(', ')}).\n`
+      + 'That build belongs on its own channel — `npm run build && '
+      + 'node scripts/publish-beta.mjs --channel ps2` — and reaches people at '
+      + '/beta/?era=ps2.\nThe festival at /beta/ is only published from a tree '
+      + 'without it.',
+    );
+    process.exit(1);
+  }
+}
 
 await mkdir(target, { recursive: true });
 // force overwrites index.html and any asset whose name repeated; everything
@@ -55,4 +94,4 @@ for (const name of await listAssets(assetsDirectory)) {
   pruned += 1;
 }
 
-console.log(`published to docs/beta — ${kept} asset(s) kept, ${pruned} stale asset(s) pruned`);
+console.log(`published to ${target} — ${kept} asset(s) kept, ${pruned} stale asset(s) pruned`);

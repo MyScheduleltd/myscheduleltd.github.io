@@ -43,6 +43,27 @@ const PRODUCTION = {
 const STAGE_PAYMENT = { merchantId: '3002607', hashKey: 'pwFHCqoQZGmho4w6', hashIV: 'EkRm7iFT261dpevs' };
 const STAGE_INVOICE = { merchantId: '2000132', hashKey: 'ejCk326UnaZWKisg', hashIV: 'q9jcZX8Ib9LM8wYk' };
 
+/**
+ * Where ECPay calls back to.
+ *
+ * `ECPAY_PUBLIC_URL` first, because a deploy behind a custom domain or a proxy
+ * knows something the platform does not. Render fills `RENDER_EXTERNAL_URL` in
+ * by itself, and falling back to it is what stops the whole feature sitting
+ * dark because one variable nobody could see was never set — which is exactly
+ * how it spent its first day live.
+ *
+ * Never the request's own `Host` header. That is written by whoever is calling,
+ * and this value becomes the URL ECPay reports a completed payment to; taking
+ * it from the caller would let a stranger point our payment notifications at
+ * themselves. Both sources here come from the platform, before any request.
+ */
+const publicOrigin = (env) => {
+  const explicit = (env.ECPAY_PUBLIC_URL ?? '').trim();
+  const platform = (env.RENDER_EXTERNAL_URL ?? '').trim();
+  const chosen = explicit || (/^https:\/\//.test(platform) ? platform : '');
+  return chosen.replace(/\/$/, '');
+};
+
 export const ecpayConfig = (env = process.env) => {
   const production = (env.ECPAY_ENV ?? 'stage').trim().toLowerCase() === 'production';
   const urls = production ? PRODUCTION : STAGE;
@@ -60,20 +81,21 @@ export const ecpayConfig = (env = process.env) => {
       hashIV: (env.ECPAY_INVOICE_HASH_IV ?? '').trim(),
     }
     : STAGE_INVOICE;
+  const publicUrl = publicOrigin(env);
   return {
     production,
     urls,
     payment,
     invoice,
-    // Where ECPay calls back to. Must be reachable from the open internet —
-    // localhost is not, and a missing one is the usual reason a payment
-    // succeeds and the world never hears about it.
-    publicUrl: (env.ECPAY_PUBLIC_URL ?? '').trim().replace(/\/$/, ''),
+    // Must be reachable from the open internet — localhost is not, and a
+    // missing one is the usual reason a payment succeeds and the world never
+    // hears about it.
+    publicUrl,
     // Where the paid tab is sent afterwards.
     returnTo: (env.ECPAY_RETURN_TO ?? 'https://myscheduleltd.com/beta/').trim(),
     // Invoices can be switched off without switching payments off.
     invoiceEnabled: (env.ECPAY_INVOICE ?? 'on').trim().toLowerCase() !== 'off',
-    ready: Boolean(payment.merchantId && payment.hashKey && payment.hashIV && (env.ECPAY_PUBLIC_URL ?? '').trim()),
+    ready: Boolean(payment.merchantId && payment.hashKey && payment.hashIV && publicUrl),
   };
 };
 

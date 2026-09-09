@@ -15,6 +15,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { checkMacValue, verifyCheckMacValue, ecpayUrlEncode, aesEncryptRaw, aesDecrypt } from './ecpay.mjs';
+import { ecpayConfig } from './donations.mjs';
 
 const VECTORS = [
   {
@@ -228,3 +229,34 @@ for (const vector of AES_VECTORS) {
     );
   });
 }
+
+/**
+ * The offering spent its first day live switched off, because the one variable
+ * that turns it on was never set on Render and nothing said so. These pin down
+ * where that value may come from — and, more importantly, where it may not.
+ */
+test('the callback address comes from the platform, never from a caller', () => {
+  const explicit = ecpayConfig({ ECPAY_PUBLIC_URL: 'https://example.test/' });
+  assert.equal(explicit.publicUrl, 'https://example.test', 'a trailing slash is not part of it');
+  assert.equal(explicit.ready, true, 'stage credentials plus an address is all it needs');
+
+  const render = ecpayConfig({ RENDER_EXTERNAL_URL: 'https://myschedule-festival.onrender.com' });
+  assert.equal(render.publicUrl, 'https://myschedule-festival.onrender.com');
+  assert.equal(render.ready, true, "Render's own address is enough on its own");
+
+  assert.equal(
+    ecpayConfig({ ECPAY_PUBLIC_URL: 'https://chosen.test', RENDER_EXTERNAL_URL: 'https://guessed.test' }).publicUrl,
+    'https://chosen.test',
+    'an explicit address wins — a custom domain knows what the platform does not',
+  );
+
+  assert.equal(
+    ecpayConfig({ RENDER_EXTERNAL_URL: 'http://insecure.test' }).publicUrl,
+    '',
+    'ECPay reports a payment to this address; it is https or it is nothing',
+  );
+
+  const bare = ecpayConfig({});
+  assert.equal(bare.publicUrl, '');
+  assert.equal(bare.ready, false, 'no address means no payment may start');
+});

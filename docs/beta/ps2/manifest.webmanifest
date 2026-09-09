@@ -1,0 +1,10 @@
+{
+  "name": "myschedule Virtual Festival",
+  "short_name": "myschedule",
+  "description": "A live three-venue virtual festival city by myschedule.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#08090a",
+  "theme_color": "#08090a",
+  "lang": "zh-TW"
+}
