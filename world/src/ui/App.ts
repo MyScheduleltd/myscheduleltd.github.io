@@ -4218,7 +4218,7 @@ export class App {
           ? '收據將會寄送到這個信箱。'
           : 'The receipt will be sent to this address.'}</p>` : ''}
         <p class="offering__error" data-offering-error hidden></p>
-        <button type="button" class="offering__go" data-offering-go>${zh ? '感謝供養' : 'WITH THANKS'}</button>
+        <button type="button" class="offering__go" data-offering-go>${zh ? '感謝供養' : 'MY DEEPEST GRATITUDE'}</button>
         <p class="offering__note">${zh
           ? '付款會在新分頁開啟，影展保持連線。'
           : 'Payment opens in a new tab. The festival stays connected.'}</p>
