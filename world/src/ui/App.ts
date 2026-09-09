@@ -4212,13 +4212,13 @@ export class App {
         <label class="offering__field"><span>${zh ? '自訂金額' : 'OR YOUR OWN'}</span>
           <input type="number" inputmode="numeric" data-offering-custom min="${options.min}" max="${options.max}" step="1" placeholder="${options.min}–${options.max}" />
         </label>
-        ${options.invoice ? `<label class="offering__field"><span>${zh ? '電子發票寄送信箱' : 'EMAIL FOR THE INVOICE'}</span>
+        ${options.invoice ? `<label class="offering__field"><span>${zh ? '收據寄送信箱' : 'EMAIL FOR THE RECEIPT'}</span>
           <input type="email" inputmode="email" autocomplete="email" data-offering-email placeholder="you@example.com" /></label>
         <p class="offering__note">${zh
-          ? '發票由綠界開立，寄到這個信箱。除此之外我們不留這個地址。'
-          : 'ECPay issues the invoice to this address. We keep it for nothing else.'}</p>` : ''}
+          ? '收據將會寄送到這個信箱。'
+          : 'The receipt will be sent to this address.'}</p>` : ''}
         <p class="offering__error" data-offering-error hidden></p>
-        <button type="button" class="offering__go" data-offering-go>${zh ? '前往付款' : 'GO TO PAYMENT'}</button>
+        <button type="button" class="offering__go" data-offering-go>${zh ? '感謝供養' : 'WITH THANKS'}</button>
         <p class="offering__note">${zh
           ? '付款會在新分頁開啟，影展保持連線。'
           : 'Payment opens in a new tab. The festival stays connected.'}</p>
@@ -4261,7 +4261,7 @@ export class App {
       }
       const address = email?.value.trim() ?? '';
       if (options.invoice && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
-        return complain(zh ? '請填一個能收發票的信箱。' : 'An email address is needed for the invoice.');
+        return complain(zh ? '請填一個能收到收據的信箱。' : 'An email address is needed for the receipt.');
       }
       // The tab is opened **here**, inside the tap, and pointed somewhere real
       // only once the service answers. A browser allows a new window while it
@@ -4296,10 +4296,10 @@ export class App {
     const zh = this.language === 'zh-TW';
     const deity = this.networkState?.templeSign?.name ?? '美麗本人';
     if (receipt.invoice) {
-      this.showWorldAlert(zh ? `電子發票 ${receipt.invoice}` : `INVOICE ${receipt.invoice}`);
+      this.showWorldAlert(zh ? `收據 ${receipt.invoice}` : `RECEIPT ${receipt.invoice}`);
       this.pushNpcLine(deity, zh
-        ? `發票號碼 ${receipt.invoice}，已寄到你的信箱。`
-        : `Invoice ${receipt.invoice} — it is on its way to your inbox.`);
+        ? `收據號碼 ${receipt.invoice}，已寄到你的信箱。`
+        : `Receipt ${receipt.invoice} — it is on its way to your inbox.`);
       return;
     }
     this.showWorldAlert(zh ? `供養已收下 · NT$${receipt.amount}` : `OFFERING RECEIVED · NT$${receipt.amount}`);
