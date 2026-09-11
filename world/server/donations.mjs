@@ -69,7 +69,8 @@ export const ecpayConfig = (env = process.env) => {
   const invoiceEnabled = (env.ECPAY_INVOICE ?? 'on').trim().toLowerCase() !== 'off';
   // Held to the same shape as a donor's own address: an unusable one here
   // fails at ECPay, hours later, as a missing invoice nobody is watching for.
-  const fallback = safeEmail(env.ECPAY_INVOICE_FALLBACK_EMAIL) ?? '';
+  const rawFallback = String(env.ECPAY_INVOICE_FALLBACK_EMAIL ?? '').trim();
+  const fallback = safeEmail(rawFallback) ?? '';
   const urls = production ? PRODUCTION : STAGE;
   const payment = production
     ? {
@@ -118,6 +119,22 @@ export const ecpayConfig = (env = process.env) => {
      * invoice against it, which is the one outcome nobody chose.
      */
     receiptOptional: Boolean(invoiceEnabled && fallback),
+    /**
+     * Why the tick box is not being offered, when it is not.
+     *
+     * A variable that is simply absent and one that is present with a typo in
+     * it produce exactly the same silence, and the difference is the whole
+     * question when somebody is looking at a sheet that has no tick box on it.
+     * Names the fault, never the address.
+     */
+    receiptBlockedBy: !invoiceEnabled
+      ? 'invoice-off'
+      // Not an `||` chain: "nothing is wrong" is the empty string, which is
+      // falsy, so a chain would fall straight through the good case into the
+      // faults below it and report one that is not happening.
+      : fallback
+        ? ''
+        : rawFallback ? 'fallback-unusable' : 'fallback-missing',
     ready: Boolean(payment.merchantId && payment.hashKey && payment.hashIV && publicUrl),
     /**
      * Why it is off, when it is off.

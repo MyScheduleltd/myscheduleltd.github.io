@@ -302,3 +302,30 @@ test('a declinable receipt needs a mailbox to fall back to', () => {
     'with invoices off there is no receipt to make optional',
   );
 });
+
+test('a missing tick box says which of the two reasons it is', () => {
+  const base = { ECPAY_PUBLIC_URL: 'https://example.test' };
+  assert.equal(ecpayConfig({ ...base }).receiptBlockedBy, 'fallback-missing');
+  assert.equal(
+    ecpayConfig({ ...base, ECPAY_INVOICE_FALLBACK_EMAIL: 'accounts at example.test' }).receiptBlockedBy,
+    'fallback-unusable',
+    'set and wrong is a different problem from never set, and looks the same on the sheet',
+  );
+  assert.equal(ecpayConfig({ ...base, ECPAY_INVOICE_FALLBACK_EMAIL: 'accounts@example.test' }).receiptBlockedBy, '');
+  assert.equal(
+    ecpayConfig({ ...base, ECPAY_INVOICE: 'off', ECPAY_INVOICE_FALLBACK_EMAIL: 'accounts@example.test' }).receiptBlockedBy,
+    'invoice-off',
+  );
+  // Whitespace either side of a pasted address is not a typo worth failing on.
+  assert.equal(
+    ecpayConfig({ ...base, ECPAY_INVOICE_FALLBACK_EMAIL: '  accounts@example.test  ' }).receiptOptional,
+    true,
+  );
+  for (const env of [{}, { ECPAY_INVOICE_FALLBACK_EMAIL: 'accounts@example.test' }]) {
+    assert.equal(
+      JSON.stringify(ecpayConfig(env).receiptBlockedBy).includes('@'),
+      false,
+      'the reason names the fault, never the address',
+    );
+  }
+});

@@ -1601,6 +1601,7 @@ test('the amount that counts is the one ECPay reports, not the one asked for', a
 test('an offering without a receipt still starts, and still has somewhere to invoice', async () => {
   const options = await (await fetch(`${baseUrl}/api/donation/options`)).json();
   assert.equal(options.receiptOptional, true, 'a fallback mailbox is configured, so the choice is offered');
+  assert.equal(options.receiptBlockedBy, '', 'and nothing is standing in the way of it');
   assert.deepEqual(options.presets, [52, 520, 5920, 20000]);
   assert.equal(options.min, 50);
   assert.equal(options.max, 20000);

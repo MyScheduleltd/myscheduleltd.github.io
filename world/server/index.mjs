@@ -1421,6 +1421,10 @@ const server = createServer(async (request, response) => {
         // Whether the sheet may make the receipt a choice. False keeps the
         // email field required, which is what it has always been.
         receiptOptional: ECPAY.receiptOptional,
+        // And why not, when not — 'fallback-missing' is a variable nobody set,
+        // 'fallback-unusable' is one somebody set wrongly, and the two look
+        // identical from a sheet with no tick box on it.
+        receiptBlockedBy: ECPAY.receiptBlockedBy,
       });
     }
 
