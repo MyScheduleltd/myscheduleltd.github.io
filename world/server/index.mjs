@@ -386,6 +386,21 @@ const gateCopy = {
 };
 
 const shopLink = { url: '', label: 'MASTER OF THE HOUSE', labelZh: 'MASTER OF THE HOUSE', updatedAt: 0 };
+/**
+ * Where the 統一發票 goes when a donor does not want a receipt.
+ *
+ * A STAFF setting rather than an environment variable, because it is a festival
+ * decision and not a deployment one, and because a value only the dashboard can
+ * reach is a value nobody can change without leaving the world. The environment
+ * still works and is used when this is empty, so an existing deploy keeps its
+ * behaviour and either place can be the one that holds it.
+ *
+ * **Private.** It is a real mailbox belonging to whoever runs the festival, and
+ * it never goes into the attendee broadcast or `/api/config` — only into
+ * `/api/admin/state`, behind the staff key. Visitors are told whether the tick
+ * box may be offered, never what address is behind it.
+ */
+const offeringReceipt = { email: '', updatedAt: 0 };
 // The two lines carved over the temple door: who is worshipped there, and what
 // the building is called. STAFF own both, the way they own the venue signs.
 const templeSign = { name: '美麗本人', label: 'THE TEMPLE', updatedAt: 0 };
@@ -587,6 +602,7 @@ const persistedSnapshot = () => ({
   pamphlet: pamphletContent,
   djProfiles,
   shopLink,
+  offeringReceipt,
   templeSign,
   entranceSign,
   gateCopy,
@@ -818,6 +834,12 @@ const restorePersistedState = () => {
     }
   }
 
+  if (saved.offeringReceipt && typeof saved.offeringReceipt === 'object') {
+    Object.assign(offeringReceipt, {
+      email: safeEmail(saved.offeringReceipt.email) ?? '',
+      updatedAt: clampNumber(saved.offeringReceipt.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
+    });
+  }
   if (saved.shopLink && typeof saved.shopLink === 'object') {
     Object.assign(shopLink, {
       url: safeExternalUrl(saved.shopLink.url),
@@ -1275,6 +1297,24 @@ const tellVisitor = (visitorId, event, payload) => {
  * `1|OK` quickly and unconditionally: if this call is slow or fails, ECPay must
  * still be told the payment was received, or it retries for a day.
  */
+/**
+ * The mailbox a declined receipt's invoice goes to, read fresh every time.
+ *
+ * `ECPAY` is computed once at startup, which is right for keys and endpoints
+ * and wrong for this: STAFF can change it from inside the world, and an
+ * offering made a second later must see the new one.
+ */
+const receiptMailbox = () => offeringReceipt.email || ECPAY.invoiceFallbackEmail;
+const receiptOptional = () => Boolean(ECPAY.invoiceEnabled && receiptMailbox());
+const receiptBlockedBy = () => {
+  if (!ECPAY.invoiceEnabled) return 'invoice-off';
+  if (receiptMailbox()) return '';
+  // An address set in the environment and rejected is a different fault from
+  // one nobody ever set, and worth keeping apart now that there are two places
+  // it can come from.
+  return ECPAY.receiptBlockedBy === 'fallback-unusable' ? 'fallback-unusable' : 'mailbox-missing';
+};
+
 const issueInvoice = async (donation) => {
   const { url, payload } = buildInvoice({
     config: ECPAY,
@@ -1420,11 +1460,11 @@ const server = createServer(async (request, response) => {
         invoice: ECPAY.invoiceEnabled,
         // Whether the sheet may make the receipt a choice. False keeps the
         // email field required, which is what it has always been.
-        receiptOptional: ECPAY.receiptOptional,
+        receiptOptional: receiptOptional(),
         // And why not, when not — 'fallback-missing' is a variable nobody set,
         // 'fallback-unusable' is one somebody set wrongly, and the two look
         // identical from a sheet with no tick box on it.
-        receiptBlockedBy: ECPAY.receiptBlockedBy,
+        receiptBlockedBy: receiptBlockedBy(),
       });
     }
 
@@ -1437,13 +1477,13 @@ const server = createServer(async (request, response) => {
       // A receipt is only declinable where somewhere else has been arranged
       // for the invoice to go. Without that the answer is the old one: an
       // address, or no payment.
-      const wantsReceipt = ECPAY.receiptOptional ? payload.receipt !== false : true;
+      const wantsReceipt = receiptOptional() ? payload.receipt !== false : true;
       const given = safeEmail(payload.email);
       if (ECPAY.invoiceEnabled && wantsReceipt && !given) {
         return apiError(response, 400, 'An email address is needed for the invoice.');
       }
       // The invoice is issued either way. This only decides where it lands.
-      const email = wantsReceipt ? given : ECPAY.invoiceFallbackEmail;
+      const email = wantsReceipt ? given : receiptMailbox();
       forgetOldDonations();
       const id = randomUUID();
       const tradeNo = tradeNumber();
@@ -2006,6 +2046,8 @@ a{color:#e8b64a}</style>
           pamphlet: pamphletContent,
           djProfiles,
           shopLink,
+          // Behind the staff key, and only here. It is somebody's mailbox.
+          offeringReceipt,
           templeSign,
           entranceSign,
           gateCopy,
@@ -2219,6 +2261,17 @@ a{color:#e8b64a}</style>
         scheduleBroadcast();
         persist();
         return json(response, 200, { ok: true, gateCopy });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/offering-receipt') {
+        // An empty string is allowed, and it is how STAFF withdraw the choice:
+        // with nowhere for a declined invoice to go, the sheet asks every donor
+        // for an address again rather than taking money with no 發票 against it.
+        const raw = safeText(payload.email, 80);
+        const address = raw ? safeEmail(raw) : '';
+        if (raw && !address) return apiError(response, 400, 'That is not an address an invoice can be sent to.');
+        Object.assign(offeringReceipt, { email: address, updatedAt: Date.now() });
+        persist();
+        return json(response, 200, { ok: true, offeringReceipt, receiptOptional: receiptOptional() });
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/shop-link') {
         // An empty string is allowed: that is how STAFF take the store down.

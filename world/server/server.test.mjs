@@ -45,9 +45,6 @@ const startServer = async (port, stateFile, seedFile = 'off') => {
       // money. Nothing here contacts ECPay: the tests exercise this service's
       // own half — what it signs, what it accepts, and what it refuses.
       ECPAY_PUBLIC_URL: `http://127.0.0.1:${port}`,
-      // Somewhere for an invoice to go when a donor does not want one. Its
-      // presence is what makes the receipt declinable at all.
-      ECPAY_INVOICE_FALLBACK_EMAIL: 'accounts@example.com',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -1598,13 +1595,25 @@ test('the amount that counts is the one ECPay reports, not the one asked for', a
  * by a 營業人, who owes a 統一發票 on the sale whether the buyer wants a copy or
  * not. So an unticked box has to redirect the invoice, never cancel it.
  */
+const staff = { 'content-type': 'application/json', 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173' };
+const setReceiptMailbox = (email) => fetch(`${baseUrl}/api/admin/offering-receipt`, {
+  method: 'POST', headers: staff, body: JSON.stringify({ email }),
+});
+
 test('an offering without a receipt still starts, and still has somewhere to invoice', async () => {
+  const before = await (await fetch(`${baseUrl}/api/donation/options`)).json();
+  assert.equal(before.receiptOptional, false, 'with nowhere to send a declined invoice, the choice is not offered');
+  assert.equal(before.receiptBlockedBy, 'mailbox-missing');
+  assert.deepEqual(before.presets, [52, 520, 5920, 20000]);
+  assert.equal(before.min, 50);
+  assert.equal(before.max, 20000);
+
+  assert.equal((await setReceiptMailbox('not an address')).status, 400, 'an unusable mailbox is refused at the door');
+  assert.equal((await setReceiptMailbox('accounts@example.com')).status, 200);
+
   const options = await (await fetch(`${baseUrl}/api/donation/options`)).json();
-  assert.equal(options.receiptOptional, true, 'a fallback mailbox is configured, so the choice is offered');
-  assert.equal(options.receiptBlockedBy, '', 'and nothing is standing in the way of it');
-  assert.deepEqual(options.presets, [52, 520, 5920, 20000]);
-  assert.equal(options.min, 50);
-  assert.equal(options.max, 20000);
+  assert.equal(options.receiptOptional, true, 'STAFF set a mailbox, so the choice appears');
+  assert.equal(options.receiptBlockedBy, '');
 
   const session = await join('NO RECEIPT');
   const started = await fetch(`${baseUrl}/api/donation`, {
@@ -1627,4 +1636,35 @@ test('an offering without a receipt still starts, and still has somewhere to inv
     body: JSON.stringify({ amount: 520, receipt: true }),
   });
   assert.equal(asked.status, 400, 'ticking the box and leaving it blank is not a valid offering');
+});
+
+/**
+ * The mailbox belongs to whoever runs the festival. Visitors are told whether
+ * they may decline a receipt; they are never told where the invoice goes
+ * instead, and nothing that reaches a browser without the staff key may carry
+ * it.
+ */
+test('the receipt mailbox reaches STAFF and nobody else', async () => {
+  const address = 'private-books@example.com';
+  assert.equal((await setReceiptMailbox(address)).status, 200);
+
+  const config = await (await fetch(`${baseUrl}/api/config`)).text();
+  assert.equal(config.includes(address), false, '/api/config is public');
+  assert.equal(config.includes('offeringReceipt'), false, 'and does not even name the setting');
+
+  const options = await (await fetch(`${baseUrl}/api/donation/options`)).text();
+  assert.equal(options.includes(address), false, 'the offering sheet learns yes or no, never the address');
+
+  const session = await join('LOOKING');
+  const state = await (await fetch(`${baseUrl}/api/state`, { headers: auth(session) })).text();
+  assert.equal(state.includes(address), false, 'nor does the attendee broadcast');
+
+  const admin = await (await fetch(`${baseUrl}/api/admin/state`, { headers: staff })).json();
+  assert.equal(admin.offeringReceipt.email, address, 'STAFF can read back what they set');
+
+  // Clearing it withdraws the choice rather than leaving offerings uninvoiced.
+  assert.equal((await setReceiptMailbox('')).status, 200);
+  const after = await (await fetch(`${baseUrl}/api/donation/options`)).json();
+  assert.equal(after.receiptOptional, false);
+  assert.equal(after.receiptBlockedBy, 'mailbox-missing');
 });

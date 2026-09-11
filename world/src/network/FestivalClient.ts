@@ -168,6 +168,15 @@ export interface AdminState {
   pamphlet: PamphletContent;
   djProfiles: DjProfiles;
   shopLink: ShopLink;
+  /**
+   * Where a declined receipt's invoice goes.
+   *
+   * On `AdminState` and nowhere else on purpose: it is a real mailbox belonging
+   * to whoever runs the festival, it arrives only from `/api/admin/state`
+   * behind the staff key, and declaring it on `PublicConfig` would invite
+   * somebody to read it off a payload that never carries it.
+   */
+  offeringReceipt?: { email: string; updatedAt: number };
   templeSign: TempleSign;
   entranceSign?: EntranceSign;
   gateCopy: GateCopy;
@@ -813,6 +822,13 @@ export class FestivalClient {
     await this.adminRequest('/api/admin/temple-sign', key, {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  }
+
+  async updateOfferingReceipt(key: string, email: string): Promise<void> {
+    await this.adminRequest('/api/admin/offering-receipt', key, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
     });
   }
 

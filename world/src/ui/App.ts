@@ -5017,6 +5017,21 @@ export class App {
             this.openPanel('admin');
           });
       });
+      const receiptEditor = panel.querySelector<HTMLFormElement>('#offering-receipt-editor');
+      receiptEditor?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const data = new FormData(receiptEditor);
+        const button = receiptEditor.querySelector<HTMLButtonElement>('button[type="submit"]');
+        if (button) button.disabled = true;
+        void this.festivalClient.updateOfferingReceipt(this.staffKey, String(data.get('email') ?? '')).then(async () => {
+          await this.refreshAdminState(false);
+          this.showWorldAlert(this.language === 'zh-TW' ? '收據信箱已更新' : 'RECEIPT MAILBOX SAVED');
+        }).catch((error: unknown) => {
+          this.showWorldAlert(error instanceof Error ? error.message : (this.language === 'zh-TW' ? '儲存失敗' : 'COULD NOT SAVE'));
+        }).finally(() => {
+          if (button) button.disabled = false;
+        });
+      });
       const shopEditor = panel.querySelector<HTMLFormElement>('#shop-link-editor');
       shopEditor?.addEventListener('submit', (event) => {
         event.preventDefault();
@@ -5552,6 +5567,14 @@ export class App {
         <label><span>${this.language === 'zh-TW' ? '店名（中）' : 'STORE NAME (ZH)'}</span><input name="labelZh" maxlength="60" value="${this.escapeAttribute(this.adminState.shopLink?.labelZh ?? '')}" /></label>
         <label><span>${this.language === 'zh-TW' ? '店名（英）' : 'STORE NAME (EN)'}</span><input name="label" maxlength="60" value="${this.escapeAttribute(this.adminState.shopLink?.label ?? '')}" /></label>
         <button type="submit">${this.language === 'zh-TW' ? '儲存商店連結' : 'SAVE STORE LINK'}</button>
+      </form>`)}
+      ${this.staffSection('offering', this.language === 'zh-TW' ? '供養收據' : 'OFFERING RECEIPTS', `
+      <form class="staff-form" id="offering-receipt-editor">
+        <p class="staff-note">${this.language === 'zh-TW'
+          ? '訪客不要收據時，那張統一發票寄到哪裡。綠界不接受沒有信箱的發票，而這筆錢是營業收入，發票該開還是要開——所以這裡填了，供養面板才會出現「我要收據」的勾選；留空的話，每位訪客都還是得填信箱。'
+          : "Where the 統一發票 goes when a visitor does not want a receipt. ECPay will not issue one with no address on it, and the sale owes an invoice either way — so the offering sheet only offers the tick box once this is filled in. Leave it empty and every visitor is asked for an address, as before."}</p>
+        <label class="staff-form__wide"><span>${this.language === 'zh-TW' ? '發票寄送信箱' : 'INVOICE MAILBOX'}</span><input name="email" type="email" inputmode="email" maxlength="80" placeholder="accounts@example.com" value="${this.escapeAttribute(this.adminState.offeringReceipt?.email ?? '')}" /></label>
+        <button type="submit">${this.language === 'zh-TW' ? '儲存收據信箱' : 'SAVE MAILBOX'}</button>
       </form>`)}
       ${this.staffSection('jukebox', this.language === 'zh-TW' ? '點唱機' : 'JUKEBOX', `
       <form class="staff-form" id="jukebox-editor">
