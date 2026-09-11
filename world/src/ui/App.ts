@@ -5502,6 +5502,33 @@ export class App {
    * remembered, because the panel re-renders on every refresh and a collapsed
    * group would otherwise swallow the form being worked on.
    */
+  /**
+   * Says out loud that this one setting does not survive a deploy.
+   *
+   * Every other STAFF setting outlives one by being captured into
+   * `festival-seed.json` and committed. This address cannot take that route:
+   * the capture reads the public settings endpoint, and a real mailbox has no
+   * business in a public repository. So set here alone it is gone on the next
+   * deploy, the tick box quietly disappears, and every visitor is asked for an
+   * address again — a regression nobody would think to look for. Saying it
+   * here costs four lines; finding it later costs an afternoon.
+   */
+  private offeringReceiptWarning(): string {
+    const zh = this.language === 'zh-TW';
+    const source = this.adminState?.offeringReceipt?.source;
+    if (source === 'staff') {
+      return `<p class="staff-note staff-note--warn">${zh
+        ? '這個信箱只存在目前這台服務上，下次部署就會消失，勾選也會跟著不見。要讓它永久生效，請同時在 Render 設定 ECPAY_INVOICE_FALLBACK_EMAIL。'
+        : 'This address lives only on the instance now serving and is lost on the next deploy, taking the tick box with it. To make it permanent, also set ECPAY_INVOICE_FALLBACK_EMAIL on Render.'}</p>`;
+    }
+    if (source === 'environment') {
+      return `<p class="staff-note">${zh
+        ? '目前用的是 Render 環境變數裡的信箱，部署也不會消失。這裡填了會蓋過它，但只到下次部署為止。'
+        : "The address in Render's environment is in use and survives deploys. Filling this in overrides it, but only until the next deploy."}</p>`;
+    }
+    return '';
+  }
+
   private staffSection(id: string, title: string, body: string): string {
     const open = this.openStaffSections.has(id) ? ' open' : '';
     return `<details class="staff-section" data-staff-section="${id}"${open}>
@@ -5574,6 +5601,7 @@ export class App {
           ? '訪客不要收據時，那張統一發票寄到哪裡。綠界不接受沒有信箱的發票，而這筆錢是營業收入，發票該開還是要開——所以這裡填了，供養面板才會出現「我要收據」的勾選；留空的話，每位訪客都還是得填信箱。'
           : "Where the 統一發票 goes when a visitor does not want a receipt. ECPay will not issue one with no address on it, and the sale owes an invoice either way — so the offering sheet only offers the tick box once this is filled in. Leave it empty and every visitor is asked for an address, as before."}</p>
         <label class="staff-form__wide"><span>${this.language === 'zh-TW' ? '發票寄送信箱' : 'INVOICE MAILBOX'}</span><input name="email" type="email" inputmode="email" maxlength="80" placeholder="accounts@example.com" value="${this.escapeAttribute(this.adminState.offeringReceipt?.email ?? '')}" /></label>
+        ${this.offeringReceiptWarning()}
         <button type="submit">${this.language === 'zh-TW' ? '儲存收據信箱' : 'SAVE MAILBOX'}</button>
       </form>`)}
       ${this.staffSection('jukebox', this.language === 'zh-TW' ? '點唱機' : 'JUKEBOX', `

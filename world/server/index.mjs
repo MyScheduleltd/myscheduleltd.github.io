@@ -2047,7 +2047,22 @@ a{color:#e8b64a}</style>
           djProfiles,
           shopLink,
           // Behind the staff key, and only here. It is somebody's mailbox.
-          offeringReceipt,
+          //
+          // `source` is the difference between an address that survives a
+          // deploy and one that does not. This plan has no disk: STAFF
+          // settings live in the memory and filesystem of the instance
+          // currently serving, and a deploy starts a new one. Everything else
+          // STAFF set is carried over by committing `festival-seed.json` — but
+          // that file is built from `/api/config`, which is public and which
+          // this address is deliberately not in. So a mailbox set here alone
+          // is lost on the next deploy, silently, and the sheet goes back to
+          // demanding an address from everybody. The panel says so.
+          offeringReceipt: {
+            ...offeringReceipt,
+            source: offeringReceipt.email
+              ? 'staff'
+              : (ECPAY.invoiceFallbackEmail ? 'environment' : 'none'),
+          },
           templeSign,
           entranceSign,
           gateCopy,

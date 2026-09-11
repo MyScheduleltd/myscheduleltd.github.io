@@ -176,7 +176,16 @@ export interface AdminState {
    * behind the staff key, and declaring it on `PublicConfig` would invite
    * somebody to read it off a payload that never carries it.
    */
-  offeringReceipt?: { email: string; updatedAt: number };
+  offeringReceipt?: {
+    email: string;
+    updatedAt: number;
+    /**
+     * Which of the two places the address is coming from. `staff` is this
+     * field and does not survive a deploy; `environment` is the Render
+     * variable and does.
+     */
+    source?: 'staff' | 'environment' | 'none';
+  };
   templeSign: TempleSign;
   entranceSign?: EntranceSign;
   gateCopy: GateCopy;
