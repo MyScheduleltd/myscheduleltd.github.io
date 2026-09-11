@@ -17,11 +17,16 @@
  * deliberately captures neither the key nor the chat: the repository is public,
  * and neither belongs in it.
  */
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const service = (process.argv[2] ?? 'https://myschedule-festival.onrender.com').replace(/\/$/, '');
 const target = fileURLToPath(new URL('../server/festival-seed.json', import.meta.url));
+
+// What is already committed, so a field the running service does not report —
+// because it predates the field — is carried over rather than erased. Losing a
+// setting to an out-of-date instance is the opposite of what this script is for.
+const committed = await readFile(target, 'utf8').then(JSON.parse).catch(() => ({}));
 
 const response = await fetch(`${service}/api/config`);
 if (!response.ok) {
@@ -56,6 +61,12 @@ const seed = {
   gateBackground: live.gateBackground,
   gateCopy: live.gateCopy,
   shopLink: live.shopLink,
+  // Where a declined receipt's invoice goes. Committed like everything else
+  // here, and for the same reason: without it the next deploy boots with no
+  // mailbox, the offering sheet's tick box disappears, and every visitor is
+  // asked for an address again. It is the festival's own published contact
+  // address, not a donor's — no visitor's address is ever written here.
+  offeringReceipt: live.offeringReceipt ?? committed.offeringReceipt,
   templeSign: live.templeSign,
   djProfiles: live.djProfiles,
   npcNames: live.npcNames,

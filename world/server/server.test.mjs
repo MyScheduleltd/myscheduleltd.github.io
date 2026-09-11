@@ -1639,28 +1639,37 @@ test('an offering without a receipt still starts, and still has somewhere to inv
 });
 
 /**
- * The mailbox belongs to whoever runs the festival. Visitors are told whether
- * they may decline a receipt; they are never told where the invoice goes
- * instead, and nothing that reaches a browser without the staff key may carry
- * it.
+ * The mailbox is the festival's own published contact address, so it travels
+ * with the rest of the settings — `/api/config` is what `capture-state.mjs`
+ * reads, and being in it is the only reason the address survives a deploy.
+ *
+ * A donor's address is a different thing entirely and is never any of this.
  */
-test('the receipt mailbox reaches STAFF and nobody else', async () => {
-  const address = 'private-books@example.com';
+test('the receipt mailbox travels with the settings, and a donor’s never does', async () => {
+  const address = 'books@example.com';
   assert.equal((await setReceiptMailbox(address)).status, 200);
 
-  const config = await (await fetch(`${baseUrl}/api/config`)).text();
-  assert.equal(config.includes(address), false, '/api/config is public');
-  assert.equal(config.includes('offeringReceipt'), false, 'and does not even name the setting');
-
-  const options = await (await fetch(`${baseUrl}/api/donation/options`)).text();
-  assert.equal(options.includes(address), false, 'the offering sheet learns yes or no, never the address');
-
-  const session = await join('LOOKING');
-  const state = await (await fetch(`${baseUrl}/api/state`, { headers: auth(session) })).text();
-  assert.equal(state.includes(address), false, 'nor does the attendee broadcast');
+  const config = await (await fetch(`${baseUrl}/api/config`)).json();
+  assert.equal(config.offeringReceipt.email, address, 'the capture script reads this and nothing else');
 
   const admin = await (await fetch(`${baseUrl}/api/admin/state`, { headers: staff })).json();
-  assert.equal(admin.offeringReceipt.email, address, 'STAFF can read back what they set');
+  assert.equal(admin.offeringReceipt.email, address);
+  assert.equal(admin.offeringReceipt.source, 'staff', 'it differs from the committed seed, and STAFF are told so');
+
+  // The sheet a visitor sees learns whether a receipt may be declined. It has
+  // no use for the address and is not given it.
+  const options = await (await fetch(`${baseUrl}/api/donation/options`)).text();
+  assert.equal(options.includes(address), false);
+
+  // A donor's own address reaches ECPay and stops there.
+  const session = await join('LOOKING');
+  await fetch(`${baseUrl}/api/donation`, {
+    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 520, email: 'donor@example.com' }),
+  });
+  const state = await (await fetch(`${baseUrl}/api/state`, { headers: auth(session) })).text();
+  assert.equal(state.includes('donor@example.com'), false, 'a donor is not broadcast to the festival');
+  const publicConfig = await (await fetch(`${baseUrl}/api/config`)).text();
+  assert.equal(publicConfig.includes('donor@example.com'), false);
 
   // Clearing it withdraws the choice rather than leaving offerings uninvoiced.
   assert.equal((await setReceiptMailbox('')).status, 200);

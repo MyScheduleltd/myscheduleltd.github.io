@@ -87,6 +87,23 @@ const seedEnabled = configuredSeedFile !== 'off';
 const SEED_FILE = configuredSeedFile && seedEnabled
   ? resolve(configuredSeedFile)
   : fileURLToPath(new URL('./festival-seed.json', import.meta.url));
+/**
+ * The receipt mailbox as committed, separately from whatever is running.
+ *
+ * The seed is what a new instance boots with, and on a plan with no disk that
+ * is every deploy. Knowing it lets the panel tell STAFF the one thing they
+ * cannot see otherwise: whether the address on screen is the one that will
+ * come back after a deploy, or a change of theirs that will not.
+ */
+const seededReceiptEmail = (() => {
+  if (!seedEnabled) return '';
+  try {
+    return safeEmail(JSON.parse(readFileSync(SEED_FILE, 'utf8'))?.offeringReceipt?.email) ?? '';
+  } catch {
+    return '';
+  }
+})();
+
 const configuredOrigins = (process.env.FESTIVAL_ALLOWED_ORIGINS ?? 'http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174')
   .split(',')
   .map((value) => value.trim())
@@ -1368,7 +1385,7 @@ const server = createServer(async (request, response) => {
       // by itself, and without it there is no way from outside to tell a
       // deployed fix that did not work from a fix that never deployed — which
       // is a question this service has already cost two rounds of guessing.
-      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
+      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), offeringReceipt, schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
@@ -2046,21 +2063,20 @@ a{color:#e8b64a}</style>
           pamphlet: pamphletContent,
           djProfiles,
           shopLink,
-          // Behind the staff key, and only here. It is somebody's mailbox.
-          //
           // `source` is the difference between an address that survives a
           // deploy and one that does not. This plan has no disk: STAFF
-          // settings live in the memory and filesystem of the instance
-          // currently serving, and a deploy starts a new one. Everything else
-          // STAFF set is carried over by committing `festival-seed.json` — but
-          // that file is built from `/api/config`, which is public and which
-          // this address is deliberately not in. So a mailbox set here alone
-          // is lost on the next deploy, silently, and the sheet goes back to
-          // demanding an address from everybody. The panel says so.
+          // settings live on the instance currently serving, and a deploy
+          // starts a new one reading `festival-seed.json`. So the committed
+          // address always comes back, and a change made here since does not
+          // — which is what the panel tells STAFF, because it is the one thing
+          // they cannot see from the field itself.
           offeringReceipt: {
             ...offeringReceipt,
+            // 'seed' is the committed address, which comes back after every
+            // deploy. 'staff' means somebody has changed it here since, and
+            // that change lives only on this instance until it is captured.
             source: offeringReceipt.email
-              ? 'staff'
+              ? (offeringReceipt.email === seededReceiptEmail ? 'seed' : 'staff')
               : (ECPAY.invoiceFallbackEmail ? 'environment' : 'none'),
           },
           templeSign,

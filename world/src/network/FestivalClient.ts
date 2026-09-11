@@ -180,11 +180,12 @@ export interface AdminState {
     email: string;
     updatedAt: number;
     /**
-     * Which of the two places the address is coming from. `staff` is this
-     * field and does not survive a deploy; `environment` is the Render
-     * variable and does.
+     * Where the address in use is coming from. `seed` is the one committed to
+     * the repository, which every deploy comes back to; `staff` is a change
+     * made in the panel since, which a deploy replaces; `environment` is the
+     * Render variable, used when the field is empty.
      */
-    source?: 'staff' | 'environment' | 'none';
+    source?: 'seed' | 'staff' | 'environment' | 'none';
   };
   templeSign: TempleSign;
   entranceSign?: EntranceSign;

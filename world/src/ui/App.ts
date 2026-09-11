@@ -5505,26 +5505,29 @@ export class App {
   /**
    * Says out loud that this one setting does not survive a deploy.
    *
-   * Every other STAFF setting outlives one by being captured into
-   * `festival-seed.json` and committed. This address cannot take that route:
-   * the capture reads the public settings endpoint, and a real mailbox has no
-   * business in a public repository. So set here alone it is gone on the next
-   * deploy, the tick box quietly disappears, and every visitor is asked for an
-   * address again — a regression nobody would think to look for. Saying it
-   * here costs four lines; finding it later costs an afternoon.
+   * The committed address comes back on every deploy, because this plan has no
+   * disk and a new instance boots from `festival-seed.json`. A change made here
+   * since does not — and the field looks exactly the same either way. Without
+   * this note the tick box would quietly revert to an address somebody changed
+   * weeks ago, and nobody would think to look.
    */
   private offeringReceiptWarning(): string {
     const zh = this.language === 'zh-TW';
     const source = this.adminState?.offeringReceipt?.source;
     if (source === 'staff') {
       return `<p class="staff-note staff-note--warn">${zh
-        ? '這個信箱只存在目前這台服務上，下次部署就會消失，勾選也會跟著不見。要讓它永久生效，請同時在 Render 設定 ECPAY_INVOICE_FALLBACK_EMAIL。'
-        : 'This address lives only on the instance now serving and is lost on the next deploy, taking the tick box with it. To make it permanent, also set ECPAY_INVOICE_FALLBACK_EMAIL on Render.'}</p>`;
+        ? '這個信箱和存進版本庫的那個不一樣，只存在目前這台服務上。下次部署會換回舊的那個。要讓這次的改動永久生效，請執行 node world/scripts/capture-state.mjs 並提交。'
+        : 'This address differs from the one committed to the repository and lives only on the instance now serving; the next deploy brings the old one back. To keep this change, run node world/scripts/capture-state.mjs and commit it.'}</p>`;
+    }
+    if (source === 'seed') {
+      return `<p class="staff-note">${zh
+        ? '這是版本庫裡存著的信箱，每次部署都會回到它。'
+        : 'This is the address committed to the repository, and every deploy comes back to it.'}</p>`;
     }
     if (source === 'environment') {
       return `<p class="staff-note">${zh
-        ? '目前用的是 Render 環境變數裡的信箱，部署也不會消失。這裡填了會蓋過它，但只到下次部署為止。'
-        : "The address in Render's environment is in use and survives deploys. Filling this in overrides it, but only until the next deploy."}</p>`;
+        ? '目前用的是 Render 環境變數裡的信箱。這裡填了會蓋過它，但只到下次部署為止。'
+        : "The address in Render's environment is in use. Filling this in overrides it, but only until the next deploy."}</p>`;
     }
     return '';
   }
