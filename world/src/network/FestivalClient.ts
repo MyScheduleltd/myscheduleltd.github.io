@@ -237,6 +237,8 @@ export interface DonationOptions {
   min: number;
   max: number;
   invoice: boolean;
+  /** Whether the sheet may offer the receipt as a choice rather than demand it. */
+  receiptOptional: boolean;
 }
 
 export interface JukeboxState {
@@ -590,10 +592,14 @@ export class FestivalClient {
    * pressing a record and hearing it start.
    */
   /** Start an offering. Returns where the already-opened tab should go. */
-  async beginDonation(amount: number, email: string): Promise<{ id: string; checkoutUrl: string }> {
+  async beginDonation(
+    amount: number,
+    email: string,
+    receipt = true,
+  ): Promise<{ id: string; checkoutUrl: string }> {
     const response = await this.request('/api/donation', {
       method: 'POST',
-      body: JSON.stringify({ amount, email }),
+      body: JSON.stringify({ amount, email, receipt }),
     });
     return await response.json() as { id: string; checkoutUrl: string };
   }

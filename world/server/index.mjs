@@ -1294,6 +1294,11 @@ const issueInvoice = async (donation) => {
     return;
   }
   donation.invoiceNo = outcome.invoiceNo;
+  // Silence when the donor declined a receipt. The invoice exists and went to
+  // the festival's own mailbox; telling them 「收據號碼 X，已寄到你的信箱」
+  // would be naming a number they will never see. They have already been
+  // thanked for the offering itself.
+  if (!donation.wantsReceipt) return;
   tellVisitor(donation.visitorId, 'donation', {
     id: donation.id,
     amount: donation.paidAmount ?? donation.amount,
@@ -1413,6 +1418,9 @@ const server = createServer(async (request, response) => {
         min: MIN_DONATION,
         max: MAX_DONATION,
         invoice: ECPAY.invoiceEnabled,
+        // Whether the sheet may make the receipt a choice. False keeps the
+        // email field required, which is what it has always been.
+        receiptOptional: ECPAY.receiptOptional,
       });
     }
 
@@ -1422,8 +1430,16 @@ const server = createServer(async (request, response) => {
       const payload = await body(request);
       const amount = safeAmount(payload.amount);
       if (!amount) return apiError(response, 400, `An offering is between ${MIN_DONATION} and ${MAX_DONATION} TWD.`);
-      const email = safeEmail(payload.email);
-      if (ECPAY.invoiceEnabled && !email) return apiError(response, 400, 'An email address is needed for the invoice.');
+      // A receipt is only declinable where somewhere else has been arranged
+      // for the invoice to go. Without that the answer is the old one: an
+      // address, or no payment.
+      const wantsReceipt = ECPAY.receiptOptional ? payload.receipt !== false : true;
+      const given = safeEmail(payload.email);
+      if (ECPAY.invoiceEnabled && wantsReceipt && !given) {
+        return apiError(response, 400, 'An email address is needed for the invoice.');
+      }
+      // The invoice is issued either way. This only decides where it lands.
+      const email = wantsReceipt ? given : ECPAY.invoiceFallbackEmail;
       forgetOldDonations();
       const id = randomUUID();
       const tradeNo = tradeNumber();
@@ -1432,6 +1448,7 @@ const server = createServer(async (request, response) => {
         tradeNo,
         amount,
         email,
+        wantsReceipt,
         visitorId: visitor.id,
         visitorName: visitor.name,
         createdAt: Date.now(),

@@ -4212,11 +4212,17 @@ export class App {
         <label class="offering__field"><span>${zh ? '自訂金額' : 'OR YOUR OWN'}</span>
           <input type="number" inputmode="numeric" data-offering-custom min="${options.min}" max="${options.max}" step="1" placeholder="${options.min}–${options.max}" />
         </label>
-        ${options.invoice ? `<label class="offering__field"><span>${zh ? '收據寄送信箱' : 'EMAIL FOR THE RECEIPT'}</span>
-          <input type="email" inputmode="email" autocomplete="email" data-offering-email placeholder="you@example.com" /></label>
-        <p class="offering__note">${zh
-          ? '收據將會寄送到這個信箱。'
-          : 'The receipt will be sent to this address.'}</p>` : ''}
+        ${options.invoice ? `${options.receiptOptional ? `<label class="offering__check">
+          <input type="checkbox" data-offering-wants />
+          <span>${zh ? '我要收據' : "I'D LIKE A RECEIPT"}</span>
+        </label>` : ''}
+        <div class="offering__receipt"${options.receiptOptional ? ' hidden' : ''} data-offering-receipt>
+          <label class="offering__field"><span>${zh ? '收據寄送信箱' : 'EMAIL FOR THE RECEIPT'}</span>
+            <input type="email" inputmode="email" autocomplete="email" data-offering-email placeholder="you@example.com" /></label>
+          <p class="offering__note">${zh
+            ? '收據將會寄送到這個信箱。'
+            : 'The receipt will be sent to this address.'}</p>
+        </div>` : ''}
         <p class="offering__error" data-offering-error hidden></p>
         <button type="button" class="offering__go" data-offering-go>${zh ? '感謝供養' : 'MY DEEPEST GRATITUDE'}</button>
         <p class="offering__note">${zh
@@ -4251,6 +4257,16 @@ export class App {
       sheet.querySelectorAll('[data-offering-amount]').forEach((other) => other.classList.remove('is-chosen'));
     });
 
+    // Unticked to begin with: giving is a tap and an amount, and a receipt is
+    // something you ask for. The field is hidden rather than disabled so the
+    // sheet is shorter for everyone who does not want one.
+    const wants = sheet.querySelector<HTMLInputElement>('[data-offering-wants]');
+    const receipt = sheet.querySelector<HTMLElement>('[data-offering-receipt]');
+    wants?.addEventListener('change', () => {
+      if (receipt) receipt.hidden = !wants.checked;
+      if (wants.checked) email?.focus();
+    });
+
     sheet.querySelector('[data-offering-go]')?.addEventListener('click', () => {
       const typed = custom?.value.trim();
       const amount = typed ? Math.trunc(Number(typed)) : chosen;
@@ -4259,8 +4275,11 @@ export class App {
           ? `金額請介於 NT$${options.min} 到 NT$${options.max}。`
           : `Choose between NT$${options.min} and NT$${options.max}.`);
       }
-      const address = email?.value.trim() ?? '';
-      if (options.invoice && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+      // Asked for only when asked for. `wants` is absent when the service has
+      // nowhere else to send the invoice, and then a receipt is not optional.
+      const wanted = wants ? wants.checked : true;
+      const address = wanted ? (email?.value.trim() ?? '') : '';
+      if (options.invoice && wanted && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
         return complain(zh ? '請填一個能收到收據的信箱。' : 'An email address is needed for the receipt.');
       }
       // The tab is opened **here**, inside the tap, and pointed somewhere real
@@ -4270,7 +4289,7 @@ export class App {
       // reason the service hands back a URL instead of the form itself.
       const tab = window.open('', '_blank');
       if (tab) tab.document.write('<!doctype html><meta charset="utf-8"><title>…</title><p style="font:600 15px system-ui;padding:24px">前往綠界付款… Taking you to ECPay…</p>');
-      void this.festivalClient.beginDonation(amount, address).then((started) => {
+      void this.festivalClient.beginDonation(amount, address, wanted).then((started) => {
         if (tab) tab.location.replace(started.checkoutUrl);
         // No tab means a blocker took it. Rather than lose the offering, this
         // one goes in the same window — the festival reloads on the way back,

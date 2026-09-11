@@ -63,6 +63,13 @@ services:
       # naming where the money reports to.
       - key: ECPAY_PUBLIC_URL
         value: https://myschedule-festival.onrender.com
+      # ECPAY_INVOICE_FALLBACK_EMAIL is set in the dashboard, not here — an
+      # address in a public repository is an address in a spam list. It is
+      # where the 統一發票 goes when a donor does not want a receipt: ECPay
+      # will not issue one without an email or a phone, and a 營業人 owes an
+      # invoice on the sale either way. Until it is set, the receipt is not
+      # optional and the sheet asks for an address exactly as it always has.
+      #
       # Real money needs ECPAY_ENV=production plus ECPAY_MERCHANT_ID,
       # ECPAY_HASH_KEY, ECPAY_HASH_IV and the three ECPAY_INVOICE_* keys. Those
       # are secrets and belong in the dashboard, never in this file or the

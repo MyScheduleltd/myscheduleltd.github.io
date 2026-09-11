@@ -1935,6 +1935,33 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      and never quite zooms back out. */
   font: 600 16px/1.2 sans-serif;
 }
+/* The receipt is a choice, and the whole row is the target — a 15px box is
+   not something a thumb hits, and a label that only reads as text next to it
+   wastes the easiest tap on the sheet. */
+.offering__check {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  min-height: 46px; padding: 0 12px;
+  border: 1px solid rgba(21, 23, 26, 0.3); background: rgba(21, 23, 26, 0.03);
+  font: 700 13px var(--condensed); letter-spacing: 0.06em;
+}
+.offering__check input {
+  /* Square, like every other control here, and big enough to see what it is
+     doing. Safari rounds a checkbox into a lozenge otherwise. */
+  -webkit-appearance: none; appearance: none; margin: 0;
+  width: 20px; height: 20px; flex: none; cursor: pointer;
+  border: 1px solid rgba(21, 23, 26, 0.5); background: #fff;
+}
+.offering__check input:checked {
+  border-color: var(--red, #a91c24); background: var(--red, #a91c24);
+  /* The tick, drawn rather than typed: a glyph would need a font this sheet
+     does not load and would sit differently in every browser. */
+  background-image: linear-gradient(45deg, transparent 44%, #f5efe2 44%, #f5efe2 58%, transparent 58%),
+    linear-gradient(-45deg, transparent 62%, #f5efe2 62%, #f5efe2 76%, transparent 76%);
+}
+.offering__receipt { display: grid; gap: 13px; }
+/* `display` on the element outranks the browser's own `[hidden]` rule, so
+   without this the field is hidden in name only and the sheet never shortens. */
+.offering__receipt[hidden] { display: none; }
 .offering__note { margin: 0; font: 600 12px/1.5 sans-serif; opacity: 0.66; }
 .offering__note--test { opacity: 1; padding: 8px 10px; background: rgba(169, 28, 36, 0.1); border-left: 3px solid var(--red, #a91c24); }
 .offering__error { margin: 0; font: 700 13px/1.4 sans-serif; color: var(--red, #a91c24); }
@@ -1947,4 +1974,9 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .offering { padding: 12px; align-items: end; }
   .offering__card { padding: 16px; gap: 11px; }
   .offering__card h2 { font-size: 22px; }
+  /* Two by two, said rather than fallen into. NT$20000 wants 60px of label
+     and four across leaves it 57, so the row broke 3+1 on its own — which
+     reads as a mistake. An even pair of pairs reads as a choice, and every
+     button ends up twice the size of a thumb. */
+  .offering__amounts { grid-template-columns: repeat(2, 1fr); }
 }

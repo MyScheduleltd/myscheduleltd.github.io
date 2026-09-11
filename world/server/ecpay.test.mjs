@@ -273,3 +273,32 @@ test('being switched off says which knob is missing, and never its value', () =>
     'the reason names the knob, not what is in it',
   );
 });
+
+/**
+ * The receipt may only become a choice once the invoice has somewhere else to
+ * go. Offering the choice without that would mean taking money with no 統一發票
+ * against it, which is a tax position and not a UI decision.
+ */
+test('a declinable receipt needs a mailbox to fall back to', () => {
+  const none = ecpayConfig({ ECPAY_PUBLIC_URL: 'https://example.test' });
+  assert.equal(none.receiptOptional, false, 'no fallback, no choice — the field stays required');
+  assert.equal(none.invoiceFallbackEmail, '');
+
+  const ready = ecpayConfig({
+    ECPAY_PUBLIC_URL: 'https://example.test',
+    ECPAY_INVOICE_FALLBACK_EMAIL: 'accounts@example.test',
+  });
+  assert.equal(ready.receiptOptional, true);
+  assert.equal(ready.invoiceFallbackEmail, 'accounts@example.test');
+
+  assert.equal(
+    ecpayConfig({ ECPAY_INVOICE_FALLBACK_EMAIL: 'not-an-address' }).receiptOptional,
+    false,
+    'an unusable address fails here, not hours later as an invoice nobody is watching for',
+  );
+  assert.equal(
+    ecpayConfig({ ECPAY_INVOICE: 'off', ECPAY_INVOICE_FALLBACK_EMAIL: 'accounts@example.test' }).receiptOptional,
+    false,
+    'with invoices off there is no receipt to make optional',
+  );
+});

@@ -45,6 +45,9 @@ const startServer = async (port, stateFile, seedFile = 'off') => {
       // money. Nothing here contacts ECPay: the tests exercise this service's
       // own half — what it signs, what it accepts, and what it refuses.
       ECPAY_PUBLIC_URL: `http://127.0.0.1:${port}`,
+      // Somewhere for an invoice to go when a donor does not want one. Its
+      // presence is what makes the receipt declinable at all.
+      ECPAY_INVOICE_FALLBACK_EMAIL: 'accounts@example.com',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -1481,17 +1484,24 @@ test('an offering needs a session, an amount in range, and an email', async () =
 
   const session = await join('OFFERING TEST');
   const tooSmall = await fetch(`${baseUrl}/api/donation`, {
-    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 9, email: 'donor@example.com' }),
+    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 49, email: 'donor@example.com' }),
   });
   assert.equal(tooSmall.status, 400);
   const tooLarge = await fetch(`${baseUrl}/api/donation`, {
-    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 10001, email: 'donor@example.com' }),
+    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 20001, email: 'donor@example.com' }),
   });
   assert.equal(tooLarge.status, 400);
+  // The ends of the range are inside it.
+  for (const amount of [50, 20000]) {
+    const edge = await fetch(`${baseUrl}/api/donation`, {
+      method: 'POST', headers: auth(session), body: JSON.stringify({ amount, email: 'donor@example.com' }),
+    });
+    assert.equal(edge.status, 200, `NT$${amount} is an offering, not an error`);
+  }
   const noEmail = await fetch(`${baseUrl}/api/donation`, {
     method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 100, email: 'not-an-address' }),
   });
-  assert.equal(noEmail.status, 400, 'the invoice has to go somewhere');
+  assert.equal(noEmail.status, 400, 'a receipt that was asked for has to go somewhere');
 
   const started = await fetch(`${baseUrl}/api/donation`, {
     method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 100, email: 'donor@example.com' }),
@@ -1579,4 +1589,41 @@ test('the amount that counts is the one ECPay reports, not the one asked for', a
   });
   const settled = await (await fetch(`${baseUrl}/api/donation/${started.id}`)).json();
   assert.equal(settled.amount, 10, 'a client that asks for 1000 and pays 10 has paid 10');
+});
+
+/**
+ * Declining a receipt is not declining the invoice.
+ *
+ * ECPay will not issue one without an email or a phone, and the money is taken
+ * by a 營業人, who owes a 統一發票 on the sale whether the buyer wants a copy or
+ * not. So an unticked box has to redirect the invoice, never cancel it.
+ */
+test('an offering without a receipt still starts, and still has somewhere to invoice', async () => {
+  const options = await (await fetch(`${baseUrl}/api/donation/options`)).json();
+  assert.equal(options.receiptOptional, true, 'a fallback mailbox is configured, so the choice is offered');
+  assert.deepEqual(options.presets, [52, 520, 5920, 20000]);
+  assert.equal(options.min, 50);
+  assert.equal(options.max, 20000);
+
+  const session = await join('NO RECEIPT');
+  const started = await fetch(`${baseUrl}/api/donation`, {
+    method: 'POST',
+    headers: auth(session),
+    body: JSON.stringify({ amount: 520, receipt: false }),
+  });
+  assert.equal(started.status, 200, 'no address is needed when no receipt was asked for');
+  const offering = await started.json();
+
+  // The signed form is the only place this service's own view of the offering
+  // becomes visible, and it must carry the amount that was asked for.
+  const page = await (await fetch(`${baseUrl}/api/donation/${offering.id}/checkout`)).text();
+  assert.match(page, /name="TotalAmount" value="520"/);
+
+  // And an address is still required from anyone who did ask for one.
+  const asked = await fetch(`${baseUrl}/api/donation`, {
+    method: 'POST',
+    headers: auth(session),
+    body: JSON.stringify({ amount: 520, receipt: true }),
+  });
+  assert.equal(asked.status, 400, 'ticking the box and leaving it blank is not a valid offering');
 });

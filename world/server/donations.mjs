@@ -17,10 +17,10 @@ import { randomUUID } from 'node:crypto';
 import { aesDecrypt, aesEncrypt, checkMacValue } from './ecpay.mjs';
 
 /** The smallest and largest offering, in whole New Taiwan dollars. */
-export const MIN_DONATION = 10;
-export const MAX_DONATION = 10_000;
+export const MIN_DONATION = 50;
+export const MAX_DONATION = 20_000;
 /** What the panel offers before anybody types a number. */
-export const DONATION_PRESETS = [10, 100, 300, 1000];
+export const DONATION_PRESETS = [52, 520, 5920, 20_000];
 
 const STAGE = {
   checkout: 'https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5',
@@ -66,6 +66,10 @@ const publicOrigin = (env) => {
 
 export const ecpayConfig = (env = process.env) => {
   const production = (env.ECPAY_ENV ?? 'stage').trim().toLowerCase() === 'production';
+  const invoiceEnabled = (env.ECPAY_INVOICE ?? 'on').trim().toLowerCase() !== 'off';
+  // Held to the same shape as a donor's own address: an unusable one here
+  // fails at ECPay, hours later, as a missing invoice nobody is watching for.
+  const fallback = safeEmail(env.ECPAY_INVOICE_FALLBACK_EMAIL) ?? '';
   const urls = production ? PRODUCTION : STAGE;
   const payment = production
     ? {
@@ -94,7 +98,26 @@ export const ecpayConfig = (env = process.env) => {
     // Where the paid tab is sent afterwards.
     returnTo: (env.ECPAY_RETURN_TO ?? 'https://myscheduleltd.com/beta/').trim(),
     // Invoices can be switched off without switching payments off.
-    invoiceEnabled: (env.ECPAY_INVOICE ?? 'on').trim().toLowerCase() !== 'off',
+    invoiceEnabled,
+    /**
+     * Where the invoice goes when the donor does not want one.
+     *
+     * ECPay requires an email or a phone on every B2C invoice — there is no
+     * anonymous issue — and the money is taken by a 營業人, who owes a 統一發票
+     * on the sale whether or not the buyer asks for it. So declining a receipt
+     * cannot mean declining the invoice; it means the invoice is notified
+     * somewhere the festival owns instead of to the donor.
+     */
+    invoiceFallbackEmail: fallback,
+    /**
+     * Whether the sheet may offer the receipt as a choice at all.
+     *
+     * False unless that mailbox is configured, and then the email field stays
+     * required exactly as before. The alternative — offering the choice and
+     * issuing nothing when it is declined — would quietly take money with no
+     * invoice against it, which is the one outcome nobody chose.
+     */
+    receiptOptional: Boolean(invoiceEnabled && fallback),
     ready: Boolean(payment.merchantId && payment.hashKey && payment.hashIV && publicUrl),
     /**
      * Why it is off, when it is off.
