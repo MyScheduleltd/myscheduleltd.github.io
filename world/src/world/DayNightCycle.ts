@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CoastalSky } from './CoastalSky';
 
 export type DayPhase =
   | 'dawn'
@@ -104,8 +105,8 @@ const frame = (
 // world at night.
 const KEYFRAMES: LightingKeyframe[] = [
   frame(0, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 1.05, 0.2, 0.30, 1.08),
-  frame(5, 0x9ab5c6, 0x899aa0, 0xffd3a6, 1.45, 1.05, 0.08, 0, 0.96),
-  frame(20, 0x83b4d1, 0xa1b3b5, 0xfff1d0, 2.2, 1.35, 0, 0, 0.92),
+  frame(5, 0x4b8dcc, 0x899fae, 0xffd3a6, 1.45, 1.05, 0.08, 0, 0.96),
+  frame(20, 0x3d83d8, 0x93afc5, 0xfff1d0, 2.2, 1.35, 0, 0, 0.92),
   // Sunset and the half hour around it were the darkest the world ever got,
   // and darker than the middle of the night — which is the wrong way round and
   // is what the owner kept walking into.
@@ -148,6 +149,7 @@ const phaseAt = (minute: number): { phase: DayPhase; start: number; end: number 
 };
 
 export class DayNightCycle {
+  readonly atmosphere: CoastalSky;
   readonly directionalLight = new THREE.DirectionalLight(0xffffff, 1);
   // The lower half of the fill was very nearly black, so every underside and
   // every face turned away from the moon fell out of the picture after dark.
@@ -180,6 +182,7 @@ export class DayNightCycle {
 
   constructor(scene: THREE.Scene, fixedCycleMinute?: number) {
     this.scene = scene;
+    this.atmosphere = new CoastalSky(scene);
     this.fixedCycleMinute = fixedCycleMinute;
     this.directionalLight.position.set(36, 42, 24);
     this.directionalLight.castShadow = true;
@@ -225,6 +228,9 @@ export class DayNightCycle {
     });
     const halo = new THREE.Sprite(this.sunHaloMaterial);
     halo.scale.set(30, 30, 1);
+    // Match the moon: cloud cutouts must cover both the disc and its glow.
+    sun.renderOrder = -4; halo.renderOrder = -4;
+    this.sunMaterial.depthWrite = false;
     this.sunObject.add(halo, sun);
     this.sunObject.userData.projectorBackground = true;
 
@@ -250,6 +256,9 @@ export class DayNightCycle {
     });
     const moonHalo = new THREE.Sprite(this.moonHaloMaterial);
     moonHalo.scale.set(25, 25, 1);
+    // Celestial discs render before cloud alpha cutouts and never mask their depth.
+    moon.renderOrder = -4; moonHalo.renderOrder = -4;
+    this.moonMaterial.depthWrite = false;
     this.moonObject.add(moonHalo, moon);
     this.moonObject.userData.projectorBackground = true;
     scene.add(

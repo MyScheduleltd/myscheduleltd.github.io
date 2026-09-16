@@ -1,7 +1,13 @@
+import { SCREENING_SITES, SHORE_SIGN, screeningContains } from './CoastalVenues';
+import { TOP_OUTFITS } from './CoastalOutfits';
+import { npcSeed, sampleNpcMotion, type NpcLeg } from './SharedNpcMotion';
+import { createCoastalPopcorn, createCoastalDrink, createCoastalPamphletStand, createCoastalDeity, createCoastalSignFrame } from './CoastalProps';
+import { createCoastalDecks, createCoastalSpeaker, createCoastalJukebox } from './CoastalFurniture';
+import { setCoastalSwimwear } from './CoastalAvatar';
 import * as THREE from 'three';
 import { HeadTracking } from './HeadTracking';
 import { GamepadInput, type GamepadActionId, type GamepadFrame } from './GamepadInput';
-import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, taperedPrism, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
+import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
 import { dressBuildings, dressInteriors } from './WornArchitecture';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import type { VenueKey } from '../data/catalogue';
@@ -9,10 +15,21 @@ import { AmbientAudio } from './AmbientAudio';
 import masterOfTheHouseLogo from '../assets/master-of-the-house.png';
 import { DayNightCycle, type DayNightState } from './DayNightCycle';
 import { createStylizedWaterMaterial, tintStylizedWater } from './StylizedWater';
-import { createMentorDog, type MentorDogRig } from './MentorDog';
+import { createMentorDog, perchMentor, stepMentorGait, type MentorDogRig } from './MentorDog';
 import { createGanganStatue, GANGAN_STATUE_SIZE } from './GanganStatue';
 import { createBeachCouple, animateBeachCouple, type BeachCoupleRig } from './BeachCouple';
-import { addAvatarAccessories, applyAvatarAccessories } from './AvatarAccessories';
+import { applyAvatarAccessories } from './AvatarAccessories';
+import { SEA_Y, TEMPLE_GRADE, TEMPLE_STAIRS, TEMPLE_STAIR_VISUAL_OVERLAP, templeStairPitch, templeStairX, templeTreadTop, SHORE_GRADE, CLUB_GRADE, HILL_WALK, terrainHeightAt, isSwimmingDepth, createCoastalTerrain, createGroundRibbon, insidePaving, type PlanPoint } from './CoastalTerrain';
+import { poseCoastalCarry } from './CoastalCarry';
+import { moveCoastalBody, overlapsBodyHeight, coastalDetour, coastalRouteAround } from './CoastalCollision';
+import { pixelSurface, worldSurfaceUV } from './CoastalSurfaces';
+import { ROAD_POLYGONS, streetLampObstructsRoute } from './CoastalCirculation';
+import { CoastalScenery } from './CoastalScenery';
+import { createCoastalAvatar } from './CoastalAvatar';
+import { attachImportedAvatar, syncImportedAvatars } from './ImportedAvatar';
+import { createCoastalSkateboard } from './CoastalSkateboard';
+import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, setCoastalFists, walkCoastalPose, danceCoastalPose, COASTAL_STRIDE_LENGTH, skateCoastalPose, levelCoastalFeet, supportCoastalPose, seatCoastalLegs, coastalFootHeights } from './CoastalPose';
+import { coastalRoof, createCoastalSedan, CONVERTIBLE } from './CoastalGeometry';
 
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>;
@@ -22,7 +39,7 @@ type PhoneOrientationPermission = 'idle' | 'granted' | 'denied' | 'unavailable';
 export type GraphicsMode = 'normal' | 'lite';
 export type CameraMode = 'follow' | 'perspective' | 'first-person' | 'screening';
 export type PlayerState = 'walking' | 'seated' | 'swimming';
-export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink' | 'jump' | 'stumble' | 'offer' | 'bow' | 'punch' | 'hit' | 'tumble';
+export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink' | 'eat' | 'jump' | 'stumble' | 'offer' | 'bow' | 'punch' | 'hit' | 'tumble';
 export type CarriedItem = 'POPCORN' | 'MENTOR' | 'DRINK' | 'HOTDOG' | 'PIZZA' | 'CHICKEN';
 export const NPC_NAMES = ['MENTOR', 'KENNY', 'NUNO', 'MICHAEL', 'SEBINE', 'ZC', 'LOUI', 'MINYUN', 'VIOLA', 'XIEHGAN', 'DRBEAUTY', 'YO'] as const;
 export type NpcId = string;
@@ -168,6 +185,9 @@ interface Seat {
   /** A bar stool faces the counter and keeps the ordinary camera. */
   kind?: 'screening' | 'bar' | 'bench';
   facing?: number;
+  cushion?: THREE.Mesh;
+  forward?: number;
+  footFloor?: number;
 }
 
 interface ProjectorSurface {
@@ -177,6 +197,14 @@ interface ProjectorSurface {
   aperture: THREE.Mesh;
   /** A lightweight, policy-safe sign used while DOM/YouTube is outside WebXR. */
   xrPoster: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  xrVideo?: HTMLVideoElement;
+  xrTexture?: THREE.VideoTexture;
+  xrVideoUrl?: string;
+  xrVideoFilmId?: string;
+  xrCastStream?: MediaStream;
+  xrVideoError?: boolean;
+  xrFailedUrl?: string;
+  volume?: number;
   iframe?: HTMLIFrameElement;
   filmId?: string;
   youtubeId?: string;
@@ -189,7 +217,7 @@ interface ProjectorSurface {
    * nobody is in the room, so walking in can start it straight away instead of
    * waiting for the programme to be pushed round again.
    */
-  pending?: { film: { id: string; title: string; embedUrl: string; youtubeId: string }; offsetSeconds: number; reloadToken: string };
+  pending?: { film: { id: string; title: string; embedUrl: string; youtubeId: string; immersiveUrl?: string }; offsetSeconds: number; reloadToken: string };
   lastAdvanceAt?: number;
   currentTime?: number;
   currentTimeAt?: number;
@@ -291,7 +319,8 @@ interface RemoteAvatar {
   name: string;
 }
 
-interface AvatarRig {
+export interface AvatarRig {
+  visualRoot?: THREE.Group;
   leftArm: THREE.Group;
   rightArm: THREE.Group;
   leftLeg: THREE.Group;
@@ -332,6 +361,10 @@ interface AvatarRig {
    *
    * Absent on the original figure, so everything that drives them checks first.
    */
+  leftWrist?: THREE.Group;
+  rightWrist?: THREE.Group;
+  leftAnkle?: THREE.Group;
+  rightAnkle?: THREE.Group;
   leftElbow?: THREE.Group;
   rightElbow?: THREE.Group;
   leftKnee?: THREE.Group;
@@ -345,8 +378,8 @@ interface WaterReflectionVisual {
 }
 
 interface FireworkRocket {
-  mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
-  trail: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  trail: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
   velocity: number;
   targetY: number;
   colour: THREE.Color;
@@ -355,7 +388,7 @@ interface FireworkRocket {
 interface FireworkBurst {
   points: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
   velocities: Float32Array;
-  reflection: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  reflection: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
   origin: THREE.Vector3;
   age: number;
   lifetime: number;
@@ -364,6 +397,7 @@ interface FireworkBurst {
 }
 
 interface Collider {
+  physical?: boolean;
   label?: string;
   minX: number;
   maxX: number;
@@ -465,7 +499,7 @@ const statueBlockCenterY = GANGAN_STATUE_SIZE.height / 2;
 // it, gave up, waited, and tried again for ever. Four units further south
 // leaves the corridor clear while keeping the booth in front of the entrance
 // at z = -31.
-const concessionPosition = new THREE.Vector3(-25, 0, -28);
+const concessionPosition = new THREE.Vector3(-20, 0, -25);
 // Right in front of the statue, on the gate side: walking in you meet the
 // pamphlets first and the horse behind them. Just clear of the statue's own
 // footprint, so the two read as one arrangement.
@@ -502,12 +536,8 @@ const STUMBLE_IMPACT = 14;
 // off an edge rather than walking down a step. A rooftop tread is 0.35, so this
 // clears a staircase without turning it into a series of little hops.
 const LEDGE_DROP = 0.75;
-// How far a rider stands above the road: the exact height of this board from
-// the road to the top of its deck — wheel bottom at -0.46 under the hips, deck
-// top at -0.09, so 0.37. Anything less and the board cannot fit between the
-// soles and the ground: either the soles come through the deck or the wheels
-// go under the road.
-const SKATE_LIFT = 0.37;
+// Rider origin .28 + lift .18 balances the board's wheel bottom at -.46.
+const SKATE_LIFT = 0.18;
 const CAMERA_ZOOM_KEY = 'myschedule-camera-zoom-v1';
 /** Below this the frame is narrower than it is tall and the fov is widened. */
 const PORTRAIT_ASPECT = 1.35;
@@ -545,14 +575,14 @@ const readStoredZoom = (): number => {
     return 1;
   }
 };
-const AVATAR_SWIM_Y = -2.08;
+const AVATAR_SWIM_Y = SEA_Y - 2.22;
 /**
  * North of this the ground gives out and a body is in the sea. The visitor's
  * own `shouldSwim` has always used it; residents now read the same number, so
  * a dog paddling behind its owner and the owner start swimming on the same
  * step rather than one of them walking on the water.
  */
-const SWIM_Z = -60;
+
 
 /** The only origins a projector or jukebox player can legitimately speak from. */
 const PROJECTOR_ORIGINS = new Set([
@@ -572,7 +602,7 @@ const PROJECTOR_ORIGINS = new Set([
  * belly exactly on the surface: legs under, whole body and head above, still
  * walking. Measured against the geometry rather than eyeballed this time.
  */
-const MENTOR_SWIM_Y = -0.72;
+const MENTOR_SWIM_Y = SEA_Y - 0.86;
 
 /**
  * How far the viewpoint moves for how far the head does. A webcam gives roughly
@@ -598,7 +628,6 @@ const SWIM_CAMERA_PITCH = 0.2;
 
 const clubLightColors = [0xff2f6d, 0x38e0ff, 0xffd23f, 0x8c4bff, 0x2fff9e, 0xff6a1f];
 // The street elevation is kept to the house colours: pink and orange.
-const clubFacadeColors = [0xff2f6d, 0xff7a1f];
 // How far north the club sits, keeping it clear of the red carpet and road.
 const EDIBLE_ITEMS: CarriedItem[] = ['POPCORN', 'DRINK', 'HOTDOG', 'PIZZA', 'CHICKEN'];
 const DRUNK_DURATION_MS = 45_000;
@@ -618,7 +647,12 @@ const DRUNK_DURATION_MS = 45_000;
  * alone, which every caller already has.
  */
 const GESTURE_SPAN_MS: Partial<Record<AvatarGesture, number>> = {
+  wave: 1600,
+  tumble: 1050,
+  stumble: 700,
   punch: 560,
+  drink: 1_800,
+  eat: 2_000,
   hit: 620,
   // MENTOR's bow is posed from how far through the gesture it is, and a gesture
   // with no span here reports zero for ever — so the dog's play-bow had a depth
@@ -647,7 +681,7 @@ const TEMPLE = {
   wallThickness: 0.9,
   doorHalfWidth: 3.6,
 };
-const TEMPLE_FLOOR_Y = TEMPLE.podium + AVATAR_GROUND_Y;
+const TEMPLE_FLOOR_Y = TEMPLE_GRADE + TEMPLE.podium + AVATAR_GROUND_Y;
 const rooftopBounds = {
   // Pulled four units east off the road. The stair runs down the outside of the
   // west face and its kerb reached x = 13.3, while the red carpet's edge is at
@@ -702,11 +736,11 @@ const ROOF_GOING = 0.56;
 // in this list: it is underground and NPCs cannot use the stairs.
 const NPC_HAUNTS: Record<string, Array<[number, number]>> = {
   gate: [[-9, 52], [9, 52], [9, 44], [-9, 44]],
-  square: [[-9, 8], [9, 8], [9, -4], [-9, -4]],
+  square: [[-9, 8], [9, 8], [9, -12], [-9, -12]],
   promenade: [[-10, 30], [10, 30], [10, 18], [-10, 18]],
   palace: [[-42, -22], [-28, -22], [-28, -30], [-42, -30]],
-  driveIn: [[29, -13], [41, -13], [41, -18], [29, -18]],
-  shore: [[-8, -26], [8, -26], [8, -31], [-8, -31]],
+  driveIn: [[-6, -23], [6, -23], [6, -26], [-6, -26]],
+  shore: [[27, -16], [43, -16], [43, -21], [27, -21]],
   clubFront: [[-14, 29], [-7, 29], [-7, 19], [-14, 19]],
   // The three rooms the residents never actually went into. Written out rather
   // than derived, because CLUB_Z, rooftopBounds and TEMPLE are all declared
@@ -735,12 +769,14 @@ const NAV_POINTS: Record<string, [number, number]> = {
   // and which the old spine walked straight into.
   square: [9, 6],
   southJunction: [9, -12],
-  shore: [0, -31],
+  shore: [35, -21],
+  shoreApproach: [35, -15],
   palace: [-35, -26],
+  westPromenade: [-21, -19],
   // The Drive-In is entered from its north side; coming at it across the
   // diagonal walks into the back of the cars.
-  driveInApproach: [35, -12],
-  driveIn: [35, -16],
+  driveInApproach: [0, -22],
+  driveIn: [0, -26],
   // West, into The Basement: across the forecourt, in at the door, then down
   // the stair slot on its centre line.
   clubFront: [-11, 24],
@@ -754,18 +790,20 @@ const NAV_POINTS: Record<string, [number, number]> = {
   // the west a body walks into the kerb the handrail stands on.
   roofStairApproach: [19.6, 16],
   roofStairFoot: [19.6, 21],
-  roofStairTop: [19.6, 35],
+  roofStairTop: [19.6, 35.05],
   // Straight in through the gap in the parapet before turning onto the deck.
   // Cutting the corner diagonally clipped the parapet's end: a point slipped
   // past it and a body does not, which is what verifying the network with a
   // point and then walking it with a body hides.
-  roofDeckDoor: [24.5, 34.4],
+  roofDeckDoor: [24.5, 35.05],
   roofDeck: [36, 30],
   // The long walk east to the temple, south of the garage's plot.
   // Out past the square's east kerb before turning for the temple: straight
   // from the square the line clips the furniture at its edge.
   templeSpur: [20, 0],
   templeApproach: [40, 4],
+  hill1: [65, -4], hill2: [65, -32], hill3: [112,-32],
+  hill4: [116,-6], hill5: [114,28], hill6: [72,28], hill7: [72,4],
   templeFoot: [73, 4],
   templeHall: [88, 4],
 };
@@ -773,8 +811,11 @@ const NAV_LINKS: Array<[string, string]> = [
   ['gate', 'promenade'],
   ['promenade', 'square'],
   ['square', 'southJunction'],
-  ['southJunction', 'shore'],
+  ['southJunction', 'shoreApproach'],
+  ['shoreApproach','shore'],
   ['southJunction', 'palace'],
+  ['palace','westPromenade'],
+  ['westPromenade','driveInApproach'],
   ['southJunction', 'driveInApproach'],
   ['driveInApproach', 'driveIn'],
   ['promenade', 'clubFront'],
@@ -789,7 +830,8 @@ const NAV_LINKS: Array<[string, string]> = [
   ['roofDeckDoor', 'roofDeck'],
   ['square', 'templeSpur'],
   ['templeSpur', 'templeApproach'],
-  ['templeApproach', 'templeFoot'],
+  ['templeApproach','hill1'], ['hill1','hill2'], ['hill2','hill3'],
+  ['hill3','hill4'], ['hill4','hill5'], ['hill5','hill6'], ['hill6','hill7'], ['hill7','templeFoot'],
   ['templeFoot', 'templeHall'],
 ];
 const NAV_ADJACENCY: Record<string, string[]> = (() => {
@@ -869,9 +911,9 @@ const HAUNT_NODE: Record<string, string> = {
  * arrive at that height or the ground under them is read as the street.
  */
 const NPC_HAUNT_FLOOR: Record<string, number> = {
-  clubFloor: -16.5 + AVATAR_GROUND_Y,
+  clubFloor: CLUB_GRADE + AVATAR_GROUND_Y,
   rooftopDeck: 7 + AVATAR_GROUND_Y,
-  temple: 1.2 + AVATAR_GROUND_Y,
+  temple: TEMPLE_GRADE + 1.2 + AVATAR_GROUND_Y,
 };
 /** Rooms worth stopping to dance in. */
 const NPC_DANCE_HAUNTS = new Set(['clubFloor', 'rooftopDeck']);
@@ -893,7 +935,7 @@ const NPC_DWELL_SPREAD_MS = 55_000;
 const CLUB_Z = 15;
 // The gate sits north of the club, so attendees pass it on the way in.
 const GATE_Z = 62;
-const CLUB_FLOOR_Y = -16.5;
+const CLUB_FLOOR_Y = CLUB_GRADE;
 const CLUB_ROOM_HEIGHT = 15;
 const CLUB_AVATAR_Y = CLUB_FLOOR_Y + AVATAR_GROUND_Y;
 const CLUB_STAGE_X = -68;
@@ -949,8 +991,8 @@ const venueScreens: Record<VenueKey, {
 }> = {
   shore: {
     label: 'The Shore',
-    position: [0, 6.1, -45.68],
-    target: [0, 5.8, -46],
+    position: [35, 6.1 + SHORE_GRADE, -35.68],
+    target: [35, 5.8 + SHORE_GRADE, -36],
     scale: 0.0095,
     facing: 1,
   },
@@ -963,8 +1005,8 @@ const venueScreens: Record<VenueKey, {
   },
   'drive-in': {
     label: 'Drive-In 88',
-    position: [35, 6.05, -35.68],
-    target: [35, 5.75, -36],
+    position: [0, 6.05 + SCREENING_SITES['drive-in'].grade, -45.68],
+    target: [0, 5.75 + SCREENING_SITES['drive-in'].grade, -46],
     scale: 0.00915,
     facing: 1,
   },
@@ -1059,18 +1101,16 @@ const signFont = (size: number, heading: boolean): string => {
  * inside the rule at its own aspect ratio rather than stretched to the canvas,
  * because a hand-drawn wordmark squashed to a 2:1 box stops looking hand-drawn.
  */
-const createImageSignTexture = (source: string, background = '#151517'): THREE.CanvasTexture => {
+const createImageSignTexture = (source: string, background = '#151517', aspect=2): THREE.CanvasTexture => {
   const canvas = document.createElement('canvas');
   canvas.width = 1024;
-  canvas.height = 512;
+  canvas.height = Math.round(1024/aspect);
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Canvas 2D context unavailable.');
   const frame = () => {
     context.fillStyle = background;
     context.fillRect(0, 0, canvas.width, canvas.height);
-    context.strokeStyle = '#b51f27';
-    context.lineWidth = 18;
-    context.strokeRect(22, 22, canvas.width - 44, canvas.height - 44);
+
   };
   frame();
   const texture = new THREE.CanvasTexture(canvas);
@@ -1082,7 +1122,8 @@ const createImageSignTexture = (source: string, background = '#151517'): THREE.C
     // The supplied file carries a wide transparent margin, so fitting the
     // whole bitmap would leave the logo small and adrift. Contain it in the
     // panel's inner area and let the margin fall outside.
-    const inner = { x: 58, y: 58, width: canvas.width - 116, height: canvas.height - 116 };
+    const pad=canvas.height*.07;
+    const inner = { x: pad, y: pad, width: canvas.width - pad*2, height: canvas.height - pad*2 };
     const scale = Math.min(inner.width / art.width, inner.height / art.height);
     const width = art.width * scale;
     const height = art.height * scale;
@@ -1093,27 +1134,28 @@ const createImageSignTexture = (source: string, background = '#151517'): THREE.C
   return texture;
 };
 
-const createTextTexture = (lines: string[], foreground = '#f5efe2', background = '#151517') => {
+const createTextTexture = (lines: string[], foreground = '#eee4cc', background = '#354842', aspect=2) => {
   const canvas = document.createElement('canvas');
   canvas.width = 1024;
-  canvas.height = 512;
+  canvas.height = Math.round(1024/aspect);
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Canvas 2D context unavailable.');
   const paint = () => {
     context.fillStyle = background;
     context.fillRect(0, 0, canvas.width, canvas.height);
-    context.strokeStyle = '#b51f27';
-    context.lineWidth = 18;
+    context.strokeStyle = '#8d654b';
+    context.lineWidth = Math.max(3,canvas.height*.022);
     context.strokeRect(22, 22, canvas.width - 44, canvas.height - 44);
     context.fillStyle = foreground;
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     lines.forEach((line, index) => {
       const heading = index === 0;
-      context.font = signFont(heading ? 104 : 48, heading);
-      // Bebas is a condensed face and sits taller on the line than the old
-      // fallback, so the heading is nudged down to stay centred in its band.
-      context.fillText(line, canvas.width / 2, (heading ? 158 : 150) + index * 115);
+      let size=canvas.height*(heading?.36:.17);
+      context.font=signFont(size,heading);
+      size*=Math.min(1,(canvas.width-100)/Math.max(1,context.measureText(line).width));
+      context.font=signFont(size,heading);
+      context.fillText(line,canvas.width/2,canvas.height*(heading?.41:.76));
     });
   };
   paint();
@@ -1271,6 +1313,8 @@ export class FestivalWorld {
   private drinks = 0;
   private carriedPropKind?: CarriedItem;
   private drinkUntil = 0;
+  private eatingUntil = 0;
+  private eatingItem?: CarriedItem;
   private drunkUntil = 0;
   private drunkPhase = 0;
   private reviewFrameCount = 0;
@@ -1310,10 +1354,18 @@ export class FestivalWorld {
   private readonly xrRig = new THREE.Group();
   private readonly xrControllers: THREE.Group[] = [];
   private xrSession?: XRSession;
+  /** Present only when this headset/browser granted WebXR's DOM overlay feature. */
+  private xrDomOverlay?: XRDOMOverlayType;
   private xrActive = false;
   private xrSimulated = false;
   private xrYaw = 0;
   private xrHomeYaw = 0;
+  private xrFloorOffset = 0;
+  private xrNeedsCalibration = true;
+  private xrRecenterReady = true;
+  private xrHeadHeading = 0;
+  private readonly xrMovementView = new THREE.PerspectiveCamera();
+  private readonly xrRawOrientation = new THREE.Quaternion();
   private xrSimPitch = 0;
   private readonly xrYawAxis = new THREE.Vector3(0, 1, 0);
   private xrLookedAround = false;
@@ -1690,6 +1742,7 @@ export class FestivalWorld {
     document.removeEventListener('visibilitychange', this.resumeProjectorsOnReturn);
     window.removeEventListener('pointerup', this.nudgeProjectorsOnGesture, true);
     this.stopFireworks();
+    for (const venue of this.projectors.keys()) this.stopImmersiveVideo(venue);
     this.renderer.dispose();
     this.foregroundRenderer?.dispose();
     for (const projector of this.projectors.values()) {
@@ -1868,6 +1921,10 @@ export class FestivalWorld {
     this.xrLookedAround = false;
     this.xrLookReference = undefined;
     this.xrSimulated = simulated;
+    this.xrNeedsCalibration = true;
+    this.xrFloorOffset = 0;
+    // The town uses two world units per metre; WebXR poses are in metres.
+    this.xrRig.scale.setScalar(simulated ? 1 : 2);
     this.xrRig.rotation.y = this.xrYaw;
     this.camera.position.set(0, simulated ? AVATAR_EYE_HEIGHT : 0, 0);
     this.camera.rotation.set(0, 0, 0);
@@ -1876,13 +1933,13 @@ export class FestivalWorld {
     });
     for (const [venue, projector] of this.projectors) {
       // A desktop preview is still an ordinary browser composition, so its
-      // CSS3D YouTube player can stay on the in-world screen. A real immersive
-      // WebXR layer cannot contain that cross-origin iframe; only that path
-      // swaps to the lightweight WebGL poster and releases its decoder.
+      // CSS3D YouTube can stay on a desktop/phone preview. Real WebXR uses a
+      // WebGL video texture when an authorized direct stream is configured.
       if (simulated) {
         projector.xrPoster.visible = false;
         continue;
       }
+      projector.xrFailedUrl = undefined;
       this.releaseProjector(venue);
       projector.xrPoster.visible = true;
       projector.element.style.visibility = 'hidden';
@@ -1893,7 +1950,7 @@ export class FestivalWorld {
   }
 
   /** Must be called directly from a visitor gesture for a real WebXR session. */
-  async enterVr(simulated = false, phoneMotion = false): Promise<boolean> {
+  async enterVr(simulated = false, phoneMotion = false, overlayRoot?: Element): Promise<boolean> {
     if (this.xrActive || this.xrSession) return true;
     if (simulated) {
       if (phoneMotion && !await this.enablePhoneOrientation()) return false;
@@ -1918,9 +1975,11 @@ export class FestivalWorld {
       if (!xr || !supported) return false;
       const session = await xr.requestSession('immersive-vr', {
         requiredFeatures: ['local-floor'],
-        optionalFeatures: ['bounded-floor'],
+        optionalFeatures: ['bounded-floor', 'dom-overlay'],
+        ...(overlayRoot ? { domOverlay: { root: overlayRoot } } : {}),
       });
       this.xrSession = session;
+      this.xrDomOverlay = session.domOverlayState?.type;
       session.addEventListener('end', this.xrEnded, { once: true });
       this.beginXrPresentation(false);
       await this.renderer.xr.setSession(session);
@@ -1953,6 +2012,15 @@ export class FestivalWorld {
     } catch {
       this.xrEnded();
     }
+  }
+
+  /**
+   * A granted overlay is the only standards based way to keep an HTML YouTube
+   * iframe visible while an immersive WebXR session owns the headset display.
+   * The browser chooses whether it is floating, head locked or screen sized.
+   */
+  xrDomOverlayType(): XRDOMOverlayType | undefined {
+    return this.xrDomOverlay;
   }
 
   /** Let the browser keep the tracker between visits, or not. */
@@ -2151,7 +2219,12 @@ export class FestivalWorld {
    * straight from gravity, so the horizon cannot be knocked over with it.
    */
   recenterVrView(): boolean {
-    if (!this.xrActive || !this.xrSimulated) return false;
+    if (!this.xrActive) return false;
+    if (!this.xrSimulated) {
+      this.xrNeedsCalibration = true;
+      this.xrLookReference = undefined;
+      return true;
+    }
     this.xrLookReference = undefined;
     // However the visitor is sitting now is the new straight-ahead, for the
     // head as much as for the view.
@@ -2178,6 +2251,7 @@ export class FestivalWorld {
 
   private readonly xrEnded = (): void => {
     this.xrSession = undefined;
+    this.xrDomOverlay = undefined;
     this.xrActive = false;
     this.xrSimulated = false;
     this.xrSimPitch = 0;
@@ -2187,9 +2261,14 @@ export class FestivalWorld {
     // site that asked for a camera.
     this.disableHeadTracking();
     this.xrRig.position.set(0, 0, 0);
+    this.xrRig.scale.setScalar(1);
     this.xrRig.rotation.set(0, 0, 0);
     this.xrControllers.forEach((controller) => controller.position.set(0, 0, 0));
-    for (const projector of this.projectors.values()) projector.xrPoster.visible = false;
+    for (const [venue, projector] of this.projectors) {
+      this.stopImmersiveVideo(venue);
+      projector.xrPoster.visible = false;
+    }
+    this.mountedProjectorVenue = undefined;
     this.player.visible = !this.controlledNpcId && this.cameraMode !== 'first-person';
     this.onXrSessionChange?.(false);
   };
@@ -2314,6 +2393,7 @@ export class FestivalWorld {
     let run = false;
     let teleportPressed = false;
     let jumpPressed = false;
+    let recenterPressed = false;
     for (const source of this.xrSession.inputSources) {
       const gamepad = source.gamepad;
       if (!gamepad) continue;
@@ -2326,22 +2406,29 @@ export class FestivalWorld {
         run ||= Boolean(gamepad.buttons[1]?.pressed);
         teleportPressed ||= Boolean(gamepad.buttons[3]?.pressed);
         jumpPressed ||= Boolean(gamepad.buttons[4]?.pressed);
+        recenterPressed ||= Boolean(gamepad.buttons[5]?.pressed);
       } else if (source.handedness === 'right') {
         turnX = Math.abs(x) > 0.68 ? x : 0;
         run ||= Boolean(gamepad.buttons[1]?.pressed);
       }
     }
+    if(recenterPressed&&this.xrRecenterReady){this.recenterVrView();this.xrRecenterReady=false;}
+    else if(!recenterPressed)this.xrRecenterReady=true;
     if (turnX && this.xrSnapReady) {
       this.xrYaw -= Math.sign(turnX) * THREE.MathUtils.degToRad(30);
       this.xrSnapReady = false;
     } else if (!turnX) this.xrSnapReady = true;
     if (this.playerState !== 'seated' && (moveX || moveY)) {
-      const xrCamera = this.renderer.xr.getCamera();
+      // Use this frame's viewer pose and the same snap yaw as the rendered rig.
+      // getCamera() still contains reference-space matrices before render().
+      this.xrMovementView.rotation.set(0,this.xrYaw+this.xrHeadHeading,0);
+      const xrCamera = this.xrMovementView;
       const speed = run ? 7.4 : 4.4;
       this.movePlayer(moveX, moveY, speed * delta, xrCamera);
     }
     if (teleportPressed && this.xrTeleportReady && this.playerState !== 'seated') {
-      this.movePlayer(0, -1, 2.4, this.renderer.xr.getCamera());
+      this.xrMovementView.rotation.set(0,this.xrYaw+this.xrHeadHeading,0);
+      this.movePlayer(0, -1, 2.4, this.xrMovementView);
       this.xrTeleportReady = false;
     } else if (!teleportPressed) this.xrTeleportReady = true;
     if (jumpPressed && this.xrJumpReady) {
@@ -2359,16 +2446,20 @@ export class FestivalWorld {
       preferred: this.xrPreferred,
       active: this.xrActive,
       simulated: this.xrSimulated,
+      domOverlay: this.xrDomOverlay ?? null,
       singleWebglContext: !this.foregroundRenderer,
       controllers: this.xrControllers.length,
       projectorPosters: [...this.projectors.values()].filter((projector) => projector.xrPoster.visible).length,
       projectorMode: this.xrActive
-        ? (this.xrSimulated ? 'youtube-css3d' : 'webgl-posters')
+        ? (this.xrSimulated ? 'youtube-css3d' : [...this.projectors.values()].some((projector) => projector.xrTexture) ? 'webgl-video' : 'webgl-posters')
         : 'standard',
       mountedProjector: this.mountedProjectorVenue ?? null,
       projectorPlayback: mountedProjector ? {
         youtubeId: mountedProjector.youtubeId ?? null,
         iframeMounted: Boolean(mountedProjector.iframe),
+        directVideoMounted: Boolean(mountedProjector.xrVideo),
+        directVideoReady: Boolean(mountedProjector.xrTexture),
+        directVideoError: mountedProjector.xrVideoError ?? false,
         playing: mountedProjector.playing ?? null,
         staffPaused: mountedProjector.paused,
       } : null,
@@ -2423,7 +2514,7 @@ export class FestivalWorld {
   }
 
   /** Local QA summary: exposes counts, never the scene or mutable effect. */
-  fireworksReviewSnapshot(): { active: boolean; rockets: number; bursts: number; particles: number; lights: number; reflections: number } {
+  fireworksReviewSnapshot(): { active: boolean; rockets: number; bursts: number; particles: number; lights: number; reflections: number; reflectionHeights: number[] } {
     return {
       active: this.fireworksUntil > performance.now(),
       rockets: this.fireworkRockets.length,
@@ -2431,6 +2522,7 @@ export class FestivalWorld {
       particles: this.fireworkBursts.reduce((total, burst) => total + burst.velocities.length / 3, 0),
       lights: this.fireworkWorldLight.intensity > 0.01 ? 1 : 0,
       reflections: this.fireworkBursts.length,
+      reflectionHeights: this.fireworkBursts.map(b=>b.reflection.position.y),
     };
   }
 
@@ -2600,7 +2692,7 @@ export class FestivalWorld {
     const me = this.selfVisitorId ?? 'review-self';
     this.selfVisitorId = me;
     this.setMentorFollower(null);
-    this.player.position.set(NAV_POINTS.square[0], AVATAR_GROUND_Y, NAV_POINTS.square[1]);
+    this.player.position.set(NAV_POINTS.square[0], this.groundHeightAt(...NAV_POINTS.square), NAV_POINTS.square[1]);
     this.pickUpMentor();
     // Told to the service, not just to us. A pick-up announces itself, so a
     // put-down that stays quiet leaves the service still holding this visitor
@@ -2774,9 +2866,9 @@ export class FestivalWorld {
       // The Palace, off its carpet at (-35, -39.5), 21 by 17.
       box(-47, -2, -50, -23, 26, -29),
       // The Drive-In, off its asphalt at (35, -24.5), 25 by 22.
-      box(21, -2, -37, 49, 26, -12),
+      box(-14, -3, -47, 20, 26, -22),
       // The Shore's screen and its two masts.
-      box(-12, -2, -50, 12, 26, -41),
+      box(23, -2, -40, 47, 26, -31),
       // The temple, for the same reason.
       box(TEMPLE.stepMinX - 2, -2, TEMPLE.minZ - 2, TEMPLE.maxX + 2, 26, TEMPLE.maxZ + 2),
     ];
@@ -2849,7 +2941,7 @@ export class FestivalWorld {
     // the later re-runs correctly find nothing to do — and assigning their
     // return value overwrote the real count with zero, which made a working
     // feature look like a broken one.
-    if (wornMeshesRequested()) {
+    if (new URLSearchParams(window.location.search).get('legacyDressing') === '1') {
       // Fetched here rather than on load, so a visitor who never asks for the
       // style never pays for the font.
       loadBrandFont();
@@ -2998,7 +3090,7 @@ export class FestivalWorld {
         const box = new THREE.Box3();
         this.player.traverseVisible((object) => {
           const mesh = object as THREE.Mesh;
-          if (mesh.isMesh) box.expandByObject(mesh);
+          if (mesh.isMesh && !mesh.userData.projectorBackground) box.expandByObject(mesh);
         });
         const ground = this.groundHeightAt(this.player.position.x, this.player.position.z)
           - AVATAR_GROUND_Y;
@@ -3026,6 +3118,7 @@ export class FestivalWorld {
       const steps = Math.max(2, Math.ceil(span / 0.4));
       let y = this.groundHeightAt(a[0], a[1]);
       let blockedAt: [number, number] | undefined;
+      let firstObstacles: Collider[] | undefined;
       let blocked = 0;
       let climb = 0;
       for (let step = 0; step <= steps; step += 1) {
@@ -3040,7 +3133,11 @@ export class FestivalWorld {
         // "clear" and impassable at the same time.
         if (this.staticCollides(x, z, y, FestivalWorld.BODY_RADIUS)) {
           blocked += 1;
-          if (!blockedAt) blockedAt = [Number(x.toFixed(1)), Number(z.toFixed(1))];
+          if (!blockedAt) {
+            blockedAt = [Number(x.toFixed(1)), Number(z.toFixed(1))];
+            const radius=FestivalWorld.BODY_RADIUS;
+            firstObstacles=this.colliders.filter(c=>x>c.minX-radius&&x<c.maxX+radius&&z>c.minZ-radius&&z<c.maxZ+radius&&overlapsBodyHeight(y,c));
+          }
         }
       }
       results.push({
@@ -3048,6 +3145,7 @@ export class FestivalWorld {
         span: Number(span.toFixed(1)),
         blocked,
         firstBlock: blockedAt,
+        firstObstacles,
         // A jump in the floor between two samples 0.4 apart is a ledge, not a
         // slope: a resident would be walking up the side of something.
         worstStep: Number(climb.toFixed(2)),
@@ -3056,7 +3154,6 @@ export class FestivalWorld {
     }
     const loops: Array<Record<string, unknown>> = [];
     for (const [haunt, points] of Object.entries(NPC_HAUNTS)) {
-      const floor = NPC_HAUNT_FLOOR[haunt] ?? AVATAR_GROUND_Y;
       let blocked = 0;
       let firstBlock: [number, number] | undefined;
       for (let corner = 0; corner < points.length; corner += 1) {
@@ -3067,6 +3164,7 @@ export class FestivalWorld {
           const t = step / steps;
           const x = a[0] + (b[0] - a[0]) * t;
           const z = a[1] + (b[1] - a[1]) * t;
+          const floor = this.groundHeightAt(x, z, NPC_HAUNT_FLOOR[haunt]);
           if (this.staticCollides(x, z, floor, FestivalWorld.BODY_RADIUS)) {
             blocked += 1;
             if (!firstBlock) firstBlock = [Number(x.toFixed(1)), Number(z.toFixed(1))];
@@ -3112,6 +3210,211 @@ export class FestivalWorld {
       bad: results.filter((r) => (r.blocked as number) > 0 || (r.worstStep as number) > 0.9),
       clean: results.filter((r) => (r.blocked as number) === 0 && (r.worstStep as number) <= 0.9).length,
       total: results.length,
+    };
+  }
+
+  focusCoastalForReview(view: string): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    const views: Record<string, [number, number, number, number, number]> = {
+      housesEast:[35,61,12,Math.PI+.3,-.18], housesWest:[-39,58,9,Math.PI,-.22], roofStair:[19.6,23,12,-2,-.2], roofStairTop:[19.6,31.6,7,Math.PI,-.12], roofLandingCorner:[22,36.5,9,2.5,-.12], roofWestSoffit:[22,18,10,-2.3,-.25], clubExterior:[-19,23,32,Math.PI/2,-.18], djSide:[40,25.2,6,Math.PI/2,.12], templeSide:[79,-10,19,-.4,.12], palaceCorner:[-45,-32,12,-.7,-.25],
+      clubdj:[-68,35.9,6,Math.PI,.22], roofdj:[40,25.2,6,0,.22], hillstairs:[67,4,20,-Math.PI/2,.3],
+      pamphlet:[0,-1.4,6,0,.22], eastplan:[45,0,58,-.4,.85], threshold:[-22.5,23.5,3,-Math.PI/2,.38], crossing:[8.5,56,12,Math.PI/2,.48], shopcabinet:[29,11,9,Math.PI,.22], templefloor:[88,4,12,-Math.PI/2,.3], palacepost:[-26,-26.2,9,.2,.2],
+      rampjoin:[-49,23.5,7,-Math.PI/2,.13], templesteps:[74,4,12,-Math.PI/2,.18], templealtar:[100,4,8,-Math.PI/2,-.16], shoresign:[SHORE_SIGN.x,SHORE_SIGN.z,18,0,-.08], shoreRoad:[35,-12,16,0,.08], concession:[concessionPosition.x,concessionPosition.z,9,0,-.1],
+      booth:[17,-27,12,0,-.16], clubfloor:[-88,22,7,Math.PI/2,.65], clubceiling:[-70,22,14,0,-.6], roofseats:[40,35,8,Math.PI,.3], clubfront:[-20,23.5,28,Math.PI/2,-.18], clubentry:[-20,23.5,22,-Math.PI/2,-.22], gate:[0,62,30,0,-.25],
+      clublights:[-55,0,21,Math.PI,-.18], bar:[-68,6.8,12,0,-.10], houses:[-39,58,12,Math.PI,-.22], shop:[40,8,20,Math.PI,-.10], clubscreen:[-68,41,19,Math.PI,-.15],
+      arrival: [0, 25, 27, 0, .18], square: [-7, -4, 20, .4, .16],
+      palace: [-35, -32, 27, 0, -.17], shore: [35, -32, 18, .35, .06],
+      drive: [0, -38, 17, .2, .05], club: [-45, 23.5, 32, Math.PI / 2, .08],
+      temple: [88, 4, 48, -Math.PI / 2, -.17], hill: [100, 0, 56, -2.3, -.08],
+      roof: [40, 28, 8, .6, .14],
+    };
+    this.lookAtSpotForReview(...(views[view] ?? views.square));
+    if (view === 'roofLandingCorner') this.player.position.y = ROOF_AVATAR_Y;
+    if (view === 'eastplan') {
+      this.player.position.set(48,this.groundHeightAt(48,0),0);
+      this.cameraMode='follow';this.cameraZoom=4.8;
+      this.cameraOrbit.follow.yaw=-.4;this.cameraOrbit.follow.pitch=.9;
+    }
+    if (view === 'overview' || view === 'avatar' || view === 'hit') {
+      this.player.position.set(0, this.groundHeightAt(0, 10), 10);
+      this.cameraMode = 'follow';
+      this.cameraZoom = view === 'overview' ? 3.2 : .4;
+      this.cameraOrbit.follow.yaw = view === 'overview' ? -.35 : 0;
+      if (view === 'avatar' || view === 'hit') {
+        this.cameraMode = 'perspective'; this.cameraZoom = .5;
+        this.cameraOrbit.perspective.yaw = .14; this.cameraOrbit.perspective.pitch = .12;
+      }
+      this.cameraOrbit.follow.pitch = view === 'overview' ? .9 : .08;
+      this.player.rotation.y = 0;
+    }
+    if (['popcorn', 'drink', 'drink-seat'].includes(view)) {
+      this.focusCoastalForReview('avatar');
+      if (view === 'drink-seat') {
+        this.focusClubBarForReview();
+        this.cameraMode = 'perspective'; this.cameraZoom = .5;
+        this.cameraOrbit.perspective.yaw = 1.6; this.cameraOrbit.perspective.pitch = .12;
+      }
+      this.carriedItem = view === 'popcorn' ? 'POPCORN' : 'DRINK';
+      this.syncCarriedPropAnchor();
+      if (view !== 'popcorn') {
+        this.drinkUntil = performance.now() + 60_000;
+        this.playerGesture = 'drink'; this.playerGestureUntil = this.drinkUntil;
+      }
+    }
+  }
+
+  coastalRigReview(): unknown {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    const seats = (['shore', 'palace', 'drive-in', 'rooftop', 'club'] as VenueKey[]).map(venue => {
+      this.focusSeatForReview(venue);
+      return { venue, ...this.seatReviewSnapshot() };
+    });
+    const allSeats=this.seats.map(seat=>{
+      this.focusSeatForReview(seat.venue,seat.id);
+      const check=this.seatReviewSnapshot();
+      return {id:seat.id,reachable:check.reachable,legInPad:check.legInPad,hipAbovePad:check.hipAbovePad};
+    });
+    this.activeSeat = undefined; this.playerState = 'walking';
+    if (this.playerRig) this.animateRig(this.playerRig, 0, 0);
+    this.focusCoastalForReview('avatar');
+    return { seats, totalSeats:allSeats.length, seatFailures:allSeats.filter(s=>!s.reachable||s.legInPad||Math.abs(Number(s.hipAbovePad)-.23)>.01), accessories: this.accessoryFitSnapshot() };
+  }
+
+  private signLayoutReview():unknown {
+    this.scene.updateMatrixWorld(true);
+    const signs:THREE.Mesh[]=[],occluders:THREE.Mesh[]=[],materials=[...this.venueSignMaterials.values()];
+    this.scene.traverseVisible(o=>{
+      const mesh=o as THREE.Mesh;if(!mesh.isMesh)return;
+      for(let p:THREE.Object3D|null=o;p;p=p.parent)if(p.userData.sculptRuntime)return;
+      if(materials.includes(mesh.material as THREE.MeshBasicMaterial)||mesh===this.shopSign)signs.push(mesh);else occluders.push(mesh);
+    });
+    return signs.map(sign=>{
+      const g=sign.geometry as THREE.PlaneGeometry,mat=sign.material as THREE.MeshBasicMaterial;
+      const image=mat.map?.image as {width:number;height:number}|undefined;
+      const normal=new THREE.Vector3(0,0,1).transformDirection(sign.matrixWorld),blocked:unknown[]=[];
+      for(const u of [-.4,0,.4])for(const v of [-.35,0,.35]){
+        const target=new THREE.Vector3(g.parameters.width*u,g.parameters.height*v,0).applyMatrix4(sign.matrixWorld);
+        const ray=new THREE.Raycaster(target.clone().addScaledVector(normal,4),normal.clone().negate(),0,3.97);
+        const hit=ray.intersectObjects(occluders,false)[0];if(hit)blocked.push(hit.point.toArray());
+      }
+      return {name:sign===this.shopSign?'Master of the House':Object.entries(Object.fromEntries(this.venueSignMaterials)).find(([,m])=>m===mat)?.[0],panelAspect:g.parameters.width/g.parameters.height,textureAspect:image?image.width/image.height:null,blocked};
+    });
+  }
+
+  private clubSightlineReview():unknown {
+    this.scene.updateMatrixWorld(true);
+    const blockers:Array<unknown>=[],ray=new THREE.Raycaster();let checks=0;
+    const meshes:THREE.Mesh[]=[];
+    this.scene.traverseVisible(o=>{
+      if(!(o as THREE.Mesh).isMesh)return;
+      for(let p:THREE.Object3D|null=o;p;p=p.parent)if(p.userData.sculptRuntime)return;
+      meshes.push(o as THREE.Mesh);
+    });
+    for(const x of [-74,-68,-62])for(const z of [18,26])for(const [dx,dy] of [[0,0],[-6,-3],[6,-3],[-6,3],[6,3]]){
+      const from=new THREE.Vector3(x,CLUB_FLOOR_Y+2.5,z),to=new THREE.Vector3(CLUB_STAGE_X+dx,CLUB_FLOOR_Y+CLUB_ROOM_HEIGHT/2+dy,41.5);
+      ray.set(from,to.clone().sub(from).normalize());ray.far=from.distanceTo(to)-.08;checks++;
+      const hit=ray.intersectObjects(meshes,false)[0];
+      if(hit)blockers.push({from:from.toArray(),to:to.toArray(),name:hit.object.name||'unnamed structural mesh',at:hit.point.toArray()});
+    }
+    return {checks,blockers};
+  }
+
+  private surfaceContactReview():unknown {
+    this.scene.updateMatrixWorld(true);
+    const meshes:THREE.Mesh[]=[];this.scene.traverseVisible(o=>{
+      if(!(o instanceof THREE.Mesh))return;
+      for(let p:THREE.Object3D|null=o;p;p=p.parent)if(p.userData.sculptRuntime)return;
+      meshes.push(o);
+    });
+    const samples:Array<[string,number,number,number]>=[],r=rooftopBounds;
+    for(const [start,base] of [[r.stairMinZ,0],[r.stairLandingMaxZ,ROOF_Y/2]])for(let i=0;i<9;i++)for(const u of [.1,.5,.9])samples.push(['roof tread',19.6,start+(i+u)*ROOF_GOING,base+(i+u)*ROOF_RISER]);
+    for(let i=0;i<TEMPLE_STAIRS.count;i++)for(const u of [.1,.5,.9])for(const z of [-2,4,10])samples.push(['temple tread',templeStairX(i)+(templeStairX(i+1)-templeStairX(i))*u,z,templeTreadTop(templeStairX(i)+.01)]);
+    for(const x of [24,40,56])for(const z of [9,12])samples.push(['shop floor',x,z,0]);
+    for(const x of [78,88,95])samples.push(['temple floor',x,4,TEMPLE_GRADE+TEMPLE.podium]);
+    const failures:unknown[]=[];
+    for(const [name,x,z,reference] of samples){
+      const expected=this.footSurfaceAt(x,z,reference+.28);
+      const ray=new THREE.Raycaster(new THREE.Vector3(x,expected+.6,z),new THREE.Vector3(0,-1,0),0,1.2);
+      const hit=ray.intersectObjects(meshes,false)[0];
+      if(!hit||Math.abs(hit.point.y-expected)>.015)failures.push({name,x,z,expected,actual:hit?.point.y,mesh:hit?.object.name});
+    }
+    return {checks:samples.length,failures};
+  }
+
+  private infrastructureReviewSnapshot():unknown {
+    const physical=this.colliders.filter(c=>c.physical),leaks:Array<unknown>=[],missing:Array<unknown>=[];
+    const counts:Record<string,number>={};
+    for(const c of physical){
+      counts[c.label??'solid']=(counts[c.label??'solid']??0)+1;
+      const y=(c.minY??0)+AVATAR_GROUND_Y;
+      for(const axis of ['x','z'] as const){
+        const span=axis==='x'?c.maxX-c.minX:c.maxZ-c.minZ;
+        const from={x:axis==='x'?c.minX-.9:(c.minX+c.maxX)/2,z:axis==='z'?c.minZ-.9:(c.minZ+c.maxZ)/2,y};
+        const result=moveCoastalBody(from,axis==='x'?span+1.8:0,axis==='z'?span+1.8:0,FestivalWorld.BODY_RADIUS,this.colliders,()=>y);
+        if(result[axis]>(axis==='x'?c.maxX:c.maxZ)+.6)leaks.push({label:c.label,axis,from,result});
+      }
+    }
+    for(const bounds of this.scene.userData.coastalDetailBounds??[]){
+      const [a,b]=[bounds.min,bounds.max],x=bounds.contact[0],z=bounds.contact[2];
+      const floor=this.groundHeightAt(x,z,a[1]+AVATAR_GROUND_Y)-AVATAR_GROUND_Y;
+      if(b[1]-a[1]<.6||b[0]-a[0]<.3||b[2]-a[2]<.3||Math.abs(a[1]-floor)>.35)continue;
+      if(!this.staticCollides(x,z,floor+AVATAR_GROUND_Y,.1))missing.push({x,z,bounds});
+    }
+    const plantingConflicts:Array<unknown>=[];
+    for(const tree of this.scene.userData.treeCanopies??[])for(const c of physical.filter(c=>['inland-house','street-lamp','utility-pole'].includes(c.label??''))){
+      const distance=Math.hypot(Math.max(c.minX-tree.x,0,tree.x-c.maxX),Math.max(c.minZ-tree.z,0,tree.z-c.maxZ));
+      if(distance<tree.radius)plantingConflicts.push({tree,obstacle:c.label});
+    }
+    const lampCarConflicts=physical.filter(c=>c.label==='street-lamp').flatMap(lamp=>
+      physical.filter(c=>c.label==='convertible-car'&&lamp.minX<c.maxX&&lamp.maxX>c.minX&&lamp.minZ<c.maxZ&&lamp.maxZ>c.minZ).map(car=>({lamp,car})));
+    const lampRoadConflicts=this.lampPosts.filter(lamp=>ROAD_POLYGONS.some(p=>insidePaving(lamp.x,lamp.z,p)));
+    const foundation=this.scene.getObjectByName('Club continuous foundation'),ramp=this.scene.getObjectByName('Club sealed ramp');
+    const floorHoles:Array<[number,number]>=[];let floorProbes=0;
+    if(foundation&&ramp){this.scene.updateMatrixWorld(true);const ray=new THREE.Raycaster();
+      for(let x=-89.5;x< -20.4;x+=.5)for(let z=.5;z<41.6;z+=.5){
+        ray.set(new THREE.Vector3(x,3,z),new THREE.Vector3(0,-1,0));floorProbes++;
+        if(!ray.intersectObject(foundation).length)floorHoles.push([x,z]);
+      }
+    }
+    const visibleSurfaceFailures:unknown[]=[];
+    const floorObjects=['Club full width threshold','Club sealed ramp','Club gallery solid edge','Club entry landing'].flatMap(name=>{
+      const objects:THREE.Object3D[]=[];this.scene.traverse(o=>{if(o.name===name)objects.push(o);});return objects;
+    });
+    for(let x=-24.2;x<=-19.2;x+=.1)for(let z=19.25;z<=27.75;z+=.25){
+      if(x> -19.6&&(z<20.5||z>26.5))continue;
+      const expected=x< -24?(x+24)/26:0;
+      const hit=new THREE.Raycaster(new THREE.Vector3(x,2,z),new THREE.Vector3(0,-1,0)).intersectObjects(floorObjects,false)[0];
+      if(!hit||Math.abs(hit.point.y-expected)>.035)visibleSurfaceFailures.push({x,z,y:hit?.point.y,expected});
+    }
+    const templeBody=this.scene.getObjectByName('Temple foundation below finish'),templeFinish=this.scene.getObjectByName('Temple single floor finish');
+    const templeFinishSeparation=templeBody&&templeFinish?new THREE.Box3().setFromObject(templeFinish).max.y-new THREE.Box3().setFromObject(templeBody).max.y:0;
+    return {visibleSurfaceFailures,templeFinishSeparation,surfaceContact:this.surfaceContactReview(),floorProbes,floorHoles,lampPathConflicts:this.lampPosts.filter(p=>streetLampObstructsRoute(p.x,p.z)),lampRoadConflicts,lampPosts:this.lampPosts.length,lampCarConflicts,physicalSolids:physical.length,crossingChecks:physical.length*2,leaks,missingGroundSolids:missing,counts,plantingConflicts,clubSightlines:this.clubSightlineReview(),signs:this.signLayoutReview()};
+  }
+
+  coastalReviewSnapshot(): unknown {
+    return {
+      navigation: this.navReviewSnapshot(),
+      infrastructure:this.infrastructureReviewSnapshot(),
+      performance: this.performanceSnapshot(),
+      style: this.wornStyleReviewSnapshot(),
+      atmosphere: this.dayNight.atmosphere.snapshot(),
+      sea: SEA_Y, clubFloor: CLUB_FLOOR_Y, templeFloor: TEMPLE_FLOOR_Y - AVATAR_GROUND_Y,
+      contourGrades: HILL_WALK.slice(1).map((b, i) => {
+        const a = HILL_WALK[i];
+        return Number((Math.abs(b[1]-a[1]) / Math.hypot(b[0]-a[0], b[2]-a[2])).toFixed(4));
+      }),
+      contourGroundError: Math.max(...HILL_WALK.map(([x,y,z]) => Math.abs(terrainHeightAt(x,z)-y))),
+      player: this.player.position.toArray(),
+      carriedProp: (() => {
+        const runtime=this.carriedProp.parent?.userData.sculptRuntime;
+        if (!runtime || !this.carriedProp.visible) return {visible:false};
+        this.carriedProp.parent!.updateWorldMatrix(true,true);
+        const hand=runtime.sockets[this.carriedProp.userData.carryHand==='right'?'handRight':'handLeft'] as THREE.Group;
+        const grip=hand.localToWorld(new THREE.Vector3(0,-.04,.15));
+        return {visible:true,kind:this.carriedPropKind,hand:this.carriedProp.userData.carryHand??'left',gripError:grip.distanceTo(this.carriedProp.getWorldPosition(new THREE.Vector3()))};
+      })(),
+      authoredMeshes: (() => { let count=0; this.scene.traverse(o => { if(o.userData.coastalAuthored) count++; }); return count; })(),
+      renderer: { calls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles },
     };
   }
 
@@ -3231,9 +3534,9 @@ export class FestivalWorld {
    * Loopback fixture sitting the player in a Shore deck chair, and measuring
    * where the body actually lands against the pad it is supposed to rest on.
    */
-  focusSeatForReview(venue: VenueKey = 'shore'): void {
+  focusSeatForReview(venue: VenueKey = 'shore',seatId?:string): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
-    const seat = this.seats.find((candidate) => candidate.venue === venue);
+    const seat = this.seats.find((candidate) => candidate.venue === venue && (!seatId||candidate.id===seatId));
     if (!seat) return;
     this.activeSeat = seat;
     this.playerState = 'seated';
@@ -3241,6 +3544,7 @@ export class FestivalWorld {
     // visitor gets and it is the one view from which the thing this fixture
     // exists to check cannot be seen at all.
     this.cameraMode = 'follow';
+    this.cameraZoom=1.3;this.cameraOrbit.follow.yaw=1.0;this.cameraOrbit.follow.pitch=.35;
     this.player.position.copy(this.seatAnchor(seat));
     this.player.rotation.y = seat.facing ?? Math.PI;
     if (this.playerRig) this.poseRigSeated(this.playerRig);
@@ -3262,15 +3566,15 @@ export class FestivalWorld {
     // reported the shop's roof at street level as the rooftop bench's cushion,
     // and it would have gone on agreeing with itself forever. A second copy of
     // a question is a second answer waiting to happen.
-    const sitZ = seat.position.z + (seat.kind === 'bench' || seat.kind === 'bar' ? 0 : 0.28);
-    const padBox = this.seatPad(seat.position.x, sitZ, seat.position.y);
+    const sitZ = seat.position.z + this.seatForward(seat);
+    const padBox = seat.cushion ? new THREE.Box3().setFromObject(seat.cushion) : this.seatPad(seat.position.x, sitZ, seat.position.y);
     const padTop = padBox ? padBox.max.y : -Infinity;
     const extent = (): number | null => {
       this.player.updateMatrixWorld(true);
       const box = new THREE.Box3();
       this.player.traverseVisible((object) => {
         const mesh = object as THREE.Mesh;
-        if (mesh.isMesh) box.expandByObject(mesh);
+        if (mesh.isMesh && !mesh.userData.projectorBackground) box.expandByObject(mesh);
       });
       return box.isEmpty() ? null : Number(box.min.y.toFixed(3));
     };
@@ -3279,13 +3583,14 @@ export class FestivalWorld {
     this.foldJoints(rig, 0, 0, 0, 0);
     rig.leftLeg.rotation.x = 0;
     rig.rightLeg.rotation.x = 0;
+    levelCoastalFeet(rig);
     const standingLow = extent();
     this.poseRigSeated(rig);
     const body = new THREE.Box3();
     this.player.updateMatrixWorld(true);
     this.player.traverseVisible((object) => {
       const mesh = object as THREE.Mesh;
-      if (mesh.isMesh) body.expandByObject(mesh);
+      if (mesh.isMesh && !mesh.userData.projectorBackground) body.expandByObject(mesh);
     });
     const hip = rig.leftLeg.getWorldPosition(new THREE.Vector3());
     // The leg on its own. The whole-body box kept reporting the same figure in
@@ -3295,7 +3600,19 @@ export class FestivalWorld {
     const footY = legBox.isEmpty() ? null : Number(legBox.min.y.toFixed(3));
     // Whether the leg is inside the chair — against the same pad the seating
     // measured, not a third scan of the scene for the same box.
-    const legInPad = padBox && !legBox.isEmpty() ? legBox.intersectsBox(padBox) : null;
+    // A whole-leg AABB contains empty space between thigh and shin. Test the
+    // actual posed triangles so an empty corner cannot report a chair collision.
+    let legInPad = false;
+    const intersectingParts=new Set<string>();
+    if (padBox) rig.leftLeg.traverseVisible(object => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const g=object.geometry, p=g.getAttribute('position'), indices=g.getIndex();
+      const triangle=new THREE.Triangle();
+      for(let i=0;i<(indices?.count ?? p.count);i+=3){
+        [triangle.a,triangle.b,triangle.c].forEach((v,j)=>v.fromBufferAttribute(p,indices?indices.getX(i+j):i+j).applyMatrix4(object.matrixWorld));
+        if(padBox.intersectsTriangle(triangle)){legInPad=true;intersectingParts.add(object.name);}
+      }
+    });
     const groundY = this.groundHeightAt(seat.position.x, seat.position.z) - AVATAR_GROUND_Y;
     return {
       seated: true,
@@ -3313,8 +3630,10 @@ export class FestivalWorld {
       standingLow,
       footY,
       legInPad,
+      intersectingParts:[...intersectingParts],
       groundY: Number(groundY.toFixed(3)),
       footAboveGround: footY === null ? null : Number((footY - groundY).toFixed(3)),
+      soleHeights: coastalFootHeights(rig).map(y=>Number(y.toFixed(3))),
       styled: wornMeshesRequested(),
     };
   }
@@ -3500,6 +3819,7 @@ export class FestivalWorld {
       for (let done = 0; done < seconds; done += step) {
         simulated += step * 1000;
         elapsed += step;
+        this.reviewLastDelta=step;
         this.updateNpcs(step, elapsed);
       }
       // Read while the clock is still the one the world was run on. Reading
@@ -3515,6 +3835,9 @@ export class FestivalWorld {
         return {
           id: npc.id,
           stationed: Boolean(npc.station),
+          position:npc.group.position.toArray().map(v=>Number(v.toFixed(2))),
+          recovering:Boolean(npc.recovering),
+          detour:(npc.group.userData.navigationDetour??[]).length,
           travelled: Number(travelled.toFixed(2)),
           stuckFor: Number(npc.stuckFor.toFixed(2)),
           // Telling a resident standing about for a while from one that cannot
@@ -3808,7 +4131,7 @@ export class FestivalWorld {
       stoolXZ: stool ? [Number(stool.position.x.toFixed(2)), Number(stool.position.z.toFixed(2))] : undefined,
       inClubRoom: this.inClubRoom(this.player.position.x, this.player.position.z),
       nearClubBar: this.nearClubBar(),
-      carriedItem: this.carriedItem,
+      carriedItem: this.carriedItem ?? (performance.now()<this.drinkUntil?'DRINK':performance.now()<this.eatingUntil?this.eatingItem:undefined),
       interaction: this.interactionLabel(),
       canInteract: this.canInteract(),
       promptAction: this.promptAction,
@@ -4131,7 +4454,7 @@ export class FestivalWorld {
       // on the sea could otherwise only be judged from a screenshot, and the
       // difference is a couple of hundred millimetres of height.
       mentorAt: mentor.group.position.toArray().map((value) => Number(value.toFixed(2))),
-      mentorSwimming: this.isOverWater(mentor.group.position.z),
+      mentorSwimming: this.isOverWater(mentor.group.position.z,mentor.group.position.x),
       mentorRoll: Number(mentor.group.rotation.z.toFixed(3)),
       mentorFrontLeg: mentor.dogRig ? Number(mentor.dogRig.leftFrontLeg.rotation.x.toFixed(3)) : null,
       playerAt: this.player.position.toArray().map((value) => Number(value.toFixed(2))),
@@ -4186,7 +4509,7 @@ export class FestivalWorld {
       npcPosition: controlledNpc?.group.position.toArray(),
       playerNpcDistance: controlledNpc?.group.position.distanceTo(this.player.position),
       playerState: this.playerState,
-      carriedItem: this.carriedItem,
+      carriedItem: this.carriedItem ?? (performance.now()<this.drinkUntil?'DRINK':performance.now()<this.eatingUntil?this.eatingItem:undefined),
       carriedPropVisible: this.carriedProp.visible,
       carriedPropParentNpcId: this.npcs.find((npc) => npc.group === this.carriedProp.parent)?.id,
     };
@@ -4363,13 +4686,13 @@ export class FestivalWorld {
 
     if (nextNpc) {
       this.player.position.copy(nextNpc.group.getWorldPosition(new THREE.Vector3()));
-      this.player.position.y = AVATAR_GROUND_Y;
+      this.player.position.y = this.groundHeightAt(this.player.position.x, this.player.position.z, this.player.position.y);
       this.player.quaternion.copy(nextNpc.group.getWorldQuaternion(new THREE.Quaternion()));
       this.playerState = 'walking';
       this.activeSeat = undefined;
     } else if (this.controlledNpcId) {
       this.player.position.copy(this.originalPlayerIdle.position);
-      this.player.position.y = AVATAR_GROUND_Y;
+      this.player.position.y = this.groundHeightAt(this.player.position.x, this.player.position.z, this.player.position.y);
       this.player.rotation.copy(this.originalPlayerIdle.rotation);
       this.playerState = 'walking';
       this.originalPlayerIdle.visible = false;
@@ -4486,9 +4809,11 @@ export class FestivalWorld {
   setAvatarPalette(palette: AvatarPalette): void {
     this.palette = palette;
     for (const avatar of [this.player, this.originalPlayerIdle]) {
+      avatar.userData.setImportedPalette?.(palette);
       // Worn or not worn is a visibility question, not a colour one, so it is
       // answered before the recolour walk rather than inside it.
       applyAvatarAccessories(avatar, palette);
+      setCoastalSwimwear(avatar,this.outfit==='swimwear');
       avatar.traverse((child: THREE.Object3D) => {
         if (!(child instanceof THREE.Mesh)) return;
         const slot = child.userData.paletteSlot as AvatarColourSlot | undefined;
@@ -4606,7 +4931,7 @@ export class FestivalWorld {
       // would have been drawn on rather than dropping it to zero.
       const reportedY = typeof displayVisitor.y === 'number' && Number.isFinite(displayVisitor.y)
         ? displayVisitor.y
-        : (displayVisitor.state === 'swimming' ? AVATAR_SWIM_Y : AVATAR_GROUND_Y);
+        : (displayVisitor.state === 'swimming' ? AVATAR_SWIM_Y : this.groundHeightAt(displayVisitor.x, displayVisitor.z, 0));
       // Play the body from where it was to where it now is, over the time the
       // next update is expected to take. Easing toward the latest position
       // instead made everyone sprint to their last known spot, stop dead, and
@@ -4627,6 +4952,8 @@ export class FestivalWorld {
       avatar.target.set(displayVisitor.x, reportedY, displayVisitor.z);
       avatar.targetRotation = displayVisitor.rotation;
       avatar.state = displayVisitor.state;
+      setCoastalSwimwear(avatar.group,displayVisitor.state==='swimming');
+      avatar.group.userData.setImportedPalette?.(displayVisitor.palette);
       avatar.moving = displayVisitor.moving;
       avatar.running = displayVisitor.running === true;
       avatar.carriedItem = displayVisitor.carriedItem;
@@ -4721,6 +5048,135 @@ export class FestivalWorld {
     projector.currentTimeAt = undefined;
   }
 
+  /** Release the headset decoder when leaving a venue or immersive mode. */
+  private stopImmersiveVideo(venue: VenueKey): void {
+    const projector = this.projectors.get(venue);
+    if (!projector?.xrVideo) return;
+    const video = projector.xrVideo;
+    const texture = projector.xrTexture;
+    projector.xrVideo = undefined;
+    projector.xrTexture = undefined;
+    projector.xrVideoUrl = undefined;
+    projector.xrVideoFilmId = undefined;
+    projector.xrCastStream = undefined;
+    video.pause();
+    video.srcObject = null;
+    video.removeAttribute('src');
+    video.load();
+    if (projector.xrPoster.material.map === texture) {
+      projector.xrPoster.material.map = null;
+      projector.xrPoster.material.needsUpdate = true;
+    }
+    texture?.dispose();
+    this.refreshXrPoster(venue, projector.pending?.film.title);
+  }
+
+  /** Put a user-approved WebRTC tab capture onto a real WebGL theater screen. */
+  setImmersiveProjectorStream(venue: VenueKey, stream?: MediaStream): void {
+    const projector = this.projectors.get(venue);
+    if (!projector) return;
+    if (!stream) {
+      if (projector.xrCastStream) this.stopImmersiveVideo(venue);
+      return;
+    }
+    if (projector.xrCastStream === stream && projector.xrTexture) return;
+    this.stopImmersiveVideo(venue);
+    const video = document.createElement('video');
+    video.playsInline = true;
+    video.autoplay = true;
+    video.muted = projector.muted;
+    video.volume = projector.volume ?? 1;
+    video.srcObject = stream;
+    projector.xrVideo = video;
+    projector.xrCastStream = stream;
+    projector.xrVideoError = false;
+    const mountTexture = () => {
+      if (projector.xrVideo !== video || projector.xrTexture) return;
+      const texture = new THREE.VideoTexture(video);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      projector.xrTexture = texture;
+      const previous = projector.xrPoster.material.map;
+      projector.xrPoster.material.map = texture;
+      projector.xrPoster.material.needsUpdate = true;
+      previous?.dispose();
+    };
+    video.addEventListener('loadeddata', mountTexture);
+    video.addEventListener('playing', mountTexture);
+    video.addEventListener('error', () => {
+      if (projector.xrVideo !== video) return;
+      this.stopImmersiveVideo(venue);
+      projector.xrVideoError = true;
+    });
+    void video.play().catch(() => { /* The next headset select retries all projectors. */ });
+  }
+
+  /** Paint an authorized direct video onto the existing in-world screen quad. */
+  private startImmersiveVideo(
+    venue: VenueKey,
+    film: { id: string; title: string; youtubeId: string; immersiveUrl?: string },
+    offsetSeconds: number,
+  ): void {
+    const projector = this.projectors.get(venue);
+    if (!projector || !film.immersiveUrl) return;
+    let url: URL;
+    try { url = new URL(film.immersiveUrl, window.location.href); }
+    catch { return; }
+    if (!['https:', 'http:'].includes(url.protocol)) return;
+    if (projector.xrFailedUrl === url.href) return;
+    if (projector.xrVideo && projector.xrVideoFilmId === film.id && projector.xrVideoUrl === url.href) {
+      const video = projector.xrVideo;
+      if (Number.isFinite(offsetSeconds) && Math.abs(video.currentTime - offsetSeconds) > 4 && video.readyState >= 1) {
+        video.currentTime = Math.max(0, offsetSeconds);
+      }
+      return;
+    }
+    this.stopImmersiveVideo(venue);
+    const video = document.createElement('video');
+    video.crossOrigin = 'anonymous';
+    video.playsInline = true;
+    video.preload = 'auto';
+    video.autoplay = true;
+    video.muted = true;
+    video.volume = projector.volume ?? 1;
+    projector.xrVideo = video;
+    projector.xrVideoUrl = url.href;
+    projector.xrVideoFilmId = film.id;
+    projector.xrVideoError = false;
+    video.addEventListener('loadedmetadata', () => {
+      if (projector.xrVideo !== video) return;
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        this.onProjectorDuration?.(venue, film.youtubeId, video.duration);
+        video.currentTime = Math.max(0, offsetSeconds) % video.duration;
+      }
+    });
+    video.addEventListener('loadeddata', () => {
+      if (projector.xrVideo !== video || projector.xrTexture) return;
+      const texture = new THREE.VideoTexture(video);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      projector.xrTexture = texture;
+      const previous = projector.xrPoster.material.map;
+      projector.xrPoster.material.map = texture;
+      projector.xrPoster.material.needsUpdate = true;
+      previous?.dispose();
+    });
+    video.addEventListener('ended', () => {
+      if (projector.xrVideo === video) this.onProjectorAdvance?.(venue, film.youtubeId);
+    });
+    video.addEventListener('error', () => {
+      if (projector.xrVideo !== video) return;
+      this.stopImmersiveVideo(venue);
+      projector.xrVideoError = true;
+      projector.xrFailedUrl = url.href;
+    });
+    video.src = url.href;
+    void video.play().then(() => {
+      if (projector.xrVideo === video) {
+        projector.xrFailedUrl = undefined;
+        video.muted = projector.muted;
+      }
+    }).catch(() => { /* A later headset gesture retries playback. */ });
+  }
+
   /**
    * The venue whose player should be loading. Deliberately wider than the room
    * itself: a YouTube player has to fetch, hand-shake and buffer, and doing all
@@ -4732,7 +5188,7 @@ export class FestivalWorld {
    * screen off.
    */
   private projectorVenue(): VenueKey | undefined {
-    if (this.xrActive && !this.xrSimulated) return undefined;
+    if (this.xrActive && !this.xrSimulated) return this.activeProjectorVenue();
     // The run-up is a desk's luxury.
     //
     // Warming a venue's player while somebody is still walking towards it hides
@@ -4753,9 +5209,9 @@ export class FestivalWorld {
     if (this.inClub(x, z)) return 'club';
     if (this.onRooftop(x, z)) return 'rooftop';
     const m = PROJECTOR_WARM_MARGIN;
-    if (z < -30 + m && z > -45.2 - m && Math.abs(x) < 12 + m) return 'shore';
+    if (screeningContains('shore',x,z,m)) return 'shore';
     if (x < -24 + m && x > -46 - m && z < -31 + m && z > -49.2 - m) return 'palace';
-    if (x > 24 - m && x < 46 + m && z < -17 + m && z > -35.2 - m) return 'drive-in';
+    if (screeningContains('drive-in',x,z,m)) return 'drive-in';
     return undefined;
   }
 
@@ -4772,6 +5228,7 @@ export class FestivalWorld {
     for (const venue of this.projectors.keys()) {
       if (venue === wanted) continue;
       this.releaseProjector(venue);
+      this.stopImmersiveVideo(venue);
     }
     if (!wanted) return;
     const pending = this.projectors.get(wanted)?.pending;
@@ -4790,18 +5247,29 @@ export class FestivalWorld {
 
   setPublicScreening(
     venue: VenueKey,
-    film: { id: string; title: string; embedUrl: string; youtubeId: string },
+    film: { id: string; title: string; embedUrl: string; youtubeId: string; immersiveUrl?: string },
     offsetSeconds: number,
     reloadToken = '',
   ): void {
     const projector = this.projectors.get(venue);
     if (!projector) return;
     projector.pending = { film, offsetSeconds, reloadToken };
-    this.refreshXrPoster(venue, film.title);
+    if (!projector.xrCastStream && projector.xrVideoFilmId !== film.id) {
+      this.stopImmersiveVideo(venue);
+      this.refreshXrPoster(venue, film.title);
+    }
     if (venue !== this.projectorVenue()) {
       this.releaseProjector(venue);
       return;
     }
+    if (this.xrActive && !this.xrSimulated) {
+      this.releaseProjector(venue);
+      projector.filmId = film.id;
+      projector.youtubeId = film.youtubeId;
+      if (!projector.xrCastStream) this.startImmersiveVideo(venue, film, offsetSeconds);
+      return;
+    }
+    this.stopImmersiveVideo(venue);
     const signature = `${film.id}|${reloadToken}`;
     if (projector.signature === signature) return;
     projector.filmId = film.id;
@@ -4868,7 +5336,8 @@ export class FestivalWorld {
     this.refreshXrPoster(venue);
     const signMaterial = this.venueSignMaterials.get(venue);
     if (!signMaterial) return;
-    const next = createTextTexture([nextName, nextSubtitle]);
+    const ratios:Record<VenueKey,number>={palace:15.8/3.3,'drive-in':2.8/1.4,shore:5.6/3.15,club:11/2.8,rooftop:7.4/2};
+    const next = createTextTexture([nextName,nextSubtitle],'#eee4cc','#354842',ratios[venue]);
     const previous = signMaterial.map;
     signMaterial.map = next;
     signMaterial.needsUpdate = true;
@@ -4905,6 +5374,10 @@ export class FestivalWorld {
     // Remembered, so that the nudges below never restart a venue STAFF have
     // deliberately stopped. Everything else may be woken; this may not.
     projector.paused = paused;
+    if (projector.xrVideo) {
+      if (paused) projector.xrVideo.pause();
+      else void projector.xrVideo.play().catch(() => {});
+    }
     projector.iframe?.contentWindow?.postMessage(JSON.stringify({
       event: 'command',
       func: paused ? 'pauseVideo' : 'playVideo',
@@ -4924,6 +5397,7 @@ export class FestivalWorld {
   private nudgeProjectorsToPlay(): void {
     for (const projector of this.projectors.values()) {
       if (projector.paused) continue;
+      if (projector.xrVideo) void projector.xrVideo.play().catch(() => {});
       projector.iframe?.contentWindow?.postMessage(JSON.stringify({
         event: 'command', func: 'playVideo', args: [],
       }), '*');
@@ -4936,6 +5410,7 @@ export class FestivalWorld {
       const projectorMuted = muted || venue !== audibleVenue;
       if (projectorMuted === projector.muted) continue;
       projector.muted = projectorMuted;
+      if (projector.xrVideo) projector.xrVideo.muted = projectorMuted;
       projector.iframe?.contentWindow?.postMessage(JSON.stringify({
         event: 'command',
         func: projectorMuted ? 'mute' : 'unMute',
@@ -4947,6 +5422,7 @@ export class FestivalWorld {
   /** Where the in-world projector currently is, so a screening can join it. */
   publicScreenTime(venue: VenueKey): number | undefined {
     const projector = this.projectors.get(venue);
+    if (projector?.xrVideo && projector.xrVideo.readyState >= 1) return projector.xrVideo.currentTime;
     if (!projector || projector.currentTime === undefined || projector.currentTimeAt === undefined) return undefined;
     const drift = projector.playing === false ? 0 : (performance.now() - projector.currentTimeAt) / 1000;
     // A stale sample means the projector stopped reporting; do not guess.
@@ -4956,6 +5432,8 @@ export class FestivalWorld {
 
   setPublicScreenVolume(value: number): void {
     for (const projector of this.projectors.values()) {
+      projector.volume = THREE.MathUtils.clamp(value, 0, 1);
+      if (projector.xrVideo) projector.xrVideo.volume = projector.volume;
       projector.iframe?.contentWindow?.postMessage(JSON.stringify({
         event: 'command',
         func: 'setVolume',
@@ -4964,18 +5442,30 @@ export class FestivalWorld {
     }
   }
 
-  fastTravel(destination: 'gate' | 'square' | 'palace' | 'drive-in' | 'shore' | 'club' | 'rooftop'): void {
+  fastTravel(destination: 'gate' | 'square' | 'palace' | 'drive-in' | 'shore' | 'club' | 'rooftop' | 'temple'): void {
     if (this.playerState === 'seated') this.standUp();
     const positions = {
       gate: new THREE.Vector3(0, AVATAR_GROUND_Y, GATE_Z - 6),
       square: new THREE.Vector3(0, AVATAR_GROUND_Y, 3),
       palace: new THREE.Vector3(-35, AVATAR_GROUND_Y, -34),
-      'drive-in': new THREE.Vector3(35, AVATAR_GROUND_Y, -18),
-      shore: new THREE.Vector3(0, AVATAR_GROUND_Y, -25),
+      'drive-in': new THREE.Vector3(...[SCREENING_SITES['drive-in'].approach[0], AVATAR_GROUND_Y, SCREENING_SITES['drive-in'].approach[1]] as [number,number,number]),
+      shore: new THREE.Vector3(35, AVATAR_GROUND_Y, -19),
       club: new THREE.Vector3(-15, AVATAR_GROUND_Y, 8.5 + CLUB_Z),
       rooftop: new THREE.Vector3(ROOFTOP_CENTER_X, AVATAR_GROUND_Y, 4),
+      temple: new THREE.Vector3(70,AVATAR_GROUND_Y,4),
     };
     this.player.position.copy(positions[destination]);
+    this.player.position.y = this.groundHeightAt(this.player.position.x, this.player.position.z, 0);
+    if (destination === 'rooftop' && this.cameraMode !== 'first-person') {
+      // The pop-up shop is open on its south face. A follow camera retaining
+      // yaw 0 sits north of this arrival, inside that bay, so its roof and
+      // counter fill the frame as clipped horizontal walls. Put the orbit on
+      // the visitor's seaward side and make the next camera probe establish a
+      // fresh safe reach for this location.
+      const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
+      orbit.yaw = Math.PI;
+      this.cameraReach = 0;
+    }
     this.setSwimming(false);
     this.setOutfit(false);
   }
@@ -4985,14 +5475,14 @@ export class FestivalWorld {
    * that point directly; the theatre chairs store the chair position and are
    * sat on from a little forward of it, at standing height.
    */
+  private seatForward(seat: Seat): number {
+    // Palace cushions are deeper: bring the knee beyond the pad's front edge.
+    if(seat.forward!==undefined)return seat.forward;
+    return seat.kind === 'bar' ? 0 : seat.kind === 'bench' ? -.55 : seat.venue==='palace' ? -.42 : -.3;
+  }
+
   private seatAnchor(seat: Seat): THREE.Vector3 {
-    // Bar stools and rooftop benches keep their authored spots. Both were placed
-    // by hand against something — a rail, a parapet — and both already carry
-    // AVATAR_SEAT_DROP, which was tuned for them. The rooftop complaint was that
-    // these could not be sat on at all, and that was reach, not height: nothing
-    // here was reported as sitting wrong, so nothing here changes.
-    if (seat.kind === 'bar' || seat.kind === 'bench') return seat.position.clone();
-    const forward = 0.28;
+    const forward = this.seatForward(seat);
     // Sat on the pad, not a fixed distance above the floor.
     //
     // This used to drop the body at the seat's own origin plus the standing
@@ -5010,7 +5500,7 @@ export class FestivalWorld {
     // The two are 0.28 apart, which is nothing on a cushion a metre and a half
     // deep and everything on the back of a car.
     const sitZ = seat.position.z + forward;
-    const padTop = this.seatPadTop(seat.position.x, sitZ, seat.position.y);
+    const padTop = seat.cushion ? new THREE.Box3().setFromObject(seat.cushion).max.y : this.seatPadTop(seat.position.x, sitZ, seat.position.y);
     if (padTop === undefined) return seat.position.clone().add(new THREE.Vector3(0, AVATAR_GROUND_Y, forward));
     return new THREE.Vector3(
       seat.position.x,
@@ -5020,13 +5510,10 @@ export class FestivalWorld {
   }
 
   /**
-   * Half the thickness of a thigh: how far the hip joint rides above a pad.
-   *
-   * Tuned against the measurement rather than guessed. At 0.12 the hips sat
-   * right and the feet finished 38mm under the sand; 0.16 puts the soles on
-   * the ground and the hips still within a thigh of the cushion.
+   * Cargo thigh depth is .44: half its depth plus 1cm cushion clearance.
+   * The knee solver handles floor reach independently of cushion contact.
    */
-  private static readonly SEAT_THIGH = 0.16;
+  private static readonly SEAT_THIGH = 0.23;
 
   private hipRise: number | undefined;
 
@@ -5039,6 +5526,8 @@ export class FestivalWorld {
    * one reading holds for every seat and every gesture.
    */
   private hipAboveOrigin(): number {
+    // The visual body can be raised by foot support. Its transient lift is not hip anatomy.
+    if(this.playerRig?.visualRoot)return this.playerRig.leftLeg.position.y;
     if (this.hipRise !== undefined) return this.hipRise;
     const rig = this.playerRig;
     if (!rig) return AVATAR_GROUND_Y;
@@ -5085,7 +5574,7 @@ export class FestivalWorld {
 
   /** Takes the drink that is in hand. Written once; three paths reach it. */
   private drinkInHand(): void {
-    this.drinkUntil = performance.now() + 1_500;
+    this.drinkUntil = performance.now() + 1_800;
     this.playerGesture = 'drink';
     this.playerGestureUntil = this.drinkUntil;
     this.carriedItem = undefined;
@@ -5097,17 +5586,11 @@ export class FestivalWorld {
   }
 
   interact(pickUpMentor = false): void {
+    if(performance.now()<this.drinkUntil||performance.now()<this.eatingUntil)return;
     if (this.playerState === 'seated') {
       // SHIFT+E drinks without leaving the stool; plain E stands up.
       if (pickUpMentor && this.carriedItem === 'DRINK') {
-        this.drinkUntil = performance.now() + 1_500;
-        this.playerGesture = 'drink';
-        this.playerGestureUntil = this.drinkUntil;
-        this.carriedItem = undefined;
-        this.syncCarriedPropAnchor();
-        this.drinks += 1;
-        if (this.drinks >= 3) this.drunkUntil = performance.now() + DRUNK_DURATION_MS;
-        this.onAction({ type: 'drank', drinks: this.drinks, drunk: this.drinks >= 3 });
+        this.drinkInHand();
         return;
       }
       if (!pickUpMentor && this.nearClubBar() && !this.carriedItem) {
@@ -5159,8 +5642,10 @@ export class FestivalWorld {
     }
 
     if (this.carriedItem && EDIBLE_ITEMS.includes(this.carriedItem) && this.carriedItem !== 'DRINK') {
-      this.playerGesture = 'drink';
-      this.playerGestureUntil = performance.now() + 1_400;
+      this.playerGesture = 'eat';
+      this.eatingItem = this.carriedItem;
+      this.eatingUntil = performance.now() + 2_000;
+      this.playerGestureUntil = this.eatingUntil;
       this.carriedItem = undefined;
       this.syncCarriedPropAnchor();
       this.onAction({ type: 'ate' });
@@ -5713,6 +6198,8 @@ export class FestivalWorld {
     if (away.lengthSq() < 0.0001) {
       away.set(-Math.sin(this.player.rotation.y), 0, -Math.cos(this.player.rotation.y));
     }
+    const carrier=this.activeCarrierGroup();
+    carrier.userData.hitDirection=away.clone().normalize().applyQuaternion(carrier.getWorldQuaternion(new THREE.Quaternion()).invert());
     this.knockback.copy(away.normalize()).multiplyScalar(9.6);
     // Off balance rather than frozen: movement still answers, at the same
     // reduced pace a bad landing costs, so nobody is held still to be hit again.
@@ -6251,7 +6738,7 @@ export class FestivalWorld {
     width: number,
     depth: number,
     padding = 0.35,
-    heights?: { minY: number; maxY: number },
+    heights?: { minY: number; maxY: number; physical?:boolean },
     label?: string,
     // How high the thing actually stands, when that is not the same as the band
     // it is refused in. Those bands say which storey a collider belongs to —
@@ -6269,6 +6756,7 @@ export class FestivalWorld {
       maxZ: z + depth / 2 + padding,
       minY: heights?.minY,
       maxY: heights?.maxY,
+      physical:heights?.physical,
       viewTop,
     });
   }
@@ -6311,15 +6799,15 @@ export class FestivalWorld {
     canvas.height = 576;
     const context = canvas.getContext('2d');
     if (!context) return;
-    context.fillStyle = '#09090b';
+    context.fillStyle = '#151518';
     context.fillRect(0, 0, canvas.width, canvas.height);
-    context.strokeStyle = '#e63d48';
+    context.strokeStyle = '#f44355';
     context.lineWidth = 18;
     context.strokeRect(18, 18, canvas.width - 36, canvas.height - 36);
-    context.fillStyle = '#e63d48';
+    context.fillStyle = '#f44355';
     context.font = '700 44px sans-serif';
-    context.fillText(`${venueScreens[venue].label.toUpperCase()} · YOUTUBE`, 62, 102);
-    context.fillStyle = '#ffffff';
+    context.fillText(venueScreens[venue].label.toUpperCase(), 62, 102);
+    context.fillStyle = '#f5efe2';
     context.font = '900 70px sans-serif';
     const title = (filmTitle ?? projector.pending?.film.title ?? 'PUBLIC SCREENING').toUpperCase();
     const words = title.split(/\s+/);
@@ -6334,9 +6822,14 @@ export class FestivalWorld {
     }
     if (line) lines.push(line);
     lines.slice(0, 3).forEach((part, index) => context.fillText(part, 62, 205 + index * 82));
-    context.fillStyle = '#d0d0d3';
-    context.font = '700 34px sans-serif';
-    context.fillText('TAKE A SEAT · PRESS TRIGGER TO WATCH', 62, 510);
+    context.fillStyle = '#d6d2ca';
+    context.font = '700 27px sans-serif';
+    context.fillText(
+      projector.pending?.film.immersiveUrl
+        ? 'LOADING FILM ON THE VR SCREEN'
+        : 'THIS FILM IS AVAILABLE IN BROWSER VIEW',
+      62, 510,
+    );
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     const previous = projector.xrPoster.material.map;
@@ -6376,13 +6869,25 @@ export class FestivalWorld {
     height = 4.8,
     targetX = x,
   ): void {
-    this.mesh([0.18, height, 0.18], [x, height / 2, z], material(0x2b2c30, 0.55, 0.7));
-    this.mesh([0.62, 0.48, 0.62], [x, height + 0.05, z], lampMaterial);
-    this.addCollider(x, z, 0.28, 0.28, 0.18, { minY: -0.4, maxY: 40 });
+    if(streetLampObstructsRoute(x,z))return;
+    if((this.scene.userData.treeCanopies??[]).some((c:{x:number;z:number;radius:number})=>Math.hypot(x-c.x,z-c.z)<c.radius+1.2))return;
+    const base = this.groundHeightAt(x,z,terrainHeightAt(x,z)+AVATAR_GROUND_Y)-AVATAR_GROUND_Y;
+    const enamel=material(0x354d47,.85,.12),stone=material(0xa9a58e,.95),brass=material(0xb3a47c,.75,.18);
+    const fitting=(size:[number,number,number],pos:[number,number,number],mat:THREE.Material)=>{const m=this.mesh(size,pos,mat);m.userData.wornNoMasonry=true;return m;};
+    fitting([.58,.18,.58],[x,base+.09,z],stone);
+    fitting([.32,.8,.32],[x,base+.4,z],enamel);
+    fitting([.2,height-.6,.2],[x,base+.6+(height-.6)/2,z],enamel);
+    fitting([.78,.12,.78],[x,base+height-.27,z],enamel);
+    fitting([.58,.52,.58],[x,base+height+.05,z],lampMaterial);
+    for(const dx of [-.32,.32])for(const dz of [-.32,.32])fitting([.06,.6,.06],[x+dx,base+height+.05,z+dz],enamel);
+    fitting([.84,.13,.84],[x,base+height+.39,z],enamel);
+    fitting([.58,.12,.58],[x,base+height+.5,z],brass);
+    this.addCollider(x, z, 0.28, 0.28, 0.18, { minY: base, maxY: base+height+.3 }, 'street-lamp',base+height+.3);
+    this.colliders[this.colliders.length-1].physical=true;
     // Every post is a light source, but the lights themselves come from a
     // fixed pool that follows the attendee. A dedicated light per post would
     // put the count back where it was tanking the frame rate.
-    this.lampPosts.push({ x, z, height, targetX, castsShadow });
+    this.lampPosts.push({ x, z, height: base + height, targetX, castsShadow });
   }
 
   /**
@@ -6409,50 +6914,30 @@ export class FestivalWorld {
       }
       light.visible = true;
       light.position.set(nearest.post.x, nearest.post.height, nearest.post.z);
-      light.target.position.set(nearest.post.targetX, 0, nearest.post.z - 0.9);
+      light.target.position.set(nearest.post.targetX, terrainHeightAt(nearest.post.targetX,nearest.post.z-.9), nearest.post.z - 0.9);
       light.target.updateMatrixWorld();
     });
   }
 
-  private createEnvironment(): void {
-    const groundMaterial = material(0x34312d);
-    const c = clubBounds;
-    const terrain: Array<[number, number, number, number]> = [
-      // [minX, maxX, minZ, maxZ] — four pieces leaving the club's plot open.
-      [-104, c.buildingMinX, -49, 81],
-      // Reaches past the temple with room to spare. It used to stop at 92,
-      // which left the eastern third of the building — and its roof overhang —
-      // hanging over the edge of the world.
-      [c.buildingMaxX, 124, -49, 81],
-      [c.buildingMinX, c.buildingMaxX, -49, c.buildingMinZ],
-      [c.buildingMinX, c.buildingMaxX, c.buildingMaxZ, 81],
-    ];
-    for (const [minX, maxX, minZ, maxZ] of terrain) {
-      const slab = this.mesh(
-        [maxX - minX, 0.4, maxZ - minZ],
-        [(minX + maxX) / 2, -0.25, (minZ + maxZ) / 2],
-        groundMaterial,
-      );
-      slab.receiveShadow = true;
-      slab.userData.projectorBackground = true;
+  private buildOnGrade(build: () => void, lift: number, dx=0, dz=0): void {
+    const previous=new Set(this.scene.children),seatStart=this.seats.length,solidStart=this.colliders.length;
+    build();
+    for(const object of this.scene.children) {
+      if(previous.has(object) || [...this.projectors.values()].some(p=>p.xrPoster===object)) continue;
+      object.position.add(new THREE.Vector3(dx,lift,dz));
     }
+    for(const seat of this.seats.slice(seatStart)) {seat.position.add(new THREE.Vector3(dx,lift,dz));if(seat.footFloor!==undefined)seat.footFloor+=lift;}
+    for(const collider of this.colliders.slice(solidStart)) {
+      collider.minX+=dx;collider.maxX+=dx;collider.minZ+=dz;collider.maxZ+=dz;
+      if(collider.minY!==undefined)collider.minY+=lift;
+      if(collider.maxY!==undefined)collider.maxY+=lift;
+      if(collider.viewTop!==undefined)collider.viewTop+=lift;
+    }
+  }
 
-    const promenade = this.mesh([29, 0.12, 83 + (GATE_Z - 29)], [0, 0.02, 2 + (GATE_Z - 29) / 2], material(0xa89d8c));
-    promenade.receiveShadow = true;
-    promenade.userData.projectorBackground = true;
-    // Stop the pale wayfinding stripe before the Shore beach venue so the
-    // screening floor remains visually uninterrupted.
-    // The pale wayfinding stripe belongs to the square only. End it before
-    // the Shore approach so the beach venue remains sand, chairs, and screen.
-    const promenadeStripe = this.mesh([2.2, 0.04, 31], [0, 0.1, 28], material(0xc4b69f));
-    promenadeStripe.userData.projectorBackground = true;
-    const carpetMaterial = material(0x941a22, 0.76, 0.04);
-    // The ceremonial carpet ends at the Shore entrance. The screening itself
-    // sits directly on the beach rather than on a carpeted platform.
-    const centralCarpet = this.mesh([28, 0.055, 65 + (GATE_Z - 29)], [0, 0.16, 7 + (GATE_Z - 29) / 2], carpetMaterial);
-    centralCarpet.userData.festivalCarpet = true;
-    centralCarpet.receiveShadow = true;
-    centralCarpet.userData.projectorBackground = true;
+  private createEnvironment(): void {
+    this.scene.add(createCoastalTerrain());
+    this.scene.add(createGroundRibbon('Festival square', [[0, 11], [0, -16]], 31, material(0xa79e87), .025));
 
     const deepWaterTexture = createWaterTexture(false);
     const surfaceWaterTexture = createWaterTexture(true);
@@ -6466,10 +6951,10 @@ export class FestivalWorld {
       opacity: 0.82,
       depthWrite: false,
     });
-    const ocean = this.mesh([196, 0.35, 52], [0, -0.08, -84], oceanMaterial);
+    const ocean = this.mesh([250, 0.35, 76], [0, SEA_Y - 0.22, -80], oceanMaterial);
     ocean.receiveShadow = true;
     ocean.userData.projectorBackground = true;
-    const waterVolume = this.mesh([196, 2.6, 52], [0, -1.48, -84], new THREE.MeshStandardMaterial({
+    const waterVolume = this.mesh([250, 2.6, 76], [0, SEA_Y - 1.62, -80], new THREE.MeshStandardMaterial({
       color: 0x052332,
       transparent: true,
       opacity: 0.2,
@@ -6482,16 +6967,16 @@ export class FestivalWorld {
     // Cel-shaded surface for 一般 graphics. 精簡 keeps the cheaper textured
     // water below, so the shader never costs anything on the low setting.
     const stylised = createStylizedWaterMaterial();
-    const stylisedWater = new THREE.Mesh(new THREE.PlaneGeometry(196, 52, 1, 1), stylised);
+    const stylisedWater = new THREE.Mesh(new THREE.PlaneGeometry(250, 76, 1, 1), stylised);
     stylisedWater.rotation.x = -Math.PI / 2;
-    stylisedWater.position.set(0, 0.14, -84);
+    stylisedWater.position.set(0, SEA_Y, -80);
     stylisedWater.userData.projectorBackground = true;
     stylisedWater.visible = this.graphicsMode === 'normal';
     this.scene.add(stylisedWater);
     this.stylizedWater = stylisedWater;
     this.stylizedWaterMaterial = stylised;
 
-    const waveSurface = this.mesh([196, 0.025, 52], [0, 0.115, -84], new THREE.MeshStandardMaterial({
+    const waveSurface = this.mesh([250, 0.025, 76], [0, SEA_Y - 0.025, -80], new THREE.MeshStandardMaterial({
       color: 0x5aa4b4,
       map: surfaceWaterTexture,
       transparent: true,
@@ -6514,46 +6999,23 @@ export class FestivalWorld {
         toneMapped: false,
         side: THREE.DoubleSide,
       });
-      const reflection = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), reflectionMaterial);
+      const reflection = new THREE.Mesh(new THREE.PlaneGeometry(1,1), reflectionMaterial);
       reflection.rotation.x = -Math.PI / 2;
-      reflection.position.set(0, 0.145 + (kind === 'moon' ? 0.004 : 0), -70.5);
+      reflection.position.set(0, SEA_Y + 0.005 + (kind === 'moon' ? 0.004 : 0), -70.5);
       reflection.scale.set(11, 38, 1);
       reflection.renderOrder = kind === 'moon' ? 3 : 2;
       reflection.userData.projectorBackground = true;
       this.scene.add(reflection);
       this.waterReflections.push({ mesh: reflection, material: reflectionMaterial, kind });
     }
-    // The sand stops exactly on the waterline. It used to run a unit past it,
-    // under water planes at the same height, which is what made the sea and the
-    // beach interlock along the shore.
-    const beachDepth = -15 - SHORE_Z;
-    const beach = this.mesh([196, 0.23, beachDepth], [0, 0, SHORE_Z + beachDepth / 2], material(0xc4a979, 0.92, 0.02));
-    beach.userData.projectorBackground = true;
-    // Bands of slightly different sand, damp nearest the water, so the beach
-    // reads as a graded surface instead of one flat colour.
-    // The damp band ends on the waterline like the sand under it, and every
-    // band sits just clear of the water surface rather than level with it.
-    const sandBands: Array<[number, number, number]> = [
-      [-24, 8, 0xcbb184],
-      [-34, 12, 0xc0a377],
-      [-46, 12, 0xa98d68],
-      [SHORE_Z + 2.7, 5.4, 0x8c7355],
-    ];
-    for (const [z, depth, colour] of sandBands) {
-      const band = this.mesh([196, 0.02, depth], [0, 0.125, z], material(colour, 0.95, 0.02));
-      band.userData.projectorBackground = true;
-      band.receiveShadow = true;
-    }
-
-    this.createBeachPlanting();
-
     const buoyWhite = material(0xf3ead7);
     const buoyRed = material(0xa91c24);
     for (let x = -30; x <= 30; x += 7.5) {
-      this.mesh([1.15, 0.65, 1.15], [x, 0.1, -88], Math.abs(x / 7.5) % 2 === 0 ? buoyRed : buoyWhite);
+      this.mesh([1.15, 0.65, 1.15], [x, SEA_Y - 0.04, -88], Math.abs(x / 7.5) % 2 === 0 ? buoyRed : buoyWhite);
     }
 
-    const gateMat = material(0x16171a, 0.7, 0.25);
+    const gateStart = new Set(this.scene.children);
+    const gateMat = material(0x383c36, 0.9, 0.1);
     this.mesh([1.1, 9, 1.1], [-14, 4.5, GATE_Z], gateMat);
     this.mesh([1.1, 9, 1.1], [14, 4.5, GATE_Z], gateMat);
     this.mesh([29, 1.1, 1.1], [0, 8.6, GATE_Z], gateMat);
@@ -6571,38 +7033,24 @@ export class FestivalWorld {
     // invisible from inside the festival, where the gate is seen just as often.
     for (const facing of [1, -1]) {
       const gateSign = new THREE.Mesh(
-        new THREE.PlaneGeometry(22, 4.2),
+        new THREE.PlaneGeometry(22, 3.8),
         new THREE.MeshBasicMaterial({
-          map: createTextTexture([this.entranceSignText.title, this.entranceSignText.subtitle]),
+          map: createTextTexture([this.entranceSignText.title, this.entranceSignText.subtitle],'#eee4cc','#354842',22/3.8),
         }),
       );
       this.entranceSignMaterials.push(gateSign.material as THREE.MeshBasicMaterial);
-      gateSign.position.set(0, 8.6, GATE_Z + facing * 0.9);
+      gateSign.position.set(0, 11.2, GATE_Z + facing * 0.9);
       if (facing < 0) gateSign.rotation.y = Math.PI;
-      this.scene.add(gateSign);
+      const frame=createCoastalSignFrame(22,3.8);frame.position.copy(gateSign.position);frame.rotation.copy(gateSign.rotation);this.scene.add(frame);
+      gateSign.position.z+=facing*.035;this.scene.add(gateSign);
       // Short stubs back to the bar, so the panel reads as mounted on it.
       for (const side of [-1, 1]) {
-        this.mesh([0.24, 0.24, 0.9], [side * 9.4, 8.6, GATE_Z + facing * 0.45], gateMat);
+        this.mesh([0.18, 2.8, 0.18], [side * 9.4, 9.95, GATE_Z + facing * 0.72], gateMat);
       }
     }
 
-    // The approach road now runs from the gate south past the club turning.
-    const road = this.mesh([17, 0.06, GATE_Z - 4], [0, 0.2, (GATE_Z + 4) / 2 - 2], material(0x2f2d31, 0.8, 0.1));
-    road.receiveShadow = true;
-    road.userData.projectorBackground = true;
-    for (let z = 8; z < GATE_Z - 4; z += 6) {
-      const dash = this.mesh([0.5, 0.05, 2.4], [0, 0.24, z], material(0xd8d2c4, 0.6, 0.1));
-      dash.userData.projectorBackground = true;
-    }
-    // The turning that leads west to The Basement's forecourt.
-    const clubRoadWidth = Math.abs(clubBounds.buildingMaxX - -8);
-    const clubRoad = this.mesh(
-      [clubRoadWidth, 0.06, 11],
-      [(clubBounds.buildingMaxX + -8) / 2, 0.2, (clubBounds.doorMinZ + clubBounds.doorMaxZ) / 2],
-      material(0x2f2d31, 0.8, 0.1),
-    );
-    clubRoad.receiveShadow = true;
-    clubRoad.userData.projectorBackground = true;
+    const gateBase = terrainHeightAt(0, GATE_Z);
+    this.scene.children.filter(object => !gateStart.has(object)).forEach(object => { object.position.y += gateBase; });
 
     // A fixed pool of lamp lights, reassigned to whichever posts are closest.
     // Three on the light setting rather than six: every one of them is
@@ -6616,9 +7064,9 @@ export class FestivalWorld {
 
     this.createGanganStatue();
     this.createJukebox();
-    this.createShoreScreen();
+    this.buildOnGrade(() => this.createShoreScreen(), SCREENING_SITES.shore.grade, SCREENING_SITES.shore.dx, SCREENING_SITES.shore.dz);
     this.createPalace();
-    this.createDriveIn();
+    this.buildOnGrade(() => this.createDriveIn(), SCREENING_SITES['drive-in'].grade, SCREENING_SITES['drive-in'].dx, SCREENING_SITES['drive-in'].dz);
     this.createClub();
     this.createRooftop();
     this.createConcession();
@@ -6629,23 +7077,21 @@ export class FestivalWorld {
     this.mesh([8, 15, 27], [-99, 7.5, 4], buildingMat);
     this.mesh([7.2, 1.2, 0.3], [-99, 10.2, 17.65], material(0xa31820));
     this.addCollider(-99, 4, 8, 27, 0.2, { minY: -0.4, maxY: 40 });
-    this.createTemple();
+    this.buildOnGrade(() => this.createTemple(), TEMPLE_GRADE);
 
-    const branchPromenade = this.mesh([93, 0.08, 12], [0, 0.13, -14], material(0x6d655b));
-    branchPromenade.receiveShadow = true;
-    branchPromenade.userData.projectorBackground = true;
-    const branchStripe = this.mesh([93, 0.025, 1.6], [0, 0.185, -14], material(0xc4b69f));
-    branchStripe.userData.projectorBackground = true;
-    const branchCarpet = this.mesh([93, 0.055, 7.5], [0, 0.22, -14], carpetMaterial);
-    branchCarpet.userData.festivalCarpet = true;
-    branchCarpet.receiveShadow = true;
-    branchCarpet.userData.projectorBackground = true;
-    // Connect the cross-town carpet to The Palace entrance. Its surface sits
-    // a few millimetres above both adjoining pieces to prevent z-fighting.
-    const palaceApproachCarpet = this.mesh([12, 0.055, 16], [-35, 0.225, -24], carpetMaterial);
-    palaceApproachCarpet.userData.festivalCarpet = true;
-    palaceApproachCarpet.receiveShadow = true;
-    palaceApproachCarpet.userData.projectorBackground = true;
+    const scenery = new CoastalScenery(this.scene,
+      (x,z,w,d,base,top,label) => {
+        this.addCollider(x,z,w,d,.08,{minY:base,maxY:top},label,top);
+        this.colliders[this.colliders.length-1].physical=true;
+      },
+      (x,z,radius) => !this.staticCollides(x,z,terrainHeightAt(x,z)+AVATAR_GROUND_Y,radius)
+        && !this.onAWayThrough(x,z,terrainHeightAt(x,z)+AVATAR_GROUND_Y,radius+1));
+    scenery.buildTown();
+    scenery.buildCirculation();
+    scenery.buildPlanting();
+    scenery.finish();
+    this.paving=this.scene.children.filter(object=>object.userData.groundFootprint).map(object=>({polygon:object.userData.groundFootprint,lift:object.userData.groundLift,exclusions:object.userData.groundExclusions}));
+    this.createBeachPlanting();
 
     const lampMaterial = new THREE.MeshStandardMaterial({
       color: 0xffd7a1,
@@ -6680,7 +7126,8 @@ export class FestivalWorld {
         if (z === -14) continue;
         // The turning post throws its light west; the rest wash the roadway.
         const targetX = x < 0 && z === clubTurningZ ? clubBounds.buildingMaxX : 0;
-        this.createLampPost(x, z, lampMaterial, z === 3, PROMENADE_LAMP_HEIGHT, targetX);
+        const postZ=x>0&&z===6?8:z; // leave the temple crossing's walking envelope clear
+        this.createLampPost(x, postZ, lampMaterial, z === 3, PROMENADE_LAMP_HEIGHT, targetX);
       }
     }
 
@@ -6695,8 +7142,8 @@ export class FestivalWorld {
     this.addSpotlight([-35, 8.05, -31.15], [-35, 0, -35.5], 90, 26, true, 0xffb86b);
 
     for (const z of [-18, -29]) {
-      for (const x of [26, 44]) {
-        this.createLampPost(x, z, lampMaterial, z === -18 && x === 26, 6.3, 35);
+      for (const x of [23, 47]) {
+        this.createLampPost(x, z, lampMaterial, z === -18 && x === 23, 6.3, 35);
       }
     }
 
@@ -6752,26 +7199,7 @@ export class FestivalWorld {
     // Built facing -z; a quarter turn puts that front on -x, towards the road.
     cabinet.rotation.y = Math.PI / 2;
     this.scene.add(cabinet);
-    const shell = material(0x2a1512, 0.62, 0.18);
-    const trim = material(0xc9a227, 0.34, 0.66);
-    const glass = new THREE.MeshStandardMaterial({
-      color: 0xff5a3c, emissive: 0xff4a2a, emissiveIntensity: 0.85, roughness: 0.4,
-    });
-    // A cabinet with a lit arch over it, which is the whole silhouette at this
-    // resolution — nobody needs to read the record titles off the object.
-    // The plinth runs a metre below the seating plane. groundHeightAt only
-    // knows the floors that can be walked on, and the lot here is dressed with
-    // kerbs and aprons it has never heard of, so the exact drop under any one
-    // corner is not knowable from here. A skirt buried in the ground reads as a
-    // cabinet standing on it; a cabinet cut off by it does not.
-    this.mesh([2.4, 2, 1.5], [0, -0.5, 0], shell, cabinet);
-    this.mesh([2.2, 2.4, 1.3], [0, 1.7, 0], shell, cabinet);
-    this.mesh([1.7, 0.9, 0.12], [0, 2.1, -0.68], glass, cabinet);
-    this.mesh([2.4, 0.34, 1.5], [0, 3.1, 0], trim, cabinet);
-    this.mesh([1.9, 0.42, 1.1], [0, 3.42, 0], glass, cabinet);
-    for (const side of [-1, 1]) {
-      this.mesh([0.16, 2.2, 0.16], [side * 1.05, 1.85, -0.62], trim, cabinet);
-    }
+    const recordCabinet=createCoastalJukebox();recordCabinet.rotation.y=Math.PI;cabinet.add(recordCabinet);
     // The one light it throws, so the foot of the stair has a warm corner.
     const glow = new THREE.PointLight(0xff7a44, 26, 15, 1.6);
     glow.position.set(x - 1.2, floorY + 2.6, z);
@@ -6822,27 +7250,42 @@ export class FestivalWorld {
     const shoreSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['THE SHORE', 'MUSIC VIDEO']) });
     this.venueSignMaterials.set('shore', shoreSignMaterial);
     const shoreSign = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 3.15), shoreSignMaterial);
-    shoreSign.position.set(-11.6, 3.35, -28.2);
-    shoreSign.rotation.y = 0.12;
-    this.scene.add(shoreSign);
-    // Offset both supports behind the rotated poster plane so neither post
-    // crosses the artwork when viewed from the entrance.
-    this.mesh([0.34, 4.9, 0.34], [-13.75, 2.15, -28.32], material(0x15171a));
-    this.mesh([0.34, 4.9, 0.34], [-9.55, 2.15, -28.82], material(0x15171a));
-    this.addCollider(-13.75, -28.32, 0.45, 0.45);
-    this.addCollider(-9.55, -28.82, 0.45, 0.45);
+    // Put the board all the way outside the theatre on the service road. In
+    // world coordinates it stands ahead of the nearest lamp at (47,-18), with
+    // more than five units between the lamp and the closest sign footing.
+    const shoreSignX=SHORE_SIGN.x-SCREENING_SITES.shore.dx;
+    const shoreSignZ=SHORE_SIGN.z-SCREENING_SITES.shore.dz;
+    const shoreBoard=createCoastalSignFrame(SHORE_SIGN.width,3.15);shoreBoard.position.set(shoreSignX,3.35,shoreSignZ);shoreBoard.rotation.y=SHORE_SIGN.rotation;
+    shoreSign.position.z=.035;shoreBoard.add(shoreSign);
+    for(const x of [-2.15,2.15]){
+      this.mesh([.30,3.35,.30],[x,-1.675,-.25],material(0x52645a),shoreBoard).userData.wornNoMasonry=true;
+      this.mesh([.6,.16,.65],[x,-3.27,-.25],material(0xa89b80),shoreBoard).userData.wornNoMasonry=true;
+    }
+    this.scene.add(shoreBoard);
+    for(const x of [-2.15,2.15])this.addCollider(
+      shoreSignX+x*Math.cos(shoreBoard.rotation.y)-.25*Math.sin(shoreBoard.rotation.y),
+      shoreSignZ-x*Math.sin(shoreBoard.rotation.y)-.25*Math.cos(shoreBoard.rotation.y),
+      .62,.67,
+    );
 
     const chairMaterial = material(0xded3bd);
     for (let row = 0; row < 3; row += 1) {
       for (let column = -3; column <= 3; column += 1) {
         const x = column * 2.25;
         const z = -34.5 - row * 2.8;
-        this.mesh([1.3, 0.18, 1.4], [x, 0.55, z], chairMaterial);
-        this.mesh([1.3, 1.3, 0.16], [x, 1.15, z + 0.6], chairMaterial);
+        const cushion = this.mesh([1.3, 0.18, 1.4], [x, 0.55, z], chairMaterial);
+        const back=this.mesh([1.3,.9,.12],[x,1.03,z+.65],chairMaterial);back.rotation.x=.12;
+        const frame=material(0x536962);
+        for(const side of [-1,1]){
+          for(const dz of [-.5,.5])this.mesh([.10,.48,.10],[x+side*.59,.24,z+dz],frame);
+          this.mesh([.10,.68,.10],[x+side*.64,.93,z+.65],frame);
+        }
+        for(const dy of [.86,1.14])this.mesh([1.3,.04,.025],[x,dy,z+.574],frame);
         this.addCollider(x, z, 1.12, 1.15, 0.08, { minY: -0.4, maxY: 1.8 });
         this.seats.push({
           id: `SHORE-${row + 1}-${column + 4}`,
           venue: 'shore',
+          cushion,
           position: new THREE.Vector3(x, 0, z),
         });
       }
@@ -6853,30 +7296,27 @@ export class FestivalWorld {
     const centerX = -35;
     const centerZ = -39.5;
     const screenZ = -48.5;
-    const entranceZ = -31.1;
     // The beach top is y=0.115. Keep the Palace floor on a distinct y-plane;
     // sharing that surface caused the striped clipping visible while moving.
-    const carpet = this.mesh([21, 0.08, 17], [centerX, 0.21, centerZ], material(0x4b181c));
+    // Keep the finish inside the inner faces of the entrance pillars and side
+    // walls. The previous 21-unit width entered both pillar footprints and
+    // shimmered against their masonry at the front edge.
+    const carpet = this.mesh([18.4, 0.08, 15.2], [centerX, 0.21, -40.6], material(0x4b181c));
     carpet.receiveShadow = true;
     carpet.userData.projectorBackground = true;
 
-    const wallMaterial = material(0x171419, 0.72, 0.15);
+    const wallMaterial = material(0xb5ab92, 0.94, 0);
     this.mesh([1, 10, 18], [centerX - 10.5, 5, centerZ], wallMaterial);
     this.mesh([1, 10, 18], [centerX + 10.5, 5, centerZ], wallMaterial);
     this.addCollider(centerX - 10.5, centerZ, 1, 18, 0.16);
     this.addCollider(centerX + 10.5, centerZ, 1, 18, 0.16);
-    for (const x of [centerX - 8, centerX + 8]) {
-      this.mesh([0.45, 8.8, 0.45], [x, 4.4, entranceZ], material(0xb58b43, 0.55, 0.45));
-    }
-    this.mesh([21, 0.55, 0.7], [centerX, 9.1, entranceZ], material(0xb58b43, 0.55, 0.45));
-
     const palaceSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['THE PALACE', 'COMMERCIAL']) });
     this.venueSignMaterials.set('palace', palaceSignMaterial);
     const marquee = new THREE.Mesh(
       new THREE.PlaneGeometry(15.8, 3.3),
       palaceSignMaterial,
     );
-    marquee.position.set(centerX, 7.25, entranceZ - 0.35);
+    marquee.position.set(centerX, 8.5, -30.92);
     this.scene.add(marquee);
 
     const screen = this.mesh([15.3, 8.5, 0.55], [centerX, 5.7, screenZ], material(0x050506, 0.72));
@@ -6886,17 +7326,36 @@ export class FestivalWorld {
     this.addCollider(centerX, screenZ, 17.5, 1.3);
     this.createProjectorSurface('palace');
 
+    // Close the rear behind the projector so the new roof belongs to an enclosed hall.
+    this.mesh([22,.6,1],[centerX,9.8,-49.05],wallMaterial).userData.wornNoMasonry=true;
+    this.mesh([22,9.8,.6],[centerX,4.9,-49.05],wallMaterial).userData.wornNoMasonry=true;
+    this.addCollider(centerX,-49.05,22,.6,.05,{minY:0,maxY:10.1,physical:true},'palace-rear-wall',10.1);
+    const roof=this.mesh([22.4,.42,17.1],[centerX,10.25,-40.75],material(0x4f5957));
+    roof.name='Palace auditorium roof';roof.userData.wornNoMasonry=true;
+    for(const x of [centerX-10.9,centerX+10.9])this.mesh([.25,.45,17.1],[x,10.65,-40.75],wallMaterial).userData.wornNoMasonry=true;
+    for(const z of [-49.2,-32.3])this.mesh([22.4,.45,.25],[centerX,10.65,z],wallMaterial).userData.wornNoMasonry=true;
+    for(const z of [-45,-39,-33])this.mesh([21,.3,.25],[centerX,9.91,z],material(0x4b4440)).userData.wornNoMasonry=true;
+    this.addCollider(centerX,-40.75,22.4,17.1,0,{minY:10.04,maxY:10.91,physical:true},'palace-roof',10.91);
+
     const seatMaterial = material(0x9a2028);
     for (let row = 0; row < 3; row += 1) {
       for (let column = -2; column <= 2; column += 1) {
         const x = centerX + column * 2.75;
         const z = -36.7 - row * 3.05;
-        this.mesh([1.6, 0.28, 1.55], [x, 0.62, z], seatMaterial);
-        this.mesh([1.6, 1.65, 0.22], [x, 1.35, z + 0.67], seatMaterial);
+        const cushion = this.mesh([1.6, 0.28, 1.55], [x, 0.62, z], seatMaterial);
+        const back=this.mesh([1.44,1.12,.24],[x,1.26,z+.69],seatMaterial);back.rotation.x=.08;
+        const frame=material(0x353e3d);
+        for(const side of [-1,1]){
+          this.mesh([.13,.44,1.14],[x+side*.64,.44,z],frame);
+          this.mesh([.17,.13,1.04],[x+side*.78,1.02,z+.04],material(0x87684d));
+          this.mesh([.09,.45,.12],[x+side*.78,.79,z+.43],frame);
+        }
+        this.mesh([1.14,.035,.018],[x,1.49,z+.555],material(0xbb6257));
         this.addCollider(x, z, 1.32, 1.25, 0.08, { minY: -0.4, maxY: 2.2 });
         this.seats.push({
           id: `PALACE-${row + 1}-${column + 3}`,
           venue: 'palace',
+          cushion,
           position: new THREE.Vector3(x, 0, z),
         });
       }
@@ -6928,15 +7387,12 @@ export class FestivalWorld {
       new THREE.PlaneGeometry(9, 4.5),
       driveSignMaterial,
     );
-    roadside.position.set(48.5, 5.3, -16.2);
-    roadside.rotation.y = -0.32;
+    // Reuse the film sign on the ticket booth wall; remove the superseded freestanding legs.
+    roadside.geometry.dispose();roadside.geometry=new THREE.PlaneGeometry(4,2);
+    roadside.position.set(52,4.85,-15.18);
+    this.mesh([4.2,2.2,.18],[52,4.85,-15.31],material(0x354d47)).userData.wornNoMasonry=true;
+    for(const x of [50.6,53.4])this.mesh([.12,.35,.12],[x,3.85,-15.31],material(0x354d47)).userData.wornNoMasonry=true;
     this.scene.add(roadside);
-    // Both legs sit behind the rotated poster plane and no longer occlude its
-    // title when approached from MY SQUARE.
-    this.mesh([0.5, 6.8, 0.5], [46.05, 3.1, -17.75], material(0x15171a));
-    this.mesh([0.5, 6.8, 0.5], [50.65, 3.1, -16.35], material(0x15171a));
-    this.addCollider(46.05, -17.75, 0.5, 0.5);
-    this.addCollider(50.65, -16.35, 0.5, 0.5);
 
     const carColors = [0x8f1720, 0xd3b356, 0x315c70, 0xd8d0bc, 0x6d4f7d, 0x335d3f];
     let carIndex = 0;
@@ -6944,26 +7400,17 @@ export class FestivalWorld {
       for (let column = -1; column <= 1; column += 1) {
         const x = centerX + column * 7.2;
         const z = -20.5 - row * 6.2;
-        const car = new THREE.Group();
-        car.position.set(x, 0, z);
-        const carMaterial = material(carColors[carIndex % carColors.length], 0.55, 0.35);
-        this.mesh([4.6, 1.05, 2.9], [0, 0.85, 0], carMaterial, car);
-        this.mesh([2.9, 0.95, 2.35], [0, 1.65, -0.2], material(0x17232d, 0.25, 0.4), car);
-        for (const wheelX of [-1.65, 1.65]) {
-          this.mesh([0.45, 0.8, 0.85], [wheelX, 0.45, -1.05], material(0x090a0b), car);
-          this.mesh([0.45, 0.8, 0.85], [wheelX, 0.45, 1.05], material(0x090a0b), car);
-        }
+        const car = createCoastalSedan(carColors[carIndex % carColors.length]);
+        car.position.set(x, .10, z);
         this.scene.add(car);
-        this.addCollider(x, z, 4.35, 2.55, 0.08, { minY: -0.4, maxY: 2.2 });
+        this.addCollider(x, z, 3.75, 5.7, 0.08, { minY: .1, maxY: 2.16, physical:true },'convertible-car',2.16);
         this.seats.push({
           id: `DRIVE-${row + 1}-${column + 2}`,
           venue: 'drive-in',
-          // On the back of the car, which is where anybody at a drive-in
-          // sits. The marker was 1.9 forward of the car's centre and the body
-          // is 1.45 deep, so this put people on the tarmac behind the bumper —
-          // sitting at a drive-in with their back to the film. 0.8 lands the
-          // body on the exposed deck behind the cabin, facing the screen.
-          position: new THREE.Vector3(x, 0, z + 0.8),
+          cushion:car.userData.cushion as THREE.Mesh,
+          forward:-.3,
+          footFloor:.10+CONVERTIBLE.footFloor,
+          position: new THREE.Vector3(x+CONVERTIBLE.seatX, 0, z+CONVERTIBLE.seatZ),
         });
         carIndex += 1;
       }
@@ -6973,367 +7420,121 @@ export class FestivalWorld {
   private createClub(): void {
     const b = clubBounds;
     const floor = CLUB_FLOOR_Y;
-    const roomCenterX = (b.roomMinX + b.roomMaxX) / 2;
-    const roomCenterZ = (b.roomMinZ + b.roomMaxZ) / 2;
-    const roomWidth = b.roomMaxX - b.roomMinX;
-    const roomDepth = b.roomMaxZ - b.roomMinZ;
-    const buildingCenterX = (b.buildingMinX + b.buildingMaxX) / 2;
-    const buildingCenterZ = (b.buildingMinZ + b.buildingMaxZ) / 2;
-    const buildingWidth = b.buildingMaxX - b.buildingMinX;
-    const buildingDepth = b.buildingMaxZ - b.buildingMinZ;
-    const brick = material(0x2a2229, 0.8, 0.14);
-    const concrete = material(0x1b1b20, 0.82, 0.12);
-    const darkConcrete = material(0x121216, 0.86, 0.1);
-    // The room is sealed from the sky, so its surfaces are kept light enough
-    // to catch the lamps rather than swallowing them.
-    const roomWall = new THREE.MeshStandardMaterial({
-      color: 0x413a4a,
-      roughness: 0.72,
-      metalness: 0.18,
-      emissive: 0x2a2740,
-      emissiveIntensity: 1.2,
-    });
-    const roomShell = new THREE.MeshStandardMaterial({
-      color: 0x2b2733,
-      roughness: 0.6,
-      metalness: 0.3,
-      emissive: 0x211f30,
-      emissiveIntensity: 1.05,
-    });
-    const aboveGround = { minY: -0.4, maxY: 40 };
-    const belowGround = { minY: floor - 1.5, maxY: -0.5 };
-
-    // A paved forecourt so the new ground reads as a developed lot rather than
-    // the bare plane the walkable area was extended onto. Nothing is planted
-    // in front of the doors; lamps there blocked the way in.
-    const paving = material(0x2c2b30, 0.7, 0.2);
-    for (const [minX, maxX, minZ, maxZ] of [
-      // East of the doors, and a margin along each outside face.
-      [b.buildingMaxX, b.buildingMaxX + 14, b.buildingMinZ - 9, b.buildingMaxZ + 9],
-      [b.buildingMinX - 9, b.buildingMaxX, b.buildingMinZ - 9, b.buildingMinZ],
-      [b.buildingMinX - 9, b.buildingMaxX, b.buildingMaxZ, b.buildingMaxZ + 9],
-      [b.buildingMinX - 9, b.buildingMinX, b.buildingMinZ, b.buildingMaxZ],
-    ] as Array<[number, number, number, number]>) {
-      const slab = this.mesh(
-        [maxX - minX, 0.16, maxZ - minZ],
-        [(minX + maxX) / 2, 0.08, (minZ + maxZ) / 2],
-        paving,
-      );
-      slab.receiveShadow = true;
-      slab.userData.projectorBackground = true;
+    const roomCenterX = (b.roomMinX+b.roomMaxX)/2;
+    const roomCenterZ = (b.roomMinZ+b.roomMaxZ)/2;
+    const buildingCenterX=(b.buildingMinX+b.buildingMaxX)/2;
+    const buildingWidth=b.buildingMaxX-b.buildingMinX;
+    const buildingDepth=b.buildingMaxZ-b.buildingMinZ;
+    const ceiling=floor+CLUB_ROOM_HEIGHT;
+    const belowGround={minY:floor-1,maxY:ceiling};
+    const concrete=material(0x777c6f,.97,0);
+    const brick=material(0x8a6653,.94,0);
+    const iron=material(0x3b4b49,.9,.15);
+    const roomWall=new THREE.MeshStandardMaterial({color:0x778077,roughness:.93,emissive:0x222c32,emissiveIntensity:.2});
+    const roomShell=material(0x505950,.96,0);
+    const paving=material(0x9b9884,.95,0);
+    // Two floor levels within one supported warehouse volume. Its lower floor
+    // is above the sea; the 26-unit descent is a 3.85% ramp, not fourteen tall steps.
+    const foundation=this.mesh([buildingWidth+.2,.6,buildingDepth+.2],[buildingCenterX,floor-.3,(b.buildingMinZ+b.buildingMaxZ)/2],roomShell);foundation.name='Club continuous foundation';foundation.userData.projectorBackground=true;foundation.userData.wornNoMasonry=true;
+    for(const [from,to] of [[b.buildingMinZ,19.2],[27.8,b.buildingMaxZ]]) {
+      const gallery=this.mesh([30,1,to-from],[-35,-.5,(from+to)/2],paving);gallery.name="Club gallery solid edge";gallery.userData.projectorBackground=true;gallery.userData.wornNoMasonry=true;
     }
-
-    // Shell. Built as four walls and a roof rather than one solid block, so
-    // the lobby is a real room instead of space carved out of a filled box.
-    const wallThickness = 1;
-    const wallHeight = 8.4;
-    const wallY = wallHeight / 2;
-    this.mesh([wallThickness, wallHeight, buildingDepth], [b.buildingMinX, wallY, buildingCenterZ], brick);
-    this.addCollider(b.buildingMinX, buildingCenterZ, wallThickness, buildingDepth, 0.2, aboveGround);
-    for (const z of [b.buildingMinZ, b.buildingMaxZ]) {
-      this.mesh([buildingWidth, wallHeight, wallThickness], [buildingCenterX, wallY, z], brick);
-      this.addCollider(buildingCenterX, z, buildingWidth, wallThickness, 0.2, aboveGround);
+    const landing=this.mesh([4.75,.35,8.6],[-21.675,-.167,23.5],paving);
+    landing.name='Club full width threshold';landing.userData.projectorBackground=true;landing.userData.wornNoMasonry=true;
+    const ramp=this.mesh([26,1,7],[-37,floor/2,23.5],concrete);
+    // A closed wedge, with its underside founded on the dance-floor slab.
+    ramp.geometry=new THREE.BufferGeometry();ramp.scale.set(1,1,1);ramp.position.set(0,0,0);
+    const wedge=[-50,floor,19.2,-50,floor,27.8,-24,0,19.2,-24,0,27.8,-24,floor,19.2,-24,floor,27.8];
+    ramp.geometry.setAttribute('position',new THREE.Float32BufferAttribute(wedge,3));
+    ramp.geometry.setIndex([0,1,2,2,1,3,0,2,4,1,5,3,2,3,4,4,3,5,0,4,1,1,4,5]);
+    ramp.name='Club sealed ramp';ramp.geometry.computeVertexNormals();ramp.userData.wornNoMasonry=true;ramp.userData.projectorBackground=true;
+    // Rails stand inside the ramp, clear of the gallery edge and its end walls.
+    for(const z of [19.65,27.35]){
+      const start=-49.35,end=-24.4,span=end-start,cx=(start+end)/2;
+      const grade=(x:number)=>floor+(x+50)/26*-floor;
+      for(const height of [.72,1.45]) {
+        const rail=this.mesh([Math.hypot(span,span/26),.12,.12],[cx,height+grade(cx),z],iron);
+        rail.name='Club ramp handrail';rail.rotation.z=Math.atan2(-floor,26);rail.userData.wornNoMasonry=true;
+      }
+      for(let n=0;n<=8;n++) {
+        const x=start+n*span/8,surface=grade(x);
+        this.mesh([.12,1.45,.12],[x,surface+.725,z],iron).userData.wornNoMasonry=true;
+        this.mesh([.28,.07,.28],[x,surface+.035,z],iron).userData.wornNoMasonry=true;
+      }
+      this.addCollider(cx,z,span,.28,.1,{minY:floor-.4,maxY:1.5},'warehouse-ramp-rail',1.5);
     }
-    // East face, split around the doorway.
-    for (const [from, to] of [[b.buildingMinZ, b.doorMinZ], [b.doorMaxZ, b.buildingMaxZ]] as Array<[number, number]>) {
-      const span = Math.abs(to - from);
-      this.mesh([wallThickness, wallHeight, span], [b.buildingMaxX, wallY, (from + to) / 2], brick);
-      this.addCollider(b.buildingMaxX, (from + to) / 2, wallThickness, span, 0.2, aboveGround);
+    // The entrance has a paved landing; a person does not step from sloping soil into a doorway.
+    this.scene.add(createGroundRibbon('Club entry landing',[[-19.4,23.5],[-12,23.5]],6,paving,0,(x,z)=>terrainHeightAt(x,z)+.012+.018*Math.min(1,(x+19.4)/.6)));
+    const wallHeight=ceiling-floor;
+    for(const z of [b.buildingMinZ,b.buildingMaxZ]){
+      this.mesh([buildingWidth,wallHeight-.5,.8],[buildingCenterX,(floor+ceiling-.5)/2,z],roomWall);
+      this.addCollider(buildingCenterX,z,buildingWidth,.8,.1,belowGround,'warehouse-end-wall');
     }
-    const doorCenterZ = (b.doorMinZ + b.doorMaxZ) / 2;
-    const doorHeight = 5.8;
-    // Header over the opening keeps the wall reading as continuous.
-    this.mesh([wallThickness, wallHeight - doorHeight, b.doorMaxZ - b.doorMinZ], [b.buildingMaxX, doorHeight + (wallHeight - doorHeight) / 2, doorCenterZ], brick);
-    this.mesh([buildingWidth + 1.6, 0.7, buildingDepth + 1.6], [buildingCenterX, wallHeight + 0.35, buildingCenterZ], concrete);
-    for (let index = 0; index < 7; index += 1) {
-      this.mesh([buildingWidth + 1.8, 0.5, 0.5], [buildingCenterX, wallHeight + 0.8, b.buildingMinZ + 2 + index * 3.8], darkConcrete);
+    this.mesh([.8,wallHeight,buildingDepth],[b.buildingMinX,(floor+ceiling)/2,roomCenterZ],roomWall);
+    this.addCollider(b.buildingMinX,roomCenterZ,.8,buildingDepth,.1,belowGround,'warehouse-west-wall');
+    const opening=(b.doorMinZ+b.doorMaxZ)/2;
+    for(const [from,to] of [[b.buildingMinZ,b.doorMinZ],[b.doorMaxZ,b.buildingMaxZ]]){
+      this.mesh([.8,wallHeight,to-from],[b.buildingMaxX,(floor+ceiling)/2,(from+to)/2],brick).userData.wornMasonryKind=1;
+      this.mesh([.08,wallHeight,to-from],[b.buildingMaxX-.445,(floor+ceiling)/2,(from+to)/2],roomWall);
+      this.addCollider(b.buildingMaxX,(from+to)/2,.8,to-from,.1,belowGround,'warehouse-front-wall');
     }
-
-    // Doorway dressing. Both leaves stand open against the jambs.
-    // Set a few centimetres proud of the wall. Flush, the dressing's faces and
-    // the wall's landed on the same planes and speckled around the opening.
-    this.mesh([1.5, doorHeight, 0.6], [b.buildingMaxX + 0.36, doorHeight / 2, b.doorMinZ - 0.36], material(0x35141c, 0.6, 0.3));
-    this.mesh([1.5, doorHeight, 0.6], [b.buildingMaxX + 0.36, doorHeight / 2, b.doorMaxZ + 0.36], material(0x35141c, 0.6, 0.3));
-    this.mesh([1.6, 0.8, b.doorMaxZ - b.doorMinZ + 1.5], [b.buildingMaxX + 0.36, doorHeight + 0.4, doorCenterZ], material(0x35141c, 0.6, 0.3));
-    const leafWidth = (b.doorMaxZ - b.doorMinZ) / 2;
-    for (const [z, side] of [[b.doorMinZ, -1], [b.doorMaxZ, 1]] as Array<[number, number]>) {
-      const leafZ = z + side * 0.2;
-      this.mesh(
-        [leafWidth, doorHeight - 0.4, 0.28],
-        [b.buildingMaxX + 1.15 + leafWidth / 2, (doorHeight - 0.4) / 2, leafZ],
-        material(0x8a1220, 0.45, 0.4),
-      );
-      this.addCollider(b.buildingMaxX + 1.15 + leafWidth / 2, leafZ, leafWidth, 0.28, 0.12, aboveGround);
+    this.mesh([.8,ceiling-5.8,6],[b.buildingMaxX,(ceiling+5.8)/2,opening],brick).userData.wornMasonryKind=1;
+    this.mesh([.08,ceiling-5.8,6],[b.buildingMaxX-.445,(ceiling+5.8)/2,opening],roomWall);
+    const eastRoofBottom=ceiling+.5+Math.tan(.12)*5-.19/Math.cos(.12);
+    this.mesh([.9,eastRoofBottom-ceiling+.04,buildingDepth+.8],[b.buildingMaxX,(ceiling+eastRoofBottom)/2,roomCenterZ],roomWall);
+    // Repeated structural bays support a sawtooth roof profile and clerestories.
+    for(let bay=0;bay<7;bay++){
+      const x=-85+bay*10;
+      for(const endZ of [-.4,41.6]){
+        const cap=new THREE.Shape();const bottom=ceiling-.5;
+        cap.moveTo(-5,bottom);cap.lineTo(5,bottom);
+        cap.lineTo(5,ceiling+.5+Math.tan(.12)*5-.19/Math.cos(.12));
+        cap.lineTo(-5,ceiling+.5-Math.tan(.12)*5-.19/Math.cos(.12));cap.closePath();
+        const closure=new THREE.Mesh(new THREE.ExtrudeGeometry(cap,{depth:.8,bevelEnabled:false}),roomWall);
+        closure.position.set(x,0,endZ);closure.userData.wornNoMasonry=true;this.scene.add(closure);
+      }
+      const roof=this.mesh([10.5,.38,43],[x,ceiling+.5,21],concrete);
+      roof.rotation.z=.12;
+      this.mesh([.25,1.45,42],[x-5,ceiling+.1,21],iron);
+      this.mesh([.28,.7,35],[x-4.96,ceiling+.6,21],material(0x658484,.8,0));
     }
-    // The jambs are solid too, so nobody walks through the frame.
-    for (const z of [b.doorMinZ - 0.36, b.doorMaxZ + 0.36]) {
-      this.addCollider(b.buildingMaxX + 0.36, z, 1.5, 0.6, 0.12, aboveGround);
+    // One column system: a double bay frames the screen, with 10-unit bays
+    // continuing on either side. A continuous wall plate carries the roof.
+    for(const z of [1,41]) {
+      for(const x of [-88,-78,-58,-48,-38,-28]) {
+        const column=this.mesh([.7,wallHeight,.9],[x,(floor+ceiling)/2,z],iron);
+        column.name='Club structural column';column.userData.wornNoMasonry=true;
+        this.addCollider(x,z,.7,.9,.02,{minY:floor,maxY:ceiling,physical:true},'warehouse-column',ceiling);
+      }
+      this.mesh([69,.45,.9],[-55,ceiling-.225,z],iron).userData.wornNoMasonry=true;
     }
-    // The venue sign is fixed to the wall above the doorway; the club has no
-    // free-standing poster stand.
-    const doorSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['SLAP AND POP', 'XIEH GAN']) });
-    this.venueSignMaterials.set('club', doorSignMaterial);
-    const doorSign = new THREE.Mesh(new THREE.PlaneGeometry(9.6, 2.2), doorSignMaterial);
-    doorSign.position.set(b.buildingMaxX + 0.56, 7.1, doorCenterZ);
-    doorSign.rotation.y = Math.PI / 2;
-    this.scene.add(doorSign);
-    this.clubNeon = this.mesh(
-      [0.22, 0.22, 9.8],
-      [b.buildingMaxX + 0.56, doorHeight + 0.1, doorCenterZ],
-      new THREE.MeshBasicMaterial({ color: 0xff2f6d }),
-    );
-
-    // Club lighting across the south face, the elevation The Palace looks at.
-    // These are wall washers rather than street lamps, so nothing stands in
-    // the way of the doors.
-    const southZ = b.buildingMinZ - 0.62;
-    for (let index = 0; index < 9; index += 1) {
-      const x = b.buildingMinX + 3 + index * ((buildingWidth - 6) / 8);
-      const box = this.mesh([1.5, 0.9, 0.5], [x, 6.6, southZ], material(0x101014, 0.7, 0.2));
-      box.castShadow = false;
-      const lens = this.mesh(
-        [1.1, 0.5, 0.24],
-        [x, 6.6, southZ - 0.3],
-        new THREE.MeshBasicMaterial({ color: clubFacadeColors[index % clubFacadeColors.length] }),
-      );
-      this.clubFacadeLights.push(lens);
+    this.mesh([20.7,.45,.9],[CLUB_STAGE_X,12.3,41],iron).userData.wornNoMasonry=true;
+    // Sunken floor retaining edge, with a clear opening for the ramp.
+    for(const [from,to] of [[0,19.4],[27.6,42]]){
+      this.mesh([.45,2.5,to-from],[-49.8,.25,(from+to)/2],iron).userData.wornNoMasonry=true;
+      this.addCollider(-49.8,(from+to)/2,.45,to-from,.1,{minY:floor-1,maxY:1.5},'gallery-balustrade',1.5);
     }
-    // A neon band along the parapet, and uplights washing the brick.
-    for (const y of [8.1, 1.1]) {
-      const band = this.mesh(
-        [buildingWidth - 2, 0.26, 0.26],
-        [buildingCenterX, y, southZ - 0.2],
-        new THREE.MeshBasicMaterial({ color: y > 4 ? clubFacadeColors[0] : clubFacadeColors[1] }),
-      );
-      this.clubFacadeLights.push(band);
+    const signMaterial=new THREE.MeshBasicMaterial({map:createTextTexture(['SLAP AND POP','WAREHOUSE · XIEH GAN'],'#ddd0b4','#344844')});
+    this.venueSignMaterials.set('club',signMaterial);
+    const sign=new THREE.Mesh(new THREE.PlaneGeometry(11,2.8),signMaterial);
+    sign.position.set(-19.12,8.1,opening);sign.rotation.y=Math.PI/2;this.scene.add(sign);
+    const entranceCanopy=this.mesh([4,.3,9],[-18.3,6.2,opening],iron);
+    entranceCanopy.userData.wornNoMasonry=true;
+    this.clubNeon=this.mesh([.16,.16,9.5],[-16.2,6.1,opening],new THREE.MeshBasicMaterial({color:0xe39865}));
+    // Wall-mounted enamel bulkheads, centred between the warehouse bays.
+    for(let index=0;index<6;index++){
+      const x=-79.5+index*10,y=5.5;
+      const enamel=material(0x3d5651),cage=material(0xaca184);
+      this.mesh([1.6,1.2,.22],[x,y,-.52],enamel).userData.wornNoMasonry=true;
+      const lens=this.mesh([1.08,.64,.16],[x,y,-.66],new THREE.MeshBasicMaterial({color:0xe8c985}));
+      lens.userData.wornNoGrain=true;this.clubFacadeLights.push(lens);
+      this.mesh([1.48,.13,.52],[x,y+.52,-.67],enamel).userData.wornNoMasonry=true;
+      for(const dx of [-.39,0,.39])this.mesh([.035,.73,.04],[x+dx,y,-.765],cage).userData.wornNoMasonry=true;
+      for(const dy of [-.36,.36])this.mesh([1.15,.035,.04],[x,y+dy,-.765],cage).userData.wornNoMasonry=true;
     }
-    const facadeGlow = new THREE.PointLight(clubFacadeColors[0], 0, 34, 1.7);
-    facadeGlow.position.set(buildingCenterX, 5.4, southZ - 2);
-    this.scene.add(facadeGlow);
-    this.clubFacadeGlows.push(facadeGlow);
-
-    // Ground-floor lobby, running west as far as the room's east wall below it
-    // — the last line the floor has anything to stand on. Laid either side of
-    // the stair slot, so the hole in the floor is the only thing announcing the
-    // way down. No interior walls, no signage.
-    const groundFloorMaterial = material(0x3a3340, 0.6, 0.25);
-    // Full-width floor north and south of the opening.
-    for (const [from, to] of [
-      [b.buildingMinZ, b.stairMinZ],
-      [b.stairMaxZ, b.buildingMaxZ],
-    ] as Array<[number, number]>) {
-      const slab = this.mesh(
-        [b.buildingMaxX - b.lobbyMinX, 0.4, Math.abs(to - from)],
-        [(b.lobbyMinX + b.buildingMaxX) / 2, 0.02, (from + to) / 2],
-        groundFloorMaterial,
-      );
-      slab.receiveShadow = true;
-      slab.userData.projectorBackground = true;
-    }
-    // And the strip east of the opening, so the hole has floor on every side.
-    const eastStrip = this.mesh(
-      [b.buildingMaxX - b.stairTopX, 0.4, b.stairMaxZ - b.stairMinZ],
-      [(b.stairTopX + b.buildingMaxX) / 2, 0.02, (b.stairMinZ + b.stairMaxZ) / 2],
-      groundFloorMaterial,
-    );
-    eastStrip.receiveShadow = true;
-    eastStrip.userData.projectorBackground = true;
-    // The floor's west edge is a balcony over the room below, so it is closed
-    // with a waist-high balustrade rather than a wall: the point of standing
-    // there is to look down at the dance floor. The stair slot is left open —
-    // that is the way down. The guard reaches below ground level as well as
-    // above it, because the far side of it is a sixteen-unit drop.
-    const kerb = material(0x8a1220, 0.45, 0.4);
-    const balustradeX = b.roomMaxX - 0.2;
-    const balustradeHeight = 1.7;
-    for (const [from, to] of [
-      [b.buildingMinZ, b.stairMinZ - 0.7],
-      [b.stairMaxZ + 0.7, b.buildingMaxZ],
-    ] as Array<[number, number]>) {
-      const span = Math.abs(to - from);
-      this.mesh([0.4, balustradeHeight, span], [balustradeX, 0.22 + balustradeHeight / 2, (from + to) / 2], kerb);
-      this.mesh([0.62, 0.22, span], [balustradeX, 0.22 + balustradeHeight, (from + to) / 2], material(0x2b2733, 0.5, 0.35));
-      this.addCollider(balustradeX, (from + to) / 2, 0.4, span, 0.16, { minY: floor - 2, maxY: 40 }, 'gallery-balustrade');
-    }
-
-    // The plot's own surface west of the balcony is the club's roof. A light
-    // well is cut through it, and through the room's ceiling directly below,
-    // so the balcony has something to overlook: the drop lands on the dance
-    // floor rather than on a slab a metre down.
-    const wellMinX = -64;
-    const wellMaxX = b.roomMaxX;
-    const wellMinZ = 8;
-    const wellMaxZ = 34;
-    const capMaterial = material(0x2f2b33, 0.8, 0.12);
-    for (const [minX, maxX, minZ, maxZ] of [
-      [b.buildingMinX, wellMinX, b.buildingMinZ, b.buildingMaxZ],
-      [wellMinX, b.lobbyMinX, b.buildingMinZ, wellMinZ],
-      [wellMinX, b.lobbyMinX, wellMaxZ, b.buildingMaxZ],
-    ] as Array<[number, number, number, number]>) {
-      const cap = this.mesh(
-        [maxX - minX, 0.4, maxZ - minZ],
-        [(minX + maxX) / 2, 0.02, (minZ + maxZ) / 2],
-        capMaterial,
-      );
-      cap.receiveShadow = true;
-      cap.userData.projectorBackground = true;
-    }
-
-    // A kerb around the stair slot, so the drop is legible from across the room.
-    // Overhanging the slot by a few centimetres. Flush with the floor's own
-    // edge, the kerb's face and the slab's face shared a plane and speckled.
-    for (const z of [b.stairMinZ - 0.18, b.stairMaxZ + 0.18]) {
-      this.mesh([b.stairTopX - b.lobbyMinX, 0.5, 0.5], [(b.lobbyMinX + b.stairTopX) / 2, 0.34, z], kerb);
-    }
-    this.mesh([0.5, 0.5, b.stairMaxZ - b.stairMinZ + 1.36], [b.stairTopX + 0.18, 0.34, (b.stairMinZ + b.stairMaxZ) / 2], kerb);
-
-    // House lighting for the ground floor. Every fitting is fixed flush to the
-    // face of the wall it belongs to: the inner faces are half a wall thickness
-    // in from each wall's centre line, so the sconce body sits half its own
-    // depth further in again. They are spaced along those walls rather than
-    // grouped, which is what made the old lobby read as a corridor of lamps.
-    const sconce = new THREE.MeshBasicMaterial({ color: 0xffcf94 });
-    const sconceDepth = 0.4;
-    const eastFaceX = b.buildingMaxX - wallThickness / 2 - sconceDepth / 2;
-    const southFaceZ = b.buildingMinZ + wallThickness / 2 + sconceDepth / 2;
-    const northFaceZ = b.buildingMaxZ - wallThickness / 2 - sconceDepth / 2;
-    // East wall, clear of the doorway.
-    for (const z of [b.buildingMinZ + 7, b.buildingMaxZ - 7]) {
-      this.mesh([sconceDepth, 0.9, 2.2], [eastFaceX, 4.1, z], sconce);
-    }
-    // North and south walls, across the width of the floor.
-    for (const x of [b.lobbyMinX + 6, (b.lobbyMinX + b.buildingMaxX) / 2, b.buildingMaxX - 6]) {
-      this.mesh([2.2, 0.9, sconceDepth], [x, 4.1, southFaceZ], sconce);
-      this.mesh([2.2, 0.9, sconceDepth], [x, 4.1, northFaceZ], sconce);
-    }
-    // The west edge has no wall to fix anything to, so it is lit from the floor
-    // along the balcony instead.
-    for (let index = 0; index < 4; index += 1) {
-      const z = b.buildingMinZ + 6 + index * ((buildingDepth - 12) / 3);
-      if (z > b.stairMinZ - 2 && z < b.stairMaxZ + 2) continue;
-      this.mesh([1.1, 0.12, 0.5], [balustradeX + 0.9, 0.28, z], sconce);
-    }
-    for (const [x, z] of [
-      [b.lobbyMinX + 8, b.buildingMinZ + 11],
-      [b.lobbyMinX + 8, b.buildingMaxZ - 11],
-      [b.buildingMaxX - 8, b.buildingMinZ + 11],
-      [b.buildingMaxX - 8, b.buildingMaxZ - 11],
-    ] as Array<[number, number]>) {
-      const fill = new THREE.PointLight(0xffcf94, 26, 30, 1.4);
-      fill.position.set(x, 4.2, z);
-      this.scene.add(fill);
-    }
-    // Light for the descent. The head of the run is lit from the lobby ceiling
-    // directly over the opening; below that the fittings are fixed to the
-    // stairwell's own side walls. Nothing is left hanging in the middle of the
-    // shaft with no ceiling, rod or bracket holding it up.
-    const shaftLight = new THREE.MeshBasicMaterial({ color: 0xffd9a8 });
-    const openingCenterZ = (b.stairMinZ + b.stairMaxZ) / 2;
-    // A run of fittings down the ceiling over the slot rather than one panel
-    // the length of it, which is far too long to read as a light.
-    for (let index = 0; index < 3; index += 1) {
-      const x = b.stairTopX - 3.5 - index * 8;
-      this.mesh([3.4, 0.16, 3.4], [x, wallHeight - 0.08, openingCenterZ], shaftLight);
-      const ceilingLamp = new THREE.PointLight(0xffd9a8, 46, 26, 1.15);
-      ceilingLamp.position.set(x, wallHeight - 0.4, openingCenterZ);
-      this.scene.add(ceilingLamp);
-    }
-    // Side-wall fittings, low enough down the run that the shaft wall behind
-    // each one is still there to carry it.
-    for (const [fraction, side] of [[0.45, -1], [0.72, 1], [0.95, -1]] as Array<[number, number]>) {
-      const x = b.stairTopX - (b.stairTopX - b.stairBottomX) * fraction;
-      const y = this.groundHeightAt(x, openingCenterZ) + 3;
-      const z = side < 0 ? b.stairMinZ - 0.25 : b.stairMaxZ + 0.25;
-      this.mesh([1.6, 0.5, 0.3], [x, y, z], shaftLight);
-      const lamp = new THREE.PointLight(0xffd9a8, 42, 24, 1.15);
-      lamp.position.set(x, y, z - side * 0.6);
-      this.scene.add(lamp);
-    }
-
-    // The stair opening is left completely clear: a plain hole in the lobby
-    // floor with the steps visible in it, and nothing else to explain it.
-
-    // Stair run down to the room.
-    const stairWidth = b.stairMaxZ - b.stairMinZ;
-    const stairRun = b.stairTopX - b.stairBottomX;
-    const steps = 14;
-    for (let step = 0; step < steps; step += 1) {
-      const progress = (step + 0.5) / steps;
-      const x = b.stairTopX - stairRun * progress;
-      // Each tread is masonry carried down to the room's floor, the way the
-      // rooftop flight already is. Drawn as thin slabs they left the whole run
-      // hanging over a void: the gap between one tread and the next looked
-      // clean through the flight, and under the lowest steps there was neither
-      // ground nor wall to see — just the outside.
-      const treadTop = progress * floor;
-      // Left as built, like the rooftop flight and for the same reason: a tread
-      // carried to the floor is building-sized, and the styling passes measure
-      // rather than ask, so each one came out with its own plinth and cornice.
-      this.mesh(
-        [stairRun / steps + 0.06, treadTop - floor, stairWidth],
-        [x, (treadTop + floor) / 2, (b.stairMinZ + b.stairMaxZ) / 2],
-        darkConcrete,
-      ).userData.wornNoMasonry = true;
-    }
-    // Shaft walls either side of the run, carried all the way up to the
-    // underside of the ground floor. They used to stop a room's height short,
-    // leaving a slot of daylight along the steps and nothing for the stair's
-    // own light fittings to be mounted on.
-    const shaftTop = -0.18;
-    const shaftHeight = shaftTop - floor;
-    for (const z of [b.stairMinZ - 0.7, b.stairMaxZ + 0.7]) {
-      this.mesh([stairRun - 0.4, shaftHeight, 0.6], [(b.stairTopX + b.stairBottomX) / 2 + 0.2, floor + shaftHeight / 2, z], concrete);
-      this.addCollider((b.stairTopX + b.stairBottomX) / 2, z, stairRun, 0.6, 0.16, { minY: floor - 1.5, maxY: 40 }, 'stair-balustrade');
-    }
-
-    // The room.
-    const roomFloor = this.mesh([roomWidth, 0.5, roomDepth], [roomCenterX, floor - 0.25, roomCenterZ], roomShell);
-    roomFloor.receiveShadow = true;
-    roomFloor.userData.projectorBackground = true;
-    // Ceiling, opened under the balcony's light well. The two openings line up,
-    // so the balcony looks through both and lands on the dance floor.
-    const ceilingY = floor + CLUB_ROOM_HEIGHT;
-    for (const [minX, maxX, minZ, maxZ] of [
-      [b.roomMinX - 1, wellMinX, b.roomMinZ - 1, b.roomMaxZ + 1],
-      [wellMinX, b.roomMaxX + 1, b.roomMinZ - 1, wellMinZ],
-      [wellMinX, b.roomMaxX + 1, wellMaxZ, b.roomMaxZ + 1],
-    ] as Array<[number, number, number, number]>) {
-      this.mesh(
-        [maxX - minX, 0.6, maxZ - minZ],
-        [(minX + maxX) / 2, ceilingY, (minZ + maxZ) / 2],
-        roomShell,
-      );
-    }
-    // Fascia around the well, closing the storey-deep cavity between the room's
-    // ceiling and the roof cap so the opening reads as one clean shaft.
-    // Held a hair under the floor above rather than flush with it: two faces on
-    // the same plane shimmer, and this rim is the one the balcony looks over.
-    const fasciaTop = 0.1;
-    const fasciaHeight = fasciaTop - (ceilingY - 0.3);
-    const fasciaY = (fasciaTop + ceilingY - 0.3) / 2;
-    for (const [x, z, sx, sz] of [
-      [wellMinX, (wellMinZ + wellMaxZ) / 2, 0.8, wellMaxZ - wellMinZ],
-      [(wellMinX + wellMaxX) / 2, wellMinZ, wellMaxX - wellMinX, 0.8],
-      [(wellMinX + wellMaxX) / 2, wellMaxZ, wellMaxX - wellMinX, 0.8],
-    ] as Array<[number, number, number, number]>) {
-      this.mesh([sx, fasciaHeight, sz], [x, fasciaY, z], roomShell);
-    }
-    this.mesh([0.8, CLUB_ROOM_HEIGHT, roomDepth + 1.6], [b.roomMinX - 0.4, floor + CLUB_ROOM_HEIGHT / 2, roomCenterZ], roomWall);
-    this.addCollider(b.roomMinX - 0.4, roomCenterZ, 0.8, roomDepth + 1.6, 0.16, belowGround, 'room-west-wall');
-    // East wall, split around the foot of the stairs.
-    for (const [from, to] of [
-      [b.roomMinZ - 0.8, b.stairMinZ - 0.35],
-      [b.stairMaxZ + 0.35, b.roomMaxZ + 0.8],
-    ] as Array<[number, number]>) {
-      const span = Math.abs(to - from);
-      this.mesh([0.8, CLUB_ROOM_HEIGHT, span], [b.roomMaxX + 0.4, floor + CLUB_ROOM_HEIGHT / 2, (from + to) / 2], roomWall);
-      this.addCollider(b.roomMaxX + 0.4, (from + to) / 2, 0.8, span, 0.16, belowGround, 'room-east-wall');
-    }
-    // Header over that opening, above head height so it never blocks the way.
-    this.mesh([0.9, 1.6, b.stairMaxZ - b.stairMinZ + 0.5], [b.roomMaxX + 0.45, floor + CLUB_ROOM_HEIGHT - 0.9, (b.stairMinZ + b.stairMaxZ) / 2], roomWall);
-    for (const z of [b.roomMinZ - 0.4, b.roomMaxZ + 0.4]) {
-      this.mesh([roomWidth, CLUB_ROOM_HEIGHT, 0.8], [roomCenterX, floor + CLUB_ROOM_HEIGHT / 2, z], roomWall);
-      this.addCollider(roomCenterX, z, roomWidth + 1.6, 0.8, 0.16, belowGround, 'room-end-wall');
+    for(const x of [-79.5,-59.5,-39.5]){
+      const glow=new THREE.PointLight(0xe8c985,0,12,1.7);
+      glow.position.set(x,5.5,-1.05);this.scene.add(glow);this.clubFacadeGlows.push(glow);
     }
 
     // Back wall screen.
@@ -7343,16 +7544,8 @@ export class FestivalWorld {
     // Stage, set back so the dance floor has the middle of the room.
     this.mesh([17, 0.9, CLUB_STAGE_DEPTH], [CLUB_STAGE_X, floor + 0.45, CLUB_STAGE_CENTER_Z], material(0x1f1622, 0.6, 0.35));
     this.addCollider(CLUB_STAGE_X, CLUB_STAGE_CENTER_Z, 17, CLUB_STAGE_DEPTH, 0.05, belowGround, 'stage');
-    this.mesh([5.4, 1.3, 1.6], [CLUB_STAGE_X, floor + 1.55, CLUB_BOOTH_Z], material(0x24242b, 0.5, 0.4));
-    this.mesh([5.7, 0.16, 1.9], [CLUB_STAGE_X, floor + 2.25, CLUB_BOOTH_Z], material(0x35353f, 0.4, 0.5));
-    // The decks rise well above the stage slab, so they keep their own taller
-    // collider even though the expanded platform now carries their footprint.
-    this.addCollider(CLUB_STAGE_X, CLUB_BOOTH_Z, 5.7, 1.9, 0.12, belowGround, 'club-booth', CLUB_FLOOR_Y + 1.5);
-    for (const side of [-1, 1]) {
-      this.mesh([1.2, 0.12, 1.2], [CLUB_STAGE_X + side * 1.5, floor + 2.37, CLUB_BOOTH_Z], material(0x0d0d10, 0.35, 0.55));
-      this.mesh([0.52, 0.14, 0.52], [CLUB_STAGE_X + side * 1.5, floor + 2.47, CLUB_BOOTH_Z], material(0xd8d3c6, 0.4, 0.4));
-    }
-    this.mesh([1.1, 0.14, 1.5], [CLUB_STAGE_X, floor + 2.37, CLUB_BOOTH_Z], material(0x17171c, 0.35, 0.5));
+    const decks=createCoastalDecks(4.9);decks.position.set(CLUB_STAGE_X,floor+.9,CLUB_BOOTH_Z);decks.rotation.y=Math.PI;this.scene.add(decks);
+    this.addCollider(CLUB_STAGE_X, CLUB_BOOTH_Z, 4.9, 1.9, .12, belowGround, 'club-booth', floor+2.5);
     this.clubBoothGlow = this.mesh(
       [5.1, 0.1, 0.12],
       [CLUB_STAGE_X, floor + 1.02, CLUB_STAGE_Z - 2.5],
@@ -7360,23 +7553,25 @@ export class FestivalWorld {
     );
     for (const side of [-1, 1]) {
       const x = CLUB_STAGE_X + side * 11;
-      this.mesh([2.2, 2, 2.4], [x, floor + 1, CLUB_STAGE_Z + 0.6], material(0x131317, 0.7, 0.2));
-      this.mesh([1.8, 1.7, 2], [x, floor + 2.85, CLUB_STAGE_Z + 0.6], material(0x131317, 0.7, 0.2));
+      const speaker=createCoastalSpeaker(2.2,3.7,2.4);speaker.position.set(x,floor,CLUB_STAGE_Z+.6);speaker.rotation.y=Math.PI;this.scene.add(speaker);
       this.addCollider(x, CLUB_STAGE_Z + 0.6, 2.2, 2.4, 0.1, belowGround, 'speaker');
     }
 
     // Dance floor: lit panels across the open middle of the room.
-    for (let row = 0; row < 6; row += 1) {
-      for (let column = 0; column < 7; column += 1) {
+    for (let row = 0; row < 4; row += 1) {
+      for (let column = 0; column < 6; column += 1) {
         const x = -85 + column * 5.6;
-        const z = -9 + CLUB_Z + row * 4.6;
+        const z = 13 + row * 4.6;
         const panel = this.mesh(
-          [5.2, 0.08, 4.3],
-          [x, floor + 0.06, z],
+          [4.7, 0.04, 3.8],
+          [x, floor + 0.035, z],
           new THREE.MeshBasicMaterial({ color: clubLightColors[(row + column) % clubLightColors.length] }),
         );
         (panel.material as THREE.MeshBasicMaterial).transparent = true;
         (panel.material as THREE.MeshBasicMaterial).opacity = 0.3;
+        // A recessed brass frame reads as a fitted light tile, not a glowing carpet.
+        for(const dz of [-2.02,2.02])this.mesh([4.95,.035,.07],[x,floor+.032,z+dz],iron).userData.wornNoMasonry=true;
+        for(const dx of [-2.44,2.44])this.mesh([.07,.035,4.04],[x+dx,floor+.032,z],iron).userData.wornNoMasonry=true;
         this.clubFloorPanels.push(panel);
       }
     }
@@ -7395,17 +7590,18 @@ export class FestivalWorld {
     const stoolHeight = 1.5;
     const stoolPadTop = barFloor + stoolHeight;
     this.mesh([20, counterHeight - 0.14, 1.4], [-68, barFloor + (counterHeight - 0.14) / 2, barZ], material(0x2b1d1f, 0.55, 0.35));
-    this.addCollider(-68, barZ, 20, 1.4, 0.1, belowGround, 'bar-counter');
+    this.addCollider(-68, barZ, 20.4, 1.7, 0.1, {minY:floor,maxY:barFloor+counterHeight,physical:true}, 'bar-counter',barFloor+counterHeight);
     this.mesh([20.4, 0.14, 1.7], [-68, barFloor + counterHeight - 0.07, barZ], material(0x4a3326, 0.4, 0.45));
     for (let index = 0; index < 6; index += 1) {
       const x = -76 + index * 3.2;
       this.mesh([0.5, stoolHeight - 0.14, 0.5], [x, barFloor + (stoolHeight - 0.14) / 2, stoolZ], material(0x1a1a1f, 0.6, 0.3));
-      this.mesh([0.78, 0.14, 0.78], [x, stoolPadTop - 0.07, stoolZ], material(0x6d2630, 0.5, 0.35));
+      const cushion = this.mesh([0.78, 0.14, 0.78], [x, stoolPadTop - 0.07, stoolZ], material(0x6d2630, 0.5, 0.35));
       // Footrest, because a stool this tall needs somewhere to put your feet.
       this.mesh([0.86, 0.1, 0.1], [x, barFloor + 0.55, stoolZ - 0.38], material(0x6b5a3a, 0.5, 0.6));
       this.seats.push({
         id: `CLUB-1-${index + 1}`,
         venue: 'club',
+          cushion,
         // The anchor is where the avatar's group origin goes, so the underside
         // of its torso lands on the pad instead of hovering over it.
         position: new THREE.Vector3(x, stoolPadTop - AVATAR_SEAT_DROP, stoolZ),
@@ -7414,15 +7610,22 @@ export class FestivalWorld {
         facing: Math.PI,
       });
     }
-    // Bottles behind the counter, so the bar reads as one.
-    for (let index = 0; index < 10; index += 1) {
-      this.mesh(
-        [0.28, 0.7 + (index % 3) * 0.18, 0.28],
-        [-77 + index * 1.9, floor + 1.9, b.roomMinZ + 1.15],
-        material([0x8f5a2b, 0x2f6d4a, 0x8a1220][index % 3], 0.4, 0.3),
-      );
+    // Supported back-bar shelving; every bottle sits on a shelf surface.
+    const shelfWood=material(0x8b7255),barTile=material(0x57736a),brass=material(0xb19a68);
+    for(let n=0;n<20;n++)this.mesh([.94,1.63,.055],[-77.5+n,barFloor+1.02,barZ+.718],barTile);
+    this.mesh([19.6,.10,.10],[-68,barFloor+.44,barZ+.95],brass);
+    for(const x of [-77,-68,-59])this.mesh([.10,.42,.10],[x,barFloor+.22,barZ+.95],brass);
+    for(const y of [floor+1.35,floor+2.75]){
+      this.mesh([19,.16,.8],[-68,y,b.buildingMinZ+2.2],shelfWood);
+      for(let n=0;n<10;n++){
+        const x=-76.5+n*1.88,h=.48+(n%3)*.12;
+        this.mesh([.25,h,.25],[x,y+.08+h/2,b.buildingMinZ+2.2],material([0x446957,0x9b774d,0x96564c][n%3]));
+        this.mesh([.12,.16,.12],[x,y+.08+h+.08,b.buildingMinZ+2.2],brass);
+      }
     }
-    this.mesh([20, 1.8, 0.5], [-68, floor + 2.4, b.roomMinZ + 0.45], material(0x1c1720, 0.7, 0.2));
+    for(const x of [-77.5,-68,-58.5])this.mesh([.13,3.2,.16],[x,floor+1.6,b.buildingMinZ+1.88],shelfWood);
+
+    this.addCollider(-68,b.buildingMinZ+2.2,19.2,.85,.05,{minY:floor,maxY:floor+3.8,physical:true},'bar-shelving',floor+3.8);
 
     // The wall behind the bar carries the same fittings as the sides. The wall
     // opposite carries none: the screen hangs there, and lamps flanking a
@@ -7434,56 +7637,40 @@ export class FestivalWorld {
     // wall's own middle, so the formation is symmetrical whatever the room's
     // width happens to be.
     const endWallY = floor + CLUB_ROOM_HEIGHT - 5;
-    const barWallCentreX = (b.roomMinX + b.roomMaxX) / 2;
     for (let index = 0; index < 5; index += 1) {
-      const x = barWallCentreX + (index - 2) * 7;
+      const x = -80 + index * 10; // Between structural columns at -85, -75, ...
       const light = this.mesh(
-        [1.2, 1.2, 0.36], [x, endWallY, b.roomMinZ + 0.95],
+        [1.2, 1.2, 0.36], [x, endWallY, b.buildingMinZ + .62],
         new THREE.MeshBasicMaterial({ color: clubLightColors[(index + 3) % clubLightColors.length] }),
       );
+      this.mesh([1.4,1.4,.22],[x,endWallY,b.buildingMinZ+.43],iron).userData.wornNoMasonry=true;
       this.clubLights.push(light);
     }
 
-    // The ceiling is left bare. It carried a rig of hanging fittings, and every
-    // attempt to place them ran into the light well cut through the slab — a
-    // fitting standing in that hole hangs from nothing. A clean ceiling is the
-    // simpler room and the one that was asked for.
-    //
-    // What stays is the light itself. A spotlight has no body to see, so these
-    // throw the beat down onto the floor without anything hanging up there to
-    // throw it: the room still pulses, the ceiling is just empty. They are kept
-    // clear of the well so their cones fall on the floor rather than down the
-    // shaft, and there are four rather than one per fitting, which is cheaper
-    // on a phone than the rig ever was.
+    // Two aligned pairs over the dance floor, suspended from structural rails.
     const beatBeamY = floor + CLUB_ROOM_HEIGHT - 1.4;
-    for (const [index, beamX] of [-82, -76, -70, -64].entries()) {
-      const beamZ = b.roomMinZ + 6 + index * 3.2;
+    for (const [index, [beamX, beamZ]] of [[-79,16],[-62,16],[-79,27],[-62,27]].entries()) {
       const colour = clubLightColors[index % clubLightColors.length];
       const beam = new THREE.SpotLight(colour, 0, 34, Math.PI * 0.3, 0.7, 1.3);
       beam.position.set(beamX, beatBeamY, beamZ);
       beam.target.position.set(beamX, floor, beamZ);
+      // A supported rail and pendant body make the source visible and grounded in the architecture.
+      const roofBay=-85+Math.round((beamX+85)/10)*10;
+      const attachmentY=ceiling+.5+Math.tan(.12)*(beamX-roofBay)-.19/Math.cos(.12);
+      this.mesh([.12,attachmentY-beatBeamY,.12],[beamX,(attachmentY+beatBeamY)/2,beamZ],iron).userData.wornNoMasonry=true;
+      this.mesh([.65,.5,.65],[beamX,beatBeamY+.1,beamZ],iron).userData.wornNoMasonry=true;
+      const lens=this.mesh([.45,.04,.45],[beamX,beatBeamY-.17,beamZ],new THREE.MeshBasicMaterial({color:colour}));this.clubLights.push(lens);
       this.scene.add(beam, beam.target);
       this.clubBeatLights.push(beam);
     }
-    for (let index = 0; index < 5; index += 1) {
-      const z = b.roomMinZ + 4 + index * 6.5;
-      for (const side of [-1, 1]) {
-        // The east wall is cut away for the stairs; a fixture there would hang
-        // in open air with nothing behind it. The old margin was two, which let
-        // one through sitting exactly on the boundary — half of it on the wall
-        // and half over the opening, which is the fitting that was reported as
-        // clipping the edge. Four clears the cut properly.
-        if (side > 0 && z > b.stairMinZ - 4 && z < b.stairMaxZ + 4) continue;
-        const light = this.mesh(
-          [0.36, 1.2, 1.2],
-          // Stood off the wall rather than buried in it. At 0.6 the fitting
-          // straddled the inner face — the wall runs half a thickness either
-          // side of the room's edge — so most of the body was inside the wall
-          // and only a slice showed, which is why it read as growing out of it.
-          [side < 0 ? b.roomMinX + 0.95 : b.roomMaxX - 0.95, floor + CLUB_ROOM_HEIGHT - 5, z],
-          new THREE.MeshBasicMaterial({ color: clubLightColors[(index + side + 5) % clubLightColors.length] }),
-        );
-        this.clubLights.push(light);
+    for (const side of [-1,1]) {
+      const center=side>0?opening:roomCenterZ;
+      const offsets=side>0?[-14,-7,7,14]:[-14,-7,0,7,14];
+      for(const offset of offsets) {
+        const x=side<0?b.buildingMinX+.7:b.buildingMaxX-.7,z=center+offset,y=ceiling-5;
+        this.mesh([.32,1.4,1.4],[x-side*.13,y,z],iron).userData.wornNoMasonry=true;
+        const lens=this.mesh([.14,1.02,1.02],[x-side*.3,y,z],new THREE.MeshBasicMaterial({color:0xe8c985}));
+        lens.name='Mirrored club wall lens';this.clubLights.push(lens);
       }
     }
 
@@ -7498,6 +7685,16 @@ export class FestivalWorld {
     floorGlow.position.set(roomCenterX, floor + 6, 3 + CLUB_Z);
     this.scene.add(floorGlow);
     this.clubFloorLight = floorGlow;
+    // One continuous tile scale across all interior panels and roof closures.
+    roomWall.map=pixelSurface('ceramic');
+    this.scene.traverse(object=>{
+      if(!(object instanceof THREE.Mesh)||object.material!==roomWall)return;
+      object.updateMatrix();
+      const projected=object.geometry.clone().applyMatrix4(object.matrix);
+      worldSurfaceUV(projected,4);
+      object.geometry=object.geometry.clone();object.geometry.setAttribute('uv',projected.getAttribute('uv').clone());
+      projected.dispose();object.userData.wornNoMasonry=true;
+    });
   }
 
 
@@ -7522,7 +7719,7 @@ export class FestivalWorld {
     this.entranceSignText = next;
     for (const material of this.entranceSignMaterials) {
       const previous = material.map;
-      material.map = createTextTexture([this.entranceSignText.title, this.entranceSignText.subtitle]);
+      material.map = createTextTexture([this.entranceSignText.title, this.entranceSignText.subtitle],'#eee4cc','#354842',22/3.8);
       material.needsUpdate = true;
       previous?.dispose();
     }
@@ -7559,15 +7756,27 @@ export class FestivalWorld {
     const lacquer = material(0x8f1d1d, 0.6, 0.16);
     const timber = material(0x5d2f22, 0.75, 0.08);
     const tile = material(0x2f5a4a, 0.55, 0.28);
-    const gold = material(0xc9a227, 0.35, 0.62);
+    const gold = material(0xbca15c, .78, .22);
 
     // Podium, and the three steps that climb it from the festival side.
-    this.mesh([width + 3, t.podium, depth + 3], [centerX, t.podium / 2, centerZ], stone);
-    this.mesh([width + 0.6, 0.12, depth + 0.6], [centerX, t.podium + 0.06, centerZ], paleStone);
-    for (let step = 0; step < 3; step += 1) {
-      const riseTop = (t.podium / 3) * (step + 1);
-      const x = t.minX - 1.5 - (2 - step) * 1.4;
-      this.mesh([1.5, riseTop, 13], [x, riseTop / 2, centerZ], stone);
+    const foundationBottom=Math.min(...[t.minX-1.5,centerX,t.maxX+1.5].flatMap(x=>[t.minZ-1.5,centerZ,t.maxZ+1.5].map(z=>terrainHeightAt(x,z))))-TEMPLE_GRADE-.3;
+    const podium=this.mesh([width+3,t.podium-.12-foundationBottom,depth+3],[centerX,(t.podium-.12+foundationBottom)/2,centerZ],stone);
+    podium.name='Temple foundation below finish';podium.userData.wornNoMasonry=true;
+    const templeFloor=this.mesh([width+3,.12,depth+3],[centerX,t.podium-.06,centerZ],paleStone);
+    templeFloor.name='Temple single floor finish';templeFloor.userData.wornNoMasonry=true;
+    // Equal 0.24 rises continue to the hall; longer upper treads meet the contour walk.
+    const flight=TEMPLE_STAIRS;
+    for(let i=0;i<flight.count;i++){
+      const left=templeStairX(i),right=templeStairX(i+1),going=right-left;
+      const x=(left+right)/2,top=flight.top*(i+1)/flight.count,bottom=-.3;
+      // The landscape is cut to the nominal flight footprint. Carry each
+      // masonry box a little below that cut on all four sides so exact shared
+      // edges cannot open into a blue pinhole when viewed along the hillside.
+      const stair=this.mesh(
+        [going+TEMPLE_STAIR_VISUAL_OVERLAP*2,top-bottom,flight.width+TEMPLE_STAIR_VISUAL_OVERLAP*2],
+        [x,(top+bottom)/2-TEMPLE_GRADE,flight.centerZ],stone,
+      );
+      stair.name='Temple hill approach step '+i;stair.userData.wornNoMasonry=true;
     }
 
     // Raised from 6.4. At that height the eaves came down to about six units
@@ -7619,15 +7828,11 @@ export class FestivalWorld {
     const tier = (y: number, overhangX: number, overhangZ: number, thickness: number): void => {
       const w = width + overhangX;
       const d = depth + overhangZ;
-      this.mesh([w, thickness, d], [centerX, y, centerZ], tile);
-      this.mesh([w - 2, 0.35, d - 2], [centerX, y - thickness / 2 - 0.15, centerZ], timber);
-      for (const sx of [-1, 1]) {
-        for (const sz of [-1, 1]) {
-          const kick = this.mesh([3.4, thickness * 0.8, 3.4], [centerX + sx * (w / 2 - 1.2), y + 0.5, centerZ + sz * (d / 2 - 1.2)], tile);
-          kick.rotation.z = -sx * 0.34;
-          kick.rotation.x = sz * 0.34;
-        }
-      }
+      const roof = new THREE.Mesh(coastalRoof(w, d, thickness * 2.6), tile);
+      roof.position.set(centerX, y, centerZ); roof.castShadow = true; roof.receiveShadow = true;
+      roof.userData.coastalAuthored = true; roof.userData.wornNoMasonry = true;
+      this.scene.add(roof);
+      this.mesh([w - 2, .35, d - 2], [centerX, y - thickness / 2 - .15, centerZ], timber);
     };
     tier(t.podium + wallHeight + 0.5, 7, 7, 0.9);
     this.mesh([width - 6, 2.6, depth - 6], [centerX, t.podium + wallHeight + 2.3, centerZ], lacquer);
@@ -7680,51 +7885,32 @@ export class FestivalWorld {
     const tableWidth = 6.6;
     this.mesh([tableWidth - 1.4, 1.1, 12], [tableCenterX, t.podium + 0.55, centerZ], stone);
     this.mesh([tableWidth, 0.28, 12.6], [tableCenterX, t.podium + 1.24, centerZ], timber);
+    const altarWood=material(0x794b38,.91),altarTrim=material(0xbda56c,.84),altarGreen=material(0x3c5348,.95);
+    this.mesh([tableWidth-.7,.2,12.3],[tableCenterX,t.podium+.12,centerZ],paleStone).userData.wornNoMasonry=true;
+    for(const z of [centerZ-4,centerZ,centerZ+4]){
+      this.mesh([.12,.72,3.5],[tableCenterX-(tableWidth-1.4)/2-.07,t.podium+.65,z],altarWood).userData.wornNoMasonry=true;
+      this.mesh([.05,.48,3.12],[tableCenterX-(tableWidth-1.4)/2-.15,t.podium+.65,z],altarGreen).userData.wornNoMasonry=true;
+      this.mesh([.06,.1,.7],[tableCenterX-(tableWidth-1.4)/2-.19,t.podium+.65,z],altarTrim).userData.wornNoMasonry=true;
+    }
+    for(const y of [.28,1.02])this.mesh([.13,.08,11.7],[tableCenterX-(tableWidth-1.4)/2-.15,t.podium+y,centerZ],altarTrim).userData.wornNoMasonry=true;
+    // Keep the offering row in front of the 2.03-radius lotus base.
+    // Incense stands in its own front row, clear of every bowl rim.
     for (const z of [centerZ - 3, centerZ, centerZ + 3]) {
-      this.mesh([0.9, 0.45, 0.9], [altarX - 0.1, t.podium + 1.6, z], gold);
+      const bowl=new THREE.Mesh(new THREE.CylinderGeometry(.48,.3,.3,8),altarTrim);bowl.position.set(altarX-.85,t.podium+1.53,z);bowl.userData.wornNoMasonry=true;this.scene.add(bowl);
+      const contents=new THREE.Mesh(new THREE.CylinderGeometry(.4,.4,.025,8),altarGreen);contents.position.set(altarX-.85,t.podium+1.69,z);this.scene.add(contents);
     }
     // Incense, three sticks with an ember at the tip.
     for (const z of [centerZ - 1.4, centerZ, centerZ + 1.4]) {
-      this.mesh([0.07, 1.3, 0.07], [altarX - 1.1, t.podium + 2.03, z], timber);
-      this.mesh([0.14, 0.14, 0.14], [altarX - 1.1, t.podium + 2.72, z], material(0xff6a2a, 0.3, 0.1));
+      this.mesh([0.07, 1.3, 0.07], [altarX - 1.65, t.podium + 2.03, z], timber);
+      this.mesh([0.14, 0.14, 0.14], [altarX - 1.65, t.podium + 2.72, z], material(0xff6a2a, 0.3, 0.1));
     }
 
     // 美麗本人 herself, seated on a lotus dais behind the table, facing the
     // door. Gilded rather than skin-toned: this is an image of a god, not
     // another attendee standing at the back of the room.
-    const deityBase = t.podium + 1.4;
-    const deity = new THREE.Group();
-    deity.position.set(altarX + 1.9, deityBase, centerZ);
-    deity.rotation.y = -Math.PI / 2;
-    this.scene.add(deity);
-    const petal = material(0xd8b34a, 0.42, 0.5);
-    for (const [ring, radius, height] of [[8, 1.9, 0.34], [6, 1.35, 0.3]] as Array<[number, number, number]>) {
-      for (let i = 0; i < ring; i += 1) {
-        const angle = (i / ring) * Math.PI * 2;
-        const leaf = this.mesh([0.8, height, 0.5], [Math.cos(angle) * radius, height / 2, Math.sin(angle) * radius], petal, deity);
-        leaf.rotation.y = -angle;
-        leaf.rotation.x = -0.32;
-      }
-    }
-    this.mesh([2.6, 0.4, 2.6], [0, 0.7, 0], gold, deity);
-    // Crossed legs, then the body, arms resting in the lap, and the head.
-    this.mesh([2.9, 0.6, 1.5], [0, 1.15, 0.15], gold, deity);
-    this.mesh([1.05, 0.55, 1.2], [-0.85, 1.5, 0.1], gold, deity);
-    this.mesh([1.05, 0.55, 1.2], [0.85, 1.5, 0.1], gold, deity);
-    this.mesh([1.7, 1.9, 1.1], [0, 2.35, -0.1], gold, deity);
-    this.mesh([0.45, 1.5, 0.5], [-1.05, 2.3, 0.05], gold, deity);
-    this.mesh([0.45, 1.5, 0.5], [1.05, 2.3, 0.05], gold, deity);
-    // Hands together in the lap.
-    this.mesh([0.9, 0.3, 0.7], [0, 1.62, 0.42], material(0xe6c766, 0.35, 0.55), deity);
-    this.mesh([1.15, 1.15, 1.05], [0, 3.85, -0.05], gold, deity);
-    // Hair, and a crown above it.
-    this.mesh([1.28, 0.42, 1.14], [0, 4.5, -0.06], material(0x3b2f1c, 0.7, 0.2), deity);
-    this.mesh([1.05, 0.5, 1.05], [0, 4.92, -0.06], petal, deity);
-    this.mesh([0.3, 0.55, 0.3], [0, 5.3, -0.06], petal, deity);
-    // Eyes, lowered.
-    for (const side of [-1, 1]) {
-      this.mesh([0.14, 0.06, 0.06], [side * 0.26, 3.82, 0.54], material(0x2a2118), deity);
-    }
+    const deity=createCoastalDeity();
+    deity.position.set(altarX+1.9,t.podium+1.38,centerZ);
+    deity.rotation.y=-Math.PI/2;this.scene.add(deity);
     // No halo. There was one, it was never parented to her, and it spent its
     // life as a pale translucent square standing in the middle of the main
     // road. Asked for and removed rather than moved.
@@ -7747,6 +7933,8 @@ export class FestivalWorld {
     // wallHeight + 0.5 and is 0.9 deep, with a 0.35 timber band slung 0.15
     // under it, so the lowest thing overhead is at wallHeight + 0.5 - 0.625.
     const ceilingY = t.podium + wallHeight + 0.5 - 0.9 / 2 - 0.15 - 0.35 / 2;
+    const lanternGlass=new THREE.MeshStandardMaterial({color:0xd8452c,emissive:0x963016,emissiveIntensity:0,roughness:.65});
+    this.dayNight.addLampMaterial(lanternGlass);
     const lanternHeight = 1.1;
     // Head height and above, well clear of the tallest attendee.
     const lanternTopY = t.podium + 5.55;
@@ -7754,11 +7942,14 @@ export class FestivalWorld {
       for (const x of [t.minX + 8, t.maxX - 9]) {
         const cordLength = ceilingY - lanternTopY;
         this.mesh([0.09, cordLength, 0.09], [x, lanternTopY + cordLength / 2, z], material(0x2a2118, 0.8, 0.05));
-        this.mesh([0.8, lanternHeight, 0.8], [x, lanternTopY - lanternHeight / 2, z], material(0xd8452c, 0.5, 0.1));
+        this.mesh([0.8, lanternHeight, 0.8], [x, lanternTopY - lanternHeight / 2, z], lanternGlass).userData.wornNoMasonry=true;
+        for(const dy of [0,-lanternHeight])this.mesh([.88,.09,.88],[x,lanternTopY+dy,z],timber).userData.wornNoMasonry=true;
+        for(const dx of [-.405,.405])for(const dz of [-.405,.405])this.mesh([.045,lanternHeight,.045],[x+dx,lanternTopY-lanternHeight/2,z+dz],timber).userData.wornNoMasonry=true;
         // Cap where the cord meets the lantern, so the join is not a wire
         // vanishing into a box.
         this.mesh([0.34, 0.14, 0.34], [x, lanternTopY, z], material(0xc9a227, 0.4, 0.55));
-        const glow = new THREE.PointLight(0xff9a5a, 55, 26, 1.4);
+        const glow = new THREE.PointLight(0xff9a5a, 0, 26, 1.4);
+        this.dayNight.addLampLight(glow,18);
         glow.position.set(x, lanternTopY - lanternHeight, z);
         this.scene.add(glow);
       }
@@ -7767,6 +7958,7 @@ export class FestivalWorld {
 
   private createRooftop(): void {
     const r = rooftopBounds;
+    const beforeShop=new Set(this.scene.children);
     const width = r.maxX - r.minX;
     const depth = r.maxZ - r.minZ;
     const centerX = (r.minX + r.maxX) / 2;
@@ -7774,7 +7966,7 @@ export class FestivalWorld {
     const bayDepth = r.bayMaxZ - r.minZ;
     const deckCenterZ = (r.deckMinZ + r.maxZ) / 2;
     const deckDepth = r.maxZ - r.deckMinZ;
-    const brick = material(0x3a2f2c, 0.78, 0.14);
+    const brick = material(0x927a62, 0.95, 0);
     const warmConcrete = material(0x4a3d35, 0.75, 0.12);
     const aboveGround = { minY: -0.4, maxY: 60 };
     const onDeck = { minY: ROOF_Y - 1, maxY: 60 };
@@ -7783,10 +7975,6 @@ export class FestivalWorld {
     // running jump carries over it and the attendee falls to the street.
     const parapet = { minY: ROOF_Y - 1, maxY: ROOF_Y + 1.5 };
 
-    const forecourt = this.mesh([width + 18, 0.16, 22], [centerX, 0.04, r.minZ - 9], material(0x3a352f, 0.7, 0.2));
-    forecourt.receiveShadow = true;
-    forecourt.userData.projectorBackground = true;
-
     // Mass under the deck, solid at street level. The stair now stands clear
     // of this footprint, so the block needs no opening cut through it.
     // Stopped half a unit short of the deck's finished floor. Carried the whole
@@ -7794,14 +7982,16 @@ export class FestivalWorld {
     // the two fought for every pixel, which is what made the floor shimmer.
     this.mesh([width, ROOF_Y - 0.5, deckDepth], [centerX, (ROOF_Y - 0.5) / 2, deckCenterZ], brick);
     this.addCollider(centerX, deckCenterZ, width, deckDepth, 0.2, { minY: -0.4, maxY: ROOF_Y - 2 });
-    // Roof slab, with its overhang reading as a cornice from the street. It
-    // sits under the deck's finished floor: carried at ROOF_Y + 0.3 its top
-    // was 0.6 above the level everything on the deck is set out from, so the
-    // avatar stood shin-deep in it and the floor lights were buried entirely.
-    this.mesh([width + 1.2, 0.6, depth + 1.2], [centerX, ROOF_Y - 0.35, (r.minZ + r.maxZ) / 2], warmConcrete);
+    // Recess the west slab face slightly behind the shell and deck edge. The
+    // former x=minX face was coplanar with the shell for its bottom 0.15 units,
+    // which made the long dark, stippled band on this side of NIMA. It also
+    // stays clear of the stair stringer; the east cornice still overhangs.
+    const slabWest = r.minX + 0.16;
+    const slabEast = r.maxX + 0.6;
+    this.mesh([slabEast - slabWest, 0.6, depth + 1.2], [(slabWest + slabEast) / 2, ROOF_Y - 0.35, (r.minZ + r.maxZ) / 2], warmConcrete);
 
     // Garage bay: floor, side walls, open to the south.
-    this.mesh([width, 0.5, bayDepth], [centerX, 0.1, bayCenterZ], material(0x453b33, 0.7, 0.15));
+    const shopFloor=this.mesh([width,.5,bayDepth],[centerX,-.17,bayCenterZ],material(0x796c59,.95));shopFloor.name="Shop finished floor";shopFloor.userData.wornNoMasonry=true;
     for (const x of [r.minX, r.maxX]) {
       this.mesh([0.8, ROOF_Y, bayDepth], [x, ROOF_Y / 2, bayCenterZ], brick);
       this.addCollider(x, bayCenterZ, 0.8, bayDepth, 0.16, aboveGround);
@@ -7810,32 +8000,43 @@ export class FestivalWorld {
     // The bay is a pop-up clothing store: one frontage across the three former
     // counters, with the shopfront facing the Drive-In the way the stalls did.
     const counterZ = r.bayMaxZ - 2.4;
-    this.mesh([31, 2.3, 2.6], [centerX, 1.15, counterZ], material(0x2e2621, 0.7, 0.2));
-    this.mesh([31.6, 0.45, 3], [centerX, 2.55, counterZ], material(0xd8642c, 0.5, 0.25));
+    this.mesh([30.6,.18,2.25],[centerX,.17,counterZ],material(0x35403b)).userData.wornNoMasonry=true;
+    this.mesh([31,2.1,2.6],[centerX,1.31,counterZ],material(0x544438,.95)).userData.wornNoMasonry=true;
+    this.mesh([31.6,.20,3],[centerX,2.46,counterZ],material(0xa78d67,.88,.05)).userData.wornNoMasonry=true;
     this.addCollider(centerX, counterZ, 31, 2.6, 0.16, { minY: -0.4, maxY: ROOF_Y }, 'shop-counter');
-    for (const side of [-1, 0, 1]) {
-      const rail = this.mesh([6.4, 0.24, 0.24], [centerX + side * 10, 4.4, counterZ - 0.2], material(0x8a8f96, 0.4, 0.6));
-      rail.castShadow = false;
-      // Stock on the rail, so the frontage reads as a clothes shop.
-      for (let index = 0; index < 6; index += 1) {
-        const x = centerX + side * 10 - 2.6 + index * 1.05;
-        this.mesh(
-          [0.72, 1.5, 0.3],
-          [x, 3.55, counterZ - 0.2],
-          material([0x9f1720, 0x20242c, 0xd5b23f, 0x3f6d5a, 0x8a4b8f, 0xd8d3c6][index % 6], 0.8, 0.05),
-        );
+    const shopTimber=material(0x8b7054,.94),shopEnamel=material(0x354d47,.85),shopCloth=material(0xc5bea6,.98);
+    for(let i=0;i<8;i++){
+      const x=centerX-13.6+i*3.9;
+      this.mesh([3.55,1.6,.08],[x,1.3,counterZ-1.34],shopCloth).userData.wornNoMasonry=true;
+      this.mesh([3.72,.1,.12],[x,.4,counterZ-1.36],shopTimber).userData.wornNoMasonry=true;
+      this.mesh([.3,.08,.09],[x,1.86,counterZ-1.4],shopEnamel).userData.wornNoMasonry=true;
+    }
+    for(const side of [-1,0,1]){
+      const cx=centerX+side*10;
+      for(const dx of [-3.3,3.3])this.mesh([.12,1.9,.12],[cx+dx,3.5,counterZ-.2],shopEnamel).userData.wornNoMasonry=true;
+      this.mesh([6.7,.13,.13],[cx,4.43,counterZ-.2],shopEnamel).userData.wornNoMasonry=true;
+      for(let index=0;index<5;index++){
+        const x=cx-2.5+index*1.25,z=counterZ-.2;
+        const cloth=material([0xeee5ce,0x506d61,0xb8a063,0x9a594a,0x46515c][index],.98);
+        const shirt=new THREE.Shape();shirt.moveTo(-.2,.7);shirt.lineTo(-.44,.58);shirt.lineTo(-.61,.22);shirt.lineTo(-.37,.1);shirt.lineTo(-.3,.27);shirt.lineTo(-.3,-.64);shirt.lineTo(.3,-.64);shirt.lineTo(.3,.27);shirt.lineTo(.37,.1);shirt.lineTo(.61,.22);shirt.lineTo(.44,.58);shirt.lineTo(.2,.7);shirt.lineTo(.12,.53);shirt.lineTo(-.12,.53);shirt.closePath();
+        const garment=new THREE.Mesh(new THREE.ExtrudeGeometry(shirt,{depth:.18,bevelEnabled:false}),cloth);garment.position.set(x,3.4,z-.09);garment.userData.wornNoMasonry=true;this.scene.add(garment);
+        this.mesh([.04,.3,.04],[x,4.27,z],shopTimber).userData.wornNoMasonry=true;
       }
-      const stallLamp = new THREE.PointLight(0xffcf94, 22, 14, 1.4);
-      stallLamp.position.set(centerX + side * 10, 3.4, counterZ - 3);
-      this.scene.add(stallLamp);
+      // Each task light belongs to a rail bay, with a ceiling-mounted housing.
+      this.mesh([1.5,.18,.55],[cx,6.25,counterZ-2],shopEnamel).userData.wornNoMasonry=true;
+      this.mesh([1.25,.04,.4],[cx,6.14,counterZ-2],material(0xe4d3ac)).userData.wornNoMasonry=true;
+      const lamp=new THREE.PointLight(0xffcf94,22,14,1.4);lamp.position.set(cx,5.9,counterZ-2);this.scene.add(lamp);
     }
     this.shopSign = new THREE.Mesh(
-      new THREE.PlaneGeometry(11.2, 3),
-      new THREE.MeshBasicMaterial({ map: createImageSignTexture(masterOfTheHouseLogo) }),
+      new THREE.PlaneGeometry(5.25, 2.5),
+      new THREE.MeshBasicMaterial({ map: createImageSignTexture(masterOfTheHouseLogo,'#202b29',5.25/2.5) }),
     );
     // Forward of the rail and clear of the soffit. At 5.4 its top ran into the
     // roof slab overhead, and a metre and a half out it sat almost on the stock.
-    this.shopSign.position.set(centerX, 4.5, counterZ - 4.2);
+    this.shopSign.position.set(centerX, 4.75, 5.15);
+    this.mesh([5.45,2.7,.10],[centerX,4.75,5.23],material(0x5e6560)).userData.wornNoMasonry=true;
+    for(const dx of [-2,2])this.mesh([.09,.35,.09],[centerX+dx,6.13,5.25],material(0x5e6560)).userData.wornNoMasonry=true;
+    this.addCollider(centerX,5.23,5.45,.1,0,{minY:3.4,maxY:6.1,physical:true},'shop-sign',6.1);
     this.shopSign.rotation.y = Math.PI;
     this.scene.add(this.shopSign);
     // Where an attendee stands to be served, in front of the frontage.
@@ -7845,8 +8046,8 @@ export class FestivalWorld {
       map: createTextTexture(['NIMA ROOFTOP', DEFAULT_VENUE_SUBTITLES.rooftop]),
     });
     this.venueSignMaterials.set('rooftop', rooftopSignMaterial);
-    const rooftopSign = new THREE.Mesh(new THREE.PlaneGeometry(9.6, 2.6), rooftopSignMaterial);
-    rooftopSign.position.set(r.minX - 0.42, 4.6, bayCenterZ);
+    const rooftopSign = new THREE.Mesh(new THREE.PlaneGeometry(7.4, 2), rooftopSignMaterial);
+    rooftopSign.position.set(r.minX - 0.42, 5.3, bayCenterZ);
     rooftopSign.rotation.y = -Math.PI / 2;
     this.scene.add(rooftopSign);
     const rooftopSignGlow = new THREE.PointLight(0xffcf94, 20, 16, 1.5);
@@ -7876,7 +8077,9 @@ export class FestivalWorld {
     // the parapet's place and is built with the run.
     for (const [from, to] of [
       [r.deckMinZ, r.stairMinZ],
-      [r.stairMaxZ, r.maxZ],
+      // The north landing end-wall already owns z=stairMaxZ..+0.5 and the
+      // west parapet previously occupied that same volume. Start after it.
+      [r.stairMaxZ + 0.5, r.maxZ],
     ] as Array<[number, number]>) {
       const span = to - from;
       if (span <= 0) continue;
@@ -7893,15 +8096,11 @@ export class FestivalWorld {
     this.mesh([15, 8, 0.4], [ROOFTOP_CENTER_X, ROOF_Y + 6.6, r.deckMinZ + 0.6], material(0x050506, 0.72));
     const boothZ = r.deckMinZ + 4.4;
     this.mesh([10, 0.7, 3.6], [centerX, ROOF_Y + 0.35, boothZ], material(0x3d2a24, 0.6, 0.3));
-    this.mesh([4.6, 1.2, 1.5], [centerX, ROOF_Y + 1.3, boothZ + 0.8], material(0x2b2b33, 0.5, 0.4));
-    this.mesh([4.9, 0.16, 1.8], [centerX, ROOF_Y + 1.95, boothZ + 0.8], material(0x3a3a44, 0.4, 0.5));
-    // The booth is furniture, not scenery: the plinth carries the decks and an
-    // attendee has to walk round it rather than through the DJ.
-    this.addCollider(centerX, boothZ, 10, 3.6, 0.12, onDeck, 'rooftop-booth', ROOF_Y + 1.4);
-    for (const side of [-1, 1]) {
-      this.mesh([1.1, 0.12, 1.1], [centerX + side * 1.35, ROOF_Y + 2.06, boothZ + 0.8], material(0x0d0d10, 0.35, 0.55));
-      this.mesh([2, 2.4, 1.8], [centerX + side * 7.4, ROOF_Y + 1.2, boothZ], material(0x241d1a, 0.7, 0.2));
-      this.addCollider(centerX + side * 7.4, boothZ, 2, 1.8, 0.12, onDeck, 'rooftop-speaker', ROOF_Y + 2.2);
+    const decks=createCoastalDecks(4.9);decks.position.set(centerX,ROOF_Y+.7,boothZ+.8);this.scene.add(decks);
+    this.addCollider(centerX,boothZ,10,3.6,.12,onDeck,'rooftop-booth',ROOF_Y+2.3);
+    for(const side of [-1,1]){
+      const speaker=createCoastalSpeaker(2,2.4,1.8);speaker.position.set(centerX+side*7.4,ROOF_Y,boothZ);this.scene.add(speaker);
+      this.addCollider(centerX+side*7.4,boothZ,2,2.05,.12,onDeck,'rooftop-speaker',ROOF_Y+2.4);
     }
 
     // Fittings on the inside face of the parapet, washing the deck from its
@@ -7911,9 +8110,11 @@ export class FestivalWorld {
     const parapetFace = 0.34;
     const lightY = ROOF_Y + 0.95;
     const deckLightAt = (x: number, z: number, size: [number, number, number]): void => {
-      const light = this.mesh(size, [x, lightY, z], new THREE.MeshBasicMaterial({
-        color: clubLightColors[this.clubLights.length % clubLightColors.length],
-      }));
+      const horizontal=size[0]>size[2],inward=horizontal?(z<deckCenterZ?1:-1):(x<centerX?1:-1);
+      const frame=material(0x354d47,.85,.12);
+      this.mesh(horizontal?[1.74,.66,.2]:[.2,.66,1.74],[x,lightY,z],frame).userData.wornNoMasonry=true;
+      const light=this.mesh(horizontal?[1.34,.36,.12]:[.12,.36,1.34],[x+(horizontal?0:inward*.14),lightY,z+(horizontal?inward*.14:0)],new THREE.MeshBasicMaterial({color:0xe5c992}));
+      this.mesh(horizontal?[1.88,.1,.48]:[.48,.1,1.88],[x,lightY+.36,z],frame).userData.wornNoMasonry=true;
       this.clubLights.push(light);
     };
     for (let index = 0; index < 4; index += 1) {
@@ -7928,16 +8129,23 @@ export class FestivalWorld {
     }
     // Benches, low enough to sit on.
     for (const [benchIndex, [x, z]] of ([[centerX - 11, deckCenterZ + 4], [centerX + 11, deckCenterZ + 2], [centerX - 3, deckCenterZ + 7]] as Array<[number, number]>).entries()) {
-      this.mesh([2.4, 0.8, 2], [x, ROOF_Y + 0.4, z], material(0x4d3a2c, 0.6, 0.2));
+      const wood=material(0x96785b,.9),frame=material(0x354d47,.85,.12);
+      const cushion = this.mesh([2.4,.16,2], [x, ROOF_Y+.72,z], wood);
+      for(const dx of [-1.05,1.05])this.mesh([.16,.66,.16],[x+dx,ROOF_Y+.33,z-.7],frame).userData.wornNoMasonry=true;
+      for(const dx of [-1.05,1.05])this.mesh([.12,1.7,.12],[x+dx,ROOF_Y+.85,z+.87],frame).userData.wornNoMasonry=true;
+      for(const y of [1.1,1.45])this.mesh([2.4,.23,.13],[x,ROOF_Y+y,z+.88],wood).userData.wornNoMasonry=true;
+      for(const dx of [-.6,0,.6])this.mesh([.025,.012,1.88],[x+dx,ROOF_Y+.806,z],frame).userData.wornNoMasonry=true;
       // Topped at the seat rather than at the sky, so a jump clears the bench
       // instead of stopping dead against it.
       this.addCollider(x, z, 2.4, 2, 0.1, { minY: ROOF_Y - 1, maxY: ROOF_Y + 0.8 }, 'rooftop-bench');
+      this.addCollider(x,z+.88,2.4,.2,.03,{minY:ROOF_Y+.8,maxY:ROOF_Y+1.75,physical:true},'rooftop-bench-back',ROOF_Y+1.75);
       this.seats.push({
         // Numbered by position in this list rather than by how many benches
         // happen to exist, so the ids stay put and keep matching the service's
         // register of seats.
         id: `ROOFTOP-BENCH-${benchIndex + 1}`,
         venue: 'rooftop',
+          cushion,
         // Perched on the block, facing the screen at the deck's south edge.
         position: new THREE.Vector3(x, ROOF_Y + 0.8 - AVATAR_SEAT_DROP, z),
         kind: 'bench',
@@ -7950,6 +8158,8 @@ export class FestivalWorld {
       warmth.position.set(x, ROOF_Y + 3, z);
       this.scene.add(warmth);
     }
+    this.scene.children.filter(o=>!beforeShop.has(o)).forEach(o=>{if(o instanceof THREE.Mesh)o.userData.wornNoMasonry=true;});
+
   }
 
   /**
@@ -7969,7 +8179,15 @@ export class FestivalWorld {
     const stairWidth = r.stairMaxX - r.stairMinX;
     const centerX = (r.stairMinX + r.stairMaxX) / 2;
     const halfHeight = ROOF_Y / 2;
-    const railColour = material(0x8a5a2b, 0.5, 0.3);
+    const stairObjects=new Set(this.scene.children);
+    // Weathered stone and painted iron echo the town's paving and balcony rails.
+    treadMaterial=material(0xaaa08b,.98);
+    treadMaterial.map=pixelSurface('plaster');
+    wallMaterial=material(0x7c8274,.98);
+    wallMaterial.map=pixelSurface('ceramic');
+    const treadFinish=material(0xc5b799,.97);
+    treadFinish.map=pixelSurface('plaster');
+    const railColour = material(0x426158,.88,.12);
     // The open side. Its kerb and its posts stand on the flight's own masonry,
     // which is why the mass below is drawn half a unit wider than the treads.
     const kerbWidth = 0.5;
@@ -8003,26 +8221,29 @@ export class FestivalWorld {
         // plinth and its own cornice, and the flight grew a row of ledges down
         // its edge. A stair is a stair however large its parts are.
         keepAsBuilt(this.mesh(
-          [massWidth, top - ground, ROOF_GOING + 0.02],
-          [massCenterX, (top + ground) / 2, treadZ],
-          treadMaterial,
+          [massWidth, top - ground - .06, ROOF_GOING],
+          [massCenterX, (top + ground - .06) / 2, treadZ],
+          wallMaterial,
         ));
+        keepAsBuilt(this.mesh([stairWidth,.06,ROOF_GOING],[centerX,top-.03,treadZ],treadFinish));
         // Kerb along the open edge, low enough to leave the steps in view.
-        keepAsBuilt(this.mesh([kerbWidth, 0.36, ROOF_GOING + 0.02], [railX, top + 0.18, treadZ], wallMaterial));
+        keepAsBuilt(this.mesh([kerbWidth, 0.42, ROOF_GOING], [railX, top + 0.15, treadZ], wallMaterial));
       }
       // The pitch line runs nosing to nosing: nine goings across, nine risers
       // up, which is 32 degrees — the angle a stair is comfortable at.
       const run = ROOF_GOING * 9;
       const rise = ROOF_RISER * 9;
       const rail = this.mesh(
-        [0.26, 0.26, Math.hypot(run, rise) + 0.5],
+        [0.14, 0.14, Math.hypot(run, rise) + 0.5],
         [railX, footY + ROOF_RISER + rise / 2 + handrail, footZ + run / 2],
         railColour,
       );
       rail.rotation.x = -Math.atan2(rise, run);
-      for (let post = 0; post <= 9; post += 3) {
+      const middleRail=this.mesh([.07,.07,Math.hypot(run,rise)+.3],[railX,footY+ROOF_RISER+rise/2+.8,footZ+run/2],railColour);
+      middleRail.rotation.x=rail.rotation.x;
+      for (let post = 0; post <= 9; post += 2) {
         const y = footY + ROOF_RISER * (post + 1);
-        this.mesh([0.22, handrail, 0.22], [railX, y + handrail / 2, footZ + ROOF_GOING * post], railColour);
+        this.mesh([0.12, handrail, 0.12], [railX, y + handrail / 2, footZ + ROOF_GOING * post], railColour);
       }
     };
 
@@ -8030,12 +8251,14 @@ export class FestivalWorld {
       const depth = maxZ - minZ;
       const width = maxX - massMinX;
       const cx = (massMinX + maxX) / 2;
-      this.mesh([width, surfaceY - ground, depth], [cx, (surfaceY + ground) / 2, (minZ + maxZ) / 2], treadMaterial);
+      this.mesh([width, surfaceY - ground - .06, depth], [cx, (surfaceY + ground - .06) / 2, (minZ + maxZ) / 2], treadMaterial);
+      this.mesh([width,.06,depth],[cx,surfaceY-.03,(minZ+maxZ)/2],treadFinish);
       this.addCollider(cx, (minZ + maxZ) / 2, width, depth, 0.16, { minY: -0.4, maxY: surfaceY - 1.5 });
       this.mesh([kerbWidth, 0.36, depth], [railX, surfaceY + 0.18, (minZ + maxZ) / 2], wallMaterial);
-      this.mesh([0.26, 0.26, depth], [railX, surfaceY + handrail, (minZ + maxZ) / 2], railColour);
+      this.mesh([.07,.07,depth],[railX,surfaceY+.8,(minZ+maxZ)/2],railColour);
+      this.mesh([0.14, 0.14, depth], [railX, surfaceY + handrail, (minZ + maxZ) / 2], railColour);
       for (const z of [minZ + 0.2, maxZ - 0.2]) {
-        this.mesh([0.22, handrail, 0.22], [railX, surfaceY + handrail / 2, z], railColour);
+        this.mesh([0.12, handrail, 0.12], [railX, surfaceY + handrail / 2, z], railColour);
       }
     };
 
@@ -8046,6 +8269,18 @@ export class FestivalWorld {
     // left in the parapet. Sizing it to the deck's own width once walled the
     // roof in half.
     landing(r.stairTopZ, r.stairMaxZ, ROOF_Y, r.minX);
+    // The landing and deck used to stop on the exact same x plane. At grazing
+    // camera angles that shared edge opened into a dark clipped strip. This
+    // shallow stone threshold overlaps both slabs and gives the entrance one
+    // continuous finished surface without changing its walking height.
+    const topLandingDepth = r.stairMaxZ - r.stairTopZ;
+    const seamBridge = this.mesh(
+      [0.72, 0.08, topLandingDepth],
+      [r.minX + 0.14, ROOF_Y + 0.01, (r.stairTopZ + r.stairMaxZ) / 2],
+      treadFinish,
+    );
+    seamBridge.name = 'Rooftop stair-to-deck seam bridge';
+    seamBridge.userData.wornNoMasonry = true;
     // Parapet closing the north end of that landing, and nothing further east.
     const landingWidth = r.minX - massMinX;
     const landingCenterX = (massMinX + r.minX) / 2;
@@ -8097,15 +8332,26 @@ export class FestivalWorld {
       // Nothing past stairTopZ: the stringer wall ends there and the fitting
       // was left hanging in open air with no wall behind it.
     ] as Array<[number, number]>) {
+      this.mesh([.22,.5,1.1],[r.stairMaxX-.11,y+1.5,z],railColour);
       this.mesh(
-        [0.16, 0.34, 1.2],
-        [r.stairMaxX - 0.08, y + 1.5, z],
+        [0.12, 0.24, .8],
+        [r.stairMaxX - 0.25, y + 1.5, z],
         new THREE.MeshBasicMaterial({ color: 0xffb066 }),
       );
       const glow = new THREE.PointLight(0xffb066, 18, 13, 1.5);
       glow.position.set(r.stairMaxX - 0.6, y + 1.3, z);
       this.scene.add(glow);
     }
+    for(const object of this.scene.children) {
+      if(stairObjects.has(object)||!(object instanceof THREE.Mesh))continue;
+      object.userData.wornNoMasonry=true;
+      object.updateMatrix();
+      const projected=object.geometry.clone().applyMatrix4(object.matrix);
+      worldSurfaceUV(projected,4);
+      object.geometry=object.geometry.clone();object.geometry.setAttribute('uv',projected.getAttribute('uv').clone());
+      projected.dispose();
+    }
+
   }
 
   /**
@@ -8115,55 +8361,6 @@ export class FestivalWorld {
    * against existing colliders before it is built.
    */
   private createBeachPlanting(): void {
-    const palmTrunk = material(0x6b4a2f, 0.85, 0.05);
-    const palmFrond = material(0x2f6d3f, 0.8, 0.05);
-    const grassBlade = material(0x5c7f43, 0.9, 0.02);
-    const dune = material(0xbfa176, 0.95, 0.02);
-
-    const palms: Array<[number, number, number]> = [
-      [-54, -26, 5.6], [-62, -30, 4.4], [-56, -36, 6.2], [-68, -25, 5],
-      [-74, -32, 4.2], [-66, -40, 5.4], [-82, -28, 5.2], [-78, -38, 4.8],
-      [54, -26, 5.4], [62, -30, 4.6], [56, -36, 4], [68, -25, 6],
-      [74, -32, 5], [66, -40, 5.2], [82, -28, 5.6], [78, -38, 4.6],
-      [-60, -48, 5], [60, -48, 5], [-72, -46, 4.4], [72, -46, 4.4],
-    ];
-    for (const [x, z, height] of palms) {
-      if (this.staticCollides(x, z, AVATAR_GROUND_Y)) continue;
-      this.mesh([0.5, height, 0.5], [x, height / 2, z], palmTrunk);
-      this.addCollider(x, z, 0.6, 0.6, 0.2, { minY: -0.4, maxY: 40 });
-      this.mesh([6.2, 0.22, 1.3], [x, height + 0.1, z], palmFrond);
-      this.mesh([1.3, 0.22, 6.2], [x, height + 0.02, z], palmFrond);
-      this.mesh([1.8, 0.5, 1.8], [x, height + 0.35, z], palmFrond);
-    }
-
-    const clumps: Array<[number, number]> = [
-      [-50, -22], [-58, -23], [-66, -22], [-74, -23], [-84, -22],
-      [50, -22], [58, -23], [66, -22], [74, -23], [84, -22],
-      [-52, -42], [-64, -44], [-76, -42],
-      [52, -42], [64, -44], [76, -42],
-      [-58, -54], [58, -54],
-    ];
-    for (const [x, z] of clumps) {
-      if (this.staticCollides(x, z, AVATAR_GROUND_Y)) continue;
-      this.mesh([2.6, 0.3, 2.2], [x, 0.16, z], dune);
-      const bladeCount = this.graphicsMode === 'normal' ? 5 : 2;
-      for (let blade = 0; blade < bladeCount; blade += 1) {
-        const angle = (blade / bladeCount) * Math.PI * 2;
-        const spread = 0.55 + (blade % 3) * 0.22;
-        this.mesh(
-          [0.16, 0.9 + (blade % 4) * 0.22, 0.16],
-          [x + Math.cos(angle) * spread, 0.55, z + Math.sin(angle) * spread],
-          grassBlade,
-        );
-      }
-    }
-
-    for (const [x, z] of [[-56, -20], [57, -20.4]] as Array<[number, number]>) {
-      this.mesh([0.22, 3.2, 0.22], [x, 1.6, z], material(0x8a7a63, 0.8, 0.05));
-      this.mesh([4.4, 0.3, 4.4], [x, 3.3, z], material(0xc23b3b, 0.7, 0.05));
-      this.addCollider(x, z, 0.4, 0.4, 0.2, { minY: -0.4, maxY: 40 });
-    }
-
     // Two people who came for each other rather than for the films, tucked in
     // among the palms east of the drive-in. Off any path, behind planting, and
     // found rather than presented.
@@ -8180,16 +8377,21 @@ export class FestivalWorld {
   private createConcession(): void {
     const booth = new THREE.Group();
     booth.position.copy(concessionPosition);
-    this.mesh([3.2, 2.5, 2.6], [0, 1.25, 0], material(0x9f1720), booth);
-    this.mesh([3.8, 0.35, 3.1], [0, 2.7, 0], material(0x17171a), booth);
+    this.mesh([3.1,.18,2.5],[0,.09,0],material(0x3b4540),booth).userData.wornNoMasonry=true;
+    this.mesh([3.2,2.25,2.6],[0,1.305,0],material(0x9e4b3c),booth).userData.wornNoMasonry=true;
+    for(const x of [-1.45,1.45])this.mesh([.14,2.25,.12],[x,1.305,1.34],material(0xdecbaa),booth).userData.wornNoMasonry=true;
+    for(const x of [-1,-.5,0,.5,1])this.mesh([.18,.78,.06],[x,.69,1.34],material(0xdecbaa),booth).userData.wornNoMasonry=true;
+    this.mesh([3.8,.22,3.1],[0,2.54,0],material(0x796046),booth).userData.wornNoMasonry=true;
     const signTexture = createTextTexture(['POP!', 'TAKE ONE'], '#f5efe2', '#a91c24');
     const sign = new THREE.Mesh(
       new THREE.PlaneGeometry(2.5, 1.25),
       new THREE.MeshBasicMaterial({ map: signTexture }),
     );
-    sign.position.set(0, 2.1, 1.34);
+    sign.position.set(0,1.76,1.405);
     booth.add(sign);
-    this.mesh([0.5, 0.75, 0.5], [0, 3.05, 0], material(0xffc93c), booth);
+    const carton=createCoastalPopcorn();carton.position.set(-.85,3.01,0);booth.add(carton);
+    const tray=this.mesh([1.5,.10,.95],[.60,2.70,0],material(0xdecbaa),booth);tray.userData.wornNoMasonry=true;
+    for(const x of [.2,.65,1.1]){const small=createCoastalPopcorn();small.scale.setScalar(.65);small.position.set(x,2.99,0);booth.add(small);}
     // Facing the promenade and the road beyond it, which is the side anybody
     // walks up from. Built facing +z, which is that side, so it needs no turn
     // at all — the half turn it had put its counter against the palace.
@@ -8203,21 +8405,13 @@ export class FestivalWorld {
   }
 
   private createPamphletStand(): void {
-    const stand = new THREE.Group();
+    const stand=createCoastalPamphletStand();
     stand.position.copy(pamphletPosition);
-    this.mesh([2.1, 1.9, 1.2], [0, 0.95, 0], material(0x15171a, 0.72, 0.16), stand);
-    this.mesh([2.35, 0.22, 1.45], [0, 2.02, -0.12], material(0xa91c24), stand);
-    const shelf = this.mesh([1.75, 0.14, 0.82], [0, 1.55, 0.48], material(0xb99664), stand);
-    shelf.rotation.x = -0.28;
-    for (const x of [-0.58, 0, 0.58]) {
-      const booklet = this.mesh([0.48, 0.05, 0.7], [x, 1.72, 0.43], material(x === 0 ? 0xf5efe2 : 0xa91c24), stand);
-      booklet.rotation.x = -0.28;
-    }
     const label = new THREE.Mesh(
       new THREE.PlaneGeometry(1.75, 0.72),
       new THREE.MeshBasicMaterial({ map: createTextTexture(['FESTIVAL', 'PAMPHLET']) }),
     );
-    label.position.set(0, 0.75, 0.615);
+    label.position.set(0, .87, .619);
     stand.add(label);
     this.scene.add(stand);
     // Chest height: the view rides over it rather than being stopped by it.
@@ -8282,7 +8476,7 @@ export class FestivalWorld {
   private stationRooftopDj(): void {
     const dj = this.npcs.find((npc) => npc.id === 'DRBEAUTY');
     if (!dj) return;
-    const position = new THREE.Vector3(ROOFTOP_CENTER_X, ROOF_AVATAR_Y, rooftopBounds.deckMinZ + 2.6);
+    const position = new THREE.Vector3(ROOFTOP_CENTER_X, ROOF_AVATAR_Y + .7, rooftopBounds.deckMinZ + 4.3);
     dj.station = { position, rotationY: 0 };
     dj.pose = 'dj';
     dj.route = [position.clone()];
@@ -8343,7 +8537,7 @@ export class FestivalWorld {
     const dj = this.npcs.find((npc) => npc.id === 'XIEHGAN');
     if (!dj) return;
     // Clear of the desk in front of them, not inside it.
-    const position = new THREE.Vector3(CLUB_STAGE_X, CLUB_AVATAR_Y + 0.9, 23.6 + CLUB_Z);
+    const position = new THREE.Vector3(CLUB_STAGE_X, CLUB_AVATAR_Y + 0.9, CLUB_BOOTH_Z + .9);
     dj.station = { position, rotationY: Math.PI };
     dj.pose = 'dj';
     dj.route = [position.clone()];
@@ -8354,18 +8548,18 @@ export class FestivalWorld {
 
   private createNpcAvatar(profile: NpcProfile, index: number): NpcAvatar {
     const npc = new THREE.Group();
-    const hue = (index * 0.13 + 0.02) % 1;
-    const shirtColor = `#${new THREE.Color().setHSL(hue, 0.48, 0.34).getHexString()}`;
+    const shirtColor = ['#485f59', '#9b5644', '#d2bd8a', '#5c7186', '#7a7351', '#6d4351', '#bd7854', '#497574', '#a69c88', '#595963', '#797b49', '#986b73'][index % 12];
     const npcPalette: AvatarPalette = {
       skin: index % 2 ? '#7a4a35' : '#b77856',
       hair: index % 3 ? '#171315' : '#3a241d',
-      top: shirtColor,
+      top: TOP_OUTFITS[index % TOP_OUTFITS.length].wire,
       bottoms: '#20242c',
       swimwear: shirtColor,
     };
     const dogRig = profile.id === 'MENTOR' ? createMentorDog() : undefined;
     // MENTOR rides too, on a board cut down to a dog's length.
     const dogBoard = dogRig ? this.createSkateboard(dogRig.root, 0.72, -0.04) : undefined;
+    npc.userData.wardrobeVariant = index % 4;
     const rig = dogRig ? undefined : this.createAvatarRig(npc, npcPalette);
     if (dogRig) npc.add(dogRig.root);
     const remoteCarriedProp = new THREE.Group();
@@ -8379,7 +8573,7 @@ export class FestivalWorld {
       depthTest: true,
       depthWrite: false,
     }));
-    badge.position.set(0, dogRig ? 1.9 : 3.48, 0);
+    badge.position.set(0, dogRig ? 1.25 : 3.48, 0);
     badge.scale.set(1.55, 0.39, 1);
     badge.visible = false;
     npc.add(badge);
@@ -8471,19 +8665,8 @@ export class FestivalWorld {
     // Parent MENTOR to the avatar that is actually visible, otherwise the dog
     // inherits the hidden original avatar and disappears as soon as it is held.
     carrier.attach(mentor.group);
-    // The dog is compact while carried and its four foot blocks rest just
-    // above the avatar's hair instead of intersecting the head geometry —
-    // measured from that carrier's own head rather than from a number that was
-    // only ever right for the figure the world used to have.
-    mentor.group.position.set(0, (this.rigFor(carrier)?.headTop ?? 3.37) + 0.15, 0.05);
-    mentor.group.rotation.set(0, 0, 0);
-    mentor.group.scale.setScalar(0.56);
-    // Tuck all four legs inward into a compact perched pose. The leg pivots
-    // no longer extend downward into the avatar's hair while MENTOR is carried.
-    mentor.dogRig.leftFrontLeg.rotation.z = 1.08;
-    mentor.dogRig.rightFrontLeg.rotation.z = -1.08;
-    mentor.dogRig.leftBackLeg.rotation.z = 1.08;
-    mentor.dogRig.rightBackLeg.rotation.z = -1.08;
+    const rig=this.rigFor(carrier);
+    if(rig){carrier.userData.syncImportedAvatar?.();perchMentor(mentor.group,mentor.dogRig,rig.head,carrier.userData.importedHeadSupport?.()??new THREE.Vector3(0,.5,0));}
     mentor.badge.visible = false;
   }
 
@@ -8494,7 +8677,7 @@ export class FestivalWorld {
    */
   private rigFor(carrier: THREE.Group): AvatarRig | undefined {
     if (carrier === this.player) return this.playerRig;
-    return this.npcs.find((npc) => npc.group === carrier)?.rig ?? this.playerRig;
+    return this.npcs.find((npc) => npc.group === carrier)?.rig ?? [...(this.remoteAvatars?.values()??[])].find(a=>a.group===carrier)?.rig ?? this.playerRig;
   }
 
   private activeCarrierGroup(): THREE.Group {
@@ -8503,8 +8686,7 @@ export class FestivalWorld {
   }
 
   private populatePopcornProp(prop: THREE.Group): void {
-    this.mesh([0.42, 0.72, 0.42], [0, 0, 0], material(0xa91c24), prop);
-    this.mesh([0.5, 0.38, 0.5], [0, 0.48, 0], material(0xffd767), prop);
+    prop.add(createCoastalPopcorn());
   }
 
   private populateFoodProp(prop: THREE.Group, base: number, filling: number): void {
@@ -8513,15 +8695,34 @@ export class FestivalWorld {
   }
 
   private populateDrinkProp(prop: THREE.Group): void {
-    this.mesh([0.3, 0.62, 0.3], [0, 0, 0], material(0x9fd8e8, 0.25, 0.5), prop);
-    this.mesh([0.34, 0.1, 0.34], [0, -0.3, 0], material(0x2a2a32, 0.5, 0.4), prop);
-    this.mesh([0.2, 0.16, 0.2], [0, 0.36, 0], material(0xffb347, 0.4, 0.3), prop);
+    prop.userData.carryHand = 'right';
+    prop.add(createCoastalDrink());
   }
 
-  private positionPopcornProp(prop: THREE.Group, dogCarrier = false): void {
-    prop.position.set(dogCarrier ? 0.68 : -0.95, dogCarrier ? 0.82 : 1.38, dogCarrier ? 0.28 : -0.08);
-    prop.rotation.set(0, 0, 0);
-    prop.scale.setScalar(dogCarrier ? 0.78 : 1);
+  private syncRemoteProp(prop:THREE.Group,item:CarriedItem|undefined,gesture:AvatarGesture|undefined,state:PlayerState):void {
+    const displayed=item ?? (gesture==='drink'?'DRINK':gesture==='eat'?(prop.userData.item??'POPCORN'):undefined);
+    if(prop.userData.item!==displayed){
+      prop.clear();prop.userData.carryHand='left';
+      if(displayed==='DRINK')this.populateDrinkProp(prop);
+      else if(displayed==='HOTDOG')this.populateFoodProp(prop,0xd8642c,0xf0d8a8);
+      else if(displayed==='PIZZA')this.populateFoodProp(prop,0xe0a52e,0xc4482a);
+      else if(displayed==='CHICKEN')this.populateFoodProp(prop,0xc4842a,0xe8d6a8);
+      else if(displayed==='POPCORN')this.populatePopcornProp(prop);
+      prop.userData.item=displayed;
+    }
+    prop.visible=state!=='swimming'&&Boolean(displayed)&&displayed!=='MENTOR';
+    prop.userData.handProp=true;
+  }
+
+  private positionPopcornProp(prop: THREE.Group, dogCarrier = false, gesture?: AvatarGesture): void {
+    prop.userData.handProp=!dogCarrier;
+    prop.position.set(dogCarrier?.68:-.75,dogCarrier?.82:1.38,dogCarrier?.28:.12);
+    prop.rotation.set(0,0,0);prop.scale.setScalar(dogCarrier?.78:1);
+    const root=prop.parent,runtime=root?.userData.sculptRuntime;
+    if(!dogCarrier&&prop.visible&&runtime){
+      const rig=this.rigFor(root as THREE.Group);
+      if(rig)poseCoastalCarry(rig,prop,gesture,Number(root!.userData.carryProgress??0));
+    }
   }
 
   private syncCarriedPropAnchor(): void {
@@ -8529,17 +8730,20 @@ export class FestivalWorld {
     if (this.carriedProp.parent !== carrier) carrier.attach(this.carriedProp);
     const dogCarrier = this.npcs.some((npc) => npc.group === carrier && Boolean(npc.dogRig));
     this.positionPopcornProp(this.carriedProp, dogCarrier);
-    if (this.carriedPropKind !== this.carriedItem) {
+    // Inventory is consumed immediately; keep the cup visible during the sip.
+    const displayedItem = this.carriedItem ?? (performance.now() < this.drinkUntil ? 'DRINK' : performance.now() < this.eatingUntil ? this.eatingItem : undefined);
+    if (this.carriedPropKind !== displayedItem) {
       this.carriedProp.clear();
-      if (this.carriedItem === 'DRINK') this.populateDrinkProp(this.carriedProp);
-      else if (this.carriedItem === 'HOTDOG') this.populateFoodProp(this.carriedProp, 0xd8642c, 0xf0d8a8);
-      else if (this.carriedItem === 'PIZZA') this.populateFoodProp(this.carriedProp, 0xe0a52e, 0xc4482a);
-      else if (this.carriedItem === 'CHICKEN') this.populateFoodProp(this.carriedProp, 0xc4842a, 0xe8d6a8);
+      this.carriedProp.userData.carryHand = 'left';
+      if (displayedItem === 'DRINK') this.populateDrinkProp(this.carriedProp);
+      else if (displayedItem === 'HOTDOG') this.populateFoodProp(this.carriedProp, 0xd8642c, 0xf0d8a8);
+      else if (displayedItem === 'PIZZA') this.populateFoodProp(this.carriedProp, 0xe0a52e, 0xc4482a);
+      else if (displayedItem === 'CHICKEN') this.populateFoodProp(this.carriedProp, 0xc4842a, 0xe8d6a8);
       else this.populatePopcornProp(this.carriedProp);
-      this.carriedPropKind = this.carriedItem;
+      this.carriedPropKind = displayedItem;
     }
     this.carriedProp.visible = this.playerState !== 'swimming' &&
-      Boolean(this.carriedItem) && this.carriedItem !== 'MENTOR';
+      Boolean(displayedItem) && displayedItem !== 'MENTOR';
   }
 
   /**
@@ -8699,16 +8903,18 @@ export class FestivalWorld {
       const shiftedX = x + perpX * width * fraction;
       const shiftedZ = z + perpZ * width * fraction;
       const y = this.groundHeightAt(shiftedX, shiftedZ);
-      if (!this.staticCollides(shiftedX, shiftedZ, y)) return new THREE.Vector3(shiftedX, y, shiftedZ);
+      if (!this.staticCollides(shiftedX, shiftedZ, y, FestivalWorld.BODY_RADIUS)) return new THREE.Vector3(shiftedX, y, shiftedZ);
     }
     return new THREE.Vector3(x, this.groundHeightAt(x, z), z);
   }
 
   private laneAdjusted(x: number, z: number, lane: THREE.Vector2, y: number): THREE.Vector3 {
-    const shiftedX = x + lane.x;
-    const shiftedZ = z + lane.y;
-    if (this.staticCollides(shiftedX, shiftedZ, y)) return new THREE.Vector3(x, y, z);
-    return new THREE.Vector3(shiftedX, y, shiftedZ);
+    const shiftedX=x+lane.x, shiftedZ=z+lane.y;
+    const ground=this.groundHeightAt(shiftedX,shiftedZ,y);
+    if(this.staticCollides(shiftedX,shiftedZ,ground,FestivalWorld.BODY_RADIUS)) {
+      return new THREE.Vector3(x,this.groundHeightAt(x,z,y),z);
+    }
+    return new THREE.Vector3(shiftedX,ground,shiftedZ);
   }
 
   /**
@@ -8743,7 +8949,7 @@ export class FestivalWorld {
     // same way are spread across the link rather than queued along it.
     let fromX = npc.group.position.x;
     let fromZ = npc.group.position.z;
-    npc.transit = path.map((node) => {
+    npc.transit = [from,...path].map((node) => {
       const [x, z] = NAV_POINTS[node];
       const runX = x - fromX;
       const runZ = z - fromZ;
@@ -8829,6 +9035,7 @@ export class FestivalWorld {
   private createRemoteAvatar(visitor: RemoteVisitorVisual): RemoteAvatar {
     const group = new THREE.Group();
     const rig = this.createAvatarRig(group, visitor.palette);
+    setCoastalSwimwear(group,visitor.state==='swimming');
     const badge = new THREE.Sprite(new THREE.SpriteMaterial({
       map: createNameTexture(visitor.name),
       transparent: true,
@@ -8848,7 +9055,7 @@ export class FestivalWorld {
       visitor.x,
       typeof visitor.y === 'number' && Number.isFinite(visitor.y)
         ? visitor.y
-        : (visitor.state === 'swimming' ? AVATAR_SWIM_Y : AVATAR_GROUND_Y),
+        : (visitor.state === 'swimming' ? AVATAR_SWIM_Y : this.groundHeightAt(visitor.x, visitor.z, 0)),
       visitor.z,
     );
     group.rotation.y = visitor.rotation;
@@ -8882,77 +9089,7 @@ export class FestivalWorld {
    * same blocky idiom as everything else: a deck, two trucks, four wheels.
    */
   private createSkateboard(parent: THREE.Object3D, scale = 1, lift = 0): THREE.Group {
-    const board = new THREE.Group();
-    board.scale.setScalar(scale);
-    board.position.set(0, lift, 0);
-    const deckWood = material(0x3a2f2a, 0.62, 0.12);
-    const grip = material(0x14151a, 0.95, 0.02);
-    const truck = material(0x9aa1ab, 0.32, 0.68);
-    const wheel = material(0xe8e2d2, 0.5, 0.1);
-    // Turned across the direction of travel: the board runs under the stance
-    // and the rider stands sideways on it.
-    board.rotation.y = Math.PI / 2;
-
-    // Measured down from the hips. The rider is lifted by SKATE_LIFT while
-    // riding, which puts the road at -0.46 here: the wheels meet it, the deck
-    // top meets the soles at -0.09, and nothing passes through anything.
-    const deckY = -0.135;
-    const baseplateY = -0.21;
-    const hangerY = -0.28;
-    const axleY = -0.33;
-    // One plank, not a stack of chunks.
-    //
-    // The deck used to be a flat slab with two separately rotated kick pieces
-    // laid over its ends and a grip strip on each — six parts pretending to be
-    // one board, and pretending badly: a rotated box does not meet a flat one
-    // along a straight line, so the joins showed as steps at the nose and tail
-    // and the thing read as assembled rather than cut.
-    //
-    // It is a single extrusion now. The side view of a deck is drawn once as a
-    // closed outline — flat through the middle, sweeping up at both ends — and
-    // pushed out to the width of the board. The kicks are part of the same
-    // surface as the middle because they are the same piece of wood, which is
-    // what a deck is.
-    const profile = new THREE.Shape();
-    profile.moveTo(-1.34, 0.2);
-    profile.lineTo(-1.04, 0.05);
-    profile.lineTo(-0.8, 0);
-    profile.lineTo(0.8, 0);
-    profile.lineTo(1.04, 0.05);
-    profile.lineTo(1.34, 0.2);
-    profile.lineTo(1.34, 0.11);
-    profile.lineTo(1.04, -0.04);
-    profile.lineTo(0.8, -0.09);
-    profile.lineTo(-0.8, -0.09);
-    profile.lineTo(-1.04, -0.04);
-    profile.lineTo(-1.34, 0.11);
-    profile.closePath();
-    const deckGeometry = new THREE.ExtrudeGeometry(profile, { depth: 0.66, bevelEnabled: false });
-    // Extrusion runs from z = 0 outward, so the board is centred by hand.
-    deckGeometry.translate(0, 0, -0.33);
-    const deck = new THREE.Mesh(deckGeometry, deckWood);
-    deck.position.set(0, deckY, 0);
-    board.add(deck);
-    // Grip is the one thing on a deck that genuinely is a separate object —
-    // a sheet stuck to the top — so it stays its own piece, cut from the same
-    // outline and inset so the wood shows at the edges as it does on a board.
-    const gripGeometry = new THREE.ExtrudeGeometry(profile, { depth: 0.58, bevelEnabled: false });
-    gripGeometry.translate(0, 0, -0.29);
-    gripGeometry.scale(0.985, 1, 1);
-    const gripSheet = new THREE.Mesh(gripGeometry, grip);
-    gripSheet.position.set(0, deckY + 0.022, 0);
-    board.add(gripSheet);
-    for (const end of [-1, 1]) {
-      this.mesh([0.34, 0.07, 0.42], [end * 0.66, baseplateY, 0], truck, board);
-      this.mesh([0.16, 0.12, 0.52], [end * 0.66, hangerY, 0], truck, board);
-      this.mesh([0.1, 0.07, 0.84], [end * 0.66, axleY, 0], truck, board);
-      for (const side of [-1, 1]) {
-        this.mesh([0.19, 0.26, 0.26], [end * 0.66, axleY, side * 0.39], wheel, board);
-      }
-    }
-    board.visible = false;
-    parent.add(board);
-    return board;
+    return createCoastalSkateboard(parent,scale,lift);
   }
 
   /**
@@ -8960,333 +9097,13 @@ export class FestivalWorld {
    * right over the tail, arms spread wide for balance.
    */
   private poseRigSkating(rig: AvatarRig, phase: number): void {
-    // Regular stance. Nobody rides a board facing along it — the feet go across
-    // the deck and the body turns side-on, left foot leading over the front
-    // bolts and right foot back on the tail. Squaring up to the direction of
-    // travel is what made this look like someone standing on a plank.
-    this.foldJoints(rig, 0.55, 0.55, 0.68 + Math.sin(phase) * 0.1, 0.34);
-    // Feet turned across the deck: the front one angled over the bolts, the
-    // back one closer to square on the tail.
-    if (rig.leftKnee) rig.leftKnee.rotation.y = 0.55;
-    if (rig.rightKnee) rig.rightKnee.rotation.y = 1.2;
-    const bob = Math.sin(phase * 1.6);
-    // Shoulders opened to the left, which is what puts the body side-on.
-    rig.torso.rotation.y = -0.92;
-    rig.torso.rotation.x = 0.15 + bob * 0.03;
-    rig.torso.rotation.z = 0;
-    // And the head turns back along the board, which is where a rider looks.
-    rig.head.rotation.set(0, 0.86, 0);
-    // Left foot forward, right foot back, and further apart than a stance —
-    // a rider is planted across the deck, not mid-stride.
-    rig.leftLeg.rotation.x = -0.46 - bob * 0.04;
-    rig.leftLeg.rotation.z = 0.18;
-    rig.rightLeg.rotation.x = 0.38 + bob * 0.04;
-    rig.rightLeg.rotation.z = -0.16;
-    // Straight out to the sides. A positive rotation about z swings an arm
-    // towards +x, so the left arm needs a negative one to go outward — with
-    // the signs the other way round both arms folded across the chest and
-    // disappeared inside the torso, which is what read as arms cut off.
-    rig.leftArm.rotation.x = bob * 0.06;
-    rig.rightArm.rotation.x = -bob * 0.06;
-    rig.leftArm.rotation.z = -1.42 - bob * 0.05;
-    rig.rightArm.rotation.z = 1.42 + bob * 0.05;
-    rig.board.visible = true;
+    skateCoastalPose(rig,phase);
   }
 
-  /**
-   * The restyled figure — tier three, for the avatars only, behind the same
-   * flag as the shading.
-   *
-   * Every pivot keeps its name and its position, so animateRig, the seating,
-   * the skateboard, the gestures and the collision all carry on untouched. What
-   * changes is only the shape hanging underneath each one.
-   *
-   * Four moves, and the coat is not among them: the head drops to roughly a
-   * sixth of the height so the figure reads adult rather than childlike; a hard
-   * shoulder yoke sits proud of the torso as its own facet; the torso, arms and
-   * legs all taper, so nothing is a rectangle; and the face is a single dark
-   * band rather than modelled eyes and a mouth. The clothes stay ordinary and
-   * every colour is still the visitor's own choice.
-   */
-  private createStyledAvatarRig(parent: THREE.Group, palette: AvatarPalette, markPalette: boolean): AvatarRig {
-    window.setTimeout(() => this.castShadows(parent), 0);
-    // Nobody is symmetrical.
-    //
-    // These figures were the cleanest objects left in the world, because I built
-    // them that way: two identical arms on two identical shoulders, mirrored to
-    // the millimetre. Bodies are not mirrored, and a crowd of twelve that all
-    // are reads as a set of copies however different their colours.
-    //
-    // So each body is bent slightly out of true, and the same way every time —
-    // seeded from the palette, so a visitor's figure is their figure and not a
-    // new one on every load. One shoulder rides higher, one arm is a shade
-    // longer, the head sits a degree off centre. All of it under two per cent,
-    // which is the difference between a person and a mannequin and is not
-    // visible as anything in itself.
-    const seed = Number.parseInt(palette.top.replace('#', ''), 16)
-      + Number.parseInt(palette.bottoms.replace('#', ''), 16);
-    const lean = (salt: number): number => {
-      const value = Math.sin(seed * 0.0007 + salt * 5.31) * 43758.5453;
-      return (value - Math.floor(value)) - 0.5;
-    };
-    const shoulderTilt = lean(1) * 0.055;
-    const armStretch = 1 + lean(2) * 0.035;
-    const legStretch = 1 + lean(3) * 0.025;
-    const headTilt = lean(4) * 0.07;
-    const shade = (slot: AvatarColourSlot) =>
-      material(Number.parseInt(palette[slot].replace('#', ''), 16), 0.86, 0.02);
-    const add = (
-      geometry: THREE.BufferGeometry,
-      position: [number, number, number],
-      slot: AvatarColourSlot,
-      target: THREE.Object3D,
-    ) => {
-      const part = new THREE.Mesh(geometry, shade(slot));
-      part.position.set(...position);
-      // The gate's live preview recolours by this, so a restyled part has to
-      // carry it exactly as the old one did or the colour pickers go dead.
-      if (markPalette) part.userData.paletteSlot = slot;
-      // A person is not a wall: skin and hair take the shading but not the
-      // surface grain.
-      if (slot === 'skin' || slot === 'hair') part.material.userData.wornNoGrain = true;
-      target.add(part);
-      return part;
-    };
-    // The hard, unpainted parts: joints, visor, sole. Not on the palette,
-    // because they are the through-line that holds a crowd of freely coloured
-    // figures together now that no single accent does.
-    const hardware = material(0x14161a, 0.62, 0.28);
-    const shell = (
-      geometry: THREE.BufferGeometry,
-      position: [number, number, number],
-      target: THREE.Object3D,
-    ) => {
-      const part = new THREE.Mesh(geometry, hardware);
-      part.position.set(...position);
-      target.add(part);
-      return part;
-    };
-
-    // ---- pelvis --------------------------------------------------------
-    // Stays on the body's own root, because a lean should bend above the waist
-    // and leave the hips where the legs are.
-    add(taperedPrism(0.42, 0.36, 0.42, 0.54), [0, 1.3, 0], 'bottoms', parent);
-
-    // ---- spine ---------------------------------------------------------
-    // Everything above the waist hangs off this, so bending it carries the
-    // chest, the shoulders, both arms and the head together — which is what
-    // separates a body leaning into a walk from a slab being twisted.
-    const spine = new THREE.Group();
-    spine.position.set(0, 1.55, 0);
-    parent.add(spine);
-
-    // Chest and waist as two pieces meeting at a narrow join, rather than one
-    // taper running the whole way. The break at the waist is what stops the
-    // body reading as a single carved lump.
-    add(taperedPrism(0.56, 0.44, 0.86, 0.56), [0, 0.47, 0], 'top', spine);
-    shell(taperedPrism(0.43, 0.4, 0.14, 0.54), [0, 0, 0], spine);
-
-    // ---- shoulders -----------------------------------------------------
-    // Caps that stand slightly proud of the body, which is the one silhouette
-    // cue that reads at any distance and in any colour.
-    shell(taperedPrism(0.64, 0.58, 0.1, 0.58), [0, 0.89, 0], spine);
-    for (const side of [-1, 1]) {
-      // One cap rides higher than the other, which is the single most human
-      // thing that can be done to a pair of shoulders.
-      add(taperedPrism(0.2, 0.15, 0.22, 0.95), [side * 0.53, 0.81 + side * shoulderTilt, 0], 'top', spine);
-    }
-
-    // ---- head ----------------------------------------------------------
-    shell(taperedPrism(0.12, 0.15, 0.15, 1), [0, 1.0, 0], spine);
-    const head = new THREE.Group();
-    head.position.set(0, 1.05, 0);
-    // Carried a degree off straight, permanently. A head that is exactly level
-    // is the tell that nothing underneath it is alive.
-    head.rotation.z = headTilt;
-    spine.add(head);
-    add(taperedPrism(0.23, 0.27, 0.46, 0.94), [0, 0.23, 0], 'skin', head);
-    add(taperedPrism(0.285, 0.26, 0.13, 0.98), [0, 0.43, -0.015], 'hair', head);
-    // The visor, on the front of the head and only the front.
-    //
-    // A painted face was tried here and taken back out. It is the more faithful
-    // answer to the reference — that generation drew faces rather than modelling
-    // them — but faithfulness to a reference is not the only thing at stake in a
-    // world where every resident and every visitor wears the same one, and the
-    // owner preferred this. Keeping the note because the reasoning is still
-    // sound and the decision could reasonably go the other way later.
-    //
-    // It was a prism a hair wider than the head, which is a ring — so it banded
-    // right around the back as a line across the skull, which is what a visor
-    // is not. "Wrapped round the sides" was the intention and a full revolution
-    // was what the shape actually did; a tapered prism has no front.
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.1, 0.07), hardware);
-    visor.position.set(0, 0.245, 0.22);
-    head.add(visor);
-    // A short return down each side, which is the part that was worth keeping:
-    // it stops the visor reading as a sticker on a flat face.
-    for (const side of [-1, 1]) {
-      const wrap = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, 0.14), hardware);
-      wrap.position.set(side * 0.17, 0.245, 0.15);
-      head.add(wrap);
-    }
-
-    const limb = (
-      x: number,
-      y: number,
-      geometry: THREE.BufferGeometry,
-      height: number,
-      slot: AvatarColourSlot,
-      root: THREE.Object3D,
-    ) => {
-      const pivot = new THREE.Group();
-      pivot.position.set(x, y, 0);
-      root.add(pivot);
-      add(geometry, [0, -height / 2, 0], slot, pivot);
-      return pivot;
-    };
-
-    // ---- limbs ---------------------------------------------------------
-    // Each limb is upper and lower with a narrow joint between, which is the
-    // single most futuristic thing on the figure and costs nothing: the pieces
-    // hang off the same pivot, so nothing about the animation changes.
-    // Everything below the joint hangs off its own pivot, so the lower half of
-    // a limb can move relative to the upper half instead of riding along with
-    // it. The segments were already drawn this way; they simply had nothing to
-    // turn about.
-    const arm = (side: number) => {
-      const reach = side < 0 ? armStretch : 2 - armStretch;
-      const pivot = limb(side * 0.56, 0.73 + side * shoulderTilt, taperedPrism(0.115, 0.08, 0.6 * reach, 0.94), 0.6 * reach, 'top', spine);
-      const elbow = new THREE.Group();
-      elbow.position.set(0, -0.64, 0);
-      pivot.add(elbow);
-      shell(taperedPrism(0.075, 0.075, 0.09, 1), [0, 0, 0], elbow);
-      add(taperedPrism(0.088, 0.07, 0.56, 0.94), [0, -0.33, 0], 'skin', elbow);
-      shell(taperedPrism(0.085, 0.062, 0.16, 0.96), [0, -0.68, 0], elbow);
-      return { pivot, joint: elbow };
-    };
-    const leg = (side: number) => {
-      const stand = side < 0 ? legStretch : 2 - legStretch;
-      const pivot = limb(side * 0.24, 1.16, taperedPrism(0.185, 0.13, 0.66 * stand, 0.84), 0.66 * stand, 'bottoms', parent);
-      const knee = new THREE.Group();
-      knee.position.set(0, -0.71, 0);
-      pivot.add(knee);
-      shell(taperedPrism(0.115, 0.115, 0.1, 0.9), [0, 0, 0], knee);
-      // The original figure's foot bottoms out 0.09 below the body's origin,
-      // and the ground is placed against that. This leg was reaching to 0.205,
-      // so the restyled figure stood a tenth of a unit deeper than the world
-      // expected and its feet disappeared into the road. The shin is shortened
-      // to bring the sole back to where the ground actually is.
-      add(taperedPrism(0.132, 0.1, 0.39, 0.82), [0, -0.245, 0], 'bottoms', knee);
-      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.11, 0.46), hardware);
-      foot.position.set(0, -0.485, 0.08);
-      knee.add(foot);
-      return { pivot, joint: knee };
-    };
-
-    const left = arm(-1);
-    const right = arm(1);
-    const leftLower = leg(-1);
-    const rightLower = leg(1);
-    const leftArm = left.pivot;
-    const rightArm = right.pivot;
-    const leftLeg = leftLower.pivot;
-    const rightLeg = rightLower.pivot;
-
-    // The treat rides the forearm now, so a held thing follows the hand rather
-    // than hanging in the air where the hand used to be.
-    const treat = this.mesh([0.16, 0.16, 0.22], [0, -0.56, 0.16], material(0xd18a35, 0.78), right.joint);
-    treat.visible = false;
-    const board = this.createSkateboard(parent);
-    addAvatarAccessories({ head, torso: spine, leftArm, rightArm }, palette, markPalette);
-    return {
-      leftArm,
-      rightArm,
-      leftLeg,
-      rightLeg,
-      // Spine 1.55, head group at 1.05 above it, hair cap topping out 0.5 over
-      // that.
-      headTop: 3.1,
-      // The spine stands in for the torso, so every pose already written bends
-      // the whole upper body without one line of those poses changing.
-      torso: spine,
-      treat,
-      head,
-      board,
-      leftElbow: left.joint,
-      rightElbow: right.joint,
-      leftKnee: leftLower.joint,
-      rightKnee: rightLower.joint,
-    };
-  }
-
+  /** The local PS2 neighbourhood avatar, with articulated unisex streetwear. */
   private createAvatarRig(parent: THREE.Group, palette: AvatarPalette, markPalette = false): AvatarRig {
-    if (wornMeshesRequested()) return this.createStyledAvatarRig(parent, palette, markPalette);
-    // Avatars are the one thing whose shadow is always worth its cost.
     window.setTimeout(() => this.castShadows(parent), 0);
-    const addPart = (
-      size: [number, number, number],
-      position: [number, number, number],
-      slot: AvatarColourSlot,
-      target: THREE.Object3D = parent,
-    ) => {
-      const part = this.mesh(
-        size,
-        position,
-        material(Number.parseInt(palette[slot].replace('#', ''), 16), 0.82, 0.03),
-        target,
-      );
-      if (markPalette) part.userData.paletteSlot = slot;
-      if (slot === 'skin' || slot === 'hair') {
-        (part.material as THREE.Material).userData.wornNoGrain = true;
-      }
-      return part;
-    };
-    const torso = addPart([1.02, 1.38, 0.62], [0, 1.78, 0], 'top');
-    // The head pivots at the neck. It used to be a handful of parts fixed to
-    // the body, so bowing tipped the torso and left the face pointing level.
-    const head = new THREE.Group();
-    head.position.set(0, 2.47, 0);
-    parent.add(head);
-    addPart([0.8, 0.82, 0.72], [0, 0.38, 0], 'skin', head);
-    addPart([0.9, 0.34, 0.79], [0, 0.73, -0.02], 'hair', head);
-    addPart([0.78, 0.4, 0.16], [0, 0.51, 0.34], 'hair', head);
-    this.mesh([0.09, 0.1, 0.05], [-0.18, 0.37, 0.385], material(0x171315), head);
-    this.mesh([0.09, 0.1, 0.05], [0.18, 0.37, 0.385], material(0x171315), head);
-    this.mesh([0.24, 0.055, 0.05], [0, 0.17, 0.385], material(0x6f2e2b), head);
-
-    const limb = (
-      x: number,
-      y: number,
-      size: [number, number, number],
-      slot: AvatarColourSlot,
-    ) => {
-      const pivot = new THREE.Group();
-      pivot.position.set(x, y, 0);
-      parent.add(pivot);
-      addPart(size, [0, -size[1] / 2, 0], slot, pivot);
-      return pivot;
-    };
-    const leftArm = limb(-0.68, 2.2, [0.3, 1.22, 0.38], 'skin');
-    const rightArm = limb(0.68, 2.2, [0.3, 1.22, 0.38], 'skin');
-    const leftLeg = limb(-0.28, 1.16, [0.4, 1.25, 0.5], 'bottoms');
-    const rightLeg = limb(0.28, 1.16, [0.4, 1.25, 0.5], 'bottoms');
-    const treat = this.mesh([0.16, 0.16, 0.22], [0, -1.2, 0.16], material(0xd18a35, 0.78), rightArm);
-    treat.visible = false;
-    const board = this.createSkateboard(parent);
-    // The chest here is one scaled mesh rather than a group, so the accessories
-    // hang off the body's own root and are told where the chest is.
-    addAvatarAccessories({
-      head,
-      torso: parent,
-      torsoBounds: new THREE.Box3(
-        new THREE.Vector3(-0.51, 1.09, -0.31),
-        new THREE.Vector3(0.51, 2.47, 0.31),
-      ),
-      leftArm,
-      rightArm,
-    }, palette, markPalette);
-    // Head group at 2.47, hair 0.73 above that and 0.17 thick.
-    return { leftArm, rightArm, leftLeg, rightLeg, torso, treat, head, board, headTop: 3.37 };
+    return attachImportedAvatar(parent,createCoastalAvatar(parent, palette, markPalette, this.createSkateboard(parent)),palette);
   }
 
   private createAtmosphere(): void {
@@ -9453,7 +9270,23 @@ export class FestivalWorld {
     }
   }
 
-  private render = (): void => {
+  private render = (_time?: number, frame?: XRFrame): void => {
+    if (this.xrActive && !this.xrSimulated && frame) {
+      const reference=this.renderer.xr.getReferenceSpace();
+      const pose=reference?frame.getViewerPose(reference):null;
+      if(pose){
+        const q=pose.transform.orientation;
+        this.xrRawOrientation.set(q.x,q.y,q.z,q.w);
+        const forward=new THREE.Vector3(0,0,-1).applyQuaternion(this.xrRawOrientation);
+        // Looking straight up/down must not flip the stick's heading.
+        if(Math.hypot(forward.x,forward.z)>.2)this.xrHeadHeading=Math.atan2(-forward.x,-forward.z);
+        if(this.xrNeedsCalibration){
+          this.xrYaw=this.xrHomeYaw-this.xrHeadHeading;
+          this.xrFloorOffset=AVATAR_EYE_HEIGHT-2*pose.transform.position.y;
+          this.xrNeedsCalibration=false;
+        }
+      }
+    }
     if (this.disposed) return;
     const delta = Math.min(this.clock.getDelta(), 0.05);
     const elapsed = this.clock.elapsedTime;
@@ -9465,6 +9298,8 @@ export class FestivalWorld {
     this.updateGamepad(delta);
     this.updateXrInput(delta);
     this.updatePlayer(delta);
+    this.playerShadow.position.y=this.groundHeightAt(this.player.position.x,this.player.position.z,this.player.position.y)-AVATAR_GROUND_Y-this.player.position.y+.02;
+    this.playerShadow.visible=this.playerState!=='swimming';
     this.updateNpcs(delta, elapsed);
     // Only while somebody could see it. It is a joke behind some trees, not a
     // thing worth a matrix update on every frame of the whole festival.
@@ -9477,6 +9312,7 @@ export class FestivalWorld {
     // walked into or out of a room.
     this.updateProjectorMounts();
     const dayNight = this.dayNight.update();
+    this.dayNight.atmosphere.update(dayNight.cycleMinute, this.player.position);
     // Exposed for the hour rather than fixed at noon's value. Raising lights
     // only brightens what they reach, and after dark most of what is on screen
     // is dark paint under a dim sky — so a wall lit harder is still a dark
@@ -9490,6 +9326,11 @@ export class FestivalWorld {
     this.updateWaterLayers();
     this.updateFireworks(delta, performance.now());
     this.updateClubBeat(elapsed);
+    syncImportedAvatars(this.scene);
+    for(const npc of this.npcs)if(npc.dogRig&&npc.group.parent&&npc.group.parent!==this.scene){
+      const carrier=npc.group.parent as THREE.Group,rig=this.rigFor(carrier);
+      if(rig)perchMentor(npc.group,npc.dogRig,rig.head,carrier.userData.importedHeadSupport?.()??new THREE.Vector3(0,.5,0));
+    }
     this.updateLampPool();
     this.camera.layers.set(0);
     this.renderer.render(this.scene, this.camera);
@@ -9626,7 +9467,7 @@ export class FestivalWorld {
         inTheater: this.inTheater(),
         screeningVenue: this.screeningVenue(),
         outfit: this.outfit,
-        carriedItem: this.carriedItem,
+        carriedItem: this.carriedItem ?? (performance.now()<this.drinkUntil?'DRINK':performance.now()<this.eatingUntil?this.eatingItem:undefined),
         stowedItem: this.stowedItem,
         hasPamphlet: this.hasPamphlet,
         npcCount: this.npcs.length,
@@ -9666,7 +9507,7 @@ export class FestivalWorld {
     // Height of the eye above the water, not the avatar's: the camera is what
     // decides how much of the screen these sheets cover.
     this.camera.getWorldPosition(this.cameraWorldPosition);
-    const eyeAboveWater = this.cameraWorldPosition.y - 0.14;
+    const eyeAboveWater = this.cameraWorldPosition.y - SEA_Y;
     // Only when the eye is genuinely grazing the surface. The swimming camera
     // is now held well above that, so the sea keeps all of its sheets — and its
     // glitter — at the height an attendee actually sees it from.
@@ -9783,9 +9624,9 @@ export class FestivalWorld {
       positions.needsUpdate = true;
       burst.points.material.opacity = Math.pow(fade, 1.35);
       burst.currentIntensity = burst.peakIntensity * Math.pow(fade, 2.2) * (0.82 + Math.random() * 0.18);
-      burst.reflection.material.opacity = 0.52 * Math.pow(fade, 1.7);
-      burst.reflection.scale.x = 10 + burst.age * 4;
-      burst.reflection.scale.y = 30 + burst.age * 8;
+      burst.reflection.material.opacity = Math.round(.38 * Math.pow(fade, 1.7) * 16) / 16;
+      // Short, stepped glints stay on the sea's pixel grid instead of stretching.
+      burst.reflection.scale.x = 10 + (Math.floor(burst.age * 5) % 3) * .5;
       if (burst.age < burst.lifetime) continue;
       this.removeFireworkBurst(burst);
       this.fireworkBursts.splice(index, 1);
@@ -9815,10 +9656,10 @@ export class FestivalWorld {
   }
 
   private spawnFireworkRocket(): void {
-    const colours = [0xff3158, 0xffc83d, 0x62d6ff, 0x9f70ff, 0x52ed94, 0xff8a42];
+    const colours = [0xe7c77c, 0xa7c9b4, 0xd48466, 0xc5d5cc];
     const colour = new THREE.Color(colours[Math.floor(Math.random() * colours.length)]);
     const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(this.graphicsMode === 'normal' ? 0.16 : 0.2, 6, 5),
+      new THREE.OctahedronGeometry(this.graphicsMode === 'normal' ? .22 : .26,0),
       new THREE.MeshBasicMaterial({ color: colour, toneMapped: false }),
     );
     // Kept in the part of the horizon visible from the Shore: the earlier,
@@ -9828,7 +9669,8 @@ export class FestivalWorld {
     mesh.userData.projectorBackground = true;
     const trailGeometry = new THREE.BufferGeometry();
     trailGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(8 * 3), 3));
-    const trail = new THREE.Line(trailGeometry, new THREE.LineBasicMaterial({
+    const trail = new THREE.Points(trailGeometry, new THREE.PointsMaterial({
+      size:.18,sizeAttenuation:true,
       color: colour,
       transparent: true,
       opacity: 0.78,
@@ -9851,7 +9693,7 @@ export class FestivalWorld {
     const origin = rocket.mesh.position.clone();
     this.removeFireworkRocket(rocket);
     const count = this.graphicsMode === 'normal' ? 40 : 24;
-    const pattern = Math.floor(Math.random() * 4);
+    const pattern = Math.floor(Math.random() * 2);
     const positions = new Float32Array(count * 3);
     const velocities = new Float32Array(count * 3);
     for (let index = 0; index < count; index += 1) {
@@ -9859,36 +9701,17 @@ export class FestivalWorld {
       positions[offset] = origin.x;
       positions[offset + 1] = origin.y;
       positions[offset + 2] = origin.z;
-      const speed = THREE.MathUtils.randFloat(5.2, 10.5);
-      if (pattern === 1) {
-        const angle = index / count * Math.PI * 2;
-        velocities[offset] = Math.cos(angle) * speed;
-        velocities[offset + 1] = Math.sin(angle) * speed;
-        velocities[offset + 2] = THREE.MathUtils.randFloatSpread(1.7);
-      } else if (pattern === 2) {
-        velocities[offset] = THREE.MathUtils.randFloatSpread(7.5);
-        velocities[offset + 1] = THREE.MathUtils.randFloat(3.5, 10.5);
-        velocities[offset + 2] = THREE.MathUtils.randFloatSpread(5.2);
-      } else if (pattern === 3) {
-        const spoke = index % 12 / 12 * Math.PI * 2;
-        const reach = THREE.MathUtils.randFloat(0.35, 1);
-        velocities[offset] = Math.cos(spoke) * speed * reach;
-        velocities[offset + 1] = (3.2 + Math.sin(spoke) * 4.2) * reach;
-        velocities[offset + 2] = THREE.MathUtils.randFloatSpread(2.8);
-      } else {
-        const vertical = THREE.MathUtils.randFloatSpread(2);
-        const angle = Math.random() * Math.PI * 2;
-        const horizontal = Math.sqrt(Math.max(0, 1 - vertical * vertical * 0.25));
-        velocities[offset] = Math.cos(angle) * horizontal * speed;
-        velocities[offset + 1] = vertical * speed * 0.5;
-        velocities[offset + 2] = Math.sin(angle) * horizontal * speed * 0.72;
-      }
+      const spoke=index%8,ring=Math.floor(index/8),angle=spoke/8*Math.PI*2+(pattern?Math.PI/8:0);
+      const speed=4.4+ring*1.35;
+      velocities[offset]=Math.cos(angle)*speed;
+      velocities[offset+1]=Math.sin(angle)*speed;
+      velocities[offset+2]=(ring%2?1:-1)*.7;
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     const points = new THREE.Points(geometry, new THREE.PointsMaterial({
       color: rocket.colour,
-      size: this.graphicsMode === 'normal' ? 0.92 : 1.12,
+      size: this.graphicsMode === 'normal' ? .44 : .56,
       sizeAttenuation: true,
       transparent: true,
       opacity: 1,
@@ -9909,10 +9732,16 @@ export class FestivalWorld {
       toneMapped: false,
       side: THREE.DoubleSide,
     });
-    const reflection = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), reflectionMaterial);
+    const reflectionGeometry=new THREE.BufferGeometry(),glints:number[]=[];
+    for(let row=0;row<8;row++){
+      const y=-.5+row/8,w=(row%3===0?.32:.18)*(1-row*.065),x=(row%2?.09:-.09);
+      glints.push(x-w,y,0,x+w,y,0,x+w,y+.035,0,x-w,y,0,x+w,y+.035,0,x-w,y+.035,0);
+    }
+    reflectionGeometry.setAttribute('position',new THREE.Float32BufferAttribute(glints,3));reflectionGeometry.computeVertexNormals();
+    const reflection = new THREE.Mesh(reflectionGeometry, reflectionMaterial);
     reflection.rotation.x = -Math.PI / 2;
-    reflection.position.set(origin.x * 0.82, 0.158, THREE.MathUtils.clamp(origin.z + 21, -88, -66));
-    reflection.scale.set(10, 30, 1);
+    reflection.position.set(Math.round(origin.x * .82 * 2)/2, SEA_Y + .018, THREE.MathUtils.clamp(origin.z + 21, -88, -74));
+    reflection.scale.set(10, 18, 1);
     reflection.renderOrder = 5;
     reflection.userData.projectorBackground = true;
     this.scene.add(points, reflection);
@@ -9952,7 +9781,7 @@ export class FestivalWorld {
       const carrier = this.mentorCarrierId ? this.remoteAvatars.get(this.mentorCarrierId) : undefined;
       if (carrier) {
         const carrierPosition = carrier.group.getWorldPosition(new THREE.Vector3());
-        this.player.position.set(carrierPosition.x, AVATAR_GROUND_Y, carrierPosition.z);
+        this.player.position.set(carrierPosition.x, this.groundHeightAt(carrierPosition.x,carrierPosition.z), carrierPosition.z);
         this.player.rotation.y = carrier.group.rotation.y;
       }
       this.playerState = 'walking';
@@ -9996,7 +9825,7 @@ export class FestivalWorld {
       const running = this.running && !this.dancing;
       const speed = this.playerState === 'swimming'
         ? (running ? 6.2 : 4.1)
-        : (running ? 12.4 : 7.2);
+        : (running ? 12.4 : 3.6);
       // Winded by the landing: the legs are under you again but not yet
       // carrying you at full pace.
       const recovering = performance.now() < this.stumbleUntil ? 0.42 : 1;
@@ -10004,10 +9833,10 @@ export class FestivalWorld {
     }
     this.applyKnockback(delta);
 
-    const shouldWearSwimwear = this.player.position.z < -58.2;
-    if (shouldWearSwimwear !== (this.outfit === 'swimwear')) this.setOutfit(shouldWearSwimwear);
-    const shouldSwim = this.player.position.z < -60;
+    const shouldSwim = isSwimmingDepth(this.player.position.x,this.player.position.z);
+    if (shouldSwim !== (this.outfit === 'swimwear')) this.setOutfit(shouldSwim);
     this.setSwimming(shouldSwim);
+    this.skating = this.running && this.moveVector.lengthSq()>0 && !this.dancing && this.playerState==='walking';
 
     if (this.playerState === 'swimming') {
       // Keep the head, torso, and arms clearly above the waterline. Swimming is
@@ -10022,7 +9851,7 @@ export class FestivalWorld {
         this.player.position.y += this.verticalVelocity * delta;
         // Past a certain speed the body stops falling and starts tumbling.
         // Below it this is a hop, and a hop wants the tuck it already has.
-        if (this.verticalVelocity < -7 && this.playerGesture !== 'jump') {
+        if (this.verticalVelocity < -7) {
           this.playerGesture = 'tumble';
           this.playerGestureUntil = Math.max(this.playerGestureUntil, performance.now() + 240);
         }
@@ -10041,7 +9870,7 @@ export class FestivalWorld {
             // foot, a hand goes down, and it unwinds from there. The recovery
             // is longer for the same reason.
             const heavy = severity > 0.35;
-            this.stumbleUntil = performance.now() + 320 + severity * (heavy ? 900 : 460);
+            this.stumbleUntil = performance.now() + (heavy ? GESTURE_SPAN_MS.tumble! : GESTURE_SPAN_MS.stumble!);
             this.playerGesture = heavy ? 'tumble' : 'stumble';
             this.playerGestureUntil = this.stumbleUntil;
             this.dancing = false;
@@ -10089,7 +9918,7 @@ export class FestivalWorld {
         this.playerRig.torso.rotation.x = 0.16;
         this.playerRig.leftArm.rotation.x *= 1.25;
         this.playerRig.rightArm.rotation.x *= 1.25;
-      } else if (this.playerState !== 'swimming' && !gesture) {
+      } else if (this.playerState !== 'swimming' && !gesture && !skating) {
         // Only undoes the run's lean. Without the gesture check this also
         // flattened every pose that bends the body — the bow, the offering,
         // the stagger — leaving the head tipped over a torso stood bolt
@@ -10097,11 +9926,9 @@ export class FestivalWorld {
         this.playerRig.torso.rotation.x = 0;
       }
       if (this.playerState === 'swimming' && moving && !gesture) {
-        const paddle = Math.sin(this.clock.elapsedTime * 6.6);
-        this.playerRig.leftArm.rotation.x = paddle * 0.72;
-        this.playerRig.rightArm.rotation.x = -paddle * 0.72;
+        this.poseRigSwimming(this.playerRig,this.clock.elapsedTime);
       }
-      if (performance.now() < this.pickupUntil) this.playerRig.leftArm.rotation.x = -1.15;
+      if (performance.now() < this.pickupUntil && !this.carriedProp.visible) this.playerRig.leftArm.rotation.x = -1.15;
     }
   }
 
@@ -10113,25 +9940,8 @@ export class FestivalWorld {
    * was snapped back onto the road, which is why the food stalls could only be
    * reached from one direction.
    */
-  private walkableXRange(z: number): { min: number; max: number } {
-    // The beach, The Palace and the Drive-In share one wide strip.
-    if (z < -8) return { min: -55, max: 55 };
-    let min = -14;
-    let max = 14;
-    // The Basement's plot, west of the road.
-    if (z > -11 && z < GATE_Z - 2) min = clubBounds.buildingMinX - 9;
-    // The Rooftop's plot and the forecourt in front of it, east of the road.
-    // The forecourt starts south of the promenade, so this band has to reach
-    // past z = 0 to meet the strip below it.
-    // Reaches as far north as The Basement's plot does on the other side of the
-    // road. It used to stop at 50, fourteen short of where an attendee leaving
-    // the deck's north edge lands, and the limit fell from 58 to 14 at that
-    // line — so crossing it dragged the body twenty-two units sideways.
-    if (z > -12 && z <= GATE_Z - 2) max = rooftopBounds.maxX + 4;
-    // The temple's ground was always drawn — the map reaches x = 92 — but the
-    // festival stopped anyone at 58, so it could only ever be looked at.
-    if (z > TEMPLE.minZ - 6 && z < TEMPLE.maxZ + 6) max = TEMPLE.maxX + 5;
-    return { min, max };
+  private walkableXRange(_z: number): { min: number; max: number } {
+    return { min: -110, max: 122 };
   }
 
   private movePlayer(horizontal: number, vertical: number, distance: number, view: THREE.Object3D = this.camera): void {
@@ -10150,43 +9960,9 @@ export class FestivalWorld {
     if (this.moveVector.lengthSq() === 0) return;
     this.moveVector.normalize().multiplyScalar(distance);
 
-    const nextX = this.player.position.x + this.moveVector.x;
-    const nextZ = this.player.position.z + this.moveVector.z;
-    // A step has to be clear at the height being left as well as the height
-    // being arrived at. Testing only the destination let an attendee walk out
-    // through the club's underground walls: one pace past the room, the ground
-    // height is the surface again, so the wall's own height band no longer
-    // matched and the collider was skipped.
-    // Already standing inside something. That is where a STAFF member lands
-    // when they take over a resident stationed behind their own decks: every
-    // direction reads as blocked and there is no way out of the booth. When the
-    // ground underfoot is refused already, movement is allowed so the body can
-    // walk itself clear.
-    const stuck = this.staticCollides(this.player.position.x, this.player.position.z, this.player.position.y, FestivalWorld.BODY_RADIUS) ||
-      this.staticCollides(this.player.position.x, this.player.position.z,
-        this.groundHeightAt(this.player.position.x, this.player.position.z, this.player.position.y));
-    // A step has to be clear at the height being left as well as the height
-    // being arrived at. Testing only the destination let an attendee walk out
-    // through the club's underground walls: one pace past the room, the ground
-    // height is the surface again, so the wall's own height band no longer
-    // matched and the collider was skipped. In the air only the body's own
-    // height is tested, which is what lets a jump carry over anything the world
-    // has given a top to.
-    const blocked = (x: number, z: number): boolean => {
-      if (stuck) return false;
-      // A visitor is as wide as a resident and was walking into walls up to the
-      // shoulders for the same reason.
-      const wide = FestivalWorld.BODY_RADIUS;
-      if (this.airborne) return this.staticCollides(x, z, this.player.position.y, wide);
-      return this.staticCollides(x, z, this.groundHeightAt(x, z, this.player.position.y), wide) ||
-        this.staticCollides(x, z, this.player.position.y, wide);
-    };
-    if (!blocked(nextX, this.player.position.z)) {
-      this.player.position.x = nextX;
-    }
-    if (!blocked(this.player.position.x, nextZ)) {
-      this.player.position.z = nextZ;
-    }
+    const moved=moveCoastalBody(this.player.position,this.moveVector.x,this.moveVector.z,FestivalWorld.BODY_RADIUS,this.colliders,
+      (x,z)=>this.groundHeightAt(x,z,this.player.position.y),this.airborne);
+    this.player.position.x=moved.x;this.player.position.z=moved.z;
     // Depth first, then the width allowed at that depth. Taken the other way
     // round, a stride that overshot the north limit read the width belonging to
     // ground the attendee is never allowed to stand on, and slammed them
@@ -10263,7 +10039,7 @@ export class FestivalWorld {
       return false;
     }
 
-    const travel = Math.min(distance - 2.1, Math.max(5.4, mentor.speed * 5.2) * delta);
+    const travel = Math.min(distance - 2.1, THREE.MathUtils.clamp((distance-2.1)*2,1.2,6) * delta);
     const nx = dx / distance;
     const nz = dz / distance;
     this.mentorStepPosition.set(
@@ -10326,10 +10102,88 @@ export class FestivalWorld {
     this.knockback.multiplyScalar(Math.exp(-delta * 8.2));
   }
 
+  sharedNpcReview():unknown {
+    const residents=this.npcs.filter(n=>!n.station);
+    const samples=residents.map(n=>({id:n.id,...sampleNpcMotion(this.sharedNpcRoute(n),1789470000,npcSeed(n.id)%800)}));
+    const bad:string[]=[];
+    for(const [key,points] of this.sharedNpcEdges)for(let i=1;i<points.length;i++){
+      const a=points[i-1],b=points[i],count=Math.ceil(a.distanceTo(b)/.10);let y=a.y;
+      for(let j=0;j<=count;j++){
+        const x=a.x+(b.x-a.x)*j/count,z=a.z+(b.z-a.z)*j/count,ny=this.groundHeightAt(x,z,y);
+        if(Math.abs(ny-y)>.45||this.staticCollides(x,z,ny,FestivalWorld.BODY_RADIUS)){bad.push(key+'@'+x.toFixed(2)+','+z.toFixed(2));break;}y=ny;
+      }
+    }
+    return {sharedEpoch:1789470000,routeCount:residents.length,edges:this.sharedNpcEdges.size,bad,samples};
+  }
+
+  private npcClockOffset=0;
+  private sharedNpcRoutes=new Map<string,NpcLeg[]>();
+  private sharedNpcEdges=new Map<string,THREE.Vector3[]>();
+  setNpcClock(serverTime:number):void { if(Number.isFinite(serverTime))this.npcClockOffset=serverTime-Date.now(); }
+
+  /** Every visitor uses the same clearance-tested circuit and service clock. */
+  private sharedNpcRoute(npc:NpcAvatar):NpcLeg[] {
+    const existing=this.sharedNpcRoutes.get(npc.id);if(existing)return existing;
+    const seed=npcSeed(npc.id),tour=tourFor(seed%10),speed=.95+(seed%4)*.13,legs:NpcLeg[]=[];
+    let time=0;
+    for(let i=0;i<tour.length;i++){
+      const from=HAUNT_NODE[tour[i]],to=HAUNT_NODE[tour[(i+1)%tour.length]];
+      const nodes=[from,...navPath(from,to)];
+      for(let n=1;n<nodes.length;n++){
+        const key=nodes[n-1]+'>'+nodes[n];let points=this.sharedNpcEdges.get(key);
+        if(!points){
+          const a=NAV_POINTS[nodes[n-1]],b=NAV_POINTS[nodes[n]];
+          const start=new THREE.Vector3(a[0],this.groundHeightAt(a[0],a[1],0),a[1]);
+          const goal=new THREE.Vector3(b[0],this.groundHeightAt(b[0],b[1],start.y),b[1]);
+          let y=start.y,clear=true;
+          const count=Math.ceil(start.distanceTo(goal)/.12);
+          for(let j=0;j<=count;j++){
+            const x=start.x+(goal.x-start.x)*j/count,z=start.z+(goal.z-start.z)*j/count,ny=this.groundHeightAt(x,z,y);
+            if(Math.abs(ny-y)>.45||this.staticCollides(x,z,ny,FestivalWorld.BODY_RADIUS)){clear=false;break;}y=ny;
+          }
+          const detour=clear?[goal]:coastalRouteAround(start,goal,(x,z,y)=>this.staticCollides(x,z,y,FestivalWorld.BODY_RADIUS),(x,z,y)=>this.groundHeightAt(x,z,y));
+          if(!detour.length)throw new Error('Blocked shared NPC route: '+key);
+          points=[start,...detour.map(p=>new THREE.Vector3(p.x,p.y,p.z))];this.sharedNpcEdges.set(key,points);
+        }
+        for(let j=1;j<points.length;j++){
+          const a=points[j-1],b=points[j],duration=Math.hypot(b.x-a.x,b.z-a.z)/speed;
+          if(duration>0){legs.push({from:a,to:b,start:time,duration});time+=duration;}
+        }
+      }
+      const end=legs.at(-1)!.to,duration=12+seed%13;
+      let rest=end;
+      for(let attempt=0;attempt<12;attempt++){
+        const angle=(seed%1009)/1009*Math.PI*2+attempt*2.4,radius=1.8+(seed%4)*.3;
+        const x=end.x+Math.cos(angle)*radius,z=end.z+Math.sin(angle)*radius,y=this.groundHeightAt(x,z,end.y);
+        let clear=Math.abs(y-end.y)<.4;
+        for(let j=0;j<=24&&clear;j++){
+          const px=end.x+(x-end.x)*j/24,pz=end.z+(z-end.z)*j/24,py=this.groundHeightAt(px,pz,end.y);
+          if(Math.abs(py-end.y)>.4||this.staticCollides(px,pz,py,FestivalWorld.BODY_RADIUS))clear=false;
+        }
+        if(clear){rest={x,y,z};break;}
+      }
+      const stroll=Math.hypot(rest.x-end.x,rest.z-end.z)/speed;
+      if(stroll){legs.push({from:end,to:rest,start:time,duration:stroll});time+=stroll;}
+      legs.push({from:rest,to:rest,start:time,duration,pause:true});time+=duration;
+      if(stroll){legs.push({from:rest,to:end,start:time,duration:stroll});time+=stroll;}
+    }
+    this.sharedNpcRoutes.set(npc.id,legs);return legs;
+  }
+
+  private updateSharedNpc(npc:NpcAvatar,elapsed:number):void {
+    const sample=sampleNpcMotion(this.sharedNpcRoute(npc),(Date.now()+this.npcClockOffset)/1000,npcSeed(npc.id)%800);
+    npc.group.position.set(sample.x,this.groundHeightAt(sample.x,sample.z,sample.y),sample.z);
+    if(sample.moving)npc.group.rotation.y=sample.rotation;
+    npc.stuckFor=0;npc.recovering=false;
+    const gesture=performance.now()<npc.gestureUntil?npc.gesture:undefined;
+    if(npc.rig)this.animateRig(npc.rig,elapsed*2,sample.moving?.62:.025,gesture,false,this.gestureProgress(gesture,npc.gestureUntil));
+    if(npc.dogRig)this.animateMentorDog(npc.dogRig,elapsed*2,sample.moving,gesture==='tail-wag',performance.now()<npc.eatUntil);
+  }
+
   private updateNpcs(delta: number, elapsed: number): void {
     // Last, after every body has taken its step, so it resolves the overlaps
     // this frame actually produced rather than last frame's.
-    this.holdBodiesApart(delta);
+    if(!this.sharedNpcRoutes)this.holdBodiesApart(delta);
     const now = performance.now();
     let nearestNpc: NpcAvatar | undefined;
     let nearestDistance = 6.5;
@@ -10427,7 +10281,7 @@ export class FestivalWorld {
         npc.group.rotation.y += rotationDelta * smoothing;
         const moving = remoteController.moving || positionError > 0.055;
         const gesture = remoteController.gesture ?? (now < npc.gestureUntil ? npc.gesture : undefined);
-        npc.remoteCarriedProp.visible = remoteController.state !== 'swimming' && remoteController.carriedItem === 'POPCORN';
+        this.syncRemoteProp(npc.remoteCarriedProp,remoteController.carriedItem,gesture,remoteController.state);
         this.positionPopcornProp(npc.remoteCarriedProp, Boolean(npc.dogRig));
         if (npc.rig) {
           this.animateRig(
@@ -10508,7 +10362,7 @@ export class FestivalWorld {
             moving = this.updateMentorFollower(npc, followerObject, delta);
           }
           npc.group.position.y = this.npcBodyY(npc, elapsed);
-          const swimming = this.isOverWater(npc.group.position.z);
+          const swimming = this.isOverWater(npc.group.position.z,npc.group.position.x);
           const gesture = now < npc.gestureUntil ? npc.gesture : undefined;
           if (npc.dogRig) this.animateMentorDog(
             npc.dogRig,
@@ -10529,6 +10383,12 @@ export class FestivalWorld {
           }
           continue;
         }
+      }
+      if(this.sharedNpcRoutes){
+        this.updateSharedNpc(npc,elapsed);
+        const distance=npc.group.position.distanceTo(this.player.position);
+        if(distance<nearestDistance){nearestDistance=distance;nearestNpc=npc;}
+        continue;
       }
       // Held up for this long, the route is the problem and not the moment.
       //
@@ -10551,6 +10411,8 @@ export class FestivalWorld {
       // wound down to nothing inside seven minutes. Long enough that only a
       // genuine dead end reaches it.
       if (npc.stuckFor > 6) {
+        npc.group.userData.navigationDetour=[];
+        npc.dwellUntil=now;
         npc.transit = [];
         npc.stuckFor = 0;
         npc.waitUntil = now + 200;
@@ -10560,10 +10422,12 @@ export class FestivalWorld {
       // Mid-journey a resident is walking the network, link by link; at rest it
       // is wandering the venue's own loop. Same walk either way.
       const travelling = npc.transit.length > 0;
-      const target = travelling ? npc.transit[0] : npc.route[npc.waypointIndex];
+      const detour:THREE.Vector3[]=npc.group.userData.navigationDetour??=[];
+      const target = detour[0] ?? (travelling ? npc.transit[0] : npc.route[npc.waypointIndex]);
       const direction = target.clone().sub(npc.group.position);
       direction.y = 0;
-      const moving = now >= npc.waitUntil && direction.lengthSq() > 0.05;
+      const arrivalDistanceSq=detour.length?.0001:.05;
+      const moving = now >= npc.waitUntil && direction.lengthSq() > arrivalDistanceSq;
       if (moving) {
         const targetGap = direction.length();
         const step = Math.min(targetGap, npc.speed * delta);
@@ -10593,14 +10457,14 @@ export class FestivalWorld {
         // resident through a crowd, never through a wall.
         const barging = npc.stuckFor > 2.5;
         const stepBlocked = barging
-          ? this.staticCollides(next.x, next.z, npc.group.position.y, FestivalWorld.BODY_RADIUS)
+          ? this.staticCollides(next.x, next.z, this.groundHeightAt(next.x,next.z,npc.group.position.y), FestivalWorld.BODY_RADIUS)
           : this.npcCollides(npc, next.x, next.z);
         if (!givingWay && !stepBlocked) {
           npc.group.position.x = next.x;
           npc.group.position.z = next.z;
           npc.group.rotation.y = Math.atan2(direction.x, direction.z);
           npc.stuckFor = 0;
-        } else if (!this.staticCollides(next.x, next.z, npc.group.position.y, FestivalWorld.BODY_RADIUS)) {
+        } else if (!this.staticCollides(next.x, next.z, this.groundHeightAt(next.x,next.z,npc.group.position.y), FestivalWorld.BODY_RADIUS)) {
           // Somebody in the way rather than something. Standing still was the
           // whole trouble: two residents meeting head-on each waited for the
           // other, both timed out together, and both set off into each other
@@ -10642,17 +10506,28 @@ export class FestivalWorld {
             npc.waitUntil = now + 320 + ((npc.phase * 100) % 260);
             npc.stuckFor += delta;
           }
-        } else if (!travelling) {
-          npc.waypointIndex = (npc.waypointIndex + 1) % npc.route.length;
-          npc.stuckFor += delta;
         } else {
-          // Scenery across a link. Skipping the link would cut the corner off
-          // the network and walk them through whatever the link was going
-          // round, so they wait for it instead.
-          npc.waitUntil = now + 420;
-          npc.stuckFor += delta;
+          if(!detour.length && now>(npc.group.userData.nextNavigationPlan??0)){
+            npc.group.userData.nextNavigationPlan=now+2000;
+            const route=coastalRouteAround(npc.group.position,target,
+              (x,z,y)=>this.staticCollides(x,z,y,FestivalWorld.BODY_RADIUS),
+              (x,z,y)=>this.groundHeightAt(x,z,y));
+            if(route.length){npc.group.userData.navigationDetour=route.map(p=>new THREE.Vector3(p.x,p.y,p.z));npc.stuckFor=0;continue;}
+          }
+          const dodge=coastalDetour(npc.group.position.x,npc.group.position.z,direction.x,direction.z,step,
+            Math.floor(npc.phase*100)%2?1:-1,
+            (x,z)=>this.staticCollides(x,z,npc.group.position.y,FestivalWorld.BODY_RADIUS));
+          if(dodge) {
+            npc.group.rotation.y=Math.atan2(dodge.x-npc.group.position.x,dodge.z-npc.group.position.z);
+            npc.group.position.x=dodge.x;npc.group.position.z=dodge.z;
+            npc.stuckFor+=delta*.3;
+          } else {
+            if(!travelling)npc.waypointIndex=(npc.waypointIndex+1)%npc.route.length;
+            npc.waitUntil=now+160;npc.stuckFor+=delta;
+          }
         }
-      } else if (direction.lengthSq() <= 0.05) {
+      } else if (direction.lengthSq() <= arrivalDistanceSq) {
+        if(detour.length){detour.shift();npc.stuckFor=0;continue;}
         if (travelling) {
           // One link done. The next begins from here, with no pause: stopping
           // at every corner made the walk across the festival look like a
@@ -10692,27 +10567,27 @@ export class FestivalWorld {
         npc.recovering = true;
       }
       if (npc.recovering) {
-        const refuge = this.nearestNavPoint(npc.group.position);
-        const out = refuge.clone().sub(npc.group.position);
-        out.y = 0;
-        if (out.lengthSq() < 0.25) {
-          npc.recovering = false;
-          npc.stuckFor = 0;
-          // Whatever it was doing was interrupted by the blow; pick the journey
-          // up again from where it now stands.
-          npc.transit = [];
-          npc.atNode = this.nearestNavNode(npc.group.position);
-          npc.dwellUntil = now;
-        } else {
-          // Walked, not placed: the same speed it walks everywhere else, so it
-          // reads as somebody picking themselves up rather than a body moving
-          // between frames.
-          out.normalize().multiplyScalar(Math.min(npc.speed * delta, out.length()));
-          npc.group.position.x += out.x;
-          npc.group.position.z += out.z;
-          npc.group.rotation.y = Math.atan2(out.x, out.z);
+        const origin=npc.group.position,refuge=this.nearestNavPoint(origin);
+        let best={x:origin.x,z:origin.z},score=-Infinity;
+        // Choose an actual way out of the overlap. The nearest node can lie
+        // across the post or wall; a straight push toward it may never escape.
+        for(let turn=0;turn<16;turn++){
+          const angle=turn*Math.PI/8,step=npc.speed*delta;
+          const candidate=moveCoastalBody(origin,Math.cos(angle)*step,Math.sin(angle)*step,FestivalWorld.BODY_RADIUS,
+            this.colliders,(x,z)=>this.groundHeightAt(x,z,origin.y));
+          const travelled=Math.hypot(candidate.x-origin.x,candidate.z-origin.z);
+          const merit=travelled*100-Math.hypot(refuge.x-candidate.x,refuge.z-candidate.z);
+          if(merit>score){score=merit;best=candidate;}
+        }
+        npc.group.rotation.y=Math.atan2(best.x-origin.x,best.z-origin.z);
+        origin.x=best.x;origin.z=best.z;
+        if(!this.staticCollides(origin.x,origin.z,this.groundHeightAt(origin.x,origin.z,origin.y),FestivalWorld.BODY_RADIUS)){
+          npc.recovering=false;npc.stuckFor=0;npc.transit=[];
+          npc.group.userData.navigationDetour=[];
+          npc.atNode=this.nearestNavNode(origin);npc.dwellUntil=now;
         }
       } else if (npc.stuckFor > 4) {
+        npc.group.userData.navigationDetour=[];
         // Held up too long by the crowd rather than the scenery. Re-plan from
         // where it is instead of shoving through.
         npc.transit = [];
@@ -10740,7 +10615,7 @@ export class FestivalWorld {
       // height, a resident stationed on the roof deck sank through it — which
       // is what put DR.BEAUTY waist-deep in the shop counter.
       npc.group.position.y = this.npcBodyY(npc, elapsed);
-      const swimming = this.isOverWater(npc.group.position.z);
+      const swimming = this.isOverWater(npc.group.position.z,npc.group.position.x);
       const gesture = now < npc.gestureUntil ? npc.gesture : undefined;
       // Posing a body writes ten bones, and it is the one per-resident cost
       // paid every frame by every resident. Across the square that is what
@@ -10825,11 +10700,12 @@ export class FestivalWorld {
         avatar.group.rotation.y = avatar.previousRotation + rotationDelta * played;
       }
       if (avatar.state === 'swimming') avatar.group.position.y += Math.sin(elapsed * 3.1) * 0.025;
-      const moving = avatar.moving || positionError > 0.055;
+      const moving = avatar.state==='walking' && avatar.moving;
       avatar.animationPhase += delta * (moving ? 8.2 : 1.4);
       const gesture = avatar.gesture === 'dance'
         ? 'dance'
         : performance.now() < avatar.gestureUntil ? avatar.gesture : undefined;
+      this.syncRemoteProp(avatar.carriedProp,avatar.carriedItem,gesture,avatar.state);
       this.animateRig(
         avatar.rig,
         avatar.animationPhase,
@@ -10838,9 +10714,21 @@ export class FestivalWorld {
         avatar.running && moving && avatar.state === 'walking',
         this.gestureProgress(gesture, avatar.gestureUntil),
       );
+      const floor=this.groundHeightAt(avatar.group.position.x,avatar.group.position.z,avatar.group.position.y);
+      const airborne=avatar.state==='walking'&&avatar.group.position.y-floor>.6;
+      if(airborne){
+        avatar.group.userData.wasAirborne=true;
+        fallCoastalPose(avatar.rig,(avatar.target.y-avatar.previousTarget.y)/Math.max(.09,avatar.updateInterval/1000));
+      }else if(avatar.group.userData.wasAirborne){
+        avatar.group.userData.wasAirborne=false;avatar.group.userData.landUntil=performance.now()+1050;
+      }
+      if(!airborne&&performance.now()<(avatar.group.userData.landUntil??0)){
+        landCoastalPose(avatar.rig,1-(avatar.group.userData.landUntil-performance.now())/1050);
+        supportCoastalPose(avatar.rig,(x,z,y)=>this.footSurfaceAt(x,z,y));
+      }
       if (avatar.state === 'swimming' && moving && !gesture) this.poseRigSwimming(avatar.rig, elapsed);
       if (avatar.state === 'seated') this.poseRigSeated(avatar.rig, gesture);
-      avatar.carriedProp.visible = avatar.state !== 'swimming' && avatar.carriedItem === 'POPCORN';
+
       const distance = avatar.group.position.distanceTo(this.player.position);
       avatar.badge.visible = distance < 12;
     }
@@ -10934,9 +10822,38 @@ export class FestivalWorld {
     if (rig.rightElbow) rig.rightElbow.rotation.set(-rightElbow, 0, 0);
     if (rig.leftKnee) rig.leftKnee.rotation.set(leftKnee, 0, 0);
     if (rig.rightKnee) rig.rightKnee.rotation.set(rightKnee, 0, 0);
+    if (rig.leftWrist) rig.leftWrist.rotation.set(-.10, 0, -.035);
+    if (rig.rightWrist) rig.rightWrist.rotation.set(-.10, 0, .035);
   }
 
+  private locomotion = new WeakMap<AvatarRig,{x:number;z:number;phase:number;blend:number}>();
+
   private animateRig(rig: AvatarRig, phase: number, stride: number, gesture?: AvatarGesture, skating = false, progress = 0): void {
+    if(rig.visualRoot){rig.visualRoot.position.y=0;rig.visualRoot.rotation.y=0;}
+    setCoastalFists(rig,gesture==='punch');
+    const root=rig.visualRoot?.parent;
+    if(root){
+      const gait=this.locomotion.get(rig)??{x:root.position.x,z:root.position.z,phase:0,blend:0};
+      const distance=Math.hypot(root.position.x-gait.x,root.position.z-gait.z);
+      if(distance<2)gait.phase+=distance/COASTAL_STRIDE_LENGTH*Math.PI*2;
+      gait.blend+=(Number(stride>.1&&distance>this.reviewLastDelta*.12&&distance<2)-gait.blend)*(1-Math.exp(-8*this.reviewLastDelta));
+      gait.x=root.position.x;gait.z=root.position.z;this.locomotion.set(rig,gait);
+    }
+    if(root)root.userData.carryProgress=progress;
+    this.animateRigPose(rig,phase,stride,gesture,skating,progress);
+    if(skating){
+      const arms=gesture?[rig.leftArm.quaternion.clone(),rig.rightArm.quaternion.clone(),rig.leftElbow?.quaternion.clone(),rig.rightElbow?.quaternion.clone()]:undefined;
+      skateCoastalPose(rig,phase);
+      if(arms){rig.leftArm.quaternion.copy(arms[0]!);rig.rightArm.quaternion.copy(arms[1]!);if(arms[2])rig.leftElbow?.quaternion.copy(arms[2]);if(arms[3])rig.rightElbow?.quaternion.copy(arms[3]);}
+    }
+    else levelCoastalFeet(rig);
+    if(!skating&&gesture!=='jump' && !(gesture==='tumble'&&rig===this.playerRig&&this.airborne)) {
+      supportCoastalPose(rig,(x,z,y)=>this.footSurfaceAt(x,z,y));
+    }
+    for(const prop of root?.children??[])if(prop.userData.handProp&&prop.visible)this.positionPopcornProp(prop as THREE.Group, false, gesture);
+  }
+
+  private animateRigPose(rig: AvatarRig, phase: number, stride: number, gesture?: AvatarGesture, skating = false, progress = 0): void {
     // Riding overrides the gait but not a gesture: someone waving from a board
     // is still waving.
     if (skating && !gesture) {
@@ -10949,10 +10866,10 @@ export class FestivalWorld {
     rig.rightLeg.rotation.x = -swing;
     rig.leftArm.rotation.x = -swing * 0.72;
     rig.rightArm.rotation.x = swing * 0.72;
-    rig.rightArm.rotation.z = 0;
+    rig.rightArm.rotation.z = rig.visualRoot ? .18 : 0;
     // Axes only the dance and DJ poses touch. Without clearing them the body
     // keeps the last frame of the pose after the pose ends.
-    rig.leftArm.rotation.z = 0;
+    rig.leftArm.rotation.z = rig.visualRoot ? -.18 : 0;
     rig.torso.rotation.y = 0;
     rig.torso.rotation.x = 0;
     rig.head.rotation.set(0, 0, 0);
@@ -10974,18 +10891,10 @@ export class FestivalWorld {
       Math.max(0, swing) * 0.95,
       Math.max(0, -swing) * 0.95,
     );
+    if(rig.visualRoot){const gait=this.locomotion.get(rig);walkCoastalPose(rig,gait?.phase??0,gait?.blend??0);}
     rig.treat.visible = gesture === 'feed';
     if (gesture === 'wave') {
-      // Raise the arm away from the head, then wave front-to-back from the
-      // shoulder. The previous inward rotation intersected the face.
-      rig.rightArm.rotation.z = 2.08 + Math.sin(phase * 2.2) * 0.1;
-      rig.rightArm.rotation.x = -0.15 + Math.sin(phase * 2.2) * 0.07;
-      // With an elbow the wave comes from the forearm, which is where a wave
-      // actually comes from — the whole arm rocking at the shoulder always
-      // read as semaphore.
-      if (rig.rightElbow) {
-        rig.rightElbow.rotation.set(-0.55, 0, Math.sin(phase * 2.6) * 0.42);
-      }
+      waveCoastalPose(rig,phase,progress);
     } else if (gesture === 'feed') {
       // Reach forward with a visible bite-sized treat at hand level.
       rig.rightArm.rotation.x = -1.18 + Math.sin(phase * 1.7) * 0.06;
@@ -11000,98 +10909,21 @@ export class FestivalWorld {
       // follows the arc — arms highest off the ground, legs straightening as
       // the feet come back down.
       const lift = THREE.MathUtils.clamp(this.verticalVelocity / JUMP_SPEED, -1, 1);
-      rig.leftArm.rotation.x = -2.1 - lift * 0.5;
-      rig.rightArm.rotation.x = -2.1 - lift * 0.5;
-      rig.leftArm.rotation.z = 0.3;
-      rig.rightArm.rotation.z = -0.3;
+      jumpCoastalArms(rig,lift);
       rig.leftLeg.rotation.x = -0.85 + lift * 0.35;
       rig.rightLeg.rotation.x = -0.4 + lift * 0.2;
       rig.torso.rotation.x = 0.12;
       // A tuck is knees drawn up, which is a knee bend and not a hip rotation.
       // Straightening as the feet come back down is what sells the landing.
       const tuck = Math.max(0, 1 - Math.abs(lift)) * 0.5;
-      this.foldJoints(rig, 1.15, 1.15, 1.1 - tuck, 0.75 - tuck * 0.6);
+      this.foldJoints(rig, .35, .35, 1.1 - tuck, 0.75 - tuck * 0.6);
       return;
     } else if (gesture === 'tumble') {
-      // A fall has two halves and they look nothing alike.
-      //
-      // In the air there is nothing under the feet, so nothing the body does
-      // is a step. The arms turn right over at the shoulder rather than
-      // swinging — a windmill, out of phase with each other so it never reads
-      // as a pose — the legs cycle loose beneath, and the whole body pitches
-      // further forward the faster the ground is coming. It is the pitch that
-      // makes it read as falling rather than as flapping.
-      //
-      // Only this client's own body is ever in the air; an NPC is always on
-      // the floor, so it always gets the landing half.
-      const falling = rig === this.playerRig && this.airborne;
-      if (falling) {
-        const spin = phase * 2.6;
-        const drop = THREE.MathUtils.clamp(-this.verticalVelocity / 20, 0, 1);
-        rig.leftArm.rotation.x = -1.5 + Math.sin(spin) * 1.7;
-        rig.rightArm.rotation.x = -1.5 + Math.sin(spin + 2.4) * 1.7;
-        rig.leftArm.rotation.z = 0.62;
-        rig.rightArm.rotation.z = -0.62;
-        rig.leftLeg.rotation.x = Math.sin(spin + 1.1) * 0.82;
-        rig.rightLeg.rotation.x = Math.sin(spin + 3.6) * 0.82;
-        rig.leftLeg.rotation.z = 0.12;
-        rig.rightLeg.rotation.z = -0.12;
-        rig.torso.rotation.set(-0.18 - drop * 0.42, Math.sin(spin * 0.5) * 0.24, 0);
-        rig.head.rotation.set(-0.24 - drop * 0.22, 0, 0);
-        // Limbs loose rather than braced: a body in the air is not holding
-        // anything, and locked joints are what made this look like a mannequin
-        // being dropped.
-        this.foldJoints(
-          rig,
-          0.7 + Math.sin(spin + 0.8) * 0.5,
-          0.7 + Math.sin(spin + 3.0) * 0.5,
-          0.5 + Math.max(0, Math.sin(spin + 1.1)) * 0.7,
-          0.5 + Math.max(0, Math.sin(spin + 3.6)) * 0.7,
-        );
-        return;
-      }
-      // And on the ground: everything collapses at once and then unwinds. The
-      // weight goes over the front foot, the knees fold under it, one hand
-      // goes down to catch, and the head comes up last — which is the order a
-      // person actually gets up in.
-      const spent = THREE.MathUtils.clamp(progress, 0, 1);
-      const collapse = Math.max(0, 1 - spent * 1.5);
-      const catching = Math.max(0, 1 - spent * 2.4);
-      rig.torso.rotation.set(0.16 + collapse * 0.86, collapse * 0.3, 0);
-      // Late: a fallen body looks at the floor first and only then looks up.
-      rig.head.rotation.set(0.3 - Math.min(1, spent * 1.9) * 0.62, -collapse * 0.24, 0);
-      rig.leftArm.rotation.x = -0.5 - catching * 1.5;
-      rig.rightArm.rotation.x = -0.3 - collapse * 0.9;
-      rig.leftArm.rotation.z = 0.5 + catching * 0.4;
-      rig.rightArm.rotation.z = -0.42 - collapse * 0.3;
-      rig.leftLeg.rotation.x = -0.62 * collapse;
-      rig.rightLeg.rotation.x = 0.34 * collapse;
-      rig.leftLeg.rotation.z = 0.14 * collapse;
-      rig.rightLeg.rotation.z = -0.1 * collapse;
-      this.foldJoints(
-        rig,
-        0.35 + catching * 0.9,
-        0.35 + collapse * 0.75,
-        0.2 + collapse * 1.5,
-        0.2 + collapse * 1.1,
-      );
+      if(rig === this.playerRig && this.airborne) fallCoastalPose(rig, this.verticalVelocity);
+      else landCoastalPose(rig,progress);
       return;
     } else if (gesture === 'stumble') {
-      // Caught on the front foot and recovering: the body straightens as the
-      // phase runs on, so the stagger reads as one movement rather than a loop.
-      const recover = THREE.MathUtils.clamp(Math.sin(phase * 2.6), -1, 1);
-      rig.torso.rotation.x = 0.5 - Math.abs(recover) * 0.16;
-      // Head up, looking where the feet are going rather than at them.
-      rig.head.rotation.x = -0.26 + recover * 0.08;
-      rig.leftArm.rotation.x = -1.5 + recover * 0.4;
-      rig.rightArm.rotation.x = -1.2 - recover * 0.4;
-      rig.leftArm.rotation.z = 0.75;
-      rig.rightArm.rotation.z = -0.62;
-      rig.leftLeg.rotation.x = -0.72 + recover * 0.22;
-      rig.rightLeg.rotation.x = 0.46 - recover * 0.18;
-      // The trailing leg buckles and the leading one braces straight, which is
-      // what a stagger is: one leg failing and the other catching it.
-      this.foldJoints(rig, 0.95 - recover * 0.2, 0.7 + recover * 0.25, 0.12, 0.85 - recover * 0.2);
+      landCoastalPose(rig,progress,.55);
       return;
     } else if (gesture === 'offer') {
       // Both hands raised together and held out, the body bowed over them.
@@ -11125,66 +10957,11 @@ export class FestivalWorld {
       this.foldJoints(rig, 1.35, 1.35);
       return;
     } else if (gesture === 'punch') {
-      // A cross. What makes a punch read as a punch rather than a reach is the
-      // shape of its timing: the body loads slowly, releases violently, and
-      // overruns the target before it gathers itself. An arm that simply
-      // travels out and back at one speed is a handshake however far it goes.
-      //
-      // coil rises through the wind-up and is spent by contact. strike is zero
-      // until the wind-up ends, snaps over in a fifth of the gesture — the
-      // exponent under one is what makes it leave rather than travel — and
-      // falls away over the whole of the rest.
-      const coil = progress < 0.3
-        ? progress / 0.3
-        : Math.max(0, 1 - (progress - 0.3) / 0.16);
-      const strike = progress < 0.3
-        ? 0
-        : progress < 0.46
-          ? Math.pow((progress - 0.3) / 0.16, 0.5)
-          : Math.max(0, 1 - (progress - 0.46) / 0.54);
-      // The rear hand: drawn back past the ribs, then thrown through.
-      rig.rightArm.rotation.x = 0.62 * coil - 2 * strike;
-      rig.rightArm.rotation.z = -0.12 - 0.26 * strike;
-      // The lead hand holds a guard at the chin and is pulled back as the other
-      // goes out, which is where the turn of the shoulders comes from.
-      rig.leftArm.rotation.x = -1.05 + 0.7 * strike;
-      rig.leftArm.rotation.z = 0.44 - 0.1 * strike;
-      // The whole body turns through it. Feet stay planted: this is all
-      // rotation, so nothing here can push the avatar through a wall.
-      rig.torso.rotation.y = 0.46 * coil - 0.66 * strike;
-      rig.torso.rotation.x = -0.12 * coil + 0.34 * strike;
-      rig.head.rotation.y = 0.22 * coil - 0.38 * strike;
-      rig.head.rotation.x = 0.16 * strike;
-      // Weight rolls off the back foot onto the front one.
-      rig.leftLeg.rotation.x = -0.12 - 0.3 * strike;
-      rig.rightLeg.rotation.x = 0.16 + 0.28 * strike;
-      // The punch is in the elbow. A cross is a folded arm thrown straight —
-      // the striking elbow snaps from tight to locked as it goes through, and
-      // the guard hand stays folded at the chin throughout. Rotating two rigid
-      // arms at the shoulder could never show that.
-      this.foldJoints(rig, 1.5 - 0.25 * strike, 1.45 * coil * (1 - strike), 0.14, 0.1);
-      return;
+      punchCoastalPose(rig,progress);return;
     } else if (gesture === 'hit') {
-      // Taking one: head snapped back, body folded away from it, arms flung up.
-      // Snaps over in the first fifth and lets go slowly, the reverse of the
-      // punch that caused it.
-      const recoil = progress < 0.2
-        ? Math.pow(progress / 0.2, 0.45)
-        : Math.max(0, 1 - (progress - 0.2) / 0.8);
-      rig.torso.rotation.x = -0.34 * recoil;
-      rig.torso.rotation.y = 0.26 * recoil;
-      rig.head.rotation.x = -0.44 * recoil;
-      rig.leftArm.rotation.x = -1.2 * recoil;
-      rig.rightArm.rotation.x = -1.05 * recoil;
-      rig.leftArm.rotation.z = 0.6 * recoil;
-      rig.rightArm.rotation.z = -0.5 * recoil;
-      rig.leftLeg.rotation.x = 0.22 * recoil;
-      rig.rightLeg.rotation.x = -0.14 * recoil;
+      const away=rig.visualRoot?.parent?.userData.hitDirection as THREE.Vector3|undefined;
+      hitCoastalPose(rig,progress,away?.x??0,away?.z??-1);
       return;
-    } else if (gesture === 'drink') {
-      // Raise the glass to the mouth and tip it back.
-      rig.rightArm.rotation.x = -2.32 + Math.sin(phase * 1.4) * 0.08;
-      rig.rightArm.rotation.z = -0.34;
     }
     rig.torso.rotation.z = Math.sin(phase * 0.5) * Math.min(stride, 0.06);
   }
@@ -11195,42 +10972,8 @@ export class FestivalWorld {
    */
   private poseRigDance(rig: AvatarRig, offset = 0): void {
     const beat = this.clubBeatPhase() * Math.PI * 2 + offset;
-    const bounce = Math.sin(beat);
-    const sway = Math.sin(beat / 2);
-    // The elbows were folded by a fixed amount and in the wrong direction, so
-    // the forearms stuck out backwards and stayed there while the shoulders
-    // swung — which is what made the hands look broken. They ride the beat now,
-    // through foldJoints, which is the one place that knows which way an elbow
-    // bends.
-    //
-    // And the legs do something. They used to rock a few degrees at the hip
-    // while everything above them danced; a body whose whole lower half is
-    // rigid reads as a puppet held up by its shoulders. The knees now take the
-    // bounce, alternating, so the weight visibly drops onto one foot and then
-    // the other, and the hips swing across with the sway.
-    this.foldJoints(
-      rig,
-      0.85 + bounce * 0.45,
-      0.85 - bounce * 0.45,
-      0.28 + Math.max(0, bounce) * 0.5,
-      0.28 + Math.max(0, -bounce) * 0.5,
-    );
-    // The limbs pivot from the shoulders and hips; the torso is a separate
-    // mesh, so shifting its position would tear the body apart.
-    rig.leftArm.rotation.x = -1.15 + bounce * 0.42;
-    rig.rightArm.rotation.x = -1.15 - bounce * 0.42;
-    rig.leftArm.rotation.z = 0.34 + bounce * 0.22;
-    rig.rightArm.rotation.z = -0.34 + bounce * 0.22;
-    rig.leftLeg.rotation.x = bounce * 0.3;
-    rig.rightLeg.rotation.x = -bounce * 0.3;
-    // Weight shifting from foot to foot, which is what stops a dance being a
-    // bob on the spot.
-    rig.leftLeg.rotation.z = 0.06 + sway * 0.1;
-    rig.rightLeg.rotation.z = -0.06 + sway * 0.1;
-    rig.torso.rotation.y = sway * 0.3;
-    rig.torso.rotation.z = bounce * 0.09;
-    rig.head.rotation.set(bounce * 0.1, sway * 0.22, 0);
-    rig.treat.visible = false;
+    danceCoastalPose(rig,beat);
+    supportCoastalPose(rig,(x,z,y)=>this.footSurfaceAt(x,z,y));
   }
 
   /** The DJ throws a hand up when a request lands. */
@@ -11255,30 +10998,8 @@ export class FestivalWorld {
    * with a bob that follows the same beat the lights use.
    */
   private poseRigDj(rig: AvatarRig, elapsed: number): void {
-    const secondsPerBeat = 60 / this.clubBeat.bpm;
-    const sinceStart = this.clubBeat.startedAt ? (Date.now() - this.clubBeat.startedAt) / 1000 : elapsed;
-    const beat = (sinceStart / secondsPerBeat) * Math.PI * 2;
-    const bob = Math.sin(beat);
-    // Folded through the one place that knows which way an elbow bends.
-    //
-    // This pose set the joints by hand, and it was written before the signs
-    // were found to be inverted — so when the walk and the dance were corrected
-    // this was left behind, bending the DJ's forearms out backwards over the
-    // decks. It is the argument for having a single method do this at all:
-    // anything that reaches past it inherits whichever mistake was current on
-    // the day it was written.
-    //
-    // Working hands: the platter hand rides the beat, the mixer hand holds a
-    // tighter, steadier fold.
-    this.foldJoints(rig, 1.0 + Math.sin(beat * 2) * 0.22, 1.25 + bob * 0.12, 0.16, 0.16);
-    rig.leftArm.rotation.x = -1.15 + Math.sin(beat * 2) * 0.34;
-    rig.leftArm.rotation.z = 0.28;
-    rig.rightArm.rotation.x = -1.05 + Math.cos(beat) * 0.26;
-    rig.rightArm.rotation.z = -0.22;
-    rig.leftLeg.rotation.x = bob * 0.06;
-    rig.rightLeg.rotation.x = -bob * 0.06;
-    rig.torso.rotation.y = Math.sin(beat / 2) * 0.16;
-    rig.torso.rotation.x = bob * 0.07;
+    djCoastalPose(rig,elapsed);
+    supportCoastalPose(rig,(x,z,y)=>this.footSurfaceAt(x,z,y));
   }
 
   /**
@@ -11289,34 +11010,41 @@ export class FestivalWorld {
    * happening; the drinking arm is left where the gesture put it.
    */
   private poseRigSeated(rig: AvatarRig, gesture?: AvatarGesture): void {
-    // Sitting with the legs out, not folded under.
-    //
-    // The knees were folded 86 degrees, which drops the shin vertically from a
-    // knee that is still over the cushion — so the shins went down through the
-    // pad and the feet came out underneath it. Deck chairs and cinema seats are
-    // not stools: the leg goes forward.
-    //
-    // A gentle 29 degrees at the knee instead. The thigh clears the pad's front
-    // edge before it has dropped far enough to meet it, the shin carries on
-    // forward and down, and the soles finish on the ground in front of the
-    // chair rather than inside it.
-    this.foldJoints(rig, 0.8, 0.8, 0.5, 0.5);
-    rig.leftLeg.rotation.x = -1.28;
-    rig.rightLeg.rotation.x = -1.28;
+    setCoastalFists(rig,false);
+    const drinkingArm = gesture === 'drink' || gesture === 'eat'
+      ? [rig.rightArm.quaternion.clone(), rig.rightElbow?.quaternion.clone(), rig.rightWrist?.quaternion.clone()]
+      : undefined;
+    this.foldJoints(rig, 0.8, 0.8);
+    if(rig.visualRoot){rig.visualRoot.position.y=0;rig.visualRoot.rotation.y=0;}
+    const origin=rig.visualRoot?.parent?.position;
+    const seat=origin?this.seats.find(s=>Math.hypot(s.position.x-origin.x,s.position.z+this.seatForward(s)-origin.z)<.25):undefined;
+    seatCoastalLegs(rig,(x,z,y)=>seat?.footFloor??this.footSurfaceAt(x,z,y));
+    rig.torso.rotation.set(0,0,0);rig.head.rotation.set(0,0,0);
     rig.leftArm.rotation.x = -0.12;
-    rig.leftArm.rotation.z = 0;
+    rig.leftArm.rotation.z = -.18;
     rig.torso.rotation.z = 0;
-    if (gesture === 'drink') return;
-    rig.rightArm.rotation.x = -0.12;
-    rig.rightArm.rotation.z = 0;
+    if (drinkingArm) {
+      rig.rightArm.quaternion.copy(drinkingArm[0]!);
+      if (drinkingArm[1]) rig.rightElbow?.quaternion.copy(drinkingArm[1]);
+      if (drinkingArm[2]) rig.rightWrist?.quaternion.copy(drinkingArm[2]);
+    } else {
+      rig.rightArm.rotation.x = -0.12;
+      rig.rightArm.rotation.z = .18;
+    }
+    for (const prop of rig.visualRoot?.parent?.children ?? []) {
+      if (prop.userData.handProp && prop.visible) this.positionPopcornProp(prop as THREE.Group, false, gesture);
+    }
   }
 
   private poseRigSwimming(rig: AvatarRig, elapsed: number): void {
+    if(rig.visualRoot){rig.visualRoot.position.y=0;rig.visualRoot.rotation.y=0;}
     // Arms reach nearly straight through a stroke and legs kick from the knee.
     this.foldJoints(rig, 0.2, 0.2, 0.45 + Math.sin(elapsed * 5.2) * 0.35, 0.45 - Math.sin(elapsed * 5.2) * 0.35);
     const paddle = Math.sin(elapsed * 6.6);
     rig.leftArm.rotation.x = paddle * 0.72;
     rig.rightArm.rotation.x = -paddle * 0.72;
+    levelCoastalFeet(rig);
+    rig.leftAnkle?.rotateX(.3);rig.rightAnkle?.rotateX(.3);
   }
 
   private poseMentorDogSeated(rig: MentorDogRig): void {
@@ -11328,8 +11056,8 @@ export class FestivalWorld {
   }
 
   /** True where the ground has given out and a body is in the sea. */
-  private isOverWater(z: number): boolean {
-    return z < SWIM_Z;
+  private isOverWater(z: number, x = 0): boolean {
+    return isSwimmingDepth(x,z);
   }
 
   /**
@@ -11343,7 +11071,9 @@ export class FestivalWorld {
    * does, and a human resident matches the visitor's own waterline.
    */
   private npcBodyY(npc: NpcAvatar, elapsed: number): number {
-    if (this.isOverWater(npc.group.position.z)) {
+    const swimming=this.isOverWater(npc.group.position.z,npc.group.position.x);
+    if(npc.rig)setCoastalSwimwear(npc.group,swimming);
+    if (swimming) {
       return (npc.dogRig ? MENTOR_SWIM_Y : AVATAR_SWIM_Y)
         + Math.sin(elapsed * 3.2 + npc.phase) * 0.035;
     }
@@ -11392,13 +11122,14 @@ export class FestivalWorld {
     gesture?: AvatarGesture,
     progress = 0,
   ): void {
-    const stride = moving ? Math.sin(phase) * 0.48 : Math.sin(phase * 0.35) * 0.018;
+    const gait=stepMentorGait(rig,this.reviewLastDelta,moving);
+    const stride = Math.sin(gait.phase) * .36 * gait.amount;
     rig.leftFrontLeg.rotation.x = stride;
     rig.rightFrontLeg.rotation.x = -stride;
     rig.leftBackLeg.rotation.x = -stride;
     rig.rightBackLeg.rotation.x = stride;
     rig.body.rotation.x = 0;
-    rig.body.rotation.z = moving ? Math.sin(phase * 0.5) * 0.025 : 0;
+    rig.body.rotation.z = Math.sin(gait.phase) * .018 * gait.amount;
     rig.head.rotation.x = eating ? 0.46 + Math.sin(phase * 1.65) * 0.12 : 0;
     rig.head.rotation.y = Math.sin(phase * 0.24) * 0.08;
     rig.tail.rotation.z = Math.sin(phase * (greeting ? 3.8 : 0.7)) * (greeting ? 0.62 : 0.18);
@@ -11479,7 +11210,7 @@ export class FestivalWorld {
 
   private inClubRoom(x: number, z: number): boolean {
     const b = clubBounds;
-    return x > b.roomMinX && x < b.roomMaxX && z > b.roomMinZ && z < b.roomMaxZ;
+    return x > b.buildingMinX+.4 && x < b.roomMaxX && z > b.buildingMinZ+.4 && z < b.buildingMaxZ-.4;
   }
 
   private onClubStairs(x: number, z: number): boolean {
@@ -11647,23 +11378,43 @@ export class FestivalWorld {
   /** Where the pavement actually got laid, rather than where it was meant to. */
   private kerbStones: Array<{ minX: number; maxX: number; z: number }> = [];
 
+  private paving: Array<{polygon:PlanPoint[];lift:number;exclusions?:PlanPoint[][]}>=[];
+
+  private pavingLiftAt(x:number,z:number):number {
+    let lift=0;for(const surface of this.paving)if(surface.lift>lift&&insidePaving(x,z,surface.polygon)&&!surface.exclusions?.some(p=>insidePaving(x,z,p)))lift=surface.lift;return lift;
+  }
+
+  /** Actual tread tops for ankle support; locomotion retains its continuous pitch line. */
+  private footSurfaceAt(x:number,z:number,fromY:number):number {
+    const r=rooftopBounds;
+    if(x>r.stairMinX&&x<r.stairMaxX){
+      for(const [start,end,base] of [[r.stairMinZ,r.stairLandingMinZ,0],[r.stairLandingMaxZ,r.stairTopZ,ROOF_Y/2]]){
+        if(z>=start-.01&&z<end) return base+Math.min(9,Math.floor((z-start+.01)/ROOF_GOING)+1)*ROOF_RISER;
+      }
+      if(z>=r.stairMinZ-2.4&&z<r.stairMinZ)return .16;
+    }
+    const f=TEMPLE_STAIRS;
+    if(x>=f.start&&x<f.end&&Math.abs(z-f.centerZ)<f.width/2){
+      return templeTreadTop(x);
+    }
+    return this.groundHeightAt(x,z,fromY)-AVATAR_GROUND_Y;
+  }
+
   private groundHeightAt(x: number, z: number, fromY = this.player.position.y): number {
+    if(x>=TEMPLE_STAIRS.start&&x<=TEMPLE_STAIRS.end&&Math.abs(z-TEMPLE_STAIRS.centerZ)<TEMPLE_STAIRS.width/2)return AVATAR_GROUND_Y+templeStairPitch(x);
     const r = rooftopBounds;
     if (x > r.minX && x < r.maxX && z >= r.deckMinZ && z < r.maxZ) return ROOF_AVATAR_Y;
     // The slab over the shop, level with the deck it continues from. Only for
     // a body already up there — at street level this is the shop's own floor.
     if (x > r.minX && x < r.maxX && z > r.minZ && z < r.deckMinZ && fromY > ROOF_Y - 1) return ROOF_AVATAR_Y;
+    if(x>r.minX&&x<r.maxX&&z>r.minZ&&z<r.bayMaxZ&&fromY<ROOF_Y-1)return .08+AVATAR_GROUND_Y;
     const stair = this.rooftopStairHeight(x, z);
     if (stair !== undefined) return stair;
     if (x > TEMPLE.minX - 1.5 && x < TEMPLE.maxX + 1.5 && z > TEMPLE.minZ - 1.5 && z < TEMPLE.maxZ + 1.5) {
       return TEMPLE_FLOOR_Y;
     }
-    // The three steps on the temple's west face, taken as one ramp so the climb
-    // is smooth rather than a stutter of ledges.
-    if (x > TEMPLE.stepMinX && x <= TEMPLE.minX - 1.5 && z > TEMPLE.minZ && z < TEMPLE.maxZ) {
-      const climbed = (x - TEMPLE.stepMinX) / (TEMPLE.minX - 1.5 - TEMPLE.stepMinX);
-      return AVATAR_GROUND_Y + (TEMPLE_FLOOR_Y - AVATAR_GROUND_Y) * THREE.MathUtils.clamp(climbed, 0, 1);
-    }
+    if (x > -45.5 && x < -24.5 && z > -48 && z < -31) return .25 + AVATAR_GROUND_Y;
+    if (x > -12.5 && x < 12.5 && z > -45.5 && z < -23.5) return SCREENING_SITES['drive-in'].grade + .11 + AVATAR_GROUND_Y;
     const kerb = this.kerbHeightAt(x, z);
     if (kerb !== undefined) return kerb;
     if (this.inClubRoom(x, z)) return CLUB_AVATAR_Y;
@@ -11672,7 +11423,8 @@ export class FestivalWorld {
       const progress = (b.stairTopX - x) / (b.stairTopX - b.stairBottomX);
       return AVATAR_GROUND_Y + (CLUB_AVATAR_Y - AVATAR_GROUND_Y) * THREE.MathUtils.clamp(progress, 0, 1);
     }
-    return AVATAR_GROUND_Y;
+    if (x > -50 && x < -20 && z > 0 && z < 42) return AVATAR_GROUND_Y;
+    return terrainHeightAt(x,z) + this.pavingLiftAt(x,z) + AVATAR_GROUND_Y;
   }
 
   /**
@@ -11699,13 +11451,12 @@ export class FestivalWorld {
       (collider) =>
         x > collider.minX - radius && x < collider.maxX + radius &&
         z > collider.minZ - radius && z < collider.maxZ + radius &&
-        (collider.minY === undefined || y >= collider.minY) &&
-        (collider.maxY === undefined || y <= collider.maxY),
+        overlapsBodyHeight(y,collider),
     );
   }
 
   /** How wide a body is, for the purpose of not being inside a wall. */
-  private static readonly BODY_RADIUS = 0.42;
+  private static readonly BODY_RADIUS = 0.60;
 
   /**
    * Whether a visitor is close enough ahead of this resident to be worth going
@@ -11861,7 +11612,8 @@ export class FestivalWorld {
   }
 
   private npcCollides(npc: NpcAvatar, x: number, z: number): boolean {
-    if (this.staticCollides(x, z, npc.group.position.y, FestivalWorld.BODY_RADIUS)) return true;
+    const y=this.groundHeightAt(x,z,npc.group.position.y);
+    if (this.staticCollides(x, z, y, FestivalWorld.BODY_RADIUS)) return true;
     // Bodies are close to a unit across, so 1.05 between centres left them
     // visibly inside one another whenever two routes crossed.
     const radiusSq = 1.35 * 1.35;
@@ -11871,9 +11623,9 @@ export class FestivalWorld {
     const playerRadiusSq = 1.32 * 1.32;
     const playerDx = this.player.position.x - x;
     const playerDz = this.player.position.z - z;
-    if (playerDx * playerDx + playerDz * playerDz < playerRadiusSq) return true;
+    if (Math.abs(this.player.position.y-y)<1.8 && playerDx * playerDx + playerDz * playerDz < playerRadiusSq) return true;
     for (const other of this.npcs) {
-      if (other === npc) continue;
+      if (other === npc || Math.abs(other.group.position.y-y)>1.8) continue;
       if (other.id === this.controlledNpcId) continue;
       if (other.id === 'MENTOR' && (this.carriedItem === 'MENTOR' || Boolean(this.mentorCarrierId))) continue;
       const dx = other.group.position.x - x;
@@ -11881,6 +11633,7 @@ export class FestivalWorld {
       if (dx * dx + dz * dz < radiusSq) return true;
     }
     for (const avatar of this.remoteAvatars.values()) {
+      if(Math.abs(avatar.group.position.y-y)>1.8)continue;
       const dx = avatar.group.position.x - x;
       const dz = avatar.group.position.z - z;
       if (dx * dx + dz * dz < radiusSq) return true;
@@ -11984,6 +11737,7 @@ export class FestivalWorld {
       npc.group.position.z - this.player.position.z,
     );
     if (away.lengthSq() < 0.0001) return;
+    npc.group.userData.hitDirection=away.clone().normalize().applyQuaternion(npc.group.getWorldQuaternion(new THREE.Quaternion()).invert());
     npc.knockback.copy(away.normalize()).multiplyScalar(7.4);
   }
 
@@ -12000,7 +11754,7 @@ export class FestivalWorld {
       // puts the eye on the waterline while swimming, where the ground was
       // holding it a body's height above the sea.
       const eyeFloorY = this.player.position.y - AVATAR_GROUND_Y;
-      this.xrRig.position.set(this.player.position.x, eyeFloorY, this.player.position.z);
+      this.xrRig.position.set(this.player.position.x, eyeFloorY+(this.xrSimulated?0:this.xrFloorOffset), this.player.position.z);
       if (this.xrSimulated) {
         this.camera.position.set(0, AVATAR_EYE_HEIGHT, 0);
         if (this.headTrackingEnabled()) {
@@ -12021,6 +11775,10 @@ export class FestivalWorld {
         }
       } else {
         this.xrRig.rotation.y = this.xrYaw;
+      }
+      if(!this.xrSimulated){
+        this.xrRig.updateMatrixWorld(true);
+        this.renderer.xr.updateCamera(this.camera);
       }
       const xrView = this.xrSimulated ? this.camera : this.renderer.xr.getCamera();
       xrView.getWorldQuaternion(this.xrLookPose);
@@ -12084,6 +11842,18 @@ export class FestivalWorld {
     this.pullCameraClearOfWalls(cameraTarget, delta);
     const smoothing = 1 - Math.exp(-delta * 5.2);
     this.camera.position.lerp(cameraTarget, smoothing);
+    // Easing the camera position can itself carry it through a wall while the
+    // target is already clear. Check the rendered position as well as the
+    // target, and snap inward only when the old position is obstructed.
+    if (this.cameraMode !== 'screening' && this.playerState !== 'swimming') {
+      const eye = this.player.position.clone().add(new THREE.Vector3(0, AVATAR_EYE_OFFSET, 0));
+      const actualReach = eye.distanceTo(this.camera.position);
+      const clearReach = this.cameraClearReach(eye, this.camera.position);
+      if (clearReach < actualReach - 0.001) {
+        this.camera.position.lerpVectors(eye, this.camera.position, clearReach / actualReach);
+      }
+      if (eye.distanceTo(this.camera.position) < 1.4) this.player.visible = false;
+    }
     this.camera.lookAt(this.lookTarget);
     this.applyCameraShake(delta);
     this.applyDrunkenView(delta);
@@ -12197,6 +11967,25 @@ export class FestivalWorld {
     );
   }
 
+  private cameraClearReach(eye: THREE.Vector3, target: THREE.Vector3): number {
+    const vector = target.clone().sub(eye);
+    const reach = vector.length();
+    if (reach < 0.001) return reach;
+    vector.divideScalar(reach);
+    const step = 0.24;
+    const clearance = 0.28;
+    for (let travelled = step; travelled <= reach + step; travelled += step) {
+      const distance = Math.min(travelled, reach);
+      const x = eye.x + vector.x * distance;
+      const y = eye.y + vector.y * distance;
+      const z = eye.z + vector.z * distance;
+      if (this.blocksCamera(x, z, y) || y < this.groundHeightAt(x, z, this.player.position.y) + 0.45) {
+        return Math.max(0.12, distance - clearance);
+      }
+    }
+    return reach;
+  }
+
   private pullCameraClearOfWalls(cameraTarget: THREE.Vector3, delta: number): void {
     if (this.playerState === 'swimming') return;
     // Not while seated at a screening. Everywhere else the look target is the
@@ -12211,52 +12000,24 @@ export class FestivalWorld {
     // a registered seat inside a room, and confineCameraToClub already holds it
     // within the walls.
     if (this.cameraMode === 'screening') return;
-    this.cameraProbe.subVectors(cameraTarget, this.lookTarget);
+    const eye = this.player.position.clone().add(new THREE.Vector3(0, AVATAR_EYE_OFFSET, 0));
+    this.cameraProbe.subVectors(cameraTarget, eye);
     const reach = this.cameraProbe.length();
     if (reach < 0.001) return;
     this.cameraProbe.divideScalar(reach);
-    // A third of a unit is finer than the thinnest wall in the world, which is
-    // the temple's at 0.9, so nothing can be stepped over.
-    const step = 0.33;
-    // Held off the surface by a little more than the near plane, or the wall
-    // the camera has stopped against is itself clipped through.
-    const clearance = 0.55;
-    let safe = reach;
-    for (let travelled = clearance; travelled <= reach; travelled += step) {
-      const x = this.lookTarget.x + this.cameraProbe.x * travelled;
-      const y = this.lookTarget.y + this.cameraProbe.y * travelled;
-      const z = this.lookTarget.z + this.cameraProbe.z * travelled;
-      if (this.blocksCamera(x, z, y)) {
-        // Never closer than this. Some things in the world are honestly taller
-        // than a head — a market stall is — so they should hold the view off,
-        // but a unit and a tenth puts the camera inside the avatar's collar,
-        // which is what "zoomed in super close" has meant every time.
-        safe = Math.max(3.4, travelled - clearance);
-        break;
-      }
-    }
-    // The ground counts too: tilting down used to bury the camera in the road.
-    for (let travelled = clearance; travelled <= safe; travelled += step) {
-      const x = this.lookTarget.x + this.cameraProbe.x * travelled;
-      const y = this.lookTarget.y + this.cameraProbe.y * travelled;
-      const z = this.lookTarget.z + this.cameraProbe.z * travelled;
-      if (y < this.groundHeightAt(x, z, this.player.position.y) + 0.45) {
-        safe = Math.max(1.1, travelled - step);
-        break;
-      }
-    }
+    const safe = this.cameraClearReach(eye, cameraTarget);
     // The distance is eased rather than the position, so the view closes in
     // behind something and opens again afterwards without either being a jump.
     // Snapping it was what made walking past a seat feel like a shove.
-    if (this.cameraReach <= 0) this.cameraReach = safe;
+    if (this.cameraReach <= 0 || safe < this.cameraReach) this.cameraReach = safe;
     else this.cameraReach += (safe - this.cameraReach) * (1 - Math.exp(-delta * 8.5));
     if (this.cameraReach >= reach - 0.01) return;
-    cameraTarget.copy(this.lookTarget).addScaledVector(this.cameraProbe, this.cameraReach);
+    cameraTarget.copy(eye).addScaledVector(this.cameraProbe, this.cameraReach);
   }
 
   private confineCameraOverWater(cameraTarget: THREE.Vector3): void {
     if (this.playerState !== 'swimming') return;
-    const waterline = 0.14;
+    const waterline = SEA_Y;
     cameraTarget.y = THREE.MathUtils.clamp(cameraTarget.y, waterline + 2.2, waterline + 3.6);
     // The horizon stays where it is. Turning is free; the height and the tilt
     // are fixed, which is the view that holds its frame rate over open water.
@@ -12339,7 +12100,6 @@ export class FestivalWorld {
       lightMaterial.color.setHex(barColor);
       lightMaterial.transparent = true;
       lightMaterial.opacity = 0.22 + pulse * 0.78;
-      light.scale.y = 0.85 + pulse * 0.5;
     }
     for (const panel of this.clubFloorPanels) {
       const panelMaterial = panel.material as THREE.MeshBasicMaterial;
@@ -12358,7 +12118,7 @@ export class FestivalWorld {
       facadeMaterial.opacity = index % 4 === bar ? 0.45 + pulse * 0.55 : 0.22 + pulse * 0.24;
     });
     this.clubFacadeGlows.forEach((glow, index) => {
-      glow.intensity = (index % 4 === bar ? 10 : 3) + pulse * 16;
+      glow.intensity = ((index*2) % 4 === bar ? 4 : 1.2) + pulse * 5;
     });
     if (this.clubFloorLight) this.clubFloorLight.intensity = 55 + pulse * 90;
     if (this.clubNeon) {
@@ -12378,11 +12138,12 @@ export class FestivalWorld {
     if (this.inClub(x, z)) return 'THE BASEMENT';
     if (this.onRooftop(x, z)) return 'THE ROOFTOP';
     if (x < -20 && z < -28 && z > -50) return 'THE PALACE';
-    if (x > 20 && z < -8 && z > -38) return 'DRIVE-IN 88';
+    if (screeningContains('drive-in',x,z,7)) return 'DRIVE-IN 88';
+    if (screeningContains('shore',x,z,7)) return 'THE SHORE';
     if (z > -17) return 'MY SQUARE';
-    if (z > -30) return 'THE SHORE ENTRANCE';
+    if (z > -30) return 'COASTAL PROMENADE';
     if (z < -48) return 'MEDITERRANEAN SEA';
-    return 'THE SHORE';
+    return 'COASTAL PROMENADE';
   }
 
   /** Whether the attendee is stood before the altar, close enough to worship. */
@@ -12567,7 +12328,7 @@ export class FestivalWorld {
   /** Within arm's reach of the jukebox, on any side of it. */
   private nearJukebox(): boolean {
     if (!this.jukebox) return false;
-    if (Math.abs(this.player.position.y - AVATAR_GROUND_Y) > 2.6) return false;
+    if (Math.abs(this.player.position.y - this.groundHeightAt(this.player.position.x,this.player.position.z,0)) > 2.6) return false;
     return Math.hypot(
       this.player.position.x - this.jukebox.x,
       this.player.position.z - this.jukebox.z,
@@ -12675,9 +12436,9 @@ export class FestivalWorld {
     const z = this.player.position.z;
     if (this.inClub(this.player.position.x, this.player.position.z)) return true;
     if (this.onRooftop(this.player.position.x, this.player.position.z)) return true;
-    const inShore = z < -30 && z > -45.2 && Math.abs(x) < 12;
+    const inShore = screeningContains('shore',x,z);
     const inPalace = x < -24 && x > -46 && z < -31 && z > -49.2;
-    const inDriveIn = x > 24 && x < 46 && z < -17 && z > -35.2;
+    const inDriveIn = screeningContains('drive-in',x,z);
     return inShore || inPalace || inDriveIn;
   }
 
@@ -12688,7 +12449,7 @@ export class FestivalWorld {
     if (this.inClub(x, z)) return 'club';
     if (this.onRooftop(x, z)) return 'rooftop';
     if (x < -20 && z < -29 && z > -50) return 'palace';
-    if (x > 20 && z < -8 && z > -39) return 'drive-in';
+    if (screeningContains('drive-in',x,z,7)) return 'drive-in';
     return 'shore';
   }
 
@@ -12713,7 +12474,7 @@ export class FestivalWorld {
       this.onAction({ type: 'swim', active: true, stowedPopcorn });
     } else if (!active && wasSwimming) {
       this.playerState = 'walking';
-      this.player.position.y = AVATAR_GROUND_Y;
+      this.player.position.y = this.groundHeightAt(this.player.position.x, this.player.position.z, this.player.position.y);
       this.player.rotation.x = 0;
       this.player.rotation.z = 0;
       this.player.visible = !this.controlledNpcId;
@@ -12723,15 +12484,21 @@ export class FestivalWorld {
         this.stowedItem = undefined;
       }
       this.syncCarriedPropAnchor();
-      if (this.player.position.z > -58.2) this.setOutfit(false);
+      this.setOutfit(false);
       this.onAction({ type: 'swim', active: false });
     }
   }
 
   private standUp(): void {
     const seatPosition = this.activeSeat?.position ?? this.player.position;
-    this.player.position.set(seatPosition.x + 1.2, 0, seatPosition.z + 1.6);
-    this.player.position.y = this.groundHeightAt(this.player.position.x, this.player.position.z);
+    const fromY=this.player.position.y;
+    // Exit into a clear aisle or beside the door, never through the car body.
+    for(const [dx,dz] of [[-2,0],[2,0],[1.2,1.6],[-1.2,1.6],[0,2.3],[0,-2.3],[-3,0],[3,0]]){
+      const x=seatPosition.x+dx,z=seatPosition.z+dz,y=this.groundHeightAt(x,z,fromY);
+      if(!this.staticCollides(x,z,y,FestivalWorld.BODY_RADIUS)){
+        this.player.position.set(x,y,z);break;
+      }
+    }
     this.activeSeat = undefined;
     this.playerState = 'walking';
     this.cameraMode = this.previousCameraMode;

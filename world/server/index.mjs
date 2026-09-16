@@ -70,6 +70,16 @@ const isProduction = process.env.NODE_ENV === 'production';
 const HOST = process.env.FESTIVAL_HOST ?? (isProduction ? '0.0.0.0' : '127.0.0.1');
 const PORT = Number(process.env.FESTIVAL_PORT ?? process.env.PORT ?? 8787);
 const ADMIN_KEY = process.env.FESTIVAL_ADMIN_KEY ?? (isProduction ? '' : 'myschedule-local-admin');
+const theaterIceServers = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+];
+if ((process.env.FESTIVAL_TURN_URL ?? '').trim()) {
+  theaterIceServers.push({
+    urls: process.env.FESTIVAL_TURN_URL.trim(),
+    username: process.env.FESTIVAL_TURN_USERNAME ?? '',
+    credential: process.env.FESTIVAL_TURN_CREDENTIAL ?? '',
+  });
+}
 const DIST_DIR = fileURLToPath(new URL('../dist/', import.meta.url));
 // STAFF settings outlive a service restart. Set FESTIVAL_STATE_FILE=off for a
 // throwaway instance that always boots from the built-in festival defaults.
@@ -121,6 +131,12 @@ const messages = [];
 // against, so it is shown to everyone rather than silently disappearing.
 const restoredMessageIds = new Set();
 const streams = new Map();
+// A cast carries only signalling here. Video and audio travel browser-to-browser
+// over WebRTC, so the festival service never downloads, decodes or republishes
+// YouTube media.
+const theaterCasts = new Map();
+const castLinks = new Map();
+const CAST_OFFER_TTL_MS = 60 * 1000;
 const DISCONNECTED_SESSION_GRACE_MS = 120_000;
 const youtubeIdFromUrl = (value) => {
   try {
@@ -586,6 +602,14 @@ const body = async (request) => {
 };
 
 const safeText = (value, max) => String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').slice(0, max);
+
+const safeRtcDescription = (value, expectedType) => {
+  if (!value || value.type !== expectedType || typeof value.sdp !== 'string') return null;
+  // SDP is signalling text, never executed, but a hard ceiling prevents this
+  // tiny coordination service from becoming an arbitrary payload relay.
+  if (!value.sdp.startsWith('v=0') || value.sdp.length > 96_000) return null;
+  return { type: expectedType, sdp: value.sdp };
+};
 const safePalette = (value = {}) => {
   const color = (slot, fallback) => /^#[0-9a-f]{6}$/i.test(value[slot] ?? '') ? value[slot] : fallback;
   const palette = {
@@ -1103,6 +1127,12 @@ const stateFor = (visitor) => ({
   gateCopy,
   trackTempos,
   jukebox: jukeboxSnapshot(),
+  theaterCasts: Object.fromEntries([...theaterCasts.entries()].map(([venue, cast]) => [venue, {
+    venue,
+    hostId: cast.hostId,
+    hostName: visitors.get(cast.hostId)?.originalName ?? 'STAFF',
+    startedAt: cast.startedAt,
+  }])),
 });
 
 const writeEvent = (response, event, data) => {
@@ -1180,6 +1210,34 @@ const scheduleBroadcast = () => {
   if (!broadcastTimer) broadcastTimer = setTimeout(broadcast, 50);
 };
 
+const castSignal = (visitorId, payload) => {
+  const responseSet = streams.get(visitorId);
+  if (!responseSet) return false;
+  for (const response of responseSet) writeEvent(response, 'cast-signal', payload);
+  return responseSet.size > 0;
+};
+
+const stopTheaterCast = (venue, reason = 'ended') => {
+  const cast = theaterCasts.get(venue);
+  if (!cast) return;
+  theaterCasts.delete(venue);
+  for (const [requestId, link] of castLinks) {
+    if (link.venue !== venue || link.hostId !== cast.hostId) continue;
+    castSignal(link.viewerId, { kind: 'ended', venue, requestId, reason });
+    castLinks.delete(requestId);
+  }
+  scheduleBroadcast();
+};
+
+const pruneCastLinks = () => {
+  const now = Date.now();
+  for (const [requestId, link] of castLinks) {
+    if (link.answeredAt || now - link.createdAt <= CAST_OFFER_TTL_MS) continue;
+    castSignal(link.hostId, { kind: 'leave', venue: link.venue, requestId });
+    castLinks.delete(requestId);
+  }
+};
+
 const releaseSeat = (visitor) => {
   if (!visitor.seatedAt) return;
   if (seats.get(visitor.seatedAt) === visitor.id) seats.delete(visitor.seatedAt);
@@ -1197,6 +1255,14 @@ const removeVisitor = (visitor, reason = 'left') => {
   }
   visitors.delete(visitor.id);
   refreshMentorLoyaltyLeader();
+  for (const [venue, cast] of theaterCasts) {
+    if (cast.hostId === visitor.id) stopTheaterCast(venue, 'host-left');
+  }
+  for (const [requestId, link] of castLinks) {
+    if (link.viewerId !== visitor.id) continue;
+    castSignal(link.hostId, { kind: 'leave', venue: link.venue, requestId });
+    castLinks.delete(requestId);
+  }
   const responseSet = streams.get(visitor.id);
   if (responseSet) {
     for (const response of responseSet) {
@@ -1400,7 +1466,7 @@ const server = createServer(async (request, response) => {
       // by itself, and without it there is no way from outside to tell a
       // deployed fix that did not work from a fix that never deployed — which
       // is a question this service has already cost two rounds of guessing.
-      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), offeringReceipt, schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
+      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), offeringReceipt, schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, clubRequest, venueQueues, jukebox: jukeboxSnapshot(), theaterIceServers });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
@@ -2066,8 +2132,99 @@ a{color:#e8b64a}</style>
       return json(response, 200, { ok: true, advanced: true, schedule: programmeSchedule, venueQueues });
     }
 
+    {
+      const castOffer = url.pathname.match(/^\/api\/casts\/([^/]+)\/offer$/);
+      if (request.method === 'POST' && castOffer) {
+        if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+        const venue = decodeURIComponent(castOffer[1]);
+        if (!isVenue(venue)) return apiError(response, 404, 'No such venue.');
+        const cast = theaterCasts.get(venue);
+        if (!cast || !visitors.has(cast.hostId)) return apiError(response, 409, 'No live cast is available for this screen.');
+        if (cast.hostId === visitor.id) return apiError(response, 409, 'The cast host already has the source tab.');
+        const payload = await body(request);
+        const description = safeRtcDescription(payload.description, 'offer');
+        if (!description) return apiError(response, 400, 'A valid WebRTC offer is required.');
+        pruneCastLinks();
+        const now = Date.now();
+        if (visitor.castOfferAt && now - visitor.castOfferAt < 2_000) {
+          return apiError(response, 429, 'Wait before reconnecting to the cast.');
+        }
+        visitor.castOfferAt = now;
+        // One viewer has one live route to one screen. A reconnect replaces
+        // its abandoned negotiation instead of accumulating peers at the host.
+        for (const [oldRequestId, link] of castLinks) {
+          if (link.viewerId !== visitor.id || link.venue !== venue) continue;
+          castSignal(link.hostId, { kind: 'leave', venue, requestId: oldRequestId });
+          castLinks.delete(oldRequestId);
+        }
+        const requestId = randomUUID();
+        castLinks.set(requestId, {
+          venue,
+          hostId: cast.hostId,
+          viewerId: visitor.id,
+          createdAt: now,
+        });
+        if (!castSignal(cast.hostId, { kind: 'offer', venue, requestId, viewerId: visitor.id, description })) {
+          castLinks.delete(requestId);
+          return apiError(response, 409, 'The cast host is reconnecting. Try again shortly.');
+        }
+        return json(response, 202, { ok: true, requestId });
+      }
+
+      const castLeave = url.pathname.match(/^\/api\/casts\/([^/]+)\/leave$/);
+      if (request.method === 'POST' && castLeave) {
+        if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+        const venue = decodeURIComponent(castLeave[1]);
+        const payload = await body(request);
+        const requestId = safeText(payload.requestId, 64);
+        const link = castLinks.get(requestId);
+        if (link && link.venue === venue && link.viewerId === visitor.id) {
+          castSignal(link.hostId, { kind: 'leave', venue, requestId });
+          castLinks.delete(requestId);
+        }
+        return json(response, 200, { ok: true });
+      }
+    }
+
     if (url.pathname.startsWith('/api/admin/')) {
       if (!adminAllowed(request)) return apiError(response, 401, 'Invalid staff key.');
+      {
+        const castControl = url.pathname.match(/^\/api\/admin\/casts\/([^/]+)\/(start|stop|answer)$/);
+        if (request.method === 'POST' && castControl) {
+          if (!visitor) return apiError(response, 401, 'A connected STAFF visitor is required.');
+          const venue = decodeURIComponent(castControl[1]);
+          const action = castControl[2];
+          if (!isVenue(venue)) return apiError(response, 404, 'No such venue.');
+          if (action === 'start') {
+            for (const [otherVenue, cast] of theaterCasts) {
+              if (cast.hostId === visitor.id) stopTheaterCast(otherVenue, 'host-moved');
+            }
+            if (theaterCasts.has(venue)) stopTheaterCast(venue, 'replaced');
+            theaterCasts.set(venue, { hostId: visitor.id, startedAt: Date.now() });
+            scheduleBroadcast();
+            return json(response, 200, { ok: true, venue });
+          }
+          const cast = theaterCasts.get(venue);
+          if (!cast || cast.hostId !== visitor.id) return apiError(response, 409, 'This browser is not hosting that screen.');
+          if (action === 'stop') {
+            stopTheaterCast(venue, 'stopped');
+            return json(response, 200, { ok: true });
+          }
+          const payload = await body(request);
+          const requestId = safeText(payload.requestId, 64);
+          const description = safeRtcDescription(payload.description, 'answer');
+          const link = castLinks.get(requestId);
+          if (!description || !link || link.venue !== venue || link.hostId !== visitor.id) {
+            return apiError(response, 404, 'That cast request has expired.');
+          }
+          if (!castSignal(link.viewerId, { kind: 'answer', venue, requestId, description })) {
+            castLinks.delete(requestId);
+            return apiError(response, 410, 'The viewer has left.');
+          }
+          link.answeredAt = Date.now();
+          return json(response, 200, { ok: true });
+        }
+      }
       if (request.method === 'GET' && url.pathname === '/api/admin/state') {
         return json(response, 200, {
           visitors: [...visitors.values()].map(publicVisitor),
@@ -2107,6 +2264,12 @@ a{color:#e8b64a}</style>
           entranceSign,
           gateCopy,
           trackTempos,
+          theaterCasts: Object.fromEntries([...theaterCasts.entries()].map(([venue, cast]) => [venue, {
+            venue,
+            hostId: cast.hostId,
+            hostName: visitors.get(cast.hostId)?.originalName ?? 'STAFF',
+            startedAt: cast.startedAt,
+          }])),
           // The STAFF panel reads this payload, not the one attendees get, so
           // without it the running order and the shelf were always empty there
           // however many records were in the machine.

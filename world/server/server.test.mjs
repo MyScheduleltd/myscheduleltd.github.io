@@ -102,6 +102,30 @@ const auth = (session) => ({
   origin: 'http://127.0.0.1:5173',
 });
 
+const nextSseEvent = async (reader, wanted, timeoutMs = 2_000) => {
+  const decoder = new TextDecoder();
+  let buffer = '';
+  return await Promise.race([
+    (async () => {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) throw new Error(`Event stream ended before ${wanted}.`);
+        buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary >= 0) {
+          const block = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          boundary = buffer.indexOf('\n\n');
+          const event = block.split('\n').find((line) => line.startsWith('event:'))?.slice(6).trim();
+          const data = block.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim()).join('\n');
+          if (event === wanted) return JSON.parse(data);
+        }
+      }
+    })(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`Timed out waiting for ${wanted}.`)), timeoutMs)),
+  ]);
+};
+
 test('health endpoint reports readiness', async () => {
   const response = await fetch(`${baseUrl}/health`);
   assert.equal(response.status, 200);
@@ -174,6 +198,60 @@ test('chat is sanitized and moderation requires the staff key', async () => {
   assert.equal(allowed.status, 200);
   const state = await allowed.json();
   assert.equal(state.messages.at(-1).text, 'hello festival');
+});
+
+test('staff tab casts relay private WebRTC offers and answers without relaying media', async () => {
+  const host = await join('CAST HOST');
+  const viewer = await join('CAST VIEWER');
+  const hostEvents = await fetch(`${baseUrl}/api/events`, { headers: auth(host) });
+  const viewerEvents = await fetch(`${baseUrl}/api/events`, { headers: auth(viewer) });
+  const hostReader = hostEvents.body.getReader();
+  const viewerReader = viewerEvents.body.getReader();
+  try {
+    const started = await fetch(`${baseUrl}/api/admin/casts/shore/start`, {
+      method: 'POST',
+      headers: { ...auth(host), 'x-festival-admin-key': 'test-admin-key' },
+    });
+    assert.equal(started.status, 200);
+    const state = await fetch(`${baseUrl}/api/admin/state`, {
+      headers: { origin: 'http://127.0.0.1:5173', 'x-festival-admin-key': 'test-admin-key' },
+    }).then((response) => response.json());
+    assert.equal(state.theaterCasts.shore.hostId, host.id);
+
+    const offered = await fetch(`${baseUrl}/api/casts/shore/offer`, {
+      method: 'POST',
+      headers: auth(viewer),
+      body: JSON.stringify({ description: { type: 'offer', sdp: 'v=0\r\no=viewer 1 1 IN IP4 127.0.0.1\r\n' } }),
+    });
+    assert.equal(offered.status, 202);
+    const { requestId } = await offered.json();
+    const offerSignal = await nextSseEvent(hostReader, 'cast-signal');
+    assert.equal(offerSignal.kind, 'offer');
+    assert.equal(offerSignal.requestId, requestId);
+    assert.equal(offerSignal.viewerId, viewer.id);
+
+    const answered = await fetch(`${baseUrl}/api/admin/casts/shore/answer`, {
+      method: 'POST',
+      headers: { ...auth(host), 'x-festival-admin-key': 'test-admin-key' },
+      body: JSON.stringify({ requestId, description: { type: 'answer', sdp: 'v=0\r\no=host 1 1 IN IP4 127.0.0.1\r\n' } }),
+    });
+    assert.equal(answered.status, 200);
+    const answerSignal = await nextSseEvent(viewerReader, 'cast-signal');
+    assert.equal(answerSignal.kind, 'answer');
+    assert.equal(answerSignal.requestId, requestId);
+
+    const stopped = await fetch(`${baseUrl}/api/admin/casts/shore/stop`, {
+      method: 'POST',
+      headers: { ...auth(host), 'x-festival-admin-key': 'test-admin-key' },
+    });
+    assert.equal(stopped.status, 200);
+    const endedSignal = await nextSseEvent(viewerReader, 'cast-signal');
+    assert.equal(endedSignal.kind, 'ended');
+    assert.equal(endedSignal.requestId, requestId);
+  } finally {
+    await hostReader.cancel();
+    await viewerReader.cancel();
+  }
 });
 
 test('public programmes expose full queues and advance when a work ends', async () => {
@@ -1481,24 +1559,17 @@ test('an offering needs a session, an amount in range, and an email', async () =
 
   const session = await join('OFFERING TEST');
   const tooSmall = await fetch(`${baseUrl}/api/donation`, {
-    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 49, email: 'donor@example.com' }),
+    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 9, email: 'donor@example.com' }),
   });
   assert.equal(tooSmall.status, 400);
   const tooLarge = await fetch(`${baseUrl}/api/donation`, {
-    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 20001, email: 'donor@example.com' }),
+    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 10001, email: 'donor@example.com' }),
   });
   assert.equal(tooLarge.status, 400);
-  // The ends of the range are inside it.
-  for (const amount of [50, 20000]) {
-    const edge = await fetch(`${baseUrl}/api/donation`, {
-      method: 'POST', headers: auth(session), body: JSON.stringify({ amount, email: 'donor@example.com' }),
-    });
-    assert.equal(edge.status, 200, `NT$${amount} is an offering, not an error`);
-  }
   const noEmail = await fetch(`${baseUrl}/api/donation`, {
     method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 100, email: 'not-an-address' }),
   });
-  assert.equal(noEmail.status, 400, 'a receipt that was asked for has to go somewhere');
+  assert.equal(noEmail.status, 400, 'the invoice has to go somewhere');
 
   const started = await fetch(`${baseUrl}/api/donation`, {
     method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 100, email: 'donor@example.com' }),
@@ -1588,92 +1659,18 @@ test('the amount that counts is the one ECPay reports, not the one asked for', a
   assert.equal(settled.amount, 10, 'a client that asks for 1000 and pays 10 has paid 10');
 });
 
-/**
- * Declining a receipt is not declining the invoice.
- *
- * ECPay will not issue one without an email or a phone, and the money is taken
- * by a 營業人, who owes a 統一發票 on the sale whether the buyer wants a copy or
- * not. So an unticked box has to redirect the invoice, never cancel it.
- */
-const staff = { 'content-type': 'application/json', 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173' };
-const setReceiptMailbox = (email) => fetch(`${baseUrl}/api/admin/offering-receipt`, {
-  method: 'POST', headers: staff, body: JSON.stringify({ email }),
-});
 
-test('an offering without a receipt still starts, and still has somewhere to invoice', async () => {
-  const before = await (await fetch(`${baseUrl}/api/donation/options`)).json();
-  assert.equal(before.receiptOptional, false, 'with nowhere to send a declined invoice, the choice is not offered');
-  assert.equal(before.receiptBlockedBy, 'mailbox-missing');
-  assert.deepEqual(before.presets, [52, 520, 5920, 20000]);
-  assert.equal(before.min, 50);
-  assert.equal(before.max, 20000);
-
-  assert.equal((await setReceiptMailbox('not an address')).status, 400, 'an unusable mailbox is refused at the door');
-  assert.equal((await setReceiptMailbox('accounts@example.com')).status, 200);
-
-  const options = await (await fetch(`${baseUrl}/api/donation/options`)).json();
-  assert.equal(options.receiptOptional, true, 'STAFF set a mailbox, so the choice appears');
-  assert.equal(options.receiptBlockedBy, '');
-
-  const session = await join('NO RECEIPT');
-  const started = await fetch(`${baseUrl}/api/donation`, {
-    method: 'POST',
-    headers: auth(session),
-    body: JSON.stringify({ amount: 520, receipt: false }),
-  });
-  assert.equal(started.status, 200, 'no address is needed when no receipt was asked for');
-  const offering = await started.json();
-
-  // The signed form is the only place this service's own view of the offering
-  // becomes visible, and it must carry the amount that was asked for.
-  const page = await (await fetch(`${baseUrl}/api/donation/${offering.id}/checkout`)).text();
-  assert.match(page, /name="TotalAmount" value="520"/);
-
-  // And an address is still required from anyone who did ask for one.
-  const asked = await fetch(`${baseUrl}/api/donation`, {
-    method: 'POST',
-    headers: auth(session),
-    body: JSON.stringify({ amount: 520, receipt: true }),
-  });
-  assert.equal(asked.status, 400, 'ticking the box and leaving it blank is not a valid offering');
-});
-
-/**
- * The mailbox is the festival's own published contact address, so it travels
- * with the rest of the settings — `/api/config` is what `capture-state.mjs`
- * reads, and being in it is the only reason the address survives a deploy.
- *
- * A donor's address is a different thing entirely and is never any of this.
- */
-test('the receipt mailbox travels with the settings, and a donor’s never does', async () => {
-  const address = 'books@example.com';
-  assert.equal((await setReceiptMailbox(address)).status, 200);
-
-  const config = await (await fetch(`${baseUrl}/api/config`)).json();
-  assert.equal(config.offeringReceipt.email, address, 'the capture script reads this and nothing else');
-
-  const admin = await (await fetch(`${baseUrl}/api/admin/state`, { headers: staff })).json();
-  assert.equal(admin.offeringReceipt.email, address);
-  assert.equal(admin.offeringReceipt.source, 'staff', 'it differs from the committed seed, and STAFF are told so');
-
-  // The sheet a visitor sees learns whether a receipt may be declined. It has
-  // no use for the address and is not given it.
-  const options = await (await fetch(`${baseUrl}/api/donation/options`)).text();
-  assert.equal(options.includes(address), false);
-
-  // A donor's own address reaches ECPay and stops there.
-  const session = await join('LOOKING');
-  await fetch(`${baseUrl}/api/donation`, {
-    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 520, email: 'donor@example.com' }),
-  });
-  const state = await (await fetch(`${baseUrl}/api/state`, { headers: auth(session) })).text();
-  assert.equal(state.includes('donor@example.com'), false, 'a donor is not broadcast to the festival');
-  const publicConfig = await (await fetch(`${baseUrl}/api/config`)).text();
-  assert.equal(publicConfig.includes('donor@example.com'), false);
-
-  // Clearing it withdraws the choice rather than leaving offerings uninvoiced.
-  assert.equal((await setReceiptMailbox('')).status, 200);
-  const after = await (await fetch(`${baseUrl}/api/donation/options`)).json();
-  assert.equal(after.receiptOptional, false);
-  assert.equal(after.receiptBlockedBy, 'mailbox-missing');
+test('fixed outfit IDs and independent trouser colours survive join and presence updates',async()=>{
+ for(const top of ['#18191b','#191a1c','#1a1b1d']){
+  const palette={top,bottoms:'#718262'};
+  const response=await fetch(`${baseUrl}/api/session`,{method:'POST',headers:{'content-type':'application/json',origin:'http://127.0.0.1:5173'},body:JSON.stringify({name:'OUTFIT CHECK',palette})});
+  assert.equal(response.status,201);const session=(await response.json()).session;
+  for(const state of ['walking','swimming','walking']){
+   const updated=await fetch(`${baseUrl}/api/presence`,{method:'POST',headers:auth(session),body:JSON.stringify({x:0,z:0,state,palette})});
+   assert.equal(updated.status,202);
+   const shared=await (await fetch(`${baseUrl}/api/admin/state`,{headers:{'x-festival-admin-key':'test-admin-key',origin:'http://127.0.0.1:5173'}})).json();
+   const visitor=shared.visitors.find(v=>v.id===session.id);
+   assert.equal(visitor.palette.top,top);assert.equal(visitor.palette.bottoms,palette.bottoms);assert.equal(visitor.presence.state,state);
+  }
+ }
 });

@@ -394,6 +394,9 @@ export function applyWornStyle(
  * walls agreeing with each other.
  */
 function masonryKind(mesh: THREE.Mesh, rooms: MasonryRoom[]): number {
+  // A continuous authored facade must not change finish at spatial cell boundaries.
+  const authored=mesh.userData.wornMasonryKind;
+  if(Number.isInteger(authored)&&authored>=0&&authored<=3)return authored;
   const at = mesh.getWorldPosition(new THREE.Vector3());
   // Inside a room, the room decides, and every wall around it agrees. A
   // sixteen-metre cell is smaller than the club, so its four walls came out of

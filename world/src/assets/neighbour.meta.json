@@ -1,0 +1,1834 @@
+{
+  "source": "avatars1.blend",
+  "construction": "authored reference rebuild; source armature only",
+  "mouthSourcePosition": [
+    0,
+    0.398,
+    0.15
+  ],
+  "outfits": [
+    "schedule-tee",
+    "bros-tee",
+    "utility-vest"
+  ],
+  "parts": [
+    {
+      "connectedComponents": 1,
+      "name": "head",
+      "vertices": 40,
+      "triangles": 76,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-ear--1",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-eye--1",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-brow--1",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-ear-1",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-eye-1",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-brow-1",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-nose",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-mouth",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown",
+      "vertices": 72,
+      "triangles": 140,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-0-0",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-0-1",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-0-2",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-0-3",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-0-4",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-0-5",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-0-6",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-0-7",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-0-8",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-0-9",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-0-10",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-0-11",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-0-12",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-1-0",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-1-1",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-1-2",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-1-3",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-1-4",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-1-5",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-1-6",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-1-7",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-1-8",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-1-9",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-2-0",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-2-1",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-2-2",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-2-3",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-2-4",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-crown-lock-2-5",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-0-0",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-0-1",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-0-2",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-0-3",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-0-4",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-0-5",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-0-6",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-0-7",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-0-8",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-0-9",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-0-10",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-0-11",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-0-12",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-0-13",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-0-14",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-0-15",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-1-0",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-1-1",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-1-2",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-1-3",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-1-4",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-1-5",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-1-6",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-1-7",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-1-8",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-1-9",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-1-10",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-1-11",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-1-12",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-1-13",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-1-14",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-2-0",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-2-1",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-2-2",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-2-3",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-2-4",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-2-5",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-2-6",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-2-7",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-2-8",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-2-9",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-2-10",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-2-11",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-2-12",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-2-13",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-3-0",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-3-1",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-3-2",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-3-3",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-3-4",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-3-5",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-3-6",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-3-7",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-3-8",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-3-9",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-3-10",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-lock-3-11",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-bang-0",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-bang-1",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-bang-2",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-bang-3",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-bang-4",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-bang-5",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "hair-bang-6",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-crown",
+      "vertices": 360,
+      "triangles": 716,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-band",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-shaped-visor",
+      "vertices": 14,
+      "triangles": 24,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-panel-seam",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-panel-seam.001",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-panel-seam.002",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-panel-seam.003",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-panel-seam.004",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-panel-seam.005",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-button",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-rear-opening",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-adjuster",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-adjuster-hole",
+      "vertices": 8,
+      "triangles": 12,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-adjuster-hole.001",
+      "vertices": 8,
+      "triangles": 12,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-adjuster-hole.002",
+      "vertices": 8,
+      "triangles": 12,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-adjuster-hole.003",
+      "vertices": 8,
+      "triangles": 12,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "cap-logo",
+      "vertices": 218,
+      "triangles": 432,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "tee",
+      "vertices": 456,
+      "triangles": 908,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "tee-hem",
+      "vertices": 96,
+      "triangles": 188,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "neck",
+      "vertices": 16,
+      "triangles": 28,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "tee-collar",
+      "vertices": 576,
+      "triangles": 1152,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "outfit1-print-front",
+      "vertices": 386,
+      "triangles": 768,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "outfit1-print-back",
+      "vertices": 386,
+      "triangles": 768,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "outfit2-print-front",
+      "vertices": 386,
+      "triangles": 768,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "outfit2-print-back",
+      "vertices": 386,
+      "triangles": 768,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-panel",
+      "vertices": 96,
+      "triangles": 188,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-shoulder",
+      "vertices": 16,
+      "triangles": 28,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-v-binding",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-side",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-pocket",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-pocket-flap",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-zip",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-zip-pull",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-pocket.001",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-pocket-flap.001",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-zip.001",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-zip-pull.001",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-waist-zip",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-panel.001",
+      "vertices": 96,
+      "triangles": 188,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-shoulder.001",
+      "vertices": 16,
+      "triangles": 28,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-v-binding.001",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-side.001",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-pocket.002",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-pocket-flap.002",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-zip.002",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-zip-pull.002",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-pocket.003",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-pocket-flap.003",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-zip.003",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-zip-pull.003",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-waist-zip.001",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-back",
+      "vertices": 240,
+      "triangles": 476,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-back-pocket",
+      "vertices": 200,
+      "triangles": 396,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-back-zip",
+      "vertices": 200,
+      "triangles": 396,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-print-back",
+      "vertices": 386,
+      "triangles": 768,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-chest-label",
+      "vertices": 8,
+      "triangles": 12,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-print-front",
+      "vertices": 386,
+      "triangles": 768,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-fastener",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-brass-button",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-brass-ring",
+      "vertices": 48,
+      "triangles": 96,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "vest-brass-ring.001",
+      "vertices": 48,
+      "triangles": 96,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-sleeve",
+      "vertices": 312,
+      "triangles": 620,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-sleeve-hem",
+      "vertices": 96,
+      "triangles": 188,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-forearm",
+      "vertices": 40,
+      "triangles": 76,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 6,
+      "name": "Right-hand",
+      "vertices": 144,
+      "triangles": 264,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-trousers-upper",
+      "vertices": 312,
+      "triangles": 620,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-trousers-lower",
+      "vertices": 456,
+      "triangles": 908,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-cargo-pocket",
+      "vertices": 200,
+      "triangles": 396,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-cargo-flap",
+      "vertices": 200,
+      "triangles": 396,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-cargo-front",
+      "vertices": 200,
+      "triangles": 396,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-cargo-front-flap",
+      "vertices": 200,
+      "triangles": 396,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe",
+      "vertices": 32,
+      "triangles": 60,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-upper",
+      "vertices": 32,
+      "triangles": 60,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-toe",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-collar",
+      "vertices": 16,
+      "triangles": 28,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-tongue",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-lace-0",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-lace-1",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-lace-2",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-lace-3",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-quarter",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-sole-block",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-sole-block.001",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-sole-block.002",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-sole-block.003",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-quarter.001",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-sole-block.004",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-sole-block.005",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-sole-block.006",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-sole-block.007",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Right-shoe-heel",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-sleeve",
+      "vertices": 312,
+      "triangles": 620,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-sleeve-hem",
+      "vertices": 96,
+      "triangles": 188,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-forearm",
+      "vertices": 40,
+      "triangles": 76,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 6,
+      "name": "Left-hand",
+      "vertices": 144,
+      "triangles": 264,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-trousers-upper",
+      "vertices": 312,
+      "triangles": 620,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-trousers-lower",
+      "vertices": 456,
+      "triangles": 908,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-cargo-pocket",
+      "vertices": 200,
+      "triangles": 396,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-cargo-flap",
+      "vertices": 200,
+      "triangles": 396,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-cargo-front",
+      "vertices": 200,
+      "triangles": 396,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-cargo-front-flap",
+      "vertices": 200,
+      "triangles": 396,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe",
+      "vertices": 32,
+      "triangles": 60,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-upper",
+      "vertices": 32,
+      "triangles": 60,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-toe",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-collar",
+      "vertices": 16,
+      "triangles": 28,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-tongue",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-lace-0",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-lace-1",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-lace-2",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-lace-3",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-quarter",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-sole-block",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-sole-block.001",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-sole-block.002",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-sole-block.003",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-quarter.001",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-sole-block.004",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-sole-block.005",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-sole-block.006",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-sole-block.007",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    },
+    {
+      "connectedComponents": 1,
+      "name": "Left-shoe-heel",
+      "vertices": 24,
+      "triangles": 44,
+      "boundaryEdges": 0,
+      "nonManifoldEdges": 0
+    }
+  ],
+  "webParts": [
+    "head",
+    "cap",
+    "cap-logo",
+    "tee",
+    "outfit1-print-front",
+    "outfit1-print-back",
+    "outfit2-print-front",
+    "outfit2-print-back",
+    "vest",
+    "vest-print-back",
+    "vest-print-front",
+    "Right-sleeve",
+    "Right-forearm",
+    "Right-hand",
+    "Right-trousers-upper",
+    "Right-trousers-lower",
+    "Right-shoe",
+    "Left-sleeve",
+    "Left-forearm",
+    "Left-hand",
+    "Left-trousers-upper",
+    "Left-trousers-lower",
+    "Left-shoe"
+  ],
+  "glbSha256": "634eb1e50f53759812ca09d5d00e262bdad7c0667a8911624fbe79efaffeb65b"
+}

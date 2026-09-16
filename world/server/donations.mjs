@@ -17,10 +17,10 @@ import { randomUUID } from 'node:crypto';
 import { aesDecrypt, aesEncrypt, checkMacValue } from './ecpay.mjs';
 
 /** The smallest and largest offering, in whole New Taiwan dollars. */
-export const MIN_DONATION = 50;
-export const MAX_DONATION = 20_000;
+export const MIN_DONATION = 10;
+export const MAX_DONATION = 10_000;
 /** What the panel offers before anybody types a number. */
-export const DONATION_PRESETS = [52, 520, 5920, 20_000];
+export const DONATION_PRESETS = [10, 100, 300, 1000];
 
 const STAGE = {
   checkout: 'https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5',

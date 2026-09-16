@@ -1,3 +1,6 @@
+import { TOP_OUTFITS, topOutfit } from '../world/CoastalOutfits';
+import { loadImportedAvatar } from '../world/ImportedAvatar';
+import { coastalMapGraphic } from './coastalMap';
 import {
   catalogue,
   catalogueByVenue,
@@ -5,6 +8,7 @@ import {
   type CatalogueEntry,
   type VenueKey,
 } from '../data/catalogue';
+import { immersiveVideoSources } from '../data/immersiveVideoSources';
 import companyLogoUrl from '../assets/company-logo.png';
 import { GAMEPAD_ACTIONS, DEFAULT_BINDINGS, buttonLabel, type GamepadActionId } from '../world/GamepadInput';
 import { ACCESSORY_SLOTS, DEFAULT_ACCESSORY_COLOURS, type AccessorySlot } from '../world/AvatarAccessories';
@@ -23,6 +27,7 @@ import {
   type PamphletContent,
   type ProgrammeMode,
   type SiteStyle,
+  type TheaterCastSignal,
   JukeboxState,
 } from '../network/FestivalClient';
 import {
@@ -127,7 +132,7 @@ const VENUE_KEYS: VenueKey[] = ['palace', 'drive-in', 'shore', 'club', 'rooftop'
 const defaultPalette: AvatarPalette = {
   skin: '#9d5f43',
   hair: '#171315',
-  top: '#9f1720',
+  top: '#18191b',
   bottoms: '#20242c',
   swimwear: '#d5b23f',
 };
@@ -270,14 +275,10 @@ const panelLabels: Record<Language, Record<PanelId, string>> = {
   },
 };
 
-const paletteInputs = ['skin', 'hair', 'top', 'bottoms', 'swimwear'] as const;
-const accessoryLabels: Record<Language, Record<AccessorySlot, string>> = {
-  en: { cap: 'BASEBALL CAP', chain: 'GOLD CHAIN', tattoo: 'ARM TATTOOS', backpack: 'BACKPACK' },
-  'zh-TW': { cap: '棒球帽', chain: '金項鍊', tattoo: '手臂刺青', backpack: '後背包' },
-};
+const paletteInputs = ['skin', 'hair', 'bottoms', 'swimwear'] as const;
 const paletteLabels: Record<Language, Record<(typeof paletteInputs)[number], string>> = {
-  en: { skin: 'SKIN', hair: 'HAIR', top: 'TOP', bottoms: 'BOTTOMS', swimwear: 'SWIMWEAR' },
-  'zh-TW': { skin: '膚色', hair: '髮色', top: '上衣', bottoms: '下身', swimwear: '泳裝' },
+  en: { skin: 'SKIN', hair: 'HAIR', bottoms: 'BOTTOMS', swimwear: 'SWIMWEAR' },
+  'zh-TW': { skin: '膚色', hair: '髮色', bottoms: '下身', swimwear: '泳裝' },
 };
 
 const defaultGateBackground: GateBackground = { youtubeId: 'Ffli-o0ocT0', updatedAt: 0 };
@@ -421,6 +422,19 @@ export class App {
   private staffKey = sessionStorage.getItem(STAFF_KEY) ?? '';
   private adminState?: AdminState;
   private adminError = '';
+  private theaterIceServers: RTCIceServer[] = [
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+  ];
+  private hostCastStream?: MediaStream;
+  private hostCastVenue?: VenueKey;
+  private readonly hostCastPeers = new Map<string, RTCPeerConnection>();
+  private viewerCastPeer?: RTCPeerConnection;
+  private viewerCastVenue?: VenueKey;
+  private viewerCastHostId?: string;
+  private viewerCastRequestId?: string;
+  private viewerCastStream?: MediaStream;
+  private viewerCastStarting = false;
+  private viewerCastRetryAt = 0;
   private programmeRotationIndex = -1;
   private readonly openStaffSections = new Set<string>(
     JSON.parse(sessionStorage.getItem(STAFF_SECTIONS_KEY) ?? '[]') as string[],
@@ -438,6 +452,7 @@ export class App {
   private pamphlet: PamphletContent = { ...defaultPamphlet };
   private readonly programmeClock = new ProgrammeClock();
   private waitTimer?: number;
+  private openingWorld=false;
   private gateCopy?: GateCopy;
   private controlledNpcId?: string;
   /** Visit-only onboarding: deliberately absent from local/session storage. */
@@ -464,11 +479,14 @@ export class App {
       onState: (state) => this.handleNetworkState(state),
       onStatus: (status, detail) => this.handleConnectionStatus(status, detail),
       onDonation: (receipt) => this.thankTheOffering(receipt),
+      onCastSignal: (signal) => { void this.handleTheaterCastSignal(signal); },
     });
   }
 
   mount(): void {
     this.renderGate();
+    // Start the download behind the usable sign-in form. Retry on entry if it fails.
+    void loadImportedAvatar().catch(() => undefined);
     this.showLastBreath();
     void this.detectVrSupport().finally(() => this.rejoinAfterDiscard());
     void this.festivalClient.publicConfig().then((config) => {
@@ -477,6 +495,7 @@ export class App {
       this.gateBackground = { ...this.gateBackground, ...config.gateBackground };
       this.npcProfiles = this.normalizeNpcProfiles(config.npcProfiles, config.npcNames);
       this.pamphlet = { ...this.pamphlet, ...config.pamphlet };
+      if (config.theaterIceServers?.length) this.theaterIceServers = config.theaterIceServers;
       if (config.gateCopy) {
         this.gateCopy = config.gateCopy;
         // The gate is already on screen by now, so it has to be redrawn.
@@ -932,7 +951,20 @@ export class App {
    * even after the network wait was removed.
    */
   private enterWorldAfterGateFeedback(muted: boolean): void {
-    window.setTimeout(() => this.enterWorld(muted), 50);
+    if(this.openingWorld)return;
+    this.openingWorld=true;
+    this.root.querySelectorAll<HTMLButtonElement>('#gate-form button[type="submit"]').forEach(b=>b.disabled=true);
+    const waiting=this.root.querySelector<HTMLElement>('#gate-waiting');
+    if(waiting){waiting.hidden=false;waiting.textContent=this.language==='zh-TW'?'正在開啟影展…':'OPENING THE FESTIVAL…';}
+    window.setTimeout(() => {
+      void loadImportedAvatar().then(() => {this.openingWorld=false;this.enterWorld(muted);}).catch(() => {
+        this.openingWorld=false;
+        const notice=this.root.querySelector<HTMLElement>('#gate-waiting');
+        if(notice){notice.hidden=false;notice.textContent=this.language==='zh-TW'
+          ? '角色下載未完成，請再次點選進入重試。' : 'Character download failed. Select enter again to retry.';}
+        this.root.querySelectorAll<HTMLButtonElement>('#gate-form button[type="submit"]').forEach(b=>b.disabled=false);
+      });
+    }, 50);
   }
 
   private enterWorld(muted: boolean): void {
@@ -1001,7 +1033,7 @@ export class App {
             ? (zh ? '允許動態取向後，現在的手機角度會設為正前方；轉動、傾斜或旋轉手機即可環顧世界。' : 'Allow motion access to set the current phone pose as forward, then turn, tilt or roll the phone to look around.')
             : vrPreview
               ? (zh ? '以鍵盤與滑鼠預覽頭戴式視角。這不會啟動真正的沉浸階段。' : 'Preview the headset view with keyboard and mouse. This does not start a real immersive session.')
-            : (zh ? '戴上頭戴式裝置，以控制器確認進入。' : 'Put on your headset, then confirm with a controller.')}</p>
+            : (zh ? '戴上頭戴式裝置，以控制器確認進入。左搖桿依視線方向移動，右搖桿轉向；Y 鍵重新校準朝向與眼高。' : 'Enter with your controller. Left stick moves relative to your view; right stick snap-turns. Press Y to recalibrate heading and eye height.')}</p>
           <div>
             <button class="button button--primary" type="button" data-vr-enter>${phoneVrPreview
               ? (zh ? '允許動態鏡頭' : 'ENABLE MOTION CAMERA')
@@ -1144,46 +1176,9 @@ export class App {
     this.world.start();
     this.syncPublicProjectors();
     this.syncVrUi();
-    // Tier one of the art direction, behind its own flag rather than the review
-    // gate — the point of it is to be looked at on a phone against the live
-    // site, so it must not be loopback-only. Absent the flag nothing here runs
-    // and the world is exactly the one visitors already have.
-    //   ?worn                     full strength
-    //   ?worn=0.5                 half mixed in
-    //   ?worn=1&wornSteps=8       coarser colour depth
-    //   ?worn=1&wornGrain=0       shading only, no surface grain
-    //   ?worn=1&wornWarp=0        square corners kept, nothing settles
-    //   ?worn=1&meshes=0          surfaces only, boxes left alone
-    //   ?worn=1&wornTexture=0     no courses or paving, plain planes
-    //   ?era=ps2                  the later console: surface detail, no dither
-    // Two consoles, not one — but only in what `era=ps2` adds, not in what it
-    // takes away.
-    //
-    // The argument for standing the dither down was sound and lost anyway: the
-    // hard colour steps are a PS1 tell, and the generation the GTA reference
-    // comes from had dropped them. But the owner has asked for that gritty
-    // texture back twice, and it is the texture of this world rather than a
-    // period detail to be got right. So `era=ps2` now only brings the courses
-    // up; the banding and the grain both stay exactly where they were signed
-    // off, and `wornSteps` is still there for anyone who wants to see it
-    // without them.
-    //
-    // **The surface grain is the world's own now, not a flag.** The owner asked
-    // for this texture a third time, pointing at `?era=ps2` and calling the CSS
-    // overlay that stood in for it faded and wrong — and they were right about
-    // the overlay: a full-screen noise layer slides over the picture, while
-    // this is sampled at the world position, so the speckle belongs to the wall
-    // and travels with it when you walk past. That is the whole difference
-    // between grain and a dirty screen.
-    //
-    // What comes on by default is the **grain only**, at `wornSteps: 64` so
-    // there is no colour banding, `wornWarp: 0` so no corner is rounded and no
-    // collider moves, and `wornTexture: 0` so no paving or courses are painted
-    // on. The world's shape and palette are untouched; it gains a tooth.
-    // `?era=ps2` still brings the whole period look, banding and all.
-    //
-    // Normal graphics only. This runs on every lit surface, and lite mode
-    // exists precisely to stop paying for passes like it.
+    // This entire App is now loaded only by the explicit local PS2 preview.
+    // These dials belong to that experimental world; ordinary beta uses its
+    // separately maintained restored build.
     const era = new URLSearchParams(window.location.search).get('era');
     const ps2 = era === 'ps2';
     const wornDefault = this.graphicsMode === 'normal' ? '' : null;
@@ -1192,28 +1187,14 @@ export class App {
     if (wornFlag !== null) {
       const world = this.world;
       const amount = wornFlag === '' ? 1 : Number.parseFloat(wornFlag);
-      // **The default is now exactly `?era=ps2`.**
-      //
-      // Stripping it back to "grain only" was the wrong read, twice. The tooth
-      // the owner keeps pointing at is not the grain term on its own: the
-      // shader adds the surface variation and *then* quantises it, so the
-      // dither is what crunches a smooth continuous speckle into hard specks.
-      // At `wornSteps: 64` there is nothing to crunch it, and the same grain
-      // value reads as a soft wash — which is precisely the difference they
-      // could see between the default and the flag and I could not explain
-      // away. The courses carry the rest of it: a wall visibly made of
-      // something at the scale of a hand.
-      //
-      // So there is one look now, and the flag is kept only because it is
-      // documented above and costs nothing.
       const stepsFlag = new URLSearchParams(window.location.search).get('wornSteps');
-      const steps = stepsFlag === null ? 10 : Number.parseFloat(stepsFlag);
+      const steps = stepsFlag === null ? 16 : Number.parseFloat(stepsFlag);
       const grainFlag = new URLSearchParams(window.location.search).get('wornGrain');
-      const grain = grainFlag === null ? 1 : Number.parseFloat(grainFlag);
+      const grain = grainFlag === null ? .18 : Number.parseFloat(grainFlag);
       const warpFlag = new URLSearchParams(window.location.search).get('wornWarp');
       const warp = warpFlag === null ? 1 : Number.parseFloat(warpFlag);
       const textureFlag = new URLSearchParams(window.location.search).get('wornTexture');
-      const texture = textureFlag === null ? 1.25 : Number.parseFloat(textureFlag);
+      const texture = textureFlag === null ? .65 : Number.parseFloat(textureFlag);
       const dial = (nextAmount: number, nextSteps: number, nextGrain: number) =>
         world.applyWornStyleForReview(
           Number.isFinite(nextAmount) ? nextAmount : 1,
@@ -1247,7 +1228,36 @@ export class App {
       (window as Window & { __festivalProjectors?: () => unknown }).__festivalProjectors =
         () => this.world?.projectorAlignmentSnapshot();
     }
-    if (reviewTarget === 'vr-screen' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+    if (reviewTarget === 'coastal' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      const query = new URLSearchParams(window.location.search);
+      const view = query.get('view') ?? 'square';
+      this.world.focusCoastalForReview(view);
+      // The session restore can land after the first placement. Keep the two
+      // rooftop seam views stable long enough to inspect the actual geometry.
+      if (view === 'roofLandingCorner' || view === 'roofWestSoffit') {
+        for (const delay of [400, 1_600]) window.setTimeout(() => this.world?.focusCoastalForReview(view), delay);
+      }
+      if(query.get('view')==='hit'){
+        const trigger=document.createElement('button');trigger.textContent='Preview hit reaction';
+        trigger.style.cssText='position:fixed;right:20px;top:110px;z-index:2000;padding:12px';
+        trigger.onclick=()=>this.world?.takeHit('LOCAL REACTION REVIEW');document.body.append(trigger);
+      }
+
+      // Review staging is one-shot. Refresh/return must use the ordinary arrival
+      // spawn, even when this tab was previously used to inspect a club defect.
+      const ordinaryEntry = new URL(window.location.href);
+      for (const key of ['review','view','checks','audit']) ordinaryEntry.searchParams.delete(key);
+      window.history.replaceState(null, '', ordinaryEntry);
+
+      window.setTimeout(() => {
+        const crowd = query.get('audit') === '1' ? this.world?.stepResidentsForReview(480) : undefined;
+        document.documentElement.dataset.coastalReview = JSON.stringify({
+          rig: query.get('checks') === 'rig' ? this.world?.coastalRigReview() : undefined,
+          world: this.world?.coastalReviewSnapshot(), crowd,
+          gaps: query.get('audit') === '1' ? this.world?.crowdGapSnapshot() : undefined,
+        });
+      }, 800);
+    } else if (reviewTarget === 'vr-screen' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       this.activeVenue = 'shore';
       this.world.focusPublicScreeningForReview('shore');
       const reviewFilm = this.venueFilms('shore').find((film) => film.youtubeId === 'SRbsIUYB0dc');
@@ -1392,10 +1402,11 @@ export class App {
           ? this.world?.mentorGreetingReviewSnapshot()
           : this.world?.mentorFollowerReviewSnapshot());
       }, 250);
-    } else if (reviewTarget === 'sit' || reviewTarget === 'sit-rooftop' || reviewTarget === 'sit-drive' || reviewTarget === 'sit-club') {
+    } else if (reviewTarget === 'sit' || reviewTarget === 'sit-rooftop' || reviewTarget === 'sit-drive' || reviewTarget === 'sit-club' || reviewTarget === 'sit-palace') {
       this.world.focusSeatForReview(
-        reviewTarget === 'sit-rooftop' ? 'rooftop' : reviewTarget === 'sit-drive' ? 'drive-in' : reviewTarget === 'sit-club' ? 'club' : 'shore',
+        reviewTarget === 'sit-rooftop' ? 'rooftop' : reviewTarget === 'sit-drive' ? 'drive-in' : reviewTarget === 'sit-club' ? 'club' : reviewTarget==='sit-palace'?'palace':'shore',
       );
+      window.setInterval(()=>{document.documentElement.dataset.seatReview=JSON.stringify(this.world?.seatReviewSnapshot());},300);
       (window as Window & { __festivalSeat?: () => unknown }).__festivalSeat =
         () => this.world?.seatReviewSnapshot();
     } else if (reviewTarget === 'kerb') {
@@ -1599,6 +1610,14 @@ export class App {
         () => this.world?.crowdGapSnapshot();
       (window as Window & { __festivalCrowding?: () => unknown }).__festivalCrowding =
         () => this.world?.crowdingReviewSnapshot();
+      const navLab=document.createElement('details');
+      navLab.style.cssText='position:fixed;right:10px;top:85px;z-index:90;background:#f3eddf;color:#202525;padding:10px;max-width:480px;max-height:65vh;overflow:auto;font:12px monospace';
+      navLab.innerHTML='<summary>Local navigation checks</summary><button type="button">Simulate 60 seconds</button><button type="button" data-shared>Check shared circuits</button><pre></pre>';
+      const output=navLab.querySelector('pre')!;
+      output.textContent=JSON.stringify(this.world.navReviewSnapshot(),null,2);
+      navLab.querySelector('button')!.onclick=()=>{output.textContent=JSON.stringify(this.world?.stepResidentsForReview(60,.1),null,2);};
+      navLab.querySelector<HTMLButtonElement>('[data-shared]')!.onclick=()=>{output.textContent=JSON.stringify(this.world?.sharedNpcReview(),null,2);};
+      this.root.append(navLab);
     } else if (reviewTarget === 'mentor-drop' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       this.world.dropMentorForReview();
       (window as Window & { __festivalRestage?: () => void }).__festivalRestage =
@@ -2347,8 +2366,205 @@ export class App {
   private handleVrSessionChange(active: boolean): void {
     this.vrActive = active;
     if (active) this.vrError = '';
+    if (!active) this.stopViewerTheaterCast();
+    else if (this.networkState) this.syncTheaterCast(this.networkState);
     this.syncVrUi();
     this.refreshQuestUi();
+  }
+
+  private waitForIce(peer: RTCPeerConnection, timeoutMs = 4_000): Promise<void> {
+    if (peer.iceGatheringState === 'complete') return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => {
+        window.clearTimeout(timer);
+        peer.removeEventListener('icegatheringstatechange', changed);
+        resolve();
+      };
+      const changed = () => {
+        if (peer.iceGatheringState === 'complete') done();
+      };
+      const timer = window.setTimeout(done, timeoutMs);
+      peer.addEventListener('icegatheringstatechange', changed);
+    });
+  }
+
+  private closeHostCastPeers(): void {
+    for (const peer of this.hostCastPeers.values()) peer.close();
+    this.hostCastPeers.clear();
+  }
+
+  private async stopHostingTheaterCast(notify = true): Promise<void> {
+    const venue = this.hostCastVenue;
+    const stream = this.hostCastStream;
+    this.hostCastVenue = undefined;
+    this.hostCastStream = undefined;
+    this.closeHostCastPeers();
+    stream?.getTracks().forEach((track) => track.stop());
+    if (notify && venue && this.staffKey) {
+      await this.festivalClient.stopTheaterCast(this.staffKey, venue).catch(() => undefined);
+    }
+    if (venue) this.showWorldAlert(this.language === 'zh-TW' ? 'VR 銀幕直播已停止' : 'VR SCREEN CAST STOPPED');
+  }
+
+  private async startHostingTheaterCast(venue: VenueKey): Promise<void> {
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      throw new Error(this.language === 'zh-TW'
+        ? '這個瀏覽器無法分享分頁。請使用桌面版 Chrome。'
+        : 'This browser cannot share a tab. Use desktop Chrome.');
+    }
+    await this.stopHostingTheaterCast(true);
+    // The browser owns this chooser. STAFF must deliberately select the tab
+    // containing YouTube and enable Share tab audio; the site cannot silently
+    // capture a screen or choose a source on their behalf.
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    if (!stream.getVideoTracks().length) {
+      stream.getTracks().forEach((track) => track.stop());
+      throw new Error('The selected source did not provide video.');
+    }
+    try {
+      await this.festivalClient.startTheaterCast(this.staffKey, venue);
+    } catch (error) {
+      stream.getTracks().forEach((track) => track.stop());
+      throw error;
+    }
+    this.hostCastStream = stream;
+    this.hostCastVenue = venue;
+    const ended = () => {
+      if (this.hostCastStream === stream) void this.stopHostingTheaterCast(true);
+    };
+    stream.getVideoTracks()[0]?.addEventListener('ended', ended, { once: true });
+    this.showWorldAlert(this.language === 'zh-TW'
+      ? `${this.venueName(venue)} · 正在直播分享的分頁`
+      : `${this.venueName(venue)} · SHARED TAB IS LIVE`);
+    void this.refreshAdminState();
+  }
+
+  private stopViewerTheaterCast(notify = true): void {
+    const venue = this.viewerCastVenue;
+    const requestId = this.viewerCastRequestId;
+    this.viewerCastPeer?.close();
+    this.viewerCastStream?.getTracks().forEach((track) => track.stop());
+    if (venue) this.world?.setImmersiveProjectorStream(venue, undefined);
+    this.viewerCastPeer = undefined;
+    this.viewerCastVenue = undefined;
+    this.viewerCastHostId = undefined;
+    this.viewerCastRequestId = undefined;
+    this.viewerCastStream = undefined;
+    this.viewerCastStarting = false;
+    if (notify && venue && requestId) void this.festivalClient.leaveTheaterCast(venue, requestId);
+  }
+
+  private async beginViewerTheaterCast(venue: VenueKey, hostId: string): Promise<void> {
+    if (this.viewerCastStarting || Date.now() < this.viewerCastRetryAt) return;
+    this.stopViewerTheaterCast();
+    this.viewerCastStarting = true;
+    const peer = new RTCPeerConnection({ iceServers: this.theaterIceServers });
+    this.viewerCastPeer = peer;
+    this.viewerCastVenue = venue;
+    this.viewerCastHostId = hostId;
+    peer.addTransceiver('video', { direction: 'recvonly' });
+    peer.addTransceiver('audio', { direction: 'recvonly' });
+    peer.addEventListener('track', (event) => {
+      if (this.viewerCastPeer !== peer) return;
+      const stream = event.streams[0] ?? this.viewerCastStream ?? new MediaStream();
+      if (!event.streams[0] && !stream.getTracks().includes(event.track)) stream.addTrack(event.track);
+      this.viewerCastStream = stream;
+      if (stream.getVideoTracks().length && this.vrActive) {
+        this.world?.setImmersiveProjectorStream(venue, stream);
+      }
+    });
+    peer.addEventListener('connectionstatechange', () => {
+      if (this.viewerCastPeer !== peer) return;
+      if (!['failed', 'closed', 'disconnected'].includes(peer.connectionState)) return;
+      this.viewerCastRetryAt = Date.now() + 5_000;
+      this.stopViewerTheaterCast(false);
+    });
+    try {
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      await this.waitForIce(peer);
+      if (this.viewerCastPeer !== peer || !peer.localDescription) return;
+      const reply = await this.festivalClient.requestTheaterCast(venue, peer.localDescription.toJSON());
+      if (this.viewerCastPeer === peer) this.viewerCastRequestId = reply.requestId;
+    } catch (error) {
+      if (this.viewerCastPeer === peer) {
+        this.viewerCastRetryAt = Date.now() + 5_000;
+        this.stopViewerTheaterCast(false);
+        this.vrError = error instanceof Error ? error.message : 'VR screen cast could not connect.';
+        this.syncVrUi();
+      }
+    } finally {
+      if (this.viewerCastPeer === peer) this.viewerCastStarting = false;
+    }
+  }
+
+  private syncTheaterCast(state: FestivalState): void {
+    const venue = this.snapshot?.screeningVenue ?? this.activeVenue;
+    const cast = state.theaterCasts?.[venue];
+    const selfId = state.selfId;
+    const wanted = this.vrActive && !this.usesVrSimulation() && cast && cast.hostId !== selfId;
+    if (!wanted) {
+      if (this.viewerCastPeer) this.stopViewerTheaterCast();
+      return;
+    }
+    if (this.viewerCastPeer && this.viewerCastVenue === venue && this.viewerCastHostId === cast.hostId) {
+      if (this.viewerCastStream?.getVideoTracks().length) {
+        this.world?.setImmersiveProjectorStream(venue, this.viewerCastStream);
+      }
+      return;
+    }
+    void this.beginViewerTheaterCast(venue, cast.hostId);
+  }
+
+  private async handleTheaterCastSignal(signal: TheaterCastSignal): Promise<void> {
+    if (signal.kind === 'leave') {
+      if (signal.requestId) {
+        this.hostCastPeers.get(signal.requestId)?.close();
+        this.hostCastPeers.delete(signal.requestId);
+      }
+      return;
+    }
+    if (signal.kind === 'ended') {
+      if (this.viewerCastVenue === signal.venue) this.stopViewerTheaterCast(false);
+      return;
+    }
+    if (signal.kind === 'answer') {
+      const peer = this.viewerCastPeer;
+      if (!peer || this.viewerCastVenue !== signal.venue) return;
+      if (this.viewerCastRequestId && this.viewerCastRequestId !== signal.requestId) return;
+      this.viewerCastRequestId = signal.requestId;
+      await peer.setRemoteDescription(signal.description).catch(() => {
+        this.viewerCastRetryAt = Date.now() + 5_000;
+        this.stopViewerTheaterCast(false);
+      });
+      return;
+    }
+    if (!this.hostCastStream || this.hostCastVenue !== signal.venue || !this.staffKey) return;
+    this.hostCastPeers.get(signal.requestId)?.close();
+    const peer = new RTCPeerConnection({ iceServers: this.theaterIceServers });
+    this.hostCastPeers.set(signal.requestId, peer);
+    peer.addEventListener('connectionstatechange', () => {
+      if (!['failed', 'closed', 'disconnected'].includes(peer.connectionState)) return;
+      if (this.hostCastPeers.get(signal.requestId) === peer) this.hostCastPeers.delete(signal.requestId);
+      peer.close();
+    });
+    try {
+      for (const track of this.hostCastStream.getTracks()) peer.addTrack(track, this.hostCastStream);
+      await peer.setRemoteDescription(signal.description);
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      await this.waitForIce(peer);
+      if (this.hostCastPeers.get(signal.requestId) !== peer || !peer.localDescription) return;
+      await this.festivalClient.answerTheaterCast(
+        this.staffKey,
+        signal.venue,
+        signal.requestId,
+        peer.localDescription.toJSON(),
+      );
+    } catch {
+      if (this.hostCastPeers.get(signal.requestId) === peer) this.hostCastPeers.delete(signal.requestId);
+      peer.close();
+    }
   }
 
   private syncVrUi(): void {
@@ -2365,7 +2581,7 @@ export class App {
     if (entry) entry.hidden = !this.vrRequested || this.vrActive || this.vrResumePending;
     if (resume) resume.hidden = !this.vrResumePending || this.vrActive || !this.root.querySelector('#venue-screen')?.hasAttribute('hidden');
     if (previewExit) previewExit.hidden = !this.vrActive || !this.usesVrSimulation();
-    if (recenter) recenter.hidden = !this.vrActive || !this.usesVrSimulation();
+    if (recenter) recenter.hidden = !this.vrActive;
     this.syncHeadTrackUi();
     if (status && this.vrError) status.textContent = this.vrError;
     if (this.world && this.usesVrSimulation()) {
@@ -2687,7 +2903,8 @@ export class App {
     if (!this.world) return false;
     this.vrError = '';
     const phonePreview = this.usesPhoneVrSimulation();
-    const entered = await this.world.enterVr(this.usesVrSimulation(), phonePreview);
+    const overlay = this.root.querySelector<HTMLElement>('#venue-screen') ?? undefined;
+    const entered = await this.world.enterVr(this.usesVrSimulation(), phonePreview, overlay);
     if (!entered) {
       this.vrError = phonePreview
         ? this.language === 'zh-TW'
@@ -2702,12 +2919,21 @@ export class App {
   }
 
   /**
-   * A YouTube iframe cannot become an in-world WebXR texture without replacing
-   * or extracting the player. End the immersive session, keep the seat in the
-   * world, and open YouTube's standard player instead.
+   * Prefer WebXR's optional DOM overlay when the browser grants it. That keeps
+   * YouTube's own iframe intact and lets the headset present it as a 2D panel
+   * while the immersive session continues. Cross-origin overlay support is a
+   * browser capability, so an ungranted session uses the established exit,
+   * watch and resume path instead.
    */
   private async leaveVrForYoutube(venue: VenueKey): Promise<void> {
     this.activeVenue = venue;
+    if (this.vrActive && !this.usesVrSimulation() && this.world?.xrDomOverlayType()) {
+      this.renderScreen(this.publicFilm(venue), 'public', this.publicScreeningOffset(), true);
+      this.applyScreenMaximized(true);
+      this.root.querySelector<HTMLElement>('#venue-screen')?.classList.add('venue-screen--xr-overlay');
+      this.syncVrUi();
+      return;
+    }
     this.vrResumePending = true;
     await this.world?.exitVr();
     this.renderScreen(this.publicFilm(venue), 'public', this.publicScreeningOffset(), true);
@@ -2759,6 +2985,7 @@ export class App {
       resumeHidden: this.root.querySelector<HTMLButtonElement>('[data-vr-resume]')?.hidden,
       youtubeHost: iframe ? new URL(iframe.src).hostname : null,
       world: this.world?.xrReviewSnapshot(),
+      domOverlay: this.world?.xrDomOverlayType() ?? null,
     };
   }
 
@@ -2809,7 +3036,10 @@ export class App {
       // report the next work's duration while projector.youtubeId still named
       // the previous one. That poisoned the shared duration table and made the
       // service cut longer films off at the wrongly learned time.
-      this.world?.setPublicScreening(venue, film, this.publicOffset(venue), `${schedule?.updatedAt ?? 0}|${schedule?.startedAt ?? 0}`);
+      this.world?.setPublicScreening(venue, {
+        ...film,
+        immersiveUrl: immersiveVideoSources[film.youtubeId],
+      }, this.publicOffset(venue), `${schedule?.updatedAt ?? 0}|${schedule?.startedAt ?? 0}`);
       this.world?.setPublicScreenPaused(venue, schedule?.mode === 'paused');
     }
   }
@@ -3184,6 +3414,7 @@ export class App {
       if (this.screenOwnsFullscreen(screen)) void this.exitScreenFullscreen();
       screen.hidden = true;
       screen.classList.remove('venue-screen--maximized');
+      screen.classList.remove('venue-screen--xr-overlay');
     }
     this.screenNativeFullscreen = false;
     this.root.querySelector<HTMLElement>('.world-shell')?.removeAttribute('data-screen-mode');
@@ -3536,8 +3767,9 @@ export class App {
     const previousAttendeeSignature = this.attendeeListSignature(this.networkState, this.npcProfiles);
     // Attendee clocks drift and some are simply wrong. Programme positions are
     // measured against the service clock instead.
-    if (state.serverTime) this.serverClockOffset = state.serverTime - Date.now();
+    if (state.serverTime) { this.serverClockOffset = state.serverTime - Date.now(); this.world?.setNpcClock(state.serverTime); }
     this.networkState = state;
+    this.syncTheaterCast(state);
     this.siteStyle = { ...this.siteStyle, ...state.siteStyle };
     this.gateBackground = { ...this.gateBackground, ...state.gateBackground };
     this.npcProfiles = this.normalizeNpcProfiles(state.npcProfiles, state.npcNames);
@@ -4204,8 +4436,8 @@ export class App {
           <button type="button" data-offering-close aria-label="${zh ? '關閉' : 'Close'}">×</button>
         </header>
         ${options.production ? '' : `<p class="offering__note offering__note--test">${zh
-          ? '測試模式：這裡不會真的扣款。'
-          : 'TEST MODE — no money is taken here.'}</p>`}
+          ? (options.receiptEmailEnabled ? '測試模式：不會真的扣款；勾選收據後仍會寄出測試收據。' : '測試模式：不會真的扣款；收據郵件尚未設定。')
+          : (options.receiptEmailEnabled ? 'TEST MODE — no charge; a requested test receipt will still be emailed.' : 'TEST MODE — no charge; receipt email is not configured yet.')}</p>`}
         <div class="offering__amounts">
           ${options.presets.map((amount, index) => `<button type="button" data-offering-amount="${amount}"${index === 1 ? ' class="is-chosen"' : ''}>NT$${amount}</button>`).join('')}
         </div>
@@ -4213,15 +4445,15 @@ export class App {
           <input type="number" inputmode="numeric" data-offering-custom min="${options.min}" max="${options.max}" step="1" placeholder="${options.min}–${options.max}" />
         </label>
         ${options.invoice ? `${options.receiptOptional ? `<label class="offering__check">
-          <input type="checkbox" data-offering-wants />
+          <input type="checkbox" data-offering-wants${options.receiptEmailEnabled ? '' : ' disabled'} />
           <span>${zh ? '我要收據' : "I'D LIKE A RECEIPT"}</span>
         </label>` : ''}
         <div class="offering__receipt"${options.receiptOptional ? ' hidden' : ''} data-offering-receipt>
           <label class="offering__field"><span>${zh ? '收據寄送信箱' : 'EMAIL FOR THE RECEIPT'}</span>
             <input type="email" inputmode="email" autocomplete="email" data-offering-email placeholder="you@example.com" /></label>
           <p class="offering__note">${zh
-            ? '收據將會寄送到這個信箱。'
-            : 'The receipt will be sent to this address.'}</p>
+            ? (options.receiptEmailEnabled ? '發票開立後，測試收據會寄到這個信箱。' : '收據郵件尚未設定，暫時無法勾選。')
+            : (options.receiptEmailEnabled ? 'The test receipt is emailed here after the invoice is issued.' : 'Receipt email is not configured, so the option is temporarily unavailable.')}</p>
         </div>` : ''}
         <p class="offering__error" data-offering-error hidden></p>
         <button type="button" class="offering__go" data-offering-go>${zh ? '感謝供養' : 'MY DEEPEST GRATITUDE'}</button>
@@ -4311,14 +4543,16 @@ export class App {
    * otherwise. The invoice number follows a moment later as a second message —
    * ECPay issues it after the payment, not with it.
    */
-  private thankTheOffering(receipt: { id: string; amount: number; invoice: string | null }): void {
+  private thankTheOffering(receipt: { id: string; amount: number; invoice: string | null; emailSent?: boolean }): void {
     const zh = this.language === 'zh-TW';
     const deity = this.networkState?.templeSign?.name ?? '美麗本人';
     if (receipt.invoice) {
       this.showWorldAlert(zh ? `收據 ${receipt.invoice}` : `RECEIPT ${receipt.invoice}`);
-      this.pushNpcLine(deity, zh
-        ? `收據號碼 ${receipt.invoice}，已寄到你的信箱。`
-        : `Receipt ${receipt.invoice} — it is on its way to your inbox.`);
+      this.pushNpcLine(deity, receipt.emailSent === true
+        ? (zh ? `收據號碼 ${receipt.invoice} 已開立並寄到你的信箱。` : `Receipt ${receipt.invoice} has been issued and emailed to you.`)
+        : receipt.emailSent === false
+          ? (zh ? `收據號碼 ${receipt.invoice} 已開立，但郵件寄送失敗，請聯絡影展工作人員。` : `Receipt ${receipt.invoice} was issued, but email delivery failed. Please contact festival staff.`)
+          : (zh ? `收據號碼 ${receipt.invoice} 已開立；郵件寄送狀態尚未確認。` : `Receipt ${receipt.invoice} was issued; email delivery has not been confirmed yet.`));
       return;
     }
     this.showWorldAlert(zh ? `供養已收下 · NT$${receipt.amount}` : `OFFERING RECEIVED · NT$${receipt.amount}`);
@@ -4465,7 +4699,9 @@ export class App {
    */
   private syncMenuCapture(): void {
     const pass = this.root.querySelector<HTMLElement>('#festival-pass');
-    this.world?.setMenuOpen(Boolean(this.activePanel) || (pass ? !pass.hidden : false));
+    const captured=Boolean(this.activePanel) || (pass ? !pass.hidden : false);
+    this.world?.setMenuOpen(captured);
+    if (['127.0.0.1','localhost'].includes(window.location.hostname)) this.root.dataset.menuCapture=String(captured);
   }
 
   private closeFestivalPass(): void {
@@ -4486,16 +4722,20 @@ export class App {
       case 'map':
         return `
           <p class="panel-intro">${this.language === 'zh-TW' ? '選擇入口即可快速移動。' : 'Choose an entrance to fast travel.'}</p>
-          <div class="map-card" aria-label="${this.language === 'zh-TW' ? '影展地圖' : 'Festival map'}">
-            <div class="map-sea">${this.language === 'zh-TW' ? '地中海' : 'MEDITERRANEAN<br />SEA'}</div>
-            <span class="map-branch" aria-hidden="true"></span>
-            <button class="map-node map-node--gate" data-travel="gate">${this.language === 'zh-TW' ? '影展入口' : 'FESTIVAL GATE'}</button>
-            <button class="map-node map-node--palace" data-travel="palace">${this.escapeHtml(this.venueName('palace'))}<small>${this.categoryLabel('TELEVISION')}</small></button>
-            <button class="map-node map-node--square" data-travel="square">${this.language === 'zh-TW' ? '我的廣場' : 'MY SQUARE'}</button>
-            <button class="map-node map-node--drive" data-travel="drive-in">${this.escapeHtml(this.venueName('drive-in'))}<small>${this.categoryLabel('MUSIC VIDEO')}</small></button>
-            <button class="map-node map-node--shore" data-travel="shore">${this.escapeHtml(this.venueName('shore'))}<small>${this.categoryLabel('COMMERCIAL')}</small></button>
-            <button class="map-node map-node--rooftop" data-travel="rooftop">${this.escapeHtml(this.venueName('rooftop'))}<small>${this.categoryLabel('ORIGINALS')}</small></button>
-            <button class="map-node map-node--club" data-travel="club">${this.escapeHtml(this.venueName('club'))}<small>${this.categoryLabel('ORIGINALS')}</small></button>
+          <div class="map-card coastal-map-card" aria-label="${this.language === 'zh-TW' ? '影展地圖' : 'Festival map'}">
+            ${coastalMapGraphic(this.language==='zh-TW')}
+            <div class="coastal-map-destinations">
+            <button class="map-node map-node--gate" data-travel="gate"><b class="map-number">1</b>${this.language === 'zh-TW' ? '影展入口' : 'FESTIVAL GATE'}</button>
+            <button class="map-node map-node--square" data-travel="square"><b class="map-number">2</b>${this.language === 'zh-TW' ? '我的廣場' : 'MY SQUARE'}</button>
+            <button class="map-node map-node--palace" data-travel="palace"><b class="map-number">3</b>${this.escapeHtml(this.venueName('palace'))}<small>${this.categoryLabel('TELEVISION')}</small></button>
+            <button class="map-node map-node--drive" data-travel="drive-in"><b class="map-number">4</b>${this.escapeHtml(this.venueName('drive-in'))}<small>${this.categoryLabel('MUSIC VIDEO')}</small></button>
+            <button class="map-node map-node--shore" data-travel="shore"><b class="map-number">5</b>${this.escapeHtml(this.venueName('shore'))}<small>${this.categoryLabel('COMMERCIAL')}</small></button>
+            <button class="map-node map-node--club" data-travel="club"><b class="map-number">6</b>${this.escapeHtml(this.venueName('club'))}<small>${this.categoryLabel('ORIGINALS')}</small></button>
+            <button class="map-node map-node--rooftop" data-travel="rooftop"><b class="map-number">7</b>${this.escapeHtml(this.venueName('rooftop'))}<small>${this.categoryLabel('ORIGINALS')}</small></button>
+            <button class="map-node" data-travel="temple"><b class="map-number">8</b>${this.language==='zh-TW'?'美麗仙人':'BEAUTIFUL IMMORTAL'}<small>${this.language==='zh-TW'?'緩坡入口':'CONTOUR WALK ENTRANCE'}</small></button>
+            </div>
+            <a class="panel-button" href="./floor-plan.svg" download="myschedule-floor-plan.svg">${this.language==='zh-TW'?'下載平面圖':'DOWNLOAD FLOOR PLAN'}</a>
+            <p class="coastal-map-key">${this.language==='zh-TW'?'灰色：道路 · 米色：步道 · 紅色：皇宮紅毯。數字對應目的地入口。':'Grey: roads · Cream: paths · Red: Palace carpet. Numbers identify destination entrances.'}</p>
           </div>`;
       case 'programme':
         {
@@ -4758,8 +4998,11 @@ export class App {
   private bindPanelActions(panelId: PanelId, panel: HTMLElement): void {
     panel.querySelectorAll<HTMLButtonElement>('[data-travel]').forEach((button) => {
       button.addEventListener('click', () => {
-        this.world?.fastTravel(button.dataset.travel as 'gate' | 'square' | 'palace' | 'drive-in' | 'shore' | 'club' | 'rooftop');
-        panel.hidden = true;
+        this.world?.fastTravel(button.dataset.travel as 'gate' | 'square' | 'palace' | 'drive-in' | 'shore' | 'club' | 'rooftop' | 'temple');
+        this.closePanel();
+        this.closeFestivalPass();
+        this.syncMenuCapture();
+        (document.activeElement as HTMLElement | null)?.blur();
       });
     });
     // In the world the change has to reach the body in the square, the copy of
@@ -5186,6 +5429,27 @@ export class App {
           sessionStorage.setItem(STAFF_SECTIONS_KEY, JSON.stringify([...this.openStaffSections]));
         });
       });
+      panel.querySelector<HTMLButtonElement>('[data-cast-start]')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget as HTMLButtonElement;
+        const venue = panel.querySelector<HTMLSelectElement>('[data-cast-venue]')?.value as VenueKey | undefined;
+        if (!venue || !VENUE_KEYS.includes(venue)) return;
+        button.disabled = true;
+        this.adminError = '';
+        try {
+          await this.startHostingTheaterCast(venue);
+        } catch (error) {
+          this.adminError = error instanceof Error ? error.message : 'The browser tab could not be shared.';
+          this.reopenPanelKeepingPlace('admin');
+        } finally {
+          button.disabled = false;
+        }
+      });
+      panel.querySelector<HTMLButtonElement>('[data-cast-stop]')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget as HTMLButtonElement;
+        button.disabled = true;
+        await this.stopHostingTheaterCast(true);
+        await this.refreshAdminState();
+      });
       panel.querySelector<HTMLFormElement>('#staff-key-form')?.addEventListener('submit', (event) => {
         event.preventDefault();
         const form = event.currentTarget as HTMLFormElement;
@@ -5228,6 +5492,7 @@ export class App {
       });
       panel.querySelector<HTMLButtonElement>('[data-staff-refresh]')?.addEventListener('click', () => void this.refreshAdminState());
       panel.querySelector<HTMLButtonElement>('[data-staff-logout]')?.addEventListener('click', () => {
+        void this.stopHostingTheaterCast(true);
         this.staffKey = '';
         this.adminState = undefined;
         this.adminError = '';
@@ -5664,6 +5929,22 @@ export class App {
         <button type="submit">${this.language === 'zh-TW' ? '儲存寺廟看板' : 'SAVE TEMPLE SIGN'}</button>
       </form>`)}
       ${this.staffSection('programme', this.language === 'zh-TW' ? '節目與銀幕' : 'PROGRAMME & SCREENS', `
+      <div class="staff-cast-control">
+        <h4 class="staff-subheading">${this.language === 'zh-TW' ? 'VR 銀幕直播' : 'VR SCREEN CAST'}</h4>
+        <p class="staff-note">${this.language === 'zh-TW'
+          ? '在桌面版 Chrome 開啟 YouTube，再按下分享並選擇該分頁及「分享分頁音訊」。影片會透過 WebRTC 顯示在頭戴式裝置裡的實體銀幕上；分享的電腦必須保持在線。'
+          : 'Open YouTube in desktop Chrome, press Share, then select that tab and Share tab audio. WebRTC puts the capture on the real in-world headset screen; the host computer must stay online.'}</p>
+        <label>${this.language === 'zh-TW' ? '直播影廳' : 'CAST TO'}<select data-cast-venue>
+          ${VENUE_KEYS.map((venue) => `<option value="${venue}"${venue === (this.hostCastVenue ?? 'shore') ? ' selected' : ''}>${this.escapeHtml(this.venueName(venue))}</option>`).join('')}
+        </select></label>
+        <div class="staff-cast-control__actions">
+          <button class="panel-button" type="button" data-cast-start>${this.language === 'zh-TW' ? '分享 YOUTUBE 分頁' : 'SHARE YOUTUBE TAB'}</button>
+          <button class="panel-button" type="button" data-cast-stop${this.hostCastStream ? '' : ' disabled'}>${this.language === 'zh-TW' ? '停止直播' : 'STOP CAST'}</button>
+        </div>
+        <p class="staff-note" data-cast-status>${Object.values(this.adminState.theaterCasts ?? {}).length
+          ? Object.values(this.adminState.theaterCasts ?? {}).map((cast) => `${this.escapeHtml(this.venueName(cast!.venue))} · ${this.escapeHtml(cast!.hostName)}`).join('<br>')
+          : (this.language === 'zh-TW' ? '目前沒有 VR 銀幕直播。' : 'NO VR SCREEN CAST IS LIVE.')}</p>
+      </div>
       <div class="staff-programmes">${VENUE_KEYS.map((venue) => {
         const schedule = this.adminState?.schedule?.[venue];
         const venueFilms = this.venueFilms(venue);
@@ -5823,7 +6104,7 @@ export class App {
     if (!stream) return;
     const messages = [...this.chatMessages]
       .sort((first, second) => first.timestamp - second.timestamp)
-      .slice(-4);
+      .slice(-3);
     const timeFormat = new Intl.DateTimeFormat(this.language, { hour: '2-digit', minute: '2-digit' });
     const items = messages.map((message) => ({
       id: message.id,
@@ -5905,17 +6186,16 @@ export class App {
     const colours = paletteInputs
       .map((slot) => `<label class="swatch"><span>${paletteLabels[this.language][slot]}</span><input type="color" ${attribute}="${slot}" value="${this.palette[slot]}" /></label>`)
       .join('');
-    // One row per accessory: worn or not, and in what colour. The colour is
-    // disabled rather than hidden while it is off, so the row keeps its shape
-    // and the list does not jump about as things are ticked.
+    // The cap is a separate mesh, with the same optional control at gate and in-world.
     const worn = ACCESSORY_SLOTS
+      .filter((slot) => slot === 'cap')
       .map((slot) => {
         const colour = this.palette[slot];
         const value = colour ?? DEFAULT_ACCESSORY_COLOURS[slot];
-        return `<label class="wearable${colour ? ' is-worn' : ''}" data-wearable="${slot}">
-          <input type="checkbox" ${attribute}-wear="${slot}"${colour ? ' checked' : ''} />
-          <span>${accessoryLabels[this.language][slot]}</span>
-          <input type="color" ${attribute}="${slot}" value="${value}"${colour ? '' : ' disabled'} />
+        return `<label class="wearable ${colour ? 'is-worn' : ''}" data-wearable="${slot}">
+          <input type="checkbox" ${attribute}-wear="${slot}" ${colour ? 'checked' : ''} aria-label="${zh ? '戴帽子' : 'Wear cap'}" />
+          <span>${zh ? '棒球帽' : 'BASEBALL CAP'}</span>
+          <input type="color" ${attribute}="${slot}" value="${value}" ${colour ? '' : 'disabled'} aria-label="${zh ? '帽子顏色' : 'Cap colour'}" />
         </label>`;
       })
       .join('');
@@ -5923,6 +6203,7 @@ export class App {
       <div class="appearance">
         <div class="appearance__group">
           <span class="eyebrow">${zh ? '膚色與服裝' : 'SKIN AND CLOTHES'}</span>
+          <label class="outfit-choice"><span>${zh ? '上衣服裝' : 'TOP OUTFIT'}</span><select ${attribute}-outfit aria-label="${zh ? '上衣服裝' : 'Top outfit'}">${TOP_OUTFITS.map(o=>`<option value="${o.wire}" ${topOutfit(this.palette.top)===o.id?'selected':''}>${zh?o.zh:o.en}</option>`).join('')}</select></label>
           <div class="swatch-row">${colours}</div>
         </div>
         <div class="appearance__group">
@@ -5940,6 +6221,11 @@ export class App {
    * square and everybody looking at it.
    */
   private bindAppearanceFields(scope: ParentNode, attribute: 'data-palette' | 'data-world-palette', commit: () => void): void {
+    scope.querySelector<HTMLSelectElement>(`[${attribute}-outfit]`)?.addEventListener('change', event => {
+      const value=(event.currentTarget as HTMLSelectElement).value;
+      if(!TOP_OUTFITS.some(outfit=>outfit.wire===value))return;
+      this.palette={...this.palette,top:value};commit();
+    });
     scope.querySelectorAll<HTMLInputElement>(`[${attribute}]`).forEach((input) => {
       if (input.type !== 'color') return;
       input.addEventListener('input', () => {

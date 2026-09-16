@@ -44,6 +44,9 @@ const addBlock = (
 export const createMentorDog = (): MentorDogRig => {
   const root = new THREE.Group();
   root.name = 'mentor-dog-root';
+  // Medium companion: knee-to-thigh height, scaled about the paw contact plane.
+  root.scale.setScalar(.68);
+  root.position.y=-.28*(1-.68);
 
   const fur = dogMaterial(0x55342a);
   const furLight = dogMaterial(0x704a3a);
@@ -116,6 +119,40 @@ export const createMentorDog = (): MentorDogRig => {
     style: 'simple block-style festival NPC',
   };
 
-  root.scale.setScalar(0.92);
+  root.scale.setScalar(0.68);
   return { root, head, leftFrontLeg, rightFrontLeg, leftBackLeg, rightBackLeg, tail, body };
 };
+
+/** Keep a compact, still perch in the animated head frame, with paws on the crown. */
+export function perchMentor(group:THREE.Group, rig:MentorDogRig, head:THREE.Object3D, support:THREE.Vector3):void {
+  const parent=group.parent;if(!parent)return;
+  for(const [leg,sign] of [[rig.leftFrontLeg,1],[rig.rightFrontLeg,-1],[rig.leftBackLeg,1],[rig.rightBackLeg,-1]] as const)leg.rotation.set(0,0,sign*1.08);
+  group.scale.setScalar(.56);
+  parent.updateWorldMatrix(true,false);head.updateWorldMatrix(true,false);
+  group.quaternion.copy(parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(head.getWorldQuaternion(new THREE.Quaternion())));
+  group.position.copy(parent.worldToLocal(head.localToWorld(support.clone())));
+  group.updateWorldMatrix(false,true);
+  // Measure the actual tucked legs, not the standing dog's old origin.
+  let lowest=Infinity;
+  for(const leg of [rig.leftFrontLeg,rig.rightFrontLeg,rig.leftBackLeg,rig.rightBackLeg])leg.traverse(o=>{
+    if(!(o instanceof THREE.Mesh))return;
+    const positions=o.geometry.getAttribute('position');
+    for(let i=0;i<positions.count;i++)lowest=Math.min(lowest,group.worldToLocal(o.localToWorld(new THREE.Vector3().fromBufferAttribute(positions,i))).y);
+  });
+  group.position.add(new THREE.Vector3(0,.006-lowest*.56,0).applyQuaternion(group.quaternion));
+  group.updateWorldMatrix(false,true);
+}
+
+/** Distance-driven trot; collisions and teleports cannot make stationary paws shuffle. */
+export function stepMentorGait(rig:MentorDogRig,delta:number,moving:boolean):{phase:number;amount:number} {
+  const position=rig.root.getWorldPosition(new THREE.Vector3());
+  const state=rig.root.userData.gait??={x:position.x,z:position.z,phase:0,amount:0};
+  const dt=THREE.MathUtils.clamp(delta,0,.1);
+  const distance=Math.hypot(position.x-state.x,position.z-state.z);
+  const speed=dt>0&&distance<2?distance/dt:0;
+  const active=moving&&speed>.12;
+  if(active)state.phase+=Math.min(distance/1.8,dt*1.15)*Math.PI*2;
+  state.amount+=(Number(active)*Math.min(1,speed/2)-state.amount)*(1-Math.exp(-10*dt));
+  state.x=position.x;state.z=position.z;
+  return state;
+}
