@@ -11,6 +11,7 @@ import {
   buildInvoice, buildOrder, ecpayConfig, readInvoiceReply,
   safeAmount, safeEmail, tradeNumber,
 } from './donations.mjs';
+import { receiptMailConfig, sendReceiptEmail } from './receipt-mail.mjs';
 
 /** The room remembers this many lines; older ones fall off the top. */
 const CHAT_HISTORY_LIMIT = 50;
@@ -1251,6 +1252,7 @@ const claimName = (name) => {
 const donations = new Map();
 const DONATION_TTL_MS = 45 * 60 * 1000;
 const ECPAY = ecpayConfig();
+const RECEIPT_MAIL = receiptMailConfig();
 
 /** Whether this visitor has an offering still open at ECPay. */
 const paying = (visitorId) => {
@@ -1356,10 +1358,23 @@ const issueInvoice = async (donation) => {
   // would be naming a number they will never see. They have already been
   // thanked for the offering itself.
   if (!donation.wantsReceipt) return;
+  try {
+    const mailed = await sendReceiptEmail({
+      donation,
+      invoiceNo: outcome.invoiceNo,
+      production: ECPAY.production,
+    }, RECEIPT_MAIL);
+    donation.receiptEmailId = mailed.id;
+    donation.receiptEmailSent = true;
+  } catch (error) {
+    donation.receiptEmailError = String(error?.message ?? error);
+    donation.receiptEmailSent = false;
+  }
   tellVisitor(donation.visitorId, 'donation', {
     id: donation.id,
     amount: donation.paidAmount ?? donation.amount,
     invoice: outcome.invoiceNo,
+    emailSent: donation.receiptEmailSent,
   });
 };
 
@@ -1482,6 +1497,8 @@ const server = createServer(async (request, response) => {
         // 'fallback-unusable' is one somebody set wrongly, and the two look
         // identical from a sheet with no tick box on it.
         receiptBlockedBy: receiptBlockedBy(),
+        receiptEmailEnabled: RECEIPT_MAIL.ready,
+        receiptEmailBlockedBy: RECEIPT_MAIL.blockedBy,
       });
     }
 
@@ -1496,8 +1513,15 @@ const server = createServer(async (request, response) => {
       // address, or no payment.
       const wantsReceipt = receiptOptional() ? payload.receipt !== false : true;
       const given = safeEmail(payload.email);
-      if (ECPAY.invoiceEnabled && wantsReceipt && !given) {
+      if (wantsReceipt && !given) {
         return apiError(response, 400, 'An email address is needed for the invoice.');
+      }
+      // Only reject the explicit opt-in introduced by the receipt checkbox.
+      // Older clients predate that field and still follow the established
+      // ECPay invoice path; keeping them working also makes a staggered beta
+      // rollout safe while the static site and backend update in sequence.
+      if (payload.receipt === true && !RECEIPT_MAIL.ready) {
+        return apiError(response, 503, 'Email receipts are not configured yet. Please try again later.');
       }
       // The invoice is issued either way. This only decides where it lands.
       const email = wantsReceipt ? given : receiptMailbox();
@@ -1678,7 +1702,7 @@ a{color:#e8b64a}</style>
         moving: payload.moving === true,
         running: payload.running === true,
         venue: isVenue(payload.venue) ? payload.venue : 'shore',
-        gesture: ['wave', 'feed', 'tail-wag', 'dance', 'drink', 'jump', 'stumble', 'offer', 'bow', 'punch', 'hit'].includes(payload.gesture) ? payload.gesture : undefined,
+        gesture: ['wave', 'feed', 'tail-wag', 'dance', 'drink', 'eat', 'jump', 'stumble', 'offer', 'bow', 'punch', 'hit'].includes(payload.gesture) ? payload.gesture : undefined,
         carriedItem: payload.carriedItem === 'MENTOR'
           ? (mentorCarrierId === visitor.id ? 'MENTOR' : undefined)
           : ['POPCORN', 'DRINK', 'HOTDOG', 'PIZZA', 'CHICKEN'].includes(payload.carriedItem)

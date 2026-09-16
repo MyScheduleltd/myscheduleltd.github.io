@@ -75,3 +75,11 @@ services:
       # are secrets and belong in the dashboard, never in this file or the
       # repository. Absent them the service stays on ECPay's stage environment
       # with their published test credentials, where nothing can be charged.
+      # Test and production receipt messages are sent only after ECPay returns
+      # an invoice number. Secrets and the verified sender stay in Render.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RECEIPT_EMAIL_FROM
+        sync: false
+      - key: RECEIPT_EMAIL_REPLY_TO
+        sync: false

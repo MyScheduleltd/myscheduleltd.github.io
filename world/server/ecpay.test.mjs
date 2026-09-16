@@ -16,6 +16,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { checkMacValue, verifyCheckMacValue, ecpayUrlEncode, aesEncryptRaw, aesDecrypt } from './ecpay.mjs';
 import { ecpayConfig } from './donations.mjs';
+import { buildReceiptEmail, receiptMailConfig, sendReceiptEmail } from './receipt-mail.mjs';
 
 const VECTORS = [
   {
@@ -328,4 +329,43 @@ test('a missing tick box says which of the two reasons it is', () => {
       'the reason names the fault, never the address',
     );
   }
+});
+
+test('receipt mail stays disabled until both secret and verified sender exist', () => {
+  assert.deepEqual(
+    { ready: receiptMailConfig({}).ready, blockedBy: receiptMailConfig({}).blockedBy },
+    { ready: false, blockedBy: 'api-key-missing' },
+  );
+  assert.equal(receiptMailConfig({ RESEND_API_KEY: 'secret' }).blockedBy, 'sender-missing');
+  const ready = receiptMailConfig({
+    RESEND_API_KEY: 'secret',
+    RECEIPT_EMAIL_FROM: 'MYSCHEDULE <receipt@example.test>',
+  });
+  assert.equal(ready.ready, true);
+  assert.equal(JSON.stringify(ready.blockedBy).includes('secret'), false);
+});
+
+test('test receipt clearly says no money was charged and sends through Resend', async () => {
+  const donation = {
+    email: 'visitor@example.test', visitorName: '<VISITOR>', tradeNo: 'MS123', amount: 100,
+  };
+  const message = buildReceiptEmail({ donation, invoiceNo: 'AB12345678', production: false });
+  assert.match(message.subject, /測試/);
+  assert.match(message.text, /No money was charged/);
+  assert.equal(message.html.includes('<VISITOR>'), false, 'visitor content is escaped in HTML');
+
+  let request;
+  const result = await sendReceiptEmail(
+    { donation, invoiceNo: 'AB12345678', production: false },
+    { ready: true, blockedBy: '', apiKey: 'secret', from: 'MYSCHEDULE <receipt@example.test>', replyTo: '' },
+    async (url, init) => {
+      request = { url, init };
+      return { ok: true, status: 200, json: async () => ({ id: 'mail-1' }) };
+    },
+  );
+  assert.deepEqual(result, { id: 'mail-1' });
+  assert.equal(request.url, 'https://api.resend.com/emails');
+  const payload = JSON.parse(request.init.body);
+  assert.deepEqual(payload.to, ['visitor@example.test']);
+  assert.match(payload.subject, /AB12345678/);
 });
