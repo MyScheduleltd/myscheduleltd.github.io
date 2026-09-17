@@ -2249,6 +2249,7 @@ export class App {
       const name = zh ? (link?.labelZh || 'MASTER OF THE HOUSE') : (link?.label || 'MASTER OF THE HOUSE');
       this.showWorldAlert(zh ? `正在開啟 ${name}` : `OPENING ${name}`);
       window.open(safe, '_blank', 'noopener,noreferrer');
+      void this.leaveHeadsetForNewWindow(name);
       return;
     }
     if (action.type === 'pamphlet') {
@@ -2387,6 +2388,27 @@ export class App {
    */
   private paintsHeadsetHud(): boolean {
     return this.vrActive && (!this.usesVrSimulation() || this.paintedHudReview);
+  }
+
+  /**
+   * Come out of the headset when a new browser window has been opened.
+   *
+   * A shop link or an ECPay checkout opens a window the visitor cannot see:
+   * the session owns the display, so the page is behind it and nothing says
+   * so. Leaving the session puts them back in the browser, looking at the
+   * window that just opened. The window is opened first and this runs after,
+   * because a popup has to be created inside the gesture that asked for it.
+   *
+   * Only for a real headset. A desktop or phone preview is an ordinary browser
+   * composition where a new tab is already visible.
+   */
+  private async leaveHeadsetForNewWindow(what: string): Promise<void> {
+    if (!this.paintsHeadsetHud()) return;
+    await this.world?.exitVr();
+    this.syncVrUi();
+    this.showWorldAlert(this.language === 'zh-TW'
+      ? `已離開 VR · ${what}已在瀏覽器另一個視窗開啟`
+      : `LEFT VR · ${what} OPENED IN ANOTHER BROWSER WINDOW`);
   }
 
   private syncVrUi(): void {
@@ -4359,6 +4381,7 @@ export class App {
       // reason the service hands back a URL instead of the form itself.
       const tab = window.open('', '_blank');
       if (tab) tab.document.write('<!doctype html><meta charset="utf-8"><title>…</title><p style="font:600 15px system-ui;padding:24px">前往綠界付款… Taking you to ECPay…</p>');
+      void this.leaveHeadsetForNewWindow(zh ? '付款頁面' : 'THE PAYMENT PAGE');
       void this.festivalClient.beginDonation(amount, address, wanted).then((started) => {
         if (tab) tab.location.replace(started.checkoutUrl);
         // No tab means a blocker took it. Rather than lose the offering, this
@@ -5535,7 +5558,10 @@ export class App {
       panel.querySelectorAll<HTMLButtonElement>('[data-film-id]').forEach((button) => {
         button.addEventListener('click', () => {
           const film = this.allFilms().find((entry) => entry.id === button.dataset.filmId);
-          if (film) window.open(film.sourceUrl, '_blank', 'noopener,noreferrer');
+          if (film) {
+            window.open(film.sourceUrl, '_blank', 'noopener,noreferrer');
+            void this.leaveHeadsetForNewWindow(this.language === 'zh-TW' ? '作品頁面' : 'THE FILM PAGE');
+          }
         });
       });
     }

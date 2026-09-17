@@ -2010,6 +2010,9 @@ export class FestivalWorld {
         onQuickAction: (action) => {
           if (action === 'offer') this.offerFromTouch();
           else if (action === 'punch') this.punchFromTouch();
+          // A headset has no flat exit button — the one in the corner belongs
+          // to the desktop preview — so leaving has to be painted.
+          else if (action === 'exitVr') void this.exitVr();
         },
       });
       return true;

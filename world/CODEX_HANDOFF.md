@@ -8,6 +8,73 @@ Last updated: 2026-09-17 · **the headset paints its own interface, and only a h
 
 ---
 
+# Latest: the Quest's own keyboard, and a screening nothing sits in front of — BETA PUBLISHED (2026-09-17)
+
+### The painted keyboard is gone, and good
+
+Two keyboards were appearing at once. Clicking the painted writing-box row ran
+`el.click()` on the real `<input>`, which **focuses** it — and a focused field is
+what brings up the Quest's *own* keyboard in an immersive session. So the
+system keyboard sat on top of the painted one.
+
+The owner's call, and the right one: keep the system keyboard and delete the
+painted one. It has a Chinese IME, which a painted keyboard was never going to
+have — `xrKeyRows`, `xrKeyCommands`, `xrPhrases`, `paintKeyboard`, `pressKey`
+and the panel's keyboard height cap are all removed. A writing box is now
+focused **on purpose** (`el.focus()` then `el.click()` for text-ish inputs), and
+the typed text reaches the painted panel through `panelState()` as before.
+
+> So a headset session *can* show the system keyboard over the immersive view.
+> Worth remembering before building any other input by hand.
+
+### The offering could not be launched because it was never painted
+
+`#offering` is built and appended when the temple is asked for one, and it was
+missing from the painted panel's source list — so in a headset the sheet
+existed, took the focus and drew nothing. It is modal at z-index 60, so it now
+comes first in that list, ahead of `#seat-menu`, `#panel` and `#festival-pass`.
+**Any new modal has to be added there, or it will be invisible in VR.**
+
+### Leaving VR when a window opens behind it
+
+A shop link and the ECPay checkout open a browser window the visitor cannot
+see: the session owns the display. `leaveHeadsetForNewWindow()` exits the
+session and says which window opened. The window is opened **first** and this
+runs after, because a popup has to be created inside the gesture that asked for
+it — see the note at the ECPay call about why the tab is opened before the
+await.
+
+### A painted way out
+
+There was no exit in a headset at all: the flat exit button belongs to the
+desktop preview. `EXIT VR` is painted full-width under `任務` and `通行證` in the
+top-right block, as a synthetic `exitVr` action rather than a DOM click. The
+block is 470 canvas rows to make room.
+
+### The screening is in front of the chat now
+
+`.venue-screen` was `z-index: 4` — tied with `.chat-stream`, which won on
+document order — and under `.interaction-toast` at 6. The stack is now
+`controls-hint 3 < chat 4 < toast 6 < screening 7 < seat controls 8 < panel 9 <
+PASS 30`: nothing casual in front of a film, while its own controls and any
+deliberately opened menu still are. This is the flat interface, so it applies in
+the desktop and phone VR modes and in ordinary desktop and phone use alike.
+
+### What was and was not verified
+
+**173/173 tests** and the build pass. Through `?review=vr-hud`: the painted
+`EXIT VR` leaves the session, the offering sheet paints with all seven rows
+clickable and reports `placedFor: "offering"`, the status block carries three
+targets, and the computed z-index stack reads as listed above.
+
+> **Not tested on physical headset hardware**, and two things especially need
+> it: whether the system keyboard now comes up cleanly on its own with no second
+> keyboard behind it, and whether the offering sheet can be completed end to end
+> in the headset — the local service refuses offerings offline, so only the
+> painting was exercised, with an injected sheet.
+
+---
+
 # Latest: the cap's logo had a black frame round it — BETA PUBLISHED (2026-09-17)
 
 Reported as "the top part of the logo graphic on the hat got clipped", on every

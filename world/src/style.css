@@ -282,7 +282,8 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
 .world-shell[data-vr-painted='true'] .world-alert,
 .world-shell[data-vr-painted='true'] .chat-stream,
 .world-shell[data-vr-painted='true'] .controls-hint,
-.world-shell[data-vr-painted='true'] .touch-controls { opacity: 0 !important; pointer-events: none !important; }
+.world-shell[data-vr-painted='true'] .touch-controls,
+.world-shell[data-vr-painted='true'] .offering { opacity: 0 !important; pointer-events: none !important; }
 .vr-entry {
   position: fixed; z-index: 18; left: 50%; top: 50%; width: min(470px, calc(100vw - 32px));
   transform: translate(-50%, -50%); border: 2px solid var(--paper); padding: 24px;
@@ -1058,7 +1059,13 @@ button:active { filter: brightness(.88); scale: .96; }
 .contact-list span { color: var(--red); font: 800 12px var(--condensed); letter-spacing: .1em; }
 .contact-list button:hover, .contact-list a:hover { color: white; background: var(--ink); }
 .venue-screen {
-  position: fixed; z-index: 4; right: 4vw; top: 16vh; width: min(42vw, 650px); overflow: hidden;
+  /* Above the chat and the interaction prompt, which used to be drawn over the
+     picture — the chat tied with it on z-index and won on document order, and
+     the prompt simply outranked it. A screening is the thing being watched, so
+     nothing casual sits in front of it. Its own seat controls go above it
+     (below), and so do the panels, the alerts and PASS: those are all
+     deliberate, and a menu opened over a film has to be readable. */
+  position: fixed; z-index: 7; right: 4vw; top: 16vh; width: min(42vw, 650px); overflow: hidden;
   border: 7px solid #111113; color: var(--paper); background: #090a0c; box-shadow: 0 24px 60px rgba(0,0,0,.5);
 }
 .venue-screen[hidden], .seat-menu[hidden], .world-alert[hidden] { display: none; }
@@ -1113,7 +1120,7 @@ button:active { filter: brightness(.88); scale: .96; }
 .venue-screen:fullscreen .venue-screen__frame { flex: 1; min-height: 0; }
 .venue-screen:-webkit-full-screen { inset: 0; width: 100vw; height: 100vh; border: 0; box-shadow: none; }
 .public-seat-hud {
-  position: fixed; z-index: 6; left: 50%; bottom: 22px; display: flex; align-items: center; justify-content: space-between; gap: 26px;
+  position: fixed; z-index: 8; left: 50%; bottom: 22px; display: flex; align-items: center; justify-content: space-between; gap: 26px;
   width: min(720px, calc(100vw - 280px)); transform: translateX(-50%); padding: 10px 12px; color: white; background: rgba(8,9,10,.88); border: 1px solid rgba(255,255,255,.5);
 }
 .public-seat-hud[hidden] { display: none; }
