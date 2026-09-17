@@ -262,27 +262,27 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
 .world-shell--single-context-projectors .world-css3d { z-index: 0; }
 .world-shell[data-vr-active='true'][data-vr-simulated='false'] .world-css3d,
 .world-shell[data-vr-active='true'][data-vr-simulated='false'] #world-foreground { visibility: hidden !important; }
-/* Inside a headset the flat interface is not composited at all, so the painted
-   HUD is the only one there. In the desktop preview both would be drawn, and a
-   preview showing two interfaces is not a preview of anything — so the flat
-   layers are faded out instead of hidden. `opacity` and not `display`,
-   deliberately: the painted HUD reads these very elements for its contents and
-   sends clicks back to them, and a `display: none` panel has no box to read.
-   Pointer events go with them, because the only pointer now is the ray. */
-.world-shell[data-vr-active='true'] .world-header,
-.world-shell[data-vr-active='true'] .world-status,
-.world-shell[data-vr-active='true'] .inventory-status,
-.world-shell[data-vr-active='true'] .objective-count,
-.world-shell[data-vr-active='true'] .pass-toggle,
-.world-shell[data-vr-active='true'] .festival-pass,
-.world-shell[data-vr-active='true'] .panel,
-.world-shell[data-vr-active='true'] .seat-menu,
-.world-shell[data-vr-active='true'] .public-seat-hud,
-.world-shell[data-vr-active='true'] .interaction-toast,
-.world-shell[data-vr-active='true'] .world-alert,
-.world-shell[data-vr-active='true'] .chat-stream,
-.world-shell[data-vr-active='true'] .controls-hint,
-.world-shell[data-vr-active='true'] .touch-controls { opacity: 0 !important; pointer-events: none !important; }
+/* Only where the painted HUD actually runs — a real headset session, or a
+   loopback review of one. The desktop and phone VR previews are ordinary
+   browser compositions and keep the flat interface untouched.
+   `opacity` and not `display`, deliberately: the painted HUD reads these very
+   elements for its contents and sends clicks back to them, and a
+   `display: none` panel has no box to read. Pointer events go with them,
+   because inside a headset the only pointer is the ray. */
+.world-shell[data-vr-painted='true'] .world-header,
+.world-shell[data-vr-painted='true'] .world-status,
+.world-shell[data-vr-painted='true'] .inventory-status,
+.world-shell[data-vr-painted='true'] .objective-count,
+.world-shell[data-vr-painted='true'] .pass-toggle,
+.world-shell[data-vr-painted='true'] .festival-pass,
+.world-shell[data-vr-painted='true'] .panel,
+.world-shell[data-vr-painted='true'] .seat-menu,
+.world-shell[data-vr-painted='true'] .public-seat-hud,
+.world-shell[data-vr-painted='true'] .interaction-toast,
+.world-shell[data-vr-painted='true'] .world-alert,
+.world-shell[data-vr-painted='true'] .chat-stream,
+.world-shell[data-vr-painted='true'] .controls-hint,
+.world-shell[data-vr-painted='true'] .touch-controls { opacity: 0 !important; pointer-events: none !important; }
 .vr-entry {
   position: fixed; z-index: 18; left: 50%; top: 50%; width: min(470px, calc(100vw - 32px));
   transform: translate(-50%, -50%); border: 2px solid var(--paper); padding: 24px;

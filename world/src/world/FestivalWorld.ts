@@ -432,6 +432,8 @@ interface WorldOptions {
   hudRoot?: HTMLElement;
   /** Whether the interface is in Chinese, for the painted headset HUD. */
   isChinese?: () => boolean;
+  /** Loopback review only: paint the headset HUD in the desktop preview too. */
+  paintHudInSimulation?: boolean;
   onSnapshot: (snapshot: WorldSnapshot) => void;
   onAction: (action: WorldAction) => void;
   onXrSessionChange?: (active: boolean) => void;
@@ -1361,14 +1363,28 @@ export class FestivalWorld {
   private xrSession?: XRSession;
   /** Present only when this headset/browser granted WebXR's DOM overlay feature. */
   private xrDomOverlay?: XRDOMOverlayType;
-  /** The interface, painted into the scene because a headset hides the DOM. */
+  /**
+   * The interface, painted into the scene because a headset hides the DOM.
+   *
+   * Built on the first real immersive session and never before. It used to be
+   * built with the world on every device, which cost every phone seven extra
+   * 2D canvases it would never draw — and iOS caps total canvas memory, so a
+   * refused context threw inside this constructor and the world never opened
+   * at all. A black screen, on the one platform that could least afford the
+   * memory. The desktop and phone VR previews keep the flat interface.
+   */
   private xrHud?: XrHud;
+  private readonly hudRoot?: HTMLElement;
+  private readonly isChinese: () => boolean;
+  /** Loopback review only: paint the headset HUD in the desktop preview. */
+  private readonly paintHudInSimulation: boolean;
   private readonly xrRayOrigin = new THREE.Vector3();
   private readonly xrRayDirection = new THREE.Vector3();
   private readonly xrRayQuaternion = new THREE.Quaternion();
   /** When each button went down, for telling a tap from a hold. */
   private readonly xrHeld = new Map<string, number>();
   private xrScrollAt = 0;
+  private xrHudError?: string;
   private xrActive = false;
   private xrSimulated = false;
   private xrYaw = 0;
@@ -1557,7 +1573,7 @@ export class FestivalWorld {
    */
   private baseFov = 58;
 
-  constructor({ canvas, foregroundCanvas, cssLayer, graphicsMode, palette, xrPreferred = false, lookSensitivity, gamepadBindings, hudRoot, isChinese, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
+  constructor({ canvas, foregroundCanvas, cssLayer, graphicsMode, palette, xrPreferred = false, lookSensitivity, gamepadBindings, hudRoot, isChinese, paintHudInSimulation = false, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
     this.canvas = canvas;
     this.foregroundCanvas = foregroundCanvas;
     this.graphicsMode = graphicsMode;
@@ -1705,20 +1721,9 @@ export class FestivalWorld {
     window.addEventListener('blur', this.clearRunning);
     document.addEventListener('visibilitychange', this.resumeProjectorsOnReturn);
     window.addEventListener('pointerup', this.nudgeProjectorsOnGesture, true);
-    if (hudRoot) {
-      this.xrHud = new XrHud({
-        scene: this.scene,
-        root: hudRoot,
-        zh: isChinese ?? (() => false),
-        // The buttons ran out before the actions did, so these three are
-        // reached with the pointer and run through the pad's own dispatcher.
-        onQuickAction: (action) => {
-          if (action === 'offer') this.offerFromTouch();
-          else if (action === 'punch') this.punchFromTouch();
-          else if (action === 'camera') this.toggleCameraMode();
-        },
-      });
-    }
+    this.hudRoot = hudRoot;
+    this.isChinese = isChinese ?? (() => false);
+    this.paintHudInSimulation = paintHudInSimulation;
     this.resize();
   }
 
@@ -1975,12 +1980,43 @@ export class FestivalWorld {
     if (!simulated) this.mountedProjectorVenue = undefined;
     this.xrActive = true;
     this.player.visible = false;
-    // The flat interface is invisible inside a headset, and in the desktop
-    // preview it is faded out, so the painted one is the only interface in
-    // both places rather than a second copy in one of them.
-    this.xrHud?.setVisible(true);
-    this.xrHud?.resetPlacement();
+    // A headset composites no DOM at all, so it gets the painted interface.
+    // The desktop and phone previews are ordinary browser compositions where
+    // the flat interface still works, and the owner asked for those to stay
+    // exactly as they were — so they are left alone.
+    if ((!simulated || this.paintHudInSimulation) && this.ensureXrHud()) {
+      this.xrHud?.setVisible(true);
+      this.xrHud?.resetPlacement();
+    }
     this.xrHeld.clear();
+  }
+
+  /**
+   * Only a headset gets the painted interface, and only once.
+   *
+   * A refused canvas is not worth a dead world: the headset loses its HUD and
+   * says so in the review snapshot, rather than taking the festival with it.
+   */
+  private ensureXrHud(): boolean {
+    if (this.xrHud) return true;
+    if (!this.hudRoot) return false;
+    try {
+      this.xrHud = new XrHud({
+        scene: this.scene,
+        root: this.hudRoot,
+        zh: this.isChinese,
+        // The buttons ran out before the actions did, so these are reached
+        // with the pointer and run through the pad's own dispatcher.
+        onQuickAction: (action) => {
+          if (action === 'offer') this.offerFromTouch();
+          else if (action === 'punch') this.punchFromTouch();
+        },
+      });
+      return true;
+    } catch (error) {
+      this.xrHudError = error instanceof Error ? error.message : String(error);
+      return false;
+    }
   }
 
   /** Must be called directly from a visitor gesture for a real WebXR session. */
@@ -2556,6 +2592,7 @@ export class FestivalWorld {
       singleWebglContext: !this.foregroundRenderer,
       controllers: this.xrControllers.length,
       hud: this.xrHud?.reviewSnapshot() ?? null,
+      hudError: this.xrHudError ?? null,
       projectorPosters: [...this.projectors.values()].filter((projector) => projector.xrPoster.visible).length,
       projectorMode: this.xrActive
         ? (this.xrSimulated ? 'youtube-css3d' : [...this.projectors.values()].some((projector) => projector.xrTexture) ? 'webgl-video' : 'webgl-posters')

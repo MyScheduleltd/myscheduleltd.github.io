@@ -353,23 +353,21 @@ export class App {
    * for until the enable button is pressed — which is when the browser puts up
    * its own permission prompt as well.
    */
-  /**
-   * Opt in, not opt out, since 2026-09-17.
-   *
-   * The webcam tracker is a desktop-preview experiment, and its toggle is the
-   * only door to it — so it sat permanently in the corner of the headset view.
-   * The owner asked for that corner cleared. Gating the toggle on "not in VR"
-   * would have deleted the feature instead of hiding it, because the preview
-   * is the only place it ever applied, so the flag is inverted rather than the
-   * condition: `?headtrack=on` still reaches it for review.
-   */
   private readonly headTrackRequested =
-    new URLSearchParams(window.location.search).get('headtrack') === 'on';
+    new URLSearchParams(window.location.search).get('headtrack') !== 'off';
   private headTrackPanelOpen = false;
   private readonly headTrackDeskQuery =
     window.matchMedia('(min-width: 781px) and (hover: hover) and (pointer: fine)');
   private headTrackReadoutTimer?: number;
   private vrError = '';
+  /**
+   * Loopback only: paint the headset HUD in the desktop preview so it can be
+   * reviewed without a Quest. Never true in production — the owner asked for
+   * the desktop and phone VR modes to stay exactly as they were.
+   */
+  private readonly paintedHudReview =
+    ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+    && new URLSearchParams(window.location.search).get('review') === 'vr-hud';
   /** When the review snapshot was last published, to keep it off every frame. */
   private vrReviewAt = 0;
   private promptHoldTimer = 0;
@@ -507,7 +505,7 @@ export class App {
   private async detectVrSupport(): Promise<void> {
     const review = new URLSearchParams(window.location.search).get('review');
     const loopbackFixture = ['127.0.0.1', 'localhost'].includes(window.location.hostname)
-      && ['vr-gate', 'vr-entry', 'vr-youtube', 'vr-screen', 'headtrack'].includes(review ?? '');
+      && ['vr-gate', 'vr-entry', 'vr-youtube', 'vr-screen', 'vr-hud', 'headtrack'].includes(review ?? '');
     try {
       this.vrSupported = loopbackFixture || Boolean(await navigator.xr?.isSessionSupported('immersive-vr'));
     } catch {
@@ -563,7 +561,7 @@ export class App {
   private isLocalVrPreview(): boolean {
     const review = new URLSearchParams(window.location.search).get('review');
     return ['127.0.0.1', 'localhost'].includes(window.location.hostname)
-      && ['vr-gate', 'vr-entry', 'vr-screen', 'vr-phone', 'headtrack'].includes(review ?? '');
+      && ['vr-gate', 'vr-entry', 'vr-screen', 'vr-phone', 'vr-hud', 'headtrack'].includes(review ?? '');
   }
 
   private isLocalPhoneVrPreview(): boolean {
@@ -1149,6 +1147,7 @@ export class App {
       // reads them from here. One implementation of the pass, not two.
       hudRoot: this.root,
       isChinese: () => this.language === 'zh-TW',
+      paintHudInSimulation: this.paintedHudReview,
       onSnapshot: (snapshot) => this.updateSnapshot(snapshot),
       onAction: (action) => this.handleWorldAction(action),
       onXrSessionChange: (active) => this.handleVrSessionChange(active),
@@ -2097,7 +2096,7 @@ export class App {
     // snapshot is how a review reads the painted HUD, and one captured at the
     // moment VR was entered reports every panel empty because none of them
     // have been painted yet — which reads exactly like a HUD that is broken.
-    if (this.vrActive && this.usesVrSimulation() && performance.now() - this.vrReviewAt > 400) {
+    if (this.vrActive && (this.usesVrSimulation() || this.paintedHudReview) && performance.now() - this.vrReviewAt > 400) {
       this.vrReviewAt = performance.now();
       document.documentElement.dataset.vrReview = JSON.stringify(this.vrReviewSnapshot());
     }
@@ -2389,19 +2388,20 @@ export class App {
     if (shell) {
       shell.dataset.vrActive = String(this.vrActive);
       shell.dataset.vrSimulated = String(this.vrActive && this.usesVrSimulation());
+      // Drives the CSS that fades the flat interface. True only where the
+      // painted one is actually drawn, so a desktop or phone preview keeps
+      // every panel it had.
+      shell.dataset.vrPainted = String(
+        this.vrActive && (!this.usesVrSimulation() || this.paintedHudReview),
+      );
     }
     if (entry) entry.hidden = !this.vrRequested || this.vrActive || this.vrResumePending;
     if (resume) resume.hidden = !this.vrResumePending || this.vrActive || !this.root.querySelector('#venue-screen')?.hasAttribute('hidden');
     if (previewExit) previewExit.hidden = !this.vrActive || !this.usesVrSimulation();
-    // Gone from the VR view at the owner's instruction. Recentring is the left
-    // stick press now and the painted strip says so, so a flat button for it
-    // was clutter in the preview and was never composited in a headset at all.
-    // Only the preview's own exit stays, because without it there is no way
-    // back out of the preview.
-    if (recenter) recenter.hidden = true;
+    if (recenter) recenter.hidden = !this.vrActive;
     this.syncHeadTrackUi();
     if (status && this.vrError) status.textContent = this.vrError;
-    if (this.world && this.usesVrSimulation()) {
+    if (this.world && (this.usesVrSimulation() || this.paintedHudReview)) {
       document.documentElement.dataset.vrReview = JSON.stringify(this.vrReviewSnapshot());
     }
   }

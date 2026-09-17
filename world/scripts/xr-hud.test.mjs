@@ -30,8 +30,11 @@ test('every vital action reaches a button or the pointer',()=>{
   for(const action of ['click','interact','pickUp','jump','dance','photo','run','recenter','pass'])
     assert.ok(onButtons.has(action),`${action} is not bound to anything`);
   const pointed=new Set(xrQuickActions.map(([action])=>action));
-  for(const action of ['offer','punch','camera'])
+  for(const action of ['offer','punch'])
     assert.ok(pointed.has(action),`${action} is not reachable with the pointer`);
+  // Deliberately absent: a headset *is* the camera, so the follow and
+  // perspective rigs mean nothing in there and the owner asked for it gone.
+  assert.ok(!pointed.has('camera'),'changing the camera has no meaning in a headset');
 });
 
 test('only run is a hold, and only the interact button carries a long press',()=>{

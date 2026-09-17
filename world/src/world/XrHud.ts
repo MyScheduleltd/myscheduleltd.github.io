@@ -84,7 +84,9 @@ class HudQuad {
     this.view = height;
     this.metres = metres;
     const ctx = this.canvas.getContext('2d');
-    if(!ctx)throw new Error('The headset HUD needs a 2D canvas.');
+    // iOS caps total canvas memory and refuses a context rather than growing,
+    // so this is a real outcome on a real device, not a theoretical one.
+    if(!ctx)throw new Error(`The headset HUD could not get a 2D canvas at ${width}x${height}.`);
     this.ctx = ctx;
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;

@@ -65,11 +65,16 @@ export const xrStickRows:ReadonlyArray<[string,string,string,string]> = [
   ['RIGHT STICK ↑↓','右搖桿 ↑↓','Scroll the pass you are pointing at','捲動指向的通行證'],
 ];
 
-/** Reached with the pointer instead of a button, because the buttons ran out. */
+/**
+ * Reached with the pointer instead of a button, because the buttons ran out.
+ *
+ * Changing the camera is not among them: a headset *is* the camera, so the
+ * follow and perspective rigs mean nothing in there, and the owner asked for
+ * that button gone.
+ */
 export const xrQuickActions:ReadonlyArray<[string,string,string]> = [
   ['offer','OFFER','供養'],
   ['punch','PUNCH','出拳'],
-  ['camera','CAMERA','切換鏡頭'],
 ];
 
 export function xrBindingFor(hand:XrHand,button:number):XrBinding|undefined {
