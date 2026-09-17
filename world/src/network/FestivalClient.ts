@@ -68,34 +68,6 @@ export interface ProgrammeScheduleEntry {
 
 export type ProgrammeSchedule = Record<VenueKey, ProgrammeScheduleEntry>;
 
-/** A staff browser is currently sharing a tab to this venue. */
-export interface TheaterCastSession {
-  venue: VenueKey;
-  hostId: string;
-  hostName: string;
-  startedAt: number;
-}
-
-export type TheaterCastSessions = Partial<Record<VenueKey, TheaterCastSession>>;
-
-/** Private WebRTC negotiation messages, delivered only to the named browser. */
-export type TheaterCastSignal =
-  | {
-      kind: 'offer';
-      venue: VenueKey;
-      requestId: string;
-      viewerId: string;
-      description: RTCSessionDescriptionInit;
-    }
-  | {
-      kind: 'answer';
-      venue: VenueKey;
-      requestId: string;
-      description: RTCSessionDescriptionInit;
-    }
-  | { kind: 'leave'; venue: VenueKey; requestId: string }
-  | { kind: 'ended'; venue: VenueKey; requestId?: string };
-
 export interface SiteStyle {
   brandFontSize: number;
   brandScaleY: number;
@@ -176,7 +148,6 @@ export interface FestivalState {
   jukebox?: JukeboxState;
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
-  theaterCasts?: TheaterCastSessions;
 }
 
 export interface AdminState {
@@ -221,7 +192,6 @@ export interface AdminState {
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
   jukebox?: JukeboxState;
-  theaterCasts?: TheaterCastSessions;
 }
 
 /** A resident DJ's introduction, shown from their booth. */
@@ -334,7 +304,6 @@ export interface PublicConfig {
   entranceSign?: EntranceSign;
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
-  theaterIceServers?: RTCIceServer[];
 }
 
 interface Session {
@@ -357,7 +326,6 @@ interface ClientOptions {
   onStatus: (status: ConnectionStatus, detail?: string) => void;
   /** Optional: an offering completed, in whatever tab it was paid in. */
   onDonation?: (receipt: DonationReceipt) => void;
-  onCastSignal?: (signal: TheaterCastSignal) => void;
 }
 
 const defaultServerUrl = import.meta.env.DEV ? 'http://127.0.0.1:8787' : window.location.origin;
@@ -389,7 +357,6 @@ export class FestivalClient {
   private readonly onState: ClientOptions['onState'];
   private readonly onStatus: ClientOptions['onStatus'];
   private readonly onDonation: ClientOptions['onDonation'];
-  private readonly onCastSignal: ClientOptions['onCastSignal'];
   private session?: Session;
   private abortController?: AbortController;
   private reconnectTimer?: number;
@@ -408,11 +375,10 @@ export class FestivalClient {
    */
   private placeRequest?: Promise<PlaceResult>;
 
-  constructor({ onState, onStatus, onDonation, onCastSignal }: ClientOptions) {
+  constructor({ onState, onStatus, onDonation }: ClientOptions) {
     this.onState = onState;
     this.onStatus = onStatus;
     this.onDonation = onDonation;
-    this.onCastSignal = onCastSignal;
     // A stream that has gone quiet without ever failing.
     //
     // The read loop only notices a dead connection when the read itself errors,
@@ -926,50 +892,6 @@ export class FestivalClient {
     }, false);
   }
 
-  /** Announce that this STAFF browser is ready to cast a shared browser tab. */
-  async startTheaterCast(key: string, venue: VenueKey): Promise<void> {
-    await this.adminRequest(`/api/admin/casts/${encodeURIComponent(venue)}/start`, key, {
-      method: 'POST',
-    });
-  }
-
-  async stopTheaterCast(key: string, venue: VenueKey): Promise<void> {
-    await this.adminRequest(`/api/admin/casts/${encodeURIComponent(venue)}/stop`, key, {
-      method: 'POST',
-    });
-  }
-
-  /** Ask the active host for one receive-only WebRTC connection. */
-  async requestTheaterCast(
-    venue: VenueKey,
-    description: RTCSessionDescriptionInit,
-  ): Promise<{ requestId: string }> {
-    const response = await this.request(`/api/casts/${encodeURIComponent(venue)}/offer`, {
-      method: 'POST',
-      body: JSON.stringify({ description }),
-    });
-    return response.json() as Promise<{ requestId: string }>;
-  }
-
-  async answerTheaterCast(
-    key: string,
-    venue: VenueKey,
-    requestId: string,
-    description: RTCSessionDescriptionInit,
-  ): Promise<void> {
-    await this.adminRequest(`/api/admin/casts/${encodeURIComponent(venue)}/answer`, key, {
-      method: 'POST',
-      body: JSON.stringify({ requestId, description }),
-    });
-  }
-
-  async leaveTheaterCast(venue: VenueKey, requestId: string): Promise<void> {
-    await this.request(`/api/casts/${encodeURIComponent(venue)}/leave`, {
-      method: 'POST',
-      body: JSON.stringify({ requestId }),
-    }, false).catch(() => undefined);
-  }
-
   async disconnect(): Promise<void> {
     this.closed = true;
     this.forgetSession();
@@ -1194,7 +1116,6 @@ export class FestivalClient {
     // happened in a different tab entirely — this one has no other way to find
     // out, short of asking over and over.
     if (event === 'donation') this.onDonation?.(payload as DonationReceipt);
-    if (event === 'cast-signal') this.onCastSignal?.(payload as TheaterCastSignal);
   }
 
   private async recoverSession(): Promise<void> {

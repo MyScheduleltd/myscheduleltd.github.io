@@ -102,30 +102,6 @@ const auth = (session) => ({
   origin: 'http://127.0.0.1:5173',
 });
 
-const nextSseEvent = async (reader, wanted, timeoutMs = 2_000) => {
-  const decoder = new TextDecoder();
-  let buffer = '';
-  return await Promise.race([
-    (async () => {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) throw new Error(`Event stream ended before ${wanted}.`);
-        buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
-        let boundary = buffer.indexOf('\n\n');
-        while (boundary >= 0) {
-          const block = buffer.slice(0, boundary);
-          buffer = buffer.slice(boundary + 2);
-          boundary = buffer.indexOf('\n\n');
-          const event = block.split('\n').find((line) => line.startsWith('event:'))?.slice(6).trim();
-          const data = block.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim()).join('\n');
-          if (event === wanted) return JSON.parse(data);
-        }
-      }
-    })(),
-    new Promise((_, reject) => setTimeout(() => reject(new Error(`Timed out waiting for ${wanted}.`)), timeoutMs)),
-  ]);
-};
-
 test('health endpoint reports readiness', async () => {
   const response = await fetch(`${baseUrl}/health`);
   assert.equal(response.status, 200);
@@ -198,60 +174,6 @@ test('chat is sanitized and moderation requires the staff key', async () => {
   assert.equal(allowed.status, 200);
   const state = await allowed.json();
   assert.equal(state.messages.at(-1).text, 'hello festival');
-});
-
-test('staff tab casts relay private WebRTC offers and answers without relaying media', async () => {
-  const host = await join('CAST HOST');
-  const viewer = await join('CAST VIEWER');
-  const hostEvents = await fetch(`${baseUrl}/api/events`, { headers: auth(host) });
-  const viewerEvents = await fetch(`${baseUrl}/api/events`, { headers: auth(viewer) });
-  const hostReader = hostEvents.body.getReader();
-  const viewerReader = viewerEvents.body.getReader();
-  try {
-    const started = await fetch(`${baseUrl}/api/admin/casts/shore/start`, {
-      method: 'POST',
-      headers: { ...auth(host), 'x-festival-admin-key': 'test-admin-key' },
-    });
-    assert.equal(started.status, 200);
-    const state = await fetch(`${baseUrl}/api/admin/state`, {
-      headers: { origin: 'http://127.0.0.1:5173', 'x-festival-admin-key': 'test-admin-key' },
-    }).then((response) => response.json());
-    assert.equal(state.theaterCasts.shore.hostId, host.id);
-
-    const offered = await fetch(`${baseUrl}/api/casts/shore/offer`, {
-      method: 'POST',
-      headers: auth(viewer),
-      body: JSON.stringify({ description: { type: 'offer', sdp: 'v=0\r\no=viewer 1 1 IN IP4 127.0.0.1\r\n' } }),
-    });
-    assert.equal(offered.status, 202);
-    const { requestId } = await offered.json();
-    const offerSignal = await nextSseEvent(hostReader, 'cast-signal');
-    assert.equal(offerSignal.kind, 'offer');
-    assert.equal(offerSignal.requestId, requestId);
-    assert.equal(offerSignal.viewerId, viewer.id);
-
-    const answered = await fetch(`${baseUrl}/api/admin/casts/shore/answer`, {
-      method: 'POST',
-      headers: { ...auth(host), 'x-festival-admin-key': 'test-admin-key' },
-      body: JSON.stringify({ requestId, description: { type: 'answer', sdp: 'v=0\r\no=host 1 1 IN IP4 127.0.0.1\r\n' } }),
-    });
-    assert.equal(answered.status, 200);
-    const answerSignal = await nextSseEvent(viewerReader, 'cast-signal');
-    assert.equal(answerSignal.kind, 'answer');
-    assert.equal(answerSignal.requestId, requestId);
-
-    const stopped = await fetch(`${baseUrl}/api/admin/casts/shore/stop`, {
-      method: 'POST',
-      headers: { ...auth(host), 'x-festival-admin-key': 'test-admin-key' },
-    });
-    assert.equal(stopped.status, 200);
-    const endedSignal = await nextSseEvent(viewerReader, 'cast-signal');
-    assert.equal(endedSignal.kind, 'ended');
-    assert.equal(endedSignal.requestId, requestId);
-  } finally {
-    await hostReader.cancel();
-    await viewerReader.cancel();
-  }
 });
 
 test('public programmes expose full queues and advance when a work ends', async () => {

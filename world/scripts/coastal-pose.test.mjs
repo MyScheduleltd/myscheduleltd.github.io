@@ -649,9 +649,80 @@ test('follow camera stays on the avatar side of a nearby building wall',()=>{
   const target=new THREE.Vector3(0,3.12,10);
   world.pullCameraClearOfWalls(target,1/60);
   assert.ok(target.z<2,`camera target crossed the wall at z=${target.z}`);
+  assert.ok(target.distanceTo(eye)>3.6,'a wall behind the avatar must not snap the camera against its face');
+  assert.ok(Math.abs(target.x)>5,'the camera goes around the edge of the wall');
+  assert.ok(world.cameraClearReach(eye,target)>=target.distanceTo(eye)-.32,
+    'the alternate view still has an unobstructed line of sight');
   const oldPosition=new THREE.Vector3(0,3.12,10);
   const clear=world.cameraClearReach(eye,oldPosition);
   assert.ok(clear<2,'smoothing an obstructed camera must be clamped too');
+});
+
+test('wall avoidance holds one side and returns to the usual orbit after clearance',()=>{
+  const world=Object.create(FestivalWorld.prototype);
+  const player=new THREE.Group();player.position.set(0,.28,0);
+  Object.assign(world,{player,playerState:'walking',cameraMode:'follow',cameraReach:0,
+    cameraProbe:new THREE.Vector3(),groundHeightAt:()=>0,
+    colliders:[{minX:-5,maxX:5,minZ:2,maxZ:3,minY:-1,maxY:10}]});
+  const first=new THREE.Vector3(0,3.12,10);
+  world.pullCameraClearOfWalls(first,1/60);
+  const second=new THREE.Vector3(0,3.12,10);
+  world.pullCameraClearOfWalls(second,1/60);
+  assert.ok(Math.sign(first.x)===Math.sign(second.x),'the orbit must not flip sides between frames');
+  player.position.z=-12;
+  const clear=new THREE.Vector3(0,3.12,-2);
+  world.pullCameraClearOfWalls(clear,1/60);
+  assert.equal(world.cameraAvoidanceSide,0);
+  assert.equal(clear.x,0,'the camera should return to the preferred orbit after the wall');
+});
+
+test('perspective orbit also stays away from a wall at its side',()=>{
+  const world=Object.create(FestivalWorld.prototype);
+  const player=new THREE.Group();player.position.set(0,.28,0);
+  Object.assign(world,{player,playerState:'walking',cameraMode:'perspective',cameraReach:0,
+    cameraProbe:new THREE.Vector3(),groundHeightAt:()=>0,
+    colliders:[{minX:2,maxX:3,minZ:-5,maxZ:5,minY:-1,maxY:10}]});
+  const eye=player.position.clone().add(new THREE.Vector3(0,2.84,0));
+  const target=new THREE.Vector3(9,3.12,2);
+  world.pullCameraClearOfWalls(target,1/60);
+  assert.ok(target.distanceTo(eye)>3.6,'perspective orbit must avoid a sudden face closeup');
+  assert.ok(world.cameraClearReach(eye,target)>=target.distanceTo(eye)-.32);
+});
+
+test('club wall confinement finds room to the side before squeezing the camera',()=>{
+  const world=Object.create(FestivalWorld.prototype);
+  const player=new THREE.Group();player.position.set(-51.5,-15.7,15);
+  Object.assign(world,{player,playerState:'walking',cameraMode:'follow',
+    cameraOrbit:{follow:{yaw:Math.PI/2,pitch:.3},perspective:{yaw:.8,pitch:.4}},
+    lookTarget:new THREE.Vector3(),groundHeightAt:()=>-16});
+  const target=new THREE.Vector3(-41.5,-12,15);
+  world.confineCameraToClub(target);
+  assert.ok(target.distanceTo(player.position)>4,
+    'the club wall must not force a face closeup while the room has lateral space');
+  assert.ok(target.x<-51.1 && target.x>-87,'the alternate camera remains inside the room');
+});
+
+test('approaching a building keeps the follow camera out of the face and the masonry',()=>{
+  const world=Object.create(FestivalWorld.prototype);
+  const player=new THREE.Group();player.position.set(0,.28,-15);
+  const camera=new THREE.PerspectiveCamera();camera.position.set(0,5,-7);
+  Object.assign(world,{player,camera,lookTarget:new THREE.Vector3(),cameraProbe:new THREE.Vector3(),
+    cameraMode:'follow',cameraZoom:1,cameraReach:0,playerState:'walking',
+    cameraOrbit:{follow:{yaw:0,pitch:Math.atan2(3.4,10)},perspective:{yaw:.8,pitch:.4}},
+    colliders:[{minX:-5,maxX:5,minZ:2,maxZ:3,minY:-1,maxY:10}],
+    groundHeightAt:()=>0,confineCameraToClub(){},confineCameraOverWater(){},
+    settlePunchImpact(){},applyCameraShake(){},applyDrunkenView(){},
+  });
+  let closest=Infinity;
+  for(let frame=0;frame<310;frame++){
+    player.position.z=Math.min(0,-15+frame*.06);
+    world.updateCamera(1/60,frame/60);
+    const eye=player.position.clone().add(new THREE.Vector3(0,2.84,0));
+    closest=Math.min(closest,camera.position.distanceTo(eye));
+    assert.ok(world.cameraClearReach(eye,camera.position)>=eye.distanceTo(camera.position)-.35,
+      `camera passed through the wall at frame ${frame}`);
+  }
+  assert.ok(closest>3.2,`camera squeezed to ${closest.toFixed(2)} units from the face`);
 });
 
 test('an authorized direct film fills and releases the immersive theater quad',async()=>{
@@ -691,38 +762,6 @@ test('an authorized direct film fills and releases the immersive theater quad',a
     globalThis.window=originalWindow;
   }
 });
-
-test('a staff WebRTC cast fills and releases the immersive theater quad',async()=>{
-  const originalCreate=document.createElement;
-  const listeners=new Map();
-  const video={readyState:1,volume:1,muted:true,srcObject:null,playsInline:false,autoplay:false,paused:false,
-    addEventListener(name,listener){listeners.set(name,listener);},
-    play(){this.paused=false;return Promise.resolve();},
-    pause(){this.paused=true;},removeAttribute(){},load(){},
-  };
-  document.createElement=(tag)=>tag==='video'?video:originalCreate(tag);
-  try {
-    const world=Object.create(FestivalWorld.prototype);
-    const projector={xrPoster:new THREE.Mesh(new THREE.PlaneGeometry(),new THREE.MeshBasicMaterial()),muted:false,volume:.7};
-    Object.assign(world,{projectors:new Map([['shore',projector]]),refreshXrPoster(){}});
-    const stream={id:'staff-tab-stream'};
-    world.setImmersiveProjectorStream('shore',stream);
-    assert.equal(video.srcObject,stream);
-    assert.equal(video.playsInline,true);
-    assert.equal(video.autoplay,true);
-    assert.equal(video.muted,false);
-    assert.equal(video.volume,.7);
-    listeners.get('playing')();
-    assert.ok(projector.xrPoster.material.map instanceof THREE.VideoTexture);
-    world.setImmersiveProjectorStream('shore');
-    assert.equal(video.paused,true);
-    assert.equal(video.srcObject,null);
-    assert.equal(projector.xrPoster.material.map,null);
-  } finally {
-    document.createElement=originalCreate;
-  }
-});
-
 
 test('both sides of an authored club facade retain the same concrete panel finish',()=>{
   const scene=new THREE.Scene(),base=new THREE.MeshStandardMaterial();

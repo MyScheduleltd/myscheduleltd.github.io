@@ -201,7 +201,6 @@ interface ProjectorSurface {
   xrTexture?: THREE.VideoTexture;
   xrVideoUrl?: string;
   xrVideoFilmId?: string;
-  xrCastStream?: MediaStream;
   xrVideoError?: boolean;
   xrFailedUrl?: string;
   volume?: number;
@@ -1488,6 +1487,8 @@ export class FestivalWorld {
   private readonly cameraProbe = new THREE.Vector3();
   /** How far back the view is actually sitting, eased towards where it may. */
   private cameraReach = 0;
+  /** Keep the same side of an obstruction until the intended orbit is clear. */
+  private cameraAvoidanceSide: -1 | 0 | 1 = 0;
   private punchPointerX = 0;
   private punchPointerY = 0;
   private verticalVelocity = 0;
@@ -5058,7 +5059,6 @@ export class FestivalWorld {
     projector.xrTexture = undefined;
     projector.xrVideoUrl = undefined;
     projector.xrVideoFilmId = undefined;
-    projector.xrCastStream = undefined;
     video.pause();
     video.srcObject = null;
     video.removeAttribute('src');
@@ -5069,45 +5069,6 @@ export class FestivalWorld {
     }
     texture?.dispose();
     this.refreshXrPoster(venue, projector.pending?.film.title);
-  }
-
-  /** Put a user-approved WebRTC tab capture onto a real WebGL theater screen. */
-  setImmersiveProjectorStream(venue: VenueKey, stream?: MediaStream): void {
-    const projector = this.projectors.get(venue);
-    if (!projector) return;
-    if (!stream) {
-      if (projector.xrCastStream) this.stopImmersiveVideo(venue);
-      return;
-    }
-    if (projector.xrCastStream === stream && projector.xrTexture) return;
-    this.stopImmersiveVideo(venue);
-    const video = document.createElement('video');
-    video.playsInline = true;
-    video.autoplay = true;
-    video.muted = projector.muted;
-    video.volume = projector.volume ?? 1;
-    video.srcObject = stream;
-    projector.xrVideo = video;
-    projector.xrCastStream = stream;
-    projector.xrVideoError = false;
-    const mountTexture = () => {
-      if (projector.xrVideo !== video || projector.xrTexture) return;
-      const texture = new THREE.VideoTexture(video);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      projector.xrTexture = texture;
-      const previous = projector.xrPoster.material.map;
-      projector.xrPoster.material.map = texture;
-      projector.xrPoster.material.needsUpdate = true;
-      previous?.dispose();
-    };
-    video.addEventListener('loadeddata', mountTexture);
-    video.addEventListener('playing', mountTexture);
-    video.addEventListener('error', () => {
-      if (projector.xrVideo !== video) return;
-      this.stopImmersiveVideo(venue);
-      projector.xrVideoError = true;
-    });
-    void video.play().catch(() => { /* The next headset select retries all projectors. */ });
   }
 
   /** Paint an authorized direct video onto the existing in-world screen quad. */
@@ -5254,7 +5215,7 @@ export class FestivalWorld {
     const projector = this.projectors.get(venue);
     if (!projector) return;
     projector.pending = { film, offsetSeconds, reloadToken };
-    if (!projector.xrCastStream && projector.xrVideoFilmId !== film.id) {
+    if (projector.xrVideoFilmId !== film.id) {
       this.stopImmersiveVideo(venue);
       this.refreshXrPoster(venue, film.title);
     }
@@ -5266,7 +5227,7 @@ export class FestivalWorld {
       this.releaseProjector(venue);
       projector.filmId = film.id;
       projector.youtubeId = film.youtubeId;
-      if (!projector.xrCastStream) this.startImmersiveVideo(venue, film, offsetSeconds);
+      this.startImmersiveVideo(venue, film, offsetSeconds);
       return;
     }
     this.stopImmersiveVideo(venue);
@@ -11917,10 +11878,8 @@ export class FestivalWorld {
   /**
    * The club is the only roofed interior, so it gets its own camera rather
    * than the outdoor orbit, which swings wide enough to rise through the roof
-   * and frame the lot outside. Rather than clamping the camera into the room,
-   * which collapses the shot to nothing when the attendee stands against a
-   * wall, the view distance is cut to whatever fits and the camera lifts as it
-   * is squeezed, easing into a look down over the floor.
+   * and frame the lot outside. Near a wall the camera finds a longer direction
+   * within the room before shortening its distance from the attendee.
    */
   /**
    * Holds the eye in a band above the waterline while swimming. Grazing the
@@ -12005,7 +11964,43 @@ export class FestivalWorld {
     const reach = this.cameraProbe.length();
     if (reach < 0.001) return;
     this.cameraProbe.divideScalar(reach);
-    const safe = this.cameraClearReach(eye, cameraTarget);
+    let safe = this.cameraClearReach(eye, cameraTarget);
+    // A straight retreat puts the lens on the avatar's face when a wall is
+    // just behind it. Start steering around the obstruction while there is
+    // still room, and keep that side until the original orbit is fully clear.
+    // The search uses the same solids as the movement and final camera probe;
+    // it cannot select a view through a building just to preserve distance.
+    const mustSteer = safe < (this.cameraAvoidanceSide ? reach * 0.94 : Math.min(reach * 0.78, 6.4));
+    if (mustSteer) {
+      const preferredSide: -1 | 1 = this.cameraAvoidanceSide || 1;
+      const offsets = [0.35, 0.7, 1.05, 1.4, 1.8, 2.3, Math.PI];
+      let best: THREE.Vector3 | undefined;
+      let bestReach = safe;
+      let bestSide: -1 | 1 = preferredSide;
+      for (const offset of offsets) {
+        for (const side of [preferredSide, preferredSide === 1 ? -1 : 1] as const) {
+          if (offset === Math.PI && side !== preferredSide) continue;
+          const probe = this.cameraProbe.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), offset * side);
+          const candidate = eye.clone().addScaledVector(probe, reach);
+          const clear = this.cameraClearReach(eye, candidate);
+          if (clear > bestReach + 0.2) {
+            best = candidate;
+            bestReach = clear;
+            bestSide = side;
+          }
+          if (clear >= reach - 0.32) break;
+        }
+        if (bestReach >= reach - 0.32) break;
+      }
+      if (best && bestReach >= Math.min(3.6, reach * 0.72)) {
+        cameraTarget.copy(best);
+        this.cameraProbe.subVectors(cameraTarget, eye).normalize();
+        safe = bestReach;
+        this.cameraAvoidanceSide = bestSide;
+      }
+    } else if (this.cameraAvoidanceSide) {
+      this.cameraAvoidanceSide = 0;
+    }
     // The distance is eased rather than the position, so the view closes in
     // behind something and opens again afterwards without either being a jump.
     // Snapping it was what made walking past a seat feel like a shove.
@@ -12052,14 +12047,36 @@ export class FestivalWorld {
     // back onto the attendee is what left the bar looking at the counter.
     if (this.cameraMode === 'first-person' || this.cameraMode === 'screening') return;
     const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
-    const dirX = Math.sin(orbit.yaw);
-    const dirZ = Math.cos(orbit.yaw);
+    let dirX = Math.sin(orbit.yaw);
+    let dirZ = Math.cos(orbit.yaw);
     const reach = (direction: number, low: number, high: number, from: number): number => {
       if (Math.abs(direction) < 0.0001) return Number.POSITIVE_INFINITY;
       return direction > 0 ? (high - from) / direction : (low - from) / direction;
     };
     const preferred = 7.4;
-    const radius = Math.max(1.6, Math.min(preferred, reach(dirX, minX, maxX, x), reach(dirZ, minZ, maxZ, z)));
+    const roomReach = (dx: number, dz: number): number => Math.min(
+      preferred, reach(dx, minX, maxX, x), reach(dz, minZ, maxZ, z),
+    );
+    let available = roomReach(dirX, dirZ);
+    if (available < preferred * 0.8) {
+      for (const offset of [0.4, 0.8, 1.2, 1.6, 2.1, Math.PI]) {
+        for (const side of [1, -1]) {
+          if (offset === Math.PI && side === -1) continue;
+          const yaw = orbit.yaw + offset * side;
+          const dx = Math.sin(yaw);
+          const dz = Math.cos(yaw);
+          const candidate = roomReach(dx, dz);
+          if (candidate > available + 0.25) {
+            dirX = dx;
+            dirZ = dz;
+            available = candidate;
+          }
+          if (available >= preferred * 0.95) break;
+        }
+        if (available >= preferred * 0.95) break;
+      }
+    }
+    const radius = Math.max(1.6, available);
     const squeeze = (preferred - radius) / preferred;
     const floorY = this.groundHeightAt(x, z);
 

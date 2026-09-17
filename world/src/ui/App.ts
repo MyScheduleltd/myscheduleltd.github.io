@@ -27,7 +27,6 @@ import {
   type PamphletContent,
   type ProgrammeMode,
   type SiteStyle,
-  type TheaterCastSignal,
   JukeboxState,
 } from '../network/FestivalClient';
 import {
@@ -422,19 +421,6 @@ export class App {
   private staffKey = sessionStorage.getItem(STAFF_KEY) ?? '';
   private adminState?: AdminState;
   private adminError = '';
-  private theaterIceServers: RTCIceServer[] = [
-    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-  ];
-  private hostCastStream?: MediaStream;
-  private hostCastVenue?: VenueKey;
-  private readonly hostCastPeers = new Map<string, RTCPeerConnection>();
-  private viewerCastPeer?: RTCPeerConnection;
-  private viewerCastVenue?: VenueKey;
-  private viewerCastHostId?: string;
-  private viewerCastRequestId?: string;
-  private viewerCastStream?: MediaStream;
-  private viewerCastStarting = false;
-  private viewerCastRetryAt = 0;
   private programmeRotationIndex = -1;
   private readonly openStaffSections = new Set<string>(
     JSON.parse(sessionStorage.getItem(STAFF_SECTIONS_KEY) ?? '[]') as string[],
@@ -479,7 +465,6 @@ export class App {
       onState: (state) => this.handleNetworkState(state),
       onStatus: (status, detail) => this.handleConnectionStatus(status, detail),
       onDonation: (receipt) => this.thankTheOffering(receipt),
-      onCastSignal: (signal) => { void this.handleTheaterCastSignal(signal); },
     });
   }
 
@@ -495,7 +480,6 @@ export class App {
       this.gateBackground = { ...this.gateBackground, ...config.gateBackground };
       this.npcProfiles = this.normalizeNpcProfiles(config.npcProfiles, config.npcNames);
       this.pamphlet = { ...this.pamphlet, ...config.pamphlet };
-      if (config.theaterIceServers?.length) this.theaterIceServers = config.theaterIceServers;
       if (config.gateCopy) {
         this.gateCopy = config.gateCopy;
         // The gate is already on screen by now, so it has to be redrawn.
@@ -2366,205 +2350,8 @@ export class App {
   private handleVrSessionChange(active: boolean): void {
     this.vrActive = active;
     if (active) this.vrError = '';
-    if (!active) this.stopViewerTheaterCast();
-    else if (this.networkState) this.syncTheaterCast(this.networkState);
     this.syncVrUi();
     this.refreshQuestUi();
-  }
-
-  private waitForIce(peer: RTCPeerConnection, timeoutMs = 4_000): Promise<void> {
-    if (peer.iceGatheringState === 'complete') return Promise.resolve();
-    return new Promise((resolve) => {
-      const done = () => {
-        window.clearTimeout(timer);
-        peer.removeEventListener('icegatheringstatechange', changed);
-        resolve();
-      };
-      const changed = () => {
-        if (peer.iceGatheringState === 'complete') done();
-      };
-      const timer = window.setTimeout(done, timeoutMs);
-      peer.addEventListener('icegatheringstatechange', changed);
-    });
-  }
-
-  private closeHostCastPeers(): void {
-    for (const peer of this.hostCastPeers.values()) peer.close();
-    this.hostCastPeers.clear();
-  }
-
-  private async stopHostingTheaterCast(notify = true): Promise<void> {
-    const venue = this.hostCastVenue;
-    const stream = this.hostCastStream;
-    this.hostCastVenue = undefined;
-    this.hostCastStream = undefined;
-    this.closeHostCastPeers();
-    stream?.getTracks().forEach((track) => track.stop());
-    if (notify && venue && this.staffKey) {
-      await this.festivalClient.stopTheaterCast(this.staffKey, venue).catch(() => undefined);
-    }
-    if (venue) this.showWorldAlert(this.language === 'zh-TW' ? 'VR 銀幕直播已停止' : 'VR SCREEN CAST STOPPED');
-  }
-
-  private async startHostingTheaterCast(venue: VenueKey): Promise<void> {
-    if (!navigator.mediaDevices?.getDisplayMedia) {
-      throw new Error(this.language === 'zh-TW'
-        ? '這個瀏覽器無法分享分頁。請使用桌面版 Chrome。'
-        : 'This browser cannot share a tab. Use desktop Chrome.');
-    }
-    await this.stopHostingTheaterCast(true);
-    // The browser owns this chooser. STAFF must deliberately select the tab
-    // containing YouTube and enable Share tab audio; the site cannot silently
-    // capture a screen or choose a source on their behalf.
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-    if (!stream.getVideoTracks().length) {
-      stream.getTracks().forEach((track) => track.stop());
-      throw new Error('The selected source did not provide video.');
-    }
-    try {
-      await this.festivalClient.startTheaterCast(this.staffKey, venue);
-    } catch (error) {
-      stream.getTracks().forEach((track) => track.stop());
-      throw error;
-    }
-    this.hostCastStream = stream;
-    this.hostCastVenue = venue;
-    const ended = () => {
-      if (this.hostCastStream === stream) void this.stopHostingTheaterCast(true);
-    };
-    stream.getVideoTracks()[0]?.addEventListener('ended', ended, { once: true });
-    this.showWorldAlert(this.language === 'zh-TW'
-      ? `${this.venueName(venue)} · 正在直播分享的分頁`
-      : `${this.venueName(venue)} · SHARED TAB IS LIVE`);
-    void this.refreshAdminState();
-  }
-
-  private stopViewerTheaterCast(notify = true): void {
-    const venue = this.viewerCastVenue;
-    const requestId = this.viewerCastRequestId;
-    this.viewerCastPeer?.close();
-    this.viewerCastStream?.getTracks().forEach((track) => track.stop());
-    if (venue) this.world?.setImmersiveProjectorStream(venue, undefined);
-    this.viewerCastPeer = undefined;
-    this.viewerCastVenue = undefined;
-    this.viewerCastHostId = undefined;
-    this.viewerCastRequestId = undefined;
-    this.viewerCastStream = undefined;
-    this.viewerCastStarting = false;
-    if (notify && venue && requestId) void this.festivalClient.leaveTheaterCast(venue, requestId);
-  }
-
-  private async beginViewerTheaterCast(venue: VenueKey, hostId: string): Promise<void> {
-    if (this.viewerCastStarting || Date.now() < this.viewerCastRetryAt) return;
-    this.stopViewerTheaterCast();
-    this.viewerCastStarting = true;
-    const peer = new RTCPeerConnection({ iceServers: this.theaterIceServers });
-    this.viewerCastPeer = peer;
-    this.viewerCastVenue = venue;
-    this.viewerCastHostId = hostId;
-    peer.addTransceiver('video', { direction: 'recvonly' });
-    peer.addTransceiver('audio', { direction: 'recvonly' });
-    peer.addEventListener('track', (event) => {
-      if (this.viewerCastPeer !== peer) return;
-      const stream = event.streams[0] ?? this.viewerCastStream ?? new MediaStream();
-      if (!event.streams[0] && !stream.getTracks().includes(event.track)) stream.addTrack(event.track);
-      this.viewerCastStream = stream;
-      if (stream.getVideoTracks().length && this.vrActive) {
-        this.world?.setImmersiveProjectorStream(venue, stream);
-      }
-    });
-    peer.addEventListener('connectionstatechange', () => {
-      if (this.viewerCastPeer !== peer) return;
-      if (!['failed', 'closed', 'disconnected'].includes(peer.connectionState)) return;
-      this.viewerCastRetryAt = Date.now() + 5_000;
-      this.stopViewerTheaterCast(false);
-    });
-    try {
-      const offer = await peer.createOffer();
-      await peer.setLocalDescription(offer);
-      await this.waitForIce(peer);
-      if (this.viewerCastPeer !== peer || !peer.localDescription) return;
-      const reply = await this.festivalClient.requestTheaterCast(venue, peer.localDescription.toJSON());
-      if (this.viewerCastPeer === peer) this.viewerCastRequestId = reply.requestId;
-    } catch (error) {
-      if (this.viewerCastPeer === peer) {
-        this.viewerCastRetryAt = Date.now() + 5_000;
-        this.stopViewerTheaterCast(false);
-        this.vrError = error instanceof Error ? error.message : 'VR screen cast could not connect.';
-        this.syncVrUi();
-      }
-    } finally {
-      if (this.viewerCastPeer === peer) this.viewerCastStarting = false;
-    }
-  }
-
-  private syncTheaterCast(state: FestivalState): void {
-    const venue = this.snapshot?.screeningVenue ?? this.activeVenue;
-    const cast = state.theaterCasts?.[venue];
-    const selfId = state.selfId;
-    const wanted = this.vrActive && !this.usesVrSimulation() && cast && cast.hostId !== selfId;
-    if (!wanted) {
-      if (this.viewerCastPeer) this.stopViewerTheaterCast();
-      return;
-    }
-    if (this.viewerCastPeer && this.viewerCastVenue === venue && this.viewerCastHostId === cast.hostId) {
-      if (this.viewerCastStream?.getVideoTracks().length) {
-        this.world?.setImmersiveProjectorStream(venue, this.viewerCastStream);
-      }
-      return;
-    }
-    void this.beginViewerTheaterCast(venue, cast.hostId);
-  }
-
-  private async handleTheaterCastSignal(signal: TheaterCastSignal): Promise<void> {
-    if (signal.kind === 'leave') {
-      if (signal.requestId) {
-        this.hostCastPeers.get(signal.requestId)?.close();
-        this.hostCastPeers.delete(signal.requestId);
-      }
-      return;
-    }
-    if (signal.kind === 'ended') {
-      if (this.viewerCastVenue === signal.venue) this.stopViewerTheaterCast(false);
-      return;
-    }
-    if (signal.kind === 'answer') {
-      const peer = this.viewerCastPeer;
-      if (!peer || this.viewerCastVenue !== signal.venue) return;
-      if (this.viewerCastRequestId && this.viewerCastRequestId !== signal.requestId) return;
-      this.viewerCastRequestId = signal.requestId;
-      await peer.setRemoteDescription(signal.description).catch(() => {
-        this.viewerCastRetryAt = Date.now() + 5_000;
-        this.stopViewerTheaterCast(false);
-      });
-      return;
-    }
-    if (!this.hostCastStream || this.hostCastVenue !== signal.venue || !this.staffKey) return;
-    this.hostCastPeers.get(signal.requestId)?.close();
-    const peer = new RTCPeerConnection({ iceServers: this.theaterIceServers });
-    this.hostCastPeers.set(signal.requestId, peer);
-    peer.addEventListener('connectionstatechange', () => {
-      if (!['failed', 'closed', 'disconnected'].includes(peer.connectionState)) return;
-      if (this.hostCastPeers.get(signal.requestId) === peer) this.hostCastPeers.delete(signal.requestId);
-      peer.close();
-    });
-    try {
-      for (const track of this.hostCastStream.getTracks()) peer.addTrack(track, this.hostCastStream);
-      await peer.setRemoteDescription(signal.description);
-      const answer = await peer.createAnswer();
-      await peer.setLocalDescription(answer);
-      await this.waitForIce(peer);
-      if (this.hostCastPeers.get(signal.requestId) !== peer || !peer.localDescription) return;
-      await this.festivalClient.answerTheaterCast(
-        this.staffKey,
-        signal.venue,
-        signal.requestId,
-        peer.localDescription.toJSON(),
-      );
-    } catch {
-      if (this.hostCastPeers.get(signal.requestId) === peer) this.hostCastPeers.delete(signal.requestId);
-      peer.close();
-    }
   }
 
   private syncVrUi(): void {
@@ -3769,7 +3556,6 @@ export class App {
     // measured against the service clock instead.
     if (state.serverTime) { this.serverClockOffset = state.serverTime - Date.now(); this.world?.setNpcClock(state.serverTime); }
     this.networkState = state;
-    this.syncTheaterCast(state);
     this.siteStyle = { ...this.siteStyle, ...state.siteStyle };
     this.gateBackground = { ...this.gateBackground, ...state.gateBackground };
     this.npcProfiles = this.normalizeNpcProfiles(state.npcProfiles, state.npcNames);
@@ -5429,27 +5215,6 @@ export class App {
           sessionStorage.setItem(STAFF_SECTIONS_KEY, JSON.stringify([...this.openStaffSections]));
         });
       });
-      panel.querySelector<HTMLButtonElement>('[data-cast-start]')?.addEventListener('click', async (event) => {
-        const button = event.currentTarget as HTMLButtonElement;
-        const venue = panel.querySelector<HTMLSelectElement>('[data-cast-venue]')?.value as VenueKey | undefined;
-        if (!venue || !VENUE_KEYS.includes(venue)) return;
-        button.disabled = true;
-        this.adminError = '';
-        try {
-          await this.startHostingTheaterCast(venue);
-        } catch (error) {
-          this.adminError = error instanceof Error ? error.message : 'The browser tab could not be shared.';
-          this.reopenPanelKeepingPlace('admin');
-        } finally {
-          button.disabled = false;
-        }
-      });
-      panel.querySelector<HTMLButtonElement>('[data-cast-stop]')?.addEventListener('click', async (event) => {
-        const button = event.currentTarget as HTMLButtonElement;
-        button.disabled = true;
-        await this.stopHostingTheaterCast(true);
-        await this.refreshAdminState();
-      });
       panel.querySelector<HTMLFormElement>('#staff-key-form')?.addEventListener('submit', (event) => {
         event.preventDefault();
         const form = event.currentTarget as HTMLFormElement;
@@ -5492,7 +5257,6 @@ export class App {
       });
       panel.querySelector<HTMLButtonElement>('[data-staff-refresh]')?.addEventListener('click', () => void this.refreshAdminState());
       panel.querySelector<HTMLButtonElement>('[data-staff-logout]')?.addEventListener('click', () => {
-        void this.stopHostingTheaterCast(true);
         this.staffKey = '';
         this.adminState = undefined;
         this.adminError = '';
@@ -5929,22 +5693,6 @@ export class App {
         <button type="submit">${this.language === 'zh-TW' ? '儲存寺廟看板' : 'SAVE TEMPLE SIGN'}</button>
       </form>`)}
       ${this.staffSection('programme', this.language === 'zh-TW' ? '節目與銀幕' : 'PROGRAMME & SCREENS', `
-      <div class="staff-cast-control">
-        <h4 class="staff-subheading">${this.language === 'zh-TW' ? 'VR 銀幕直播' : 'VR SCREEN CAST'}</h4>
-        <p class="staff-note">${this.language === 'zh-TW'
-          ? '在桌面版 Chrome 開啟 YouTube，再按下分享並選擇該分頁及「分享分頁音訊」。影片會透過 WebRTC 顯示在頭戴式裝置裡的實體銀幕上；分享的電腦必須保持在線。'
-          : 'Open YouTube in desktop Chrome, press Share, then select that tab and Share tab audio. WebRTC puts the capture on the real in-world headset screen; the host computer must stay online.'}</p>
-        <label>${this.language === 'zh-TW' ? '直播影廳' : 'CAST TO'}<select data-cast-venue>
-          ${VENUE_KEYS.map((venue) => `<option value="${venue}"${venue === (this.hostCastVenue ?? 'shore') ? ' selected' : ''}>${this.escapeHtml(this.venueName(venue))}</option>`).join('')}
-        </select></label>
-        <div class="staff-cast-control__actions">
-          <button class="panel-button" type="button" data-cast-start>${this.language === 'zh-TW' ? '分享 YOUTUBE 分頁' : 'SHARE YOUTUBE TAB'}</button>
-          <button class="panel-button" type="button" data-cast-stop${this.hostCastStream ? '' : ' disabled'}>${this.language === 'zh-TW' ? '停止直播' : 'STOP CAST'}</button>
-        </div>
-        <p class="staff-note" data-cast-status>${Object.values(this.adminState.theaterCasts ?? {}).length
-          ? Object.values(this.adminState.theaterCasts ?? {}).map((cast) => `${this.escapeHtml(this.venueName(cast!.venue))} · ${this.escapeHtml(cast!.hostName)}`).join('<br>')
-          : (this.language === 'zh-TW' ? '目前沒有 VR 銀幕直播。' : 'NO VR SCREEN CAST IS LIVE.')}</p>
-      </div>
       <div class="staff-programmes">${VENUE_KEYS.map((venue) => {
         const schedule = this.adminState?.schedule?.[venue];
         const venueFilms = this.venueFilms(venue);
