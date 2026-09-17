@@ -14,7 +14,7 @@
 
 export type HudRole =
   |'header'|'title'|'heading'|'eyebrow'|'text'|'hint'|'message'
-  |'button'|'row'|'item'|'summary'|'field'|'rule';
+  |'button'|'row'|'item'|'summary'|'field'|'meter'|'rule';
 
 export interface HudSourceNode {
   tag:string;
@@ -32,6 +32,8 @@ export interface HudSourceNode {
   value?:string;
   /** A pass row's ordinal, printed in red ahead of the label as on screen. */
   index?:string;
+  /** A range input's position, 0..1. */
+  meter?:number;
   /** `aria-pressed`, for a segmented control's selected cell. */
   pressed?:boolean;
 }
@@ -48,6 +50,8 @@ export interface HudNode {
   pressed?:boolean;
   /** A chat message's own words, printed under its author and time. */
   body?:string;
+  /** A slider's position, 0..1, painted as a filled track with a knob. */
+  meter?:number;
   /**
    * A control that belongs to the row above it, so it shares a line with its
    * siblings instead of taking the panel's whole width. Thirteen rebind rows
@@ -82,6 +86,7 @@ export const hudRoleStyles:Record<HudRole,HudRoleStyle> = {
   item:   {size:31,weight:600,condensed:false,lineHeight:42,marginTop:11,padY:12,letter:0,  caps:false},
   summary:{size:35,weight:800,condensed:true, lineHeight:41,marginTop:24,padY:19,letter:2.7,caps:true },
   field:  {size:32,weight:700,condensed:true, lineHeight:41,marginTop:17,padY:20,letter:1.5,caps:true },
+  meter:  {size:32,weight:700,condensed:true, lineHeight:41,marginTop:17,padY:20,letter:1.5,caps:true },
   rule:   {size:0, weight:400,condensed:false,lineHeight:0, marginTop:24,padY:0, letter:0,  caps:false},
 };
 
@@ -155,6 +160,7 @@ export function describeHud(root:HudSourceNode):HudNode[] {
       target:node?.ref ?? -1,disabled:Boolean(node?.disabled),indent,
       index:node?.index ? clean(node.index) : undefined,
       pressed:node?.pressed,
+      meter:node?.meter,
     });
   };
   /** Emit a row's own controls as one shared line. */
@@ -186,7 +192,8 @@ export function describeHud(root:HudSourceNode):HudNode[] {
     }
     if(interactive(node)){
       if(node.tag === 'select'||node.tag === 'input'||node.tag === 'textarea')
-        add('field',clean(node.text) || node.tag.toUpperCase(),node,indent,node.value);
+        add(node.meter !== undefined ? 'meter' : 'field',
+          clean(node.text) || node.tag.toUpperCase(),node,indent,node.value);
       // A button's trailing value too: the pass prints a quest count in a
       // `<small>` at the end of its row, and dropping it lost the 3/25.
       else add('button',clean(node.text),node,indent,node.value);
@@ -203,7 +210,9 @@ export function describeHud(root:HudSourceNode):HudNode[] {
     if(node.tag === 'label'){
       const control = controlsUnder(node)[0];
       if(control){
-        add('field',textMinusControls(node) || clean(control.text),control,indent,control.value ?? clean(control.text));
+        add(control.meter !== undefined ? 'meter' : 'field',
+          textMinusControls(node) || clean(control.text),control,indent,
+          control.value ?? clean(control.text));
         return;
       }
     }
@@ -217,20 +226,21 @@ export function describeHud(root:HudSourceNode):HudNode[] {
     }
     // A chat message, kept whole: author, time and words are one card rather
     // than three loose lines stacked down the panel.
+    // Only a chat message, which is an article whose header names an author.
+    // Matching every `<article>` swallowed the pamphlet: its article holds an
+    // eyebrow, a heading and an introduction, and all three vanished into one
+    // mangled card, which is why that panel opened empty.
     if(node.tag === 'article'){
       const head = child(node,'header');
-      const who = head ? clean(child(head,'strong')?.text) : '';
-      const when = head ? clean(child(head,'time')?.text) : '';
-      const said = clean(child(node,'p')?.text) || textMinusControls(node);
-      if(who||said){
-        const label = who || clean(node.text);
-        if(label||said){
-          out.push({
-            role:'message',text:label,value:when || undefined,body:said || undefined,
-            target:-1,disabled:false,indent,
-          });
-          return;
-        }
+      const who = head && clean(child(head,'strong')?.text);
+      if(head && who){
+        out.push({
+          role:'message',text:who,
+          value:clean(child(head,'time')?.text) || undefined,
+          body:clean(child(node,'p')?.text) || undefined,
+          target:-1,disabled:false,indent,
+        });
+        return;
       }
     }
     if(node.tag === 'li'){
@@ -301,7 +311,7 @@ export function wrapHudText(text:string,width:number,style:HudRoleStyle,measure:
   return lines.length ? lines : [body];
 }
 
-const boxed = (role:HudRole):boolean => role === 'button'||role === 'summary'||role === 'field'||role === 'row'||role === 'item'||role === 'message';
+const boxed = (role:HudRole):boolean => role === 'button'||role === 'summary'||role === 'field'||role === 'meter'||role === 'row'||role === 'item'||role === 'message';
 
 /**
  * Stack the nodes down a single column. Everything is a full-width block: a
@@ -334,10 +344,11 @@ export function layoutHud(
     const bodyLines = node.body
       ? wrapHudText(node.body,textWidth,hudRoleStyles.text,measure).slice(0,6)
       : [];
+    const meterRoom = node.meter !== undefined ? 40 : 0;
     const body = lines.length * style.lineHeight
       + (sameLine ? 0 : valueLines.length * hudRoleStyles.text.lineHeight)
       + bodyLines.length * hudRoleStyles.text.lineHeight;
-    return {x:left,y:top,w:inner,h:body + style.padY * 2,node,lines,valueLines,bodyLines};
+    return {x:left,y:top,w:inner,h:body + style.padY * 2 + meterRoom,node,lines,valueLines,bodyLines};
   };
 
   const keep = (block:HudBlock):void => {
@@ -396,7 +407,37 @@ export function layoutHud(
     first = false;
     index += 1;
   }
+  closeHitGaps(hits);
   return {blocks,hits,height:y + pad};
+}
+
+/**
+ * Give the gaps between neighbouring rows to the rows.
+ *
+ * Every row is laid out with air above it, and that air was not clickable — so
+ * roughly a fifth of a menu's surface did nothing, and a trigger pulled with a
+ * slightly unsteady hand fell through to the world instead of pressing the row
+ * it was plainly aimed at. That is the "sometimes it does not respond". Each
+ * gap is split between the rows either side of it, so the column is solid.
+ */
+export function closeHitGaps(hits:HudHit[],limit = 34):void {
+  const byTop = [...hits].sort((first,second) => first.y - second.y);
+  for(let index = 0;index < byTop.length - 1;index += 1){
+    const above = byTop[index];
+    for(let next = index + 1;next < byTop.length;next += 1){
+      const below = byTop[next];
+      // Only rows actually stacked on each other, not two cells side by side.
+      const shares = above.x < below.x + below.w && below.x < above.x + above.w;
+      if(!shares)continue;
+      const gap = below.y - (above.y + above.h);
+      if(gap <= 0||gap > limit)break;
+      const share = gap / 2;
+      above.h += share;
+      below.y -= gap - share;
+      below.h += gap - share;
+      break;
+    }
+  }
 }
 
 /** Topmost hit wins, so a button inside a row still takes the click. */

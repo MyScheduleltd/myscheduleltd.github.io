@@ -2398,7 +2398,13 @@ export class FestivalWorld {
       }
       case 'pass': this.xrHud?.togglePass(); break;
       case 'hideHud': this.xrHud?.toggleHidden(); break;
-      case 'recenter': this.recenterVrView(); break;
+      case 'recenter':
+        this.recenterVrView();
+        // The interface comes back with it: the layer holds its heading inside
+        // a dead zone now, so after a long session it can be sitting off to one
+        // side, and this is the button that puts it straight again.
+        this.xrHud?.snapToHead();
+        break;
       case 'jump': this.jumpFromTouch(); break;
       case 'dance': this.toggleDancing(); break;
       case 'photo': this.onAction({ type: 'photoMode' }); break;
@@ -2520,7 +2526,7 @@ export class FestivalWorld {
     // after this runs, so without this the rays were tested against where the
     // interface had been on the previous frame — and against the world origin
     // on the first frame of a session, where nothing could ever be hit.
-    hud.syncToCamera(this.camera);
+    hud.syncToCamera(this.camera, performance.now());
     for (const controller of this.xrControllers) {
       const source = controller.userData.inputSource as XRInputSource | undefined;
       const hand = source?.handedness;

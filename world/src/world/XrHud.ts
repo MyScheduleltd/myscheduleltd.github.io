@@ -31,6 +31,16 @@ const CHANNEL_TINTS:Record<string,string> = {NEARBY:'#f1c560',VENUE:'#ed434d',FE
 /** The town is built at two world units to the metre; a HUD is sized in metres. */
 const UNITS = 2;
 
+/**
+ * How far the head may turn before the interface follows it, and how quickly it
+ * catches up once it does. Eight degrees is about a glance: reading across a
+ * panel, or looking from the clock to the chat, moves the interface not at all.
+ */
+const HUD_DEAD_ZONE = THREE.MathUtils.degToRad(8);
+/** Seconds to close most of the gap. Slow enough to feel like weight. */
+const HUD_ROTATION_LAG = 0.22;
+const HUD_POSITION_LAG = 0.11;
+
 const CONDENSED = "'Barlow Condensed', Impact, sans-serif";
 /** The bottom strip: its own size, because it is not one of the panel roles. */
 const HINT_STYLE = {size:33,weight:700,condensed:true,lineHeight:50,marginTop:0,padY:0,letter:2.2,caps:false} as const;
@@ -72,6 +82,8 @@ class HudQuad {
   scroll = 0;
   /** Painted content height, which can exceed the canvas and then scrolls. */
   content = 0;
+  /** Whether its painter has anything to show, before menu focus is applied. */
+  wants = false;
 
   /** Canvas rows actually shown. A short menu is a short panel, not a slab. */
   view:number;
@@ -187,6 +199,11 @@ export class XrHud {
   private readonly cursors = new Map<'left'|'right',THREE.Mesh<THREE.CircleGeometry,THREE.MeshBasicMaterial>>();
   private readonly pointers = new Map<'left'|'right',PointerState>();
   private readonly raycaster = new THREE.Raycaster();
+  private readonly highlight:THREE.Mesh<THREE.PlaneGeometry,THREE.MeshBasicMaterial>;
+  private readonly pickable:THREE.Object3D[] = [];
+  private readonly picked:THREE.Intersection[] = [];
+  /** Which quad owns the hovered target, so only that one is repainted. */
+  private hoverQuad?:HudQuad;
   private readonly measureCtx:CanvasRenderingContext2D;
 
   private visible = false;
@@ -194,6 +211,10 @@ export class XrHud {
   private placedFor = '';
   private placedPlaced = false;
   private hiddenByVisitor = false;
+  private snapNext = true;
+  private lastSync = 0;
+  private readonly headPosition = new THREE.Vector3();
+  private readonly headRotation = new THREE.Quaternion();
   private hover?:HudTarget;
 
   constructor(options:XrHudOptions){
@@ -246,6 +267,23 @@ export class XrHud {
       this.scene.add(cursor);
     }
 
+    // Hovering used to clear the panel's signature, which redrew a
+    // 1400x1200 canvas and re-uploaded 6.7MB of texture — on every frame the
+    // pointer moved across a menu. On a Quest that is most of the frame
+    // budget, and it is the first thing to look at if the headset drags again.
+    // The row under the pointer is marked by moving this instead.
+    this.highlight = new THREE.Mesh(
+      new THREE.PlaneGeometry(1,1),
+      new THREE.MeshBasicMaterial({
+        color:0xa91c24,transparent:true,opacity:0.34,
+        depthTest:false,depthWrite:false,toneMapped:false,
+      }),
+    );
+    this.highlight.renderOrder = 4030;
+    this.highlight.frustumCulled = false;
+    this.highlight.visible = false;
+    this.panel.mesh.add(this.highlight);
+
     this.head.visible = false;
     this.placed.visible = false;
     this.scene.add(this.head,this.placed);
@@ -262,6 +300,10 @@ export class XrHud {
     if(this.visible === visible)return;
     this.visible = visible;
     this.hiddenByVisitor = false;
+    // A new session starts with the interface in front of the visitor, not
+    // wherever the layer happened to be pointing when the last one ended.
+    this.snapNext = true;
+    this.lastSync = performance.now();
     this.head.visible = visible;
     if(!visible){
       this.placed.visible = false;
@@ -304,6 +346,16 @@ export class XrHud {
           ? (input.checked ? (this.zh() ? '開' : 'ON') : (this.zh() ? '關' : 'OFF'))
           : input.value;
         node.text = label ?? input.placeholder ?? input.name ?? '';
+        if(input.type === 'range'){
+          // Where the value actually sits, so the painted row can be the same
+          // filled meter the flat panel draws rather than a bare number.
+          const min = Number(input.min||'0');
+          const max = Number(input.max||'100');
+          const span = max - min;
+          node.meter = span > 0
+            ? Math.min(1,Math.max(0,(Number(input.value) - min) / span))
+            : 0;
+        }
       }
     }
     if(el.getAttribute('aria-pressed') === 'true')node.pressed = true;
@@ -337,7 +389,18 @@ export class XrHud {
    * it, so the paper is exactly as tall as the menu and the whole thing is one
    * pass — the alternative was laying every row out twice per repaint.
    */
-  private paintNodes(quad:HudQuad,el:Element,width:number,pad:number,background?:() => void):void {
+  private paintNodes(quad:HudQuad,el:Element,width:number,pad:number,background?:() => void,dark = false):void {
+    // The chat panel is dark translucent on screen, so it is dark translucent
+    // here too. One palette, flipped, rather than two painters.
+    const skin = dark ? {
+      ink:PAPER,dim:'rgba(245,239,226,.45)',fill:'rgba(255,255,255,.07)',
+      edge:'rgba(255,255,255,.24)',accent:HINT,rule:'rgba(255,255,255,.16)',
+      value:'rgba(245,239,226,.62)',invert:INK,
+    } : {
+      ink:INK,dim:'rgba(17,17,19,.42)',fill:'rgba(17,17,19,.05)',
+      edge:'rgba(17,17,19,.22)',accent:RED,rule:'rgba(17,17,19,.22)',
+      value:'rgba(17,17,19,.66)',invert:PAPER,
+    };
     const targets:HudTarget[] = [];
     const nodes = describeHud(this.source(el,targets));
     const layout = layoutHud(nodes,width,this.measure,pad);
@@ -353,9 +416,12 @@ export class XrHud {
     for(const block of layout.blocks){
       const style = hudRoleStyles[block.node.role];
       if(block.y - quad.scroll > quad.view||block.y + block.h - quad.scroll < 0)continue;
-      const hovered = block.node.target >= 0 && targets[block.node.target] === this.hover;
+      // The panel does not paint its own hover: `highlight` marks the row, so
+      // a pointer moving over a menu costs nothing to redraw.
+      const hovered = quad !== this.panel
+        && block.node.target >= 0 && targets[block.node.target] === this.hover;
       if(block.node.role === 'rule'){
-        ctx.fillStyle = 'rgba(17,17,19,.22)';
+        ctx.fillStyle = skin.rule;
         ctx.fillRect(block.x,block.y,block.w,2);
         continue;
       }
@@ -389,26 +455,26 @@ export class XrHud {
         ctx.textBaseline = 'top';
         ctx.font = fontFor(author);
         ctx.letterSpacing = `${author.letter}px`;
-        ctx.fillStyle = RED;
+        ctx.fillStyle = skin.accent;
         ctx.fillText(block.lines[0] ?? '',block.x,block.y + author.padY);
         if(block.node.value){
           ctx.font = fontFor({...said,size:24});
           ctx.letterSpacing = '0px';
-          ctx.fillStyle = 'rgba(17,17,19,.5)';
+          ctx.fillStyle = skin.value;
           ctx.textAlign = 'right';
           ctx.fillText(block.node.value,block.x + block.w,block.y + author.padY + 5);
           ctx.textAlign = 'left';
         }
         ctx.font = fontFor(said);
         ctx.letterSpacing = '0px';
-        ctx.fillStyle = INK;
+        ctx.fillStyle = skin.ink;
         let messageY = block.y + author.padY + author.lineHeight;
         for(const line of block.bodyLines){
           ctx.fillText(line,block.x,messageY);
           messageY += said.lineHeight;
         }
         // The divider the flat feed puts between messages.
-        ctx.fillStyle = 'rgba(17,17,19,.12)';
+        ctx.fillStyle = skin.rule;
         ctx.fillRect(block.x,block.y + block.h - 1,block.w,1);
         continue;
       }
@@ -417,14 +483,14 @@ export class XrHud {
         // The flat panel paints a hovered row ink-on-paper, and a selected
         // segmented cell red. The same here, so a pointer resting on a row is
         // unmistakable across a room and the live channel is obvious.
-        const fill = hovered ? INK
+        const fill = hovered ? skin.ink
           : block.node.pressed ? 'rgba(169,28,36,.9)'
-          : 'rgba(17,17,19,.05)';
-        strokeBox(ctx,block.x,block.y,block.w,block.h,fill,'rgba(17,17,19,.22)',2);
+          : skin.fill;
+        strokeBox(ctx,block.x,block.y,block.w,block.h,fill,skin.edge,2);
       }
-      if(block.node.role === 'summary'&&!isBox)strokeBox(ctx,block.x,block.y,block.w,block.h,'rgba(17,17,19,.07)');
-      ctx.fillStyle = hovered||block.node.pressed ? PAPER : block.node.disabled ? 'rgba(17,17,19,.42)' : INK;
-      if(block.node.role === 'eyebrow')ctx.fillStyle = hovered ? PAPER : RED;
+      if(block.node.role === 'summary'&&!isBox)strokeBox(ctx,block.x,block.y,block.w,block.h,skin.fill);
+      ctx.fillStyle = hovered ? skin.invert : block.node.pressed ? PAPER : block.node.disabled ? skin.dim : skin.ink;
+      if(block.node.role === 'eyebrow')ctx.fillStyle = hovered ? skin.invert : skin.accent;
       ctx.font = fontFor(style);
       ctx.letterSpacing = `${style.letter}px`;
       ctx.textBaseline = 'top';
@@ -435,23 +501,40 @@ export class XrHud {
         const indexStyle = {...hudRoleStyles.row,size:Math.round(style.size * 0.66)};
         ctx.font = fontFor(indexStyle);
         ctx.letterSpacing = `${indexStyle.letter}px`;
-        ctx.fillStyle = hovered ? PAPER : RED;
+        ctx.fillStyle = hovered ? skin.invert : skin.accent;
         ctx.fillText(block.node.index,block.x + padX,block.y + style.padY + 6);
         indexWidth = ctx.measureText(block.node.index).width + 20;
         ctx.font = fontFor(style);
         ctx.letterSpacing = `${style.letter}px`;
-        ctx.fillStyle = hovered ? PAPER : block.node.disabled ? 'rgba(17,17,19,.42)' : INK;
+        ctx.fillStyle = hovered ? skin.invert : block.node.disabled ? skin.dim : skin.ink;
       }
       let lineY = block.y + style.padY;
       for(const line of block.lines){
         ctx.fillText(line,block.x + padX + indexWidth,lineY);
         lineY += style.lineHeight;
       }
+      // A slider is drawn as a slider: the flat panel shows a filled track and
+      // a knob, and a bare percentage told nobody where the value sat.
+      if(block.node.meter !== undefined){
+        const trackY = block.y + block.h - 22;
+        const trackX = block.x + padX;
+        const trackW = block.w - padX * 2;
+        strokeBox(ctx,trackX,trackY,trackW,7,skin.rule);
+        strokeBox(ctx,trackX,trackY,Math.max(3,trackW * block.node.meter),7,skin.accent);
+        const knobX = trackX + trackW * block.node.meter;
+        ctx.fillStyle = skin.accent;
+        ctx.beginPath();
+        ctx.arc(knobX,trackY + 3.5,15,0,Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = skin.invert;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
       if(block.node.value){
         const valueStyle = hudRoleStyles.text;
         ctx.font = fontFor(valueStyle);
         ctx.letterSpacing = `${valueStyle.letter}px`;
-        ctx.fillStyle = hovered ? PAPER : 'rgba(17,17,19,.66)';
+        ctx.fillStyle = hovered ? skin.invert : skin.value;
         if(block.valueLines.length === 1 && block.lines.length === 1){
           ctx.textAlign = 'right';
           ctx.fillText(block.valueLines[0],block.x + block.w - padX,block.y + style.padY + 2);
@@ -469,8 +552,8 @@ export class XrHud {
       const track = quad.view - 8;
       const thumb = Math.max(40,track * quad.view / layout.height);
       const travel = (track - thumb) * (quad.scroll / Math.max(1,layout.height - quad.view));
-      strokeBox(ctx,quad.canvas.width - 12,4,6,track,'rgba(17,17,19,.12)');
-      strokeBox(ctx,quad.canvas.width - 12,4 + travel,6,thumb,RED);
+      strokeBox(ctx,quad.canvas.width - 12,4,6,track,skin.rule);
+      strokeBox(ctx,quad.canvas.width - 12,4 + travel,6,thumb,skin.accent);
     }
   }
 
@@ -483,12 +566,13 @@ export class XrHud {
     const source = seat ?? open ?? pass;
     const key = seat ? 'seat' : open ? `panel:${open.className}` : pass ? 'pass' : '';
     if(!source||this.hiddenByVisitor){
+      this.highlight.visible = false;
       this.placed.visible = false;
       this.placedFor = '';
       this.panel.signature = '';
       return;
     }
-    const signature = `${key}|${source.textContent ?? ''}|${this.hover ? 'h' : ''}`;
+    const signature = `${key}|${source.textContent ?? ''}|${this.panelState(source)}`;
     if(signature === this.panel.signature)return;
     this.panel.signature = signature;
     if(key !== this.placedFor){
@@ -496,11 +580,29 @@ export class XrHud {
       this.placedFor = key;
     }
     const quad = this.panel;
+    const glass = source.classList.contains('panel--chat');
     quad.clear();
     this.paintNodes(quad,source,quad.canvas.width,42,() => {
-      strokeBox(quad.ctx,0,0,quad.canvas.width,quad.view,PAPER,'rgba(255,255,255,.85)',4);
-      strokeBox(quad.ctx,0,0,quad.canvas.width,8,RED);
-    });
+      const ctx = quad.ctx;
+      if(glass){
+        // Faked glass: the world shows through, a sheen along the top edge and
+        // a bright hairline round it. No blur pass — reading the framebuffer
+        // back every frame is exactly the cost a headset cannot spare.
+        ctx.fillStyle = 'rgba(8,9,10,.62)';
+        ctx.fillRect(0,0,quad.canvas.width,quad.view);
+        const sheen = ctx.createLinearGradient(0,0,0,Math.min(quad.view,320));
+        sheen.addColorStop(0,'rgba(255,255,255,.16)');
+        sheen.addColorStop(1,'rgba(255,255,255,0)');
+        ctx.fillStyle = sheen;
+        ctx.fillRect(0,0,quad.canvas.width,Math.min(quad.view,320));
+        ctx.strokeStyle = 'rgba(255,255,255,.34)';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(1.5,1.5,quad.canvas.width - 3,quad.view - 3);
+      } else {
+        strokeBox(ctx,0,0,quad.canvas.width,quad.view,PAPER,'rgba(255,255,255,.85)',4);
+      }
+      strokeBox(ctx,0,0,quad.canvas.width,8,glass ? HINT : RED);
+    },glass);
     quad.done();
     quad.mesh.visible = true;
     // Newly opened, however it was opened — a stick press, the painted button,
@@ -511,6 +613,28 @@ export class XrHud {
   }
 
   /** Top left: where you are, the festival clock, the hour and the camera. */
+  /**
+   * The parts of a panel that change without its text changing.
+   *
+   * Signing on `textContent` alone was not enough, and quietly broke two
+   * things: a slider moved and the painted meter kept its old position, and a
+   * `<details>` section opened and the panel did not redraw — because neither
+   * a form value nor an open attribute is text. Hover used to mask this by
+   * invalidating everything, and it no longer does.
+   */
+  private panelState(source:Element):string {
+    const parts:string[] = [];
+    for(const entry of source.querySelectorAll('details'))
+      parts.push((entry as HTMLDetailsElement).open ? 'o' : 'c');
+    for(const entry of source.querySelectorAll('input,select,textarea')){
+      const field = entry as HTMLInputElement;
+      parts.push(field.type === 'checkbox' ? (field.checked ? '1' : '0') : field.value);
+    }
+    for(const entry of source.querySelectorAll('[aria-pressed],[hidden],[disabled]'))
+      parts.push(`${entry.getAttribute('aria-pressed') ?? ''}${entry.hasAttribute('hidden') ? 'h' : ''}${entry.hasAttribute('disabled') ? 'd' : ''}`);
+    return parts.join('|');
+  }
+
   private paintClock():void {
     const quad = this.clock;
     const place = this.root.querySelector('#location-label')?.textContent?.trim() ?? '';
@@ -540,7 +664,7 @@ export class XrHud {
     ctx.fillStyle = 'rgba(245,239,226,.74)';
     ctx.fillText(phase,34,202);
     quad.done();
-    quad.mesh.visible = true;
+    quad.wants = true;
   }
 
   /** Top right: the two buttons, who you are, and what you are carrying. */
@@ -600,7 +724,7 @@ export class XrHud {
     ctx.letterSpacing = `${chipStyle.letter}px`;
     lines.forEach((line,index) => ctx.fillText(line,pad,196 + index * chipStyle.lineHeight));
     quad.done();
-    quad.mesh.visible = true;
+    quad.wants = true;
   }
 
   private paintChat():void {
@@ -616,7 +740,7 @@ export class XrHud {
     quad.layout = {blocks:[],hits:[],height};
     if(!items.length){
       quad.done();
-      quad.mesh.visible = false;
+      quad.wants = false;
       return;
     }
     // Painted upward from the bottom edge, so the newest card never moves.
@@ -664,7 +788,7 @@ export class XrHud {
       bottom = y - 12;
     }
     quad.done();
-    quad.mesh.visible = true;
+    quad.wants = true;
   }
 
   private paintPrompt():void {
@@ -682,28 +806,40 @@ export class XrHud {
     quad.layout = {blocks:[],hits:[],height};
     let y = height;
 
-    const cell = (el:HTMLElement,label:string,accent:boolean,boxY:number,x:number,w:number):void => {
+    const cellStyle = {...hudRoleStyles.button,size:35,lineHeight:42,letter:2};
+    /** How tall a prompt needs to be to say all of itself. */
+    const cellHeight = (label:string,w:number):number =>
+      Math.max(84,42 + wrapHudText(label,w - 36,cellStyle,this.measure).length * cellStyle.lineHeight);
+    const cell = (el:HTMLElement,label:string,accent:boolean,boxY:number,x:number,w:number,h:number):void => {
       const ref = quad.targets.push(el) - 1;
       const hovered = this.hover === el;
       const disabled = (el as HTMLButtonElement).disabled === true;
-      strokeBox(ctx,x,boxY,w,84,hovered ? PAPER : 'rgba(8,9,10,.88)',accent ? HINT : 'rgba(245,239,226,.55)',3);
+      strokeBox(ctx,x,boxY,w,h,hovered ? PAPER : 'rgba(8,9,10,.88)',accent ? HINT : 'rgba(245,239,226,.55)',3);
       ctx.fillStyle = hovered ? INK : disabled ? 'rgba(245,239,226,.45)' : PAPER;
-      ctx.font = `800 35px ${CONDENSED}`;
-      ctx.letterSpacing = '2px';
+      ctx.font = fontFor(cellStyle);
+      ctx.letterSpacing = `${cellStyle.letter}px`;
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label,x + w / 2,boxY + 43);
-      ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      if(!disabled)quad.layout?.hits.push({x,y:boxY,w,h:84,target:ref});
+      // Wrapped, not clipped. A two-part prompt — taking a drink offers both
+      // a sip and putting it down — is longer than the panel and was having
+      // its second half cut off the end.
+      const lines = wrapHudText(label,w - 36,cellStyle,this.measure);
+      const top = boxY + (h - lines.length * cellStyle.lineHeight) / 2;
+      lines.forEach((line,index) => {
+        ctx.fillText(line,x + w / 2,top + index * cellStyle.lineHeight);
+      });
+      ctx.textAlign = 'left';
+      if(!disabled)quad.layout?.hits.push({x,y:boxY,w,h,target:ref});
     };
 
     if(seatBar){
       const buttons = Array.from(seatBar.querySelectorAll<HTMLElement>('button'));
       const gap = 12;
       const each = (width - gap * (buttons.length - 1)) / Math.max(1,buttons.length);
-      y -= 84;
-      buttons.forEach((entry,index) => cell(entry,readText(entry).toUpperCase(),false,y,index * (each + gap),each));
+      const labels = buttons.map((entry) => readText(entry).toUpperCase());
+      const tallest = Math.max(84,...labels.map((label) => cellHeight(label,each)));
+      y -= tallest;
+      buttons.forEach((entry,index) => cell(entry,labels[index],false,y,index * (each + gap),each,tallest));
       const heading = seatBar.querySelector('strong')?.textContent?.trim() ?? '';
       if(heading){
         ctx.font = `800 31px ${CONDENSED}`;
@@ -717,8 +853,10 @@ export class XrHud {
       y -= 12;
     }
     if(toast){
-      y -= 84;
-      cell(toast,readText(toast).toUpperCase(),true,y,0,width);
+      const label = readText(toast).toUpperCase();
+      const height = cellHeight(label,width);
+      y -= height;
+      cell(toast,label,true,y,0,width,height);
       y -= 12;
     }
     if(alert){
@@ -737,7 +875,7 @@ export class XrHud {
       }
     }
     quad.done();
-    quad.mesh.visible = Boolean(toast||alert||seatBar);
+    quad.wants = Boolean(toast||alert||seatBar);
   }
 
   private paintQuick():void {
@@ -779,7 +917,7 @@ export class XrHud {
       quad.layout?.hits.push({x:0,y,w:width,h:each,target:ref});
     });
     quad.done();
-    quad.mesh.visible = true;
+    quad.wants = true;
   }
 
   private paintHints():void {
@@ -827,24 +965,74 @@ export class XrHud {
     ctx.shadowOffsetY = 0;
     ctx.textAlign = 'left';
     quad.done();
-    quad.mesh.visible = true;
+    quad.wants = true;
+  }
+
+  /**
+   * An open menu is the thing being read, so the visor steps out from behind it.
+   *
+   * The chat panel is translucent glass, and the head-locked layer sat *behind*
+   * it — so the prompt's red box and the quick actions punched straight through
+   * the menu, which read as a rendering fault. The flat interface has the same
+   * shape of answer: its panel covers the HUD. Only the control hints stay,
+   * because they are the one thing still true while a menu is open.
+   */
+  private applyMenuFocus():void {
+    const menuOpen = this.placed.visible;
+    for(const quad of [this.clock,this.status,this.chat,this.prompt,this.quick])
+      quad.mesh.visible = quad.wants && !menuOpen;
+    this.hints.mesh.visible = this.hints.wants;
   }
 
   // -------------------------------------------------------------- the frame
 
   /**
-   * Pin the head-locked layer to the eye, and make its transforms current.
+   * Carry the head-locked layer with the eye — lazily, not rigidly.
+   *
+   * Bolting it to the camera made it unreadable: every small movement of the
+   * head, including the sway nobody notices they are doing, swung the whole
+   * interface, and a panel that never holds still cannot be read or pointed
+   * at. So the layer holds its heading until the head has turned past a dead
+   * zone, and then eases after it, faster the further behind it falls. Inside
+   * the dead zone it does not move at all, which is what makes the text sit
+   * still long enough to read.
    *
    * Called before the rays are cast as well as before the frame is drawn:
    * `Raycaster` reads `matrixWorld` and never updates it, so a layer moved
    * this frame has to be flushed or the pointer tests last frame's positions.
    */
-  syncToCamera(camera:THREE.Camera):void {
+  syncToCamera(camera:THREE.Camera,now = performance.now()):void {
     if(!this.visible)return;
-    camera.getWorldPosition(this.head.position);
-    camera.getWorldQuaternion(this.head.quaternion);
+    const seconds = Math.min(0.1,Math.max(0,(now - this.lastSync) / 1000));
+    this.lastSync = now;
+    camera.getWorldPosition(this.headPosition);
+    camera.getWorldQuaternion(this.headRotation);
+    if(this.snapNext){
+      this.head.position.copy(this.headPosition);
+      this.head.quaternion.copy(this.headRotation);
+      this.snapNext = false;
+    } else {
+      // Position follows on a short lag. Leaning costs the panels nothing to
+      // track and translation is not what makes people ill; rotation is.
+      this.head.position.lerp(this.headPosition,1 - Math.exp(-seconds / HUD_POSITION_LAG));
+      const behind = this.head.quaternion.angleTo(this.headRotation);
+      if(behind > HUD_DEAD_ZONE){
+        // Only the part past the dead zone is chased, so the layer creeps when
+        // it is barely out and comes round briskly on a real turn of the head.
+        const excess = (behind - HUD_DEAD_ZONE) / behind;
+        const ease = 1 - Math.exp(-seconds / HUD_ROTATION_LAG);
+        this.head.quaternion.slerp(this.headRotation,Math.min(1,excess * ease));
+      }
+    }
     this.head.updateMatrixWorld(true);
     if(this.placed.visible)this.placed.updateMatrixWorld(true);
+  }
+
+  /** Put it straight back in front of the eye. Bound to the left stick press. */
+  snapToHead():void {
+    this.snapNext = true;
+    this.placedPlaced = false;
+    this.lastRead = 0;
   }
 
   /** Clear the whole interface out of the view, or bring it back. */
@@ -856,6 +1044,7 @@ export class XrHud {
       this.pointers.clear();
       for(const cursor of this.cursors.values())cursor.visible = false;
     }
+    this.highlight.visible = false;
     this.lastRead = 0;
   }
 
@@ -865,9 +1054,12 @@ export class XrHud {
 
   update(camera:THREE.Camera,now:number):void {
     if(!this.visible)return;
-    this.syncToCamera(camera);
+    this.syncToCamera(camera,now);
     if(this.hiddenByVisitor)return;
-    if(now - this.lastRead < 140)return;
+    if(now - this.lastRead < 140){
+      this.applyMenuFocus();
+      return;
+    }
     this.lastRead = now;
     this.paintClock();
     this.paintStatus();
@@ -877,6 +1069,7 @@ export class XrHud {
     this.paintHints();
     this.paintPanel();
     if(this.placed.visible && !this.placedPlaced)this.placeMenu(camera);
+    this.applyMenuFocus();
   }
 
   /** Dropped in front of the visitor once, then left alone to be looked around. */
@@ -923,20 +1116,20 @@ export class XrHud {
       if(idle)idle.visible = false;
       return 0;
     }
+    const cursor = this.cursors.get(hand);
+    // Everything here is reused. This runs twice a frame for as long as the
+    // session lasts, and a clone or a `new Quaternion` per hand per frame is
+    // a few hundred short-lived objects a second — which a headset pays for
+    // later, as a stutter, rather than now.
+    this.pickable.length = 0;
+    for(const quad of this.quads)if(quad.mesh.visible)this.pickable.push(quad.mesh);
     this.raycaster.set(origin,direction);
     this.raycaster.far = 40;
-    const meshes = this.quads.filter((quad) => quad.mesh.visible).map((quad) => quad.mesh);
-    const hits = this.raycaster.intersectObjects(meshes,false);
-    const cursor = this.cursors.get(hand);
-    const first = hits[0];
-    if(!first||!first.uv){
-      this.pointers.delete(hand);
-      if(cursor)cursor.visible = false;
-      this.refreshHover();
-      return 0;
-    }
-    const quad = this.quads.find((entry) => entry.mesh === first.object);
-    if(!quad||!quad.layout){
+    this.picked.length = 0;
+    this.raycaster.intersectObjects(this.pickable,false,this.picked);
+    const first = this.picked[0];
+    const quad = first && this.quads.find((entry) => entry.mesh === first.object);
+    if(!first||!first.uv||!quad||!quad.layout){
       this.pointers.delete(hand);
       if(cursor)cursor.visible = false;
       this.refreshHover();
@@ -945,17 +1138,18 @@ export class XrHud {
     const x = first.uv.x * quad.canvas.width;
     const y = (1 - first.uv.y) * quad.view + quad.scroll;
     const hit = hudHitAt(quad.layout,x,y);
-    this.pointers.set(hand,{
-      hand,quad,
-      target:hit ? quad.targets[hit.target] : undefined,
-      fraction:hit ? Math.min(1,Math.max(0,(x - hit.x) / hit.w)) : 0,
-      distance:first.distance,
-      point:first.point.clone(),
-    });
+    const existing = this.pointers.get(hand);
+    const state:PointerState = existing ?? {hand,fraction:0,distance:0,point:new THREE.Vector3()};
+    state.quad = quad;
+    state.target = hit ? quad.targets[hit.target] : undefined;
+    state.fraction = hit ? Math.min(1,Math.max(0,(x - hit.x) / hit.w)) : 0;
+    state.distance = first.distance;
+    state.point.copy(first.point);
+    this.pointers.set(hand,state);
     if(cursor){
       cursor.visible = true;
       cursor.position.copy(first.point);
-      cursor.quaternion.copy(quad.mesh.getWorldQuaternion(new THREE.Quaternion()));
+      quad.mesh.getWorldQuaternion(cursor.quaternion);
       cursor.translateZ(0.01 * UNITS);
     }
     this.refreshHover();
@@ -970,16 +1164,43 @@ export class XrHud {
   }
 
   private refreshHover():void {
-    const next = this.pointers.get('right')?.target ?? this.pointers.get('left')?.target;
+    const pointer = this.pointers.get('right')?.target !== undefined
+      ? this.pointers.get('right')
+      : this.pointers.get('left');
+    const next = pointer?.target;
     if(next === this.hover)return;
+    const previous = this.hoverQuad;
     this.hover = next;
-    // Every quad that paints a hover has to be re-signed, or the highlight
-    // would wait for its content to change before it appeared.
-    this.status.signature = '';
-    this.prompt.signature = '';
-    this.quick.signature = '';
-    this.panel.signature = '';
-    this.lastRead = 0;
+    this.hoverQuad = next ? pointer?.quad : undefined;
+    // Only the small quads repaint their own hover, and only the ones actually
+    // involved. The panel is far too expensive to redraw for a pointer moving
+    // over it, so its row is marked with `highlight` instead.
+    for(const quad of [previous,this.hoverQuad]){
+      if(quad && quad !== this.panel)quad.signature = '';
+    }
+    this.markHighlight();
+    if(previous !== this.panel||this.hoverQuad !== this.panel)this.lastRead = 0;
+  }
+
+  /** Put the marker over the panel row under the pointer, in the panel's own space. */
+  private markHighlight():void {
+    const quad = this.panel;
+    const hit = this.hoverQuad === quad && this.hover !== undefined
+      ? quad.layout?.hits.find((entry) => quad.targets[entry.target] === this.hover)
+      : undefined;
+    if(!hit||!quad.mesh.visible){
+      this.highlight.visible = false;
+      return;
+    }
+    // The mesh is a unit plane scaled to size, and its texture shows `view`
+    // rows of the canvas, so the row's box maps straight into local space.
+    this.highlight.position.set(
+      (hit.x + hit.w / 2) / quad.canvas.width - 0.5,
+      0.5 - (hit.y + hit.h / 2 - quad.scroll) / quad.view,
+      0.003,
+    );
+    this.highlight.scale.set(hit.w / quad.canvas.width,hit.h / quad.view,1);
+    this.highlight.visible = true;
   }
 
   /** True when the trigger was consumed by the interface rather than the world. */
@@ -1051,6 +1272,8 @@ export class XrHud {
   }
 
   dispose():void {
+    this.highlight.geometry.dispose();
+    this.highlight.material.dispose();
     for(const quad of this.quads)quad.dispose();
     for(const cursor of this.cursors.values()){
       cursor.geometry.dispose();

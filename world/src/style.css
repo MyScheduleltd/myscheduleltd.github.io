@@ -305,26 +305,29 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
 
      The top shares the venue label's row instead of covering the connection
      status in the header. Every value here has a narrow-layout twin below. */
-  position: fixed; z-index: 5; right: calc(16px + env(safe-area-inset-right));
-  top: calc(65px + env(safe-area-inset-top)); min-height: 44px; border: 2px solid var(--paper);
-  padding: 0 18px; font: 900 14px var(--condensed); letter-spacing: .05em; cursor: pointer;
+  top: calc(65px + env(safe-area-inset-top));
 }
 .vr-preview-exit { color: var(--paper); background: rgba(8,9,10,.86); }
 /* Filled, because this one is an invitation rather than an exit. */
 .vr-resume { color: white; background: var(--red); }
-.vr-recenter {
-  position: fixed; z-index: 5; right: calc(16px + env(safe-area-inset-right));
-  top: calc(117px + env(safe-area-inset-top)); min-height: 38px; border: 1px solid var(--paper);
-  padding: 0 14px; color: var(--paper); background: rgba(8,9,10,.76);
-  font: 900 12px var(--condensed); letter-spacing: .05em; cursor: pointer;
-}
-/* The head-tracking experiment. Same column as the other two VR controls, third
-   in the run, and marked as live when the camera is actually reading a face. */
+.vr-recenter { top: calc(107px + env(safe-area-inset-top)); }
+/* The head-tracking experiment. Third in the run, and marked as live when the
+   camera is actually reading a face. */
 .head-track-toggle {
+  top: calc(149px + env(safe-area-inset-top)); border-style: dashed;
+}
+/* One box for all three, at the smallest of the three sizes, because a column
+   of controls in three different heights and three different widths reads as
+   three unrelated things. The owner picked the head-tracking button's size.
+   A fixed width rather than a content width: the labels are different lengths
+   in both languages, and a ragged column is the thing being complained about. */
+.vr-resume, .vr-preview-exit, .vr-recenter, .head-track-toggle {
   position: fixed; z-index: 5; right: calc(16px + env(safe-area-inset-right));
-  top: calc(163px + env(safe-area-inset-top)); min-height: 34px; border: 1px dashed var(--paper);
-  padding: 0 14px; color: var(--paper); background: rgba(8,9,10,.76);
-  font: 900 12px var(--condensed); letter-spacing: .05em; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-sizing: border-box; width: 156px; min-height: 34px;
+  border: 1px solid var(--paper); padding: 0 12px;
+  color: var(--paper); background: rgba(8,9,10,.8);
+  font: 900 12px var(--condensed); letter-spacing: .05em; text-align: center; cursor: pointer;
 }
 .head-track-toggle[data-active='true'] { border-style: solid; background: var(--red); color: white; }
 .head-track {
@@ -1337,8 +1340,13 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .vr-entry { padding: 20px; }
   .vr-entry h2 { font-size: 40px; }
   .vr-entry > div { grid-template-columns: 1fr; }
-  .vr-resume, .vr-preview-exit { right: calc(14px + env(safe-area-inset-right)); top: calc(76px + env(safe-area-inset-top)); }
-  .vr-recenter { right: calc(14px + env(safe-area-inset-right)); top: calc(128px + env(safe-area-inset-top)); }
+  /* Narrower still on a phone, where these sat over a third of the width. */
+  .vr-resume, .vr-preview-exit, .vr-recenter, .head-track-toggle {
+    right: calc(14px + env(safe-area-inset-right)); width: 138px; min-height: 32px; font-size: 11px;
+  }
+  .vr-resume, .vr-preview-exit { top: calc(76px + env(safe-area-inset-top)); }
+  .vr-recenter { top: calc(116px + env(safe-area-inset-top)); }
+  .head-track-toggle { top: calc(156px + env(safe-area-inset-top)); }
   .world-status { top: 76px; left: 14px; }
   .inventory-status { left: 14px; top: 153px; }
   .objective-count { left: 14px; top: 185px; }

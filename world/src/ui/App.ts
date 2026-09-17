@@ -6122,8 +6122,12 @@ export class App {
     // A prompt naming a key is a prompt nobody in a headset can follow, and
     // these are painted into the view now, where they are read rather than
     // skipped. B is the interact button, holding B is what SHIFT+E was, and
-    // the offering is one of the three painted buttons beside the view.
-    if (this.vrActive) {
+    // the offering is one of the painted buttons beside the view.
+    //
+    // Only where the painted interface runs. `vrActive` was too broad: it is
+    // also true in the desktop and phone VR previews, which are keyboard and
+    // touch and must keep the wording the rest of the site uses.
+    if (this.paintsHeadsetHud()) {
       const twoParted = value.includes('·') && /SHIFT\+E/.test(value);
       const press = zh ? 'B／' : 'B / ';
       return value

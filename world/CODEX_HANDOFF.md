@@ -8,6 +8,98 @@ Last updated: 2026-09-17 · **the headset paints its own interface, and only a h
 
 ---
 
+# Latest: the headset HUD holds still, and stops leaking into the previews — BETA PUBLISHED (2026-09-17)
+
+Third pass, from the owner's Quest and phone testing. Several of these were
+faults I had introduced in the two passes above.
+
+### It was too twitchy to read
+
+Bolting the head-locked layer to the camera meant every small movement of the
+head — including sway nobody notices — swung the whole interface, and a panel
+that never holds still cannot be read or pointed at. It now holds its heading
+until the head turns past an **8° dead zone**, then eases after it, faster the
+further behind it falls (`HUD_DEAD_ZONE`, `HUD_ROTATION_LAG`, `HUD_POSITION_LAG`
+in `XrHud.ts`). Inside the dead zone it does not move at all. Pressing the left
+stick recentres the view **and** snaps the layer back in front, which is the way
+out if it ends up off to one side.
+
+### Three faults of my own making
+
+- **The VR prompt wording leaked into the desktop and phone previews.** It was
+  gated on `vrActive`, which is true there too. `paintsHeadsetHud()` is the test
+  for "the painted interface is the interface"; use it and not `vrActive`.
+- **The pamphlet opened empty.** My chat-message branch matched *every*
+  `<article>`, and the pamphlet's article holds an eyebrow, a heading and an
+  introduction — all three vanished into one mangled card. It now requires a
+  `<header>` naming an author.
+- **Moving a slider changed nothing on screen.** The panel was signed on
+  `textContent`, and neither a form value nor `<details open>` is text. Hover
+  used to mask it by invalidating everything. `panelState()` signs the open
+  sections, the control values and the pressed/hidden/disabled attributes.
+
+### Performance, which is the one to watch
+
+Hovering used to clear the panel's signature, redrawing a **1400x1200 canvas and
+re-uploading 6.7MB of texture on every frame the pointer moved** — most of a
+Quest's frame budget, and the likeliest cause of the reported lag. The hovered
+row is marked by moving a `highlight` quad in the panel's own local space
+instead, and the panel repaints only when its content actually changes. Hover
+invalidation elsewhere is scoped to the one quad that owns the target. The
+pointer path also allocated a `Quaternion` and a `clone()` per hand per frame —
+a few hundred short-lived objects a second, which a headset pays for later as a
+stutter. All reused now. **If it drags again, look here first.**
+
+### Clicks that did not land
+
+Every row was laid out with air above it and that air was not clickable, so
+roughly a fifth of a menu's surface did nothing and a slightly unsteady hand
+fell through to the world. `closeHitGaps()` gives each gap to the rows either
+side of it, and a test walks down a column asserting every point hits something.
+Cells side by side are left alone.
+
+### Matching the flat interface
+
+- The **chat panel is glass**: dark translucent with a sheen along the top edge
+  and a bright hairline, as `.panel--chat` is on screen. `paintNodes` takes a
+  `dark` flag and flips one palette rather than having two painters. **No blur
+  pass** — reading the framebuffer back per frame is the cost a headset cannot
+  spare, and the owner chose the faked look.
+- **An open menu hides the visor behind it.** The glass is translucent, so the
+  head-locked prompt and quick actions punched straight through the menu. Only
+  the control hints stay, which is the shape of answer the flat panel has.
+- **Sliders are painted as sliders** — a filled track and a knob, from the
+  input's own min/max/value — because a bare percentage told nobody where the
+  value sat. A click sets it.
+- **Prompts wrap.** A two-part prompt (taking a drink offers a sip *and* putting
+  it down) was longer than the panel and lost its second half off the end.
+
+### The three VR buttons
+
+One box for all of them, at the head-tracking button's size and a fixed width,
+because a column in three heights and three widths reads as three unrelated
+things. Narrower again on a phone, where they had taken a third of the width.
+
+### What was and was not verified
+
+**173/173 tests** and the build pass. Reviewed against the production bundle via
+`?review=vr-hud`: the pamphlet's content, the sound meters moving 0.70 → 0.91 on
+a click, the glass chat panel with its segmented channels and message cards, the
+visor stepping out from behind an open menu, and the corner layout.
+
+> **Still not tested on physical headset hardware.** The dead zone's feel, the
+> blur, the lag and the click reliability all need a Quest.
+
+> **Still open:** typing in the headset needs the painted keyboard the owner
+> chose — an immersive session has no DOM for a system keyboard to attach to, so
+> the chat panel's writing box cannot be used yet. The clipped cap logo is not
+> diagnosed: the avatar is hidden in first person and in VR, so the cap in the
+> report is another visitor's, and `cap-logo` is baked geometry in
+> `neighbour.glb` (218 vertices) rather than a texture decal. Immersive video
+> remains as described below — do not re-try DOM overlays.
+
+---
+
 # Latest: the headset's interface, sharpened and scoped — BETA PUBLISHED (2026-09-17)
 
 Second pass on the painted HUD, after the owner tested it on a Quest.

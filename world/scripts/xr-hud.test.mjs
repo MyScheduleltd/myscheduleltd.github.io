@@ -269,6 +269,37 @@ test("a row's own buttons share one line instead of stacking full width",()=>{
   assert.ok(layout.height<stacked.height*0.75,'packing must shorten the panel');
 });
 
+test('the air between stacked rows is clickable, so a shaky aim still lands',()=>{
+  const nodes=describeHud({tag:'nav',children:[
+    {tag:'button',text:'OBJECTIVES',ref:0},
+    {tag:'button',text:'MAP',ref:1},
+    {tag:'button',text:'PROGRAMME',ref:2},
+  ]});
+  const layout=layoutHud(nodes,1400,measure,42);
+  const stacked=[...layout.hits].sort((a,b)=>a.y-b.y);
+  for(let i=0;i<stacked.length-1;i+=1){
+    const gap=stacked[i+1].y-(stacked[i].y+stacked[i].h);
+    assert.ok(Math.abs(gap)<0.001,`row ${i} leaves ${gap}px of dead space below it`);
+  }
+  // Every point down the column hits something.
+  for(let y=stacked[0].y;y<stacked[stacked.length-1].y+stacked[stacked.length-1].h;y+=7)
+    assert.ok(hudHitAt(layout,stacked[0].x+20,y),`nothing at y=${y}`);
+});
+
+test('side by side cells are not merged into each other',()=>{
+  const nodes=describeHud({tag:'div',children:[
+    {tag:'div',classes:['segmented'],children:[
+      {tag:'button',text:'NEARBY',ref:0},
+      {tag:'button',text:'VENUE',ref:1},
+    ]},
+  ]});
+  const layout=layoutHud(nodes,1400,measure,42);
+  const [a,b]=layout.hits;
+  assert.equal(a.y,b.y,'they share a line');
+  assert.equal(a.h,b.h,'and neither grew into the other');
+  assert.ok(a.x+a.w<=b.x);
+});
+
 test('long text wraps, and a run without spaces still breaks',()=>{
   const style=hudRoleStyles.text;
   const wrapped=wrapHudText('the festival runs three public screenings every evening',200,style,measure);
