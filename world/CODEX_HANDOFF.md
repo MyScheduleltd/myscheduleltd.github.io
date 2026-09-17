@@ -80,20 +80,40 @@ One box for all of them, at the head-tracking button's size and a fixed width,
 because a column in three heights and three widths reads as three unrelated
 things. Narrower again on a phone, where they had taken a third of the width.
 
+### Typing, in a session with no keyboard
+
+An immersive session composites no DOM, so the headset's own keyboard never
+appears — there is no focused field for it to attach to. There is a painted one
+now, on its own quad under whichever menu holds a writing box
+(`writingBox()` finds it; `xrKeyRows`/`xrKeyCommands` are the layout).
+
+Keys are **synthetic targets**, not DOM. A press edits the real input and
+dispatches a real `input` event, so the panel above repaints through the
+ordinary signature and the form's own submit handler sees exactly what it would
+see from a keyboard. ⇧ is a one-shot capital, like a phone's. ↵ clicks the
+form's submit button.
+
+**No Chinese IME.** Pinyin or zhuyin plus a candidate list is a different piece
+of work, so the 中 key opens a short list of ready-made lines instead and the
+panel says so in both languages. Do not describe this as Chinese input.
+
+The panel is **capped to 820 canvas rows while a keyboard is up**, and the pair
+is centred on the eye line, or the two of them ran from the top of the view to
+well below the chin.
+
 ### What was and was not verified
 
-**173/173 tests** and the build pass. Reviewed against the production bundle via
+**176/176 tests** and the build pass. Reviewed against the production bundle via
 `?review=vr-hud`: the pamphlet's content, the sound meters moving 0.70 → 0.91 on
 a click, the glass chat panel with its segmented channels and message cards, the
-visor stepping out from behind an open menu, and the corner layout.
+visor stepping out from behind an open menu, the corner layout, and the painted
+keyboard typing `hi`, appending a ready-made 你好, and sending — the input
+cleared and the line arrived in the feed under this visitor's own name.
 
 > **Still not tested on physical headset hardware.** The dead zone's feel, the
 > blur, the lag and the click reliability all need a Quest.
 
-> **Still open:** typing in the headset needs the painted keyboard the owner
-> chose — an immersive session has no DOM for a system keyboard to attach to, so
-> the chat panel's writing box cannot be used yet. The clipped cap logo is not
-> diagnosed: the avatar is hidden in first person and in VR, so the cap in the
+> **Still open:** the clipped cap logo is not diagnosed: the avatar is hidden in first person and in VR, so the cap in the
 > report is another visitor's, and `cap-logo` is baked geometry in
 > `neighbour.glb` (218 vertices) rather than a texture decal. Immersive video
 > remains as described below — do not re-try DOM overlays.

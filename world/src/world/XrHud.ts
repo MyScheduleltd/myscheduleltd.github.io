@@ -3,7 +3,7 @@ import {
   clampHudScroll,describeHud,hudHitAt,hudRoleStyles,layoutHud,wrapHudText,
   type HudLayout,type HudRoleStyle,type HudSourceNode,
 } from './XrHudLayout';
-import {XR_HINT_SEPARATOR,xrHintItems,xrQuickActions} from './XrControls';
+import {XR_HINT_SEPARATOR,xrHintItems,xrKeyCommands,xrKeyRows,xrPhrases,xrQuickActions} from './XrControls';
 
 /**
  * The interface, painted where a headset can see it.
@@ -48,7 +48,10 @@ const BODY = "Inter, system-ui, sans-serif";
 const fontFor = (style:HudRoleStyle):string =>
   `${style.weight} ${style.size}px ${style.condensed ? CONDENSED : BODY}`;
 
-type HudTarget = Element|{action:string};
+type HudTarget = Element|{action:string}|{key:string};
+const isKey = (target:HudTarget):target is {key:string} => 'key' in target;
+const isAction = (target:HudTarget):target is {action:string} =>
+  !(target instanceof Element) && 'action' in target;
 
 /** Fixed elements report no `offsetParent`, so all three tests have to agree. */
 function isHidden(el:Element):boolean {
@@ -87,6 +90,8 @@ class HudQuad {
 
   /** Canvas rows actually shown. A short menu is a short panel, not a slab. */
   view:number;
+  /** An upper bound on that, so a panel cannot outgrow the field of view. */
+  maxView:number;
   private readonly metres:number;
 
   constructor(width:number,height:number,metres:number,renderOrder = 4000){
@@ -94,6 +99,7 @@ class HudQuad {
     this.canvas.width = width;
     this.canvas.height = height;
     this.view = height;
+    this.maxView = height;
     this.metres = metres;
     const ctx = this.canvas.getContext('2d');
     // iOS caps total canvas memory and refuses a context rather than growing,
@@ -126,7 +132,7 @@ class HudQuad {
 
   /** Show the top `rows` pixels of the canvas, at the panel's own scale. */
   setViewHeight(rows:number):void {
-    const shown = Math.max(40,Math.min(this.canvas.height,Math.round(rows)));
+    const shown = Math.max(40,Math.min(this.canvas.height,this.maxView,Math.round(rows)));
     this.view = shown;
     const fraction = shown / this.canvas.height;
     // The canvas is painted from its top, and a texture's V runs from the
@@ -194,6 +200,8 @@ export class XrHud {
   // below the canvas so a long panel scrolls rather than running past the top
   // and bottom of a comfortable field of view.
   private readonly panel = new HudQuad(1400,1200,1.40,4020);
+  /** Painted because an immersive session has no field for a system keyboard. */
+  private readonly keyboard = new HudQuad(1600,620,1.40,4020);
 
   private readonly quads:HudQuad[];
   private readonly cursors = new Map<'left'|'right',THREE.Mesh<THREE.CircleGeometry,THREE.MeshBasicMaterial>>();
@@ -204,6 +212,9 @@ export class XrHud {
   private readonly picked:THREE.Intersection[] = [];
   /** Which quad owns the hovered target, so only that one is repainted. */
   private hoverQuad?:HudQuad;
+  private shifted = false;
+  private phraseMode = false;
+  private typing?:HTMLInputElement|HTMLTextAreaElement;
   private readonly measureCtx:CanvasRenderingContext2D;
 
   private visible = false;
@@ -222,7 +233,7 @@ export class XrHud {
     this.root = options.root;
     this.zh = options.zh;
     this.onQuickAction = options.onQuickAction;
-    this.quads = [this.clock,this.status,this.chat,this.prompt,this.hints,this.quick,this.panel];
+    this.quads = [this.clock,this.status,this.chat,this.prompt,this.hints,this.quick,this.panel,this.keyboard];
 
     const measure = document.createElement('canvas').getContext('2d');
     if(!measure)throw new Error('The headset HUD needs a 2D canvas.');
@@ -252,7 +263,7 @@ export class XrHud {
       this.clock.mesh,this.status.mesh,this.chat.mesh,
       this.prompt.mesh,this.hints.mesh,this.quick.mesh,
     );
-    this.placed.add(this.panel.mesh);
+    this.placed.add(this.panel.mesh,this.keyboard.mesh);
     this.panel.mesh.position.set(0,0,0);
 
     for(const hand of ['left','right'] as const){
@@ -581,6 +592,10 @@ export class XrHud {
     }
     const quad = this.panel;
     const glass = source.classList.contains('panel--chat');
+    // A panel with a keyboard under it has to leave room for one, or the pair
+    // runs from the top of the view to well below the chin. Shorter panel,
+    // more scrolling — which the right stick already does.
+    quad.maxView = this.writingBox() ? 820 : quad.canvas.height;
     quad.clear();
     this.paintNodes(quad,source,quad.canvas.width,42,() => {
       const ctx = quad.ctx;
@@ -902,8 +917,7 @@ export class XrHud {
     xrQuickActions.forEach(([action,en,zhLabel],index) => {
       const target:HudTarget = {action};
       const ref = quad.targets.push(target) - 1;
-      const hovered = !(this.hover instanceof Element)
-        && (this.hover as {action:string}|undefined)?.action === action;
+      const hovered = this.hover !== undefined && isAction(this.hover) && this.hover.action === action;
       const y = top + index * (each + gap);
       strokeBox(ctx,0,y,width,each,hovered ? PAPER : 'rgba(8,9,10,.80)','rgba(245,239,226,.45)',3);
       ctx.fillStyle = hovered ? INK : PAPER;
@@ -968,6 +982,157 @@ export class XrHud {
     quad.wants = true;
   }
 
+  /** The writing box in the open menu, if it has one. */
+  private writingBox():HTMLInputElement|HTMLTextAreaElement|undefined {
+    const panel = this.el('#seat-menu') ?? this.el('#panel');
+    const field = panel?.querySelector<HTMLInputElement|HTMLTextAreaElement>(
+      'textarea, input[type="text"], input[type="url"], input[type="search"], input:not([type])',
+    );
+    return field && !field.disabled ? field : undefined;
+  }
+
+  /**
+   * The keyboard, painted under whichever menu holds a writing box.
+   *
+   * Keys are synthetic targets rather than DOM, and a press edits the real
+   * input and dispatches a real `input` event — so the panel above repaints
+   * with the new text through the ordinary signature, and the form's own
+   * handler sees exactly what it would see from a keyboard.
+   */
+  private paintKeyboard():void {
+    const quad = this.keyboard;
+    const field = this.writingBox();
+    this.typing = field;
+    if(!field||this.hiddenByVisitor){
+      quad.wants = false;
+      quad.signature = '';
+      return;
+    }
+    const zh = this.zh();
+    const signature = `${zh}|${this.shifted}|${this.phraseMode}|${this.hoverKey()}`;
+    if(signature === quad.signature)return;
+    quad.signature = signature;
+    const ctx = quad.ctx;
+    const {width,height} = quad.canvas;
+    quad.clear();
+    quad.targets = [];
+    quad.layout = {blocks:[],hits:[],height};
+    quad.setViewHeight(height);
+
+    // The same glass as the chat panel it sits under.
+    ctx.fillStyle = 'rgba(8,9,10,.72)';
+    ctx.fillRect(0,0,width,height);
+    ctx.strokeStyle = 'rgba(255,255,255,.3)';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(1.5,1.5,width - 3,height - 3);
+
+    const pad = 16;
+    const gap = 9;
+    const key = (target:HudTarget,label:string,x:number,y:number,w:number,h:number,accent = false):void => {
+      const ref = quad.targets.push(target) - 1;
+      const hovered = isKey(target)
+        && this.hover !== undefined && !(this.hover instanceof Element)
+        && isKey(this.hover) && this.hover.key === target.key;
+      strokeBox(ctx,x,y,w,h,
+        hovered ? PAPER : accent ? 'rgba(169,28,36,.88)' : 'rgba(245,239,226,.12)',
+        'rgba(245,239,226,.42)',2);
+      ctx.fillStyle = hovered ? INK : PAPER;
+      ctx.font = `800 ${label.length > 3 ? 27 : 36}px ${CONDENSED}`;
+      ctx.letterSpacing = '1.4px';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label,x + w / 2,y + h / 2 + 2);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      quad.layout?.hits.push({x,y,w,h,target:ref});
+    };
+
+    if(this.phraseMode){
+      // No IME in here, so a short list of ready-made lines instead.
+      ctx.font = `800 24px ${CONDENSED}`;
+      ctx.letterSpacing = '3px';
+      ctx.fillStyle = 'rgba(245,239,226,.6)';
+      ctx.fillText(zh ? '現成語句 · 沒有中文輸入法' : 'READY-MADE LINES · NO IME IN HERE',pad,pad);
+      const columns = 3;
+      const rows = Math.ceil(xrPhrases.length / columns);
+      const cellW = (width - pad * 2 - gap * (columns - 1)) / columns;
+      const cellH = (height - pad * 2 - 46 - gap * rows) / rows;
+      xrPhrases.forEach(([en,zhText],index) => {
+        const column = index % columns;
+        const row = Math.floor(index / columns);
+        key({key:`text:${zh ? zhText : en}`},zh ? zhText : en,
+          pad + column * (cellW + gap),pad + 46 + row * (cellH + gap),cellW,cellH);
+      });
+      key({key:'phrases'},zh ? 'ABC' : 'ABC',width - pad - 140,pad - 6,140,40);
+      quad.done();
+      quad.wants = true;
+      return;
+    }
+
+    const perRow = 10;
+    const cellW = (width - pad * 2 - gap * (perRow - 1)) / perRow;
+    const rowH = (height - pad * 2 - gap * xrKeyRows.length) / (xrKeyRows.length + 1);
+    xrKeyRows.forEach((row,index) => {
+      row.forEach((glyph,column) => {
+        const label = this.shifted ? glyph.toUpperCase() : glyph;
+        key({key:`text:${label}`},label,pad + column * (cellW + gap),pad + index * (rowH + gap),cellW,rowH);
+      });
+    });
+    const totalSpan = xrKeyCommands.reduce((sum,command) => sum + command.span,0);
+    const unit = (width - pad * 2 - gap * (xrKeyCommands.length - 1)) / totalSpan;
+    let x = pad;
+    const commandY = pad + xrKeyRows.length * (rowH + gap);
+    for(const command of xrKeyCommands){
+      const w = unit * command.span;
+      key({key:command.key},command.label[zh ? 1 : 0],x,commandY,w,rowH,
+        command.key === 'send' || (command.key === 'shift' && this.shifted));
+      x += w + gap;
+    }
+    quad.done();
+    quad.wants = true;
+  }
+
+  /** A painted key press, applied to the real input. */
+  private pressKey(name:string):void {
+    const field = this.typing;
+    if(name === 'phrases'){
+      this.phraseMode = !this.phraseMode;
+      this.keyboard.signature = '';
+      this.lastRead = 0;
+      return;
+    }
+    if(name === 'shift'){
+      this.shifted = !this.shifted;
+      this.keyboard.signature = '';
+      this.lastRead = 0;
+      return;
+    }
+    if(!field)return;
+    if(name === 'send'){
+      // Submit the way the form expects, so the server sees an ordinary line.
+      const form = field.closest('form');
+      const submit = form?.querySelector<HTMLElement>('button[type="submit"],button:not([type])');
+      if(submit)submit.click();
+      else form?.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+      this.shifted = false;
+      this.keyboard.signature = '';
+      this.lastRead = 0;
+      return;
+    }
+    if(name === 'backspace')field.value = field.value.slice(0,-1);
+    else if(name === 'space')field.value = `${field.value} `;
+    else if(name.startsWith('text:')){
+      const text = name.slice(5);
+      const limit = field.maxLength > 0 ? field.maxLength : Infinity;
+      field.value = `${field.value}${text}`.slice(0,limit);
+      // One capital, as a phone's keyboard does, rather than a stuck shift.
+      if(this.shifted && text.length === 1)this.shifted = false;
+    }
+    field.dispatchEvent(new Event('input',{bubbles:true}));
+    this.keyboard.signature = '';
+    this.lastRead = 0;
+  }
+
   /**
    * An open menu is the thing being read, so the visor steps out from behind it.
    *
@@ -982,6 +1147,20 @@ export class XrHud {
     for(const quad of [this.clock,this.status,this.chat,this.prompt,this.quick])
       quad.mesh.visible = quad.wants && !menuOpen;
     this.hints.mesh.visible = this.hints.wants;
+    // The keyboard hangs below the panel, and the panel's height moves with
+    // its content, so its place is worked out from whatever is on screen now.
+    const board = this.keyboard;
+    board.mesh.visible = menuOpen && board.wants;
+    const panelHeight = this.panel.mesh.scale.y;
+    if(board.mesh.visible){
+      // Panel above, keyboard below, and the pair centred on the eye line so
+      // neither end of it is somewhere the visitor has to crane to reach.
+      const gap = 0.03 * UNITS;
+      const boardHeight = board.mesh.scale.y;
+      const total = panelHeight + gap + boardHeight;
+      this.panel.mesh.position.set(0,total / 2 - panelHeight / 2,0);
+      board.mesh.position.set(0,boardHeight / 2 - total / 2,0.01);
+    } else this.panel.mesh.position.set(0,0,0);
   }
 
   // -------------------------------------------------------------- the frame
@@ -1068,6 +1247,7 @@ export class XrHud {
     this.paintQuick();
     this.paintHints();
     this.paintPanel();
+    this.paintKeyboard();
     if(this.placed.visible && !this.placedPlaced)this.placeMenu(camera);
     this.applyMenuFocus();
   }
@@ -1160,7 +1340,7 @@ export class XrHud {
   private hoverKey():string {
     if(!this.hover)return '';
     if(this.hover instanceof Element)return this.hover.id || this.hover.className || this.hover.tagName;
-    return this.hover.action;
+    return isKey(this.hover) ? `key:${this.hover.key}` : this.hover.action;
   }
 
   private refreshHover():void {
@@ -1227,7 +1407,11 @@ export class XrHud {
   }
 
   private activate(target:HudTarget,fraction:number):void {
-    if(!(target instanceof Element)){
+    if(isKey(target)){
+      this.pressKey(target.key);
+      return;
+    }
+    if(isAction(target)){
       this.onQuickAction(target.action);
       return;
     }
@@ -1265,9 +1449,10 @@ export class XrHud {
       quickTargets:this.quick.targets.length,
       chatVisible:this.chat.mesh.visible,
       pointing:[...this.pointers.keys()],
-      hover:this.hover instanceof Element
-        ? (this.hover.id||this.hover.className||this.hover.tagName)
-        : this.hover ? (this.hover as {action:string}).action : null,
+      hover:this.hoverKey() || null,
+      keyboard:this.keyboard.mesh.visible ? (this.phraseMode ? 'phrases' : 'keys') : null,
+      panelView:this.panel.view,
+      typing:this.typing?.id || null,
     };
   }
 

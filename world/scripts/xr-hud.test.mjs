@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {xrBindings,xrStickRows,xrQuickActions,xrBindingFor,xrHintRow,xrHintItems,XR_HINT_SEPARATOR,XR_HOLD_MS} from '../src/world/XrControls.ts';
+import {xrBindings,xrStickRows,xrQuickActions,xrBindingFor,xrHintRow,xrHintItems,XR_HINT_SEPARATOR,XR_HOLD_MS,xrKeyRows,xrKeyCommands,xrPhrases} from '../src/world/XrControls.ts';
 import {describeHud,layoutHud,hudHitAt,wrapHudText,clampHudScroll,hudRoleStyles} from '../src/world/XrHudLayout.ts';
 
 const measure=(text,style)=>text.length*style.size*.5;
@@ -75,6 +75,38 @@ test('the painted strip is a list of whole bindings, so a wrap cannot split one'
     }
     assert.equal(items.join(XR_HINT_SEPARATOR),xrHintRow(zh));
   }
+});
+
+test('the painted keyboard covers the alphabet and the digits, once each',()=>{
+  const glyphs=xrKeyRows.flat();
+  assert.equal(new Set(glyphs).size,glyphs.length,'a glyph is on two keys');
+  for(const letter of 'abcdefghijklmnopqrstuvwxyz')
+    assert.ok(glyphs.includes(letter),`${letter} is not on the keyboard`);
+  for(const digit of '0123456789')
+    assert.ok(glyphs.includes(digit),`${digit} is not on the keyboard`);
+  for(const row of xrKeyRows)assert.equal(row.length,10,'rows are laid out ten across');
+});
+
+test('the keyboard can be shifted, cleared, spaced, switched and sent',()=>{
+  const commands=xrKeyCommands.map((command)=>command.key);
+  for(const needed of ['shift','space','backspace','phrases','send'])
+    assert.ok(commands.includes(needed),`${needed} is missing`);
+  assert.equal(new Set(commands).size,commands.length);
+  for(const command of xrKeyCommands){
+    assert.ok(command.span>0,'a key with no width cannot be pressed');
+    assert.equal(command.label.length,2);
+    for(const label of command.label)assert.ok(label.trim().length);
+  }
+});
+
+test('there are ready-made lines in both languages, since there is no IME',()=>{
+  assert.ok(xrPhrases.length>=6);
+  for(const [en,zh] of xrPhrases){
+    assert.ok(en.trim().length,'an empty English phrase');
+    assert.ok(zh.trim().length,'an empty Chinese phrase');
+  }
+  // They have to fit the chat box, which takes 160 characters.
+  for(const pair of xrPhrases)for(const phrase of pair)assert.ok(phrase.length<=160);
 });
 
 test('a painted panel keeps the real elements as its click targets',()=>{

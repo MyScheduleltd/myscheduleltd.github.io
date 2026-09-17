@@ -111,3 +111,44 @@ export const XR_HINT_SEPARATOR = '   ·   ';
 export function xrHintRow(zh:boolean):string {
   return xrHintItems(zh).join(XR_HINT_SEPARATOR);
 }
+
+/**
+ * The painted keyboard.
+ *
+ * An immersive session composites no DOM, so the headset's own keyboard never
+ * appears — there is no focused field for it to attach to. These rows are
+ * painted onto a panel under whichever menu holds a writing box, and the
+ * controller ray presses them.
+ *
+ * Latin, digits and punctuation only. A Chinese IME needs a pinyin or zhuyin
+ * dictionary and a candidate list, which is a different piece of work — so the
+ * 中 key switches to a short list of ready-made lines instead, and says so.
+ */
+export const xrKeyRows:ReadonlyArray<readonly string[]> = [
+  ['1','2','3','4','5','6','7','8','9','0'],
+  ['q','w','e','r','t','y','u','i','o','p'],
+  ['a','s','d','f','g','h','j','k','l','\''],
+  ['z','x','c','v','b','n','m',',','.','?'],
+];
+
+/** The wide keys, with the share of a row's width each one takes. */
+export const xrKeyCommands:ReadonlyArray<{key:string;label:[string,string];span:number}> = [
+  {key:'shift',label:['\u21e7 CAPS','\u21e7 \u5927\u5beb'],span:1.6},
+  {key:'space',label:['SPACE','\u7a7a\u767d'],span:3},
+  {key:'backspace',label:['\u232b','\u232b'],span:1.4},
+  {key:'phrases',label:['\u4e2d','\u4e2d'],span:1},
+  {key:'send',label:['\u21b5 SEND','\u21b5 \u50b3\u9001'],span:2},
+];
+
+/** Ready-made lines, because there is no IME in here to spell Chinese with. */
+export const xrPhrases:ReadonlyArray<[string,string]> = [
+  ['Hello','\u4f60\u597d'],
+  ['Thanks','\u8b1d\u8b1d'],
+  ['This one is great','\u9019\u90e8\u5f88\u8b9b'],
+  ['Seats at the back','\u5f8c\u9762\u9084\u6709\u4f4d\u5b50'],
+  ['One moment','\u7b49\u6211\u4e00\u4e0b'],
+  ['I am at MY SQUARE','\u6211\u5728\u6211\u7684\u5ee3\u5834'],
+  ['\ud83d\udc4f','\ud83d\udc4f'],
+  ['\ud83d\udd25','\ud83d\udd25'],
+  ['\ud83c\udfac','\ud83c\udfac'],
+];
