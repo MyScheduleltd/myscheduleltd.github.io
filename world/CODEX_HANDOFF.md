@@ -8,6 +8,45 @@ Last updated: 2026-09-17 · **the headset paints its own interface, and only a h
 
 ---
 
+# Latest: the cap's logo had a black frame round it — BETA PUBLISHED (2026-09-17)
+
+Reported as "the top part of the logo graphic on the hat got clipped", on every
+avatar, because every avatar wears the same cap.
+
+**`cap-logo` is a white block with a fully transparent border, and its glTF
+material declares no `alphaMode`.** glTF's default is OPAQUE, so the alpha
+channel was ignored and that border drew as **solid black** — a dark frame 3.4%
+of the patch wide on every side. The patch also leans 21.2° back from vertical
+(z 0.1698 at its bottom edge to 0.1364 at its top), so seen from above the frame
+foreshortens, collapses against the dark cap and reads as the artwork having
+been cut off. `material.alphaTest = 0.5` in `attachImportedAvatar` — a cutout
+rather than `transparent`, which keeps depth writing and needs no sorting.
+
+### Four things it was NOT, so nobody spends another pass on them
+
+Measured directly from `src/assets/neighbour.glb` (scratch scripts parsed the
+GLB container, accessors and embedded textures by hand):
+
+- **Not occlusion.** A ray test of all 144 forward-facing `cap-logo` vertices
+  against every triangle of the `cap` mesh — head on, and 25° and 45° from above
+  — buries **zero** of them, at any offset. An earlier "fix" that pushed the
+  patch forward was a no-op and was reverted. Comparing nearest *vertices*
+  suggests the cap is 0.008 in front of the patch; that is misleading, because
+  the crown has a window cut for the logo and those are its rim vertices.
+- **Not the UVs.** The front patch maps u 0→1 across its width and v 1→0 down
+  its height. The whole image is on the mesh.
+- **Not the artwork.** 3554×3543, white block inset evenly — transparent to
+  v 0.033, opaque white from v 0.034 to 0.962.
+- **Not the shader.** `componentId` for this mesh is `cap-logo`, not `cap`, so
+  `dyeFamily` is `none` and every dye branch compiles to `if(false)`. The
+  `height` varying is declared and never used.
+
+> The sampler declares no `wrapS`/`wrapT`, so glTF's REPEAT default applies.
+> Anything that pushes these UVs outside 0..1 will wrap the artwork, not clamp
+> it — do not offset them without setting the wrap mode first.
+
+---
+
 # Latest: the headset HUD holds still, and stops leaking into the previews — BETA PUBLISHED (2026-09-17)
 
 Third pass, from the owner's Quest and phone testing. Several of these were

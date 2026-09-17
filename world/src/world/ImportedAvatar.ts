@@ -34,6 +34,17 @@ export function attachImportedAvatar(root:THREE.Group, rig:AvatarRig, palette:Av
     const dyeFamily=component==='cap'?'cap':component==='head'?'head':component.includes('trousers')?'bottoms':component.endsWith('-hand')||component.endsWith('-forearm')?'skin':'none';
     const material=(o.material as THREE.MeshStandardMaterial).clone();o.material=material;
     material.roughness=1;material.metalness=0;material.userData.wornNoMasonry=true;material.userData.wornNoGrain=true;
+    // The cap's logo is a white block with a fully transparent border, but its
+    // glTF material declares no `alphaMode` — so glTF's OPAQUE default applied,
+    // the alpha channel was ignored, and that border drew as solid **black**: a
+    // dark frame 3.4% of the patch wide on every side. At the top, where the
+    // patch tilts 21° away from the viewer and foreshortens, the frame collapses
+    // against the cap and reads as the artwork having been sliced off. Every
+    // avatar wears this cap, so every avatar had it.
+    //
+    // A cutout and not `transparent`: it keeps depth writing and needs no
+    // sorting, which is what a decal on a solid surface wants.
+    if(component==='cap-logo')material.alphaTest=0.5;
     material.onBeforeCompile=shader=>{
       for(const [key,value] of Object.entries(uniforms))shader.uniforms['avatar_'+key]=value;
       shader.vertexShader='varying vec3 avatarSource;\n'+shader.vertexShader;
