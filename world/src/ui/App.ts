@@ -15,6 +15,7 @@ import { ACCESSORY_SLOTS, DEFAULT_ACCESSORY_COLOURS, type AccessorySlot } from '
 import { DJ_BY_VENUE, djProfileFor } from '../data/djProfiles';
 import { ProgrammeClock } from '../data/programmeClock';
 import { QUESTS, QUEST_SECTIONS, QUEST_TOTAL, type QuestId } from '../data/quests';
+import { xrBindings, xrQuickActions, xrStickRows } from '../world/XrControls';
 import {
   FestivalClient,
   type AdminState,
@@ -352,13 +353,25 @@ export class App {
    * for until the enable button is pressed — which is when the browser puts up
    * its own permission prompt as well.
    */
+  /**
+   * Opt in, not opt out, since 2026-09-17.
+   *
+   * The webcam tracker is a desktop-preview experiment, and its toggle is the
+   * only door to it — so it sat permanently in the corner of the headset view.
+   * The owner asked for that corner cleared. Gating the toggle on "not in VR"
+   * would have deleted the feature instead of hiding it, because the preview
+   * is the only place it ever applied, so the flag is inverted rather than the
+   * condition: `?headtrack=on` still reaches it for review.
+   */
   private readonly headTrackRequested =
-    new URLSearchParams(window.location.search).get('headtrack') !== 'off';
+    new URLSearchParams(window.location.search).get('headtrack') === 'on';
   private headTrackPanelOpen = false;
   private readonly headTrackDeskQuery =
     window.matchMedia('(min-width: 781px) and (hover: hover) and (pointer: fine)');
   private headTrackReadoutTimer?: number;
   private vrError = '';
+  /** When the review snapshot was last published, to keep it off every frame. */
+  private vrReviewAt = 0;
   private promptHoldTimer = 0;
   private promptHeld = false;
   private cameraHidden = false;
@@ -1132,6 +1145,10 @@ export class App {
       graphicsMode: this.graphicsMode,
       palette: this.palette,
       xrPreferred: this.vrRequested,
+      // A headset hides every flat panel, so the world paints them itself and
+      // reads them from here. One implementation of the pass, not two.
+      hudRoot: this.root,
+      isChinese: () => this.language === 'zh-TW',
       onSnapshot: (snapshot) => this.updateSnapshot(snapshot),
       onAction: (action) => this.handleWorldAction(action),
       onXrSessionChange: (active) => this.handleVrSessionChange(active),
@@ -2076,6 +2093,14 @@ export class App {
       ].filter(Boolean);
       inventory.innerHTML = chips.map((chip) => `<span>${chip}</span>`).join('');
     }
+    // Republished as the world runs, not only when the session starts. The
+    // snapshot is how a review reads the painted HUD, and one captured at the
+    // moment VR was entered reports every panel empty because none of them
+    // have been painted yet — which reads exactly like a HUD that is broken.
+    if (this.vrActive && this.usesVrSimulation() && performance.now() - this.vrReviewAt > 400) {
+      this.vrReviewAt = performance.now();
+      document.documentElement.dataset.vrReview = JSON.stringify(this.vrReviewSnapshot());
+    }
     this.syncVenueScreen(snapshot);
     this.syncJukebox();
     // Re-checked from the world's own tick rather than from a media-query
@@ -2368,7 +2393,12 @@ export class App {
     if (entry) entry.hidden = !this.vrRequested || this.vrActive || this.vrResumePending;
     if (resume) resume.hidden = !this.vrResumePending || this.vrActive || !this.root.querySelector('#venue-screen')?.hasAttribute('hidden');
     if (previewExit) previewExit.hidden = !this.vrActive || !this.usesVrSimulation();
-    if (recenter) recenter.hidden = !this.vrActive;
+    // Gone from the VR view at the owner's instruction. Recentring is the left
+    // stick press now and the painted strip says so, so a flat button for it
+    // was clutter in the preview and was never composited in a headset at all.
+    // Only the preview's own exit stays, because without it there is no way
+    // back out of the preview.
+    if (recenter) recenter.hidden = true;
     this.syncHeadTrackUi();
     if (status && this.vrError) status.textContent = this.vrError;
     if (this.world && this.usesVrSimulation()) {
@@ -4746,13 +4776,19 @@ export class App {
           }),
         ].join('');
 
+        // Straight off `xrBindings`, which is what `updateXrInput` reads and
+        // what the painted strip inside the headset prints. The old hand-typed
+        // list is how "A / X" and "B / Y" came to claim one meaning between two
+        // hands while four buttons did nothing and dance had nowhere to live.
         const quest = [
-          [zh ? '左搖桿' : 'LEFT STICK', zh ? '移動' : 'Move'],
-          [zh ? '右搖桿' : 'RIGHT STICK', zh ? '轉身（分段轉動）' : 'Turn — in snap steps'],
-          [zh ? '扳機／握把' : 'TRIGGER / GRIP', zh ? '互動：座位、MENTOR、放映' : 'Interact — seats, MENTOR, screenings'],
-          ['A / X', zh ? '跳躍' : 'Jump'],
-          ['B / Y', zh ? '向前傳送' : 'Teleport forward'],
-          [zh ? '按住扳機' : 'HOLD TRIGGER', zh ? '奔跑' : 'Run'],
+          ...xrStickRows.map(([en, zhKey, enSays, zhSays]) => [zh ? zhKey : en, zh ? zhSays : enSays] as const),
+          ...xrBindings.map((binding) => [binding.label[zh ? 1 : 0], binding.describes[zh ? 1 : 0]] as const),
+          [
+            zh ? '指向介面' : 'POINT AT THE HUD',
+            zh
+              ? `通行證與提示可直接點選 · ${xrQuickActions.map(([, , label]) => label).join('、')}`
+              : `Click the pass and the prompts — ${xrQuickActions.map(([, label]) => label).join(', ')}`,
+          ] as const,
         ].map(([k, v]) => row(k, v)).join('');
 
         const padExtra = `${padStatus}<p class="setting-hint">${zh
@@ -4766,7 +4802,9 @@ export class App {
           ${group('mouse', zh ? '滑鼠' : 'MOUSE', mouse)}
           ${group('touch', zh ? '觸控螢幕' : 'TOUCHSCREEN', touch)}
           ${group('gamepad', zh ? '遊戲手把' : 'GAME CONTROLLER', padRows, padExtra, padReset)}
-          ${group('vr', zh ? 'VR 頭戴裝置' : 'VR HEADSET', quest, `<p class="setting-hint">${zh ? 'Meta Quest Touch 控制器。' : 'Meta Quest Touch controllers.'}</p>`)}`;
+          ${group('vr', zh ? 'VR 頭戴裝置' : 'VR HEADSET', quest, `<p class="setting-hint">${zh
+            ? 'Meta Quest Touch 控制器。頭戴裝置內會畫出自己的介面：時間、地點、聊天與提示固定在視野中，通行證則會停在你面前，可以用控制器指向點選。'
+            : 'Meta Quest Touch controllers. The headset paints its own interface: the clock, the place, the chat and the prompts stay with your view, while the pass is left standing in front of you to point at.'}</p>`)}`;
       }
       case 'contact':
         return `
@@ -6057,8 +6095,21 @@ export class App {
    * MENTOR and nothing else.
    */
   private promptForTouch(value: string): string {
-    if (!value || !App.looksLikeAPhone()) return value;
+    if (!value) return value;
     const zh = this.language === 'zh-TW';
+    // A prompt naming a key is a prompt nobody in a headset can follow, and
+    // these are painted into the view now, where they are read rather than
+    // skipped. B is the interact button, holding B is what SHIFT+E was, and
+    // the offering is one of the three painted buttons beside the view.
+    if (this.vrActive) {
+      const twoParted = value.includes('·') && /SHIFT\+E/.test(value);
+      const press = zh ? 'B／' : 'B / ';
+      return value
+        .replace(/SHIFT\+E ?[／/] ?/g, twoParted ? (zh ? '按住 B／' : 'HOLD B / ') : press)
+        .replace(/(^|· )E ?[／/] ?/g, (_match, lead: string) => `${lead}${press}`)
+        .replace(/(^|· )O ?[／/] ?/g, (_match, lead: string) => `${lead}${zh ? '點選「供養」／' : 'CLICK OFFER / '}`);
+    }
+    if (!App.looksLikeAPhone()) return value;
     const tap = zh ? '輕觸／' : 'TAP / ';
     const hold = zh ? '長按／' : 'HOLD / ';
     const twoParted = value.includes('·') && /SHIFT\+E/.test(value);

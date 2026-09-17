@@ -30,6 +30,8 @@ import { attachImportedAvatar, syncImportedAvatars } from './ImportedAvatar';
 import { createCoastalSkateboard } from './CoastalSkateboard';
 import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, setCoastalFists, walkCoastalPose, danceCoastalPose, COASTAL_STRIDE_LENGTH, skateCoastalPose, levelCoastalFeet, supportCoastalPose, seatCoastalLegs, coastalFootHeights } from './CoastalPose';
 import { coastalRoof, createCoastalSedan, CONVERTIBLE } from './CoastalGeometry';
+import { XrHud } from './XrHud';
+import { XR_HOLD_MS, xrBindingFor, type XrAction } from './XrControls';
 
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>;
@@ -426,6 +428,10 @@ interface WorldOptions {
   lookSensitivity?: number;
   /** Any controller bindings the visitor has changed from the defaults. */
   gamepadBindings?: Partial<Record<GamepadActionId, number>>;
+  /** The interface's own root. The headset HUD reads it and clicks it back. */
+  hudRoot?: HTMLElement;
+  /** Whether the interface is in Chinese, for the painted headset HUD. */
+  isChinese?: () => boolean;
   onSnapshot: (snapshot: WorldSnapshot) => void;
   onAction: (action: WorldAction) => void;
   onXrSessionChange?: (active: boolean) => void;
@@ -1355,13 +1361,20 @@ export class FestivalWorld {
   private xrSession?: XRSession;
   /** Present only when this headset/browser granted WebXR's DOM overlay feature. */
   private xrDomOverlay?: XRDOMOverlayType;
+  /** The interface, painted into the scene because a headset hides the DOM. */
+  private xrHud?: XrHud;
+  private readonly xrRayOrigin = new THREE.Vector3();
+  private readonly xrRayDirection = new THREE.Vector3();
+  private readonly xrRayQuaternion = new THREE.Quaternion();
+  /** When each button went down, for telling a tap from a hold. */
+  private readonly xrHeld = new Map<string, number>();
+  private xrScrollAt = 0;
   private xrActive = false;
   private xrSimulated = false;
   private xrYaw = 0;
   private xrHomeYaw = 0;
   private xrFloorOffset = 0;
   private xrNeedsCalibration = true;
-  private xrRecenterReady = true;
   private xrHeadHeading = 0;
   private readonly xrMovementView = new THREE.PerspectiveCamera();
   private readonly xrRawOrientation = new THREE.Quaternion();
@@ -1418,8 +1431,6 @@ export class FestivalWorld {
    */
   private lookSensitivity = 0.2;
   private xrSnapReady = true;
-  private xrTeleportReady = true;
-  private xrJumpReady = true;
   private readonly projectorClipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 45.68);
   private readonly projectorCornerView = new THREE.Vector3();
   private readonly statueViewPosition = new THREE.Vector3();
@@ -1546,7 +1557,7 @@ export class FestivalWorld {
    */
   private baseFov = 58;
 
-  constructor({ canvas, foregroundCanvas, cssLayer, graphicsMode, palette, xrPreferred = false, lookSensitivity, gamepadBindings, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
+  constructor({ canvas, foregroundCanvas, cssLayer, graphicsMode, palette, xrPreferred = false, lookSensitivity, gamepadBindings, hudRoot, isChinese, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
     this.canvas = canvas;
     this.foregroundCanvas = foregroundCanvas;
     this.graphicsMode = graphicsMode;
@@ -1694,6 +1705,20 @@ export class FestivalWorld {
     window.addEventListener('blur', this.clearRunning);
     document.addEventListener('visibilitychange', this.resumeProjectorsOnReturn);
     window.addEventListener('pointerup', this.nudgeProjectorsOnGesture, true);
+    if (hudRoot) {
+      this.xrHud = new XrHud({
+        scene: this.scene,
+        root: hudRoot,
+        zh: isChinese ?? (() => false),
+        // The buttons ran out before the actions did, so these three are
+        // reached with the pointer and run through the pad's own dispatcher.
+        onQuickAction: (action) => {
+          if (action === 'offer') this.offerFromTouch();
+          else if (action === 'punch') this.punchFromTouch();
+          else if (action === 'camera') this.toggleCameraMode();
+        },
+      });
+    }
     this.resize();
   }
 
@@ -1722,6 +1747,7 @@ export class FestivalWorld {
     // in memory, but there is no reason to hold fifteen megabytes of it after
     // the festival has closed.
     this.gamepad.stop();
+    this.xrHud?.dispose();
     this.headTracking.release();
     this.headTrackingActive = false;
     this.releaseHeadCoupledView();
@@ -1766,6 +1792,7 @@ export class FestivalWorld {
         new THREE.LineBasicMaterial({ color: index === 0 ? 0xffffff : 0xff4b55 }),
       );
       ray.scale.z = 2.6;
+      controller.userData.ray = ray;
       controller.add(ray);
       controller.addEventListener('connected', (event) => {
         controller.userData.inputSource = (event as THREE.Event & { data?: XRInputSource }).data;
@@ -1948,6 +1975,12 @@ export class FestivalWorld {
     if (!simulated) this.mountedProjectorVenue = undefined;
     this.xrActive = true;
     this.player.visible = false;
+    // The flat interface is invisible inside a headset, and in the desktop
+    // preview it is faded out, so the painted one is the only interface in
+    // both places rather than a second copy in one of them.
+    this.xrHud?.setVisible(true);
+    this.xrHud?.resetPlacement();
+    this.xrHeld.clear();
   }
 
   /** Must be called directly from a visitor gesture for a real WebXR session. */
@@ -2253,6 +2286,8 @@ export class FestivalWorld {
   private readonly xrEnded = (): void => {
     this.xrSession = undefined;
     this.xrDomOverlay = undefined;
+    this.xrHud?.setVisible(false);
+    this.xrHeld.clear();
     this.xrActive = false;
     this.xrSimulated = false;
     this.xrSimPitch = 0;
@@ -2274,14 +2309,47 @@ export class FestivalWorld {
     this.onXrSessionChange?.(false);
   };
 
-  private readonly xrSelect = (): void => {
+  /**
+   * The trigger, from the session's own event rather than from polling.
+   *
+   * Hand tracking has no gamepad to poll but does emit `select`, so this stays
+   * the trigger's path and the polling loop skips button 0 to keep the press
+   * from firing twice. Both routes end up in `performXrAction`.
+   */
+  private readonly xrSelect = (event: { target?: THREE.Object3D }): void => {
     if (!this.xrActive) return;
+    const source = event.target?.userData?.inputSource as XRInputSource | undefined;
+    this.performXrAction('click', source?.handedness === 'left' ? 'left' : 'right');
+  };
+
+  /** What the trigger does when it is not pointing at the interface. */
+  private xrSelectWorld(): void {
     if (this.playerState === 'seated' && this.activeSeat?.kind !== 'bar') {
       this.onAction({ type: 'vrWatch', venue: this.activeSeat?.venue ?? this.screeningVenue() });
       return;
     }
     this.interact();
-  };
+  }
+
+  private performXrAction(action: XrAction, hand: 'left' | 'right'): void {
+    switch (action) {
+      case 'click':
+        // The interface gets first refusal: a trigger aimed at a pass row is
+        // a click on that row, and only a trigger aimed at nothing reaches
+        // the world. Otherwise picking a film would also feed the dog.
+        if (!this.xrHud?.press(hand)) this.xrSelectWorld();
+        break;
+      case 'pass': this.xrHud?.togglePass(); break;
+      case 'recenter': this.recenterVrView(); break;
+      case 'jump': this.jumpFromTouch(); break;
+      case 'dance': this.toggleDancing(); break;
+      case 'photo': this.onAction({ type: 'photoMode' }); break;
+      case 'interact': this.interact(false); break;
+      case 'pickUp': this.interact(true); break;
+      // A hold, read as a state further up rather than as a press.
+      case 'run': break;
+    }
+  }
 
   /**
    * Drive the world from a controller.
@@ -2386,35 +2454,83 @@ export class FestivalWorld {
     }
   }
 
+  /** Aim both rays at the painted interface, and shorten them where they land. */
+  private updateXrPointers(): void {
+    const hud = this.xrHud;
+    if (!hud) return;
+    for (const controller of this.xrControllers) {
+      const source = controller.userData.inputSource as XRInputSource | undefined;
+      const hand = source?.handedness;
+      if (hand !== 'left' && hand !== 'right') continue;
+      controller.getWorldPosition(this.xrRayOrigin);
+      controller.getWorldQuaternion(this.xrRayQuaternion);
+      this.xrRayDirection.set(0, 0, -1).applyQuaternion(this.xrRayQuaternion).normalize();
+      const distance = hud.point(hand, this.xrRayOrigin, this.xrRayDirection);
+      const ray = controller.userData.ray as THREE.Object3D | undefined;
+      // The ray hangs off the rig, which is scaled to metres, so a world
+      // distance has to come back out of that scale before it is a length.
+      if (ray) ray.scale.z = distance > 0 ? distance / (this.xrRig.scale.z || 1) : 2.6;
+    }
+  }
+
   private updateXrInput(delta: number): void {
     if (!this.xrActive || this.xrSimulated || !this.xrSession) return;
+    this.updateXrPointers();
     let moveX = 0;
     let moveY = 0;
     let turnX = 0;
+    let scrollY = 0;
     let run = false;
-    let teleportPressed = false;
-    let jumpPressed = false;
-    let recenterPressed = false;
+    const now = performance.now();
     for (const source of this.xrSession.inputSources) {
       const gamepad = source.gamepad;
-      if (!gamepad) continue;
+      const hand = source.handedness;
+      if (!gamepad || (hand !== 'left' && hand !== 'right')) continue;
       const axes = gamepad.axes;
       const x = axes.length >= 4 ? axes[2] : (axes[0] ?? 0);
       const y = axes.length >= 4 ? axes[3] : (axes[1] ?? 0);
-      if (source.handedness === 'left') {
+      if (hand === 'left') {
         moveX = Math.abs(x) > 0.16 ? x : 0;
         moveY = Math.abs(y) > 0.16 ? y : 0;
-        run ||= Boolean(gamepad.buttons[1]?.pressed);
-        teleportPressed ||= Boolean(gamepad.buttons[3]?.pressed);
-        jumpPressed ||= Boolean(gamepad.buttons[4]?.pressed);
-        recenterPressed ||= Boolean(gamepad.buttons[5]?.pressed);
-      } else if (source.handedness === 'right') {
+      } else {
         turnX = Math.abs(x) > 0.68 ? x : 0;
-        run ||= Boolean(gamepad.buttons[1]?.pressed);
+        scrollY = Math.abs(y) > 0.3 ? y : 0;
+      }
+      // Every binding comes from `xrBindings`, so the list the controls panel
+      // prints and the painted strip in the headset cannot disagree with what
+      // the buttons actually do. Button 0 is the trigger, which arrives as a
+      // `select` event instead — see `xrSelect`.
+      for (let index = 1; index < gamepad.buttons.length; index += 1) {
+        const binding = xrBindingFor(hand, index);
+        if (!binding) continue;
+        const pressed = Boolean(gamepad.buttons[index]?.pressed);
+        if (binding.sustained) {
+          run ||= pressed;
+          continue;
+        }
+        const key = `${hand}:${index}`;
+        const since = this.xrHeld.get(key);
+        if (pressed && since === undefined) {
+          this.xrHeld.set(key, now);
+          // With nothing behind a hold there is nothing to wait for, so the
+          // press lands at once and the button feels like a button.
+          if (!binding.hold) this.performXrAction(binding.action, hand);
+        } else if (pressed && binding.hold && since !== undefined && now - since >= XR_HOLD_MS) {
+          // Marked as spent, so releasing it does not also fire the tap.
+          this.xrHeld.set(key, Number.POSITIVE_INFINITY);
+          this.performXrAction(binding.hold, hand);
+        } else if (!pressed && since !== undefined) {
+          this.xrHeld.delete(key);
+          if (binding.hold && Number.isFinite(since)) this.performXrAction(binding.action, hand);
+        }
       }
     }
-    if(recenterPressed&&this.xrRecenterReady){this.recenterVrView();this.xrRecenterReady=false;}
-    else if(!recenterPressed)this.xrRecenterReady=true;
+    // Up and down on the right stick scrolls whatever it is pointing at. It is
+    // otherwise unused — turning is the left-right axis — and a pass panel
+    // taller than the view needs some way to reach its end.
+    if (scrollY && this.xrHud?.pointing('right')) {
+      if (now >= this.xrScrollAt && this.xrHud.scrollBy('right', scrollY * 32)) this.xrScrollAt = now + 16;
+    }
     if (turnX && this.xrSnapReady) {
       this.xrYaw -= Math.sign(turnX) * THREE.MathUtils.degToRad(30);
       this.xrSnapReady = false;
@@ -2422,20 +2538,9 @@ export class FestivalWorld {
     if (this.playerState !== 'seated' && (moveX || moveY)) {
       // Use this frame's viewer pose and the same snap yaw as the rendered rig.
       // getCamera() still contains reference-space matrices before render().
-      this.xrMovementView.rotation.set(0,this.xrYaw+this.xrHeadHeading,0);
-      const xrCamera = this.xrMovementView;
-      const speed = run ? 7.4 : 4.4;
-      this.movePlayer(moveX, moveY, speed * delta, xrCamera);
+      this.xrMovementView.rotation.set(0, this.xrYaw + this.xrHeadHeading, 0);
+      this.movePlayer(moveX, moveY, (run ? 7.4 : 4.4) * delta, this.xrMovementView);
     }
-    if (teleportPressed && this.xrTeleportReady && this.playerState !== 'seated') {
-      this.xrMovementView.rotation.set(0,this.xrYaw+this.xrHeadHeading,0);
-      this.movePlayer(0, -1, 2.4, this.xrMovementView);
-      this.xrTeleportReady = false;
-    } else if (!teleportPressed) this.xrTeleportReady = true;
-    if (jumpPressed && this.xrJumpReady) {
-      this.jump();
-      this.xrJumpReady = false;
-    } else if (!jumpPressed) this.xrJumpReady = true;
     this.running = run;
   }
 
@@ -2450,6 +2555,7 @@ export class FestivalWorld {
       domOverlay: this.xrDomOverlay ?? null,
       singleWebglContext: !this.foregroundRenderer,
       controllers: this.xrControllers.length,
+      hud: this.xrHud?.reviewSnapshot() ?? null,
       projectorPosters: [...this.projectors.values()].filter((projector) => projector.xrPoster.visible).length,
       projectorMode: this.xrActive
         ? (this.xrSimulated ? 'youtube-css3d' : [...this.projectors.values()].some((projector) => projector.xrTexture) ? 'webgl-video' : 'webgl-posters')
@@ -5924,6 +6030,12 @@ export class FestivalWorld {
     // Pen and touch turn the camera and throw punches too; only the mouse's
     // other buttons are left alone.
     if (event.button !== 0) return;
+    // A click that lands on the painted interface is that interface's click,
+    // not a turn of the camera and not a punch.
+    if (this.pointHudFromScreen(event.clientX, event.clientY) > 0 && this.xrHud?.press('right')) {
+      event.preventDefault();
+      return;
+    }
     event.preventDefault();
     this.cameraDragging = true;
     if (event.pointerType !== 'mouse') {
@@ -5947,7 +6059,29 @@ export class FestivalWorld {
     this.canvas.setPointerCapture?.(event.pointerId);
   };
 
+  /**
+   * The headset preview, pointed with a mouse.
+   *
+   * A desktop preview has no controllers, and an interface that could only be
+   * reached from inside a headset could not be reviewed from a desk at all.
+   * The ray is the same ray, cast from the camera through the cursor, so both
+   * paths hit-test and click through exactly the same code.
+   */
+  private pointHudFromScreen(clientX: number, clientY: number): number {
+    if (!this.xrHud || !this.xrActive || !this.xrSimulated) return 0;
+    const rect = this.canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return 0;
+    this.camera.getWorldPosition(this.xrRayOrigin);
+    this.xrRayDirection
+      .set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1, 0.5)
+      .unproject(this.camera)
+      .sub(this.xrRayOrigin)
+      .normalize();
+    return this.xrHud.point('right', this.xrRayOrigin, this.xrRayDirection);
+  }
+
   private readonly cameraPointerMove = (event: PointerEvent): void => {
+    if (!this.cameraDragging) this.pointHudFromScreen(event.clientX, event.clientY);
     if (event.pointerType !== 'mouse' && this.touchPoints.has(event.pointerId)) {
       this.touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY });
       if (this.touchPoints.size >= 2) {
@@ -6045,6 +6179,17 @@ export class FestivalWorld {
    * under either hand.
    */
   private readonly cameraWheel = (event: WheelEvent): void => {
+    // In the desktop preview the wheel is the only thing standing in for the
+    // right stick, and a pass panel taller than the view is unreadable without
+    // it. Only when the cursor is actually on the panel, so the wheel still
+    // zooms the camera everywhere else.
+    if (this.xrActive && this.xrSimulated && this.pointHudFromScreen(event.clientX, event.clientY) > 0) {
+      const step = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1;
+      if (this.xrHud?.scrollBy('right', event.deltaY * step * 0.9)) {
+        event.preventDefault();
+        return;
+      }
+    }
     // Seated at a screen and in first person the distance is not the
     // attendee's to set: one is framed on the screen, the other is an eyeline.
     if (this.cameraMode === 'screening' || this.cameraMode === 'first-person') return;
@@ -9293,6 +9438,9 @@ export class FestivalWorld {
       if(rig)perchMentor(npc.group,npc.dogRig,rig.head,carrier.userData.importedHeadSupport?.()??new THREE.Vector3(0,.5,0));
     }
     this.updateLampPool();
+    // After the camera has been moved and before anything is drawn: the strip
+    // is pinned to the head, so a frame late is a frame of the visor lagging.
+    this.xrHud?.update(this.camera, performance.now());
     this.camera.layers.set(0);
     this.renderer.render(this.scene, this.camera);
     this.mainDrawCalls = this.renderer.info.render.calls;

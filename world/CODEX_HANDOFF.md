@@ -1,10 +1,123 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-09 · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
+Last updated: 2026-09-17 · **the headset paints its own interface — see Latest** · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
 > obsolete no-publish rule and branch name. Use this file for the active process.
+
+---
+
+# Latest: the interface a headset can see — BETA PUBLISHED (2026-09-17)
+
+A Quest never grants `dom-overlay` for an `immersive-vr` session. Every flat
+panel — the clock, the chat, the prompts, the whole pass — therefore vanished
+the moment anybody put the headset on, and the only controls that existed were
+buttons nobody could see a list of. The interface is painted into the scene now.
+
+### It reads the real DOM rather than reimplementing it
+
+`src/world/XrHud.ts` walks the panels `App` already builds, paints them onto
+canvas quads, and sends clicks back to the elements they came from. That is the
+whole reason all thirteen pass panels, the seat menu and the prompt boxes work
+in VR without a second implementation to keep in step: whatever `App` renders,
+a headset can read, and a panel rewritten there needs no work here. Layout and
+hit testing live in `XrHudLayout.ts`, free of three.js so tests can reach them.
+
+**Two anchorings, and the reason matters.** The always-on strip — place, clock,
+phase, connection, chips, objectives, chat, prompts, hints — rides with the head,
+because a clock you have to go and find is not a clock. The pass is *placed* in
+the world when it opens and left there. Dense text that follows every head twitch
+is what makes people ill in VR; a menu you can lean into is a menu you can read.
+
+- The flat layers are faded to `opacity: 0` during a session, never `display:
+  none` — the painted HUD reads their boxes for its contents, and a hidden panel
+  has no box. In a headset they were never composited anyway; this is what stops
+  the desktop preview showing two interfaces.
+- The panel is cut to its content, so a thirteen-row menu is not a slab of paper
+  with a metre of nothing under it, and it draws above the visor layer because an
+  open menu is the thing being read.
+- Row controls share a line. Thirteen rebind rows of CHANGE and RESET stacked
+  full-width made the controls panel four screens long for two words a side.
+- The map's inline SVG is **not** painted; its numbered destination buttons are,
+  which reads better at arm's length than a postage-stamp drawing.
+- No dropdown ever appears in a headset, so a click on a `<select>` steps to the
+  next option, and a slider is click-to-set rather than dragged.
+
+### One table for the controls, because there were three
+
+`src/world/XrControls.ts` is now the only source. `updateXrInput` reads it, the
+controls panel prints it and the painted hint strip prints it. The hand-typed
+list said "A / X — jump" and "B / Y — teleport forward", which is exactly how
+both hands came to mean one thing between them while **four buttons did nothing
+at all** and dance and photo mode had nowhere to live.
+
+| | |
+|---|---|
+| Left stick | Move / swim |
+| Right stick ←→ | Snap turn |
+| Right stick ↑↓ | Scroll the pass being pointed at |
+| Triggers | Point and click — the right one interacts with nothing under it |
+| Grips | Run, held |
+| Press left stick | Recentre |
+| Press right stick | Open / close the pass |
+| A | Jump |
+| B | Interact, feed MENTOR — **hold** to pick MENTOR up |
+| X | Dance |
+| Y | Photo mode |
+
+Offer, punch and camera are painted quick actions instead: the buttons ran out
+before the actions did, and the new pointer makes reaching them natural. The
+trigger stays on the session's `select` event rather than polling, so hand
+tracking — which has no gamepad — still clicks; the polling loop skips button 0
+to keep the press from firing twice.
+
+**Prompts name buttons, not keys.** `promptForTouch` rewrote `E /` to `TAP /`
+on a phone and left it as `E /` in a headset, where there is no keyboard. In VR
+it is `B /`, `HOLD B /` for what SHIFT+E was, and the offering points at its
+painted button.
+
+**Controller rays hit-test now** instead of being decorative lines of fixed
+length: they shorten to whatever they land on and carry a cursor dot. The
+desktop preview casts the same ray from the camera through the mouse, so both
+paths click through identical code and the thing can be reviewed from a desk.
+
+### Cleared from the VR view, at the owner's instruction
+
+Recentre and head tracking are gone from the corner; only the preview's own exit
+remains, because without it there is no way back out of the preview. Recentring
+is the left stick press and the painted strip says so. The webcam tracker's
+toggle was its **only** door, so gating it on "not in VR" would have deleted the
+feature rather than hiding it — the flag is inverted instead, and
+`?headtrack=on` still reaches it.
+
+### Published from an isolated checkout, and why
+
+`gate-entry-fix` was **eight days behind `origin/main`** and its working tree
+still carried the staff VR casting code that `82a0eb2` had removed that same
+afternoon. Building there would have resurrected removed work and dropped the
+live wall-camera fix. The VR work was ported onto a clean `origin/main` checkout
+(`vr-hud-20260917`) and published from there; every untracked `Coastal*.ts` in
+`gate-entry-fix` was confirmed byte-identical to `origin/main` first. **The
+dirty tree is untouched** — codex's uncommitted casting work is still there and
+is still nobody else's to commit.
+
+### What was and was not verified
+
+**167/167 tests** and the TypeScript/Vite build pass. The painted HUD was
+exercised in the desktop preview against the production bundle in **both
+languages**: strip, chat, prompts and quick actions paint; the pass opens,
+scrolls and closes; a submenu opens; the controls panel prints the new rows;
+fast travel from the painted map works; a quick action changed the camera; hover
+highlights; the review snapshot reports 13 clickable pass rows. No console errors
+beyond the production API's CORS refusal of a loopback origin.
+
+> **Not tested on a physical headset.** Text size at a real IPD and field of
+> view, comfort of the placed panel, ray ergonomics and the long-press timing all
+> need a Quest and the owner's own hands. Do not report those as working.
+> `document.documentElement.dataset.vrReview` carries a live `world.hud` block
+> for review — it used to be written only on session change, which reported every
+> panel empty because none had been painted yet.
 
 ---
 
