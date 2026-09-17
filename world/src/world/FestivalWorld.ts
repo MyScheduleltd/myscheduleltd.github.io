@@ -2052,6 +2052,18 @@ export class FestivalWorld {
       this.xrDomOverlay = session.domOverlayState?.type;
       session.addEventListener('end', this.xrEnded, { once: true });
       this.beginXrPresentation(false);
+      // Both of these are why the painted interface read as blurred.
+      //
+      // three.js ships `foveation = 1.0` — the *maximum* fixed foveated
+      // rendering the headset offers — which deliberately throws away
+      // resolution away from the centre of each eye. The HUD lives in exactly
+      // that periphery, by design, so every panel was being rendered into the
+      // cheapest part of the frame. Off entirely: this scene has the budget,
+      // and text is the one thing foveation cannot afford to soften.
+      this.renderer.xr.setFoveation(0);
+      // And the default framebuffer is below the panel's native resolution, so
+      // the canvases were being downsampled before they were ever displayed.
+      this.renderer.xr.setFramebufferScaleFactor(1.25);
       await this.renderer.xr.setSession(session);
       this.onXrSessionChange?.(true);
       return true;
@@ -2369,13 +2381,23 @@ export class FestivalWorld {
 
   private performXrAction(action: XrAction, hand: 'left' | 'right'): void {
     switch (action) {
-      case 'click':
+      case 'click': {
         // The interface gets first refusal: a trigger aimed at a pass row is
         // a click on that row, and only a trigger aimed at nothing reaches
         // the world. Otherwise picking a film would also feed the dog.
-        if (!this.xrHud?.press(hand)) this.xrSelectWorld();
+        //
+        // Both hands are tried, because the hand cannot always be trusted. A
+        // `select` event whose input source has not arrived yet reports no
+        // handedness, and this used to fall back to 'right' — so pointing with
+        // the left controller and pulling its trigger asked the right hand
+        // what it was aiming at, got nothing, and punched the world instead.
+        const other = hand === 'left' ? 'right' : 'left';
+        if (this.xrHud?.press(hand) || this.xrHud?.press(other)) break;
+        this.xrSelectWorld();
         break;
+      }
       case 'pass': this.xrHud?.togglePass(); break;
+      case 'hideHud': this.xrHud?.toggleHidden(); break;
       case 'recenter': this.recenterVrView(); break;
       case 'jump': this.jumpFromTouch(); break;
       case 'dance': this.toggleDancing(); break;
@@ -2494,6 +2516,11 @@ export class FestivalWorld {
   private updateXrPointers(): void {
     const hud = this.xrHud;
     if (!hud) return;
+    // The head-locked layer is pinned to the camera further down the frame,
+    // after this runs, so without this the rays were tested against where the
+    // interface had been on the previous frame — and against the world origin
+    // on the first frame of a session, where nothing could ever be hit.
+    hud.syncToCamera(this.camera);
     for (const controller of this.xrControllers) {
       const source = controller.userData.inputSource as XRInputSource | undefined;
       const hand = source?.handedness;

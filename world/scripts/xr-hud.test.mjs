@@ -37,12 +37,14 @@ test('every vital action reaches a button or the pointer',()=>{
   assert.ok(!pointed.has('camera'),'changing the camera has no meaning in a headset');
 });
 
-test('only run is a hold, and only the interact button carries a long press',()=>{
+test('only run is a hold, and every long press keeps its tap',()=>{
   assert.deepEqual(xrBindings.filter((b)=>b.sustained).map((b)=>b.action),['run','run']);
   const holds=xrBindings.filter((b)=>b.hold);
-  assert.equal(holds.length,1);
-  assert.equal(holds[0].action,'interact');
-  assert.equal(holds[0].hold,'pickUp');
+  // Two buttons carry a hold: B taps to interact and holds to pick MENTOR up,
+  // and the right stick press taps for the pass and holds to clear the view.
+  assert.deepEqual(holds.map((b)=>[b.action,b.hold]),[['pass','hideHud'],['interact','pickUp']]);
+  for(const binding of holds)
+    assert.ok(binding.action!==binding.hold,'a hold that repeats its tap is not a second action');
   assert.ok(XR_HOLD_MS>250&&XR_HOLD_MS<900,'a hold has to be longer than a tap and shorter than a wait');
 });
 
@@ -66,7 +68,7 @@ test('the painted strip is a list of whole bindings, so a wrap cannot split one'
   // two separate controls.
   for(const zh of [false,true]){
     const items=xrHintItems(zh);
-    assert.equal(items.length,10);
+    assert.equal(items.length,11);
     for(const item of items){
       assert.ok(item.trim().length,'an empty item');
       assert.ok(!item.includes(XR_HINT_SEPARATOR.trim()),'an item must not contain the separator');
@@ -82,11 +84,88 @@ test('a painted panel keeps the real elements as its click targets',()=>{
     {tag:'button',text:'02 地圖',ref:1},
     {tag:'button',text:'03 節目表',ref:2,disabled:true},
   ]});
-  assert.deepEqual(nodes.map((node)=>node.role),['text','button','button','button']);
+  // The pass's own heading is a title, painted like the flat panel's.
+  assert.deepEqual(nodes.map((node)=>node.role),['title','button','button','button']);
   assert.deepEqual(nodes.filter((node)=>node.role==='button').map((node)=>node.target),[0,1,2]);
   assert.equal(nodes[1].target,0);
   assert.equal(nodes[3].disabled,true);
   assert.equal(nodes[0].target,-1,'plain text must not be clickable');
+});
+
+test("a node's own words survive having an element child",()=>{
+  // `<p>NOW PLAYING · ROTATES IN <span>4</span>S</p>` used to print a bare
+  // "4": the walker recursed into the child and dropped the sentence around
+  // it. The panel header lost its title the same way.
+  const eyebrow=describeHud({tag:'div',children:[
+    {tag:'p',classes:['eyebrow'],text:'NOW PLAYING · ROTATES IN 4 S',children:[{tag:'span',text:'4'}]},
+  ]});
+  assert.equal(eyebrow.length,1);
+  assert.equal(eyebrow[0].role,'eyebrow');
+  assert.equal(eyebrow[0].text,'NOW PLAYING · ROTATES IN 4 S');
+
+  const header=describeHud({tag:'div',children:[
+    {tag:'header',classes:['panel__header'],text:'FESTIVAL PASS / PROGRAMME ×',children:[
+      {tag:'p',text:'FESTIVAL PASS / PROGRAMME',children:[{tag:'span',text:'FESTIVAL PASS /'}]},
+      {tag:'button',text:'Close',ref:5},
+    ]},
+  ]});
+  assert.equal(header.length,1);
+  assert.equal(header[0].role,'header');
+  assert.equal(header[0].text,'FESTIVAL PASS / PROGRAMME','the panel title must reach the header bar');
+  assert.equal(header[0].target,5,'the close button is the header block\u2019s hit area');
+  // Only the close square is clickable, not the whole bar.
+  const layout=layoutHud(header,1400,measure,42);
+  assert.equal(layout.hits.length,1);
+  const [hit]=layout.hits;
+  const [block]=layout.blocks;
+  assert.equal(hit.w,block.h,'the close area is a square at the end of the bar');
+  assert.ok(hit.x>block.x+block.w/2,'and it sits at the right-hand end');
+});
+
+test('a chat message stays one card, not three stacked lines',()=>{
+  const nodes=describeHud({tag:'div',classes:['chat-feed'],children:[
+    {tag:'article',text:'NPC \u00b7 MENTOR 08:55 \u4e09\u5ea7\u5f71\u5ef3\u90fd\u5728\u9032\u884c\u516c\u958b\u653e\u6620\u3002',children:[
+      {tag:'header',children:[
+        {tag:'strong',text:'NPC \u00b7 MENTOR'},
+        {tag:'time',text:'08:55'},
+      ]},
+      {tag:'p',text:'\u4e09\u5ea7\u5f71\u5ef3\u90fd\u5728\u9032\u884c\u516c\u958b\u653e\u6620\u3002'},
+    ]},
+  ]});
+  assert.equal(nodes.length,1,'one card, not an author line plus a time line plus a body');
+  assert.equal(nodes[0].role,'message');
+  assert.equal(nodes[0].text,'NPC \u00b7 MENTOR');
+  assert.equal(nodes[0].value,'08:55');
+  assert.equal(nodes[0].body,'\u4e09\u5ea7\u5f71\u5ef3\u90fd\u5728\u9032\u884c\u516c\u958b\u653e\u6620\u3002');
+  assert.equal(nodes[0].target,-1,'a message is not a button');
+  const layout=layoutHud(nodes,1400,measure,42);
+  assert.equal(layout.hits.length,0);
+  assert.ok(layout.blocks[0].bodyLines.length>=1,'the words are laid out under the author');
+});
+
+test('a segmented control is one row of cells, with the selected one marked',()=>{
+  const nodes=describeHud({tag:'div',children:[
+    {tag:'div',classes:['chat-channels','segmented'],children:[
+      {tag:'button',text:'NEARBY',ref:0},
+      {tag:'button',text:'VENUE',ref:1,pressed:true},
+      {tag:'button',text:'FESTIVAL',ref:2},
+    ]},
+  ]});
+  assert.equal(nodes.length,3);
+  assert.ok(nodes.every((node)=>node.inline),'the cells share a line');
+  assert.deepEqual(nodes.map((node)=>node.pressed??false),[false,true,false]);
+  const layout=layoutHud(nodes,1400,measure,42);
+  const ys=new Set(layout.hits.map((hit)=>hit.y));
+  assert.equal(ys.size,1,'three channels on one line');
+});
+
+test('a pass row keeps its ordinal separate from its label',()=>{
+  const nodes=describeHud({tag:'nav',classes:['festival-pass'],children:[
+    {tag:'button',text:'任務',ref:0,index:'01',value:'3/25'},
+  ]});
+  assert.equal(nodes[0].index,'01');
+  assert.equal(nodes[0].text,'任務');
+  assert.equal(nodes[0].value,'3/25');
 });
 
 test('a hidden element and an inline drawing are never painted',()=>{

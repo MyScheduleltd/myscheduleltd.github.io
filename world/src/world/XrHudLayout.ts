@@ -13,7 +13,7 @@
  */
 
 export type HudRole =
-  |'title'|'heading'|'eyebrow'|'text'|'hint'
+  |'header'|'title'|'heading'|'eyebrow'|'text'|'hint'|'message'
   |'button'|'row'|'item'|'summary'|'field'|'rule';
 
 export interface HudSourceNode {
@@ -30,6 +30,10 @@ export interface HudSourceNode {
   open?:boolean;
   /** The displayed value of a select or input. */
   value?:string;
+  /** A pass row's ordinal, printed in red ahead of the label as on screen. */
+  index?:string;
+  /** `aria-pressed`, for a segmented control's selected cell. */
+  pressed?:boolean;
 }
 
 export interface HudNode {
@@ -40,6 +44,10 @@ export interface HudNode {
   target:number;
   disabled:boolean;
   indent:number;
+  index?:string;
+  pressed?:boolean;
+  /** A chat message's own words, printed under its author and time. */
+  body?:string;
   /**
    * A control that belongs to the row above it, so it shares a line with its
    * siblings instead of taking the panel's whole width. Thirteen rebind rows
@@ -56,17 +64,25 @@ export interface HudRoleStyle {
 
 /** One place for every painted size, so the panels stay in proportion. */
 export const hudRoleStyles:Record<HudRole,HudRoleStyle> = {
-  title:  {size:40,weight:800,condensed:true, lineHeight:44,marginTop:0, padY:0, letter:2.4,caps:true },
-  heading:{size:33,weight:800,condensed:true, lineHeight:37,marginTop:24,padY:0, letter:1.2,caps:true },
-  eyebrow:{size:20,weight:800,condensed:true, lineHeight:24,marginTop:20,padY:0, letter:3,  caps:true },
-  text:   {size:24,weight:500,condensed:false,lineHeight:34,marginTop:12,padY:0, letter:0,  caps:false},
-  hint:   {size:21,weight:500,condensed:false,lineHeight:30,marginTop:10,padY:0, letter:0,  caps:false},
-  button: {size:27,weight:800,condensed:true, lineHeight:31,marginTop:11,padY:16,letter:1.6,caps:true },
-  row:    {size:24,weight:700,condensed:true, lineHeight:30,marginTop:8, padY:10,letter:1.1,caps:true },
-  item:   {size:23,weight:600,condensed:false,lineHeight:31,marginTop:8, padY:9, letter:0,  caps:false},
-  summary:{size:26,weight:800,condensed:true, lineHeight:30,marginTop:18,padY:14,letter:2,  caps:true },
-  field:  {size:24,weight:700,condensed:true, lineHeight:30,marginTop:12,padY:15,letter:1.1,caps:true },
-  rule:   {size:0, weight:400,condensed:false,lineHeight:0, marginTop:18,padY:0, letter:0,  caps:false},
+  // Scaled up with the canvases on 2026-09-17. The panel is painted at 1400px
+  // across where it used to be 1024, so the old sizes would have read a third
+  // smaller in the headset — and the owner's note was that it was already too
+  // crowded and too soft to read. Bigger type, and more air between the rows.
+  header: {size:42,weight:800,condensed:true, lineHeight:47,marginTop:0, padY:23,letter:2.2,caps:true },
+  // One card per message: the author and the time on a line, the words under
+  // them, and a hairline between — the shape `.chat-feed article` already has.
+  message:{size:28,weight:800,condensed:true, lineHeight:36,marginTop:0, padY:15,letter:2,  caps:true },
+  title:  {size:54,weight:800,condensed:true, lineHeight:59,marginTop:0, padY:6, letter:3.2,caps:true },
+  heading:{size:45,weight:800,condensed:true, lineHeight:50,marginTop:34,padY:0, letter:1.6,caps:true },
+  eyebrow:{size:27,weight:800,condensed:true, lineHeight:33,marginTop:28,padY:0, letter:4,  caps:true },
+  text:   {size:32,weight:500,condensed:false,lineHeight:46,marginTop:17,padY:0, letter:0,  caps:false},
+  hint:   {size:28,weight:500,condensed:false,lineHeight:41,marginTop:14,padY:0, letter:0,  caps:false},
+  button: {size:37,weight:800,condensed:true, lineHeight:42,marginTop:15,padY:22,letter:2.2,caps:true },
+  row:    {size:32,weight:700,condensed:true, lineHeight:41,marginTop:11,padY:14,letter:1.5,caps:true },
+  item:   {size:31,weight:600,condensed:false,lineHeight:42,marginTop:11,padY:12,letter:0,  caps:false},
+  summary:{size:35,weight:800,condensed:true, lineHeight:41,marginTop:24,padY:19,letter:2.7,caps:true },
+  field:  {size:32,weight:700,condensed:true, lineHeight:41,marginTop:17,padY:20,letter:1.5,caps:true },
+  rule:   {size:0, weight:400,condensed:false,lineHeight:0, marginTop:24,padY:0, letter:0,  caps:false},
 };
 
 const classed = (node:HudSourceNode,name:string):boolean => node.classes?.includes(name) ?? false;
@@ -91,15 +107,32 @@ function controlsUnder(node:HudSourceNode,out:HudSourceNode[] = []):HudSourceNod
   return out;
 }
 
-/** A row's own words, with its buttons' labels left out — they get their own box. */
-function textWithoutControls(node:HudSourceNode):string {
-  if(interactive(node))return '';
-  const children = kids(node).filter((entry) => !SKIPPED.has(entry.tag));
-  if(!children.length)return clean(node.text);
-  const parts = children.map((entry) => textWithoutControls(entry)).filter(Boolean);
-  // A node whose children are all controls still holds the label text itself.
-  return parts.length ? parts.join(' ') : (children.every(interactive) ? clean(node.text) : '');
+/**
+ * Everything a node says, minus whatever its own buttons say.
+ *
+ * `text` is the whole `textContent`, so this is a subtraction rather than a
+ * walk. Walking lost text: `<p>NOW PLAYING · ROTATES IN <span>4</span>S</p>`
+ * has both a text of its own and an element child, and recursing into the
+ * child printed a bare "4" where the sentence should have been. The panel
+ * header lost its title the same way.
+ */
+function textMinusControls(node:HudSourceNode):string {
+  let text = clean(node.text);
+  for(const control of controlsUnder(node)){
+    for(const spoken of [clean(control.text),clean(control.value)]){
+      if(!spoken)continue;
+      const at = text.indexOf(spoken);
+      if(at >= 0)text = `${text.slice(0,at)} ${text.slice(at + spoken.length)}`;
+    }
+  }
+  return clean(text);
 }
+
+/** Tags that carry words of their own, as opposed to laying other things out. */
+const TEXTUAL = new Set([
+  'p','h1','h2','h3','h4','h5','h6','li','dt','dd','small','span','strong',
+  'em','b','i','time','figcaption','blockquote','legend','caption','output',
+]);
 
 const roleForText = (node:HudSourceNode):HudRole => {
   if(classed(node,'eyebrow')||classed(node,'panel-intro'))return 'eyebrow';
@@ -120,6 +153,8 @@ export function describeHud(root:HudSourceNode):HudNode[] {
     out.push({
       role,text:label,value:clean(value) || undefined,
       target:node?.ref ?? -1,disabled:Boolean(node?.disabled),indent,
+      index:node?.index ? clean(node.index) : undefined,
+      pressed:node?.pressed,
     });
   };
   /** Emit a row's own controls as one shared line. */
@@ -130,10 +165,31 @@ export function describeHud(root:HudSourceNode):HudNode[] {
   };
   const walk = (node:HudSourceNode,indent:number):void => {
     if(node.hidden||SKIPPED.has(node.tag))return;
+    // The panel's own header: an ink bar carrying the title and the close
+    // button, exactly as the flat panel draws it. Emitted as one block whose
+    // hit area is only the close square — see `layoutHud`.
+    if(classed(node,'panel__header')){
+      // The title lives in the header's own `<p>`; the close button is the
+      // only control in there and becomes the block's single hit area.
+      const label = kids(node).find((entry) => !interactive(entry) && !SKIPPED.has(entry.tag));
+      add('header',clean(label?.text) || textMinusControls(node),controlsUnder(node)[0],indent);
+      return;
+    }
+    if(classed(node,'festival-pass__title')){
+      add('title',clean(node.text),undefined,indent);
+      return;
+    }
+    // A segmented control is a row of cells, not a column of buttons.
+    if(classed(node,'segmented')){
+      inlineRun(controlsUnder(node),indent);
+      return;
+    }
     if(interactive(node)){
       if(node.tag === 'select'||node.tag === 'input'||node.tag === 'textarea')
         add('field',clean(node.text) || node.tag.toUpperCase(),node,indent,node.value);
-      else add('button',clean(node.text),node,indent);
+      // A button's trailing value too: the pass prints a quest count in a
+      // `<small>` at the end of its row, and dropping it lost the 3/25.
+      else add('button',clean(node.text),node,indent,node.value);
       return;
     }
     if(node.tag === 'details'){
@@ -147,7 +203,7 @@ export function describeHud(root:HudSourceNode):HudNode[] {
     if(node.tag === 'label'){
       const control = controlsUnder(node)[0];
       if(control){
-        add('field',textWithoutControls(node) || clean(control.text),control,indent,control.value ?? clean(control.text));
+        add('field',textMinusControls(node) || clean(control.text),control,indent,control.value ?? clean(control.text));
         return;
       }
     }
@@ -155,13 +211,31 @@ export function describeHud(root:HudSourceNode):HudNode[] {
     // the value cell emitted after it rather than swallowed by it.
     const term = child(node,'dt');
     if(term){
-      add('row',clean(term.text),undefined,indent,textWithoutControls(child(node,'dd') ?? {tag:'dd'}));
+      add('row',clean(term.text),undefined,indent,textMinusControls(child(node,'dd') ?? {tag:'dd'}));
       inlineRun(controlsUnder(node),indent + 1);
       return;
     }
+    // A chat message, kept whole: author, time and words are one card rather
+    // than three loose lines stacked down the panel.
+    if(node.tag === 'article'){
+      const head = child(node,'header');
+      const who = head ? clean(child(head,'strong')?.text) : '';
+      const when = head ? clean(child(head,'time')?.text) : '';
+      const said = clean(child(node,'p')?.text) || textMinusControls(node);
+      if(who||said){
+        const label = who || clean(node.text);
+        if(label||said){
+          out.push({
+            role:'message',text:label,value:when || undefined,body:said || undefined,
+            target:-1,disabled:false,indent,
+          });
+          return;
+        }
+      }
+    }
     if(node.tag === 'li'){
       const controls = controlsUnder(node);
-      add('item',textWithoutControls(node),controls.length === 1 ? controls[0] : undefined,indent);
+      add('item',textMinusControls(node),controls.length === 1 ? controls[0] : undefined,indent);
       if(controls.length > 1)inlineRun(controls,indent + 1);
       return;
     }
@@ -172,14 +246,25 @@ export function describeHud(root:HudSourceNode):HudNode[] {
       else add(roleForText(node),clean(node.text),undefined,indent);
       return;
     }
-    if(/^h[1-6]$/.test(node.tag)){add('heading',textWithoutControls(node),undefined,indent);return;}
+    // Textual: one block for the whole sentence, with any controls inside it
+    // emitted after. Everything else is layout, and is recursed into.
+    if(TEXTUAL.has(node.tag)){
+      const role = /^h[1-6]$/.test(node.tag) ? 'heading' : roleForText(node);
+      const controls = controlsUnder(node);
+      add(role,textMinusControls(node),undefined,indent);
+      if(controls.length)inlineRun(controls,indent + 1);
+      return;
+    }
     for(const entry of children)walk(entry,indent);
   };
   for(const entry of kids(root))walk(entry,0);
   return out;
 }
 
-export interface HudBlock {x:number;y:number;w:number;h:number;node:HudNode;lines:string[];valueLines:string[];}
+export interface HudBlock {
+  x:number;y:number;w:number;h:number;node:HudNode;
+  lines:string[];valueLines:string[];bodyLines:string[];
+}
 export interface HudHit {x:number;y:number;w:number;h:number;target:number;}
 export interface HudLayout {blocks:HudBlock[];hits:HudHit[];height:number;}
 
@@ -216,7 +301,7 @@ export function wrapHudText(text:string,width:number,style:HudRoleStyle,measure:
   return lines.length ? lines : [body];
 }
 
-const boxed = (role:HudRole):boolean => role === 'button'||role === 'summary'||role === 'field'||role === 'row'||role === 'item';
+const boxed = (role:HudRole):boolean => role === 'button'||role === 'summary'||role === 'field'||role === 'row'||role === 'item'||role === 'message';
 
 /**
  * Stack the nodes down a single column. Everything is a full-width block: a
@@ -224,7 +309,7 @@ const boxed = (role:HudRole):boolean => role === 'button'||role === 'summary'||r
  * pointer needs targets it can hit at arm's length.
  */
 export function layoutHud(
-  nodes:readonly HudNode[],width:number,measure:HudMeasure,pad = 30,
+  nodes:readonly HudNode[],width:number,measure:HudMeasure,pad = 42,
 ):HudLayout {
   const blocks:HudBlock[] = [];
   const hits:HudHit[] = [];
@@ -234,7 +319,7 @@ export function layoutHud(
   /** Measure and place one node in a column of `inner` width at `left`. */
   const place = (node:HudNode,left:number,inner:number,top:number):HudBlock => {
     const style = hudRoleStyles[node.role];
-    const padX = boxed(node.role) ? 18 : 0;
+    const padX = boxed(node.role) ? 24 : 0;
     const textWidth = Math.max(40,inner - padX * 2);
     // A row prints its value on the same line when both fit, and under the key
     // when they do not — which is what keeps a long setting readable.
@@ -246,9 +331,13 @@ export function layoutHud(
     const valueLines = valueText && !sameLine
       ? wrapHudText(valueText,textWidth,hudRoleStyles.text,measure)
       : valueText ? [valueText] : [];
+    const bodyLines = node.body
+      ? wrapHudText(node.body,textWidth,hudRoleStyles.text,measure).slice(0,6)
+      : [];
     const body = lines.length * style.lineHeight
-      + (sameLine ? 0 : valueLines.length * hudRoleStyles.text.lineHeight);
-    return {x:left,y:top,w:inner,h:body + style.padY * 2,node,lines,valueLines};
+      + (sameLine ? 0 : valueLines.length * hudRoleStyles.text.lineHeight)
+      + bodyLines.length * hudRoleStyles.text.lineHeight;
+    return {x:left,y:top,w:inner,h:body + style.padY * 2,node,lines,valueLines,bodyLines};
   };
 
   const keep = (block:HudBlock):void => {
@@ -259,11 +348,11 @@ export function layoutHud(
   for(let index = 0;index < nodes.length;){
     const node = nodes[index];
     const style = hudRoleStyles[node.role];
-    const left = pad + node.indent * 20;
+    const left = pad + node.indent * 26;
     const inner = Math.max(80,width - left - pad);
     if(node.role === 'rule'){
       if(!first)y += style.marginTop;
-      keep({x:left,y,w:inner,h:2,node,lines:[],valueLines:[]});
+      keep({x:left,y,w:inner,h:2,node,lines:[],valueLines:[],bodyLines:[]});
       y += 2;
       first = false;
       index += 1;
@@ -279,7 +368,7 @@ export function layoutHud(
       }
       if(!first)y += style.marginTop;
       const gap = 10;
-      const perLine = Math.min(3,Math.max(1,Math.floor(inner / 170)));
+      const perLine = Math.min(3,Math.max(1,Math.floor(inner / 230)));
       for(let at = 0;at < run.length;at += perLine){
         const slice = run.slice(at,at + perLine);
         const each = (inner - gap * (slice.length - 1)) / slice.length;
@@ -298,7 +387,11 @@ export function layoutHud(
     }
     if(!first)y += style.marginTop;
     const block = place(node,left,inner,y);
-    keep(block);
+    if(node.role === 'header' && node.target >= 0){
+      // Only the square at the end closes the panel; the title is not a button.
+      blocks.push(block);
+      hits.push({x:block.x + block.w - block.h,y:block.y,w:block.h,h:block.h,target:node.target});
+    } else keep(block);
     y += block.h;
     first = false;
     index += 1;

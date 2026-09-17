@@ -33,7 +33,7 @@ const UNITS = 2;
 
 const CONDENSED = "'Barlow Condensed', Impact, sans-serif";
 /** The bottom strip: its own size, because it is not one of the panel roles. */
-const HINT_STYLE = {size:25,weight:700,condensed:true,lineHeight:38,marginTop:0,padY:0,letter:1.6,caps:false} as const;
+const HINT_STYLE = {size:33,weight:700,condensed:true,lineHeight:50,marginTop:0,padY:0,letter:2.2,caps:false} as const;
 const BODY = "Inter, system-ui, sans-serif";
 const fontFor = (style:HudRoleStyle):string =>
   `${style.weight} ${style.size}px ${style.condensed ? CONDENSED : BODY}`;
@@ -91,6 +91,13 @@ class HudQuad {
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
     this.texture.anisotropy = 4;
+    // No mipmaps, and a plain linear minification filter. The canvases are
+    // deliberately drawn at a higher resolution than the headset displays them,
+    // and with mipmaps on, that oversampling made three.js pick a *smaller*
+    // mip and hand the compositor a pre-blurred copy of the text.
+    this.texture.generateMipmaps = false;
+    this.texture.minFilter = THREE.LinearFilter;
+    this.texture.magFilter = THREE.LinearFilter;
     this.mesh = new THREE.Mesh(
       // A unit plane, scaled: the visible height changes with the content, and
       // rebuilding the geometry every repaint would churn buffers for nothing.
@@ -158,12 +165,23 @@ export class XrHud {
   private readonly head = new THREE.Group();
   private readonly placed = new THREE.Group();
 
-  private readonly status = new HudQuad(1280,176,1.30);
-  private readonly chat = new HudQuad(660,470,0.62);
-  private readonly prompt = new HudQuad(920,240,0.86);
-  private readonly hints = new HudQuad(1600,164,1.46);
-  private readonly quick = new HudQuad(560,132,0.52);
-  private readonly panel = new HudQuad(1024,1330,1.02,4020);
+  // Pushed out to the corners, and drawn at roughly twice the resolution the
+  // headset can display, so nothing sits in the middle of the view and nothing
+  // is upscaled into it. The clock and the connection used to share one wide
+  // slab across the top; they are two blocks in two corners now.
+  private readonly clock = new HudQuad(880,300,0.60);
+  private readonly status = new HudQuad(960,360,0.66);
+  private readonly chat = new HudQuad(1000,640,0.62);
+  private readonly prompt = new HudQuad(1200,280,0.78);
+  private readonly hints = new HudQuad(2000,210,1.52);
+  private readonly quick = new HudQuad(520,280,0.38);
+  // A third wider than it was, at the owner's request: body text lands near
+  // 1.3° of the view instead of 1.0°, which is the difference between legible
+  // and only just. The canvas stays at 1400 across, so it is still drawn at
+  // about 1.4× the resolution the headset can show. Its height is capped well
+  // below the canvas so a long panel scrolls rather than running past the top
+  // and bottom of a comfortable field of view.
+  private readonly panel = new HudQuad(1400,1200,1.40,4020);
 
   private readonly quads:HudQuad[];
   private readonly cursors = new Map<'left'|'right',THREE.Mesh<THREE.CircleGeometry,THREE.MeshBasicMaterial>>();
@@ -175,6 +193,7 @@ export class XrHud {
   private lastRead = 0;
   private placedFor = '';
   private placedPlaced = false;
+  private hiddenByVisitor = false;
   private hover?:HudTarget;
 
   constructor(options:XrHudOptions){
@@ -182,7 +201,7 @@ export class XrHud {
     this.root = options.root;
     this.zh = options.zh;
     this.onQuickAction = options.onQuickAction;
-    this.quads = [this.status,this.chat,this.prompt,this.hints,this.quick,this.panel];
+    this.quads = [this.clock,this.status,this.chat,this.prompt,this.hints,this.quick,this.panel];
 
     const measure = document.createElement('canvas').getContext('2d');
     if(!measure)throw new Error('The headset HUD needs a 2D canvas.');
@@ -190,12 +209,28 @@ export class XrHud {
 
     // Metres from the eye, converted on the way in. Everything sits inside a
     // comfortable cone: the strip above the horizon, prompts and hints below.
-    this.at(this.status.mesh,0,0.40,1.50);
-    this.at(this.chat.mesh,-0.47,-0.14,1.46);
-    this.at(this.prompt.mesh,0,-0.30,1.38);
-    this.at(this.hints.mesh,0,-0.475,1.58);
-    this.at(this.quick.mesh,0.49,-0.30,1.46);
-    this.head.add(this.status.mesh,this.chat.mesh,this.prompt.mesh,this.hints.mesh,this.quick.mesh);
+    // Laid out by the angle each block subtends, not by eye, because in a
+    // headset two panels that merely look separate on a monitor will sit on
+    // top of each other. Measured from the eye at these distances:
+    //   clock   -30.9°..-11.7° x, +11.6°..+18.6° y
+    //   status  +11.3°..+31.0° x, +10.9°..+18.9° y
+    //   chat    -34.0°..-14.6° x, -10.5°..+4.5°  y
+    //   quick   +18.1°..+29.0° x,  -2.6°..-9.5°  y
+    //   prompt  -14.6°..+14.6° x,  -8.0°..-14.6° y
+    //   hints    centred,           -18.1°..-21.3° y
+    // The pass panel is placed in the world rather than here, 1.45m ahead,
+    // where it subtends 51.5° across and at most 45.3° down.
+    // Nothing overlaps, and the middle of the view is left empty.
+    this.at(this.clock.mesh,-0.60,0.40,1.50);
+    this.at(this.status.mesh,0.60,0.40,1.50);
+    this.at(this.chat.mesh,-0.70,-0.08,1.50);
+    this.at(this.prompt.mesh,0,-0.30,1.42);
+    this.at(this.hints.mesh,0,-0.56,1.60);
+    this.at(this.quick.mesh,0.66,-0.16,1.50);
+    this.head.add(
+      this.clock.mesh,this.status.mesh,this.chat.mesh,
+      this.prompt.mesh,this.hints.mesh,this.quick.mesh,
+    );
     this.placed.add(this.panel.mesh);
     this.panel.mesh.position.set(0,0,0);
 
@@ -226,6 +261,7 @@ export class XrHud {
   setVisible(visible:boolean):void {
     if(this.visible === visible)return;
     this.visible = visible;
+    this.hiddenByVisitor = false;
     this.head.visible = visible;
     if(!visible){
       this.placed.visible = false;
@@ -270,6 +306,20 @@ export class XrHud {
         node.text = label ?? input.placeholder ?? input.name ?? '';
       }
     }
+    if(el.getAttribute('aria-pressed') === 'true')node.pressed = true;
+    // A pass row is `<span>01</span>LABEL<small>1/25</small>` on screen, and
+    // reads as "01 LABEL 1/25" if it is taken as one string. Split so the
+    // ordinal can be painted in red ahead of the label, as the flat panel does.
+    if(tag === 'button' && el.closest('.festival-pass')){
+      const ordinal = el.querySelector(':scope > span');
+      const trailing = el.querySelector(':scope > small');
+      if(ordinal)node.index = ordinal.textContent?.trim() ?? undefined;
+      if(trailing)node.value = trailing.textContent?.trim() ?? undefined;
+      node.text = Array.from(el.childNodes)
+        .filter((child) => child !== ordinal && child !== trailing)
+        .map((child) => child.textContent ?? '')
+        .join(' ').replace(/\s+/g,' ').trim();
+    }
     if(tag === 'details')node.open = (el as HTMLDetailsElement).open;
     const children:HudSourceNode[] = [];
     for(const kid of Array.from(el.children)){
@@ -309,22 +359,92 @@ export class XrHud {
         ctx.fillRect(block.x,block.y,block.w,2);
         continue;
       }
+      // The panel's header is an ink bar with the title in white and a close
+      // square at its end — the same chrome `.panel__header` draws on screen.
+      if(block.node.role === 'header'){
+        strokeBox(ctx,block.x,block.y,block.w,block.h,INK);
+        const close = block.h;
+        const closeHovered = hovered;
+        strokeBox(ctx,block.x + block.w - close,block.y,close,block.h,
+          closeHovered ? PAPER : 'rgba(245,239,226,.14)');
+        ctx.fillStyle = PAPER;
+        ctx.font = fontFor(style);
+        ctx.letterSpacing = `${style.letter}px`;
+        ctx.textBaseline = 'top';
+        block.lines.forEach((line,index) => {
+          ctx.fillText(line,block.x + 24,block.y + style.padY + index * style.lineHeight);
+        });
+        ctx.fillStyle = closeHovered ? INK : PAPER;
+        ctx.font = `800 ${Math.round(style.size * 1.1)}px ${CONDENSED}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('✕',block.x + block.w - close / 2,block.y + block.h / 2);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        continue;
+      }
+      if(block.node.role === 'message'){
+        const author = hudRoleStyles.message;
+        const said = hudRoleStyles.text;
+        ctx.textBaseline = 'top';
+        ctx.font = fontFor(author);
+        ctx.letterSpacing = `${author.letter}px`;
+        ctx.fillStyle = RED;
+        ctx.fillText(block.lines[0] ?? '',block.x,block.y + author.padY);
+        if(block.node.value){
+          ctx.font = fontFor({...said,size:24});
+          ctx.letterSpacing = '0px';
+          ctx.fillStyle = 'rgba(17,17,19,.5)';
+          ctx.textAlign = 'right';
+          ctx.fillText(block.node.value,block.x + block.w,block.y + author.padY + 5);
+          ctx.textAlign = 'left';
+        }
+        ctx.font = fontFor(said);
+        ctx.letterSpacing = '0px';
+        ctx.fillStyle = INK;
+        let messageY = block.y + author.padY + author.lineHeight;
+        for(const line of block.bodyLines){
+          ctx.fillText(line,block.x,messageY);
+          messageY += said.lineHeight;
+        }
+        // The divider the flat feed puts between messages.
+        ctx.fillStyle = 'rgba(17,17,19,.12)';
+        ctx.fillRect(block.x,block.y + block.h - 1,block.w,1);
+        continue;
+      }
       const isBox = block.node.target >= 0;
       if(isBox){
-        // The flat panel paints a hovered row ink-on-paper. The same here, so a
-        // pointer resting on a row is unmistakable across a room.
-        strokeBox(ctx,block.x,block.y,block.w,block.h,hovered ? INK : 'rgba(17,17,19,.05)','rgba(17,17,19,.22)',2);
+        // The flat panel paints a hovered row ink-on-paper, and a selected
+        // segmented cell red. The same here, so a pointer resting on a row is
+        // unmistakable across a room and the live channel is obvious.
+        const fill = hovered ? INK
+          : block.node.pressed ? 'rgba(169,28,36,.9)'
+          : 'rgba(17,17,19,.05)';
+        strokeBox(ctx,block.x,block.y,block.w,block.h,fill,'rgba(17,17,19,.22)',2);
       }
       if(block.node.role === 'summary'&&!isBox)strokeBox(ctx,block.x,block.y,block.w,block.h,'rgba(17,17,19,.07)');
-      ctx.fillStyle = hovered ? PAPER : block.node.disabled ? 'rgba(17,17,19,.42)' : INK;
+      ctx.fillStyle = hovered||block.node.pressed ? PAPER : block.node.disabled ? 'rgba(17,17,19,.42)' : INK;
       if(block.node.role === 'eyebrow')ctx.fillStyle = hovered ? PAPER : RED;
       ctx.font = fontFor(style);
       ctx.letterSpacing = `${style.letter}px`;
       ctx.textBaseline = 'top';
-      const padX = isBox||block.node.role === 'summary' ? 18 : 0;
+      const padX = isBox||block.node.role === 'summary' ? 24 : 0;
+      // A pass row's ordinal, in red ahead of the label, as on screen.
+      let indexWidth = 0;
+      if(block.node.index){
+        const indexStyle = {...hudRoleStyles.row,size:Math.round(style.size * 0.66)};
+        ctx.font = fontFor(indexStyle);
+        ctx.letterSpacing = `${indexStyle.letter}px`;
+        ctx.fillStyle = hovered ? PAPER : RED;
+        ctx.fillText(block.node.index,block.x + padX,block.y + style.padY + 6);
+        indexWidth = ctx.measureText(block.node.index).width + 20;
+        ctx.font = fontFor(style);
+        ctx.letterSpacing = `${style.letter}px`;
+        ctx.fillStyle = hovered ? PAPER : block.node.disabled ? 'rgba(17,17,19,.42)' : INK;
+      }
       let lineY = block.y + style.padY;
       for(const line of block.lines){
-        ctx.fillText(line,block.x + padX,lineY);
+        ctx.fillText(line,block.x + padX + indexWidth,lineY);
         lineY += style.lineHeight;
       }
       if(block.node.value){
@@ -362,7 +482,7 @@ export class XrHud {
     const pass = this.el('#festival-pass');
     const source = seat ?? open ?? pass;
     const key = seat ? 'seat' : open ? `panel:${open.className}` : pass ? 'pass' : '';
-    if(!source){
+    if(!source||this.hiddenByVisitor){
       this.placed.visible = false;
       this.placedFor = '';
       this.panel.signature = '';
@@ -377,9 +497,9 @@ export class XrHud {
     }
     const quad = this.panel;
     quad.clear();
-    this.paintNodes(quad,source,quad.canvas.width,30,() => {
+    this.paintNodes(quad,source,quad.canvas.width,42,() => {
       strokeBox(quad.ctx,0,0,quad.canvas.width,quad.view,PAPER,'rgba(255,255,255,.85)',4);
-      strokeBox(quad.ctx,0,0,quad.canvas.width,6,RED);
+      strokeBox(quad.ctx,0,0,quad.canvas.width,8,RED);
     });
     quad.done();
     quad.mesh.visible = true;
@@ -390,19 +510,51 @@ export class XrHud {
     this.placed.visible = true;
   }
 
+  /** Top left: where you are, the festival clock, the hour and the camera. */
+  private paintClock():void {
+    const quad = this.clock;
+    const place = this.root.querySelector('#location-label')?.textContent?.trim() ?? '';
+    const time = this.root.querySelector('#festival-clock')?.textContent?.trim() ?? '--:--';
+    const phase = this.root.querySelector('#phase-label')?.textContent?.trim() ?? '';
+    const signature = `${place}|${time}|${phase}`;
+    if(signature === quad.signature)return;
+    quad.signature = signature;
+    const ctx = quad.ctx;
+    const {width,height} = quad.canvas;
+    quad.clear();
+    quad.targets = [];
+    quad.layout = {blocks:[],hits:[],height};
+    strokeBox(ctx,0,0,width,height,'rgba(8,9,10,.70)','rgba(245,239,226,.28)',3);
+    strokeBox(ctx,0,0,7,height,HINT);
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = HINT;
+    ctx.font = `800 30px ${CONDENSED}`;
+    ctx.letterSpacing = '4px';
+    ctx.fillText(place.toUpperCase(),34,32);
+    ctx.fillStyle = PAPER;
+    ctx.font = `800 96px ${CONDENSED}`;
+    ctx.letterSpacing = '3px';
+    ctx.fillText(time,32,76);
+    ctx.font = `600 30px ${BODY}`;
+    ctx.letterSpacing = '0px';
+    ctx.fillStyle = 'rgba(245,239,226,.74)';
+    ctx.fillText(phase,34,202);
+    quad.done();
+    quad.mesh.visible = true;
+  }
+
+  /** Top right: the two buttons, who you are, and what you are carrying. */
   private paintStatus():void {
     const quad = this.status;
     const zh = this.zh();
-    const clock = this.root.querySelector('#festival-clock')?.textContent?.trim() ?? '--:--';
-    const place = this.root.querySelector('#location-label')?.textContent?.trim() ?? '';
-    const phase = this.root.querySelector('#phase-label')?.textContent?.trim() ?? '';
     const status = this.root.querySelector<HTMLElement>('#connection-status');
     const online = status?.dataset.status ?? 'connecting';
     const who = status?.textContent?.replace(/\s+/g,' ').trim() ?? '';
-    const chips = Array.from(this.root.querySelectorAll('#inventory-status span')).map((chip) => chip.textContent?.trim() ?? '').filter(Boolean);
+    const chips = Array.from(this.root.querySelectorAll('#inventory-status span'))
+      .map((chip) => chip.textContent?.trim() ?? '').filter(Boolean);
     const objective = this.root.querySelector('[data-objective-count]')?.textContent?.trim() ?? '';
     const passOpen = Boolean(this.el('#festival-pass'));
-    const signature = `${clock}|${place}|${phase}|${online}|${who}|${chips.join(',')}|${objective}|${passOpen}|${this.hover ? 'h' : ''}`;
+    const signature = `${online}|${who}|${chips.join(',')}|${objective}|${passOpen}|${this.hoverKey()}`;
     if(signature === quad.signature)return;
     quad.signature = signature;
 
@@ -411,63 +563,49 @@ export class XrHud {
     quad.clear();
     quad.targets = [];
     quad.layout = {blocks:[],hits:[],height};
-    strokeBox(ctx,0,0,width,height,'rgba(8,9,10,.72)','rgba(245,239,226,.30)',2);
-    strokeBox(ctx,0,0,5,height,HINT);
+    strokeBox(ctx,0,0,width,height,'rgba(8,9,10,.70)','rgba(245,239,226,.28)',3);
+    strokeBox(ctx,width - 7,0,7,height,HINT);
     ctx.textBaseline = 'top';
 
-    ctx.fillStyle = HINT;
-    ctx.font = `800 22px ${CONDENSED}`;
-    ctx.letterSpacing = '3px';
-    ctx.fillText(place.toUpperCase(),26,22);
-    ctx.fillStyle = PAPER;
-    ctx.font = `800 58px ${CONDENSED}`;
-    ctx.letterSpacing = '2px';
-    ctx.fillText(clock,26,50);
-    ctx.font = `600 22px ${BODY}`;
-    ctx.letterSpacing = '0px';
-    ctx.fillStyle = 'rgba(245,239,226,.72)';
-    ctx.fillText(phase,26,124);
-
-    // Two real buttons, painted: clicking them clicks the flat interface's own.
-    const button = (el:HTMLElement|null,label:string,x:number,w:number,accent:boolean):number => {
-      if(!el)return x;
+    // Two of the flat interface's own buttons, painted. Clicking them clicks it.
+    const pad = 26;
+    const gap = 14;
+    const buttonWidth = (width - pad * 2 - gap) / 2;
+    const button = (el:HTMLElement|null,label:string,x:number,accent:boolean):void => {
+      if(!el)return;
       const ref = quad.targets.push(el) - 1;
       const hovered = this.hover === el;
-      strokeBox(ctx,x,20,w,58,hovered ? PAPER : accent ? 'rgba(169,28,36,.88)' : 'rgba(245,239,226,.12)',PAPER,2);
+      strokeBox(ctx,x,pad,buttonWidth,86,
+        hovered ? PAPER : accent ? 'rgba(169,28,36,.9)' : 'rgba(245,239,226,.12)',PAPER,3);
       ctx.fillStyle = hovered ? INK : PAPER;
-      ctx.font = `800 27px ${CONDENSED}`;
-      ctx.letterSpacing = '2px';
+      ctx.font = `800 36px ${CONDENSED}`;
+      ctx.letterSpacing = '2.4px';
       ctx.textAlign = 'center';
-      ctx.fillText(label,x + w / 2,36);
+      ctx.fillText(label,x + buttonWidth / 2,pad + 24);
       ctx.textAlign = 'left';
-      quad.layout?.hits.push({x,y:20,w,h:58,target:ref});
-      return x;
+      quad.layout?.hits.push({x,y:pad,w:buttonWidth,h:86,target:ref});
     };
-    const passLabel = `${zh ? '通行證' : 'PASS'} ${passOpen ? '−' : '+'}`;
-    const passWidth = 212;
-    const questWidth = 186;
-    button(this.root.querySelector<HTMLElement>('#pass-toggle'),passLabel,width - 26 - passWidth,passWidth,true);
-    button(
-      this.root.querySelector<HTMLElement>('.objective-count'),
-      `${zh ? '任務' : 'OBJ'} ${objective}`,
-      width - 26 - passWidth - 12 - questWidth,questWidth,false,
-    );
+    button(this.root.querySelector<HTMLElement>('.objective-count'),`${zh ? '任務' : 'OBJ'} ${objective}`,pad,false);
+    button(this.root.querySelector<HTMLElement>('#pass-toggle'),`${zh ? '通行證' : 'PASS'} ${passOpen ? '−' : '+'}`,pad + buttonWidth + gap,true);
 
-    ctx.font = `700 21px ${CONDENSED}`;
-    ctx.letterSpacing = '1.5px';
-    ctx.textAlign = 'right';
+    ctx.font = `700 29px ${CONDENSED}`;
+    ctx.letterSpacing = '2px';
     ctx.fillStyle = online === 'online' ? '#6ed08a' : '#f1c560';
-    ctx.fillText(`● ${who.toUpperCase()}`,width - 26,96);
-    ctx.fillStyle = 'rgba(245,239,226,.66)';
-    ctx.fillText(chips.join('  ·  ').toUpperCase(),width - 26,128);
-    ctx.textAlign = 'left';
+    ctx.fillText(`● ${who.toUpperCase()}`,pad,150);
+    ctx.fillStyle = 'rgba(245,239,226,.68)';
+    // Wrapped rather than run together, now that there is room for it.
+    const chipStyle = {...hudRoleStyles.row,size:27,lineHeight:34,letter:1.6};
+    const lines = wrapHudText(chips.join('  ·  '),width - pad * 2,chipStyle,this.measure).slice(0,3);
+    ctx.font = fontFor(chipStyle);
+    ctx.letterSpacing = `${chipStyle.letter}px`;
+    lines.forEach((line,index) => ctx.fillText(line,pad,196 + index * chipStyle.lineHeight));
     quad.done();
     quad.mesh.visible = true;
   }
 
   private paintChat():void {
     const quad = this.chat;
-    const items = Array.from(this.root.querySelectorAll('#chat-stream .chat-stream__item')).slice(-5);
+    const items = Array.from(this.root.querySelectorAll('#chat-stream .chat-stream__item')).slice(-4);
     const signature = items.map((item) => item.textContent?.trim() ?? '').join('|');
     if(signature === quad.signature)return;
     quad.signature = signature;
@@ -482,6 +620,8 @@ export class XrHud {
       return;
     }
     // Painted upward from the bottom edge, so the newest card never moves.
+    // Four cards rather than five, at half again the size: the owner's note was
+    // that the view was crowded, and an unreadable card is not information.
     let bottom = height;
     for(const item of [...items].reverse()){
       const channel = item.getAttribute('data-channel') ?? 'VENUE';
@@ -490,9 +630,9 @@ export class XrHud {
       const who = item.querySelector('strong')?.textContent?.trim() ?? '';
       const when = item.querySelector('time')?.textContent?.trim() ?? '';
       const body = item.querySelector('p')?.textContent?.trim() ?? '';
-      const bodyStyle = {...hudRoleStyles.text,size:24,lineHeight:30};
-      const lines = wrapHudText(body,width - 40,bodyStyle,this.measure).slice(0,2);
-      const cardHeight = 40 + lines.length * bodyStyle.lineHeight;
+      const bodyStyle = {...hudRoleStyles.text,size:32,lineHeight:42};
+      const lines = wrapHudText(body,width - 64,bodyStyle,this.measure).slice(0,2);
+      const cardHeight = 62 + lines.length * bodyStyle.lineHeight;
       const y = bottom - cardHeight;
       if(y < 0)break;
       const gradient = ctx.createLinearGradient(0,0,width,0);
@@ -500,28 +640,28 @@ export class XrHud {
       gradient.addColorStop(1,'rgba(8,9,10,.62)');
       ctx.fillStyle = gradient;
       ctx.fillRect(0,y,width,cardHeight);
-      strokeBox(ctx,0,y,4,cardHeight,tint);
+      strokeBox(ctx,0,y,6,cardHeight,tint);
       ctx.textBaseline = 'top';
-      ctx.font = `800 19px ${CONDENSED}`;
-      ctx.letterSpacing = '2px';
+      ctx.font = `800 26px ${CONDENSED}`;
+      ctx.letterSpacing = '2.6px';
       ctx.fillStyle = tint;
-      ctx.fillText(tag.toUpperCase(),18,y + 11);
+      ctx.fillText(tag.toUpperCase(),26,y + 16);
       const tagWidth = ctx.measureText(tag.toUpperCase()).width;
       ctx.fillStyle = PAPER;
-      ctx.fillText(who.toUpperCase(),18 + tagWidth + 14,y + 11);
+      ctx.fillText(who.toUpperCase(),26 + tagWidth + 20,y + 16);
       ctx.fillStyle = 'rgba(255,255,255,.55)';
       ctx.textAlign = 'right';
-      ctx.fillText(when,width - 16,y + 11);
+      ctx.fillText(when,width - 22,y + 16);
       ctx.textAlign = 'left';
       ctx.font = fontFor(bodyStyle);
       ctx.letterSpacing = '0px';
       ctx.fillStyle = '#ffffff';
-      let lineY = y + 34;
+      let lineY = y + 52;
       for(const line of lines){
-        ctx.fillText(line,18,lineY);
+        ctx.fillText(line,26,lineY);
         lineY += bodyStyle.lineHeight;
       }
-      bottom = y - 8;
+      bottom = y - 12;
     }
     quad.done();
     quad.mesh.visible = true;
@@ -546,53 +686,53 @@ export class XrHud {
       const ref = quad.targets.push(el) - 1;
       const hovered = this.hover === el;
       const disabled = (el as HTMLButtonElement).disabled === true;
-      strokeBox(ctx,x,boxY,w,62,hovered ? PAPER : 'rgba(8,9,10,.86)',accent ? HINT : 'rgba(245,239,226,.55)',2);
+      strokeBox(ctx,x,boxY,w,84,hovered ? PAPER : 'rgba(8,9,10,.88)',accent ? HINT : 'rgba(245,239,226,.55)',3);
       ctx.fillStyle = hovered ? INK : disabled ? 'rgba(245,239,226,.45)' : PAPER;
-      ctx.font = `800 26px ${CONDENSED}`;
-      ctx.letterSpacing = '1.6px';
+      ctx.font = `800 35px ${CONDENSED}`;
+      ctx.letterSpacing = '2px';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(label,x + w / 2,boxY + 32);
+      ctx.fillText(label,x + w / 2,boxY + 43);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      if(!disabled)quad.layout?.hits.push({x,y:boxY,w,h:62,target:ref});
+      if(!disabled)quad.layout?.hits.push({x,y:boxY,w,h:84,target:ref});
     };
 
     if(seatBar){
       const buttons = Array.from(seatBar.querySelectorAll<HTMLElement>('button'));
-      const gap = 10;
+      const gap = 12;
       const each = (width - gap * (buttons.length - 1)) / Math.max(1,buttons.length);
-      y -= 62;
+      y -= 84;
       buttons.forEach((entry,index) => cell(entry,readText(entry).toUpperCase(),false,y,index * (each + gap),each));
       const heading = seatBar.querySelector('strong')?.textContent?.trim() ?? '';
       if(heading){
-        ctx.font = `800 24px ${CONDENSED}`;
-        ctx.letterSpacing = '2px';
+        ctx.font = `800 31px ${CONDENSED}`;
+        ctx.letterSpacing = '2.6px';
         ctx.fillStyle = HINT;
         ctx.textAlign = 'center';
-        y -= 34;
+        y -= 44;
         ctx.fillText(heading.toUpperCase(),width / 2,y + 4);
         ctx.textAlign = 'left';
       }
-      y -= 10;
+      y -= 12;
     }
     if(toast){
-      y -= 62;
+      y -= 84;
       cell(toast,readText(toast).toUpperCase(),true,y,0,width);
-      y -= 10;
+      y -= 12;
     }
     if(alert){
-      const lines = wrapHudText(readText(alert),width - 36,hudRoleStyles.text,this.measure).slice(0,2);
-      const boxHeight = 22 + lines.length * hudRoleStyles.text.lineHeight;
+      const lines = wrapHudText(readText(alert),width - 48,hudRoleStyles.text,this.measure).slice(0,2);
+      const boxHeight = 30 + lines.length * hudRoleStyles.text.lineHeight;
       y -= boxHeight;
-      strokeBox(ctx,0,y,width,boxHeight,'rgba(169,28,36,.9)',PAPER,2);
+      strokeBox(ctx,0,y,width,boxHeight,'rgba(169,28,36,.9)',PAPER,3);
       ctx.font = fontFor(hudRoleStyles.text);
       ctx.letterSpacing = '0px';
       ctx.fillStyle = PAPER;
       ctx.textBaseline = 'top';
-      let lineY = y + 11;
+      let lineY = y + 15;
       for(const line of lines){
-        ctx.fillText(line,18,lineY);
+        ctx.fillText(line,24,lineY);
         lineY += hudRoleStyles.text.lineHeight;
       }
     }
@@ -603,7 +743,7 @@ export class XrHud {
   private paintQuick():void {
     const quad = this.quick;
     const zh = this.zh();
-    const signature = `${zh}|${this.hover && !(this.hover instanceof Element) ? (this.hover as {action:string}).action : ''}`;
+    const signature = `${zh}|${this.hoverKey()}`;
     if(signature === quad.signature)return;
     quad.signature = signature;
     const ctx = quad.ctx;
@@ -611,28 +751,33 @@ export class XrHud {
     quad.clear();
     quad.targets = [];
     quad.layout = {blocks:[],hits:[],height};
-    const gap = 8;
-    const each = (width - gap * (xrQuickActions.length - 1)) / xrQuickActions.length;
+    ctx.font = `800 25px ${CONDENSED}`;
+    ctx.letterSpacing = '4px';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = 'rgba(245,239,226,.6)';
+    ctx.fillText(zh ? '指向點擊' : 'POINT AND CLICK',4,4);
+    // Stacked rather than in a row: two full-width cells are easier to hit at
+    // arm's length than two narrow ones, and there is room for them now.
+    const top = 46;
+    const gap = 12;
+    const each = (height - top - gap * (xrQuickActions.length - 1)) / xrQuickActions.length;
     xrQuickActions.forEach(([action,en,zhLabel],index) => {
       const target:HudTarget = {action};
       const ref = quad.targets.push(target) - 1;
-      const hovered = !(this.hover instanceof Element) && (this.hover as {action:string}|undefined)?.action === action;
-      const x = index * (each + gap);
-      strokeBox(ctx,x,34,each,84,hovered ? PAPER : 'rgba(8,9,10,.80)','rgba(245,239,226,.45)',2);
+      const hovered = !(this.hover instanceof Element)
+        && (this.hover as {action:string}|undefined)?.action === action;
+      const y = top + index * (each + gap);
+      strokeBox(ctx,0,y,width,each,hovered ? PAPER : 'rgba(8,9,10,.80)','rgba(245,239,226,.45)',3);
       ctx.fillStyle = hovered ? INK : PAPER;
-      ctx.font = `800 26px ${CONDENSED}`;
-      ctx.letterSpacing = '1.4px';
+      ctx.font = `800 37px ${CONDENSED}`;
+      ctx.letterSpacing = '2.2px';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(zh ? zhLabel : en,x + each / 2,78);
+      ctx.fillText(zh ? zhLabel : en,width / 2,y + each / 2);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      quad.layout?.hits.push({x,y:34,w:each,h:84,target:ref});
+      quad.layout?.hits.push({x:0,y,w:width,h:each,target:ref});
     });
-    ctx.font = `800 19px ${CONDENSED}`;
-    ctx.letterSpacing = '3px';
-    ctx.fillStyle = 'rgba(245,239,226,.6)';
-    ctx.fillText(zh ? '指向點擊' : 'POINT AND CLICK',2,4);
     quad.done();
     quad.mesh.visible = true;
   }
@@ -652,7 +797,7 @@ export class XrHud {
     // worst of the options. Broken between bindings and never inside one:
     // wrapping on spaces put "L STICK PRESS" on one line and "RECENTER" on
     // the next, which reads as two controls instead of one.
-    const limit = quad.canvas.width - 40;
+    const limit = quad.canvas.width - 56;
     const lines:string[] = [];
     let line = '';
     for(const item of items){
@@ -663,7 +808,7 @@ export class XrHud {
       } else line = candidate;
     }
     if(line)lines.push(line);
-    quad.setViewHeight(lines.length * HINT_STYLE.lineHeight + 16);
+    quad.setViewHeight(lines.length * HINT_STYLE.lineHeight + 22);
     quad.layout = {blocks:[],hits:[],height:quad.view};
     ctx.font = fontFor(HINT_STYLE);
     ctx.letterSpacing = `${HINT_STYLE.letter}px`;
@@ -672,11 +817,11 @@ export class XrHud {
     // Painted like the flat hint: a shadow instead of a panel, so the strip
     // reads over bright sky and dark interiors alike without boxing the view.
     ctx.shadowColor = 'rgba(0,0,0,.95)';
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur = 13;
     ctx.shadowOffsetY = 2;
     ctx.fillStyle = PAPER;
     lines.forEach((line,index) => {
-      ctx.fillText(line,quad.canvas.width / 2,8 + index * HINT_STYLE.lineHeight);
+      ctx.fillText(line,quad.canvas.width / 2,11 + index * HINT_STYLE.lineHeight);
     });
     ctx.shadowBlur = 0;
     ctx.shadowOffsetY = 0;
@@ -687,12 +832,44 @@ export class XrHud {
 
   // -------------------------------------------------------------- the frame
 
-  update(camera:THREE.Camera,now:number):void {
+  /**
+   * Pin the head-locked layer to the eye, and make its transforms current.
+   *
+   * Called before the rays are cast as well as before the frame is drawn:
+   * `Raycaster` reads `matrixWorld` and never updates it, so a layer moved
+   * this frame has to be flushed or the pointer tests last frame's positions.
+   */
+  syncToCamera(camera:THREE.Camera):void {
     if(!this.visible)return;
     camera.getWorldPosition(this.head.position);
     camera.getWorldQuaternion(this.head.quaternion);
+    this.head.updateMatrixWorld(true);
+    if(this.placed.visible)this.placed.updateMatrixWorld(true);
+  }
+
+  /** Clear the whole interface out of the view, or bring it back. */
+  toggleHidden():void {
+    this.hiddenByVisitor = !this.hiddenByVisitor;
+    this.head.visible = this.visible && !this.hiddenByVisitor;
+    this.placed.visible = this.placed.visible && !this.hiddenByVisitor;
+    if(this.hiddenByVisitor){
+      this.pointers.clear();
+      for(const cursor of this.cursors.values())cursor.visible = false;
+    }
+    this.lastRead = 0;
+  }
+
+  hidden():boolean {
+    return this.hiddenByVisitor;
+  }
+
+  update(camera:THREE.Camera,now:number):void {
+    if(!this.visible)return;
+    this.syncToCamera(camera);
+    if(this.hiddenByVisitor)return;
     if(now - this.lastRead < 140)return;
     this.lastRead = now;
+    this.paintClock();
     this.paintStatus();
     this.paintChat();
     this.paintPrompt();
@@ -741,7 +918,7 @@ export class XrHud {
 
   /** Aim one hand at the interface. Returns the hit distance, or 0 for a miss. */
   point(hand:'left'|'right',origin:THREE.Vector3,direction:THREE.Vector3):number {
-    if(!this.visible){
+    if(!this.visible||this.hiddenByVisitor){
       const idle = this.cursors.get(hand);
       if(idle)idle.visible = false;
       return 0;
@@ -783,6 +960,13 @@ export class XrHud {
     }
     this.refreshHover();
     return first.distance;
+  }
+
+  /** Identifies whatever is under a pointer, for a repaint signature. */
+  private hoverKey():string {
+    if(!this.hover)return '';
+    if(this.hover instanceof Element)return this.hover.id || this.hover.className || this.hover.tagName;
+    return this.hover.action;
   }
 
   private refreshHover():void {
@@ -850,6 +1034,7 @@ export class XrHud {
   reviewSnapshot():Record<string,unknown> {
     return {
       visible:this.visible,
+      hidden:this.hiddenByVisitor,
       placed:this.placed.visible,
       placedFor:this.placedFor,
       panelRows:this.panel.layout?.hits.length ?? 0,

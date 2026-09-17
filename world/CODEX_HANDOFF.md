@@ -1,10 +1,125 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-17 · **the headset paints its own interface — see Latest** · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
+Last updated: 2026-09-17 · **the headset paints its own interface, and only a headset does — see Latest** · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
 > obsolete no-publish rule and branch name. Use this file for the active process.
+
+---
+
+# Latest: the headset's interface, sharpened and scoped — BETA PUBLISHED (2026-09-17)
+
+Second pass on the painted HUD, after the owner tested it on a Quest.
+
+### An iPhone could not open the festival at all
+
+The HUD built **seven 2D canvases with the world, on every device** — including
+the ones that would never draw it. iOS caps total canvas memory and refuses a
+context rather than growing, and a refused context *threw inside the
+FestivalWorld constructor*. So an iPhone reached the gate, pressed enter and got
+a black screen, with nothing in the console because the throw happened before
+there was anything to log to. **It is built on the first real immersive session
+now and never before**, and a refused canvas costs the headset its HUD instead
+of costing everybody the festival. A phone loads two canvases where it loaded
+nine. If a painted panel is ever wanted on a phone, budget the canvases first.
+
+### Only a headset gets it
+
+The desktop and phone VR previews are ordinary browser compositions where the
+flat interface works, and the owner asked for both to stay exactly as they were
+— recentre and head tracking included. `?review=vr-hud` on loopback paints the
+headset HUD at a desk so it can still be reviewed; `data-vr-painted` on the
+shell is what fades the flat layers, and it is true only where the painted one
+actually runs. Recentre and head tracking are hidden in that mode, because they
+are desktop-preview controls and a headset composites no DOM at all.
+
+### Why it looked blurred, which was not the canvases
+
+**three.js ships `foveation = 1.0` — the maximum.** Fixed foveated rendering
+deliberately throws away resolution away from the centre of each eye, and this
+HUD lives in exactly that periphery by design, so every panel was being drawn
+into the cheapest part of the frame. `setFoveation(0)` at session start, plus
+`setFramebufferScaleFactor(1.25)`, and **no mipmaps** on the canvas textures:
+the canvases are drawn at more than display resolution, and with mipmaps on,
+three.js answered that oversampling by picking a smaller mip and handing the
+compositor a pre-blurred copy of the text. If the frame ever needs the budget
+back, foveation is the first dial — but not while text is the payload.
+
+### Spread out, and sized by angle
+
+The blocks are laid out by the angle each subtends from the eye, listed in a
+comment beside their positions, because two panels that look separate on a
+monitor will sit on top of each other in a headset. Corners: clock top left,
+connection and the two buttons top right, chat lower left, quick actions right,
+prompt and hints along the bottom, middle of the view empty. The pass panel is a
+third wider than the first pass at the owner's request — body text near 1.3° of
+view rather than 1.0° — with its height capped so a long panel scrolls instead
+of running past a comfortable field of view.
+
+### The menus look like the flat ones now
+
+A generic painter reading real DOM had been printing the panels as undifferentiated
+rows. It honours the classes the flat interface already carries: `.panel__header`
+becomes the ink header bar with the title and a **✕ close square** (only the square
+is clickable), `.festival-pass__title` the large title, a pass row's `<span>` its
+red ordinal with the quest count kept at the end, `.segmented` a row of cells with
+`aria-pressed` painted red, and `.chat-feed article` one message card — red author,
+dim right-aligned time, words under, hairline between.
+
+> **A node's own words were being lost.** `textWithoutControls` walked children
+> and ignored the node's own text, so `<p>NOW PLAYING · ROTATES IN <span>4</span>S</p>`
+> printed a bare "4" and the panel header lost its title. It is a subtraction
+> from `textContent` now, not a walk. Watch for this whenever a panel reads as
+> a stray fragment.
+
+### Controls
+
+`hideHud` is a **hold of the right stick press** — tap opens the pass, hold
+clears the whole interface out of the view. Changing the camera is gone from the
+quick actions: a headset is the camera. Two fixes to clicking, both of which
+could have been the reported "cannot click the prompt boxes":
+
+- **Either hand is tried.** A `select` event whose input source has not arrived
+  reports no handedness and fell back to `'right'`, so pointing with the left
+  controller asked the right hand what it was aiming at, got nothing, and hit
+  the world instead.
+- **The rays were tested against last frame's transforms.** `Raycaster` reads
+  `matrixWorld` and never updates it, and the head-locked layer is pinned to the
+  camera later in the frame — so on the first frame of a session the quads were
+  still at the world origin, where nothing could be hit. `syncToCamera` now runs
+  before the rays as well as before the draw.
+
+### Video in an immersive session — still not solved, and not for want of code
+
+The owner asked to try DOM overlays. **That path is already built and has been
+all along**: `enterVr` passes `#venue-screen` as the `domOverlay` root,
+`requestSession` asks for the module optionally, and `leaveVrForYoutube` keeps
+the immersive session and shows YouTube's own iframe in the overlay *when the
+browser grants it*. The Quest does not grant it — `dom-overlay` is specified for
+handheld `immersive-ar`, not `immersive-vr` — so it falls through to exit, watch,
+resume. That is why a film still opens outside the headset in a separate window.
+It now **says so in the headset** when it leaves, instead of leaving silently.
+
+`immersiveVideoSources` is still an **empty map**. The WebGL video path it feeds
+works; it has no sources. A cross-origin YouTube iframe can never be read into a
+WebGL texture, so the only route that keeps a film inside the session is a direct
+MP4/HLS URL on a host that sends CORS headers, added there per film ID. That is a
+hosting and rights decision, not a code one. **Do not report immersive video as
+working, and do not claim a DOM overlay will fix it.**
+
+### What was and was not verified
+
+**171/171 tests** and the TypeScript/Vite build pass. Reviewed against the
+production bundle through `?review=vr-hud`: the corner layout with nothing
+overlapping, the enlarged pass panel with its ordinals and quest count, a
+submenu's ink header and ✕, the chat panel's segmented channels and message
+cards, and a phone entering the world with **two canvases and `hud: null`**.
+
+> **Still not tested on physical headset hardware.** Whether foveation was in
+> fact the blur, whether the panel is now the right size, whether the ray
+> clicks, and how the hold reads all need a Quest. `dataset.vrReview` →
+> `world.hud` carries live pointer, hover and panel state for review.
 
 ---
 

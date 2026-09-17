@@ -2378,6 +2378,17 @@ export class App {
     this.refreshQuestUi();
   }
 
+  /**
+   * True where the headset's own painted interface is the interface.
+   *
+   * A real immersive session, or a loopback review of one. The desktop and
+   * phone VR previews are not this: they are ordinary browser compositions
+   * and keep every flat panel and button they had.
+   */
+  private paintsHeadsetHud(): boolean {
+    return this.vrActive && (!this.usesVrSimulation() || this.paintedHudReview);
+  }
+
   private syncVrUi(): void {
     const shell = this.root.querySelector<HTMLElement>('.world-shell');
     const entry = this.root.querySelector<HTMLElement>('[data-vr-entry]');
@@ -2391,14 +2402,15 @@ export class App {
       // Drives the CSS that fades the flat interface. True only where the
       // painted one is actually drawn, so a desktop or phone preview keeps
       // every panel it had.
-      shell.dataset.vrPainted = String(
-        this.vrActive && (!this.usesVrSimulation() || this.paintedHudReview),
-      );
+      shell.dataset.vrPainted = String(this.paintsHeadsetHud());
     }
     if (entry) entry.hidden = !this.vrRequested || this.vrActive || this.vrResumePending;
     if (resume) resume.hidden = !this.vrResumePending || this.vrActive || !this.root.querySelector('#venue-screen')?.hasAttribute('hidden');
     if (previewExit) previewExit.hidden = !this.vrActive || !this.usesVrSimulation();
-    if (recenter) recenter.hidden = !this.vrActive;
+    // Not where the painted interface runs: recentring is the left stick press
+    // in a headset and the painted strip says so. It stays in the desktop VR
+    // preview, which is the only place it was ever for.
+    if (recenter) recenter.hidden = !this.vrActive || this.paintsHeadsetHud();
     this.syncHeadTrackUi();
     if (status && this.vrError) status.textContent = this.vrError;
     if (this.world && (this.usesVrSimulation() || this.paintedHudReview)) {
@@ -2417,8 +2429,10 @@ export class App {
     const panel = this.root.querySelector<HTMLElement>('[data-head-track]');
     const readout = this.root.querySelector<HTMLElement>('[data-head-track-readout]');
     const pick = this.root.querySelector<HTMLElement>('[data-head-track-pick]');
+    // A headset tracks its own head, so the webcam tracker is offered only in
+    // the desktop preview — never alongside the painted interface.
     const offered = this.headTrackRequested && this.vrActive
-      && this.usesVrSimulation() && this.isHeadTrackingAvailable();
+      && this.usesVrSimulation() && !this.paintedHudReview && this.isHeadTrackingAvailable();
     if (!offered && this.headTrackPanelOpen) this.headTrackPanelOpen = false;
     const tracking = Boolean(this.world?.headTrackingEnabled());
     if (toggle) {
@@ -2750,6 +2764,14 @@ export class App {
       this.root.querySelector<HTMLElement>('#venue-screen')?.classList.add('venue-screen--xr-overlay');
       this.syncVrUi();
       return;
+    }
+    // The overlay was asked for and not granted. Say so, in the headset, at
+    // the moment it matters: leaving an immersive session without explanation
+    // reads as a bug, and this is a browser capability rather than one.
+    if (this.vrActive && !this.usesVrSimulation()) {
+      this.showWorldAlert(this.language === 'zh-TW'
+        ? '此裝置未授予 DOM 疊層，YouTube 影片無法在沉浸模式內播放 · 正在離開 VR 開啟播放器'
+        : 'THIS HEADSET DID NOT GRANT A DOM OVERLAY, SO A YOUTUBE FILM CANNOT PLAY INSIDE THE SESSION · LEAVING VR TO OPEN IT');
     }
     this.vrResumePending = true;
     await this.world?.exitVr();

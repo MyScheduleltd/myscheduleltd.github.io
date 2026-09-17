@@ -17,7 +17,7 @@
 export type XrHand = 'left'|'right';
 
 export type XrAction =
-  |'click'|'interact'|'pickUp'|'jump'|'dance'|'photo'|'run'|'recenter'|'pass';
+  |'click'|'interact'|'pickUp'|'jump'|'dance'|'photo'|'run'|'recenter'|'pass'|'hideHud';
 
 export interface XrBinding {
   hand:XrHand;
@@ -32,7 +32,14 @@ export interface XrBinding {
   describes:[string,string];
 }
 
-/** SHIFT+E on a keyboard is a hold here: the same action, one button along. */
+/**
+ * SHIFT+E on a keyboard is a hold here: the same action, one button along.
+ *
+ * Two buttons carry a hold. B taps to interact and holds to pick MENTOR up,
+ * the way SHIFT+E does. The right stick press taps to open the pass and holds
+ * to clear the whole painted interface out of the view — the same control, so
+ * it reads as "press for the menu, hold for none of it".
+ */
 export const XR_HOLD_MS = 520;
 
 export const xrBindings:readonly XrBinding[] = [
@@ -46,8 +53,8 @@ export const xrBindings:readonly XrBinding[] = [
     describes:['Run, while held','奔跑（按住）']},
   {hand:'left', button:3,action:'recenter',label:['PRESS LEFT STICK','按下左搖桿'],
     describes:['Recenter the view','重設視角']},
-  {hand:'right',button:3,action:'pass',    label:['PRESS RIGHT STICK','按下右搖桿'],
-    describes:['Open or close the pass','開關通行證']},
+  {hand:'right',button:3,action:'pass',hold:'hideHud',label:['PRESS RIGHT STICK','按下右搖桿'],
+    describes:['Open or close the pass — hold to hide or summon the whole interface','開關通行證（按住：隱藏／喚回整個介面）']},
   {hand:'left', button:4,action:'dance',   label:['X','X'],
     describes:['Dance','跳舞']},
   {hand:'left', button:5,action:'photo',   label:['Y','Y'],
@@ -94,6 +101,7 @@ export function xrHintItems(zh:boolean):string[] {
     `Y ${zh ? '拍照' : 'PHOTO'}`,
     `${zh ? '按右搖桿' : 'R STICK PRESS'} ${zh ? '通行證' : 'PASS'}`,
     `${zh ? '按左搖桿' : 'L STICK PRESS'} ${zh ? '重設視角' : 'RECENTER'}`,
+    `${zh ? '長按右搖桿' : 'HOLD R STICK'} ${zh ? '隱藏介面' : 'HIDE HUD'}`,
   ];
 }
 
