@@ -13,10 +13,11 @@ let data = {
       url:'https://www.youtube.com/embed/d5PVbDDREW8?si=GIAf9AGI345WvGX5'
     },{
       // The middle block, standing in for the team board while it is on hold.
-      // Defaulted to the showreel so the page is never empty; change this one
-      // URL to put a different film there. Nothing else needs touching.
+      // The owner picked this film on 2026-09-18. It is the same one as
+      // `about-videos2` below the block — deliberate, and their choice; change
+      // this one URL to put a different film there.
       id: 'about-videos3',
-      url:'https://www.youtube.com/embed/Ffli-o0ocT0?si=zeLjtzglBG7qmga1'
+      url:'https://www.youtube.com/embed/d5PVbDDREW8?si=hCJ1-7cwvmhpoE0R'
     }],
     memberData:[
       {
