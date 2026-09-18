@@ -538,9 +538,13 @@ h2 {
    visible height are the same number. */
 @media all and (max-width: 920px) {
   .videos-wrapper { height: 100svh; }
-  /* The ordinary centred heading, at every width. The 50px sideways label it
-     used to become on a phone put 22px text in a 50-pixel box and overflowed
-     into nothing readable, so the heading was reported missing on mobile. */
-  .aboutVideos2 h2:not(.mob) { display: block; }
-  .aboutVideos2 h2.mob { display: none; }
+  /* No heading on a phone at all, by the owner's decision. It was hidden
+     originally, then briefly shown when it was reported missing — but shown is
+     worse: the full-bleed film starts at the top of the page there, so the
+     heading lands on top of the ABOUT bar in the corner. The film is its own
+     label, and the desktop keeps the heading where there is room for it. The
+     50px sideways variant stays gone too: it put 22px text in a 50-pixel box
+     and overflowed into nothing readable, which is why it looked missing
+     rather than deliberately absent. */
+  .aboutVideos2 h2 { display: none; }
 }

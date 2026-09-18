@@ -154,15 +154,24 @@ h2{
 
 }
 .aboutVideos2{
+    // No heading on a phone at all, by the owner's decision on 2026-09-18.
+    //
+    // It was hidden here originally, then briefly shown when the heading was
+    // reported missing on mobile — but shown is worse: the full-bleed film
+    // starts at the top of the page there, so a 50px heading lands on top of
+    // the ABOUT bar in the corner. The film is its own label. The desktop keeps
+    // the heading, where there is room above the block for it.
     h2:not(.mob){
         z-index: 100;
         top:0;
+        @include rwd($md){
+            display: none;
+        }
     }
-    // The sideways 50px label the heading used to become on a phone. It put
-    // "OFFICE TOUR" at 22px into a 50-pixel box with a 16-pixel line height,
-    // which overflowed into nothing you could read — the heading was reported
-    // simply missing on mobile. The ordinary centred heading shows at every
-    // width now, as it does on the desktop, and this is kept out of the way.
+    // And the sideways 50px variant stays gone. It put "OFFICE TOUR" at 22px
+    // into a 50-pixel box with a 16-pixel line height, which overflowed into
+    // nothing anybody could read — which is why the heading looked missing
+    // rather than deliberately absent.
     h2.mob{
         display: none;
         width:50px;
