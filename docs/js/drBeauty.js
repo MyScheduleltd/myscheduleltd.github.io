@@ -124,7 +124,14 @@ $(function () {
         let email = 'mssdrbeauty@gmail.com';
         let subject = $('#subject')[0].value || '';
         let emailBody = $('#message')[0].value || '';
-        window.location = 'mailto:' + email + '?subject=' + subject + '&body=' + emailBody;
+        // Encoded, both of them. Without this an ampersand in the message
+        // starts a new URL parameter and everything after it is dropped, and a
+        // hash is read as a fragment and dropped too — so an enquiry saying
+        // "budget is 50k & timeline is Q3" arrived as "budget is 50k", with no
+        // sign to either side that a word had gone missing.
+        window.location = 'mailto:' + email
+            + '?subject=' + encodeURIComponent(subject)
+            + '&body=' + encodeURIComponent(emailBody);
     });
 
     // 初始化 Swiper 與第一支影片
