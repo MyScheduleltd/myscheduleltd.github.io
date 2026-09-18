@@ -33,7 +33,7 @@ $(function async(){
                             <img src="./assets/logo.png"/>
                         </div>
                     </div>
-                    <iframe id="youtube${i+1}" class="video" src="${homeVideos[i].url.split('?')[0]}?rel=0&loop=1&autoplay=1&mute=1&playsinline=1&enablejsapi=1&showinfo=0&playlist=${youtube_parser(homeVideos[i].url)}"  frameborder="0" allowfullscreen></iframe>
+                    <iframe id="youtube${i+1}" class="video" src="${homeVideos[i].url.split('?')[0]}?rel=0&loop=1&autoplay=1&mute=1&playsinline=1&enablejsapi=1&showinfo=0&playlist=${youtube_parser(homeVideos[i].url)}"  frameborder="0" allowfullscreen allow="autoplay; encrypted-media"></iframe>
                 </div>
             </div>`)
             i++
