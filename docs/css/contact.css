@@ -228,3 +228,14 @@
   -webkit-transform: translate(-50%, -50%);
           transform: translate(-50%, -50%);
 }
+
+/* The enquiry form is gone — it never sent anything, it handed off to the
+   visitor's own mail app — so the page is the logo and the social links,
+   centred at every width, which is what a phone already showed. The container
+   was `flex: 1` to share the row with the form; alone it is a fixed column the
+   parent's `justify-content: center` puts in the middle. `dvh` for the reason
+   the ABOUT films needed it: on iOS `vh` measures a viewport taller than the
+   screen, so a full-height block overflows and what it centres sits high. */
+.contact .contact-us,
+.contact .videos-wrapper { height: 100vh; height: 100dvh; }
+.contact .contact-us .container { flex: 0 0 auto; width: 370px; margin-inline: auto; }

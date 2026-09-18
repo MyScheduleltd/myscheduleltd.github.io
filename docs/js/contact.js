@@ -10,20 +10,6 @@ $(function async(){
         </div>
     `)
 
-    $('#submit').on('click', function(event){
-        event.preventDefault();
-        let email = 'santana30541@gmail.com';
-        let subject = $('#subject')[0].value || '';
-        let emailBody = $('#message')[0].value || '';
-        // Encoded, both of them. Without this an ampersand in the message
-        // starts a new URL parameter and everything after it is dropped, and a
-        // hash is read as a fragment and dropped too — so an enquiry saying
-        // "budget is 50k & timeline is Q3" arrived as "budget is 50k", with no
-        // sign to either side that a word had gone missing.
-        window.location = 'mailto:' + email
-            + '?subject=' + encodeURIComponent(subject)
-            + '&body=' + encodeURIComponent(emailBody);
-    })
     
     const footer =  $('.footer').innerHeight();
     if(window.innerWidth > 960){
