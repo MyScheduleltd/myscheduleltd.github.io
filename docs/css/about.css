@@ -499,4 +499,34 @@ h2 {
   font-size: 2em;
 }
 
-
+/* Two treatments for one space, and the width decides which. On a phone the
+   middle block is a third film like the two around it; on a desktop it is the
+   COMING SOON notice. 920px is the same line the rest of this page turns on.
+   Kept at the end of the file on purpose: it is the last word on both. */
+/* 921 and not 920: the notice's rule below is max-width 920, and at exactly
+   920 both would match and the space would come out blank. */
+@media all and (min-width: 921px) {
+  .aboutVideos3 { display: none; }
+}
+@media all and (max-width: 920px) {
+  .aboutMember { display: none; }
+}
+/* Sized like the film blocks either side of it, not like the 1600px grid of
+   faces it will one day hold — centring one line of text in that put the
+   notice eight hundred pixels down an empty page. svh, not vh: on iOS vh
+   measures a viewport taller than the one you can actually see. */
+.member-container:has(> .member-coming-soon) {
+  height: auto;
+  min-height: 100svh;
+  margin-top: 0;
+}
+.member-coming-soon {
+  width: 100%;
+  text-align: center;
+  padding: 0 20px;
+  margin: 0;
+  font-size: 48px;
+  font-weight: bold;
+  letter-spacing: 4px;
+  color: #fff;
+}

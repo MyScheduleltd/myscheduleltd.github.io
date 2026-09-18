@@ -9,14 +9,22 @@ block container
                     img(src="./assets/logo.png")
                 .about-us
                     p This is MY SCHEDULE LTD. We are a creative video production company based in Taipei, Taiwan. Operating globally, we are dedicated to producing top-quality visuals. Our creative team specializes in a variety of video productions, including movies, music videos, television shows, commercials, and occasionally unconventional YouTube content.
-        //- The team board is on hold. Rather than leave an empty black panel
-        //- standing where it will go, this is a third film block built exactly
-        //- like the two around it: the video loops muted behind, and the centre
-        //- logo opens it on YouTube. Swap the film in js/allData.js.
+        //- Two treatments for one space, and the width decides which.
+        //-
+        //- On a phone it is a third film block built exactly like the two
+        //- around it: the video loops muted behind, and the centre logo opens
+        //- it on YouTube. Swap the film in js/allData.js. On a desktop it is
+        //- the COMING SOON notice, which is what the owner wants standing
+        //- there until the team board is ready. Both are in the markup and the
+        //- stylesheet hides one, so neither flashes before the other appears.
         .videos-wrapper.aboutVideos3
             .blackScreen
                 .button(data-set="2")
                     img(src="./assets/logo.png")
+        .aboutMember
+            //- h2 ACTUALLY HUMAN
+            .member-container
+                p.member-coming-soon COMING SOON
         .videos-wrapper.aboutVideos2
             h2 OFFICE TOUR
             .blackScreen

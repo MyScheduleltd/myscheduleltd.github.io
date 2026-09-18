@@ -438,9 +438,47 @@ h2{
         }
     }
 }
-// The team board is on hold, and a placeholder used to stand here. Centring a
-// lone line of text inside a container built for a grid of faces put it eight
-// hundred pixels down an otherwise empty page, and on a phone that was below
-// the fold. Rather than keep tuning an empty black panel, the section is now a
-// third film block like the two around it — see `.aboutVideos3` in about.pug.
+// Two treatments for one space, and the width decides which.
+//
+// The team board is on hold. On a phone this space is a third film block like
+// the two around it; on a desktop it is the COMING SOON notice, which is what
+// the owner wants standing there until the board is ready. Both are in the
+// markup and one is hidden here, so neither flashes before the other arrives.
+// 920px is $md, the same line the rest of this page turns on.
+//
 // The team board's own rules above are left intact for when it returns.
+.aboutVideos3{
+    // Not `rwd($md,min-width)`: that is `min-width:920px`, and the notice's own
+    // rule is `max-width:920px`, so at exactly 920 both would match and the
+    // space would come out blank. One pixel up, and the line has one side.
+    @media all and (min-width: #{$md + 1}){
+        display:none;
+    }
+}
+.aboutMember{
+    @include rwd($md){
+        display:none;
+    }
+}
+// Sized like the film blocks either side of it rather than like the grid of
+// faces it will one day hold. That grid is 1600px tall, and centring one line
+// of text inside it put the notice eight hundred pixels down an empty page.
+//
+// `svh` and not `vh`: on iOS `vh` measures a viewport taller than the one you
+// can actually see. Only desktop sees this today, but the unit costs nothing
+// to get right and this block has been a phone problem once already.
+.member-container:has(> .member-coming-soon){
+    height:auto;
+    min-height:100svh;
+    margin-top:0;
+}
+.member-coming-soon{
+    width:100%;
+    text-align:center;
+    padding:0 20px;
+    margin:0;
+    font-size:48px;
+    font-weight:bold;
+    letter-spacing:4px;
+    color:#fff;
+}
