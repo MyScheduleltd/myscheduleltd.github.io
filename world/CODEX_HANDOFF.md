@@ -1,10 +1,101 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-18 · **in a headset, `event.target` is not the focused field** · **iOS `vh` is taller than the screen — no emulator shows it** · **a fix that only moves a symptom is not one — measure both sides** · **walking must not move the camera — one avoidance owner, see Latest** · **curl is not a browser — test media hosts from a page, see Latest** · **the headset paints its own interface, and only a headset does — see Latest** · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
+Last updated: 2026-09-19 · **a fix that only moves *when* a symptom happens has not touched the cause** · **in a headset, `event.target` is not the focused field** · **iOS `vh` is taller than the screen — no emulator shows it** · **a fix that only moves a symptom is not one — measure both sides** · **walking must not move the camera — one avoidance owner, see Latest** · **curl is not a browser — test media hosts from a page, see Latest** · **the headset paints its own interface, and only a headset does — see Latest** · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
 > obsolete no-publish rule and branch name. Use this file for the active process.
+
+---
+
+# Latest: the camera judder found at last, and the gate split from the world — BETA PUBLISHED (2026-09-19)
+
+## The camera lunge: a limit cycle, not the geometry
+
+Four attempts, and the first three were wrong because none of them was the
+cause. The measurements that finally located it:
+
+- the jump was **identical to four decimals** against a wall, a corridor and a
+  thin lamp post — which looked like "not geometric", but is because the lens
+  sits on x=0 in all three and the sight line crosses each the same way
+- it arrived **every tenth frame**, ~0.33 inward, while outward motion was
+  smooth (+0.014 at worst)
+- `cameraClearReach` was **already continuous** after the bisection: sweeping in
+  the avatar's own 0.06 steps it changes by 0.06–0.0675 with **no flat treads**
+- `cameraReach` sat about **0.45 longer** than the true clear distance
+
+That last number is the fault. `cameraReach` is measured towards the camera's
+*target*, which sits at the full orbit radius and therefore points higher and
+steeper than the lens actually does — and a steeper ray clears an obstruction
+further out. So the eased distance believed it had room it had not, pushed
+outward at the opening rate, went obstructed, and the clamp that guarantees you
+cannot see through a wall hauled it back instantly. Ten frames, for ever.
+
+`easeCameraToward()` now travels the **arc** — direction and distance eased
+separately about the avatar — and clamps the distance **on the ray the lens is
+actually on**, measured out to the radius it *wants* rather than the one it
+*has*. That last distinction matters: measuring only as far as the current
+position can never report room further out, so feeding it back is a ratchet with
+no way up, and it walked the lens to 0.37 of a unit from the eye, inside the
+avatar's head.
+
+Measured after: **0.183 near a wall (was 0.337), 0.005 on stairs**, closest
+approach 1.78, recovery to 4.06, zero frames seeing through a wall. The stairs
+were the case reported as unusable. Pinned at 0.19 in `coastal-pose.test.mjs`.
+
+**The lesson worth keeping: a fix that only moves *when* a symptom happens has
+not touched the cause. Measure the period, not just the amplitude.**
+
+## The gate no longer waits for the world
+
+`App.ts` imported five *values* from `FestivalWorld` — the roster constants —
+and a single value import drags the whole festival into the same chunk. So the
+gate could not draw a field until 702KB had arrived and parsed.
+
+The roster moved to `NpcRoster.ts`, a leaf module; `FestivalWorld` is now a
+**type-only** import in `App.ts`, which is erased; and the world is fetched by a
+dynamic `import()` that is *started while the gate is on screen*, beside the
+avatar model that was already preloading there.
+
+| | before | after |
+|---|---|---|
+| blocks the gate | 225 KB gzip | **99 KB gzip** |
+| world, in parallel | — | 126 KB gzip |
+
+`FestivalWorld` re-exports the roster, so nothing else needed changing.
+
+## ABOUT, wrong both ways, now right
+
+`100vh` on iOS is the viewport with the toolbars **collapsed** — taller than the
+screen, so the block overflowed and its centred logo sat high. `100svh` is the
+viewport with them **showing** — shorter than the screen once Safari hides them,
+so the block stopped filling the screen and the next film bled in underneath
+with a hard seam. Both were mine. `100dvh` is the viewport as it actually is.
+
+**No emulator reproduces any of this.** Measured at 390x844, `vh`, `svh` and
+`dvh` all report 844, which is why both wrong answers looked right when checked.
+
+## Two more
+
+**An introduction would not open while MENTOR followed you.** A branch at the
+top of `interact()` turned *every* SHIFT+E into a pick-up whenever the dog was
+nearby — and while it follows, it always is. So the prompt promised
+`SHIFT+E / INTRODUCTION` and the key picked the dog up. A resident within reach
+now outranks the dog, matching the order `interactionLabel()` already used, and
+only when an introduction is actually on offer.
+
+**MENTOR has its own introduction**, on a **double tap** of the prompt, because
+its tap and hold are already a treat and a pick-up and it is deliberately not
+somebody you can wave at. Counted from `pointerup`, not `dblclick`, which a
+phone with `touch-action: manipulation` and a headset pointer do not report
+dependably. Empty like the others until STAFF write it.
+
+## Still open
+
+- **Render needs a manual deploy** — introductions cannot be saved until then.
+- Ten introductions to write, MENTOR's included.
+- Immersive video still has no host.
+- `docs/beta/assets` is 45MB of retained models; the owner declined clearing it.
 
 ---
 

@@ -1,4 +1,6 @@
 import { SCREENING_SITES, SHORE_SIGN, screeningContains } from './CoastalVenues';
+import { DEFAULT_NPC_PROFILES, DOUBLE_TAP_INTRODUCTION,
+  type NpcId, type NpcProfile, type MentorFollowerTarget } from './NpcRoster';
 import { TOP_OUTFITS } from './CoastalOutfits';
 import { npcSeed, sampleNpcMotion, type NpcLeg } from './SharedNpcMotion';
 import { createCoastalPopcorn, createCoastalDrink, createCoastalPamphletStand, createCoastalDeity, createCoastalSignFrame } from './CoastalProps';
@@ -47,46 +49,13 @@ export type CameraMode = 'follow' | 'perspective' | 'first-person' | 'screening'
 export type PlayerState = 'walking' | 'seated' | 'swimming';
 export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink' | 'eat' | 'jump' | 'stumble' | 'offer' | 'bow' | 'punch' | 'hit' | 'tumble';
 export type CarriedItem = 'POPCORN' | 'MENTOR' | 'DRINK' | 'HOTDOG' | 'PIZZA' | 'CHICKEN';
-export const NPC_NAMES = ['MENTOR', 'KENNY', 'NUNO', 'MICHAEL', 'SEBINE', 'ZC', 'LOUI', 'MINYUN', 'VIOLA', 'XIEHGAN', 'DRBEAUTY', 'YO'] as const;
-export type NpcId = string;
-export type NpcNames = Record<NpcId, string>;
-export interface NpcProfile {
-  id: NpcId;
-  name: string;
-  title: string;
-  /**
-   * What this resident says about themselves, written by STAFF.
-   *
-   * Optional and usually absent: the roster is real colleagues and nothing is
-   * written on their behalf. A resident with no introduction still has a name
-   * and a job title, and that is what their card shows.
-   */
-  introduction?: string;
-}
-export interface MentorFollowerTarget {
-  kind: 'visitor' | 'npc';
-  id: string;
-}
-export const DEFAULT_NPC_NAMES: NpcNames = Object.fromEntries(NPC_NAMES.map((name) => [name, name]));
-export const NPC_TITLES: Record<NpcId, string> = {
-  MENTOR: 'Video Editor',
-  KENNY: 'Director',
-  NUNO: 'Sound Engineer',
-  MICHAEL: 'Director',
-  SEBINE: 'Director',
-  ZC: 'Director',
-  LOUI: 'Director',
-  MINYUN: 'Director Manager',
-  VIOLA: 'Project Manager',
-  XIEHGAN: 'Resident DJ',
-  DRBEAUTY: 'Rooftop DJ',
-  YO: 'Festival Videographer',
-};
-export const DEFAULT_NPC_PROFILES: NpcProfile[] = NPC_NAMES.map((id) => ({
-  id,
-  name: DEFAULT_NPC_NAMES[id],
-  title: NPC_TITLES[id],
-}));
+// The roster moved to `NpcRoster.ts` so the gate can name residents without
+// importing the whole world; re-exported here so existing imports still work.
+export {
+  NPC_NAMES, DEFAULT_NPC_NAMES, NPC_TITLES, DEFAULT_NPC_PROFILES, DOUBLE_TAP_INTRODUCTION,
+  type NpcId, type NpcNames, type NpcProfile, type MentorFollowerTarget,
+} from './NpcRoster';
+
 export type WorldAction =
   | { type: 'seated'; seatId: string; venue: VenueKey }
   | { type: 'seatUnavailable'; seatId: string }
@@ -1624,6 +1593,10 @@ export class FestivalWorld {
   private readonly cameraProbe = new THREE.Vector3();
   /** Scratch for the avoidance probe; the camera path allocates nothing. */
   private readonly cameraScratch = new THREE.Vector3();
+  /** Scratch for the arc the lens travels; the camera path allocates nothing. */
+  private readonly cameraArcPivot = new THREE.Vector3();
+  private readonly cameraArcFrom = new THREE.Vector3();
+  private readonly cameraArcTo = new THREE.Vector3();
   /** How far back the view is actually sitting, eased towards where it may. */
   private cameraReach = 0;
   /**
@@ -5961,6 +5934,29 @@ export class FestivalWorld {
       return;
     }
 
+    /**
+     * A resident within reach outranks the dog, because the prompt says so.
+     *
+     * While MENTOR follows you it is always within reach, and the blanket
+     * "SHIFT+E means MENTOR" shortcut below therefore swallowed *every*
+     * SHIFT+E — so the prompt read `E / WAVE TO VIOLA · SHIFT+E / INTRODUCTION`
+     * and the key picked the dog up instead. The words and the action have to
+     * agree, and `interactionLabel()` decides the words here first, so this
+     * decides the action here first too.
+     *
+     * Only when an introduction is actually on offer. The nearest social target
+     * can be another visitor, who has no profile; then this falls through and
+     * SHIFT+E still means the dog.
+     */
+    const followerGreeting = this.mentorFollowsActiveAvatar() ? this.nearestSocialTarget() : undefined;
+    if (followerGreeting) {
+      if (!pickUpMentor) {
+        this.greetSocialTarget(followerGreeting);
+        return;
+      }
+      if (this.openNpcIntroduction(followerGreeting)) return;
+    }
+
     // SHIFT+E is an explicit request for MENTOR, so it outranks the seat and
     // concession stand. MENTOR's route passes within reach of both, and the
     // ordinary priority order used to swallow every pickup attempt there.
@@ -6044,13 +6040,6 @@ export class FestivalWorld {
     // feeding range all the time. A nearby attendee must outrank that permanent
     // dog prompt or the player can never greet anybody again. This is mirrored
     // in interactionLabel(), so the words and the action stay in agreement.
-    const followerGreeting = this.mentorFollowsActiveAvatar() ? this.nearestSocialTarget() : undefined;
-    if (followerGreeting) {
-      if (pickUpMentor && this.openNpcIntroduction(followerGreeting)) return;
-      this.greetSocialTarget(followerGreeting);
-      return;
-    }
-
     const mentor = this.nearbyMentor();
     // SHIFT+E still means the dog wherever you are standing — asking for him
     // explicitly should always reach him. Plain E gives way to the counter.
@@ -6117,6 +6106,21 @@ export class FestivalWorld {
       );
     }
     this.onAction({ type: 'treat', target: mentor.name });
+  }
+
+  /**
+   * MENTOR's own introduction, opened by a double tap on the prompt.
+   *
+   * The dog is deliberately not a `nearestSocialTarget()` — you cannot wave at
+   * it, you feed it — so it never reached the greeting's hold. A double tap is
+   * the one gesture its prompt had spare, and the interface calls this when it
+   * sees one. Answers false when the dog is not within reach, so a double tap
+   * anywhere else stays a pair of ordinary taps.
+   */
+  openMentorIntroduction(): boolean {
+    const mentor = this.nearbyMentor();
+    if (!mentor) return false;
+    return this.openNpcIntroduction({ name: mentor.name, npc: mentor });
   }
 
   /**
@@ -12379,7 +12383,7 @@ export class FestivalWorld {
     this.confineCameraOverWater(cameraTarget);
     this.pullCameraClearOfWalls(cameraTarget, delta);
     const smoothing = 1 - Math.exp(-delta * 5.2);
-    this.camera.position.lerp(cameraTarget, smoothing);
+    this.easeCameraToward(cameraTarget, smoothing);
     // Easing the camera position can itself carry it through a wall while the
     // target is already clear. Check the rendered position as well as the
     // target, and snap inward only when the old position is obstructed.
@@ -12395,6 +12399,102 @@ export class FestivalWorld {
     this.camera.lookAt(this.lookTarget);
     this.applyCameraShake(delta);
     this.applyDrunkenView(delta);
+  }
+
+  /**
+   * Move the lens towards where it should be — around the avatar, not straight
+   * at it.
+   *
+   * This was a plain `position.lerp`, which travels the **chord** between where
+   * the lens is and where it is going. A chord cuts the corner: both ends can be
+   * in clear air while the line between them passes through a wall. The clamp
+   * below then finds the lens inside masonry and hauls it back the same frame,
+   * because that clamp is what guarantees you cannot see through walls — and
+   * that haul is the snap. Measured while walking up to a building it was a
+   * third of a unit inward every tenth frame, for ever, and no amount of easing
+   * anywhere else could soften it, because the easing was not what jumped.
+   *
+   * Travelling the arc instead keeps the lens on a ray from the avatar at all
+   * times: the direction turns and the distance closes, separately, and every
+   * intermediate position is one the distance logic has already vouched for.
+   *
+   * Three earlier attempts treated the symptom — feeding the clamp back into the
+   * eased distance, capping it continuously, measuring along the lens line —
+   * and each only changed how often the jump happened. This is the cause.
+   */
+  private easeCameraToward(cameraTarget: THREE.Vector3, smoothing: number): void {
+    // A screening view is aimed across the room at a screen rather than orbiting
+    // a body, so it has no arc to travel and the straight line is correct.
+    if (this.cameraMode === 'screening') {
+      this.camera.position.lerp(cameraTarget, smoothing);
+      return;
+    }
+    const pivot = this.cameraArcPivot.copy(this.player.position);
+    pivot.y += AVATAR_EYE_OFFSET;
+    const from = this.cameraArcFrom.subVectors(this.camera.position, pivot);
+    const to = this.cameraArcTo.subVectors(cameraTarget, pivot);
+    const fromLength = from.length();
+    const toLength = to.length();
+    // Degenerate: the lens is sitting on the pivot, or is being asked to. There
+    // is no direction to turn, so fall back rather than divide by nothing.
+    if (fromLength < 0.001 || toLength < 0.001) {
+      this.camera.position.lerp(cameraTarget, smoothing);
+      return;
+    }
+    from.divideScalar(fromLength);
+    to.divideScalar(toLength);
+    // A normalised lerp rather than a true slerp. At a sixtieth of a second the
+    // angle between the two is small, where the two are indistinguishable, and
+    // this costs no trigonometry on a path that runs every frame.
+    from.lerp(to, smoothing);
+    const turned = from.length();
+    if (turned < 0.0001) {
+      // Exactly opposite directions, which lerp collapses to nothing.
+      this.camera.position.lerp(cameraTarget, smoothing);
+      return;
+    }
+    from.divideScalar(turned);
+    let length = fromLength + (toLength - fromLength) * smoothing;
+    /**
+     * Clamp the distance here, on the ray the lens will actually be on.
+     *
+     * This is the fault that survived three fixes. The clamp used to run *after*
+     * this, against the rendered position, and it is instant because it is the
+     * guarantee you cannot see through a wall. But `cameraReach` is measured
+     * towards the camera's *target*, which sits at the full orbit radius and so
+     * points higher and steeper than the lens currently does; a steeper ray
+     * clears an obstruction further, so the eased distance sat about 0.45
+     * longer than the line the lens was really on. It pushed outward at the
+     * opening rate, went obstructed, and got hauled back — 0.33 inward every
+     * tenth frame, for ever. A limit cycle between the two, not a staircase and
+     * not the geometry: measured identically against a wall, a corridor and a
+     * lamp post, because the lens sits on x=0 in all three.
+     *
+     * Now the ray, the distance and the clamp are the same measurement. The
+     * direction turns smoothly and the clear distance along a smoothly turning
+     * ray is smooth too — verified: sweeping in the avatar's own 0.06 steps, the
+     * clear distance changes by 0.06 to 0.0675 a step with no flat treads. So
+     * the lens never becomes obstructed and the clamp after this never fires.
+     */
+    /**
+     * Measure to the distance we *want*, not the one we currently have.
+     *
+     * Casting only as far as `length` can never report room further out, so
+     * feeding that answer back to `cameraReach` was a ratchet with no way up —
+     * measured, it walked the lens to 0.37 of a unit from the eye, inside the
+     * avatar's head. Casting to whichever of the two is longer lets the same
+     * number both take room away and give it back.
+     */
+    const wanted = Math.max(length, toLength);
+    const clear = this.cameraClearReach(pivot, this.cameraArcTo.copy(pivot).addScaledVector(from, wanted));
+    if (clear < length) length = clear;
+    this.camera.position.copy(pivot).addScaledVector(from, length);
+    // And keep the eased distance honest against the same measurement, or it
+    // goes on believing it has room it has not and spends every frame pushing
+    // back out into the wall — which is the limit cycle this whole method is
+    // about. Clamping by `clear` rather than by `length` is what stops that
+    // being a one-way ratchet.
+    this.cameraReach = Math.min(this.cameraReach, clear);
   }
 
   /**
@@ -12930,13 +13030,13 @@ export class FestivalWorld {
     // Both at once: a key each, and the prompt says which is which.
     if (this.carriedItem === 'DRINK' && this.nearbyMentor()) {
       this.promptSecondary = true;
-      return 'E / PICK UP MENTOR · SHIFT+E / DRINK UP';
+      return 'E / PICK UP MENTOR · SHIFT+E / DRINK UP' + DOUBLE_TAP_INTRODUCTION;
     }
     if (this.nearbyMentor() && !this.mentorGivesWay()) {
       this.promptSecondary = true;
       return this.carriedItem === 'POPCORN'
-        ? 'E / GIVE MENTOR A TREAT · SHIFT+E / PICK UP (POPCORN WILL BE LOST)'
-        : 'E / GIVE MENTOR A TREAT · SHIFT+E / PICK UP';
+        ? 'E / GIVE MENTOR A TREAT · SHIFT+E / PICK UP (POPCORN WILL BE LOST)' + DOUBLE_TAP_INTRODUCTION
+        : 'E / GIVE MENTOR A TREAT · SHIFT+E / PICK UP' + DOUBLE_TAP_INTRODUCTION;
     }
     if (this.carriedItem === 'DRINK') {
       this.promptAction = 'shift';

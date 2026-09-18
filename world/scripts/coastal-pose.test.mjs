@@ -769,6 +769,7 @@ test('approaching a building keeps the follow camera out of the face and the mas
   Object.assign(world,{player,camera,lookTarget:new THREE.Vector3(),cameraProbe:new THREE.Vector3(),
     cameraMode:'follow',cameraZoom:1,cameraReach:0,playerState:'walking',
     cameraScratch:new THREE.Vector3(),
+    cameraArcPivot:new THREE.Vector3(),cameraArcFrom:new THREE.Vector3(),cameraArcTo:new THREE.Vector3(),
     clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
     cameraOrbit:{follow:{yaw:0,pitch:Math.atan2(3.4,10)},perspective:{yaw:.8,pitch:.4}},
     colliders:[{minX:-5,maxX:5,minZ:2,maxZ:3,minY:-1,maxY:10}],
@@ -794,28 +795,29 @@ test('approaching a building keeps the follow camera out of the face and the mas
       `camera passed through the wall at frame ${frame}`);
   }
   /**
-   * A known remaining fault, pinned at its measured size so it cannot grow.
+   * The lunge, now mostly gone, pinned at what it measures.
    *
-   * Closeness is allowed now — the owner chose it over the view swinging aside
-   * — but it should arrive as a glide, and one part of it still does not. The
-   * clear distance itself was a staircase of 0.24 treads and is now continuous
-   * to within eight millimetres; the pull-in is eased both ways; the room no
-   * longer overrides its own walls. What is left is a lunge inward of about a
-   * third of a unit every tenth frame, with the view opening back out smoothly
-   * (+0.014 at worst) in between.
+   * It was 0.337 inward every tenth frame, for ever, and it survived three
+   * fixes because none of them was the cause. The cause was a limit cycle: the
+   * eased distance was measured towards the camera's *target*, which sits at
+   * the full orbit radius and so points steeper than the lens actually does, and
+   * a steeper ray clears an obstruction further. So the distance sat about 0.45
+   * longer than the line the lens was on, pushed outward at the opening rate,
+   * went obstructed, and was hauled back by the clamp that guarantees you cannot
+   * see through a wall. Ten frames, every time, against a wall, a corridor and a
+   * lamp post alike — identical numbers, because the lens sits on x=0 in all
+   * three and the sight line crosses each the same way.
    *
-   * Diagnosed, not guessed: `camera.position.lerp(cameraTarget)` interpolates
-   * along the *chord* between where the lens is and where it is going, so it
-   * cuts the corner and passes through masonry that neither end is inside.
-   * The hard clamp then has to haul it back, instantly, because that clamp is
-   * what guarantees you cannot see through a wall. The fix is to ease along the
-   * arc instead — direction and distance separately, about the avatar — which
-   * touches every camera mode including the seated one, so it is the owner's
-   * call and not a quiet change.
+   * `easeCameraToward` now travels the arc and clamps the distance on the ray
+   * the lens is actually on, measured out to the radius it wants rather than the
+   * one it has — the latter could only ever take room away, which walked the
+   * lens to 0.37 of a unit from the eye, inside the avatar's head.
    *
-   * 0.35 is the measured worst; anything above it is a regression.
+   * Measured after: 0.183 near a wall, and 0.005 on stairs, which is the case
+   * that was reported as unusable. Something of the cycle remains near a wall
+   * and this is where it is caught if it grows.
    */
-  assert.ok(biggestZoomStep<0.35,`the view closed in ${biggestZoomStep.toFixed(3)} in a single frame`);
+  assert.ok(biggestZoomStep<0.19,`the view closed in ${biggestZoomStep.toFixed(3)} in a single frame`);
   // Not so close that the lens is inside the head. Below 1.4 the avatar is
   // faded out, so that is the floor worth holding rather than a comfortable
   // shoulder distance.

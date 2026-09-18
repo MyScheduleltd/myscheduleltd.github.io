@@ -30,19 +30,33 @@ import {
   type SiteStyle,
   JukeboxState,
 } from '../network/FestivalClient';
+/**
+ * The roster comes from its own leaf module, and the world itself is a *type*
+ * here and nothing more.
+ *
+ * Both matter for how this loads. A value imported from `FestivalWorld` drags
+ * the entire festival — three.js, the scene, the avatar model — into the same
+ * chunk as the gate, which is why the gate could not draw a single field until
+ * 702KB had arrived and parsed. A type import is erased at compile time, so the
+ * world is fetched by the dynamic `import()` in `enterWorld()` instead, on its
+ * own, while the visitor is still typing their name.
+ */
 import {
   DEFAULT_NPC_NAMES,
   DEFAULT_NPC_PROFILES,
-  FestivalWorld,
   NPC_NAMES,
   NPC_TITLES,
-  type AvatarPalette,
-  type GraphicsMode,
+  DOUBLE_TAP_INTRODUCTION,
   type NpcId,
   type NpcNames,
   type NpcProfile,
-  type WorldAction,
-  type WorldSnapshot,
+} from '../world/NpcRoster';
+import type {
+  AvatarPalette,
+  FestivalWorld,
+  GraphicsMode,
+  WorldAction,
+  WorldSnapshot,
 } from '../world/FestivalWorld';
 
 type Language = 'en' | 'zh-TW';
@@ -482,7 +496,13 @@ export class App {
   mount(): void {
     this.renderGate();
     // Start the download behind the usable sign-in form. Retry on entry if it fails.
+    // Both halves of the festival, fetched while the gate is on screen: the
+    // avatar model and the world's own code. Neither blocks the gate, and by
+    // the time anybody has typed a name and chosen a language they are usually
+    // both in. Failures are swallowed — `enterWorld()` asks again and reports
+    // properly if it is still not there.
     void loadImportedAvatar().catch(() => undefined);
+    this.preloadWorldModule();
     this.showLastBreath();
     void this.detectVrSupport().finally(() => this.rejoinAfterDiscard());
     void this.festivalClient.publicConfig().then((config) => {
@@ -952,7 +972,7 @@ export class App {
     const waiting=this.root.querySelector<HTMLElement>('#gate-waiting');
     if(waiting){waiting.hidden=false;waiting.textContent=this.language==='zh-TW'?'正在開啟影展…':'OPENING THE FESTIVAL…';}
     window.setTimeout(() => {
-      void loadImportedAvatar().then(() => {this.openingWorld=false;this.enterWorld(muted);}).catch(() => {
+      void loadImportedAvatar().then(() => {this.openingWorld=false;return this.enterWorld(muted);}).catch(() => {
         this.openingWorld=false;
         const notice=this.root.querySelector<HTMLElement>('#gate-waiting');
         if(notice){notice.hidden=false;notice.textContent=this.language==='zh-TW'
@@ -962,7 +982,26 @@ export class App {
     }, 50);
   }
 
-  private enterWorld(muted: boolean): void {
+  /**
+   * The world's code, fetched once and remembered.
+   *
+   * Started while the gate is on screen and awaited when entering, so the
+   * download happens during the part of the visit that was already waiting for
+   * a person rather than the part that was waiting for the network. A failed
+   * fetch clears the memo so entering can try again rather than being stuck
+   * with a rejected promise for ever.
+   */
+  private worldModule?: Promise<typeof import('../world/FestivalWorld')>;
+
+  private preloadWorldModule(): Promise<typeof import('../world/FestivalWorld')> {
+    if (!this.worldModule) {
+      this.worldModule = import('../world/FestivalWorld');
+      void this.worldModule.catch(() => { this.worldModule = undefined; });
+    }
+    return this.worldModule;
+  }
+
+  private async enterWorld(muted: boolean): Promise<void> {
     this.lockPageZoomForWorld();
     // Marked as soon as somebody is inside, so that if the phone throws this
     // tab away while it is locked, the restored tab knows it was already in
@@ -1136,6 +1175,7 @@ export class App {
     if (!canvas || !foregroundCanvas || !cssLayer) throw new Error('World rendering layers were not created.');
     this.renderChatStream();
 
+    const { FestivalWorld } = await this.preloadWorldModule();
     this.world = new FestivalWorld({
       canvas,
       foregroundCanvas,
@@ -1715,6 +1755,30 @@ export class App {
         this.world?.triggerSecondaryPrompt();
       }, PROMPT_HOLD_MS);
       toast?.classList.add('is-holding');
+    });
+    /**
+     * A double tap on the prompt opens MENTOR's introduction.
+     *
+     * The dog's tap and hold are already a treat and a pick-up, and it is
+     * deliberately not somebody you can wave at, so the greeting's hold never
+     * reached it. This is the owner's design and it is MENTOR's alone: anywhere
+     * else two taps stay two taps, because the world answers false when the dog
+     * is not within reach.
+     *
+     * Counted from `pointerup` rather than relying on `dblclick`, which a phone
+     * with `touch-action: manipulation` and a headset's pointer do not report
+     * dependably.
+     */
+    this.root.addEventListener('pointerup', (event) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest('#interaction-toast')) return;
+      const now = performance.now();
+      if (now - this.lastPromptTapAt < App.PROMPT_DOUBLE_TAP_MS) {
+        this.lastPromptTapAt = 0;
+        this.world?.openMentorIntroduction();
+        return;
+      }
+      this.lastPromptTapAt = now;
     });
     for (const done of ['pointerup', 'pointercancel', 'pointerleave'] as const) {
       this.root.addEventListener(done, (event) => {
@@ -6274,7 +6338,18 @@ export class App {
       .replace(/(^|· )[EO] ?[／/] ?/g, (_match, lead: string) => `${lead}${tap}`);
   }
 
+  /** How close two taps on the prompt must be to count as one double tap. */
+  private static readonly PROMPT_DOUBLE_TAP_MS = 340;
+  private lastPromptTapAt = 0;
+
   private localizeInteraction(value: string): string {
+    // MENTOR's prompt carries this on the end whatever else it says, so take it
+    // off, translate the sentence underneath, and put it back translated.
+    if (value.endsWith(DOUBLE_TAP_INTRODUCTION)) {
+      const base = value.slice(0, -DOUBLE_TAP_INTRODUCTION.length);
+      return this.localizeInteraction(base)
+        + (this.language === 'zh-TW' ? ' · 點兩下／介紹' : DOUBLE_TAP_INTRODUCTION);
+    }
     const mentorName = this.mentorName();
     if (this.language !== 'zh-TW' || !value) {
       return value
