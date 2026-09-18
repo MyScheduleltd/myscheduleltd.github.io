@@ -2533,6 +2533,12 @@ export class FestivalWorld {
       case 'hideHud': this.xrHud?.toggleHidden(); break;
       case 'recenter':
         this.recenterVrView();
+        // And the way out of the drink. Recentre is already the button anybody
+        // reaches for when the view stops feeling right, so it is where sobering
+        // up belongs — rather than on *any* press, which would end the effect
+        // the moment you did anything at all.
+        this.drunkUntil = 0;
+        this.xrHud?.setDrunkenness(0, 0);
         // The interface comes back with it: the layer holds its heading inside
         // a dead zone now, so after a long session it can be sitting off to one
         // side, and this is the button that puts it straight again.
@@ -12558,6 +12564,22 @@ export class FestivalWorld {
    */
   private applyDrunkenView(delta: number): void {
     const amount = this.drunkenness();
+    /**
+     * A headset gets this in the eyes, never in the neck.
+     *
+     * Everything below moves the camera — rolls the horizon, drifts the aim,
+     * breathes the lens — and every one of those is the mismatch that makes
+     * people ill in a headset, where the head is the camera and the inner ear
+     * has an opinion about where it is. The owner chose the comfortable
+     * treatment, so in here the world holds perfectly still and a warm haze
+     * closes in over the eyes instead. `XrHud.setDrunkenness` has it.
+     *
+     * Recentre sobers up instantly; see `performXrAction`.
+     */
+    if (this.xrActive && !this.xrSimulated) {
+      this.xrHud?.setDrunkenness(amount, delta);
+      return;
+    }
     if (amount <= 0) {
       // Never touch the orientation when sober. lookAt has already set it, and
       // its roll is rarely zero, so nudging that value tilts the whole view.

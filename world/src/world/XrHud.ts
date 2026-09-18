@@ -179,6 +179,15 @@ export class XrHud {
   private readonly onQuickAction:(action:string) => void;
 
   private readonly head = new THREE.Group();
+  /**
+   * Rigidly head-locked, unlike `head`, which lags on purpose so the interface
+   * does not swing with every small movement. A veil over the eyes must not
+   * lag: if its clear middle slid off-axis it would read as the world moving,
+   * which is the one thing this is built to avoid.
+   */
+  private readonly viewLock = new THREE.Group();
+  private veil?:THREE.Mesh<THREE.PlaneGeometry,THREE.MeshBasicMaterial>;
+  private veilPhase = 0;
   private readonly placed = new THREE.Group();
 
   // Pushed out to the corners, and drawn at roughly twice the resolution the
@@ -300,7 +309,7 @@ export class XrHud {
 
     this.head.visible = false;
     this.placed.visible = false;
-    this.scene.add(this.head,this.placed);
+    this.scene.add(this.head,this.placed,this.viewLock);
     // Fonts arrive after the first frame; a strip painted before they land
     // keeps Impact for the rest of the session unless it is repainted.
     document.fonts?.ready?.then(() => {this.lastRead = 0;}).catch(() => undefined);
@@ -1037,10 +1046,15 @@ export class XrHud {
     if(this.snapNext){
       this.head.position.copy(this.headPosition);
       this.head.quaternion.copy(this.headRotation);
+      this.viewLock.position.copy(this.headPosition);
+      this.viewLock.quaternion.copy(this.headRotation);
       this.snapNext = false;
     } else {
       // Position follows on a short lag. Leaning costs the panels nothing to
       // track and translation is not what makes people ill; rotation is.
+      // The veil is never eased. See `viewLock`.
+      this.viewLock.position.copy(this.headPosition);
+      this.viewLock.quaternion.copy(this.headRotation);
       this.head.position.lerp(this.headPosition,1 - Math.exp(-seconds / HUD_POSITION_LAG));
       const behind = this.head.quaternion.angleTo(this.headRotation);
       if(behind > HUD_DEAD_ZONE){
@@ -1287,6 +1301,65 @@ export class XrHud {
       return;
     }
     el.click();
+  }
+
+
+  /**
+   * Drunkenness, shown to the eyes rather than done to the head.
+   *
+   * The flat world rolls the horizon, drifts the aim and breathes the lens. In
+   * a headset that is close to the textbook recipe for making somebody ill:
+   * moving the horizon independently of the neck is exactly the mismatch the
+   * inner ear objects to. So none of that happens in here. The horizon stays
+   * level, the head stays the visitor's own, and what changes is what they can
+   * see through — a warm haze that closes in from the edges and swims slowly
+   * about, which reads as drunk without arguing with anybody's balance.
+   *
+   * Head-locked rigidly, and deliberately soft-edged: there is no hard line
+   * anywhere in it for the eye to fix on and notice lagging.
+   */
+  setDrunkenness(amount:number,delta:number):void {
+    if(amount <= 0.001){
+      if(this.veil)this.veil.visible = false;
+      return;
+    }
+    if(!this.veil){
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      if(!ctx)return;
+      // Clear in the middle, closing to a warm amber at the rim. The stops are
+      // eased rather than linear so the haze has no visible edge.
+      const gradient = ctx.createRadialGradient(128,128,40,128,128,132);
+      gradient.addColorStop(0,'rgba(226,170,90,0)');
+      gradient.addColorStop(0.45,'rgba(226,170,90,0.12)');
+      gradient.addColorStop(0.75,'rgba(214,142,74,0.42)');
+      gradient.addColorStop(1,'rgba(150,84,48,0.86)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0,0,256,256);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.generateMipmaps = false;
+      texture.minFilter = texture.magFilter = THREE.LinearFilter;
+      this.veil = new THREE.Mesh(
+        new THREE.PlaneGeometry(4,4),
+        new THREE.MeshBasicMaterial({map:texture,transparent:true,depthTest:false,depthWrite:false}),
+      );
+      // In front of everything, including the painted panels.
+      this.veil.renderOrder = 9000;
+      this.veil.position.z = -0.7;
+      this.veil.frustumCulled = false;
+      this.viewLock.add(this.veil);
+    }
+    this.veil.visible = true;
+    this.veilPhase += delta;
+    this.veil.material.opacity = Math.min(0.72,amount * 0.72);
+    // Swimming, not spinning: the haze drifts across the eyes while the world
+    // behind it holds perfectly still.
+    this.veil.position.x = Math.sin(this.veilPhase * 0.55) * 0.13 * amount;
+    this.veil.position.y = Math.sin(this.veilPhase * 0.37 + 1.3) * 0.09 * amount;
+    const breath = 1 + Math.sin(this.veilPhase * 0.8) * 0.05 * amount;
+    this.veil.scale.set(breath,breath,1);
   }
 
   reviewSnapshot():Record<string,unknown> {
