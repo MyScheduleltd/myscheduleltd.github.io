@@ -83,8 +83,14 @@ XIEH GAN's biography and DR.BEAUTY's new title were written through the STAFF
 editor. **Read back out of the live service verbatim** — `/api/config` →
 `djProfiles` — rather than transcribed from the screenshots, so the numbers,
 awards and names are the owner's own characters and not an OCR guess. Both are
-now the seeded defaults in `server/index.mjs`, and the English is a translation
-of the Chinese that somebody who knows the credits should check.
+now the seeded defaults in `server/index.mjs`. The English uses the owner's own
+romanisations, supplied on 2026-09-18: NICKTHEREAL, E.SO, Naiwen, Cosmos People,
+A-Mei, Crowd Lu, MJ116, Nine One One, The King of night market, My Schedule LTD,
+The Rapper S2, 247 MUSIC FESTIVAL. **Use those spellings and no others** — do
+not "correct" them to the names a search engine offers.
+
+> One was not supplied and is therefore still a guess: 走鐘獎 is rendered
+> "Zouzhong Awards". 金鐘獎 is the Golden Bell Awards, which is standard.
 
 **This plan has no disk.** A deploy starts a new instance that reads the
 committed `server/festival-seed.json`, so that file is the real seed and it was
@@ -103,6 +109,22 @@ an introduction, 120 for a role — so STAFF can still re-save either language.
 > **The server needs a manual deploy.** Pushing to `main` ships the client
 > only; until Render is redeployed by hand, the live service keeps serving the
 > old English role and introduction.
+
+### Immersive video — the client is ready, the host is not
+
+Nothing in the client needs changing when a URL arrives. `playImmersiveVideo()`
+already creates a fresh `<video>`, sets `crossOrigin = 'anonymous'` **before**
+`src` (which is the whole ballgame for a WebGL texture), sets `playsInline`,
+`muted` and `autoplay` for the autoplay policy, accepts any http/https URL with
+no domain allowlist, and remembers a failing URL in `xrFailedUrl` so it is not
+retried in a loop. It is one line in `immersiveVideoSources`.
+
+**JJ SKIBIDI is `jiawzYgfkuI`** — "Skibidi - JJ Lin Ft. Jackie Chen", first in
+the DRIVE-IN 88 playlist.
+
+The host needs: a real media response (not an HTML interstitial),
+`access-control-allow-origin` for the site's origin, byte-range support so the
+film can be seeked, and H.264/AAC MP4 with the moov atom at the front.
 
 ### Immersive video — the Drive link cannot work
 
