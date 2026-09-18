@@ -188,7 +188,17 @@ export class XrHud {
   private readonly clock = new HudQuad(880,300,0.60);
   private readonly status = new HudQuad(960,470,0.66);
   private readonly chat = new HudQuad(1000,640,0.62);
-  private readonly prompt = new HudQuad(1200,280,0.78);
+  /**
+   * 280 rows was not enough to hold everything this quad can be asked to show
+   * at once, and what did not fit was simply cut off the top — reported while
+   * seated at the bar, where the seat menu's buttons, its heading, the world
+   * alert and the prompt itself all land here together.
+   *
+   * Taller costs nothing when there is less to say: `view` is the rows actually
+   * shown, so a short prompt is still a short panel rather than a slab. This is
+   * headroom, not size.
+   */
+  private readonly prompt = new HudQuad(1200,560,0.78);
   private readonly hints = new HudQuad(2000,210,1.52);
   private readonly quick = new HudQuad(520,280,0.38);
   // A third wider than it was, at the owner's request: body text lands near
