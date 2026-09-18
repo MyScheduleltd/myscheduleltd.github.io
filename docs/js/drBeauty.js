@@ -83,7 +83,7 @@ $(function () {
         const videoId = youtube_parser(drBeautyVideos[index].url);
         const iframe = $(`.wrapper${index} .video`)[0];
         if (iframe) {
-            iframe.src = `https://www.youtube.com/embed/${videoId}?rel=0&loop=1&autoplay=1&mute=1&enablejsapi=1&showinfo=0&playlist=${videoId}`;
+            iframe.src = `https://www.youtube.com/embed/${videoId}?rel=0&loop=1&autoplay=1&mute=1&playsinline=1&enablejsapi=1&showinfo=0&playlist=${videoId}`;
         }
         // 其他 slide 的 iframe src 清空
         $('.video').each(function (i) {

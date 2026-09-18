@@ -6,7 +6,7 @@ $(function async(){
     const {aboutVideos , memberData} = data;
     $('.aboutVideos1').append(`
         <div class="iframe-videos">
-            <iframe  class="video" src="${aboutVideos[0].url}?rel=0&autoplay=1&mute=1&enablejsapi=1&showinfo=0&loop=1&playlist=${youtube_parser(aboutVideos[0].url)}"  allow='autoplay' allowfullscreen  frameborder="0" ></iframe>
+            <iframe  class="video" src="${aboutVideos[0].url.split('?')[0]}?rel=0&autoplay=1&mute=1&playsinline=1&enablejsapi=1&showinfo=0&loop=1&playlist=${youtube_parser(aboutVideos[0].url)}"  allow='autoplay' allowfullscreen  frameborder="0" ></iframe>
         </div>
     `)
     // The middle block, where the team board will go. On a phone it is a film
@@ -27,7 +27,7 @@ $(function async(){
         if ($('.aboutVideos3 .iframe-videos').length) return;
         $('.aboutVideos3').append(`
             <div class="iframe-videos">
-                <iframe  class="video" src="${aboutVideos[2].url}?rel=0&autoplay=1&mute=1&enablejsapi=1&showinfo=0&loop=1&playlist=${youtube_parser(aboutVideos[2].url)}"  allow='autoplay' allowfullscreen frameborder="0" ></iframe>
+                <iframe  class="video" src="${aboutVideos[2].url.split('?')[0]}?rel=0&autoplay=1&mute=1&playsinline=1&enablejsapi=1&showinfo=0&loop=1&playlist=${youtube_parser(aboutVideos[2].url)}"  allow='autoplay' allowfullscreen frameborder="0" ></iframe>
             </div>
         `)
     };
@@ -35,7 +35,7 @@ $(function async(){
     middleFilmWidth.addEventListener('change', mountMiddleFilm);
     $('.aboutVideos2').append(`
         <div class="iframe-videos">
-            <iframe  class="video" src="${aboutVideos[1].url}?rel=0&autoplay=1&mute=1&enablejsapi=1&showinfo=0&loop=1&playlist=${youtube_parser(aboutVideos[1].url)}"  allow='autoplay' allowfullscreen frameborder="0" ></iframe>
+            <iframe  class="video" src="${aboutVideos[1].url.split('?')[0]}?rel=0&autoplay=1&mute=1&playsinline=1&enablejsapi=1&showinfo=0&loop=1&playlist=${youtube_parser(aboutVideos[1].url)}"  allow='autoplay' allowfullscreen frameborder="0" ></iframe>
         </div>
     `)
 
@@ -77,7 +77,7 @@ $(function async(){
         $('.dialog').show()
         $('#dialog-wrapper').empty();
         $('#dialog-wrapper').append(`
-            <iframe id="youtube-dialog${set+1}" class="dialogvideo" src="${aboutVideos[set].url}?rel=0&autoplay=1&loop=1&enablejsapi=1&showinfo=0"  allow='autoplay' allowfullscreen frameborder="0" ></iframe>
+            <iframe id="youtube-dialog${set+1}" class="dialogvideo" src="${aboutVideos[set].url.split('?')[0]}?rel=0&autoplay=1&loop=1&enablejsapi=1&showinfo=0"  allow='autoplay' allowfullscreen frameborder="0" ></iframe>
         `)
         var dialogiframes = document.querySelectorAll('.dialogvideo');
         Array.prototype.forEach.call(dialogiframes, iframes => { 
