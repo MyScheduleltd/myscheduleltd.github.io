@@ -616,6 +616,17 @@ const LITE_FOG_FAR = 78;
  */
 const TOUCH_LOOK_GAIN = 6;
 /**
+ * The same, for a mouse, because the desk was reported as too slow too.
+ *
+ * The shipped rate was 0.0042 radians a pixel against a sensitivity default of
+ * 0.2, which is 0.00084 — about eleven hundred pixels of drag to turn a
+ * quarter circle. Two and a half times that puts it near four hundred and
+ * fifty, which is a comfortable sweep of the hand. Applied at the drag rather
+ * than to the constant, so the sensitivity slider still means what it says and
+ * a visitor who has already chosen a setting keeps the feel of it.
+ */
+const DESKTOP_LOOK_GAIN = 2.5;
+/**
  * Whether the view may ever swing itself round an obstruction.
  *
  * False, by the owner's decision on 2026-09-18, after trying it: "stop letting
@@ -690,7 +701,23 @@ const PROJECTOR_ORIGINS = new Set([
  * belly exactly on the surface: legs under, whole body and head above, still
  * walking. Measured against the geometry rather than eyeballed this time.
  */
-const MENTOR_SWIM_Y = SEA_Y - 0.86;
+/**
+ * Where MENTOR floats.
+ *
+ * Raised from `SEA_Y - 0.86`. The head pivot sits 1.25 above the dog's root, so
+ * at the old height the head rode a third of a unit above the waterline with
+ * the body's whole bulk under it, and with the slight nose-down pitch the swim
+ * pose applies it read as a dog going under rather than swimming. A dog swims
+ * with its head well clear and most of the body submerged, which is what this
+ * height gives.
+ */
+const MENTOR_SWIM_Y = SEA_Y - 0.42;
+/**
+ * How long MENTOR treads water where it was put down before it thinks about
+ * moving at all. Long, because the answer to "what should the dog do in the
+ * sea" is "wait for the person who put it there".
+ */
+const MENTOR_WATER_WAIT_MS = 45_000;
 
 /**
  * How far the viewpoint moves for how far the head does. A webcam gives roughly
@@ -6489,7 +6516,7 @@ export class FestivalWorld {
       // can be picked up and put down again. At the shipped sensitivity a
       // phone needed about five full swipes to turn ninety degrees, which is
       // why turning around felt impossible rather than merely slow.
-      event.pointerType === 'mouse' ? 1 : TOUCH_LOOK_GAIN,
+      event.pointerType === 'mouse' ? DESKTOP_LOOK_GAIN : TOUCH_LOOK_GAIN,
     );
   };
 
@@ -9307,9 +9334,20 @@ export class FestivalWorld {
     // simply set off for the next venue on its circuit and left.
     mentor.transit = [];
     mentor.atNode = this.nearestNavNode(dropPosition);
-    mentor.route = this.smallLoopAround(dropPosition);
-    mentor.waypointIndex = this.nearestRouteIndex(mentor, dropPosition);
-    mentor.dwellUntil = performance.now() + MENTOR_LINGER_MS;
+    /**
+     * Put down in the water, stay in the water.
+     *
+     * A small patrol loop is a land idea: the nodes it is built from are on the
+     * sand, so a dog set down in the sea immediately made for the nearest one
+     * and swam ashore on its own, which is what was reported. Given a route of
+     * one point it paddles where it was put and waits there, the way it waits
+     * on land — and it still follows if it is asked to, which is the case that
+     * already worked.
+     */
+    const droppedInWater = this.isOverWater(dropPosition.z, dropPosition.x);
+    mentor.route = droppedInWater ? [dropPosition.clone()] : this.smallLoopAround(dropPosition);
+    mentor.waypointIndex = droppedInWater ? 0 : this.nearestRouteIndex(mentor, dropPosition);
+    mentor.dwellUntil = performance.now() + (droppedInWater ? MENTOR_WATER_WAIT_MS : MENTOR_LINGER_MS);
     mentor.dances = false;
     mentor.recovering = false;
     mentor.waitUntil = performance.now() + 1250;

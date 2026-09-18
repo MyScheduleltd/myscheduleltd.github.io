@@ -12,6 +12,19 @@ export function loadImportedAvatar(bytes?:ArrayBuffer): Promise<void> {
 }
 
 /** Share immutable geometry/textures, but give every attendee an independent skeleton and dyes. */
+/**
+ * How much wider than the cap's logo patch the artwork is sampled, and how far
+ * down it is nudged.
+ *
+ * 1.10 leaves the picture occupying about 91% of the patch, so it keeps roughly
+ * a 4.5% border of its own on top of the 3.4% already in the texture. 0.018 of
+ * that goes to the top, which is the edge that leans away and foreshortens.
+ * Small numbers on purpose: this is buying legibility at the top, not shrinking
+ * the logo.
+ */
+const CAP_LOGO_ROOM = 1.10;
+const CAP_LOGO_DROP = 0.018;
+
 export function attachImportedAvatar(root:THREE.Group, rig:AvatarRig, palette:AvatarPalette): AvatarRig {
   if(!template)throw new Error('The supplied avatar must finish loading before the world starts.');
   const body=rig.visualRoot!;
@@ -44,7 +57,44 @@ export function attachImportedAvatar(root:THREE.Group, rig:AvatarRig, palette:Av
     //
     // A cutout and not `transparent`: it keeps depth writing and needs no
     // sorting, which is what a decal on a solid surface wants.
-    if(component==='cap-logo')material.alphaTest=0.5;
+    if(component==='cap-logo'){
+      material.alphaTest=0.5;
+      /**
+       * Give the artwork room, because the border it has is not enough.
+       *
+       * Measured rather than guessed: the texture is 3554×3543 and its opaque
+       * content sits at x 123..3410, y 121..3408 — an even margin of 3.4% at
+       * the top and 3.5–4.0% elsewhere, with nothing touching any edge. The
+       * mesh's UVs span the full 0..1. So neither the picture nor the mapping
+       * clips anything, and the earlier `alphaTest` fix did stop the border
+       * drawing black.
+       *
+       * What is left is the foreshortening described above. The patch leans 21°
+       * away at the top and curves with the crown, so 3.4% of margin up there
+       * compresses to almost nothing and the characters still read as sliced.
+       * The honest fix is to redraw the patch in Blender —
+       * `scripts/prepare-blender-avatar.py` builds it — but that needs Blender
+       * and rebuilds the whole model.
+       *
+       * This does it in the texture transform instead: sample a slightly wider
+       * area than the patch, so the picture sits inside it with a real border,
+       * and nudge it down so the top gets more of that border than the bottom.
+       * `ClampToEdgeWrapping` matters — outside 0..1 it repeats the edge pixels,
+       * which are fully transparent, and `alphaTest` then discards them. Every
+       * avatar wears this cap, so this is every avatar.
+       */
+      const logo=material.map;
+      if(logo){
+        logo.wrapS=logo.wrapT=THREE.ClampToEdgeWrapping;
+        logo.center.set(.5,.5);
+        logo.repeat.set(CAP_LOGO_ROOM,CAP_LOGO_ROOM);
+        // Positive v shifts the sampled window up the image, which moves the
+        // picture down the cap — the image's first row is the top, and three.js
+        // flips it, so the artwork's top edge is at v=1.
+        logo.offset.set(0,CAP_LOGO_DROP);
+        logo.needsUpdate=true;
+      }
+    }
     material.onBeforeCompile=shader=>{
       for(const [key,value] of Object.entries(uniforms))shader.uniforms['avatar_'+key]=value;
       shader.vertexShader='varying vec3 avatarSource;\n'+shader.vertexShader;

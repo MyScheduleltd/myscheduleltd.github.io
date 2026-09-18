@@ -530,3 +530,17 @@ h2 {
   letter-spacing: 4px;
   color: #fff;
 }
+
+/* `svh` on a phone, and the second time this page has needed it. On iOS 100vh
+   is the viewport with the toolbars collapsed — taller than what you can see —
+   so a block that tall centres its contents below the visible middle and the
+   logo reads as sitting high. An emulator cannot reproduce it: there vh and the
+   visible height are the same number. */
+@media all and (max-width: 920px) {
+  .videos-wrapper { height: 100svh; }
+  /* The ordinary centred heading, at every width. The 50px sideways label it
+     used to become on a phone put 22px text in a 50-pixel box and overflowed
+     into nothing readable, so the heading was reported missing on mobile. */
+  .aboutVideos2 h2:not(.mob) { display: block; }
+  .aboutVideos2 h2.mob { display: none; }
+}

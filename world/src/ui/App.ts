@@ -2969,6 +2969,30 @@ export class App {
     }
     if (event.key !== 'Enter' || event.repeat) return;
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLButtonElement) return;
+    /**
+     * Read the *focused* element, not only the event's target.
+     *
+     * This is what opened the chat window on top of the donation menu in a
+     * headset. The Quest's own keyboard is a system overlay outside the page:
+     * its Return arrives as a keydown on the document body even though the
+     * field being typed into is focused, so the guard above let it through and
+     * Enter did what Enter does on a desk — opened chat and took the focus with
+     * it. Typing an amount therefore summoned the chat window mid-donation, and
+     * the same thing happened in a seat.
+     */
+    const focused = document.activeElement;
+    if (focused instanceof HTMLInputElement
+      || focused instanceof HTMLTextAreaElement
+      || focused instanceof HTMLButtonElement) return;
+    /**
+     * And in a headset, Enter is never the way into chat.
+     *
+     * There is no keyboard in an immersive session except the one the system
+     * puts up for a focused field, so every Return in there belongs to whatever
+     * is being written — never to a shortcut that tears the session's attention
+     * somewhere else. Chat is reached from the painted interface.
+     */
+    if (this.paintsHeadsetHud()) return;
     event.preventDefault();
     if (this.activePanel !== 'chat') this.openPanel('chat');
     window.setTimeout(() => this.root.querySelector<HTMLInputElement>('#chat-message')?.focus(), 0);

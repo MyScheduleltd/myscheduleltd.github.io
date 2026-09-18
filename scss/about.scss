@@ -94,6 +94,20 @@
 .videos-wrapper{
     width: 100%;
     height: 100vh;
+    // `svh` on a phone, and this is the second time this page has needed it.
+    //
+    // On iOS `100vh` is the viewport *with the browser's toolbars collapsed* —
+    // taller than what you can actually see. A block that tall centres its
+    // contents around a midpoint below the visible middle, so the logo sits
+    // high and reads as "not centred", which is exactly what was reported.
+    // `svh` is the viewport with the toolbars showing, so whatever is centred
+    // in here is centred in what the visitor is looking at.
+    //
+    // A desktop emulator cannot reproduce this: there `vh` and the visible
+    // height are the same number, which is why it looked right when checked.
+    @include rwd($md){
+        height: 100svh;
+    }
     position: relative;
     overflow: hidden;
     .button{
@@ -143,11 +157,14 @@ h2{
     h2:not(.mob){
         z-index: 100;
         top:0;
-        @include rwd($md){
-            display: none;
-        }
     }
+    // The sideways 50px label the heading used to become on a phone. It put
+    // "OFFICE TOUR" at 22px into a 50-pixel box with a 16-pixel line height,
+    // which overflowed into nothing you could read — the heading was reported
+    // simply missing on mobile. The ordinary centred heading shows at every
+    // width now, as it does on the desktop, and this is kept out of the way.
     h2.mob{
+        display: none;
         width:50px;
         height:50px;
         position: absolute;

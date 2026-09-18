@@ -1,10 +1,106 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-18 · **a fix that only moves a symptom is not one — measure both sides** · **walking must not move the camera — one avoidance owner, see Latest** · **curl is not a browser — test media hosts from a page, see Latest** · **the headset paints its own interface, and only a headset does — see Latest** · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
+Last updated: 2026-09-18 · **in a headset, `event.target` is not the focused field** · **iOS `vh` is taller than the screen — no emulator shows it** · **a fix that only moves a symptom is not one — measure both sides** · **walking must not move the camera — one avoidance owner, see Latest** · **curl is not a browser — test media hosts from a page, see Latest** · **the headset paints its own interface, and only a headset does — see Latest** · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
 > obsolete no-publish rule and branch name. Use this file for the active process.
+
+---
+
+# Latest: the headset keyboard stops opening chat, and five more — BETA PUBLISHED (2026-09-18)
+
+## The Quest keyboard was opening the chat window on top of everything
+
+The worst of the batch: in a headset, typing a donation amount summoned the chat
+window and broke the session. Also happened in a seat.
+
+`globalShortcut` opens chat on Enter and only stood down when **`event.target`**
+was a field. The Quest's own keyboard is a **system overlay outside the page**,
+so its Return arrives as a keydown on the document body even though the field
+being typed into is focused — the guard let it through and Enter did what Enter
+does at a desk. It now reads `document.activeElement` as well, and in a headset
+it never opens chat at all: there is no keyboard in an immersive session except
+the one the system puts up for a focused field, so every Return in there belongs
+to whatever is being written.
+
+**Anything keyed off `event.target` is wrong in a headset.** The system keyboard
+is not in the document.
+
+## ABOUT on a phone, and why the emulator lied
+
+`.videos-wrapper` is `height: 100vh`. On iOS that is the viewport **with the
+toolbars collapsed** — taller than what you can see — so the logo centred around
+a midpoint below the visible middle and read as sitting high. `100svh` on mobile.
+
+This is the second time this page has needed `svh` and it will not be the last.
+**A desktop emulator cannot reproduce it**: there `innerHeight` and
+`visualViewport.height` are the same number, which is why it was checked and
+looked right. Measured on the live site at 375×812: both 812.
+
+Also `.aboutVideos2 h2.mob` put "OFFICE TOUR" at 22px into a 50×50 box with a
+16px line height, which overflowed into nothing readable — the heading was
+reported missing on mobile. The ordinary centred heading shows at every width now.
+
+Worth knowing: **`.aboutVideos1` is `display:none` under 920px** and always has
+been. That is pre-existing, not a regression — it is why the middle block sits at
+the top of the page on a phone.
+
+## The cap logo: measured, and the texture is innocent
+
+Third time on this. The numbers, so nobody has to take a third guess:
+
+- texture 3554×3543, opaque content at x 123..3410, y 121..3408
+- margins: **top 3.4%**, bottom 3.8%, left 3.5%, right 4.0%
+- **nothing touches any image edge**
+- the mesh's UVs span the full 0..1
+- the embedded GLB texture is identical to `src/assets/cap-logo.png`
+
+So neither the picture nor the mapping clips anything, and the `alphaTest = 0.5`
+fix did stop the border drawing black. What remains is the foreshortening: the
+patch leans 21° away at the top and curves with the crown, so 3.4% of margin up
+there compresses to almost nothing. Fixed in the **texture transform** —
+`ClampToEdgeWrapping` plus `repeat 1.10` and a `0.018` drop in v, so the picture
+sits inside the patch with a real border and the top gets more of it. The proper
+fix is redrawing the patch in `scripts/prepare-blender-avatar.py`, which needs
+Blender and rebuilds the model.
+
+## Camera, MENTOR
+
+`DESKTOP_LOOK_GAIN = 2.5` — the desk was slow for the same reason the phone was:
+0.0042 × a 0.2 default is 0.00084 rad/px, about 1,100px to turn a quarter circle.
+Applied at the drag, not to the constant, so the sensitivity slider still means
+what it says.
+
+`MENTOR_SWIM_Y` raised from `SEA_Y - 0.86` to `SEA_Y - 0.42`; the head pivot is
+1.25 above the root, so at the old height the dog read as going under.
+
+And a dog put down in the sea swam ashore on its own, because `smallLoopAround()`
+is a **land** idea — the nodes it is built from are on the sand, so it set off for
+the nearest one. Given a route of one point it now paddles where it was put and
+waits, which is what the owner asked for.
+
+## Not done: splitting the bundle
+
+The owner asked for it and it is not in this pass. The measurement stands —
+`App-*.js` is **702KB raw, 225KB gzipped, 7.1s** on a live load, and the model
+had not begun downloading at that point. `three` is **already** a separate chunk,
+so this is not a `manualChunks` tweak: `App.ts` itself carries the gate, every
+panel and all the world glue in one file, and separating the gate from the world
+is a refactor of that file. Attempted hastily it is the same mistake as the three
+speculative camera fixes earlier in this session, so it is left for its own pass.
+
+Not this, either, by the owner's choice: `docs/beta/assets` is **45MB** holding
+six copies of the avatar model from previous publishes. Harmless to visitors —
+only the referenced one is fetched — but it bloats every clone.
+
+## Still open
+
+- Splitting the gate from the world.
+- The camera's chord-vs-arc easing (previous entry).
+- **Render needs a manual deploy** — the NPC introductions cannot be saved yet.
+- Nine introductions to be written.
+- Immersive video still has no host.
 
 ---
 
