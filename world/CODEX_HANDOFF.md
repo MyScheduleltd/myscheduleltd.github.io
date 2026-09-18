@@ -77,6 +77,33 @@ again, check `underside(z) >= 1.57` across z 0…0.56.
   occupies 16–60px, so 52px would have cut into it, and the brief said not to
   overlap. Its width is bounded by what is left beside the chat column.
 
+### The two DJ introductions, where a redeploy cannot lose them
+
+XIEH GAN's biography and DR.BEAUTY's new title were written through the STAFF
+editor. **Read back out of the live service verbatim** — `/api/config` →
+`djProfiles` — rather than transcribed from the screenshots, so the numbers,
+awards and names are the owner's own characters and not an OCR guess. Both are
+now the seeded defaults in `server/index.mjs`, and the English is a translation
+of the Chinese that somebody who knows the credits should check.
+
+**This plan has no disk.** A deploy starts a new instance that reads the
+committed `server/festival-seed.json`, so that file is the real seed and it was
+carrying the old bios; it is updated from the same strings, extracted from the
+code rather than retyped. Every field is inside the editor's limits — 1200 for
+an introduction, 120 for a role — so STAFF can still re-save either language.
+
+> **`DJ_PROFILE_SEED` is new, and it matters.** A stored profile overlays the
+> seed field by field, which is right for an edit and wrong when the defaults
+> themselves are corrected: XIEH GAN's Chinese was written through the editor
+> while the English stayed a placeholder, so a stored copy of that placeholder
+> would have overwritten this translation on every redeploy, for ever. Bumping
+> the edition declares the seed authoritative once and drops the stored copies.
+> Bump it **only** when the seeded text changes, never for an ordinary edit.
+
+> **The server needs a manual deploy.** Pushing to `main` ships the client
+> only; until Render is redeployed by hand, the live service keeps serving the
+> old English role and introduction.
+
 ### Immersive video — the Drive link cannot work
 
 Tested: `drive.usercontent.google.com/download?id=…` answers

@@ -439,23 +439,34 @@ const safeExternalUrl = (value) => {
   }
 };
 
+/** Bump when the seeded introductions above change; see the note at the load. */
+const DJ_PROFILE_SEED = '2026-09-18-xiehgan-drbeauty';
 const djProfiles = {
   XIEHGAN: {
     id: 'XIEHGAN',
     name: 'XIEH GAN',
-    role: 'Resident DJ · The Basement',
-    roleZh: '駐場 DJ · 皇宮地下室',
-    // Left for STAFF to write. Inventing a biography for a real person is not
-    // this file's job, so the placeholder says plainly that it is one.
-    introduction: 'Resident DJ at The Basement. STAFF have not written this introduction yet — open the booth with a STAFF pass to fill it in.',
-    introductionZh: '皇宮地下室的駐場 DJ。這段介紹尚未由 STAFF 撰寫，請以 STAFF 通行證開啟後編輯。',
+    // The owner's own title, in both languages, because that is what they wrote
+    // into the field rather than a translation of it.
+    role: 'FOUNDER OF MY SCHEDULE LTD',
+    roleZh: 'FOUNDER OF MY SCHEDULE LTD',
+    // Written by the owner through the STAFF editor and read back out of the
+    // live service verbatim rather than transcribed from a screenshot. It lives
+    // here so a Render redeploy cannot lose it: `saved.djProfiles` overlays
+    // this, and an empty store falls back to exactly what the owner wrote.
+    // The English is a translation of that Chinese and should be checked by
+    // somebody who knows the credits; both are inside the 1200 the editor and
+    // `safeText` allow, so STAFF can still re-save either of them.
+    introduction: '2017 Founded MY SCHEDULE LTD. 2020 Produced the music video for iGO ASIA REMIX, a single uniting Nick Chou, JP THE WAVY and SIK-K across Taiwan, Japan and Korea, which helped set the direction of mainstream hip-hop and fashion in Asia. 2021 Directed and A&R-planned the album videos for E.SO’s OUTTA BODY and EARTHBOUND, linking several videos of different styles into one continuous narrative film. 2022 MY SCHEDULE LTD had made over 200 music videos, for artists including J.Sheon, Naiwen Yang, A-Lin, Cosmos People, A-Mei, Crowd Lu, MJ116 and Nine One One. 2023 A producer and chief director of the series The Rappers 2, nominated for and winning awards at the 58th Golden Bell Awards and the 5th Zouzhong Awards, and well received across traditional and new media alike. 2024 Producer of the series Night Market King, widely praised for renewing attention on Taiwan’s night market culture — visitor numbers rose 40% — and winner of the Programme Innovation Award at the 60th Golden Bell Awards. 2025 Producer of the hip-hop festival Long Hu Men 247 Music Day, attended by over 2,500 people on the day, with more than a hundred positive posts shared by audiences across platforms.',
+    introductionZh: '2017 成立【我的檔期有限公司】。 2020 製作周湯豪、JP THE WAVY 及 SIK-K 台、日、韓三地歌手合作單曲《iGO ASIA REMIX》MV，引領亞洲主流嘻哈及時尚潮流。 2021 製作瘦子 E.SO《OUTTA BODY》、《EARTHBOUND》專輯 MV，擔任導演及 A&R 企劃，運用多支不同風格的 MV 串聯出一部完整劇情影片，廣受觀眾喜愛。 2022 【我的檔期有限公司】已為多位藝人量身打造超過 200 支 MV，其中包含 J.Sheon、楊乃文、A-Lin、宇宙人、張惠妹、盧廣仲、頑童 MJ116、玖壹壹等。 2023 擔任電視節目《大嘻哈時代 2》製作人之一及總導演，入圍並獲得第 58 屆金鐘獎及第 5 屆走鐘獎多項獎項，在傳統媒體與新媒體間皆獲得高度好評。 2024 擔任電視節目《夜市王》製作人，廣受大眾好評，成功帶動台灣夜市文化再次受到關注，來客數增加 40%，並榮獲第 60 屆金鐘獎「節目創新獎」。 2025 擔任嘻哈音樂祭《龍虎門 247 音樂日》製作人，活動當日現場參與人數超過 2,500 人，各平台觀眾分享貼文累積逾百則好評。',
     updatedAt: 0,
   },
   DRBEAUTY: {
     id: 'DRBEAUTY',
     name: 'DR.BEAUTY',
-    role: 'Rooftop DJ · Artist, rapper, music producer, host, YouTuber',
-    roleZh: '頂樓 DJ · 藝人、饒舌歌手、音樂製作人、主持人、YouTuber',
+    // The line the owner uses on the DR.BEAUTY page of myscheduleltd.com, which
+    // is where they took it from. 114 characters, inside the editor's 120.
+    role: 'Li Baobi — artist, rapper, producer, host, influencer, YouTuber, party mascot; born the same day as the Earth God.',
+    roleZh: '李包比，藝人、饒舌歌手、音樂製作人、主持人、網美、YouTuber、派對吉祥物，農曆是 2 月 2 號跟土地公同一天生。',
     // Taken from the DR.BEAUTY page on myscheduleltd.com rather than written
     // here, so the world and the site say the same thing.
     introduction: 'Li Baobi — artist, rapper, music producer, host, influencer, YouTuber and party mascot. Opened the 美麗本人 YouTube channel in 2019, known for reaction videos to Mandarin music videos shot with animation and effects, and for putting "R爆" and the 醬擠 gesture into everyday use among younger audiences.',
@@ -619,6 +630,7 @@ const persistedSnapshot = () => ({
   npcTitles,
   pamphlet: pamphletContent,
   djProfiles,
+  djProfileSeed: DJ_PROFILE_SEED,
   shopLink,
   offeringReceipt,
   templeSign,
@@ -872,7 +884,27 @@ const restorePersistedState = () => {
       if (/^[A-Za-z0-9_-]{6,20}$/.test(id) && seconds) trackDurations[id] = Math.round(seconds);
     }
   }
-  const savedDjProfiles = saved.djProfiles;
+  /**
+   * A saved profile overlays the seed — but only within the same seed edition.
+   *
+   * The store keeps whatever STAFF last wrote, field by field, and it wins over
+   * the defaults above. That is right for an edit, and wrong the moment the
+   * defaults themselves are corrected: XIEH GAN's Chinese introduction was
+   * written through the editor while the English stayed a placeholder, so a
+   * saved copy of that placeholder would have overwritten the translation now
+   * seeded here, every redeploy, for ever.
+   *
+   * Bumping `DJ_PROFILE_SEED` therefore declares the seed authoritative once:
+   * the stored profiles are dropped, the file's text stands, and edits made
+   * after that persist and take precedence as usual. Safe to do here because
+   * this edition's text *is* what the owner wrote, read back out of the live
+   * service rather than retyped. Bump it again only when the defaults are
+   * corrected, never for an ordinary edit.
+   */
+  const savedDjProfiles = saved.djProfileSeed === DJ_PROFILE_SEED ? saved.djProfiles : undefined;
+  if (saved.djProfileSeed !== DJ_PROFILE_SEED) {
+    console.log(`DJ profiles: seed edition ${DJ_PROFILE_SEED} adopted; stored copies of the old defaults dropped.`);
+  }
   if (savedDjProfiles && typeof savedDjProfiles === 'object') {
     for (const id of Object.keys(djProfiles)) {
       const entry = savedDjProfiles[id];
