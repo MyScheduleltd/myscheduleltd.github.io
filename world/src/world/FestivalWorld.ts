@@ -583,6 +583,12 @@ const LITE_FOG_FAR = 78;
  * half-screen swipe. The sensitivity slider still scales on top of this, so
  * anybody who wants the old crawl can still have it.
  */
+/**
+ * How fast the right stick turns the view in a headset, at full deflection, in
+ * radians a second. About 115 degrees — brisk enough to come about without a
+ * second push, slow enough to read the world going past.
+ */
+const XR_TURN_RATE = 2.0;
 const TOUCH_LOOK_GAIN = 6;
 /**
  * The same, for a mouse, because the desk was reported as too slow too.
@@ -1525,7 +1531,6 @@ export class FestivalWorld {
    * than agree with it. This is for the controls that invent motion.
    */
   private lookSensitivity = 0.2;
-  private xrSnapReady = true;
   private readonly projectorClipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 45.68);
   private readonly projectorCornerView = new THREE.Vector3();
   private readonly statueViewPosition = new THREE.Vector3();
@@ -2690,7 +2695,11 @@ export class FestivalWorld {
         moveX = Math.abs(x) > 0.16 ? x : 0;
         moveY = Math.abs(y) > 0.16 ? y : 0;
       } else {
-        turnX = Math.abs(x) > 0.68 ? x : 0;
+        // A small dead zone, because the turn is analogue now. 0.68 was right
+        // for a snap — you had to shove the stick to earn a click — and it is
+        // exactly wrong for smooth turning, where a gentle push should be a
+        // gentle turn.
+        turnX = Math.abs(x) > 0.15 ? x : 0;
         scrollY = Math.abs(y) > 0.3 ? y : 0;
       }
       // Every binding comes from `xrBindings`, so the list the controls panel
@@ -2728,10 +2737,16 @@ export class FestivalWorld {
     if (scrollY && this.xrHud?.pointing('right')) {
       if (now >= this.xrScrollAt && this.xrHud.scrollBy('right', scrollY * 32)) this.xrScrollAt = now + 16;
     }
-    if (turnX && this.xrSnapReady) {
-      this.xrYaw -= Math.sign(turnX) * THREE.MathUtils.degToRad(30);
-      this.xrSnapReady = false;
-    } else if (!turnX) this.xrSnapReady = true;
+    /**
+     * Turn smoothly rather than in thirty-degree clicks.
+     *
+     * Snap turning is the usual comfort default in a headset — discrete jumps
+     * give the inner ear nothing to disagree with — but the owner asked for
+     * smooth, and it is their world. The rate is squared against the stick, so
+     * a small push turns slowly and precision near a prompt is possible, while
+     * a full push still comes round at a useful speed.
+     */
+    if (turnX) this.xrYaw -= turnX * Math.abs(turnX) * XR_TURN_RATE * delta;
     if (this.playerState !== 'seated' && (moveX || moveY)) {
       // Use this frame's viewer pose and the same snap yaw as the rendered rig.
       // getCamera() still contains reference-space matrices before render().
@@ -5957,6 +5972,15 @@ export class FestivalWorld {
       if (this.openNpcIntroduction(followerGreeting)) return;
     }
 
+    // Where the prompt offers `· SHIFT+E / DRINK UP` beside a counter, the hold
+    // has to drink. Above the MENTOR shortcut below, which would otherwise take
+    // every SHIFT+E for the dog and leave the prompt promising something that
+    // never happened.
+    if (pickUpMentor && this.carriedItem === 'DRINK' && this.atAFixedPlace()) {
+      this.drinkInHand();
+      return;
+    }
+
     // SHIFT+E is an explicit request for MENTOR, so it outranks the seat and
     // concession stand. MENTOR's route passes within reach of both, and the
     // ordinary priority order used to swallow every pickup attempt there.
@@ -6050,7 +6074,7 @@ export class FestivalWorld {
     // up — which is worse than the original fault, because at least that was
     // consistent. They get a key each instead, and nothing is taken away:
     // plain E lifts the dog, SHIFT+E drinks.
-    if (mentor && this.carriedItem === 'DRINK') {
+    if (mentor && this.carriedItem === 'DRINK' && !this.mentorGivesWay()) {
       if (pickUpMentor) this.drinkInHand();
       else this.pickUpMentor();
       return;
@@ -13027,8 +13051,12 @@ export class FestivalWorld {
     }
     const followerGreeting = this.mentorFollowsActiveAvatar() ? this.nearestSocialTarget() : undefined;
     if (followerGreeting) return this.socialLabel(followerGreeting);
-    // Both at once: a key each, and the prompt says which is which.
-    if (this.carriedItem === 'DRINK' && this.nearbyMentor()) {
+    // Both at once: a key each, and the prompt says which is which. Gives way
+    // like the branch below it — this one did not, and while MENTOR follows you
+    // it is *always* nearby, so a drink in hand left this prompt stuck on the
+    // screen at the temple, the shop and the jukebox alike, hiding whatever you
+    // had actually walked up to.
+    if (this.carriedItem === 'DRINK' && this.nearbyMentor() && !this.mentorGivesWay()) {
       this.promptSecondary = true;
       return 'E / PICK UP MENTOR · SHIFT+E / DRINK UP' + DOUBLE_TAP_INTRODUCTION;
     }
@@ -13038,6 +13066,27 @@ export class FestivalWorld {
         ? 'E / GIVE MENTOR A TREAT · SHIFT+E / PICK UP (POPCORN WILL BE LOST)' + DOUBLE_TAP_INTRODUCTION
         : 'E / GIVE MENTOR A TREAT · SHIFT+E / PICK UP' + DOUBLE_TAP_INTRODUCTION;
     }
+    /**
+     * Somewhere you walked up to outranks what you happen to be holding.
+     *
+     * A drink in hand used to return here and stop, so the counter, the
+     * jukebox and the pop-up shop all vanished behind `SHIFT+E / DRINK UP`
+     * until the glass was empty — which, with a dog at your heel, is how the
+     * headset came to show the same prompt at the temple and at the clothes
+     * rail. Neither has to lose: the place takes the tap, the drink keeps the
+     * hold, and the prompt says so.
+     */
+    const here = this.nearClubBar() ? 'E / ORDER A DRINK'
+      : this.nearJukebox() ? 'E / PUT A RECORD ON'
+      : this.nearShopCounter() ? 'E / OPEN MASTER OF THE HOUSE'
+      : undefined;
+    if (here) {
+      if (this.carriedItem === 'DRINK') {
+        this.promptSecondary = true;
+        return `${here} · SHIFT+E / DRINK UP`;
+      }
+      return here;
+    }
     if (this.carriedItem === 'DRINK') {
       this.promptAction = 'shift';
       return 'SHIFT+E / DRINK UP';
@@ -13045,9 +13094,6 @@ export class FestivalWorld {
     // Anything else edible, wherever you happen to be standing with it.
     const eating = this.eatingLabel();
     if (eating) return eating;
-    if (this.nearClubBar()) return 'E / ORDER A DRINK';
-    if (this.nearJukebox()) return 'E / PUT A RECORD ON';
-    if (this.nearShopCounter()) return 'E / OPEN MASTER OF THE HOUSE';
     const dj = this.nearbyDj();
     if (dj) return `E / REQUEST A TRACK FROM ${dj.name}`;
     const socialTarget = this.nearestSocialTarget();
@@ -13180,6 +13226,8 @@ export class FestivalWorld {
       || this.nearJukebox()
       || this.nearShopCounter()
       || this.nearbyDj() !== undefined
+      // The altar was missing, so the dog never gave way at the temple.
+      || this.atTheAltar()
       || this.player.position.distanceTo(pamphletPosition) < 2.35
       ;
   }
