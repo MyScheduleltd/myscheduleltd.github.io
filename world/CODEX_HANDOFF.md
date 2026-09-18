@@ -89,8 +89,15 @@ A-Mei, Crowd Lu, MJ116, Nine One One, The King of night market, My Schedule LTD,
 The Rapper S2, 247 MUSIC FESTIVAL. **Use those spellings and no others** — do
 not "correct" them to the names a search engine offers.
 
-> One was not supplied and is therefore still a guess: 走鐘獎 is rendered
-> "Zouzhong Awards". 金鐘獎 is the Golden Bell Awards, which is standard.
+走鐘獎 is **"Walk Bell John Awards"**, also the owner's own form, supplied on
+2026-09-18 — it is not a translation anybody would arrive at independently, so
+leave it exactly as written. 金鐘獎 is the Golden Bell Awards, which is standard.
+
+> **`safeText` normalises with NFKC**, so full-width punctuation in a stored
+> profile comes back as ASCII: `，` is served as `,`. The seed keeps the
+> full-width characters the website uses, and the overlay path flattens them.
+> That matches what the owner typed in the first place, and NFKC is also what
+> defeats homoglyph tricks — do not remove it to win the typography.
 
 **This plan has no disk.** A deploy starts a new instance that reads the
 committed `server/festival-seed.json`, so that file is the real seed and it was
