@@ -531,13 +531,16 @@ h2 {
   color: #fff;
 }
 
-/* `svh` on a phone, and the second time this page has needed it. On iOS 100vh
-   is the viewport with the toolbars collapsed — taller than what you can see —
-   so a block that tall centres its contents below the visible middle and the
-   logo reads as sitting high. An emulator cannot reproduce it: there vh and the
-   visible height are the same number. */
+/* `dvh`, not `vh` and not `svh` — this block has now been wrong both ways.
+   100vh on iOS is the viewport with the toolbars collapsed: taller than what
+   you can see, so the block overflows and its centred logo sits high. 100svh is
+   the viewport with the toolbars showing: shorter than what you can see once
+   Safari hides them, so the block stops filling the screen and the next film
+   bleeds in under it with a hard seam. 100dvh is the viewport as it actually
+   is, moment to moment. No emulator shows any of this — there all three units
+   are the same number, measured 844/844/844 at 390x844. */
 @media all and (max-width: 920px) {
-  .videos-wrapper { height: 100svh; }
+  .videos-wrapper { height: 100vh; height: 100dvh; }
   /* No heading on a phone at all, by the owner's decision. It was hidden
      originally, then briefly shown when it was reported missing — but shown is
      worse: the full-bleed film starts at the top of the page there, so the
