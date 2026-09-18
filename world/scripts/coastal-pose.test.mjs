@@ -652,11 +652,17 @@ test('follow camera stays on the avatar side of a nearby building wall',()=>{
   // settle it over a second of frames and read where it comes to rest.
   const target=new THREE.Vector3(0,3.12,10);
   for(let frame=0;frame<240;frame++){target.set(0,3.12,10);world.pullCameraClearOfWalls(target,1/60);}
+  // The contract the owner asked for on 2026-09-18: the view does not move
+  // itself out of the way any more. It stays on the orbit it was given, stops
+  // short of the wall, and never looks through it. It is allowed to end up
+  // close to the avatar — that is the trade, and the avatar is faded out before
+  // the lens reaches their head.
   assert.ok(target.z<2,`camera target crossed the wall at z=${target.z}`);
-  assert.ok(target.distanceTo(eye)>3.6,'a wall behind the avatar must not snap the camera against its face');
-  assert.ok(Math.abs(target.x)>5,'the camera goes around the edge of the wall');
+  assert.ok(Math.abs(target.x)<.05,`the camera swung itself to x=${target.x.toFixed(2)}`);
+  assert.equal(world.wallAvoidance.side,0,'no side may be taken any more');
+  assert.equal(world.wallAvoidance.offset,0,'and no swing applied');
   assert.ok(world.cameraClearReach(eye,target)>=target.distanceTo(eye)-.32,
-    'the alternate view still has an unobstructed line of sight');
+    'the view it settles on still has an unobstructed line of sight');
   const oldPosition=new THREE.Vector3(0,3.12,10);
   const clear=world.cameraClearReach(eye,oldPosition);
   assert.ok(clear<2,'smoothing an obstructed camera must be clamped too');
@@ -694,8 +700,9 @@ test('perspective orbit also stays away from a wall at its side',()=>{
   const eye=player.position.clone().add(new THREE.Vector3(0,2.84,0));
   const target=new THREE.Vector3(9,3.12,2);
   for(let frame=0;frame<240;frame++){target.set(9,3.12,2);world.pullCameraClearOfWalls(target,1/60);}
-  assert.ok(target.distanceTo(eye)>3.6,'perspective orbit must avoid a sudden face closeup');
+  // Closeness is permitted now; looking through the wall is not.
   assert.ok(world.cameraClearReach(eye,target)>=target.distanceTo(eye)-.32);
+  assert.equal(world.wallAvoidance.offset,0,'the perspective orbit must not swing either');
 });
 
 test('club wall confinement finds room to the side before squeezing the camera',()=>{
@@ -711,9 +718,17 @@ test('club wall confinement finds room to the side before squeezing the camera',
   // of frames — a camera that jumped to its alternate in one frame is what made
   // walking through the club dizzy.
   for(let frame=0;frame<90;frame+=1)world.confineCameraToClub(target,1/60);
-  assert.ok(target.distanceTo(player.position)>4,
-    'the club wall must not force a face closeup while the room has lateral space');
-  assert.ok(target.x<-51.1 && target.x>-87,'the alternate camera remains inside the room');
+  // The room still holds the camera inside its walls — that part has not
+  // changed — but it no longer hunts along them for a better view.
+  // The invariant that still matters: wherever the view ends up, it is inside
+  // the club. It used to be allowed a 1.6 minimum distance even when the orbit
+  // it was on had less room than that, which with the swing gone would put the
+  // lens through the wall and show the void behind it.
+  assert.ok(world.inClub(target.x,target.z),
+    `the camera left the room at ${target.x.toFixed(2)},${target.z.toFixed(2)}`);
+  assert.ok(target.distanceTo(player.position)<=7.5,'and never further out than the orbit asked for');
+  assert.equal(world.clubAvoidance.offset,0,'the club must not swing the view any more');
+  assert.equal(world.clubAvoidance.side,0);
 });
 
 test('the club camera commits to one side instead of swinging as you walk',()=>{
@@ -726,20 +741,25 @@ test('the club camera commits to one side instead of swinging as you walk',()=>{
     clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0}});
   const target=new THREE.Vector3(-41.5,-12,15);
   for(let frame=0;frame<90;frame+=1)world.confineCameraToClub(target,1/60);
-  const side=world.clubAvoidance.side;
-  assert.ok(side===1||side===-1,'a side must have been taken');
-  // Walk along the room and the camera must not flip to the other side, which
-  // is what rotated the whole world around somebody pressing forward.
-  let biggestJump=0;
+  // The rule now, in its strongest form: walking moves the avatar and nothing
+  // else. This used to assert that a side had been *taken* and merely held on
+  // to; the owner tried that and asked for the swing gone altogether, because
+  // even a committed, eased swing reads as the world turning around somebody
+  // who is only pressing forward.
+  assert.equal(world.clubAvoidance.side,0,'no side may be taken any more');
+  assert.equal(world.clubAvoidance.offset,0,'and no swing applied');
+  let biggestSidestep=0;
   let previous=target.clone();
   for(let stepIndex=0;stepIndex<40;stepIndex+=1){
     player.position.z+=0.25;
     world.confineCameraToClub(target,1/60);
-    biggestJump=Math.max(biggestJump,Math.hypot(target.x-previous.x,target.z-previous.z-0.25));
+    // The avatar's own 0.25 is subtracted; what is left is the camera moving
+    // of its own accord, which must be nothing.
+    biggestSidestep=Math.max(biggestSidestep,Math.hypot(target.x-previous.x,target.z-previous.z-0.25));
     previous=target.clone();
-    assert.equal(world.clubAvoidance.side,side,`the camera changed sides at step ${stepIndex}`);
+    assert.equal(world.clubAvoidance.offset,0,`the camera swung itself at step ${stepIndex}`);
   }
-  assert.ok(biggestJump<0.6,`the camera lurched ${biggestJump.toFixed(2)} in one frame`);
+  assert.ok(biggestSidestep<0.06,`the camera moved itself ${biggestSidestep.toFixed(3)} sideways in one frame`);
 });
 
 test('approaching a building keeps the follow camera out of the face and the masonry',()=>{
@@ -756,15 +776,50 @@ test('approaching a building keeps the follow camera out of the face and the mas
     settlePunchImpact(){},applyCameraShake(){},applyDrunkenView(){},
   });
   let closest=Infinity;
+  let biggestZoomStep=0;
+  let previousReach;
   for(let frame=0;frame<310;frame++){
     player.position.z=Math.min(0,-15+frame*.06);
     world.updateCamera(1/60,frame/60);
     const eye=player.position.clone().add(new THREE.Vector3(0,2.84,0));
-    closest=Math.min(closest,camera.position.distanceTo(eye));
+    const reach=camera.position.distanceTo(eye);
+    closest=Math.min(closest,reach);
+    // The first frame arrives from nowhere and is exempt; after that, how far
+    // the view closes in during a single frame is the whole complaint. It used
+    // to assign the shorter distance outright, so walking up to anything
+    // snapped the lens towards the back of the avatar's head in one frame.
+    if(previousReach!==undefined) biggestZoomStep=Math.max(biggestZoomStep,Math.abs(reach-previousReach));
+    previousReach=reach;
     assert.ok(world.cameraClearReach(eye,camera.position)>=eye.distanceTo(camera.position)-.35,
       `camera passed through the wall at frame ${frame}`);
   }
-  assert.ok(closest>3.2,`camera squeezed to ${closest.toFixed(2)} units from the face`);
+  /**
+   * A known remaining fault, pinned at its measured size so it cannot grow.
+   *
+   * Closeness is allowed now — the owner chose it over the view swinging aside
+   * — but it should arrive as a glide, and one part of it still does not. The
+   * clear distance itself was a staircase of 0.24 treads and is now continuous
+   * to within eight millimetres; the pull-in is eased both ways; the room no
+   * longer overrides its own walls. What is left is a lunge inward of about a
+   * third of a unit every tenth frame, with the view opening back out smoothly
+   * (+0.014 at worst) in between.
+   *
+   * Diagnosed, not guessed: `camera.position.lerp(cameraTarget)` interpolates
+   * along the *chord* between where the lens is and where it is going, so it
+   * cuts the corner and passes through masonry that neither end is inside.
+   * The hard clamp then has to haul it back, instantly, because that clamp is
+   * what guarantees you cannot see through a wall. The fix is to ease along the
+   * arc instead — direction and distance separately, about the avatar — which
+   * touches every camera mode including the seated one, so it is the owner's
+   * call and not a quiet change.
+   *
+   * 0.35 is the measured worst; anything above it is a regression.
+   */
+  assert.ok(biggestZoomStep<0.35,`the view closed in ${biggestZoomStep.toFixed(3)} in a single frame`);
+  // Not so close that the lens is inside the head. Below 1.4 the avatar is
+  // faded out, so that is the floor worth holding rather than a comfortable
+  // shoulder distance.
+  assert.ok(closest>1.4,`camera reached ${closest.toFixed(2)} units from the face`);
 });
 
 test('an authorized direct film fills and releases the immersive theater quad',async()=>{

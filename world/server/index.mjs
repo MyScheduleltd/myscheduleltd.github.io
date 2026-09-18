@@ -384,7 +384,29 @@ const npcTitles = {
   // the festival but not on its books, which is how YO arrived.
   YO: 'Festival Videographer',
 };
-const publicNpcProfiles = () => Object.keys(npcNames).map((id) => ({ id, name: npcNames[id], title: npcTitles[id] }));
+/**
+ * What a resident says about themselves, held against their NPC id.
+ *
+ * Empty by design. These are real colleagues, so nothing is written here on
+ * their behalf — STAFF fill each one in through the same editor that renames
+ * them, exactly as the owner wrote the two DJ introductions. An id with no
+ * entry is not a fault: the world shows the name and the job title it already
+ * has and simply has no biography under them yet.
+ *
+ * English only for now, at the owner's choice. `introductionZh` can be added
+ * beside this the day it is wanted without disturbing anything that reads it.
+ *
+ * The two DJs are deliberately absent. They are NPCs *and* DJs, they already
+ * have a fuller bilingual profile in `djProfiles`, and the world reaches it by
+ * a different prompt — one introduction per person, edited in one place.
+ */
+const npcIntroductions = {};
+const publicNpcProfiles = () => Object.keys(npcNames).map((id) => ({
+  id,
+  name: npcNames[id],
+  title: npcTitles[id],
+  introduction: npcIntroductions[id] ?? '',
+}));
 // The pop-up store's destination. Empty until STAFF set one, and only ever an
 // http(s) address: this string ends up in a link the visitor's browser follows,
 // so a javascript: or data: URL here would be script execution on every
@@ -628,6 +650,7 @@ const persistedSnapshot = () => ({
   customVideos: customVideosByVenue,
   npcNames,
   npcTitles,
+  npcIntroductions,
   pamphlet: pamphletContent,
   djProfiles,
   djProfileSeed: DJ_PROFILE_SEED,
@@ -781,7 +804,7 @@ const restoreMessages = (saved) => {
   }
 };
 
-const restoreNpcs = (savedNames, savedTitles) => {
+const restoreNpcs = (savedNames, savedTitles, savedIntroductions) => {
   for (const [id, name] of Object.entries(savedNames ?? {})) {
     if (!/^[A-Z0-9_]{1,24}$/.test(id)) continue;
     // Only the current roster and NPCs STAFF added are restored. A default
@@ -792,6 +815,12 @@ const restoreNpcs = (savedNames, savedTitles) => {
     if (!safeName) continue;
     npcNames[id] = safeName;
     npcTitles[id] = safeText(savedTitles?.[id], 40) || npcTitles[id] || 'Director';
+    // No seed edition to guard here, unlike the DJ profiles: the defaults are
+    // empty, so a stored introduction is always somebody's writing and always
+    // wins. Only set the key when there is something in it, so an id with no
+    // biography stays absent rather than becoming an empty string.
+    const savedIntroduction = safeText(savedIntroductions?.[id], 1200);
+    if (savedIntroduction) npcIntroductions[id] = savedIntroduction;
   }
 };
 
@@ -947,7 +976,7 @@ const restorePersistedState = () => {
     adminKeyDigest = { salt: saved.adminKeyDigest.salt, hash: saved.adminKeyDigest.hash };
   }
   restoreMessages(saved.messages);
-  restoreNpcs(saved.npcNames, saved.npcTitles);
+  restoreNpcs(saved.npcNames, saved.npcTitles, saved.npcIntroductions);
   restoreCustomVideos(saved.customVideos);
   restoreSchedule(saved.schedule);
   migrateVenues(saved.version);
@@ -2272,8 +2301,17 @@ a{color:#e8b64a}</style>
         const duplicate = Object.entries(npcNames).some(([id, currentName]) =>
           id !== npcId && currentName.toLocaleUpperCase('en-US') === name.toLocaleUpperCase('en-US'));
         if (duplicate) return apiError(response, 409, 'That NPC name is already in use.');
+        // The introduction rides along with the rename rather than having an
+        // endpoint of its own, so STAFF edit a resident in one place and one
+        // save. Optional, and clearable: an empty field means "no biography
+        // yet", which is a state the world already draws, so it must be
+        // possible to go back to it. `safeText` normalises and caps it at the
+        // same 1200 the DJ introductions use.
+        const introduction = safeText(payload.introduction, 1200);
         npcNames[npcId] = name;
         npcTitles[npcId] = title;
+        if (introduction) npcIntroductions[npcId] = introduction;
+        else delete npcIntroductions[npcId];
         for (const controlledVisitor of visitors.values()) {
           if (controlledVisitor.npcId === npcId) controlledVisitor.name = name;
         }

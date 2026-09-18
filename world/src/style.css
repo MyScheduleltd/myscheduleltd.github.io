@@ -1188,6 +1188,11 @@ button:active { filter: brightness(.88); scale: .96; }
 .controls-hint { position: fixed; z-index: 3; left: 22px; bottom: 22px; font: 700 11px var(--condensed); letter-spacing: .07em; text-shadow: 0 2px 8px black; }.controls-hint span { color: #ed434d; margin-right: 3px; }.controls-hint span:nth-child(2) { margin-left: 12px; }
 .touch-controls { display: none; }
 .touch-stick, .touch-ring__hit, .touch-ring__key { touch-action: none; -webkit-user-select: none; user-select: none; }
+/* The introduction sits under the name and title rather than beside them: it
+   is a paragraph, and a paragraph in a row of short inputs squeezes them all
+   down to nothing. Full width of the form, which is a grid. */
+.staff-npc-intro { grid-column: 1 / -1; }
+.staff-npc-intro textarea { width: 100%; min-height: 64px; resize: vertical; }
 .chat-stream {
   position: fixed; z-index: 4; left: 22px; bottom: 52px; display: grid; gap: 6px;
   width: min(520px, calc(100vw - 44px)); pointer-events: none;

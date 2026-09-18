@@ -54,6 +54,14 @@ export interface NpcProfile {
   id: NpcId;
   name: string;
   title: string;
+  /**
+   * What this resident says about themselves, written by STAFF.
+   *
+   * Optional and usually absent: the roster is real colleagues and nothing is
+   * written on their behalf. A resident with no introduction still has a name
+   * and a job title, and that is what their card shows.
+   */
+  introduction?: string;
 }
 export interface MentorFollowerTarget {
   kind: 'visitor' | 'npc';
@@ -88,6 +96,7 @@ export type WorldAction =
   | { type: 'pamphlet' }
   | { type: 'swim'; active: boolean; stowedPopcorn?: boolean }
   | { type: 'greet'; target: string; gesture: 'wave' | 'tail-wag' }
+  | { type: 'npcIntroduction'; id: string; name: string; title: string; introduction: string }
   | { type: 'treat'; target: string }
   | { type: 'mentor'; active: boolean; discardedPopcorn?: boolean }
   | { type: 'programme' }
@@ -598,6 +607,44 @@ const NPC_LANE_RADIUS = 2.6;
  * flat haze, which costs far less than shading detail nobody can make out.
  */
 const LITE_FOG_FAR = 78;
+/**
+ * How much further a finger turns the view than a mouse pointer does.
+ *
+ * Six, which at the default sensitivity puts roughly sixty degrees in a
+ * half-screen swipe. The sensitivity slider still scales on top of this, so
+ * anybody who wants the old crawl can still have it.
+ */
+const TOUCH_LOOK_GAIN = 6;
+/**
+ * Whether the view may ever swing itself round an obstruction.
+ *
+ * False, by the owner's decision on 2026-09-18, after trying it: "stop letting
+ * the camera snap away when the avatars are near a surface, just make sure the
+ * camera view won't see through the walls." So it does not swing at all any
+ * more — walking moves the avatar and nothing else, and the drag is the only
+ * thing that turns the view.
+ *
+ * What still keeps the lens out of the masonry is the distance: the camera
+ * closes in along the line it is already on, eased, and the rendered position
+ * is clamped against the real geometry every frame. Backed against a wall the
+ * view therefore ends up close to the avatar rather than beside them — which
+ * is the trade that was asked for, and the avatar is faded out before the lens
+ * reaches their head.
+ *
+ * The machinery is left in place and tested rather than deleted, because this
+ * is a judgement about how the world should feel and not a fact about it. One
+ * line brings it back.
+ */
+const CAMERA_MAY_STEER = false;
+/**
+ * How fast the view closes in on an obstruction, and how fast it opens again.
+ *
+ * Closing is quicker: it has to keep ahead of the camera's own easing so the
+ * lens is never left inside a wall. Neither is instant, because instant is
+ * what read as a lurch.
+ */
+const CAMERA_REACH_CLOSE_RATE = 7;
+const CAMERA_REACH_OPEN_RATE = 4.5;
 const CAMERA_LEVEL_GROUND_GRADIENT = 0.35;
 /** How far out the ground is sampled to judge that. */
 const CAMERA_GROUND_PROBE = 0.7;
@@ -1323,6 +1370,8 @@ export class FestivalWorld {
   private readonly colliders: Collider[] = [];
   private readonly seats: Seat[] = [];
   private readonly npcs: NpcAvatar[] = [];
+  /** The served roster, by id, so a prompt can offer what STAFF have written. */
+  private readonly npcProfileById = new Map<string, NpcProfile>();
   private readonly remoteAvatars = new Map<string, RemoteAvatar>();
   private readonly remoteNpcControls = new Map<string, RemoteVisitorVisual>();
   private readonly occupiedSeats = new Set<string>();
@@ -1620,6 +1669,14 @@ export class FestivalWorld {
    * is running, the pointer path stands down rather than counting the same two
    * fingers a second time.
    */
+  /**
+   * Whether native touch events reach this canvas at all.
+   *
+   * Where they do, they are the only thing allowed to pinch, because they are
+   * the only path that can tell a finger on the world from a thumb on the
+   * movement stick. The pointer path stays for trackpads and pens.
+   */
+  private readonly canvasTouchSupported = typeof window !== 'undefined' && 'ontouchstart' in window;
   private touchPinching = false;
   private touchPinchSpread = 0;
   /**
@@ -4908,6 +4965,11 @@ export class FestivalWorld {
       if (!npc) {
         npc = this.createNpcAvatar(profile, index);
       }
+      // Kept before the name check below, which skips the rest of this loop
+      // when nothing has been renamed. A STAFF edit that only writes an
+      // introduction changes no name, so storing it after that `continue`
+      // would silently drop every biography anybody ever wrote.
+      this.npcProfileById.set(profile.id, profile);
       const name = profile.name.trim() || profile.id;
       if (name === npc.name) continue;
       npc.name = name;
@@ -5957,6 +6019,7 @@ export class FestivalWorld {
     // in interactionLabel(), so the words and the action stay in agreement.
     const followerGreeting = this.mentorFollowsActiveAvatar() ? this.nearestSocialTarget() : undefined;
     if (followerGreeting) {
+      if (pickUpMentor && this.openNpcIntroduction(followerGreeting)) return;
       this.greetSocialTarget(followerGreeting);
       return;
     }
@@ -6001,6 +6064,7 @@ export class FestivalWorld {
 
     const socialTarget = this.nearestSocialTarget();
     if (socialTarget) {
+      if (pickUpMentor && this.openNpcIntroduction(socialTarget)) return;
       this.greetSocialTarget(socialTarget);
       return;
     }
@@ -6026,6 +6090,35 @@ export class FestivalWorld {
       );
     }
     this.onAction({ type: 'treat', target: mentor.name });
+  }
+
+  /**
+   * Hand a resident's introduction to the interface, and turn to face them.
+   *
+   * Answers false for a live attendee, who has no profile — the caller then
+   * greets them instead, so a hold on somebody without one is a wave rather
+   * than nothing happening. A resident with no biography written yet still
+   * opens: their name and job title are worth showing, and the card fills out
+   * on its own as STAFF write.
+   */
+  private openNpcIntroduction(target: { name: string; npc?: NpcAvatar }): boolean {
+    const npc = target.npc;
+    if (!npc) return false;
+    const profile = this.npcProfileById.get(npc.id);
+    // Face them, as greeting them does. Being read about while the reader
+    // stands side-on to you looks like the prompt fired at the wrong person.
+    this.player.rotation.set(0, Math.atan2(
+      npc.group.position.x - this.player.position.x,
+      npc.group.position.z - this.player.position.z,
+    ), 0);
+    this.onAction({
+      type: 'npcIntroduction',
+      id: npc.id,
+      name: profile?.name?.trim() || npc.name,
+      title: profile?.title?.trim() ?? '',
+      introduction: profile?.introduction?.trim() ?? '',
+    });
+    return true;
   }
 
   private greetSocialTarget(target: { name: string; npc?: NpcAvatar; remote?: RemoteAvatar }): void {
@@ -6298,7 +6391,16 @@ export class FestivalWorld {
    * pinch, and only because iOS would otherwise keep the gesture for itself.
    */
   private readonly canvasTouch = (event: TouchEvent): void => {
-    if (event.touches.length < 2) {
+    // `targetTouches`, never `touches`.
+    //
+    // `touches` is every finger on the screen, wherever it landed. So a thumb
+    // resting on the movement stick and a finger dragging the world counted as
+    // two fingers and turned every camera drag into a zoom — which is exactly
+    // what was reported. `targetTouches` is only the fingers that came down on
+    // the canvas itself, so the stick, the action pads and the pass menus are
+    // all outside the gesture by construction, with no zone to lay out and
+    // nothing to keep in sync with the layout.
+    if (event.targetTouches.length < 2) {
       this.touchPinching = false;
       this.touchPinchSpread = 0;
       return;
@@ -6306,7 +6408,7 @@ export class FestivalWorld {
     // Claim the gesture whatever the camera is doing with it, or releasing a
     // two-finger touch over a seated view leaves the page itself scaled.
     event.preventDefault();
-    const [first, second] = [event.touches[0], event.touches[1]];
+    const [first, second] = [event.targetTouches[0], event.targetTouches[1]];
     const spread = pinchSpread(
       { x: first.clientX, y: first.clientY },
       { x: second.clientX, y: second.clientY },
@@ -6331,7 +6433,7 @@ export class FestivalWorld {
   };
 
   private readonly canvasTouchEnd = (event: TouchEvent): void => {
-    if (event.touches.length >= 2) return;
+    if (event.targetTouches.length >= 2) return;
     this.touchPinching = false;
     this.touchPinchSpread = 0;
   };
@@ -6344,8 +6446,11 @@ export class FestivalWorld {
         const [a, b] = [...this.touchPoints.values()];
         const spread = Math.hypot(a.x - b.x, a.y - b.y);
         // Not while the native touch path is driving, or the same two fingers
-        // are counted twice and the view zooms at double speed.
-        if (!this.touchPinching && this.pinchDistance > 0 && this.canPinchZoom()) {
+        // are counted twice and the view zooms at double speed. And not at all
+        // once that path exists on this device: it counts only the fingers that
+        // landed on the canvas, which this cannot, and a thumb on the movement
+        // stick must never be half of a pinch.
+        if (!this.touchPinching && !this.canvasTouchSupported && this.pinchDistance > 0 && this.canPinchZoom()) {
           const zoomed = pinchZoom(this.cameraZoom, this.pinchDistance, spread);
           if (zoomed !== this.cameraZoom) { this.cameraZoom = zoomed; this.rememberZoom(); }
         }
@@ -6367,8 +6472,25 @@ export class FestivalWorld {
     const deltaY = event.clientY - this.cameraPointerY;
     this.cameraPointerX = event.clientX;
     this.cameraPointerY = event.clientY;
-    if (Math.abs(deltaX) > 180 || Math.abs(deltaY) > 180) return;
-    this.applyLookDelta(deltaX, deltaY);
+    // Clamped, not discarded.
+    //
+    // This used to hand back anything over 180px, which is a guard against a
+    // pointer jumping when capture changes — but on a phone a quick flick of
+    // the thumb genuinely covers more than that between two events, and
+    // throwing those away is a drag that stops responding exactly when it is
+    // moved fastest. That is the "buggy" feel. A jump is now clamped to the
+    // largest believable step instead, so a fast swipe turns the view a long
+    // way and a spurious one cannot spin it.
+    const step = 320;
+    this.applyLookDelta(
+      THREE.MathUtils.clamp(deltaX, -step, step),
+      THREE.MathUtils.clamp(deltaY, -step, step),
+      // A thumb has a few hundred pixels to work with, a mouse has a desk and
+      // can be picked up and put down again. At the shipped sensitivity a
+      // phone needed about five full swipes to turn ninety degrees, which is
+      // why turning around felt impossible rather than merely slow.
+      event.pointerType === 'mouse' ? 1 : TOUCH_LOOK_GAIN,
+    );
   };
 
   /**
@@ -6379,7 +6501,9 @@ export class FestivalWorld {
    * orbits all clamp differently, and a second copy of that would drift out of
    * step the first time one of them changed.
    */
-  private applyLookDelta(deltaX: number, deltaY: number): void {
+  private applyLookDelta(deltaX: number, deltaY: number, gain = 1): void {
+    deltaX *= gain;
+    deltaY *= gain;
     if (this.xrActive && this.xrSimulated) {
       if (this.phoneOrientationEnabled && this.phoneOrientationReceived) return;
       // No hidden discount here any more. The slider is the whole of it, and
@@ -12328,6 +12452,7 @@ export class FestivalWorld {
    * even when the ground is not.
    */
   private cameraSteeringAllowed(): boolean {
+    if (!CAMERA_MAY_STEER) return false;
     if (this.airborne) return false;
     const { x, z } = this.player.position;
     const here = this.groundHeightAt(x, z);
@@ -12371,14 +12496,44 @@ export class FestivalWorld {
     vector.divideScalar(reach);
     const step = 0.24;
     const clearance = 0.28;
-    for (let travelled = step; travelled <= reach + step; travelled += step) {
-      const distance = Math.min(travelled, reach);
+    const blocked = (distance: number): boolean => {
       const x = eye.x + vector.x * distance;
       const y = eye.y + vector.y * distance;
       const z = eye.z + vector.z * distance;
-      if (this.blocksCamera(x, z, y) || y < this.groundHeightAt(x, z, this.player.position.y) + 0.45) {
-        return Math.max(0.12, distance - clearance);
+      return this.blocksCamera(x, z, y) || y < this.groundHeightAt(x, z, this.player.position.y) + 0.45;
+    };
+    let previous = 0;
+    for (let travelled = step; travelled <= reach + step; travelled += step) {
+      const distance = Math.min(travelled, reach);
+      if (blocked(distance)) {
+        /**
+         * Find where the surface actually is, not which stride hit it.
+         *
+         * The march samples every 0.24, and returning the sample meant this
+         * function could only ever answer a multiple of 0.24 — a staircase. The
+         * camera's distance is built on this answer, so the view came in one
+         * tread at a time: measured walking up to a building, a jump of a third
+         * of a unit every fourteenth frame, with nothing in between. That is the
+         * lunge that was reported, and no amount of easing downstream could
+         * smooth it, because the signal being eased was the staircase. Two
+         * earlier attempts at this failed for exactly that reason.
+         *
+         * Five bisections between the last clear sample and this blocked one
+         * puts the surface within eight millimetres, which is far below what
+         * the camera's own easing would show. The answer stays conservative:
+         * `high` is always a point known to be blocked, so the distance
+         * returned is never past the surface.
+         */
+        let low = previous;
+        let high = distance;
+        for (let refinement = 0; refinement < 5; refinement += 1) {
+          const middle = (low + high) / 2;
+          if (blocked(middle)) high = middle;
+          else low = middle;
+        }
+        return Math.max(0.12, high - clearance);
       }
+      previous = distance;
     }
     return reach;
   }
@@ -12441,11 +12596,31 @@ export class FestivalWorld {
       cameraTarget.copy(eye).addScaledVector(this.cameraProbe, reach);
       safe = this.cameraClearReach(eye, cameraTarget);
     }
-    // The distance is eased rather than the position, so the view closes in
-    // behind something and opens again afterwards without either being a jump.
-    // Snapping it was what made walking past a seat feel like a shove.
-    if (this.cameraReach <= 0 || safe < this.cameraReach) this.cameraReach = safe;
-    else this.cameraReach += (safe - this.cameraReach) * (1 - Math.exp(-delta * 8.5));
+    /**
+     * Ease the distance in *both* directions.
+     *
+     * Opening out was eased; closing in was assigned outright. So walking up to
+     * anything snapped the camera towards the back of the avatar's head in a
+     * single frame, which is the sudden zoom that was reported as dizziness —
+     * and it happened constantly, because a world this full always has
+     * something just behind you.
+     *
+     * Coming in is still quicker than going out: it has to keep up with the
+     * camera's own easing, or the lens would be inside the wall while the
+     * distance was still catching up. It does not have to be instant, because
+     * it is not what guarantees anything — the hard clamp on the rendered
+     * position in `updateCamera` is, and that runs against the real geometry
+     * every frame after this.
+     *
+     * The first frame is exempt: there is no previous distance to ease from,
+     * and starting every visit by gliding in from the far plane would be worse
+     * than arriving.
+     */
+    if (this.cameraReach <= 0) this.cameraReach = safe;
+    else {
+      const rate = safe < this.cameraReach ? CAMERA_REACH_CLOSE_RATE : CAMERA_REACH_OPEN_RATE;
+      this.cameraReach += (safe - this.cameraReach) * (1 - Math.exp(-delta * rate));
+    }
     if (this.cameraReach >= reach - 0.01) return;
     cameraTarget.copy(eye).addScaledVector(this.cameraProbe, this.cameraReach);
   }
@@ -12523,7 +12698,17 @@ export class FestivalWorld {
       dirX = Math.sin(yaw);
       dirZ = Math.cos(yaw);
     }
-    const radius = Math.max(1.6, available);
+    /**
+     * The room's own limit outranks the comfortable minimum.
+     *
+     * `Math.max(1.6, available)` was safe while the view could swing: if the
+     * orbit it was asked for had less than 1.6 of room, it went and found a
+     * direction that had more. With the swing gone that floor can push the
+     * camera straight through the room's wall and show the void behind it, so
+     * the cap wins and the view is allowed to come very close instead. The
+     * avatar is faded out before the lens reaches their head.
+     */
+    const radius = Math.max(0.35, Math.min(available, preferred));
     const squeeze = (preferred - radius) / preferred;
     const floorY = this.groundHeightAt(x, z);
 
@@ -12649,6 +12834,24 @@ export class FestivalWorld {
     else this.interact(this.promptAction === 'shift');
   }
 
+  /**
+   * What walking up to somebody offers.
+   *
+   * A tap greets them. A hold reads their introduction — but only for a
+   * resident: a live attendee is another visitor, with no profile for STAFF to
+   * have written, so the hold is not offered and the prompt does not promise
+   * it. The dog says it differently because the dog wags.
+   *
+   * `promptSecondary` is what a phone and a headset read to know the hold
+   * exists at all, neither of which can say SHIFT+E.
+   */
+  private socialLabel(target: { name: string; npc?: NpcAvatar }): string {
+    if (this.controlledNpcId === 'MENTOR') return `E / WAG TAIL AT ${target.name}`;
+    if (!target.npc) return `E / WAVE TO ${target.name}`;
+    this.promptSecondary = true;
+    return `E / WAVE TO ${target.name} · SHIFT+E / INTRODUCTION`;
+  }
+
   private interactionLabel(): string | undefined {
     this.promptAction = 'interact';
     this.promptActionable = true;
@@ -12685,9 +12888,7 @@ export class FestivalWorld {
       return 'E / TAKE POPCORN';
     }
     const followerGreeting = this.mentorFollowsActiveAvatar() ? this.nearestSocialTarget() : undefined;
-    if (followerGreeting) return this.controlledNpcId === 'MENTOR'
-      ? `E / WAG TAIL AT ${followerGreeting.name}`
-      : `E / WAVE TO ${followerGreeting.name}`;
+    if (followerGreeting) return this.socialLabel(followerGreeting);
     // Both at once: a key each, and the prompt says which is which.
     if (this.carriedItem === 'DRINK' && this.nearbyMentor()) {
       this.promptSecondary = true;
@@ -12712,9 +12913,7 @@ export class FestivalWorld {
     const dj = this.nearbyDj();
     if (dj) return `E / REQUEST A TRACK FROM ${dj.name}`;
     const socialTarget = this.nearestSocialTarget();
-    if (socialTarget) return this.controlledNpcId === 'MENTOR'
-      ? `E / WAG TAIL AT ${socialTarget.name}`
-      : `E / WAVE TO ${socialTarget.name}`;
+    if (socialTarget) return this.socialLabel(socialTarget);
     if (this.player.position.distanceTo(pamphletPosition) < 2.35) {
       return this.hasPamphlet ? 'E / OPEN FESTIVAL PAMPHLET' : 'E / TAKE FESTIVAL PAMPHLET';
     }

@@ -289,6 +289,66 @@ test('staff can update NPC names and job titles across the festival', async () =
   assert.equal(config.npcProfiles.find((profile) => profile.id === 'KENNY').title, 'Senior Director');
 });
 
+const adminPost = (path, body) => fetch(`${baseUrl}${path}`, {
+  method: 'POST',
+  headers: {
+    'content-type': 'application/json',
+    'x-festival-admin-key': 'test-admin-key',
+    origin: 'http://127.0.0.1:5173',
+  },
+  body: JSON.stringify(body),
+});
+
+test('staff write a resident introduction, and can take it back off again', async () => {
+  // Held on the wave button in the world. Nothing is seeded, because the roster
+  // is real colleagues and no biography is invented for them, so the whole
+  // feature turns on STAFF being able to put one in and clear it again.
+  const written = await adminPost('/api/admin/npcs', {
+    npcId: 'KENNY', name: 'KENNY', title: 'Director',
+    introduction: 'Directed the opening night film.  ',
+  });
+  assert.equal(written.status, 200);
+  const served = async () => {
+    const config = await (await fetch(`${baseUrl}/api/config`)).json();
+    return config.npcProfiles.find((profile) => profile.id === 'KENNY');
+  };
+  let profile = await served();
+  // Trimmed on the way in by safeText, like every other field STAFF type.
+  assert.equal(profile.introduction, 'Directed the opening night film.');
+  assert.equal(profile.title, 'Director');
+
+  // Empty is a real answer, not a missing one: it is how a resident goes back
+  // to having just a name and a job title on their card.
+  const cleared = await adminPost('/api/admin/npcs', {
+    npcId: 'KENNY', name: 'KENNY', title: 'Director', introduction: '   ',
+  });
+  assert.equal(cleared.status, 200);
+  profile = await served();
+  assert.equal(profile.introduction, '');
+
+  // A rename must not quietly drop a biography that is already written.
+  await adminPost('/api/admin/npcs', {
+    npcId: 'KENNY', name: 'KENNY', title: 'Director', introduction: 'Back again.',
+  });
+  const renamed = await adminPost('/api/admin/npcs', {
+    npcId: 'KENNY', name: 'KEN', title: 'Senior Director', introduction: 'Back again.',
+  });
+  assert.equal(renamed.status, 200);
+  profile = await served();
+  assert.equal(profile.name, 'KEN');
+  assert.equal(profile.introduction, 'Back again.');
+
+  // Put it back, so the tests after this one see the roster they expect.
+  await adminPost('/api/admin/npcs', { npcId: 'KENNY', name: 'KENNY', title: 'Senior Director', introduction: '' });
+});
+
+test('an unknown resident cannot be given an introduction', async () => {
+  const response = await adminPost('/api/admin/npcs', {
+    npcId: 'NOBODY', name: 'NOBODY', title: 'Ghost', introduction: 'Unwelcome.',
+  });
+  assert.equal(response.status, 400);
+});
+
 test('staff can add a new NPC to the shared roster', async () => {
   const added = await fetch(`${baseUrl}/api/admin/npcs/add`, {
     method: 'POST',
@@ -305,7 +365,10 @@ test('staff can add a new NPC to the shared roster', async () => {
   const configResponse = await fetch(`${baseUrl}/api/config`);
   const config = await configResponse.json();
   const profile = config.npcProfiles.find((candidate) => candidate.id === payload.npcId);
-  assert.deepEqual(profile, { id: payload.npcId, name: 'ALICE', title: 'Producer' });
+  // An introduction comes back empty on a new resident, and that is the
+  // intended state: nobody's biography is invented, so a name and a job title
+  // is all a newly added NPC has until STAFF write one.
+  assert.deepEqual(profile, { id: payload.npcId, name: 'ALICE', title: 'Producer', introduction: '' });
 });
 
 test('staff NPC control preserves the original attendee and restores its position', async () => {

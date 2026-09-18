@@ -2275,6 +2275,10 @@ export class App {
         : `GIVING ${action.target} A TREAT`);
       return;
     }
+    if (action.type === 'npcIntroduction') {
+      this.openNpcAbout(action);
+      return;
+    }
     if (action.type === 'greet') {
       this.showWorldAlert(action.gesture === 'tail-wag'
         ? (this.language === 'zh-TW' ? `向 ${action.target} 搖尾巴` : `WAGGING TAIL AT ${action.target}`)
@@ -3588,6 +3592,77 @@ export class App {
     });
     menu.querySelector<HTMLButtonElement>('[data-seat-back]')?.addEventListener('click', () => {
       this.openSeatMenu(this.activeSeatId, venue);
+    });
+  }
+
+  /**
+   * A resident's introduction, opened by holding the greeting on them.
+   *
+   * Rendered into `#seat-menu` with an owner of its own, exactly as the DJ
+   * booth's introduction is. Three things fall out of reusing that element:
+   * the liquid-glass styling is already right, the headset already paints it
+   * (`#seat-menu` is second in XrHud's source list), and the DJ panel's
+   * re-render guard checks for its own owner so it will not draw over this.
+   *
+   * These are real colleagues and nothing is written on their behalf, so most
+   * will open with a name and a job title and no biography under them. That is
+   * the intended state, not an error — the card fills out as STAFF write.
+   */
+  private openNpcAbout(profile: { id: string; name: string; title: string; introduction: string }): void {
+    const menu = this.root.querySelector<HTMLElement>('#seat-menu');
+    if (!menu) return;
+    const zh = this.language === 'zh-TW';
+    // No service, nowhere to save. The introduction itself still shows.
+    const canEdit = Boolean(this.staffKey) && this.festivalClient.online;
+    const paragraphs = profile.introduction
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => `<p>${this.escapeHtml(line)}</p>`)
+      .join('');
+    menu.dataset.menuOwner = 'npc';
+    menu.hidden = false;
+    menu.innerHTML = `
+      <p class="eyebrow">${zh ? '團隊介紹' : 'THE TEAM'}</p>
+      <h2 id="seat-menu-title">${this.escapeHtml(profile.name)}</h2>
+      ${profile.title ? `<p class="dj-about__role">${this.escapeHtml(profile.title)}</p>` : ''}
+      ${paragraphs
+        ? `<div class="dj-about__body">${paragraphs}</div>`
+        : `<p class="dj-about__hint dj-about__wide">${zh
+          ? '尚未填寫介紹。'
+          : 'No introduction written yet.'}</p>`}
+      ${canEdit ? `
+      <form class="dj-about__edit" data-npc-about-edit>
+        <p class="eyebrow dj-about__wide">${zh ? 'STAFF 編輯' : 'STAFF EDIT'}</p>
+        <label class="dj-about__wide"><span>${zh ? '介紹' : 'INTRODUCTION'}</span><textarea name="introduction" rows="6" maxlength="1200">${this.escapeHtml(profile.introduction)}</textarea></label>
+        <p class="dj-about__hint dj-about__wide">${zh
+          ? '留空即為尚未填寫。名稱與職稱在 STAFF 面板編輯。'
+          : 'Leave it empty for no introduction. The name and job title are edited in the STAFF panel.'}</p>
+        <button type="submit">${zh ? '儲存介紹' : 'SAVE INTRODUCTION'}</button>
+      </form>` : ''}
+      <button class="seat-menu__back dj-about__back" type="button" data-npc-about-close>${zh ? '關閉' : 'CLOSE'}</button>`;
+
+    menu.querySelector<HTMLButtonElement>('[data-npc-about-close]')?.addEventListener('click', () => {
+      this.hideSeatMenu();
+    });
+    menu.querySelector<HTMLFormElement>('[data-npc-about-edit]')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const introduction = form.querySelector<HTMLTextAreaElement>('textarea[name="introduction"]')?.value.trim() ?? '';
+      const submit = form.querySelector<HTMLButtonElement>('button[type=submit]');
+      if (submit) submit.disabled = true;
+      // The name and the title go back unchanged: the service takes all three
+      // together, and this panel is not where those two are edited.
+      void this.festivalClient
+        .updateNpcProfile(this.staffKey, profile.id as NpcId, profile.name, profile.title, introduction)
+        .then(() => {
+          this.showWorldAlert(zh ? '介紹已儲存' : 'INTRODUCTION SAVED');
+          this.openNpcAbout({ ...profile, introduction });
+        })
+        .catch((error) => {
+          if (submit) submit.disabled = false;
+          this.showWorldAlert(error instanceof Error ? error.message : (zh ? '儲存失敗' : 'SAVE FAILED'));
+        });
     });
   }
 
@@ -5389,10 +5464,14 @@ export class App {
           const npcId = form.dataset.npcForm as NpcId;
           const name = form.querySelector<HTMLInputElement>('input[name="npcName"]')?.value.trim() ?? '';
           const title = form.querySelector<HTMLInputElement>('input[name="npcTitle"]')?.value.trim() ?? '';
+          // Not required, and an empty one is a real answer: it means this
+          // resident has no biography yet, which the world draws as a card with
+          // just their name and job title on it.
+          const introduction = form.querySelector<HTMLTextAreaElement>('textarea[name="npcIntroduction"]')?.value.trim() ?? '';
           if (!name || !title) return;
           const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
           if (button) button.disabled = true;
-          void this.festivalClient.updateNpcProfile(this.staffKey, npcId, name, title)
+          void this.festivalClient.updateNpcProfile(this.staffKey, npcId, name, title, introduction)
             .then(() => this.refreshAdminState())
             .catch((error) => {
               this.adminError = error instanceof Error ? error.message : 'NPC profile update failed.';
@@ -5871,6 +5950,7 @@ export class App {
             <span class="npc-dot">NPC</span>
             <label><span>${this.language === 'zh-TW' ? '名稱' : 'NAME'}</span><input name="npcName" maxlength="16" required value="${this.escapeAttribute(profile.name)}" /></label>
             <label><span>${this.language === 'zh-TW' ? '職稱' : 'JOB TITLE'}</span><input name="npcTitle" maxlength="40" required value="${this.escapeAttribute(profile.title)}" /></label>
+            <label class="staff-npc-intro"><span>${this.language === 'zh-TW' ? '介紹' : 'INTRODUCTION'}</span><textarea name="npcIntroduction" rows="3" maxlength="1200" placeholder="${this.language === 'zh-TW' ? '留空即為尚未填寫' : 'Leave empty for none'}">${this.escapeHtml(profile.introduction ?? '')}</textarea></label>
             <span class="staff-npc-actions"><button type="submit">${this.language === 'zh-TW' ? '儲存' : 'SAVE'}</button><button type="button" data-npc-play="${this.escapeAttribute(profile.id)}"${controlledNpcId === profile.id ? ' disabled' : ''}>${controlledNpcId === profile.id ? (this.language === 'zh-TW' ? '使用中' : 'PLAYING') : (this.language === 'zh-TW' ? '扮演' : 'PLAY AS')}</button></span>
           </form>`).join('')}</div>
         <form class="staff-npc-add" id="staff-npc-add">
@@ -6309,6 +6389,9 @@ export class App {
       id,
       name: served.get(id)?.name?.trim() || names?.[id]?.trim() || DEFAULT_NPC_NAMES[id],
       title: served.get(id)?.title?.trim() || NPC_TITLES[id],
+      // No local default, unlike the name and the title. Nobody's biography is
+      // invented here; an absent one means STAFF have not written it yet.
+      introduction: served.get(id)?.introduction?.trim() || '',
     }));
     for (const [id, profile] of served) {
       if (known.has(id)) continue;
@@ -6316,6 +6399,7 @@ export class App {
         id,
         name: profile.name?.trim() || id,
         title: profile.title?.trim() || 'Festival Staff',
+        introduction: profile.introduction?.trim() || '',
       });
     }
     return merged.slice(0, 24);

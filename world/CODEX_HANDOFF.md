@@ -1,10 +1,102 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-18 · **walking must not move the camera — one avoidance owner, see Latest** · **curl is not a browser — test media hosts from a page, see Latest** · **the headset paints its own interface, and only a headset does — see Latest** · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
+Last updated: 2026-09-18 · **a fix that only moves a symptom is not one — measure both sides** · **walking must not move the camera — one avoidance owner, see Latest** · **curl is not a browser — test media hosts from a page, see Latest** · **the headset paints its own interface, and only a headset does — see Latest** · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
 > obsolete no-publish rule and branch name. Use this file for the active process.
+
+---
+
+# Latest: introductions for every resident, and three real camera faults — BETA PUBLISHED (2026-09-18)
+
+## Pass 3: hold the greeting to read somebody's introduction
+
+The last item of the ten. Almost all of it was extending what was already
+there rather than building anything.
+
+**Nothing is seeded, deliberately.** The roster is the owner's real colleagues,
+so no biography is written on their behalf — the owner chose "build it empty,
+STAFF fills it in". A resident with no introduction still opens a card with
+their name and job title on it; that is the intended state, not a fault.
+
+- Server: `npcIntroductions`, in `publicNpcProfiles()`, persisted, restored, and
+  written through the **existing** `/api/admin/npcs` endpoint rather than a new
+  one, so a resident is edited in one place and one save. English only, at the
+  owner's choice; `introductionZh` can go beside it without disturbing anything.
+  No seed-edition guard, unlike `djProfiles`: the defaults are empty, so a stored
+  value is always somebody's writing and always wins.
+- World: `openNpcIntroduction()` off the **secondary** prompt, which already
+  existed three ways — SHIFT+E, `PROMPT_HOLD_MS` on a phone, `XR_HOLD_MS` on a
+  Quest. `socialLabel()` is now the single place that words a greeting, so the
+  prompt and the action cannot drift apart. Only offered for residents: a live
+  attendee has no profile, and a hold on one is a wave rather than nothing.
+- Interface: rendered into `#seat-menu` with `menuOwner = 'npc'`, exactly as the
+  DJ booth's introduction is. Three things fall out of that — the liquid glass is
+  already right, **the headset already paints it** (`#seat-menu` is second in
+  XrHud's source list), and the DJ panel's re-render guard checks for its own
+  owner so it will not draw over this one.
+- The two DJs are untouched. They are NPCs *and* DJs, `nearestSocialTarget()`
+  already skips `pose === 'dj'`, and their own richer bilingual panel is one tap
+  away at the booth. One introduction per person, edited in one place.
+- STAFF panel gets the same field, because ten of these will be written in one
+  sitting.
+
+## Three camera faults, and one still open
+
+**`event.touches` is every finger on the screen.** The pinch I added yesterday
+used it, so a thumb resting on the movement stick plus a finger dragging the
+world counted as two fingers and turned every camera drag into a zoom. That is
+what was reported. `event.targetTouches` is only the fingers that landed on the
+canvas, so the stick, the pads and the pass menus are outside the gesture by
+construction — no zone to lay out, nothing to keep in sync with the layout.
+
+**Turning was five swipes to the quarter-circle.** `0.0042 × lookSensitivity`
+at a default of 0.2 is 0.00084 rad/px, so ninety degrees needed 1,870px of drag.
+`TOUCH_LOOK_GAIN = 6` puts about sixty degrees in a half-screen swipe. The
+"buggy" half was separate: deltas over 180px were **discarded**, and a quick
+thumb flick genuinely covers more than that between two events, so the drag
+stopped responding exactly when moved fastest. Clamped now, not dropped.
+
+**`cameraClearReach` was a staircase.** It marched in 0.24 strides and returned
+the stride it hit, so the clear distance could only ever be a multiple of 0.24 —
+and the camera's distance is built on it. Five bisections between the last clear
+sample and the blocked one now put the surface within 8mm.
+
+**The swing is gone entirely**, by the owner's decision after trying it:
+`CAMERA_MAY_STEER = false`. Walking moves the avatar and nothing else. What keeps
+the lens out of masonry is the distance, eased both ways — it used to ease
+outward and *assign* inward, which was its own lurch. The machinery is left in
+place and tested rather than deleted, because that is a judgement about feel.
+
+That also exposed a real bug: `Math.max(1.6, available)` in the club was safe
+only while the view could swing aside, and with the swing gone that floor pushed
+the camera through the room's wall and showed the void. The room's cap wins now.
+
+**Still open, and pinned in `coastal-pose.test.mjs` at its measured size.** An
+inward lunge of about a third of a unit every tenth frame remains, with the view
+opening back out smoothly in between. Diagnosed, not guessed:
+`camera.position.lerp(cameraTarget)` interpolates along the **chord**, so it cuts
+the corner through masonry neither end is inside, and the hard clamp — which is
+what guarantees you cannot see through a wall — has to haul it back instantly.
+The fix is to ease along the **arc**, direction and distance separately about the
+avatar. That touches every camera mode including the seated one, so it is the
+owner's call.
+
+Three speculative fixes were tried first and each moved *when* the jump happened
+without changing its size: feeding the clamp back into the eased distance, then
+capping continuously (which ratchets — it collapsed the view to 0.1 units inside
+the avatar's head), then measuring along the lens line (no effect, and it crashed
+the `Object.create` fakes, which is how the crash was found). All three are
+removed. **Measure before and after; a fix that only moves a symptom is not one.**
+
+## Still open
+
+- The arc-easing decision above.
+- **Render needs a manual deploy** for the NPC introductions to be writable.
+- Nine introductions to be written by the owner or STAFF.
+- Immersive video still has no host.
+- None of the camera work is verified on the owner's iPhone.
 
 ---
 

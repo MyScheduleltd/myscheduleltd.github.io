@@ -777,10 +777,15 @@ export class FestivalClient {
     }
   }
 
-  async updateNpcProfile(key: string, npcId: NpcId, name: string, title: string): Promise<void> {
+  /**
+   * `introduction` is optional and may be empty: an empty one means "no
+   * biography yet", which is a state the world draws, so clearing it has to be
+   * possible. The service normalises and caps it.
+   */
+  async updateNpcProfile(key: string, npcId: NpcId, name: string, title: string, introduction = ''): Promise<void> {
     await this.adminRequest('/api/admin/npcs', key, {
       method: 'POST',
-      body: JSON.stringify({ npcId, name, title }),
+      body: JSON.stringify({ npcId, name, title, introduction }),
     });
   }
 
