@@ -11,15 +11,10 @@
         position: absolute;
         top:0;
     }
-    .contact-form{
-        flex:1;
-        @include rwd($md){
-            display: none;
-        }
-        .text:nth-child(2){
-            margin-top:2%;
-        }
-    }
+    // The enquiry form is gone. It never sent anything — it built a `mailto:`
+    // and handed off to the visitor's own mail app — and the owner chose to
+    // drop it rather than build a real one. What is left is the logo and the
+    // social links, centred, which is what a phone already showed.
     .share-wrapper{
         @include rwd($md){
             display: none;
@@ -43,6 +38,7 @@
         max-width: 80%;
         padding: 0 1em;
         height:100vh;
+        height:100dvh;
         justify-content: center;
         align-items: center;
         margin:auto;
@@ -51,7 +47,11 @@
         // }
         .container{
             width: 370px;
-            flex: 1;
+            // Was `flex: 1` to share the row with the form. Alone it is a fixed
+            // column, which `justify-content: center` above puts in the middle
+            // at every width.
+            flex: 0 0 auto;
+            margin-inline: auto;
             padding-top: 20px;
             .logo_icon{
                 width:100%;
@@ -98,7 +98,8 @@
         display: flex;
         flex-direction: column;
         justify-content: center;
-        flex:1;
+        flex: 0 0 auto;
+        margin-inline: auto;
 
         .title{
             text-align: center;
@@ -149,6 +150,7 @@
         background-color: #000;
         width:100%;
         height:100vh;
+        height:100dvh;
         position: absolute;
         .iframe-videos{
             position: relative;
