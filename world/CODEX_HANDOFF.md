@@ -133,6 +133,33 @@ The host needs: a real media response (not an HTML interstitial),
 `access-control-allow-origin` for the site's origin, byte-range support so the
 film can be seeked, and H.264/AAC MP4 with the moov atom at the front.
 
+`immersiveVideoSources.ts` now carries two routes and drops any entry without a
+usable URL, so a half-finished setup leaves the screens on their posters rather
+than shipping a broken src:
+
+- **`driveFiles`** — YouTube id → Drive file id, resolved through the Drive REST
+  API. Tested: `GET /drive/v3/files/<id>?alt=media` answers with
+  `access-control-allow-origin` reflecting the caller, so it **is** usable as a
+  texture. The ordinary `drive.google.com/uc?export=download` endpoint is **not**
+  and never was — `text/html`, the virus-scan interstitial, no CORS. They are
+  not interchangeable, and the difference is the whole reason this works.
+  Skibidi (`jiawzYgfkuI` → `1OwWa9w8…`) is already mapped and activates the
+  moment `driveApiKey` is filled in.
+- **`directUrls`** — a real CDN, which wins over Drive for the same film, so
+  moving one across needs no other change.
+
+> Drive is **not a CDN**: per-project quotas, and Google discourage serving
+> media this way. It is a route for testing in a headset, not for an audience.
+> The browser key ships in the public bundle and is public by design — the
+> restrictions on it are the protection, not secrecy. Never put an OAuth client
+> secret there.
+
+> **Drive's own `/preview` player is embeddable** (no `X-Frame-Options`, no
+> `frame-ancestors`) and would work on the flat screens through the existing
+> CSS3D path — but not in a headset, for the same reason YouTube does not. The
+> owner decided against adding it: the flat modes already work, and a second
+> embed path would be two players to keep in step for no new capability.
+
 ### Immersive video — the Drive link cannot work
 
 Tested: `drive.usercontent.google.com/download?id=…` answers
