@@ -175,3 +175,45 @@ test('every temple riser has equal height, terrain stays below treads, and the p
  }
  for(const x of [74.5,76,91,106,107.5])for(const z of [-15.5,23.5])assert.ok(terrainHeightAt(x,z)>5.82,`exposed foundation ${x},${z}`);
 });
+
+test('nothing on the DJ console reaches back into the DJ standing at it', async () => {
+  // The reported fault: on a phone the DJs were clipping through their booths.
+  // The console's top used to overhang the cabinet behind it — the worktop to
+  // -0.65 and the platters to -0.70 — while the DJ stands at -0.9 and leans
+  // forward over the decks. The overhang went through their chest.
+  const bundled = await build({
+    entryPoints: [new URL('../src/world/CoastalFurniture.ts', import.meta.url).pathname],
+    bundle: true, platform: 'node', format: 'esm', write: false,
+  });
+  const { createCoastalDecks, DECK_TOP_BACK, DECK_DJ_STAND_Z } =
+    await import('data:text/javascript;base64,' + Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+
+  const decks = createCoastalDecks(4.9);
+  decks.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  const whole = new THREE.Box3().setFromObject(decks);
+
+  // Only the parts standing above the worktop can meet a chest; the cabinet
+  // below is exactly what the DJ's legs are meant to be hidden behind.
+  let worst = Number.POSITIVE_INFINITY;
+  let culprit = '';
+  decks.traverse((child) => {
+    if (!child.isMesh) return;
+    box.setFromObject(child);
+    if (box.max.y < 1.35) return;
+    if (box.min.z < worst) { worst = box.min.z; culprit = child.name || 'unnamed'; }
+  });
+
+  assert.ok(worst >= DECK_TOP_BACK - 0.001,
+    `${culprit} reaches back to ${worst.toFixed(3)}, past DECK_TOP_BACK ${DECK_TOP_BACK}`);
+
+  // And the gap that leaves. A leaning torso is about a quarter deep at the
+  // chest; anything under that and the console is inside the DJ again.
+  const chest = DECK_DJ_STAND_Z + 0.25 + 0.12; // half-depth, plus the forward lean
+  assert.ok(worst > chest,
+    `the console reaches ${worst.toFixed(3)} but the DJ's chest is at ${chest.toFixed(3)}`);
+
+  // The front lip is the side the room sees, and it has not moved.
+  assert.ok(Math.abs(whole.max.z - 0.95) < 0.001, `front lip moved to ${whole.max.z.toFixed(3)}`);
+  decks.traverse((child) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose?.(); } });
+});

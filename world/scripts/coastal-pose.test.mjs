@@ -642,12 +642,16 @@ test('follow camera stays on the avatar side of a nearby building wall',()=>{
   const player=new THREE.Group();player.position.set(0,.28,0);
   Object.assign(world,{
     player,playerState:'walking',cameraMode:'follow',cameraReach:0,
-    cameraProbe:new THREE.Vector3(),groundHeightAt:()=>0,
+    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),groundHeightAt:()=>0,
+    clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
     colliders:[{minX:-5,maxX:5,minZ:2,maxZ:3,minY:-1,maxY:10}],
   });
   const eye=player.position.clone().add(new THREE.Vector3(0,2.84,0));
+  // The swing is eased now rather than snapped — a camera that jumped to its
+  // alternate in a single frame is precisely the lurch the owner reported — so
+  // settle it over a second of frames and read where it comes to rest.
   const target=new THREE.Vector3(0,3.12,10);
-  world.pullCameraClearOfWalls(target,1/60);
+  for(let frame=0;frame<240;frame++){target.set(0,3.12,10);world.pullCameraClearOfWalls(target,1/60);}
   assert.ok(target.z<2,`camera target crossed the wall at z=${target.z}`);
   assert.ok(target.distanceTo(eye)>3.6,'a wall behind the avatar must not snap the camera against its face');
   assert.ok(Math.abs(target.x)>5,'the camera goes around the edge of the wall');
@@ -662,29 +666,34 @@ test('wall avoidance holds one side and returns to the usual orbit after clearan
   const world=Object.create(FestivalWorld.prototype);
   const player=new THREE.Group();player.position.set(0,.28,0);
   Object.assign(world,{player,playerState:'walking',cameraMode:'follow',cameraReach:0,
-    cameraProbe:new THREE.Vector3(),groundHeightAt:()=>0,
+    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),groundHeightAt:()=>0,
+    clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
     colliders:[{minX:-5,maxX:5,minZ:2,maxZ:3,minY:-1,maxY:10}]});
   const first=new THREE.Vector3(0,3.12,10);
-  world.pullCameraClearOfWalls(first,1/60);
+  for(let frame=0;frame<240;frame++){first.set(0,3.12,10);world.pullCameraClearOfWalls(first,1/60);}
+  const side=world.wallAvoidance.side;
+  // Thirty more frames against the same wall must not change its mind.
   const second=new THREE.Vector3(0,3.12,10);
-  world.pullCameraClearOfWalls(second,1/60);
+  for(let frame=0;frame<30;frame++){second.set(0,3.12,10);world.pullCameraClearOfWalls(second,1/60);}
   assert.ok(Math.sign(first.x)===Math.sign(second.x),'the orbit must not flip sides between frames');
+  assert.equal(world.wallAvoidance.side,side,'the committed side must survive');
   player.position.z=-12;
   const clear=new THREE.Vector3(0,3.12,-2);
-  world.pullCameraClearOfWalls(clear,1/60);
-  assert.equal(world.cameraAvoidanceSide,0);
-  assert.equal(clear.x,0,'the camera should return to the preferred orbit after the wall');
+  for(let frame=0;frame<120;frame++){clear.set(0,3.12,-2);world.pullCameraClearOfWalls(clear,1/60);}
+  assert.equal(world.wallAvoidance.side,0);
+  assert.ok(Math.abs(clear.x)<.05,`the camera should return to the preferred orbit after the wall, got x=${clear.x}`);
 });
 
 test('perspective orbit also stays away from a wall at its side',()=>{
   const world=Object.create(FestivalWorld.prototype);
   const player=new THREE.Group();player.position.set(0,.28,0);
   Object.assign(world,{player,playerState:'walking',cameraMode:'perspective',cameraReach:0,
-    cameraProbe:new THREE.Vector3(),groundHeightAt:()=>0,
+    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),groundHeightAt:()=>0,
+    clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
     colliders:[{minX:2,maxX:3,minZ:-5,maxZ:5,minY:-1,maxY:10}]});
   const eye=player.position.clone().add(new THREE.Vector3(0,2.84,0));
   const target=new THREE.Vector3(9,3.12,2);
-  world.pullCameraClearOfWalls(target,1/60);
+  for(let frame=0;frame<240;frame++){target.set(9,3.12,2);world.pullCameraClearOfWalls(target,1/60);}
   assert.ok(target.distanceTo(eye)>3.6,'perspective orbit must avoid a sudden face closeup');
   assert.ok(world.cameraClearReach(eye,target)>=target.distanceTo(eye)-.32);
 });
@@ -694,7 +703,9 @@ test('club wall confinement finds room to the side before squeezing the camera',
   const player=new THREE.Group();player.position.set(-51.5,-15.7,15);
   Object.assign(world,{player,playerState:'walking',cameraMode:'follow',
     cameraOrbit:{follow:{yaw:Math.PI/2,pitch:.3},perspective:{yaw:.8,pitch:.4}},
-    lookTarget:new THREE.Vector3(),groundHeightAt:()=>-16});
+    lookTarget:new THREE.Vector3(),groundHeightAt:()=>-16,
+    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),
+    clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0}});
   const target=new THREE.Vector3(-41.5,-12,15);
   // The swing is eased now rather than snapped, so it is settled over a second
   // of frames — a camera that jumped to its alternate in one frame is what made
@@ -710,10 +721,12 @@ test('the club camera commits to one side instead of swinging as you walk',()=>{
   const player=new THREE.Group();player.position.set(-51.5,-15.7,15);
   Object.assign(world,{player,playerState:'walking',cameraMode:'follow',
     cameraOrbit:{follow:{yaw:Math.PI/2,pitch:.3},perspective:{yaw:.8,pitch:.4}},
-    lookTarget:new THREE.Vector3(),groundHeightAt:()=>-16});
+    lookTarget:new THREE.Vector3(),groundHeightAt:()=>-16,
+    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),
+    clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0}});
   const target=new THREE.Vector3(-41.5,-12,15);
   for(let frame=0;frame<90;frame+=1)world.confineCameraToClub(target,1/60);
-  const side=world.cameraAvoidanceSide;
+  const side=world.clubAvoidance.side;
   assert.ok(side===1||side===-1,'a side must have been taken');
   // Walk along the room and the camera must not flip to the other side, which
   // is what rotated the whole world around somebody pressing forward.
@@ -724,7 +737,7 @@ test('the club camera commits to one side instead of swinging as you walk',()=>{
     world.confineCameraToClub(target,1/60);
     biggestJump=Math.max(biggestJump,Math.hypot(target.x-previous.x,target.z-previous.z-0.25));
     previous=target.clone();
-    assert.equal(world.cameraAvoidanceSide,side,`the camera changed sides at step ${stepIndex}`);
+    assert.equal(world.clubAvoidance.side,side,`the camera changed sides at step ${stepIndex}`);
   }
   assert.ok(biggestJump<0.6,`the camera lurched ${biggestJump.toFixed(2)} in one frame`);
 });
@@ -735,6 +748,8 @@ test('approaching a building keeps the follow camera out of the face and the mas
   const camera=new THREE.PerspectiveCamera();camera.position.set(0,5,-7);
   Object.assign(world,{player,camera,lookTarget:new THREE.Vector3(),cameraProbe:new THREE.Vector3(),
     cameraMode:'follow',cameraZoom:1,cameraReach:0,playerState:'walking',
+    cameraScratch:new THREE.Vector3(),
+    clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
     cameraOrbit:{follow:{yaw:0,pitch:Math.atan2(3.4,10)},perspective:{yaw:.8,pitch:.4}},
     colliders:[{minX:-5,maxX:5,minZ:2,maxZ:3,minY:-1,maxY:10}],
     groundHeightAt:()=>0,confineCameraToClub(){},confineCameraOverWater(){},

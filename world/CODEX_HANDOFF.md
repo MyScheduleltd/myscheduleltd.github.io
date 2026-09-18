@@ -1,10 +1,103 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-18 · **curl is not a browser — test media hosts from a page, see Latest** · **the headset paints its own interface, and only a headset does — see Latest** · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
+Last updated: 2026-09-18 · **walking must not move the camera — one avoidance owner, see Latest** · **curl is not a browser — test media hosts from a page, see Latest** · **the headset paints its own interface, and only a headset does — see Latest** · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
 > obsolete no-publish rule and branch name. Use this file for the active process.
+
+---
+
+# Latest: the camera stops fighting itself, and the phone gets its resolution ramp back — BETA PUBLISHED (2026-09-18)
+
+## The stairs spun because two systems shared one field
+
+`confineCameraToClub` and `pullCameraClearOfWalls` both steer the view round
+obstructions, they both run every frame, and they **both wrote
+`cameraAvoidanceSide`**. Each overwrote the other's committed side, so the
+hysteresis meant to stop the view flip-flopping was what made it flip — every
+frame. On the NIMA ROOFTOP stairs, where the geometry under the camera changes
+step by step, that is a view that "rotates everywhere". It is also most of why
+walking with the joystick appeared to turn the camera.
+
+`pullCameraClearOfWalls` made it worse by assigning `cameraTarget` outright: a
+swing arriving in a single frame, with no easing at all, unlike the club's.
+
+`src/world/CameraAvoidance.ts` is now the one implementation, with **two
+separate states** (`clubAvoidance`, `wallAvoidance`). 17 tests in
+`scripts/camera-avoidance.test.mjs`.
+
+The owner's rule, chosen explicitly: **walking must not move the camera.** Only
+the drag turns the view. The swing exists solely so the lens does not end up
+inside a wall, and `cameraSteeringAllowed()` switches even that off on stairs
+and slopes — sampled as a ground gradient over 0.7 units, so it covers every
+staircase in the world without naming any of them. There the view closes in
+instead, which is steady even when the ground is not. An existing swing is
+*unwound* on the way onto stairs rather than dropped.
+
+Note the two ladders. The room ladder is coarse; a building's edge has to be
+cleared exactly, and stepping past it in coarse jumps settles the view *beside*
+the wall with a grazing sight line along its face. `AVOIDANCE_OFFSETS_FINE`.
+
+The three wall tests in `coastal-pose.test.mjs` asserted the old snap and now
+settle over frames. That is the behaviour change, not a regression.
+
+## Pinch could not work on a phone, and the phone never got a resolution ramp
+
+**`tuneRenderScale` began `if (this.graphicsMode !== 'normal') return;`.** A
+phone defaults to `lite`, so the adaptive resolution ramp never ran on the only
+device that needed it. It now runs in both modes, over `RENDER_SCALE_FLOOR`
+(0.67 normal, 0.5 lite), and it can raise the scale again as well as drop it —
+the old ramp was one-way, so one slow patch left the picture soft for the rest
+of the visit. `src/world/RenderScale.ts`, 9 tests, including one that models a
+genuinely marginal device and proves the ramp settles instead of hunting.
+
+Pinch-to-zoom was wired through pointer events only. That is correct on a desk
+and unreliable on iOS, which keeps two-finger gestures for its own page zoom —
+`touch-action: none` is not enough. A native `touchmove` handler with
+`passive: false` now drives the zoom and the pointer path stands down while it
+is running, so the same two fingers are not counted twice. The arithmetic is in
+`src/world/CameraInput.ts` with a dead zone, because two fingers resting on
+glass are never still and following the tremor made the view breathe.
+
+**Not verified on a phone** — this session has no iOS device and the browser
+pane is not Safari. The mechanism is the standard one; the fix is reasoned, not
+observed.
+
+The haze in `lite` closes in at 78 rather than 92. The camera's far plane is
+**deliberately left at 300**: the night sky's stars sit at radius 253 and
+bringing the plane in would clip them.
+
+## Two smaller ones
+
+**The DJs were clipping through their booths.** The console's top overhung the
+cabinet behind it — worktop to -0.65, platters to -0.70 — while the DJ stands
+at -0.9 and leans in. The overhang went through their chest. The top is pulled
+forward and trimmed to `DECK_TOP_BACK`; the front lip the room actually sees is
+unchanged. Moving the DJ instead would not work: `reachCoastalHand` clamps at
+0.925 and the left hand is *already* at full stretch, so the hands would have
+come off the decks. Locked down in `coastal.test.mjs`.
+
+**ABOUT's COMING SOON is gone.** The owner chose the looping-video treatment
+over centring the text. The middle block is now a third film block built exactly
+like the two around it — muted, looping, dimmed, with the centre logo opening it
+on YouTube. The film is `aboutVideos[2]` in `docs/js/allData.js` and is
+**defaulted to the showreel**, which duplicates the first block; the owner has
+been asked which film belongs there. `pug/about.pug` is the source, `docs/`
+the built copy — both edited, since prepros is not run here.
+
+Careful in `allData.js`: `contactVideos` holds the same two URLs as
+`aboutVideos`, so a naive search-and-replace edits the contact page too.
+
+## Still open
+
+- Which film goes in the ABOUT middle block.
+- Immersive video still has no host; Drive is out (see below), R2 or a Drive API
+  key is the decision.
+- Nothing here is verified on the owner's iPhone or on the Quest.
+- **Pass 3 — introductions for every NPC**, held on the wave button and
+  staff-editable, is still untouched.
+- Render still needs a manual deploy for the Walk Bell John Awards line.
 
 ---
 

@@ -13,6 +13,15 @@ function builder(name:string) {
   };
   return {group,box,disc};
 }
+/**
+ * How far back anything on top of the console reaches, in the group's own
+ * space, and where a DJ stands. The gap between them is what stops the
+ * console passing through the DJ's chest; `scripts/coastal.test.mjs` holds
+ * both ends of it.
+ */
+export const DECK_TOP_BACK = -.40;
+export const DECK_DJ_STAND_Z = -.9;
+
 export function createCoastalDecks(width=5.7):THREE.Group {
   const {group,box,disc}=builder('Timber DJ console'),m=palette();
   box('recessed-plinth',[width-.45,.16,.95],[0,.08,.25],m.dark);
@@ -20,17 +29,29 @@ export function createCoastalDecks(width=5.7):THREE.Group {
   box('enamel-front',[width-.6,.78,.06],[0,.71,.8],m.green);
   for(const x of [-1,1])box('corner-trim',[.12,1.1,1.15],[x*(width/2-.16),.71,.25],m.cream);
   for(let i=0;i<11;i++)box('front-vent',[.035,.5,.035],[(i-5)*(width-.9)/11,.66,.843],m.wood);
-  box('worktop',[width,.14,1.6],[0,1.31,.15],m.cream);
+  /**
+   * Everything on top of the console sits forward of the cabinet's back face.
+   *
+   * It used to overhang it: the worktop reached back to -0.65 and the platters
+   * to -0.70, while the cabinet stops at -0.275. The DJ stands at -0.9 and
+   * leans in, so that overhang passed straight through their chest — which is
+   * the clipping that was reported. The top is pulled forward and trimmed so
+   * nothing reaches past `DECK_TOP_BACK`, which leaves the DJ's chest clear
+   * while their hands still come down on the back of the platters, where a
+   * DJ's hands belong. The front lip over the enamel face is unchanged, and
+   * that is the side anybody in the room is looking at.
+   */
+  box('worktop',[width,.14,1.35],[0,1.31,.275],m.cream);
   for(const side of [-1,1]){
     const x=side*width*.27;
-    box('turntable',[1.45,.1,1.4],[x,1.43,0],m.green);
-    disc('platter',.49,.07,[x,1.515,0],m.dark);disc('record-label',.13,.015,[x,1.558,0],m.cream);
-    box('tonearm',[.035,.05,.58],[x+.48,1.55,-.03],m.metal);
-    box('start-button',[.13,.04,.13],[x-.52,1.51,.49],m.red);
+    box('turntable',[1.45,.1,1.25],[x,1.43,.25],m.green);
+    disc('platter',.49,.07,[x,1.515,.25],m.dark);disc('record-label',.13,.015,[x,1.558,.25],m.cream);
+    box('tonearm',[.035,.05,.58],[x+.48,1.55,.22],m.metal);
+    box('start-button',[.13,.04,.13],[x-.52,1.51,.71],m.red);
   }
-  box('mixer',[.82,.12,1.3],[0,1.44,0],m.dark);
-  for(const x of [-.24,0,.24])for(const z of [-.35,-.1,.2])box('mixer-knob',[.08,.09,.08],[x,1.55,z],m.cream);
-  for(const x of [-.24,0,.24])box('fader',[.08,.05,.18],[x,1.535,.45],m.red);
+  box('mixer',[.82,.12,1.1],[0,1.44,.25],m.dark);
+  for(const x of [-.24,0,.24])for(const z of [-.1,.15,.45])box('mixer-knob',[.08,.09,.08],[x,1.55,z],m.cream);
+  for(const x of [-.24,0,.24])box('fader',[.08,.05,.18],[x,1.535,.68],m.red);
   return group;
 }
 export function createCoastalSpeaker(width:number,height:number,depth:number):THREE.Group {

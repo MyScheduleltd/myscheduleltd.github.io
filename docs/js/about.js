@@ -9,6 +9,15 @@ $(function async(){
             <iframe  class="video" src="${aboutVideos[0].url}?rel=0&autoplay=1&mute=1&enablejsapi=1&showinfo=0&loop=1&playlist=${youtube_parser(aboutVideos[0].url)}"  allow='autoplay' allowfullscreen  frameborder="0" ></iframe>
         </div>
     `)
+    // The middle block, where the team board will go. Same treatment as the two
+    // around it: muted, looping, playing behind a dimmed screen, with the centre
+    // logo opening it full size. `loop` needs `playlist` set to the film's own
+    // id, or YouTube plays it once and stops on a black frame.
+    $('.aboutVideos3').append(`
+        <div class="iframe-videos">
+            <iframe  class="video" src="${aboutVideos[2].url}?rel=0&autoplay=1&mute=1&enablejsapi=1&showinfo=0&loop=1&playlist=${youtube_parser(aboutVideos[2].url)}"  allow='autoplay' allowfullscreen frameborder="0" ></iframe>
+        </div>
+    `)
     $('.aboutVideos2').append(`
         <div class="iframe-videos">
             <iframe  class="video" src="${aboutVideos[1].url}?rel=0&autoplay=1&mute=1&enablejsapi=1&showinfo=0&loop=1&playlist=${youtube_parser(aboutVideos[1].url)}"  allow='autoplay' allowfullscreen frameborder="0" ></iframe>

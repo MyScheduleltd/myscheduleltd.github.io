@@ -498,5 +498,5 @@ h2 {
   color: #FFF5EE;
   font-size: 2em;
 }
-.member-container:has(> .member-coming-soon){height:auto;min-height:60svh;margin-top:0}
-.member-coming-soon{width:100%;text-align:center;padding:0 20px;margin:0;font-size:48px;font-weight:bold;letter-spacing:4px;color:#fff}
+
+

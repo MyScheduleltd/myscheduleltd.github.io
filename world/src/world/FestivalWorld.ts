@@ -33,6 +33,9 @@ import { coastalRoof, createCoastalSedan, CONVERTIBLE } from './CoastalGeometry'
 import { XrHud } from './XrHud';
 import { XR_HOLD_MS, xrBindingFor, type XrAction } from './XrControls';
 import { videoSyncPlan, videoJoinTime, bufferedAheadOf } from './VideoSync';
+import { stepAvoidance, AVOIDANCE_OFFSETS_FINE, type AvoidanceState } from './CameraAvoidance';
+import { pinchZoom, pinchSpread, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX } from './CameraInput';
+import { planRenderScale, RENDER_SCALE_FLOOR } from './RenderScale';
 
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>;
@@ -575,8 +578,33 @@ const NPC_ANIMATION_RANGE_SQ = 38 * 38;
  * nobody is asked to walk a line somebody else is already walking.
  */
 const NPC_LANE_RADIUS = 2.6;
-const CAMERA_ZOOM_MIN = 0.45;
-const CAMERA_ZOOM_MAX = 2.2;
+/**
+ * The steepest ground the view will still swing over, as a rise over a run.
+ *
+ * 0.35 is a little under twenty degrees — steeper than any pavement here and
+ * shallower than every staircase. Above it the camera stops swinging around
+ * obstructions and closes in instead, because on a staircase the ground under
+ * the camera changes from step to step and a view that re-answers "how far can
+ * I see that way" on every one of them is the view that rotated everywhere on
+ * the rooftop stairs.
+ */
+/**
+ * Where the haze closes in when the graphics are set to 精簡, which is what a
+ * phone gets by default.
+ *
+ * Pulled in from 92. Distant scenery is still drawn out to the camera's far
+ * plane — the night sky's stars sit at 253, so that plane cannot simply be
+ * brought in without clipping them — but everything past this is shaded into
+ * flat haze, which costs far less than shading detail nobody can make out.
+ */
+const LITE_FOG_FAR = 78;
+const CAMERA_LEVEL_GROUND_GRADIENT = 0.35;
+/** How far out the ground is sampled to judge that. */
+const CAMERA_GROUND_PROBE = 0.7;
+const CAMERA_GROUND_SAMPLES: ReadonlyArray<readonly [number, number]> = [
+  [CAMERA_GROUND_PROBE, 0], [-CAMERA_GROUND_PROBE, 0], [0, CAMERA_GROUND_PROBE], [0, -CAMERA_GROUND_PROBE],
+];
+
 /** How far back the camera sat last visit, if the browser still remembers. */
 const readStoredZoom = (): number => {
   try {
@@ -1518,12 +1546,21 @@ export class FestivalWorld {
   private cameraShakePhase = 0;
   private readonly knockback = new THREE.Vector3();
   private readonly cameraProbe = new THREE.Vector3();
+  /** Scratch for the avoidance probe; the camera path allocates nothing. */
+  private readonly cameraScratch = new THREE.Vector3();
   /** How far back the view is actually sitting, eased towards where it may. */
   private cameraReach = 0;
-  /** Keep the same side of an obstruction until the intended orbit is clear. */
-  private cameraAvoidanceSide: -1 | 0 | 1 = 0;
-  /** The swing currently applied, eased rather than snapped into place. */
-  private cameraAvoidanceOffset = 0;
+  /**
+   * Two obstructions, two memories.
+   *
+   * Keeping the camera inside the club's walls and keeping it out of the
+   * world's solids are separate problems that happen on the same frame. They
+   * used to share one field, so each overwrote the other's committed side every
+   * frame and the hysteresis meant to steady the view was what shook it. They
+   * now run the same policy over their own state. See CameraAvoidance.
+   */
+  private readonly clubAvoidance: AvoidanceState = { side: 0, offset: 0 };
+  private readonly wallAvoidance: AvoidanceState = { side: 0, offset: 0 };
   private punchPointerX = 0;
   private punchPointerY = 0;
   private verticalVelocity = 0;
@@ -1573,6 +1610,18 @@ export class FestivalWorld {
   /** Every finger currently down on the world, so a pinch can be recognised. */
   private readonly touchPoints = new Map<number, { x: number; y: number }>();
   private pinchDistance = 0;
+  /**
+   * True while a native `touchmove` is driving the zoom.
+   *
+   * iOS is the reason this path exists at all. Pointer events carry two
+   * fingers on a desk browser, but on a phone the pinch was reported as simply
+   * not working, and a `touchmove` handler that calls `preventDefault` is the
+   * one mechanism Safari has never taken back for its own page zoom. When it
+   * is running, the pointer path stands down rather than counting the same two
+   * fingers a second time.
+   */
+  private touchPinching = false;
+  private touchPinchSpread = 0;
   /**
    * A camera's fov is its *vertical* one, so holding it at 58 on a phone held
    * upright leaves barely twenty-eight degrees across — a slot, with the street
@@ -1641,7 +1690,7 @@ export class FestivalWorld {
     this.cssRenderer = new CSS3DRenderer({ element: cssLayer });
     this.cssRenderer.domElement.classList.add('world-css3d__renderer');
 
-    this.scene.fog = new THREE.Fog(0x111521, 34, graphicsMode === 'normal' ? 150 : 92);
+    this.scene.fog = new THREE.Fog(0x111521, 34, graphicsMode === 'normal' ? 150 : LITE_FOG_FAR);
     const requestedCycleMinute = new URLSearchParams(window.location.search).get('cycleMinute');
     const parsedCycleMinute = requestedCycleMinute === null ? undefined : Number(requestedCycleMinute);
     const localTimeOverride = ['127.0.0.1', 'localhost'].includes(window.location.hostname) &&
@@ -1717,6 +1766,13 @@ export class FestivalWorld {
     // trackpad pinch arrives as a wheel event the browser would otherwise use
     // to zoom the whole document.
     this.canvas.addEventListener('wheel', this.cameraWheel, { passive: false });
+    // passive: false, or `preventDefault` is ignored and the page scales
+    // instead of the camera. `touch-action: none` on the canvas is not enough
+    // on iOS, which is why the phone could not pinch the world.
+    this.canvas.addEventListener('touchstart', this.canvasTouch, { passive: false });
+    this.canvas.addEventListener('touchmove', this.canvasTouch, { passive: false });
+    this.canvas.addEventListener('touchend', this.canvasTouchEnd);
+    this.canvas.addEventListener('touchcancel', this.canvasTouchEnd);
     // The browser offers its own menu over a canvas — save image, copy image,
     // inspect — and on a trackpad it takes very little for a click to be read
     // as the one that opens it. In a world you are playing, that menu is never
@@ -1772,6 +1828,10 @@ export class FestivalWorld {
     window.removeEventListener('keyup', this.keyUp);
     window.removeEventListener('message', this.projectorMessage);
     this.canvas.removeEventListener('pointerdown', this.cameraPointerDown);
+    this.canvas.removeEventListener('touchstart', this.canvasTouch);
+    this.canvas.removeEventListener('touchmove', this.canvasTouch);
+    this.canvas.removeEventListener('touchend', this.canvasTouchEnd);
+    this.canvas.removeEventListener('touchcancel', this.canvasTouchEnd);
     this.canvas.removeEventListener('wheel', this.cameraWheel);
     this.canvas.removeEventListener('contextmenu', this.suppressContextMenu);
     window.removeEventListener('pointermove', this.cameraPointerMove);
@@ -4997,7 +5057,7 @@ export class FestivalWorld {
     this.dayNight.setShadowsEnabled(mode === 'normal');
     for (const spotlight of this.shadowSpotlights) spotlight.castShadow = mode === 'normal';
     this.applyRenderPixelRatios();
-    if (this.scene.fog instanceof THREE.Fog) this.scene.fog.far = mode === 'normal' ? 150 : 92;
+    if (this.scene.fog instanceof THREE.Fog) this.scene.fog.far = mode === 'normal' ? 150 : LITE_FOG_FAR;
   }
 
   setAvatarPalette(palette: AvatarPalette): void {
@@ -6221,6 +6281,61 @@ export class FestivalWorld {
     return this.xrHud.point('right', this.xrRayOrigin, this.xrRayDirection);
   }
 
+  /**
+   * Whether a pinch means anything where the camera currently is.
+   *
+   * A seated view is aimed at the screen and a first-person view is the
+   * attendee's own eyes; there is no distance in either to pull on.
+   */
+  private canPinchZoom(): boolean {
+    return this.cameraMode !== 'screening' && this.cameraMode !== 'first-person';
+  }
+
+  /**
+   * Two fingers on the world, read natively.
+   *
+   * Everything else about touch goes through pointer events; this is only the
+   * pinch, and only because iOS would otherwise keep the gesture for itself.
+   */
+  private readonly canvasTouch = (event: TouchEvent): void => {
+    if (event.touches.length < 2) {
+      this.touchPinching = false;
+      this.touchPinchSpread = 0;
+      return;
+    }
+    // Claim the gesture whatever the camera is doing with it, or releasing a
+    // two-finger touch over a seated view leaves the page itself scaled.
+    event.preventDefault();
+    const [first, second] = [event.touches[0], event.touches[1]];
+    const spread = pinchSpread(
+      { x: first.clientX, y: first.clientY },
+      { x: second.clientX, y: second.clientY },
+    );
+    if (!this.touchPinching || this.touchPinchSpread <= 0) {
+      // The first frame only establishes the separation to measure against.
+      this.touchPinching = true;
+      this.touchPinchSpread = spread;
+      return;
+    }
+    if (this.canPinchZoom()) {
+      const zoomed = pinchZoom(this.cameraZoom, this.touchPinchSpread, spread);
+      if (zoomed !== this.cameraZoom) {
+        this.cameraZoom = zoomed;
+        this.rememberZoom();
+        // Whichever finger is left must not also be turning the camera.
+        this.cameraDragging = false;
+        this.punchPointerX = Number.NaN;
+      }
+    }
+    this.touchPinchSpread = spread;
+  };
+
+  private readonly canvasTouchEnd = (event: TouchEvent): void => {
+    if (event.touches.length >= 2) return;
+    this.touchPinching = false;
+    this.touchPinchSpread = 0;
+  };
+
   private readonly cameraPointerMove = (event: PointerEvent): void => {
     if (!this.cameraDragging) this.pointHudFromScreen(event.clientX, event.clientY);
     if (event.pointerType !== 'mouse' && this.touchPoints.has(event.pointerId)) {
@@ -6228,14 +6343,11 @@ export class FestivalWorld {
       if (this.touchPoints.size >= 2) {
         const [a, b] = [...this.touchPoints.values()];
         const spread = Math.hypot(a.x - b.x, a.y - b.y);
-        if (this.pinchDistance > 0 && spread > 0 && this.cameraMode !== 'screening' && this.cameraMode !== 'first-person') {
-          // Fingers apart pulls the camera in, the way a pinch zooms a photo.
-          this.cameraZoom = THREE.MathUtils.clamp(
-            this.cameraZoom * (this.pinchDistance / spread),
-            CAMERA_ZOOM_MIN,
-            CAMERA_ZOOM_MAX,
-          );
-          this.rememberZoom();
+        // Not while the native touch path is driving, or the same two fingers
+        // are counted twice and the view zooms at double speed.
+        if (!this.touchPinching && this.pinchDistance > 0 && this.canPinchZoom()) {
+          const zoomed = pinchZoom(this.cameraZoom, this.pinchDistance, spread);
+          if (zoomed !== this.cameraZoom) { this.cameraZoom = zoomed; this.rememberZoom(); }
         }
         this.pinchDistance = spread;
         event.preventDefault();
@@ -6767,14 +6879,28 @@ export class FestivalWorld {
     this.foregroundRenderer?.setPixelRatio(this.foregroundPixelRatio() * this.adaptiveRenderScale);
   }
 
+  /**
+   * Watch the frame rate and spend or save resolution accordingly.
+   *
+   * This used to return immediately unless the graphics were set to 一般, which
+   * meant it never ran on a phone — and a phone, defaulted to 精簡, is the only
+   * place it was ever needed. That is most of why the world felt slow on one.
+   * It now runs in both modes, over the floor each mode allows, and it can
+   * raise the resolution again as well as drop it: the old ramp was one-way, so
+   * a single slow patch left the picture soft for the rest of the visit.
+   */
   private tuneRenderScale(now: number): void {
-    if (this.graphicsMode !== 'normal') return;
     this.performanceFrameCount += 1;
     const elapsed = now - this.performanceWindowStartedAt;
     if (elapsed < 3500) return;
     const framesPerSecond = (this.performanceFrameCount * 1000) / elapsed;
-    if (framesPerSecond < 44 && this.adaptiveRenderScale > 0.67) {
-      this.adaptiveRenderScale = Math.max(0.67, this.adaptiveRenderScale - 0.16);
+    const plan = planRenderScale(
+      this.adaptiveRenderScale,
+      framesPerSecond,
+      RENDER_SCALE_FLOOR[this.graphicsMode],
+    );
+    if (plan.changed) {
+      this.adaptiveRenderScale = plan.scale;
       this.applyRenderPixelRatios();
     }
     this.performanceWindowStartedAt = now;
@@ -12192,6 +12318,29 @@ export class FestivalWorld {
    * exactly the surfaces that are solid, and none of the scenery that is not.
    */
   /**
+   * Whether the view may swing round an obstruction at all.
+   *
+   * Only on level ground, and only with both feet on it. The owner's rule is
+   * that walking does not move the camera — the drag turns the view and
+   * nothing else — so this is the one exception, kept as narrow as it can be:
+   * it is here to stop the lens ending up inside a wall. On stairs and slopes
+   * even that is switched off and the view simply closes in, which is steady
+   * even when the ground is not.
+   */
+  private cameraSteeringAllowed(): boolean {
+    if (this.airborne) return false;
+    const { x, z } = this.player.position;
+    const here = this.groundHeightAt(x, z);
+    if (!Number.isFinite(here)) return true;
+    for (const [dx, dz] of CAMERA_GROUND_SAMPLES) {
+      const there = this.groundHeightAt(x + dx, z + dz);
+      if (!Number.isFinite(there)) continue;
+      if (Math.abs(there - here) / CAMERA_GROUND_PROBE > CAMERA_LEVEL_GROUND_GRADIENT) return false;
+    }
+    return true;
+  }
+
+  /**
    * What actually stands between the view and the body. A chair does not: the
    * camera rides well above one and should ride over it. Only things that reach
    * head height are treated as obstructions.
@@ -12254,41 +12403,43 @@ export class FestivalWorld {
     if (reach < 0.001) return;
     this.cameraProbe.divideScalar(reach);
     let safe = this.cameraClearReach(eye, cameraTarget);
-    // A straight retreat puts the lens on the avatar's face when a wall is
-    // just behind it. Start steering around the obstruction while there is
-    // still room, and keep that side until the original orbit is fully clear.
-    // The search uses the same solids as the movement and final camera probe;
-    // it cannot select a view through a building just to preserve distance.
-    const mustSteer = safe < (this.cameraAvoidanceSide ? reach * 0.94 : Math.min(reach * 0.78, 6.4));
-    if (mustSteer) {
-      const preferredSide: -1 | 1 = this.cameraAvoidanceSide || 1;
-      const offsets = [0.35, 0.7, 1.05, 1.4, 1.8, 2.3, Math.PI];
-      let best: THREE.Vector3 | undefined;
-      let bestReach = safe;
-      let bestSide: -1 | 1 = preferredSide;
-      for (const offset of offsets) {
-        for (const side of [preferredSide, preferredSide === 1 ? -1 : 1] as const) {
-          if (offset === Math.PI && side !== preferredSide) continue;
-          const probe = this.cameraProbe.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), offset * side);
-          const candidate = eye.clone().addScaledVector(probe, reach);
-          const clear = this.cameraClearReach(eye, candidate);
-          if (clear > bestReach + 0.2) {
-            best = candidate;
-            bestReach = clear;
-            bestSide = side;
-          }
-          if (clear >= reach - 0.32) break;
-        }
-        if (bestReach >= reach - 0.32) break;
-      }
-      if (best && bestReach >= Math.min(3.6, reach * 0.72)) {
-        cameraTarget.copy(best);
-        this.cameraProbe.subVectors(cameraTarget, eye).normalize();
-        safe = bestReach;
-        this.cameraAvoidanceSide = bestSide;
-      }
-    } else if (this.cameraAvoidanceSide) {
-      this.cameraAvoidanceSide = 0;
+    /**
+     * A straight retreat puts the lens on the avatar's face when a wall is just
+     * behind it, so the view leans aside while there is still room to.
+     *
+     * This used to write `cameraTarget` outright, which is a swing arriving in
+     * one frame, and it kept its committed side in the same field the club's
+     * confinement was using — so the two overwrote each other and the "keep the
+     * side you are on" rule became "change sides every frame". On the rooftop
+     * stairs that is a camera that rotates everywhere. It now eases its swing
+     * like the club's does, over its own state, through the same policy. On
+     * stairs and slopes it does not swing at all: `steerAllowed` is false there
+     * and the view simply closes in, which is steady even when the ground is
+     * not.
+     */
+    const rotated = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+    const reachAtOffset = (offset: number): number => {
+      if (offset === 0) return this.cameraClearReach(eye, cameraTarget);
+      rotated.copy(this.cameraProbe).applyAxisAngle(up, offset);
+      return this.cameraClearReach(eye, this.cameraScratch.copy(eye).addScaledVector(rotated, reach));
+    };
+    const plan = stepAvoidance(this.wallAvoidance, {
+      reachAt: reachAtOffset,
+      preferred: reach,
+      steerAllowed: this.cameraSteeringAllowed(),
+      delta,
+      // A building's edge has to be cleared exactly. Stepping past it in the
+      // room ladder's coarser jumps settles the view *beside* the wall, with a
+      // grazing sight line along its face, instead of short of its corner.
+      offsets: AVOIDANCE_OFFSETS_FINE,
+    });
+    this.wallAvoidance.side = plan.side;
+    this.wallAvoidance.offset = plan.offset;
+    if (Math.abs(plan.offset) > 0.001) {
+      this.cameraProbe.applyAxisAngle(up, plan.offset);
+      cameraTarget.copy(eye).addScaledVector(this.cameraProbe, reach);
+      safe = this.cameraClearReach(eye, cameraTarget);
     }
     // The distance is eased rather than the position, so the view closes in
     // behind something and opens again afterwards without either being a jump.
@@ -12346,58 +12497,31 @@ export class FestivalWorld {
     const roomReach = (dx: number, dz: number): number => Math.min(
       preferred, reach(dx, minX, maxX, x), reach(dz, minZ, maxZ, z),
     );
-    let available = roomReach(dirX, dirZ);
     /**
      * Swing the view round an obstruction — but commit to a side, and ease.
      *
-     * This used to re-choose the offset from scratch on every frame, and the
-     * offset depends on where the attendee is standing. So simply walking
-     * through the club swung the camera from one side to the other and back as
-     * the numbers crossed, and the whole world appeared to rotate around
-     * somebody who was only pressing forward. That is the reported dizziness.
-     *
-     * `cameraAvoidanceSide` is the side already in use and is tried first, and
-     * it is only released once the orbit the attendee actually asked for is
-     * clear again — the field and this comment were written for exactly this
-     * and then never wired up. `cameraAvoidanceOffset` eases towards the
-     * chosen swing rather than snapping, so a change that is genuinely needed
-     * still arrives as a drift and not a lurch.
+     * Walking must not move the camera: only the drag turns the view. This
+     * exists so the lens does not end up in a wall, nothing more, and on
+     * stairs it does not run at all. The policy, the hysteresis and the easing
+     * all live in CameraAvoidance so this and `pullCameraClearOfWalls` cannot
+     * drift apart again — they used to share one field and spent every frame
+     * overruling each other.
      */
-    let wanted = 0;
-    // Tolerant of being called without a frame time, and of an instance built
-    // by `Object.create` in the pose tests, where field initialisers never ran.
-    const step = Number.isFinite(delta) ? Math.max(0, delta) : 1 / 60;
-    if (!Number.isFinite(this.cameraAvoidanceOffset)) this.cameraAvoidanceOffset = 0;
-    if (this.cameraAvoidanceSide !== -1 && this.cameraAvoidanceSide !== 1) this.cameraAvoidanceSide = 0;
-    if (available >= preferred * 0.95) this.cameraAvoidanceSide = 0;
-    else if (available < preferred * 0.8) {
-      // The side already in use goes first, so a marginal call keeps its answer.
-      const sides: Array<-1 | 1> = this.cameraAvoidanceSide === -1 ? [-1, 1] : [1, -1];
-      let best = available;
-      for (const offset of [0.4, 0.8, 1.2, 1.6, 2.1, Math.PI]) {
-        for (const side of sides) {
-          if (offset === Math.PI && side === -1) continue;
-          const candidate = roomReach(Math.sin(orbit.yaw + offset * side), Math.cos(orbit.yaw + offset * side));
-          // A clear margin to take a *new* side, a slim one to keep the old.
-          const margin = side === this.cameraAvoidanceSide ? 0.05 : 0.6;
-          if (candidate > best + margin) {
-            best = candidate;
-            wanted = offset * side;
-            this.cameraAvoidanceSide = side;
-          }
-          if (best >= preferred * 0.95) break;
-        }
-        if (best >= preferred * 0.95) break;
-      }
-      available = best;
-    } else wanted = this.cameraAvoidanceOffset;
-    const ease = 1 - Math.exp(-step / 0.32);
-    this.cameraAvoidanceOffset += (wanted - this.cameraAvoidanceOffset) * ease;
-    if (Math.abs(this.cameraAvoidanceOffset) > 0.001) {
-      const yaw = orbit.yaw + this.cameraAvoidanceOffset;
+    const plan = stepAvoidance(this.clubAvoidance, {
+      reachAt: (offset) => (offset === 0
+        ? roomReach(dirX, dirZ)
+        : roomReach(Math.sin(orbit.yaw + offset), Math.cos(orbit.yaw + offset))),
+      preferred,
+      steerAllowed: this.cameraSteeringAllowed(),
+      delta,
+    });
+    this.clubAvoidance.side = plan.side;
+    this.clubAvoidance.offset = plan.offset;
+    let available = plan.available;
+    if (Math.abs(plan.offset) > 0.001) {
+      const yaw = orbit.yaw + plan.offset;
       dirX = Math.sin(yaw);
       dirZ = Math.cos(yaw);
-      available = Math.max(1.6, roomReach(dirX, dirZ));
     }
     const radius = Math.max(1.6, available);
     const squeeze = (preferred - radius) / preferred;
