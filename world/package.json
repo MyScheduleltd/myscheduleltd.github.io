@@ -11,7 +11,7 @@
     "build": "node scripts/export-floor-plan.mjs && tsc --noEmit && vite build",
     "build:beta": "node scripts/publish-beta.mjs",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test server/server.test.mjs server/ecpay.test.mjs scripts/coastal.test.mjs scripts/coastal-pose.test.mjs scripts/coastal-collision.test.mjs scripts/art-isolation.test.mjs scripts/xr-hud.test.mjs",
+    "test": "node --test server/server.test.mjs server/ecpay.test.mjs scripts/coastal.test.mjs scripts/coastal-pose.test.mjs scripts/coastal-collision.test.mjs scripts/art-isolation.test.mjs scripts/xr-hud.test.mjs scripts/video-sync.test.mjs",
     "verify": "npm run test && npm run build"
   },
   "dependencies": {

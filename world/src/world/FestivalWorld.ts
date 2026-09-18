@@ -32,6 +32,7 @@ import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpC
 import { coastalRoof, createCoastalSedan, CONVERTIBLE } from './CoastalGeometry';
 import { XrHud } from './XrHud';
 import { XR_HOLD_MS, xrBindingFor, type XrAction } from './XrControls';
+import { videoSyncPlan, videoJoinTime, bufferedAheadOf } from './VideoSync';
 
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>;
@@ -204,6 +205,11 @@ interface ProjectorSurface {
   xrVideoUrl?: string;
   xrVideoFilmId?: string;
   xrVideoError?: boolean;
+  /** True between `waiting` and the next `playing`: stopped for want of data. */
+  xrBuffering?: boolean;
+  /** How long this screen has spent waiting, for the diagnostics readout. */
+  xrStalledMs?: number;
+  xrStalledSince?: number;
   xrFailedUrl?: string;
   volume?: number;
   iframe?: HTMLIFrameElement;
@@ -2642,6 +2648,12 @@ export class FestivalWorld {
         directVideoMounted: Boolean(mountedProjector.xrVideo),
         directVideoReady: Boolean(mountedProjector.xrTexture),
         directVideoError: mountedProjector.xrVideoError ?? false,
+        directVideoBuffering: mountedProjector.xrBuffering ?? false,
+        directVideoStalledMs: Math.round(mountedProjector.xrStalledMs ?? 0),
+        directVideoRate: mountedProjector.xrVideo ? Number(mountedProjector.xrVideo.playbackRate.toFixed(3)) : null,
+        directVideoBufferedAhead: mountedProjector.xrVideo
+          ? Number(bufferedAheadOf(mountedProjector.xrVideo.buffered, mountedProjector.xrVideo.currentTime).toFixed(1))
+          : null,
         playing: mountedProjector.playing ?? null,
         staffPaused: mountedProjector.paused,
       } : null,
@@ -5237,6 +5249,9 @@ export class FestivalWorld {
     const video = projector.xrVideo;
     const texture = projector.xrTexture;
     projector.xrVideo = undefined;
+    projector.xrBuffering = false;
+    projector.xrStalledSince = undefined;
+    projector.xrStalledMs = 0;
     projector.xrTexture = undefined;
     projector.xrVideoUrl = undefined;
     projector.xrVideoFilmId = undefined;
@@ -5266,17 +5281,22 @@ export class FestivalWorld {
     if (!['https:', 'http:'].includes(url.protocol)) return;
     if (projector.xrFailedUrl === url.href) return;
     if (projector.xrVideo && projector.xrVideoFilmId === film.id && projector.xrVideoUrl === url.href) {
-      const video = projector.xrVideo;
-      if (Number.isFinite(offsetSeconds) && Math.abs(video.currentTime - offsetSeconds) > 4 && video.readyState >= 1) {
-        video.currentTime = Math.max(0, offsetSeconds);
-      }
+      this.syncImmersiveVideo(projector, offsetSeconds);
       return;
     }
     this.stopImmersiveVideo(venue);
     const video = document.createElement('video');
+    // Before `src`, always: a cross-origin video whose request went out without
+    // this taints the canvas, and a tainted texture cannot be uploaded.
     video.crossOrigin = 'anonymous';
     video.playsInline = true;
+    // Buffer ahead as far as the browser will. The screens are the one thing in
+    // here worth spending bandwidth on, and a headset that runs dry mid-shot is
+    // the complaint this is all answering.
     video.preload = 'auto';
+    // Nothing in an immersive session can cast, and offering it costs a media
+    // session and a route the headset then has to maintain.
+    video.disableRemotePlayback = true;
     video.autoplay = true;
     video.muted = true;
     video.volume = projector.volume ?? 1;
@@ -5288,7 +5308,11 @@ export class FestivalWorld {
       if (projector.xrVideo !== video) return;
       if (Number.isFinite(video.duration) && video.duration > 0) {
         this.onProjectorDuration?.(venue, film.youtubeId, video.duration);
-        video.currentTime = Math.max(0, offsetSeconds) % video.duration;
+        // Only if the screening is genuinely under way. Seeking before any
+        // buffer exists is a round trip the viewer waits out in full, and it is
+        // not worth paying to skip the first couple of seconds of a film.
+        const joinAt = videoJoinTime(offsetSeconds, video.duration);
+        if (joinAt !== undefined) video.currentTime = joinAt;
       }
     });
     video.addEventListener('loadeddata', () => {
@@ -5301,6 +5325,24 @@ export class FestivalWorld {
       projector.xrPoster.material.needsUpdate = true;
       previous?.dispose();
     });
+    // Buffering is tracked rather than inferred: the sync policy backs off
+    // while a screen is stalled, and the diagnostics readout can say plainly
+    // whether a bad-looking screening is the network or the world.
+    video.addEventListener('waiting', () => {
+      if (projector.xrVideo !== video || projector.xrBuffering) return;
+      projector.xrBuffering = true;
+      projector.xrStalledSince = performance.now();
+    });
+    const clearStall = (): void => {
+      if (projector.xrVideo !== video || !projector.xrBuffering) return;
+      projector.xrBuffering = false;
+      if (projector.xrStalledSince !== undefined) {
+        projector.xrStalledMs = (projector.xrStalledMs ?? 0) + (performance.now() - projector.xrStalledSince);
+        projector.xrStalledSince = undefined;
+      }
+    };
+    video.addEventListener('playing', clearStall);
+    video.addEventListener('canplay', clearStall);
     video.addEventListener('ended', () => {
       if (projector.xrVideo === video) this.onProjectorAdvance?.(venue, film.youtubeId);
     });
@@ -5317,6 +5359,30 @@ export class FestivalWorld {
         video.muted = projector.muted;
       }
     }).catch(() => { /* A later headset gesture retries playback. */ });
+  }
+
+  /**
+   * Hold a running screen on the festival's shared clock.
+   *
+   * The correction is almost always a few percent of playback rate rather than
+   * a seek, because a seek in a headset is the visible hitch: it drops the
+   * buffer, re-opens a Range request and sends the decoder hunting for a
+   * keyframe. See VideoSync for the policy; this only carries out its answer,
+   * and it assigns nothing that has not changed, since touching `currentTime`
+   * at all is what costs.
+   */
+  private syncImmersiveVideo(projector: ProjectorSurface, offsetSeconds: number): void {
+    const video = projector.xrVideo;
+    if (!video || !Number.isFinite(offsetSeconds)) return;
+    const plan = videoSyncPlan({
+      current: video.currentTime,
+      target: offsetSeconds,
+      duration: video.duration,
+      readyState: video.readyState,
+      buffering: projector.xrBuffering,
+    });
+    if (plan.seekTo !== undefined) video.currentTime = plan.seekTo;
+    if (Math.abs(video.playbackRate - plan.playbackRate) > 0.001) video.playbackRate = plan.playbackRate;
   }
 
   /**

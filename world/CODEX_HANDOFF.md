@@ -1,10 +1,91 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-17 · **the headset paints its own interface, and only a headset does — see Latest** · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
+Last updated: 2026-09-18 · **curl is not a browser — test media hosts from a page, see Latest** · **the headset paints its own interface, and only a headset does — see Latest** · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
 > obsolete no-publish rule and branch name. Use this file for the active process.
+
+---
+
+# Latest: Drive will not serve a browser, and a screen stops hitching — BETA PUBLISHED (2026-09-18)
+
+## Google Drive is out, and the test that said otherwise was wrong
+
+The owner asked whether the Drive share link could be used directly, without a
+Cloud project. Measured with curl, it looked like a clean yes:
+`drive.usercontent.google.com/download?id=…&export=download&confirm=t` answers
+`200 video/mp4`, `access-control-allow-origin: *`, `accept-ranges: bytes`,
+correct `content-range` mid-file, passing `OPTIONS` preflight. I said so.
+
+It fails in a browser. One header decides it:
+
+| request | result |
+|---|---|
+| plain curl, or with Origin, or a Chrome/Quest UA, or `Sec-Fetch-Mode`/`Dest` | `206 video/mp4` |
+| **`+ Sec-Fetch-Site: cross-site`** | **`403 text/html`** |
+
+That is precisely the header a browser sends when this site requests a file from
+Drive, and `Sec-Fetch-*` is a **forbidden header name** — no fetch option, no
+service worker, no `<video>` attribute can unset or forge it. Confirmed live:
+`MEDIA_ELEMENT_ERROR: Format error`, and a bare `fetch` throwing
+`TypeError: Failed to fetch`. It is Google declining to be hotlinked.
+
+**The rule this leaves behind: curl is not a browser.** Any candidate media host
+must be tested from a page. `world/STREAMING.md` has a console snippet for it,
+including the `getImageData` taint check, since a video that plays but taints
+the canvas can never reach a texture.
+
+The Drive **REST API** is still viable and is what the code is wired for, still
+dormant behind an empty `driveApiKey`. Under the same `Sec-Fetch-Site:
+cross-site`, `www.googleapis.com` answers `403 application/json` — "The request
+is missing a valid API key" — with CORS set to this origin. An API asking to be
+identified, not a host refusing to be embedded. The distinction is the whole
+finding.
+
+## The screens stop hitching, wherever the film ends up coming from
+
+Host-independent, and the part of this pass that shipped working.
+
+`src/world/VideoSync.ts` is new and pure — no three.js, no DOM — with 14 tests
+in `scripts/video-sync.test.mjs` (188 total, up from 174).
+
+The old code sat on up to four seconds of drift and then assigned
+`currentTime`. A seek is the expensive correction: it drops the buffer, opens a
+fresh Range request and sends the decoder hunting for a keyframe — in a headset,
+on wifi, while the world holds 90fps, that is a visible hitch. Now:
+
+- **Drift up to 5s is walked off** at up to ±5% playback rate, pulling harder
+  the further behind a screen is. Browsers correct pitch, so nothing chipmunks.
+  Because it runs continuously, drift rarely reaches the seek threshold at all.
+  A 400-step simulation proves it converges without a single seek.
+- **Joining inside the first 3s does not seek.** A seek before any buffer exists
+  is a round trip the viewer waits out in full, bought to skip two seconds.
+- **A loop point is not mistaken for drift.** Two seconds from the end of a
+  204.6s film, told the screening is at 1s, is three seconds behind the short
+  way round — not a whole film ahead. This would have seeked every loop.
+- **A stalled screen is never told to hurry**, which only asks for more of what
+  it has not got. `waiting`/`playing` are tracked rather than inferred.
+- `preconnect` in `index.html` warms the media host. **Retarget it when the host
+  changes** or it warms a connection nothing uses.
+- `?review=vr-hud` now reports `directVideoBuffering`, `directVideoStalledMs`,
+  `directVideoRate` and `directVideoBufferedAhead`, so a bad screening can be
+  diagnosed as the network or the world rather than guessed at.
+
+## The file matters more than any of this
+
+The Skibidi clip is a **delivery master**: 854MB, 35Mbps, 2160-line, 3m25s.
+Parsed from its own header. No client-side work survives that on a Quest. The
+encode recipe is in `world/STREAMING.md` — 1080p, CRF 22, High/4.1, yuv420p,
+`-g 120`, `+faststart` — which lands the same clip near 180MB.
+
+## Still open
+
+- The owner must choose: a Drive API browser key, or R2 (account already open).
+- Nothing about immersive video is verified on hardware; there is still no host.
+- **Pass 3 — introductions for every NPC**, held on the wave button and
+  staff-editable, is untouched and is the last item of the ten.
+- Render still needs a manual deploy for the Walk Bell John Awards line.
 
 ---
 
