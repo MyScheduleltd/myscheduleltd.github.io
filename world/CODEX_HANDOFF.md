@@ -8,6 +8,94 @@ Last updated: 2026-09-17 · **the headset paints its own interface, and only a h
 
 ---
 
+# Latest: the camera stops swinging, and two pages get centred — BETA PUBLISHED (2026-09-18)
+
+First of three passes on a ten-item list. The owner asked for the quick visible
+fixes first; the two DJ introductions and the all-NPC introduction feature
+follow, and immersive video is waiting on a CORS-enabled media host.
+
+### The dizziness was the camera committing to nothing
+
+`confineCameraToClub()` re-chose its avoidance offset **from scratch every
+frame**, and that offset depends on where the attendee is standing. So walking
+through the club swung the view from one side of an obstruction to the other and
+back as the numbers crossed, and the world appeared to rotate around somebody
+who was only pressing forward.
+
+`cameraAvoidanceSide` existed for exactly this, with the comment *"Keep the same
+side of an obstruction until the intended orbit is clear"* — and was **never
+referenced anywhere**. It is wired up now: the side already in use is tried
+first and needs only a slim 0.05 margin to keep, while taking a *new* side needs
+a clear 0.6; the side is released only once the orbit actually asked for is
+clear again. `cameraAvoidanceOffset` eases towards the chosen swing over ~0.32s
+instead of snapping.
+
+> The function now takes `delta`. It tolerates being called without one and
+> tolerates an instance built by `Object.create`, because that is how
+> `coastal-pose.test.mjs` builds its worlds and field initialisers never run
+> there. A new test walks 40 steps down the club and asserts the side never
+> flips and no frame moves the camera more than 0.6.
+
+### The pamphlet stand was timber inside timber
+
+The sloped tray was rotated about its own centre at y 1.68, which drove its
+whole front half **into** the top of the case: the underside crossed the case
+top at z 0.235 and stayed below it to the case's front face — a 32cm band of
+interpenetration. The cream stiles (top 1.585) and the upper rail (top 1.60)
+also stood up through the tray, whose underside passes 1.562 over them.
+
+The tray is shallower, 4cm higher and shifted forward, so the lowest part of its
+underside meets the case top *exactly* at the front face and everything below
+that line overhangs into air; a riser fills the wedge left under the back. Every
+clearance was checked numerically rather than by eye — if this prop is touched
+again, check `underside(z) >= 1.57` across z 0…0.56.
+
+### The website
+
+- **about.html** — `.member-container` is 1600px tall because that is the height
+  of the grid of faces it is built for, and with only the COMING SOON
+  placeholder inside, its flex centring put the text 800px down an empty page;
+  on a phone it landed below the fold behind the browser toolbar. The container
+  gives up that height when it holds the placeholder. `svh`, not `vh`.
+- **portfolio.html** — `#portfolio-header` had `padding-left: 50%`, which left
+  the four categories spread across the right-hand side. It is a centred flex
+  now with the swiper capped at 820px: measured at 1600px the group centre is
+  the page centre exactly. Below 1180px a guard keeps it clear of OUR WORK,
+  which is a separate fixed element.
+
+> Both pages are Prepros output: edit `pug/` and `scss/` **and** the committed
+> `docs/*.html` and `docs/css/*.css`, because this repo has no build step for
+> them. These two fixes are CSS only, so no HTML was touched.
+
+### Two smaller ones
+
+- `儲存中文介紹` and `回到點歌` were 44px tall at 12px next to 52px at 15px, in two
+  different widths. One box now, at a fixed 176×46, because those labels are
+  different lengths and content-sized boxes would still differ.
+- The seated screening bar moved from across the middle to the right, above
+  PASS, sharing its 16px right edge. 68px up and not the chat's 52px: PASS
+  occupies 16–60px, so 52px would have cut into it, and the brief said not to
+  overlap. Its width is bounded by what is left beside the chat column.
+
+### Immersive video — the Drive link cannot work
+
+Tested: `drive.usercontent.google.com/download?id=…` answers
+`content-type: text/html` (the virus-scan interstitial, not the file) and sends
+**no `access-control-allow-origin` header at all**. A WebGL video texture needs
+a real media response *and* CORS. The owner is setting up a proper media host;
+when a URL arrives it is one line per film in `immersiveVideoSources`.
+
+### What was and was not verified
+
+**174/174 tests** and the build pass. The two pages were measured in a browser
+at 375px, 1024px and 1600px. The stand's clearances were computed from the
+geometry. The camera is covered by the new test.
+
+> **Not tested on physical headset hardware.** Everything still open from the
+> passes below stands.
+
+---
+
 # Latest: the Quest's own keyboard, and a screening nothing sits in front of — BETA PUBLISHED (2026-09-17)
 
 ### The painted keyboard is gone, and good

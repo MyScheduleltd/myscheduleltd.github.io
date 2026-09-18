@@ -91,12 +91,30 @@ export function createCoastalPamphletStand():THREE.Group {
   for(const x of [-.88,.88])for(const z of [-.43,.43])box(p,'Rack foot',[.18,.17,.22],[x,.085,z],dark);
   box(p,'Timber case',[2.05,1.40,1.12],[0,.87,0],wood);
   box(p,'Recessed enamel front',[1.77,1.03,.055],[0,.87,.584],green);
-  for(const x of [-.98,.98])box(p,'Cream frame stile',[.13,1.43,.14],[x,.87,.60],cream);
-  for(const y of [.20,1.54])box(p,'Cream frame rail',[2.1,.12,.14],[0,y,.60],cream);
-  const tray=new THREE.Group();tray.position.set(0,1.68,0);tray.rotation.x=.22;p.add(tray);
-  box(tray,'Sloped display tray',[2.2,.12,1.30],[0,0,0],wood);
-  box(tray,'Book stop',[2.2,.15,.08],[0,.105,.61],red);
-  for(const x of [-1.05,1.05])box(tray,'Tray side',[.10,.19,1.28],[x,.13,0],cream);
+  // The sloped tray above tilts its front edge down, and these used to stand
+  // into the space it sweeps through: the stiles topped out at 1.585 and the
+  // upper rail at 1.60, while the tray's underside passes 1.562 over them — so
+  // both pierced the tray and showed as cream cutting across the timber. They
+  // stop just under it now.
+  for(const x of [-.98,.98])box(p,'Cream frame stile',[.13,1.40,.14],[x,.855,.60],cream);
+  for(const y of [.20,1.49])box(p,'Cream frame rail',[2.1,.12,.14],[0,y,.60],cream);
+  /**
+   * The tray is a slab tilted towards the reader, and it was rotated about its
+   * own centre at 1.68 — which drove its whole front half *into* the top of the
+   * case. The underside crossed the case top at z 0.235 and stayed below it all
+   * the way to the case's front face, a 32cm band of timber intersecting
+   * timber, which is the clipping across this stand.
+   *
+   * It sits a little higher and a little shallower now, and shifted forward, so
+   * the lowest part of its underside meets the case top exactly at the front
+   * face and everything below that line overhangs into open air. A riser fills
+   * the wedge left under the back, which would otherwise show as a gap.
+   */
+  box(p,'Tray riser',[2.03,.18,.52],[0,1.62,-.28],wood);
+  const tray=new THREE.Group();tray.position.set(0,1.72,.10);tray.rotation.x=.20;p.add(tray);
+  box(tray,'Sloped display tray',[2.2,.12,1.10],[0,0,0],wood);
+  box(tray,'Book stop',[2.2,.15,.08],[0,.105,.51],red);
+  for(const x of [-1.05,1.05])box(tray,'Tray side',[.10,.19,1.08],[x,.13,0],cream);
   for(const x of [-.65,0,.65]) {
     box(tray,'Cream paper stack',[.53,.11,.86],[x,.115,0],cream);
     // Distinct surface heights keep the thin print above the paper. The old

@@ -1516,6 +1516,8 @@ export class FestivalWorld {
   private cameraReach = 0;
   /** Keep the same side of an obstruction until the intended orbit is clear. */
   private cameraAvoidanceSide: -1 | 0 | 1 = 0;
+  /** The swing currently applied, eased rather than snapped into place. */
+  private cameraAvoidanceOffset = 0;
   private punchPointerX = 0;
   private punchPointerY = 0;
   private verticalVelocity = 0;
@@ -12019,7 +12021,7 @@ export class FestivalWorld {
         Math.cos(orbit.yaw) * horizontalRadius,
       ));
     }
-    this.confineCameraToClub(cameraTarget);
+    this.confineCameraToClub(cameraTarget, delta);
     this.confineCameraOverWater(cameraTarget);
     this.pullCameraClearOfWalls(cameraTarget, delta);
     const smoothing = 1 - Math.exp(-delta * 5.2);
@@ -12240,7 +12242,7 @@ export class FestivalWorld {
     this.lookTarget.y = waterline + 1.15;
   }
 
-  private confineCameraToClub(cameraTarget: THREE.Vector3): void {
+  private confineCameraToClub(cameraTarget: THREE.Vector3, delta: number): void {
     const { x, z } = this.player.position;
     if (!this.inClub(x, z)) return;
     const b = clubBounds;
@@ -12279,23 +12281,57 @@ export class FestivalWorld {
       preferred, reach(dx, minX, maxX, x), reach(dz, minZ, maxZ, z),
     );
     let available = roomReach(dirX, dirZ);
-    if (available < preferred * 0.8) {
+    /**
+     * Swing the view round an obstruction — but commit to a side, and ease.
+     *
+     * This used to re-choose the offset from scratch on every frame, and the
+     * offset depends on where the attendee is standing. So simply walking
+     * through the club swung the camera from one side to the other and back as
+     * the numbers crossed, and the whole world appeared to rotate around
+     * somebody who was only pressing forward. That is the reported dizziness.
+     *
+     * `cameraAvoidanceSide` is the side already in use and is tried first, and
+     * it is only released once the orbit the attendee actually asked for is
+     * clear again — the field and this comment were written for exactly this
+     * and then never wired up. `cameraAvoidanceOffset` eases towards the
+     * chosen swing rather than snapping, so a change that is genuinely needed
+     * still arrives as a drift and not a lurch.
+     */
+    let wanted = 0;
+    // Tolerant of being called without a frame time, and of an instance built
+    // by `Object.create` in the pose tests, where field initialisers never ran.
+    const step = Number.isFinite(delta) ? Math.max(0, delta) : 1 / 60;
+    if (!Number.isFinite(this.cameraAvoidanceOffset)) this.cameraAvoidanceOffset = 0;
+    if (this.cameraAvoidanceSide !== -1 && this.cameraAvoidanceSide !== 1) this.cameraAvoidanceSide = 0;
+    if (available >= preferred * 0.95) this.cameraAvoidanceSide = 0;
+    else if (available < preferred * 0.8) {
+      // The side already in use goes first, so a marginal call keeps its answer.
+      const sides: Array<-1 | 1> = this.cameraAvoidanceSide === -1 ? [-1, 1] : [1, -1];
+      let best = available;
       for (const offset of [0.4, 0.8, 1.2, 1.6, 2.1, Math.PI]) {
-        for (const side of [1, -1]) {
+        for (const side of sides) {
           if (offset === Math.PI && side === -1) continue;
-          const yaw = orbit.yaw + offset * side;
-          const dx = Math.sin(yaw);
-          const dz = Math.cos(yaw);
-          const candidate = roomReach(dx, dz);
-          if (candidate > available + 0.25) {
-            dirX = dx;
-            dirZ = dz;
-            available = candidate;
+          const candidate = roomReach(Math.sin(orbit.yaw + offset * side), Math.cos(orbit.yaw + offset * side));
+          // A clear margin to take a *new* side, a slim one to keep the old.
+          const margin = side === this.cameraAvoidanceSide ? 0.05 : 0.6;
+          if (candidate > best + margin) {
+            best = candidate;
+            wanted = offset * side;
+            this.cameraAvoidanceSide = side;
           }
-          if (available >= preferred * 0.95) break;
+          if (best >= preferred * 0.95) break;
         }
-        if (available >= preferred * 0.95) break;
+        if (best >= preferred * 0.95) break;
       }
+      available = best;
+    } else wanted = this.cameraAvoidanceOffset;
+    const ease = 1 - Math.exp(-step / 0.32);
+    this.cameraAvoidanceOffset += (wanted - this.cameraAvoidanceOffset) * ease;
+    if (Math.abs(this.cameraAvoidanceOffset) > 0.001) {
+      const yaw = orbit.yaw + this.cameraAvoidanceOffset;
+      dirX = Math.sin(yaw);
+      dirZ = Math.cos(yaw);
+      available = Math.max(1.6, roomReach(dirX, dirZ));
     }
     const radius = Math.max(1.6, available);
     const squeeze = (preferred - radius) / preferred;

@@ -3528,7 +3528,7 @@ export class App {
           : 'This edits the English version. Switch to 繁中 to edit the Chinese one; they are saved separately.'}</p>
         <button type="submit">${zh ? '儲存中文介紹' : 'SAVE ENGLISH INTRODUCTION'}</button>
       </form>` : ''}
-      <button class="seat-menu__back" type="button" data-dj-back>${zh ? '回到點歌' : 'BACK TO REQUESTS'}</button>`;
+      <button class="seat-menu__back dj-about__back" type="button" data-dj-back>${zh ? '回到點歌' : 'BACK TO REQUESTS'}</button>`;
 
     this.djIntroductionTouched = false;
     this.djIntroductionSignature = this.djProfileSignature(profile);

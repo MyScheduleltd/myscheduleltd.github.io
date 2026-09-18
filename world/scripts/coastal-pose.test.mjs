@@ -696,10 +696,37 @@ test('club wall confinement finds room to the side before squeezing the camera',
     cameraOrbit:{follow:{yaw:Math.PI/2,pitch:.3},perspective:{yaw:.8,pitch:.4}},
     lookTarget:new THREE.Vector3(),groundHeightAt:()=>-16});
   const target=new THREE.Vector3(-41.5,-12,15);
-  world.confineCameraToClub(target);
+  // The swing is eased now rather than snapped, so it is settled over a second
+  // of frames — a camera that jumped to its alternate in one frame is what made
+  // walking through the club dizzy.
+  for(let frame=0;frame<90;frame+=1)world.confineCameraToClub(target,1/60);
   assert.ok(target.distanceTo(player.position)>4,
     'the club wall must not force a face closeup while the room has lateral space');
   assert.ok(target.x<-51.1 && target.x>-87,'the alternate camera remains inside the room');
+});
+
+test('the club camera commits to one side instead of swinging as you walk',()=>{
+  const world=Object.create(FestivalWorld.prototype);
+  const player=new THREE.Group();player.position.set(-51.5,-15.7,15);
+  Object.assign(world,{player,playerState:'walking',cameraMode:'follow',
+    cameraOrbit:{follow:{yaw:Math.PI/2,pitch:.3},perspective:{yaw:.8,pitch:.4}},
+    lookTarget:new THREE.Vector3(),groundHeightAt:()=>-16});
+  const target=new THREE.Vector3(-41.5,-12,15);
+  for(let frame=0;frame<90;frame+=1)world.confineCameraToClub(target,1/60);
+  const side=world.cameraAvoidanceSide;
+  assert.ok(side===1||side===-1,'a side must have been taken');
+  // Walk along the room and the camera must not flip to the other side, which
+  // is what rotated the whole world around somebody pressing forward.
+  let biggestJump=0;
+  let previous=target.clone();
+  for(let stepIndex=0;stepIndex<40;stepIndex+=1){
+    player.position.z+=0.25;
+    world.confineCameraToClub(target,1/60);
+    biggestJump=Math.max(biggestJump,Math.hypot(target.x-previous.x,target.z-previous.z-0.25));
+    previous=target.clone();
+    assert.equal(world.cameraAvoidanceSide,side,`the camera changed sides at step ${stepIndex}`);
+  }
+  assert.ok(biggestJump<0.6,`the camera lurched ${biggestJump.toFixed(2)} in one frame`);
 });
 
 test('approaching a building keeps the follow camera out of the face and the masonry',()=>{

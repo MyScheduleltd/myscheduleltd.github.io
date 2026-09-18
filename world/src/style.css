@@ -1120,8 +1120,18 @@ button:active { filter: brightness(.88); scale: .96; }
 .venue-screen:fullscreen .venue-screen__frame { flex: 1; min-height: 0; }
 .venue-screen:-webkit-full-screen { inset: 0; width: 100vw; height: 100vh; border: 0; box-shadow: none; }
 .public-seat-hud {
-  position: fixed; z-index: 8; left: 50%; bottom: 22px; display: flex; align-items: center; justify-content: space-between; gap: 26px;
-  width: min(720px, calc(100vw - 280px)); transform: translateX(-50%); padding: 10px 12px; color: white; background: rgba(8,9,10,.88); border: 1px solid rgba(255,255,255,.5);
+  /* Over on the right, sitting on top of PASS rather than across the middle of
+     the picture. The right edge lines up with PASS's own right edge at 16px.
+
+     68px up, not the chat's 52px: PASS occupies 16px to 60px, so a bar whose
+     bottom sat at 52px would have cut into it by eight pixels, and the brief
+     was to avoid overlapping. 68px is the first line clear of it.
+
+     The width is bounded by what is left after the chat column rather than by
+     the viewport, so the two never grow into each other; below this the narrow
+     rule further down takes over and gives the bar the full width instead. */
+  position: fixed; z-index: 8; right: 16px; bottom: 68px; display: flex; align-items: center; justify-content: space-between; gap: 26px;
+  width: min(720px, max(320px, calc(100vw - 580px))); padding: 10px 12px; color: white; background: rgba(8,9,10,.88); border: 1px solid rgba(255,255,255,.5);
 }
 .public-seat-hud[hidden] { display: none; }
 /* The seat panel opens the moment you sit down, and this took the prompt off
@@ -1619,6 +1629,20 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .staff-form button, .dj-about__edit button { grid-column: 1 / -1; justify-self: start; min-height: 44px; border: 0; padding: 0 18px; color: white; background: var(--red); font: 800 12px var(--condensed); cursor: pointer; }
 .staff-form button:disabled, .dj-about__edit button:disabled { opacity: .55; cursor: default; }
 .staff-form__wide, .dj-about__wide { grid-column: 1 / -1; }
+/* Saving the introduction and leaving it are two halves of one decision, so
+   they are the same box. They were 44px tall at 12px next to 52px at 15px, in
+   two different widths, which read as two unrelated controls stacked up. The
+   width is fixed rather than left to the labels, because "儲存中文介紹" and
+   "回到點歌" are different lengths and content-sized boxes would still differ. */
+.dj-about__edit button, .dj-about__back {
+  box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 176px; min-height: 46px; padding: 0 18px;
+  font: 800 13px var(--condensed); letter-spacing: .05em; cursor: pointer;
+}
+.dj-about__back {
+  margin-top: 10px; border: 2px solid var(--ink);
+  color: var(--ink); background: transparent;
+}
 .staff-note { grid-column: 1 / -1; margin: 0 0 2px; font: 400 13px/1.5 sans-serif; opacity: .72; }
 /* A setting that will quietly stop working is worth more than 72% opacity. */
 .staff-note--warn {
