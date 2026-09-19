@@ -588,27 +588,6 @@ const LITE_FOG_FAR = 78;
  * radians a second. About 115 degrees — brisk enough to come about without a
  * second push, slow enough to read the world going past.
  */
-/**
- * How the view follows the avatar *upwards*.
- *
- * Sideways the camera tracks exactly — a lagging follow when you walk is what
- * makes a third-person view feel loose. Height is different: a staircase raises
- * the avatar one tread at a time, so the height it reports is a staircase too,
- * and a view pinned to it jumps by the rise of a step every time one is
- * climbed. Measured on a 0.3 rise that is a 0.3 jolt per step, and on a
- * staircase that is a jolt every few frames — which is what "extremely unstable
- * on the NIMA ROOFTOP stairs" was, and it hid from a metric watching the
- * distance between the eye and the lens, because both jumped together.
- *
- * Eased over about an eighth of a second: fast enough that the view never feels
- * detached from the body, slow enough to turn a staircase back into a ramp.
- *
- * Beyond `SNAP` the change is not a step but a storey — a teleport, a fall, a
- * fast travel — and there the view has to arrive with the body rather than
- * sail after it.
- */
-const CAMERA_HEIGHT_SECONDS = 0.12;
-const CAMERA_HEIGHT_SNAP = 2.5;
 const XR_TURN_RATE = 2.0;
 const TOUCH_LOOK_GAIN = 6;
 /**
@@ -643,15 +622,6 @@ const DESKTOP_LOOK_GAIN = 2.5;
  * line brings it back.
  */
 const CAMERA_MAY_STEER = false;
-/**
- * How fast the view closes in on an obstruction, and how fast it opens again.
- *
- * Closing is quicker: it has to keep ahead of the camera's own easing so the
- * lens is never left inside a wall. Neither is instant, because instant is
- * what read as a lurch.
- */
-const CAMERA_REACH_CLOSE_RATE = 7;
-const CAMERA_REACH_OPEN_RATE = 4.5;
 const CAMERA_LEVEL_GROUND_GRADIENT = 0.35;
 /** How far out the ground is sampled to judge that. */
 const CAMERA_GROUND_PROBE = 0.7;
@@ -1620,9 +1590,6 @@ export class FestivalWorld {
   /** Scratch for the avoidance probe; the camera path allocates nothing. */
   private readonly cameraScratch = new THREE.Vector3();
   /** Scratch for the arc the lens travels; the camera path allocates nothing. */
-  /** The heights the view follows, eased, so treads do not become jolts. */
-  private cameraFollowY = Number.NaN;
-  private cameraFloorY = Number.NaN;
   /** How far back the view is actually sitting, eased towards where it may. */
   private cameraReach = 0;
   /**
@@ -12452,27 +12419,21 @@ export class FestivalWorld {
       this.applyCameraShake(delta);
       return;
     } else {
-      this.cameraFollowY = this.easeHeight(this.cameraFollowY, this.player.position.y, delta);
       const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
       /**
-       * The lead — the bit of ground ahead of the avatar that the view is aimed
-       * at, so the body sits a little low in frame and you can see where you are
-       * going — follows the camera round.
+       * The lead turns with the camera; the height is taken raw.
        *
-       * It was a fixed `z - 2.2`, in world space. At yaw zero that is directly
-       * ahead and the framing is the one it was drawn for; turn ninety degrees
-       * and the very same offset is entirely *sideways*, so the view is aimed at
-       * a patch of ground beside the avatar and the avatar slides to the edge of
-       * the frame. The further round you turned, the worse it got.
-       *
-       * Along the camera's own forward direction instead. At yaw zero this is
-       * exactly what it always was, so nothing about the default view changes;
-       * at every other angle the avatar now sits where it does at zero.
+       * Turning the lead is what keeps the avatar centred at every angle, and
+       * it adds no lag — it is a function of the yaw the visitor set. Easing
+       * the *height* did add lag, and lag is drift: the view tilts while it
+       * catches up whenever the climb rate changes. It was added for stepped
+       * treads, and the stair it was aimed at turned out to be a continuous
+       * ramp, so it was buying nothing and costing that.
        */
       const lead = this.cameraMode === 'perspective' ? 0 : 2.2;
       this.lookTarget.set(
         this.player.position.x - Math.sin(orbit.yaw) * lead,
-        this.cameraFollowY + (this.cameraMode === 'perspective' ? 1.65 : 1.4),
+        this.player.position.y + (this.cameraMode === 'perspective' ? 1.65 : 1.4),
         this.player.position.z - Math.cos(orbit.yaw) * lead,
       );
       const radius = (this.cameraMode === 'perspective' ? 11.68 : 10.56) * this.cameraZoom;
@@ -12503,36 +12464,6 @@ export class FestivalWorld {
     this.camera.lookAt(this.lookTarget);
     this.applyCameraShake(delta);
     this.applyDrunkenView(delta);
-  }
-
-  /**
-   * The height the camera treats as the avatar's, for the pivot it swings about
-   * and the eye it measures clearance from.
-   *
-   * The eased one, not the body's own. Easing only the look target smoothed
-   * where the view *points* and left the lens still jumping a tread at a time,
-   * because both the arc's pivot and the clearance probe were built from the
-   * raw height — measured, the look target came down from 0.3 to 0.04 a step
-   * while the camera itself did not move at all. Falls back to the body before
-   * the eased value exists, and on the `Object.create` instances the pose tests
-   * build, where it never does.
-   */
-  private followEyeY(): number {
-    return Number.isFinite(this.cameraFollowY) ? this.cameraFollowY : this.player.position.y;
-  }
-
-  /**
-   * Follow a height without inheriting its steps. See CAMERA_HEIGHT_SECONDS.
-   *
-   * Tolerant of a first frame and of the `Object.create` instances the pose
-   * tests build, where field initialisers never ran: an unusable current value
-   * simply arrives at the target.
-   */
-  private easeHeight(current: number, target: number, delta: number): number {
-    if (!Number.isFinite(target)) return current;
-    if (!Number.isFinite(current) || Math.abs(target - current) > CAMERA_HEIGHT_SNAP) return target;
-    const step = Number.isFinite(delta) ? Math.max(0, delta) : 1 / 60;
-    return current + (target - current) * (1 - Math.exp(-step / CAMERA_HEIGHT_SECONDS));
   }
 
   /**
@@ -12744,7 +12675,7 @@ export class FestivalWorld {
     // a registered seat inside a room, and confineCameraToClub already holds it
     // within the walls.
     if (this.cameraMode === 'screening') return;
-    const eye = new THREE.Vector3(this.player.position.x, this.followEyeY() + AVATAR_EYE_OFFSET, this.player.position.z);
+    const eye = this.player.position.clone().add(new THREE.Vector3(0, AVATAR_EYE_OFFSET, 0));
     this.cameraProbe.subVectors(cameraTarget, eye);
     const reach = this.cameraProbe.length();
     if (reach < 0.001) return;
@@ -12788,49 +12719,11 @@ export class FestivalWorld {
       cameraTarget.copy(eye).addScaledVector(this.cameraProbe, reach);
       safe = this.cameraClearReach(eye, cameraTarget);
     }
-    /**
-     * Ease the distance in *both* directions.
-     *
-     * Opening out was eased; closing in was assigned outright. So walking up to
-     * anything snapped the camera towards the back of the avatar's head in a
-     * single frame, which is the sudden zoom that was reported as dizziness —
-     * and it happened constantly, because a world this full always has
-     * something just behind you.
-     *
-     * Coming in is still quicker than going out: it has to keep up with the
-     * camera's own easing, or the lens would be inside the wall while the
-     * distance was still catching up. It does not have to be instant, because
-     * it is not what guarantees anything — the hard clamp on the rendered
-     * position in `updateCamera` is, and that runs against the real geometry
-     * every frame after this.
-     *
-     * The first frame is exempt: there is no previous distance to ease from,
-     * and starting every visit by gliding in from the far plane would be worse
-     * than arriving.
-     */
-    /**
-     * Hold still unless there is a real reason to move.
-     *
-     * The distance used to chase `safe` continuously, and `safe` is a ray cast
-     * against whatever happens to be behind the avatar — so on a slope, a stair
-     * or past a railing it wanders by a few centimetres constantly, and the
-     * camera wandered with it. Nobody asked for any of that movement: the
-     * request is that walking not move the view at all.
-     *
-     * So a dead band. Inside it the distance is left exactly where it is, which
-     * means walking across ordinary ground moves the camera not at all rather
-     * than a little. Outside it something is genuinely in the way and the
-     * camera answers, closing quicker than it opens as before.
-     *
-     * The band is safe because it is not what keeps the lens out of masonry —
-     * the clamp on the rendered position does that, every frame, against the
-     * real geometry.
-     */
-    if (this.cameraReach <= 0) this.cameraReach = safe;
-    else {
-      const rate = safe < this.cameraReach ? CAMERA_REACH_CLOSE_RATE : CAMERA_REACH_OPEN_RATE;
-      this.cameraReach += (safe - this.cameraReach) * (1 - Math.exp(-delta * rate));
-    }
+    // Instant when closing, eased when opening — as it was before. Easing the
+    // close as well only made the lens lag, and a lagging lens is a turning
+    // view, because `lookAt` re-aims from wherever it has got to.
+    if (this.cameraReach <= 0 || safe < this.cameraReach) this.cameraReach = safe;
+    else this.cameraReach += (safe - this.cameraReach) * (1 - Math.exp(-delta * 8.5));
     if (this.cameraReach >= reach - 0.01) return;
     cameraTarget.copy(eye).addScaledVector(this.cameraProbe, this.cameraReach);
   }
@@ -12920,8 +12813,7 @@ export class FestivalWorld {
      */
     const radius = Math.max(0.35, Math.min(available, preferred));
     const squeeze = (preferred - radius) / preferred;
-    this.cameraFloorY = this.easeHeight(this.cameraFloorY, this.groundHeightAt(x, z), delta);
-    const floorY = this.cameraFloorY;
+    const floorY = this.groundHeightAt(x, z);
 
     this.lookTarget.set(x, floorY + 1.3, z);
     cameraTarget.set(
