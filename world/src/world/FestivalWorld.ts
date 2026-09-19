@@ -650,6 +650,15 @@ const CAMERA_MAY_STEER = false;
  * lens is never left inside a wall. Neither is instant, because instant is
  * what read as a lurch.
  */
+/**
+ * How far the clear distance must differ from the one in use before the camera
+ * does anything about it.
+ *
+ * A third of a unit. Below that the difference is the ray finding slightly
+ * different ground from one frame to the next, which is not a reason to move a
+ * camera anybody is looking through.
+ */
+const CAMERA_REACH_DEAD_BAND = 0.35;
 const CAMERA_REACH_CLOSE_RATE = 7;
 const CAMERA_REACH_OPEN_RATE = 4.5;
 const CAMERA_LEVEL_GROUND_GRADIENT = 0.35;
@@ -12884,8 +12893,26 @@ export class FestivalWorld {
      * and starting every visit by gliding in from the far plane would be worse
      * than arriving.
      */
+    /**
+     * Hold still unless there is a real reason to move.
+     *
+     * The distance used to chase `safe` continuously, and `safe` is a ray cast
+     * against whatever happens to be behind the avatar — so on a slope, a stair
+     * or past a railing it wanders by a few centimetres constantly, and the
+     * camera wandered with it. Nobody asked for any of that movement: the
+     * request is that walking not move the view at all.
+     *
+     * So a dead band. Inside it the distance is left exactly where it is, which
+     * means walking across ordinary ground moves the camera not at all rather
+     * than a little. Outside it something is genuinely in the way and the
+     * camera answers, closing quicker than it opens as before.
+     *
+     * The band is safe because it is not what keeps the lens out of masonry —
+     * the clamp on the rendered position does that, every frame, against the
+     * real geometry.
+     */
     if (this.cameraReach <= 0) this.cameraReach = safe;
-    else {
+    else if (Math.abs(safe - this.cameraReach) > CAMERA_REACH_DEAD_BAND) {
       const rate = safe < this.cameraReach ? CAMERA_REACH_CLOSE_RATE : CAMERA_REACH_OPEN_RATE;
       this.cameraReach += (safe - this.cameraReach) * (1 - Math.exp(-delta * rate));
     }
