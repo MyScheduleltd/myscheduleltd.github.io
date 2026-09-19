@@ -10573,7 +10573,17 @@ export class FestivalWorld {
      * A view passed in explicitly is the headset's, which carries the real
      * heading of a real head and must be used as given.
      */
-    if (view === this.camera && this.cameraMode !== 'first-person') {
+    /**
+     * Not in a headset, real or simulated.
+     *
+     * There the camera's own orientation *is* the authority: `updateCamera`
+     * hands it to the XR rig, which builds it from `xrYaw` and, on a phone, the
+     * gyroscope. Substituting the orbit's yaw there walks the avatar somewhere
+     * other than where the phone is pointing, which is what this did. A real
+     * headset passes its own view explicitly and never reaches this branch at
+     * all; the phone preview does not, so it has to be named.
+     */
+    if (view === this.camera && !this.xrActive && this.cameraMode !== 'first-person') {
       const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
       this.cameraDirection.set(-Math.sin(orbit.yaw), 0, -Math.cos(orbit.yaw));
     } else {

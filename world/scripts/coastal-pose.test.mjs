@@ -960,3 +960,39 @@ test('the avatar stays put on screen however far the camera is turned',()=>{
       `turning to ${(yaw*180/Math.PI).toFixed(0)}° moved the avatar vertically to ${turned.y.toFixed(3)}`);
   }
 });
+
+test('in a headset the avatar walks where the view points, not where the orbit does',()=>{
+  // The counterpart to the test above, and the fault it guards was caused by
+  // that one's fix. On a flat screen the orbit's yaw is the heading, because the
+  // rendered camera's facing drifts as the lens is moved about. In a headset —
+  // including the phone preview — `updateCamera` hands the camera to the XR rig
+  // and builds its orientation from `xrYaw` and the gyroscope, so *there* the
+  // camera's own direction is the authority and the orbit is stale. Taking the
+  // orbit's yaw in that mode walks the avatar somewhere other than where the
+  // phone is pointing.
+  const stepTaken=(xrActive,cameraYaw)=>{
+    const world=Object.create(FestivalWorld.prototype);
+    const player=new THREE.Group();player.position.set(0,.28,0);
+    const camera=new THREE.PerspectiveCamera();
+    Object.assign(world,{player,camera,cameraMode:'follow',xrActive,
+      cameraDirection:new THREE.Vector3(),moveVector:new THREE.Vector3(),
+      // Deliberately nothing like the camera's heading, so the two are telling.
+      cameraOrbit:{follow:{yaw:0,pitch:.3},perspective:{yaw:.8,pitch:.4}},
+      colliders:[],groundHeightAt:()=>0,airborne:false,playerState:'walking',
+      npcs:[],remoteAvatars:new Map(),seats:[],occupiedSeats:new Set()});
+    camera.position.set(0,3,0);
+    camera.rotation.order='YXZ';
+    camera.rotation.set(0,cameraYaw,0);
+    camera.updateMatrixWorld(true);
+    world.movePlayer(0,-1,0.1);
+    return world.player.position.clone();
+  };
+  // The phone is turned a quarter circle from the orbit. In a headset the step
+  // must follow the phone; on a flat screen it must follow the orbit.
+  const inHeadset=stepTaken(true,Math.PI/2);
+  const onScreen=stepTaken(false,Math.PI/2);
+  assert.ok(Math.abs(inHeadset.x)>0.09 && Math.abs(inHeadset.z)<0.01,
+    `a headset should walk along the view: got ${inHeadset.toArray().map((v)=>v.toFixed(3))}`);
+  assert.ok(Math.abs(onScreen.z)>0.09 && Math.abs(onScreen.x)<0.01,
+    `a flat screen should walk along the orbit: got ${onScreen.toArray().map((v)=>v.toFixed(3))}`);
+});
