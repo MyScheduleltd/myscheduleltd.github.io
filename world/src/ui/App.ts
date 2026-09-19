@@ -4791,6 +4791,18 @@ export class App {
         {
         const feedCounts = this.networkState?.mentorFeedCounts ?? { visitors: {}, npcs: {} };
         const feedLabel = (count: number) => `<span class="attendee-feed-count">${this.language === 'zh-TW' ? '餵食' : 'FEED'} ×${count}</span>`;
+        /**
+         * Residents only. A live visitor is another person with no profile for
+         * STAFF to have written, so there is nothing to open for them — the same
+         * rule the greeting prompt in the world already follows.
+         *
+         * A real button in the real panel, which is what makes this work in a
+         * headset for nothing: the painted interface reads these panels out of
+         * the DOM and dispatches real clicks back, and `#seat-menu` — where the
+         * card is drawn — already outranks `#panel` in its source list, so the
+         * card replaces the list in there by itself.
+         */
+        const aboutButton = (profile: NpcProfile) => `<button class="attendee-about" type="button" data-npc-about="${this.escapeAttribute(profile.id)}">${this.language === 'zh-TW' ? '介紹' : 'ABOUT'}</button>`;
         const selfVisitor = this.networkState?.visitors.find((visitor) => visitor.id === this.networkState?.selfId);
         const selfFeedCount = selfVisitor?.npcId && selfVisitor.npcId !== 'MENTOR'
           ? feedCounts.npcs[selfVisitor.npcId] ?? 0
@@ -4820,7 +4832,7 @@ export class App {
                 : profile.id === 'DRBEAUTY' ? 'THE ROOFTOP'
                 : originalIndex < 4 ? 'MY SQUARE'
                   : originalIndex < 6 ? 'THE PALACE'
-                    : originalIndex < 8 ? 'DRIVE-IN 88' : 'THE SHORE'))}${profile.id === 'MENTOR' ? '' : feedLabel(feedCounts.npcs[profile.id] ?? 0)}</small></li>`).join('')}
+                    : originalIndex < 8 ? 'DRIVE-IN 88' : 'THE SHORE'))}${profile.id === 'MENTOR' ? '' : feedLabel(feedCounts.npcs[profile.id] ?? 0)}${aboutButton(profile)}</small></li>`).join('')}
           </ul>`;
         }
       case 'pamphlet':
@@ -5028,6 +5040,22 @@ export class App {
   }
 
   private bindPanelActions(panelId: PanelId, panel: HTMLElement): void {
+    panel.querySelectorAll<HTMLButtonElement>('[data-npc-about]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const profile = this.npcProfiles.find((candidate) => candidate.id === button.dataset.npcAbout);
+        if (!profile) return;
+        // The list gives way to the card. Leaving both up puts the card over the
+        // list it was opened from, and the way back is one tap on CLOSE.
+        this.closePanel();
+        this.syncMenuCapture();
+        this.openNpcAbout({
+          id: profile.id,
+          name: profile.name,
+          title: profile.title,
+          introduction: profile.introduction ?? '',
+        });
+      });
+    });
     panel.querySelectorAll<HTMLButtonElement>('[data-travel]').forEach((button) => {
       button.addEventListener('click', () => {
         this.world?.fastTravel(button.dataset.travel as 'gate' | 'square' | 'palace' | 'drive-in' | 'shore' | 'club' | 'rooftop' | 'temple');
