@@ -1038,6 +1038,10 @@ button:active { filter: brightness(.88); scale: .96; }
    red, the condensed caps — but filled rather than outlined, because this one
    is pressable and that one is a number. */
 .attendee-about { border: 1px solid var(--red); padding: 3px 7px; color: var(--paper); background: var(--red); font: 800 10px var(--condensed); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+/* It sits in the name row now, which aligns its children on the baseline so a
+   name and its job title sit on one line. A button has no useful baseline, so
+   centre it against them instead of letting it hang. */
+.attendee-list strong .attendee-about { align-self: center; }
 .attendee-about:hover { color: var(--red); background: transparent; }
 .attendee-about:focus-visible { outline: 0; box-shadow: 0 0 0 2px var(--ink); }
 .pamphlet-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }

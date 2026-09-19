@@ -4827,12 +4827,12 @@ export class App {
                 : feedCounts.visitors[visitor.id] ?? 0;
               return `<li><span class="status-dot"></span><strong>${this.escapeHtml(visitor.name)}</strong><small>${this.escapeHtml(this.localizeLocation(visitor.presence.location))}${visitor.seatedAt ? ` · ${this.escapeHtml(visitor.seatedAt)}` : ''}${visitor.npcId === 'MENTOR' ? '' : feedLabel(count)}</small></li>`;
             }).join('')}
-            ${visibleNpcProfiles.map(({ profile, originalIndex }) => `<li><span class="npc-dot">NPC</span><strong>${this.escapeHtml(profile.name)}<em>${this.escapeHtml(profile.title)}</em></strong><small>${this.escapeHtml(this.localizeLocation(
+            ${visibleNpcProfiles.map(({ profile, originalIndex }) => `<li><span class="npc-dot">NPC</span><strong>${this.escapeHtml(profile.name)}<em>${this.escapeHtml(profile.title)}</em>${aboutButton(profile)}</strong><small>${this.escapeHtml(this.localizeLocation(
               profile.id === 'XIEHGAN' ? 'THE BASEMENT'
                 : profile.id === 'DRBEAUTY' ? 'THE ROOFTOP'
                 : originalIndex < 4 ? 'MY SQUARE'
                   : originalIndex < 6 ? 'THE PALACE'
-                    : originalIndex < 8 ? 'DRIVE-IN 88' : 'THE SHORE'))}${profile.id === 'MENTOR' ? '' : feedLabel(feedCounts.npcs[profile.id] ?? 0)}${aboutButton(profile)}</small></li>`).join('')}
+                    : originalIndex < 8 ? 'DRIVE-IN 88' : 'THE SHORE'))}${profile.id === 'MENTOR' ? '' : feedLabel(feedCounts.npcs[profile.id] ?? 0)}</small></li>`).join('')}
           </ul>`;
         }
       case 'pamphlet':
