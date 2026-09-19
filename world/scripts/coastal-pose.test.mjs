@@ -795,29 +795,23 @@ test('approaching a building keeps the follow camera out of the face and the mas
       `camera passed through the wall at frame ${frame}`);
   }
   /**
-   * The lunge, now mostly gone, pinned at what it measures.
+   * A deliberate trade, not an oversight.
    *
-   * It was 0.337 inward every tenth frame, for ever, and it survived three
-   * fixes because none of them was the cause. The cause was a limit cycle: the
-   * eased distance was measured towards the camera's *target*, which sits at
-   * the full orbit radius and so points steeper than the lens actually does, and
-   * a steeper ray clears an obstruction further. So the distance sat about 0.45
-   * longer than the line the lens was on, pushed outward at the opening rate,
-   * went obstructed, and was hauled back by the clamp that guarantees you cannot
-   * see through a wall. Ten frames, every time, against a wall, a corridor and a
-   * lamp post alike — identical numbers, because the lens sits on x=0 in all
-   * three and the sight line crosses each the same way.
+   * Easing the lens along an *arc* about the avatar, and clamping its distance
+   * on the ray it was actually travelling, cut this to 0.183. But moving the
+   * lens angularly is precisely what turns the view when `lookAt` re-aims it
+   * every frame, and the owner reported the result as the rotation drifting and
+   * being less steady than it had been. Rotation stability was asked for three
+   * times running; a third of a unit of distance, occasionally, was not
+   * complained about once.
    *
-   * `easeCameraToward` now travels the arc and clamps the distance on the ray
-   * the lens is actually on, measured out to the radius it wants rather than the
-   * one it has — the latter could only ever take room away, which walked the
-   * lens to 0.37 of a unit from the eye, inside the avatar's head.
-   *
-   * Measured after: 0.183 near a wall, and 0.005 on stairs, which is the case
-   * that was reported as unusable. Something of the cycle remains near a wall
-   * and this is where it is caught if it grows.
+   * So the straight interpolation is back and this is 0.337 again. If it is
+   * ever worth attacking, the cause is the limit cycle described in the camera
+   * code — the eased distance measured towards the *target* sits longer than
+   * the line the lens is really on — and the fix has to be one that does not
+   * move the lens sideways to get it.
    */
-  assert.ok(biggestZoomStep<0.19,`the view closed in ${biggestZoomStep.toFixed(3)} in a single frame`);
+  assert.ok(biggestZoomStep<0.35,`the view closed in ${biggestZoomStep.toFixed(3)} in a single frame`);
   // Not so close that the lens is inside the head. Below 1.4 the avatar is
   // faded out, so that is the floor worth holding rather than a comfortable
   // shoulder distance.

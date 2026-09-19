@@ -650,15 +650,6 @@ const CAMERA_MAY_STEER = false;
  * lens is never left inside a wall. Neither is instant, because instant is
  * what read as a lurch.
  */
-/**
- * How far the clear distance must differ from the one in use before the camera
- * does anything about it.
- *
- * A third of a unit. Below that the difference is the ray finding slightly
- * different ground from one frame to the next, which is not a reason to move a
- * camera anybody is looking through.
- */
-const CAMERA_REACH_DEAD_BAND = 0.35;
 const CAMERA_REACH_CLOSE_RATE = 7;
 const CAMERA_REACH_OPEN_RATE = 4.5;
 const CAMERA_LEVEL_GROUND_GRADIENT = 0.35;
@@ -1632,9 +1623,6 @@ export class FestivalWorld {
   /** The heights the view follows, eased, so treads do not become jolts. */
   private cameraFollowY = Number.NaN;
   private cameraFloorY = Number.NaN;
-  private readonly cameraArcPivot = new THREE.Vector3();
-  private readonly cameraArcFrom = new THREE.Vector3();
-  private readonly cameraArcTo = new THREE.Vector3();
   /** How far back the view is actually sitting, eased towards where it may. */
   private cameraReach = 0;
   /**
@@ -12499,7 +12487,7 @@ export class FestivalWorld {
     this.confineCameraOverWater(cameraTarget);
     this.pullCameraClearOfWalls(cameraTarget, delta);
     const smoothing = 1 - Math.exp(-delta * 5.2);
-    this.easeCameraToward(cameraTarget, smoothing);
+    this.camera.position.lerp(cameraTarget, smoothing);
     // Easing the camera position can itself carry it through a wall while the
     // target is already clear. Check the rendered position as well as the
     // target, and snap inward only when the old position is obstructed.
@@ -12545,105 +12533,6 @@ export class FestivalWorld {
     if (!Number.isFinite(current) || Math.abs(target - current) > CAMERA_HEIGHT_SNAP) return target;
     const step = Number.isFinite(delta) ? Math.max(0, delta) : 1 / 60;
     return current + (target - current) * (1 - Math.exp(-step / CAMERA_HEIGHT_SECONDS));
-  }
-
-  /**
-   * Move the lens towards where it should be — around the avatar, not straight
-   * at it.
-   *
-   * This was a plain `position.lerp`, which travels the **chord** between where
-   * the lens is and where it is going. A chord cuts the corner: both ends can be
-   * in clear air while the line between them passes through a wall. The clamp
-   * below then finds the lens inside masonry and hauls it back the same frame,
-   * because that clamp is what guarantees you cannot see through walls — and
-   * that haul is the snap. Measured while walking up to a building it was a
-   * third of a unit inward every tenth frame, for ever, and no amount of easing
-   * anywhere else could soften it, because the easing was not what jumped.
-   *
-   * Travelling the arc instead keeps the lens on a ray from the avatar at all
-   * times: the direction turns and the distance closes, separately, and every
-   * intermediate position is one the distance logic has already vouched for.
-   *
-   * Three earlier attempts treated the symptom — feeding the clamp back into the
-   * eased distance, capping it continuously, measuring along the lens line —
-   * and each only changed how often the jump happened. This is the cause.
-   */
-  private easeCameraToward(cameraTarget: THREE.Vector3, smoothing: number): void {
-    // A screening view is aimed across the room at a screen rather than orbiting
-    // a body, so it has no arc to travel and the straight line is correct.
-    if (this.cameraMode === 'screening') {
-      this.camera.position.lerp(cameraTarget, smoothing);
-      return;
-    }
-    const pivot = this.cameraArcPivot.set(
-      this.player.position.x,
-      this.followEyeY() + AVATAR_EYE_OFFSET,
-      this.player.position.z,
-    );
-    const from = this.cameraArcFrom.subVectors(this.camera.position, pivot);
-    const to = this.cameraArcTo.subVectors(cameraTarget, pivot);
-    const fromLength = from.length();
-    const toLength = to.length();
-    // Degenerate: the lens is sitting on the pivot, or is being asked to. There
-    // is no direction to turn, so fall back rather than divide by nothing.
-    if (fromLength < 0.001 || toLength < 0.001) {
-      this.camera.position.lerp(cameraTarget, smoothing);
-      return;
-    }
-    from.divideScalar(fromLength);
-    to.divideScalar(toLength);
-    // A normalised lerp rather than a true slerp. At a sixtieth of a second the
-    // angle between the two is small, where the two are indistinguishable, and
-    // this costs no trigonometry on a path that runs every frame.
-    from.lerp(to, smoothing);
-    const turned = from.length();
-    if (turned < 0.0001) {
-      // Exactly opposite directions, which lerp collapses to nothing.
-      this.camera.position.lerp(cameraTarget, smoothing);
-      return;
-    }
-    from.divideScalar(turned);
-    let length = fromLength + (toLength - fromLength) * smoothing;
-    /**
-     * Clamp the distance here, on the ray the lens will actually be on.
-     *
-     * This is the fault that survived three fixes. The clamp used to run *after*
-     * this, against the rendered position, and it is instant because it is the
-     * guarantee you cannot see through a wall. But `cameraReach` is measured
-     * towards the camera's *target*, which sits at the full orbit radius and so
-     * points higher and steeper than the lens currently does; a steeper ray
-     * clears an obstruction further, so the eased distance sat about 0.45
-     * longer than the line the lens was really on. It pushed outward at the
-     * opening rate, went obstructed, and got hauled back — 0.33 inward every
-     * tenth frame, for ever. A limit cycle between the two, not a staircase and
-     * not the geometry: measured identically against a wall, a corridor and a
-     * lamp post, because the lens sits on x=0 in all three.
-     *
-     * Now the ray, the distance and the clamp are the same measurement. The
-     * direction turns smoothly and the clear distance along a smoothly turning
-     * ray is smooth too — verified: sweeping in the avatar's own 0.06 steps, the
-     * clear distance changes by 0.06 to 0.0675 a step with no flat treads. So
-     * the lens never becomes obstructed and the clamp after this never fires.
-     */
-    /**
-     * Measure to the distance we *want*, not the one we currently have.
-     *
-     * Casting only as far as `length` can never report room further out, so
-     * feeding that answer back to `cameraReach` was a ratchet with no way up —
-     * measured, it walked the lens to 0.37 of a unit from the eye, inside the
-     * avatar's head. Casting to whichever of the two is longer lets the same
-     * number both take room away and give it back.
-     */
-    const wanted = Math.max(length, toLength);
-    const clear = this.cameraClearReach(pivot, this.cameraArcTo.copy(pivot).addScaledVector(from, wanted));
-    if (clear < length) length = clear;
-    this.camera.position.copy(pivot).addScaledVector(from, length);
-    // And keep the eased distance honest against the same measurement, or it
-    // goes on believing it has room it has not and spends every frame pushing
-    // back out into the wall — which is the limit cycle this whole method is
-    // about. Clamping by `clear` rather than by `length` is what stops that
-    // being a one-way ratchet.
-    this.cameraReach = Math.min(this.cameraReach, clear);
   }
 
   /**
@@ -12938,7 +12827,7 @@ export class FestivalWorld {
      * real geometry.
      */
     if (this.cameraReach <= 0) this.cameraReach = safe;
-    else if (Math.abs(safe - this.cameraReach) > CAMERA_REACH_DEAD_BAND) {
+    else {
       const rate = safe < this.cameraReach ? CAMERA_REACH_CLOSE_RATE : CAMERA_REACH_OPEN_RATE;
       this.cameraReach += (safe - this.cameraReach) * (1 - Math.exp(-delta * rate));
     }
