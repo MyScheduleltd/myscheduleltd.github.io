@@ -10541,11 +10541,37 @@ export class FestivalWorld {
   }
 
   private movePlayer(horizontal: number, vertical: number, distance: number, view: THREE.Object3D = this.camera): void {
-    // Third-person controls are always camera-relative: W advances toward the
-    // current view, S retreats, and A/D strafe along its right vector.
-    view.getWorldDirection(this.cameraDirection);
-    this.cameraDirection.y = 0;
-    this.cameraDirection.normalize();
+    /**
+     * Camera-relative, but relative to the orbit the visitor set — not to where
+     * the lens happens to be pointing this frame.
+     *
+     * This read the rendered camera's own facing, and that facing is whatever
+     * `lookAt` produced from wherever the lens had been moved to. So walking
+     * closed a loop: a step moved the avatar, the lens was repositioned around
+     * it — pulled in by clearance, eased, or jumped when `confineCameraToClub`
+     * swapped the look target for one 2.2 units away on crossing the threshold
+     * — the facing turned, "forward" turned with it, and the next step went
+     * somewhere slightly different. Near a doorway that is a circle you cannot
+     * walk out of, which is exactly what leaving SLAP AND POP became.
+     *
+     * The orbit's yaw is only ever written by a drag, a stick, or a deliberate
+     * placement. Taking the heading from there makes the visitor the only thing
+     * that can turn the controls, which is what was asked for, and it cannot
+     * feed back on itself because nothing about the camera's position touches
+     * it. The camera still sits at `+yaw` from the look target, so it faces
+     * along `-yaw`.
+     *
+     * A view passed in explicitly is the headset's, which carries the real
+     * heading of a real head and must be used as given.
+     */
+    if (view === this.camera && this.cameraMode !== 'first-person') {
+      const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
+      this.cameraDirection.set(-Math.sin(orbit.yaw), 0, -Math.cos(orbit.yaw));
+    } else {
+      view.getWorldDirection(this.cameraDirection);
+      this.cameraDirection.y = 0;
+      this.cameraDirection.normalize();
+    }
     const rightX = -this.cameraDirection.z;
     const rightZ = this.cameraDirection.x;
     this.moveVector.set(

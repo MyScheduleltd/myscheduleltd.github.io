@@ -889,3 +889,38 @@ test('venue relocation moves solids and seat foot support with the model, leavin
  world.buildOnGrade(()=>{car=new THREE.Group();car.position.set(35,.1,-20);scene.add(car,poster);world.seats.push({position:seat,footFloor:.4});world.colliders.push(collider);},-.8,-35,-10);
  assert.deepEqual(car.position.toArray(),[0,-.7000000000000001,-30]);assert.deepEqual(seat.toArray(),[0,-.8,-30]);assert.equal(world.seats[0].footFloor,-.4);assert.equal(collider.minX,-1);assert.equal(collider.minZ,-31);assert.equal(collider.minY,-.7000000000000001);assert.deepEqual(poster.position.toArray(),[0,0,0]);
 });
+
+test('walking is steered by the orbit the visitor set, never by where the lens ended up',()=>{
+  // The fault this guards is a feedback loop, and it made leaving SLAP AND POP
+  // impossible: movement read the *rendered* camera's facing, which `lookAt`
+  // derives from wherever the lens has been moved to. So a step moved the
+  // avatar, the lens was repositioned around it — pulled in by clearance, eased,
+  // or jumped when the club's confinement swapped the look target for one 2.2
+  // units away — the facing turned, "forward" turned with it, and the next step
+  // went somewhere slightly different. Near a doorway that is a circle.
+  const step=(cameraPosition)=>{
+    const world=Object.create(FestivalWorld.prototype);
+    const player=new THREE.Group();player.position.set(0,.28,0);
+    Object.assign(world,{player,camera:new THREE.PerspectiveCamera(),cameraMode:'follow',
+      cameraDirection:new THREE.Vector3(),moveVector:new THREE.Vector3(),
+      cameraOrbit:{follow:{yaw:0,pitch:.3},perspective:{yaw:.8,pitch:.4}},
+      colliders:[],groundHeightAt:()=>0,airborne:false,playerState:'walking',
+      npcs:[],remoteAvatars:new Map(),seats:[],occupiedSeats:new Set()});
+    world.camera.position.set(...cameraPosition);
+    // Aimed at the follow mode's own look target, which is offset in world Z —
+    // so the facing genuinely differs from the orbit by a different amount from
+    // each of these positions.
+    world.camera.lookAt(new THREE.Vector3(0,1.4,-2.2));
+    world.movePlayer(0,-1,0.1);
+    return [Number(world.player.position.x.toFixed(6)),Number(world.player.position.z.toFixed(6))];
+  };
+  const taken=[step([0,5,-10]),step([9,5,4]),step([-9,5,4]),step([0,2,-2])];
+  for(const position of taken){
+    assert.deepEqual(position,taken[0],
+      `the same orbit gave a different step from a different lens position: ${JSON.stringify(taken)}`);
+  }
+  // And it is the orbit's own heading: yaw 0 means the camera sits behind and
+  // looks along -Z, so forward is -Z.
+  assert.equal(taken[0][0],0,'forward drifted sideways');
+  assert.ok(taken[0][1]<0,'forward should advance along -Z at yaw 0');
+});
