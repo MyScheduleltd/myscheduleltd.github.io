@@ -12455,12 +12455,28 @@ export class FestivalWorld {
       return;
     } else {
       this.cameraFollowY = this.easeHeight(this.cameraFollowY, this.player.position.y, delta);
-      this.lookTarget.set(
-        this.player.position.x,
-        this.cameraFollowY + (this.cameraMode === 'perspective' ? 1.65 : 1.4),
-        this.player.position.z + (this.cameraMode === 'perspective' ? 0 : -2.2),
-      );
       const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
+      /**
+       * The lead — the bit of ground ahead of the avatar that the view is aimed
+       * at, so the body sits a little low in frame and you can see where you are
+       * going — follows the camera round.
+       *
+       * It was a fixed `z - 2.2`, in world space. At yaw zero that is directly
+       * ahead and the framing is the one it was drawn for; turn ninety degrees
+       * and the very same offset is entirely *sideways*, so the view is aimed at
+       * a patch of ground beside the avatar and the avatar slides to the edge of
+       * the frame. The further round you turned, the worse it got.
+       *
+       * Along the camera's own forward direction instead. At yaw zero this is
+       * exactly what it always was, so nothing about the default view changes;
+       * at every other angle the avatar now sits where it does at zero.
+       */
+      const lead = this.cameraMode === 'perspective' ? 0 : 2.2;
+      this.lookTarget.set(
+        this.player.position.x - Math.sin(orbit.yaw) * lead,
+        this.cameraFollowY + (this.cameraMode === 'perspective' ? 1.65 : 1.4),
+        this.player.position.z - Math.cos(orbit.yaw) * lead,
+      );
       const radius = (this.cameraMode === 'perspective' ? 11.68 : 10.56) * this.cameraZoom;
       const horizontalRadius = Math.cos(orbit.pitch) * radius;
       cameraTarget.copy(this.lookTarget).add(new THREE.Vector3(

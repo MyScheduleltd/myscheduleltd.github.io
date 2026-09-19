@@ -924,3 +924,39 @@ test('walking is steered by the orbit the visitor set, never by where the lens e
   assert.equal(taken[0][0],0,'forward drifted sideways');
   assert.ok(taken[0][1]<0,'forward should advance along -Z at yaw 0');
 });
+
+test('the avatar stays put on screen however far the camera is turned',()=>{
+  // The look target carried a fixed `z - 2.2` lead in *world* space, so that the
+  // view sits a little ahead of the body and you can see where you are going.
+  // At yaw zero that offset is directly ahead and the framing is the one it was
+  // drawn for. Turn ninety degrees and the same offset is entirely sideways, so
+  // the view is aimed at a patch of ground beside the avatar and the avatar
+  // slides to the edge of the frame — further the more you had turned.
+  const onScreen=(yaw)=>{
+    const world=Object.create(FestivalWorld.prototype);
+    const player=new THREE.Group();player.position.set(0,.28,0);
+    const camera=new THREE.PerspectiveCamera(58,16/9,.1,300);camera.position.set(0,5,10);
+    Object.assign(world,{player,camera,lookTarget:new THREE.Vector3(),cameraProbe:new THREE.Vector3(),
+      cameraMode:'follow',cameraZoom:1,cameraReach:0,playerState:'walking',cameraScratch:new THREE.Vector3(),
+      cameraFollowY:Number.NaN,cameraFloorY:Number.NaN,
+      cameraArcPivot:new THREE.Vector3(),cameraArcFrom:new THREE.Vector3(),cameraArcTo:new THREE.Vector3(),
+      clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
+      cameraOrbit:{follow:{yaw,pitch:Math.atan2(3.4,10)},perspective:{yaw:.8,pitch:.4}},
+      colliders:[],groundHeightAt:()=>0,confineCameraToClub(){},confineCameraOverWater(){},
+      settlePunchImpact(){},applyCameraShake(){},applyDrunkenView(){}});
+    for(let frame=0;frame<400;frame+=1)world.updateCamera(1/60,frame/60);
+    camera.updateMatrixWorld(true);camera.updateProjectionMatrix();
+    return new THREE.Vector3(player.position.x,player.position.y+1.5,player.position.z).project(camera);
+  };
+  const straightOn=onScreen(0);
+  // Slightly low in frame, which is the lead doing its job, and dead centre.
+  assert.ok(Math.abs(straightOn.x)<1e-6,`not centred even at yaw 0: ${straightOn.x}`);
+  assert.ok(straightOn.y<0,'the lead should put the body a little below centre');
+  for(const yaw of [Math.PI/4,Math.PI/2,Math.PI,-Math.PI/2,2.3,-2.9]){
+    const turned=onScreen(yaw);
+    assert.ok(Math.abs(turned.x-straightOn.x)<1e-6,
+      `turning to ${(yaw*180/Math.PI).toFixed(0)}° moved the avatar sideways to ${turned.x.toFixed(3)}`);
+    assert.ok(Math.abs(turned.y-straightOn.y)<1e-6,
+      `turning to ${(yaw*180/Math.PI).toFixed(0)}° moved the avatar vertically to ${turned.y.toFixed(3)}`);
+  }
+});
