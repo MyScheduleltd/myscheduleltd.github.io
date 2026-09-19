@@ -2159,3 +2159,13 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   font: inherit;
 }
 .outfit-choice select option { color: #171719; background: #f5efe2; }
+
+/* Shown only when the published build has moved on under a cached entry page.
+   Bottom centre, above the world's own furniture, in the festival's red. */
+.new-build {
+  position: fixed; z-index: 60; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom));
+  transform: translateX(-50%); border: 0; padding: 10px 18px;
+  color: #fff; background: var(--red); font: 800 13px var(--condensed); letter-spacing: .08em;
+  cursor: pointer; box-shadow: 0 6px 22px rgba(0,0,0,.45);
+}
+.new-build:hover { filter: brightness(1.1); }

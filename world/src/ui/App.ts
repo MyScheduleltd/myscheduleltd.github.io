@@ -503,6 +503,7 @@ export class App {
     // properly if it is still not there.
     void loadImportedAvatar().catch(() => undefined);
     this.preloadWorldModule();
+    this.watchForANewerBuild();
     this.showLastBreath();
     void this.detectVrSupport().finally(() => this.rejoinAfterDiscard());
     void this.festivalClient.publicConfig().then((config) => {
@@ -4584,6 +4585,67 @@ export class App {
       ? `你的供養我收下了，NT$${receipt.amount}。願你平安。`
       : `Your offering of NT$${receipt.amount} is accepted. May it come back to you.`);
     this.completeQuest('offering');
+  }
+
+  /**
+   * Notice when the published build has moved on, and say so.
+   *
+   * GitHub Pages caches the entry page for ten minutes and will not let the
+   * header be changed. That alone would be survivable, but the publish script
+   * deliberately keeps older hashed assets so a cached page does not break —
+   * so a stale entry page loads the *previous* build perfectly, with no error
+   * and nothing on screen to say so. The result is looking straight at an old
+   * version and reasonably concluding that nothing was fixed. That has now
+   * happened to this project more than once, and it costs a round trip every
+   * time.
+   *
+   * The check is cheap: re-read the entry page bypassing the cache and compare
+   * the module it names with the one actually running. Anything unexpected —
+   * offline, a dev server, a page served some other way — just leaves it alone.
+   */
+  private watchForANewerBuild(): void {
+    const running = App.entryModuleName();
+    if (!running) return;
+    const check = async (): Promise<void> => {
+      try {
+        const response = await fetch(window.location.pathname, { cache: 'no-store' });
+        if (!response.ok) return;
+        const served = (await response.text()).match(/assets\/[A-Za-z0-9_.-]+\.js/)?.[0];
+        if (!served || served === running) return;
+        this.showNewBuildPrompt();
+      } catch {
+        // Offline, or nothing readable at this path. Either is fine; the prompt
+        // is a convenience and must never be able to break the festival.
+      }
+    };
+    void check();
+    window.setInterval(() => void check(), 5 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) void check();
+    });
+  }
+
+  /** The module the running page was started from, as the page names it. */
+  private static entryModuleName(): string {
+    try {
+      const src = document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.getAttribute('src') ?? '';
+      return src.match(/assets\/[A-Za-z0-9_.-]+\.js/)?.[0] ?? '';
+    } catch {
+      return '';
+    }
+  }
+
+  private showNewBuildPrompt(): void {
+    if (this.root.querySelector('#new-build')) return;
+    const button = document.createElement('button');
+    button.id = 'new-build';
+    button.className = 'new-build';
+    button.type = 'button';
+    button.textContent = this.language === 'zh-TW' ? '有新版本 · 點此重新載入' : 'NEW VERSION · TAP TO RELOAD';
+    // A plain reload revalidates the document, which is exactly what a stale
+    // entry page needs; the assets are content-hashed and look after themselves.
+    button.addEventListener('click', () => window.location.reload());
+    this.root.appendChild(button);
   }
 
   /** One line in the nearby channel, from somebody who is not a visitor. */
