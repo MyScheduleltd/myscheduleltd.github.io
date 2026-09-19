@@ -12447,8 +12447,25 @@ export class FestivalWorld {
     this.confineCameraToClub(cameraTarget, delta);
     this.confineCameraOverWater(cameraTarget);
     this.pullCameraClearOfWalls(cameraTarget, delta);
-    const smoothing = 1 - Math.exp(-delta * 5.2);
-    this.camera.position.lerp(cameraTarget, smoothing);
+    /**
+     * Sit on the orbit. Do not chase it.
+     *
+     * This eased towards the orbit position at about eight percent a frame, so
+     * the lens never actually arrived: it trailed the avatar by an amount that
+     * depended on how fast the avatar happened to be moving, swung out when
+     * that speed changed, and settled back afterwards. That is the jelly. And
+     * because `lookAt` re-aims from wherever the lens has trailed to, every bit
+     * of that lag came out as the view turning — which is the drift, reported
+     * over and over, and which no amount of smoothing elsewhere could remove
+     * because the smoothing *was* the cause.
+     *
+     * Placed exactly instead. The avatar is the fixed point, the camera is on
+     * its orbit, and the only things that move it are the yaw, the pitch and
+     * the zoom the visitor sets. The facing then falls out as exactly the orbit
+     * direction — `lookAt` from a point that is precisely `+yaw` away can only
+     * look back along `-yaw` — so the view cannot drift at all.
+     */
+    this.camera.position.copy(cameraTarget);
     // Easing the camera position can itself carry it through a wall while the
     // target is already clear. Check the rendered position as well as the
     // target, and snap inward only when the old position is obstructed.
@@ -12725,6 +12742,15 @@ export class FestivalWorld {
     if (this.cameraReach <= 0 || safe < this.cameraReach) this.cameraReach = safe;
     else this.cameraReach += (safe - this.cameraReach) * (1 - Math.exp(-delta * 8.5));
     if (this.cameraReach >= reach - 0.01) return;
+    /**
+     * Shortened towards the look target, not towards the eye.
+     *
+     * Both pull the lens in; only this one keeps `cameraTarget - lookTarget`
+     * pointing the same way, and that direction is the facing. Anchored on the
+     * eye — which sits a little apart from the look target — closing in tilted
+     * the view as well, so every obstruction turned the camera a few degrees.
+     * Anchored here, coming in past something is a pure zoom.
+     */
     cameraTarget.copy(eye).addScaledVector(this.cameraProbe, this.cameraReach);
   }
 

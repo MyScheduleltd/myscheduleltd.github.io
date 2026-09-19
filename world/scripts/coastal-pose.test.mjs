@@ -642,7 +642,7 @@ test('follow camera stays on the avatar side of a nearby building wall',()=>{
   const player=new THREE.Group();player.position.set(0,.28,0);
   Object.assign(world,{
     player,playerState:'walking',cameraMode:'follow',cameraReach:0,
-    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),groundHeightAt:()=>0,
+    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),lookTarget:new THREE.Vector3(),groundHeightAt:()=>0,
     clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
     colliders:[{minX:-5,maxX:5,minZ:2,maxZ:3,minY:-1,maxY:10}],
   });
@@ -672,7 +672,7 @@ test('wall avoidance holds one side and returns to the usual orbit after clearan
   const world=Object.create(FestivalWorld.prototype);
   const player=new THREE.Group();player.position.set(0,.28,0);
   Object.assign(world,{player,playerState:'walking',cameraMode:'follow',cameraReach:0,
-    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),groundHeightAt:()=>0,
+    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),lookTarget:new THREE.Vector3(),groundHeightAt:()=>0,
     clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
     colliders:[{minX:-5,maxX:5,minZ:2,maxZ:3,minY:-1,maxY:10}]});
   const first=new THREE.Vector3(0,3.12,10);
@@ -694,7 +694,7 @@ test('perspective orbit also stays away from a wall at its side',()=>{
   const world=Object.create(FestivalWorld.prototype);
   const player=new THREE.Group();player.position.set(0,.28,0);
   Object.assign(world,{player,playerState:'walking',cameraMode:'perspective',cameraReach:0,
-    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),groundHeightAt:()=>0,
+    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),lookTarget:new THREE.Vector3(),groundHeightAt:()=>0,
     clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
     colliders:[{minX:2,maxX:3,minZ:-5,maxZ:5,minY:-1,maxY:10}]});
   const eye=player.position.clone().add(new THREE.Vector3(0,2.84,0));
@@ -989,4 +989,57 @@ test('in a headset the avatar walks where the view points, not where the orbit d
     `a headset should walk along the view: got ${inHeadset.toArray().map((v)=>v.toFixed(3))}`);
   assert.ok(Math.abs(onScreen.z)>0.09 && Math.abs(onScreen.x)<0.01,
     `a flat screen should walk along the orbit: got ${onScreen.toArray().map((v)=>v.toFixed(3))}`);
+});
+
+test('the camera sits on its orbit and does not wobble along behind',()=>{
+  // The jelly, and the drift, were one thing: the lens was eased towards its
+  // orbit position at about eight percent a frame, so it never arrived. It
+  // trailed the avatar by an amount that depended on how fast the avatar was
+  // moving, swung when that changed, and settled afterwards — and because
+  // `lookAt` re-aims from wherever it has trailed to, every bit of that lag
+  // came out as the view turning. Placed exactly, the facing is the orbit's and
+  // nothing else can move it.
+  const ramp=(x,z)=> z<0?0 : z>6?3 : z*0.5;
+  const walk=(colliders,ground)=>{
+    const world=Object.create(FestivalWorld.prototype);
+    const player=new THREE.Group();
+    const camera=new THREE.PerspectiveCamera();camera.position.set(0,5,-9);
+    Object.assign(world,{player,camera,lookTarget:new THREE.Vector3(),cameraProbe:new THREE.Vector3(),
+      cameraMode:'follow',cameraZoom:1,cameraReach:0,playerState:'walking',cameraScratch:new THREE.Vector3(),
+      clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
+      cameraOrbit:{follow:{yaw:.6,pitch:Math.atan2(3.4,10)},perspective:{yaw:.8,pitch:.4}},
+      colliders,groundHeightAt:ground,confineCameraToClub(){},confineCameraOverWater(){},
+      settlePunchImpact(){},applyCameraShake(){},applyDrunkenView(){}});
+    const direction=new THREE.Vector3();
+    let previousDirection,previousCamera,previousPlayer,worstTurn=0,worstWobble=0;
+    for(let frame=0;frame<400;frame+=1){
+      const z=-3+frame*0.03;
+      player.position.set(0,0.28+ground(0,z),z);
+      world.updateCamera(1/60,frame/60);
+      camera.getWorldDirection(direction);
+      if(previousDirection&&frame>=25){
+        worstTurn=Math.max(worstTurn,direction.angleTo(previousDirection));
+        // The camera's own movement, with the avatar's taken out. Rigidly
+        // attached, this is zero.
+        worstWobble=Math.max(worstWobble,camera.position.clone().sub(previousCamera)
+          .sub(player.position.clone().sub(previousPlayer)).length());
+      }
+      previousDirection=direction.clone();
+      previousCamera=camera.position.clone();
+      previousPlayer=player.position.clone();
+    }
+    return {worstTurn,worstWobble};
+  };
+  const walls=[{minX:-4,maxX:-1.3,minZ:-6,maxZ:12,minY:-1,maxY:14},
+               {minX:1.3,maxX:4,minZ:-6,maxZ:12,minY:-1,maxY:14}];
+  for(const [label,result] of [
+    ['flat ground',walk([],()=>0)],
+    ['up a ramp',walk([],ramp)],
+    ['a ramp between walls',walk(walls,ramp)],
+  ]){
+    assert.ok(result.worstTurn<1e-6,
+      `walking ${label} turned the view by ${THREE.MathUtils.radToDeg(result.worstTurn).toExponential(2)} degrees in a frame`);
+    assert.ok(result.worstWobble<1e-9,
+      `walking ${label} moved the camera ${result.worstWobble.toExponential(2)} of its own accord`);
+  }
 });
