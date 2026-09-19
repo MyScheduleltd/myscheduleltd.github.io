@@ -768,7 +768,7 @@ test('approaching a building keeps the follow camera out of the face and the mas
   const camera=new THREE.PerspectiveCamera();camera.position.set(0,5,-7);
   Object.assign(world,{player,camera,lookTarget:new THREE.Vector3(),cameraProbe:new THREE.Vector3(),
     cameraMode:'follow',cameraZoom:1,cameraReach:0,playerState:'walking',
-    cameraScratch:new THREE.Vector3(),
+    cameraScratch:new THREE.Vector3(),cameraAim:new THREE.Euler(0,0,0,'YXZ'),
     cameraArcPivot:new THREE.Vector3(),cameraArcFrom:new THREE.Vector3(),cameraArcTo:new THREE.Vector3(),
     clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
     cameraOrbit:{follow:{yaw:0,pitch:Math.atan2(3.4,10)},perspective:{yaw:.8,pitch:.4}},
@@ -923,4 +923,49 @@ test('walking is steered by the orbit the visitor set, never by where the lens e
   // looks along -Z, so forward is -Z.
   assert.equal(taken[0][0],0,'forward drifted sideways');
   assert.ok(taken[0][1]<0,'forward should advance along -Z at yaw 0');
+});
+
+test('the view faces where the visitor aimed it, whatever the lens is doing',()=>{
+  // The camera used to be aimed with `lookAt(lookTarget)`, which derives the
+  // facing from wherever the lens *ended up* — after the distance was eased,
+  // after clearance pulled it in, after the arc turned it. Every one of those
+  // moved the view as well as the camera and none of them was asked for, which
+  // is the camera "adjusting its rotation on its own".
+  const YAW=0.7, PITCH=0.33;
+  const facingAfter=(colliders,startCamera,walk)=>{
+    const world=Object.create(FestivalWorld.prototype);
+    const player=new THREE.Group();player.position.set(0,.28,0);
+    const camera=new THREE.PerspectiveCamera();camera.position.set(...startCamera);
+    Object.assign(world,{player,camera,lookTarget:new THREE.Vector3(),cameraProbe:new THREE.Vector3(),
+      cameraMode:'follow',cameraZoom:1,cameraReach:0,playerState:'walking',cameraScratch:new THREE.Vector3(),
+      cameraFollowY:Number.NaN,cameraFloorY:Number.NaN,cameraAim:new THREE.Euler(0,0,0,'YXZ'),
+      cameraArcPivot:new THREE.Vector3(),cameraArcFrom:new THREE.Vector3(),cameraArcTo:new THREE.Vector3(),
+      clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
+      cameraOrbit:{follow:{yaw:YAW,pitch:PITCH},perspective:{yaw:.8,pitch:.4}},
+      colliders,groundHeightAt:()=>0,confineCameraToClub(){},confineCameraOverWater(){},
+      settlePunchImpact(){},applyCameraShake(){},applyDrunkenView(){}});
+    for(let frame=0;frame<120;frame+=1){
+      if(walk)player.position.z=frame*0.03;
+      world.updateCamera(1/60,frame/60);
+    }
+    const direction=new THREE.Vector3();
+    camera.getWorldDirection(direction);
+    return direction;
+  };
+  const wall=[{minX:-6,maxX:6,minZ:2,maxZ:3,minY:-1,maxY:10}];
+  const corner=[{minX:-6,maxX:6,minZ:1.2,maxZ:3,minY:-1,maxY:10},{minX:1,maxX:6,minZ:-10,maxZ:10,minY:-1,maxY:10}];
+  const cases=[
+    facingAfter([],[0,5,-10],false),
+    facingAfter([],[0,2,-1],false),
+    facingAfter(wall,[0,5,-10],false),
+    facingAfter(corner,[0,5,-10],false),
+    facingAfter(wall,[0,5,-10],true),
+  ];
+  // The camera sits at +yaw from the look target, so it faces along -yaw.
+  const expected=new THREE.Vector3(
+    -Math.sin(YAW)*Math.cos(PITCH), -Math.sin(PITCH), -Math.cos(YAW)*Math.cos(PITCH));
+  for(const direction of cases){
+    assert.ok(direction.distanceTo(expected)<1e-6,
+      `the view drifted to ${direction.toArray().map((v)=>v.toFixed(5))} instead of the orbit`);
+  }
 });
