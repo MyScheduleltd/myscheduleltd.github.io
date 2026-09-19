@@ -4820,14 +4820,14 @@ export class App {
             ? (this.language === 'zh-TW' ? `${remoteVisitors.length + 1} 位線上觀影者` : `${remoteVisitors.length + 1} LIVE VISITOR${remoteVisitors.length ? 'S' : ''}`)
             : (this.language === 'zh-TW' ? '離線模式 · 正在重新連線' : 'OFFLINE · RECONNECTING')}</p>
           <ul class="attendee-list">
-            <li><span class="status-dot"></span><strong>${this.escapeHtml(this.currentId)}</strong><small>${this.localizeLocation(this.snapshot?.location ?? 'FESTIVAL GATE')}${window.innerWidth < 780 ? ` · ${this.language === 'zh-TW' ? '手機' : 'PHONE'}` : ''}${selfVisitor?.npcId === 'MENTOR' ? '' : feedLabel(selfFeedCount)}</small></li>
+            <li><span class="status-dot"></span><span class="attendee-about-gap" aria-hidden="true"></span><strong>${this.escapeHtml(this.currentId)}</strong><small>${this.localizeLocation(this.snapshot?.location ?? 'FESTIVAL GATE')}${window.innerWidth < 780 ? ` · ${this.language === 'zh-TW' ? '手機' : 'PHONE'}` : ''}${selfVisitor?.npcId === 'MENTOR' ? '' : feedLabel(selfFeedCount)}</small></li>
             ${remoteVisitors.map((visitor) => {
               const count = visitor.npcId && visitor.npcId !== 'MENTOR'
                 ? feedCounts.npcs[visitor.npcId] ?? 0
                 : feedCounts.visitors[visitor.id] ?? 0;
-              return `<li><span class="status-dot"></span><strong>${this.escapeHtml(visitor.name)}</strong><small>${this.escapeHtml(this.localizeLocation(visitor.presence.location))}${visitor.seatedAt ? ` · ${this.escapeHtml(visitor.seatedAt)}` : ''}${visitor.npcId === 'MENTOR' ? '' : feedLabel(count)}</small></li>`;
+              return `<li><span class="status-dot"></span><span class="attendee-about-gap" aria-hidden="true"></span><strong>${this.escapeHtml(visitor.name)}</strong><small>${this.escapeHtml(this.localizeLocation(visitor.presence.location))}${visitor.seatedAt ? ` · ${this.escapeHtml(visitor.seatedAt)}` : ''}${visitor.npcId === 'MENTOR' ? '' : feedLabel(count)}</small></li>`;
             }).join('')}
-            ${visibleNpcProfiles.map(({ profile, originalIndex }) => `<li><span class="npc-dot">NPC</span><strong>${this.escapeHtml(profile.name)}<em>${this.escapeHtml(profile.title)}</em>${aboutButton(profile)}</strong><small>${this.escapeHtml(this.localizeLocation(
+            ${visibleNpcProfiles.map(({ profile, originalIndex }) => `<li><span class="npc-dot">NPC</span>${aboutButton(profile)}<strong>${this.escapeHtml(profile.name)}<em>${this.escapeHtml(profile.title)}</em></strong><small>${this.escapeHtml(this.localizeLocation(
               profile.id === 'XIEHGAN' ? 'THE BASEMENT'
                 : profile.id === 'DRBEAUTY' ? 'THE ROOFTOP'
                 : originalIndex < 4 ? 'MY SQUARE'

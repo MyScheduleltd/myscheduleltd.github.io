@@ -588,6 +588,27 @@ const LITE_FOG_FAR = 78;
  * radians a second. About 115 degrees — brisk enough to come about without a
  * second push, slow enough to read the world going past.
  */
+/**
+ * How the view follows the avatar *upwards*.
+ *
+ * Sideways the camera tracks exactly — a lagging follow when you walk is what
+ * makes a third-person view feel loose. Height is different: a staircase raises
+ * the avatar one tread at a time, so the height it reports is a staircase too,
+ * and a view pinned to it jumps by the rise of a step every time one is
+ * climbed. Measured on a 0.3 rise that is a 0.3 jolt per step, and on a
+ * staircase that is a jolt every few frames — which is what "extremely unstable
+ * on the NIMA ROOFTOP stairs" was, and it hid from a metric watching the
+ * distance between the eye and the lens, because both jumped together.
+ *
+ * Eased over about an eighth of a second: fast enough that the view never feels
+ * detached from the body, slow enough to turn a staircase back into a ramp.
+ *
+ * Beyond `SNAP` the change is not a step but a storey — a teleport, a fall, a
+ * fast travel — and there the view has to arrive with the body rather than
+ * sail after it.
+ */
+const CAMERA_HEIGHT_SECONDS = 0.12;
+const CAMERA_HEIGHT_SNAP = 2.5;
 const XR_TURN_RATE = 2.0;
 const TOUCH_LOOK_GAIN = 6;
 /**
@@ -1599,6 +1620,9 @@ export class FestivalWorld {
   /** Scratch for the avoidance probe; the camera path allocates nothing. */
   private readonly cameraScratch = new THREE.Vector3();
   /** Scratch for the arc the lens travels; the camera path allocates nothing. */
+  /** The heights the view follows, eased, so treads do not become jolts. */
+  private cameraFollowY = Number.NaN;
+  private cameraFloorY = Number.NaN;
   private readonly cameraArcPivot = new THREE.Vector3();
   private readonly cameraArcFrom = new THREE.Vector3();
   private readonly cameraArcTo = new THREE.Vector3();
@@ -12395,11 +12419,12 @@ export class FestivalWorld {
       this.applyCameraShake(delta);
       return;
     } else {
-      this.lookTarget.copy(this.player.position).add(new THREE.Vector3(
-        0,
-        this.cameraMode === 'perspective' ? 1.65 : 1.4,
-        this.cameraMode === 'perspective' ? 0 : -2.2,
-      ));
+      this.cameraFollowY = this.easeHeight(this.cameraFollowY, this.player.position.y, delta);
+      this.lookTarget.set(
+        this.player.position.x,
+        this.cameraFollowY + (this.cameraMode === 'perspective' ? 1.65 : 1.4),
+        this.player.position.z + (this.cameraMode === 'perspective' ? 0 : -2.2),
+      );
       const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
       const radius = (this.cameraMode === 'perspective' ? 11.68 : 10.56) * this.cameraZoom;
       const horizontalRadius = Math.cos(orbit.pitch) * radius;
@@ -12432,6 +12457,36 @@ export class FestivalWorld {
   }
 
   /**
+   * The height the camera treats as the avatar's, for the pivot it swings about
+   * and the eye it measures clearance from.
+   *
+   * The eased one, not the body's own. Easing only the look target smoothed
+   * where the view *points* and left the lens still jumping a tread at a time,
+   * because both the arc's pivot and the clearance probe were built from the
+   * raw height — measured, the look target came down from 0.3 to 0.04 a step
+   * while the camera itself did not move at all. Falls back to the body before
+   * the eased value exists, and on the `Object.create` instances the pose tests
+   * build, where it never does.
+   */
+  private followEyeY(): number {
+    return Number.isFinite(this.cameraFollowY) ? this.cameraFollowY : this.player.position.y;
+  }
+
+  /**
+   * Follow a height without inheriting its steps. See CAMERA_HEIGHT_SECONDS.
+   *
+   * Tolerant of a first frame and of the `Object.create` instances the pose
+   * tests build, where field initialisers never ran: an unusable current value
+   * simply arrives at the target.
+   */
+  private easeHeight(current: number, target: number, delta: number): number {
+    if (!Number.isFinite(target)) return current;
+    if (!Number.isFinite(current) || Math.abs(target - current) > CAMERA_HEIGHT_SNAP) return target;
+    const step = Number.isFinite(delta) ? Math.max(0, delta) : 1 / 60;
+    return current + (target - current) * (1 - Math.exp(-step / CAMERA_HEIGHT_SECONDS));
+  }
+
+  /**
    * Move the lens towards where it should be — around the avatar, not straight
    * at it.
    *
@@ -12459,8 +12514,11 @@ export class FestivalWorld {
       this.camera.position.lerp(cameraTarget, smoothing);
       return;
     }
-    const pivot = this.cameraArcPivot.copy(this.player.position);
-    pivot.y += AVATAR_EYE_OFFSET;
+    const pivot = this.cameraArcPivot.set(
+      this.player.position.x,
+      this.followEyeY() + AVATAR_EYE_OFFSET,
+      this.player.position.z,
+    );
     const from = this.cameraArcFrom.subVectors(this.camera.position, pivot);
     const to = this.cameraArcTo.subVectors(cameraTarget, pivot);
     const fromLength = from.length();
@@ -12736,7 +12794,7 @@ export class FestivalWorld {
     // a registered seat inside a room, and confineCameraToClub already holds it
     // within the walls.
     if (this.cameraMode === 'screening') return;
-    const eye = this.player.position.clone().add(new THREE.Vector3(0, AVATAR_EYE_OFFSET, 0));
+    const eye = new THREE.Vector3(this.player.position.x, this.followEyeY() + AVATAR_EYE_OFFSET, this.player.position.z);
     this.cameraProbe.subVectors(cameraTarget, eye);
     const reach = this.cameraProbe.length();
     if (reach < 0.001) return;
@@ -12894,7 +12952,8 @@ export class FestivalWorld {
      */
     const radius = Math.max(0.35, Math.min(available, preferred));
     const squeeze = (preferred - radius) / preferred;
-    const floorY = this.groundHeightAt(x, z);
+    this.cameraFloorY = this.easeHeight(this.cameraFloorY, this.groundHeightAt(x, z), delta);
+    const floorY = this.cameraFloorY;
 
     this.lookTarget.set(x, floorY + 1.3, z);
     cameraTarget.set(

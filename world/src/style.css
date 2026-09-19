@@ -1029,7 +1029,13 @@ button:active { filter: brightness(.88); scale: .96; }
 .catalogue-group button:hover { color: white; background: var(--ink); }
 .catalogue-group button span { font: 700 17px var(--condensed); }.catalogue-group button small { opacity: .65; }
 .attendee-list { margin: 0; padding: 0; list-style: none; }
-.attendee-list li { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; border-block: 1px solid rgba(17,17,19,.2); padding: 15px 0; }
+/* Four columns: the badge, the introduction button, the name, the location. The
+   button was after the job title, so it landed at a different x on every row —
+   titles are not the same length — and the column reads as ragged. Its own
+   column puts them all on one line down the list. Rows without a button get an
+   empty cell, or their name and location would slide left out of step. */
+.attendee-list li { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 12px; border-block: 1px solid rgba(17,17,19,.2); padding: 15px 0; }
+.attendee-about-gap { display: block; }
 .attendee-list strong { display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; }
 .attendee-list strong em { color: var(--red); font: 700 11px var(--condensed); letter-spacing: .08em; text-transform: uppercase; }
 .attendee-list small { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; text-align: right; }
@@ -1038,10 +1044,6 @@ button:active { filter: brightness(.88); scale: .96; }
    red, the condensed caps — but filled rather than outlined, because this one
    is pressable and that one is a number. */
 .attendee-about { border: 1px solid var(--red); padding: 3px 7px; color: var(--paper); background: var(--red); font: 800 10px var(--condensed); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
-/* It sits in the name row now, which aligns its children on the baseline so a
-   name and its job title sit on one line. A button has no useful baseline, so
-   centre it against them instead of letting it hang. */
-.attendee-list strong .attendee-about { align-self: center; }
 .attendee-about:hover { color: var(--red); background: transparent; }
 .attendee-about:focus-visible { outline: 0; box-shadow: 0 0 0 2px var(--ink); }
 .pamphlet-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
