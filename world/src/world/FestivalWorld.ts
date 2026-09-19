@@ -1623,8 +1623,6 @@ export class FestivalWorld {
   /** The heights the view follows, eased, so treads do not become jolts. */
   private cameraFollowY = Number.NaN;
   private cameraFloorY = Number.NaN;
-  /** Reused, so aiming the camera every frame allocates nothing. */
-  private readonly cameraAim = new THREE.Euler(0, 0, 0, 'YXZ');
   private readonly cameraArcPivot = new THREE.Vector3();
   private readonly cameraArcFrom = new THREE.Vector3();
   private readonly cameraArcTo = new THREE.Vector3();
@@ -12479,10 +12477,7 @@ export class FestivalWorld {
       }
       if (eye.distanceTo(this.camera.position) < 1.4) this.player.visible = false;
     }
-    // A screening view is aimed across the room at a screen, which the orbit
-    // does not describe; everything else is aimed by the visitor alone.
-    if (this.cameraMode === 'screening') this.camera.lookAt(this.lookTarget);
-    else this.aimCameraAlongOrbit();
+    this.camera.lookAt(this.lookTarget);
     this.applyCameraShake(delta);
     this.applyDrunkenView(delta);
   }
@@ -12515,35 +12510,6 @@ export class FestivalWorld {
     if (!Number.isFinite(current) || Math.abs(target - current) > CAMERA_HEIGHT_SNAP) return target;
     const step = Number.isFinite(delta) ? Math.max(0, delta) : 1 / 60;
     return current + (target - current) * (1 - Math.exp(-step / CAMERA_HEIGHT_SECONDS));
-  }
-
-  /**
-   * Point the camera where the visitor pointed it — and nowhere else.
-   *
-   * This used to be `lookAt(this.lookTarget)`, which derives the facing from
-   * wherever the lens *ended up*: after the distance was eased, after clearance
-   * pulled it in, after the arc turned it. So every one of those moved the view
-   * as well as the camera, and none of them was asked for. Walking changed the
-   * facing; so did stepping through a doorway, and crossing the club's
-   * threshold, where the look target itself shifts 2.2 units. That is the
-   * camera "adjusting its rotation on its own".
-   *
-   * The orbit is written only by a drag, a stick, or a deliberate placement, so
-   * taking the aim straight from it means the view turns when the visitor turns
-   * it and at no other time. The camera sits at `+yaw` from the look target, so
-   * it faces along `-yaw`: with YXZ order that is `rotation.y = yaw` and
-   * `rotation.x = -pitch`, which is the same heading `movePlayer` now walks
-   * along — the two cannot disagree.
-   *
-   * The trade, stated plainly: the lens no longer re-aims at the avatar when it
-   * is pulled in close, so in a tight corner the body sits lower in frame
-   * instead of the world tilting to keep it centred. A still frame is the price
-   * of a still horizon.
-   */
-  private aimCameraAlongOrbit(): void {
-    const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
-    this.cameraAim.set(-orbit.pitch, orbit.yaw, 0, 'YXZ');
-    this.camera.quaternion.setFromEuler(this.cameraAim);
   }
 
   /**
@@ -12663,8 +12629,7 @@ export class FestivalWorld {
     this.camera.position.z += Math.cos(this.cameraShakePhase * 1.9) * amount * 0.4;
     // Re-aimed after the shove, so the body stays in frame while the mount
     // rattles around it. The roll goes on top, and is what sells the hit.
-    if (this.cameraMode === 'screening') this.camera.lookAt(this.lookTarget);
-    else this.aimCameraAlongOrbit();
+    this.camera.lookAt(this.lookTarget);
     this.camera.rotation.z += Math.sin(this.cameraShakePhase * 2.05) * amount * 0.055;
     this.cameraShake = Math.max(0, amount - delta * 3.6);
   }
