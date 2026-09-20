@@ -196,6 +196,18 @@ const DEFAULT_TRACK_TEMPO = 120;
 // The club's lights cannot listen to a cross-origin player, so each track
 // carries a tempo and every attendee strobes off the shared programme clock.
 const trackTempos = {};
+
+// A headset cannot draw a cross-origin YouTube iframe into the world, so a
+// film that should play inside an immersive session needs a direct video as
+// well as its YouTube link. Stored exactly as it was pasted — a Drive share
+// link or a CDN address — and resolved to a media URL by the client, which is
+// the only side that holds the Drive key.
+const immersiveSources = {};
+const MAX_IMMERSIVE_URL = 500;
+const validImmersiveUrl = (value) => {
+  if (typeof value !== 'string' || value.length > MAX_IMMERSIVE_URL) return false;
+  try { return new URL(value).protocol === 'https:'; } catch { return false; }
+};
 const programmeSchedule = Object.fromEntries(
   Object.keys(programmeCategoryForVenue).map((venue) => {
     const order = [...programmeIdsByVenue[venue]];
@@ -660,6 +672,7 @@ const persistedSnapshot = () => ({
   entranceSign,
   gateCopy,
   trackTempos,
+  immersiveSources,
   trackDurations,
   adminKeyDigest,
   messages,
@@ -968,6 +981,10 @@ const restorePersistedState = () => {
     if (!validYoutubeId(youtubeId) || !Number.isFinite(tempo) || tempo < 40 || tempo > 220) continue;
     trackTempos[youtubeId] = Math.round(tempo);
   }
+  for (const [youtubeId, link] of Object.entries(saved.immersiveSources ?? {})) {
+    if (!validYoutubeId(youtubeId) || !validImmersiveUrl(link)) continue;
+    immersiveSources[youtubeId] = link;
+  }
   if (saved.adminKeyDigest
     && typeof saved.adminKeyDigest.salt === 'string'
     && typeof saved.adminKeyDigest.hash === 'string'
@@ -1163,6 +1180,7 @@ const stateFor = (visitor) => ({
   entranceSign,
   gateCopy,
   trackTempos,
+  immersiveSources,
   jukebox: jukeboxSnapshot(),
 });
 
@@ -1461,7 +1479,7 @@ const server = createServer(async (request, response) => {
       // by itself, and without it there is no way from outside to tell a
       // deployed fix that did not work from a fix that never deployed — which
       // is a question this service has already cost two rounds of guessing.
-      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), offeringReceipt, schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
+      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), offeringReceipt, schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, immersiveSources, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
@@ -2168,6 +2186,7 @@ a{color:#e8b64a}</style>
           entranceSign,
           gateCopy,
           trackTempos,
+          immersiveSources,
           // The STAFF panel reads this payload, not the one attendees get, so
           // without it the running order and the shelf were always empty there
           // however many records were in the machine.
@@ -2290,6 +2309,19 @@ a{color:#e8b64a}</style>
         scheduleBroadcast();
         persist();
         return json(response, 200, { ok: true, trackTempos });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/immersive') {
+        const youtubeId = String(payload.youtubeId ?? '').trim();
+        if (!validYoutubeId(youtubeId)) return apiError(response, 400, 'Unknown track.');
+        const link = String(payload.url ?? '').trim();
+        // An empty box is how a link is taken away again, so it is not an error.
+        if (!link) delete immersiveSources[youtubeId];
+        else if (!validImmersiveUrl(link)) {
+          return apiError(response, 400, 'Paste an https link to a video file or a Google Drive share link.');
+        } else immersiveSources[youtubeId] = link;
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true, immersiveSources });
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/npcs') {
         const npcId = safeText(payload.npcId, 24).toUpperCase();

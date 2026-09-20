@@ -86,6 +86,12 @@ export type CustomVideos = Record<VenueKey, CatalogueEntry[]>;
 
 /** Beats per minute per track, used to strobe the club in time. */
 export type TrackTempos = Record<string, number>;
+/**
+ * YouTube id -> the direct video link a member of staff pasted for it, exactly
+ * as pasted. Resolved to a media URL on this side, because the Drive key that
+ * a share link needs lives in the client and nowhere else.
+ */
+export type ImmersiveSources = Record<string, string>;
 
 /** The last track an attendee asked the club's DJ to play. */
 export interface ClubRequest {
@@ -148,6 +154,7 @@ export interface FestivalState {
   jukebox?: JukeboxState;
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
+  immersiveSources?: ImmersiveSources;
 }
 
 export interface AdminState {
@@ -191,6 +198,7 @@ export interface AdminState {
   entranceSign?: EntranceSign;
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
+  immersiveSources?: ImmersiveSources;
   jukebox?: JukeboxState;
 }
 
@@ -304,6 +312,7 @@ export interface PublicConfig {
   entranceSign?: EntranceSign;
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
+  immersiveSources?: ImmersiveSources;
 }
 
 interface Session {
@@ -745,6 +754,14 @@ export class FestivalClient {
     await this.adminRequest('/api/admin/tempo', key, {
       method: 'POST',
       body: JSON.stringify({ youtubeId, bpm }),
+    });
+  }
+
+  /** An empty `url` takes the link away again, which the service allows. */
+  async updateImmersiveSource(key: string, youtubeId: string, url: string): Promise<void> {
+    await this.adminRequest('/api/admin/immersive', key, {
+      method: 'POST',
+      body: JSON.stringify({ youtubeId, url }),
     });
   }
 

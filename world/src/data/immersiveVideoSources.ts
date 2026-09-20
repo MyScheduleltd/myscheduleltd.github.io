@@ -1,3 +1,4 @@
+import { resolveMediaUrl } from './MediaLink';
 /**
  * Where an in-world screen gets a film it can draw *inside a headset*.
  *
@@ -59,6 +60,14 @@
  * than for delivering a catalogue to an audience.
  */
 const driveApiKey = 'AIzaSyCOVGK4WTCqQzapmMDnc3cgTuCCtvPyqOI';
+
+/**
+ * A link a member of staff pasted into the STAFF panel, resolved against this
+ * build's Drive key. The key lives here and only here, so resolving has to
+ * happen on this side rather than on the service.
+ */
+export const immersiveUrlFor = (pasted: string | undefined): string | undefined =>
+  resolveMediaUrl(pasted, driveApiKey);
 
 const driveMedia = (fileId: string): string | undefined =>
   driveApiKey ? `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${driveApiKey}` : undefined;

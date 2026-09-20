@@ -8,7 +8,8 @@ import {
   type CatalogueEntry,
   type VenueKey,
 } from '../data/catalogue';
-import { immersiveVideoSources } from '../data/immersiveVideoSources';
+import { immersiveVideoSources, immersiveUrlFor } from '../data/immersiveVideoSources';
+import { youtubeIdFromUrl } from '../data/MediaLink';
 import companyLogoUrl from '../assets/company-logo.png';
 import { GAMEPAD_ACTIONS, DEFAULT_BINDINGS, buttonLabel, type GamepadActionId } from '../world/GamepadInput';
 import { ACCESSORY_SLOTS, DEFAULT_ACCESSORY_COLOURS, type AccessorySlot } from '../world/AvatarAccessories';
@@ -17,6 +18,12 @@ import { ProgrammeClock } from '../data/programmeClock';
 import { QUESTS, QUEST_SECTIONS, QUEST_TOTAL, type QuestId } from '../data/quests';
 import { xrBindings, xrQuickActions, xrStickRows } from '../world/XrControls';
 import { armLeavingVr, type LeaveVrArming } from './LeaveVrConfirm';
+
+/**
+ * The rooms with lights that answer to a beat. Everywhere else is a cinema,
+ * where a tempo would be a control that does nothing.
+ */
+const STROBING_VENUES = new Set<VenueKey>(['club', 'rooftop']);
 import {
   FestivalClient,
   type AdminState,
@@ -3039,7 +3046,7 @@ export class App {
       // service cut longer films off at the wrongly learned time.
       this.world?.setPublicScreening(venue, {
         ...film,
-        immersiveUrl: immersiveVideoSources[film.youtubeId],
+        immersiveUrl: this.immersiveUrl(film.youtubeId),
       }, this.publicOffset(venue), `${schedule?.updatedAt ?? 0}|${schedule?.startedAt ?? 0}`);
       this.world?.setPublicScreenPaused(venue, schedule?.mode === 'paused');
     }
@@ -3228,6 +3235,36 @@ export class App {
   }
 
   /**
+   * The per-song controls that used to be a column of their own.
+   *
+   * BPM appears only where something actually strobes to it. A cinema has no
+   * lights to flash, so a tempo box there would promise a feature that does
+   * not exist. A VR link is offered on every song, because any film can be
+   * given one.
+   */
+  private trackTuneFields(venue: VenueKey, youtubeId: string): string {
+    const zh = this.language === 'zh-TW';
+    const id = this.escapeAttribute(youtubeId);
+    const tempo = STROBING_VENUES.has(venue)
+      ? `<label class="staff-order__bpm"><span>BPM</span><input type="number" data-tempo-input="${id}" min="40" max="220" step="1" value="${this.adminState?.trackTempos?.[youtubeId] ?? 120}" /></label>`
+      : '';
+    return `${tempo}<label class="staff-order__vr"><span>${zh ? 'VR 連結' : 'VR LINK'}</span><input type="url" data-immersive-input="${id}" maxlength="500" placeholder="${zh ? 'Drive 或 CDN 連結' : 'Drive or CDN link'}" value="${this.escapeAttribute(this.adminState?.immersiveSources?.[youtubeId] ?? '')}" /></label><button type="button" data-tune-save="${id}">${zh ? '儲存' : 'SAVE'}</button>`;
+  }
+
+  /**
+   * The direct video for a film, if it has one.
+   *
+   * What STAFF pasted wins over the table compiled into this build, so a film
+   * can be given a source without a deploy. The built-in table stays as the
+   * fallback, which is what keeps SKIBIDI playing on a service that has not
+   * been told about it yet.
+   */
+  private immersiveUrl(youtubeId: string): string | undefined {
+    const pasted = this.networkState?.immersiveSources?.[youtubeId];
+    return immersiveUrlFor(pasted) ?? immersiveVideoSources[youtubeId];
+  }
+
+  /**
    * Put a private film on a surface in the world instead of on a flat panel.
    *
    * `renderScreen` builds a YouTube iframe into `#venue-screen`, and that
@@ -3243,7 +3280,7 @@ export class App {
   private startPrivateScreeningInWorld(film: CatalogueEntry, offset: number): boolean {
     if (!this.paintsHeadsetHud() || !this.world) return false;
     const zh = this.language === 'zh-TW';
-    const immersiveUrl = immersiveVideoSources[film.youtubeId];
+    const immersiveUrl = this.immersiveUrl(film.youtubeId);
     if (!immersiveUrl) {
       // YouTube only. A cross-origin iframe can never become a WebGL texture,
       // so the film genuinely cannot be shown in here — but being dropped out
@@ -5704,17 +5741,26 @@ export class App {
             this.openPanel('admin');
           });
       });
-      panel.querySelectorAll<HTMLFormElement>('[data-tempo-form]').forEach((form) => {
-        form.addEventListener('submit', (event) => {
-          event.preventDefault();
-          const youtubeId = form.dataset.tempoForm ?? '';
-          const bpm = Number(new FormData(form).get('bpm'));
-          void this.festivalClient.updateTrackTempo(this.staffKey, youtubeId, bpm)
+      // One button a row, saving whichever of the two controls that row has.
+      // These are plain buttons and unnamed inputs on purpose: they sit inside
+      // the venue's own <form>, and HTML has no nested forms.
+      panel.querySelectorAll<HTMLButtonElement>('[data-tune-save]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const youtubeId = button.dataset.tuneSave ?? '';
+          const row = button.closest('li');
+          const bpm = row?.querySelector<HTMLInputElement>('[data-tempo-input]');
+          const link = row?.querySelector<HTMLInputElement>('[data-immersive-input]');
+          const saves: Array<Promise<void>> = [];
+          if (bpm) saves.push(this.festivalClient.updateTrackTempo(this.staffKey, youtubeId, Number(bpm.value)));
+          if (link) saves.push(this.festivalClient.updateImmersiveSource(this.staffKey, youtubeId, link.value.trim()));
+          button.disabled = true;
+          void Promise.all(saves)
             .then(() => this.refreshAdminState())
             .catch((error) => {
-              this.adminError = error instanceof Error ? error.message : 'Tempo update failed.';
+              this.adminError = error instanceof Error ? error.message : 'Track update failed.';
               this.openPanel('admin');
-            });
+            })
+            .finally(() => { button.disabled = false; });
         });
       });
       panel.querySelector<HTMLButtonElement>('[data-staff-refresh]')?.addEventListener('click', () => void this.refreshAdminState());
@@ -5870,6 +5916,15 @@ export class App {
           titleZh: String(formData.get('titleZh') ?? ''),
           creator: String(formData.get('creator') ?? ''),
           year: Number.isFinite(year) && year > 0 ? year : undefined,
+        }).then(async () => {
+          // The film has to exist before it can be given a video, and the id
+          // comes from the link rather than from the service's answer.
+          const immersiveUrl = String(formData.get('immersiveUrl') ?? '').trim();
+          const youtubeId = youtubeIdFromUrl(String(formData.get('youtubeUrl') ?? ''));
+          if (immersiveUrl && youtubeId) {
+            await this.festivalClient.updateImmersiveSource(this.staffKey, youtubeId, immersiveUrl);
+          }
+          form.reset();
         }).then(() => this.refreshAdminState()).catch((error) => {
           this.adminError = error instanceof Error ? error.message : 'Video could not be added.';
           this.openPanel('admin');
@@ -6163,6 +6218,12 @@ export class App {
         <button type="submit">${this.language === 'zh-TW' ? '儲存寺廟看板' : 'SAVE TEMPLE SIGN'}</button>
       </form>`)}
       ${this.staffSection('programme', this.language === 'zh-TW' ? '節目與銀幕' : 'PROGRAMME & SCREENS', `
+      <p class="staff-note">${this.language === 'zh-TW'
+        ? 'VR 連結：Quest 沒辦法把 YouTube 播放器畫進世界裡，所以要在頭戴裝置內放映的影片，除了 YouTube 連結之外還需要一支影片檔。貼上 Google Drive 分享連結或 CDN 網址皆可；留空則該片在 VR 中只會顯示海報。桌機與手機仍然使用 YouTube，兩邊依同一個排程時鐘同步。'
+        : 'VR LINK — a headset cannot draw a YouTube player into the world, so a film that should play inside one needs a video file as well as its YouTube link. Paste a Google Drive share link or a CDN address; leave it empty and that film shows a painted poster in VR. Desktop and mobile keep using YouTube, and both follow the same programme clock.'}</p>
+      <p class="staff-note">${this.language === 'zh-TW'
+        ? 'BPM：俱樂部與屋頂的燈光沒辦法讀取 YouTube 的聲音，所以每首歌自己帶速度。燈光依服務時鐘閃動，房裡每個人都同步。'
+        : 'BPM — the lights at the club and on the rooftop cannot read a YouTube player\u2019s audio, so each track carries its own tempo. They strobe off the service clock, so the whole room flashes together.'}</p>
       <div class="staff-programmes">${VENUE_KEYS.map((venue) => {
         const schedule = this.adminState?.schedule?.[venue];
         const venueFilms = this.venueFilms(venue);
@@ -6195,7 +6256,7 @@ export class App {
             </div>
             <p class="staff-programme__name">${this.escapeHtml(schedule?.name ?? defaultVenueLabels[venue])} · ${this.categoryLabel(catalogueByVenue[venue][0]?.category ?? '')}</p>
             <ol class="staff-order" data-programme-order>
-              ${order.map((film, index) => `<li data-youtube-id="${film.youtubeId}"><span><b>${index + 1}</b>${this.escapeHtml(this.filmTitle(film))}</span><span><button type="button" data-order-move="up" aria-label="${this.language === 'zh-TW' ? '上移' : 'Up'}">↑</button><button type="button" data-order-move="down" aria-label="${this.language === 'zh-TW' ? '下移' : 'Down'}">↓</button><button type="button" data-video-remove="${film.youtubeId}" data-venue="${venue}" aria-label="${this.language === 'zh-TW' ? '下架影片' : 'Remove video'}">×</button></span></li>`).join('')}
+              ${order.map((film, index) => `<li data-youtube-id="${film.youtubeId}"><span><b>${index + 1}</b>${this.escapeHtml(this.filmTitle(film))}</span><span class="staff-order__tune">${this.trackTuneFields(venue, film.youtubeId)}</span><span><button type="button" data-order-move="up" aria-label="${this.language === 'zh-TW' ? '上移' : 'Up'}">↑</button><button type="button" data-order-move="down" aria-label="${this.language === 'zh-TW' ? '下移' : 'Down'}">↓</button><button type="button" data-video-remove="${film.youtubeId}" data-venue="${venue}" aria-label="${this.language === 'zh-TW' ? '下架影片' : 'Remove video'}">×</button></span></li>`).join('')}
             </ol>
             <div class="staff-special">
               <label>${this.language === 'zh-TW' ? '特別放映來源' : 'SPECIAL SOURCE'}<select name="specialSource">
@@ -6216,20 +6277,13 @@ export class App {
       <form class="staff-video" id="staff-video-form">
         <label>${this.language === 'zh-TW' ? '影廳' : 'VENUE'}<select name="venue">${VENUE_KEYS.map((venue) => `<option value="${venue}">${this.escapeHtml(this.venueName(venue))}</option>`).join('')}</select></label>
         <label>${this.language === 'zh-TW' ? 'YouTube 連結' : 'YOUTUBE LINK'}<input name="youtubeUrl" type="url" required placeholder="https://youtu.be/..." /></label>
+        <label>${this.language === 'zh-TW' ? 'VR 影片連結' : 'VR VIDEO LINK'}<input name="immersiveUrl" type="url" maxlength="500" placeholder="https://drive.google.com/file/d/..." /></label>
         <label>${this.language === 'zh-TW' ? '英文片名' : 'TITLE'}<input name="title" required maxlength="100" /></label>
         <label>${this.language === 'zh-TW' ? '中文片名' : 'CHINESE TITLE'}<input name="titleZh" maxlength="100" /></label>
         <label>${this.language === 'zh-TW' ? '導演' : 'DIRECTOR'}<input name="creator" maxlength="80" /></label>
         <label>${this.language === 'zh-TW' ? '年份' : 'YEAR'}<input name="year" type="number" min="1888" max="2200" /></label>
         <button type="submit">${this.language === 'zh-TW' ? '新增影片' : 'ADD VIDEO'}</button>
       </form>
-      <h4 class="staff-subheading">${this.language === 'zh-TW' ? '俱樂部節拍' : 'CLUB TEMPO'}</h4>
-      <p class="staff-note">${this.language === 'zh-TW' ? '俱樂部燈光沒辦法讀取 YouTube 的聲音，所以每首歌自己帶速度。燈光依服務時鐘閃動，房裡每個人都同步。' : 'The club lights cannot read a YouTube player\u2019s audio, so each track carries its own tempo. Lights strobe off the service clock, so the whole room flashes together.'}</p>
-      <div class="staff-tempos">${this.venueFilms('club').map((film) => `
-        <form data-tempo-form="${this.escapeAttribute(film.youtubeId)}">
-          <span>${this.escapeHtml(this.filmTitle(film))}</span>
-          <label>BPM<input name="bpm" type="number" min="40" max="220" step="1" value="${this.adminState?.trackTempos?.[film.youtubeId] ?? 120}" /></label>
-          <button type="submit">${this.language === 'zh-TW' ? '儲存' : 'SAVE'}</button>
-        </form>`).join('')}</div>
       `)}
       ${this.staffSection('world', this.language === 'zh-TW' ? '世界與外觀' : 'WORLD & APPEARANCE', `
       <h4 class="staff-subheading">${this.language === 'zh-TW' ? '字標設定' : 'WORDMARK'}</h4>

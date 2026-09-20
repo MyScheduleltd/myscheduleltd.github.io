@@ -1003,11 +1003,6 @@ button:active { filter: brightness(.88); scale: .96; }
 .staff-section__body { padding: 16px 15px 20px; border-top: 1px solid rgba(17,17,19,.16); }
 .staff-subheading { margin: 26px 0 10px; color: var(--red); font: 800 11px var(--condensed); letter-spacing: .12em; }
 .staff-section__body > .staff-subheading:first-child { margin-top: 0; }
-.staff-tempos { display: grid; gap: 8px; }
-.staff-tempos form { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 9px 11px; border: 1px solid rgba(17,17,19,.18); }
-.staff-tempos span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.staff-tempos label { display: flex; align-items: center; gap: 6px; font: 800 10px var(--condensed); letter-spacing: .1em; }
-.staff-tempos input { width: 72px; }
 .map-branch { position: absolute; z-index: 0; top: 163px; left: 16%; right: 16%; height: 4px; background: var(--paper); }
 .map-sea { position: absolute; inset: auto 0 0; height: 95px; padding: 25px; background: #123c4d; font: 800 15px var(--condensed); letter-spacing: .1em; }
 .programme-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px; }
@@ -1268,6 +1263,17 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .staff-order li > span:first-child { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .staff-order li b { min-width: 22px; color: var(--red); }
 .staff-order li > span:last-child { display: flex; gap: 3px; }
+/* Per-song tempo and VR link, which used to be a column of their own. The row
+   wraps rather than squeezing the title, because a long title is how a member
+   of staff knows which song they are editing. */
+.staff-order li { flex-wrap: wrap; }
+.staff-order li > span:first-child { flex: 1 1 220px; }
+.staff-order__tune { display: flex; align-items: center; gap: 8px; flex: 1 1 320px; min-width: 0; }
+.staff-order__tune label { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.staff-order__tune label span { font: 800 10px var(--condensed); letter-spacing: .1em; white-space: nowrap; opacity: .72; }
+.staff-order__bpm input { width: 66px; }
+.staff-order__vr { flex: 1 1 auto; }
+.staff-order__vr input { width: 100%; min-width: 0; font-size: 12px; }
 .staff-order button { width: 34px; padding: 7px; }
 .staff-special { display: grid; grid-template-columns: .85fr 1.25fr 1fr auto; align-items: end; gap: 8px; }
 .staff-special [hidden] { display: none !important; }
