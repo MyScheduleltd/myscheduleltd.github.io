@@ -1150,6 +1150,7 @@ export class App {
           <div>
             <button type="button" data-public-catalogue>${zh ? '片單' : 'CATALOGUE'}</button>
             <button type="button" data-public-fullscreen>${zh ? '放映全螢幕' : 'FULLSCREEN SCREENING'}</button>
+            <button type="button" data-public-end hidden>${zh ? '結束放映' : 'END SCREENING'}</button>
             <button type="button" data-public-stand>${zh ? '起身' : 'STAND'}</button>
           </div>
         </section>
@@ -2048,6 +2049,14 @@ export class App {
     // Standing up is its own action. Routing it through interact() meant that at
     // the bar, where plain E orders a round, the STAND button bought a drink.
     this.root.querySelector<HTMLButtonElement>('[data-public-stand]')?.addEventListener('click', () => this.world?.forceStand());
+    // Ending a private screening without getting up. `hideVenueScreen` is the
+    // one choke point that gives a borrowed venue screen back to the festival,
+    // and starting the public one again keeps the bar up rather than leaving
+    // the visitor sitting in front of nothing.
+    this.root.querySelector<HTMLButtonElement>('[data-public-end]')?.addEventListener('click', () => {
+      this.hideVenueScreen();
+      this.startPublicScreening(true);
+    });
     // Reversible only, because this fires when a phone is locked.
     //
     // pagehide means "this page may be going away", not "this page is going
@@ -2206,6 +2215,22 @@ export class App {
       return;
     }
     if (action.type === 'vrWatch') {
+      if (this.paintsHeadsetHud()) {
+        // There is nothing to open. The venue's own screen is already showing
+        // the programme in the world, so "watch" means put the seat bar up —
+        // and crucially not `leaveVrForYoutube`, which maximised the DOM
+        // overlay and set `screenMaximized`, after which `syncVenueScreen`
+        // returned early on every frame and the bar could never come back.
+        this.activeVenue = action.venue;
+        this.hideSeatMenu();
+        this.startPublicScreening(true);
+        if (!this.immersiveUrl(this.publicFilm(action.venue).youtubeId)) {
+          this.showWorldAlert(this.language === 'zh-TW'
+            ? '此片尚未提供 VR 影片檔 · 銀幕上顯示海報'
+            : 'THIS FILM HAS NO VR VIDEO YET · THE SCREEN SHOWS ITS POSTER');
+        }
+        return;
+      }
       void this.leaveVrForYoutube(action.venue);
       return;
     }
@@ -3005,14 +3030,26 @@ export class App {
       // Ended from inside the world, by the prompt on the panel.
       this.screenMode = undefined;
     }
-    if (this.screenMode === 'private' && (snapshot.playerState === 'seated' || this.privateScreenOpen())) return;
-    if (this.screenMaximized && snapshot.playerState === 'seated') return;
+    const seated = snapshot.playerState === 'seated';
+    // A private screening drawn *in the world* must not take the seat bar away
+    // with it. The flat player has a close button of its own; a painted one
+    // does not, so the bar is the only way to end a screening without standing
+    // up — and hiding it here is what would make END SCREENING unreachable.
+    const inWorldPrivate = placement !== 'none';
+    if (this.screenMode === 'private' && !inWorldPrivate && (seated || this.privateScreenOpen())) return;
+    if (this.screenMaximized && seated) return;
     const seatMenuOpen = !this.root.querySelector<HTMLElement>('#seat-menu')?.hidden;
     if (snapshot.inTheater) {
       if (!this.screenMode) this.startPublicScreening(false);
-      if (snapshot.playerState === 'seated' && !seatMenuOpen && this.screenMode === 'public') this.showPublicSeatHud();
-      else if (snapshot.playerState !== 'seated') this.hidePublicSeatHud();
-    } else if (snapshot.playerState !== 'seated') {
+      if (seated && !seatMenuOpen && (this.screenMode === 'public' || inWorldPrivate)) this.showPublicSeatHud();
+      else if (!seated) this.hidePublicSeatHud();
+    } else if (seated && snapshot.seatKind === 'bar' && this.paintsHeadsetHud()) {
+      // A bar stool is a seat the screens forgot: the club's own screen plays
+      // behind it, and the only way to reach the catalogue from one was to get
+      // up again. Headset only, which is where it was asked for — the flat
+      // interface is unchanged.
+      if (!seatMenuOpen) this.showPublicSeatHud();
+    } else if (!seated) {
       this.hideVenueScreen();
       this.hidePublicSeatHud();
     }
@@ -3529,12 +3566,39 @@ export class App {
   }
 
   private showPublicSeatHud(): void {
+    this.syncPublicSeatButtons();
     const hud = this.root.querySelector<HTMLElement>('#public-seat-hud');
     const mode = this.root.querySelector<HTMLElement>('#public-seat-mode');
     const title = this.root.querySelector<HTMLElement>('#public-seat-title');
-    if (mode) mode.textContent = `${this.venueName(this.activeVenue)} · ${this.language === 'zh-TW' ? '公開放映' : 'PUBLIC SCREENING'}`;
-    if (title) title.textContent = this.filmTitle(this.publicFilm(this.activeVenue));
+    // Whatever is actually on the screen, which during a private screening is
+    // not the programme. Saying PUBLIC SCREENING over somebody's own film is
+    // the kind of small lie that makes an interface feel broken.
+    const privateFilm = this.screenMode === 'private' && this.privateProgress
+      ? this.allFilms().find((film) => film.id === this.privateProgress?.filmId)
+      : undefined;
+    const zh = this.language === 'zh-TW';
+    if (mode) {
+      mode.textContent = `${this.venueName(this.activeVenue)} · ${privateFilm
+        ? (zh ? '私人放映' : 'PRIVATE SCREENING')
+        : (zh ? '公開放映' : 'PUBLIC SCREENING')}`;
+    }
+    if (title) title.textContent = this.filmTitle(privateFilm ?? this.publicFilm(this.activeVenue));
     if (hud) hud.hidden = false;
+  }
+
+  /**
+   * Fullscreen means nothing on a screen the size of a wall, and the only
+   * thing the button could do in a session was open the flat browser panel
+   * the owner asked to be rid of. So it is taken away where the interface is
+   * painted, and the end-screening button appears only while there is a
+   * private screening to end.
+   */
+  private syncPublicSeatButtons(): void {
+    const painted = this.paintsHeadsetHud();
+    const fullscreen = this.root.querySelector<HTMLButtonElement>('[data-public-fullscreen]');
+    if (fullscreen) fullscreen.hidden = painted;
+    const end = this.root.querySelector<HTMLButtonElement>('[data-public-end]');
+    if (end) end.hidden = this.screenMode !== 'private' && !this.privateScreenOpen();
   }
 
   private hidePublicSeatHud(): void {

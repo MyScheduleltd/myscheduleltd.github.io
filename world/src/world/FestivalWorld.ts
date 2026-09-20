@@ -123,6 +123,8 @@ export interface WorldSnapshot {
   dayNight: DayNightState;
   playerState: PlayerState;
   inTheater: boolean;
+  /** Which kind of seat, when seated. A bar stool is a seat the screens forgot. */
+  seatKind?: 'screening' | 'bar' | 'bench';
   screeningVenue: VenueKey;
   outfit: 'festival' | 'swimwear';
   carriedItem?: CarriedItem;
@@ -10246,6 +10248,7 @@ export class FestivalWorld {
         dayNight,
         playerState: this.playerState,
         inTheater: this.inTheater(),
+        seatKind: this.activeSeat?.kind,
         screeningVenue: this.screeningVenue(),
         outfit: this.outfit,
         carriedItem: this.carriedItem ?? (performance.now()<this.drinkUntil?'DRINK':performance.now()<this.eatingUntil?this.eatingItem:undefined),

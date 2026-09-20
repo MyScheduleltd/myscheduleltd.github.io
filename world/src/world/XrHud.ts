@@ -833,7 +833,15 @@ export class XrHud {
     const toast = this.el('#interaction-toast');
     const alert = this.el('#world-alert');
     const seatBar = this.el('#public-seat-hud');
-    const signature = `${toast?.textContent?.trim() ?? ''}|${alert?.textContent?.trim() ?? ''}|${seatBar?.textContent?.trim() ?? ''}|${this.hover ? 'h' : ''}`;
+    // Which buttons are showing has to be settled *before* the signature. A
+    // hidden button is still in the NodeList and still inside `textContent`,
+    // so taking one away would not change the signature, the quad would not
+    // repaint, and the headset would go on painting a control the flat
+    // interface had already withdrawn.
+    const seatButtons = seatBar
+      ? Array.from(seatBar.querySelectorAll<HTMLElement>('button')).filter((entry) => !isHidden(entry))
+      : [];
+    const signature = `${toast?.textContent?.trim() ?? ''}|${alert?.textContent?.trim() ?? ''}|${seatBar?.textContent?.trim() ?? ''}|${seatButtons.length}|${this.hover ? 'h' : ''}`;
     if(signature === quad.signature)return;
     quad.signature = signature;
     const ctx = quad.ctx;
@@ -870,7 +878,7 @@ export class XrHud {
     };
 
     if(seatBar){
-      const buttons = Array.from(seatBar.querySelectorAll<HTMLElement>('button'));
+      const buttons = seatButtons;
       const gap = 12;
       const each = (width - gap * (buttons.length - 1)) / Math.max(1,buttons.length);
       const labels = buttons.map((entry) => readText(entry).toUpperCase());
