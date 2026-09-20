@@ -1043,3 +1043,72 @@ test('the camera sits on its orbit and does not wobble along behind',()=>{
       `walking ${label} moved the camera ${result.worstWobble.toExponential(2)} of its own accord`);
   }
 });
+
+/** A private screening borrows a venue's screen and must give it back. */
+const privateWorld=()=>{
+  const world=Object.create(FestivalWorld.prototype);
+  const started=[],stopped=[],panels=[];
+  world.projectors=new Map([['shore',{pending:undefined,xrPoster:{visible:false}}]]);
+  world.privateScreening=undefined;world.privateVenue=undefined;world.privatePanel=undefined;
+  world.xrActive=true;world.xrSimulated=false;
+  world.projectorVenue=()=>world.fakeVenue;
+  world.fakeVenue='shore';
+  world.startImmersiveVideo=(venue,film,offset)=>started.push([venue,film.id,Math.round(offset)]);
+  world.stopImmersiveVideo=(venue)=>stopped.push(venue);
+  world.releaseProjector=()=>{};
+  world.refreshXrPoster=()=>{};
+  world.startPrivatePanel=()=>panels.push(world.privateScreening?.film.id);
+  return {world,started,stopped,panels};
+};
+const PUBLIC_A={id:'pub-a',title:'PUBLIC A',embedUrl:'https://x/a',youtubeId:'pa'};
+const PUBLIC_B={id:'pub-b',title:'PUBLIC B',embedUrl:'https://x/b',youtubeId:'pb'};
+const PRIVATE={id:'skibidi',title:'SKIBIDI',youtubeId:'jiawzYgfkuI',immersiveUrl:'https://x/s.mp4'};
+
+test('a private film takes the venue screen',()=>{
+  const {world,started}=privateWorld();
+  world.setPublicScreening('shore',PUBLIC_A,12,'t1');
+  started.length=0;
+  world.setPrivateScreening(PRIVATE,0);
+  assert.equal(world.privateVenue,'shore');
+  assert.ok(started.some(([v,id])=>v==='shore'&&id==='skibidi'),'it goes up on the wall');
+});
+
+test('the programme cannot interrupt a private screening, but is still recorded',()=>{
+  const {world,started}=privateWorld();
+  world.setPublicScreening('shore',PUBLIC_A,12,'t1');
+  world.setPrivateScreening(PRIVATE,0);
+  started.length=0;
+  world.setPublicScreening('shore',PUBLIC_B,40,'t2');
+  assert.deepEqual(started,[],'the festival must not cut across what you chose');
+  assert.equal(world.projectors.get('shore').pending.film.id,'pub-b','but it keeps arriving');
+});
+
+test('giving the screen back shows where the festival has got to, not where it was',()=>{
+  const {world,started}=privateWorld();
+  world.setPublicScreening('shore',PUBLIC_A,12,'t1');
+  world.setPrivateScreening(PRIVATE,0);
+  world.setPublicScreening('shore',PUBLIC_B,40,'t2');
+  started.length=0;
+  world.setPrivateScreening(undefined);
+  assert.equal(world.privateVenue,undefined);
+  assert.ok(started.some(([v,id])=>v==='shore'&&id==='pub-b'),'the newer public film goes back up');
+});
+
+test('carrying a private film out of the cinema moves it to the personal panel',()=>{
+  const {world,started,panels}=privateWorld();
+  world.setPrivateScreening(PRIVATE,0);
+  assert.equal(world.privateVenue,'shore');
+  started.length=0;
+  world.fakeVenue=undefined;           // walked out of the room
+  world.applyPrivateScreening();
+  assert.equal(world.privateVenue,undefined,'the wall is given back');
+  assert.deepEqual(panels,['skibidi'],'and it follows you on the panel');
+});
+
+test('a YouTube-only film is never put on a surface in the world',()=>{
+  const {world,started,panels}=privateWorld();
+  world.setPrivateScreening({id:'yt',title:'YT ONLY',youtubeId:'abc'},0);
+  assert.equal(world.privateVenue,undefined);
+  assert.deepEqual(started,[]);
+  assert.deepEqual(panels,[]);
+});

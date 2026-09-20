@@ -2986,6 +2986,18 @@ export class App {
       this.audioMuted || !snapshot.inTheater || this.screenMaximized ||
         (this.screenMode === 'private' && this.privateScreenOpen()),
     );
+    // A screening on a venue's own wall belongs to the seat: stand up and it
+    // goes back to the programme. The personal panel does not — it is summoned
+    // where there is no seat — so it ends on its own prompt instead.
+    const placement = this.world?.privateScreeningPlacement() ?? 'none';
+    if (placement === 'venue' && snapshot.playerState !== 'seated') {
+      this.world?.setPrivateScreening(undefined);
+      this.screenMode = undefined;
+    } else if (this.screenMode === 'private' && placement === 'none'
+      && this.paintsHeadsetHud() && !this.privateScreenOpen()) {
+      // Ended from inside the world, by the prompt on the panel.
+      this.screenMode = undefined;
+    }
     if (this.screenMode === 'private' && (snapshot.playerState === 'seated' || this.privateScreenOpen())) return;
     if (this.screenMaximized && snapshot.playerState === 'seated') return;
     const seatMenuOpen = !this.root.querySelector<HTMLElement>('#seat-menu')?.hidden;
@@ -3207,8 +3219,48 @@ export class App {
     this.savePrivateProgress();
     this.hidePublicSeatHud();
     this.world?.setPublicScreenMuted(undefined, true);
+    if (this.startPrivateScreeningInWorld(film, offset)) {
+      this.hideSeatMenu();
+      return;
+    }
     this.renderScreen(film, 'private', offset, true);
     this.hideSeatMenu();
+  }
+
+  /**
+   * Put a private film on a surface in the world instead of on a flat panel.
+   *
+   * `renderScreen` builds a YouTube iframe into `#venue-screen`, and that
+   * element is the WebXR DOM overlay root — so unhiding it inside a session
+   * does not show the film in the world, it asks the headset to draw a browser
+   * window in front of it. That is what was reported: the film played, but
+   * outside the festival rather than in it.
+   *
+   * Returns true when the world has taken it, or when the visitor has been
+   * asked to confirm leaving VR and has not yet answered. False means fall
+   * through to the flat player, which is right everywhere but a headset.
+   */
+  private startPrivateScreeningInWorld(film: CatalogueEntry, offset: number): boolean {
+    if (!this.paintsHeadsetHud() || !this.world) return false;
+    const zh = this.language === 'zh-TW';
+    const immersiveUrl = immersiveVideoSources[film.youtubeId];
+    if (!immersiveUrl) {
+      // YouTube only. A cross-origin iframe can never become a WebGL texture,
+      // so the film genuinely cannot be shown in here — but being dropped out
+      // of VR without warning is what made this feel broken in the first place.
+      if (!this.confirmedLeavingVr(`film:${film.id}`, film.title)) return true;
+      return false;
+    }
+    this.screenMode = 'private';
+    this.world.setPrivateScreening(
+      { id: film.id, title: film.title, youtubeId: film.youtubeId, immersiveUrl },
+      offset,
+    );
+    const placement = this.world.privateScreeningPlacement();
+    this.showWorldAlert(placement === 'venue'
+      ? (zh ? `《${film.title}》正在銀幕上放映` : `${film.title.toUpperCase()} IS ON THE SCREEN`)
+      : (zh ? `《${film.title}》已在眼前開啟 · 按 E 結束` : `${film.title.toUpperCase()} IS PLAYING · E TO END IT`));
+    return true;
   }
 
   private renderScreen(
@@ -3421,6 +3473,9 @@ export class App {
   }
 
   private hideVenueScreen(resetMode = true): void {
+    // Whatever route got here, the film is no longer being watched — so give
+    // the venue's screen back to the festival's own programme.
+    this.world?.setPrivateScreening(undefined);
     const screen = this.root.querySelector<HTMLElement>('#venue-screen');
     const frame = this.root.querySelector<HTMLElement>('#screen-frame');
     if (screen) {

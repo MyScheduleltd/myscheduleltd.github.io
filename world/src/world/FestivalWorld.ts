@@ -34,6 +34,10 @@ import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpC
 import { coastalRoof, createCoastalSedan, CONVERTIBLE } from './CoastalGeometry';
 import { XrHud } from './XrHud';
 import { XR_HOLD_MS, xrBindingFor, type XrAction } from './XrControls';
+import {
+  placePrivateScreening, privateOffset, playsInsideHeadset,
+  type PrivateScreeningState, type ScreeningFilm,
+} from './PrivateScreening';
 import { videoSyncPlan, videoJoinTime, bufferedAheadOf } from './VideoSync';
 import { stepAvoidance, AVOIDANCE_OFFSETS_FINE, type AvoidanceState } from './CameraAvoidance';
 import { pinchZoom, pinchSpread, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX } from './CameraInput';
@@ -576,6 +580,12 @@ const NPC_LANE_RADIUS = 2.6;
  * flat haze, which costs far less than shading detail nobody can make out.
  */
 const LITE_FOG_FAR = 78;
+
+/** The personal screen, for private films watched away from any projector. */
+const PRIVATE_PANEL_WIDTH = 3.2;
+const PRIVATE_PANEL_DISTANCE = 4.1;
+/** Walk this far from it and it comes with you rather than being left behind. */
+const PRIVATE_PANEL_FOLLOW = 6.5;
 /**
  * How much further a finger turns the view than a mouse pointer does.
  *
@@ -1409,6 +1419,11 @@ export class FestivalWorld {
   /** Set by whoever asks to leave, read once by `xrEnded`. */
   private xrExitCause?: string;
   private xrExitReason?: string;
+  /** A film being watched privately, which outranks the programme on a screen. */
+  private privateScreening?: PrivateScreeningState;
+  /** The venue screen a private film has taken over, so it can be given back. */
+  private privateVenue?: VenueKey;
+  private privatePanel?: { mesh: THREE.Mesh; video: HTMLVideoElement; texture: THREE.VideoTexture };
   private readonly onProjectorAdvance?: WorldOptions['onProjectorAdvance'];
   private readonly onProjectorDuration?: WorldOptions['onProjectorDuration'];
   private readonly lookTarget = new THREE.Vector3();
@@ -2112,6 +2127,9 @@ export class FestivalWorld {
     this.xrHeld.clear();
     this.xrExitCause = undefined;
     this.xrExitReason = undefined;
+    // Somebody may already have been watching something privately on the flat
+    // screen when they put the headset on.
+    this.applyPrivateScreening();
   }
 
   /**
@@ -2498,6 +2516,8 @@ export class FestivalWorld {
     this.xrRig.scale.setScalar(1);
     this.xrRig.rotation.set(0, 0, 0);
     this.xrControllers.forEach((controller) => controller.position.set(0, 0, 0));
+    this.stopPrivatePanel();
+    this.privateVenue = undefined;
     for (const [venue, projector] of this.projectors) {
       this.stopImmersiveVideo(venue);
       projector.xrPoster.visible = false;
@@ -2789,6 +2809,14 @@ export class FestivalWorld {
       simulated: this.xrSimulated,
       domOverlay: this.xrDomOverlay ?? null,
       lastExitReason: this.xrExitReason ?? null,
+      privateScreening: this.privateScreening ? {
+        filmId: this.privateScreening.film.id,
+        title: this.privateScreening.film.title,
+        placement: this.privateScreeningPlacement(),
+        hasDirectSource: playsInsideHeadset(this.privateScreening.film),
+        panelMounted: Boolean(this.privatePanel),
+        ownsVenue: this.privateVenue ?? null,
+      } : null,
       singleWebglContext: !this.foregroundRenderer,
       controllers: this.xrControllers.length,
       hud: this.xrHud?.reviewSnapshot() ?? null,
@@ -5404,6 +5432,156 @@ export class FestivalWorld {
   }
 
   /** Release the headset decoder when leaving a venue or immersive mode. */
+  /**
+   * Watch something privately, inside the headset.
+   *
+   * Outside an immersive session this does nothing: the flat player is still
+   * the player, and it is better at this than a quad in a 3D scene. Inside
+   * one it is the whole point — see `PrivateScreening` for why a film needs a
+   * direct source before it can be shown in here at all.
+   */
+  setPrivateScreening(film: ScreeningFilm | undefined, offsetSeconds = 0): void {
+    this.privateScreening = film
+      ? { film, offsetSeconds, startedAt: performance.now() }
+      : undefined;
+    this.applyPrivateScreening();
+  }
+
+  /** True when a private film is actually on a surface in here. */
+  privateScreeningPlacement(): string {
+    return placePrivateScreening(this.privateScreening, this.projectorVenue(), this.paintsInHeadset()).kind;
+  }
+
+  private paintsInHeadset(): boolean {
+    return this.xrActive && !this.xrSimulated;
+  }
+
+  /** Does a private film currently own this venue's screen? */
+  private privateOwns(venue: VenueKey): boolean {
+    return this.privateVenue === venue;
+  }
+
+  /**
+   * Put the private film wherever it belongs now, and give back whatever it
+   * no longer needs. Called when the screening changes and when the visitor
+   * walks into or out of a room with a screen in it.
+   */
+  private applyPrivateScreening(): void {
+    const where = placePrivateScreening(
+      this.privateScreening, this.projectorVenue(), this.paintsInHeadset(),
+    );
+    if (where.kind !== 'panel') this.stopPrivatePanel();
+    // Hand a borrowed screen back before taking another, and put the festival's
+    // own programme on it as it stands now rather than as it stood then.
+    if (this.privateVenue && !(where.kind === 'venue' && where.venue === this.privateVenue)) {
+      const giveBack = this.privateVenue;
+      this.privateVenue = undefined;
+      this.stopImmersiveVideo(giveBack);
+      const pending = this.projectors.get(giveBack)?.pending;
+      if (pending) this.setPublicScreening(giveBack, pending.film, pending.offsetSeconds, pending.reloadToken);
+    }
+    if (where.kind === 'venue') {
+      const venue = where.venue as VenueKey;
+      const screening = this.privateScreening;
+      if (!screening) return;
+      this.privateVenue = venue;
+      const projector = this.projectors.get(venue);
+      if (projector) {
+        // The flat player must not be left running behind the quad.
+        this.releaseProjector(venue);
+        projector.filmId = screening.film.id;
+        projector.youtubeId = screening.film.youtubeId;
+      }
+      this.refreshXrPoster(venue, screening.film.title);
+      this.startImmersiveVideo(venue, screening.film, privateOffset(screening, performance.now()));
+      return;
+    }
+    if (where.kind === 'panel') this.startPrivatePanel();
+  }
+
+  /**
+   * The personal screen: a plane hung in the world in front of the viewer.
+   *
+   * World locked rather than head locked, because a film pinned to somebody's
+   * face is the fastest way to make them take a headset off. It follows only
+   * when they have walked away from it.
+   */
+  private startPrivatePanel(): void {
+    const screening = this.privateScreening;
+    const source = screening?.film.immersiveUrl;
+    if (!screening || !source) return;
+    if (this.privatePanel?.mesh.userData.filmId === screening.film.id) return;
+    this.stopPrivatePanel();
+    let url: URL;
+    try { url = new URL(source, window.location.href); } catch { return; }
+    if (!['https:', 'http:'].includes(url.protocol)) return;
+    const video = document.createElement('video');
+    // Before `src`, as everywhere else: without it the texture is tainted.
+    video.crossOrigin = 'anonymous';
+    video.playsInline = true;
+    video.preload = 'auto';
+    video.disableRemotePlayback = true;
+    video.autoplay = true;
+    // A private screening answers to nobody, so it loops.
+    video.loop = true;
+    video.muted = true;
+    const texture = new THREE.VideoTexture(video);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(PRIVATE_PANEL_WIDTH, PRIVATE_PANEL_WIDTH * 9 / 16),
+      new THREE.MeshBasicMaterial({ map: texture, toneMapped: false }),
+    );
+    mesh.userData.filmId = screening.film.id;
+    mesh.renderOrder = 2;
+    video.addEventListener('loadedmetadata', () => {
+      if (this.privatePanel?.video !== video) return;
+      const joinAt = privateOffset(screening, performance.now(), video.duration);
+      // Seeking costs a round trip and a keyframe hunt; skipping the first
+      // second of a film does not buy anything worth that.
+      if (joinAt > 1) video.currentTime = joinAt;
+    });
+    video.src = url.href;
+    void video.play().then(() => {
+      if (this.privatePanel?.video === video) video.muted = false;
+    }).catch(() => { /* a later headset gesture retries it */ });
+    this.scene.add(mesh);
+    this.privatePanel = { mesh, video, texture };
+    this.placePrivatePanel();
+  }
+
+  /** Hang it at eye height, an arm's reach and a bit further, facing the viewer. */
+  private placePrivatePanel(): void {
+    const panel = this.privatePanel;
+    if (!panel) return;
+    const yaw = this.xrYaw + this.xrHeadHeading;
+    panel.mesh.position.set(
+      this.player.position.x - Math.sin(yaw) * PRIVATE_PANEL_DISTANCE,
+      this.player.position.y + AVATAR_EYE_HEIGHT,
+      this.player.position.z - Math.cos(yaw) * PRIVATE_PANEL_DISTANCE,
+    );
+    // A plane's face is +Z, so this turns its front back towards the viewer.
+    panel.mesh.rotation.set(0, yaw, 0);
+  }
+
+  private updatePrivatePanel(): void {
+    const panel = this.privatePanel;
+    if (!panel) return;
+    if (panel.mesh.position.distanceTo(this.player.position) > PRIVATE_PANEL_FOLLOW) this.placePrivatePanel();
+  }
+
+  private stopPrivatePanel(): void {
+    const panel = this.privatePanel;
+    if (!panel) return;
+    this.privatePanel = undefined;
+    panel.video.pause();
+    panel.video.removeAttribute('src');
+    panel.video.load();
+    this.scene.remove(panel.mesh);
+    panel.mesh.geometry.dispose();
+    (panel.mesh.material as THREE.Material).dispose();
+    panel.texture.dispose();
+  }
+
   private stopImmersiveVideo(venue: VenueKey): void {
     const projector = this.projectors.get(venue);
     if (!projector?.xrVideo) return;
@@ -5599,11 +5777,14 @@ export class FestivalWorld {
       this.releaseProjector(venue);
       this.stopImmersiveVideo(venue);
     }
-    if (!wanted) return;
-    const pending = this.projectors.get(wanted)?.pending;
-    if (pending) {
+    const pending = wanted ? this.projectors.get(wanted)?.pending : undefined;
+    if (wanted && pending) {
       this.setPublicScreening(wanted, pending.film, pending.offsetSeconds, pending.reloadToken);
     }
+    // The room changed, so where a private film belongs may have changed with
+    // it: carrying one out of a cinema moves it onto the personal panel, and
+    // carrying it into one puts it up on the wall.
+    this.applyPrivateScreening();
   }
 
   /** The venue whose screen is worth running a player for right now. */
@@ -5623,6 +5804,10 @@ export class FestivalWorld {
     const projector = this.projectors.get(venue);
     if (!projector) return;
     projector.pending = { film, offsetSeconds, reloadToken };
+    // A private screening owns this screen until it ends. The programme keeps
+    // being recorded above, so handing the screen back later puts on whatever
+    // the festival has reached by then, not what it was showing when you sat.
+    if (this.privateOwns(venue)) return;
     if (projector.xrVideoFilmId !== film.id) {
       this.stopImmersiveVideo(venue);
       this.refreshXrPoster(venue, film.title);
@@ -6050,6 +6235,11 @@ export class FestivalWorld {
       this.carriedItem = undefined;
       this.syncCarriedPropAnchor();
       this.onAction({ type: 'ate' });
+      return;
+    }
+
+    if (this.privatePanel) {
+      this.setPrivateScreening(undefined);
       return;
     }
 
@@ -9898,6 +10088,7 @@ export class FestivalWorld {
     // Cheap: it compares one venue key and returns, unless somebody has just
     // walked into or out of a room.
     this.updateProjectorMounts();
+    this.updatePrivatePanel();
     const dayNight = this.dayNight.update();
     this.dayNight.atmosphere.update(dayNight.cycleMinute, this.player.position);
     // Exposed for the hour rather than fixed at noon's value. Raising lights
@@ -13015,6 +13206,11 @@ export class FestivalWorld {
     this.promptAction = 'interact';
     this.promptActionable = true;
     this.promptSecondary = false;
+    // A panel hung in front of somebody with no way to take it down is a trap:
+    // the close button belongs to `#venue-screen`, which an immersive session
+    // never shows. A screening on a venue's own wall does not need this —
+    // standing up ends that one.
+    if (this.privatePanel) return 'E / END THE PRIVATE SCREENING';
     if (this.atTheAltar()) {
       this.promptAction = 'worship';
       return `O / WORSHIP ${this.templeSignText.name}`;
