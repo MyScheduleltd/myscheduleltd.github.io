@@ -16,6 +16,7 @@ import { DJ_BY_VENUE, djProfileFor } from '../data/djProfiles';
 import { ProgrammeClock } from '../data/programmeClock';
 import { QUESTS, QUEST_SECTIONS, QUEST_TOTAL, type QuestId } from '../data/quests';
 import { xrBindings, xrQuickActions, xrStickRows } from '../world/XrControls';
+import { armLeavingVr, type LeaveVrArming } from './LeaveVrConfirm';
 import {
   FestivalClient,
   type AdminState,
@@ -2312,9 +2313,8 @@ export class App {
         return;
       }
       const name = zh ? (link?.labelZh || 'MASTER OF THE HOUSE') : (link?.label || 'MASTER OF THE HOUSE');
-      this.showWorldAlert(zh ? `正在開啟 ${name}` : `OPENING ${name}`);
-      window.open(safe, '_blank', 'noopener,noreferrer');
-      void this.leaveHeadsetForNewWindow(name);
+      if (!this.confirmedLeavingVr('shop', name)) return;
+      this.openLinkAndLeaveVr(safe, name);
       return;
     }
     if (action.type === 'pamphlet') {
@@ -2442,8 +2442,22 @@ export class App {
   }
 
   private handleVrSessionChange(active: boolean): void {
+    const wasActive = this.vrActive;
     this.vrActive = active;
-    if (active) this.vrError = '';
+    if (active) {
+      this.vrError = '';
+      this.leaveVrArming = undefined;
+    }
+    // A session that ends without anything in here asking for it is the one
+    // worth saying out loud. The owner reported losing the headset at the shop
+    // and the temple with no window to show for it, and on a Quest there is
+    // nothing to read afterwards — so it says so here, in the world, and the
+    // review snapshot keeps the same answer.
+    if (wasActive && !active && this.world?.lastXrExitReason() === 'headset') {
+      this.showWorldAlert(this.language === 'zh-TW'
+        ? '這台裝置結束了 VR 實境 · 並非從世界中離開'
+        : 'THE HEADSET ENDED THE VR SESSION — NOTHING IN THE WORLD ASKED IT TO');
+    }
     this.syncVrUi();
     this.refreshQuestUi();
   }
@@ -2457,6 +2471,51 @@ export class App {
    */
   private paintsHeadsetHud(): boolean {
     return this.vrActive && (!this.usesVrSimulation() || this.paintedHudReview);
+  }
+
+  /** Held between the press that offers to leave VR and the press that does. */
+  private leaveVrArming?: LeaveVrArming;
+
+  /**
+   * Ask twice before leaving an immersive session, and only in a headset.
+   *
+   * Outside one this is not a decision worth interrupting — a new tab on a
+   * desktop costs nothing and the page you came from is still there. In a
+   * headset it costs the whole session, so it is worth a second press. See
+   * `LeaveVrConfirm` for why one press cannot be trusted.
+   */
+  private confirmedLeavingVr(key: string, name: string): boolean {
+    if (!this.paintsHeadsetHud()) return true;
+    const decision = armLeavingVr(this.leaveVrArming, key, performance.now());
+    this.leaveVrArming = decision.armed;
+    if (!decision.confirmed) {
+      this.showWorldAlert(this.language === 'zh-TW'
+        ? `再按一次開啟${name} · 會離開 VR`
+        : `PRESS AGAIN TO OPEN ${name} — THIS LEAVES VR`);
+    }
+    return decision.confirmed;
+  }
+
+  /**
+   * Follow a link out of the world, and leave the headset only if it opened.
+   *
+   * `window.open` returns null when a blocker takes it, which in a headset is
+   * the usual outcome: the press came from a WebXR `select`, and that is not a
+   * gesture a popup blocker recognises. The old code threw the return value
+   * away and came out of VR regardless, so the visitor lost the festival and
+   * got nothing in exchange. There is nowhere to go, so we stay.
+   */
+  private openLinkAndLeaveVr(url: string, name: string): void {
+    const opened = window.open(url, '_blank', 'noopener,noreferrer');
+    const zh = this.language === 'zh-TW';
+    if (!opened) {
+      this.showWorldAlert(zh
+        ? `瀏覽器擋下了${name}的新視窗 · 仍在 VR 中`
+        : `THE BROWSER BLOCKED ${name} — STILL IN VR`);
+      return;
+    }
+    this.showWorldAlert(zh ? `正在開啟${name}` : `OPENING ${name}`);
+    void this.leaveHeadsetForNewWindow(name);
   }
 
   /**
@@ -2473,7 +2532,7 @@ export class App {
    */
   private async leaveHeadsetForNewWindow(what: string): Promise<void> {
     if (!this.paintsHeadsetHud()) return;
-    await this.world?.exitVr();
+    await this.world?.exitVr(`opening ${what}`);
     this.syncVrUi();
     this.showWorldAlert(this.language === 'zh-TW'
       ? `已離開 VR · ${what}已在瀏覽器另一個視窗開啟`
@@ -2865,7 +2924,7 @@ export class App {
         : 'THIS HEADSET DID NOT GRANT A DOM OVERLAY, SO A YOUTUBE FILM CANNOT PLAY INSIDE THE SESSION · LEAVING VR TO OPEN IT');
     }
     this.vrResumePending = true;
-    await this.world?.exitVr();
+    await this.world?.exitVr('a film with no DOM overlay');
     this.renderScreen(this.publicFilm(venue), 'public', this.publicScreeningOffset(), true);
     this.applyScreenMaximized(true);
     this.syncVrUi();
@@ -2880,7 +2939,7 @@ export class App {
   private async exitVrPreview(): Promise<void> {
     if (!this.world || !this.vrActive || !this.usesVrSimulation()) return;
     this.vrResumePending = true;
-    await this.world.exitVr();
+    await this.world.exitVr('leaving the preview');
     this.syncVrUi();
     this.showWorldAlert(this.language === 'zh-TW' ? '已離開 VR · 按「回到 VR」可再進入' : 'LEFT VR · TAP RESUME VR TO GO BACK IN');
   }
@@ -4543,14 +4602,26 @@ export class App {
       // can still see the gesture that asked for one; open it after an await
       // and the gesture is gone and the popup is blocked. This is the whole
       // reason the service hands back a URL instead of the form itself.
+      const payment = zh ? '付款頁面' : 'THE PAYMENT PAGE';
+      if (!this.confirmedLeavingVr('donation', payment)) return;
       const tab = window.open('', '_blank');
       if (tab) tab.document.write('<!doctype html><meta charset="utf-8"><title>…</title><p style="font:600 15px system-ui;padding:24px">前往綠界付款… Taking you to ECPay…</p>');
-      void this.leaveHeadsetForNewWindow(zh ? '付款頁面' : 'THE PAYMENT PAGE');
+      // Only once there is somewhere to go. This used to run whether or not
+      // the window opened, which in a headset meant losing the session to a
+      // blocked popup and never seeing a payment page at all.
+      if (tab) void this.leaveHeadsetForNewWindow(payment);
       void this.festivalClient.beginDonation(amount, address, wanted).then((started) => {
         if (tab) tab.location.replace(started.checkoutUrl);
-        // No tab means a blocker took it. Rather than lose the offering, this
-        // one goes in the same window — the festival reloads on the way back,
-        // which is worse than a second tab and much better than nothing.
+        // No tab means a blocker took it. On a flat screen the offering goes
+        // in this window instead — the festival reloads on the way back,
+        // which is worse than a second tab and much better than nothing. In a
+        // headset that same navigation ends the immersive session and shows
+        // nothing for it, so there it stays put and says why.
+        else if (this.vrActive) {
+          return complain(zh
+            ? '瀏覽器擋下了付款視窗。請先離開 VR 再供養。'
+            : 'The browser blocked the payment window. Leave VR and offer again.');
+        }
         else window.location.assign(started.checkoutUrl);
         close();
       }).catch((failure: unknown) => {
@@ -5816,8 +5887,9 @@ export class App {
         button.addEventListener('click', () => {
           const film = this.allFilms().find((entry) => entry.id === button.dataset.filmId);
           if (film) {
-            window.open(film.sourceUrl, '_blank', 'noopener,noreferrer');
-            void this.leaveHeadsetForNewWindow(this.language === 'zh-TW' ? '作品頁面' : 'THE FILM PAGE');
+            const name = this.language === 'zh-TW' ? '作品頁面' : 'THE FILM PAGE';
+            if (!this.confirmedLeavingVr(`film:${film.id}`, name)) return;
+            this.openLinkAndLeaveVr(film.sourceUrl, name);
           }
         });
       });

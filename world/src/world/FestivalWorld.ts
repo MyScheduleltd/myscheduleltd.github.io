@@ -1406,6 +1406,9 @@ export class FestivalWorld {
   private readonly onSnapshot: WorldOptions['onSnapshot'];
   private readonly onAction: WorldOptions['onAction'];
   private readonly onXrSessionChange?: WorldOptions['onXrSessionChange'];
+  /** Set by whoever asks to leave, read once by `xrEnded`. */
+  private xrExitCause?: string;
+  private xrExitReason?: string;
   private readonly onProjectorAdvance?: WorldOptions['onProjectorAdvance'];
   private readonly onProjectorDuration?: WorldOptions['onProjectorDuration'];
   private readonly lookTarget = new THREE.Vector3();
@@ -2107,6 +2110,8 @@ export class FestivalWorld {
       this.xrHud?.resetPlacement();
     }
     this.xrHeld.clear();
+    this.xrExitCause = undefined;
+    this.xrExitReason = undefined;
   }
 
   /**
@@ -2130,7 +2135,7 @@ export class FestivalWorld {
           else if (action === 'punch') this.punchFromTouch();
           // A headset has no flat exit button — the one in the corner belongs
           // to the desktop preview — so leaving has to be painted.
-          else if (action === 'exitVr') void this.exitVr();
+          else if (action === 'exitVr') void this.exitVr('painted exit button');
         },
       });
       return true;
@@ -2203,7 +2208,16 @@ export class FestivalWorld {
     }
   }
 
-  async exitVr(): Promise<void> {
+  /**
+   * Leave the headset, and say who asked.
+   *
+   * `cause` is kept so that a session which ends without anybody asking can be
+   * told apart from one the visitor or the world ended on purpose. On a real
+   * headset that difference is the whole diagnosis, and it is not something a
+   * desktop can reproduce — see `lastXrExitReason`.
+   */
+  async exitVr(cause = 'visitor'): Promise<void> {
+    this.xrExitCause = cause;
     if (this.xrSimulated) {
       this.xrEnded();
       return;
@@ -2215,6 +2229,16 @@ export class FestivalWorld {
     } catch {
       this.xrEnded();
     }
+  }
+
+  /**
+   * What ended the last immersive session: who asked for it, or `'headset'`
+   * when nothing in here did and the browser or the runtime ended it by
+   * itself. Reported in the world after the fact and in the review snapshot,
+   * because a session that ends on a Quest cannot be watched from a desk.
+   */
+  lastXrExitReason(): string | undefined {
+    return this.xrExitReason;
   }
 
   /**
@@ -2453,6 +2477,11 @@ export class FestivalWorld {
   }
 
   private readonly xrEnded = (): void => {
+    // Nobody in here asked, so the headset ended it: a blocked popup that
+    // navigated the page, a lost GL context, the runtime taking the display
+    // back. Worth keeping, because the alternative is guessing.
+    this.xrExitReason = this.xrExitCause ?? 'headset';
+    this.xrExitCause = undefined;
     this.xrSession = undefined;
     this.xrDomOverlay = undefined;
     this.xrHud?.setVisible(false);
@@ -2759,6 +2788,7 @@ export class FestivalWorld {
       active: this.xrActive,
       simulated: this.xrSimulated,
       domOverlay: this.xrDomOverlay ?? null,
+      lastExitReason: this.xrExitReason ?? null,
       singleWebglContext: !this.foregroundRenderer,
       controllers: this.xrControllers.length,
       hud: this.xrHud?.reviewSnapshot() ?? null,
