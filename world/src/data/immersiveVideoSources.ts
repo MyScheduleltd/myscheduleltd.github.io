@@ -58,7 +58,7 @@
  * serving media this way, so this is a route for testing in the headset rather
  * than for delivering a catalogue to an audience.
  */
-const driveApiKey = '';
+const driveApiKey = 'AIzaSyCOVGK4WTCqQzapmMDnc3cgTuCCtvPyqOI';
 
 const driveMedia = (fileId: string): string | undefined =>
   driveApiKey ? `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${driveApiKey}` : undefined;
@@ -79,7 +79,11 @@ export const MEDIA_ORIGIN = 'https://www.googleapis.com';
  */
 const driveFiles: Record<string, string> = {
   // Skibidi — JJ Lin Ft. Jackie Chen, first in the DRIVE-IN 88 playlist.
-  jiawzYgfkuI: '1OwWa9w8QScOGX4ZE3Hog4JldlV2RTDKu',
+  // The 1080p/6Mbps streaming encode, not the 4K master: the master was
+  // 895MB at 35Mbps, which a headset cannot decode while holding 90fps in
+  // the world around the screen. Keyframes every two seconds, so a screen
+  // joining a film part way through lands close to the programme clock.
+  jiawzYgfkuI: '1y1oR_RYNXob0NBuB4QiLgywV5IEJzDXT',
 };
 
 /**
