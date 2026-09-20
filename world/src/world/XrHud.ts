@@ -256,20 +256,27 @@ export class XrHud {
     // Laid out by the angle each block subtends, not by eye, because in a
     // headset two panels that merely look separate on a monitor will sit on
     // top of each other. Measured from the eye at these distances:
-    //   clock   -30.9°..-11.7° x, +11.6°..+18.6° y
-    //   status  +11.3°..+31.0° x, +10.9°..+18.9° y
+    //   clock   -30.9°..-11.7° x, +11.2°..+18.5° y
+    //   status  +11.3°..+31.0° x,  +9.0°..+20.5° y
     //   chat    -34.0°..-14.6° x, -10.5°..+4.5°  y
-    //   quick   +18.1°..+29.0° x,  -2.6°..-9.5°  y
-    //   prompt  -14.6°..+14.6° x,  -8.0°..-14.6° y
-    //   hints    centred,           -18.1°..-21.3° y
+    //   quick   +18.1°..+29.0° x,  -2.2°..-9.9°  y
+    //   prompt  -15.4°..+15.4° x,  -2.3°..-16.6° y
+    //   hints    centred,          -19.9°..-24.8° y
+    // Re-measured, because this table had gone stale and the drift was the
+    // bug: the prompt's canvas was doubled to 560 to give a wrapped prompt
+    // headroom, nobody moved the panel, and its bottom edge went from -15.4°
+    // to -18.75° — straight through the top of the hints at -16.7°. The seat
+    // bar draws at the bottom of that panel, so it landed on the instructions.
+    // The prompt now ends at -16.6° and the hints begin at -19.9°: 3.4° of
+    // clear air. Keep this table honest when a canvas changes size.
     // The pass panel is placed in the world rather than here, 1.45m ahead,
     // where it subtends 51.5° across and at most 45.3° down.
     // Nothing overlaps, and the middle of the view is left empty.
     this.at(this.clock.mesh,-0.60,0.40,1.50);
     this.at(this.status.mesh,0.60,0.40,1.50);
     this.at(this.chat.mesh,-0.70,-0.08,1.50);
-    this.at(this.prompt.mesh,0,-0.30,1.42);
-    this.at(this.hints.mesh,0,-0.56,1.60);
+    this.at(this.prompt.mesh,0,-0.24,1.42);
+    this.at(this.hints.mesh,0,-0.66,1.60);
     this.at(this.quick.mesh,0.66,-0.16,1.50);
     this.head.add(
       this.clock.mesh,this.status.mesh,this.chat.mesh,
@@ -879,7 +886,7 @@ export class XrHud {
 
     if(seatBar){
       const buttons = seatButtons;
-      const gap = 12;
+      const gap = 16;
       const each = (width - gap * (buttons.length - 1)) / Math.max(1,buttons.length);
       const labels = buttons.map((entry) => readText(entry).toUpperCase());
       const tallest = Math.max(84,...labels.map((label) => cellHeight(label,each)));
@@ -891,18 +898,18 @@ export class XrHud {
         ctx.letterSpacing = '2.6px';
         ctx.fillStyle = HINT;
         ctx.textAlign = 'center';
-        y -= 44;
+        y -= 52;
         ctx.fillText(heading.toUpperCase(),width / 2,y + 4);
         ctx.textAlign = 'left';
       }
-      y -= 12;
+      y -= 20;
     }
     if(toast){
       const label = readText(toast).toUpperCase();
       const height = cellHeight(label,width);
       y -= height;
       cell(toast,label,true,y,0,width,height);
-      y -= 12;
+      y -= 20;
     }
     if(alert){
       const lines = wrapHudText(readText(alert),width - 48,hudRoleStyles.text,this.measure).slice(0,2);

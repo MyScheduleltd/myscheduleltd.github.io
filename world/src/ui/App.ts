@@ -3624,6 +3624,7 @@ export class App {
     const venueResume = resumable?.venue === venue ? resumable : undefined;
     menu.hidden = false;
     menu.innerHTML = `
+      ${this.seatMenuClose()}
       <p class="eyebrow">${this.escapeHtml(this.venueName(venue))} · ${this.escapeHtml(seatId)}</p>
       <h2 id="seat-menu-title">${this.language === 'zh-TW' ? '已入座' : 'YOU HAVE A SEAT'}</h2>
       <p>${this.language === 'zh-TW' ? '公開放映同步進行；私人選片只會更改你的畫面。' : 'Public playback stays synchronized. A private choice changes only your screen.'}</p>
@@ -3643,6 +3644,9 @@ export class App {
     });
     menu.querySelector<HTMLButtonElement>('[data-seat-catalogue]')?.addEventListener('click', () => this.openFilmPicker(venue));
     menu.querySelector<HTMLButtonElement>('[data-seat-stand]')?.addEventListener('click', () => this.world?.forceStand());
+    // Nothing above the seat menu, so its cross shuts the menu and leaves you
+    // sitting down — which in a headset is how the seat bar is reached.
+    this.onSeatMenuClose(menu, () => this.hideSeatMenu());
   }
 
   /**
@@ -3665,6 +3669,7 @@ export class App {
     };
     menu.hidden = false;
     menu.innerHTML = `
+      ${this.seatMenuClose()}
       <p class="eyebrow">${this.escapeHtml(this.venueName(venue))} · ${zh ? '點歌' : 'REQUEST A TRACK'}</p>
       <h2 id="seat-menu-title">${zh ? `跟 ${this.escapeHtml(djName)} 點歌` : `ASK ${this.escapeHtml(djName)} FOR A TRACK`}</h2>
       <div class="dj-booth">
@@ -3728,10 +3733,12 @@ export class App {
         this.showWorldAlert(zh ? '私人聆聽 · 只有你聽得到' : 'PRIVATE LISTENING · YOURS ALONE');
       });
     });
-    menu.querySelector<HTMLButtonElement>('[data-seat-back]')?.addEventListener('click', () => {
+    const leaveBooth = (): void => {
       this.openDjBooth = undefined;
       this.hideSeatMenu();
-    });
+    };
+    menu.querySelector<HTMLButtonElement>('[data-seat-back]')?.addEventListener('click', leaveBooth);
+    this.onSeatMenuClose(menu, leaveBooth);
   }
 
   private djProfileSignature(profile: DjProfile): string {
@@ -3822,6 +3829,7 @@ export class App {
       .join('');
     menu.hidden = false;
     menu.innerHTML = `
+      ${this.seatMenuClose()}
       <p class="eyebrow">${this.escapeHtml(this.venueName(venue))} · ${zh ? '駐場介紹' : 'RESIDENT'}</p>
       <h2 id="seat-menu-title">${this.escapeHtml(profile.name)}</h2>
       <p class="dj-about__role">${this.escapeHtml(zh ? profile.roleZh : profile.role)}</p>
@@ -3843,9 +3851,9 @@ export class App {
     menu.querySelector<HTMLFormElement>('[data-dj-edit]')?.addEventListener('input', () => {
       this.djIntroductionTouched = true;
     });
-    menu.querySelector<HTMLButtonElement>('[data-dj-back]')?.addEventListener('click', () => {
-      this.openDjRequest(djName, venue);
-    });
+    const backToRequests = (): void => this.openDjRequest(djName, venue);
+    menu.querySelector<HTMLButtonElement>('[data-dj-back]')?.addEventListener('click', backToRequests);
+    this.onSeatMenuClose(menu, backToRequests);
     menu.querySelector<HTMLFormElement>('[data-dj-edit]')?.addEventListener('submit', (event) => {
       event.preventDefault();
       const form = event.currentTarget as HTMLFormElement;
@@ -3873,6 +3881,28 @@ export class App {
     });
   }
 
+  /**
+   * The way out that every screen in `#seat-menu` carries, in the same corner.
+   *
+   * The word is beside the cross rather than instead of it. A flat interface
+   * shows the cross and hides the word with CSS, which is the convention;
+   * the painted one reads the element's text, so in a headset the button says
+   * CLOSE — and a cross alone, painted small in a corner, is a poor thing to
+   * have to aim a controller at.
+   */
+  private seatMenuClose(): string {
+    return `<button class="seat-menu__close" type="button" data-seat-close><span aria-hidden="true">✕</span><span class="seat-menu__close-word">${this.language === 'zh-TW' ? '關閉' : 'CLOSE'}</span></button>`;
+  }
+
+  /**
+   * Send it wherever that screen's own BACK goes, or shut the menu when there
+   * is no level above. One behaviour, five screens, rather than a cross that
+   * means something different on each.
+   */
+  private onSeatMenuClose(menu: HTMLElement, back: () => void): void {
+    menu.querySelector<HTMLButtonElement>('[data-seat-close]')?.addEventListener('click', back);
+  }
+
   private openFilmPicker(venue: VenueKey = this.activeVenue): void {
     const menu = this.root.querySelector<HTMLElement>('#seat-menu');
     if (!menu) return;
@@ -3881,6 +3911,7 @@ export class App {
     this.activeVenue = venue;
     menu.hidden = false;
     menu.innerHTML = `
+      ${this.seatMenuClose()}
       <p class="eyebrow">${this.escapeHtml(this.venueName(venue))} · ${this.language === 'zh-TW' ? '私人片單' : 'PERSONAL CATALOGUE'}</p>
       <h2 id="seat-menu-title">${this.language === 'zh-TW' ? '選擇影片' : 'CHOOSE A FILM'}</h2>
       <div class="seat-film-grid">${this.venueFilms(venue).map((film) => `
@@ -3894,9 +3925,9 @@ export class App {
         if (film) this.startPrivateScreening(film);
       });
     });
-    menu.querySelector<HTMLButtonElement>('[data-seat-back]')?.addEventListener('click', () => {
-      this.openSeatMenu(this.activeSeatId, venue);
-    });
+    const backToSeat = (): void => this.openSeatMenu(this.activeSeatId, venue);
+    menu.querySelector<HTMLButtonElement>('[data-seat-back]')?.addEventListener('click', backToSeat);
+    this.onSeatMenuClose(menu, backToSeat);
   }
 
   /**
@@ -3927,6 +3958,7 @@ export class App {
     menu.dataset.menuOwner = 'npc';
     menu.hidden = false;
     menu.innerHTML = `
+      ${this.seatMenuClose()}
       <p class="eyebrow">${zh ? '團隊介紹' : 'THE TEAM'}</p>
       <h2 id="seat-menu-title">${this.escapeHtml(profile.name)}</h2>
       ${profile.title ? `<p class="dj-about__role">${this.escapeHtml(profile.title)}</p>` : ''}
@@ -3949,6 +3981,7 @@ export class App {
     menu.querySelector<HTMLButtonElement>('[data-npc-about-close]')?.addEventListener('click', () => {
       this.hideSeatMenu();
     });
+    this.onSeatMenuClose(menu, () => this.hideSeatMenu());
     menu.querySelector<HTMLFormElement>('[data-npc-about-edit]')?.addEventListener('submit', (event) => {
       event.preventDefault();
       const form = event.currentTarget as HTMLFormElement;

@@ -1172,6 +1172,13 @@ button:active { filter: brightness(.88); scale: .96; }
 .seat-menu h2 { padding-bottom: 6px; line-height: 1.18; margin: 0; font: 900 clamp(42px, 7vw, 72px)/.9 var(--condensed); }
 .seat-menu > p:not(.eyebrow) { max-width: 56ch; line-height: 1.55; }
 .seat-menu__actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 25px; }
+/* The cross every screen in the seat menu carries. The word beside it is for
+   the painted headset interface, which reads the element's text; here it is
+   the cross alone, in the corner, the way a dialog closes. */
+.seat-menu { position: relative; }
+.seat-menu__close { position: absolute; z-index: 2; top: 10px; right: 10px; width: 38px; height: 38px; display: grid; place-items: center; border: 2px solid var(--ink); padding: 0; color: var(--ink); background: transparent; font: 800 17px var(--condensed); line-height: 1; cursor: pointer; }
+.seat-menu__close:hover, .seat-menu__close:focus-visible { color: var(--paper); background: var(--ink); }
+.seat-menu__close-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .seat-menu__actions button, .seat-menu__back { min-height: 52px; border: 2px solid var(--ink); padding: 10px; color: var(--ink); background: transparent; font: 800 15px var(--condensed); cursor: pointer; }
 .seat-menu__actions button:first-child, .seat-menu__actions button:hover, .seat-menu__back:hover { color: white; background: var(--red); border-color: var(--red); }
 .seat-film-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; margin: 24px 0; background: rgba(17,17,19,.22); }
@@ -1263,17 +1270,20 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .staff-order li > span:first-child { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .staff-order li b { min-width: 22px; color: var(--red); }
 .staff-order li > span:last-child { display: flex; gap: 3px; }
-/* Per-song tempo and VR link, which used to be a column of their own. The row
-   wraps rather than squeezing the title, because a long title is how a member
-   of staff knows which song they are editing. */
-.staff-order li { flex-wrap: wrap; }
-.staff-order li > span:first-child { flex: 1 1 220px; }
-.staff-order__tune { display: flex; align-items: center; gap: 8px; flex: 1 1 320px; min-width: 0; }
+/* Per-song tempo and VR link, which used to be a column of their own. Two
+   rows rather than one: the title keeps a full line to itself, because a long
+   title is how a member of staff knows which song they are editing, and the
+   link box gets a full line because a Drive URL is long. */
+.staff-order li { display: grid; grid-template-columns: 1fr auto; gap: 7px 10px; padding: 8px 9px; }
+.staff-order li > span:first-child { grid-column: 1; grid-row: 1; }
+.staff-order li > span:last-child { grid-column: 2; grid-row: 1; }
+.staff-order__tune { grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .staff-order__tune label { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .staff-order__tune label span { font: 800 10px var(--condensed); letter-spacing: .1em; white-space: nowrap; opacity: .72; }
 .staff-order__bpm input { width: 66px; }
 .staff-order__vr { flex: 1 1 auto; }
 .staff-order__vr input { width: 100%; min-width: 0; font-size: 12px; }
+.staff-order__tune button { white-space: nowrap; }
 .staff-order button { width: 34px; padding: 7px; }
 .staff-special { display: grid; grid-template-columns: .85fr 1.25fr 1fr auto; align-items: end; gap: 8px; }
 .staff-special [hidden] { display: none !important; }
