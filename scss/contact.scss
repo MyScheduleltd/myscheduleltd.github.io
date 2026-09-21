@@ -117,11 +117,10 @@
                 display: block;
                 text-align: center;
                 font-size: 23px;
-                // `top: -10px` pulled it over the logo, so the block leaned
-                // upwards. Ten above and ten below rather than thirty: the
-                // block keeps the height it always had, so the column's own
-                // centring leaves the logo exactly where it was.
-                margin: 10px 0 0;
+                // The logo sits straight on top of this line. Margin, not a
+                // negative offset: `top: -10px` used to pull the text up over
+                // the logo, which is the overlap this must not have.
+                margin: 0;
             }
         }
         .mob_subTitle{
@@ -129,9 +128,9 @@
             @include rwd($md){
                 display: block;
                 font-size:30px;
-                // 40 above keeps the gap the two lines always had between
-                // them; 10 below matches the 10 above the email.
-                margin:40px auto 10px;
+                // Equal above and below: FOLLOW sits midway between the
+                // address and the icons, which is what it is between.
+                margin:25px auto;
                 text-align: center;
             }
         }
