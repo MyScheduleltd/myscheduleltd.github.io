@@ -218,8 +218,9 @@
   z-index: 10;
 }
 .contact .videos-wrapper iframe {
-  width: var(--video-width);
-  height: var(--video-height);
+  --fill: 1.3334;
+  width: max(calc(177.78vh * var(--fill)), 100vw);
+  height: max(calc(100vh * var(--fill)), 56.25vw);
   position: absolute;
   top: 50%;
   left: 50%;

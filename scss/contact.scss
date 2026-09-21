@@ -173,8 +173,17 @@
             z-index: 10;
         }
         iframe{
-            width: var(--video-width);
-            height: var(--video-height);
+            // The background film is 2.39:1 inside YouTube's own 16:9 player,
+            // so YouTube bars it and it fills exactly three quarters of the
+            // player's height. Measured off the thumbnail: 1280x720, with 90
+            // black rows at each end. Sizing the player to the viewport
+            // covered the viewport with the *player* while the film stayed
+            // short of it — the black above and below the picture. Four
+            // thirds taller and the film itself covers. `max()` does the work
+            // of the two aspect-ratio queries in layout.scss, fill folded in.
+            --fill: 1.3334;
+            width: max(calc(177.78vh * var(--fill)), 100vw);
+            height: max(calc(100vh * var(--fill)), 56.25vw);
             position: absolute;
             top: 50%;
             left: 50%;
