@@ -1284,22 +1284,29 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
    by column and row explicitly: a venue with no tempo simply leaves column
    two empty, and the reorder buttons stay hard against the right edge either
    way rather than sliding about between venues. */
-.staff-order li { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 7px 10px; min-height: 38px; padding: 8px 9px; flex: 0 0 auto; background: rgba(255,255,255,.48); }
+/* Five columns, every cell placed by name. The three square buttons are grid
+   children rather than a huddle inside one cell, which is what lets the link
+   box stop flush with the right edge of the DOWN button and SAVE sit directly
+   under REMOVE, the same size as it. A venue with no tempo leaves column two
+   empty and nothing else moves. */
+.staff-order li { display: grid; grid-template-columns: 1fr auto 42px 42px 42px; align-items: center; column-gap: 4px; row-gap: 8px; min-height: 38px; padding: 8px 9px; flex: 0 0 auto; background: rgba(255,255,255,.48); }
 .staff-order__title { grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .staff-order li b { min-width: 22px; color: var(--red); }
-.staff-order__bpm { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 5px; }
-.staff-order__move { grid-column: 3; grid-row: 1; display: flex; gap: 3px; }
-.staff-order__tune { grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.staff-order__bpm { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 5px; margin: 0 9px; }
+.staff-order__up { grid-column: 3; grid-row: 1; }
+.staff-order__down { grid-column: 4; grid-row: 1; }
+.staff-order__remove { grid-column: 5; grid-row: 1; }
+/* Columns one to four, so it ends where DOWN ends. */
+.staff-order__tune { grid-column: 1 / 5; grid-row: 2; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.staff-order__save { grid-column: 5; grid-row: 2; }
 .staff-order__tune label, .staff-order__bpm label { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .staff-order__tune label span, .staff-order__bpm > span { font: 800 10px var(--condensed); letter-spacing: .1em; white-space: nowrap; opacity: .72; }
 .staff-order__bpm input { width: 66px; }
 .staff-order__vr { flex: 1 1 auto; }
 .staff-order__vr input { width: 100%; min-width: 0; font-size: 12px; }
-/* SAVE stands as tall as the box it saves. */
-.staff-order__tune button { box-sizing: border-box; height: 46px; min-height: 46px; padding: 0 16px; white-space: nowrap; }
-/* One size for all three, so the row does not look assembled from spare parts. */
-.staff-order__move button { box-sizing: border-box; flex: 0 0 42px; width: 42px; height: 42px; display: grid; place-items: center; padding: 0; font-size: 14px; line-height: 1; }
-.staff-order button { width: 34px; padding: 7px; }
+/* One square for all four, text centred in each, so the row does not look
+   assembled from spare parts. */
+.staff-order__btn { box-sizing: border-box; width: 42px; height: 42px; min-height: 42px; display: grid; place-items: center; padding: 0; font-size: 13px; line-height: 1; text-align: center; white-space: nowrap; }
 .staff-special { display: grid; grid-template-columns: .85fr 1.25fr 1fr auto; align-items: end; gap: 8px; }
 .staff-special [hidden] { display: none !important; }
 .staff-special button { height: 46px; min-height: 46px; }
@@ -1311,7 +1318,9 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .staff-gate-background button { min-height: 46px; border: 0; padding: 0 18px; color: white; background: var(--red); font: 800 12px var(--condensed); cursor: pointer; }
 .staff-video { display: grid; grid-template-columns: .75fr 1.5fr 1fr 1fr; gap: 8px; margin-bottom: 22px; }
 .staff-video label { display: grid; gap: 5px; color: var(--red); font: 800 12px var(--condensed); letter-spacing: .08em; }
-.staff-video button { min-height: 42px; border: 0; padding: 0 18px; color: white; background: var(--red); font: 800 12px var(--condensed); }
+/* A label cell is its caption plus a 46px field, so a button left to stretch
+   grew to the full cell and stood half as tall again as the box beside it. */
+.staff-video button { box-sizing: border-box; align-self: end; height: 46px; min-height: 46px; border: 0; padding: 0 18px; color: white; background: var(--red); font: 800 12px var(--condensed); }
 .staff-list article { display: flex; align-items: center; justify-content: space-between; gap: 14px; border-top: 1px solid rgba(17,17,19,.18); padding: 10px 0; }
 .staff-list article > div:first-child { display: grid; gap: 3px; min-width: 0; }.staff-list small { overflow-wrap: anywhere; opacity: .7; }.staff-list article > div:last-child { display: flex; flex: 0 0 auto; gap: 5px; }
 .staff-npc-list { display: grid; gap: 2px; }

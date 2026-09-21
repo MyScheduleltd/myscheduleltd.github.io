@@ -19,11 +19,7 @@ $(function () {
         element.append(`
             <div class="swiper-slide">
                 <div class="wrapper wrapper${i}">
-                    <div class="blackScreen">
-                        <div class="button" data-set="${i}">
-                            <img src="./assets/logo.png"/>
-                        </div>
-                    </div>
+                    <div class="blackScreen"></div>
                     <div class="video-container">
                         <iframe class="video" width="560" height="315" frameborder="0" allowfullscreen allow="autoplay; encrypted-media" src=""></iframe>
                     </div>
@@ -31,6 +27,19 @@ $(function () {
             </div>
         `);
     });
+
+    // The play button sits beside the pagination, not inside a slide.
+    //
+    // Swiper's own element is a stacking context, so a button within a slide
+    // can never paint above the pagination — and on a wide screen those
+    // pagination titles are the video titles, running right across the middle
+    // of the picture, straight over the logo. One button, always in front,
+    // playing whichever slide is showing.
+    $('.profilo').append(`
+        <div class="button profilo-play" role="button" tabindex="0" aria-label="play">
+            <img src="./assets/logo.png"/>
+        </div>
+    `);
 
     // Swiper 實例
     let swiper;
@@ -44,7 +53,7 @@ $(function () {
                 renderBullet: function (index, className) {
                     return `
                         <div class="pagination-subtitle ${className}">
-                            <span class="text">${drBeautyVideos[index].title}</span>
+                            <span class="text">${splitLongTitle(drBeautyVideos[index].title)}</span>
                         </div>
                     `;
                 }
@@ -101,9 +110,9 @@ $(function () {
     }
 
     // 彈窗播放
-    $('.swiper-wrapper').on('click', '.button', function (e) {
+    $('.profilo').on('click', '.profilo-play', function (e) {
         stopAllYouTubeVideos();
-        const set = $(this).data('set');
+        const set = swiper ? swiper.activeIndex : 0;
         $('.dialog').show();
         $('#dialog-wrapper').empty();
         $('#dialog-wrapper').append(`
@@ -134,6 +143,19 @@ $(function () {
         }, 300);
     });
 });
+
+/**
+ * Put the credits on a line of their own.
+ *
+ * A title like `更年期 Midlife Crisis feat. 手天使 Hand Angel & 謝乾 $hitGanGan`
+ * is long enough to reach the middle of the picture on a wide screen, where
+ * the play button is. Short titles are left alone — breaking `美麗本人 247
+ * Live ft. 謝乾` in half would look like a mistake rather than a layout.
+ */
+function splitLongTitle(title) {
+    if (!title || title.length <= 24) return title;
+    return title.replace(/\s*(feat\.|ft\.)\s*/i, '<br>$1 ');
+}
 
 // 輔助函式
 function youtube_parser(url) {

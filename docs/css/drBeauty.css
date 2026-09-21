@@ -341,6 +341,15 @@ h2 {
   -webkit-transform: translate(-50%, -50%);
           transform: translate(-50%, -50%);
 }
+.profilo .profilo-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  -webkit-transform: translate(-50%, -50%);
+          transform: translate(-50%, -50%);
+  z-index: 120;
+  cursor: pointer;
+}
 .profilo #swiper-pagination {
   position: absolute;
   left: 0%;
@@ -403,7 +412,8 @@ h2 {
   width: -webkit-fit-content;
   width: -moz-fit-content;
   width: fit-content;
-  height: 1rem;
+  height: auto;
+  min-height: 1rem;
   text-align: left;
   -webkit-transform: scale(1);
           transform: scale(1);

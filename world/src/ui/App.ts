@@ -3290,7 +3290,7 @@ export class App {
   private trackLinkField(youtubeId: string): string {
     const zh = this.language === 'zh-TW';
     const id = this.escapeAttribute(youtubeId);
-    return `<label class="staff-order__vr"><span>${zh ? 'VR 連結' : 'VR LINK'}</span><input type="url" data-immersive-input="${id}" maxlength="500" placeholder="${zh ? 'Drive 或 CDN 連結' : 'Drive or CDN link'}" value="${this.escapeAttribute(this.adminState?.immersiveSources?.[youtubeId] ?? '')}" /></label><button type="button" data-tune-save="${id}">${zh ? '儲存' : 'SAVE'}</button>`;
+    return `<label class="staff-order__vr"><span>${zh ? 'VR 連結' : 'VR LINK'}</span><input type="url" data-immersive-input="${id}" maxlength="500" placeholder="${zh ? 'Drive 或 CDN 連結' : 'Drive or CDN link'}" value="${this.escapeAttribute(this.adminState?.immersiveSources?.[youtubeId] ?? '')}" /></label>`;
   }
 
   /**
@@ -6358,7 +6358,7 @@ export class App {
             </div>
             <p class="staff-programme__name">${this.escapeHtml(schedule?.name ?? defaultVenueLabels[venue])} · ${this.categoryLabel(catalogueByVenue[venue][0]?.category ?? '')}</p>
             <ol class="staff-order" data-programme-order>
-              ${order.map((film, index) => `<li data-youtube-id="${film.youtubeId}"><span class="staff-order__title"><b>${index + 1}</b>${this.escapeHtml(this.filmTitle(film))}</span>${this.trackTempoField(venue, film.youtubeId)}<span class="staff-order__move"><button type="button" data-order-move="up" aria-label="${this.language === 'zh-TW' ? '上移' : 'Up'}">↑</button><button type="button" data-order-move="down" aria-label="${this.language === 'zh-TW' ? '下移' : 'Down'}">↓</button><button type="button" data-video-remove="${film.youtubeId}" data-venue="${venue}" aria-label="${this.language === 'zh-TW' ? '下架影片' : 'Remove video'}">×</button></span><span class="staff-order__tune">${this.trackLinkField(film.youtubeId)}</span></li>`).join('')}
+              ${order.map((film, index) => `<li data-youtube-id="${film.youtubeId}"><span class="staff-order__title"><b>${index + 1}</b>${this.escapeHtml(this.filmTitle(film))}</span>${this.trackTempoField(venue, film.youtubeId)}<button type="button" class="staff-order__btn staff-order__up" data-order-move="up" aria-label="${this.language === 'zh-TW' ? '上移' : 'Up'}">↑</button><button type="button" class="staff-order__btn staff-order__down" data-order-move="down" aria-label="${this.language === 'zh-TW' ? '下移' : 'Down'}">↓</button><button type="button" class="staff-order__btn staff-order__remove" data-video-remove="${film.youtubeId}" data-venue="${venue}" aria-label="${this.language === 'zh-TW' ? '下架影片' : 'Remove video'}">×</button><span class="staff-order__tune">${this.trackLinkField(film.youtubeId)}</span><button type="button" class="staff-order__btn staff-order__save" data-tune-save="${this.escapeAttribute(film.youtubeId)}">${this.language === 'zh-TW' ? '儲存' : 'SAVE'}</button></li>`).join('')}
             </ol>
             <div class="staff-special">
               <label>${this.language === 'zh-TW' ? '特別放映來源' : 'SPECIAL SOURCE'}<select name="specialSource">
