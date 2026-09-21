@@ -1324,6 +1324,11 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 /* A line of its own beneath the source, the way a song's VR link sits beneath
    its title, rather than a fifth box squeezed into a row of four. */
 .staff-special__vr { grid-column: 1 / -1; }
+/* Whichever source box is showing runs from the second column to the right
+   edge, so it ends flush with the VR link beneath it. Both of them, not just
+   the YouTube one: only ever one is visible, and sizing them differently
+   would make the row jump when the source is changed. */
+.staff-special [data-special-library], .staff-special [data-special-youtube] { grid-column: 2 / -1; }
 .staff-special button { height: 46px; min-height: 46px; }
 .staff-style { display: grid; grid-template-columns: repeat(5, minmax(110px, 1fr)) auto; align-items: end; gap: 8px; margin-bottom: 22px; }
 .staff-style label { color: var(--red); font: 800 12px var(--condensed); letter-spacing: .08em; }
