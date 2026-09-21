@@ -5953,6 +5953,10 @@ export class App {
           const youtube = form.querySelector<HTMLElement>('[data-special-youtube]');
           if (library) library.hidden = source !== 'library';
           if (youtube) youtube.hidden = source !== 'youtube';
+          // A work picked from the venue's own list already carries a VR link
+          // in the row above, so this is only for a one-off YouTube address.
+          const specialVr = form.querySelector<HTMLElement>('[data-special-vr]');
+          if (specialVr) specialVr.hidden = source !== 'youtube';
         };
         form.querySelector<HTMLSelectElement>('select[name="specialSource"]')?.addEventListener('change', syncSpecialSource);
         syncSpecialSource();
@@ -5994,9 +5998,19 @@ export class App {
           const specialStartsAt = form.querySelector<HTMLInputElement>('input[name="specialStartsAt"]')?.value ?? '';
           if (!order.length || !currentYoutubeId) return;
           if (button) button.disabled = true;
+          const specialImmersiveUrl = form.querySelector<HTMLInputElement>('input[name="specialImmersiveUrl"]')?.value.trim() ?? '';
           void this.festivalClient.updateProgramme(this.staffKey, {
             venue, name, subtitle, order, currentYoutubeId, mode, specialSource, specialYoutubeId, specialYoutubeUrl, specialStartsAt,
           })
+            .then(async () => {
+              // Saved with the venue rather than on its own button: the id to
+              // file it under comes from the YouTube box beside it, so a
+              // separate save could fire before that work existed and have
+              // nothing to attach to.
+              if (specialSource !== 'youtube') return;
+              const id = youtubeIdFromUrl(specialYoutubeUrl);
+              if (id) await this.festivalClient.updateImmersiveSource(this.staffKey, id, specialImmersiveUrl);
+            })
             .then(() => this.refreshAdminState())
             .catch((error) => {
               // Deliberately jumps to the top: the failure message renders
@@ -6370,6 +6384,7 @@ export class App {
                 ${order.map((film) => `<option value="${film.youtubeId}"${film.youtubeId === schedule?.special?.youtubeId ? ' selected' : ''}>${this.escapeHtml(this.filmTitle(film))}</option>`).join('')}
               </select></label>
               <label data-special-youtube${specialSource !== 'youtube' ? ' hidden' : ''}>${this.language === 'zh-TW' ? 'YouTube 連結' : 'YOUTUBE LINK'}<input name="specialYoutubeUrl" type="url" placeholder="https://youtu.be/..." value="${specialSource === 'youtube' && schedule?.special?.youtubeId ? `https://youtu.be/${this.escapeAttribute(schedule.special.youtubeId)}` : ''}" /></label>
+              <label class="staff-special__vr" data-special-vr${specialSource !== 'youtube' ? ' hidden' : ''}>${this.language === 'zh-TW' ? 'VR 影片連結' : 'VR VIDEO LINK'}<input name="specialImmersiveUrl" type="url" maxlength="500" placeholder="${this.language === 'zh-TW' ? 'Drive 或 CDN 連結' : 'Drive or CDN link'}" value="${this.escapeAttribute(specialSource === 'youtube' && schedule?.special?.youtubeId ? (this.adminState?.immersiveSources?.[schedule.special.youtubeId] ?? '') : '')}" /></label>
               <label>${this.language === 'zh-TW' ? '日期' : 'DATE'}<input name="specialStartsAt" type="datetime-local" value="${specialTime}" /></label>
               <button type="submit">${this.language === 'zh-TW' ? '儲存影廳' : 'SAVE VENUE'}</button>
             </div>

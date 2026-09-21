@@ -351,9 +351,11 @@ h2{
             // }
            .text{
             position: relative;
-            line-height: 1.5rem;
-            
-            // top: -1.5rem;;
+            // Relative to the font rather than a flat 1.5rem. The active
+            // title is 2rem, so a fixed 1.5rem line box had the two lines of
+            // a wrapped title sitting on top of each other; the inactive ones
+            // are much smaller and want a smaller line box, not the same one.
+            line-height: 1.25em;
            }
 
         }

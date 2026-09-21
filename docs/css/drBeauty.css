@@ -423,7 +423,7 @@ h2 {
 }
 .profilo #swiper-pagination .pagination-subtitle .text {
   position: relative;
-  line-height: 1.5rem;
+  line-height: 1.25em;
 }
 @media all and (max-width: 920px) {
   .profilo #swiper-pagination {

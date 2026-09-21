@@ -1301,14 +1301,29 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .staff-order__save { grid-column: 5; grid-row: 2; }
 .staff-order__tune label, .staff-order__bpm label { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .staff-order__tune label span, .staff-order__bpm > span { font: 800 10px var(--condensed); letter-spacing: .1em; white-space: nowrap; opacity: .72; }
-.staff-order__bpm input { width: 66px; }
+
 .staff-order__vr { flex: 1 1 auto; }
 .staff-order__vr input { width: 100%; min-width: 0; font-size: 12px; }
-/* One square for all four, text centred in each, so the row does not look
-   assembled from spare parts. */
-.staff-order__btn { box-sizing: border-box; width: 42px; height: 42px; min-height: 42px; display: grid; place-items: center; padding: 0; font-size: 13px; line-height: 1; text-align: center; white-space: nowrap; }
+/* One height for everything in a row: four 42px squares, and boxes 42px tall
+   between them, so SAVE and the link box share a top and a bottom edge.
+   .
+   These have to be written as two classes. `.staff-programmes button` and
+   `.staff-programmes input` are element rules, and an element rule outranks a
+   lone class — which is why SAVE kept the 10px/14px padding it was told not to
+   have, squeezing its label into a 14px box and pushing it off centre. */
+.staff-order .staff-order__btn { box-sizing: border-box; width: 42px; height: 42px; min-height: 42px; display: grid; place-items: center; padding: 0; font: 800 12px var(--condensed); line-height: 1; letter-spacing: 0; text-align: center; white-space: nowrap; }
+.staff-order .staff-order__bpm input { box-sizing: border-box; width: 42px; height: 42px; min-height: 42px; padding: 0; text-align: center; }
+/* A three-digit tempo and a spinner do not both fit in 42px, and the spinner
+   is the one nobody uses. */
+.staff-order .staff-order__bpm input::-webkit-outer-spin-button,
+.staff-order .staff-order__bpm input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.staff-order .staff-order__bpm input { -moz-appearance: textfield; appearance: textfield; }
+.staff-order .staff-order__vr input { box-sizing: border-box; height: 42px; min-height: 42px; }
 .staff-special { display: grid; grid-template-columns: .85fr 1.25fr 1fr auto; align-items: end; gap: 8px; }
 .staff-special [hidden] { display: none !important; }
+/* A line of its own beneath the source, the way a song's VR link sits beneath
+   its title, rather than a fifth box squeezed into a row of four. */
+.staff-special__vr { grid-column: 1 / -1; }
 .staff-special button { height: 46px; min-height: 46px; }
 .staff-style { display: grid; grid-template-columns: repeat(5, minmax(110px, 1fr)) auto; align-items: end; gap: 8px; margin-bottom: 22px; }
 .staff-style label { color: var(--red); font: 800 12px var(--condensed); letter-spacing: .08em; }

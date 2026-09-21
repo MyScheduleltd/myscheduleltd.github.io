@@ -117,10 +117,11 @@
                 display: block;
                 text-align: center;
                 font-size: 23px;
-                // `top: -10px` pulled it over the logo, so the block between
-                // the logo and the icons leaned upwards exactly as the desktop
-                // one did. Same margin above as the FOLLOW line has below.
-                margin: 30px 0 0;
+                // `top: -10px` pulled it over the logo, so the block leaned
+                // upwards. Ten above and ten below rather than thirty: the
+                // block keeps the height it always had, so the column's own
+                // centring leaves the logo exactly where it was.
+                margin: 10px 0 0;
             }
         }
         .mob_subTitle{
@@ -128,7 +129,9 @@
             @include rwd($md){
                 display: block;
                 font-size:30px;
-                margin:1em auto;
+                // 40 above keeps the gap the two lines always had between
+                // them; 10 below matches the 10 above the email.
+                margin:40px auto 10px;
                 text-align: center;
             }
         }
