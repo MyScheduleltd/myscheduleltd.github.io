@@ -1161,7 +1161,11 @@ button:active { filter: brightness(.88); scale: .96; }
   top: calc(146px + env(safe-area-inset-top));
 }
 .public-seat-hud strong { display: block; max-width: 370px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 16px var(--condensed); }
-.public-seat-hud > div:last-child { display: flex; gap: 6px; }
+/* The buttons wrap rather than running out of the bar. There can be four of
+   them now — CATALOGUE, FULLSCREEN, END SCREENING, STAND — and the bar's width
+   is bounded by what the chat column leaves, which at some widths is 320px. */
+.public-seat-hud { flex-wrap: wrap; row-gap: 8px; }
+.public-seat-hud > div:last-child { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .public-seat-hud button { border: 1px solid rgba(255,255,255,.45); padding: 8px 10px; color: white; background: transparent; font: 700 11px var(--condensed); cursor: pointer; }
 .public-seat-hud button:hover { background: var(--red); }
 .seat-menu {
@@ -1175,10 +1179,12 @@ button:active { filter: brightness(.88); scale: .96; }
 /* The cross every screen in the seat menu carries. The word beside it is for
    the painted headset interface, which reads the element's text; here it is
    the cross alone, in the corner, the way a dialog closes. */
-.seat-menu { position: relative; }
 .seat-menu__close { position: absolute; z-index: 2; top: 10px; right: 10px; width: 38px; height: 38px; display: grid; place-items: center; border: 2px solid var(--ink); padding: 0; color: var(--ink); background: transparent; font: 800 17px var(--condensed); line-height: 1; cursor: pointer; }
 .seat-menu__close:hover, .seat-menu__close:focus-visible { color: var(--paper); background: var(--ink); }
 .seat-menu__close-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* The eyebrow runs the full width of the menu and the cross sits on top of its
+   right-hand end, so it needs to stop short of it. */
+.seat-menu .eyebrow { padding-right: 46px; }
 .seat-menu__actions button, .seat-menu__back { min-height: 52px; border: 2px solid var(--ink); padding: 10px; color: var(--ink); background: transparent; font: 800 15px var(--condensed); cursor: pointer; }
 .seat-menu__actions button:first-child, .seat-menu__actions button:hover, .seat-menu__back:hover { color: white; background: var(--red); border-color: var(--red); }
 .seat-film-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; margin: 24px 0; background: rgba(17,17,19,.22); }
@@ -1265,25 +1271,34 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .staff-programme__top { display: grid; grid-template-columns: 1.2fr .8fr 1.2fr; gap: 8px; }
 .staff-programme__top label, .staff-special label, .staff-style label { display: grid; gap: 5px; }
 .staff-programme__name { margin: 0; font: 900 22px var(--condensed); }
-.staff-order { display: grid; gap: 2px; max-height: 280px; overflow: auto; margin: 0; padding: 0; list-style: none; }
-.staff-order li { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 38px; padding: 5px 7px; background: rgba(255,255,255,.48); }
-.staff-order li > span:first-child { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.staff-order li b { min-width: 22px; color: var(--red); }
-.staff-order li > span:last-child { display: flex; gap: 3px; }
-/* Per-song tempo and VR link, which used to be a column of their own. Two
-   rows rather than one: the title keeps a full line to itself, because a long
+/* A column, not a grid. As a grid with a max-height this compressed its auto
+   rows down to the old 38px min-height once the list outgrew the box, while
+   the rows' own content stayed 98px tall — so every row spilled over the one
+   below it. Two videos fitted and looked right; twelve were a pile-up. Flex
+   items that refuse to shrink cannot do that. The box is taller too, because
+   a row is two lines now. */
+.staff-order { display: flex; flex-direction: column; gap: 2px; max-height: min(54vh, 540px); overflow: auto; margin: 0; padding: 0; list-style: none; }
+/* Two lines to a song. The title keeps a full line to itself, because a long
    title is how a member of staff knows which song they are editing, and the
-   link box gets a full line because a Drive URL is long. */
-.staff-order li { display: grid; grid-template-columns: 1fr auto; gap: 7px 10px; padding: 8px 9px; }
-.staff-order li > span:first-child { grid-column: 1; grid-row: 1; }
-.staff-order li > span:last-child { grid-column: 2; grid-row: 1; }
+   link box gets a full line because a Drive URL is long. Every cell is placed
+   by column and row explicitly: a venue with no tempo simply leaves column
+   two empty, and the reorder buttons stay hard against the right edge either
+   way rather than sliding about between venues. */
+.staff-order li { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 7px 10px; min-height: 38px; padding: 8px 9px; flex: 0 0 auto; background: rgba(255,255,255,.48); }
+.staff-order__title { grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.staff-order li b { min-width: 22px; color: var(--red); }
+.staff-order__bpm { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 5px; }
+.staff-order__move { grid-column: 3; grid-row: 1; display: flex; gap: 3px; }
 .staff-order__tune { grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; gap: 8px; min-width: 0; }
-.staff-order__tune label { display: flex; align-items: center; gap: 5px; min-width: 0; }
-.staff-order__tune label span { font: 800 10px var(--condensed); letter-spacing: .1em; white-space: nowrap; opacity: .72; }
+.staff-order__tune label, .staff-order__bpm label { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.staff-order__tune label span, .staff-order__bpm > span { font: 800 10px var(--condensed); letter-spacing: .1em; white-space: nowrap; opacity: .72; }
 .staff-order__bpm input { width: 66px; }
 .staff-order__vr { flex: 1 1 auto; }
 .staff-order__vr input { width: 100%; min-width: 0; font-size: 12px; }
-.staff-order__tune button { white-space: nowrap; }
+/* SAVE stands as tall as the box it saves. */
+.staff-order__tune button { box-sizing: border-box; height: 46px; min-height: 46px; padding: 0 16px; white-space: nowrap; }
+/* One size for all three, so the row does not look assembled from spare parts. */
+.staff-order__move button { box-sizing: border-box; flex: 0 0 42px; width: 42px; height: 42px; display: grid; place-items: center; padding: 0; font-size: 14px; line-height: 1; }
 .staff-order button { width: 34px; padding: 7px; }
 .staff-special { display: grid; grid-template-columns: .85fr 1.25fr 1fr auto; align-items: end; gap: 8px; }
 .staff-special [hidden] { display: none !important; }

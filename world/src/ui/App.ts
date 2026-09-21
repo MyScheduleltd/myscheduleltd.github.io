@@ -3279,13 +3279,18 @@ export class App {
    * not exist. A VR link is offered on every song, because any film can be
    * given one.
    */
-  private trackTuneFields(venue: VenueKey, youtubeId: string): string {
+  private trackTempoField(venue: VenueKey, youtubeId: string): string {
+    // Empty for a cinema: nothing there strobes, so a tempo box would promise
+    // a feature that does not exist. The grid column simply collapses.
+    if (!STROBING_VENUES.has(venue)) return '';
+    const id = this.escapeAttribute(youtubeId);
+    return `<label class="staff-order__bpm"><span>BPM</span><input type="number" data-tempo-input="${id}" min="40" max="220" step="1" value="${this.adminState?.trackTempos?.[youtubeId] ?? 120}" /></label>`;
+  }
+
+  private trackLinkField(youtubeId: string): string {
     const zh = this.language === 'zh-TW';
     const id = this.escapeAttribute(youtubeId);
-    const tempo = STROBING_VENUES.has(venue)
-      ? `<label class="staff-order__bpm"><span>BPM</span><input type="number" data-tempo-input="${id}" min="40" max="220" step="1" value="${this.adminState?.trackTempos?.[youtubeId] ?? 120}" /></label>`
-      : '';
-    return `${tempo}<label class="staff-order__vr"><span>${zh ? 'VR 連結' : 'VR LINK'}</span><input type="url" data-immersive-input="${id}" maxlength="500" placeholder="${zh ? 'Drive 或 CDN 連結' : 'Drive or CDN link'}" value="${this.escapeAttribute(this.adminState?.immersiveSources?.[youtubeId] ?? '')}" /></label><button type="button" data-tune-save="${id}">${zh ? '儲存' : 'SAVE'}</button>`;
+    return `<label class="staff-order__vr"><span>${zh ? 'VR 連結' : 'VR LINK'}</span><input type="url" data-immersive-input="${id}" maxlength="500" placeholder="${zh ? 'Drive 或 CDN 連結' : 'Drive or CDN link'}" value="${this.escapeAttribute(this.adminState?.immersiveSources?.[youtubeId] ?? '')}" /></label><button type="button" data-tune-save="${id}">${zh ? '儲存' : 'SAVE'}</button>`;
   }
 
   /**
@@ -6353,7 +6358,7 @@ export class App {
             </div>
             <p class="staff-programme__name">${this.escapeHtml(schedule?.name ?? defaultVenueLabels[venue])} · ${this.categoryLabel(catalogueByVenue[venue][0]?.category ?? '')}</p>
             <ol class="staff-order" data-programme-order>
-              ${order.map((film, index) => `<li data-youtube-id="${film.youtubeId}"><span><b>${index + 1}</b>${this.escapeHtml(this.filmTitle(film))}</span><span class="staff-order__tune">${this.trackTuneFields(venue, film.youtubeId)}</span><span><button type="button" data-order-move="up" aria-label="${this.language === 'zh-TW' ? '上移' : 'Up'}">↑</button><button type="button" data-order-move="down" aria-label="${this.language === 'zh-TW' ? '下移' : 'Down'}">↓</button><button type="button" data-video-remove="${film.youtubeId}" data-venue="${venue}" aria-label="${this.language === 'zh-TW' ? '下架影片' : 'Remove video'}">×</button></span></li>`).join('')}
+              ${order.map((film, index) => `<li data-youtube-id="${film.youtubeId}"><span class="staff-order__title"><b>${index + 1}</b>${this.escapeHtml(this.filmTitle(film))}</span>${this.trackTempoField(venue, film.youtubeId)}<span class="staff-order__move"><button type="button" data-order-move="up" aria-label="${this.language === 'zh-TW' ? '上移' : 'Up'}">↑</button><button type="button" data-order-move="down" aria-label="${this.language === 'zh-TW' ? '下移' : 'Down'}">↓</button><button type="button" data-video-remove="${film.youtubeId}" data-venue="${venue}" aria-label="${this.language === 'zh-TW' ? '下架影片' : 'Remove video'}">×</button></span><span class="staff-order__tune">${this.trackLinkField(film.youtubeId)}</span></li>`).join('')}
             </ol>
             <div class="staff-special">
               <label>${this.language === 'zh-TW' ? '特別放映來源' : 'SPECIAL SOURCE'}<select name="specialSource">
