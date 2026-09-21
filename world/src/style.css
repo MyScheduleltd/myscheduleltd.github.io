@@ -1212,7 +1212,11 @@ button:active { filter: brightness(.88); scale: .96; }
    is a paragraph, and a paragraph in a row of short inputs squeezes them all
    down to nothing. Full width of the form, which is a grid. */
 .staff-npc-intro { grid-column: 1 / -1; }
-.staff-npc-intro textarea { width: 100%; min-height: 64px; resize: vertical; }
+/* Paper and ink, like every other field. It set no background at all, so it
+   fell through to the browser's own — dark, and unreadable against the rest
+   of the panel. The neighbouring rule only ever named `input`. */
+.staff-npc-intro textarea { box-sizing: border-box; width: 100%; min-height: 84px; resize: vertical; border: 2px solid var(--ink); padding: 9px; color: var(--ink); background: var(--paper); font: 800 15px var(--condensed); line-height: 1.45; }
+.staff-npc-intro textarea::placeholder { color: rgba(17,17,19,.42); }
 .chat-stream {
   position: fixed; z-index: 4; left: 22px; bottom: 52px; display: grid; gap: 6px;
   width: min(520px, calc(100vw - 44px)); pointer-events: none;
@@ -1345,7 +1349,9 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .staff-list article > div:first-child { display: grid; gap: 3px; min-width: 0; }.staff-list small { overflow-wrap: anywhere; opacity: .7; }.staff-list article > div:last-child { display: flex; flex: 0 0 auto; gap: 5px; }
 .staff-npc-list { display: grid; gap: 2px; }
 .staff-npc-form { display: grid; grid-template-columns: auto minmax(120px, .7fr) minmax(180px, 1fr) auto; align-items: end; gap: 10px; padding: 8px 0; border-top: 1px solid rgba(17,17,19,.18); }
-.staff-npc-form .npc-dot { align-self: center; }
+/* Bottom of the row, and as tall as a field, so the badge's top and bottom
+   edges are the name box's top and bottom edges. Centred, it matched neither. */
+.staff-npc-form .npc-dot { box-sizing: border-box; align-self: end; height: 46px; min-height: 46px; display: grid; place-items: center; padding: 0 10px; }
 .staff-npc-form label, .staff-npc-add label { display: grid; gap: 4px; min-width: 0; color: var(--red); font: 800 10px var(--condensed); letter-spacing: .08em; }
 .staff-npc-form input, .staff-npc-add input { width: 100%; min-width: 0; border: 2px solid var(--ink); padding: 9px; color: var(--ink); background: var(--paper); font: 800 15px var(--condensed); }
 .staff-npc-form button, .staff-npc-add button { min-height: 39px; border: 0; padding: 0 16px; color: white; background: var(--red); font: 800 12px var(--condensed); cursor: pointer; }
