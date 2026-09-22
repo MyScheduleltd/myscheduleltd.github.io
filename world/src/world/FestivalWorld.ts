@@ -87,6 +87,7 @@ export type WorldAction =
   | { type: 'jukebox' }
   | { type: 'vrWatch'; venue: VenueKey }
   | { type: 'vrPhoto'; image?: string }
+  | { type: 'vrArmsCalibrated' }
   // The photo/postcard mode belongs to the interface, not to the world, so a
   // controller asks for it the same way the seat asks to open a screening.
   | { type: 'photoMode' }
@@ -642,6 +643,8 @@ const ELBOW_HINGE: 1 | -1 = -1;
  */
 const ARM_PASSES = 3;
 const ARM_GAIN = 0.5;
+/** Reused: a fresh Vector3 twice a frame for two hands is silly. */
+const THREE_UP = new THREE.Vector3(0, 1, 0);
 
 /**
  * What to take off the visitor's own body in a session.
@@ -1509,6 +1512,17 @@ export class FestivalWorld {
   private readonly armTarget = new THREE.Vector3();
   private readonly armMeasured = new THREE.Vector3();
   private readonly armWanted = new THREE.Vector3();
+  /** Controller orientation to rig wrist, once the visitor has said "now". */
+  private readonly armCalibration = new Map<'left' | 'right', THREE.Quaternion>();
+  private armCalibratePending = false;
+  private readonly armQuat = new THREE.Quaternion();
+  private readonly armParentQuat = new THREE.Quaternion();
+  private readonly armMeasuredQuat = new THREE.Quaternion();
+  private readonly armDesiredQuat = new THREE.Quaternion();
+  private readonly armMatrix = new THREE.Matrix4();
+  private readonly armVecA = new THREE.Vector3();
+  private readonly armVecB = new THREE.Vector3();
+  private readonly armVecC = new THREE.Vector3();
   private xrExitCause?: string;
   private xrExitReason?: string;
   /** A film being watched privately, which outranks the programme on a screen. */
@@ -2241,7 +2255,8 @@ export class FestivalWorld {
         // The buttons ran out before the actions did, so these are reached
         // with the pointer and run through the pad's own dispatcher.
         onQuickAction: (action) => {
-          if (action === 'offer') this.offerFromTouch();
+          if (action === 'calibrate') this.calibrateXrArms();
+          else if (action === 'offer') this.offerFromTouch();
           else if (action === 'punch') this.punchFromTouch();
           // A headset has no flat exit button — the one in the corner belongs
           // to the desktop preview — so leaving has to be painted.
@@ -2662,6 +2677,9 @@ export class FestivalWorld {
       case 'hideHud': this.xrHud?.toggleHidden(); break;
       case 'recenter':
         this.recenterVrView();
+        // The same press, because it is the same complaint: something about
+        // the view has stopped matching the body holding it.
+        this.calibrateXrArms();
         // And the way out of the drink. Recentre is already the button anybody
         // reaches for when the view stops feeling right, so it is where sobering
         // up belongs — rather than on *any* press, which would end the effect
@@ -5860,7 +5878,81 @@ export class FestivalWorld {
         parent.worldToLocal(this.armWanted);
         target.addScaledVector(this.armWanted.sub(this.armMeasured), ARM_GAIN);
       }
+
+      // The wrist. Nothing above this touches it, so until a calibration has
+      // been made the hand keeps whatever roll the forearm gave it — which is
+      // exactly the wandering thumb this is here to end.
+      const handFrame = this.player.userData.importedHandFrame as
+        ((right: boolean) => { thumb: THREE.Vector3; fingers: THREE.Vector3 }) | undefined;
+      controller.getWorldQuaternion(this.armQuat);
+      if (this.armCalibratePending && handFrame && visualRoot) {
+        const frame = handFrame(hand === 'left');
+        // The frame arrives in the avatar's own space and these are
+        // directions, so they are rotated rather than moved.
+        visualRoot.updateWorldMatrix(true, false);
+        const fingers = frame.fingers.clone()
+          .applyMatrix4(this.armMatrix.extractRotation(visualRoot.matrixWorld)).normalize();
+        const thumb = frame.thumb.clone()
+          .applyMatrix4(this.armMatrix.extractRotation(visualRoot.matrixWorld)).normalize();
+        this.armMeasuredQuat.setFromRotationMatrix(this.armFrame(fingers, thumb));
+        // Where they ought to have been: fingers along the visitor's own level
+        // forward, thumbs up. The handshake pose.
+        this.armVecB.set(this.headForward.x, 0, this.headForward.z);
+        if (this.armVecB.lengthSq() < 1e-6) this.armVecB.set(0, 0, -1);
+        this.armDesiredQuat.setFromRotationMatrix(this.armFrame(this.armVecB.normalize(), THREE_UP));
+        // Turn the hand by the difference, read that back as a wrist
+        // orientation, and keep it against the controller's own.
+        wrist.getWorldQuaternion(this.armParentQuat);
+        this.armDesiredQuat.multiply(this.armMeasuredQuat.invert()).multiply(this.armParentQuat);
+        this.armCalibration.set(hand, this.armQuat.clone().invert().multiply(this.armDesiredQuat));
+      }
+      const calibration = this.armCalibration.get(hand);
+      if (calibration && wrist.parent) {
+        this.armDesiredQuat.copy(this.armQuat).multiply(calibration);
+        wrist.parent.getWorldQuaternion(this.armParentQuat);
+        wrist.quaternion.copy(this.armParentQuat.invert()).multiply(this.armDesiredQuat);
+      }
     }
+    if (this.armCalibratePending) {
+      this.armCalibratePending = false;
+      this.onAction({ type: 'vrArmsCalibrated' });
+    }
+  }
+
+  /**
+   * Line the avatar's hands up with the real ones, on the visitor's word.
+   *
+   * Nothing drives the wrist until this has been done once, and that is the
+   * whole reason the thumbs wandered: with only the shoulder and the elbow
+   * solved, a hand's roll is a side effect of where the elbow happens to
+   * point, so it changes as the arm moves. Thumbs backwards with the arms
+   * down and thumbs downwards with the arms up is not one error in two poses,
+   * it is the wrist having no owner.
+   *
+   * Which way round a controller reports itself is not worth deriving. The
+   * visitor holds their hands out — fingers forward, thumbs up, the pose
+   * anybody adopts to shake hands — presses, and the offset between the
+   * controller and the hand is measured from the model itself through
+   * `importedHandFrame`. Press again in a better pose and it is measured
+   * again.
+   */
+  calibrateXrArms(): boolean {
+    if (!this.paintsInHeadset() || !this.playerRig) return false;
+    // Done inside the frame loop, after the arms have been solved: the offset
+    // is measured off where the hands actually finished, and here they have
+    // not been placed yet.
+    this.armCalibratePending = true;
+    return true;
+  }
+
+  /** An orthonormal basis whose X is `primary` and whose Y leans to `secondary`. */
+  private armFrame(primary: THREE.Vector3, secondary: THREE.Vector3): THREE.Matrix4 {
+    this.armVecA.copy(primary).normalize();
+    this.armVecC.crossVectors(this.armVecA, secondary);
+    if (this.armVecC.lengthSq() < 1e-8) this.armVecC.set(0, 0, 1);
+    this.armVecC.normalize();
+    this.armVecB.crossVectors(this.armVecC, this.armVecA);
+    return this.armMatrix.makeBasis(this.armVecA, this.armVecB, this.armVecC);
   }
 
   private updatePrivatePanel(): void {

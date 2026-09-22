@@ -82,6 +82,9 @@ export const xrStickRows:ReadonlyArray<[string,string,string,string]> = [
 export const xrQuickActions:ReadonlyArray<[string,string,string]> = [
   ['offer','OFFER','供養'],
   ['punch','PUNCH','出拳'],
+  // Also on the left stick, which is the one anybody presses when something
+  // about the view stops matching their body.
+  ['calibrate','CALIBRATE','校對'],
 ];
 
 export function xrBindingFor(hand:XrHand,button:number):XrBinding|undefined {

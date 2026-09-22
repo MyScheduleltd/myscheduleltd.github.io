@@ -2221,6 +2221,16 @@ export class App {
       if (!this.activePanel) this.cycleViewMode();
       return;
     }
+    if (action.type === 'vrArmsCalibrated') {
+      const zh = this.language === 'zh-TW';
+      // The pose is part of the instruction: the offset is measured against
+      // "fingers forward, thumbs up", so pressing while your hands are
+      // anywhere else calibrates to anywhere else.
+      this.showWorldAlert(zh
+        ? '手臂已校對 · 若仍不合，請雙手向前伸直、拇指服上，再按一次左搖桿'
+        : 'ARMS CALIBRATED · IF STILL OFF, HOLD YOUR HANDS OUT IN FRONT, FINGERS FORWARD AND THUMBS UP, THEN PRESS THE LEFT STICK AGAIN');
+      return;
+    }
     if (action.type === 'vrPhoto') {
       const zh = this.language === 'zh-TW';
       if (!action.image) {
