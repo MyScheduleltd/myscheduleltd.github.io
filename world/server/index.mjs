@@ -1569,6 +1569,11 @@ const server = createServer(async (request, response) => {
         min: MIN_DONATION,
         max: MAX_DONATION,
         invoice: ECPAY.invoiceEnabled,
+        // Named separately from `blockedBy`, which is about taking money. This
+        // one says whether a 電子發票 can actually be issued afterwards, and
+        // which of the three invoice variables is the one at fault.
+        invoiceReady: ECPAY.invoiceReady,
+        invoiceBlockedBy: ECPAY.invoiceBlockedBy,
         // Whether the sheet may make the receipt a choice. False keeps the
         // email field required, which is what it has always been.
         receiptOptional: receiptOptional(),

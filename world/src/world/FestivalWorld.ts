@@ -38,6 +38,8 @@ import {
   placePrivateScreening, privateOffset, playsInsideHeadset,
   type PrivateScreeningState, type ScreeningFilm,
 } from './PrivateScreening';
+import { solveArm, armOrientation, type Vec3 } from './ArmIk';
+import { trackPunch, restingSwing, type SwingState } from './PunchSwing';
 import { videoSyncPlan, videoJoinTime, bufferedAheadOf } from './VideoSync';
 import { stepAvoidance, AVOIDANCE_OFFSETS_FINE, type AvoidanceState } from './CameraAvoidance';
 import { pinchZoom, pinchSpread, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX } from './CameraInput';
@@ -600,6 +602,20 @@ const PRIVATE_PANEL_WIDTH = 3.2;
 const PRIVATE_PANEL_DISTANCE = 4.1;
 /** Walk this far from it and it comes with you rather than being left behind. */
 const PRIVATE_PANEL_FOLLOW = 6.5;
+
+/**
+ * Which way an elbow breaks.
+ *
+ * Mostly backwards, a little outwards and a little down — an arm's elbow goes
+ * behind the hand, never forward through the chest. Only the component across
+ * the arm matters, so this is a direction rather than a measurement.
+ *
+ * This is the one number in the arm work that cannot be checked without a
+ * headset on. If the elbows bend the wrong way, negate the Z.
+ */
+const ELBOW_POLE_Z = 1;
+const ELBOW_POLE_OUT = 0.35;
+const ELBOW_POLE_DOWN = -0.2;
 /**
  * How much further a finger turns the view than a mouse pointer does.
  *
@@ -1431,6 +1447,21 @@ export class FestivalWorld {
   private readonly onAction: WorldOptions['onAction'];
   private readonly onXrSessionChange?: WorldOptions['onXrSessionChange'];
   /** Set by whoever asks to leave, read once by `xrEnded`. */
+  /** Scratch for decomposing a pose; the scale is read and thrown away. */
+  private readonly photoScale = new THREE.Vector3();
+  /** True while the body is hidden and only the forearms are drawn. */
+  private xrArmsShown = false;
+  /** Exactly the meshes this hid, so nothing else gets un-hidden on the way out. */
+  private xrHiddenParts: THREE.Object3D[] = [];
+  private leftSwing: SwingState = restingSwing();
+  private rightSwing: SwingState = restingSwing();
+  private readonly armWorld = new THREE.Vector3();
+  private readonly armLocal = new THREE.Vector3();
+  private readonly armAxisX = new THREE.Vector3();
+  private readonly armAxisY = new THREE.Vector3();
+  private readonly armAxisZ = new THREE.Vector3();
+  private readonly armBasis = new THREE.Matrix4();
+  private readonly headForward = new THREE.Vector3();
   private xrExitCause?: string;
   private xrExitReason?: string;
   /** A film being watched privately, which outranks the programme on a screen. */
@@ -5476,10 +5507,20 @@ export class FestivalWorld {
       const shot = new THREE.PerspectiveCamera(PHOTO_FOV, width / height, 0.05, 4200);
       // Where the head actually is. Inside a session `camera.position` is
       // local to the rig, so the world matrix is the only honest source.
-      const view: THREE.Object3D = this.xrActive && wasXr ? renderer.xr.getCamera() : this.camera;
-      view.updateMatrixWorld(true);
-      shot.position.setFromMatrixPosition(view.matrixWorld);
-      shot.quaternion.setFromRotationMatrix(view.matrixWorld);
+      // Read the pose three.js wrote for this frame. Never recompute it.
+      //
+      // `getCamera()` hands back the camera the session drives: three.js
+      // writes its `matrixWorld` straight from the viewer pose, leaves
+      // `matrixAutoUpdate` off, and gives it no parent. So the
+      // `updateMatrixWorld(true)` that used to be here ran
+      // `matrixWorld.copy(this.matrix)` against a local matrix nobody
+      // maintains, and threw the head pose on the floor — every photograph
+      // came from the world origin looking down -Z. The picture was of the
+      // festival all right, just not from where the visitor was standing.
+      const inSession = this.xrActive && wasXr;
+      const view: THREE.Object3D = inSession ? renderer.xr.getCamera() : this.camera;
+      if (!inSession) view.updateMatrixWorld(true);
+      view.matrixWorld.decompose(shot.position, shot.quaternion, this.photoScale);
       shot.updateMatrixWorld(true);
 
       renderer.xr.enabled = false;
@@ -5641,6 +5682,108 @@ export class FestivalWorld {
     );
     // A plane's face is +Z, so this turns its front back towards the viewer.
     panel.mesh.rotation.set(0, yaw, 0);
+  }
+
+  /**
+   * Put the visitor's own forearms where their hands actually are.
+   *
+   * Only the arms. The body is hidden in a session because the camera is the
+   * head, and a torso and legs that do not match how somebody is really
+   * standing read as broken — floating forearms read as correct, which is what
+   * nearly every headset app has settled on.
+   *
+   * The shoulders stay where the avatar's shoulders are, at the avatar's own
+   * height rather than the visitor's. That sounds wrong and is not: the solver
+   * is given the wrist as its target, so the *hands* land exactly on the
+   * controllers whatever the height difference. All a mismatch changes is how
+   * bent the elbow ends up, and guessing at somebody's shoulder height from a
+   * headset pose is a good way to put an arm somewhere absurd.
+   */
+  private updateXrArms(): void {
+    const rig = this.playerRig;
+    if (!rig) return;
+    if (!this.paintsInHeadset()) {
+      if (this.xrArmsShown) {
+        for (const part of this.xrHiddenParts) part.visible = true;
+        this.xrHiddenParts = [];
+        this.xrArmsShown = false;
+        this.leftSwing = restingSwing();
+        this.rightSwing = restingSwing();
+      }
+      return;
+    }
+    if (!this.xrArmsShown) {
+      const keep = new Set<THREE.Object3D>();
+      for (const root of [rig.leftArm, rig.rightArm]) root.traverse((part) => keep.add(part));
+      this.xrHiddenParts = [];
+      this.player.traverse((part) => {
+        // Anything already hidden is hidden for its own reason — the skateboard
+        // that is only out while running, a treat nobody is holding — and must
+        // not be handed back visible later.
+        if (!(part as THREE.Mesh).isMesh || keep.has(part) || !part.visible) return;
+        this.xrHiddenParts.push(part);
+      });
+      this.xrArmsShown = true;
+    }
+    // Re-applied every frame, because `updatePlayer` sets this from the session
+    // and the pose code turns parts on and off as it goes.
+    this.player.visible = true;
+    for (const part of this.xrHiddenParts) part.visible = false;
+
+    // The head, read and never recomputed. See `captureViewImage`.
+    const head = this.renderer.xr.getCamera();
+    const e = head.matrixWorld.elements;
+    this.headForward.set(-e[8], -e[9], -e[10]);
+    const now = performance.now();
+
+    for (const controller of this.xrControllers) {
+      const source = controller.userData.inputSource as XRInputSource | undefined;
+      const hand = source?.handedness;
+      if (hand !== 'left' && hand !== 'right') continue;
+      const shoulder = hand === 'left' ? rig.leftArm : rig.rightArm;
+      const elbow = hand === 'left' ? rig.leftElbow : rig.rightElbow;
+      const wrist = hand === 'left' ? rig.leftWrist : rig.rightWrist;
+      const parent = shoulder.parent;
+      if (!elbow || !wrist || !parent) continue;
+
+      controller.updateWorldMatrix(true, false);
+      this.armWorld.setFromMatrixPosition(controller.matrixWorld);
+
+      // A throw is read in world space, before any of the rig's own frames get
+      // involved — how fast the hand moved and whether it went where the
+      // visitor was looking.
+      const swing = trackPunch(
+        hand === 'left' ? this.leftSwing : this.rightSwing,
+        [this.armWorld.x, this.armWorld.y, this.armWorld.z],
+        now,
+        [this.headForward.x, this.headForward.y, this.headForward.z],
+      );
+      if (hand === 'left') this.leftSwing = swing.state; else this.rightSwing = swing.state;
+      if (swing.thrown) this.punchFromTouch();
+
+      // The target, in the shoulder's own frame: its parent's space, moved so
+      // the shoulder joint is the origin.
+      parent.updateWorldMatrix(true, false);
+      this.armLocal.copy(this.armWorld);
+      parent.worldToLocal(this.armLocal);
+      this.armLocal.sub(shoulder.position);
+
+      // Read off the rig rather than assumed, so a rescaled avatar still works.
+      const upperLength = elbow.position.length();
+      const lowerLength = wrist.position.length();
+      if (upperLength < 1e-4 || lowerLength < 1e-4) continue;
+
+      const out = hand === 'left' ? -ELBOW_POLE_OUT : ELBOW_POLE_OUT;
+      const target: Vec3 = [this.armLocal.x, this.armLocal.y, this.armLocal.z];
+      const solved = solveArm(target, upperLength, lowerLength, [out, ELBOW_POLE_DOWN, ELBOW_POLE_Z]);
+      const rotation = armOrientation(solved);
+      this.armAxisX.set(rotation.x[0], rotation.x[1], rotation.x[2]);
+      this.armAxisY.set(rotation.y[0], rotation.y[1], rotation.y[2]);
+      this.armAxisZ.set(rotation.z[0], rotation.z[1], rotation.z[2]);
+      this.armBasis.makeBasis(this.armAxisX, this.armAxisY, this.armAxisZ);
+      shoulder.quaternion.setFromRotationMatrix(this.armBasis);
+      elbow.rotation.set(rotation.elbowX, 0, 0);
+    }
   }
 
   private updatePrivatePanel(): void {
@@ -10169,6 +10312,10 @@ export class FestivalWorld {
     // walked into or out of a room.
     this.updateProjectorMounts();
     this.updatePrivatePanel();
+    // After the rig has been posed, never before: `animateRig` writes the same
+    // shoulder and elbow rotations this overwrites, and whichever runs second
+    // wins.
+    this.updateXrArms();
     const dayNight = this.dayNight.update();
     this.dayNight.atmosphere.update(dayNight.cycleMinute, this.player.position);
     // Exposed for the hour rather than fixed at noon's value. Raising lights

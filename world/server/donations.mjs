@@ -137,6 +137,28 @@ export const ecpayConfig = (env = process.env) => {
         : rawFallback ? 'fallback-unusable' : 'fallback-missing',
     ready: Boolean(payment.merchantId && payment.hashKey && payment.hashIV && publicUrl),
     /**
+     * The invoice credentials, checked separately and on purpose.
+     *
+     * `ready` above is about taking money, and deliberately does not depend on
+     * these: payments must not stop because an invoice setting is wrong. But
+     * nothing used to look at them at all, so a mistyped
+     * ECPAY_INVOICE_HASH_IV passed every check and then failed hours later as
+     * an invoice that never issued and nobody was waiting for. Three variables
+     * whose names are too long to read in a hosting dashboard deserve better
+     * than that.
+     */
+    invoiceReady: Boolean(!invoiceEnabled
+      || (invoice.merchantId && invoice.hashKey && invoice.hashIV)),
+    invoiceBlockedBy: !invoiceEnabled
+      ? 'invoice-off'
+      : !invoice.merchantId
+        ? 'invoice-merchant-id'
+        : !invoice.hashKey
+          ? 'invoice-hash-key'
+          : !invoice.hashIV
+            ? 'invoice-hash-iv'
+            : '',
+    /**
      * Why it is off, when it is off.
      *
      * `enabled: false` and nothing else cost two rounds of "it still does not

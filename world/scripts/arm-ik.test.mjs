@@ -82,3 +82,53 @@ test('a pole lying along the arm still gives a usable answer', () => {
   for (const v of [...s.upper, ...s.lower, s.bend]) assert.ok(Number.isFinite(v));
   assert.ok(dist(armWrist(s, UPPER, LOWER), [0, -0.6, 0]) < 1e-6);
 });
+
+import { armOrientation } from '../src/world/ArmIk.ts';
+
+/** Rebuild the chain from the rotations the rig would be given. */
+const forwardFromRig = (target, pole) => {
+  const s = solveArm(target, UPPER, LOWER, pole);
+  const { x, y, z, elbowX } = armOrientation(s);
+  // Shoulder basis maps local (x,y,z) to these axes. The upper bone is local
+  // -Y, so in parent space it is -y.
+  const upper = [-y[0], -y[1], -y[2]];
+  // The forearm is local -Y turned about local X by elbowX: (0,-cos,-sin),
+  // which in parent space is -cos*y - sin*z.
+  const c = Math.cos(elbowX), sn = Math.sin(elbowX);
+  const lower = [
+    -c * y[0] - sn * z[0],
+    -c * y[1] - sn * z[1],
+    -c * y[2] - sn * z[2],
+  ];
+  // x must be perpendicular to both, or the basis is not a basis.
+  const perp = Math.abs(x[0] * upper[0] + x[1] * upper[1] + x[2] * upper[2]);
+  return {
+    wrist: [0, 1, 2].map((i) => upper[i] * UPPER + lower[i] * LOWER),
+    perp,
+  };
+};
+
+test('the rig rotations put the wrist on the target', () => {
+  // The real test of armOrientation: go all the way round through the basis
+  // and the elbow angle the avatar would actually be given, and land on it.
+  for (const t of [
+    [0, -0.6, 0], [0.4, -0.5, 0], [-0.4, -0.5, 0], [0, -0.3, -0.5],
+    [0.3, -0.2, -0.6], [0, 0.2, -0.7], [0.5, 0.3, 0.2], [-0.2, -0.75, 0.3],
+    [0.2, -0.85, -0.1], [0.1, 0.05, 0.2],
+  ]) {
+    const { wrist, perp } = forwardFromRig(t);
+    assert.ok(dist(wrist, t) < 1e-6, `${JSON.stringify(t)} missed by ${dist(wrist, t)}`);
+    assert.ok(perp < 1e-9, 'the hinge axis is perpendicular to the bone');
+  }
+});
+
+test('a straight arm asks the elbow for no bend', () => {
+  const { elbowX } = armOrientation(solveArm([0, -REACH, 0], UPPER, LOWER));
+  assert.ok(Math.abs(elbowX) < 0.03, `expected ~0, got ${elbowX}`);
+});
+
+test('the basis stays a basis for an out-of-reach target', () => {
+  const o = armOrientation(solveArm([0, 0, -4], UPPER, LOWER));
+  for (const v of [...o.x, ...o.y, ...o.z, o.elbowX]) assert.ok(Number.isFinite(v));
+  assert.ok(Math.abs(len(o.x) - 1) < 1e-9 && Math.abs(len(o.z) - 1) < 1e-9);
+});

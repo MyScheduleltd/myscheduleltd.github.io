@@ -118,3 +118,44 @@ export function armWrist(solution: ArmSolution, upperLength: number, lowerLength
     upper[2] * upperLength + lower[2] * lowerLength,
   ];
 }
+
+export interface ArmOrientation {
+  /** The shoulder's local X in its parent's space: the elbow's hinge axis. */
+  readonly x: Vec3;
+  /** Local Y. The bone runs down local -Y, so this is the opposite of `upper`. */
+  readonly y: Vec3;
+  /** Local Z, completing a right-handed basis. */
+  readonly z: Vec3;
+  /** Rotation about the elbow's own X that lands the forearm on `lower`. */
+  readonly elbowX: number;
+}
+
+/**
+ * The rotations the rig actually wants, read out of a solved arm.
+ *
+ * Both bones hang down their joint's local -Y — the elbow sits at [0,-0.5,0]
+ * under the shoulder and the wrist at [0,-0.43,0] under the elbow — and the
+ * elbow bends about its own X, which is what every hand-written pose in
+ * `CoastalPose` does too.
+ *
+ * A minimal rotation from -Y to the upper bone is not enough: it leaves the
+ * twist about the bone arbitrary, and the twist is exactly what decides which
+ * way the elbow breaks. So the whole basis is built, with local X *as* the
+ * hinge axis, and the elbow angle then falls out of the arithmetic instead of
+ * being guessed at and corrected by eye.
+ */
+export function armOrientation(solution: ArmSolution): ArmOrientation {
+  const { upper, lower } = solution;
+  const y: Vec3 = [-upper[0], -upper[1], -upper[2]];
+  // The plane the two bones lie in. Straight-armed there is no plane, so any
+  // perpendicular will do — the elbow angle comes out zero either way.
+  let x = cross(upper, lower);
+  if (len(x) < 1e-6) x = cross(y, Math.abs(y[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]);
+  const xn = norm(x);
+  const z = norm(cross(xn, y));
+  // The forearm continues down local -Y when straight. Rotating -Y about +X by
+  // t gives (0, -cos t, -sin t), so matching it to `lower` in this basis is a
+  // single atan2 and no case analysis.
+  const elbowX = Math.atan2(-dot(lower, z), -dot(lower, y));
+  return { x: xn, y, z, elbowX };
+}
