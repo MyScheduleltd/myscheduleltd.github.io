@@ -1624,6 +1624,8 @@ export class FestivalWorld {
   private xrHipOffset = 0;
   private xrHeadWorldHeading = 0;
   private xrBodyOriented = false;
+  /** This frame's waist twist, waiting for the pose code to finish. */
+  private xrSpineTwist = 0;
   private readonly xrMovementView = new THREE.PerspectiveCamera();
   private readonly xrRawOrientation = new THREE.Quaternion();
   private xrSimPitch = 0;
@@ -5839,12 +5841,25 @@ export class FestivalWorld {
    */
   private orientXrBody(delta: number, now: number): void {
     const rig = this.playerRig;
-    if (!rig) return;
-    // Straight up and straight down carry no heading at all, so hold the last
-    // one rather than letting the arithmetic invent one out of noise.
-    if (Math.hypot(this.headForward.x, this.headForward.z) > 0.2) {
-      this.xrHeadWorldHeading = Math.atan2(this.headForward.x, this.headForward.z);
+    if (!this.paintsInHeadset() || !rig) {
+      this.xrBodyOriented = false;
+      this.xrSpineTwist = 0;
+      return;
     }
+    /**
+     * The visitor's heading, taken from the viewer pose rather than the camera.
+     *
+     * This used to read `renderer.xr.getCamera()`, which only holds a real
+     * pose once `updateCamera` has run — far too late to be orienting a body
+     * the pose code is about to plant feet for. The viewer pose is read at the
+     * top of the frame and `xrYaw` is already this frame's, stick and all.
+     *
+     * `xrHeadHeading` is kept in the convention where a heading points back at
+     * the camera rather than out through the eyes — `placePrivatePanel` leans
+     * on that — so an avatar's heading is half a turn from it. Looking straight
+     * up or down is guarded where that value is set, not here.
+     */
+    this.xrHeadWorldHeading = this.wrapAngle(this.xrYaw + this.xrHeadHeading + Math.PI);
     // On the first frame of a session there is nothing to ease from, and
     // easing from zero would swing the avatar round in front of its owner.
     if (!this.xrBodyOriented) {
@@ -5894,7 +5909,12 @@ export class FestivalWorld {
     this.xrChestHeading = oriented.chest;
     this.xrHipOffset = oriented.lead;
     this.player.rotation.y = oriented.hips;
-    rig.torso.rotation.y = oriented.spine;
+    // Held rather than applied. `walkCoastalPose` writes this same axis a
+    // little further into the frame, as part of the stride, and would wipe
+    // anything put here now. Added on top once the rig is posed, in
+    // `updateXrArms` — where the arm solver, which hangs off this joint, can
+    // still see the final value.
+    this.xrSpineTwist = oriented.spine;
   }
 
   /**
@@ -5912,7 +5932,7 @@ export class FestivalWorld {
    * bent the elbow ends up, and guessing at somebody's shoulder height from a
    * headset pose is a good way to put an arm somewhere absurd.
    */
-  private updateXrArms(delta: number): void {
+  private updateXrArms(): void {
     const rig = this.playerRig;
     if (!rig) return;
     if (!this.paintsInHeadset()) {
@@ -5948,9 +5968,12 @@ export class FestivalWorld {
     const e = head.matrixWorld.elements;
     this.headForward.set(-e[8], -e[9], -e[10]);
     const now = performance.now();
-    // Before the arms, never after: every target below is pulled into the
-    // shoulder's frame, and that frame is inside the body this turns.
-    this.orientXrBody(delta, now);
+    // The waist, now that the pose has had its turn — added to what the stride
+    // left rather than written over it, because the small counter-rotation a
+    // walk puts here is worth keeping. Before the arms, never after: every
+    // target below is pulled into the shoulder's frame, and this joint is that
+    // frame's parent.
+    rig.torso.rotation.y += this.xrSpineTwist;
 
     for (const controller of this.xrControllers) {
       const source = controller.userData.inputSource as XRInputSource | undefined;
@@ -5982,6 +6005,14 @@ export class FestivalWorld {
       );
       if (hand === 'left') this.leftSwing = swing.state; else this.rightSwing = swing.state;
       if (swing.thrown) this.punchFromTouch();
+
+      // Riding hands the arms to the pose, as asked. A skater's arms are part
+      // of the stance — out for balance, not wherever the controllers happen
+      // to be — and with the chest a quarter turn round, aiming them at the
+      // controllers is what put them through the ribs. The swing above still
+      // runs, so a punch thrown from a board still lands and still plays its
+      // own animation over the stance, exactly as it does at a desk.
+      if (this.skating) continue;
 
       // The target, in the shoulder's own frame: its parent's space, moved so
       // the shoulder joint is the origin.
@@ -6065,7 +6096,9 @@ export class FestivalWorld {
         wrist.quaternion.copy(this.armParentQuat.invert()).multiply(this.armDesiredQuat);
       }
     }
-    if (this.armCalibratePending) {
+    // Left standing if a board arrived between the press and this frame: the
+    // loop above skipped the measurement, so there is nothing to confirm yet.
+    if (this.armCalibratePending && !this.skating) {
       this.armCalibratePending = false;
       this.onAction({ type: 'vrArmsCalibrated' });
     }
@@ -6089,7 +6122,10 @@ export class FestivalWorld {
    * again.
    */
   calibrateXrArms(): boolean {
-    if (!this.paintsInHeadset() || !this.playerRig) return false;
+    // Not from a board. The arms belong to the skate stance while riding, so
+    // there is nothing there to measure the controllers against — and clearing
+    // the request anyway would report a calibration that never happened.
+    if (!this.paintsInHeadset() || !this.playerRig || this.skating) return false;
     // Done inside the frame loop, after the arms have been solved: the offset
     // is measured off where the hands actually finished, and here they have
     // not been placed yet.
@@ -10618,6 +10654,26 @@ export class FestivalWorld {
     this.tuneRenderScale(performance.now());
     this.updateGamepad(delta);
     this.updateXrInput(delta);
+    /**
+     * Before the rig is posed, never after.
+     *
+     * `supportCoastalPose` plants the feet by projecting each one into world
+     * space through the body's own matrix and sampling the ground underneath
+     * it, then lifting the whole body onto whichever foot has the most ground
+     * beneath it. That matrix carries `player.rotation.y`. Posing first and
+     * turning the body afterwards — which is what running this from
+     * `updateXrArms` amounted to — solved every foot against the previous
+     * frame's heading, so on anything that is not flat (a kerb, the deck
+     * stairs, the beach) the body's height and both ankle angles were
+     * re-decided every frame from slightly the wrong place. That is a walk
+     * that will not hold still.
+     *
+     * `playerState` and `skating` are read a frame old up here. At 72Hz that is
+     * fourteen milliseconds of a board or a chair arriving late, and
+     * `orientBody` ranks a seat above a board precisely so the stale one
+     * cannot do any harm.
+     */
+    this.orientXrBody(delta, performance.now());
     this.updatePlayer(delta);
     this.playerShadow.position.y=this.groundHeightAt(this.player.position.x,this.player.position.z,this.player.position.y)-AVATAR_GROUND_Y-this.player.position.y+.02;
     this.playerShadow.visible=this.playerState!=='swimming';
@@ -10636,7 +10692,7 @@ export class FestivalWorld {
     // After the rig has been posed, never before: `animateRig` writes the same
     // shoulder and elbow rotations this overwrites, and whichever runs second
     // wins.
-    this.updateXrArms(delta);
+    this.updateXrArms();
     const dayNight = this.dayNight.update();
     this.dayNight.atmosphere.update(dayNight.cycleMinute, this.player.position);
     // Exposed for the hour rather than fixed at noon's value. Raising lights
@@ -12237,7 +12293,15 @@ export class FestivalWorld {
     if(root){
       const gait=this.locomotion.get(rig)??{x:root.position.x,z:root.position.z,phase:0,blend:0};
       const distance=Math.hypot(root.position.x-gait.x,root.position.z-gait.z);
-      if(distance<2)gait.phase+=distance/COASTAL_STRIDE_LENGTH*Math.PI*2;
+      if(distance<2){
+        // Signed against the body's own facing. Everywhere but a headset a
+        // body faces the way it travels and this is always forwards; in one
+        // the chest belongs to the visitor's head, so backing away from
+        // something while still looking at it used to moonwalk.
+        const along=(root.position.x-gait.x)*Math.sin(root.rotation.y)
+          +(root.position.z-gait.z)*Math.cos(root.rotation.y);
+        gait.phase+=Math.sign(along||1)*distance/COASTAL_STRIDE_LENGTH*Math.PI*2;
+      }
       gait.blend+=(Number(stride>.1&&distance>this.reviewLastDelta*.12&&distance<2)-gait.blend)*(1-Math.exp(-8*this.reviewLastDelta));
       gait.x=root.position.x;gait.z=root.position.z;this.locomotion.set(rig,gait);
     }

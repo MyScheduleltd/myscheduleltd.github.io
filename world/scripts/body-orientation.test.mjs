@@ -234,3 +234,42 @@ test('only riding is exempt from hips plus spine', () => {
     );
   }
 });
+
+test('a step straight back does not flip the hips from side to side', () => {
+  // The seam a clamp left. Dead astern is the angle where "lean left" and
+  // "lean right" are equally true, and a stick is never perfectly still, so a
+  // clamped lean threw the body a full 92 degrees across on stick noise alone.
+  // Sweep across it and watch for a jump.
+  let previous;
+  for (let i = -40; i <= 40; i += 1) {
+    const travel = wrapAngle(Math.PI + i * 0.004);
+    const out = settle({ head: 0, travel });
+    if (previous !== undefined) {
+      assert.ok(
+        Math.abs(out.lead - previous) < 0.02,
+        `lead jumped from ${previous} to ${out.lead} at travel ${travel}`,
+      );
+    }
+    assert.ok(Math.abs(out.lead) < 0.2, `straight back should barely lean: ${out.lead}`);
+    previous = out.lead;
+  }
+});
+
+test('the lean is continuous the whole way round', () => {
+  // Not just at the seam: no travel direction should be a cliff.
+  let previous = orientBody({ head: 0, travel: -Math.PI, chest: 0, lead: 0, delta: FRAME }).lead;
+  for (let i = 1; i <= 720; i += 1) {
+    const travel = wrapAngle(-Math.PI + (i * Math.PI * 2) / 720);
+    const out = orientBody({ head: 0, travel, chest: 0, lead: 0, delta: FRAME });
+    assert.ok(Math.abs(out.lead - previous) < 0.01, `cliff at ${travel}`);
+    previous = out.lead;
+  }
+});
+
+test('the lean says the right thing at all four quarters', () => {
+  const at = (offset) => settle({ head: 0, travel: wrapAngle(offset) }).lead;
+  assert.ok(Math.abs(at(0)) < 1e-6, 'walking forward needs no lean');
+  assert.ok(Math.abs(at(Math.PI)) < 1e-6, 'walking straight back needs none either');
+  assert.ok(Math.abs(at(Math.PI / 2) - HIP_TWIST_MAX) < 1e-6, 'a strafe leans the whole way');
+  assert.ok(Math.abs(at(-Math.PI / 2) + HIP_TWIST_MAX) < 1e-6, 'and the other strafe the other way');
+});

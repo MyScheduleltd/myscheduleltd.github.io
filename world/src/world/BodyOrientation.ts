@@ -41,6 +41,16 @@
  * forty-six degrees of lean and the legs go backwards underneath a body that
  * still faces front.
  *
+ * The lean is shaped by a sine of the angle rather than clipped to it, and
+ * that is not cosmetic. Clipping has a seam at exactly-backwards: a step a
+ * hair to one side of dead astern clamps the hips one way, a hair to the
+ * other clamps them the other, and since a stick is never perfectly still,
+ * backing away from something swung the body ninety degrees back and forth.
+ * A sine has no seam. It also happens to say the right thing at every point
+ * that matters — nothing when walking forwards, everything when strafing, and
+ * nothing again when walking straight back, where a real person's hips do not
+ * turn at all and the legs simply go backwards underneath them.
+ *
  * Seated the hips belong to the chair and cannot lean at all, so the same
  * allowance is spent the other way round: the chest is the only thing that
  * turns, and it may go much further, because turning in a seat is mostly
@@ -136,7 +146,7 @@ export function orientBody(input: BodyOrientationInput): BodyOrientation {
   }
   const wanted = travel === undefined
     ? 0
-    : clamp(wrapAngle(travel - head), -HIP_TWIST_MAX, HIP_TWIST_MAX);
+    : HIP_TWIST_MAX * Math.sin(wrapAngle(travel - head));
   const chest = approachAngle(input.chest, head, CHEST_TURN_RATE, delta);
   const lead = input.lead + (wanted - input.lead) * (1 - Math.exp(-HIP_TURN_RATE * delta));
   return { hips: chest + lead, spine: -lead, chest, lead, riding: false };
