@@ -24,6 +24,13 @@ import { armLeavingVr, type LeaveVrArming } from './LeaveVrConfirm';
  * where a tempo would be a control that does nothing.
  */
 const STROBING_VENUES = new Set<VenueKey>(['club', 'rooftop']);
+
+/**
+ * How many headset photographs to keep. They are held as data URLs in memory
+ * and handed over when the visitor takes the headset off, so this is a cap on
+ * a session's worth rather than on an album.
+ */
+const VR_PHOTO_LIMIT = 8;
 import {
   FestivalClient,
   type AdminState,
@@ -2214,6 +2221,23 @@ export class App {
       if (!this.activePanel) this.cycleViewMode();
       return;
     }
+    if (action.type === 'vrPhoto') {
+      const zh = this.language === 'zh-TW';
+      if (!action.image) {
+        this.showWorldAlert(zh ? '這一張沒拍成' : 'THAT SHOT DID NOT TAKE');
+        return;
+      }
+      this.vrPhotos.push(action.image);
+      while (this.vrPhotos.length > VR_PHOTO_LIMIT) this.vrPhotos.shift();
+      const count = this.vrPhotos.length;
+      // Both halves of the answer, because neither is complete on its own: the
+      // web cannot write to the headset's gallery, and Quest's own screenshot
+      // can — and the interface is out of the way for a moment either way.
+      this.showWorldAlert(zh
+        ? `已拍下 ${count} 張 · 離開 VR 後可下載 · 要存進裝置相簿請用 Quest 自帶的截圖`
+        : `${count} SHOT${count > 1 ? 'S' : ''} TAKEN · DOWNLOAD ON LEAVING VR · FOR THE HEADSET GALLERY USE QUEST'S OWN SCREENSHOT`);
+      return;
+    }
     if (action.type === 'vrWatch') {
       if (this.paintsHeadsetHud()) {
         // There is nothing to open. The venue's own screen is already showing
@@ -2492,6 +2516,45 @@ export class App {
     }
     this.syncVrUi();
     this.refreshQuestUi();
+    // A photograph taken in a headset has nowhere to go while the headset is
+    // on: a download cannot be seen and the gallery is closed to the web. So
+    // it waits here, and the moment the session ends it is offered.
+    if (wasActive && !active) this.showVrPhotos();
+  }
+
+  /**
+   * The album, shown once on leaving VR.
+   *
+   * Data URLs on an anchor with `download`, which is the one route that
+   * reliably saves a file from a page — and it works properly here, on the
+   * flat screen, where the earlier trouble with blocked windows does not
+   * apply because nothing has to open.
+   */
+  private showVrPhotos(): void {
+    if (!this.vrPhotos.length) return;
+    const zh = this.language === 'zh-TW';
+    const count = this.vrPhotos.length;
+    this.root.querySelector('#vr-photos')?.remove();
+    const sheet = document.createElement('div');
+    sheet.id = 'vr-photos';
+    sheet.className = 'vr-photos';
+    sheet.innerHTML = `
+      <div class="vr-photos__card" role="dialog" aria-modal="true" aria-labelledby="vr-photos-title">
+        <header>
+          <p class="eyebrow">${zh ? '頭戴裝置拍下的' : 'FROM THE HEADSET'}</p>
+          <h2 id="vr-photos-title">${zh ? `${count} 張照片` : `${count} PHOTO${count > 1 ? 'S' : ''}`}</h2>
+          <button type="button" data-vr-photos-close aria-label="${zh ? '關閉' : 'Close'}">×</button>
+        </header>
+        <div class="vr-photos__grid">${this.vrPhotos.map((src, index) => `
+          <figure>
+            <img src="${src}" alt="${zh ? `VR 照片 ${index + 1}` : `Headset photograph ${index + 1}`}" />
+            <a class="panel-button" href="${src}" download="myschedule-vr-${index + 1}.jpg">${zh ? '下載' : 'DOWNLOAD'}</a>
+          </figure>`).join('')}</div>
+      </div>`;
+    this.root.appendChild(sheet);
+    const close = (): void => { sheet.remove(); this.vrPhotos = []; };
+    sheet.querySelector<HTMLButtonElement>('[data-vr-photos-close]')?.addEventListener('click', close);
+    sheet.addEventListener('click', (event) => { if (event.target === sheet) close(); });
   }
 
   /**
@@ -2507,6 +2570,8 @@ export class App {
 
   /** Held between the press that offers to leave VR and the press that does. */
   private leaveVrArming?: LeaveVrArming;
+  /** Photographs taken in the headset, waiting for the headset to come off. */
+  private vrPhotos: string[] = [];
 
   /**
    * Ask twice before leaving an immersive session, and only in a headset.
@@ -4713,8 +4778,8 @@ export class App {
           <button type="button" data-offering-close aria-label="${zh ? '關閉' : 'Close'}">×</button>
         </header>
         ${options.production ? '' : `<p class="offering__note offering__note--test">${zh
-          ? (options.receiptEmailEnabled ? '測試模式：不會真的扣款；勾選收據後仍會寄出測試收據。' : '測試模式：不會真的扣款；收據郵件尚未設定。')
-          : (options.receiptEmailEnabled ? 'TEST MODE — no charge; a requested test receipt will still be emailed.' : 'TEST MODE — no charge; receipt email is not configured yet.')}</p>`}
+          ? '測試模式：不會真的扣款，綠界也不會開出真的發票。'
+          : 'TEST MODE — no charge, and ECPay issues no real invoice.'}</p>`}
         <div class="offering__amounts">
           ${options.presets.map((amount, index) => `<button type="button" data-offering-amount="${amount}"${index === 1 ? ' class="is-chosen"' : ''}>NT$${amount}</button>`).join('')}
         </div>
@@ -4722,15 +4787,15 @@ export class App {
           <input type="number" inputmode="numeric" data-offering-custom min="${options.min}" max="${options.max}" step="1" placeholder="${options.min}–${options.max}" />
         </label>
         ${options.invoice ? `${options.receiptOptional ? `<label class="offering__check">
-          <input type="checkbox" data-offering-wants${options.receiptEmailEnabled ? '' : ' disabled'} />
+          <input type="checkbox" data-offering-wants checked />
           <span>${zh ? '我要收據' : "I'D LIKE A RECEIPT"}</span>
         </label>` : ''}
-        <div class="offering__receipt"${options.receiptOptional ? ' hidden' : ''} data-offering-receipt>
-          <label class="offering__field"><span>${zh ? '收據寄送信箱' : 'EMAIL FOR THE RECEIPT'}</span>
+        <div class="offering__receipt" data-offering-receipt>
+          <label class="offering__field"><span>${zh ? '發票寄送信箱' : 'EMAIL FOR THE INVOICE'}</span>
             <input type="email" inputmode="email" autocomplete="email" data-offering-email placeholder="you@example.com" /></label>
           <p class="offering__note">${zh
-            ? (options.receiptEmailEnabled ? '發票開立後，測試收據會寄到這個信箱。' : '收據郵件尚未設定，暫時無法勾選。')
-            : (options.receiptEmailEnabled ? 'The test receipt is emailed here after the invoice is issued.' : 'Receipt email is not configured, so the option is temporarily unavailable.')}</p>
+            ? '綠界會把電子發票寄到這個信箱。不勾選也照開，只是寄到影展自己的信箱。'
+            : 'ECPay emails the invoice here. Unticked, it is still issued — just to the festival\u2019s own address instead.'}</p>
         </div>` : ''}
         <p class="offering__error" data-offering-error hidden></p>
         <button type="button" class="offering__go" data-offering-go>${zh ? '感謝供養' : 'MY DEEPEST GRATITUDE'}</button>

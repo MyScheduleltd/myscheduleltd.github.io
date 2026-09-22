@@ -1595,13 +1595,11 @@ const server = createServer(async (request, response) => {
       if (wantsReceipt && !given) {
         return apiError(response, 400, 'An email address is needed for the invoice.');
       }
-      // Only reject the explicit opt-in introduced by the receipt checkbox.
-      // Older clients predate that field and still follow the established
-      // ECPay invoice path; keeping them working also makes a staggered beta
-      // rollout safe while the static site and backend update in sequence.
-      if (payload.receipt === true && !RECEIPT_MAIL.ready) {
-        return apiError(response, 503, 'Email receipts are not configured yet. Please try again later.');
-      }
+      // No longer gated on this festival's own mailer. The festival sends
+      // nothing: every receipt is the 電子發票, issued and emailed by ECPay.
+      // Requiring a Resend key here refused the one thing a donor actually
+      // wants — their own invoice — and sent it to the fallback mailbox
+      // instead, which is the festival's address and not theirs.
       // The invoice is issued either way. This only decides where it lands.
       const email = wantsReceipt ? given : receiptMailbox();
       forgetOldDonations();
