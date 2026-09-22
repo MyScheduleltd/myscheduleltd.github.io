@@ -40,6 +40,7 @@ import {
 } from './PrivateScreening';
 import { solveArm, armOrientation, type Vec3 } from './ArmIk';
 import { trackPunch, restingSwing, type SwingState } from './PunchSwing';
+import { orientBody } from './BodyOrientation';
 import { videoSyncPlan, videoJoinTime, bufferedAheadOf } from './VideoSync';
 import { stepAvoidance, AVOIDANCE_OFFSETS_FINE, type AvoidanceState } from './CameraAvoidance';
 import { pinchZoom, pinchSpread, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX } from './CameraInput';
@@ -652,6 +653,15 @@ const ARM_PASSES = 3;
 const ARM_GAIN = 0.5;
 /** Reused: a fresh Vector3 twice a frame for two hands is silly. */
 const THREE_UP = new THREE.Vector3(0, 1, 0);
+
+/**
+ * How long a step keeps steering the hips after the stick lets go.
+ *
+ * `moveVector` cannot answer this. `updatePlayer` rewrites it from the
+ * keyboard every frame, which in a headset is always zero, so the only honest
+ * record that a step was taken is when the last one happened.
+ */
+const TRAVEL_HEADING_MS = 140;
 
 /**
  * What to take off the visitor's own body in a session.
@@ -1599,6 +1609,14 @@ export class FestivalWorld {
   private xrFloorOffset = 0;
   private xrNeedsCalibration = true;
   private xrHeadHeading = 0;
+  /** Where the last step went, and when it was taken. See `orientXrBody`. */
+  private travelHeading = 0;
+  private travelHeadingAt = 0;
+  /** The avatar's two headings in a headset, and the visitor's own. */
+  private xrChestHeading = 0;
+  private xrHipOffset = 0;
+  private xrHeadWorldHeading = 0;
+  private xrBodyOriented = false;
   private readonly xrMovementView = new THREE.PerspectiveCamera();
   private readonly xrRawOrientation = new THREE.Quaternion();
   private xrSimPitch = 0;
@@ -5757,6 +5775,76 @@ export class FestivalWorld {
   }
 
   /**
+   * Point the hips where the visitor is walking and the chest where they are
+   * looking.
+   *
+   * On a desk a body has one heading and `movePlayer` sets it to the direction
+   * of travel: push the stick left, the character turns and walks left, which
+   * is what a third-person game should do. In a headset that is wrong, and it
+   * is wrong in a way that lands on the arms.
+   *
+   * The view is already independent of the body — the rig takes its position
+   * from the avatar and its yaw from `xrYaw`, so turning the body cannot turn
+   * the head, and none of this can feed back on itself. That independence is
+   * exactly what hurt. Strafing spun the torso ninety degrees underneath a
+   * head that had not moved; walking backwards spun it a hundred and eighty.
+   * The arm solver targets each controller's position in world space and pulls
+   * it into the shoulder's frame, and that frame lives inside the body — so a
+   * spun body put the target beside the chest, or behind the spine, and the
+   * arm did the only thing left to it and reached around the torso. Crossed,
+   * twisted, through the ribs. The solver was never wrong. It was solving
+   * faithfully for a body that was facing the wrong way.
+   *
+   * So the body is given the two headings a body actually has. The chest owns
+   * the visitor's own heading, because their real arms hang off their real
+   * chest and squaring one to the other is what guarantees the hands stay in
+   * front of it. The hips lean off the chest towards the step, clamped, which
+   * is how a person sidesteps and back-pedals without their waist coming
+   * apart. `player.rotation.y` carries the hips and the legs; the spine takes
+   * the lean back out again for everything above the waist. Both are zeroed by
+   * the pose code at the top of every frame, so neither needs undoing when the
+   * session ends.
+   */
+  private orientXrBody(delta: number, now: number): void {
+    const rig = this.playerRig;
+    if (!rig) return;
+    // Straight up and straight down carry no heading at all, so hold the last
+    // one rather than letting the arithmetic invent one out of noise.
+    if (Math.hypot(this.headForward.x, this.headForward.z) > 0.2) {
+      this.xrHeadWorldHeading = Math.atan2(this.headForward.x, this.headForward.z);
+    }
+    // On the first frame of a session there is nothing to ease from, and
+    // easing from zero would swing the avatar round in front of its owner.
+    if (!this.xrBodyOriented) {
+      this.xrChestHeading = this.xrHeadWorldHeading;
+      this.xrHipOffset = 0;
+      this.xrBodyOriented = true;
+    }
+    // Two ways the hips stop being the visitor's to steer: a chair, and being
+    // carried. Both already own `player.rotation.y` by the time this runs — a
+    // seat writes it once, and a carry rewrites it from the carrier every
+    // frame — so both are read from the same place, and in both the visitor
+    // still turns to look at things at the waist.
+    const pinned = this.playerState === 'seated' || this.isMentorControlLocked();
+    const oriented = orientBody({
+      head: this.xrHeadWorldHeading,
+      // Pinned hips take no steps, and the heading of whichever step was taken
+      // on the way in must not lean hips that are in a chair.
+      travel: pinned || now - this.travelHeadingAt >= TRAVEL_HEADING_MS
+        ? undefined
+        : this.travelHeading,
+      seat: pinned ? this.player.rotation.y : undefined,
+      chest: this.xrChestHeading,
+      lead: this.xrHipOffset,
+      delta,
+    });
+    this.xrChestHeading = oriented.chest;
+    this.xrHipOffset = oriented.lead;
+    this.player.rotation.y = oriented.hips;
+    rig.torso.rotation.y = oriented.spine;
+  }
+
+  /**
    * Put the visitor's own arms where their hands actually are.
    *
    * The body is shown and the head taken off. Floating forearms would have
@@ -5771,7 +5859,7 @@ export class FestivalWorld {
    * bent the elbow ends up, and guessing at somebody's shoulder height from a
    * headset pose is a good way to put an arm somewhere absurd.
    */
-  private updateXrArms(): void {
+  private updateXrArms(delta: number): void {
     const rig = this.playerRig;
     if (!rig) return;
     if (!this.paintsInHeadset()) {
@@ -5779,6 +5867,7 @@ export class FestivalWorld {
         for (const part of this.xrHiddenParts) part.visible = true;
         this.xrHiddenParts = [];
         this.xrArmsShown = false;
+        this.xrBodyOriented = false;
         this.leftSwing = restingSwing();
         this.rightSwing = restingSwing();
       }
@@ -5806,6 +5895,9 @@ export class FestivalWorld {
     const e = head.matrixWorld.elements;
     this.headForward.set(-e[8], -e[9], -e[10]);
     const now = performance.now();
+    // Before the arms, never after: every target below is pulled into the
+    // shoulder's frame, and that frame is inside the body this turns.
+    this.orientXrBody(delta, now);
 
     for (const controller of this.xrControllers) {
       const source = controller.userData.inputSource as XRInputSource | undefined;
@@ -10491,7 +10583,7 @@ export class FestivalWorld {
     // After the rig has been posed, never before: `animateRig` writes the same
     // shoulder and elbow rotations this overwrites, and whichever runs second
     // wins.
-    this.updateXrArms();
+    this.updateXrArms(delta);
     const dayNight = this.dayNight.update();
     this.dayNight.atmosphere.update(dayNight.cycleMinute, this.player.position);
     // Exposed for the hour rather than fixed at noon's value. Raising lights
@@ -11192,7 +11284,14 @@ export class FestivalWorld {
     const reach = this.walkableXRange(this.player.position.z);
     this.player.position.x = THREE.MathUtils.clamp(this.player.position.x, reach.min, reach.max);
     this.resolvePlayerCrowdCollisions();
-    this.player.rotation.y = Math.atan2(this.moveVector.x, this.moveVector.z);
+    this.travelHeading = Math.atan2(this.moveVector.x, this.moveVector.z);
+    this.travelHeadingAt = performance.now();
+    // Off a headset the body is one piece and it faces where it walks. In one
+    // it is hips and chest with different jobs, composed a little later in the
+    // frame once the head has been read — see `orientXrBody`. Writing the
+    // travel heading here as well would leave a frame of the old behaviour for
+    // anything in between to pick up, and the network snapshot is in between.
+    if (!this.paintsInHeadset()) this.player.rotation.y = this.travelHeading;
   }
 
   private mentorFollowerObject(): THREE.Object3D | undefined {
