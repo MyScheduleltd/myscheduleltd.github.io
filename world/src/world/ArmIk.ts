@@ -144,14 +144,22 @@ export interface ArmOrientation {
  * hinge axis, and the elbow angle then falls out of the arithmetic instead of
  * being guessed at and corrected by eye.
  */
-export function armOrientation(solution: ArmSolution): ArmOrientation {
+export function armOrientation(solution: ArmSolution, hinge: 1 | -1 = 1): ArmOrientation {
   const { upper, lower } = solution;
   const y: Vec3 = [-upper[0], -upper[1], -upper[2]];
   // The plane the two bones lie in. Straight-armed there is no plane, so any
   // perpendicular will do — the elbow angle comes out zero either way.
   let x = cross(upper, lower);
   if (len(x) < 1e-6) x = cross(y, Math.abs(y[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]);
-  const xn = norm(x);
+  // `hinge` picks which of the two valid axes to use.
+  //
+  // Negating it leaves both bones exactly where they were — the elbow angle
+  // comes out negated as well, and a rotation about a flipped axis by a
+  // flipped angle is the same rotation — but it rolls the limb 180° about its
+  // own length. On a skinned arm that is the difference between a thumb on the
+  // inside and a thumb on the outside, and nothing else.
+  x = scale(norm(x), hinge);
+  const xn = x;
   const z = norm(cross(xn, y));
   // The forearm continues down local -Y when straight. Rotating -Y about +X by
   // t gives (0, -cos t, -sin t), so matching it to `lower` in this basis is a

@@ -132,3 +132,25 @@ test('the basis stays a basis for an out-of-reach target', () => {
   for (const v of [...o.x, ...o.y, ...o.z, o.elbowX]) assert.ok(Number.isFinite(v));
   assert.ok(Math.abs(len(o.x) - 1) < 1e-9 && Math.abs(len(o.z) - 1) < 1e-9);
 });
+
+test('flipping the hinge rolls the limb without moving it', () => {
+  // The two hinge choices are both valid: the wrist has to land on the target
+  // either way, and only the twist about the arm's own length differs. This is
+  // what decides which side a thumb ends up on.
+  for (const t of [[0.3, -0.5, -0.4], [-0.2, -0.7, 0.2], [0, -0.4, -0.6]]) {
+    const s = solveArm(t, UPPER, LOWER);
+    const a = armOrientation(s, 1);
+    const b = armOrientation(s, -1);
+    for (const o of [a, b]) {
+      const c = Math.cos(o.elbowX), sn = Math.sin(o.elbowX);
+      const upper = [-o.y[0], -o.y[1], -o.y[2]];
+      const lower = [0, 1, 2].map((i) => -c * o.y[i] - sn * o.z[i]);
+      const wrist = [0, 1, 2].map((i) => upper[i] * UPPER + lower[i] * LOWER);
+      assert.ok(dist(wrist, t) < 1e-6, `hinge landed ${dist(wrist, t)} off`);
+    }
+    // Same bones, opposite roll.
+    assert.ok(dist(a.y, b.y) < 1e-9, 'the upper bone does not move');
+    assert.ok(dist(a.x, b.x) > 1.9, 'but the hinge axis is reversed');
+    assert.ok(Math.abs(a.elbowX + b.elbowX) < 1e-9, 'and the elbow angle negates');
+  }
+});

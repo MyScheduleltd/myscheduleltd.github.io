@@ -614,6 +614,14 @@ const PRIVATE_PANEL_FOLLOW = 6.5;
  * headset on. If the elbows bend the wrong way, negate the Z.
  */
 const ELBOW_POLE_Z = 1;
+/**
+ * Which of the two valid elbow hinge axes to use.
+ *
+ * Both put the bones in the same place; the choice only rolls the limb about
+ * its own length, which on a skinned arm is which side the thumb ends up on.
+ * It was rolled the wrong way, so the thumbs pointed backwards.
+ */
+const ELBOW_HINGE: 1 | -1 = -1;
 
 /**
  * What to take off the visitor's own body in a session.
@@ -5800,7 +5808,7 @@ export class FestivalWorld {
       const out = Math.sign(shoulder.position.x || 1) * ELBOW_POLE_OUT;
       const target: Vec3 = [this.armLocal.x, this.armLocal.y, this.armLocal.z];
       const solved = solveArm(target, upperLength, lowerLength, [out, ELBOW_POLE_DOWN, ELBOW_POLE_Z]);
-      const rotation = armOrientation(solved);
+      const rotation = armOrientation(solved, ELBOW_HINGE);
       this.armAxisX.set(rotation.x[0], rotation.x[1], rotation.x[2]);
       this.armAxisY.set(rotation.y[0], rotation.y[1], rotation.y[2]);
       this.armAxisZ.set(rotation.z[0], rotation.z[1], rotation.z[2]);
