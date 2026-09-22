@@ -1757,6 +1757,14 @@ export class FestivalWorld {
   private verticalVelocity = 0;
   private airborne = false;
   private skating = false;
+  /**
+   * Whether the headset's stick took this frame's step.
+   *
+   * Cleared and re-set inside one frame, so it can never go stale across a
+   * session ending, and set only on frames that actually moved the avatar —
+   * the keyboard keeps every frame the stick was at rest. See `updatePlayer`.
+   */
+  private xrSteered = false;
   /** While recovering from a heavy landing: slower, and shown staggering. */
   private stumbleUntil = 0;
 
@@ -2859,6 +2867,12 @@ export class FestivalWorld {
   }
 
   private updateXrInput(delta: number): void {
+    // Cleared ahead of the guard, not after it. On every path where this
+    // returns without steering anything — no session, the phone preview, no
+    // headset at all — `updatePlayer` must go back to reading the keyboard,
+    // and a flag left true from the last frame of a session would strand the
+    // avatar for good.
+    this.xrSteered = false;
     if (!this.xrActive || this.xrSimulated || !this.xrSession) return;
     this.updateXrPointers();
     let moveX = 0;
@@ -2934,7 +2948,16 @@ export class FestivalWorld {
       // Use this frame's viewer pose and the same snap yaw as the rendered rig.
       // getCamera() still contains reference-space matrices before render().
       this.xrMovementView.rotation.set(0, this.xrYaw + this.xrHeadHeading, 0);
+      // Walking out of a dance, the same as at a desk. Without it the stick
+      // could carry a dancing avatar across the festival still dancing.
+      this.dancing = false;
       this.movePlayer(moveX, moveY, (run ? 7.4 : 4.4) * delta, this.xrMovementView);
+      // Only on the frames the stick actually stepped. Claiming the whole of a
+      // session would shut out a Bluetooth keyboard paired to the headset,
+      // which drives `updatePlayer` today and still should; and on a frame with
+      // the stick at rest that same block is what puts `moveVector` back to
+      // zero, so releasing the stick still stops the legs.
+      this.xrSteered = true;
     }
     this.running = run;
   }
@@ -11087,33 +11110,49 @@ export class FestivalWorld {
       }
       return;
     }
-    const keyed = Math.hypot(this.stickX, this.stickY) < 0.001;
-    const horizontal = keyed
-      ? Number(this.keys.has('d') || this.keys.has('arrowright')) -
-        Number(this.keys.has('a') || this.keys.has('arrowleft'))
-      : this.stickX;
-    const vertical = keyed
-      ? Number(this.keys.has('s') || this.keys.has('arrowdown')) -
-        Number(this.keys.has('w') || this.keys.has('arrowup'))
-      : this.stickY;
-    this.moveVector.set(horizontal, 0, vertical);
-    if (this.moveVector.lengthSq() > 0) {
-      this.dancing = false;
-      const running = this.running && !this.dancing;
-      const speed = this.playerState === 'swimming'
-        ? (running ? 6.2 : 4.1)
-        : (running ? 12.4 : 3.6);
-      // Winded by the landing: the legs are under you again but not yet
-      // carrying you at full pace.
-      const recovering = performance.now() < this.stumbleUntil ? 0.42 : 1;
-      this.movePlayer(horizontal, vertical, speed * recovering * delta);
+    /**
+     * The keyboard, unless a headset has already answered.
+     *
+     * `updateXrInput` runs first and takes the step itself, through the
+     * headset's own view; `movePlayer` leaves the result in `moveVector`,
+     * which is what everything downstream reads to know whether this avatar is
+     * walking. In a session there is no keyboard and no on-screen stick, so
+     * both of these read zero — and this line then set that record straight
+     * back to nothing, every frame, immediately after the headset had written
+     * it. Hence `moving` was false for the whole of every session: the legs
+     * never took a stride in VR, and every other visitor in the festival was
+     * told you were standing still while you walked past them.
+     */
+    if (!this.xrSteered) {
+      const keyed = Math.hypot(this.stickX, this.stickY) < 0.001;
+      const horizontal = keyed
+        ? Number(this.keys.has('d') || this.keys.has('arrowright')) -
+          Number(this.keys.has('a') || this.keys.has('arrowleft'))
+        : this.stickX;
+      const vertical = keyed
+        ? Number(this.keys.has('s') || this.keys.has('arrowdown')) -
+          Number(this.keys.has('w') || this.keys.has('arrowup'))
+        : this.stickY;
+      this.moveVector.set(horizontal, 0, vertical);
+      if (this.moveVector.lengthSq() > 0) {
+        this.dancing = false;
+        const running = this.running && !this.dancing;
+        const speed = this.playerState === 'swimming'
+          ? (running ? 6.2 : 4.1)
+          : (running ? 12.4 : 3.6);
+        // Winded by the landing: the legs are under you again but not yet
+        // carrying you at full pace.
+        const recovering = performance.now() < this.stumbleUntil ? 0.42 : 1;
+        this.movePlayer(horizontal, vertical, speed * recovering * delta);
+      }
     }
     this.applyKnockback(delta);
 
     const shouldSwim = isSwimmingDepth(this.player.position.x,this.player.position.z);
     if (shouldSwim !== (this.outfit === 'swimwear')) this.setOutfit(shouldSwim);
     this.setSwimming(shouldSwim);
-    this.skating = this.running && this.moveVector.lengthSq()>0 && !this.dancing && this.playerState==='walking';
+    this.skating = this.running && this.moveVector.lengthSq()>0 && !this.dancing
+      && this.playerState==='walking' && !this.paintsInHeadset();
 
     if (this.playerState === 'swimming') {
       // Keep the head, torso, and arms clearly above the waterline. Swimming is
@@ -11184,7 +11223,17 @@ export class FestivalWorld {
         ? (moving ? (running ? 0.42 : 0.3) : 0.025)
         : (moving ? (running ? 1.02 : 0.72) : 0.035);
       // On land a run is a ride; in the water it stays a swim.
-      const skating = running && this.playerState === 'walking';
+      /**
+       * On land a run is a ride — but not from inside the body.
+       *
+       * Nobody has ever seen this in a headset: the board could only come out
+       * while `moveVector` said the avatar was moving, and until now that was
+       * never true in a session. Letting it appear as a side effect of fixing
+       * the legs would put a skateboard under the visitor's own feet, at speed,
+       * while their real feet are on a real floor — a new thing in VR, and not
+       * one that was asked for. Running in a headset is a run.
+       */
+      const skating = running && this.playerState === 'walking' && !this.paintsInHeadset();
       this.skating = skating;
       this.animateRig(
         this.playerRig, this.clock.elapsedTime * cadence, stride, gesture, skating,
