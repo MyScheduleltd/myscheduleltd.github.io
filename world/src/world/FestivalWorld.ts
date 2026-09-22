@@ -624,6 +624,26 @@ const ELBOW_POLE_Z = 1;
 const ELBOW_HINGE: 1 | -1 = -1;
 
 /**
+ * How many times to solve each arm per frame, and how hard to correct.
+ *
+ * The skeleton this solves is not the arm anybody sees. `visualRoot` is scale
+ * 1 and the imported model inside it is scaled 2.012, so the visible arm is
+ * about twice the length of the rig's 0.5 + 0.43 bones — and each imported
+ * bone follows its rig joint through an offset baked at bind time, from an
+ * origin of its own. Aiming the rig's wrist at the controller therefore does
+ * not put the *model's* hand there, which is why the whole arm ended up inside
+ * the torso.
+ *
+ * Rather than chase that with a scale factor, the loop is closed:
+ * `importedWrist` reports where the visible wrist actually finished, and the
+ * target moves by the shortfall. A gain of 1 would overshoot by exactly the
+ * length ratio, so a half step converges in one pass for a ratio of two and
+ * stays stable anywhere between one and four.
+ */
+const ARM_PASSES = 3;
+const ARM_GAIN = 0.5;
+
+/**
  * What to take off the visitor's own body in a session.
  *
  * Not "everything but the arms", which is what this tried first and why no
@@ -1486,6 +1506,9 @@ export class FestivalWorld {
   private readonly armAxisZ = new THREE.Vector3();
   private readonly armBasis = new THREE.Matrix4();
   private readonly headForward = new THREE.Vector3();
+  private readonly armTarget = new THREE.Vector3();
+  private readonly armMeasured = new THREE.Vector3();
+  private readonly armWanted = new THREE.Vector3();
   private xrExitCause?: string;
   private xrExitReason?: string;
   /** A film being watched privately, which outranks the programme on a screen. */
@@ -5806,15 +5829,37 @@ export class FestivalWorld {
       // hand. With the names mirrored, anything that decides "outward" from
       // the handedness is one rename away from pointing into the chest.
       const out = Math.sign(shoulder.position.x || 1) * ELBOW_POLE_OUT;
-      const target: Vec3 = [this.armLocal.x, this.armLocal.y, this.armLocal.z];
-      const solved = solveArm(target, upperLength, lowerLength, [out, ELBOW_POLE_DOWN, ELBOW_POLE_Z]);
-      const rotation = armOrientation(solved, ELBOW_HINGE);
-      this.armAxisX.set(rotation.x[0], rotation.x[1], rotation.x[2]);
-      this.armAxisY.set(rotation.y[0], rotation.y[1], rotation.y[2]);
-      this.armAxisZ.set(rotation.z[0], rotation.z[1], rotation.z[2]);
-      this.armBasis.makeBasis(this.armAxisX, this.armAxisY, this.armAxisZ);
-      shoulder.quaternion.setFromRotationMatrix(this.armBasis);
-      elbow.rotation.set(rotation.elbowX, 0, 0);
+      const pole: Vec3 = [out, ELBOW_POLE_DOWN, ELBOW_POLE_Z];
+      const target = this.armTarget.copy(this.armLocal);
+      // `importedWrist` mirrors like everything else here: its `right` flag
+      // selects the model side, and the model's left arm is the one this
+      // visitor's left hand drives.
+      const measureWrist = this.player.userData.importedWrist as
+        ((right: boolean) => THREE.Vector3) | undefined;
+      const visualRoot = rig.visualRoot;
+
+      for (let pass = 0; pass < ARM_PASSES; pass += 1) {
+        const solved = solveArm([target.x, target.y, target.z], upperLength, lowerLength, pole);
+        const rotation = armOrientation(solved, ELBOW_HINGE);
+        this.armAxisX.set(rotation.x[0], rotation.x[1], rotation.x[2]);
+        this.armAxisY.set(rotation.y[0], rotation.y[1], rotation.y[2]);
+        this.armAxisZ.set(rotation.z[0], rotation.z[1], rotation.z[2]);
+        this.armBasis.makeBasis(this.armAxisX, this.armAxisY, this.armAxisZ);
+        shoulder.quaternion.setFromRotationMatrix(this.armBasis);
+        elbow.rotation.set(rotation.elbowX, 0, 0);
+        if (!measureWrist || !visualRoot || pass === ARM_PASSES - 1) continue;
+        // Where the arm somebody can see actually finished, against where the
+        // controller is. Both taken into the shoulder's frame so the shortfall
+        // can be added straight to the target.
+        const landed = measureWrist(hand === 'left');
+        visualRoot.localToWorld(landed);
+        parent.updateWorldMatrix(true, false);
+        this.armMeasured.copy(landed);
+        parent.worldToLocal(this.armMeasured);
+        this.armWanted.copy(this.armWorld);
+        parent.worldToLocal(this.armWanted);
+        target.addScaledVector(this.armWanted.sub(this.armMeasured), ARM_GAIN);
+      }
     }
   }
 
