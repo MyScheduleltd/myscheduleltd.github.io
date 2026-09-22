@@ -614,6 +614,22 @@ const PRIVATE_PANEL_FOLLOW = 6.5;
  * headset on. If the elbows bend the wrong way, negate the Z.
  */
 const ELBOW_POLE_Z = 1;
+
+/**
+ * What to take off the visitor's own body in a session.
+ *
+ * Not "everything but the arms", which is what this tried first and why no
+ * arms appeared at all. `attachImportedAvatar` disposes every procedural mesh
+ * and skins one imported model to the rig's joints instead, so the arm joints
+ * have no meshes under them to keep — hiding everything else hid the whole
+ * avatar. The model is not split per limb either: only the head and the cap
+ * are components of their own.
+ *
+ * So the body stays and the head comes off, which is what a headset wants
+ * regardless. Nobody should be looking at the inside of their own skull.
+ */
+const hiddenInHeadset = (componentId: string): boolean =>
+  componentId === 'head' || componentId.startsWith('cap') || componentId.includes('hair');
 const ELBOW_POLE_OUT = 0.35;
 const ELBOW_POLE_DOWN = -0.2;
 /**
@@ -5685,12 +5701,12 @@ export class FestivalWorld {
   }
 
   /**
-   * Put the visitor's own forearms where their hands actually are.
+   * Put the visitor's own arms where their hands actually are.
    *
-   * Only the arms. The body is hidden in a session because the camera is the
-   * head, and a torso and legs that do not match how somebody is really
-   * standing read as broken — floating forearms read as correct, which is what
-   * nearly every headset app has settled on.
+   * The body is shown and the head taken off. Floating forearms would have
+   * been nicer, but the imported avatar is one skinned model rather than a
+   * mesh per limb, so there is no arm to keep on its own — see
+   * `hiddenInHeadset`.
    *
    * The shoulders stay where the avatar's shoulders are, at the avatar's own
    * height rather than the visitor's. That sounds wrong and is not: the solver
@@ -5713,14 +5729,13 @@ export class FestivalWorld {
       return;
     }
     if (!this.xrArmsShown) {
-      const keep = new Set<THREE.Object3D>();
-      for (const root of [rig.leftArm, rig.rightArm]) root.traverse((part) => keep.add(part));
       this.xrHiddenParts = [];
       this.player.traverse((part) => {
-        // Anything already hidden is hidden for its own reason — the skateboard
-        // that is only out while running, a treat nobody is holding — and must
-        // not be handed back visible later.
-        if (!(part as THREE.Mesh).isMesh || keep.has(part) || !part.visible) return;
+        const componentId = part.userData?.componentId as string | undefined;
+        // Anything already hidden is hidden for its own reason — a skateboard
+        // that is only out while running — and must not be handed back
+        // visible later.
+        if (!componentId || !hiddenInHeadset(componentId) || !part.visible) return;
         this.xrHiddenParts.push(part);
       });
       this.xrArmsShown = true;

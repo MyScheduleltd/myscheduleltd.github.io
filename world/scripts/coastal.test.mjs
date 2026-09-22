@@ -217,3 +217,101 @@ test('nothing on the DJ console reaches back into the DJ standing at it', async 
   assert.ok(Math.abs(whole.max.z - 0.95) < 0.001, `front lip moved to ${whole.max.z.toFixed(3)}`);
   decks.traverse((child) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose?.(); } });
 });
+
+/**
+ * The pamphlet stand's tray has been reported as clipping three times. The
+ * numbers that matter are written down here so a fourth report is a failing
+ * test rather than a screenshot.
+ */
+test('nothing on the pamphlet stand sits inside anything else', async () => {
+  const bundled=await build({entryPoints:[new URL('../src/world/CoastalProps.ts',import.meta.url).pathname],bundle:true,loader:{'.png':'dataurl'},platform:'node',format:'esm',write:false});
+  const { createCoastalPamphletStand } = await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+  const stand = createCoastalPamphletStand();
+  stand.updateMatrixWorld(true);
+
+  const boxOf = (name) => {
+    const found = [];
+    stand.traverse((o) => { if (o.name === name && o.isMesh) found.push(o); });
+    assert.ok(found.length, `no mesh named ${name}`);
+    return found.map((mesh) => new THREE.Box3().setFromObject(mesh));
+  };
+  const gap = (below, above) => above.min.y - below.max.y;
+
+  const [caseBox] = boxOf('Timber case');
+  const [trayBox] = boxOf('Sloped display tray');
+  const [riserBox] = boxOf('Tray riser');
+
+  // Bounding boxes, which for a tilted slab is the conservative test: if these
+  // do not touch then no triangle of one is inside the other, whatever the
+  // rotation. The tray clears the case top outright now rather than relying on
+  // an overhang, which is a smaller thing to get wrong next time.
+  assert.ok(!trayBox.intersectsBox(caseBox),
+    `the tray is inside the case: tray y from ${trayBox.min.y.toFixed(4)}, case top ${caseBox.max.y.toFixed(4)}`);
+  assert.ok(trayBox.min.y >= caseBox.max.y,
+    `the tray's lowest corner must sit on or above the case top, not ${trayBox.min.y.toFixed(4)} against ${caseBox.max.y.toFixed(4)}`);
+
+  // The riser must stop under the tray rather than standing through it: its top
+  // used to reach 1.71 where the tray's underside is 1.703. A bounding box is
+  // no use for this pair — the tilted tray's box dips to the front while the
+  // riser sits at the back — so the riser's top corners are taken into the
+  // tray's own space and checked against the slab's underside directly.
+  const trayMesh = (() => { let m; stand.traverse((o) => { if (o.name === 'Sloped display tray') m = o; }); return m; })();
+  trayMesh.geometry.computeBoundingBox();
+  const halfY = trayMesh.geometry.boundingBox.max.y;
+  const toTray = new THREE.Matrix4().copy(trayMesh.matrixWorld).invert();
+  const extent = trayMesh.geometry.boundingBox;
+  let checked = 0;
+  for (const x of [riserBox.min.x, riserBox.max.x]) {
+    for (const z of [riserBox.min.z, riserBox.max.z]) {
+      const corner = new THREE.Vector3(x, riserBox.max.y, z).applyMatrix4(toTray);
+      // Only corners under the slab's footprint can pierce it at all.
+      if (corner.x < extent.min.x || corner.x > extent.max.x) continue;
+      if (corner.z < extent.min.z || corner.z > extent.max.z) continue;
+      checked += 1;
+      assert.ok(corner.y <= -halfY,
+        `a riser corner stands ${(corner.y + halfY).toFixed(4)} up inside the tray`);
+    }
+  }
+  assert.ok(checked > 0, 'the riser sits under the tray at all, so this proves something');
+
+  // Every printed layer needs real daylight over the one beneath it, or it
+  // z-fights into speckles at ordinary viewing distance.
+  //
+  // Measured in the tray's own space, not the world's. These all hang off the
+  // tilted tray, and a world bounding box spreads a 0.88-deep booklet through
+  // 0.175 of height — so comparing world Y between two layers says nothing
+  // about which is on top of which.
+  const localSpans = (name) => {
+    const out = [];
+    stand.traverse((o) => {
+      if (o.name !== name || !o.isMesh) return;
+      o.geometry.computeBoundingBox();
+      const bb = o.geometry.boundingBox;
+      out.push({
+        yMin: o.position.y + bb.min.y, yMax: o.position.y + bb.max.y,
+        xMin: o.position.x + bb.min.x, xMax: o.position.x + bb.max.x,
+      });
+    });
+    return out;
+  };
+  const overlapsX = (a, b) => a.xMin < b.xMax && a.xMax > b.xMin;
+  const covers = localSpans('Printed booklet cover');
+  const stacks = localSpans('Cream paper stack');
+  assert.equal(covers.length, 3);
+  assert.equal(stacks.length, 3);
+  for (const [name, layers] of [['fold', localSpans('Booklet fold')], ['type line', localSpans('Cover type line')]]) {
+    assert.ok(layers.length, `${name} exists`);
+    for (const layer of layers) {
+      const under = covers.find((cover) => overlapsX(layer, cover));
+      assert.ok(under, `${name} is not over any cover`);
+      const clear = layer.yMin - under.yMax;
+      assert.ok(clear > 0.008, `${name} clears its cover by only ${clear.toFixed(4)} — it will z-fight`);
+    }
+  }
+  for (const cover of covers) {
+    const stack = stacks.find((s) => overlapsX(cover, s));
+    assert.ok(stack, 'each cover sits on a paper stack');
+    const clear = cover.yMin - stack.yMax;
+    assert.ok(clear > 0.008, `a cover clears its stack by only ${clear.toFixed(4)}`);
+  }
+});

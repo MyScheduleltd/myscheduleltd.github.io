@@ -99,19 +99,25 @@ export function createCoastalPamphletStand():THREE.Group {
   for(const x of [-.98,.98])box(p,'Cream frame stile',[.13,1.40,.14],[x,.855,.60],cream);
   for(const y of [.20,1.49])box(p,'Cream frame rail',[2.1,.12,.14],[0,y,.60],cream);
   /**
-   * The tray is a slab tilted towards the reader, and it was rotated about its
-   * own centre at 1.68 — which drove its whole front half *into* the top of the
-   * case. The underside crossed the case top at z 0.235 and stayed below it all
-   * the way to the case's front face, a 32cm band of timber intersecting
-   * timber, which is the clipping across this stand.
+   * The tray is a slab tilted towards the reader, rotated about its own centre.
+   * Getting it clear of the case has taken three goes, so the numbers are
+   * written down this time.
    *
-   * It sits a little higher and a little shallower now, and shifted forward, so
-   * the lowest part of its underside meets the case top exactly at the front
-   * face and everything below that line overhangs into open air. A riser fills
-   * the wedge left under the back, which would otherwise show as a gap.
+   * With the tray at 1.72 its underside passed y 1.5655 at the case's front
+   * face — 4.5mm *under* the case top at 1.57. The note that used to sit here
+   * claimed the two met exactly; they did not, and 4.5mm of timber inside
+   * timber is the seam along the front edge. At 1.74 the underside crosses the
+   * front face at 1.5855, clear by 15.5mm, and everything below that line
+   * overhangs into open air.
+   *
+   * The riser had the same fault from the other side: its top at 1.71 stood
+   * 2.7cm *through* the tray, since the underside is only 1.703 above the
+   * riser's own front face. It stops at 1.69 now. It fills less of the wedge
+   * under the back than it used to, which is a gap facing away from the path
+   * rather than two pieces of wood in the same place.
    */
-  box(p,'Tray riser',[2.03,.18,.52],[0,1.62,-.28],wood);
-  const tray=new THREE.Group();tray.position.set(0,1.72,.10);tray.rotation.x=.20;p.add(tray);
+  box(p,'Tray riser',[2.03,.18,.52],[0,1.60,-.28],wood);
+  const tray=new THREE.Group();tray.position.set(0,1.74,.10);tray.rotation.x=.20;p.add(tray);
   box(tray,'Sloped display tray',[2.2,.12,1.10],[0,0,0],wood);
   box(tray,'Book stop',[2.2,.15,.08],[0,.105,.51],red);
   for(const x of [-1.05,1.05])box(tray,'Tray side',[.10,.19,1.08],[x,.13,0],cream);
@@ -121,8 +127,11 @@ export function createCoastalPamphletStand():THREE.Group {
     // cover was only 0.009 above the stack, and the fold and lines intersected
     // it, producing the dotted clipping across the tray at normal viewing range.
     box(tray,'Printed booklet cover',[.55,.025,.88],[x,.205,0],x===0?red:green);
-    box(tray,'Booklet fold',[.025,.018,.88],[x-.245,.23,0],cream);
-    for(let n=0;n<3;n++)box(tray,'Cover type line',[n===0?.30:.23,.009,.035],[x,.225,-.20+n*.10],cream);
+    // The fold and the type lines cleared the cover by 3.5mm and 3.0mm, which
+    // is not clearance at a distance — it is the dotted clipping across the
+    // booklets. 15mm each now, still too thin to read as a gap.
+    box(tray,'Booklet fold',[.025,.018,.88],[x-.245,.242,0],cream);
+    for(let n=0;n<3;n++)box(tray,'Cover type line',[n===0?.30:.23,.009,.035],[x,.237,-.20+n*.10],cream);
   }
   return p;
 }
