@@ -1527,6 +1527,8 @@ export class FestivalWorld {
   private leftSwing: SwingState = restingSwing();
   private rightSwing: SwingState = restingSwing();
   private readonly armWorld = new THREE.Vector3();
+  /** The same hand with the body's travel taken out of it, for `trackPunch`. */
+  private readonly armSwing = new THREE.Vector3();
   private readonly armLocal = new THREE.Vector3();
   private readonly armAxisX = new THREE.Vector3();
   private readonly armAxisY = new THREE.Vector3();
@@ -5994,12 +5996,33 @@ export class FestivalWorld {
       controller.updateWorldMatrix(true, false);
       this.armWorld.setFromMatrixPosition(controller.matrixWorld);
 
-      // A throw is read in world space, before any of the rig's own frames get
-      // involved — how fast the hand moved and whether it went where the
-      // visitor was looking.
+      /**
+       * A throw is how fast the hand left the body, not how fast it crossed
+       * the festival.
+       *
+       * This fed `trackPunch` the controller's world position, and a world
+       * position carries wherever the body has walked. Riding at 7.4 metres a
+       * second moves both hands at 7.4 metres a second, straight along the way
+       * the visitor is looking, which is a textbook punch as far as a speed
+       * test and an outwardness test can tell — so the world threw one every
+       * cooldown, forever, from a rider with their arms folded.
+       *
+       * It was never only the board. Walking is 4.4 and running 7.4, both well
+       * past the 2.2 this triggers on, so phantom punches have been landing
+       * since the day this went in. They could not be *seen*, because the arm
+       * solver a few lines below rewrote the punch animation out of the avatar
+       * on the very frame it started; handing the arms to the skate stance is
+       * what finally made them visible. Being carried by MENTOR was the same.
+       *
+       * The body's own position comes out and the axes stay as they were, so
+       * `headForward` still means what it says. Turning needs no such handling:
+       * it swings a hand sideways across the view, and the outwardness test
+       * throws that out already.
+       */
+      this.armSwing.copy(this.armWorld).sub(this.player.position);
       const swing = trackPunch(
         hand === 'left' ? this.leftSwing : this.rightSwing,
-        [this.armWorld.x, this.armWorld.y, this.armWorld.z],
+        [this.armSwing.x, this.armSwing.y, this.armSwing.z],
         now,
         [this.headForward.x, this.headForward.y, this.headForward.z],
       );
