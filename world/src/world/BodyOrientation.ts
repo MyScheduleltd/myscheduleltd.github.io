@@ -69,7 +69,7 @@ const clamp = (value: number, low: number, high: number): number =>
   value < low ? low : value > high ? high : value;
 
 /** Ease one angle towards another the short way round. */
-const approach = (from: number, to: number, rate: number, delta: number): number =>
+export const approachAngle = (from: number, to: number, rate: number, delta: number): number =>
   from + wrapAngle(to - from) * (1 - Math.exp(-rate * delta));
 
 export interface BodyOrientationInput {
@@ -79,6 +79,8 @@ export interface BodyOrientationInput {
   travel?: number;
   /** Where the seat points, or undefined when on foot. */
   seat?: number;
+  /** The heading of the board being ridden, or undefined when not riding. */
+  board?: number;
   /** Last frame's chest heading. */
   chest: number;
   /** Last frame's hip lead. */
@@ -96,25 +98,46 @@ export interface BodyOrientation {
   chest: number;
   /** How far the hips lead the chest, carried into the next frame. */
   lead: number;
+  /** True while the pose, not this, decides which way the body faces. */
+  riding: boolean;
 }
 
 /**
- * `hips + spine` is always the chest's heading. That identity is the contract
- * the arms depend on, and it is what the tests pin down.
+ * `hips + spine` is the chest's heading — always, except while riding. That
+ * identity is the contract the arms depend on, and it is what the tests pin
+ * down.
+ *
+ * Riding is the exception, and deliberately: a skater stands across the deck,
+ * and the pose that puts them there turns the avatar's own visual root a
+ * quarter turn that this function neither sees nor should. So while riding,
+ * `chest` stops describing where the chest points and becomes a parked value,
+ * walked towards the body's heading only so that stepping off the board does
+ * not snap the torso round. The owner chose that stance knowing the cost.
  */
 export function orientBody(input: BodyOrientationInput): BodyOrientation {
-  const { head, travel, seat, delta } = input;
+  const { head, travel, seat, board, delta } = input;
   if (seat !== undefined) {
     // The hips are the chair's and stay in it. Whatever the visitor turns to
     // look at, they turn at the waist to look at.
     const reach = clamp(wrapAngle(head - seat), -SEATED_TWIST_MAX, SEATED_TWIST_MAX);
-    const chest = approach(input.chest, seat + reach, CHEST_TURN_RATE, delta);
-    return { hips: seat, spine: wrapAngle(chest - seat), chest, lead: 0 };
+    const chest = approachAngle(input.chest, seat + reach, CHEST_TURN_RATE, delta);
+    return { hips: seat, spine: wrapAngle(chest - seat), chest, lead: 0, riding: false };
+  }
+  if (board !== undefined) {
+    // The wheels roll where the body heads, and the rider stands sideways on
+    // top of them. Nothing at the waist: the pose owns the whole turn.
+    return {
+      hips: board,
+      spine: 0,
+      chest: approachAngle(input.chest, board, CHEST_TURN_RATE, delta),
+      lead: input.lead * Math.exp(-HIP_TURN_RATE * delta),
+      riding: true,
+    };
   }
   const wanted = travel === undefined
     ? 0
     : clamp(wrapAngle(travel - head), -HIP_TWIST_MAX, HIP_TWIST_MAX);
-  const chest = approach(input.chest, head, CHEST_TURN_RATE, delta);
+  const chest = approachAngle(input.chest, head, CHEST_TURN_RATE, delta);
   const lead = input.lead + (wanted - input.lead) * (1 - Math.exp(-HIP_TURN_RATE * delta));
-  return { hips: chest + lead, spine: -lead, chest, lead };
+  return { hips: chest + lead, spine: -lead, chest, lead, riding: false };
 }

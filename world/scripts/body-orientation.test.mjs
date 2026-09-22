@@ -175,3 +175,62 @@ test('a seated waist has a limit, and a shoulder-check finds it', () => {
   assert.ok(Math.abs(out.spine) <= SEATED_TWIST_MAX + 1e-9, 'no one twists that far');
   assert.ok(Math.abs(out.spine) > SEATED_TWIST_MAX - 1e-3, 'but they go as far as they can');
 });
+
+test('a board rolls where it is going, and the waist stays out of it', () => {
+  for (const board of RING) {
+    const out = settle({ head: 0, board });
+    assert.equal(out.riding, true);
+    assert.equal(out.hips, board, 'the wheels point along travel');
+    assert.equal(out.spine, 0, 'the pose owns the turn, not the waist');
+  }
+});
+
+test('stepping off a board does not snap the torso round', () => {
+  // While riding, `chest` is parked rather than describing anything. It has to
+  // end up on the body's own heading, or the first frame back on foot eases
+  // from wherever it was left and the torso whips round.
+  const board = 2.2;
+  const ridden = settle({ head: 0, board });
+  assert.ok(
+    Math.abs(wrapAngle(ridden.chest - board)) < 1e-3,
+    `chest parked at ${ridden.chest}, board at ${board}`,
+  );
+  // And the lean it had before mounting is gone, so the hips do not jump.
+  const leaning = settle({ head: 0, board, chest: 0, lead: HIP_TWIST_MAX });
+  assert.ok(Math.abs(leaning.lead) < 1e-4, `lean survived at ${leaning.lead}`);
+});
+
+test('the first frame off a board continues from where the board left it', () => {
+  const board = 2.2;
+  const ridden = settle({ head: 0, board });
+  const off = orientBody({
+    head: 0, travel: undefined, chest: ridden.chest, lead: ridden.lead, delta: FRAME,
+  });
+  // One frame must move the hips a little way off the board's heading, not all
+  // the way and not nowhere.
+  const moved = Math.abs(wrapAngle(off.hips - board));
+  assert.ok(moved > 1e-3 && moved < Math.abs(wrapAngle(0 - board)), `hips jumped ${moved}`);
+});
+
+test('a chair and a carry outrank a board', () => {
+  // `skating` is stale for a frame or two after a visitor sits down, and a
+  // chair that rode away would be quite a thing.
+  const out = orientBody({ head: 1, seat: 0.4, board: 3, chest: 0, lead: 0, delta: FRAME });
+  assert.equal(out.riding, false);
+  assert.equal(out.hips, 0.4, 'the seat wins');
+});
+
+test('only riding is exempt from hips plus spine', () => {
+  for (const [name, input] of [
+    ['on foot', { head: 1, travel: 2 }],
+    ['standing', { head: 1 }],
+    ['seated', { head: 1, seat: 0.3 }],
+  ]) {
+    const out = settle(input);
+    assert.equal(out.riding, false, name);
+    assert.ok(
+      Math.abs(wrapAngle(out.hips + out.spine - out.chest)) < 1e-9,
+      `${name} broke the identity`,
+    );
+  }
+});

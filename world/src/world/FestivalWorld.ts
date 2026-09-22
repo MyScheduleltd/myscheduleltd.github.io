@@ -543,6 +543,13 @@ const STUMBLE_IMPACT = 14;
 const LEDGE_DROP = 0.75;
 // Rider origin .28 + lift .18 balances the board's wheel bottom at -.46.
 const SKATE_LIFT = 0.18;
+
+/**
+ * How fast the visitor rises onto the deck in a headset, as an exponential
+ * rate. About a third of a second to stand up, which reads as stepping on
+ * rather than as the floor moving.
+ */
+const SKATE_LIFT_RATE = 12;
 const CAMERA_ZOOM_KEY = 'myschedule-camera-zoom-v1';
 /** Below this the frame is narrower than it is tall and the fov is widened. */
 const PORTRAIT_ASPECT = 1.35;
@@ -1757,6 +1764,8 @@ export class FestivalWorld {
   private verticalVelocity = 0;
   private airborne = false;
   private skating = false;
+  /** How much of the deck's height the visitor has actually stepped up. */
+  private skateLift = 0;
   /**
    * Whether the headset's stick took this frame's step.
    *
@@ -5843,6 +5852,24 @@ export class FestivalWorld {
       this.xrHipOffset = 0;
       this.xrBodyOriented = true;
     }
+    /**
+     * A board is steered by the board, so riding goes back to the desk's rule.
+     *
+     * `skateCoastalPose` turns `visualRoot` a quarter turn, which is the whole
+     * avatar — legs, spine, shoulders and all — because a skater stands across
+     * the deck. The board itself hangs off `player` rather than `visualRoot`,
+     * so it keeps pointing along `player.rotation.y`: the wheels roll where the
+     * body is heading and the rider stands sideways on top. That only holds
+     * while `player.rotation.y` is the direction of travel, so while riding it
+     * is, exactly as at a desk.
+     *
+     * The chest is not corrected back to the visitor's view here. The owner
+     * chose the desk's stance over square shoulders, told plainly that a
+     * quarter-turned chest puts their controllers out beside it and the arms
+     * reach across to find them. Their call, their world. `xrChestHeading` is
+     * still walked towards the body's real heading so that stepping off the
+     * board does not snap the torso round.
+     */
     // Two ways the hips stop being the visitor's to steer: a chair, and being
     // carried. Both already own `player.rotation.y` by the time this runs — a
     // seat writes it once, and a carry rewrites it from the carrier every
@@ -5857,6 +5884,9 @@ export class FestivalWorld {
         ? undefined
         : this.travelHeading,
       seat: pinned ? this.player.rotation.y : undefined,
+      // A seat and a carry both outrank it inside `orientBody`, so a stale
+      // `skating` left over from before a visitor sat down cannot ride a chair.
+      board: this.skating ? this.travelHeading : undefined,
       chest: this.xrChestHeading,
       lead: this.xrHipOffset,
       delta,
@@ -11151,8 +11181,7 @@ export class FestivalWorld {
     const shouldSwim = isSwimmingDepth(this.player.position.x,this.player.position.z);
     if (shouldSwim !== (this.outfit === 'swimwear')) this.setOutfit(shouldSwim);
     this.setSwimming(shouldSwim);
-    this.skating = this.running && this.moveVector.lengthSq()>0 && !this.dancing
-      && this.playerState==='walking' && !this.paintsInHeadset();
+    this.skating = this.running && this.moveVector.lengthSq()>0 && !this.dancing && this.playerState==='walking';
 
     if (this.playerState === 'swimming') {
       // Keep the head, torso, and arms clearly above the waterline. Swimming is
@@ -11202,7 +11231,21 @@ export class FestivalWorld {
         this.airborne = true;
         this.verticalVelocity = 0;
       } else {
-        this.player.position.y = ground + (this.skating ? SKATE_LIFT : 0);
+        /**
+         * Stepping onto the deck, rather than being teleported onto it.
+         *
+         * At a desk this is 18cm of avatar and nobody feels it. In a headset
+         * `player.position.y` is where the visitor's own eyes are — `xrRig`
+         * takes its height straight from it — so an instant 18cm is the
+         * visitor's head snapping up, which is the sort of thing headsets get
+         * blamed for. Eased there and left alone everywhere else, so the desk
+         * keeps exactly the behaviour it has always had.
+         */
+        const lift = this.skating ? SKATE_LIFT : 0;
+        this.skateLift = this.paintsInHeadset()
+          ? this.skateLift + (lift - this.skateLift) * (1 - Math.exp(-SKATE_LIFT_RATE * delta))
+          : lift;
+        this.player.position.y = ground + this.skateLift;
       }
       this.player.rotation.x = 0;
       this.player.rotation.z = 0;
@@ -11223,17 +11266,7 @@ export class FestivalWorld {
         ? (moving ? (running ? 0.42 : 0.3) : 0.025)
         : (moving ? (running ? 1.02 : 0.72) : 0.035);
       // On land a run is a ride; in the water it stays a swim.
-      /**
-       * On land a run is a ride — but not from inside the body.
-       *
-       * Nobody has ever seen this in a headset: the board could only come out
-       * while `moveVector` said the avatar was moving, and until now that was
-       * never true in a session. Letting it appear as a side effect of fixing
-       * the legs would put a skateboard under the visitor's own feet, at speed,
-       * while their real feet are on a real floor — a new thing in VR, and not
-       * one that was asked for. Running in a headset is a run.
-       */
-      const skating = running && this.playerState === 'walking' && !this.paintsInHeadset();
+      const skating = running && this.playerState === 'walking';
       this.skating = skating;
       this.animateRig(
         this.playerRig, this.clock.elapsedTime * cadence, stride, gesture, skating,
