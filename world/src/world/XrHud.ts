@@ -326,6 +326,22 @@ export class XrHud {
     mesh.position.set(x * UNITS,y * UNITS,-forward * UNITS);
   }
 
+  /**
+   * Take the interface out of the picture for one frame.
+   *
+   * Returns a function that puts back exactly what was showing rather than
+   * recomputing it: the pass panel and the drunken veil are each visible for
+   * their own reasons, and a photograph must not be the thing that decides
+   * those. The cursors go too — a snapshot with two floating dots in it is a
+   * screenshot of an interface, not a picture of the festival.
+   */
+  hideForPhoto():() => void {
+    const layers:THREE.Object3D[] = [this.head,this.placed,this.viewLock,...this.cursors.values()];
+    const was = layers.map((layer) => layer.visible);
+    for(const layer of layers)layer.visible = false;
+    return () => { layers.forEach((layer,index) => { layer.visible = was[index]; }); };
+  }
+
   setVisible(visible:boolean):void {
     if(this.visible === visible)return;
     this.visible = visible;

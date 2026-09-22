@@ -84,6 +84,7 @@ export type WorldAction =
   | { type: 'died'; by?: string }
   | { type: 'jukebox' }
   | { type: 'vrWatch'; venue: VenueKey }
+  | { type: 'vrPhoto'; image?: string }
   // The photo/postcard mode belongs to the interface, not to the world, so a
   // controller asks for it the same way the seat asks to open a screening.
   | { type: 'photoMode' }
@@ -584,6 +585,17 @@ const NPC_LANE_RADIUS = 2.6;
 const LITE_FOG_FAR = 78;
 
 /** The personal screen, for private films watched away from any projector. */
+/**
+ * A photograph is one mono frame, 16:9, a little wider than an eye sees.
+ *
+ * Not the headset's own framebuffer: that is an opaque WebXR framebuffer, two
+ * eyes side by side, and the spec does not let anything read it back. So the
+ * world is drawn once more into a target of our own, from where the head is —
+ * which is also the only way to get a picture with no interface in it.
+ */
+const PHOTO_WIDTH = 1600;
+const PHOTO_FOV = 78;
+
 const PRIVATE_PANEL_WIDTH = 3.2;
 const PRIVATE_PANEL_DISTANCE = 4.1;
 /** Walk this far from it and it comes with you rather than being left behind. */
@@ -2585,7 +2597,12 @@ export class FestivalWorld {
         break;
       case 'jump': this.jumpFromTouch(); break;
       case 'dance': this.toggleDancing(); break;
-      case 'photo': this.onAction({ type: 'photoMode' }); break;
+      case 'photo':
+        // The flat camera interface is DOM, and a session composites none of
+        // it. In here the button takes the picture instead.
+        if (this.paintsInHeadset()) this.onAction({ type: 'vrPhoto', image: this.captureViewImage() });
+        else this.onAction({ type: 'photoMode' });
+        break;
       case 'interact': this.interact(false); break;
       case 'pickUp': this.interact(true); break;
       // A hold, read as a state further up rather than as a press.
@@ -5434,6 +5451,67 @@ export class FestivalWorld {
   }
 
   /** Release the headset decoder when leaving a venue or immersive mode. */
+  /**
+   * A still of what the visitor is looking at, as a JPEG data URL.
+   *
+   * We cannot screenshot the headset and the web cannot write to its photo
+   * gallery — no API exists for either — so this renders the scene a second
+   * time into an offscreen target and hands the picture back. The interface is
+   * hidden for that one frame, and `renderer.xr.enabled` is switched off
+   * across it so three.js draws one ordinary camera rather than the two-eye
+   * array the session is presenting.
+   *
+   * `undefined` when the frame cannot be read, which a caller should treat as
+   * "no photograph" rather than as an error worth interrupting anybody with.
+   */
+  captureViewImage(width = PHOTO_WIDTH): string | undefined {
+    const height = Math.round((width * 9) / 16);
+    const renderer = this.renderer;
+    const restoreHud = this.xrHud?.hideForPhoto();
+    const wasXr = renderer.xr.enabled;
+    const previousTarget = renderer.getRenderTarget();
+    let target: THREE.WebGLRenderTarget | undefined;
+    try {
+      target = new THREE.WebGLRenderTarget(width, height);
+      const shot = new THREE.PerspectiveCamera(PHOTO_FOV, width / height, 0.05, 4200);
+      // Where the head actually is. Inside a session `camera.position` is
+      // local to the rig, so the world matrix is the only honest source.
+      const view: THREE.Object3D = this.xrActive && wasXr ? renderer.xr.getCamera() : this.camera;
+      view.updateMatrixWorld(true);
+      shot.position.setFromMatrixPosition(view.matrixWorld);
+      shot.quaternion.setFromRotationMatrix(view.matrixWorld);
+      shot.updateMatrixWorld(true);
+
+      renderer.xr.enabled = false;
+      renderer.setRenderTarget(target);
+      renderer.render(this.scene, shot);
+      const pixels = new Uint8Array(width * height * 4);
+      renderer.readRenderTargetPixels(target, 0, 0, width, height, pixels);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return undefined;
+      const image = ctx.createImageData(width, height);
+      // WebGL hands back rows from the bottom; a canvas wants them from the top.
+      const stride = width * 4;
+      for (let row = 0; row < height; row += 1) {
+        const from = (height - 1 - row) * stride;
+        image.data.set(pixels.subarray(from, from + stride), row * stride);
+      }
+      ctx.putImageData(image, 0, 0);
+      return canvas.toDataURL('image/jpeg', 0.92);
+    } catch {
+      return undefined;
+    } finally {
+      renderer.setRenderTarget(previousTarget);
+      renderer.xr.enabled = wasXr;
+      target?.dispose();
+      restoreHud?.();
+    }
+  }
+
   /**
    * Watch something privately, inside the headset.
    *
