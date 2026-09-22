@@ -5755,9 +5755,15 @@ export class FestivalWorld {
       const source = controller.userData.inputSource as XRInputSource | undefined;
       const hand = source?.handedness;
       if (hand !== 'left' && hand !== 'right') continue;
-      const shoulder = hand === 'left' ? rig.leftArm : rig.rightArm;
-      const elbow = hand === 'left' ? rig.leftElbow : rig.rightElbow;
-      const wrist = hand === 'left' ? rig.leftWrist : rig.rightWrist;
+      // Crossed over, and deliberately. The rig's joint names are mirrored
+      // against the imported model — `ImportedAvatar` maps `RightArm` to
+      // `rig.leftArm` and `LeftArm` to `rig.rightArm` — so driving
+      // `rig.leftArm` from the left controller moved the arm on the far side
+      // and the visitor's arms crossed in front of them.
+      const mirrored = hand === 'left' ? 'right' : 'left';
+      const shoulder = mirrored === 'left' ? rig.leftArm : rig.rightArm;
+      const elbow = mirrored === 'left' ? rig.leftElbow : rig.rightElbow;
+      const wrist = mirrored === 'left' ? rig.leftWrist : rig.rightWrist;
       const parent = shoulder.parent;
       if (!elbow || !wrist || !parent) continue;
 
@@ -5788,7 +5794,10 @@ export class FestivalWorld {
       const lowerLength = wrist.position.length();
       if (upperLength < 1e-4 || lowerLength < 1e-4) continue;
 
-      const out = hand === 'left' ? -ELBOW_POLE_OUT : ELBOW_POLE_OUT;
+      // Away from the spine, read off the joint itself rather than from the
+      // hand. With the names mirrored, anything that decides "outward" from
+      // the handedness is one rename away from pointing into the chest.
+      const out = Math.sign(shoulder.position.x || 1) * ELBOW_POLE_OUT;
       const target: Vec3 = [this.armLocal.x, this.armLocal.y, this.armLocal.z];
       const solved = solveArm(target, upperLength, lowerLength, [out, ELBOW_POLE_DOWN, ELBOW_POLE_Z]);
       const rotation = armOrientation(solved);
