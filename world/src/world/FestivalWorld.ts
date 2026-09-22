@@ -618,11 +618,18 @@ const ELBOW_POLE_Z = 1;
 /**
  * Which of the two valid elbow hinge axes to use.
  *
- * Both put the bones in the same place; the choice only rolls the limb about
- * its own length, which on a skinned arm is which side the thumb ends up on.
- * It was rolled the wrong way, so the thumbs pointed backwards.
+ * Both put the bones in the same place; the choice rolls the limb 180° about
+ * its own length. This was flipped to -1 to get the thumbs facing forward,
+ * back when nothing drove the wrist and the hand's roll was a side effect of
+ * the elbow's plane. That is no longer true: the wrist is driven from the
+ * controller against a measured calibration, and owns the hand's roll on its
+ * own.
+ *
+ * So the flip stopped buying anything and went on costing: a 180° roll of the
+ * limb is also a 180° roll of the upper arm and the deltoid, which is the
+ * twisted shoulder. Back to the axis the bend plane actually gives.
  */
-const ELBOW_HINGE: 1 | -1 = -1;
+const ELBOW_HINGE: 1 | -1 = 1;
 
 /**
  * How many times to solve each arm per frame, and how hard to correct.
