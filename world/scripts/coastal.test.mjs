@@ -223,6 +223,61 @@ test('nothing on the DJ console reaches back into the DJ standing at it', async 
  * numbers that matter are written down here so a fourth report is a failing
  * test rather than a screenshot.
  */
+/**
+ * The fourth pamphlet-stand report, and a different fault from the first three.
+ *
+ * Those were solids inside solids. This one was solids agreeing exactly where
+ * their surfaces were: the cheeks' outer faces at x = ±1.10 and the slab's at
+ * x = ±1.10, the stop's front at z = 0.55 and the slab's at z = 0.55. Two faces
+ * at one depth is a coin toss the depth buffer re-tosses as the camera moves,
+ * which is why it was reported as a glitch when rotating rather than as a seam.
+ *
+ * Only same-side pairs count. A max face against a min face is two solids
+ * touching back to back — the feet under the case — and culling means only one
+ * of them is ever facing the camera. A max against a max is two outward faces
+ * on one plane, and that is the fight.
+ */
+test('no two surfaces on the pamphlet stand sit at exactly the same depth', async () => {
+  const bundled = await build({ entryPoints: [new URL('../src/world/CoastalProps.ts', import.meta.url).pathname], bundle: true, loader: { '.png': 'dataurl' }, platform: 'node', format: 'esm', write: false });
+  const { createCoastalPamphletStand } = await import('data:text/javascript;base64,' + Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+  const stand = createCoastalPamphletStand();
+  stand.updateMatrixWorld(true);
+
+  // Grouped by parent: the tray is tilted, so its children can only ever be
+  // coplanar with each other, and comparing across the tilt would be noise.
+  const frames = new Map();
+  stand.traverse((o) => {
+    if (!o.isMesh) return;
+    const p = o.geometry.parameters;
+    const span = (centre, size) => [centre - size / 2, centre + size / 2];
+    const entry = { name: o.name, x: span(o.position.x, p.width), y: span(o.position.y, p.height), z: span(o.position.z, p.depth) };
+    if (!frames.has(o.parent.uuid)) frames.set(o.parent.uuid, []);
+    frames.get(o.parent.uuid).push(entry);
+  });
+
+  const overlap = (a, b) => Math.min(a[1], b[1]) - Math.max(a[0], b[0]);
+  const clashes = [];
+  for (const boxes of frames.values()) {
+    for (let i = 0; i < boxes.length; i += 1) {
+      for (let j = i + 1; j < boxes.length; j += 1) {
+        const a = boxes[i];
+        const b = boxes[j];
+        for (const axis of ['x', 'y', 'z']) {
+          const rest = ['x', 'y', 'z'].filter((k) => k !== axis);
+          const area = rest.map((k) => overlap(a[k], b[k]));
+          // No shared area means no shared pixels, whatever the depths agree on.
+          if (area.some((v) => v <= 1e-4)) continue;
+          for (const side of [0, 1]) {
+            if (Math.abs(a[axis][side] - b[axis][side]) > 1e-6) continue;
+            clashes.push(`${a.name} and ${b.name} both put a face at ${axis}=${a[axis][side].toFixed(3)}, sharing ${area.map((v) => v.toFixed(3)).join('x')}`);
+          }
+        }
+      }
+    }
+  }
+  assert.deepEqual(clashes, [], `coplanar faces will flicker as the camera turns:\n${clashes.join('\n')}`);
+});
+
 test('nothing on the pamphlet stand sits inside anything else', async () => {
   const bundled=await build({entryPoints:[new URL('../src/world/CoastalProps.ts',import.meta.url).pathname],bundle:true,loader:{'.png':'dataurl'},platform:'node',format:'esm',write:false});
   const { createCoastalPamphletStand } = await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
