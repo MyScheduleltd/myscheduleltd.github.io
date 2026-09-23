@@ -322,3 +322,19 @@ test('scrolling stops at both ends of the content',()=>{
   assert.equal(clampHudScroll(400,3000,1330),400);
   assert.equal(clampHudScroll(120,800,1330),0,'content shorter than the panel never scrolls');
 });
+
+test('a chosen amount survives into the painted panel as a pressed cell',()=>{
+  // The offering bug, from the painting end. Three amount buttons, the middle
+  // one selected. `aria-pressed` is what carries that into a headset — the
+  // class the flat sheet also sets is invisible to everything here — so if the
+  // middle block comes back unpressed, the visitor has no way to see which
+  // amount they picked.
+  const amount=(text,pressed,ref)=>({tag:'button',classes:['is-chosen'].slice(0,pressed?1:0),text,ref,pressed:pressed||undefined});
+  const blocks=describeHud({tag:'div',classes:['offering__amounts'],children:[
+    amount('NT$52',false,0),amount('NT$520',true,1),amount('NT$5920',false,2),
+  ]});
+  const cells=blocks.filter((block)=>block.target>=0);
+  assert.equal(cells.length,3,'all three amounts reach the panel');
+  assert.deepEqual(cells.map((cell)=>Boolean(cell.pressed)),[false,true,false]);
+});
+

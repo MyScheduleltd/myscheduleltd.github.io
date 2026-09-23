@@ -19,8 +19,14 @@ import { aesDecrypt, aesEncrypt, checkMacValue } from './ecpay.mjs';
 /** The smallest and largest offering, in whole New Taiwan dollars. */
 export const MIN_DONATION = 10;
 export const MAX_DONATION = 10_000;
-/** What the panel offers before anybody types a number. */
-export const DONATION_PRESETS = [10, 100, 300, 1000];
+/**
+ * What the panel offers before anybody types a number.
+ *
+ * 52, 520, 5920 — 我愛, 我愛你, 我就愛你. The floor stays at `MIN_DONATION`
+ * rather than rising to meet the lowest of these: a preset is a suggestion,
+ * and somebody who wants to give ten dollars can still type ten dollars.
+ */
+export const DONATION_PRESETS = [52, 520, 5920];
 
 const STAGE = {
   checkout: 'https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5',

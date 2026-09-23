@@ -1659,3 +1659,19 @@ test('fixed outfit IDs and independent trouser colours survive join and presence
   }
  }
 });
+
+test('the offering panel is served three amounts, all of them payable', async () => {
+  const response = await fetch(`${baseUrl}/api/donation/options`);
+  assert.equal(response.status, 200);
+  const options = await response.json();
+  assert.deepEqual(options.presets, [52, 520, 5920]);
+  // A preset the server would then refuse is a button that cannot be pressed,
+  // and nothing else in the flow checks that the two agree.
+  for (const amount of options.presets) {
+    assert.ok(amount >= options.min, `NT$${amount} is under the floor of ${options.min}`);
+    assert.ok(amount <= options.max, `NT$${amount} is over the ceiling of ${options.max}`);
+    assert.ok(Number.isInteger(amount), `NT$${amount} is not a whole dollar`);
+  }
+  // The panel highlights the second one when it opens, so there has to be one.
+  assert.ok(options.presets.length >= 2, 'the default selection must exist');
+});

@@ -4791,7 +4791,7 @@ export class App {
           ? '測試模式：不會真的扣款，綠界也不會開出真的發票。'
           : 'TEST MODE — no charge, and ECPay issues no real invoice.'}</p>`}
         <div class="offering__amounts">
-          ${options.presets.map((amount, index) => `<button type="button" data-offering-amount="${amount}"${index === 1 ? ' class="is-chosen"' : ''}>NT$${amount}</button>`).join('')}
+          ${options.presets.map((amount, index) => `<button type="button" data-offering-amount="${amount}" aria-pressed="${index === 1}"${index === 1 ? ' class="is-chosen"' : ''}>NT$${amount}</button>`).join('')}
         </div>
         <label class="offering__field"><span>${zh ? '自訂金額' : 'OR YOUR OWN'}</span>
           <input type="number" inputmode="numeric" data-offering-custom min="${options.min}" max="${options.max}" step="1" placeholder="${options.min}–${options.max}" />
@@ -4830,15 +4830,38 @@ export class App {
     sheet.addEventListener('click', (event) => {
       if (event.target === sheet) close();
     });
+    /**
+     * Mark the chosen amount in a way a headset can notice.
+     *
+     * The class alone is invisible in VR. `XrHud` only repaints a panel when
+     * its signature changes, and that signature is built from text, form
+     * values and `aria-pressed`/`hidden`/`disabled` — a class is none of those.
+     * So the click landed, `chosen` updated, and the painted sheet went on
+     * showing the default highlighted: from inside the headset, an amount that
+     * could not be selected. Typing a custom figure always worked, because an
+     * input's value *is* in the signature.
+     *
+     * `aria-pressed` is the honest markup for a one-of-several choice anyway,
+     * and it earns its keep twice over here — the painted layout draws a
+     * pressed button as a selected cell, so the headset gets the same red
+     * highlight the flat panel has.
+     */
+    const setChosen = (button: Element | null): void => {
+      sheet.querySelectorAll('[data-offering-amount]').forEach((other) => {
+        other.classList.toggle('is-chosen', other === button);
+        other.setAttribute('aria-pressed', String(other === button));
+      });
+    };
+
     sheet.querySelectorAll<HTMLButtonElement>('[data-offering-amount]').forEach((button) => {
       button.addEventListener('click', () => {
         chosen = Number(button.dataset.offeringAmount);
         if (custom) custom.value = '';
-        sheet.querySelectorAll('[data-offering-amount]').forEach((other) => other.classList.toggle('is-chosen', other === button));
+        setChosen(button);
       });
     });
     custom?.addEventListener('input', () => {
-      sheet.querySelectorAll('[data-offering-amount]').forEach((other) => other.classList.remove('is-chosen'));
+      setChosen(null);
     });
 
     // Unticked to begin with: giving is a tap and an amount, and a receipt is
