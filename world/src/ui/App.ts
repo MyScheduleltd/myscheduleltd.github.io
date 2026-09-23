@@ -4825,6 +4825,17 @@ export class App {
       error.textContent = message;
       error.hidden = false;
     };
+    /**
+     * Take the complaint back once the visitor has moved on from it.
+     *
+     * `complain` had nothing that ever undid it, so the first refusal stood
+     * for the life of the sheet: ask for a receipt without an email, get told
+     * so, then untick the box — and the sheet still says an email is needed
+     * for a receipt nobody is asking for any more. Cleared on every edit and
+     * at the top of every attempt, so what is on screen is about the state
+     * the sheet is in now.
+     */
+    const reassure = () => { if (error) error.hidden = true; };
 
     sheet.querySelector('[data-offering-close]')?.addEventListener('click', close);
     sheet.addEventListener('click', (event) => {
@@ -4862,19 +4873,25 @@ export class App {
     });
     custom?.addEventListener('input', () => {
       setChosen(null);
+      reassure();
     });
 
-    // Unticked to begin with: giving is a tap and an amount, and a receipt is
-    // something you ask for. The field is hidden rather than disabled so the
-    // sheet is shorter for everyone who does not want one.
+    // Ticked to begin with, by the owner's decision: an invoice is issued
+    // either way, and this is what decides whether it reaches the visitor or
+    // the festival's own address, so the kinder default is to offer it. The
+    // field is hidden rather than disabled when it is turned off, which keeps
+    // the sheet short for anyone who does not want one.
     const wants = sheet.querySelector<HTMLInputElement>('[data-offering-wants]');
     const receipt = sheet.querySelector<HTMLElement>('[data-offering-receipt]');
     wants?.addEventListener('change', () => {
       if (receipt) receipt.hidden = !wants.checked;
+      reassure();
       if (wants.checked) email?.focus();
     });
+    email?.addEventListener('input', reassure);
 
     sheet.querySelector('[data-offering-go]')?.addEventListener('click', () => {
+      reassure();
       const typed = custom?.value.trim();
       const amount = typed ? Math.trunc(Number(typed)) : chosen;
       if (!Number.isFinite(amount) || amount < options.min || amount > options.max) {

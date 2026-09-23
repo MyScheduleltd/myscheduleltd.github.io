@@ -1058,7 +1058,13 @@ button:active { filter: brightness(.88); scale: .96; }
 .panel-palette { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; max-width: 430px; }
 .range-field { display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: 15px; margin: 18px 0; font: 800 14px var(--condensed); }
 .range-field input { accent-color: var(--red); }
-.panel-button { margin-top: 20px; border: 0; padding: 13px 18px; color: white; background: var(--red); font: 800 16px var(--condensed); cursor: pointer; }
+/* `inline-block`, and it is load-bearing. Six of these are <button>, which is
+   inline-block already, but two are <a> — the floor plan and a VR photo — and
+   an inline box ignores `margin-top` outright and paints its vertical padding
+   outside the line box without pushing anything away. So the floor-plan link
+   sat 20px higher than it looked and laid 13px of red over the bottom row of
+   the map's destination grid, which is exactly how far it overlapped. */
+.panel-button { display: inline-block; margin-top: 20px; border: 0; padding: 13px 18px; color: white; background: var(--red); font: 800 16px var(--condensed); cursor: pointer; }
 .segmented--dark { max-width: 380px; }.segmented--dark button[aria-pressed='true'] { background: var(--red); }
 .controls-list { margin: 0; }.controls-list div { display: grid; grid-template-columns: 180px 1fr; border-top: 1px solid rgba(17,17,19,.2); padding: 14px 0; }.controls-list dt { font: 900 18px var(--condensed); }.controls-list dd { margin: 0; }
 .contact-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
@@ -2147,14 +2153,20 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   font: 700 15px var(--condensed); letter-spacing: 0.14em; text-transform: uppercase;
 }
 @media (max-width: 480px) {
-  .offering { padding: 12px; align-items: end; }
+  /* Centred, not pinned to the bottom. Bottom-anchored, the sheet's top edge
+     slid down every time the receipt field was folded away — the sheet got
+     shorter and the only edge that could move was the one being looked at.
+     Centred it moves half as far, and towards the middle rather than away. */
+  .offering { padding: 12px; }
   .offering__card { padding: 16px; gap: 11px; }
   .offering__card h2 { font-size: 22px; }
-  /* Two by two, said rather than fallen into. NT$20000 wants 60px of label
-     and four across leaves it 57, so the row broke 3+1 on its own — which
-     reads as a mistake. An even pair of pairs reads as a choice, and every
-     button ends up twice the size of a thumb. */
-  .offering__amounts { grid-template-columns: repeat(2, 1fr); }
+  /* One row of three, matching the desk. Two columns were right when there
+     were four amounts — an even pair of pairs reads as a choice where 3+1
+     reads as a mistake — but there are three now, and two columns is the
+     shape that breaks 2+1. Three across leaves each button 81px on the
+     narrowest phone worth supporting, and NT$5920 needs 68 of it. */
+  .offering__amounts { grid-template-columns: repeat(3, 1fr); }
+  .offering__amounts button { padding: 10px 4px; font-size: 14px; letter-spacing: 0.02em; }
 }
 
 /* The plan and its accessible destination list share one coordinate legend. */
