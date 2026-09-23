@@ -145,6 +145,35 @@ export function createCoastalPamphletStand():THREE.Group {
    * looks like.
    */
   box(tray,'Sloped display tray',[2.2,.12,1.10],[0,0,0],wood);
+  /**
+   * The fascia that closes the wedge under the tray.
+   *
+   * The tray overhangs the case and its underside rises towards the back, so
+   * between the case top at 1.57 and that underside there was a real opening —
+   * 133mm at the riser, closing to 15mm at the front edge. Nothing was wrong
+   * with it; it was open air, and from a low angle you looked into the shadow
+   * inside and read it as the panel cutting into the box.
+   *
+   * It has to live in the tray's frame and tilt with it. The gap's ceiling is
+   * the tilted underside, so an upright box either stops short of it at the
+   * back — 105mm short, most of the opening still there — or pierces it at the
+   * front. Tilted, one board follows the slab the whole way.
+   *
+   * It runs the whole underside rather than just the part facing the path. The
+   * riser closed the back to 1.69 and the underside above it is 1.70 to 1.81,
+   * so there was a second opening back there of up to 119mm — out of sight of
+   * the path, which is why it was written off once, but out of sight is not
+   * the same as closed and somebody will walk round.
+   *
+   * Its bottom is 55 to 250mm inside the case, and that is the point rather
+   * than a slip: a tilted board cannot meet a level top along a line, so it is
+   * housed into it the way a real one would be. That is a different thing from
+   * the faults this stand was reported for three times — those were solids
+   * showing through each other. Every face of this one is either in open air
+   * or buried where nothing can see it. Wood, like the riser it meets, so the
+   * two read as one mass rather than as two boards fighting over a shadow.
+   */
+  box(tray,'Tray skirt',[2.02,.30,1.01],[0,-.19,-.035],wood);
   box(tray,'Book stop',[2.08,.15,.09],[0,.105,.515],red);
   for(const x of [-1.055,1.055])box(tray,'Tray side',[.11,.19,1.08],[x,.13,0],cream);
   for(const x of [-.65,0,.65]) {

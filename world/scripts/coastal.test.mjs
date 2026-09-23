@@ -278,6 +278,76 @@ test('no two surfaces on the pamphlet stand sit at exactly the same depth', asyn
   assert.deepEqual(clashes, [], `coplanar faces will flicker as the camera turns:\n${clashes.join('\n')}`);
 });
 
+/**
+ * The gap under the tray is closed, and closed by something rather than by a
+ * smaller gap.
+ *
+ * Between the case top at 1.57 and the tray's tilted underside there was real
+ * open air — 133mm at the riser, closing to 15mm at the front lip. Nothing
+ * intersected; it was a hole, and from a low angle you looked into the shadow
+ * in it and read the tray as cutting into the case. Fired straight up from
+ * just above the case top, a ray must now meet the fascia or the riser before
+ * it meets the underside of the tray.
+ */
+test('the wedge under the pamphlet tray is filled, not merely clear', async () => {
+  const bundled = await build({ entryPoints: [new URL('../src/world/CoastalProps.ts', import.meta.url).pathname], bundle: true, loader: { '.png': 'dataurl' }, platform: 'node', format: 'esm', write: false });
+  const { createCoastalPamphletStand } = await import('data:text/javascript;base64,' + Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+  const stand = createCoastalPamphletStand();
+  stand.updateMatrixWorld(true);
+
+  // Containment, not a raycast. A ray fired from the gap starts *inside* the
+  // riser over most of the back, and a front-facing material does not report
+  // the surface you leave through — so the first version of this read solid
+  // timber as a hole.
+  const solids = [];
+  stand.traverse((o) => {
+    if (!o.isMesh) return;
+    const p = o.geometry.parameters;
+    solids.push({
+      name: o.name,
+      toLocal: new THREE.Matrix4().copy(o.matrixWorld).invert(),
+      half: new THREE.Vector3(p.width / 2, p.height / 2, p.depth / 2),
+    });
+  });
+  const probe = new THREE.Vector3();
+  const holding = (point, skip) => solids.find((solid) => {
+    if (skip.includes(solid.name)) return false;
+    probe.copy(point).applyMatrix4(solid.toLocal);
+    return Math.abs(probe.x) <= solid.half.x && Math.abs(probe.y) <= solid.half.y && Math.abs(probe.z) <= solid.half.z;
+  });
+
+  const slab = solids.find((solid) => solid.name === 'Sloped display tray');
+  const inSlab = (point) => {
+    probe.copy(point).applyMatrix4(slab.toLocal);
+    return Math.abs(probe.x) <= slab.half.x && Math.abs(probe.y) <= slab.half.y && Math.abs(probe.z) <= slab.half.z;
+  };
+
+  const point = new THREE.Vector3();
+  const filled = new Set();
+  let sampled = 0;
+  // Only where there is a tray overhead to make a gap: the slab's underside
+  // runs from z = -0.451 at the back to z = 0.627 at the front lip, and the
+  // case top it is over ends at 0.56. Outside that the sky is meant to be
+  // open, and sampling it was the first version of this test failing on
+  // nothing at all.
+  for (let z = -0.43; z <= 0.5001; z += 0.02) {
+    for (const x of [-0.95, -0.5, 0, 0.5, 0.95]) {
+      // Up from just above the case top until the tray itself is reached.
+      // Everything in between has to be somebody's timber.
+      for (let y = 1.575; y < 1.83; y += 0.005) {
+        point.set(x, y, z);
+        if (inSlab(point)) break;
+        const held = holding(point, ['Sloped display tray']);
+        assert.ok(held, `open air under the tray at x=${x} y=${y.toFixed(3)} z=${z.toFixed(2)}`);
+        filled.add(held.name);
+        sampled += 1;
+      }
+    }
+  }
+  assert.ok(sampled > 500, `only ${sampled} points were in the gap at all — the sweep missed it`);
+  assert.ok(filled.has('Tray skirt'), `the fascia was never the thing holding the gap; saw ${[...filled].join(', ')}`);
+});
+
 test('nothing on the pamphlet stand sits inside anything else', async () => {
   const bundled=await build({entryPoints:[new URL('../src/world/CoastalProps.ts',import.meta.url).pathname],bundle:true,loader:{'.png':'dataurl'},platform:'node',format:'esm',write:false});
   const { createCoastalPamphletStand } = await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
