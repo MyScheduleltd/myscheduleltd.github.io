@@ -259,6 +259,21 @@ export interface DonationReceipt {
   emailSent?: boolean;
 }
 
+/**
+ * A deferred payment that has been given its number but not yet been paid.
+ *
+ * Only 虛擬帳號, 超商代碼 and 超商條碼 ever produce one of these: the payer
+ * leaves with a code and days to use it. The code itself is deliberately not
+ * here — ECPay has already shown it to them and emailed it, and carrying a
+ * second copy through the festival would be one more thing to leak.
+ */
+export interface DonationPending {
+  id: string;
+  amount: number;
+  /** ECPay's own name for the method, e.g. `ATM_TAISHIN` or `CVS_CVS`. */
+  paymentType: string;
+}
+
 export interface DonationOptions {
   enabled: boolean;
   production: boolean;
@@ -335,6 +350,7 @@ interface ClientOptions {
   onStatus: (status: ConnectionStatus, detail?: string) => void;
   /** Optional: an offering completed, in whatever tab it was paid in. */
   onDonation?: (receipt: DonationReceipt) => void;
+  onDonationPending?: (pending: DonationPending) => void;
 }
 
 const defaultServerUrl = import.meta.env.DEV ? 'http://127.0.0.1:8787' : window.location.origin;
@@ -366,6 +382,7 @@ export class FestivalClient {
   private readonly onState: ClientOptions['onState'];
   private readonly onStatus: ClientOptions['onStatus'];
   private readonly onDonation: ClientOptions['onDonation'];
+  private readonly onDonationPending: ClientOptions['onDonationPending'];
   private session?: Session;
   private abortController?: AbortController;
   private reconnectTimer?: number;
@@ -384,10 +401,11 @@ export class FestivalClient {
    */
   private placeRequest?: Promise<PlaceResult>;
 
-  constructor({ onState, onStatus, onDonation }: ClientOptions) {
+  constructor({ onState, onStatus, onDonation, onDonationPending }: ClientOptions) {
     this.onState = onState;
     this.onStatus = onStatus;
     this.onDonation = onDonation;
+    this.onDonationPending = onDonationPending;
     // A stream that has gone quiet without ever failing.
     //
     // The read loop only notices a dead connection when the read itself errors,
@@ -1138,6 +1156,7 @@ export class FestivalClient {
     // happened in a different tab entirely — this one has no other way to find
     // out, short of asking over and over.
     if (event === 'donation') this.onDonation?.(payload as DonationReceipt);
+    if (event === 'donationPending') this.onDonationPending?.(payload as DonationPending);
   }
 
   private async recoverSession(): Promise<void> {

@@ -225,10 +225,22 @@ export const tradeNumber = (at = Date.now()) =>
 /**
  * The form that carries a visitor to the payment page.
  *
- * `ChoosePayment` takes exactly one value, so "credit card **and** Apple Pay"
- * is expressed as everything minus the rest. Listing what to leave out rather
- * than what to include means a method ECPay adds later shows up on its own
- * instead of silently never appearing.
+ * `ChoosePayment` takes exactly one value, so a choice of methods is expressed
+ * as everything minus the rest. Listing what to leave out rather than what to
+ * include means a method ECPay adds later shows up on its own instead of
+ * silently never appearing.
+ *
+ * Four were switched off here and are now on, at the owner's request: 網路ATM,
+ * ATM虛擬帳號, 超商條碼 and 超商代碼. Only the first of those settles at the
+ * checkout the way a card does. The other three hand the payer a number and
+ * let them pay days later, which is why this also carries a `PaymentInfoURL`:
+ * that is the only way the festival hears that a code was issued, and without
+ * it an offering would sit as an abandoned checkout until it either paid or
+ * expired, with nothing in between.
+ *
+ * `ClientRedirectURL` is the async twin of `ClientBackURL`. Without it a payer
+ * who has just been given a store code is left standing on ECPay's own result
+ * page with no way back to the festival.
  */
 export const buildOrder = ({ config, tradeNo, amount, itemName, tradeDesc, custom }) => {
   const fields = {
@@ -241,8 +253,10 @@ export const buildOrder = ({ config, tradeNo, amount, itemName, tradeDesc, custo
     ItemName: itemName,
     ReturnURL: `${config.publicUrl}/api/ecpay/notify`,
     ClientBackURL: `${config.publicUrl}/api/donation/done`,
+    PaymentInfoURL: `${config.publicUrl}/api/ecpay/payment-info`,
+    ClientRedirectURL: `${config.publicUrl}/api/donation/done`,
     ChoosePayment: 'ALL',
-    IgnorePayment: 'WebATM#ATM#CVS#BARCODE#TWQR#BNPL#WeiXin',
+    IgnorePayment: 'TWQR#BNPL#WeiXin',
     EncryptType: '1',
     // Comes back untouched on the notification, which is how a payment is
     // matched to the visitor who is standing at the altar waiting for it.

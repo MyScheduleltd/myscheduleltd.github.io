@@ -505,6 +505,7 @@ export class App {
       onState: (state) => this.handleNetworkState(state),
       onStatus: (status, detail) => this.handleConnectionStatus(status, detail),
       onDonation: (receipt) => this.thankTheOffering(receipt),
+      onDonationPending: (pending) => this.awaitTheOffering(pending),
     });
   }
 
@@ -4948,6 +4949,29 @@ export class App {
    * otherwise. The invoice number follows a moment later as a second message —
    * ECPay issues it after the payment, not with it.
    */
+  /**
+   * Somebody chose to pay at a store or by transfer, and has their number.
+   *
+   * Said out loud because otherwise nothing happens at all: the tab closes,
+   * the offering is not accepted, and the visitor is left wondering whether
+   * any of it worked. The quest deliberately does not complete here — nothing
+   * has been paid yet, and marking it done would be the festival thanking
+   * somebody for money it has not received.
+   */
+  private awaitTheOffering(pending: { id: string; amount: number; paymentType: string }): void {
+    const zh = this.language === 'zh-TW';
+    const deity = this.networkState?.templeSign?.name ?? '美麗本人';
+    const store = pending.paymentType.startsWith('CVS') || pending.paymentType.startsWith('BARCODE');
+    this.showWorldAlert(zh ? `等待付款 · NT$${pending.amount}` : `AWAITING PAYMENT · NT$${pending.amount}`);
+    this.pushNpcLine(deity, zh
+      ? (store
+        ? `你的 NT$${pending.amount} 我先記下了。拿著綠界給你的代碼去超商付款，付了我就收得到。`
+        : `你的 NT$${pending.amount} 我先記下了。用綠界給你的帳號轉帳，轉了我就收得到。`)
+      : (store
+        ? `NT$${pending.amount} is noted. Take the code ECPay gave you to a convenience store, and it will reach me.`
+        : `NT$${pending.amount} is noted. Transfer to the account ECPay gave you, and it will reach me.`));
+  }
+
   private thankTheOffering(receipt: { id: string; amount: number; invoice: string | null; emailSent?: boolean }): void {
     const zh = this.language === 'zh-TW';
     const deity = this.networkState?.templeSign?.name ?? '美麗本人';

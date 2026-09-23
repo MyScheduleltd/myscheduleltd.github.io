@@ -679,6 +679,9 @@ const persistedSnapshot = () => ({
   // The stock survives a restart; the running order does not, because a queue
   // of requests from people who have since left is not worth restoring.
   jukeboxTracks,
+  // Offerings outlive the process now that a payment can be finished at a
+  // convenience store three days after it was started. See `donationForDisk`.
+  donations: [...donations.values()].map(donationForDisk),
 });
 
 let persistTimer;
@@ -996,6 +999,7 @@ const restorePersistedState = () => {
   restoreNpcs(saved.npcNames, saved.npcTitles, saved.npcIntroductions);
   restoreCustomVideos(saved.customVideos);
   restoreSchedule(saved.schedule);
+  restoreDonations(saved.donations);
   migrateVenues(saved.version);
 };
 
@@ -1310,6 +1314,79 @@ const nameHeldBy = (name) => {
   return undefined;
 };
 
+/**
+ * Offerings in flight, and the ones that have landed.
+ *
+ * This was held in memory on purpose, and the reasoning was sound while a card
+ * was the only way to pay: a checkout finishes in minutes, so a restart lost
+ * nothing anybody was owed. Convenience-store and ATM payments broke that
+ * premise. A 超商代碼 can be paid three days later, and ECPay's notification
+ * then arrives at a process that has restarted twice and forgotten the record
+ * — so `donations.get()` misses, the visitor is never credited, and, much
+ * worse, `issueInvoice` never runs. The 電子發票 is ours to issue, not
+ * ECPay's. Money taken and no invoice is not a bug you get to shrug at.
+ *
+ * So the record outlives the process now, and the two clocks it was keeping
+ * with one number are separated:
+ *
+ * `DONATION_OPEN_MS` is how long a checkout counts as still in flight, which
+ * is all `paying()` ever wanted to know. An abandoned card checkout should not
+ * stop somebody giving again half an hour later.
+ *
+ * `DONATION_RETAIN_MS` is how long the record has to survive so a late
+ * notification can still find it. ECPay's own default windows are three days
+ * for an ATM virtual account and seven for a store code; ten days clears both
+ * with room for a slow payer and a retrying notification.
+ */
+const donations = new Map();
+const DONATION_OPEN_MS = 45 * 60 * 1000;
+const DONATION_RETAIN_MS = 10 * 24 * 60 * 60 * 1000;
+
+/**
+ * What is worth writing to disk, and what is deliberately left off it.
+ *
+ * The visitor's own email is on this list because without it a late payment
+ * cannot be invoiced, which is the whole point of persisting any of this. It
+ * comes straight back off again the moment the invoice is issued — see
+ * `issueInvoice` — so an address sits on disk for exactly as long as it is
+ * needed and no longer. Nothing about a card is here because nothing about a
+ * card ever reaches this service.
+ */
+const donationForDisk = (donation) => ({
+  id: donation.id,
+  tradeNo: donation.tradeNo,
+  amount: donation.amount,
+  email: donation.email ?? '',
+  wantsReceipt: Boolean(donation.wantsReceipt),
+  visitorId: donation.visitorId,
+  visitorName: donation.visitorName,
+  createdAt: donation.createdAt,
+  state: donation.state,
+  paidAt: donation.paidAt ?? null,
+  paidAmount: donation.paidAmount ?? null,
+  ecpayTradeNo: donation.ecpayTradeNo ?? '',
+  paymentType: donation.paymentType ?? '',
+  invoiceNo: donation.invoiceNo ?? '',
+});
+
+const restoreDonations = (saved) => {
+  if (!Array.isArray(saved)) return;
+  const now = Date.now();
+  for (const entry of saved.slice(0, 2000)) {
+    const id = typeof entry?.id === 'string' ? entry.id : '';
+    const createdAt = clampNumber(entry?.createdAt, 0, Number.MAX_SAFE_INTEGER, 0);
+    // Anything already past its retention is not worth bringing back, and a
+    // record with no id could never be matched to a notification anyway.
+    if (!id || !createdAt || now - createdAt > DONATION_RETAIN_MS) continue;
+    donations.set(id, {
+      ...donationForDisk(entry),
+      id,
+      createdAt,
+      state: ['pending', 'awaiting', 'paid', 'failed'].includes(entry.state) ? entry.state : 'pending',
+    });
+  }
+};
+
 const claimName = (name) => {
   const holder = nameHeldBy(name);
   if (!holder) return true;
@@ -1318,18 +1395,6 @@ const claimName = (name) => {
   return true;
 };
 
-/**
- * Offerings in flight, and the ones that have landed.
- *
- * Held in memory on purpose. A record here is a *pending* payment plus a
- * receipt for one that completed in this process's lifetime; the money itself
- * is ECPay's record and theirs is the one that matters. Restarting the service
- * loses nothing that anybody is owed — ECPay retries an unacknowledged
- * notification for a day, and a donor's own invoice arrives by email from
- * ECPay whatever happens here.
- */
-const donations = new Map();
-const DONATION_TTL_MS = 45 * 60 * 1000;
 const ECPAY = ecpayConfig();
 const RECEIPT_MAIL = receiptMailConfig();
 
@@ -1339,7 +1404,7 @@ const paying = (visitorId) => {
   for (const donation of donations.values()) {
     if (donation.visitorId !== visitorId) continue;
     if (donation.state !== 'pending') continue;
-    if (now - donation.createdAt > DONATION_TTL_MS) continue;
+    if (now - donation.createdAt > DONATION_OPEN_MS) continue;
     return true;
   }
   return false;
@@ -1348,7 +1413,7 @@ const paying = (visitorId) => {
 const forgetOldDonations = () => {
   const now = Date.now();
   for (const [id, donation] of donations) {
-    if (now - donation.createdAt > DONATION_TTL_MS) donations.delete(id);
+    if (now - donation.createdAt > DONATION_RETAIN_MS) donations.delete(id);
   }
 };
 
@@ -1432,6 +1497,10 @@ const issueInvoice = async (donation) => {
     return;
   }
   donation.invoiceNo = outcome.invoiceNo;
+  // The reason this address was written to disk at all was so a payment made
+  // days later could still be invoiced. It has been, so it comes off again.
+  donation.email = '';
+  persist();
   // Silence when the donor declined a receipt. The invoice exists and went to
   // the festival's own mailbox; telling them 「收據號碼 X，已寄到你的信箱」
   // would be naming a number they will never see. They have already been
@@ -1621,6 +1690,11 @@ const server = createServer(async (request, response) => {
         createdAt: Date.now(),
         state: 'pending',
       });
+      // Written down before the payer has even reached ECPay. A deferred
+      // payment can arrive days and several restarts later, and a record that
+      // only ever existed in this process's memory is a payment nobody can
+      // invoice — see the note above `donations`.
+      persist();
       // The tab that carries the payer is opened by their own tap, before this
       // request is made, and then pointed here. It cannot be opened afterwards:
       // a browser only allows a new window while it can still see the gesture
@@ -1676,7 +1750,11 @@ const server = createServer(async (request, response) => {
       }
       const donation = donations.get(String(notice.CustomField1 ?? ''));
       const paid = String(notice.RtnCode) === '1';
-      if (donation && donation.state === 'pending') {
+      // `awaiting` as well as `pending`: a store or ATM payment has already
+      // been through `/api/ecpay/payment-info` to collect its code by the time
+      // the money actually arrives, and the old guard would have thrown that
+      // settlement away as a duplicate.
+      if (donation && (donation.state === 'pending' || donation.state === 'awaiting')) {
         // The amount is taken from ECPay, never from the browser. A tampered
         // client can ask for any total it likes; only this number was paid.
         const settled = Number(notice.TradeAmt);
@@ -1684,6 +1762,8 @@ const server = createServer(async (request, response) => {
         donation.paidAt = Date.now();
         donation.paidAmount = Number.isFinite(settled) ? settled : donation.amount;
         donation.ecpayTradeNo = String(notice.TradeNo ?? '');
+        donation.paymentType = String(notice.PaymentType ?? donation.paymentType ?? '');
+        persist();
         if (paid) {
           tellVisitor(donation.visitorId, 'donation', {
             id: donation.id,
@@ -1699,6 +1779,58 @@ const server = createServer(async (request, response) => {
             });
           }
         }
+      }
+      response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+      return response.end('1|OK');
+    }
+
+    /**
+     * ECPay saying "here is the number they have to go and pay with".
+     *
+     * Only the three deferred methods ever reach this: 虛擬帳號 hands back a
+     * bank code and an account, 超商代碼 a payment number, 超商條碼 three
+     * barcodes. No money has moved. What has happened is that the offering has
+     * stopped being an abandoned checkout and become a promise with a deadline,
+     * and the festival needs to know the difference — otherwise the record
+     * looks identical to somebody who opened the page and wandered off, and
+     * `paying()` would go on believing a checkout was in flight.
+     *
+     * Verified exactly as the settlement notification is. This endpoint can
+     * move a record's state, so an unsigned post to it is an unsigned post to
+     * the festival's books.
+     */
+    if (request.method === 'POST' && url.pathname === '/api/ecpay/payment-info') {
+      const notice = await formBody(request);
+      if (!verifyCheckMacValue(notice, ECPAY.payment.hashKey, ECPAY.payment.hashIV)) {
+        response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+        return response.end('0|CheckMacValue');
+      }
+      /**
+       * Only the two codes that mean a number was actually handed over.
+       *
+       * ECPay uses this same callback to report a 取號 that *failed*, and
+       * reading only the record id meant a failure moved the offering to
+       * `awaiting` just as a success did — telling the visitor to go and pay
+       * with a code they were never given, and holding the record open on the
+       * strength of it. `2` is a virtual account issued, `10100073` a store
+       * code or barcode. Anything else leaves the offering exactly as it was,
+       * which is the honest description of what happened.
+       */
+      const issued = ['2', '10100073'].includes(String(notice.RtnCode));
+      const donation = donations.get(String(notice.CustomField1 ?? ''));
+      if (issued && donation && donation.state === 'pending') {
+        donation.state = 'awaiting';
+        donation.paymentType = String(notice.PaymentType ?? '');
+        donation.awaitingSince = Date.now();
+        persist();
+        // Nothing about the code itself is kept here. ECPay has just shown it
+        // to the payer on its own page and emailed it to them; storing a copy
+        // would be one more thing to leak for no benefit the payer can use.
+        tellVisitor(donation.visitorId, 'donationPending', {
+          id: donation.id,
+          amount: donation.amount,
+          paymentType: donation.paymentType,
+        });
       }
       response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
       return response.end('1|OK');

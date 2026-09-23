@@ -15,7 +15,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { checkMacValue, verifyCheckMacValue, ecpayUrlEncode, aesEncryptRaw, aesDecrypt } from './ecpay.mjs';
-import { ecpayConfig } from './donations.mjs';
+import { ecpayConfig, buildOrder, DONATION_PRESETS, MIN_DONATION, MAX_DONATION } from './donations.mjs';
 import { buildReceiptEmail, receiptMailConfig, sendReceiptEmail } from './receipt-mail.mjs';
 
 const VECTORS = [
@@ -368,4 +368,63 @@ test('test receipt clearly says no money was charged and sends through Resend', 
   const payload = JSON.parse(request.init.body);
   assert.deepEqual(payload.to, ['visitor@example.test']);
   assert.match(payload.subject, /AB12345678/);
+});
+
+
+/* ---- what the payer is actually offered -------------------------------- */
+
+const order = () => buildOrder({
+  config: ecpayConfig(),
+  tradeNo: 'MSTEST0000000000',
+  amount: 520,
+  itemName: 'MYSCHEDULE',
+  tradeDesc: 'offering',
+  custom: 'abc',
+});
+
+test('all six payment methods the festival offers are left switched on', () => {
+  // `ChoosePayment: ALL` minus `IgnorePayment`, so this list is the real one.
+  const ignored = new Set(order().fields.IgnorePayment.split('#').filter(Boolean));
+  for (const method of ['Credit', 'ApplePay', 'WebATM', 'ATM', 'CVS', 'BARCODE']) {
+    assert.ok(!ignored.has(method), `${method} is switched off`);
+  }
+  assert.equal(order().fields.ChoosePayment, 'ALL');
+});
+
+test('the deferred methods have somewhere to report a code to', () => {
+  // Without these two a store payment is invisible to the festival until it
+  // either pays or expires, and the payer is stranded on ECPay's own page.
+  const fields = order().fields;
+  assert.match(fields.PaymentInfoURL, /\/api\/ecpay\/payment-info$/);
+  assert.match(fields.ClientRedirectURL, /\/api\/donation\/done$/);
+});
+
+test('every field sent to ECPay is covered by the check value', () => {
+  // A field added to the order and left out of the signature is a field an
+  // attacker can rewrite in flight. Recomputing over everything but the value
+  // itself has to reproduce it exactly.
+  const { fields } = order();
+  const { CheckMacValue, ...rest } = fields;
+  const config = ecpayConfig();
+  assert.equal(checkMacValue(rest, config.payment.hashKey, config.payment.hashIV), CheckMacValue);
+  assert.ok(verifyCheckMacValue(fields, config.payment.hashKey, config.payment.hashIV));
+});
+
+test('no card details or secrets are anywhere in the order', () => {
+  // The whole safety of the redirect design is that nothing sensitive passes
+  // through this service. If a key or a card field ever appears here, it has.
+  const config = ecpayConfig();
+  const body = JSON.stringify(order().fields);
+  for (const secret of [config.payment.hashKey, config.payment.hashIV]) {
+    assert.ok(!body.includes(secret), 'a hash secret reached the browser');
+  }
+  for (const field of ['CardNo', 'CardNumber', 'CVV', 'CVC', 'ExpiryDate', 'PAN']) {
+    assert.ok(!(field in order().fields), `${field} must never be in an order`);
+  }
+});
+
+test('every preset is an amount the server would actually accept', () => {
+  for (const amount of DONATION_PRESETS) {
+    assert.ok(Number.isInteger(amount) && amount >= MIN_DONATION && amount <= MAX_DONATION, String(amount));
+  }
 });

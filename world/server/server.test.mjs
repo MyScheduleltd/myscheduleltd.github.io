@@ -5,6 +5,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join as joinPath } from 'node:path';
 import { tmpdir } from 'node:os';
+import { checkMacValue } from './ecpay.mjs';
+import { ecpayConfig } from './donations.mjs';
 
 const temporaryDirectory = mkdtempSync(joinPath(tmpdir(), 'festival-test-'));
 let baseUrl;
@@ -1674,4 +1676,213 @@ test('the offering panel is served three amounts, all of them payable', async ()
   }
   // The panel highlights the second one when it opens, so there has to be one.
   assert.ok(options.presets.length >= 2, 'the default selection must exist');
+});
+
+test('a deferred offering survives a restart and can still be settled and invoiced', async () => {
+  // The whole reason convenience-store and ATM payments needed work. Somebody
+  // takes a 超商代碼 away, the service restarts twice over the next three days,
+  // and then ECPay says the money arrived. If the record did not outlive the
+  // process, that notification lands on nothing: the visitor is never credited
+  // and `issueInvoice` never runs, which means money taken and no 電子發票 —
+  // and the invoice is the festival's to issue, not ECPay's.
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const stateFile = joinPath(temporaryDirectory, 'deferred-offering-state.json');
+
+  let id;
+  let instance = await startServer(port, stateFile);
+  try {
+    const session = await fetch(`${url}/api/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' },
+      body: JSON.stringify({ name: 'DEFERRED GIVER' }),
+    }).then((r) => r.json()).then((r) => r.session);
+
+    const created = await fetch(`${url}/api/donation`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${session.token}`,
+        'x-festival-session': session.id,
+        'content-type': 'application/json',
+        origin: 'http://127.0.0.1:5173',
+      },
+      body: JSON.stringify({ amount: 520, email: 'giver@example.com', receipt: true }),
+    });
+    assert.equal(created.status, 200);
+    ({ id } = await created.json());
+    assert.ok(id, 'the offering was given an id');
+  } finally {
+    await stopServer(instance);
+  }
+
+  // It is on disk before anybody has paid anything.
+  const saved = JSON.parse(readFileSync(stateFile, 'utf8'));
+  const onDisk = (saved.donations ?? []).find((entry) => entry.id === id);
+  assert.ok(onDisk, 'the offering was written down before the payer left');
+  assert.equal(onDisk.state, 'pending');
+  for (const field of ['CardNo', 'cardNo', 'cvv', 'pan']) {
+    assert.ok(!(field in onDisk), `${field} must never be persisted`);
+  }
+
+  instance = await startServer(port, stateFile);
+  try {
+    const config = ecpayConfig();
+    const notice = {
+      MerchantID: config.payment.merchantId,
+      MerchantTradeNo: onDisk.tradeNo,
+      RtnCode: '1',
+      RtnMsg: 'Succeeded',
+      TradeAmt: '520',
+      TradeNo: '2504010000000001',
+      PaymentType: 'CVS_CVS',
+      PaymentDate: '2026/09/26 14:12:00',
+      CustomField1: id,
+    };
+    notice.CheckMacValue = checkMacValue(notice, config.payment.hashKey, config.payment.hashIV);
+    const settled = await fetch(`${url}/api/ecpay/notify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(notice).toString(),
+    });
+    assert.equal(settled.status, 200);
+    assert.equal(await settled.text(), '1|OK');
+
+    // And a forged one still cannot move the books, restart or no restart.
+    const forged = await fetch(`${url}/api/ecpay/notify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ ...notice, TradeAmt: '99999', CheckMacValue: 'nope' }).toString(),
+    });
+    assert.equal(forged.status, 400);
+  } finally {
+    await stopServer(instance);
+  }
+
+  const after = JSON.parse(readFileSync(stateFile, 'utf8'));
+  const settledRecord = (after.donations ?? []).find((entry) => entry.id === id);
+  assert.ok(settledRecord, 'the offering is still there after settling');
+  assert.equal(settledRecord.state, 'paid');
+  // Taken from ECPay's number, never from anything a browser said.
+  assert.equal(settledRecord.paidAmount, 520);
+});
+
+test('a code issued at a store moves the offering off pending, and only when signed', async () => {
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const stateFile = joinPath(temporaryDirectory, 'awaiting-offering-state.json');
+  const instance = await startServer(port, stateFile);
+  try {
+    const session = await fetch(`${url}/api/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' },
+      body: JSON.stringify({ name: 'CODE HOLDER' }),
+    }).then((r) => r.json()).then((r) => r.session);
+    const { id } = await fetch(`${url}/api/donation`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${session.token}`,
+        'x-festival-session': session.id,
+        'content-type': 'application/json',
+        origin: 'http://127.0.0.1:5173',
+      },
+      body: JSON.stringify({ amount: 52, email: 'code@example.com', receipt: true }),
+    }).then((r) => r.json());
+
+    const config = ecpayConfig();
+    const info = {
+      MerchantID: config.payment.merchantId,
+      MerchantTradeNo: 'MSINFO0000000000',
+      RtnCode: '10100073',
+      RtnMsg: 'Get CVS Code Succeeded.',
+      TradeAmt: '52',
+      TradeNo: '2504010000000002',
+      PaymentType: 'CVS_CVS',
+      CustomField1: id,
+    };
+    // Unsigned first: this endpoint can move a record's state, so it must
+    // refuse anything that did not come from ECPay exactly as the settlement
+    // notification does.
+    const forged = await fetch(`${url}/api/ecpay/payment-info`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ ...info, CheckMacValue: 'nope' }).toString(),
+    });
+    assert.equal(forged.status, 400);
+
+    info.CheckMacValue = checkMacValue(info, config.payment.hashKey, config.payment.hashIV);
+    const accepted = await fetch(`${url}/api/ecpay/payment-info`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(info).toString(),
+    });
+    assert.equal(accepted.status, 200);
+    assert.equal(await accepted.text(), '1|OK');
+  } finally {
+    await stopServer(instance);
+  }
+
+  const after = JSON.parse(readFileSync(stateFile, 'utf8'));
+  const record = (after.donations ?? []).at(-1);
+  assert.equal(record.state, 'awaiting', 'a code was issued, so it is no longer an abandoned checkout');
+  assert.equal(record.invoiceNo, '', 'no invoice yet: nothing has been paid');
+  // The code itself is ECPay's to show and email. Keeping a copy would be one
+  // more thing to leak for no benefit the payer can use.
+  const text = JSON.stringify(record);
+  for (const leak of ['vAccount', 'PaymentNo', 'Barcode1', 'BankCode']) {
+    assert.ok(!text.includes(leak), `${leak} must not be stored`);
+  }
+});
+
+
+test('a failed attempt to get a store code leaves the offering alone', async () => {
+  // ECPay reports a 取號 that failed through the same callback as one that
+  // succeeded. Reading only the record id moved the offering to `awaiting`
+  // either way — telling the visitor to go and pay with a code they were
+  // never given, and holding the record open on the strength of it.
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const stateFile = joinPath(temporaryDirectory, 'failed-code-state.json');
+  const instance = await startServer(port, stateFile);
+  try {
+    const session = await fetch(`${url}/api/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' },
+      body: JSON.stringify({ name: 'NO CODE' }),
+    }).then((r) => r.json()).then((r) => r.session);
+    const { id } = await fetch(`${url}/api/donation`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${session.token}`,
+        'x-festival-session': session.id,
+        'content-type': 'application/json',
+        origin: 'http://127.0.0.1:5173',
+      },
+      body: JSON.stringify({ amount: 52, email: 'nocode@example.com', receipt: true }),
+    }).then((r) => r.json());
+
+    const config = ecpayConfig();
+    const failure = {
+      MerchantID: config.payment.merchantId,
+      MerchantTradeNo: 'MSFAIL0000000000',
+      RtnCode: '10100058',
+      RtnMsg: 'Get code failed.',
+      TradeAmt: '52',
+      TradeNo: '2504010000000003',
+      PaymentType: 'CVS_CVS',
+      CustomField1: id,
+    };
+    failure.CheckMacValue = checkMacValue(failure, config.payment.hashKey, config.payment.hashIV);
+    const answered = await fetch(`${url}/api/ecpay/payment-info`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(failure).toString(),
+    });
+    // Acknowledged, because it did come from ECPay and there is nothing to retry.
+    assert.equal(answered.status, 200);
+  } finally {
+    await stopServer(instance);
+  }
+
+  const after = JSON.parse(readFileSync(stateFile, 'utf8'));
+  assert.equal((after.donations ?? []).at(-1).state, 'pending', 'no code, no promise');
 });
