@@ -40,6 +40,7 @@
   -webkit-box-direction: normal;
       -ms-flex-direction: column;
           flex-direction: column;
+  padding-top: min(60px, max(0px, 100vh - 520px));
 }
 .aboutVideos1 .button {
   position: relative;
@@ -50,7 +51,7 @@
 }
 .aboutVideos1 .about-us {
   width: 320px;
-  margin-top: 50px;
+  margin-top: 16px;
 }
 .aboutVideos1 .about-us p {
   color: #fff;

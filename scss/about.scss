@@ -13,6 +13,25 @@
     }
     .blackScreen{
         flex-direction: column;
+        // Sit the mark down closer to the words under it.
+        //
+        // The column is centred as a whole, so closing the gap alone could never
+        // do this: every pixel taken out of it moves the logo down by half a pixel
+        // and pulls the paragraph up by the other half. Fifty down to nothing
+        // would have moved the mark twenty-five pixels, which is not what "too
+        // high up" was describing. So the gap closes *and* the column is nudged
+        // down — 60px of padding above a centred box shifts its contents by half
+        // that. Together the mark drops 47px and the gap goes 50 to 16.
+        //
+        // Capped against the slack rather than against a share of the viewport,
+        // because that padding is headroom spent: the column is 517px tall, the
+        // block is exactly 100vh, and whatever is left over is the margin above
+        // and below. `8vh` was the first cut and it still clipped the last line
+        // of the paragraph by a pixel at 560px tall. Asking for no more padding
+        // than there is spare room cannot: on a full-height window the 60 wins
+        // and nothing changes, and on a short one the padding goes to zero
+        // before anything is pushed off the bottom of a block that clips.
+        padding-top: min(60px, max(0px, 100vh - 520px));
     }
     .button{
         position: relative;
@@ -23,7 +42,7 @@
     }
     .about-us{
         width: 320px;
-        margin-top: 50px;
+        margin-top: 16px;
         p {
             color:#fff;
             font-size:15px;
