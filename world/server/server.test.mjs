@@ -1044,6 +1044,44 @@ test('staff can rotate the key, and only with the current one', async () => {
   }
 });
 
+test('the receipt mailbox reaches STAFF and no attendee payload', async () => {
+  // A real address, STAFF's to set. It went out on /api/config to every
+  // visitor from 2026-09-11 until this test: nothing was checking.
+  const mailbox = 'receipts-private@example.test';
+  const staff = { 'x-festival-admin-key': 'test-admin-key', 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' };
+  const setMailbox = (email) => fetch(`${baseUrl}/api/admin/offering-receipt`, {
+    method: 'POST', headers: staff, body: JSON.stringify({ email }),
+  });
+  assert.equal((await setMailbox(mailbox)).status, 200);
+  try {
+    const state = await (await fetch(`${baseUrl}/api/admin/state`, { headers: staff })).json();
+    assert.equal(state.offeringReceipt.email, mailbox, 'STAFF can still read the address they set');
+
+    const config = await (await fetch(`${baseUrl}/api/config`)).text();
+    assert.ok(!config.includes(mailbox), '/api/config must not carry the mailbox');
+    const options = await (await fetch(`${baseUrl}/api/donation/options`)).text();
+    assert.ok(!options.includes(mailbox), '/api/donation/options must not carry the mailbox');
+
+    // The attendee broadcast: every `state` event comes from one builder, so
+    // the first one on a fresh stream is the one every later broadcast sends.
+    const session = await join('MAILBOX PRIVACY');
+    const stream = await fetch(`${baseUrl}/api/events`, { headers: { ...auth(session), accept: 'text/event-stream' } });
+    const reader = stream.body.getReader(), decoder = new TextDecoder();
+    let received = '';
+    while (!/event: state\ndata: .*\n\n/.test(received)) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      received += decoder.decode(value, { stream: true });
+    }
+    await reader.cancel();
+    assert.match(received, /event: state/, 'the stream delivered a state event to check');
+    assert.ok(!received.includes(mailbox), 'the attendee broadcast must not carry the mailbox');
+  } finally {
+    // Leave the shared instance as the rest of the suite expects it.
+    await setMailbox('');
+  }
+});
+
 test('a committed seed carries the festival across a deploy that keeps no disk', async () => {
   const port = await freePort();
   const seededUrl = `http://127.0.0.1:${port}`;

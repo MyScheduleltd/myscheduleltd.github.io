@@ -1548,7 +1548,11 @@ const server = createServer(async (request, response) => {
       // by itself, and without it there is no way from outside to tell a
       // deployed fix that did not work from a fix that never deployed — which
       // is a question this service has already cost two rounds of guessing.
-      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), offeringReceipt, schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, immersiveSources, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
+      //
+      // The receipt mailbox is deliberately absent. It is a real address,
+      // STAFF's to set, and it reaches `/api/admin/state` behind the key and
+      // nothing else — the client only ever declares it on `AdminState`.
+      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, immersiveSources, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
