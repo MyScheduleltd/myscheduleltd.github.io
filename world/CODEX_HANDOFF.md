@@ -1,10 +1,196 @@
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
-Last updated: 2026-09-19 · **a fix that only moves *when* a symptom happens has not touched the cause** · **in a headset, `event.target` is not the focused field** · **iOS `vh` is taller than the screen — no emulator shows it** · **a fix that only moves a symptom is not one — measure both sides** · **walking must not move the camera — one avoidance owner, see Latest** · **curl is not a browser — test media hosts from a page, see Latest** · **the headset paints its own interface, and only a headset does — see Latest** · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
+Last updated: 2026-09-27 · **PS2 preview (branch `character-native-20260924`): one Higgsfield body per sex, finger bones, Quest hands and webcam body tracking shown to everyone, a rooftop band — see Latest; `/beta/` still waits for the owner** · **§00 has two stale details, corrected in Latest** · **a fix that only moves *when* a symptom happens has not touched the cause** · **in a headset, `event.target` is not the focused field** · **iOS `vh` is taller than the screen — no emulator shows it** · **a fix that only moves a symptom is not one — measure both sides** · **walking must not move the camera — one avoidance owner, see Latest** · **curl is not a browser — test media hosts from a page, see Latest** · **the headset paints its own interface, and only a headset does — see Latest** · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness
 
 > `world/CLAUDE_HANDOFF.md` now begins with a current continuation note. Its long body
 > below `Read this first` remains the older architectural record and still contains an
 > obsolete no-publish rule and branch name. Use this file for the active process.
+
+---
+
+# Latest: the PS2 preview's avatars, fingers, tracking and rooftop band — PS2 PREVIEW ONLY, `/beta/` untouched (2026-09-27)
+
+Written by Claude for Codex. Everything below lives on branch
+`character-native-20260924` (worktree `myschedule-pivot/character-native-20260924/`),
+which is **not merged**. `main` carries only this branch's published
+`docs/beta/ps2/` builds (cherry-picked, docs only) and one server commit.
+
+## 1. What is live, and what is waiting
+
+| | State |
+| --- | --- |
+| PS2 preview `https://myscheduleltd.com/beta/ps2/?era=ps2` | live, `index-BBp2PDhn.js` (2026-09-27) |
+| Festival `https://myscheduleltd.com/beta/` | **unchanged**, `index-BeANdgLX.js`. The owner: "Not yet, please wait for further approval." Never publish `--channel beta` from this branch without it. |
+| Service `myschedule-festival.onrender.com` | still build `b47d366`. `ed551b8` (limbs relay, below) is on `main` and **needs the owner's manual Render deploy**. Check `GET /api/config` → `build`. |
+
+Publishing the preview, exactly as done every round:
+
+```bash
+cd character-native-20260924/world && npm run build && node scripts/publish-beta.mjs --channel ps2
+cd .. && git add docs/beta/ps2 && git commit -m "Publish … to the PS2 preview only"
+cd ../ps2-publish-20260924 && git fetch origin && git reset --hard origin/main && git cherry-pick <that sha>
+git diff --name-only origin/main HEAD      # must list docs/beta/ps2/ only
+git push origin HEAD:main                  # then poll the live index hash; Pages caches ~600s
+```
+
+Two corrections to §00, both verified 2026-09-24: **`/beta/?era=ps2` is not the
+preview** (Pages ignores the query; it is the `/beta/` bundle with the worn PS2
+style switched on; the preview is `/beta/ps2/`), and the `Coastal*.ts` tripwire in
+`publish-beta.mjs` is gone (both channels approved 2026-09-14). `npm run build:beta`
+now only publishes and exits 1 without `--channel`, by design.
+
+## 2. Avatars: one Higgsfield body per sex
+
+`scripts/prepare-higgsfield-avatars.py` builds `src/assets/avatars/{male,female}.glb`,
+`*-dye.png`, `*-vest.jpg` and `avatars.json`. Sources are **untracked**, in
+`character-prototype-20260920/art/generated/` (`male-base`, `female-base`, and the
+clothed `base`, `female` `-rigged.glb`).
+
+```bash
+GLTF_TRANSFORM=<gltf-transform binary> /Applications/Blender.app/Contents/MacOS/Blender \
+  -b --factory-startup -P scripts/prepare-higgsfield-avatars.py
+```
+
+- **One body under every outfit** (owner's request): the base generation in its
+  swimsuit; tee, trousers and shoes lifted off the clothed generation, carried
+  across the skeleton, pushed outside the skin, skinned like the skin beneath.
+  Skin under a garment carries `_covered` and is discarded while dressed.
+- **Fingers are rebuilt** (`rebuild_fingers`). Generated fingers were fused and
+  randomly triangulated, so the four are cut at the knuckle line and remade as
+  tubes with three loops per joint: bones `<Side>Hand<Finger>1..3` and an
+  unweighted `4` at the tip, Z toward the palm (+X curls). The thumb is the piece
+  above the knuckle line not joined to the fingertips, grown back by surface
+  distance. Each new face takes its texture from the **one** nearest old face
+  (per-corner lookups landed on different UV islands: noise).
+- **Shoes are carried by translation only** (`level_shoes`). Rotated bone by bone,
+  the two models' foot bones disagree and his toes stood up about 20°.
+- **Tee over trousers**: the two came off the clothed model along one jagged colour
+  boundary, so their edges interlock. `level_hem` pulls the hem's notches down to
+  its teeth, `trousers_under` removes the trousers the tee covers, `over_trousers`
+  pushes the tee outside what is left along rays from the spine. A shrinkwrap by
+  the trousers' own normals did not work: they do not all face out.
+- **Hair is rigid to `Head`** (`hair_rigid`); the bob's neck-weighted ends
+  twisted away from the head on a skateboard.
+- **Eyes**: his are the brown of his hair, at z .47–.505. The texture classifier
+  loses them whenever the atlas repacks, so `EYE_HEIGHT` stands in, and the dye mask
+  leaves the eyes out of the hair class **by position**. A fallback of .421 was
+  wrong for two builds and put his cap's brim over his eyes.
+- **Caps share proportions**: crown height `CAP_RISE` = 1.05 × the band's half
+  width (sized to his curls it was 1.66 and swallowed his head).
+- Unchanged traps: weld before Smart UV (unwelded meshes used 4% of the atlas),
+  padded conservative texels, dye mask R skin / G hair / B garment.
+
+## 3. Hands at run time, and tracking
+
+- `HandPose.ts`: poses are joint angles. `ImportedAvatar` applies them as the
+  difference from the modelled rest, measured the same way, so any hand fits any
+  body. `setImportedFists(closed)` and `setImportedHandPose(right, pose | null)`.
+  The Fist shape key is gone. **The rig's names are mirrored**: the visitor's
+  left hand drives `rig.rightArm`, passes `right = true`, and moves the model's
+  `Left` bones.
+- **Quest bare hands**: the session asks for `hand-tracking`. The arm reaches for the
+  tracked wrist (not the pointer ray), `turnWrist` follows the real hand every frame
+  with no calibration, and `poseXrFingers` eases the 25 joints into finger angles.
+- **Desktop webcam** (`HeadTracking.setBodyTracking`, a switch in the head-tracking
+  panel): MediaPipe `pose_landmarker_full` and `hand_landmarker` on the face
+  tracker's camera and runtime, fetched no-store and **SHA-256 pinned** in
+  `INTEGRITY`. `updateTrackedBody` shows the body headless in the preview. It drives
+  arms, wrists, fingers and chest, and drives legs only while standing still with
+  all six leg landmarks visible.
+- **Everyone sees it**: `TrackedLimbs.ts` is the wire format (arms as wrist over
+  shoulder over reach, in the body's frame; hand directions; finger angles; chest;
+  legs; head). The service's `safeLimbs` must agree on `LIMB_FIELDS`.
+  `limbsForNetwork` sends and `applyLimbs` replays, played out between updates like
+  positions.
+- **None of this has run on a real Quest or webcam.** Tests drive synthetic joints
+  only.
+
+## 4. MENTOR on a head
+
+`perchMentor` lays him down (front paws forward, hind legs folded, each on its own
+side; the legs were rolled under the belly and crossed). He rests on a height field
+of the hair or cap (`importedHeadSurface`), settled 2 cm in (`MENTOR_NESTLE`), not
+on the crown's single highest vertex.
+
+## 5. The rooftop band
+
+The owner's rules:
+
+- The stage is on the **empty roof over the pop-up shop** (x 22..58, z 8..19,
+  y 7), behind the NIMA ROOFTOP screen, facing the beach.
+- NIMA ROOFTOP (the deck, z > 19) stays untouched.
+- They play only while the jukebox has a record on
+  (`App.syncJukeboxPlayer` → `setJukeboxPlaying`). With no record they sit round a
+  bonfire low in that roof's north-east corner.
+- They are not attendees or residents.
+- The shop roof is not the `rooftop` venue, so the jukebox is heard there and the
+  deck keeps its DJ set.
+
+How it's built and run:
+
+- **Assets**: Higgsfield generations (job ids in
+  `character-prototype-20260920/art/generated/band/jobs.json`, about 440 credits).
+  The amp was rebuilt from a front and a back view after the owner found its back
+  broken, so anything seen from behind needs a back view.
+- **Build**: `scripts/prepare-band.py` (`BAND_REUSE=1` skips the texture bakes).
+  Musicians go through the avatars' steps, then clips are authored with IK on the
+  instruments and baked: `walk`, `sit`, and one `play` each.
+- **Carried props** are meshes skinned 100% to a bone. Blender's bone parenting
+  offsets by the bone tail, and the generated hand tails are far off, so parented
+  sticks floated.
+- **Seated hips** ride a thigh's thickness over the log (they sank into it).
+  Seated hands point along their forearms (they twisted).
+- **Runtime**: `RooftopBand.ts` places `stage.glb` and `bonfire.glb`. It walks the
+  four between seats and marks along lanes: out past the amps, in front of the mic,
+  and behind the riser for the drummer. Colliders are on the roof only.
+
+## 6. How this was checked
+
+- Fitting room `avatar-review.html` takes these parameters:
+  `sex, outfit, zoom, look, angle, pose (stand|skate|dj|eat…), fist, cap, skin/hair/bottoms=<hex>, headless, mentor=carry`.
+- `band-review.html` takes `roof, play, t=<s>, stop=<s>, still, zoom, look, from`.
+- In-game on loopback:
+  - review targets `review=band`, `band-play`, `band-street`, `band-street-play`
+  - `window.__festivalFeet()` gives the sole height against the floor
+  - `window.__festivalGround(x0,x1,z0,z1,step)` gives the walking surface against the drawn ground
+- Screenshots came from headless Chrome over CDP. The script was scratch and is not
+  in the repo; the Browser pane cannot capture while hidden.
+- `npm test`: 325 pass on this branch (the service's own tests included). `main`'s service suite, with the relay, is 56.
+
+## Still open — for Codex to improve
+
+1. **Deploy and prove the limbs relay.** After the owner deploys Render, check
+   `build` is `ed551b8` or later. Then run two browsers, one in the desktop preview
+   with body tracking on, and watch it on the other.
+2. **His shoe collars are ragged** (spiky pieces round the ankle opening). This is
+   the same interlock as the hem, between shoes and trouser cuffs in
+   `classify_garments`. A level-and-cover pass like `level_hem` should clear it.
+3. A small sliver flap at the male thumb tip. The thumb weights are a heuristic
+   (`rebuild_fingers`, thumb section).
+4. Band:
+   - Stick contacts are approximate (`KIT_PADS` read off the kit's up-facing faces;
+     the kit is turned about the throne, which is stretched to 0.42 m).
+   - Fixed 120 bpm (the owner does not want tempo sync). There is no lip-sync.
+   - All four always animate (4 × about 30k-triangle skinned bodies). Consider
+     skipping mixer updates when far or off screen.
+5. Webcam tracking needs real-world tuning: gains, clamps, a stance calibration,
+   and turning away from the lens.
+6. While tracking, presence posts every 140–220 ms because the payload changes each
+   frame. Consider a change threshold.
+7. Promotion to `/beta/`, when approved: a file-level copy per §00. This branch's
+   `world/src` diverges from `main`'s.
+8. The owner reported an avatar "floating" on the street (2026-09-27). It was not
+   reproducible after the shoe fix; if it returns, measure with the two probes above.
+9. If a base body is regenerated, re-measure its eyes (non-skin faces on the front
+   of the face between chin and fringe) before trusting `EYE_HEIGHT`.
+
+**Worth keeping:**
+
+- **Garments cut along one colour boundary interlock: fix the edges in geometry,
+  not in the dye.**
+- **A texture classifier's classes move when the atlas repacks: find features by
+  where they are.**
+- **Never bone-parent a prop in Blender for export: skin it.**
 
 ---
 
