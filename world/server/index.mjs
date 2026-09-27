@@ -631,6 +631,24 @@ const body = async (request) => {
 };
 
 const safeText = (value, max) => String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').slice(0, max);
+/**
+ * A visitor's tracked arms, hands and body (a headset's, or the desktop
+ * webcam's), relayed to everyone as sent: each field only if it is the right
+ * length of finite numbers, held to ±4 and to hundredths, anything else
+ * dropped. Must agree with LIMB_FIELDS in src/world/TrackedLimbs.ts.
+ */
+const LIMB_FIELDS = { l: 9, r: 9, lf: 20, rf: 20, t: 2, g: 6, h: 2 };
+const safeLimbs = (value) => {
+  if (!value || typeof value !== 'object') return undefined;
+  const limbs = {};
+  for (const [key, length] of Object.entries(LIMB_FIELDS)) {
+    const list = value[key];
+    if (!Array.isArray(list) || list.length !== length) continue;
+    if (!list.every((n) => typeof n === 'number' && Number.isFinite(n))) continue;
+    limbs[key] = list.map((n) => Math.round(Math.max(-4, Math.min(4, n)) * 100) / 100);
+  }
+  return Object.keys(limbs).length ? limbs : undefined;
+};
 const safePalette = (value = {}) => {
   const color = (slot, fallback) => /^#[0-9a-f]{6}$/i.test(value[slot] ?? '') ? value[slot] : fallback;
   const palette = {
@@ -1926,6 +1944,7 @@ a{color:#e8b64a}</style>
           : ['POPCORN', 'DRINK', 'HOTDOG', 'PIZZA', 'CHICKEN'].includes(payload.carriedItem)
             ? payload.carriedItem
             : undefined,
+        limbs: safeLimbs(payload.limbs),
       };
       visitor.palette = safePalette(payload.palette ?? visitor.palette);
       visitor.lastSeen = Date.now();

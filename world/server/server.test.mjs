@@ -1924,3 +1924,37 @@ test('a failed attempt to get a store code leaves the offering alone', async () 
   const after = JSON.parse(readFileSync(stateFile, 'utf8'));
   assert.equal((after.donations ?? []).at(-1).state, 'pending', 'no code, no promise');
 });
+
+test('tracked limbs are relayed to everyone, checked field by field', async () => {
+  const session = await join('LIMBS TEST');
+  const response = await fetch(`${baseUrl}/api/presence`, {
+    method: 'POST',
+    headers: auth(session),
+    body: JSON.stringify({
+      x: 1, y: .28, z: 2, rotation: 0, location: 'MY SQUARE', state: 'walking', moving: false, running: false, venue: 'shore',
+      limbs: {
+        l: [.1234, -.5, .9, 0, -1, 0, 1, 0, 0],   // kept, to hundredths
+        r: [1, 2, 3],                              // wrong length: dropped
+        t: [9, -9],                                // held to ±4
+        h: [.2, 'up'],                             // not numbers: dropped
+        extra: [1, 2],                             // not a field: dropped
+      },
+    }),
+  });
+  assert.equal(response.status, 202);
+  const state = await (await fetch(`${baseUrl}/api/admin/state`, {
+    headers: { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173' },
+  })).json();
+  const visitor = state.visitors.find((candidate) => candidate.id === session.id);
+  assert.deepEqual(visitor.presence.limbs, { l: [.12, -.5, .9, 0, -1, 0, 1, 0, 0], t: [4, -4] });
+  // Tracking stops: the next presence without limbs takes them away.
+  await fetch(`${baseUrl}/api/presence`, {
+    method: 'POST',
+    headers: auth(session),
+    body: JSON.stringify({ x: 1, y: .28, z: 2, rotation: 0, location: 'MY SQUARE', state: 'walking', moving: false, running: false, venue: 'shore' }),
+  });
+  const after = await (await fetch(`${baseUrl}/api/admin/state`, {
+    headers: { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173' },
+  })).json();
+  assert.equal(after.visitors.find((candidate) => candidate.id === session.id).presence.limbs, undefined);
+});
