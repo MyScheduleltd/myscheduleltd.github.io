@@ -1,39 +1,22 @@
 {
   "version": 1,
-  "capturedAt": "2026-08-19T12:01:05.340Z",
+  "capturedAt": "2026-09-29T13:22:44.939Z",
   "capturedFrom": "https://myschedule-festival.onrender.com",
   "schedule": {
     "palace": {
       "name": "THE PALACE",
-      "subtitle": "COMMERCIAL",
-      "order": [
-        "5pSwEJw53Y8",
-        "jeqkAGA_3n0",
-        "KD5dGYzk9Bo",
-        "qyMIdPT4K4Q"
-      ],
-      "currentIndex": 1,
-      "mode": "scheduled-loop",
-      "special": {
-        "youtubeId": "sc6P0k-PYcs",
-        "startsAt": 1787149260000
-      },
-      "updatedAt": 1787140853945
-    },
-    "drive-in": {
-      "name": "DRIVE-IN 88",
       "subtitle": "TELEVISION",
       "order": [
         "TmvklnJYWA4",
         "PrE9j9r0Ewo"
       ],
-      "currentIndex": 1,
-      "mode": "scheduled-loop",
+      "currentIndex": 0,
+      "mode": "continuous",
       "special": null,
-      "updatedAt": 1787140853945
+      "updatedAt": 1790687956180
     },
-    "shore": {
-      "name": "THE SHORE",
+    "drive-in": {
+      "name": "DRIVE-IN 88",
       "subtitle": "MUSIC VIDEO",
       "order": [
         "jiawzYgfkuI",
@@ -51,7 +34,6 @@
         "HTRQ0n4yjfs",
         "fKd-qQto3gk",
         "yOEpwDu7OB4",
-        "XPQzKjisTbI",
         "tRa3fOlnN7k",
         "fIXTRr22_II",
         "F5XjLbMTo38",
@@ -61,7 +43,6 @@
         "YgNGl442hgg",
         "0Yi4WAR-9hM",
         "9eOQsGYs70c",
-        "NDDa_AV8cks",
         "HqhQR3adbok",
         "O2EZ6Tys0x8",
         "Et-TvF_4fa4",
@@ -69,13 +50,27 @@
         "F6XaLvhpGog",
         "xndA9Geu4eg"
       ],
-      "currentIndex": 1,
-      "mode": "scheduled-loop",
+      "currentIndex": 22,
+      "mode": "continuous",
       "special": null,
-      "updatedAt": 1787140853945
+      "updatedAt": 1790687936218
+    },
+    "shore": {
+      "name": "THE SHORE",
+      "subtitle": "COMMERCIAL",
+      "order": [
+        "5pSwEJw53Y8",
+        "jeqkAGA_3n0",
+        "KD5dGYzk9Bo",
+        "qyMIdPT4K4Q"
+      ],
+      "currentIndex": 2,
+      "mode": "continuous",
+      "special": null,
+      "updatedAt": 1790688093110
     },
     "club": {
-      "name": "THE BASEMENT",
+      "name": "SLAP AND POP",
       "subtitle": "XIEH GAN",
       "order": [
         "m0RKB7HGHIo",
@@ -88,10 +83,10 @@
       "currentIndex": 1,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787140373910
+      "updatedAt": 1790687976220
     },
     "rooftop": {
-      "name": "THE ROOFTOP",
+      "name": "NIMA ROOFTOP",
       "subtitle": "DR.BEAUTY",
       "order": [
         "Wf9_Z7b5wwo",
@@ -104,10 +99,10 @@
         "U2-OzFANCiA",
         "KH4HNQBlP7U"
       ],
-      "currentIndex": 8,
+      "currentIndex": 4,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1787140373910
+      "updatedAt": 1790688058713
     }
   },
   "customVideos": {
@@ -203,13 +198,9 @@
   },
   "shopLink": {
     "url": "https://masterofthehouse.app1shop.com/",
-    "label": "THE POP-UP STORE",
-    "labelZh": "快閃服飾店",
+    "label": "MASTER OF THE HOUSE",
+    "labelZh": "MASTER OF THE HOUSE",
     "updatedAt": 1787063471568
-  },
-  "offeringReceipt": {
-    "email": "santana30541@gmail.com",
-    "updatedAt": 0
   },
   "templeSign": {
     "name": "美麗仙人",
@@ -223,16 +214,16 @@
       "role": "FOUNDER OF MY SCHEDULE LTD",
       "roleZh": "FOUNDER OF MY SCHEDULE LTD",
       "introduction": "2017 Founded My Schedule LTD. 2020 Produced the music video for iGO ASIA REMIX, a single uniting NICKTHEREAL, JP THE WAVY and SIK-K across Taiwan, Japan and Korea, which helped set the direction of mainstream hip-hop and fashion in Asia. 2021 Directed and A&R-planned the album videos for E.SO’s OUTTA BODY and EARTHBOUND, linking several videos of different styles into one continuous narrative film. 2022 My Schedule LTD had made over 200 music videos, for artists including J.Sheon, Naiwen, A-Lin, Cosmos People, A-Mei, Crowd Lu, MJ116 and Nine One One. 2023 A producer and chief director of The Rapper S2, nominated for and winning awards at the 58th Golden Bell Awards and the 5th Walk Bell John Awards, and well received across traditional and new media alike. 2024 Producer of The King of night market, widely praised for renewing attention on Taiwan’s night market culture — visitor numbers rose 40% — and winner of the Programme Innovation Award at the 60th Golden Bell Awards. 2025 Producer of 247 MUSIC FESTIVAL, attended by over 2,500 people on the day, with more than a hundred positive posts shared by audiences across platforms.",
-      "introductionZh": "2017 成立【我的檔期有限公司】。 2020 製作周湯豪、JP THE WAVY 及 SIK-K 台、日、韓三地歌手合作單曲《iGO ASIA REMIX》MV，引領亞洲主流嘻哈及時尚潮流。 2021 製作瘦子 E.SO《OUTTA BODY》、《EARTHBOUND》專輯 MV，擔任導演及 A&R 企劃，運用多支不同風格的 MV 串聯出一部完整劇情影片，廣受觀眾喜愛。 2022 【我的檔期有限公司】已為多位藝人量身打造超過 200 支 MV，其中包含 J.Sheon、楊乃文、A-Lin、宇宙人、張惠妹、盧廣仲、頑童 MJ116、玖壹壹等。 2023 擔任電視節目《大嘻哈時代 2》製作人之一及總導演，入圍並獲得第 58 屆金鐘獎及第 5 屆走鐘獎多項獎項，在傳統媒體與新媒體間皆獲得高度好評。 2024 擔任電視節目《夜市王》製作人，廣受大眾好評，成功帶動台灣夜市文化再次受到關注，來客數增加 40%，並榮獲第 60 屆金鐘獎「節目創新獎」。 2025 擔任嘻哈音樂祭《龍虎門 247 音樂日》製作人，活動當日現場參與人數超過 2,500 人，各平台觀眾分享貼文累積逾百則好評。",
+      "introductionZh": "2017 成立【我的檔期有限公司】。 2020 製作周湯豪、JP THE WAVY 及 SIK-K 台、日、韓三地歌手合作單曲《iGO ASIA REMIX》MV,引領亞洲主流嘻哈及時尚潮流。 2021 製作瘦子 E.SO《OUTTA BODY》、《EARTHBOUND》專輯 MV,擔任導演及 A&R 企劃,運用多支不同風格的 MV 串聯出一部完整劇情影片,廣受觀眾喜愛。 2022 【我的檔期有限公司】已為多位藝人量身打造超過 200 支 MV,其中包含 J.Sheon、楊乃文、A-Lin、宇宙人、張惠妹、盧廣仲、頑童 MJ116、玖壹壹等。 2023 擔任電視節目《大嘻哈時代 2》製作人之一及總導演,入圍並獲得第 58 屆金鐘獎及第 5 屆走鐘獎多項獎項,在傳統媒體與新媒體間皆獲得高度好評。 2024 擔任電視節目《夜市王》製作人,廣受大眾好評,成功帶動台灣夜市文化再次受到關注,來客數增加 40%,並榮獲第 60 屆金鐘獎「節目創新獎」。 2025 擔任嘻哈音樂祭《龍虎門 247 音樂日》製作人,活動當日現場參與人數超過 2,500 人,各平台觀眾分享貼文累積逾百則好評。",
       "updatedAt": 0
     },
     "DRBEAUTY": {
       "id": "DRBEAUTY",
       "name": "DR.BEAUTY",
       "role": "Li Baobi — artist, rapper, producer, host, influencer, YouTuber, party mascot; born the same day as the Earth God.",
-      "roleZh": "李包比，藝人、饒舌歌手、音樂製作人、主持人、網美、YouTuber、派對吉祥物，農曆是 2 月 2 號跟土地公同一天生。",
+      "roleZh": "李包比,藝人、饒舌歌手、音樂製作人、主持人、網美、YouTuber、派對吉祥物,農曆是 2 月 2 號跟土地公同一天生。",
       "introduction": "Li Baobi — artist, rapper, music producer, host, influencer, YouTuber and party mascot. Opened the 美麗本人 YouTube channel in 2019, known for reaction videos to Mandarin music videos shot with animation and effects, and for putting \"R爆\" and the 醬擠 gesture into everyday use among younger audiences.",
-      "introductionZh": "李包比，藝人、饒舌歌手、音樂製作人、主持人、網美、YouTuber、派對吉祥物。2019 年開立『美麗本人』YouTube 頻道，以浮誇且具幽默感的表演方式對華語歌曲 MV 做 Reaction 影片，加入動畫及特效，並以一句「R爆」跟經典手勢「醬擠」在年輕族群間瘋傳。",
+      "introductionZh": "李包比,藝人、饒舌歌手、音樂製作人、主持人、網美、YouTuber、派對吉祥物。2019 年開立『美麗本人』YouTube 頻道,以浮誇且具幽默感的表演方式對華語歌曲 MV 做 Reaction 影片,加入動畫及特效,並以一句「R爆」跟經典手勢「醬擠」在年輕族群間瘋傳。",
       "updatedAt": 0
     }
   },
@@ -273,7 +264,76 @@
     "introductionZh": "這是我的檔期有限公司。我們是位於台灣台北的創意影像製作公司,服務遍及全球,致力製作高品質影像。團隊擅長電影、音樂錄影帶、電視節目、廣告,以及不定期的非典型 YouTube 內容。",
     "updatedAt": 0
   },
-  "trackTempos": {},
+  "trackTempos": {
+    "m0RKB7HGHIo": 120,
+    "ufwVeLYiqo0": 120,
+    "VRr6fb4kmOk": 120,
+    "XZ9YCADCko8": 120,
+    "De33mCT9OW0": 120,
+    "TH4iVLVqXAc": 120,
+    "Wf9_Z7b5wwo": 120,
+    "rMicadJVzH8": 120,
+    "lhAvlkYlFc4": 120,
+    "tLvj_eC8tQQ": 120,
+    "hXhatbZ5j4k": 120,
+    "U2-OzFANCiA": 120,
+    "KH4HNQBlP7U": 120
+  },
+  "immersiveSources": {
+    "TmvklnJYWA4": "https://drive.google.com/file/d/1HHW6RIg5_hTF0cNr0rA8k-8IT8zPibwc/view?usp=sharing",
+    "PrE9j9r0Ewo": "https://drive.google.com/file/d/1I8VLk0WfwMOgaFOL77POmQmPdZPY1fhL/view?usp=sharing",
+    "jiawzYgfkuI": "https://drive.google.com/file/d/1y1oR_RYNXob0NBuB4QiLgywV5IEJzDXT/view?usp=sharing",
+    "ZIvWrKYdMQE": "https://drive.google.com/file/d/1Rsra76qxOd2GYtYJG8SBhL9icSUKEmBF/view?usp=sharing",
+    "SRbsIUYB0dc": "https://drive.google.com/file/d/1ggyBYHXB8Tl1JZReHhJKb78xl3ZPcbTb/view?usp=sharing",
+    "i5YVMS1noIo": "https://drive.google.com/file/d/167CXzyx04rnOlo_aJAD15u4SFndBm-Yk/view?usp=sharing",
+    "Df9lbCJNhGU": "https://drive.google.com/file/d/1gKfrzKV7JOsHaWyNncZYTBL2FQGIt-yh/view?usp=sharing",
+    "DJmHJB-hHC8": "https://drive.google.com/file/d/1gxrV8TfkZoufDfcev48lRrjKD0Ksc6w3/view?usp=drive_link",
+    "cgnPinA7D8U": "https://drive.google.com/file/d/1zoq0rNpzehBzpc7qdFvTwps6rSXp1Odo/view?usp=drive_link",
+    "QvydPXEfk0M": "https://drive.google.com/file/d/1KYfWohuPuhFMZJReyrIQ5wjb_0XaN9uL/view?usp=sharing",
+    "tsahcnnUzMw": "https://drive.google.com/file/d/11N_xFhJOC635OSrOoxcGhOBEivL4aLDD/view?usp=drive_link",
+    "QuNc8b7DxyY": "https://drive.google.com/file/d/13j8j8GIvi3PCcHOQ9JLFQ1V8NCTYzhNf/view?usp=drive_link",
+    "JfS8YZD5eSA": "https://drive.google.com/file/d/1hzvWqn3UMclvNv6yFyM5Gt6HqDylWbSL/view?usp=drive_link",
+    "FcCtOYGxf1Y": "https://drive.google.com/file/d/1ptCG5hHTOAya0Pjaf1pjmrIkJ88jfWoL/view?usp=drive_link",
+    "HTRQ0n4yjfs": "https://drive.google.com/file/d/1FT98g2qnh1AB5pdPNtrUuVSl8IfSPb5V/view?usp=drive_link",
+    "fKd-qQto3gk": "https://drive.google.com/file/d/15lDr7Pqz_hmOM9euAHBl3dRfwiJymGSr/view?usp=drive_link",
+    "yOEpwDu7OB4": "https://drive.google.com/file/d/1fZgD5znflyVisUM_eVHqtSYAspIwjEof/view?usp=drive_link",
+    "tRa3fOlnN7k": "https://drive.google.com/file/d/1IsgP-9aKArFJT1z4cr4rUuvbhHEmg566/view?usp=drive_link",
+    "fIXTRr22_II": "https://drive.google.com/file/d/1J_2EUL3dRUrAz4wAwuc7BEp2dNOtgo8a/view?usp=drive_link",
+    "F5XjLbMTo38": "https://drive.google.com/file/d/1Lwpagk6qE6XJLDfM_jbxX6y_bwE-hIif/view?usp=drive_link",
+    "hQkQ2AzdNaY": "https://drive.google.com/file/d/1_E8IKtGKBQWdAMM9oLHoqXoJODoDmb1w/view?usp=drive_link",
+    "smFGZKPS5yc": "https://drive.google.com/file/d/1o3O5ewSgEQVX6aDnkpi1aaZLRgaDH2Cy/view?usp=drive_link",
+    "U1G4lKnYf4o": "https://drive.google.com/file/d/1cKZd4rBjO1lH_JozK32gdELgizR3QUca/view?usp=drive_link",
+    "YgNGl442hgg": "https://drive.google.com/file/d/1e69TQf96JK1AaXiUbx5SonYcu1KDp9x9/view?usp=drive_link",
+    "0Yi4WAR-9hM": "https://drive.google.com/file/d/1FJiGsVDQLCCCIfpmW5IZeJeCIyl340FA/view?usp=drive_link",
+    "9eOQsGYs70c": "https://drive.google.com/file/d/1qfXNSkr6O0HIyBUZivjxEF_ACpHWec0P/view?usp=sharing",
+    "HqhQR3adbok": "https://drive.google.com/file/d/1DOunSvCiaiX2c-qHKuD1kuP2DKILIgU8/view?usp=drive_link",
+    "O2EZ6Tys0x8": "https://drive.google.com/file/d/17mYcn4h9bn-ostgh2yWP4HSieQ3UPTHJ/view?usp=drive_link",
+    "Et-TvF_4fa4": "https://drive.google.com/file/d/11ivZFijWkrtJcMZBbWWhSR2bKbANSRJt/view?usp=drive_link",
+    "bnOjr-SMTbc": "https://drive.google.com/file/d/1ynaP_kv4BbpB5SMi0j5P7lnNSNykZQFH/view?usp=drive_link",
+    "xndA9Geu4eg": "https://drive.google.com/file/d/19SHKUSeUi70QlbwcAkv8qnmA6OqgMsJH/view?usp=drive_link",
+    "F6XaLvhpGog": "https://drive.google.com/file/d/1ZVetDAgQC96Sfeer7GC-r2Vrw2p0h5iI/view?usp=drive_link",
+    "5pSwEJw53Y8": "https://drive.google.com/file/d/1c64sx406G78LyXmdsUiH8YtgjWYFD-Y1/view?usp=drive_link",
+    "jeqkAGA_3n0": "https://drive.google.com/file/d/1wcsyTQH8oyqduNN2VbY7Am205G6qNy3C/view?usp=drive_link",
+    "KD5dGYzk9Bo": "https://drive.google.com/file/d/1BzSiFj8pgckeCjWTBuaWeECYO_XAjVbf/view?usp=drive_link",
+    "qyMIdPT4K4Q": "https://drive.google.com/file/d/1oHmOsf1XP8xxIpKnVl2Cv1DfgwRGxNHb/view?usp=drive_link",
+    "m0RKB7HGHIo": "https://drive.google.com/file/d/11fBieE-FbahclMMtKUwZ9Moz621WLAj0/view?usp=drive_link",
+    "ufwVeLYiqo0": "https://drive.google.com/file/d/1NSGVBX4ej6tl5jBkNWK9CufALzREBn76/view?usp=drive_link",
+    "VRr6fb4kmOk": "https://drive.google.com/file/d/1yuD-v-TdpqUwtjxTzUThiNQUy-kc-4nt/view?usp=drive_link",
+    "XZ9YCADCko8": "https://drive.google.com/file/d/1E1xRted-ORCeXrjquzE34jUiBtfD_Zka/view?usp=drive_link",
+    "De33mCT9OW0": "https://drive.google.com/file/d/16EbSHaCixGuyn7hQ6SWz1ttytu79l_3Z/view?usp=drive_link",
+    "TH4iVLVqXAc": "https://drive.google.com/file/d/1cZGM8ch8Uo8gBbOKAZH1OHLO1rYBbBrp/view?usp=drive_link",
+    "Wf9_Z7b5wwo": "https://drive.google.com/file/d/1I8dkWiYTRfbYSAx8c2Q7LpB-ja_198_G/view?usp=drive_link",
+    "rMicadJVzH8": "https://drive.google.com/file/d/1s_EpfJWlU56AZ3xjXyNwJOkR4Eob9jJl/view?usp=drive_link",
+    "lhAvlkYlFc4": "https://drive.google.com/file/d/1CXUsdBpuJM1bnurTB3gkWa2hfEq6pjiM/view?usp=drive_link",
+    "tLvj_eC8tQQ": "https://drive.google.com/file/d/1grx2hmO3KmGj_tbnSwqbwIsfS0PM9O4z/view?usp=sharing",
+    "hXhatbZ5j4k": "https://drive.google.com/file/d/1i9zr1QikG_GdgL3sVocScHcRS7bbXtLZ/view?usp=drive_link",
+    "U2-OzFANCiA": "https://drive.google.com/file/d/1dHGrJjUV49E43zqIZca7-2Tp7wfu2UJx/view?usp=drive_link",
+    "KH4HNQBlP7U": "https://drive.google.com/file/d/14v6UP1S6QApQebJwwGpxL0hfL5aNgzQA/view?usp=drive_link"
+  },
+  "offeringReceipt": {
+    "email": "santana30541@gmail.com",
+    "updatedAt": 0
+  },
   "jukeboxTracks": [
     {
       "id": "x6QZn9xiuOE",
@@ -310,6 +370,5 @@
       "youtubeId": "58RgLQ_0Ars",
       "title": "I Just Called To Say I Love You · Stevie Wonder"
     }
-  ],
-  "djProfileSeed": "2026-09-18-xiehgan-drbeauty-award-names"
+  ]
 }

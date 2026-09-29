@@ -17,7 +17,7 @@
  * deliberately captures neither the key nor the chat: the repository is public,
  * and neither belongs in it.
  */
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const service = (process.argv[2] ?? 'https://myschedule-festival.onrender.com').replace(/\/$/, '');
@@ -30,6 +30,10 @@ if (!response.ok) {
   process.exit(1);
 }
 const live = await response.json();
+// The receipt mailbox is committed by hand, not captured: the public endpoint
+// is not where it belongs (see server.test.mjs), so it is carried over from the
+// seed already in the repository rather than dropped.
+const previous = await readFile(target, 'utf8').then(JSON.parse).catch(() => ({}));
 
 if (!live.schedule || typeof live.schedule !== 'object') {
   console.error('That response carried no programme, so there is nothing to save.');
@@ -64,6 +68,10 @@ const seed = {
   npcTitles: Object.fromEntries((live.npcProfiles ?? []).map((profile) => [profile.id, profile.title])),
   pamphlet: live.pamphlet,
   trackTempos: live.trackTempos,
+  // The headset copies of the films (VR 連結). Left out, every deploy dropped
+  // the links STAFF had pasted, and the films showed only a poster in a Quest.
+  immersiveSources: live.immersiveSources ?? {},
+  ...(previous.offeringReceipt ? { offeringReceipt: previous.offeringReceipt } : {}),
   // The jukebox's shelf, so records STAFF put in it outlive a deploy the way
   // everything else here does. Only the shelf: the waiting list is requests
   // made by people who are in the square at that moment, and bringing it back
@@ -84,4 +92,5 @@ for (const [venue, entry] of Object.entries(seed.schedule)) {
 }
 console.log(`  ${customCount} work(s) STAFF added by hand`);
 console.log(`  ${seed.jukeboxTracks.length} record(s) on the jukebox's shelf`);
+console.log(`  ${Object.keys(seed.immersiveSources).length} VR link(s)`);
 console.log('Commit world/server/festival-seed.json for these to survive the next deploy.');
