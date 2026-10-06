@@ -1,13 +1,13 @@
 import { SCREENING_SITES, SHORE_SIGN, screeningContains } from './CoastalVenues';
-import { DEFAULT_NPC_PROFILES, DOUBLE_TAP_INTRODUCTION,
+import { DEFAULT_NPC_PROFILES, DOUBLE_TAP_INTRODUCTION, FEMALE_RESIDENTS,
   type NpcId, type NpcProfile, type MentorFollowerTarget } from './NpcRoster';
-import { TOP_OUTFITS } from './CoastalOutfits';
+import { TOP_OUTFITS, outfitWire } from './CoastalOutfits';
 import { npcSeed, sampleNpcMotion, type NpcLeg } from './SharedNpcMotion';
 import { createCoastalPopcorn, createCoastalDrink, createCoastalPamphletStand, createCoastalDeity, createCoastalSignFrame } from './CoastalProps';
 import { createCoastalDecks, createCoastalSpeaker, createCoastalJukebox } from './CoastalFurniture';
 import { setCoastalSwimwear } from './CoastalAvatar';
 import * as THREE from 'three';
-import { HeadTracking } from './HeadTracking';
+import { HeadTracking, type TrackedPoint } from './HeadTracking';
 import { GamepadInput, type GamepadActionId, type GamepadFrame } from './GamepadInput';
 import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
 import { dressBuildings, dressInteriors } from './WornArchitecture';
@@ -18,19 +18,24 @@ import masterOfTheHouseLogo from '../assets/master-of-the-house.png';
 import { DayNightCycle, type DayNightState } from './DayNightCycle';
 import { createStylizedWaterMaterial, tintStylizedWater } from './StylizedWater';
 import { createMentorDog, perchMentor, stepMentorGait, type MentorDogRig } from './MentorDog';
+import { RooftopBand, BAND_SCALE } from './RooftopBand';
+import { handJointsFromLandmarks, handJointsFromXR, handPoseFromJoints, limitHandPose, smoothHandPose, type HandJoints, type HandPose } from './HandPose';
+import { cleanLimbs, decodeHandPose, encodeHandPose, mixLimbs, type TrackedLimbs } from './TrackedLimbs';
 import { createGanganStatue, GANGAN_STATUE_SIZE } from './GanganStatue';
 import { createBeachCouple, animateBeachCouple, type BeachCoupleRig } from './BeachCouple';
 import { applyAvatarAccessories } from './AvatarAccessories';
-import { SEA_Y, TEMPLE_GRADE, TEMPLE_STAIRS, TEMPLE_STAIR_VISUAL_OVERLAP, templeStairPitch, templeStairX, templeTreadTop, SHORE_GRADE, CLUB_GRADE, HILL_WALK, terrainHeightAt, isSwimmingDepth, createCoastalTerrain, createGroundRibbon, insidePaving, type PlanPoint } from './CoastalTerrain';
+import { PLANET, keepFlat, setPlanetCentre, bendCss3d, subdivideSceneForPlanet } from './PlanetCurve';
+import { IslandDock, DOCK_ARRIVAL } from './IslandDock';
+import { ISLAND, ISLAND_COVE, islandTerrain, SEA_Y, TEMPLE_GRADE, TEMPLE_STAIRS, TEMPLE_STAIR_VISUAL_OVERLAP, templeStairPitch, templeStairX, templeTreadTop, SHORE_GRADE, CLUB_GRADE, HILL_WALK, terrainHeightAt, isSwimmingDepth, createCoastalTerrain, createGroundRibbon, insidePaving, type PlanPoint } from './CoastalTerrain';
 import { poseCoastalCarry } from './CoastalCarry';
 import { moveCoastalBody, overlapsBodyHeight, coastalDetour, coastalRouteAround } from './CoastalCollision';
 import { pixelSurface, worldSurfaceUV } from './CoastalSurfaces';
 import { ROAD_POLYGONS, streetLampObstructsRoute } from './CoastalCirculation';
 import { CoastalScenery } from './CoastalScenery';
 import { createCoastalAvatar } from './CoastalAvatar';
-import { attachImportedAvatar, syncImportedAvatars } from './ImportedAvatar';
+import { attachImportedAvatar, syncImportedAvatars, AVATAR_NATIVE, MOVE_SECONDS, PUNCH_CONTACT_SECONDS } from './ImportedAvatar';
 import { createCoastalSkateboard } from './CoastalSkateboard';
-import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, setCoastalFists, walkCoastalPose, danceCoastalPose, COASTAL_STRIDE_LENGTH, skateCoastalPose, levelCoastalFeet, supportCoastalPose, seatCoastalLegs, coastalFootHeights } from './CoastalPose';
+import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, setCoastalFists, releaseCoastalGrips, walkCoastalPose, danceCoastalPose, COASTAL_STRIDE_LENGTH, skateCoastalPose, levelCoastalFeet, supportCoastalPose, seatCoastalLegs, coastalFootHeights } from './CoastalPose';
 import { coastalRoof, createCoastalSedan, CONVERTIBLE } from './CoastalGeometry';
 import { XrHud } from './XrHud';
 import { XR_HOLD_MS, xrBindingFor, type XrAction } from './XrControls';
@@ -146,6 +151,8 @@ export interface WorldSnapshot {
   moving: boolean;
   running: boolean;
   gesture?: AvatarGesture;
+  /** The visitor's tracked arms, hands and body, for everyone else to see. */
+  limbs?: TrackedLimbs;
 }
 
 export interface RemoteVisitorVisual {
@@ -163,6 +170,8 @@ export interface RemoteVisitorVisual {
   gesture?: AvatarGesture;
   carriedItem?: CarriedItem;
   npcId?: string;
+  /** Their tracked arms, hands and body, when they are tracking. */
+  limbs?: TrackedLimbs;
   impersonationOrigin?: {
     x: number;
     y?: number;
@@ -316,6 +325,11 @@ interface RemoteAvatar {
   gesture?: AvatarGesture;
   animationPhase: number;
   name: string;
+  /** Tracked limbs, played out between two updates like the position is. */
+  limbs?: TrackedLimbs;
+  previousLimbs?: TrackedLimbs;
+  shownLimbs?: TrackedLimbs;
+  limbsApplied?: boolean;
 }
 
 export interface AvatarRig {
@@ -677,8 +691,10 @@ const TRAVEL_HEADING_MS = 140;
  * arms appeared at all. `attachImportedAvatar` disposes every procedural mesh
  * and skins one imported model to the rig's joints instead, so the arm joints
  * have no meshes under them to keep — hiding everything else hid the whole
- * avatar. The model is not split per limb either: only the head and the cap
- * are components of their own.
+ * avatar. The model is not split per limb either: only the cap is a component
+ * of its own. The Higgsfield bodies carry the head and hair in the one body
+ * mesh, so the head goes by `setImportedHeadHidden`, which stops the body's
+ * shader drawing whatever follows the head bones.
  *
  * So the body stays and the head comes off, which is what a headset wants
  * regardless. Nobody should be looking at the inside of their own skull.
@@ -842,7 +858,8 @@ const GESTURE_SPAN_MS: Partial<Record<AvatarGesture, number>> = {
   wave: 1600,
   tumble: 1050,
   stumble: 700,
-  punch: 560,
+  // The owner's Mixamo jab, at its own speed (2026-10-01).
+  punch: Math.round(MOVE_SECONDS.punch * 1000),
   drink: 1_800,
   eat: 2_000,
   hit: 620,
@@ -854,7 +871,8 @@ const GESTURE_SPAN_MS: Partial<Record<AvatarGesture, number>> = {
   bow: 1_500,
 };
 /** How far into the swing the fist arrives. */
-const PUNCH_CONTACT_MS = 200;
+// When the jab's fist arrives: the hit is felt then, not when the arm leaves.
+const PUNCH_CONTACT_MS = Math.round(PUNCH_CONTACT_SECONDS * 1000);
 // The rooftop venue, east across the street from The Basement. The deck sits
 // over the eastern part of the shell; the western bay is the open garage, so
 // no column has to carry two walkable floors.
@@ -1116,6 +1134,26 @@ const NPC_DANCE_HAUNTS = new Set(['clubFloor', 'rooftopDeck']);
  * crowd circulating, and means every venue has somebody in it.
  */
 const NPC_TOUR = ['gate', 'promenade', 'clubFront', 'clubFloor', 'square', 'temple', 'shore', 'palace', 'driveIn', 'rooftopDeck'];
+// On the island prototype the residents walk down to the harbour too: out
+// through the gate, across the quay, down its steps and along the pier to
+// the head, where the ferry is tied up. Their floor there is the landing's
+// (IslandDock.heightAt), and its edges hold them as they hold visitors.
+if (islandTerrain()) {
+  NPC_HAUNTS.harbour = [[-4.5, ISLAND_COVE.z + 20.2], [4.5, ISLAND_COVE.z + 20.2], [4.5, ISLAND_COVE.z + 24.5], [-4.5, ISLAND_COVE.z + 24.5]];
+  Object.assign(NAV_POINTS, {
+    gateOut: [0, 66], quay: [0, ISLAND_COVE.z - 1], pierRoot: [0, ISLAND_COVE.z + 7], harbour: [0, ISLAND_COVE.z + 22],
+  });
+  const harbourLinks: Array<[string, string]> = [['gate', 'gateOut'], ['gateOut', 'quay'], ['quay', 'pierRoot'], ['pierRoot', 'harbour']];
+  NAV_LINKS.push(...harbourLinks);
+  // The adjacency was built from the links above already: add these both ways.
+  for (const [a, b] of harbourLinks) {
+    (NAV_ADJACENCY[a] ??= []).push(b);
+    (NAV_ADJACENCY[b] ??= []).push(a);
+  }
+  HAUNT_NODE.harbour = 'harbour';
+  NPC_HAUNT_FLOOR.harbour = SEA_Y + 1.43 + AVATAR_GROUND_Y;
+  NPC_TOUR.splice(1, 0, 'harbour');
+}
 /**
  * How long the dog stays where a visitor put it down before it picks its own
  * round back up. Long enough that setting it down somewhere means something,
@@ -1228,7 +1266,9 @@ const projectorApertureMaterial = new THREE.MeshBasicMaterial({
   transparent: true,
   opacity: 0,
   blending: THREE.NoBlending,
-  depthTest: false,
+  // Reveal the CSS video only where no nearer world surface was drawn.
+  // Clearing the entire screen polygon also erases booths in front of it.
+  depthTest: true,
   depthWrite: false,
   side: THREE.DoubleSide,
   toneMapped: false,
@@ -1389,6 +1429,71 @@ const createNameTexture = (name: string) => {
   return texture;
 };
 
+
+/**
+ * The sea round the island prototype: a divided sheet, fine enough to follow
+ * the planet, with every cell left out whose corners all stand on dry land —
+ * so it runs under beaches and the harbour but never shows up through a
+ * basement floor or the club's room below the street. In the plane's own XY,
+ * for a mesh laid flat by rotating -90° about X.
+ */
+/**
+ * One tile of 精簡's sea: the stylised sea's dark rounded cells on light
+ * water, as a seamless Voronoi drawn once on a canvas.
+ */
+function liteSeaTexture(): THREE.CanvasTexture {
+  const size = 128, count = 9;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const context = canvas.getContext('2d')!;
+  const image = context.createImageData(size, size);
+  let seed = 7;
+  const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const points = Array.from({ length: count }, () => [random() * size, random() * size]);
+  const light = [126, 184, 222], dark = [16, 52, 74];
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    let first = Infinity, second = Infinity;
+    for (const [px, py] of points) for (const ox of [-size, 0, size]) for (const oy of [-size, 0, size]) {
+      const d = Math.hypot(x - px - ox, y - py - oy);
+      if (d < first) { second = first; first = d; } else if (d < second) second = d;
+    }
+    // Light where two cells meet, dark inside, with a short soft edge.
+    // Wide light channels and rounded dark islands, as the 一般 sea draws.
+    const t = THREE.MathUtils.smoothstep(second - first, 5, 9);
+    const i = (y * size + x) * 4;
+    for (let c = 0; c < 3; c++) image.data[i + c] = Math.round(light[c] + (dark[c] - light[c]) * t);
+    image.data[i + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+function seaAroundIsland(span: number, cells: number, centreX: number, centreZ: number): THREE.BufferGeometry {
+  const plane = new THREE.PlaneGeometry(span, span, cells, cells).toNonIndexed();
+  const p = plane.getAttribute('position'), uv = plane.getAttribute('uv');
+  const keep: number[] = [], keepUv: number[] = [];
+  for (let i = 0; i < p.count; i += 3) {
+    let dry = 0;
+    for (let k = 0; k < 3; k++) {
+      // Plane Y becomes world -Z once laid flat.
+      if (terrainHeightAt(centreX + p.getX(i + k), centreZ - p.getY(i + k)) > SEA_Y + .4) dry++;
+    }
+    if (dry === 3) continue;
+    for (let k = 0; k < 3; k++) {
+      keep.push(p.getX(i + k), p.getY(i + k), p.getZ(i + k));
+      keepUv.push(uv.getX(i + k), uv.getY(i + k));
+    }
+  }
+  const sea = new THREE.BufferGeometry();
+  sea.setAttribute('position', new THREE.Float32BufferAttribute(keep, 3));
+  sea.setAttribute('uv', new THREE.Float32BufferAttribute(keepUv, 2));
+  sea.computeVertexNormals();
+  return sea;
+}
 
 const createWaterTexture = (light = false) => {
   const canvas = document.createElement('canvas');
@@ -1586,6 +1691,20 @@ export class FestivalWorld {
   private readonly xrPreferred: boolean;
   private readonly xrRig = new THREE.Group();
   private readonly xrControllers: THREE.Group[] = [];
+  /** Tracked bare hands, one per input source, beside the controllers. */
+  private readonly xrHands: THREE.XRHandSpace[] = [];
+  /** Each hand's finger pose as last read, eased toward every new reading. */
+  private xrHandPoses: Record<'left' | 'right', HandPose | null> = { left: null, right: null };
+  private xrHandSampleAt = { left: 0, right: 0 };
+  /** The desktop preview's body tracking: shown, what it hid, and the eased landmarks. */
+  private trackedBodyShown = false;
+  private trackedHiddenParts: THREE.Object3D[] = [];
+  private trackedLandmarks: THREE.Vector3[] = [];
+  /** What tracking drove this frame, for everyone else to see: arms, chest, legs. */
+  private trackedArms = { left: false, right: false };
+  private trackedTorso?: [number, number];
+  private trackedTorsoRoll = 0;
+  private trackedLegs?: number[];
   private xrSession?: XRSession;
   /** Present only when this headset/browser granted WebXR's DOM overlay feature. */
   private xrDomOverlay?: XRDOMOverlayType;
@@ -1712,6 +1831,12 @@ export class FestivalWorld {
   private fireworksUntil = 0;
   private nextFireworkAt = 0;
   private stylizedWater?: THREE.Mesh;
+  /** The island prototype's landing (?island); absent otherwise. */
+  private islandDock?: IslandDock;
+  /** The plain sea sheet round the island; only drawn when the cel-shaded sea is off. */
+  private islandOcean?: THREE.Mesh;
+  /** Loopback aerial view for reviewing the island: [from, to]. */
+  private aerialReview?: [THREE.Vector3, THREE.Vector3];
   private waterVolume?: THREE.Mesh;
   private waveSurface?: THREE.Mesh;
   private stylizedWaterMaterial?: THREE.ShaderMaterial;
@@ -1732,6 +1857,8 @@ export class FestivalWorld {
   private entranceSignText = { title: 'MYSCHEDULE', subtitle: 'VIRTUAL FESTIVAL' };
   private templeAltar?: { x: number; z: number };
   private jukebox?: { x: number; z: number };
+  /** The band on the roof over the pop-up shop; plays while the jukebox has a record on. */
+  private rooftopBand?: RooftopBand;
   /** The beach easter egg. Scenery with one loop; not a resident. */
   private beachCouple?: BeachCoupleRig;
   private lastDonationAt = 0;
@@ -1877,6 +2004,12 @@ export class FestivalWorld {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.92;
+    // three.js reads every new shader's log to report errors, which makes the
+    // browser finish compiling it there and then: under a phone's CPU, a
+    // second-long freeze whenever something new came into view (2026-10-01).
+    // Only the developer's own machine checks.
+    const checkShaders = ['127.0.0.1', 'localhost'].includes(window.location.hostname);
+    this.renderer.debug.checkShaderErrors = checkShaders;
     this.renderer.shadowMap.enabled = graphicsMode === 'normal';
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.setPixelRatio(this.mainPixelRatio());
@@ -1891,6 +2024,7 @@ export class FestivalWorld {
         antialias: false,
         powerPreference: 'high-performance',
       });
+      this.foregroundRenderer.debug.checkShaderErrors = checkShaders;
       this.foregroundRenderer.outputColorSpace = THREE.SRGBColorSpace;
       this.foregroundRenderer.toneMapping = THREE.ACESFilmicToneMapping;
       this.foregroundRenderer.toneMappingExposure = 0.92;
@@ -1940,6 +2074,13 @@ export class FestivalWorld {
     this.xrRig.add(this.camera);
     this.createXrControllers();
     this.createEnvironment();
+    this.keepSkyFlat();
+    // The world keeps adding rooms and fittings after this, so the pass runs
+    // again once they are in.
+    if (PLANET.on) {
+      subdivideSceneForPlanet(this.scene);
+      for (const delay of [1_500, 6_000]) window.setTimeout(() => subdivideSceneForPlanet(this.scene), delay);
+    }
     this.createPlayer(palette);
     this.createNpcCrowd();
     this.createAtmosphere();
@@ -1965,6 +2106,12 @@ export class FestivalWorld {
     this.dayNight.moonObject.traverse((object) => object.layers.disable(1));
     this.player.position.set(0, AVATAR_GROUND_Y, 22);
     this.camera.position.set(0, 5.2, 29);
+    // On the island every visitor arrives by ferry: on the pier head, facing
+    // the gate, with the harbour behind them.
+    if (this.islandDock) {
+      this.player.position.set(DOCK_ARRIVAL.x, this.groundHeightAt(DOCK_ARRIVAL.x, DOCK_ARRIVAL.z), DOCK_ARRIVAL.z);
+      this.camera.position.set(DOCK_ARRIVAL.x, this.player.position.y + 5.2, DOCK_ARRIVAL.z + 7);
+    }
 
     window.addEventListener('resize', this.resize);
     // The mask that hides the screens behind whatever stands in front of them is
@@ -2096,7 +2243,35 @@ export class FestivalWorld {
       controller.addEventListener('selectstart', this.xrSelect);
       this.xrRig.add(controller);
       this.xrControllers.push(controller);
+      // The same input source's hand, when it is a hand: three.js poses its
+      // 25 joints here every frame. A pinch still selects through the ray.
+      const hand = this.renderer.xr.getHand(index);
+      this.xrRig.add(hand);
+      this.xrHands.push(hand);
     }
+  }
+
+  /** A tracked hand's joints in the world, or undefined when it is not tracked. */
+  private readXrHand(space: THREE.XRHandSpace | undefined): HandJoints | undefined {
+    if (!space) return undefined;
+    space.updateWorldMatrix(true, true);
+    return handJointsFromXR(name => {
+      const joint = space.joints[name as XRHandJoint];
+      return joint?.visible ? joint.getWorldPosition(new THREE.Vector3()) : undefined;
+    });
+  }
+
+  /** Hold the avatar's hand in the visitor's tracked pose, or let it go. */
+  private poseXrFingers(hand: 'left' | 'right', joints: HandJoints | undefined, sampleAt = performance.now(), knownHandedness = false): void {
+    const setPose = this.player.userData.setImportedHandPose as ((right: boolean, pose: HandPose | null) => void) | undefined;
+    // Mirrored like the arms: the visitor's left hand is the model's Left.
+    if (!joints) { this.xrHandPoses[hand] = null; this.xrHandSampleAt[hand] = 0; setPose?.(hand === 'left', null); return; }
+    if (sampleAt > this.xrHandSampleAt[hand]) {
+      const dt = this.xrHandSampleAt[hand] ? Math.min(.1, (sampleAt - this.xrHandSampleAt[hand]) / 1000) : .1;
+      this.xrHandPoses[hand] = smoothHandPose(this.xrHandPoses[hand], limitHandPose(handPoseFromJoints(joints, hand === 'right', knownHandedness)), Math.exp(-dt * 24));
+      this.xrHandSampleAt[hand] = sampleAt;
+    }
+    setPose?.(hand === 'left', this.xrHandPoses[hand]);
   }
 
   private isPhoneOrientationReview(): boolean {
@@ -2342,7 +2517,8 @@ export class FestivalWorld {
       if (!xr || !supported) return false;
       const session = await xr.requestSession('immersive-vr', {
         requiredFeatures: ['local-floor'],
-        optionalFeatures: ['bounded-floor', 'dom-overlay'],
+        // Bare hands on a Quest: every finger of the avatar follows the visitor's.
+        optionalFeatures: ['bounded-floor', 'dom-overlay', 'hand-tracking'],
         ...(overlayRoot ? { domOverlay: { root: overlayRoot } } : {}),
       });
       this.xrSession = session;
@@ -2492,7 +2668,7 @@ export class FestivalWorld {
    * onward — calibration, deadzone, easing, the amplified turn and the skewed
    * frustum — is the live path, driven by the tracker's own matrix format.
    */
-  headTrackForReview(poses: Array<{ yaw?: number; pitch?: number; x?: number; y?: number; z?: number }>): void {
+  headTrackForReview(poses: Array<{ yaw?: number; pitch?: number; roll?: number; x?: number; y?: number; z?: number }>): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
     if (!this.headTrackingActive) {
       this.headTracking.startForReview();
@@ -2505,7 +2681,7 @@ export class FestivalWorld {
       // four come out of `applyMatrix` mirrored, deliberately, so a positive
       // sensor pitch here is the visitor's chin going *down*.
       const matrix = new THREE.Matrix4()
-        .makeRotationFromEuler(new THREE.Euler(pose.pitch ?? 0, pose.yaw ?? 0, 0, 'YXZ'))
+        .makeRotationFromEuler(new THREE.Euler(pose.pitch ?? 0, pose.yaw ?? 0, pose.roll ?? 0, 'YXZ'))
         .setPosition(-(pose.x ?? 0) * 100, (pose.y ?? 0) * 100, -((pose.z ?? 0) * 100) - 45);
       this.headTracking.applyMatrix(matrix.toArray());
     }
@@ -2515,6 +2691,28 @@ export class FestivalWorld {
     // turns a nine-pose sweep into a minute of nothing.
     this.headTracking.update(performance.now(), 4);
     if (this.xrActive && this.xrSimulated) this.applyHeadView();
+  }
+
+  /** Local deterministic fixture uses the same desktop webcam retargeting path. */
+  async bodyTrackForReview(pose: TrackedPoint[], hands: { left?: TrackedPoint[]; right?: TrackedPoint[] },
+    sex: 'male' | 'female' = 'male'): Promise<Record<string, unknown>> {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return {};
+    this.setAvatarPalette({ ...this.palette, top: outfitWire('1', sex) });
+    if (!this.xrSimulated) await this.enterVr(true);
+    this.headTrackForReview([{ yaw: 0, pitch: 0 }]);
+    const now = performance.now();
+    this.headTracking.feedBodyForReview(pose, hands, now);
+    this.updateXrArms(); this.updateTrackedBody(1 / 30);
+    syncImportedAvatars(this.scene);
+    const parts: Record<string, unknown> = {};
+    for (const hand of ['left', 'right'] as const) {
+      const right = hand === 'left';
+      const arm = this.player.userData.importedArm?.(right);
+      const wrist = this.player.userData.importedWrist?.(right);
+      const frame = this.player.userData.importedHandFrame?.(right);
+      parts[hand] = { arm, wrist, frame, pose: this.xrHandPoses[hand] };
+    }
+    return { sex, network: this.limbsForNetwork(), parts, bodyShown: this.trackedBodyShown };
   }
 
   /**
@@ -2598,6 +2796,12 @@ export class FestivalWorld {
    * shifted with it — not a change to make without that probe open.
    */
   private applyHeadCoupledView(): void {
+    // Full-body preview has an anatomical eye, not an independently translated
+    // window. A 10cm lean used to move the view 1.2 units off the shoulders.
+    if (this.trackedBodyShown && this.desktopBodyTracked()) {
+      this.attachDesktopEye();
+      return;
+    }
     const pose = this.headTracking.pose;
     this.camera.position.set(
       pose.x * HEAD_PARALLAX_UNITS_PER_METRE,
@@ -3781,6 +3985,10 @@ export class FestivalWorld {
       drive: [0, -38, 17, .2, .05], club: [-45, 23.5, 32, Math.PI / 2, .08],
       temple: [88, 4, 48, -Math.PI / 2, -.17], hill: [100, 0, 56, -2.3, -.08],
       roof: [40, 28, 8, .6, .14],
+      // The rooftop screen from the street, the way the owner saw it float.
+      roofScreenStreet: [18, 9, 16, -2.35, -.34],
+      // The stair side-on from the road, where the rail's bends read clearly.
+      roofStairSide: [19.6, 28.3, 17, -Math.PI / 2, -.12], roofStairSideB: [19.6, 28.3, 17, Math.PI / 2, -.12],
     };
     this.lookAtSpotForReview(...(views[view] ?? views.square));
     if (view === 'roofLandingCorner') this.player.position.y = ROOF_AVATAR_Y;
@@ -4071,6 +4279,24 @@ export class FestivalWorld {
 
   /** Deterministic loopback fixture that drops the attendee into the club. */
   /** Loopback fixture that drops the attendee on the rooftop deck. */
+  /**
+   * Loopback fixture: the player on the roof over the shop, looking at the
+   * band's stage from its front edge (or from the street, ?review=band-street),
+   * with a record on (band-play) or not.
+   */
+  focusRooftopBandForReview(playing: boolean, fromStreet = false): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    const x = ROOFTOP_CENTER_X + 3, z = fromStreet ? rooftopBounds.minZ - 12 : rooftopBounds.minZ + 1.2;
+    this.player.position.set(x, fromStreet ? this.groundHeightAt(x, z, 0) : ROOF_AVATAR_Y, z);
+    this.airborne = false;
+    this.verticalVelocity = 0;
+    this.player.rotation.y = 0;
+    this.cameraMode = 'follow';
+    this.cameraOrbit.follow.yaw = Math.PI;
+    this.cameraOrbit.follow.pitch = fromStreet ? .05 : .2;
+    this.rooftopBand?.setPlaying(playing);
+  }
+
   focusRooftopForReview(atDj = false): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
     const x = atDj ? ROOFTOP_CENTER_X : ROOFTOP_CENTER_X - 6;
@@ -4762,8 +4988,19 @@ export class FestivalWorld {
     npcs: number;
     pendingSignRepaints: number;
     mobileGpuConservation: boolean;
+    shadowLights: number;
+    lampPool: number;
+    darkLampsLit: number;
   } | undefined {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return undefined;
+    let shadowLights = 0;
+    let darkLampsLit = 0;
+    this.scene.traverseVisible((object) => {
+      const light = object as THREE.Light & { isPointLight?: boolean; isSpotLight?: boolean };
+      if (!light.isLight) return;
+      if (light.castShadow) shadowLights += 1;
+      if ((light.isPointLight || light.isSpotLight) && light.intensity < 1e-3) darkLampsLit += 1;
+    });
     let sceneObjects = 0;
     let lights = 0;
     let lampsLit = 0;
@@ -4807,6 +5044,9 @@ export class FestivalWorld {
       npcs: this.npcs.length,
       pendingSignRepaints: signRepaints.size,
       mobileGpuConservation: this.conservesMobileGpu,
+      shadowLights,
+      lampPool: this.lampPool.length,
+      darkLampsLit,
     };
   }
 
@@ -5127,10 +5367,12 @@ export class FestivalWorld {
         id: 'projector-review-visitor',
         name: 'VISITOR-QA',
         originalName: 'VISITOR-QA',
+        // Female, outfit 3. Her body arrives after entering, so she is
+        // mounted late — the case that once left a body under the film.
         palette: {
           skin: '#9d5f43',
           hair: '#171315',
-          top: '#1f8f91',
+          top: '#2a1b1d',
           bottoms: '#20242c',
           swimwear: '#d5b23f',
         },
@@ -5510,6 +5752,10 @@ export class FestivalWorld {
       }
       avatar.target.set(displayVisitor.x, reportedY, displayVisitor.z);
       avatar.targetRotation = displayVisitor.rotation;
+      // Tracked limbs arrive with the position and are played out the same
+      // way: from what is on screen now to the new reading.
+      if (sinceLast > 20) avatar.previousLimbs = avatar.shownLimbs;
+      avatar.limbs = cleanLimbs(displayVisitor.limbs);
       avatar.state = displayVisitor.state;
       setCoastalSwimwear(avatar.group,displayVisitor.state==='swimming');
       avatar.group.userData.setImportedPalette?.(displayVisitor.palette);
@@ -5703,6 +5949,24 @@ export class FestivalWorld {
     return this.xrActive && !this.xrSimulated;
   }
 
+  private desktopBodyTracked(): boolean {
+    return this.xrActive && this.xrSimulated && this.headTrackingEnabled()
+      && this.headTracking.bodyTrackingWanted() && Boolean(this.headTracking.body.pose)
+      && performance.now() - this.headTracking.body.at < 700;
+  }
+
+  private attachDesktopEye(): void {
+    const rig = this.playerRig;
+    if (!rig) return;
+    // Carry the existing standing eye height with the spine/head through lean,
+    // nod and roll. This changes the viewpoint, never the avatar's skin.
+    const eye = new THREE.Vector3(0,
+      AVATAR_EYE_OFFSET - rig.torso.position.y - rig.head.position.y, 0);
+    rig.head.localToWorld(eye);
+    this.xrRig.worldToLocal(eye);
+    this.camera.position.copy(eye);
+  }
+
   /** Does a private film currently own this venue's screen? */
   private privateOwns(venue: VenueKey): boolean {
     return this.privateVenue === venue;
@@ -5843,7 +6107,8 @@ export class FestivalWorld {
    */
   private orientXrBody(delta: number, now: number): void {
     const rig = this.playerRig;
-    if (!this.paintsInHeadset() || !rig) {
+    const desktop = this.desktopBodyTracked();
+    if ((!this.paintsInHeadset() && !desktop) || !rig) {
       this.xrBodyOriented = false;
       this.xrSpineTwist = 0;
       return;
@@ -5861,7 +6126,9 @@ export class FestivalWorld {
      * on that — so an avatar's heading is half a turn from it. Looking straight
      * up or down is guarded where that value is set, not here.
      */
-    this.xrHeadWorldHeading = this.wrapAngle(this.xrYaw + this.xrHeadHeading + Math.PI);
+    // Webcam arms are measured against the chest facing the screen. Amplified
+    // head glances must not turn that chest or re-label left and right.
+    this.xrHeadWorldHeading = this.wrapAngle(this.xrYaw + (desktop ? 0 : this.xrHeadHeading) + Math.PI);
     // On the first frame of a session there is nothing to ease from, and
     // easing from zero would swing the avatar round in front of its owner.
     if (!this.xrBodyOriented) {
@@ -5897,7 +6164,7 @@ export class FestivalWorld {
       head: this.xrHeadWorldHeading,
       // Pinned hips take no steps, and the heading of whichever step was taken
       // on the way in must not lean hips that are in a chair.
-      travel: pinned || now - this.travelHeadingAt >= TRAVEL_HEADING_MS
+      travel: desktop || pinned || now - this.travelHeadingAt >= TRAVEL_HEADING_MS
         ? undefined
         : this.travelHeading,
       seat: pinned ? this.player.rotation.y : undefined,
@@ -5935,12 +6202,20 @@ export class FestivalWorld {
    * headset pose is a good way to put an arm somewhere absurd.
    */
   private updateXrArms(): void {
+    // Cleared every frame; whatever tracking drives below says so again.
+    this.trackedArms = { left: false, right: false };
+    this.trackedTorso = undefined;
+    this.trackedTorsoRoll = 0;
+    this.trackedLegs = undefined;
     const rig = this.playerRig;
     if (!rig) return;
     if (!this.paintsInHeadset()) {
       if (this.xrArmsShown) {
         for (const part of this.xrHiddenParts) part.visible = true;
         this.xrHiddenParts = [];
+        this.player.userData.setImportedHeadHidden?.(false);
+        this.poseXrFingers('left', undefined);
+        this.poseXrFingers('right', undefined);
         this.xrArmsShown = false;
         this.xrBodyOriented = false;
         this.leftSwing = restingSwing();
@@ -5958,6 +6233,7 @@ export class FestivalWorld {
         if (!componentId || !hiddenInHeadset(componentId) || !part.visible) return;
         this.xrHiddenParts.push(part);
       });
+      this.player.userData.setImportedHeadHidden?.(true);
       this.xrArmsShown = true;
     }
     // Re-applied every frame, because `updatePlayer` sets this from the session
@@ -5977,7 +6253,7 @@ export class FestivalWorld {
     // frame's parent.
     rig.torso.rotation.y += this.xrSpineTwist;
 
-    for (const controller of this.xrControllers) {
+    for (const [index, controller] of this.xrControllers.entries()) {
       const source = controller.userData.inputSource as XRInputSource | undefined;
       const hand = source?.handedness;
       if (hand !== 'left' && hand !== 'right') continue;
@@ -5995,6 +6271,11 @@ export class FestivalWorld {
 
       controller.updateWorldMatrix(true, false);
       this.armWorld.setFromMatrixPosition(controller.matrixWorld);
+      // Bare hands: the arm reaches for the tracked wrist, not the pointer
+      // ray (which starts out by the knuckles), and the fingers are posed.
+      const tracked = source?.hand ? this.readXrHand(this.xrHands[index]) : undefined;
+      if (tracked) this.armWorld.copy(tracked.wrist);
+      this.poseXrFingers(hand, tracked);
 
       /**
        * A throw is how fast the hand left the body, not how fast it crossed
@@ -6037,59 +6318,25 @@ export class FestivalWorld {
       // own animation over the stance, exactly as it does at a desk.
       if (this.skating) continue;
 
-      // The target, in the shoulder's own frame: its parent's space, moved so
-      // the shoulder joint is the origin.
-      parent.updateWorldMatrix(true, false);
-      this.armLocal.copy(this.armWorld);
-      parent.worldToLocal(this.armLocal);
-      this.armLocal.sub(shoulder.position);
-
-      // Read off the rig rather than assumed, so a rescaled avatar still works.
-      const upperLength = elbow.position.length();
-      const lowerLength = wrist.position.length();
-      if (upperLength < 1e-4 || lowerLength < 1e-4) continue;
-
-      // Away from the spine, read off the joint itself rather than from the
-      // hand. With the names mirrored, anything that decides "outward" from
-      // the handedness is one rename away from pointing into the chest.
-      const out = Math.sign(shoulder.position.x || 1) * ELBOW_POLE_OUT;
-      const pole: Vec3 = [out, ELBOW_POLE_DOWN, ELBOW_POLE_Z];
-      const target = this.armTarget.copy(this.armLocal);
-      // `importedWrist` mirrors like everything else here: its `right` flag
-      // selects the model side, and the model's left arm is the one this
-      // visitor's left hand drives.
-      const measureWrist = this.player.userData.importedWrist as
-        ((right: boolean) => THREE.Vector3) | undefined;
+      this.reachArm(hand, this.armWorld);
+      this.trackedArms[hand] = true;
+      if (this.xrSpineTwist) this.trackedTorso = [0, this.xrSpineTwist];
       const visualRoot = rig.visualRoot;
-
-      for (let pass = 0; pass < ARM_PASSES; pass += 1) {
-        const solved = solveArm([target.x, target.y, target.z], upperLength, lowerLength, pole);
-        const rotation = armOrientation(solved, ELBOW_HINGE);
-        this.armAxisX.set(rotation.x[0], rotation.x[1], rotation.x[2]);
-        this.armAxisY.set(rotation.y[0], rotation.y[1], rotation.y[2]);
-        this.armAxisZ.set(rotation.z[0], rotation.z[1], rotation.z[2]);
-        this.armBasis.makeBasis(this.armAxisX, this.armAxisY, this.armAxisZ);
-        shoulder.quaternion.setFromRotationMatrix(this.armBasis);
-        elbow.rotation.set(rotation.elbowX, 0, 0);
-        if (!measureWrist || !visualRoot || pass === ARM_PASSES - 1) continue;
-        // Where the arm somebody can see actually finished, against where the
-        // controller is. Both taken into the shoulder's frame so the shortfall
-        // can be added straight to the target.
-        const landed = measureWrist(hand === 'left');
-        visualRoot.localToWorld(landed);
-        parent.updateWorldMatrix(true, false);
-        this.armMeasured.copy(landed);
-        parent.worldToLocal(this.armMeasured);
-        this.armWanted.copy(this.armWorld);
-        parent.worldToLocal(this.armWanted);
-        target.addScaledVector(this.armWanted.sub(this.armMeasured), ARM_GAIN);
-      }
 
       // The wrist. Nothing above this touches it, so until a calibration has
       // been made the hand keeps whatever roll the forearm gave it — which is
       // exactly the wandering thumb this is here to end.
       const handFrame = this.player.userData.importedHandFrame as
         ((right: boolean) => { thumb: THREE.Vector3; fingers: THREE.Vector3 }) | undefined;
+      // A tracked hand says outright where its fingers and thumb point, so the
+      // wrist follows it every frame and no calibration is needed.
+      if (tracked) {
+        const f = tracked.fingers;
+        const along = f.Middle[0].clone().sub(tracked.wrist).normalize();
+        const thumbSide = f.Index[0].clone().sub(f.Pinky[0]);
+        this.turnWrist(hand, along, thumbSide.addScaledVector(along, -thumbSide.dot(along)).normalize());
+        continue;
+      }
       controller.getWorldQuaternion(this.armQuat);
       if (this.armCalibratePending && handFrame && visualRoot) {
         const frame = handFrame(hand === 'left');
@@ -6125,6 +6372,372 @@ export class FestivalWorld {
       this.armCalibratePending = false;
       this.onAction({ type: 'vrArmsCalibrated' });
     }
+  }
+
+  /**
+   * Solve one arm so its wrist lands on a point in the world: the headset's
+   * controllers and tracked wrists, and the webcam's. `hand` is the visitor's
+   * own; the rig's names are mirrored against the model, so the left hand
+   * drives \`rig.rightArm\`.
+   */
+  private trackedArmFrames = new WeakMap<THREE.Object3D, THREE.Quaternion>();
+  private trackedArmDirections: Partial<Record<'left' | 'right', { upper: THREE.Vector3; lower: THREE.Vector3; at: number }>> = {};
+
+  private reachArm(hand: 'left' | 'right', worldTarget: THREE.Vector3, rig = this.playerRig, avatar: THREE.Object3D = this.player, worldElbow?: THREE.Vector3, continuous = false): void {
+    if (!rig) return;
+    const mirrored = hand === 'left' ? 'right' : 'left';
+    const shoulder = mirrored === 'left' ? rig.leftArm : rig.rightArm;
+    const elbow = mirrored === 'left' ? rig.leftElbow : rig.rightElbow;
+    const wrist = mirrored === 'left' ? rig.leftWrist : rig.rightWrist;
+    const parent = shoulder.parent;
+    if (!elbow || !wrist || !parent) return;
+    if (worldTarget !== this.armWorld) this.armWorld.copy(worldTarget);
+    // The target, in the shoulder's own frame: its parent's space, moved so
+    // the shoulder joint is the origin.
+    parent.updateWorldMatrix(true, false);
+    this.armLocal.copy(this.armWorld);
+    parent.worldToLocal(this.armLocal);
+    this.armLocal.sub(shoulder.position);
+
+    // Read off the rig rather than assumed, so a rescaled avatar still works.
+    const upperLength = elbow.position.length();
+    const lowerLength = wrist.position.length();
+    if (upperLength < 1e-4 || lowerLength < 1e-4) return;
+
+    // Away from the spine, read off the joint itself rather than from the
+    // hand. With the names mirrored, anything that decides "outward" from
+    // the handedness is one rename away from pointing into the chest.
+    const out = Math.sign(shoulder.position.x || 1) * ELBOW_POLE_OUT;
+    let pole: Vec3 = [out, ELBOW_POLE_DOWN, ELBOW_POLE_Z];
+    if (worldElbow) {
+      const elbowLocal = parent.worldToLocal(worldElbow.clone()).sub(shoulder.position);
+      // A measured elbow chooses the bend plane; IK still keeps bone lengths.
+      const aim = this.armLocal.clone().normalize();
+      elbowLocal.addScaledVector(aim, -elbowLocal.dot(aim));
+      if (elbowLocal.lengthSq() > 1e-6) pole = [elbowLocal.x, elbowLocal.y, elbowLocal.z];
+    }
+    const target = this.armTarget.copy(this.armLocal);
+    // `importedWrist` mirrors like everything else here: its `right` flag
+    // selects the model side, and the model's left arm is the one this
+    // visitor's left hand drives.
+    const measureWrist = avatar.userData.importedWrist as
+      ((right: boolean) => THREE.Vector3) | undefined;
+    const visualRoot = rig.visualRoot;
+    // Both IK hinge signs reach the same hand. Webcam elbows can cross the
+    // straight-arm singularity; retain the closest shoulder frame so that
+    // this ambiguity cannot roll a sleeve/deltoid through half a turn.
+    const frames = this.trackedArmFrames ??= new WeakMap();
+    const reference = continuous ? (frames.get(shoulder) ?? shoulder.quaternion).clone() : undefined;
+    const referenceAxis = reference ? new THREE.Vector3(1, 0, 0).applyQuaternion(reference) : undefined;
+
+    for (let pass = 0; pass < ARM_PASSES; pass += 1) {
+      const solved = solveArm([target.x, target.y, target.z], upperLength, lowerLength, pole);
+      let rotation = armOrientation(solved, ELBOW_HINGE, referenceAxis?.toArray() as Vec3 | undefined);
+      this.armAxisX.set(rotation.x[0], rotation.x[1], rotation.x[2]);
+      this.armAxisY.set(rotation.y[0], rotation.y[1], rotation.y[2]);
+      this.armAxisZ.set(rotation.z[0], rotation.z[1], rotation.z[2]);
+      this.armBasis.makeBasis(this.armAxisX, this.armAxisY, this.armAxisZ);
+      shoulder.quaternion.setFromRotationMatrix(this.armBasis);
+      if (reference) {
+        const alternative = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(
+          this.armAxisX.clone().negate(), this.armAxisY, this.armAxisZ.clone().negate()));
+        if (alternative.angleTo(reference) < shoulder.quaternion.angleTo(reference)) {
+          shoulder.quaternion.copy(alternative);
+          rotation = { ...rotation, elbowX: -rotation.elbowX };
+        }
+      }
+      elbow.rotation.set(rotation.elbowX, 0, 0);
+      if (!measureWrist || !visualRoot || pass === ARM_PASSES - 1) continue;
+      // Where the arm somebody can see actually finished, against where the
+      // controller is. Both taken into the shoulder's frame so the shortfall
+      // can be added straight to the target.
+      const landed = measureWrist(hand === 'left');
+      visualRoot.localToWorld(landed);
+      parent.updateWorldMatrix(true, false);
+      this.armMeasured.copy(landed);
+      parent.worldToLocal(this.armMeasured);
+      this.armWanted.copy(this.armWorld);
+      parent.worldToLocal(this.armWanted);
+      target.addScaledVector(this.armWanted.sub(this.armMeasured), ARM_GAIN);
+    }
+    if (continuous) frames.set(shoulder, shoulder.quaternion.clone());
+  }
+
+  /**
+   * Turn a wrist so the avatar's hand points along \`along\` with its thumb's
+   * side toward \`thumbSide\` (world directions), measured off the model.
+   */
+  private turnWrist(hand: 'left' | 'right', along: THREE.Vector3, thumbSide: THREE.Vector3, rig = this.playerRig, avatar: THREE.Object3D = this.player, distribute = false): void {
+    const visualRoot = rig?.visualRoot;
+    const wrist = hand === 'left' ? rig?.rightWrist : rig?.leftWrist;
+    const handFrame = avatar.userData.importedHandFrame as
+      ((right: boolean) => { thumb: THREE.Vector3; fingers: THREE.Vector3 }) | undefined;
+    if (!visualRoot || !wrist?.parent || !handFrame) return;
+    let frame = handFrame(hand === 'left');
+    visualRoot.updateWorldMatrix(true, false);
+    const turn = new THREE.Matrix4().extractRotation(visualRoot.matrixWorld);
+    let measured = new THREE.Quaternion().setFromRotationMatrix(
+      this.armFrame(frame.fingers.clone().applyMatrix4(turn), frame.thumb.clone().applyMatrix4(turn)));
+    const wanted = new THREE.Quaternion().setFromRotationMatrix(this.armFrame(along, thumbSide));
+    const elbow = hand === 'left' ? rig?.rightElbow : rig?.leftElbow;
+    if (distribute && elbow?.parent && 'forearm' in frame) {
+      // Pronation belongs to the forearm. Split the shortest palm rotation
+      // about its measured longitudinal axis, preserving the wrist endpoint.
+      const axis = (frame as { forearm: THREE.Vector3 }).forearm.clone().applyMatrix4(turn).normalize();
+      const delta = wanted.clone().multiply(measured.clone().invert());
+      const projection = axis.clone().multiplyScalar(new THREE.Vector3(delta.x, delta.y, delta.z).dot(axis));
+      const twist = new THREE.Quaternion(projection.x, projection.y, projection.z, delta.w);
+      if (twist.lengthSq() > 1e-8) {
+        twist.normalize();
+        if (twist.w < 0) twist.set(-twist.x, -twist.y, -twist.z, -twist.w);
+        const shared = new THREE.Quaternion().slerp(twist, .65);
+        const world = elbow.getWorldQuaternion(new THREE.Quaternion());
+        elbow.quaternion.copy(elbow.parent.getWorldQuaternion(new THREE.Quaternion()).invert()).multiply(shared).multiply(world);
+        frame = handFrame(hand === 'left');
+        measured = new THREE.Quaternion().setFromRotationMatrix(
+          this.armFrame(frame.fingers.clone().applyMatrix4(turn), frame.thumb.clone().applyMatrix4(turn)));
+      }
+    }
+    const now = wrist.getWorldQuaternion(new THREE.Quaternion());
+    wanted.multiply(measured.invert()).multiply(now);
+    wrist.quaternion.copy(wrist.parent.getWorldQuaternion(new THREE.Quaternion()).invert()).multiply(wanted);
+  }
+
+  /**
+   * The desktop preview's full-body tracking: the webcam's reading of the
+   * visitor put on their own avatar, as a headset's controllers and hands are.
+   * Seen from inside, headless, looking down, like the headset. The arms reach
+   * where the visitor's do (scaled to the avatar's reach), the wrists turn and
+   * the fingers bend with theirs, the chest leans and twists with theirs, and
+   * when the legs are in view and nobody is walking, the legs follow too.
+   * Walking stays on the keys: stepping in place in front of a desk is not a
+   * way to cross a festival.
+   */
+  private updateTrackedBody(delta: number): void {
+    const rig = this.playerRig;
+    const body = this.headTracking.body;
+    const now = performance.now();
+    const bodyFresh = Boolean(body.pose) && now - body.at < 700;
+    const handFresh = (['left', 'right'] as const).some(hand => body.hands[hand] && now - body.hands[hand === 'left' ? 'leftAt' : 'rightAt'] < 400);
+    const on = Boolean(rig) && this.xrActive && this.xrSimulated && this.headTrackingEnabled()
+      && this.headTracking.bodyTrackingWanted() && (bodyFresh || handFresh);
+    if (!on || !rig) {
+      if (this.trackedBodyShown) {
+        this.trackedArmFrames = new WeakMap();
+        this.trackedArmDirections = {};
+        for (const part of this.trackedHiddenParts) part.visible = true;
+        this.trackedHiddenParts = [];
+        this.player.userData.setImportedHeadHidden?.(false);
+        this.poseXrFingers('left', undefined);
+        this.poseXrFingers('right', undefined);
+        this.trackedLandmarks = [];
+        this.trackedBodyShown = false;
+      }
+      return;
+    }
+    if (!this.trackedBodyShown) {
+      this.player.traverse(part => {
+        const id = part.userData?.componentId as string | undefined;
+        if (id && hiddenInHeadset(id) && part.visible) this.trackedHiddenParts.push(part);
+      });
+      this.player.userData.setImportedHeadHidden?.(true);
+      this.trackedBodyShown = true;
+    }
+    // Hidden again every frame: the camera hides the whole body in VR, and
+    // the pose code turns parts on and off as it goes.
+    this.player.visible = true;
+    for (const part of this.trackedHiddenParts) part.visible = false;
+
+    // The camera's axes onto the avatar's: the visitor faces the lens, so
+    // toward the lens is forward, the picture's right is the visitor's left,
+    // and the picture's down is down.
+    const forward = new THREE.Vector3(0, 0, 1);
+    if (Number.isFinite(this.xrYaw)) forward.applyAxisAngle(THREE_UP, this.xrYaw + Math.PI);
+    else forward.applyQuaternion(this.player.getWorldQuaternion(new THREE.Quaternion()));
+    forward.setY(0).normalize();
+    const up = new THREE.Vector3(0, 1, 0), right = new THREE.Vector3().crossVectors(forward, up);
+    const place = (p: { x: number; y: number; z: number }) =>
+      new THREE.Vector3().addScaledVector(right, -p.x).addScaledVector(up, -p.y).addScaledVector(forward, -p.z);
+    const ease = 1 - Math.exp(-delta * 28);
+    if (bodyFresh) body.pose!.forEach((p, i) => {
+      const at = place(p);
+      if (!this.trackedLandmarks[i]) this.trackedLandmarks[i] = at;
+      else this.trackedLandmarks[i].lerp(at, ease);
+    });
+    const L = this.trackedLandmarks, seen = (...k: number[]) => bodyFresh && k.every(i => Boolean(L[i]) && (body.pose![i].visibility ?? 1) > .5);
+
+    // The chest: leaning and twisting over the hips.
+    if (seen(11, 12, 23, 24)) {
+      const chest = L[11].clone().add(L[12]).multiplyScalar(.5), hips = L[23].clone().add(L[24]).multiplyScalar(.5);
+      const spine = chest.sub(hips).normalize();
+      const lean = Math.atan2(spine.dot(forward), Math.max(.2, spine.dot(up)));
+      const shoulders = L[11].clone().sub(L[12]).setY(0), hipLine = L[23].clone().sub(L[24]).setY(0);
+      const twist = shoulders.lengthSq() > 1e-6 && hipLine.lengthSq() > 1e-6
+        ? Math.asin(THREE.MathUtils.clamp(new THREE.Vector3().crossVectors(hipLine.normalize(), shoulders.normalize()).dot(up), -1, 1)) : 0;
+      this.trackedTorso = [THREE.MathUtils.clamp(lean, -.6, .7), THREE.MathUtils.clamp(twist, -.7, .7) + (this.xrSpineTwist || 0)];
+      rig.torso.rotation.x += this.trackedTorso[0];
+      rig.torso.rotation.y += this.trackedTorso[1];
+      this.trackedTorsoRoll = THREE.MathUtils.clamp(Math.atan2(spine.dot(right), Math.max(.2, spine.dot(up))), -.55, .55);
+      rig.torso.rotation.z += this.trackedTorsoRoll;
+    }
+
+    // The legs, only standing still and only when all of them are in view.
+    const legs = this.moveVector.lengthSq() < 1e-4 && !this.airborne && this.playerState === 'walking' && seen(23, 24, 25, 26, 27, 28);
+    if (legs) {
+      for (const [hip, knee, ankle, leg, bend] of [
+        [23, 25, 27, rig.rightLeg, rig.rightKnee], [24, 26, 28, rig.leftLeg, rig.leftKnee],
+      ] as const) {
+        if (!leg.parent || !bend) continue;
+        const toLocal = leg.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+        const thigh = L[knee].clone().sub(L[hip]).normalize(), shin = L[ankle].clone().sub(L[knee]).normalize();
+        const d = thigh.clone().applyQuaternion(toLocal);
+        leg.rotation.set(Math.atan2(-d.z, -d.y), 0, Math.asin(THREE.MathUtils.clamp(d.x, -.9, .9)));
+        bend.rotation.set(THREE.MathUtils.clamp(thigh.angleTo(shin), 0, 2.3), 0, 0);
+      }
+      levelCoastalFeet(rig);
+      this.trackedLegs = [rig.leftLeg.rotation.x, rig.leftLeg.rotation.z, rig.leftKnee?.rotation.x ?? 0,
+        rig.rightLeg.rotation.x, rig.rightLeg.rotation.z, rig.rightKnee?.rotation.x ?? 0];
+    }
+
+    // The arms: each wrist where the visitor's is, from the avatar's own shoulder.
+    for (const [hand, shoulderAt, elbowAt, wristAt] of [['left', 11, 13, 15], ['right', 12, 14, 16]] as const) {
+      // Hand detection remains useful when a desk hides an elbow or the body
+      // detector loses the torso. Do not gate fingers/palm on body landmarks.
+      const shoulder = hand === 'left' ? rig.rightArm : rig.leftArm;
+      const elbow = hand === 'left' ? rig.rightElbow : rig.leftElbow;
+      const wrist = hand === 'left' ? rig.rightWrist : rig.leftWrist;
+      if (!elbow || !wrist) continue;
+      this.trackedArmDirections ??= {};
+      if (seen(shoulderAt, elbowAt, wristAt) && L[shoulderAt].distanceToSquared(L[elbowAt]) > 1e-6 && L[elbowAt].distanceToSquared(L[wristAt]) > 1e-6) {
+        this.trackedArmDirections[hand] = {
+          upper: L[elbowAt].clone().sub(L[shoulderAt]).normalize(),
+          lower: L[wristAt].clone().sub(L[elbowAt]).normalize(), at: body.at,
+        };
+      }
+      // A brief detector dropout must not snap a held hand back to the thigh.
+      // Hold the last measured arm for the same 700ms body freshness window.
+      const directions = this.trackedArmDirections[hand];
+      if (directions && now - directions.at < 700) {
+        const s = shoulder.getWorldPosition(new THREE.Vector3()), e = elbow.getWorldPosition(new THREE.Vector3()), w = wrist.getWorldPosition(new THREE.Vector3());
+        const elbowTarget = s.clone().addScaledVector(directions.upper, e.distanceTo(s));
+        const target = elbowTarget.clone().addScaledVector(directions.lower, w.distanceTo(e));
+        this.reachArm(hand, target, rig, this.player, elbowTarget, true);
+        this.trackedArms[hand] = true;
+      }
+      // The hand itself, when the camera has it: which way it points, and
+      // every finger.
+      const points = body.hands[hand], at = hand === 'left' ? body.hands.leftAt : body.hands.rightAt;
+      const joints = points && now - at < 400 ? handJointsFromLandmarks(points, place) : undefined;
+      if (joints) {
+        const along = joints.fingers.Middle[0].clone().sub(joints.wrist).normalize();
+        const thumbSide = joints.fingers.Index[0].clone().sub(joints.fingers.Pinky[0]);
+        this.turnWrist(hand, along, thumbSide.addScaledVector(along, -thumbSide.dot(along)).normalize(), rig, this.player, true);
+      }
+      this.poseXrFingers(hand, joints, at, true);
+    }
+    if (legs) supportCoastalPose(rig, (x, z, y) => this.footSurfaceAt(x, z, y));
+    // Counter the measured torso rotation at the neck; head motion is physical
+    // here, independent of the amplified camera glance and sensitivity slider.
+    const head = this.headTracking.pose;
+    rig.head.rotation.set(
+      -THREE.MathUtils.clamp(head.pitch + (this.trackedTorso?.[0] ?? 0), -.8, .8),
+      THREE.MathUtils.clamp(head.yaw - (this.trackedTorso?.[1] ?? 0) + (this.xrSpineTwist || 0), -1.2, 1.2),
+      THREE.MathUtils.clamp(head.roll - this.trackedTorsoRoll, -.65, .65));
+    if (this.xrRig && this.camera) this.attachDesktopEye();
+  }
+
+  /**
+   * The visitor's tracked body as it goes to everyone else, or nothing when
+   * no tracking is driving it. Arms as each wrist against its own shoulder in
+   * the body's frame, over the arm's reach, so it lands on any body; the
+   * hand's directions and fingers; the chest; the legs; where the head looks.
+   */
+  private limbsForNetwork(): TrackedLimbs | undefined {
+    const rig = this.playerRig, root = this.player;
+    if (!rig?.visualRoot || !(this.trackedArms.left || this.trackedArms.right || this.trackedTorso || this.trackedLegs || this.xrHandPoses.left || this.xrHandPoses.right)) return undefined;
+    const out: TrackedLimbs = {};
+    const arm = root.userData.importedArm as ((right: boolean) => { shoulder: THREE.Vector3; reach: number }) | undefined;
+    const wristAt = root.userData.importedWrist as ((right: boolean) => THREE.Vector3) | undefined;
+    const frameOf = root.userData.importedHandFrame as ((right: boolean) => { fingers: THREE.Vector3; thumb: THREE.Vector3 }) | undefined;
+    for (const hand of ['left', 'right'] as const) {
+      const pose = this.xrHandPoses[hand];
+      if (pose) out[hand === 'left' ? 'lf' : 'rf'] = encodeHandPose(pose);
+      if (!(this.trackedArms[hand] || pose) || !arm || !wristAt || !frameOf) continue;
+      const a = arm(hand === 'left'), w = wristAt(hand === 'left'), f = frameOf(hand === 'left');
+      const n = w.sub(a.shoulder).divideScalar(Math.max(a.reach, 1e-4));
+      out[hand === 'left' ? 'l' : 'r'] = [n.x, n.y, n.z, f.fingers.x, f.fingers.y, f.fingers.z, f.thumb.x, f.thumb.y, f.thumb.z];
+      const elbow = hand === 'left' ? rig.rightElbow : rig.leftElbow;
+      if (elbow) {
+        const bend = rig.visualRoot.worldToLocal(elbow.getWorldPosition(new THREE.Vector3())).sub(a.shoulder).normalize();
+        out[hand === 'left' ? 'le' : 're'] = bend.toArray();
+      }
+    }
+    if (this.trackedTorso) { out.t = [...this.trackedTorso]; out.tr = [this.trackedTorsoRoll || 0]; }
+    if (this.trackedLegs) out.g = [...this.trackedLegs];
+    const view = this.xrSimulated ? this.camera : this.renderer.xr.getCamera();
+    const look = new THREE.Vector3(0, 0, -1).applyQuaternion(view.getWorldQuaternion(new THREE.Quaternion()))
+      .applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion()).invert());
+    out.h = [THREE.MathUtils.clamp(Math.atan2(look.x, look.z), -1.2, 1.2), THREE.MathUtils.clamp(Math.asin(THREE.MathUtils.clamp(look.y, -1, 1)), -.8, .8)];
+    if (this.xrSimulated && this.headTrackingEnabled() && this.trackedBodyShown) {
+      // Avatar anatomy follows the measured head, independent of camera sensitivity.
+      const head = this.headTracking.pose;
+      out.hr = [THREE.MathUtils.clamp(head.roll - (this.trackedTorsoRoll || 0), -.65, .65)];
+      out.h = [THREE.MathUtils.clamp(head.yaw - (this.trackedTorso?.[1] ?? 0) + (this.xrSpineTwist || 0), -1.2, 1.2),
+        THREE.MathUtils.clamp(head.pitch + (this.trackedTorso?.[0] ?? 0), -.8, .8)];
+    }
+    return cleanLimbs(out);
+  }
+
+  /**
+   * Another visitor's tracked body, over whatever the animation posed: the
+   * chest, the head, the legs, then each arm to its wrist and its fingers.
+   * Nothing tracked hands the hands back to the animation.
+   */
+  private applyLimbs(avatar: RemoteAvatar, limbs: TrackedLimbs | undefined): void {
+    const root = avatar.group, rig = avatar.rig;
+    const setPose = root.userData.setImportedHandPose as ((right: boolean, pose: HandPose | null) => void) | undefined;
+    if (!limbs) {
+      if (avatar.limbsApplied) { setPose?.(true, null); setPose?.(false, null); avatar.limbsApplied = false; }
+      return;
+    }
+    avatar.limbsApplied = true;
+    if (limbs.t) { rig.torso.rotation.x += limbs.t[0]; rig.torso.rotation.y += limbs.t[1]; }
+    if (limbs.tr) rig.torso.rotation.z += limbs.tr[0];
+    if (limbs.hr) rig.head.rotation.z += limbs.hr[0];
+    if (limbs.h) { rig.head.rotation.y += limbs.h[0]; rig.head.rotation.x -= limbs.h[1]; }
+    if (limbs.g) {
+      const g = limbs.g;
+      rig.leftLeg.rotation.set(g[0], 0, g[1]); rig.leftKnee?.rotation.set(g[2], 0, 0);
+      rig.rightLeg.rotation.set(g[3], 0, g[4]); rig.rightKnee?.rotation.set(g[5], 0, 0);
+      levelCoastalFeet(rig);
+      supportCoastalPose(rig, (x, z, y) => this.footSurfaceAt(x, z, y));
+    }
+    const arm = root.userData.importedArm as ((right: boolean) => { shoulder: THREE.Vector3; reach: number }) | undefined;
+    const body = rig.visualRoot;
+    for (const hand of ['left', 'right'] as const) {
+      const a = limbs[hand === 'left' ? 'l' : 'r'];
+      const fingers = limbs[hand === 'left' ? 'lf' : 'rf'];
+      setPose?.(hand === 'left', fingers ? limitHandPose(decodeHandPose(fingers)) : null);
+      if (!a || !arm || !body) continue;
+      const reach = arm(hand === 'left');
+      const target = body.localToWorld(reach.shoulder.clone().addScaledVector(new THREE.Vector3(a[0], a[1], a[2]), reach.reach));
+      const e = limbs[hand === 'left' ? 'le' : 're'];
+      const elbowTarget = e ? body.localToWorld(reach.shoulder.clone().add(new THREE.Vector3(...e))) : undefined;
+      this.reachArm(hand, target, rig, root, elbowTarget);
+      const turn = body.getWorldQuaternion(new THREE.Quaternion());
+      const along = new THREE.Vector3(a[3], a[4], a[5]).applyQuaternion(turn).normalize();
+      const thumb = new THREE.Vector3(a[6], a[7], a[8]).applyQuaternion(turn).normalize();
+      this.turnWrist(hand, along, thumb, rig, root, true);
+    }
+  }
+
+  /** Track the whole body and hands too (desktop VR preview), or only the head. */
+  async setBodyTracking(on: boolean): Promise<boolean> {
+    return this.headTracking.setBodyTracking(on);
+  }
+
+  bodyTrackingSnapshot(): { wanted: boolean; status: string } {
+    return { wanted: this.headTracking.bodyTrackingWanted(), status: this.headTracking.bodyStatus };
   }
 
   /**
@@ -7492,7 +8105,8 @@ export class FestivalWorld {
     if (this.playerState === 'seated' || this.playerState === 'swimming') return;
     if (this.isMentorControlLocked()) return;
     const now = performance.now();
-    if (now - this.lastPunchAt < 620) return;
+    // One jab at a time: the next waits for this one to finish.
+    if (now - this.lastPunchAt < (GESTURE_SPAN_MS.punch ?? 620)) return;
     this.lastPunchAt = now;
     this.dancing = false;
     this.playerGesture = 'punch';
@@ -7956,7 +8570,6 @@ export class FestivalWorld {
    * building themselves, because lights added later would otherwise slip past.
    */
   private cullDecorativeLights(): void {
-    if (this.graphicsMode === 'normal') return;
     const lamps: THREE.Light[] = [];
     this.scene.traverse((object) => {
       const light = object as THREE.Light & { distance?: number };
@@ -7970,8 +8583,18 @@ export class FestivalWorld {
       // this could only lose, and did: six lamps hidden, five back on within
       // three seconds. The pool is made smaller where it is built instead.
       if (this.lampPool.includes(light as THREE.SpotLight)) return;
+      // The fireworks' light is the show's own, lit only while it runs.
+      if (light === this.fireworkWorldLight) return;
       lamps.push(light);
     });
+    this.decorativeLamps = lamps;
+    // On 一般 the lamps are not dropped for good: the nearest stay lit, a
+    // fixed number of them, re-chosen as the visitor moves (updateLampBudget).
+    if (this.graphicsMode === 'normal') {
+      this.lampBudgetAt = 0;
+      this.updateLampBudget();
+      return;
+    }
     const reach = (light: THREE.Light) => {
       const distance = (light as THREE.PointLight).distance || 30;
       return light.intensity * distance;
@@ -7986,6 +8609,40 @@ export class FestivalWorld {
 
   private lastCullSeen = 0;
   private lastCullAt = 0;
+  private decorativeLamps: THREE.Light[] = [];
+  private lampBudgetAt = 0;
+
+  /** How many decorative lamps 一般 keeps lit at once, nearest first. */
+  private static readonly NORMAL_LAMPS = 10;
+
+  /**
+   * On 一般, only the decorative lamps nearest the visitor are lit.
+   *
+   * Every lit lamp is evaluated for every pixel of every lit surface, near or
+   * not, and 一般 kept all thirty-three: measured on a desktop GPU the world
+   * ran at 21 fps (2026-10-01). A lamp across town lights nothing on screen.
+   * The number lit never changes, only which ones, so no shader recompiles as
+   * the visitor walks; ranked by how far inside its own reach the visitor is.
+   */
+  private updateLampBudget(): void {
+    if (this.graphicsMode !== 'normal' || !this.decorativeLamps.length) return;
+    const now = performance.now();
+    if (now - this.lampBudgetAt < 600) return;
+    this.lampBudgetAt = now;
+    const at = this.player.position;
+    const ranked = this.decorativeLamps
+      .map((light) => {
+        light.getWorldPosition(this.lampBudgetProbe);
+        const reach = (light as THREE.PointLight).distance || 30;
+        return { light, score: this.lampBudgetProbe.distanceTo(at) - reach * .5 };
+      })
+      .sort((a, b) => a.score - b.score);
+    ranked.forEach(({ light }, index) => { light.visible = index < FestivalWorld.NORMAL_LAMPS; });
+    this.lastCullSeen = ranked.length;
+    this.lastCullAt = Math.round(now);
+  }
+
+  private readonly lampBudgetProbe = new THREE.Vector3();
 
   /** How many placed lamps a light-setting device keeps. */
   private static readonly LITE_LAMPS = 6;
@@ -8304,6 +8961,100 @@ export class FestivalWorld {
     }
   }
 
+  /**
+   * The island prototype: sea on every side. The Shore's sea sheets are
+   * rebuilt as one large finely divided plane round the whole island, fine
+   * enough to follow the planet's curve, and the landing goes in north of the
+   * gate. The sky rides with the visitor and stays unbent.
+   */
+  private surroundIsland(ocean: THREE.Mesh, stylised: THREE.Mesh, sea: THREE.ShaderMaterial): void {
+    const span = 1500, cells = 150;
+    const centreX = (ISLAND.west + ISLAND.east) / 2, centreZ = (ISLAND.north + ISLAND.south) / 2;
+    stylised.geometry.dispose();
+    stylised.geometry = seaAroundIsland(span, cells, centreX, centreZ);
+    stylised.position.set(centreX, SEA_Y, centreZ);
+    sea.uniforms.uFadeDistance.value = 900;
+    if (PLANET.on) { sea.defines = { ...sea.defines, PLANET_ON: '' }; sea.needsUpdate = true; }
+    const lite = seaAroundIsland(span, cells, centreX, centreZ);
+    lite.rotateX(-Math.PI / 2);
+    ocean.geometry.dispose();
+    ocean.geometry = lite;
+    ocean.position.set(centreX, SEA_Y - .05, centreZ);
+    // The sheet this was on the Shore was a unit plane scaled 250 x 76; kept,
+    // it made this 1,500 m sea 375 km wide, the planet curve wrapped every
+    // vertex round to the far side, and 精簡 had no sea at all, only the
+    // seabed (the owner, 2026-10-01).
+    ocean.scale.set(1, 1, 1);
+    ocean.rotation.set(0, 0, 0);
+    // 精簡's sea. It was the Shore's sheet at 82% opacity: a murky film the
+    // seabed showed through, which read as empty space round the island (the
+    // owner, 2026-10-01). Now the 一般 sea's look, cheaply: light water broken
+    // into dark rounded cells, opaque, lit by the day and drifting slowly.
+    (ocean.material as THREE.Material).dispose();
+    const cellsMap = liteSeaTexture();
+    cellsMap.repeat.set(span / 14, span / 14);
+    const liteSea = new THREE.MeshLambertMaterial({ map: cellsMap });
+    // Moving, not only drifting: at a few centimetres a second the cells sat
+    // still and the sea looked dead (the owner, October 2). Each cell's edges
+    // now sway on two slow crossing swells, as the 一般 sea's do, for two sines
+    // a pixel.
+    const seaTime = { value: 0 };
+    liteSea.onBeforeCompile = (shader) => {
+      shader.uniforms.uSeaTime = seaTime;
+      shader.fragmentShader = shader.fragmentShader
+        .replace('void main() {', 'uniform float uSeaTime;\nvoid main() {')
+        .replace('#include <map_fragment>', `
+          vec2 seaUv = vMapUv + vec2(
+            .045 * sin(vMapUv.y * 9.4 + uSeaTime * 1.3) + .02 * sin(vMapUv.x * 4.1 - uSeaTime * .7),
+            .045 * sin(vMapUv.x * 8.2 - uSeaTime * 1.1) + .02 * sin(vMapUv.y * 3.7 + uSeaTime * .9));
+          diffuseColor *= texture2D(map, seaUv);`);
+    };
+    liteSea.customProgramCacheKey = () => 'lite-sea-v1';
+    liteSea.userData.seaTime = seaTime;
+    ocean.material = liteSea;
+    this.islandOcean = ocean;
+    if (this.waterVolume) this.waterVolume.visible = false;
+    // From the gate down to the pier, where the approach road used to run off the map.
+    this.scene.add(createGroundRibbon('Island landing path', [[0, GATE_Z + 1], [0, ISLAND_COVE.z - 1]], 6, material(0x9a917e), .03));
+    sea.uniforms.uDeepOpacity.value = .9;
+    if (['127.0.0.1', 'localhost'].includes(window.location.hostname)) Object.assign(window, { __islandScene: this.scene, __islandWorld: this });
+    this.islandDock = new IslandDock();
+    this.scene.add(this.islandDock.group);
+    for (const [x, z, width, depth] of this.islandDock.barriers()) this.addCollider(x, z, width, depth, 0, undefined, 'island-landing-edge');
+  }
+
+  /** Sky pieces draw where they are modelled: they already follow the visitor. */
+  private keepSkyFlat(): void {
+    if (!PLANET.on) return;
+    this.scene.traverse((object) => {
+      if (object.renderOrder > -2) return;
+      const materials = (object as THREE.Mesh).material;
+      for (const m of Array.isArray(materials) ? materials : materials ? [materials] : []) keepFlat(m);
+    });
+  }
+
+  /**
+   * Loopback only: hold the camera at `from` looking at `to`, with the fog
+   * pushed back, to look over the whole island. `__festivalAerial()` with no
+   * arguments hands the camera back.
+   */
+  setAerialReview(from?: number[], to?: number[]): void {
+    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
+    this.aerialReview = from && to ? [new THREE.Vector3(...from), new THREE.Vector3(...to)] : undefined;
+  }
+
+  private applyAerialReview(): void {
+    if (!this.aerialReview) return;
+    const [from, to] = this.aerialReview;
+    // The planet is centred where the view looks, as for somebody standing there.
+    if (PLANET.on) setPlanetCentre(to.x, to.z);
+    this.camera.position.copy(from);
+    this.camera.lookAt(to);
+    this.camera.far = 4000;
+    this.camera.updateProjectionMatrix();
+    if (this.scene.fog instanceof THREE.Fog) { this.scene.fog.near = 2000; this.scene.fog.far = 4000; }
+  }
+
   private createEnvironment(): void {
     this.scene.add(createCoastalTerrain());
     this.scene.add(createGroundRibbon('Festival square', [[0, 11], [0, -16]], 31, material(0xa79e87), .025));
@@ -8344,6 +9095,7 @@ export class FestivalWorld {
     this.scene.add(stylisedWater);
     this.stylizedWater = stylisedWater;
     this.stylizedWaterMaterial = stylised;
+    if (islandTerrain()) this.surroundIsland(ocean, stylisedWater, stylised);
 
     const waveSurface = this.mesh([250, 0.025, 76], [0, SEA_Y - 0.025, -80], new THREE.MeshStandardMaterial({
       color: 0x5aa4b4,
@@ -8356,6 +9108,7 @@ export class FestivalWorld {
     }));
     waveSurface.userData.projectorBackground = true;
     this.waveSurface = waveSurface;
+    if (islandTerrain()) this.waveSurface.visible = false;
     const reflectionTexture = createWaterReflectionTexture();
     for (const kind of ['sun', 'moon'] as const) {
       const reflectionMaterial = new THREE.MeshBasicMaterial({
@@ -8368,7 +9121,8 @@ export class FestivalWorld {
         toneMapped: false,
         side: THREE.DoubleSide,
       });
-      const reflection = new THREE.Mesh(new THREE.PlaneGeometry(1,1), reflectionMaterial);
+      // Divided on the island prototype, so the glitter follows the planet's curve.
+      const reflection = new THREE.Mesh(islandTerrain() ? new THREE.PlaneGeometry(1, 1, 6, 24) : new THREE.PlaneGeometry(1,1), reflectionMaterial);
       reflection.rotation.x = -Math.PI / 2;
       reflection.position.set(0, SEA_Y + 0.005 + (kind === 'moon' ? 0.004 : 0), -70.5);
       reflection.scale.set(11, 38, 1);
@@ -8438,6 +9192,7 @@ export class FestivalWorld {
     this.buildOnGrade(() => this.createDriveIn(), SCREENING_SITES['drive-in'].grade, SCREENING_SITES['drive-in'].dx, SCREENING_SITES['drive-in'].dz);
     this.createClub();
     this.createRooftop();
+    this.createRooftopBand();
     this.createConcession();
     this.createPamphletStand();
 
@@ -8515,6 +9270,8 @@ export class FestivalWorld {
         this.createLampPost(x, z, lampMaterial, z === -18 && x === 23, 6.3, 35);
       }
     }
+    // The island's harbour, lit like the town: arrivals come ashore after dark too.
+    for (const [x, z] of this.islandDock?.lampSpots() ?? []) this.createLampPost(x, z, lampMaterial, false, 4.2, x);
 
   }
 
@@ -9357,7 +10114,12 @@ export class FestivalWorld {
     // stays clear of the stair stringer; the east cornice still overhangs.
     const slabWest = r.minX + 0.16;
     const slabEast = r.maxX + 0.6;
-    this.mesh([slabEast - slabWest, 0.6, depth + 1.2], [(slabWest + slabEast) / 2, ROOF_Y - 0.35, (r.minZ + r.maxZ) / 2], warmConcrete);
+    const shopRoof = this.mesh([slabEast - slabWest, 0.6, depth + 1.2], [(slabWest + slabEast) / 2, ROOF_Y - 0.35, (r.minZ + r.maxZ) / 2], warmConcrete);
+    // In the sun's shadow map, as the deck is: the band plays and sits on it,
+    // and without it their shadows fell through onto the shop's back wall
+    // below (the owner, October 2).
+    shopRoof.castShadow = true;
+    shopRoof.receiveShadow = true;
 
     // Garage bay: floor, side walls, open to the south.
     const shopFloor=this.mesh([width,.5,bayDepth],[centerX,-.17,bayCenterZ],material(0x796c59,.95));shopFloor.name="Shop finished floor";shopFloor.userData.wornNoMasonry=true;
@@ -9463,6 +10225,7 @@ export class FestivalWorld {
     // Screen at the deck's south edge, back to the Drive-In, watched northward.
     this.createProjectorSurface('rooftop');
     this.mesh([15, 8, 0.4], [ROOFTOP_CENTER_X, ROOF_Y + 6.6, r.deckMinZ + 0.6], material(0x050506, 0.72));
+    this.createRooftopScreenFrame(r.deckMinZ + 0.6, warmConcrete);
     const boothZ = r.deckMinZ + 4.4;
     this.mesh([10, 0.7, 3.6], [centerX, ROOF_Y + 0.35, boothZ], material(0x3d2a24, 0.6, 0.3));
     const decks=createCoastalDecks(4.9);decks.position.set(centerX,ROOF_Y+.7,boothZ+.8);this.scene.add(decks);
@@ -9532,6 +10295,58 @@ export class FestivalWorld {
   }
 
   /**
+   * What holds the rooftop screen up. It used to be a black slab with its
+   * bottom edge 2.6 above the deck and nothing under it, floating. Now it
+   * hangs in a steel portal the colour of the deck's other ironwork: two
+   * columns on concrete plinths, a head beam and a sill beam framing the
+   * picture, a braced frame behind it that the street sees, and a raking strut
+   * at each side down to the deck in front — outside the picture, so nothing
+   * crosses the film.
+   */
+  private createRooftopScreenFrame(screenZ: number, plinthMaterial: THREE.MeshStandardMaterial): void {
+    const x0 = ROOFTOP_CENTER_X;
+    const steel = material(0x354d47, 0.85, 0.12);
+    const bottom = ROOF_Y + 2.6, top = ROOF_Y + 10.6;
+    const columnX = 7.85, columnTop = top + 0.5;
+    const built: THREE.Mesh[] = [];
+    const box = (size: [number, number, number], at: [number, number, number], surface = steel): THREE.Mesh => {
+      const mesh = this.mesh(size, at, surface);
+      built.push(mesh);
+      return mesh;
+    };
+    const strut = (a: THREE.Vector3, b: THREE.Vector3, size: number): void => {
+      const direction = b.clone().sub(a);
+      const mesh = box([size, direction.length(), size], a.clone().add(b).multiplyScalar(0.5).toArray() as [number, number, number]);
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+    };
+    for (const side of [-1, 1]) {
+      const x = x0 + side * columnX;
+      box([1.2, 0.36, 1.3], [x, ROOF_Y + 0.18, screenZ], plinthMaterial);
+      box([0.9, 0.06, 1.0], [x, ROOF_Y + 0.39, screenZ]);
+      box([0.5, columnTop - ROOF_Y - 0.42, 0.5], [x, (columnTop + ROOF_Y + 0.42) / 2, screenZ]);
+      // Raking strut from two-thirds up the column to a foot on the deck.
+      const foot = new THREE.Vector3(x + side * 0.4, ROOF_Y + 0.3, screenZ + 2.1);
+      strut(new THREE.Vector3(x, ROOF_Y + 6.4, screenZ + 0.2), foot, 0.22);
+      box([0.6, 0.3, 0.6], [foot.x, ROOF_Y + 0.15, foot.z], plinthMaterial);
+      this.addCollider(x, screenZ, 1.2, 1.3, 0.1, { minY: ROOF_Y, maxY: columnTop }, 'rooftop-screen-column');
+      this.addCollider(foot.x, foot.z, 0.6, 0.6, 0.08, { minY: ROOF_Y, maxY: ROOF_Y + 1.2 }, 'rooftop-screen-strut');
+    }
+    // Head and sill beams frame the picture without touching it.
+    box([columnX * 2 + 0.5, 0.45, 0.55], [x0, top + 0.225, screenZ]);
+    box([columnX * 2 + 0.5, 0.36, 0.55], [x0, bottom - 0.18, screenZ]);
+    // Behind: girts and studs in a grid, cross-braced in the outer bays.
+    const back = screenZ - 0.38;
+    for (const y of [bottom + 0.2, (bottom + top) / 2, top - 0.2]) box([columnX * 2, 0.22, 0.22], [x0, y, back]);
+    for (const x of [-2.6, 2.6]) box([0.2, top - bottom, 0.2], [x0 + x, (top + bottom) / 2, back]);
+    for (const side of [-1, 1]) for (const [from, to] of [[bottom + 0.2, (bottom + top) / 2], [(bottom + top) / 2, top - 0.2]]) {
+      strut(new THREE.Vector3(x0 + side * 2.6, from, back - 0.12), new THREE.Vector3(x0 + side * columnX, to, back - 0.12), 0.12);
+      strut(new THREE.Vector3(x0 + side * columnX, from, back - 0.12), new THREE.Vector3(x0 + side * 2.6, to, back - 0.12), 0.12);
+    }
+    // Ironwork keeps its edges: the worn style's settling is for masonry.
+    for (const mesh of built) mesh.userData.wornNoMasonry = true;
+  }
+
+  /**
    * The stair up to the rooftop deck, built the way one would be drawn: two
    * flights of ten equal 0.35 risers on 0.56 goings, a half-landing between
    * them deep enough to turn on, and a top landing level with the deck so the
@@ -9598,22 +10413,6 @@ export class FestivalWorld {
         // Kerb along the open edge, low enough to leave the steps in view.
         keepAsBuilt(this.mesh([kerbWidth, 0.42, ROOF_GOING], [railX, top + 0.15, treadZ], wallMaterial));
       }
-      // The pitch line runs nosing to nosing: nine goings across, nine risers
-      // up, which is 32 degrees — the angle a stair is comfortable at.
-      const run = ROOF_GOING * 9;
-      const rise = ROOF_RISER * 9;
-      const rail = this.mesh(
-        [0.14, 0.14, Math.hypot(run, rise) + 0.5],
-        [railX, footY + ROOF_RISER + rise / 2 + handrail, footZ + run / 2],
-        railColour,
-      );
-      rail.rotation.x = -Math.atan2(rise, run);
-      const middleRail=this.mesh([.07,.07,Math.hypot(run,rise)+.3],[railX,footY+ROOF_RISER+rise/2+.8,footZ+run/2],railColour);
-      middleRail.rotation.x=rail.rotation.x;
-      for (let post = 0; post <= 9; post += 2) {
-        const y = footY + ROOF_RISER * (post + 1);
-        this.mesh([0.12, handrail, 0.12], [railX, y + handrail / 2, footZ + ROOF_GOING * post], railColour);
-      }
     };
 
     const landing = (minZ: number, maxZ: number, surfaceY: number, maxX: number): void => {
@@ -9624,11 +10423,6 @@ export class FestivalWorld {
       this.mesh([width,.06,depth],[cx,surfaceY-.03,(minZ+maxZ)/2],treadFinish);
       this.addCollider(cx, (minZ + maxZ) / 2, width, depth, 0.16, { minY: -0.4, maxY: surfaceY - 1.5 });
       this.mesh([kerbWidth, 0.36, depth], [railX, surfaceY + 0.18, (minZ + maxZ) / 2], wallMaterial);
-      this.mesh([.07,.07,depth],[railX,surfaceY+.8,(minZ+maxZ)/2],railColour);
-      this.mesh([0.14, 0.14, depth], [railX, surfaceY + handrail, (minZ + maxZ) / 2], railColour);
-      for (const z of [minZ + 0.2, maxZ - 0.2]) {
-        this.mesh([0.12, handrail, 0.12], [railX, surfaceY + handrail / 2, z], railColour);
-      }
     };
 
     flight(r.stairMinZ, 0);
@@ -9638,6 +10432,73 @@ export class FestivalWorld {
     // left in the parapet. Sizing it to the deck's own width once walled the
     // roof in half.
     landing(r.stairTopZ, r.stairMaxZ, ROOF_Y, r.minX);
+
+    /**
+     * One guard for the whole climb, drawn the way the club ramp's rails are:
+     * a handrail and a mid-rail on square posts with base plates.
+     *
+     * Each flight used to carry its own rail, overshooting its ends by a
+     * quarter unit, and each landing carried another — so at every landing
+     * two rails, two mid-rails and three posts crossed at different heights,
+     * which is what read as messy. Now the rail follows one line: parallel to
+     * the nosings up each flight and level across each landing, bending only
+     * at a post, where a cap covers the joint.
+     */
+    // What each post stands on: the kerb along the open edge.
+    const kerbTop = (z: number): number => {
+      if (z < r.stairLandingMinZ) return ROOF_RISER * (Math.floor((z - r.stairMinZ) / ROOF_GOING) + 1) + 0.36;
+      if (z < r.stairLandingMaxZ) return halfHeight + 0.36;
+      if (z < r.stairTopZ) return halfHeight + ROOF_RISER * (Math.floor((z - r.stairLandingMaxZ) / ROOF_GOING) + 1) + 0.36;
+      return ROOF_Y + 0.36;
+    };
+    // The rail's line, bending only where the stair does. Up the first flight
+    // it runs parallel to the nosings and meets the landing's level exactly at
+    // the landing's edge. It stays level to the far edge of the landing, then
+    // steps up one riser on a post — a gooseneck — so the second flight's rail
+    // starts over its own first step, parallel to its nosings. It used to start
+    // climbing a whole going early, out over the landing, which is what read as
+    // misaligned from the street.
+    const flightTwo = (z: number): number => halfHeight + ROOF_RISER + (z - r.stairLandingMaxZ) * ROOF_RISER / ROOF_GOING;
+    const landingEnd = r.stairLandingMaxZ - 0.04;
+    const path: Array<[number, number]> = [
+      [r.stairMinZ + 0.16, ROOF_RISER + 0.16 * ROOF_RISER / ROOF_GOING],
+      [r.stairLandingMinZ + 0.04, halfHeight],
+      [landingEnd, halfHeight],
+      [landingEnd, flightTwo(landingEnd)],
+      [r.stairTopZ + 0.04, ROOF_Y],
+      [r.stairMaxZ - 0.14, ROOF_Y],
+    ];
+    const midRail = handrail / 2;
+    const rail = (a: THREE.Vector3, b: THREE.Vector3, size: number): void => {
+      const direction = b.clone().sub(a);
+      const mesh = keepAsBuilt(this.mesh([size, size, direction.length()], a.clone().add(b).multiplyScalar(0.5).toArray() as [number, number, number], railColour));
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction.normalize());
+      mesh.name = 'NIMA stair guard rail';
+    };
+    for (let i = 0; i < path.length - 1; i += 1) {
+      const [za, ya] = path[i], [zb, yb] = path[i + 1];
+      for (const [height, size] of [[handrail, 0.13], [midRail, 0.075]] as const) {
+        rail(new THREE.Vector3(railX, ya + height, za), new THREE.Vector3(railX, yb + height, zb), size);
+      }
+    }
+    // A post at every bend, taking the higher rail where it steps, and between
+    // bends never more than about two goings apart.
+    const posts = new Map<number, { base: number; bend: boolean }>();
+    for (const [z, y] of path) posts.set(z, { base: Math.max(y, posts.get(z)?.base ?? -Infinity), bend: true });
+    for (let i = 0; i < path.length - 1; i += 1) {
+      const [za, ya] = path[i], [zb, yb] = path[i + 1];
+      const span = zb - za;
+      if (span <= 0) continue;
+      const count = Math.ceil(span / (ROOF_GOING * 2.2));
+      for (let k = 1; k < count; k += 1) posts.set(za + span * k / count, { base: ya + (yb - ya) * k / count, bend: false });
+    }
+    for (const [z, { base, bend }] of posts) {
+      const foot = kerbTop(z), top = base + handrail;
+      keepAsBuilt(this.mesh([bend ? 0.15 : 0.11, top - foot, bend ? 0.15 : 0.11], [railX, (top + foot) / 2, z], railColour));
+      keepAsBuilt(this.mesh([0.26, 0.05, 0.26], [railX, foot + 0.025, z], railColour));
+      // A cap over each bend's post covers the rail's joint.
+      if (bend) keepAsBuilt(this.mesh([0.2, 0.07, 0.2], [railX, top + 0.035, z], railColour));
+    }
     // The landing and deck used to stop on the exact same x plane. At grazing
     // camera angles that shared edge opened into a dark clipped strip. This
     // shallow stone threshold overlaps both slabs and gives the entrance one
@@ -9918,11 +10779,16 @@ export class FestivalWorld {
   private createNpcAvatar(profile: NpcProfile, index: number): NpcAvatar {
     const npc = new THREE.Group();
     const shirtColor = ['#485f59', '#9b5644', '#d2bd8a', '#5c7186', '#7a7351', '#6d4351', '#bd7854', '#497574', '#a69c88', '#595963', '#797b49', '#986b73'][index % 12];
+    // Residents wear the generated bodies, a third of them in exactly the
+    // generated colours, the rest in a few other skin, hair and trouser tones.
+    const female = FEMALE_RESIDENTS.has(profile.id);
+    const native = AVATAR_NATIVE[female ? 'female' : 'male'];
     const npcPalette: AvatarPalette = {
-      skin: index % 2 ? '#7a4a35' : '#b77856',
-      hair: index % 3 ? '#171315' : '#3a241d',
-      top: TOP_OUTFITS[index % TOP_OUTFITS.length].wire,
-      bottoms: '#20242c',
+      skin: [native.skin, '#b77856', '#7a4a35'][index % 3],
+      hair: [native.hair, '#171315', '#3a241d'][index % 3],
+      // Residents dress for the street: the first three outfits, never the swimsuit.
+      top: female ? TOP_OUTFITS[index % 3].wireFemale : TOP_OUTFITS[index % 3].wire,
+      bottoms: [native.bottoms, '#20242c', native.bottoms, '#4a4c50'][index % 4],
       swimwear: shirtColor,
     };
     const dogRig = profile.id === 'MENTOR' ? createMentorDog() : undefined;
@@ -10035,7 +10901,7 @@ export class FestivalWorld {
     // inherits the hidden original avatar and disappears as soon as it is held.
     carrier.attach(mentor.group);
     const rig=this.rigFor(carrier);
-    if(rig){carrier.userData.syncImportedAvatar?.();perchMentor(mentor.group,mentor.dogRig,rig.head,carrier.userData.importedHeadSupport?.()??new THREE.Vector3(0,.5,0));}
+    if(rig){carrier.userData.syncImportedAvatar?.();perchMentor(mentor.group,mentor.dogRig,rig.head,carrier.userData.importedHeadSupport?.()??new THREE.Vector3(0,.5,0),carrier.userData.importedHeadSurface?.());}
     mentor.badge.visible = false;
   }
 
@@ -10573,8 +11439,8 @@ export class FestivalWorld {
   /**
    * Composites every avatar over a phone's CSS projector without a second
    * WebGL context. The transparent plane opens the exact projector in the
-   * already-rendered main canvas; layer two then redraws only bodies whose
-   * projected bounds overlap that screen and which stand on its viewing side.
+   * already-rendered main canvas, retaining closer furniture and avatars.
+   * Layer two uses that same world depth when redrawing overlapping bodies.
    */
   private compositeMobileAvatars(
     visibleProjectors: VenueKey[],
@@ -10628,7 +11494,8 @@ export class FestivalWorld {
           this.projectorClipPlane.normal.set(0, 0, facing);
           this.projectorClipPlane.constant = -venueScreens[venue].position[2] * facing;
           this.renderer.setScissor(scissor.x, scissor.y, scissor.width, scissor.height);
-          this.renderer.clear(false, true, false);
+          // Keep the main pass depth: a DJ's legs must remain behind the
+          // cabinet, even when their projected bounds overlap the video.
           if (selectedAvatarIds.length) {
             this.renderer.render(this.scene, this.camera);
             this.singleContextForegroundDrawCalls += this.renderer.info.render.calls;
@@ -10716,7 +11583,10 @@ export class FestivalWorld {
     // shoulder and elbow rotations this overwrites, and whichever runs second
     // wins.
     this.updateXrArms();
+    this.updateTrackedBody(delta);
     const dayNight = this.dayNight.update();
+    // After the day-night cycle has set the lamps: the bonfire wavers its own.
+    this.rooftopBand?.update(delta, elapsed);
     this.dayNight.atmosphere.update(dayNight.cycleMinute, this.player.position);
     // Exposed for the hour rather than fixed at noon's value. Raising lights
     // only brightens what they reach, and after dark most of what is on screen
@@ -10734,13 +11604,17 @@ export class FestivalWorld {
     syncImportedAvatars(this.scene);
     for(const npc of this.npcs)if(npc.dogRig&&npc.group.parent&&npc.group.parent!==this.scene){
       const carrier=npc.group.parent as THREE.Group,rig=this.rigFor(carrier);
-      if(rig)perchMentor(npc.group,npc.dogRig,rig.head,carrier.userData.importedHeadSupport?.()??new THREE.Vector3(0,.5,0));
+      if(rig)perchMentor(npc.group,npc.dogRig,rig.head,carrier.userData.importedHeadSupport?.()??new THREE.Vector3(0,.5,0),carrier.userData.importedHeadSurface?.());
     }
     this.updateLampPool();
+    this.updateLampBudget();
     // After the camera has been moved and before anything is drawn: the strip
     // is pinned to the head, so a frame late is a frame of the visor lagging.
     this.xrHud?.update(this.camera, performance.now());
     this.camera.layers.set(0);
+    if (PLANET.on) setPlanetCentre(this.player.position.x, this.player.position.z);
+    this.islandDock?.update(elapsed);
+    this.applyAerialReview();
     this.renderer.render(this.scene, this.camera);
     this.mainDrawCalls = this.renderer.info.render.calls;
     this.mainTriangles = this.renderer.info.render.triangles;
@@ -10831,7 +11705,10 @@ export class FestivalWorld {
         visibleProjectorScissors.set(venue, compositorScissor);
       }
     }
-    if (visibleProjectors.length) this.cssRenderer.render(this.cssScene, this.camera);
+    if (visibleProjectors.length) {
+      if (PLANET.on) { this.cssScene.matrixWorldAutoUpdate = false; bendCss3d(this.cssScene); }
+      this.cssRenderer.render(this.cssScene, this.camera);
+    }
     this.compositeMobileAvatars(visibleProjectors, visibleProjectorScissors);
     const foregroundRenderer = this.foregroundRenderer;
     this.foregroundCanvas.style.visibility = visibleProjectors.length && foregroundRenderer ? 'visible' : 'hidden';
@@ -10888,6 +11765,7 @@ export class FestivalWorld {
         rotation: this.player.rotation.y,
         moving: !this.isMentorControlLocked() && this.moveVector.lengthSq() > 0.0001,
         running: this.running && !this.dancing && this.playerState === 'walking',
+        limbs: this.limbsForNetwork(),
         gesture: this.dancing
           ? 'dance'
           : performance.now() < this.playerGestureUntil ? this.playerGesture : undefined,
@@ -10921,7 +11799,16 @@ export class FestivalWorld {
     // is now held well above that, so the sea keeps all of its sheets — and its
     // glitter — at the height an attendee actually sees it from.
     const nearSurface = eyeAboveWater < 1.5 && this.cameraWorldPosition.z < -40;
-    if (this.waterVolume) {
+    if (this.islandOcean) {
+      this.islandOcean.visible = !stylised;
+      // The cells drift, so it reads as water rather than a floor.
+      const map = (this.islandOcean.material as THREE.MeshLambertMaterial).map;
+      const seconds = performance.now() / 1000;
+      if (map && !stylised) map.offset.set(seconds * .012, seconds * .008);
+      const seaTime = (this.islandOcean.material as THREE.Material).userData.seaTime as { value: number } | undefined;
+      if (seaTime && !stylised) seaTime.value = seconds % 3600;
+    }
+    if (this.waterVolume && !this.islandDock) {
       // The body below the surface. From above it gives the sea its depth;
       // from the waterline it is edge-on and doubles the fill for nothing,
       // and it is double-sided, so it costs twice again.
@@ -11257,7 +12144,7 @@ export class FestivalWorld {
     }
     this.applyKnockback(delta);
 
-    const shouldSwim = isSwimmingDepth(this.player.position.x,this.player.position.z);
+    const shouldSwim = this.isOverWater(this.player.position.z, this.player.position.x);
     if (shouldSwim !== (this.outfit === 'swimwear')) this.setOutfit(shouldSwim);
     this.setSwimming(shouldSwim);
     this.skating = this.running && this.moveVector.lengthSq()>0 && !this.dancing && this.playerState==='walking';
@@ -11378,6 +12265,11 @@ export class FestivalWorld {
    * was snapped back onto the road, which is why the food stalls could only be
    * reached from one direction.
    */
+  /** How far north a body may go: the gate, or on the island out along the pier. */
+  private northLimit(): number {
+    return this.islandDock ? ISLAND_COVE.z + 30 : GATE_Z - 2;
+  }
+
   private walkableXRange(_z: number): { min: number; max: number } {
     return { min: -110, max: 122 };
   }
@@ -11441,7 +12333,7 @@ export class FestivalWorld {
     // round, a stride that overshot the north limit read the width belonging to
     // ground the attendee is never allowed to stand on, and slammed them
     // sideways before the depth was pulled back.
-    this.player.position.z = THREE.MathUtils.clamp(this.player.position.z, -75, GATE_Z - 2);
+    this.player.position.z = THREE.MathUtils.clamp(this.player.position.z, -75, this.northLimit());
     const reach = this.walkableXRange(this.player.position.z);
     this.player.position.x = THREE.MathUtils.clamp(this.player.position.x, reach.min, reach.max);
     this.resolvePlayerCrowdCollisions();
@@ -11452,7 +12344,7 @@ export class FestivalWorld {
     // frame once the head has been read — see `orientXrBody`. Writing the
     // travel heading here as well would leave a frame of the old behaviour for
     // anything in between to pick up, and the network snapshot is in between.
-    if (!this.paintsInHeadset()) this.player.rotation.y = this.travelHeading;
+    if (!this.paintsInHeadset() && !this.desktopBodyTracked()) this.player.rotation.y = this.travelHeading;
   }
 
   private mentorFollowerObject(): THREE.Object3D | undefined {
@@ -11577,7 +12469,7 @@ export class FestivalWorld {
     }
     this.player.position.x = nextX;
     this.player.position.z = nextZ;
-    this.player.position.z = THREE.MathUtils.clamp(this.player.position.z, -75, GATE_Z - 2);
+    this.player.position.z = THREE.MathUtils.clamp(this.player.position.z, -75, this.northLimit());
     const reach = this.walkableXRange(this.player.position.z);
     this.player.position.x = THREE.MathUtils.clamp(this.player.position.x, reach.min, reach.max);
     this.knockback.multiplyScalar(Math.exp(-delta * 8.2));
@@ -12209,6 +13101,9 @@ export class FestivalWorld {
       }
       if (avatar.state === 'swimming' && moving && !gesture) this.poseRigSwimming(avatar.rig, elapsed);
       if (avatar.state === 'seated') this.poseRigSeated(avatar.rig, gesture);
+      const playedLimbs = THREE.MathUtils.clamp((performance.now() - avatar.targetAt) / (avatar.updateInterval * .8), 0, 1);
+      avatar.shownLimbs = mixLimbs(avatar.previousLimbs, avatar.limbs, playedLimbs);
+      this.applyLimbs(avatar, avatar.shownLimbs);
 
       const distance = avatar.group.position.distanceTo(this.player.position);
       avatar.badge.visible = distance < 12;
@@ -12311,7 +13206,7 @@ export class FestivalWorld {
 
   private animateRig(rig: AvatarRig, phase: number, stride: number, gesture?: AvatarGesture, skating = false, progress = 0): void {
     if(rig.visualRoot){rig.visualRoot.position.y=0;rig.visualRoot.rotation.y=0;}
-    setCoastalFists(rig,gesture==='punch');
+    setCoastalFists(rig,gesture==='punch');releaseCoastalGrips(rig);
     const root=rig.visualRoot?.parent;
     if(root){
       const gait=this.locomotion.get(rig)??{x:root.position.x,z:root.position.z,phase:0,blend:0};
@@ -12446,7 +13341,9 @@ export class FestivalWorld {
       this.foldJoints(rig, 1.35, 1.35);
       return;
     } else if (gesture === 'punch') {
-      punchCoastalPose(rig,progress);return;
+      punchCoastalPose(rig,progress);
+      rig.visualRoot?.parent?.userData.setImportedMove?.('punch', progress * MOVE_SECONDS.punch);
+      return;
     } else if (gesture === 'hit') {
       const away=rig.visualRoot?.parent?.userData.hitDirection as THREE.Vector3|undefined;
       hitCoastalPose(rig,progress,away?.x??0,away?.z??-1);
@@ -12462,7 +13359,15 @@ export class FestivalWorld {
   private poseRigDance(rig: AvatarRig, offset = 0): void {
     const beat = this.clubBeatPhase() * Math.PI * 2 + offset;
     danceCoastalPose(rig,beat);
+    // The owner's Northern Soul routine on the bodies, every dancer on the
+    // same point of it: the club's shared clock, not each one's own.
+    rig.visualRoot?.parent?.userData.setImportedMove?.('dance', this.clubSeconds());
     supportCoastalPose(rig,(x,z,y)=>this.footSurfaceAt(x,z,y));
+  }
+
+  /** Seconds on the club's shared clock, the same on every visitor's screen. */
+  private clubSeconds(): number {
+    return this.clubBeat.startedAt ? (Date.now() - this.clubBeat.startedAt) / 1000 : this.clock.elapsedTime;
   }
 
   /** The DJ throws a hand up when a request lands. */
@@ -12546,6 +13451,8 @@ export class FestivalWorld {
 
   /** True where the ground has given out and a body is in the sea. */
   private isOverWater(z: number, x = 0): boolean {
+    // The island's landing stands over deep water.
+    if (this.islandDock?.heightAt(x, z) !== undefined) return false;
     return isSwimmingDepth(x,z);
   }
 
@@ -12876,6 +13783,11 @@ export class FestivalWorld {
   /** Actual tread tops for ankle support; locomotion retains its continuous pitch line. */
   private footSurfaceAt(x:number,z:number,fromY:number):number {
     const r=rooftopBounds;
+    // Raised performance platforms are distinct from their room/deck floor.
+    // Use the actual mesh footprint and top, not the taller booth collider.
+    const roofStageZ = r.deckMinZ + 4.4;
+    if (Math.abs(x - ROOFTOP_CENTER_X) <= 5 && Math.abs(z - roofStageZ) <= 1.8 && fromY > ROOF_Y - .5) return ROOF_Y + .7;
+    if (Math.abs(x - CLUB_STAGE_X) <= 8.5 && Math.abs(z - CLUB_STAGE_CENTER_Z) <= CLUB_STAGE_DEPTH / 2 && fromY > CLUB_FLOOR_Y - .5) return CLUB_FLOOR_Y + .9;
     if(x>r.stairMinX&&x<r.stairMaxX){
       for(const [start,end,base] of [[r.stairMinZ,r.stairLandingMinZ,0],[r.stairLandingMaxZ,r.stairTopZ,ROOF_Y/2]]){
         if(z>=start-.01&&z<end) return base+Math.min(9,Math.floor((z-start+.01)/ROOF_GOING)+1)*ROOF_RISER;
@@ -12890,6 +13802,8 @@ export class FestivalWorld {
   }
 
   private groundHeightAt(x: number, z: number, fromY = this.player.position.y): number {
+    const landing = this.islandDock?.heightAt(x, z);
+    if (landing !== undefined) return landing + AVATAR_GROUND_Y;
     if(x>=TEMPLE_STAIRS.start&&x<=TEMPLE_STAIRS.end&&Math.abs(z-TEMPLE_STAIRS.centerZ)<TEMPLE_STAIRS.width/2)return AVATAR_GROUND_Y+templeStairPitch(x);
     const r = rooftopBounds;
     if (x > r.minX && x < r.maxX && z >= r.deckMinZ && z < r.maxZ) return ROOF_AVATAR_Y;
@@ -13741,6 +14655,97 @@ export class FestivalWorld {
       z + dirZ * radius,
     );
     cameraTarget.y = Math.max(cameraTarget.y, floorY + 0.85);
+  }
+
+  /**
+   * The band's stage on the empty roof over the pop-up shop, behind the NIMA
+   * ROOFTOP screen and facing the beach; their bonfire low in the roof's
+   * north-east corner, clear of the stage. They are not residents: not in
+   * the attendee list, not greeted, not carried. Their props stop bodies on
+   * the roof only, never in the shop underneath.
+   */
+  private createRooftopBand(): void {
+    const r = rooftopBounds;
+    const stage = { x: ROOFTOP_CENTER_X, y: ROOF_Y, z: 12.2, yaw: Math.PI };
+    const fire = { x: r.maxX - 4.5, y: ROOF_Y, z: r.deckMinZ - 3.4, yaw: Math.PI / 2 };
+    const band = new RooftopBand(stage, fire, light => this.dayNight.addLampLight(light, 16));
+    this.scene.add(band.group);
+    this.rooftopBand = band;
+    void band.load().catch(error => console.warn('The rooftop band did not load', error));
+    const roof = { minY: ROOF_Y - 1, maxY: ROOF_Y + 3.5 };
+    const m = BAND_SCALE;
+    // Stage-frame metres to the world: the stage is turned to face -z.
+    const at = (x: number, y: number): [number, number] => [stage.x - x * m, stage.z + y * m];
+    const riser = at(0, 1.35), mic = at(0, -1.05);
+    this.addCollider(riser[0], riser[1], 2.3 * m, 2.2 * m, .1, roof, 'band-riser');
+    for (const side of [-1, 1]) {
+      const amp = at(side * 3.2, .5);
+      this.addCollider(amp[0], amp[1], .8 * m, .6 * m, .1, roof, 'band-amp');
+    }
+    this.addCollider(mic[0], mic[1], .35 * m, .35 * m, .05, roof, 'band-mic');
+    this.addCollider(fire.x, fire.z, 1.1 * m, 1.1 * m, .1, roof, 'band-bonfire');
+    for (const side of [-1, 1]) this.addCollider(fire.x + side * 1.3 * m, fire.z, .5 * m, 1.25 * m, .08, roof, 'band-bench');
+  }
+
+  /**
+   * For review: where the visitor's feet are against the ground under them —
+   * the lowest point of every shown mesh of their body, and the floor.
+   */
+  feetReviewSnapshot(): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    const p = this.player.position;
+    out.floor = this.footSurfaceAt(p.x, p.z, p.y);
+    out.ground = this.groundHeightAt(p.x, p.z, p.y);
+    out.rootY = p.y;
+    out.at = [Number(p.x.toFixed(2)), Number(p.z.toFixed(2))];
+    out.visualY = this.playerRig?.visualRoot?.position.y;
+    const shown = (o: THREE.Object3D): boolean => o.visible && (!o.parent || shown(o.parent));
+    this.player.traverse(o => {
+      if (!(o instanceof THREE.SkinnedMesh) || !shown(o)) return;
+      const position = o.geometry.getAttribute('position');
+      let low = Infinity;
+      const v = new THREE.Vector3();
+      for (let i = 0; i < position.count; i += 1) {
+        v.fromBufferAttribute(position, i);
+        o.applyBoneTransform(i, v);
+        low = Math.min(low, o.localToWorld(v).y);
+      }
+      out[String(o.userData.componentId)] = Number(low.toFixed(3));
+    });
+    return out;
+  }
+
+  /**
+   * For review: across a patch of ground, where a body stands (the walking
+   * surface) against where the ground is drawn (the first thing a ray down
+   * meets that is not a body). A body "floating" is the first above the second.
+   */
+  groundReviewSamples(x0: number, x1: number, z0: number, z1: number, step = 1): Array<[number, number, number, number]> {
+    const ray = new THREE.Raycaster();
+    ray.camera = this.camera;
+    const bodies = new Set<THREE.Object3D>();
+    this.player.traverse(o => bodies.add(o));
+    for (const avatar of this.remoteAvatars.values()) avatar.group.traverse(o => bodies.add(o));
+    for (const npc of this.npcs) npc.group.traverse(o => bodies.add(o));
+    const out: Array<[number, number, number, number]> = [];
+    for (let x = x0; x <= x1; x += step) for (let z = z0; z <= z1; z += step) {
+      const stand = this.footSurfaceAt(x, z, 0);
+      ray.set(new THREE.Vector3(x, stand + 3, z), new THREE.Vector3(0, -1, 0));
+      ray.far = 8;
+      const hit = ray.intersectObjects(this.scene.children, true).find(h => !bodies.has(h.object) && (h.object as THREE.Mesh).isMesh && h.object.visible);
+      out.push([x, z, Number(stand.toFixed(3)), hit ? Number(hit.point.y.toFixed(3)) : NaN]);
+    }
+    return out;
+  }
+
+  /** Whether the jukebox has a record on: the band plays it, or goes back to the fire. */
+  setJukeboxPlaying(playing: boolean): void {
+    this.rooftopBand?.setPlaying(playing);
+  }
+
+  /** For review: where the band is and what it is doing. */
+  rooftopBandSnapshot(): ReturnType<RooftopBand['snapshot']> | undefined {
+    return this.rooftopBand?.snapshot();
   }
 
   /**

@@ -123,23 +123,75 @@ export const createMentorDog = (): MentorDogRig => {
   return { root, head, leftFrontLeg, rightFrontLeg, leftBackLeg, rightBackLeg, tail, body };
 };
 
-/** Keep a compact, still perch in the animated head frame, with paws on the crown. */
-export function perchMentor(group:THREE.Group, rig:MentorDogRig, head:THREE.Object3D, support:THREE.Vector3):void {
+/**
+ * Lying down on the crown in the animated head frame: front paws forward under
+ * the chin, hind legs folded forward along the flanks, each leg on its own side.
+ * Rolling the legs about Z swung each one under the belly to the other side,
+ * so the paws crossed and propped him up off the hair.
+ */
+const LYING=[['leftFrontLeg',-1.52,-.1],['rightFrontLeg',-1.52,.1],['leftBackLeg',-1.6,-.3],['rightBackLeg',-1.6,.3]] as const;
+/**
+ * Points over the body's blocks in the lying pose, in the dog root's frame.
+ * The legs and tail are left out: folded under him they held his belly a
+ * leg's thickness off the hair, and he floated over the head with daylight
+ * under him (the owner, 2026-10-01). The belly rests; the paws tuck in.
+ */
+function lyingSamples(rig:MentorDogRig):THREE.Vector3[] {
+  const cached=rig.root.userData.lyingSamples as THREE.Vector3[]|undefined;if(cached)return cached;
+  rig.root.updateWorldMatrix(false,true);
+  const toRoot=new THREE.Matrix4().copy(rig.root.matrixWorld).invert(),samples:THREE.Vector3[]=[];
+  // A box's corners miss the middle of its belly, which is what meets the crown.
+  const steps=[-.5,-.25,0,.25,.5];
+  const limbs=[rig.leftFrontLeg,rig.rightFrontLeg,rig.leftBackLeg,rig.rightBackLeg,rig.tail];
+  const onLimb=(o:THREE.Object3D)=>{for(let p:THREE.Object3D|null=o;p&&p!==rig.root;p=p.parent)if(limbs.includes(p as THREE.Group))return true;return false;};
+  // His own body and head only. The resident MENTOR carries a board (hidden
+  // while he is held) on the same root: counted, it was what rested on the
+  // cap, and he lay a board's height above it (the owner, October 2).
+  const ownPart=(o:THREE.Object3D)=>{for(let p:THREE.Object3D|null=o;p&&p!==rig.root;p=p.parent)if(p===rig.body||p===rig.head)return true;return false;};
+  rig.root.traverse(o=>{
+    if(!(o instanceof THREE.Mesh)||onLimb(o)||!ownPart(o))return;
+    const local=new THREE.Matrix4().multiplyMatrices(toRoot,o.matrixWorld);
+    // The undersides only: what he lies on. Every face counted, a quantile
+    // of the gaps meant nothing and sank him into the crown.
+    for(const x of steps)for(const z of steps)samples.push(new THREE.Vector3(x,-.5,z).applyMatrix4(local));
+  });
+  return rig.root.userData.lyingSamples=samples;
+}
+/**
+ * Rest on the head. Given the surface under him (the hair's or the cap's dome,
+ * in the head frame) he settles 2 cm into it: a flat belly on a dome touches
+ * at one point and shows daylight under both ends. Without one he stays 6 mm
+ * clear of the crown's height.
+ */
+export const MENTOR_NESTLE=.02;
+/** Which of his belly's gaps to the crown is brought down to MENTOR_NESTLE. */
+export const MENTOR_SEAT_QUANTILE=.1;
+export function perchMentor(group:THREE.Group, rig:MentorDogRig, head:THREE.Object3D, support:THREE.Vector3, surface?:(x:number,z:number)=>number):void {
   const parent=group.parent;if(!parent)return;
-  for(const [leg,sign] of [[rig.leftFrontLeg,1],[rig.rightFrontLeg,-1],[rig.leftBackLeg,1],[rig.rightBackLeg,-1]] as const)leg.rotation.set(0,0,sign*1.08);
+  for(const [leg,pitch,splay] of LYING)rig[leg].rotation.set(pitch,0,splay);
+  rig.body.rotation.set(0,0,0);rig.head.rotation.set(-.12,0,0);rig.tail.rotation.set(-.7,0,0);
+  const samples=lyingSamples(rig);
   group.scale.setScalar(.56);
   parent.updateWorldMatrix(true,false);head.updateWorldMatrix(true,false);
   group.quaternion.copy(parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(head.getWorldQuaternion(new THREE.Quaternion())));
   group.position.copy(parent.worldToLocal(head.localToWorld(support.clone())));
   group.updateWorldMatrix(false,true);
-  // Measure the actual tucked legs, not the standing dog's old origin.
-  let lowest=Infinity;
-  for(const leg of [rig.leftFrontLeg,rig.rightFrontLeg,rig.leftBackLeg,rig.rightBackLeg])leg.traverse(o=>{
-    if(!(o instanceof THREE.Mesh))return;
-    const positions=o.geometry.getAttribute('position');
-    for(let i=0;i<positions.count;i++)lowest=Math.min(lowest,group.worldToLocal(o.localToWorld(new THREE.Vector3().fromBufferAttribute(positions,i))).y);
-  });
-  group.position.add(new THREE.Vector3(0,.006-lowest*.56,0).applyQuaternion(group.quaternion));
+  const toHead=new THREE.Matrix4().copy(head.matrixWorld).invert().multiply(rig.root.matrixWorld),point=new THREE.Vector3();
+  // Seated by his belly's lower gaps (the 10th percentile), not the least:
+  // on a round crown the least is the dome's top, and the rest of a flat
+  // belly hovered over the slopes (the owner, 2026-10-01: "the gap is too
+  // wide"). His middle settles into the hair or the cap's crown instead.
+  const gaps:number[]=[];
+  for(const sample of samples){
+    point.copy(sample).applyMatrix4(toHead);
+    const under=surface?surface(point.x,point.z):support.y;
+    if(Number.isFinite(under))gaps.push(point.y-under);
+  }
+  gaps.sort((a,b)=>a-b);
+  let clearance=gaps.length?gaps[Math.floor(gaps.length*MENTOR_SEAT_QUANTILE)]:Infinity;
+  if(!Number.isFinite(clearance))for(const sample of samples)clearance=Math.min(clearance,point.copy(sample).applyMatrix4(toHead).y-support.y);
+  const from=parent.worldToLocal(head.localToWorld(new THREE.Vector3())),to=parent.worldToLocal(head.localToWorld(new THREE.Vector3(0,(surface?-MENTOR_NESTLE:.006)-clearance,0)));
+  group.position.add(to.sub(from));
   group.updateWorldMatrix(false,true);
 }
 

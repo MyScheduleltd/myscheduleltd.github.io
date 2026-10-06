@@ -4,9 +4,14 @@ import { canOpenArtPreview } from './artPreviewPolicy';
 const root = document.querySelector<HTMLElement>('#app');
 if (!root) throw new Error('Application root is missing.');
 
+async function openWorld(into: HTMLElement): Promise<void> {
+  const { App } = await import('./ui/App');
+  new App(into).mount();
+}
+
 if (canOpenArtPreview(window.location.hostname, window.location.search, window.location.pathname)) {
   // Do not import the world, open a connection, or create renderers off this route.
-  void import('./ui/App').then(({ App }) => new App(root).mount());
+  void openWorld(root);
 } else {
   const panel = document.createElement('section');
   panel.style.cssText = 'max-width:38rem;margin:12vh auto;padding:2rem;font:18px/1.6 system-ui;color:#e8e5df';

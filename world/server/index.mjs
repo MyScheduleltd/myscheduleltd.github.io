@@ -203,6 +203,11 @@ const trackTempos = {};
 // link or a CDN address — and resolved to a media URL by the client, which is
 // the only side that holds the Drive key.
 const immersiveSources = {};
+// Titles STAFF have rewritten, by YouTube id: { title, titleZh }, either or
+// both. A film's title otherwise comes from the catalogue compiled into the
+// client, or from the work STAFF added, and could only be changed by a deploy.
+const videoTitles = {};
+const MAX_VIDEO_TITLE = 100;
 const MAX_IMMERSIVE_URL = 500;
 const validImmersiveUrl = (value) => {
   if (typeof value !== 'string' || value.length > MAX_IMMERSIVE_URL) return false;
@@ -397,27 +402,33 @@ const npcTitles = {
   YO: 'Festival Videographer',
 };
 /**
- * What a resident says about themselves, held against their NPC id.
+ * What a resident says about themselves, held against their NPC id, in each
+ * language.
  *
- * Empty by design. These are real colleagues, so nothing is written here on
- * their behalf — STAFF fill each one in through the same editor that renames
- * them, exactly as the owner wrote the two DJ introductions. An id with no
- * entry is not a fault: the world shows the name and the job title it already
- * has and simply has no biography under them yet.
+ * Empty in the code by design. These are real colleagues, so nothing is
+ * written here on their behalf — STAFF fill each one in through the same editor
+ * that renames them. What the owner wrote lives in `festival-seed.json`, which
+ * is what a deploy boots from. An id with no entry is not a fault: the world
+ * shows the name and the job title it already has and simply has no biography
+ * under them yet.
  *
- * English only for now, at the owner's choice. `introductionZh` can be added
- * beside this the day it is wanted without disturbing anything that reads it.
- *
- * The two DJs are deliberately absent. They are NPCs *and* DJs, they already
- * have a fuller bilingual profile in `djProfiles`, and the world reaches it by
- * a different prompt — one introduction per person, edited in one place.
+ * Two languages, like the DJ pages and the pamphlet. The owner writes in
+ * Chinese, so `*Zh` is the original and the English is its translation; either
+ * may be empty, and the world falls back to the other one rather than show a
+ * blank card. A job title has a Chinese half too, but only the English one is
+ * required, because the attendee list needs something to print in every
+ * language.
  */
+const npcTitlesZh = {};
 const npcIntroductions = {};
+const npcIntroductionsZh = {};
 const publicNpcProfiles = () => Object.keys(npcNames).map((id) => ({
   id,
   name: npcNames[id],
   title: npcTitles[id],
+  titleZh: npcTitlesZh[id] ?? '',
   introduction: npcIntroductions[id] ?? '',
+  introductionZh: npcIntroductionsZh[id] ?? '',
 }));
 // The pop-up store's destination. Empty until STAFF set one, and only ever an
 // http(s) address: this string ends up in a link the visitor's browser follows,
@@ -637,7 +648,7 @@ const safeText = (value, max) => String(value ?? '').normalize('NFKC').trim().re
  * length of finite numbers, held to ±4 and to hundredths, anything else
  * dropped. Must agree with LIMB_FIELDS in src/world/TrackedLimbs.ts.
  */
-const LIMB_FIELDS = { l: 9, r: 9, lf: 20, rf: 20, t: 2, g: 6, h: 2 };
+const LIMB_FIELDS = { l: 9, r: 9, lf: 20, rf: 20, le: 3, re: 3, tr: 1, hr: 1, t: 2, g: 6, h: 2 };
 const safeLimbs = (value) => {
   if (!value || typeof value !== 'object') return undefined;
   const limbs = {};
@@ -680,7 +691,9 @@ const persistedSnapshot = () => ({
   customVideos: customVideosByVenue,
   npcNames,
   npcTitles,
+  npcTitlesZh,
   npcIntroductions,
+  npcIntroductionsZh,
   pamphlet: pamphletContent,
   djProfiles,
   djProfileSeed: DJ_PROFILE_SEED,
@@ -691,6 +704,7 @@ const persistedSnapshot = () => ({
   gateCopy,
   trackTempos,
   immersiveSources,
+  videoTitles,
   trackDurations,
   adminKeyDigest,
   messages,
@@ -838,8 +852,8 @@ const restoreMessages = (saved) => {
   }
 };
 
-const restoreNpcs = (savedNames, savedTitles, savedIntroductions) => {
-  for (const [id, name] of Object.entries(savedNames ?? {})) {
+const restoreNpcs = (saved) => {
+  for (const [id, name] of Object.entries(saved.npcNames ?? {})) {
     if (!/^[A-Z0-9_]{1,24}$/.test(id)) continue;
     // Only the current roster and NPCs STAFF added are restored. A default
     // that has since been renamed would otherwise return as a stray.
@@ -848,13 +862,19 @@ const restoreNpcs = (savedNames, savedTitles, savedIntroductions) => {
     const safeName = safeText(name, 16);
     if (!safeName) continue;
     npcNames[id] = safeName;
-    npcTitles[id] = safeText(savedTitles?.[id], 40) || npcTitles[id] || 'Director';
+    npcTitles[id] = safeText(saved.npcTitles?.[id], 40) || npcTitles[id] || 'Director';
     // No seed edition to guard here, unlike the DJ profiles: the defaults are
-    // empty, so a stored introduction is always somebody's writing and always
-    // wins. Only set the key when there is something in it, so an id with no
+    // empty, so a stored value is always somebody's writing and always wins.
+    // Only set a key when there is something in it, so an id with no
     // biography stays absent rather than becoming an empty string.
-    const savedIntroduction = safeText(savedIntroductions?.[id], 1200);
-    if (savedIntroduction) npcIntroductions[id] = savedIntroduction;
+    for (const [target, source, limit] of [
+      [npcTitlesZh, saved.npcTitlesZh, 40],
+      [npcIntroductions, saved.npcIntroductions, 1200],
+      [npcIntroductionsZh, saved.npcIntroductionsZh, 1200],
+    ]) {
+      const value = safeText(source?.[id], limit);
+      if (value) target[id] = value;
+    }
   }
 };
 
@@ -1006,6 +1026,11 @@ const restorePersistedState = () => {
     if (!validYoutubeId(youtubeId) || !validImmersiveUrl(link)) continue;
     immersiveSources[youtubeId] = link;
   }
+  for (const [youtubeId, entry] of Object.entries(saved.videoTitles ?? {})) {
+    if (!validYoutubeId(youtubeId)) continue;
+    const title = safeText(entry?.title, MAX_VIDEO_TITLE), titleZh = safeText(entry?.titleZh, MAX_VIDEO_TITLE);
+    if (title || titleZh) videoTitles[youtubeId] = { ...(title ? { title } : {}), ...(titleZh ? { titleZh } : {}) };
+  }
   if (saved.adminKeyDigest
     && typeof saved.adminKeyDigest.salt === 'string'
     && typeof saved.adminKeyDigest.hash === 'string'
@@ -1014,7 +1039,7 @@ const restorePersistedState = () => {
     adminKeyDigest = { salt: saved.adminKeyDigest.salt, hash: saved.adminKeyDigest.hash };
   }
   restoreMessages(saved.messages);
-  restoreNpcs(saved.npcNames, saved.npcTitles, saved.npcIntroductions);
+  restoreNpcs(saved);
   restoreCustomVideos(saved.customVideos);
   restoreSchedule(saved.schedule);
   restoreDonations(saved.donations);
@@ -1203,6 +1228,7 @@ const stateFor = (visitor) => ({
   gateCopy,
   trackTempos,
   immersiveSources,
+  videoTitles,
   jukebox: jukeboxSnapshot(),
 });
 
@@ -1570,7 +1596,7 @@ const server = createServer(async (request, response) => {
       // The receipt mailbox is deliberately absent. It is a real address,
       // STAFF's to set, and it reaches `/api/admin/state` behind the key and
       // nothing else — the client only ever declares it on `AdminState`.
-      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, immersiveSources, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
+      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, immersiveSources, videoTitles, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
@@ -2345,6 +2371,7 @@ a{color:#e8b64a}</style>
           gateCopy,
           trackTempos,
           immersiveSources,
+          videoTitles,
           // The STAFF panel reads this payload, not the one attendees get, so
           // without it the running order and the shelf were always empty there
           // however many records were in the machine.
@@ -2481,6 +2508,23 @@ a{color:#e8b64a}</style>
         persist();
         return json(response, 200, { ok: true, immersiveSources });
       }
+      if (request.method === 'POST' && url.pathname === '/api/admin/video-title') {
+        const youtubeId = String(payload.youtubeId ?? '').trim();
+        if (!validYoutubeId(youtubeId)) return apiError(response, 400, 'Unknown video.');
+        // Each language on its own; an empty one goes back to the catalogue's.
+        const next = { ...videoTitles[youtubeId] };
+        for (const field of ['title', 'titleZh']) {
+          if (!(field in payload)) continue;
+          const text = safeText(payload[field], MAX_VIDEO_TITLE);
+          if (text) next[field] = text;
+          else delete next[field];
+        }
+        if (Object.keys(next).length) videoTitles[youtubeId] = next;
+        else delete videoTitles[youtubeId];
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true, videoTitles });
+      }
       if (request.method === 'POST' && url.pathname === '/api/admin/npcs') {
         const npcId = safeText(payload.npcId, 24).toUpperCase();
         if (!(npcId in npcNames)) return apiError(response, 400, 'Unknown NPC.');
@@ -2497,11 +2541,22 @@ a{color:#e8b64a}</style>
         // yet", which is a state the world already draws, so it must be
         // possible to go back to it. `safeText` normalises and caps it at the
         // same 1200 the DJ introductions use.
-        const introduction = safeText(payload.introduction, 1200);
+        //
+        // The Chinese halves are only touched when the request carries them. A
+        // page built before they existed sends `title` and `introduction`
+        // alone, and saving a rename from it must not wipe the Chinese text.
         npcNames[npcId] = name;
         npcTitles[npcId] = title;
-        if (introduction) npcIntroductions[npcId] = introduction;
-        else delete npcIntroductions[npcId];
+        for (const [target, field, limit] of [
+          [npcIntroductions, 'introduction', 1200],
+          [npcTitlesZh, 'titleZh', 40],
+          [npcIntroductionsZh, 'introductionZh', 1200],
+        ]) {
+          if (field !== 'introduction' && typeof payload[field] !== 'string') continue;
+          const value = safeText(payload[field], limit);
+          if (value) target[npcId] = value;
+          else delete target[npcId];
+        }
         for (const controlledVisitor of visitors.values()) {
           if (controlledVisitor.npcId === npcId) controlledVisitor.name = name;
         }

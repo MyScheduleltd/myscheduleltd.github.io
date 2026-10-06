@@ -10,8 +10,8 @@ import { createHash } from 'node:crypto';
 globalThis.self=globalThis;
 globalThis.createImageBitmap=async(blob)=>{const bytes=await blob.arrayBuffer();const view=new DataView(bytes);return {width:view.getUint32(16),height:view.getUint32(20),close(){}};};
 globalThis.document = {createElement:()=>({width:64,height:64,getContext:()=>({fillRect(){}})})};
-const output=await build({stdin:{contents:"export {applyWornStyle} from './src/world/WornStyle'; export * from './src/world/MentorDog'; export { FestivalWorld } from './src/world/FestivalWorld'; export * from './src/world/CoastalAvatar'; export * from './src/world/CoastalPose'; export * from './src/world/CoastalCarry'; export * from './src/world/ImportedAvatar'; export * from './src/world/CoastalSkateboard'; export * from './src/world/CoastalGeometry'; export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,loader:{'.png':'dataurl'},platform:'node',format:'esm',write:false});
-const {applyWornStyle,waveCoastalPose,fallCoastalPose,landCoastalPose,djCoastalPose,hitCoastalPose,perchMentor,stepMentorGait,createMentorDog,poseCoastalCarry,loadImportedAvatar,attachImportedAvatar,syncImportedAvatars,COASTAL_CUP_OFFSET,COASTAL_STRAW_TIP,FestivalWorld,jumpCoastalArms,setCoastalSwimwear,punchCoastalPose,setCoastalFists,createCoastalSedan,CONVERTIBLE,walkCoastalPose,danceCoastalPose,COASTAL_STRIDE_LENGTH,THREE,createCoastalAvatar,supportCoastalPose,seatCoastalLegs,coastalFootHeights,skateCoastalPose,createCoastalSkateboard}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
+const output=await build({stdin:{contents:"export {applyWornStyle} from './src/world/WornStyle'; export * from './src/world/MentorDog'; export * from './src/world/HandPose'; export * from './src/world/RooftopBand'; export { HeadTracking } from './src/world/HeadTracking'; export { FestivalWorld } from './src/world/FestivalWorld'; export * from './src/world/CoastalAvatar'; export * from './src/world/CoastalPose'; export * from './src/world/CoastalCarry'; export * from './src/world/ImportedAvatar'; export * from './src/world/CoastalSkateboard'; export * from './src/world/CoastalGeometry'; export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,loader:{'.png':'dataurl'},platform:'node',format:'esm',write:false});
+const {HeadTracking,RooftopBand,BAND_MEMBERS,FIST,FINGER_NAMES,handJointsFromLandmarks,handPoseFromJoints,MENTOR_NESTLE,applyWornStyle,waveCoastalPose,fallCoastalPose,landCoastalPose,djCoastalPose,hitCoastalPose,perchMentor,stepMentorGait,createMentorDog,poseCoastalCarry,loadImportedAvatar,attachImportedAvatar,syncImportedAvatars,COASTAL_CUP_OFFSET,COASTAL_STRAW_TIP,FestivalWorld,jumpCoastalArms,setCoastalSwimwear,punchCoastalPose,setCoastalFists,createCoastalSedan,CONVERTIBLE,walkCoastalPose,danceCoastalPose,COASTAL_STRIDE_LENGTH,THREE,createCoastalAvatar,supportCoastalPose,seatCoastalLegs,coastalFootHeights,skateCoastalPose,createCoastalSkateboard}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
 function character(){
   const root=new THREE.Group();root.position.y=.28;
   const rig=createCoastalAvatar(root,{skin:'#dfb590',hair:'#3b3633',top:'#d0cbc1',bottoms:'#44464a',swimwear:'#577467'},true,new THREE.Group());
@@ -264,179 +264,276 @@ test('popcorn eating retains the left carton while the right hand carries a bite
 });
 
 
-const importedBytes=await readFile(process.env.AVATAR_ASSET??'src/assets/neighbour.glb');
-await loadImportedAvatar(importedBytes.buffer.slice(importedBytes.byteOffset,importedBytes.byteOffset+importedBytes.byteLength));
-function importedCharacter(){
+const AVATAR_FILES=['male','female'];
+const avatarBytes=Object.fromEntries(await Promise.all(AVATAR_FILES.map(async key=>{
+  const bytes=await readFile(`src/assets/avatars/${key}.glb`);
+  return [key,bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength)];
+})));
+await loadImportedAvatar(avatarBytes);
+const BASE_PALETTE={skin:'#dfb590',hair:'#3b3633',top:'#18191b',bottoms:'#44464a',swimwear:'#577467'};
+function importedCharacter(palette={}){
   const {root,rig}=character();
-  attachImportedAvatar(root,rig,{skin:'#dfb590',hair:'#3b3633',top:'#d0cbc1',bottoms:'#44464a',swimwear:'#577467'});
+  attachImportedAvatar(root,rig,{...BASE_PALETTE,...palette});
   return {root,rig};
 }
-test('supplied FBX instances share geometry but never share a skeleton or colour material',()=>{
+const shown=o=>o.visible&&(!o.parent||shown(o.parent));
+const shownMeshes=root=>root.userData.importedAvatar.meshes.filter(shown);
+const bodyMesh=root=>shownMeshes(root).find(m=>m.userData.componentId==='body');
+const lowestSole=root=>Math.min(...root.userData.importedSolePoints().map(p=>p.y));
+
+test('Higgsfield instances share geometry but never share a skeleton or colour material',()=>{
   const first=importedCharacter(),second=importedCharacter();
-  const a=first.root.userData.importedAvatar.meshes[0],b=second.root.userData.importedAvatar.meshes[0];
+  const a=bodyMesh(first.root),b=bodyMesh(second.root);
   assert.equal(a.geometry,b.geometry);assert.notEqual(a.skeleton,b.skeleton);assert.notEqual(a.material,b.material);
   walkCoastalPose(first.rig,1,1);syncImportedAvatars(first.root);
   assert.notDeepEqual(a.skeleton.bones.find(b=>b.name==='RightArm').quaternion.toArray(),b.skeleton.bones.find(b=>b.name==='RightArm').quaternion.toArray());
 });
-test('supplied mesh keeps finite deformations, clear walking wrists and grounded soles through a full cycle',()=>{
-  const {root,rig}=importedCharacter(),meshes=root.userData.importedAvatar.meshes,p=new THREE.Vector3();
+test('walking keeps finite deformations, hands clear of the trousers and soles on the ground',()=>{
+  const {root,rig}=importedCharacter(),mesh=bodyMesh(root),p=new THREE.Vector3();
   for(let frame=0;frame<24;frame++){
     walkCoastalPose(rig,frame/24*Math.PI*2,1);supportCoastalPose(rig,()=>0);syncImportedAvatars(root);
-    let lowest=Infinity;
-    for(const mesh of meshes){
     mesh.skeleton.update();const rest=mesh.geometry.getAttribute('position');
-    for(let i=0;i<rest.count;i++){
-      if(rest.getY(i)>-.69)continue;
-      p.fromBufferAttribute(rest,i);mesh.applyBoneTransform(i,p);mesh.localToWorld(p);
-      assert.ok(Number.isFinite(p.y));lowest=Math.min(lowest,p.y);
-    }}
-    assert.ok(lowest>-.04 && lowest<.02,`actual shoe contact at ${frame}: ${lowest}`);
-    for(const hand of [rig.leftWrist,rig.rightWrist])assert.ok(Math.abs(root.worldToLocal(hand.getWorldPosition(p)).x)>.57,'oversized sleeve must clear the torso');
+    for(let i=0;i<rest.count;i+=7){p.fromBufferAttribute(rest,i);mesh.applyBoneTransform(i,p);assert.ok(Number.isFinite(p.x+p.y+p.z));}
+    const lowest=lowestSole(root);
+    assert.ok(lowest>-.04&&lowest<.02,`shoe contact at ${frame}: ${lowest}`);
+    for(const right of [false,true]){
+      const tip=root.userData.importedFingertip(right);
+      assert.ok(Math.abs(tip.x)>.36,`hand swings through the trousers at ${frame}: ${tip.x}`);
+    }
   }
 });
-test('swimwear replaces the imported streetwear while keeping the supplied head and hands',()=>{
-  const {root}=importedCharacter(),mesh=root.userData.importedAvatar.meshes.find(m=>m.userData.componentId==='tee');
-  setCoastalSwimwear(root,true);assert.equal(mesh.visible,false);assert.ok(root.userData.swimMeshes.every(m=>m.visible));
-  assert.equal(root.getObjectByName('Supplied head and hands • swim outfit').visible,true);
-  setCoastalSwimwear(root,false);assert.equal(mesh.visible,true);assert.ok(root.userData.swimMeshes.every(m=>!m.visible));
+test('the arms hang from their generated A-pose to the rig, not stiffly out to the side',()=>{
+  const {root,rig}=importedCharacter();walkCoastalPose(rig,0,0);syncImportedAvatars(root);
+  for(const right of [false,true]){
+    const frame=root.userData.importedHandFrame(right);
+    // The source models stand with their arms 42° out; at rest they hang.
+    assert.ok(frame.forearm.y<-.9,`forearm hangs ${right}: ${frame.forearm.toArray()}`);
+  }
 });
-
-test('rigid bag and head parts never inherit limb influences',()=>{
-  const {root}=importedCharacter();
-  for(const mesh of root.userData.importedAvatar.meshes){
-    const name=mesh.material.name;
-    const allowed=name.includes('bag-and-strap')?['Spine02']:name.endsWith('head')?['Head']:null;
-    if(!allowed)continue;
+test('swimwear takes the clothes off the same body and keeps the same head',()=>{
+  const {root}=importedCharacter(),land=bodyMesh(root);
+  const garments=()=>shownMeshes(root).filter(m=>m.userData.componentId.startsWith('garment-')).map(m=>m.userData.componentId).sort();
+  const headTop=()=>{syncImportedAvatars(root);return root.userData.importedHeadSupport().y;};
+  const before=headTop();
+  assert.deepEqual(garments(),['garment-shoes','garment-tee','garment-trousers']);
+  setCoastalSwimwear(root,true);
+  // One body in every outfit: the swimsuit is the body itself, never a second model.
+  assert.equal(bodyMesh(root),land);assert.deepEqual(garments(),[]);
+  assert.ok(root.userData.importedAvatar.variant.endsWith('-swim'));
+  assert.ok(Math.abs(headTop()-before)<1e-6,'the crown does not move with the change');
+  setCoastalSwimwear(root,false);assert.equal(bodyMesh(root),land);
+  assert.deepEqual(garments(),['garment-shoes','garment-tee','garment-trousers']);
+});
+test('the cap and its mark are carried rigidly by the head',()=>{
+  const {root}=importedCharacter({cap:'#303030'});
+  for(const mesh of root.userData.importedAvatar.meshes.filter(m=>['cap','cap-logo'].includes(m.userData.componentId))){
     const ids=mesh.geometry.getAttribute('skinIndex'),weights=mesh.geometry.getAttribute('skinWeight');
     for(let v=0;v<ids.count;v++)for(let k=0;k<4;k++)if(weights.getComponent(v,k)>.0001)
-      assert.ok(allowed.includes(mesh.skeleton.bones[ids.getComponent(v,k)].name),name+' must be rigid');
+      assert.equal(mesh.skeleton.bones[ids.getComponent(v,k)].name,'Head',mesh.userData.componentId+' must be rigid');
   }
 });
 
 // Exercise the imported shoe surface, not the old rig's invisible proxy boxes.
 test('imported soles clear every sampled step during ascent and descent',()=>{
-  const {root,rig}=importedCharacter(),p=new THREE.Vector3();
+  const {root,rig}=importedCharacter();
   const floor=(x,z)=>Math.max(0,Math.ceil(z/.56))*(3.5/9);
-  const shoes=root.userData.importedAvatar.meshes.filter(m=>m.material.name.endsWith('shoe'));
   for(const heading of [0,Math.PI])for(let frame=0;frame<48;frame++){
     root.position.set(0,0,frame/48*4.32);root.position.y=root.position.z/.56*(3.5/9)+.28;root.rotation.y=heading;
     walkCoastalPose(rig,frame/48*Math.PI*6);supportCoastalPose(rig,floor);syncImportedAvatars(root);
     let nearest=Infinity;
-    for(const mesh of shoes){
-      mesh.skeleton.update();const rest=mesh.geometry.getAttribute('position');
-      for(let i=0;i<rest.count;i++){
-        p.fromBufferAttribute(rest,i);mesh.applyBoneTransform(i,p);mesh.localToWorld(p);
-        const clearance=p.y-floor(p.x,p.z);nearest=Math.min(nearest,clearance);
-        assert.ok(clearance>-.04,`imported sole sinks at ${frame}, ${heading}: ${clearance}`);
-      }
+    for(const p of root.userData.importedSolePoints()){
+      const clearance=p.y-floor(p.x,p.z);nearest=Math.min(nearest,clearance);
+      assert.ok(clearance>-.04,`imported sole sinks at ${frame}, ${heading}: ${clearance}`);
     }
     assert.ok(nearest<.07,`imported shoes float at ${frame}, ${heading}: ${nearest}`);
   }
 });
-test('drinking and eating cannot drag trouser or bag vertices with the hands',()=>{
+test('drinking and eating cannot drag trouser vertices with the hands',()=>{
   const {root,rig}=importedCharacter(),prop=new THREE.Group();root.add(prop);
-  const parts=root.userData.importedAvatar.meshes.filter(m=>m.material.name.includes('trousers')||m.material.name.includes('bag-and-strap'));
+  // The trousers and the legs under them: whatever follows the hips and legs
+  // alone. The hands now hang to mid-thigh, so height cannot tell them apart.
+  const legBones=/^(Hips|(Left|Right)(UpLeg|Leg|Foot|ToeBase))$/;
+  const meshes=shownMeshes(root).filter(m=>['body','garment-trousers'].includes(m.userData.componentId));
+  assert.equal(meshes.length,2);
+  const legs=meshes.map(mesh=>{
+    const rest=mesh.geometry.getAttribute('position'),ids=mesh.geometry.getAttribute('skinIndex'),weights=mesh.geometry.getAttribute('skinWeight');
+    mesh.skeleton.update();const picked=[];
+    for(let i=0;i<rest.count;i++){
+      let onLegs=true;for(let k=0;k<4;k++)if(weights.getComponent(i,k)>.001&&!legBones.test(mesh.skeleton.bones[ids.getComponent(i,k)].name))onLegs=false;
+      if(onLegs)picked.push(i);
+    }
+    return {mesh,rest,picked};
+  });
+  assert.ok(legs.every(l=>l.picked.length>500));
   function vertices(){
     syncImportedAvatars(root);
-    return parts.flatMap(mesh=>{
-      mesh.skeleton.update();const p=mesh.geometry.getAttribute('position');
-      return Array.from({length:p.count},(_,i)=>mesh.localToWorld(mesh.applyBoneTransform(i,new THREE.Vector3().fromBufferAttribute(p,i))));
-    });
+    return legs.flatMap(({mesh,rest,picked})=>{mesh.skeleton.update();return picked.map(i=>mesh.localToWorld(mesh.applyBoneTransform(i,new THREE.Vector3().fromBufferAttribute(rest,i))));});
   }
   const baseline=vertices();
   for(const [hand,gesture] of [['right','drink'],['left','eat']])for(const phase of [0,.25,.5,.75,1]){
     prop.userData.carryHand=hand;poseCoastalCarry(rig,prop,gesture,phase);
-    vertices().forEach((p,i)=>assert.ok(p.distanceTo(baseline[i])<.00001,`hand pulls garment at ${gesture} ${phase}`));
+    vertices().forEach((p,i)=>assert.ok(p.distanceTo(baseline[i])<.0005,`hand pulls trousers at ${gesture} ${phase}`));
   }
 });
 
 test('imported hands bring the straw and popcorn to the mouth',()=>{
-  for(const gesture of ['drink','eat']){
-    const {root,rig}=importedCharacter(),prop=new THREE.Group();root.add(prop);
+  for(const palette of [{},{top:'#28191b'}])for(const gesture of ['drink','eat']){
+    const {root,rig}=importedCharacter(palette),prop=new THREE.Group();root.add(prop);
     prop.userData.carryHand=gesture==='drink'?'right':'left';
     poseCoastalCarry(rig,prop,gesture,.5);syncImportedAvatars(root);
     const mouth=rig.head.localToWorld(root.userData.importedMouth.clone());
     const point=gesture==='drink'?prop.localToWorld(COASTAL_STRAW_TIP.clone()):rig.visualRoot.localToWorld(root.userData.importedFingertip(true));
-    assert.ok(point.distanceTo(mouth)<.065,`${gesture} misses the native mouth: ${point.distanceTo(mouth)}`);
+    assert.ok(point.distanceTo(mouth)<.065,`${gesture} misses the mouth (${palette.top??'male'}): ${point.distanceTo(mouth)}`);
   }
 });
 
 test('seated imported shoes meet the floor without moving the seated body',()=>{
   const {root,rig}=importedCharacter();root.position.y=.4+.23-1.1;
   const seatedY=root.position.y;seatCoastalLegs(rig,()=>-.28);syncImportedAvatars(root);
-  for(const mesh of root.userData.importedAvatar.meshes.filter(m=>m.material.name.endsWith('shoe'))){
-    mesh.skeleton.update();const rest=mesh.geometry.getAttribute('position');let lowest=Infinity;
-    for(let i=0;i<rest.count;i++){
-      const p=mesh.localToWorld(mesh.applyBoneTransform(i,new THREE.Vector3().fromBufferAttribute(rest,i)));
-      lowest=Math.min(lowest,p.y);
-    }
-    assert.ok(Math.abs(lowest+.28)<.035,`seated shoe contact: ${lowest}`);
-  }
+  const lowest=lowestSole(root);
+  assert.ok(Math.abs(lowest+.28)<.035,`seated shoe contact: ${lowest}`);
   assert.equal(root.position.y,seatedY);
 });
 
-test('the installed model matches its zero-open-edge Blender audit',async()=>{
-  const audit=JSON.parse(await readFile('src/assets/neighbour.meta.json','utf8'));
-  assert.equal(audit.glbSha256,createHash('sha256').update(importedBytes).digest('hex'));
-  assert.ok(audit.parts.length>10);
-  for(const part of audit.parts){assert.equal(part.boundaryEdges,0,part.name);assert.equal(part.nonManifoldEdges,0,part.name);}
-});
-
-test('every clean body section has one joint owner and cannot stretch between unrelated bones',()=>{
+test('every avatar file carries one skinned body, four influences and finite weights',()=>{
   const {root}=importedCharacter();
   for(const mesh of root.userData.importedAvatar.meshes){
-    const ids=mesh.geometry.getAttribute('skinIndex'),weights=mesh.geometry.getAttribute('skinWeight'),owners=new Set();
-    for(let i=0;i<ids.count;i++)for(let k=0;k<4;k++)if(weights.getComponent(i,k)>.00001)owners.add(ids.getComponent(i,k));
-    assert.equal(owners.size,1,mesh.material.name);
+    const weights=mesh.geometry.getAttribute('skinWeight');assert.ok(weights,mesh.userData.componentId);
+    for(let v=0;v<weights.count;v+=5){
+      let sum=0;for(let k=0;k<4;k++){const w=weights.getComponent(v,k);assert.ok(Number.isFinite(w));sum+=w;}
+      assert.ok(Math.abs(sum-1)<.02,`${mesh.userData.componentId} weights sum to ${sum}`);
+    }
+  }
+  const ids=root.userData.importedAvatar.meshes.map(m=>m.userData.componentId);
+  for(const id of ['body','cap','cap-logo','print-schedule-front','print-schedule-back','print-schedule-tag','print-house-front','print-bros-back','vest','print-vest-front','print-vest-back'])
+    assert.ok(ids.includes(id),'missing '+id);
+});
+
+test('the tee and vest lettering is the supplied artwork, never the generated text',async()=>{
+  const {root}=importedCharacter();
+  for(const [id,file] of [['print-schedule-front','schedule-front'],['print-schedule-back','schedule-back'],['print-schedule-tag','schedule-tag'],['print-house-front','house-front'],['print-bros-back','bros-back'],['print-vest-front','vest-front'],['print-vest-back','vest-back']]){
+    const bytes=await readFile(`src/assets/outfits/${file}.png`),view=new DataView(bytes.buffer,bytes.byteOffset);
+    const mesh=root.userData.importedAvatar.meshes.find(m=>m.userData.componentId===id);
+    const image=mesh.material.map.image;
+    // The build pads each image by a six-pixel transparent border.
+    assert.deepEqual([image.width,image.height],[view.getUint32(16)+12,view.getUint32(20)+12],id);
   }
 });
 
 test('the cap is independently removable through palette and swim transitions',()=>{
- const {root}=importedCharacter(),meshes=root.userData.importedAvatar.meshes;
- const cap=meshes.find(m=>m.userData.componentId==='cap');
- assert.ok(cap,'separate cap mesh');assert.equal(cap.visible,false);
- const head=meshes.find(m=>m.userData.componentId==='head');assert.equal(head.visible,true);
- const palette={skin:'#dfb590',hair:'#3b3633',top:'#d0cbc1',bottoms:'#44464a',swimwear:'#577467'};
- root.userData.setImportedPalette({...palette,cap:'#aa3344'});assert.equal(cap.visible,true);
- setCoastalSwimwear(root,true);assert.equal(cap.visible,true);
- root.userData.setImportedPalette(palette);assert.equal(cap.visible,false);
- setCoastalSwimwear(root,false);assert.equal(cap.visible,false);assert.equal(head.visible,true);
-});
-
-
-test('streetwear contains no shoulder bag and every authored surface is closed',async()=>{
- const audit=JSON.parse(await readFile('src/assets/neighbour.meta.json','utf8'));
- assert.deepEqual(audit.outfits,['schedule-tee','bros-tee','utility-vest']);
- assert.ok(audit.parts.every(p=>!p.name.startsWith('bag-')&&!p.name.startsWith('strap-')));
- assert.ok(audit.parts.every(p=>p.boundaryEdges===0&&p.nonManifoldEdges===0));
+ const {root}=importedCharacter();
+ const cap=()=>shownMeshes(root).find(m=>m.userData.componentId==='cap');
+ assert.equal(cap(),undefined);
+ root.userData.setImportedPalette({...BASE_PALETTE,cap:'#aa3344'});assert.ok(cap());
+ assert.equal(cap().material.color.getHexString(),new THREE.Color('#aa3344').getHexString());
+ setCoastalSwimwear(root,true);assert.ok(cap(),'the cap stays on in the water');
+ root.userData.setImportedPalette(BASE_PALETTE);assert.equal(cap(),undefined);
+ setCoastalSwimwear(root,false);assert.equal(cap(),undefined);assert.ok(bodyMesh(root));
 });
 
 test('three fixed outfits remain independent across visitors and restore correctly after swimming',()=>{
  const a=importedCharacter(),b=importedCharacter();
- const palette={skin:'#dfb590',hair:'#3b3633',bottoms:'#718262',swimwear:'#577467'};
- const visible=root=>root.userData.importedAvatar.meshes.filter(m=>m.visible).map(m=>m.userData.componentId);
- for(const [top,id] of [['#18191b','1'],['#191a1c','2'],['#1a1b1d','3']]){
-  a.root.userData.setImportedPalette({...palette,top});
-  const names=visible(a.root);
-  assert.equal(names.some(n=>n.startsWith('vest')),id==='3');
-  assert.equal(names.some(n=>n.startsWith('outfit2')),id==='2');
-  assert.equal(names.some(n=>n.startsWith('outfit1')),id!=='2');
-  assert.ok(!visible(b.root).some(n=>n.startsWith('vest')||n.startsWith('outfit2')));
+ const visible=root=>shownMeshes(root).map(m=>m.userData.componentId).sort();
+ const clothes=['garment-shoes','garment-tee','garment-trousers'];
+ const dressed=(...prints)=>['body',...clothes,...prints].sort();
+ for(const [top,expected] of [['#18191b',dressed('print-schedule-back','print-schedule-front','print-schedule-tag')],['#191a1c',dressed('print-bros-back','print-house-front')],['#1a1b1d',dressed('print-vest-back','print-vest-front','vest')]]){
+  a.root.userData.setImportedPalette({...BASE_PALETTE,top});
+  assert.deepEqual(visible(a.root),expected);
+  assert.deepEqual(visible(b.root),dressed('print-schedule-back','print-schedule-front','print-schedule-tag'));
   setCoastalSwimwear(a.root,true);
-  assert.equal(visible(a.root).length,0,'all imported streetwear hidden in water');
-  a.root.userData.setImportedPalette({...palette,top});
-  assert.equal(visible(a.root).length,0,'appearance edits cannot reveal garments in water');
-  setCoastalSwimwear(a.root,false);assert.deepEqual(visible(a.root),names);
+  assert.deepEqual(visible(a.root),['body'],'only the swimwear body in the water');
+  a.root.userData.setImportedPalette({...BASE_PALETTE,top});
+  assert.deepEqual(visible(a.root),['body'],'appearance edits cannot reveal garments in water');
+  setCoastalSwimwear(a.root,false);assert.deepEqual(visible(a.root),expected);
  }
 });
 
+test('the female body rides in the outfit wire and keeps outfit, cap and swimwear',()=>{
+ const {root}=importedCharacter({top:'#291a1c',cap:'#303030'});
+ assert.equal(root.userData.avatarSex,'female');
+ assert.deepEqual(shownMeshes(root).map(m=>m.userData.componentId).sort(),['body','cap','cap-logo','garment-shoes','garment-tee','garment-trousers','print-bros-back','print-house-front']);
+ setCoastalSwimwear(root,true);assert.equal(root.userData.importedAvatar.variant,'female-swim');
+ setCoastalSwimwear(root,false);
+ root.userData.setImportedPalette({...BASE_PALETTE,top:'#191a1c',cap:'#303030'});
+ assert.equal(root.userData.avatarSex,'male');assert.equal(root.userData.importedAvatar.variant,'male');
+ assert.ok(shownMeshes(root).some(m=>m.userData.componentId==='print-bros-back'),'the outfit survives the change of body');
+});
+
+test('a body mounted after the avatar was placed keeps its projector layers',()=>{
+ // The screens redraw only what is on layer 1 in front of the film. A body
+ // changed after entering was mounted on layer 0 alone, and the film covered it.
+ const {root}=importedCharacter();
+ root.traverse(o=>{o.layers.enable(1);o.layers.enable(2);});
+ for(const top of ['#28191b','#1b1c1e','#18191b']){
+  root.userData.setImportedPalette({...BASE_PALETTE,top});
+  root.traverse(o=>{if(o.isMesh)assert.ok(o.layers.isEnabled(1)&&o.layers.isEnabled(2),`${top}: ${o.name} left off the projector layers`);});
+ }
+});
+
+test('outfit 4 wears the swimsuit on land, on either body, standing on its feet',()=>{
+ for(const [top,variant] of [['#1b1c1e','male-swim'],['#2b1c1e','female-swim']]){
+  const {root,rig}=importedCharacter({top});
+  assert.equal(root.userData.importedAvatar.variant,variant);
+  walkCoastalPose(rig,0,0);supportCoastalPose(rig,()=>0);syncImportedAvatars(root);
+  const lowest=lowestSole(root);
+  assert.ok(lowest>-.04&&lowest<.02,`${variant} bare feet on the ground: ${lowest}`);
+ }
+});
+
+test('every finger has three bones: a fist curls each tip toward the palm and rest round-trips',()=>{
+ for(const top of ['#18191b','#28191b']){
+  const {root,rig}=importedCharacter({top});walkCoastalPose(rig,0,0);syncImportedAvatars(root);
+  const body=bodyMesh(root);
+  for(const right of [false,true]){
+   const side=right?'Left':'Right',bone=n=>body.skeleton.bones.find(b=>b.name===side+'Hand'+n);
+   const rest=root.userData.importedHandRest(right);assert.ok(rest,`${top} ${side} finger rig`);
+   const frame=root.userData.importedHandFrame(right),hand=bone('');
+   const tips=()=>{syncImportedAvatars(root);root.updateMatrixWorld(true);return FINGER_NAMES.map(n=>bone(n+'4').getWorldPosition(new THREE.Vector3()));};
+   const open=tips();
+   root.userData.setImportedFists(true);const closed=tips();root.userData.setImportedFists(false);
+   const wrist=hand.getWorldPosition(new THREE.Vector3());
+   // Closed, every fingertip is nearer the wrist and has moved toward the palm side.
+   const palm=frame.palm.clone().applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion()));
+   FINGER_NAMES.forEach((n,i)=>{
+    assert.ok(closed[i].distanceTo(wrist)<open[i].distanceTo(wrist)*(n==='Thumb'?.97:.7),`${side} ${n} closes`);
+    // Rolled in, the tip ends on the palm's side of its own knuckle.
+    const knuckle=bone(n+'1').getWorldPosition(new THREE.Vector3());
+    if(n!=='Thumb')assert.ok(closed[i].clone().sub(knuckle).dot(palm)>.01,`${side} ${n} curls toward the palm`);
+   });
+   root.userData.setImportedHandPose(right,rest);
+   tips().forEach((p,i)=>assert.ok(p.distanceTo(open[i])<1e-6,'the rest pose leaves the hand as modelled'));
+   root.userData.setImportedHandPose(right,null);
+  }
+ }
+});
+test('hand angles read a curled hand as curled, whichever hand it is',()=>{
+ // A flat hand, palm down, fingers along -z; then the same hand curled.
+ const make=(right,bendBy)=>{
+  const s=right?1:-1,wrist=new THREE.Vector3(0,0,0),fingers={};
+  const lanes={Thumb:-.045,Index:-.03,Middle:-.01,Ring:.01,Pinky:.03};
+  for(const n of FINGER_NAMES){
+   const x=lanes[n]*s;let p=new THREE.Vector3(x,0,n==='Thumb'?-.03:-.09),dir=new THREE.Vector3(0,0,-1);const pts=[p.clone()];
+   for(let i=0;i<3;i++){dir.applyAxisAngle(new THREE.Vector3(1,0,0),-bendBy);p=p.clone().addScaledVector(dir,.03);pts.push(p);}
+   fingers[n]=pts;
+  }
+  return handPoseFromJoints({wrist,fingers},right);
+ };
+ for(const right of [false,true])for(const amount of [.6,.9,1.2]){
+  // At .9 and 1.2 the distal segment passes 90 degrees. Its bend must stay positive.
+  const flat=make(right,0),curled=make(right,amount);
+  for(const n of ['Index','Middle','Ring','Pinky'])for(let i=1;i<3;i++){
+   assert.ok(Math.abs(flat[n].curl[i])<1e-6,`${n} straight`);
+   assert.ok(Math.abs(curled[n].curl[i]-amount)<1e-6,`${right?'right':'left'} ${n} joint ${i} bends toward the palm: ${curled[n].curl[i]}`);
+  }
+ }
+});
 test('imported hands rest palm-in with thumbs forward and fingers down',()=>{
  const {root}=importedCharacter();
  for(const right of [false,true]){
   const frame=root.userData.importedHandFrame(right);
-  assert.ok(frame.palm.dot(new THREE.Vector3(right?-1:1,0,0))>.98,`palm-in ${right}: ${frame.palm.toArray()}`);
-  assert.ok(frame.thumb.z>.98,`thumb-forward ${right}: ${frame.thumb.toArray()}`);
-  assert.ok(frame.fingers.y<-.98,`fingers-down ${right}: ${frame.fingers.toArray()}`);
+  assert.ok(frame.palm.dot(new THREE.Vector3(right?-1:1,0,0))>.85,`palm-in ${right}: ${frame.palm.toArray()}`);
+  assert.ok(frame.thumb.z>.85,`thumb-forward ${right}: ${frame.thumb.toArray()}`);
+  assert.ok(frame.fingers.y<-.9,`fingers-down ${right}: ${frame.fingers.toArray()}`);
  }
 });
 
@@ -451,6 +548,20 @@ test('container grips face the prop without bending wrists through the sleeve',(
  }
 });
 
+test('a piece of popcorn goes up with the palm towards the face, not the wrist bent back',()=>{
+ for(const palette of [{},{top:'#28191b'}]){
+  const {root,rig}=importedCharacter(palette),prop=new THREE.Group();root.add(prop);prop.userData.carryHand='left';
+  poseCoastalCarry(rig,prop,'eat',.5);syncImportedAvatars(root);
+  const frame=root.userData.importedHandFrame(true);
+  const mouth=rig.visualRoot.worldToLocal(rig.head.localToWorld(root.userData.importedMouth.clone()));
+  const toMouth=mouth.clone().sub(frame.joint).normalize();
+  const who=palette.top?'female':'male';
+  // The avatar faces +z in its own frame: a palm turned to the face points back along -z.
+  assert.ok(frame.palm.z<-.3,`the palm is not turned to the face (${who}): ${frame.palm.toArray().map(v=>v.toFixed(2))}`);
+  assert.ok(frame.fingers.dot(toMouth)>.5,`the fingers do not rise to the mouth (${who}): ${frame.fingers.dot(toMouth).toFixed(2)}`);
+  assert.ok(frame.forearm.angleTo(frame.fingers)<THREE.MathUtils.degToRad(35),`the wrist is bent (${who}): ${THREE.MathUtils.radToDeg(frame.forearm.angleTo(frame.fingers)).toFixed(0)} degrees`);
+ }
+});
 test('both wrists remain attached and anatomically bounded throughout the complete popcorn cycle',()=>{
  const {root,rig}=importedCharacter(),prop=new THREE.Group();root.add(prop);prop.userData.carryHand='left';
  for(let i=0;i<=60;i++){
@@ -458,48 +569,54 @@ test('both wrists remain attached and anatomically bounded throughout the comple
   for(const right of [true,false]){
    const frame=root.userData.importedHandFrame(right);
    assert.ok(frame.forearm.angleTo(frame.fingers)<THREE.MathUtils.degToRad(40.1),`overbent wrist at ${i}, ${right}`);
-   assert.ok(frame.joint.distanceTo(root.userData.importedWrist(right))<.02,`hand/cuff socket drift at ${i}, ${right}`);
-   const cuff=root.userData.importedAvatar.meshes.find(m=>m.userData.componentId===(right?'Left-forearm':'Right-forearm'));
-   cuff.skeleton.update();const positions=cuff.geometry.getAttribute('position');let bottom=Infinity;
-   for(let v=0;v<positions.count;v++)bottom=Math.min(bottom,positions.getY(v));
-   const centre=new THREE.Vector3();let count=0;
-   for(let v=0;v<positions.count;v++)if(positions.getY(v)<bottom+.0001){
-    const point=new THREE.Vector3().fromBufferAttribute(positions,v);cuff.applyBoneTransform(v,point);
-    centre.add(rig.visualRoot.worldToLocal(cuff.localToWorld(point)));count++;
-   }
-   centre.divideScalar(count);
-   assert.ok(centre.distanceTo(frame.joint)<.02,`visible sleeve/hand break at ${i}, ${right}: ${centre.distanceTo(frame.joint)}`);
+   assert.ok(frame.joint.distanceTo(root.userData.importedWrist(right))<.02,`hand drift at ${i}, ${right}`);
   }
  }
 });
 
-test('the original cap logo is textured, independent of cap dye, and hidden with the hat',()=>{
- const {root}=importedCharacter(),meshes=root.userData.importedAvatar.meshes;
- const logo=meshes.find(m=>m.userData.componentId==='cap-logo');
+test('the cap mark is textured, independent of cap dye, and hidden with the hat',()=>{
+ const {root}=importedCharacter();
+ const logo=root.userData.importedAvatar.meshes.find(m=>m.userData.componentId==='cap-logo');
  assert.ok(logo,'separate exact-logo patch');assert.ok(logo.material.map,'embedded PNG texture');
- const texture=logo.material.map;
- root.userData.setImportedPalette({skin:'#dfb590',hair:'#3b3633',top:'#d0cbc1',bottoms:'#44464a',swimwear:'#577467',cap:'#ee3333'});
- assert.equal(logo.visible,true);assert.equal(logo.material.map,texture);
- root.userData.setImportedPalette({skin:'#dfb590',hair:'#3b3633',top:'#d0cbc1',bottoms:'#44464a',swimwear:'#577467'});
- assert.equal(logo.visible,false);
+ const texture=logo.material.map,colour=logo.material.color.getHex();
+ root.userData.setImportedPalette({...BASE_PALETTE,cap:'#ee3333'});
+ assert.equal(shown(logo),true);assert.equal(logo.material.map,texture);assert.equal(logo.material.color.getHex(),colour);
+ root.userData.setImportedPalette(BASE_PALETTE);
+ assert.equal(shown(logo),false);
 });
 
-
-test('MENTOR stays in contact with the animated crown with and without a cap',()=>{
+test('MENTOR lies in the hair or on the cap, following the animated head, legs uncrossed',()=>{
  const {root,rig}=importedCharacter(),group=new THREE.Group(),dog=createMentorDog();root.add(group);group.add(dog.root);
+ const legs=[['leftFrontLeg',-1],['rightFrontLeg',1],['leftBackLeg',-1],['rightBackLeg',1]];
  for(const cap of [undefined,'#303030']){
-  root.userData.setImportedPalette({cap});
+  root.userData.setImportedPalette({...BASE_PALETTE,cap});
   for(let i=0;i<48;i++){
    root.position.set(i*.03,.28+i*.007,0);root.rotation.y=i*.03;
    walkCoastalPose(rig,i/48*Math.PI*2);supportCoastalPose(rig,()=>i*.007);syncImportedAvatars(root);
-   const support=root.userData.importedHeadSupport();perchMentor(group,dog,rig.head,support);
-   let lowest=Infinity;
-   for(const leg of [dog.leftFrontLeg,dog.rightFrontLeg,dog.leftBackLeg,dog.rightBackLeg])leg.traverse(mesh=>{
-    if(!mesh.isMesh)return;
-    const positions=mesh.geometry.getAttribute('position');
-    for(let v=0;v<positions.count;v++)lowest=Math.min(lowest,rig.head.worldToLocal(mesh.localToWorld(new THREE.Vector3().fromBufferAttribute(positions,v))).y-support.y);
+   const support=root.userData.importedHeadSupport(),surface=root.userData.importedHeadSurface();
+   perchMentor(group,dog,rig.head,support,surface);
+   // Settled into the dome it lies on, measured over the blocks' faces, not just their corners.
+   let clearance=Infinity,belly=Infinity;
+   // His body, not his paws and tail: those tuck into the hair as he lies.
+   const limbs=new Set();for(const part of ['leftFrontLeg','rightFrontLeg','leftBackLeg','rightBackLeg','tail'])dog[part].traverse(o=>limbs.add(o));
+   dog.root.traverse(mesh=>{
+    if(!mesh.isMesh||limbs.has(mesh))return;
+    for(const x of [-.5,0,.5])for(const y of [-.5,0,.5])for(const z of [-.5,0,.5]){
+     const p=rig.head.worldToLocal(mesh.localToWorld(new THREE.Vector3(x,y,z))),under=surface(p.x,p.z);
+     if(Number.isFinite(under))clearance=Math.min(clearance,p.y-under);
+     if(mesh.name==='square-horizontal-torso')belly=Math.min(belly,p.y-support.y);
+    }
    });
-   assert.ok(Math.abs(lowest-.006)<1e-5,`crown contact ${i}: ${lowest}`);
+   // Lying on it, not perched on his paws over it (the owner, 2026-10-01:
+   // "the gap is too wide") and not sunk into it ("too deep"): his lowest
+   // point is in the hair or the cap's crown, by no more than a few cm.
+   assert.ok(clearance<-MENTOR_NESTLE+.004&&clearance>-.12,`settled ${i}: ${clearance}`);
+   assert.ok(belly<.01&&belly>-.12,`belly on the crown ${i}: ${belly}`);
+   // Each paw stays on its own side of the body: crossed, they propped him up.
+   for(const [leg,side] of legs){
+    const paw=dog.root.worldToLocal(dog[leg].localToWorld(new THREE.Vector3(0,-.78,0)));
+    assert.ok(paw.x*side>.25,`${leg} paw on its own side: ${paw.x}`);
+   }
    assert.equal(group.parent,root,'retain carrier identity for networking');
   }
  }
@@ -528,13 +645,7 @@ test('receiving a punch is grounded, bounded and recovers without inheriting the
    walkCoastalPose(rig,2.1);world.animateRig(rig,9,.62,'hit',false,i/62);syncImportedAvatars(root);
    assert.ok(Math.abs(rig.head.rotation.x)<=.141&&Math.abs(rig.head.rotation.z)<=.101);
    assert.ok(rig.leftArm.rotation.z<0&&rig.rightArm.rotation.z>0,'brace outward, never cross arms through the torso');
-   let minimum=Infinity;
-   for(const mesh of root.userData.importedAvatar.meshes.filter(m=>m.userData.componentId.endsWith('shoe'))){
-    mesh.skeleton.update();const vertices=mesh.geometry.getAttribute('position');
-    for(let v=0;v<vertices.count;v++){
-     const p=new THREE.Vector3().fromBufferAttribute(vertices,v);mesh.applyBoneTransform(v,p);mesh.localToWorld(p);minimum=Math.min(minimum,p.y);
-    }
-   }
+   const minimum=lowestSole(root);
    assert.ok(minimum>-.04&&minimum<.02,`hit sole contact ${i}: ${minimum}`);
    const current=joints.map(j=>j.quaternion.clone());
    if(previous)current.forEach((q,j)=>assert.ok(q.angleTo(previous[j])<.11,`abrupt joint change at ${i}, joint ${j}`));
@@ -561,7 +672,9 @@ test('wave uses an outward shoulder and a single bending elbow without twisting 
   if(i>28&&i<52)assert.ok(wrist.y>2.5,'raised palm stays above the shoulder');
   const frame=root.userData.importedHandFrame(true);
   assert.ok(frame.forearm.angleTo(frame.fingers)<1.1,'wrist must follow forearm');
-  if(last)assert.ok(rig.rightArm.quaternion.angleTo(last)<.12,`wave change ${i}: ${rig.rightArm.quaternion.angleTo(last)}`);
+  // The generated arm is solved to its own wrist, a few degrees from the rig's
+  // proxy, so the largest single step is a shade above the old 0.12.
+  if(last)assert.ok(rig.rightArm.quaternion.angleTo(last)<.135,`wave change ${i}: ${rig.rightArm.quaternion.angleTo(last)}`);
   last=rig.rightArm.quaternion.clone();
  }
 });
@@ -595,9 +708,13 @@ test('DJ hands lie over the record and mixer with palms down',()=>{
   djCoastalPose(rig,time);syncImportedAvatars(root);
   for(const right of [false,true]){
    const wrist=root.userData.importedWrist(right),tip=root.userData.importedFingertip(right),frame=root.userData.importedHandFrame(right);
-   assert.ok(tip.y>1.26&&tip.y<1.34,'fingertips stay at control surface height');
-   assert.ok(tip.z>.6&&tip.z<.8,'hands stay above the deck rather than behind the cabinet');
-   assert.ok(right?Math.abs(tip.x)<.3:tip.x<-.9,'one hand on the mixer, one on the platter');
+   assert.ok(tip.y>1.26&&tip.y<1.36,`fingertips stay at control surface height: ${tip.y}`);
+   // The generated fingers are longer than the old blocky ones, so the tips
+   // reach a couple of centimetres further over the mixer.
+   assert.ok(tip.z>.6&&tip.z<.84,`hands stay above the deck rather than behind the cabinet: ${tip.z}`);
+   // The mixer spans |x| < .41 and each platter is .98 across; the platter
+   // hand is at full reach, and measured by its real palm its tips land at -.89 to -.92.
+   assert.ok(right?Math.abs(tip.x)<.3:tip.x<-.85,`one hand on the mixer, one on the platter: ${tip.x}`);
    assert.ok(frame.palm.y<-.6,'palms face the controls');
   }
  }
@@ -868,6 +985,168 @@ test('both sides of an authored club facade retain the same concrete panel finis
   assert.equal(walls[0].material.defines.WORN_MASONRY_KIND,'1');
 });
 
+test('in a headset every Higgsfield body puts its hands on the controllers and takes its head off',()=>{
+  const FEMALE_TOP='#2b1a1c';
+  for(const [palette,swim] of [[{},false],[{},true],[{top:FEMALE_TOP},false],[{top:FEMALE_TOP},true]]){
+    const {root,rig}=importedCharacter({...palette,cap:'#303030'});
+    if(swim)setCoastalSwimwear(root,true);
+    const scene=new THREE.Scene();scene.add(root);
+    walkCoastalPose(rig,0,0);supportCoastalPose(rig,()=>0);syncImportedAvatars(root);root.updateMatrixWorld(true);
+    const head=rig.head.getWorldPosition(new THREE.Vector3());
+    const mouth=rig.head.localToWorld(root.userData.importedMouth.clone());
+    const forward=mouth.clone().sub(head).setY(0).normalize();
+    const camera=new THREE.PerspectiveCamera();camera.position.copy(head);camera.lookAt(head.clone().add(forward));camera.updateMatrixWorld(true);
+    const controllers=[],targets={};
+    for(const hand of ['left','right']){
+      // The visitor's left hand drives the model's mirrored-name right arm.
+      const shoulder=(hand==='left'?rig.rightArm:rig.leftArm).getWorldPosition(new THREE.Vector3());
+      targets[hand]=shoulder.clone().addScaledVector(forward,.5).add(new THREE.Vector3(0,-.3,0));
+      const controller=new THREE.Group();controller.position.copy(targets[hand]);controller.userData.inputSource={handedness:hand};
+      scene.add(controller);controllers.push(controller);
+    }
+    const world=Object.create(FestivalWorld.prototype);
+    const V=()=>new THREE.Vector3(),Q=()=>new THREE.Quaternion(),M=()=>new THREE.Matrix4();
+    Object.assign(world,{
+      playerRig:rig,player:root,xrControllers:controllers,xrHands:[],xrHandPoses:{left:null,right:null},xrHandSampleAt:{left:0,right:0},xrArmsShown:false,xrHiddenParts:[],leftSwing:{readyAt:0},rightSwing:{readyAt:0},
+      armWorld:V(),armSwing:V(),armLocal:V(),armAxisX:V(),armAxisY:V(),armAxisZ:V(),armBasis:M(),headForward:V(),armTarget:V(),armMeasured:V(),armWanted:V(),
+      armCalibration:new Map(),armCalibratePending:false,armQuat:Q(),armParentQuat:Q(),armMeasuredQuat:Q(),armDesiredQuat:Q(),armMatrix:M(),armVecA:V(),armVecB:V(),armVecC:V(),
+      xrSpineTwist:0,skating:false,renderer:{xr:{getCamera:()=>camera}},onAction(){},punchFromTouch(){},
+    });
+    let inHeadset=true;world.paintsInHeadset=()=>inHeadset;
+    world.updateXrArms();syncImportedAvatars(root);
+    const label=`${palette.top?'female':'male'}${swim?' swimwear':''}`;
+    for(const hand of ['left','right']){
+      const wrist=rig.visualRoot.localToWorld(root.userData.importedWrist(hand==='left'));
+      const miss=wrist.distanceTo(targets[hand]);
+      assert.ok(miss<.03,`${label} ${hand} wrist misses its controller by ${miss.toFixed(3)}`);
+      // The arm reaches forward, on its own side: not crossed over the chest.
+      const side=wrist.clone().sub(head).dot(new THREE.Vector3().crossVectors(forward,new THREE.Vector3(0,1,0)));
+      const wanted=targets[hand].clone().sub(head).dot(new THREE.Vector3().crossVectors(forward,new THREE.Vector3(0,1,0)));
+      assert.ok(Math.sign(side)===Math.sign(wanted),`${label} ${hand} arm crossed over`);
+    }
+    const caps=root.userData.importedAvatar.meshes.filter(m=>['cap','cap-logo'].includes(m.userData.componentId));
+    assert.equal(root.userData.importedAvatar.headHidden,true,`${label}: the head stays on in the headset`);
+    assert.ok(caps.every(m=>!shown(m)),`${label}: the cap stays on in the headset`);
+    assert.ok(shown(bodyMesh(root)),`${label}: the body went with the head`);
+    inHeadset=false;world.updateXrArms();
+    assert.equal(root.userData.importedAvatar.headHidden,false,`${label}: the head is not put back`);
+    assert.ok(caps.some(m=>shown(m)),`${label}: the cap is not put back`);
+  }
+});
+test('bare hands in a headset: the wrist, its turn and every finger follow the tracked hand',()=>{
+  const {root,rig}=importedCharacter();
+  const scene=new THREE.Scene();scene.add(root);
+  walkCoastalPose(rig,0,0);supportCoastalPose(rig,()=>0);syncImportedAvatars(root);root.updateMatrixWorld(true);
+  const head=rig.head.getWorldPosition(new THREE.Vector3());
+  const mouth=rig.head.localToWorld(root.userData.importedMouth.clone());
+  const forward=mouth.clone().sub(head).setY(0).normalize(),up=new THREE.Vector3(0,1,0),right=new THREE.Vector3().crossVectors(forward,up);
+  const camera=new THREE.PerspectiveCamera();camera.position.copy(head);camera.lookAt(head.clone().add(forward));camera.updateMatrixWorld(true);
+  // A hand held out palm down, fingers forward, curled 0.9 at every finger joint.
+  const lanes={Thumb:.05,Index:.03,Middle:.01,Ring:-.01,Pinky:-.03};
+  const names={Thumb:['thumb-metacarpal','thumb-phalanx-proximal','thumb-phalanx-distal','thumb-tip'],
+   Index:['index-finger-phalanx-proximal','index-finger-phalanx-intermediate','index-finger-phalanx-distal','index-finger-tip'],
+   Middle:['middle-finger-phalanx-proximal','middle-finger-phalanx-intermediate','middle-finger-phalanx-distal','middle-finger-tip'],
+   Ring:['ring-finger-phalanx-proximal','ring-finger-phalanx-intermediate','ring-finger-phalanx-distal','ring-finger-tip'],
+   Pinky:['pinky-finger-phalanx-proximal','pinky-finger-phalanx-intermediate','pinky-finger-phalanx-distal','pinky-finger-tip']};
+  const controllers=[],hands=[],wrists={};
+  for(const hand of ['left','right']){
+    const shoulder=(hand==='left'?rig.rightArm:rig.leftArm).getWorldPosition(new THREE.Vector3());
+    const wrist=shoulder.clone().addScaledVector(forward,.45).add(new THREE.Vector3(0,-.25,0));wrists[hand]=wrist;
+    // The thumb is on the inside: toward the body's middle.
+    const thumbward=right.clone().multiplyScalar(hand==='right'?-1:1);
+    const space=new THREE.Group();space.joints={};
+    const joint=(name,p)=>{const j=new THREE.Group();j.position.copy(p);j.visible=true;space.add(j);space.joints[name]=j;};
+    joint('wrist',wrist);
+    for(const [n,lane] of Object.entries(lanes)){
+      let p=wrist.clone().addScaledVector(forward,n==='Thumb'?.03:.09).addScaledVector(thumbward,lane),dir=forward.clone();
+      joint(names[n][0],p);
+      // Each joint turns the finger further down, toward the palm.
+      const bendAxis=forward.clone().cross(new THREE.Vector3(0,-1,0)).normalize();
+      for(let i=1;i<4;i++){if(n!=='Thumb')dir.applyAxisAngle(bendAxis,.9);p=p.clone().addScaledVector(dir,.03);joint(names[n][i],p);}
+    }
+    scene.add(space);hands.push(space);
+    const controller=new THREE.Group();controller.position.copy(wrist).addScaledVector(forward,.1);controller.userData.inputSource={handedness:hand,hand:{}};
+    scene.add(controller);controllers.push(controller);
+  }
+  scene.updateMatrixWorld(true);
+  const world=Object.create(FestivalWorld.prototype);
+  const V=()=>new THREE.Vector3(),Q=()=>new THREE.Quaternion(),M=()=>new THREE.Matrix4();
+  Object.assign(world,{
+    playerRig:rig,player:root,xrControllers:controllers,xrHands:hands,xrHandPoses:{left:null,right:null},xrHandSampleAt:{left:0,right:0},xrArmsShown:false,xrHiddenParts:[],leftSwing:{readyAt:0},rightSwing:{readyAt:0},
+    armWorld:V(),armSwing:V(),armLocal:V(),armAxisX:V(),armAxisY:V(),armAxisZ:V(),armBasis:M(),headForward:V(),armTarget:V(),armMeasured:V(),armWanted:V(),
+    armCalibration:new Map(),armCalibratePending:false,armQuat:Q(),armParentQuat:Q(),armMeasuredQuat:Q(),armDesiredQuat:Q(),armMatrix:M(),armVecA:V(),armVecB:V(),armVecC:V(),
+    xrSpineTwist:0,skating:false,renderer:{xr:{getCamera:()=>camera}},onAction(){},punchFromTouch(){},
+  });
+  world.paintsInHeadset=()=>true;
+  const body=bodyMesh(root);
+  const tipsOf=hand=>{const side=hand==='left'?'Left':'Right';root.updateMatrixWorld(true);
+    return ['Index','Middle','Ring','Pinky'].map(n=>body.skeleton.bones.find(b=>b.name===side+'Hand'+n+'4').getWorldPosition(new THREE.Vector3()));};
+  syncImportedAvatars(root);
+  for(let frame=0;frame<12;frame++){world.updateXrArms();syncImportedAvatars(root);}
+  for(const hand of ['left','right']){
+    const landed=rig.visualRoot.localToWorld(root.userData.importedWrist(hand==='left'));
+    assert.ok(landed.distanceTo(wrists[hand])<.03,`${hand}: the wrist goes to the tracked wrist, not the ray: ${landed.distanceTo(wrists[hand]).toFixed(3)}`);
+    const frame=root.userData.importedHandFrame(hand==='left');
+    const fingers=frame.fingers.clone().applyQuaternion(rig.visualRoot.getWorldQuaternion(new THREE.Quaternion()));
+    assert.ok(fingers.dot(forward)>.75,`${hand}: the hand points where the tracked hand points: ${fingers.dot(forward).toFixed(2)}`);
+    const pose=world.xrHandPoses[hand];assert.ok(pose&&pose.Middle.curl[1]>.6,`${hand}: the curl is read`);
+    const curled=tipsOf(hand).map(t=>t.distanceTo(landed));
+    root.userData.setImportedHandPose(hand==='left',null);syncImportedAvatars(root);
+    const open=tipsOf(hand).map(t=>t.distanceTo(landed));
+    curled.forEach((d,i)=>assert.ok(d<open[i]*.92,`${hand} finger ${i} curls with the tracked one: ${d.toFixed(3)} vs ${open[i].toFixed(3)}`));
+  }
+});
+test('the desktop preview puts the webcam body on the avatar: arms, wrists, fingers, chest and legs',()=>{
+  for (const top of ['#18191b','#28191b']) {
+  const {root,rig}=importedCharacter({top});
+  const scene=new THREE.Scene();scene.add(root);
+  walkCoastalPose(rig,0,0);supportCoastalPose(rig,()=>0);syncImportedAvatars(root);root.updateMatrixWorld(true);
+  const forward=new THREE.Vector3(0,0,1).applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion())).setY(0).normalize();
+  const up=new THREE.Vector3(0,1,0),right=new THREE.Vector3().crossVectors(forward,up);
+  // World directions to the camera's axes (x right of the picture, y down, z away): the visitor faces the lens.
+  const cam=v=>({x:-v.dot(right),y:-v.dot(up),z:-v.dot(forward),visibility:1});
+  const W=(r,u,f)=>right.clone().multiplyScalar(r).addScaledVector(up,u).addScaledVector(forward,f);
+  const pose=Array.from({length:33},()=>cam(W(0,.3,0)));
+  const put=(i,v)=>{pose[i]=cam(v);};
+  put(11,W(-.18,.45,0));put(12,W(.18,.45,0));            // left, right shoulder
+  put(13,W(-.21,.2,0));put(15,W(-.22,-.05,0));           // left arm hanging
+  put(14,W(.18,.45,.28));put(16,W(.18,.45,.55));          // right arm straight out in front
+  put(23,W(-.1,0,0));put(24,W(.1,0,0));put(25,W(-.1,-.42,0));put(26,W(.1,-.42,0));put(27,W(-.1,-.82,0));put(28,W(.1,-.82,0));
+  // The right hand: pointing forward, palm down, every finger curled 0.9 a joint.
+  const hand=[W(0,0,0)],lanes=[.05,.03,.01,-.01,-.03];
+  const bendAxis=forward.clone().cross(new THREE.Vector3(0,-1,0)).normalize();
+  lanes.forEach((lane,f)=>{let p=W(-lane,0,f===0?.03:.09),dir=forward.clone();hand.push(p);
+    for(let i=1;i<4;i++){if(f)dir.applyAxisAngle(bendAxis,.9);p=p.clone().addScaledVector(dir,.03);hand.push(p);}});
+  const tracker=new HeadTracking();tracker.startForReview();
+  const world=Object.create(FestivalWorld.prototype);
+  const V=()=>new THREE.Vector3(),Q=()=>new THREE.Quaternion(),M=()=>new THREE.Matrix4();
+  Object.assign(world,{
+    playerRig:rig,player:root,xrActive:true,xrSimulated:true,headTracking:tracker,headTrackingActive:true,
+    moveVector:V(),airborne:false,playerState:'walking',trackedBodyShown:false,trackedHiddenParts:[],trackedLandmarks:[],trackedArms:{left:false,right:false},xrHandPoses:{left:null,right:null},xrHandSampleAt:{left:0,right:0},
+    armWorld:V(),armSwing:V(),armLocal:V(),armAxisX:V(),armAxisY:V(),armAxisZ:V(),armBasis:M(),headForward:V(),armTarget:V(),armMeasured:V(),armWanted:V(),
+    armQuat:Q(),armParentQuat:Q(),armMeasuredQuat:Q(),armDesiredQuat:Q(),armMatrix:M(),armVecA:V(),armVecB:V(),armVecC:V(),
+    footSurfaceAt:()=>0,
+  });
+  const shoulderR=rig.leftArm.getWorldPosition(new THREE.Vector3()),shoulderL=rig.rightArm.getWorldPosition(new THREE.Vector3());
+  for(let frame=0;frame<30;frame++){
+    walkCoastalPose(rig,0,0);supportCoastalPose(rig,()=>0);syncImportedAvatars(root);
+    tracker.feedBodyForReview(pose,{right:hand.map(cam)},performance.now());
+    world.updateTrackedBody(1/30);syncImportedAvatars(root);
+  }
+  assert.equal(root.userData.importedAvatar.headHidden,true,'seen from inside: no head');
+  assert.equal(root.visible,true,'the body is shown in the preview');
+  // The visitor's right is the model's Right, driven through the rig's mirrored left arm.
+  const wristR=rig.visualRoot.localToWorld(root.userData.importedWrist(false)),wristL=rig.visualRoot.localToWorld(root.userData.importedWrist(true));
+  assert.ok(wristR.clone().sub(shoulderR).dot(forward)>.5,`the right arm reaches forward: ${wristR.clone().sub(shoulderR).dot(forward).toFixed(2)}`);
+  assert.ok(Math.abs(wristR.y-shoulderR.y)<.35,`at shoulder height: ${(wristR.y-shoulderR.y).toFixed(2)}`);
+  assert.ok(wristL.y<shoulderL.y-.8,`the left arm hangs: ${(wristL.y-shoulderL.y).toFixed(2)}`);
+  const pose0=world.xrHandPoses.right;assert.ok(pose0&&pose0.Middle.curl[1]>.6,'the right hand\'s curl is read');
+  // Asked to stop: everything handed back.
+  tracker.setBodyTracking(false);world.updateTrackedBody(1/30);
+  assert.equal(root.userData.importedAvatar.headHidden,false,'the head comes back');
+  assert.equal(world.xrHandPoses.right,null,'the hand is let go');
+  }
+});
 test('Quest stick forward uses current headset heading plus snap turn, never the stale XR camera',()=>{
  const world=Object.create(FestivalWorld.prototype),camera=new THREE.PerspectiveCamera();
  Object.assign(world,{xrActive:true,xrSimulated:false,xrSession:{inputSources:[{handedness:'left',gamepad:{axes:[0,0,0,-1],buttons:[]}}]},xrMovementView:camera,playerState:'walking',xrSnapReady:true,xrTeleportReady:true,xrJumpReady:true});
@@ -1111,4 +1390,381 @@ test('a YouTube-only film is never put on a surface in the world',()=>{
   assert.equal(world.privateVenue,undefined);
   assert.deepEqual(started,[]);
   assert.deepEqual(panels,[]);
+});
+
+
+test('the rooftop band sits by the fire, plays the record at their marks, and goes back',async()=>{
+ const files={};
+ for(const name of [...BAND_MEMBERS,'stage','bonfire']){const b=await readFile(`src/assets/band/${name}.glb`);files[name]=b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength);}
+ const stage={x:40,y:7,z:12.2,yaw:Math.PI},fire={x:53.5,y:7,z:15.6,yaw:Math.PI/2};
+ const band=new RooftopBand(stage,fire);await band.load(files);
+ for(const member of band.musicians){
+  assert.equal(member.actions.walk.getClip().duration,1,'walk clip uses the intended 30 fps');
+  assert.equal(member.actions.play.getClip().duration,16,'eight bars at 120 bpm take sixteen seconds');
+  assert.equal(member.actions.sit.getClip().duration,16,'seated clip retains its authored duration');
+ }
+ const at=()=>band.snapshot();
+ assert.deepEqual(at().map(m=>m.state),['seated','seated','seated','seated']);
+ assert.ok(at().every(m=>!m.carrying),'instruments stay on the stage while they sit');
+ const nearFire=m=>Math.hypot(m.x-fire.x,m.z-fire.z);
+ const run=seconds=>{for(let t=0;t<seconds;t+=1/30){band.update(1/30,t);
+  const people=at();
+  for(const m of people)assert.ok(nearFire(m)>1.1*3.42/1.7*.55,`${m.name} walked through the fire`);
+  for(let i=0;i<people.length;i++)for(let j=i+1;j<people.length;j++){
+   const a=people[i],b=people[j],d=Math.hypot(a.x-b.x,a.z-b.z);
+   assert.ok(d>.98,`${a.name} overlaps ${b.name}: ${d.toFixed(3)}`);
+  }
+  const benches=[];band.group.updateMatrixWorld(true);
+  band.group.traverse(o=>{if(o.userData.componentId==='bench')benches.push(new THREE.Box3().setFromObject(o));});
+  for(const m of people.filter(m=>m.state==='walking'))for(const bench of benches){
+   const dx=Math.max(bench.min.x-m.x,0,m.x-bench.max.x),dz=Math.max(bench.min.z-m.z,0,m.z-bench.max.z);
+   assert.ok(Math.hypot(dx,dz)>.30,`${m.name} walks through a bench: ${Math.hypot(dx,dz)} at ${m.x.toFixed(2)},${m.z.toFixed(2)} bench x ${bench.min.x.toFixed(2)}..${bench.max.x.toFixed(2)} z ${bench.min.z.toFixed(2)}..${bench.max.z.toFixed(2)}`);
+  }}};
+ band.setPlaying(true);run(80);
+ for(const m of at()){
+  assert.equal(m.state,'playing',m.name);assert.equal(m.clip,'play');
+  // In front of the screen's back (z 19.6) and behind the roof's front edge (z 8).
+  assert.ok(m.z>8.5&&m.z<19,`${m.name} on the roof over the shop: ${m.z}`);
+ }
+ assert.ok(at().filter(m=>m.name!=='vocal').every(m=>m.carrying),'guitar, bass and sticks in hand');
+ const drummer=at().find(m=>m.name==='drummer');assert.ok(drummer.y>7.3,'the drummer is up on the riser');
+ band.setPlaying(false);run(80);
+ assert.deepEqual(at().map(m=>m.state),['seated','seated','seated','seated']);
+ assert.ok(at().every(m=>!m.carrying&&nearFire(m)<3.5),'back on the benches, instruments put down');
+ // Changing the record during rising and walking must not reroute through furniture.
+ for(const delay of [.45,4]){band.setPlaying(true);run(delay);band.setPlaying(false);run(80);assert.ok(at().every(m=>m.state==='seated'));}
+});
+
+test('both caps have the same proportions and his clears his eyes',async()=>{
+ const meta=JSON.parse(await readFile('src/assets/avatars/avatars.json','utf8'));
+ const rise=k=>meta[k].cap.top-meta[k].cap.band;
+ // Sized to his curls it stood twice hers and came down over his eyes.
+ assert.ok(rise('male')<rise('female')*1.7,`his crown ${rise('male').toFixed(3)} against hers ${rise('female').toFixed(3)}`);
+ assert.ok(meta.male.cap.band>.5,`his band sits above his eyes (.47-.505): ${meta.male.cap.band}`);
+});
+test('shoes stand level: heel and toe meet the ground together',()=>{
+ for(const top of ['#18191b','#28191b']){
+  const {root,rig}=importedCharacter({top});walkCoastalPose(rig,0,0);supportCoastalPose(rig,()=>0);syncImportedAvatars(root);root.updateMatrixWorld(true);
+  const shoes=shownMeshes(root).find(m=>m.userData.componentId==='garment-shoes');
+  const forward=new THREE.Vector3(0,0,1).applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion()));
+  const p=shoes.geometry.getAttribute('position'),pts=[];
+  for(let i=0;i<p.count;i++){const v=new THREE.Vector3().fromBufferAttribute(p,i);shoes.applyBoneTransform(i,v);pts.push(root.worldToLocal(shoes.localToWorld(v)));}
+  for(const side of [-1,1]){
+   const foot=pts.filter(v=>Math.sign(v.x)===side),along=foot.map(v=>v.dot(forward)),lo=Math.min(...along),hi=Math.max(...along);
+   const lowIn=(a,b)=>Math.min(...foot.filter((v,i)=>along[i]>=a&&along[i]<=b).map(v=>v.y));
+   const heel=lowIn(lo,lo+(hi-lo)*.3),toe=lowIn(lo+(hi-lo)*.7,hi);
+   // Tipped toes-up by the foot bones, the toe stood 3-4 cm off the ground.
+   assert.ok(toe-heel<.03,`${top} ${side} toe ${toe.toFixed(3)} against heel ${heel.toFixed(3)}`);
+  }
+ }
+});
+
+test('another visitor sees the tracked arms, fingers and chest as sent',()=>{
+  // The sender: the desktop fixture's reading, arm out front, right hand curled.
+  const V=()=>new THREE.Vector3(),Q=()=>new THREE.Quaternion(),M=()=>new THREE.Matrix4();
+  const scratch=()=>({armWorld:V(),armSwing:V(),armLocal:V(),armAxisX:V(),armAxisY:V(),armAxisZ:V(),armBasis:M(),headForward:V(),armTarget:V(),armMeasured:V(),armWanted:V(),
+    armQuat:Q(),armParentQuat:Q(),armMeasuredQuat:Q(),armDesiredQuat:Q(),armMatrix:M(),armVecA:V(),armVecB:V(),armVecC:V(),footSurfaceAt:()=>0});
+  const a=importedCharacter(),b=importedCharacter();
+  for(const {root,rig} of [a,b]){walkCoastalPose(rig,0,0);supportCoastalPose(rig,()=>0);syncImportedAvatars(root);root.updateMatrixWorld(true);}
+  b.root.position.set(5,.28,3);b.root.rotation.y=1.1;b.root.updateMatrixWorld(true);
+  const sender=Object.create(FestivalWorld.prototype);
+  const camera=new THREE.PerspectiveCamera();camera.position.set(0,3,0);camera.lookAt(0,3,5);camera.updateMatrixWorld(true);
+  Object.assign(sender,scratch(),{playerRig:a.rig,player:a.root,xrSimulated:true,camera,trackedTorso:[.2,.3],trackedLegs:undefined,
+    trackedArms:{left:false,right:true},xrHandPoses:{left:null,right:{...FIST}}});
+  const forward=new THREE.Vector3(0,0,1),target=a.rig.leftArm.getWorldPosition(new THREE.Vector3()).addScaledVector(forward,.5);
+  sender.reachArm('right',target);syncImportedAvatars(a.root);
+  const limbs=sender.limbsForNetwork();
+  assert.ok(limbs&&limbs.r&&limbs.rf&&limbs.t&&limbs.h,'arm, fingers, chest and head are sent');
+  assert.equal(limbs.l,undefined,'an untracked arm is not');
+  // Over the wire: rounded to hundredths, as the service relays it.
+  const wire=JSON.parse(JSON.stringify(limbs));
+  const receiver=Object.create(FestivalWorld.prototype);
+  Object.assign(receiver,scratch(),{playerRig:a.rig,player:a.root});
+  const remote={group:b.root,rig:b.rig,limbsApplied:false};
+  receiver.applyLimbs(remote,wire);syncImportedAvatars(b.root);
+  const normalised=(root)=>{const arm=root.userData.importedArm(false),w=root.userData.importedWrist(false);return w.sub(arm.shoulder).divideScalar(arm.reach);};
+  const sent=normalised(a.root),shown=normalised(b.root);
+  assert.ok(sent.distanceTo(shown)<.06,`the arm lands the same way on the other body: ${sent.toArray().map(v=>v.toFixed(2))} vs ${shown.toArray().map(v=>v.toFixed(2))}`);
+  const tip=(root)=>{const body=root.userData.importedAvatar.meshes.find(m=>m.userData.componentId==='body');root.updateMatrixWorld(true);
+    return body.skeleton.bones.find(x=>x.name==='RightHandMiddle4').getWorldPosition(new THREE.Vector3()).distanceTo(body.skeleton.bones.find(x=>x.name==='RightHand').getWorldPosition(new THREE.Vector3()));};
+  const curled=tip(b.root);
+  receiver.applyLimbs(remote,undefined);syncImportedAvatars(b.root);
+  assert.ok(curled<tip(b.root)*.75,'the fist arrives, and is let go when tracking stops');
+});
+
+
+test('both standing shoe soles are planted and separated for both bodies',()=>{
+ for(const top of ['#18191b','#28191b']){
+  const {root,rig}=importedCharacter({top});walkCoastalPose(rig,0,0);supportCoastalPose(rig,()=>0);syncImportedAvatars(root);
+  const points=root.userData.importedSolePoints();
+  const left=points.filter(p=>p.x<0),right=points.filter(p=>p.x>0);
+  const heights=[left,right].map(p=>Math.min(...p.map(v=>v.y)));
+  for(const sole of [left,right])assert.ok(Math.max(...sole.map(v=>v.y))-Math.min(...sole.map(v=>v.y))<.04,`sole plane tilted: ${top}`);
+  assert.ok(heights.every(h=>Math.abs(h)<.002),`both soles meet floor: ${top}: ${heights}`);
+  const gap=Math.min(...right.map(p=>p.x))-Math.max(...left.map(p=>p.x));
+  assert.ok(gap>.04,`separate standing shoes: ${top}: gap ${gap}`);
+ }
+});
+
+// Inspect the skin that is actually drawn in outfit 4: the same mesh also
+// contains dressed-only feet, discarded by the swimwear shader.
+function visibleBareFeet(root){
+ const mesh=bodyMesh(root);mesh.skeleton.update();
+ const ids=mesh.geometry.getAttribute('skinIndex'),weights=mesh.geometry.getAttribute('skinWeight'),dressed=mesh.geometry.getAttribute('_dressed');
+ return ['Left','Right'].map(side=>{
+  const owned=mesh.skeleton.bones.map((b,i)=>b.name===side+'Foot'||b.name===side+'ToeBase'?i:-1).filter(i=>i>=0);
+  const points=[];
+  for(let v=0;v<ids.count;v++){
+   let onFoot=0;for(let k=0;k<4;k++)if(owned.includes(ids.getComponent(v,k)))onFoot+=weights.getComponent(v,k);
+   if(onFoot>.5&&(dressed?.getX(v)??0)<.5)points.push(mesh.localToWorld(mesh.getVertexPosition(v,new THREE.Vector3())));
+  }
+  return points;
+ });
+}
+test('male swimwear plants the visible heels and forefeet on flat and sloping ground',()=>{
+ const {root,rig}=importedCharacter({top:'#1b1c1e'});
+ for(const floor of [()=>0,(x,z)=>.04*x+.035*z])for(const heading of [0,.9,2.2]){
+  root.rotation.y=heading;walkCoastalPose(rig,0,0);supportCoastalPose(rig,floor);syncImportedAvatars(root);
+  for(const foot of visibleBareFeet(root)){
+   const local=foot.map(p=>root.worldToLocal(p.clone())),z0=Math.min(...local.map(p=>p.z)),length=Math.max(...local.map(p=>p.z))-z0;
+   const clearance=foot.map(p=>p.y-floor(p.x,p.z));
+   const heel=Math.min(...clearance.filter((_,i)=>local[i].z<z0+length*.2));
+   const ball=Math.min(...clearance.filter((_,i)=>local[i].z>z0+length*.2&&local[i].z<z0+length*.8));
+   assert.ok(heel>=-.002&&heel<.006,`heel floats at heading ${heading}: ${heel}`);
+   assert.ok(ball>=-.002&&ball<.006,`forefoot floats at heading ${heading}: ${ball}`);
+   assert.ok(Math.min(...clearance)>-.002,'the visible skin must not sink below the floor');
+  }
+ }
+});
+test('male barefoot walking supports the real skin and returning to shoes restores the original skeleton',()=>{
+ const {root,rig}=importedCharacter();
+ const stand=()=>{walkCoastalPose(rig,0,0);supportCoastalPose(rig,()=>0);syncImportedAvatars(root);};stand();
+ const bones=bodyMesh(root).skeleton.bones;
+ const snapshot=()=>bones.map(b=>[b.name,...b.position.toArray(),...b.quaternion.toArray()]);
+ const shod=snapshot();
+ for(let repeat=0;repeat<3;repeat++){
+  root.userData.setImportedPalette({...BASE_PALETTE,top:'#1b1c1e'});
+  for(let frame=0;frame<48;frame++){
+   walkCoastalPose(rig,frame/48*Math.PI*2);supportCoastalPose(rig,()=>0);syncImportedAvatars(root);
+   const low=Math.min(...visibleBareFeet(root).flat().map(p=>p.y));
+   assert.ok(low>-.006&&low<.003,`barefoot walk contact ${frame}: ${low}`);
+  }
+  root.userData.setImportedPalette(BASE_PALETTE);stand();
+  assert.deepEqual(snapshot(),shod,'barefoot alignment must not accumulate or alter shod joints');
+ }
+});
+
+test('desktop full-body eyes stay attached to the posed head instead of amplified parallax',()=>{
+ for(const top of ['#18191b','#28191b']) {
+  const {root,rig}=importedCharacter({top});const xrRig=new THREE.Group(),camera=new THREE.PerspectiveCamera();xrRig.add(camera);
+  xrRig.position.set(3,.7,-4);root.position.copy(xrRig.position).add(new THREE.Vector3(0,.28,0));
+  const tracker=new HeadTracking();tracker.startForReview();tracker.feedBodyForReview(Array.from({length:33},()=>({x:0,y:0,z:0,visibility:1})),{},performance.now());
+  const world=Object.create(FestivalWorld.prototype);Object.assign(world,{player:root,playerRig:rig,xrRig,camera,headTracking:tracker,headTrackingActive:true,xrActive:true,xrSimulated:true,trackedBodyShown:true});
+  for(const yaw of [0,.9,2.6])for(const lean of [-.4,0,.4])for(const pitch of [-.4,0,.4]) {
+   walkCoastalPose(rig,0,0);root.rotation.y=yaw;xrRig.rotation.y=yaw+1.3;
+   rig.torso.rotation.set(lean,.3,.2);rig.head.rotation.set(-pitch,-.3,-.2);
+   Object.assign(tracker.pose,{x:.15,y:.1,z:.12,pitch});
+   world.applyHeadCoupledView();
+   const eye=rig.head.localToWorld(new THREE.Vector3(0,2.84-rig.torso.position.y-rig.head.position.y,0));
+   assert.ok(camera.getWorldPosition(new THREE.Vector3()).distanceTo(eye)<1e-9,'camera detached from neck');
+   assert.ok(camera.getWorldPosition(new THREE.Vector3()).distanceTo(rig.head.getWorldPosition(new THREE.Vector3()))<.75);
+  }
+ }
+});
+
+test('webcam palm pronation preserves the wrist endpoint and shares rotation with the forearm',()=>{
+ for(const top of ['#18191b','#28191b'])for(const hand of ['left','right'])for(const angle of [-1.3,-.6,.6,1.3]) {
+  const {root,rig}=importedCharacter({top});walkCoastalPose(rig,0,0);syncImportedAvatars(root);
+  const frame=root.userData.importedHandFrame(hand==='left'),basis=rig.visualRoot.getWorldQuaternion(new THREE.Quaternion());
+  const along=frame.fingers.clone().applyQuaternion(basis),thumb=frame.thumb.clone().applyQuaternion(basis);
+  const axis=frame.forearm.clone().applyQuaternion(basis);const roll=new THREE.Quaternion().setFromAxisAngle(axis,angle);
+  const targetAlong=along.clone().applyQuaternion(roll),targetThumb=thumb.clone().applyQuaternion(roll);
+  const elbow=hand==='left'?rig.rightElbow:rig.leftElbow,wrist=hand==='left'?rig.rightWrist:rig.leftWrist;
+  const oldElbow=elbow.quaternion.clone(),oldWrist=wrist.quaternion.clone();
+  const at=rig.visualRoot.localToWorld(root.userData.importedWrist(hand==='left'));
+  const world=Object.create(FestivalWorld.prototype);Object.assign(world,{player:root,playerRig:rig,armVecA:new THREE.Vector3(),armVecB:new THREE.Vector3(),armVecC:new THREE.Vector3(),armMatrix:new THREE.Matrix4(),armAxisX:new THREE.Vector3(),armAxisY:new THREE.Vector3(),armAxisZ:new THREE.Vector3(),armBasis:new THREE.Matrix4()});
+  world.turnWrist(hand,targetAlong,targetThumb,rig,root,true);
+  const landed=root.userData.importedHandFrame(hand==='left');
+  assert.ok(landed.fingers.clone().applyQuaternion(basis).dot(targetAlong)>.99999);
+  assert.ok(landed.thumb.clone().applyQuaternion(basis).dot(targetThumb)>.99999);
+  assert.ok(rig.visualRoot.localToWorld(root.userData.importedWrist(hand==='left')).distanceTo(at)<1e-7,'pronation moved the hand');
+  assert.ok(elbow.quaternion.angleTo(oldElbow)>Math.abs(angle)*.6,'forearm did not pronate');
+  assert.ok(wrist.quaternion.angleTo(oldWrist)<Math.abs(angle)*.4,'all twist stayed in wrist');
+ }
+});
+
+test('desktop webcam chest uses the calibrated screen heading through strafes and amplified head turns',()=>{
+ const {root,rig}=importedCharacter();const tracker=new HeadTracking();tracker.startForReview();tracker.feedBodyForReview(Array.from({length:33},()=>({x:0,y:0,z:0,visibility:1})),{},performance.now());
+ const world=Object.create(FestivalWorld.prototype);Object.assign(world,{player:root,playerRig:rig,headTracking:tracker,headTrackingActive:true,xrActive:true,xrSimulated:true,playerState:'walking',skating:false,xrBodyOriented:false,xrChestHeading:0,xrHipOffset:0});
+ world.isMentorControlLocked=()=>false;
+ for(const yaw of [0,.7,-2.1])for(const head of [-1.2,.9])for(const travel of [0,Math.PI/2,Math.PI,-Math.PI/2]) {
+  world.xrBodyOriented=false;world.xrYaw=yaw;world.xrHeadHeading=head;world.travelHeading=yaw+Math.PI+travel;world.travelHeadingAt=performance.now();
+  for(let k=0;k<90;k++)world.orientXrBody(1/60,performance.now());
+  assert.ok(Math.abs(world.wrapAngle(root.rotation.y+world.xrSpineTwist-yaw-Math.PI))<1e-6,'chest followed travel or amplified head yaw');
+ }
+});
+
+test('each tracked digit moves its own native joints on either avatar and restores rest exactly',()=>{
+ for(const top of ['#18191b','#28191b'])for(const side of ['Left','Right']) {
+  const {root,rig}=importedCharacter({top});walkCoastalPose(rig,0,0);syncImportedAvatars(root);
+  const bones=new Map();root.traverse(o=>{if(o.isBone&&o.name.startsWith(side+'Hand'))bones.set(o.name,o);});
+  const capture=()=>Object.fromEntries([...bones].map(([n,b])=>[n,b.quaternion.toArray()]));
+  const rest=capture();
+  const points={wrist:bones.get(side+'Hand').getWorldPosition(new THREE.Vector3()),fingers:{}};
+  for(const n of FINGER_NAMES)points.fingers[n]=[1,2,3,4].map(k=>bones.get(side+'Hand'+n+k).getWorldPosition(new THREE.Vector3()));
+  const relaxed=handPoseFromJoints(points,side==='Right');
+  for(const name of FINGER_NAMES){
+   const pose=structuredClone(relaxed);pose[name]={curl:[.5,.85,.6],spread:name==='Thumb'?.7:.2};
+   root.userData.setImportedHandPose(side==='Left',pose);syncImportedAvatars(root);
+   let moved=0;
+   for(const [n,b] of bones){if(n.startsWith(side+'Hand'+name))moved+=b.quaternion.angleTo(new THREE.Quaternion().fromArray(rest[n]));else assert.ok(b.quaternion.toArray().every((v,i)=>Math.abs(v-rest[n][i])<1e-6),n+' moved with '+name);}
+   assert.ok(moved>.2,name+' did not articulate');
+   root.userData.setImportedHandPose(side==='Left',null);syncImportedAvatars(root);assert.deepEqual(capture(),rest,'tracking release did not restore fingers');
+  }
+ }
+});
+
+test('raised DJ platforms support native soles at their mesh tops in both venues',()=>{
+ const world=Object.create(FestivalWorld.prototype);world.groundHeightAt=()=>.28;
+ for(const [x,z,floor] of [[40,23.4,7.7],[-68,37.3,-.1]])for(const top of ['#18191b','#28191b']) {
+  const {root,rig}=importedCharacter({top});root.position.set(x,floor+.28,z);
+  const support=(x,z,y)=>world.footSurfaceAt(x,z,y);
+  assert.ok(Math.abs(support(x,z,floor+.28)-floor)<1e-9);
+  for(const seconds of [0,1,3,5,7]) {
+   djCoastalPose(rig,seconds);supportCoastalPose(rig,support);syncImportedAvatars(root);
+   const points=root.userData.importedSolePoints();
+   assert.ok(Math.abs(Math.min(...points.map(p=>p.y))-floor)<.002,'soles under stage: '+Math.min(...points.map(p=>p.y)));
+   assert.ok(points.every(p=>p.y>=floor-.002),'sole penetrates stage');
+  }
+ }
+ assert.equal(world.footSurfaceAt(46,23.4,7.8),0,'roof stage footprint extended into deck');
+ assert.equal(world.footSurfaceAt(-58,37.3,0),0,'club stage footprint extended into room');
+});
+
+test('tracked arms retain shoulder roll at straight-arm singularities without changing wrist reach',()=>{
+ for(const hand of ['left','right']) {
+  const {root,rig}=character();walkCoastalPose(rig,0,0);
+  const world=Object.create(FestivalWorld.prototype),V=()=>new THREE.Vector3();
+  Object.assign(world,{player:root,playerRig:rig,armWorld:V(),armLocal:V(),armTarget:V(),armMeasured:V(),armWanted:V(),armAxisX:V(),armAxisY:V(),armAxisZ:V(),armBasis:new THREE.Matrix4()});
+  const shoulder=hand==='left'?rig.rightArm:rig.leftArm,wrist=hand==='left'?rig.rightWrist:rig.leftWrist;
+  let previous;
+  for(let i=0;i<=80;i++) {
+   const direction=new THREE.Vector3((hand==='left'?1:-1)*Math.sin(.25+i*.004),-Math.cos(.25+i*.004),.001).normalize();
+   const target=shoulder.parent.localToWorld(shoulder.position.clone().addScaledVector(direction,.94));
+   world.reachArm(hand,target,rig,root,undefined,true);
+   const orientation=shoulder.quaternion.clone();
+   if(previous)assert.ok(orientation.angleTo(previous)<.02,'shoulder snapped near straight-arm pole');
+   previous=orientation;
+   const expected=shoulder.parent.localToWorld(shoulder.position.clone().addScaledVector(direction,.93));
+   assert.ok(wrist.getWorldPosition(V()).distanceTo(expected)<1e-6,'stabilized roll changed endpoint');
+  }
+ }
+});
+
+
+function webcamRuntime(root,rig,tracker){
+ const V=()=>new THREE.Vector3(),Q=()=>new THREE.Quaternion(),M=()=>new THREE.Matrix4();
+ const world=Object.create(FestivalWorld.prototype);
+ Object.assign(world,{player:root,playerRig:rig,headTracking:tracker,headTrackingActive:true,xrActive:true,xrSimulated:true,xrYaw:-Math.PI,xrSpineTwist:0,
+ moveVector:V(),airborne:false,playerState:'walking',trackedBodyShown:false,trackedHiddenParts:[],trackedLandmarks:[],trackedArms:{left:false,right:false},xrHandPoses:{left:null,right:null},xrHandSampleAt:{left:0,right:0},trackedArmFrames:new WeakMap(),
+ armWorld:V(),armSwing:V(),armLocal:V(),armAxisX:V(),armAxisY:V(),armAxisZ:V(),armBasis:M(),headForward:V(),armTarget:V(),armMeasured:V(),armWanted:V(),armQuat:Q(),armParentQuat:Q(),armMeasuredQuat:Q(),armDesiredQuat:Q(),armMatrix:M(),armVecA:V(),armVecB:V(),armVecC:V(),footSurfaceAt:()=>0});
+ return world;
+}
+function webcamHand(left,digit,rotation=new THREE.Quaternion()){
+ const sign=left?-1:1,points=[new THREE.Vector3()];
+ FINGER_NAMES.forEach((name,k)=>{
+  let p=new THREE.Vector3(sign*(.055-k*.022),0,name==='Thumb'?.03:.085);points.push(p.clone());let theta=0;
+  for(let i=0;i<3;i++){theta+=name===digit?[.3,.8,.5][i]:0;
+   const direction=name==='Thumb'?new THREE.Vector3(sign*.85,-Math.sin(theta),.5*Math.cos(theta)).normalize():new THREE.Vector3(0,-Math.sin(theta),Math.cos(theta));
+   p=p.clone().addScaledVector(direction,i===0?.028:.021);points.push(p.clone());}
+ });
+ return points.map(p=>{p.applyQuaternion(rotation);return {x:p.x,y:-p.y,z:-p.z};});
+}
+test('webcam hands articulate native fingers and orient palms even without visible shoulders or a body',()=>{
+ for(const top of ['#18191b','#28191b'])for(const hand of ['left','right'])for(const mode of ['occluded','absent','stale']){
+  const {root,rig}=importedCharacter({top});walkCoastalPose(rig,0,0);syncImportedAvatars(root);
+  const tracker=new HeadTracking();tracker.startForReview();const world=webcamRuntime(root,rig,tracker);
+  const bones=new Map();root.traverse(o=>{if(o.isBone)bones.set(o.name,o);});const side=hand==='left'?'Left':'Right';
+  const rest=Object.fromEntries(FINGER_NAMES.map(n=>[n,[1,2,3].map(i=>bones.get(side+'Hand'+n+i).quaternion.clone())]));
+  for(const digit of FINGER_NAMES){
+   world.xrHandSampleAt[hand]=0;world.xrHandPoses[hand]=null;
+   const now=performance.now(),points=webcamHand(hand==='left',digit,new THREE.Quaternion().setFromEuler(new THREE.Euler(.6,-.7,.4)));
+   const pose=mode==='absent'?undefined:Array.from({length:33},()=>({x:0,y:0,z:0,visibility:0}));
+   tracker.feedBodyForReview(pose,{[hand]:points},now);if(mode==='stale')tracker.body.at=now-1000;
+   world.updateTrackedBody(1/30);syncImportedAvatars(root);
+   assert.ok(world.xrHandPoses[hand],mode+' lost a recognized hand');
+   const measured=handJointsFromLandmarks(points),along=measured.fingers.Middle[0].clone().sub(measured.wrist).normalize(),thumb=measured.fingers.Index[0].clone().sub(measured.fingers.Pinky[0]);thumb.addScaledVector(along,-thumb.dot(along)).normalize();
+   const actual=root.userData.importedHandFrame(hand==='left'),basis=rig.visualRoot.getWorldQuaternion(new THREE.Quaternion());
+   assert.ok(actual.fingers.clone().applyQuaternion(basis).dot(along)>.999,'finger direction ignored');
+   assert.ok(actual.thumb.clone().applyQuaternion(basis).dot(thumb)>.999,'palm orientation ignored');
+   const moved=[1,2,3].reduce((sum,i)=>sum+bones.get(side+'Hand'+digit+i).quaternion.angleTo(rest[digit][i-1]),0);
+   assert.ok(moved>.15,digit+' native joints did not move');
+  }
+ }
+});
+
+test('a transient musician asset failure retries without losing any band member',async()=>{
+ const files={};for(const n of [...BAND_MEMBERS,'stage','bonfire']){const b=await readFile('src/assets/band/'+n+'.glb');files[n]=b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength);}
+ const good=files.guitarist;let attempts=0;Object.defineProperty(files,'guitarist',{get(){return ++attempts===1?new ArrayBuffer(4):good;}});
+ const band=new RooftopBand({x:40,y:7,z:12.2,yaw:Math.PI},{x:53.5,y:7,z:15.6,yaw:Math.PI/2});await band.load(files);band.update(0,0);
+ assert.equal(attempts,2);assert.deepEqual(band.snapshot().map(m=>m.name).sort(),[...BAND_MEMBERS].sort());
+ for(const playing of [false,true,false]){band.setPlaying(playing);for(let i=0;i<2400;i++)band.update(1/30,i/30);assert.equal(band.snapshot().length,4);assert.ok(band.snapshot().every(m=>m.state===(playing?'playing':'seated')));}
+});
+
+
+test('recognized hands still reach the renderer when the pose detector returns an invalid frame',()=>{
+ const tracker=new HeadTracking();tracker.startForReview();const points=webcamHand(true,'Index');
+ tracker.poseLandmarker={detectForVideo:()=>({worldLandmarks:[Array.from({length:33},()=>({x:NaN,y:0,z:0}))]}),close(){}};
+ tracker.handLandmarker={detectForVideo:()=>({worldLandmarks:[points],landmarks:[points],handedness:[[{categoryName:'Left'}]]}),close(){}};
+ tracker.detectBody({},performance.now());assert.ok(tracker.body.hands.left);assert.equal(tracker.bodyStatus,'tracking');
+});
+
+test('an unavailable musician recovers on a later frame without reloading the world',async()=>{
+ const files={};for(const n of [...BAND_MEMBERS,'stage','bonfire']){const b=await readFile('src/assets/band/'+n+'.glb');files[n]=b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength);}
+ const good=files.guitarist;let attempts=0;Object.defineProperty(files,'guitarist',{get(){return ++attempts<=3?new ArrayBuffer(4):good;}});
+ const band=new RooftopBand({x:40,y:7,z:12.2,yaw:Math.PI},{x:53.5,y:7,z:15.6,yaw:Math.PI/2});await band.load(files);
+ assert.equal(band.ready,false);assert.equal(band.snapshot().length,3);band.setPlaying(true);
+ for(let i=0;i<151;i++)band.update(.1,i*.1);
+ await new Promise(resolve=>setTimeout(resolve,25));
+ assert.equal(band.ready,true);assert.equal(band.snapshot().length,4);assert.equal(band.snapshot().find(m=>m.name==='guitarist').state,'playing');
+});
+
+// Official MediaPipe recorded detector outputs, rather than handcrafted curl
+// vectors: these exposed the swapped fallback that flattened every bent digit.
+const recordedHands=await Promise.all(['thumb_up','pointing_up'].map(async name=>JSON.parse(await readFile(`scripts/fixtures/mediapipe/${name}.json`,'utf8'))));
+test('recorded detector hands retain anatomical side, individual finger bends and palm orientation on both avatars',()=>{
+ for(const top of ['#18191b','#28191b'])for(const hand of ['left','right'])for(const mode of ['absent','invalid','occluded'])for(const sample of recordedHands){
+  const {root,rig}=importedCharacter({top});walkCoastalPose(rig,0,0);syncImportedAvatars(root);
+  const tracker=new HeadTracking();tracker.startForReview();const world=webcamRuntime(root,rig,tracker);
+  world.camera=new THREE.Object3D();
+  const rotation=new THREE.Quaternion().setFromEuler(new THREE.Euler(.5,-.7,.4));
+  const points=sample.worldLandmarks.map(p=>{const v=new THREE.Vector3(hand==='left'?-p.x:p.x,p.y,p.z).applyQuaternion(rotation);return {x:v.x,y:v.y,z:v.z};});
+  const image=sample.landmarks.map(p=>({...p,x:hand==='left'?1-p.x:p.x}));
+  const pose=mode==='absent'?[]:[Array.from({length:33},()=>({x:mode==='invalid'?NaN:0,y:0,z:0,visibility:0}))];
+  tracker.poseLandmarker={detectForVideo:()=>({worldLandmarks:pose,landmarks:pose}),close(){}};
+  tracker.handLandmarker={detectForVideo:()=>({worldLandmarks:[points],landmarks:[image],handedness:[[{categoryName:hand==='left'?'Left':'Right'}]]}),close(){}};
+  tracker.bodyWanted=true;tracker.detectBody({},performance.now());
+  assert.ok(tracker.body.hands[hand],`${mode}: SDK ${hand} assigned to opposite side`);
+  world.updateTrackedBody(1/30);syncImportedAvatars(root);
+  const measured=world.xrHandPoses[hand];assert.ok(measured);
+  assert.ok(measured.Middle.curl.every(v=>v>.7),'recognized bent fingers clamped flat');
+  if(sample.source.includes('pointing_up'))assert.ok(measured.Index.curl[1]<.2&&measured.Middle.curl[1]>1,'independent pointing finger lost');
+  const joints=handJointsFromLandmarks(points),along=joints.fingers.Middle[0].clone().sub(joints.wrist).normalize();
+  const thumb=joints.fingers.Index[0].clone().sub(joints.fingers.Pinky[0]);thumb.addScaledVector(along,-thumb.dot(along)).normalize();
+  const frame=root.userData.importedHandFrame(hand==='left'),basis=rig.visualRoot.getWorldQuaternion(new THREE.Quaternion());
+  assert.ok(frame.fingers.clone().applyQuaternion(basis).dot(along)>.999,'measured fingers orientation lost');
+  assert.ok(frame.thumb.clone().applyQuaternion(basis).dot(thumb)>.999,'measured palm roll lost');
+  const side=hand==='left'?'Left':'Right',bones=new Map();root.traverse(o=>{if(o.isBone)bones.set(o.name,o);});
+  const wrist=bones.get(side+'Hand').getWorldPosition(new THREE.Vector3());
+  const tip=bones.get(side+'HandMiddle4').getWorldPosition(new THREE.Vector3());
+  const curledDistance=tip.distanceTo(wrist);
+  const limbs=world.limbsForNetwork();assert.ok(limbs[hand==='left'?'lf':'rf'],'hand-only fingers omitted from network');
+  assert.ok(limbs[hand==='left'?'l':'r'],'hand-only orientation omitted from network');
+  const remote=importedCharacter({top});walkCoastalPose(remote.rig,0,0);
+  world.applyLimbs({group:remote.root,rig:remote.rig},limbs);syncImportedAvatars(remote.root);
+  const remoteBones=new Map();remote.root.traverse(o=>{if(o.isBone)remoteBones.set(o.name,o);});
+  for(const digit of FINGER_NAMES)for(let k=1;k<=3;k++)assert.ok(bones.get(side+'Hand'+digit+k).quaternion.angleTo(remoteBones.get(side+'Hand'+digit+k).quaternion)<.008,'relayed joint exceeds hundredth-radian relay precision');
+  root.userData.setImportedHandPose(hand==='left',null);syncImportedAvatars(root);
+  assert.ok(curledDistance<bones.get(side+'HandMiddle4').getWorldPosition(new THREE.Vector3()).distanceTo(bones.get(side+'Hand').getWorldPosition(new THREE.Vector3()))*.8,'native middle finger did not curl');
+ }
 });

@@ -3,10 +3,11 @@
  *
  * The service runs on a plan with no disk that survives a deploy, so everything
  * STAFF set through the panel — running orders, venue names and subtitles, the
- * works they added, the gate wording, DJ pages, NPCs — lives only in the memory
- * of the instance currently serving. Deploying throws it away. Committing the
- * output of this script is what makes those settings outlive a deploy: the
- * service reads it at boot whenever it has nothing of its own.
+ * works they added, the gate wording, DJ pages, NPCs and their introductions —
+ * lives only in the memory of the instance currently serving. Deploying throws
+ * it away. Committing the output of this script is what makes those settings
+ * outlive a deploy: the service reads it at boot whenever it has nothing of
+ * its own.
  *
  * Run it before deploying, or after a session of changes worth keeping:
  *
@@ -66,12 +67,24 @@ const seed = {
   // Job titles live on the profiles, not beside the names, and were being left
   // behind — STAFF renaming a resident's title saw it reset on the next deploy.
   npcTitles: Object.fromEntries((live.npcProfiles ?? []).map((profile) => [profile.id, profile.title])),
+  // The introductions and the Chinese job titles, for the same reason. Empty
+  // ones are left out rather than saved as blanks, which is how the service
+  // stores them.
+  ...Object.fromEntries([
+    ['npcTitlesZh', 'titleZh'],
+    ['npcIntroductions', 'introduction'],
+    ['npcIntroductionsZh', 'introductionZh'],
+  ].map(([key, field]) => [key, Object.fromEntries((live.npcProfiles ?? [])
+    .filter((profile) => profile[field])
+    .map((profile) => [profile.id, profile[field]]))])),
   pamphlet: live.pamphlet,
   trackTempos: live.trackTempos,
   // The headset copies of the films (VR 連結). Left out, every deploy dropped
   // the links STAFF had pasted, and the films showed only a poster in a Quest.
   immersiveSources: live.immersiveSources ?? {},
   ...(previous.offeringReceipt ? { offeringReceipt: previous.offeringReceipt } : {}),
+  // Titles STAFF rewrote in the running order.
+  videoTitles: live.videoTitles ?? {},
   // The jukebox's shelf, so records STAFF put in it outlive a deploy the way
   // everything else here does. Only the shelf: the waiting list is requests
   // made by people who are in the square at that moment, and bringing it back
@@ -93,4 +106,6 @@ for (const [venue, entry] of Object.entries(seed.schedule)) {
 console.log(`  ${customCount} work(s) STAFF added by hand`);
 console.log(`  ${seed.jukeboxTracks.length} record(s) on the jukebox's shelf`);
 console.log(`  ${Object.keys(seed.immersiveSources).length} VR link(s)`);
+console.log(`  ${Object.keys(seed.videoTitles).length} retitled film(s)`);
+console.log(`  ${Object.keys(seed.npcIntroductions).length} English and ${Object.keys(seed.npcIntroductionsZh).length} Chinese resident introduction(s)`);
 console.log('Commit world/server/festival-seed.json for these to survive the next deploy.');

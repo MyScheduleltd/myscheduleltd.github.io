@@ -1,6 +1,5 @@
-import { TOP_OUTFITS, topOutfit } from '../world/CoastalOutfits';
-import { loadImportedAvatar } from '../world/ImportedAvatar';
-import { coastalMapGraphic } from './coastalMap';
+import { TOP_OUTFITS, topOutfit, avatarSex, outfitWire, type AvatarSex } from '../world/CoastalOutfits';
+import { avatarVariantsFor, AVATAR_NATIVE } from '../world/NativeAvatarPalette';
 import {
   catalogue,
   catalogueByVenue,
@@ -10,9 +9,9 @@ import {
 } from '../data/catalogue';
 import { immersiveVideoSources, immersiveUrlFor } from '../data/immersiveVideoSources';
 import { youtubeIdFromUrl } from '../data/MediaLink';
-import companyLogoUrl from '../assets/company-logo.png';
+import companyLogoUrl from '../assets/company-logo.png?inline';
 import { GAMEPAD_ACTIONS, DEFAULT_BINDINGS, buttonLabel, type GamepadActionId } from '../world/GamepadInput';
-import { ACCESSORY_SLOTS, DEFAULT_ACCESSORY_COLOURS, type AccessorySlot } from '../world/AvatarAccessories';
+import { ACCESSORY_SLOTS, DEFAULT_ACCESSORY_COLOURS, type AccessorySlot } from '../world/AccessoryOptions';
 import { DJ_BY_VENUE, djProfileFor } from '../data/djProfiles';
 import { ProgrammeClock } from '../data/programmeClock';
 import { QUESTS, QUEST_SECTIONS, QUEST_TOTAL, type QuestId } from '../data/quests';
@@ -62,6 +61,8 @@ import {
   NPC_NAMES,
   NPC_TITLES,
   DOUBLE_TAP_INTRODUCTION,
+  npcIntroductionIn,
+  npcTitleIn,
   type NpcId,
   type NpcNames,
   type NpcProfile,
@@ -158,13 +159,36 @@ const defaultVenueLabels: Record<VenueKey, string> = {
 };
 const VENUE_KEYS: VenueKey[] = ['palace', 'drive-in', 'shore', 'club', 'rooftop'];
 
+// A new visitor wears the body exactly as it was generated: every dye slot
+// starts at that body's own colour, which leaves its texture untouched.
 const defaultPalette: AvatarPalette = {
+  skin: AVATAR_NATIVE.male.skin,
+  hair: AVATAR_NATIVE.male.hair,
+  top: '#18191b',
+  bottoms: AVATAR_NATIVE.male.bottoms,
+  swimwear: AVATAR_NATIVE.male.swimwear,
+};
+
+// The defaults before the generated bodies (September), still saved on
+// returning visitors' devices. Kept, they dyed the bodies: navy trousers over
+// the camouflage, tan skin, a yellow swimsuit (the owner, 2026-10-04: "the
+// colour is wrong"). A slot still holding its old default takes the body's own
+// colour; anything a visitor picked is kept.
+const OLD_DEFAULTS: Partial<Record<keyof AvatarPalette, string>> = {
   skin: '#9d5f43',
   hair: '#171315',
-  top: '#18191b',
   bottoms: '#20242c',
   swimwear: '#d5b23f',
 };
+
+function withoutOldDefaults(palette: AvatarPalette): AvatarPalette {
+  const native = AVATAR_NATIVE[avatarSex(palette.top)];
+  const out = { ...palette };
+  for (const slot of ['skin', 'hair', 'bottoms', 'swimwear'] as const) {
+    if (out[slot]?.toLowerCase() === OLD_DEFAULTS[slot]) out[slot] = native[slot];
+  }
+  return out;
+}
 
 const copy = {
   en: {
@@ -497,7 +521,7 @@ export class App {
     // screen starts light instead, and the 一般 / 精簡 switch still overrides
     // it for anyone who wants to try.
     this.graphicsMode = saved?.graphicsMode ?? (App.looksLikeAPhone() ? 'lite' : 'normal');
-    this.palette = { ...defaultPalette, ...saved?.palette };
+    this.palette = withoutOldDefaults({ ...defaultPalette, ...saved?.palette });
     this.currentId = saved?.id ?? '';
     this.privateProgress = readSession<PrivateProgress | undefined>(PRIVATE_PROGRESS_KEY, undefined);
     this.chatMessages = readSession<ChatMessage[]>(CHAT_KEY, initialChat).slice(-100);
@@ -517,7 +541,7 @@ export class App {
     // the time anybody has typed a name and chosen a language they are usually
     // both in. Failures are swallowed — `enterWorld()` asks again and reports
     // properly if it is still not there.
-    void loadImportedAvatar().catch(() => undefined);
+    void this.preloadAvatar().catch(() => undefined);
     this.preloadWorldModule();
     this.watchForANewerBuild();
     this.showLastBreath();
@@ -753,12 +777,12 @@ export class App {
     this.root.innerHTML = `
       <section class="gate" aria-labelledby="gate-title">
         <div class="gate__atmosphere" aria-hidden="true">
-          <iframe class="gate__video" src="${this.escapeAttribute(gateBackgroundUrl(this.gateBackground.youtubeId))}" title="" tabindex="-1" allow="autoplay; encrypted-media"></iframe>
+          <iframe class="gate__video${this.gateBackground.youtubeId === defaultGateBackground.youtubeId ? ' gate__video--cinematic' : ''}" src="${this.escapeAttribute(gateBackgroundUrl(this.gateBackground.youtubeId))}" title="" tabindex="-1" allow="autoplay; encrypted-media"></iframe>
           <div class="gate__video-shade"></div>
           <div class="gate__grain"></div>
         </div>
         <header class="gate__brand">
-          <img class="brand-logo" src="${companyLogoUrl}" alt="我的檔期" />
+          <img class="brand-logo" width="42" height="42" fetchpriority="high" src="${companyLogoUrl}" alt="我的檔期" />
           <span>MYSCHEDULE</span>
           <span class="phase-badge">${text.local}</span>
         </header>
@@ -836,12 +860,19 @@ export class App {
           <div class="gate-actions">
             <button class="button button--primary" type="submit" data-audio="sound">${text.sound}</button>
             <button class="button button--secondary" type="submit" data-audio="muted">${text.muted}</button>
+            <button class="button button--secondary gate-donate" type="button" data-gate-donate>Donate</button>
           </div>
           <p class="gate-card__note">${text.gateNote}</p>
         </form>
       </section>
     `;
 
+    // Giving without coming in: the temple's sheet, worded as a donation.
+    this.root.querySelector<HTMLButtonElement>('[data-gate-donate]')?.addEventListener('click', () => {
+      // Headed with the sign-in page's own title, which STAFF can rename.
+      const title = this.root.querySelector<HTMLElement>('#gate-title')?.textContent?.trim();
+      void this.openOffering(title || (this.language === 'zh-TW' ? '我的戲院' : 'MY THEATRE'), 'gate');
+    });
     this.root.querySelectorAll<HTMLButtonElement>('[data-language]').forEach((button) => {
       setButtonPressed(button, button.dataset.language === this.language);
       button.addEventListener('click', () => {
@@ -989,7 +1020,9 @@ export class App {
     const waiting=this.root.querySelector<HTMLElement>('#gate-waiting');
     if(waiting){waiting.hidden=false;waiting.textContent=this.language==='zh-TW'?'正在開啟影展…':'OPENING THE FESTIVAL…';}
     window.setTimeout(() => {
-      void loadImportedAvatar().then(() => {this.openingWorld=false;return this.enterWorld(muted);}).catch(() => {
+      // Only the bodies this visitor and the residents wear; the others arrive
+      // behind them while the world is already running.
+      void this.preloadAvatar().then(() => {this.openingWorld=false;return this.enterWorld(muted);}).catch(() => {
         this.openingWorld=false;
         const notice=this.root.querySelector<HTMLElement>('#gate-waiting');
         if(notice){notice.hidden=false;notice.textContent=this.language==='zh-TW'
@@ -1008,11 +1041,31 @@ export class App {
    * fetch clears the memo so entering can try again rather than being stuck
    * with a rejected promise for ever.
    */
+  private topology?: Promise<void>;
+
+  private prepareWorldTopology(): Promise<void> {
+    if (!this.topology) {
+      this.topology = import('../world/WorldTopology').then(({ configureWorldTopology }) =>
+        configureWorldTopology(window.location.hostname, window.location.pathname, window.location.search));
+      void this.topology.catch(() => { this.topology = undefined; });
+    }
+    return this.topology;
+  }
+
+  private mapGraphic: (zh: boolean) => string = () => '';
+
+  private preloadAvatar(): Promise<void> {
+    return this.prepareWorldTopology().then(() => import('../world/ImportedAvatar')).then(({ loadImportedAvatar }) =>
+      loadImportedAvatar(undefined, avatarVariantsFor(this.palette), false));
+  }
+
   private worldModule?: Promise<typeof import('../world/FestivalWorld')>;
 
   private preloadWorldModule(): Promise<typeof import('../world/FestivalWorld')> {
     if (!this.worldModule) {
-      this.worldModule = import('../world/FestivalWorld');
+      this.worldModule = this.prepareWorldTopology().then(() =>
+        Promise.all([import('../world/FestivalWorld'), import('./coastalMap')]))
+        .then(([world, map]) => { this.mapGraphic = map.coastalMapGraphic; return world; });
       void this.worldModule.catch(() => { this.worldModule = undefined; });
     }
     return this.worldModule;
@@ -1108,6 +1161,9 @@ export class App {
             ? '用電腦的攝影機追蹤你的頭部，讓螢幕變成一扇可以探頭看的窗。影像只在這台電腦上處理，不會離開你的裝置。'
             : 'Track your head with your computer\u2019s camera so the screen becomes a window you can lean around. The video is processed on this machine and never leaves your device.'}</p>
           <label class="head-track__remember"><input type="checkbox" data-head-track-remember${this.headTrackRemember ? ' checked' : ''} /><span>${zh ? '記住在這台電腦上' : 'Remember on this computer'}</span></label>
+          <label class="head-track__remember" data-head-track-body-row><input type="checkbox" data-head-track-body${this.world?.bodyTrackingSnapshot().wanted ? ' checked' : ''} /><span>${zh
+            ? '身體與手指追蹤：讓雙手、肩膀和手肘入鏡；每根手指會獨立跟隨。雙腿入鏡且站著不動時也會跟隨。另需下載約 17 MB。'
+            : 'Body and fingers: keep your hands, shoulders and elbows in view. Each finger follows independently. Legs follow when visible and you stand still. About 17 MB more to download.'}</span></label>
           <p class="head-track__mode" data-head-track-mode>${this.headTrackModeLabel()}</p>
           <label data-head-track-pick hidden><span>${zh ? '攝影機' : 'CAMERA'}</span><select data-head-track-camera></select></label>
           <div class="head-track__actions">
@@ -1119,7 +1175,7 @@ export class App {
         </section>
         <button class="head-track-toggle" type="button" data-head-track-toggle hidden>${zh ? '頭部追蹤' : 'HEAD TRACKING'}</button>
         <header class="world-header">
-          <div class="world-brand"><img class="brand-logo" src="${companyLogoUrl}" alt="我的檔期" /><span>MYSCHEDULE</span></div>
+          <div class="world-brand"><img class="brand-logo" width="42" height="42" fetchpriority="high" src="${companyLogoUrl}" alt="我的檔期" /><span>MYSCHEDULE</span></div>
           <div class="status-cluster" id="connection-status" data-status="connecting">
             <span class="status-dot"></span>
             <span>${zh ? '連線中' : 'CONNECTING'} / ${this.escapeHtml(this.currentId)}</span>
@@ -1166,7 +1222,7 @@ export class App {
         <button class="interaction-toast" id="interaction-toast" type="button" hidden></button>
         <div class="world-alert" id="world-alert" role="status" hidden></div>
         <div class="touch-controls" aria-hidden="true">
-          <div class="touch-stick" data-stick><span class="touch-stick__knob" data-stick-knob></span></div>
+          <div class="touch-stick" data-stick><span class="touch-stick__knob" data-stick-knob></span><span class="touch-stick__caption">${zh ? '移動' : 'MOVE'}</span></div>
           <div class="touch-ring">
             <button type="button" class="touch-ring__hit" data-touch-act="punch" aria-label="${zh ? '出拳' : 'Punch'}">${zh ? '拳' : 'HIT'}</button>
             <button type="button" class="touch-ring__key touch-ring__key--a" data-touch-act="jump" aria-label="${zh ? '跳躍' : 'Jump'}">${zh ? '跳' : 'JUMP'}</button>
@@ -1232,6 +1288,8 @@ export class App {
     });
     this.world.setNpcProfiles(this.npcProfiles);
     this.world.start();
+    // Other body variants are background work, after the visitor is inside.
+    void import('../world/ImportedAvatar').then(({ loadImportedAvatar }) => loadImportedAvatar()).catch(() => undefined);
     this.syncPublicProjectors();
     this.syncVrUi();
     // This entire App is now loaded only by the explicit local PS2 preview.
@@ -1281,6 +1339,13 @@ export class App {
     // — walking it into the sea, for instance — is from whichever page the walk
     // started on.
     if (['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      // How the visitor's own body meets the ground, on every loopback page.
+      (window as Window & { __festivalFeet?: () => unknown }).__festivalFeet = () => this.world?.feetReviewSnapshot();
+      (window as Window & { __festivalGround?: (x0: number, x1: number, z0: number, z1: number, step?: number) => unknown }).__festivalGround =
+        (x0, x1, z0, z1, step) => this.world?.groundReviewSamples(x0, x1, z0, z1, step);
+      // Over the whole island: __festivalAerial([x,y,z], [x,y,z]); no arguments hands the camera back.
+      (window as Window & { __festivalAerial?: (from?: number[], to?: number[]) => void }).__festivalAerial = (from, to) =>
+        this.world?.setAerialReview(from, to);
       (window as Window & { __festivalMentor?: () => unknown }).__festivalMentor =
         () => this.world?.mentorFollowerReviewSnapshot();
       (window as Window & { __festivalProjectors?: () => unknown }).__festivalProjectors =
@@ -1371,6 +1436,9 @@ export class App {
         this.syncHeadTrackUi();
         return this.world?.headTrackReviewSnapshot();
       };
+      (window as Window & { __festivalBodyTrack?: (pose: Array<{x: number; y: number; z: number; visibility?: number}>,
+        hands: { left?: Array<{x: number; y: number; z: number}>; right?: Array<{x: number; y: number; z: number}> }, sex?: 'male' | 'female') => Promise<unknown> }).__festivalBodyTrack =
+        (pose, hands, sex) => this.world?.bodyTrackForReview(pose, hands, sex) ?? Promise.resolve({});
     } else if (reviewTarget === 'fit' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       (window as Window & { __festivalFit?: () => unknown }).__festivalFit =
         () => this.world?.accessoryFitSnapshot();
@@ -1521,6 +1589,13 @@ export class App {
       this.activeVenue = venue;
       this.world.focusPublicScreeningForReview(venue);
       this.startPublicScreening(true);
+      const reviewQuery = new URLSearchParams(window.location.search);
+      const reviewPoint = (key: string): number[] | undefined => {
+        const point = reviewQuery.get(key)?.split(',').map(Number);
+        return point?.length === 3 && point.every(Number.isFinite) ? point : undefined;
+      };
+      const from = reviewPoint('from'), to = reviewPoint('look');
+      if (from && to) this.world.setAerialReview(from, to);
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () =>
         this.world?.djVenueReviewSnapshot(venue);
       window.setTimeout(() => {
@@ -1528,6 +1603,13 @@ export class App {
           this.world?.djVenueReviewSnapshot(venue),
         );
       }, 400);
+    } else if (reviewTarget?.startsWith('band') && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      // band, band-play, band-street, band-street-play: the rooftop band.
+      const playing = reviewTarget.endsWith('-play'), street = reviewTarget.includes('street');
+      this.world.focusRooftopBandForReview(playing, street);
+      // The network's jukebox state would take the record back off.
+      (this.world as unknown as { setJukeboxPlaying: (on: boolean) => void }).setJukeboxPlaying = () => undefined;
+      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.rooftopBandSnapshot();
     } else if (reviewTarget === 'rooftop' || reviewTarget === 'rooftop-dj') {
       this.world.focusRooftopForReview(reviewTarget === 'rooftop-dj');
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.clubReviewSnapshot();
@@ -1825,6 +1907,9 @@ export class App {
       this.updateJukeboxSoundPrompt();
     });
     document.addEventListener('visibilitychange', () => {
+      // Out of sight, the record is let go; back in sight, picked up again
+      // where the festival's clock says it has got to.
+      this.syncJukebox();
       if (document.hidden) return;
       this.applyJukeboxVolume();
       // Coming back from a locked phone. Locking never fires pagehide, so
@@ -2014,6 +2099,13 @@ export class App {
       } catch { /* private mode */ }
       const mode = this.root.querySelector<HTMLElement>('[data-head-track-mode]');
       if (mode) mode.textContent = this.headTrackModeLabel();
+    });
+    this.root.querySelector<HTMLInputElement>('[data-head-track-body]')?.addEventListener('change', (event) => {
+      // Off by default: it opens nothing new, but it is 17 MB and a lot more
+      // of the visitor in front of the lens than a face.
+      const on = (event.currentTarget as HTMLInputElement).checked;
+      void this.world?.setBodyTracking(on).then(() => this.syncHeadTrackUi());
+      this.syncHeadTrackUi();
     });
     this.root.querySelector<HTMLButtonElement>('[data-head-track-start]')?.addEventListener('click', () => {
       // Straight from the press. A browser will not open a camera on the back
@@ -2210,6 +2302,7 @@ export class App {
       venue: snapshot.screeningVenue,
       gesture: snapshot.gesture,
       carriedItem: snapshot.carriedItem,
+      limbs: snapshot.limbs,
     }, this.palette).catch(() => undefined);
   }
 
@@ -2408,7 +2501,8 @@ export class App {
       return;
     }
     if (action.type === 'npcIntroduction') {
-      this.openNpcAbout(action);
+      // The world hands over one language; the roster here has both.
+      this.openNpcAbout(this.npcProfiles.find((profile) => profile.id === action.id) ?? action);
       return;
     }
     if (action.type === 'greet') {
@@ -2973,7 +3067,18 @@ export class App {
     }
     const deg = (radians: number) => `${(radians * 180 / Math.PI).toFixed(1)}°`;
     const cm = (metres: number) => `${(metres * 100).toFixed(1)}cm`;
-    return `${label} · ${zh ? '轉' : 'yaw'} ${deg(pose.yaw)} · ${zh ? '仰' : 'pitch'} ${deg(pose.pitch)}`
+    const body = state.body as { status: string; seen: boolean; left: boolean; right: boolean } | undefined;
+    const bodyWords: Record<string, [string, string]> = {
+      loading: ['LOADING THE BODY TRACKER', '正在載入全身追蹤'],
+      searching: ['LOOKING FOR A BODY — STEP BACK', '尋找身體中——請退後'],
+      tracking: [body?.seen ? 'BODY' : 'HANDS', body?.seen ? '身體' : '手部'],
+      failed: ['BODY TRACKER FAILED', '全身追蹤失敗'],
+    };
+    const bodyLabel = body && body.status !== 'off' ? ` · ${(bodyWords[body.status] ?? bodyWords.searching)[zh ? 1 : 0]}` : '';
+    const handsLabel = body?.status === 'tracking' ? (zh
+      ? ` · 左手${body.left ? '已辨識' : '未入鏡'} / 右手${body.right ? '已辨識' : '未入鏡'}`
+      : ` · LEFT ${body.left ? 'SEEN' : 'NOT SEEN'} / RIGHT ${body.right ? 'SEEN' : 'NOT SEEN'}`) : '';
+    return `${label}${bodyLabel}${handsLabel} · ${zh ? '轉' : 'yaw'} ${deg(pose.yaw)} · ${zh ? '仰' : 'pitch'} ${deg(pose.pitch)}`
       + ` · x ${cm(pose.x)} · y ${cm(pose.y)} · z ${cm(pose.z)}`;
   }
 
@@ -4024,13 +4129,14 @@ export class App {
    * will open with a name and a job title and no biography under them. That is
    * the intended state, not an error — the card fills out as STAFF write.
    */
-  private openNpcAbout(profile: { id: string; name: string; title: string; introduction: string }): void {
+  private openNpcAbout(profile: NpcProfile): void {
     const menu = this.root.querySelector<HTMLElement>('#seat-menu');
     if (!menu) return;
     const zh = this.language === 'zh-TW';
     // No service, nowhere to save. The introduction itself still shows.
     const canEdit = Boolean(this.staffKey) && this.festivalClient.online;
-    const paragraphs = profile.introduction
+    const title = npcTitleIn(profile, zh);
+    const paragraphs = npcIntroductionIn(profile, zh)
       .split(/\n+/)
       .map((line) => line.trim())
       .filter(Boolean)
@@ -4042,7 +4148,7 @@ export class App {
       ${this.seatMenuClose()}
       <p class="eyebrow">${zh ? '團隊介紹' : 'THE TEAM'}</p>
       <h2 id="seat-menu-title">${this.escapeHtml(profile.name)}</h2>
-      ${profile.title ? `<p class="dj-about__role">${this.escapeHtml(profile.title)}</p>` : ''}
+      ${title ? `<p class="dj-about__role">${this.escapeHtml(title)}</p>` : ''}
       ${paragraphs
         ? `<div class="dj-about__body">${paragraphs}</div>`
         : `<p class="dj-about__hint dj-about__wide">${zh
@@ -4051,10 +4157,11 @@ export class App {
       ${canEdit ? `
       <form class="dj-about__edit" data-npc-about-edit>
         <p class="eyebrow dj-about__wide">${zh ? 'STAFF 編輯' : 'STAFF EDIT'}</p>
-        <label class="dj-about__wide"><span>${zh ? '介紹' : 'INTRODUCTION'}</span><textarea name="introduction" rows="6" maxlength="1200">${this.escapeHtml(profile.introduction)}</textarea></label>
+        <label class="dj-about__wide"><span>${zh ? '中文介紹' : 'CHINESE INTRODUCTION'}</span><textarea name="introductionZh" rows="5" maxlength="1200">${this.escapeHtml(profile.introductionZh ?? '')}</textarea></label>
+        <label class="dj-about__wide"><span>${zh ? '英文介紹' : 'ENGLISH INTRODUCTION'}</span><textarea name="introduction" rows="5" maxlength="1200">${this.escapeHtml(profile.introduction ?? '')}</textarea></label>
         <p class="dj-about__hint dj-about__wide">${zh
-          ? '留空即為尚未填寫。名稱與職稱在 STAFF 面板編輯。'
-          : 'Leave it empty for no introduction. The name and job title are edited in the STAFF panel.'}</p>
+          ? '兩欄都留空即為尚未填寫；只填一種語言時，另一種語言的讀者會看到它。名稱與職稱在 STAFF 面板編輯。'
+          : 'Leave both empty for no introduction. With only one filled in, readers of the other language see that one. The name and job title are edited in the STAFF panel.'}</p>
         <button type="submit">${zh ? '儲存介紹' : 'SAVE INTRODUCTION'}</button>
       </form>` : ''}
       <button class="seat-menu__back dj-about__back" type="button" data-npc-about-close>${zh ? '關閉' : 'CLOSE'}</button>`;
@@ -4067,15 +4174,22 @@ export class App {
       event.preventDefault();
       const form = event.currentTarget as HTMLFormElement;
       const introduction = form.querySelector<HTMLTextAreaElement>('textarea[name="introduction"]')?.value.trim() ?? '';
+      const introductionZh = form.querySelector<HTMLTextAreaElement>('textarea[name="introductionZh"]')?.value.trim() ?? '';
       const submit = form.querySelector<HTMLButtonElement>('button[type=submit]');
       if (submit) submit.disabled = true;
-      // The name and the title go back unchanged: the service takes all three
-      // together, and this panel is not where those two are edited.
+      // The name and the titles go back unchanged: the service takes them all
+      // together, and this panel is not where they are edited.
       void this.festivalClient
-        .updateNpcProfile(this.staffKey, profile.id as NpcId, profile.name, profile.title, introduction)
+        .updateNpcProfile(this.staffKey, profile.id as NpcId, {
+          name: profile.name,
+          title: profile.title,
+          titleZh: profile.titleZh ?? '',
+          introduction,
+          introductionZh,
+        })
         .then(() => {
           this.showWorldAlert(zh ? '介紹已儲存' : 'INTRODUCTION SAVED');
-          this.openNpcAbout({ ...profile, introduction });
+          this.openNpcAbout({ ...profile, introduction, introductionZh });
         })
         .catch((error) => {
           if (submit) submit.disabled = false;
@@ -4207,6 +4321,7 @@ export class App {
         running: visitor.presence.running,
         gesture: visitor.hitAt && Date.now() - visitor.hitAt < 620 ? 'hit' : visitor.presence.gesture,
         carriedItem: visitor.presence.carriedItem,
+        limbs: visitor.presence.limbs,
         npcId: visitor.npcId,
         originalName: visitor.originalName,
         impersonationOrigin: visitor.impersonationOrigin,
@@ -4285,11 +4400,29 @@ export class App {
    * is punishing in the STAFF panel where the save button sits a long way down.
    */
   private reopenPanelKeepingPlace(panelId: PanelId): void {
-    const previousScrollTop = this.root.querySelector<HTMLElement>('#panel .panel__body')?.scrollTop ?? 0;
+    // Every box that scrolls, not only the panel's body: each venue's running
+    // order scrolls inside its own list, and restoring the body alone put
+    // STAFF back at the first film every time they saved a row further down.
+    // Rebuilt markup has the same shape, so a box is found again by its path.
+    const panel = this.root.querySelector<HTMLElement>('#panel');
+    const pathOf = (element: Element, root: Element): string => {
+      const steps: number[] = [];
+      for (let node: Element | null = element; node && node !== root; node = node.parentElement) {
+        steps.unshift(node.parentElement ? [...node.parentElement.children].indexOf(node) : 0);
+      }
+      return steps.join('/');
+    };
+    const places = new Map<string, number>();
+    panel?.querySelectorAll<HTMLElement>('*').forEach((element) => {
+      if (element.scrollTop > 0) places.set(pathOf(element, panel), element.scrollTop);
+    });
     this.openPanel(panelId);
-    const body = this.root.querySelector<HTMLElement>('#panel .panel__body');
-    if (!body) return;
-    body.scrollTop = Math.min(previousScrollTop, Math.max(0, body.scrollHeight - body.clientHeight));
+    const reopened = this.root.querySelector<HTMLElement>('#panel');
+    if (!reopened || !places.size) return;
+    reopened.querySelectorAll<HTMLElement>('*').forEach((element) => {
+      const top = places.get(pathOf(element, reopened));
+      if (top !== undefined) element.scrollTop = Math.min(top, Math.max(0, element.scrollHeight - element.clientHeight));
+    });
   }
 
   private handleConnectionStatus(status: ConnectionStatus, detail?: string): void {
@@ -4508,6 +4641,8 @@ export class App {
     }
     const jukebox = this.networkState?.jukebox;
     const playing = jukebox?.nowPlaying;
+    // The rooftop band plays whenever a record is on, heard here or not.
+    this.world?.setJukeboxPlaying(Boolean(playing));
     if (!playing) {
       this.stopJukebox();
       return;
@@ -4517,7 +4652,10 @@ export class App {
     // DJ is already playing to the room.
     const venue = this.snapshot?.screeningVenue;
     const inItsOwnRoom = Boolean(this.snapshot?.inTheater) || venue === 'club' || venue === 'rooftop';
-    const silenced = this.audioMuted || inItsOwnRoom;
+    // A tab nobody is looking at lets go of the record too: with the festival
+    // open in two tabs or windows, both played it, a beat apart, and it came
+    // across as the same song twice (the owner, October 3).
+    const silenced = this.audioMuted || inItsOwnRoom || document.hidden;
     if (silenced !== this.jukeboxSilenced) {
       this.jukeboxSilenced = silenced;
       this.applyJukeboxVolume();
@@ -4674,8 +4812,17 @@ export class App {
         '*',
       );
     } catch { /* a frame that has already gone */ }
-    this.jukeboxFrame.src = 'about:blank';
-    this.jukeboxFrame.remove();
+    // Muted, blanked, and only taken out once the blank page has replaced the
+    // player: removed at once, a browser could keep the old player's sound
+    // going behind the new one.
+    const old = this.jukeboxFrame;
+    try {
+      old.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'mute', args: [] }), '*');
+    } catch { /* gone already */ }
+    old.style.display = 'none';
+    old.addEventListener('load', () => old.remove(), { once: true });
+    window.setTimeout(() => old.remove(), 2000);
+    old.src = 'about:blank';
     // Added once per frame built, so without this the listeners pile up one
     // per venue walked into for the length of the visit.
     window.removeEventListener('message', this.jukeboxMessage);
@@ -4764,18 +4911,31 @@ export class App {
    * you are stood at it, and goes away again. Putting it in the pass would mean
    * anyone could give money from anywhere, which is not what worship is.
    */
-  private async openOffering(deity: string): Promise<void> {
+  /**
+   * The offering sheet. At the temple it is an offering to a deity; from the
+   * sign-in page (`gate`) the same sheet, the same sale and the same invoice
+   * are worded as a donation, at the owner's request, for a visitor who has
+   * not come in yet and has no deity in front of them.
+   */
+  private async openOffering(deity: string, where: 'temple' | 'gate' = 'temple'): Promise<void> {
     if (this.root.querySelector('#offering')) return;
     const zh = this.language === 'zh-TW';
+    const gate = where === 'gate';
+    const unavailable = (message: string) => {
+      if (!gate) return this.showWorldAlert(message);
+      // No world yet to show an alert in: the gate's own status line says it.
+      const waiting = this.root.querySelector<HTMLElement>('#gate-waiting');
+      if (waiting) { waiting.textContent = message; waiting.hidden = false; }
+    };
     let options;
     try {
       options = await this.festivalClient.donationOptions();
     } catch {
-      this.showWorldAlert(zh ? '供養暫時無法使用' : 'OFFERINGS ARE UNAVAILABLE');
+      unavailable(gate ? (zh ? '捐款暫時無法使用' : 'DONATIONS ARE UNAVAILABLE') : (zh ? '供養暫時無法使用' : 'OFFERINGS ARE UNAVAILABLE'));
       return;
     }
     if (!options.enabled) {
-      this.showWorldAlert(zh ? '供養尚未開放' : 'OFFERINGS ARE NOT OPEN YET');
+      unavailable(gate ? (zh ? '捐款尚未開放' : 'DONATIONS ARE NOT OPEN YET') : (zh ? '供養尚未開放' : 'OFFERINGS ARE NOT OPEN YET'));
       return;
     }
     const sheet = document.createElement('div');
@@ -4784,7 +4944,7 @@ export class App {
     sheet.innerHTML = `
       <div class="offering__card" role="dialog" aria-modal="true" aria-labelledby="offering-title">
         <header>
-          <p class="eyebrow">${zh ? '供養' : 'AN OFFERING'}</p>
+          <p class="eyebrow">${gate ? 'Donate' : (zh ? '供養' : 'AN OFFERING')}</p>
           <h2 id="offering-title">${this.escapeHtml(deity)}</h2>
           <button type="button" data-offering-close aria-label="${zh ? '關閉' : 'Close'}">×</button>
         </header>
@@ -4809,10 +4969,10 @@ export class App {
             : 'ECPay emails the invoice here. Unticked, it is still issued — just to the festival\u2019s own address instead.'}</p>
         </div>` : ''}
         <p class="offering__error" data-offering-error hidden></p>
-        <button type="button" class="offering__go" data-offering-go>${zh ? '感謝供養' : 'MY DEEPEST GRATITUDE'}</button>
-        <p class="offering__note">${zh
-          ? '付款會在新分頁開啟，影展保持連線。'
-          : 'Payment opens in a new tab. The festival stays connected.'}</p>
+        <button type="button" class="offering__go" data-offering-go>${gate ? 'Donate' : (zh ? '感謝供養' : 'MY DEEPEST GRATITUDE')}</button>
+        <p class="offering__note">${gate
+          ? (zh ? '付款會在新分頁開啟。' : 'Payment opens in a new tab.')
+          : (zh ? '付款會在新分頁開啟，影展保持連線。' : 'Payment opens in a new tab. The festival stays connected.')}</p>
       </div>`;
     this.root.appendChild(sheet);
 
@@ -4929,7 +5089,7 @@ export class App {
         // nothing for it, so there it stays put and says why.
         else if (this.vrActive) {
           return complain(zh
-            ? '瀏覽器擋下了付款視窗。請先離開 VR 再供養。'
+            ? `瀏覽器擋下了付款視窗。請先離開 VR 再${gate ? '捐款' : '供養'}。`
             : 'The browser blocked the payment window. Leave VR and offer again.');
         }
         else window.location.assign(started.checkoutUrl);
@@ -5213,7 +5373,7 @@ export class App {
         return `
           <p class="panel-intro">${this.language === 'zh-TW' ? '選擇入口即可快速移動。' : 'Choose an entrance to fast travel.'}</p>
           <div class="map-card coastal-map-card" aria-label="${this.language === 'zh-TW' ? '影展地圖' : 'Festival map'}">
-            ${coastalMapGraphic(this.language==='zh-TW')}
+            ${this.mapGraphic(this.language==='zh-TW')}
             <div class="coastal-map-destinations">
             <button class="map-node map-node--gate" data-travel="gate"><b class="map-number">1</b>${this.language === 'zh-TW' ? '影展入口' : 'FESTIVAL GATE'}</button>
             <button class="map-node map-node--square" data-travel="square"><b class="map-number">2</b>${this.language === 'zh-TW' ? '我的廣場' : 'MY SQUARE'}</button>
@@ -5293,7 +5453,7 @@ export class App {
                 : feedCounts.visitors[visitor.id] ?? 0;
               return `<li><span class="status-dot"></span><span class="attendee-about-gap" aria-hidden="true"></span><strong>${this.escapeHtml(visitor.name)}</strong><small>${this.escapeHtml(this.localizeLocation(visitor.presence.location))}${visitor.seatedAt ? ` · ${this.escapeHtml(visitor.seatedAt)}` : ''}${visitor.npcId === 'MENTOR' ? '' : feedLabel(count)}</small></li>`;
             }).join('')}
-            ${visibleNpcProfiles.map(({ profile, originalIndex }) => `<li><span class="npc-dot">NPC</span>${aboutButton(profile)}<strong>${this.escapeHtml(profile.name)}<em>${this.escapeHtml(profile.title)}</em></strong><small>${this.escapeHtml(this.localizeLocation(
+            ${visibleNpcProfiles.map(({ profile, originalIndex }) => `<li><span class="npc-dot">NPC</span>${aboutButton(profile)}<strong>${this.escapeHtml(profile.name)}<em>${this.escapeHtml(npcTitleIn(profile, this.language === 'zh-TW'))}</em></strong><small>${this.escapeHtml(this.localizeLocation(
               profile.id === 'XIEHGAN' ? 'THE BASEMENT'
                 : profile.id === 'DRBEAUTY' ? 'THE ROOFTOP'
                 : originalIndex < 4 ? 'MY SQUARE'
@@ -5514,12 +5674,7 @@ export class App {
         // list it was opened from, and the way back is one tap on CLOSE.
         this.closePanel();
         this.syncMenuCapture();
-        this.openNpcAbout({
-          id: profile.id,
-          name: profile.name,
-          title: profile.title,
-          introduction: profile.introduction ?? '',
-        });
+        this.openNpcAbout(profile);
       });
     });
     panel.querySelectorAll<HTMLButtonElement>('[data-travel]').forEach((button) => {
@@ -5724,7 +5879,7 @@ export class App {
           .then(() => { this.adminError = ''; jukeboxEditor.reset(); return this.refreshAdminState(); })
           .catch((error) => {
             this.adminError = error instanceof Error ? error.message : 'Jukebox update failed.';
-            this.openPanel('admin');
+            this.reopenPanelKeepingPlace('admin');
           });
       });
       // Every jukebox control goes the same way: send it, then re-read the
@@ -5734,7 +5889,7 @@ export class App {
           .then(() => { this.adminError = ''; return this.refreshAdminState(); })
           .catch((error) => {
             this.adminError = error instanceof Error ? error.message : 'Jukebox update failed.';
-            this.openPanel('admin');
+            this.reopenPanelKeepingPlace('admin');
           });
       };
       panel.querySelector<HTMLButtonElement>('[data-jukebox-skip]')?.addEventListener('click', () => jukeboxAction({ skip: true }));
@@ -5754,7 +5909,7 @@ export class App {
             .then(() => { this.adminError = ''; return this.refreshAdminState(); })
             .catch((error) => {
               this.adminError = error instanceof Error ? error.message : 'Jukebox update failed.';
-              this.openPanel('admin');
+              this.reopenPanelKeepingPlace('admin');
             });
         });
       });
@@ -5769,7 +5924,7 @@ export class App {
           .then(() => this.refreshAdminState())
           .catch((error) => {
             this.adminError = error instanceof Error ? error.message : 'Entrance sign update failed.';
-            this.openPanel('admin');
+            this.reopenPanelKeepingPlace('admin');
           });
       });
       const templeEditor = panel.querySelector<HTMLFormElement>('#temple-sign-editor');
@@ -5783,7 +5938,7 @@ export class App {
           .then(() => this.refreshAdminState())
           .catch((error) => {
             this.adminError = error instanceof Error ? error.message : 'Temple sign update failed.';
-            this.openPanel('admin');
+            this.reopenPanelKeepingPlace('admin');
           });
       });
       const receiptEditor = panel.querySelector<HTMLFormElement>('#offering-receipt-editor');
@@ -5965,7 +6120,7 @@ export class App {
         const zh = this.language === 'zh-TW';
         if (nextKey !== confirmKey) {
           this.adminError = zh ? '兩次輸入的新金鑰不一致。' : 'The new keys do not match.';
-          this.openPanel('admin');
+          this.reopenPanelKeepingPlace('admin');
           return;
         }
         void this.festivalClient.updateAdminKey(this.staffKey, currentKey, nextKey)
@@ -5979,8 +6134,31 @@ export class App {
           .then(() => this.showWorldAlert(zh ? '金鑰已更換' : 'STAFF KEY CHANGED'))
           .catch((error) => {
             this.adminError = error instanceof Error ? error.message : 'Key change failed.';
-            this.openPanel('admin');
+            this.reopenPanelKeepingPlace('admin');
           });
+      });
+      // ✎ swaps a row's title for a box; the row's SAVE sends it with the rest.
+      panel.querySelectorAll<HTMLButtonElement>('[data-title-edit]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const row = button.closest('li');
+          const text = row?.querySelector<HTMLElement>('[data-title-text]');
+          const input = row?.querySelector<HTMLInputElement>('[data-title-input]');
+          if (!text || !input) return;
+          const editing = input.hidden;
+          input.hidden = !editing;
+          text.hidden = editing;
+          button.setAttribute('aria-pressed', String(editing));
+          if (editing) { input.focus(); input.select(); } else input.value = input.defaultValue;
+        });
+      });
+      // Enter in the box saves this row. Left alone it would submit the
+      // venue's whole form, which the row sits inside.
+      panel.querySelectorAll<HTMLInputElement>('[data-title-input]').forEach((input) => {
+        input.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          input.closest('li')?.querySelector<HTMLButtonElement>('[data-tune-save]')?.click();
+        });
       });
       // One button a row, saving whichever of the two controls that row has.
       // These are plain buttons and unnamed inputs on purpose: they sit inside
@@ -5991,15 +6169,21 @@ export class App {
           const row = button.closest('li');
           const bpm = row?.querySelector<HTMLInputElement>('[data-tempo-input]');
           const link = row?.querySelector<HTMLInputElement>('[data-immersive-input]');
+          const title = row?.querySelector<HTMLInputElement>('[data-title-input]');
           const saves: Array<Promise<void>> = [];
           if (bpm) saves.push(this.festivalClient.updateTrackTempo(this.staffKey, youtubeId, Number(bpm.value)));
           if (link) saves.push(this.festivalClient.updateImmersiveSource(this.staffKey, youtubeId, link.value.trim()));
+          // The title only when it is being edited and has actually changed.
+          const text = title?.value.trim() ?? '';
+          if (title && !title.hidden && text && text !== title.defaultValue) {
+            saves.push(this.festivalClient.updateVideoTitle(this.staffKey, youtubeId, this.titleFields(youtubeId, text)));
+          }
           button.disabled = true;
           void Promise.all(saves)
             .then(() => this.refreshAdminState())
             .catch((error) => {
               this.adminError = error instanceof Error ? error.message : 'Track update failed.';
-              this.openPanel('admin');
+              this.reopenPanelKeepingPlace('admin');
             })
             .finally(() => { button.disabled = false; });
         });
@@ -6010,7 +6194,7 @@ export class App {
         this.adminState = undefined;
         this.adminError = '';
         sessionStorage.removeItem(STAFF_KEY);
-        this.openPanel('admin');
+        this.reopenPanelKeepingPlace('admin');
       });
       panel.querySelectorAll<HTMLButtonElement>('[data-npc-play]').forEach((button) => {
         button.addEventListener('click', () => {
@@ -6031,7 +6215,7 @@ export class App {
             })
             .catch((error) => {
               this.adminError = error instanceof Error ? error.message : 'NPC control failed.';
-              this.openPanel('admin');
+              this.reopenPanelKeepingPlace('admin');
             });
         });
       });
@@ -6045,7 +6229,7 @@ export class App {
             .then(() => this.refreshAdminState())
             .catch((error) => {
               this.adminError = error instanceof Error ? error.message : 'Moderation action failed.';
-              this.openPanel('admin');
+              this.reopenPanelKeepingPlace('admin');
             });
         });
       });
@@ -6059,14 +6243,16 @@ export class App {
           // resident has no biography yet, which the world draws as a card with
           // just their name and job title on it.
           const introduction = form.querySelector<HTMLTextAreaElement>('textarea[name="npcIntroduction"]')?.value.trim() ?? '';
+          const titleZh = form.querySelector<HTMLInputElement>('input[name="npcTitleZh"]')?.value.trim() ?? '';
+          const introductionZh = form.querySelector<HTMLTextAreaElement>('textarea[name="npcIntroductionZh"]')?.value.trim() ?? '';
           if (!name || !title) return;
           const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
           if (button) button.disabled = true;
-          void this.festivalClient.updateNpcProfile(this.staffKey, npcId, name, title, introduction)
+          void this.festivalClient.updateNpcProfile(this.staffKey, npcId, { name, title, titleZh, introduction, introductionZh })
             .then(() => this.refreshAdminState())
             .catch((error) => {
               this.adminError = error instanceof Error ? error.message : 'NPC profile update failed.';
-              this.openPanel('admin');
+              this.reopenPanelKeepingPlace('admin');
             });
         });
       });
@@ -6082,7 +6268,7 @@ export class App {
           .then(() => this.refreshAdminState())
           .catch((error) => {
             this.adminError = error instanceof Error ? error.message : 'NPC creation failed.';
-            this.openPanel('admin');
+            this.reopenPanelKeepingPlace('admin');
           });
       });
       panel.querySelectorAll<HTMLFormElement>('[data-programme-form]').forEach((form) => {
@@ -6155,7 +6341,7 @@ export class App {
               // Deliberately jumps to the top: the failure message renders
               // there, and keeping the reader's place would hide it.
               this.adminError = error instanceof Error ? error.message : 'Programme update failed.';
-              this.openPanel('admin');
+              this.reopenPanelKeepingPlace('admin');
             });
         });
       });
@@ -6182,7 +6368,7 @@ export class App {
           form.reset();
         }).then(() => this.refreshAdminState()).catch((error) => {
           this.adminError = error instanceof Error ? error.message : 'Video could not be added.';
-          this.openPanel('admin');
+          this.reopenPanelKeepingPlace('admin');
         });
       });
       panel.querySelector<HTMLFormElement>('#staff-gate-background-form')?.addEventListener('submit', (event) => {
@@ -6195,7 +6381,7 @@ export class App {
           .then(() => this.refreshAdminState())
           .catch((error) => {
             this.adminError = error instanceof Error ? error.message : 'Gate background update failed.';
-            this.openPanel('admin');
+            this.reopenPanelKeepingPlace('admin');
           });
       });
       panel.querySelectorAll<HTMLButtonElement>('[data-video-remove]').forEach((button) => {
@@ -6208,7 +6394,7 @@ export class App {
             .then(() => this.refreshAdminState())
             .catch((error) => {
               this.adminError = error instanceof Error ? error.message : 'Video could not be removed.';
-              this.openPanel('admin');
+              this.reopenPanelKeepingPlace('admin');
             });
         });
       });
@@ -6224,7 +6410,7 @@ export class App {
           brandOffsetY: Number(formData.get('brandOffsetY')),
         }).then(() => this.refreshAdminState()).catch((error) => {
           this.adminError = error instanceof Error ? error.message : 'Style update failed.';
-          this.openPanel('admin');
+          this.reopenPanelKeepingPlace('admin');
         });
       });
       const styleForm = panel.querySelector<HTMLFormElement>('#staff-style-form');
@@ -6422,7 +6608,7 @@ export class App {
           ? '放入唱片：貼上 YouTube 連結即可，曲名留空就用 YouTube 上的標題。整個影展都會聽到，影廳、俱樂部與屋頂不受影響。'
           : "Stock the machine with a YouTube link. Leave the title blank and it takes YouTube's own. It plays across the open festival; the theatres, the club and the rooftop are left alone."}</p>
         <label class="is-wide"><span>${this.language === 'zh-TW' ? 'YOUTUBE 連結' : 'YOUTUBE LINK'}</span><input name="url" placeholder="https://www.youtube.com/watch?v=…" /></label>
-        <label><span>${this.language === 'zh-TW' ? '曲名（可留空）' : 'TITLE (OPTIONAL)'}</span><input name="title" maxlength="120" placeholder="${this.language === 'zh-TW' ? '留空就用 YOUTUBE 上的標題' : "LEAVE BLANK FOR YOUTUBE'S OWN TITLE"}" /></label>
+        <label class="is-wide"><span>${this.language === 'zh-TW' ? '曲名（可留空）' : 'TITLE (OPTIONAL)'}</span><input name="title" maxlength="120" placeholder="${this.language === 'zh-TW' ? '留空就用 YOUTUBE 上的標題' : "LEAVE BLANK FOR YOUTUBE'S OWN TITLE"}" /></label>
         <button class="panel-button" type="submit">${this.language === 'zh-TW' ? '放入點唱機' : 'ADD TO THE JUKEBOX'}</button>
       </form>
       <div class="staff-jukebox">
@@ -6511,7 +6697,7 @@ export class App {
             </div>
             <p class="staff-programme__name">${this.escapeHtml(schedule?.name ?? defaultVenueLabels[venue])} · ${this.categoryLabel(catalogueByVenue[venue][0]?.category ?? '')}</p>
             <ol class="staff-order" data-programme-order>
-              ${order.map((film, index) => `<li data-youtube-id="${film.youtubeId}"><span class="staff-order__title"><b>${index + 1}</b>${this.escapeHtml(this.filmTitle(film))}</span>${this.trackTempoField(venue, film.youtubeId)}<button type="button" class="staff-order__btn staff-order__up" data-order-move="up" aria-label="${this.language === 'zh-TW' ? '上移' : 'Up'}">↑</button><button type="button" class="staff-order__btn staff-order__down" data-order-move="down" aria-label="${this.language === 'zh-TW' ? '下移' : 'Down'}">↓</button><button type="button" class="staff-order__btn staff-order__remove" data-video-remove="${film.youtubeId}" data-venue="${venue}" aria-label="${this.language === 'zh-TW' ? '下架影片' : 'Remove video'}">×</button><span class="staff-order__tune">${this.trackLinkField(film.youtubeId)}</span><button type="button" class="staff-order__btn staff-order__save" data-tune-save="${this.escapeAttribute(film.youtubeId)}">${this.language === 'zh-TW' ? '儲存' : 'SAVE'}</button></li>`).join('')}
+              ${order.map((film, index) => `<li data-youtube-id="${film.youtubeId}"><span class="staff-order__title"><b>${index + 1}</b><span data-title-text>${this.escapeHtml(this.filmTitle(film))}</span><input type="text" data-title-input maxlength="100" value="${this.escapeAttribute(this.filmTitle(film))}" aria-label="${this.language === 'zh-TW' ? '影片標題' : 'Video title'}" hidden /></span>${this.trackTempoField(venue, film.youtubeId)}<button type="button" class="staff-order__btn staff-order__edit" data-title-edit aria-label="${this.language === 'zh-TW' ? '編輯標題' : 'Edit title'}" aria-pressed="false">✎</button><button type="button" class="staff-order__btn staff-order__up" data-order-move="up" aria-label="${this.language === 'zh-TW' ? '上移' : 'Up'}">↑</button><button type="button" class="staff-order__btn staff-order__down" data-order-move="down" aria-label="${this.language === 'zh-TW' ? '下移' : 'Down'}">↓</button><button type="button" class="staff-order__btn staff-order__remove" data-video-remove="${film.youtubeId}" data-venue="${venue}" aria-label="${this.language === 'zh-TW' ? '下架影片' : 'Remove video'}">×</button><span class="staff-order__tune">${this.trackLinkField(film.youtubeId)}</span><button type="button" class="staff-order__btn staff-order__save" data-tune-save="${this.escapeAttribute(film.youtubeId)}">${this.language === 'zh-TW' ? '儲存' : 'SAVE'}</button></li>`).join('')}
             </ol>
             <div class="staff-special">
               <label>${this.language === 'zh-TW' ? '特別放映來源' : 'SPECIAL SOURCE'}<select name="specialSource">
@@ -6564,8 +6750,10 @@ export class App {
           <form class="staff-npc-form" data-npc-form="${this.escapeAttribute(profile.id)}">
             <span class="npc-dot">NPC</span>
             <label><span>${this.language === 'zh-TW' ? '名稱' : 'NAME'}</span><input name="npcName" maxlength="16" required value="${this.escapeAttribute(profile.name)}" /></label>
-            <label><span>${this.language === 'zh-TW' ? '職稱' : 'JOB TITLE'}</span><input name="npcTitle" maxlength="40" required value="${this.escapeAttribute(profile.title)}" /></label>
-            <label class="staff-npc-intro"><span>${this.language === 'zh-TW' ? '介紹' : 'INTRODUCTION'}</span><textarea name="npcIntroduction" rows="3" maxlength="1200" placeholder="${this.language === 'zh-TW' ? '留空即為尚未填寫' : 'Leave empty for none'}">${this.escapeHtml(profile.introduction ?? '')}</textarea></label>
+            <label><span>${this.language === 'zh-TW' ? '中文職稱' : 'CHINESE JOB TITLE'}</span><input name="npcTitleZh" maxlength="40" placeholder="${this.language === 'zh-TW' ? '留空則顯示英文' : 'Empty shows the English'}" value="${this.escapeAttribute(profile.titleZh ?? '')}" /></label>
+            <label><span>${this.language === 'zh-TW' ? '英文職稱' : 'ENGLISH JOB TITLE'}</span><input name="npcTitle" maxlength="40" required value="${this.escapeAttribute(profile.title)}" /></label>
+            <label class="staff-npc-intro"><span>${this.language === 'zh-TW' ? '中文介紹' : 'CHINESE INTRODUCTION'}</span><textarea name="npcIntroductionZh" rows="3" maxlength="1200" placeholder="${this.language === 'zh-TW' ? '留空即為尚未填寫' : 'Leave empty for none'}">${this.escapeHtml(profile.introductionZh ?? '')}</textarea></label>
+            <label class="staff-npc-intro"><span>${this.language === 'zh-TW' ? '英文介紹' : 'ENGLISH INTRODUCTION'}</span><textarea name="npcIntroduction" rows="3" maxlength="1200" placeholder="${this.language === 'zh-TW' ? '留空即為尚未填寫' : 'Leave empty for none'}">${this.escapeHtml(profile.introduction ?? '')}</textarea></label>
             <span class="staff-npc-actions"><button type="submit">${this.language === 'zh-TW' ? '儲存' : 'SAVE'}</button><button type="button" data-npc-play="${this.escapeAttribute(profile.id)}"${controlledNpcId === profile.id ? ' disabled' : ''}>${controlledNpcId === profile.id ? (this.language === 'zh-TW' ? '使用中' : 'PLAYING') : (this.language === 'zh-TW' ? '扮演' : 'PLAY AS')}</button></span>
           </form>`).join('')}</div>
         <form class="staff-npc-add" id="staff-npc-add">
@@ -6732,7 +6920,8 @@ export class App {
       <div class="appearance">
         <div class="appearance__group">
           <span class="eyebrow">${zh ? '膚色與服裝' : 'SKIN AND CLOTHES'}</span>
-          <label class="outfit-choice"><span>${zh ? '上衣服裝' : 'TOP OUTFIT'}</span><select ${attribute}-outfit aria-label="${zh ? '上衣服裝' : 'Top outfit'}">${TOP_OUTFITS.map(o=>`<option value="${o.wire}" ${topOutfit(this.palette.top)===o.id?'selected':''}>${zh?o.zh:o.en}</option>`).join('')}</select></label>
+          <label class="outfit-choice"><span>${zh ? '性別' : 'BODY'}</span><select ${attribute}-body aria-label="${zh ? '性別' : 'Body'}"><option value="male" ${avatarSex(this.palette.top)==='male'?'selected':''}>${zh ? '男' : 'MALE'}</option><option value="female" ${avatarSex(this.palette.top)==='female'?'selected':''}>${zh ? '女' : 'FEMALE'}</option></select></label>
+          <label class="outfit-choice"><span>${zh ? '上衣服裝' : 'TOP OUTFIT'}</span><select ${attribute}-outfit aria-label="${zh ? '上衣服裝' : 'Top outfit'}">${TOP_OUTFITS.map(o=>`<option value="${outfitWire(o.id,avatarSex(this.palette.top))}" ${topOutfit(this.palette.top)===o.id?'selected':''}>${zh?o.zh:o.en}</option>`).join('')}</select></label>
           <div class="swatch-row">${colours}</div>
         </div>
         <div class="appearance__group">
@@ -6752,8 +6941,31 @@ export class App {
   private bindAppearanceFields(scope: ParentNode, attribute: 'data-palette' | 'data-world-palette', commit: () => void): void {
     scope.querySelector<HTMLSelectElement>(`[${attribute}-outfit]`)?.addEventListener('change', event => {
       const value=(event.currentTarget as HTMLSelectElement).value;
-      if(!TOP_OUTFITS.some(outfit=>outfit.wire===value))return;
+      if(!TOP_OUTFITS.some(outfit=>outfit.wire===value||outfit.wireFemale===value))return;
       this.palette={...this.palette,top:value};commit();
+    });
+    // The body rides in the outfit's wire, so changing it keeps the outfit.
+    // Colours still at the old body's own shades move to the new body's, so
+    // an untouched visitor keeps an untouched texture either way.
+    scope.querySelector<HTMLSelectElement>(`[${attribute}-body]`)?.addEventListener('change', event => {
+      const next: AvatarSex = (event.currentTarget as HTMLSelectElement).value === 'female' ? 'female' : 'male';
+      const was = avatarSex(this.palette.top);
+      if (next === was) return;
+      const palette: AvatarPalette = { ...this.palette, top: outfitWire(topOutfit(this.palette.top), next) };
+      for (const slot of ['skin', 'hair', 'bottoms', 'swimwear'] as const) {
+        if (palette[slot]?.toLowerCase() === AVATAR_NATIVE[was][slot]) palette[slot] = AVATAR_NATIVE[next][slot];
+      }
+      // Her outfits are her dressed generation as generated, without a cap
+      // (the owner, October 2); her swim generation wears its own.
+      this.palette = palette;
+      scope.querySelectorAll<HTMLInputElement>(`input[type="color"][${attribute}]`).forEach((input) => {
+        const value = this.palette[input.getAttribute(attribute) as keyof AvatarPalette];
+        if (value) input.value = value;
+      });
+      scope.querySelectorAll<HTMLOptionElement>(`[${attribute}-outfit] option`).forEach((option, index) => {
+        option.value = outfitWire(TOP_OUTFITS[index].id, next);
+      });
+      commit();
     });
     scope.querySelectorAll<HTMLInputElement>(`[${attribute}]`).forEach((input) => {
       if (input.type !== 'color') return;
@@ -7011,13 +7223,17 @@ export class App {
   private normalizeNpcProfiles(profiles: NpcProfile[] | undefined, names: NpcNames | undefined): NpcProfile[] {
     const served = new Map((profiles ?? []).slice(0, 24).map((profile) => [profile.id, profile]));
     const known = new Set<string>(NPC_NAMES);
+    // The build's own copy of what the owner wrote stands in only when no
+    // service has answered at all. Once one has, an empty field is STAFF
+    // clearing it, and the old text must not come back from the bundle.
+    const carried = profiles ? undefined : new Map(DEFAULT_NPC_PROFILES.map((profile) => [profile.id, profile]));
     const merged: NpcProfile[] = NPC_NAMES.map((id) => ({
       id,
       name: served.get(id)?.name?.trim() || names?.[id]?.trim() || DEFAULT_NPC_NAMES[id],
       title: served.get(id)?.title?.trim() || NPC_TITLES[id],
-      // No local default, unlike the name and the title. Nobody's biography is
-      // invented here; an absent one means STAFF have not written it yet.
-      introduction: served.get(id)?.introduction?.trim() || '',
+      titleZh: served.get(id)?.titleZh?.trim() || carried?.get(id)?.titleZh || '',
+      introduction: served.get(id)?.introduction?.trim() || carried?.get(id)?.introduction || '',
+      introductionZh: served.get(id)?.introductionZh?.trim() || carried?.get(id)?.introductionZh || '',
     }));
     for (const [id, profile] of served) {
       if (known.has(id)) continue;
@@ -7025,7 +7241,9 @@ export class App {
         id,
         name: profile.name?.trim() || id,
         title: profile.title?.trim() || 'Festival Staff',
+        titleZh: profile.titleZh?.trim() || '',
         introduction: profile.introduction?.trim() || '',
+        introductionZh: profile.introductionZh?.trim() || '',
       });
     }
     return merged.slice(0, 24);
@@ -7036,7 +7254,7 @@ export class App {
       .map((visitor) => [visitor.id, visitor.name, visitor.presence.location, visitor.seatedAt ?? ''])
       .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
     const npcCount = this.snapshot?.npcCount ?? 5;
-    const npcs = profiles.slice(0, npcCount).map((profile) => [profile.id, profile.name, profile.title]);
+    const npcs = profiles.slice(0, npcCount).map((profile) => [profile.id, profile.name, profile.title, profile.titleZh ?? '']);
     return JSON.stringify([this.language, visitors, npcs, state?.mentorFeedCounts ?? null, state?.mentorFollower ?? null]);
   }
 
@@ -7055,7 +7273,9 @@ export class App {
   private applyGateBackground(): void {
     const frame = this.root.querySelector<HTMLIFrameElement>('.gate__video');
     if (!frame) return;
-    const next = gateBackgroundUrl(this.gateBackground.youtubeId || defaultGateBackground.youtubeId);
+    const youtubeId = this.gateBackground.youtubeId || defaultGateBackground.youtubeId;
+    frame.classList.toggle('gate__video--cinematic', youtubeId === defaultGateBackground.youtubeId);
+    const next = gateBackgroundUrl(youtubeId);
     if (frame.src !== next) frame.src = next;
   }
 
@@ -7066,7 +7286,7 @@ export class App {
   }
 
   private venueFilms(venue: VenueKey): CatalogueEntry[] {
-    return [...catalogueByVenue[venue], ...this.customFilms(venue)];
+    return [...catalogueByVenue[venue], ...this.customFilms(venue)].map((film) => this.retitled(film));
   }
 
   private allFilms(): CatalogueEntry[] {
@@ -7075,7 +7295,27 @@ export class App {
       ...this.customFilms('palace'),
       ...this.customFilms('drive-in'),
       ...this.customFilms('shore'),
-    ];
+    ].map((film) => this.retitled(film));
+  }
+
+  /**
+   * Which title a rewrite replaces. A film with distinct English and Chinese
+   * titles has the one being read rewritten; a film with a single title (most
+   * music videos, whose title is the same in both) has both, or English
+   * visitors would go on seeing the old one.
+   */
+  private titleFields(youtubeId: string, text: string): { title?: string; titleZh?: string } {
+    const film = this.allFilms().find((entry) => entry.youtubeId === youtubeId);
+    const bilingual = Boolean(film?.titleZh && film.titleZh !== film.title);
+    if (!bilingual) return { title: text, titleZh: text };
+    return this.language === 'zh-TW' ? { titleZh: text } : { title: text };
+  }
+
+  /** A film under the title STAFF gave it, where they gave one. */
+  private retitled(film: CatalogueEntry): CatalogueEntry {
+    const override = (this.networkState?.videoTitles ?? this.adminState?.videoTitles)?.[film.youtubeId];
+    if (!override) return film;
+    return { ...film, ...(override.title ? { title: override.title } : {}), ...(override.titleZh ? { titleZh: override.titleZh } : {}) };
   }
 
   private totalFilmCount(): number {

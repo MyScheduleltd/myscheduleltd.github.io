@@ -7,6 +7,8 @@
     <meta name="color-scheme" content="dark" />
     <link rel="icon" type="image/png" href="/src/assets/company-logo.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
+    <!-- The resident/player body can download while the gate code is loading. -->
+    <link rel="preload" href="/src/assets/avatars/male.glb" as="fetch" crossorigin fetchpriority="high" />
     <!--
       Warm the connection a headset's screens will need.
 

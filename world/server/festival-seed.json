@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "capturedAt": "2026-09-29T13:22:44.939Z",
+  "capturedAt": "2026-10-06T13:42:01.841Z",
   "capturedFrom": "https://myschedule-festival.onrender.com",
   "schedule": {
     "palace": {
@@ -10,10 +10,10 @@
         "TmvklnJYWA4",
         "PrE9j9r0Ewo"
       ],
-      "currentIndex": 0,
+      "currentIndex": 1,
       "mode": "continuous",
       "special": null,
-      "updatedAt": 1790687956180
+      "updatedAt": 1791294029033
     },
     "drive-in": {
       "name": "DRIVE-IN 88",
@@ -50,10 +50,10 @@
         "F6XaLvhpGog",
         "xndA9Geu4eg"
       ],
-      "currentIndex": 22,
+      "currentIndex": 5,
       "mode": "continuous",
       "special": null,
-      "updatedAt": 1790687936218
+      "updatedAt": 1791294029033
     },
     "shore": {
       "name": "THE SHORE",
@@ -64,10 +64,10 @@
         "KD5dGYzk9Bo",
         "qyMIdPT4K4Q"
       ],
-      "currentIndex": 2,
+      "currentIndex": 3,
       "mode": "continuous",
       "special": null,
-      "updatedAt": 1790688093110
+      "updatedAt": 1791294029033
     },
     "club": {
       "name": "SLAP AND POP",
@@ -80,10 +80,10 @@
         "XZ9YCADCko8",
         "VRr6fb4kmOk"
       ],
-      "currentIndex": 1,
+      "currentIndex": 2,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1790687976220
+      "updatedAt": 1791294029033
     },
     "rooftop": {
       "name": "NIMA ROOFTOP",
@@ -99,10 +99,10 @@
         "U2-OzFANCiA",
         "KH4HNQBlP7U"
       ],
-      "currentIndex": 4,
+      "currentIndex": 8,
       "mode": "scheduled-loop",
       "special": null,
-      "updatedAt": 1790688058713
+      "updatedAt": 1791293949031
     }
   },
   "customVideos": {
@@ -214,16 +214,16 @@
       "role": "FOUNDER OF MY SCHEDULE LTD",
       "roleZh": "FOUNDER OF MY SCHEDULE LTD",
       "introduction": "2017 Founded My Schedule LTD. 2020 Produced the music video for iGO ASIA REMIX, a single uniting NICKTHEREAL, JP THE WAVY and SIK-K across Taiwan, Japan and Korea, which helped set the direction of mainstream hip-hop and fashion in Asia. 2021 Directed and A&R-planned the album videos for E.SO’s OUTTA BODY and EARTHBOUND, linking several videos of different styles into one continuous narrative film. 2022 My Schedule LTD had made over 200 music videos, for artists including J.Sheon, Naiwen, A-Lin, Cosmos People, A-Mei, Crowd Lu, MJ116 and Nine One One. 2023 A producer and chief director of The Rapper S2, nominated for and winning awards at the 58th Golden Bell Awards and the 5th Walk Bell John Awards, and well received across traditional and new media alike. 2024 Producer of The King of night market, widely praised for renewing attention on Taiwan’s night market culture — visitor numbers rose 40% — and winner of the Programme Innovation Award at the 60th Golden Bell Awards. 2025 Producer of 247 MUSIC FESTIVAL, attended by over 2,500 people on the day, with more than a hundred positive posts shared by audiences across platforms.",
-      "introductionZh": "2017 成立【我的檔期有限公司】。 2020 製作周湯豪、JP THE WAVY 及 SIK-K 台、日、韓三地歌手合作單曲《iGO ASIA REMIX》MV,引領亞洲主流嘻哈及時尚潮流。 2021 製作瘦子 E.SO《OUTTA BODY》、《EARTHBOUND》專輯 MV,擔任導演及 A&R 企劃,運用多支不同風格的 MV 串聯出一部完整劇情影片,廣受觀眾喜愛。 2022 【我的檔期有限公司】已為多位藝人量身打造超過 200 支 MV,其中包含 J.Sheon、楊乃文、A-Lin、宇宙人、張惠妹、盧廣仲、頑童 MJ116、玖壹壹等。 2023 擔任電視節目《大嘻哈時代 2》製作人之一及總導演,入圍並獲得第 58 屆金鐘獎及第 5 屆走鐘獎多項獎項,在傳統媒體與新媒體間皆獲得高度好評。 2024 擔任電視節目《夜市王》製作人,廣受大眾好評,成功帶動台灣夜市文化再次受到關注,來客數增加 40%,並榮獲第 60 屆金鐘獎「節目創新獎」。 2025 擔任嘻哈音樂祭《龍虎門 247 音樂日》製作人,活動當日現場參與人數超過 2,500 人,各平台觀眾分享貼文累積逾百則好評。",
+      "introductionZh": "2017 成立【我的檔期有限公司】。 2020 製作周湯豪、JP THE WAVY 及 SIK-K 台、日、韓三地歌手合作單曲《iGO ASIA REMIX》MV，引領亞洲主流嘻哈及時尚潮流。 2021 製作瘦子 E.SO《OUTTA BODY》、《EARTHBOUND》專輯 MV，擔任導演及 A&R 企劃，運用多支不同風格的 MV 串聯出一部完整劇情影片，廣受觀眾喜愛。 2022 【我的檔期有限公司】已為多位藝人量身打造超過 200 支 MV，其中包含 J.Sheon、楊乃文、A-Lin、宇宙人、張惠妹、盧廣仲、頑童 MJ116、玖壹壹等。 2023 擔任電視節目《大嘻哈時代 2》製作人之一及總導演，入圍並獲得第 58 屆金鐘獎及第 5 屆走鐘獎多項獎項，在傳統媒體與新媒體間皆獲得高度好評。 2024 擔任電視節目《夜市王》製作人，廣受大眾好評，成功帶動台灣夜市文化再次受到關注，來客數增加 40%，並榮獲第 60 屆金鐘獎「節目創新獎」。 2025 擔任嘻哈音樂祭《龍虎門 247 音樂日》製作人，活動當日現場參與人數超過 2,500 人，各平台觀眾分享貼文累積逾百則好評。",
       "updatedAt": 0
     },
     "DRBEAUTY": {
       "id": "DRBEAUTY",
       "name": "DR.BEAUTY",
       "role": "Li Baobi — artist, rapper, producer, host, influencer, YouTuber, party mascot; born the same day as the Earth God.",
-      "roleZh": "李包比,藝人、饒舌歌手、音樂製作人、主持人、網美、YouTuber、派對吉祥物,農曆是 2 月 2 號跟土地公同一天生。",
+      "roleZh": "李包比，藝人、饒舌歌手、音樂製作人、主持人、網美、YouTuber、派對吉祥物，農曆是 2 月 2 號跟土地公同一天生。",
       "introduction": "Li Baobi — artist, rapper, music producer, host, influencer, YouTuber and party mascot. Opened the 美麗本人 YouTube channel in 2019, known for reaction videos to Mandarin music videos shot with animation and effects, and for putting \"R爆\" and the 醬擠 gesture into everyday use among younger audiences.",
-      "introductionZh": "李包比,藝人、饒舌歌手、音樂製作人、主持人、網美、YouTuber、派對吉祥物。2019 年開立『美麗本人』YouTube 頻道,以浮誇且具幽默感的表演方式對華語歌曲 MV 做 Reaction 影片,加入動畫及特效,並以一句「R爆」跟經典手勢「醬擠」在年輕族群間瘋傳。",
+      "introductionZh": "李包比，藝人、饒舌歌手、音樂製作人、主持人、網美、YouTuber、派對吉祥物。2019 年開立『美麗本人』YouTube 頻道，以浮誇且具幽默感的表演方式對華語歌曲 MV 做 Reaction 影片，加入動畫及特效，並以一句「R爆」跟經典手勢「醬擠」在年輕族群間瘋傳。",
       "updatedAt": 0
     }
   },
@@ -235,25 +235,64 @@
     "SEBINE": "SEBINE",
     "ZC": "ZC",
     "LOUI": "LOUI",
-    "MINYUN": "MINYUN",
+    "MINYUN": "MIN YUN LEE",
     "VIOLA": "VIOLA",
     "XIEHGAN": "XIEH GAN",
     "DRBEAUTY": "DR.BEAUTY",
     "YO": "YO"
   },
   "npcTitles": {
-    "MENTOR": "Video Editor",
-    "KENNY": "Director",
-    "NUNO": "Sound Engineer",
-    "MICHAEL": "Director",
-    "SEBINE": "Director",
-    "ZC": "Director",
-    "LOUI": "Director",
-    "MINYUN": "Director Manager",
-    "VIOLA": "Project Manager",
-    "XIEHGAN": "Boss",
+    "MENTOR": "Divine Beast",
+    "KENNY": "Toilet Paper",
+    "NUNO": "Chief Researcher",
+    "MICHAEL": "Alchemist",
+    "SEBINE": "Zoo Director",
+    "ZC": "PE Teacher",
+    "LOUI": "Soup Dumpling Master",
+    "MINYUN": "School Nurse",
+    "VIOLA": "Bard",
+    "XIEHGAN": "Mr. Security Guard",
     "DRBEAUTY": "Artist",
-    "YO": "Festival Videographer"
+    "YO": "Friend of MY SCHEDULE"
+  },
+  "npcTitlesZh": {
+    "MENTOR": "神獸",
+    "KENNY": "衛生紙",
+    "NUNO": "首席研究員",
+    "MICHAEL": "煉金術士",
+    "SEBINE": "動物園園長",
+    "ZC": "體育老師",
+    "LOUI": "小籠包師傅",
+    "MINYUN": "保健室阿姨",
+    "VIOLA": "吟遊詩人",
+    "XIEHGAN": "警衛先生",
+    "YO": "檔期之友"
+  },
+  "npcIntroductions": {
+    "MENTOR": "Woof woof, woof woof woof.",
+    "KENNY": "Everyone loves to yank me out hard, then wipe hard with me. Treated this roughly, and I still don't mind.",
+    "NUNO": "49, from Green Island. Into surfing, sailing and bears. Chief Researcher at MY SCHEDULE LTD.",
+    "MICHAEL": "A mysterious alchemist from the East.",
+    "SEBINE": "Dear benefactors, spare a little for the incense, won't you?",
+    "ZC": "They call me the PE teacher, but I have never taught a single PE class. I used to want to play on the computer every day; now all I want is one day without touching one...",
+    "LOUI": "Trained finger strength from childhood, and placed tenth in the Changhua County dictation-typing contest. Joined the U16 youth academy of a famous soup dumpling restaurant at 12. Now a researcher at MY SCHEDULE LTD, studying No. 42 concrete and aliens.",
+    "MINYUN": "Formerly a psychiatric nurse. Stayed on because everyone at MY SCHEDULE needs their head examined. Lately my greatest skill is emptying the dehumidifier. Assets: PS1–PS5, Switch 1 & 2, an Xbox One and one 6.7 kg tabby cat.",
+    "VIOLA": "Lives by the sea in Lu-le-fornia, raising seals full-time, and became the bard of the SEAL team. Arf, arf arf, arf arf arf.",
+    "XIEHGAN": "XIEH GAN. Tilts to the left. One leg longer than the other (the left, by 1.8 cm). Macular edema in the right eye, prediabetic, compressed C2–C3 vertebrae, slow heart rate, low blood pressure. Formerly an instructor at Gjun Inc. and a producer at EGGO Music Production; now the security guard at MY SCHEDULE LTD.",
+    "YO": "MY SCHEDULE community adviser. For the valuable advice given while the MY SCHEDULE website was being built, Michael chose to defy the laws of nature and used alchemy to grant YO eternal life."
+  },
+  "npcIntroductionsZh": {
+    "MENTOR": "汪汪,汪汪汪。",
+    "KENNY": "大家都喜歡很用力的抽我,抽完我後又很用力的擦我,這麼暴力的對待我也不排斥.",
+    "NUNO": "49歲,綠島人. 愛好衝浪,帆船,熊派. 我的檔期有限擔任首席研究員.",
+    "MICHAEL": "來自東方的神秘煉金術士.",
+    "SEBINE": "各位濕主,添個香油錢吧.",
+    "ZC": "雖然叫體育老師但從來沒有教過一堂體育課,以前想要每天玩電腦,現在只想要一天不碰電腦...",
+    "LOUI": "從小著重指力訓練,並獲得彰化縣聽打比賽第十名. 12歲加入知名小籠包店U16青訓隊培訓, 目前在我的檔期有限公司擔任42號混凝土與外星人的探討研究員.",
+    "MINYUN": "以前是精神科護理師,因為檔期大家有精神上的問題所以任職至今,最近最擅長的事是幫除濕機倒水. 擁有的資產:PS1~PS5、Switch1&2、Xbox one 以及6.7kg虎斑貓一隻.",
+    "VIOLA": "住在蘆樂佛尼亞海邊,專職養海豹. 成為海豹部隊裡的吟遊詩人. 嗷 嗷嗷 嗷嗷嗷",
+    "XIEHGAN": "謝乾乾,偏左,長短腳(左比右長1.8公分),右眼黃斑部水腫,糖尿病前期,第二第三節頸椎壓迫,心跳過慢血壓低,曾任職巨匠講師,跳蛋製作人,現為我的檔期有限公司的警衛先生.",
+    "YO": "檔期社群顧問,因曾為檔期網站建置提供寶貴建議,Michael決定違反自然法則,動用煉金術,讓他獲得了永生."
   },
   "pamphlet": {
     "youtubeId": "Ffli-o0ocT0",

@@ -1,3 +1,4 @@
+import { LandmarkFilter, assignWebcamHands } from './TrackingFilter';
 import * as THREE from 'three';
 
 /**
@@ -41,6 +42,8 @@ export interface HeadPose {
   yaw: number;
   /** Radians, positive when the chin lifts and the view should rise with it. */
   pitch: number;
+  /** Anatomical head tilt; does not roll the desktop camera horizon. */
+  roll: number;
   /** Metres from the calibration pose, positive to the visitor's right. */
   x: number;
   /** Metres from the calibration pose, positive upward. */
@@ -90,6 +93,13 @@ const VISION_WASM = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VISI
 const VISION_WASM_LOADER = `${VISION_WASM}/vision_wasm_internal.js`;
 const VISION_WASM_BINARY = `${VISION_WASM}/vision_wasm_internal.wasm`;
 const FACE_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+/**
+ * Full body and hands, fetched only when a visitor turns them on (about 17 MB
+ * more). The full pose model rather than the lite one: the legs and the
+ * elbows are what it is for, and the lite model loses both first.
+ */
+const POSE_MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task';
+const HAND_MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
 
 /**
  * What each of those four files must hash to.
@@ -115,7 +125,40 @@ const INTEGRITY: Record<string, string> = {
   [VISION_WASM_LOADER]: 'sha256-4XDuZ91OFsGm/NiECiBmh+WlmyLCDkqQK8RFsJVFTXM=',
   [VISION_WASM_BINARY]: 'sha256-jaJ3pzOSbqzQR0uHBLNnQtbsMjHFeoYMW4id/48d+IY=',
   [FACE_MODEL]: 'sha256-ZBhOIpsmMQe8K4BMZiXbE0H/K7cxh0sLzC/mVE4Lyf8=',
+  // 9,398,198 and 7,819,105 bytes, pinned 2026-09-27.
+  [POSE_MODEL]: 'sha256-UTSjqtJ6WLk9oAiNQx82baNitE48z740YrOCeoOQEbE=',
+  [HAND_MODEL]: 'sha256-+8KjAIDDxVcJO13fwzRpgTLrNBBEzO4yLM+LzzYHzeE=',
 };
+
+/** One landmark: metres for world landmarks, 0..1 of the frame for image ones. */
+export interface TrackedPoint { x: number; y: number; z: number; visibility?: number }
+
+/**
+ * What the camera sees of the body. Landmarks are MediaPipe's, in the camera's
+ * axes: x to the right of the picture, y down, z away from the lens. The pose
+ * is centred between the hips; each hand around itself.
+ */
+export interface BodyReading {
+  /** When the body was last seen (performance.now()), 0 before ever. */
+  at: number;
+  /** The 33 body landmarks, in metres. */
+  pose?: TrackedPoint[];
+  /** Each hand the camera sees, by whose hand it is, and when. */
+  hands: { left?: TrackedPoint[]; right?: TrackedPoint[]; leftAt: number; rightAt: number };
+}
+
+export type BodyTrackingStatus = 'off' | 'loading' | 'searching' | 'tracking' | 'failed';
+
+interface LandmarkResultLike {
+  landmarks?: TrackedPoint[][];
+  worldLandmarks?: TrackedPoint[][];
+  handedness?: Array<Array<{ categoryName: string }>>;
+}
+
+interface LandmarkerLike {
+  detectForVideo(video: HTMLVideoElement | HTMLImageElement, timestamp: number): LandmarkResultLike;
+  close(): void;
+}
 
 interface FaceLandmarkerResultLike {
   facialTransformationMatrixes?: Array<{ data: number[] }>;
@@ -131,13 +174,15 @@ interface VisionModule {
   FaceLandmarker: {
     createFromOptions(fileset: unknown, options: Record<string, unknown>): Promise<FaceLandmarkerLike>;
   };
+  PoseLandmarker: { createFromOptions(fileset: unknown, options: Record<string, unknown>): Promise<LandmarkerLike> };
+  HandLandmarker: { createFromOptions(fileset: unknown, options: Record<string, unknown>): Promise<LandmarkerLike> };
 }
 
 export class HeadTracking {
   status: HeadTrackingStatus = 'idle';
   message = '';
   /** The pose the world should use: smoothed, and relative to the calibration. */
-  readonly pose: HeadPose = { yaw: 0, pitch: 0, x: 0, y: 0, z: 0 };
+  readonly pose: HeadPose = { yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0 };
 
   private landmarker?: FaceLandmarkerLike;
   private stream?: MediaStream;
@@ -180,13 +225,30 @@ export class HeadTracking {
   private readonly objectUrls: string[] = [];
 
   /** The raw reading, before the calibration pose is taken off it. */
-  private readonly raw: HeadPose = { yaw: 0, pitch: 0, x: 0, y: 0, z: 0 };
+  private readonly raw: HeadPose = { yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0 };
   private reference?: HeadPose;
-  private readonly target: HeadPose = { yaw: 0, pitch: 0, x: 0, y: 0, z: 0 };
+  private readonly target: HeadPose = { yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0 };
   private frames = 0;
 
   private readonly matrix = new THREE.Matrix4();
   private readonly euler = new THREE.Euler(0, 0, 0, 'YXZ');
+
+  /** Full body and hands, on the same camera, when the visitor asks. */
+  bodyStatus: BodyTrackingStatus = 'off';
+  readonly body: BodyReading = { at: 0, hands: { leftAt: 0, rightAt: 0 } };
+  private readonly bodyFilter = new LandmarkFilter();
+  private readonly handFilters = { left: new LandmarkFilter(), right: new LandmarkFilter() };
+  private lastVideoTime = -1;
+  private bodyImage?: TrackedPoint[];
+  private bodyImageAt = 0;
+  private bodyWanted = false;
+  private bodyLoading = false;
+  private poseLandmarker?: LandmarkerLike;
+  private handLandmarker?: LandmarkerLike;
+  private poseBuffer?: Uint8Array;
+  private handBuffer?: Uint8Array;
+  /** The runtime the face tracker was built from, which the others share. */
+  private fileset?: unknown;
 
   get running(): boolean {
     return this.reviewMode || Boolean(this.landmarker && this.stream);
@@ -281,6 +343,8 @@ export class HeadTracking {
       this.message = '';
       this.reference = undefined;
       this.frames = 0;
+      // Asked for before the camera was open, or left on from last time.
+      if (this.bodyWanted) void this.setBodyTracking(true);
       return true;
     } finally {
       this.starting = false;
@@ -457,10 +521,12 @@ export class HeadTracking {
     const bundle = this.bundle;
     if (!bundle) throw new Error('The tracker library did not load.');
     try {
-      return await this.withDeadline(
+      const landmarker = await this.withDeadline(
         bundle.FaceLandmarker.createFromOptions(this.wasmFileset, options),
         BUILD_TIMEOUT_MS,
       );
+      this.fileset = this.wasmFileset;
+      return landmarker;
     } catch {
       this.loadStage = 'the tracker runtime, the ordinary way';
       const fileset = await this.withDeadline(
@@ -472,6 +538,7 @@ export class HeadTracking {
         BUILD_TIMEOUT_MS,
       );
       this.runtimeCached = true;
+      this.fileset = fileset;
       return landmarker;
     }
   }
@@ -527,7 +594,148 @@ export class HeadTracking {
     }
   }
 
+  /**
+   * Track the whole body and both hands as well as the head, or stop.
+   *
+   * The same camera and the same runtime as the face; two more models, each
+   * fetched and weighed exactly as the face's is, and held for the page's
+   * life so turning this off and on is free. Needs head tracking running (the
+   * camera is its); asked for before that, it starts with it.
+   */
+  async setBodyTracking(on: boolean): Promise<boolean> {
+    this.bodyWanted = on;
+    if (!on) {
+      this.closeBody();
+      this.bodyStatus = 'off';
+      return true;
+    }
+    if (!this.running) return false;
+    if (this.poseLandmarker && this.handLandmarker) {
+      this.bodyStatus = 'searching';
+      return true;
+    }
+    if (this.bodyLoading) return false;
+    this.bodyLoading = true;
+    this.bodyStatus = 'loading';
+    try {
+      this.loadStage = 'the body tracker (about 17 MB)';
+      await this.fetchAll();
+      const [pose, hand] = await Promise.all([
+        this.poseBuffer ? undefined : this.fetchWithoutStoring(POSE_MODEL),
+        this.handBuffer ? undefined : this.fetchWithoutStoring(HAND_MODEL),
+      ]);
+      if (pose) this.poseBuffer = new Uint8Array(pose);
+      if (hand) this.handBuffer = new Uint8Array(hand);
+      const bundle = this.bundle;
+      if (!bundle) throw new Error('The tracker library did not load.');
+      const fileset = this.fileset ?? this.wasmFileset;
+      const [poseLandmarker, handLandmarker] = await Promise.all([
+        this.withDeadline(bundle.PoseLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetBuffer: this.poseBuffer, delegate: 'GPU' },
+          runningMode: 'VIDEO', numPoses: 1, minPoseDetectionConfidence: .5, minTrackingConfidence: .5,
+        }), BUILD_TIMEOUT_MS),
+        this.withDeadline(bundle.HandLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetBuffer: this.handBuffer, delegate: 'GPU' },
+          runningMode: 'VIDEO', numHands: 2, minHandDetectionConfidence: .5, minTrackingConfidence: .5,
+        }), BUILD_TIMEOUT_MS),
+      ]);
+      if (!this.bodyWanted || !this.running) {
+        poseLandmarker.close();
+        handLandmarker.close();
+        return false;
+      }
+      this.poseLandmarker = poseLandmarker;
+      this.handLandmarker = handLandmarker;
+      this.bodyStatus = 'searching';
+      return true;
+    } catch (error) {
+      this.bodyStatus = 'failed';
+      const detail = error instanceof Error ? error.message : String(error);
+      this.message = `Could not load ${this.loadStage}. ${detail}`;
+      return false;
+    } finally {
+      this.bodyLoading = false;
+    }
+  }
+
+  bodyTrackingWanted(): boolean {
+    return this.bodyWanted;
+  }
+
+  private closeBody(): void {
+    this.poseLandmarker?.close();
+    this.handLandmarker?.close();
+    this.poseLandmarker = undefined;
+    this.handLandmarker = undefined;
+    this.bodyFilter.reset(); this.handFilters.left.reset(); this.handFilters.right.reset();
+    this.lastVideoTime = -1;
+    this.bodyImage = undefined; this.bodyImageAt = 0;
+    this.body.pose = undefined;
+    this.body.hands.left = this.body.hands.right = undefined;
+    this.body.at = this.body.hands.leftAt = this.body.hands.rightAt = 0;
+  }
+
+  /** Loopback fixtures: hand the world a body reading as if the camera saw it. */
+  feedBodyForReview(pose: TrackedPoint[] | undefined, hands: { left?: TrackedPoint[]; right?: TrackedPoint[] }, now: number): void {
+    this.bodyWanted = true;
+    this.bodyStatus = 'tracking';
+    this.body.pose = pose;
+    this.body.at = pose ? now : this.body.at;
+    if (hands.left) { this.body.hands.left = hands.left; this.body.hands.leftAt = now; }
+    if (hands.right) { this.body.hands.right = hands.right; this.body.hands.rightAt = now; }
+  }
+
+  /** Run the real detector against a public test image, without a webcam. */
+  detectImageForReview(image: HTMLImageElement, now: number): void {
+    if (!this.reviewMode || !['localhost', '127.0.0.1'].includes(location.hostname)) return;
+    this.detectBody(image, now);
+  }
+
+  private detectBody(video: HTMLVideoElement | HTMLImageElement, now: number): void {
+    let image: TrackedPoint[] | undefined;
+    if (this.poseLandmarker) {
+      try {
+        const result = this.poseLandmarker.detectForVideo(video, now);
+        const world = result.worldLandmarks?.[0];
+        image = result.landmarks?.[0];
+        if (world && world.length >= 33) {
+          const filtered = this.bodyFilter.read(world, now);
+          if (!filtered) throw new Error('Invalid pose sample');
+          if (image) { this.bodyImage = image; this.bodyImageAt = now; }
+          this.body.pose = filtered;
+          this.body.at = now;
+          this.bodyStatus = 'tracking';
+        }
+      } catch { /* a dropped frame */ }
+    }
+    // Sample hands with the body; skipping alternate frames delayed gestures.
+    if (!this.handLandmarker) return;
+    let result: LandmarkResultLike;
+    try {
+      result = this.handLandmarker.detectForVideo(video, now);
+    } catch {
+      return;
+    }
+    const worlds = result.worldLandmarks ?? [];
+    const sides = assignWebcamHands(worlds.map((_, i) => result.landmarks?.[i]?.[0]), image ?? (now - this.bodyImageAt < 350 ? this.bodyImage : undefined),
+      worlds.map((_, i) => result.handedness?.[i]?.[0]?.categoryName ?? ''));
+    const used = new Set<string>();
+    worlds.forEach((world, i) => {
+      if (world.length < 21) return;
+      const side = sides[i];
+      if (!side || used.has(side)) return;
+      const filtered = this.handFilters[side].read(world, now);
+      if (!filtered) return;
+      used.add(side);
+      this.bodyStatus = 'tracking';
+      this.body.hands[side] = filtered;
+      this.body.hands[side === 'left' ? 'leftAt' : 'rightAt'] = now;
+    });
+  }
+
   stop(): void {
+    this.closeBody();
+    if (this.bodyStatus !== 'failed') this.bodyStatus = 'off';
     this.reviewMode = false;
     this.landmarker?.close();
     this.landmarker = undefined;
@@ -539,11 +747,13 @@ export class HeadTracking {
     }
     this.reference = undefined;
     this.frames = 0;
+    this.pose.roll = 0;
     this.pose.yaw = 0;
     this.pose.pitch = 0;
     this.pose.x = 0;
     this.pose.y = 0;
     this.pose.z = 0;
+    this.target.roll = 0;
     this.target.yaw = 0;
     this.target.pitch = 0;
     this.target.x = 0;
@@ -581,15 +791,17 @@ export class HeadTracking {
     if (!this.reviewMode && this.running && this.lastFaceAt && now - this.lastFaceAt > LOST_AFTER_MS) {
       // Nobody in front of the camera. Drift home rather than hold the last
       // pose, which would leave the world leaning until somebody sat back down.
-      this.target.yaw = 0;
+      this.target.roll = 0;
+    this.target.yaw = 0;
       this.target.pitch = 0;
       this.target.x = 0;
       this.target.y = 0;
       this.target.z = 0;
       if (this.status === 'tracking') this.status = 'searching';
     }
-    const rotationEase = 1 - Math.exp(-delta * 11);
+    const rotationEase = 1 - Math.exp(-delta * (11 + Math.min(18, Math.abs(this.target.yaw - this.pose.yaw) * 35 + Math.abs(this.target.pitch - this.pose.pitch) * 35)));
     const positionEase = 1 - Math.exp(-delta * 8);
+    this.pose.roll += (this.target.roll - this.pose.roll) * rotationEase;
     this.pose.yaw += (this.target.yaw - this.pose.yaw) * rotationEase;
     this.pose.pitch += (this.target.pitch - this.pose.pitch) * rotationEase;
     this.pose.x += (this.target.x - this.pose.x) * positionEase;
@@ -600,6 +812,9 @@ export class HeadTracking {
   private detect(now: number): void {
     const video = this.video;
     if (!video || !this.landmarker || video.readyState < 2) return;
+    if (video.currentTime === this.lastVideoTime) return;
+    this.lastVideoTime = video.currentTime;
+    this.detectBody(video, now);
     let result: FaceLandmarkerResultLike;
     try {
       result = this.landmarker.detectForVideo(video, now);
@@ -625,6 +840,7 @@ export class HeadTracking {
     this.matrix.fromArray(Array.from(data));
     this.euler.setFromRotationMatrix(this.matrix, 'YXZ');
     this.raw.yaw = this.euler.y;
+    this.raw.roll = this.euler.z;
     // Confirmed against a real face on 2026-09-04: yaw came out the right way
     // round, pitch did not — lifting the chin looked down. The tracker measures
     // the face's own rotation in front of the lens, and the lens is looking
@@ -645,6 +861,7 @@ export class HeadTracking {
     this.frames += 1;
     if (!this.reference) this.reference = { ...this.raw };
     const reference = this.reference;
+    this.target.roll = deadzone(this.raw.roll - reference.roll, ROTATION_DEADZONE_RAD);
     this.target.yaw = deadzone(this.raw.yaw - reference.yaw, ROTATION_DEADZONE_RAD);
     this.target.pitch = deadzone(this.raw.pitch - reference.pitch, ROTATION_DEADZONE_RAD);
     this.target.x = deadzone(this.raw.x - reference.x, TRANSLATION_DEADZONE_M);
@@ -664,9 +881,13 @@ export class HeadTracking {
       frames: this.frames,
       calibrated: Boolean(this.reference),
       cameraId: this.deviceId ?? null,
+      body: { status: this.bodyStatus, seen: Boolean(this.body.pose) && performance.now() - this.body.at < 700,
+        left: Boolean(this.body.hands.left) && performance.now() - this.body.hands.leftAt < 400,
+        right: Boolean(this.body.hands.right) && performance.now() - this.body.hands.rightAt < 400 },
       pose: {
         yaw: round(this.pose.yaw),
         pitch: round(this.pose.pitch),
+        roll: round(this.pose.roll),
         x: round(this.pose.x),
         y: round(this.pose.y),
         z: round(this.pose.z),
@@ -674,6 +895,7 @@ export class HeadTracking {
       target: {
         yaw: round(this.target.yaw),
         pitch: round(this.target.pitch),
+        roll: round(this.target.roll),
         x: round(this.target.x),
         y: round(this.target.y),
         z: round(this.target.z),

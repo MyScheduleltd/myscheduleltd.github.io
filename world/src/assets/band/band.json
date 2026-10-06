@@ -1,0 +1,61 @@
+{
+ "members": {
+  "vocal": {
+   "sex": "female",
+   "height": 1.62,
+   "clips": [
+    "walk",
+    "sit",
+    "play"
+   ]
+  },
+  "bass-player": {
+   "sex": "female",
+   "height": 1.62,
+   "clips": [
+    "walk",
+    "sit",
+    "play"
+   ]
+  },
+  "guitarist": {
+   "sex": "male",
+   "height": 1.7,
+   "clips": [
+    "walk",
+    "sit",
+    "play"
+   ]
+  },
+  "drummer": {
+   "sex": "male",
+   "height": 1.7,
+   "clips": [
+    "walk",
+    "sit",
+    "play"
+   ]
+  }
+ },
+ "fps": 30,
+ "beat": 15,
+ "micStand": [
+  0.0,
+  -0.24664045870304108,
+  0.0
+ ],
+ "stage": {
+  "vocal": [
+   0,
+   -0.8
+  ],
+  "guitarist": [
+   -2.3,
+   -0.25
+  ],
+  "bass-player": [
+   2.3,
+   -0.25
+  ]
+ }
+}

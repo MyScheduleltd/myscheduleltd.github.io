@@ -1,3 +1,152 @@
+# Current local avatar rebuild — 2026-09-29
+
+This is the isolated `avatar-rebuild-20260927/world` copy. Read `../art/BUILD_NOTES.md` for completed changes, source provenance, validation and the local review URL. The user has NOT approved publication. Historical deployment instructions below are background only and do not authorize publishing this build.
+
+Preview: http://127.0.0.1:4337/rebuild-review.html
+
+REJECTED by the user on 2026-09-28: bench penetration, overlapping routes, spinning wrists, flat faces, malformed fingers/shoes/trousers, crushed singer torso and misplaced stage equipment. The previous 325 passing tests and successful build did not establish visual correctness. Repair v2 is in progress; see ../art/QUALITY_REPAIR_V2.md. Do not publish to `/beta/` or `/beta/ps2/` without explicit approval.
+
+## Active continuation for Claude — September 29
+
+User requests supersede historical publishing commands below: **nothing may be published to either beta channel without approval**. Work only in this isolated copy. Baseline `character-native-20260924` is not the repair workspace.
+
+Latest user additions: swollen male palms/wrists; remaining cap/hair intersections; replace yellow/red/green location channel badges with monochrome treatment matching the PS2 UI. Preserve designs, branding, colours and proportions. The user asked this handoff be kept current.
+
+Implemented locally, still under visual verification: rounded faces, rebuilt articulated fingers and layered shoes; trouser clearance and female lower-leg flare; shared larger cap with crown morph; individual standing sole grounding and wider stance; band bone-tail repair (imported limb tails were 100x joint distance), continuous wrist quaternions, torso/skirt weights, measured seat contact, shoulder straps, larger centred drum riser, serialized routes with standing/seating transitions.
+
+**Known remaining defects:** close-up confirms male wrist/palm swelling, including the forearm-owned area above the wrist. Both shoe minimum heights pass but shoes still tilt sideways: foot retargeting inherits the leg A-pose correction. Cap crown/band intersection must be rechecked after edits. Band v2h has been exported; hand-target reach is sub-centimetre for most performance poses (bassist right up to 1.08 cm) but sitting vocal/bass targets remain 4–6 cm unreachable. Full visual cycles and seated contact must be rechecked. Mid-route reversal now defers to completion of the reserved journey; regression verification pending.
+
+### Claude, September 29 afternoon — male hands (awaiting the owner's review)
+
+- Cause: the male generation's wrist is a 12.5 × 9 cm balloon (the female's is ~7 × 5). `refine_wrist_volume` clamped it about the wrist *bone*, which is 2.5 cm off the arm's centre, and it reached the whole palm, crumpling the palm and pinching the thumb into it. It was removed. `art/refit_caps.py` no longer calls it.
+- Fix: `rebuild_palm` (male only) cuts the hand off 5 cm above the wrist bone, slims the forearm stub, and lofts a rounded-box wrist and palm (with a thumb pad) onto the existing finger tubes, ending at the knuckle line. The thumb is a `finger_mesh` tube on the existing Thumb1–4 bones, with its normals recalculated (one thumb came out inside-out and rendered as a brown patch). New faces are textured only from source faces that read as skin. The female hand is unchanged.
+- The assets are now a clean full build (`Blender -b --factory-startup -P scripts/prepare-higgsfield-avatars.py`, about 90 s), not the incrementally patched blend. Head renders match; the female cap sits about 7.5 mm higher, clear of her eyes. `AVATAR_OUT` / `AVATAR_WORK` send a trial build elsewhere.
+- DJ pose: the platter hand's target moved to (-.99, 1.27). The 40° wrist limit keeps its fingers raised; that asymmetry predates this change.
+- `npm test` 326/326, `npm run build` OK. Evidence: `../art/validation/v2/male-hands-before-after.jpg`. The pre-change copy is in the session scratchpad snapshot.
+- Still open: shoe tilt, cap/hair recheck, seated vocal/bass hand reach, full band cycles, mid-route reversal.
+
+### Claude, September 29 evening — outfits, cap, grip (awaiting the owner's review)
+
+The owner reported: the arm orientation is wrong when holding a drink or popcorn; the outfits look broken; the cap is too big on both.
+- **Outfits.** `retarget` is bone-by-bone again, as in the approved Sep 27 build, with two changes. Each bone turns by the least rotation toward the joint it leads to, not its tail (the new male's Hips tail is 91° off the clothed model's, which twisted the tee's lower half). Only the bones in FOLLOW count (thigh weights on the tee's hem split it into teeth). The Sep 28 whole-body "spatial fit" shrank the tee and trousers and opened a dark gap at the waist; it is deleted. The tee and trousers now match the Sep 27 silhouettes.
+- **Cap.** It is still one shared master, scaled by `CAP_SIZE = .85`. At .242 it was about 23% wider than her hair.
+- **Grip.** `ImportedAvatar` now measures the hand frame from bones: fingers from the wrist to the knuckles, palm from the rest curl. Before, it guessed the palm as "inward", and the male's came out 48° off, so he held the cup palm-up. At rest the lowered hand is rolled so the palm faces the thigh, half of the roll in the forearm. Carrying closes the hand part way (`setImportedGrip`); `animateRig` releases it every frame via `releaseCoastalGrips`.
+- DJ: platter target (-1.005, 1.27). The test's platter bound moved from -.9 to -.85, because the mixer only spans |x| < .41.
+- **Known issue:** the avatar build is not deterministic. The female eye height, and so her cap band, varied 5 mm between identical runs (atlas packing). The installed assets are the exact build that was reviewed (the scratchpad `trial-fit3`); a rebuild may shift the cap slightly.
+- `npm test` 326/326, build OK. Evidence: `../art/validation/v2/outfits-cap-grip-before-after.jpg`.
+
+### Claude, September 29 night — cap clipping, neck, female head (awaiting review)
+
+- **Cap.** `cap_hair_key` now eases hair out from under the rim over `CAP_SKIRT` (7 cm; Sep 28 used 3 cm, so curls bent out sharply at the rim). It keeps the fringe under the bill's underside and never moves face or ear skin; scalp above the band is tucked. The cap stores its `fit`, so the scratchpad `cap_clip.py` counts clipping hair. Hair clipping is now 0 on both; the male's remaining counts are forehead skin where the bill sits on the brow.
+- **Neck.** `lower_collar` cuts the tee near the neck at the neck bone's base + 6 mm. The clothed models wear the crew neck like a turtleneck: 6 cm up his neck and 4 cm up hers, to the chin. The tee is also carried without head bones (falling back to `neck`).
+- **Female head.** The owner called it broken. The Sep 28 regeneration is a box: flat-topped hair, a chinless square face, and an ear poking through the hair. `art/generated/female-base-rigged.glb` is now a symlink to the Sep 25 generation (the one on /beta/ps2/); the Sep 28 file is kept as `female-base-sep28-rigged.glb`. `AVATAR_SOURCE_<STEM>` overrides a source for comparisons.
+- Next: outfits (tee, sleeves, trouser cuffs per the reference sheets, the waist join, prints and vest), shoes per the reference sneaker, and all animations; the owner flagged every group.
+
+### Claude, September 30 — shoes, outfits, animations (awaiting review)
+
+- **Shoes.** `clean_shoes` is rewritten after `art/generated/shoe-reference.png` as solid blocky panels coloured per face: a stepped ivory sole with an arch notch and a toe bumper, a black upper with an overlay toe cap, eyestays, an ankle strap and a heel counter, four flat laces, and a padded collar that dips to the tongue. His overlays are the reference's muted brick red on charcoal; hers are grey.
+- **Tee.** `tidy_tee` repaints the bottom of the shirt: `plain_hem` gives every non-black face below the waist the UV of a plain patch of the shirt's front, because the generator painted the belt's grey and camouflage into the hem. It also trims the sleeves' teeth to a line square to the arm (openings that sit round an arm only) and extrudes a 1 cm rib at the neck. (A geometric hem cut failed: the textured band is the shirt's own rolled hem.)
+- **Trousers.** `jogger_cuffs` (male) tapers each leg below the knee, never tighter than the sneaker collar (8.4 cm).
+- **Animations.** Reviewed as filmstrips with the scratchpad `filmstrips.py` + `cdp-shoot.mjs` (headless Chrome over DevTools; it waits for `data-avatar-review` before capturing). Fixed: the punch guard (the elbow was bent only 72°, so both arms reached forward); the dance (it read as standing about: the knees now drop on each beat, the fists pump in turn, the chest twists, the head nods, and the feet stay planted per its test); the fall (arms thrown up in a V; its test caps knees < .5). Walk, hit, wave, sit, DJ, drink, eat and skate read correctly. The landing is shallow but capped by its test (knee ≤ .71).
+- **Known:** with the arms raised high (fall, dance peak) the male armpit shows through: the sleeve pulls off the side and skin under clothing is not drawn.
+- `npm test` 326/326.
+- **Later, same day — fall wings.** In the fall his tee's sides dragged out into black wings down to the hem. The flank skin carries arm weight and `body_weights` copied it onto the side panels. `sleeves_only(arm)` is now a limit for the tee: past the shoulder cap an arm or hand bone keeps its weight only within `SLEEVE_REACH` (9.5 → 11.5 cm) of the upper arm's axis; every sleeve vertex is within 9 cm, the side panels start at 12. A vertex left with no weight borrows the nearest body vertex free of arm bones. The long faces are gone: the worst stretch in the arms-up pose fell from 52 cm to 20 cm, and that is armpit only. The installed assets are trial-flank2, which includes the muted-red shoe colours. The trial-jog1 assets are backed up in the scratchpad as `installed-jog1/`. Evidence: `../art/validation/v2/fall-tee-before-after.jpg`.
+
+### Claude, September 30 — island prototype (exploration, owner has not reviewed)
+
+The owner asked to explore the map as a small planet (like messenger.abeto.co): the festival as a tiny island ringed by sea, with a landing dock and a moored boat at the gate. It is loopback-only behind `?island`; without the flag nothing changes. `npm test` 326/326, `npm run build` clean.
+
+- **`?island`** (`src/main.ts`): installs the planet before `App` imports anything. `?island=<radius>` sets the radius (default 320); `?island=flat` gives the island without the curve.
+- **`PlanetCurve.ts`**: the Animal Crossing / Messenger trick. Gameplay, collision, NPCs and cameras stay flat; only drawing wraps the world round a sphere centred under the visitor.
+  - `project_vertex`, `worldpos_vertex` (so shadows and fog follow the bend) and the sprite shader are patched.
+  - Every program gets the `planetCentre` and `planetRadius` uniforms through an accessor on `Material.prototype.onBeforeCompile`, which keeps each material's own hook and cache key.
+  - The sky (renderOrder ≤ -2) is `keepFlat`.
+  - CSS3D screens are moved and tilted whole by `bendCss3d`.
+  - The stylised water has its own `PLANET_ON` path.
+- **Terrain** (`CoastalTerrain.ts`):
+  - `ISLAND` is a rounded outline with coves and headlands (quiet due north). The land runs down a 16-unit beach into the sea, and the terrain grid is widened and trimmed round it.
+  - `ISLAND_COVE` cuts a walled harbour basin from z = 71 northwards, x ±18, directly outside the gate.
+- **`IslandDock.ts`**: quay walls with coping and a tide band, 16 stone steps down from the quay, a timber pier with a T-head, bollards and tyre fenders, and a lofted ferry. The ferry has a blue bottom, white topsides, a wheelhouse with a red roof, a mast lamp, rails and a life ring. It is moored with rope lines and rides a slow swell.
+- **`FestivalWorld.surroundIsland`**: replaces the Shore's sea sheets with a 1500-unit, 150×150 plane round the island and adds a path from the gate to the quay.
+- **Review helper** (loopback): `__festivalAerial([x,y,z],[x,y,z])` holds the camera, pushes the fog back and centres the planet on the look target. With no arguments it hands the camera back.
+- **Arrival by boat** (the owner's decision): on the island every visitor starts on the pier head (`DOCK_ARRIVAL`) beside the ferry and its gangway, and walks up the pier, up the steps, across the quay and in through the gate.
+  - `IslandDock.heightAt` is the walking floor: the steps are one even ramp, the pier and head are boards. `groundHeightAt` asks it first, and `isOverWater` does not swim a body standing on it.
+  - `IslandDock.barriers` adds zero-padding colliders on the quay edge, the basin's side walls and every edge of the pier and head.
+  - The north clamp is `northLimit()`: `GATE_Z - 2` normally, and the pier's end on the island.
+  - Checked by holding keys in headless Chrome: pier head to z 25.8 inside the festival, and every edge holds.
+- **Second pass (owner's screenshots).**
+  - **Subdivision:** `subdivideSceneForPlanet` splits every large static mesh to 3-unit edges, keeping groups and every attribute. Walls, floors and roof slabs now bend with the ground instead of floating over it or being cut by it, which also fixes the rooftop band floating.
+  - **Sea:** `seaAroundIsland` leaves out sea cells that stand wholly on dry land, so no water shows through the club's floor.
+  - **Beach:** it only ever lowers ground, so the old seabed is no longer walled into a lagoon.
+  - **Ferry:** it lies 0.6 further out, so it no longer clips the pier head.
+- **Donate:** the staff-ui branch (179fe46 + fc56593) is patched in, giving the gate Donate button, title editing, scroll-keeping and the 曲名 width. This build's `/api/config` still returns `offeringReceipt`, which the unmerged fix-config-mailbox branch removes. Never ship this server.
+- **Not yet done:**
+  - Clicks on far objects are not bent.
+  - The harbour has no lamps of its own at night.
+
+### Claude, September 30 evening — band seats, faces, skin, toes, collars, walk
+
+- **Band at the fire** (`prepare-band.py`, pose-only rebuild):
+  - Measured in Blender, the calves and toes went 11–15 cm into the log rounds under the bench, and the hands sat on the knee joints themselves.
+  - The feet are now planted forward on the floor, the hands rest on top of the knees (clear of the leg's thickness), and the seat clears 3.5 cm, not 8 mm: the browser's four-weight skinning sank the trousers into the log.
+- **Avatar build** (`prepare-higgsfield-avatars.py`), the owner's choices, in build order:
+  - **Toes:** `rebuild_toes` cuts each foot a little ahead of the ball, caps it and lofts five toes (big toe widest), textured from the foot's clean skin and weighted to ToeBase.
+  - **Her face:** `flatten_face` replaces `round_face` for her. It fits a smooth surface over the front of her face (eye sockets included; only the fringe's strands in front are left out) and relaxes the edges in. `paint_face` then paints her sheet's face at her own proportions: tall eyes, dark inside and pale outside, a lid line, brows, a small mouth and blush. Her eye height is measured (0.435; `EYE_HEIGHT` updated).
+  - **Neck:** `smooth_neck` relaxes the neck column and its join under the jaw.
+  - **Skin:** `relax_skin` applies Taubin smoothing to body skin (not heads, hands, toes, shoulders or upper arms; relaxed under the sleeves it crept out through the tee). `clean_skin` paints one median skin tone.
+  - **Collars:** `lower_collar` now trims out to 14 cm (the shoulder points). `clean_collar` removes tee scraps that were really the clothed model's neck and fills the rest with the shirt's own shade. `covered_faces` never hides the bare neck above the collar by the fan rule (that cut a hole in her throat), and counts skin with the tee directly over it within 5 cm as covered.
+  - Env switches `AVATAR_COLLAR_RELAX` and `AVATAR_RELAX_SKIN` exist for bisecting.
+- **Walk** (`scripts/prepare-walk.py` → `src/data/walk-cycle.json`):
+  - It is taken from the owner's Mixamo reference (`../art/reference/walking-mixamo.fbx`, same bone names as ours): one 24-frame cycle from the right heel strike, read as rig joint angles (leg swing, splay and knee; arm swing, splay and elbow; chest and head).
+  - `walkCoastalPose` plays it for everyone. Each stance foot is locked exactly where it struck, solved for the opened leg (`solveLeg`). The swing follows the reference, eased back onto its path.
+  - The stride is 2.333, measured from the reference's travel. Running is untouched (it is the skate pose), and a carried item keeps its arm while the free arm swings.
+- Installed: the avatar assets from the scratchpad's `trial-final1`, and the band assets from the pose-only rebuild. `npm test` 327/327.
+- **Superseded the same night.** The owner judged the reshaped face and toes worse, and said the Higgsfield models themselves look fine: integrate them, don't remodel them.
+  - **The actual cause:** the generated materials carry their base colour as emission (self-lit), which is how they look in the generator and on the reference sheets. `strip_emission` removes that so the world can light them, and the world's lighting then shows every small bump of the generated mesh: her nose and pout, the facet patchwork on his legs.
+  - **Now:**
+    - `AVATAR_RESHAPE` (comma list: `toes,face,neck,skin`) is empty by default, so no reshaping runs.
+    - `smooth_skin` smooths every face, head included.
+    - The runtime's `evenLight` (ImportedAvatar.ts, `AVATAR_EVEN = .72`) mixes each avatar's lighting toward an even amount taken from the scene's ambient, hemisphere and sun colours, so day and night still reach it but the facing of each triangle mostly doesn't. `setAvatarEvenness` tunes it.
+  - The tee collar and cover fixes stay (those are integration). `relax_skin` stays off.
+  - Evidence: `../art/validation/v3/generated-vs-game.jpg` and `avatars-in-world.jpg`. The installed avatar assets are `trial-asgen2`.
+  - NPCs never go to the harbour.
+  - At player height the curve hides the sea from parts of the Shore.
+- Evidence: `../art/validation/island/`.
+
+### 2026-10-01: modelled tee, her bob and face, cap, band fixes
+
+- **Tee, both avatars** (`model_tee`): every cut through the generated tees left teeth, holes or a boat neck, so the tee is now built, not lifted.
+  - It is made of rings round the torso and a tube down each upper arm. Each point sits just outside the outermost skin (a ray from outside in), and the tee gets looser toward the hem.
+  - The shoulders get a shelf in to a round crew neck with a rib, and the hem and sleeve ends are exact with a turned lip.
+  - Its winding faces out by construction. Never `recalc_face_normals` it: that turned her tee inside out, black with the prints inside.
+  - Hem and sleeve length come from the generated tee. Weights come from `body_weights` plus `sleeves_only`.
+  - Under the sleeves the arm skin is hidden only from 7 cm inside the sleeve end (`TEE_SLEEVES`), so the ragged hidden-skin edge never shows.
+- **Her head** (the owner chose: remodel a block bob, repaint the face to the sheet, model a new cap, default black):
+  - `build_bob` replaces the generated hair with a closed shell: a dome to a straight fringe at eye+.035, and a curtain falling straight to where her hair ended with a slight tuck.
+    - The face window is ±45°. The edges turn in to the head (deep where no skin is left), and the underside closes to the neck.
+    - The shell has its own pixel-block texture and a cream clip.
+    - It joins the body before the atlas bake, so dye and CapHair treat it as hair.
+    - The generated hair faces come off. Small holes left in the face are filled with UVs taken from the neighbouring skin.
+  - `paint_sheet_face` paints the window one flat tone, with tall near-black eyes under the fringe (lid line, white glint, brown lower third), a tiny mouth and a faint blush. It paints every face in the window, whichever way it faces, because a gap showed the inside of the head.
+  - Cap: the `CROWN` profile now leans in and rounds over (the old one was a pillbox), with `exp` 2.15, a longer bill pitched at 12° with more curve, and an opening over the strap at the back.
+  - Runtime default cap colour is `DEFAULT_ACCESSORY_COLOURS.cap` (`#1d1f24`).
+- **Dev switches:** `AVATAR_ONLY=female` builds one avatar; `AVATAR_STOP=dressed` saves `<key>-dressed.blend` in about 4 s.
+- **Band** (`prepare-band.py`, pose-only rebuild with `BAND_REUSE=1`):
+  - Benches are now `BENCH_SEAT` .34 (chibi knee height) and the seat marks sit `SEAT_FORWARD` .2 ahead of the log's middle. At .42 and centred, the shins went through the log's front.
+  - The seated hands follow the forearm, found as the IK places the elbow.
+  - `KIT_ACROSS` +.06 (was −.18): the bass drum is now in front of the drummer, and the riser centres on the throne.
+  - The bass fretting hand is nearer the body (it was out of reach) and wraps under the neck. The plucking fingers hang across the strings instead of into the body.
+  - Remaining: the singer's skirt back hangs about 10 cm into the log behind her (not visible from the front), and the drummer's right wrist is up to 5 cm short of the snare.
+- Installed: the avatars from the scratchpad's `trial-all1`, and the band from the pose-only rebuild. `npm test` 327/327, `npm run build` OK.
+
+Files: `scripts/prepare-higgsfield-avatars.py`, `scripts/prepare-band.py`, `src/world/ImportedAvatar.ts`, `CoastalPose.ts`, `RooftopBand.ts`; cached cap refit `../art/refit_caps.py`; validation `../art/validate_band.py`, `../art/render_band_review_v2.py`. Rejected v1 is `../art/rejected-v1/build-snapshot.tgz`. Current screenshots under `../art/validation/v2` include stale earlier frames; do not call them final without rerendering.
+
+Build tools: official Blender `/Applications/Blender.app/Contents/MacOS/Blender`; pinned glTF CLI at `../.tools/node_modules/.bin/gltf-transform`. Blender sandbox segfaults; local execution with escalation has worked. Pose-only rebuild: `BAND_REUSE=1 /Applications/Blender.app/Contents/MacOS/Blender -b --python scripts/prepare-band.py`. Avatar cache: `.artifacts/higgsfield-avatars/avatars.blend`. Run `npm test` and `npm run build` locally; NEVER `build:beta`.
+
+Validation so far: previous full suite had 324 pass / 1 DJ fingertip-height failure; DJ target adjusted and targeted checks pass. New both-sole/spacing check passes. Full suite/build after final assets is pending. Passing tests did not establish visual quality of the rejected v1. Read `../art/QUALITY_REPAIR_V2.md` for acceptance checks. Preview stays http://127.0.0.1:4337/rebuild-review.html.
+
+---
+
 # Codex handoff — 我的戲院 / MYSCHEDULE Virtual Festival
 
 Last updated: 2026-09-27 · **PS2 preview (branch `character-native-20260924`): one Higgsfield body per sex, finger bones, Quest hands and webcam body tracking shown to everyone, a rooftop band — see Latest; `/beta/` still waits for the owner** · **§00 has two stale details, corrected in Latest** · **a fix that only moves *when* a symptom happens has not touched the cause** · **in a headset, `event.target` is not the focused field** · **iOS `vh` is taller than the screen — no emulator shows it** · **a fix that only moves a symptom is not one — measure both sides** · **walking must not move the camera — one avoidance owner, see Latest** · **curl is not a browser — test media hosts from a page, see Latest** · **the headset paints its own interface, and only a headset does — see Latest** · **two published channels — read §00 before publishing anything** · the temple offering through ECPay · venue renames and catalogue swap, the GANGAN statue, avatar accessories, the crowd, a measurement harness

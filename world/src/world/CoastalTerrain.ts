@@ -47,6 +47,35 @@ const outside = (x: number, z: number, a: number, b: number, c: number, d: numbe
 export const shorelineAt = (x: number): number =>
   -59 - 3.2 * Math.sin(x * 0.045) - 1.2 * Math.sin(x * 0.11 + 0.7);
 
+/**
+ * The island prototype (?island, loopback only): the festival as a small
+ * island with sea on every side. The land keeps its authored grades inside a
+ * rounded outline and runs down a beach into the sea over its last 16 units;
+ * the seabed shelves away beyond. North of the gate the approach road ends at
+ * the landing dock (IslandDock.ts).
+ */
+export const ISLAND = { west: -124, east: 127, north: 100, south: -72, corner: 44, beach: 16 } as const;
+/** The harbour cut into the north coast just outside the gate: sea north of `z`, between ±`half`. */
+export const ISLAND_COVE = { half: 18, z: 71, floor: SEA_Y - 4 } as const;
+let island = false;
+export const islandTerrain = (): boolean => island;
+export function setIslandTerrain(on: boolean): void {
+  island = on;
+  gradeCache.clear();
+}
+/** Distance outside the island's rounded outline; negative inside. */
+export function islandOutside(x: number, z: number): number {
+  const { west, east, north, south, corner } = ISLAND;
+  const qx = Math.abs(x - (west + east) / 2) - ((east - west) / 2 - corner);
+  const qz = Math.abs(z - (north + south) / 2) - ((north - south) / 2 - corner);
+  const box = Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0) - corner;
+  // Coves and headlands, so the coast is not a drawn rectangle. Quiet due
+  // north, where the landing is.
+  const a = Math.atan2(z - (north + south) / 2, x - (west + east) / 2);
+  const quiet = 1 - Math.exp(-(((a - Math.PI / 2) / .35) ** 2));
+  return box + quiet * (4.5 * Math.sin(3 * a + .8) + 2.5 * Math.sin(7 * a + 2.1) + 1.2 * Math.sin(13 * a + .4));
+}
+
 const pads = [
   [-102, -17, -9, 52, 0, 9], // Warehouse block and forecourt.
   [14, 62, -5, 47, 0, 8],   // Shop, deck, outside stair and lower approach.
@@ -121,6 +150,17 @@ function designGrade(x: number, z: number): number {
     const belowFlight=x<71.4?Math.max(0,templeStairPitch(x)-.15):4.8;
     h=mix(h,Math.min(h,belowFlight),1-smooth((Math.abs(z-4)-8)/2));
   }
+  if (island) {
+    const out = islandOutside(x, z);
+    // Dry sand 0.7 above the sea at the outline, the waterline 2.5 beyond it.
+    const beach = SEA_Y + .7 - Math.max(0, out) * .28;
+    // Land runs down to the beach; seabed already below it stays where it is,
+    // or the old sea inside the outline is walled off as a lagoon.
+    h = mix(h, Math.min(h, beach), smooth((out + ISLAND.beach) / ISLAND.beach));
+    // The harbour: a walled basin, its quay walls standing on the cove's edges.
+    const inside = Math.min(x + ISLAND_COVE.half, ISLAND_COVE.half - x, z - ISLAND_COVE.z);
+    if (inside > -.3) h = mix(h, ISLAND_COVE.floor, smooth((inside + .3) / 1.6));
+  }
   return h;
 }
 
@@ -150,6 +190,12 @@ export function isSwimmingDepth(x: number, z: number): boolean {
 export function createCoastalTerrain(): THREE.Mesh {
   const positions:number[]=[], colours:number[]=[];
   const soil=new THREE.Color(0x72765c), sand=new THREE.Color(0xc0aa7c);
+  // The island's beach: sand from a few units inside the outline outwards.
+  const beachy=(x:number,z:number,c:THREE.Color)=>{
+    if(!island)return;
+    const out=islandOutside(x,z);
+    if(out>-ISLAND.beach)c.lerp(out>2.5?wet:sand,smooth((out+ISLAND.beach*.6)/(ISLAND.beach*.4)));
+  };
   const wet=new THREE.Color(0x857858), cut=new THREE.Color(0x82806d);
   const colour=new THREE.Color();
   const vertex=(x:number,z:number)=>{
@@ -158,12 +204,16 @@ export function createCoastalTerrain(): THREE.Mesh {
     const shore=shorelineAt(x);
     if(z<-16) colour.copy(wet).lerp(sand,smooth((z-shore)/18));
     else colour.copy(soil).lerp(cut,clamp(y/7));
+    beachy(x,z,colour);
     const facet = Math.sin(x*.31+z*.19)*.035 + Math.cos(x*.16-z*.27)*.025;
     colour.multiplyScalar(1+facet);
     colours.push(colour.r,colour.g,colour.b);
   };
-  for(let z=-112;z<88;z+=2) for(let x=-120;x<130;x+=2){
+  const [z0,z1,x0,x1]=island?[-150,146,-172,176]:[-112,88,-120,130];
+  for(let z=z0;z<z1;z+=2) for(let x=x0;x<x1;x+=2){
     if(x>=-90&&x<-20&&z>=0&&z<42) continue;
+    // Round the island, the seabed only as far as it can be seen through the sea.
+    if(island&&islandOutside(x+1,z+1)>34) continue;
     vertex(x,z);vertex(x,z+2);vertex(x+2,z);
     vertex(x+2,z);vertex(x,z+2);vertex(x+2,z+2);
   }
@@ -182,6 +232,7 @@ export function createCoastalTerrain(): THREE.Mesh {
     const x=cutPositions.getX(i),z=cutPositions.getZ(i),y=cutPositions.getY(i),shore=shorelineAt(x);
     if(z<-16)colour.copy(wet).lerp(sand,smooth((z-shore)/18));
     else colour.copy(soil).lerp(cut,clamp(y/7));
+    beachy(x,z,colour);
     colour.multiplyScalar(1+Math.sin(x*.31+z*.19)*.035+Math.cos(x*.16-z*.27)*.025);
     cutColours.push(colour.r,colour.g,colour.b);
   }

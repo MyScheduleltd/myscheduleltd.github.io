@@ -344,6 +344,63 @@ test('staff write a resident introduction, and can take it back off again', asyn
   await adminPost('/api/admin/npcs', { npcId: 'KENNY', name: 'KENNY', title: 'Senior Director', introduction: '' });
 });
 
+test('a resident is introduced in both languages, and an older page cannot wipe the Chinese', async () => {
+  // The owner writes in Chinese; the English is its translation. Each half is
+  // its own field, so neither language has to be squeezed into the other's.
+  const written = await adminPost('/api/admin/npcs', {
+    npcId: 'NUNO', name: 'NUNO', title: 'Chief Researcher', titleZh: '首席研究員',
+    introduction: 'Loves surfing.', introductionZh: '愛好衝浪。',
+  });
+  assert.equal(written.status, 200);
+  const served = async () => {
+    const config = await (await fetch(`${baseUrl}/api/config`)).json();
+    return config.npcProfiles.find((profile) => profile.id === 'NUNO');
+  };
+  let profile = await served();
+  assert.equal(profile.title, 'Chief Researcher');
+  assert.equal(profile.titleZh, '首席研究員');
+  assert.equal(profile.introduction, 'Loves surfing.');
+  assert.equal(profile.introductionZh, '愛好衝浪。');
+
+  // A page published before the Chinese fields existed sends only the English
+  // pair. Its save must leave the Chinese exactly where it was.
+  await adminPost('/api/admin/npcs', {
+    npcId: 'NUNO', name: 'NUNO', title: 'Head Researcher', introduction: 'Loves sailing.',
+  });
+  profile = await served();
+  assert.equal(profile.title, 'Head Researcher');
+  assert.equal(profile.titleZh, '首席研究員');
+  assert.equal(profile.introduction, 'Loves sailing.');
+  assert.equal(profile.introductionZh, '愛好衝浪。');
+
+  // Sent empty, they clear — the same as the English introduction.
+  await adminPost('/api/admin/npcs', {
+    npcId: 'NUNO', name: 'NUNO', title: 'Sound Engineer', titleZh: '', introduction: '', introductionZh: '  ',
+  });
+  profile = await served();
+  assert.equal(profile.titleZh, '');
+  assert.equal(profile.introductionZh, '');
+});
+
+test('staff retitle a film in one language, and an empty title gives it back', async () => {
+  // The STAFF panel published on 2026-10-06 already sends this. Until the
+  // service had the route, every save from it was a 404.
+  const both = await adminPost('/api/admin/video-title', { youtubeId: 'jiawzYgfkuI', title: 'EN TITLE', titleZh: '中文標題' });
+  assert.equal(both.status, 200);
+  const config = await (await fetch(`${baseUrl}/api/config`)).json();
+  assert.deepEqual(config.videoTitles.jiawzYgfkuI, { title: 'EN TITLE', titleZh: '中文標題' }, 'attendees are told');
+  const cleared = await (await adminPost('/api/admin/video-title', { youtubeId: 'jiawzYgfkuI', titleZh: '' })).json();
+  assert.deepEqual(cleared.videoTitles.jiawzYgfkuI, { title: 'EN TITLE' }, 'only the language that was cleared goes back');
+  const gone = await (await adminPost('/api/admin/video-title', { youtubeId: 'jiawzYgfkuI', title: '' })).json();
+  assert.equal(gone.videoTitles.jiawzYgfkuI, undefined);
+  const refused = await adminPost('/api/admin/video-title', { youtubeId: 'no', title: 'X' });
+  assert.equal(refused.status, 400);
+  const outsider = await fetch(`${baseUrl}/api/admin/video-title`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ youtubeId: 'jiawzYgfkuI', title: 'X' }),
+  });
+  assert.equal(outsider.status, 401, 'only STAFF retitle');
+});
+
 test('an unknown resident cannot be given an introduction', async () => {
   const response = await adminPost('/api/admin/npcs', {
     npcId: 'NOBODY', name: 'NOBODY', title: 'Ghost', introduction: 'Unwelcome.',
@@ -370,7 +427,9 @@ test('staff can add a new NPC to the shared roster', async () => {
   // An introduction comes back empty on a new resident, and that is the
   // intended state: nobody's biography is invented, so a name and a job title
   // is all a newly added NPC has until STAFF write one.
-  assert.deepEqual(profile, { id: payload.npcId, name: 'ALICE', title: 'Producer', introduction: '' });
+  assert.deepEqual(profile, {
+    id: payload.npcId, name: 'ALICE', title: 'Producer', titleZh: '', introduction: '', introductionZh: '',
+  });
 });
 
 test('staff NPC control preserves the original attendee and restores its position', async () => {
@@ -680,6 +739,13 @@ test('staff settings survive a service restart', async () => {
     });
     assert.equal(added.status, 201);
 
+    const retitled = await fetch(`${restartUrl}/api/admin/video-title`, {
+      method: 'POST',
+      headers: staffHeaders,
+      body: JSON.stringify({ youtubeId: 'jiawzYgfkuI', title: 'RESTART TITLE', titleZh: '重啟標題' }),
+    });
+    assert.equal(retitled.status, 200);
+
     const style = await fetch(`${restartUrl}/api/admin/style`, {
       method: 'POST',
       headers: staffHeaders,
@@ -700,6 +766,7 @@ test('staff settings survive a service restart', async () => {
     assert.equal(config.npcProfiles.find((profile) => profile.id === 'KENNY').title, 'Restart Director');
     assert.equal(config.customVideos.shore.at(-1).title, 'RESTART TEST WORK');
     assert.equal(config.schedule.shore.order.includes('dQw4w9WgXcQ'), true);
+    assert.deepEqual(config.videoTitles.jiawzYgfkuI, { title: 'RESTART TITLE', titleZh: '重啟標題' });
     assert.equal(config.siteStyle.brandFontSize, 33);
     assert.equal(config.siteStyle.brandScaleY, 1.4);
     assert.equal(config.siteStyle.brandOffsetY, -8);
@@ -1716,6 +1783,56 @@ test('the offering panel is served three amounts, all of them payable', async ()
   assert.ok(options.presets.length >= 2, 'the default selection must exist');
 });
 
+test('an invoice goes to the donor only when they tick the receipt box, and otherwise to the STAFF mailbox', async () => {
+  // The owner's rule, 2026-10-06: the visitor's address is used only if they
+  // asked for a receipt; without the tick the 電子發票 goes to the mailbox set
+  // in the STAFF panel, and the address they typed is not kept at all.
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const stateFile = joinPath(temporaryDirectory, 'receipt-routing-state.json');
+  const mailbox = 'festival-invoices@example.test';
+  const instance = await startServer(port, stateFile);
+  const ids = {};
+  try {
+    const staffSaved = await fetch(`${url}/api/admin/offering-receipt`, {
+      method: 'POST',
+      headers: { 'x-festival-admin-key': 'test-admin-key', 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' },
+      body: JSON.stringify({ email: mailbox }),
+    });
+    assert.equal(staffSaved.status, 200);
+    const session = await fetch(`${url}/api/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' },
+      body: JSON.stringify({ name: 'RECEIPT GIVER' }),
+    }).then((r) => r.json()).then((r) => r.session);
+    const give = (body) => fetch(`${url}/api/donation`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${session.token}`,
+        'x-festival-session': session.id,
+        'content-type': 'application/json',
+        origin: 'http://127.0.0.1:5173',
+      },
+      body: JSON.stringify(body),
+    });
+    const ticked = await give({ amount: 52, email: 'ticked@example.com', receipt: true });
+    assert.equal(ticked.status, 200);
+    ids.ticked = (await ticked.json()).id;
+    const unticked = await give({ amount: 52, email: 'unticked@example.com', receipt: false });
+    assert.equal(unticked.status, 200);
+    ids.unticked = (await unticked.json()).id;
+  } finally {
+    await stopServer(instance);
+  }
+  const saved = JSON.parse(readFileSync(stateFile, 'utf8'));
+  const record = (id) => (saved.donations ?? []).find((entry) => entry.id === id);
+  assert.equal(record(ids.ticked).email, 'ticked@example.com');
+  assert.equal(record(ids.ticked).wantsReceipt, true);
+  assert.equal(record(ids.unticked).email, mailbox);
+  assert.equal(record(ids.unticked).wantsReceipt, false);
+  assert.equal(JSON.stringify(saved).includes('unticked@example.com'), false, 'an address given without the tick is not kept');
+});
+
 test('a deferred offering survives a restart and can still be settled and invoiced', async () => {
   // The whole reason convenience-store and ATM payments needed work. Somebody
   // takes a 超商代碼 away, the service restarts twice over the next three days,
@@ -1934,6 +2051,8 @@ test('tracked limbs are relayed to everyone, checked field by field', async () =
       x: 1, y: .28, z: 2, rotation: 0, location: 'MY SQUARE', state: 'walking', moving: false, running: false, venue: 'shore',
       limbs: {
         l: [.1234, -.5, .9, 0, -1, 0, 1, 0, 0],   // kept, to hundredths
+        le: [.346, -.523, .78],                     // elbow direction
+        re: [0, 1],                               // incomplete elbow: dropped
         r: [1, 2, 3],                              // wrong length: dropped
         t: [9, -9],                                // held to ±4
         h: [.2, 'up'],                             // not numbers: dropped
@@ -1946,7 +2065,7 @@ test('tracked limbs are relayed to everyone, checked field by field', async () =
     headers: { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173' },
   })).json();
   const visitor = state.visitors.find((candidate) => candidate.id === session.id);
-  assert.deepEqual(visitor.presence.limbs, { l: [.12, -.5, .9, 0, -1, 0, 1, 0, 0], t: [4, -4] });
+  assert.deepEqual(visitor.presence.limbs, { l: [.12, -.5, .9, 0, -1, 0, 1, 0, 0], le: [.35, -.52, .78], t: [4, -4] });
   // Tracking stops: the next presence without limbs takes them away.
   await fetch(`${baseUrl}/api/presence`, {
     method: 'POST',

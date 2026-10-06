@@ -144,12 +144,13 @@ export interface ArmOrientation {
  * hinge axis, and the elbow angle then falls out of the arithmetic instead of
  * being guessed at and corrected by eye.
  */
-export function armOrientation(solution: ArmSolution, hinge: 1 | -1 = 1): ArmOrientation {
+export function armOrientation(solution: ArmSolution, hinge: 1 | -1 = 1, referenceX?: Vec3): ArmOrientation {
   const { upper, lower } = solution;
   const y: Vec3 = [-upper[0], -upper[1], -upper[2]];
   // The plane the two bones lie in. Straight-armed there is no plane, so any
   // perpendicular will do — the elbow angle comes out zero either way.
   let x = cross(upper, lower);
+  if (len(x) < 1e-6 && referenceX) x = sub(referenceX, scale(y, dot(referenceX, y)));
   if (len(x) < 1e-6) x = cross(y, Math.abs(y[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]);
   // `hinge` picks which of the two valid axes to use.
   //

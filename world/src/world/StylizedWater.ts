@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { PLANET_GLSL } from './PlanetCurve';
 
 /**
  * Cel-shaded water for The Shore.
@@ -15,11 +16,18 @@ import * as THREE from 'three';
  * to sit in a world that also runs four venues.
  */
 
+// PLANET_ON: drawn round the island prototype's planet (PlanetCurve.ts).
 const VERTEX = /* glsl */ `
   varying vec2 vWorldPos;
+  #ifdef PLANET_ON
+  ${PLANET_GLSL}
+  #endif
   void main() {
     vec4 worldPosition = modelMatrix * vec4(position, 1.0);
     vWorldPos = worldPosition.xz;
+    #ifdef PLANET_ON
+    worldPosition.xyz = planetBend(worldPosition.xyz);
+    #endif
     gl_Position = projectionMatrix * viewMatrix * worldPosition;
   }
 `;

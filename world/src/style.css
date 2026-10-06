@@ -83,6 +83,11 @@ input:focus, input:focus-visible, textarea:focus, textarea:focus-visible, select
   position: absolute; left: 50%; top: 50%; width: max(100vw, 177.78vh); height: max(56.25vw, 100vh);
   transform: translate(-50%, -50%) scale(1.03); border: 0; pointer-events: none;
 }
+/* The default loop has a 2.4:1 picture letterboxed inside its 16:9 player.
+   Size the player so the picture itself covers the viewport, then clip the bars. */
+.gate__video--cinematic {
+  width: max(100vw, 240vh); height: max(56.25vw, 135vh);
+}
 .gate__video-shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(5,6,8,.68), rgba(5,6,8,.22) 50%, rgba(5,6,8,.68)); }
 .gate__sun {
   position: absolute; width: 30vw; height: 30vw; min-width: 260px; min-height: 260px;
@@ -240,7 +245,9 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
 .check-field--vr[data-vr-availability='checking'] input,
 .check-field--vr[data-vr-availability='unavailable'] input { cursor: not-allowed; opacity: .52; }
 .check-field--vr[data-vr-availability='unavailable'] small { color: rgba(17,17,19,.72); }
-.gate-actions { display: grid; grid-template-columns: 1.25fr 1fr; gap: 10px; margin-top: 23px; }
+.gate-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 23px; }
+/* Under the two ways in, the width of both: giving without coming in. */
+.gate-actions .gate-donate { grid-column: 1 / -1; }
 .button { min-height: 52px; border: 2px solid var(--ink); font: 800 17px var(--condensed); letter-spacing: .04em; cursor: pointer; }
 .button--primary { color: white; background: var(--red); border-color: var(--red); }
 .button--secondary { color: var(--ink); background: transparent; }
@@ -1125,7 +1132,8 @@ button:active { filter: brightness(.88); scale: .96; }
 }
 .venue-screen__close:hover { background: var(--red); border-color: var(--red); }
 .venue-screen--maximized {
-  z-index: 12; inset: 0; width: 100vw; height: 100vh; max-width: none; border: 0; box-shadow: none;
+  /* Fullscreen screening covers the PASS drawer (30) and its toggle (31). */
+  z-index: 32; inset: 0; width: 100vw; height: 100vh; max-width: none; border: 0; box-shadow: none;
   display: flex; flex-direction: column; background: #000;
 }
 .venue-screen--maximized .venue-screen__frame { flex: 1; min-height: 0; aspect-ratio: auto; }
@@ -1241,14 +1249,12 @@ button:active { filter: brightness(.88); scale: .96; }
 }
 .chat-stream[hidden] { display: none; }
 .chat-stream__item {
-  --chat-accent: #ed434d;
+  --chat-accent: #e8e2d5;
   min-width: 0; border-left: 3px solid var(--chat-accent); padding: 8px 12px;
   color: #fff; background: linear-gradient(90deg, rgba(8,9,10,.9), rgba(8,9,10,.68));
   text-shadow: 0 2px 8px rgba(0,0,0,.9);
 }
-.chat-stream__item[data-channel='NEARBY'] { --chat-accent: #f1c560; }
-.chat-stream__item[data-channel='VENUE'] { --chat-accent: #ed434d; }
-.chat-stream__item[data-channel='FESTIVAL'] { --chat-accent: #6ed08a; }
+.chat-stream__item[data-channel='VENUE'] { --chat-accent: #e8e2d5; }
 .chat-stream__item header { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
 .chat-stream__channel {
   flex: 0 0 auto; color: var(--chat-accent); font: 800 10px var(--condensed); letter-spacing: .1em;
@@ -1305,27 +1311,32 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
    by column and row explicitly: a venue with no tempo simply leaves column
    two empty, and the reorder buttons stay hard against the right edge either
    way rather than sliding about between venues. */
-/* Five columns, every cell placed by name. The three square buttons are grid
-   children rather than a huddle inside one cell, which is what lets the link
+/* Six columns, every cell placed by name. The four square buttons (edit, up,
+   down, remove) are grid children rather than a huddle inside one cell, which is what lets the link
    box stop flush with the right edge of the DOWN button and SAVE sit directly
    under REMOVE, the same size as it. A venue with no tempo leaves column two
    empty and nothing else moves. */
-.staff-order li { display: grid; grid-template-columns: 1fr auto 42px 42px 42px; align-items: center; column-gap: 4px; row-gap: 8px; min-height: 38px; padding: 8px 9px; flex: 0 0 auto; background: rgba(255,255,255,.48); }
+.staff-order li { display: grid; grid-template-columns: 1fr auto 42px 42px 42px 42px; align-items: center; column-gap: 4px; row-gap: 8px; min-height: 38px; padding: 8px 9px; flex: 0 0 auto; background: rgba(255,255,255,.48); }
 .staff-order__title { grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .staff-order li b { min-width: 22px; color: var(--red); }
 .staff-order__bpm { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 5px; margin: 0 9px; }
-.staff-order__up { grid-column: 3; grid-row: 1; }
-.staff-order__down { grid-column: 4; grid-row: 1; }
-.staff-order__remove { grid-column: 5; grid-row: 1; }
-/* Columns one to four, so it ends where DOWN ends. */
-.staff-order__tune { grid-column: 1 / 5; grid-row: 2; display: flex; align-items: center; gap: 8px; min-width: 0; }
-.staff-order__save { grid-column: 5; grid-row: 2; }
+.staff-order__edit { grid-column: 3; grid-row: 1; }
+.staff-order__up { grid-column: 4; grid-row: 1; }
+.staff-order__down { grid-column: 5; grid-row: 1; }
+.staff-order__remove { grid-column: 6; grid-row: 1; }
+/* Columns one to five, so it ends where DOWN ends. */
+.staff-order__tune { grid-column: 1 / 6; grid-row: 2; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.staff-order__save { grid-column: 6; grid-row: 2; }
+/* Editing, the title's box takes the title's place at the same height as the
+   buttons beside it. */
+.staff-order__title [hidden] { display: none !important; }
+.staff-order .staff-order__title input { box-sizing: border-box; flex: 1 1 auto; min-width: 0; height: 42px; min-height: 42px; }
 .staff-order__tune label, .staff-order__bpm label { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .staff-order__tune label span, .staff-order__bpm > span { font: 800 10px var(--condensed); letter-spacing: .1em; white-space: nowrap; opacity: .72; }
 
 .staff-order__vr { flex: 1 1 auto; }
 .staff-order__vr input { width: 100%; min-width: 0; font-size: 12px; }
-/* One height for everything in a row: four 42px squares, and boxes 42px tall
+/* One height for everything in a row: five 42px squares, and boxes 42px tall
    between them, so SAVE and the link box share a top and a bottom edge.
    .
    These have to be written as two classes. `.staff-programmes button` and
@@ -1365,7 +1376,10 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .staff-list article { display: flex; align-items: center; justify-content: space-between; gap: 14px; border-top: 1px solid rgba(17,17,19,.18); padding: 10px 0; }
 .staff-list article > div:first-child { display: grid; gap: 3px; min-width: 0; }.staff-list small { overflow-wrap: anywhere; opacity: .7; }.staff-list article > div:last-child { display: flex; flex: 0 0 auto; gap: 5px; }
 .staff-npc-list { display: grid; gap: 2px; }
-.staff-npc-form { display: grid; grid-template-columns: auto minmax(120px, .7fr) minmax(180px, 1fr) auto; align-items: end; gap: 10px; padding: 8px 0; border-top: 1px solid rgba(17,17,19,.18); }
+/* Name, then the job title in Chinese and in English side by side. The two
+   introductions take a row each below them, and the buttons wrap under those
+   into the first column. */
+.staff-npc-form { display: grid; grid-template-columns: auto minmax(120px, .7fr) minmax(150px, 1fr) minmax(150px, 1fr); align-items: end; gap: 10px; padding: 8px 0; border-top: 1px solid rgba(17,17,19,.18); }
 /* Bottom of the row, and as tall as a field, so the badge's top and bottom
    edges are the name box's top and bottom edges. Centred, it matched neither. */
 .staff-npc-form .npc-dot { box-sizing: border-box; align-self: end; height: 46px; min-height: 46px; display: grid; place-items: center; padding: 0 10px; }
@@ -1521,13 +1535,26 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .touch-stick {
     position: fixed; z-index: 6;
     left: calc(18px + env(safe-area-inset-left)); bottom: calc(22px + env(safe-area-inset-bottom));
-    width: 116px; height: 116px; border-radius: 50%;
-    border: 1px solid rgba(255,255,255,.34); background: rgba(8,9,10,.34);
+    width: 116px; height: 116px; border-radius: 0;
+    border: 1px solid var(--line); border-top: 3px solid var(--paper);
+    background: rgba(17,17,19,.86);
+    clip-path: polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
     display: grid; place-items: center;
   }
+  .touch-stick::before {
+    content: ''; position: absolute; inset: 20px; pointer-events: none;
+    background: linear-gradient(var(--line),var(--line)) center / 1px 100% no-repeat,
+      linear-gradient(var(--line),var(--line)) center / 100% 1px no-repeat;
+  }
+  .touch-stick__caption {
+    position: absolute; bottom: 5px; left: 0; right: 0; text-align: center;
+    color: var(--paper); font: 800 9px var(--condensed); letter-spacing: .12em; pointer-events: none;
+  }
   .touch-stick__knob {
-    width: 50px; height: 50px; border-radius: 50%;
-    background: rgba(245,239,226,.82); border: 1px solid rgba(8,9,10,.4);
+    width: 50px; height: 50px; border-radius: 0; z-index: 1;
+    background: var(--paper); border: 2px solid var(--ink);
+    box-shadow: inset 0 -3px 0 var(--red);
+    clip-path: polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);
     pointer-events: none;
   }
   /* A ring rather than the single jump button: everything the keyboard offers
@@ -1541,24 +1568,26 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   }
   .touch-ring { display: contents; }
   .touch-ring__hit, .touch-ring__key {
-    position: fixed; z-index: 6; border-radius: 50%;
-    border: 1px solid rgba(255,255,255,.45); background: rgba(8,9,10,.5); color: var(--paper);
+    position: fixed; z-index: 6; border-radius: 0;
+    border: 1px solid var(--line); border-top: 2px solid var(--paper);
+    background: rgba(17,17,19,.9); color: var(--paper);
+    clip-path: polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);
     display: grid; place-items: center;
     font: 800 11px var(--condensed); letter-spacing: .08em;
   }
   .touch-ring__hit {
     right: calc(25px + env(safe-area-inset-right)); bottom: calc(89px + env(safe-area-inset-bottom));
     width: 58px; height: 58px;
-    border-color: rgba(224,71,80,.85); background: rgba(224,71,80,.34);
+    border-color: var(--red); border-top-color: var(--paper); background: var(--red);
     font-size: 13px;
   }
   .touch-ring__key { width: 44px; height: 44px; }
   .touch-ring__key--a { right: calc(9px + env(safe-area-inset-right)); bottom: calc(189px + env(safe-area-inset-bottom)); }
   .touch-ring__key--b { right: calc(57px + env(safe-area-inset-right)); bottom: calc(189px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--c { right: calc(99px + env(safe-area-inset-right)); bottom: calc(165px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--d { right: calc(124px + env(safe-area-inset-right)); bottom: calc(124px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--e { right: calc(126px + env(safe-area-inset-right)); bottom: calc(76px + env(safe-area-inset-bottom)); }
-  .touch-ring__hit.is-active, .touch-ring__key.is-active { background: var(--red); border-color: var(--red); }
+  .touch-ring__key--c { right: calc(105px + env(safe-area-inset-right)); bottom: calc(165px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--d { right: calc(136px + env(safe-area-inset-right)); bottom: calc(118px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--e { right: calc(136px + env(safe-area-inset-right)); bottom: calc(70px + env(safe-area-inset-bottom)); }
+  .touch-ring__hit.is-active, .touch-ring__key.is-active { background: var(--paper); color: var(--ink); border-color: var(--red); }
 
   /* A phone screen is mostly world. Everything that reports on the festival —
      the clock, where you are, what you are carrying, the chat log, the strip of
@@ -1661,7 +1690,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      without this the phone's inset won and a maximised screening was never
      actually full — it stayed a panel with its controls off the edge. */
   .venue-screen--maximized { inset: 0; left: 0; right: 0; top: 0; width: 100vw; height: 100vh; }
-  .venue-screen--seated { inset: 70px 10px 74px; }
+  .venue-screen--seated:not(.venue-screen--maximized) { inset: 70px 10px 74px; }
   /* In mobile fullscreen the YouTube player owns the display. The floating X
      remains above it, so both the site button and the system exit gesture have
      a visible way back to the screening panel. */
@@ -1680,6 +1709,8 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .world-alert { top: calc(120px + env(safe-area-inset-top)); max-width: calc(100vw - 28px); text-align: center; }
   .staff-toolbar, .staff-programme__top, .staff-special, .staff-style, .staff-video, .staff-gate-background, .pamphlet-editor, .staff-form, .dj-about__edit { grid-template-columns: 1fr; }.staff-list article { align-items: flex-start; flex-direction: column; }.staff-login div { grid-template-columns: 1fr; }.pamphlet-editor__wide, .pamphlet-editor button { grid-column: 1; }
   .staff-npc-form { grid-template-columns: auto minmax(0, 1fr); }.staff-npc-form label, .staff-npc-form button { grid-column: 2; }
+  /* Except the introductions: a paragraph squeezed into the column beside the NPC tag is a few words a line. */
+  .staff-npc-form .staff-npc-intro { grid-column: 1 / -1; }
   .staff-npc-add { grid-template-columns: 1fr; }.staff-npc-add h4 { grid-column: 1; }
 }
 
@@ -1775,14 +1806,14 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .touch-stick { width: 92px; height: 92px; left: calc(14px + env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom)); }
   .touch-stick__knob { width: 40px; height: 40px; }
   .touch-ring__hit { width: 50px; height: 50px; right: calc(35px + env(safe-area-inset-right)); bottom: calc(52px + env(safe-area-inset-bottom)); }
-  .touch-ring__key { width: 38px; height: 38px; }
+  .touch-ring__key { width: 44px; height: 44px; }
   /* The same fan, opened out to the left along the bottom edge, and lifted so
      the whole cluster clears the pass in the corner beneath it. */
-  .touch-ring__key--a { right: calc(5px + env(safe-area-inset-right)); bottom: calc(138px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--b { right: calc(46px + env(safe-area-inset-right)); bottom: calc(146px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--c { right: calc(85px + env(safe-area-inset-right)); bottom: calc(134px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--d { right: calc(115px + env(safe-area-inset-right)); bottom: calc(106px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--e { right: calc(129px + env(safe-area-inset-right)); bottom: calc(67px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--a { right: calc(6px + env(safe-area-inset-right)); bottom: calc(144px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--b { right: calc(54px + env(safe-area-inset-right)); bottom: calc(144px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--c { right: calc(102px + env(safe-area-inset-right)); bottom: calc(122px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--d { right: calc(150px + env(safe-area-inset-right)); bottom: calc(100px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--e { right: calc(152px + env(safe-area-inset-right)); bottom: calc(50px + env(safe-area-inset-bottom)); }
   /* Between the two thumbs rather than above them — there is no room above. */
   .interaction-toast { bottom: calc(16px + env(safe-area-inset-bottom)); max-width: min(46vw, 320px); height: 38px; }
   .world-camera-hint { bottom: calc(14px + env(safe-area-inset-bottom)); }
@@ -2224,7 +2255,8 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   clip-path: polygon(0 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%);
 }
 .chat-stream__item header { border-bottom: 1px dashed rgba(243,237,222,.22); padding-bottom: 5px; }
-.chat-stream__channel { color: #151616; background: var(--chat-accent); padding: 2px 5px; letter-spacing: .04em; }
+/* Location is printed like a programme section, not a colour-coded badge. */
+.chat-stream__channel { color: #e8e2d5; background: transparent; border: 1px solid rgba(232,226,213,.48); padding: 1px 5px; letter-spacing: .08em; text-shadow: none; }
 .chat-stream__item strong { letter-spacing: .08em; }
 .chat-stream__item p { margin-top: 6px; }
 .pass-toggle:focus-visible, .objective-count:focus-visible, .interaction-toast:focus-visible {

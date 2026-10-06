@@ -1,5 +1,6 @@
 import type { AvatarGesture, AvatarPalette, CarriedItem, NpcId, NpcNames, NpcProfile, PlayerState } from '../world/FestivalWorld';
 import type { VenueKey } from '../data/catalogue';
+import type { TrackedLimbs } from '../world/TrackedLimbs';
 import type { CatalogueEntry } from '../data/catalogue';
 
 export type ConnectionStatus = 'connecting' | 'online' | 'reconnecting' | 'offline' | 'kicked';
@@ -18,6 +19,8 @@ export interface NetworkPresence {
   venue: VenueKey;
   gesture?: AvatarGesture;
   carriedItem?: CarriedItem;
+  /** Tracked arms, hands and body (a headset's, or the desktop webcam's). */
+  limbs?: TrackedLimbs;
 }
 
 export interface NetworkVisitor {
@@ -92,6 +95,8 @@ export type TrackTempos = Record<string, number>;
  * a share link needs lives in the client and nowhere else.
  */
 export type ImmersiveSources = Record<string, string>;
+/** Titles STAFF rewrote, by YouTube id; either language may be left to the catalogue. */
+export type VideoTitles = Record<string, { title?: string; titleZh?: string }>;
 
 /** The last track an attendee asked the club's DJ to play. */
 export interface ClubRequest {
@@ -155,6 +160,7 @@ export interface FestivalState {
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
   immersiveSources?: ImmersiveSources;
+  videoTitles?: VideoTitles;
 }
 
 export interface AdminState {
@@ -199,6 +205,7 @@ export interface AdminState {
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
   immersiveSources?: ImmersiveSources;
+  videoTitles?: VideoTitles;
   jukebox?: JukeboxState;
 }
 
@@ -328,6 +335,7 @@ export interface PublicConfig {
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
   immersiveSources?: ImmersiveSources;
+  videoTitles?: VideoTitles;
 }
 
 interface Session {
@@ -783,6 +791,14 @@ export class FestivalClient {
     });
   }
 
+  /** Rewrite a film's title in one or both languages; an empty string restores the catalogue's. */
+  async updateVideoTitle(key: string, youtubeId: string, titles: { title?: string; titleZh?: string }): Promise<void> {
+    await this.adminRequest('/api/admin/video-title', key, {
+      method: 'POST',
+      body: JSON.stringify({ youtubeId, ...titles }),
+    });
+  }
+
   async updateGateBackground(key: string, youtubeUrl: string): Promise<void> {
     await this.adminRequest('/api/admin/gate-background', key, {
       method: 'POST',
@@ -813,14 +829,22 @@ export class FestivalClient {
   }
 
   /**
-   * `introduction` is optional and may be empty: an empty one means "no
-   * biography yet", which is a state the world draws, so clearing it has to be
-   * possible. The service normalises and caps it.
+   * The name and the English title are required; the Chinese title and both
+   * introductions may be empty, which clears them — "no biography yet" is a
+   * state the world draws, so going back to it has to be possible. Every field
+   * is always sent, because the service leaves a Chinese field it is not sent
+   * untouched. It normalises and caps them all.
    */
-  async updateNpcProfile(key: string, npcId: NpcId, name: string, title: string, introduction = ''): Promise<void> {
+  async updateNpcProfile(key: string, npcId: NpcId, profile: {
+    name: string;
+    title: string;
+    titleZh: string;
+    introduction: string;
+    introductionZh: string;
+  }): Promise<void> {
     await this.adminRequest('/api/admin/npcs', key, {
       method: 'POST',
-      body: JSON.stringify({ npcId, name, title, introduction }),
+      body: JSON.stringify({ npcId, ...profile }),
     });
   }
 

@@ -14,7 +14,8 @@ def extract(name,file,rect,colour,mode):
  out=np.zeros((*alpha.shape,4),dtype=np.uint8);out[:,:,:3]=colour;out[:,:,3]=(alpha*255).astype('uint8')
  Image.fromarray(out).save(ROOT/'src/assets/outfits'/name)
 extract('schedule-front.png','WhatsApp Image 2026-09-16 at 1.38.17 AM.jpeg',(.190,.351,.365,.408),(239,237,229),'white')
-extract('schedule-back.png','WhatsApp Image 2026-09-16 at 1.38.17 AM.jpeg',(.630,.291,.825,.485),(172,133,104),'tan')
+# schedule-back.png is drawn by draw-outfit-prints.py: lifted from this photo its
+# table lines came out too faint to survive being cut out on the garment.
 extract('house-front.png','hf_20260729_080736_06546972-132e-4a9d-a0a0-4e67af4c4563.png',(.611,.365,.698,.400),(239,138,26),'tan')
 extract('bros-back.png','hf_20260729_083827_c0efb0bf-57f5-4c22-b3d6-59fb242f50ba.png',(.293,.382,.718,.446),(239,138,26),'tan')
 extract('vest-front.png','hf_20260729_135327_df3b58a8-24e7-476f-ab80-c14159666ce6.png',(.361,.367,.384,.401),(228,227,219),'white')
