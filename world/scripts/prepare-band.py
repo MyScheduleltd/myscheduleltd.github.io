@@ -1208,7 +1208,9 @@ def strung(arm, kind, length, frames):
             for c in list(arm.pose.bones[side + suffix].constraints):
                 arm.pose.bones[side + suffix].constraints.remove(c)
     body = bpy.data.objects[arm.name.replace('-rig', '-body')]
-    inst = load_prop(kind, length)
+    # The guitar keeps the full texture the shipped guitarist has always had;
+    # brought down to 512 like the other props, it went soft on the stage.
+    inst = load_prop(kind, length, texture=2048 if kind == 'guitar' else 512)
     remove_loose_strap(inst)
     hips = head(arm, 'Hips')
     R = rot('Z', float(os.environ.get('BASS_Z','-25')) if kind=='bass' else -25) @ rot('X', float(os.environ.get('BASS_FACE_TILT','-30')) if kind=='bass' else 0) @ rot('Y', 52 if kind == 'guitar' else float(os.environ.get('BASS_Y','48')))
@@ -1266,6 +1268,18 @@ def strung(arm, kind, length, frames):
         pluck = .06 * math.sin(math.pi * f / BEAT)
         return {n: angles for n, angles in [('Index', (.95+pluck, .45, .2)), ('Middle', (.95-pluck, .45, .2)),
                  ('Ring', (.55, .7, .4)), ('Pinky', (.55, .7, .4)), ('Thumb', (.25, .3, .3))]}
+
+    def shown_fingers(side, f, solved):
+        # What the fretting fingers look like, apart from what the arm was
+        # solved with. Drawn as solved, the guitarist's fingers lay 2-3 mm under
+        # the tops of his strings, so the strings drew over them and the neck
+        # seemed to run through his hand (the owner, 2026-10-06). Arching them
+        # in the solve instead bent his wrist 20 degrees, and straight wrists
+        # come first (2026-10-01), so the arm keeps its solve and only the
+        # fingers close round the neck, as the owner asked hands to on necks.
+        if side == 'Left' and kind == 'guitar':
+            return {**solved, **{n: (.7, 1.05, .6) for n in ('Index', 'Middle', 'Ring', 'Pinky')}}
+        return solved
 
     def contact_at(side, f):
         if side == 'Left':
@@ -1333,7 +1347,7 @@ def strung(arm, kind, length, frames):
             target = pose.hand[side][0]
             target.location = W; target.rotation_quaternion = H.to_quaternion()
             key(target, f+1, 'location', 'rotation_quaternion')
-            for finger, angles in fingers.items():
+            for finger, angles in shown_fingers(side, f, fingers).items():
                 curl(arm, f+1, side, finger, angles)
     report.setdefault(arm.name.replace('-rig',''), {})['playingContactSolve'] = {s: {n: max(abs(v[n]) for v in rows) for n in ('wristBend','upperArmRoll','forearmPronation','largestPenalty')} for s,rows in contact_metrics.items()}
     shoulder_strap(arm, inst, M, L)
