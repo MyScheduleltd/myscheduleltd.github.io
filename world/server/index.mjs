@@ -1538,6 +1538,10 @@ const issueInvoice = async (donation) => {
   const outcome = readInvoiceReply(reply, ECPAY);
   if (!outcome.ok) {
     donation.invoiceError = `${outcome.stage}: ${outcome.message}`;
+    // To the service log as well: nothing else surfaces a record's fields, so
+    // an invoice that failed to issue was invisible to everyone (2026-10-07).
+    // The trade number identifies the sale; the address is never logged.
+    console.error(`Invoice not issued for ${donation.tradeNo}: ${donation.invoiceError}`);
     return;
   }
   donation.invoiceNo = outcome.invoiceNo;
@@ -1824,6 +1828,7 @@ const server = createServer(async (request, response) => {
             // already been thanked.
             void issueInvoice(donation).catch((error) => {
               donation.invoiceError = String(error?.message ?? error);
+              console.error(`Invoice not issued for ${donation.tradeNo}: ${donation.invoiceError}`);
             });
           }
         }

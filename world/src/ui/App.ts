@@ -3061,10 +3061,6 @@ export class App {
       return stage ? `${label} · ${stage}` : label;
     }
     if (!pose || status !== 'tracking') return message ? `${label} · ${message}` : label;
-    if (state.runtimeCached === true) {
-      return `${label}${zh ? ' · 執行檔已由瀏覽器快取' : ' · runtime cached by the browser'} · `
-        + `${zh ? '轉' : 'yaw'} ${(pose.yaw * 180 / Math.PI).toFixed(1)}°`;
-    }
     const deg = (radians: number) => `${(radians * 180 / Math.PI).toFixed(1)}°`;
     const cm = (metres: number) => `${(metres * 100).toFixed(1)}cm`;
     const body = state.body as { status: string; seen: boolean; left: boolean; right: boolean } | undefined;
@@ -3078,7 +3074,11 @@ export class App {
     const handsLabel = body?.status === 'tracking' ? (zh
       ? ` · 左手${body.left ? '已辨識' : '未入鏡'} / 右手${body.right ? '已辨識' : '未入鏡'}`
       : ` · LEFT ${body.left ? 'SEEN' : 'NOT SEEN'} / RIGHT ${body.right ? 'SEEN' : 'NOT SEEN'}`) : '';
-    return `${label}${bodyLabel}${handsLabel} · ${zh ? '轉' : 'yaw'} ${deg(pose.yaw)} · ${zh ? '仰' : 'pitch'} ${deg(pose.pitch)}`
+    // The cached-runtime note used to return early, before the body and the
+    // hands were worded, so a returning visitor never saw whether either hand
+    // was seen (the owner, 2026-10-07). It is one more clause now.
+    const cachedLabel = state.runtimeCached === true ? (zh ? ' · 執行檔已由瀏覽器快取' : ' · runtime cached by the browser') : '';
+    return `${label}${cachedLabel}${bodyLabel}${handsLabel} · ${zh ? '轉' : 'yaw'} ${deg(pose.yaw)} · ${zh ? '仰' : 'pitch'} ${deg(pose.pitch)}`
       + ` · x ${cm(pose.x)} · y ${cm(pose.y)} · z ${cm(pose.z)}`;
   }
 

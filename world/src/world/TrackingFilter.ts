@@ -30,6 +30,20 @@ export class LandmarkFilter {
   }
 }
 
+/**
+ * A hand's landmarks, ready for a LandmarkFilter.
+ *
+ * MediaPipe's HandLandmarker does not estimate visibility for hand points: it
+ * reports 0 for every one. The filter holds any point under .5 where it last
+ * was, so every finger froze on the first frame the hand was found and never
+ * moved again, while the arms (from the pose model, which does report
+ * visibility) kept following (the owner, 2026-10-07). A hand that was detected
+ * at all is in view; its points carry no visibility here.
+ */
+export function handLandmarks(points: Landmark[]): Landmark[] {
+  return points.map(({ x, y, z }) => ({ x, y, z }));
+}
+
 /** Match both detections together so crossed hands cannot overwrite one side. */
 export function assignWebcamHands(wrists: Array<Landmark | undefined>, pose: Landmark[] | undefined,
   labels: string[]): Array<'left' | 'right'> {

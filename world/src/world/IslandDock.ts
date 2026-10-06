@@ -110,6 +110,14 @@ export class IslandDock {
   private readonly batches = new Map<THREE.Material, THREE.BufferGeometry[]>();
   private readonly boatHome = new THREE.Vector3();
   private readonly quayTop = terrainHeightAt(PIER_X, QUAY_Z - 1.5);
+  /**
+   * The coping along the top of every quay wall, as [minX, maxX, minZ, maxZ,
+   * top]. It is a slab laid 19 cm proud of the ground the wall was sized to,
+   * and the terrain under it dips into the harbour's cut, so a body on it was
+   * stood on the terrain — up to 80 cm into the stone at the side quays (the
+   * owner's screenshot, 2026-10-07). Walked as a floor now, like the steps.
+   */
+  private readonly copings: Array<[number, number, number, number, number]> = [];
 
   constructor() {
     this.group.name = 'island-dock';
@@ -131,7 +139,9 @@ export class IslandDock {
       const back = along === 'x' ? 2.2 : 1.2, shift = along === 'x' ? -.5 : 0;
       const size: [number, number, number] = along === 'x' ? [length, top - wallFoot, back] : [back, top - wallFoot, length];
       box(put, size, [x, (top + wallFoot) / 2, z + shift], stone);
-      box(put, along === 'x' ? [length + .1, .22, back + .3] : [back + .3, .22, length + .1], [x, top + .08, z + shift], coping);
+      const copingSize = along === 'x' ? [length + .1, back + .3] : [back + .3, length + .1];
+      box(put, [copingSize[0], .22, copingSize[1]], [x, top + .08, z + shift], coping);
+      this.copings.push([x - copingSize[0] / 2, x + copingSize[0] / 2, z + shift - copingSize[1] / 2, z + shift + copingSize[1] / 2, top + .19]);
       // A dark tide band at the waterline.
       box(put, along === 'x' ? [length + .04, .5, 1.26] : [1.26, .5, length + .04], [x, SEA_Y + .05, z], dark);
     };
@@ -290,8 +300,8 @@ export class IslandDock {
 
   /**
    * The floor a body walks on here, or undefined off the landing: the steps
-   * as one even ramp from the quay to the deck (as the temple's are), then
-   * the boards of the pier and its head.
+   * as one even ramp from the quay to the deck (as the temple's are), the
+   * boards of the pier and its head, and the coping on top of the quay walls.
    */
   heightAt(x: number, z: number): number | undefined {
     const stepsFrom = QUAY_Z - .6, stepsTo = ROOT_Z - .6;
@@ -301,7 +311,11 @@ export class IslandDock {
     }
     if (Math.abs(x - PIER_X) < WIDTH / 2 && z >= stepsTo && z <= HEAD_Z - 3) return DECK_Y + .08;
     if (Math.abs(x - PIER_X) < HEAD_W / 2 && z >= HEAD_Z - 3 && z <= HEAD_Z + HEAD_D - 3) return DECK_Y + .08;
-    return undefined;
+    let coping: number | undefined;
+    for (const [minX, maxX, minZ, maxZ, top] of this.copings) {
+      if (x >= minX && x <= maxX && z >= minZ && z <= maxZ) coping = Math.max(coping ?? -Infinity, top);
+    }
+    return coping;
   }
 
   /**

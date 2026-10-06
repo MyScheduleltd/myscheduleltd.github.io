@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { LandmarkFilter, assignWebcamHands } from '../src/world/TrackingFilter.ts';
+import { LandmarkFilter, assignWebcamHands, handLandmarks } from '../src/world/TrackingFilter.ts';
 import { FINGER_NAMES, handPoseFromJoints, handJointsFromLandmarks, limitHandPose, smoothHandPose } from '../src/world/HandPose.ts';
 
 const point = (x = 0) => ({ x, y: 0, z: 0, visibility: 1 });
@@ -88,3 +88,19 @@ test('one occluded or backward finger cannot reverse another finger on a known w
   assert.deepEqual(reading.Index.curl.slice(1),[-.08,-.08]);
  }
 });
+
+test('a hand keeps following after its first frame although MediaPipe reports zero visibility', () => {
+ // HandLandmarker puts visibility 0 on every hand point. Fed raw, the filter
+ // held each one where the first frame found it, so the fingers froze while
+ // the arms, from the pose model, kept moving (the owner, 2026-10-07).
+ const hand = (x) => Array.from({ length: 21 }, (_, i) => ({ x: x + i * .001, y: 0, z: 0, visibility: 0 }));
+ const raw = new LandmarkFilter();
+ raw.read(hand(0), 1000);
+ let frozen; for (let k = 1; k < 10; k++) frozen = raw.read(hand(.05), 1000 + k * 33)[0];
+ assert.equal(frozen.x, 0, 'the old path stays frozen, which is the fault this guards');
+ const fixed = new LandmarkFilter();
+ fixed.read(handLandmarks(hand(0)), 1000);
+ let moved; for (let k = 1; k < 10; k++) moved = fixed.read(handLandmarks(hand(.05)), 1000 + k * 33)[0];
+ assert.ok(moved.x > .04, `the finger follows (${moved.x})`);
+});
+

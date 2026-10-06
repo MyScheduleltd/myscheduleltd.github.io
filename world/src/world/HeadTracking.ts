@@ -1,4 +1,4 @@
-import { LandmarkFilter, assignWebcamHands } from './TrackingFilter';
+import { LandmarkFilter, assignWebcamHands, handLandmarks } from './TrackingFilter';
 import * as THREE from 'three';
 
 /**
@@ -724,7 +724,7 @@ export class HeadTracking {
       if (world.length < 21) return;
       const side = sides[i];
       if (!side || used.has(side)) return;
-      const filtered = this.handFilters[side].read(world, now);
+      const filtered = this.handFilters[side].read(handLandmarks(world), now);
       if (!filtered) return;
       used.add(side);
       this.bodyStatus = 'tracking';
