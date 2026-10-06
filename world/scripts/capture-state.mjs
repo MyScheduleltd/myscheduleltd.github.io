@@ -79,6 +79,10 @@ const seed = {
     .map((profile) => [profile.id, profile[field]]))])),
   pamphlet: live.pamphlet,
   trackTempos: live.trackTempos,
+  // The works' lengths, which every venue's clock runs on. Lost on a deploy,
+  // they were relearned from whichever visitor reported first; visitors can no
+  // longer shorten a known one, so the seed carries them.
+  trackDurations: live.trackDurations ?? {},
   // The headset copies of the films (VR 連結). Left out, every deploy dropped
   // the links STAFF had pasted, and the films showed only a poster in a Quest.
   immersiveSources: live.immersiveSources ?? {},

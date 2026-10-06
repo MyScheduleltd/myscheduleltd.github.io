@@ -25,7 +25,7 @@ const freePort = () => new Promise((resolve, reject) => {
 
 // Every instance gets its own settings file so a previous run can never leak
 // persisted STAFF state into the next one.
-const startServer = async (port, stateFile, seedFile = 'off') => {
+const startServer = async (port, stateFile, seedFile = 'off', extraEnv = {}) => {
   const child = spawn(process.execPath, ['server/index.mjs'], {
     cwd: new URL('..', import.meta.url),
     env: {
@@ -47,6 +47,7 @@ const startServer = async (port, stateFile, seedFile = 'off') => {
       // money. Nothing here contacts ECPay: the tests exercise this service's
       // own half — what it signs, what it accepts, and what it refuses.
       ECPAY_PUBLIC_URL: `http://127.0.0.1:${port}`,
+      ...extraEnv,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -190,6 +191,14 @@ test('public programmes expose full queues and advance when a work ends', async 
   assert.equal(config.schedule.shore.order.length, 4);
 
   const currentYoutubeId = config.schedule.palace.youtubeId;
+  // Early, it is somebody skipping the programme for everyone: refused.
+  const early = await fetch(`${baseUrl}/api/programme/palace/advance`, {
+    method: 'POST',
+    headers: auth(session),
+    body: JSON.stringify({ youtubeId: currentYoutubeId }),
+  });
+  assert.equal((await early.json()).advanced, false, 'no visitor can skip a work');
+  await nearlyOver('palace', currentYoutubeId);
   const advanced = await fetch(`${baseUrl}/api/programme/palace/advance`, {
     method: 'POST',
     headers: auth(session),
@@ -300,6 +309,17 @@ const adminPost = (path, body) => fetch(`${baseUrl}${path}`, {
   },
   body: JSON.stringify(body),
 });
+
+/**
+ * Puts a venue's current work one second from the end of its length, through
+ * STAFF, so a player's "it has ended" is believed. Visitors cannot shorten a
+ * known length, and a skip earlier than the end is refused.
+ */
+const nearlyOver = async (venue, youtubeId) => {
+  const set = await adminPost('/api/admin/duration', { youtubeId, seconds: 16 });
+  assert.equal(set.status, 200);
+  await new Promise((resolve) => setTimeout(resolve, 1_100));
+};
 
 test('staff write a resident introduction, and can take it back off again', async () => {
   // Held on the wave button in the world. Nothing is seeded, because the roster
@@ -846,7 +866,7 @@ test('a venue publishes one programme clock for every attendee', async () => {
   assert.equal(before.pausedAt, null);
   assert.ok(before.startedAt > 0, 'the current work records when it began');
 
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await nearlyOver('drive-in', before.youtubeId);
   const advanced = await fetch(`${baseUrl}/api/programme/drive-in/advance`, {
     method: 'POST',
     headers: auth(session),
@@ -988,6 +1008,7 @@ test('a request joins the queue rather than cutting the room off', async () => {
   assert.equal(config.venueQueues.club[0].requestedBy, 'DJ REQUEST');
 
   // When the current track ends, the queued one is what plays next.
+  await nearlyOver('club', before.youtubeId);
   const advanced = await fetch(`${baseUrl}/api/programme/club/advance`, {
     method: 'POST',
     headers: auth(session),
@@ -1012,11 +1033,7 @@ test('the booth turns down nonsense and back-to-back requests', async () => {
 
 // Told how long the record actually runs, the booth knows where the programme
   // has got to and may refuse. A refusal costs nothing, so this goes first.
-  await fetch(`${baseUrl}/api/programme/club/duration`, {
-    method: 'POST',
-    headers: auth(session),
-    body: JSON.stringify({ youtubeId: club.youtubeId, seconds: 600 }),
-  });
+  await adminPost('/api/admin/duration', { youtubeId: club.youtubeId, seconds: 600 });
   const alreadyOn = await fetch(`${baseUrl}/api/club/request`, {
     method: 'POST',
     headers: auth(session),
@@ -2077,3 +2094,65 @@ test('tracked limbs are relayed to everyone, checked field by field', async () =
   })).json();
   assert.equal(after.visitors.find((candidate) => candidate.id === session.id).presence.limbs, undefined);
 });
+
+test('wrong staff keys lock that address out, and nobody else', async () => {
+  const from = (address, key) => fetch(`${baseUrl}/api/admin/state`, {
+    headers: { 'x-festival-admin-key': key, 'x-forwarded-for': address, origin: 'http://127.0.0.1:5173' },
+  });
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    assert.equal((await from('203.0.113.9', `guess-${attempt}`)).status, 401);
+  }
+  // Locked: even the right key is refused, or the lock would announce a hit.
+  assert.equal((await from('203.0.113.9', 'test-admin-key')).status, 429);
+  // Another address is untouched.
+  assert.equal((await from('198.51.100.4', 'test-admin-key')).status, 200);
+  // Behind Cloudflare the address is CF-Connecting-IP, which a client cannot
+  // choose; a forged X-Forwarded-For beside it changes nothing.
+  const viaEdge = await fetch(`${baseUrl}/api/admin/state`, {
+    headers: { 'x-festival-admin-key': 'test-admin-key', 'cf-connecting-ip': '203.0.113.9', 'x-forwarded-for': '192.0.2.77', origin: 'http://127.0.0.1:5173' },
+  });
+  assert.equal(viaEdge.status, 429);
+});
+
+test('recovering a session cannot add attendees past the room limit', async () => {
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const instance = await startServer(port, joinPath(temporaryDirectory, 'recover-cap.json'), 'off', { FESTIVAL_MAX_VISITORS: '1' });
+  try {
+    const headers = { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' };
+    const first = await fetch(`${url}/api/session`, { method: 'POST', headers, body: JSON.stringify({ name: 'INSIDE' }) });
+    assert.equal(first.status, 201);
+    const forged = await fetch(`${url}/api/session/recover`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ name: 'SNEAK', session: { id: 'not-a-session', token: 'not-a-token' } }),
+    });
+    assert.equal(forged.status, 503, 'a made-up session is a new attendee, and the room is full');
+  } finally {
+    await stopServer(instance);
+  }
+});
+
+test('ids shaped like object internals are not accepted as videos', async () => {
+  const refused = await adminPost('/api/admin/tempo', { youtubeId: '__proto__', bpm: 120 });
+  assert.equal(refused.status, 400);
+});
+
+test('a visitor cannot shorten a work, alone or by repeating themselves', async () => {
+  const one = await join('LENGTH ONE');
+  const two = await join('LENGTH TWO');
+  const report = (session, seconds) => fetch(`${baseUrl}/api/programme/shore/duration`, {
+    method: 'POST', headers: auth(session), body: JSON.stringify({ youtubeId: 'zzLengthTest1', seconds }),
+  });
+  const known = async () => (await (await fetch(`${baseUrl}/api/config`)).json()).trackDurations.zzLengthTest1;
+  await report(one, 5);
+  assert.equal(await known(), undefined, 'five seconds is not a length anything is shortened to');
+  await report(one, 60);
+  await report(one, 60);
+  assert.equal(await known(), undefined, 'one visitor repeating themselves is still one visitor');
+  await report(two, 61);
+  assert.equal(await known(), 61, 'two players agreeing is a length');
+  await report(one, 30);
+  await report(two, 30);
+  assert.equal(await known(), 61, 'and once known, visitors cannot change it');
+});
+

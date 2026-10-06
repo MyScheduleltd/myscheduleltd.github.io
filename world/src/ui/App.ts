@@ -673,12 +673,17 @@ export class App {
     const staff = this.gateCopy;
     if (!staff) return base;
     const zh = this.language === 'zh-TW';
+    // Escaped here because the gate drops these straight into its markup.
+    // The build's own wording is trusted; STAFF's arrives from the service,
+    // and whoever holds the staff key must not be able to put a script on
+    // every visitor's sign-in page (security review, 2026-10-07).
+    const own = (value: string | undefined) => value ? this.escapeHtml(value) : '';
     return {
       ...base,
-      gateKicker: (zh ? staff.kickerZh : staff.kicker) || base.gateKicker,
-      gateTitle: (zh ? staff.titleZh : staff.title) || base.gateTitle,
-      gateIntro: (zh ? staff.introZh : staff.intro) || base.gateIntro,
-      festivalId: (zh ? staff.nameLabelZh : staff.nameLabel) || base.festivalId,
+      gateKicker: own(zh ? staff.kickerZh : staff.kicker) || base.gateKicker,
+      gateTitle: own(zh ? staff.titleZh : staff.title) || base.gateTitle,
+      gateIntro: own(zh ? staff.introZh : staff.intro) || base.gateIntro,
+      festivalId: own(zh ? staff.nameLabelZh : staff.nameLabel) || base.festivalId,
     };
   }
 

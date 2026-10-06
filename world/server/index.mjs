@@ -768,7 +768,10 @@ const clampNumber = (value, min, max, fallback) => {
   return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
 };
 
-const validYoutubeId = (value) => /^[A-Za-z0-9_-]{6,20}$/.test(String(value ?? ''));
+// Also refuses the names a plain object treats specially. `__proto__` fits
+// the pattern, and these ids become keys of plain objects all over this file.
+const RESERVED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const validYoutubeId = (value) => /^[A-Za-z0-9_-]{6,20}$/.test(String(value ?? '')) && !RESERVED_KEYS.has(String(value));
 
 const restoreCustomVideos = (saved) => {
   for (const venue of Object.keys(customVideosByVenue)) {
@@ -1100,7 +1103,50 @@ const adminKeyMatches = (candidate) => {
   return tokenMatches(hashAdminKey(candidate, adminKeyDigest.salt), adminKeyDigest.hash);
 };
 
-const adminAllowed = (request) => adminKeyMatches(String(request.headers['x-festival-admin-key'] ?? ''));
+/**
+ * Wrong STAFF keys, counted per address.
+ *
+ * Nothing limited guessing before: Render's generated key is far too long to
+ * guess, but STAFF can rotate to one of twelve characters, and every admin
+ * route answered as fast as it was asked. After ADMIN_FAILURE_LIMIT wrong
+ * keys in a window, that address is refused until the window passes — even
+ * with the right key, or the lock would only tell a guesser when they won.
+ */
+const ADMIN_FAILURE_LIMIT = 20;
+const ADMIN_FAILURE_WINDOW_MS = 15 * 60_000;
+const adminFailures = new Map();
+// Cloudflare stands in front of Render here (responses carry `cf-ray`), and it
+// overwrites CF-Connecting-IP on every request, so a visitor cannot choose it.
+// X-Forwarded-For is only a fallback: Render appends to whatever the client
+// sent rather than replacing it, so its first entry can be forged.
+const clientAddress = (request) => String(request.headers['cf-connecting-ip'] ?? '').trim()
+  || String(request.headers['x-forwarded-for'] ?? '').split(',')[0].trim()
+  || request.socket?.remoteAddress || 'unknown';
+const adminLocked = (request) => {
+  const entry = adminFailures.get(clientAddress(request));
+  if (!entry) return false;
+  if (Date.now() - entry.since > ADMIN_FAILURE_WINDOW_MS) {
+    adminFailures.delete(clientAddress(request));
+    return false;
+  }
+  return entry.count >= ADMIN_FAILURE_LIMIT;
+};
+const adminAllowed = (request) => {
+  const key = String(request.headers['x-festival-admin-key'] ?? '');
+  if (!key) return false;
+  if (adminLocked(request)) return false;
+  if (adminKeyMatches(key)) return true;
+  const address = clientAddress(request);
+  const entry = adminFailures.get(address) ?? { count: 0, since: Date.now() };
+  entry.count += 1;
+  adminFailures.set(address, entry);
+  // The map cannot be grown without bound by a spread of addresses.
+  if (adminFailures.size > 5_000) {
+    const cutoff = Date.now() - ADMIN_FAILURE_WINDOW_MS;
+    for (const [where, value] of adminFailures) if (value.since < cutoff) adminFailures.delete(where);
+  }
+  return false;
+};
 
 const createVisitor = (name, palette) => ({
   id: randomUUID(),
@@ -1257,6 +1303,38 @@ const broadcast = () => {
  * limit, which sent it back to the beginning. That is the restart.
  */
 const durationOf = (youtubeId) => trackDurations[youtubeId] ?? NOMINAL_TRACK_SECONDS;
+
+/**
+ * Learning a work's length from what visitors' players report, without
+ * letting a visitor cut anyone's programme short (the owner, 2026-10-07: "no
+ * visitors can skip any programme").
+ *
+ * The length is the clock every venue runs on, and it used to be whatever the
+ * last report said, so one forged report of five seconds raced a venue — or
+ * the jukebox — through its whole running order. Now a known length is never
+ * changed by a visitor; an unknown one may be lengthened by any single report
+ * (which can only make a work play on, never skip), but shortened below the
+ * nominal length only when two different visitors' players agree on it.
+ */
+const pendingLengths = new Map();
+const MIN_REPORTED_SECONDS = 20;
+const MAX_REPORTED_SECONDS = 6 * 3600;
+const learnLength = (known, youtubeId, seconds, visitorId, nominal) => {
+  if (known !== undefined) return undefined;
+  if (!Number.isFinite(seconds) || seconds < MIN_REPORTED_SECONDS || seconds > MAX_REPORTED_SECONDS) return undefined;
+  const rounded = Math.round(seconds);
+  if (rounded >= nominal) return rounded;
+  const pending = pendingLengths.get(youtubeId) ?? [];
+  const agreeing = pending.find((entry) => entry.visitorId !== visitorId && Math.abs(entry.seconds - rounded) <= 2);
+  if (agreeing) {
+    pendingLengths.delete(youtubeId);
+    return Math.round((agreeing.seconds + rounded) / 2);
+  }
+  if (!pending.some((entry) => entry.visitorId === visitorId)) pending.push({ visitorId, seconds: rounded });
+  pendingLengths.set(youtubeId, pending.slice(-8));
+  if (pendingLengths.size > 2_000) pendingLengths.delete(pendingLengths.keys().next().value);
+  return undefined;
+};
 
 const settleSchedule = (venue) => {
   const schedule = programmeSchedule[venue];
@@ -1600,7 +1678,7 @@ const server = createServer(async (request, response) => {
       // The receipt mailbox is deliberately absent. It is a real address,
       // STAFF's to set, and it reaches `/api/admin/state` behind the key and
       // nothing else — the client only ever declares it on `AdminState`.
-      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, immersiveSources, videoTitles, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
+      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, trackDurations, immersiveSources, videoTitles, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
@@ -1660,6 +1738,13 @@ const server = createServer(async (request, response) => {
         });
       }
 
+      // A new attendee in all but name, so the room's limit applies. Recovery
+      // used to create one past MAX_VISITORS and past the queue, which let a
+      // script fill the festival without limit. Refused, the client falls back
+      // to an ordinary join, which queues.
+      if (visitors.size >= MAX_VISITORS && !adminAllowed(request)) {
+        return apiError(response, 503, 'The festival is full. Join the queue.');
+      }
       if (!claimName(name)) return apiError(response, 409, 'That festival name is already connected.');
       const recovered = createVisitor(name, payload.palette);
       visitors.set(recovered.id, recovered);
@@ -1729,6 +1814,10 @@ const server = createServer(async (request, response) => {
       // The invoice is issued either way. This only decides where it lands.
       const email = wantsReceipt ? given : receiptMailbox();
       forgetOldDonations();
+      // Each one is written to disk. Nobody needs more than a few checkouts
+      // open at once, and a script asking for thousands would fill the store.
+      const open = [...donations.values()].filter((entry) => entry.visitorId === visitor.id && entry.state === 'pending').length;
+      if (open >= 5) return apiError(response, 429, 'Finish or close an open offering first.');
       const id = randomUUID();
       const tradeNo = tradeNumber();
       donations.set(id, {
@@ -1929,6 +2018,13 @@ a{color:#e8b64a}</style>
       });
       response.write(': connected\n\n');
       const responseSet = streams.get(visitor.id) ?? new Set();
+      // A few tabs are normal; hundreds from one session are an attack on the
+      // instance's sockets. The oldest gives way, as a reconnect would.
+      if (responseSet.size >= 4) {
+        const oldest = responseSet.values().next().value;
+        responseSet.delete(oldest);
+        oldest?.end();
+      }
       responseSet.add(response);
       streams.set(visitor.id, responseSet);
       visitor.lastSeen = Date.now();
@@ -2100,8 +2196,11 @@ a{color:#e8b64a}</style>
       const seconds = clampNumber(payload.seconds, 5, 3600, 0);
       // Whoever is actually playing it knows how long it runs; without this the
       // running order moves on at a guess and everyone drifts apart.
-      if (validYoutubeId(youtubeId) && seconds) {
-        jukeboxDurations.set(youtubeId, seconds);
+      const learned = validYoutubeId(youtubeId) && seconds
+        ? learnLength(jukeboxDurations.get(youtubeId), youtubeId, seconds, visitor.id, JUKEBOX_DEFAULT_SECONDS)
+        : undefined;
+      if (learned) {
+        jukeboxDurations.set(youtubeId, learned);
         // The record on the deck was timed against a guess until this arrived.
         // Re-arm against the real length, or a three-minute song sits in
         // silence until the guessed three and a half minutes are up.
@@ -2291,9 +2390,9 @@ a{color:#e8b64a}</style>
       if (!/^[A-Za-z0-9_-]{6,20}$/.test(youtubeId) || !seconds) {
         return apiError(response, 400, 'Invalid track duration.');
       }
-      const known = trackDurations[youtubeId];
-      if (!known || Math.abs(known - seconds) > 1) {
-        trackDurations[youtubeId] = Math.round(seconds);
+      const learned = learnLength(trackDurations[youtubeId], youtubeId, seconds, visitor.id, NOMINAL_TRACK_SECONDS);
+      if (learned) {
+        trackDurations[youtubeId] = learned;
         persist();
       }
       return json(response, 200, { ok: true });
@@ -2308,6 +2407,12 @@ a{color:#e8b64a}</style>
       const expectedYoutubeId = String(payload.youtubeId ?? '');
       const currentYoutubeId = schedule.activeSpecialYoutubeId ?? schedule.order[schedule.currentIndex];
       if (expectedYoutubeId !== currentYoutubeId || schedule.mode === 'paused') {
+        return json(response, 200, { ok: true, advanced: false, schedule: programmeSchedule });
+      }
+      // A player saying its work has ended is believed only when the work has
+      // in fact nearly run its length. Earlier, it is somebody skipping the
+      // programme for every visitor; the clock moves it on regardless.
+      if (Date.now() - schedule.startedAt < (durationOf(currentYoutubeId) - 15) * 1000) {
         return json(response, 200, { ok: true, advanced: false, schedule: programmeSchedule });
       }
 
@@ -2335,6 +2440,7 @@ a{color:#e8b64a}</style>
     }
 
     if (url.pathname.startsWith('/api/admin/')) {
+      if (adminLocked(request)) return apiError(response, 429, 'Too many wrong staff keys. Try again later.');
       if (!adminAllowed(request)) return apiError(response, 401, 'Invalid staff key.');
       if (request.method === 'GET' && url.pathname === '/api/admin/state') {
         return json(response, 200, {
@@ -2487,6 +2593,23 @@ a{color:#e8b64a}</style>
         adminKeyDigest = { salt, hash: hashAdminKey(nextKey, salt) };
         persist();
         return json(response, 200, { ok: true });
+      }
+      // A work's length, set by STAFF. Visitors can no longer change a known
+      // one, so a wrong length — or a work that has been re-cut — is
+      // corrected here.
+      if (request.method === 'POST' && url.pathname === '/api/admin/duration') {
+        const youtubeId = String(payload.youtubeId ?? '').trim();
+        if (!validYoutubeId(youtubeId)) return apiError(response, 400, 'Unknown track.');
+        const seconds = Number(payload.seconds);
+        if (!Number.isFinite(seconds) || seconds < 1 || seconds > MAX_REPORTED_SECONDS) {
+          return apiError(response, 400, 'A length is between 1 second and 6 hours.');
+        }
+        trackDurations[youtubeId] = Math.round(seconds);
+        jukeboxDurations.set(youtubeId, Math.round(seconds));
+        pendingLengths.delete(youtubeId);
+        scheduleBroadcast();
+        persist();
+        return json(response, 200, { ok: true, trackDurations, schedule: programmeSchedule });
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/tempo') {
         const youtubeId = String(payload.youtubeId ?? '').trim();
