@@ -163,6 +163,29 @@ export interface FestivalState {
   videoTitles?: VideoTitles;
 }
 
+/**
+ * An offering as STAFF see it. Never the donor's address or phone barcode:
+ * only whether its invoice was issued, and ECPay's reason when it was not.
+ */
+export interface StaffOffering {
+  id: string;
+  tradeNo: string;
+  amount: number;
+  state: 'pending' | 'awaiting' | 'paid' | 'failed';
+  createdAt: number;
+  paidAt: number | null;
+  paymentType: string;
+  visitorName: string;
+  wantsReceipt: boolean;
+  invoiceNo: string;
+  invoiceError: string;
+  invoiceTriedAt: number | null;
+  invoiceNoticeSent: boolean | null;
+  invoiceNoticeError: string;
+  invoicing: boolean;
+  canRetry: boolean;
+}
+
 export interface AdminState {
   visitors: NetworkVisitor[];
   seats: Array<{ seatId: string; visitorId: string }>;
@@ -200,6 +223,8 @@ export interface AdminState {
      */
     source?: 'seed' | 'staff' | 'environment' | 'none';
   };
+  /** Recent offerings, newest first: paid or not, and their 統一發票. */
+  offerings?: StaffOffering[];
   templeSign: TempleSign;
   entranceSign?: EntranceSign;
   gateCopy: GateCopy;
@@ -909,6 +934,14 @@ export class FestivalClient {
       method: 'POST',
       body: JSON.stringify({ email }),
     });
+  }
+
+  /** Ask ECPay again for a paid offering's 統一發票. A refusal comes back in `offering.invoiceError`. */
+  async retryOfferingInvoice(key: string, id: string): Promise<{ ok: boolean; offering: StaffOffering; offerings: StaffOffering[] }> {
+    return await this.adminRequest('/api/admin/offerings/retry-invoice', key, {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    }) as { ok: boolean; offering: StaffOffering; offerings: StaffOffering[] };
   }
 
   async updateShopLink(key: string, payload: {

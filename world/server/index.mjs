@@ -1490,6 +1490,12 @@ const donationForDisk = (donation) => ({
   ecpayTradeNo: donation.ecpayTradeNo ?? '',
   paymentType: donation.paymentType ?? '',
   invoiceNo: donation.invoiceNo ?? '',
+  // What happened when the invoice was asked for, so STAFF can see a refusal
+  // and try again (2026-10-07). ECPay's own words; never the address.
+  invoiceError: String(donation.invoiceError ?? '').slice(0, 300),
+  invoiceTriedAt: donation.invoiceTriedAt ?? null,
+  invoiceNoticeSent: donation.invoiceNoticeSent ?? null,
+  invoiceNoticeError: String(donation.invoiceNoticeError ?? '').slice(0, 300),
 });
 
 const restoreDonations = (saved) => {
@@ -1601,6 +1607,23 @@ const receiptBlockedBy = () => {
 };
 
 const issueInvoice = async (donation) => {
+  // One request at a time per offering: a STAFF retry pressed while the
+  // first attempt is still out must not ask ECPay for a second invoice.
+  if (donation.invoicing) return;
+  donation.invoicing = true;
+  donation.invoiceTriedAt = Date.now();
+  try {
+    await requestInvoice(donation);
+  } catch (error) {
+    donation.invoiceError = String(error?.message ?? error).slice(0, 300);
+    console.error(`Invoice not issued for ${donation.tradeNo}: ${donation.invoiceError}`);
+  } finally {
+    donation.invoicing = false;
+    persist();
+  }
+};
+
+const requestInvoice = async (donation) => {
   const { url, payload } = buildInvoice({
     config: ECPAY,
     relateNumber: donation.tradeNo,
@@ -1627,6 +1650,7 @@ const issueInvoice = async (donation) => {
     return;
   }
   donation.invoiceNo = outcome.invoiceNo;
+  donation.invoiceError = '';
   // Issued is not sent: ask ECPay to email it, to whoever it was issued to —
   // the donor, or the STAFF mailbox when they declined a receipt. Without this
   // nobody ever received an invoice, only ECPay's payment confirmation.
@@ -1670,6 +1694,41 @@ const issueInvoice = async (donation) => {
     invoice: outcome.invoiceNo,
   });
 };
+
+/**
+ * An offering as STAFF see it: paid or not, and whether its 統一發票 was
+ * issued, with ECPay's reason when it was not (the owner, 2026-10-07: invoices
+ * failed for days and only Render's log knew). Never the address or the
+ * phone barcode — only whether one is on file to issue to.
+ */
+const staffOffering = (donation) => ({
+  id: donation.id,
+  tradeNo: donation.tradeNo,
+  amount: donation.paidAmount ?? donation.amount,
+  state: donation.state,
+  createdAt: donation.createdAt,
+  paidAt: donation.paidAt ?? null,
+  paymentType: donation.paymentType ?? '',
+  visitorName: donation.visitorName ?? '',
+  wantsReceipt: Boolean(donation.wantsReceipt),
+  invoiceNo: donation.invoiceNo ?? '',
+  invoiceError: donation.invoiceError ?? '',
+  invoiceTriedAt: donation.invoiceTriedAt ?? null,
+  invoiceNoticeSent: donation.invoiceNoticeSent ?? null,
+  invoiceNoticeError: donation.invoiceNoticeError ?? '',
+  invoicing: Boolean(donation.invoicing),
+  canRetry: canRetryInvoice(donation),
+});
+
+/** Paid, not yet invoiced, not already being invoiced, and somewhere to send it. */
+const canRetryInvoice = (donation) => Boolean(ECPAY.invoiceEnabled && ECPAY.invoiceReady
+  && donation.state === 'paid' && !donation.invoiceNo && !donation.invoicing
+  && (donation.email || receiptMailbox()));
+
+const staffOfferings = () => [...donations.values()]
+  .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+  .slice(0, 60)
+  .map(staffOffering);
 
 const apiError = (response, status, message) => json(response, status, { error: message });
 
@@ -1959,10 +2018,7 @@ const server = createServer(async (request, response) => {
             // Issued after the fact and never in the way: a failure here is a
             // missing invoice, not a missing payment, and the visitor has
             // already been thanked.
-            void issueInvoice(donation).catch((error) => {
-              donation.invoiceError = String(error?.message ?? error);
-              console.error(`Invoice not issued for ${donation.tradeNo}: ${donation.invoiceError}`);
-            });
+            void issueInvoice(donation);
           }
         }
       }
@@ -2512,6 +2568,7 @@ a{color:#e8b64a}</style>
           // address always comes back, and a change made here since does not
           // — which is what the panel tells STAFF, because it is the one thing
           // they cannot see from the field itself.
+          offerings: staffOfferings(),
           offeringReceipt: {
             ...offeringReceipt,
             // 'seed' is the committed address, which comes back after every
@@ -2814,6 +2871,22 @@ a{color:#e8b64a}</style>
         Object.assign(offeringReceipt, { email: address, updatedAt: Date.now() });
         persist();
         return json(response, 200, { ok: true, offeringReceipt, receiptOptional: receiptOptional() });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/offerings/retry-invoice') {
+        const donation = donations.get(safeText(payload.id, 80));
+        if (!donation) return apiError(response, 404, 'That offering is no longer on this instance.');
+        if (donation.invoiceNo) return json(response, 200, { ok: true, offering: staffOffering(donation), offerings: staffOfferings() });
+        if (!canRetryInvoice(donation)) return apiError(response, 409, 'That offering cannot be invoiced now.');
+        // An offering whose donor declined a receipt and was paid before a
+        // mailbox existed has no address; the mailbox is where it belongs.
+        if (!donation.email) donation.email = receiptMailbox();
+        await issueInvoice(donation);
+        // A refusal is still an answer: the reason is in `offering.invoiceError`.
+        return json(response, 200, {
+          ok: Boolean(donation.invoiceNo),
+          offering: staffOffering(donation),
+          offerings: staffOfferings(),
+        });
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/shop-link') {
         // An empty string is allowed: that is how STAFF take the store down.

@@ -477,6 +477,25 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
   position: fixed; width: 320px; height: 180px; left: -9999px; top: -9999px;
   border: 0; pointer-events: none; opacity: 0;
 }
+.staff-offerings { display: grid; gap: 8px; margin-top: 18px; }
+.staff-offerings__list { margin: 0; padding: 0; list-style: none; display: grid; }
+/* Three columns on a desk — amount and visitor, payment, invoice — and one
+   stacked column on a phone, where the invoice reason needs the full width. */
+.staff-offerings__row {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr); gap: 10px;
+  padding: 10px 0; border-bottom: 1px solid rgba(20,18,16,.16);
+}
+.staff-offerings__row > div { display: grid; gap: 2px; align-content: start; min-width: 0; }
+.staff-offerings__row strong { font: 800 15px var(--condensed); }
+.staff-offerings__row span { font: 700 12px var(--condensed); letter-spacing: .08em; }
+.staff-offerings__row small { font-size: 12px; line-height: 1.4; opacity: .65; overflow-wrap: anywhere; }
+.staff-offerings__row small.is-warn { opacity: 1; color: var(--red, #a91c24); }
+.staff-offerings__row .is-muted { opacity: .45; }
+.staff-offerings__row.is-uninvoiced { box-shadow: inset 3px 0 0 var(--red, #a91c24); padding-left: 10px; }
+.staff-offerings__invoice button { justify-self: start; margin-top: 4px; }
+@media (max-width: 640px) {
+  .staff-offerings__row { grid-template-columns: 1fr; gap: 4px; }
+}
 .staff-jukebox { display: grid; gap: 6px; }
 .staff-jukebox .eyebrow { margin-top: 8px; }
 .staff-jukebox__now { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(20,18,16,.16); }

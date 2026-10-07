@@ -33,6 +33,7 @@ const VR_PHOTO_LIMIT = 8;
 import {
   FestivalClient,
   type AdminState,
+  type StaffOffering,
   type ChatChannel,
   type ConnectionStatus,
   type DjProfile,
@@ -5974,6 +5975,25 @@ export class App {
             this.reopenPanelKeepingPlace('admin');
           });
       });
+      panel.querySelectorAll<HTMLButtonElement>('[data-offering-retry]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const id = button.dataset.offeringRetry ?? '';
+          const zh = this.language === 'zh-TW';
+          button.disabled = true;
+          button.textContent = zh ? '開立中…' : 'ISSUING…';
+          void this.festivalClient.retryOfferingInvoice(this.staffKey, id).then(async ({ ok, offering }) => {
+            // Redrawn in place, so the row shows its invoice number (or the
+            // new reason) where STAFF are looking.
+            await this.refreshAdminState();
+            this.showWorldAlert(ok
+              ? (zh ? `發票已開立：${offering.invoiceNo}` : `INVOICE ISSUED: ${offering.invoiceNo}`)
+              : (zh ? '綠界仍拒絕開立，原因已列在清單上' : 'ECPAY STILL REFUSED; THE REASON IS IN THE LIST'));
+          }).catch(async (error: unknown) => {
+            await this.refreshAdminState();
+            this.showWorldAlert(error instanceof Error ? error.message : (zh ? '開立失敗' : 'COULD NOT ISSUE'));
+          });
+        });
+      });
       const receiptEditor = panel.querySelector<HTMLFormElement>('#offering-receipt-editor');
       receiptEditor?.addEventListener('submit', (event) => {
         event.preventDefault();
@@ -6560,6 +6580,67 @@ export class App {
     return '';
   }
 
+  /**
+   * Recent offerings and their 統一發票, with ECPay's reason when one was
+   * refused and a button to ask again. Invoices failed for days with only
+   * Render's log knowing (the owner, 2026-10-07). No address is ever shown.
+   */
+  private staffOfferingsList(): string {
+    const zh = this.language === 'zh-TW';
+    const offerings = this.adminState?.offerings ?? [];
+    const when = (at: number | null) => at
+      ? new Date(at).toLocaleString(zh ? 'zh-TW' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : '';
+    const states: Record<StaffOffering['state'], [string, string]> = {
+      pending: ['未付款', 'NOT PAID'],
+      awaiting: ['等待繳費', 'AWAITING PAYMENT'],
+      paid: ['已付款', 'PAID'],
+      failed: ['付款失敗', 'PAYMENT FAILED'],
+    };
+    const methods: Array<[RegExp, string, string]> = [
+      [/^Credit/i, '信用卡', 'CARD'],
+      [/^CVS/i, '超商代碼', 'STORE CODE'],
+      [/^BARCODE/i, '超商條碼', 'STORE BARCODE'],
+      [/^WebATM/i, '網路 ATM', 'WEB ATM'],
+      [/^ATM/i, 'ATM 轉帳', 'ATM'],
+      [/^ApplePay/i, 'Apple Pay', 'APPLE PAY'],
+      [/^TWQR/i, '台灣 Pay', 'TAIWAN PAY'],
+    ];
+    const method = (type: string) => {
+      const match = methods.find(([pattern]) => pattern.test(type));
+      return match ? (zh ? match[1] : match[2]) : type;
+    };
+    const invoice = (offering: StaffOffering) => {
+      if (offering.invoiceNo) {
+        const notice = offering.invoiceNoticeSent === false
+          ? `<small class="is-warn">${zh ? '已開立，但 Email 通知失敗：' : 'Issued, but the email was refused: '}${this.escapeHtml(offering.invoiceNoticeError)}</small>`
+          : `<small>${offering.wantsReceipt ? (zh ? '已寄給訪客' : 'Sent to the visitor') : (zh ? '已寄到收據信箱' : 'Sent to the receipt mailbox')}</small>`;
+        return `<strong>${this.escapeHtml(offering.invoiceNo)}</strong>${notice}`;
+      }
+      if (offering.invoicing) return `<span>${zh ? '開立中…' : 'ISSUING…'}</span>`;
+      if (offering.state !== 'paid') return '<span class="is-muted">—</span>';
+      const reason = offering.invoiceError
+        ? `<small class="is-warn">${zh ? '綠界拒絕：' : 'ECPay refused: '}${this.escapeHtml(offering.invoiceError)}</small>`
+        : `<small class="is-warn">${zh ? '尚未開立' : 'Not issued yet'}</small>`;
+      const retry = offering.canRetry
+        ? `<button type="button" data-offering-retry="${this.escapeAttribute(offering.id)}">${zh ? '重新開立發票' : 'ISSUE INVOICE AGAIN'}</button>`
+        : '';
+      return `${reason}${retry}`;
+    };
+    const rows = offerings.map((offering) => `<li class="staff-offerings__row is-${offering.state}${offering.state === 'paid' && !offering.invoiceNo ? ' is-uninvoiced' : ''}">
+      <div><strong>NT$${offering.amount}</strong><small>${this.escapeHtml(offering.visitorName || (zh ? '訪客' : 'GUEST'))} · ${when(offering.paidAt ?? offering.createdAt)}</small></div>
+      <div><span>${zh ? states[offering.state][0] : states[offering.state][1]}</span><small>${offering.paymentType ? `${this.escapeHtml(method(offering.paymentType))} · ` : ''}${this.escapeHtml(offering.tradeNo)}</small></div>
+      <div class="staff-offerings__invoice">${invoice(offering)}</div>
+    </li>`).join('');
+    return `<div class="staff-offerings">
+      <span class="eyebrow">${zh ? '最近的供養與發票' : 'RECENT OFFERINGS AND INVOICES'}</span>
+      <p class="staff-note">${zh
+        ? '每筆供養付款後是否開出統一發票；沒開出的會寫出綠界的原因，可按「重新開立發票」再試一次。這份紀錄存在目前這台服務上，Render 重新部署後會清空——部署前已付款但沒開到發票的，請到綠界電子發票後台手動開立。'
+        : "Whether each paid offering got its 統一發票. A refused one shows ECPay's reason and can be issued again. This list lives on the instance now serving and is emptied by a Render redeploy, so anything paid but not invoiced before a deploy has to be issued by hand in ECPay's invoice backend."}</p>
+      ${rows ? `<ol class="staff-offerings__list">${rows}</ol>` : `<p class="staff-note">${zh ? '這台服務啟動以來還沒有供養。' : 'No offerings since this instance started.'}</p>`}
+    </div>`;
+  }
+
   private staffSection(id: string, title: string, body: string): string {
     const open = this.openStaffSections.has(id) ? ' open' : '';
     return `<details class="staff-section" data-staff-section="${id}"${open}>
@@ -6634,7 +6715,8 @@ export class App {
         <label class="staff-form__wide"><span>${this.language === 'zh-TW' ? '發票寄送信箱' : 'INVOICE MAILBOX'}</span><input name="email" type="email" inputmode="email" maxlength="80" placeholder="accounts@example.com" value="${this.escapeAttribute(this.adminState.offeringReceipt?.email ?? '')}" /></label>
         ${this.offeringReceiptWarning()}
         <button type="submit">${this.language === 'zh-TW' ? '儲存收據信箱' : 'SAVE MAILBOX'}</button>
-      </form>`)}
+      </form>
+      ${this.staffOfferingsList()}`)}
       ${this.staffSection('jukebox', this.language === 'zh-TW' ? '點唱機' : 'JUKEBOX', `
       <form class="staff-form" id="jukebox-editor">
         <p class="panel-intro">${this.language === 'zh-TW'

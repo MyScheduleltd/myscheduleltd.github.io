@@ -5,7 +5,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join as joinPath } from 'node:path';
 import { tmpdir } from 'node:os';
-import { checkMacValue } from './ecpay.mjs';
+import { createServer as createHttpServer } from 'node:http';
+import { aesDecrypt, aesEncrypt, checkMacValue } from './ecpay.mjs';
 import { ecpayConfig } from './donations.mjs';
 
 const temporaryDirectory = mkdtempSync(joinPath(tmpdir(), 'festival-test-'));
@@ -2214,3 +2215,126 @@ test('a visitor cannot shorten a work, alone or by repeating themselves', async 
   assert.equal(await known(), 61, 'and once known, visitors cannot change it');
 });
 
+
+
+test('STAFF see an offering whose invoice ECPay refused, and can issue it again', async () => {
+  // A stand-in for ECPay's invoice service, on ECPay's public stage keys. It
+  // refuses the first invoice and issues the second: the shape of a wrong key
+  // fixed, or a 字軌 opened, after the payment had already been taken.
+  const config = ecpayConfig();
+  const keys = [config.invoice.hashKey, config.invoice.hashIV];
+  const issues = [];
+  const notices = [];
+  const ecpay = createHttpServer(async (request, response) => {
+    let raw = '';
+    for await (const chunk of request) raw += chunk;
+    const data = aesDecrypt(JSON.parse(raw).Data, ...keys);
+    const reply = (inner) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ TransCode: 1, TransMsg: '', Data: aesEncrypt(inner, ...keys) }));
+    };
+    if (request.url === '/B2CInvoice/Issue') {
+      issues.push(data);
+      return issues.length === 1
+        ? reply({ RtnCode: 1600003, RtnMsg: '查無可用字軌' })
+        : reply({ RtnCode: 1, RtnMsg: '開立發票成功', InvoiceNo: 'FU67503600', InvoiceDate: '2026-10-07 21:00:00' });
+    }
+    notices.push(data);
+    return reply({ RtnCode: 1, RtnMsg: '發送通知成功' });
+  });
+  await new Promise((resolve) => ecpay.listen(0, '127.0.0.1', resolve));
+  const fake = `http://127.0.0.1:${ecpay.address().port}`;
+
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const instance = await startServer(port, joinPath(temporaryDirectory, 'staff-offerings-state.json'), 'off', {
+    ECPAY_STAGE_INVOICE_BASE: fake,
+  });
+  const staff = { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173', 'content-type': 'application/json' };
+  try {
+    const session = await fetch(`${url}/api/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' },
+      body: JSON.stringify({ name: 'REFUSED GIVER' }),
+    }).then((r) => r.json()).then((r) => r.session);
+    const { id } = await fetch(`${url}/api/donation`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${session.token}`,
+        'x-festival-session': session.id,
+        'content-type': 'application/json',
+        origin: 'http://127.0.0.1:5173',
+      },
+      body: JSON.stringify({ amount: 30, email: 'giver@example.com', receipt: true }),
+    }).then((r) => r.json());
+    const tradeNo = (await fetch(`${url}/api/admin/state`, { headers: staff }).then((r) => r.json()))
+      .offerings.find((entry) => entry.id === id).tradeNo;
+    const notice = {
+      MerchantID: config.payment.merchantId,
+      MerchantTradeNo: tradeNo,
+      RtnCode: '1',
+      RtnMsg: 'Succeeded',
+      TradeAmt: '30',
+      TradeNo: '2510070000000001',
+      PaymentType: 'Credit_CreditCard',
+      PaymentDate: '2026/10/07 21:00:00',
+      CustomField1: id,
+    };
+    notice.CheckMacValue = checkMacValue(notice, config.payment.hashKey, config.payment.hashIV);
+    await fetch(`${url}/api/ecpay/notify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(notice).toString(),
+    });
+
+    let refused;
+    for (let attempt = 0; attempt < 50 && !refused?.invoiceError; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const state = await fetch(`${url}/api/admin/state`, { headers: staff }).then((r) => r.json());
+      refused = state.offerings.find((entry) => entry.id === id);
+    }
+    assert.equal(issues.length, 1, 'the invoice was asked for once the payment arrived');
+    assert.equal(issues[0].CarrierType, '1');
+    assert.equal(issues[0].CarrierNum, '', 'ECPay fills its own carrier number in');
+    assert.equal(refused.state, 'paid');
+    assert.equal(refused.invoiceNo, '');
+    assert.match(refused.invoiceError, /查無可用字軌/, 'STAFF read ECPay\'s own reason');
+    assert.equal(refused.canRetry, true);
+    for (const field of ['email', 'carrierNum']) assert.ok(!(field in refused), `${field} is not shown to STAFF`);
+    assert.ok(!JSON.stringify(refused).includes('giver@example.com'), 'nor is the address anywhere in it');
+
+    // Visitors cannot reach it.
+    const stranger = await fetch(`${url}/api/admin/offerings/retry-invoice`, {
+      method: 'POST',
+      headers: { ...staff, 'x-festival-admin-key': 'wrong' },
+      body: JSON.stringify({ id }),
+    });
+    assert.equal(stranger.status, 401);
+    assert.equal(issues.length, 1);
+
+    const retried = await fetch(`${url}/api/admin/offerings/retry-invoice`, {
+      method: 'POST',
+      headers: staff,
+      body: JSON.stringify({ id }),
+    });
+    assert.equal(retried.status, 200);
+    const { offering } = await retried.json();
+    assert.equal(offering.invoiceNo, 'FU67503600');
+    assert.equal(offering.invoiceError, '');
+    assert.equal(offering.canRetry, false, 'an issued invoice is never asked for twice');
+    assert.equal(issues[1].RelateNumber, tradeNo, 'the same sale, the same number');
+    assert.equal(notices.length, 1, 'and ECPay was asked to email it');
+    assert.equal(notices[0].NotifyMail, 'giver@example.com');
+
+    const again = await fetch(`${url}/api/admin/offerings/retry-invoice`, {
+      method: 'POST',
+      headers: staff,
+      body: JSON.stringify({ id }),
+    });
+    assert.equal(again.status, 200);
+    assert.equal(issues.length, 2, 'pressing it again issues nothing more');
+  } finally {
+    await stopServer(instance);
+    await new Promise((resolve) => ecpay.close(resolve));
+  }
+});
