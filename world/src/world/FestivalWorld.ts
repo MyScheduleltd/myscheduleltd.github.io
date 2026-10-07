@@ -8,6 +8,7 @@ import { createCoastalDecks, createCoastalSpeaker, createCoastalJukebox } from '
 import { setCoastalSwimwear } from './CoastalAvatar';
 import * as THREE from 'three';
 import { HeadTracking, type TrackedPoint } from './HeadTracking';
+import { batchStaticScenery, type StaticBatchReport } from './StaticBatch';
 import { GamepadInput, type GamepadActionId, type GamepadFrame } from './GamepadInput';
 import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
 import { dressBuildings, dressInteriors } from './WornArchitecture';
@@ -24,7 +25,7 @@ import { cleanLimbs, decodeHandPose, encodeHandPose, mixLimbs, type TrackedLimbs
 import { createGanganStatue, GANGAN_STATUE_SIZE } from './GanganStatue';
 import { createBeachCouple, animateBeachCouple, type BeachCoupleRig } from './BeachCouple';
 import { applyAvatarAccessories } from './AvatarAccessories';
-import { PLANET, keepFlat, setPlanetCentre, bendCss3d, subdivideSceneForPlanet } from './PlanetCurve';
+import { PLANET, keepFlat, setPlanetCentre, bendCss3d, subdivideSceneForPlanet, planetBendPoint } from './PlanetCurve';
 import { IslandDock, DOCK_ARRIVAL } from './IslandDock';
 import { ISLAND, ISLAND_COVE, islandTerrain, SEA_Y, TEMPLE_GRADE, TEMPLE_STAIRS, TEMPLE_STAIR_VISUAL_OVERLAP, templeStairPitch, templeStairX, templeTreadTop, SHORE_GRADE, CLUB_GRADE, HILL_WALK, terrainHeightAt, isSwimmingDepth, createCoastalTerrain, createGroundRibbon, insidePaving, type PlanPoint } from './CoastalTerrain';
 import { poseCoastalCarry } from './CoastalCarry';
@@ -33,7 +34,7 @@ import { pixelSurface, worldSurfaceUV } from './CoastalSurfaces';
 import { ROAD_POLYGONS, streetLampObstructsRoute } from './CoastalCirculation';
 import { CoastalScenery } from './CoastalScenery';
 import { createCoastalAvatar } from './CoastalAvatar';
-import { attachImportedAvatar, syncImportedAvatars, AVATAR_NATIVE, MOVE_SECONDS, PUNCH_CONTACT_SECONDS } from './ImportedAvatar';
+import { attachImportedAvatar, syncImportedAvatars, importedAvatarRoots, AVATAR_NATIVE, MOVE_SECONDS, PUNCH_CONTACT_SECONDS } from './ImportedAvatar';
 import { createCoastalSkateboard } from './CoastalSkateboard';
 import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, setCoastalFists, releaseCoastalGrips, walkCoastalPose, danceCoastalPose, COASTAL_STRIDE_LENGTH, skateCoastalPose, levelCoastalFeet, supportCoastalPose, seatCoastalLegs, coastalFootHeights } from './CoastalPose';
 import { coastalRoof, createCoastalSedan, CONVERTIBLE } from './CoastalGeometry';
@@ -1581,6 +1582,13 @@ export class FestivalWorld {
   private readonly npcs: NpcAvatar[] = [];
   /** The served roster, by id, so a prompt can offer what STAFF have written. */
   private readonly npcProfileById = new Map<string, NpcProfile>();
+  private readonly avatarFrustum = new THREE.Frustum();
+  private readonly avatarViewProjection = new THREE.Matrix4();
+  private readonly avatarSphere = new THREE.Sphere();
+  private readonly avatarCentre = new THREE.Vector3();
+  private avatarFrame = 0;
+  /** What the static-scenery pass combined, for the performance review. */
+  private staticBatchReport?: StaticBatchReport;
   private readonly remoteAvatars = new Map<string, RemoteAvatar>();
   private readonly remoteNpcControls = new Map<string, RemoteVisitorVisual>();
   private readonly occupiedSeats = new Set<string>();
@@ -2080,6 +2088,14 @@ export class FestivalWorld {
     if (PLANET.on) {
       subdivideSceneForPlanet(this.scene);
       for (const delay of [1_500, 6_000]) window.setTimeout(() => subdivideSceneForPlanet(this.scene), delay);
+    }
+    // Once the planet subdivision (last at 6 s) and the worn-style passes
+    // (last 6 s after entry) have reshaped every mesh, the scenery that never
+    // moves is baked into a few large meshes. `?nobatch` skips it, to compare.
+    if (!new URLSearchParams(window.location.search).has('nobatch')) {
+      window.setTimeout(() => {
+        this.staticBatchReport = batchStaticScenery(this.scene);
+      }, 9_000);
     }
     this.createPlayer(palette);
     this.createNpcCrowd();
@@ -4980,6 +4996,7 @@ export class FestivalWorld {
     lampsLit: number;
     lampsTotal: number;
     lastCullSeen: number;
+    staticBatch: StaticBatchReport | null;
     sinceCullMs: number | null;
     mode: GraphicsMode;
     shadowCasters: number;
@@ -5036,6 +5053,7 @@ export class FestivalWorld {
       lampsLit,
       lampsTotal,
       lastCullSeen: this.lastCullSeen,
+      staticBatch: this.staticBatchReport ?? null,
       sinceCullMs: this.lastCullAt ? Math.round(performance.now()) - this.lastCullAt : null,
       mode: this.graphicsMode,
       shadowCasters,
@@ -8292,7 +8310,13 @@ export class FestivalWorld {
   };
 
   private mainPixelRatio(): number {
-    return Math.min(window.devicePixelRatio, this.graphicsMode === 'normal' ? 1.25 : 0.7);
+    // 精簡 draws one pixel per CSS pixel and the page enlarges it without
+    // smoothing (style.css, `image-rendering: pixelated`): on a phone each one
+    // becomes a sharp 3×3 block. It used to draw at 0.7 and then lower still,
+    // and the browser's smoothing turned that into a picture that looked out of
+    // focus (owner, 2026-10-07: "crisp pixels"). A whole number of device pixels
+    // per drawn pixel is what keeps the blocks even, hence 1 and not 0.7.
+    return Math.min(window.devicePixelRatio, this.graphicsMode === 'normal' ? 1.25 : 1);
   }
 
   private foregroundPixelRatio(): number {
@@ -11567,6 +11591,7 @@ export class FestivalWorld {
     this.updatePlayer(delta);
     this.playerShadow.position.y=this.groundHeightAt(this.player.position.x,this.player.position.z,this.player.position.y)-AVATAR_GROUND_Y-this.player.position.y+.02;
     this.playerShadow.visible=this.playerState!=='swimming';
+    this.cullAvatars();
     this.updateNpcs(delta, elapsed);
     // Only while somebody could see it. It is a joke behind some trees, not a
     // thing worth a matrix update on every frame of the whole festival.
@@ -12553,6 +12578,46 @@ export class FestivalWorld {
     if(npc.dogRig)this.animateMentorDog(npc.dogRig,elapsed*2,sample.moving,gesture==='tail-wag',performance.now()<npc.eatUntil);
   }
 
+  /**
+   * Which bodies are worth drawing and re-posing this frame.
+   *
+   * Every avatar skin had culling switched off, so all fifteen residents were
+   * drawn — and drawn again into the shadow map — wherever the camera looked,
+   * and re-posed every frame (2026-10-07). A body whose sphere, at the place
+   * the planet curve draws it, is outside the view is now neither drawn nor
+   * re-posed; four metres of margin keep a shadow cast into view from popping.
+   * A body seen but more than 35 m away is re-posed every other frame, which
+   * the owner accepted for distant residents. From last frame's camera, which
+   * has barely moved. Off in a headset, where the eyes are other cameras.
+   */
+  private cullAvatars(): void {
+    this.avatarFrame += 1;
+    const headset = this.xrActive && !this.xrSimulated;
+    this.camera.updateMatrixWorld();
+    this.avatarViewProjection.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+    this.avatarFrustum.setFromProjectionMatrix(this.avatarViewProjection);
+    let index = 0;
+    for (const root of importedAvatarRoots) {
+      index += 1;
+      const setCulled = root.userData.setImportedCulled as ((culled: boolean) => void) | undefined;
+      if (!setCulled) continue;
+      if (headset || root === this.player) {
+        setCulled(false);
+        root.userData.cullThrottle = false;
+        continue;
+      }
+      root.getWorldPosition(this.avatarCentre);
+      this.avatarCentre.y += 0.9;
+      if (PLANET.on) planetBendPoint(this.avatarCentre, this.avatarCentre);
+      this.avatarSphere.set(this.avatarCentre, 4);
+      const seen = this.avatarFrustum.intersectsSphere(this.avatarSphere);
+      setCulled(!seen);
+      root.userData.cullThrottle = seen
+        && this.avatarCentre.distanceToSquared(this.cameraWorldPosition) > 35 * 35
+        && (this.avatarFrame + index) % 2 === 1;
+    }
+  }
+
   private updateNpcs(delta: number, elapsed: number): void {
     // Last, after every body has taken its step, so it resolves the overlaps
     // this frame actually produced rather than last frame's.
@@ -13231,7 +13296,10 @@ export class FestivalWorld {
       if(arms){rig.leftArm.quaternion.copy(arms[0]!);rig.rightArm.quaternion.copy(arms[1]!);if(arms[2])rig.leftElbow?.quaternion.copy(arms[2]);if(arms[3])rig.rightElbow?.quaternion.copy(arms[3]);}
     }
     else levelCoastalFeet(rig);
-    if(!skating&&gesture!=='jump' && !(gesture==='tumble'&&rig===this.playerRig&&this.airborne)) {
+    // Not for a body nobody can see this frame (cullAvatars): its feet are
+    // planted again on the first frame it is drawn.
+    const unseen=Boolean(root?.userData.importedCulled?.()||root?.userData.cullThrottle);
+    if(!unseen&&!skating&&gesture!=='jump' && !(gesture==='tumble'&&rig===this.playerRig&&this.airborne)) {
       supportCoastalPose(rig,(x,z,y)=>this.footSurfaceAt(x,z,y));
     }
     for(const prop of root?.children??[])if(prop.userData.handProp&&prop.visible)this.positionPopcornProp(prop as THREE.Group, false, gesture);

@@ -31,11 +31,14 @@ export const RENDER_SCALE_UP_STEP = 0.07;
 /**
  * The lowest fraction each mode may fall to.
  *
- * `lite` is allowed much further down because it is what phones run, and a
- * soft picture that holds its frame rate is worth more than a sharp one that
- * does not — the pixel-art treatment hides most of the softness anyway.
+ * `lite` holds its resolution. It is enlarged as crisp square pixels, and those
+ * only stay square at a whole number of device pixels each; a scale of 0.84
+ * would make them uneven blocks that crawl as the camera moves. It used to be
+ * allowed down to half, which together with smoothing was the blur the owner
+ * reported on a phone (2026-10-07). Its frame rate on a phone is set by the
+ * processor, not the pixels, so lowering them bought nothing anyway.
  */
-export const RENDER_SCALE_FLOOR = { normal: 0.67, lite: 0.5 } as const;
+export const RENDER_SCALE_FLOOR = { normal: 0.67, lite: 1 } as const;
 
 export interface RenderScalePlan {
   scale: number;
