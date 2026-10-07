@@ -401,7 +401,8 @@ test('the invoice goes to the phone barcode the buyer gave, and to ECPay\'s carr
   assert.equal(phone.Items[0].ItemWord, '次');
   const plain = issued({});
   assert.equal(plain.CarrierType, '1');
-  assert.equal('CarrierNum' in plain, false, 'ECPay fills its own carrier number in');
+  // ECPay's spec: an empty string with its own carrier, which ECPay fills in.
+  assert.equal(plain.CarrierNum, '');
   // A malformed barcode never reaches ECPay as one.
   assert.equal(issued({ carrierType: '3', carrierNum: 'AB201C9' }).CarrierType, '1');
 });

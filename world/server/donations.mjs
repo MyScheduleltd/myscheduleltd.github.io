@@ -83,7 +83,14 @@ export const ecpayConfig = (env = process.env) => {
   // fails at ECPay, hours later, as a missing invoice nobody is watching for.
   const rawFallback = String(env.ECPAY_INVOICE_FALLBACK_EMAIL ?? '').trim();
   const fallback = safeEmail(rawFallback) ?? '';
-  const urls = production ? PRODUCTION : STAGE;
+  // Tests stand in for ECPay's invoice service with a local one. Honoured on
+  // stage only: production always talks to ECPay itself.
+  const stageInvoiceBase = (env.ECPAY_STAGE_INVOICE_BASE ?? '').trim().replace(/\/$/, '');
+  const urls = production
+    ? PRODUCTION
+    : stageInvoiceBase
+      ? { ...STAGE, invoice: `${stageInvoiceBase}/B2CInvoice/Issue`, invoiceNotify: `${stageInvoiceBase}/B2CInvoice/InvoiceNotify` }
+      : STAGE;
   const payment = production
     ? {
       merchantId: (env.ECPAY_MERCHANT_ID ?? '').trim(),
@@ -301,7 +308,9 @@ export const buildInvoice = ({ config, relateNumber, email, amount, itemName, ca
     Print: '0',
     Donation: '0',
     CarrierType: phone ? '3' : '1',
-    ...(phone ? { CarrierNum: carrierNum } : {}),
+    // ECPay's spec (developers.ecpay.com.tw/7896/): with its own carrier the
+    // number is sent as an empty string and ECPay fills it in.
+    CarrierNum: phone ? carrierNum : '',
     TaxType: '1',
     SalesAmount: amount,
     InvType: '07',
