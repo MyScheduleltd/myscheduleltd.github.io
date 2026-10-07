@@ -2360,3 +2360,92 @@ test('STAFF see an offering whose invoice ECPay refused, and can issue it again'
     await new Promise((resolve) => ecpay.close(resolve));
   }
 });
+
+
+test('a jukebox record plays its own length, not a guess, and a length heard is kept', async () => {
+  // Records were timed against a flat 3:35 after every redeploy, so anything
+  // longer was cut off (the owner, 2026-10-08). A length on file is used now.
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const stateFile = joinPath(temporaryDirectory, 'jukebox-length-state.json');
+  const seedFile = joinPath(temporaryDirectory, 'jukebox-length-seed.json');
+  writeFileSync(seedFile, JSON.stringify({
+    version: 1,
+    jukeboxTracks: [
+      { id: 'bc0KhhjJP98', youtubeId: 'bc0KhhjJP98', title: 'SHORT ONE' },
+      { id: '58RgLQ_0Ars', youtubeId: '58RgLQ_0Ars', title: 'UNKNOWN LENGTH' },
+    ],
+    trackDurations: { bc0KhhjJP98: 2 },
+  }), 'utf8');
+  const instance = await startServer(port, stateFile, seedFile);
+  try {
+    const session = await fetch(`${url}/api/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' },
+      body: JSON.stringify({ name: 'RECORD PLAYER' }),
+    }).then((r) => r.json()).then((r) => r.session);
+    const as = { authorization: `Bearer ${session.token}`, 'x-festival-session': session.id, 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' };
+    const put = await fetch(`${url}/api/jukebox/request`, { method: 'POST', headers: as, body: JSON.stringify({ trackId: 'bc0KhhjJP98' }) });
+    assert.equal((await put.json()).jukebox.nowPlaying?.youtubeId, 'bc0KhhjJP98');
+    await new Promise((resolve) => setTimeout(resolve, 2_600));
+    const config = await fetch(`${url}/api/config`).then((r) => r.json());
+    assert.equal(config.jukebox.nowPlaying, null, 'it ran its two seconds, not three and a half minutes');
+
+    // An unknown record: a listener's player says it runs 4:22. That is kept
+    // with every other length, which is what is saved and committed.
+    await fetch(`${url}/api/jukebox/duration`, { method: 'POST', headers: as, body: JSON.stringify({ youtubeId: '58RgLQ_0Ars', seconds: 262 }) });
+    const learned = await fetch(`${url}/api/config`).then((r) => r.json());
+    assert.equal(learned.trackDurations['58RgLQ_0Ars'], 262);
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    const saved = JSON.parse(readFileSync(stateFile, 'utf8'));
+    assert.equal(saved.trackDurations?.['58RgLQ_0Ars'], 262, `and written down: ${JSON.stringify(saved.trackDurations)} ${Object.keys(saved).join(',')}`);
+
+    // And a known length is not cut short by a visitor afterwards.
+    await fetch(`${url}/api/jukebox/duration`, { method: 'POST', headers: as, body: JSON.stringify({ youtubeId: '58RgLQ_0Ars', seconds: 30 }) });
+    assert.equal((await fetch(`${url}/api/config`).then((r) => r.json())).trackDurations['58RgLQ_0Ars'], 262);
+  } finally {
+    await stopServer(instance);
+  }
+});
+
+test('lengths nobody has on file are looked up on YouTube when the service starts', async () => {
+  // A stand-in for YouTube's watch page: the length is all that is read.
+  const asked = [];
+  const youtube = createHttpServer((request, response) => {
+    const id = new URL(request.url, 'http://x').searchParams.get('v');
+    asked.push(id);
+    response.writeHead(200, { 'content-type': 'text/html' });
+    response.end(id === '58RgLQ_0Ars' ? '<script>var x={"lengthSeconds":"262"};</script>' : '<html>no length here</html>');
+  });
+  await new Promise((resolve) => youtube.listen(0, '127.0.0.1', resolve));
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const seedFile = joinPath(temporaryDirectory, 'lookup-seed.json');
+  writeFileSync(seedFile, JSON.stringify({
+    version: 1,
+    jukeboxTracks: [
+      { id: '58RgLQ_0Ars', youtubeId: '58RgLQ_0Ars', title: 'NEEDS A LENGTH' },
+      { id: 'bc0KhhjJP98', youtubeId: 'bc0KhhjJP98', title: 'ALREADY KNOWN' },
+      { id: 'UvynvnxZJ3Q', youtubeId: 'UvynvnxZJ3Q', title: 'YOUTUBE WILL NOT SAY' },
+    ],
+    trackDurations: { bc0KhhjJP98: 208 },
+  }), 'utf8');
+  const instance = await startServer(port, joinPath(temporaryDirectory, 'lookup-state.json'), seedFile, {
+    FESTIVAL_YOUTUBE_TITLES: 'on',
+    FESTIVAL_YOUTUBE_ORIGIN: `http://127.0.0.1:${youtube.address().port}`,
+  });
+  try {
+    let lengths = {};
+    for (let attempt = 0; attempt < 40 && !lengths['58RgLQ_0Ars']; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      lengths = (await fetch(`${url}/api/config`).then((r) => r.json())).trackDurations;
+    }
+    assert.equal(lengths['58RgLQ_0Ars'], 262, 'looked up');
+    assert.equal(lengths.bc0KhhjJP98, 208, 'a length on file is left alone');
+    assert.equal(lengths.UvynvnxZJ3Q, undefined, 'and one YouTube would not give stays unknown, not invented');
+    assert.ok(!asked.includes('bc0KhhjJP98'), 'only what is missing is asked for');
+  } finally {
+    await stopServer(instance);
+    await new Promise((resolve) => youtube.close(resolve));
+  }
+});
