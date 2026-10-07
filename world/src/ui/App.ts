@@ -5137,16 +5137,15 @@ export class App {
         : `NT$${pending.amount} is noted. Transfer to the account ECPay gave you, and it will reach me.`));
   }
 
-  private thankTheOffering(receipt: { id: string; amount: number; invoice: string | null; emailSent?: boolean }): void {
+  private thankTheOffering(receipt: { id: string; amount: number; invoice: string | null }): void {
     const zh = this.language === 'zh-TW';
     const deity = this.networkState?.templeSign?.name ?? '美麗本人';
     if (receipt.invoice) {
       this.showWorldAlert(zh ? `收據 ${receipt.invoice}` : `RECEIPT ${receipt.invoice}`);
-      this.pushNpcLine(deity, receipt.emailSent === true
-        ? (zh ? `收據號碼 ${receipt.invoice} 已開立並寄到你的信箱。` : `Receipt ${receipt.invoice} has been issued and emailed to you.`)
-        : receipt.emailSent === false
-          ? (zh ? `收據號碼 ${receipt.invoice} 已開立，但郵件寄送失敗，請聯絡影展工作人員。` : `Receipt ${receipt.invoice} was issued, but email delivery failed. Please contact festival staff.`)
-          : (zh ? `收據號碼 ${receipt.invoice} 已開立；郵件寄送狀態尚未確認。` : `Receipt ${receipt.invoice} was issued; email delivery has not been confirmed yet.`));
+      // ECPay sends the invoice email itself; the festival sends none.
+      this.pushNpcLine(deity, zh
+        ? `收據號碼 ${receipt.invoice} 已開立，綠界會寄到你的信箱。`
+        : `Receipt ${receipt.invoice} has been issued; ECPay will email it to you.`);
       return;
     }
     this.showWorldAlert(zh ? `供養已收下 · NT$${receipt.amount}` : `OFFERING RECEIVED · NT$${receipt.amount}`);
