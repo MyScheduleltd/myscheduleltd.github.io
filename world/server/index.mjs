@@ -296,11 +296,50 @@ const fetchYoutubeTitle = async (youtubeId) => {
     return '';
   }
 };
+/**
+ * A video's length, read from its YouTube page.
+ *
+ * Lengths learned while the service runs were lost on every Render redeploy
+ * (no disk), so the jukebox fell back to a guessed 3:35 a record and newly
+ * added videos to a nominal length until a visitor's player reported one
+ * (the owner, 2026-10-08: "the videos length are still not remembered"). The
+ * service now asks YouTube itself for anything it does not know, at start
+ * and whenever STAFF add something. Best effort: 0 when YouTube will not say.
+ * The same switch as the titles turns it off (tests).
+ */
+/** Tests stand in for YouTube here; nothing else sets it. */
+const youtubePages = (process.env.FESTIVAL_YOUTUBE_ORIGIN ?? 'https://www.youtube.com').replace(/\/$/, '');
+const fetchYoutubeLength = async (youtubeId) => {
+  if (!youtubeTitleLookup) return 0;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6_000);
+    const response = await fetch(`${youtubePages}/watch?v=${encodeURIComponent(youtubeId)}`, {
+      signal: controller.signal,
+      headers: { 'accept-language': 'en', 'user-agent': 'Mozilla/5.0 (festival length lookup)' },
+    });
+    clearTimeout(timer);
+    if (!response.ok) return 0;
+    const match = (await response.text()).match(/"lengthSeconds":"(\d+)"/);
+    const seconds = match ? Number(match[1]) : 0;
+    return seconds >= 1 && seconds <= 86_400 ? seconds : 0;
+  } catch {
+    return 0;
+  }
+};
 const jukeboxQueue = [];
 let jukeboxNowPlaying = null;
 /** What a record is assumed to run for until a client that has it open says. */
 const JUKEBOX_DEFAULT_SECONDS = 215;
 const jukeboxDurations = new Map();
+/**
+ * How long a record runs: what a player reported, else the length on file
+ * (committed in festival-seed.json, or looked up from YouTube), else a guess.
+ * The jukebox used to read only the first, which nothing kept across a deploy.
+ */
+const jukeboxLength = (youtubeId) => jukeboxDurations.get(youtubeId)
+  ?? trackDurations[youtubeId]
+  ?? JUKEBOX_DEFAULT_SECONDS;
 
 const jukeboxSnapshot = () => ({
   tracks: jukeboxTracks,
@@ -316,7 +355,7 @@ const jukeboxSnapshot = () => ({
 const advanceJukebox = () => {
   const now = Date.now();
   if (jukeboxNowPlaying) {
-    const seconds = jukeboxDurations.get(jukeboxNowPlaying.youtubeId) ?? JUKEBOX_DEFAULT_SECONDS;
+    const seconds = jukeboxLength(jukeboxNowPlaying.youtubeId);
     if (now - jukeboxNowPlaying.startedAt < seconds * 1000) {
       armJukeboxTimer(jukeboxNowPlaying.startedAt + seconds * 1000 - now);
       return false;
@@ -332,7 +371,7 @@ const advanceJukebox = () => {
     return true;
   }
   jukeboxNowPlaying = { ...next, startedAt: now };
-  const seconds = jukeboxDurations.get(jukeboxNowPlaying.youtubeId) ?? JUKEBOX_DEFAULT_SECONDS;
+  const seconds = jukeboxLength(jukeboxNowPlaying.youtubeId);
   armJukeboxTimer(seconds * 1000);
   return true;
 };
@@ -1732,6 +1771,42 @@ const staffOfferings = () => [...donations.values()]
   .slice(0, 60)
   .map(staffOffering);
 
+/** Every video the festival can play: the programmes, STAFF's additions and the jukebox. */
+const knownVideoIds = () => new Set([
+  ...Object.values(programmeSchedule).flatMap((schedule) => schedule.order ?? []),
+  ...Object.values(customVideosByVenue).flatMap((videos) => videos.map((video) => video.youtubeId)),
+  ...jukeboxTracks.map((track) => track.youtubeId),
+].filter((id) => validYoutubeId(id)));
+
+let measuringLengths = Promise.resolve();
+/**
+ * Look up, one at a time, the length of every video that has none on file.
+ * Chained, so a STAFF addition during the start-up pass waits its turn
+ * instead of asking YouTube twice.
+ */
+const measureMissingLengths = (ids = knownVideoIds()) => {
+  measuringLengths = measuringLengths.then(async () => {
+    let learned = 0;
+    for (const youtubeId of ids) {
+      if (trackDurations[youtubeId]) continue;
+      const seconds = await fetchYoutubeLength(youtubeId);
+      if (!seconds || trackDurations[youtubeId]) continue;
+      trackDurations[youtubeId] = seconds;
+      learned += 1;
+      // A record already on the deck was timed against the guess.
+      if (jukeboxNowPlaying?.youtubeId === youtubeId && !jukeboxDurations.has(youtubeId)) {
+        armJukeboxTimer(jukeboxNowPlaying.startedAt + seconds * 1000 - Date.now());
+      }
+    }
+    if (learned) {
+      console.log(`Looked up ${learned} video length${learned === 1 ? '' : 's'} on YouTube`);
+      scheduleBroadcast();
+      persist();
+    }
+  }).catch(() => undefined);
+  return measuringLengths;
+};
+
 const apiError = (response, status, message) => json(response, status, { error: message });
 
 const server = createServer(async (request, response) => {
@@ -2310,16 +2385,22 @@ a{color:#e8b64a}</style>
       // Whoever is actually playing it knows how long it runs; without this the
       // running order moves on at a guess and everyone drifts apart.
       const learned = validYoutubeId(youtubeId) && seconds
-        ? learnLength(jukeboxDurations.get(youtubeId), youtubeId, seconds, visitor.id, JUKEBOX_DEFAULT_SECONDS)
+        ? learnLength(jukeboxDurations.get(youtubeId) ?? trackDurations[youtubeId], youtubeId, seconds, visitor.id, JUKEBOX_DEFAULT_SECONDS)
         : undefined;
       if (learned) {
         jukeboxDurations.set(youtubeId, learned);
+        // Kept with every other length, which is what is saved and what
+        // capture-state.mjs commits — the jukebox's own map was neither.
+        trackDurations[youtubeId] = learned;
         // The record on the deck was timed against a guess until this arrived.
         // Re-arm against the real length, or a three-minute song sits in
         // silence until the guessed three and a half minutes are up.
         if (jukeboxNowPlaying?.youtubeId === youtubeId) {
           armJukeboxTimer(jukeboxNowPlaying.startedAt + seconds * 1000 - Date.now());
         }
+        // Never saved before: a length a listener's player had reported was
+        // gone at the next restart, and the record was cut at 3:35 again.
+        persist();
       }
       return json(response, 202, { ok: true });
     }
@@ -3007,6 +3088,7 @@ a{color:#e8b64a}</style>
         advanceJukebox();
         scheduleBroadcast();
         persist();
+        void measureMissingLengths([youtubeId]);
         return json(response, 200, { ok: true, jukebox: jukeboxSnapshot() });
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/dj-profile') {
@@ -3056,6 +3138,7 @@ a{color:#e8b64a}</style>
         programmeSchedule[venue].updatedAt = Date.now();
         scheduleBroadcast();
         persist();
+        void measureMissingLengths([youtubeId]);
         return json(response, 201, { ok: true, video: entry, schedule: programmeSchedule });
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/videos/remove') {
@@ -3149,6 +3232,9 @@ restorePersistedState();
 
 server.listen(PORT, HOST, () => {
   console.log(`myschedule festival server listening on http://${HOST}:${PORT}`);
+  // A redeploy starts from the committed seed; anything it does not carry a
+  // length for is looked up rather than guessed.
+  void measureMissingLengths();
 });
 
 const shutdown = () => {
