@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { fetchAsset } from './AssetMirror';
 
 /**
  * The band on the roof over the pop-up shop. While the jukebox has a record on
@@ -27,6 +28,40 @@ const urls = (): Record<BandMember | 'stage' | 'bonfire', string> => ({
   stage: new URL('../assets/band/stage.glb', import.meta.url).href,
   bonfire: new URL('../assets/band/bonfire.glb', import.meta.url).href,
 });
+type BandFile = BandMember | 'stage' | 'bonfire';
+const BAND_FILES: BandFile[] = ['stage', 'bonfire', 'vocal', 'drummer', 'guitarist', 'bass-player'];
+const fetched = new Map<BandFile, Promise<ArrayBuffer>>();
+
+/**
+ * One download per file, shared by the gate's prefetch and the world's own
+ * load, whichever asks first. A visitor who enters before the prefetch has
+ * begun must not start a second copy of the band (it did: 8.5 MB twice).
+ * A failure is forgotten, so the next ask fetches afresh.
+ */
+function bandBytes(name: BandFile): Promise<ArrayBuffer> {
+  const known = fetched.get(name);
+  if (known) return known;
+  const bytes = fetchAsset(urls()[name]);
+  bytes.catch(() => { if (fetched.get(name) === bytes) fetched.delete(name); });
+  fetched.set(name, bytes);
+  return bytes;
+}
+
+/**
+ * Start fetching the band while the visitor is still at the gate, so it is
+ * on the roof when the world opens instead of a minute after (the owner,
+ * 2026-10-07). Called once the world's own files are in. Safe to call more
+ * than once, and after the world has started loading the band itself.
+ */
+export function prefetchBand(): void {
+  for (const name of BAND_FILES) {
+    if (!used.has(name)) void bandBytes(name).catch(() => undefined);
+  }
+}
+
+/** Files the world has already built the band from: never fetched again by a late prefetch. */
+const used = new Set<BandFile>();
+
 /** Metres in the band's files to units here: the visitors' own factor. */
 export const BAND_SCALE = 3.42 / 1.7;
 /** Walking pace the walk clip was made for: two steps of ~0.48 m a second. */
@@ -81,10 +116,14 @@ export class RooftopBand {
   async load(files?: Partial<Record<BandMember | 'stage' | 'bonfire', ArrayBuffer>>): Promise<void> {
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
-    const URLS = files ? undefined : urls();
-    const get = (name: BandMember | 'stage' | 'bonfire') => {
+    const get = async (name: BandMember | 'stage' | 'bonfire') => {
       const data = files?.[name];
-      return data ? loader.parseAsync(data, '') : loader.loadAsync(URLS![name]);
+      if (data) return loader.parseAsync(data, '');
+      const gltf = await loader.parseAsync(await bandBytes(name), '');
+      // Built: the 8.5 MB of bytes need not be kept as well.
+      used.add(name);
+      fetched.delete(name);
+      return gltf;
     };
     // The set first, then each musician as their own file arrives. Waiting
     // for all six left the roof empty for minutes on a slow connection

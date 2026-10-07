@@ -544,6 +544,17 @@ export class App {
     // properly if it is still not there.
     void this.preloadAvatar().catch(() => undefined);
     this.preloadWorldModule();
+    // Then the band, and the bodies nobody here is wearing yet, behind them
+    // and still at the gate: the band used to start downloading only once
+    // the world had opened, and reached the roof a minute later (the owner,
+    // 2026-10-07). Behind, not beside: the world's own files go first.
+    void Promise.all([this.preloadAvatar(), this.preloadWorldModule()])
+      .then(() => Promise.all([import('../world/RooftopBand'), import('../world/ImportedAvatar')]))
+      .then(([band, avatars]) => {
+        band.prefetchBand();
+        void avatars.loadImportedAvatar(undefined, ['male'], true).catch(() => undefined);
+      })
+      .catch(() => undefined);
     this.watchForANewerBuild();
     this.showLastBreath();
     void this.detectVrSupport().finally(() => this.rejoinAfterDiscard());
@@ -5975,25 +5986,13 @@ export class App {
             this.reopenPanelKeepingPlace('admin');
           });
       });
-      panel.querySelectorAll<HTMLButtonElement>('[data-offering-retry]').forEach((button) => {
-        button.addEventListener('click', () => {
-          const id = button.dataset.offeringRetry ?? '';
-          const zh = this.language === 'zh-TW';
-          button.disabled = true;
-          button.textContent = zh ? '開立中…' : 'ISSUING…';
-          void this.festivalClient.retryOfferingInvoice(this.staffKey, id).then(async ({ ok, offering }) => {
-            // Redrawn in place, so the row shows its invoice number (or the
-            // new reason) where STAFF are looking.
-            await this.refreshAdminState();
-            this.showWorldAlert(ok
-              ? (zh ? `發票已開立：${offering.invoiceNo}` : `INVOICE ISSUED: ${offering.invoiceNo}`)
-              : (zh ? '綠界仍拒絕開立，原因已列在清單上' : 'ECPAY STILL REFUSED; THE REASON IS IN THE LIST'));
-          }).catch(async (error: unknown) => {
-            await this.refreshAdminState();
-            this.showWorldAlert(error instanceof Error ? error.message : (zh ? '開立失敗' : 'COULD NOT ISSUE'));
-          });
-        });
-      });
+      this.bindOfferingList(panel);
+      // The list is read fresh whenever it is on screen, and every 20 s while
+      // it stays there: it used to be the copy fetched when the panel first
+      // opened, so an offering made since never appeared (the owner,
+      // 2026-10-08: "I have no idea whether ECPay has issued a receipt").
+      if (panel.querySelector<HTMLDetailsElement>('[data-staff-section="offering"]')?.open) void this.refreshOfferingList();
+      this.watchOfferingList();
       const receiptEditor = panel.querySelector<HTMLFormElement>('#offering-receipt-editor');
       receiptEditor?.addEventListener('submit', (event) => {
         event.preventDefault();
@@ -6158,6 +6157,7 @@ export class App {
       panel.querySelectorAll<HTMLDetailsElement>('[data-staff-section]').forEach((section) => {
         section.addEventListener('toggle', () => {
           const id = section.dataset.staffSection ?? '';
+          if (id === 'offering' && section.open) void this.refreshOfferingList();
           if (section.open) this.openStaffSections.add(id);
           else this.openStaffSections.delete(id);
           sessionStorage.setItem(STAFF_SECTIONS_KEY, JSON.stringify([...this.openStaffSections]));
@@ -6632,13 +6632,87 @@ export class App {
       <div><span>${zh ? states[offering.state][0] : states[offering.state][1]}</span><small>${offering.paymentType ? `${this.escapeHtml(method(offering.paymentType))} · ` : ''}${this.escapeHtml(offering.tradeNo)}</small></div>
       <div class="staff-offerings__invoice">${invoice(offering)}</div>
     </li>`).join('');
+    const checked = this.offeringListCheckedAt
+      ? new Date(this.offeringListCheckedAt).toLocaleTimeString(zh ? 'zh-TW' : 'en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      : '';
     return `<div class="staff-offerings">
-      <span class="eyebrow">${zh ? '最近的供養與發票' : 'RECENT OFFERINGS AND INVOICES'}</span>
+      <div class="staff-offerings__head">
+        <span class="eyebrow">${zh ? '最近的供養與發票' : 'RECENT OFFERINGS AND INVOICES'}</span>
+        <span>${checked ? `<small>${zh ? `更新於 ${checked}` : `CHECKED ${checked}`}</small>` : ''}<button type="button" data-offerings-refresh>${zh ? '重新整理清單' : 'REFRESH LIST'}</button></span>
+      </div>
       <p class="staff-note">${zh
         ? '每筆供養付款後是否開出統一發票；沒開出的會寫出綠界的原因，可按「重新開立發票」再試一次。這份紀錄存在目前這台服務上，Render 重新部署後會清空——部署前已付款但沒開到發票的，請到綠界電子發票後台手動開立。'
         : "Whether each paid offering got its 統一發票. A refused one shows ECPay's reason and can be issued again. This list lives on the instance now serving and is emptied by a Render redeploy, so anything paid but not invoiced before a deploy has to be issued by hand in ECPay's invoice backend."}</p>
       ${rows ? `<ol class="staff-offerings__list">${rows}</ol>` : `<p class="staff-note">${zh ? '這台服務啟動以來還沒有供養。' : 'No offerings since this instance started.'}</p>`}
     </div>`;
+  }
+
+  private offeringListTimer?: number;
+  private offeringListCheckedAt = 0;
+
+  /** The retry buttons and the refresh button of the offerings list, wherever it was just drawn. */
+  private bindOfferingList(root: ParentNode): void {
+    root.querySelector<HTMLButtonElement>('[data-offerings-refresh]')?.addEventListener('click', () => {
+      void this.refreshOfferingList();
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-offering-retry]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = button.dataset.offeringRetry ?? '';
+        const zh = this.language === 'zh-TW';
+        button.disabled = true;
+        button.textContent = zh ? '開立中…' : 'ISSUING…';
+        void this.festivalClient.retryOfferingInvoice(this.staffKey, id).then(async ({ ok, offering }) => {
+          // Redrawn in place, so the row shows its invoice number (or the
+          // new reason) where STAFF are looking.
+          await this.refreshOfferingList();
+          this.showWorldAlert(ok
+            ? (zh ? `發票已開立：${offering.invoiceNo}` : `INVOICE ISSUED: ${offering.invoiceNo}`)
+            : (zh ? '綠界仍拒絕開立，原因已列在清單上' : 'ECPAY STILL REFUSED; THE REASON IS IN THE LIST'));
+        }).catch(async (error: unknown) => {
+          await this.refreshOfferingList();
+          this.showWorldAlert(error instanceof Error ? error.message : (zh ? '開立失敗' : 'COULD NOT ISSUE'));
+        });
+      });
+    });
+  }
+
+  /**
+   * Fetch the offerings again and redraw only their list, so a STAFF member
+   * typing in another field of the panel loses nothing.
+   */
+  private async refreshOfferingList(): Promise<void> {
+    if (!this.staffKey || !this.adminState) return;
+    try {
+      const fresh = await this.festivalClient.adminState(this.staffKey);
+      if (!this.adminState) return;
+      this.adminState.offerings = fresh.offerings ?? [];
+      this.offeringListCheckedAt = Date.now();
+    } catch {
+      return;
+    }
+    const list = this.root.querySelector<HTMLElement>('.staff-offerings');
+    if (!list) return;
+    const holder = document.createElement('div');
+    holder.innerHTML = this.staffOfferingsList();
+    const next = holder.firstElementChild;
+    if (!next) return;
+    list.replaceWith(next);
+    this.bindOfferingList(next);
+  }
+
+  /** Every 20 s while the list is open in the STAFF panel; stops by itself once it is not. */
+  private watchOfferingList(): void {
+    if (this.offeringListTimer !== undefined) return;
+    this.offeringListTimer = window.setInterval(() => {
+      const open = this.activePanel === 'admin'
+        && this.root.querySelector<HTMLDetailsElement>('[data-staff-section="offering"]')?.open;
+      if (!open) {
+        window.clearInterval(this.offeringListTimer);
+        this.offeringListTimer = undefined;
+        return;
+      }
+      void this.refreshOfferingList();
+    }, 20_000);
   }
 
   private staffSection(id: string, title: string, body: string): string {

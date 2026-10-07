@@ -478,6 +478,9 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
   border: 0; pointer-events: none; opacity: 0;
 }
 .staff-offerings { display: grid; gap: 8px; margin-top: 18px; }
+.staff-offerings__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.staff-offerings__head > span:last-child { display: flex; align-items: center; gap: 10px; }
+.staff-offerings__head small { font-size: 12px; opacity: .6; }
 .staff-offerings__list { margin: 0; padding: 0; list-style: none; display: grid; }
 /* Three columns on a desk — amount and visitor, payment, invoice — and one
    stacked column on a phone, where the invoice reason needs the full width. */
