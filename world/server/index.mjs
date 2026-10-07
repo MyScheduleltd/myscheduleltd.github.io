@@ -11,7 +11,6 @@ import {
   buildInvoice, buildOrder, ecpayConfig, readInvoiceReply,
   safeAmount, safeEmail, tradeNumber,
 } from './donations.mjs';
-import { receiptMailConfig, sendReceiptEmail } from './receipt-mail.mjs';
 
 /** The room remembers this many lines; older ones fall off the top. */
 const CHAT_HISTORY_LIMIT = 50;
@@ -1518,7 +1517,6 @@ const claimName = (name) => {
 };
 
 const ECPAY = ecpayConfig();
-const RECEIPT_MAIL = receiptMailConfig();
 
 /** Whether this visitor has an offering still open at ECPay. */
 const paying = (visitorId) => {
@@ -1606,7 +1604,9 @@ const issueInvoice = async (donation) => {
     relateNumber: donation.tradeNo,
     email: donation.email,
     amount: donation.paidAmount ?? donation.amount,
-    itemName: 'MYSCHEDULE 影展供養',
+    // What the 統一發票 says was sold, in the owner's words (2026-10-07), and
+    // what ECPay's checkout page says too.
+    itemName: '網路服務費',
   });
   const reply = await fetch(url, {
     method: 'POST',
@@ -1632,23 +1632,13 @@ const issueInvoice = async (donation) => {
   // would be naming a number they will never see. They have already been
   // thanked for the offering itself.
   if (!donation.wantsReceipt) return;
-  try {
-    const mailed = await sendReceiptEmail({
-      donation,
-      invoiceNo: outcome.invoiceNo,
-      production: ECPAY.production,
-    }, RECEIPT_MAIL);
-    donation.receiptEmailId = mailed.id;
-    donation.receiptEmailSent = true;
-  } catch (error) {
-    donation.receiptEmailError = String(error?.message ?? error);
-    donation.receiptEmailSent = false;
-  }
+  // ECPay emails the invoice itself: its issue notification is switched on in
+  // the merchant backend (the owner, 2026-10-07). The festival's own receipt
+  // email, which never had a mail service to send through, was removed.
   tellVisitor(donation.visitorId, 'donation', {
     id: donation.id,
     amount: donation.paidAmount ?? donation.amount,
     invoice: outcome.invoiceNo,
-    emailSent: donation.receiptEmailSent,
   });
 };
 
@@ -1787,8 +1777,6 @@ const server = createServer(async (request, response) => {
         // 'fallback-unusable' is one somebody set wrongly, and the two look
         // identical from a sheet with no tick box on it.
         receiptBlockedBy: receiptBlockedBy(),
-        receiptEmailEnabled: RECEIPT_MAIL.ready,
-        receiptEmailBlockedBy: RECEIPT_MAIL.blockedBy,
       });
     }
 
@@ -1860,7 +1848,8 @@ const server = createServer(async (request, response) => {
           config: ECPAY,
           tradeNo: donation.tradeNo,
           amount: donation.amount,
-          itemName: 'MYSCHEDULE 影展供養',
+          // The same words as the invoice's item line (the owner, 2026-10-07).
+          itemName: '網路服務費',
           tradeDesc: 'MYSCHEDULE Virtual Festival',
           custom: donation.id,
         });

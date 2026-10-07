@@ -263,7 +263,6 @@ export interface DonationReceipt {
   /** The invoice number, when one has been issued — it arrives a moment later. */
   invoice: string | null;
   /** True only after the configured mail provider accepted the message. */
-  emailSent?: boolean;
 }
 
 /**
@@ -290,8 +289,6 @@ export interface DonationOptions {
   invoice: boolean;
   /** Whether the sheet may offer the receipt as a choice rather than demand it. */
   receiptOptional: boolean;
-  receiptEmailEnabled: boolean;
-  receiptEmailBlockedBy?: string;
 }
 
 export interface JukeboxState {

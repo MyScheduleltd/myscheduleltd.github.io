@@ -291,7 +291,7 @@ export const buildInvoice = ({ config, relateNumber, email, amount, itemName }) 
     Items: [{
       ItemName: itemName,
       ItemCount: 1,
-      ItemWord: '份',
+      ItemWord: '次',
       ItemPrice: amount,
       ItemTaxType: '1',
       ItemAmount: amount,
