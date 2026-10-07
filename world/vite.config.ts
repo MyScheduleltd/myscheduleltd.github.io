@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 
 /**
@@ -51,11 +52,33 @@ const contentSecurityPolicy = (service: string): Plugin => ({
   },
 });
 
+/**
+ * The SHA-256 of every model and picture the world fetches, published on
+ * Pages beside them as `assets/asset-integrity.json`.
+ *
+ * Those files are fetched from jsDelivr's copy of this repository first
+ * (src/world/AssetMirror.ts), and a copy whose hash is not on this list is
+ * thrown away. The list itself always comes from this site.
+ */
+const assetIntegrity = (): Plugin => ({
+  name: 'festival-asset-integrity',
+  apply: 'build',
+  generateBundle(_options, bundle) {
+    const hashes: Record<string, string> = {};
+    for (const [fileName, item] of Object.entries(bundle)) {
+      if (item.type !== 'asset' || !/\.(glb|png|jpe?g|webp)$/i.test(fileName)) continue;
+      const bytes = typeof item.source === 'string' ? Buffer.from(item.source) : Buffer.from(item.source);
+      hashes[fileName.split('/').pop()!] = `sha256-${createHash('sha256').update(bytes).digest('base64')}`;
+    }
+    this.emitFile({ type: 'asset', fileName: 'assets/asset-integrity.json', source: JSON.stringify(hashes) });
+  },
+});
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     base: './',
-    plugins: [contentSecurityPolicy(env.VITE_FESTIVAL_SERVER_URL ?? '')],
+    plugins: [contentSecurityPolicy(env.VITE_FESTIVAL_SERVER_URL ?? ''), assetIntegrity()],
     build: {
       outDir: 'dist',
       emptyOutDir: true,

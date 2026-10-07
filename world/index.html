@@ -7,8 +7,13 @@
     <meta name="color-scheme" content="dark" />
     <link rel="icon" type="image/png" href="/src/assets/company-logo.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <!-- The resident/player body can download while the gate code is loading. -->
-    <link rel="preload" href="/src/assets/avatars/male.glb" as="fetch" crossorigin fetchpriority="high" />
+    <!--
+      No preload of the body here. It used to be fetched first, at high
+      priority, and on a slow connection to GitHub Pages it took the bandwidth
+      the sign-in page's own code needed: the gate appeared after 29 seconds
+      (2026-10-07). The body now follows the gate (App.preloadAvatar), from
+      the mirror (world/AssetMirror.ts).
+    -->
     <!--
       Warm the connection a headset's screens will need.
 

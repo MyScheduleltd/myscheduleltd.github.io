@@ -544,6 +544,17 @@ export class App {
     // properly if it is still not there.
     void this.preloadAvatar().catch(() => undefined);
     this.preloadWorldModule();
+    // Then the band, and the bodies nobody here is wearing yet, behind them
+    // and still at the gate: the band used to start downloading only once
+    // the world had opened, and reached the roof a minute later (the owner,
+    // 2026-10-07). Behind, not beside: the world's own files go first.
+    void Promise.all([this.preloadAvatar(), this.preloadWorldModule()])
+      .then(() => Promise.all([import('../world/RooftopBand'), import('../world/ImportedAvatar')]))
+      .then(([band, avatars]) => {
+        band.prefetchBand();
+        void avatars.loadImportedAvatar(undefined, ['male'], true).catch(() => undefined);
+      })
+      .catch(() => undefined);
     this.watchForANewerBuild();
     this.showLastBreath();
     void this.detectVrSupport().finally(() => this.rejoinAfterDiscard());

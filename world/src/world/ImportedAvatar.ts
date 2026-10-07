@@ -9,6 +9,7 @@ import { FINGER_NAMES, FIST, handPoseFromJoints, mixHandPose, type FingerName, t
 import { DEFAULT_ACCESSORY_COLOURS } from './AvatarAccessories';
 import movesData from '../data/moves.json';
 import { walkCoastalPose, levelCoastalFeet } from './CoastalPose';
+import { assetObjectUrl, fetchAsset } from './AssetMirror';
 
 /**
  * The punch and the dance, from the owner's Mixamo files (2026-10-01; see
@@ -143,7 +144,7 @@ async function loadVest(key: AvatarVariant, like?: THREE.Texture): Promise<THREE
   const url = vestUrl(key);
   if (!url || typeof window === 'undefined' || typeof Image === 'undefined') return undefined;
   try {
-    const texture = await new THREE.TextureLoader().loadAsync(url);
+    const texture = await loadPicture(url);
     texture.flipY = false;
     texture.colorSpace = THREE.SRGBColorSpace;
     if (like) { texture.magFilter = like.magFilter; texture.minFilter = like.minFilter; texture.anisotropy = like.anisotropy; }
@@ -153,10 +154,20 @@ async function loadVest(key: AvatarVariant, like?: THREE.Texture): Promise<THREE
   }
 }
 
+/** A texture by way of the mirror (AssetMirror.ts), opened from its bytes. */
+async function loadPicture(url: string): Promise<THREE.Texture> {
+  const objectUrl = await assetObjectUrl(url);
+  try {
+    return await new THREE.TextureLoader().loadAsync(objectUrl);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 async function loadDye(key: AvatarVariant): Promise<THREE.Texture | undefined> {
   if (typeof window === 'undefined' || typeof Image === 'undefined') return undefined;
   try {
-    const texture = await new THREE.TextureLoader().loadAsync(dyeUrl(key));
+    const texture = await loadPicture(dyeUrl(key));
     // Weights, not colours, and filtered exactly like the texture they
     // describe, so the two always agree about which texel is which.
     texture.flipY = false;
@@ -186,7 +197,7 @@ function loadVariant(key: AvatarVariant, bytes?: ArrayBuffer): Promise<void> {
   const promise = (async () => {
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
-    const gltf = bytes ? await loader.parseAsync(bytes, '') : await loader.loadAsync(modelUrl(key));
+    const gltf = await loader.parseAsync(bytes ?? await fetchAsset(modelUrl(key)), '');
     const template: Template = { scene: gltf.scene };
     let map: THREE.Texture | undefined;
     gltf.scene.traverse(o => { if (o instanceof THREE.Mesh && o.userData.componentId === 'body') map = (o.material as THREE.MeshStandardMaterial).map ?? undefined; });
