@@ -15,7 +15,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { checkMacValue, verifyCheckMacValue, ecpayUrlEncode, aesEncryptRaw, aesDecrypt } from './ecpay.mjs';
-import { ecpayConfig, buildOrder, DONATION_PRESETS, MIN_DONATION, MAX_DONATION } from './donations.mjs';
+import { ecpayConfig, buildOrder, buildInvoice, DONATION_PRESETS, MIN_DONATION, MAX_DONATION } from './donations.mjs';
 
 const VECTORS = [
   {
@@ -387,3 +387,26 @@ test('every preset is an amount the server would actually accept', () => {
     assert.ok(Number.isInteger(amount) && amount >= MIN_DONATION && amount <= MAX_DONATION, String(amount));
   }
 });
+
+test('the invoice goes to the phone barcode the buyer gave, and to ECPay\'s carrier otherwise', () => {
+  const config = ecpayConfig({});
+  const issued = (carrier) => aesDecrypt(buildInvoice({
+    config, relateNumber: 'MSTEST0000000001', email: 'giver@example.com', amount: 520, itemName: '網路服務費', ...carrier,
+  }).payload.Data, config.invoice.hashKey, config.invoice.hashIV);
+  const phone = issued({ carrierType: '3', carrierNum: '/AB201C9' });
+  assert.equal(phone.CarrierType, '3');
+  assert.equal(phone.CarrierNum, '/AB201C9');
+  assert.equal(phone.Print, '0', 'no paper invoices');
+  assert.equal(phone.Items[0].ItemName, '網路服務費');
+  assert.equal(phone.Items[0].ItemWord, '次');
+  const plain = issued({});
+  assert.equal(plain.CarrierType, '1');
+  assert.equal('CarrierNum' in plain, false, 'ECPay fills its own carrier number in');
+  // A malformed barcode never reaches ECPay as one.
+  assert.equal(issued({ carrierType: '3', carrierNum: 'AB201C9' }).CarrierType, '1');
+});
+
+test('the smallest offering is one every payment method accepts', () => {
+  assert.equal(MIN_DONATION, 30, 'below NT$30 ECPay hides the store code and barcode');
+});
+

@@ -1850,6 +1850,41 @@ test('an invoice goes to the donor only when they tick the receipt box, and othe
   assert.equal(JSON.stringify(saved).includes('unticked@example.com'), false, 'an address given without the tick is not kept');
 });
 
+test('a phone barcode carrier is checked, kept for the invoice, and survives a restart', async () => {
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const stateFile = joinPath(temporaryDirectory, 'phone-carrier-state.json');
+  const instance = await startServer(port, stateFile);
+  let id;
+  try {
+    const session = await fetch(`${url}/api/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' },
+      body: JSON.stringify({ name: 'BARCODE GIVER' }),
+    }).then((r) => r.json()).then((r) => r.session);
+    const give = (body) => fetch(`${url}/api/donation`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${session.token}`,
+        'x-festival-session': session.id,
+        'content-type': 'application/json',
+        origin: 'http://127.0.0.1:5173',
+      },
+      body: JSON.stringify(body),
+    });
+    assert.equal((await give({ amount: 29, email: 'giver@example.com', receipt: true })).status, 400, 'under NT$30');
+    assert.equal((await give({ amount: 52, email: 'giver@example.com', receipt: true, carrier: 'mobile', mobileBarcode: 'AB201C9' })).status, 400, 'no slash');
+    const made = await give({ amount: 52, email: 'giver@example.com', receipt: true, carrier: 'mobile', mobileBarcode: '/ab201c9' });
+    assert.equal(made.status, 200, 'typed in lowercase, read as the capitals it is');
+    ({ id } = await made.json());
+  } finally {
+    await stopServer(instance);
+  }
+  const saved = JSON.parse(readFileSync(stateFile, 'utf8')).donations.find((entry) => entry.id === id);
+  assert.equal(saved.carrierType, '3');
+  assert.equal(saved.carrierNum, '/AB201C9', 'kept, so a payment that lands days later is still invoiced to it');
+});
+
 test('a deferred offering survives a restart and can still be settled and invoiced', async () => {
   // The whole reason convenience-store and ATM payments needed work. Somebody
   // takes a 超商代碼 away, the service restarts twice over the next three days,

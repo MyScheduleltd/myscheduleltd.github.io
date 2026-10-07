@@ -9,7 +9,7 @@ import { verifyCheckMacValue } from './ecpay.mjs';
 import {
   DONATION_PRESETS, MAX_DONATION, MIN_DONATION,
   buildInvoice, buildOrder, ecpayConfig, readInvoiceReply,
-  safeAmount, safeEmail, tradeNumber,
+  safeAmount, safeEmail, tradeNumber, validMobileBarcode,
 } from './donations.mjs';
 
 /** The room remembers this many lines; older ones fall off the top. */
@@ -1479,6 +1479,8 @@ const donationForDisk = (donation) => ({
   amount: donation.amount,
   email: donation.email ?? '',
   wantsReceipt: Boolean(donation.wantsReceipt),
+  carrierType: donation.carrierType === '3' ? '3' : '1',
+  carrierNum: donation.carrierType === '3' && validMobileBarcode(donation.carrierNum) ? donation.carrierNum : '',
   visitorId: donation.visitorId,
   visitorName: donation.visitorName,
   createdAt: donation.createdAt,
@@ -1604,6 +1606,8 @@ const issueInvoice = async (donation) => {
     relateNumber: donation.tradeNo,
     email: donation.email,
     amount: donation.paidAmount ?? donation.amount,
+    carrierType: donation.carrierType,
+    carrierNum: donation.carrierNum,
     // What the 統一發票 says was sold, in the owner's words (2026-10-07), and
     // what ECPay's checkout page says too.
     itemName: '網路服務費',
@@ -1624,8 +1628,10 @@ const issueInvoice = async (donation) => {
   }
   donation.invoiceNo = outcome.invoiceNo;
   // The reason this address was written to disk at all was so a payment made
-  // days later could still be invoiced. It has been, so it comes off again.
+  // days later could still be invoiced. It has been, so it comes off again,
+  // and so does the phone barcode.
   donation.email = '';
+  donation.carrierNum = '';
   persist();
   // Silence when the donor declined a receipt. The invoice exists and went to
   // the festival's own mailbox; telling them 「收據號碼 X，已寄到你的信箱」
@@ -1801,6 +1807,14 @@ const server = createServer(async (request, response) => {
       // instead, which is the festival's address and not theirs.
       // The invoice is issued either way. This only decides where it lands.
       const email = wantsReceipt ? given : receiptMailbox();
+      // The visitor's phone barcode carrier, when they chose one. Only with a
+      // receipt: an unticked invoice goes to the festival's mailbox on ECPay's
+      // own carrier, as before.
+      const barcode = String(payload.mobileBarcode ?? '').trim().toUpperCase();
+      const phoneCarrier = wantsReceipt && payload.carrier === 'mobile';
+      if (phoneCarrier && !validMobileBarcode(barcode)) {
+        return apiError(response, 400, 'A phone barcode is a slash and seven letters or digits, like /AB201C9.');
+      }
       forgetOldDonations();
       // Each one is written to disk. Nobody needs more than a few checkouts
       // open at once, and a script asking for thousands would fill the store.
@@ -1814,6 +1828,8 @@ const server = createServer(async (request, response) => {
         amount,
         email,
         wantsReceipt,
+        carrierType: phoneCarrier ? '3' : '1',
+        carrierNum: phoneCarrier ? barcode : '',
         visitorId: visitor.id,
         visitorName: visitor.name,
         createdAt: Date.now(),

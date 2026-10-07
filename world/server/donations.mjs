@@ -17,7 +17,11 @@ import { randomUUID } from 'node:crypto';
 import { aesDecrypt, aesEncrypt, checkMacValue } from './ecpay.mjs';
 
 /** The smallest and largest offering, in whole New Taiwan dollars. */
-export const MIN_DONATION = 10;
+// NT$30: below it ECPay hides store code and store barcode from the payment
+// page (and below NT$11, ATM too), so a smaller offering could only be paid
+// by card. The owner chose a floor at which all six methods always appear
+// (2026-10-07).
+export const MIN_DONATION = 30;
 export const MAX_DONATION = 10_000;
 /**
  * What the panel offers before anybody types a number.
@@ -277,14 +281,25 @@ export const buildOrder = ({ config, tradeNo, amount, itemName, tradeDesc, custo
  * vocabulary it means the *invoice* is not being given away to a charity, which
  * is a different thing from the offering itself.
  */
-export const buildInvoice = ({ config, relateNumber, email, amount, itemName }) => {
+/**
+ * A phone barcode carrier (手機條碼載具), as ECPay's Issue API takes it: a slash
+ * and seven of digits, capital letters, `+`, `-` and `.` — eight in all.
+ */
+export const validMobileBarcode = (value) => /^\/[0-9A-Z+\-.]{7}$/.test(String(value ?? ''));
+
+export const buildInvoice = ({ config, relateNumber, email, amount, itemName, carrierType = '1', carrierNum = '' }) => {
+  // The carrier the buyer chose: ECPay's own (`1`, the number filled in by
+  // ECPay) or their phone barcode (`3`, the barcode itself). Print stays 0:
+  // ECPay allows it with either, and the festival posts no paper invoices.
+  const phone = carrierType === '3' && validMobileBarcode(carrierNum);
   const data = {
     MerchantID: config.invoice.merchantId,
     RelateNumber: relateNumber,
     CustomerEmail: email,
     Print: '0',
     Donation: '0',
-    CarrierType: '1',
+    CarrierType: phone ? '3' : '1',
+    ...(phone ? { CarrierNum: carrierNum } : {}),
     TaxType: '1',
     SalesAmount: amount,
     InvType: '07',
