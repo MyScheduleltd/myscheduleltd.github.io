@@ -2251,6 +2251,10 @@ test('STAFF see an offering whose invoice ECPay refused, and can issue it again'
     ECPAY_STAGE_INVOICE_BASE: fake,
   });
   const staff = { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173', 'content-type': 'application/json' };
+  // Render's log outlives the records (no disk), so every step goes there.
+  let log = '';
+  instance.stdout.on('data', (chunk) => { log += chunk.toString(); });
+  instance.stderr.on('data', (chunk) => { log += chunk.toString(); });
   try {
     const session = await fetch(`${url}/api/session`, {
       method: 'POST',
@@ -2333,6 +2337,24 @@ test('STAFF see an offering whose invoice ECPay refused, and can issue it again'
     });
     assert.equal(again.status, 200);
     assert.equal(issues.length, 2, 'pressing it again issues nothing more');
+
+    for (const step of [`Offering ${tradeNo} opened`, `Offering ${tradeNo} paid`, `Invoice not issued for ${tradeNo}`,
+      `Invoice FU67503600 issued for ${tradeNo}`, 'Invoice FU67503600 emailed by ECPay']) {
+      assert.ok(log.includes(step), `the log says: ${step}`);
+    }
+    assert.ok(!log.includes('giver@example.com'), 'and never the address');
+
+    // A payment ECPay reports for a record this instance has lost.
+    const orphan = { ...notice, MerchantTradeNo: 'MSLOSTRECORD0001', CustomField1: '00000000-0000-4000-8000-000000000000' };
+    delete orphan.CheckMacValue;
+    orphan.CheckMacValue = checkMacValue(orphan, config.payment.hashKey, config.payment.hashIV);
+    await fetch(`${url}/api/ecpay/notify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(orphan).toString(),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.match(log, /Offering MSLOSTRECORD0001 paid \(NT\$30\), but this service no longer has its record/);
   } finally {
     await stopServer(instance);
     await new Promise((resolve) => ecpay.close(resolve));

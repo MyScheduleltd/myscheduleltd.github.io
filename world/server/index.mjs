@@ -1651,6 +1651,7 @@ const requestInvoice = async (donation) => {
   }
   donation.invoiceNo = outcome.invoiceNo;
   donation.invoiceError = '';
+  console.log(`Invoice ${outcome.invoiceNo} issued for ${donation.tradeNo}`);
   // Issued is not sent: ask ECPay to email it, to whoever it was issued to —
   // the donor, or the STAFF mailbox when they declined a receipt. Without this
   // nobody ever received an invoice, only ECPay's payment confirmation.
@@ -1665,6 +1666,7 @@ const requestInvoice = async (donation) => {
       }).then((result) => result.json());
       const sent = readInvoiceNotifyReply(answer, ECPAY);
       donation.invoiceNoticeSent = sent.ok;
+      if (sent.ok) console.log(`Invoice ${outcome.invoiceNo} emailed by ECPay (${donation.wantsReceipt ? 'to the donor' : 'to the receipt mailbox'})`);
       if (!sent.ok) {
         donation.invoiceNoticeError = `${sent.stage}: ${sent.message}`;
         console.error(`Invoice ${outcome.invoiceNo} issued for ${donation.tradeNo}, but its email was refused: ${donation.invoiceNoticeError}`);
@@ -1938,6 +1940,10 @@ const server = createServer(async (request, response) => {
       // only ever existed in this process's memory is a payment nobody can
       // invoice — see the note above `donations`.
       persist();
+      // Render keeps its log across restarts; this service does not keep its
+      // records (no disk). So every step of an offering is written there too
+      // — the trade number, never the address (2026-10-08).
+      console.log(`Offering ${tradeNo} opened: NT$${amount}, ${visitor ? 'visitor' : 'sign-in page'}, receipt ${wantsReceipt ? 'to donor' : 'to mailbox'}`);
       // The tab that carries the payer is opened by their own tap, before this
       // request is made, and then pointed here. It cannot be opened afterwards:
       // a browser only allows a new window while it can still see the gesture
@@ -1994,6 +2000,12 @@ const server = createServer(async (request, response) => {
       }
       const donation = donations.get(String(notice.CustomField1 ?? ''));
       const paid = String(notice.RtnCode) === '1';
+      if (!donation && paid) {
+        // Signed by ECPay, so a real payment — for an offering this instance
+        // no longer has, because a restart or a deploy emptied the records.
+        // Nothing can be invoiced from here; say so where STAFF can find it.
+        console.error(`Offering ${String(notice.MerchantTradeNo ?? '').slice(0, 20)} paid (NT$${Number(notice.TradeAmt) || '?'}), but this service no longer has its record: issue its invoice by hand in ECPay's backend.`);
+      }
       // `awaiting` as well as `pending`: a store or ATM payment has already
       // been through `/api/ecpay/payment-info` to collect its code by the time
       // the money actually arrives, and the old guard would have thrown that
@@ -2008,6 +2020,7 @@ const server = createServer(async (request, response) => {
         donation.ecpayTradeNo = String(notice.TradeNo ?? '');
         donation.paymentType = String(notice.PaymentType ?? donation.paymentType ?? '');
         persist();
+        console.log(`Offering ${donation.tradeNo} ${paid ? 'paid' : 'not paid'}: NT$${donation.paidAmount} by ${donation.paymentType || 'unknown'} (ECPay ${donation.ecpayTradeNo})`);
         if (paid) {
           tellVisitor(donation.visitorId, 'donation', {
             id: donation.id,
