@@ -1,0 +1,23 @@
+import{C as g,b as n,S as d,R as c}from"./CoastalCirculation-Dk3cdpnl.js";import{s as p,f as k,h as x}from"./CoastalTerrain-VxOfymgA.js";import"./three-CpN_QYbP.js";function M(o){const s=Array.from({length:60},(t,e)=>{const a=-108+e*4;return`${a},${p(a)}`}).join(" "),$=g.map(t=>`<polyline ${t.kind==="walk"?'mask="url(#pavement-clearance)"':""} points="${t.points.map(e=>e.join(",")).join(" ")}" fill="none" stroke="${t.kind==="road"?"#666c68":t.kind==="carpet"?"#993e3a":"#e7ddc4"}" stroke-width="${t.width}" stroke-linejoin="miter"/>`).join(""),i=(t,e,a)=>`<g transform="translate(${t} ${e})"><circle r="4" fill="#f0e7d2" stroke="#474d48" stroke-width=".5"/><text text-anchor="middle" dy="1.6" font-size="4.8" fill="#252e30">${a}</text></g>`,l=n.shore,r=n["drive-in"],f=[0,1].flatMap(t=>[-1,0,1].map(e=>`<rect x="${35+e*7.2-1.8}" y="${-20.5-t*6.2-2.8}" width="3.6" height="5.6" rx=".5" fill="#ad7661" stroke="#eee2cb" stroke-width=".4"/>`)).join("");return`<svg class="coastal-plan" viewBox="-108 -78 232 156" role="img" aria-label="${o?"沿岸影展街區、地形與步行路線":"Coastal festival streets, terrain and walking routes"}">
+    <rect x="-108" y="-78" width="232" height="156" fill="#abb29a"/>
+    <path d="M-108,-78 L${s} L128,-78 Z" fill="#69999d"/>
+    <polyline points="${s}" fill="none" stroke="#d9c7a0" stroke-width="6"/>
+    <path d="M60,-46 Q125,-62 122,36 Q87,55 59,29Z" fill="#829474"/>
+    <path d="M68,-39 Q115,-49 115,32 M74,-29 Q106,-40 110,26" fill="none" stroke="#687f64" stroke-width=".6"/>
+    <defs><mask id="pavement-clearance"><rect x="-108" y="-78" width="232" height="156" fill="white"/>${c.map(t=>`<polygon points="${t.map(e=>e.join(",")).join(" ")}" fill="black"/>`).join("")}</mask></defs>
+    ${$}
+    <g stroke="#4e5752" stroke-width=".7"><rect x="-90" y="0" width="70" height="42" fill="#7d8580"/><rect x="-46.2" y="-49.2" width="22.4" height="19.4" fill="#687371"/><rect x="22" y="8" width="36" height="36" fill="#b9a987"/><rect x="76" y="-14" width="30" height="36" fill="#aa7254"/><g data-venue="drive-in" transform="translate(${r.dx} ${r.dz})"><rect x="22.5" y="-35.5" width="25" height="22" fill="#565f60"/><rect x="49.9" y="-18.65" width="4.2" height="3.3" fill="#a78563"/></g></g>
+    ${[[-39,65,17,14],[-66,65,19,13],[35,65,16,14],[62,66,17,12]].map(([t,e,a,h])=>`<rect x="${t-a/2}" y="${e-h/2}" width="${a}" height="${h}" fill="#a28a73" stroke="#626d5e" stroke-width=".6"/>`).join("")}
+    <g transform="translate(${r.dx} ${r.dz})">${f}<path d="M26,-36 H44" stroke="#3c484b" stroke-width="1.5"/></g><g data-venue="shore" transform="translate(${l.dx} ${l.dz})"><path d="M-9,-46 H9" stroke="#3c484b" stroke-width="1.5"/>
+    <g fill="#d5c5a5">${[-34.5,-37.3,-40.1].flatMap(t=>[-3,-2,-1,0,1,2,3].map(e=>`<rect x="${e*2.25-.65}" y="${t-.7}" width="1.3" height="1.4"/>`)).join("")}</g></g>
+    <g data-shore-sign="roadside" transform="translate(${d.x} ${d.z}) rotate(${d.rotation*180/Math.PI})"><rect x="${-5.6/2}" y="${-.7/2}" width="${d.width}" height="${d.depth}" fill="#354842" stroke="#d9c7a0" stroke-width=".35"/></g>
+    <rect x="17.3" y="17.6" width="4.6" height="2.4" fill="#b7aa8b"/><path d="M17.8,20 V36.5 H22" fill="none" stroke="#e7ddc4" stroke-width="3"/>
+    <g stroke="#71695c" stroke-width=".18">${Array.from({length:k.count},(t,e)=>`<path d="M${x(e)},-2.5 v13"/>`).join("")}</g>
+    <g fill="none" stroke="#b9ddda" stroke-width=".45" opacity=".7">${Array.from({length:18},(t,e)=>`<path d="M${-103+e*12},${-72+e%3*4} q2,-1 4,0 t4,0"/>`).join("")}</g>
+    <g stroke="#344b45" stroke-width=".5">${[[-94,-20],[-60,-18],[-14,-9],[12,-50],[59,-40],[111,-19],[-84,53],[65,64]].map(([t,e])=>`<g transform="translate(${t} ${e})"><path d="M0,4V-3" stroke="#796144" stroke-width="1"/><path d="M0,-3Q-6,-7 -5,-1Q-2,-3 0,-3Q5,-8 6,-1Q2,-3 0,-3" fill="#4e7962"/></g>`).join("")}</g>
+    <g fill="none" stroke="#c3c9b4" stroke-width="1">${[-88,-78,-58,-48,-38,-28].map(t=>`<path d="M${t},2v36"/>`).join("")}<path d="M-44,-47h18v14h-18z"/><path d="M25,12h30v27H25z"/></g>
+    <g fill="#d0ba7e"><path d="M74,-14l17,-9 17,9-3,2-14,-6-14,6z"/><path d="M75,-10h32v3H75z"/></g>
+    <g fill="#eee1bb"><path d="M-46,-30h22v3h-22z"/><path d="M-42,-29v4m4,-4v4m4,-4v4m4,-4v4" stroke="#a35846"/></g>
+    ${i(0,62,"1")}${i(0,3,"2")}${i(-35,-40,"3")}${i(35+r.dx,-24+r.dz,"4")}${i(l.dx,-39+l.dz,"5")}${i(-58,21,"6")}${i(40,30,"7")}${i(91,4,"8")}
+    <g fill="#253d3d" font-family="sans-serif" font-size="3.7"><text x="-99" y="-67">${o?"海岸":"COAST"}</text><text x="76" y="-37">${o?"山海小徑":"HILL WALK"}</text><text x="40" y="51" text-anchor="middle">${o?"屋頂放映":"ROOFTOP"}</text><text x="-83" y="46">${o?"跳舞俱樂部":"DANCE CLUB"}</text></g>
+  </svg>`}export{M as coastalMapGraphic};
