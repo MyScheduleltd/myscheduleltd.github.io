@@ -14,8 +14,8 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkMacValue, verifyCheckMacValue, ecpayUrlEncode, aesEncryptRaw, aesDecrypt } from './ecpay.mjs';
-import { ecpayConfig, buildOrder, buildInvoice, DONATION_PRESETS, MIN_DONATION, MAX_DONATION } from './donations.mjs';
+import { checkMacValue, verifyCheckMacValue, ecpayUrlEncode, aesEncryptRaw, aesEncrypt, aesDecrypt } from './ecpay.mjs';
+import { ecpayConfig, buildOrder, buildInvoice, buildInvoiceNotify, readInvoiceNotifyReply, DONATION_PRESETS, MIN_DONATION, MAX_DONATION } from './donations.mjs';
 
 const VECTORS = [
   {
@@ -408,5 +408,33 @@ test('the invoice goes to the phone barcode the buyer gave, and to ECPay\'s carr
 
 test('the smallest offering is one every payment method accepts', () => {
   assert.equal(MIN_DONATION, 30, 'below NT$30 ECPay hides the store code and barcode');
+});
+
+test('an issued invoice is emailed by asking ECPay, exactly as its InvoiceNotify page specifies', () => {
+  // developers.ecpay.com.tw/7938/: issue notice (I), by email (E), to the customer (C).
+  const production = {
+    ECPAY_ENV: 'production', ECPAY_INVOICE_MERCHANT_ID: '1234567',
+    ECPAY_INVOICE_HASH_KEY: 'abcdefghijklmnop', ECPAY_INVOICE_HASH_IV: 'ponmlkjihgfedcba',
+  };
+  for (const env of [{}, production]) {
+    const config = ecpayConfig(env);
+    const { url, payload } = buildInvoiceNotify({ config, invoiceNo: 'AB12345678', email: 'giver@example.com' });
+    assert.match(url, /^https:\/\/einvoice(-stage)?\.ecpay\.com\.tw\/B2CInvoice\/InvoiceNotify$/);
+    assert.equal(payload.MerchantID, config.invoice.merchantId);
+    assert.ok(Math.abs(payload.RqHeader.Timestamp - Date.now() / 1000) < 60, 'ECPay refuses a timestamp more than ten minutes off');
+    const data = aesDecrypt(payload.Data, config.invoice.hashKey, config.invoice.hashIV);
+    assert.deepEqual(data, {
+      MerchantID: config.invoice.merchantId, InvoiceNo: 'AB12345678', NotifyMail: 'giver@example.com',
+      Notify: 'E', InvoiceTag: 'I', Notified: 'C',
+    });
+  }
+});
+
+test('an InvoiceNotify reply is a success only when both of its layers say so', () => {
+  const config = ecpayConfig({});
+  const wrap = (data) => ({ TransCode: 1, Data: aesEncrypt(data, config.invoice.hashKey, config.invoice.hashIV) });
+  assert.deepEqual(readInvoiceNotifyReply(wrap({ RtnCode: 1, RtnMsg: 'ok' }), config), { ok: true });
+  assert.equal(readInvoiceNotifyReply(wrap({ RtnCode: 2000046, RtnMsg: '查無資料' }), config).ok, false);
+  assert.equal(readInvoiceNotifyReply({ TransCode: 999, TransMsg: 'bad' }, config).stage, 'envelope');
 });
 

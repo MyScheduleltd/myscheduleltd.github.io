@@ -9,7 +9,7 @@ import { verifyCheckMacValue } from './ecpay.mjs';
 import {
   DONATION_PRESETS, MAX_DONATION, MIN_DONATION,
   buildInvoice, buildOrder, ecpayConfig, readInvoiceReply,
-  safeAmount, safeEmail, tradeNumber, validMobileBarcode,
+  safeAmount, safeEmail, tradeNumber, validMobileBarcode, buildInvoiceNotify, readInvoiceNotifyReply,
 } from './donations.mjs';
 
 /** The room remembers this many lines; older ones fall off the top. */
@@ -1627,6 +1627,30 @@ const issueInvoice = async (donation) => {
     return;
   }
   donation.invoiceNo = outcome.invoiceNo;
+  // Issued is not sent: ask ECPay to email it, to whoever it was issued to —
+  // the donor, or the STAFF mailbox when they declined a receipt. Without this
+  // nobody ever received an invoice, only ECPay's payment confirmation.
+  const issuedTo = donation.email;
+  if (issuedTo) {
+    try {
+      const notice = buildInvoiceNotify({ config: ECPAY, invoiceNo: outcome.invoiceNo, email: issuedTo });
+      const answer = await fetch(notice.url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(notice.payload),
+      }).then((result) => result.json());
+      const sent = readInvoiceNotifyReply(answer, ECPAY);
+      donation.invoiceNoticeSent = sent.ok;
+      if (!sent.ok) {
+        donation.invoiceNoticeError = `${sent.stage}: ${sent.message}`;
+        console.error(`Invoice ${outcome.invoiceNo} issued for ${donation.tradeNo}, but its email was refused: ${donation.invoiceNoticeError}`);
+      }
+    } catch (error) {
+      donation.invoiceNoticeSent = false;
+      donation.invoiceNoticeError = String(error?.message ?? error);
+      console.error(`Invoice ${outcome.invoiceNo} issued for ${donation.tradeNo}, but its email could not be requested: ${donation.invoiceNoticeError}`);
+    }
+  }
   // The reason this address was written to disk at all was so a payment made
   // days later could still be invoiced. It has been, so it comes off again,
   // and so does the phone barcode.
@@ -1638,8 +1662,7 @@ const issueInvoice = async (donation) => {
   // would be naming a number they will never see. They have already been
   // thanked for the offering itself.
   if (!donation.wantsReceipt) return;
-  // ECPay emails the invoice itself: its issue notification is switched on in
-  // the merchant backend (the owner, 2026-10-07). The festival's own receipt
+  // ECPay emails the invoice, asked to above. The festival's own receipt
   // email, which never had a mail service to send through, was removed.
   tellVisitor(donation.visitorId, 'donation', {
     id: donation.id,

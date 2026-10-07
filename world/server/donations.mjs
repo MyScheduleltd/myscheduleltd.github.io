@@ -35,10 +35,12 @@ export const DONATION_PRESETS = [52, 520, 5920];
 const STAGE = {
   checkout: 'https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5',
   invoice: 'https://einvoice-stage.ecpay.com.tw/B2CInvoice/Issue',
+  invoiceNotify: 'https://einvoice-stage.ecpay.com.tw/B2CInvoice/InvoiceNotify',
 };
 const PRODUCTION = {
   checkout: 'https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5',
   invoice: 'https://einvoice.ecpay.com.tw/B2CInvoice/Issue',
+  invoiceNotify: 'https://einvoice.ecpay.com.tw/B2CInvoice/InvoiceNotify',
 };
 
 /**
@@ -345,4 +347,48 @@ export const readInvoiceReply = (reply, config) => {
     return { ok: false, stage: 'issue', message: String(data?.RtnMsg ?? 'The invoice was refused.') };
   }
   return { ok: true, invoiceNo: String(data.InvoiceNo ?? ''), issuedAt: String(data.InvoiceDate ?? '') };
+};
+
+/**
+ * Asking ECPay to email an issued invoice to the buyer.
+ *
+ * Issuing an invoice does not send it anywhere by itself. ECPay emails it only
+ * if the merchant backend's notification option is on, or when the shop calls
+ * InvoiceNotify — and the owner received only the payment confirmation, never
+ * the invoice (2026-10-07). So the service asks, every time, for the issue
+ * notice (`InvoiceTag: I`) by email (`Notify: E`) to the customer
+ * (`Notified: C`). ECPay's guide says the backend option must then be off, or
+ * the buyer gets two. Specification: developers.ecpay.com.tw/7938/.
+ */
+export const buildInvoiceNotify = ({ config, invoiceNo, email }) => ({
+  url: config.urls.invoiceNotify,
+  payload: {
+    MerchantID: config.invoice.merchantId,
+    RqHeader: { Timestamp: Math.floor(Date.now() / 1000) },
+    Data: aesEncrypt({
+      MerchantID: config.invoice.merchantId,
+      InvoiceNo: invoiceNo,
+      NotifyMail: email,
+      Notify: 'E',
+      InvoiceTag: 'I',
+      Notified: 'C',
+    }, config.invoice.hashKey, config.invoice.hashIV),
+  },
+});
+
+/** InvoiceNotify answers in the same two layers as Issue: envelope, then result. */
+export const readInvoiceNotifyReply = (reply, config) => {
+  if (Number(reply?.TransCode) !== 1) {
+    return { ok: false, stage: 'envelope', message: String(reply?.TransMsg ?? 'ECPay rejected the request.') };
+  }
+  let data;
+  try {
+    data = aesDecrypt(reply.Data, config.invoice.hashKey, config.invoice.hashIV);
+  } catch {
+    return { ok: false, stage: 'decrypt', message: 'The reply could not be decrypted.' };
+  }
+  if (Number(data?.RtnCode) !== 1) {
+    return { ok: false, stage: 'notify', message: String(data?.RtnMsg ?? 'The notice was refused.') };
+  }
+  return { ok: true };
 };
