@@ -465,6 +465,10 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
   will-change: background-position;
 }
 .world-shell[data-world-quality='lite'] .world-grain { display: none; }
+/* 精簡 is drawn at one pixel per CSS pixel (FestivalWorld.mainPixelRatio) and
+   shown as sharp blocks rather than smoothed into a blur. */
+.world-shell[data-world-quality='lite'] #world-canvas,
+.world-shell[data-world-quality='lite'] #world-foreground { image-rendering: crisp-edges; image-rendering: pixelated; }
 @media (prefers-reduced-motion: reduce) { .world-grain { animation: none; } }
 /* The jukebox's player. It is only ever a source of sound — the picture is
    irrelevant and must never be on screen — so it is parked off-canvas rather
@@ -833,6 +837,12 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
   padding: 0 15px; border: 1px solid var(--paper); color: var(--paper); background: rgba(8,9,10,.85); font: 800 15px var(--condensed); cursor: pointer;
 }
 .pass-toggle:hover { background: var(--red); }
+/* Behind whatever is open over the world. Above everything, it sat on top of
+   the last rows of a film list on a phone and covered what it listed (the
+   owner, 2026-10-07). An open panel or seat menu has its own close button, so
+   nothing is lost by sending the pass under it until it closes. */
+.world-shell:has(#panel:not([hidden])) .pass-toggle { z-index: 8; }
+.world-shell:has(#seat-menu:not([hidden])) .pass-toggle { z-index: 10; }
 .festival-pass {
   /* PASS is the global navigation drawer. It must remain the frontmost menu,
      including when it is opened over an already-open settings or quest panel. */

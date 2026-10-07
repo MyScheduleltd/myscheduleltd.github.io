@@ -824,6 +824,15 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
   // swapped for the real one the moment it lands.
   const resolve = (want: AvatarVariant): AvatarVariant => templates.has(want) ? want : 'male';
   let mounted = mount(resolve(wanted()));
+  // Off-screen: the skin is not drawn and not re-posed. Decided per frame by
+  // the world from where the body is drawn (see FestivalWorld.cullAvatars).
+  let culled = false;
+  importedAvatarRoots.add(root);
+  root.userData.setImportedCulled = (next: boolean) => {
+    culled = next;
+    mounted.model.visible = !next;
+  };
+  root.userData.importedCulled = () => culled;
   const clothed = () => dressed();
   const morph = (mesh: THREE.SkinnedMesh, name: string, value: number) => {
     const index = mesh.morphTargetDictionary?.[name];
@@ -954,6 +963,10 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
   root.userData.importedMoveActive = () => activeMove()?.name ?? null;
 
   root.userData.syncImportedAvatar = () => {
+    // Not drawn this frame, so nothing to rebuild. The next frame it is seen,
+    // it is synced before it is drawn.
+    // A distant body seen this frame is rebuilt every other frame.
+    if (culled || root.userData.cullThrottle) return;
     // The procedural rig the bones follow; the model is rebuilt below.
     body.updateWorldMatrix(true, false);
     for (const child of body.children) if (child !== mounted.model) child.updateWorldMatrix(false, true);
@@ -1236,7 +1249,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
   const settle = () => {
     const want = resolve(wanted());
     const changed = mounted.key !== want;
-    if (changed) { unmount(mounted); mounted = mount(want); }
+    if (changed) { unmount(mounted); mounted = mount(want); mounted.model.visible = !culled; }
     refresh();
     if (changed) { measureHead(); root.userData.syncImportedAvatar(); }
   };
@@ -1262,6 +1275,22 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
   return rig;
 }
 
+/**
+ * Every body that carries an imported avatar. Kept as a list because walking
+ * the whole scene to find the fifteen of them cost a traversal of thousands of
+ * objects every frame.
+ */
+export const importedAvatarRoots = new Set<THREE.Object3D>();
+
+const inScene = (node: THREE.Object3D, scene: THREE.Object3D): boolean => {
+  for (let p: THREE.Object3D | null = node; p; p = p.parent) if (p === scene) return true;
+  return false;
+};
+
 export function syncImportedAvatars(scene: THREE.Object3D): void {
-  scene.traverse(o => { if (o.userData.syncImportedAvatar) o.userData.syncImportedAvatar(); });
+  for (const root of importedAvatarRoots) {
+    // A body not (or not yet) in this scene is skipped, never forgotten: a
+    // remote visitor's body is built before it is added.
+    if (root.userData.syncImportedAvatar && inScene(root, scene)) root.userData.syncImportedAvatar();
+  }
 }

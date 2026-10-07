@@ -4,12 +4,14 @@ import {
   planRenderScale, RENDER_SCALE_FLOOR, RENDER_SCALE_LOW_FPS, RENDER_SCALE_HIGH_FPS,
 } from '../src/world/RenderScale.ts';
 
-const PHONE = RENDER_SCALE_FLOOR.lite;
+const PHONE = RENDER_SCALE_FLOOR.normal;
 
-test('a phone is allowed further down than a desk', () => {
-  // The whole point of the change: the ramp used to refuse to run at all in
-  // the mode phones are given, which is the only place it was needed.
-  assert.ok(RENDER_SCALE_FLOOR.lite < RENDER_SCALE_FLOOR.normal);
+test('精簡 holds its resolution, so its pixels stay square', () => {
+  // It is enlarged as crisp blocks; a fractional scale makes them uneven, and
+  // halving it was the blur the owner saw on a phone (2026-10-07).
+  assert.equal(RENDER_SCALE_FLOOR.lite, 1);
+  assert.equal(planRenderScale(1, 12, RENDER_SCALE_FLOOR.lite).changed, false);
+  assert.ok(RENDER_SCALE_FLOOR.normal < 1, '一般 may still trade resolution for frames');
 });
 
 test('a struggling picture loses resolution, one step at a time', () => {
