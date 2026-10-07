@@ -1606,7 +1606,10 @@ const issueInvoice = async (donation) => {
     relateNumber: donation.tradeNo,
     email: donation.email,
     amount: donation.paidAmount ?? donation.amount,
-    itemName: 'MYSCHEDULE 影展供養',
+    // What the 統一發票 says was sold, in the owner's words (2026-10-07). The
+    // checkout page at ECPay keeps its own description; only the invoice's
+    // item line is this.
+    itemName: '網路服務費',
   });
   const reply = await fetch(url, {
     method: 'POST',
