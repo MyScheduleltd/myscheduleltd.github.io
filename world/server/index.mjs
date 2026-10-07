@@ -1787,7 +1787,11 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'POST' && url.pathname === '/api/donation') {
-      if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+      // A session is not required. The sign-in page's Donate button offers
+      // the same sale to somebody who has not entered the festival, and they
+      // have no session to send — so it answered every guest "Invalid
+      // festival session" (the owner, 2026-10-07). A guest's offering simply
+      // has nobody inside to thank; ECPay and the invoice work the same.
       if (!ECPAY.ready) return apiError(response, 503, 'Offerings are not accepting payment yet.');
       const payload = await body(request);
       const amount = safeAmount(payload.amount);
@@ -1818,8 +1822,18 @@ const server = createServer(async (request, response) => {
       forgetOldDonations();
       // Each one is written to disk. Nobody needs more than a few checkouts
       // open at once, and a script asking for thousands would fill the store.
-      const open = [...donations.values()].filter((entry) => entry.visitorId === visitor.id && entry.state === 'pending').length;
+      // A guest is counted by network address, which Cloudflare sets and a
+      // client cannot choose; all guests together are held to a ceiling too,
+      // since none of them needed a session to ask.
+      const address = visitor ? '' : clientAddress(request);
+      const pending = [...donations.values()].filter((entry) => entry.state === 'pending');
+      const open = visitor
+        ? pending.filter((entry) => entry.visitorId === visitor.id).length
+        : pending.filter((entry) => !entry.visitorId && entry.guestAddress === address).length;
       if (open >= 5) return apiError(response, 429, 'Finish or close an open offering first.');
+      if (!visitor && pending.filter((entry) => !entry.visitorId).length >= 200) {
+        return apiError(response, 503, 'Too many offerings are open right now. Try again shortly.');
+      }
       const id = randomUUID();
       const tradeNo = tradeNumber();
       donations.set(id, {
@@ -1830,8 +1844,10 @@ const server = createServer(async (request, response) => {
         wantsReceipt,
         carrierType: phoneCarrier ? '3' : '1',
         carrierNum: phoneCarrier ? barcode : '',
-        visitorId: visitor.id,
-        visitorName: visitor.name,
+        visitorId: visitor?.id ?? '',
+        visitorName: visitor?.name ?? '',
+        // Held in memory only, to count a guest's open checkouts.
+        ...(visitor ? {} : { guestAddress: address }),
         createdAt: Date.now(),
         state: 'pending',
       });
