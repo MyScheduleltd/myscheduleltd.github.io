@@ -4969,9 +4969,16 @@ export class App {
         <div class="offering__receipt" data-offering-receipt>
           <label class="offering__field"><span>${zh ? '發票寄送信箱' : 'EMAIL FOR THE INVOICE'}</span>
             <input type="email" inputmode="email" autocomplete="email" data-offering-email placeholder="you@example.com" /></label>
+          <fieldset class="offering__carrier">
+            <legend>${zh ? '發票載具' : 'INVOICE CARRIER'}</legend>
+            <label><input type="radio" name="offering-carrier" value="ecpay" data-offering-carrier checked /><span>${zh ? '綠界科技電子發票載具' : 'ECPay e-invoice carrier'}</span></label>
+            <label><input type="radio" name="offering-carrier" value="mobile" data-offering-carrier /><span>${zh ? '手機條碼載具' : 'Phone barcode carrier'}</span></label>
+            <label class="offering__field" data-offering-barcode-row hidden><span>${zh ? '手機條碼' : 'PHONE BARCODE'}</span>
+              <input type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="8" data-offering-barcode placeholder="/AB201C9" /></label>
+          </fieldset>
           <p class="offering__note">${zh
-            ? '綠界會把電子發票寄到這個信箱。不勾選也照開，只是寄到影展自己的信箱。'
-            : 'ECPay emails the invoice here. Unticked, it is still issued — just to the festival\u2019s own address instead.'}</p>
+            ? '綠界會把電子發票通知寄到這個信箱；選手機條碼時，發票會存進你的手機條碼載具。不勾選也照開，只是寄到影展自己的信箱。'
+            : 'ECPay emails the invoice notice here; with a phone barcode the invoice is also stored in that carrier. Unticked, it is still issued — just to the festival\u2019s own address instead.'}</p>
         </div>` : ''}
         <p class="offering__error" data-offering-error hidden></p>
         <button type="button" class="offering__go" data-offering-go>${gate ? 'Donate' : (zh ? '感謝供養' : 'MY DEEPEST GRATITUDE')}</button>
@@ -5055,6 +5062,23 @@ export class App {
       if (wants.checked) email?.focus();
     });
     email?.addEventListener('input', reassure);
+    // The phone barcode field only when that carrier is chosen. Typed in
+    // capitals, as the government prints it, so a lowercase entry is not a
+    // rejection for no visible reason.
+    const barcodeRow = sheet.querySelector<HTMLElement>('[data-offering-barcode-row]');
+    const barcode = sheet.querySelector<HTMLInputElement>('[data-offering-barcode]');
+    const carrier = () => sheet.querySelector<HTMLInputElement>('[data-offering-carrier]:checked')?.value === 'mobile' ? 'mobile' : 'ecpay';
+    sheet.querySelectorAll<HTMLInputElement>('[data-offering-carrier]').forEach((radio) => radio.addEventListener('change', () => {
+      if (barcodeRow) barcodeRow.hidden = carrier() !== 'mobile';
+      reassure();
+      if (carrier() === 'mobile') barcode?.focus();
+    }));
+    barcode?.addEventListener('input', () => {
+      const at = barcode.selectionStart;
+      barcode.value = barcode.value.toUpperCase();
+      if (at !== null) barcode.setSelectionRange(at, at);
+      reassure();
+    });
 
     sheet.querySelector('[data-offering-go]')?.addEventListener('click', () => {
       reassure();
@@ -5072,6 +5096,11 @@ export class App {
       if (options.invoice && wanted && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
         return complain(zh ? '請填一個能收到收據的信箱。' : 'An email address is needed for the receipt.');
       }
+      const phoneCarrier = Boolean(options.invoice && wanted && carrier() === 'mobile');
+      const code = phoneCarrier ? (barcode?.value.trim().toUpperCase() ?? '') : '';
+      if (phoneCarrier && !/^\/[0-9A-Z+\-.]{7}$/.test(code)) {
+        return complain(zh ? '手機條碼是「/」加 7 個英數字，例如 /AB201C9。' : 'A phone barcode is a slash and seven letters or digits, like /AB201C9.');
+      }
       // The tab is opened **here**, inside the tap, and pointed somewhere real
       // only once the service answers. A browser allows a new window while it
       // can still see the gesture that asked for one; open it after an await
@@ -5085,7 +5114,7 @@ export class App {
       // the window opened, which in a headset meant losing the session to a
       // blocked popup and never seeing a payment page at all.
       if (tab) void this.leaveHeadsetForNewWindow(payment);
-      void this.festivalClient.beginDonation(amount, address, wanted).then((started) => {
+      void this.festivalClient.beginDonation(amount, address, wanted, code).then((started) => {
         if (tab) tab.location.replace(started.checkoutUrl);
         // No tab means a blocker took it. On a flat screen the offering goes
         // in this window instead — the festival reloads on the way back,

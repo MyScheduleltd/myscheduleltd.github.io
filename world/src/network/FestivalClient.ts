@@ -651,10 +651,14 @@ export class FestivalClient {
     amount: number,
     email: string,
     receipt = true,
+    /** A phone barcode carrier (/XXXXXXX), or empty for ECPay's own carrier. */
+    mobileBarcode = '',
   ): Promise<{ id: string; checkoutUrl: string }> {
     const response = await this.request('/api/donation', {
       method: 'POST',
-      body: JSON.stringify({ amount, email, receipt }),
+      body: JSON.stringify(mobileBarcode
+        ? { amount, email, receipt, carrier: 'mobile', mobileBarcode }
+        : { amount, email, receipt }),
     });
     return await response.json() as { id: string; checkoutUrl: string };
   }

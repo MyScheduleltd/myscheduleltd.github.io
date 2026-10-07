@@ -1658,17 +1658,19 @@ test('a name is refused while somebody is actually holding it', async () => {
 });
 
 
-test('an offering needs a session, an amount in range, and an email', async () => {
-  const anonymous = await fetch(`${baseUrl}/api/donation`, {
+test('an offering needs an amount in range and an email, from a guest or a visitor', async () => {
+  // A guest on the sign-in page may give too (the Donate button there), but
+  // is held to exactly the same amount and address rules.
+  const guestTooSmall = await fetch(`${baseUrl}/api/donation`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ amount: 100, email: 'donor@example.com' }),
+    body: JSON.stringify({ amount: 29, email: 'donor@example.com' }),
   });
-  assert.equal(anonymous.status, 401, 'nobody can give money without being in the festival');
+  assert.equal(guestTooSmall.status, 400);
 
   const session = await join('OFFERING TEST');
   const tooSmall = await fetch(`${baseUrl}/api/donation`, {
-    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 9, email: 'donor@example.com' }),
+    method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 29, email: 'donor@example.com' }),
   });
   assert.equal(tooSmall.status, 400);
   const tooLarge = await fetch(`${baseUrl}/api/donation`, {
@@ -1848,6 +1850,62 @@ test('an invoice goes to the donor only when they tick the receipt box, and othe
   assert.equal(record(ids.unticked).email, mailbox);
   assert.equal(record(ids.unticked).wantsReceipt, false);
   assert.equal(JSON.stringify(saved).includes('unticked@example.com'), false, 'an address given without the tick is not kept');
+});
+
+test('a phone barcode carrier is checked, kept for the invoice, and survives a restart', async () => {
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const stateFile = joinPath(temporaryDirectory, 'phone-carrier-state.json');
+  const instance = await startServer(port, stateFile);
+  let id;
+  try {
+    const session = await fetch(`${url}/api/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' },
+      body: JSON.stringify({ name: 'BARCODE GIVER' }),
+    }).then((r) => r.json()).then((r) => r.session);
+    const give = (body) => fetch(`${url}/api/donation`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${session.token}`,
+        'x-festival-session': session.id,
+        'content-type': 'application/json',
+        origin: 'http://127.0.0.1:5173',
+      },
+      body: JSON.stringify(body),
+    });
+    assert.equal((await give({ amount: 29, email: 'giver@example.com', receipt: true })).status, 400, 'under NT$30');
+    assert.equal((await give({ amount: 52, email: 'giver@example.com', receipt: true, carrier: 'mobile', mobileBarcode: 'AB201C9' })).status, 400, 'no slash');
+    const made = await give({ amount: 52, email: 'giver@example.com', receipt: true, carrier: 'mobile', mobileBarcode: '/ab201c9' });
+    assert.equal(made.status, 200, 'typed in lowercase, read as the capitals it is');
+    ({ id } = await made.json());
+  } finally {
+    await stopServer(instance);
+  }
+  const saved = JSON.parse(readFileSync(stateFile, 'utf8')).donations.find((entry) => entry.id === id);
+  assert.equal(saved.carrierType, '3');
+  assert.equal(saved.carrierNum, '/AB201C9', 'kept, so a payment that lands days later is still invoiced to it');
+});
+
+test('a guest on the sign-in page can make an offering, within limits', async () => {
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const instance = await startServer(port, joinPath(temporaryDirectory, 'guest-offering-state.json'));
+  try {
+    const give = (address) => fetch(`${url}/api/donation`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173', 'cf-connecting-ip': address },
+      body: JSON.stringify({ amount: 52, email: 'guest@example.com', receipt: true }),
+    });
+    const first = await give('203.0.113.20');
+    assert.equal(first.status, 200, 'no session needed to pay');
+    assert.match((await first.json()).checkoutUrl, /\/api\/donation\/[0-9a-f-]{36}\/checkout$/);
+    for (let k = 1; k < 5; k += 1) assert.equal((await give('203.0.113.20')).status, 200);
+    assert.equal((await give('203.0.113.20')).status, 429, 'five open checkouts per address');
+    assert.equal((await give('203.0.113.21')).status, 200, 'another address is not held up');
+  } finally {
+    await stopServer(instance);
+  }
 });
 
 test('a deferred offering survives a restart and can still be settled and invoiced', async () => {
