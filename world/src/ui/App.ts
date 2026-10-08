@@ -379,6 +379,13 @@ const setButtonPressed = (button: HTMLButtonElement, pressed: boolean) => {
   button.classList.toggle('is-selected', pressed);
 };
 
+/**
+ * Whose introduction card offers 音樂製作. XIEH GAN's only, for now (the
+ * owner, 2026-10-08) — not even STAFF see it on DR.BEAUTY's card. Add an id
+ * here to give another resident the page.
+ */
+const CREDIT_CARDS = new Set(['XIEHGAN']);
+
 export class App {
   private readonly root: HTMLElement;
   private world?: FestivalWorld;
@@ -4061,7 +4068,7 @@ export class App {
         <button type="submit">${zh ? '儲存中文介紹' : 'SAVE ENGLISH INTRODUCTION'}</button>
       </form>` : ''}
       <div class="dj-about__actions">
-        ${hasCredits || canEdit ? `<button class="dj-about__credits-button" type="button" data-dj-credits>${zh ? '音樂製作' : 'MUSIC PRODUCTION'}</button>` : ''}
+        ${CREDIT_CARDS.has(profile.id) && (hasCredits || canEdit) ? `<button class="dj-about__credits-button" type="button" data-dj-credits>${zh ? '音樂製作' : 'MUSIC PRODUCTION'}</button>` : ''}
         <button class="seat-menu__back dj-about__back" type="button" data-dj-back>${zh ? '回到點歌' : 'BACK TO REQUESTS'}</button>
       </div>`;
 
