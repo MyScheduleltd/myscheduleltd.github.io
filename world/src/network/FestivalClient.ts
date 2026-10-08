@@ -157,6 +157,8 @@ export interface FestivalState {
   templeSign: TempleSign;
   entranceSign?: EntranceSign;
   jukebox?: JukeboxState;
+  /** The temple's wish wall: notes left with paid offerings, newest last. */
+  wishes?: Wish[];
   gateCopy: GateCopy;
   trackTempos: TrackTempos;
   immersiveSources?: ImmersiveSources;
@@ -167,6 +169,25 @@ export interface FestivalState {
  * An offering as STAFF see it. Never the donor's address or phone barcode:
  * only whether its invoice was issued, and ECPay's reason when it was not.
  */
+/** A note on the temple's wish wall. `name` is empty for a guest who typed none. */
+export interface Wish {
+  id: string;
+  name: string;
+  message: string;
+  at: number;
+}
+
+/** ECPay's answer about this merchant's invoice number ranges, read with the keys the service holds. */
+export interface InvoiceCheck {
+  ok: boolean;
+  stage?: string;
+  message?: string;
+  production?: boolean;
+  merchantId?: string;
+  checkedAt?: number;
+  ranges?: Array<{ header: string; year: string; term: number; type: string; start: string; end: string; used: string; status: number }>;
+}
+
 export interface StaffOffering {
   id: string;
   tradeNo: string;
@@ -232,6 +253,8 @@ export interface AdminState {
   immersiveSources?: ImmersiveSources;
   videoTitles?: VideoTitles;
   jukebox?: JukeboxState;
+  /** The temple's wish wall: notes left with paid offerings, newest last. */
+  wishes?: Wish[];
 }
 
 /** A resident DJ's introduction, shown from their booth. */
@@ -242,6 +265,9 @@ export interface DjProfile {
   roleZh: string;
   introduction: string;
   introductionZh: string;
+  /** Music-production credits, one per line; a line starting with * is a footnote. */
+  credits?: string;
+  creditsZh?: string;
   updatedAt: number;
 }
 
@@ -678,12 +704,23 @@ export class FestivalClient {
     receipt = true,
     /** A phone barcode carrier (/XXXXXXX), or empty for ECPay's own carrier. */
     mobileBarcode = '',
+    /**
+     * A note for the temple's wish wall, shown once the payment is confirmed,
+     * and — from the sign-in page, where there is no name in the world yet —
+     * the name to sign it with.
+     */
+    wish: { message?: string; displayName?: string } = {},
   ): Promise<{ id: string; checkoutUrl: string }> {
     const response = await this.request('/api/donation', {
       method: 'POST',
-      body: JSON.stringify(mobileBarcode
-        ? { amount, email, receipt, carrier: 'mobile', mobileBarcode }
-        : { amount, email, receipt }),
+      body: JSON.stringify({
+        amount,
+        email,
+        receipt,
+        ...(mobileBarcode ? { carrier: 'mobile', mobileBarcode } : {}),
+        ...(wish.message ? { message: wish.message } : {}),
+        ...(wish.displayName ? { displayName: wish.displayName } : {}),
+      }),
     });
     return await response.json() as { id: string; checkoutUrl: string };
   }
@@ -908,6 +945,8 @@ export class FestivalClient {
     roleZh: string;
     introduction: string;
     introductionZh: string;
+    credits?: string;
+    creditsZh?: string;
   }): Promise<void> {
     await this.adminRequest('/api/admin/dj-profile', key, {
       method: 'POST',
@@ -934,6 +973,16 @@ export class FestivalClient {
       method: 'POST',
       body: JSON.stringify({ email }),
     });
+  }
+
+  /** STAFF take a note off the wish wall. */
+  async removeWish(key: string, id: string): Promise<void> {
+    await this.adminRequest('/api/admin/wishes/remove', key, { method: 'POST', body: JSON.stringify({ id }) });
+  }
+
+  /** Read-only: ECPay lists the invoice number ranges, proving (or not) the invoice keys. */
+  async checkInvoice(key: string): Promise<InvoiceCheck> {
+    return await this.adminRequest('/api/admin/invoice-check', key, { method: 'POST', body: '{}' }) as InvoiceCheck;
   }
 
   /** Ask ECPay again for a paid offering's 統一發票. A refusal comes back in `offering.invoiceError`. */

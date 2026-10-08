@@ -34,6 +34,7 @@ import {
   FestivalClient,
   type AdminState,
   type StaffOffering,
+  type InvoiceCheck,
   type ChatChannel,
   type ConnectionStatus,
   type DjProfile,
@@ -429,7 +430,7 @@ export class App {
   private cameraHidden = false;
   private cameraCornerCueTimer = 0;
   private publicFilmId?: string;
-  private openDjBooth?: { name: string; venue: 'club' | 'rooftop'; view: 'requests' | 'about' };
+  private openDjBooth?: { name: string; venue: 'club' | 'rooftop'; view: 'requests' | 'about' | 'credits' };
   /** Set once STAFF touch the introduction, so no update can redraw over them. */
   private djIntroductionTouched = false;
   /** The introduction as it stood when drawn, to notice someone else changing it. */
@@ -1304,6 +1305,7 @@ export class App {
       },
     });
     this.world.setNpcProfiles(this.npcProfiles);
+    this.world.setWishes(this.networkState?.wishes ?? []);
     this.world.start();
     // Other body variants are background work, after the visitor is inside.
     void import('../world/ImportedAvatar').then(({ loadImportedAvatar }) => loadImportedAvatar()).catch(() => undefined);
@@ -1711,6 +1713,12 @@ export class App {
           overlaps,
         };
       };
+    } else if ((reviewTarget === 'dj-about' || reviewTarget === 'dj-credits' || reviewTarget === 'wish-wall') && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      // XIEH GAN's introduction and credits, and the temple's wish wall, open
+      // without walking there (2026-10-08).
+      if (reviewTarget === 'dj-about') this.openDjAbout(this.npcName('XIEHGAN'), 'club');
+      else if (reviewTarget === 'dj-credits') this.openDjCredits(this.npcName('XIEHGAN'), 'club');
+      else this.showWishWall();
     } else if (reviewTarget === 'menu-ownership' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       this.openDjRequest(this.npcName('XIEHGAN'), 'club');
       this.openSeatMenu('SHORE-REVIEW', 'shore');
@@ -2468,6 +2476,10 @@ export class App {
     }
     if (action.type === 'jukebox') {
       this.openPanel('jukebox');
+      return;
+    }
+    if (action.type === 'wishWall') {
+      this.showWishWall();
       return;
     }
     if (action.type === 'shop') {
@@ -4024,6 +4036,7 @@ export class App {
     this.openDjBooth = { name: djName, venue, view: 'about' };
     menu.dataset.menuOwner = 'dj';
     const canEdit = Boolean(this.staffKey) && this.festivalClient.online;
+    const hasCredits = Boolean((zh ? profile.creditsZh : profile.credits)?.trim());
     const paragraphs = (text: string) => text
       .split(/\n+/)
       .map((line) => line.trim())
@@ -4047,8 +4060,12 @@ export class App {
           : 'This edits the English version. Switch to 繁中 to edit the Chinese one; they are saved separately.'}</p>
         <button type="submit">${zh ? '儲存中文介紹' : 'SAVE ENGLISH INTRODUCTION'}</button>
       </form>` : ''}
-      <button class="seat-menu__back dj-about__back" type="button" data-dj-back>${zh ? '回到點歌' : 'BACK TO REQUESTS'}</button>`;
+      <div class="dj-about__actions">
+        ${hasCredits || canEdit ? `<button class="dj-about__credits-button" type="button" data-dj-credits>${zh ? '音樂製作' : 'MUSIC PRODUCTION'}</button>` : ''}
+        <button class="seat-menu__back dj-about__back" type="button" data-dj-back>${zh ? '回到點歌' : 'BACK TO REQUESTS'}</button>
+      </div>`;
 
+    menu.querySelector<HTMLButtonElement>('[data-dj-credits]')?.addEventListener('click', () => this.openDjCredits(djName, venue));
     this.djIntroductionTouched = false;
     this.djIntroductionSignature = this.djProfileSignature(profile);
     menu.querySelector<HTMLFormElement>('[data-dj-edit]')?.addEventListener('input', () => {
@@ -4077,6 +4094,117 @@ export class App {
         this.showWorldAlert(zh ? '介紹已更新' : 'INTRODUCTION SAVED');
         this.djIntroductionTouched = false;
         this.openDjAbout(djName, venue);
+      }).catch((error: unknown) => {
+        if (submit instanceof HTMLButtonElement) submit.disabled = false;
+        this.showWorldAlert(error instanceof Error ? error.message : (zh ? '儲存失敗' : 'COULD NOT SAVE'));
+      });
+    });
+  }
+
+  private openWishWall = false;
+
+  /**
+   * The temple's wish wall, read properly: every note in full, newest first,
+   * in the seat menu (which the headset paints as well). The painted board
+   * outside only fits so much and is only legible up close.
+   */
+  private showWishWall(): void {
+    const menu = this.root.querySelector<HTMLElement>('#seat-menu');
+    if (!menu) return;
+    const zh = this.language === 'zh-TW';
+    const wishes = [...(this.networkState?.wishes ?? [])].reverse();
+    this.openWishWall = true;
+    menu.dataset.menuOwner = 'wishes';
+    menu.hidden = false;
+    menu.innerHTML = `
+      ${this.seatMenuClose()}
+      <p class="eyebrow">${zh ? '美麗仙人' : 'THE TEMPLE'}</p>
+      <h2 id="seat-menu-title">${zh ? '祈福牆' : 'WISH WALL'}</h2>
+      <p class="dj-about__hint">${zh
+        ? '供養時留下的話，付款完成後掛上這面牆。只保留最新 30 則。'
+        : 'Notes left with offerings, hung here once paid. The newest 30 are kept.'}</p>
+      ${wishes.length
+        ? `<ul class="wish-list">${wishes.map((wish) => `<li><strong>${this.escapeHtml(wish.name || (zh ? '訪客' : 'GUEST'))}</strong><p>${this.escapeHtml(wish.message)}</p></li>`).join('')}</ul>`
+        : `<p class="panel-note">${zh ? '還沒有人留言。按 B 供養時就能留下一句話。' : 'No notes yet. Leave one with an offering (B).'}</p>`}`;
+    const close = (): void => {
+      this.openWishWall = false;
+      menu.hidden = true;
+      delete menu.dataset.menuOwner;
+    };
+    this.onSeatMenuClose(menu, close);
+  }
+
+  /**
+   * A resident's music-production credits, opened from their introduction
+   * (the owner, 2026-10-08). One credit per line; a line starting with * is
+   * a footnote under the list. The list scrolls on its own, so the heading
+   * and the way back stay in view. STAFF edit each language here, as they do
+   * the introduction.
+   */
+  private openDjCredits(djName: string, venue: 'club' | 'rooftop'): void {
+    const menu = this.root.querySelector<HTMLElement>('#seat-menu');
+    if (!menu) return;
+    const zh = this.language === 'zh-TW';
+    const profile = djProfileFor(venue, this.networkState?.djProfiles, djName);
+    if (!profile) return;
+    this.openDjBooth = { name: djName, venue, view: 'credits' };
+    menu.dataset.menuOwner = 'dj';
+    const canEdit = Boolean(this.staffKey) && this.festivalClient.online;
+    const text = (zh ? profile.creditsZh : profile.credits) ?? '';
+    const lines = text.split(/\n+/).map((line) => line.trim().replace(/^[·•‧・\-]\s*/, '')).filter(Boolean);
+    const items = lines.filter((line) => !line.startsWith('*'));
+    const notes = lines.filter((line) => line.startsWith('*')).map((line) => line.replace(/^\*\s*/, ''));
+    menu.hidden = false;
+    menu.innerHTML = `
+      ${this.seatMenuClose()}
+      <p class="eyebrow">${this.escapeHtml(this.venueName(venue))} · ${zh ? '音樂製作' : 'MUSIC PRODUCTION'}</p>
+      <h2 id="seat-menu-title">${this.escapeHtml(profile.name)}</h2>
+      ${items.length
+        ? `<ul class="dj-credits">${items.map((line) => `<li>${this.escapeHtml(line.replace(/\*$/, ''))}${line.endsWith('*') ? '<sup>*</sup>' : ''}</li>`).join('')}</ul>`
+        : `<p class="dj-about__hint">${zh ? '還沒有音樂製作資料。' : 'No music-production credits yet.'}</p>`}
+      ${notes.length ? `<div class="dj-credits__notes">${notes.map((note) => `<p><sup>*</sup>${this.escapeHtml(note)}</p>`).join('')}</div>` : ''}
+      ${canEdit ? `
+      <form class="dj-about__edit" data-dj-edit>
+        <p class="eyebrow dj-about__wide">${zh ? 'STAFF 編輯 · 中文' : 'STAFF EDIT · ENGLISH'}</p>
+        <label class="dj-about__wide"><span>${zh ? '音樂製作（一行一筆，* 開頭為附註）' : 'CREDITS (ONE PER LINE; START A FOOTNOTE WITH *)'}</span><textarea name="credits" rows="10" maxlength="12000">${this.escapeHtml(text)}</textarea></label>
+        <p class="dj-about__hint dj-about__wide">${zh
+          ? '這裡編輯的是中文版。切換到 EN 可編輯英文版，兩者分開儲存。'
+          : 'This edits the English version. Switch to 繁中 to edit the Chinese one; they are saved separately.'}</p>
+        <button type="submit">${zh ? '儲存中文音樂製作' : 'SAVE ENGLISH CREDITS'}</button>
+      </form>` : ''}
+      <div class="dj-about__actions">
+        <button class="seat-menu__back dj-about__back" type="button" data-dj-about>${zh ? '回到介紹' : 'BACK TO INTRODUCTION'}</button>
+        <button class="seat-menu__back dj-about__back" type="button" data-dj-back>${zh ? '回到點歌' : 'BACK TO REQUESTS'}</button>
+      </div>`;
+    this.djIntroductionTouched = false;
+    this.djIntroductionSignature = this.djProfileSignature(profile);
+    menu.querySelector<HTMLFormElement>('[data-dj-edit]')?.addEventListener('input', () => {
+      this.djIntroductionTouched = true;
+    });
+    const backToAbout = (): void => this.openDjAbout(djName, venue);
+    menu.querySelector<HTMLButtonElement>('[data-dj-about]')?.addEventListener('click', backToAbout);
+    menu.querySelector<HTMLButtonElement>('[data-dj-back]')?.addEventListener('click', () => this.openDjRequest(djName, venue));
+    this.onSeatMenuClose(menu, backToAbout);
+    menu.querySelector<HTMLFormElement>('[data-dj-edit]')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const submit = form.querySelector('button[type=submit]');
+      if (submit instanceof HTMLButtonElement) submit.disabled = true;
+      const credits = String(new FormData(form).get('credits') ?? '');
+      // The introduction is sent back exactly as it came; only the credits in
+      // the language on screen change.
+      void this.festivalClient.updateDjProfile(this.staffKey, {
+        id: profile.id,
+        role: profile.role,
+        roleZh: profile.roleZh,
+        introduction: profile.introduction,
+        introductionZh: profile.introductionZh,
+        credits: zh ? (profile.credits ?? '') : credits,
+        creditsZh: zh ? credits : (profile.creditsZh ?? ''),
+      }).then(() => {
+        this.showWorldAlert(zh ? '音樂製作已更新' : 'CREDITS SAVED');
+        this.djIntroductionTouched = false;
+        this.openDjCredits(djName, venue);
       }).catch((error: unknown) => {
         if (submit instanceof HTMLButtonElement) submit.disabled = false;
         this.showWorldAlert(error instanceof Error ? error.message : (zh ? '儲存失敗' : 'COULD NOT SAVE'));
@@ -4321,6 +4449,11 @@ export class App {
     }
     if (state.entranceSign) this.world?.setEntranceSign(state.entranceSign.title, state.entranceSign.subtitle);
     if (state.templeSign) this.world?.setTempleSign(state.templeSign.name, state.templeSign.label);
+    this.world?.setWishes(state.wishes ?? []);
+    // The wall's panel, if it is the one open, follows the list as it changes.
+    const wallMenu = this.root.querySelector<HTMLElement>('#seat-menu');
+    if (this.openWishWall && wallMenu && !wallMenu.hidden && wallMenu.dataset.menuOwner === 'wishes') this.showWishWall();
+    else this.openWishWall = false;
     this.world?.setSharedMentorCarrier(state.mentorCarrierId, state.selfId);
     this.world?.setMentorFollower(state.mentorFollower);
     const remoteVisitors = state.visitors
@@ -4372,8 +4505,9 @@ export class App {
       const booth = this.openDjBooth;
       this.networkState = state;
       if (booth.view === 'requests') this.openDjRequest(booth.name, booth.venue);
-      else if (!this.djIntroductionBeingEdited()) this.openDjAbout(booth.name, booth.venue);
-      else this.noticeDjIntroductionChanged(booth.name, booth.venue);
+      else if (this.djIntroductionBeingEdited()) this.noticeDjIntroductionChanged(booth.name, booth.venue);
+      else if (booth.view === 'credits') this.openDjCredits(booth.name, booth.venue);
+      else this.openDjAbout(booth.name, booth.venue);
     }
     const request = state.clubRequest;
     if (request && request.at > previousRequestAt && this.snapshot?.screeningVenue === (request.venue ?? 'club')) {
@@ -4974,6 +5108,10 @@ export class App {
         <label class="offering__field"><span>${zh ? '自訂金額' : 'OR YOUR OWN'}</span>
           <input type="number" inputmode="numeric" data-offering-custom min="${options.min}" max="${options.max}" step="1" placeholder="${options.min}–${options.max}" />
         </label>
+        <label class="offering__field offering__wish"><span>${zh ? '留言（付款完成後掛上美麗仙人祈福牆）' : 'A NOTE FOR THE TEMPLE WISH WALL (POSTED ONCE PAID)'}</span>
+          <textarea data-offering-message rows="2" maxlength="60" placeholder="${zh ? '可留空，最多 60 字' : 'Optional, up to 60 characters'}"></textarea>
+          <small data-offering-message-count>0 / 60</small>
+        </label>
         ${options.invoice ? `${options.receiptOptional ? `<label class="offering__check">
           <input type="checkbox" data-offering-wants checked />
           <span>${zh ? '我要收據' : "I'D LIKE A RECEIPT"}</span>
@@ -5060,6 +5198,11 @@ export class App {
       setChosen(null);
       reassure();
     });
+    const message = sheet.querySelector<HTMLTextAreaElement>('[data-offering-message]');
+    const messageCount = sheet.querySelector<HTMLElement>('[data-offering-message-count]');
+    message?.addEventListener('input', () => {
+      if (messageCount) messageCount.textContent = `${[...message.value].length} / 60`;
+    });
 
     // Ticked to begin with, by the owner's decision: an invoice is issued
     // either way, and this is what decides whether it reaches the visitor or
@@ -5126,7 +5269,11 @@ export class App {
       // the window opened, which in a headset meant losing the session to a
       // blocked popup and never seeing a payment page at all.
       if (tab) void this.leaveHeadsetForNewWindow(payment);
-      void this.festivalClient.beginDonation(amount, address, wanted, code).then((started) => {
+      // Signed in the world with the visitor's own name (the service knows it);
+      // from the sign-in page with whatever is typed in the gate's name field.
+      const gateName = gate ? (this.root.querySelector<HTMLInputElement>('input[name="festivalId"]')?.value.trim() ?? '') : '';
+      const wish = { message: message?.value.trim() ?? '', displayName: gateName };
+      void this.festivalClient.beginDonation(amount, address, wanted, code, wish).then((started) => {
         if (tab) tab.location.replace(started.checkoutUrl);
         // No tab means a blocker took it. On a flat screen the offering goes
         // in this window instead — the festival reloads on the way back,
@@ -5987,6 +6134,28 @@ export class App {
           });
       });
       this.bindOfferingList(panel);
+      panel.querySelectorAll<HTMLButtonElement>('[data-wish-remove]').forEach((button) => {
+        button.addEventListener('click', () => {
+          button.disabled = true;
+          void this.festivalClient.removeWish(this.staffKey, button.dataset.wishRemove ?? '')
+            .then(() => {
+              if (this.networkState?.wishes) this.networkState.wishes = this.networkState.wishes.filter((wish) => wish.id !== button.dataset.wishRemove);
+              this.reopenPanelKeepingPlace('admin');
+            })
+            .catch((error: unknown) => {
+              button.disabled = false;
+              this.showWorldAlert(error instanceof Error ? error.message : 'COULD NOT REMOVE');
+            });
+        });
+      });
+      panel.querySelector<HTMLButtonElement>('[data-invoice-check]')?.addEventListener('click', () => {
+        this.invoiceChecking = true;
+        this.reopenPanelKeepingPlace('admin');
+        void this.festivalClient.checkInvoice(this.staffKey)
+          .then((check) => { this.invoiceCheck = check; })
+          .catch((error: unknown) => { this.invoiceCheck = { ok: false, stage: 'network', message: error instanceof Error ? error.message : String(error) }; })
+          .finally(() => { this.invoiceChecking = false; this.reopenPanelKeepingPlace('admin'); });
+      });
       // The list is read fresh whenever it is on screen, and every 20 s while
       // it stays there: it used to be the copy fetched when the panel first
       // opened, so an offering made since never appeared (the owner,
@@ -6647,6 +6816,60 @@ export class App {
     </div>`;
   }
 
+  private invoiceCheck?: InvoiceCheck;
+  private invoiceChecking = false;
+
+  /**
+   * The STAFF answer to "is ECPay set up?": one read-only call that lists the
+   * invoice number ranges using the keys the service holds (2026-10-08 — the
+   * owner had paid twice and seen no invoice, with every setting looking right).
+   */
+  private invoiceCheckBlock(): string {
+    const zh = this.language === 'zh-TW';
+    const check = this.invoiceCheck;
+    const terms = ['', '1–2月', '3–4月', '5–6月', '7–8月', '9–10月', '11–12月'];
+    const termsEn = ['', 'Jan–Feb', 'Mar–Apr', 'May–Jun', 'Jul–Aug', 'Sep–Oct', 'Nov–Dec'];
+    const statuses = ['', '未啟用', '使用中', '已停用', '暫停中', '待審核', '審核不通過'];
+    const statusesEn = ['', 'NOT ENABLED', 'IN USE', 'STOPPED', 'PAUSED', 'AWAITING REVIEW', 'REJECTED'];
+    let result = '';
+    if (check?.ok) {
+      const ranges = (check.ranges ?? []).map((range) => `<li><strong>${this.escapeHtml(range.header)}</strong> ${this.escapeHtml(range.year)}${zh ? '年' : ''} ${zh ? terms[range.term] ?? '' : termsEn[range.term] ?? ''} · ${this.escapeHtml(range.start)}–${this.escapeHtml(range.end)} · ${range.used ? `${zh ? '已用到' : 'USED TO'} ${this.escapeHtml(range.used)}` : (zh ? '尚未開出任何發票' : 'NONE ISSUED YET')} · ${zh ? statuses[range.status] ?? '' : statusesEn[range.status] ?? ''}</li>`).join('');
+      result = `<p class="staff-note">${zh
+        ? `綠界電子發票金鑰正確（商店代號 ${this.escapeHtml(check.merchantId ?? '')}${check.production ? '' : '，測試環境'}）。`
+        : `ECPay accepts the invoice keys (merchant ${this.escapeHtml(check.merchantId ?? '')}${check.production ? '' : ', stage'}).`}</p>
+        ${ranges ? `<ul class="staff-invoice-check__ranges">${ranges}</ul>` : `<p class="staff-note staff-note--warn">${zh ? '綠界說今年沒有任何字軌。' : 'ECPay lists no number ranges for this year.'}</p>`}`;
+    } else if (check) {
+      const keys = ['envelope', 'decrypt'].includes(check.stage ?? '') || /HTTP 500/.test(check.message ?? '');
+      result = `<p class="staff-note staff-note--warn">${zh ? '綠界拒絕：' : 'ECPay refused: '}${this.escapeHtml(check.message ?? '')}${keys
+        ? (zh
+          ? '<br>請確認 Render 的 ECPAY_INVOICE_MERCHANT_ID、ECPAY_INVOICE_HASH_KEY、ECPAY_INVOICE_HASH_IV，與綠界電子發票後台「系統開發管理 › 系統介接設定」的電子發票金鑰完全一致，存檔後重新部署。'
+          : "<br>Check that Render's ECPAY_INVOICE_MERCHANT_ID, ECPAY_INVOICE_HASH_KEY and ECPAY_INVOICE_HASH_IV match the e-invoice keys under 系統開發管理 › 系統介接設定 exactly, then redeploy.")
+        : ''}</p>`;
+    }
+    return `<div class="staff-invoice-check">
+      <button type="button" data-invoice-check${this.invoiceChecking ? ' disabled' : ''}>${this.invoiceChecking ? (zh ? '檢查中…' : 'CHECKING…') : (zh ? '檢查綠界發票設定' : 'CHECK ECPAY INVOICE SETUP')}</button>
+      <small>${zh ? '只讀取字軌，不會開立任何發票。' : 'Reads the number ranges only; issues nothing.'}</small>
+      ${result}
+    </div>`;
+  }
+
+  /** STAFF can take a note off the temple's wish wall. */
+  private staffWishList(): string {
+    const zh = this.language === 'zh-TW';
+    const wishes = [...(this.networkState?.wishes ?? [])].reverse();
+    return `<div class="staff-offerings">
+      <span class="eyebrow">${zh ? '祈福牆留言' : 'WISH WALL NOTES'}</span>
+      <p class="staff-note">${zh
+        ? '付款完成的供養留言，最新 30 則。只存在記憶體，服務重啟或重新部署就會清空。不妥的留言可在這裡移除。'
+        : 'Notes from paid offerings, newest 30. Kept in memory only: a restart or redeploy clears them. Remove anything unsuitable here.'}</p>
+      ${wishes.length ? `<ol class="staff-offerings__list">${wishes.map((wish) => `<li class="staff-offerings__row">
+        <div><strong>${this.escapeHtml(wish.name || (zh ? '訪客' : 'GUEST'))}</strong><small>${new Date(wish.at).toLocaleString(zh ? 'zh-TW' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small></div>
+        <div><small>${this.escapeHtml(wish.message)}</small></div>
+        <div class="staff-offerings__invoice"><button type="button" data-wish-remove="${this.escapeAttribute(wish.id)}">${zh ? '移除' : 'REMOVE'}</button></div>
+      </li>`).join('')}</ol>` : `<p class="staff-note">${zh ? '牆上還沒有留言。' : 'The wall is empty.'}</p>`}
+    </div>`;
+  }
+
   private offeringListTimer?: number;
   private offeringListCheckedAt = 0;
 
@@ -6790,7 +7013,9 @@ export class App {
         ${this.offeringReceiptWarning()}
         <button type="submit">${this.language === 'zh-TW' ? '儲存收據信箱' : 'SAVE MAILBOX'}</button>
       </form>
-      ${this.staffOfferingsList()}`)}
+      ${this.invoiceCheckBlock()}
+      ${this.staffOfferingsList()}
+      ${this.staffWishList()}`)}
       ${this.staffSection('jukebox', this.language === 'zh-TW' ? '點唱機' : 'JUKEBOX', `
       <form class="staff-form" id="jukebox-editor">
         <p class="panel-intro">${this.language === 'zh-TW'
@@ -7293,6 +7518,7 @@ export class App {
     if (value.startsWith('E / WAG TAIL AT')) return value.replace('E / WAG TAIL AT', 'E／搖尾巴給');
     if (value === 'E / ORDER A DRINK') return 'E／點一杯';
     if (value === 'E / OPEN MASTER OF THE HOUSE') return 'E／逛 MASTER OF THE HOUSE';
+    if (value === 'E / READ THE WISH WALL') return 'E／看祈福牆';
     if (value === 'E / PUT A RECORD ON') return 'E／點歌';
     if (value === 'SHIFT+E / DRINK UP') return 'SHIFT+E／喝一口';
     if (value.startsWith('E / EAT ')) {

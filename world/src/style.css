@@ -477,6 +477,9 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
   position: fixed; width: 320px; height: 180px; left: -9999px; top: -9999px;
   border: 0; pointer-events: none; opacity: 0;
 }
+.staff-invoice-check { display: grid; gap: 6px; margin-top: 18px; justify-items: start; }
+.staff-invoice-check small { font-size: 12px; opacity: .6; }
+.staff-invoice-check__ranges { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
 .staff-offerings { display: grid; gap: 8px; margin-top: 18px; }
 .staff-offerings__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .staff-offerings__head > span:last-child { display: flex; align-items: center; gap: 10px; }
@@ -535,7 +538,16 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
 .jukebox-queue ol { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 5px; }
 .jukebox-queue li { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
 .jukebox-queue li strong { font-weight: 600; font-size: 13px; }
-.jukebox-picks { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+/* The shelf scrolls on its own, so a long jukebox keeps "now playing" and the
+   queue in view while visitors look for a record (owner, 2026-10-08). The
+   queue does the same once it is long. Wheel and touch stay inside the list. */
+.jukebox-picks {
+  display: flex; flex-direction: column; gap: 6px; margin-top: 6px;
+  max-height: min(46svh, 440px); overflow-y: auto; overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch; padding-right: 4px; scrollbar-gutter: stable;
+}
+.jukebox-picks button { flex: none; }
+.jukebox-queue ol { max-height: min(24svh, 220px); overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
 .jukebox-picks button {
   padding: 9px 12px; text-align: left; cursor: pointer;
   border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.05); color: inherit;
@@ -1070,8 +1082,10 @@ button:active { filter: brightness(.88); scale: .96; }
    empty cell, or their name and location would slide left out of step. */
 .attendee-list li { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 12px; border-block: 1px solid rgba(17,17,19,.2); padding: 15px 0; }
 .attendee-about-gap { display: block; }
-.attendee-list strong { display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; }
-.attendee-list strong em { color: var(--red); font: 700 11px var(--condensed); letter-spacing: .08em; text-transform: uppercase; }
+/* Name above, title below (owner, 2026-10-08): side by side, a long title
+   like 保健室阿姨 pushed the name's line apart and read as one phrase. */
+.attendee-list strong { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+.attendee-list strong em { display: block; color: var(--red); font: 700 12px/1.2 var(--condensed); font-style: normal; letter-spacing: .08em; text-transform: uppercase; }
 .attendee-list small { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; text-align: right; }
 .attendee-feed-count { border: 1px solid currentColor; padding: 2px 5px; color: var(--red); font: 800 10px var(--condensed); letter-spacing: .06em; white-space: nowrap; }
 /* Sits beside the feed count and is built from the same parts — the pill, the
@@ -1806,6 +1820,29 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   margin-top: 10px; border: 2px solid var(--ink);
   color: var(--ink); background: transparent;
 }
+/* 音樂製作 sits left of 回到點歌, which moved over to make room (owner,
+   2026-10-08). Same size as the way back; filled, because it goes forward. */
+.dj-about__actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.dj-about__actions .dj-about__back { margin-top: 0; }
+.dj-about__credits-button {
+  box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 176px; min-height: 46px; padding: 0 18px; border: 2px solid var(--red);
+  color: white; background: var(--red); font: 800 13px var(--condensed); letter-spacing: .05em; cursor: pointer;
+}
+/* The list scrolls on its own so the heading and the way back stay put. */
+.dj-credits {
+  margin: 4px 0 0; padding: 0 6px 0 18px; max-height: min(48svh, 440px); overflow-y: auto;
+  overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  display: grid; gap: 7px; font: 400 14px/1.5 sans-serif;
+}
+.dj-credits li::marker { color: var(--red); }
+.wish-list { margin: 8px 0 0; padding: 0 6px 0 0; list-style: none; display: grid; gap: 8px; max-height: min(56svh, 520px); overflow-y: auto; overscroll-behavior: contain; }
+.wish-list li { border-left: 4px solid var(--red); background: rgba(17,17,19,.05); padding: 8px 12px; }
+.wish-list strong { color: var(--red); font: 800 13px var(--condensed); letter-spacing: .06em; }
+.wish-list p { margin: 3px 0 0; font: 500 15px/1.45 sans-serif; overflow-wrap: anywhere; }
+.dj-credits sup, .dj-credits__notes sup { color: var(--red); font-weight: 800; }
+.dj-credits__notes { margin-top: 10px; border-top: 1px solid rgba(17,17,19,.2); padding-top: 8px; }
+.dj-credits__notes p { margin: 0; font: 400 12px/1.5 sans-serif; opacity: .8; }
 .staff-note { grid-column: 1 / -1; margin: 0 0 2px; font: 400 13px/1.5 sans-serif; opacity: .72; }
 /* A setting that will quietly stop working is worth more than 72% opacity. */
 .staff-note--warn {
@@ -2166,6 +2203,11 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   font: 700 15px var(--condensed); letter-spacing: 0.04em; color: inherit;
 }
 .offering__amounts button.is-chosen { border-color: var(--red, #a91c24); background: rgba(169, 28, 36, 0.1); }
+.offering__wish textarea {
+  box-sizing: border-box; width: 100%; min-height: 64px; resize: vertical; padding: 10px 12px;
+  border: 2px solid var(--ink, #111113); background: white; color: #111113; font: 500 16px/1.4 sans-serif;
+}
+.offering__wish small { justify-self: end; font-size: 12px; opacity: .6; }
 .offering__field { display: grid; gap: 5px; font: 700 11px var(--condensed); letter-spacing: 0.08em; }
 .offering__field input {
   box-sizing: border-box; width: 100%; min-height: 46px; padding: 10px 12px;

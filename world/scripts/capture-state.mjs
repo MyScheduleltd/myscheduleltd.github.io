@@ -63,6 +63,8 @@ const seed = {
   shopLink: live.shopLink,
   templeSign: live.templeSign,
   djProfiles: live.djProfiles,
+  // Without the edition the service drops the profiles above as stale.
+  djProfileSeed: live.djProfileSeed,
   npcNames: live.npcNames,
   // Job titles live on the profiles, not beside the names, and were being left
   // behind — STAFF renaming a resident's title saw it reset on the next deploy.

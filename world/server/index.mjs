@@ -10,6 +10,7 @@ import {
   DONATION_PRESETS, MAX_DONATION, MIN_DONATION,
   buildInvoice, buildOrder, ecpayConfig, readInvoiceReply,
   safeAmount, safeEmail, tradeNumber, validMobileBarcode, buildInvoiceNotify, readInvoiceNotifyReply,
+  buildInvoiceWordQuery, readInvoiceWordReply,
 } from './donations.mjs';
 
 /** The room remembers this many lines; older ones fall off the top. */
@@ -522,6 +523,19 @@ const safeExternalUrl = (value) => {
   }
 };
 
+/**
+ * A list kept line by line: each line cleaned like any other text, blank ones
+ * dropped. The credits need their line breaks, which `safeText` folds away.
+ */
+const safeLines = (value, maxLines, maxLength) => String(value ?? '')
+  .split(/\r?\n/)
+  .map((line) => safeText(line, maxLength))
+  .filter(Boolean)
+  .slice(0, maxLines)
+  .join('\n');
+const CREDIT_LINES = 60;
+const CREDIT_LINE_LENGTH = 200;
+
 /** Bump when the seeded introductions above change; see the note at the load. */
 const DJ_PROFILE_SEED = '2026-09-18-xiehgan-drbeauty-award-names';
 const djProfiles = {
@@ -540,6 +554,13 @@ const djProfiles = {
     // somebody who knows the credits; both are inside the 1200 the editor and
     // `safeText` allow, so STAFF can still re-save either of them.
     introduction: '2017 Founded My Schedule LTD. 2020 Produced the music video for iGO ASIA REMIX, a single uniting NICKTHEREAL, JP THE WAVY and SIK-K across Taiwan, Japan and Korea, which helped set the direction of mainstream hip-hop and fashion in Asia. 2021 Directed and A&R-planned the album videos for E.SO’s OUTTA BODY and EARTHBOUND, linking several videos of different styles into one continuous narrative film. 2022 My Schedule LTD had made over 200 music videos, for artists including J.Sheon, Naiwen, A-Lin, Cosmos People, A-Mei, Crowd Lu, MJ116 and Nine One One. 2023 A producer and chief director of The Rapper S2, nominated for and winning awards at the 58th Golden Bell Awards and the 5th Walk Bell John Awards, and well received across traditional and new media alike. 2024 Producer of The King of night market, widely praised for renewing attention on Taiwan’s night market culture — visitor numbers rose 40% — and winner of the Programme Innovation Award at the 60th Golden Bell Awards. 2025 Producer of 247 MUSIC FESTIVAL, attended by over 2,500 people on the day, with more than a hundred positive posts shared by audiences across platforms.',
+    // The owner's list of music-production credits (2026-10-08), one line per
+    // credit; a line starting with * is a footnote. The English names are the
+    // official ones where they exist (The King of Nightmarket, The Rappers 2,
+    // soul.food, Hope in the Darkness and the artists' own English names);
+    // titles with none keep their Chinese with a translation beside it.
+    credits: "The King of Nightmarket — opening theme (A&R / recording & mixing)\nThe Rappers 2 — opening theme (A&R / recording & mixing)\nDR.BEAUTY — 美麗本人精選輯 (Greatest Hits), album (music producer / A&R)\nJ.Sheon — J.Sheon 街巷, self-titled album (album producer / A&R)\nMiss Ko — soul.food 靈食 (music producer / A&R)*\nLai Tzu-hung — 這就是人生啊 (This Is Life), album (album producer)\nCoCo Lee — 叩叩 (Knock Knock), 能不能 (Can We), 盛開 (In Full Bloom) (production coordinator)\n自由發揮 (Freestyle) — 跨出界 (Crossing the Line), album (production coordinator)\nRachel Liang — 黃色夾克 (Yellow Jacket), album (production coordinator)\nRicky Hsiao — 無邊際的愛你 (Boundless Love for You) (production coordinator)\nElva Hsiao — 愛我不愛 (Love Me or Not), Super Girl, 放愛情一個假 (Give Love a Day Off) (production coordinator)\nAmber An — 呼呼 (Hu Hu), 玫瑰公主 (Rose Princess), 愛的動名片 (Love's Moving Card) (production coordinator)\nRichie Jen — 爆掉 (Blow Up), 瘋狂的存在 (A Crazy Existence) (production coordinator)\nRainie Yang — 離開動物園 (Leaving the Zoo), 一萬零一種可能 (10,001 Possibilities) (production coordinator)\nA-Mit — 裂痕 (Cracks) (production coordinator)\nHan Geng — Hope in the Darkness 寒更, album (production coordinator)\nA-Mei — 可樂果快樂Song (Koloko Happy Song) (production coordinator)\nJane Huang — 只怕想家 (Only Afraid of Missing Home), 破壞的愛情 (Broken Love), 你不是說愛我 (Didn't You Say You Love Me) (production coordinator)\n*Miss Ko — soul.food: nominated, Best Vocal Recording Album, 37th Golden Melody Awards",
+    creditsZh: "夜市王 《夜市王》片頭曲（A&R／錄音混音）\n大嘻哈時代2 《片頭曲》（A&R／錄音混音）\n美麗本人 《美麗本人精選輯》專輯（音樂製作人／A&R）\nJ.Sheon 《J.Sheon街巷》同名專輯（專輯製作人／A&R）\nMiss Ko 葛仲珊《靈食》（音樂製作人／A&R）*\n賴慈泓 《這就是人生啊》專輯（專輯製作人）\n李玟 《叩叩》、《能不能》、《盛開》（執行製作）\n自由發揮 《跨出界》專輯（執行製作）\n梁文音 《黃色夾克》專輯（執行製作）\n蕭煌奇 《無邊際的愛你》（執行製作）\n蕭亞軒 《愛我不愛》、《SUPER GIRL》、《放愛情一個假》（執行製作）\n安心亞 《呼呼》、《玫瑰公主》、《愛的動名片》（執行製作）\n任賢齊 《爆掉》、《瘋狂的存在》（執行製作）\n楊丞琳 《離開動物園》、《一萬零一種可能》（執行製作）\n阿密特 《裂痕》（執行製作）\n韓庚 《寒更》專輯（執行製作）\n張惠妹 《可樂果快樂Song》（執行製作）\n黃美珍 《只怕想家》、《破壞的愛情》、《你不是說愛我》（執行製作）\n*Miss Ko 葛仲珊《靈食》：入圍第 37 屆金曲獎最佳演唱錄音專輯獎",
     introductionZh: '2017 成立【我的檔期有限公司】。 2020 製作周湯豪、JP THE WAVY 及 SIK-K 台、日、韓三地歌手合作單曲《iGO ASIA REMIX》MV，引領亞洲主流嘻哈及時尚潮流。 2021 製作瘦子 E.SO《OUTTA BODY》、《EARTHBOUND》專輯 MV，擔任導演及 A&R 企劃，運用多支不同風格的 MV 串聯出一部完整劇情影片，廣受觀眾喜愛。 2022 【我的檔期有限公司】已為多位藝人量身打造超過 200 支 MV，其中包含 J.Sheon、楊乃文、A-Lin、宇宙人、張惠妹、盧廣仲、頑童 MJ116、玖壹壹等。 2023 擔任電視節目《大嘻哈時代 2》製作人之一及總導演，入圍並獲得第 58 屆金鐘獎及第 5 屆走鐘獎多項獎項，在傳統媒體與新媒體間皆獲得高度好評。 2024 擔任電視節目《夜市王》製作人，廣受大眾好評，成功帶動台灣夜市文化再次受到關注，來客數增加 40%，並榮獲第 60 屆金鐘獎「節目創新獎」。 2025 擔任嘻哈音樂祭《龍虎門 247 音樂日》製作人，活動當日現場參與人數超過 2,500 人，各平台觀眾分享貼文累積逾百則好評。',
     updatedAt: 0,
   },
@@ -554,6 +575,8 @@ const djProfiles = {
     // here, so the world and the site say the same thing.
     introduction: 'Li Baobi — artist, rapper, music producer, host, influencer, YouTuber and party mascot. Opened the 美麗本人 YouTube channel in 2019, known for reaction videos to Mandarin music videos shot with animation and effects, and for putting "R爆" and the 醬擠 gesture into everyday use among younger audiences.',
     introductionZh: '李包比，藝人、饒舌歌手、音樂製作人、主持人、網美、YouTuber、派對吉祥物。2019 年開立『美麗本人』YouTube 頻道，以浮誇且具幽默感的表演方式對華語歌曲 MV 做 Reaction 影片，加入動畫及特效，並以一句「R爆」跟經典手勢「醬擠」在年輕族群間瘋傳。',
+    credits: '',
+    creditsZh: '',
     updatedAt: 0,
   },
 };
@@ -1038,6 +1061,10 @@ const restorePersistedState = () => {
         roleZh: safeText(entry.roleZh, 120) || djProfiles[id].roleZh,
         introduction: safeText(entry.introduction, 1200) || djProfiles[id].introduction,
         introductionZh: safeText(entry.introductionZh, 1200) || djProfiles[id].introductionZh,
+        // Absent in copies saved before there were credits: those keep the
+        // defaults. Present, even empty, means STAFF set it.
+        credits: typeof entry.credits === 'string' ? safeLines(entry.credits, CREDIT_LINES, CREDIT_LINE_LENGTH) : djProfiles[id].credits,
+        creditsZh: typeof entry.creditsZh === 'string' ? safeLines(entry.creditsZh, CREDIT_LINES, CREDIT_LINE_LENGTH) : djProfiles[id].creditsZh,
         updatedAt: clampNumber(entry.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
       });
     }
@@ -1287,6 +1314,42 @@ const canSeeMessage = (viewer, message) => {
   return Math.hypot(dx, dz) <= 14;
 };
 
+/**
+ * The temple's wish wall: notes left with an offering, shown once the
+ * payment is confirmed (the owner, 2026-10-08).
+ *
+ * Memory only, as the owner asked — never written to disk, so a restart or a
+ * redeploy clears the wall. Memory is not the limit (thirty notes are a few
+ * kilobytes of the instance's 512 MB); legibility is. The wall shows the
+ * newest WISH_LIMIT and the oldest falls off as a new one goes up.
+ */
+const WISH_LIMIT = 30;
+const WISH_LENGTH = 60;
+const WISH_NAME_LENGTH = 24;
+const wishes = [];
+/**
+ * A note as written. Not `safeText`: its NFKC folds full-width Chinese
+ * punctuation (！，。) to ASCII, which would change how a Chinese note reads.
+ * Control characters go, runs of space become one, and the length counts
+ * characters rather than UTF-16 units so an emoji is not cut in half.
+ */
+const wishText = (value, max) => [...String(value ?? '').normalize('NFC')
+  .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()].slice(0, max).join('').trim();
+const postWish = (donation) => {
+  if (!donation.wish) return;
+  wishes.push({
+    id: donation.id,
+    name: donation.wishName ?? '',
+    message: donation.wish,
+    at: Date.now(),
+  });
+  while (wishes.length > WISH_LIMIT) wishes.shift();
+  donation.wish = '';
+  scheduleBroadcast();
+};
+
 const stateFor = (visitor) => ({
   serverTime: Date.now(),
   selfId: visitor.id,
@@ -1314,6 +1377,7 @@ const stateFor = (visitor) => ({
   immersiveSources,
   videoTitles,
   jukebox: jukeboxSnapshot(),
+  wishes,
 });
 
 const writeEvent = (response, event, data) => {
@@ -1645,6 +1709,41 @@ const receiptBlockedBy = () => {
   return ECPAY.receiptBlockedBy === 'fallback-unusable' ? 'fallback-unusable' : 'mailbox-missing';
 };
 
+/**
+ * A call to ECPay's invoice service, answered as JSON or as a plain reason.
+ *
+ * ECPay answers a MerchantID whose HashKey and HashIV do not belong to it
+ * with an HTTP 500 and no JSON (developers.ecpay.com.tw/7854/), which used to
+ * surface as "Unexpected token" — true, and no help to anyone reading it.
+ */
+const callEcpayInvoice = async (url, payload) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const result = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    const text = await result.text();
+    if (!result.ok) {
+      throw new Error(result.status === 500
+        ? 'ECPay answered HTTP 500: usually the invoice MerchantID, HashKey and HashIV do not belong together.'
+        : result.status === 403
+          ? 'ECPay answered HTTP 403: too many calls; it asks to wait 30 minutes.'
+          : `ECPay answered HTTP ${result.status}.`);
+    }
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error('ECPay answered with something that was not JSON.');
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const issueInvoice = async (donation) => {
   // One request at a time per offering: a STAFF retry pressed while the
   // first attempt is still out must not ask ECPay for a second invoice.
@@ -1674,11 +1773,7 @@ const requestInvoice = async (donation) => {
     // what ECPay's checkout page says too.
     itemName: '網路服務費',
   });
-  const reply = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-  }).then((result) => result.json());
+  const reply = await callEcpayInvoice(url, payload);
   const outcome = readInvoiceReply(reply, ECPAY);
   if (!outcome.ok) {
     donation.invoiceError = `${outcome.stage}: ${outcome.message}`;
@@ -1698,11 +1793,7 @@ const requestInvoice = async (donation) => {
   if (issuedTo) {
     try {
       const notice = buildInvoiceNotify({ config: ECPAY, invoiceNo: outcome.invoiceNo, email: issuedTo });
-      const answer = await fetch(notice.url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(notice.payload),
-      }).then((result) => result.json());
+      const answer = await callEcpayInvoice(notice.url, notice.payload);
       const sent = readInvoiceNotifyReply(answer, ECPAY);
       donation.invoiceNoticeSent = sent.ok;
       if (sent.ok) console.log(`Invoice ${outcome.invoiceNo} emailed by ECPay (${donation.wantsReceipt ? 'to the donor' : 'to the receipt mailbox'})`);
@@ -1833,7 +1924,7 @@ const server = createServer(async (request, response) => {
       // The receipt mailbox is deliberately absent. It is a real address,
       // STAFF's to set, and it reaches `/api/admin/state` behind the key and
       // nothing else — the client only ever declares it on `AdminState`.
-      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, trackDurations, immersiveSources, videoTitles, clubRequest, venueQueues, jukebox: jukeboxSnapshot() });
+      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, trackDurations, immersiveSources, videoTitles, clubRequest, venueQueues, jukebox: jukeboxSnapshot(), wishes });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
@@ -1993,9 +2084,17 @@ const server = createServer(async (request, response) => {
       if (!visitor && pending.filter((entry) => !entry.visitorId).length >= 200) {
         return apiError(response, 503, 'Too many offerings are open right now. Try again shortly.');
       }
+      // A note for the wish wall, posted only once ECPay says it was paid. A
+      // visitor signs with their name in the world; a guest on the sign-in
+      // page with whatever they had typed at the gate, or nothing (the wall
+      // then says 訪客 / GUEST).
+      const wish = wishText(payload.message, WISH_LENGTH);
+      const wishName = visitor ? visitor.name : wishText(payload.displayName, WISH_NAME_LENGTH);
       const id = randomUUID();
       const tradeNo = tradeNumber();
       donations.set(id, {
+        wish,
+        wishName,
         id,
         tradeNo,
         amount,
@@ -2097,6 +2196,7 @@ const server = createServer(async (request, response) => {
         persist();
         console.log(`Offering ${donation.tradeNo} ${paid ? 'paid' : 'not paid'}: NT$${donation.paidAmount} by ${donation.paymentType || 'unknown'} (ECPay ${donation.ecpayTradeNo})`);
         if (paid) {
+          postWish(donation);
           tellVisitor(donation.visitorId, 'donation', {
             id: donation.id,
             amount: donation.paidAmount,
@@ -2654,6 +2754,11 @@ a{color:#e8b64a}</style>
           npcProfiles: publicNpcProfiles(),
           pamphlet: pamphletContent,
           djProfiles,
+          // Which edition of the default introductions these are, so the
+          // committed seed captured from here is accepted on the next deploy.
+          // Without it the seed's profiles were dropped and every STAFF edit
+          // to an introduction was lost at each redeploy.
+          djProfileSeed: DJ_PROFILE_SEED,
           shopLink,
           // `source` is the difference between an address that survives a
           // deploy and one that does not. This plan has no disk: STAFF
@@ -2966,6 +3071,30 @@ a{color:#e8b64a}</style>
         persist();
         return json(response, 200, { ok: true, offeringReceipt, receiptOptional: receiptOptional() });
       }
+      if (request.method === 'POST' && url.pathname === '/api/admin/wishes/remove') {
+        const index = wishes.findIndex((entry) => entry.id === safeText(payload.id, 80));
+        if (index < 0) return apiError(response, 404, 'That note is no longer on the wall.');
+        wishes.splice(index, 1);
+        scheduleBroadcast();
+        return json(response, 200, { ok: true, wishes });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/invoice-check') {
+        // Read-only: ECPay's list of this merchant's invoice number ranges,
+        // fetched with the keys this service holds. Answers "are the invoice
+        // keys right, and has any invoice ever been issued?" without a sale.
+        if (!ECPAY.invoiceEnabled) return json(response, 200, { ok: false, stage: 'config', message: 'Invoices are switched off (ECPAY_INVOICE=off).' });
+        if (!ECPAY.invoiceReady) return json(response, 200, { ok: false, stage: 'config', message: `Missing setting: ${ECPAY.invoiceBlockedBy}.` });
+        try {
+          const { url: wordsUrl, payload: query } = buildInvoiceWordQuery({ config: ECPAY });
+          const outcome = readInvoiceWordReply(await callEcpayInvoice(wordsUrl, query), ECPAY);
+          console.log(`Invoice check: ${outcome.ok ? `${outcome.ranges.length} range(s)` : `${outcome.stage}: ${outcome.message}`}`);
+          return json(response, 200, { ...outcome, production: ECPAY.production, merchantId: ECPAY.invoice.merchantId, checkedAt: Date.now() });
+        } catch (error) {
+          const message = String(error?.message ?? error).slice(0, 300);
+          console.error(`Invoice check failed: ${message}`);
+          return json(response, 200, { ok: false, stage: 'network', message, production: ECPAY.production, merchantId: ECPAY.invoice.merchantId, checkedAt: Date.now() });
+        }
+      }
       if (request.method === 'POST' && url.pathname === '/api/admin/offerings/retry-invoice') {
         const donation = donations.get(safeText(payload.id, 80));
         if (!donation) return apiError(response, 404, 'That offering is no longer on this instance.');
@@ -3101,7 +3230,11 @@ a{color:#e8b64a}</style>
         if (!role || !roleZh || !introduction || !introductionZh) {
           return apiError(response, 400, 'Complete all DJ introduction fields.');
         }
-        Object.assign(djProfiles[id], { role, roleZh, introduction, introductionZh, updatedAt: Date.now() });
+        // The credits are optional and edited on their own page; a save that
+        // leaves them out leaves them as they were.
+        const credits = typeof payload.credits === 'string' ? safeLines(payload.credits, CREDIT_LINES, CREDIT_LINE_LENGTH) : djProfiles[id].credits;
+        const creditsZh = typeof payload.creditsZh === 'string' ? safeLines(payload.creditsZh, CREDIT_LINES, CREDIT_LINE_LENGTH) : djProfiles[id].creditsZh;
+        Object.assign(djProfiles[id], { role, roleZh, introduction, introductionZh, credits, creditsZh, updatedAt: Date.now() });
         scheduleBroadcast();
         persist();
         return json(response, 200, { ok: true, djProfiles });
