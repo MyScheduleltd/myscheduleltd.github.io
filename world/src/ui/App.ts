@@ -1381,9 +1381,9 @@ export class App {
       const query = new URLSearchParams(window.location.search);
       const view = query.get('view') ?? 'square';
       this.world.focusCoastalForReview(view);
-      // The session restore can land after the first placement. Keep the two
-      // rooftop seam views stable long enough to inspect the actual geometry.
-      if (view === 'roofLandingCorner' || view === 'roofWestSoffit') {
+      // The session restore can land after the first placement. Keep the
+      // rooftop seam and wish-wall views stable while inspecting the geometry.
+      if (view === 'roofLandingCorner' || view === 'roofWestSoffit' || view === 'wishWall') {
         for (const delay of [400, 1_600]) window.setTimeout(() => this.world?.focusCoastalForReview(view), delay);
       }
       if(query.get('view')==='hit'){
