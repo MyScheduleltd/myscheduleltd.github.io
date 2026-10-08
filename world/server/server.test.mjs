@@ -2449,3 +2449,126 @@ test('lengths nobody has on file are looked up on YouTube when the service start
     await new Promise((resolve) => youtube.close(resolve));
   }
 });
+
+test('STAFF can ask ECPay whether the invoice keys work, without issuing anything', async () => {
+  const config = ecpayConfig();
+  const keys = [config.invoice.hashKey, config.invoice.hashIV];
+  let mode = 'ok';
+  const asked = [];
+  const ecpay = createHttpServer(async (request, response) => {
+    let raw = '';
+    for await (const chunk of request) raw += chunk;
+    asked.push(request.url);
+    if (mode === 'wrong-keys') {
+      response.writeHead(500, { 'content-type': 'text/html' });
+      return response.end('<html>Internal Server Error</html>');
+    }
+    const data = aesDecrypt(JSON.parse(raw).Data, ...keys);
+    assert.equal(data.InvoiceCategory, 1);
+    assert.equal(data.InvoiceYear, String(new Date().getFullYear() - 1911), 'the ROC year');
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ TransCode: 1, TransMsg: '', Data: aesEncrypt({
+      RtnCode: 1,
+      RtnMsg: '查詢成功',
+      InvoiceInfo: [{ InvoiceHeader: 'FU', InvoiceYear: '115', InvoiceTerm: 5, InvType: '07', InvoiceStart: '67503600', InvoiceEnd: '67503949', InvoiceNo: '', UseStatus: 2 }],
+    }, ...keys) }));
+  });
+  await new Promise((resolve) => ecpay.listen(0, '127.0.0.1', resolve));
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const instance = await startServer(port, joinPath(temporaryDirectory, 'invoice-check-state.json'), 'off', {
+    ECPAY_STAGE_INVOICE_BASE: `http://127.0.0.1:${ecpay.address().port}`,
+  });
+  const staff = { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173', 'content-type': 'application/json' };
+  try {
+    const good = await fetch(`${url}/api/admin/invoice-check`, { method: 'POST', headers: staff, body: '{}' }).then((r) => r.json());
+    assert.equal(good.ok, true);
+    assert.deepEqual(good.ranges.map((range) => [range.header, range.term, range.used, range.status]), [['FU', 5, '', 2]]);
+    assert.deepEqual(asked, ['/B2CInvoice/GetInvoiceWordSetting'], 'only the read-only query; nothing issued');
+
+    mode = 'wrong-keys';
+    const bad = await fetch(`${url}/api/admin/invoice-check`, { method: 'POST', headers: staff, body: '{}' }).then((r) => r.json());
+    assert.equal(bad.ok, false);
+    assert.match(bad.message, /HTTP 500: usually the invoice MerchantID, HashKey and HashIV do not belong together/);
+
+    const stranger = await fetch(`${url}/api/admin/invoice-check`, { method: 'POST', headers: { ...staff, 'x-festival-admin-key': 'nope' }, body: '{}' });
+    assert.equal(stranger.status, 401);
+  } finally {
+    await stopServer(instance);
+    await new Promise((resolve) => ecpay.close(resolve));
+  }
+});
+
+test('a note left with an offering goes on the wish wall once paid, never to disk, newest thirty', async () => {
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const stateFile = joinPath(temporaryDirectory, 'wish-wall-state.json');
+  const instance = await startServer(port, stateFile);
+  const config = ecpayConfig();
+  const staff = { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173', 'content-type': 'application/json' };
+  const wall = async () => (await fetch(`${url}/api/config`).then((r) => r.json())).wishes;
+  const pay = async (id, amount) => {
+    const tradeNo = (await fetch(`${url}/api/admin/state`, { headers: staff }).then((r) => r.json())).offerings.find((o) => o.id === id).tradeNo;
+    const notice = { MerchantID: config.payment.merchantId, MerchantTradeNo: tradeNo, RtnCode: '1', RtnMsg: 'Succeeded', TradeAmt: String(amount), TradeNo: '2510080000000001', PaymentType: 'Credit_CreditCard', PaymentDate: '2026/10/08 12:00:00', CustomField1: id };
+    notice.CheckMacValue = checkMacValue(notice, config.payment.hashKey, config.payment.hashIV);
+    await fetch(`${url}/api/ecpay/notify`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(notice).toString() });
+  };
+  try {
+    const session = await fetch(`${url}/api/session`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' }, body: JSON.stringify({ name: 'WISHER' }) })
+      .then((r) => r.json()).then((r) => r.session);
+    const as = { authorization: `Bearer ${session.token}`, 'x-festival-session': session.id, 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' };
+    // A visitor's note is signed with their own name, whatever they send.
+    const { id } = await fetch(`${url}/api/donation`, { method: 'POST', headers: as, body: JSON.stringify({ amount: 30, email: 'giver@example.com', receipt: true, message: '祝影展順利！', displayName: 'SOMEONE ELSE' }) }).then((r) => r.json());
+    assert.deepEqual(await wall(), [], 'nothing goes up before the money does');
+    await pay(id, 30);
+    assert.deepEqual((await wall()).map((w) => [w.name, w.message]), [['WISHER', '祝影展順利！']]);
+
+    // A guest on the sign-in page signs with what they typed at the gate.
+    const guest = await fetch(`${url}/api/donation`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' }, body: JSON.stringify({ amount: 30, email: 'guest@example.com', receipt: true, message: '  hello   wall  ', displayName: 'AWD' }) }).then((r) => r.json());
+    await pay(guest.id, 30);
+    assert.deepEqual((await wall()).at(-1), { ...(await wall()).at(-1), name: 'AWD', message: 'hello wall' });
+
+    // Never written down.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const saved = readFileSync(stateFile, 'utf8');
+    assert.ok(!saved.includes('祝影展順利') && !saved.includes('hello wall'), 'the notes are memory only');
+
+    // The newest thirty stay; the oldest falls off.
+    for (let index = 0; index < 30; index += 1) {
+      const more = await fetch(`${url}/api/donation`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' }, body: JSON.stringify({ amount: 30, email: 'guest@example.com', receipt: true, message: `note ${index}` }) }).then((r) => r.json());
+      if (more.id) await pay(more.id, 30);
+    }
+    const full = await wall();
+    assert.equal(full.length, 30);
+    assert.ok(!full.some((w) => w.message === '祝影展順利！'), 'the oldest went first');
+
+    // STAFF can take one down; a visitor cannot.
+    const target = full.at(-1).id;
+    assert.equal((await fetch(`${url}/api/admin/wishes/remove`, { method: 'POST', headers: { ...staff, 'x-festival-admin-key': 'nope' }, body: JSON.stringify({ id: target }) })).status, 401);
+    assert.equal((await fetch(`${url}/api/admin/wishes/remove`, { method: 'POST', headers: staff, body: JSON.stringify({ id: target }) })).status, 200);
+    assert.ok(!(await wall()).some((w) => w.id === target));
+  } finally {
+    await stopServer(instance);
+  }
+});
+
+test('a resident\'s music credits keep their lines, and an introduction save leaves them alone', async () => {
+  const staff = { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173', 'content-type': 'application/json' };
+  const profile = (await fetch(`${baseUrl}/api/config`).then((r) => r.json())).djProfiles.XIEHGAN;
+  assert.match(profile.creditsZh, /夜市王/, 'XIEH GAN ships with the owner\'s credits');
+  assert.match(profile.credits, /The King of Nightmarket/);
+  const save = (extra) => fetch(`${baseUrl}/api/admin/dj-profile`, {
+    method: 'POST',
+    headers: staff,
+    body: JSON.stringify({ id: 'XIEHGAN', role: profile.role, roleZh: profile.roleZh, introduction: profile.introduction, introductionZh: profile.introductionZh, ...extra }),
+  });
+  assert.equal((await save({ creditsZh: '第一筆\n\n  第二筆  \n*附註' })).status, 200);
+  let after = (await fetch(`${baseUrl}/api/config`).then((r) => r.json())).djProfiles.XIEHGAN;
+  assert.equal(after.creditsZh, '第一筆\n第二筆\n*附註', 'one credit per line, blanks dropped');
+  assert.equal(after.credits, profile.credits, 'the other language untouched');
+  assert.equal((await save({})).status, 200);
+  after = (await fetch(`${baseUrl}/api/config`).then((r) => r.json())).djProfiles.XIEHGAN;
+  assert.equal(after.creditsZh, '第一筆\n第二筆\n*附註', 'an introduction save keeps the credits');
+  // Put the owner's list back for whatever runs after.
+  await save({ creditsZh: profile.creditsZh, credits: profile.credits });
+});

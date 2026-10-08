@@ -75,6 +75,7 @@ export type WorldAction =
   | { type: 'stood' }
   | { type: 'food'; item: CarriedItem }
   | { type: 'shop' }
+  | { type: 'wishWall' }
   | { type: 'pamphlet' }
   | { type: 'swim'; active: boolean; stowedPopcorn?: boolean }
   | { type: 'greet'; target: string; gesture: 'wave' | 'tail-wag' }
@@ -524,6 +525,15 @@ const concessionPosition = new THREE.Vector3(-20, 0, -25);
 // pamphlets first and the horse behind them. Just clear of the statue's own
 // footprint, so the two read as one arrangement.
 const pamphletPosition = new THREE.Vector3(0, 0, -1.4);
+/**
+ * The temple's wish wall: on the flat ground at the foot of 美麗仙人's
+ * stairs, south of the flight (which spans z -2.5..10.5), facing the road
+ * (the owner, 2026-10-08). x 67.6 rather than nearer the road: the
+ * residents' path from the temple approach to the hill runs south along
+ * x = 65 (hill1 > hill2), and the ground is still level here; it rises from
+ * about x = 69.
+ */
+const WISH_WALL = { x: 67.6, z: -6.6 } as const;
 // Where the sea meets the sand. Every water plane ends here and every piece of
 // beach starts here: overlapping the two put opaque sand and a water surface at
 // the same height, and they fought for the same pixels along the whole shore.
@@ -7492,6 +7502,11 @@ export class FestivalWorld {
       return;
     }
 
+    if (this.nearWishWall()) {
+      this.onAction({ type: 'wishWall' });
+      return;
+    }
+
     if (this.nearClubBar()) {
       this.carriedItem = 'DRINK';
       this.stowedItem = undefined;
@@ -9219,6 +9234,7 @@ export class FestivalWorld {
     this.createRooftopBand();
     this.createConcession();
     this.createPamphletStand();
+    this.createWishWall();
 
     // Only the western block remains: the eastern one is the temple now.
     const buildingMat = material(0x26262a);
@@ -10656,6 +10672,156 @@ export class FestivalWorld {
     // the camera pulls the view in every time somebody passes it, which is
     // what it has been doing.
     this.addCollider(concessionPosition.x, concessionPosition.z, 3.4, 2.8, 0.15, undefined, 'concession', 2.4);
+  }
+
+  private wishWallTexture?: THREE.CanvasTexture;
+  private wishWallCanvas?: HTMLCanvasElement;
+  private wishWallNotes: Array<{ name: string; message: string }> = [];
+
+  /**
+   * The temple's wish wall (祈福牆): notes left with paid offerings, hung at
+   * the foot of 美麗仙人's stairs, facing the road visitors arrive along
+   * (the owner, 2026-10-08). Red posts and a green tiled cap, the temple's
+   * own colours; the notes are painted cards on one board, a single texture
+   * repainted when the list changes. Reading them properly is the panel's job
+   * (E / 看祈福牆) — painted text is only legible up close.
+   */
+  private createWishWall(): void {
+    const group = new THREE.Group();
+    group.name = 'wish-wall';
+    const ground = terrainHeightAt(WISH_WALL.x, WISH_WALL.z);
+    group.position.set(WISH_WALL.x, ground, WISH_WALL.z);
+    // Facing -x: the road and the plaza beyond it.
+    group.rotation.y = -Math.PI / 2;
+    const red = material(0x8e2a22);
+    const wood = material(0x4a1c18);
+    const tile = material(0x1f3f3a);
+    const width = 4.6;
+    const post = new THREE.BoxGeometry(0.24, 3.7, 0.24);
+    for (const side of [-1, 1]) {
+      const pillar = new THREE.Mesh(post, red);
+      pillar.position.set(side * (width / 2 + 0.16), 1.85, 0);
+      pillar.castShadow = true;
+      group.add(pillar);
+    }
+    const back = new THREE.Mesh(new THREE.BoxGeometry(width, 2.7, 0.14), wood);
+    back.position.set(0, 1.95, -0.02);
+    back.castShadow = true;
+    back.receiveShadow = true;
+    group.add(back);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(width + 1.0, 0.2, 0.95), tile);
+    cap.position.set(0, 3.55, 0);
+    cap.rotation.x = 0.08;
+    cap.castShadow = true;
+    group.add(cap);
+    const ridge = new THREE.Mesh(new THREE.BoxGeometry(width + 1.2, 0.12, 0.22), red);
+    ridge.position.set(0, 3.7, 0.02);
+    group.add(ridge);
+    const canvas = document.createElement('canvas');
+    canvas.width = 2048;
+    canvas.height = 1184;
+    this.wishWallCanvas = canvas;
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    this.wishWallTexture = texture;
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(width - 0.16, 2.52), new THREE.MeshBasicMaterial({ map: texture }));
+    face.position.set(0, 1.95, 0.06);
+    face.userData.wornNoGrain = true;
+    group.add(face);
+    this.scene.add(group);
+    this.paintWishWall();
+    // Thin along the road, so it stops nobody walking past but cannot be
+    // walked through.
+    this.addCollider(WISH_WALL.x, WISH_WALL.z, 0.5, width + 0.6, 0.12, undefined, 'wish-wall', 3.8);
+  }
+
+  /** The notes to show, newest first; repaints the board. */
+  setWishes(wishes: Array<{ name: string; message: string }>): void {
+    const next = wishes.slice(-30).reverse().map((wish) => ({ name: wish.name, message: wish.message }));
+    if (JSON.stringify(next) === JSON.stringify(this.wishWallNotes)) return;
+    this.wishWallNotes = next;
+    this.paintWishWall();
+  }
+
+  private paintWishWall(): void {
+    const canvas = this.wishWallCanvas;
+    const context = canvas?.getContext('2d');
+    if (!canvas || !context || !this.wishWallTexture) return;
+    const font = '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif';
+    context.fillStyle = '#3d1714';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    // The header: what this is, in both languages.
+    context.fillStyle = '#8e2a22';
+    context.fillRect(0, 0, canvas.width, 150);
+    context.fillStyle = '#f4ead2';
+    context.textBaseline = 'middle';
+    context.textAlign = 'center';
+    context.font = `900 84px ${font}`;
+    context.fillText('祈福牆  WISH WALL', canvas.width / 2, 78);
+    const notes = this.wishWallNotes;
+    if (!notes.length) {
+      context.font = `700 54px ${font}`;
+      context.fillText('供養時留言，付款後會掛在這裡', canvas.width / 2, 560);
+      context.font = `700 44px ${font}`;
+      context.fillText('Leave a note with your offering; it hangs here once paid.', canvas.width / 2, 660);
+      this.wishWallTexture.needsUpdate = true;
+      return;
+    }
+    // Fewer notes, bigger cards: the grid grows towards 6 × 5 as the wall
+    // fills, and the lettering scales with the card.
+    const shown = notes.slice(0, 30);
+    const columns = shown.length <= 2 ? 2 : shown.length <= 6 ? 3 : shown.length <= 12 ? 4 : shown.length <= 20 ? 5 : 6;
+    const rows = Math.max(2, Math.ceil(shown.length / columns));
+    const gap = 22;
+    const cardW = (canvas.width - gap * (columns + 1)) / columns;
+    const cardH = (canvas.height - 150 - gap * (rows + 1)) / rows;
+    const nameSize = Math.round(Math.min(cardH * 0.16, cardW * 0.11, 68));
+    const textSize = Math.round(Math.min(cardH * 0.14, cardW * 0.1, 60));
+    const lineHeight = Math.round(textSize * 1.25);
+    const maxLines = Math.max(1, Math.floor((cardH - nameSize * 2.2) / lineHeight));
+    const wrap = (text: string, width: number, limit: number): string[] => {
+      const lines: string[] = [];
+      let line = '';
+      for (const character of [...text]) {
+        if (context.measureText(line + character).width > width) {
+          lines.push(line);
+          line = character.trimStart();
+          if (lines.length === limit) break;
+        } else line += character;
+      }
+      if (lines.length < limit && line) lines.push(line);
+      if (lines.length === limit && [...lines.join('')].length < [...text].length) {
+        lines[limit - 1] = `${[...lines[limit - 1]].slice(0, -1).join('')}…`;
+      }
+      return lines;
+    };
+    shown.forEach((note, index) => {
+      const x = gap + (index % columns) * (cardW + gap);
+      const y = 150 + gap + Math.floor(index / columns) * (cardH + gap);
+      // A wooden plaque on a red cord, each tilted a hair so the wall looks hung.
+      context.save();
+      context.translate(x + cardW / 2, y + cardH / 2);
+      context.rotate(((index * 37) % 7 - 3) * 0.006);
+      context.fillStyle = '#f2e3c2';
+      context.fillRect(-cardW / 2, -cardH / 2, cardW, cardH);
+      context.fillStyle = '#b8342a';
+      context.fillRect(-cardW / 2, -cardH / 2, cardW, Math.max(8, cardH * 0.05));
+      const pad = Math.max(14, cardW * 0.06);
+      context.textAlign = 'left';
+      context.textBaseline = 'top';
+      context.fillStyle = '#8e2a22';
+      context.font = `900 ${nameSize}px ${font}`;
+      const name = note.name || '訪客 GUEST';
+      context.fillText(wrap(name, cardW - pad * 2, 1)[0] ?? '', -cardW / 2 + pad, -cardH / 2 + nameSize * 0.6);
+      context.fillStyle = '#2a1512';
+      context.font = `600 ${textSize}px ${font}`;
+      wrap(note.message, cardW - pad * 2, maxLines).forEach((line, row) => {
+        context.fillText(line, -cardW / 2 + pad, -cardH / 2 + nameSize * 1.9 + row * lineHeight);
+      });
+      context.restore();
+    });
+    this.wishWallTexture.needsUpdate = true;
   }
 
   private createPamphletStand(): void {
@@ -15017,6 +15183,7 @@ export class FestivalWorld {
     const here = this.nearClubBar() ? 'E / ORDER A DRINK'
       : this.nearJukebox() ? 'E / PUT A RECORD ON'
       : this.nearShopCounter() ? 'E / OPEN MASTER OF THE HOUSE'
+      : this.nearWishWall() ? 'E / READ THE WISH WALL'
       : undefined;
     if (here) {
       if (this.carriedItem === 'DRINK') {
@@ -15120,6 +15287,13 @@ export class FestivalWorld {
     ) < 4.2;
   }
 
+  /** In front of the temple's wish wall, on the road side of it. */
+  private nearWishWall(): boolean {
+    const dx = WISH_WALL.x - this.player.position.x;
+    const dz = this.player.position.z - WISH_WALL.z;
+    return dx > -0.4 && dx < 4.2 && Math.abs(dz) < 3.4;
+  }
+
   private nearShopCounter(): boolean {
     if (!this.shopCounter) return false;
     const alongCounter = Math.max(0, Math.abs(this.shopCounter.x - this.player.position.x) - 15);
@@ -15167,6 +15341,7 @@ export class FestivalWorld {
       // The altar was missing, so the dog never gave way at the temple.
       || this.atTheAltar()
       || this.player.position.distanceTo(pamphletPosition) < 2.35
+      || this.nearWishWall()
       ;
   }
 

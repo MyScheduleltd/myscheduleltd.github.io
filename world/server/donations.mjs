@@ -36,11 +36,13 @@ const STAGE = {
   checkout: 'https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5',
   invoice: 'https://einvoice-stage.ecpay.com.tw/B2CInvoice/Issue',
   invoiceNotify: 'https://einvoice-stage.ecpay.com.tw/B2CInvoice/InvoiceNotify',
+  invoiceWords: 'https://einvoice-stage.ecpay.com.tw/B2CInvoice/GetInvoiceWordSetting',
 };
 const PRODUCTION = {
   checkout: 'https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5',
   invoice: 'https://einvoice.ecpay.com.tw/B2CInvoice/Issue',
   invoiceNotify: 'https://einvoice.ecpay.com.tw/B2CInvoice/InvoiceNotify',
+  invoiceWords: 'https://einvoice.ecpay.com.tw/B2CInvoice/GetInvoiceWordSetting',
 };
 
 /**
@@ -89,7 +91,12 @@ export const ecpayConfig = (env = process.env) => {
   const urls = production
     ? PRODUCTION
     : stageInvoiceBase
-      ? { ...STAGE, invoice: `${stageInvoiceBase}/B2CInvoice/Issue`, invoiceNotify: `${stageInvoiceBase}/B2CInvoice/InvoiceNotify` }
+      ? {
+        ...STAGE,
+        invoice: `${stageInvoiceBase}/B2CInvoice/Issue`,
+        invoiceNotify: `${stageInvoiceBase}/B2CInvoice/InvoiceNotify`,
+        invoiceWords: `${stageInvoiceBase}/B2CInvoice/GetInvoiceWordSetting`,
+      }
       : STAGE;
   const payment = production
     ? {
@@ -400,4 +407,60 @@ export const readInvoiceNotifyReply = (reply, config) => {
     return { ok: false, stage: 'notify', message: String(data?.RtnMsg ?? 'The notice was refused.') };
   }
   return { ok: true };
+};
+
+/**
+ * Asking ECPay which invoice number ranges (字軌) this merchant has, and how
+ * far each has been used. Read-only: nothing is issued or changed.
+ *
+ * It is the one-click answer to "are the invoice keys right?". A merchant
+ * whose MerchantID, HashKey and HashIV do not belong together gets an HTTP
+ * 500 or a refused envelope here, exactly as every Issue would; one whose keys
+ * are right gets its ranges back, and `InvoiceNo` shows whether any invoice
+ * has ever been taken from them. Specification: developers.ecpay.com.tw/7881/.
+ */
+export const buildInvoiceWordQuery = ({ config, now = new Date() }) => ({
+  url: config.urls.invoiceWords,
+  payload: {
+    MerchantID: config.invoice.merchantId,
+    RqHeader: { Timestamp: Math.floor(now.getTime() / 1000) },
+    Data: aesEncrypt({
+      MerchantID: config.invoice.merchantId,
+      // The Republic of China year, as ECPay counts invoice years.
+      InvoiceYear: String(now.getFullYear() - 1911),
+      InvoiceTerm: 0,
+      UseStatus: 0,
+      InvoiceCategory: 1,
+    }, config.invoice.hashKey, config.invoice.hashIV),
+  },
+});
+
+/** The ranges, or which of the two layers refused and why. */
+export const readInvoiceWordReply = (reply, config) => {
+  if (Number(reply?.TransCode) !== 1) {
+    return { ok: false, stage: 'envelope', message: String(reply?.TransMsg ?? 'ECPay rejected the request.') };
+  }
+  let data;
+  try {
+    data = aesDecrypt(reply.Data, config.invoice.hashKey, config.invoice.hashIV);
+  } catch {
+    return { ok: false, stage: 'decrypt', message: 'The reply could not be decrypted.' };
+  }
+  if (Number(data?.RtnCode) !== 1) {
+    return { ok: false, stage: 'query', message: String(data?.RtnMsg ?? 'The query was refused.') };
+  }
+  const list = Array.isArray(data.InvoiceInfo) ? data.InvoiceInfo : (data.InvoiceInfo ? [data.InvoiceInfo] : []);
+  return {
+    ok: true,
+    ranges: list.slice(0, 40).map((entry) => ({
+      header: String(entry.InvoiceHeader ?? ''),
+      year: String(entry.InvoiceYear ?? ''),
+      term: Number(entry.InvoiceTerm) || 0,
+      type: String(entry.InvType ?? ''),
+      start: String(entry.InvoiceStart ?? ''),
+      end: String(entry.InvoiceEnd ?? ''),
+      used: String(entry.InvoiceNo ?? ''),
+      status: Number(entry.UseStatus) || 0,
+    })),
+  };
 };
