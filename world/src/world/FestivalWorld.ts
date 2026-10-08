@@ -531,9 +531,9 @@ const pamphletPosition = new THREE.Vector3(0, 0, -1.4);
  * (the owner, 2026-10-08). x 67.6 rather than nearer the road: the
  * residents' path from the temple approach to the hill runs south along
  * x = 65 (hill1 > hill2), and the ground is still level here; it rises from
- * about x = 69.
+ * about x = 69. The larger board sits farther south so its cap clears the stairs.
  */
-const WISH_WALL = { x: 67.6, z: -6.6 } as const;
+const WISH_WALL = { x: 67.6, z: -7.5, scale: 1.5 } as const;
 // Where the sea meets the sand. Every water plane ends here and every piece of
 // beach starts here: overlapping the two put opaque sand and a water surface at
 // the same height, and they fought for the same pixels along the whole shore.
@@ -4007,6 +4007,7 @@ export class FestivalWorld {
       booth:[17,-27,12,0,-.16], clubfloor:[-88,22,7,Math.PI/2,.65], clubceiling:[-70,22,14,0,-.6], roofseats:[40,35,8,Math.PI,.3], clubfront:[-20,23.5,28,Math.PI/2,-.18], clubentry:[-20,23.5,22,-Math.PI/2,-.22], gate:[0,62,30,0,-.25],
       clublights:[-55,0,21,Math.PI,-.18], bar:[-68,6.8,12,0,-.10], houses:[-39,58,12,Math.PI,-.22], shop:[40,8,20,Math.PI,-.10], clubscreen:[-68,41,19,Math.PI,-.15],
       arrival: [0, 25, 27, 0, .18], square: [-7, -4, 20, .4, .16],
+      wishWall: [67.6, -6.6, 12, -Math.PI / 2 - .3, -.10],
       palace: [-35, -32, 27, 0, -.17], shore: [35, -32, 18, .35, .06],
       drive: [0, -38, 17, .2, .05], club: [-45, 23.5, 32, Math.PI / 2, .08],
       temple: [88, 4, 48, -Math.PI / 2, -.17], hill: [100, 0, 56, -2.3, -.08],
@@ -10691,6 +10692,7 @@ export class FestivalWorld {
     group.name = 'wish-wall';
     const ground = terrainHeightAt(WISH_WALL.x, WISH_WALL.z);
     group.position.set(WISH_WALL.x, ground, WISH_WALL.z);
+    group.scale.setScalar(WISH_WALL.scale);
     // Facing -x: the road and the plaza beyond it.
     group.rotation.y = -Math.PI / 2;
     const red = material(0x8e2a22);
@@ -10733,7 +10735,7 @@ export class FestivalWorld {
     this.paintWishWall();
     // Thin along the road, so it stops nobody walking past but cannot be
     // walked through.
-    this.addCollider(WISH_WALL.x, WISH_WALL.z, 0.5, width + 0.6, 0.12, undefined, 'wish-wall', 3.8);
+    this.addCollider(WISH_WALL.x, WISH_WALL.z, 0.5 * WISH_WALL.scale, (width + 0.6) * WISH_WALL.scale, 0.12, undefined, 'wish-wall', 3.8 * WISH_WALL.scale);
   }
 
   /** The notes to show, newest first; repaints the board. */
@@ -10757,13 +10759,13 @@ export class FestivalWorld {
     context.fillStyle = '#f4ead2';
     context.textBaseline = 'middle';
     context.textAlign = 'center';
-    context.font = `900 84px ${font}`;
+    context.font = `900 104px ${font}`;
     context.fillText('祈福牆  WISH WALL', canvas.width / 2, 78);
     const notes = this.wishWallNotes;
     if (!notes.length) {
-      context.font = `700 54px ${font}`;
+      context.font = `700 72px ${font}`;
       context.fillText('供養時留言，付款後會掛在這裡', canvas.width / 2, 560);
-      context.font = `700 44px ${font}`;
+      context.font = `700 56px ${font}`;
       context.fillText('Leave a note with your offering; it hangs here once paid.', canvas.width / 2, 660);
       this.wishWallTexture.needsUpdate = true;
       return;
@@ -10776,8 +10778,8 @@ export class FestivalWorld {
     const gap = 22;
     const cardW = (canvas.width - gap * (columns + 1)) / columns;
     const cardH = (canvas.height - 150 - gap * (rows + 1)) / rows;
-    const nameSize = Math.round(Math.min(cardH * 0.16, cardW * 0.11, 68));
-    const textSize = Math.round(Math.min(cardH * 0.14, cardW * 0.1, 60));
+    const nameSize = Math.round(Math.min(cardH * 0.18, cardW * 0.13, 80));
+    const textSize = Math.round(Math.min(cardH * 0.16, cardW * 0.12, 72));
     const lineHeight = Math.round(textSize * 1.25);
     const maxLines = Math.max(1, Math.floor((cardH - nameSize * 2.2) / lineHeight));
     const wrap = (text: string, width: number, limit: number): string[] => {
@@ -15291,7 +15293,7 @@ export class FestivalWorld {
   private nearWishWall(): boolean {
     const dx = WISH_WALL.x - this.player.position.x;
     const dz = this.player.position.z - WISH_WALL.z;
-    return dx > -0.4 && dx < 4.2 && Math.abs(dz) < 3.4;
+    return dx > -0.4 && dx < 4.2 && Math.abs(dz) < 2.3 * WISH_WALL.scale + 1.1;
   }
 
   private nearShopCounter(): boolean {

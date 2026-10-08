@@ -2,6 +2,15 @@
 
 Written by Claude at the end of the 2026-10-07/08 sessions. **This section supersedes everything below it.** The older sections are history: they describe isolated worktrees, rejected builds and processes that no longer apply. Where they disagree with this section, this section is right.
 
+## Wish-wall enlargement release — Codex, 2026-10-08
+
+- Owner requested a larger in-world message board and authorized publication on 2026-10-08. Release branch: `codex/enlarge-wish-wall`, based on `origin/main` (`0df1d49`). Both channel bundles are prepared; publication awaits the protected PR's approval and merge.
+- `FestivalWorld.ts`: scale the complete wish wall by 1.5 (board width 4.6 → 6.9), increase title/empty-state/plaque lettering, and scale the collision bounds and interaction span to match.
+- Position is now `{ x: 67.6, z: -7.5 }`; moving south keeps the wider cap clear of the temple stairs while leaving the residents' x=65 route clear.
+- Loopback preview: `http://127.0.0.1:5173/?era=ps2&island&review=coastal&view=wishWall`. This view is reapplied after session restoration to keep the camera stable.
+- Verified the enlarged empty board visually in the local phone-width preview. Screenshot: `/private/tmp/wish-wall-enlarged-20261008.jpg`. Populated plaques and a physical phone have not been visually checked.
+- `npm run build` passed (includes TypeScript); all 384 tests passed with localhost binding enabled; `git diff --check` passed. Both channel entry files reference `main-BWe7gUX3.js`. No server source changed, so this release needs no Render redeploy.
+
 ## How shipping works now
 
 1. **`main` is protected** (since 2026-10-07).
