@@ -1,3 +1,124 @@
+# Codex handoff: current state, 2026-10-08 (read this first)
+
+Written by Claude at the end of the 2026-10-07/08 sessions. **This section supersedes everything below it.** The older sections are history: they describe isolated worktrees, rejected builds and processes that no longer apply. Where they disagree with this section, this section is right.
+
+## How shipping works now
+
+1. **`main` is protected** (since 2026-10-07).
+   - Every change is a PR that needs 1 approving review. `enforce_admins` is on, the last push must be approved, and stale approvals are dismissed.
+   - This machine pushes as **MyScheduleltd**, the owner's account, which cannot approve its own PRs. **macakinTT** approves; **brain00021** is also trusted.
+   - The owner approves in **Files changed → Submit review → Approve**. The conversation page has no approve button.
+   - Request the review with `gh pr edit N --add-reviewer macakinTT`.
+   - Never disable or bypass the protection.
+2. **Never stack PRs.** Merging the first PR moves the second one's merge base, GitHub dismisses its approval, and even a fresh approval counts as stale until the branch is merged with `main` and approved again. One PR at a time, or one PR with everything.
+3. **The owner approves before anything ships.**
+   - Show screenshots and test results locally first.
+   - A PR is not live until it is merged. Say "awaiting macakinTT's review", never "shipped".
+4. **Client = GitHub Pages**, two channels, both published from `docs/`:
+   - `/beta/` → `docs/beta/`
+   - `/beta/ps2/` → `docs/beta/ps2/`
+   - `/beta/?era=ps2` is the `/beta/` bundle with the PS2 style on, not the ps2 channel.
+   - Publish both every time so they match. Build first, because the publisher only copies `dist/`:
+     ```bash
+     cd world && npm run build
+     node scripts/publish-beta.mjs --channel beta
+     node scripts/publish-beta.mjs --channel ps2
+     ```
+   - `npm run build:beta` exits 1 on purpose.
+   - Commit `docs/beta` in the same PR as the source.
+   - Pages caches `index.html` for 600 s. "The fix didn't work" is often a stale page.
+5. **Server = Render**, `https://myschedule-festival.onrender.com`, behind Cloudflare.
+   - **Deploys are manual**: merging to `main` does not redeploy it. Tell the owner "Render needs a manual redeploy" whenever `world/server/**` changed.
+   - `/api/config` returns `build` (the deployed commit).
+   - **No disk.** Runtime state lives on the instance, and a redeploy boots from `world/server/festival-seed.json`.
+   - To keep STAFF edits across deploys, capture them with `node world/scripts/capture-state.mjs` (reads the live admin state) and commit the seed.
+   - Resident profiles in the seed are only honoured with a matching `djProfileSeed`. This is now captured and committed, so STAFF edits to introductions and credits survive.
+6. **Source of truth is `origin/main`.** The "live bundle source not on main" problem (codex shipping `docs/` from non-git `band-repair-20261004`) was resolved on 2026-10-07: `main` now rebuilds exactly what is live.
+   - Develop on a branch from `origin/main`. Do not ship from `band-repair-20261004`, `gate-entry-fix` or any other old worktree.
+   - **Never ship codex's old server copy**: its `/api/config` leaked the STAFF receipt mailbox (`offeringReceipt`).
+7. **Never `git add -A`** in shared worktrees. Stage the files you changed.
+8. **Secrets:** never put ECPay HashKey/HashIV, the STAFF key or any token in code, commits, PR text or chat.
+   - The owner has pasted ECPay key screenshots before; do not repeat them.
+   - ECPay test-stage keys in `donations.mjs` are ECPay's public stage keys and are fine.
+9. **Payments:** never write ECPay API code from memory. Read the spec on developers.ecpay.com.tw first; each function cites its page.
+   - Do not send test requests to the live ECPay service.
+   - Server tests stand ECPay up locally with `ECPAY_STAGE_INVOICE_BASE` (honoured on stage only).
+
+## Live state on 2026-10-08
+
+- **GitHub Pages:** `main` = `c3c6f86` (PR #13). Both channels serve `main-CBOHtRPn.js`.
+- **Render:** still on `bf839ff` (PR #10). **PRs #11–#13 need a Render redeploy** before the wish wall, the corrected credits and the STAFF invoice check work. The owner has been told.
+
+## What shipped (PRs #1–#13, all merged)
+
+| PR | What |
+|---|---|
+| #1 | Removed the unused root Vue/Vite toolchain. |
+| #2 | Invoice and checkout item name `網路服務費`, unit `次`; removed the festival's own receipt email (Resend). |
+| #3 | Seeded every programme film's length (`trackDurations`, 49 films, all checked against YouTube). |
+| #4 | `MIN_DONATION` 30 (below it ECPay hides store payments). Phone barcode invoice carrier (CarrierType 3). Guests can donate from the sign-in page (5 open per `CF-Connecting-IP`, 200 total). |
+| #5 | `InvoiceNotify` after Issue (ECPay emails the invoice: InvoiceTag I, Notify E, Notified C). |
+| #6 | Phone performance: static scenery merged into batches (`world/src/world/StaticBatch.ts`) with identical materials shared; off-screen residents not animated, distant ones every other frame. 精簡 is crisp pixels (pixel ratio 1 + `image-rendering: pixelated`, render-scale floor 1). The 通行證 button sits behind open menus. Phone-like test went from 17 to 32–35 fps (一般) and 21 to 42–51 fps (精簡). All 17 lamps stay lit (owner's rule). |
+| #7 | STAFF → 供養收據: list of recent offerings with invoice number or ECPay's refusal, and a **重新開立發票** retry. `CarrierNum` is `''` for ECPay's carrier. |
+| #8 | Band guitar and bass textures re-saved at JPEG q90 (`world/scripts/lighten-band-textures.py`); band 12.9 → 8.5 MB. |
+| #9 | Load speed. No `male.glb` preload ahead of the sign-in page (the gate took 29 s on the owner's connection). Models and textures come from **jsDelivr** (`world/src/world/AssetMirror.ts`), each checked against a SHA-256 in `assets/asset-integrity.json` (vite plugin), falling back to Pages. The band prefetches at the gate. The STAFF offerings list refreshes itself, and Render logs every offering step (`Offering … opened/paid`, `Invoice … issued`, `Invoice not issued for …: <reason>`). |
+| #10 | Jukebox records cut off at 3:35: the jukebox now uses `trackDurations`. Missing lengths are looked up on YouTube at start and when STAFF add videos. The jukebox lengths are seeded. |
+| #11 | Temple **wish wall** (祈福牆), resident **music credits** (音樂製作), STAFF **檢查綠界發票設定**, scrolling jukebox list, NPC title under the name in the attendee list. |
+| #12 | XIEH GAN's English credits per the owner: One Two Free; 執行製作 = producer; titles with no official English keep the original Chinese. |
+| #13 | 音樂製作 only on XIEH GAN's card (`CREDIT_CARDS` in `App.ts`). |
+
+## Open items, most important first
+
+1. **No 電子發票 has ever been issued.**
+   - Evidence: ECPay backend 字軌 FU (115年 9–10月, 67503600–67503949) shows nothing used. The owner gets ECPay's payment confirmation but no invoice.
+   - Likeliest cause: Render's `ECPAY_INVOICE_HASH_KEY` / `ECPAY_INVOICE_HASH_IV` do not match the keys under ECPay 電子發票 → 系統開發管理 → 系統介接設定. The owner confirmed on 2026-10-08 that they don't match. `ECPAY_INVOICE_MERCHANT_ID` is 3515470.
+   - Next steps:
+     1. After the Render redeploy, the owner presses STAFF → 供養收據 → **檢查綠界發票設定**. It calls read-only `GetInvoiceWordSetting` with Render's keys and shows either "keys accepted" plus the 字軌, or ECPay's refusal. ECPay answers wrong keys with HTTP 500.
+     2. Fix the keys in Render, redeploy, and recheck.
+     3. Make an NT$30 test donation with 我要收據 ticked.
+   - Render logs show each step; search `Offering` / `Invoice`.
+   - Paid offerings from before a redeploy are not in the STAFF list (no disk). Those invoices must be issued by hand in ECPay's backend.
+   - The owner should set ECPay's backend invoice notification option to 不要開啟, or donors get two emails.
+2. **jsDelivr purge after model or texture changes.** `AssetMirror` reads `@main`, which jsDelivr re-resolves at most every 12 h. A release that adds or changes a GLB/PNG/JPG is served from Pages (slow) until then. After such a merge, purge each new file, for both channels:
+   ```bash
+   curl https://purge.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@main/docs/beta/assets/<file>
+   ```
+3. **Flaky test.** "staff can rotate the key" fails about half the time even on untouched `main`. It predates this work and has not been fixed.
+4. **Housekeeping:**
+   - `.claude/launch.json` at the repo root has an `offerings-dev` entry pointing at the `release-npc-20261006` worktree.
+   - `release-npc-20261006/world` and `invoice-notify-20261007/world` have `node_modules` symlinks.
+   - Old dated worktrees (`ps2-publish-*`, `avatar-*`, etc.) are untracked clutter.
+   - Ask before deleting any of it.
+
+## Owner decisions to keep
+
+- The offering is a **sale** (網路服務費), not a donation. A real 統一發票 is issued every time. Unticked 我要收據 sends it to the STAFF receipt mailbox (seeded `offeringReceipt`). Minimum NT$30. No paper invoices. The only carriers are ECPay's own and a phone barcode.
+- **Wish wall:**
+  - Notes are ≤ 60 characters, posted only after ECPay confirms payment.
+  - Signed with the visitor's name, a sign-in-page guest's typed gate name, or 訪客.
+  - **Memory only, never written to disk, newest 30.** The owner explicitly asked for this. A restart clears the wall.
+  - The wall stands at `WISH_WALL {x 67.6, z -6.6}`, the foot of the temple stairs, facing the road. **x = 65 is the residents' path (hill1 → hill2)**; keep it clear.
+  - Notes are cleaned by `wishText` (keeps full-width Chinese punctuation; `safeText`'s NFKC would fold it).
+  - STAFF remove notes under 供養收據.
+- **Credits:** XIEH GAN only. Official English names where they exist, otherwise the original Chinese. 執行製作 = producer. The Golden Melody footnote is confirmed. The defaults live in `world/server/index.mjs` (djProfiles), `world/src/data/djProfiles.ts` (build copy) and the seed.
+- **Phones:** lamps stay at 17 (the owner rejected fewer lamps). Distant residents animating less is accepted. 精簡 = crisp pixels.
+- **Band:** clean straight wrists. The guitarist's fretting fingers are display-only curl `(.7, 1.05, .6)`. The band plays only while the jukebox has a record. The NIMA ROOFTOP deck stays untouched.
+- **The Google Drive browser key is an accepted risk.** Do not re-raise it. Direct card entry was dropped (PCI cost); do not re-propose it.
+
+## How to test and review
+
+- Run `npm test` (384 pass at `c3c6f86`, give or take the flaky one) and `npx tsc --noEmit`.
+- Local dev: `npm run dev` (client on 5173 + service on 8787). The local STAFF key is the code default `myschedule-local-admin`.
+- Local-only review shortcuts (`?era=ps2&island&review=…`): `dj-about`, `dj-credits`, `wish-wall`, `band-street-play`, `perf`, and others in `App.ts`.
+- Headless performance and loading checks (CDP):
+  ```bash
+  DPR=3 CPU=4 node tools/perf-probe.mjs "http://127.0.0.1:5173/?era=ps2&review=perf&island" 390 844
+  ```
+  The browser pane suspends rAF, so don't measure in it.
+- ECPay without ECPay: the server tests start a local stand-in for `/B2CInvoice/*` on the public stage keys (see "STAFF see an offering…" and "STAFF can ask ECPay whether the invoice keys work…" in `server/server.test.mjs`).
+
+---
+
 # Current local avatar rebuild — 2026-09-29
 
 This is the isolated `avatar-rebuild-20260927/world` copy. Read `../art/BUILD_NOTES.md` for completed changes, source provenance, validation and the local review URL. The user has NOT approved publication. Historical deployment instructions below are background only and do not authorize publishing this build.
