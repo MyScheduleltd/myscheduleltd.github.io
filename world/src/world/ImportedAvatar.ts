@@ -272,6 +272,26 @@ function evenLight(shader: THREE.WebGLProgramParametersWithUniforms): void {
     }`);
 }
 
+/** Match new generated people to the existing visitors' colour response. */
+export function applyAvatarColourLighting(material: THREE.MeshStandardMaterial): void {
+  material.toneMapped = false;
+  // Meshy's optional baked emission duplicates illumination from the world.
+  // Keep that source map in the GLB, but light people once like native avatars.
+  material.emissiveIntensity = 0;
+  material.onBeforeCompile = shader => {
+    // Warm skin islands are distinct from the near-neutral ivory shirt.
+    // Tint those texels only; preserve eyes, hair, clothing and the source map.
+    shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      float scenicSkin = step(.25, diffuseColor.r)
+        * step(diffuseColor.g * 1.12, diffuseColor.r)
+        * step(diffuseColor.b * 1.25, diffuseColor.g);
+      diffuseColor.rgb *= mix(vec3(1.), vec3(.91, .75, .66), scenicSkin);
+    `);
+    evenLight(shader);
+  };
+  material.customProgramCacheKey = () => 'higgsfield-scenery-avatar-even-v2';
+}
+
 interface Link { bone: THREE.Bone; control: THREE.Object3D; offset: THREE.Quaternion; bareOffset?: THREE.Quaternion }
 interface Hand { bone: THREE.Bone; tips: number[]; palm: THREE.Vector3; thumb: THREE.Vector3; fingers: THREE.Vector3 }
 /**

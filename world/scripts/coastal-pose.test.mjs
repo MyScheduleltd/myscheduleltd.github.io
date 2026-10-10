@@ -724,7 +724,7 @@ test('DJ hands lie over the record and mixer with palms down',()=>{
 test('controller movement resumes immediately when a teleport closes menu capture',()=>{
   const world=Object.create(FestivalWorld.prototype),events=[];
   const frame={moveX:.65,moveY:-.8,lookX:0,lookY:0,pressed:new Set(),held:new Set()};
-  Object.assign(world,{xrActive:false,gamepad:{poll:()=>frame},gamepadRunning:false,onAction:e=>events.push(e)});
+  Object.assign(world,{xrActive:false,keys:new Set(),gamepad:{poll:()=>frame},gamepadRunning:false,onAction:e=>events.push(e)});
   for(let trip=0;trip<3;trip++) {
     world.setMenuOpen(true);world.updateGamepad(1/60);
     assert.equal(world.stickX,0);assert.equal(world.stickY,0,'map input must not walk the avatar');

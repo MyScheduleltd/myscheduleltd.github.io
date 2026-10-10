@@ -1,0 +1,72 @@
+{
+  "assets": [
+    {
+      "asset": "attendant",
+      "model": "Meshy 7",
+      "generation": "b65f091e-4e4e-480e-9ee9-e94048d18210",
+      "original_glb_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/hf_20261009_072627_b65f091e-4e4e-480e-9ee9-e94048d18210.glb",
+      "reference_image_url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/cffd5ead-fd5c-4302-81e5-07d2e99c84c4_resize.jpg",
+      "rigged": true,
+      "requested_polycount": 10000,
+      "bytes": 8698600,
+      "sha256": "997e2776a15ae5e6a5ab4207cebc912103f86e216d7abdf3530a745b5f8d77c1",
+      "triangles": 18382,
+      "source_preserved": false,
+      "original_sha256": "64954bebd96939445591068c36e4ba137e1d2aaaff5f301f3077ee4d9f6293c5",
+      "local_repair": {
+        "shirt": 773,
+        "trousers": 4920,
+        "bytes": 8698600,
+        "sha256": "997e2776a15ae5e6a5ab4207cebc912103f86e216d7abdf3530a745b5f8d77c1"
+      }
+    },
+    {
+      "asset": "box-office",
+      "model": "Meshy 7",
+      "generation": "c19c007d-e619-4ba2-8705-fe335acdda4b",
+      "original_glb_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/hf_20261009_072619_c19c007d-e619-4ba2-8705-fe335acdda4b.glb",
+      "reference_image_url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/54bb7168-2bf6-402a-9832-947ac6c5d38e.png",
+      "rigged": false,
+      "requested_polycount": 6000,
+      "bytes": 4290436,
+      "sha256": "a3a75f6937daabe3ed0c47424460c88c4cc0d04de209f9048c2cfd8f1b4b7fa1",
+      "triangles": 1988,
+      "source_preserved": false,
+      "original_sha256": "95a355275ff7236e37dee527e21cbfd0467216048c7fc6b6d2569911ddde396e",
+      "local_repair": {
+        "replaced_plaster_and_cabinet_faces": 10625,
+        "closed_panels": 7,
+        "bytes": 4290436,
+        "sha256": "a3a75f6937daabe3ed0c47424460c88c4cc0d04de209f9048c2cfd8f1b4b7fa1",
+        "counter_fit": "Counter width 1.44 fits the 1.46 gap between the post inner faces, with 0.01 clearance per side."
+      }
+    },
+    {
+      "asset": "valet",
+      "model": "Meshy 7",
+      "generation": "e32a20da-ffd3-4342-a1f0-b2e26d227b69",
+      "original_glb_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/hf_20261009_072621_e32a20da-ffd3-4342-a1f0-b2e26d227b69.glb",
+      "reference_image_url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/51569934-793a-4a5c-aae1-e6bf2de25242.png",
+      "rigged": false,
+      "requested_polycount": 4000,
+      "bytes": 4540012,
+      "sha256": "2cbf7670e6d82fb49c929abd936766c59dca11ebce55f7b892269c67969fb3b8",
+      "triangles": 6696,
+      "source_preserved": true
+    },
+    {
+      "asset": "temple-statue",
+      "model": "Meshy 7",
+      "generation": "7f4404b8-187b-42a3-b6e2-0cc3603439cb",
+      "original_glb_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/hf_20261008_162706_7f4404b8-187b-42a3-b6e2-0cc3603439cb.glb",
+      "reference_image_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/hf_20261008_162204_32b83455-6cb0-46cb-b8b0-645eb170d58a.png",
+      "bytes": 2096404,
+      "sha256": "98dbecdda28f0fe470089aeba259f3137580c48b25f559b5bd20f59e2900761b",
+      "rigged": true,
+      "triangles": 935,
+      "source_preserved": true
+    }
+  ],
+  "preparation": "Original Meshy downloads retained in raw artifacts. Owner-requested selective repairs replace contaminated attendant sleeve/trouser materials without changing topology or rig; booth plaster, posts and cabinet rebuilt with closed clean surfaces under original roof/sign. Original 2K image maps retained; no decimation or resizing. Other assets remain byte-for-byte originals.",
+  "status": "Owner approved publication on 2026-10-10; packaged for protected pull request, not yet deployed."
+}

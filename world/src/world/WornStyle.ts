@@ -238,6 +238,7 @@ type PatchableMaterial = THREE.Material & {
 };
 
 function patchMaterial(material: PatchableMaterial, masonry: number | false = false): void {
+  if (material.userData.preserveAuthoredSurface === true) return;
   if (material.userData.wornPatched === true) return;
   material.userData.wornPatched = true;
 
@@ -373,7 +374,7 @@ export function applyWornStyle(
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const material of materials) {
       const target = material as PatchableMaterial;
-      if (target.userData.wornPatched === true) continue;
+      if (target.userData.wornPatched === true || target.userData.preserveAuthoredSurface === true) continue;
       patchMaterial(target);
       patched += 1;
     }
