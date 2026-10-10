@@ -1,4 +1,4 @@
-import { SCREENING_SITES, SHORE_SIGN, screeningContains } from './CoastalVenues';
+import { SCREENING_SITES, SHORE_SIGN, VENUE_STANDS, venueStandNear, screeningContains } from './CoastalVenues';
 import { DEFAULT_NPC_PROFILES, DOUBLE_TAP_INTRODUCTION, FEMALE_RESIDENTS,
   type NpcId, type NpcProfile, type MentorFollowerTarget } from './NpcRoster';
 import { TOP_OUTFITS, outfitWire } from './CoastalOutfits';
@@ -33,6 +33,7 @@ import { moveCoastalBody, overlapsBodyHeight, coastalDetour, coastalRouteAround 
 import { pixelSurface, worldSurfaceUV } from './CoastalSurfaces';
 import { ROAD_POLYGONS, streetLampObstructsRoute } from './CoastalCirculation';
 import { CoastalScenery } from './CoastalScenery';
+import { VenueSceneryAssets } from './VenueSceneryAssets';
 import { createCoastalAvatar } from './CoastalAvatar';
 import { attachImportedAvatar, syncImportedAvatars, importedAvatarRoots, AVATAR_NATIVE, MOVE_SECONDS, PUNCH_CONTACT_SECONDS } from './ImportedAvatar';
 import { createCoastalSkateboard } from './CoastalSkateboard';
@@ -82,9 +83,10 @@ export type WorldAction =
   | { type: 'npcIntroduction'; id: string; name: string; title: string; introduction: string }
   | { type: 'treat'; target: string }
   | { type: 'mentor'; active: boolean; discardedPopcorn?: boolean }
-  | { type: 'programme' }
+  | { type: 'programme'; venue?: VenueKey }
   | { type: 'dj'; name: string; venue: 'club' | 'rooftop' }
   | { type: 'dance'; active: boolean }
+  | { type: 'danceSelection'; active: boolean }
   | { type: 'drinkOrdered' }
   | { type: 'ate' }
   | { type: 'drank'; drinks: number; drunk: boolean }
@@ -1590,6 +1592,7 @@ export class FestivalWorld {
   private readonly colliders: Collider[] = [];
   private readonly seats: Seat[] = [];
   private readonly npcs: NpcAvatar[] = [];
+  private readonly venueSceneryAssets = new VenueSceneryAssets();
   /** The served roster, by id, so a prompt can offer what STAFF have written. */
   private readonly npcProfileById = new Map<string, NpcProfile>();
   private readonly avatarFrustum = new THREE.Frustum();
@@ -1626,7 +1629,7 @@ export class FestivalWorld {
   /** SHIFT held: the avatar runs, on land and in the water. */
   private running = false;
   private shopSign?: THREE.Mesh;
-  private shopCounter?: { x: number; z: number };
+  private shopCounter?: { x: number; y: number; z: number };
   private drinks = 0;
   private carriedPropKind?: CarriedItem;
   private drinkUntil = 0;
@@ -2202,6 +2205,7 @@ export class FestivalWorld {
 
   stop(): void {
     this.disposed = true;
+    this.venueSceneryAssets.dispose();
     this.renderer.setAnimationLoop(null);
     if (this.xrSession) void this.xrSession.end().catch(() => undefined);
     this.stopPhoneOrientation();
@@ -2645,6 +2649,8 @@ export class FestivalWorld {
   setMenuOpen(open: boolean): void {
     this.menuOpen = open;
     if (open) {
+      this.keys.clear();
+      this.running = false;
       this.setMovementVector(0, 0);
       if (this.gamepadRunning) {
         this.gamepadRunning = false;
@@ -3077,7 +3083,7 @@ export class FestivalWorld {
       case 'offer': this.offerFromTouch(); break;
       case 'camera': this.toggleCameraMode(); break;
       case 'photo': this.onAction({ type: 'photoMode' }); break;
-      case 'dance': this.toggleDancing(); break;
+      case 'dance': this.requestDanceSelection(); break;
       // `run` is a hold, handled above rather than as a press. The three menu
       // bindings never reach here — `updateGamepad` returns before this when a
       // panel is open.
@@ -4000,11 +4006,14 @@ export class FestivalWorld {
   focusCoastalForReview(view: string): void {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
     const views: Record<string, [number, number, number, number, number]> = {
+      boothInterior:[17,-27,3.3,Math.PI/2,.3], palaceOutfit:[VENUE_STANDS.palace.x-1.4,VENUE_STANDS.palace.z,3.5,0,-.05], boothOcclusion:[17,-27,7,-.65,-.10], palaceClose:[VENUE_STANDS.palace.x,VENUE_STANDS.palace.z,3.3,Math.PI/2,-.05],
       housesEast:[35,61,12,Math.PI+.3,-.18], housesWest:[-39,58,9,Math.PI,-.22], roofStair:[19.6,23,12,-2,-.2], roofStairTop:[19.6,31.6,7,Math.PI,-.12], roofLandingCorner:[22,36.5,9,2.5,-.12], roofWestSoffit:[22,18,10,-2.3,-.25], clubExterior:[-19,23,32,Math.PI/2,-.18], djSide:[40,25.2,6,Math.PI/2,.12], templeSide:[79,-10,19,-.4,.12], palaceCorner:[-45,-32,12,-.7,-.25],
       clubdj:[-68,35.9,6,Math.PI,.22], roofdj:[40,25.2,6,0,.22], hillstairs:[67,4,20,-Math.PI/2,.3],
       pamphlet:[0,-1.4,6,0,.22], eastplan:[45,0,58,-.4,.85], threshold:[-22.5,23.5,3,-Math.PI/2,.38], crossing:[8.5,56,12,Math.PI/2,.48], shopcabinet:[29,11,9,Math.PI,.22], templefloor:[88,4,12,-Math.PI/2,.3], palacepost:[-26,-26.2,9,.2,.2],
       rampjoin:[-49,23.5,7,-Math.PI/2,.13], templesteps:[74,4,12,-Math.PI/2,.18], templealtar:[100,4,8,-Math.PI/2,-.16], shoresign:[SHORE_SIGN.x,SHORE_SIGN.z,18,0,-.08], shoreRoad:[35,-12,16,0,.08], concession:[concessionPosition.x,concessionPosition.z,9,0,-.1],
-      booth:[17,-27,12,0,-.16], clubfloor:[-88,22,7,Math.PI/2,.65], clubceiling:[-70,22,14,0,-.6], roofseats:[40,35,8,Math.PI,.3], clubfront:[-20,23.5,28,Math.PI/2,-.18], clubentry:[-20,23.5,22,-Math.PI/2,-.22], gate:[0,62,30,0,-.25],
+      booth:[17,-27,12,0,0], clubfloor:[-88,22,7,Math.PI/2,.65], clubceiling:[-70,22,14,0,-.6], roofseats:[40,35,8,Math.PI,.3], clubfront:[-20,23.5,28,Math.PI/2,-.18], clubentry:[-20,23.5,22,-Math.PI/2,-.22], gate:[0,62,30,0,-.25],
+      boothTicket:[17,-27,3.6,0,-.12], palaceTicket:[VENUE_STANDS.palace.x,VENUE_STANDS.palace.z,6.5,Math.PI/2,0], shoreTicket:[SHORE_SIGN.x,SHORE_SIGN.z,2.3,0,-.1],
+      palaceCarpet:[VENUE_STANDS.palace.x,VENUE_STANDS.palace.z,9,.75,.16], palaceApproach:[VENUE_STANDS.palace.x,VENUE_STANDS.palace.z,2.2,Math.PI/2,0],
       clublights:[-55,0,21,Math.PI,-.18], bar:[-68,6.8,12,0,-.10], houses:[-39,58,12,Math.PI,-.22], shop:[40,8,20,Math.PI,-.10], clubscreen:[-68,41,19,Math.PI,-.15],
       arrival: [0, 25, 27, 0, .18], square: [-7, -4, 20, .4, .16],
       wishWall: [67.6, -6.6, 12, -Math.PI / 2 - .3, -.10],
@@ -4018,7 +4027,14 @@ export class FestivalWorld {
       roofStairSide: [19.6, 28.3, 17, -Math.PI / 2, -.12], roofStairSideB: [19.6, 28.3, 17, Math.PI / 2, -.12],
     };
     this.lookAtSpotForReview(...(views[view] ?? views.square));
+    if (view === 'boothOcclusion') this.reviewProjectorVenue = 'shore';
     if (view === 'roofLandingCorner') this.player.position.y = ROOF_AVATAR_Y;
+    if ((view === 'shopCounter' || view === 'shopRoof') && this.shopCounter) {
+      const {x,z}=this.shopCounter;
+      this.player.position.set(x,view === 'shopRoof' ? ROOF_AVATAR_Y : this.groundHeightAt(x,z,0),z);
+      this.cameraMode='follow';this.cameraZoom=.8;
+      this.cameraOrbit.follow.yaw=Math.PI;this.cameraOrbit.follow.pitch=.14;
+    }
     if (view === 'eastplan') {
       this.player.position.set(48,this.groundHeightAt(48,0),0);
       this.cameraMode='follow';this.cameraZoom=4.8;
@@ -4075,7 +4091,7 @@ export class FestivalWorld {
     this.scene.traverseVisible(o=>{
       const mesh=o as THREE.Mesh;if(!mesh.isMesh)return;
       for(let p:THREE.Object3D|null=o;p;p=p.parent)if(p.userData.sculptRuntime)return;
-      if(materials.includes(mesh.material as THREE.MeshBasicMaterial)||mesh===this.shopSign)signs.push(mesh);else occluders.push(mesh);
+      if((materials.includes(mesh.material as THREE.MeshBasicMaterial)||mesh===this.shopSign) && mesh.geometry instanceof THREE.PlaneGeometry)signs.push(mesh);else occluders.push(mesh);
     });
     return signs.map(sign=>{
       const g=sign.geometry as THREE.PlaneGeometry,mat=sign.material as THREE.MeshBasicMaterial;
@@ -4186,6 +4202,7 @@ export class FestivalWorld {
       infrastructure:this.infrastructureReviewSnapshot(),
       performance: this.performanceSnapshot(),
       style: this.wornStyleReviewSnapshot(),
+      venueScenery: this.venueSceneryAssets.reviewSnapshot(),
       atmosphere: this.dayNight.atmosphere.snapshot(),
       sea: SEA_Y, clubFloor: CLUB_FLOOR_Y, templeFloor: TEMPLE_FLOOR_Y - AVATAR_GROUND_Y,
       contourGrades: HILL_WALK.slice(1).map((b, i) => {
@@ -5582,7 +5599,18 @@ export class FestivalWorld {
     this.player.visible = !this.controlledNpcId;
   }
 
-  /** Space starts and stops dancing; moving or sitting down ends it. */
+  requestDanceSelection(): void {
+    if (this.playerState === 'seated' || this.isMentorControlLocked() || this.menuOpen) return;
+    this.onAction({ type: 'danceSelection', active: this.dancing });
+  }
+
+  selectDance(move: 'groove' | 'stop'): void {
+    if (this.playerState === 'seated' || this.isMentorControlLocked()) return;
+    this.dancing = move !== 'stop';
+    this.onAction({ type: 'dance', active: this.dancing });
+  }
+
+  /** Moving or sitting down ends dancing. Immersive controls keep their toggle. */
   toggleDancing(): boolean {
     if (this.playerState === 'seated' || this.isMentorControlLocked()) return false;
     this.dancing = !this.dancing;
@@ -7135,7 +7163,7 @@ export class FestivalWorld {
     this.refreshXrPoster(venue);
     const signMaterial = this.venueSignMaterials.get(venue);
     if (!signMaterial) return;
-    const ratios:Record<VenueKey,number>={palace:15.8/3.3,'drive-in':2.8/1.4,shore:5.6/3.15,club:11/2.8,rooftop:7.4/2};
+    const ratios:Record<VenueKey,number>={palace:15.8/3.3,'drive-in':3.55/.9,shore:5.6/3.15,club:11/2.8,rooftop:7.4/2};
     const next = createTextTexture([nextName,nextSubtitle],'#eee4cc','#354842',ratios[venue]);
     const previous = signMaterial.map;
     signMaterial.map = next;
@@ -7508,6 +7536,12 @@ export class FestivalWorld {
       return;
     }
 
+    const programmeVenue = venueStandNear(this.player.position.x, this.player.position.z);
+    if (programmeVenue) {
+      this.onAction({ type: 'programme', venue: programmeVenue });
+      return;
+    }
+
     if (this.nearClubBar()) {
       this.carriedItem = 'DRINK';
       this.stowedItem = undefined;
@@ -7700,7 +7734,7 @@ export class FestivalWorld {
       event.preventDefault();
       this.jump();
     }
-    if (key === 'b' && !event.repeat) this.toggleDancing();
+    if (key === 'b' && !event.repeat) this.requestDanceSelection();
     if (key === 'o' && !event.repeat) this.donate();
     if (key === 't' && !event.repeat) this.toggleCameraMode();
     if (key === 'e' && !event.repeat) this.interact(event.shiftKey);
@@ -9255,6 +9289,7 @@ export class FestivalWorld {
     scenery.buildCirculation();
     scenery.buildPlanting();
     scenery.finish();
+    this.createVenueEntrances();
     this.paving=this.scene.children.filter(object=>object.userData.groundFootprint).map(object=>({polygon:object.userData.groundFootprint,lift:object.userData.groundLift,exclusions:object.userData.groundExclusions}));
     this.createBeachPlanting();
 
@@ -9417,22 +9452,41 @@ export class FestivalWorld {
     const shoreSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['THE SHORE', 'MUSIC VIDEO']) });
     this.venueSignMaterials.set('shore', shoreSignMaterial);
     const shoreSign = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 3.15), shoreSignMaterial);
-    // Put the board all the way outside the theatre on the service road. In
-    // world coordinates it stands ahead of the nearest lamp at (47,-18), with
-    // more than five units between the lamp and the closest sign footing.
+    shoreSign.userData.dynamic = true;
+    // Beside the entrance on the venue side of the service road, ahead of
+    // the first seating row. Geometry, map and interaction share SHORE_SIGN.
     const shoreSignX=SHORE_SIGN.x-SCREENING_SITES.shore.dx;
     const shoreSignZ=SHORE_SIGN.z-SCREENING_SITES.shore.dz;
     const shoreBoard=createCoastalSignFrame(SHORE_SIGN.width,3.15);shoreBoard.position.set(shoreSignX,3.35,shoreSignZ);shoreBoard.rotation.y=SHORE_SIGN.rotation;
     shoreSign.position.z=.035;shoreBoard.add(shoreSign);
     for(const x of [-2.15,2.15]){
-      this.mesh([.30,3.35,.30],[x,-1.675,-.25],material(0x52645a),shoreBoard).userData.wornNoMasonry=true;
-      this.mesh([.6,.16,.65],[x,-3.27,-.25],material(0xa89b80),shoreBoard).userData.wornNoMasonry=true;
+      const ground = (dx:number,dz:number) => terrainHeightAt(
+        SHORE_SIGN.x+dx*Math.cos(SHORE_SIGN.rotation)+dz*Math.sin(SHORE_SIGN.rotation),
+        SHORE_SIGN.z-dx*Math.sin(SHORE_SIGN.rotation)+dz*Math.cos(SHORE_SIGN.rotation));
+      const base=ground(x,-.25),postHeight=3.35-base;
+      this.mesh([.30,postHeight,.30],[x,-postHeight/2,-.25],material(0x52645a),shoreBoard).userData.wornNoMasonry=true;
+      const foot=this.mesh([.6,.16,.65],[x,base-3.27,-.25],material(0xa89b80),shoreBoard);
+      // mesh() shares its unit cube across the entire world. Only this foot
+      // may follow the slope; changing the shared vertices deforms all boxes.
+      foot.geometry = foot.geometry.clone();
+      const vertices=foot.geometry.getAttribute('position');
+      for(let i=0;i<vertices.count;i++)vertices.setY(i,vertices.getY(i)+(ground(x+vertices.getX(i)*.6,-.25+vertices.getZ(i)*.65)-base)/.16);
+      foot.geometry.computeVertexNormals();foot.geometry.computeBoundingBox();foot.geometry.computeBoundingSphere();foot.userData.wornNoMasonry=true;
     }
     this.scene.add(shoreBoard);
+    // buildOnGrade moves both geometry and these local colliders together.
+    const signFloor = terrainHeightAt(SHORE_SIGN.x,SHORE_SIGN.z);
+    const signAngle = SHORE_SIGN.rotation;
+    const signDepth = .35;
+    this.addCollider(shoreSignX-.1*Math.sin(signAngle),shoreSignZ-.1*Math.cos(signAngle),
+      Math.abs(Math.cos(signAngle))*(SHORE_SIGN.width+.26) + Math.abs(Math.sin(signAngle))*signDepth,
+      Math.abs(Math.sin(signAngle))*(SHORE_SIGN.width+.26) + Math.abs(Math.cos(signAngle))*signDepth,
+      .06,{minY:1.645,maxY:5.055,physical:true},'shore-programme-board',5.055);
     for(const x of [-2.15,2.15])this.addCollider(
-      shoreSignX+x*Math.cos(shoreBoard.rotation.y)-.25*Math.sin(shoreBoard.rotation.y),
-      shoreSignZ-x*Math.sin(shoreBoard.rotation.y)-.25*Math.cos(shoreBoard.rotation.y),
+      shoreSignX+x*Math.cos(signAngle)-.25*Math.sin(signAngle),
+      shoreSignZ-x*Math.sin(signAngle)-.25*Math.cos(signAngle),
       .62,.67,
+      .04,{minY:signFloor-.2,maxY:3.35,physical:true},'shore-programme-post',3.35,
     );
 
     const chairMaterial = material(0xded3bd);
@@ -9548,18 +9602,9 @@ export class FestivalWorld {
     this.addCollider(centerX, -36, 19, 1.4);
     this.createProjectorSurface('drive-in');
 
-    const driveSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['DRIVE-IN 88', 'TELEVISION']) });
+    const driveSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['DRIVE-IN 88', 'TELEVISION'],'#eee4cc','#354842',3.55/.9) });
     this.venueSignMaterials.set('drive-in', driveSignMaterial);
-    const roadside = new THREE.Mesh(
-      new THREE.PlaneGeometry(9, 4.5),
-      driveSignMaterial,
-    );
-    // Reuse the film sign on the ticket booth wall; remove the superseded freestanding legs.
-    roadside.geometry.dispose();roadside.geometry=new THREE.PlaneGeometry(4,2);
-    roadside.position.set(52,4.85,-15.18);
-    this.mesh([4.2,2.2,.18],[52,4.85,-15.31],material(0x354d47)).userData.wornNoMasonry=true;
-    for(const x of [50.6,53.4])this.mesh([.12,.35,.12],[x,3.85,-15.31],material(0x354d47)).userData.wornNoMasonry=true;
-    this.scene.add(roadside);
+    // The sign is mounted on the new box office by createVenueEntrances().
 
     const carColors = [0x8f1720, 0xd3b356, 0x315c70, 0xd8d0bc, 0x6d4f7d, 0x335d3f];
     let carIndex = 0;
@@ -10072,10 +10117,22 @@ export class FestivalWorld {
       this.mesh([0.14, 0.14, 0.14], [altarX - 1.65, t.podium + 2.72, z], material(0xff6a2a, 0.3, 0.1));
     }
 
-    // 美麗本人 herself, seated on a lotus dais behind the table, facing the
-    // door. Gilded rather than skin-toned: this is an image of a god, not
-    // another attendee standing at the back of the room.
+    // 美麗仙人's portrait, seated on the existing lotus dais and facing the
+    // door. The photo's likeness and pose use the world's matte gold finish.
     const deity=createCoastalDeity();
+    // Keep the carved base. The portrait figure replaces the generic deity
+    // only after its local model has loaded, so a failed request stays visible.
+    const oldFigure = new THREE.Group();
+    oldFigure.name = 'Original temple figure fallback';
+    for (const child of [...deity.children]) {
+      if (!/^(Stone pedestal|Lotus core|Carved lotus|Lotus seat)/.test(child.name)) oldFigure.add(child);
+    }
+    oldFigure.traverse((child) => { child.userData.dynamic = true; });
+    deity.add(oldFigure);
+    const portrait = new THREE.Group();
+    portrait.position.y = .75;
+    deity.add(portrait);
+    void this.venueSceneryAssets.attach('statue', portrait, 3.7, oldFigure);
     deity.position.set(altarX+1.9,t.podium+1.38,centerZ);
     deity.rotation.y=-Math.PI/2;this.scene.add(deity);
     // No halo. There was one, it was never parented to her, and it spent its
@@ -10212,7 +10269,7 @@ export class FestivalWorld {
     this.shopSign.rotation.y = Math.PI;
     this.scene.add(this.shopSign);
     // Where an attendee stands to be served, in front of the frontage.
-    this.shopCounter = { x: centerX, z: counterZ - 4.2 };
+    this.shopCounter = { x: centerX, y: .28, z: counterZ - 4.2 };
 
     const rooftopSignMaterial = new THREE.MeshBasicMaterial({
       map: createTextTexture(['NIMA ROOFTOP', DEFAULT_VENUE_SUBTITLES.rooftop]),
@@ -10677,6 +10734,63 @@ export class FestivalWorld {
 
   private wishWallTexture?: THREE.CanvasTexture;
   private wishWallCanvas?: HTMLCanvasElement;
+  private createVenueEntrances(): void {
+    const booth = new THREE.Group();
+    booth.name = 'DRIVE-IN 88 staffed box office';
+    booth.position.set(VENUE_STANDS['drive-in'].x, SCREENING_SITES['drive-in'].grade, VENUE_STANDS['drive-in'].z);
+    this.scene.add(booth);
+    const fallback = new THREE.Group();
+    booth.add(fallback);
+    const plaster = material(0xc7baa0), teal = material(0x354d47), red = material(0x863632);
+    const part = (size: [number, number, number], at: [number, number, number], mat: THREE.Material, parent = fallback): THREE.Mesh => {
+      const mesh = this.mesh(size, at, mat, parent);
+      mesh.userData.dynamic = true;
+      mesh.userData.wornNoMasonry = true;
+      return mesh;
+    };
+    // The generated shell leaves its floor and ceiling open. Keep these
+    // structural surfaces after loading so the clerk stands on a real floor.
+    part([4.2,.12,3.3],[0,.06,0],plaster,booth);
+    part([4.65,.12,3.9],[0,4.5,0],red,booth);
+    part([4.2,3.6,.16],[0,1.8,-1.57],plaster);
+    for (const x of [-2,2]) part([.2,3.6,3.3],[x,1.8,0],plaster);
+    part([4.2,1.4,.18],[0,.7,1.57],plaster);
+    for (const x of [-1.95,1.95]) part([.3,2.2,.25],[x,2.5,1.57],teal);
+    part([4.2,.3,.25],[0,3.5,1.57],teal);
+    part([4.3,.16,.6],[0,1.5,1.6],teal);
+    part([4.8,.3,4],[0,3.75,0],red);
+    part([3.8,1.1,.12],[0,5.27,1.95],teal);
+    void this.venueSceneryAssets.attach('boxOffice', booth, 5.8, fallback);
+    const boothSign = new THREE.Mesh(new THREE.PlaneGeometry(3.55,.9),this.venueSignMaterials.get('drive-in')!);
+    boothSign.name = 'DRIVE-IN 88 box office programme sign';
+    boothSign.position.set(0,5.27,2.03);
+    boothSign.userData.dynamic = true;
+    booth.add(boothSign);
+    this.addCollider(booth.position.x, booth.position.z, 4.8, 4, .08, { minY: -.8, maxY: 5.1, physical:true }, 'drive-in-ticket-booth',5.1);
+    const clerk = new THREE.Group();
+    clerk.name = 'Unlisted box office attendant';
+    clerk.position.set(0,.12,.65);
+    booth.add(clerk);
+    void this.venueSceneryAssets.attach('attendant', clerk, 3.25);
+
+    const palace = new THREE.Group();
+    palace.name = 'THE PALACE ticket inspection stand';
+    const stand = VENUE_STANDS.palace;
+    const floor = terrainHeightAt(stand.x,stand.z) + .03;
+    palace.position.set(stand.x, floor, stand.z);
+    palace.rotation.y = stand.rotation;
+    this.scene.add(palace);
+    void this.venueSceneryAssets.attach('valet', palace, 1.95);
+    this.addCollider(stand.x,stand.z,1.3,1.6,.08,{minY:floor,maxY:floor+2,physical:true},'palace-ticket-stand',floor+2);
+    const inspector = new THREE.Group();
+    inspector.name = 'Unlisted Palace ticket inspector';
+    const inspectorFloor = terrainHeightAt(stand.x-1.4,stand.z)+.03;
+    inspector.position.set(0,inspectorFloor-floor,-1.4);
+    palace.add(inspector);
+    void this.venueSceneryAssets.attach('attendant', inspector, 3.25);
+    this.addCollider(stand.x-1.4,stand.z,.7,.7,.08,{minY:inspectorFloor,maxY:inspectorFloor+3.3,physical:true},'palace-ticket-inspector',inspectorFloor+3.3);
+  }
+
   private wishWallNotes: Array<{ name: string; message: string }> = [];
 
   /**
@@ -11729,6 +11843,7 @@ export class FestivalWorld {
     if (this.disposed) return;
     const delta = Math.min(this.clock.getDelta(), 0.05);
     const elapsed = this.clock.elapsedTime;
+    this.venueSceneryAssets.update(elapsed);
     this.reviewFrameCount += 1;
     this.reviewLastDelta = delta;
     this.waterTextures[0]?.offset.set((elapsed * 0.004) % 1, (elapsed * 0.0015) % 1);
@@ -15186,6 +15301,7 @@ export class FestivalWorld {
       : this.nearJukebox() ? 'E / PUT A RECORD ON'
       : this.nearShopCounter() ? 'E / OPEN MASTER OF THE HOUSE'
       : this.nearWishWall() ? 'E / READ THE WISH WALL'
+      : venueStandNear(this.player.position.x, this.player.position.z) ? 'E / VIEW VENUE SCHEDULE'
       : undefined;
     if (here) {
       if (this.carriedItem === 'DRINK') {
@@ -15297,7 +15413,7 @@ export class FestivalWorld {
   }
 
   private nearShopCounter(): boolean {
-    if (!this.shopCounter) return false;
+    if (!this.shopCounter || Math.abs(this.player.position.y - this.shopCounter.y) > 2.6) return false;
     const alongCounter = Math.max(0, Math.abs(this.shopCounter.x - this.player.position.x) - 15);
     const outFromCounter = this.player.position.z - this.shopCounter.z;
     return Math.hypot(alongCounter, outFromCounter) < 4.6;
@@ -15344,6 +15460,7 @@ export class FestivalWorld {
       || this.atTheAltar()
       || this.player.position.distanceTo(pamphletPosition) < 2.35
       || this.nearWishWall()
+      || venueStandNear(this.player.position.x, this.player.position.z) !== undefined
       ;
   }
 

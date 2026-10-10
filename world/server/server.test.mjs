@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { createServer as createHttpServer } from 'node:http';
 import { aesDecrypt, aesEncrypt, checkMacValue } from './ecpay.mjs';
 import { ecpayConfig } from './donations.mjs';
+import { randomUUID } from 'node:crypto';
 
 const temporaryDirectory = mkdtempSync(joinPath(tmpdir(), 'festival-test-'));
 let baseUrl;
@@ -104,6 +105,94 @@ const auth = (session) => ({
   'x-festival-session': session.id,
   'content-type': 'application/json',
   origin: 'http://127.0.0.1:5173',
+});
+
+test('a sign-in donation is listed, invoiced and restored for STAFF without a visitor session', async () => {
+  const config = ecpayConfig();
+  const keys = [config.invoice.hashKey, config.invoice.hashIV];
+  let issues = 0, notices = 0;
+  const invoiceServer = createHttpServer(async (request,response) => {
+    let raw = '';
+    for await (const chunk of request) raw += chunk;
+    const data = aesDecrypt(JSON.parse(raw).Data,...keys);
+    if (request.url.endsWith('/Issue')) { issues++; assert.equal(data.CustomerEmail,'guest-test@example.com'); }
+    else { notices++; assert.equal(data.NotifyMail,'guest-test@example.com'); }
+    const answer = request.url.endsWith('/Issue')
+      ? {RtnCode:1,InvoiceNo:'TEST000050',InvoiceDate:'2026-10-09 10:00:00'}
+      : {RtnCode:1};
+    response.writeHead(200,{'content-type':'application/json'});
+    response.end(JSON.stringify({TransCode:1,Data:aesEncrypt(answer,...keys)}));
+  });
+  await new Promise(resolve=>invoiceServer.listen(0,'127.0.0.1',resolve));
+  const port = await freePort(), url = `http://127.0.0.1:${port}`;
+  const stateFile = joinPath(temporaryDirectory,'guest-staff-history.json');
+  const env = {ECPAY_STAGE_INVOICE_BASE:`http://127.0.0.1:${invoiceServer.address().port}`};
+  let instance = await startServer(port,stateFile,'off',env);
+  const staff = {'x-festival-admin-key':'test-admin-key'};
+  const list = ()=>fetch(`${url}/api/admin/state`,{headers:staff}).then(r=>r.json());
+  try {
+    const started = await fetch(`${url}/api/donation`,{
+      method:'POST',headers:{'content-type':'application/json',origin:'http://127.0.0.1:5173'},
+      body:JSON.stringify({amount:52,email:'guest-test@example.com',displayName:'SIGN-IN GIVER'}),
+    });
+    assert.equal(started.status,200);
+    const {id} = await started.json();
+    const pending = (await list()).offerings.find(row=>row.id===id);
+    assert.equal(pending.state,'pending');
+    assert.equal(pending.visitorName,'SIGN-IN GIVER');
+    const notice = {CustomField1:id,MerchantTradeNo:pending.tradeNo,RtnCode:'1',TradeAmt:'52',PaymentType:'Credit_CreditCard',TradeNo:'stage-guest-trade'};
+    notice.CheckMacValue=checkMacValue(notice,config.payment.hashKey,config.payment.hashIV);
+    const paid = await fetch(`${url}/api/ecpay/notify`,{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams(notice)});
+    assert.equal(await paid.text(),'1|OK');
+    let row;
+    for (let i=0;i<40;i++) {
+      row=(await list()).offerings.find(entry=>entry.id===id);
+      if(row.invoiceNoticeSent===true) break;
+      await new Promise(resolve=>setTimeout(resolve,25));
+    }
+    assert.equal(row.state,'paid'); assert.equal(row.invoiceNo,'TEST000050');
+    assert.equal(row.invoiceNoticeSent,true); assert.equal(issues,1); assert.equal(notices,1);
+    assert.equal('email' in row,false,'STAFF history exposes no recipient address');
+    await stopServer(instance);
+    instance=await startServer(port,stateFile,'off',env);
+    row=(await list()).offerings.find(entry=>entry.id===id);
+    assert.equal(row.invoiceNo,'TEST000050','survives a restart when the settings file survives');
+    assert.equal(row.visitorName,'SIGN-IN GIVER');
+    assert.equal(issues,1,'restoring history does not reissue an invoice');
+  } finally {
+    await stopServer(instance);
+    await new Promise(resolve=>invoiceServer.close(resolve));
+  }
+});
+
+test('STAFF history is capped at 50 completed records while old unfinished payments remain settleable', async () => {
+  const now=Date.now(), stateFile=joinPath(temporaryDirectory,'bounded-offerings.json');
+  const completed=Array.from({length:60},(_,i)=>({id:randomUUID(),tradeNo:`FINAL-${i}`,createdAt:now-20*86_400_000-i*1000,paidAt:now-20*86_400_000+1000-i*1000,state:'paid',amount:30,invoiceNo:`TEST-${i}`}));
+  const awaiting={id:randomUUID(),tradeNo:'OLD-AWAITING',createdAt:now-86_400_000,state:'awaiting',amount:30};
+  const pending={id:randomUUID(),tradeNo:'OLD-PENDING',createdAt:now-86_400_000,state:'pending',amount:30};
+  const uninvoiced={id:randomUUID(),tradeNo:'OLD-UNINVOICED',createdAt:now-86_400_000,paidAt:now-86_400_000,state:'paid',amount:30,invoiceError:'Needs a retry'};
+  writeFileSync(stateFile,JSON.stringify({donations:[...completed,awaiting,pending,uninvoiced]}));
+  const port=await freePort(),url=`http://127.0.0.1:${port}`;
+  const instance=await startServer(port,stateFile);
+  try {
+    const get=()=>fetch(`${url}/api/admin/state`,{headers:{'x-festival-admin-key':'test-admin-key'}}).then(r=>r.json());
+    let state=await get();
+    assert.equal(state.offeringLimit,50); assert.equal(state.offerings.length,50);
+    assert.deepEqual(state.offerings.map(r=>r.id),[awaiting,pending,uninvoiced,...completed.slice(0,47)].map(r=>r.id));
+    const config=ecpayConfig();
+    const notice={CustomField1:awaiting.id,MerchantTradeNo:awaiting.tradeNo,RtnCode:'1',TradeAmt:'30',PaymentType:'CVS_CVS',TradeNo:'stage-deferred'};
+    notice.CheckMacValue=checkMacValue(notice,config.payment.hashKey,config.payment.hashIV);
+    assert.equal(await fetch(`${url}/api/ecpay/notify`,{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams(notice)}).then(r=>r.text()),'1|OK');
+    state=await get();
+    assert.equal(state.offerings.length,50);
+    assert.equal(state.offerings[0].id,awaiting.id,'a newly paid older checkout is listed first');
+    assert.equal(state.offerings[0].state,'paid');
+    await stopServer(instance);
+    const kept=JSON.parse(readFileSync(stateFile,'utf8')).donations;
+    assert.equal(kept.filter(r=>r.invoiceNo).length,50);
+    assert.ok(!kept.some(r=>r.id===completed[59].id),'oldest completed history is deleted, not merely hidden');
+    for (const row of [awaiting,pending,uninvoiced]) assert.ok(kept.some(r=>r.id===row.id),'unfinished processing records survive the display limit');
+  } finally { await stopServer(instance); }
 });
 
 test('health endpoint reports readiness', async () => {

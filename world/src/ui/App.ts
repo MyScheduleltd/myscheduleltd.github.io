@@ -1,12 +1,13 @@
+import { DanceWheel } from './DanceWheel';
 import { TOP_OUTFITS, topOutfit, avatarSex, outfitWire, type AvatarSex } from '../world/CoastalOutfits';
 import { avatarVariantsFor, AVATAR_NATIVE } from '../world/NativeAvatarPalette';
 import {
   catalogue,
   catalogueByVenue,
-  catalogueSummary,
   type CatalogueEntry,
   type VenueKey,
 } from '../data/catalogue';
+import { withVerifiedProgrammeMetadata } from '../data/catalogueMetadata';
 import { immersiveVideoSources, immersiveUrlFor } from '../data/immersiveVideoSources';
 import { youtubeIdFromUrl } from '../data/MediaLink';
 import companyLogoUrl from '../assets/company-logo.png?inline';
@@ -394,6 +395,7 @@ export class App {
   private palette: AvatarPalette;
   private snapshot?: WorldSnapshot;
   private activePanel?: PanelId;
+  private danceWheel?: DanceWheel;
   private currentId = '';
   private audioMuted = true;
   private screenMode?: 'public' | 'private';
@@ -495,6 +497,7 @@ export class App {
   private adminState?: AdminState;
   private adminError = '';
   private programmeRotationIndex = -1;
+  private programmeVenue?: VenueKey;
   private readonly openStaffSections = new Set<string>(
     JSON.parse(sessionStorage.getItem(STAFF_SECTIONS_KEY) ?? '[]') as string[],
   );
@@ -1252,7 +1255,7 @@ export class App {
             <button type="button" class="touch-ring__hit" data-touch-act="punch" aria-label="${zh ? '出拳' : 'Punch'}">${zh ? '拳' : 'HIT'}</button>
             <button type="button" class="touch-ring__key touch-ring__key--a" data-touch-act="jump" aria-label="${zh ? '跳躍' : 'Jump'}">${zh ? '跳' : 'JUMP'}</button>
             <button type="button" class="touch-ring__key touch-ring__key--b" data-touch-act="run" aria-label="${zh ? '奔跑' : 'Run'}">${zh ? '跑' : 'RUN'}</button>
-            <button type="button" class="touch-ring__key touch-ring__key--c" data-touch-act="dance" aria-label="${zh ? '跳舞' : 'Dance'}">${zh ? '舞' : 'DANCE'}</button>
+            <button type="button" class="touch-ring__key touch-ring__key--c" data-touch-act="dance" aria-label="${zh ? '選擇舞步' : 'Choose a dance'}">${zh ? '舞' : 'DANCE'}</button>
             <button type="button" class="touch-ring__key touch-ring__key--d" data-touch-act="offer" aria-label="${zh ? '供養' : 'Offer'}">${zh ? '供' : 'OFFER'}</button>
             <button type="button" class="touch-ring__key touch-ring__key--e" data-touch-act="photo" aria-label="${zh ? '拍照' : 'Photo'}">${zh ? '影' : 'PHOTO'}</button>
           </div>
@@ -1264,7 +1267,7 @@ export class App {
           aria-live="polite"
           aria-atomic="false"
         ></section>
-          <div class="controls-hint"><span>${zh ? '移動' : 'MOVE'}</span> WASD / ARROWS <span>${zh ? '奔跑' : 'RUN'}</span> SHIFT <span>${zh ? '互動' : 'INTERACT'}</span> E · SHIFT+E ${zh ? '抱起 MENTOR' : 'PICK UP MENTOR'} <span>${zh ? '跳躍' : 'JUMP'}</span> SPACE <span>${zh ? '跳舞' : 'DANCE'}</span> B <span>${zh ? '供養' : 'OFFER'}</span> O <span>${zh ? '視角' : 'LOOK'}</span> ${zh ? '拖曳滑鼠' : 'DRAG MOUSE'} · T <span>${zh ? '拍照' : 'PHOTO'}</span> C</div>
+          <div class="controls-hint"><span>${zh ? '移動' : 'MOVE'}</span> WASD / ARROWS <span>${zh ? '奔跑' : 'RUN'}</span> SHIFT <span>${zh ? '互動' : 'INTERACT'}</span> E · SHIFT+E ${zh ? '抱起 MENTOR' : 'PICK UP MENTOR'} <span>${zh ? '跳躍' : 'JUMP'}</span> SPACE <span>${zh ? '舞步' : 'DANCE MOVES'}</span> B <span>${zh ? '供養' : 'OFFER'}</span> O <span>${zh ? '視角' : 'LOOK'}</span> ${zh ? '拖曳滑鼠' : 'DRAG MOUSE'} · T <span>${zh ? '拍照' : 'PHOTO'}</span> C</div>
       </section>
     `;
 
@@ -1383,7 +1386,7 @@ export class App {
       this.world.focusCoastalForReview(view);
       // The session restore can land after the first placement. Keep the
       // rooftop seam and wish-wall views stable while inspecting the geometry.
-      if (view === 'roofLandingCorner' || view === 'roofWestSoffit' || view === 'wishWall') {
+      if (['roofLandingCorner', 'roofWestSoffit', 'wishWall', 'booth', 'boothTicket', 'boothOcclusion', 'boothInterior', 'shopCounter', 'shopRoof', 'palaceOutfit', 'palaceClose', 'palaceTicket', 'palaceCarpet', 'palaceApproach', 'shoresign', 'shoreTicket', 'templealtar', 'avatar'].includes(view)) {
         for (const delay of [400, 1_600]) window.setTimeout(() => this.world?.focusCoastalForReview(view), delay);
       }
       if(query.get('view')==='hit'){
@@ -1839,7 +1842,10 @@ export class App {
     });
 
     this.root.querySelectorAll<HTMLButtonElement>('[data-panel]').forEach((button) => {
-      button.addEventListener('click', () => this.openPanel(button.dataset.panel as PanelId));
+      button.addEventListener('click', () => {
+        this.programmeVenue = undefined;
+        this.openPanel(button.dataset.panel as PanelId);
+      });
     });
     this.root.querySelector<HTMLButtonElement>('[data-replay-fireworks]')?.addEventListener('click', () => {
       if (!this.questCelebrated) return;
@@ -2045,7 +2051,7 @@ export class App {
         button.classList.add('is-active');
         if (act === 'jump') this.world?.jumpFromTouch();
         else if (act === 'punch') this.world?.punchFromTouch();
-        else if (act === 'dance') this.world?.toggleDancing();
+        else if (act === 'dance') this.world?.requestDanceSelection();
         else if (act === 'offer') this.world?.offerFromTouch();
         else if (act === 'photo') this.cycleViewMode();
         else if (act === 'run') this.world?.setRunning(true);
@@ -2229,6 +2235,9 @@ export class App {
 
   private updateSnapshot(snapshot: WorldSnapshot): void {
     this.snapshot = snapshot;
+    if (['127.0.0.1', 'localhost'].includes(window.location.hostname) && document.documentElement.dataset.coastalReview) {
+      document.documentElement.dataset.coastalPosition = JSON.stringify([snapshot.x,snapshot.y,snapshot.z]);
+    }
     if (snapshot.moving) this.completeQuest('walk');
     if (snapshot.moving && snapshot.running) this.completeQuest('run');
     if (this.vrRequested) {
@@ -2339,6 +2348,15 @@ export class App {
   }
 
   private handleWorldAction(action: WorldAction): void {
+    if (action.type === 'danceSelection') {
+      if (this.activePanel || this.viewMode !== 'normal') return;
+      this.closeFestivalPass();
+      const close = () => { this.danceWheel?.close(); this.danceWheel = undefined; this.syncMenuCapture(); };
+      this.danceWheel = new DanceWheel(this.root, this.language === 'zh-TW', action.active,
+        move => { close(); this.world?.selectDance(move); }, close);
+      this.syncMenuCapture();
+      return;
+    }
     if (action.type === 'gamepadMenu') {
       this.handleGamepadMenu(action.nav);
       return;
@@ -2633,6 +2651,7 @@ export class App {
       return;
     }
     if (action.type === 'programme') {
+      this.programmeVenue = action.venue;
       this.openPanel('programme');
       return;
     }
@@ -2873,6 +2892,7 @@ export class App {
    * the ring is painted with a class instead.
    */
   private handleGamepadMenu(nav: 'up' | 'down' | 'confirm' | 'back' | 'toggle'): void {
+    if (this.danceWheel) { this.danceWheel.navigate(nav); return; }
     if (nav === 'toggle') {
       if (this.activePanel) this.closePanel();
       else this.openFestivalPass();
@@ -3308,11 +3328,11 @@ export class App {
 
   private syncProgrammeBoard(force = false): void {
     const venues: VenueKey[] = VENUE_KEYS;
-    const index = Math.floor(Date.now() / 8_000) % venues.length;
+    const index = this.programmeVenue ? venues.indexOf(this.programmeVenue) : Math.floor(Date.now() / 8_000) % venues.length;
     const countdown = this.root.querySelector<HTMLElement>('#programme-rotate-countdown');
     if (countdown) countdown.textContent = String(8 - Math.floor((Date.now() / 1000) % 8));
     this.syncStaffNowPlaying();
-    if (!force && index === this.programmeRotationIndex) return;
+    if (!force && index === this.programmeRotationIndex && !this.programmeVenue) return;
     this.programmeRotationIndex = index;
     const venue = venues[index];
     const playlist = this.venueFilms(venue);
@@ -3359,6 +3379,13 @@ export class App {
     }
     if ((event.key === 'c' || event.key === 'C') && !event.repeat) {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+      // C always returns from a photo mode in one press. The visible mode
+      // button still cycles through postcard and film for people choosing them.
+      if (this.viewMode !== 'normal') {
+        event.preventDefault();
+        this.setViewMode('normal');
+        return;
+      }
       if (this.activePanel) return;
       event.preventDefault();
       this.cycleViewMode();
@@ -4132,7 +4159,7 @@ export class App {
         : 'Notes left with offerings, hung here once paid. The newest 30 are kept.'}</p>
       ${wishes.length
         ? `<ul class="wish-list">${wishes.map((wish) => `<li><strong>${this.escapeHtml(wish.name || (zh ? '訪客' : 'GUEST'))}</strong><p>${this.escapeHtml(wish.message)}</p></li>`).join('')}</ul>`
-        : `<p class="panel-note">${zh ? '還沒有人留言。按 B 供養時就能留下一句話。' : 'No notes yet. Leave one with an offering (B).'}</p>`}`;
+        : `<p class="panel-note">${zh ? '還沒有人留言。到廟內的美麗仙人像前供養，或在登入頁按 Donate，即可留下祈福留言。' : 'No notes yet. Leave a note with an offering in front of the statue inside the temple, or through Donate on the sign-in page.'}</p>`}`;
     const close = (): void => {
       this.openWishWall = false;
       menu.hidden = true;
@@ -4723,7 +4750,9 @@ export class App {
           : mode === 'film'
             ? (zh ? '離開' : 'EXIT')
             : '';
-      hint.textContent = step && !touch ? `${zh ? 'C／' : 'C / '}${step}` : step;
+      hint.textContent = step && !touch
+        ? `${zh ? 'C／離開 · 點此：' : 'C / EXIT · CLICK: '}${step}`
+        : step;
       hint.hidden = mode === 'normal';
       const hide = this.root.querySelector<HTMLElement>('[data-camera-hide]');
       if (hide) hide.hidden = mode === 'normal';
@@ -5538,6 +5567,7 @@ export class App {
       panel.className = 'panel';
     }
     this.activePanel = undefined;
+    this.programmeVenue = undefined;
   }
 
   /**
@@ -5548,7 +5578,7 @@ export class App {
    */
   private syncMenuCapture(): void {
     const pass = this.root.querySelector<HTMLElement>('#festival-pass');
-    const captured=Boolean(this.activePanel) || (pass ? !pass.hidden : false);
+    const captured=Boolean(this.danceWheel) || Boolean(this.activePanel) || (pass ? !pass.hidden : false);
     this.world?.setMenuOpen(captured);
     if (['127.0.0.1','localhost'].includes(window.location.hostname)) this.root.dataset.menuCapture=String(captured);
   }
@@ -5589,25 +5619,25 @@ export class App {
       case 'programme':
         {
         const venues: VenueKey[] = VENUE_KEYS;
-        const venue = venues[Math.max(0, this.programmeRotationIndex) % venues.length];
+        const venue = this.programmeVenue ?? venues[Math.max(0, this.programmeRotationIndex) % venues.length];
         const film = this.publicFilm(venue);
         const playlist = this.venueFilms(venue);
         const filmIndex = Math.max(0, playlist.findIndex((entry) => entry.id === film.id));
         const next = playlist[(filmIndex + 1) % playlist.length];
         return `
           <div class="programme-focus" id="programme-focus" data-venue="${venue}">
-            <p class="eyebrow" data-programme-eyebrow>${this.language === 'zh-TW' ? '現正放映' : 'NOW PLAYING'} · ${this.escapeHtml(this.venueName(venue))} · ${this.language === 'zh-TW' ? '切換倒數' : 'ROTATES IN'} <span id="programme-rotate-countdown">${8 - Math.floor((Date.now() / 1000) % 8)}</span>${this.language === 'zh-TW' ? '秒' : 'S'}</p>
+            <p class="eyebrow" data-programme-eyebrow>${this.programmeEyebrow(venue)}</p>
             <h2 data-programme-title>${this.escapeHtml(this.filmTitle(film))}</h2>
             <dl>
-              <div><dt>${this.language === 'zh-TW' ? '節目' : 'PROGRAMME'}</dt><dd data-programme-category>${this.escapeHtml(this.categoryLabel(film.category))}</dd></div>
-              <div><dt>${this.language === 'zh-TW' ? '導演' : 'DIRECTOR'}</dt><dd data-programme-director>${this.escapeHtml(film.creator ?? (this.language === 'zh-TW' ? '我的檔期典藏' : 'MYSCHEDULE ARCHIVE'))}</dd></div>
-              <div><dt>${this.language === 'zh-TW' ? '年份' : 'YEAR'}</dt><dd data-programme-year>${film.year ?? (this.language === 'zh-TW' ? '典藏' : 'ARCHIVE')}</dd></div>
+              <div><dt>${this.language === 'zh-TW' ? '類別' : 'CATEGORY'}</dt><dd data-programme-category>${this.escapeHtml(this.categoryLabel(film.category))}</dd></div>
+              <div><dt>${this.language === 'zh-TW' ? '導演' : 'DIRECTOR'}</dt><dd data-programme-director>${this.escapeHtml(film.creator || (this.language === 'zh-TW' ? '未提供' : 'NOT PROVIDED'))}</dd></div>
+              <div><dt>${this.language === 'zh-TW' ? '年份' : 'YEAR'}</dt><dd data-programme-year>${film.year ?? (this.language === 'zh-TW' ? '未提供' : 'NOT PROVIDED')}</dd></div>
               <div><dt>${this.language === 'zh-TW' ? '串流' : 'STREAM'}</dt><dd data-programme-stream>${filmIndex + 1} / ${playlist.length}</dd></div>
               <div><dt>${this.language === 'zh-TW' ? '下一部' : 'UP NEXT'}</dt><dd data-programme-next>${this.escapeHtml(this.filmTitle(next ?? film))}</dd></div>
             </dl>
           </div>
-          <p class="programme-library-count">${this.totalFilmCount()} ${this.language === 'zh-TW' ? `部作品 · ${VENUE_KEYS.length} 座場地` : `WORKS · ${VENUE_KEYS.length} VENUES`}</p>
-          ${VENUE_KEYS.map((key) => this.venueCatalogue(this.venueName(key), this.venueFilms(key))).join('')}
+          <p class="programme-library-count">${this.programmeVenue ? playlist.length : this.totalFilmCount()} ${this.language === 'zh-TW' ? `部作品 · ${this.programmeVenue ? 1 : VENUE_KEYS.length} 座場地` : `WORKS · ${this.programmeVenue ? 1 : VENUE_KEYS.length} VENUES`}</p>
+          ${(this.programmeVenue ? [venue] : VENUE_KEYS).map((key) => this.venueCatalogue(this.venueName(key), this.venueFilms(key))).join('')}
         `;
         }
       case 'chat':
@@ -5769,7 +5799,7 @@ export class App {
           ['SPACE', zh ? '跳躍（可從高處跳下）' : 'Jump — and drop from high places'],
           ['E', zh ? '互動／餵 MENTOR 吃點心' : 'Interact / give MENTOR a treat'],
           ['SHIFT + E', zh ? '抱起 MENTOR' : 'Pick up MENTOR'],
-          ['B', zh ? '跳舞' : 'Dance'],
+          ['B', zh ? '選擇舞步' : 'Choose a dance'],
           ['O', zh ? '供養／佈施：在神像前或 NPC 旁' : 'Make an offering — at the altar or beside an NPC'],
           ['T', zh ? '切換鏡頭' : 'Change camera'],
           ['C', zh ? '拍照模式／明信片模式／離開' : 'Camera mode / postcard mode / exit'],
@@ -6763,7 +6793,8 @@ export class App {
    */
   private staffOfferingsList(): string {
     const zh = this.language === 'zh-TW';
-    const offerings = this.adminState?.offerings ?? [];
+    const limit = this.adminState?.offeringLimit ?? 50;
+    const offerings = (this.adminState?.offerings ?? []).slice(0, limit);
     const when = (at: number | null) => at
       ? new Date(at).toLocaleString(zh ? 'zh-TW' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
       : '';
@@ -6811,15 +6842,16 @@ export class App {
     const checked = this.offeringListCheckedAt
       ? new Date(this.offeringListCheckedAt).toLocaleTimeString(zh ? 'zh-TW' : 'en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       : '';
-    return `<div class="staff-offerings">
+    return `<div class="staff-offerings" data-staff-offerings>
       <div class="staff-offerings__head">
         <span class="eyebrow">${zh ? '最近的供養與發票' : 'RECENT OFFERINGS AND INVOICES'}</span>
         <span>${checked ? `<small>${zh ? `更新於 ${checked}` : `CHECKED ${checked}`}</small>` : ''}<button type="button" data-offerings-refresh>${zh ? '重新整理清單' : 'REFRESH LIST'}</button></span>
       </div>
       <p class="staff-note">${zh
-        ? '每筆供養付款後是否開出統一發票；沒開出的會寫出綠界的原因，可按「重新開立發票」再試一次。這份紀錄存在目前這台服務上，Render 重新部署後會清空——部署前已付款但沒開到發票的，請到綠界電子發票後台手動開立。'
-        : "Whether each paid offering got its 統一發票. A refused one shows ECPay's reason and can be issued again. This list lives on the instance now serving and is emptied by a Render redeploy, so anything paid but not invoiced before a deploy has to be issued by hand in ECPay's invoice backend."}</p>
-      ${rows ? `<ol class="staff-offerings__list">${rows}</ol>` : `<p class="staff-note">${zh ? '這台服務啟動以來還沒有供養。' : 'No offerings since this instance started.'}</p>`}
+        ? `登入頁捐款與廟內供養都列在這裡，顯示最新 ${limit} 筆，可向下捲動。已完成紀錄超過 ${limit} 筆時會刪除最舊的一筆；未完成的付款與發票仍保留待處理。未開立發票會顯示綠界的原因，可按「重新開立發票」。未付款的紀錄最多保留 10 天；目前 Render 免費方案的紀錄仍會在服務重啟或重新部署後清空。`
+        : `Sign-in donations and temple offerings are both listed here. Scroll through the newest ${limit}. When completed records exceed ${limit}, the oldest is removed; unfinished payments and invoices remain available for processing. A refused invoice shows ECPay's reason and can be issued again. Unpaid checkouts expire after 10 days. The current free Render plan still loses history on a restart or redeploy.`}</p>
+      ${this.offeringListError ? `<p class="staff-note staff-note--warn" role="alert">${this.escapeHtml(this.offeringListError)}</p>` : ''}
+      ${rows ? `<ol class="staff-offerings__list staff-history-scroll" data-staff-history="offerings" tabindex="0" aria-label="${zh ? '最近的供養與發票' : 'Recent offerings and invoices'}">${rows}</ol>` : `<p class="staff-note">${zh ? '目前沒有供養紀錄；較早的紀錄可能已在服務重啟後清空。' : 'No offering records are currently available. Earlier records may have been cleared by a service restart.'}</p>`}
     </div>`;
   }
 
@@ -6869,7 +6901,7 @@ export class App {
       <p class="staff-note">${zh
         ? '付款完成的供養留言，最新 30 則。只存在記憶體，服務重啟或重新部署就會清空。不妥的留言可在這裡移除。'
         : 'Notes from paid offerings, newest 30. Kept in memory only: a restart or redeploy clears them. Remove anything unsuitable here.'}</p>
-      ${wishes.length ? `<ol class="staff-offerings__list">${wishes.map((wish) => `<li class="staff-offerings__row">
+      ${wishes.length ? `<ol class="staff-offerings__list staff-history-scroll" data-staff-history="wishes" tabindex="0" aria-label="${zh ? '祈福牆留言' : 'Wish wall notes'}">${wishes.map((wish) => `<li class="staff-offerings__row">
         <div><strong>${this.escapeHtml(wish.name || (zh ? '訪客' : 'GUEST'))}</strong><small>${new Date(wish.at).toLocaleString(zh ? 'zh-TW' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small></div>
         <div><small>${this.escapeHtml(wish.message)}</small></div>
         <div class="staff-offerings__invoice"><button type="button" data-wish-remove="${this.escapeAttribute(wish.id)}">${zh ? '移除' : 'REMOVE'}</button></div>
@@ -6879,6 +6911,7 @@ export class App {
 
   private offeringListTimer?: number;
   private offeringListCheckedAt = 0;
+  private offeringListError = '';
 
   /** The retry buttons and the refresh button of the offerings list, wherever it was just drawn. */
   private bindOfferingList(root: ParentNode): void {
@@ -6916,17 +6949,24 @@ export class App {
       const fresh = await this.festivalClient.adminState(this.staffKey);
       if (!this.adminState) return;
       this.adminState.offerings = fresh.offerings ?? [];
+      this.adminState.offeringLimit = fresh.offeringLimit;
       this.offeringListCheckedAt = Date.now();
+      this.offeringListError = '';
     } catch {
-      return;
+      this.offeringListError = this.language === 'zh-TW'
+        ? '無法更新供養清單，請確認連線與工作人員金鑰後重試。'
+        : 'Could not refresh offerings. Check the connection and STAFF key, then try again.';
     }
-    const list = this.root.querySelector<HTMLElement>('.staff-offerings');
+    const list = this.root.querySelector<HTMLElement>('[data-staff-offerings]');
     if (!list) return;
+    const scrollTop = list.querySelector<HTMLElement>('[data-staff-history="offerings"]')?.scrollTop ?? 0;
     const holder = document.createElement('div');
     holder.innerHTML = this.staffOfferingsList();
     const next = holder.firstElementChild;
     if (!next) return;
     list.replaceWith(next);
+    const scroll = next.querySelector<HTMLElement>('[data-staff-history="offerings"]');
+    if (scroll) scroll.scrollTop = scrollTop;
     this.bindOfferingList(next);
   }
 
@@ -6951,6 +6991,12 @@ export class App {
       <summary><span>${title}</span></summary>
       <div class="staff-section__body">${body}</div>
     </details>`;
+  }
+
+  private staffMessagesList(): string {
+    const zh = this.language === 'zh-TW';
+    return `<div class="staff-list staff-history-scroll" data-staff-history="messages" tabindex="0" role="region" aria-label="${zh ? '近期聊天' : 'Recent chat'}">${(this.adminState?.messages ?? []).slice(-50).reverse().map((message) => `
+      <article><div><strong>${this.escapeHtml(message.author)} · ${this.chatChannelLabel(message.channel)}</strong><small>${this.escapeHtml(this.localizeNpcChat(message.text))}</small></div><button data-moderate="delete-message" data-message-id="${this.escapeAttribute(message.id)}">${zh ? '移除' : 'REMOVE'}</button></article>`).join('') || `<p>${zh ? '尚無聊天。' : 'No chat yet.'}</p>`}</div>`;
   }
 
   private adminPanelContent(): string {
@@ -7206,8 +7252,7 @@ export class App {
           </article>`).join('') || `<p>${this.language === 'zh-TW' ? '目前無線上觀影者。' : 'No live attendees.'}</p>`}
       </div>
       <h4 class="staff-subheading">${this.language === 'zh-TW' ? '近期聊天' : 'RECENT CHAT'}</h4>
-      <div class="staff-list">${this.adminState.messages.slice(-20).reverse().map((message) => `
-        <article><div><strong>${this.escapeHtml(message.author)} · ${this.chatChannelLabel(message.channel)}</strong><small>${this.escapeHtml(this.localizeNpcChat(message.text))}</small></div><button data-moderate="delete-message" data-message-id="${message.id}">${this.language === 'zh-TW' ? '移除' : 'REMOVE'}</button></article>`).join('') || `<p>${this.language === 'zh-TW' ? '尚無聊天。' : 'No chat yet.'}</p>`}</div>
+      ${this.staffMessagesList()}
       `)}
 `;
   }
@@ -7526,6 +7571,7 @@ export class App {
     if (value === 'E / ORDER A DRINK') return 'E／點一杯';
     if (value === 'E / OPEN MASTER OF THE HOUSE') return 'E／逛 MASTER OF THE HOUSE';
     if (value === 'E / READ THE WISH WALL') return 'E／看祈福牆';
+    if (value === 'E / VIEW VENUE SCHEDULE') return 'E／看場地節目表';
     if (value === 'E / PUT A RECORD ON') return 'E／點歌';
     if (value === 'SHIFT+E / DRINK UP') return 'SHIFT+E／喝一口';
     if (value.startsWith('E / EAT ')) {
@@ -7702,9 +7748,10 @@ export class App {
   }
 
   private customFilms(venue: VenueKey): CatalogueEntry[] {
-    return this.networkState?.customVideos?.[venue]
+    const films = this.networkState?.customVideos?.[venue]
       ?? this.adminState?.customVideos?.[venue]
       ?? [];
+    return films.map(withVerifiedProgrammeMetadata);
   }
 
   private venueFilms(venue: VenueKey): CatalogueEntry[] {
@@ -7712,12 +7759,21 @@ export class App {
   }
 
   private allFilms(): CatalogueEntry[] {
-    return [
+    const films = [
       ...catalogue,
       ...this.customFilms('palace'),
       ...this.customFilms('drive-in'),
       ...this.customFilms('shore'),
-    ].map((film) => this.retitled(film));
+      ...this.customFilms('club'),
+      ...this.customFilms('rooftop'),
+    ];
+    // Shared playlists can contain the same upload at several venues.
+    const seen = new Set<string>();
+    return films.filter((film) => {
+      if (seen.has(film.youtubeId)) return false;
+      seen.add(film.youtubeId);
+      return true;
+    }).map((film) => this.retitled(film));
   }
 
   /**
@@ -7741,7 +7797,7 @@ export class App {
   }
 
   private totalFilmCount(): number {
-    return catalogueSummary.total + this.customFilms('palace').length + this.customFilms('drive-in').length + this.customFilms('shore').length;
+    return this.allFilms().length;
   }
 
   private updateProgrammeFocus(venue: VenueKey, film: CatalogueEntry, next: CatalogueEntry, filmIndex: number, total: number): void {
@@ -7755,13 +7811,19 @@ export class App {
     const year = focus.querySelector<HTMLElement>('[data-programme-year]');
     const stream = focus.querySelector<HTMLElement>('[data-programme-stream]');
     const nextTitle = focus.querySelector<HTMLElement>('[data-programme-next]');
-    if (eyebrow) eyebrow.innerHTML = `${this.language === 'zh-TW' ? '現正放映' : 'NOW PLAYING'} · ${this.escapeHtml(this.venueName(venue))} · ${this.language === 'zh-TW' ? '切換倒數' : 'ROTATES IN'} <span id="programme-rotate-countdown">${8 - Math.floor((Date.now() / 1000) % 8)}</span>${this.language === 'zh-TW' ? '秒' : 'S'}`;
+    if (eyebrow) eyebrow.innerHTML = this.programmeEyebrow(venue);
     if (title) title.textContent = this.filmTitle(film);
     if (programme) programme.textContent = this.categoryLabel(film.category);
-    if (director) director.textContent = film.creator ?? (this.language === 'zh-TW' ? '我的檔期典藏' : 'MYSCHEDULE ARCHIVE');
-    if (year) year.textContent = String(film.year ?? (this.language === 'zh-TW' ? '典藏' : 'ARCHIVE'));
+    if (director) director.textContent = film.creator || (this.language === 'zh-TW' ? '未提供' : 'NOT PROVIDED');
+    if (year) year.textContent = String(film.year ?? (this.language === 'zh-TW' ? '未提供' : 'NOT PROVIDED'));
     if (stream) stream.textContent = `${filmIndex + 1} / ${total}`;
     if (nextTitle) nextTitle.textContent = this.filmTitle(next);
+  }
+
+  private programmeEyebrow(venue: VenueKey): string {
+    const zh = this.language === 'zh-TW';
+    const heading = `${zh ? '現正放映' : 'NOW PLAYING'} · ${this.escapeHtml(this.venueName(venue))}`;
+    return this.programmeVenue ? heading : `${heading} · ${zh ? '切換倒數' : 'ROTATES IN'} <span id="programme-rotate-countdown">${8 - Math.floor((Date.now() / 1000) % 8)}</span>${zh ? '秒' : 'S'}`;
   }
 
   private venueCatalogue(name: string, films: CatalogueEntry[]): string {

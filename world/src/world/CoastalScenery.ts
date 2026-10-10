@@ -116,11 +116,7 @@ export class CoastalScenery {
       this.beam(new THREE.Vector3(-19.3,terrainHeightAt(-19.3,z)+.1,z),new THREE.Vector3(-19.3,10,z),.085,m.iron);
       this.box([.3,.22,1.2],[-19.3,9.9,z+.4],m.iron);
     }
-    // Drive-In: a connected gatehouse and strong mechanical screen silhouette.
-    this.box([4.2,3.5,3.3],[17,.95,-27],m.shell);
-    this.box([4.8,.32,4],[17,2.86,-27],m.red);
-    this.box([3.6,1.2,.13],[17,1.45,-25.25],m.ink);
-    this.solid(17,-27,4.2,3.3,-.8,3.2,'drive-in-ticket-booth');
+    // The staffed gatehouse is built separately, with a real window opening.
     for(const x of [-9,9]){
       this.beam(new THREE.Vector3(x,-.8,-50),new THREE.Vector3(x,8.7,-46.1),.15,m.iron);
       this.solid(x,-50,1.8,1.8,-1,-.5,'screen-footing');

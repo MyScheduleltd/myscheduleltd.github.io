@@ -1,4 +1,5 @@
 import legacySource from '../../../docs/js/allData.js';
+import { withVerifiedProgrammeMetadata } from './catalogueMetadata';
 
 export type VenueKey = 'palace' | 'drive-in' | 'shore' | 'club' | 'rooftop';
 
@@ -69,7 +70,7 @@ const normalizeFilm = (film: LegacyFilm, category: string): CatalogueEntry | nul
   const youtubeId = youtubeIdFromUrl(film.url);
   if (!youtubeId) return null;
 
-  return {
+  return withVerifiedProgrammeMetadata({
     id: `${category.toLowerCase().replaceAll(' ', '-')}-${film.id}`,
     title: film.title.trim(),
     titleZh: film.chinese_title?.trim(),
@@ -80,7 +81,7 @@ const normalizeFilm = (film: LegacyFilm, category: string): CatalogueEntry | nul
     youtubeId,
     embedUrl: `https://www.youtube-nocookie.com/embed/${youtubeId}`,
     sourceUrl: film.url,
-  };
+  });
 };
 
 const portfolioEntries = legacyData.profilo.flatMap((category) =>

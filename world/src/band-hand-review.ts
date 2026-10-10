@@ -1,0 +1,14 @@
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+if(!['localhost','127.0.0.1'].includes(location.hostname)) throw new Error('Local review only');
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight-64);renderer.setPixelRatio(1);document.body.append(renderer.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0xe8e5df);scene.add(new THREE.HemisphereLight(0xffffff,0x888888,2));const sun=new THREE.DirectionalLight(0xfff6e8,2);sun.position.set(3,5,4);scene.add(sun);
+const camera=new THREE.PerspectiveCamera(32,innerWidth/(innerHeight-64),.01,20);
+const gltf=await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(new URL('./assets/band/guitarist.glb',import.meta.url).href);scene.add(gltf.scene);
+const mixer=new THREE.AnimationMixer(gltf.scene);mixer.clipAction(gltf.animations.find(c=>c.name==='play')!).play();
+const query=new URLSearchParams(location.search);let at=Number(query.get('time')??0);
+const view=(a:number)=>{camera.position.set(Math.sin(a)*Number(query.get('distance')??2.3),1.15,Math.cos(a)*Number(query.get('distance')??2.3));camera.lookAt(.18,1.04,.1);};view(Number(query.get('angle')??0));
+document.getElementById('front')!.onclick=()=>view(0);document.getElementById('side')!.onclick=()=>view(Math.PI/2);document.getElementById('back')!.onclick=()=>view(-Math.PI/2);
+const slider=document.getElementById('time') as HTMLInputElement;slider.value=String(at);slider.oninput=()=>{at=Number(slider.value)};
+renderer.setAnimationLoop(()=>{mixer.setTime(at);scene.updateMatrixWorld(true);renderer.render(scene,camera);document.getElementById('status')!.textContent=`${at.toFixed(2)} s`;});

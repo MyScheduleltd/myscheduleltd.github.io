@@ -246,6 +246,7 @@ export interface AdminState {
   };
   /** Recent offerings, newest first: paid or not, and their 統一發票. */
   offerings?: StaffOffering[];
+  offeringLimit?: number;
   templeSign: TempleSign;
   entranceSign?: EntranceSign;
   gateCopy: GateCopy;

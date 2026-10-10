@@ -6,6 +6,7 @@ import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import legacySource from '../../docs/js/allData.js';
 import { verifyCheckMacValue } from './ecpay.mjs';
+import { STAFF_OFFERING_LIMIT, offeringExpired, offeringTime, trimOfferingHistory } from './offering-history.mjs';
 import {
   DONATION_PRESETS, MAX_DONATION, MIN_DONATION,
   buildInvoice, buildOrder, ecpayConfig, readInvoiceReply,
@@ -1558,14 +1559,12 @@ const nameHeldBy = (name) => {
  * is all `paying()` ever wanted to know. An abandoned card checkout should not
  * stop somebody giving again half an hour later.
  *
- * `DONATION_RETAIN_MS` is how long the record has to survive so a late
- * notification can still find it. ECPay's own default windows are three days
- * for an ATM virtual account and seven for a store code; ten days clears both
- * with room for a slow payer and a retrying notification.
+ * Unpaid checkouts survive ten days so deferred notifications can find them.
+ * Completed history keeps its newest 50 records; paid records awaiting an
+ * invoice are protected from that pruning until processing finishes.
  */
 const donations = new Map();
 const DONATION_OPEN_MS = 45 * 60 * 1000;
-const DONATION_RETAIN_MS = 10 * 24 * 60 * 60 * 1000;
 
 /**
  * What is worth writing to disk, and what is deliberately left off it.
@@ -1608,9 +1607,9 @@ const restoreDonations = (saved) => {
   for (const entry of saved.slice(0, 2000)) {
     const id = typeof entry?.id === 'string' ? entry.id : '';
     const createdAt = clampNumber(entry?.createdAt, 0, Number.MAX_SAFE_INTEGER, 0);
-    // Anything already past its retention is not worth bringing back, and a
-    // record with no id could never be matched to a notification anyway.
-    if (!id || !createdAt || now - createdAt > DONATION_RETAIN_MS) continue;
+    // Expired unpaid checkouts cannot settle; completed history is bounded
+    // by count instead of age. A record without an id cannot be matched.
+    if (!id || !createdAt || offeringExpired({ ...entry, createdAt }, now)) continue;
     donations.set(id, {
       ...donationForDisk(entry),
       id,
@@ -1618,6 +1617,7 @@ const restoreDonations = (saved) => {
       state: ['pending', 'awaiting', 'paid', 'failed'].includes(entry.state) ? entry.state : 'pending',
     });
   }
+  forgetOldDonations();
 };
 
 const claimName = (name) => {
@@ -1643,10 +1643,7 @@ const paying = (visitorId) => {
 };
 
 const forgetOldDonations = () => {
-  const now = Date.now();
-  for (const [id, donation] of donations) {
-    if (now - donation.createdAt > DONATION_RETAIN_MS) donations.delete(id);
-  }
+  if (trimOfferingHistory(donations, ECPAY.invoiceEnabled)) persist();
 };
 
 /**
@@ -1758,6 +1755,7 @@ const issueInvoice = async (donation) => {
     console.error(`Invoice not issued for ${donation.tradeNo}: ${donation.invoiceError}`);
   } finally {
     donation.invoicing = false;
+    forgetOldDonations();
     persist();
   }
 };
@@ -1859,8 +1857,8 @@ const canRetryInvoice = (donation) => Boolean(ECPAY.invoiceEnabled && ECPAY.invo
   && (donation.email || receiptMailbox()));
 
 const staffOfferings = () => [...donations.values()]
-  .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
-  .slice(0, 60)
+  .sort((a, b) => offeringTime(b) - offeringTime(a))
+  .slice(0, STAFF_OFFERING_LIMIT)
   .map(staffOffering);
 
 /** Every video the festival can play: the programmes, STAFF's additions and the jukebox. */
@@ -2104,7 +2102,7 @@ const server = createServer(async (request, response) => {
         carrierType: phoneCarrier ? '3' : '1',
         carrierNum: phoneCarrier ? barcode : '',
         visitorId: visitor?.id ?? '',
-        visitorName: visitor?.name ?? '',
+        visitorName: visitor?.name ?? wishName,
         // Held in memory only, to count a guest's open checkouts.
         ...(visitor ? {} : { guestAddress: address }),
         createdAt: Date.now(),
@@ -2210,6 +2208,7 @@ const server = createServer(async (request, response) => {
             void issueInvoice(donation);
           }
         }
+        forgetOldDonations();
       }
       response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
       return response.end('1|OK');
@@ -2769,6 +2768,7 @@ a{color:#e8b64a}</style>
           // — which is what the panel tells STAFF, because it is the one thing
           // they cannot see from the field itself.
           offerings: staffOfferings(),
+          offeringLimit: STAFF_OFFERING_LIMIT,
           offeringReceipt: {
             ...offeringReceipt,
             // 'seed' is the committed address, which comes back after every

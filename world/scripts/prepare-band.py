@@ -1270,15 +1270,8 @@ def strung(arm, kind, length, frames):
                  ('Ring', (.55, .7, .4)), ('Pinky', (.55, .7, .4)), ('Thumb', (.25, .3, .3))]}
 
     def shown_fingers(side, f, solved):
-        # What the fretting fingers look like, apart from what the arm was
-        # solved with. Drawn as solved, the guitarist's fingers lay 2-3 mm under
-        # the tops of his strings, so the strings drew over them and the neck
-        # seemed to run through his hand (the owner, 2026-10-06). Arching them
-        # in the solve instead bent his wrist 20 degrees, and straight wrists
-        # come first (2026-10-01), so the arm keeps its solve and only the
-        # fingers close round the neck, as the owner asked hands to on necks.
-        if side == 'Left' and kind == 'guitar':
-            return {**solved, **{n: (.7, 1.05, .6) for n in ('Index', 'Middle', 'Ring', 'Pinky')}}
+        # Use the finger pose whose tips actually solved the string contact.
+        # Extra display-only curl drew the fretting tips behind the neck.
         return solved
 
     def contact_at(side, f):

@@ -1,0 +1,30 @@
+import * as THREE from 'three';
+import { VenueSceneryAssets, type ScenicAsset } from './world/VenueSceneryAssets';
+
+if (!['localhost','127.0.0.1'].includes(location.hostname)) throw new Error('Local art review only');
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0xe8e5df);
+const renderer = new THREE.WebGLRenderer({antialias:false});
+renderer.setSize(innerWidth,innerHeight-72); renderer.setPixelRatio(1);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.append(renderer.domElement);
+const camera = new THREE.PerspectiveCamera(36,innerWidth/(innerHeight-72),.1,80);
+scene.add(new THREE.HemisphereLight(0xeff2f5,0xb3adb0,2));
+const sun = new THREE.DirectionalLight(0xfff1da,2); sun.position.set(-3,6,7); scene.add(sun);
+const assets = new VenueSceneryAssets();
+const root = new THREE.Group(); scene.add(root);
+const query = new URLSearchParams(location.search);
+const kind = (query.get('asset') ?? 'attendant') as ScenicAsset;
+const height = kind === 'boxOffice' ? 5.8 : kind === 'valet' ? 1.95 : kind === 'statue' ? 3.7 : 3.25;
+await assets.attach(kind,root,height);
+const bounds = new THREE.Box3().setFromObject(root), centre = bounds.getCenter(new THREE.Vector3());
+const distance = Math.max(height, bounds.getSize(new THREE.Vector3()).x) * 2.2;
+const view = (angle:number) => {camera.position.set(centre.x+Math.sin(angle)*distance,centre.y+.25,centre.z+Math.cos(angle)*distance);camera.lookAt(centre);};
+view(Number(query.get('angle')??0));
+if(kind==='boxOffice'&&query.get('detail')==='interior'){camera.position.set(3.2,2.1,1);camera.lookAt(-.3,1,-.9);}
+document.getElementById('front')!.onclick=()=>view(0);
+document.getElementById('side')!.onclick=()=>view(Math.PI/2);
+document.getElementById('back')!.onclick=()=>view(Math.PI);
+document.getElementById('status')!.textContent=kind;
+const clock=new THREE.Clock();
+renderer.setAnimationLoop(()=>{assets.update(clock.getElapsedTime());renderer.render(scene,camera);document.body.dataset.venueAssets=JSON.stringify(assets.reviewSnapshot());});
+window.addEventListener('pagehide',()=>{renderer.setAnimationLoop(null);assets.dispose();renderer.dispose();});
