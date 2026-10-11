@@ -1,3 +1,7 @@
+# Current release status — 2026-10-11
+
+PR #16 is merged in main (`e84dccd`). The next release is on `codex/sign-backing-breaking-wheel`: tracked hand and wrist repairs, clean sign back, Breaking wheel, audio re-entry and desktop body/finger tracking. Final 405/405 tests and production build passed; both docs channels match dist and all 36 asset hashes were verified. See the final release section and `art/SIGN_BREAKING_HAND_REVIEW_20261011.md`. Publish through one PR with required last-push approval; earlier pending PR #16 notes below are historical. No server change in this release.
+
 # Codex handoff: current state, 2026-10-10 (read this first)
 
 Updated by Codex through 2026-10-10, preserving Claude’s 2026-10-07/08 handoff. The dated additions below give the latest verified local status. Older release and live-state entries are historical snapshots; prefer the newest dated evidence where they disagree.
@@ -3343,3 +3347,13 @@ working, which is why several of these lived a long time.
 - Basement lighting: ceiling rig removed entirely at the owner's request (a light well
   is cut through that ceiling; anything over it hangs from nothing), wall fittings on
   both sides plus a centred run of five on the bar wall, none beside the screen.
+
+## Release prepared on 2026-10-11: hands, sign, Breaking and entry tracking
+
+Branch `codex/sign-backing-breaking-wheel`, based on `e84dccd`. Repairs use live Blender MCP: male dressed palm seams closed, female palm and five digit surfaces fitted to the existing rig (including the latest thumb-size/index-root feedback and the curled-pose wrist notch), sign back gets matte teal without the generated relief texture. Outfit masks, cap morph, native materials and swim body are retained. The build scripts include the repairs for future exports.
+
+Breaking label/freeze icon fit inside the top dance-wheel sector; B opens, Enter selects, Escape cancels. Audio is unlocked in the gate gesture, reused by the world, resumed on interaction, and recovered through a visible Enable sound button if blocked. Discarded-tab rejoin retains the session sound choice. Desktop camera start requests body/fingers by default, with an opt-out.
+
+405/405 tests passed with loopback access; the last interrupted-audio guard also passed 4/4 startup tests. Production build passed. Both docs channels match dist; their 18 asset hashes per channel were checked. Screenshots, hashes and device-validation limits: `art/SIGN_BREAKING_HAND_REVIEW_20261011.md` and `art/SIGN_BREAKING_HAND_ASSETS_20261011.json`. No server changes. Physical webcam/headset/controller checks remain untested.
+
+Publish through one PR requesting macakinTT's last-push review; do not bypass main protection. A prepared PR is not live. Leave unrelated `.artifacts`, low-detail provenance and diagnostic scripts unstaged.

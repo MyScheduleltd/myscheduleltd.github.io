@@ -1,0 +1,31 @@
+{
+  "date": "2026-10-11",
+  "workflow": "Inspected, repaired and exported through live Blender MCP; body texture WebP and meshopt compression afterwards.",
+  "assets": {
+    "male": {
+      "path": "src/assets/avatars/male.glb",
+      "bytes": 1518340,
+      "sha256": "1c06bed68ce588d3e75a8dfcfb0eabdb063dab459a6c7e818641dc1376bd9db0"
+    },
+    "female": {
+      "path": "src/assets/avatars/female.glb",
+      "bytes": 1350752,
+      "sha256": "a6015dbc5e58b0c88e14b24ae595e68c914abfa5bf101d492b098acb914e3366"
+    },
+    "boxOffice": {
+      "path": "src/assets/venue-scenery/box-office.glb",
+      "bytes": 4293768,
+      "sha256": "c1066210b415ab7ae1296096ee566ebeca551eb810af8b3cf70619c6affc04d8"
+    }
+  },
+  "female_hand": {
+    "digits_per_hand": 5,
+    "closed_digit_surfaces": true,
+    "dressed_hand_boundary_edges": 0,
+    "source": "existing three-joint finger rig, fitted closed wrist loft, blended forearm weights and filled thenar pad; preserves swim skin and outfit masks"
+  },
+  "male_hand": {
+    "dressed_hand_boundary_edges": 0,
+    "source": "selective boundary closure and internal palm bridge; original articulated fingers retained"
+  }
+}

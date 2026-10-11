@@ -29,14 +29,14 @@ document.getElementById('detector')!.onclick=async()=>{
 const runtime=Object.create(FestivalWorld.prototype);
 const V=()=>new THREE.Vector3(),Q=()=>new THREE.Quaternion(),M=()=>new THREE.Matrix4();
 Object.assign(runtime,{headTracking:tracker,headTrackingActive:true,xrActive:true,xrSimulated:true,xrYaw:-Math.PI,xrSpineTwist:0,xrRig,camera:eye,
- moveVector:V(),airborne:false,playerState:'walking',trackedBodyShown:false,trackedHiddenParts:[],trackedLandmarks:[],trackedArms:{left:false,right:false},xrHandPoses:{left:null,right:null},xrHandSampleAt:{left:0,right:0},
+ moveVector:V(),airborne:false,playerState:'walking',trackedTorsoRoll:0,trackedBodyShown:false,trackedHiddenParts:[],trackedLandmarks:[],trackedArms:{left:false,right:false},xrHandPoses:{left:null,right:null},xrHandSampleAt:{left:0,right:0},
  armWorld:V(),armSwing:V(),armLocal:V(),armAxisX:V(),armAxisY:V(),armAxisZ:V(),armBasis:M(),headForward:V(),armTarget:V(),armMeasured:V(),armWanted:V(),
  armQuat:Q(),armParentQuat:Q(),armMeasuredQuat:Q(),armDesiredQuat:Q(),armMatrix:M(),armVecA:V(),armVecB:V(),armVecC:V(),footSurfaceAt:()=>0});
 function mount(){
  if(root)scene.remove(root);root=new THREE.Group();root.position.y=.28;scene.add(root);
  const sex=select('sex').value==='female'?'female':'male',palette={...AVATAR_NATIVE[sex],top:outfitWire(select('outfit').value as '1'|'2'|'3'|'4',sex)};
  rig=createCoastalAvatar(root,palette,true,new THREE.Group());attachImportedAvatar(root,rig,palette);
- Object.assign(runtime,{player:root,playerRig:rig,trackedBodyShown:false,trackedHiddenParts:[],trackedLandmarks:[],xrHandPoses:{left:null,right:null},xrHandSampleAt:{left:0,right:0}});
+ Object.assign(runtime,{player:root,playerRig:rig,trackedTorsoRoll:0,trackedBodyShown:false,trackedHiddenParts:[],trackedLandmarks:[],xrHandPoses:{left:null,right:null},xrHandSampleAt:{left:0,right:0}});
 }
 const sensor=(v:THREE.Vector3):TrackedPoint=>({x:v.x,y:-v.y,z:-v.z,visibility:1});
 function body(){

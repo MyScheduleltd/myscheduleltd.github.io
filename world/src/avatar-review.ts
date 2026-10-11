@@ -5,6 +5,7 @@ import { loadImportedAvatar, attachImportedAvatar, syncImportedAvatars, AVATAR_N
 import { poseCoastalCarry } from './world/CoastalCarry';
 import { createCoastalDrink, createCoastalPopcorn } from './world/CoastalProps';
 import { createCoastalAvatar, setCoastalSwimwear } from './world/CoastalAvatar';
+import { FIST, FINGER_NAMES, type HandPose } from './world/HandPose';
 import { createCoastalSkateboard } from './world/CoastalSkateboard';
 import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, COASTAL_STRIDE_LENGTH, walkCoastalPose, danceCoastalPose, skateCoastalPose, supportCoastalPose, seatCoastalLegs, coastalFootHeights } from './world/CoastalPose';
 const q=new URLSearchParams(location.search);
@@ -78,6 +79,8 @@ const originals=new Map<THREE.Mesh,boolean>();
 for(const meshes of Object.values(parts))for(const mesh of meshes)originals.set(mesh,mesh.visible);
 const separated=new THREE.Group();root.add(separated);
 let exploded=false,selected='';
+let handStudy:THREE.Mesh|undefined;
+const handStudyMaterial=q.has('solid')?new THREE.MeshStandardMaterial({color:0xc89677,roughness:1,side:THREE.DoubleSide,wireframe:q.has('wire')}):undefined;
 const highlight=new THREE.Box3Helper(new THREE.Box3(),0xa6533f);highlight.visible=false;scene.add(highlight);
 const visible=(object:THREE.Object3D):boolean=>object.visible&&(!object.parent||visible(object.parent));
 // ?t=seconds into the owner's punch or dance clip; playing advances it.
@@ -87,6 +90,44 @@ function render(){
   syncImportedAvatars(scene);
   if(reviewDog&&q.get('mentor')==='carry')perchMentor(dogCarrier,reviewDog,rig.head,root.userData.importedHeadSupport(),root.userData.importedHeadSurface());
   root.updateMatrixWorld(true);
+  // Review the actual dressed skin and tracking finger rig at close range.
+  // ?hand=left|right&grip=open|fist&handview=palm|back|side
+  if(q.has('hand')){
+    const side=q.get('hand')==='right'?'Right':'Left';
+    const open=Object.fromEntries(FINGER_NAMES.map(name=>[name,{curl:[0,0,0],spread:name==='Thumb'?.7:0}])) as HandPose;
+    root.userData.setImportedHandPose(side==='Left',q.get('grip')==='fist'?FIST:q.get('grip')==='open'?open:null);
+    syncImportedAvatars(root);root.updateMatrixWorld(true);
+    const mesh=Object.values(parts).flat().find(m=>m.userData.componentId==='body') as THREE.SkinnedMesh;
+    mesh.skeleton.update();
+    const indices=mesh.skeleton.bones.map((b,i)=>b.name.startsWith(side+'Hand')?i:-1).filter(i=>i>=0);
+    const forearm=mesh.skeleton.bones.findIndex(b=>b.name===side+'ForeArm');
+    const p=mesh.geometry.getAttribute('position'),si=mesh.geometry.getAttribute('skinIndex'),sw=mesh.geometry.getAttribute('skinWeight');
+    const dressed=mesh.geometry.getAttribute('_dressed'),covered=mesh.geometry.getAttribute('_covered');
+    const box=new THREE.Box3(),owned=new Set<number>(),geometry=mesh.geometry.clone();
+    // Published positions are quantized integers. A world-space study needs
+    // floating point positions rather than writing metres into that buffer.
+    const positions=new THREE.Float32BufferAttribute(new Float32Array(p.count*3),3);geometry.setAttribute('position',positions);
+    for(let i=0;i<p.count;i++){
+      let weight=0,armWeight=0;for(let k=0;k<4;k++){if(indices.includes(si.getComponent(i,k)))weight+=sw.getComponent(i,k);if(si.getComponent(i,k)===forearm)armWeight+=sw.getComponent(i,k);}
+      if(weight+armWeight>.5&&(!dressed||dressed.getX(i)>.5)&&(!covered||covered.getX(i)<.5)){
+        const point=mesh.localToWorld(mesh.applyBoneTransform(i,new THREE.Vector3().fromBufferAttribute(p,i)));if(weight>.5)box.expandByPoint(point);owned.add(i);positions.setXYZ(i,point.x,point.y,point.z);
+      }
+    }
+    const triangles:number[]=[],index=mesh.geometry.index!;
+    for(let i=0;i<index.count;i+=3){const ids=[index.getX(i),index.getX(i+1),index.getX(i+2)];if(ids.every(v=>owned.has(v)))triangles.push(...ids);}
+    geometry.setIndex(triangles);geometry.computeVertexNormals();geometry.computeBoundingSphere();
+    if(handStudy){handStudy.geometry.dispose();handStudy.removeFromParent();}
+    handStudy=new THREE.Mesh(geometry,handStudyMaterial??mesh.material);scene.add(handStudy);
+    for(const meshes of Object.values(parts))for(const part of meshes)part.visible=false;
+    const centre=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3()).length()*.65;
+    const frame=root.userData.importedHandFrame(side==='Left');
+    const basis=rig.visualRoot!.getWorldQuaternion(new THREE.Quaternion());
+    const normal=(q.get('handview')==='side'?frame.thumb:frame.palm).clone().applyQuaternion(basis);
+    if(q.get('handview')==='back')normal.negate();
+    camera.up.copy(frame.fingers).applyQuaternion(basis);camera.position.copy(centre).addScaledVector(normal,2);camera.lookAt(centre);
+    const aspect=innerWidth/Math.max(240,innerHeight-160);camera.left=-size*aspect;camera.right=size*aspect;camera.top=size;camera.bottom=-size;camera.zoom=1;camera.updateProjectionMatrix();
+    floor.visible=false;
+  }
   if(q.has('board')){
     for(const child of root.children)child.visible=child===board;
     board.visible=true;

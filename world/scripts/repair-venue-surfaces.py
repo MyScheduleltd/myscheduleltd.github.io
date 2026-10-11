@@ -34,6 +34,8 @@ plaster=solid('GEO-clean warm plaster',(.64,.61,.53));o.data.materials.append(pl
 removed=[f.index for f in o.data.polygons if f.center.z<.53]
 bm=bmesh.new();bm.from_mesh(o.data);bm.faces.ensure_lookup_table()
 bmesh.ops.delete(bm,geom=[bm.faces[i]for i in removed],context='FACES');bm.to_mesh(o.data);bm.free();o.data.update()
+exec(compile((WORLD/'scripts/repair-sign-backing.py').read_text(), 'repair-sign-backing.py', 'exec'))
+sign_back = repair_sign_back(o)
 # Exact, closed panels replace the defective generated plaster and poster relief.
 panels=[cube('GEO-left booth wall',(-.762,0,-.215),(.075,1.6,1.47),plaster),
  cube('GEO-back booth wall',(0,.765,-.215),(1.56,.075,1.47),plaster),
@@ -52,7 +54,7 @@ frame_mat=solid('GEO-booth charcoal frame',(.015,.019,.018))
 for x in [-.775,.775]:
  for y in [-.785,.785]:frames.append(cube('GEO-booth post',(x,y,-.215),(.09,.09,1.47),frame_mat))
 frames.append(cube('GEO-service header',(0,-.785,.469),(1.64,.09,.115),frame_mat))
-REPORT['box-office']={'replaced_plaster_and_cabinet_faces':len(removed),'closed_panels':len(panels)}
+REPORT['box-office']={'replaced_plaster_and_cabinet_faces':len(removed),'closed_panels':len(panels),'sign_back':sign_back}
 export('box-office',[o]+panels+cabinet+frames)
 # Keep character topology, face/hair/shoe maps and skin weights. Correct sleeve
 # atlas contamination with a dedicated shirt surface, trousers with their own cloth.

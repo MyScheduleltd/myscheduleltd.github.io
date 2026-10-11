@@ -28,17 +28,18 @@
       "reference_image_url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/54bb7168-2bf6-402a-9832-947ac6c5d38e.png",
       "rigged": false,
       "requested_polycount": 6000,
-      "bytes": 4290436,
-      "sha256": "a3a75f6937daabe3ed0c47424460c88c4cc0d04de209f9048c2cfd8f1b4b7fa1",
+      "bytes": 4293768,
+      "sha256": "c1066210b415ab7ae1296096ee566ebeca551eb810af8b3cf70619c6affc04d8",
       "triangles": 1988,
       "source_preserved": false,
       "original_sha256": "95a355275ff7236e37dee527e21cbfd0467216048c7fc6b6d2569911ddde396e",
       "local_repair": {
         "replaced_plaster_and_cabinet_faces": 10625,
         "closed_panels": 7,
-        "bytes": 4290436,
-        "sha256": "a3a75f6937daabe3ed0c47424460c88c4cc0d04de209f9048c2cfd8f1b4b7fa1",
-        "counter_fit": "Counter width 1.44 fits the 1.46 gap between the post inner faces, with 0.01 clearance per side."
+        "bytes": 4293768,
+        "sha256": "c1066210b415ab7ae1296096ee566ebeca551eb810af8b3cf70619c6affc04d8",
+        "counter_fit": "Counter width 1.44 fits the 1.46 gap between the post inner faces, with 0.01 clearance per side.",
+        "sign_back": "128 rear faces use texture-free matte teal; front artwork unchanged."
       }
     },
     {

@@ -1,5 +1,5 @@
 /** Move definitions are shared by pointer, keyboard and controller selection. */
-export const DANCE_MOVES = [{id: 'groove', zh: '律動舞', en: 'GROOVE'}] as const;
+export const DANCE_MOVES = [{id: 'groove', zh: 'Breaking', en: 'Breaking'}] as const;
 export type DanceMove = typeof DANCE_MOVES[number]['id'];
 
 export class DanceWheel {
@@ -15,7 +15,7 @@ export class DanceWheel {
       <div class="dance-wheel" role="group" aria-label="${zh ? '舞步' : 'Dance moves'}">
         <div class="dance-wheel__centre" aria-hidden="true"><span>♪</span><strong>${zh ? '舞步' : 'DANCE'}</strong></div>
         ${DANCE_MOVES.map((move, i) => `<button type="button" class="dance-wheel__move" data-dance="${i}" style="--angle:${i * 360 / DANCE_MOVES.length}deg" aria-label="${zh ? move.zh : move.en}">
-          <svg viewBox="0 0 48 56" aria-hidden="true"><circle cx="25" cy="8" r="5"/><path d="M23 18L17 32L6 27M23 18L33 24L42 17M17 32L29 37L22 50M17 32L8 48"/></svg><span>${zh ? move.zh : move.en}</span></button>`).join('')}
+          <svg viewBox="0 0 64 56" aria-hidden="true"><circle cx="24" cy="37" r="4"/><path d="M30 30L39 22L46 10L57 7M39 22L28 16L22 5M30 30L38 37L36 48L43 48M30 30L19 25L10 30M5 50H59"/></svg><span>${zh ? move.zh : move.en}</span></button>`).join('')}
       </div>
       <p>${zh ? '點選舞步或按 Enter · 移動即停止' : 'CLICK A MOVE OR PRESS ENTER · MOVE TO STOP'}</p>
       <div class="dance-selector__actions">${dancing ? `<button type="button" data-stop-dance>${zh ? '停止跳舞' : 'STOP DANCING'}</button>` : ''}<button type="button" data-cancel-dance>${zh ? '取消' : 'CANCEL'} <kbd>B / ESC</kbd></button></div>

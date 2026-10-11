@@ -1,3 +1,4 @@
+import { AmbientAudio } from '../world/AmbientAudio';
 import { DanceWheel } from './DanceWheel';
 import { TOP_OUTFITS, topOutfit, avatarSex, outfitWire, type AvatarSex } from '../world/CoastalOutfits';
 import { avatarVariantsFor, AVATAR_NATIVE } from '../world/NativeAvatarPalette';
@@ -125,6 +126,7 @@ const WORLD_VIEWPORT_CONTENT = 'width=device-width, initial-scale=1.0, minimum-s
 
 const PROFILE_KEY = 'myschedule-festival-profile-v1';
 /** Set once a visitor is inside, so a discarded tab knows it was already in. */
+const AUDIO_MUTED_KEY = 'festival-audio-muted';
 const INSIDE_KEY = 'myschedule-festival-inside-v1';
 /** How many times in a row this tab has let itself back in without settling. */
 const REJOIN_TRIES_KEY = 'myschedule-festival-rejoin-tries-v1';
@@ -398,6 +400,8 @@ export class App {
   private danceWheel?: DanceWheel;
   private currentId = '';
   private audioMuted = true;
+  private readonly entryAudio = new AmbientAudio();
+  private bodyTrackRequested = true;
   private screenMode?: 'public' | 'private';
   private screenMaximized = false;
   private screenNativeFullscreen = false;
@@ -523,6 +527,7 @@ export class App {
 
   constructor(root: HTMLElement) {
     this.root = root;
+    this.entryAudio.onStateChange = () => this.syncAudioResumeUi();
     const saved = readProfile();
     const browserLanguage: Language = navigator.language.toLowerCase().startsWith('zh') ? 'zh-TW' : 'en';
     this.language = saved?.language ?? browserLanguage;
@@ -755,7 +760,7 @@ export class App {
     }
     sessionStorage.setItem(REJOIN_TRIES_KEY, String(tries + 1));
     this.currentId = saved.id;
-    void this.enterWhenThereIsRoom(true);
+    void this.enterWhenThereIsRoom(readSession<boolean>(AUDIO_MUTED_KEY, true));
   }
 
   /**
@@ -967,7 +972,10 @@ export class App {
       if (remember) localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
       else localStorage.removeItem(PROFILE_KEY);
       this.currentId = id;
-      void this.enterWhenThereIsRoom(submitter?.dataset.audio === 'muted');
+      const muted = submitter?.dataset.audio === 'muted';
+      // Unlock synchronously while the visitor’s submit gesture is active.
+      void this.entryAudio.start(muted).catch(() => {});
+      void this.enterWhenThereIsRoom(muted);
     });
   }
 
@@ -977,7 +985,13 @@ export class App {
    * they are in the queue, and goes in the moment a place opens. With no
    * service to ask, the world is single-player and everyone gets in.
    */
+  private syncAudioResumeUi(): void {
+    const button = this.root.querySelector<HTMLButtonElement>('[data-audio-resume]');
+    if (button) button.hidden = this.audioMuted || !this.world?.audio.needsResume();
+  }
+
   private async enterWhenThereIsRoom(muted: boolean): Promise<void> {
+    this.audioMuted = muted;
     const zh = this.language === 'zh-TW';
     const form = this.root.querySelector<HTMLFormElement>('#gate-form');
     const notice = this.root.querySelector<HTMLElement>('#gate-waiting');
@@ -1007,7 +1021,7 @@ export class App {
         // multiplayer in the background. A ready service still gets to enforce
         // its capacity and queue below.
         stopWaiting();
-        this.enterWorldAfterGateFeedback(muted);
+        this.enterWorldAfterGateFeedback();
         return;
       }
       const place = await placeRequest;
@@ -1029,7 +1043,7 @@ export class App {
         if (notice) { notice.hidden = false; notice.textContent = place.error; }
         return;
       }
-      this.enterWorldAfterGateFeedback(muted);
+      this.enterWorldAfterGateFeedback();
     };
 
     await ask();
@@ -1041,7 +1055,7 @@ export class App {
    * synchronous, so entering it in the submit task made the click look dead
    * even after the network wait was removed.
    */
-  private enterWorldAfterGateFeedback(muted: boolean): void {
+  private enterWorldAfterGateFeedback(): void {
     if(this.openingWorld)return;
     this.openingWorld=true;
     this.root.querySelectorAll<HTMLButtonElement>('#gate-form button[type="submit"]').forEach(b=>b.disabled=true);
@@ -1050,7 +1064,7 @@ export class App {
     window.setTimeout(() => {
       // Only the bodies this visitor and the residents wear; the others arrive
       // behind them while the world is already running.
-      void this.preloadAvatar().then(() => {this.openingWorld=false;return this.enterWorld(muted);}).catch(() => {
+      void this.preloadAvatar().then(() => {this.openingWorld=false;return this.enterWorld(this.audioMuted);}).catch(() => {
         this.openingWorld=false;
         const notice=this.root.querySelector<HTMLElement>('#gate-waiting');
         if(notice){notice.hidden=false;notice.textContent=this.language==='zh-TW'
@@ -1155,6 +1169,7 @@ export class App {
         <button class="world-camera-hide" type="button" data-camera-hide hidden
           aria-label="${zh ? '顯示或隱藏相機介面' : 'Show or hide camera controls'}">${zh ? '隱藏' : 'HIDE'}</button>
         <button class="zoom-reset" type="button" data-zoom-reset hidden>${zh ? '重設縮放' : 'RESET ZOOM'}</button>
+        <button class="audio-resume" type="button" data-audio-resume hidden>${zh ? '開啟聲音' : 'ENABLE SOUND'}</button>
         <button class="jukebox-sound" type="button" data-jukebox-sound hidden>DROP THE BEAT</button>
         <section class="vr-entry" data-vr-entry hidden aria-live="polite">
           <p class="eyebrow">${phoneVrPreview ? 'PHONE MOTION · VR PREVIEW' : vrPreview ? 'DESKTOP SIMULATION · WEBXR' : 'META QUEST · WEBXR'}</p>
@@ -1186,16 +1201,16 @@ export class App {
           </button>
           <div class="head-track__body">
           <p data-head-track-note>${zh
-            ? '用電腦的攝影機追蹤你的頭部，讓螢幕變成一扇可以探頭看的窗。影像只在這台電腦上處理，不會離開你的裝置。'
-            : 'Track your head with your computer\u2019s camera so the screen becomes a window you can lean around. The video is processed on this machine and never leaves your device.'}</p>
+            ? '用電腦的攝影機追蹤頭部、手臂、雙手與手指。請讓肩膀、手肘和雙手入鏡；也可關閉身體與手指追蹤。影像只在這台電腦上處理。'
+            : 'Track your head, arms, hands and fingers with your computer’s camera. Keep shoulders, elbows and hands in view; body and finger tracking can be switched off. Video stays on this device.'}</p>
           <label class="head-track__remember"><input type="checkbox" data-head-track-remember${this.headTrackRemember ? ' checked' : ''} /><span>${zh ? '記住在這台電腦上' : 'Remember on this computer'}</span></label>
-          <label class="head-track__remember" data-head-track-body-row><input type="checkbox" data-head-track-body${this.world?.bodyTrackingSnapshot().wanted ? ' checked' : ''} /><span>${zh
+          <label class="head-track__remember" data-head-track-body-row><input type="checkbox" data-head-track-body${this.bodyTrackRequested ? ' checked' : ''} /><span>${zh
             ? '身體與手指追蹤：讓雙手、肩膀和手肘入鏡；每根手指會獨立跟隨。雙腿入鏡且站著不動時也會跟隨。另需下載約 17 MB。'
             : 'Body and fingers: keep your hands, shoulders and elbows in view. Each finger follows independently. Legs follow when visible and you stand still. About 17 MB more to download.'}</span></label>
           <p class="head-track__mode" data-head-track-mode>${this.headTrackModeLabel()}</p>
           <label data-head-track-pick hidden><span>${zh ? '攝影機' : 'CAMERA'}</span><select data-head-track-camera></select></label>
           <div class="head-track__actions">
-            <button class="button button--primary" type="button" data-head-track-start>${zh ? '開啟頭部追蹤' : 'ENABLE HEAD TRACKING'}</button>
+            <button class="button button--primary" type="button" data-head-track-start>${zh ? '開啟攝影機追蹤' : 'ENABLE CAMERA TRACKING'}</button>
             <button class="button button--secondary" type="button" data-head-track-stop>${zh ? '關閉' : 'TURN OFF'}</button>
           </div>
           </div>
@@ -1280,6 +1295,7 @@ export class App {
     const { FestivalWorld } = await this.preloadWorldModule();
     this.world = new FestivalWorld({
       canvas,
+      audio: this.entryAudio,
       foregroundCanvas,
       cssLayer,
       graphicsMode: this.graphicsMode,
@@ -1824,7 +1840,14 @@ export class App {
       }, 250);
     }
     this.audioMuted = muted;
-    void this.world.audio.start(muted);
+    sessionStorage.setItem(AUDIO_MUTED_KEY, JSON.stringify(muted));
+    void this.world.audio.start(muted).then(() => this.syncAudioResumeUi()).catch(() => this.syncAudioResumeUi());
+    this.syncAudioResumeUi();
+    this.root.querySelector<HTMLButtonElement>('[data-audio-resume]')?.addEventListener('click', () => {
+      void this.world?.audio.start(false).then(() => this.syncAudioResumeUi()).catch(() => this.syncAudioResumeUi());
+      this.applyJukeboxVolume();
+      this.sendScreenCommand('unMute');
+    });
     // Loopback review routes are deterministic visual fixtures. Keeping them
     // offline prevents a persisted STAFF impersonation from replacing the
     // controlled avatar while a carry/geometry snapshot is being inspected.
@@ -1875,7 +1898,10 @@ export class App {
     // and SHIFT+E, which is how a keyboard says it, is unsayable on a phone.
     // The controller's highlight belongs to the controller. Left standing after
     // somebody picks up the mouse, it reads as a selection that is not there.
+    const resumeEntryAudio = () => { if (!this.audioMuted) void this.world?.audio.resume().then(() => this.syncAudioResumeUi()).catch(() => this.syncAudioResumeUi()); };
+    this.root.addEventListener('keydown', resumeEntryAudio, true);
     this.root.addEventListener('pointerdown', () => {
+      resumeEntryAudio();
       for (const marked of this.root.querySelectorAll('.is-gamepad-focus')) {
         marked.classList.remove('is-gamepad-focus');
       }
@@ -1949,6 +1975,7 @@ export class App {
       // where the festival's clock says it has got to.
       this.syncJukebox();
       if (document.hidden) return;
+      resumeEntryAudio();
       this.applyJukeboxVolume();
       // Coming back from a locked phone. Locking never fires pagehide, so
       // nothing suspended the connection and nothing resumed it — the socket
@@ -2139,9 +2166,9 @@ export class App {
       if (mode) mode.textContent = this.headTrackModeLabel();
     });
     this.root.querySelector<HTMLInputElement>('[data-head-track-body]')?.addEventListener('change', (event) => {
-      // Off by default: it opens nothing new, but it is 17 MB and a lot more
-      // of the visitor in front of the lens than a face.
+      // Uses the same camera. Visitors can opt out of body and finger detection.
       const on = (event.currentTarget as HTMLInputElement).checked;
+      this.bodyTrackRequested = on;
       void this.world?.setBodyTracking(on).then(() => this.syncHeadTrackUi());
       this.syncHeadTrackUi();
     });
@@ -2149,7 +2176,7 @@ export class App {
       // Straight from the press. A browser will not open a camera on the back
       // of anything else, and neither should this.
       const chosen = this.root.querySelector<HTMLSelectElement>('[data-head-track-camera]')?.value;
-      void this.world?.enableHeadTracking(chosen || undefined).then(async (started) => {
+      void this.world?.enableHeadTracking(chosen || undefined, this.bodyTrackRequested).then(async (started) => {
         if (started) await this.fillHeadTrackCameras();
         this.syncHeadTrackUi();
       });
@@ -2161,7 +2188,7 @@ export class App {
     this.root.querySelector<HTMLSelectElement>('[data-head-track-camera]')?.addEventListener('change', (event) => {
       const deviceId = (event.currentTarget as HTMLSelectElement).value;
       if (!this.world?.headTrackingEnabled()) return;
-      void this.world.enableHeadTracking(deviceId || undefined).then(() => this.syncHeadTrackUi());
+      void this.world.enableHeadTracking(deviceId || undefined, this.bodyTrackRequested).then(() => this.syncHeadTrackUi());
     });
     this.root.querySelector<HTMLButtonElement>('[data-vr-dismiss]')?.addEventListener('click', () => {
       this.vrRequested = false;
@@ -6012,6 +6039,8 @@ export class App {
     });
     panel.querySelector<HTMLButtonElement>('[data-mute]')?.addEventListener('click', (event) => {
       this.audioMuted = !this.audioMuted;
+      sessionStorage.setItem(AUDIO_MUTED_KEY, JSON.stringify(this.audioMuted));
+      this.syncAudioResumeUi();
       this.world?.audio.setMuted(this.audioMuted);
       // The jukebox is its own player and was never told, so turning the
       // festival's sound on left the square silent until the slider was moved.

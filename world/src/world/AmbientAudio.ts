@@ -1,4 +1,5 @@
 export class AmbientAudio {
+  onStateChange?: () => void;
   private context?: AudioContext;
   private master?: GainNode;
   private ambient?: GainNode;
@@ -11,13 +12,22 @@ export class AmbientAudio {
   async start(muted: boolean): Promise<void> {
     this.muted = muted;
     if (!this.context) this.createGraph();
-    await this.context?.resume();
     this.applyVolumes();
+    await this.context?.resume();
   }
 
   setMuted(muted: boolean): void {
     this.muted = muted;
     this.applyVolumes();
+    if (!muted) void this.resume().catch(() => {});
+  }
+
+  needsResume(): boolean {
+    return !this.context || this.context.state !== 'running';
+  }
+
+  async resume(): Promise<void> {
+    if (this.context && this.context.state !== 'running' && this.context.state !== 'closed') await this.context.resume();
   }
 
   setMasterVolume(value: number): void {
@@ -37,6 +47,7 @@ export class AmbientAudio {
 
   private createGraph(): void {
     this.context = new AudioContext();
+    this.context.onstatechange = () => this.onStateChange?.();
     this.master = this.context.createGain();
     this.ambient = this.context.createGain();
     this.screening = this.context.createGain();

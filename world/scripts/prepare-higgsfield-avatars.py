@@ -5552,6 +5552,12 @@ def build(stages):
         report[key]['headRigid'] = head_rigid(body, fit)
         report[key]['hairRigid'] = hair_rigid(arm, body)
         report[key]['capHair'] = cap_hair_key(body, fit, hug=sex == 'male')
+        # Preserve the MCP-inspected dressed-hand fixes in future exports.
+        if body.data.attributes.get('_dressed') or body.data.attributes.get('_DRESSED'):
+            hand_script = os.path.join(WORLD, 'scripts', 'repair-tracked-hands.py')
+            hand_namespace = {}
+            exec(compile(open(hand_script).read(), hand_script, 'exec'), hand_namespace)
+            report[key]['trackedHands'] = hand_namespace['repair_tracked_hands'](body, arm, sex)
         report[key]['dye'], native, reference = dye_mask(key, body, garments, atlas, frame)
         if whole and not FEMALE_SWIM_MODEL:
             report[key]['swimSeam'] = swim_flags(body)
