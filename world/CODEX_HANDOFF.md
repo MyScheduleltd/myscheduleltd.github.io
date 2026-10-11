@@ -1,6 +1,16 @@
 # Current release status — 2026-10-11
 
-PR #16 is merged in main (`e84dccd`). The next release is on `codex/sign-backing-breaking-wheel`: tracked hand and wrist repairs, clean sign back, Breaking wheel, audio re-entry and desktop body/finger tracking. Final 405/405 tests and production build passed; both docs channels match dist and all 36 asset hashes were verified. See the final release section and `art/SIGN_BREAKING_HAND_REVIEW_20261011.md`. Publish through one PR with required last-push approval; earlier pending PR #16 notes below are historical. No server change in this release.
+PR #16 is merged in main (`e84dccd`). The next release is PR #17 on `codex/sign-backing-breaking-wheel`: tracked avatar hand/wrist repairs, clean sign back, Breaking wheel, audio re-entry, desktop body/finger tracking, and now attendant forearm material and finger separation repairs. Final 407/407 tests and production build passed. Both docs channels match dist; all 36 integrity hashes passed. Required reviewer macakinTT must approve the latest push before merge/publication. No server change or Render redeploy required.
+
+## Attendant arms and fingers — 2026-10-11
+
+- User requested publication after fixing both unlisted attendants' dark inner forearms and connected fingers. Fixed the shared GLB through live Blender MCP, preserving authored maps and the existing 24-bone rig.
+- 47 inner-arm faces restored to skin; trouser classification now excludes arm-owned faces. Closed 14 source hand boundary edges and added six rounded finger gaps. Actual export checks verify four separated fingers plus a thumb and closed distal hand surfaces on both sides.
+- Asset SHA256: `2248d11158447b6bd21866329c2ae157a760fe604a6acced046d1918032b9e1d`; 19,115 triangles. All four embedded image maps unchanged. Outside-hand surface positions unchanged; one pre-existing duplicate coplanar body triangle collapsed during the hand Boolean.
+- Reusable repair: `scripts/repair-attendant-hands.py`, invoked by `repair-venue-surfaces.py`. Apply once to the preserved source after clothing repair; do not repeat on the already-repaired export. Original source and working Blender snapshots remain in local `.artifacts` (not staged).
+- Review: `art/ATTENDANT_ARM_HAND_REVIEW_20261011.md`; browser screenshots in `art/attendant-forearms-20261011/`. Full-world screenshots cover the earlier forearm repair; final hand close-ups cover finger separation. Build and 407/407 tests passed; both Pages packages verified.
+- Built local full site: `http://127.0.0.1:4173/?era=ps2&island`. Dev close-up: `http://127.0.0.1:5173/venue-review.html?asset=attendant&detail=hands&angle=1.57`.
+- PR #17 remains the single release PR; review is required after the latest push. Do not bypass protected main or claim live publication. Earlier dated entries below remain historical.
 
 # Codex handoff: current state, 2026-10-10 (read this first)
 

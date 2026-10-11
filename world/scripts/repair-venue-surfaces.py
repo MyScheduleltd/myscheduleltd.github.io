@@ -65,15 +65,22 @@ shirt=solid('GEO-ivory staff shirt',(.83,.80,.68));trousers=solid('GEO-charcoal 
 o.data.materials.append(shirt);o.data.materials.append(trousers);counts={'shirt':0,'trousers':0}
 im=next(n.image for n in o.data.materials[0].node_tree.nodes if n.type=='TEX_IMAGE'and n.label=='BASE COLOR')
 pix=np.array(im.pixels[:]).reshape(im.size[1],im.size[0],4);uv=o.data.uv_layers.active.data
+arm_groups={g.index for g in o.vertex_groups if g.name in ('LeftArm','LeftForeArm','LeftHand','RightArm','RightForeArm','RightHand')}
 for f in o.data.polygons:
  c=sum((o.matrix_world@o.data.vertices[i].co for i in f.vertices),Vector())/len(f.vertices)
  if abs(c.x)>.34 and 1.89<c.z<2.33:
   f.material_index=1;counts['shirt']+=1
  elif abs(c.x)<.54 and .29<c.z<1.78:
+  # The inner elbows share the trousers' bounding box in the source pose.
+  # Rig ownership distinguishes arm skin from the nearby clothing surface.
+  arm_weight=sum(sum(g.weight for g in o.data.vertices[i].groups if g.group in arm_groups) for i in f.vertices)/len(f.vertices)
+  if arm_weight>.5:continue
   t=sum((uv[l].uv for l in f.loop_indices),Vector((0,0)))/len(f.loop_indices)
   rgb=pix[int(t.y*(im.size[1]-1)),int(t.x*(im.size[0]-1)),:3]
   if rgb[0]>rgb[1]*1.8 and rgb[0]>.015:continue # Keep the burgundy vest hem.
   f.material_index=2;counts['trousers']+=1
 REPORT['attendant']=counts
+exec(compile((WORLD/'scripts/repair-attendant-hands.py').read_text(), 'repair-attendant-hands.py', 'exec'))
+REPORT['attendant']['finger_separation']=separate_attendant_fingers(o)
 export('attendant',[o,o.parent])
 (WORLD/'.artifacts/venue-finish-20261009/surface-repair.json').write_text(json.dumps(REPORT,indent=2))

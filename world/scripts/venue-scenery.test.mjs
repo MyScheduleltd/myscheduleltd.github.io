@@ -11,9 +11,9 @@ async function geometry(kind) {
   const bytes=await readFile(new URL(`../src/assets/venue-scenery/${names[kind]}.glb`,import.meta.url));
   const length=bytes.readUInt32LE(12),doc=JSON.parse(bytes.subarray(20,20+length));
   // Node has no image decoder. Retain every geometry/skin buffer byte; only
-  // omit material bindings so the real GLTF loader can inspect the mesh.
-  for(const mesh of doc.meshes)for(const primitive of mesh.primitives)delete primitive.material;
-  delete doc.materials;delete doc.textures;delete doc.images;
+  // omit texture bindings so the real GLTF loader can inspect mesh ownership.
+  doc.materials=doc.materials?.map(material=>({name:material.name}));
+  delete doc.textures;delete doc.images;
   const json=Buffer.from(JSON.stringify(doc)),padded=Buffer.alloc(Math.ceil(json.length/4)*4,32);json.copy(padded);
   const bin=bytes.subarray(20+length),header=Buffer.alloc(20);
   header.writeUInt32LE(0x46546c67,0);header.writeUInt32LE(2,4);header.writeUInt32LE(20+padded.length+bin.length,8);
@@ -25,6 +25,61 @@ async function geometry(kind) {
 const compiled=await build({entryPoints:['src/world/VenueSceneryAssets.ts'],bundle:true,loader:{'.png':'dataurl'},write:false,format:'esm',platform:'node',define:{'import.meta.url':JSON.stringify(new URL('../src/world/VenueSceneryAssets.ts',import.meta.url).href)}});
 const {VenueSceneryAssets}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 const assets=()=>{const a=new VenueSceneryAssets();a.load=async kind=>(await geometry(kind)).scene;return a;};
+
+test('attendant arm skin never uses the charcoal trouser material',async()=>{
+  const {scene}=await geometry('attendant');
+  let checked=0;
+  scene.traverse(mesh=>{
+    if(!mesh.isSkinnedMesh || mesh.material.name!=='GEO-charcoal staff trousers')return;
+    const joints=mesh.geometry.attributes.skinIndex,weights=mesh.geometry.attributes.skinWeight;
+    const armBones=new Set(mesh.skeleton.bones.flatMap((bone,i)=>/^(Left|Right)(Arm|ForeArm|Hand)$/.test(bone.name)?[i]:[]));
+    assert.equal(armBones.size,6);
+    const indices=mesh.geometry.index;
+    for(let i=0;i<indices.count;i+=3){
+      let armWeight=0;
+      for(let corner=0;corner<3;corner++){
+        const vertex=indices.getX(i+corner);
+        for(let component=0;component<4;component++)if(armBones.has(joints.getComponent(vertex,component)))armWeight+=weights.getComponent(vertex,component)/3;
+      }
+      assert.ok(armWeight<=.5,'inner arm surface is assigned trouser cloth');checked++;
+    }
+  });
+  assert.ok(checked>4000,'trouser surfaces were not checked');
+});
+
+test('both attendant hands have four separated fingers, a thumb and closed distal surfaces',async()=>{
+  const {scene}=await geometry('attendant');scene.updateMatrixWorld(true);
+  for(const side of [-1,1]){
+    const handHit=(y,z)=>new THREE.Raycaster(new THREE.Vector3(side*1.2,z,-y),new THREE.Vector3(-side,0,0)).intersectObject(scene,true)
+      .some(hit=>hit.point.x*side>.63 && hit.point.x*side<.94);
+    for(const gap of [-.043,.007,.051])assert.equal(handHit(gap,1.38),false,`${side} fingers joined at ${gap}`);
+    for(const finger of [-.070,-.017,.028,.073])assert.equal(handHit(finger,1.38),true,`${side} finger missing at ${finger}`);
+    assert.equal(handHit(-.145,1.43),true,`${side} thumb missing`);
+  }
+  // Across material/UV seams, each geometric edge of the distal hand must
+  // still belong to exactly two triangles. Exclude the proximal wrist cut.
+  const edges=new Map();
+  scene.traverse(mesh=>{
+    if(!mesh.isSkinnedMesh)return;
+    const p=mesh.geometry.attributes.position,weights=mesh.geometry.attributes.skinWeight,joints=mesh.geometry.attributes.skinIndex,ids=mesh.geometry.index;
+    const handBones=new Set(mesh.skeleton.bones.flatMap((bone,i)=>/^(Left|Right)Hand$/.test(bone.name)?[i]:[]));
+    const positions=new Map(),owned=new Map();
+    for(let i=0;i<p.count;i++){
+      positions.set(i,mesh.getVertexPosition(i,new THREE.Vector3()).applyMatrix4(mesh.matrixWorld));
+      let total=0;for(let c=0;c<4;c++)if(handBones.has(joints.getComponent(i,c)))total+=weights.getComponent(i,c);
+      owned.set(i,total>.8);
+    }
+    const key=i=>positions.get(i).toArray().map(v=>v.toFixed(5)).join(',');
+    for(let i=0;i<ids.count;i+=3)for(let j=0;j<3;j++){
+      const a=ids.getX(i+j),b=ids.getX(i+(j+1)%3);
+      if(!owned.get(a)||!owned.get(b)||positions.get(a).y>1.48||positions.get(b).y>1.48)continue;
+      const edge=[key(a),key(b)].sort().join('|');edges.set(edge,(edges.get(edge)??0)+1);
+    }
+  });
+  assert.ok(edges.size>500);
+  const invalid=[...edges].filter(([,n])=>n!==2);
+  assert.equal(invalid.length,0,`an attendant finger has an open or nonmanifold edge: ${JSON.stringify(invalid.slice(0,6))}`);
+});
 
 test('installed scenery matches its recorded original or locally repaired asset provenance',async()=>{
   const provenance=JSON.parse(await readFile(new URL('../art/VENUE_ASSET_PROVENANCE_20261009.json',import.meta.url)));
