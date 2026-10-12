@@ -1,0 +1,3061 @@
+:root {
+  color-scheme: dark;
+  --bg: #07080f;
+  --panel: #10131b;
+  --ink: #f7f2de;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  /* Kill double-tap-to-zoom on phones; the canvas handles its own gestures. */
+  touch-action: manipulation;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(132, 42, 120, 0.26), transparent 32%),
+    radial-gradient(circle at 74% 66%, rgba(16, 121, 142, 0.18), transparent 36%),
+    var(--bg);
+  color: var(--ink);
+  font-family:
+    "Courier New",
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.game-shell {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  padding: 12px;
+  padding:
+    max(12px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+}
+
+#game {
+  grid-area: 1 / 1;
+  position: relative;
+  z-index: 1;
+  display: block;
+  /* 100vw ignores the shell's own padding, so the canvas used to overflow its
+     grid area to the right on a narrow portrait window - which is exactly what
+     MODE: 桌面 on a phone hits. Size from the padded box instead. */
+  width: min(100%, calc((100vh - 24px) * 16 / 9));
+  height: min(calc(100vh - 24px), calc((100vw - 24px) * 9 / 16));
+  max-width: 1280px;
+  max-height: 720px;
+  border: 3px solid #272d3a;
+  background: #07080f;
+  box-shadow:
+    0 0 0 4px #06070b,
+    0 20px 80px rgba(0, 0, 0, 0.58);
+  image-rendering: pixelated;
+  touch-action: none;
+  user-select: none;
+}
+
+/* A cached monochrome noise plate plus independently moving dust/scratches
+   gives the canvas a restrained 35mm print texture without touching game art. */
+.film-grain-overlay {
+  --film-edge: 3px;
+  grid-area: 1 / 1;
+  position: relative;
+  z-index: 2;
+  display: block;
+  /* 100vw ignores the shell's own padding, so the canvas used to overflow its
+     grid area to the right on a narrow portrait window - which is exactly what
+     MODE: 桌面 on a phone hits. Size from the padded box instead. */
+  width: min(100%, calc((100vh - 24px) * 16 / 9));
+  height: min(calc(100vh - 24px), calc((100vw - 24px) * 9 / 16));
+  max-width: 1280px;
+  max-height: 720px;
+  overflow: hidden;
+  clip-path: inset(var(--film-edge));
+  background:
+    linear-gradient(180deg, rgba(255, 214, 148, 0.025), rgba(73, 35, 18, 0.035));
+  box-shadow:
+    inset 0 0 34px rgba(34, 17, 9, 0.1),
+    inset 0 0 3px rgba(255, 232, 186, 0.09);
+  pointer-events: none;
+  user-select: none;
+  contain: paint;
+}
+
+.film-grain-overlay::before,
+.film-grain-overlay::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.film-grain-overlay::before {
+  inset: -12%;
+  background-image: url("assets/sprites/ui/film-grain.png");
+  background-size: 142px 142px;
+  mix-blend-mode: soft-light;
+  opacity: 0.3;
+  animation: film-grain-jitter 190ms steps(2, end) infinite;
+}
+
+.film-grain-overlay::after {
+  inset: -8% -3%;
+  background-image:
+    radial-gradient(circle at 14% 18%, rgba(255, 244, 217, 0.8) 0 0.45px, transparent 0.9px),
+    radial-gradient(circle at 73% 64%, rgba(21, 12, 8, 0.9) 0 0.55px, transparent 1.15px),
+    radial-gradient(circle at 42% 86%, rgba(255, 235, 197, 0.6) 0 0.35px, transparent 0.8px),
+    repeating-linear-gradient(90deg, transparent 0 23%, rgba(255, 239, 209, 0.16) 23.08% 23.18%, transparent 23.28% 47%);
+  background-size: 127px 89px, 173px 131px, 211px 157px, 367px 100%;
+  mix-blend-mode: screen;
+  opacity: 0.19;
+  animation:
+    film-dust-roll 7.5s linear infinite,
+    film-exposure-flicker 2.6s steps(1, end) infinite;
+}
+
+@keyframes film-grain-jitter {
+  0% { transform: translate3d(-3%, 1%, 0); }
+  20% { transform: translate3d(2%, -4%, 0); }
+  40% { transform: translate3d(-4%, 3%, 0); }
+  60% { transform: translate3d(4%, 2%, 0); }
+  80% { transform: translate3d(1%, -3%, 0); }
+  100% { transform: translate3d(-2%, 4%, 0); }
+}
+
+@keyframes film-dust-roll {
+  from { transform: translate3d(0, -8%, 0); }
+  to { transform: translate3d(1.5%, 8%, 0); }
+}
+
+@keyframes film-exposure-flicker {
+  0%, 19%, 22%, 57%, 61%, 100% { opacity: 0.11; }
+  20% { opacity: 0.15; }
+  58% { opacity: 0.08; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .film-grain-overlay::before,
+  .film-grain-overlay::after {
+    animation: none;
+  }
+
+  .film-grain-overlay::before {
+    opacity: 0.2;
+  }
+
+  .film-grain-overlay::after {
+    opacity: 0.12;
+  }
+}
+
+body[data-device-mode="phone"] .game-shell {
+  /* Keep breathing room at the top even without a notch — the canvas used
+     to sit flush against the screen edge. */
+  padding:
+    max(10px, env(safe-area-inset-top))
+    max(6px, env(safe-area-inset-right))
+    max(6px, env(safe-area-inset-bottom))
+    max(6px, env(safe-area-inset-left));
+}
+
+body[data-device-mode="phone"] #game {
+  width: min(calc(100dvw - 12px), calc((var(--app-h, 100dvh) - 18px) * 16 / 9));
+  height: min(calc(var(--app-h, 100dvh) - 18px), calc((100dvw - 12px) * 9 / 16));
+  max-width: none;
+  max-height: none;
+  border-width: 2px;
+}
+
+body[data-device-mode="phone"] .film-grain-overlay {
+  --film-edge: 2px;
+  width: min(calc(100dvw - 12px), calc((var(--app-h, 100dvh) - 18px) * 16 / 9));
+  height: min(calc(var(--app-h, 100dvh) - 18px), calc((100dvw - 12px) * 9 / 16));
+  max-width: none;
+  max-height: none;
+}
+
+/* Desktop and landscape phones use the same saturated-orange handheld shell
+   as portrait, but stop at the monitor: there is intentionally no lower
+   joystick/control deck because these layouts use keyboard or canvas taps. */
+@media (orientation: landscape), (min-width: 921px) {
+  html,
+  body {
+    background: #4a100d;
+  }
+
+  .game-shell {
+    position: relative;
+    isolation: isolate;
+    padding: 32px;
+    background-color: #ff5c21;
+    background-image:
+      linear-gradient(180deg, rgba(255, 143, 73, 0.24), transparent 22%),
+      linear-gradient(90deg, rgba(117, 28, 14, 0.16), transparent 3%, transparent 97%, rgba(117, 28, 14, 0.16));
+    /* No inset rim or bottom band: they drew a dark orange line along the
+       bottom of the window (user, 2026-09-30). */
+    box-shadow: none;
+  }
+
+  .game-shell::before {
+    content: "";
+    position: fixed;
+    z-index: 0;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cfilter id='n' x='-20%25' y='-20%25' width='140%25' height='140%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='3' seed='35' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.9'/%3E%3C/svg%3E");
+    background-size: 150px 150px;
+    mix-blend-mode: soft-light;
+    opacity: 0.09;
+    pointer-events: none;
+  }
+
+  #game,
+  .film-grain-overlay {
+    width: min(calc(100vw - 72px), calc((100vh - 72px) * 16 / 9), 1280px);
+    height: min(calc(100vh - 72px), calc((100vw - 72px) * 9 / 16), 720px);
+  }
+
+  #game {
+    border: 4px solid #090b0d;
+    border-radius: 14px;
+    box-shadow:
+      0 0 0 5px #31373b,
+      0 0 0 9px #4a5358,
+      0 0 0 18px #ff5c21,
+      0 0 0 21px rgba(117, 28, 14, 0.72),
+      0 18px 52px rgba(47, 8, 6, 0.58),
+      inset 0 0 20px rgba(0, 0, 0, 0.72);
+  }
+
+  .film-grain-overlay {
+    border-radius: 12px;
+  }
+}
+
+.mobile-controls {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  pointer-events: none;
+  font-family: "Courier New", ui-monospace, monospace;
+  color: #f7f2de;
+  touch-action: none;
+}
+
+.mobile-controls.is-hidden {
+  display: none;
+}
+
+.mobile-controls__rotate {
+  display: none;
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: min(330px, calc(100vw - 48px));
+  transform: translate(-50%, -50%);
+  padding: 18px 20px;
+  border: 2px solid #ffd36c;
+  background: rgba(5, 8, 14, 0.9);
+  color: #f7f2de;
+  text-align: center;
+  font: 900 15px/1.35 "Courier New", ui-monospace, monospace;
+  box-shadow:
+    0 0 0 4px rgba(0, 0, 0, 0.7),
+    inset 0 0 0 1px rgba(143, 232, 255, 0.45);
+  pointer-events: none;
+}
+
+.mobile-controls__handheld-brand,
+.mobile-controls__handheld-speaker {
+  display: none;
+}
+
+.mobile-control-group {
+  display: none;
+  position: fixed;
+  pointer-events: none;
+}
+
+.mobile-controls[data-control-mode="menu"] .mobile-control-group--menu,
+.mobile-controls[data-control-mode="chest"] .mobile-control-group--menu,
+.mobile-controls[data-control-mode="pocket"] .mobile-control-group--menu,
+.mobile-controls[data-control-mode="action"] .mobile-control-group--dpad,
+.mobile-controls[data-control-mode="dialogue"] .mobile-control-group--dialogue,
+.mobile-controls[data-control-mode="overlay"] .mobile-control-group--overlay,
+.mobile-controls[data-control-mode="failure"] .mobile-control-group--failure {
+  display: grid;
+}
+
+.mobile-controls[data-control-mode="action"] .mobile-control-group--actions {
+  display: block;
+}
+
+.mobile-controls[data-control-mode="rhythm"] .mobile-control-group--rhythm {
+  display: grid;
+}
+
+.mobile-controls[data-control-mode="office-rhythm"] .mobile-control-group--office-rhythm {
+  display: grid;
+}
+
+.mobile-control-group--menu {
+  left: 50%;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  width: min(520px, calc(100vw - 28px));
+  transform: translateX(-50%);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mobile-control-group--dpad {
+  left: max(18px, env(safe-area-inset-left));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  align-items: end;
+  grid-template-columns: auto auto;
+  gap: 12px;
+}
+
+.mobile-joystick {
+  position: relative;
+  width: 148px;
+  height: 148px;
+  border-radius: 50%;
+  background: url("assets/sprites/mobile_control_pad_kit/ui/joystick-base.webp?v=pad-art-20260702") center / 100% 100% no-repeat;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.55));
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-joystick.is-held {
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.55)) brightness(1.12);
+}
+
+.mobile-joystick__knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 72px;
+  height: 72px;
+  margin: -36px 0 0 -36px;
+  background: url("assets/sprites/mobile_control_pad_kit/ui/joystick-knob.webp?v=pad-art-20260702") center / 100% 100% no-repeat;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.6));
+  pointer-events: none;
+}
+
+/* Four independent, clickable Game Boy arrow keys. The Higgsfield sheet has
+   released states on row one and pressed states on row two. There is no
+   movable center knob or gesture-only hit area. */
+.mobile-dpad {
+  position: relative;
+  display: grid;
+  width: 148px;
+  height: 148px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  pointer-events: none;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-dpad__button {
+  appearance: none;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background-color: transparent;
+  background-image: url("assets/ui/mobile_dpad_20260901/processed/sheet-transparent.webp?v=retro-arrows-20260901a");
+  background-repeat: no-repeat;
+  background-size: 400% 200%;
+  background-position: var(--dpad-frame-x) 0%;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 3px 0 rgba(85, 23, 17, 0.45));
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-dpad__button:active,
+.mobile-dpad__button.is-held {
+  background-position: var(--dpad-frame-x) 100%;
+  filter: drop-shadow(0 1px 0 rgba(85, 23, 17, 0.4));
+}
+
+.mobile-dpad__button--up {
+  --dpad-frame-x: 0%;
+  grid-area: 1 / 2;
+}
+
+.mobile-dpad__button--down {
+  --dpad-frame-x: 33.333%;
+  grid-area: 3 / 2;
+}
+
+.mobile-dpad__button--left {
+  --dpad-frame-x: 66.667%;
+  grid-area: 2 / 1;
+}
+
+.mobile-dpad__button--right {
+  --dpad-frame-x: 100%;
+  grid-area: 2 / 3;
+}
+
+/* Corner arc (Hoop Land style): J biggest in the corner, K above it, SPACE to
+   its left; contextual B (diagonal) and R (far left) pop in via data-can-*. */
+.mobile-control-group--actions {
+  right: max(10px, env(safe-area-inset-right));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  width: 252px;
+  height: 200px;
+}
+
+.mobile-control-group--rhythm {
+  left: 50%;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  width: min(430px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  place-items: center;
+  gap: 12px;
+}
+
+.mobile-control-group--office-rhythm {
+  left: 50%;
+  bottom: max(22px, env(safe-area-inset-bottom));
+  width: min(360px, calc(100vw - 48px));
+  transform: translateX(-50%);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  place-items: center;
+  gap: 24px;
+}
+
+.mobile-control-group--office-rhythm .mobile-button {
+  position: relative;
+  width: clamp(128px, 36vw, 148px);
+  height: clamp(70px, 18vw, 82px);
+  border: 6px solid #171a1b;
+  border-radius: 12px;
+  outline: 3px solid #8d2b22;
+  background: #ef3f78;
+  box-shadow: inset 0 -8px 0 rgba(66, 19, 17, 0.2);
+  color: #ffffff;
+  font-size: 15px;
+  line-height: 1.05;
+}
+
+.mobile-control-group--office-rhythm .mobile-button small {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  opacity: 0.72;
+}
+
+.mobile-control-group--office-rhythm .mobile-button strong {
+  display: block;
+  font: 900 30px/1 'Courier New', monospace;
+}
+
+.mobile-control-group--office-rhythm .mobile-button--office-accent {
+  background: #45484d;
+}
+
+.mobile-button.mobile-button--round.mobile-button--rhythm {
+  position: relative;
+  width: clamp(64px, 18vw, 84px);
+  height: clamp(64px, 18vw, 84px);
+  font-size: 20px;
+}
+
+.mobile-button.mobile-button--rhythm-d {
+  color: #ff6b7d;
+}
+
+.mobile-button.mobile-button--rhythm-f {
+  color: #ffd36c;
+}
+
+.mobile-button.mobile-button--rhythm-j {
+  color: #8fe8ff;
+}
+
+.mobile-button.mobile-button--rhythm-k {
+  color: #c58cff;
+}
+
+.mobile-button.mobile-button--round {
+  position: absolute;
+  width: 68px;
+  height: 68px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-image: none;
+  border-radius: 50%;
+  background: url("assets/sprites/mobile_round_button_kit/ui/round-dark.webp?v=roundpad-20260703") center / calc(100% - 4px) calc(100% - 4px) no-repeat;
+  box-shadow: none;
+  opacity: 0.88;
+  overflow: visible;
+}
+
+.mobile-button.mobile-button--round:active,
+.mobile-button.mobile-button--round.is-held {
+  border-image: none;
+  background-image: url("assets/sprites/mobile_round_button_kit/ui/round-dark-pressed.webp?v=roundpad-20260703");
+  opacity: 1;
+}
+
+.mobile-button.mobile-button--arc-j {
+  right: 0;
+  bottom: 0;
+  width: 92px;
+  height: 92px;
+  font-size: 20px;
+  background-image: url("assets/sprites/mobile_round_button_kit/ui/round-orange.webp?v=roundpad-20260703");
+  color: #241505;
+  text-shadow: 1px 1px rgba(255, 235, 200, 0.5);
+}
+
+.mobile-button.mobile-button--arc-j:active,
+.mobile-button.mobile-button--arc-j.is-held {
+  background-image: url("assets/sprites/mobile_round_button_kit/ui/round-orange-pressed.webp?v=roundpad-20260703");
+}
+
+.mobile-button.mobile-button--arc-k {
+  right: 16px;
+  bottom: 116px;
+}
+
+
+.mobile-button.mobile-button--arc-space {
+  right: 116px;
+  bottom: 6px;
+  width: 78px;
+  height: 78px;
+  font-size: 12px;
+}
+
+.mobile-button.mobile-button--arc-b {
+  left: 0;
+  top: 0;
+  right: auto;
+  bottom: auto;
+  width: 64px;
+  height: 64px;
+  display: none;
+  /* Gold halo so the contextual interact button reads as "press me now". */
+  filter:
+    drop-shadow(0 3px 3px rgba(0, 0, 0, 0.55))
+    drop-shadow(0 0 10px rgba(255, 211, 108, 0.9));
+  color: #ffd36c;
+}
+
+@keyframes mobile-b-button-press {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 100% 0;
+  }
+}
+
+.mobile-button.mobile-button--arc-b:active,
+.mobile-button.mobile-button--arc-b.is-held {
+  background-image: url("assets/sprites/mobile_b_button_press/higgsfield-20260713/processed/b-press-strip.webp?v=b-press-20260713");
+  background-size: 400% 100%;
+  background-position: 0 0;
+  opacity: 1;
+  animation: mobile-b-button-press 150ms steps(3, end) forwards;
+  filter:
+    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.62))
+    drop-shadow(0 0 8px rgba(255, 171, 48, 0.96));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-button.mobile-button--arc-b:active,
+  .mobile-button.mobile-button--arc-b.is-held {
+    animation: none;
+    background-position: 100% 0;
+  }
+}
+
+.mobile-button.mobile-button--arc-r {
+  right: 194px;
+  bottom: 4px;
+  width: 58px;
+  height: 58px;
+  display: none;
+}
+
+.mobile-controls[data-can-interact="1"] .mobile-button.mobile-button--arc-b {
+  display: flex; /* a label: flex keeps its text centred (see .haptic-switch) */
+}
+
+.mobile-controls[data-can-mount="1"] .mobile-button.mobile-button--arc-r {
+  display: flex; /* a label: flex keeps its text centred (see .haptic-switch) */
+}
+
+.mobile-control-group--dialogue,
+.mobile-control-group--overlay {
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  grid-template-columns: 132px;
+  gap: 8px;
+}
+
+.mobile-controls[data-forge-open="1"] .mobile-control-group--overlay {
+  top: max(18px, env(safe-area-inset-top));
+  bottom: auto;
+}
+
+.mobile-control-group--failure {
+  left: 50%;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  width: min(290px, calc(100vw - 28px));
+  transform: translateX(-50%);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+/* Buttons wear the Higgsfield retro MP3-hardware key art. border-image keeps
+   the cream rim and corners crisp at every button aspect ratio. */
+.mobile-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  border: 13px solid transparent;
+  border-image: url("assets/sprites/mobile_control_pad_kit/ui/key-dark.webp?v=pad-art-20260702") 88 fill / 13px stretch;
+  border-radius: 0;
+  background: none;
+  color: #f7f2de;
+  box-shadow: none;
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.55));
+  font: 900 16px "Courier New", ui-monospace, monospace;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  overflow: hidden;
+  padding: 0 2px;
+  text-shadow: 2px 2px rgba(5, 7, 13, 0.85);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-button:active,
+.mobile-button.is-held {
+  transform: translateY(2px);
+  border-image-source: url("assets/sprites/mobile_control_pad_kit/ui/key-dark-pressed.webp?v=pad-art-20260702");
+  color: #ffd36c;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+}
+
+.mobile-button--blank {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.mobile-button--primary {
+  border-image-source: url("assets/sprites/mobile_control_pad_kit/ui/key-orange.webp?v=pad-art-20260702");
+  color: #241505;
+  text-shadow: 1px 1px rgba(255, 235, 200, 0.5);
+}
+
+.mobile-button--primary:active,
+.mobile-button--primary.is-held {
+  border-image-source: url("assets/sprites/mobile_control_pad_kit/ui/key-orange-pressed.webp?v=pad-art-20260702");
+  color: #2a1200;
+  text-shadow: 1px 1px rgba(255, 235, 200, 0.5);
+}
+
+.mobile-button--wide {
+  grid-column: span 2;
+}
+
+/* Level 5 stage 1 intentionally has no jumping (depth movement instead). */
+
+@media (orientation: portrait) and (max-width: 920px) {
+  html[data-device-mode="phone"],
+  body[data-device-mode="phone"] {
+    --portrait-split: calc(var(--app-h, 100dvh) * 0.46);
+    /* The shell's own orange and side shading: an iPhone Home Screen app can
+       report a viewport shorter than its screen, and Safari paints under its
+       floating toolbar, so whatever the shell does not cover continues it
+       seamlessly rather than showing a strip. */
+    background-color: #ff5c21;
+    background-image: linear-gradient(90deg, rgba(117, 28, 14, 0.16), transparent 4%, transparent 96%, rgba(117, 28, 14, 0.16));
+  }
+
+  /* The whole portrait deck is positioned from --portrait-split, which the
+     handheld shell owns. With MODE set to 桌面 that shell is off, the variable
+     is undefined, and every calc() using it is dropped - which is how the
+     buttons ended up off the bottom of the screen. Touch devices get the
+     variable whatever MODE says; in 桌面 it sits lower, because there the canvas
+     is letterboxed in the middle and the deck belongs under it. */
+  html[data-touch-controls="1"],
+  body[data-touch-controls="1"] {
+    --portrait-split: calc(var(--app-h, 100dvh) * 0.46);
+  }
+
+  html[data-touch-controls="1"][data-device-mode="desktop"],
+  body[data-touch-controls="1"][data-device-mode="desktop"] {
+    --portrait-split: calc(var(--app-h, 100dvh) * 0.62);
+  }
+
+  /* MODE: 桌面 on a phone keeps the plain canvas look - no handheld shell - but
+     the touch deck still owns the bottom band. Give the canvas the band above
+     it, centred, instead of centring it in the whole screen where it sat
+     underneath the deck (and past the right edge). */
+  body[data-touch-controls="1"][data-device-mode="desktop"] .game-shell {
+    display: grid;
+    grid-template-rows: var(--portrait-split) calc(var(--app-h, 100dvh) - var(--portrait-split));
+    width: 100dvw;
+    height: var(--app-h, 100dvh);
+    padding: 0;
+    place-items: center;
+    overflow: hidden;
+  }
+
+  body[data-touch-controls="1"][data-device-mode="desktop"] #game,
+  body[data-touch-controls="1"][data-device-mode="desktop"] .film-grain-overlay {
+    grid-row: 1;
+    grid-column: 1;
+    align-self: center;
+    width: min(calc(100dvw - 24px), calc((var(--portrait-split) - 48px) * 16 / 9));
+    height: auto;
+    aspect-ratio: 16 / 9;
+    max-width: none;
+    max-height: none;
+  }
+
+  /* The seam rule belongs to the handheld shell's molded panel. With the shell
+     off it read as a stray red line drawn across the menu. */
+  body[data-touch-controls="1"][data-device-mode="desktop"] .mobile-controls,
+  body[data-touch-controls="1"][data-device-mode="desktop"] .mobile-controls.is-hidden {
+    border-top-color: transparent;
+    box-shadow: none;
+  }
+
+  body[data-device-mode="phone"] .game-shell {
+    position: relative;
+    z-index: 0;
+    display: grid;
+    grid-template-rows: var(--portrait-split) calc(var(--app-h, 100dvh) - var(--portrait-split));
+    width: 100dvw;
+    height: var(--app-h, 100dvh);
+    padding: 0;
+    overflow: hidden;
+    place-items: center;
+    isolation: isolate;
+    background-color: #ff5c21;
+    background-image:
+      linear-gradient(180deg, rgba(255, 143, 73, 0.2), transparent 18%),
+      linear-gradient(90deg, rgba(117, 28, 14, 0.16), transparent 4%, transparent 96%, rgba(117, 28, 14, 0.16));
+    /* Sides and top only. The shell used to end in a darker 16 px lip and a
+       2 px rule along its bottom edge; in Safari that edge sits just above
+       the floating toolbar, across the bottom of the button panel - a thick
+       darker line over the deck. The body below carries the same orange. */
+    box-shadow:
+      inset 2px 0 0 rgba(117, 28, 14, 0.5),
+      inset -2px 0 0 rgba(117, 28, 14, 0.5),
+      inset 0 2px 0 rgba(117, 28, 14, 0.5);
+  }
+
+  body[data-device-mode="phone"] .game-shell::before {
+    content: "";
+    position: fixed;
+    z-index: 1;
+    top: max(58px, calc(env(safe-area-inset-top) + 16px));
+    left: 10px;
+    right: 10px;
+    bottom: calc(var(--app-h, 100dvh) - var(--portrait-split) + 8px);
+    height: auto;
+    border: 5px solid #090b0d;
+    border-radius: 27px 27px 30px 30px;
+    background: linear-gradient(180deg, #30363a 0%, #24292c 100%);
+    box-shadow:
+      inset 0 0 0 3px #4a5358,
+      inset 0 -8px 0 rgba(8, 10, 12, 0.24),
+      0 5px 0 rgba(103, 25, 14, 0.4);
+    pointer-events: none;
+  }
+
+  body[data-device-mode="phone"] .game-shell::after {
+    content: "DOT MATRIX  •  FULL COLOR  •  STEREO SOUND";
+    position: fixed;
+    z-index: 3;
+    top: calc(var(--portrait-split) - 31px);
+    left: 34px;
+    right: 34px;
+    color: #f1eee4;
+    font: 900 8px/1 "Courier New", ui-monospace, monospace;
+    letter-spacing: 0.08em;
+    text-align: center;
+    text-shadow: 1px 1px #090b0c;
+    pointer-events: none;
+  }
+
+  body[data-device-mode="phone"] #game {
+    position: relative;
+    z-index: 2;
+    grid-row: 1;
+    align-self: center;
+    width: 84dvw;
+    height: auto;
+    max-width: none;
+    max-height: none;
+    margin-top: max(30px, env(safe-area-inset-top));
+    transform: none;
+    border: 2px solid #05070a;
+    border-radius: 4px;
+    box-shadow:
+      0 0 0 2px #0d1114,
+      inset 0 0 18px rgba(0, 0, 0, 0.7);
+  }
+
+  body[data-device-mode="phone"] .film-grain-overlay {
+    /* On portrait phones the film stock covers the complete handheld surface,
+       including the physical controls. pointer-events:none preserves input. */
+    position: fixed;
+    z-index: 20;
+    inset: 0;
+    grid-row: 1 / -1;
+    align-self: stretch;
+    width: 100dvw;
+    height: var(--app-h, 100dvh);
+    aspect-ratio: auto;
+    margin: 0;
+    border-radius: 0;
+    clip-path: none;
+  }
+
+  body[data-device-mode="phone"] .film-grain-overlay::before {
+    opacity: 0.32;
+  }
+
+  body[data-device-mode="phone"] .film-grain-overlay::after {
+    opacity: 0.21;
+  }
+
+  body[data-touch-controls="1"] .mobile-controls,
+  body[data-touch-controls="1"] .mobile-controls.is-hidden {
+    display: block;
+    inset: var(--portrait-split) 0 0;
+    z-index: 12;
+    overflow: hidden;
+    border-top: 2px solid rgba(108, 28, 16, 0.5);
+    border-radius: 0;
+    background: transparent;
+    /* No bottom lip: it drew a second darker band across the panel's foot. */
+    box-shadow: inset 0 1px 0 rgba(255, 170, 110, 0.3);
+  }
+
+  body[data-device-mode="phone"] .mobile-controls::before {
+    content: "";
+    position: fixed;
+    z-index: 0;
+    left: 24px;
+    right: 24px;
+    top: calc(var(--portrait-split) + 56px);
+    bottom: max(74px, env(safe-area-inset-bottom));
+    border: 1px solid rgba(111, 31, 24, 0.48);
+    border-radius: 24px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 190, 160, 0.16),
+      0 1px 0 rgba(86, 21, 16, 0.24);
+    pointer-events: none;
+  }
+
+  body[data-device-mode="phone"] .mobile-controls__rotate {
+    display: none;
+  }
+
+  body[data-device-mode="phone"] .mobile-controls__handheld-brand {
+    position: fixed;
+    z-index: 1;
+    top: calc(var(--portrait-split) + 20px);
+    left: 24px;
+    right: 24px;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    color: #fff3e8;
+    pointer-events: none;
+    text-shadow: 1px 1px #702219;
+  }
+
+  body[data-device-mode="phone"] .mobile-controls__handheld-brand strong {
+    font: italic 900 17px/1 "Courier New", ui-monospace, monospace;
+    letter-spacing: -0.08em;
+  }
+
+  body[data-device-mode="phone"] .mobile-controls__handheld-brand small {
+    font: 900 7px/1 "Courier New", ui-monospace, monospace;
+    letter-spacing: 0.08em;
+  }
+
+  body[data-device-mode="phone"] .mobile-controls__power-dot {
+    width: 8px;
+    height: 8px;
+    border: 1px solid #32100d;
+    border-radius: 50%;
+    background: #fff7ec;
+    box-shadow: 0 0 7px rgba(255, 243, 224, 0.65);
+  }
+
+  body[data-device-mode="phone"] .mobile-controls__handheld-speaker {
+    /* The new generated body is a complete asset. Keep old decorative layers
+       from crossing its lower screw or making it look composited. */
+    display: none;
+  }
+
+  body[data-touch-controls="1"] .mobile-control-group {
+    z-index: 2;
+  }
+
+  .mobile-control-group--dpad {
+    left: max(36px, calc(env(safe-area-inset-left) + 28px));
+    top: calc(var(--portrait-split) + clamp(102px, calc(var(--app-h, 100dvh) * 0.13), 122px));
+    bottom: auto;
+    gap: 8px;
+  }
+
+  .mobile-joystick {
+    width: clamp(112px, 31vw, 136px);
+    height: clamp(112px, 31vw, 136px);
+    border: 4px solid #16191a;
+    outline: 3px solid #8d2b22;
+    background:
+      linear-gradient(#ff704d, #ff704d) center 8px / 4px 12px no-repeat,
+      linear-gradient(#ff704d, #ff704d) center calc(100% - 8px) / 4px 12px no-repeat,
+      linear-gradient(90deg, #ff704d, #ff704d) 8px center / 12px 4px no-repeat,
+      linear-gradient(90deg, #ff704d, #ff704d) calc(100% - 8px) center / 12px 4px no-repeat,
+      #222627;
+    box-shadow: none;
+    filter: none;
+  }
+
+  .mobile-dpad {
+    width: clamp(112px, 31vw, 136px);
+    height: clamp(112px, 31vw, 136px);
+  }
+
+  .mobile-joystick__knob {
+    width: 72px;
+    height: 72px;
+    margin: -36px 0 0 -36px;
+    border: 3px solid #0c0e0f;
+    border-radius: 50%;
+    background: #3b4041;
+    box-shadow: none;
+    filter: none;
+  }
+
+  .mobile-joystick.is-held {
+    filter: none;
+  }
+
+  .mobile-control-group--actions {
+    right: max(22px, calc(env(safe-area-inset-right) + 14px));
+    /* Keep the full action cluster inside the molded panel. The 64px offset
+       starts eight pixels below the panel line; height tiers below scale the
+       264px three-row formation for Safari's shorter visible viewport. */
+    top: calc(var(--portrait-split) + 64px);
+    bottom: auto;
+    width: 220px;
+    height: 264px;
+    transform: none;
+    transform-origin: top right;
+  }
+
+  .mobile-control-group--rhythm {
+    left: 32px;
+    right: 32px;
+    top: calc(var(--portrait-split) + clamp(150px, calc(var(--app-h, 100dvh) * 0.2), 184px));
+    bottom: auto;
+    width: auto;
+    transform: none;
+    gap: 12px;
+  }
+
+  .mobile-button.mobile-button--round.mobile-button--rhythm {
+    position: relative;
+    width: clamp(54px, 16.5vw, 70px);
+    height: clamp(54px, 16.5vw, 70px);
+    font-size: 18px;
+  }
+
+  .mobile-control-group--menu {
+    left: 28px;
+    right: 28px;
+    top: calc(var(--portrait-split) + clamp(84px, calc(var(--app-h, 100dvh) * 0.11), 106px));
+    bottom: auto;
+    width: auto;
+    height: clamp(190px, calc(var(--app-h, 100dvh) * 0.28), 234px);
+    transform: none;
+    gap: 0;
+  }
+
+  .mobile-controls[data-control-mode="menu"] .mobile-control-group--menu,
+  .mobile-controls[data-control-mode="chest"] .mobile-control-group--menu,
+  .mobile-controls[data-control-mode="pocket"] .mobile-control-group--menu {
+    display: block;
+  }
+
+  .mobile-controls[data-control-mode="menu"] .mobile-control-group--dpad,
+  .mobile-controls[data-control-mode="chest"] .mobile-control-group--dpad,
+  .mobile-controls[data-control-mode="pocket"] .mobile-control-group--dpad {
+    display: grid;
+  }
+
+  .mobile-control-group--menu::before,
+  .mobile-control-group--menu::after {
+    content: none;
+  }
+
+  .mobile-control-group--menu [data-mobile-action="back"],
+  .mobile-control-group--menu [data-mobile-action="advance"] {
+    position: absolute;
+    top: 28px;
+    width: 68px;
+    height: 68px;
+    min-height: 0;
+    padding: 0;
+    border: 7px solid #1a1d1e;
+    border-image: none;
+    border-radius: 50%;
+    outline: 3px solid #8d2b22;
+    background: #e6e1d7;
+    box-shadow: none;
+    font-size: 9px;
+    color: #181a1c;
+    overflow: visible;
+    filter: none;
+    text-shadow: none;
+  }
+
+  .mobile-control-group--menu [data-mobile-action="back"] {
+    right: 116px;
+  }
+
+  .mobile-control-group--menu [data-mobile-action="advance"] {
+    right: 18px;
+    top: 20px;
+    width: 82px;
+    height: 82px;
+    background: #ff704d;
+    color: #25120d;
+    font-size: 10px;
+    text-shadow: none;
+  }
+
+  .mobile-control-group--menu [data-mobile-action="back"]:active,
+  .mobile-control-group--menu [data-mobile-action="back"].is-held,
+  .mobile-control-group--menu [data-mobile-action="advance"]:active,
+  .mobile-control-group--menu [data-mobile-action="advance"].is-held {
+    transform: scale(0.94);
+    border-image: none;
+    background: #b9b6b0;
+    box-shadow: none;
+    color: #f4eee5;
+    filter: none;
+    text-shadow: none;
+  }
+
+  .mobile-control-group--menu [data-mobile-action="advance"]:active,
+  .mobile-control-group--menu [data-mobile-action="advance"].is-held {
+    background: #d95338;
+    color: #25120d;
+    text-shadow: none;
+  }
+
+  .mobile-control-group--menu [data-mobile-action="jump"] {
+    position: absolute;
+    left: 63%;
+    bottom: 30px;
+    width: 126px;
+    min-height: 34px;
+    transform: translateX(-50%);
+    border-width: 10px;
+    font-size: 9px;
+  }
+
+
+  /* Flat 2D portrait control language: solid faces, outlines, no perspective. */
+  .mobile-control-group--actions .mobile-button.mobile-button--round:not(.mobile-button--arc-b),
+  .mobile-control-group--rhythm .mobile-button.mobile-button--round,
+  .mobile-control-group--office-rhythm .mobile-button.mobile-button--round {
+    border: 7px solid #1a1d1e;
+    border-image: none;
+    outline: 3px solid #8d2b22;
+    background: #e6e1d7;
+    background-position: center;
+    background-size: 100% 100%;
+    box-shadow: none;
+    opacity: 1;
+    overflow: visible;
+    filter: none;
+    color: #181a1c;
+    text-shadow: none;
+  }
+
+  .mobile-control-group--actions .mobile-button.mobile-button--round.mobile-button--arc-j {
+    left: 117px;
+    right: auto;
+    top: 176px;
+    bottom: auto;
+    background: #ff704d;
+    color: #25120d;
+  }
+
+  .mobile-control-group--actions .mobile-button.mobile-button--arc-k {
+    left: 128px;
+    right: auto;
+    top: 90px;
+    bottom: auto;
+  }
+
+
+  .mobile-control-group--actions .mobile-button.mobile-button--arc-space {
+    left: 19px;
+    right: auto;
+    top: 176px;
+    bottom: auto;
+  }
+
+  .mobile-control-group--actions .mobile-button.mobile-button--round:not(.mobile-button--arc-b):active,
+  .mobile-control-group--actions .mobile-button.mobile-button--round:not(.mobile-button--arc-b).is-held,
+  .mobile-control-group--rhythm .mobile-button.mobile-button--round:active,
+  .mobile-control-group--rhythm .mobile-button.mobile-button--round.is-held,
+  .mobile-control-group--office-rhythm .mobile-button.mobile-button--round:active,
+  .mobile-control-group--office-rhythm .mobile-button.mobile-button--round.is-held {
+    transform: scale(0.94);
+    border-image: none;
+    background: #b9b6b0;
+    box-shadow: none;
+    filter: none;
+    color: #f4eee5;
+    text-shadow: none;
+  }
+
+  .mobile-control-group--actions .mobile-button.mobile-button--round.mobile-button--arc-j:active,
+  .mobile-control-group--actions .mobile-button.mobile-button--round.mobile-button--arc-j.is-held {
+    background: #d95338;
+    color: #25120d;
+    text-shadow: none;
+  }
+
+  .mobile-button.mobile-button--arc-b {
+    border: 7px solid #1a1d1e;
+    outline: 3px solid #8d2b22;
+    background: #e6e1d7;
+    color: #181a1c;
+    box-shadow: none;
+    filter: none;
+    text-shadow: none;
+  }
+
+  .mobile-button.mobile-button--arc-b:active,
+  .mobile-button.mobile-button--arc-b.is-held {
+    background-image: url("assets/ui/mobile_handheld_20260825/processed/button-flat-press-strip.webp?v=flat-handheld-20260825");
+    color: #181a1c;
+    filter: none;
+  }
+
+  .mobile-control-group--rhythm .mobile-button.mobile-button--rhythm-d {
+    color: #d82239;
+  }
+
+  .mobile-control-group--rhythm .mobile-button.mobile-button--rhythm-f {
+    color: #a36c00;
+  }
+
+  .mobile-control-group--rhythm .mobile-button.mobile-button--rhythm-j {
+    color: #087895;
+  }
+
+  .mobile-control-group--rhythm .mobile-button.mobile-button--rhythm-k {
+    color: #7d3da6;
+  }
+
+  .mobile-control-group--office-rhythm {
+    left: 50%;
+    right: auto;
+    top: calc(var(--portrait-split) + clamp(124px, calc(var(--app-h, 100dvh) * 0.16), 154px));
+    bottom: auto;
+    width: min(346px, calc(100dvw - 44px));
+    transform: translateX(-50%);
+    gap: 24px;
+  }
+
+  .mobile-control-group--office-rhythm .mobile-button {
+    position: relative;
+    width: clamp(118px, 34dvw, 140px);
+    height: clamp(74px, 20dvw, 88px);
+    border: 7px solid #1a1d1e;
+    border-image: none;
+    border-radius: 12px;
+    outline: 3px solid #8d2b22;
+    background: #ef3f78;
+    box-shadow: none;
+    overflow: visible;
+    filter: none;
+    color: #181a1c;
+    text-shadow: none;
+    font-size: 14px;
+  }
+
+  .mobile-control-group--office-rhythm .mobile-button--office-do {
+    color: #ffffff;
+  }
+
+  .mobile-control-group--office-rhythm .mobile-button--office-accent {
+    background: #45484d;
+    color: #ffffff;
+  }
+
+  .mobile-control-group--office-rhythm .mobile-button:active,
+  .mobile-control-group--office-rhythm .mobile-button.is-held {
+    transform: translateY(4px) scale(0.98);
+    background: #b9b6b0;
+    box-shadow: none;
+  }
+
+  .mobile-control-group--office-rhythm .mobile-button--office-accent:active,
+  .mobile-control-group--office-rhythm .mobile-button--office-accent.is-held {
+    background: #2f3236;
+  }
+
+  /* Contextual controls live above the main action cluster so a temporary B
+     or R button never collides with the joystick on narrow portrait phones. */
+  .mobile-button.mobile-button--arc-b {
+    left: 78px;
+    top: 8px;
+  }
+
+  .mobile-button.mobile-button--arc-r {
+    left: 81px;
+    right: auto;
+    top: 8px;
+    bottom: auto;
+  }
+
+  /* SPACE, R and B used to need two rows because the L cap took the first
+     slot. With L retired the three of them fit one row inside the group's
+     190px, which keeps every cap clear of the arrow pad below. */
+  .mobile-controls[data-can-interact="1"][data-can-mount="1"] .mobile-button.mobile-button--arc-b {
+    left: 132px;
+  }
+
+  .mobile-controls[data-can-interact="1"][data-can-mount="1"] .mobile-button.mobile-button--arc-r {
+    left: 66px;
+  }
+
+  .mobile-controls[data-control-mode="action"] .mobile-controls__handheld-brand {
+    opacity: 0;
+  }
+
+  .mobile-control-group--dialogue,
+  .mobile-control-group--overlay {
+    right: max(34px, calc(env(safe-area-inset-right) + 24px));
+    top: calc(var(--portrait-split) + clamp(150px, calc(var(--app-h, 100dvh) * 0.2), 184px));
+    bottom: auto;
+    width: 116px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mobile-controls[data-forge-open="1"] .mobile-control-group--overlay {
+    top: calc(var(--portrait-split) + 120px);
+    bottom: auto;
+  }
+
+  .mobile-control-group--failure {
+    top: calc(var(--portrait-split) + clamp(158px, calc(var(--app-h, 100dvh) * 0.21), 190px));
+    bottom: auto;
+    width: min(300px, calc(100vw - 58px));
+  }
+
+  .mobile-button {
+    min-height: 42px;
+    border-radius: 7px;
+    font-size: 11px;
+  }
+
+  .mobile-button.mobile-button--round {
+    border-radius: 50%;
+    background-position: center;
+    background-repeat: no-repeat;
+    overflow: visible;
+  }
+
+  .mobile-control-group--menu [data-mobile-action="jump"],
+  .mobile-control-group--dialogue .mobile-button,
+  .mobile-control-group--overlay .mobile-button,
+  .mobile-control-group--failure .mobile-button {
+    border: 3px solid #17191a;
+    border-image: none;
+    border-radius: 999px;
+    outline: 2px solid #8d2b22;
+    background: #242829;
+    box-shadow: none;
+    color: #f4eee5;
+    filter: none;
+    overflow: visible;
+    text-shadow: none;
+  }
+
+  .mobile-control-group--dialogue .mobile-button--primary,
+  .mobile-control-group--overlay .mobile-button--primary,
+  .mobile-control-group--failure .mobile-button--primary {
+    border-color: #17191a;
+    background: #ff704d;
+    color: #24110d;
+    text-shadow: none;
+  }
+
+  .mobile-control-group--menu [data-mobile-action="jump"]:active,
+  .mobile-control-group--menu [data-mobile-action="jump"].is-held,
+  .mobile-control-group--dialogue .mobile-button:active,
+  .mobile-control-group--dialogue .mobile-button.is-held,
+  .mobile-control-group--overlay .mobile-button:active,
+  .mobile-control-group--overlay .mobile-button.is-held,
+  .mobile-control-group--failure .mobile-button:active,
+  .mobile-control-group--failure .mobile-button.is-held {
+    transform: scale(0.96);
+    border-image: none;
+    box-shadow: none;
+  }
+
+  .mobile-control-group--menu [data-mobile-action="jump"]:active,
+  .mobile-control-group--menu [data-mobile-action="jump"].is-held {
+    transform: translateX(-50%) scale(0.96);
+  }
+}
+
+@media (max-height: 430px) {
+  body[data-touch-controls="1"] .mobile-controls[data-control-mode="rhythm"] .mobile-control-group--rhythm {
+    /* Landscape players tap the four full-size receptors drawn inside the
+       game viewport; a second floating D/F/J/K row only obscures the chart. */
+    display: none;
+  }
+
+  .mobile-control-group--dpad {
+    gap: 10px;
+  }
+
+  .mobile-joystick {
+    width: 128px;
+    height: 128px;
+  }
+
+  .mobile-dpad {
+    width: 128px;
+    height: 128px;
+  }
+
+  .mobile-joystick__knob {
+    width: 56px;
+    height: 56px;
+    margin: -28px 0 0 -28px;
+  }
+
+  .mobile-control-group--actions {
+    transform: scale(0.9);
+    transform-origin: bottom right;
+  }
+
+  .mobile-button {
+    min-height: 44px;
+    border-radius: 8px;
+    font-size: 12px;
+  }
+
+  .mobile-button.mobile-button--round {
+    border-radius: 50%;
+  }
+
+  .mobile-control-group--office-rhythm {
+    left: max(92px, calc(env(safe-area-inset-left) + 78px));
+    right: max(92px, calc(env(safe-area-inset-right) + 78px));
+    top: 204px;
+    bottom: auto;
+    width: auto;
+    transform: none;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+
+  .mobile-control-group--office-rhythm .mobile-button {
+    width: 106px;
+    height: 62px;
+    font-size: 12px;
+  }
+
+  .mobile-control-group--office-rhythm .mobile-button--office-do {
+    justify-self: start;
+  }
+
+  .mobile-control-group--office-rhythm .mobile-button--office-accent {
+    justify-self: end;
+  }
+}
+
+@media (orientation: portrait) and (max-width: 920px) and (max-height: 650px) {
+  html[data-device-mode="phone"],
+  body[data-device-mode="phone"] {
+    --portrait-split: calc(var(--app-h, 100dvh) * 0.5);
+  }
+
+  body[data-device-mode="phone"] .game-shell {
+    background-color: #ff5c21;
+  }
+
+  body[data-device-mode="phone"] .mobile-controls::before {
+    bottom: max(28px, env(safe-area-inset-bottom));
+  }
+
+  body[data-device-mode="phone"] #game {
+    width: 84dvw;
+    margin-top: max(4px, env(safe-area-inset-top));
+  }
+
+  body[data-device-mode="phone"] .film-grain-overlay {
+    width: 100dvw;
+    height: var(--app-h, 100dvh);
+    margin: 0;
+  }
+
+  body[data-device-mode="phone"] .game-shell::after {
+    top: calc(var(--portrait-split) - 34px);
+  }
+
+  body[data-device-mode="phone"] .mobile-controls__handheld-brand {
+    top: calc(var(--portrait-split) + 14px);
+  }
+
+  .mobile-control-group--dpad {
+    top: calc(var(--portrait-split) + 70px);
+    left: max(32px, calc(env(safe-area-inset-left) + 24px));
+    bottom: auto;
+  }
+
+  .mobile-joystick {
+    width: 100px;
+    height: 100px;
+  }
+
+  .mobile-dpad {
+    width: 100px;
+    height: 100px;
+  }
+
+  .mobile-control-group--actions {
+    top: calc(var(--portrait-split) + 56px);
+    right: max(20px, calc(env(safe-area-inset-right) + 14px));
+    bottom: auto;
+    transform: scale(0.73);
+    transform-origin: top right;
+  }
+
+  .mobile-control-group--menu {
+    left: 24px;
+    right: 24px;
+    top: calc(var(--portrait-split) + 52px);
+    height: 160px;
+  }
+
+  .mobile-control-group--menu [data-mobile-action="back"] {
+    right: 94px;
+    width: 60px;
+    height: 60px;
+  }
+
+  .mobile-control-group--menu [data-mobile-action="advance"] {
+    right: 12px;
+    width: 70px;
+    height: 70px;
+  }
+
+  .mobile-button.mobile-button--arc-b,
+  .mobile-button.mobile-button--arc-r {
+    top: 8px;
+  }
+
+  .mobile-control-group--actions .mobile-button.mobile-button--arc-k {
+    left: 128px;
+    right: auto;
+    top: 90px;
+    bottom: auto;
+  }
+
+
+  .mobile-control-group--actions .mobile-button.mobile-button--round.mobile-button--arc-j {
+    top: 176px;
+  }
+
+  .mobile-control-group--menu [data-mobile-action="jump"] {
+    bottom: 8px;
+  }
+
+  body[data-device-mode="phone"] .mobile-controls__handheld-speaker {
+    display: none;
+  }
+
+
+  .mobile-control-group--rhythm {
+    top: calc(var(--portrait-split) + 78px);
+  }
+
+  .mobile-button.mobile-button--round.mobile-button--rhythm {
+    width: 54px;
+    height: 54px;
+  }
+
+  .mobile-control-group--office-rhythm {
+    top: calc(var(--portrait-split) + 76px);
+    width: min(270px, calc(100dvw - 64px));
+    gap: 16px;
+  }
+
+  .mobile-control-group--office-rhythm .mobile-button {
+    width: 112px;
+    height: 70px;
+    font-size: 12px;
+  }
+
+  .mobile-control-group--dialogue,
+  .mobile-control-group--overlay {
+    top: calc(var(--portrait-split) + 82px);
+    bottom: auto;
+  }
+
+  .mobile-control-group--failure {
+    top: calc(var(--portrait-split) + 92px);
+    bottom: auto;
+  }
+}
+
+/* Mobile Safari's visible portrait viewport commonly lands between the
+   compact 568px fixture and a full-height 844px phone. Scale the intact
+   three-row control formation in steps so its outer outlines clear both the
+   top and bottom molded-panel borders throughout that otherwise-missed range. */
+@media (orientation: portrait) and (max-width: 920px) and (min-height: 651px) and (max-height: 700px) {
+  .mobile-control-group--actions {
+    transform: scale(0.78);
+  }
+}
+
+@media (orientation: portrait) and (max-width: 920px) and (min-height: 701px) and (max-height: 740px) {
+  .mobile-control-group--actions {
+    transform: scale(0.86);
+  }
+}
+
+@media (orientation: portrait) and (max-width: 920px) and (min-height: 741px) and (max-height: 780px) {
+  .mobile-control-group--actions {
+    transform: scale(0.94);
+  }
+}
+
+@media (orientation: portrait) and (max-width: 920px) and (prefers-reduced-motion: reduce) {
+  body[data-device-mode="phone"] .film-grain-overlay::before {
+    opacity: 0.22;
+  }
+
+  body[data-device-mode="phone"] .film-grain-overlay::after {
+    opacity: 0.13;
+  }
+}
+
+.debug-panel {
+  --debug-paper: #eee2c5;
+  --debug-ink: #302b25;
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100dvh - max(16px, env(safe-area-inset-top)) - max(16px, env(safe-area-inset-bottom)));
+  overflow: hidden;
+  border: 4px solid var(--debug-ink);
+  background: var(--debug-paper);
+  box-shadow: 0 0 0 3px #c87842, 6px 8px 0 #171a1ddb, 0 18px 60px #0008;
+  color: var(--debug-ink);
+  font: 13px/1.5 "Courier New", "PingFang TC", ui-monospace, monospace;
+  user-select: text;
+  image-rendering: pixelated;
+}
+
+.debug-panel.is-hidden { display: none; }
+
+.debug-panel__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 4px solid #c87842;
+  background: #20242a;
+  color: #f3ead0;
+}
+
+.debug-panel__header strong {
+  display: block;
+  color: #f3ead0;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-shadow: 2px 2px #090b0e;
+}
+
+.debug-panel__header span { display: block; font-size: 11px; }
+.debug-panel__header .debug-panel__eyebrow { color: #e5b568; letter-spacing: 0.08em; }
+
+.debug-panel button {
+  min-height: 44px;
+  min-width: 0;
+  border: 2px solid #514538;
+  background: #f9f1de;
+  box-shadow: 0 2px 0 #b1a385;
+  color: var(--debug-ink);
+  font: 900 12px/1.35 "Courier New", "PingFang TC", ui-monospace, monospace;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.debug-panel button:hover,
+.debug-panel button:focus-visible {
+  background: #e6c05f;
+  outline: 2px solid #302b25;
+  outline-offset: 2px;
+}
+.debug-panel button:active { transform: translateY(2px); box-shadow: none; }
+.debug-panel .debug-button--stamp { border-color: #9b3c32; color: #913a31; background: #f6e5cd; }
+
+.debug-panel__header button {
+  flex: 0 0 44px;
+  width: 44px;
+  padding: 0;
+  border-color: #f3ead0;
+  background: #20242a;
+  box-shadow: none;
+  color: #f3ead0;
+  font-size: 26px;
+}
+.debug-panel__header button:hover,
+.debug-panel__header button:focus-visible { color: #302b25; }
+
+.debug-panel__body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  scrollbar-color: #786b55 #e1d3b3;
+}
+
+.debug-panel__body > section + section,
+.debug-panel__body > details {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 2px solid #b5a582;
+}
+
+.debug-panel h2,
+.debug-panel summary {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.debug-panel summary { cursor: pointer; min-height: 32px; }
+.debug-panel summary:focus-visible { outline: 2px solid #9b3c32; outline-offset: 2px; }
+.debug-panel details:not([open]) summary { margin-bottom: 0; }
+.debug-hint { margin: 0 0 10px; color: #655b4d; font-size: 11px; line-height: 1.5; }
+.debug-actions + .debug-hint { margin-top: 12px; }
+
+.debug-grid {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  gap: 9px 10px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.debug-grid dt { color: #78624b; font-weight: 900; }
+.debug-grid dd { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
+
+.debug-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.debug-unlock-controls { margin-top: 14px; }
+.debug-actions--grid,
+.debug-actions--conversation { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.debug-status { min-height: 18px; margin: 10px 0 0; color: #7c392f; font-size: 12px; }
+.debug-field-label { display: block; margin: 10px 0; font-size: 12px; font-weight: 900; }
+
+.debug-panel select,
+.debug-panel input,
+.debug-panel textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border: 2px solid #8c7c62;
+  border-radius: 0;
+  background: #faf3e1;
+  color: #302b25;
+  color-scheme: light;
+  padding: 8px;
+  font: 12px/1.5 "Courier New", "PingFang TC", ui-monospace, monospace;
+}
+.debug-panel textarea { min-height: 100px; resize: vertical; }
+.debug-conversation-editor textarea { min-height: 120px; }
+.debug-conversation-toolbar { display: grid; grid-template-columns: 52px minmax(0, 1fr) 52px; gap: 8px; align-items: center; margin: 8px 0; }
+.debug-panel textarea:focus,
+.debug-panel input:focus,
+.debug-panel select:focus { border-color: #9b3c32; outline: 1px solid #9b3c32; }
+
+.debug-panel-toggle {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  top: max(16px, env(safe-area-inset-top));
+  z-index: 19;
+  min-height: 44px;
+  border: 3px solid #302b25;
+  background: #eee2c5;
+  color: #302b25;
+  padding: 8px 12px;
+  box-shadow: 0 3px 0 #171a1d;
+  font: 900 12px "Courier New", ui-monospace, monospace;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.debug-panel-toggle[hidden] { display: none; }
+.debug-panel-toggle:hover,
+.debug-panel-toggle:focus-visible,
+.debug-panel-toggle.is-active { background: #e6c05f; outline: 2px solid #9b3c32; outline-offset: 2px; }
+
+@media (max-width: 520px) {
+  .debug-panel {
+    top: max(8px, env(safe-area-inset-top));
+    right: max(8px, env(safe-area-inset-right));
+    width: calc(100vw - max(8px, env(safe-area-inset-left)) - max(8px, env(safe-area-inset-right)));
+    max-height: calc(100dvh - max(8px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)));
+  }
+  .debug-panel__body { padding: 12px; }
+  .debug-panel__header { padding: 10px 12px; }
+  .debug-panel__header strong { font-size: 20px; }
+}
+
+/* ---------------------------------------------------------------------------
+   Flat generated button faces (2026-09-02)
+
+   BACK / SELECT / SPACE / ENTER / J / K share a Higgsfield-generated flat 2D
+   membrane-control language. Row one is released and row two is pressed. The
+   pressed art keeps the complete face visible and adds an inset ring, so touch
+   feedback reads as a click instead of the old cap disappearing into a socket.
+--------------------------------------------------------------------------- */
+.mobile-controls .mobile-button--capped {
+  border: 0;
+  border-image: none;
+  outline: 0;
+  border-radius: 0;
+  background-color: transparent;
+  background-image: var(--cap-image);
+  background-repeat: no-repeat;
+  background-position: var(--cap-x) 0%;
+  background-size: var(--cap-sheet-size);
+  box-shadow: none;
+  image-rendering: pixelated;
+  filter: none;
+  overflow: visible;
+  opacity: 1;
+  text-shadow: none;
+}
+
+.mobile-controls .mobile-button--capped:active,
+.mobile-controls .mobile-button--capped.is-held {
+  background-position: var(--cap-x) 100%;
+  transform: translateY(1px);
+  filter: none;
+  opacity: 1;
+}
+
+/* Earlier portrait rules use a `background` shorthand for their old CSS
+   buttons. Restate the generated image at a higher specificity so a held cap
+   swaps rows instead of having that shorthand erase the sprite. */
+.mobile-controls .mobile-control-group .mobile-button--capped:active,
+.mobile-controls .mobile-control-group .mobile-button--capped.is-held {
+  background-color: transparent;
+  background-image: var(--cap-image);
+  background-repeat: no-repeat;
+  background-size: var(--cap-sheet-size);
+}
+
+.mobile-controls .mobile-button--cap-round {
+  --cap-sheet-size: 200% 200%;
+  --cap-image: url("assets/ui/mobile_flat_buttons_20260902/processed/rounds-transparent.webp?v=flat-buttons-20260902a");
+}
+
+.mobile-controls .mobile-button--cap-square {
+  --cap-sheet-size: 200% 200%;
+  --cap-image: url("assets/ui/mobile_flat_buttons_20260902/processed/squares-transparent.webp?v=flat-buttons-20260902a");
+}
+
+.mobile-controls .mobile-button--cap-pill,
+.mobile-controls .mobile-button--cap-enter {
+  --cap-sheet-size: 200% 200%;
+  --cap-image: url("assets/ui/mobile_flat_buttons_20260902/processed/pills-transparent.webp?v=flat-buttons-20260902a");
+}
+
+.mobile-controls .mobile-button--capped {
+  padding: 0 8px;
+}
+
+.mobile-controls .mobile-control-group--menu [data-mobile-action="back"],
+.mobile-controls .mobile-control-group--menu [data-mobile-action="advance"],
+.mobile-controls .mobile-control-group--menu [data-mobile-action="jump"],
+.mobile-controls .mobile-control-group--office-rhythm [data-mobile-action="office-do"],
+.mobile-controls .mobile-control-group--office-rhythm [data-mobile-action="office-accent"],
+.mobile-controls .mobile-control-group--dialogue [data-mobile-action="advance"],
+.mobile-controls .mobile-control-group--failure [data-mobile-action="advance"] {
+  border: 0;
+  border-image: none;
+  outline: 0;
+  background-color: transparent;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+.mobile-controls .mobile-control-group--menu [data-mobile-action="back"] {
+  --cap-x: 0%;
+  width: 84px;
+  height: 84px;
+  color: #23262b;
+  font-size: 11px;
+}
+
+.mobile-controls .mobile-control-group--menu [data-mobile-action="advance"] {
+  --cap-x: 100%;
+  width: 92px;
+  height: 92px;
+  color: #2a140c;
+  font-size: 12px;
+}
+
+.mobile-controls .mobile-control-group--menu [data-mobile-action="jump"] {
+  --cap-x: 0%;
+  width: 148px;
+  height: 74px;
+  min-height: 0;
+  color: #efe3c4;
+  font-size: 11px;
+  transform: translateX(-50%);
+}
+
+.mobile-controls .mobile-control-group--office-rhythm [data-mobile-action="office-do"] {
+  --cap-x: 0%;
+  color: #fff4dc;
+}
+
+.mobile-controls .mobile-control-group--office-rhythm [data-mobile-action="office-accent"] {
+  --cap-x: 100%;
+  color: #eef1f4;
+}
+
+.mobile-controls .mobile-button--cap-enter {
+  --cap-x: 100%;
+  color: #2a140c;
+}
+
+.mobile-controls .mobile-control-group--menu [data-mobile-action="jump"]:active,
+.mobile-controls .mobile-control-group--menu [data-mobile-action="jump"].is-held {
+  transform: translateX(-50%) translateY(1px);
+}
+
+.mobile-controls .mobile-control-group--office-rhythm .mobile-button--capped {
+  /* Landscape keeps these compact so the cap never reaches down into the
+     timing rail; portrait has room for the full-size cap (below). */
+  width: clamp(76px, 20vw, 92px);
+  height: clamp(76px, 20vw, 92px);
+  padding: 0 8px;
+}
+
+.mobile-controls .mobile-control-group--office-rhythm .mobile-button--capped strong {
+  font: 900 22px/1 "Courier New", monospace;
+}
+
+/* Short portrait decks (390x700 and below) have less room between the menu caps
+   and the fullscreen pill, so both shrink and ride higher to stay clear. */
+@media (orientation: portrait) and (max-height: 760px) {
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="back"] {
+    top: 16px;
+    width: 72px;
+    height: 72px;
+    font-size: 10px;
+  }
+
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="advance"] {
+    top: 10px;
+    width: 80px;
+    height: 80px;
+    font-size: 11px;
+  }
+
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"] {
+    width: 126px;
+    height: 58px;
+    font-size: 10px;
+  }
+}
+
+/* Narrow portrait decks (320px class) must fit the arrow pad, both menu caps and
+   their moulded shadows across one row, so the caps step down again. */
+@media (orientation: portrait) and (max-width: 360px) {
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="back"] {
+    right: 92px;
+    width: 60px;
+    height: 60px;
+    font-size: 9px;
+  }
+
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="advance"] {
+    right: 14px;
+    width: 68px;
+    height: 68px;
+    font-size: 10px;
+  }
+
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"] {
+    width: 112px;
+    height: 52px;
+    font-size: 9px;
+  }
+}
+
+/* Landscape anchors the pair above the timing rail rather than inheriting the
+   portrait deck's top offset, which pushed the caps down over the notes. */
+@media (orientation: landscape) {
+  .mobile-controls .mobile-control-group--office-rhythm {
+    top: auto;
+    bottom: calc(122px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (orientation: portrait) {
+  .mobile-controls .mobile-control-group--office-rhythm .mobile-button--capped {
+    width: clamp(104px, 27vw, 124px);
+    height: clamp(104px, 27vw, 124px);
+    padding: 0 10px;
+  }
+
+  .mobile-controls .mobile-control-group--office-rhythm .mobile-button--capped strong {
+    font: 900 30px/1 "Courier New", monospace;
+  }
+}
+
+.mobile-controls .mobile-control-group--office-rhythm .mobile-button--capped small {
+  opacity: 0.85;
+}
+
+/* ---------------------------------------------------------------------------
+   Persistent mobile hardware deck (2026-09-02)
+
+   Every phone state uses the same four arrow keys and the same J/K elements.
+   Their runtime actions change by context, but the hardware never disappears
+   or gets replaced by SELECT/BACK/ENTER/boss-specific duplicates.
+--------------------------------------------------------------------------- */
+.mobile-controls:not(.is-hidden) .mobile-control-group--menu,
+.mobile-controls:not(.is-hidden) .mobile-control-group--dpad {
+  display: grid;
+}
+
+.mobile-controls .mobile-control-group--menu {
+  left: auto;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  width: 210px;
+  height: 132px;
+  transform: none;
+  grid-template-columns: none;
+  gap: 0;
+}
+
+.mobile-controls .mobile-control-group--menu [data-mobile-action="primary"],
+.mobile-controls .mobile-control-group--menu [data-mobile-action="secondary"] {
+  position: absolute;
+  width: 92px;
+  height: 92px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background-color: transparent;
+  box-shadow: none;
+  color: #fff4dc;
+  font: 900 30px/1 "Courier New", ui-monospace, monospace;
+  text-shadow: none;
+}
+
+.mobile-controls .mobile-control-group--menu [data-mobile-action="primary"] {
+  --cap-x: 0%;
+  left: 0;
+  top: 0;
+}
+
+.mobile-controls .mobile-control-group--menu [data-mobile-action="secondary"] {
+  --cap-x: 100%;
+  right: 0;
+  bottom: 0;
+  color: #eef1f4;
+}
+
+.mobile-controls .mobile-control-group--menu [data-mobile-action="jump"] {
+  display: flex; /* a label: flex keeps its text centred (see .haptic-switch) */
+  position: absolute;
+  left: 50%;
+  top: -58px;
+  bottom: auto;
+  width: 132px;
+  height: 52px;
+  min-height: 0;
+  transform: translateX(-50%);
+  font-size: 10px;
+}
+
+.mobile-controls .mobile-control-group--menu [data-mobile-action="jump"]:active,
+.mobile-controls .mobile-control-group--menu [data-mobile-action="jump"].is-held {
+  transform: translateX(-50%) translateY(1px);
+}
+
+/* Auxiliary legacy actions stay available in exploration without replacing
+   the persistent J/K pair. Boss transitions never create another button row. */
+.mobile-controls .mobile-control-group--actions {
+  right: 242px;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  width: 190px;
+  height: 120px;
+  transform: none;
+}
+
+.mobile-controls .mobile-control-group--actions .mobile-button--arc-space,
+.mobile-controls .mobile-control-group--actions .mobile-button--arc-b,
+.mobile-controls .mobile-control-group--actions .mobile-button--arc-r {
+  right: auto;
+  bottom: auto;
+  width: 54px;
+  height: 54px;
+  min-height: 0;
+}
+
+
+.mobile-controls .mobile-control-group--actions .mobile-button--arc-space {
+  left: 0;
+  top: 0;
+  font-size: 9px;
+}
+
+.mobile-controls .mobile-control-group--actions .mobile-button--arc-b {
+  left: 66px;
+  top: 0;
+}
+
+.mobile-controls .mobile-control-group--actions .mobile-button--arc-r {
+  left: 132px;
+  top: 0;
+}
+
+@media (orientation: portrait) and (max-width: 920px) {
+  .mobile-controls .mobile-control-group--menu {
+    left: auto;
+    right: max(28px, calc(env(safe-area-inset-right) + 20px));
+    top: calc(var(--portrait-split) + clamp(98px, calc(var(--app-h, 100dvh) * 0.13), 122px));
+    bottom: auto;
+    width: 182px;
+    height: 190px;
+    transform: none;
+  }
+
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="primary"],
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="secondary"] {
+    width: 84px;
+    height: 84px;
+  }
+
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="primary"] {
+    left: 0;
+    top: 0;
+  }
+
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="secondary"] {
+    right: 0;
+    top: 28px;
+    bottom: auto;
+  }
+
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"] {
+    left: 50%;
+    top: auto;
+    bottom: 4px;
+    width: 126px;
+    height: 54px;
+  }
+
+  .mobile-controls .mobile-control-group--actions {
+    left: 50%;
+    right: auto;
+    top: calc(var(--portrait-split) + clamp(190px, calc(var(--app-h, 100dvh) * 0.27), 250px));
+    bottom: auto;
+    width: 190px;
+    height: 120px;
+    transform: translateX(-50%) scale(0.78);
+    transform-origin: top center;
+  }
+}
+
+@media (orientation: portrait) and (max-width: 360px) {
+  .mobile-controls .mobile-control-group--menu {
+    right: max(28px, calc(env(safe-area-inset-right) + 20px));
+    width: 154px;
+    height: 164px;
+  }
+
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="primary"],
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="secondary"] {
+    width: 70px;
+    height: 70px;
+    font-size: 24px;
+  }
+
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="primary"] {
+    top: 22px;
+  }
+
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"] {
+    width: 112px;
+    height: 48px;
+  }
+}
+
+@media (orientation: portrait) and (max-height: 650px) {
+  /* The staggered K cap hangs 6px lower than J, so on the shortest decks the
+     exploration row has to start below it or the two overlap by a couple of
+     pixels. There is room: the row's bottom still clears the safe area. */
+  .mobile-controls .mobile-control-group--actions {
+    top: calc(var(--portrait-split) + 212px);
+    width: 252px;
+    height: 54px;
+    transform: translateX(-50%) scale(0.75);
+  }
+
+  .mobile-controls .mobile-control-group--actions .mobile-button--arc-r {
+    left: 198px;
+    top: 0;
+  }
+
+  .mobile-controls[data-can-interact="1"][data-can-mount="1"] .mobile-control-group--actions .mobile-button.mobile-button--arc-r {
+    left: 198px;
+    top: 0;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .mobile-controls .mobile-control-group--dpad {
+    top: calc(50% - 64px);
+    bottom: auto;
+  }
+
+  .mobile-controls .mobile-control-group--dpad .mobile-dpad {
+    width: 128px;
+    height: 128px;
+  }
+
+  .mobile-controls .mobile-control-group--menu {
+    top: calc(50% - 66px);
+    bottom: auto;
+  }
+
+  .mobile-controls .mobile-control-group--actions {
+    top: calc(50% - 60px);
+    bottom: auto;
+    transform: scale(0.78);
+    transform-origin: center right;
+  }
+}
+
+/* Landscape used to be tap-only outside exploration, with the deck hidden on
+   menus and rhythm bosses. The Game Boy layout below replaces that: the picture
+   is inset far enough to open a control gutter down each side, the hardware
+   lives there permanently, and tapping the canvas keeps working alongside it. */
+
+/* ---------------------------------------------------------------------------
+   Landscape Game Boy layout (2026-09-07)
+
+   The picture is inset far enough to leave a control gutter down each side, and
+   the hardware sits in those gutters the way a handheld's does: arrow pad on
+   the left, J / K on the right with SPACE beneath them, B / R under the pad.
+   Everything is measured from the canvas box published by syncStageMetrics(),
+   so the columns follow the letterboxed picture instead of the viewport. Both
+   MODE settings get it - on a touch device the controls follow the hardware.
+--------------------------------------------------------------------------- */
+@media (orientation: landscape) {
+  /* Left gutter, sitting LOW: an iPhone's camera housing runs down the middle
+     of the long edge in landscape, so a vertically centred arrow pad ends up
+     under it. The columns hug the bottom instead, inside the safe area. */
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--dpad {
+    left: var(--deck-left, 20px);
+    right: auto;
+    top: auto;
+    bottom: var(--deck-bottom, 38px);
+    transform: none;
+  }
+
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--dpad .mobile-dpad {
+    width: 88px;
+    height: 88px;
+  }
+
+  /* Right gutter: the J / K pair, with the pill hanging under it. The pill is
+     32px tall and hangs 10px below the pair, so the pair is lifted by 42px to
+     put the bottom of the whole stack on the same line as the arrow pad. */
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--menu {
+    left: auto;
+    right: var(--deck-right, 20px);
+    top: auto;
+    bottom: calc(var(--deck-bottom, 38px) + 42px);
+    width: 110px;
+    height: 80px;
+    transform: none;
+  }
+
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--menu [data-mobile-action="primary"],
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--menu [data-mobile-action="secondary"] {
+    width: 54px;
+    height: 54px;
+    font-size: 19px;
+  }
+
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--menu [data-mobile-action="primary"] {
+    left: 0;
+    top: 0;
+  }
+
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--menu [data-mobile-action="secondary"] {
+    right: 0;
+    bottom: 0;
+  }
+
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"] {
+    left: 50%;
+    right: auto;
+    top: calc(100% + 10px);
+    bottom: auto;
+    margin-right: 0;
+    width: 96px;
+    height: 32px;
+    font-size: 9px;
+    transform: translateX(-50%);
+  }
+
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"]:active,
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"].is-held {
+    transform: translateX(-50%) translateY(1px);
+  }
+
+  /* R keeps the left column, stacked above the arrow pad. */
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--actions {
+    left: var(--deck-left, 20px);
+    right: auto;
+    top: auto;
+    bottom: calc(var(--deck-bottom, 38px) + 100px);
+    width: 92px;
+    height: 40px;
+    transform: none;
+  }
+
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--actions .mobile-button--arc-r {
+    width: 40px;
+    height: 40px;
+    font-size: 11px;
+  }
+
+  /* The two-cap rhythm row, when it exists, follows the same midline. */
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--office-rhythm {
+    left: 50%;
+    right: auto;
+    top: auto;
+    bottom: calc(var(--stage-bottom, 0px) + 10px);
+    transform: translateX(-50%);
+  }
+}
+
+/* SPACE moved onto the persistent pill and the B cap was retired entirely -
+   interaction rides J now - so R is the only auxiliary control left and it
+   takes the row's first slot. */
+.mobile-controls .mobile-control-group--actions .mobile-button.mobile-button--arc-r,
+.mobile-controls[data-can-interact="1"][data-can-mount="1"] .mobile-control-group--actions .mobile-button.mobile-button--arc-r {
+  left: 0;
+  right: auto;
+  top: 0;
+  bottom: auto;
+}
+
+@media (orientation: landscape) {
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--actions .mobile-button.mobile-button--arc-r,
+  body[data-touch-controls="1"] .mobile-controls[data-can-interact="1"][data-can-mount="1"] .mobile-control-group--actions .mobile-button.mobile-button--arc-r {
+    left: 0;
+    top: 0;
+  }
+}
+
+/* Portrait: the pill hangs under J/K, right-aligned with K. Centring it used to
+   be fine when it only appeared on the title screen; now that it is SPACE
+   during exploration it has to clear the B / R row on its left. */
+@media (orientation: portrait) {
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"] {
+    left: auto;
+    right: 0;
+    transform: none;
+  }
+
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"]:active,
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"].is-held {
+    transform: translateY(1px);
+  }
+}
+
+/* The shortest decks have no room under J/K for a full-height pill: raise it
+   so its outline clears the molded panel's bottom border. */
+@media (orientation: portrait) and (max-height: 650px) {
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"] {
+    bottom: 18px;
+    height: 44px;
+  }
+}
+
+/* The pill is hardware, not a contextual button: it is on screen wherever the
+   deck is and it is always SPACE. Where jumping is impossible it simply does
+   nothing - exactly as the arrow pad does nothing during a rhythm fight.
+   Fullscreen lives on its own START cap (below). */
+.mobile-controls .mobile-control-group--menu [data-mobile-action="jump"] {
+  display: flex; /* a label: flex keeps its text centred (see .haptic-switch) */
+}
+
+/* ---------------------------------------------------------------------------
+   Landscape breathing room (2026-09-07)
+
+   Phone MODE sizes the canvas to the whole screen minus 18px, which is right
+   in portrait (the handheld shell frames it) but wrong in landscape: there the
+   canvas carries its own 21px moulded bezel in box-shadow, so a full-bleed
+   canvas pushed that bezel off the screen and left the picture jammed against
+   the frame. Landscape on a touch device now keeps room for the bezel plus a
+   margin of orange on every side. Both MODE settings, same as the deck.
+--------------------------------------------------------------------------- */
+@media (orientation: landscape) {
+  body[data-touch-controls="1"] #game,
+  body[data-touch-controls="1"] .film-grain-overlay {
+    /* Each gutter has to hold the canvas's own 21px moulded bezel, a 118px
+       control column, and a margin either side of it. 180px per side is the
+       floor: at the old 150px the J / K column cleared the frame by 3px, which
+       renders as touching it once zoom or device pixel ratio is involved.
+       100px of height keeps the bezel off the top and bottom edges. */
+    /* syncStageMetrics() sizes the picture from each gutter's real needs; the
+       min() is only the fallback for the frames before it first runs. */
+    width: var(--stage-w, min(calc(var(--view-w, 100dvw) - 360px), calc((var(--view-h, var(--app-h, 100dvh)) - 100px) * 16 / 9)));
+    height: var(--stage-h, min(calc(var(--view-h, var(--app-h, 100dvh)) - 100px), calc((var(--view-w, 100dvw) - 360px) * 9 / 16)));
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    /* Only one edge carries a notch, so the picture sits off-centre by half the
+       difference between the two gutters; the vertical nudge opens the band the
+       START cap sits in. */
+    transform: translate(var(--stage-shift, 0px), var(--stage-shift-y, 0px));
+  }
+}
+
+
+/* ---------------------------------------------------------------------------
+   START cap (2026-09-08)
+
+   Fullscreen has its own piece of hardware now, so the pill next to J / K can
+   be SPACE and nothing else. The cap art is a dedicated Higgsfield generation
+   keyed through the same magenta pipeline as the rest of the deck: one column,
+   released above pressed. It sits centred below the screen, where a handheld
+   puts START.
+--------------------------------------------------------------------------- */
+.mobile-controls .mobile-button--cap-start {
+  --cap-sheet-size: 100% 200%;
+  --cap-x: 0%;
+  --cap-image: url("assets/ui/mobile_start_cap_20260908/processed/start-transparent.webp?v=start-cap-20260908a");
+  color: #efe3c4;
+}
+
+.mobile-controls:not(.is-hidden) .mobile-control-group--system,
+body[data-touch-controls="1"] .mobile-controls .mobile-control-group--system {
+  /* 全螢幕 is always on a touch deck, whatever the screen. */
+  display: block;
+}
+
+.mobile-controls .mobile-control-group--system {
+  position: fixed;
+  pointer-events: none;
+}
+
+.mobile-controls .mobile-control-group--system [data-mobile-action="fullscreen"] {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 118px;
+  height: 34px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background-color: transparent;
+  box-shadow: none;
+  transform: translateX(-50%);
+  font: 900 11px/1 "Courier New", "PingFang TC", "Noto Sans TC", ui-monospace, monospace;
+  letter-spacing: 0.04em;
+  text-shadow: none;
+  pointer-events: auto;
+}
+
+.mobile-controls .mobile-control-group--system [data-mobile-action="fullscreen"]:active,
+.mobile-controls .mobile-control-group--system [data-mobile-action="fullscreen"].is-held {
+  transform: translateX(-50%) translateY(1px);
+}
+
+/* Portrait: centred on the moulded panel, below every other control. The
+   panel's own bottom edge sits at max(28px, safe area), so this keeps the cap
+   on the panel rather than floating below it. */
+@media (orientation: portrait) {
+  .mobile-controls .mobile-control-group--system {
+    left: 0;
+    right: 0;
+    /* The panel's own bottom edge is max(74px, safe area) up from the screen
+       edge on a full-height deck; sit the cap just inside it. */
+    bottom: calc(max(74px, env(safe-area-inset-bottom, 0px)) + 10px);
+    height: 34px;
+  }
+}
+
+/* Short decks pull the panel's bottom edge in to 28px, so the cap follows. */
+@media (orientation: portrait) and (max-width: 920px) and (max-height: 650px) {
+  .mobile-controls .mobile-control-group--system {
+    bottom: calc(max(28px, env(safe-area-inset-bottom, 0px)) + 8px);
+  }
+}
+
+/* Short decks have no room under the pill, so the cap shrinks and tucks in. */
+@media (orientation: portrait) and (max-height: 700px) {
+  .mobile-controls .mobile-control-group--system [data-mobile-action="fullscreen"] {
+    width: 104px;
+    height: 28px;
+    font-size: 9px;
+  }
+}
+
+/* Landscape: centred under the picture, in the band the metrics reserve for it.
+   Both values come from syncStageMetrics() as plain pixels. */
+@media (orientation: landscape) {
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--system {
+    left: var(--deck-system-left, 50%);
+    right: auto;
+    bottom: var(--deck-system-bottom, 14px);
+    width: 0;
+    height: 30px;
+  }
+
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--system [data-mobile-action="fullscreen"] {
+    width: 106px;
+    height: 30px;
+    font-size: 10px;
+  }
+}
+
+
+/* Short portrait decks have to fit SPACE and the START cap in the same band, so
+   the pill slims down and lifts to leave the bottom strip for the cap. */
+@media (orientation: portrait) and (max-height: 760px) {
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"] {
+    height: 34px;
+    bottom: 34px;
+  }
+
+  .mobile-controls .mobile-control-group--system [data-mobile-action="fullscreen"] {
+    width: 104px;
+    height: 28px;
+    font-size: 9px;
+  }
+}
+
+
+/* The shortest decks need one more notch of separation. */
+/* The shortest decks cannot stack SPACE above the START cap and keep both at a
+   usable size, so the two share the bottom row instead: the cap takes the left
+   of the panel and SPACE stays under J / K. Centring gives way to a control
+   big enough to hit. */
+@media (orientation: portrait) and (max-height: 650px) {
+  .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"] {
+    height: 34px;
+    bottom: 30px;
+  }
+
+  .mobile-controls .mobile-control-group--system [data-mobile-action="fullscreen"] {
+    /* Between the R cap and SPACE - the only gap left once Level 1 exploration
+       puts R in the bottom-left corner of a 568px-tall deck. */
+    left: 110px;
+    width: 66px;
+    height: 26px;
+    font-size: 7px;
+    letter-spacing: 0;
+    transform: none;
+  }
+
+  .mobile-controls .mobile-control-group--system [data-mobile-action="fullscreen"]:active,
+  .mobile-controls .mobile-control-group--system [data-mobile-action="fullscreen"].is-held {
+    transform: translateY(1px);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   桌面 MODE on a portrait phone (2026-09-08)
+
+   Without the handheld shell the deck has no moulded panel to sit on, so the
+   controls were bunched at the bottom of the screen with the START cap wedged
+   between K and SPACE. There is a lot of empty screen between the picture and
+   the deck, so the cluster moves up into it and the cap keeps the bottom strip
+   to itself: three clearly separated bands instead of one crowded one.
+--------------------------------------------------------------------------- */
+@media (orientation: portrait) and (max-width: 920px) {
+  body[data-touch-controls="1"][data-device-mode="desktop"] .mobile-controls .mobile-control-group--dpad {
+    top: auto;
+    bottom: 180px;
+  }
+
+  body[data-touch-controls="1"][data-device-mode="desktop"] .mobile-controls .mobile-control-group--menu {
+    top: auto;
+    bottom: 124px;
+  }
+
+  /* B / R stack above the arrow pad rather than beside it, where they would
+     reach across into J. */
+  body[data-touch-controls="1"][data-device-mode="desktop"] .mobile-controls .mobile-control-group--actions {
+    left: max(36px, env(safe-area-inset-left, 0px));
+    right: auto;
+    top: auto;
+    bottom: 320px;
+    transform: none;
+  }
+
+  /* The cap alone at the bottom, centred. */
+  body[data-touch-controls="1"][data-device-mode="desktop"] .mobile-controls .mobile-control-group--system {
+    bottom: max(36px, calc(env(safe-area-inset-bottom, 0px) + 12px));
+  }
+
+  body[data-touch-controls="1"][data-device-mode="desktop"] .mobile-controls .mobile-control-group--system [data-mobile-action="fullscreen"] {
+    left: 50%;
+    width: 118px;
+    height: 34px;
+    font-size: 11px;
+    transform: translateX(-50%);
+  }
+}
+
+
+/* ---------------------------------------------------------------------------
+   The tall portrait screen (2026-09-28)
+
+   A 16:9 picture can be no taller than a portrait phone is wide, which left
+   the game in a fifth of the screen. In portrait the game draws a taller
+   canvas (#portraitFight, 720x776 - see renderTallScreen in src/game.js) for
+   every screen, and the handheld gives it the top of the phone: no bezel, the
+   full width where the deck leaves room, and one deck position throughout.
+--------------------------------------------------------------------------- */
+#portraitFight {
+  display: none;
+}
+
+@media (orientation: portrait) {
+  html[data-device-mode="phone"][data-tall-screen="1"],
+  body[data-device-mode="phone"][data-tall-screen="1"] {
+    --pf-top: max(34px, calc(env(safe-area-inset-top) + 6px));
+    /* The deck keeps the room it needs below the view (J / K, the arrows and
+       SPACE); on a short phone the view gives way - narrower and centred -
+       rather than pushing the deck off the bottom. 776 / 720 is the view's own
+       aspect, so it is never stretched. */
+    /* Measured at runtime (syncTallScreenReserve): exactly the deck's height. */
+    --pf-reserve: var(--tall-reserve, clamp(300px, calc(var(--app-h, 100dvh) * 0.4), 360px));
+    --pf-width: min(calc(100dvw - 12px), calc((var(--app-h, 100dvh) - var(--pf-top) - var(--pf-reserve) - 12px) / 1.0778));
+    --portrait-split: calc(var(--pf-top) + var(--pf-width) * 1.0778 + 12px);
+  }
+
+  body[data-device-mode="phone"][data-tall-screen="1"] .game-shell::before,
+  body[data-device-mode="phone"][data-tall-screen="1"] .game-shell::after {
+    display: none;
+  }
+
+  body[data-device-mode="phone"][data-tall-screen="1"] #game {
+    position: absolute;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  body[data-device-mode="phone"][data-tall-screen="1"] #portraitFight {
+    display: block;
+    position: fixed;
+    z-index: 2;
+    top: var(--pf-top);
+    left: calc((100dvw - var(--pf-width)) / 2);
+    width: var(--pf-width);
+    height: auto;
+    border: 2px solid #05070a;
+    border-radius: 6px;
+    box-shadow: 0 0 0 2px #0d1114;
+    touch-action: none;
+  }
+}
+
+/* With the deck moved down to meet the taller fight view, the START cap (fixed
+   to the bottom) would land on SPACE or the arrow pad depending on the phone's
+   height. It moves up to the free end of the brand row instead. */
+@media (orientation: portrait) {
+  body[data-device-mode="phone"][data-tall-screen="1"] .mobile-controls .mobile-control-group--system {
+    top: calc(var(--portrait-split) + 10px);
+    bottom: auto;
+    height: 28px;
+  }
+
+  body[data-device-mode="phone"][data-tall-screen="1"] .mobile-controls .mobile-control-group--system [data-mobile-action="fullscreen"] {
+    left: auto;
+    right: 14px;
+    width: 92px;
+    /* On narrow phones it drops under the brand text (getFullscreenCapDrop). */
+    height: var(--fs-h, 28px);
+    translate: 0 var(--fs-drop, 0px);
+    font-size: 9px;
+    transform: none;
+  }
+}
+
+
+/* The deck's molded panel reaches the bottom of the phone in the tall layout:
+   its old 74px gap held the START cap, which now lives on the brand row. */
+@media (orientation: portrait) {
+  body[data-device-mode="phone"][data-tall-screen="1"] .mobile-controls::before {
+    /* Its sides line up with the screen's (its 2 px outer ring included), but
+       never closer to the phone's edge than the buttons allow: on the
+       smallest phones the screen shrinks narrower than the deck. */
+    left: min(24px, calc((100dvw - var(--pf-width)) / 2 - 2px));
+    right: min(24px, calc((100dvw - var(--pf-width)) / 2 - 2px));
+    bottom: var(--deck-foot, max(12px, calc(env(safe-area-inset-bottom) + 6px)));
+    /* Down to the bottom of the screen as before, but never ending above
+       the buttons: at least 18 px below the lowest one, as measured by
+       syncTallScreenReserve. */
+    height: max(
+      var(--tall-panel-h, 0px),
+      calc(var(--app-h, 100dvh) - var(--portrait-split) - 56px - var(--deck-foot, max(12px, calc(env(safe-area-inset-bottom) + 6px))))
+    );
+  }
+}
+
+/* The old deck hid the brand while walking to make room for B / R above the
+   buttons. On the tall screen those sit in the lower row, so the brand row
+   stays the same on every screen. */
+@media (orientation: portrait) {
+  body[data-device-mode="phone"][data-tall-screen="1"] .mobile-controls[data-control-mode="action"] .mobile-controls__handheld-brand {
+    opacity: 1;
+  }
+}
+
+/* An iPhone Home Screen app lays the page out shorter than its screen (the
+   viewport ends ~65 px above the bottom), so the shell reaches for the large
+   viewport - the whole screen there - as well. Only in the app: in Safari the
+   large viewport is taller than what is shown and would make the page scroll. */
+@media (orientation: portrait) and (display-mode: standalone), (orientation: portrait) and (display-mode: fullscreen) {
+  body[data-device-mode="phone"] .game-shell {
+    height: max(var(--app-h, 100dvh), 100lvh);
+  }
+}
+
+/* The deck controls are labels (each holds a locked switch for the iPhone
+   haptic tick). Zero specificity: every existing rule - including the ones
+   that show and hide controls by mode - still wins; this only replaces the
+   inline layout a label has by default with the centred box a button had. */
+:where(.mobile-controls label.mobile-button, .mobile-controls label.mobile-dpad__button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.mobile-controls .haptic-switch {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------------
+   M O T H deck (2026-10-02, laid out again 2026-10-02b)
+
+   Four round action buttons replace J / K, set like a handheld's face
+   buttons: M on top, O on the right, T at the bottom, H on the left. They are
+   the size of the arrow keys and laid out as the arrow pad's mirror image:
+   the same 3 x 3 grid, at the same height, as far from the right edge as the
+   pad is from the left (alignMothDeck() in src/game.js measures the pad and
+   publishes --pad-* / --moth-left / --space-*). SPACE sits centred at the
+   foot of the molded panel (where the panel ends too close under the
+   clusters, in the empty middle of their bottom row), and the R (mount) cap
+   in the pad's empty
+   bottom-left corner, so the deck is no taller than the J / K one and the
+   screen keeps its width.
+--------------------------------------------------------------------------- */
+.mobile-controls .mobile-moth {
+  --moth-size: 40px;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.mobile-controls .mobile-moth__button,
+body[data-touch-controls="1"] .mobile-controls .mobile-moth__button {
+  position: absolute;
+  display: block;
+  width: var(--moth-size);
+  height: var(--moth-size);
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background-color: transparent;
+  background-image: url("assets/ui/mobile_moth_buttons_20261002/sheet.webp?v=moth-gpt-20261002c");
+  background-repeat: no-repeat;
+  background-size: 400% 200%;
+  background-position: var(--moth-x) 0%;
+  image-rendering: pixelated;
+  box-shadow: none;
+  color: transparent;
+  font-size: 0;
+  text-shadow: none;
+  filter: drop-shadow(0 3px 0 rgba(85, 23, 17, 0.45));
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-controls .mobile-moth__button:active,
+.mobile-controls .mobile-moth__button.is-held,
+body[data-touch-controls="1"] .mobile-controls .mobile-moth__button:active,
+body[data-touch-controls="1"] .mobile-controls .mobile-moth__button.is-held {
+  background-position: var(--moth-x) 100%;
+  filter: drop-shadow(0 1px 0 rgba(85, 23, 17, 0.4));
+}
+
+.mobile-controls .mobile-moth__button:focus-visible {
+  outline: 3px solid #fff1c9;
+  outline-offset: 2px;
+}
+
+.mobile-controls .mobile-moth__button--m { --moth-x: 0%; left: var(--moth-size); top: 0; }
+.mobile-controls .mobile-moth__button--o { --moth-x: 33.333%; left: calc(var(--moth-size) * 2); top: var(--moth-size); }
+.mobile-controls .mobile-moth__button--t { --moth-x: 66.667%; left: var(--moth-size); top: calc(var(--moth-size) * 2); }
+.mobile-controls .mobile-moth__button--h { --moth-x: 100%; left: 0; top: var(--moth-size); }
+
+/* The handheld (portrait phone): mirror the arrow pad. */
+@media (orientation: portrait) {
+  body[data-device-mode="phone"] .mobile-controls .mobile-dpad {
+    transform: translateY(var(--pad-align-y, 0px));
+  }
+
+  body[data-device-mode="phone"] .mobile-controls .mobile-control-group--menu {
+    position: fixed;
+    left: var(--moth-left, auto);
+    right: auto;
+    top: var(--moth-top, var(--pad-top, auto));
+    bottom: auto;
+    width: var(--moth-box, var(--pad-box, 121px));
+    height: var(--moth-box, var(--pad-box, 121px));
+    transform: none;
+  }
+
+  /* The buttons fill the diamond rather than a 3 x 3 grid's cells (user,
+     2026-10-06: still too small to press): 0.40 of the box, a fifth bigger
+     than a third, leaves a few pixels between the round caps (0.414 is where
+     they touch). Their square boxes now overlap at the corners, so each
+     answers taps only inside its circle (plus the shadow under it). The
+     diamond itself keeps its size and place. */
+  body[data-device-mode="phone"] .mobile-controls .mobile-moth {
+    --moth-span: var(--moth-box, var(--pad-box, 121px));
+    --moth-size: var(--moth-button, calc(var(--moth-span) * 0.4));
+    --moth-mid: calc((var(--moth-span) - var(--moth-size)) / 2);
+    --moth-far: calc(var(--moth-span) - var(--moth-size));
+  }
+
+  body[data-device-mode="phone"] .mobile-controls .mobile-moth__button {
+    clip-path: circle(calc(50% + 3px));
+  }
+
+  body[data-device-mode="phone"] .mobile-controls .mobile-moth__button--m { left: var(--moth-mid); top: 0; }
+  body[data-device-mode="phone"] .mobile-controls .mobile-moth__button--o { left: var(--moth-far); top: var(--moth-mid); }
+  body[data-device-mode="phone"] .mobile-controls .mobile-moth__button--t { left: var(--moth-mid); top: var(--moth-far); }
+  body[data-device-mode="phone"] .mobile-controls .mobile-moth__button--h { left: 0; top: var(--moth-mid); }
+
+  body[data-device-mode="phone"] .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"] {
+    position: fixed;
+    left: 50%;
+    right: auto;
+    top: var(--space-top, calc(var(--pad-top, 0px) + var(--pad-box, 121px) + 12px));
+    bottom: auto;
+    width: var(--space-w, 132px);
+    height: var(--space-h, 50px);
+    transform: translateX(-50%);
+  }
+
+  body[data-device-mode="phone"] .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"]:active,
+  body[data-device-mode="phone"] .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"].is-held {
+    transform: translateX(-50%) translateY(1px);
+  }
+
+  body[data-device-mode="phone"] .mobile-controls[data-control-mode] .mobile-control-group--actions {
+    position: fixed;
+    left: var(--pad-left, 36px);
+    right: auto;
+    top: calc(var(--pad-top, 0px) + var(--pad-box, 121px) * 2 / 3);
+    bottom: auto;
+    width: calc(var(--pad-box, 121px) / 3);
+    height: calc(var(--pad-box, 121px) / 3);
+    transform: none;
+  }
+
+  body[data-device-mode="phone"] .mobile-controls[data-control-mode] .mobile-control-group--actions .mobile-button.mobile-button--arc-r {
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+  }
+}
+
+@media (orientation: portrait) and (max-height: 760px) {
+  /* 桌面 MODE (no handheld shell): the diamond hangs from the bottom like the
+     rest of that deck, with SPACE centred under it. */
+  body[data-device-mode="desktop"] .mobile-controls .mobile-control-group--menu {
+    width: 132px;
+    height: 132px;
+  }
+
+  body[data-device-mode="desktop"] .mobile-controls .mobile-moth {
+    --moth-size: 44px;
+  }
+
+  body[data-device-mode="desktop"] .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"] {
+    position: absolute;
+    left: 50%;
+    right: auto;
+    top: calc(100% + 8px);
+    bottom: auto;
+    width: 120px;
+    height: 40px;
+    transform: translateX(-50%);
+  }
+}
+
+/* Landscape: the diamond in the right gutter, SPACE under it as before. It
+   is the arrow pad's 88 px, grown by up to a quarter where the gutter has
+   width to spare (--moth-land, set with the stage size in src/game.js). */
+@media (orientation: landscape) {
+  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--menu {
+    width: var(--moth-land, 88px);
+    height: var(--moth-land, 88px);
+  }
+
+  body[data-touch-controls="1"] .mobile-controls .mobile-moth {
+    --moth-size: calc(var(--moth-land, 88px) / 3);
+  }
+}
+
+/* 桌面 MODE on a portrait phone: SPACE hangs under the diamond, so the cluster
+   sits higher to keep the START cap clear below it. */
+@media (orientation: portrait) and (max-width: 920px) {
+  body[data-touch-controls="1"][data-device-mode="desktop"] .mobile-controls .mobile-control-group--menu {
+    bottom: 150px;
+  }
+}
+
+/* The canvas supplies moving film grain during rhythm play. Keep the outer
+   print texture, but pause its independent compositing animation on phones. */
+body[data-device-mode="phone"][data-rhythm-active="1"] .film-grain-overlay::before,
+body[data-device-mode="phone"][data-rhythm-active="1"] .film-grain-overlay::after {
+  animation-play-state: paused;
+}
+
+/* A persistent player notice, above every canvas/loading view. */
+.fullscreen-guide[hidden] { display: none; }
+.fullscreen-guide {
+  --guide-inset-top: max(16px, env(safe-area-inset-top));
+  --guide-inset-bottom: max(16px, env(safe-area-inset-bottom));
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: var(--guide-inset-top) max(16px, env(safe-area-inset-right)) var(--guide-inset-bottom) max(16px, env(safe-area-inset-left));
+  background: rgba(8, 9, 13, .82);
+  box-sizing: border-box;
+  overscroll-behavior: contain;
+  font-family: "Courier New", "PingFang TC", "Noto Sans TC", monospace;
+}
+.fullscreen-guide__card {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 540px);
+  max-height: calc(100vh - var(--guide-inset-top) - var(--guide-inset-bottom));
+  max-height: calc(100dvh - var(--guide-inset-top) - var(--guide-inset-bottom));
+  overflow: hidden;
+  padding: clamp(20px, 5vw, 32px);
+  color: #22252f;
+  border: 4px solid #3c4842;
+  outline: 2px solid #f7f2de;
+  box-shadow: 8px 8px 0 #08090d;
+  background: repeating-linear-gradient(0deg, transparent 0 23px, rgba(111, 133, 98, .12) 23px 24px), #f1ecd7;
+}
+.fullscreen-guide__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: #69876d #e2dec8;
+}
+.fullscreen-guide__eyebrow {
+  padding-bottom: 14px;
+  border-bottom: 3px double #69876d;
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 900;
+}
+.fullscreen-guide h2 {
+  margin: 20px 0 14px;
+  padding-left: 12px;
+  border-left: 6px solid #c44245;
+  font-size: clamp(24px, 6vw, 32px);
+  line-height: 1.25;
+  font-weight: 900;
+}
+.fullscreen-guide p {
+  margin: 14px 0;
+  font-size: 18px;
+  line-height: 1.55;
+  font-weight: 900;
+}
+.fullscreen-guide ol {
+  display: grid;
+  gap: 16px;
+  padding: 18px 0;
+  margin: 0;
+  border-block: 2px solid #80957a;
+  list-style: none;
+}
+.fullscreen-guide li {
+  display: flex;
+  align-items: start;
+  gap: 12px;
+  font-size: 20px;
+  line-height: 1.5;
+  font-weight: 900;
+}
+.fullscreen-guide li span {
+  flex: 0 0 34px;
+  color: #b7393c;
+  border-bottom: 3px solid #b7393c;
+}
+.fullscreen-guide button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 100%;
+  min-height: 52px;
+  margin-top: 20px;
+  padding: 12px;
+  border: 3px solid #324c38;
+  border-radius: 0;
+  background: #80b88a;
+  box-shadow: 3px 3px 0 #324c38;
+  color: #172b1e;
+  text-align: center;
+  font: 900 17px/1.3 "Courier New", "PingFang TC", "Noto Sans TC", monospace;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.fullscreen-guide button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #324c38; }
+.fullscreen-guide button:focus-visible { outline: 3px solid #c44245; outline-offset: 4px; }
+@media (orientation: landscape) and (max-height: 500px) {
+  .fullscreen-guide {
+    --guide-inset-top: max(12px, env(safe-area-inset-top));
+    --guide-inset-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+  .fullscreen-guide__card { width: min(100%, 680px); padding: 12px 24px 20px; }
+  .fullscreen-guide__eyebrow { padding-bottom: 8px; font-size: 10px; line-height: 1.3; }
+  .fullscreen-guide h2 { margin: 12px 0 8px; font-size: 24px; }
+  .fullscreen-guide p { margin: 8px 0; font-size: 16px; line-height: 1.4; }
+  .fullscreen-guide ol { gap: 8px; padding-block: 8px; }
+  .fullscreen-guide button { margin-top: 12px; }
+}
+.audio-recovery[hidden] { display: none; }
+.audio-recovery {
+  position: fixed; inset: 0; z-index: 10001;
+  display: grid; place-items: center;
+  padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  background: #121613b8; box-sizing: border-box;
+  touch-action: manipulation;
+}
+.audio-recovery section {
+  box-sizing: border-box; width: min(480px, 100%); max-height: 100%; overflow: auto;
+  padding: 24px; color: #292d28;
+  background: repeating-linear-gradient(#eee9d7 0 27px, #e0dcc8 28px, #eee9d7 29px);
+  border: 5px double #354838; box-shadow: 7px 8px 0 #101612;
+  font: 700 18px/1.5 "Courier New", "PingFang TC", monospace;
+}
+.audio-recovery small { font-size: 12px; }
+.audio-recovery h2 { margin: 18px 0 12px; padding-left: 12px; border-left: 6px solid #ce3f49; font-size: clamp(22px, 5vw, 30px); }
+.audio-recovery p { margin: 12px 0 20px; }
+.audio-recovery button {
+  display: grid; place-items: center; width: 100%; min-height: 56px;
+  padding: 12px; margin: 0 0 8px; box-sizing: border-box;
+  border: 3px solid #354838; border-radius: 0; background: #83b88c; color: #203725;
+  box-shadow: 4px 5px 0 #354838; text-align: center; font: inherit; cursor: pointer;
+}
