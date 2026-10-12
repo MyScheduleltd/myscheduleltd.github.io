@@ -7,7 +7,7 @@ globalThis.self=globalThis;
 globalThis.createImageBitmap=async blob=>{const b=new DataView(await blob.arrayBuffer());return {width:b.getUint32(16),height:b.getUint32(20),close(){}};};
 globalThis.document={createElement:()=>({width:64,height:64,getContext:()=>({fillRect(){}})})};
 const output=await build({stdin:{contents:"export * from './src/world/ImportedAvatar'; export * from './src/world/CoastalAvatar'; export * from './src/world/CoastalPose'; export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,loader:{'.png':'dataurl'},platform:'node',format:'esm',write:false});
-const {THREE,MOVE_SECONDS,loadImportedAvatar,attachImportedAvatar,syncImportedAvatars,createCoastalAvatar,walkCoastalPose,waveCoastalPose,supportCoastalPose,setCoastalSwimwear}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
+const {THREE,MOVE_SECONDS,loadImportedAvatar,attachImportedAvatar,syncImportedAvatars,createCoastalAvatar,walkCoastalPose,skateCoastalPose,waveCoastalPose,supportCoastalPose,setCoastalSwimwear}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
 const files=Object.fromEntries(await Promise.all(['male','female'].map(async sex=>{
  const bytes=await readFile(sex==='male'?(process.env.WARDROBE_MALE_TEST_ASSET??'src/assets/avatars/male.glb'):'src/assets/avatars/female.glb');
  return [sex,bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength)];
@@ -30,6 +30,36 @@ test('male shirt, vest and prints do not follow the thighs or head',()=>{
    const bone=mesh.skeleton.bones[indices.getComponent(v,k)].name;
    assert.ok(!/Leg|Foot|Toe|^Head$|head_end|headfront/.test(bone),`${id} vertex ${v} follows ${bone}`);
   }
+ }
+});
+
+test('shirt graphics stay flush with their cloth through skating, punching and dancing',()=>{
+ const {root,rig,parts}=character(),tee=parts['garment-tee'];
+ const clothPosition=tee.geometry.getAttribute('position');
+ const clothPoints=Array.from({length:clothPosition.count},(_,v)=>new THREE.Vector3().fromBufferAttribute(clothPosition,v));
+ const correspondences=[];
+ for(const id of ['print-schedule-back','print-bros-back','print-vest-back','print-schedule-front','print-house-front','print-schedule-tag']){
+  const print=parts[id],position=print.geometry.getAttribute('position');
+  assert.equal(print.userData.print_surface,'garment-tee',`${id}: no cloth attachment`);
+  for(let v=0;v<position.count;v++){
+   const point=new THREE.Vector3().fromBufferAttribute(position,v);let closest=-1,distance=Infinity;
+   clothPoints.forEach((p,i)=>{const d=point.distanceToSquared(p);if(d<distance){closest=i;distance=d;}});
+   assert.ok(Math.sqrt(distance)<.00025,`${id}: print floats away from its authored cloth vertex`);
+   correspondences.push({print,vertex:v,clothVertex:closest});
+  }
+ }
+ const check=label=>{
+  syncImportedAvatars(root);root.updateMatrixWorld(true);tee.skeleton.update();
+  for(const {print,vertex,clothVertex} of correspondences){
+   print.skeleton.update();
+   const ink=print.getVertexPosition(vertex,new THREE.Vector3()).applyMatrix4(print.matrixWorld);
+   const cloth=tee.getVertexPosition(clothVertex,new THREE.Vector3()).applyMatrix4(tee.matrixWorld);
+   assert.ok(ink.distanceTo(cloth)<.0015,`${label}: ${print.userData.componentId} separates from the shirt`);
+  }
+ };
+ for(const phase of [0,.8,1.8,3]){skateCoastalPose(rig,phase);check(`skate ${phase}`);}
+ for(const move of ['punch','dance'])for(let frame=0;frame<=16;frame++){
+  root.userData.setImportedMove(move,frame*MOVE_SECONDS[move]/16);check(`${move} ${frame}`);
  }
 });
 test('male waistband stays enclosed by the shirt in all three standing outfits',()=>{
@@ -162,6 +192,20 @@ test('male collar stays attached to the torso when either arm is raised',()=>{
    sample().forEach((point,i)=>assert.ok(point.distanceTo(rest[i])<.005,`outfit ${top}: arm movement pulled collar vertex ${vertices[i]} out of place`));
   }
  }
+});
+
+test('lower male neck skin stays with the crew collar instead of following the shoulders or head',()=>{
+ const {parts}=character(),mesh=parts.body,p=mesh.geometry.getAttribute('position');
+ const indices=mesh.geometry.getAttribute('skinIndex'),weights=mesh.geometry.getAttribute('skinWeight');let checked=0;
+ for(let v=0;v<p.count;v++){
+  if(p.getY(v)<=.325||p.getY(v)>=.354||Math.abs(p.getX(v)-.008)>=.06||Math.abs(p.getZ(v)-.024)>=.04)continue;
+  for(let k=0;k<4;k++)if(weights.getComponent(v,k)>1e-6){
+   const bone=mesh.skeleton.bones[indices.getComponent(v,k)].name;
+   assert.equal(bone,'Spine',`lower neck skin ${v} is pulled by ${bone}`);
+  }
+  checked++;
+ }
+ assert.ok(checked>100,'sample the generated neck surface around the collar');
 });
 test('male cuffs retain their open shape through elbow and wrist tracking',()=>{
  const {root,rig,parts}=character(),tee=parts['garment-tee'],p=tee.geometry.getAttribute('position');

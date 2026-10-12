@@ -720,6 +720,40 @@ test('DJ hands lie over the record and mixer with palms down',()=>{
  }
 });
 
+test('DJ pronation preserves the generated wrist volume through the complete working cycle',()=>{
+ const {root,rig}=importedCharacter();
+ const body=root.userData.importedAvatar.meshes.find(m=>m.userData.componentId==='body');
+ const position=body.geometry.getAttribute('position'),samples={};
+ for(const side of ['Left','Right']){
+  const index=name=>body.skeleton.bones.findIndex(b=>b.name===side+name);
+  const joint=name=>new THREE.Vector3().setFromMatrixPosition(body.skeleton.boneInverses[index(name)].clone().invert());
+  const wrist=joint('Hand'),axis=wrist.clone().sub(joint('ForeArm')).normalize();
+  samples[side]=Array.from({length:position.count},(_,v)=>v).filter(v=>{
+   const delta=new THREE.Vector3().fromBufferAttribute(position,v).sub(wrist);
+   return Math.abs(delta.dot(axis))<.010&&delta.length()<.05;
+  });
+  assert.ok(samples[side].length>100,'measure the actual wrist skin, including both sides of its seam');
+ }
+ const radius=side=>{
+  const frame=root.userData.importedHandFrame(side==='Left');body.skeleton.update();
+  const axis=frame.forearm.clone().applyQuaternion(rig.visualRoot.getWorldQuaternion(new THREE.Quaternion()));
+  const points=samples[side].map(v=>body.getVertexPosition(v,new THREE.Vector3()).applyMatrix4(body.matrixWorld));
+  const centre=points.reduce((a,b)=>a.add(b),new THREE.Vector3()).divideScalar(points.length);
+  return Math.sqrt(points.reduce((sum,p)=>{
+   const delta=p.clone().sub(centre);delta.addScaledVector(axis,-delta.dot(axis));return sum+delta.lengthSq();
+  },0)/points.length);
+ };
+ walkCoastalPose(rig,0,0);syncImportedAvatars(root);root.updateMatrixWorld(true);
+ const rest=Object.fromEntries(['Left','Right'].map(side=>[side,radius(side)]));
+ for(let time=0;time<=8;time+=.25){
+  djCoastalPose(rig,time);syncImportedAvatars(root);root.updateMatrixWorld(true);
+  for(const side of ['Left','Right']){
+   assert.ok(radius(side)/rest[side]>.82,`${side} wrist collapses at ${time}s`);
+   assert.ok(Math.abs(root.userData.importedHandFrame(side==='Left').wristRoll)<THREE.MathUtils.degToRad(80),`${side} wrist carries excessive pronation`);
+  }
+ }
+});
+
 
 test('controller movement resumes immediately when a teleport closes menu capture',()=>{
   const world=Object.create(FestivalWorld.prototype),events=[];

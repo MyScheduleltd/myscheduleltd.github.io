@@ -743,6 +743,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       avatarHideHead: { value: headHidden ? 1 : 0 },
       avatarDye: { value: template.dye ?? null },
       avatarSkin: { value: new THREE.Color() },
+      avatarCleanSkin: { value: new THREE.Color(META[key].native.skin ?? '#fbd2c0') },
       avatarHair: { value: new THREE.Color() },
     };
     const uniforms = new Map<THREE.SkinnedMesh, Record<string, THREE.IUniform>>();
@@ -825,6 +826,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       // The regenerated hair has its own surface label. Texture brightness
       // alone misses its lower curls and recolors baked highlights as skin.
       const hairSurface = mesh === bodyMesh && mesh.geometry.getAttribute('_hair') !== undefined;
+      const skinSurface = mesh === bodyMesh && mesh.geometry.getAttribute('_skin') !== undefined;
       // Hers only: the dressed generation's arms and hands, which give way
       // to the swimsuit body's own while she swims.
       const dressedOnly = mesh.geometry.getAttribute('_dressed') !== undefined;
@@ -842,14 +844,19 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
           varying float vAvatarCovered;
           varying float vAvatarDressed;
           varying float vAvatarHair;
+          varying float vAvatarSkin;
+          varying vec3 vAvatarRestPosition;
           ${covered ? 'attribute float _covered;' : ''}
           ${dressedOnly ? 'attribute float _dressed;' : ''}
           ${hairSurface ? 'attribute float _hair;' : ''}
+          ${skinSurface ? 'attribute float _skin;' : ''}
           ` + shader.vertexShader.replace('#include <skinning_vertex>', `#include <skinning_vertex>
           vAvatarHead = 0.;
           vAvatarCovered = ${covered ? '_covered' : '0.'};
           vAvatarDressed = ${dressedOnly ? '_dressed' : '0.'};
           vAvatarHair = ${hairSurface ? '_hair' : '0.'};
+          vAvatarSkin = ${skinSurface ? '_skin' : '0.'};
+          vAvatarRestPosition = position;
           #ifdef USE_SKINNING
             float onHead = dot(skinWeight, vec4(equal(skinIndex, vec4(avatarHeadBones.x))) + vec4(equal(skinIndex, vec4(avatarHeadBones.y)))
               + vec4(equal(skinIndex, vec4(avatarHeadBones.z))));
@@ -859,22 +866,48 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
             vAvatarHead = avatarHideHead * max(onHead / .25, (onHead + onNeck) / .6);
           #endif`);
         shader.fragmentShader = `uniform sampler2D avatarDye;
-          uniform vec3 avatarDyeOn, avatarReference, avatarSkin, avatarHair, avatarGarment;
+          uniform vec3 avatarDyeOn, avatarReference, avatarSkin, avatarCleanSkin, avatarHair, avatarGarment;
           uniform float avatarCover, avatarSwim;
           varying float vAvatarHead;
           varying float vAvatarCovered;
           varying float vAvatarDressed;
           varying float vAvatarHair;
+          varying float vAvatarSkin;
+          varying vec3 vAvatarRestPosition;
           ` + shader.fragmentShader;
         // Each dye keeps the texel's own light and shade, measured against
         // the median of its class, so a recoloured body keeps its folds.
         shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `if (vAvatarHead > 1.) discard;
           if (avatarCover > .5 && vAvatarCovered > .5) discard;
           if (avatarSwim > .5 && vAvatarDressed > .5) discard;
+          ${skinSurface && key === 'male' ? `
+          // A continuous cut at the crew neck hides lower-neck skin outside
+          // the opening; a vertex mask alone leaves isolated triangle tips.
+          vec2 collarPoint = (vAvatarRestPosition.xz - vec2(.005, .024)) / vec2(.066, .046);
+          if (avatarCover > .5 && vAvatarHair < .5 && vAvatarRestPosition.y > .325 && vAvatarRestPosition.y < .389
+            && dot(collarPoint, collarPoint) > 1.) discard;
+          ` : ''}
           #include <map_fragment>
           #ifdef USE_MAP
             vec3 dyeMask = texture2D(avatarDye, vMapUv).rgb;
-            ${hairSurface ? 'dyeMask = mix(dyeMask, vec3(0., 1., 0.), smoothstep(.2, .8, vAvatarHair));' : ''}
+            ${hairSurface ? `${key === 'male' ? 'dyeMask.g = 0.;' : ''} dyeMask = mix(dyeMask, vec3(0., 1., 0.), smoothstep(.2, .8, vAvatarHair));` : ''}
+            ${skinSurface ? `
+            // Dense generated UV islands bleed dark hair and cloth into skin.
+            // Surface labels clean only skin, retaining the eyes and mouth.
+            float skinLuma = dot(diffuseColor.rgb, vec3(.2126, .7152, .0722));
+            bool eyeRegion = abs(vAvatarRestPosition.x) > .047 && abs(vAvatarRestPosition.x) < .100
+              && vAvatarRestPosition.y > .473 && vAvatarRestPosition.y < .548 && vAvatarRestPosition.z > .119;
+            bool mouthRegion = abs(vAvatarRestPosition.x) < .034 && vAvatarRestPosition.y > .413
+              && vAvatarRestPosition.y < .444 && vAvatarRestPosition.z > .119;
+            bool facialInk = (eyeRegion && diffuseColor.b > max(diffuseColor.r, diffuseColor.g) * 1.6 && skinLuma < .18)
+              || (mouthRegion && diffuseColor.r - diffuseColor.g > .33 && diffuseColor.g < .47);
+            if (vAvatarSkin > .5 && !facialInk) {
+              float skinShade = clamp(dot(diffuseColor.rgb, vec3(.2126, .7152, .0722)) / max(avatarReference.x, .002), .96, 1.04);
+              diffuseColor.rgb = avatarCleanSkin * skinShade;
+              dyeMask = vec3(1., 0., 0.);
+            }
+            if (facialInk) dyeMask = vec3(0.);
+            ` : ''}
             vec3 dyeWeight = dyeMask * avatarDyeOn;
             float dyeTotal = dyeWeight.r + dyeWeight.g + dyeWeight.b;
             if (dyeTotal > .002) {
@@ -890,7 +923,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
             }
           #endif`);
       };
-      material.customProgramCacheKey = () => `higgsfield-avatar-dye-v9-${covered}-${dressedOnly}-${hairSurface}`;
+      material.customProgramCacheKey = () => `higgsfield-avatar-dye-v12-${covered}-${dressedOnly}-${hairSurface}-${skinSurface}`;
     }
     const meta = META[key];
     return {
@@ -1325,7 +1358,13 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     const joint = body.worldToLocal(hand.bone.getWorldPosition(new THREE.Vector3()));
     const toBody = body.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(hand.bone.getWorldQuaternion(new THREE.Quaternion()));
     const direction = (v: THREE.Vector3) => v.clone().applyQuaternion(toBody).normalize();
-    return { forearm: joint.clone().sub(elbow).normalize(), joint, palm: direction(hand.palm), thumb: direction(hand.thumb), fingers: direction(hand.fingers) };
+    const home = mounted.moveHome.get(side + 'Hand');
+    const delta = home ? hand.bone.quaternion.clone().multiply(home.clone().invert()) : new THREE.Quaternion();
+    const axis = hand.bone.position.clone().normalize();
+    const along = new THREE.Vector3(delta.x, delta.y, delta.z).dot(axis);
+    const wristRoll = 2 * Math.atan2(along, delta.w);
+    return { forearm: joint.clone().sub(elbow).normalize(), joint, palm: direction(hand.palm), thumb: direction(hand.thumb), fingers: direction(hand.fingers),
+      wristRoll: Math.atan2(Math.sin(wristRoll), Math.cos(wristRoll)) };
   };
 
   // Where the generated arm starts and how far it reaches, in the body frame.
