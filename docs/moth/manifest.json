@@ -1,0 +1,23 @@
+{
+  "name": "MASTER OF THE HOUSE",
+  "short_name": "MASTER OF THE HOUSE",
+  "description": "Master of the House: a Taipei night adventure",
+  "start_url": "/moth/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#07080f",
+  "theme_color": "#07080f",
+  "icons": [
+    {
+      "src": "/moth/assets/icons/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/moth/assets/icons/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "scope": "/moth/"
+}

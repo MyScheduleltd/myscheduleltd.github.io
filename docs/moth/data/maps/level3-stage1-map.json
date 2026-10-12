@@ -1,0 +1,44 @@
+{
+  "id": "level3-stage1",
+  "label": "LEVEL 3 STAGE 1",
+  "title": "美麗的家",
+  "subtitle": "THE HOUSEWIFE AND MOM",
+  "baseSource": "assets/maps/level3_stage1/level3-stage1-house-no-table.webp?v=level3-stage1-20260516-clean",
+  "visualModel": "baked_raster",
+  "runtimeObjectModel": "trigger_zones",
+  "collisionModel": "coarse_side_view_bounds",
+  "engineTarget": "raw_canvas",
+  "sideView": {
+    "spawnX": 126,
+    "floorY": 455,
+    "minX": 64,
+    "maxX": 1216,
+    "moveSpeed": 265,
+    "acceleration": 1500,
+    "brake": 2200,
+    "playerScale": 1.15,
+    "playerRenderOffsetY": 10,
+    "jumpVelocity": -430,
+    "gravity": 1400,
+    "crouchSpeedMultiplier": 0.44,
+    "weaponMpCost": 10
+  },
+  "walkBounds": {
+    "x": 64,
+    "y": 392,
+    "w": 1152,
+    "h": 70,
+    "floorY": 455
+  },
+  "collision": {
+    "blockers": [
+      { "id": "left-wall", "x": 0, "y": 0, "w": 48, "h": 720 },
+      { "id": "right-wall", "x": 1232, "y": 0, "w": 48, "h": 720 }
+    ]
+  },
+  "encounterZones": [],
+  "restPoints": [],
+  "exits": [],
+  "props": [],
+  "notes": "Image-generated side-view raster inspired by the supplied Level 3 reference. It is not a direct crop or copy. Household boss hazards and prop-layer depth sorting are future work."
+}

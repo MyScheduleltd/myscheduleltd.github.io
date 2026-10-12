@@ -1,0 +1,85 @@
+{
+  "id": "level1-layered-alley-sewer",
+  "baseSource": "assets/maps/level1_layered/level1-reference-base.webp?v=level1-layered-20260508b",
+  "mapSize": {
+    "width": 1280,
+    "height": 720
+  },
+  "pipeline": {
+    "visual_model": "layered_raster",
+    "runtime_object_model": "y_sorted_props",
+    "collision_model": "precise_shapes",
+    "engine_target": "raw_canvas",
+    "visual_asset_source": "image_gen"
+  },
+  "roadBounds": {
+    "topY": 304,
+    "bottomY": 366,
+    "minXTop": 54,
+    "maxXTop": 1226,
+    "minXBottom": 34,
+    "maxXBottom": 1246,
+    "farScale": 0.82,
+    "nearScale": 0.82
+  },
+  "onFootRoadBounds": {
+    "topY": 348,
+    "bottomY": 406,
+    "minXTop": 54,
+    "maxXTop": 1226,
+    "minXBottom": 74,
+    "maxXBottom": 1206,
+    "farScale": 0.82,
+    "nearScale": 0.82
+  },
+  "sewer": {
+    "entry": {
+      "x": 640,
+      "y": 418,
+      "focusX": 656,
+      "focusY": 423,
+      "radius": 90
+    },
+    "prompt": "B 進入下水道"
+  },
+  "spawn": {
+    "x": 210,
+    "depth": 0.68
+  },
+  "props": [],
+  "blockers": [],
+  "zones": {
+    "encounterGrass": [],
+    "rest": {
+      "id": "manhole-rest-point",
+      "type": "circle",
+      "x": 640,
+      "y": 418,
+      "radius": 72
+    },
+    "exits": [
+      {
+        "id": "sewer-entry",
+        "type": "circle",
+        "x": 640,
+        "y": 418,
+        "radius": 92,
+        "action": "enterSewer"
+      }
+    ]
+  },
+  "generation": {
+    "skill": "generate2dmap",
+    "model": "image_gen",
+    "reference": "/Users/myscheduleai/Downloads/ChatGPT Image 2026年5月8日 下午09_33_14.png",
+    "baseRawSource": "assets/maps/level1_layered/level1-reference-base-raw.png",
+    "baseOutput": "assets/maps/level1_layered/level1-reference-base.webp",
+    "baseSize": [
+      1280,
+      720
+    ],
+    "basePromptSummary": "Taiwanese alley above a sewer cutaway, central open manhole and vertical ladder aligned to the underground sewer, clean layered base without loose foreground props.",
+    "propPack": "assets/props/level1_layered/prop-pack.json",
+    "runtimeNote": "Temporary prop pack disabled on 2026-05-12 because prop placements/blockers mismatched the reference and blocked Level 1 movement. Keep prop assets for future rebuild, but runtime props/blockers are empty."
+  }
+}
