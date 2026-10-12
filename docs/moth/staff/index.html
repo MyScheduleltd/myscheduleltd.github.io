@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; worker-src 'none'" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="robots" content="noindex, nofollow, noarchive" />
+    <base href="/moth/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>MASTER OF THE HOUSE</title>
+    <link rel="manifest" href="/moth/staff/manifest.json" />
+    <link rel="icon" type="image/png" href="./assets/icons/app-icon-192.png" />
+    <link rel="apple-touch-icon" href="./assets/icons/app-icon-192.png" />
+    <!-- iPhone Safari has no page Fullscreen API; Add to Home Screen launches
+         the game as a standalone fullscreen web app instead. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="MASTER OF THE HOUSE" />
+    <link rel="stylesheet" href="./styles.css?v=moth-20261012a" />
+  </head>
+  <body>
+    <main class="game-shell" aria-label="Master of the House game">
+      <canvas id="game" width="1280" height="720" aria-label="Master of the House canvas"></canvas>
+      <div class="film-grain-overlay" aria-hidden="true"></div>
+      <noscript style="position:absolute;top:24px;left:24px;color:#f7f2de;font-family:monospace">JavaScript is required to play MASTER OF THE HOUSE.</noscript>
+    </main>
+    <script src="/moth/staff/game.js?v=moth-20261012a" integrity="sha384-uT/CbkOKIuyHz7EVV6p75edW6V6BaveO2XjDaDyTkd4CijZdeP17ILbwYROODHro" crossorigin="anonymous"></script>
+  </body>
+</html>

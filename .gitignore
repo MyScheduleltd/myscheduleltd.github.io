@@ -28,3 +28,5 @@ world/server/festival-state.json.*.tmp
 *.njsproj
 *.sln
 *.sw?
+
+.qa/
