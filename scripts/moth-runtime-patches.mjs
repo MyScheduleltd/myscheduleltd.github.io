@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { patchScoreboard, SCOREBOARD_METHODS } from './moth-scoreboard-client.mjs';
 
 // Keep the selected published game as the input. Both audiences get identical
 // loading/audio repairs before the public debug tools are stripped.
@@ -69,7 +70,7 @@ export function patchMothRuntime(source, ts) {
   // Definitions precede closures, but the registry must exist for secret jobs.
   const registry = `  createSceneAssetJobs() {\n    this.sceneAssetJobs = [];\n    ${definitions.join('\n    ')}\n    this.sceneAssetJobs.push(\n${jobs.map(job => `      {key:${JSON.stringify(job.key)}, group:${JSON.stringify(job.group)}, run:async () => {${job.run}}, release:() => {delete this.refs.${job.key};}}`).join(',\n')}\n    );\n    this.loadedSceneGroups = new Set();\n  }\n`;
   source = source.slice(0, start) + '      this.createSceneAssetJobs();\n' + source.slice(end);
-  once('  async loadLayeredMapConfig() {', registry + RUNTIME_METHODS + '\n  async loadLayeredMapConfig() {');
+  once('  async loadLayeredMapConfig() {', registry + RUNTIME_METHODS + SCOREBOARD_METHODS + '\n  async loadLayeredMapConfig() {');
   once('const response = await fetch("./data/level1.json", { cache: "no-store" });\n      this.config = await response.json();', 'this.config = await fetchGameJson("./data/level1.json");');
   once('const response = await fetch(source, { cache: "no-store" });\n    if (!response.ok) throw new Error(`Could not load layered map data: ${source}`);\n    const layeredMap = await response.json();', 'const layeredMap = await fetchGameJson(source);');
   once('this.loadError = error instanceof Error ? error.message : String(error);\n      this.state = "failure";', 'this.showLoadRecovery(error);');
@@ -161,6 +162,8 @@ export function patchMothRuntime(source, ts) {
   // layers blended on top. Windows draws through the compositor instead.
   once('const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });', 'const DESYNC_CANVAS = !/Windows/i.test(navigator.userAgentData?.platform || navigator.userAgent || "");\nconst ctx = canvas.getContext("2d", { alpha: false, desynchronized: DESYNC_CANVAS });');
   once('this.portraitCtx = element.getContext("2d", { alpha: false, desynchronized: true });', 'this.portraitCtx = element.getContext("2d", { alpha: false, desynchronized: DESYNC_CANVAS });');
+  // Final scoreboard (scripts/moth-scoreboard-client.mjs).
+  patchScoreboard(once);
   const imageStart = source.indexOf('function loadImage(src) {');
   const imageEnd = source.indexOf('\nfunction loadOptionalSheet(src)', imageStart);
   assert(imageStart > 0 && imageEnd > imageStart);

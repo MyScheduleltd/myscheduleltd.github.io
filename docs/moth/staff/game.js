@@ -1886,11 +1886,11 @@ const HOME_ROOT_MENU_ITEMS = [
   { id: "stageSelect", label: "STAGE SELECT" },
   { id: "playlist", label: "PLAYLIST" },
   { id: "lyrics", label: "LYRICS" },
+  { id: "scoreboard", label: "SCOREBOARD" },
   { id: "settings", label: "SETTINGS" },
   { id: "language", label: "LANGUAGE: ENGLISH" },
   { id: "deviceMode", label: "MODE: DESKTOP" },
-  { id: "credits", label: "GAME CREDITS" },
-  { id: "difficulty", label: "DIFFICULTY" }
+  { id: "credits", label: "GAME CREDITS" }
 ];
 // Which stages STAGE SELECT is allowed to list: the fight at the end of each
 // level. Story-only connective scenes (the sewer, the approach walks) are
@@ -2969,6 +2969,396 @@ for (const level of this.config.secretLevels || []) {
     }).catch(() => {}); // The player's generated waveform remains available.
   }
 
+  // ---- Final scoreboard (scripts/moth-scoreboard-client.mjs) ----
+  startStoryRun(difficulty) {
+    this.setDifficulty(difficulty, { announce: false });
+    this.storyDifficultyId = null;
+    if (!this.progress) this.progress = this.createDefaultProgress();
+    const random = () => Math.random().toString(36).slice(2, 10);
+    const id = globalThis.crypto?.randomUUID?.() || ('run-' + Date.now().toString(36) + '-' + random() + random());
+    this.progress.storyRun = { id, difficulty, scores: {}, startedAt: Date.now() };
+    this.startNewStory();
+  }
+
+  recordStoryFightScore(stageId) {
+    const run = this.progress?.storyRun;
+    const rhythm = this.level1OfficeRhythm;
+    if (this.freePlay || !run || !rhythm || !["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"].includes(stageId)) return;
+    if (this.difficultyId !== run.difficulty) run.mixed = true;
+    run.scores[stageId] = Math.max(0, Math.round(rhythm.roundScore || 0));
+  }
+
+  storyRunResult(run = this.progress?.storyRun) {
+    if (!run) return null;
+    const fights = ["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"];
+    const total = fights.reduce((sum, id) => sum + (run.scores?.[id] || 0), 0);
+    const complete = !run.legacy && !run.mixed && fights.every(id => Number.isFinite(run.scores?.[id]));
+    return { run, total, complete, mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' };
+  }
+
+  maybeShowFinalScoreboard() {
+    if (this.freePlay || this.scoreboard) return false;
+    if (!this.progress) this.progress = this.createDefaultProgress();
+    let run = this.progress.storyRun;
+    // A story begun before the scoreboard existed still sees it once.
+    if (!run) run = this.progress.storyRun = { id: 'legacy-' + Date.now().toString(36), legacy: true, difficulty: this.difficultyId, scores: {} };
+    if (run.boardShown) return false;
+    run.boardShown = true;
+    run.finishedAt = Date.now();
+    this.saveProgress();
+    this.openScoreboard({ final: true, onClose: () => this.startFinaleEnding() });
+    return true;
+  }
+
+  scoreboardModeLabel(mode) {
+    const spec = RHYTHM_DIFFICULTIES[mode] || RHYTHM_DIFFICULTIES.chill;
+    return this.tr(spec.en, spec.zh);
+  }
+
+  openScoreboard({ final = false, onClose = null } = {}) {
+    this.closeScoreboard({ silent: true });
+    const run = this.progress?.storyRun;
+    const result = final || run?.boardShown ? this.storyRunResult(run) : null;
+    const board = { final, onClose, result, mode: result?.mode || (this.difficultyId === 'shoot' ? 'shoot' : 'chill'),
+      entries: {}, status: { chill: 'loading', shoot: 'loading' }, draftId: result?.run.posted?.id || '', message: '', posting: false };
+    this.scoreboard = board;
+    this.releaseHeldInputs?.();
+    const root = document.createElement('div');
+    root.className = 'moth-board';
+    root.setAttribute('role', 'dialog');
+    root.setAttribute('aria-modal', 'true');
+    root.setAttribute('aria-labelledby', 'moth-board-title');
+    for (const type of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'click', 'wheel']) root.addEventListener(type, event => event.stopPropagation(), { passive: true });
+    document.body.append(root);
+    board.root = root;
+    this.renderScoreboard();
+    root.querySelector('[data-board-close]')?.focus({ preventScroll: true });
+    for (const mode of ['chill', 'shoot']) this.fetchScoreboard(mode);
+    this.prepareScoreCard();
+  }
+
+  closeScoreboard({ silent = false } = {}) {
+    const board = this.scoreboard;
+    if (!board) return;
+    board.root?.remove();
+    this.scoreboard = null;
+    if (!silent) board.onClose?.();
+    this.updateMobileControls?.(true);
+  }
+
+  async fetchScoreboard(mode) {
+    const board = this.scoreboard;
+    if (!board) return;
+    board.status[mode] = 'loading';
+    this.renderScoreboard();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(this.scoreboardApi() + '?mode=' + mode, { cache: 'no-store', signal: controller.signal });
+      if (!response.ok) throw new Error(String(response.status));
+      const data = await response.json();
+      if (this.scoreboard !== board) return;
+      board.entries[mode] = Array.isArray(data.entries) ? data.entries : [];
+      board.status[mode] = 'ready';
+    } catch {
+      if (this.scoreboard === board) board.status[mode] = 'error';
+    } finally {
+      clearTimeout(timer);
+    }
+    if (this.scoreboard === board) this.renderScoreboard();
+  }
+
+  scoreboardApi() {
+    return 'https://beauty-boy.vercel.app/api/moth-scoreboard';
+  }
+
+  // Where the run stands against the loaded board.
+  scoreboardStanding(board = this.scoreboard) {
+    const result = board?.result;
+    if (!result) return null;
+    if (!result.complete) return { kind: 'ineligible' };
+    if (result.run.posted) return { kind: 'posted', rank: result.run.posted.rank };
+    if (board.status[result.mode] !== 'ready') return { kind: board.status[result.mode] };
+    const entries = board.entries[result.mode] || [];
+    if (entries.length < 10 || result.total > entries[entries.length - 1].total) return { kind: 'qualifies' };
+    return { kind: 'short', gap: entries[entries.length - 1].total - result.total + 200 };
+  }
+
+  renderScoreboard() {
+    const board = this.scoreboard;
+    if (!board?.root) return;
+    const active = document.activeElement;
+    const focusKey = board.root.contains(active) ? active.dataset.focusKey : null;
+    const caret = active?.tagName === 'INPUT' ? [active.selectionStart, active.selectionEnd] : null;
+    const el = (tag, attrs = {}, ...children) => {
+      const node = document.createElement(tag);
+      for (const [key, value] of Object.entries(attrs)) {
+        if (value === false || value == null) continue;
+        if (key === 'text') node.textContent = value;
+        else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
+        else node.setAttribute(key, value === true ? '' : value);
+      }
+      node.append(...children.filter(Boolean));
+      return node;
+    };
+    const tr = (en, zh) => this.tr(en, zh);
+    const number = value => Number(value || 0).toLocaleString('en-US');
+    const result = board.result;
+    const standing = this.scoreboardStanding(board);
+    const section = el('section');
+    section.append(
+      el('small', { text: 'M.O.T.H · DR. BEAUTY' }),
+      el('h2', { id: 'moth-board-title', text: board.final ? tr('FINAL SCORE', '最終成績') : tr('SCOREBOARD', '排行榜') })
+    );
+    if (result) {
+      const status = {
+        ineligible: tr('This story run cannot enter the scoreboard (it began before the scoreboard opened). Start a new story to compete.', '這次的故事無法登上排行榜（在排行榜開放前就開始了）。從故事模式重新開始即可挑戰排名。'),
+        posted: result.run.posted?.rank ? tr('You are #' + result.run.posted.rank + ' on the ' + this.scoreboardModeLabel(result.mode) + ' board!', '你在' + this.scoreboardModeLabel(result.mode) + '排行榜第 ' + result.run.posted.rank + ' 名！') : tr('This run is already on the scoreboard.', '這次的成績已經登上排行榜。'),
+        qualifies: tr('Top 10! Enter an ID to join the scoreboard.', '進入前十名！輸入 ID 登上排行榜。'),
+        short: standing?.kind === 'short' ? tr(number(standing.gap) + ' more points would have reached the top 10.', '還差 ' + number(standing.gap) + ' 分就能擠進前十名，再接再厲！') : '',
+        loading: tr('Loading the scoreboard…', '正在讀取排行榜…'),
+        error: tr('The scoreboard cannot be reached right now.', '排行榜暫時無法連線。')
+      }[standing?.kind] || '';
+      section.append(el('div', { class: 'moth-board-run' },
+        el('span', { text: this.scoreboardModeLabel(result.mode) + ' · ' + tr('7 FIGHTS TOTAL', '七場戰鬥總分') }),
+        el('strong', { text: number(result.total) }),
+        el('p', { text: status })));
+    }
+    const tabs = el('div', { class: 'moth-board-tabs', role: 'tablist' });
+    for (const mode of ['chill', 'shoot']) {
+      tabs.append(el('button', { type: 'button', role: 'tab', 'aria-selected': String(board.mode === mode), 'data-focus-key': 'tab-' + mode, text: this.scoreboardModeLabel(mode),
+        onclick: () => { board.mode = mode; this.renderScoreboard(); } }));
+    }
+    section.append(tabs);
+    const list = el('ol', { class: 'moth-board-list', tabindex: '0', 'aria-label': tr('Top 10', '前十名'), 'data-focus-key': 'list' });
+    const entries = board.entries[board.mode] || [];
+    if (board.status[board.mode] === 'loading' && !entries.length) list.append(el('li', { class: 'state', text: tr('Loading…', '讀取中…') }));
+    else if (board.status[board.mode] === 'error' && !entries.length) list.append(el('li', { class: 'state' }, tr('Cannot reach the scoreboard.', '無法連線到排行榜。'), ' ', el('button', { type: 'button', class: 'moth-board-retry', 'data-focus-key': 'retry', text: tr('RETRY', '重試'), onclick: () => this.fetchScoreboard(board.mode) })));
+    else if (!entries.length) list.append(el('li', { class: 'state', text: tr('No scores yet. Be the first!', '還沒有人上榜，搶下第一名！') }));
+    for (const entry of entries) {
+      const mine = result?.run.posted && entry.id === result.run.posted.id && entry.total === result.total && board.mode === result.mode;
+      const date = new Date(entry.at);
+      list.append(el('li', { class: mine ? 'is-mine' : null, 'data-rank': String(entry.rank) },
+        el('span', { class: 'rank', text: String(entry.rank).padStart(2, '0') }),
+        el('span', { class: 'id', text: entry.id }),
+        el('span', { class: 'score', text: number(entry.total) }),
+        el('span', { class: 'date', text: Number.isFinite(date.getTime()) ? date.getFullYear() + '/' + String(date.getMonth() + 1).padStart(2, '0') + '/' + String(date.getDate()).padStart(2, '0') : '' })));
+    }
+    section.append(list);
+    if (board.final && standing?.kind === 'qualifies') {
+      const input = el('input', { type: 'text', inputmode: 'text', autocomplete: 'nickname', enterkeyhint: 'send', maxlength: '8', 'data-focus-key': 'id',
+        'aria-label': tr('Your ID', '你的 ID'), placeholder: tr('Up to 8 characters', '最多 8 個字'), value: board.draftId });
+      input.value = board.draftId;
+      input.addEventListener('input', () => { board.draftId = input.value; });
+      section.append(el('div', { class: 'moth-board-post' },
+        el('label', { text: tr('ID · Chinese, English or numbers', 'ID · 中文、英文或數字') }),
+        input,
+        el('button', { type: 'button', class: 'is-primary', 'data-focus-key': 'post', disabled: board.posting, text: board.posting ? tr('POSTING…', '上傳中…') : tr('JOIN', '登上排行榜'), onclick: () => this.postScore() })));
+    }
+    section.append(el('p', { class: 'moth-board-message', role: 'status', text: board.message }));
+    const actions = el('div', { class: 'moth-board-actions' });
+    if (result?.complete) actions.append(el('button', { type: 'button', 'data-focus-key': 'share', text: tr('SHARE CARD', '分享成績卡'), onclick: () => this.shareScoreCard() }));
+    actions.append(el('button', { type: 'button', 'data-focus-key': 'copy', text: tr('COPY LINK', '複製連結'), onclick: () => this.copyScoreLink() }));
+    section.append(actions);
+    section.append(el('button', { type: 'button', class: 'moth-board-close is-primary', 'data-board-close': true, 'data-focus-key': 'close',
+      text: board.final ? tr('CONTINUE · CREDITS', '繼續 · 片尾名單') : tr('BACK', '返回'), onclick: () => this.closeScoreboard() }));
+    const scroll = board.root.querySelector('.moth-board-list')?.scrollTop || 0;
+    board.root.replaceChildren(section);
+    board.root.querySelector('.moth-board-list').scrollTop = scroll;
+    const restore = focusKey && board.root.querySelector('[data-focus-key="' + focusKey + '"]');
+    if (restore) {
+      restore.focus({ preventScroll: true });
+      if (caret && restore.tagName === 'INPUT') restore.setSelectionRange(...caret);
+    }
+  }
+
+  handleScoreboardKey(event) {
+    const board = this.scoreboard;
+    const typing = event.target?.tagName === 'INPUT';
+    const code = event.code;
+    if (typing) {
+      if (code === 'Enter' || code === 'NumpadEnter') { event.preventDefault(); this.postScore(); }
+      else if (code === 'Escape') { event.preventDefault(); event.target.blur(); }
+      return;
+    }
+    const list = board.root.querySelector('.moth-board-list');
+    if (code === 'ArrowLeft' || code === 'ArrowRight' || code === 'KeyA' || code === 'KeyD') {
+      board.mode = code === 'ArrowLeft' || code === 'KeyA' ? 'chill' : 'shoot';
+      this.renderScoreboard();
+    } else if (code === 'ArrowUp' || code === 'ArrowDown' || code === 'KeyW' || code === 'KeyS') {
+      list?.scrollBy({ top: (code === 'ArrowUp' || code === 'KeyW' ? -1 : 1) * 56 });
+    } else if (code === 'Escape' || code === 'KeyH') {
+      this.closeScoreboard();
+    } else if (code === 'Enter' || code === 'Space' || code === 'KeyO') {
+      if (event.repeat) return event.preventDefault();
+      const focused = board.root.contains(document.activeElement) && document.activeElement.tagName === 'BUTTON' ? document.activeElement : null;
+      (focused || board.root.querySelector('.moth-board-post input') || board.root.querySelector('[data-board-close]'))?.[focused ? 'click' : 'focus']?.();
+    } else return;
+    event.preventDefault();
+  }
+
+  scoreboardMessage(error, status) {
+    const tr = (en, zh) => this.tr(en, zh);
+    if (error === 'id') return tr('IDs are 1–8 characters: Chinese, English letters or numbers.', 'ID 只能用中文、英文或數字，最多 8 個字。');
+    if (error === 'id-blocked') return tr('Please choose a different ID.', '這個 ID 不能使用，請換一個。');
+    if (error === 'not-top') return tr('So close! Others posted higher scores first.', '差一點！其他玩家剛搶先登上前十。');
+    if (error === 'posted') return tr('This run is already on the scoreboard.', '這次的成績已經登上排行榜。');
+    if (error === 'rate' || status === 429) return tr('Too many tries. Please wait a few minutes.', '嘗試太多次了，請稍等幾分鐘再試。');
+    return tr('The scoreboard cannot be reached right now.', '排行榜暫時無法連線。');
+  }
+
+  async postScore() {
+    const board = this.scoreboard;
+    const result = board?.result;
+    if (!board || board.posting || !result?.complete || result.run.posted) return;
+    const id = String(board.draftId || '').normalize('NFKC').trim();
+    if (!/^[\p{Script=Han}A-Za-z0-9]{1,8}$/u.test(id)) {
+      board.message = this.scoreboardMessage('id');
+      this.renderScoreboard();
+      return;
+    }
+    board.posting = true;
+    board.message = '';
+    this.renderScoreboard();
+    try {
+      const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: result.mode, id, run: result.run.id, scores: result.run.scores }) });
+      const data = await response.json().catch(() => ({}));
+      if (Array.isArray(data.entries)) { board.entries[result.mode] = data.entries; board.status[result.mode] = 'ready'; }
+      if (response.status === 201) {
+        result.run.posted = { rank: data.rank, id, at: Date.now() };
+        board.mode = result.mode;
+        board.message = '';
+        this.prepareScoreCard();
+      } else {
+        if (data.error === 'posted') result.run.posted = { rank: null, id };
+        board.message = this.scoreboardMessage(data.error, response.status);
+      }
+      this.saveProgress();
+    } catch {
+      board.message = this.scoreboardMessage(null);
+    }
+    board.posting = false;
+    this.renderScoreboard();
+  }
+
+  scoreShareText(result = this.scoreboard?.result) {
+    const url = 'https://myscheduleltd.com/moth/';
+    if (!result?.complete) return this.tr('Play MASTER OF THE HOUSE: ' + url, '來玩《MASTER OF THE HOUSE》：' + url);
+    const total = Number(result.total).toLocaleString('en-US');
+    const rank = result.run.posted?.rank;
+    return this.tr('I scored ' + total + ' on MASTER OF THE HOUSE (' + this.scoreboardModeLabel(result.mode) + ')' + (rank ? ', #' + rank + ' on the scoreboard' : '') + '! Beat it: ' + url,
+      '我在《MASTER OF THE HOUSE》' + this.scoreboardModeLabel(result.mode) + '拿到 ' + total + ' 分' + (rank ? '，排行榜第 ' + rank + ' 名' : '') + '！來挑戰：' + url);
+  }
+
+  async copyScoreLink() {
+    const board = this.scoreboard;
+    const text = this.scoreShareText(board?.result);
+    let copied = false;
+    try { await navigator.clipboard.writeText(text); copied = true; } catch {
+      const area = document.createElement('textarea');
+      area.value = text; area.setAttribute('readonly', ''); area.style.cssText = 'position:fixed;left:-9999px;top:0';
+      document.body.append(area); area.select();
+      try { copied = document.execCommand('copy'); } catch {}
+      area.remove();
+    }
+    if (this.scoreboard !== board) return;
+    board.message = copied ? this.tr('Link copied.', '已複製連結。') : text;
+    this.renderScoreboard();
+  }
+
+  // The card is drawn ahead of the tap, because iPhone only shares from
+  // inside the tap itself.
+  async prepareScoreCard() {
+    const board = this.scoreboard;
+    const result = board?.result;
+    if (!result?.complete) return;
+    // Dr. Beauty's dialogue portrait (orange suit) is loaded with the fights;
+    // from the main menu it may not be, so fetch it for the card.
+    let portrait = this.refs?.dialogueProfilesSheet;
+    const source = this.config?.sprites?.dialogueProfiles?.source;
+    if (!portrait?.naturalWidth && source) portrait = await loadImage(source).catch(() => null);
+    if (this.scoreboard !== board) return;
+    this.drawScoreCard(result, portrait).toBlob(blob => {
+      if (this.scoreboard !== board || !blob) return;
+      board.cardFile = new File([blob], 'moth-score-' + result.total + '.png', { type: 'image/png' });
+    }, 'image/png');
+  }
+
+  shareScoreCard() {
+    const board = this.scoreboard;
+    const file = board?.cardFile;
+    if (!file) return;
+    const text = this.scoreShareText(board.result);
+    if (navigator.canShare?.({ files: [file] })) {
+      navigator.share({ files: [file], text, title: 'MASTER OF THE HOUSE' }).catch(() => {});
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const link = document.createElement('a');
+    link.href = url; link.download = file.name;
+    document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    board.message = this.tr('Score card saved.', '成績卡已下載。');
+    this.renderScoreboard();
+  }
+
+  drawScoreCard(result, portrait) {
+    const W = 1080, H = 1350;
+    const card = document.createElement('canvas');
+    card.width = W; card.height = H;
+    const g = card.getContext('2d');
+    const tr = (en, zh) => this.tr(en, zh);
+    g.fillStyle = '#141a16'; g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(239, 227, 196, 0.035)';
+    for (let y = 0; y < H; y += 6) g.fillRect(0, y, W, 2);
+    // The main menu's board: dark green, a cream rule, a red marker.
+    g.fillStyle = '#2b3a2f'; g.fillRect(48, 48, W - 96, H - 96);
+    g.strokeStyle = '#d8d2b4'; g.lineWidth = 8; g.strokeRect(60, 60, W - 120, H - 120);
+    g.strokeStyle = '#141a16'; g.lineWidth = 4; g.strokeRect(72, 72, W - 144, H - 144);
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#f7f2de';
+    drawFittedText(g, 'MASTER OF THE HOUSE', W / 2, 150, W - 220, 72, 900, 40);
+    g.fillStyle = '#8fe8ff';
+    drawFittedText(g, 'BEAUTY BOY · DR. BEAUTY', W / 2, 212, W - 260, 30, 900, 18);
+    const profiles = this.config?.sprites?.dialogueProfiles;
+    if (portrait?.naturalWidth && profiles) {
+      const size = 300, x = W / 2 - size / 2, y = 262;
+      g.fillStyle = '#1d2720'; g.fillRect(x - 10, y - 10, size + 20, size + 20);
+      g.save(); g.beginPath(); g.rect(x, y, size, size); g.clip();
+      g.imageSmoothingEnabled = false;
+      drawBundleFrame(g, portrait, profiles, bundleFrameIndex(profiles, 'bobby'), W / 2, y, size, size, { x: 0.5, y: 0 });
+      g.restore();
+      g.strokeStyle = '#d8d2b4'; g.lineWidth = 6; g.strokeRect(x - 10, y - 10, size + 20, size + 20);
+    }
+    g.fillStyle = '#ffd36c';
+    drawFittedText(g, tr('FINAL SCORE', '最終成績') + ' · ' + this.scoreboardModeLabel(result.mode), W / 2, 640, W - 220, 40, 900, 24);
+    g.font = '900 150px ' + CANVAS_UI_FONT;
+    const fitted = fitCanvasText(g, Number(result.total).toLocaleString('en-US'), W - 200, 150, 900, 80);
+    drawOutlinedText(g, fitted.text, W / 2, 760, { fill: '#f7f2de', shadow: '#0b0e0c', outline: '#141a16', accent: '#ce3f49', accentOffset: 6 });
+    const rank = result.run.posted?.rank;
+    g.fillStyle = rank ? '#ffd36c' : '#b9c7b4';
+    drawFittedText(g, rank ? tr('#' + rank + ' ON THE SCOREBOARD', '排行榜第 ' + rank + ' 名') : tr('7 FIGHTS TOTAL', '七場戰鬥總分'), W / 2, 880, W - 220, 44, 900, 24);
+    if (result.run.posted?.id) {
+      g.fillStyle = '#f7f2de';
+      drawFittedText(g, 'ID · ' + result.run.posted.id, W / 2, 944, W - 260, 36, 900, 22);
+    }
+    // The seven fights, two columns.
+    const fights = ["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"];
+    g.font = '900 28px ' + CANVAS_UI_FONT;
+    fights.forEach((id, index) => {
+      const col = index < 4 ? 0 : 1, row = index < 4 ? index : index - 4;
+      const x = col ? W / 2 + 30 : 130, y = 1010 + row * 50;
+      g.textAlign = 'left'; g.fillStyle = '#8fe8ff';
+      g.fillText(tr('LEVEL ', '關卡 ') + (index + 1), x, y);
+      g.textAlign = 'right'; g.fillStyle = '#f7f2de';
+      g.fillText(Number(result.run.scores?.[id] || 0).toLocaleString('en-US'), x + (W / 2 - 160), y);
+    });
+    g.textAlign = 'center'; g.fillStyle = '#ffd36c';
+    drawFittedText(g, 'myscheduleltd.com/moth', W / 2, H - 100, W - 260, 32, 900, 20);
+    return card;
+  }
+
   async loadLayeredMapConfig() {
     const source = this.config?.map?.layeredDataSource;
     if (!source) return;
@@ -3232,6 +3622,7 @@ for (const level of this.config.secretLevels || []) {
       }
     }, { capture: true });
     window.addEventListener("keydown", (event) => {
+      if (this.scoreboard) { this.handleScoreboardKey(event); return; }
       if (this.loadError) { if (["Enter", "Space", "KeyO"].includes(event.code) && !event.repeat) window.location.reload(); event.preventDefault(); return; }
       if (this.audioRecoveryVisible()) {
         if (["Enter", "Space", "KeyO"].includes(event.code) && !event.repeat) this.recoverGameAudio();
@@ -6042,6 +6433,7 @@ for (const level of this.config.secretLevels || []) {
       // Old saves have only lifetime unlocks. Keep their Continue behavior
       // until a new story run establishes its own checkpoint.
       storyCheckpoint: validStages.has(progress.storyCheckpoint) ? progress.storyCheckpoint : null,
+      storyRun: progress.storyRun && typeof progress.storyRun === "object" && typeof progress.storyRun.id === "string" && progress.storyRun.scores && typeof progress.storyRun.scores === "object" ? progress.storyRun : null,
       flags,
       latestInventory: this.normalizeInventory(progress.latestInventory || save?.inventory || defaults.latestInventory),
       latestCollectedSongs: this.normalizeCollectedSongs(progress.latestCollectedSongs || save?.collectedSongs || []),
@@ -6095,6 +6487,7 @@ for (const level of this.config.secretLevels || []) {
 
   completeStage(stageId) {
     if (this.freePlay) return;
+    this.recordStoryFightScore(stageId);
     if (!stageId) return;
     if (!this.progress) this.progress = this.createDefaultProgress();
     const ordered = this.getHomeStageDefs().map((stage) => stage.id);
@@ -6963,6 +7356,8 @@ for (const level of this.config.secretLevels || []) {
   continueStory() {
     const stageId = this.getContinueStageId();
     if (!stageId) return false;
+    const runMode = this.progress?.storyRun?.difficulty;
+    if (runMode && runMode !== this.difficultyId) this.setDifficulty(runMode, { persist: false, announce: false });
     this.freePlay = false;
     return this.startStage(stageId, { freePlay: false });
   }
@@ -9046,6 +9441,7 @@ for (const level of this.config.secretLevels || []) {
       stageSelect: this.tr("STAGE SELECT", "關卡選擇"),
       playlist: this.tr("PLAYLIST", "歌曲"),
       lyrics: this.tr("LYRICS", "歌詞"),
+      scoreboard: this.tr("SCOREBOARD", "排行榜"),
       difficulty: `${this.tr("DIFFICULTY", "難度")}: ${this.getDifficultyLabel()}`,
       deviceMode: `${this.tr("MODE", "模式")}: ${this.getDeviceModeLabel()}`,
       language: `${this.tr("LANGUAGE", "語言")}: ${this.tr("ENGLISH", "繁體中文")}`,
@@ -9094,6 +9490,11 @@ for (const level of this.config.secretLevels || []) {
   async startStageWithPickedDifficulty() {
     const pick = this.homeMenu?.difficultyPick;
     if (!pick) return;
+    if (pick.story) {
+      this.homeMenu.difficultyPick = null;
+      this.startStoryRun(pick.choice === 1 ? "shoot" : "chill");
+      return;
+    }
     const chosen = pick.choice === 1 ? "shoot" : "chill";
     this.homeMenu.difficultyPick = null;
     this.stageSelectDifficultyId = chosen;
@@ -9112,7 +9513,9 @@ for (const level of this.config.secretLevels || []) {
     if (!item) return;
     if (this.homeMenu.view === "root") {
       if (item.id === "newGame") {
-        this.startNewStory();
+        this.homeMenu.difficultyPick = { story: true, title: this.tr("STORY MODE", "故事模式"), choice: this.difficultyId === "shoot" ? 1 : 0 };
+      } else if (item.id === "scoreboard") {
+        this.openScoreboard();
       } else if (item.id === "continue") {
         this.freePlay = false;
         this.continueStory();
@@ -17858,6 +18261,7 @@ for (const level of this.config.secretLevels || []) {
   }
 
   startFinaleEnding() {
+    if (this.maybeShowFinalScoreboard()) return;
     if (this.deferSceneAssets("finale-stage1", () => this.startFinaleEnding())) return;
     this.currentStageId = "finale-stage1";
     this.state = "finaleEnding";
