@@ -21,4 +21,4 @@ Repairs the male skating neckline, stray skin/face marks, DJ wrist twist and flo
 
 ## Publication status
 
-Prepared locally; no release PR created or pushed yet. The commit/push command was not executed because automatic approval review hit the account usage limit. Existing source commits remain local. Not live. After approval, merge normally, wait for Pages, then verify public entries and hashes. Retain old hashed assets for cached entries. Rejected female generation and diagnostic Blender files stay offline.
+Release branch pushed after the initial approval-review account-limit failure cleared. Awaiting protected-main review; not live. After approval, merge normally, wait for Pages, then verify public entries and hashes. Retain old hashed assets for cached entries. Rejected female generation and diagnostic Blender files stay offline.

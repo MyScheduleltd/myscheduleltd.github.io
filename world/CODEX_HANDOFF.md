@@ -6,7 +6,7 @@ Production TypeScript/Vite build and **432/432 tests pass**. Both channel packag
 
 Evidence: `art/beta-release-20261013/RELEASE.md` and `package-verification.json`, plus male skating, face, DJ wrist, print-fitting and original-female browser screenshots in `art/avatar-followup-20261012/`. This release adds no server change relative to current main, so it does not require a new Render deployment. Physical webcam/headset checks remain unmeasured.
 
-The final package commit and release-branch push were not executed: automatic approval review failed because the account usage limit prevented review (reported retry time 3:57 AM). No new PR has been created. Resolve the approval-review failure before retrying; do not bypass it.
+The initial package commit/push was not executed because automatic approval review hit an account limit. A later live account check allowed ordinary usage; the same approval path then succeeded. Release packages are committed and pushed on `codex/avatar-print-release-20261013`, awaiting a new protected-main PR review.
 
 GitHub requires a fresh review including the final push from `macakinTT` or another authorized reviewer. Packages and a PR are not a live deployment. Do not bypass protection. Verify Pages and public asset hashes after merge before reporting publication complete.
 
