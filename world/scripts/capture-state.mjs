@@ -14,15 +14,23 @@
  *     node world/scripts/capture-state.mjs
  *     node world/scripts/capture-state.mjs http://127.0.0.1:8787
  *
+ * FESTIVAL_SEED_FILE, the variable the service boots from, writes the capture
+ * somewhere other than the committed seed; the tests use it to check that a
+ * capture really does come back after a deploy.
+ *
  * It reads only the public settings endpoint, so it needs no STAFF key, and it
  * deliberately captures neither the key nor the chat: the repository is public,
  * and neither belongs in it.
  */
 import { readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const service = (process.argv[2] ?? 'https://myschedule-festival.onrender.com').replace(/\/$/, '');
-const target = fileURLToPath(new URL('../server/festival-seed.json', import.meta.url));
+const configuredTarget = (process.env.FESTIVAL_SEED_FILE ?? '').trim();
+const target = configuredTarget && configuredTarget !== 'off'
+  ? resolve(configuredTarget)
+  : fileURLToPath(new URL('../server/festival-seed.json', import.meta.url));
 
 const response = await fetch(`${service}/api/config`);
 if (!response.ok) {
@@ -40,6 +48,12 @@ if (!live.schedule || typeof live.schedule !== 'object') {
   console.error('That response carried no programme, so there is nothing to save.');
   process.exit(1);
 }
+
+// Without the edition the service drops the DJ profiles below as stale, and
+// every STAFF edit to a DJ card goes with them. A service from before
+// 2026-10-12 does not report it; the seed already here is then the best guess,
+// since the edition only moves when the code's own defaults are corrected.
+const djProfileSeed = live.djProfileSeed ?? previous.djProfileSeed;
 
 // Timestamps are left out on purpose. A schedule's startedAt belongs to the
 // process that wrote it, and the service stamps its own on boot anyway.
@@ -63,8 +77,7 @@ const seed = {
   shopLink: live.shopLink,
   templeSign: live.templeSign,
   djProfiles: live.djProfiles,
-  // Without the edition the service drops the profiles above as stale.
-  djProfileSeed: live.djProfileSeed,
+  djProfileSeed,
   npcNames: live.npcNames,
   // Job titles live on the profiles, not beside the names, and were being left
   // behind — STAFF renaming a resident's title saw it reset on the next deploy.
@@ -114,4 +127,10 @@ console.log(`  ${seed.jukeboxTracks.length} record(s) on the jukebox's shelf`);
 console.log(`  ${Object.keys(seed.immersiveSources).length} VR link(s)`);
 console.log(`  ${Object.keys(seed.videoTitles).length} retitled film(s)`);
 console.log(`  ${Object.keys(seed.npcIntroductions).length} English and ${Object.keys(seed.npcIntroductionsZh).length} Chinese resident introduction(s)`);
+console.log(`  ${Object.keys(seed.djProfiles ?? {}).length} DJ card(s), edition ${djProfileSeed ?? 'MISSING'}`);
+if (!live.djProfileSeed) {
+  console.warn(djProfileSeed
+    ? `  ! ${service} did not report its DJ card edition; kept ${djProfileSeed} from the previous seed.`
+    : '  ! No DJ card edition: the next deploy will drop these DJ cards and serve the defaults in the code.');
+}
 console.log('Commit world/server/festival-seed.json for these to survive the next deploy.');
