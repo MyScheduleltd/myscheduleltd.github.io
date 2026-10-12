@@ -2622,6 +2622,7 @@ for (const level of this.config.secretLevels || []) this.sceneAssetJobs.push({ke
 
   async loadChapterAssets(stageId) {
     const groups = this.sceneGroups(stageId);
+    this.prefetchChapterAudio(groups);
     // A loading screen draws no outgoing scene artwork. Release it before
     // decoding the next chapter so mobile Safari does not hold the whole game.
     for (const group of this.loadedSceneGroups) {
@@ -2687,6 +2688,85 @@ for (const level of this.config.secretLevels || []) this.sceneAssetJobs.push({ke
     const title = fitCanvasText(target, this.tr('CONNECTION LOST', '連線中斷'), W - (tall ? 72 : 200), tall ? 60 : 72, 900, 28);
     drawOutlinedText(target, title.text, W / 2, Math.round(H * (tall ? 0.2 : 0.17)), {fill:'#f7f2de', shadow:'#05070d', outline:'#080b12', accent:'#ff4866', accentOffset:4});
     target.restore();
+  }
+
+  // A track's mirror copy has to be ready before the tap that first plays it,
+  // so it is fetched ahead: the first fight's music on the home screen, the
+  // highlighted song or stage after 300 ms, the next track, and each
+  // chapter's fight music while the chapter loads.
+  prefetchMirroredAudio(src) {
+    if (!MIRROR_BASE || !src || src.startsWith('blob:')) return;
+    this.audioMirror ||= new Map();
+    if (this.audioMirror.has(src)) return;
+    const entry = {url: null, used: 0};
+    this.audioMirror.set(src, entry);
+    mirrorObjectUrl(src).then(url => {
+      Object.assign(entry, {url, used: performance.now()});
+      this.trimAudioMirror();
+    });
+  }
+
+  mirroredAudioUrl(src) {
+    const entry = src && this.audioMirror?.get(src);
+    if (!entry?.url) return null;
+    entry.used = performance.now();
+    return entry.url;
+  }
+
+  // An element still pointing at a copy keeps it alive; beyond eight idle
+  // copies the oldest are released, and idle song players using one are
+  // dropped so the next play rebuilds them.
+  audioUsing(url) {
+    const held = [...this.getKnownBgmTracks(), this.songPreview?.audio, this.pausedBgm?.audio, this.walkPause?.bgm,
+      ...[this.audioInterruption, this.fullscreenGuideResume].flatMap(owner => (owner?.tracks || []).map(saved => saved.track))];
+    const playing = [...(this.gameAudioRegistry || []), ...(this.homePlaylistAudioCache?.values() || [])].filter(track => !track.paused);
+    return [...held, ...playing].some(track => track?.getAttribute('src') === url);
+  }
+
+  trimAudioMirror() {
+    const idle = [...this.audioMirror].filter(([, entry]) => entry.url && !this.audioUsing(entry.url)).sort((a, b) => a[1].used - b[1].used);
+    for (const [src, entry] of idle.slice(0, Math.max(0, idle.length - 8))) {
+      for (const [id, track] of this.homePlaylistAudioCache || []) if (track.getAttribute('src') === entry.url) this.homePlaylistAudioCache.delete(id);
+      for (const track of this.gameAudioRegistry || []) if (track.getAttribute('src') === entry.url) this.gameAudioRegistry.delete(track);
+      URL.revokeObjectURL(entry.url);
+      this.audioMirror.delete(src);
+    }
+  }
+
+  stageTrackSource(stageId) {
+    const theme = this.getSecretLevel(stageId)?.theme || {
+      'level1-stage1': 'office', 'level2-stage2': 'bathroom', 'level3-stage2': 'massage',
+      'level4-stage1': 'arcade', 'studio-stage1': 'studio', 'level5-stage2': 'river', 'level6-stage2': 'concert'
+    }[stageId];
+    return theme ? this.getRhythmAudioFor(theme)?.getAttribute('src') : null;
+  }
+
+  prefetchChapterAudio(groups) {
+    const themes = {office: ['office'], level2: ['bathroom'], level3: ['massage'], level4: ['arcade'], studio: ['studio'], level5: ['river'], level6: ['concert', 'level6']};
+    for (const group of groups) {
+      for (const theme of themes[group] || [this.getSecretLevel(group)?.theme]) {
+        if (theme) this.prefetchMirroredAudio(this.getRhythmAudioFor(theme)?.getAttribute('src'));
+      }
+    }
+  }
+
+  prefetchTitleAudio() {
+    if (!MIRROR_BASE) return;
+    const now = performance.now();
+    this.titleAudioSince ||= now;
+    if (now - this.titleAudioSince > 1500) this.prefetchMirroredAudio(this.stageTrackSource('level1-stage1'));
+    const view = this.homeMenu?.view;
+    let src = null;
+    if (view === 'playlist' || view === 'stageSelect') {
+      const item = this.getHomeMenuItems()[this.homeMenu.index || 0];
+      if (item && !item.locked) src = view === 'playlist' ? item.audioSrc : this.stageTrackSource(item.id);
+    } else if (view === 'playlistPlayer') {
+      const list = this.getHomePlaylistSongDefs().filter(song => !song.locked);
+      const at = list.findIndex(song => song.id === this.homeMenu.playerSongId);
+      src = at < 0 ? null : list[(at + 1) % list.length]?.audioSrc;
+    }
+    if (src !== this.titleAudioFocus?.src) this.titleAudioFocus = {src, since: now};
+    else if (src && now - this.titleAudioFocus.since > 300) this.prefetchMirroredAudio(src);
   }
 
   loadHomeWaveform(songId) {
@@ -7970,8 +8050,9 @@ for (const level of this.config.secretLevels || []) this.sceneAssetJobs.push({ke
   getHomePlaylistAudio(song) {
     if (!this.homePlaylistAudioCache) this.homePlaylistAudioCache = new Map();
     let audio = this.homePlaylistAudioCache.get(song.id);
-    if (!audio || audio.getAttribute("src") !== song.audioSrc) {
-      audio = new Audio(song.audioSrc);
+    const source = this.mirroredAudioUrl(song.audioSrc) || song.audioSrc;
+    if (!audio || audio.getAttribute("src") !== source) {
+      audio = new Audio(source);
       audio.preload = "none";
       this.homePlaylistAudioCache.set(song.id, audio);
     }
@@ -8279,6 +8360,7 @@ for (const level of this.config.secretLevels || []) this.sceneAssetJobs.push({ke
 
   playHomePlaylistSong(songId) {
     this.loadHomeWaveform(songId);
+    this.prefetchMirroredAudio(this.getHomePlaylistSongById(songId)?.audioSrc);
     const song = this.getHomePlaylistSongById(songId);
     if (!song) return;
     const outgoing = this.songPreview;
@@ -11709,6 +11791,8 @@ for (const level of this.config.secretLevels || []) this.sceneAssetJobs.push({ke
     this.rhythmTrackPriming ||= new WeakMap();
     if (this.primedRhythmTracks.has(track)) return Promise.resolve();
     if (this.rhythmTrackPriming.has(track)) return this.rhythmTrackPriming.get(track);
+    const mirrored = track.paused && this.mirroredAudioUrl(track.getAttribute("src"));
+    if (mirrored) track.src = mirrored;
     track.volume = 0;
     this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);
     this.gameAudioRegistry ||= new Set();
@@ -22589,6 +22673,7 @@ for (const level of this.config.secretLevels || []) this.sceneAssetJobs.push({ke
   }
 
   renderTitle() {
+    this.prefetchTitleAudio();
     // On the tall portrait screen the home page is drawn at its own tall size
     // into its own canvas, which the tall view shows; elsewhere, the frame.
     const tall = this.isTallScreenView();
@@ -27078,6 +27163,13 @@ async function mirrorCopy(url) {
     console.warn('Mirror copy rejected (hash mismatch):', url.pathname);
   } catch {} // Any mirror failure falls back to this site's copy.
   return null;
+}
+
+// Music: a verified mirror copy as a local object URL, or null to stream
+// the file from this site.
+async function mirrorObjectUrl(src) {
+  const asset = await mirrorCopy(new URL(src, document.baseURI)).catch(() => null);
+  return asset ? URL.createObjectURL(new Blob([asset.data], {type: asset.type.startsWith('audio/') ? asset.type : 'audio/mp4'})) : null;
 }
 
 async function fetchGameAsset(src) {
