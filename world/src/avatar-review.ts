@@ -109,7 +109,8 @@ function render(){
     const positions=new THREE.Float32BufferAttribute(new Float32Array(p.count*3),3);geometry.setAttribute('position',positions);
     for(let i=0;i<p.count;i++){
       let weight=0,armWeight=0;for(let k=0;k<4;k++){if(indices.includes(si.getComponent(i,k)))weight+=sw.getComponent(i,k);if(si.getComponent(i,k)===forearm)armWeight+=sw.getComponent(i,k);}
-      if(weight+armWeight>.5&&(!dressed||dressed.getX(i)>.5)&&(!covered||covered.getX(i)<.5)){
+      const hiddenMask=root.userData.wearingSwimwear?dressed:covered;
+      if(weight+armWeight>.5&&(!hiddenMask||hiddenMask.getX(i)<.5)){
         const point=mesh.localToWorld(mesh.applyBoneTransform(i,new THREE.Vector3().fromBufferAttribute(p,i)));if(weight>.5)box.expandByPoint(point);owned.add(i);positions.setXYZ(i,point.x,point.y,point.z);
       }
     }
@@ -135,6 +136,29 @@ function render(){
     floor.visible=!underside;
     camera.zoom=1.8;camera.position.set(0,underside?-2:2,5);
     camera.lookAt(0,0,0);camera.updateProjectionMatrix();
+  }
+  // Frame the actual skinned bare-foot surface, including the ankle join.
+  // ?feet=side|top|front keeps the full body intact for a silhouette review.
+  if(q.has('feet')){
+    const mesh=Object.values(parts).flat().find(m=>m.userData.componentId==='body') as THREE.SkinnedMesh;
+    mesh.skeleton.update();
+    const ids=mesh.skeleton.bones.map((b,i)=>/^(Left|Right)(Foot|ToeBase)$/.test(b.name)?i:-1).filter(i=>i>=0);
+    const p=mesh.geometry.getAttribute('position'),si=mesh.geometry.getAttribute('skinIndex'),sw=mesh.geometry.getAttribute('skinWeight');
+    const covered=mesh.geometry.getAttribute('_covered'),box=new THREE.Box3();
+    for(let i=0;i<p.count;i++){
+      let weight=0;for(let k=0;k<4;k++)if(ids.includes(si.getComponent(i,k)))weight+=sw.getComponent(i,k);
+      if(weight>.5&&covered.getX(i)>.5)box.expandByPoint(mesh.localToWorld(mesh.applyBoneTransform(i,new THREE.Vector3().fromBufferAttribute(p,i))));
+    }
+    const centre=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
+    const aspect=innerWidth/Math.max(240,innerHeight-160),view=q.get('feet');
+    const half=view==='top'?Math.max(size.z/2,size.x/(2*aspect))+.13:view==='side'?Math.max(size.y/2,size.z/(2*aspect))+.16:Math.max(size.y/2,size.x/(2*aspect))+.16;
+    camera.left=-half*aspect;camera.right=half*aspect;camera.top=half;camera.bottom=-half;camera.zoom=1;
+    camera.up.set(0,view==='top'?0:1,view==='top'?-1:0);
+    // A slight overhead angle keeps the torso outside the detail frame
+    // without clipping the shin and making an artificial open ankle cap.
+    camera.near=.1;
+    camera.position.copy(centre).add(view==='top'?new THREE.Vector3(0,4,1.6):view==='side'?new THREE.Vector3(4,0,0):new THREE.Vector3(0,0,4));
+    camera.lookAt(centre);camera.updateProjectionMatrix();
   }
   const selection=new THREE.Box3();for(const mesh of parts[selected]??[])if(visible(mesh))selection.expandByObject(mesh);
   highlight.visible=!selection.isEmpty();highlight.box.copy(selection);
@@ -180,7 +204,7 @@ if(!q.has('mask')){
   controls.innerHTML=`<label>Pose <select id="pose"><option value="idle">Standing</option><option value="walk">Walking</option><option value="carry-cup">Hold drink</option><option value="carry-popcorn">Hold popcorn</option><option value="drink">Drink</option><option value="eat">Eat popcorn</option><option value="punch">Punch</option><option value="hit">Receive punch</option><option value="dance">Dance</option><option value="wave">Wave</option><option value="fall">Falling</option><option value="land">Landing</option><option value="dj">DJ at decks</option><option value="seat">Sitting</option><option value="skate">Skateboard</option><option value="skate-jump">Skateboard jump</option></select></label><label>Outfit <select id="outfit">${TOP_OUTFITS.map(o=>`<option value="${o.id}">${o.en}</option>`).join('')}<option value="swim">Swimwear</option></select></label><label><input id="wear-cap" type="checkbox" ${q.has('cap')?'checked':''}> Cap</label><label>Cap colour <input id="cap-colour" type="color" value="#1d1f24" ${q.has('cap')?'':'disabled'}></label><button id="play">Play motion</button>${carryPose||pose==='hit'?`<label>Action progress <input id="action-progress" type="range" min="0" max="1" step="0.01" value="${phase}"></label>`:""}<button id="turn">Turn 45°</button><button id="explode">Separate parts</button><label>Inspect <select id="part"><option value="">Click a part</option></select></label><output id="selection">Articulated garment study</output>`;
   document.body.append(controls);
   for(const id of ['pose','outfit']){
-    const select=document.getElementById(id) as HTMLSelectElement;select.value=id==='outfit'?(q.has('swim')?'swim':q.get('outfit')??'1'):(q.get('pose')??'idle');
+    const select=document.getElementById(id) as HTMLSelectElement;select.value=id==='outfit'?(q.has('swim')?'swim':q.get('outfit')??'1'):(pose==='stand'?'idle':pose);
     select.onchange=()=>{if(id==='outfit'){if(select.value==='swim')q.set('swim','');else {q.delete('swim');q.set('outfit',select.value);}}else q.set(id,select.value);if(id==='pose'&&select.value==='walk')q.set('phase','1');location.search=q.toString();};
   }
   const capToggle=document.getElementById('wear-cap') as HTMLInputElement;

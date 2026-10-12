@@ -1786,7 +1786,7 @@ test('both dressed avatars expose all five weighted distal digits in all three o
   for(const digit of FINGER_NAMES){
   const ids=m.skeleton.bones.map((b,i)=>b.name.startsWith((right?'Left':'Right')+'Hand'+digit)&&!b.name.endsWith('1')?i:-1).filter(i=>i>=0);
   let count=0;for(let i=0;i<g.attributes.position.count;i++){
-   if(g.attributes._dressed.getX(i)<.5||g.attributes._covered.getX(i)>.5)continue;
+   if(g.attributes._covered.getX(i)>.5)continue;
    let weight=0;for(let k=0;k<4;k++)if(ids.includes(g.attributes.skinIndex.getComponent(i,k)))weight+=g.attributes.skinWeight.getComponent(i,k);
    if(weight>.5)count++;
   }

@@ -1,0 +1,37 @@
+{
+  "beforeSha256": "27637bb8c97eb30d12b72988d7c8d5dfa48b48237cb7e0c941a32d01e9b60ebe",
+  "installedMaleSha256": "ab3c969f23e2c28e2d6b38b409d3cc572afb47cd484da57bcf50efe6bfcb5278",
+  "installedBytes": 13416900,
+  "preservedFemaleSha256": "20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3",
+  "preservedGeometry": {
+    "body": "34c1eafe81eb86eb3153cee3ead25262dcf4741f492b5723d829b95b5a3894c2",
+    "garment-shoes": "d1806a9e15882f81c1c92b28c7e4896844617bb1ae80bd5da93cf41e0484b0c9",
+    "cap": "96056fe3edbe10768176462d7a86d99cfafc76326b9a4988aef8585af9fc88ae",
+    "cap-logo": "611121010e7206a0c275e87715a9c589b26554ff62ff892d62e8a09ea338b007",
+    "garment-tee": "9d4041db032643cda8ec62585691fb4040ff283fede7c1565a44f71ab5abefa1",
+    "garment-trousers": "bb639b33af5ae8e2efc86bd002e3360fcb81c00919769f19c172983f09f26b1a",
+    "vest": "5aaf56c5c745f8822fbea87ec57193ecfdc573cac5ac4d9a0ff3bd61d87ae05d",
+    "print-schedule-front": "cd00f8acd26eac8fe561be4e1fe0fc551757c859ff1fd778d0074dbbffcd1fb2",
+    "print-schedule-back": "f1225967231949a44b2734b3f114f226e4a4b4cbf6f449ed1ccf50ea163e43ca",
+    "print-schedule-tag": "704bbb90e144acb81bf5b69e5e597b56f718f0305f4e46cfe834d4ed8fe8af42",
+    "print-house-front": "2e124bb89e2ece7973f0ad05332ac4e45dd24f582d6d8674927da9b5779bcd39",
+    "print-bros-back": "67fba9d4f3779f65f3e2f48d1809c1ba5ca799faa20cab4388e6a237a80cea5a",
+    "print-vest-front": "27ba1ec4ee0a233ec7e283799bd8f811e6656d87bd0abe9618978cb2adcf85aa",
+    "print-vest-back": "3c72f2c6d9f6a52193381b6726d6252a01dd499b9eafc1ac0ccbf1438246aba9"
+  },
+  "preservedTextureSha256": [
+    "21489a8482a9faa5f86cb169344ebefcfd63c8808c3277e944a4968b9e1acdb2",
+    "536ef729bf7bd7d13a0c4fe0e4d28662418d35a606dedb041fbf75545c115b7d",
+    "821501e711161f12168542ded2d5c5bc0c08301d6f96591ecd88a000c435b894",
+    "8ce117b6519d961c9d9a07cc3eb7ba98f10208ec4089fc6cddf1a7c4646fe28c",
+    "96277b1bd7f2919731c3a73623a58ff292429bd6837b83d4198efa774df424d6",
+    "9ccfd558e30aa61fd45edb3762aa6e5db63fbd3fc8d394c603d3b2f70e3c0636",
+    "9da7c15047561895b07213a5ed632738814a175f905e2e4001b6b48a35230458",
+    "a3dd997d6f3bf0196ba62dfd94ece93fe2c101439ed342d73e4f6fdb1113061f",
+    "bfd81b72cf0e2aedf327b7933db91e9c865eecd717550c696babca8fa5921eee",
+    "ed051045733ab1fe6cf5d715db979d5db8c7340ac8e7655c50e36e9f6c605713",
+    "f24d62b40a2fe2124e81c36dcb3011c84da2a6edfe4913417abf12d1e5d3edc9",
+    "f6ff831c5d495c07f43cde1cf3a828b3f175a3f2302bee73a5de0061279379bf"
+  ],
+  "preservedJointCount": 64
+}

@@ -5561,6 +5561,13 @@ def build(stages):
         report[key]['dye'], native, reference = dye_mask(key, body, garments, atlas, frame)
         if whole and not FEMALE_SWIM_MODEL:
             report[key]['swimSeam'] = swim_flags(body)
+        # Swimwear uses the same repaired lower arms and finger skin as the
+        # dressed outfits. Apply after final wardrobe mask classification.
+        if body.data.attributes.get('_dressed') or body.data.attributes.get('_DRESSED'):
+            swim_script = os.path.join(WORLD, 'scripts', 'repair-swim-body.py')
+            swim_namespace = {}
+            exec(compile(open(swim_script).read(), swim_script, 'exec'), swim_namespace)
+            report[key]['swimBody'] = swim_namespace['match_swim_body'](body, arm, sex)
         for obj in parts:
             obj.parent = arm
         export(key, arm, parts)

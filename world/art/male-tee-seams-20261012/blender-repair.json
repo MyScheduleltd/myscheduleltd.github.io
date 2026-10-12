@@ -1,0 +1,66 @@
+{
+  "tee_vertices": 1030,
+  "tee_faces": 1771,
+  "boundary": [
+    {
+      "edges": 36,
+      "min": [
+        -0.1693,
+        -0.13997,
+        -0.16975
+      ],
+      "max": [
+        0.17209,
+        0.10502,
+        -0.11392
+      ],
+      "branches": 0
+    },
+    {
+      "edges": 22,
+      "min": [
+        -0.27802,
+        -0.06765,
+        0.10656
+      ],
+      "max": [
+        -0.17939,
+        0.029,
+        0.15603
+      ],
+      "branches": 0
+    },
+    {
+      "edges": 26,
+      "min": [
+        0.17606,
+        -0.06778,
+        0.10527
+      ],
+      "max": [
+        0.27806,
+        0.02651,
+        0.14893
+      ],
+      "branches": 0
+    },
+    {
+      "edges": 32,
+      "min": [
+        -0.06575,
+        -0.07686,
+        0.34202
+      ],
+      "max": [
+        0.07327,
+        0.029,
+        0.36
+      ],
+      "branches": 0
+    }
+  ],
+  "multi_face_edges": 0,
+  "changed_body_mask_vertices": 189,
+  "body_positions_modified": false,
+  "revision": "20261012-continuous-crew-neck-and-open-cuff-rings"
+}
