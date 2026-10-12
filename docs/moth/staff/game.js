@@ -2885,6 +2885,40 @@ for (const level of this.config.secretLevels || []) {
     else if (src && now - this.titleAudioFocus.since > 300) this.prefetchMirroredAudio(src);
   }
 
+  // GANGAN in the timing chip, as he looks in this level: the office chibi for
+  // levels 1-2 (level 2's dialogue uses the office portraits), his beanie and
+  // denim jacket by the river, his beanie and black tee at the concert decks.
+  // Drawn 60 units tall in a 52-unit chip and unclipped, the chibi's cap stood
+  // above the chip's border; every face now sits inside its portrait window.
+  drawCoachGanganFace(target, chip, k, prompt, motionTime) {
+    const sprites = this.config?.sprites || {};
+    const office = this.refs.level1OfficeGanganCoachSheet, officeSpec = sprites.level1OfficeGanganCoach;
+    const river = this.isRiverRhythm() && this.refs.level5DialoguePortraitsSheet && sprites.level5DialoguePortraits;
+    const concert = this.isConcertRhythm() && this.refs.level6ConcertGanganSheet && sprites.level6ConcertGangan;
+    if (!river && !concert && !(office && officeSpec)) return false;
+    target.save();
+    target.beginPath();
+    target.rect(chip.x + 3 * k, chip.y + 3 * k, 56 * k, chip.h - 6 * k);
+    target.clip();
+    if (river) {
+      const bob = Math.round(Math.sin(motionTime * 9) * k);
+      drawBundleFrame(target, this.refs.level5DialoguePortraitsSheet, river, bundleFrameIndex(river, 'ganGan'), chip.x + 31 * k, chip.y + 2 * k + bob, 62 * k, 62 * k, {x: 0.5, y: 0});
+    } else if (concert) {
+      // His head and headphones from the DJ sprite: cheering, hyped or worried.
+      const row = prompt.row === 2 ? 2 : prompt.row === 1 ? 1 : 3;
+      const frame = row * concert.cols + (Math.floor(motionTime * 7) % 2);
+      const sx = (frame % concert.cols) * concert.frameWidth + 62;
+      const sy = Math.floor(frame / concert.cols) * concert.frameHeight + 34;
+      target.imageSmoothingEnabled = false;
+      target.drawImage(this.refs.level6ConcertGanganSheet, sx, sy, 110, 110, chip.x + 3 * k, chip.y + 3 * k, 56 * k, 56 * k);
+    } else {
+      const frame = prompt.row * 2 + (Math.floor(motionTime * 7) % 2);
+      drawBundleFrame(target, office, officeSpec, frame, chip.x + 31 * k, chip.y + chip.h - 1 * k, 52 * k, 52 * k, officeSpec.anchor || {x: 0.5, y: 1});
+    }
+    target.restore();
+    return true;
+  }
+
   loadHomeWaveform(songId) {
     const src = this.config?.sprites?.homeMp3Waveforms?.[songId]?.source;
     if (!src || this.refs.homeMp3WaveformSheets?.[songId]) return;
@@ -11914,9 +11948,8 @@ for (const level of this.config.secretLevels || []) {
       target.clip();
       drawBundleFrame(target, zuxianSheet, zuxianSpec, bundleFrameIndex(zuxianSpec, name), chip.x + 31 * k, chip.y + 1 * k, 72 * k, 72 * k, { x: 0.5, y: 0 });
       target.restore();
-    } else if (!zuxian && !bonita && sheet && spec) {
-      const frame = prompt.row * 2 + (Math.floor(motionTime * 7) % 2);
-      drawBundleFrame(target, sheet, spec, frame, chip.x + 31 * k, chip.y + chip.h - 2 * k, face, face, spec.anchor || { x: 0.5, y: 1 });
+    } else if (!zuxian && !bonita && this.drawCoachGanganFace(target, chip, k, prompt, motionTime)) {
+      // Drawn by drawCoachGanganFace.
     } else {
       target.beginPath();
       target.fillStyle = prompt.color;
