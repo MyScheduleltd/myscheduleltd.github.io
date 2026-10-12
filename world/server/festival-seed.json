@@ -256,7 +256,7 @@
     "MINYUN": "School Nurse",
     "VIOLA": "Bard",
     "XIEHGAN": "Mr. Security Guard",
-    "DRBEAUTY": "Artist",
+    "DRBEAUTY": "Bobi the Immortal",
     "YO": "Friend of MY SCHEDULE"
   },
   "npcTitlesZh": {
@@ -270,6 +270,7 @@
     "MINYUN": "保健室阿姨",
     "VIOLA": "吟遊詩人",
     "XIEHGAN": "警衛先生",
+    "DRBEAUTY": "李包比仙人",
     "YO": "檔期之友"
   },
   "npcIntroductions": {
@@ -283,6 +284,7 @@
     "MINYUN": "Formerly a psychiatric nurse. Stayed on because everyone at MY SCHEDULE needs their head examined. Lately my greatest skill is emptying the dehumidifier. Assets: PS1–PS5, Switch 1 & 2, an Xbox One and one 6.7 kg tabby cat.",
     "VIOLA": "Lives by the sea in Lu-le-fornia, raising seals full-time, and became the bard of the SEAL team. Arf, arf arf, arf arf arf.",
     "XIEHGAN": "XIEH GAN. Tilts to the left. One leg longer than the other (the left, by 1.8 cm). Macular edema in the right eye, prediabetic, compressed C2–C3 vertebrae, slow heart rate, low blood pressure. Formerly an instructor at Gjun Inc. and a producer at EGGO Music Production; now the security guard at MY SCHEDULE LTD.",
+    "DRBEAUTY": "Bobi the Immortal, courtesy name Dr., art name Beauty. Born in 1990 BC and alive to this day. Best known for teaching Marco Polo to make pizza, helping Zhang Heng calibrate the armillary sphere and seismoscope, giving Cai Lun the idea for paper, and bandaging Van Gogh's ear.",
     "YO": "MY SCHEDULE community adviser. For the valuable advice given while the MY SCHEDULE website was being built, Michael chose to defy the laws of nature and used alchemy to grant YO eternal life."
   },
   "npcIntroductionsZh": {
@@ -296,6 +298,7 @@
     "MINYUN": "以前是精神科護理師,因為檔期大家有精神上的問題所以任職至今,最近最擅長的事是幫除濕機倒水. 擁有的資產:PS1~PS5、Switch1&2、Xbox one 以及6.7kg虎斑貓一隻.",
     "VIOLA": "住在蘆樂佛尼亞海邊,專職養海豹. 成為海豹部隊裡的吟遊詩人. 嗷 嗷嗷 嗷嗷嗷",
     "XIEHGAN": "謝乾乾,偏左,長短腳(左比右長1.8公分),右眼黃斑部水腫,糖尿病前期,第二第三節頸椎壓迫,心跳過慢血壓低,曾任職巨匠講師,跳蛋製作人,現為我的檔期有限公司的警衛先生.",
+    "DRBEAUTY": "李包比仙人,字本人號美麗,公元前1990年誕生至今,代表作為教導馬可波羅做披薩、幫助張衡校正渾天地動儀、給蔡倫造紙靈感、替梵谷包紮耳朵。",
     "YO": "檔期社群顧問,因曾為檔期網站建置提供寶貴建議,Michael決定違反自然法則,動用煉金術,讓他獲得了永生."
   },
   "pamphlet": {
