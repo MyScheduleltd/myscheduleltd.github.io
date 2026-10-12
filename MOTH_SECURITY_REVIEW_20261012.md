@@ -1,6 +1,6 @@
 # M.O.T.H integration and security review — 12 October 2026
 
-Status: the initial integration is live following PR #18 and a successful GitHub Pages deployment. All 238 deployed game files matched the package, both game URLs returned 200, and all five menus contain M.O.T.H below BETA. The loading/audio follow-up described below requires review and publication; its browser checks are local unless explicitly labelled live.
+Status: the initial integration is live following PR #18, and the loading/audio repair following PR #19; the jsDelivr follow-up below requires review. All 238 deployed game files matched the package, both game URLs returned 200, and all five menus contain M.O.T.H below BETA. The loading/audio follow-up described below requires review and publication; its browser checks are local unless explicitly labelled live.
 
 ## Requested experience
 
@@ -15,6 +15,7 @@ Status: the initial integration is live following PR #18 and a successful GitHub
 ## Protections added
 
 - Both game entries have Content Security Policy metadata limiting scripts, media and data requests to this website; inline JavaScript, external connections, plugins and form submissions are blocked. Required dynamic styles remain permitted. The manifest is explicitly allowed.
+- The game's data requests may also reach one jsDelivr path, pinned to the commit that published these assets: `cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@4a1cae24…/docs/moth/`. Images and sound effects from it are used only when their SHA-256 matches `/moth/asset-integrity.json`, which this site serves. Code and configuration never come from it.
 - Both game scripts have SHA-384 Subresource Integrity attributes checked against the packaged bytes.
 - The five main pages and their Pug template now have a resource policy allowing the existing pinned jQuery, Bootstrap, Swiper and YouTube integrations. Existing third-party script/style integrity attributes are preserved.
 - A development-only `source-map-js` advisory was found and patched from 1.2.1 to 1.2.2 in `world/package-lock.json`. No BETA/PS2 application bundles were rebuilt or changed. The published backend uses Node built-ins rather than this build dependency.
@@ -27,6 +28,7 @@ Status: the initial integration is live following PR #18 and a successful GitHub
 - A permanent failure shows a dark, red-bordered console-style panel with a clear REFRESH PAGE button instead of a filename and GAME OVER. English and Traditional Chinese prompts are provided. Refresh keeps existing session saves. Behind the panel the game screen shows only CONNECTION LOST on a dark scanline ground. The retired level-1 road scene and its HUD are no longer redrawn, and the backdrop is lighter so that text reads.
 - Music and effects share an AudioContext, resumed on real input. Sound effects download/decode when a fight or sound test needs them. Songs do not preload at startup. An audio-start failure now exposes its existing recovery dialog and a working enable-sound button instead of pausing behind an invisible prompt.
 - `scripts/verify-moth-loading.mjs` exercises Chrome and WebKit: ten scene entries, chapter eviction, cancelled-entry handling, transient retries, permanent failures, refresh/session preservation, public debug absence, and audio recovery. It measures nonzero PCM from earned-track playback and game sound effects, and verifies all 27 effects decoded. Physical iPhone playback still needs validation after publication.
+- **Live regression after PR #19, fixed in the follow-up.** GitHub Pages delivers about 40–90 KB/s per file to Taiwan, while this network reaches jsDelivr at about 2–4 MB/s. The 20-second total limit per image attempt aborted level 1's 6.8 MB background on every try, so live level 1 showed CONNECTION LOST after about 110 seconds. Downloads are now abandoned only after 20 seconds with no data (15 seconds for configuration). Images and sound effects come from the pinned jsDelivr copy when their hash matches, with one retry; otherwise from this site. Fight music and songs still stream from Pages, since their bitrate (about 31 KB/s) is below Pages' throughput. `scripts/verify-moth-mirror.mjs` serves this build as the live site and uses the real jsDelivr. In Chrome and WebKit, level 1 opened in about 3 seconds. A tampered mirror copy was rejected in favour of this site's copy. A jsDelivr outage fell back cleanly. A steady 150 KB/s download of 56–59 seconds completed.
 
 ## Verification
 
@@ -59,6 +61,7 @@ The live checks are non-destructive: no production uploads, chat posts, payments
 - The initial production routes and all 238 files were verified after publication. This loading/audio repair still needs production verification after merge and GitHub Pages publication. Physical phones have not been tested.
 - The staff URL is intentionally public, and robots metadata does not enforce access control. Staff debug actions change that visitor's game, not website administration.
 - Songs and other public media can be downloaded or recorded. Removing download buttons or hiding URLs cannot solve that while browser playback is preserved.
+- jsDelivr is a third-party service. If it is unavailable, or a copy fails its hash, the game falls back to GitHub Pages' slower delivery. A connection slower than the fight music's bitrate (about 31 KB/s) would still stutter.
 - The existing Google browser key remains public by design. Referrer rejection was observed; Google Cloud service restrictions, quota/billing configuration and account access were not inspected. Referrers are not a substitute for server authentication.
 - GitHub Pages serves the static site with HTTPS enforced, but the responses checked do not provide HSTS, `nosniff`, or a configurable header-level frame policy on ordinary site pages. CSP metadata does not supply `frame-ancestors`. Adding those headers would require a hosting/proxy change.
 - GitHub/Render/Google account MFA, recovery settings, organization policies and third-party media ownership were outside the accessible evidence. Repository protection is preserved; no bypass was used.

@@ -117,6 +117,8 @@ export function patchMothRuntime(source, ts) {
   once('    target.fillStyle = "#08090d";\n    target.fillRect(0, 0, layout.width, layout.height);\n', '    target.fillStyle = "#08090d";\n    target.fillRect(0, 0, layout.width, layout.height);\n    if (this.loadError) { this.renderConnectionLost(target, layout.width, layout.height); return; }\n');
   once('    drawStageLoadingScreen(target, this.time, t,\n      `${this.tr("LOADING", "載入中")}', '    const progress = this.sceneLoadProgress;\n    const fraction = progress?.total ? progress.done / progress.total : t;\n    drawStageLoadingScreen(target, this.time, fraction,\n      `${this.tr("LOADING", "載入中")}');
   once('`${this.tr("LEVEL", "關卡")} ${level} · ${this.tr(...(places[level] || places[1]))}`, W, H);', '`${this.tr("LEVEL", "關卡")} ${level} · ${this.tr(...(places[level] || places[1]))}${progress?.total ? ` · ${progress.done}/${progress.total}` : ""}`, W, H);');
+  // Sound effects gate every fight, so they share the images' mirror path.
+  once('      const response = await fetch(src);\n      if (!response.ok) throw new Error(src);\n      this.sfxRaw[name] = await response.arrayBuffer();', '      this.sfxRaw[name] = (await fetchGameAsset(src)).data.buffer;');
   const imageStart = source.indexOf('function loadImage(src) {');
   const imageEnd = source.indexOf('\nfunction loadOptionalSheet(src)', imageStart);
   assert(imageStart > 0 && imageEnd > imageStart);
@@ -235,39 +237,102 @@ const RUNTIME_METHODS = `
   }
 `;
 
+// GitHub Pages reaches Taiwan at about 50 KB/s per file, too slow for a 7 MB
+// background; jsDelivr serves the same commit at about 2 MB/s. The pin is the
+// merge that published these assets (PR #18): it never changes, so jsDelivr
+// caches it forever and nothing needs purging. A later asset change simply
+// fails its hash and falls back to Pages.
+export const MOTH_MIRROR_COMMIT = '4a1cae2472c9fbece153cc1dbd0f0c1593dd9997';
+export const MOTH_MIRROR_ORIGIN = 'https://cdn.jsdelivr.net';
+
 const IMAGE_LOADER = `const imageRequests = new Map();
-async function fetchGameJson(src) {
+// Images and sound effects come from the mirror only on the live site, and
+// only when their bytes match the SHA-256 this site publishes. Code and
+// configuration always come from this site.
+const MIRROR_BASE = ['myscheduleltd.com', 'www.myscheduleltd.com'].includes(location.hostname)
+  ? '${MOTH_MIRROR_ORIGIN}/gh/MyScheduleltd/myscheduleltd.github.io@${MOTH_MIRROR_COMMIT}/docs/moth/' : '';
+const MIRROR_ROOT = '/moth/';
+let assetIntegrity = null;
+
+// A download is abandoned only when no bytes arrive for stallMs. A total time
+// limit aborted large files that were still arriving on a slow connection.
+async function fetchBytes(url, stallMs, init = {}) {
+  const controller = new AbortController();
+  let timer;
+  const arm = () => { clearTimeout(timer); timer = setTimeout(() => controller.abort(), stallMs); };
+  arm();
+  try {
+    const response = await fetch(url, {...init, signal: controller.signal});
+    if (!response.ok) throw new Error('Resource unavailable');
+    const type = response.headers.get('content-type') || '';
+    if (!response.body) return {data: new Uint8Array(await response.arrayBuffer()), type};
+    const reader = response.body.getReader(), chunks = [];
+    let size = 0;
+    for (;;) {
+      arm();
+      const {done, value} = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      size += value.length;
+    }
+    const data = new Uint8Array(size);
+    let at = 0;
+    for (const chunk of chunks) { data.set(chunk, at); at += chunk.length; }
+    return {data, type};
+  } catch (error) {
+    throw controller.signal.aborted ? new Error('Download stalled') : error;
+  } finally { clearTimeout(timer); }
+}
+
+async function retryFetch(url, stallMs, init) {
   let last;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = await fetch(src, {signal:AbortSignal.timeout(15000)});
-      if (!response.ok) throw new Error('Resource unavailable');
-      return await response.json();
+      const target = new URL(url, document.baseURI);
+      if (attempt) target.searchParams.set('retry', String(Date.now()));
+      return await fetchBytes(target.href, stallMs, init);
     } catch (error) { last = error; if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1))); }
   }
   throw last;
 }
 
+async function fetchGameJson(src) {
+  const {data} = await retryFetch(src, 15000, {cache: 'no-store'});
+  return JSON.parse(new TextDecoder().decode(data));
+}
+
+async function mirrorCopy(url) {
+  if (!MIRROR_BASE || url.origin !== location.origin || !url.pathname.startsWith(MIRROR_ROOT)) return null;
+  try {
+    assetIntegrity ||= fetchGameJson('/moth/asset-integrity.json');
+    const expected = (await assetIntegrity)[decodeURIComponent(url.pathname.slice(MIRROR_ROOT.length))];
+    if (!expected) return null;
+    // One quick retry: jsDelivr can fail a file's first, uncached request.
+    const source = MIRROR_BASE + url.pathname.slice(MIRROR_ROOT.length);
+    const asset = await fetchBytes(source, 10000).catch(() => new Promise(resolve => setTimeout(resolve, 400)).then(() => fetchBytes(source, 10000)));
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', asset.data));
+    const hex = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
+    if (hex === expected) return asset;
+    console.warn('Mirror copy rejected (hash mismatch):', url.pathname);
+  } catch {} // Any mirror failure falls back to this site's copy.
+  return null;
+}
+
+async function fetchGameAsset(src) {
+  const url = new URL(src, document.baseURI);
+  return await mirrorCopy(url) || await retryFetch(url.href, 20000);
+}
+
 function loadImage(src) {
   if (imageRequests.has(src)) return imageRequests.get(src);
   BOOT_LOAD.started++;
-  const promise = (async () => {
-    let last;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        return await new Promise((resolve, reject) => {
-          const image = new Image();
-          const timer = setTimeout(() => { image.onload = image.onerror = null; image.src = ''; reject(new Error('Image download timed out')); }, 20000);
-          image.onload = () => { clearTimeout(timer); resolve(image); };
-          image.onerror = () => { clearTimeout(timer); reject(new Error('Image download failed')); };
-          const url = new URL(src, document.baseURI);
-          if (attempt) url.searchParams.set('retry', String(Date.now()));
-          image.src = url.href;
-        });
-      } catch (error) { last = error; if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1))); }
-    }
-    throw last;
-  })().finally(() => { BOOT_LOAD.settled++; imageRequests.delete(src); });
+  const promise = fetchGameAsset(src).then(({data, type}) => new Promise((resolve, reject) => {
+    const blobUrl = URL.createObjectURL(new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'}));
+    const image = new Image();
+    image.onload = () => { URL.revokeObjectURL(blobUrl); resolve(image); };
+    image.onerror = () => { URL.revokeObjectURL(blobUrl); reject(new Error('Image could not be decoded')); };
+    image.src = blobUrl;
+  })).finally(() => { BOOT_LOAD.settled++; imageRequests.delete(src); });
   imageRequests.set(src, promise);
   return promise;
 }
