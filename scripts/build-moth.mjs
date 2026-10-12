@@ -69,11 +69,15 @@ publicCode = publicCode.slice(0, listenerStart) + publicCode.slice(listenerEnd);
 publicCode = publicCode.replace('this.toggleDebugPanel(false);', 'this.debugPanelOpen = false;');
 publicCode = replaceOnce(publicCode, '&& new URLSearchParams(window.location.search).get("debugLevel5Boss") === "1"', '&& false');
 publicCode = replaceOnce(publicCode, 'const DEBUG_TEXT_AUDIT = typeof window !== "undefined"\n  && new URLSearchParams(window.location.search).get("debugTextAudit") === "1";', 'const DEBUG_TEXT_AUDIT = false;');
-publicCode = replaceOnce(publicCode, 'window.bobbyGame = game;', '');
+// The public game is not a window global, but several drawing helpers outside
+// the class read it (dialogue text and portraits, the hotbar, the pocket icon,
+// phone prompts). They get a reference private to the closure instead.
+publicCode = replaceOnce(publicCode, 'window.bobbyGame = game;', 'mothGame = game;');
 publicCode = replaceOnce(publicCode, 'if (window.bobbyGame && window.bobbyGame.bootDone) return;', 'if (game.bootDone) return;');
+publicCode = publicCode.replaceAll('window.bobbyGame', 'mothGame');
 publicCode = replaceOnce(publicCode, ' || this.progress?.flags?.debugSecretLevelsUnlocked === true', '');
-publicCode = `(() => {\n"use strict";\n${namespace(publicCode, 'public')}\n})();\n`;
-assert(!/createDebugPanel|toggleDebugPanel|data-debug-action|debug-panel-toggle|window\.bobbyGame\s*=/.test(publicCode));
+publicCode = `(() => {\n"use strict";\nlet mothGame = null;\n${namespace(publicCode, 'public')}\n})();\n`;
+assert(!/createDebugPanel|toggleDebugPanel|data-debug-action|debug-panel-toggle|window\.bobbyGame/.test(publicCode));
 assert.equal(ts.createSourceFile('public.js', publicCode, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS).parseDiagnostics.length, 0);
 let staffCode = namespace(original, 'staff');
 staffCode = replaceOnce(staffCode, 'toggle.hidden = new URLSearchParams(window.location.search).get("debug") !== "1";', 'toggle.hidden = false;');
@@ -88,9 +92,10 @@ for (const audience of ['public', 'staff']) {
   const sri = 'sha384-' + crypto.createHash('sha384').update(code).digest('base64');
   let html = await fs.readFile(path.join(sourceRoot, 'index.html'), 'utf8');
   html = html.replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />\n    <meta name="referrer" content="strict-origin-when-cross-origin" />${staff ? '\n    <meta name="robots" content="noindex, nofollow, noarchive" />\n    <base href="/moth/" />' : ''}`);
+  html = html.replace('<html lang="en">', '<html lang="zh-Hant-TW">');
   html = html.replace('./manifest.json', staff ? '/moth/staff/manifest.json' : './manifest.json');
-  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261012e');
-  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=moth-loading-20261012e" integrity="${sri}" crossorigin="anonymous"></script>`);
+  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261012f');
+  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=moth-loading-20261012f" integrity="${sri}" crossorigin="anonymous"></script>`);
   await fs.writeFile(path.join(output, staff ? 'staff/index.html' : 'index.html'), html);
   const manifest = JSON.parse(await fs.readFile(path.join(sourceRoot, 'manifest.json'), 'utf8'));
   manifest.start_url = staff ? '/moth/staff/' : '/moth/';
