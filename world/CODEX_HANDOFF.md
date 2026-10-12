@@ -1,10 +1,22 @@
-# Approved BETA release — 2026-10-12, waiting for required GitHub review
+# Approved BETA follow-up — 2026-10-13, packages ready for required review
+
+Owner requested “please publish to beta” after the male skin/neck/DJ wrist and floating-shirt-print repairs, and explicitly reverted the female regeneration. Release branch: `codex/avatar-print-release-20261013`. Earlier release PR #17 has merged. Current main (`8c78d72`) is integrated, preserving the subsequent M.O.T.H and server work.
+
+Production TypeScript/Vite build and **432/432 tests pass**. Both channel packages match all 52 current build files; all 38 integrity hashes pass. Entry: `main-BoMZQ2dt.js`. Production API: `https://myschedule-festival.onrender.com`. Male SHA256: `1e0a00e35849c6f1f79a579c6ec136d14ebaa38d05d7504409eba6a4aa533f61`. Female is the original SHA256 `20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3`.
+
+Evidence: `art/beta-release-20261013/RELEASE.md` and `package-verification.json`, plus male skating, face, DJ wrist, print-fitting and original-female browser screenshots in `art/avatar-followup-20261012/`. This release adds no server change relative to current main, so it does not require a new Render deployment. Physical webcam/headset checks remain unmeasured.
+
+The initial package commit/push was not executed because automatic approval review hit an account limit. A later live account check allowed ordinary usage; the same approval path then succeeded. Release packages are committed and pushed on `codex/avatar-print-release-20261013`, awaiting a new protected-main PR review.
+
+GitHub requires a fresh review including the final push from `macakinTT` or another authorized reviewer. Packages and a PR are not a live deployment. Do not bypass protection. Verify Pages and public asset hashes after merge before reporting publication complete.
+
+# Prior BETA release — 2026-10-12, merged through PR #17
 
 Owner explicitly requested “please publish to beta” after local avatar review. The accumulated male Higgsfield regeneration, outfits 1–3, sleeve/collar repair, shoes, cap/full-hair dye, shoulders/elbows and female shared swimwear limbs are prepared in the existing release PR #17. Earlier LOCAL / UNPUBLISHED entries below describe preceding checkpoints.
 
 Fresh production build uses `https://myschedule-festival.onrender.com`, with no local API address. Existing BETA and PS2 release packages are updated together: `main-D_9ROePK.js`; male `male-uakojqp2.glb` SHA256 `24c258bacd78bbf1b7d26689f828937c4ed5773fed626dde0c2db3ad0e8c61c9`; female `female-BUDxbVEw.glb` SHA256 `20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3`. All 52 current dist files match each package, and all 38 combined integrity hashes pass. Old hashed assets are retained. `art/beta-release-20261012/package-verification.json` records the checks. 428/428 tests and the production TypeScript/Vite build pass; prior local action/cap/dye visual evidence is in `art/male-surface-motion-20261012/`.
 
-GitHub currently enforces one approving review including the latest push, dismisses stale approvals and applies this rule to admins. PR #17 has no approving review; requested reviewer is `macakinTT`. Automatic merging is disabled. Do not bypass protection or claim this release is live before review, merge and Pages verification. No server code change or Render redeploy is required by this release. Original Blender sources and downloads remain local in `.artifacts/`.
+At preparation, GitHub required one approving review including the latest push, dismissed stale approvals and applied this rule to admins. PR #17 was subsequently approved by `macakinTT` and merged. Do not bypass protection or claim this release is live before review, merge and Pages verification. No server code change or Render redeploy is required by this release. Original Blender sources and downloads remain local in `.artifacts/`.
 
 # Male shoes, cap, full hair dye, shoulders and elbows — 2026-10-12, local review ready
 
@@ -3436,3 +3448,13 @@ Breaking label/freeze icon fit inside the top dance-wheel sector; B opens, Enter
 405/405 tests passed with loopback access; the last interrupted-audio guard also passed 4/4 startup tests. Production build passed. Both docs channels match dist; their 18 asset hashes per channel were checked. Screenshots, hashes and device-validation limits: `art/SIGN_BREAKING_HAND_REVIEW_20261011.md` and `art/SIGN_BREAKING_HAND_ASSETS_20261011.json`. No server changes. Physical webcam/headset/controller checks remain untested.
 
 Publish through one PR requesting macakinTT's last-push review; do not bypass main protection. A prepared PR is not live. Leave unrelated `.artifacts`, low-detail provenance and diagnostic scripts unstaged.
+
+## Current follow-up: male repairs and print fitting; female regeneration reverted (2026-10-13)
+
+- Male neck/skin/DJ repairs remain in the local source. Tee geometry is smoothed; lower cervical weights and skin labels repaired. DJ total wrist roll is shared with the forearm only in the DJ reach path, with actual wrist skin volume checked throughout the working cycle.
+- The user rejected the regenerated female avatar and explicitly requested a revert. The original `female.glb` is restored byte-for-byte (SHA256 `20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3`), together with her original metadata, dye/vest loading and foot/arm mapping. Regeneration-only shaders, tracking solver changes and tests were removed. Her existing body, hands, feet, cap and wardrobe are retained.
+- The rejected Higgsfield generation remains offline for provenance: Meshy 7 job `cae0e90d-066b-4bd2-81aa-36668c2991ff`, reference `art/female-regeneration-20261012/clothed-front.png`, generated source and rejected integrated GLBs under `.artifacts/female-regeneration-20261012/`. Do not reinstall this generation or its body dye without a new user request.
+- Floating male shirt graphics are refitted through live Blender MCP to the actual cloth triangles, using identical skin weights and 0.2 mm authored clearance. This includes the back graphics for outfits 1–3 and the tee's front graphics/tag. The vest is a front panel, so its back graphic is attached to the tee underneath. `fit-prints.py`, `print-fit.json`, `preservation.json` and browser screenshots are in the follow-up artifact directories. The export now explicitly uses the active scene to exclude a diagnostic `review-only` mesh.
+- Original male body/cap/shoe/trouser/vest surfaces and every embedded texture byte are preserved; tee and six print meshes are the intentional geometry changes. Installed male GLB is 14,601,556 bytes.
+- Final local production build passed; **431/431 regression tests passed**, including print clearance throughout skating/punch/dance and DJ wrist volume. Browser reviewed male profile and moving back graphics, plus the restored female body and her original shirt graphic. Physical webcam/headset measurements were not performed.
+- Follow-up source is committed on `codex/avatar-print-release-20261013`; BETA/PS2 packages are prepared for a new review after PR #17 merged. Local preview is `http://127.0.0.1:4173/`; local API is `http://127.0.0.1:8787`. Publication still awaits the required review and Pages deployment.

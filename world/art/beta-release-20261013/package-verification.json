@@ -1,0 +1,20 @@
+{
+  "status": "production packages verified; awaiting review and deployment",
+  "server": "https://myschedule-festival.onrender.com",
+  "male_sha256": "1e0a00e35849c6f1f79a579c6ec136d14ebaa38d05d7504409eba6a4aa533f61",
+  "female_sha256": "20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3",
+  "channels": {
+    "beta": {
+      "entry": "main-BoMZQ2dt.js",
+      "files_matching_dist": 52,
+      "integrity_hashes": 19
+    },
+    "ps2": {
+      "entry": "main-BoMZQ2dt.js",
+      "files_matching_dist": 52,
+      "integrity_hashes": 19
+    }
+  },
+  "tests": 432,
+  "source_base": "8c78d72"
+}

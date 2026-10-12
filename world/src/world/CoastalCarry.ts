@@ -17,7 +17,7 @@ function turnFrame(palm0:THREE.Vector3,fingers0:THREE.Vector3,palm1:THREE.Vector
 }
 
 /** Two rigid arm segments, solved in torso space; the elbow bends outward. */
-export function reachCoastalHand(rig:AvatarRig,right:boolean,bodyTarget:THREE.Vector3,wristRotation=new THREE.Quaternion()):void {
+export function reachCoastalHand(rig:AvatarRig,right:boolean,bodyTarget:THREE.Vector3,wristRotation=new THREE.Quaternion(),forearmRollShare=0):void {
   const shoulder=right?rig.rightArm:rig.leftArm,elbow=right?rig.rightElbow:rig.leftElbow,wrist=right?rig.rightWrist:rig.leftWrist;
   const body=rig.visualRoot;
   if(!elbow||!wrist||!body||!shoulder.parent)return;
@@ -47,7 +47,7 @@ export function reachCoastalHand(rig:AvatarRig,right:boolean,bodyTarget:THREE.Ve
   if(nativeWrist){
     // The imported skeleton has a different native wrist axis. Solve the
     // rendered palm/finger frame, rather than trusting the proxy wrist axes.
-    const frame=body.parent!.userData.importedHandFrame?.(right);
+    let frame=body.parent!.userData.importedHandFrame?.(right);
     if(frame){
       const palm=new THREE.Vector3(right?-1:1,0,0).applyQuaternion(wristRotation);
       const fingers=down.clone().applyQuaternion(wristRotation);
@@ -61,10 +61,23 @@ export function reachCoastalHand(rig:AvatarRig,right:boolean,bodyTarget:THREE.Ve
       }
       palm.addScaledVector(fingers,-palm.dot(fingers)).normalize();
       const orientation=(p:THREE.Vector3,f:THREE.Vector3)=>new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(p,f,p.clone().cross(f)));
-      const correction=orientation(palm,fingers).multiply(orientation(frame.palm,frame.fingers).invert());
       const bodyWorld=body.getWorldQuaternion(new THREE.Quaternion());
-      const targetWorld=bodyWorld.clone().multiply(correction).multiply(bodyWorld.clone().invert()).multiply(wrist.getWorldQuaternion(new THREE.Quaternion()));
-      wrist.quaternion.copy(wrist.parent!.getWorldQuaternion(new THREE.Quaternion()).invert()).multiply(targetWorld);
+      const orientWrist=()=>{
+        const correction=orientation(palm,fingers).multiply(orientation(frame.palm,frame.fingers).invert());
+        const targetWorld=bodyWorld.clone().multiply(correction).multiply(bodyWorld.clone().invert()).multiply(wrist.getWorldQuaternion(new THREE.Quaternion()));
+        wrist.quaternion.copy(wrist.parent!.getWorldQuaternion(new THREE.Quaternion()).invert()).multiply(targetWorld);
+      };
+      orientWrist();
+      if(forearmRollShare>0){
+        // Measure total native wrist roll after reaching the palm target.
+        // The last orientation correction alone omits the rest-frame twist.
+        frame=body.parent!.userData.importedHandFrame(right);
+        const twist=new THREE.Quaternion().setFromAxisAngle(frame.forearm,frame.wristRoll*THREE.MathUtils.clamp(forearmRollShare,0,1));
+        const lowerWorld=bodyWorld.clone().multiply(twist).multiply(bodyWorld.clone().invert()).multiply(elbow.getWorldQuaternion(new THREE.Quaternion()));
+        elbow.quaternion.copy(elbow.parent!.getWorldQuaternion(new THREE.Quaternion()).invert()).multiply(lowerWorld);
+        frame=body.parent!.userData.importedHandFrame(right);
+        orientWrist();
+      }
     }
     const error=bodyTarget.clone().sub(nativeWrist(right));
     if(error.length()<.001)break;

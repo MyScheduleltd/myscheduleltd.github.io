@@ -107,6 +107,9 @@ function render(){
     // Published positions are quantized integers. A world-space study needs
     // floating point positions rather than writing metres into that buffer.
     const positions=new THREE.Float32BufferAttribute(new Float32Array(p.count*3),3);geometry.setAttribute('position',positions);
+    // The skin's material boundaries are defined at bind rest. Keep those
+    // coordinates when this close-up bakes the pose into world positions.
+    geometry.setAttribute('avatarBindPosition',p.clone());
     for(let i=0;i<p.count;i++){
       let weight=0,armWeight=0;for(let k=0;k<4;k++){if(indices.includes(si.getComponent(i,k)))weight+=sw.getComponent(i,k);if(si.getComponent(i,k)===forearm)armWeight+=sw.getComponent(i,k);}
       const hiddenMask=root.userData.wearingSwimwear?dressed:covered;
@@ -118,7 +121,17 @@ function render(){
     for(let i=0;i<index.count;i+=3){const ids=[index.getX(i),index.getX(i+1),index.getX(i+2)];if(ids.every(v=>owned.has(v)))triangles.push(...ids);}
     geometry.setIndex(triangles);geometry.computeVertexNormals();geometry.computeBoundingSphere();
     if(handStudy){handStudy.geometry.dispose();handStudy.removeFromParent();}
-    handStudy=new THREE.Mesh(geometry,handStudyMaterial??mesh.material);scene.add(handStudy);
+    const studyMaterial=handStudyMaterial??(mesh.material as THREE.MeshStandardMaterial).clone();
+    if(!handStudyMaterial){
+      const nativeMaterial=mesh.material as THREE.MeshStandardMaterial;
+      studyMaterial.onBeforeCompile=(shader,renderer)=>{
+        nativeMaterial.onBeforeCompile(shader,renderer);
+        shader.vertexShader='attribute vec3 avatarBindPosition;\n'+shader.vertexShader.replace('vAvatarRestPosition = position;','vAvatarRestPosition = avatarBindPosition;');
+      };
+      studyMaterial.customProgramCacheKey=()=>nativeMaterial.customProgramCacheKey()+'-bind-coordinate-study';
+    }
+    if(handStudy&& !handStudyMaterial)(handStudy.material as THREE.Material).dispose();
+    handStudy=new THREE.Mesh(geometry,studyMaterial);scene.add(handStudy);
     for(const meshes of Object.values(parts))for(const part of meshes)part.visible=false;
     const centre=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3()).length()*.65;
     const frame=root.userData.importedHandFrame(side==='Left');
