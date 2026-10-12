@@ -1,10 +1,22 @@
-# Approved BETA release — 2026-10-12, waiting for required GitHub review
+# Approved BETA follow-up — 2026-10-13, packages ready for required review
+
+Owner requested “please publish to beta” after the male skin/neck/DJ wrist and floating-shirt-print repairs, and explicitly reverted the female regeneration. Release branch: `codex/avatar-print-release-20261013`. Earlier release PR #17 has merged. Current main (`8c78d72`) is integrated, preserving the subsequent M.O.T.H and server work.
+
+Production TypeScript/Vite build and **432/432 tests pass**. Both channel packages match all 52 current build files; all 38 integrity hashes pass. Entry: `main-BoMZQ2dt.js`. Production API: `https://myschedule-festival.onrender.com`. Male SHA256: `1e0a00e35849c6f1f79a579c6ec136d14ebaa38d05d7504409eba6a4aa533f61`. Female is the original SHA256 `20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3`.
+
+Evidence: `art/beta-release-20261013/RELEASE.md` and `package-verification.json`, plus male skating, face, DJ wrist, print-fitting and original-female browser screenshots in `art/avatar-followup-20261012/`. This release adds no server change relative to current main, so it does not require a new Render deployment. Physical webcam/headset checks remain unmeasured.
+
+The final package commit and release-branch push were not executed: automatic approval review failed because the account usage limit prevented review (reported retry time 3:57 AM). No new PR has been created. Resolve the approval-review failure before retrying; do not bypass it.
+
+GitHub requires a fresh review including the final push from `macakinTT` or another authorized reviewer. Packages and a PR are not a live deployment. Do not bypass protection. Verify Pages and public asset hashes after merge before reporting publication complete.
+
+# Prior BETA release — 2026-10-12, merged through PR #17
 
 Owner explicitly requested “please publish to beta” after local avatar review. The accumulated male Higgsfield regeneration, outfits 1–3, sleeve/collar repair, shoes, cap/full-hair dye, shoulders/elbows and female shared swimwear limbs are prepared in the existing release PR #17. Earlier LOCAL / UNPUBLISHED entries below describe preceding checkpoints.
 
 Fresh production build uses `https://myschedule-festival.onrender.com`, with no local API address. Existing BETA and PS2 release packages are updated together: `main-D_9ROePK.js`; male `male-uakojqp2.glb` SHA256 `24c258bacd78bbf1b7d26689f828937c4ed5773fed626dde0c2db3ad0e8c61c9`; female `female-BUDxbVEw.glb` SHA256 `20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3`. All 52 current dist files match each package, and all 38 combined integrity hashes pass. Old hashed assets are retained. `art/beta-release-20261012/package-verification.json` records the checks. 428/428 tests and the production TypeScript/Vite build pass; prior local action/cap/dye visual evidence is in `art/male-surface-motion-20261012/`.
 
-GitHub currently enforces one approving review including the latest push, dismisses stale approvals and applies this rule to admins. PR #17 has no approving review; requested reviewer is `macakinTT`. Automatic merging is disabled. Do not bypass protection or claim this release is live before review, merge and Pages verification. No server code change or Render redeploy is required by this release. Original Blender sources and downloads remain local in `.artifacts/`.
+At preparation, GitHub required one approving review including the latest push, dismissed stale approvals and applied this rule to admins. PR #17 was subsequently approved by `macakinTT` and merged. Do not bypass protection or claim this release is live before review, merge and Pages verification. No server code change or Render redeploy is required by this release. Original Blender sources and downloads remain local in `.artifacts/`.
 
 # Male shoes, cap, full hair dye, shoulders and elbows — 2026-10-12, local review ready
 
@@ -3445,4 +3457,4 @@ Publish through one PR requesting macakinTT's last-push review; do not bypass ma
 - Floating male shirt graphics are refitted through live Blender MCP to the actual cloth triangles, using identical skin weights and 0.2 mm authored clearance. This includes the back graphics for outfits 1–3 and the tee's front graphics/tag. The vest is a front panel, so its back graphic is attached to the tee underneath. `fit-prints.py`, `print-fit.json`, `preservation.json` and browser screenshots are in the follow-up artifact directories. The export now explicitly uses the active scene to exclude a diagnostic `review-only` mesh.
 - Original male body/cap/shoe/trouser/vest surfaces and every embedded texture byte are preserved; tee and six print meshes are the intentional geometry changes. Installed male GLB is 14,601,556 bytes.
 - Final local production build passed; **431/431 regression tests passed**, including print clearance throughout skating/punch/dance and DJ wrist volume. Browser reviewed male profile and moving back graphics, plus the restored female body and her original shirt graphic. Physical webcam/headset measurements were not performed.
-- Changes remain **local and uncommitted**. BETA/PS2 release packages and pending PR #17 have not been updated with this follow-up. Local preview is `http://127.0.0.1:4173/`; local API is `http://127.0.0.1:8787`.
+- Follow-up source is committed on `codex/avatar-print-release-20261013`; BETA/PS2 packages are prepared for a new review after PR #17 merged. Local preview is `http://127.0.0.1:4173/`; local API is `http://127.0.0.1:8787`. Publication still awaits the required review and Pages deployment.
