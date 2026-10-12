@@ -2866,8 +2866,32 @@ for (const level of this.config.secretLevels || []) {
     if (!this.progress) this.progress = this.createDefaultProgress();
     const random = () => Math.random().toString(36).slice(2, 10);
     const id = globalThis.crypto?.randomUUID?.() || ('run-' + Date.now().toString(36) + '-' + random() + random());
-    this.progress.storyRun = { id, difficulty, scores: {}, startedAt: Date.now() };
+    const run = this.progress.storyRun = { id, difficulty, scores: {}, startedAt: Date.now(), ticket: null };
     this.startNewStory();
+    this.registerStoryRun(run);
+  }
+
+  // The server's ticket for this run. Without a connection it is asked for
+  // again (5 s, 10 s, ... 2 min apart) until the first fight is cleared; a run
+  // that never gets one cannot be posted.
+  async registerStoryRun(run, attempt = 0) {
+    clearTimeout(this.storyTicketTimer);
+    if (!run || run.ticket || run.legacy || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', signal: controller.signal,
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
+      const data = await response.json().catch(() => ({}));
+      if (response.status !== 201 || typeof data.run !== 'string') throw new Error(String(response.status));
+      if (this.progress?.storyRun !== run || run.ticket) return;
+      run.ticket = data.run;
+      this.saveProgress();
+    } catch {
+      if (this.progress?.storyRun === run) this.storyTicketTimer = setTimeout(() => this.registerStoryRun(run, attempt + 1), Math.min(120, 5 * 2 ** attempt) * 1000);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   recordStoryFightScore(stageId) {
@@ -2882,8 +2906,9 @@ for (const level of this.config.secretLevels || []) {
     if (!run) return null;
     const fights = ["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"];
     const total = fights.reduce((sum, id) => sum + (run.scores?.[id] || 0), 0);
-    const complete = !run.legacy && !run.mixed && fights.every(id => Number.isFinite(run.scores?.[id]));
-    return { run, total, complete, mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' };
+    const blocked = run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
+    const complete = !blocked && fights.every(id => Number.isFinite(run.scores?.[id]));
+    return { run, total, complete, blocked, mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' };
   }
 
   maybeShowFinalScoreboard() {
@@ -2966,7 +2991,7 @@ for (const level of this.config.secretLevels || []) {
   scoreboardStanding(board = this.scoreboard) {
     const result = board?.result;
     if (!result) return null;
-    if (!result.complete) return { kind: 'ineligible' };
+    if (!result.complete) return { kind: 'ineligible', why: result.blocked };
     if (result.run.posted) return { kind: 'posted', rank: result.run.posted.rank };
     if (board.status[result.mode] !== 'ready') return { kind: board.status[result.mode] };
     const entries = board.entries[result.mode] || [];
@@ -3002,7 +3027,9 @@ for (const level of this.config.secretLevels || []) {
     );
     if (result) {
       const status = {
-        ineligible: tr('This story run cannot enter the scoreboard (it began before the scoreboard opened). Start a new story to compete.', '這次的故事無法登上排行榜（在排行榜開放前就開始了）。從故事模式重新開始即可挑戰排名。'),
+        ineligible: standing?.why === 'offline'
+          ? tr('This story run cannot enter the scoreboard: it could not reach the scoreboard when it began. Start a new story online to compete.', '這次的故事無法登上排行榜：開始時沒有連上排行榜。連上網路後從故事模式重新開始，即可挑戰排名。')
+          : tr('This story run cannot enter the scoreboard (it began before the scoreboard opened). Start a new story to compete.', '這次的故事無法登上排行榜（在排行榜開放前就開始了）。從故事模式重新開始即可挑戰排名。'),
         posted: result.run.posted?.rank ? tr('You are #' + result.run.posted.rank + ' on the ' + this.scoreboardModeLabel(result.mode) + ' board!', '你在' + this.scoreboardModeLabel(result.mode) + '排行榜第 ' + result.run.posted.rank + ' 名！') : tr('This run is already on the scoreboard.', '這次的成績已經登上排行榜。'),
         qualifies: tr('Top 10! Enter an ID to join the scoreboard.', '進入前十名！輸入 ID 登上排行榜。'),
         short: standing?.kind === 'short' ? tr(number(standing.gap) + ' more points would have reached the top 10.', '還差 ' + number(standing.gap) + ' 分就能擠進前十名，再接再厲！') : '',
@@ -3093,6 +3120,7 @@ for (const level of this.config.secretLevels || []) {
     if (error === 'id-blocked') return tr('Please choose a different ID.', '這個 ID 不能使用，請換一個。');
     if (error === 'not-top') return tr('So close! Others posted higher scores first.', '差一點！其他玩家剛搶先登上前十。');
     if (error === 'posted') return tr('This run is already on the scoreboard.', '這次的成績已經登上排行榜。');
+    if (error === 'too-fast' || error === 'run') return tr('The scoreboard could not verify this story run, so it cannot be posted.', '排行榜無法驗證這次的故事進度，因此無法登上排行榜。');
     if (error === 'rate' || status === 429) return tr('Too many tries. Please wait a few minutes.', '嘗試太多次了，請稍等幾分鐘再試。');
     return tr('The scoreboard cannot be reached right now.', '排行榜暫時無法連線。');
   }
@@ -3112,7 +3140,7 @@ for (const level of this.config.secretLevels || []) {
     this.renderScoreboard();
     try {
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: result.mode, id, run: result.run.id, scores: result.run.scores }) });
+        body: JSON.stringify({ mode: result.mode, id, run: result.run.ticket, scores: result.run.scores }) });
       const data = await response.json().catch(() => ({}));
       if (Array.isArray(data.entries)) { board.entries[result.mode] = data.entries; board.status[result.mode] = 'ready'; }
       if (response.status === 201) {
@@ -6490,6 +6518,7 @@ for (const level of this.config.secretLevels || []) {
     if (!stageId) return false;
     const runMode = this.progress?.storyRun?.difficulty;
     if (runMode && runMode !== this.difficultyId) this.setDifficulty(runMode, { persist: false, announce: false });
+    if (this.progress?.storyRun) this.registerStoryRun(this.progress.storyRun);
     this.freePlay = false;
     return this.startStage(stageId, { freePlay: false });
   }
@@ -31895,9 +31924,37 @@ window.bobbyBuildId = BUILD_ID;
 game.init();
 
 // Deck artwork from styles.css (rewriteCssArtwork in moth-runtime-patches.mjs).
+
+async function tintMothButtons(blob) {
+  const image = await createImageBitmap(blob);
+  const canvas = Object.assign(document.createElement('canvas'), {width: image.width, height: image.height});
+  const context = canvas.getContext('2d', {willReadFrequently: true});
+  context.drawImage(image, 0, 0);
+  image.close?.();
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+  const data = pixels.data, width = canvas.width;
+  const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+  const targets = [rgb(MOTH_NOTE_COLOURS.M), null, rgb(MOTH_NOTE_COLOURS.T), rgb(MOTH_NOTE_COLOURS.H)];
+  const luma = (r, g, b) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  const face = luma(56, 61, 59);
+  for (let i = 0; i < data.length; i += 4) {
+    const target = targets[Math.floor((i / 4 % width) * 4 / width)];
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    if (!target || data[i + 3] < 10 || Math.max(r, g, b) - Math.min(r, g, b) > 34) continue;
+    const y = luma(r, g, b);
+    if (y < 0.09 || y > 0.8) continue;
+    const f = y / face, k = Math.min(1, (f - 1) * 0.55);
+    for (let c = 0; c < 3; c++) data[i + c] = Math.round(f <= 1 ? target[c] * f : target[c] + (255 - target[c]) * k);
+  }
+  context.putImageData(pixels, 0, 0);
+  return new Promise((resolve, reject) => canvas.toBlob(out => out ? resolve(out) : reject(new Error('tint')), 'image/png'));
+}
+
 for (const [index, src] of ["assets/sprites/ui/film-grain.png","assets/sprites/mobile_control_pad_kit/ui/joystick-base.webp?v=pad-art-20260702","assets/sprites/mobile_control_pad_kit/ui/joystick-knob.webp?v=pad-art-20260702","assets/ui/mobile_dpad_20260901/processed/sheet-transparent.webp?v=retro-arrows-20260901a","assets/sprites/mobile_round_button_kit/ui/round-dark.webp?v=roundpad-20260703","assets/sprites/mobile_round_button_kit/ui/round-dark-pressed.webp?v=roundpad-20260703","assets/sprites/mobile_round_button_kit/ui/round-orange.webp?v=roundpad-20260703","assets/sprites/mobile_round_button_kit/ui/round-orange-pressed.webp?v=roundpad-20260703","assets/sprites/mobile_b_button_press/higgsfield-20260713/processed/b-press-strip.webp?v=b-press-20260713","assets/sprites/mobile_control_pad_kit/ui/key-dark.webp?v=pad-art-20260702","assets/sprites/mobile_control_pad_kit/ui/key-dark-pressed.webp?v=pad-art-20260702","assets/sprites/mobile_control_pad_kit/ui/key-orange.webp?v=pad-art-20260702","assets/sprites/mobile_control_pad_kit/ui/key-orange-pressed.webp?v=pad-art-20260702","assets/ui/mobile_handheld_20260825/processed/button-flat-press-strip.webp?v=flat-handheld-20260825","assets/ui/mobile_flat_buttons_20260902/processed/rounds-transparent.webp?v=flat-buttons-20260902a","assets/ui/mobile_flat_buttons_20260902/processed/squares-transparent.webp?v=flat-buttons-20260902a","assets/ui/mobile_flat_buttons_20260902/processed/pills-transparent.webp?v=flat-buttons-20260902a","assets/ui/mobile_start_cap_20260908/processed/start-transparent.webp?v=start-cap-20260908a","assets/ui/mobile_moth_buttons_20261002/sheet.webp?v=moth-gpt-20261002c"].entries()) {
   fetchGameAsset(src)
-    .then(({data, type}) => URL.createObjectURL(new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'})))
+    .then(({data, type}) => new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'}))
+    .then(blob => src.includes('/mobile_moth_buttons_') ? tintMothButtons(blob).catch(() => blob) : blob)
+    .then(blob => URL.createObjectURL(blob))
     .catch(() => new URL(src, document.baseURI).href)
     .then(url => document.documentElement.style.setProperty('--moth-art-' + index, 'url("' + url + '")'));
 }

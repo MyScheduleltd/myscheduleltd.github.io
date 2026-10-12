@@ -17,6 +17,9 @@ export function fakeUpstash() {
       case 'ZREMRANGEBYRANK': { const r = sorted(a[0]); const stop = +a[2] < 0 ? r.length + +a[2] : +a[2]; const gone = stop < +a[1] ? [] : r.slice(+a[1], stop + 1); /* Redis: an empty range removes nothing */ gone.forEach(([m]) => zset(a[0]).delete(m)); return gone.length; }
       case 'SET': { if (a.includes('NX') && data.has(a[0])) return null; data.set(a[0], a[1]); return 'OK'; }
       case 'INCR': { const v = Number(data.get(a[0]) || 0) + 1; data.set(a[0], String(v)); return v; }
+      case 'GET': return data.has(a[0]) ? data.get(a[0]) : null;
+      case 'EXISTS': return a.filter(key => data.has(key)).length;
+      case 'DEL': return a.filter(key => data.delete(key)).length;
       default: throw new Error('unsupported ' + cmd);
     }
   };

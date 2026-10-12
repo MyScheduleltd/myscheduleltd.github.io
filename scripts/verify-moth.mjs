@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { chromium, webkit } from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
+import {stubScoreboard} from './moth-scoreboard-stub.mjs';
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const out = path.resolve(process.argv[3] || '.qa/moth/browser');
 await fs.mkdir(out, { recursive: true });
@@ -10,6 +11,7 @@ for (const [name, type] of [['chrome', chromium], ['webkit', webkit]]) {
   const browser = await type.launch(name === 'chrome' ? {executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless:true, args:['--no-sandbox']} : {headless:true});
   try {
     const context = await browser.newContext();
+    await stubScoreboard(context);
     await context.addInitScript(() => {
       window.__qaDraws = [];
       window.__qaViolations = [];
@@ -72,6 +74,7 @@ for (const [name, type] of [['chrome', chromium], ['webkit', webkit]]) {
     await context.close();
     if (name === 'chrome') {
       const menuContext = await browser.newContext({viewport:{width:390,height:844}});
+      await stubScoreboard(menuContext);
       await menuContext.addInitScript(() => {
         window.__menuViolations = [];
         document.addEventListener('securitypolicyviolation', event => window.__menuViolations.push(event.effectiveDirective));

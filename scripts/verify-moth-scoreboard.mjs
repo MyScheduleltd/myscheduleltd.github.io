@@ -29,11 +29,22 @@ async function bridge(route) {
   await handler(req, res, env);
   await route.fulfill({status: res.statusCode, headers: res.headers, body: res.text});
 }
+const api = async (body, ip) => {
+  const res = {statusCode: 0, text: '', setHeader() {}, end(t) { this.text = t || ''; }};
+  await handler({method: 'POST', url: '/api/moth-scoreboard', headers: {'x-forwarded-for': ip}, body}, res, env);
+  return {status: res.statusCode, json: JSON.parse(res.text)};
+};
+// A ticket as if its story had started 15 minutes ago.
+const age = run => {
+  const key = 'moth:ticket:' + run;
+  store.data.set(key, JSON.stringify({...JSON.parse(store.data.get(key)), at: Date.now() - 15 * 60000}));
+};
 const seed = async (mode, count, scale) => {
   for (let i = 0; i < count; i++) {
-    const req = {method: 'POST', url: '/api/moth-scoreboard', headers: {'x-forwarded-for': `11.0.${i}.1`}, body: {mode, id: 'P' + (i + 1), run: `seed-${mode}-${i}-xxxxxxxxxxxx`, scores: runScores(mode, scale - i * 0.03)}};
-    const res = {setHeader() {}, end() {}};
-    await handler(req, res, env);
+    const {json: {run}} = await api({action: 'start', mode}, `11.0.${i}.1`);
+    age(run);
+    const posted = await api({mode, id: 'P' + (i + 1), run, scores: runScores(mode, scale - i * 0.03)}, `11.0.${i}.1`);
+    assert(posted.status === 201 || posted.json.error === 'not-top', JSON.stringify(posted.json));
   }
 };
 
@@ -59,6 +70,10 @@ for (const [label, viewport, device] of [['phone', {width: 390, height: 844}, 'p
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => bobbyGame.progress?.storyRun?.difficulty === 'shoot' && bobbyGame.difficultyId === 'shoot', undefined, {timeout: 20000});
+  // The server issued the run's ticket; the songs take ~14 minutes, so age it.
+  const ticket = await page.waitForFunction(() => bobbyGame.progress.storyRun.ticket, undefined, {timeout: 15000}).then(handle => handle.jsonValue());
+  assert.equal(JSON.parse(store.data.get('moth:ticket:' + ticket)).mode, 'shoot');
+  age(ticket);
 
   // Cleared story fights record their scores (here, with the fight's result in place).
   const mode = 'shoot';
@@ -125,6 +140,14 @@ for (const [label, viewport, device] of [['phone', {width: 390, height: 844}, 'p
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('.moth-board').count(), 0);
   assert.equal(await page.evaluate(() => bobbyGame.state), 'title');
+
+  // A run that never reached the server for its ticket can't be posted, and says why.
+  await page.evaluate(scores => { bobbyGame.progress.storyRun = {id: 'offline-run', difficulty: 'chill', scores, startedAt: Date.now(), ticket: null}; bobbyGame.startFinaleEnding(); }, runScores('chill', 0.5));
+  await page.locator('.moth-board').waitFor();
+  assert.match(await page.locator('.moth-board-run p').innerText(), /could not reach the scoreboard|開始時沒有連上排行榜/);
+  assert.equal(await page.locator('.moth-board-post input').count(), 0, 'No ID entry for an unverified run');
+  await page.locator('[data-board-close]').click();
+  await page.waitForFunction(() => bobbyGame.state === 'finaleEnding');
   assert.deepEqual(errors, []);
   console.log(label, 'PASS', JSON.stringify({rank, total, scrollable}));
   await context.close();
