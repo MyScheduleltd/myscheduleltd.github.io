@@ -107,7 +107,7 @@ body {
 
 .film-grain-overlay::before {
   inset: -12%;
-  background-image: url("assets/sprites/ui/film-grain.png");
+  background-image: var(--moth-art-0);
   background-size: 142px 142px;
   mix-blend-mode: soft-light;
   opacity: 0.3;
@@ -335,7 +335,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
   width: 148px;
   height: 148px;
   border-radius: 50%;
-  background: url("assets/sprites/mobile_control_pad_kit/ui/joystick-base.webp?v=pad-art-20260702") center / 100% 100% no-repeat;
+  background: var(--moth-art-1) center / 100% 100% no-repeat;
   filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.55));
   pointer-events: auto;
   touch-action: none;
@@ -353,7 +353,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
   width: 72px;
   height: 72px;
   margin: -36px 0 0 -36px;
-  background: url("assets/sprites/mobile_control_pad_kit/ui/joystick-knob.webp?v=pad-art-20260702") center / 100% 100% no-repeat;
+  background: var(--moth-art-2) center / 100% 100% no-repeat;
   filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.6));
   pointer-events: none;
 }
@@ -383,7 +383,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
   border-radius: 0;
   outline: 0;
   background-color: transparent;
-  background-image: url("assets/ui/mobile_dpad_20260901/processed/sheet-transparent.webp?v=retro-arrows-20260901a");
+  background-image: var(--moth-art-3);
   background-repeat: no-repeat;
   background-size: 400% 200%;
   background-position: var(--dpad-frame-x) 0%;
@@ -511,7 +511,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
   border: none;
   border-image: none;
   border-radius: 50%;
-  background: url("assets/sprites/mobile_round_button_kit/ui/round-dark.webp?v=roundpad-20260703") center / calc(100% - 4px) calc(100% - 4px) no-repeat;
+  background: var(--moth-art-4) center / calc(100% - 4px) calc(100% - 4px) no-repeat;
   box-shadow: none;
   opacity: 0.88;
   overflow: visible;
@@ -520,7 +520,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
 .mobile-button.mobile-button--round:active,
 .mobile-button.mobile-button--round.is-held {
   border-image: none;
-  background-image: url("assets/sprites/mobile_round_button_kit/ui/round-dark-pressed.webp?v=roundpad-20260703");
+  background-image: var(--moth-art-5);
   opacity: 1;
 }
 
@@ -530,14 +530,14 @@ body[data-device-mode="phone"] .film-grain-overlay {
   width: 92px;
   height: 92px;
   font-size: 20px;
-  background-image: url("assets/sprites/mobile_round_button_kit/ui/round-orange.webp?v=roundpad-20260703");
+  background-image: var(--moth-art-6);
   color: #241505;
   text-shadow: 1px 1px rgba(255, 235, 200, 0.5);
 }
 
 .mobile-button.mobile-button--arc-j:active,
 .mobile-button.mobile-button--arc-j.is-held {
-  background-image: url("assets/sprites/mobile_round_button_kit/ui/round-orange-pressed.webp?v=roundpad-20260703");
+  background-image: var(--moth-art-7);
 }
 
 .mobile-button.mobile-button--arc-k {
@@ -580,7 +580,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
 
 .mobile-button.mobile-button--arc-b:active,
 .mobile-button.mobile-button--arc-b.is-held {
-  background-image: url("assets/sprites/mobile_b_button_press/higgsfield-20260713/processed/b-press-strip.webp?v=b-press-20260713");
+  background-image: var(--moth-art-8);
   background-size: 400% 100%;
   background-position: 0 0;
   opacity: 1;
@@ -643,7 +643,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
   min-width: 0;
   min-height: 48px;
   border: 13px solid transparent;
-  border-image: url("assets/sprites/mobile_control_pad_kit/ui/key-dark.webp?v=pad-art-20260702") 88 fill / 13px stretch;
+  border-image: var(--moth-art-9) 88 fill / 13px stretch;
   border-radius: 0;
   background: none;
   color: #f7f2de;
@@ -665,7 +665,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
 .mobile-button:active,
 .mobile-button.is-held {
   transform: translateY(2px);
-  border-image-source: url("assets/sprites/mobile_control_pad_kit/ui/key-dark-pressed.webp?v=pad-art-20260702");
+  border-image-source: var(--moth-art-10);
   color: #ffd36c;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
 }
@@ -676,14 +676,14 @@ body[data-device-mode="phone"] .film-grain-overlay {
 }
 
 .mobile-button--primary {
-  border-image-source: url("assets/sprites/mobile_control_pad_kit/ui/key-orange.webp?v=pad-art-20260702");
+  border-image-source: var(--moth-art-11);
   color: #241505;
   text-shadow: 1px 1px rgba(255, 235, 200, 0.5);
 }
 
 .mobile-button--primary:active,
 .mobile-button--primary.is-held {
-  border-image-source: url("assets/sprites/mobile_control_pad_kit/ui/key-orange-pressed.webp?v=pad-art-20260702");
+  border-image-source: var(--moth-art-12);
   color: #2a1200;
   text-shadow: 1px 1px rgba(255, 235, 200, 0.5);
 }
@@ -1177,7 +1177,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
 
   .mobile-button.mobile-button--arc-b:active,
   .mobile-button.mobile-button--arc-b.is-held {
-    background-image: url("assets/ui/mobile_handheld_20260825/processed/button-flat-press-strip.webp?v=flat-handheld-20260825");
+    background-image: var(--moth-art-13);
     color: #181a1c;
     filter: none;
   }
@@ -1815,18 +1815,18 @@ body[data-device-mode="phone"] .film-grain-overlay {
 
 .mobile-controls .mobile-button--cap-round {
   --cap-sheet-size: 200% 200%;
-  --cap-image: url("assets/ui/mobile_flat_buttons_20260902/processed/rounds-transparent.webp?v=flat-buttons-20260902a");
+  --cap-image: var(--moth-art-14);
 }
 
 .mobile-controls .mobile-button--cap-square {
   --cap-sheet-size: 200% 200%;
-  --cap-image: url("assets/ui/mobile_flat_buttons_20260902/processed/squares-transparent.webp?v=flat-buttons-20260902a");
+  --cap-image: var(--moth-art-15);
 }
 
 .mobile-controls .mobile-button--cap-pill,
 .mobile-controls .mobile-button--cap-enter {
   --cap-sheet-size: 200% 200%;
-  --cap-image: url("assets/ui/mobile_flat_buttons_20260902/processed/pills-transparent.webp?v=flat-buttons-20260902a");
+  --cap-image: var(--moth-art-16);
 }
 
 .mobile-controls .mobile-button--capped {
@@ -2408,7 +2408,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
 .mobile-controls .mobile-button--cap-start {
   --cap-sheet-size: 100% 200%;
   --cap-x: 0%;
-  --cap-image: url("assets/ui/mobile_start_cap_20260908/processed/start-transparent.webp?v=start-cap-20260908a");
+  --cap-image: var(--moth-art-17);
   color: #efe3c4;
 }
 
@@ -2758,7 +2758,7 @@ body[data-touch-controls="1"] .mobile-controls .mobile-moth__button {
   border-radius: 0;
   outline: 0;
   background-color: transparent;
-  background-image: url("assets/ui/mobile_moth_buttons_20261002/sheet.webp?v=moth-gpt-20261002c");
+  background-image: var(--moth-art-18);
   background-repeat: no-repeat;
   background-size: 400% 200%;
   background-position: var(--moth-x) 0%;

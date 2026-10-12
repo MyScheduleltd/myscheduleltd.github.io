@@ -137,6 +137,30 @@ export function patchMothRuntime(source, ts) {
   once('  renderTitle() {\n', '  renderTitle() {\n    this.prefetchTitleAudio();\n');
   // GANGAN's chip portrait: dressed for the level and kept inside the chip.
   once('    } else if (!zuxian && !bonita && sheet && spec) {\n      const frame = prompt.row * 2 + (Math.floor(motionTime * 7) % 2);\n      drawBundleFrame(target, sheet, spec, frame, chip.x + 31 * k, chip.y + chip.h - 2 * k, face, face, spec.anchor || { x: 0.5, y: 1 });\n    } else {', '    } else if (!zuxian && !bonita && this.drawCoachGanganFace(target, chip, k, prompt, motionTime)) {\n      // Drawn by drawCoachGanganFace.\n    } else {');
+  // The pocket/forge shells and pocket icons are module-level Images that
+  // fetched straight from Pages; they now take the verified mirror copy.
+  const shells = source.match(/^(POCKET_SHELL_IMAGE|FORGE_SHELL_IMAGE|POCKET_ICON_IMAGE|POCKET_ICON_ACTIVE_IMAGE)\.src = ("[^"]+");$/gm) || [];
+  assert.equal(shells.length, 4);
+  source = source.replace(/^(POCKET_SHELL_IMAGE|FORGE_SHELL_IMAGE|POCKET_ICON_IMAGE|POCKET_ICON_ACTIVE_IMAGE)\.src = ("[^"]+");$/gm, 'mirrorImageSource($1, $2);');
+  // The phone deck re-measures until two frames agree, then only when the
+  // window size changes. iOS can settle the bottom safe area after a cold
+  // launch without resizing, which left SPACE and the M O T H diamond where
+  // the first frames put them. The inset is now part of the check, read from
+  // a probe that stays in the page, and the first seconds re-validate.
+  once('    const key = `${window.innerWidth}x${window.innerHeight}x${document.documentElement.style.getPropertyValue("--app-h")}`;\n    if (this.tallReserveKey === key || !this.mobileControls) return;\n    const probe = document.createElement("div");\n    probe.style.cssText = "position:fixed;left:0;width:1px;height:1px;top:var(--portrait-split);padding-bottom:env(safe-area-inset-bottom,0px)";\n    document.body.appendChild(probe);\n    const split = probe.getBoundingClientRect().top;\n    const safeBottom = probe.getBoundingClientRect().height - 1;\n    probe.remove();',
+    '    if (!this.deckProbe?.isConnected) {\n      this.deckProbe = document.createElement("div");\n      this.deckProbe.setAttribute("aria-hidden", "true");\n      this.deckProbe.style.cssText = "position:fixed;left:0;width:1px;height:1px;top:var(--portrait-split);padding-bottom:env(safe-area-inset-bottom,0px);visibility:hidden;pointer-events:none";\n      document.body.appendChild(this.deckProbe);\n    }\n    const probeBox = this.deckProbe.getBoundingClientRect();\n    const split = probeBox.top;\n    const safeBottom = probeBox.height - 1;\n    const now = performance.now();\n    this.deckFirstShown ||= this.mobileControls?.querySelector(\'[data-mobile-action="btn-o"]\')?.getBoundingClientRect().height > 0 ? now : 0;\n    const early = this.deckFirstShown && now - this.deckFirstShown < 8000 ? Math.floor((now - this.deckFirstShown) / 1000) : "";\n    const key = `${window.innerWidth}x${window.innerHeight}x${document.documentElement.style.getPropertyValue("--app-h")}x${Math.round(safeBottom)}x${early}`;\n    if (this.tallReserveKey === key || !this.mobileControls) return;');
+  // Silent until reloaded after idling (owner, 2026-10-13; iPhone and desktop
+  // Chrome; locked screen, other apps, a pause or a menu). The next tap or key
+  // after such an idle rebuilds the audio engines, as a reload would.
+  once('  primeAudioOnGesture() {\n    if (this.audioRecoveryVisible()) return;', '  primeAudioOnGesture() {\n    this.refreshStaleAudioEngine();\n    if (this.audioRecoveryVisible()) return;');
+  once('  update(dt) {\n    if (document.hidden || this.audioInterruption || this.audioRecoveryVisible()) return;', '  update(dt) {\n    this.noteMusicActivity();\n    if (document.hidden || this.audioInterruption || this.audioRecoveryVisible()) return;');
+  once('    window.addEventListener("pagehide", () => this.suspendGameAudio({ fromHidden: true }));', '    window.addEventListener("pagehide", () => this.suspendGameAudio({ fromHidden: true }));\n    const staleAudio = reason => () => { this.audioEngineStale ||= reason; };\n    document.addEventListener("visibilitychange", () => { if (document.hidden) staleAudio("hidden")(); });\n    window.addEventListener("pagehide", staleAudio("hidden"));\n    document.addEventListener("freeze", staleAudio("frozen"));\n    navigator.mediaDevices?.addEventListener?.("devicechange", staleAudio("device"));');
+  // Windows Chrome flashed the whole page white/black (owner, 2026-10-13).
+  // Both game canvases asked for a desynchronized (low-latency, compositor-
+  // bypassing) context, which on Windows does not mix with the film-grain
+  // layers blended on top. Windows draws through the compositor instead.
+  once('const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });', 'const DESYNC_CANVAS = !/Windows/i.test(navigator.userAgentData?.platform || navigator.userAgent || "");\nconst ctx = canvas.getContext("2d", { alpha: false, desynchronized: DESYNC_CANVAS });');
+  once('this.portraitCtx = element.getContext("2d", { alpha: false, desynchronized: true });', 'this.portraitCtx = element.getContext("2d", { alpha: false, desynchronized: DESYNC_CANVAS });');
   const imageStart = source.indexOf('function loadImage(src) {');
   const imageEnd = source.indexOf('\nfunction loadOptionalSheet(src)', imageStart);
   assert(imageStart > 0 && imageEnd > imageStart);
@@ -358,6 +382,45 @@ const RUNTIME_METHODS = `
     return true;
   }
 
+  // The audio engine can come back from an idle "running" but silent, and
+  // nothing rebuilt an engine in that state, so every later fight stayed
+  // silent until a reload. After a hidden or frozen page, an output-device
+  // change, or a minute without music, the next tap or key rebuilds both
+  // engines (rebuildToneContext also rebuilds the shared music engine and
+  // re-decodes the hit sounds) before anything plays. Music that is playing
+  // goes through the existing recovery, which rebuilds and continues it from
+  // its position inside this same gesture, as iPhone requires.
+  refreshStaleAudioEngine() {
+    const now = performance.now();
+    const idle = Number.isFinite(this.lastMusicAt) && now - this.lastMusicAt > 60000;
+    const reason = this.audioEngineStale || (idle ? 'idle' : null);
+    if (!reason || !this.bootDone || document.hidden || this.audioRecovering || !this.level1OfficeAudioContext) return;
+    this.audioEngineStale = null;
+    this.lastMusicAt = now;
+    // An interruption already rebuilds on this tap (primeAudioOnGesture).
+    if (this.audioInterruption || this.audioRecoveryVisible()) return;
+    this.audioEngineRefreshes = (this.audioEngineRefreshes || 0) + 1;
+    this.lastAudioRefresh = reason;
+    if (this.playingMusicTracks().length) {
+      this.suspendGameAudio();
+      this.recoverGameAudio();
+    } else {
+      this.rebuildToneContext();
+    }
+  }
+
+  playingMusicTracks() {
+    return [...new Set([...this.getKnownBgmTracks(), ...(this.gameAudioRegistry || []), this.songPreview?.audio].filter(Boolean))]
+      .filter(track => !track.paused && !track.ended);
+  }
+
+  noteMusicActivity() {
+    const now = performance.now();
+    if (now - (this.musicActivityCheckedAt || 0) < 500) return;
+    this.musicActivityCheckedAt = now;
+    if (!Number.isFinite(this.lastMusicAt) || (!document.hidden && this.playingMusicTracks().length)) this.lastMusicAt = now;
+  }
+
   loadHomeWaveform(songId) {
     const src = this.config?.sprites?.homeMp3Waveforms?.[songId]?.source;
     if (!src || this.refs.homeMp3WaveformSheets?.[songId]) return;
@@ -462,6 +525,15 @@ async function fetchGameAsset(src) {
   return await mirrorCopy(url) || await retryFetch(url.href, 20000);
 }
 
+// An Image created at load time (device shells, pocket icons), given the
+// verified mirror copy, or this site's file if both downloads fail.
+function mirrorImageSource(image, src) {
+  fetchGameAsset(src)
+    .then(({data, type}) => URL.createObjectURL(new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'})))
+    .catch(() => src)
+    .then(url => { image.src = url; });
+}
+
 function loadImage(src) {
   if (imageRequests.has(src)) return imageRequests.get(src);
   BOOT_LOAD.started++;
@@ -476,3 +548,30 @@ function loadImage(src) {
   return promise;
 }
 `;
+
+// styles.css draws the touch deck (D-pad, M/O/T/H, SPACE, FULLSCREEN), the
+// grain and the start cap from images the browser fetched straight from GitHub
+// Pages, at ~50 KB/s each from Taiwan: on 2026-10-13 the M/O/T/H buttons
+// arrived after 17 s and the D-pad after 23 s. Each url() becomes a custom
+// property that the game fills with the verified mirror copy.
+export function rewriteCssArtwork(css) {
+  const assets = [];
+  const rewritten = css.replace(/url\("(assets\/[^"]+)"\)/g, (_, src) => {
+    let index = assets.indexOf(src);
+    if (index < 0) index = assets.push(src) - 1;
+    return `var(--moth-art-${index})`;
+  });
+  return {css: rewritten, assets};
+}
+
+export function cssArtworkLoader(assets) {
+  return `
+// Deck artwork from styles.css (rewriteCssArtwork in moth-runtime-patches.mjs).
+for (const [index, src] of ${JSON.stringify(assets)}.entries()) {
+  fetchGameAsset(src)
+    .then(({data, type}) => URL.createObjectURL(new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'})))
+    .catch(() => new URL(src, document.baseURI).href)
+    .then(url => document.documentElement.style.setProperty('--moth-art-' + index, 'url("' + url + '")'));
+}
+`;
+}

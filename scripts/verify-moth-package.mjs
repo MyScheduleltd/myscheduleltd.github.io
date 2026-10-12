@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
+import {rewriteCssArtwork} from './moth-runtime-patches.mjs';
 const root = path.resolve(import.meta.dirname, '..');
 const dir = path.join(root, 'docs/moth');
 const snapshot = JSON.parse(await fs.readFile(path.join(root, '.qa/moth/published-snapshot.json'), 'utf8'));
@@ -15,7 +16,12 @@ for (const file of snapshot.files) {
   if (excluded.has(file.path)) continue;
   const data = await fs.readFile(path.join(dir, file.path));
   if (file.path === 'styles.css') {
-    assert.equal(hash(data.subarray(0, file.bytes)),file.sha256,'Original game styles preserved');
+    // The release's styles, with only their artwork url()s turned into the
+    // custom properties the game fills from the verified mirror.
+    const releaseCss = await fs.readFile(path.join(root, '.qa/moth/published/styles.css'));
+    assert.equal(hash(releaseCss), file.sha256);
+    assert(data.toString().startsWith(rewriteCssArtwork(releaseCss.toString()).css), 'Original game styles preserved');
+    assert(!/url\("assets\//.test(data.toString()), 'No artwork fetched straight from Pages by the stylesheet');
     assert(data.toString().includes('.load-recovery section'));
     continue;
   }
