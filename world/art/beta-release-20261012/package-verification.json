@@ -1,0 +1,23 @@
+{
+  "status": "production packages verified; not live",
+  "male_sha256": "24c258bacd78bbf1b7d26689f828937c4ed5773fed626dde0c2db3ad0e8c61c9",
+  "female_sha256": "20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3",
+  "server": "https://myschedule-festival.onrender.com",
+  "tests": 428,
+  "channels": {
+    "beta": {
+      "entry": "main-D_9ROePK.js",
+      "files_matching_dist": 52,
+      "integrity_hashes": 19,
+      "male": "male-uakojqp2.glb",
+      "female": "female-BUDxbVEw.glb"
+    },
+    "ps2": {
+      "entry": "main-D_9ROePK.js",
+      "files_matching_dist": 52,
+      "integrity_hashes": 19,
+      "male": "male-uakojqp2.glb",
+      "female": "female-BUDxbVEw.glb"
+    }
+  }
+}

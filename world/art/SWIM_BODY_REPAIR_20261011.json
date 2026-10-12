@@ -1,0 +1,113 @@
+{
+  "date": "2026-10-11",
+  "status": "local-unpublished",
+  "method": "Live Blender MCP; preserved input, shared dressed arms/hands, closed upper-arm joins, reshaped bare feet",
+  "acceptedSwimwear": "Original black shorts and black one-piece preserved",
+  "inputDirectory": ".artifacts/swim-body-match-20261011",
+  "sourceHashes": {
+    "male": "4c035dbf75f0ccad46f4ab096a798ab0a8c77c725cf71ba4c037aed58467fc28",
+    "female": "20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3"
+  },
+  "reports": {
+    "male": {
+      "reproduction_vertex_signature_match": true,
+      "report": {
+        "limbs": {
+          "Left": {
+            "native_join_vertices": 20,
+            "swim_join_vertices": 64,
+            "bridge_triangles": 84,
+            "upper_arm_scale": 0.7,
+            "shared_upper_arm_vertices": 167
+          },
+          "Right": {
+            "native_join_vertices": 19,
+            "swim_join_vertices": 72,
+            "bridge_triangles": 91,
+            "upper_arm_scale": 0.7190775749490755,
+            "shared_upper_arm_vertices": 187
+          }
+        },
+        "feet": {
+          "Left": {
+            "vertices": 881,
+            "forefoot_width_scale": 0.67,
+            "forward_length_scale": 0.82,
+            "target_rest_yaw_degrees": 4
+          },
+          "Right": {
+            "vertices": 878,
+            "forefoot_width_scale": 0.67,
+            "forward_length_scale": 0.82,
+            "target_rest_yaw_degrees": -4
+          }
+        },
+        "anatomicalFeet": {
+          "Left": {
+            "changed_vertices": 773,
+            "target_heel_length": 0.07,
+            "target_toe_length": 0.177,
+            "sole_z": -0.853,
+            "toe_dorsal_height": 0.026,
+            "max_medial_arch": 0.009
+          },
+          "Right": {
+            "changed_vertices": 745,
+            "target_heel_length": 0.07,
+            "target_toe_length": 0.177,
+            "sole_z": -0.853,
+            "toe_dorsal_height": 0.026,
+            "max_medial_arch": 0.009
+          },
+          "weights": {
+            "Left": {
+              "reweighted_vertices": 271,
+              "shin_blend_start_below_ankle": 0.025,
+              "full_foot_weight_below_ankle": 0.08
+            },
+            "Right": {
+              "reweighted_vertices": 260,
+              "shin_blend_start_below_ankle": 0.025,
+              "full_foot_weight_below_ankle": 0.08
+            }
+          }
+        }
+      }
+    },
+    "female": {
+      "reproduction_vertex_signature_match": true,
+      "report": {
+        "limbs": {
+          "Left": {
+            "native_join_vertices": 16,
+            "swim_join_vertices": 28,
+            "bridge_triangles": 44,
+            "upper_arm_scale": 0.8608845171210247,
+            "shared_upper_arm_vertices": 54
+          },
+          "Right": {
+            "native_join_vertices": 13,
+            "swim_join_vertices": 38,
+            "bridge_triangles": 51,
+            "upper_arm_scale": 0.8264660294064033,
+            "shared_upper_arm_vertices": 59
+          }
+        },
+        "feet": {
+          "Left": {
+            "vertices": 418,
+            "forefoot_width_scale": 0.76,
+            "forward_length_scale": 0.82,
+            "target_rest_yaw_degrees": 4
+          },
+          "Right": {
+            "vertices": 431,
+            "forefoot_width_scale": 0.76,
+            "forward_length_scale": 0.82,
+            "target_rest_yaw_degrees": -4
+          }
+        }
+      }
+    }
+  }
+}

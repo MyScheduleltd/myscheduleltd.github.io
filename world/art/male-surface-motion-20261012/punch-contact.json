@@ -1,0 +1,33 @@
+{
+  "schema": "animation_contact_sheet_report.v1",
+  "frames": [
+    "art/male-surface-motion-20261012/punch-0-outfit-1.png",
+    "art/male-surface-motion-20261012/punch-0.25-outfit-2.png",
+    "art/male-surface-motion-20261012/punch-0.4-outfit-3.png",
+    "art/male-surface-motion-20261012/punch-0.7-outfit-1.png",
+    "art/male-surface-motion-20261012/punch-0.9-outfit-3.png"
+  ],
+  "frame_diff": [
+    {
+      "from": "punch-0-outfit-1.png",
+      "to": "punch-0.25-outfit-2.png",
+      "mean_rgb_diff": 16.972164035968447
+    },
+    {
+      "from": "punch-0.25-outfit-2.png",
+      "to": "punch-0.4-outfit-3.png",
+      "mean_rgb_diff": 8.950401527622757
+    },
+    {
+      "from": "punch-0.4-outfit-3.png",
+      "to": "punch-0.7-outfit-1.png",
+      "mean_rgb_diff": 9.8065005512829
+    },
+    {
+      "from": "punch-0.7-outfit-1.png",
+      "to": "punch-0.9-outfit-3.png",
+      "mean_rgb_diff": 18.46373679766643
+    }
+  ],
+  "warnings": []
+}

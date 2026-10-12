@@ -5,6 +5,7 @@ import { loadImportedAvatar, attachImportedAvatar, syncImportedAvatars, AVATAR_N
 import { poseCoastalCarry } from './world/CoastalCarry';
 import { createCoastalDrink, createCoastalPopcorn } from './world/CoastalProps';
 import { createCoastalAvatar, setCoastalSwimwear } from './world/CoastalAvatar';
+import { FIST, FINGER_NAMES, type HandPose } from './world/HandPose';
 import { createCoastalSkateboard } from './world/CoastalSkateboard';
 import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, COASTAL_STRIDE_LENGTH, walkCoastalPose, danceCoastalPose, skateCoastalPose, supportCoastalPose, seatCoastalLegs, coastalFootHeights } from './world/CoastalPose';
 const q=new URLSearchParams(location.search);
@@ -78,6 +79,8 @@ const originals=new Map<THREE.Mesh,boolean>();
 for(const meshes of Object.values(parts))for(const mesh of meshes)originals.set(mesh,mesh.visible);
 const separated=new THREE.Group();root.add(separated);
 let exploded=false,selected='';
+let handStudy:THREE.Mesh|undefined;
+const handStudyMaterial=q.has('solid')?new THREE.MeshStandardMaterial({color:0xc89677,roughness:1,side:THREE.DoubleSide,wireframe:q.has('wire')}):undefined;
 const highlight=new THREE.Box3Helper(new THREE.Box3(),0xa6533f);highlight.visible=false;scene.add(highlight);
 const visible=(object:THREE.Object3D):boolean=>object.visible&&(!object.parent||visible(object.parent));
 // ?t=seconds into the owner's punch or dance clip; playing advances it.
@@ -87,6 +90,45 @@ function render(){
   syncImportedAvatars(scene);
   if(reviewDog&&q.get('mentor')==='carry')perchMentor(dogCarrier,reviewDog,rig.head,root.userData.importedHeadSupport(),root.userData.importedHeadSurface());
   root.updateMatrixWorld(true);
+  // Review the actual dressed skin and tracking finger rig at close range.
+  // ?hand=left|right&grip=open|fist&handview=palm|back|side
+  if(q.has('hand')){
+    const side=q.get('hand')==='right'?'Right':'Left';
+    const open=Object.fromEntries(FINGER_NAMES.map(name=>[name,{curl:[0,0,0],spread:name==='Thumb'?.7:0}])) as HandPose;
+    root.userData.setImportedHandPose(side==='Left',q.get('grip')==='fist'?FIST:q.get('grip')==='open'?open:null);
+    syncImportedAvatars(root);root.updateMatrixWorld(true);
+    const mesh=Object.values(parts).flat().find(m=>m.userData.componentId==='body') as THREE.SkinnedMesh;
+    mesh.skeleton.update();
+    const indices=mesh.skeleton.bones.map((b,i)=>b.name.startsWith(side+'Hand')?i:-1).filter(i=>i>=0);
+    const forearm=mesh.skeleton.bones.findIndex(b=>b.name===side+'ForeArm');
+    const p=mesh.geometry.getAttribute('position'),si=mesh.geometry.getAttribute('skinIndex'),sw=mesh.geometry.getAttribute('skinWeight');
+    const dressed=mesh.geometry.getAttribute('_dressed'),covered=mesh.geometry.getAttribute('_covered');
+    const box=new THREE.Box3(),owned=new Set<number>(),geometry=mesh.geometry.clone();
+    // Published positions are quantized integers. A world-space study needs
+    // floating point positions rather than writing metres into that buffer.
+    const positions=new THREE.Float32BufferAttribute(new Float32Array(p.count*3),3);geometry.setAttribute('position',positions);
+    for(let i=0;i<p.count;i++){
+      let weight=0,armWeight=0;for(let k=0;k<4;k++){if(indices.includes(si.getComponent(i,k)))weight+=sw.getComponent(i,k);if(si.getComponent(i,k)===forearm)armWeight+=sw.getComponent(i,k);}
+      const hiddenMask=root.userData.wearingSwimwear?dressed:covered;
+      if(weight+armWeight>.5&&(!hiddenMask||hiddenMask.getX(i)<.5)){
+        const point=mesh.localToWorld(mesh.applyBoneTransform(i,new THREE.Vector3().fromBufferAttribute(p,i)));if(weight>.5)box.expandByPoint(point);owned.add(i);positions.setXYZ(i,point.x,point.y,point.z);
+      }
+    }
+    const triangles:number[]=[],index=mesh.geometry.index!;
+    for(let i=0;i<index.count;i+=3){const ids=[index.getX(i),index.getX(i+1),index.getX(i+2)];if(ids.every(v=>owned.has(v)))triangles.push(...ids);}
+    geometry.setIndex(triangles);geometry.computeVertexNormals();geometry.computeBoundingSphere();
+    if(handStudy){handStudy.geometry.dispose();handStudy.removeFromParent();}
+    handStudy=new THREE.Mesh(geometry,handStudyMaterial??mesh.material);scene.add(handStudy);
+    for(const meshes of Object.values(parts))for(const part of meshes)part.visible=false;
+    const centre=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3()).length()*.65;
+    const frame=root.userData.importedHandFrame(side==='Left');
+    const basis=rig.visualRoot!.getWorldQuaternion(new THREE.Quaternion());
+    const normal=(q.get('handview')==='side'?frame.thumb:frame.palm).clone().applyQuaternion(basis);
+    if(q.get('handview')==='back')normal.negate();
+    camera.up.copy(frame.fingers).applyQuaternion(basis);camera.position.copy(centre).addScaledVector(normal,2);camera.lookAt(centre);
+    const aspect=innerWidth/Math.max(240,innerHeight-160);camera.left=-size*aspect;camera.right=size*aspect;camera.top=size;camera.bottom=-size;camera.zoom=1;camera.updateProjectionMatrix();
+    floor.visible=false;
+  }
   if(q.has('board')){
     for(const child of root.children)child.visible=child===board;
     board.visible=true;
@@ -94,6 +136,29 @@ function render(){
     floor.visible=!underside;
     camera.zoom=1.8;camera.position.set(0,underside?-2:2,5);
     camera.lookAt(0,0,0);camera.updateProjectionMatrix();
+  }
+  // Frame the actual skinned bare-foot surface, including the ankle join.
+  // ?feet=side|top|front keeps the full body intact for a silhouette review.
+  if(q.has('feet')){
+    const mesh=Object.values(parts).flat().find(m=>m.userData.componentId==='body') as THREE.SkinnedMesh;
+    mesh.skeleton.update();
+    const ids=mesh.skeleton.bones.map((b,i)=>/^(Left|Right)(Foot|ToeBase)$/.test(b.name)?i:-1).filter(i=>i>=0);
+    const p=mesh.geometry.getAttribute('position'),si=mesh.geometry.getAttribute('skinIndex'),sw=mesh.geometry.getAttribute('skinWeight');
+    const covered=mesh.geometry.getAttribute('_covered'),box=new THREE.Box3();
+    for(let i=0;i<p.count;i++){
+      let weight=0;for(let k=0;k<4;k++)if(ids.includes(si.getComponent(i,k)))weight+=sw.getComponent(i,k);
+      if(weight>.5&&covered.getX(i)>.5)box.expandByPoint(mesh.localToWorld(mesh.applyBoneTransform(i,new THREE.Vector3().fromBufferAttribute(p,i))));
+    }
+    const centre=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
+    const aspect=innerWidth/Math.max(240,innerHeight-160),view=q.get('feet');
+    const half=view==='top'?Math.max(size.z/2,size.x/(2*aspect))+.13:view==='side'?Math.max(size.y/2,size.z/(2*aspect))+.16:Math.max(size.y/2,size.x/(2*aspect))+.16;
+    camera.left=-half*aspect;camera.right=half*aspect;camera.top=half;camera.bottom=-half;camera.zoom=1;
+    camera.up.set(0,view==='top'?0:1,view==='top'?-1:0);
+    // A slight overhead angle keeps the torso outside the detail frame
+    // without clipping the shin and making an artificial open ankle cap.
+    camera.near=.1;
+    camera.position.copy(centre).add(view==='top'?new THREE.Vector3(0,4,1.6):view==='side'?new THREE.Vector3(4,0,0):new THREE.Vector3(0,0,4));
+    camera.lookAt(centre);camera.updateProjectionMatrix();
   }
   const selection=new THREE.Box3();for(const mesh of parts[selected]??[])if(visible(mesh))selection.expandByObject(mesh);
   highlight.visible=!selection.isEmpty();highlight.box.copy(selection);
@@ -139,7 +204,7 @@ if(!q.has('mask')){
   controls.innerHTML=`<label>Pose <select id="pose"><option value="idle">Standing</option><option value="walk">Walking</option><option value="carry-cup">Hold drink</option><option value="carry-popcorn">Hold popcorn</option><option value="drink">Drink</option><option value="eat">Eat popcorn</option><option value="punch">Punch</option><option value="hit">Receive punch</option><option value="dance">Dance</option><option value="wave">Wave</option><option value="fall">Falling</option><option value="land">Landing</option><option value="dj">DJ at decks</option><option value="seat">Sitting</option><option value="skate">Skateboard</option><option value="skate-jump">Skateboard jump</option></select></label><label>Outfit <select id="outfit">${TOP_OUTFITS.map(o=>`<option value="${o.id}">${o.en}</option>`).join('')}<option value="swim">Swimwear</option></select></label><label><input id="wear-cap" type="checkbox" ${q.has('cap')?'checked':''}> Cap</label><label>Cap colour <input id="cap-colour" type="color" value="#1d1f24" ${q.has('cap')?'':'disabled'}></label><button id="play">Play motion</button>${carryPose||pose==='hit'?`<label>Action progress <input id="action-progress" type="range" min="0" max="1" step="0.01" value="${phase}"></label>`:""}<button id="turn">Turn 45°</button><button id="explode">Separate parts</button><label>Inspect <select id="part"><option value="">Click a part</option></select></label><output id="selection">Articulated garment study</output>`;
   document.body.append(controls);
   for(const id of ['pose','outfit']){
-    const select=document.getElementById(id) as HTMLSelectElement;select.value=id==='outfit'?(q.has('swim')?'swim':q.get('outfit')??'1'):(q.get('pose')??'idle');
+    const select=document.getElementById(id) as HTMLSelectElement;select.value=id==='outfit'?(q.has('swim')?'swim':q.get('outfit')??'1'):(pose==='stand'?'idle':pose);
     select.onchange=()=>{if(id==='outfit'){if(select.value==='swim')q.set('swim','');else {q.delete('swim');q.set('outfit',select.value);}}else q.set(id,select.value);if(id==='pose'&&select.value==='walk')q.set('phase','1');location.search=q.toString();};
   }
   const capToggle=document.getElementById('wear-cap') as HTMLInputElement;

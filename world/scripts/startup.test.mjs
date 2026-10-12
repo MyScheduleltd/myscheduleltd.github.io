@@ -29,3 +29,36 @@ test('the embedded brand image is the original PNG, without a separate image dow
   const original = await readFile('src/assets/company-logo.png');
   assert.ok(result.outputFiles[0].text.includes(`data:image/png;base64,${original.toString('base64')}`));
 });
+
+test('sound-on entry unlocks audio before admission and avatar downloads', async () => {
+ const code=await readFile('src/ui/App.ts','utf8');
+ const submit=code.slice(code.indexOf("form?.addEventListener('submit'"),code.indexOf('private async enterWhenThereIsRoom'));
+ assert.ok(submit.indexOf('entryAudio.start(muted)')<submit.indexOf('enterWhenThereIsRoom(muted)'));
+ assert.ok(code.includes('audio: this.entryAudio'));
+ assert.ok(code.includes('enterWhenThereIsRoom(readSession<boolean>(AUDIO_MUTED_KEY, true))'));
+ assert.ok(code.includes('data-audio-resume'));
+ assert.ok(code.includes('this.bodyTrackRequested ?'));
+ assert.ok(code.includes('enableHeadTracking(chosen || undefined, this.bodyTrackRequested)'));
+ assert.ok(code.includes("addEventListener('keydown', resumeEntryAudio, true)"));
+});
+
+test('audio gains recover on unmute after a suspended context without constructing a second graph', async () => {
+ const {AmbientAudio}=await import('../src/world/AmbientAudio.ts');
+ let constructed=0;
+ const gain=()=>({gain:{value:0,setTargetAtTime(v){this.value=v}},connect(){}});
+ globalThis.AudioContext=class {
+  state='suspended'; currentTime=0; sampleRate=8; destination={}; resumes=0;
+  constructor(){constructed++;}
+  createGain(){return gain();} createBuffer(){return {getChannelData:()=>new Float32Array(24)};}
+  createBufferSource(){return {connect(){},start(){}};} createBiquadFilter(){return {connect(){},frequency:{},Q:{}};}
+  async resume(){this.resumes++;this.state='running';}
+ };
+ try {
+  const audio=new AmbientAudio();await audio.start(true);assert.equal(audio.master.gain.value,0);
+  audio.context.state='suspended';audio.setMuted(false);await Promise.resolve();
+  assert.equal(audio.context.state,'running');assert.equal(audio.master.gain.value,.7);
+  audio.context.state='interrupted';assert.equal(audio.needsResume(),true);
+  await audio.resume();assert.equal(audio.context.state,'running');
+  await audio.start(false);assert.equal(constructed,1);
+ } finally {delete globalThis.AudioContext;}
+});

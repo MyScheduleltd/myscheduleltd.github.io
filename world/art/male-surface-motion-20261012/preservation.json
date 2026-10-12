@@ -1,0 +1,54 @@
+{
+  "beforeSha256": "d7d8f2bbe124071d1f8369e19669bf01677dd62a60aba4293c79b1438c6efa1c",
+  "installedMaleSha256": "24c258bacd78bbf1b7d26689f828937c4ed5773fed626dde0c2db3ad0e8c61c9",
+  "installedBytes": 15130464,
+  "preservedFemaleSha256": "20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3",
+  "preservedBodyGeometryAndMasks": "3b41de7a272d7f1ae3343448c344d8b247750b1ce834f10a1d2354656dfda619",
+  "preservedComponents": {
+    "garment-trousers": "bb639b33af5ae8e2efc86bd002e3360fcb81c00919769f19c172983f09f26b1a",
+    "vest": "5aaf56c5c745f8822fbea87ec57193ecfdc573cac5ac4d9a0ff3bd61d87ae05d",
+    "print-schedule-front": "cd00f8acd26eac8fe561be4e1fe0fc551757c859ff1fd778d0074dbbffcd1fb2",
+    "print-schedule-back": "f1225967231949a44b2734b3f114f226e4a4b4cbf6f449ed1ccf50ea163e43ca",
+    "print-schedule-tag": "704bbb90e144acb81bf5b69e5e597b56f718f0305f4e46cfe834d4ed8fe8af42",
+    "print-house-front": "2e124bb89e2ece7973f0ad05332ac4e45dd24f582d6d8674927da9b5779bcd39",
+    "print-bros-back": "67fba9d4f3779f65f3e2f48d1809c1ba5ca799faa20cab4388e6a237a80cea5a",
+    "print-vest-front": "27ba1ec4ee0a233ec7e283799bd8f811e6656d87bd0abe9618978cb2adcf85aa",
+    "print-vest-back": "3c72f2c6d9f6a52193381b6726d6252a01dd499b9eafc1ac0ccbf1438246aba9"
+  },
+  "preservedImages": [
+    "cap-cloth",
+    "cap-mark",
+    "male-body",
+    "male-bros-back",
+    "male-house-front",
+    "male-schedule-back",
+    "male-schedule-front",
+    "male-schedule-tag",
+    "male-vest-back",
+    "male-vest-front",
+    "male-vest-parts"
+  ],
+  "preservedJointCount": 64,
+  "losslessTextureReport": [
+    {
+      "texture": "body-texture",
+      "before": 6241551,
+      "after": 3947796,
+      "dimensions": [
+        2048,
+        2048
+      ],
+      "identical_rgba": true
+    },
+    {
+      "texture": "texture_0",
+      "before": 7103290,
+      "after": 5068210,
+      "dimensions": [
+        2048,
+        2048
+      ],
+      "identical_rgba": true
+    }
+  ]
+}

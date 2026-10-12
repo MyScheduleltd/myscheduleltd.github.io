@@ -354,12 +354,14 @@ export function djCoastalPose(rig:AvatarRig,seconds:number):void {
   // Mirror the palm axes so both hands rest flat on the controls, fingers forward.
   const palmDown=(right:boolean)=>new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(
     new THREE.Vector3(0,right?1:-1,0),new THREE.Vector3(0,0,-1),new THREE.Vector3(right?-1:1,0,0)));
+  const regenerated = rig.visualRoot?.parent?.userData.importedAvatar?.meshes.some(
+    (m:THREE.Mesh)=>m.userData.componentId==='body'&&m.userData.handPalm);
   // Wrists a little back from the deck's front edge: the generated hands are
   // longer than the old blocky ones and their fingertips went over it. The
   // platter hand reaches far out, where the 40 degree wrist limit keeps its
   // fingers raised, so its wrist sits a centimetre lower and further out.
-  reachCoastalHand(rig,false,new THREE.Vector3(-1.005,1.27,.50+(working?Math.sin(seconds*4)*.055:0)),palmDown(false));
+  reachCoastalHand(rig,false,new THREE.Vector3(regenerated?-.96:-1.005,1.27+(regenerated?.065:0),.50-(regenerated?.04:0)+(working?Math.sin(seconds*4)*.055:0)),palmDown(false));
   // Lift the mixer-hand target 3cm to keep native fingertips on the fader
   // surface once both shoes are planted on the platform.
-  reachCoastalHand(rig,true,new THREE.Vector3(.24,1.33,.43+(!working?Math.sin(seconds*1.4)*.08:0)),palmDown(true));
+  reachCoastalHand(rig,true,new THREE.Vector3(.24,1.33+(regenerated?.065:0),.43-(regenerated?.04:0)+(!working?Math.sin(seconds*1.4)*.08:0)),palmDown(true));
 }

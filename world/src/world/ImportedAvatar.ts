@@ -114,7 +114,7 @@ const STANCE = .025;
 /** The meshes the dye shader draws: the body and the garments on it. */
 const DYED = new Set(['body', 'garment-tee', 'garment-trousers', 'garment-shoes']);
 
-interface Template { scene: THREE.Group; dye?: THREE.Texture; vest?: THREE.Texture }
+interface Template { scene: THREE.Group; dye?: THREE.Texture; bodyDye?: THREE.Texture; vest?: THREE.Texture }
 const templates = new Map<AvatarVariant, Template>();
 const pending = new Map<AvatarVariant, Promise<void>>();
 /** Avatars waiting for a body or its finishing layers to arrive. */
@@ -164,10 +164,11 @@ async function loadPicture(url: string): Promise<THREE.Texture> {
   }
 }
 
-async function loadDye(key: AvatarVariant): Promise<THREE.Texture | undefined> {
+async function loadDye(key: AvatarVariant, separateBody = false): Promise<THREE.Texture | undefined> {
   if (typeof window === 'undefined' || typeof Image === 'undefined') return undefined;
   try {
-    const texture = await loadPicture(dyeUrl(key));
+    const texture = await loadPicture(separateBody
+      ? new URL('../assets/avatars/male-body-dye.png', import.meta.url).href : dyeUrl(key));
     // Weights, not colours, and filtered exactly like the texture they
     // describe, so the two always agree about which texel is which.
     texture.flipY = false;
@@ -200,7 +201,11 @@ function loadVariant(key: AvatarVariant, bytes?: ArrayBuffer): Promise<void> {
     const gltf = await loader.parseAsync(bytes ?? await fetchAsset(modelUrl(key)), '');
     const template: Template = { scene: gltf.scene };
     let map: THREE.Texture | undefined;
-    gltf.scene.traverse(o => { if (o instanceof THREE.Mesh && o.userData.componentId === 'body') map = (o.material as THREE.MeshStandardMaterial).map ?? undefined; });
+    let separateBody = false;
+    gltf.scene.traverse(o => { if (o instanceof THREE.Mesh && o.userData.componentId === 'body') {
+      map = (o.material as THREE.MeshStandardMaterial).map ?? undefined;
+      separateBody = o.userData.separateTexture === true;
+    } });
     sharpenBody(map);
     templates.set(key, template);
     announce();
@@ -208,6 +213,7 @@ function loadVariant(key: AvatarVariant, bytes?: ArrayBuffer): Promise<void> {
     // them, and nobody should wait at the gate for a colour.
     if (!bytes) void Promise.all([
       loadDye(key).then(t => { template.dye = t; }),
+      ...(separateBody ? [loadDye(key, true).then(t => { template.bodyDye = t; })] : []),
       loadVest(key, map).then(t => { template.vest = t; }),
     ]).then(announce);
   })().catch(error => { pending.delete(key); throw error; });
@@ -327,6 +333,7 @@ interface Mounted {
   slots: Map<THREE.SkinnedMesh, DyeSlot>;
   mouth: THREE.Vector3;
   atlas?: THREE.Texture | null;
+  originalMaps: Map<THREE.SkinnedMesh, THREE.Texture | null>;
 }
 
 const hexDistance = (a: string, b?: string): number => {
@@ -531,10 +538,17 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
         const base = at(joint(f, 1)!), first = at(joint(f, 2)!).sub(base).normalize(), bend = at(joint(f, 4)!).sub(base);
         palm.add(bend.addScaledVector(first, -bend.dot(first)).normalize());
       }
+      // Straight generated fingers have no reliable bend-plane normal.
+      // Their inspected palm normal is recorded with the body instead.
+      if (Array.isArray(bodyMesh.userData.handPalm)) palm.fromArray(bodyMesh.userData.handPalm);
       if (palm.lengthSq() < 1e-6) palm.set(-Math.sign(wrist.x || 1), 0, 0);
       palm.addScaledVector(fingers, -palm.dot(fingers)).normalize();
       let thumb = new THREE.Vector3().crossVectors(fingers, palm);
       if (thumb.z < 0) thumb.negate();
+      if (Array.isArray(bodyMesh.userData.handPalm) && joint('Index', 1) && joint('Pinky', 1)) {
+        thumb = at(joint('Index', 1)!).sub(at(joint('Pinky', 1)!));
+        thumb.addScaledVector(fingers, -thumb.dot(fingers)).normalize();
+      }
       const toBone = inBody(bone).invert();
       // Lowering the A-pose arm swings it down but never rolls it, so a
       // generated hand keeps whatever roll it was made with: the male's palms
@@ -575,11 +589,18 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
         const toward = name === 'Thumb' ? palmWorld.clone().sub(thumbWorld).normalize() : palmWorld;
         const curl = [0, 1, 2].map(i => {
           const along = points[i + 1].clone().sub(points[i]).normalize();
-          const axis = new THREE.Vector3().crossVectors(along, toward).normalize();
+          const direction = name === 'Thumb' && Array.isArray(bodyMesh.userData.handPalm)
+            ? joints.wrist.clone().sub(points[i]).addScaledVector(palmWorld, .04).normalize() : toward;
+          const axis = new THREE.Vector3().crossVectors(along, direction).normalize();
           return axis.applyQuaternion(links[i].getWorldQuaternion(new THREE.Quaternion()).invert());
         });
         const along = points[1].clone().sub(points[0]).normalize();
         const spreadWorld = name === 'Thumb' ? new THREE.Vector3().crossVectors(along, thumbWorld).normalize() : palmWorld.clone();
+        if (name === 'Thumb' && Array.isArray(bodyMesh.userData.handPalm)) {
+          spreadWorld.copy(palmWorld);
+          const forward = hand.fingers.clone().applyQuaternion(handWorld);
+          if (new THREE.Vector3().crossVectors(spreadWorld, forward).dot(thumbWorld) < 0) spreadWorld.negate();
+        }
         // Signed so a positive spread swings the finger toward the thumb.
         if (name !== 'Thumb' && new THREE.Vector3().crossVectors(spreadWorld, along).dot(thumbWorld) < 0) spreadWorld.negate();
         fingers[name] = {
@@ -671,6 +692,27 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       root.updateMatrixWorld(true);
       const m = probe(bodyMesh);
       poseBareRest();
+      if (bodyMesh.userData.foot_binding_revision) {
+        // Align the generated feet through their ankle rig, preserving the
+        // original heel, instep and toe volume instead of squeezing the mesh.
+        for (const side of ['Left', 'Right'] as Side[]) {
+          const ids = [m.boneIndex(side + 'Foot'), m.boneIndex(side + 'ToeBase')];
+          const points: THREE.Vector3[] = [];
+          for (let v = 0; v < m.position.count; v++) if (m.weightOn(v, ids) > .5) points.push(m.vertexAt(v));
+          const low = Math.min(...points.map(p => p.y));
+          const outline = points.filter(p => p.y < low + .06 * MODEL_SCALE);
+          const z0 = Math.min(...outline.map(p => p.z)), z1 = Math.max(...outline.map(p => p.z));
+          const centre = (set: THREE.Vector3[]) => set.reduce((sum, p) => sum.add(p), new THREE.Vector3()).divideScalar(set.length);
+          const forward = centre(outline.filter(p => p.z > z1 - (z1 - z0) * .2))
+            .sub(centre(outline.filter(p => p.z < z0 + (z1 - z0) * .2)));
+          const yaw = Math.atan2(forward.x, forward.z), want = side === 'Left' ? .07 : -.07;
+          const link = links.find(l => l.bone.name === side + 'Foot')!;
+          const rest = controlRest.get(link.bone.name)!;
+          link.bareOffset = rest.clone().invert().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), want - yaw))
+            .multiply(rest).multiply(link.bareOffset ?? link.offset);
+        }
+        poseBareRest();
+      }
       for (let iteration = 0; iteration < 12; iteration++) {
         let settled = true;
         for (const [side, contact] of bareContacts) {
@@ -755,6 +797,9 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
         };
         material.customProgramCacheKey = () => 'higgsfield-avatar-print-v4';
       }
+      // Recovered footwear uses the original shoe UVs rather than the
+      // garment atlas. Applying that atlas's dye mask colors its soles as hair.
+      if (component === 'garment-shoes' && mesh.userData.footwear_source) continue;
       if (!DYED.has(component)) continue;
       // Looking into a sleeve or a trouser leg shows its inside, not the sky.
       if (component.startsWith('garment-')) material.side = THREE.DoubleSide;
@@ -766,6 +811,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       // looking down, the visitor sees their shoulders.
       const own: Record<string, THREE.IUniform> = {
         ...shared,
+        avatarDye: { value: mesh === bodyMesh && bodyMesh.userData.separateTexture ? template.bodyDye ?? null : template.dye ?? null },
         avatarHeadBones: { value: new THREE.Vector4(...['Head', 'head_end', 'headfront', 'neck'].map(index)) },
         avatarCover: { value: 0 },
         avatarSwim: { value: 0 },
@@ -776,6 +822,9 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       uniforms.set(mesh, own);
       slots.set(mesh, slot);
       const covered = mesh.geometry.getAttribute('_covered') !== undefined;
+      // The regenerated hair has its own surface label. Texture brightness
+      // alone misses its lower curls and recolors baked highlights as skin.
+      const hairSurface = mesh === bodyMesh && mesh.geometry.getAttribute('_hair') !== undefined;
       // Hers only: the dressed generation's arms and hands, which give way
       // to the swimsuit body's own while she swims.
       const dressedOnly = mesh.geometry.getAttribute('_dressed') !== undefined;
@@ -792,12 +841,15 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
           varying float vAvatarHead;
           varying float vAvatarCovered;
           varying float vAvatarDressed;
+          varying float vAvatarHair;
           ${covered ? 'attribute float _covered;' : ''}
           ${dressedOnly ? 'attribute float _dressed;' : ''}
+          ${hairSurface ? 'attribute float _hair;' : ''}
           ` + shader.vertexShader.replace('#include <skinning_vertex>', `#include <skinning_vertex>
           vAvatarHead = 0.;
           vAvatarCovered = ${covered ? '_covered' : '0.'};
           vAvatarDressed = ${dressedOnly ? '_dressed' : '0.'};
+          vAvatarHair = ${hairSurface ? '_hair' : '0.'};
           #ifdef USE_SKINNING
             float onHead = dot(skinWeight, vec4(equal(skinIndex, vec4(avatarHeadBones.x))) + vec4(equal(skinIndex, vec4(avatarHeadBones.y)))
               + vec4(equal(skinIndex, vec4(avatarHeadBones.z))));
@@ -812,6 +864,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
           varying float vAvatarHead;
           varying float vAvatarCovered;
           varying float vAvatarDressed;
+          varying float vAvatarHair;
           ` + shader.fragmentShader;
         // Each dye keeps the texel's own light and shade, measured against
         // the median of its class, so a recoloured body keeps its folds.
@@ -820,7 +873,9 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
           if (avatarSwim > .5 && vAvatarDressed > .5) discard;
           #include <map_fragment>
           #ifdef USE_MAP
-            vec3 dyeWeight = texture2D(avatarDye, vMapUv).rgb * avatarDyeOn;
+            vec3 dyeMask = texture2D(avatarDye, vMapUv).rgb;
+            ${hairSurface ? 'dyeMask = mix(dyeMask, vec3(0., 1., 0.), smoothstep(.2, .8, vAvatarHair));' : ''}
+            vec3 dyeWeight = dyeMask * avatarDyeOn;
             float dyeTotal = dyeWeight.r + dyeWeight.g + dyeWeight.b;
             if (dyeTotal > .002) {
               float dyeLight = dot(diffuseColor.rgb, vec3(.2126, .7152, .0722));
@@ -835,13 +890,14 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
             }
           #endif`);
       };
-      material.customProgramCacheKey = () => `higgsfield-avatar-dye-v8-${covered}-${dressedOnly}`;
+      material.customProgramCacheKey = () => `higgsfield-avatar-dye-v9-${covered}-${dressedOnly}-${hairSurface}`;
     }
     const meta = META[key];
     return {
       key, model, meshes, body: bodyMesh, links, hands, fingerRigs, soles, calibrateBareFeet, uniforms, slots, moveRest, moveAlign, moveHome, moveLeg,
       mouth: new THREE.Vector3().fromArray(meta.mouth),
       atlas: (bodyMesh.material as THREE.MeshStandardMaterial).map,
+      originalMaps: new Map(meshes.map(mesh => [mesh, (mesh.material as THREE.MeshStandardMaterial).map])),
     };
   };
 
@@ -897,7 +953,13 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       && !(LEGACY_NATIVE[mounted.key]?.[slot] ?? []).some(old => hexDistance(current[slot] as string, old) <= .03) ? 1 : 0;
     for (const [mesh, own] of mounted.uniforms) {
       const material = mesh.material as THREE.MeshStandardMaterial;
-      if (material.map !== atlas) { material.map = atlas; material.needsUpdate = true; }
+      // The regenerated body's UVs belong to its original Higgsfield image.
+      // Clothes retain their own atlas; only the tee uses the vest variant.
+      const separate = mounted.body.userData.separateTexture === true;
+      const map = separate ? (mesh.userData.componentId === 'garment-tee' && outfit === '3' && vest
+        ? vest : mounted.originalMaps.get(mesh) ?? null) : atlas;
+      if (material.map !== map) { material.map = map; material.needsUpdate = true; }
+      own.avatarDye.value = separate && mesh === mounted.body ? template?.bodyDye ?? null : template?.dye ?? null;
       const slot = mounted.slots.get(mesh)!;
       own.avatarCover.value = mesh === mounted.body && on ? 1 : 0;
       own.avatarSwim.value = mesh === mounted.body && !on ? 1 : 0;
@@ -905,7 +967,6 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       (own.avatarGarment.value as THREE.Color).set(current[slot] ?? '#808080');
     }
     const shared = mounted.uniforms.get(mounted.body)!;
-    shared.avatarDye.value = template?.dye ?? null;
     (shared.avatarSkin.value as THREE.Color).set(current.skin ?? '#808080');
     (shared.avatarHair.value as THREE.Color).set(current.hair ?? '#808080');
     shared.avatarHideHead.value = headHidden ? 1 : 0;

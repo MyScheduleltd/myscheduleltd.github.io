@@ -434,6 +434,7 @@ interface Collider {
 }
 
 interface WorldOptions {
+  audio?: AmbientAudio;
   canvas: HTMLCanvasElement;
   foregroundCanvas: HTMLCanvasElement;
   cssLayer: HTMLElement;
@@ -1568,7 +1569,7 @@ const createWaterReflectionTexture = () => {
 };
 
 export class FestivalWorld {
-  readonly audio = new AmbientAudio();
+  readonly audio: AmbientAudio;
 
   private readonly canvas: HTMLCanvasElement;
   private readonly foregroundCanvas: HTMLCanvasElement;
@@ -1998,7 +1999,8 @@ export class FestivalWorld {
    */
   private baseFov = 58;
 
-  constructor({ canvas, foregroundCanvas, cssLayer, graphicsMode, palette, xrPreferred = false, lookSensitivity, gamepadBindings, hudRoot, isChinese, paintHudInSimulation = false, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
+  constructor({ audio, canvas, foregroundCanvas, cssLayer, graphicsMode, palette, xrPreferred = false, lookSensitivity, gamepadBindings, hudRoot, isChinese, paintHudInSimulation = false, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
+    this.audio = audio ?? new AmbientAudio();
     this.canvas = canvas;
     this.foregroundCanvas = foregroundCanvas;
     this.graphicsMode = graphicsMode;
@@ -2668,8 +2670,10 @@ export class FestivalWorld {
    * Turn the webcam head tracking on for this preview. Must be reached from a
    * visitor's own gesture — a browser will not hand over a camera otherwise.
    */
-  async enableHeadTracking(deviceId?: string): Promise<boolean> {
+  async enableHeadTracking(deviceId?: string, body = true): Promise<boolean> {
     if (!this.xrActive || !this.xrSimulated) return false;
+    // Remember the requested full-body mode before opening the shared camera.
+    await this.headTracking.setBodyTracking(body);
     const started = await this.headTracking.start(deviceId);
     this.headTrackingActive = started;
     if (!started) this.releaseHeadCoupledView();
@@ -6699,7 +6703,7 @@ export class FestivalWorld {
     rig.head.rotation.set(
       -THREE.MathUtils.clamp(head.pitch + (this.trackedTorso?.[0] ?? 0), -.8, .8),
       THREE.MathUtils.clamp(head.yaw - (this.trackedTorso?.[1] ?? 0) + (this.xrSpineTwist || 0), -1.2, 1.2),
-      THREE.MathUtils.clamp(head.roll - this.trackedTorsoRoll, -.65, .65));
+      THREE.MathUtils.clamp(head.roll - (this.trackedTorsoRoll || 0), -.65, .65));
     if (this.xrRig && this.camera) this.attachDesktopEye();
   }
 

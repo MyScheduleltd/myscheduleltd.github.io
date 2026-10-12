@@ -34,6 +34,8 @@ plaster=solid('GEO-clean warm plaster',(.64,.61,.53));o.data.materials.append(pl
 removed=[f.index for f in o.data.polygons if f.center.z<.53]
 bm=bmesh.new();bm.from_mesh(o.data);bm.faces.ensure_lookup_table()
 bmesh.ops.delete(bm,geom=[bm.faces[i]for i in removed],context='FACES');bm.to_mesh(o.data);bm.free();o.data.update()
+exec(compile((WORLD/'scripts/repair-sign-backing.py').read_text(), 'repair-sign-backing.py', 'exec'))
+sign_back = repair_sign_back(o)
 # Exact, closed panels replace the defective generated plaster and poster relief.
 panels=[cube('GEO-left booth wall',(-.762,0,-.215),(.075,1.6,1.47),plaster),
  cube('GEO-back booth wall',(0,.765,-.215),(1.56,.075,1.47),plaster),
@@ -52,7 +54,7 @@ frame_mat=solid('GEO-booth charcoal frame',(.015,.019,.018))
 for x in [-.775,.775]:
  for y in [-.785,.785]:frames.append(cube('GEO-booth post',(x,y,-.215),(.09,.09,1.47),frame_mat))
 frames.append(cube('GEO-service header',(0,-.785,.469),(1.64,.09,.115),frame_mat))
-REPORT['box-office']={'replaced_plaster_and_cabinet_faces':len(removed),'closed_panels':len(panels)}
+REPORT['box-office']={'replaced_plaster_and_cabinet_faces':len(removed),'closed_panels':len(panels),'sign_back':sign_back}
 export('box-office',[o]+panels+cabinet+frames)
 # Keep character topology, face/hair/shoe maps and skin weights. Correct sleeve
 # atlas contamination with a dedicated shirt surface, trousers with their own cloth.
@@ -63,15 +65,22 @@ shirt=solid('GEO-ivory staff shirt',(.83,.80,.68));trousers=solid('GEO-charcoal 
 o.data.materials.append(shirt);o.data.materials.append(trousers);counts={'shirt':0,'trousers':0}
 im=next(n.image for n in o.data.materials[0].node_tree.nodes if n.type=='TEX_IMAGE'and n.label=='BASE COLOR')
 pix=np.array(im.pixels[:]).reshape(im.size[1],im.size[0],4);uv=o.data.uv_layers.active.data
+arm_groups={g.index for g in o.vertex_groups if g.name in ('LeftArm','LeftForeArm','LeftHand','RightArm','RightForeArm','RightHand')}
 for f in o.data.polygons:
  c=sum((o.matrix_world@o.data.vertices[i].co for i in f.vertices),Vector())/len(f.vertices)
  if abs(c.x)>.34 and 1.89<c.z<2.33:
   f.material_index=1;counts['shirt']+=1
  elif abs(c.x)<.54 and .29<c.z<1.78:
+  # The inner elbows share the trousers' bounding box in the source pose.
+  # Rig ownership distinguishes arm skin from the nearby clothing surface.
+  arm_weight=sum(sum(g.weight for g in o.data.vertices[i].groups if g.group in arm_groups) for i in f.vertices)/len(f.vertices)
+  if arm_weight>.5:continue
   t=sum((uv[l].uv for l in f.loop_indices),Vector((0,0)))/len(f.loop_indices)
   rgb=pix[int(t.y*(im.size[1]-1)),int(t.x*(im.size[0]-1)),:3]
   if rgb[0]>rgb[1]*1.8 and rgb[0]>.015:continue # Keep the burgundy vest hem.
   f.material_index=2;counts['trousers']+=1
 REPORT['attendant']=counts
+exec(compile((WORLD/'scripts/repair-attendant-hands.py').read_text(), 'repair-attendant-hands.py', 'exec'))
+REPORT['attendant']['finger_separation']=separate_attendant_fingers(o)
 export('attendant',[o,o.parent])
 (WORLD/'.artifacts/venue-finish-20261009/surface-repair.json').write_text(json.dumps(REPORT,indent=2))

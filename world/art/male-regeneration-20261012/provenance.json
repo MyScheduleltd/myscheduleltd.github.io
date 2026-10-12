@@ -1,0 +1,27 @@
+{
+  "date": "2026-10-12",
+  "status": "HISTORICAL REGENERATION CANDIDATE - installed wardrobe follow-up recorded in ../male-outfits-20261012/REVIEW.md",
+  "jobs": {
+    "front": "b7cff136-fe27-448e-922a-48a7d58415db",
+    "model": "2cfdd22a-9ecb-4358-bd50-68d9b0d8cb11",
+    "rig": "95b90b24-931b-429a-81da-6c98bd20f8ef"
+  },
+  "hashes": {
+    "originalGeneratedGlb": "b1eaebb5309bdb9618447d3f6847183c18a297e5ef4f6fc4f3343c1a299fd605",
+    "originalRiggedGlb": "539dbc15b150f81f6dcf122f9c98471d9873359feb637f814cdad3dab821d07d",
+    "installedMaleGlb": "2122b5da53737ee161d3cfd340fb67fb569b473b5167395efc5d1006c63724c5",
+    "preservedFemaleGlb": "20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3"
+  },
+  "installedBytes": 13742348,
+  "geometryPolicy": "Original generated hand and foot surfaces retained; tiny duplicate flaps removed and micro holes closed through live Blender MCP. Finger chains and weights added without substituting procedural anatomy. Lossless floating point meshopt, original PNG texture.",
+  "verification": {
+    "fullSuite": "415/415 passed before final underarm visibility refinement",
+    "finalHandFootSuite": "8/8 after final visibility refinement",
+    "build": "PASS",
+    "browser": "Built preview standing/swim, right open/fist, foot side, outfit3/cap",
+    "blender": "Zero boundary edges after positional weld; 64 bones",
+    "physicalWebcamAndVR": "Not measured on owner devices"
+  },
+  "publication": "None",
+  "reviewUrl": "http://127.0.0.1:4173/avatar-review.html?sex=male&swim&pose=stand&angle=0.6"
+}

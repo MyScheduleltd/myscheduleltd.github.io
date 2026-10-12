@@ -1,3 +1,86 @@
+# Approved BETA release — 2026-10-12, waiting for required GitHub review
+
+Owner explicitly requested “please publish to beta” after local avatar review. The accumulated male Higgsfield regeneration, outfits 1–3, sleeve/collar repair, shoes, cap/full-hair dye, shoulders/elbows and female shared swimwear limbs are prepared in the existing release PR #17. Earlier LOCAL / UNPUBLISHED entries below describe preceding checkpoints.
+
+Fresh production build uses `https://myschedule-festival.onrender.com`, with no local API address. Existing BETA and PS2 release packages are updated together: `main-D_9ROePK.js`; male `male-uakojqp2.glb` SHA256 `24c258bacd78bbf1b7d26689f828937c4ed5773fed626dde0c2db3ad0e8c61c9`; female `female-BUDxbVEw.glb` SHA256 `20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3`. All 52 current dist files match each package, and all 38 combined integrity hashes pass. Old hashed assets are retained. `art/beta-release-20261012/package-verification.json` records the checks. 428/428 tests and the production TypeScript/Vite build pass; prior local action/cap/dye visual evidence is in `art/male-surface-motion-20261012/`.
+
+GitHub currently enforces one approving review including the latest push, dismisses stale approvals and applies this rule to admins. PR #17 has no approving review; requested reviewer is `macakinTT`. Automatic merging is disabled. Do not bypass protection or claim this release is live before review, merge and Pages verification. No server code change or Render redeploy is required by this release. Original Blender sources and downloads remain local in `.artifacts/`.
+
+# Male shoes, cap, full hair dye, shoulders and elbows — 2026-10-12, local review ready
+
+Current owner feedback: broken sneaker holes, cap off-center/compressing hair, lower curls missing recolor, hunched tee shoulders in outfits 1–3, and action elbow deformation. Live Blender MCP recovered complete original generated footwear (no color-based sole deletion), fitted the cap around unchanged full hair, labeled all generated hair for dye, relaxed tee shoulder fit/binding, and removed unrelated hips/leg influences from elbow skin. This supersedes the earlier cap compression candidate described below.
+
+**428/428 full tests, 13/13 focused wardrobe tests, TypeScript/Vite build, preservation and whitespace checks pass.** Four symptom guards fail the preserved preceding asset. Built close-ups and punch/dance contact sheets visually reviewed. Owner acceptance remains pending. LOCAL / UNPUBLISHED: no staging, commit or release bundle change.
+
+Installed male: 15130464 bytes; SHA256 `24c258bacd78bbf1b7d26689f828937c4ed5773fed626dde0c2db3ad0e8c61c9`. Female remains `20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3`. Body positions/normals/UVs/masks, generated hands/bare feet, all 64 joint bind transforms, trousers/vest/prints and eleven other original image bytes are preserved. Body/shoe 2048 images are pixel-identical lossless WebP; package is 14.43 MiB. Shoe topology has zero boundary/nonmanifold edges.
+
+Evidence/report: `art/male-surface-motion-20261012/REVIEW.md`, `preservation.json`, `visual-review.png`, `punch-contact.png`, `dance-contact.png`, and individual built-browser captures. Preserved input and final snapshot: `.artifacts/male-surface-motion-20261012/{male-before.glb,before.blend,surface-motion-fixed.blend}`. Focused repair scripts there are repeatable from the working Blender mesh baselines; recover footwear after surface fitting, then export via `.artifacts/male-regeneration-20261012/export-candidate.py` and its lossless `compress.mjs`. Working file remains `male-regenerated.blend`; no historical full anatomy reshaping.
+
+Local built site: `http://127.0.0.1:4173/?era=ps2&island&local=20261012-surfaces`. Vite preview runs at 4173; local Node API at 8787 uses ephemeral state, stage payments and invoices off. Final local build uses `VITE_FESTIVAL_SERVER_URL=http://127.0.0.1:8787`; public `.env.production` is preserved. Close-up controls: `avatar-review.html?sex=male&pose=stand&outfit=3&angle=0.6&cap=%23232a36&zoom=1.2&look=1.6`. Physical headset/webcam evidence remains separate; this follow-up verifies the local built renderer and actual action clips.
+
+# Male T-shirt seam follow-up — 2026-10-12, local review ready
+
+Owner reported slightly broken sleeves/neck in outfits 1–3. Live Blender MCP repaired the shared tee: continuous crew-neck, torso collar weights, closed accidental tears, even open cuff rings and folds, upper-arm cuff weights and clean collar UV islands. Forearm clothing coverage alone changed on the body; generated anatomy, body UVs/weights/normals, cap hair morph, all other 13 components, 12 original images and 64 bind transforms are preserved. Female remains unchanged.
+
+**425/425 full tests, 10/10 focused wardrobe tests, TypeScript/Vite build and whitespace checks pass.** Three seam/deformation regressions fail the preserved preceding model; the additional collar UV guard passes both. Front/rear built close-ups checked all three outfits and raised sleeves. Owner review remains pending. Current work is LOCAL / UNPUBLISHED; no staging, commit or release bundle update.
+
+Installed male: 13,409,696 bytes; SHA256 `d7d8f2bbe124071d1f8369e19669bf01677dd62a60aba4293c79b1438c6efa1c`. Review and evidence: `art/male-tee-seams-20261012/REVIEW.md`, `preservation.json`, and front/rear screenshots. Local: `http://127.0.0.1:4173/avatar-review.html?sex=male&pose=idle&phase=0.5&angle=0.6&outfit=1&zoom=3.2&look=2.25`.
+
+Preserved input and final snapshot are in `.artifacts/male-tee-seams-20261012/` (`male-before.glb`, `before.blend`, `tee-seams-fixed.blend`). `repair-seams.py` is the focused repeatable live-MCP repair and reads its saved baseline. Working source remains `.artifacts/male-regeneration-20261012/male-regenerated.blend`; use its explicit 15-part export, CapHair value zero, then lossless compression. Do not rerun historical full wardrobe transfer or anatomy reshaping on this generated male. The dated entries below describe older candidates.
+
+# Male cap/hair follow-up — 2026-10-12, local review ready
+
+Owner reported curls showing through the cap. The transferred old-body `CapHair` morph was incomplete and moved some non-hair skin. Live Blender MCP reset it to Basis and fitted hair only to the current crown. Cap removal restores the original hairstyle; the cap's rear opening still shows the hair behind it. Base geometry/UVs/weights/masks of all 14 components, 12 image bytes and 64 joint bind transforms match the preceding wardrobe candidate. Female is unchanged.
+
+**421/421 full tests, TypeScript/Vite build and whitespace checks pass.** Two new runtime geometry regressions cover crown clearance and reversible cap/wardrobe/swim transitions; the preceding candidate fails both. Built browser inspected both sides/rear and removal. Owner acceptance remains pending; current work remains LOCAL / UNPUBLISHED, with no staging, commit, release packages or server mutation.
+
+Installed male: 13,416,900 bytes, SHA256 `ab3c969f23e2c28e2d6b38b409d3cc572afb47cd484da57bcf50efe6bfcb5278`. Review: `art/male-cap-fit-20261012/REVIEW.md`; hash preservation: `preservation.json`. Close-up: `http://127.0.0.1:4173/avatar-review.html?sex=male&pose=idle&angle=0.6&outfit=3&cap=%23232a36&face`.
+
+Final snapshot `.artifacts/male-cap-fit-20261012/cap-fitted.blend`; preserved input `before.blend` and `male-before.glb`; cap-only reproduction `fit-cap-hair.py` through live Blender MCP. Working source remains `.artifacts/male-regeneration-20261012/male-regenerated.blend`; reset CapHair value to zero, use its explicit `export-candidate.py`, then lossless `compress.mjs`. Do not rerun the old wardrobe transfer after this repair or the procedural anatomy shaping scripts on this generated male. The entries below are historical and have older installed hashes.
+
+# Male outfits 1–3 follow-up — 2026-10-12, preceding local candidate
+
+Owner reported broken male outfits on the regenerated body. Live Blender MCP refitted the trousers continuously, attached the waistband to the pelvis, repaired shirt/vest/print bone ownership, lowered the side/back hem for overlap, aligned sleeves to the upper arm without forearm roll, and repaired neck/enclosed torso masks. Generated body geometry/UVs/weights, shoes, cap, all image bytes and 64 joint bind transforms match the preceding installed candidate; female hash is unchanged.
+
+**419/419 full tests and TypeScript/Vite build pass.** Four added regressions cover torso bone ownership, actual waistband clearance, walking attachment and underarm skin masks. Built browser screenshots inspect front/back of all three outfits, raised sleeves and walking/cap. Physical tracking and owner visual acceptance remain pending. This continuation is LOCAL / UNPUBLISHED; no staging, commit, push, release package or server change.
+
+Current male asset: 13,697,496 bytes, SHA256 `27637bb8c97eb30d12b72988d7c8d5dfa48b48237cb7e0c941a32d01e9b60ebe`. Review and preservation evidence: `art/male-outfits-20261012/REVIEW.md` and `preservation.json`. Preview: `http://127.0.0.1:4173/avatar-review.html?sex=male&pose=idle&angle=0.6&outfit=1&zoom=1.2`.
+
+Final snapshot: `.artifacts/male-outfits-20261012/male-outfits-fixed.blend`; pre-repair GLB: `male-before.glb`. Working source remains `.artifacts/male-regeneration-20261012/male-regenerated.blend`; use its `export-candidate.py` then `compress.mjs`. The outfit `refit.py` is only the first fitting pass, not the final reproduction recipe. Preserve all original downloads and do not run old procedural anatomy shaping on this generated male. The dated regeneration entry below describes the earlier candidate and its hash; this follow-up supersedes its outfit-fit claims.
+
+# Male Higgsfield regeneration — 2026-10-12, preceding local candidate
+
+Owner confirmed **male avatar first**, keeping the existing face/hair style and black swimming shorts. The actual generated GLB is now integrated in `src/assets/avatars/male.glb` with 64 joints and the same body in outfits 1–3/swimwear. Original hand/foot surfaces and 2048 PNG texture are retained, with live Blender MCP inspection and micro-surface cleanup. Existing outfit artwork and cap remain separate; female asset is unchanged by this regeneration.
+
+Current source: `.artifacts/male-regeneration-20261012/male-regenerated.blend`. Downloaded source model/rig and jobs are alongside it. `export-candidate.py` selects exactly the 15 rig/mesh parts; `compress.mjs` uses lossless floating point meshopt and leaves PNG images unchanged. **Do not rerun the old procedural male hand/foot reshaping scripts over this new generation.**
+
+415/415 full tests passed, followed by 8/8 hand/foot/body tests and a successful build after final underarm masking. Browser reviews exercised the built preview, including open/fist hands, foot side, and vest/cap. These are fixtures and rendered proof, not a physical webcam/headset test. Owner visual/device acceptance is pending; current work remains unpublished.
+
+Review: `http://127.0.0.1:4173/avatar-review.html?sex=male&swim&pose=stand&angle=0.6`; world: `http://127.0.0.1:4173/?era=ps2&island`. Full details and final hashes: `art/male-regeneration-20261012/REVIEW.md` and `provenance.json`. The previous usage-limit approval block cleared on resume; MCP inspection subsequently succeeded.
+
+
+# Historical local continuation — swimsuit bodies, 2026-10-11 (male visually rejected)
+
+Owner requested swim bodies matching outfits 1–3, tracked fingers and corrected bare feet; confirmed retaining current black swimwear. Repaired both source avatar GLBs through live Blender MCP: share the accepted dressed forearms/five-digit hands across all outfits, close upper-arm joins, extend skin inside each sleeve, and narrow/shorten/de-splay bare feet. Keep the 64-bone rig, joints, original heads/swimwear, torso/legs, UVs, clothes and cap morph. Reusable repair is `scripts/repair-swim-body.py`, run after final mask classification by `prepare-higgsfield-avatars.py`; the close-up viewer follows actual wardrobe visibility.
+
+Final 413/413 tests and TypeScript/Vite build passed. Six new regressions test actual exported skin under camera landmarks, shared five-digit hands, feet, joint proportions and sleeve continuity. First cuff-mask candidate was rejected by the new ray/geometry test; final corrected masks pass. Script reproduction from preserved input matches live vertex/visibility signatures. Browser full-body, hand, foot and raised-sleeve screenshots are in `art/swim-body-match-20261011/`; complete evidence and physical-device limitations are in `art/SWIM_BODY_REVIEW_20261011.md`.
+
+Built full site is refreshed at `http://127.0.0.1:4173/?era=ps2&island`; body review is `http://127.0.0.1:4173/avatar-review.html?sex=female&swim&pose=idle&zoom=1.1` (change sex to male). Latest swim edits remain LOCAL, uncommitted and unpublished; no Pages packages, GitHub push or live server change was made. PR #17's earlier release and required review remain as described below. Original installed GLBs, `before.blend`, and the final `swim-body-matched.blend` are in local `.artifacts/swim-body-match-20261011/`.
+
+# Current release status — 2026-10-11
+
+PR #16 is merged in main (`e84dccd`). The next release is PR #17 on `codex/sign-backing-breaking-wheel`: tracked avatar hand/wrist repairs, clean sign back, Breaking wheel, audio re-entry, desktop body/finger tracking, and now attendant forearm material and finger separation repairs. Final 407/407 tests and production build passed. Both docs channels match dist; all 36 integrity hashes passed. Required reviewer macakinTT must approve the latest push before merge/publication. No server change or Render redeploy required.
+
+## Attendant arms and fingers — 2026-10-11
+
+- User requested publication after fixing both unlisted attendants' dark inner forearms and connected fingers. Fixed the shared GLB through live Blender MCP, preserving authored maps and the existing 24-bone rig.
+- 47 inner-arm faces restored to skin; trouser classification now excludes arm-owned faces. Closed 14 source hand boundary edges and added six rounded finger gaps. Actual export checks verify four separated fingers plus a thumb and closed distal hand surfaces on both sides.
+- Asset SHA256: `2248d11158447b6bd21866329c2ae157a760fe604a6acced046d1918032b9e1d`; 19,115 triangles. All four embedded image maps unchanged. Outside-hand surface positions unchanged; one pre-existing duplicate coplanar body triangle collapsed during the hand Boolean.
+- Reusable repair: `scripts/repair-attendant-hands.py`, invoked by `repair-venue-surfaces.py`. Apply once to the preserved source after clothing repair; do not repeat on the already-repaired export. Original source and working Blender snapshots remain in local `.artifacts` (not staged).
+- Review: `art/ATTENDANT_ARM_HAND_REVIEW_20261011.md`; browser screenshots in `art/attendant-forearms-20261011/`. Full-world screenshots cover the earlier forearm repair; final hand close-ups cover finger separation. Build and 407/407 tests passed; both Pages packages verified.
+- Built local full site: `http://127.0.0.1:4173/?era=ps2&island`. Dev close-up: `http://127.0.0.1:5173/venue-review.html?asset=attendant&detail=hands&angle=1.57`.
+- PR #17 remains the single release PR; review is required after the latest push. Do not bypass protected main or claim live publication. Earlier dated entries below remain historical.
+
 # Codex handoff: current state, 2026-10-10 (read this first)
 
 Updated by Codex through 2026-10-10, preserving Claude’s 2026-10-07/08 handoff. The dated additions below give the latest verified local status. Older release and live-state entries are historical snapshots; prefer the newest dated evidence where they disagree.
@@ -3343,3 +3426,13 @@ working, which is why several of these lived a long time.
 - Basement lighting: ceiling rig removed entirely at the owner's request (a light well
   is cut through that ceiling; anything over it hangs from nothing), wall fittings on
   both sides plus a centred run of five on the bar wall, none beside the screen.
+
+## Release prepared on 2026-10-11: hands, sign, Breaking and entry tracking
+
+Branch `codex/sign-backing-breaking-wheel`, based on `e84dccd`. Repairs use live Blender MCP: male dressed palm seams closed, female palm and five digit surfaces fitted to the existing rig (including the latest thumb-size/index-root feedback and the curled-pose wrist notch), sign back gets matte teal without the generated relief texture. Outfit masks, cap morph, native materials and swim body are retained. The build scripts include the repairs for future exports.
+
+Breaking label/freeze icon fit inside the top dance-wheel sector; B opens, Enter selects, Escape cancels. Audio is unlocked in the gate gesture, reused by the world, resumed on interaction, and recovered through a visible Enable sound button if blocked. Discarded-tab rejoin retains the session sound choice. Desktop camera start requests body/fingers by default, with an opt-out.
+
+405/405 tests passed with loopback access; the last interrupted-audio guard also passed 4/4 startup tests. Production build passed. Both docs channels match dist; their 18 asset hashes per channel were checked. Screenshots, hashes and device-validation limits: `art/SIGN_BREAKING_HAND_REVIEW_20261011.md` and `art/SIGN_BREAKING_HAND_ASSETS_20261011.json`. No server changes. Physical webcam/headset/controller checks remain untested.
+
+Publish through one PR requesting macakinTT's last-push review; do not bypass main protection. A prepared PR is not live. Leave unrelated `.artifacts`, low-detail provenance and diagnostic scripts unstaged.

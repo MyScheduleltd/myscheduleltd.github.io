@@ -1768,3 +1768,33 @@ test('recorded detector hands retain anatomical side, individual finger bends an
   assert.ok(curledDistance<bones.get(side+'HandMiddle4').getWorldPosition(new THREE.Vector3()).distanceTo(bones.get(side+'Hand').getWorldPosition(new THREE.Vector3()))*.8,'native middle finger did not curl');
  }
 });
+
+test('desktop camera tracking requests body and fingers before opening the shared camera, including restart', async()=>{
+ const world=Object.create(FestivalWorld.prototype);const events=[];
+ Object.assign(world,{xrActive:true,xrSimulated:true,headTracking:{async setBodyTracking(on){events.push(['body',on]);},async start(id){events.push(['start',id]);return true;}}});
+ assert.equal(await world.enableHeadTracking('webcam'),true);
+ assert.deepEqual(events,[['body',true],['start','webcam']]);
+ events.length=0;assert.equal(await world.enableHeadTracking('webcam',false),true);
+ assert.deepEqual(events,[['body',false],['start','webcam']]);
+ world.xrSimulated=false;events.length=0;assert.equal(await world.enableHeadTracking('webcam'),false);assert.deepEqual(events,[]);
+});
+
+test('both dressed avatars expose all five weighted distal digits in all three outfits during open and closed tracking',()=>{
+ for(const top of ['#18191b','#191a1c','#1a1b1d','#28191b','#291a1c','#2a1b1d'])for(const right of [true,false]){
+  const {root,rig}=importedCharacter({top});walkCoastalPose(rig,0,0);const m=bodyMesh(root),g=m.geometry;
+  assert.ok(g.attributes._dressed&&g.attributes._covered,'export must retain the outfit masks; otherwise two hand skins overlap');
+  for(const digit of FINGER_NAMES){
+  const ids=m.skeleton.bones.map((b,i)=>b.name.startsWith((right?'Left':'Right')+'Hand'+digit)&&!b.name.endsWith('1')?i:-1).filter(i=>i>=0);
+  let count=0;for(let i=0;i<g.attributes.position.count;i++){
+   if(g.attributes._covered.getX(i)>.5)continue;
+   let weight=0;for(let k=0;k<4;k++)if(ids.includes(g.attributes.skinIndex.getComponent(i,k)))weight+=g.attributes.skinWeight.getComponent(i,k);
+   if(weight>.5)count++;
+  }
+  assert.ok(count>=20,`${top} ${right} missing distal ${digit} skin: ${count}`);
+  }
+  for(const pose of [FIST,Object.fromEntries(FINGER_NAMES.map(n=>[n,{curl:[0,0,0],spread:n==='Thumb'?.7:0}]))]){
+   root.userData.setImportedHandPose(right,pose);syncImportedAvatars(root);m.skeleton.update();
+   for(let i=0;i<g.attributes.position.count;i+=11){const p=m.applyBoneTransform(i,new THREE.Vector3().fromBufferAttribute(g.attributes.position,i));assert.ok(Number.isFinite(p.x+p.y+p.z));}
+  }
+ }
+});

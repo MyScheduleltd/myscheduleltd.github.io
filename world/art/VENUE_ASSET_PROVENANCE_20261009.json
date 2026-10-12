@@ -8,16 +8,28 @@
       "reference_image_url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/cffd5ead-fd5c-4302-81e5-07d2e99c84c4_resize.jpg",
       "rigged": true,
       "requested_polycount": 10000,
-      "bytes": 8698600,
-      "sha256": "997e2776a15ae5e6a5ab4207cebc912103f86e216d7abdf3530a745b5f8d77c1",
-      "triangles": 18382,
+      "bytes": 8647100,
+      "sha256": "2248d11158447b6bd21866329c2ae157a760fe604a6acced046d1918032b9e1d",
+      "triangles": 19115,
       "source_preserved": false,
       "original_sha256": "64954bebd96939445591068c36e4ba137e1d2aaaff5f301f3077ee4d9f6293c5",
       "local_repair": {
         "shirt": 773,
-        "trousers": 4920,
-        "bytes": 8698600,
-        "sha256": "997e2776a15ae5e6a5ab4207cebc912103f86e216d7abdf3530a745b5f8d77c1"
+        "trousers": 4873,
+        "bytes": 8647100,
+        "sha256": "2248d11158447b6bd21866329c2ae157a760fe604a6acced046d1918032b9e1d",
+        "forearm_faces_restored": 47,
+        "forearm_repair": "Restored the original textured skin material on 23 left and 24 right inner-arm faces; use arm rig ownership to exclude skin from trouser classification. Topology, UVs and skin weights unchanged.",
+        "finger_separation": {
+          "rounded_slots": 6,
+          "source_hand_boundary_edges_closed": 14,
+          "new_inner_surface_faces": 420,
+          "skin_uv": [
+            0.6958569884300232,
+            0.8876429796218872
+          ],
+          "retained_thumb_palm_wrist": true
+        }
       }
     },
     {
@@ -28,17 +40,18 @@
       "reference_image_url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/54bb7168-2bf6-402a-9832-947ac6c5d38e.png",
       "rigged": false,
       "requested_polycount": 6000,
-      "bytes": 4290436,
-      "sha256": "a3a75f6937daabe3ed0c47424460c88c4cc0d04de209f9048c2cfd8f1b4b7fa1",
+      "bytes": 4293768,
+      "sha256": "c1066210b415ab7ae1296096ee566ebeca551eb810af8b3cf70619c6affc04d8",
       "triangles": 1988,
       "source_preserved": false,
       "original_sha256": "95a355275ff7236e37dee527e21cbfd0467216048c7fc6b6d2569911ddde396e",
       "local_repair": {
         "replaced_plaster_and_cabinet_faces": 10625,
         "closed_panels": 7,
-        "bytes": 4290436,
-        "sha256": "a3a75f6937daabe3ed0c47424460c88c4cc0d04de209f9048c2cfd8f1b4b7fa1",
-        "counter_fit": "Counter width 1.44 fits the 1.46 gap between the post inner faces, with 0.01 clearance per side."
+        "bytes": 4293768,
+        "sha256": "c1066210b415ab7ae1296096ee566ebeca551eb810af8b3cf70619c6affc04d8",
+        "counter_fit": "Counter width 1.44 fits the 1.46 gap between the post inner faces, with 0.01 clearance per side.",
+        "sign_back": "128 rear faces use texture-free matte teal; front artwork unchanged."
       }
     },
     {
@@ -67,6 +80,6 @@
       "source_preserved": true
     }
   ],
-  "preparation": "Original Meshy downloads retained in raw artifacts. Owner-requested selective repairs replace contaminated attendant sleeve/trouser materials without changing topology or rig; booth plaster, posts and cabinet rebuilt with closed clean surfaces under original roof/sign. Original 2K image maps retained; no decimation or resizing. Other assets remain byte-for-byte originals.",
+  "preparation": "Original Meshy downloads retained in raw artifacts. Selective attendant sleeve/trouser material repairs exclude arm-owned skin faces. Six rounded finger gaps close the generated hand openings while retaining the authored palm, thumb, wrist and 24-bone rig. Booth plaster, posts and cabinet use closed clean surfaces under the original roof/sign. Original 2K image maps retained; no texture resizing. Other assets remain byte-for-byte originals.",
   "status": "Owner approved publication on 2026-10-10; packaged for protected pull request, not yet deployed."
 }

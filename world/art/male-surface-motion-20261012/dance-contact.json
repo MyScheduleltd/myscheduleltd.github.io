@@ -1,0 +1,57 @@
+{
+  "schema": "animation_contact_sheet_report.v1",
+  "frames": [
+    "art/male-surface-motion-20261012/dance-0-outfit-1.png",
+    "art/male-surface-motion-20261012/dance-1.3-outfit-2.png",
+    "art/male-surface-motion-20261012/dance-2.6-outfit-3.png",
+    "art/male-surface-motion-20261012/dance-3.9-outfit-1.png",
+    "art/male-surface-motion-20261012/dance-5.2-outfit-2.png",
+    "art/male-surface-motion-20261012/dance-6.5-outfit-3.png",
+    "art/male-surface-motion-20261012/dance-7.8-outfit-1.png",
+    "art/male-surface-motion-20261012/dance-9.1-outfit-3.png",
+    "art/male-surface-motion-20261012/dance-10.3-outfit-2.png"
+  ],
+  "frame_diff": [
+    {
+      "from": "dance-0-outfit-1.png",
+      "to": "dance-1.3-outfit-2.png",
+      "mean_rgb_diff": 11.267222706399808
+    },
+    {
+      "from": "dance-1.3-outfit-2.png",
+      "to": "dance-2.6-outfit-3.png",
+      "mean_rgb_diff": 13.950156041092237
+    },
+    {
+      "from": "dance-2.6-outfit-3.png",
+      "to": "dance-3.9-outfit-1.png",
+      "mean_rgb_diff": 18.081836205270907
+    },
+    {
+      "from": "dance-3.9-outfit-1.png",
+      "to": "dance-5.2-outfit-2.png",
+      "mean_rgb_diff": 23.56282671369135
+    },
+    {
+      "from": "dance-5.2-outfit-2.png",
+      "to": "dance-6.5-outfit-3.png",
+      "mean_rgb_diff": 10.635869574450373
+    },
+    {
+      "from": "dance-6.5-outfit-3.png",
+      "to": "dance-7.8-outfit-1.png",
+      "mean_rgb_diff": 11.034453057708873
+    },
+    {
+      "from": "dance-7.8-outfit-1.png",
+      "to": "dance-9.1-outfit-3.png",
+      "mean_rgb_diff": 10.110061210240103
+    },
+    {
+      "from": "dance-9.1-outfit-3.png",
+      "to": "dance-10.3-outfit-2.png",
+      "mean_rgb_diff": 8.055964982917875
+    }
+  ],
+  "warnings": []
+}

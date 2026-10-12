@@ -17,7 +17,11 @@ const kind = (query.get('asset') ?? 'attendant') as ScenicAsset;
 const height = kind === 'boxOffice' ? 5.8 : kind === 'valet' ? 1.95 : kind === 'statue' ? 3.7 : 3.25;
 await assets.attach(kind,root,height);
 const bounds = new THREE.Box3().setFromObject(root), centre = bounds.getCenter(new THREE.Vector3());
-const distance = Math.max(height, bounds.getSize(new THREE.Vector3()).x) * 2.2;
+const forearms = kind === 'attendant' && query.get('detail') === 'forearms';
+const hands = kind === 'attendant' && query.get('detail') === 'hands';
+if (forearms) centre.y = height * .52;
+if (hands) { root.updateMatrixWorld(true); root.getObjectByName((query.get('hand') === 'right' ? 'Right' : 'Left')+'Hand')!.getWorldPosition(centre); centre.y -= .15; }
+const distance = hands ? .85 : forearms ? 3.1 : Math.max(height, bounds.getSize(new THREE.Vector3()).x) * 2.2;
 const view = (angle:number) => {camera.position.set(centre.x+Math.sin(angle)*distance,centre.y+.25,centre.z+Math.cos(angle)*distance);camera.lookAt(centre);};
 view(Number(query.get('angle')??0));
 if(kind==='boxOffice'&&query.get('detail')==='interior'){camera.position.set(3.2,2.1,1);camera.lookAt(-.3,1,-.9);}
