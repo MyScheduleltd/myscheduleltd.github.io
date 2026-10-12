@@ -61,6 +61,8 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
       assert(groups.includes(group));assert(!groups.includes('office'),'Previous chapter art released');
       // Drawn in every fight although named after one chapter: GANGAN's coach chip and Dr. Beauty's HUD portrait.
       assert(await page.evaluate(()=>Boolean(bobbyGame.refs.level1OfficeGanganCoachSheet&&bobbyGame.refs.bobby)),'Coach chip and HUD portraits loaded');
+      // GANGAN's chip portrait stays inside the chip (its cap used to stand above the border).
+      assert(await page.evaluate(()=>{const c=document.createElement('canvas');c.width=300;c.height=120;const t=c.getContext('2d');bobbyGame.drawGanganCoachChip(t,{x:10,y:40,w:280,h:52},{row:0,color:'#8fe8ff',text:'x',kind:'perfect'},1,0);return t.getImageData(0,0,300,40).data.every((v,i)=>i%4!==3||v===0);}),'Coach portrait inside its chip');
       assert.equal(await page.evaluate(()=>bobbyGame.loadError),'');
       console.log(engine,stage,'PASS',groups);
     }
