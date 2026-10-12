@@ -2919,6 +2919,45 @@ for (const level of this.config.secretLevels || []) {
     return true;
   }
 
+  // The audio engine can come back from an idle "running" but silent, and
+  // nothing rebuilt an engine in that state, so every later fight stayed
+  // silent until a reload. After a hidden or frozen page, an output-device
+  // change, or a minute without music, the next tap or key rebuilds both
+  // engines (rebuildToneContext also rebuilds the shared music engine and
+  // re-decodes the hit sounds) before anything plays. Music that is playing
+  // goes through the existing recovery, which rebuilds and continues it from
+  // its position inside this same gesture, as iPhone requires.
+  refreshStaleAudioEngine() {
+    const now = performance.now();
+    const idle = Number.isFinite(this.lastMusicAt) && now - this.lastMusicAt > 60000;
+    const reason = this.audioEngineStale || (idle ? 'idle' : null);
+    if (!reason || !this.bootDone || document.hidden || this.audioRecovering || !this.level1OfficeAudioContext) return;
+    this.audioEngineStale = null;
+    this.lastMusicAt = now;
+    // An interruption already rebuilds on this tap (primeAudioOnGesture).
+    if (this.audioInterruption || this.audioRecoveryVisible()) return;
+    this.audioEngineRefreshes = (this.audioEngineRefreshes || 0) + 1;
+    this.lastAudioRefresh = reason;
+    if (this.playingMusicTracks().length) {
+      this.suspendGameAudio();
+      this.recoverGameAudio();
+    } else {
+      this.rebuildToneContext();
+    }
+  }
+
+  playingMusicTracks() {
+    return [...new Set([...this.getKnownBgmTracks(), ...(this.gameAudioRegistry || []), this.songPreview?.audio].filter(Boolean))]
+      .filter(track => !track.paused && !track.ended);
+  }
+
+  noteMusicActivity() {
+    const now = performance.now();
+    if (now - (this.musicActivityCheckedAt || 0) < 500) return;
+    this.musicActivityCheckedAt = now;
+    if (!Number.isFinite(this.lastMusicAt) || (!document.hidden && this.playingMusicTracks().length)) this.lastMusicAt = now;
+  }
+
   loadHomeWaveform(songId) {
     const src = this.config?.sprites?.homeMp3Waveforms?.[songId]?.source;
     if (!src || this.refs.homeMp3WaveformSheets?.[songId]) return;
@@ -3497,6 +3536,11 @@ for (const level of this.config.secretLevels || []) {
       else this.resumeAudioAfterReturn();
     });
     window.addEventListener("pagehide", () => this.suspendGameAudio({ fromHidden: true }));
+    const staleAudio = reason => () => { this.audioEngineStale ||= reason; };
+    document.addEventListener("visibilitychange", () => { if (document.hidden) staleAudio("hidden")(); });
+    window.addEventListener("pagehide", staleAudio("hidden"));
+    document.addEventListener("freeze", staleAudio("frozen"));
+    navigator.mediaDevices?.addEventListener?.("devicechange", staleAudio("device"));
     window.addEventListener("pageshow", () => this.resumeAudioAfterReturn());
 
     // The landscape deck is positioned against the letterboxed canvas, not the
@@ -9814,6 +9858,7 @@ for (const level of this.config.secretLevels || []) {
   }
 
   update(dt) {
+    this.noteMusicActivity();
     if (document.hidden || this.audioInterruption || this.audioRecoveryVisible()) return;
     if (this.level1OfficeRhythm?.audioStartPending || this.audioRecovering) return;
     if (this.fullscreenGuide && !this.fullscreenGuide.hidden) return;
@@ -11278,14 +11323,20 @@ for (const level of this.config.secretLevels || []) {
 
   syncTallScreenReserve() {
     this.syncAppHeight();
-    const key = `${window.innerWidth}x${window.innerHeight}x${document.documentElement.style.getPropertyValue("--app-h")}`;
+    if (!this.deckProbe?.isConnected) {
+      this.deckProbe = document.createElement("div");
+      this.deckProbe.setAttribute("aria-hidden", "true");
+      this.deckProbe.style.cssText = "position:fixed;left:0;width:1px;height:1px;top:var(--portrait-split);padding-bottom:env(safe-area-inset-bottom,0px);visibility:hidden;pointer-events:none";
+      document.body.appendChild(this.deckProbe);
+    }
+    const probeBox = this.deckProbe.getBoundingClientRect();
+    const split = probeBox.top;
+    const safeBottom = probeBox.height - 1;
+    const now = performance.now();
+    this.deckFirstShown ||= this.mobileControls?.querySelector('[data-mobile-action="btn-o"]')?.getBoundingClientRect().height > 0 ? now : 0;
+    const early = this.deckFirstShown && now - this.deckFirstShown < 8000 ? Math.floor((now - this.deckFirstShown) / 1000) : "";
+    const key = `${window.innerWidth}x${window.innerHeight}x${document.documentElement.style.getPropertyValue("--app-h")}x${Math.round(safeBottom)}x${early}`;
     if (this.tallReserveKey === key || !this.mobileControls) return;
-    const probe = document.createElement("div");
-    probe.style.cssText = "position:fixed;left:0;width:1px;height:1px;top:var(--portrait-split);padding-bottom:env(safe-area-inset-bottom,0px)";
-    document.body.appendChild(probe);
-    const split = probe.getBoundingClientRect().top;
-    const safeBottom = probe.getBoundingClientRect().height - 1;
-    probe.remove();
     // Only once the deck is really laid out (J is always on it): measured
     // earlier - while loading, say - the result would be cached wrong.
     if (!(this.mobileControls.querySelector('[data-mobile-action="btn-o"]')?.getBoundingClientRect().height > 0)) return;
@@ -12739,6 +12790,7 @@ for (const level of this.config.secretLevels || []) {
   // call, a route change, or the audio-session switch above. Playback that was
   // refused outside a gesture is legal again here.
   primeAudioOnGesture() {
+    this.refreshStaleAudioEngine();
     if (this.audioRecoveryVisible()) return;
     if (this.audioInterruption || this.level1OfficeRhythm?.audioStartPending) {
       this.recoverGameAudio();
@@ -28084,6 +28136,15 @@ async function fetchGameAsset(src) {
   return await mirrorCopy(url) || await retryFetch(url.href, 20000);
 }
 
+// An Image created at load time (device shells, pocket icons), given the
+// verified mirror copy, or this site's file if both downloads fail.
+function mirrorImageSource(image, src) {
+  fetchGameAsset(src)
+    .then(({data, type}) => URL.createObjectURL(new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'})))
+    .catch(() => src)
+    .then(url => { image.src = url; });
+}
+
 function loadImage(src) {
   if (imageRequests.has(src)) return imageRequests.get(src);
   BOOT_LOAD.started++;
@@ -30912,18 +30973,18 @@ function drawHudResourceBar(target, x, y, w, h, value, max, color, label) {
 // Higgsfield retro-MP3 device shell for the pocket window (matches the
 // homepage MP3 device); the procedural panel remains the loading fallback.
 const POCKET_SHELL_IMAGE = new Image();
-POCKET_SHELL_IMAGE.src = "assets/sprites/pocket_device_shell/processed/sheet-transparent.webp?v=pocket-shell-20260705";
+mirrorImageSource(POCKET_SHELL_IMAGE, "assets/sprites/pocket_device_shell/processed/sheet-transparent.webp?v=pocket-shell-20260705");
 // Forge machine face plate in the same device family: thin cream bezel
 // around one full-size olive LCD.
 const FORGE_SHELL_IMAGE = new Image();
-FORGE_SHELL_IMAGE.src = "assets/sprites/forge_device_shell/processed/sheet-transparent.webp?v=forge-shell-20260705";
+mirrorImageSource(FORGE_SHELL_IMAGE, "assets/sprites/forge_device_shell/processed/sheet-transparent.webp?v=forge-shell-20260705");
 
 // Higgsfield retro-MP3 backpack button (normal + pressed/active states);
 // the procedural drawing below stays as the fallback while it loads.
 const POCKET_ICON_IMAGE = new Image();
-POCKET_ICON_IMAGE.src = "assets/sprites/mobile_round_button_kit/ui/pocket-icon.webp?v=roundpad-20260703";
+mirrorImageSource(POCKET_ICON_IMAGE, "assets/sprites/mobile_round_button_kit/ui/pocket-icon.webp?v=roundpad-20260703");
 const POCKET_ICON_ACTIVE_IMAGE = new Image();
-POCKET_ICON_ACTIVE_IMAGE.src = "assets/sprites/mobile_round_button_kit/ui/pocket-icon-active.webp?v=roundpad-20260703";
+mirrorImageSource(POCKET_ICON_ACTIVE_IMAGE, "assets/sprites/mobile_round_button_kit/ui/pocket-icon-active.webp?v=roundpad-20260703");
 
 function drawPocketIcon(target, rect, open, time) {
   const sprite = open ? POCKET_ICON_ACTIVE_IMAGE : POCKET_ICON_IMAGE;
@@ -32296,3 +32357,11 @@ window.bobbyGame = game;
 // Same string the GAME CREDITS page prints, for the verification suites.
 window.bobbyBuildId = BUILD_ID;
 game.init();
+
+// Deck artwork from styles.css (rewriteCssArtwork in moth-runtime-patches.mjs).
+for (const [index, src] of ["assets/sprites/ui/film-grain.png","assets/sprites/mobile_control_pad_kit/ui/joystick-base.webp?v=pad-art-20260702","assets/sprites/mobile_control_pad_kit/ui/joystick-knob.webp?v=pad-art-20260702","assets/ui/mobile_dpad_20260901/processed/sheet-transparent.webp?v=retro-arrows-20260901a","assets/sprites/mobile_round_button_kit/ui/round-dark.webp?v=roundpad-20260703","assets/sprites/mobile_round_button_kit/ui/round-dark-pressed.webp?v=roundpad-20260703","assets/sprites/mobile_round_button_kit/ui/round-orange.webp?v=roundpad-20260703","assets/sprites/mobile_round_button_kit/ui/round-orange-pressed.webp?v=roundpad-20260703","assets/sprites/mobile_b_button_press/higgsfield-20260713/processed/b-press-strip.webp?v=b-press-20260713","assets/sprites/mobile_control_pad_kit/ui/key-dark.webp?v=pad-art-20260702","assets/sprites/mobile_control_pad_kit/ui/key-dark-pressed.webp?v=pad-art-20260702","assets/sprites/mobile_control_pad_kit/ui/key-orange.webp?v=pad-art-20260702","assets/sprites/mobile_control_pad_kit/ui/key-orange-pressed.webp?v=pad-art-20260702","assets/ui/mobile_handheld_20260825/processed/button-flat-press-strip.webp?v=flat-handheld-20260825","assets/ui/mobile_flat_buttons_20260902/processed/rounds-transparent.webp?v=flat-buttons-20260902a","assets/ui/mobile_flat_buttons_20260902/processed/squares-transparent.webp?v=flat-buttons-20260902a","assets/ui/mobile_flat_buttons_20260902/processed/pills-transparent.webp?v=flat-buttons-20260902a","assets/ui/mobile_start_cap_20260908/processed/start-transparent.webp?v=start-cap-20260908a","assets/ui/mobile_moth_buttons_20261002/sheet.webp?v=moth-gpt-20261002c"].entries()) {
+  fetchGameAsset(src)
+    .then(({data, type}) => URL.createObjectURL(new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'})))
+    .catch(() => new URL(src, document.baseURI).href)
+    .then(url => document.documentElement.style.setProperty('--moth-art-' + index, 'url("' + url + '")'));
+}

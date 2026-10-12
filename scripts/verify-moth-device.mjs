@@ -1,0 +1,87 @@
+// Phone-deck and audio-engine behaviour (Chrome):
+//  1. the deck artwork from styles.css arrives through the game (all 19
+//     --moth-art-* properties filled), not as direct stylesheet downloads;
+//  2. iOS settling the bottom safe area after launch, without a resize,
+//     re-lays out the deck exactly as a fresh load with that inset;
+//  3. after an idle (a minute on a menu or paused, a hidden page, a dead
+//     engine) the next key rebuilds the audio engines and music is heard.
+// usage: node scripts/verify-moth-device.mjs http://127.0.0.1:5286/
+import assert from 'node:assert/strict';
+import {chromium} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
+
+const base = process.argv[2] || 'http://127.0.0.1:5286/';
+const browser = await chromium.launch({executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--no-sandbox']});
+const rows = page => page.evaluate(() => {
+  const mid = s => { const r = document.querySelector(s)?.getBoundingClientRect(); return r?.height ? Math.round(r.top + r.height / 2) : null; };
+  return {pad: mid('[data-mobile-direction="left"]'), moth: mid('[data-mobile-action="btn-h"]'), space: mid('[data-mobile-action="jump"]')};
+});
+
+// 1 + 2. Phone deck.
+{
+  const context = await browser.newContext({viewport: {width: 393, height: 852}, deviceScaleFactor: 3, isMobile: true, hasTouch: true});
+  const page = await context.newPage();
+  const stylesheetArt = [];
+  page.on('request', r => { if (r.resourceType() === 'image' && /\/assets\//.test(r.url())) stylesheetArt.push(r.url()); });
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Emulation.setSafeAreaInsetsOverride', {insets: {bottom: 0}});
+  await page.goto(new URL('moth/?device=phone', base).href, {waitUntil: 'domcontentloaded'});
+  await page.waitForFunction(() => { const s = getComputedStyle(document.documentElement); for (let i = 0; i < 19; i++) if (!s.getPropertyValue('--moth-art-' + i).includes('blob:')) return false; return true; }, undefined, {timeout: 60000});
+  assert.deepEqual(stylesheetArt.filter(url => /mobile_|film-grain/.test(url)), [], 'No deck artwork fetched by the stylesheet itself');
+  await page.waitForTimeout(3000);
+  await cdp.send('Emulation.setSafeAreaInsetsOverride', {insets: {bottom: 34}});
+  await page.waitForTimeout(2500);
+  const late = await rows(page);
+  const fresh = await context.newPage();
+  await (await context.newCDPSession(fresh)).send('Emulation.setSafeAreaInsetsOverride', {insets: {bottom: 34}});
+  await fresh.goto(new URL('moth/?device=phone', base).href, {waitUntil: 'domcontentloaded'});
+  await fresh.waitForTimeout(6000);
+  assert.deepEqual(late, await rows(fresh), 'A late safe-area change lays the deck out as a fresh load does');
+  assert.equal(late.pad, late.moth, 'H/O level with the arrows');
+  console.log('deck PASS', JSON.stringify(late));
+  await context.close();
+}
+
+// 3. Audio engine refresh after idling.
+{
+  const page = await browser.newPage({viewport: {width: 1280, height: 800}});
+  const errors = []; page.on('pageerror', e => errors.push(String(e)));
+  await page.goto(new URL('moth/staff/?device=desktop', base).href, {waitUntil: 'domcontentloaded'});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  const heard = () => page.evaluate(async () => {
+    const g = bobbyGame, track = g.getActiveLevel1OfficeRhythmAudio(), route = g.musicAudioRoutes.get(track);
+    const a = route.context.createAnalyser(); a.fftSize = 2048; route.gain.connect(a);
+    let peak = 0;
+    for (let n = 0; n < 12; n++) { const s = new Float32Array(2048); a.getFloatTimeDomainData(s); for (const v of s) peak = Math.max(peak, Math.abs(v)); await new Promise(r => setTimeout(r, 80)); }
+    route.gain.disconnect(a);
+    return {peak, playing: !track.paused, running: route.context.state === 'running', refreshes: g.audioEngineRefreshes || 0};
+  });
+  const fight = async id => {
+    await page.keyboard.press('Shift');
+    await page.evaluate(id => { bobbyGame.returnToTitle(); bobbyGame.startStage(id); }, id);
+    await page.waitForFunction(() => bobbyGame.state === 'playing' && !bobbyGame.levelLoadingPresentation, undefined, {timeout: 120000});
+    for (let i = 0; i < 10; i++) { await page.keyboard.press('Enter'); await page.waitForTimeout(120); }
+    await page.waitForTimeout(5000);
+  };
+  await fight('level1-stage1');
+  await page.evaluate(() => { bobbyGame.returnToTitle(); bobbyGame.lastMusicAt = performance.now() - 61000; });
+  await fight('level2-stage2');
+  let r = await heard();
+  assert(r.refreshes === 1 && r.peak > 0.01 && r.playing && r.running, 'Menu idle: rebuilt, music heard');
+  await page.evaluate(() => { bobbyGame.pauseLevel1Office(); bobbyGame.lastMusicAt = performance.now() - 61000; });
+  const at = await page.evaluate(() => bobbyGame.getActiveLevel1OfficeRhythmAudio().currentTime);
+  await page.keyboard.press('Shift');
+  await page.evaluate(() => bobbyGame.resumeLevel1Office());
+  await page.waitForTimeout(2500);
+  r = await heard();
+  assert(r.refreshes === 2 && r.peak > 0.01 && r.playing, 'Long pause: rebuilt, music heard');
+  assert(await page.evaluate(at => bobbyGame.getActiveLevel1OfficeRhythmAudio().currentTime > at, at), 'Resumed from its position');
+  await page.evaluate(() => { const g = bobbyGame, route = g.musicAudioRoutes.get(g.getActiveLevel1OfficeRhythmAudio()); route.gain.disconnect(); route.source.disconnect(); g.audioEngineStale = 'hidden'; });
+  await page.keyboard.press('Shift');
+  await page.waitForTimeout(2500);
+  r = await heard();
+  assert(r.refreshes === 3 && r.peak > 0.01 && r.playing && r.running, 'Dead engine after a hidden page: rebuilt, music heard');
+  assert.deepEqual(errors, []);
+  console.log('audio refresh PASS');
+}
+await browser.close();
+console.log('PASS phone deck artwork, late safe-area layout, and audio engine refresh');
