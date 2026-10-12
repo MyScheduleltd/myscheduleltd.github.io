@@ -14,8 +14,14 @@ export function patchMothRuntime(source, ts) {
   const tree = ts.createSourceFile('assets.js', `async function setup() {\n${block}\n}`, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const statements = tree.statements[0].body.statements;
   const definitions = [], jobs = [], variables = new Map();
+  // Named after one chapter but drawn in others (found by drawing every fight,
+  // hidden level and story entry with a probe on refs): the GANGAN coach chip in
+  // every fight, dialogue portraits, the hotbar/chest icons, the Daytona at the
+  // level 6 arrival and the HP-bottle notes of the level 6 boss. About 16 MB.
+  const SHARED = new Set(['level1OfficeGanganCoachSheet', 'level1OfficeDialoguePortraitsSheet', 'level2BathroomPortraitsSheet',
+    'level2BundleSheet', 'bonitaDialogueProfileSheet', 'level5BossDaytonaSheet', 'level3RhythmHpBottleNoteSheet']);
   function group(key) {
-    if (/^level3RhythmUi/.test(key)) return 'common';
+    if (SHARED.has(key) || /^level3RhythmUi/.test(key)) return 'common';
     if (/^bobby/.test(key) || key === 'bobby') return 'player';
     if (/^level1Office/.test(key)) return 'office';
     if (/^(gangan|boss|levelMap|tutorialStage0Map|mapProps)/.test(key)) return 'road';
@@ -41,7 +47,8 @@ export function patchMothRuntime(source, ts) {
     if (text === 'this.loadHitSfx();') continue;
     if (text === 'this.refs.secretLevels = {};') continue;
     if (text.includes('(this.config.secretLevels || [])')) {
-      definitions.push(`this.refs.secretLevels = {};\nfor (const level of this.config.secretLevels || []) this.sceneAssetJobs.push({key: 'secret:' + level.id, group: level.id, run: async () => {this.refs.secretLevels[level.id] = {background: await loadOptionalSheet(level.background.source), actors: await Promise.all(level.actors.map(actor => loadOptionalSheet(actor.source)))};}, release: () => {delete this.refs.secretLevels[level.id];}});`);
+      // One job per image, so a hidden level's loading bar moves as each arrives.
+      definitions.push(`this.refs.secretLevels = {};\nfor (const level of this.config.secretLevels || []) {\n  const entry = () => (this.refs.secretLevels[level.id] ||= {background: null, actors: []});\n  const release = () => {delete this.refs.secretLevels[level.id];};\n  this.sceneAssetJobs.push({key: 'secret:' + level.id, group: level.id, run: async () => {entry().background = await loadOptionalSheet(level.background.source);}, release});\n  level.actors.forEach((actor, index) => this.sceneAssetJobs.push({key: 'secret:' + level.id + ':' + index, group: level.id, run: async () => {entry().actors[index] = await loadOptionalSheet(actor.source);}, release}));\n}`);
       continue;
     }
     if (text.includes('["Bg", "DrBeauty", "Gangan", "Mic", "Console"]')) {
@@ -116,13 +123,15 @@ export function patchMothRuntime(source, ts) {
   once('  renderScene() {\n    this.renderFrame = (this.renderFrame || 0) + 1;\n', '  renderScene() {\n    this.renderFrame = (this.renderFrame || 0) + 1;\n    if (this.loadError) { this.renderConnectionLost(this.ctx, VIEW_W, VIEW_H); return; }\n');
   once('    target.fillStyle = "#08090d";\n    target.fillRect(0, 0, layout.width, layout.height);\n', '    target.fillStyle = "#08090d";\n    target.fillRect(0, 0, layout.width, layout.height);\n    if (this.loadError) { this.renderConnectionLost(target, layout.width, layout.height); return; }\n');
   once('    drawStageLoadingScreen(target, this.time, t,\n      `${this.tr("LOADING", "載入中")}', '    const progress = this.sceneLoadProgress;\n    const fraction = progress?.total ? progress.done / progress.total : t;\n    drawStageLoadingScreen(target, this.time, fraction,\n      `${this.tr("LOADING", "載入中")}');
-  once('`${this.tr("LEVEL", "關卡")} ${level} · ${this.tr(...(places[level] || places[1]))}`, W, H);', '`${this.tr("LEVEL", "關卡")} ${level} · ${this.tr(...(places[level] || places[1]))}${progress?.total ? ` · ${progress.done}/${progress.total}` : ""}`, W, H);');
+  once('`${this.tr("LEVEL", "關卡")} ${level} · ${this.tr(...(places[level] || places[1]))}`, W, H);', '`${this.getSecretLevel(stageId) ? [this.tr("HIDDEN LEVEL", "隱藏關卡"), ...[{"secret-xiaosi": ["LOUNGE", "休息室"], "secret-getdown": ["GYM", "健身房"]}[stageId]].filter(Boolean).map(place => this.tr(...place))].join(" · ") : `${this.tr("LEVEL", "關卡")} ${level} · ${this.tr(...(places[level] || places[1]))}`}${progress?.total ? ` · ${progress.done}/${progress.total}` : ""}`, W, H);');
   // Sound effects gate every fight, so they share the images' mirror path.
   once('      const response = await fetch(src);\n      if (!response.ok) throw new Error(src);\n      this.sfxRaw[name] = await response.arrayBuffer();', '      this.sfxRaw[name] = (await fetchGameAsset(src)).data.buffer;');
   // Music: a verified jsDelivr copy replaces a track's source only before its
   // first play, inside the tap that primes it, so iPhone's playback grant
   // attaches to the copy. Otherwise the track streams from this site as before.
   once('    if (this.rhythmTrackPriming.has(track)) return this.rhythmTrackPriming.get(track);\n    track.volume = 0;', '    if (this.rhythmTrackPriming.has(track)) return this.rhythmTrackPriming.get(track);\n    const mirrored = track.paused && this.mirroredAudioUrl(track.getAttribute("src"));\n    if (mirrored) track.src = mirrored;\n    track.volume = 0;');
+  once('return window.localStorage?.getItem(LANGUAGE_KEY) === "zh-TW" ? "zh-TW" : "en";\n    } catch {\n      return "en";', 'return window.localStorage?.getItem(LANGUAGE_KEY) === "en" ? "en" : "zh-TW";\n    } catch {\n      return "zh-TW";');
+  once('this.setLanguage(this.language || "en", { persist: false, announce: false });', 'this.setLanguage(this.language || "zh-TW", { persist: false, announce: false });');
   once('    let audio = this.homePlaylistAudioCache.get(song.id);\n    if (!audio || audio.getAttribute("src") !== song.audioSrc) {\n      audio = new Audio(song.audioSrc);', '    let audio = this.homePlaylistAudioCache.get(song.id);\n    const source = this.mirroredAudioUrl(song.audioSrc) || song.audioSrc;\n    if (!audio || audio.getAttribute("src") !== source) {\n      audio = new Audio(source);');
   once('  playHomePlaylistSong(songId) {\n    this.loadHomeWaveform(songId);', '  playHomePlaylistSong(songId) {\n    this.loadHomeWaveform(songId);\n    this.prefetchMirroredAudio(this.getHomePlaylistSongById(songId)?.audioSrc);');
   once('  renderTitle() {\n', '  renderTitle() {\n    this.prefetchTitleAudio();\n');
@@ -135,9 +144,9 @@ export function patchMothRuntime(source, ts) {
 
 const RUNTIME_METHODS = `
   sceneGroups(stageId) {
-    if (this.getSecretLevel(stageId)) return ['common', stageId];
+    if (this.getSecretLevel(stageId)) return ['common', 'player', stageId];
     if (stageId === 'level1-stage0') return ['common', 'player', 'road'];
-    if (stageId === 'level1-stage1') return ['common', 'office'];
+    if (stageId === 'level1-stage1') return ['common', 'player', 'office'];
     if (stageId === 'studio-stage1') return ['common', 'player', 'studio'];
     if (/^level2/.test(stageId)) return ['common', 'player', 'level2'];
     if (/^level3/.test(stageId)) return ['common', 'player', 'level3'];

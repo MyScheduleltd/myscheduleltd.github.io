@@ -62,7 +62,7 @@ for (const [name, type] of [['chrome', chromium], ['webkit', webkit]]) {
     assert(keys.some(key => key.startsWith('moth.staff')));
     report.push({engine:name, audience:'staff', debugWorks:true, isolatedStorage:true, violations:await page.evaluate(() => window.__qaViolations)});
     await page.goto(new URL('moth/', base).href, {waitUntil:'domcontentloaded'});
-    await page.waitForFunction(() => window.__qaDraws.some(text => /STORY MODE/.test(text)), undefined, {timeout:180000});
+    await page.waitForFunction(() => window.__qaDraws.some(text => /STORY MODE|故事模式/.test(text)), undefined, {timeout:180000});
     assert.equal(await page.locator('.debug-panel').count(),0);
     // Verify inline script injection is refused by the page policy.
     assert.equal(await page.evaluate(() => {const script = document.createElement('script'); script.textContent='window.__injected=true'; document.head.append(script); return !!window.__injected;}), false);

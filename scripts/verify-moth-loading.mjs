@@ -42,7 +42,7 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
     await page.evaluate(()=>{bobbyGame.returnToTitle();bobbyGame.homeMenu.index=0;});
     await page.keyboard.press('Enter');await page.keyboard.press('Enter');await page.keyboard.press('Enter');
     await page.waitForFunction(()=>bobbyGame.state==='playing'&&!bobbyGame.level1OfficeRhythm?.graphicsLoading,undefined,{timeout:90000});
-    assert.deepEqual(await page.evaluate(()=>[...bobbyGame.loadedSceneGroups].sort()),['common','office']);
+    assert.deepEqual(await page.evaluate(()=>[...bobbyGame.loadedSceneGroups].sort()),['common','office','player']);
     const effects = await page.evaluate(async()=>{
       const g=bobbyGame, context=g.level1OfficeAudioContext, analyser=context.createAnalyser();
       analyser.fftSize=2048;const node=g.ensureFeedbackOutput(context);node.connect(analyser);
@@ -59,6 +59,8 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
       await page.waitForFunction(group=>bobbyGame.loadedSceneGroups.has(group)&&!bobbyGame.levelLoadingPresentation&&bobbyGame.state==='playing',group,{timeout:90000});
       const groups=await page.evaluate(()=>[...bobbyGame.loadedSceneGroups].sort());
       assert(groups.includes(group));assert(!groups.includes('office'),'Previous chapter art released');
+      // Drawn in every fight although named after one chapter: GANGAN's coach chip and Dr. Beauty's HUD portrait.
+      assert(await page.evaluate(()=>Boolean(bobbyGame.refs.level1OfficeGanganCoachSheet&&bobbyGame.refs.bobby)),'Coach chip and HUD portraits loaded');
       assert.equal(await page.evaluate(()=>bobbyGame.loadError),'');
       console.log(engine,stage,'PASS',groups);
     }
