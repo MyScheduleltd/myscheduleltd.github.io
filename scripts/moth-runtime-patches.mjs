@@ -155,6 +155,12 @@ export function patchMothRuntime(source, ts) {
   once('  primeAudioOnGesture() {\n    if (this.audioRecoveryVisible()) return;', '  primeAudioOnGesture() {\n    this.refreshStaleAudioEngine();\n    if (this.audioRecoveryVisible()) return;');
   once('  update(dt) {\n    if (document.hidden || this.audioInterruption || this.audioRecoveryVisible()) return;', '  update(dt) {\n    this.noteMusicActivity();\n    if (document.hidden || this.audioInterruption || this.audioRecoveryVisible()) return;');
   once('    window.addEventListener("pagehide", () => this.suspendGameAudio({ fromHidden: true }));', '    window.addEventListener("pagehide", () => this.suspendGameAudio({ fromHidden: true }));\n    const staleAudio = reason => () => { this.audioEngineStale ||= reason; };\n    document.addEventListener("visibilitychange", () => { if (document.hidden) staleAudio("hidden")(); });\n    window.addEventListener("pagehide", staleAudio("hidden"));\n    document.addEventListener("freeze", staleAudio("frozen"));\n    navigator.mediaDevices?.addEventListener?.("devicechange", staleAudio("device"));');
+  // Windows Chrome flashed the whole page white/black (owner, 2026-10-13).
+  // Both game canvases asked for a desynchronized (low-latency, compositor-
+  // bypassing) context, which on Windows does not mix with the film-grain
+  // layers blended on top. Windows draws through the compositor instead.
+  once('const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });', 'const DESYNC_CANVAS = !/Windows/i.test(navigator.userAgentData?.platform || navigator.userAgent || "");\nconst ctx = canvas.getContext("2d", { alpha: false, desynchronized: DESYNC_CANVAS });');
+  once('this.portraitCtx = element.getContext("2d", { alpha: false, desynchronized: true });', 'this.portraitCtx = element.getContext("2d", { alpha: false, desynchronized: DESYNC_CANVAS });');
   const imageStart = source.indexOf('function loadImage(src) {');
   const imageEnd = source.indexOf('\nfunction loadOptionalSheet(src)', imageStart);
   assert(imageStart > 0 && imageEnd > imageStart);

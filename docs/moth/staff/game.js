@@ -2166,7 +2166,8 @@ const OUTFIT_DEFS = {
 };
 
 const canvas = document.querySelector("#game");
-const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+const DESYNC_CANVAS = !/Windows/i.test(navigator.userAgentData?.platform || navigator.userAgent || "");
+const ctx = canvas.getContext("2d", { alpha: false, desynchronized: DESYNC_CANVAS });
 ctx.imageSmoothingEnabled = false;
 
 class BobbyGame {
@@ -10659,7 +10660,7 @@ for (const level of this.config.secretLevels || []) {
     element.setAttribute("aria-label", "Master of the House");
     canvas.insertAdjacentElement("afterend", element);
     this.portraitCanvas = element;
-    this.portraitCtx = element.getContext("2d", { alpha: false, desynchronized: true });
+    this.portraitCtx = element.getContext("2d", { alpha: false, desynchronized: DESYNC_CANVAS });
     // Every pointer event on the tall view is handed to the game canvas at
     // the frame point it corresponds to, so taps, drags and scrolls all keep
     // working through the existing handlers.
