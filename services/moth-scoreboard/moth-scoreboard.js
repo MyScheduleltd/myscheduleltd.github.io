@@ -61,8 +61,10 @@ function checkRun(mode, scores) {
 const rankScore = (total, at) => total + Math.min(0.999999, Math.max(0, 1 - (Math.floor(at / 1000) - 1.7e9) / 1e9));
 
 function redis(env = process.env) {
-  const url = env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL;
-  const token = env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN;
+  // The integration names its variables <prefix>_REST_API_URL / _TOKEN.
+  const prefixed = Object.keys(env).find(key => /_REST_API_URL$/.test(key) && env[key.replace(/_URL$/, '_TOKEN')]);
+  const url = env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL || (prefixed && env[prefixed]);
+  const token = env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN || (prefixed && env[prefixed.replace(/_URL$/, '_TOKEN')]);
   if (!url || !token) return null;
   const call = async (path, body) => {
     const response = await fetch(url.replace(/\/$/, '') + path, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });

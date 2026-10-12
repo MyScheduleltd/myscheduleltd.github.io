@@ -84,6 +84,9 @@ test('scoreboard', async t => {
     assert.equal((await call(env, {origin: 'http://127.0.0.1:5286'})).status, 403, 'local origins refused in production');
     assert.equal((await call({...env, VERCEL_ENV: 'preview'}, {origin: 'http://127.0.0.1:5286'})).status, 200, 'local origins allowed outside production');
   });
+  await t.test('finds the storage under any integration prefix', async () => {
+    assert.equal((await call({STORAGE_REST_API_URL: url, STORAGE_REST_API_TOKEN: 'test-token', VERCEL_ENV: 'production'})).status, 200);
+  });
   await t.test('no storage configured -> 503', async () => {
     assert.equal((await call({})).status, 503);
   });
