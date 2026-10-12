@@ -3059,3 +3059,9 @@ body[data-device-mode="phone"][data-rhythm-active="1"] .film-grain-overlay::afte
   border: 3px solid #354838; border-radius: 0; background: #83b88c; color: #203725;
   box-shadow: 4px 5px 0 #354838; text-align: center; font: inherit; cursor: pointer;
 }
+
+.load-recovery { background: #1216134d; }
+.load-recovery section { background: repeating-linear-gradient(#242b28 0 3px, #202623 3px 4px); color: #f7f2de; border: 4px solid #ce3f49; box-shadow: 8px 8px 0 #111613; }
+.load-recovery small { color: #8fe8ff; }
+.load-recovery button { background: #344439; color: #f7f2de; border-color: #dcd8bd; box-shadow: 4px 5px 0 #111613; }
+.load-recovery button:focus-visible { outline: 3px solid #ffd36c; outline-offset: 5px; }

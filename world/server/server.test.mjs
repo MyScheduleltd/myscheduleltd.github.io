@@ -1330,6 +1330,60 @@ test('an instance that has settings of its own ignores the seed', async () => {
   }
 });
 
+test('a DJ card STAFF edited comes back after a capture and a deploy', async () => {
+  const port = await freePort();
+  const liveUrl = `http://127.0.0.1:${port}`;
+  // Not there yet, so the capture has no earlier seed to borrow an edition
+  // from: whatever edition it writes, the service had to report.
+  const seedFile = joinPath(temporaryDirectory, 'captured-dj-seed.json');
+  const capture = () => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['scripts/capture-state.mjs', liveUrl], {
+      cwd: new URL('..', import.meta.url),
+      env: { ...process.env, FESTIVAL_SEED_FILE: seedFile },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let output = '';
+    child.stdout.on('data', (chunk) => { output += chunk; });
+    child.stderr.on('data', (chunk) => { output += chunk; });
+    child.once('error', reject);
+    child.once('exit', (code) => (code === 0 ? resolve(output) : reject(new Error(`capture-state exited ${code}: ${output}`))));
+  });
+
+  let instance = await startServer(port, joinPath(temporaryDirectory, 'dj-card-before-deploy.json'));
+  try {
+    const profile = (await (await fetch(`${liveUrl}/api/config`)).json()).djProfiles.DRBEAUTY;
+    const saved = await fetch(`${liveUrl}/api/admin/dj-profile`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-festival-admin-key': 'test-admin-key',
+        origin: 'http://127.0.0.1:5173',
+      },
+      body: JSON.stringify({
+        id: 'DRBEAUTY',
+        role: profile.role,
+        roleZh: '李包比仙人',
+        introduction: profile.introduction,
+        introductionZh: '公元前1990年誕生至今。',
+      }),
+    });
+    assert.equal(saved.status, 200);
+    await capture();
+  } finally {
+    await stopServer(instance);
+  }
+
+  // The deploy: a new instance with nothing of its own, booting from the seed.
+  instance = await startServer(port, joinPath(temporaryDirectory, 'dj-card-after-deploy.json'), seedFile);
+  try {
+    const card = (await (await fetch(`${liveUrl}/api/config`)).json()).djProfiles.DRBEAUTY;
+    assert.equal(card.roleZh, '李包比仙人', 'the edited role outlives the deploy');
+    assert.equal(card.introductionZh, '公元前1990年誕生至今。', 'and so does the edited introduction');
+  } finally {
+    await stopServer(instance);
+  }
+});
+
 test('presence keeps attendees where they stand across the whole world', async () => {
   const session = await join('EXTENT TEST');
   // The basement's west end and the roof deck's east edge both used to fall

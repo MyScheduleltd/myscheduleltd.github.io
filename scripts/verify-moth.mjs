@@ -62,7 +62,7 @@ for (const [name, type] of [['chrome', chromium], ['webkit', webkit]]) {
     assert(keys.some(key => key.startsWith('moth.staff')));
     report.push({engine:name, audience:'staff', debugWorks:true, isolatedStorage:true, violations:await page.evaluate(() => window.__qaViolations)});
     await page.goto(new URL('moth/', base).href, {waitUntil:'domcontentloaded'});
-    await page.waitForFunction(() => window.__qaDraws.some(text => /STORY MODE/.test(text)), undefined, {timeout:180000});
+    await page.waitForFunction(() => window.__qaDraws.some(text => /STORY MODE|故事模式/.test(text)), undefined, {timeout:180000});
     assert.equal(await page.locator('.debug-panel').count(),0);
     // Verify inline script injection is refused by the page policy.
     assert.equal(await page.evaluate(() => {const script = document.createElement('script'); script.textContent='window.__injected=true'; document.head.append(script); return !!window.__injected;}), false);
@@ -71,7 +71,7 @@ for (const [name, type] of [['chrome', chromium], ['webkit', webkit]]) {
     assert.deepEqual(failed,[]);
     await context.close();
     if (name === 'chrome') {
-      const menuContext = await browser.newContext();
+      const menuContext = await browser.newContext({viewport:{width:390,height:844}});
       await menuContext.addInitScript(() => {
         window.__menuViolations = [];
         document.addEventListener('securitypolicyviolation', event => window.__menuViolations.push(event.effectiveDirective));
@@ -80,7 +80,8 @@ for (const [name, type] of [['chrome', chromium], ['webkit', webkit]]) {
       const menuErrors = [];
       menuPage.on('pageerror', error => menuErrors.push(String(error)));
       for (const file of ['index.html','about.html','portfolio.html','drBeauty.html','contact.html']) {
-        await menuPage.goto(new URL(file,base).href, {waitUntil:'networkidle'});
+        await menuPage.goto(new URL(file,base).href, {waitUntil:'domcontentloaded'});
+        await menuPage.waitForFunction(() => Boolean(window.$?._data(document.querySelector('#toggle'), 'events')?.click));
         assert.equal(await menuPage.locator('.menu .moth-link').count(),1);
         assert.equal(await menuPage.locator('.menu .beta-link + .moth-link').count(),1);
         assert.equal(await menuPage.locator('a[href*="moth/staff"]').count(),0);

@@ -203,8 +203,8 @@ Updated by Codex through 2026-10-10, preserving Claude’s 2026-10-07/08 handoff
    - **Deploys are manual**: merging to `main` does not redeploy it. Tell the owner "Render needs a manual redeploy" whenever `world/server/**` changed.
    - `/api/config` returns `build` (the deployed commit).
    - **No disk.** Runtime state lives on the instance, and a redeploy boots from `world/server/festival-seed.json`.
-   - To keep STAFF edits across deploys, capture them with `node world/scripts/capture-state.mjs` (reads the live admin state) and commit the seed.
-   - Resident profiles in the seed are only honoured with a matching `djProfileSeed`. This is now captured and committed, so STAFF edits to introductions and credits survive.
+   - To keep STAFF edits across deploys, capture them with `node world/scripts/capture-state.mjs` (reads the public `/api/config`, no key) and commit the seed.
+   - DJ cards in the seed are only honoured with a matching `djProfileSeed`. Until 2026-10-12 `/api/config` did not report it, so every capture dropped it (e430852 did) and DJ-card edits were lost at each deploy. `/api/config` reports it now; check the capture prints `DJ card(s), edition …` and not `MISSING`.
 6. **Source of truth is `origin/main`.** The "live bundle source not on main" problem (codex shipping `docs/` from non-git `band-repair-20261004`) was resolved on 2026-10-07: `main` now rebuilds exactly what is live.
    - Develop on a branch from `origin/main`. Do not ship from `band-repair-20261004`, `gate-entry-fix` or any other old worktree.
    - **Never ship codex's old server copy**: its `/api/config` leaked the STAFF receipt mailbox (`offeringReceipt`).
