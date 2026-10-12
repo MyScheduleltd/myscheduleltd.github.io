@@ -1,11 +1,11 @@
 # M.O.T.H integration and security review — 12 October 2026
 
-Status: implementation and local checks complete; production publication requires an approving GitHub pull-request review. The existing public website and game have been inspected; the new `/moth/` routes have not yet been deployed or tested publicly.
+Status: the initial integration is live following PR #18 and a successful GitHub Pages deployment. All 238 deployed game files matched the package, both game URLs returned 200, and all five menus contain M.O.T.H below BETA. The loading/audio follow-up described below requires review and publication; its browser checks are local unless explicitly labelled live.
 
 ## Requested experience
 
 - `M.O.T.H` appears immediately after `BETA` in the side menu on all five main website pages and links to `/moth/` in the same tab.
-- `/moth/` uses the currently published `mobile-deck-20261012a` game from `https://beauty-boy.vercel.app/`. The snapshot hashes every downloaded file and checks that the release entry did not move during the download. All 232 retained assets/configuration/styles match that snapshot.
+- `/moth/` uses the selected published `mobile-deck-20261012a` game from `https://beauty-boy.vercel.app/`. The snapshot hashes every downloaded file and checks that the release entry did not move during the download. All 231 retained assets/configuration files match that snapshot. Original styles remain intact, with refresh-screen styles appended.
 - The public script removes 28 debug methods or replaces shared debug hooks with inert helpers. It does not construct a panel or toggle, accept debug/autostart URL launches, intercept P to open tools, load saved dialogue overrides, or expose the game instance/class to global browser JavaScript. Its script runs inside a closure. Gameplay dialogue definitions remain available.
 - `/moth/staff/` retains debug tools and displays their toggle without requiring a query parameter. It is unlisted and marked `noindex, nofollow, noarchive`. **It is publicly accessible to anyone with the URL**, as expressly selected by the owner. It is not an authenticated administrative area.
 - Public/staff progress and preferences have distinct storage namespaces. Debug changes operate in that browser; they do not publish content or modify the website's server.
@@ -19,13 +19,22 @@ Status: implementation and local checks complete; production publication require
 - The five main pages and their Pug template now have a resource policy allowing the existing pinned jQuery, Bootstrap, Swiper and YouTube integrations. Existing third-party script/style integrity attributes are preserved.
 - A development-only `source-map-js` advisory was found and patched from 1.2.1 to 1.2.2 in `world/package-lock.json`. No BETA/PS2 application bundles were rebuilt or changed. The published backend uses Node built-ins rather than this build dependency.
 
+## Loading and audio follow-up
+
+- The initial loader blocked the menu on artwork from every chapter. All packaged WebP artwork totals about 829 MB when expanded to RGBA pixels; actual browser memory also depends on decoding and GPU copies. The phone's failure screenshot names a later-level image while the game is still opening. A failed initial image prevented audio initialization as well.
+- The menu now starts after configuration is ready, without downloading chapter images, songs or sound effects. The existing device/control artwork remains. Chapter entry loads the common art and that chapter's art, then releases other chapters' image references. The original artwork files and audio files are unchanged.
+- Image downloads have a 20-second attempt timeout and up to three attempts, with a fresh retry URL after a failed attempt. Configuration downloads also have bounded retries. Asset jobs use three workers; batches are serialized, and a cancelled entry cannot reopen an earlier scene.
+- A permanent failure shows a dark, red-bordered console-style panel with a clear REFRESH PAGE button instead of a filename and GAME OVER. English and Traditional Chinese prompts are provided. Refresh keeps existing session saves. Behind the panel the game screen shows only CONNECTION LOST on a dark scanline ground. The retired level-1 road scene and its HUD are no longer redrawn, and the backdrop is lighter so that text reads.
+- Music and effects share an AudioContext, resumed on real input. Sound effects download/decode when a fight or sound test needs them. Songs do not preload at startup. An audio-start failure now exposes its existing recovery dialog and a working enable-sound button instead of pausing behind an invisible prompt.
+- `scripts/verify-moth-loading.mjs` exercises Chrome and WebKit: ten scene entries, chapter eviction, cancelled-entry handling, transient retries, permanent failures, refresh/session preservation, public debug absence, and audio recovery. It measures nonzero PCM from earned-track playback and game sound effects, and verifies all 27 effects decoded. Physical iPhone playback still needs validation after publication.
+
 ## Verification
 
 Evidence is retained in the checkout's ignored `.qa/moth/` directory.
 
 | Check | Result |
 | --- | --- |
-| Published snapshot / package integrity | 232 preserved files match; no recognized credential patterns in M.O.T.H; no diagnostic pages or unreferenced audio |
+| Published snapshot / package integrity | 231 preserved files match; original styles retained with recovery styles appended; no recognized credential patterns in M.O.T.H; no diagnostic pages or unreferenced audio |
 | Public browser behavior | Chrome and WebKit, desktop/portrait/small phone/landscape: title and actual story tutorial render; debug URL switches and P do not create controls; no public game globals |
 | Staff browser behavior | Both engines: visible toggle, P, hidden-level unlock, fight launch, separate storage |
 | Injection restriction | Both engines refuse an injected inline script under the game policy |
@@ -47,7 +56,7 @@ The live checks are non-destructive: no production uploads, chat posts, payments
 ## Remaining limits
 
 - This is an implementation review, dependency check, local browser test and targeted live assessment, not a guarantee that every possible vulnerability or malware is absent. Credential scanning is pattern-based and cannot prove the absence of all secrets.
-- New M.O.T.H production routes and anonymous live asset integrity still need verification after merge and GitHub Pages publication. Physical phones have not been tested.
+- The initial production routes and all 238 files were verified after publication. This loading/audio repair still needs production verification after merge and GitHub Pages publication. Physical phones have not been tested.
 - The staff URL is intentionally public, and robots metadata does not enforce access control. Staff debug actions change that visitor's game, not website administration.
 - Songs and other public media can be downloaded or recorded. Removing download buttons or hiding URLs cannot solve that while browser playback is preserved.
 - The existing Google browser key remains public by design. Referrer rejection was observed; Google Cloud service restrictions, quota/billing configuration and account access were not inspected. Referrers are not a substitute for server authentication.

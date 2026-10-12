@@ -2330,253 +2330,36 @@ class BobbyGame {
   async init() {
     this.startBootScreen();
     try {
-      const response = await fetch("./data/level1.json", { cache: "no-store" });
-      this.config = await response.json();
+      this.config = await fetchGameJson("./data/level1.json");
       await this.loadLayeredMapConfig();
-      const bobbySpec = this.config.sprites.bobby;
-      const ganganSpec = this.config.sprites.gangan;
-      const level2BundleSpec = this.config.sprites.level2Bundle;
-      const bathingSuitSpec = bobbySpec.outfits?.bathingSuit?.onFoot;
-      const summerFitSpec = bobbySpec.outfits?.summerFit?.onFoot;
-      const championFitSpec = bobbySpec.outfits?.championFit?.onFoot;
-      const blackHoodFitSpec = bobbySpec.outfits?.blackHoodFit?.onFoot;
-      const underwearSpec = bobbySpec.outfits?.underwear?.onFoot;
-      const finaleBikiniSpec = bobbySpec.outfits?.finaleBikini?.onFoot;
-      const mosquitoBossSpec = this.config.sprites.level2MosquitoBoss;
-      const mosquitoMinionSpec = this.config.sprites.level2MosquitoMinion;
-      const stage3PropsSpec = this.config.sprites.level2Stage3Props;
-      const level3BossSpec = this.config.sprites.level3BossZuxian;
-      const level3BossExitRightSpec = this.config.sprites.level3BossZuxianExitRight;
-      const level3RhythmFightSpec = this.config.sprites.level3RhythmFightLoop;
-      const level3RhythmFightBathingSuitSpec = this.config.sprites.level3RhythmFightLoopBathingSuit;
-      const level3RhythmFightSummerFitSpec = this.config.sprites.level3RhythmFightLoopSummerFit;
-      const level3RhythmHpBottleNoteSpec = this.config.sprites.level3RhythmHpBottleNote;
-      const level3RhythmSatisfactionReactionsSpec = this.config.sprites.level3RhythmSatisfactionReactions;
-      const level3RhythmSuccessNotificationSpec = this.config.sprites.level3RhythmSuccessNotification;
-      const homeMp3MenuSpec = this.config.sprites.homeMp3Menu;
-      const homeMp3WaveformSpecs = this.config.sprites.homeMp3Waveforms || {};
-      const dialogueProfilesSpec = this.config.sprites.dialogueProfiles;
-      const dialogueFrameSpec = this.config.sprites.dialogueFrame;
-      const loadingTransitionSpec = this.config.sprites.loadingTransition;
-      const bobbyTutorialIntroSpec = this.config.sprites.bobbyTutorialIntro;
-      const level4BonitaSpec = this.config.sprites.level4BonitaBlanketIdle;
-      const level4BonitaBossPlaceholderSpec = this.config.sprites.level4BonitaBossPlaceholder;
-      const level4HiddenChestSpec = this.config.sprites.level4HiddenWallChest;
-      const tutorialStage0Spec = this.config.tutorial?.stage0;
-      const level3Stage1Spec = this.config.level3?.stage1;
-      const level4Stage1Spec = this.config.level4?.stage1;
-      const level5Stage1Spec = this.config.level5?.stage1;
-      const level5Stage2Spec = this.config.level5?.stage2;
-      const level6Stage1Spec = this.config.level6?.stage1;
-      const level6Stage2Spec = this.config.level6?.stage2;
-      const [bobbyRef, bossRef, bobbyRideSheet, bobbyAttackSheet, bobbyOnFootSheet, ganganSheet, ganganAttackSheet, ganganCandySheet, ganganDefeatExitSheet, ganganBikeExitSheet, ganganHealthBarSheet, levelMap, tutorialStage0Map, sewerMap, level2BossMap, level2Stage3Map, level3Stage1Map, level4Stage1Map, level2BundleSheet, bobbyBathingSuitSheet, bobbySummerFitSheet, bobbyUnderwearSheet, mosquitoBossSheet, mosquitoMinionSheet, level2Stage3PropsSheet, level3BossSheet, level3BossExitRightSheet, level3RhythmFightSheet, level3RhythmFightBathingSuitSheet, level3RhythmFightSummerFitSheet, level3RhythmHpBottleNoteSheet, level3RhythmSatisfactionReactionsSheet, level3RhythmSuccessNotificationSheet, homeMp3MenuSheet, dialogueProfilesSheet, dialogueFrameSheet, loadingTransitionSheet, bobbyTutorialIntroSheet] = await Promise.all([
-        loadImage(this.config.sprites.bobby.reference),
-        loadImage(this.config.sprites.gangan.reference),
-        loadOptionalSheet(bobbySpec.source),
-        loadOptionalSheet(bobbySpec.attack?.source),
-        loadOptionalSheet(bobbySpec.onFoot?.source),
-        loadOptionalSheet(ganganSpec.source),
-        loadOptionalSheet(ganganSpec.attack?.source),
-        loadOptionalSheet(ganganSpec.candy?.source),
-        loadOptionalSheet(ganganSpec.defeatExit?.source),
-        loadOptionalSheet(ganganSpec.bikeExit?.source),
-        loadOptionalSheet(ganganSpec.healthBar?.source),
-        loadOptionalSheet(this.config.map?.source),
-        loadOptionalSheet(tutorialStage0Spec?.map?.source),
-        loadOptionalSheet(this.config.sewer?.source),
-        loadOptionalSheet(this.config.sewer?.bossArena?.source),
-        loadOptionalSheet(this.config.sewer?.stage3?.source),
-        loadOptionalSheet(level3Stage1Spec?.source),
-        loadOptionalSheet(level4Stage1Spec?.source),
-        loadOptionalSheet(level2BundleSpec?.source),
-        loadOptionalSheet(bathingSuitSpec?.source),
-        loadOptionalSheet(summerFitSpec?.source),
-        loadOptionalSheet(underwearSpec?.source),
-        loadOptionalSheet(mosquitoBossSpec?.source),
-        loadOptionalSheet(mosquitoMinionSpec?.source),
-        loadOptionalSheet(stage3PropsSpec?.source),
-        loadOptionalSheet(level3BossSpec?.source),
-        loadOptionalSheet(level3BossExitRightSpec?.source),
-        loadOptionalSheet(level3RhythmFightSpec?.source),
-        loadOptionalSheet(level3RhythmFightBathingSuitSpec?.source),
-        loadOptionalSheet(level3RhythmFightSummerFitSpec?.source),
-        loadOptionalSheet(level3RhythmHpBottleNoteSpec?.source),
-        loadOptionalSheet(level3RhythmSatisfactionReactionsSpec?.source),
-        loadOptionalSheet(level3RhythmSuccessNotificationSpec?.source),
-        loadOptionalSheet(homeMp3MenuSpec?.source),
-        loadOptionalSheet(dialogueProfilesSpec?.source),
-        loadOptionalSheet(dialogueFrameSpec?.source),
-        loadOptionalSheet(loadingTransitionSpec?.source),
-        loadOptionalSheet(bobbyTutorialIntroSpec?.source)
-      ]);
-      this.refs.bobby = bobbyRef;
-      this.refs.boss = bossRef;
-      this.refs.bobbyRideSheet = bobbyRideSheet;
-      this.refs.bobbyAttackSheet = bobbyAttackSheet;
-      this.refs.bobbyOnFootSheet = bobbyOnFootSheet;
-      this.refs.ganganSheet = ganganSheet;
-      this.refs.ganganAttackSheet = ganganAttackSheet;
-      this.refs.ganganCandySheet = ganganCandySheet;
-      this.refs.ganganDefeatExitSheet = ganganDefeatExitSheet;
-      this.refs.ganganBikeExitSheet = ganganBikeExitSheet;
-      this.refs.ganganHealthBarSheet = ganganHealthBarSheet;
-      this.refs.levelMap = levelMap;
-      this.refs.tutorialStage0Map = tutorialStage0Map;
-      this.refs.sewerMap = sewerMap;
-      this.refs.level2BossMap = level2BossMap;
-      this.refs.level2Stage3Map = level2Stage3Map;
-      this.refs.level3Stage1Map = level3Stage1Map;
-      this.refs.level4Stage1Map = level4Stage1Map;
-      this.refs.level2BundleSheet = level2BundleSheet;
-      this.refs.bobbyBathingSuitSheet = bobbyBathingSuitSheet;
-      this.refs.bobbySummerFitSheet = bobbySummerFitSheet;
-      this.refs.bobbyUnderwearSheet = bobbyUnderwearSheet;
-      this.refs.bobbyChampionFitSheet = await loadOptionalSheet(championFitSpec?.source);
-      this.refs.bobbyBlackHoodFitSheet = await loadOptionalSheet(blackHoodFitSpec?.source);
-      this.refs.bobbyFinaleBikiniSheet = await loadOptionalSheet(finaleBikiniSpec?.source);
-      this.refs.mosquitoBossSheet = mosquitoBossSheet;
-      this.refs.mosquitoMinionSheet = mosquitoMinionSheet;
-      this.refs.level2Stage3PropsSheet = level2Stage3PropsSheet;
-      this.refs.level3BossSheet = level3BossSheet;
-      this.refs.level3BossExitRightSheet = level3BossExitRightSheet;
-      this.refs.level3RhythmFightSheet = level3RhythmFightSheet;
-      this.refs.level3RhythmFightBathingSuitSheet = level3RhythmFightBathingSuitSheet;
-      this.refs.level3RhythmFightSummerFitSheet = level3RhythmFightSummerFitSheet;
-      this.refs.level3RhythmHpBottleNoteSheet = level3RhythmHpBottleNoteSheet;
-      this.refs.level3RhythmSatisfactionReactionsSheet = level3RhythmSatisfactionReactionsSheet;
-      this.refs.level3RhythmSuccessNotificationSheet = level3RhythmSuccessNotificationSheet;
-      this.refs.homeMp3MenuSheet = homeMp3MenuSheet;
-      this.refs.dialogueProfilesSheet = dialogueProfilesSheet;
-      this.refs.bonitaDialogueProfileSheet = await loadOptionalSheet(this.config?.sprites?.bonitaDialogueProfile?.source);
-      this.refs.dialogueFrameSheet = dialogueFrameSheet;
-      this.refs.loadingTransitionSheet = loadingTransitionSheet;
-      this.refs.homeMp3WaveformSheets = Object.fromEntries(await Promise.all(
-        Object.entries(homeMp3WaveformSpecs).map(async ([songId, spec]) => [
-          songId,
-          await loadOptionalSheet(spec?.source)
-        ])
-      ));
-      this.refs.bobbyTutorialIntroSheet = bobbyTutorialIntroSheet;
-      this.refs.level4BonitaBlanketIdleSheet = await loadOptionalSheet(level4BonitaSpec?.source);
-      this.refs.level4BonitaBossPlaceholderSheet = await loadOptionalSheet(level4BonitaBossPlaceholderSpec?.source);
-      this.refs.level4HiddenWallChestSheet = await loadOptionalSheet(level4HiddenChestSpec?.source);
-      this.refs.level4BonitaGameBossSheet = await loadOptionalSheet(this.config?.sprites?.level4BonitaGameBoss?.source);
-      this.refs.level4BobbyVsIntroSheet = await loadOptionalSheet(this.config?.sprites?.level4BobbyVsIntro?.source);
-      this.refs.level4BossStarShotSheet = await loadOptionalSheet(this.config?.sprites?.level4BossStarShot?.source);
-      this.refs.level4BossGroundWaveSheet = await loadOptionalSheet(this.config?.sprites?.level4BossGroundWave?.source);
-      this.refs.level4BossArenaMap = await loadOptionalSheet(this.config?.level4?.stage1?.bossFight?.source);
-      this.refs.level5Stage1Map = await loadOptionalSheet(level5Stage1Spec?.source);
-      this.refs.level5ParallaxLayers = await Promise.all((level5Stage1Spec?.parallaxLayers || []).map((layer) => loadOptionalSheet(layer.source)));
-      this.refs.level5DaytonaSheet = await loadOptionalSheet(this.config?.sprites?.level5Daytona?.source);
-      this.refs.level5GanGanCarSheet = await loadOptionalSheet(this.config?.sprites?.level5GanGanCar?.source);
-      this.refs.level5GanGanIdleSheet = await loadOptionalSheet(this.config?.sprites?.level5GanGanIdle?.source);
-      this.refs.level5HighwayChestSheet = await loadOptionalSheet(this.config?.sprites?.level5HighwayChest?.source);
-      this.refs.level5UndergroundWaterSheet = await loadOptionalSheet(this.config?.sprites?.level5UndergroundWater?.source);
-      this.refs.level5BossMap = await loadOptionalSheet(level5Stage2Spec?.source);
-      this.refs.level5BossParallaxLayers = await Promise.all((level5Stage2Spec?.parallaxLayers || []).map((layer) => loadOptionalSheet(layer.source)));
-      this.refs.level5BossDaytonaSheet = await loadOptionalSheet(this.config?.sprites?.level5BossDaytona?.source);
-      this.refs.level5BossRoadObjectsSheet = await loadOptionalSheet(this.config?.sprites?.level5BossRoadObjects?.source);
-      this.refs.level5RhythmHitFxSheet = await loadOptionalSheet(this.config?.sprites?.level5RhythmHitFx?.source);
-      this.refs.level5GoatRunSheet = await loadOptionalSheet(this.config?.sprites?.level5GoatRun?.source);
-      this.refs.level5PoopObstacleSheet = await loadOptionalSheet(this.config?.sprites?.level5PoopObstacle?.source);
-      // Level 5's river contest and night drive (2026-10-05): GPT art, loaded
-      // once it is in the config.
-      await Promise.all(["Bg", "DrBeauty", "Gangan", "Mic", "Console"].map(async name => {
-        this.refs[`level5Studio${name}Sheet`] = await loadOptionalSheet(this.config?.sprites?.[`level5Studio${name}`]?.source);
-      }));
-      this.refs.level5RiverBgSheet = await loadOptionalSheet(this.config?.sprites?.level5RiverBg?.source);
-      this.refs.level5RiverDrBeautySheet = await loadOptionalSheet(this.config?.sprites?.level5RiverDrBeauty?.source);
-      this.refs.level5RiverGanganSheet = await loadOptionalSheet(this.config?.sprites?.level5RiverGangan?.source);
-      this.refs.level5DriveCarSheet = await loadOptionalSheet(this.config?.sprites?.level5DriveCar?.source);
-      this.refs.level5DriveWheelSheet = await loadOptionalSheet(this.config?.sprites?.level5DriveWheel?.source);
-      this.refs.level5DialoguePortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level5DialoguePortraits?.source);
-      this.refs.level6Stage1Map = await loadOptionalSheet(level6Stage1Spec?.source);
-      this.refs.level6BossMap = await loadOptionalSheet(level6Stage2Spec?.source);
-      this.refs.level6BobbyPerformerSheet = await loadOptionalSheet(this.config?.sprites?.level6BobbyPerformer?.source);
-      // Level 6's concert and dream (2026-10-06): GPT art, loaded once it is
-      // in the config; until then the old stage and performer stand in.
-      this.refs.level6ConcertBgSheet = await loadOptionalSheet(this.config?.sprites?.level6ConcertBg?.source);
-      this.refs.level6ConcertCrowdSheet = await loadOptionalSheet(this.config?.sprites?.level6ConcertCrowd?.source);
-      this.refs.level6ConcertDrBeautySheet = await loadOptionalSheet(this.config?.sprites?.level6ConcertDrBeauty?.source);
-      this.refs.level6ConcertGanganSheet = await loadOptionalSheet(this.config?.sprites?.level6ConcertGangan?.source);
-      this.refs.level6DreamBedSheet = await loadOptionalSheet(this.config?.sprites?.level6DreamBed?.source);
-      this.refs.level6DreamBubbleSheet = await loadOptionalSheet(this.config?.sprites?.level6DreamBubble?.source);
-      this.refs.level6WakePortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level6WakePortraits?.source);
-      this.refs.secretLevels = {};
-      await Promise.all((this.config.secretLevels || []).map(async level => {
-        this.refs.secretLevels[level.id] = {
-          background: await loadOptionalSheet(level.background.source),
-          actors: await Promise.all(level.actors.map(actor => loadOptionalSheet(actor.source)))
-        };
-      }));
-      this.refs.endingAlbumPhotos = await Promise.all((this.config?.finale?.stage1?.ending?.album || []).map(photo => loadOptionalSheet(photo.source)));
-      this.refs.level6GanGanExitSheet = await loadOptionalSheet(this.config?.sprites?.level6GanGanExit?.source);
-      this.refs.finaleDuoSingingSheet = await loadOptionalSheet(this.config?.sprites?.finaleDuoSinging?.source);
-      this.refs.level6FansProfileSheet = await loadOptionalSheet(this.config?.sprites?.level6FansProfile?.source);
-      this.refs.finaleBackstageMap = await loadOptionalSheet(this.config?.finale?.stage1?.source);
-      this.refs.finaleEndingMap = await loadOptionalSheet(this.config?.finale?.stage1?.endingSource);
-      this.refs.finaleEndingFilmOverlaySheet = await loadOptionalSheet(this.config?.sprites?.finaleEndingFilmOverlay?.source);
-      this.refs.finaleChestSheet = await loadOptionalSheet(this.config?.sprites?.finaleChest?.source);
-      this.refs.finaleForgeMachineSheet = await loadOptionalSheet(this.config?.sprites?.finaleForgeMachine?.source);
-      this.refs.finaleForgeMenuTexture = await loadOptionalSheet(this.config?.sprites?.finaleForgeMenuTexture?.source);
-      this.refs.finaleForgeRewardIconsSheet = await loadOptionalSheet(this.config?.sprites?.finaleForgeRewardIcons?.source);
-      this.refs.level3RhythmUiReceptorsSheet = await loadOptionalSheet(this.config?.sprites?.level3RhythmUiReceptors?.source);
-      this.refs.level3RhythmUiNotesSheet = await loadOptionalSheet(this.config?.sprites?.level3RhythmUiNotes?.source);
-      this.refs.level3RhythmUiPanelSheet = await loadOptionalSheet(this.config?.sprites?.level3RhythmUiPanel?.source);
-      this.refs.level1OfficeBackground = await loadOptionalSheet(this.config?.sprites?.level1OfficeBackground?.source);
-      this.refs.level1OfficeForeground = await loadOptionalSheet(this.config?.sprites?.level1OfficeForeground?.source);
-      this.refs.level1OfficeBobbySheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeBobby?.source);
-      this.refs.level1OfficeBobbyFrontSheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeBobby?.frontSource);
-      this.refs.level1OfficeBobbyPaperMarksSheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeBobby?.paperMarks?.source);
-      this.refs.level1OfficeBobbyPaperMaskSheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeBobby?.paperMask);
-      this.refs.level1OfficeGanganSheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeGangan?.source);
-      this.refs.level1OfficeGanganCoachSheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeGanganCoach?.source);
-      this.refs.level1OfficeDialoguePortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeDialoguePortraits?.source);
-      this.refs.level1OfficePropsSheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeProps?.source);
-      this.refs.level1OfficeDeskPaperSheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeDeskPaper?.source);
-      this.refs.level2BathroomBackground = await loadOptionalSheet(this.config?.sprites?.level2BathroomBackground?.source);
-      this.refs.level2BathroomHandsSheet = await loadOptionalSheet(this.config?.sprites?.level2BathroomHands?.source);
-      this.refs.level3MassageSofa = await loadOptionalSheet(this.config?.sprites?.level3MassageSofa?.source);
-      this.refs.level3MassageFacesSheet = await loadOptionalSheet(this.config?.sprites?.level3MassageFaces?.source);
-      this.refs.level3MassageHandSheet = await loadOptionalSheet(this.config?.sprites?.level3MassageHand?.source);
-      this.refs.level4ArcadeRoom = await loadOptionalSheet(this.config?.sprites?.level4ArcadeRoom?.source);
-      this.refs.level4ArcadeArena = await loadOptionalSheet(this.config?.sprites?.level4ArcadeArena?.source);
-      this.refs.level4ArcadePlayersSheet = await loadOptionalSheet(this.config?.sprites?.level4ArcadePlayers?.source);
-      this.refs.level4BobbyFighterSheet = await loadOptionalSheet(this.config?.sprites?.level4BobbyFighter?.source);
-      this.refs.level4BonitaFighterSheet = await loadOptionalSheet(this.config?.sprites?.level4BonitaFighter?.source);
-      this.refs.comboCelebrations = await Promise.all(COMBO_CELEBRATIONS.map(item => loadOptionalSheet(item.photo)));
-      this.loadHitSfx();
-      this.refs.level2BathroomMosquitoSheet = await loadOptionalSheet(this.config?.sprites?.level2BathroomMosquito?.source);
-      this.refs.level2BathroomPortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level2BathroomDialoguePortraits?.source);
-      this.refs.level1HealthFxSheet = await loadOptionalSheet(this.config?.sprites?.level1HealthFx?.source);
-      this.refs.mapProps = await Promise.all((this.config.map?.props || []).map((prop) => loadOptionalSheet(prop.image)));
+      this.createSceneAssetJobs();
       this.audio = new Audio(this.config.audioSrc);
-      this.audio.preload = "auto";
+      this.audio.preload = "none";
       this.audio.volume = BGM_VOLUME;
       if (this.config.level2BathroomRhythm?.audioSrc) {
         this.level2BossAudio = new Audio(this.config.level2BathroomRhythm.audioSrc);
-        this.level2BossAudio.preload = "auto";
+        this.level2BossAudio.preload = "none";
         this.level2BossAudio.volume = BGM_VOLUME;
       }
       if (this.config.sewer?.level?.audioSrc) {
         this.sewerAudio = new Audio(this.config.sewer.level.audioSrc);
         this.sewerAudioSrc = this.config.sewer.level.audioSrc;
-        this.sewerAudio.preload = "auto";
+        this.sewerAudio.preload = "none";
         this.sewerAudio.volume = BGM_VOLUME;
       }
       if (this.config.level4ArcadeRhythm?.audioSrc) {
         this.level4ArcadeAudio = new Audio(this.config.level4ArcadeRhythm.audioSrc);
-        this.level4ArcadeAudio.preload = "auto";
+        this.level4ArcadeAudio.preload = "none";
         this.level4ArcadeAudio.volume = BGM_VOLUME;
       }
       if (this.config.level3?.stage2?.audioSrc) {
         this.level3RhythmAudio = new Audio(this.config.level3.stage2.audioSrc);
-        this.level3RhythmAudio.preload = "auto";
+        this.level3RhythmAudio.preload = "none";
         this.level3RhythmAudio.volume = BGM_VOLUME;
       }
       if (this.config.level6?.stage2?.audioSrc) {
         this.level6RhythmAudio = new Audio(this.config.level6.stage2.audioSrc);
-        this.level6RhythmAudio.preload = "auto";
+        this.level6RhythmAudio.preload = "none";
         this.level6RhythmAudio.volume = BGM_VOLUME;
       }
       // Each windowed fight plays its own cut of its song, with a 2 s fade in
@@ -2597,7 +2380,7 @@ class BobbyGame {
         const source = spec?.fullSong ? spec.audioSrc : spec?.fightCut?.src;
         if (!source) return;
         const cut = new Audio(source);
-        cut.preload = "auto";
+        cut.preload = "none";
         cut.volume = BGM_VOLUME;
         this.fightCutAudio[theme] = cut;
       });
@@ -2607,7 +2390,7 @@ class BobbyGame {
       // Secret songs use the same exclusive audio registry as the normal fights.
       for (const level of this.config.secretLevels || []) {
         const track = new Audio(level.rhythm.audioSrc);
-        track.preload = "auto";
+        track.preload = "none";
         track.volume = BGM_VOLUME;
         this.fightCutAudio[level.theme] = track;
       }
@@ -2625,19 +2408,301 @@ class BobbyGame {
       }
 
     } catch (error) {
-      this.loadError = error instanceof Error ? error.message : String(error);
-      this.state = "failure";
+      this.showLoadRecovery(error);
     }
     this.bootDone = true;
     requestAnimationFrame(this.loop);
   }
 
+  createSceneAssetJobs() {
+    this.sceneAssetJobs = [];
+    const bobbySpec = this.config.sprites.bobby;
+    const ganganSpec = this.config.sprites.gangan;
+    const level2BundleSpec = this.config.sprites.level2Bundle;
+    const bathingSuitSpec = bobbySpec.outfits?.bathingSuit?.onFoot;
+    const summerFitSpec = bobbySpec.outfits?.summerFit?.onFoot;
+    const championFitSpec = bobbySpec.outfits?.championFit?.onFoot;
+    const blackHoodFitSpec = bobbySpec.outfits?.blackHoodFit?.onFoot;
+    const underwearSpec = bobbySpec.outfits?.underwear?.onFoot;
+    const finaleBikiniSpec = bobbySpec.outfits?.finaleBikini?.onFoot;
+    const mosquitoBossSpec = this.config.sprites.level2MosquitoBoss;
+    const mosquitoMinionSpec = this.config.sprites.level2MosquitoMinion;
+    const stage3PropsSpec = this.config.sprites.level2Stage3Props;
+    const level3BossSpec = this.config.sprites.level3BossZuxian;
+    const level3BossExitRightSpec = this.config.sprites.level3BossZuxianExitRight;
+    const level3RhythmFightSpec = this.config.sprites.level3RhythmFightLoop;
+    const level3RhythmFightBathingSuitSpec = this.config.sprites.level3RhythmFightLoopBathingSuit;
+    const level3RhythmFightSummerFitSpec = this.config.sprites.level3RhythmFightLoopSummerFit;
+    const level3RhythmHpBottleNoteSpec = this.config.sprites.level3RhythmHpBottleNote;
+    const level3RhythmSatisfactionReactionsSpec = this.config.sprites.level3RhythmSatisfactionReactions;
+    const level3RhythmSuccessNotificationSpec = this.config.sprites.level3RhythmSuccessNotification;
+    const homeMp3MenuSpec = this.config.sprites.homeMp3Menu;
+    const homeMp3WaveformSpecs = this.config.sprites.homeMp3Waveforms || {};
+    const dialogueProfilesSpec = this.config.sprites.dialogueProfiles;
+    const dialogueFrameSpec = this.config.sprites.dialogueFrame;
+    const loadingTransitionSpec = this.config.sprites.loadingTransition;
+    const bobbyTutorialIntroSpec = this.config.sprites.bobbyTutorialIntro;
+    const level4BonitaSpec = this.config.sprites.level4BonitaBlanketIdle;
+    const level4BonitaBossPlaceholderSpec = this.config.sprites.level4BonitaBossPlaceholder;
+    const level4HiddenChestSpec = this.config.sprites.level4HiddenWallChest;
+    const tutorialStage0Spec = this.config.tutorial?.stage0;
+    const level3Stage1Spec = this.config.level3?.stage1;
+    const level4Stage1Spec = this.config.level4?.stage1;
+    const level5Stage1Spec = this.config.level5?.stage1;
+    const level5Stage2Spec = this.config.level5?.stage2;
+    const level6Stage1Spec = this.config.level6?.stage1;
+    const level6Stage2Spec = this.config.level6?.stage2;
+    this.refs.secretLevels = {};
+for (const level of this.config.secretLevels || []) this.sceneAssetJobs.push({key: 'secret:' + level.id, group: level.id, run: async () => {this.refs.secretLevels[level.id] = {background: await loadOptionalSheet(level.background.source), actors: await Promise.all(level.actors.map(actor => loadOptionalSheet(actor.source)))};}, release: () => {delete this.refs.secretLevels[level.id];}});
+    this.sceneAssetJobs.push(
+      {key:"bobby", group:"player", run:async () => {this.refs.bobby = await loadImage(this.config.sprites.bobby.reference);}, release:() => {delete this.refs.bobby;}},
+      {key:"boss", group:"road", run:async () => {this.refs.boss = await loadImage(this.config.sprites.gangan.reference);}, release:() => {delete this.refs.boss;}},
+      {key:"bobbyRideSheet", group:"player", run:async () => {this.refs.bobbyRideSheet = await loadOptionalSheet(bobbySpec.source);}, release:() => {delete this.refs.bobbyRideSheet;}},
+      {key:"bobbyAttackSheet", group:"player", run:async () => {this.refs.bobbyAttackSheet = await loadOptionalSheet(bobbySpec.attack?.source);}, release:() => {delete this.refs.bobbyAttackSheet;}},
+      {key:"bobbyOnFootSheet", group:"player", run:async () => {this.refs.bobbyOnFootSheet = await loadOptionalSheet(bobbySpec.onFoot?.source);}, release:() => {delete this.refs.bobbyOnFootSheet;}},
+      {key:"ganganSheet", group:"road", run:async () => {this.refs.ganganSheet = await loadOptionalSheet(ganganSpec.source);}, release:() => {delete this.refs.ganganSheet;}},
+      {key:"ganganAttackSheet", group:"road", run:async () => {this.refs.ganganAttackSheet = await loadOptionalSheet(ganganSpec.attack?.source);}, release:() => {delete this.refs.ganganAttackSheet;}},
+      {key:"ganganCandySheet", group:"road", run:async () => {this.refs.ganganCandySheet = await loadOptionalSheet(ganganSpec.candy?.source);}, release:() => {delete this.refs.ganganCandySheet;}},
+      {key:"ganganDefeatExitSheet", group:"road", run:async () => {this.refs.ganganDefeatExitSheet = await loadOptionalSheet(ganganSpec.defeatExit?.source);}, release:() => {delete this.refs.ganganDefeatExitSheet;}},
+      {key:"ganganBikeExitSheet", group:"road", run:async () => {this.refs.ganganBikeExitSheet = await loadOptionalSheet(ganganSpec.bikeExit?.source);}, release:() => {delete this.refs.ganganBikeExitSheet;}},
+      {key:"ganganHealthBarSheet", group:"road", run:async () => {this.refs.ganganHealthBarSheet = await loadOptionalSheet(ganganSpec.healthBar?.source);}, release:() => {delete this.refs.ganganHealthBarSheet;}},
+      {key:"levelMap", group:"road", run:async () => {this.refs.levelMap = await loadOptionalSheet(this.config.map?.source);}, release:() => {delete this.refs.levelMap;}},
+      {key:"tutorialStage0Map", group:"road", run:async () => {this.refs.tutorialStage0Map = await loadOptionalSheet(tutorialStage0Spec?.map?.source);}, release:() => {delete this.refs.tutorialStage0Map;}},
+      {key:"sewerMap", group:"level2", run:async () => {this.refs.sewerMap = await loadOptionalSheet(this.config.sewer?.source);}, release:() => {delete this.refs.sewerMap;}},
+      {key:"level2BossMap", group:"level2", run:async () => {this.refs.level2BossMap = await loadOptionalSheet(this.config.sewer?.bossArena?.source);}, release:() => {delete this.refs.level2BossMap;}},
+      {key:"level2Stage3Map", group:"level2", run:async () => {this.refs.level2Stage3Map = await loadOptionalSheet(this.config.sewer?.stage3?.source);}, release:() => {delete this.refs.level2Stage3Map;}},
+      {key:"level3Stage1Map", group:"level3", run:async () => {this.refs.level3Stage1Map = await loadOptionalSheet(level3Stage1Spec?.source);}, release:() => {delete this.refs.level3Stage1Map;}},
+      {key:"level4Stage1Map", group:"level4", run:async () => {this.refs.level4Stage1Map = await loadOptionalSheet(level4Stage1Spec?.source);}, release:() => {delete this.refs.level4Stage1Map;}},
+      {key:"level2BundleSheet", group:"level2", run:async () => {this.refs.level2BundleSheet = await loadOptionalSheet(level2BundleSpec?.source);}, release:() => {delete this.refs.level2BundleSheet;}},
+      {key:"bobbyBathingSuitSheet", group:"player", run:async () => {this.refs.bobbyBathingSuitSheet = await loadOptionalSheet(bathingSuitSpec?.source);}, release:() => {delete this.refs.bobbyBathingSuitSheet;}},
+      {key:"bobbySummerFitSheet", group:"player", run:async () => {this.refs.bobbySummerFitSheet = await loadOptionalSheet(summerFitSpec?.source);}, release:() => {delete this.refs.bobbySummerFitSheet;}},
+      {key:"bobbyUnderwearSheet", group:"player", run:async () => {this.refs.bobbyUnderwearSheet = await loadOptionalSheet(underwearSpec?.source);}, release:() => {delete this.refs.bobbyUnderwearSheet;}},
+      {key:"bobbyChampionFitSheet", group:"player", run:async () => {this.refs.bobbyChampionFitSheet = await loadOptionalSheet(championFitSpec?.source);}, release:() => {delete this.refs.bobbyChampionFitSheet;}},
+      {key:"bobbyBlackHoodFitSheet", group:"player", run:async () => {this.refs.bobbyBlackHoodFitSheet = await loadOptionalSheet(blackHoodFitSpec?.source);}, release:() => {delete this.refs.bobbyBlackHoodFitSheet;}},
+      {key:"bobbyFinaleBikiniSheet", group:"player", run:async () => {this.refs.bobbyFinaleBikiniSheet = await loadOptionalSheet(finaleBikiniSpec?.source);}, release:() => {delete this.refs.bobbyFinaleBikiniSheet;}},
+      {key:"mosquitoBossSheet", group:"level2", run:async () => {this.refs.mosquitoBossSheet = await loadOptionalSheet(mosquitoBossSpec?.source);}, release:() => {delete this.refs.mosquitoBossSheet;}},
+      {key:"mosquitoMinionSheet", group:"level2", run:async () => {this.refs.mosquitoMinionSheet = await loadOptionalSheet(mosquitoMinionSpec?.source);}, release:() => {delete this.refs.mosquitoMinionSheet;}},
+      {key:"level2Stage3PropsSheet", group:"level2", run:async () => {this.refs.level2Stage3PropsSheet = await loadOptionalSheet(stage3PropsSpec?.source);}, release:() => {delete this.refs.level2Stage3PropsSheet;}},
+      {key:"level3BossSheet", group:"level3", run:async () => {this.refs.level3BossSheet = await loadOptionalSheet(level3BossSpec?.source);}, release:() => {delete this.refs.level3BossSheet;}},
+      {key:"level3BossExitRightSheet", group:"level3", run:async () => {this.refs.level3BossExitRightSheet = await loadOptionalSheet(level3BossExitRightSpec?.source);}, release:() => {delete this.refs.level3BossExitRightSheet;}},
+      {key:"level3RhythmFightSheet", group:"level3", run:async () => {this.refs.level3RhythmFightSheet = await loadOptionalSheet(level3RhythmFightSpec?.source);}, release:() => {delete this.refs.level3RhythmFightSheet;}},
+      {key:"level3RhythmFightBathingSuitSheet", group:"level3", run:async () => {this.refs.level3RhythmFightBathingSuitSheet = await loadOptionalSheet(level3RhythmFightBathingSuitSpec?.source);}, release:() => {delete this.refs.level3RhythmFightBathingSuitSheet;}},
+      {key:"level3RhythmFightSummerFitSheet", group:"level3", run:async () => {this.refs.level3RhythmFightSummerFitSheet = await loadOptionalSheet(level3RhythmFightSummerFitSpec?.source);}, release:() => {delete this.refs.level3RhythmFightSummerFitSheet;}},
+      {key:"level3RhythmHpBottleNoteSheet", group:"level3", run:async () => {this.refs.level3RhythmHpBottleNoteSheet = await loadOptionalSheet(level3RhythmHpBottleNoteSpec?.source);}, release:() => {delete this.refs.level3RhythmHpBottleNoteSheet;}},
+      {key:"level3RhythmSatisfactionReactionsSheet", group:"level3", run:async () => {this.refs.level3RhythmSatisfactionReactionsSheet = await loadOptionalSheet(level3RhythmSatisfactionReactionsSpec?.source);}, release:() => {delete this.refs.level3RhythmSatisfactionReactionsSheet;}},
+      {key:"level3RhythmSuccessNotificationSheet", group:"level3", run:async () => {this.refs.level3RhythmSuccessNotificationSheet = await loadOptionalSheet(level3RhythmSuccessNotificationSpec?.source);}, release:() => {delete this.refs.level3RhythmSuccessNotificationSheet;}},
+      {key:"homeMp3MenuSheet", group:"home", run:async () => {this.refs.homeMp3MenuSheet = await loadOptionalSheet(homeMp3MenuSpec?.source);}, release:() => {delete this.refs.homeMp3MenuSheet;}},
+      {key:"dialogueProfilesSheet", group:"common", run:async () => {this.refs.dialogueProfilesSheet = await loadOptionalSheet(dialogueProfilesSpec?.source);}, release:() => {delete this.refs.dialogueProfilesSheet;}},
+      {key:"bonitaDialogueProfileSheet", group:"level4", run:async () => {this.refs.bonitaDialogueProfileSheet = await loadOptionalSheet(this.config?.sprites?.bonitaDialogueProfile?.source);}, release:() => {delete this.refs.bonitaDialogueProfileSheet;}},
+      {key:"dialogueFrameSheet", group:"common", run:async () => {this.refs.dialogueFrameSheet = await loadOptionalSheet(dialogueFrameSpec?.source);}, release:() => {delete this.refs.dialogueFrameSheet;}},
+      {key:"loadingTransitionSheet", group:"common", run:async () => {this.refs.loadingTransitionSheet = await loadOptionalSheet(loadingTransitionSpec?.source);}, release:() => {delete this.refs.loadingTransitionSheet;}},
+      {key:"homeMp3WaveformSheets", group:"home", run:async () => {this.refs.homeMp3WaveformSheets = Object.fromEntries(await Promise.all(
+        Object.entries(homeMp3WaveformSpecs).map(async ([songId, spec]) => [
+          songId,
+          await loadOptionalSheet(spec?.source)
+        ])
+      ));}, release:() => {delete this.refs.homeMp3WaveformSheets;}},
+      {key:"bobbyTutorialIntroSheet", group:"player", run:async () => {this.refs.bobbyTutorialIntroSheet = await loadOptionalSheet(bobbyTutorialIntroSpec?.source);}, release:() => {delete this.refs.bobbyTutorialIntroSheet;}},
+      {key:"level4BonitaBlanketIdleSheet", group:"level4", run:async () => {this.refs.level4BonitaBlanketIdleSheet = await loadOptionalSheet(level4BonitaSpec?.source);}, release:() => {delete this.refs.level4BonitaBlanketIdleSheet;}},
+      {key:"level4BonitaBossPlaceholderSheet", group:"level4", run:async () => {this.refs.level4BonitaBossPlaceholderSheet = await loadOptionalSheet(level4BonitaBossPlaceholderSpec?.source);}, release:() => {delete this.refs.level4BonitaBossPlaceholderSheet;}},
+      {key:"level4HiddenWallChestSheet", group:"level4", run:async () => {this.refs.level4HiddenWallChestSheet = await loadOptionalSheet(level4HiddenChestSpec?.source);}, release:() => {delete this.refs.level4HiddenWallChestSheet;}},
+      {key:"level4BonitaGameBossSheet", group:"level4", run:async () => {this.refs.level4BonitaGameBossSheet = await loadOptionalSheet(this.config?.sprites?.level4BonitaGameBoss?.source);}, release:() => {delete this.refs.level4BonitaGameBossSheet;}},
+      {key:"level4BobbyVsIntroSheet", group:"level4", run:async () => {this.refs.level4BobbyVsIntroSheet = await loadOptionalSheet(this.config?.sprites?.level4BobbyVsIntro?.source);}, release:() => {delete this.refs.level4BobbyVsIntroSheet;}},
+      {key:"level4BossStarShotSheet", group:"level4", run:async () => {this.refs.level4BossStarShotSheet = await loadOptionalSheet(this.config?.sprites?.level4BossStarShot?.source);}, release:() => {delete this.refs.level4BossStarShotSheet;}},
+      {key:"level4BossGroundWaveSheet", group:"level4", run:async () => {this.refs.level4BossGroundWaveSheet = await loadOptionalSheet(this.config?.sprites?.level4BossGroundWave?.source);}, release:() => {delete this.refs.level4BossGroundWaveSheet;}},
+      {key:"level4BossArenaMap", group:"level4", run:async () => {this.refs.level4BossArenaMap = await loadOptionalSheet(this.config?.level4?.stage1?.bossFight?.source);}, release:() => {delete this.refs.level4BossArenaMap;}},
+      {key:"level5Stage1Map", group:"level5", run:async () => {this.refs.level5Stage1Map = await loadOptionalSheet(level5Stage1Spec?.source);}, release:() => {delete this.refs.level5Stage1Map;}},
+      {key:"level5ParallaxLayers", group:"level5", run:async () => {this.refs.level5ParallaxLayers = await Promise.all((level5Stage1Spec?.parallaxLayers || []).map((layer) => loadOptionalSheet(layer.source)));}, release:() => {delete this.refs.level5ParallaxLayers;}},
+      {key:"level5DaytonaSheet", group:"level5", run:async () => {this.refs.level5DaytonaSheet = await loadOptionalSheet(this.config?.sprites?.level5Daytona?.source);}, release:() => {delete this.refs.level5DaytonaSheet;}},
+      {key:"level5GanGanCarSheet", group:"level5", run:async () => {this.refs.level5GanGanCarSheet = await loadOptionalSheet(this.config?.sprites?.level5GanGanCar?.source);}, release:() => {delete this.refs.level5GanGanCarSheet;}},
+      {key:"level5GanGanIdleSheet", group:"level5", run:async () => {this.refs.level5GanGanIdleSheet = await loadOptionalSheet(this.config?.sprites?.level5GanGanIdle?.source);}, release:() => {delete this.refs.level5GanGanIdleSheet;}},
+      {key:"level5HighwayChestSheet", group:"level5", run:async () => {this.refs.level5HighwayChestSheet = await loadOptionalSheet(this.config?.sprites?.level5HighwayChest?.source);}, release:() => {delete this.refs.level5HighwayChestSheet;}},
+      {key:"level5UndergroundWaterSheet", group:"level5", run:async () => {this.refs.level5UndergroundWaterSheet = await loadOptionalSheet(this.config?.sprites?.level5UndergroundWater?.source);}, release:() => {delete this.refs.level5UndergroundWaterSheet;}},
+      {key:"level5BossMap", group:"level5", run:async () => {this.refs.level5BossMap = await loadOptionalSheet(level5Stage2Spec?.source);}, release:() => {delete this.refs.level5BossMap;}},
+      {key:"level5BossParallaxLayers", group:"level5", run:async () => {this.refs.level5BossParallaxLayers = await Promise.all((level5Stage2Spec?.parallaxLayers || []).map((layer) => loadOptionalSheet(layer.source)));}, release:() => {delete this.refs.level5BossParallaxLayers;}},
+      {key:"level5BossDaytonaSheet", group:"level5", run:async () => {this.refs.level5BossDaytonaSheet = await loadOptionalSheet(this.config?.sprites?.level5BossDaytona?.source);}, release:() => {delete this.refs.level5BossDaytonaSheet;}},
+      {key:"level5BossRoadObjectsSheet", group:"level5", run:async () => {this.refs.level5BossRoadObjectsSheet = await loadOptionalSheet(this.config?.sprites?.level5BossRoadObjects?.source);}, release:() => {delete this.refs.level5BossRoadObjectsSheet;}},
+      {key:"level5RhythmHitFxSheet", group:"level5", run:async () => {this.refs.level5RhythmHitFxSheet = await loadOptionalSheet(this.config?.sprites?.level5RhythmHitFx?.source);}, release:() => {delete this.refs.level5RhythmHitFxSheet;}},
+      {key:"level5GoatRunSheet", group:"level5", run:async () => {this.refs.level5GoatRunSheet = await loadOptionalSheet(this.config?.sprites?.level5GoatRun?.source);}, release:() => {delete this.refs.level5GoatRunSheet;}},
+      {key:"level5PoopObstacleSheet", group:"level5", run:async () => {this.refs.level5PoopObstacleSheet = await loadOptionalSheet(this.config?.sprites?.level5PoopObstacle?.source);}, release:() => {delete this.refs.level5PoopObstacleSheet;}},
+      {key:"level5StudioBgSheet", group:"studio", run:async () => {this.refs.level5StudioBgSheet = await loadOptionalSheet(this.config?.sprites?.level5StudioBg?.source);}, release:() => {delete this.refs.level5StudioBgSheet;}},
+      {key:"level5StudioDrBeautySheet", group:"studio", run:async () => {this.refs.level5StudioDrBeautySheet = await loadOptionalSheet(this.config?.sprites?.level5StudioDrBeauty?.source);}, release:() => {delete this.refs.level5StudioDrBeautySheet;}},
+      {key:"level5StudioGanganSheet", group:"studio", run:async () => {this.refs.level5StudioGanganSheet = await loadOptionalSheet(this.config?.sprites?.level5StudioGangan?.source);}, release:() => {delete this.refs.level5StudioGanganSheet;}},
+      {key:"level5StudioMicSheet", group:"studio", run:async () => {this.refs.level5StudioMicSheet = await loadOptionalSheet(this.config?.sprites?.level5StudioMic?.source);}, release:() => {delete this.refs.level5StudioMicSheet;}},
+      {key:"level5StudioConsoleSheet", group:"studio", run:async () => {this.refs.level5StudioConsoleSheet = await loadOptionalSheet(this.config?.sprites?.level5StudioConsole?.source);}, release:() => {delete this.refs.level5StudioConsoleSheet;}},
+      {key:"level5RiverBgSheet", group:"level5", run:async () => {this.refs.level5RiverBgSheet = await loadOptionalSheet(this.config?.sprites?.level5RiverBg?.source);}, release:() => {delete this.refs.level5RiverBgSheet;}},
+      {key:"level5RiverDrBeautySheet", group:"level5", run:async () => {this.refs.level5RiverDrBeautySheet = await loadOptionalSheet(this.config?.sprites?.level5RiverDrBeauty?.source);}, release:() => {delete this.refs.level5RiverDrBeautySheet;}},
+      {key:"level5RiverGanganSheet", group:"level5", run:async () => {this.refs.level5RiverGanganSheet = await loadOptionalSheet(this.config?.sprites?.level5RiverGangan?.source);}, release:() => {delete this.refs.level5RiverGanganSheet;}},
+      {key:"level5DriveCarSheet", group:"level5", run:async () => {this.refs.level5DriveCarSheet = await loadOptionalSheet(this.config?.sprites?.level5DriveCar?.source);}, release:() => {delete this.refs.level5DriveCarSheet;}},
+      {key:"level5DriveWheelSheet", group:"level5", run:async () => {this.refs.level5DriveWheelSheet = await loadOptionalSheet(this.config?.sprites?.level5DriveWheel?.source);}, release:() => {delete this.refs.level5DriveWheelSheet;}},
+      {key:"level5DialoguePortraitsSheet", group:"level5", run:async () => {this.refs.level5DialoguePortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level5DialoguePortraits?.source);}, release:() => {delete this.refs.level5DialoguePortraitsSheet;}},
+      {key:"level6Stage1Map", group:"level6", run:async () => {this.refs.level6Stage1Map = await loadOptionalSheet(level6Stage1Spec?.source);}, release:() => {delete this.refs.level6Stage1Map;}},
+      {key:"level6BossMap", group:"level6", run:async () => {this.refs.level6BossMap = await loadOptionalSheet(level6Stage2Spec?.source);}, release:() => {delete this.refs.level6BossMap;}},
+      {key:"level6BobbyPerformerSheet", group:"level6", run:async () => {this.refs.level6BobbyPerformerSheet = await loadOptionalSheet(this.config?.sprites?.level6BobbyPerformer?.source);}, release:() => {delete this.refs.level6BobbyPerformerSheet;}},
+      {key:"level6ConcertBgSheet", group:"level6", run:async () => {this.refs.level6ConcertBgSheet = await loadOptionalSheet(this.config?.sprites?.level6ConcertBg?.source);}, release:() => {delete this.refs.level6ConcertBgSheet;}},
+      {key:"level6ConcertCrowdSheet", group:"level6", run:async () => {this.refs.level6ConcertCrowdSheet = await loadOptionalSheet(this.config?.sprites?.level6ConcertCrowd?.source);}, release:() => {delete this.refs.level6ConcertCrowdSheet;}},
+      {key:"level6ConcertDrBeautySheet", group:"level6", run:async () => {this.refs.level6ConcertDrBeautySheet = await loadOptionalSheet(this.config?.sprites?.level6ConcertDrBeauty?.source);}, release:() => {delete this.refs.level6ConcertDrBeautySheet;}},
+      {key:"level6ConcertGanganSheet", group:"level6", run:async () => {this.refs.level6ConcertGanganSheet = await loadOptionalSheet(this.config?.sprites?.level6ConcertGangan?.source);}, release:() => {delete this.refs.level6ConcertGanganSheet;}},
+      {key:"level6DreamBedSheet", group:"level6", run:async () => {this.refs.level6DreamBedSheet = await loadOptionalSheet(this.config?.sprites?.level6DreamBed?.source);}, release:() => {delete this.refs.level6DreamBedSheet;}},
+      {key:"level6DreamBubbleSheet", group:"level6", run:async () => {this.refs.level6DreamBubbleSheet = await loadOptionalSheet(this.config?.sprites?.level6DreamBubble?.source);}, release:() => {delete this.refs.level6DreamBubbleSheet;}},
+      {key:"level6WakePortraitsSheet", group:"level6", run:async () => {this.refs.level6WakePortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level6WakePortraits?.source);}, release:() => {delete this.refs.level6WakePortraitsSheet;}},
+      {key:"endingAlbumPhotos", group:"level6", run:async () => {this.refs.endingAlbumPhotos = await Promise.all((this.config?.finale?.stage1?.ending?.album || []).map(photo => loadOptionalSheet(photo.source)));}, release:() => {delete this.refs.endingAlbumPhotos;}},
+      {key:"level6GanGanExitSheet", group:"level6", run:async () => {this.refs.level6GanGanExitSheet = await loadOptionalSheet(this.config?.sprites?.level6GanGanExit?.source);}, release:() => {delete this.refs.level6GanGanExitSheet;}},
+      {key:"finaleDuoSingingSheet", group:"level6", run:async () => {this.refs.finaleDuoSingingSheet = await loadOptionalSheet(this.config?.sprites?.finaleDuoSinging?.source);}, release:() => {delete this.refs.finaleDuoSingingSheet;}},
+      {key:"level6FansProfileSheet", group:"level6", run:async () => {this.refs.level6FansProfileSheet = await loadOptionalSheet(this.config?.sprites?.level6FansProfile?.source);}, release:() => {delete this.refs.level6FansProfileSheet;}},
+      {key:"finaleBackstageMap", group:"level6", run:async () => {this.refs.finaleBackstageMap = await loadOptionalSheet(this.config?.finale?.stage1?.source);}, release:() => {delete this.refs.finaleBackstageMap;}},
+      {key:"finaleEndingMap", group:"level6", run:async () => {this.refs.finaleEndingMap = await loadOptionalSheet(this.config?.finale?.stage1?.endingSource);}, release:() => {delete this.refs.finaleEndingMap;}},
+      {key:"finaleEndingFilmOverlaySheet", group:"level6", run:async () => {this.refs.finaleEndingFilmOverlaySheet = await loadOptionalSheet(this.config?.sprites?.finaleEndingFilmOverlay?.source);}, release:() => {delete this.refs.finaleEndingFilmOverlaySheet;}},
+      {key:"finaleChestSheet", group:"level6", run:async () => {this.refs.finaleChestSheet = await loadOptionalSheet(this.config?.sprites?.finaleChest?.source);}, release:() => {delete this.refs.finaleChestSheet;}},
+      {key:"finaleForgeMachineSheet", group:"level6", run:async () => {this.refs.finaleForgeMachineSheet = await loadOptionalSheet(this.config?.sprites?.finaleForgeMachine?.source);}, release:() => {delete this.refs.finaleForgeMachineSheet;}},
+      {key:"finaleForgeMenuTexture", group:"level6", run:async () => {this.refs.finaleForgeMenuTexture = await loadOptionalSheet(this.config?.sprites?.finaleForgeMenuTexture?.source);}, release:() => {delete this.refs.finaleForgeMenuTexture;}},
+      {key:"finaleForgeRewardIconsSheet", group:"level6", run:async () => {this.refs.finaleForgeRewardIconsSheet = await loadOptionalSheet(this.config?.sprites?.finaleForgeRewardIcons?.source);}, release:() => {delete this.refs.finaleForgeRewardIconsSheet;}},
+      {key:"level3RhythmUiReceptorsSheet", group:"common", run:async () => {this.refs.level3RhythmUiReceptorsSheet = await loadOptionalSheet(this.config?.sprites?.level3RhythmUiReceptors?.source);}, release:() => {delete this.refs.level3RhythmUiReceptorsSheet;}},
+      {key:"level3RhythmUiNotesSheet", group:"common", run:async () => {this.refs.level3RhythmUiNotesSheet = await loadOptionalSheet(this.config?.sprites?.level3RhythmUiNotes?.source);}, release:() => {delete this.refs.level3RhythmUiNotesSheet;}},
+      {key:"level3RhythmUiPanelSheet", group:"common", run:async () => {this.refs.level3RhythmUiPanelSheet = await loadOptionalSheet(this.config?.sprites?.level3RhythmUiPanel?.source);}, release:() => {delete this.refs.level3RhythmUiPanelSheet;}},
+      {key:"level1OfficeBackground", group:"office", run:async () => {this.refs.level1OfficeBackground = await loadOptionalSheet(this.config?.sprites?.level1OfficeBackground?.source);}, release:() => {delete this.refs.level1OfficeBackground;}},
+      {key:"level1OfficeForeground", group:"office", run:async () => {this.refs.level1OfficeForeground = await loadOptionalSheet(this.config?.sprites?.level1OfficeForeground?.source);}, release:() => {delete this.refs.level1OfficeForeground;}},
+      {key:"level1OfficeBobbySheet", group:"office", run:async () => {this.refs.level1OfficeBobbySheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeBobby?.source);}, release:() => {delete this.refs.level1OfficeBobbySheet;}},
+      {key:"level1OfficeBobbyFrontSheet", group:"office", run:async () => {this.refs.level1OfficeBobbyFrontSheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeBobby?.frontSource);}, release:() => {delete this.refs.level1OfficeBobbyFrontSheet;}},
+      {key:"level1OfficeBobbyPaperMarksSheet", group:"office", run:async () => {this.refs.level1OfficeBobbyPaperMarksSheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeBobby?.paperMarks?.source);}, release:() => {delete this.refs.level1OfficeBobbyPaperMarksSheet;}},
+      {key:"level1OfficeBobbyPaperMaskSheet", group:"office", run:async () => {this.refs.level1OfficeBobbyPaperMaskSheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeBobby?.paperMask);}, release:() => {delete this.refs.level1OfficeBobbyPaperMaskSheet;}},
+      {key:"level1OfficeGanganSheet", group:"office", run:async () => {this.refs.level1OfficeGanganSheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeGangan?.source);}, release:() => {delete this.refs.level1OfficeGanganSheet;}},
+      {key:"level1OfficeGanganCoachSheet", group:"office", run:async () => {this.refs.level1OfficeGanganCoachSheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeGanganCoach?.source);}, release:() => {delete this.refs.level1OfficeGanganCoachSheet;}},
+      {key:"level1OfficeDialoguePortraitsSheet", group:"office", run:async () => {this.refs.level1OfficeDialoguePortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeDialoguePortraits?.source);}, release:() => {delete this.refs.level1OfficeDialoguePortraitsSheet;}},
+      {key:"level1OfficePropsSheet", group:"office", run:async () => {this.refs.level1OfficePropsSheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeProps?.source);}, release:() => {delete this.refs.level1OfficePropsSheet;}},
+      {key:"level1OfficeDeskPaperSheet", group:"office", run:async () => {this.refs.level1OfficeDeskPaperSheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeDeskPaper?.source);}, release:() => {delete this.refs.level1OfficeDeskPaperSheet;}},
+      {key:"level2BathroomBackground", group:"level2", run:async () => {this.refs.level2BathroomBackground = await loadOptionalSheet(this.config?.sprites?.level2BathroomBackground?.source);}, release:() => {delete this.refs.level2BathroomBackground;}},
+      {key:"level2BathroomHandsSheet", group:"level2", run:async () => {this.refs.level2BathroomHandsSheet = await loadOptionalSheet(this.config?.sprites?.level2BathroomHands?.source);}, release:() => {delete this.refs.level2BathroomHandsSheet;}},
+      {key:"level3MassageSofa", group:"level3", run:async () => {this.refs.level3MassageSofa = await loadOptionalSheet(this.config?.sprites?.level3MassageSofa?.source);}, release:() => {delete this.refs.level3MassageSofa;}},
+      {key:"level3MassageFacesSheet", group:"level3", run:async () => {this.refs.level3MassageFacesSheet = await loadOptionalSheet(this.config?.sprites?.level3MassageFaces?.source);}, release:() => {delete this.refs.level3MassageFacesSheet;}},
+      {key:"level3MassageHandSheet", group:"level3", run:async () => {this.refs.level3MassageHandSheet = await loadOptionalSheet(this.config?.sprites?.level3MassageHand?.source);}, release:() => {delete this.refs.level3MassageHandSheet;}},
+      {key:"level4ArcadeRoom", group:"level4", run:async () => {this.refs.level4ArcadeRoom = await loadOptionalSheet(this.config?.sprites?.level4ArcadeRoom?.source);}, release:() => {delete this.refs.level4ArcadeRoom;}},
+      {key:"level4ArcadeArena", group:"level4", run:async () => {this.refs.level4ArcadeArena = await loadOptionalSheet(this.config?.sprites?.level4ArcadeArena?.source);}, release:() => {delete this.refs.level4ArcadeArena;}},
+      {key:"level4ArcadePlayersSheet", group:"level4", run:async () => {this.refs.level4ArcadePlayersSheet = await loadOptionalSheet(this.config?.sprites?.level4ArcadePlayers?.source);}, release:() => {delete this.refs.level4ArcadePlayersSheet;}},
+      {key:"level4BobbyFighterSheet", group:"level4", run:async () => {this.refs.level4BobbyFighterSheet = await loadOptionalSheet(this.config?.sprites?.level4BobbyFighter?.source);}, release:() => {delete this.refs.level4BobbyFighterSheet;}},
+      {key:"level4BonitaFighterSheet", group:"level4", run:async () => {this.refs.level4BonitaFighterSheet = await loadOptionalSheet(this.config?.sprites?.level4BonitaFighter?.source);}, release:() => {delete this.refs.level4BonitaFighterSheet;}},
+      {key:"comboCelebrations", group:"common", run:async () => {this.refs.comboCelebrations = await Promise.all(COMBO_CELEBRATIONS.map(item => loadOptionalSheet(item.photo)));}, release:() => {delete this.refs.comboCelebrations;}},
+      {key:"level2BathroomMosquitoSheet", group:"level2", run:async () => {this.refs.level2BathroomMosquitoSheet = await loadOptionalSheet(this.config?.sprites?.level2BathroomMosquito?.source);}, release:() => {delete this.refs.level2BathroomMosquitoSheet;}},
+      {key:"level2BathroomPortraitsSheet", group:"level2", run:async () => {this.refs.level2BathroomPortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level2BathroomDialoguePortraits?.source);}, release:() => {delete this.refs.level2BathroomPortraitsSheet;}},
+      {key:"level1HealthFxSheet", group:"common", run:async () => {this.refs.level1HealthFxSheet = await loadOptionalSheet(this.config?.sprites?.level1HealthFx?.source);}, release:() => {delete this.refs.level1HealthFxSheet;}},
+      {key:"mapProps", group:"road", run:async () => {this.refs.mapProps = await Promise.all((this.config.map?.props || []).map((prop) => loadOptionalSheet(prop.image)));}, release:() => {delete this.refs.mapProps;}}
+    );
+    this.loadedSceneGroups = new Set();
+  }
+
+  sceneGroups(stageId) {
+    if (this.getSecretLevel(stageId)) return ['common', stageId];
+    if (stageId === 'level1-stage0') return ['common', 'player', 'road'];
+    if (stageId === 'level1-stage1') return ['common', 'office'];
+    if (stageId === 'studio-stage1') return ['common', 'player', 'studio'];
+    if (/^level2/.test(stageId)) return ['common', 'player', 'level2'];
+    if (/^level3/.test(stageId)) return ['common', 'player', 'level3'];
+    if (/^level4/.test(stageId)) return ['common', 'player', 'level4'];
+    if (/^level5/.test(stageId)) return ['common', 'player', 'level5'];
+    return ['common', 'player', 'level6'];
+  }
+
+  sceneAssetsReady(stageId) {
+    return this.sceneGroups(stageId).every(group => this.loadedSceneGroups?.has(group));
+  }
+
+  deferSceneAssets(stageId, action) {
+    if (this.sceneAssetsReady(stageId)) return false;
+    this.startLevelLoading(stageId, action);
+    return true;
+  }
+
+  loadSceneAssets(stageId) {
+    // Staff tools may change the target while a download is in flight. Finish
+    // one batch before the next can write refs, and ignore cancelled entries.
+    const ready = (this.sceneAssetQueue || Promise.resolve()).catch(() => {}).then(() => this.loadChapterAssets(stageId));
+    this.sceneAssetQueue = ready;
+    return ready;
+  }
+
+  async loadChapterAssets(stageId) {
+    const groups = this.sceneGroups(stageId);
+    // A loading screen draws no outgoing scene artwork. Release it before
+    // decoding the next chapter so mobile Safari does not hold the whole game.
+    for (const group of this.loadedSceneGroups) {
+      if (groups.includes(group)) continue;
+      for (const job of this.sceneAssetJobs.filter(job => job.group === group)) job.release();
+      this.loadedSceneGroups.delete(group);
+    }
+    const jobs = this.sceneAssetJobs.filter(job => groups.includes(job.group) && !this.loadedSceneGroups.has(job.group));
+    this.sceneLoadProgress = {done:0, total:jobs.length};
+    let next = 0;
+    let failure;
+    await Promise.all(Array.from({length:Math.min(3, jobs.length)}, async () => {
+      while (next < jobs.length) {
+        if (failure) return;
+        const job = jobs[next++];
+        try { await job.run(); } catch (error) { failure = error; return; }
+        this.sceneLoadProgress.done++;
+      }
+    }));
+    if (failure) throw failure;
+    groups.forEach(group => this.loadedSceneGroups.add(group));
+    this.sceneLoadProgress = null;
+  }
+
+  showLoadRecovery(error) {
+    console.warn('Scene resource loading failed:', error);
+    this.loadError = String(error?.message || error);
+    this.levelLoadingPresentation = null;
+    this.state = 'failure';
+    for (const track of this.getKnownBgmTracks?.() || []) track.pause();
+    if (this.audioRecoveryPrompt) this.audioRecoveryPrompt.hidden = true;
+    if (!this.loadRecoveryPrompt) {
+      const root = document.createElement('div');
+      root.className = 'audio-recovery load-recovery';
+      root.setAttribute('role', 'alertdialog');
+      root.setAttribute('aria-modal', 'true');
+      root.setAttribute('aria-labelledby', 'load-recovery-title');
+      root.innerHTML = '<section><small>M.O.T.H · DR. BEAUTY</small><h2 id="load-recovery-title"></h2><p></p><button type="button"></button></section>';
+      for (const type of ['pointerdown','pointerup','touchstart','touchend','click']) root.addEventListener(type, e => e.stopPropagation());
+      root.querySelector('button').addEventListener('click', () => window.location.reload());
+      document.body.append(root);
+      this.loadRecoveryPrompt = root;
+    }
+    this.loadRecoveryPrompt.querySelector('h2').textContent = this.tr('CONNECTION LOST', '連線中斷');
+    this.loadRecoveryPrompt.querySelector('p').textContent = this.tr('Please refresh this page to reload the game. Your saved progress is kept for this session.', '請重新整理網頁，重新載入遊戲。本次瀏覽的已儲存進度會保留。');
+    this.loadRecoveryPrompt.querySelector('button').textContent = this.tr('REFRESH PAGE', '重新整理網頁');
+    this.loadRecoveryPrompt.hidden = false;
+    this.loadRecoveryPrompt.querySelector('button').focus();
+  }
+
+  // The loading screen's dark ground and scanlines, with the lose card's
+  // outlined heading. The prompt covers the middle of the screen on desktop
+  // and the lower half on a phone, so the words sit in the band above it.
+  renderConnectionLost(target, W, H) {
+    const tall = W < H;
+    target.save();
+    target.fillStyle = '#0d0f13';
+    target.fillRect(0, 0, W, H);
+    target.fillStyle = 'rgba(239, 227, 196, 0.022)';
+    for (let y = 0; y < H; y += 7) target.fillRect(0, y, W, 1);
+    target.textAlign = 'center';
+    target.textBaseline = 'middle';
+    const title = fitCanvasText(target, this.tr('CONNECTION LOST', '連線中斷'), W - (tall ? 72 : 200), tall ? 60 : 72, 900, 28);
+    drawOutlinedText(target, title.text, W / 2, Math.round(H * (tall ? 0.2 : 0.17)), {fill:'#f7f2de', shadow:'#05070d', outline:'#080b12', accent:'#ff4866', accentOffset:4});
+    target.restore();
+  }
+
+  loadHomeWaveform(songId) {
+    const src = this.config?.sprites?.homeMp3Waveforms?.[songId]?.source;
+    if (!src || this.refs.homeMp3WaveformSheets?.[songId]) return;
+    loadOptionalSheet(src).then(image => {
+      this.refs.homeMp3WaveformSheets ||= {};
+      this.refs.homeMp3WaveformSheets[songId] = image;
+      this.loadedSceneGroups.add('home');
+    }).catch(() => {}); // The player's generated waveform remains available.
+  }
+
   async loadLayeredMapConfig() {
     const source = this.config?.map?.layeredDataSource;
     if (!source) return;
-    const response = await fetch(source, { cache: "no-store" });
-    if (!response.ok) throw new Error(`Could not load layered map data: ${source}`);
-    const layeredMap = await response.json();
+    const layeredMap = await fetchGameJson(source);
     this.config.map = {
       ...this.config.map,
       ...layeredMap,
@@ -2890,6 +2955,7 @@ class BobbyGame {
     const rhythmKeys = RHYTHM_DEFAULT_LANE_KEYS;
 
     window.addEventListener("keydown", (event) => {
+      if (this.loadError) { if (["Enter", "Space", "KeyO"].includes(event.code) && !event.repeat) window.location.reload(); event.preventDefault(); return; }
       if (this.audioRecoveryVisible()) {
         if (["Enter", "Space", "KeyO"].includes(event.code) && !event.repeat) this.recoverGameAudio();
         if (event.code !== "Tab") event.preventDefault();
@@ -6865,6 +6931,7 @@ class BobbyGame {
   }
 
   async startTutorialStage0(options = {}) {
+    if (this.deferSceneAssets("level1-stage0", () => this.startTutorialStage0(options))) return;
     this.livesRemaining = TOTAL_LIVES;
     this.resetRuntime();
     this.applyConfigDefaults();
@@ -7015,6 +7082,8 @@ class BobbyGame {
 
   // The inter-level docket also gives the outgoing music time to fade away.
   startLevelLoading(stageId, action) {
+    const enterScene = action;
+    action = async () => { const loading = this.levelLoadingPresentation; await this.loadSceneAssets(stageId); if (this.levelLoadingPresentation === loading) return enterScene(); };
     this.levelLoadingPresentation = { stageId, timer: 0, duration: 1.15, action, preparing: false };
     this.levelLoadingTarget = stageId;
     this.levelLoadingAction = action;
@@ -7071,12 +7140,13 @@ class BobbyGame {
     };
     try {
       const ready = loading.action();
-      if (ready?.then) ready.then(finish, error => { finish(); this.reportLoopError(error); });
+      if (ready?.then) ready.then(finish, error => { if (this.levelLoadingPresentation !== loading) return; finish(); this.showLoadRecovery(error); });
       else finish();
-    } catch (error) { finish(); this.reportLoopError(error); }
+    } catch (error) { if (this.levelLoadingPresentation !== loading) return; finish(); this.showLoadRecovery(error); }
   }
 
   async startLevel(options = {}) {
+    if (this.deferSceneAssets("level1-stage1", () => this.startLevel(options))) return;
     this.resetRuntime();
     this.applyConfigDefaults();
     if (options.useProgressLoadout) this.applyLatestProgressLoadout();
@@ -7106,6 +7176,7 @@ class BobbyGame {
   }
 
   restart() {
+    if (this.loadError) { window.location.reload(); return; }
     if (this.audio) {
       this.audio.pause();
       this.audio.currentTime = 0;
@@ -7477,7 +7548,7 @@ class BobbyGame {
     if (!this.dialogueOverlayAudio) {
       this.dialogueOverlayAudio = new Audio();
       this.dialogueOverlayAudio.loop = true;
-      this.dialogueOverlayAudio.preload = "auto";
+      this.dialogueOverlayAudio.preload = "none";
     }
     if (this.dialogueOverlayAudioSrc !== src) {
       this.dialogueOverlayAudio.src = src;
@@ -7524,7 +7595,7 @@ class BobbyGame {
     const Context = window.AudioContext || window.webkitAudioContext;
     if (!Context) return null;
     try {
-      this.musicAudioContext ||= new Context({ latencyHint: "interactive" });
+      this.musicAudioContext ||= this.ensureToneContext() || new Context({ latencyHint: "interactive" });
       const context = this.musicAudioContext;
       const gain = context.createGain();
       const volume = audio.volume;
@@ -7819,7 +7890,7 @@ class BobbyGame {
     else this.pauseCurrentBgmForSong();
 
     const preview = new Audio(song.audioSrc);
-    preview.preload = "auto";
+    preview.preload = "none";
     preview.volume = 0;
     preview.addEventListener("ended", () => {
       if (this.songPreview?.audio !== preview) return;
@@ -7901,7 +7972,7 @@ class BobbyGame {
     let audio = this.homePlaylistAudioCache.get(song.id);
     if (!audio || audio.getAttribute("src") !== song.audioSrc) {
       audio = new Audio(song.audioSrc);
-      audio.preload = "auto";
+      audio.preload = "none";
       this.homePlaylistAudioCache.set(song.id, audio);
     }
     audio.pause();
@@ -8207,6 +8278,7 @@ class BobbyGame {
   }
 
   playHomePlaylistSong(songId) {
+    this.loadHomeWaveform(songId);
     const song = this.getHomePlaylistSongById(songId);
     if (!song) return;
     const outgoing = this.songPreview;
@@ -8412,7 +8484,7 @@ class BobbyGame {
     images.push(...(this.refs.comboCelebrations || []));
     rhythm.graphicsLoading = true;
     rhythm.graphicsReady = (async () => {
-      await this.hitSfxReady;
+      await this.loadHitSfx();
       for (const image of new Set(images)) {
         if (typeof image?.decode !== "function") continue;
         try { await image.decode(); } catch { /* Existing loaded image remains drawable. */ }
@@ -9231,10 +9303,12 @@ class BobbyGame {
     if (!AudioContextCtor) return null;
     this.stopRhythmFeedback();
     const old = this.level1OfficeAudioContext;
+    if (old && old === this.musicAudioContext) this.rebuildMusicAudioContext();
     try {
       old?.close?.().catch?.(() => {});
     } catch {}
-    this.level1OfficeAudioContext = new AudioContextCtor({ latencyHint: "interactive" });
+    this.level1OfficeAudioContext = this.musicAudioContext || new AudioContextCtor({ latencyHint: "interactive" });
+    this.musicAudioContext ||= this.level1OfficeAudioContext;
     this.ensureFeedbackOutput(this.level1OfficeAudioContext);
     this.toneContextRebuilds = (this.toneContextRebuilds || 0) + 1;
     this.sfxBuffers = {};
@@ -9254,6 +9328,7 @@ class BobbyGame {
   }
 
   runSfxTest() {
+    this.loadHitSfx();
     this.ensureToneContext();
     const button = ["M", "O", "T", "H"][this.sfxTestIndex || 0];
     this.sfxTestIndex = ((this.sfxTestIndex || 0) + 1) % 4;
@@ -9976,6 +10051,7 @@ class BobbyGame {
     target.imageSmoothingEnabled = false;
     target.fillStyle = "#08090d";
     target.fillRect(0, 0, layout.width, layout.height);
+    if (this.loadError) { this.renderConnectionLost(target, layout.width, layout.height); return; }
     if (this.levelLoadingPresentation || (this.level1OfficeRhythm?.graphicsLoading && !this.level1OfficeRhythm.graphicsWarming && !this.level1OfficeRhythm.countdownDuringGraphicsPreparation)) {
       this.renderLevel1Loading(target, layout.width, layout.height);
       return;
@@ -11418,7 +11494,8 @@ class BobbyGame {
       const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
       if (!AudioContextCtor) return null;
       if (this.level1OfficeAudioContext?.state === "closed") return this.rebuildToneContext();
-      this.level1OfficeAudioContext ||= new AudioContextCtor({ latencyHint: "interactive" });
+      this.level1OfficeAudioContext ||= this.musicAudioContext || new AudioContextCtor({ latencyHint: "interactive" });
+      this.musicAudioContext ||= this.level1OfficeAudioContext;
       // iOS parks the engine as "interrupted" after a call, an app switch or
       // an audio-session change; it resumes the same way as "suspended".
       if (this.level1OfficeAudioContext.state === "suspended" || this.level1OfficeAudioContext.state === "interrupted") {
@@ -11435,10 +11512,8 @@ class BobbyGame {
   }
 
   showAudioRecovery(reason = "start") {
-    if (reason !== "resume" || !this.audioInterruption?.fromHidden || document.hidden) {
-      if (this.level1OfficeRhythm) this.level1OfficeRhythm.audioStartPending = true;
-      return;
-    }
+    if (document.hidden) return;
+    if (this.level1OfficeRhythm) this.level1OfficeRhythm.audioStartPending = true;
     if (!this.audioRecoveryPrompt) {
       const root = document.createElement("div");
       root.className = "audio-recovery";
@@ -11458,10 +11533,10 @@ class BobbyGame {
     }
     const root = this.audioRecoveryPrompt;
     root.querySelector("h2").textContent = reason === "resume"
-      ? this.tr("READY TO RESUME", "準備繼續遊戲") : this.tr("READY TO PLAY", "準備開始遊戲");
-    root.querySelector("p").textContent = this.tr("Your progress and hearts are saved here.", "目前進度與生命已保留。");
+      ? this.tr("READY TO RESUME", "準備繼續遊戲") : this.tr("ENABLE SOUND", "開啟音樂與音效");
+    root.querySelector("p").textContent = reason === "resume" ? this.tr("Your progress and hearts are saved here.", "目前進度與生命已保留。") : this.tr("Tap below to enable music and sound effects.", "點擊下方按鈕，開啟音樂與音效。");
     root.querySelector("button").textContent = reason === "resume"
-      ? this.tr("TAP TO RESUME", "點一下，繼續遊戲") : this.tr("TAP TO START", "點一下，開始遊戲");
+      ? this.tr("TAP TO RESUME", "點一下，繼續遊戲") : this.tr("ENABLE SOUND", "開啟音效");
     root.hidden = false;
     this.audioRecoveryReason = reason;
   }
@@ -13093,6 +13168,7 @@ class BobbyGame {
   // bathroom, running the same engine as Level 1's stamping fight. The old 2.5D
   // arena fight (`startLevel2BossFight`) is retired from the normal flow.
   async startLevel2BathroomFight(options = {}) {
+    if (this.deferSceneAssets("level2-stage2", () => this.startLevel2BathroomFight(options))) return;
     this.currentStageId = "level2-stage2";
     // The removed sewer pre-level used to award this outfit. Preserve that
     // story beat by granting and equipping the pink floral bathing suit as the
@@ -13178,6 +13254,7 @@ class BobbyGame {
   // engine as Levels 1 and 2; the old lane fight (`startLevel3RhythmBattle`)
   // now only runs Level 6.
   async startLevel3MassageFight(options = {}) {
+    if (this.deferSceneAssets("level3-stage2", () => this.startLevel3MassageFight(options))) return;
     this.currentStageId = "level3-stage2";
     this.stopSewerBgm(true);
     this.stopLevel3RhythmAudio(true);
@@ -13340,6 +13417,7 @@ class BobbyGame {
   // Bonita's landing one back. Same engine as Levels 1-3; the old real-time
   // side-view fight (`startLevel4BossFight`) is no longer reached.
   async startLevel4ArcadeFight(options = {}) {
+    if (this.deferSceneAssets("level4-stage1", () => this.startLevel4ArcadeFight(options))) return;
     this.currentStageId = "level4-stage1";
     this.stopSewerBgm(true);
     this.stopLevel3RhythmAudio(true);
@@ -15067,6 +15145,7 @@ class BobbyGame {
   }
 
   enterLevel3Stage1(options = {}) {
+    if (this.deferSceneAssets("level3-stage1", () => this.enterLevel3Stage1(options))) return;
     // The living room is not a J/K fight: a fight left over from the way in
     // (a debug shortcut, a quit mid-fight) must not keep the fight HUD up.
     this.level1OfficeRhythm = null;
@@ -15162,6 +15241,7 @@ class BobbyGame {
   }
 
   enterLevel4Stage1(options = {}) {
+    if (this.deferSceneAssets("level4-stage1", () => this.enterLevel4Stage1(options))) return;
     const stage = this.getLevel4Stage1Config();
     this.completeStage("level3-stage2");
     this.state = "level4";
@@ -15360,6 +15440,7 @@ class BobbyGame {
   }
 
   enterStudioDialogue(post = false) {
+    if (this.deferSceneAssets("studio-stage1", () => this.enterStudioDialogue(post))) return;
     if (!post) this.completeStage("level4-stage1");
     this.currentStageId = "studio-stage1";
     this.level1OfficeRhythm = null;
@@ -15381,6 +15462,7 @@ class BobbyGame {
   }
 
   async startStudioFight(options = {}) {
+    if (this.deferSceneAssets("studio-stage1", () => this.startStudioFight(options))) return;
     this.currentStageId = "studio-stage1";
     for (const track of this.getKnownBgmTracks()) {
       this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);
@@ -15477,6 +15559,7 @@ class BobbyGame {
   }
 
   enterLevel5Stage1() {
+    if (this.deferSceneAssets("level5-stage1", () => this.enterLevel5Stage1())) return;
     this.completeStage("studio-stage1");
     this.currentStageId = "level5-stage1";
     this.stopLevel3RhythmAudio(true);
@@ -15531,6 +15614,7 @@ class BobbyGame {
   // in bed seen from above, a dream bubble of the stage, a narrator's lines -
   // then the concert. It replaces the Taipei Dome walk.
   startLevel6Dream() {
+    if (this.deferSceneAssets("level6-stage1", () => this.startLevel6Dream())) return;
     this.completeStage("level5-stage2");
     this.currentStageId = "level6-stage1";
     this.level1OfficeRhythm = null;
@@ -15557,6 +15641,7 @@ class BobbyGame {
   }
 
   startLevel6WakeUp() {
+    if (this.deferSceneAssets("finale-stage1", () => this.startLevel6WakeUp())) return;
     this.currentStageId = "finale-stage1";
     this.level1OfficeRhythm = null;
     this.level6WakeTimer = 0;
@@ -15863,6 +15948,7 @@ class BobbyGame {
   // Story completion unlocks two full-song score runs. They share the normal
   // M O T H engine and remain free play, including direct starts and rematches.
   async startSecretRhythmFight(stageId, options = {}) {
+    if (this.deferSceneAssets(stageId, () => this.startSecretRhythmFight(stageId, options))) return;
     const level = this.getSecretLevel(stageId);
     if (!level || !this.isStageUnlocked(stageId)) return false;
     this.currentStageId = stageId;
@@ -15890,6 +15976,7 @@ class BobbyGame {
 
   // Level 6's fight (2026-10-06): the concert on the M O T H engine.
   async startLevel6ConcertFight(options = {}) {
+    if (this.deferSceneAssets("level6-stage2", () => this.startLevel6ConcertFight(options))) return;
     this.currentStageId = "level6-stage2";
     this.stopSewerBgm(true);
     this.stopLevel3RhythmAudio(true);
@@ -15922,6 +16009,7 @@ class BobbyGame {
   }
 
   async startLevel5RiverFight(options = {}) {
+    if (this.deferSceneAssets("level5-stage2", () => this.startLevel5RiverFight(options))) return;
     this.currentStageId = "level5-stage2";
     this.level5Drive = null;
     this.stopSewerBgm(true);
@@ -15955,6 +16043,7 @@ class BobbyGame {
 
   // The old highway walk (before 2026-10-05), kept for its debug entries.
   enterLevel5Stage1Walk() {
+    if (this.deferSceneAssets("level5-stage1", () => this.enterLevel5Stage1Walk())) return;
     const stage = this.getLevel5Stage1Config();
     const spawn = stage.spawn || {};
     const road = stage.roadBounds || {};
@@ -16180,6 +16269,7 @@ class BobbyGame {
   }
 
   enterLevel6Stage1(options = {}) {
+    if (this.deferSceneAssets("level6-stage1", () => this.enterLevel6Stage1(options))) return;
     const stage = this.getLevel6Stage1Config();
     if (!options.fromDebug && !options.fromStageSelect) this.completeStage("level5-stage2");
     this.state = "level6";
@@ -16252,6 +16342,7 @@ class BobbyGame {
   }
 
   enterFinaleStage(options = {}) {
+    if (this.deferSceneAssets("finale-stage1", () => this.enterFinaleStage(options))) return;
     // Retired backstage walk/conversations: the current finale is waking up.
     if (options.fromDebug || options.fromStageSelect) this.applyLatestProgressLoadout();
     this.startLevel6WakeUp();
@@ -16725,6 +16816,7 @@ class BobbyGame {
   }
 
   startFinaleEnding() {
+    if (this.deferSceneAssets("finale-stage1", () => this.startFinaleEnding())) return;
     this.currentStageId = "finale-stage1";
     this.state = "finaleEnding";
     this.pocketOpen = false;
@@ -16811,7 +16903,7 @@ class BobbyGame {
     video.muted = true;
     video.loop = true;
     video.playsInline = true;
-    video.preload = "auto";
+    video.preload = "none";
     video.disablePictureInPicture = true;
     video.poster = this.getFinaleStageConfig().endingSource || "";
     video.src = src;
@@ -17335,6 +17427,7 @@ class BobbyGame {
   }
 
   enterLevel5BossFight(options = {}) {
+    if (this.deferSceneAssets("level5-stage2", () => this.enterLevel5BossFight(options))) return;
     const stage = this.getLevel5Stage2Config();
     const driving = stage.driving || {};
     const chaseConfig = stage.chase || {};
@@ -17591,6 +17684,7 @@ class BobbyGame {
   }
 
   enterSewerBossScene(options = {}) {
+    if (this.deferSceneAssets("level2-stage2", () => this.enterSewerBossScene(options))) return;
     const arena = this.config?.sewer?.bossArena || {};
     const side = arena.sideView || this.config?.sewer?.sideView || {};
     const bossConfig = arena.boss || {};
@@ -18642,6 +18736,7 @@ class BobbyGame {
 
   renderScene() {
     this.renderFrame = (this.renderFrame || 0) + 1;
+    if (this.loadError) { this.renderConnectionLost(this.ctx, VIEW_W, VIEW_H); return; }
     if (this.levelLoadingPresentation || (this.level1OfficeRhythm?.graphicsLoading && !this.level1OfficeRhythm.countdownDuringGraphicsPreparation)) {
       this.renderLevel1Loading();
       return;
@@ -22634,9 +22729,11 @@ class BobbyGame {
       5: ["RECORDING STUDIO", "錄音室"], 6: ["NIGHT DRIVE", "台北夜行"],
       7: ["DREAM STAGE", "夢想舞台"]
     };
-    drawStageLoadingScreen(target, this.time, t,
+    const progress = this.sceneLoadProgress;
+    const fraction = progress?.total ? progress.done / progress.total : t;
+    drawStageLoadingScreen(target, this.time, fraction,
       `${this.tr("LOADING", "載入中")}  ${this.getStageTitle(stageId)}`,
-      `${this.tr("LEVEL", "關卡")} ${level} · ${this.tr(...(places[level] || places[1]))}`, W, H);
+      `${this.tr("LEVEL", "關卡")} ${level} · ${this.tr(...(places[level] || places[1]))}${progress?.total ? ` · ${progress.done}/${progress.total}` : ""}`, W, H);
 
   }
 
@@ -26912,20 +27009,41 @@ class BobbyGame {
 // initial asset Promise.all is still in flight.
 const BOOT_LOAD = { started: 0, settled: 0 };
 
+const imageRequests = new Map();
+async function fetchGameJson(src) {
+  let last;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetch(src, {signal:AbortSignal.timeout(15000)});
+      if (!response.ok) throw new Error('Resource unavailable');
+      return await response.json();
+    } catch (error) { last = error; if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1))); }
+  }
+  throw last;
+}
+
 function loadImage(src) {
-  BOOT_LOAD.started += 1;
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => {
-      BOOT_LOAD.settled += 1;
-      resolve(image);
-    };
-    image.onerror = () => {
-      BOOT_LOAD.settled += 1;
-      reject(new Error(`Could not load image: ${src}`));
-    };
-    image.src = src;
-  });
+  if (imageRequests.has(src)) return imageRequests.get(src);
+  BOOT_LOAD.started++;
+  const promise = (async () => {
+    let last;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await new Promise((resolve, reject) => {
+          const image = new Image();
+          const timer = setTimeout(() => { image.onload = image.onerror = null; image.src = ''; reject(new Error('Image download timed out')); }, 20000);
+          image.onload = () => { clearTimeout(timer); resolve(image); };
+          image.onerror = () => { clearTimeout(timer); reject(new Error('Image download failed')); };
+          const url = new URL(src, document.baseURI);
+          if (attempt) url.searchParams.set('retry', String(Date.now()));
+          image.src = url.href;
+        });
+      } catch (error) { last = error; if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1))); }
+    }
+    throw last;
+  })().finally(() => { BOOT_LOAD.settled++; imageRequests.delete(src); });
+  imageRequests.set(src, promise);
+  return promise;
 }
 
 function loadOptionalSheet(src) {
