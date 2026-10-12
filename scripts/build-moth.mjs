@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { patchMothRuntime } from './moth-runtime-patches.mjs';
 const require = createRequire(import.meta.url);
 const ts = require(process.env.MOTH_TYPESCRIPT_PATH || 'typescript');
 const root = path.resolve(import.meta.dirname, '..');
@@ -10,7 +11,7 @@ const sourceRoot = path.join(root, '.qa/moth/published');
 const output = path.join(root, 'docs/moth');
 const snapshot = JSON.parse(await fs.readFile(path.join(root, '.qa/moth/published-snapshot.json'), 'utf8'));
 const sha = (data) => crypto.createHash('sha256').update(data).digest('hex');
-const original = await fs.readFile(path.join(sourceRoot, 'src/game.js'), 'utf8');
+const original = patchMothRuntime(await fs.readFile(path.join(sourceRoot, 'src/game.js'), 'utf8'), ts);
 assert.match(await fs.readFile(path.join(sourceRoot, 'index.html'), 'utf8'), /mobile-deck-20261012a/);
 for (const file of snapshot.files) assert.equal(sha(await fs.readFile(path.join(sourceRoot, file.path))), file.sha256);
 await fs.mkdir(output, { recursive: true });
@@ -20,6 +21,14 @@ for (const file of snapshot.files) {
   await fs.mkdir(path.dirname(dest), { recursive: true });
   await fs.copyFile(path.join(sourceRoot, file.path), dest);
 }
+const recoveryCss = `
+.load-recovery { background: #1216134d; }
+.load-recovery section { background: repeating-linear-gradient(#242b28 0 3px, #202623 3px 4px); color: #f7f2de; border: 4px solid #ce3f49; box-shadow: 8px 8px 0 #111613; }
+.load-recovery small { color: #8fe8ff; }
+.load-recovery button { background: #344439; color: #f7f2de; border-color: #dcd8bd; box-shadow: 4px 5px 0 #111613; }
+.load-recovery button:focus-visible { outline: 3px solid #ffd36c; outline-offset: 5px; }
+`;
+await fs.appendFile(path.join(output, 'styles.css'), recoveryCss);
 
 function replaceOnce(source, before, after) {
   assert.equal(source.split(before).length, 2, `Expected one occurrence: ${before.slice(0, 80)}`);
@@ -76,8 +85,8 @@ for (const audience of ['public', 'staff']) {
   let html = await fs.readFile(path.join(sourceRoot, 'index.html'), 'utf8');
   html = html.replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />\n    <meta name="referrer" content="strict-origin-when-cross-origin" />${staff ? '\n    <meta name="robots" content="noindex, nofollow, noarchive" />\n    <base href="/moth/" />' : ''}`);
   html = html.replace('./manifest.json', staff ? '/moth/staff/manifest.json' : './manifest.json');
-  html = html.replace('mobile-deck-20261012a', 'moth-20261012a');
-  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=moth-20261012a" integrity="${sri}" crossorigin="anonymous"></script>`);
+  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261012c');
+  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=moth-loading-20261012c" integrity="${sri}" crossorigin="anonymous"></script>`);
   await fs.writeFile(path.join(output, staff ? 'staff/index.html' : 'index.html'), html);
   const manifest = JSON.parse(await fs.readFile(path.join(sourceRoot, 'manifest.json'), 'utf8'));
   manifest.start_url = staff ? '/moth/staff/' : '/moth/';

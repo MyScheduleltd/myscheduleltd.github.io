@@ -13,7 +13,13 @@ const excluded = new Set(['index.html','src/game.js','manifest.json','haptics-te
 let preserved = 0;
 for (const file of snapshot.files) {
   if (excluded.has(file.path)) continue;
-  assert.equal(hash(await fs.readFile(path.join(dir, file.path))),file.sha256,`Published release asset changed: ${file.path}`);
+  const data = await fs.readFile(path.join(dir, file.path));
+  if (file.path === 'styles.css') {
+    assert.equal(hash(data.subarray(0, file.bytes)),file.sha256,'Original game styles preserved');
+    assert(data.toString().includes('.load-recovery section'));
+    continue;
+  }
+  assert.equal(hash(data),file.sha256,`Published release asset changed: ${file.path}`);
   preserved++;
 }
 async function walk(dir) {
