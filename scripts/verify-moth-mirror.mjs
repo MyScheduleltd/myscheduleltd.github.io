@@ -74,6 +74,41 @@ async function enterOffice(page) {
   await context.close();
 }
 
+// 1b. Music: the first fight's track is fetched on the home screen, swapped in
+// by the tap that primes it, and plays; a highlighted song starts at once.
+{
+  const {context, page, requests, errors} = await livePage();
+  await page.goto('https://myscheduleltd.com/moth/staff/?device=desktop', {waitUntil: 'domcontentloaded'});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.waitForFunction(() => bobbyGame.audioMirror?.get(bobbyGame.stageTrackSource('level1-stage1'))?.url, undefined, {timeout: 20000});
+  await page.keyboard.press('KeyP');
+  await page.locator('[data-debug-fight="level1-stage1"]').click();
+  // Chrome leaves the clicked debug button focused; a later Enter would press it again.
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press('KeyP');
+  const fightStarted = Date.now();
+  await page.waitForFunction(() => { const a = bobbyGame.fightCutAudio.office; return !a.paused && a.currentTime > 1; }, undefined, {timeout: 40000});
+  const fight = await page.evaluate(() => ({src: bobbyGame.fightCutAudio.office.getAttribute('src').slice(0, 5), t: bobbyGame.fightCutAudio.office.currentTime}));
+  assert.equal(fight.src, 'blob:', 'Fight music plays the verified mirror copy');
+  assert(!requests.some(url => /myscheduleltd\.com\/moth\/assets\/audio\/fight-cuts\/level1-office/.test(url)), 'Fight music not streamed from Pages');
+  // The playlist: highlight a song, give it a moment, then play it.
+  await page.evaluate(() => { bobbyGame.returnToTitle(); bobbyGame.completeStage('level1-stage1'); bobbyGame.homeMenu.index = 3; });
+  await page.keyboard.press('Enter');
+  await page.evaluate(() => { bobbyGame.homeMenu.index = bobbyGame.getHomePlaylistSongDefs().findIndex(song => !song.locked); });
+  const song = await page.evaluate(() => bobbyGame.getHomeMenuItems()[bobbyGame.homeMenu.index].audioSrc);
+  await page.waitForFunction(src => bobbyGame.audioMirror?.get(src)?.url, song, {timeout: 20000});
+  const pressed = Date.now();
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => bobbyGame.songPreview?.audio.currentTime > 0.5, undefined, {timeout: 20000});
+  const songStart = (Date.now() - pressed) / 1000;
+  assert.equal(await page.evaluate(() => bobbyGame.songPreview.audio.getAttribute('src').slice(0, 5)), 'blob:', 'Song plays the verified mirror copy');
+  assert(songStart < 5, `Song starts promptly (${songStart}s)`);
+  assert.deepEqual(errors, []);
+  report.music = {fightSeconds: (Date.now() - fightStarted) / 1000, songStartSeconds: songStart};
+  console.log('music PASS', report.music);
+  await context.close();
+}
+
 // 2. A mirror copy that fails its hash is discarded for this site's copy.
 {
   const {context, page, requests, warnings, errors} = await livePage({tamper: true});

@@ -78,7 +78,7 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
     assert.equal(await page.evaluate(()=>bobbyGame.currentStageId),'level1-stage0');
     // An earlier download must not reopen its scene after the target changes.
     await page.goto(new URL('moth/staff/?device=phone',base).href,{waitUntil:'domcontentloaded'});
-    await page.waitForFunction(()=>bobbyGame?.bootDone);
+    await page.waitForFunction(()=>window.bobbyGame?.bootDone);
     await page.route('**/foreground.webp*',async route=>{await new Promise(r=>setTimeout(r,1000));await route.continue();});
     await page.evaluate(()=>bobbyGame.startStage('level1-stage1',{skipAudio:true}));
     await page.waitForFunction(()=>bobbyGame.sceneLoadProgress?.total>0);
@@ -89,7 +89,7 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
     await page.unroute('**/foreground.webp*');
     // A recoverable network failure retries instead of aborting the whole boot.
     await page.goto(new URL('moth/staff/?device=phone',base).href,{waitUntil:'domcontentloaded'});
-    await page.waitForFunction(()=>bobbyGame?.bootDone);
+    await page.waitForFunction(()=>window.bobbyGame?.bootDone);
     let transient = 0;
     await page.route('**/foreground.webp*', route => {if (++transient===1) return route.fulfill({status:503,body:'temporary'});return route.continue();});
     await page.keyboard.press('Enter');await page.keyboard.press('Enter');await page.keyboard.press('Enter');
@@ -97,7 +97,7 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
     assert.equal(transient,2);assert.equal(await page.locator('.load-recovery').count(),0);
     await page.unroute('**/foreground.webp*');
     await page.goto(new URL('moth/staff/?device=phone',base).href,{waitUntil:'domcontentloaded'});
-    await page.waitForFunction(()=>bobbyGame?.bootDone);
+    await page.waitForFunction(()=>window.bobbyGame?.bootDone);
     let permanent=0;
     await page.route('**/foreground.webp*', route=>{permanent++;return route.fulfill({status:503,body:'unavailable'});});
     await page.keyboard.press('Enter');await page.keyboard.press('Enter');await page.keyboard.press('Enter');
@@ -108,7 +108,7 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
     await page.evaluate(()=>sessionStorage.setItem('moth.qa-refresh','preserved'));
     await page.unroute('**/foreground.webp*');
     await page.locator('.load-recovery button').click();
-    await page.waitForFunction(()=>bobbyGame?.bootDone&&bobbyGame.state==='title');
+    await page.waitForFunction(()=>window.bobbyGame?.bootDone&&bobbyGame.state==='title');
     assert.equal(await page.evaluate(()=>sessionStorage.getItem('moth.qa-refresh')),'preserved');
     // A blocked audio start has a real button, rather than an invisible pause.
     await page.evaluate(()=>bobbyGame.showAudioRecovery('start'));
