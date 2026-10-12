@@ -47,6 +47,16 @@ for (const [page, code] of [['index.html',publicCode],['staff/index.html',staffC
   assert(html.includes("object-src 'none'"));
   assert(html.includes("manifest-src 'self'"));
 }
+// Every image and sound file is listed with its real hash, so a mirror copy is
+// accepted only when it is byte-identical to the file this site serves.
+const integrity = JSON.parse(await fs.readFile(path.join(dir, 'asset-integrity.json'), 'utf8'));
+const media = files.filter(f => /\.(webp|png|jpe?g|wav|m4a|mp3|ogg)$/.test(f)).map(f => path.relative(dir, f));
+assert.deepEqual(Object.keys(integrity).sort(), media.sort(), 'Integrity list covers exactly the packaged media');
+for (const file of media) assert.equal(integrity[file], hash(await fs.readFile(path.join(dir, file))), `Integrity hash: ${file}`);
+for (const page of ['index.html', 'staff/index.html']) {
+  const policy = (await fs.readFile(path.join(dir, page), 'utf8')).match(/connect-src ([^;]+);/)[1];
+  assert.match(policy, /^'self' https:\/\/cdn\.jsdelivr\.net\/gh\/MyScheduleltd\/myscheduleltd\.github\.io@[0-9a-f]{40}\/docs\/moth\/$/, 'Only the pinned mirror path may be fetched');
+}
 assert(!/createDebugPanel|toggleDebugPanel|data-debug-action|debug-panel-toggle|window\.bobbyGame\s*=/.test(publicCode));
 assert(staffCode.includes('createDebugPanel'));
 assert(publicCode.includes('moth.public_progress_v1'));

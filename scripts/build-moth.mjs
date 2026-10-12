@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { patchMothRuntime } from './moth-runtime-patches.mjs';
+import { patchMothRuntime, MOTH_MIRROR_COMMIT, MOTH_MIRROR_ORIGIN } from './moth-runtime-patches.mjs';
 const require = createRequire(import.meta.url);
 const ts = require(process.env.MOTH_TYPESCRIPT_PATH || 'typescript');
 const root = path.resolve(import.meta.dirname, '..');
@@ -21,6 +21,10 @@ for (const file of snapshot.files) {
   await fs.mkdir(path.dirname(dest), { recursive: true });
   await fs.copyFile(path.join(sourceRoot, file.path), dest);
 }
+// The game takes images and sound effects from jsDelivr only when they hash
+// to these values (moth-runtime-patches.mjs, fetchGameAsset).
+const integrity = Object.fromEntries(snapshot.files.filter(file => /\.(webp|png|jpe?g|wav|m4a|mp3|ogg)$/.test(file.path)).map(file => [file.path, file.sha256]));
+await fs.writeFile(path.join(output, 'asset-integrity.json'), JSON.stringify(integrity) + '\n');
 const recoveryCss = `
 .load-recovery { background: #1216134d; }
 .load-recovery section { background: repeating-linear-gradient(#242b28 0 3px, #202623 3px 4px); color: #f7f2de; border: 4px solid #ce3f49; box-shadow: 8px 8px 0 #111613; }
@@ -77,7 +81,7 @@ await fs.mkdir(path.join(output, 'src'), { recursive: true });
 await fs.mkdir(path.join(output, 'staff'), { recursive: true });
 await fs.writeFile(path.join(output, 'src/game.js'), publicCode);
 await fs.writeFile(path.join(output, 'staff/game.js'), staffCode);
-const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; worker-src 'none'";
+const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' " + MOTH_MIRROR_ORIGIN + "/gh/MyScheduleltd/myscheduleltd.github.io@" + MOTH_MIRROR_COMMIT + "/docs/moth/; font-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; worker-src 'none'";
 for (const audience of ['public', 'staff']) {
   const staff = audience === 'staff';
   const code = staff ? staffCode : publicCode;
@@ -85,8 +89,8 @@ for (const audience of ['public', 'staff']) {
   let html = await fs.readFile(path.join(sourceRoot, 'index.html'), 'utf8');
   html = html.replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />\n    <meta name="referrer" content="strict-origin-when-cross-origin" />${staff ? '\n    <meta name="robots" content="noindex, nofollow, noarchive" />\n    <base href="/moth/" />' : ''}`);
   html = html.replace('./manifest.json', staff ? '/moth/staff/manifest.json' : './manifest.json');
-  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261012c');
-  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=moth-loading-20261012c" integrity="${sri}" crossorigin="anonymous"></script>`);
+  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261012d');
+  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=moth-loading-20261012d" integrity="${sri}" crossorigin="anonymous"></script>`);
   await fs.writeFile(path.join(output, staff ? 'staff/index.html' : 'index.html'), html);
   const manifest = JSON.parse(await fs.readFile(path.join(sourceRoot, 'manifest.json'), 'utf8'));
   manifest.start_url = staff ? '/moth/staff/' : '/moth/';
