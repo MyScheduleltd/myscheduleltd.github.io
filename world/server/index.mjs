@@ -1923,7 +1923,13 @@ const server = createServer(async (request, response) => {
       // The receipt mailbox is deliberately absent. It is a real address,
       // STAFF's to set, and it reaches `/api/admin/state` behind the key and
       // nothing else — the client only ever declares it on `AdminState`.
-      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, shopLink, templeSign, entranceSign, gateCopy, trackTempos, trackDurations, immersiveSources, videoTitles, clubRequest, venueQueues, jukebox: jukeboxSnapshot(), wishes });
+      //
+      // `djProfileSeed` is here for `capture-state.mjs`, which reads this
+      // endpoint and nothing else. A seed captured without the edition has its
+      // DJ profiles dropped at boot, so every STAFF edit to a DJ card was lost
+      // at the next deploy. It sat on `/api/admin/state` until 2026-10-12, where
+      // the capture never looked.
+      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, djProfileSeed: DJ_PROFILE_SEED, shopLink, templeSign, entranceSign, gateCopy, trackTempos, trackDurations, immersiveSources, videoTitles, clubRequest, venueQueues, jukebox: jukeboxSnapshot(), wishes });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
@@ -2754,11 +2760,6 @@ a{color:#e8b64a}</style>
           npcProfiles: publicNpcProfiles(),
           pamphlet: pamphletContent,
           djProfiles,
-          // Which edition of the default introductions these are, so the
-          // committed seed captured from here is accepted on the next deploy.
-          // Without it the seed's profiles were dropped and every STAFF edit
-          // to an introduction was lost at each redeploy.
-          djProfileSeed: DJ_PROFILE_SEED,
           shopLink,
           // `source` is the difference between an address that survives a
           // deploy and one that does not. This plan has no disk: STAFF
