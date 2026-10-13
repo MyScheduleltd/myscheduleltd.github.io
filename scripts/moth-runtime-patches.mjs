@@ -642,7 +642,7 @@ export const MOTH_MIRROR_COMMIT = '4a1cae2472c9fbece153cc1dbd0f0c1593dd9997';
 // The sprites with their key fringe cleaned (moth-sprite-fringe.mjs) changed
 // after that commit; jsDelivr serves them from the commit that published them,
 // so every other file keeps its already-warm copy. Null: those load from Pages.
-export const MOTH_MIRROR_PATCH_COMMIT = null;
+export const MOTH_MIRROR_PATCH_COMMIT = 'd04046c3aba8dcef69d486205a5267d53c998f31';
 export const mirrorPath = commit => `${MOTH_MIRROR_ORIGIN}/gh/MyScheduleltd/myscheduleltd.github.io@${commit}/docs/moth/`;
 export const MOTH_MIRROR_ORIGIN = 'https://cdn.jsdelivr.net';
 
