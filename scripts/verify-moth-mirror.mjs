@@ -9,6 +9,8 @@ import http from 'node:http';
 import path from 'node:path';
 import {chromium, webkit} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
+import {MOTH_MIRROR_COMMIT, MOTH_MIRROR_PATCH_COMMIT} from './moth-runtime-patches.mjs';
+import {KEY_FRINGE_SPRITES} from './moth-sprite-fringe.mjs';
 
 const docs = path.resolve(import.meta.dirname, '../docs');
 const out = path.resolve('.qa/moth/mirror');
@@ -66,6 +68,10 @@ async function enterOffice(page) {
   assert(mirrored.some(url => /foreground\.webp/.test(url)), 'Office background came from the mirror');
   assert(mirrored.filter(url => /\/sfx\//.test(url)).length >= 27, 'Sound effects came from the mirror');
   assert.deepEqual(fromSite, [], 'No office art fetched from Pages');
+  // The cleaned sprites come from the commit that published them, everything else from the original pin.
+  const patched = mirrored.filter(url => KEY_FRINGE_SPRITES.some(file => decodeURIComponent(url).includes('/docs/moth/' + file)));
+  assert(patched.length > 0 && patched.every(url => url.includes('@' + MOTH_MIRROR_PATCH_COMMIT + '/')), 'Cleaned sprites from the patch commit ' + JSON.stringify(patched.slice(0, 3)));
+  assert(mirrored.filter(url => !patched.includes(url)).every(url => url.includes('@' + MOTH_MIRROR_COMMIT + '/')), 'Other files from the original pin');
   assert(requests.some(url => url.startsWith('https://myscheduleltd.com/moth/asset-integrity.json')), 'Hashes read from this site');
   assert(!requests.some(url => /cdn\.jsdelivr\.net.*\.(js|json)(\?|$)/.test(url)), 'No code or configuration from the mirror');
   assert.deepEqual(violations, []);

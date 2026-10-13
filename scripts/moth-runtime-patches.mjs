@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { patchScoreboard, SCOREBOARD_METHODS } from './moth-scoreboard-client.mjs';
 import { patchFightResume, FIGHT_RESUME_METHODS } from './moth-fight-resume.mjs';
-import { CLEAN_KEY_FRINGE } from './moth-sprite-fringe.mjs';
+import { TRIMMED_JOBS } from './moth-asset-trim.mjs';
+import { KEY_FRINGE_SPRITES } from './moth-sprite-fringe.mjs';
 
 // Keep the selected published game as the input. Both audiences get identical
 // loading/audio repairs before the public debug tools are stripped.
@@ -17,14 +18,15 @@ export function patchMothRuntime(source, ts) {
   const tree = ts.createSourceFile('assets.js', `async function setup() {\n${block}\n}`, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const statements = tree.statements[0].body.statements;
   const definitions = [], jobs = [], variables = new Map();
+  let trimmed = 0;
   // Named after one chapter but drawn in others (found by drawing every fight,
   // hidden level and story entry with a probe on refs): the GANGAN coach chip in
   // every fight, dialogue portraits, the hotbar/chest icons, the Daytona at the
   // level 6 arrival and the HP-bottle notes of the level 6 boss. About 16 MB.
   const SHARED = new Set(['level1OfficeGanganCoachSheet', 'level1OfficeDialoguePortraitsSheet', 'level2BathroomPortraitsSheet',
-    'level2BundleSheet', 'bonitaDialogueProfileSheet', 'level5BossDaytonaSheet', 'level3RhythmHpBottleNoteSheet']);
+    'level2BundleSheet', 'bonitaDialogueProfileSheet']);
   function group(key) {
-    if (SHARED.has(key) || /^level3RhythmUi/.test(key)) return 'common';
+    if (SHARED.has(key)) return 'common';
     if (/^bobby/.test(key) || key === 'bobby') return 'player';
     if (/^level1Office/.test(key)) return 'office';
     if (/^(gangan|boss|levelMap|tutorialStage0Map|mapProps)/.test(key)) return 'road';
@@ -65,10 +67,13 @@ export function patchMothRuntime(source, ts) {
     const assignment = statement.expression;
     const key = assignment.left.name?.text;
     assert(key, text);
+    // Retired parts of the game are no longer loaded (moth-asset-trim.mjs).
+    if (TRIMMED_JOBS.has(key)) { trimmed++; continue; }
     let value = assignment.right.getText(tree);
     if (variables.has(value)) value = `await ${variables.get(value)}`;
     jobs.push({key, group:group(key), run:`this.refs.${key} = ${value};`});
   }
+  assert.equal(trimmed, TRIMMED_JOBS.size, 'Every retired job found');
   // Definitions precede closures, but the registry must exist for secret jobs.
   const registry = `  createSceneAssetJobs() {\n    this.sceneAssetJobs = [];\n    ${definitions.join('\n    ')}\n    this.sceneAssetJobs.push(\n${jobs.map(job => `      {key:${JSON.stringify(job.key)}, group:${JSON.stringify(job.group)}, run:async () => {${job.run}}, release:() => {delete this.refs.${job.key};}}`).join(',\n')}\n    );\n    this.loadedSceneGroups = new Set();\n  }\n`;
   source = source.slice(0, start) + '      this.createSceneAssetJobs();\n' + source.slice(end);
@@ -233,6 +238,9 @@ export function patchMothRuntime(source, ts) {
   once('    rhythm.hypePulse = kind === "miss" ? -1 : 1;', '    rhythm.hypePulse = kind === "miss" ? -1 : 1;\n    if (kind === "miss") rhythm.hypeMissAt = performance.now();');
   once('    target.strokeStyle = rhythm?.climax ? `rgba(255, 239, 99, ${0.6 + 0.4 * Math.sin(motionTime * 10)})` : "#f4f0dc";', '    const missFlash = performance.now() - (rhythm?.hypeMissAt ?? -1e9) < 320;\n    target.strokeStyle = missFlash ? "#ff4866" : rhythm?.climax ? `rgba(255, 239, 99, ${0.6 + 0.4 * Math.sin(motionTime * 10)})` : "#f4f0dc";');
   once('      : this.tr("FILL HYPE BY SONG END", "歌曲結束時熱度要滿");', '      : this.tr("FILL THE HYPE TO WIN", "熱度填滿就過關");');
+  // The retired lane fight's music cut is no longer preloaded at start-up
+  // (moth-asset-trim.mjs); its fight is not in the game.
+  once('        ["concert", this.config.level6ConcertRhythm],\n        ["level6", this.config.level6?.stage2]\n', '        ["concert", this.config.level6ConcertRhythm]\n');
   // Staff debug scene jumps (the staff build only; the public build drops the
   // debug panel). A jump enters its scene directly, so with the chapter loader
   // it drew placeholders where the scene's art was not loaded (user,
@@ -631,6 +639,11 @@ const RUNTIME_METHODS = `
 // caches it forever and nothing needs purging. A later asset change simply
 // fails its hash and falls back to Pages.
 export const MOTH_MIRROR_COMMIT = '4a1cae2472c9fbece153cc1dbd0f0c1593dd9997';
+// The sprites with their key fringe cleaned (moth-sprite-fringe.mjs) changed
+// after that commit; jsDelivr serves them from the commit that published them,
+// so every other file keeps its already-warm copy. Null: those load from Pages.
+export const MOTH_MIRROR_PATCH_COMMIT = 'd04046c3aba8dcef69d486205a5267d53c998f31';
+export const mirrorPath = commit => `${MOTH_MIRROR_ORIGIN}/gh/MyScheduleltd/myscheduleltd.github.io@${commit}/docs/moth/`;
 export const MOTH_MIRROR_ORIGIN = 'https://cdn.jsdelivr.net';
 
 const IMAGE_LOADER = `const imageRequests = new Map();
@@ -638,7 +651,9 @@ const IMAGE_LOADER = `const imageRequests = new Map();
 // only when their bytes match the SHA-256 this site publishes. Code and
 // configuration always come from this site.
 const MIRROR_BASE = ['myscheduleltd.com', 'www.myscheduleltd.com'].includes(location.hostname)
-  ? '${MOTH_MIRROR_ORIGIN}/gh/MyScheduleltd/myscheduleltd.github.io@${MOTH_MIRROR_COMMIT}/docs/moth/' : '';
+  ? '${mirrorPath(MOTH_MIRROR_COMMIT)}' : '';
+const MIRROR_PATCH_BASE = MIRROR_BASE && '${MOTH_MIRROR_PATCH_COMMIT ? mirrorPath(MOTH_MIRROR_PATCH_COMMIT) : ''}';
+const MIRROR_PATCHED = new Set(${JSON.stringify(KEY_FRINGE_SPRITES)});
 const MIRROR_ROOT = '/moth/';
 let assetIntegrity = null;
 
@@ -693,10 +708,12 @@ async function mirrorCopy(url) {
   if (!MIRROR_BASE || url.origin !== location.origin || !url.pathname.startsWith(MIRROR_ROOT)) return null;
   try {
     assetIntegrity ||= fetchGameJson('/moth/asset-integrity.json');
-    const expected = (await assetIntegrity)[decodeURIComponent(url.pathname.slice(MIRROR_ROOT.length))];
-    if (!expected) return null;
+    const file = decodeURIComponent(url.pathname.slice(MIRROR_ROOT.length));
+    const expected = (await assetIntegrity)[file];
+    const base = MIRROR_PATCHED.has(file) ? MIRROR_PATCH_BASE : MIRROR_BASE;
+    if (!expected || !base) return null;
     // One quick retry: jsDelivr can fail a file's first, uncached request.
-    const source = MIRROR_BASE + url.pathname.slice(MIRROR_ROOT.length);
+    const source = base + url.pathname.slice(MIRROR_ROOT.length);
     const asset = await fetchBytes(source, 10000).catch(() => new Promise(resolve => setTimeout(resolve, 400)).then(() => fetchBytes(source, 10000)));
     const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', asset.data));
     const hex = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
@@ -733,15 +750,14 @@ function loadImage(src) {
   const promise = fetchGameAsset(src).then(({data, type}) => new Promise((resolve, reject) => {
     const blobUrl = URL.createObjectURL(new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'}));
     const image = new Image();
-    // Sprites cut from a magenta background lose its fringe (moth-sprite-fringe.mjs).
-    image.onload = () => { URL.revokeObjectURL(blobUrl); const path = src.split('?')[0]; resolve(KEY_FRINGE_SPRITES.has(path.startsWith('./') ? path.slice(2) : path) ? cleanKeyFringe(image) : image); };
+    image.onload = () => { URL.revokeObjectURL(blobUrl); resolve(image); };
     image.onerror = () => { URL.revokeObjectURL(blobUrl); reject(new Error('Image could not be decoded')); };
     image.src = blobUrl;
   })).finally(() => { BOOT_LOAD.settled++; imageRequests.delete(src); });
   imageRequests.set(src, promise);
   return promise;
 }
-${CLEAN_KEY_FRINGE}`;
+`;
 
 // styles.css draws the touch deck (D-pad, M/O/T/H, SPACE, FULLSCREEN), the
 // grain and the start cap from images the browser fetched straight from GitHub
