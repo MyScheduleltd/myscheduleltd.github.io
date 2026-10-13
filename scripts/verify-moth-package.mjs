@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import {rewriteCssArtwork} from './moth-runtime-patches.mjs';
+import {patchCharts} from './moth-chart-patches.mjs';
 const root = path.resolve(import.meta.dirname, '..');
 const dir = path.join(root, 'docs/moth');
 const snapshot = JSON.parse(await fs.readFile(path.join(root, '.qa/moth/published-snapshot.json'), 'utf8'));
@@ -23,6 +24,13 @@ for (const file of snapshot.files) {
     assert(data.toString().startsWith(rewriteCssArtwork(releaseCss.toString()).css), 'Original game styles preserved');
     assert(!/url\("assets\//.test(data.toString()), 'No artwork fetched straight from Pages by the stylesheet');
     assert(data.toString().includes('.load-recovery section'));
+    continue;
+  }
+  if (file.path === 'data/level1.json') {
+    // The release's game data plus only the chart additions.
+    const release = await fs.readFile(path.join(root, '.qa/moth/published/data/level1.json'));
+    assert.equal(hash(release), file.sha256);
+    assert.deepEqual(JSON.parse(data), patchCharts(JSON.parse(release)), 'Game data is the release plus the chart additions');
     continue;
   }
   assert.equal(hash(data),file.sha256,`Published release asset changed: ${file.path}`);

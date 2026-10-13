@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { patchMothRuntime, rewriteCssArtwork, cssArtworkLoader, MOTH_MIRROR_COMMIT, MOTH_MIRROR_ORIGIN } from './moth-runtime-patches.mjs';
 import { SCOREBOARD_API, SCOREBOARD_CSS } from './moth-scoreboard-client.mjs';
+import { patchCharts, patchChartsText } from './moth-chart-patches.mjs';
 const require = createRequire(import.meta.url);
 const ts = require(process.env.MOTH_TYPESCRIPT_PATH || 'typescript');
 const root = path.resolve(import.meta.dirname, '..');
@@ -22,6 +23,14 @@ for (const file of snapshot.files) {
   if (['index.html', 'src/game.js', 'manifest.json', 'haptics-test.html', 'haptics-test2.html', 'sfx-test.html'].includes(file.path)) continue;
   const dest = path.join(output, file.path);
   await fs.mkdir(path.dirname(dest), { recursive: true });
+  if (file.path === 'data/level1.json') {
+    // The release's game data with the chart additions (moth-chart-patches.mjs).
+    const release = await fs.readFile(path.join(sourceRoot, file.path), 'utf8');
+    const patched = patchChartsText(release);
+    assert.deepEqual(JSON.parse(patched), patchCharts(JSON.parse(release)));
+    await fs.writeFile(dest, patched);
+    continue;
+  }
   await fs.copyFile(path.join(sourceRoot, file.path), dest);
 }
 // The game takes images and sound effects from jsDelivr only when they hash

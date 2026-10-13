@@ -9,6 +9,7 @@ import {createRequire} from 'node:module';
 import {chromium} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import {fakeUpstash} from '../services/moth-scoreboard/fake-upstash.mjs';
 import {SCOREBOARD_API, STORY_FIGHTS} from './moth-scoreboard-client.mjs';
+import {stubScoreboard} from './moth-scoreboard-stub.mjs';
 
 const require = createRequire(import.meta.url);
 const handler = require('../services/moth-scoreboard/moth-scoreboard.js');
@@ -152,6 +153,22 @@ for (const [label, viewport, device] of [['phone', {width: 390, height: 844}, 'p
   console.log(label, 'PASS', JSON.stringify({rank, total, scrollable}));
   await context.close();
 }
+// The server's limits are the charts' own maxima: 1000 per note plus 1000
+// per completed hold, for every story fight on both difficulties.
+{
+  const page = await browser.newPage({viewport: {width: 1280, height: 800}});
+  await stubScoreboard(page);
+  await page.goto(new URL('moth/staff/?device=desktop', base).href, {waitUntil: 'domcontentloaded'});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  for (const mode of ['chill', 'shoot']) for (const id of STORY_FIGHTS) {
+    await page.evaluate(([id, mode]) => { bobbyGame.returnToTitle(); bobbyGame.setDifficulty(mode, {persist: false, announce: false}); bobbyGame.startStage(id, {skipAudio: true}); }, [id, mode]);
+    await page.waitForFunction(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm?.notes?.length && !bobbyGame.levelLoadingPresentation, undefined, {timeout: 120000});
+    const most = await page.evaluate(() => { const notes = bobbyGame.level1OfficeRhythm.notes.filter(n => !n.practice); return (notes.length + notes.filter(n => n.holdEnd).length) * 1000; });
+    assert.equal(maxima[mode][id], most, `Server limit for ${id} on ${mode}`);
+  }
+  console.log('limits PASS: the server allows exactly each chart\'s maximum');
+  await page.close();
+}
 await browser.close();
 store.server.close();
-console.log('PASS scoreboard: story difficulty, recorded fights, board before credits, post, share, menu');
+console.log('PASS scoreboard: story difficulty, recorded fights, board before credits, post, share, menu, server limits');
