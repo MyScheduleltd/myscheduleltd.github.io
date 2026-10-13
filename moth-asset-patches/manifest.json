@@ -1,0 +1,301 @@
+{
+ "files": {
+  "assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp": {
+   "release": "f26166cd74cbe7e0fb7313e5c5a8a10dcca7d483482a755f6e1e7fa64098f086",
+   "sha256": "c1c83bf57c892c401ded54bbda95075ac98541a6a7a6ce58b39fc55bed3d8ac1",
+   "pixelsCleaned": 5866,
+   "bytes": [
+    454142,
+    450772
+   ]
+  },
+  "assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp": {
+   "release": "eac6a4268132c84c5a1c2180613bcda407468f9ad9c85cb2da2776c03684f6e5",
+   "sha256": "845602e781b371714018952387444ab06cf51b3ba0ef04002791c2ea932499f6",
+   "pixelsCleaned": 5295,
+   "bytes": [
+    440766,
+    437480
+   ]
+  },
+  "assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp": {
+   "release": "809611a0d2cf818557018c896600262092f1658774feba652cceafe8757a6ea7",
+   "sha256": "28a79e2df1a0758f592323a9ff12c553cc35a7b4a2bc27b5849384c3d07345aa",
+   "pixelsCleaned": 5823,
+   "bytes": [
+    464078,
+    459842
+   ]
+  },
+  "assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp": {
+   "release": "d90981de5a6bc0104cf49f1e0f8d778b99ed881ecfdc9bd3afcfdce1116dc53e",
+   "sha256": "9af19043032f90f290beca7d83b9a470137aaa7f7ee577f82bdb56850cc1ef8e",
+   "pixelsCleaned": 3932,
+   "bytes": [
+    454546,
+    453154
+   ]
+  },
+  "assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp": {
+   "release": "784fab54f6750dfa3faea0be116559ab212de0e425bcf5b2e45504e05ca898a1",
+   "sha256": "6a521985dfb2adf220946b73a0c84877ae27c0e36ca4874028ed3c17faebb885",
+   "pixelsCleaned": 592,
+   "bytes": [
+    478970,
+    475684
+   ]
+  },
+  "assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp": {
+   "release": "7eeb4aeca0295f146b7c29c406d62d023b063d89c6d7e68acc73659c0b97d40c",
+   "sha256": "d804868bd24deed4d70b0beec23937b10b05bbd6b9aa2527eb1bd1f9a178d10e",
+   "pixelsCleaned": 5215,
+   "bytes": [
+    507220,
+    502932
+   ]
+  },
+  "assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp": {
+   "release": "f2f93248fc6e807f0c705cef0909fa947d8b8a72cc0cb0b5d6cedcad6cfbc3a1",
+   "sha256": "d1117fd7eeb8d758e46c2e49feac28f13b791bdd72862cd693327ca04f354f2a",
+   "pixelsCleaned": 7208,
+   "bytes": [
+    455858,
+    451744
+   ]
+  },
+  "assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp": {
+   "release": "76b8503bc5ea0c54c5f411a1947c81d92e08ebb2aa453ced4622488bb5e42961",
+   "sha256": "e34e5a933427a959af8dc4154cc92be05d861bdeb54a201c046fbdf749d4d9a7",
+   "pixelsCleaned": 1141,
+   "bytes": [
+    186670,
+    185088
+   ]
+  },
+  "assets/sprites/home_lyrics_window_controls/processed/sheet-transparent.webp": {
+   "release": "187d8b995441ddb4d4e3bf757f26e52f7bfbeb09ff1ea57e1ffa742cc72b4e68",
+   "sha256": "443114aa8d422732a140e34a876ffb466be4a2e5b83d9838603de21393a551a0",
+   "pixelsCleaned": 1284,
+   "bytes": [
+    45556,
+    43446
+   ]
+  },
+  "assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp": {
+   "release": "380a236059cf74b331d224a90ec73aaf1920b8da5111c05f5b9ddefac65454fa",
+   "sha256": "6244409543bbdca75c2aa8abfe720f0dddfd4709b3e60a3335c8f761ab992f45",
+   "pixelsCleaned": 2333,
+   "bytes": [
+    728356,
+    717970
+   ]
+  },
+  "assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp": {
+   "release": "19b8f43925da2090ebb807e5d8147de03636240530dccc777e970a7cb48ebee7",
+   "sha256": "ba8b2e9a5882ded24001869623b27edee1fcfd1fc8d4ca1cce610d9ac2ffb04b",
+   "pixelsCleaned": 9172,
+   "bytes": [
+    1690344,
+    1682740
+   ]
+  },
+  "assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp": {
+   "release": "a77daff344973979903c9e158a7b7009e57a4cf653c81ce06857463f0e852464",
+   "sha256": "8f852b5f5b8f4095ec627c0077f4ecbee99a3d3415c66ef78c7812f8d9257cc6",
+   "pixelsCleaned": 2054,
+   "bytes": [
+    180092,
+    177100
+   ]
+  },
+  "assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp": {
+   "release": "49f102fe3f05422d9d22790877f2ed0681eed2614415be00cb6fae13a3a1c9bd",
+   "sha256": "12d4d6eb83036e7dc688b229c07cf8a0d7069aa32d1b82fc4add39a577f32e65",
+   "pixelsCleaned": 2174,
+   "bytes": [
+    85142,
+    83208
+   ]
+  },
+  "assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp": {
+   "release": "2838c4afd5683f3f498beb182e64c4fd0d50174b413266856c8055c4d36ce359",
+   "sha256": "f11b50810cad8e377aa4379ab2c4a6d6c0951653bc662349dadac48617ba79be",
+   "pixelsCleaned": 8876,
+   "bytes": [
+    263824,
+    262712
+   ]
+  },
+  "assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp": {
+   "release": "2733d009589bb7d2466a50c39add7e9e00fcf558c633b780597ca4d5d0a4cef8",
+   "sha256": "359e1d614cb16430663c7e9f2a601afbb136fd51267c06bb0aae4f1ab2ca7f93",
+   "pixelsCleaned": 11774,
+   "bytes": [
+    903578,
+    894128
+   ]
+  },
+  "assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp": {
+   "release": "a9ab3ebeb683f7f9619d7fb754874dfe97e5172ea917b03fe6d9d51275f7622d",
+   "sha256": "d58bc3f984cadebc36bb80ffec410720f4f9c67202d4bd89042038a61b6994e1",
+   "pixelsCleaned": 3923,
+   "bytes": [
+    534236,
+    533530
+   ]
+  },
+  "assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp": {
+   "release": "0de911b3ccbd94975844122884f81bdce9ca11cdfb08def386cac56ac23bdcff",
+   "sha256": "49871893c5d59d4758dab0707917ddf81330c5d56e46058fc399c309ac49ba29",
+   "pixelsCleaned": 3055,
+   "bytes": [
+    210778,
+    211040
+   ]
+  },
+  "assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp": {
+   "release": "d9b1cf5a800ab062bfb9f2716623ccc188bd7a8c21eb2df7c88becd95f969a34",
+   "sha256": "064d91699d8f113a7ecbd2cbb6d7b2a35419dce18837ece47b04f2ecf7956e37",
+   "pixelsCleaned": 200,
+   "bytes": [
+    1196716,
+    1186508
+   ]
+  },
+  "assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp": {
+   "release": "314394892136f9ca37a431b2b7ea1975cd6ce17fe77f9b1c9024e81b619a7d67",
+   "sha256": "570a71dd7167468b23c5b7be4fe4b8c0efad47a5dbefd0b05895f8fd5347a90d",
+   "pixelsCleaned": 593,
+   "bytes": [
+    98650,
+    95338
+   ]
+  },
+  "assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp": {
+   "release": "7ab98927aed6e0a7ca944ed1b49d1212c75b51455b4a66ef4c474a0dc3764b23",
+   "sha256": "400f7a194378934b9f7a0d83503dc19588433f529f05c6c9be3c296eeb43fb6c",
+   "pixelsCleaned": 225,
+   "bytes": [
+    984900,
+    963262
+   ]
+  },
+  "assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp": {
+   "release": "90055ad2e9379b8c37a39dabe5070f3106540f1c8fa734cc4f20ad88da093780",
+   "sha256": "0f4e38e023e12dacd235fc665e600e78bfe7011907a642a2e29817e1878019e5",
+   "pixelsCleaned": 256,
+   "bytes": [
+    365472,
+    359966
+   ]
+  },
+  "assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp": {
+   "release": "4b8f244d3d8024efe3318b062679e8ce7ec7579d5a8c415cf6032be23150e33a",
+   "sha256": "ee47b88d29cb25ed589e025f0c48d6ff1439259f461845dcbdf4fc2585a70b17",
+   "pixelsCleaned": 2291,
+   "bytes": [
+    700444,
+    690618
+   ]
+  },
+  "assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp": {
+   "release": "084d2a8269518f08806f370d0677e136966a84d031512d3acb98badb25483bbd",
+   "sha256": "7cef1844a398ad6d72af7c794e97e5d9ef988eca1748d00252a64898ca3401ad",
+   "pixelsCleaned": 516,
+   "bytes": [
+    287108,
+    253146
+   ]
+  },
+  "assets/sprites/level5_river/processed-gpt-20261005/gangan.webp": {
+   "release": "dc76e61a776cdabe66d7617998ea8ef39011b6d1c74dffefcff0c7491b119ca1",
+   "sha256": "d537197f39f1e819252be00e359c3e8f1b43382406bc45ea14b426846763ab78",
+   "pixelsCleaned": 1830,
+   "bytes": [
+    625134,
+    617022
+   ]
+  },
+  "assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp": {
+   "release": "eae7bd20eecd62f220caa0b1f8f8544124fcb23946a0b806879bad54ff119f30",
+   "sha256": "3cbcddd20241f38b49624d65b6daa06378f58c627f44df765de3936cc9a39f36",
+   "pixelsCleaned": 4093,
+   "bytes": [
+    1366878,
+    1351056
+   ]
+  },
+  "assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp": {
+   "release": "b616e50d23adf742aa8391d2ceb17ca98d128a8079f03a15feb10bdcc5af2e2f",
+   "sha256": "91ae9a25e8ff57c8f8987359fadc98130c3eac0105c054298091059045e2b893",
+   "pixelsCleaned": 1968,
+   "bytes": [
+    1085010,
+    1080778
+   ]
+  },
+  "assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp": {
+   "release": "9f3297995d27124473eb9678676805866643e7ca3dcd68f4547ff159fd77d9a1",
+   "sha256": "9b83887496c2e0afbf84331daa8ee20219bb14be71d80e2a26423095f06dc904",
+   "pixelsCleaned": 400,
+   "bytes": [
+    1287610,
+    1263050
+   ]
+  },
+  "assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp": {
+   "release": "13837f04092e20419ca35e5647318d219801fec021c063701b5eb49ef964da8d",
+   "sha256": "eb6e44e986f1b8dfb0a5db16f7c625bed4137c67990a9ebc279e1ff1a555012d",
+   "pixelsCleaned": 841,
+   "bytes": [
+    732202,
+    718766
+   ]
+  },
+  "assets/sprites/secret_levels/processed/drb-squat.webp": {
+   "release": "e3888edc5de749456758bb2024ed768c8e433e089af38ed8e44e8236e3aa2a66",
+   "sha256": "15413847a9f18e9e40271d488cb9fd38749ea7c33ef9cbf3d2b106e0c223c4df",
+   "pixelsCleaned": 1264,
+   "bytes": [
+    428394,
+    424642
+   ]
+  },
+  "assets/sprites/secret_levels/processed/gg-squat.webp": {
+   "release": "2406c1e7f2236a33e459796e807972f0564d59f6bf3b548a4aed1c22db677da7",
+   "sha256": "a53d30c924e671ebd4b7b9410cf8c3187dd5aeb0a0ea69730f8600717b047fdd",
+   "pixelsCleaned": 1401,
+   "bytes": [
+    393114,
+    388732
+   ]
+  },
+  "assets/sprites/secret_levels/processed/spa-tickle.webp": {
+   "release": "f899cb0311e904d3ea447a9b6e6d5d2cc89b0e166f45115fa17550cdc11b4b77",
+   "sha256": "437b301e49a60c3a85eaa8250a0f9f40c76a038c9f968d455bbce2233b55bfa7",
+   "pixelsCleaned": 1796,
+   "bytes": [
+    1114480,
+    1099172
+   ]
+  },
+  "assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp": {
+   "release": "1ec790473402440e0fe3d60ced64b27f82b23b9f1b6a55e1e4c6a80f3b3ad90b",
+   "sha256": "64cb548f6eda9534f2b2e0a281863252b6553702fc779b0a4c54e3ef76882280",
+   "pixelsCleaned": 731,
+   "bytes": [
+    110524,
+    108700
+   ]
+  },
+  "assets/sprites/zuxian_idle/processed/sheet-transparent.webp": {
+   "release": "68b3d23cb1f310c03ad8647e8f5f270c04f64226a6ea75b18476ba52c5ddeffb",
+   "sha256": "3414f9a2b7b5f521643d9d0158ec352a5a3917710264b88e5ce6ef5ccee2035c",
+   "pixelsCleaned": 937,
+   "bytes": [
+    62482,
+    59728
+   ]
+  }
+ }
+}

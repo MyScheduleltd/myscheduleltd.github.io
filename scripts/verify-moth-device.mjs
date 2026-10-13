@@ -147,21 +147,29 @@ const rows = page => page.evaluate(() => {
   assert.deepEqual([second.loaded, second.o], [27, true], 'The failed sound is fetched again ' + JSON.stringify(second));
   console.log('hit sounds PASS', JSON.stringify({first, second}));
 }
-// 5. Sprites cut from a magenta background load with that fringe cleaned
-// (moth-sprite-fringe.mjs); level 3's purple notes are left as they are.
+// 5. Sprites cut from a magenta background arrive with that fringe cleaned
+// (baked into the files: moth-sprite-fringe.mjs), and retired parts of the
+// game are not loaded at all (moth-asset-trim.mjs).
 {
   const page = await browser.newPage({viewport: {width: 393, height: 852}});
   await stubScoreboard(page);
   const errors = []; page.on('pageerror', e => errors.push(String(e)));
   await page.goto(new URL('moth/staff/?device=phone', base).href, {waitUntil: 'domcontentloaded'});
   await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
-  await page.evaluate(() => Promise.all([bobbyGame.loadSceneAssets('level3-stage2')]));
+  await page.evaluate(() => bobbyGame.loadSceneAssets('level5-stage2'));
   const sprites = await page.evaluate(() => {
-    const look = image => ({kind: image?.constructor.name, cleaned: image?.fringeCleaned || 0, width: image?.naturalWidth, complete: image?.complete});
-    return {portraits: look(bobbyGame.refs.level2BathroomPortraitsSheet), notes: look(bobbyGame.refs.level3RhythmUiNotesSheet)};
+    const sheet = bobbyGame.refs.level2BathroomPortraitsSheet;
+    const c = Object.assign(document.createElement('canvas'), {width: sheet.naturalWidth, height: sheet.naturalHeight});
+    const x = c.getContext('2d'); x.drawImage(sheet, 0, 0);
+    const d = x.getImageData(0, 0, c.width, c.height).data;
+    let magenta = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] && d[i] - d[i + 1] > 40 && d[i + 2] - d[i + 1] > 25) magenta++;
+    return {kind: sheet.constructor.name, magenta, retiredJob: bobbyGame.sceneAssetJobs.some(job => job.key === 'level5GoatRunSheet'), retiredRef: 'level5GoatRunSheet' in bobbyGame.refs};
   });
-  assert(sprites.portraits.kind === 'ImageBitmap' && sprites.portraits.cleaned > 5000 && sprites.portraits.width === 1536 && sprites.portraits.complete, 'Portraits cleaned ' + JSON.stringify(sprites));
-  assert.equal(sprites.notes.kind, 'HTMLImageElement', 'Level 3 notes untouched');
+  // The release sheet has 14,846 magenta-tinted pixels; the cleaned one keeps
+  // only those inside the art.
+  assert(sprites.kind === 'HTMLImageElement' && sprites.magenta < 8000, 'Portraits cleaned ' + JSON.stringify(sprites));
+  assert(!sprites.retiredJob && !sprites.retiredRef, 'Retired sprites not loaded ' + JSON.stringify(sprites));
   assert.deepEqual(errors, []);
   console.log('sprite fringe PASS', JSON.stringify(sprites));
 }

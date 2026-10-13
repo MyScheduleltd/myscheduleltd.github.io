@@ -2374,8 +2374,7 @@ class BobbyGame {
         ["arcade", this.config.level4ArcadeRhythm],
         ["studio", this.config.level5StudioRhythm],
         ["river", this.config.level5RiverRhythm],
-        ["concert", this.config.level6ConcertRhythm],
-        ["level6", this.config.level6?.stage2]
+        ["concert", this.config.level6ConcertRhythm]
       ].forEach(([theme, spec]) => {
         const source = spec?.fullSong ? spec.audioSrc : spec?.fightCut?.src;
         if (!source) return;
@@ -2574,21 +2573,8 @@ for (const level of this.config.secretLevels || []) {
 }
     this.sceneAssetJobs.push(
       {key:"bobby", group:"player", run:async () => {this.refs.bobby = await loadImage(this.config.sprites.bobby.reference);}, release:() => {delete this.refs.bobby;}},
-      {key:"boss", group:"road", run:async () => {this.refs.boss = await loadImage(this.config.sprites.gangan.reference);}, release:() => {delete this.refs.boss;}},
-      {key:"bobbyRideSheet", group:"player", run:async () => {this.refs.bobbyRideSheet = await loadOptionalSheet(bobbySpec.source);}, release:() => {delete this.refs.bobbyRideSheet;}},
-      {key:"bobbyAttackSheet", group:"player", run:async () => {this.refs.bobbyAttackSheet = await loadOptionalSheet(bobbySpec.attack?.source);}, release:() => {delete this.refs.bobbyAttackSheet;}},
       {key:"bobbyOnFootSheet", group:"player", run:async () => {this.refs.bobbyOnFootSheet = await loadOptionalSheet(bobbySpec.onFoot?.source);}, release:() => {delete this.refs.bobbyOnFootSheet;}},
-      {key:"ganganSheet", group:"road", run:async () => {this.refs.ganganSheet = await loadOptionalSheet(ganganSpec.source);}, release:() => {delete this.refs.ganganSheet;}},
-      {key:"ganganAttackSheet", group:"road", run:async () => {this.refs.ganganAttackSheet = await loadOptionalSheet(ganganSpec.attack?.source);}, release:() => {delete this.refs.ganganAttackSheet;}},
-      {key:"ganganCandySheet", group:"road", run:async () => {this.refs.ganganCandySheet = await loadOptionalSheet(ganganSpec.candy?.source);}, release:() => {delete this.refs.ganganCandySheet;}},
-      {key:"ganganDefeatExitSheet", group:"road", run:async () => {this.refs.ganganDefeatExitSheet = await loadOptionalSheet(ganganSpec.defeatExit?.source);}, release:() => {delete this.refs.ganganDefeatExitSheet;}},
-      {key:"ganganBikeExitSheet", group:"road", run:async () => {this.refs.ganganBikeExitSheet = await loadOptionalSheet(ganganSpec.bikeExit?.source);}, release:() => {delete this.refs.ganganBikeExitSheet;}},
-      {key:"ganganHealthBarSheet", group:"road", run:async () => {this.refs.ganganHealthBarSheet = await loadOptionalSheet(ganganSpec.healthBar?.source);}, release:() => {delete this.refs.ganganHealthBarSheet;}},
-      {key:"levelMap", group:"road", run:async () => {this.refs.levelMap = await loadOptionalSheet(this.config.map?.source);}, release:() => {delete this.refs.levelMap;}},
-      {key:"tutorialStage0Map", group:"road", run:async () => {this.refs.tutorialStage0Map = await loadOptionalSheet(tutorialStage0Spec?.map?.source);}, release:() => {delete this.refs.tutorialStage0Map;}},
-      {key:"sewerMap", group:"level2", run:async () => {this.refs.sewerMap = await loadOptionalSheet(this.config.sewer?.source);}, release:() => {delete this.refs.sewerMap;}},
       {key:"level2BossMap", group:"level2", run:async () => {this.refs.level2BossMap = await loadOptionalSheet(this.config.sewer?.bossArena?.source);}, release:() => {delete this.refs.level2BossMap;}},
-      {key:"level2Stage3Map", group:"level2", run:async () => {this.refs.level2Stage3Map = await loadOptionalSheet(this.config.sewer?.stage3?.source);}, release:() => {delete this.refs.level2Stage3Map;}},
       {key:"level3Stage1Map", group:"level3", run:async () => {this.refs.level3Stage1Map = await loadOptionalSheet(level3Stage1Spec?.source);}, release:() => {delete this.refs.level3Stage1Map;}},
       {key:"level4Stage1Map", group:"level4", run:async () => {this.refs.level4Stage1Map = await loadOptionalSheet(level4Stage1Spec?.source);}, release:() => {delete this.refs.level4Stage1Map;}},
       {key:"level2BundleSheet", group:"common", run:async () => {this.refs.level2BundleSheet = await loadOptionalSheet(level2BundleSpec?.source);}, release:() => {delete this.refs.level2BundleSheet;}},
@@ -2599,50 +2585,19 @@ for (const level of this.config.secretLevels || []) {
       {key:"bobbyBlackHoodFitSheet", group:"player", run:async () => {this.refs.bobbyBlackHoodFitSheet = await loadOptionalSheet(blackHoodFitSpec?.source);}, release:() => {delete this.refs.bobbyBlackHoodFitSheet;}},
       {key:"bobbyFinaleBikiniSheet", group:"player", run:async () => {this.refs.bobbyFinaleBikiniSheet = await loadOptionalSheet(finaleBikiniSpec?.source);}, release:() => {delete this.refs.bobbyFinaleBikiniSheet;}},
       {key:"mosquitoBossSheet", group:"level2", run:async () => {this.refs.mosquitoBossSheet = await loadOptionalSheet(mosquitoBossSpec?.source);}, release:() => {delete this.refs.mosquitoBossSheet;}},
-      {key:"mosquitoMinionSheet", group:"level2", run:async () => {this.refs.mosquitoMinionSheet = await loadOptionalSheet(mosquitoMinionSpec?.source);}, release:() => {delete this.refs.mosquitoMinionSheet;}},
-      {key:"level2Stage3PropsSheet", group:"level2", run:async () => {this.refs.level2Stage3PropsSheet = await loadOptionalSheet(stage3PropsSpec?.source);}, release:() => {delete this.refs.level2Stage3PropsSheet;}},
       {key:"level3BossSheet", group:"level3", run:async () => {this.refs.level3BossSheet = await loadOptionalSheet(level3BossSpec?.source);}, release:() => {delete this.refs.level3BossSheet;}},
       {key:"level3BossExitRightSheet", group:"level3", run:async () => {this.refs.level3BossExitRightSheet = await loadOptionalSheet(level3BossExitRightSpec?.source);}, release:() => {delete this.refs.level3BossExitRightSheet;}},
-      {key:"level3RhythmFightSheet", group:"level3", run:async () => {this.refs.level3RhythmFightSheet = await loadOptionalSheet(level3RhythmFightSpec?.source);}, release:() => {delete this.refs.level3RhythmFightSheet;}},
-      {key:"level3RhythmFightBathingSuitSheet", group:"level3", run:async () => {this.refs.level3RhythmFightBathingSuitSheet = await loadOptionalSheet(level3RhythmFightBathingSuitSpec?.source);}, release:() => {delete this.refs.level3RhythmFightBathingSuitSheet;}},
-      {key:"level3RhythmFightSummerFitSheet", group:"level3", run:async () => {this.refs.level3RhythmFightSummerFitSheet = await loadOptionalSheet(level3RhythmFightSummerFitSpec?.source);}, release:() => {delete this.refs.level3RhythmFightSummerFitSheet;}},
-      {key:"level3RhythmHpBottleNoteSheet", group:"common", run:async () => {this.refs.level3RhythmHpBottleNoteSheet = await loadOptionalSheet(level3RhythmHpBottleNoteSpec?.source);}, release:() => {delete this.refs.level3RhythmHpBottleNoteSheet;}},
-      {key:"level3RhythmSatisfactionReactionsSheet", group:"level3", run:async () => {this.refs.level3RhythmSatisfactionReactionsSheet = await loadOptionalSheet(level3RhythmSatisfactionReactionsSpec?.source);}, release:() => {delete this.refs.level3RhythmSatisfactionReactionsSheet;}},
-      {key:"level3RhythmSuccessNotificationSheet", group:"level3", run:async () => {this.refs.level3RhythmSuccessNotificationSheet = await loadOptionalSheet(level3RhythmSuccessNotificationSpec?.source);}, release:() => {delete this.refs.level3RhythmSuccessNotificationSheet;}},
-      {key:"homeMp3MenuSheet", group:"home", run:async () => {this.refs.homeMp3MenuSheet = await loadOptionalSheet(homeMp3MenuSpec?.source);}, release:() => {delete this.refs.homeMp3MenuSheet;}},
       {key:"dialogueProfilesSheet", group:"common", run:async () => {this.refs.dialogueProfilesSheet = await loadOptionalSheet(dialogueProfilesSpec?.source);}, release:() => {delete this.refs.dialogueProfilesSheet;}},
       {key:"bonitaDialogueProfileSheet", group:"common", run:async () => {this.refs.bonitaDialogueProfileSheet = await loadOptionalSheet(this.config?.sprites?.bonitaDialogueProfile?.source);}, release:() => {delete this.refs.bonitaDialogueProfileSheet;}},
-      {key:"dialogueFrameSheet", group:"common", run:async () => {this.refs.dialogueFrameSheet = await loadOptionalSheet(dialogueFrameSpec?.source);}, release:() => {delete this.refs.dialogueFrameSheet;}},
-      {key:"loadingTransitionSheet", group:"common", run:async () => {this.refs.loadingTransitionSheet = await loadOptionalSheet(loadingTransitionSpec?.source);}, release:() => {delete this.refs.loadingTransitionSheet;}},
       {key:"homeMp3WaveformSheets", group:"home", run:async () => {this.refs.homeMp3WaveformSheets = Object.fromEntries(await Promise.all(
         Object.entries(homeMp3WaveformSpecs).map(async ([songId, spec]) => [
           songId,
           await loadOptionalSheet(spec?.source)
         ])
       ));}, release:() => {delete this.refs.homeMp3WaveformSheets;}},
-      {key:"bobbyTutorialIntroSheet", group:"player", run:async () => {this.refs.bobbyTutorialIntroSheet = await loadOptionalSheet(bobbyTutorialIntroSpec?.source);}, release:() => {delete this.refs.bobbyTutorialIntroSheet;}},
       {key:"level4BonitaBlanketIdleSheet", group:"level4", run:async () => {this.refs.level4BonitaBlanketIdleSheet = await loadOptionalSheet(level4BonitaSpec?.source);}, release:() => {delete this.refs.level4BonitaBlanketIdleSheet;}},
-      {key:"level4BonitaBossPlaceholderSheet", group:"level4", run:async () => {this.refs.level4BonitaBossPlaceholderSheet = await loadOptionalSheet(level4BonitaBossPlaceholderSpec?.source);}, release:() => {delete this.refs.level4BonitaBossPlaceholderSheet;}},
-      {key:"level4HiddenWallChestSheet", group:"level4", run:async () => {this.refs.level4HiddenWallChestSheet = await loadOptionalSheet(level4HiddenChestSpec?.source);}, release:() => {delete this.refs.level4HiddenWallChestSheet;}},
-      {key:"level4BonitaGameBossSheet", group:"level4", run:async () => {this.refs.level4BonitaGameBossSheet = await loadOptionalSheet(this.config?.sprites?.level4BonitaGameBoss?.source);}, release:() => {delete this.refs.level4BonitaGameBossSheet;}},
-      {key:"level4BobbyVsIntroSheet", group:"level4", run:async () => {this.refs.level4BobbyVsIntroSheet = await loadOptionalSheet(this.config?.sprites?.level4BobbyVsIntro?.source);}, release:() => {delete this.refs.level4BobbyVsIntroSheet;}},
-      {key:"level4BossStarShotSheet", group:"level4", run:async () => {this.refs.level4BossStarShotSheet = await loadOptionalSheet(this.config?.sprites?.level4BossStarShot?.source);}, release:() => {delete this.refs.level4BossStarShotSheet;}},
-      {key:"level4BossGroundWaveSheet", group:"level4", run:async () => {this.refs.level4BossGroundWaveSheet = await loadOptionalSheet(this.config?.sprites?.level4BossGroundWave?.source);}, release:() => {delete this.refs.level4BossGroundWaveSheet;}},
-      {key:"level4BossArenaMap", group:"level4", run:async () => {this.refs.level4BossArenaMap = await loadOptionalSheet(this.config?.level4?.stage1?.bossFight?.source);}, release:() => {delete this.refs.level4BossArenaMap;}},
-      {key:"level5Stage1Map", group:"level5", run:async () => {this.refs.level5Stage1Map = await loadOptionalSheet(level5Stage1Spec?.source);}, release:() => {delete this.refs.level5Stage1Map;}},
       {key:"level5ParallaxLayers", group:"level5", run:async () => {this.refs.level5ParallaxLayers = await Promise.all((level5Stage1Spec?.parallaxLayers || []).map((layer) => loadOptionalSheet(layer.source)));}, release:() => {delete this.refs.level5ParallaxLayers;}},
-      {key:"level5DaytonaSheet", group:"level5", run:async () => {this.refs.level5DaytonaSheet = await loadOptionalSheet(this.config?.sprites?.level5Daytona?.source);}, release:() => {delete this.refs.level5DaytonaSheet;}},
-      {key:"level5GanGanCarSheet", group:"level5", run:async () => {this.refs.level5GanGanCarSheet = await loadOptionalSheet(this.config?.sprites?.level5GanGanCar?.source);}, release:() => {delete this.refs.level5GanGanCarSheet;}},
-      {key:"level5GanGanIdleSheet", group:"level5", run:async () => {this.refs.level5GanGanIdleSheet = await loadOptionalSheet(this.config?.sprites?.level5GanGanIdle?.source);}, release:() => {delete this.refs.level5GanGanIdleSheet;}},
-      {key:"level5HighwayChestSheet", group:"level5", run:async () => {this.refs.level5HighwayChestSheet = await loadOptionalSheet(this.config?.sprites?.level5HighwayChest?.source);}, release:() => {delete this.refs.level5HighwayChestSheet;}},
-      {key:"level5UndergroundWaterSheet", group:"level5", run:async () => {this.refs.level5UndergroundWaterSheet = await loadOptionalSheet(this.config?.sprites?.level5UndergroundWater?.source);}, release:() => {delete this.refs.level5UndergroundWaterSheet;}},
-      {key:"level5BossMap", group:"level5", run:async () => {this.refs.level5BossMap = await loadOptionalSheet(level5Stage2Spec?.source);}, release:() => {delete this.refs.level5BossMap;}},
       {key:"level5BossParallaxLayers", group:"level5", run:async () => {this.refs.level5BossParallaxLayers = await Promise.all((level5Stage2Spec?.parallaxLayers || []).map((layer) => loadOptionalSheet(layer.source)));}, release:() => {delete this.refs.level5BossParallaxLayers;}},
-      {key:"level5BossDaytonaSheet", group:"common", run:async () => {this.refs.level5BossDaytonaSheet = await loadOptionalSheet(this.config?.sprites?.level5BossDaytona?.source);}, release:() => {delete this.refs.level5BossDaytonaSheet;}},
-      {key:"level5BossRoadObjectsSheet", group:"level5", run:async () => {this.refs.level5BossRoadObjectsSheet = await loadOptionalSheet(this.config?.sprites?.level5BossRoadObjects?.source);}, release:() => {delete this.refs.level5BossRoadObjectsSheet;}},
-      {key:"level5RhythmHitFxSheet", group:"level5", run:async () => {this.refs.level5RhythmHitFxSheet = await loadOptionalSheet(this.config?.sprites?.level5RhythmHitFx?.source);}, release:() => {delete this.refs.level5RhythmHitFxSheet;}},
-      {key:"level5GoatRunSheet", group:"level5", run:async () => {this.refs.level5GoatRunSheet = await loadOptionalSheet(this.config?.sprites?.level5GoatRun?.source);}, release:() => {delete this.refs.level5GoatRunSheet;}},
-      {key:"level5PoopObstacleSheet", group:"level5", run:async () => {this.refs.level5PoopObstacleSheet = await loadOptionalSheet(this.config?.sprites?.level5PoopObstacle?.source);}, release:() => {delete this.refs.level5PoopObstacleSheet;}},
       {key:"level5StudioBgSheet", group:"studio", run:async () => {this.refs.level5StudioBgSheet = await loadOptionalSheet(this.config?.sprites?.level5StudioBg?.source);}, release:() => {delete this.refs.level5StudioBgSheet;}},
       {key:"level5StudioDrBeautySheet", group:"studio", run:async () => {this.refs.level5StudioDrBeautySheet = await loadOptionalSheet(this.config?.sprites?.level5StudioDrBeauty?.source);}, release:() => {delete this.refs.level5StudioDrBeautySheet;}},
       {key:"level5StudioGanganSheet", group:"studio", run:async () => {this.refs.level5StudioGanganSheet = await loadOptionalSheet(this.config?.sprites?.level5StudioGangan?.source);}, release:() => {delete this.refs.level5StudioGanganSheet;}},
@@ -2654,9 +2609,6 @@ for (const level of this.config.secretLevels || []) {
       {key:"level5DriveCarSheet", group:"level5", run:async () => {this.refs.level5DriveCarSheet = await loadOptionalSheet(this.config?.sprites?.level5DriveCar?.source);}, release:() => {delete this.refs.level5DriveCarSheet;}},
       {key:"level5DriveWheelSheet", group:"level5", run:async () => {this.refs.level5DriveWheelSheet = await loadOptionalSheet(this.config?.sprites?.level5DriveWheel?.source);}, release:() => {delete this.refs.level5DriveWheelSheet;}},
       {key:"level5DialoguePortraitsSheet", group:"level5", run:async () => {this.refs.level5DialoguePortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level5DialoguePortraits?.source);}, release:() => {delete this.refs.level5DialoguePortraitsSheet;}},
-      {key:"level6Stage1Map", group:"level6", run:async () => {this.refs.level6Stage1Map = await loadOptionalSheet(level6Stage1Spec?.source);}, release:() => {delete this.refs.level6Stage1Map;}},
-      {key:"level6BossMap", group:"level6", run:async () => {this.refs.level6BossMap = await loadOptionalSheet(level6Stage2Spec?.source);}, release:() => {delete this.refs.level6BossMap;}},
-      {key:"level6BobbyPerformerSheet", group:"level6", run:async () => {this.refs.level6BobbyPerformerSheet = await loadOptionalSheet(this.config?.sprites?.level6BobbyPerformer?.source);}, release:() => {delete this.refs.level6BobbyPerformerSheet;}},
       {key:"level6ConcertBgSheet", group:"level6", run:async () => {this.refs.level6ConcertBgSheet = await loadOptionalSheet(this.config?.sprites?.level6ConcertBg?.source);}, release:() => {delete this.refs.level6ConcertBgSheet;}},
       {key:"level6ConcertCrowdSheet", group:"level6", run:async () => {this.refs.level6ConcertCrowdSheet = await loadOptionalSheet(this.config?.sprites?.level6ConcertCrowd?.source);}, release:() => {delete this.refs.level6ConcertCrowdSheet;}},
       {key:"level6ConcertDrBeautySheet", group:"level6", run:async () => {this.refs.level6ConcertDrBeautySheet = await loadOptionalSheet(this.config?.sprites?.level6ConcertDrBeauty?.source);}, release:() => {delete this.refs.level6ConcertDrBeautySheet;}},
@@ -2665,19 +2617,6 @@ for (const level of this.config.secretLevels || []) {
       {key:"level6DreamBubbleSheet", group:"level6", run:async () => {this.refs.level6DreamBubbleSheet = await loadOptionalSheet(this.config?.sprites?.level6DreamBubble?.source);}, release:() => {delete this.refs.level6DreamBubbleSheet;}},
       {key:"level6WakePortraitsSheet", group:"level6", run:async () => {this.refs.level6WakePortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level6WakePortraits?.source);}, release:() => {delete this.refs.level6WakePortraitsSheet;}},
       {key:"endingAlbumPhotos", group:"level6", run:async () => {this.refs.endingAlbumPhotos = await Promise.all((this.config?.finale?.stage1?.ending?.album || []).map(photo => loadOptionalSheet(photo.source)));}, release:() => {delete this.refs.endingAlbumPhotos;}},
-      {key:"level6GanGanExitSheet", group:"level6", run:async () => {this.refs.level6GanGanExitSheet = await loadOptionalSheet(this.config?.sprites?.level6GanGanExit?.source);}, release:() => {delete this.refs.level6GanGanExitSheet;}},
-      {key:"finaleDuoSingingSheet", group:"level6", run:async () => {this.refs.finaleDuoSingingSheet = await loadOptionalSheet(this.config?.sprites?.finaleDuoSinging?.source);}, release:() => {delete this.refs.finaleDuoSingingSheet;}},
-      {key:"level6FansProfileSheet", group:"level6", run:async () => {this.refs.level6FansProfileSheet = await loadOptionalSheet(this.config?.sprites?.level6FansProfile?.source);}, release:() => {delete this.refs.level6FansProfileSheet;}},
-      {key:"finaleBackstageMap", group:"level6", run:async () => {this.refs.finaleBackstageMap = await loadOptionalSheet(this.config?.finale?.stage1?.source);}, release:() => {delete this.refs.finaleBackstageMap;}},
-      {key:"finaleEndingMap", group:"level6", run:async () => {this.refs.finaleEndingMap = await loadOptionalSheet(this.config?.finale?.stage1?.endingSource);}, release:() => {delete this.refs.finaleEndingMap;}},
-      {key:"finaleEndingFilmOverlaySheet", group:"level6", run:async () => {this.refs.finaleEndingFilmOverlaySheet = await loadOptionalSheet(this.config?.sprites?.finaleEndingFilmOverlay?.source);}, release:() => {delete this.refs.finaleEndingFilmOverlaySheet;}},
-      {key:"finaleChestSheet", group:"level6", run:async () => {this.refs.finaleChestSheet = await loadOptionalSheet(this.config?.sprites?.finaleChest?.source);}, release:() => {delete this.refs.finaleChestSheet;}},
-      {key:"finaleForgeMachineSheet", group:"level6", run:async () => {this.refs.finaleForgeMachineSheet = await loadOptionalSheet(this.config?.sprites?.finaleForgeMachine?.source);}, release:() => {delete this.refs.finaleForgeMachineSheet;}},
-      {key:"finaleForgeMenuTexture", group:"level6", run:async () => {this.refs.finaleForgeMenuTexture = await loadOptionalSheet(this.config?.sprites?.finaleForgeMenuTexture?.source);}, release:() => {delete this.refs.finaleForgeMenuTexture;}},
-      {key:"finaleForgeRewardIconsSheet", group:"level6", run:async () => {this.refs.finaleForgeRewardIconsSheet = await loadOptionalSheet(this.config?.sprites?.finaleForgeRewardIcons?.source);}, release:() => {delete this.refs.finaleForgeRewardIconsSheet;}},
-      {key:"level3RhythmUiReceptorsSheet", group:"common", run:async () => {this.refs.level3RhythmUiReceptorsSheet = await loadOptionalSheet(this.config?.sprites?.level3RhythmUiReceptors?.source);}, release:() => {delete this.refs.level3RhythmUiReceptorsSheet;}},
-      {key:"level3RhythmUiNotesSheet", group:"common", run:async () => {this.refs.level3RhythmUiNotesSheet = await loadOptionalSheet(this.config?.sprites?.level3RhythmUiNotes?.source);}, release:() => {delete this.refs.level3RhythmUiNotesSheet;}},
-      {key:"level3RhythmUiPanelSheet", group:"common", run:async () => {this.refs.level3RhythmUiPanelSheet = await loadOptionalSheet(this.config?.sprites?.level3RhythmUiPanel?.source);}, release:() => {delete this.refs.level3RhythmUiPanelSheet;}},
       {key:"level1OfficeBackground", group:"office", run:async () => {this.refs.level1OfficeBackground = await loadOptionalSheet(this.config?.sprites?.level1OfficeBackground?.source);}, release:() => {delete this.refs.level1OfficeBackground;}},
       {key:"level1OfficeForeground", group:"office", run:async () => {this.refs.level1OfficeForeground = await loadOptionalSheet(this.config?.sprites?.level1OfficeForeground?.source);}, release:() => {delete this.refs.level1OfficeForeground;}},
       {key:"level1OfficeBobbySheet", group:"office", run:async () => {this.refs.level1OfficeBobbySheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeBobby?.source);}, release:() => {delete this.refs.level1OfficeBobbySheet;}},
@@ -2701,9 +2640,7 @@ for (const level of this.config.secretLevels || []) {
       {key:"level4BonitaFighterSheet", group:"level4", run:async () => {this.refs.level4BonitaFighterSheet = await loadOptionalSheet(this.config?.sprites?.level4BonitaFighter?.source);}, release:() => {delete this.refs.level4BonitaFighterSheet;}},
       {key:"comboCelebrations", group:"common", run:async () => {this.refs.comboCelebrations = await Promise.all(COMBO_CELEBRATIONS.map(item => loadOptionalSheet(item.photo)));}, release:() => {delete this.refs.comboCelebrations;}},
       {key:"level2BathroomMosquitoSheet", group:"level2", run:async () => {this.refs.level2BathroomMosquitoSheet = await loadOptionalSheet(this.config?.sprites?.level2BathroomMosquito?.source);}, release:() => {delete this.refs.level2BathroomMosquitoSheet;}},
-      {key:"level2BathroomPortraitsSheet", group:"common", run:async () => {this.refs.level2BathroomPortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level2BathroomDialoguePortraits?.source);}, release:() => {delete this.refs.level2BathroomPortraitsSheet;}},
-      {key:"level1HealthFxSheet", group:"common", run:async () => {this.refs.level1HealthFxSheet = await loadOptionalSheet(this.config?.sprites?.level1HealthFx?.source);}, release:() => {delete this.refs.level1HealthFxSheet;}},
-      {key:"mapProps", group:"road", run:async () => {this.refs.mapProps = await Promise.all((this.config.map?.props || []).map((prop) => loadOptionalSheet(prop.image)));}, release:() => {delete this.refs.mapProps;}}
+      {key:"level2BathroomPortraitsSheet", group:"common", run:async () => {this.refs.level2BathroomPortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level2BathroomDialoguePortraits?.source);}, release:() => {delete this.refs.level2BathroomPortraitsSheet;}}
     );
     this.loadedSceneGroups = new Set();
   }
@@ -28811,6 +28748,8 @@ const imageRequests = new Map();
 // configuration always come from this site.
 const MIRROR_BASE = ['myscheduleltd.com', 'www.myscheduleltd.com'].includes(location.hostname)
   ? 'https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@4a1cae2472c9fbece153cc1dbd0f0c1593dd9997/docs/moth/' : '';
+const MIRROR_PATCH_BASE = MIRROR_BASE && '';
+const MIRROR_PATCHED = new Set(["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","assets/sprites/home_lyrics_window_controls/processed/sheet-transparent.webp","assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","assets/sprites/secret_levels/processed/drb-squat.webp","assets/sprites/secret_levels/processed/gg-squat.webp","assets/sprites/secret_levels/processed/spa-tickle.webp","assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","assets/sprites/zuxian_idle/processed/sheet-transparent.webp"]);
 const MIRROR_ROOT = '/moth/';
 let assetIntegrity = null;
 
@@ -28865,10 +28804,12 @@ async function mirrorCopy(url) {
   if (!MIRROR_BASE || url.origin !== location.origin || !url.pathname.startsWith(MIRROR_ROOT)) return null;
   try {
     assetIntegrity ||= fetchGameJson('/moth/asset-integrity.json');
-    const expected = (await assetIntegrity)[decodeURIComponent(url.pathname.slice(MIRROR_ROOT.length))];
-    if (!expected) return null;
+    const file = decodeURIComponent(url.pathname.slice(MIRROR_ROOT.length));
+    const expected = (await assetIntegrity)[file];
+    const base = MIRROR_PATCHED.has(file) ? MIRROR_PATCH_BASE : MIRROR_BASE;
+    if (!expected || !base) return null;
     // One quick retry: jsDelivr can fail a file's first, uncached request.
-    const source = MIRROR_BASE + url.pathname.slice(MIRROR_ROOT.length);
+    const source = base + url.pathname.slice(MIRROR_ROOT.length);
     const asset = await fetchBytes(source, 10000).catch(() => new Promise(resolve => setTimeout(resolve, 400)).then(() => fetchBytes(source, 10000)));
     const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', asset.data));
     const hex = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
@@ -28905,73 +28846,12 @@ function loadImage(src) {
   const promise = fetchGameAsset(src).then(({data, type}) => new Promise((resolve, reject) => {
     const blobUrl = URL.createObjectURL(new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'}));
     const image = new Image();
-    // Sprites cut from a magenta background lose its fringe (moth-sprite-fringe.mjs).
-    image.onload = () => { URL.revokeObjectURL(blobUrl); const path = src.split('?')[0]; resolve(KEY_FRINGE_SPRITES.has(path.startsWith('./') ? path.slice(2) : path) ? cleanKeyFringe(image) : image); };
+    image.onload = () => { URL.revokeObjectURL(blobUrl); resolve(image); };
     image.onerror = () => { URL.revokeObjectURL(blobUrl); reject(new Error('Image could not be decoded')); };
     image.src = blobUrl;
   })).finally(() => { BOOT_LOAD.settled++; imageRequests.delete(src); });
   imageRequests.set(src, promise);
   return promise;
-}
-
-const KEY_FRINGE_SPRITES = new Set(["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","assets/sprites/bobby_level6_performer/processed-v3/sheet-transparent.webp","assets/sprites/bobby_orange_diaper_attack/processed-v4/sheet-transparent.webp","assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","assets/sprites/bobby_orange_ride/processed-v4/sheet-transparent.webp","assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","assets/sprites/bobby_tutorial_intro/processed-v5/sheet-transparent.webp","assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","assets/sprites/bobby_vs_intro/processed-v3/sheet-transparent.webp","assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","assets/sprites/bonita_boss_placeholder/processed/sheet-transparent.webp","assets/sprites/bonita_boss_star_shot/processed/sheet-transparent.webp","assets/sprites/bonita_game_avatar_boss/processed/sheet-transparent.webp","assets/sprites/gangan_bike_exit_level1/processed/sheet-transparent.webp","assets/sprites/gangan_candy_eat/processed/sheet-transparent.webp","assets/sprites/gangan_defeat_exit/processed/sheet-transparent.webp","assets/sprites/gangan_scooter_ride/processed-v2/sheet-transparent.webp","assets/sprites/home_lyrics_window_controls/processed/sheet-transparent.webp","assets/sprites/level1_health_fx/processed/sheet-transparent.webp","assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","assets/sprites/level2_stage3_props/processed_clean/sheet-transparent.webp","assets/sprites/level3_rhythm_hp_bottle_note/processed/sheet-transparent.webp","assets/sprites/level3_rhythm_massage_loop/processed/sheet-transparent.webp","assets/sprites/level3_ui_receptors_v2/processed/sheet-transparent.webp","assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","assets/sprites/level4_hidden_wall_chest/processed/sheet-transparent.webp","assets/sprites/level5_boss_road_objects/processed/sheet-transparent.webp","assets/sprites/level5_goat_run/processed/sheet-transparent.webp","assets/sprites/level5_poop_obstacle/processed/sheet-transparent.webp","assets/sprites/level5_rhythm_hit_fx/processed/sheet-transparent.webp","assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","assets/sprites/level6_fans_profile/processed/sheet-transparent.webp","assets/sprites/secret_levels/processed/drb-squat.webp","assets/sprites/secret_levels/processed/gg-squat.webp","assets/sprites/secret_levels/processed/spa-tickle.webp","assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","assets/sprites/zuxian_idle/processed/sheet-transparent.webp"]);
-
-// Resolves to a drawable copy of the image with its key fringe cleaned (an
-// ImageBitmap that answers naturalWidth/complete like the image), or the image
-// itself if anything fails.
-async function cleanKeyFringe(image) {
-  try {
-    const w = image.naturalWidth, h = image.naturalHeight;
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    const context = canvas.getContext('2d', {willReadFrequently: true});
-    context.drawImage(image, 0, 0);
-    const pixels = context.getImageData(0, 0, w, h), d = pixels.data;
-    const tinted = i => d[i] - d[i + 1] > 40 && d[i + 2] - d[i + 1] > 25;
-    // Within 2 px of a fully transparent pixel (worked out when first asked).
-    const near = new Int8Array(w * h).fill(-1);
-    const edge = (x, y) => {
-      const k = y * w + x;
-      if (near[k] < 0) {
-        near[k] = 0;
-        for (let yy = Math.max(0, y - 2); yy <= Math.min(h - 1, y + 2) && !near[k]; yy++)
-          for (let xx = Math.max(0, x - 2); xx <= Math.min(w - 1, x + 2); xx++) if (d[(yy * w + xx) * 4 + 3] === 0) { near[k] = 1; break; }
-      }
-      return near[k] === 1;
-    };
-    const fixes = [], clear = [];
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const i = (y * w + x) * 4;
-        if (!d[i + 3] || !tinted(i) || !edge(x, y)) continue;
-        let pink = false, n = 0, r = 0, g = 0, b = 0, solid = false;
-        for (let yy = Math.max(0, y - 3); yy <= Math.min(h - 1, y + 3) && !pink; yy++) {
-          for (let xx = Math.max(0, x - 3); xx <= Math.min(w - 1, x + 3); xx++) {
-            const j = (yy * w + xx) * 4;
-            if (d[j + 3] < 250) continue;
-            if (Math.abs(yy - y) <= 2 && Math.abs(xx - x) <= 2) solid = true;
-            if (edge(xx, yy)) continue;
-            if (tinted(j)) { pink = true; break; }
-            n++; r += d[j]; g += d[j + 1]; b += d[j + 2];
-          }
-        }
-        if (pink) continue;
-        if (n) fixes.push(i, r / n, g / n, b / n);
-        else if (d[i + 3] < 160 && !solid) clear.push(i);
-      }
-    }
-    const luma = (r, g, b) => 0.299 * r + 0.587 * g + 0.114 * b;
-    for (let f = 0; f < fixes.length; f += 4) {
-      const i = fixes[f], scale = luma(d[i], d[i + 1], d[i + 2]) / Math.max(1, luma(fixes[f + 1], fixes[f + 2], fixes[f + 3]));
-      for (let c = 0; c < 3; c++) d[i + c] = Math.min(255, Math.round(fixes[f + 1 + c] * scale));
-    }
-    for (const i of clear) d[i + 3] = 0;
-    const bitmap = await createImageBitmap(pixels);
-    canvas.width = canvas.height = 0;
-    return Object.assign(bitmap, {naturalWidth: w, naturalHeight: h, complete: true, fringeCleaned: fixes.length / 4 + clear.length});
-  } catch {
-    return image;
-  }
 }
 
 function loadOptionalSheet(src) {
