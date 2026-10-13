@@ -1,0 +1,57 @@
+{
+  "schema": "animation_contact_sheet_report.v1",
+  "frames": [
+    "art/male-swim-breaking-20261013/breaking-0.0.png",
+    "art/male-swim-breaking-20261013/breaking-1.3.png",
+    "art/male-swim-breaking-20261013/breaking-2.6.png",
+    "art/male-swim-breaking-20261013/breaking-3.9.png",
+    "art/male-swim-breaking-20261013/breaking-5.2.png",
+    "art/male-swim-breaking-20261013/breaking-6.5.png",
+    "art/male-swim-breaking-20261013/breaking-7.8.png",
+    "art/male-swim-breaking-20261013/breaking-9.1.png",
+    "art/male-swim-breaking-20261013/breaking-10.3.png"
+  ],
+  "frame_diff": [
+    {
+      "from": "breaking-0.0.png",
+      "to": "breaking-1.3.png",
+      "mean_rgb_diff": 9.32178638599537
+    },
+    {
+      "from": "breaking-1.3.png",
+      "to": "breaking-2.6.png",
+      "mean_rgb_diff": 11.588441478587962
+    },
+    {
+      "from": "breaking-2.6.png",
+      "to": "breaking-3.9.png",
+      "mean_rgb_diff": 15.034939236111109
+    },
+    {
+      "from": "breaking-3.9.png",
+      "to": "breaking-5.2.png",
+      "mean_rgb_diff": 19.52442672164352
+    },
+    {
+      "from": "breaking-5.2.png",
+      "to": "breaking-6.5.png",
+      "mean_rgb_diff": 17.620450303819446
+    },
+    {
+      "from": "breaking-6.5.png",
+      "to": "breaking-7.8.png",
+      "mean_rgb_diff": 15.325473090277777
+    },
+    {
+      "from": "breaking-7.8.png",
+      "to": "breaking-9.1.png",
+      "mean_rgb_diff": 8.631648220486111
+    },
+    {
+      "from": "breaking-9.1.png",
+      "to": "breaking-10.3.png",
+      "mean_rgb_diff": 6.487459852430555
+    }
+  ],
+  "warnings": []
+}

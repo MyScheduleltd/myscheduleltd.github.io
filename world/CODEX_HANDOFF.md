@@ -1,14 +1,32 @@
-# Approved BETA follow-up — 2026-10-13, packages ready for required review
+# Male shorts hem / Breaking hand release — 2026-10-13, prepared for BETA
 
-Owner requested “please publish to beta” after the male skin/neck/DJ wrist and floating-shirt-print repairs, and explicitly reverted the female regeneration. Release branch: `codex/avatar-print-release-20261013`. Earlier release PR #17 has merged. Current main (`8c78d72`) is integrated, preserving the subsequent M.O.T.H and server work.
+Owner requested publication, then correctly identified skin-colour spill below the shorts. The preceding colour-only check missed it. Live Blender MCP found the skin-cleanup `_skin` label included the shorts' lower half. Native atlas samples identify 6,695 fabric/stripe triangles down to both real leg hems; 2,200 Blender vertex labels (3,637 exported vertices) are corrected. Only the GLB skin-mask accessor changed: all positions, normals, UVs, indices, weights, joint binds and embedded image bytes are preserved. Female remains the original model.
 
-Production TypeScript/Vite build and **432/432 tests pass**. Both channel packages match all 52 current build files; all 38 integrity hashes pass. Entry: `main-BoMZQ2dt.js`. Production API: `https://myschedule-festival.onrender.com`. Male SHA256: `1e0a00e35849c6f1f79a579c6ec136d14ebaa38d05d7504409eba6a4aa533f61`. Female is the original SHA256 `20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3`.
+**436/436 tests and TypeScript/Vite production build pass.** The new regression samples native cloth, both hems, stripes, front/rear/sides and guards bare-leg skin; it fails the preceding model. Built local browser checks include four angles with contrasting white skin and a saved magenta swimwear colour. Native black shorts now reach their complete hems. Previous 254-frame male Breaking palm/wrist checks and nine-frame visual review also remain passing.
 
-Evidence: `art/beta-release-20261013/RELEASE.md` and `package-verification.json`, plus male skating, face, DJ wrist, print-fitting and original-female browser screenshots in `art/avatar-followup-20261012/`. This release adds no server change relative to current main, so it does not require a new Render deployment. Physical webcam/headset checks remain unmeasured.
+Approved BETA/PS2 packages contain `main-BE4fKoeL.js`; **104/104 files and all 38 combined integrity hashes pass**. Male SHA256 `b8cda2d2ddff137223a87af264116c9498e033a344d07c22b69a604d22d33e4c`; female SHA256 `20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3`. API remains `https://myschedule-festival.onrender.com`. Branch `codex/male-swim-breaking-20261013` includes current main through `9cf68bf`, preserving its M.O.T.H scoreboard release. GitHub requires one approving review, including approval of the latest push, and applies it to admins. Publish through the protected PR; do not bypass protection or claim live publication before merge and Pages verification.
 
-The initial package commit/push was not executed because automatic approval review hit an account limit. A later live account check allowed ordinary usage; the same approval path then succeeded. Release packages are committed and pushed on `codex/avatar-print-release-20261013`, awaiting a new protected-main PR review.
+Evidence: `art/male-shorts-hem-20261013/REVIEW.md`, `preservation.json`, `package-verification.json`; dance evidence: `art/male-swim-breaking-20261013/`. Local final view: `http://127.0.0.1:4173/avatar-review.html?sex=male&outfit=4&pose=idle&angle=0&zoom=1.2&look=1.5&swimwear=ff00ff&check=shorts-hem-final` . The entries below are historical checkpoints.
 
-GitHub requires a fresh review including the final push from `macakinTT` or another authorized reviewer. Packages and a PR are not a live deployment. Do not bypass protection. Verify Pages and public asset hashes after merge before reporting publication complete.
+# Male swimwear / Breaking hand fix — 2026-10-13, preceding local review
+
+Owner confirmed black shorts with white stripes and reported wrong dance palm direction / wrists that did not turn. `ImportedAvatar.ts` retains his native black swimwear texture even for older saved swimsuit dye colours; female swimwear and all other dye slots keep their existing paths. Through live Blender MCP, the source floor-combo FBX hand frame is recorded in `moves.json` and `scripts/fixtures/dance-hand-reference.json`. Male dance hands align both palm and finger directions, with reference roll passed through forearms. Original motion samples, punch/female mapping and both GLB bytes are unchanged.
+
+**435/435 tests and TypeScript/Vite build pass.** All 254 source frames check palm/finger directions, wrists articulate and skin volume remains intact. Nine-frame contact sheet and enlarged floor-hand / saved-magenta swimwear views reviewed in the built local browser. Evidence: `art/male-swim-breaking-20261013/REVIEW.md`. Physical webcam/headset measurements are separate.
+
+Branch `codex/male-swim-breaking-20261013`; local, uncommitted and unstaged. No new PR or release-package change. BETA remains the verified PR #26 release below. Local view: `http://127.0.0.1:4173/avatar-review.html?sex=male&outfit=1&pose=dance&t=7.8&angle=0.6&zoom=1.2&look=1.5&check=breaking-hand-fix` .
+
+# BETA follow-up published and verified — 2026-10-13
+
+Owner approved and merged PR #26: https://github.com/MyScheduleltd/myscheduleltd.github.io/pull/26 . Merge commit `358e58936d1e73d6b041e540c6b674a96d15b47a`. GitHub Pages run `38317748104` completed successfully. This checkout is fast-forwarded to the merged main commit; the release record below is a local status update.
+
+Both live channels (`https://myscheduleltd.com/beta/` and `/beta/ps2/`) serve `main-BoMZQ2dt.js`. All **104/104 current release files** match the approved build byte for byte, including entries, manifests, JavaScript and models. Evidence: `.artifacts/beta-release-20261013/public-verification.json`, verified at `2026-10-12T22:43:23Z`.
+
+Male SHA256 `1e0a00e35849c6f1f79a579c6ec136d14ebaa38d05d7504409eba6a4aa533f61`. Female is the original SHA256 `20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3`; rejected regeneration stays offline. Production API is `https://myschedule-festival.onrender.com`. No additional server change was introduced by this release.
+
+Production TypeScript/Vite build and **432/432 tests pass**. Public browser entered the world, showed online status and the current male avatar, and captured no console errors. Screenshot: `.artifacts/beta-release-20261013/live-beta.png`. The final live browser check entered muted; it does not establish acoustic or physical webcam/headset validation.
+
+This publishes the accepted male skin/neck/DJ wrist and floating-print repairs, keeps the original female, and preserves other main changes. Earlier waiting-for-review/local-only statements below are historical checkpoints. Current protected-main rules still apply to future changes.
 
 # Prior BETA release — 2026-10-12, merged through PR #17
 

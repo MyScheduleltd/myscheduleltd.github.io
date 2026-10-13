@@ -18,7 +18,7 @@ import bpy, json, os
 from mathutils import Matrix, Vector, Quaternion
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REFERENCE = os.path.join(HERE, '..', '..', 'art', 'reference')
+REFERENCE = os.environ.get('MYSCHEDULE_MOVE_REFERENCE', os.path.join(HERE, '..', '..', 'art', 'reference'))
 OUT = os.path.join(HERE, '..', 'src', 'data', 'moves.json')
 BONES = ['Hips', 'Spine02', 'Spine01', 'Spine', 'neck', 'Head',
          'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand',
@@ -70,6 +70,17 @@ def read(path, first, last, contact=None):
     scene.frame_set(first)
     joints = {n: [round(v, 4) for v in C @ (arm.matrix_world @ arm.data.bones[n].head_local)] for n in BONES}
     clip = {'frames': len(frames), 'bones': bones, 'hips': travel, 'rest': joints}
+    # Mixamo's reference is a T-pose with palms down. Keep the hand's own
+    # forward axis, including its rest wrist bend; inheriting the forearm's
+    # alignment drops that bend and the generated body's palm roll.
+    hands = {}
+    for side in ('Left', 'Right'):
+        hand = arm.data.bones[side + 'Hand']
+        fingers = (C @ (M @ (hand.tail_local - hand.head_local))).normalized()
+        palm = Vector((0, -1, 0))
+        palm = (palm - fingers * palm.dot(fingers)).normalized()
+        hands[side] = {'fingers': list(fingers), 'palm': list(palm)}
+    clip['hands'] = hands
     if contact is not None:
         clip['contact'] = round((contact - first) / FPS, 3)
     return clip

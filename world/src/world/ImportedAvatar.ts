@@ -18,14 +18,16 @@ import { assetObjectUrl, fetchAsset } from './AssetMirror';
  * standing hip height, and where each joint was at the file's rest. Played on
  * each body's own skeleton, so they fit both.
  */
-type MoveClip = { frames: number; bones: Record<string, number[]>; hips: number[]; rest: Record<string, number[]>; contact?: number };
+type MoveClip = { frames: number; bones: Record<string, number[]>; hips: number[]; rest: Record<string, number[]>; contact?: number;
+  hands?: Record<Side, { fingers: number[]; palm: number[] }> };
 /**
  * The joint each moved bone points at. A body's bone is first turned from its
  * own rest direction onto the file's (the dance rests in a T-pose, the bodies
  * in their generated A-pose), so the move's turns start where the file's did;
  * played straight onto the A-pose, the dance's arms were wrong (the owner,
- * October 2). Hands, feet's toes and the head keep their parent's alignment;
- * the hips keep their own facing.
+ * October 2). The male dance also aligns the inspected palm/finger frame;
+ * other hands, feet's toes and the head keep their parent's alignment. The
+ * hips keep their own facing.
  */
 const MOVE_CHILD: Record<string, string> = {
   Spine02: 'Spine01', Spine01: 'Spine', Spine: 'neck', neck: 'Head',
@@ -572,6 +574,28 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       hands[side] = { bone, tips, fingers: fingers.applyQuaternion(toBone), palm: palm.applyQuaternion(toBone), thumb: thumb.applyQuaternion(toBone) };
     }
 
+    if (key === 'male' && MOVES.dance.hands) {
+      const frame = (palm: THREE.Vector3, along: THREE.Vector3) => {
+        along.normalize();
+        palm.addScaledVector(along, -palm.dot(along)).normalize();
+        return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(palm, along, palm.clone().cross(along)));
+      };
+      for (const side of ['Left', 'Right'] as Side[]) {
+        const source = MOVES.dance.hands[side], hand = hands[side];
+        const nativePalm = hand.palm.clone().applyQuaternion(moveRest.get(side + 'Hand')!);
+        const nativeFingers = hand.fingers.clone().applyQuaternion(moveRest.get(side + 'Hand')!);
+        const sourcePalm = new THREE.Vector3().fromArray(source.palm);
+        const sourceFingers = new THREE.Vector3().fromArray(source.fingers);
+        moveAlign.dance.set(side + 'Hand', frame(sourcePalm.clone(), sourceFingers).multiply(frame(nativePalm.clone(), nativeFingers).invert()));
+        // Carry the same reference roll through the forearm, so the wrist
+        // does not absorb the generated hand's entire rest-frame mismatch.
+        const from = MOVES.dance.rest[side + 'ForeArm'], to = MOVES.dance.rest[side + 'Hand'];
+        const sourceArm = new THREE.Vector3().fromArray(to).sub(new THREE.Vector3().fromArray(from));
+        const nativeArm = at(hand.bone).sub(at(bones.get(side + 'ForeArm')!));
+        moveAlign.dance.set(side + 'ForeArm', frame(sourcePalm, sourceArm).multiply(frame(nativePalm, nativeArm).invert()));
+      }
+    }
+
     // Fingers: each bone's curl axis carries its child toward the palm; the
     // knuckle's spread axis is the palm's normal, signed toward the thumb.
     const fingerRigs: Partial<Record<Side, FingerRig>> = {};
@@ -996,8 +1020,11 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       const slot = mounted.slots.get(mesh)!;
       own.avatarCover.value = mesh === mounted.body && on ? 1 : 0;
       own.avatarSwim.value = mesh === mounted.body && !on ? 1 : 0;
-      (own.avatarDyeOn.value as THREE.Vector3).set(dyed('skin'), dyed('hair'), dyed(slot));
-      (own.avatarGarment.value as THREE.Color).set(current[slot] ?? '#808080');
+      // His swim shorts retain the agreed black cloth and white side stripes,
+      // even when an older saved profile contains a different swimsuit dye.
+      const fixedSwimwear = mounted.key === 'male' && slot === 'swimwear';
+      (own.avatarDyeOn.value as THREE.Vector3).set(dyed('skin'), dyed('hair'), fixedSwimwear ? 0 : dyed(slot));
+      (own.avatarGarment.value as THREE.Color).set(fixedSwimwear ? native.swimwear! : current[slot] ?? '#808080');
     }
     const shared = mounted.uniforms.get(mounted.body)!;
     (shared.avatarSkin.value as THREE.Color).set(current.skin ?? '#808080');
