@@ -218,6 +218,16 @@ const RHYTHM_DIFFICULTIES = {
 const DIFFICULTY_IDS = ["chill", "shoot"];
 const DEFAULT_DIFFICULTY_ID = "chill";
 const STAGE_COUNTDOWN_SECONDS = 3.6;
+{
+  const native = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "volume");
+  const asked = new WeakMap();
+  Object.defineProperty(HTMLMediaElement.prototype, "volume", {
+    configurable: true,
+    enumerable: native.enumerable,
+    get() { return asked.has(this) ? asked.get(this) : native.get.call(this); },
+    set(value) { native.set.call(this, value); asked.set(this, Number(value)); }
+  });
+}
 const MOBILE_DOUBLE_TAP_SECONDS = 0.32;
 const TOTAL_LIVES = 3;
 // The sewer is the run's save point and its only resupply, so the first time
@@ -8406,7 +8416,10 @@ for (const level of this.config.secretLevels || []) {
         get: () => route.volume,
         set: (value) => {
           route.volume = clamp(Number(value) || 0, 0, 1);
-          gain.gain.setValueAtTime(route.volume, context.currentTime);
+          const now = context.currentTime;
+          gain.gain.cancelScheduledValues(now);
+          if (audio.paused) gain.gain.setValueAtTime(route.volume, now);
+          else gain.gain.setTargetAtTime(route.volume, now, 0.015);
         }
       });
       descriptor.set.call(audio, 1);
@@ -11070,8 +11083,17 @@ for (const level of this.config.secretLevels || []) {
     }
     const key = args.join(",");
     this.rhythmBackdropCache ||= [];
+    if (!this.rhythmBackdropReset) {
+      this.rhythmBackdropReset = () => { if (!document.hidden) this.rhythmBackdropCache = []; };
+      document.addEventListener("visibilitychange", this.rhythmBackdropReset);
+    }
     let entry = this.rhythmBackdropCache.find(e => e.image === image && e.key === key);
     if (!entry) {
+      const rhythm = this.level1OfficeRhythm;
+      if ((rhythm?.graphicsLoading && !rhythm.graphicsWarming) || !(performance.now() >= (this.rhythmBackdropRetryAt || 0))) {
+        target.drawImage(image, ...args);
+        return;
+      }
       const slot = (this.rhythmBackdropSlot || 0) % 4;
       this.rhythmBackdropSlot = slot + 1;
       this.rhythmBackdropCache = this.rhythmBackdropCache.filter(e => e.slot !== slot);
@@ -11079,6 +11101,11 @@ for (const level of this.config.secretLevels || []) {
       layer.clearRect(0, 0, VIEW_W, 508);
       layer.imageSmoothingEnabled = false;
       layer.drawImage(image, ...args);
+      if (!backdropCopyHolds(layer, args)) {
+        this.rhythmBackdropRetryAt = performance.now() + 250;
+        target.drawImage(image, ...args);
+        return;
+      }
       entry = { image, key, slot, canvas: layer.canvas };
       this.rhythmBackdropCache.push(entry);
     }
@@ -27958,6 +27985,23 @@ function loadImage(src) {
 function loadOptionalSheet(src) {
   if (!src || src.startsWith("procedural:")) return Promise.resolve(null);
   return loadImage(src);
+}
+
+// Five points of where a backdrop was drawn into its copy (the destination of
+// a 4- or 8-number drawImage, inside the copy): its centre and towards each
+// corner. Every fight backdrop is opaque, so a transparent point means the copy
+// came out blank, or partly. A copy that cannot be read is trusted.
+function backdropCopyHolds(layer, args) {
+  const [x, y, w, h] = args.length >= 8 ? args.slice(4, 8) : args.slice(0, 4);
+  const left = Math.max(0, x), top = Math.max(0, y);
+  const right = Math.min(layer.canvas.width, x + w), bottom = Math.min(layer.canvas.height, y + h);
+  if (right <= left || bottom <= top) return true;
+  try {
+    return [[0.5, 0.5], [0.2, 0.2], [0.8, 0.2], [0.2, 0.8], [0.8, 0.8]].every(([fx, fy]) =>
+      layer.getImageData(Math.floor(left + (right - left) * fx), Math.floor(top + (bottom - top) * fy), 1, 1).data[3] > 0);
+  } catch {
+    return true;
+  }
 }
 
 function makeLayer(width, height, painter) {

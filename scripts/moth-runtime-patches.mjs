@@ -244,6 +244,61 @@ export function patchMothRuntime(source, ts) {
   // The retired lane fight's music cut is no longer preloaded at start-up
   // (moth-asset-trim.mjs); its fight is not in the game.
   once('        ["concert", this.config.level6ConcertRhythm],\n        ["level6", this.config.level6?.stage2]\n', '        ["concert", this.config.level6ConcertRhythm]\n');
+  // Level 3's sofa and level 7's stage were missing all fight on an iPhone
+  // (owner, 2026-10-14). Phones draw a fight's backdrop once into a copy and
+  // reuse it. Story fights show their arena under the count-in while the art
+  // is still decoding, and a copy taken then can come out blank and stay blank
+  // all fight; those two backdrops appear in no scene before their fight, so
+  // they are first decoded there. Until the art is ready a backdrop is drawn
+  // directly; a copy is kept only when it holds the picture
+  // (backdropCopyHolds), and is taken again after the page comes back (iOS may
+  // drop it while hidden).
+  once('    let entry = this.rhythmBackdropCache.find(e => e.image === image && e.key === key);\n    if (!entry) {\n',
+    '    if (!this.rhythmBackdropReset) {\n      this.rhythmBackdropReset = () => { if (!document.hidden) this.rhythmBackdropCache = []; };\n      document.addEventListener("visibilitychange", this.rhythmBackdropReset);\n    }\n    let entry = this.rhythmBackdropCache.find(e => e.image === image && e.key === key);\n    if (!entry) {\n      const rhythm = this.level1OfficeRhythm;\n      if ((rhythm?.graphicsLoading && !rhythm.graphicsWarming) || !(performance.now() >= (this.rhythmBackdropRetryAt || 0))) {\n        target.drawImage(image, ...args);\n        return;\n      }\n');
+  once('      layer.drawImage(image, ...args);\n      entry = { image, key, slot, canvas: layer.canvas };\n',
+    '      layer.drawImage(image, ...args);\n      if (!backdropCopyHolds(layer, args)) {\n        this.rhythmBackdropRetryAt = performance.now() + 250;\n        target.drawImage(image, ...args);\n        return;\n      }\n      entry = { image, key, slot, canvas: layer.canvas };\n');
+  once('function makeLayer(width, height, painter) {', `// Five points of where a backdrop was drawn into its copy (the destination of
+// a 4- or 8-number drawImage, inside the copy): its centre and towards each
+// corner. Every fight backdrop is opaque, so a transparent point means the copy
+// came out blank, or partly. A copy that cannot be read is trusted.
+function backdropCopyHolds(layer, args) {
+  const [x, y, w, h] = args.length >= 8 ? args.slice(4, 8) : args.slice(0, 4);
+  const left = Math.max(0, x), top = Math.max(0, y);
+  const right = Math.min(layer.canvas.width, x + w), bottom = Math.min(layer.canvas.height, y + h);
+  if (right <= left || bottom <= top) return true;
+  try {
+    return [[0.5, 0.5], [0.2, 0.2], [0.8, 0.2], [0.2, 0.8], [0.8, 0.8]].every(([fx, fy]) =>
+      layer.getImageData(Math.floor(left + (right - left) * fx), Math.floor(top + (bottom - top) * fy), 1, 1).data[3] > 0);
+  } catch {
+    return true;
+  }
+}
+
+function makeLayer(width, height, painter) {`);
+  // iPhone Safari ignores a media element's volume and always reads it back
+  // as 1. A level set before a track is first routed through its GainNode
+  // (prepareMusicAudio) was lost there, so the silent priming play of a fight
+  // song started at full volume until it paused: a burst of the song entering
+  // level 4 (owner, 2026-10-14; its cut is the loudest at the start). Every
+  // element now remembers the level it was given, as other browsers do.
+  once('const STAGE_COUNTDOWN_SECONDS = 3.6;', `const STAGE_COUNTDOWN_SECONDS = 3.6;
+{
+  const native = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "volume");
+  const asked = new WeakMap();
+  Object.defineProperty(HTMLMediaElement.prototype, "volume", {
+    configurable: true,
+    enumerable: native.enumerable,
+    get() { return asked.has(this) ? asked.get(this) : native.get.call(this); },
+    set(value) { native.set.call(this, value); asked.set(this, Number(value)); }
+  });
+}`);
+  // A fade sets a track's level once a frame, and each was a step of the gain.
+  // When frames come slowly (a loading screen on an iPhone) the steps were
+  // large enough to crackle (owner, 2026-10-14: entering level 4). A playing
+  // track now glides to each level; a paused one takes it at once, so a
+  // priming play still starts silent.
+  once('          gain.gain.setValueAtTime(route.volume, context.currentTime);\n',
+    '          const now = context.currentTime;\n          gain.gain.cancelScheduledValues(now);\n          if (audio.paused) gain.gain.setValueAtTime(route.volume, now);\n          else gain.gain.setTargetAtTime(route.volume, now, 0.015);\n');
   // Staff debug scene jumps (the staff build only; the public build drops the
   // debug panel). A jump enters its scene directly, so with the chapter loader
   // it drew placeholders where the scene's art was not loaded (user,
