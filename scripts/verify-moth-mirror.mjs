@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import {chromium, webkit} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
+import {stubScoreboard} from './moth-scoreboard-stub.mjs';
 
 const docs = path.resolve(import.meta.dirname, '../docs');
 const out = path.resolve('.qa/moth/mirror');
@@ -26,6 +27,7 @@ const report = {};
 
 async function livePage({tamper = false, mirrorDown = false} = {}) {
   const context = await browser.newContext({viewport: {width: 390, height: 844}});
+  await stubScoreboard(context);
   await context.route('https://myscheduleltd.com/**', route => {
     const file = local(new URL(route.request().url()).pathname);
     return fs.existsSync(file) ? route.fulfill({path: file}) : route.fulfill({status: 404, body: 'missing'});
@@ -148,6 +150,7 @@ async function enterOffice(page) {
   });
   await new Promise(resolve => server.listen(5291, '127.0.0.1', resolve));
   const context = await browser.newContext({viewport: {width: 390, height: 844}});
+  await stubScoreboard(context);
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', error => errors.push(String(error)));

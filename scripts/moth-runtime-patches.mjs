@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { patchScoreboard, SCOREBOARD_METHODS } from './moth-scoreboard-client.mjs';
 
 // Keep the selected published game as the input. Both audiences get identical
 // loading/audio repairs before the public debug tools are stripped.
@@ -69,7 +70,7 @@ export function patchMothRuntime(source, ts) {
   // Definitions precede closures, but the registry must exist for secret jobs.
   const registry = `  createSceneAssetJobs() {\n    this.sceneAssetJobs = [];\n    ${definitions.join('\n    ')}\n    this.sceneAssetJobs.push(\n${jobs.map(job => `      {key:${JSON.stringify(job.key)}, group:${JSON.stringify(job.group)}, run:async () => {${job.run}}, release:() => {delete this.refs.${job.key};}}`).join(',\n')}\n    );\n    this.loadedSceneGroups = new Set();\n  }\n`;
   source = source.slice(0, start) + '      this.createSceneAssetJobs();\n' + source.slice(end);
-  once('  async loadLayeredMapConfig() {', registry + RUNTIME_METHODS + '\n  async loadLayeredMapConfig() {');
+  once('  async loadLayeredMapConfig() {', registry + RUNTIME_METHODS + SCOREBOARD_METHODS + '\n  async loadLayeredMapConfig() {');
   once('const response = await fetch("./data/level1.json", { cache: "no-store" });\n      this.config = await response.json();', 'this.config = await fetchGameJson("./data/level1.json");');
   once('const response = await fetch(source, { cache: "no-store" });\n    if (!response.ok) throw new Error(`Could not load layered map data: ${source}`);\n    const layeredMap = await response.json();', 'const layeredMap = await fetchGameJson(source);');
   once('this.loadError = error instanceof Error ? error.message : String(error);\n      this.state = "failure";', 'this.showLoadRecovery(error);');
@@ -161,6 +162,8 @@ export function patchMothRuntime(source, ts) {
   // layers blended on top. Windows draws through the compositor instead.
   once('const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });', 'const DESYNC_CANVAS = !/Windows/i.test(navigator.userAgentData?.platform || navigator.userAgent || "");\nconst ctx = canvas.getContext("2d", { alpha: false, desynchronized: DESYNC_CANVAS });');
   once('this.portraitCtx = element.getContext("2d", { alpha: false, desynchronized: true });', 'this.portraitCtx = element.getContext("2d", { alpha: false, desynchronized: DESYNC_CANVAS });');
+  // Final scoreboard (scripts/moth-scoreboard-client.mjs).
+  patchScoreboard(once);
   const imageStart = source.indexOf('function loadImage(src) {');
   const imageEnd = source.indexOf('\nfunction loadOptionalSheet(src)', imageStart);
   assert(imageStart > 0 && imageEnd > imageStart);
@@ -564,12 +567,47 @@ export function rewriteCssArtwork(css) {
   return {css: rewritten, assets};
 }
 
+// The deck's M, T and H buttons take the colour of their notes on the track
+// (MOTH_NOTE_COLOURS); O is already the track's grey. The sheet (columns M, O,
+// T, H) has grey button faces, so only those mid-grey shades change, keeping
+// their light and shade. The red base, the cream letter, the dark outline and
+// the green glint are left alone. Approved by the owner on 2026-10-13.
+export const TINT_MOTH_BUTTONS = `
+async function tintMothButtons(blob) {
+  const image = await createImageBitmap(blob);
+  const canvas = Object.assign(document.createElement('canvas'), {width: image.width, height: image.height});
+  const context = canvas.getContext('2d', {willReadFrequently: true});
+  context.drawImage(image, 0, 0);
+  image.close?.();
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+  const data = pixels.data, width = canvas.width;
+  const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+  const targets = [rgb(MOTH_NOTE_COLOURS.M), null, rgb(MOTH_NOTE_COLOURS.T), rgb(MOTH_NOTE_COLOURS.H)];
+  const luma = (r, g, b) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  const face = luma(56, 61, 59);
+  for (let i = 0; i < data.length; i += 4) {
+    const target = targets[Math.floor((i / 4 % width) * 4 / width)];
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    if (!target || data[i + 3] < 10 || Math.max(r, g, b) - Math.min(r, g, b) > 34) continue;
+    const y = luma(r, g, b);
+    if (y < 0.09 || y > 0.8) continue;
+    const f = y / face, k = Math.min(1, (f - 1) * 0.55);
+    for (let c = 0; c < 3; c++) data[i + c] = Math.round(f <= 1 ? target[c] * f : target[c] + (255 - target[c]) * k);
+  }
+  context.putImageData(pixels, 0, 0);
+  return new Promise((resolve, reject) => canvas.toBlob(out => out ? resolve(out) : reject(new Error('tint')), 'image/png'));
+}
+`;
+
 export function cssArtworkLoader(assets) {
   return `
 // Deck artwork from styles.css (rewriteCssArtwork in moth-runtime-patches.mjs).
+${TINT_MOTH_BUTTONS}
 for (const [index, src] of ${JSON.stringify(assets)}.entries()) {
   fetchGameAsset(src)
-    .then(({data, type}) => URL.createObjectURL(new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'})))
+    .then(({data, type}) => new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'}))
+    .then(blob => src.includes('/mobile_moth_buttons_') ? tintMothButtons(blob).catch(() => blob) : blob)
+    .then(blob => URL.createObjectURL(blob))
     .catch(() => new URL(src, document.baseURI).href)
     .then(url => document.documentElement.style.setProperty('--moth-art-' + index, 'url("' + url + '")'));
 }

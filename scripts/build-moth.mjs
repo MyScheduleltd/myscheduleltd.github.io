@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { patchMothRuntime, rewriteCssArtwork, cssArtworkLoader, MOTH_MIRROR_COMMIT, MOTH_MIRROR_ORIGIN } from './moth-runtime-patches.mjs';
+import { SCOREBOARD_API, SCOREBOARD_CSS } from './moth-scoreboard-client.mjs';
 const require = createRequire(import.meta.url);
 const ts = require(process.env.MOTH_TYPESCRIPT_PATH || 'typescript');
 const root = path.resolve(import.meta.dirname, '..');
@@ -34,7 +35,7 @@ const recoveryCss = `
 .load-recovery button { background: #344439; color: #f7f2de; border-color: #dcd8bd; box-shadow: 4px 5px 0 #111613; }
 .load-recovery button:focus-visible { outline: 3px solid #ffd36c; outline-offset: 5px; }
 `;
-await fs.writeFile(path.join(output, 'styles.css'), cssArtwork.css + recoveryCss);
+await fs.writeFile(path.join(output, 'styles.css'), cssArtwork.css + recoveryCss + SCOREBOARD_CSS);
 
 function replaceOnce(source, before, after) {
   assert.equal(source.split(before).length, 2, `Expected one occurrence: ${before.slice(0, 80)}`);
@@ -87,7 +88,7 @@ await fs.mkdir(path.join(output, 'src'), { recursive: true });
 await fs.mkdir(path.join(output, 'staff'), { recursive: true });
 await fs.writeFile(path.join(output, 'src/game.js'), publicCode);
 await fs.writeFile(path.join(output, 'staff/game.js'), staffCode);
-const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' " + MOTH_MIRROR_ORIGIN + "/gh/MyScheduleltd/myscheduleltd.github.io@" + MOTH_MIRROR_COMMIT + "/docs/moth/; font-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; worker-src 'none'";
+const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' " + MOTH_MIRROR_ORIGIN + "/gh/MyScheduleltd/myscheduleltd.github.io@" + MOTH_MIRROR_COMMIT + "/docs/moth/ " + SCOREBOARD_API + "; font-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; worker-src 'none'";
 for (const audience of ['public', 'staff']) {
   const staff = audience === 'staff';
   const code = staff ? staffCode : publicCode;
@@ -96,8 +97,8 @@ for (const audience of ['public', 'staff']) {
   html = html.replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />\n    <meta name="referrer" content="strict-origin-when-cross-origin" />${staff ? '\n    <meta name="robots" content="noindex, nofollow, noarchive" />\n    <base href="/moth/" />' : ''}`);
   html = html.replace('<html lang="en">', '<html lang="zh-Hant-TW">');
   html = html.replace('./manifest.json', staff ? '/moth/staff/manifest.json' : './manifest.json');
-  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261013c');
-  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=moth-loading-20261013c" integrity="${sri}" crossorigin="anonymous"></script>`);
+  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261013e');
+  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=moth-loading-20261013e" integrity="${sri}" crossorigin="anonymous"></script>`);
   await fs.writeFile(path.join(output, staff ? 'staff/index.html' : 'index.html'), html);
   const manifest = JSON.parse(await fs.readFile(path.join(sourceRoot, 'manifest.json'), 'utf8'));
   manifest.start_url = staff ? '/moth/staff/' : '/moth/';

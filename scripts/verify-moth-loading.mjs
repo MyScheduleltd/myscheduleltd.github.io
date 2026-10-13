@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {chromium, webkit} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
+import {stubScoreboard} from './moth-scoreboard-stub.mjs';
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const out = path.resolve('.qa/moth/loading-audio');
 await fs.mkdir(out, {recursive:true});
@@ -10,6 +11,7 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
   const browser = await type.launch(engine === 'chrome' ? {executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,args:['--no-sandbox']} : {headless:true});
   try {
     const context = await browser.newContext({viewport:{width:390,height:844}});
+    await stubScoreboard(context);
     const page = await context.newPage(), errors = [], frameErrors = [], requests = [];
     page.on('pageerror', error => errors.push(String(error)));
     page.on('console', message=>{if(message.type()==='error'&&message.text().startsWith('Frame step failed:')) frameErrors.push(message.text());});

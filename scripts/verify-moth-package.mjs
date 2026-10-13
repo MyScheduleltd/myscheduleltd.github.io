@@ -61,7 +61,7 @@ assert.deepEqual(Object.keys(integrity).sort(), media.sort(), 'Integrity list co
 for (const file of media) assert.equal(integrity[file], hash(await fs.readFile(path.join(dir, file))), `Integrity hash: ${file}`);
 for (const page of ['index.html', 'staff/index.html']) {
   const policy = (await fs.readFile(path.join(dir, page), 'utf8')).match(/connect-src ([^;]+);/)[1];
-  assert.match(policy, /^'self' https:\/\/cdn\.jsdelivr\.net\/gh\/MyScheduleltd\/myscheduleltd\.github\.io@[0-9a-f]{40}\/docs\/moth\/$/, 'Only the pinned mirror path may be fetched');
+  assert.match(policy, /^'self' https:\/\/cdn\.jsdelivr\.net\/gh\/MyScheduleltd\/myscheduleltd\.github\.io@[0-9a-f]{40}\/docs\/moth\/ https:\/\/beauty-boy\.vercel\.app\/api\/moth-scoreboard$/, 'Only the pinned mirror path and the scoreboard API may be fetched');
 }
 assert(!/createDebugPanel|toggleDebugPanel|data-debug-action|debug-panel-toggle|window\.bobbyGame\s*=/.test(publicCode));
 assert(staffCode.includes('createDebugPanel'));
