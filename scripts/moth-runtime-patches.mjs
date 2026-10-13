@@ -3,6 +3,7 @@ import { patchScoreboard, SCOREBOARD_METHODS } from './moth-scoreboard-client.mj
 import { patchFightResume, FIGHT_RESUME_METHODS } from './moth-fight-resume.mjs';
 import { TRIMMED_JOBS } from './moth-asset-trim.mjs';
 import { KEY_FRINGE_SPRITES } from './moth-sprite-fringe.mjs';
+import { patchLyrics } from './moth-lyrics-patches.mjs';
 
 // Keep the selected published game as the input. Both audiences get identical
 // loading/audio repairs before the public debug tools are stripped.
@@ -221,6 +222,8 @@ export function patchMothRuntime(source, ts) {
   patchScoreboard(once);
   // Fights pick up where they stopped (scripts/moth-fight-resume.mjs).
   patchFightResume(once);
+  // The owner's lyrics changes (scripts/moth-lyrics-patches.mjs).
+  patchLyrics(once);
   // A fight's song switches to its downloaded copy before it starts (useSongCopy),
   // waits under 載入中… if a stream runs dry, and judges nothing meanwhile.
   once('      track.pause();\n      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);\n      track.currentTime = this.getRhythmAudioStart();', '      track.pause();\n      this.useSongCopy(track);\n      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);\n      track.currentTime = this.getRhythmAudioStart();');
