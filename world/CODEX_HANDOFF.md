@@ -1,4 +1,16 @@
-# Male shorts hem / Breaking hand release — 2026-10-13, prepared for BETA
+# Male wave shoulder follow-up — 2026-10-13, added to BETA release PR #28
+
+Owner reported the raised arm pulling the swim torso unnaturally. Live Blender MCP confirmed chest/rib skin assigned entirely to upper-arm bones and inconsistent adjacent spinal weights. Repair uses a welded surface graph and a smooth shoulder/spine blend; only body JOINTS_0 and WEIGHTS_0 changed. All other accessors, images, transforms, shorts masks and the original female are unchanged.
+
+**438/438 full tests, 21/21 avatar checks, production TypeScript/Vite build, 104 package file comparisons and 38 combined integrity hashes pass.** Torso regression fails the preceding asset; seam checks cover wave/punch/Breaking frames. Built browser reviews five wave phases, front/side/rear, outfits 1–3, punch, Breaking floor support and an enlarged underarm view. No physical camera/headset validation was added.
+
+Current source male SHA256 `cf03029d1cc972b8760329de22ec83009bc31ed5dd7d8e3588aff5c3d1a9965b`; entry `main-BreJUSmk.js`; model `male-DTHPQ84S.glb`. API remains `https://myschedule-festival.onrender.com`. Branch `codex/male-swim-breaking-20261013` includes main through `9cf68bf`. PR #28 remains protected by required latest-push approval: https://github.com/MyScheduleltd/myscheduleltd.github.io/pull/28 . Do not claim live publication before merge, Pages success and live verification.
+
+Evidence: `art/male-wave-20261013/REVIEW.md`, contact sheets, preservation and package reports. Reproduction: `scripts/repair-male-shoulder-weights.py` through live Blender MCP after opening `.artifacts/male-wave-20261013/production-before.blend`; local `apply-weights.mjs` transfers the changed weights to the existing GLB. Baseline `male-before.glb`; final `wave-weights-fixed.blend`. Local: `http://127.0.0.1:4173/avatar-review.html?sex=male&outfit=4&pose=wave&phase=0.5&angle=0.6&zoom=1.2&look=1.5&check=wave-final`.
+
+The entries below are historical checkpoints, including the preceding shorts and hand candidate.
+
+# Male shorts hem / Breaking hand release — 2026-10-13, preceding BETA candidate
 
 Owner requested publication, then correctly identified skin-colour spill below the shorts. The preceding colour-only check missed it. Live Blender MCP found the skin-cleanup `_skin` label included the shorts' lower half. Native atlas samples identify 6,695 fabric/stripe triangles down to both real leg hems; 2,200 Blender vertex labels (3,637 exported vertices) are corrected. Only the GLB skin-mask accessor changed: all positions, normals, UVs, indices, weights, joint binds and embedded image bytes are preserved. Female remains the original model.
 

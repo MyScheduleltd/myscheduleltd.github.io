@@ -20,6 +20,51 @@ function character(top='#18191b',cap){
  const parts=Object.fromEntries(root.userData.importedAvatar.meshes.map(m=>[m.userData.componentId,m]));
  return {root,rig,parts};
 }
+test('waving does not lift the male chest and side ribs with the upper arm',()=>{
+ const {root,rig,parts}=character(),body=parts.body,p=body.geometry.getAttribute('position');
+ const vertices=Array.from({length:p.count},(_,v)=>v).filter(v=>{
+  const x=Math.abs(p.getX(v)),y=p.getY(v);
+  // Central chest and the side ribs below the armpit are torso, not deltoid.
+  return y>.055&&y<.27&&(x<.12||(y<.125&&x<.145));
+ });
+ assert.ok(vertices.length>300,`exercise the actual front, back and side torso surface (${vertices.length} vertices)`);
+ const sample=()=>{
+  syncImportedAvatars(root);root.updateMatrixWorld(true);body.skeleton.update();
+  const inverse=body.skeleton.bones.find(b=>b.name==='Spine01').matrixWorld.clone().invert();
+  return vertices.map(v=>body.getVertexPosition(v,new THREE.Vector3()).applyMatrix4(body.matrixWorld).applyMatrix4(inverse));
+ };
+ const rest=sample();
+ for(const progress of [.1,.25,.32,.5,.68,.8,.95]){
+  walkCoastalPose(rig,0,0);waveCoastalPose(rig,progress*8,progress);
+  const points=sample(),movement=Math.max(...points.map((point,i)=>point.distanceTo(rest[i])));
+  assert.ok(movement<.004,`wave ${progress}: chest/ribs moved ${movement.toFixed(3)} in torso space toward the waving arm`);
+ }
+});
+test('male shoulder UV and normal splits stay welded through the wave and action clips',()=>{
+ const {root,rig,parts}=character(),body=parts.body,p=body.geometry.getAttribute('position');
+ const selected=new Set(Array.from({length:p.count},(_,v)=>v).filter(v=>
+  Math.abs(p.getX(v))>.09&&Math.abs(p.getX(v))<.225&&p.getY(v)>.17&&p.getY(v)<.325&&
+  body.geometry.getAttribute('_skin').getX(v)>.5&&body.geometry.getAttribute('_hair').getX(v)<.5));
+ const groups=new Map();
+ for(const v of selected){
+  const key=new THREE.Vector3().fromBufferAttribute(p,v).toArray().map(x=>Math.round(x*1e6)).join(',');
+  const ids=groups.get(key)??[];ids.push(v);groups.set(key,ids);
+ }
+ const seams=[...groups.values()].filter(ids=>ids.length>1);
+ assert.ok(seams.length>200,'exercise authored UV/normal splits across both shoulder surfaces');
+ const check=label=>{
+  syncImportedAvatars(root);root.updateMatrixWorld(true);body.skeleton.update();
+  const posed=new Map([...selected].map(v=>[v,body.getVertexPosition(v,new THREE.Vector3())]));
+  for(const ids of seams)for(const v of ids.slice(1))
+   assert.ok(posed.get(v).distanceTo(posed.get(ids[0]))<.00001,`${label}: shoulder seam opens between ${ids[0]} and ${v}`);
+ };
+ for(let frame=0;frame<=24;frame++){
+  walkCoastalPose(rig,0,0);waveCoastalPose(rig,frame/3,frame/24);check(`wave ${frame}`);
+ }
+ for(const move of ['punch','dance'])for(let frame=0;frame<=32;frame++){
+  root.userData.setImportedMove(move,frame*MOVE_SECONDS[move]/32);check(`${move} ${frame}`);
+ }
+});
 test('male shirt, vest and prints do not follow the thighs or head',()=>{
  const {parts}=character();
  for(const [id,mesh] of Object.entries(parts)){
