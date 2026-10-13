@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { patchScoreboard, SCOREBOARD_METHODS } from './moth-scoreboard-client.mjs';
+import { patchFightResume, FIGHT_RESUME_METHODS } from './moth-fight-resume.mjs';
 
 // Keep the selected published game as the input. Both audiences get identical
 // loading/audio repairs before the public debug tools are stripped.
@@ -70,7 +71,7 @@ export function patchMothRuntime(source, ts) {
   // Definitions precede closures, but the registry must exist for secret jobs.
   const registry = `  createSceneAssetJobs() {\n    this.sceneAssetJobs = [];\n    ${definitions.join('\n    ')}\n    this.sceneAssetJobs.push(\n${jobs.map(job => `      {key:${JSON.stringify(job.key)}, group:${JSON.stringify(job.group)}, run:async () => {${job.run}}, release:() => {delete this.refs.${job.key};}}`).join(',\n')}\n    );\n    this.loadedSceneGroups = new Set();\n  }\n`;
   source = source.slice(0, start) + '      this.createSceneAssetJobs();\n' + source.slice(end);
-  once('  async loadLayeredMapConfig() {', registry + RUNTIME_METHODS + SCOREBOARD_METHODS + '\n  async loadLayeredMapConfig() {');
+  once('  async loadLayeredMapConfig() {', registry + RUNTIME_METHODS + SCOREBOARD_METHODS + FIGHT_RESUME_METHODS + '\n  async loadLayeredMapConfig() {');
   once('const response = await fetch("./data/level1.json", { cache: "no-store" });\n      this.config = await response.json();', 'this.config = await fetchGameJson("./data/level1.json");');
   once('const response = await fetch(source, { cache: "no-store" });\n    if (!response.ok) throw new Error(`Could not load layered map data: ${source}`);\n    const layeredMap = await response.json();', 'const layeredMap = await fetchGameJson(source);');
   once('this.loadError = error instanceof Error ? error.message : String(error);\n      this.state = "failure";', 'this.showLoadRecovery(error);');
@@ -125,8 +126,56 @@ export function patchMothRuntime(source, ts) {
   once('    target.fillStyle = "#08090d";\n    target.fillRect(0, 0, layout.width, layout.height);\n', '    target.fillStyle = "#08090d";\n    target.fillRect(0, 0, layout.width, layout.height);\n    if (this.loadError) { this.renderConnectionLost(target, layout.width, layout.height); return; }\n');
   once('    drawStageLoadingScreen(target, this.time, t,\n      `${this.tr("LOADING", "載入中")}', '    const progress = this.sceneLoadProgress;\n    const fraction = progress?.total ? progress.done / progress.total : t;\n    drawStageLoadingScreen(target, this.time, fraction,\n      `${this.tr("LOADING", "載入中")}');
   once('`${this.tr("LEVEL", "關卡")} ${level} · ${this.tr(...(places[level] || places[1]))}`, W, H);', '`${this.getSecretLevel(stageId) ? [this.tr("HIDDEN LEVEL", "隱藏關卡"), ...[{"secret-xiaosi": ["LOUNGE", "休息室"], "secret-getdown": ["GYM", "健身房"]}[stageId]].filter(Boolean).map(place => this.tr(...place))].join(" · ") : `${this.tr("LEVEL", "關卡")} ${level} · ${this.tr(...(places[level] || places[1]))}`}${progress?.total ? ` · ${progress.done}/${progress.total}` : ""}`, W, H);');
-  // Sound effects gate every fight, so they share the images' mirror path.
-  once('      const response = await fetch(src);\n      if (!response.ok) throw new Error(src);\n      this.sfxRaw[name] = await response.arrayBuffer();', '      this.sfxRaw[name] = (await fetchGameAsset(src)).data.buffer;');
+  // Sound effects gate every fight, so they share the images' mirror path
+  // (prefetchHitSfx). The release fetched them once per visit: a sound that
+  // failed to download stayed silent, and an engine rebuild before the first
+  // fight (a minute idle, a locked phone) marked them loaded with none
+  // fetched, so no fight had them (user, 2026-10-13). Now each call fetches
+  // and decodes what is still missing.
+  once(`  loadHitSfx() {
+    if (this.hitSfxReady) return this.hitSfxReady;
+    this.sfxBuffers = {};
+    this.sfxRaw = {};
+    const context = this.ensureToneContext();
+    if (!context) return Promise.resolve();
+    this.ensureFeedbackOutput(context);
+    this.hitSfxReady = Promise.allSettled(Object.entries(HIT_SFX).map(async ([name, src]) => {
+      const response = await fetch(src);
+      if (!response.ok) throw new Error(src);
+      this.sfxRaw[name] = await response.arrayBuffer();
+      await this.decodeHitSfx(name, this.level1OfficeAudioContext);
+    }));
+    return this.hitSfxReady;
+  }`, `  loadHitSfx() {
+    this.sfxBuffers ||= {};
+    if (Object.keys(HIT_SFX).every(name => this.sfxBuffers[name])) return Promise.resolve();
+    if (this.hitSfxLoading) return this.hitSfxLoading;
+    const context = this.ensureToneContext();
+    if (!context) return Promise.resolve();
+    this.ensureFeedbackOutput(context);
+    const loading = this.hitSfxLoading = this.prefetchHitSfx()
+      .then(() => Promise.allSettled(Object.keys(HIT_SFX).filter(name => !this.sfxBuffers[name])
+        .map(name => this.decodeHitSfx(name, this.level1OfficeAudioContext))))
+      .finally(() => { if (this.hitSfxLoading === loading) this.hitSfxLoading = null; });
+    this.hitSfxReady = loading;
+    return loading;
+  }`);
+  // A rebuilt engine decodes its own copies while the old ones keep playing
+  // (an AudioBuffer is not tied to one engine), so taps are never silent.
+  once('    this.sfxBuffers = {};\n    this.hitSfxReady = Promise.allSettled(Object.keys(this.sfxRaw || {}).map(name => this.decodeHitSfx(name, this.level1OfficeAudioContext)));', '    this.sfxBuffers ||= {};\n    this.hitSfxReady = Promise.allSettled(Object.keys(this.sfxRaw || {}).map(name => this.decodeHitSfx(name, this.level1OfficeAudioContext)));');
+  // Between chapters the release shows its own LOADING card for a beat
+  // (startSewerTransition); the chapter now downloads under that card, rather
+  // than a second loading screen following it (user, 2026-10-13: level 4).
+  once('    this.state = "sewerTransition";\n  }\n\n  updateSewerTransition(dt) {\n    this.sewerTransition.timer += dt;\n    if (this.sewerTransition.timer < this.sewerTransition.duration) return;', '    this.state = "sewerTransition";\n    this.loadTransitionScene(direction);\n  }\n\n  updateSewerTransition(dt) {\n    this.sewerTransition.timer += dt;\n    if (this.sewerTransition.timer < this.sewerTransition.duration || this.sewerTransition.loading) return;');
+  once('    drawStageLoadingScreen(target, this.time, t,\n      direction === "level4"', '    const progress = transition.loading && this.sceneLoadProgress;\n    drawStageLoadingScreen(target, this.time, progress?.total ? Math.min(t, progress.done / progress.total) : t,\n      direction === "level4"');
+  // A story fight follows its scene straight onto the arena, its count-in
+  // card waiting there while the art decodes (as the bathroom already did),
+  // instead of a loading screen after the talk (user, 2026-10-13: level 4).
+  const preparing = '    const preparingRhythm = this.level1OfficeRhythm;\n    await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());';
+  assert.equal(source.split(preparing).length, 7, 'Six fights prepare the same way');
+  source = source.replaceAll(preparing, '    const preparingRhythm = this.level1OfficeRhythm;\n    this.showFightWhilePreparing(preparingRhythm, options);\n    await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());');
+  once('    rhythm.skipAudio = Boolean(options.skipAudio);\n    await this.primeRhythmSong(rhythm, this.getActiveLevel1OfficeRhythmAudio());', '    rhythm.skipAudio = Boolean(options.skipAudio);\n    this.showFightWhilePreparing(rhythm, options);\n    await this.primeRhythmSong(rhythm, this.getActiveLevel1OfficeRhythmAudio());');
+  once('  countInFightSong() {\n    const rhythm = this.level1OfficeRhythm;\n    if (!rhythm) return;', '  countInFightSong() {\n    const rhythm = this.level1OfficeRhythm;\n    if (!rhythm) return;\n    if (rhythm.countedInEarly) { rhythm.countedInEarly = false; return; }');
   // Music: a verified jsDelivr copy replaces a track's source only before its
   // first play, inside the tap that primes it, so iPhone's playback grant
   // attaches to the copy. Otherwise the track streams from this site as before.
@@ -164,6 +213,8 @@ export function patchMothRuntime(source, ts) {
   once('this.portraitCtx = element.getContext("2d", { alpha: false, desynchronized: true });', 'this.portraitCtx = element.getContext("2d", { alpha: false, desynchronized: DESYNC_CANVAS });');
   // Final scoreboard (scripts/moth-scoreboard-client.mjs).
   patchScoreboard(once);
+  // Fights pick up where they stopped (scripts/moth-fight-resume.mjs).
+  patchFightResume(once);
   const imageStart = source.indexOf('function loadImage(src) {');
   const imageEnd = source.indexOf('\nfunction loadOptionalSheet(src)', imageStart);
   assert(imageStart > 0 && imageEnd > imageStart);
@@ -227,6 +278,48 @@ const RUNTIME_METHODS = `
     if (failure) throw failure;
     groups.forEach(group => this.loadedSceneGroups.add(group));
     this.sceneLoadProgress = null;
+    this.prefetchHitSfx();
+  }
+
+  // The fights' sound files, fetched with the first chapter and again for any
+  // that failed; loadHitSfx decodes them.
+  prefetchHitSfx() {
+    this.sfxRaw ||= {};
+    if (this.hitSfxPrefetch) return this.hitSfxPrefetch;
+    const missing = Object.keys(HIT_SFX).filter(name => !this.sfxRaw[name]);
+    if (!missing.length) return Promise.resolve();
+    const prefetch = this.hitSfxPrefetch = Promise.allSettled(missing.map(async name => {
+      this.sfxRaw[name] ||= (await fetchGameAsset(HIT_SFX[name])).data.buffer;
+    })).finally(() => { if (this.hitSfxPrefetch === prefetch) this.hitSfxPrefetch = null; });
+    return prefetch;
+  }
+
+  // The chapter a LOADING card leads to (startSewerTransition) downloads
+  // under it; the card holds until it has.
+  loadTransitionScene(direction) {
+    const stageId = { boss: 'level2-stage2', down: 'level2-stage2', level3: 'level3-stage1', level4: 'level4-stage1', level5: 'level5-stage1',
+      level5Boss: 'level5-stage2', level6: 'level6-stage1', level6Boss: 'level6-stage2', finale: 'finale-stage1' }[direction];
+    const transition = this.sewerTransition;
+    if (!stageId || this.sceneAssetsReady(stageId)) return;
+    transition.loading = true;
+    this.loadSceneAssets(stageId).then(() => { transition.loading = false; }, error => {
+      transition.loading = false;
+      if (this.sewerTransition === transition && this.state === 'sewerTransition') this.showLoadRecovery(error);
+    });
+  }
+
+  // Story fights reached from their scene (not free play, a rematch's loading
+  // screen or a restored fight) show the arena under the count-in at once.
+  // Level 1 is always entered through a loading screen, and may open with
+  // its tutorial rather than a count.
+  showFightWhilePreparing(rhythm, options = {}) {
+    if (this.freePlay || options.deferSong || options.fromDialogue || this.levelLoadingPresentation || rhythm.countdownDuringGraphicsPreparation
+      || rhythm.theme === 'office') return;
+    rhythm.countdownDuringGraphicsPreparation = true;
+    this.state = 'playing';
+    this.updateMobileControls(true);
+    this.countInFightSong();
+    rhythm.countedInEarly = true;
   }
 
   showLoadRecovery(error) {
