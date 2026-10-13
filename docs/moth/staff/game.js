@@ -187,6 +187,7 @@ const LEVEL_6_WAKE_DIALOGUE = [
 ];
 const SAVE_KEY = "moth.staff_save_v1";
 const PROGRESS_KEY = "moth.staff_progress_v1";
+const FIGHT_RESUME_KEY = "moth.staff_fight_resume_v1";
 const DEVICE_MODE_KEY = "moth.staff_device_mode_v1";
 const LANGUAGE_KEY = "moth.staff_language_v1";
 const DIFFICULTY_KEY = "moth.staff_difficulty_v1";
@@ -2762,6 +2763,48 @@ for (const level of this.config.secretLevels || []) {
     if (failure) throw failure;
     groups.forEach(group => this.loadedSceneGroups.add(group));
     this.sceneLoadProgress = null;
+    this.prefetchHitSfx();
+  }
+
+  // The fights' sound files, fetched with the first chapter and again for any
+  // that failed; loadHitSfx decodes them.
+  prefetchHitSfx() {
+    this.sfxRaw ||= {};
+    if (this.hitSfxPrefetch) return this.hitSfxPrefetch;
+    const missing = Object.keys(HIT_SFX).filter(name => !this.sfxRaw[name]);
+    if (!missing.length) return Promise.resolve();
+    const prefetch = this.hitSfxPrefetch = Promise.allSettled(missing.map(async name => {
+      this.sfxRaw[name] ||= (await fetchGameAsset(HIT_SFX[name])).data.buffer;
+    })).finally(() => { if (this.hitSfxPrefetch === prefetch) this.hitSfxPrefetch = null; });
+    return prefetch;
+  }
+
+  // The chapter a LOADING card leads to (startSewerTransition) downloads
+  // under it; the card holds until it has.
+  loadTransitionScene(direction) {
+    const stageId = { boss: 'level2-stage2', down: 'level2-stage2', level3: 'level3-stage1', level4: 'level4-stage1', level5: 'level5-stage1',
+      level5Boss: 'level5-stage2', level6: 'level6-stage1', level6Boss: 'level6-stage2', finale: 'finale-stage1' }[direction];
+    const transition = this.sewerTransition;
+    if (!stageId || this.sceneAssetsReady(stageId)) return;
+    transition.loading = true;
+    this.loadSceneAssets(stageId).then(() => { transition.loading = false; }, error => {
+      transition.loading = false;
+      if (this.sewerTransition === transition && this.state === 'sewerTransition') this.showLoadRecovery(error);
+    });
+  }
+
+  // Story fights reached from their scene (not free play, a rematch's loading
+  // screen or a restored fight) show the arena under the count-in at once.
+  // Level 1 is always entered through a loading screen, and may open with
+  // its tutorial rather than a count.
+  showFightWhilePreparing(rhythm, options = {}) {
+    if (this.freePlay || options.deferSong || options.fromDialogue || this.levelLoadingPresentation || rhythm.countdownDuringGraphicsPreparation
+      || rhythm.theme === 'office') return;
+    rhythm.countdownDuringGraphicsPreparation = true;
+    this.state = 'playing';
+    this.updateMobileControls(true);
+    this.countInFightSong();
+    rhythm.countedInEarly = true;
   }
 
   showLoadRecovery(error) {
@@ -3387,6 +3430,185 @@ for (const level of this.config.secretLevels || []) {
     return card;
   }
 
+  // ---- Fights pick up where they stopped (scripts/moth-fight-resume.mjs) ----
+  // Frozen at the song's place under 3 · 2 · 1 · 開始！, then on from there.
+  resumeFightAt(rhythm, trackTime) {
+    if (!rhythm) return;
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    if (track && Number.isFinite(trackTime)) { track.pause(); track.currentTime = trackTime; }
+    rhythm.resumeTrackTime = trackTime;
+    this.releaseHeldInputs();
+    this.armStageCountdown(() => {
+      // 暫停 during the count holds it; that 繼續 counts in again.
+      if (this.level1OfficeRhythm !== rhythm || this.state !== "playing" || rhythm.ending) return;
+      this.playResumedFight(rhythm, trackTime);
+    });
+  }
+
+  playResumedFight(rhythm, trackTime) {
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    rhythm.resumeTrackTime = null;
+    if (!track || rhythm.skipAudio) return;
+    const refused = () => {
+      if (this.level1OfficeRhythm !== rhythm) return;
+      track.pause();
+      // iPhone wants a tap: the resume card's tap grants it and counts in again.
+      this.audioInterruption = { fromHidden: true, rhythm, songTime: this.songTime, tracks: [{ track, time: trackTime, volume: BGM_VOLUME }] };
+      this.showAudioRecovery("resume");
+    };
+    // A priming play still under way would pause this one when it lands.
+    (this.rhythmTrackPriming?.get(track) || Promise.resolve()).then(() => {
+      if (this.level1OfficeRhythm !== rhythm || this.state !== "playing") return;
+      if (Number.isFinite(trackTime)) track.currentTime = trackTime;
+      track.volume = BGM_VOLUME;
+      let timer;
+      Promise.race([Promise.all([this.soloPlay(track), this.musicAudioContext?.resume()]), new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Resume timed out")), 2000);
+      })]).then(() => {
+        const route = this.musicAudioRoutes?.get(track);
+        if (route && route.context.state !== "running") refused();
+      }, refused).finally(() => clearTimeout(timer));
+    });
+  }
+
+  // Back from the lock screen or another app (resumeAudioAfterReturn).
+  countDownInterruptedFight() {
+    const saved = this.audioInterruption;
+    const rhythm = this.level1OfficeRhythm;
+    if (!saved?.fromHidden || !rhythm || saved.rhythm !== rhythm || this.state !== "playing" || rhythm.ending
+      || rhythm.songHandover || rhythm.tutorial?.mode !== "done") return false;
+    // The count-in before the song (or a resume's own count) simply runs again.
+    const pending = this.stageCountdown > 0 ? this.stageCountdownAction : null;
+    this.audioInterruption = null;
+    // The song is tested when the count ends; a tap meanwhile must not swap
+    // the engine (refreshStaleAudioEngine) for one that was never granted.
+    this.audioEngineStale = null;
+    this.lastMusicAt = performance.now();
+    this.songTime = saved.songTime;
+    if (pending) {
+      this.armStageCountdown(pending);
+      return true;
+    }
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    const position = saved.tracks.find(item => item.track === track);
+    this.resumeFightAt(rhythm, position ? position.time : rhythm.resumeTrackTime ?? track?.currentTime);
+    return true;
+  }
+
+  // The resume card's tap in a fight: new engines (a stuck one may never
+  // resume), the song granted playback silently at its place, then the count.
+  countDownFightAfterTap() {
+    const saved = this.audioInterruption;
+    const rhythm = this.level1OfficeRhythm;
+    if (!saved?.rhythm || saved.rhythm !== rhythm || this.state !== "playing" || rhythm.ending || this.audioRecovering
+      || rhythm.songHandover || rhythm.tutorial?.mode !== "done") return false;
+    this.rebuildMusicAudioContext();
+    this.rebuildToneContext();
+    this.audioUnlockSettled = true;
+    this.applyPlaybackAudioSession();
+    this.audioEngineStale = null;
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    const position = saved.tracks.find(item => item.track === track) || saved.tracks[0];
+    const trackTime = position ? position.time : rhythm.resumeTrackTime;
+    this.musicAudioContext?.resume()?.catch(() => {});
+    const primed = track && !rhythm.skipAudio ? this.primeRhythmTrack(track, trackTime) : Promise.resolve();
+    this.audioRecovering = true;
+    this.audioRecoveryPrompt.querySelector("button").textContent = this.tr("RESTORING SOUND…", "正在恢復音效…");
+    primed.then(() => {
+      this.audioRecovering = false;
+      if (this.level1OfficeRhythm !== rhythm || this.audioInterruption !== saved) return;
+      if (track && !rhythm.skipAudio && !this.primedRhythmTracks?.has(track)) {
+        this.showAudioRecovery("resume");
+        return;
+      }
+      this.audioInterruption = null;
+      this.audioRecoveryPrompt.hidden = true;
+      rhythm.audioStartPending = false;
+      this.audioRecoveryFailed = false;
+      this.lastMusicAt = performance.now();
+      this.songTime = saved.songTime;
+      this.resumeFightAt(rhythm, trackTime);
+    });
+    return true;
+  }
+
+  // While the page is hidden, the story fight's state, for a reload.
+  keepFightForReload() {
+    const rhythm = this.level1OfficeRhythm;
+    if (this.freePlay || !rhythm || rhythm.ending || rhythm.songHandover || rhythm.tutorial?.mode !== "done"
+      || !["playing", "level1OfficePaused"].includes(this.state)) return;
+    const saved = this.audioInterruption?.rhythm === rhythm ? this.audioInterruption : null;
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    const trackTime = saved?.tracks.find(item => item.track === track)?.time
+      ?? (this.state === "level1OfficePaused" ? this.level1OfficePausedAt : null)
+      ?? rhythm.resumeTrackTime ?? track?.currentTime;
+    const songTime = saved ? saved.songTime : this.songTime;
+    if (!(songTime > 0) || !Number.isFinite(trackTime)) return;
+    const plain = value => JSON.parse(JSON.stringify(value, (key, item) =>
+      item && typeof item === "object" && !Array.isArray(item) && Object.getPrototypeOf(item) !== Object.prototype ? undefined : item));
+    const { notes, ...state } = rhythm;
+    for (const key of Object.keys(state)) if (/Telemetry$|Rects$/.test(key)) delete state[key];
+    const kept = { v: 1, at: Date.now(), stageId: this.currentStageId, theme: rhythm.theme,
+      checkpoint: this.progress?.storyCheckpoint || null, run: this.progress?.storyRun?.id || null,
+      difficulty: this.difficultyId, songTime, trackTime, state: plain(state), notes: plain(notes) };
+    try { window.localStorage?.setItem(FIGHT_RESUME_KEY, JSON.stringify(kept)); } catch {}
+  }
+
+  forgetKeptFight() {
+    try { window.localStorage?.removeItem(FIGHT_RESUME_KEY); } catch {}
+  }
+
+  // The main menu's 繼續 after a reload: the same fight, the same moment.
+  resumeKeptFight() {
+    let kept = null;
+    try { kept = JSON.parse(window.localStorage?.getItem(FIGHT_RESUME_KEY) || "null"); } catch {}
+    this.forgetKeptFight();
+    const start = {
+      office: () => { this.level1TutorialSeen = true; return this.startLevel({ skipTutorial: true, deferSong: true, useProgressLoadout: true }); },
+      bathroom: () => this.startLevel2BathroomFight({ deferSong: true }),
+      massage: () => this.startLevel3MassageFight({ deferSong: true }),
+      arcade: () => this.startLevel4ArcadeFight({ deferSong: true }),
+      studio: () => this.startStudioFight({ deferSong: true }),
+      river: () => this.startLevel5RiverFight({ deferSong: true }),
+      concert: () => this.startLevel6ConcertFight({ deferSong: true })
+    }[kept?.theme];
+    if (!start || kept.v !== 1 || !(Date.now() - kept.at < 7 * 864e5) || typeof kept.stageId !== "string"
+      || kept.checkpoint !== (this.progress?.storyCheckpoint || null) || kept.run !== (this.progress?.storyRun?.id || null)) return false;
+    if (RHYTHM_DIFFICULTIES[kept.difficulty] && kept.difficulty !== this.difficultyId) this.setDifficulty(kept.difficulty, { persist: false, announce: false });
+    this.freePlay = false;
+    this.startLevelLoading(kept.stageId, async () => {
+      this.livesRemaining = TOTAL_LIVES;
+      this.stopSongPreview(false);
+      this.resetRuntime();
+      this.applyConfigDefaults();
+      this.applyLatestProgressLoadout();
+      this.currentStageId = kept.stageId;
+      await start();
+      this.restoreKeptFight(kept);
+    });
+    return true;
+  }
+
+  restoreKeptFight(kept) {
+    const rhythm = this.level1OfficeRhythm;
+    if (!rhythm || rhythm.theme !== kept.theme || this.state !== "playing") return;
+    // The fight's own numbers and every note's result; not its loading,
+    // audio or effect bookkeeping, which belong to this page.
+    const skip = /^(notes|theme|tutorial|skipAudio|ending|result|review.*|graphics.*|audio.*|songHandover|outputDelay|frozenSongTime|resumeTrackTime|celebration.*|countdownDuringGraphicsPreparation|countedInEarly|hitBurstRequest|arcadeEvent|impactKick|bathroomStrike|stampFx)$/;
+    const same = (a, b) => a !== null && b !== null && typeof a === typeof b && Array.isArray(a) === Array.isArray(b);
+    for (const [key, value] of Object.entries(kept.state || {})) {
+      if (skip.test(key) || !(key in rhythm) || !same(rhythm[key], value)) continue;
+      rhythm[key] = typeof value === "object" && !Array.isArray(value) ? { ...rhythm[key], ...value } : value;
+    }
+    (kept.notes || []).forEach((saved, index) => {
+      const note = rhythm.notes[index];
+      if (!note || note.id !== saved.id || note.time !== saved.time) return;
+      for (const [key, value] of Object.entries(saved)) if (value === null || typeof value !== "object") note[key] = value;
+    });
+    this.songTime = kept.songTime;
+    this.resumeFightAt(rhythm, kept.trackTime);
+  }
+
   async loadLayeredMapConfig() {
     const source = this.config?.map?.layeredDataSource;
     if (!source) return;
@@ -3962,6 +4184,10 @@ for (const level of this.config.secretLevels || []) {
     document.addEventListener("freeze", staleAudio("frozen"));
     navigator.mediaDevices?.addEventListener?.("devicechange", staleAudio("device"));
     window.addEventListener("pageshow", () => this.resumeAudioAfterReturn());
+    // Kept only while hidden: a page that comes back was not reloaded.
+    document.addEventListener("visibilitychange", () => { if (document.hidden) this.keepFightForReload(); else this.forgetKeptFight(); });
+    window.addEventListener("pagehide", () => this.keepFightForReload());
+    window.addEventListener("pageshow", event => { if (event.persisted) this.forgetKeptFight(); });
 
     // The landscape deck is positioned against the letterboxed canvas, not the
     // viewport, so the buttons live inside the game frame instead of floating
@@ -7387,6 +7613,7 @@ for (const level of this.config.secretLevels || []) {
     const runMode = this.progress?.storyRun?.difficulty;
     if (runMode && runMode !== this.difficultyId) this.setDifficulty(runMode, { persist: false, announce: false });
     if (this.progress?.storyRun) this.registerStoryRun(this.progress.storyRun);
+    if (this.resumeKeptFight()) return true;
     this.freePlay = false;
     return this.startStage(stageId, { freePlay: false });
   }
@@ -8620,6 +8847,7 @@ for (const level of this.config.secretLevels || []) {
     this.stopLevel3RhythmAudio(true);
     this.stopLevel6RhythmAudio(true);
     const preparingRhythm = this.level1OfficeRhythm;
+    this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
     if (this.level1OfficeRhythm !== preparingRhythm) return;
@@ -9542,7 +9770,8 @@ for (const level of this.config.secretLevels || []) {
     if (!item) return;
     if (this.homeMenu.view === "root") {
       if (item.id === "newGame") {
-        this.homeMenu.difficultyPick = { story: true, title: this.tr("STORY MODE", "故事模式"), choice: this.difficultyId === "shoot" ? 1 : 0 };
+        if (this.homeMenu.difficultyPick?.story) await this.startStageWithPickedDifficulty();
+        else this.homeMenu.difficultyPick = { story: true, title: this.tr("STORY MODE", "故事模式"), choice: this.difficultyId === "shoot" ? 1 : 0 };
       } else if (item.id === "scoreboard") {
         this.openScoreboard();
       } else if (item.id === "continue") {
@@ -9911,6 +10140,7 @@ for (const level of this.config.secretLevels || []) {
   countInFightSong() {
     const rhythm = this.level1OfficeRhythm;
     if (!rhythm) return;
+    if (rhythm.countedInEarly) { rhythm.countedInEarly = false; return; }
     rhythm.tutorial.mode = "done";
     this.prepareRhythmGraphics(rhythm);
     // The clock starts at the top of the chart. The story reaches a fight with
@@ -10738,17 +10968,18 @@ for (const level of this.config.secretLevels || []) {
 
   // Fetch and decode off the input path; the arena gate awaits this batch.
   loadHitSfx() {
-    if (this.hitSfxReady) return this.hitSfxReady;
-    this.sfxBuffers = {};
-    this.sfxRaw = {};
+    this.sfxBuffers ||= {};
+    if (Object.keys(HIT_SFX).every(name => this.sfxBuffers[name])) return Promise.resolve();
+    if (this.hitSfxLoading) return this.hitSfxLoading;
     const context = this.ensureToneContext();
     if (!context) return Promise.resolve();
     this.ensureFeedbackOutput(context);
-    this.hitSfxReady = Promise.allSettled(Object.entries(HIT_SFX).map(async ([name, src]) => {
-      this.sfxRaw[name] = (await fetchGameAsset(src)).data.buffer;
-      await this.decodeHitSfx(name, this.level1OfficeAudioContext);
-    }));
-    return this.hitSfxReady;
+    const loading = this.hitSfxLoading = this.prefetchHitSfx()
+      .then(() => Promise.allSettled(Object.keys(HIT_SFX).filter(name => !this.sfxBuffers[name])
+        .map(name => this.decodeHitSfx(name, this.level1OfficeAudioContext))))
+      .finally(() => { if (this.hitSfxLoading === loading) this.hitSfxLoading = null; });
+    this.hitSfxReady = loading;
+    return loading;
   }
 
   decodeHitSfx(name, context) {
@@ -10777,7 +11008,7 @@ for (const level of this.config.secretLevels || []) {
     this.musicAudioContext ||= this.level1OfficeAudioContext;
     this.ensureFeedbackOutput(this.level1OfficeAudioContext);
     this.toneContextRebuilds = (this.toneContextRebuilds || 0) + 1;
-    this.sfxBuffers = {};
+    this.sfxBuffers ||= {};
     this.hitSfxReady = Promise.allSettled(Object.keys(this.sfxRaw || {}).map(name => this.decodeHitSfx(name, this.level1OfficeAudioContext)));
     this.level1OfficeAudioContext.resume?.().catch?.(() => {});
     return this.level1OfficeAudioContext;
@@ -12786,6 +13017,7 @@ for (const level of this.config.secretLevels || []) {
     // Hold the chart exactly where it stands; songTime is driven off the audio
     // element, so pausing the track is what actually freezes the fight.
     const track = this.getActiveLevel1OfficeRhythmAudio();
+    this.level1OfficePausedAt = track?.currentTime;
     if (track) track.pause();
     this.releaseHeldInputs();
     this.updateMobileControls(true);
@@ -12797,10 +13029,10 @@ for (const level of this.config.secretLevels || []) {
     this.level1OfficePauseConfirm = false;
     this.state = "playing";
     const resumeTrack = this.getActiveLevel1OfficeRhythmAudio();
-    if (resumeTrack && !this.level1OfficeRhythm?.skipAudio) {
-      const resumed = this.playMusicAudio(resumeTrack);
-      if (resumed?.catch) resumed.catch(() => {});
-    }
+    const pausedAt = Number.isFinite(this.level1OfficePausedAt) ? this.level1OfficePausedAt : resumeTrack?.currentTime;
+    // In the tap: keep (or regain) iPhone's permission to play after the count.
+    if (resumeTrack && !this.level1OfficeRhythm?.skipAudio) this.primeRhythmTrack(resumeTrack, pausedAt);
+    this.resumeFightAt(this.level1OfficeRhythm, pausedAt);
     this.updateMobileControls(true);
     return true;
   }
@@ -12997,7 +13229,7 @@ for (const level of this.config.secretLevels || []) {
         root.addEventListener(type, event => event.stopPropagation(), { passive: true });
       }
       root.querySelector("button").addEventListener("click", event => {
-        event.preventDefault(); event.stopPropagation(); this.recoverGameAudio();
+        event.preventDefault(); event.stopPropagation(); if (!this.countDownFightAfterTap()) this.recoverGameAudio();
       });
       document.body.appendChild(root);
       this.audioRecoveryPrompt = root;
@@ -13036,6 +13268,7 @@ for (const level of this.config.secretLevels || []) {
 
   resumeAudioAfterReturn() {
     if (!document.hidden && this.audioInterruption?.fromHidden && !this.audioRecoveryVisible()) {
+      if (this.countDownInterruptedFight()) return;
       this.recoverGameAudio({ automatic: true });
     }
   }
@@ -13315,6 +13548,7 @@ for (const level of this.config.secretLevels || []) {
     if (this.state !== "playing" || !rhythm || rhythm.ending || !button || !["practice", "done"].includes(tutorial?.mode)) return false;
     // Sound belongs to the press, including harmless taps between notes.
     if (!this.playRhythmHitSfx(action, false, button)) this.playLevel1OfficeTone("hit", action, "stamp");
+    if (this.stageCountdown > 0) return true;
     const renderTime = this.getLevel1OfficeInputTime(inputTimeStamp);
     const activeNotes = this.getLevel1OfficeRenderNotes();
     const windowSize = spec.missWindow || 0.22;
@@ -14746,6 +14980,7 @@ for (const level of this.config.secretLevels || []) {
     this.level1OfficeRhythm = this.createLevel1OfficeRhythmState("massage");
     this.level1OfficeRhythm.skipAudio = Boolean(options.skipAudio);
     const preparingRhythm = this.level1OfficeRhythm;
+    this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
     if (this.level1OfficeRhythm !== preparingRhythm) return;
@@ -14911,6 +15146,7 @@ for (const level of this.config.secretLevels || []) {
     this.level1OfficeRhythm = this.createLevel1OfficeRhythmState("arcade");
     this.level1OfficeRhythm.skipAudio = Boolean(options.skipAudio);
     const preparingRhythm = this.level1OfficeRhythm;
+    this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
     if (this.level1OfficeRhythm !== preparingRhythm) return;
@@ -16571,11 +16807,12 @@ for (const level of this.config.secretLevels || []) {
       }
     }
     this.state = "sewerTransition";
+    this.loadTransitionScene(direction);
   }
 
   updateSewerTransition(dt) {
     this.sewerTransition.timer += dt;
-    if (this.sewerTransition.timer < this.sewerTransition.duration) return;
+    if (this.sewerTransition.timer < this.sewerTransition.duration || this.sewerTransition.loading) return;
     if (this.sewerTransition.direction === "down") {
       this.enterSewerScene();
     } else if (this.sewerTransition.direction === "boss") {
@@ -16949,6 +17186,7 @@ for (const level of this.config.secretLevels || []) {
     const rhythm = this.createLevel1OfficeRhythmState("studio");
     this.level1OfficeRhythm = rhythm;
     rhythm.skipAudio = Boolean(options.skipAudio);
+    this.showFightWhilePreparing(rhythm, options);
     await this.primeRhythmSong(rhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(rhythm);
     if (this.level1OfficeRhythm !== rhythm) return;
@@ -17439,6 +17677,7 @@ for (const level of this.config.secretLevels || []) {
     this.level1OfficeRhythm = this.createLevel1OfficeRhythmState(level.theme);
     this.level1OfficeRhythm.skipAudio = Boolean(options.skipAudio);
     const preparingRhythm = this.level1OfficeRhythm;
+    this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
     if (this.level1OfficeRhythm !== preparingRhythm) return;
@@ -17468,6 +17707,7 @@ for (const level of this.config.secretLevels || []) {
     this.level1OfficeRhythm = this.createLevel1OfficeRhythmState("concert");
     this.level1OfficeRhythm.skipAudio = Boolean(options.skipAudio);
     const preparingRhythm = this.level1OfficeRhythm;
+    this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
     if (this.level1OfficeRhythm !== preparingRhythm) return;
@@ -17503,6 +17743,7 @@ for (const level of this.config.secretLevels || []) {
     this.level1OfficeRhythm = this.createLevel1OfficeRhythmState("river");
     this.level1OfficeRhythm.skipAudio = Boolean(options.skipAudio);
     const preparingRhythm = this.level1OfficeRhythm;
+    this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
     if (this.level1OfficeRhythm !== preparingRhythm) return;
@@ -24752,7 +24993,8 @@ for (const level of this.config.secretLevels || []) {
             : direction === "down"
             ? `${sewerLevel.label || "LEVEL 2"}  /  2.5D から 2D サイドビューへ`
             : "2D サイドビュー から 2.5D へ";
-    drawStageLoadingScreen(target, this.time, t,
+    const progress = transition.loading && this.sceneLoadProgress;
+    drawStageLoadingScreen(target, this.time, progress?.total ? Math.min(t, progress.done / progress.total) : t,
       direction === "level4" ? this.tr("LOADING  BONITA'S ROOM", "載入中  Bonita 的房間") : title,
       direction === "level4" ? this.tr("LEVEL 4  ·  BEDROOM", "關卡 4  ·  臥室") : subtitle, W, H);
 
