@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { patchMothRuntime, rewriteCssArtwork, cssArtworkLoader, MOTH_MIRROR_COMMIT, MOTH_MIRROR_ORIGIN } from './moth-runtime-patches.mjs';
 import { SCOREBOARD_API, SCOREBOARD_CSS } from './moth-scoreboard-client.mjs';
+import { patchCharts, patchChartsText } from './moth-chart-patches.mjs';
 const require = createRequire(import.meta.url);
 const ts = require(process.env.MOTH_TYPESCRIPT_PATH || 'typescript');
 const root = path.resolve(import.meta.dirname, '..');
@@ -22,6 +23,14 @@ for (const file of snapshot.files) {
   if (['index.html', 'src/game.js', 'manifest.json', 'haptics-test.html', 'haptics-test2.html', 'sfx-test.html'].includes(file.path)) continue;
   const dest = path.join(output, file.path);
   await fs.mkdir(path.dirname(dest), { recursive: true });
+  if (file.path === 'data/level1.json') {
+    // The release's game data with the chart additions (moth-chart-patches.mjs).
+    const release = await fs.readFile(path.join(sourceRoot, file.path), 'utf8');
+    const patched = patchChartsText(release);
+    assert.deepEqual(JSON.parse(patched), patchCharts(JSON.parse(release)));
+    await fs.writeFile(dest, patched);
+    continue;
+  }
   await fs.copyFile(path.join(sourceRoot, file.path), dest);
 }
 // The game takes images and sound effects from jsDelivr only when they hash
@@ -97,8 +106,8 @@ for (const audience of ['public', 'staff']) {
   html = html.replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />\n    <meta name="referrer" content="strict-origin-when-cross-origin" />${staff ? '\n    <meta name="robots" content="noindex, nofollow, noarchive" />\n    <base href="/moth/" />' : ''}`);
   html = html.replace('<html lang="en">', '<html lang="zh-Hant-TW">');
   html = html.replace('./manifest.json', staff ? '/moth/staff/manifest.json' : './manifest.json');
-  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261013f');
-  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=moth-loading-20261013f" integrity="${sri}" crossorigin="anonymous"></script>`);
+  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261013h');
+  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=moth-loading-20261013h" integrity="${sri}" crossorigin="anonymous"></script>`);
   await fs.writeFile(path.join(output, staff ? 'staff/index.html' : 'index.html'), html);
   const manifest = JSON.parse(await fs.readFile(path.join(sourceRoot, 'manifest.json'), 'utf8'));
   manifest.start_url = staff ? '/moth/staff/' : '/moth/';

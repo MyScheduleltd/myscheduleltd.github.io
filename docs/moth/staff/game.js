@@ -2740,7 +2740,6 @@ for (const level of this.config.secretLevels || []) {
 
   async loadChapterAssets(stageId) {
     const groups = this.sceneGroups(stageId);
-    this.prefetchChapterAudio(groups);
     // A loading screen draws no outgoing scene artwork. Release it before
     // decoding the next chapter so mobile Safari does not hold the whole game.
     for (const group of this.loadedSceneGroups) {
@@ -2749,7 +2748,9 @@ for (const level of this.config.secretLevels || []) {
       this.loadedSceneGroups.delete(group);
     }
     const jobs = this.sceneAssetJobs.filter(job => groups.includes(job.group) && !this.loadedSceneGroups.has(job.group));
-    this.sceneLoadProgress = {done:0, total:jobs.length};
+    const songs = this.chapterSongs(groups).filter(src => !this.mirroredAudioUrl(src));
+    this.sceneLoadProgress = {done:0, total:jobs.length + songs.length};
+    const songsReady = Promise.all(songs.map(src => this.songCopy(src).then(() => { this.sceneLoadProgress && this.sceneLoadProgress.done++; })));
     let next = 0;
     let failure;
     await Promise.all(Array.from({length:Math.min(3, jobs.length)}, async () => {
@@ -2761,9 +2762,20 @@ for (const level of this.config.secretLevels || []) {
       }
     }));
     if (failure) throw failure;
+    await songsReady;
     groups.forEach(group => this.loadedSceneGroups.add(group));
     this.sceneLoadProgress = null;
     this.prefetchHitSfx();
+    // The next chapter's fight song, in the background.
+    const following = {office: 'level2', level2: 'level3', level3: 'level4', level4: 'studio', studio: 'level5', level5: 'level6'};
+    for (const group of groups) if (following[group]) this.chapterSongs([following[group]]).forEach(src => this.songCopy(src));
+  }
+
+  // The fight songs a chapter's fights play.
+  chapterSongs(groups) {
+    const themes = {office: 'office', level2: 'bathroom', level3: 'massage', level4: 'arcade', studio: 'studio', level5: 'river', level6: 'concert'};
+    return groups.map(group => themes[group] || this.getSecretLevel(group)?.theme).filter(Boolean)
+      .map(theme => this.getRhythmAudioFor(theme)?.getAttribute('src')).filter(Boolean);
   }
 
   // The fights' sound files, fetched with the first chapter and again for any
@@ -2850,20 +2862,84 @@ for (const level of this.config.secretLevels || []) {
     target.restore();
   }
 
-  // A track's mirror copy has to be ready before the tap that first plays it,
-  // so it is fetched ahead: the first fight's music on the home screen, the
-  // highlighted song or stage after 300 ms, the next track, and each
-  // chapter's fight music while the chapter loads.
+  // A track's local copy (an object URL of the whole file) is fetched ahead:
+  // the first fight's music on the home screen, the highlighted song or stage
+  // after 300 ms, the next track, and the next chapter's fight music. Songs and
+  // the home playlist take only the verified jsDelivr copy here.
   prefetchMirroredAudio(src) {
-    if (!MIRROR_BASE || !src || src.startsWith('blob:')) return;
+    if (MIRROR_BASE) this.songCopy(src, {mirrorOnly: true});
+  }
+
+  // A fight's song is downloaded whole before its fight (loadChapterAssets
+  // waits for it): the mirror copy, or this site's file, so a weak connection
+  // cannot stall the song mid-fight (user, 2026-10-13). Resolves to the copy's
+  // URL, or null to stream.
+  songCopy(src, {mirrorOnly = false} = {}) {
+    if (!src || src.startsWith('blob:')) return Promise.resolve(null);
     this.audioMirror ||= new Map();
-    if (this.audioMirror.has(src)) return;
-    const entry = {url: null, used: 0};
-    this.audioMirror.set(src, entry);
-    mirrorObjectUrl(src).then(url => {
-      Object.assign(entry, {url, used: performance.now()});
+    const known = this.audioMirror.get(src);
+    if (known?.url || (known && mirrorOnly)) return known.ready;
+    // A whole-file request waits for a mirror-only fetch under way, then
+    // falls back to this site's file if the mirror had no copy.
+    if (known && !known.failed) return known.mirrorOnly ? known.ready.then(url => url || this.songCopy(src)) : known.ready;
+    const entry = {url: null, used: 0, mirrorOnly};
+    const copy = mirrorOnly ? mirrorObjectUrl(src)
+      : fetchGameAsset(src).then(({data, type}) => URL.createObjectURL(new Blob([data], {type: type.startsWith('audio/') ? type : 'audio/mp4'})));
+    entry.ready = copy.then(url => {
+      Object.assign(entry, {url, used: performance.now(), failed: !url});
       this.trimAudioMirror();
-    });
+      return url;
+    }, () => { entry.failed = true; return null; });
+    this.audioMirror.set(src, entry);
+    return entry.ready;
+  }
+
+  // Before a song starts from the top (or resumes), a copy that arrived after
+  // its first tap takes over from the stream.
+  useSongCopy(track) {
+    const src = track?.getAttribute('src');
+    const copy = src && !src.startsWith('blob:') && this.mirroredAudioUrl(src);
+    if (copy && track.paused) track.src = copy;
+  }
+
+  // A stream that runs dry mid-song (no copy, weak connection): the fight's
+  // clock follows the song, so it waits under 載入中… and goes on the moment
+  // the song does. No note is judged meanwhile.
+  isFightSongStalled() {
+    const rhythm = this.level1OfficeRhythm;
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    const playing = this.state === 'playing' && rhythm && !rhythm.ending && !rhythm.skipAudio && rhythm.tutorial?.mode === 'done'
+      && !(this.stageCountdown > 0) && track && !track.paused && !track.ended;
+    if (!playing || track.readyState >= 3) { if (rhythm) rhythm.stalledSince = null; return false; }
+    rhythm.stalledSince ??= performance.now();
+    return true;
+  }
+
+  renderSongStall() {
+    if (!this.isFightSongStalled() || performance.now() - this.level1OfficeRhythm.stalledSince < 300) return;
+    const target = this.ctx;
+    const centerX = VIEW_W / 2, centerY = PORTRAIT_FIGHT.scene.h / 2;
+    const card = {x: centerX - 170, y: centerY - 62, w: 340, h: 124};
+    target.save();
+    target.fillStyle = 'rgba(4, 6, 12, 0.45)';
+    target.fillRect(0, 0, VIEW_W, VIEW_H);
+    target.fillStyle = 'rgba(2,6,14,0.65)';
+    target.fillRect(card.x + 7, card.y + 8, card.w, card.h);
+    target.fillStyle = '#efe3c4';
+    target.fillRect(card.x, card.y, card.w, card.h);
+    target.strokeStyle = '#292d28';
+    target.lineWidth = 4;
+    target.strokeRect(card.x + 2, card.y + 2, card.w - 4, card.h - 4);
+    target.fillStyle = '#b64b36';
+    target.fillRect(card.x + 18, card.y + 18, 5, 22);
+    target.textAlign = 'center';
+    target.textBaseline = 'middle';
+    target.fillStyle = '#292d28';
+    const dots = '.'.repeat(1 + Math.floor(performance.now() / 400) % 3);
+    drawFittedText(target, this.tr('LOADING', '載入中') + dots, centerX, centerY - 6, card.w - 60, 46, 900, 24);
+    target.fillStyle = '#5d6a5f';
+    drawFittedText(target, this.tr('The song is still downloading', '歌曲仍在下載'), centerX, centerY + 34, card.w - 60, 20, 700, 14);
+    target.restore();
   }
 
   mirroredAudioUrl(src) {
@@ -2899,15 +2975,6 @@ for (const level of this.config.secretLevels || []) {
       'level4-stage1': 'arcade', 'studio-stage1': 'studio', 'level5-stage2': 'river', 'level6-stage2': 'concert'
     }[stageId];
     return theme ? this.getRhythmAudioFor(theme)?.getAttribute('src') : null;
-  }
-
-  prefetchChapterAudio(groups) {
-    const themes = {office: ['office'], level2: ['bathroom'], level3: ['massage'], level4: ['arcade'], studio: ['studio'], level5: ['river'], level6: ['concert', 'level6']};
-    for (const group of groups) {
-      for (const theme of themes[group] || [this.getSecretLevel(group)?.theme]) {
-        if (theme) this.prefetchMirroredAudio(this.getRhythmAudioFor(theme)?.getAttribute('src'));
-      }
-    }
   }
 
   prefetchTitleAudio() {
@@ -3459,6 +3526,7 @@ for (const level of this.config.secretLevels || []) {
     // A priming play still under way would pause this one when it lands.
     (this.rhythmTrackPriming?.get(track) || Promise.resolve()).then(() => {
       if (this.level1OfficeRhythm !== rhythm || this.state !== "playing") return;
+      this.useSongCopy(track);
       if (Number.isFinite(trackTime)) track.currentTime = trackTime;
       track.volume = BGM_VOLUME;
       let timer;
@@ -6111,6 +6179,12 @@ for (const level of this.config.secretLevels || []) {
   }
 
   async debugJumpToStage(stageId) {
+    const scene = /^studio/.test(stageId) ? "studio-stage1" : stageId;
+    if (!this.sceneAssetsReady(scene)) {
+      this.startLevelLoading(scene, () => this.debugJumpToStage(stageId));
+      return;
+    }
+    this.debugLevel4Won = stageId === "level4-postboss-dialogue";
     // Debug previews must not mark earlier scenes complete as their story
     // entry functions normally do. Only explicit unlock controls change saves.
     this.freePlay = true;
@@ -8876,6 +8950,7 @@ for (const level of this.config.secretLevels || []) {
 
   returnToTitle() {
     this.levelLoadingPresentation = null;
+    this.debugLevel4Won = false;
     this.recordLatestProgressLoadout();
     // A stage-select run's difficulty was for that run only.
     if (this.storyDifficultyId != null) {
@@ -10154,6 +10229,7 @@ for (const level of this.config.secretLevels || []) {
     const track = this.getActiveLevel1OfficeRhythmAudio();
     if (track) {
       track.pause();
+      this.useSongCopy(track);
       this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);
       track.currentTime = this.getRhythmAudioStart();
       track.volume = 0;
@@ -12261,6 +12337,7 @@ for (const level of this.config.secretLevels || []) {
 
   adjustConcertCrowd(rhythm, kind) {
     rhythm.hypePulse = kind === "miss" ? -1 : 1;
+    if (kind === "miss") rhythm.hypeMissAt = performance.now();
     this.updateConcertCrowd(rhythm);
   }
 
@@ -12286,10 +12363,8 @@ for (const level of this.config.secretLevels || []) {
     if (songEnded) rhythm.songEnded = true;
     const crowd = this.getActiveRhythmSpec().crowd || {};
     const performance = this.getConcertPerformance(rhythm);
-    const progress = rhythm.songEnded ? 1 : clamp(this.getLevel1OfficeRenderTime() / this.getActiveRhythmDuration(), 0, 0.999);
-    const quality = clamp(performance.accuracy / performance.target, 0, 1);
-    rhythm.hype = clamp((crowd.start ?? 0.15) * (1 - progress) + quality * progress, 0, rhythm.songEnded ? 1 : 0.999);
-    const full = rhythm.hype >= 1 - 1e-9 && rhythm.songEnded;
+    rhythm.hype = clamp(performance.earned / Math.max(1e-9, performance.target * performance.total), 0, 1);
+    const full = rhythm.hype >= 1 - 1e-9;
     if (full && !rhythm.climax) {
       rhythm.climax = true;
       rhythm.climaxAt = this.songTime;
@@ -12841,6 +12916,7 @@ for (const level of this.config.secretLevels || []) {
     if (track) {
       rhythm.audioPriming = null;
       track.pause();
+      this.useSongCopy(track);
       track.currentTime = this.getRhythmAudioStart();
       track.volume = 0;
     }
@@ -13548,7 +13624,7 @@ for (const level of this.config.secretLevels || []) {
     if (this.state !== "playing" || !rhythm || rhythm.ending || !button || !["practice", "done"].includes(tutorial?.mode)) return false;
     // Sound belongs to the press, including harmless taps between notes.
     if (!this.playRhythmHitSfx(action, false, button)) this.playLevel1OfficeTone("hit", action, "stamp");
-    if (this.stageCountdown > 0) return true;
+    if (this.stageCountdown > 0 || this.isFightSongStalled()) return true;
     const renderTime = this.getLevel1OfficeInputTime(inputTimeStamp);
     const activeNotes = this.getLevel1OfficeRenderNotes();
     const windowSize = spec.missWindow || 0.22;
@@ -14942,7 +15018,8 @@ for (const level of this.config.secretLevels || []) {
         target.fillRect(Math.round(bar.x + 3 + i * (cellW + gap)), bar.y + 3, Math.round(cellW * fill), bar.h - 6);
       }
     }
-    target.strokeStyle = rhythm?.climax ? `rgba(255, 239, 99, ${0.6 + 0.4 * Math.sin(motionTime * 10)})` : "#f4f0dc";
+    const missFlash = performance.now() - (rhythm?.hypeMissAt ?? -1e9) < 320;
+    target.strokeStyle = missFlash ? "#ff4866" : rhythm?.climax ? `rgba(255, 239, 99, ${0.6 + 0.4 * Math.sin(motionTime * 10)})` : "#f4f0dc";
     target.lineWidth = 2;
     target.strokeRect(bar.x + 1, bar.y + 1, bar.w - 2, bar.h - 2);
     target.textAlign = "center";
@@ -14951,7 +15028,7 @@ for (const level of this.config.secretLevels || []) {
     target.fillStyle = rhythm?.climax ? "#ffef63" : hype < 0.2 ? "#8fb4ff" : "#f7f2de";
     const label = rhythm?.climax
       ? this.tr("PEAK HYPE!", "嗨到最高點！")
-      : this.tr("FILL HYPE BY SONG END", "歌曲結束時熱度要滿");
+      : this.tr("FILL THE HYPE TO WIN", "熱度填滿就過關");
     drawFittedText(target, label, bar.x + bar.w / 2, bar.y + bar.h + 13, bounds.w - 16, 12, 900, 8);
     target.restore();
   }
@@ -17035,7 +17112,7 @@ for (const level of this.config.secretLevels || []) {
   }
 
   canExitLevel4ToLevel5() {
-    if (!this.progress?.flags?.level4BossDefeated) return false;
+    if (!(this.progress?.flags?.level4BossDefeated || this.debugLevel4Won)) return false;
     // A save from before the chest was removed may have beaten Bonita without
     // opening it: the song is hers either way.
     if (!this.normalizeCollectedSongs(this.collectedSongs).includes("level4")) this.collectSong("level4");
@@ -17711,7 +17788,7 @@ for (const level of this.config.secretLevels || []) {
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
     if (this.level1OfficeRhythm !== preparingRhythm) return;
-    this.level1OfficeRhythm.hype = this.getActiveRhythmSpec().crowd?.start ?? 0.3;
+    this.level1OfficeRhythm.hype = 0;
     this.level1OfficeRhythm.climax = false;
     this.state = "playing";
     this.updateMobileControls(true);
@@ -20702,6 +20779,7 @@ for (const level of this.config.secretLevels || []) {
     }
     this.renderLivesIndicator();
     this.renderStageCountdown();
+    this.renderSongStall();
     this.ctx.restore();
     if (this.flash > 0) {
       this.ctx.fillStyle = `rgba(255, 245, 214, ${this.flash * 0.22})`;
@@ -25655,7 +25733,7 @@ for (const level of this.config.secretLevels || []) {
         : this.level4Rail === "lower"
           ? "找梯子回房間"
           // Like Level 3's: who to go to, then the way out.
-          : this.progress?.flags?.level4BossDefeated && this.level4BossEncountered
+          : (this.progress?.flags?.level4BossDefeated || this.debugLevel4Won) && this.level4BossEncountered
             ? "往左離開"
             : "靠近Bonita";
       drawObjectivePrompt(
@@ -28827,12 +28905,73 @@ function loadImage(src) {
   const promise = fetchGameAsset(src).then(({data, type}) => new Promise((resolve, reject) => {
     const blobUrl = URL.createObjectURL(new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'}));
     const image = new Image();
-    image.onload = () => { URL.revokeObjectURL(blobUrl); resolve(image); };
+    // Sprites cut from a magenta background lose its fringe (moth-sprite-fringe.mjs).
+    image.onload = () => { URL.revokeObjectURL(blobUrl); const path = src.split('?')[0]; resolve(KEY_FRINGE_SPRITES.has(path.startsWith('./') ? path.slice(2) : path) ? cleanKeyFringe(image) : image); };
     image.onerror = () => { URL.revokeObjectURL(blobUrl); reject(new Error('Image could not be decoded')); };
     image.src = blobUrl;
   })).finally(() => { BOOT_LOAD.settled++; imageRequests.delete(src); });
   imageRequests.set(src, promise);
   return promise;
+}
+
+const KEY_FRINGE_SPRITES = new Set(["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","assets/sprites/bobby_level6_performer/processed-v3/sheet-transparent.webp","assets/sprites/bobby_orange_diaper_attack/processed-v4/sheet-transparent.webp","assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","assets/sprites/bobby_orange_ride/processed-v4/sheet-transparent.webp","assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","assets/sprites/bobby_tutorial_intro/processed-v5/sheet-transparent.webp","assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","assets/sprites/bobby_vs_intro/processed-v3/sheet-transparent.webp","assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","assets/sprites/bonita_boss_placeholder/processed/sheet-transparent.webp","assets/sprites/bonita_boss_star_shot/processed/sheet-transparent.webp","assets/sprites/bonita_game_avatar_boss/processed/sheet-transparent.webp","assets/sprites/gangan_bike_exit_level1/processed/sheet-transparent.webp","assets/sprites/gangan_candy_eat/processed/sheet-transparent.webp","assets/sprites/gangan_defeat_exit/processed/sheet-transparent.webp","assets/sprites/gangan_scooter_ride/processed-v2/sheet-transparent.webp","assets/sprites/home_lyrics_window_controls/processed/sheet-transparent.webp","assets/sprites/level1_health_fx/processed/sheet-transparent.webp","assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","assets/sprites/level2_stage3_props/processed_clean/sheet-transparent.webp","assets/sprites/level3_rhythm_hp_bottle_note/processed/sheet-transparent.webp","assets/sprites/level3_rhythm_massage_loop/processed/sheet-transparent.webp","assets/sprites/level3_ui_receptors_v2/processed/sheet-transparent.webp","assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","assets/sprites/level4_hidden_wall_chest/processed/sheet-transparent.webp","assets/sprites/level5_boss_road_objects/processed/sheet-transparent.webp","assets/sprites/level5_goat_run/processed/sheet-transparent.webp","assets/sprites/level5_poop_obstacle/processed/sheet-transparent.webp","assets/sprites/level5_rhythm_hit_fx/processed/sheet-transparent.webp","assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","assets/sprites/level6_fans_profile/processed/sheet-transparent.webp","assets/sprites/secret_levels/processed/drb-squat.webp","assets/sprites/secret_levels/processed/gg-squat.webp","assets/sprites/secret_levels/processed/spa-tickle.webp","assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","assets/sprites/zuxian_idle/processed/sheet-transparent.webp"]);
+
+// Resolves to a drawable copy of the image with its key fringe cleaned (an
+// ImageBitmap that answers naturalWidth/complete like the image), or the image
+// itself if anything fails.
+async function cleanKeyFringe(image) {
+  try {
+    const w = image.naturalWidth, h = image.naturalHeight;
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const context = canvas.getContext('2d', {willReadFrequently: true});
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, w, h), d = pixels.data;
+    const tinted = i => d[i] - d[i + 1] > 40 && d[i + 2] - d[i + 1] > 25;
+    // Within 2 px of a fully transparent pixel (worked out when first asked).
+    const near = new Int8Array(w * h).fill(-1);
+    const edge = (x, y) => {
+      const k = y * w + x;
+      if (near[k] < 0) {
+        near[k] = 0;
+        for (let yy = Math.max(0, y - 2); yy <= Math.min(h - 1, y + 2) && !near[k]; yy++)
+          for (let xx = Math.max(0, x - 2); xx <= Math.min(w - 1, x + 2); xx++) if (d[(yy * w + xx) * 4 + 3] === 0) { near[k] = 1; break; }
+      }
+      return near[k] === 1;
+    };
+    const fixes = [], clear = [];
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        if (!d[i + 3] || !tinted(i) || !edge(x, y)) continue;
+        let pink = false, n = 0, r = 0, g = 0, b = 0, solid = false;
+        for (let yy = Math.max(0, y - 3); yy <= Math.min(h - 1, y + 3) && !pink; yy++) {
+          for (let xx = Math.max(0, x - 3); xx <= Math.min(w - 1, x + 3); xx++) {
+            const j = (yy * w + xx) * 4;
+            if (d[j + 3] < 250) continue;
+            if (Math.abs(yy - y) <= 2 && Math.abs(xx - x) <= 2) solid = true;
+            if (edge(xx, yy)) continue;
+            if (tinted(j)) { pink = true; break; }
+            n++; r += d[j]; g += d[j + 1]; b += d[j + 2];
+          }
+        }
+        if (pink) continue;
+        if (n) fixes.push(i, r / n, g / n, b / n);
+        else if (d[i + 3] < 160 && !solid) clear.push(i);
+      }
+    }
+    const luma = (r, g, b) => 0.299 * r + 0.587 * g + 0.114 * b;
+    for (let f = 0; f < fixes.length; f += 4) {
+      const i = fixes[f], scale = luma(d[i], d[i + 1], d[i + 2]) / Math.max(1, luma(fixes[f + 1], fixes[f + 2], fixes[f + 3]));
+      for (let c = 0; c < 3; c++) d[i + c] = Math.min(255, Math.round(fixes[f + 1 + c] * scale));
+    }
+    for (const i of clear) d[i + 3] = 0;
+    const bitmap = await createImageBitmap(pixels);
+    canvas.width = canvas.height = 0;
+    return Object.assign(bitmap, {naturalWidth: w, naturalHeight: h, complete: true, fringeCleaned: fixes.length / 4 + clear.length});
+  } catch {
+    return image;
+  }
 }
 
 function loadOptionalSheet(src) {

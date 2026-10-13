@@ -285,4 +285,40 @@ for (const [name, launch] of Object.entries(browsers)) {
   console.log('level 4 entry PASS', JSON.stringify(screens));
   await browser.close();
 }
-console.log('PASS resume: lock/unlock count-in, resume card, 暫停, reload → 繼續 for every story fight, deck O, level 4 entry');
+// Level 7's hype bar fills with every hit: empty at the start, earned over the
+// target share of the whole song, a miss flashes it without taking any away,
+// full (the peak) as soon as the hits are enough, and the song's end passes it.
+for (const mode of ['chill', 'shoot']) {
+  const browser = await browsers.chrome();
+  const context = await browser.newContext({viewport: {width: 393, height: 852}});
+  await stubScoreboard(context);
+  await context.addInitScript(phoneRules);
+  const page = await context.newPage();
+  await page.goto(new URL('moth/staff/?device=phone', base).href, {waitUntil: 'domcontentloaded'});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.keyboard.press('Shift');
+  await page.evaluate(mode => { bobbyGame.setDifficulty(mode, {persist: false, announce: false}); bobbyGame.startStage('level6-stage2'); }, mode);
+  await page.waitForFunction(() => { const t = bobbyGame.getActiveLevel1OfficeRhythmAudio?.(); return bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm?.theme === 'concert' && t && !t.paused; }, undefined, {timeout: 90000});
+  const meter = () => page.evaluate(() => { const g = bobbyGame, r = g.level1OfficeRhythm, p = g.getConcertPerformance(r);
+    return {hype: r.hype, expected: Math.min(1, p.earned / (p.target * p.total)), target: p.target, climax: Boolean(r.climax), time: g.getLevel1OfficeRenderTime()}; });
+  const start = await meter();
+  assert(start.hype < 0.02, 'Starts empty ' + JSON.stringify(start));
+  await page.evaluate(() => window.__autoplay(true));
+  await page.waitForTimeout(9000);
+  const playing = await meter();
+  assert(playing.hype > start.hype && Math.abs(playing.hype - playing.expected) < 1e-6, 'Fills with hits ' + JSON.stringify(playing));
+  assert.equal(playing.target, mode === 'shoot' ? 0.7 : 0.6);
+  const missed = await page.evaluate(() => { const g = bobbyGame, r = g.level1OfficeRhythm, before = r.hype; g.adjustConcertCrowd(r, 'miss'); return {before, after: r.hype, flash: performance.now() - r.hypeMissAt < 320}; });
+  assert(missed.flash && missed.after >= missed.before, 'A miss flashes, takes nothing ' + JSON.stringify(missed));
+  // Enough hits mid-song: the peak shows before the song ends.
+  await page.evaluate(() => { const r = bobbyGame.level1OfficeRhythm; for (const n of r.notes) { n.status = 'perfect'; if (n.holdEnd) n.holdDone = true; } });
+  await page.waitForFunction(() => bobbyGame.level1OfficeRhythm.climax, undefined, {timeout: 5000});
+  const peak = await meter();
+  assert(peak.hype === 1 && peak.time < 60, 'Peak mid-song ' + JSON.stringify(peak));
+  await page.evaluate(() => { const t = bobbyGame.getActiveLevel1OfficeRhythmAudio(); t.currentTime = t.duration - 1.5; });
+  await page.waitForFunction(() => bobbyGame.state === 'level1OfficeResults' || bobbyGame.state === 'failure', undefined, {timeout: 30000});
+  assert.equal(await page.evaluate(() => bobbyGame.level1OfficeRhythm.reviewResult), 'PASSED');
+  console.log('level 7 hype PASS', mode, JSON.stringify({after9s: +playing.hype.toFixed(3), target: playing.target, peakAt: +peak.time.toFixed(1)}));
+  await browser.close();
+}
+console.log('PASS resume: lock/unlock count-in, resume card, 暫停, reload → 繼續 for every story fight, deck O, level 4 entry, level 7 hype');
