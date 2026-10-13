@@ -1,5 +1,6 @@
-// Chart additions on top of the release's data/level1.json (build-moth.mjs
-// writes the result; verify-moth-package.mjs checks nothing else changed).
+// Chart and fight-rule changes on top of the release's data/level1.json
+// (build-moth.mjs writes the result; verify-moth-package.mjs checks nothing
+// else changed).
 //
 // Level 2 (腥。禿油肥, 75 BPM): the release charted drum hits only, which left
 // 72.6–83.8 s, three and a half bars where the drums drop out under the rap,
@@ -10,7 +11,16 @@
 // inside the perfect window. Easy keeps one pickup per bar at most, like the
 // rest of its chart. Taps only.
 // A step is a sixteenth: time = step × 0.2 s − 1.033 s.
+//
+// Level 7 (the concert): full hype at the song's end needed 75% / 85% weighted
+// accuracy (easy / hard), too thin a margin (owner, 2026-10-13: a 72% run on
+// hard fell short). It now needs 60% / 70%, and the bar fills with every hit
+// (moth-runtime-patches.mjs).
 import assert from 'node:assert/strict';
+
+export const CONCERT_HYPE_TARGET = { easy: 0.6, hard: 0.7 };
+const CONCERT_NOTE = ['Hype grows with song progress; full hype requires 75%/85% weighted accuracy when the song ends. No early failure or secured climax.',
+  'Hype fills with every hit, over 60%/70% of the whole song\'s weighted total: full hype secures the climax, and at the end it needs 60%/70% weighted accuracy (owner, 2026-10-13; was 75%/85%, growing with song progress). No early failure.'];
 
 export const LEVEL2_BREAK = {
   after: 368, before: 424, // the release's notes either side (72.567 s, 83.767 s)
@@ -38,7 +48,16 @@ export function patchChartsText(text) {
   const version = '      "version": "drum-groove-20261008b",\n';
   const at = text.indexOf(version, chart);
   assert(at > chart && at < text.indexOf('"easy": [', chart), 'Level 2 chart version');
-  return text.slice(0, at + version.length) + `      "breakNotes": ${JSON.stringify(breakNotes())},\n` + text.slice(at + version.length);
+  text = text.slice(0, at + version.length) + `      "breakNotes": ${JSON.stringify(breakNotes())},\n` + text.slice(at + version.length);
+  const concert = text.indexOf('"level6ConcertRhythm": {');
+  const target = '      "accuracyTarget": {\n        "easy": 0.75,\n        "hard": 0.85\n      },\n';
+  const end = () => text.indexOf('\n  "', concert + 1); // the next top-level key
+  const where = text.indexOf(target, concert);
+  assert(concert > 0 && where > concert && where < end(), 'Concert hype target');
+  text = text.slice(0, where) + `      "accuracyTarget": {\n        "easy": ${CONCERT_HYPE_TARGET.easy},\n        "hard": ${CONCERT_HYPE_TARGET.hard}\n      },\n` + text.slice(where + target.length);
+  const note = text.indexOf(CONCERT_NOTE[0], concert);
+  assert(note > concert && note < end(), 'Concert hype note');
+  return text.slice(0, note) + CONCERT_NOTE[1] + text.slice(note + CONCERT_NOTE[0].length);
 }
 
 const breakNotes = () => ({ steps: [LEVEL2_BREAK.after, LEVEL2_BREAK.before], follows: 'the song pulse under the rap (no drums)', added: '2026-10-13' });
@@ -53,5 +72,10 @@ export function patchCharts(config) {
     chart[mode] = [...notes, ...added[mode].map(([step, button]) => [step, button, 0])].sort((a, b) => a[0] - b[0]);
   }
   chart.breakNotes = breakNotes();
+  const crowd = config.level6ConcertRhythm.crowd;
+  assert.deepEqual(crowd.accuracyTarget, { easy: 0.75, hard: 0.85 }, 'Concert hype target');
+  crowd.accuracyTarget = { ...CONCERT_HYPE_TARGET };
+  assert(crowd.note.includes(CONCERT_NOTE[0]));
+  crowd.note = crowd.note.replace(CONCERT_NOTE[0], CONCERT_NOTE[1]);
   return config;
 }

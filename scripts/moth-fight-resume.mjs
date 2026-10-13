@@ -59,6 +59,7 @@ export const FIGHT_RESUME_METHODS = String.raw`
     // A priming play still under way would pause this one when it lands.
     (this.rhythmTrackPriming?.get(track) || Promise.resolve()).then(() => {
       if (this.level1OfficeRhythm !== rhythm || this.state !== "playing") return;
+      this.useSongCopy(track);
       if (Number.isFinite(trackTime)) track.currentTime = trackTime;
       track.volume = BGM_VOLUME;
       let timer;

@@ -19172,10 +19172,10 @@
       "start": 0.15,
       "holdTailWeight": 3,
       "accuracyTarget": {
-        "easy": 0.75,
-        "hard": 0.85
+        "easy": 0.6,
+        "hard": 0.7
       },
-      "note": "Full-song finale: tap quality (perfect 1, good 0.6, miss 0) counts once; timed drum hold completion counts three times. Hype grows with song progress; full hype requires 75%/85% weighted accuracy when the song ends. No early failure or secured climax."
+      "note": "Full-song finale: tap quality (perfect 1, good 0.6, miss 0) counts once; timed drum hold completion counts three times. Hype fills with every hit, over 60%/70% of the whole song's weighted total: full hype secures the climax, and at the end it needs 60%/70% weighted accuracy (owner, 2026-10-13; was 75%/85%, growing with song progress). No early failure."
     },
     "beatOffset": -1.717,
     "audioStartSeconds": 0.0,

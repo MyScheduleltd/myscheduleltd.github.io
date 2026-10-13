@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { patchScoreboard, SCOREBOARD_METHODS } from './moth-scoreboard-client.mjs';
 import { patchFightResume, FIGHT_RESUME_METHODS } from './moth-fight-resume.mjs';
+import { CLEAN_KEY_FRINGE } from './moth-sprite-fringe.mjs';
 
 // Keep the selected published game as the input. Both audiences get identical
 // loading/audio repairs before the public debug tools are stripped.
@@ -215,6 +216,35 @@ export function patchMothRuntime(source, ts) {
   patchScoreboard(once);
   // Fights pick up where they stopped (scripts/moth-fight-resume.mjs).
   patchFightResume(once);
+  // A fight's song switches to its downloaded copy before it starts (useSongCopy),
+  // waits under 載入中… if a stream runs dry, and judges nothing meanwhile.
+  once('      track.pause();\n      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);\n      track.currentTime = this.getRhythmAudioStart();', '      track.pause();\n      this.useSongCopy(track);\n      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);\n      track.currentTime = this.getRhythmAudioStart();');
+  once('      rhythm.audioPriming = null;\n      track.pause();\n      track.currentTime = this.getRhythmAudioStart();', '      rhythm.audioPriming = null;\n      track.pause();\n      this.useSongCopy(track);\n      track.currentTime = this.getRhythmAudioStart();');
+  once('    this.renderLivesIndicator();\n    this.renderStageCountdown();\n', '    this.renderLivesIndicator();\n    this.renderStageCountdown();\n    this.renderSongStall();\n');
+  once('this.playLevel1OfficeTone("hit", action, "stamp");\n    if (this.stageCountdown > 0) return true;\n', 'this.playLevel1OfficeTone("hit", action, "stamp");\n    if (this.stageCountdown > 0 || this.isFightSongStalled()) return true;\n');
+  // Level 7's hype bar fills with every hit (owner, 2026-10-13): perfect 1,
+  // good 0.6, a completed hold three times, as before, over the target share
+  // (moth-chart-patches.mjs) of the whole song's total. It starts empty, is
+  // full once the hits so far are enough for the win, which they then secure,
+  // and a miss flashes its frame. At the song's end it decides exactly as
+  // before: full when the weighted accuracy reached the target.
+  once('    const progress = rhythm.songEnded ? 1 : clamp(this.getLevel1OfficeRenderTime() / this.getActiveRhythmDuration(), 0, 0.999);\n    const quality = clamp(performance.accuracy / performance.target, 0, 1);\n    rhythm.hype = clamp((crowd.start ?? 0.15) * (1 - progress) + quality * progress, 0, rhythm.songEnded ? 1 : 0.999);\n    const full = rhythm.hype >= 1 - 1e-9 && rhythm.songEnded;', '    rhythm.hype = clamp(performance.earned / Math.max(1e-9, performance.target * performance.total), 0, 1);\n    const full = rhythm.hype >= 1 - 1e-9;');
+  once('    this.level1OfficeRhythm.hype = this.getActiveRhythmSpec().crowd?.start ?? 0.3;', '    this.level1OfficeRhythm.hype = 0;');
+  once('    rhythm.hypePulse = kind === "miss" ? -1 : 1;', '    rhythm.hypePulse = kind === "miss" ? -1 : 1;\n    if (kind === "miss") rhythm.hypeMissAt = performance.now();');
+  once('    target.strokeStyle = rhythm?.climax ? `rgba(255, 239, 99, ${0.6 + 0.4 * Math.sin(motionTime * 10)})` : "#f4f0dc";', '    const missFlash = performance.now() - (rhythm?.hypeMissAt ?? -1e9) < 320;\n    target.strokeStyle = missFlash ? "#ff4866" : rhythm?.climax ? `rgba(255, 239, 99, ${0.6 + 0.4 * Math.sin(motionTime * 10)})` : "#f4f0dc";');
+  once('      : this.tr("FILL HYPE BY SONG END", "歌曲結束時熱度要滿");', '      : this.tr("FILL THE HYPE TO WIN", "熱度填滿就過關");');
+  // Staff debug scene jumps (the staff build only; the public build drops the
+  // debug panel). A jump enters its scene directly, so with the chapter loader
+  // it drew placeholders where the scene's art was not loaded (user,
+  // 2026-10-13: "L6 · After the river"); it now loads that chapter first.
+  // "L4 After Win Talk" previews the talk without saving the win, so the door
+  // stayed shut; that preview now counts Bonita as beaten until the next jump
+  // or the title, so the room can be left into the next scene.
+  once('  async debugJumpToStage(stageId) {\n', '  async debugJumpToStage(stageId) {\n    const scene = /^studio/.test(stageId) ? "studio-stage1" : stageId;\n    if (!this.sceneAssetsReady(scene)) {\n      this.startLevelLoading(scene, () => this.debugJumpToStage(stageId));\n      return;\n    }\n    this.debugLevel4Won = stageId === "level4-postboss-dialogue";\n');
+  const won = 'this.progress?.flags?.level4BossDefeated';
+  assert.equal(source.split(won).length, 3, 'Level 4 exit checks');
+  source = source.replaceAll(won, '(this.progress?.flags?.level4BossDefeated || this.debugLevel4Won)');
+  once('  returnToTitle() {\n    this.levelLoadingPresentation = null;\n', '  returnToTitle() {\n    this.levelLoadingPresentation = null;\n    this.debugLevel4Won = false;\n');
   const imageStart = source.indexOf('function loadImage(src) {');
   const imageEnd = source.indexOf('\nfunction loadOptionalSheet(src)', imageStart);
   assert(imageStart > 0 && imageEnd > imageStart);
@@ -255,7 +285,6 @@ const RUNTIME_METHODS = `
 
   async loadChapterAssets(stageId) {
     const groups = this.sceneGroups(stageId);
-    this.prefetchChapterAudio(groups);
     // A loading screen draws no outgoing scene artwork. Release it before
     // decoding the next chapter so mobile Safari does not hold the whole game.
     for (const group of this.loadedSceneGroups) {
@@ -264,7 +293,9 @@ const RUNTIME_METHODS = `
       this.loadedSceneGroups.delete(group);
     }
     const jobs = this.sceneAssetJobs.filter(job => groups.includes(job.group) && !this.loadedSceneGroups.has(job.group));
-    this.sceneLoadProgress = {done:0, total:jobs.length};
+    const songs = this.chapterSongs(groups).filter(src => !this.mirroredAudioUrl(src));
+    this.sceneLoadProgress = {done:0, total:jobs.length + songs.length};
+    const songsReady = Promise.all(songs.map(src => this.songCopy(src).then(() => { this.sceneLoadProgress && this.sceneLoadProgress.done++; })));
     let next = 0;
     let failure;
     await Promise.all(Array.from({length:Math.min(3, jobs.length)}, async () => {
@@ -276,9 +307,20 @@ const RUNTIME_METHODS = `
       }
     }));
     if (failure) throw failure;
+    await songsReady;
     groups.forEach(group => this.loadedSceneGroups.add(group));
     this.sceneLoadProgress = null;
     this.prefetchHitSfx();
+    // The next chapter's fight song, in the background.
+    const following = {office: 'level2', level2: 'level3', level3: 'level4', level4: 'studio', studio: 'level5', level5: 'level6'};
+    for (const group of groups) if (following[group]) this.chapterSongs([following[group]]).forEach(src => this.songCopy(src));
+  }
+
+  // The fight songs a chapter's fights play.
+  chapterSongs(groups) {
+    const themes = {office: 'office', level2: 'bathroom', level3: 'massage', level4: 'arcade', studio: 'studio', level5: 'river', level6: 'concert'};
+    return groups.map(group => themes[group] || this.getSecretLevel(group)?.theme).filter(Boolean)
+      .map(theme => this.getRhythmAudioFor(theme)?.getAttribute('src')).filter(Boolean);
   }
 
   // The fights' sound files, fetched with the first chapter and again for any
@@ -365,20 +407,84 @@ const RUNTIME_METHODS = `
     target.restore();
   }
 
-  // A track's mirror copy has to be ready before the tap that first plays it,
-  // so it is fetched ahead: the first fight's music on the home screen, the
-  // highlighted song or stage after 300 ms, the next track, and each
-  // chapter's fight music while the chapter loads.
+  // A track's local copy (an object URL of the whole file) is fetched ahead:
+  // the first fight's music on the home screen, the highlighted song or stage
+  // after 300 ms, the next track, and the next chapter's fight music. Songs and
+  // the home playlist take only the verified jsDelivr copy here.
   prefetchMirroredAudio(src) {
-    if (!MIRROR_BASE || !src || src.startsWith('blob:')) return;
+    if (MIRROR_BASE) this.songCopy(src, {mirrorOnly: true});
+  }
+
+  // A fight's song is downloaded whole before its fight (loadChapterAssets
+  // waits for it): the mirror copy, or this site's file, so a weak connection
+  // cannot stall the song mid-fight (user, 2026-10-13). Resolves to the copy's
+  // URL, or null to stream.
+  songCopy(src, {mirrorOnly = false} = {}) {
+    if (!src || src.startsWith('blob:')) return Promise.resolve(null);
     this.audioMirror ||= new Map();
-    if (this.audioMirror.has(src)) return;
-    const entry = {url: null, used: 0};
-    this.audioMirror.set(src, entry);
-    mirrorObjectUrl(src).then(url => {
-      Object.assign(entry, {url, used: performance.now()});
+    const known = this.audioMirror.get(src);
+    if (known?.url || (known && mirrorOnly)) return known.ready;
+    // A whole-file request waits for a mirror-only fetch under way, then
+    // falls back to this site's file if the mirror had no copy.
+    if (known && !known.failed) return known.mirrorOnly ? known.ready.then(url => url || this.songCopy(src)) : known.ready;
+    const entry = {url: null, used: 0, mirrorOnly};
+    const copy = mirrorOnly ? mirrorObjectUrl(src)
+      : fetchGameAsset(src).then(({data, type}) => URL.createObjectURL(new Blob([data], {type: type.startsWith('audio/') ? type : 'audio/mp4'})));
+    entry.ready = copy.then(url => {
+      Object.assign(entry, {url, used: performance.now(), failed: !url});
       this.trimAudioMirror();
-    });
+      return url;
+    }, () => { entry.failed = true; return null; });
+    this.audioMirror.set(src, entry);
+    return entry.ready;
+  }
+
+  // Before a song starts from the top (or resumes), a copy that arrived after
+  // its first tap takes over from the stream.
+  useSongCopy(track) {
+    const src = track?.getAttribute('src');
+    const copy = src && !src.startsWith('blob:') && this.mirroredAudioUrl(src);
+    if (copy && track.paused) track.src = copy;
+  }
+
+  // A stream that runs dry mid-song (no copy, weak connection): the fight's
+  // clock follows the song, so it waits under 載入中… and goes on the moment
+  // the song does. No note is judged meanwhile.
+  isFightSongStalled() {
+    const rhythm = this.level1OfficeRhythm;
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    const playing = this.state === 'playing' && rhythm && !rhythm.ending && !rhythm.skipAudio && rhythm.tutorial?.mode === 'done'
+      && !(this.stageCountdown > 0) && track && !track.paused && !track.ended;
+    if (!playing || track.readyState >= 3) { if (rhythm) rhythm.stalledSince = null; return false; }
+    rhythm.stalledSince ??= performance.now();
+    return true;
+  }
+
+  renderSongStall() {
+    if (!this.isFightSongStalled() || performance.now() - this.level1OfficeRhythm.stalledSince < 300) return;
+    const target = this.ctx;
+    const centerX = VIEW_W / 2, centerY = PORTRAIT_FIGHT.scene.h / 2;
+    const card = {x: centerX - 170, y: centerY - 62, w: 340, h: 124};
+    target.save();
+    target.fillStyle = 'rgba(4, 6, 12, 0.45)';
+    target.fillRect(0, 0, VIEW_W, VIEW_H);
+    target.fillStyle = 'rgba(2,6,14,0.65)';
+    target.fillRect(card.x + 7, card.y + 8, card.w, card.h);
+    target.fillStyle = '#efe3c4';
+    target.fillRect(card.x, card.y, card.w, card.h);
+    target.strokeStyle = '#292d28';
+    target.lineWidth = 4;
+    target.strokeRect(card.x + 2, card.y + 2, card.w - 4, card.h - 4);
+    target.fillStyle = '#b64b36';
+    target.fillRect(card.x + 18, card.y + 18, 5, 22);
+    target.textAlign = 'center';
+    target.textBaseline = 'middle';
+    target.fillStyle = '#292d28';
+    const dots = '.'.repeat(1 + Math.floor(performance.now() / 400) % 3);
+    drawFittedText(target, this.tr('LOADING', '載入中') + dots, centerX, centerY - 6, card.w - 60, 46, 900, 24);
+    target.fillStyle = '#5d6a5f';
+    drawFittedText(target, this.tr('The song is still downloading', '歌曲仍在下載'), centerX, centerY + 34, card.w - 60, 20, 700, 14);
+    target.restore();
   }
 
   mirroredAudioUrl(src) {
@@ -414,15 +520,6 @@ const RUNTIME_METHODS = `
       'level4-stage1': 'arcade', 'studio-stage1': 'studio', 'level5-stage2': 'river', 'level6-stage2': 'concert'
     }[stageId];
     return theme ? this.getRhythmAudioFor(theme)?.getAttribute('src') : null;
-  }
-
-  prefetchChapterAudio(groups) {
-    const themes = {office: ['office'], level2: ['bathroom'], level3: ['massage'], level4: ['arcade'], studio: ['studio'], level5: ['river'], level6: ['concert', 'level6']};
-    for (const group of groups) {
-      for (const theme of themes[group] || [this.getSecretLevel(group)?.theme]) {
-        if (theme) this.prefetchMirroredAudio(this.getRhythmAudioFor(theme)?.getAttribute('src'));
-      }
-    }
   }
 
   prefetchTitleAudio() {
@@ -636,14 +733,15 @@ function loadImage(src) {
   const promise = fetchGameAsset(src).then(({data, type}) => new Promise((resolve, reject) => {
     const blobUrl = URL.createObjectURL(new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'}));
     const image = new Image();
-    image.onload = () => { URL.revokeObjectURL(blobUrl); resolve(image); };
+    // Sprites cut from a magenta background lose its fringe (moth-sprite-fringe.mjs).
+    image.onload = () => { URL.revokeObjectURL(blobUrl); const path = src.split('?')[0]; resolve(KEY_FRINGE_SPRITES.has(path.startsWith('./') ? path.slice(2) : path) ? cleanKeyFringe(image) : image); };
     image.onerror = () => { URL.revokeObjectURL(blobUrl); reject(new Error('Image could not be decoded')); };
     image.src = blobUrl;
   })).finally(() => { BOOT_LOAD.settled++; imageRequests.delete(src); });
   imageRequests.set(src, promise);
   return promise;
 }
-`;
+${CLEAN_KEY_FRINGE}`;
 
 // styles.css draws the touch deck (D-pad, M/O/T/H, SPACE, FULLSCREEN), the
 // grain and the start cap from images the browser fetched straight from GitHub

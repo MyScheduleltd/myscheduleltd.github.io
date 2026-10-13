@@ -7,7 +7,8 @@
 //  3. after an idle (a minute on a menu or paused, a hidden page, a dead
 //     engine) the next key rebuilds the audio engines and music is heard;
 //  4. the fights' hit sounds load even when the engine was rebuilt first,
-//     and one that failed is fetched again.
+//     and one that failed is fetched again;
+//  5. sprites cut from a magenta background load with the fringe cleaned.
 // usage: node scripts/verify-moth-device.mjs http://127.0.0.1:5286/
 import assert from 'node:assert/strict';
 import {chromium} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
@@ -146,5 +147,23 @@ const rows = page => page.evaluate(() => {
   assert.deepEqual([second.loaded, second.o], [27, true], 'The failed sound is fetched again ' + JSON.stringify(second));
   console.log('hit sounds PASS', JSON.stringify({first, second}));
 }
+// 5. Sprites cut from a magenta background load with that fringe cleaned
+// (moth-sprite-fringe.mjs); level 3's purple notes are left as they are.
+{
+  const page = await browser.newPage({viewport: {width: 393, height: 852}});
+  await stubScoreboard(page);
+  const errors = []; page.on('pageerror', e => errors.push(String(e)));
+  await page.goto(new URL('moth/staff/?device=phone', base).href, {waitUntil: 'domcontentloaded'});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.evaluate(() => Promise.all([bobbyGame.loadSceneAssets('level3-stage2')]));
+  const sprites = await page.evaluate(() => {
+    const look = image => ({kind: image?.constructor.name, cleaned: image?.fringeCleaned || 0, width: image?.naturalWidth, complete: image?.complete});
+    return {portraits: look(bobbyGame.refs.level2BathroomPortraitsSheet), notes: look(bobbyGame.refs.level3RhythmUiNotesSheet)};
+  });
+  assert(sprites.portraits.kind === 'ImageBitmap' && sprites.portraits.cleaned > 5000 && sprites.portraits.width === 1536 && sprites.portraits.complete, 'Portraits cleaned ' + JSON.stringify(sprites));
+  assert.equal(sprites.notes.kind, 'HTMLImageElement', 'Level 3 notes untouched');
+  assert.deepEqual(errors, []);
+  console.log('sprite fringe PASS', JSON.stringify(sprites));
+}
 await browser.close();
-console.log('PASS phone deck artwork, late safe-area layout, audio engine refresh, and hit sounds');
+console.log('PASS phone deck artwork, late safe-area layout, audio engine refresh, hit sounds, and sprite fringes');
