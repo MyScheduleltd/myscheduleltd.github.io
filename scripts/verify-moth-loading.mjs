@@ -21,7 +21,8 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
     await page.waitForFunction(()=>window.bobbyGame?.bootDone);
     assert.equal(await page.evaluate(()=>bobbyGame.state), 'title');
     const initialArt = requests.filter(url=>/\.(webp|m4a|wav)(\?|$)/.test(url));
-    assert.equal(initialArt.filter(url=>!/mobile_|pocket_device_shell|forge_device_shell/.test(url)).length,0,'Title downloads no chapter art or songs');
+    // The deck, the device shells and the menu sounds (moth-menu-sfx.mjs) only.
+    assert.equal(initialArt.filter(url=>!/mobile_|pocket_device_shell|forge_device_shell|\/sfx\/menu\/menu-(tick|click)\.wav/.test(url)).length,0,'Title downloads no chapter art or songs');
     const titleMs = Date.now()-started;
     console.log(engine,'title',titleMs,'ms');
     // Use the ordinary keyboard menu entry to play an unlocked playlist track.
@@ -50,7 +51,7 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
       analyser.fftSize=2048;const node=g.ensureFeedbackOutput(context);node.connect(analyser);
       g.runSfxTest();let peak=0;
       for(let n=0;n<15;n++){const samples=new Float32Array(2048);analyser.getFloatTimeDomainData(samples);peak=Math.max(peak,...samples.map(Math.abs));await new Promise(r=>setTimeout(r,50));}
-      node.disconnect(analyser);return {peak,decoded:Object.keys(g.sfxBuffers).length,played:g.sfxTestResult};
+      node.disconnect(analyser);return {peak,decoded:Object.keys(g.sfxBuffers).filter(name=>!name.startsWith('menu-')).length,played:g.sfxTestResult};
     });
     assert(effects.peak>0.001);assert(effects.played);assert.equal(effects.decoded,27);
     console.log(engine,'effects PCM',effects.peak);

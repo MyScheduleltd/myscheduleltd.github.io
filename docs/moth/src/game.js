@@ -190,6 +190,7 @@ const LEVEL_6_WAKE_DIALOGUE = [
 ];
 const SAVE_KEY = "moth.public_save_v1";
 const PROGRESS_KEY = "moth.public_progress_v1";
+const FIGHT_RESUME_KEY = "moth.public_fight_resume_v1";
 const DEVICE_MODE_KEY = "moth.public_device_mode_v1";
 const LANGUAGE_KEY = "moth.public_language_v1";
 const DIFFICULTY_KEY = "moth.public_difficulty_v1";
@@ -217,6 +218,16 @@ const RHYTHM_DIFFICULTIES = {
 const DIFFICULTY_IDS = ["chill", "shoot"];
 const DEFAULT_DIFFICULTY_ID = "chill";
 const STAGE_COUNTDOWN_SECONDS = 3.6;
+{
+  const native = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "volume");
+  const asked = new WeakMap();
+  Object.defineProperty(HTMLMediaElement.prototype, "volume", {
+    configurable: true,
+    enumerable: native.enumerable,
+    get() { return asked.has(this) ? asked.get(this) : native.get.call(this); },
+    set(value) { native.set.call(this, value); asked.set(this, Number(value)); }
+  });
+}
 const MOBILE_DOUBLE_TAP_SECONDS = 0.32;
 const TOTAL_LIVES = 3;
 // The sewer is the run's save point and its only resupply, so the first time
@@ -510,6 +521,43 @@ const HIT_SFX = {
   "arcade-miss": "assets/sfx/arcade-miss.wav"
 };
 const HIT_SFX_GAIN = 0.95;
+const MENU_SFX = {"menu-tick":"assets/sfx/menu/menu-tick.wav","menu-click":"assets/sfx/menu/menu-click.wav"};
+// What an input asks for: arrows and the d-pad move a selection, O / Enter /
+// SPACE confirm, H / Esc go back.
+const menuKeyKind = code => /^(Arrow|Key[WASD]$)/.test(code) ? "move"
+  : ["Enter", "NumpadEnter", "Space", "KeyO"].includes(code) ? "confirm"
+  : ["Escape", "KeyH", "KeyB"].includes(code) ? "back" : "other";
+const menuActionKind = action => /^(nav|direction)-/.test(action || "") ? "move"
+  : ["advance", "jump", "primary"].includes(action) ? "confirm"
+  : ["back", "secondary"].includes(action) ? "back" : "other";
+
+// A 16-bit PCM WAV as a sound buffer, read here rather than by the
+// asynchronous decoder, so the sound is ready before the first tap. Anything
+// else is left to the decoder (null).
+function pcmWavBuffer(bytes) {
+  try {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (view.getUint32(0) !== 0x52494646 || view.getUint32(8) !== 0x57415645) return null;
+    let format = null;
+    for (let at = 12; at + 8 <= view.byteLength;) {
+      const id = view.getUint32(at), size = view.getUint32(at + 4, true), body = at + 8;
+      if (id === 0x666d7420) {
+        format = { type: view.getUint16(body, true), channels: view.getUint16(body + 2, true), rate: view.getUint32(body + 4, true), bits: view.getUint16(body + 14, true) };
+      } else if (id === 0x64617461) {
+        if (format?.type !== 1 || format.bits !== 16 || !format.channels) return null;
+        const frames = Math.floor(Math.min(size, view.byteLength - body) / 2 / format.channels);
+        const buffer = new AudioBuffer({ length: frames, numberOfChannels: format.channels, sampleRate: format.rate });
+        for (let channel = 0; channel < format.channels; channel++) {
+          const samples = buffer.getChannelData(channel);
+          for (let i = 0; i < frames; i++) samples[i] = view.getInt16(body + (i * format.channels + channel) * 2, true) / 32768;
+        }
+        return buffer;
+      }
+      at = body + size + (size & 1);
+    }
+  } catch {}
+  return null;
+}
 // Original supplied photo cutouts with transparent fighting-game callouts.
 const COMBO_CELEBRATIONS = [
   { caption: "NICE", sound: "combo-nice", photo: "assets/sprites/combo_celebrations/photos/nice.webp", face: { x: 38, y: 62, w: 185, h: 200 } },
@@ -1464,31 +1512,6 @@ const HOME_SONG_LYRICS = {
     "先不要放音樂 拜託",
     "先不要喔",
     "欸",
-    "Intro",
-    "嘿嘿",
-    "嘿嘿嘿嘿",
-    "嘿嘿",
-    "哼哼哼哼",
-    "幹我在笑三小 等一下",
-    "不是",
-    "哈！哈！",
-    "啊哈哈哈哈哈哈",
-    "（擦玻璃）",
-    "哈哈哈哈哈哈哈哈",
-    "啊咳咳咳咳",
-    "嘔嘔嘔嘔",
-    "哈哈哈哈哈哈哈",
-    "（鴨子叫）",
-    "（倒抽倒抽）",
-    "啊哈～",
-    "哈哈哈哈哈哈",
-    "喔～流口水叻",
-    "",
-    "欸等一下",
-    "還沒準備好啦",
-    "先不要放音樂 拜託",
-    "先不要喔",
-    "欸",
     "",
     "喔流口水"
   ],
@@ -2260,6 +2283,7 @@ class BobbyGame {
     this.createPortraitFightCanvas();
     this.syncAppHeight();
     this.bindInput();
+    this.loadMenuSfx();
   }
 
   // Draws a progress screen from the very first frame; without it the canvas
@@ -2376,8 +2400,7 @@ class BobbyGame {
         ["arcade", this.config.level4ArcadeRhythm],
         ["studio", this.config.level5StudioRhythm],
         ["river", this.config.level5RiverRhythm],
-        ["concert", this.config.level6ConcertRhythm],
-        ["level6", this.config.level6?.stage2]
+        ["concert", this.config.level6ConcertRhythm]
       ].forEach(([theme, spec]) => {
         const source = spec?.fullSong ? spec.audioSrc : spec?.fightCut?.src;
         if (!source) return;
@@ -2413,6 +2436,7 @@ class BobbyGame {
       this.showLoadRecovery(error);
     }
     this.bootDone = true;
+    this.listenForMenuSounds();
     requestAnimationFrame(this.loop);
   }
 
@@ -2463,21 +2487,8 @@ for (const level of this.config.secretLevels || []) {
 }
     this.sceneAssetJobs.push(
       {key:"bobby", group:"player", run:async () => {this.refs.bobby = await loadImage(this.config.sprites.bobby.reference);}, release:() => {delete this.refs.bobby;}},
-      {key:"boss", group:"road", run:async () => {this.refs.boss = await loadImage(this.config.sprites.gangan.reference);}, release:() => {delete this.refs.boss;}},
-      {key:"bobbyRideSheet", group:"player", run:async () => {this.refs.bobbyRideSheet = await loadOptionalSheet(bobbySpec.source);}, release:() => {delete this.refs.bobbyRideSheet;}},
-      {key:"bobbyAttackSheet", group:"player", run:async () => {this.refs.bobbyAttackSheet = await loadOptionalSheet(bobbySpec.attack?.source);}, release:() => {delete this.refs.bobbyAttackSheet;}},
       {key:"bobbyOnFootSheet", group:"player", run:async () => {this.refs.bobbyOnFootSheet = await loadOptionalSheet(bobbySpec.onFoot?.source);}, release:() => {delete this.refs.bobbyOnFootSheet;}},
-      {key:"ganganSheet", group:"road", run:async () => {this.refs.ganganSheet = await loadOptionalSheet(ganganSpec.source);}, release:() => {delete this.refs.ganganSheet;}},
-      {key:"ganganAttackSheet", group:"road", run:async () => {this.refs.ganganAttackSheet = await loadOptionalSheet(ganganSpec.attack?.source);}, release:() => {delete this.refs.ganganAttackSheet;}},
-      {key:"ganganCandySheet", group:"road", run:async () => {this.refs.ganganCandySheet = await loadOptionalSheet(ganganSpec.candy?.source);}, release:() => {delete this.refs.ganganCandySheet;}},
-      {key:"ganganDefeatExitSheet", group:"road", run:async () => {this.refs.ganganDefeatExitSheet = await loadOptionalSheet(ganganSpec.defeatExit?.source);}, release:() => {delete this.refs.ganganDefeatExitSheet;}},
-      {key:"ganganBikeExitSheet", group:"road", run:async () => {this.refs.ganganBikeExitSheet = await loadOptionalSheet(ganganSpec.bikeExit?.source);}, release:() => {delete this.refs.ganganBikeExitSheet;}},
-      {key:"ganganHealthBarSheet", group:"road", run:async () => {this.refs.ganganHealthBarSheet = await loadOptionalSheet(ganganSpec.healthBar?.source);}, release:() => {delete this.refs.ganganHealthBarSheet;}},
-      {key:"levelMap", group:"road", run:async () => {this.refs.levelMap = await loadOptionalSheet(this.config.map?.source);}, release:() => {delete this.refs.levelMap;}},
-      {key:"tutorialStage0Map", group:"road", run:async () => {this.refs.tutorialStage0Map = await loadOptionalSheet(tutorialStage0Spec?.map?.source);}, release:() => {delete this.refs.tutorialStage0Map;}},
-      {key:"sewerMap", group:"level2", run:async () => {this.refs.sewerMap = await loadOptionalSheet(this.config.sewer?.source);}, release:() => {delete this.refs.sewerMap;}},
       {key:"level2BossMap", group:"level2", run:async () => {this.refs.level2BossMap = await loadOptionalSheet(this.config.sewer?.bossArena?.source);}, release:() => {delete this.refs.level2BossMap;}},
-      {key:"level2Stage3Map", group:"level2", run:async () => {this.refs.level2Stage3Map = await loadOptionalSheet(this.config.sewer?.stage3?.source);}, release:() => {delete this.refs.level2Stage3Map;}},
       {key:"level3Stage1Map", group:"level3", run:async () => {this.refs.level3Stage1Map = await loadOptionalSheet(level3Stage1Spec?.source);}, release:() => {delete this.refs.level3Stage1Map;}},
       {key:"level4Stage1Map", group:"level4", run:async () => {this.refs.level4Stage1Map = await loadOptionalSheet(level4Stage1Spec?.source);}, release:() => {delete this.refs.level4Stage1Map;}},
       {key:"level2BundleSheet", group:"common", run:async () => {this.refs.level2BundleSheet = await loadOptionalSheet(level2BundleSpec?.source);}, release:() => {delete this.refs.level2BundleSheet;}},
@@ -2488,50 +2499,19 @@ for (const level of this.config.secretLevels || []) {
       {key:"bobbyBlackHoodFitSheet", group:"player", run:async () => {this.refs.bobbyBlackHoodFitSheet = await loadOptionalSheet(blackHoodFitSpec?.source);}, release:() => {delete this.refs.bobbyBlackHoodFitSheet;}},
       {key:"bobbyFinaleBikiniSheet", group:"player", run:async () => {this.refs.bobbyFinaleBikiniSheet = await loadOptionalSheet(finaleBikiniSpec?.source);}, release:() => {delete this.refs.bobbyFinaleBikiniSheet;}},
       {key:"mosquitoBossSheet", group:"level2", run:async () => {this.refs.mosquitoBossSheet = await loadOptionalSheet(mosquitoBossSpec?.source);}, release:() => {delete this.refs.mosquitoBossSheet;}},
-      {key:"mosquitoMinionSheet", group:"level2", run:async () => {this.refs.mosquitoMinionSheet = await loadOptionalSheet(mosquitoMinionSpec?.source);}, release:() => {delete this.refs.mosquitoMinionSheet;}},
-      {key:"level2Stage3PropsSheet", group:"level2", run:async () => {this.refs.level2Stage3PropsSheet = await loadOptionalSheet(stage3PropsSpec?.source);}, release:() => {delete this.refs.level2Stage3PropsSheet;}},
       {key:"level3BossSheet", group:"level3", run:async () => {this.refs.level3BossSheet = await loadOptionalSheet(level3BossSpec?.source);}, release:() => {delete this.refs.level3BossSheet;}},
       {key:"level3BossExitRightSheet", group:"level3", run:async () => {this.refs.level3BossExitRightSheet = await loadOptionalSheet(level3BossExitRightSpec?.source);}, release:() => {delete this.refs.level3BossExitRightSheet;}},
-      {key:"level3RhythmFightSheet", group:"level3", run:async () => {this.refs.level3RhythmFightSheet = await loadOptionalSheet(level3RhythmFightSpec?.source);}, release:() => {delete this.refs.level3RhythmFightSheet;}},
-      {key:"level3RhythmFightBathingSuitSheet", group:"level3", run:async () => {this.refs.level3RhythmFightBathingSuitSheet = await loadOptionalSheet(level3RhythmFightBathingSuitSpec?.source);}, release:() => {delete this.refs.level3RhythmFightBathingSuitSheet;}},
-      {key:"level3RhythmFightSummerFitSheet", group:"level3", run:async () => {this.refs.level3RhythmFightSummerFitSheet = await loadOptionalSheet(level3RhythmFightSummerFitSpec?.source);}, release:() => {delete this.refs.level3RhythmFightSummerFitSheet;}},
-      {key:"level3RhythmHpBottleNoteSheet", group:"common", run:async () => {this.refs.level3RhythmHpBottleNoteSheet = await loadOptionalSheet(level3RhythmHpBottleNoteSpec?.source);}, release:() => {delete this.refs.level3RhythmHpBottleNoteSheet;}},
-      {key:"level3RhythmSatisfactionReactionsSheet", group:"level3", run:async () => {this.refs.level3RhythmSatisfactionReactionsSheet = await loadOptionalSheet(level3RhythmSatisfactionReactionsSpec?.source);}, release:() => {delete this.refs.level3RhythmSatisfactionReactionsSheet;}},
-      {key:"level3RhythmSuccessNotificationSheet", group:"level3", run:async () => {this.refs.level3RhythmSuccessNotificationSheet = await loadOptionalSheet(level3RhythmSuccessNotificationSpec?.source);}, release:() => {delete this.refs.level3RhythmSuccessNotificationSheet;}},
-      {key:"homeMp3MenuSheet", group:"home", run:async () => {this.refs.homeMp3MenuSheet = await loadOptionalSheet(homeMp3MenuSpec?.source);}, release:() => {delete this.refs.homeMp3MenuSheet;}},
       {key:"dialogueProfilesSheet", group:"common", run:async () => {this.refs.dialogueProfilesSheet = await loadOptionalSheet(dialogueProfilesSpec?.source);}, release:() => {delete this.refs.dialogueProfilesSheet;}},
       {key:"bonitaDialogueProfileSheet", group:"common", run:async () => {this.refs.bonitaDialogueProfileSheet = await loadOptionalSheet(this.config?.sprites?.bonitaDialogueProfile?.source);}, release:() => {delete this.refs.bonitaDialogueProfileSheet;}},
-      {key:"dialogueFrameSheet", group:"common", run:async () => {this.refs.dialogueFrameSheet = await loadOptionalSheet(dialogueFrameSpec?.source);}, release:() => {delete this.refs.dialogueFrameSheet;}},
-      {key:"loadingTransitionSheet", group:"common", run:async () => {this.refs.loadingTransitionSheet = await loadOptionalSheet(loadingTransitionSpec?.source);}, release:() => {delete this.refs.loadingTransitionSheet;}},
       {key:"homeMp3WaveformSheets", group:"home", run:async () => {this.refs.homeMp3WaveformSheets = Object.fromEntries(await Promise.all(
         Object.entries(homeMp3WaveformSpecs).map(async ([songId, spec]) => [
           songId,
           await loadOptionalSheet(spec?.source)
         ])
       ));}, release:() => {delete this.refs.homeMp3WaveformSheets;}},
-      {key:"bobbyTutorialIntroSheet", group:"player", run:async () => {this.refs.bobbyTutorialIntroSheet = await loadOptionalSheet(bobbyTutorialIntroSpec?.source);}, release:() => {delete this.refs.bobbyTutorialIntroSheet;}},
       {key:"level4BonitaBlanketIdleSheet", group:"level4", run:async () => {this.refs.level4BonitaBlanketIdleSheet = await loadOptionalSheet(level4BonitaSpec?.source);}, release:() => {delete this.refs.level4BonitaBlanketIdleSheet;}},
-      {key:"level4BonitaBossPlaceholderSheet", group:"level4", run:async () => {this.refs.level4BonitaBossPlaceholderSheet = await loadOptionalSheet(level4BonitaBossPlaceholderSpec?.source);}, release:() => {delete this.refs.level4BonitaBossPlaceholderSheet;}},
-      {key:"level4HiddenWallChestSheet", group:"level4", run:async () => {this.refs.level4HiddenWallChestSheet = await loadOptionalSheet(level4HiddenChestSpec?.source);}, release:() => {delete this.refs.level4HiddenWallChestSheet;}},
-      {key:"level4BonitaGameBossSheet", group:"level4", run:async () => {this.refs.level4BonitaGameBossSheet = await loadOptionalSheet(this.config?.sprites?.level4BonitaGameBoss?.source);}, release:() => {delete this.refs.level4BonitaGameBossSheet;}},
-      {key:"level4BobbyVsIntroSheet", group:"level4", run:async () => {this.refs.level4BobbyVsIntroSheet = await loadOptionalSheet(this.config?.sprites?.level4BobbyVsIntro?.source);}, release:() => {delete this.refs.level4BobbyVsIntroSheet;}},
-      {key:"level4BossStarShotSheet", group:"level4", run:async () => {this.refs.level4BossStarShotSheet = await loadOptionalSheet(this.config?.sprites?.level4BossStarShot?.source);}, release:() => {delete this.refs.level4BossStarShotSheet;}},
-      {key:"level4BossGroundWaveSheet", group:"level4", run:async () => {this.refs.level4BossGroundWaveSheet = await loadOptionalSheet(this.config?.sprites?.level4BossGroundWave?.source);}, release:() => {delete this.refs.level4BossGroundWaveSheet;}},
-      {key:"level4BossArenaMap", group:"level4", run:async () => {this.refs.level4BossArenaMap = await loadOptionalSheet(this.config?.level4?.stage1?.bossFight?.source);}, release:() => {delete this.refs.level4BossArenaMap;}},
-      {key:"level5Stage1Map", group:"level5", run:async () => {this.refs.level5Stage1Map = await loadOptionalSheet(level5Stage1Spec?.source);}, release:() => {delete this.refs.level5Stage1Map;}},
       {key:"level5ParallaxLayers", group:"level5", run:async () => {this.refs.level5ParallaxLayers = await Promise.all((level5Stage1Spec?.parallaxLayers || []).map((layer) => loadOptionalSheet(layer.source)));}, release:() => {delete this.refs.level5ParallaxLayers;}},
-      {key:"level5DaytonaSheet", group:"level5", run:async () => {this.refs.level5DaytonaSheet = await loadOptionalSheet(this.config?.sprites?.level5Daytona?.source);}, release:() => {delete this.refs.level5DaytonaSheet;}},
-      {key:"level5GanGanCarSheet", group:"level5", run:async () => {this.refs.level5GanGanCarSheet = await loadOptionalSheet(this.config?.sprites?.level5GanGanCar?.source);}, release:() => {delete this.refs.level5GanGanCarSheet;}},
-      {key:"level5GanGanIdleSheet", group:"level5", run:async () => {this.refs.level5GanGanIdleSheet = await loadOptionalSheet(this.config?.sprites?.level5GanGanIdle?.source);}, release:() => {delete this.refs.level5GanGanIdleSheet;}},
-      {key:"level5HighwayChestSheet", group:"level5", run:async () => {this.refs.level5HighwayChestSheet = await loadOptionalSheet(this.config?.sprites?.level5HighwayChest?.source);}, release:() => {delete this.refs.level5HighwayChestSheet;}},
-      {key:"level5UndergroundWaterSheet", group:"level5", run:async () => {this.refs.level5UndergroundWaterSheet = await loadOptionalSheet(this.config?.sprites?.level5UndergroundWater?.source);}, release:() => {delete this.refs.level5UndergroundWaterSheet;}},
-      {key:"level5BossMap", group:"level5", run:async () => {this.refs.level5BossMap = await loadOptionalSheet(level5Stage2Spec?.source);}, release:() => {delete this.refs.level5BossMap;}},
       {key:"level5BossParallaxLayers", group:"level5", run:async () => {this.refs.level5BossParallaxLayers = await Promise.all((level5Stage2Spec?.parallaxLayers || []).map((layer) => loadOptionalSheet(layer.source)));}, release:() => {delete this.refs.level5BossParallaxLayers;}},
-      {key:"level5BossDaytonaSheet", group:"common", run:async () => {this.refs.level5BossDaytonaSheet = await loadOptionalSheet(this.config?.sprites?.level5BossDaytona?.source);}, release:() => {delete this.refs.level5BossDaytonaSheet;}},
-      {key:"level5BossRoadObjectsSheet", group:"level5", run:async () => {this.refs.level5BossRoadObjectsSheet = await loadOptionalSheet(this.config?.sprites?.level5BossRoadObjects?.source);}, release:() => {delete this.refs.level5BossRoadObjectsSheet;}},
-      {key:"level5RhythmHitFxSheet", group:"level5", run:async () => {this.refs.level5RhythmHitFxSheet = await loadOptionalSheet(this.config?.sprites?.level5RhythmHitFx?.source);}, release:() => {delete this.refs.level5RhythmHitFxSheet;}},
-      {key:"level5GoatRunSheet", group:"level5", run:async () => {this.refs.level5GoatRunSheet = await loadOptionalSheet(this.config?.sprites?.level5GoatRun?.source);}, release:() => {delete this.refs.level5GoatRunSheet;}},
-      {key:"level5PoopObstacleSheet", group:"level5", run:async () => {this.refs.level5PoopObstacleSheet = await loadOptionalSheet(this.config?.sprites?.level5PoopObstacle?.source);}, release:() => {delete this.refs.level5PoopObstacleSheet;}},
       {key:"level5StudioBgSheet", group:"studio", run:async () => {this.refs.level5StudioBgSheet = await loadOptionalSheet(this.config?.sprites?.level5StudioBg?.source);}, release:() => {delete this.refs.level5StudioBgSheet;}},
       {key:"level5StudioDrBeautySheet", group:"studio", run:async () => {this.refs.level5StudioDrBeautySheet = await loadOptionalSheet(this.config?.sprites?.level5StudioDrBeauty?.source);}, release:() => {delete this.refs.level5StudioDrBeautySheet;}},
       {key:"level5StudioGanganSheet", group:"studio", run:async () => {this.refs.level5StudioGanganSheet = await loadOptionalSheet(this.config?.sprites?.level5StudioGangan?.source);}, release:() => {delete this.refs.level5StudioGanganSheet;}},
@@ -2543,9 +2523,6 @@ for (const level of this.config.secretLevels || []) {
       {key:"level5DriveCarSheet", group:"level5", run:async () => {this.refs.level5DriveCarSheet = await loadOptionalSheet(this.config?.sprites?.level5DriveCar?.source);}, release:() => {delete this.refs.level5DriveCarSheet;}},
       {key:"level5DriveWheelSheet", group:"level5", run:async () => {this.refs.level5DriveWheelSheet = await loadOptionalSheet(this.config?.sprites?.level5DriveWheel?.source);}, release:() => {delete this.refs.level5DriveWheelSheet;}},
       {key:"level5DialoguePortraitsSheet", group:"level5", run:async () => {this.refs.level5DialoguePortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level5DialoguePortraits?.source);}, release:() => {delete this.refs.level5DialoguePortraitsSheet;}},
-      {key:"level6Stage1Map", group:"level6", run:async () => {this.refs.level6Stage1Map = await loadOptionalSheet(level6Stage1Spec?.source);}, release:() => {delete this.refs.level6Stage1Map;}},
-      {key:"level6BossMap", group:"level6", run:async () => {this.refs.level6BossMap = await loadOptionalSheet(level6Stage2Spec?.source);}, release:() => {delete this.refs.level6BossMap;}},
-      {key:"level6BobbyPerformerSheet", group:"level6", run:async () => {this.refs.level6BobbyPerformerSheet = await loadOptionalSheet(this.config?.sprites?.level6BobbyPerformer?.source);}, release:() => {delete this.refs.level6BobbyPerformerSheet;}},
       {key:"level6ConcertBgSheet", group:"level6", run:async () => {this.refs.level6ConcertBgSheet = await loadOptionalSheet(this.config?.sprites?.level6ConcertBg?.source);}, release:() => {delete this.refs.level6ConcertBgSheet;}},
       {key:"level6ConcertCrowdSheet", group:"level6", run:async () => {this.refs.level6ConcertCrowdSheet = await loadOptionalSheet(this.config?.sprites?.level6ConcertCrowd?.source);}, release:() => {delete this.refs.level6ConcertCrowdSheet;}},
       {key:"level6ConcertDrBeautySheet", group:"level6", run:async () => {this.refs.level6ConcertDrBeautySheet = await loadOptionalSheet(this.config?.sprites?.level6ConcertDrBeauty?.source);}, release:() => {delete this.refs.level6ConcertDrBeautySheet;}},
@@ -2554,19 +2531,6 @@ for (const level of this.config.secretLevels || []) {
       {key:"level6DreamBubbleSheet", group:"level6", run:async () => {this.refs.level6DreamBubbleSheet = await loadOptionalSheet(this.config?.sprites?.level6DreamBubble?.source);}, release:() => {delete this.refs.level6DreamBubbleSheet;}},
       {key:"level6WakePortraitsSheet", group:"level6", run:async () => {this.refs.level6WakePortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level6WakePortraits?.source);}, release:() => {delete this.refs.level6WakePortraitsSheet;}},
       {key:"endingAlbumPhotos", group:"level6", run:async () => {this.refs.endingAlbumPhotos = await Promise.all((this.config?.finale?.stage1?.ending?.album || []).map(photo => loadOptionalSheet(photo.source)));}, release:() => {delete this.refs.endingAlbumPhotos;}},
-      {key:"level6GanGanExitSheet", group:"level6", run:async () => {this.refs.level6GanGanExitSheet = await loadOptionalSheet(this.config?.sprites?.level6GanGanExit?.source);}, release:() => {delete this.refs.level6GanGanExitSheet;}},
-      {key:"finaleDuoSingingSheet", group:"level6", run:async () => {this.refs.finaleDuoSingingSheet = await loadOptionalSheet(this.config?.sprites?.finaleDuoSinging?.source);}, release:() => {delete this.refs.finaleDuoSingingSheet;}},
-      {key:"level6FansProfileSheet", group:"level6", run:async () => {this.refs.level6FansProfileSheet = await loadOptionalSheet(this.config?.sprites?.level6FansProfile?.source);}, release:() => {delete this.refs.level6FansProfileSheet;}},
-      {key:"finaleBackstageMap", group:"level6", run:async () => {this.refs.finaleBackstageMap = await loadOptionalSheet(this.config?.finale?.stage1?.source);}, release:() => {delete this.refs.finaleBackstageMap;}},
-      {key:"finaleEndingMap", group:"level6", run:async () => {this.refs.finaleEndingMap = await loadOptionalSheet(this.config?.finale?.stage1?.endingSource);}, release:() => {delete this.refs.finaleEndingMap;}},
-      {key:"finaleEndingFilmOverlaySheet", group:"level6", run:async () => {this.refs.finaleEndingFilmOverlaySheet = await loadOptionalSheet(this.config?.sprites?.finaleEndingFilmOverlay?.source);}, release:() => {delete this.refs.finaleEndingFilmOverlaySheet;}},
-      {key:"finaleChestSheet", group:"level6", run:async () => {this.refs.finaleChestSheet = await loadOptionalSheet(this.config?.sprites?.finaleChest?.source);}, release:() => {delete this.refs.finaleChestSheet;}},
-      {key:"finaleForgeMachineSheet", group:"level6", run:async () => {this.refs.finaleForgeMachineSheet = await loadOptionalSheet(this.config?.sprites?.finaleForgeMachine?.source);}, release:() => {delete this.refs.finaleForgeMachineSheet;}},
-      {key:"finaleForgeMenuTexture", group:"level6", run:async () => {this.refs.finaleForgeMenuTexture = await loadOptionalSheet(this.config?.sprites?.finaleForgeMenuTexture?.source);}, release:() => {delete this.refs.finaleForgeMenuTexture;}},
-      {key:"finaleForgeRewardIconsSheet", group:"level6", run:async () => {this.refs.finaleForgeRewardIconsSheet = await loadOptionalSheet(this.config?.sprites?.finaleForgeRewardIcons?.source);}, release:() => {delete this.refs.finaleForgeRewardIconsSheet;}},
-      {key:"level3RhythmUiReceptorsSheet", group:"common", run:async () => {this.refs.level3RhythmUiReceptorsSheet = await loadOptionalSheet(this.config?.sprites?.level3RhythmUiReceptors?.source);}, release:() => {delete this.refs.level3RhythmUiReceptorsSheet;}},
-      {key:"level3RhythmUiNotesSheet", group:"common", run:async () => {this.refs.level3RhythmUiNotesSheet = await loadOptionalSheet(this.config?.sprites?.level3RhythmUiNotes?.source);}, release:() => {delete this.refs.level3RhythmUiNotesSheet;}},
-      {key:"level3RhythmUiPanelSheet", group:"common", run:async () => {this.refs.level3RhythmUiPanelSheet = await loadOptionalSheet(this.config?.sprites?.level3RhythmUiPanel?.source);}, release:() => {delete this.refs.level3RhythmUiPanelSheet;}},
       {key:"level1OfficeBackground", group:"office", run:async () => {this.refs.level1OfficeBackground = await loadOptionalSheet(this.config?.sprites?.level1OfficeBackground?.source);}, release:() => {delete this.refs.level1OfficeBackground;}},
       {key:"level1OfficeForeground", group:"office", run:async () => {this.refs.level1OfficeForeground = await loadOptionalSheet(this.config?.sprites?.level1OfficeForeground?.source);}, release:() => {delete this.refs.level1OfficeForeground;}},
       {key:"level1OfficeBobbySheet", group:"office", run:async () => {this.refs.level1OfficeBobbySheet = await loadOptionalSheet(this.config?.sprites?.level1OfficeBobby?.source);}, release:() => {delete this.refs.level1OfficeBobbySheet;}},
@@ -2590,9 +2554,7 @@ for (const level of this.config.secretLevels || []) {
       {key:"level4BonitaFighterSheet", group:"level4", run:async () => {this.refs.level4BonitaFighterSheet = await loadOptionalSheet(this.config?.sprites?.level4BonitaFighter?.source);}, release:() => {delete this.refs.level4BonitaFighterSheet;}},
       {key:"comboCelebrations", group:"common", run:async () => {this.refs.comboCelebrations = await Promise.all(COMBO_CELEBRATIONS.map(item => loadOptionalSheet(item.photo)));}, release:() => {delete this.refs.comboCelebrations;}},
       {key:"level2BathroomMosquitoSheet", group:"level2", run:async () => {this.refs.level2BathroomMosquitoSheet = await loadOptionalSheet(this.config?.sprites?.level2BathroomMosquito?.source);}, release:() => {delete this.refs.level2BathroomMosquitoSheet;}},
-      {key:"level2BathroomPortraitsSheet", group:"common", run:async () => {this.refs.level2BathroomPortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level2BathroomDialoguePortraits?.source);}, release:() => {delete this.refs.level2BathroomPortraitsSheet;}},
-      {key:"level1HealthFxSheet", group:"common", run:async () => {this.refs.level1HealthFxSheet = await loadOptionalSheet(this.config?.sprites?.level1HealthFx?.source);}, release:() => {delete this.refs.level1HealthFxSheet;}},
-      {key:"mapProps", group:"road", run:async () => {this.refs.mapProps = await Promise.all((this.config.map?.props || []).map((prop) => loadOptionalSheet(prop.image)));}, release:() => {delete this.refs.mapProps;}}
+      {key:"level2BathroomPortraitsSheet", group:"common", run:async () => {this.refs.level2BathroomPortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level2BathroomDialoguePortraits?.source);}, release:() => {delete this.refs.level2BathroomPortraitsSheet;}}
     );
     this.loadedSceneGroups = new Set();
   }
@@ -2629,7 +2591,6 @@ for (const level of this.config.secretLevels || []) {
 
   async loadChapterAssets(stageId) {
     const groups = this.sceneGroups(stageId);
-    this.prefetchChapterAudio(groups);
     // A loading screen draws no outgoing scene artwork. Release it before
     // decoding the next chapter so mobile Safari does not hold the whole game.
     for (const group of this.loadedSceneGroups) {
@@ -2638,7 +2599,9 @@ for (const level of this.config.secretLevels || []) {
       this.loadedSceneGroups.delete(group);
     }
     const jobs = this.sceneAssetJobs.filter(job => groups.includes(job.group) && !this.loadedSceneGroups.has(job.group));
-    this.sceneLoadProgress = {done:0, total:jobs.length};
+    const songs = this.chapterSongs(groups).filter(src => !this.mirroredAudioUrl(src));
+    this.sceneLoadProgress = {done:0, total:jobs.length + songs.length};
+    const songsReady = Promise.all(songs.map(src => this.songCopy(src).then(() => { this.sceneLoadProgress && this.sceneLoadProgress.done++; })));
     let next = 0;
     let failure;
     await Promise.all(Array.from({length:Math.min(3, jobs.length)}, async () => {
@@ -2650,8 +2613,66 @@ for (const level of this.config.secretLevels || []) {
       }
     }));
     if (failure) throw failure;
+    await songsReady;
+    await Promise.all(this.chapterTracks(groups).map(track => this.adoptSongCopy(track)));
     groups.forEach(group => this.loadedSceneGroups.add(group));
     this.sceneLoadProgress = null;
+    this.prefetchHitSfx();
+    // The next chapter's fight song, in the background.
+    const following = {office: 'level2', level2: 'level3', level3: 'level4', level4: 'studio', studio: 'level5', level5: 'level6'};
+    for (const group of groups) if (following[group]) this.chapterSongs([following[group]]).forEach(src => this.songCopy(src));
+  }
+
+  // The fight songs a chapter's fights play: their players, and their files.
+  chapterTracks(groups) {
+    const themes = {office: 'office', level2: 'bathroom', level3: 'massage', level4: 'arcade', studio: 'studio', level5: 'river', level6: 'concert'};
+    return groups.map(group => themes[group] || this.getSecretLevel(group)?.theme).filter(Boolean)
+      .map(theme => this.getRhythmAudioFor(theme)).filter(Boolean);
+  }
+
+  chapterSongs(groups) {
+    return this.chapterTracks(groups).map(track => track.getAttribute('src')).filter(Boolean);
+  }
+
+  // The fights' sound files, fetched with the first chapter and again for any
+  // that failed; loadHitSfx decodes them.
+  prefetchHitSfx() {
+    this.sfxRaw ||= {};
+    if (this.hitSfxPrefetch) return this.hitSfxPrefetch;
+    const missing = Object.keys(HIT_SFX).filter(name => !this.sfxRaw[name]);
+    if (!missing.length) return Promise.resolve();
+    const prefetch = this.hitSfxPrefetch = Promise.allSettled(missing.map(async name => {
+      this.sfxRaw[name] ||= (await fetchGameAsset(HIT_SFX[name])).data.buffer;
+    })).finally(() => { if (this.hitSfxPrefetch === prefetch) this.hitSfxPrefetch = null; });
+    return prefetch;
+  }
+
+  // The chapter a LOADING card leads to (startSewerTransition) downloads
+  // under it; the card holds until it has.
+  loadTransitionScene(direction) {
+    const stageId = { boss: 'level2-stage2', down: 'level2-stage2', level3: 'level3-stage1', level4: 'level4-stage1', level5: 'level5-stage1',
+      level5Boss: 'level5-stage2', level6: 'level6-stage1', level6Boss: 'level6-stage2', finale: 'finale-stage1' }[direction];
+    const transition = this.sewerTransition;
+    if (!stageId || this.sceneAssetsReady(stageId)) return;
+    transition.loading = true;
+    this.loadSceneAssets(stageId).then(() => { transition.loading = false; }, error => {
+      transition.loading = false;
+      if (this.sewerTransition === transition && this.state === 'sewerTransition') this.showLoadRecovery(error);
+    });
+  }
+
+  // Story fights reached from their scene (not free play, a rematch's loading
+  // screen or a restored fight) show the arena under the count-in at once.
+  // Level 1 is always entered through a loading screen, and may open with
+  // its tutorial rather than a count.
+  showFightWhilePreparing(rhythm, options = {}) {
+    if (this.freePlay || options.deferSong || options.fromDialogue || this.levelLoadingPresentation || rhythm.countdownDuringGraphicsPreparation
+      || rhythm.theme === 'office') return;
+    rhythm.countdownDuringGraphicsPreparation = true;
+    this.state = 'playing';
+    this.updateMobileControls(true);
+    this.countInFightSong();
+    rhythm.countedInEarly = true;
   }
 
   showLoadRecovery(error) {
@@ -2697,20 +2718,119 @@ for (const level of this.config.secretLevels || []) {
     target.restore();
   }
 
-  // A track's mirror copy has to be ready before the tap that first plays it,
-  // so it is fetched ahead: the first fight's music on the home screen, the
-  // highlighted song or stage after 300 ms, the next track, and each
-  // chapter's fight music while the chapter loads.
+  // A track's local copy (an object URL of the whole file) is fetched ahead:
+  // the first fight's music on the home screen, the highlighted song or stage
+  // after 300 ms, the next track, and the next chapter's fight music. Songs and
+  // the home playlist take only the verified jsDelivr copy here.
   prefetchMirroredAudio(src) {
-    if (!MIRROR_BASE || !src || src.startsWith('blob:')) return;
+    if (MIRROR_BASE) this.songCopy(src, {mirrorOnly: true});
+  }
+
+  // A fight's song is downloaded whole before its fight (loadChapterAssets
+  // waits for it): the mirror copy, or this site's file, so a weak connection
+  // cannot stall the song mid-fight (user, 2026-10-13). Resolves to the copy's
+  // URL, or null to stream.
+  songCopy(src, {mirrorOnly = false} = {}) {
+    if (!src || src.startsWith('blob:')) return Promise.resolve(null);
     this.audioMirror ||= new Map();
-    if (this.audioMirror.has(src)) return;
-    const entry = {url: null, used: 0};
-    this.audioMirror.set(src, entry);
-    mirrorObjectUrl(src).then(url => {
-      Object.assign(entry, {url, used: performance.now()});
+    const known = this.audioMirror.get(src);
+    if (known?.url || (known && mirrorOnly)) return known.ready;
+    // A whole-file request waits for a mirror-only fetch under way, then
+    // falls back to this site's file if the mirror had no copy.
+    if (known && !known.failed) return known.mirrorOnly ? known.ready.then(url => url || this.songCopy(src)) : known.ready;
+    const entry = {url: null, used: 0, mirrorOnly};
+    const copy = mirrorOnly ? mirrorObjectUrl(src)
+      : fetchGameAsset(src).then(({data, type}) => URL.createObjectURL(new Blob([data], {type: type.startsWith('audio/') ? type : 'audio/mp4'})));
+    entry.ready = copy.then(url => {
+      Object.assign(entry, {url, used: performance.now(), failed: !url});
       this.trimAudioMirror();
-    });
+      return url;
+    }, () => { entry.failed = true; return null; });
+    this.audioMirror.set(src, entry);
+    return entry.ready;
+  }
+
+  // Before a song starts from the top (or resumes), a copy that arrived after
+  // its first tap takes over from the stream, if the song has never played.
+  // An iPhone plays the start of a changed source past the game's volume
+  // control, so a song that has played keeps its source here: it took its
+  // copy on the loading screen (adoptSongCopy) or streams.
+  useSongCopy(track) {
+    const src = track?.getAttribute('src');
+    const copy = src && !src.startsWith('blob:') && this.mirroredAudioUrl(src);
+    if (copy && track.paused && !this.musicAudioRoutes?.get(track)) track.src = copy;
+  }
+
+  // A fight song primed on its stream (the stage's own tap, before its copy
+  // had downloaded) took the copy at its start after the count, and on an
+  // iPhone that start burst out at full volume and cut off before the fade-in
+  // (owner, 2026-10-14, every fight). It takes the copy here instead, while
+  // the loading screen is up: the new source's first play happens now, muted
+  // and at zero, and stops a moment later.
+  async adoptSongCopy(track) {
+    const src = track?.getAttribute('src');
+    const copy = src && !src.startsWith('blob:') && this.mirroredAudioUrl(src);
+    if (!copy || !track.paused) return;
+    await this.rhythmTrackPriming?.get(track);
+    const route = this.musicAudioRoutes?.get(track);
+    if (!track.paused || track.getAttribute('src') !== src) return;
+    if (!route) {
+      track.src = copy;
+      return;
+    }
+    const level = track.volume;
+    track.volume = 0;
+    track.muted = true;
+    track.src = copy;
+    try {
+      await Promise.race([track.play(), new Promise((_, reject) => setTimeout(() => reject(new Error('Warm-up timed out')), 3000))]);
+      await new Promise(resolve => setTimeout(resolve, 250));
+    } catch {}
+    track.pause();
+    track.currentTime = 0;
+    track.muted = false;
+    track.volume = level;
+    route.playedSource = copy;
+  }
+
+  // A stream that runs dry mid-song (no copy, weak connection): the fight's
+  // clock follows the song, so it waits under 載入中… and goes on the moment
+  // the song does. No note is judged meanwhile.
+  isFightSongStalled() {
+    const rhythm = this.level1OfficeRhythm;
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    const playing = this.state === 'playing' && rhythm && !rhythm.ending && !rhythm.skipAudio && rhythm.tutorial?.mode === 'done'
+      && !(this.stageCountdown > 0) && track && !track.paused && !track.ended;
+    if (!playing || track.readyState >= 3) { if (rhythm) rhythm.stalledSince = null; return false; }
+    rhythm.stalledSince ??= performance.now();
+    return true;
+  }
+
+  renderSongStall() {
+    if (!this.isFightSongStalled() || performance.now() - this.level1OfficeRhythm.stalledSince < 300) return;
+    const target = this.ctx;
+    const centerX = VIEW_W / 2, centerY = PORTRAIT_FIGHT.scene.h / 2;
+    const card = {x: centerX - 170, y: centerY - 62, w: 340, h: 124};
+    target.save();
+    target.fillStyle = 'rgba(4, 6, 12, 0.45)';
+    target.fillRect(0, 0, VIEW_W, VIEW_H);
+    target.fillStyle = 'rgba(2,6,14,0.65)';
+    target.fillRect(card.x + 7, card.y + 8, card.w, card.h);
+    target.fillStyle = '#efe3c4';
+    target.fillRect(card.x, card.y, card.w, card.h);
+    target.strokeStyle = '#292d28';
+    target.lineWidth = 4;
+    target.strokeRect(card.x + 2, card.y + 2, card.w - 4, card.h - 4);
+    target.fillStyle = '#b64b36';
+    target.fillRect(card.x + 18, card.y + 18, 5, 22);
+    target.textAlign = 'center';
+    target.textBaseline = 'middle';
+    target.fillStyle = '#292d28';
+    const dots = '.'.repeat(1 + Math.floor(performance.now() / 400) % 3);
+    drawFittedText(target, this.tr('LOADING', '載入中') + dots, centerX, centerY - 6, card.w - 60, 46, 900, 24);
+    target.fillStyle = '#5d6a5f';
+    drawFittedText(target, this.tr('The song is still downloading', '歌曲仍在下載'), centerX, centerY + 34, card.w - 60, 20, 700, 14);
+    target.restore();
   }
 
   mirroredAudioUrl(src) {
@@ -2746,15 +2866,6 @@ for (const level of this.config.secretLevels || []) {
       'level4-stage1': 'arcade', 'studio-stage1': 'studio', 'level5-stage2': 'river', 'level6-stage2': 'concert'
     }[stageId];
     return theme ? this.getRhythmAudioFor(theme)?.getAttribute('src') : null;
-  }
-
-  prefetchChapterAudio(groups) {
-    const themes = {office: ['office'], level2: ['bathroom'], level3: ['massage'], level4: ['arcade'], studio: ['studio'], level5: ['river'], level6: ['concert', 'level6']};
-    for (const group of groups) {
-      for (const theme of themes[group] || [this.getSecretLevel(group)?.theme]) {
-        if (theme) this.prefetchMirroredAudio(this.getRhythmAudioFor(theme)?.getAttribute('src'));
-      }
-    }
   }
 
   prefetchTitleAudio() {
@@ -2944,6 +3055,12 @@ for (const level of this.config.secretLevels || []) {
     root.setAttribute('aria-modal', 'true');
     root.setAttribute('aria-labelledby', 'moth-board-title');
     for (const type of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'click', 'wheel']) root.addEventListener(type, event => event.stopPropagation(), { passive: true });
+    // Its buttons sound like the menus (moth-menu-sfx.mjs): the tabs tick, the
+    // rest click. Enter presses the focused button, so it sounds the same.
+    root.addEventListener('click', event => {
+      const button = event.target.closest?.('button');
+      if (button && !button.disabled) this.playMenuSfx(button.getAttribute('role') === 'tab' ? 'tick' : 'click');
+    });
     document.body.append(root);
     board.root = root;
     this.renderScoreboard();
@@ -3100,11 +3217,14 @@ for (const level of this.config.secretLevels || []) {
     }
     const list = board.root.querySelector('.moth-board-list');
     if (code === 'ArrowLeft' || code === 'ArrowRight' || code === 'KeyA' || code === 'KeyD') {
-      board.mode = code === 'ArrowLeft' || code === 'KeyA' ? 'chill' : 'shoot';
+      const mode = code === 'ArrowLeft' || code === 'KeyA' ? 'chill' : 'shoot';
+      if (mode !== board.mode) this.playMenuSfx('tick');
+      board.mode = mode;
       this.renderScoreboard();
     } else if (code === 'ArrowUp' || code === 'ArrowDown' || code === 'KeyW' || code === 'KeyS') {
       list?.scrollBy({ top: (code === 'ArrowUp' || code === 'KeyW' ? -1 : 1) * 56 });
     } else if (code === 'Escape' || code === 'KeyH') {
+      this.playMenuSfx('click');
       this.closeScoreboard();
     } else if (code === 'Enter' || code === 'Space' || code === 'KeyO') {
       if (event.repeat) return event.preventDefault();
@@ -3275,6 +3395,260 @@ for (const level of this.config.secretLevels || []) {
     g.textAlign = 'center'; g.fillStyle = '#ffd36c';
     drawFittedText(g, 'myscheduleltd.com/moth', W / 2, H - 100, W - 260, 32, 900, 20);
     return card;
+  }
+
+  // ---- Fights pick up where they stopped (scripts/moth-fight-resume.mjs) ----
+  // Frozen at the song's place under 3 · 2 · 1 · 開始！, then on from there.
+  resumeFightAt(rhythm, trackTime) {
+    if (!rhythm) return;
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    if (track && Number.isFinite(trackTime)) { track.pause(); track.currentTime = trackTime; }
+    rhythm.resumeTrackTime = trackTime;
+    this.releaseHeldInputs();
+    this.armStageCountdown(() => {
+      // 暫停 during the count holds it; that 繼續 counts in again.
+      if (this.level1OfficeRhythm !== rhythm || this.state !== "playing" || rhythm.ending) return;
+      this.playResumedFight(rhythm, trackTime);
+    });
+  }
+
+  playResumedFight(rhythm, trackTime) {
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    rhythm.resumeTrackTime = null;
+    if (!track || rhythm.skipAudio) return;
+    const refused = () => {
+      if (this.level1OfficeRhythm !== rhythm) return;
+      track.pause();
+      // iPhone wants a tap: the resume card's tap grants it and counts in again.
+      this.audioInterruption = { fromHidden: true, rhythm, songTime: this.songTime, tracks: [{ track, time: trackTime, volume: BGM_VOLUME }] };
+      this.showAudioRecovery("resume");
+    };
+    // A priming play still under way would pause this one when it lands.
+    (this.rhythmTrackPriming?.get(track) || Promise.resolve()).then(() => {
+      if (this.level1OfficeRhythm !== rhythm || this.state !== "playing") return;
+      this.useSongCopy(track);
+      if (Number.isFinite(trackTime)) track.currentTime = trackTime;
+      track.volume = BGM_VOLUME;
+      let timer;
+      Promise.race([Promise.all([this.soloPlay(track), this.musicAudioContext?.resume()]), new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Resume timed out")), 2000);
+      })]).then(() => {
+        const route = this.musicAudioRoutes?.get(track);
+        if (route && route.context.state !== "running") refused();
+      }, refused).finally(() => clearTimeout(timer));
+    });
+  }
+
+  // Back from the lock screen or another app (resumeAudioAfterReturn).
+  countDownInterruptedFight() {
+    const saved = this.audioInterruption;
+    const rhythm = this.level1OfficeRhythm;
+    if (!saved?.fromHidden || !rhythm || saved.rhythm !== rhythm || this.state !== "playing" || rhythm.ending
+      || rhythm.songHandover || rhythm.tutorial?.mode !== "done") return false;
+    // The count-in before the song (or a resume's own count) simply runs again.
+    const pending = this.stageCountdown > 0 ? this.stageCountdownAction : null;
+    this.audioInterruption = null;
+    // The song is tested when the count ends; a tap meanwhile must not swap
+    // the engine (refreshStaleAudioEngine) for one that was never granted.
+    this.audioEngineStale = null;
+    this.lastMusicAt = performance.now();
+    this.songTime = saved.songTime;
+    if (pending) {
+      this.armStageCountdown(pending);
+      return true;
+    }
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    const position = saved.tracks.find(item => item.track === track);
+    this.resumeFightAt(rhythm, position ? position.time : rhythm.resumeTrackTime ?? track?.currentTime);
+    return true;
+  }
+
+  // The resume card's tap in a fight: new engines (a stuck one may never
+  // resume), the song granted playback silently at its place, then the count.
+  countDownFightAfterTap() {
+    const saved = this.audioInterruption;
+    const rhythm = this.level1OfficeRhythm;
+    if (!saved?.rhythm || saved.rhythm !== rhythm || this.state !== "playing" || rhythm.ending || this.audioRecovering
+      || rhythm.songHandover || rhythm.tutorial?.mode !== "done") return false;
+    this.rebuildMusicAudioContext();
+    this.rebuildToneContext();
+    this.audioUnlockSettled = true;
+    this.applyPlaybackAudioSession();
+    this.audioEngineStale = null;
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    const position = saved.tracks.find(item => item.track === track) || saved.tracks[0];
+    const trackTime = position ? position.time : rhythm.resumeTrackTime;
+    this.musicAudioContext?.resume()?.catch(() => {});
+    const primed = track && !rhythm.skipAudio ? this.primeRhythmTrack(track, trackTime) : Promise.resolve();
+    this.audioRecovering = true;
+    this.audioRecoveryPrompt.querySelector("button").textContent = this.tr("RESTORING SOUND…", "正在恢復音效…");
+    primed.then(() => {
+      this.audioRecovering = false;
+      if (this.level1OfficeRhythm !== rhythm || this.audioInterruption !== saved) return;
+      if (track && !rhythm.skipAudio && !this.primedRhythmTracks?.has(track)) {
+        this.showAudioRecovery("resume");
+        return;
+      }
+      this.audioInterruption = null;
+      this.audioRecoveryPrompt.hidden = true;
+      rhythm.audioStartPending = false;
+      this.audioRecoveryFailed = false;
+      this.lastMusicAt = performance.now();
+      this.songTime = saved.songTime;
+      this.resumeFightAt(rhythm, trackTime);
+    });
+    return true;
+  }
+
+  // While the page is hidden, the story fight's state, for a reload.
+  keepFightForReload() {
+    const rhythm = this.level1OfficeRhythm;
+    if (this.freePlay || !rhythm || rhythm.ending || rhythm.songHandover || rhythm.tutorial?.mode !== "done"
+      || !["playing", "level1OfficePaused"].includes(this.state)) return;
+    const saved = this.audioInterruption?.rhythm === rhythm ? this.audioInterruption : null;
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    const trackTime = saved?.tracks.find(item => item.track === track)?.time
+      ?? (this.state === "level1OfficePaused" ? this.level1OfficePausedAt : null)
+      ?? rhythm.resumeTrackTime ?? track?.currentTime;
+    const songTime = saved ? saved.songTime : this.songTime;
+    if (!(songTime > 0) || !Number.isFinite(trackTime)) return;
+    const plain = value => JSON.parse(JSON.stringify(value, (key, item) =>
+      item && typeof item === "object" && !Array.isArray(item) && Object.getPrototypeOf(item) !== Object.prototype ? undefined : item));
+    const { notes, ...state } = rhythm;
+    for (const key of Object.keys(state)) if (/Telemetry$|Rects$/.test(key)) delete state[key];
+    const kept = { v: 1, at: Date.now(), stageId: this.currentStageId, theme: rhythm.theme,
+      checkpoint: this.progress?.storyCheckpoint || null, run: this.progress?.storyRun?.id || null,
+      difficulty: this.difficultyId, songTime, trackTime, state: plain(state), notes: plain(notes) };
+    try { window.localStorage?.setItem(FIGHT_RESUME_KEY, JSON.stringify(kept)); } catch {}
+  }
+
+  forgetKeptFight() {
+    try { window.localStorage?.removeItem(FIGHT_RESUME_KEY); } catch {}
+  }
+
+  // The main menu's 繼續 after a reload: the same fight, the same moment.
+  resumeKeptFight() {
+    let kept = null;
+    try { kept = JSON.parse(window.localStorage?.getItem(FIGHT_RESUME_KEY) || "null"); } catch {}
+    this.forgetKeptFight();
+    const start = {
+      office: () => { this.level1TutorialSeen = true; return this.startLevel({ skipTutorial: true, deferSong: true, useProgressLoadout: true }); },
+      bathroom: () => this.startLevel2BathroomFight({ deferSong: true }),
+      massage: () => this.startLevel3MassageFight({ deferSong: true }),
+      arcade: () => this.startLevel4ArcadeFight({ deferSong: true }),
+      studio: () => this.startStudioFight({ deferSong: true }),
+      river: () => this.startLevel5RiverFight({ deferSong: true }),
+      concert: () => this.startLevel6ConcertFight({ deferSong: true })
+    }[kept?.theme];
+    if (!start || kept.v !== 1 || !(Date.now() - kept.at < 7 * 864e5) || typeof kept.stageId !== "string"
+      || kept.checkpoint !== (this.progress?.storyCheckpoint || null) || kept.run !== (this.progress?.storyRun?.id || null)) return false;
+    if (RHYTHM_DIFFICULTIES[kept.difficulty] && kept.difficulty !== this.difficultyId) this.setDifficulty(kept.difficulty, { persist: false, announce: false });
+    this.freePlay = false;
+    this.startLevelLoading(kept.stageId, async () => {
+      this.livesRemaining = TOTAL_LIVES;
+      this.stopSongPreview(false);
+      this.resetRuntime();
+      this.applyConfigDefaults();
+      this.applyLatestProgressLoadout();
+      this.currentStageId = kept.stageId;
+      await start();
+      this.restoreKeptFight(kept);
+    });
+    return true;
+  }
+
+  restoreKeptFight(kept) {
+    const rhythm = this.level1OfficeRhythm;
+    if (!rhythm || rhythm.theme !== kept.theme || this.state !== "playing") return;
+    // The fight's own numbers and every note's result; not its loading,
+    // audio or effect bookkeeping, which belong to this page.
+    const skip = /^(notes|theme|tutorial|skipAudio|ending|result|review.*|graphics.*|audio.*|songHandover|outputDelay|frozenSongTime|resumeTrackTime|celebration.*|countdownDuringGraphicsPreparation|countedInEarly|hitBurstRequest|arcadeEvent|impactKick|bathroomStrike|stampFx)$/;
+    const same = (a, b) => a !== null && b !== null && typeof a === typeof b && Array.isArray(a) === Array.isArray(b);
+    for (const [key, value] of Object.entries(kept.state || {})) {
+      if (skip.test(key) || !(key in rhythm) || !same(rhythm[key], value)) continue;
+      rhythm[key] = typeof value === "object" && !Array.isArray(value) ? { ...rhythm[key], ...value } : value;
+    }
+    (kept.notes || []).forEach((saved, index) => {
+      const note = rhythm.notes[index];
+      if (!note || note.id !== saved.id || note.time !== saved.time) return;
+      for (const [key, value] of Object.entries(saved)) if (value === null || typeof value !== "object") note[key] = value;
+    });
+    this.songTime = kept.songTime;
+    this.resumeFightAt(rhythm, kept.trackTime);
+  }
+
+  // Fetched like every sound (the verified jsDelivr copy, else this site) and
+  // kept with the fights' sounds, so an engine rebuild decodes them again too.
+  // One that fails is fetched again the next time it is wanted.
+  loadMenuSfx() {
+    this.sfxRaw ||= {};
+    this.sfxBuffers ||= {};
+    this.menuSfxLoading ||= {};
+    for (const [name, src] of Object.entries(MENU_SFX)) {
+      if (this.sfxBuffers[name] || this.menuSfxLoading[name]) continue;
+      this.menuSfxLoading[name] = fetchGameAsset(src).then(({ data }) => {
+        this.sfxRaw[name] = data.buffer;
+        const buffer = pcmWavBuffer(data);
+        if (buffer) this.sfxBuffers[name] = buffer;
+        else if (this.level1OfficeAudioContext) return this.decodeHitSfx(name, this.level1OfficeAudioContext);
+      }).catch(() => {}).finally(() => { delete this.menuSfxLoading[name]; });
+    }
+  }
+
+  playMenuSfx(kind) {
+    const name = kind === "tick" ? "menu-tick" : "menu-click";
+    if (!this.sfxBuffers?.[name]) {
+      this.loadMenuSfx();
+      return false;
+    }
+    return this.playFeedbackSfx(name, "menu", 1.4);
+  }
+
+  // What an input can change that has a sound.
+  menuSoundState() {
+    const menu = this.homeMenu, rhythm = this.level1OfficeRhythm, preview = this.songPreview;
+    const tutorial = rhythm?.tutorial;
+    return {
+      board: Boolean(this.scoreboard),
+      screen: [this.state, menu?.view, Boolean(menu?.difficultyPick), Boolean(this.pocketOpen), Boolean(this.pocketHomeConfirm),
+        Boolean(this.chest?.menuOpen), Boolean(this.walkPause), Boolean(this.scoreboard), this.levelLoadingPresentation?.stageId,
+        Boolean(this.fullscreenGuide && !this.fullscreenGuide.hidden)].join(),
+      // The line on screen, while a dialogue is: every scene keeps its place in
+      // a ...DialogueIndex, the office tutorial in its own.
+      dialogue: this.getControlMode() !== "dialogue" ? ""
+        : Object.keys(this).filter(key => /DialogueIndex$/.test(key)).map(key => key + this[key]).join()
+          + [tutorial?.mode, tutorial?.dialogueIndex, tutorial?.readyDialogueIndex].join(),
+      player: [menu?.playerSongId, preview?.id, Boolean(preview?.paused)].join(),
+      inPlayer: this.state === "title" && menu?.view === "playlistPlayer",
+      selection: [menu?.index, menu?.difficultyPick?.choice, this.walkPause?.choice, rhythm?.failureChoice,
+        this.level1OfficePauseChoice, this.level1ResultsChoice, this.level1UnlockChoice, this.pocketSelectedIndex,
+        this.chest?.selectedIndex, this.difficultyId, this.language, this.deviceMode,
+        menu?.view === "calibrate" ? this.getAudioOffsetSeconds() : ""].join()
+    };
+  }
+
+  playMenuSoundFor(before, kind) {
+    if (!before || before.board) return;
+    const after = this.menuSoundState();
+    if (before.screen !== after.screen || (before.dialogue && before.dialogue !== after.dialogue)) this.playMenuSfx("click");
+    // The player's buttons: a song can start a moment after the press.
+    else if (before.player !== after.player || (before.inPlayer && (kind === "move" || kind === "confirm"))) this.playMenuSfx("tick");
+    else if (before.selection !== after.selection) this.playMenuSfx(kind === "confirm" || kind === "back" ? "click" : "tick");
+  }
+
+  // Keys and taps on the screen: the state is noted before the game sees the
+  // input and compared once it has.
+  listenForMenuSounds() {
+    let before = null;
+    for (const type of ["keydown", "pointerdown", "pointerup"]) {
+      window.addEventListener(type, () => { before = this.menuSoundState(); }, { capture: true });
+      window.addEventListener(type, (event) => {
+        const state = before;
+        before = null;
+        if (this.isDebugPanelElement(event.target)) return;
+        this.playMenuSoundFor(state, type === "keydown" ? menuKeyKind(event.code) : "tap");
+      });
+    }
   }
 
   async loadLayeredMapConfig() {
@@ -3845,6 +4219,10 @@ for (const level of this.config.secretLevels || []) {
     document.addEventListener("freeze", staleAudio("frozen"));
     navigator.mediaDevices?.addEventListener?.("devicechange", staleAudio("device"));
     window.addEventListener("pageshow", () => this.resumeAudioAfterReturn());
+    // Kept only while hidden: a page that comes back was not reloaded.
+    document.addEventListener("visibilitychange", () => { if (document.hidden) this.keepFightForReload(); else this.forgetKeptFight(); });
+    window.addEventListener("pagehide", () => this.keepFightForReload());
+    window.addEventListener("pageshow", event => { if (event.persisted) this.forgetKeptFight(); });
 
     // The landscape deck is positioned against the letterboxed canvas, not the
     // viewport, so the buttons live inside the game frame instead of floating
@@ -4994,6 +5372,12 @@ for (const level of this.config.secretLevels || []) {
   }
 
   handleMobileControlDown(action, inputTimeStamp) {
+    const before = this.menuSoundState();
+    this.handleDeckPress(action, inputTimeStamp);
+    this.playMenuSoundFor(before, menuActionKind(action));
+  }
+
+  handleDeckPress(action, inputTimeStamp) {
     if (!action || this.mobileHeldActions.has(action)) return;
     this.mobileHeldActions.add(action);
     if (action === "fullscreen") { this.toggleFullscreen(); return; }
@@ -6520,6 +6904,7 @@ for (const level of this.config.secretLevels || []) {
     const runMode = this.progress?.storyRun?.difficulty;
     if (runMode && runMode !== this.difficultyId) this.setDifficulty(runMode, { persist: false, announce: false });
     if (this.progress?.storyRun) this.registerStoryRun(this.progress.storyRun);
+    if (this.resumeKeptFight()) return true;
     this.freePlay = false;
     return this.startStage(stageId, { freePlay: false });
   }
@@ -7753,6 +8138,7 @@ for (const level of this.config.secretLevels || []) {
     this.stopLevel3RhythmAudio(true);
     this.stopLevel6RhythmAudio(true);
     const preparingRhythm = this.level1OfficeRhythm;
+    this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
     if (this.level1OfficeRhythm !== preparingRhythm) return;
@@ -7781,6 +8167,7 @@ for (const level of this.config.secretLevels || []) {
 
   returnToTitle() {
     this.levelLoadingPresentation = null;
+    this.debugLevel4Won = false;
     this.recordLatestProgressLoadout();
     // A stage-select run's difficulty was for that run only.
     if (this.storyDifficultyId != null) {
@@ -8198,7 +8585,10 @@ for (const level of this.config.secretLevels || []) {
         get: () => route.volume,
         set: (value) => {
           route.volume = clamp(Number(value) || 0, 0, 1);
-          gain.gain.setValueAtTime(route.volume, context.currentTime);
+          const now = context.currentTime;
+          gain.gain.cancelScheduledValues(now);
+          if (audio.paused) gain.gain.setValueAtTime(route.volume, now);
+          else gain.gain.setTargetAtTime(route.volume, now, 0.015);
         }
       });
       descriptor.set.call(audio, 1);
@@ -8234,7 +8624,15 @@ for (const level of this.config.secretLevels || []) {
     const fresh = audio.currentTime < 0.05 && audio.volume > 0 && !this.isBakedMusicTrack(audio);
     const target = audio.volume;
     if (fresh) audio.volume = 0;
+    const source = audio.getAttribute("src") || audio.src;
+    const newSource = Boolean(route?.playedSource) && route.playedSource !== source;
+    if (route) route.playedSource = source;
+    if (newSource) audio.muted = true;
     const started = audio.play();
+    if (newSource) {
+      const unmute = () => { audio.muted = false; };
+      started?.then(() => setTimeout(unmute, 250), unmute) ?? unmute();
+    }
     if (fresh) started?.then(() => {
       if (!audio.paused && audio.volume === 0 && !(this.audioFades || []).some((fade) => fade.audio === audio)) {
         this.fadeAudio(audio, target, DIALOGUE_BGM_FADE_SECONDS);
@@ -8675,7 +9073,8 @@ for (const level of this.config.secretLevels || []) {
     if (!item) return;
     if (this.homeMenu.view === "root") {
       if (item.id === "newGame") {
-        this.homeMenu.difficultyPick = { story: true, title: this.tr("STORY MODE", "故事模式"), choice: this.difficultyId === "shoot" ? 1 : 0 };
+        if (this.homeMenu.difficultyPick?.story) await this.startStageWithPickedDifficulty();
+        else this.homeMenu.difficultyPick = { story: true, title: this.tr("STORY MODE", "故事模式"), choice: this.difficultyId === "shoot" ? 1 : 0 };
       } else if (item.id === "scoreboard") {
         this.openScoreboard();
       } else if (item.id === "continue") {
@@ -9044,6 +9443,7 @@ for (const level of this.config.secretLevels || []) {
   countInFightSong() {
     const rhythm = this.level1OfficeRhythm;
     if (!rhythm) return;
+    if (rhythm.countedInEarly) { rhythm.countedInEarly = false; return; }
     rhythm.tutorial.mode = "done";
     this.prepareRhythmGraphics(rhythm);
     // The clock starts at the top of the chart. The story reaches a fight with
@@ -9057,6 +9457,7 @@ for (const level of this.config.secretLevels || []) {
     const track = this.getActiveLevel1OfficeRhythmAudio();
     if (track) {
       track.pause();
+      this.useSongCopy(track);
       this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);
       track.currentTime = this.getRhythmAudioStart();
       track.volume = 0;
@@ -9871,17 +10272,18 @@ for (const level of this.config.secretLevels || []) {
 
   // Fetch and decode off the input path; the arena gate awaits this batch.
   loadHitSfx() {
-    if (this.hitSfxReady) return this.hitSfxReady;
-    this.sfxBuffers = {};
-    this.sfxRaw = {};
+    this.sfxBuffers ||= {};
+    if (Object.keys(HIT_SFX).every(name => this.sfxBuffers[name])) return Promise.resolve();
+    if (this.hitSfxLoading) return this.hitSfxLoading;
     const context = this.ensureToneContext();
     if (!context) return Promise.resolve();
     this.ensureFeedbackOutput(context);
-    this.hitSfxReady = Promise.allSettled(Object.entries(HIT_SFX).map(async ([name, src]) => {
-      this.sfxRaw[name] = (await fetchGameAsset(src)).data.buffer;
-      await this.decodeHitSfx(name, this.level1OfficeAudioContext);
-    }));
-    return this.hitSfxReady;
+    const loading = this.hitSfxLoading = this.prefetchHitSfx()
+      .then(() => Promise.allSettled(Object.keys(HIT_SFX).filter(name => !this.sfxBuffers[name])
+        .map(name => this.decodeHitSfx(name, this.level1OfficeAudioContext))))
+      .finally(() => { if (this.hitSfxLoading === loading) this.hitSfxLoading = null; });
+    this.hitSfxReady = loading;
+    return loading;
   }
 
   decodeHitSfx(name, context) {
@@ -9910,7 +10312,7 @@ for (const level of this.config.secretLevels || []) {
     this.musicAudioContext ||= this.level1OfficeAudioContext;
     this.ensureFeedbackOutput(this.level1OfficeAudioContext);
     this.toneContextRebuilds = (this.toneContextRebuilds || 0) + 1;
-    this.sfxBuffers = {};
+    this.sfxBuffers ||= {};
     this.hitSfxReady = Promise.allSettled(Object.keys(this.sfxRaw || {}).map(name => this.decodeHitSfx(name, this.level1OfficeAudioContext)));
     this.level1OfficeAudioContext.resume?.().catch?.(() => {});
     return this.level1OfficeAudioContext;
@@ -9920,7 +10322,7 @@ for (const level of this.config.secretLevels || []) {
   // engine is doing, for checking on the phone itself.
   getSfxTestLabel() {
     const context = this.level1OfficeAudioContext;
-    const loaded = Object.keys(this.sfxBuffers || {}).length;
+    const loaded = Object.keys(HIT_SFX).filter(name => this.sfxBuffers?.[name]).length;
     const state = context ? context.state : this.tr("NONE", "無");
     const mark = this.sfxTestResult === true ? " ✓" : this.sfxTestResult === false ? " ✕" : "";
     return `${this.tr("SOUND TEST", "音效測試")}: ${state} · ${loaded}/${Object.keys(HIT_SFX).length}${mark}`;
@@ -10858,8 +11260,17 @@ for (const level of this.config.secretLevels || []) {
     }
     const key = args.join(",");
     this.rhythmBackdropCache ||= [];
+    if (!this.rhythmBackdropReset) {
+      this.rhythmBackdropReset = () => { if (!document.hidden) this.rhythmBackdropCache = []; };
+      document.addEventListener("visibilitychange", this.rhythmBackdropReset);
+    }
     let entry = this.rhythmBackdropCache.find(e => e.image === image && e.key === key);
     if (!entry) {
+      const rhythm = this.level1OfficeRhythm;
+      if ((rhythm?.graphicsLoading && !rhythm.graphicsWarming) || !(performance.now() >= (this.rhythmBackdropRetryAt || 0))) {
+        target.drawImage(image, ...args);
+        return;
+      }
       const slot = (this.rhythmBackdropSlot || 0) % 4;
       this.rhythmBackdropSlot = slot + 1;
       this.rhythmBackdropCache = this.rhythmBackdropCache.filter(e => e.slot !== slot);
@@ -10867,6 +11278,11 @@ for (const level of this.config.secretLevels || []) {
       layer.clearRect(0, 0, VIEW_W, 508);
       layer.imageSmoothingEnabled = false;
       layer.drawImage(image, ...args);
+      if (!backdropCopyHolds(layer, args)) {
+        this.rhythmBackdropRetryAt = performance.now() + 250;
+        target.drawImage(image, ...args);
+        return;
+      }
       entry = { image, key, slot, canvas: layer.canvas };
       this.rhythmBackdropCache.push(entry);
     }
@@ -11163,6 +11579,7 @@ for (const level of this.config.secretLevels || []) {
 
   adjustConcertCrowd(rhythm, kind) {
     rhythm.hypePulse = kind === "miss" ? -1 : 1;
+    if (kind === "miss") rhythm.hypeMissAt = performance.now();
     this.updateConcertCrowd(rhythm);
   }
 
@@ -11188,10 +11605,8 @@ for (const level of this.config.secretLevels || []) {
     if (songEnded) rhythm.songEnded = true;
     const crowd = this.getActiveRhythmSpec().crowd || {};
     const performance = this.getConcertPerformance(rhythm);
-    const progress = rhythm.songEnded ? 1 : clamp(this.getLevel1OfficeRenderTime() / this.getActiveRhythmDuration(), 0, 0.999);
-    const quality = clamp(performance.accuracy / performance.target, 0, 1);
-    rhythm.hype = clamp((crowd.start ?? 0.15) * (1 - progress) + quality * progress, 0, rhythm.songEnded ? 1 : 0.999);
-    const full = rhythm.hype >= 1 - 1e-9 && rhythm.songEnded;
+    rhythm.hype = clamp(performance.earned / Math.max(1e-9, performance.target * performance.total), 0, 1);
+    const full = rhythm.hype >= 1 - 1e-9;
     if (full && !rhythm.climax) {
       rhythm.climax = true;
       rhythm.climaxAt = this.songTime;
@@ -11743,6 +12158,7 @@ for (const level of this.config.secretLevels || []) {
     if (track) {
       rhythm.audioPriming = null;
       track.pause();
+      this.useSongCopy(track);
       track.currentTime = this.getRhythmAudioStart();
       track.volume = 0;
     }
@@ -11919,6 +12335,7 @@ for (const level of this.config.secretLevels || []) {
     // Hold the chart exactly where it stands; songTime is driven off the audio
     // element, so pausing the track is what actually freezes the fight.
     const track = this.getActiveLevel1OfficeRhythmAudio();
+    this.level1OfficePausedAt = track?.currentTime;
     if (track) track.pause();
     this.releaseHeldInputs();
     this.updateMobileControls(true);
@@ -11930,10 +12347,10 @@ for (const level of this.config.secretLevels || []) {
     this.level1OfficePauseConfirm = false;
     this.state = "playing";
     const resumeTrack = this.getActiveLevel1OfficeRhythmAudio();
-    if (resumeTrack && !this.level1OfficeRhythm?.skipAudio) {
-      const resumed = this.playMusicAudio(resumeTrack);
-      if (resumed?.catch) resumed.catch(() => {});
-    }
+    const pausedAt = Number.isFinite(this.level1OfficePausedAt) ? this.level1OfficePausedAt : resumeTrack?.currentTime;
+    // In the tap: keep (or regain) iPhone's permission to play after the count.
+    if (resumeTrack && !this.level1OfficeRhythm?.skipAudio) this.primeRhythmTrack(resumeTrack, pausedAt);
+    this.resumeFightAt(this.level1OfficeRhythm, pausedAt);
     this.updateMobileControls(true);
     return true;
   }
@@ -12130,7 +12547,7 @@ for (const level of this.config.secretLevels || []) {
         root.addEventListener(type, event => event.stopPropagation(), { passive: true });
       }
       root.querySelector("button").addEventListener("click", event => {
-        event.preventDefault(); event.stopPropagation(); this.recoverGameAudio();
+        event.preventDefault(); event.stopPropagation(); if (!this.countDownFightAfterTap()) this.recoverGameAudio();
       });
       document.body.appendChild(root);
       this.audioRecoveryPrompt = root;
@@ -12169,6 +12586,7 @@ for (const level of this.config.secretLevels || []) {
 
   resumeAudioAfterReturn() {
     if (!document.hidden && this.audioInterruption?.fromHidden && !this.audioRecoveryVisible()) {
+      if (this.countDownInterruptedFight()) return;
       this.recoverGameAudio({ automatic: true });
     }
   }
@@ -12315,7 +12733,7 @@ for (const level of this.config.secretLevels || []) {
     this.rhythmTrackPriming ||= new WeakMap();
     if (this.primedRhythmTracks.has(track)) return Promise.resolve();
     if (this.rhythmTrackPriming.has(track)) return this.rhythmTrackPriming.get(track);
-    const mirrored = track.paused && this.mirroredAudioUrl(track.getAttribute("src"));
+    const mirrored = track.paused && !this.musicAudioRoutes?.get(track) && this.mirroredAudioUrl(track.getAttribute("src"));
     if (mirrored) track.src = mirrored;
     track.volume = 0;
     this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);
@@ -12448,6 +12866,7 @@ for (const level of this.config.secretLevels || []) {
     if (this.state !== "playing" || !rhythm || rhythm.ending || !button || !["practice", "done"].includes(tutorial?.mode)) return false;
     // Sound belongs to the press, including harmless taps between notes.
     if (!this.playRhythmHitSfx(action, false, button)) this.playLevel1OfficeTone("hit", action, "stamp");
+    if (this.stageCountdown > 0 || this.isFightSongStalled()) return true;
     const renderTime = this.getLevel1OfficeInputTime(inputTimeStamp);
     const activeNotes = this.getLevel1OfficeRenderNotes();
     const windowSize = spec.missWindow || 0.22;
@@ -13841,7 +14260,8 @@ for (const level of this.config.secretLevels || []) {
         target.fillRect(Math.round(bar.x + 3 + i * (cellW + gap)), bar.y + 3, Math.round(cellW * fill), bar.h - 6);
       }
     }
-    target.strokeStyle = rhythm?.climax ? `rgba(255, 239, 99, ${0.6 + 0.4 * Math.sin(motionTime * 10)})` : "#f4f0dc";
+    const missFlash = performance.now() - (rhythm?.hypeMissAt ?? -1e9) < 320;
+    target.strokeStyle = missFlash ? "#ff4866" : rhythm?.climax ? `rgba(255, 239, 99, ${0.6 + 0.4 * Math.sin(motionTime * 10)})` : "#f4f0dc";
     target.lineWidth = 2;
     target.strokeRect(bar.x + 1, bar.y + 1, bar.w - 2, bar.h - 2);
     target.textAlign = "center";
@@ -13850,7 +14270,7 @@ for (const level of this.config.secretLevels || []) {
     target.fillStyle = rhythm?.climax ? "#ffef63" : hype < 0.2 ? "#8fb4ff" : "#f7f2de";
     const label = rhythm?.climax
       ? this.tr("PEAK HYPE!", "嗨到最高點！")
-      : this.tr("FILL HYPE BY SONG END", "歌曲結束時熱度要滿");
+      : this.tr("FILL THE HYPE TO WIN", "熱度填滿就過關");
     drawFittedText(target, label, bar.x + bar.w / 2, bar.y + bar.h + 13, bounds.w - 16, 12, 900, 8);
     target.restore();
   }
@@ -13879,6 +14299,7 @@ for (const level of this.config.secretLevels || []) {
     this.level1OfficeRhythm = this.createLevel1OfficeRhythmState("massage");
     this.level1OfficeRhythm.skipAudio = Boolean(options.skipAudio);
     const preparingRhythm = this.level1OfficeRhythm;
+    this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
     if (this.level1OfficeRhythm !== preparingRhythm) return;
@@ -14044,6 +14465,7 @@ for (const level of this.config.secretLevels || []) {
     this.level1OfficeRhythm = this.createLevel1OfficeRhythmState("arcade");
     this.level1OfficeRhythm.skipAudio = Boolean(options.skipAudio);
     const preparingRhythm = this.level1OfficeRhythm;
+    this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
     if (this.level1OfficeRhythm !== preparingRhythm) return;
@@ -15704,11 +16126,12 @@ for (const level of this.config.secretLevels || []) {
       }
     }
     this.state = "sewerTransition";
+    this.loadTransitionScene(direction);
   }
 
   updateSewerTransition(dt) {
     this.sewerTransition.timer += dt;
-    if (this.sewerTransition.timer < this.sewerTransition.duration) return;
+    if (this.sewerTransition.timer < this.sewerTransition.duration || this.sewerTransition.loading) return;
     if (this.sewerTransition.direction === "down") {
       this.enterSewerScene();
     } else if (this.sewerTransition.direction === "boss") {
@@ -15931,7 +16354,7 @@ for (const level of this.config.secretLevels || []) {
   }
 
   canExitLevel4ToLevel5() {
-    if (!this.progress?.flags?.level4BossDefeated) return false;
+    if (!(this.progress?.flags?.level4BossDefeated || this.debugLevel4Won)) return false;
     // A save from before the chest was removed may have beaten Bonita without
     // opening it: the song is hers either way.
     if (!this.normalizeCollectedSongs(this.collectedSongs).includes("level4")) this.collectSong("level4");
@@ -16082,6 +16505,7 @@ for (const level of this.config.secretLevels || []) {
     const rhythm = this.createLevel1OfficeRhythmState("studio");
     this.level1OfficeRhythm = rhythm;
     rhythm.skipAudio = Boolean(options.skipAudio);
+    this.showFightWhilePreparing(rhythm, options);
     await this.primeRhythmSong(rhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(rhythm);
     if (this.level1OfficeRhythm !== rhythm) return;
@@ -16572,6 +16996,7 @@ for (const level of this.config.secretLevels || []) {
     this.level1OfficeRhythm = this.createLevel1OfficeRhythmState(level.theme);
     this.level1OfficeRhythm.skipAudio = Boolean(options.skipAudio);
     const preparingRhythm = this.level1OfficeRhythm;
+    this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
     if (this.level1OfficeRhythm !== preparingRhythm) return;
@@ -16601,10 +17026,11 @@ for (const level of this.config.secretLevels || []) {
     this.level1OfficeRhythm = this.createLevel1OfficeRhythmState("concert");
     this.level1OfficeRhythm.skipAudio = Boolean(options.skipAudio);
     const preparingRhythm = this.level1OfficeRhythm;
+    this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
     if (this.level1OfficeRhythm !== preparingRhythm) return;
-    this.level1OfficeRhythm.hype = this.getActiveRhythmSpec().crowd?.start ?? 0.3;
+    this.level1OfficeRhythm.hype = 0;
     this.level1OfficeRhythm.climax = false;
     this.state = "playing";
     this.updateMobileControls(true);
@@ -16636,6 +17062,7 @@ for (const level of this.config.secretLevels || []) {
     this.level1OfficeRhythm = this.createLevel1OfficeRhythmState("river");
     this.level1OfficeRhythm.skipAudio = Boolean(options.skipAudio);
     const preparingRhythm = this.level1OfficeRhythm;
+    this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
     if (this.level1OfficeRhythm !== preparingRhythm) return;
@@ -19594,6 +20021,7 @@ for (const level of this.config.secretLevels || []) {
     }
     this.renderLivesIndicator();
     this.renderStageCountdown();
+    this.renderSongStall();
     this.ctx.restore();
     if (this.flash > 0) {
       this.ctx.fillStyle = `rgba(255, 245, 214, ${this.flash * 0.22})`;
@@ -23885,7 +24313,8 @@ for (const level of this.config.secretLevels || []) {
             : direction === "down"
             ? `${sewerLevel.label || "LEVEL 2"}  /  2.5D から 2D サイドビューへ`
             : "2D サイドビュー から 2.5D へ";
-    drawStageLoadingScreen(target, this.time, t,
+    const progress = transition.loading && this.sceneLoadProgress;
+    drawStageLoadingScreen(target, this.time, progress?.total ? Math.min(t, progress.done / progress.total) : t,
       direction === "level4" ? this.tr("LOADING  BONITA'S ROOM", "載入中  Bonita 的房間") : title,
       direction === "level4" ? this.tr("LEVEL 4  ·  BEDROOM", "關卡 4  ·  臥室") : subtitle, W, H);
 
@@ -24546,7 +24975,7 @@ for (const level of this.config.secretLevels || []) {
         : this.level4Rail === "lower"
           ? "找梯子回房間"
           // Like Level 3's: who to go to, then the way out.
-          : this.progress?.flags?.level4BossDefeated && this.level4BossEncountered
+          : (this.progress?.flags?.level4BossDefeated || this.debugLevel4Won) && this.level4BossEncountered
             ? "往左離開"
             : "靠近Bonita";
       drawObjectivePrompt(
@@ -27624,6 +28053,7 @@ const imageRequests = new Map();
 // configuration always come from this site.
 const MIRROR_BASE = ['myscheduleltd.com', 'www.myscheduleltd.com'].includes(location.hostname)
   ? 'https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@4a1cae2472c9fbece153cc1dbd0f0c1593dd9997/docs/moth/' : '';
+const MIRROR_PINNED = new Map([["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/home_lyrics_window_controls/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/drb-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/gg-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/spa-tickle.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_idle/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sfx/menu/menu-tick.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@94cc0c7ae4fe7b778f74eef4779f4832c113bb5d/docs/moth/"],["assets/sfx/menu/menu-click.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@94cc0c7ae4fe7b778f74eef4779f4832c113bb5d/docs/moth/"]]);
 const MIRROR_ROOT = '/moth/';
 let assetIntegrity = null;
 
@@ -27678,10 +28108,12 @@ async function mirrorCopy(url) {
   if (!MIRROR_BASE || url.origin !== location.origin || !url.pathname.startsWith(MIRROR_ROOT)) return null;
   try {
     assetIntegrity ||= fetchGameJson('/moth/asset-integrity.json');
-    const expected = (await assetIntegrity)[decodeURIComponent(url.pathname.slice(MIRROR_ROOT.length))];
-    if (!expected) return null;
+    const file = decodeURIComponent(url.pathname.slice(MIRROR_ROOT.length));
+    const expected = (await assetIntegrity)[file];
+    const base = MIRROR_BASE && (MIRROR_PINNED.has(file) ? MIRROR_PINNED.get(file) : MIRROR_BASE);
+    if (!expected || !base) return null;
     // One quick retry: jsDelivr can fail a file's first, uncached request.
-    const source = MIRROR_BASE + url.pathname.slice(MIRROR_ROOT.length);
+    const source = base + url.pathname.slice(MIRROR_ROOT.length);
     const asset = await fetchBytes(source, 10000).catch(() => new Promise(resolve => setTimeout(resolve, 400)).then(() => fetchBytes(source, 10000)));
     const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', asset.data));
     const hex = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
@@ -27729,6 +28161,23 @@ function loadImage(src) {
 function loadOptionalSheet(src) {
   if (!src || src.startsWith("procedural:")) return Promise.resolve(null);
   return loadImage(src);
+}
+
+// Five points of where a backdrop was drawn into its copy (the destination of
+// a 4- or 8-number drawImage, inside the copy): its centre and towards each
+// corner. Every fight backdrop is opaque, so a transparent point means the copy
+// came out blank, or partly. A copy that cannot be read is trusted.
+function backdropCopyHolds(layer, args) {
+  const [x, y, w, h] = args.length >= 8 ? args.slice(4, 8) : args.slice(0, 4);
+  const left = Math.max(0, x), top = Math.max(0, y);
+  const right = Math.min(layer.canvas.width, x + w), bottom = Math.min(layer.canvas.height, y + h);
+  if (right <= left || bottom <= top) return true;
+  try {
+    return [[0.5, 0.5], [0.2, 0.2], [0.8, 0.2], [0.2, 0.8], [0.8, 0.8]].every(([fx, fy]) =>
+      layer.getImageData(Math.floor(left + (right - left) * fx), Math.floor(top + (bottom - top) * fy), 1, 1).data[3] > 0);
+  } catch {
+    return true;
+  }
 }
 
 function makeLayer(width, height, painter) {

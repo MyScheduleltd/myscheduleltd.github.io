@@ -3,8 +3,12 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { patchMothRuntime, rewriteCssArtwork, cssArtworkLoader, MOTH_MIRROR_COMMIT, MOTH_MIRROR_ORIGIN } from './moth-runtime-patches.mjs';
+import { patchMothRuntime, rewriteCssArtwork, cssArtworkLoader, MOTH_MIRROR_COMMIT, MOTH_MIRROR_PINS, mirrorPath } from './moth-runtime-patches.mjs';
 import { SCOREBOARD_API, SCOREBOARD_CSS } from './moth-scoreboard-client.mjs';
+import { patchCharts, patchChartsText } from './moth-chart-patches.mjs';
+import { TRIMMED_FILES } from './moth-asset-trim.mjs';
+import { KEY_FRINGE_MANIFEST, patchedAsset } from './moth-sprite-fringe.mjs';
+import { ADDED_ASSETS, addedAsset } from './moth-asset-additions.mjs';
 const require = createRequire(import.meta.url);
 const ts = require(process.env.MOTH_TYPESCRIPT_PATH || 'typescript');
 const root = path.resolve(import.meta.dirname, '..');
@@ -18,15 +22,48 @@ const original = patchMothRuntime(await fs.readFile(path.join(sourceRoot, 'src/g
 assert.match(await fs.readFile(path.join(sourceRoot, 'index.html'), 'utf8'), /mobile-deck-20261012a/);
 for (const file of snapshot.files) assert.equal(sha(await fs.readFile(path.join(sourceRoot, file.path))), file.sha256);
 await fs.mkdir(output, { recursive: true });
+const published = new Map(snapshot.files.map(file => [file.path, file.sha256]));
 for (const file of snapshot.files) {
   if (['index.html', 'src/game.js', 'manifest.json', 'haptics-test.html', 'haptics-test2.html', 'sfx-test.html'].includes(file.path)) continue;
   const dest = path.join(output, file.path);
+  // Retired parts of the game are not published (moth-asset-trim.mjs).
+  if (TRIMMED_FILES.has(file.path)) {
+    await fs.rm(dest, { force: true });
+    published.delete(file.path);
+    continue;
+  }
   await fs.mkdir(path.dirname(dest), { recursive: true });
+  // Sprites with their key fringe cleaned (moth-sprite-fringe.mjs).
+  const baked = KEY_FRINGE_MANIFEST[file.path];
+  if (baked) {
+    assert.equal(baked.release, file.sha256, `Baked copy made from this release: ${file.path}`);
+    assert.equal(sha(await fs.readFile(patchedAsset(file.path))), baked.sha256);
+    await fs.copyFile(patchedAsset(file.path), dest);
+    published.set(file.path, baked.sha256);
+    continue;
+  }
+  if (file.path === 'data/level1.json') {
+    // The release's game data with the chart additions (moth-chart-patches.mjs).
+    const release = await fs.readFile(path.join(sourceRoot, file.path), 'utf8');
+    const patched = patchChartsText(release);
+    assert.deepEqual(JSON.parse(patched), patchCharts(JSON.parse(release)));
+    await fs.writeFile(dest, patched);
+    continue;
+  }
   await fs.copyFile(path.join(sourceRoot, file.path), dest);
+}
+// Files beyond the release (moth-asset-additions.mjs).
+for (const [file, added] of Object.entries(ADDED_ASSETS)) {
+  assert(!published.has(file), `An addition replaces no release file: ${file}`);
+  assert.equal(sha(await fs.readFile(addedAsset(file))), added.sha256, `Addition as listed: ${file}`);
+  await fs.mkdir(path.dirname(path.join(output, file)), { recursive: true });
+  await fs.copyFile(addedAsset(file), path.join(output, file));
+  published.set(file, added.sha256);
 }
 // The game takes images and sound effects from jsDelivr only when they hash
 // to these values (moth-runtime-patches.mjs, fetchGameAsset).
-const integrity = Object.fromEntries(snapshot.files.filter(file => /\.(webp|png|jpe?g|wav|m4a|mp3|ogg)$/.test(file.path)).map(file => [file.path, file.sha256]));
+assert(TRIMMED_FILES.size + Object.keys(KEY_FRINGE_MANIFEST).length > 0 && [...TRIMMED_FILES].every(file => !published.has(file)));
+const integrity = Object.fromEntries([...published].filter(([file]) => /\.(webp|png|jpe?g|wav|m4a|mp3|ogg)$/.test(file)));
 await fs.writeFile(path.join(output, 'asset-integrity.json'), JSON.stringify(integrity) + '\n');
 const recoveryCss = `
 .load-recovery { background: #1216134d; }
@@ -92,7 +129,7 @@ await fs.writeFile(path.join(output, 'staff/game.js'), staffCode);
 const arcadeBridge = await fs.readFile(path.join(root, 'scripts/moth-arcade-embed.js'), 'utf8');
 await fs.writeFile(path.join(output, 'src/arcade-embed.js'), arcadeBridge);
 const arcadeSri = 'sha384-' + crypto.createHash('sha384').update(arcadeBridge).digest('base64');
-const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' " + MOTH_MIRROR_ORIGIN + "/gh/MyScheduleltd/myscheduleltd.github.io@" + MOTH_MIRROR_COMMIT + "/docs/moth/ " + SCOREBOARD_API + "; font-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; worker-src 'none'";
+const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' " + [MOTH_MIRROR_COMMIT, ...new Set(MOTH_MIRROR_PINS.map(pin => pin.commit).filter(Boolean))].map(mirrorPath).join(" ") + " " + SCOREBOARD_API + "; font-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; worker-src 'none'";
 for (const audience of ['public', 'staff']) {
   const staff = audience === 'staff';
   const code = staff ? staffCode : publicCode;
@@ -101,8 +138,8 @@ for (const audience of ['public', 'staff']) {
   html = html.replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />\n    <meta name="referrer" content="strict-origin-when-cross-origin" />${staff ? '\n    <meta name="robots" content="noindex, nofollow, noarchive" />\n    <base href="/moth/" />' : ''}`);
   html = html.replace('<html lang="en">', '<html lang="zh-Hant-TW">');
   html = html.replace('./manifest.json', staff ? '/moth/staff/manifest.json' : './manifest.json');
-  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-loading-20261013e' : 'moth-arcade-20261013a'}" integrity="${sri}" crossorigin="anonymous"></script>`);
-  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261013e');
+  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-loading-20261014d' : 'moth-cabinet-20261014a'}" integrity="${sri}" crossorigin="anonymous"></script>`);
+  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261014d');
   await fs.writeFile(path.join(output, staff ? 'staff/index.html' : 'index.html'), html);
   const manifest = JSON.parse(await fs.readFile(path.join(sourceRoot, 'manifest.json'), 'utf8'));
   manifest.start_url = staff ? '/moth/staff/' : '/moth/';

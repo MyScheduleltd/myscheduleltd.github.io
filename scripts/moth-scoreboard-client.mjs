@@ -22,7 +22,9 @@ export function patchScoreboard(once) {
   once('  { id: "lyrics", label: "LYRICS" },\n  { id: "settings", label: "SETTINGS" },', '  { id: "lyrics", label: "LYRICS" },\n  { id: "scoreboard", label: "SCOREBOARD" },\n  { id: "settings", label: "SETTINGS" },');
   once('      lyrics: this.tr("LYRICS", "歌詞"),', '      lyrics: this.tr("LYRICS", "歌詞"),\n      scoreboard: this.tr("SCOREBOARD", "排行榜"),');
   // STORY MODE picks its difficulty on the stage-select card first.
-  once('      if (item.id === "newGame") {\n        this.startNewStory();\n      } else if', '      if (item.id === "newGame") {\n        this.homeMenu.difficultyPick = { story: true, title: this.tr("STORY MODE", "故事模式"), choice: this.difficultyId === "shoot" ? 1 : 0 };\n      } else if (item.id === "scoreboard") {\n        this.openScoreboard();\n      } else if');
+  // The deck's O and SPACE buttons confirm through here rather than the key
+  // handler, so an open card starts the story instead of opening again.
+  once('      if (item.id === "newGame") {\n        this.startNewStory();\n      } else if', '      if (item.id === "newGame") {\n        if (this.homeMenu.difficultyPick?.story) await this.startStageWithPickedDifficulty();\n        else this.homeMenu.difficultyPick = { story: true, title: this.tr("STORY MODE", "故事模式"), choice: this.difficultyId === "shoot" ? 1 : 0 };\n      } else if (item.id === "scoreboard") {\n        this.openScoreboard();\n      } else if');
   once('    const pick = this.homeMenu?.difficultyPick;\n    if (!pick) return;\n    const chosen', '    const pick = this.homeMenu?.difficultyPick;\n    if (!pick) return;\n    if (pick.story) {\n      this.homeMenu.difficultyPick = null;\n      this.startStoryRun(pick.choice === 1 ? "shoot" : "chill");\n      return;\n    }\n    const chosen');
   // CONTINUE plays on at the run's own difficulty (and still asks for a
   // missing ticket before the first fight).
@@ -123,6 +125,12 @@ export const SCOREBOARD_METHODS = String.raw`
     root.setAttribute('aria-modal', 'true');
     root.setAttribute('aria-labelledby', 'moth-board-title');
     for (const type of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'click', 'wheel']) root.addEventListener(type, event => event.stopPropagation(), { passive: true });
+    // Its buttons sound like the menus (moth-menu-sfx.mjs): the tabs tick, the
+    // rest click. Enter presses the focused button, so it sounds the same.
+    root.addEventListener('click', event => {
+      const button = event.target.closest?.('button');
+      if (button && !button.disabled) this.playMenuSfx(button.getAttribute('role') === 'tab' ? 'tick' : 'click');
+    });
     document.body.append(root);
     board.root = root;
     this.renderScoreboard();
@@ -279,11 +287,14 @@ export const SCOREBOARD_METHODS = String.raw`
     }
     const list = board.root.querySelector('.moth-board-list');
     if (code === 'ArrowLeft' || code === 'ArrowRight' || code === 'KeyA' || code === 'KeyD') {
-      board.mode = code === 'ArrowLeft' || code === 'KeyA' ? 'chill' : 'shoot';
+      const mode = code === 'ArrowLeft' || code === 'KeyA' ? 'chill' : 'shoot';
+      if (mode !== board.mode) this.playMenuSfx('tick');
+      board.mode = mode;
       this.renderScoreboard();
     } else if (code === 'ArrowUp' || code === 'ArrowDown' || code === 'KeyW' || code === 'KeyS') {
       list?.scrollBy({ top: (code === 'ArrowUp' || code === 'KeyW' ? -1 : 1) * 56 });
     } else if (code === 'Escape' || code === 'KeyH') {
+      this.playMenuSfx('click');
       this.closeScoreboard();
     } else if (code === 'Enter' || code === 'Space' || code === 'KeyO') {
       if (event.repeat) return event.preventDefault();

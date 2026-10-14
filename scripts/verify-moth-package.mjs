@@ -3,6 +3,10 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import {rewriteCssArtwork} from './moth-runtime-patches.mjs';
+import {patchCharts} from './moth-chart-patches.mjs';
+import {TRIMMED_FILES} from './moth-asset-trim.mjs';
+import {KEY_FRINGE_MANIFEST} from './moth-sprite-fringe.mjs';
+import {ADDED_ASSETS} from './moth-asset-additions.mjs';
 const root = path.resolve(import.meta.dirname, '..');
 const dir = path.join(root, 'docs/moth');
 const snapshot = JSON.parse(await fs.readFile(path.join(root, '.qa/moth/published-snapshot.json'), 'utf8'));
@@ -12,9 +16,23 @@ const config = await fs.readFile(path.join(dir, 'data/level1.json'), 'utf8');
 const hash = data => crypto.createHash('sha256').update(data).digest('hex');
 const excluded = new Set(['index.html','src/game.js','manifest.json','haptics-test.html','haptics-test2.html','sfx-test.html']);
 let preserved = 0;
+let trimmed = 0, baked = 0;
 for (const file of snapshot.files) {
   if (excluded.has(file.path)) continue;
+  if (TRIMMED_FILES.has(file.path)) {
+    // Retired parts of the game are left out (moth-asset-trim.mjs).
+    await assert.rejects(fs.access(path.join(dir, file.path)), `Retired file published: ${file.path}`);
+    trimmed++;
+    continue;
+  }
   const data = await fs.readFile(path.join(dir, file.path));
+  if (KEY_FRINGE_MANIFEST[file.path]) {
+    // The release sprite with its key fringe cleaned (moth-sprite-fringe.mjs).
+    assert.equal(KEY_FRINGE_MANIFEST[file.path].release, file.sha256);
+    assert.equal(hash(data), KEY_FRINGE_MANIFEST[file.path].sha256, `Cleaned sprite: ${file.path}`);
+    baked++;
+    continue;
+  }
   if (file.path === 'styles.css') {
     // The release's styles, with only their artwork url()s turned into the
     // custom properties the game fills from the verified mirror.
@@ -25,8 +43,22 @@ for (const file of snapshot.files) {
     assert(data.toString().includes('.load-recovery section'));
     continue;
   }
+  if (file.path === 'data/level1.json') {
+    // The release's game data plus only the chart additions.
+    const release = await fs.readFile(path.join(root, '.qa/moth/published/data/level1.json'));
+    assert.equal(hash(release), file.sha256);
+    assert.deepEqual(JSON.parse(data), patchCharts(JSON.parse(release)), 'Game data is the release plus the chart additions');
+    continue;
+  }
   assert.equal(hash(data),file.sha256,`Published release asset changed: ${file.path}`);
   preserved++;
+}
+// Files beyond the release, as listed (moth-asset-additions.mjs).
+let added = 0;
+for (const [file, entry] of Object.entries(ADDED_ASSETS)) {
+  assert(!snapshot.files.some(release => release.path === file), `An addition replaces no release file: ${file}`);
+  assert.equal(hash(await fs.readFile(path.join(dir, file))), entry.sha256, `Addition: ${file}`);
+  added++;
 }
 async function walk(dir) {
   const results = [];
@@ -61,7 +93,7 @@ assert.deepEqual(Object.keys(integrity).sort(), media.sort(), 'Integrity list co
 for (const file of media) assert.equal(integrity[file], hash(await fs.readFile(path.join(dir, file))), `Integrity hash: ${file}`);
 for (const page of ['index.html', 'staff/index.html']) {
   const policy = (await fs.readFile(path.join(dir, page), 'utf8')).match(/connect-src ([^;]+);/)[1];
-  assert.match(policy, /^'self' https:\/\/cdn\.jsdelivr\.net\/gh\/MyScheduleltd\/myscheduleltd\.github\.io@[0-9a-f]{40}\/docs\/moth\/ https:\/\/beauty-boy\.vercel\.app\/api\/moth-scoreboard$/, 'Only the pinned mirror path and the scoreboard API may be fetched');
+  assert.match(policy, /^'self' (https:\/\/cdn\.jsdelivr\.net\/gh\/MyScheduleltd\/myscheduleltd\.github\.io@[0-9a-f]{40}\/docs\/moth\/ ){1,3}https:\/\/beauty-boy\.vercel\.app\/api\/moth-scoreboard$/, 'Only the pinned mirror paths and the scoreboard API may be fetched');
 }
 assert(!/createDebugPanel|toggleDebugPanel|data-debug-action|debug-panel-toggle|window\.bobbyGame\s*=/.test(publicCode));
 assert(staffCode.includes('createDebugPanel'));
@@ -70,6 +102,6 @@ assert(staffCode.includes('moth.staff_progress_v1'));
 for (const file of excluded) {
   if (file.endsWith('test.html')) await assert.rejects(fs.stat(path.join(dir,file)),{code:'ENOENT'});
 }
-const report = {files:files.length, preservedReleaseAssets:preserved, audioFiles:files.filter(f=>/\.(wav|m4a|mp3|ogg)$/.test(f)).length, integrity:true, debugSeparation:true, credentialPatternsFound:0, diagnosticPages:0};
+const report = {files:files.length, preservedReleaseAssets:preserved, retiredLeftOut:trimmed, cleanedSprites:baked, addedFiles:added, audioFiles:files.filter(f=>/\.(wav|m4a|mp3|ogg)$/.test(f)).length, integrity:true, debugSeparation:true, credentialPatternsFound:0, diagnosticPages:0};
 await fs.writeFile(path.join(root,'.qa/moth/package-report.json'),JSON.stringify(report,null,2)+'\n');
 console.log('PASS',JSON.stringify(report));

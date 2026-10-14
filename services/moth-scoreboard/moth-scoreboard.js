@@ -26,10 +26,11 @@
 const crypto = require('node:crypto');
 
 // Highest score each fight's chart allows: 1000 x (notes + holds), read from
-// the game's own note lists (release mobile-deck-20261012a).
+// the game's own note lists (release mobile-deck-20261012a, with level 2's
+// drum break charted on 2026-10-13: scripts/moth-chart-patches.mjs).
 const MAX_FIGHT_SCORE = {
-  chill: { 'level1-stage1': 126000, 'level2-stage2': 112000, 'level3-stage2': 155000, 'level4-stage1': 182000, 'studio-stage1': 192000, 'level5-stage2': 245000, 'level6-stage2': 263000 },
-  shoot: { 'level1-stage1': 203000, 'level2-stage2': 186000, 'level3-stage2': 263000, 'level4-stage1': 194000, 'studio-stage1': 295000, 'level5-stage2': 336000, 'level6-stage2': 341000 }
+  chill: { 'level1-stage1': 126000, 'level2-stage2': 127000, 'level3-stage2': 155000, 'level4-stage1': 182000, 'studio-stage1': 192000, 'level5-stage2': 245000, 'level6-stage2': 263000 },
+  shoot: { 'level1-stage1': 203000, 'level2-stage2': 209000, 'level3-stage2': 263000, 'level4-stage1': 194000, 'studio-stage1': 295000, 'level5-stage2': 336000, 'level6-stage2': 341000 }
 };
 const FIGHTS = Object.keys(MAX_FIGHT_SCORE.chill);
 // Each fight ends when its song does, and the seven songs last 836 s. The

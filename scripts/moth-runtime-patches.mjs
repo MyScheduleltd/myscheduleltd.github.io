@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
 import { patchScoreboard, SCOREBOARD_METHODS } from './moth-scoreboard-client.mjs';
+import { patchFightResume, FIGHT_RESUME_METHODS } from './moth-fight-resume.mjs';
+import { TRIMMED_JOBS } from './moth-asset-trim.mjs';
+import { KEY_FRINGE_SPRITES } from './moth-sprite-fringe.mjs';
+import { patchLyrics } from './moth-lyrics-patches.mjs';
+import { patchMenuSfx, MENU_SFX_METHODS } from './moth-menu-sfx.mjs';
+import { ADDED_ASSETS, MOTH_MIRROR_ADDITIONS_COMMIT } from './moth-asset-additions.mjs';
 
 // Keep the selected published game as the input. Both audiences get identical
 // loading/audio repairs before the public debug tools are stripped.
@@ -15,14 +21,15 @@ export function patchMothRuntime(source, ts) {
   const tree = ts.createSourceFile('assets.js', `async function setup() {\n${block}\n}`, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const statements = tree.statements[0].body.statements;
   const definitions = [], jobs = [], variables = new Map();
+  let trimmed = 0;
   // Named after one chapter but drawn in others (found by drawing every fight,
   // hidden level and story entry with a probe on refs): the GANGAN coach chip in
   // every fight, dialogue portraits, the hotbar/chest icons, the Daytona at the
   // level 6 arrival and the HP-bottle notes of the level 6 boss. About 16 MB.
   const SHARED = new Set(['level1OfficeGanganCoachSheet', 'level1OfficeDialoguePortraitsSheet', 'level2BathroomPortraitsSheet',
-    'level2BundleSheet', 'bonitaDialogueProfileSheet', 'level5BossDaytonaSheet', 'level3RhythmHpBottleNoteSheet']);
+    'level2BundleSheet', 'bonitaDialogueProfileSheet']);
   function group(key) {
-    if (SHARED.has(key) || /^level3RhythmUi/.test(key)) return 'common';
+    if (SHARED.has(key)) return 'common';
     if (/^bobby/.test(key) || key === 'bobby') return 'player';
     if (/^level1Office/.test(key)) return 'office';
     if (/^(gangan|boss|levelMap|tutorialStage0Map|mapProps)/.test(key)) return 'road';
@@ -63,14 +70,17 @@ export function patchMothRuntime(source, ts) {
     const assignment = statement.expression;
     const key = assignment.left.name?.text;
     assert(key, text);
+    // Retired parts of the game are no longer loaded (moth-asset-trim.mjs).
+    if (TRIMMED_JOBS.has(key)) { trimmed++; continue; }
     let value = assignment.right.getText(tree);
     if (variables.has(value)) value = `await ${variables.get(value)}`;
     jobs.push({key, group:group(key), run:`this.refs.${key} = ${value};`});
   }
+  assert.equal(trimmed, TRIMMED_JOBS.size, 'Every retired job found');
   // Definitions precede closures, but the registry must exist for secret jobs.
   const registry = `  createSceneAssetJobs() {\n    this.sceneAssetJobs = [];\n    ${definitions.join('\n    ')}\n    this.sceneAssetJobs.push(\n${jobs.map(job => `      {key:${JSON.stringify(job.key)}, group:${JSON.stringify(job.group)}, run:async () => {${job.run}}, release:() => {delete this.refs.${job.key};}}`).join(',\n')}\n    );\n    this.loadedSceneGroups = new Set();\n  }\n`;
   source = source.slice(0, start) + '      this.createSceneAssetJobs();\n' + source.slice(end);
-  once('  async loadLayeredMapConfig() {', registry + RUNTIME_METHODS + SCOREBOARD_METHODS + '\n  async loadLayeredMapConfig() {');
+  once('  async loadLayeredMapConfig() {', registry + RUNTIME_METHODS + SCOREBOARD_METHODS + FIGHT_RESUME_METHODS + MENU_SFX_METHODS + '\n  async loadLayeredMapConfig() {');
   once('const response = await fetch("./data/level1.json", { cache: "no-store" });\n      this.config = await response.json();', 'this.config = await fetchGameJson("./data/level1.json");');
   once('const response = await fetch(source, { cache: "no-store" });\n    if (!response.ok) throw new Error(`Could not load layered map data: ${source}`);\n    const layeredMap = await response.json();', 'const layeredMap = await fetchGameJson(source);');
   once('this.loadError = error instanceof Error ? error.message : String(error);\n      this.state = "failure";', 'this.showLoadRecovery(error);');
@@ -125,12 +135,61 @@ export function patchMothRuntime(source, ts) {
   once('    target.fillStyle = "#08090d";\n    target.fillRect(0, 0, layout.width, layout.height);\n', '    target.fillStyle = "#08090d";\n    target.fillRect(0, 0, layout.width, layout.height);\n    if (this.loadError) { this.renderConnectionLost(target, layout.width, layout.height); return; }\n');
   once('    drawStageLoadingScreen(target, this.time, t,\n      `${this.tr("LOADING", "載入中")}', '    const progress = this.sceneLoadProgress;\n    const fraction = progress?.total ? progress.done / progress.total : t;\n    drawStageLoadingScreen(target, this.time, fraction,\n      `${this.tr("LOADING", "載入中")}');
   once('`${this.tr("LEVEL", "關卡")} ${level} · ${this.tr(...(places[level] || places[1]))}`, W, H);', '`${this.getSecretLevel(stageId) ? [this.tr("HIDDEN LEVEL", "隱藏關卡"), ...[{"secret-xiaosi": ["LOUNGE", "休息室"], "secret-getdown": ["GYM", "健身房"]}[stageId]].filter(Boolean).map(place => this.tr(...place))].join(" · ") : `${this.tr("LEVEL", "關卡")} ${level} · ${this.tr(...(places[level] || places[1]))}`}${progress?.total ? ` · ${progress.done}/${progress.total}` : ""}`, W, H);');
-  // Sound effects gate every fight, so they share the images' mirror path.
-  once('      const response = await fetch(src);\n      if (!response.ok) throw new Error(src);\n      this.sfxRaw[name] = await response.arrayBuffer();', '      this.sfxRaw[name] = (await fetchGameAsset(src)).data.buffer;');
+  // Sound effects gate every fight, so they share the images' mirror path
+  // (prefetchHitSfx). The release fetched them once per visit: a sound that
+  // failed to download stayed silent, and an engine rebuild before the first
+  // fight (a minute idle, a locked phone) marked them loaded with none
+  // fetched, so no fight had them (user, 2026-10-13). Now each call fetches
+  // and decodes what is still missing.
+  once(`  loadHitSfx() {
+    if (this.hitSfxReady) return this.hitSfxReady;
+    this.sfxBuffers = {};
+    this.sfxRaw = {};
+    const context = this.ensureToneContext();
+    if (!context) return Promise.resolve();
+    this.ensureFeedbackOutput(context);
+    this.hitSfxReady = Promise.allSettled(Object.entries(HIT_SFX).map(async ([name, src]) => {
+      const response = await fetch(src);
+      if (!response.ok) throw new Error(src);
+      this.sfxRaw[name] = await response.arrayBuffer();
+      await this.decodeHitSfx(name, this.level1OfficeAudioContext);
+    }));
+    return this.hitSfxReady;
+  }`, `  loadHitSfx() {
+    this.sfxBuffers ||= {};
+    if (Object.keys(HIT_SFX).every(name => this.sfxBuffers[name])) return Promise.resolve();
+    if (this.hitSfxLoading) return this.hitSfxLoading;
+    const context = this.ensureToneContext();
+    if (!context) return Promise.resolve();
+    this.ensureFeedbackOutput(context);
+    const loading = this.hitSfxLoading = this.prefetchHitSfx()
+      .then(() => Promise.allSettled(Object.keys(HIT_SFX).filter(name => !this.sfxBuffers[name])
+        .map(name => this.decodeHitSfx(name, this.level1OfficeAudioContext))))
+      .finally(() => { if (this.hitSfxLoading === loading) this.hitSfxLoading = null; });
+    this.hitSfxReady = loading;
+    return loading;
+  }`);
+  // A rebuilt engine decodes its own copies while the old ones keep playing
+  // (an AudioBuffer is not tied to one engine), so taps are never silent.
+  once('    this.sfxBuffers = {};\n    this.hitSfxReady = Promise.allSettled(Object.keys(this.sfxRaw || {}).map(name => this.decodeHitSfx(name, this.level1OfficeAudioContext)));', '    this.sfxBuffers ||= {};\n    this.hitSfxReady = Promise.allSettled(Object.keys(this.sfxRaw || {}).map(name => this.decodeHitSfx(name, this.level1OfficeAudioContext)));');
+  // Between chapters the release shows its own LOADING card for a beat
+  // (startSewerTransition); the chapter now downloads under that card, rather
+  // than a second loading screen following it (user, 2026-10-13: level 4).
+  once('    this.state = "sewerTransition";\n  }\n\n  updateSewerTransition(dt) {\n    this.sewerTransition.timer += dt;\n    if (this.sewerTransition.timer < this.sewerTransition.duration) return;', '    this.state = "sewerTransition";\n    this.loadTransitionScene(direction);\n  }\n\n  updateSewerTransition(dt) {\n    this.sewerTransition.timer += dt;\n    if (this.sewerTransition.timer < this.sewerTransition.duration || this.sewerTransition.loading) return;');
+  once('    drawStageLoadingScreen(target, this.time, t,\n      direction === "level4"', '    const progress = transition.loading && this.sceneLoadProgress;\n    drawStageLoadingScreen(target, this.time, progress?.total ? Math.min(t, progress.done / progress.total) : t,\n      direction === "level4"');
+  // A story fight follows its scene straight onto the arena, its count-in
+  // card waiting there while the art decodes (as the bathroom already did),
+  // instead of a loading screen after the talk (user, 2026-10-13: level 4).
+  const preparing = '    const preparingRhythm = this.level1OfficeRhythm;\n    await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());';
+  assert.equal(source.split(preparing).length, 7, 'Six fights prepare the same way');
+  source = source.replaceAll(preparing, '    const preparingRhythm = this.level1OfficeRhythm;\n    this.showFightWhilePreparing(preparingRhythm, options);\n    await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());');
+  once('    rhythm.skipAudio = Boolean(options.skipAudio);\n    await this.primeRhythmSong(rhythm, this.getActiveLevel1OfficeRhythmAudio());', '    rhythm.skipAudio = Boolean(options.skipAudio);\n    this.showFightWhilePreparing(rhythm, options);\n    await this.primeRhythmSong(rhythm, this.getActiveLevel1OfficeRhythmAudio());');
+  once('  countInFightSong() {\n    const rhythm = this.level1OfficeRhythm;\n    if (!rhythm) return;', '  countInFightSong() {\n    const rhythm = this.level1OfficeRhythm;\n    if (!rhythm) return;\n    if (rhythm.countedInEarly) { rhythm.countedInEarly = false; return; }');
   // Music: a verified jsDelivr copy replaces a track's source only before its
   // first play, inside the tap that primes it, so iPhone's playback grant
-  // attaches to the copy. Otherwise the track streams from this site as before.
-  once('    if (this.rhythmTrackPriming.has(track)) return this.rhythmTrackPriming.get(track);\n    track.volume = 0;', '    if (this.rhythmTrackPriming.has(track)) return this.rhythmTrackPriming.get(track);\n    const mirrored = track.paused && this.mirroredAudioUrl(track.getAttribute("src"));\n    if (mirrored) track.src = mirrored;\n    track.volume = 0;');
+  // attaches to the copy. A track already played takes its copy during a
+  // loading screen instead (adoptSongCopy).
+  once('    if (this.rhythmTrackPriming.has(track)) return this.rhythmTrackPriming.get(track);\n    track.volume = 0;', '    if (this.rhythmTrackPriming.has(track)) return this.rhythmTrackPriming.get(track);\n    const mirrored = track.paused && !this.musicAudioRoutes?.get(track) && this.mirroredAudioUrl(track.getAttribute("src"));\n    if (mirrored) track.src = mirrored;\n    track.volume = 0;');
   once('return window.localStorage?.getItem(LANGUAGE_KEY) === "zh-TW" ? "zh-TW" : "en";\n    } catch {\n      return "en";', 'return window.localStorage?.getItem(LANGUAGE_KEY) === "en" ? "en" : "zh-TW";\n    } catch {\n      return "zh-TW";');
   once('this.setLanguage(this.language || "en", { persist: false, announce: false });', 'this.setLanguage(this.language || "zh-TW", { persist: false, announce: false });');
   once('    let audio = this.homePlaylistAudioCache.get(song.id);\n    if (!audio || audio.getAttribute("src") !== song.audioSrc) {\n      audio = new Audio(song.audioSrc);', '    let audio = this.homePlaylistAudioCache.get(song.id);\n    const source = this.mirroredAudioUrl(song.audioSrc) || song.audioSrc;\n    if (!audio || audio.getAttribute("src") !== source) {\n      audio = new Audio(source);');
@@ -164,6 +223,105 @@ export function patchMothRuntime(source, ts) {
   once('this.portraitCtx = element.getContext("2d", { alpha: false, desynchronized: true });', 'this.portraitCtx = element.getContext("2d", { alpha: false, desynchronized: DESYNC_CANVAS });');
   // Final scoreboard (scripts/moth-scoreboard-client.mjs).
   patchScoreboard(once);
+  // Fights pick up where they stopped (scripts/moth-fight-resume.mjs).
+  patchFightResume(once);
+  // The owner's lyrics changes (scripts/moth-lyrics-patches.mjs).
+  patchLyrics(once);
+  // Menu sounds (scripts/moth-menu-sfx.mjs).
+  patchMenuSfx(once);
+  // A fight's song switches to its downloaded copy before it starts (useSongCopy),
+  // waits under 載入中… if a stream runs dry, and judges nothing meanwhile.
+  once('      track.pause();\n      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);\n      track.currentTime = this.getRhythmAudioStart();', '      track.pause();\n      this.useSongCopy(track);\n      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);\n      track.currentTime = this.getRhythmAudioStart();');
+  once('      rhythm.audioPriming = null;\n      track.pause();\n      track.currentTime = this.getRhythmAudioStart();', '      rhythm.audioPriming = null;\n      track.pause();\n      this.useSongCopy(track);\n      track.currentTime = this.getRhythmAudioStart();');
+  once('    this.renderLivesIndicator();\n    this.renderStageCountdown();\n', '    this.renderLivesIndicator();\n    this.renderStageCountdown();\n    this.renderSongStall();\n');
+  once('this.playLevel1OfficeTone("hit", action, "stamp");\n    if (this.stageCountdown > 0) return true;\n', 'this.playLevel1OfficeTone("hit", action, "stamp");\n    if (this.stageCountdown > 0 || this.isFightSongStalled()) return true;\n');
+  // Level 7's hype bar fills with every hit (owner, 2026-10-13): perfect 1,
+  // good 0.6, a completed hold three times, as before, over the target share
+  // (moth-chart-patches.mjs) of the whole song's total. It starts empty, is
+  // full once the hits so far are enough for the win, which they then secure,
+  // and a miss flashes its frame. At the song's end it decides exactly as
+  // before: full when the weighted accuracy reached the target.
+  once('    const progress = rhythm.songEnded ? 1 : clamp(this.getLevel1OfficeRenderTime() / this.getActiveRhythmDuration(), 0, 0.999);\n    const quality = clamp(performance.accuracy / performance.target, 0, 1);\n    rhythm.hype = clamp((crowd.start ?? 0.15) * (1 - progress) + quality * progress, 0, rhythm.songEnded ? 1 : 0.999);\n    const full = rhythm.hype >= 1 - 1e-9 && rhythm.songEnded;', '    rhythm.hype = clamp(performance.earned / Math.max(1e-9, performance.target * performance.total), 0, 1);\n    const full = rhythm.hype >= 1 - 1e-9;');
+  once('    this.level1OfficeRhythm.hype = this.getActiveRhythmSpec().crowd?.start ?? 0.3;', '    this.level1OfficeRhythm.hype = 0;');
+  once('    rhythm.hypePulse = kind === "miss" ? -1 : 1;', '    rhythm.hypePulse = kind === "miss" ? -1 : 1;\n    if (kind === "miss") rhythm.hypeMissAt = performance.now();');
+  once('    target.strokeStyle = rhythm?.climax ? `rgba(255, 239, 99, ${0.6 + 0.4 * Math.sin(motionTime * 10)})` : "#f4f0dc";', '    const missFlash = performance.now() - (rhythm?.hypeMissAt ?? -1e9) < 320;\n    target.strokeStyle = missFlash ? "#ff4866" : rhythm?.climax ? `rgba(255, 239, 99, ${0.6 + 0.4 * Math.sin(motionTime * 10)})` : "#f4f0dc";');
+  once('      : this.tr("FILL HYPE BY SONG END", "歌曲結束時熱度要滿");', '      : this.tr("FILL THE HYPE TO WIN", "熱度填滿就過關");');
+  // The retired lane fight's music cut is no longer preloaded at start-up
+  // (moth-asset-trim.mjs); its fight is not in the game.
+  once('        ["concert", this.config.level6ConcertRhythm],\n        ["level6", this.config.level6?.stage2]\n', '        ["concert", this.config.level6ConcertRhythm]\n');
+  // Level 3's sofa and level 7's stage were missing all fight on an iPhone
+  // (owner, 2026-10-14). Phones draw a fight's backdrop once into a copy and
+  // reuse it. Story fights show their arena under the count-in while the art
+  // is still decoding, and a copy taken then can come out blank and stay blank
+  // all fight; those two backdrops appear in no scene before their fight, so
+  // they are first decoded there. Until the art is ready a backdrop is drawn
+  // directly; a copy is kept only when it holds the picture
+  // (backdropCopyHolds), and is taken again after the page comes back (iOS may
+  // drop it while hidden).
+  once('    let entry = this.rhythmBackdropCache.find(e => e.image === image && e.key === key);\n    if (!entry) {\n',
+    '    if (!this.rhythmBackdropReset) {\n      this.rhythmBackdropReset = () => { if (!document.hidden) this.rhythmBackdropCache = []; };\n      document.addEventListener("visibilitychange", this.rhythmBackdropReset);\n    }\n    let entry = this.rhythmBackdropCache.find(e => e.image === image && e.key === key);\n    if (!entry) {\n      const rhythm = this.level1OfficeRhythm;\n      if ((rhythm?.graphicsLoading && !rhythm.graphicsWarming) || !(performance.now() >= (this.rhythmBackdropRetryAt || 0))) {\n        target.drawImage(image, ...args);\n        return;\n      }\n');
+  once('      layer.drawImage(image, ...args);\n      entry = { image, key, slot, canvas: layer.canvas };\n',
+    '      layer.drawImage(image, ...args);\n      if (!backdropCopyHolds(layer, args)) {\n        this.rhythmBackdropRetryAt = performance.now() + 250;\n        target.drawImage(image, ...args);\n        return;\n      }\n      entry = { image, key, slot, canvas: layer.canvas };\n');
+  once('function makeLayer(width, height, painter) {', `// Five points of where a backdrop was drawn into its copy (the destination of
+// a 4- or 8-number drawImage, inside the copy): its centre and towards each
+// corner. Every fight backdrop is opaque, so a transparent point means the copy
+// came out blank, or partly. A copy that cannot be read is trusted.
+function backdropCopyHolds(layer, args) {
+  const [x, y, w, h] = args.length >= 8 ? args.slice(4, 8) : args.slice(0, 4);
+  const left = Math.max(0, x), top = Math.max(0, y);
+  const right = Math.min(layer.canvas.width, x + w), bottom = Math.min(layer.canvas.height, y + h);
+  if (right <= left || bottom <= top) return true;
+  try {
+    return [[0.5, 0.5], [0.2, 0.2], [0.8, 0.2], [0.2, 0.8], [0.8, 0.8]].every(([fx, fy]) =>
+      layer.getImageData(Math.floor(left + (right - left) * fx), Math.floor(top + (bottom - top) * fy), 1, 1).data[3] > 0);
+  } catch {
+    return true;
+  }
+}
+
+function makeLayer(width, height, painter) {`);
+  // An iPhone plays the start of a source changed after a track has played
+  // past the game's volume control (adoptSongCopy). Any other such track (the
+  // walking music changes song between chapters) starts its next play muted
+  // for a quarter second, under the fade-in it starts with.
+  once('    const fresh = audio.currentTime < 0.05 && audio.volume > 0 && !this.isBakedMusicTrack(audio);\n    const target = audio.volume;\n    if (fresh) audio.volume = 0;\n    const started = audio.play();\n',
+    '    const fresh = audio.currentTime < 0.05 && audio.volume > 0 && !this.isBakedMusicTrack(audio);\n    const target = audio.volume;\n    if (fresh) audio.volume = 0;\n    const source = audio.getAttribute("src") || audio.src;\n    const newSource = Boolean(route?.playedSource) && route.playedSource !== source;\n    if (route) route.playedSource = source;\n    if (newSource) audio.muted = true;\n    const started = audio.play();\n    if (newSource) {\n      const unmute = () => { audio.muted = false; };\n      started?.then(() => setTimeout(unmute, 250), unmute) ?? unmute();\n    }\n');
+  // iPhone Safari ignores a media element's volume and always reads it back
+  // as 1. A level set before a track is first routed through its GainNode
+  // (prepareMusicAudio) was lost there, so the silent priming play of a fight
+  // song started at full volume until it paused: a burst of the song entering
+  // level 4 (owner, 2026-10-14; its cut is the loudest at the start). Every
+  // element now remembers the level it was given, as other browsers do.
+  once('const STAGE_COUNTDOWN_SECONDS = 3.6;', `const STAGE_COUNTDOWN_SECONDS = 3.6;
+{
+  const native = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "volume");
+  const asked = new WeakMap();
+  Object.defineProperty(HTMLMediaElement.prototype, "volume", {
+    configurable: true,
+    enumerable: native.enumerable,
+    get() { return asked.has(this) ? asked.get(this) : native.get.call(this); },
+    set(value) { native.set.call(this, value); asked.set(this, Number(value)); }
+  });
+}`);
+  // A fade sets a track's level once a frame, and each was a step of the gain.
+  // When frames come slowly (a loading screen on an iPhone) the steps were
+  // large enough to crackle (owner, 2026-10-14: entering level 4). A playing
+  // track now glides to each level; a paused one takes it at once, so a
+  // priming play still starts silent.
+  once('          gain.gain.setValueAtTime(route.volume, context.currentTime);\n',
+    '          const now = context.currentTime;\n          gain.gain.cancelScheduledValues(now);\n          if (audio.paused) gain.gain.setValueAtTime(route.volume, now);\n          else gain.gain.setTargetAtTime(route.volume, now, 0.015);\n');
+  // Staff debug scene jumps (the staff build only; the public build drops the
+  // debug panel). A jump enters its scene directly, so with the chapter loader
+  // it drew placeholders where the scene's art was not loaded (user,
+  // 2026-10-13: "L6 · After the river"); it now loads that chapter first.
+  // "L4 After Win Talk" previews the talk without saving the win, so the door
+  // stayed shut; that preview now counts Bonita as beaten until the next jump
+  // or the title, so the room can be left into the next scene.
+  once('  async debugJumpToStage(stageId) {\n', '  async debugJumpToStage(stageId) {\n    const scene = /^studio/.test(stageId) ? "studio-stage1" : stageId;\n    if (!this.sceneAssetsReady(scene)) {\n      this.startLevelLoading(scene, () => this.debugJumpToStage(stageId));\n      return;\n    }\n    this.debugLevel4Won = stageId === "level4-postboss-dialogue";\n');
+  const won = 'this.progress?.flags?.level4BossDefeated';
+  assert.equal(source.split(won).length, 3, 'Level 4 exit checks');
+  source = source.replaceAll(won, '(this.progress?.flags?.level4BossDefeated || this.debugLevel4Won)');
+  once('  returnToTitle() {\n    this.levelLoadingPresentation = null;\n', '  returnToTitle() {\n    this.levelLoadingPresentation = null;\n    this.debugLevel4Won = false;\n');
   const imageStart = source.indexOf('function loadImage(src) {');
   const imageEnd = source.indexOf('\nfunction loadOptionalSheet(src)', imageStart);
   assert(imageStart > 0 && imageEnd > imageStart);
@@ -204,7 +362,6 @@ const RUNTIME_METHODS = `
 
   async loadChapterAssets(stageId) {
     const groups = this.sceneGroups(stageId);
-    this.prefetchChapterAudio(groups);
     // A loading screen draws no outgoing scene artwork. Release it before
     // decoding the next chapter so mobile Safari does not hold the whole game.
     for (const group of this.loadedSceneGroups) {
@@ -213,7 +370,9 @@ const RUNTIME_METHODS = `
       this.loadedSceneGroups.delete(group);
     }
     const jobs = this.sceneAssetJobs.filter(job => groups.includes(job.group) && !this.loadedSceneGroups.has(job.group));
-    this.sceneLoadProgress = {done:0, total:jobs.length};
+    const songs = this.chapterSongs(groups).filter(src => !this.mirroredAudioUrl(src));
+    this.sceneLoadProgress = {done:0, total:jobs.length + songs.length};
+    const songsReady = Promise.all(songs.map(src => this.songCopy(src).then(() => { this.sceneLoadProgress && this.sceneLoadProgress.done++; })));
     let next = 0;
     let failure;
     await Promise.all(Array.from({length:Math.min(3, jobs.length)}, async () => {
@@ -225,8 +384,66 @@ const RUNTIME_METHODS = `
       }
     }));
     if (failure) throw failure;
+    await songsReady;
+    await Promise.all(this.chapterTracks(groups).map(track => this.adoptSongCopy(track)));
     groups.forEach(group => this.loadedSceneGroups.add(group));
     this.sceneLoadProgress = null;
+    this.prefetchHitSfx();
+    // The next chapter's fight song, in the background.
+    const following = {office: 'level2', level2: 'level3', level3: 'level4', level4: 'studio', studio: 'level5', level5: 'level6'};
+    for (const group of groups) if (following[group]) this.chapterSongs([following[group]]).forEach(src => this.songCopy(src));
+  }
+
+  // The fight songs a chapter's fights play: their players, and their files.
+  chapterTracks(groups) {
+    const themes = {office: 'office', level2: 'bathroom', level3: 'massage', level4: 'arcade', studio: 'studio', level5: 'river', level6: 'concert'};
+    return groups.map(group => themes[group] || this.getSecretLevel(group)?.theme).filter(Boolean)
+      .map(theme => this.getRhythmAudioFor(theme)).filter(Boolean);
+  }
+
+  chapterSongs(groups) {
+    return this.chapterTracks(groups).map(track => track.getAttribute('src')).filter(Boolean);
+  }
+
+  // The fights' sound files, fetched with the first chapter and again for any
+  // that failed; loadHitSfx decodes them.
+  prefetchHitSfx() {
+    this.sfxRaw ||= {};
+    if (this.hitSfxPrefetch) return this.hitSfxPrefetch;
+    const missing = Object.keys(HIT_SFX).filter(name => !this.sfxRaw[name]);
+    if (!missing.length) return Promise.resolve();
+    const prefetch = this.hitSfxPrefetch = Promise.allSettled(missing.map(async name => {
+      this.sfxRaw[name] ||= (await fetchGameAsset(HIT_SFX[name])).data.buffer;
+    })).finally(() => { if (this.hitSfxPrefetch === prefetch) this.hitSfxPrefetch = null; });
+    return prefetch;
+  }
+
+  // The chapter a LOADING card leads to (startSewerTransition) downloads
+  // under it; the card holds until it has.
+  loadTransitionScene(direction) {
+    const stageId = { boss: 'level2-stage2', down: 'level2-stage2', level3: 'level3-stage1', level4: 'level4-stage1', level5: 'level5-stage1',
+      level5Boss: 'level5-stage2', level6: 'level6-stage1', level6Boss: 'level6-stage2', finale: 'finale-stage1' }[direction];
+    const transition = this.sewerTransition;
+    if (!stageId || this.sceneAssetsReady(stageId)) return;
+    transition.loading = true;
+    this.loadSceneAssets(stageId).then(() => { transition.loading = false; }, error => {
+      transition.loading = false;
+      if (this.sewerTransition === transition && this.state === 'sewerTransition') this.showLoadRecovery(error);
+    });
+  }
+
+  // Story fights reached from their scene (not free play, a rematch's loading
+  // screen or a restored fight) show the arena under the count-in at once.
+  // Level 1 is always entered through a loading screen, and may open with
+  // its tutorial rather than a count.
+  showFightWhilePreparing(rhythm, options = {}) {
+    if (this.freePlay || options.deferSong || options.fromDialogue || this.levelLoadingPresentation || rhythm.countdownDuringGraphicsPreparation
+      || rhythm.theme === 'office') return;
+    rhythm.countdownDuringGraphicsPreparation = true;
+    this.state = 'playing';
+    this.updateMobileControls(true);
+    this.countInFightSong();
+    rhythm.countedInEarly = true;
   }
 
   showLoadRecovery(error) {
@@ -272,20 +489,119 @@ const RUNTIME_METHODS = `
     target.restore();
   }
 
-  // A track's mirror copy has to be ready before the tap that first plays it,
-  // so it is fetched ahead: the first fight's music on the home screen, the
-  // highlighted song or stage after 300 ms, the next track, and each
-  // chapter's fight music while the chapter loads.
+  // A track's local copy (an object URL of the whole file) is fetched ahead:
+  // the first fight's music on the home screen, the highlighted song or stage
+  // after 300 ms, the next track, and the next chapter's fight music. Songs and
+  // the home playlist take only the verified jsDelivr copy here.
   prefetchMirroredAudio(src) {
-    if (!MIRROR_BASE || !src || src.startsWith('blob:')) return;
+    if (MIRROR_BASE) this.songCopy(src, {mirrorOnly: true});
+  }
+
+  // A fight's song is downloaded whole before its fight (loadChapterAssets
+  // waits for it): the mirror copy, or this site's file, so a weak connection
+  // cannot stall the song mid-fight (user, 2026-10-13). Resolves to the copy's
+  // URL, or null to stream.
+  songCopy(src, {mirrorOnly = false} = {}) {
+    if (!src || src.startsWith('blob:')) return Promise.resolve(null);
     this.audioMirror ||= new Map();
-    if (this.audioMirror.has(src)) return;
-    const entry = {url: null, used: 0};
-    this.audioMirror.set(src, entry);
-    mirrorObjectUrl(src).then(url => {
-      Object.assign(entry, {url, used: performance.now()});
+    const known = this.audioMirror.get(src);
+    if (known?.url || (known && mirrorOnly)) return known.ready;
+    // A whole-file request waits for a mirror-only fetch under way, then
+    // falls back to this site's file if the mirror had no copy.
+    if (known && !known.failed) return known.mirrorOnly ? known.ready.then(url => url || this.songCopy(src)) : known.ready;
+    const entry = {url: null, used: 0, mirrorOnly};
+    const copy = mirrorOnly ? mirrorObjectUrl(src)
+      : fetchGameAsset(src).then(({data, type}) => URL.createObjectURL(new Blob([data], {type: type.startsWith('audio/') ? type : 'audio/mp4'})));
+    entry.ready = copy.then(url => {
+      Object.assign(entry, {url, used: performance.now(), failed: !url});
       this.trimAudioMirror();
-    });
+      return url;
+    }, () => { entry.failed = true; return null; });
+    this.audioMirror.set(src, entry);
+    return entry.ready;
+  }
+
+  // Before a song starts from the top (or resumes), a copy that arrived after
+  // its first tap takes over from the stream, if the song has never played.
+  // An iPhone plays the start of a changed source past the game's volume
+  // control, so a song that has played keeps its source here: it took its
+  // copy on the loading screen (adoptSongCopy) or streams.
+  useSongCopy(track) {
+    const src = track?.getAttribute('src');
+    const copy = src && !src.startsWith('blob:') && this.mirroredAudioUrl(src);
+    if (copy && track.paused && !this.musicAudioRoutes?.get(track)) track.src = copy;
+  }
+
+  // A fight song primed on its stream (the stage's own tap, before its copy
+  // had downloaded) took the copy at its start after the count, and on an
+  // iPhone that start burst out at full volume and cut off before the fade-in
+  // (owner, 2026-10-14, every fight). It takes the copy here instead, while
+  // the loading screen is up: the new source's first play happens now, muted
+  // and at zero, and stops a moment later.
+  async adoptSongCopy(track) {
+    const src = track?.getAttribute('src');
+    const copy = src && !src.startsWith('blob:') && this.mirroredAudioUrl(src);
+    if (!copy || !track.paused) return;
+    await this.rhythmTrackPriming?.get(track);
+    const route = this.musicAudioRoutes?.get(track);
+    if (!track.paused || track.getAttribute('src') !== src) return;
+    if (!route) {
+      track.src = copy;
+      return;
+    }
+    const level = track.volume;
+    track.volume = 0;
+    track.muted = true;
+    track.src = copy;
+    try {
+      await Promise.race([track.play(), new Promise((_, reject) => setTimeout(() => reject(new Error('Warm-up timed out')), 3000))]);
+      await new Promise(resolve => setTimeout(resolve, 250));
+    } catch {}
+    track.pause();
+    track.currentTime = 0;
+    track.muted = false;
+    track.volume = level;
+    route.playedSource = copy;
+  }
+
+  // A stream that runs dry mid-song (no copy, weak connection): the fight's
+  // clock follows the song, so it waits under 載入中… and goes on the moment
+  // the song does. No note is judged meanwhile.
+  isFightSongStalled() {
+    const rhythm = this.level1OfficeRhythm;
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    const playing = this.state === 'playing' && rhythm && !rhythm.ending && !rhythm.skipAudio && rhythm.tutorial?.mode === 'done'
+      && !(this.stageCountdown > 0) && track && !track.paused && !track.ended;
+    if (!playing || track.readyState >= 3) { if (rhythm) rhythm.stalledSince = null; return false; }
+    rhythm.stalledSince ??= performance.now();
+    return true;
+  }
+
+  renderSongStall() {
+    if (!this.isFightSongStalled() || performance.now() - this.level1OfficeRhythm.stalledSince < 300) return;
+    const target = this.ctx;
+    const centerX = VIEW_W / 2, centerY = PORTRAIT_FIGHT.scene.h / 2;
+    const card = {x: centerX - 170, y: centerY - 62, w: 340, h: 124};
+    target.save();
+    target.fillStyle = 'rgba(4, 6, 12, 0.45)';
+    target.fillRect(0, 0, VIEW_W, VIEW_H);
+    target.fillStyle = 'rgba(2,6,14,0.65)';
+    target.fillRect(card.x + 7, card.y + 8, card.w, card.h);
+    target.fillStyle = '#efe3c4';
+    target.fillRect(card.x, card.y, card.w, card.h);
+    target.strokeStyle = '#292d28';
+    target.lineWidth = 4;
+    target.strokeRect(card.x + 2, card.y + 2, card.w - 4, card.h - 4);
+    target.fillStyle = '#b64b36';
+    target.fillRect(card.x + 18, card.y + 18, 5, 22);
+    target.textAlign = 'center';
+    target.textBaseline = 'middle';
+    target.fillStyle = '#292d28';
+    const dots = '.'.repeat(1 + Math.floor(performance.now() / 400) % 3);
+    drawFittedText(target, this.tr('LOADING', '載入中') + dots, centerX, centerY - 6, card.w - 60, 46, 900, 24);
+    target.fillStyle = '#5d6a5f';
+    drawFittedText(target, this.tr('The song is still downloading', '歌曲仍在下載'), centerX, centerY + 34, card.w - 60, 20, 700, 14);
+    target.restore();
   }
 
   mirroredAudioUrl(src) {
@@ -321,15 +637,6 @@ const RUNTIME_METHODS = `
       'level4-stage1': 'arcade', 'studio-stage1': 'studio', 'level5-stage2': 'river', 'level6-stage2': 'concert'
     }[stageId];
     return theme ? this.getRhythmAudioFor(theme)?.getAttribute('src') : null;
-  }
-
-  prefetchChapterAudio(groups) {
-    const themes = {office: ['office'], level2: ['bathroom'], level3: ['massage'], level4: ['arcade'], studio: ['studio'], level5: ['river'], level6: ['concert', 'level6']};
-    for (const group of groups) {
-      for (const theme of themes[group] || [this.getSecretLevel(group)?.theme]) {
-        if (theme) this.prefetchMirroredAudio(this.getRhythmAudioFor(theme)?.getAttribute('src'));
-      }
-    }
   }
 
   prefetchTitleAudio() {
@@ -441,6 +748,18 @@ const RUNTIME_METHODS = `
 // caches it forever and nothing needs purging. A later asset change simply
 // fails its hash and falls back to Pages.
 export const MOTH_MIRROR_COMMIT = '4a1cae2472c9fbece153cc1dbd0f0c1593dd9997';
+// The sprites with their key fringe cleaned (moth-sprite-fringe.mjs) changed
+// after that commit; jsDelivr serves them from the commit that published them,
+// so every other file keeps its already-warm copy. Null: those load from Pages.
+export const MOTH_MIRROR_PATCH_COMMIT = 'd04046c3aba8dcef69d486205a5267d53c998f31';
+// Files jsDelivr serves from the commit that published them; everything else
+// comes from MOTH_MIRROR_COMMIT. A group without its commit yet loads from
+// this site.
+export const MOTH_MIRROR_PINS = [
+  { commit: MOTH_MIRROR_PATCH_COMMIT, files: KEY_FRINGE_SPRITES },
+  { commit: MOTH_MIRROR_ADDITIONS_COMMIT, files: Object.keys(ADDED_ASSETS) }
+];
+export const mirrorPath = commit => `${MOTH_MIRROR_ORIGIN}/gh/MyScheduleltd/myscheduleltd.github.io@${commit}/docs/moth/`;
 export const MOTH_MIRROR_ORIGIN = 'https://cdn.jsdelivr.net';
 
 const IMAGE_LOADER = `const imageRequests = new Map();
@@ -448,7 +767,8 @@ const IMAGE_LOADER = `const imageRequests = new Map();
 // only when their bytes match the SHA-256 this site publishes. Code and
 // configuration always come from this site.
 const MIRROR_BASE = ['myscheduleltd.com', 'www.myscheduleltd.com'].includes(location.hostname)
-  ? '${MOTH_MIRROR_ORIGIN}/gh/MyScheduleltd/myscheduleltd.github.io@${MOTH_MIRROR_COMMIT}/docs/moth/' : '';
+  ? '${mirrorPath(MOTH_MIRROR_COMMIT)}' : '';
+const MIRROR_PINNED = new Map(${JSON.stringify(MOTH_MIRROR_PINS.flatMap(pin => pin.files.map(file => [file, pin.commit ? mirrorPath(pin.commit) : ''])))});
 const MIRROR_ROOT = '/moth/';
 let assetIntegrity = null;
 
@@ -503,10 +823,12 @@ async function mirrorCopy(url) {
   if (!MIRROR_BASE || url.origin !== location.origin || !url.pathname.startsWith(MIRROR_ROOT)) return null;
   try {
     assetIntegrity ||= fetchGameJson('/moth/asset-integrity.json');
-    const expected = (await assetIntegrity)[decodeURIComponent(url.pathname.slice(MIRROR_ROOT.length))];
-    if (!expected) return null;
+    const file = decodeURIComponent(url.pathname.slice(MIRROR_ROOT.length));
+    const expected = (await assetIntegrity)[file];
+    const base = MIRROR_BASE && (MIRROR_PINNED.has(file) ? MIRROR_PINNED.get(file) : MIRROR_BASE);
+    if (!expected || !base) return null;
     // One quick retry: jsDelivr can fail a file's first, uncached request.
-    const source = MIRROR_BASE + url.pathname.slice(MIRROR_ROOT.length);
+    const source = base + url.pathname.slice(MIRROR_ROOT.length);
     const asset = await fetchBytes(source, 10000).catch(() => new Promise(resolve => setTimeout(resolve, 400)).then(() => fetchBytes(source, 10000)));
     const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', asset.data));
     const hex = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');

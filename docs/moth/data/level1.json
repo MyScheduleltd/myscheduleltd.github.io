@@ -10214,6 +10214,7 @@
         "H": "other"
       },
       "version": "drum-groove-20261008b",
+      "breakNotes": {"steps":[368,424],"follows":"the song pulse under the rap (no drums)","added":"2026-10-13"},
       "easy": [
         [
           16.0,
@@ -10713,6 +10714,81 @@
         [
           368.0,
           "T",
+          0
+        ],
+        [
+          372.0,
+          "O",
+          0
+        ],
+        [
+          376.0,
+          "T",
+          0
+        ],
+        [
+          380.0,
+          "O",
+          0
+        ],
+        [
+          384.0,
+          "T",
+          0
+        ],
+        [
+          386.0,
+          "M",
+          0
+        ],
+        [
+          388.0,
+          "O",
+          0
+        ],
+        [
+          392.0,
+          "T",
+          0
+        ],
+        [
+          396.0,
+          "O",
+          0
+        ],
+        [
+          400.0,
+          "T",
+          0
+        ],
+        [
+          404.0,
+          "O",
+          0
+        ],
+        [
+          408.0,
+          "T",
+          0
+        ],
+        [
+          410.0,
+          "M",
+          0
+        ],
+        [
+          412.0,
+          "O",
+          0
+        ],
+        [
+          416.0,
+          "T",
+          0
+        ],
+        [
+          420.0,
+          "O",
           0
         ],
         [
@@ -11605,6 +11681,121 @@
         [
           368.0,
           "T",
+          0
+        ],
+        [
+          371.0,
+          "H",
+          0
+        ],
+        [
+          372.0,
+          "O",
+          0
+        ],
+        [
+          376.0,
+          "T",
+          0
+        ],
+        [
+          379.0,
+          "H",
+          0
+        ],
+        [
+          380.0,
+          "O",
+          0
+        ],
+        [
+          384.0,
+          "T",
+          0
+        ],
+        [
+          386.0,
+          "M",
+          0
+        ],
+        [
+          388.0,
+          "O",
+          0
+        ],
+        [
+          390.0,
+          "M",
+          0
+        ],
+        [
+          391.0,
+          "H",
+          0
+        ],
+        [
+          392.0,
+          "T",
+          0
+        ],
+        [
+          395.0,
+          "H",
+          0
+        ],
+        [
+          396.0,
+          "O",
+          0
+        ],
+        [
+          400.0,
+          "T",
+          0
+        ],
+        [
+          402.0,
+          "M",
+          0
+        ],
+        [
+          404.0,
+          "O",
+          0
+        ],
+        [
+          408.0,
+          "T",
+          0
+        ],
+        [
+          410.0,
+          "M",
+          0
+        ],
+        [
+          411.0,
+          "H",
+          0
+        ],
+        [
+          412.0,
+          "O",
+          0
+        ],
+        [
+          416.0,
+          "T",
+          0
+        ],
+        [
+          420.0,
+          "O",
+          0
+        ],
+        [
+          422.0,
+          "M",
           0
         ],
         [
@@ -18981,10 +19172,10 @@
       "start": 0.15,
       "holdTailWeight": 3,
       "accuracyTarget": {
-        "easy": 0.75,
-        "hard": 0.85
+        "easy": 0.6,
+        "hard": 0.7
       },
-      "note": "Full-song finale: tap quality (perfect 1, good 0.6, miss 0) counts once; timed drum hold completion counts three times. Hype grows with song progress; full hype requires 75%/85% weighted accuracy when the song ends. No early failure or secured climax."
+      "note": "Full-song finale: tap quality (perfect 1, good 0.6, miss 0) counts once; timed drum hold completion counts three times. Hype fills with every hit, over 60%/70% of the whole song's weighted total: full hype secures the climax, and at the end it needs 60%/70% weighted accuracy (owner, 2026-10-13; was 75%/85%, growing with song progress). No early failure."
     },
     "beatOffset": -1.717,
     "audioStartSeconds": 0.0,
