@@ -1,0 +1,45 @@
+{
+  "verifiedAt": "2026-10-14T14:55:07.754310+00:00",
+  "publication": "local only",
+  "reportedUrl": "https://myscheduleltd.com/beta/",
+  "reportedBrowser": "Google Chrome",
+  "reportedVrDesktop": false,
+  "originalFailure": "Owner screenshot and report: ambient audio audible, gate remains at opening message for more than a minute. Original failed request not captured.",
+  "liveInspection": "Published entry main-DvyUK1HM.js; fresh sound-on entry succeeded in native Google Chrome and in-app browser. Exact original stalled attempt not reproduced.",
+  "confirmedDefects": [
+    "Asset mirror timeout cleared after headers, leaving body download unbounded",
+    "Integrity/site downloads and ready-service admission had no deadline",
+    "Late config could redraw an entry in progress"
+  ],
+  "repair": [
+    "15-second full admission deadline; preserves normal queue/refusal responses",
+    "10-second integrity deadline",
+    "20-second mirror and 60-second primary download inactivity deadlines, renewed by actual bytes",
+    "Downloaded-size feedback; keep gate visible while world code loads",
+    "Mute audio on failed entry, preserve profile choices, restore buttons for retry",
+    "Prevent repeated entry and late config redraw while entry is pending"
+  ],
+  "nativeFaultTest": {
+    "fixture": "localhost:4276, primary male model headers delivered but body withheld",
+    "stallCancelledAfterMs": 60004,
+    "errorNotice": "影展載入未完成，請再次點選進入重試。",
+    "nameAndRememberChoicePreserved": true,
+    "retry": "Sound-on Enter succeeded after releasing the model response",
+    "errors": [
+      "Expected: male-d_Cv4L7K.glb download timed out."
+    ],
+    "multiplayer": "Fixture remained offline; native Chrome live entry verified online separately"
+  },
+  "tests": {
+    "passed": 461,
+    "failed": 0,
+    "productionBuild": "passed",
+    "strictTypeScript": "passed",
+    "diffCheck": "passed"
+  },
+  "screenshots": [
+    "stalled-download-retry.png",
+    "retry-entered-world.png"
+  ],
+  "deviceChecks": "Desktop native Chrome and in-app browser only; no physical phone/headset checks"
+}

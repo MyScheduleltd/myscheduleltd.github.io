@@ -1,10 +1,20 @@
-# Publication requested: BETA / PS2 release prepared — 2026-10-14
+# Entry-loading release requested — 2026-10-14
 
-Owner requested publication of the accepted arcade/live-game/cleanup work. Integrated current main through 2f355a9 (newer M.O.T.H menu/audio, chart and sprite fixes) into codex/moth-arcade-wave-20261013. Update existing PR #28 / codex/male-swim-breaking-20261013 by normal fast-forward push; never bypass its required latest-push human approval. Auto-merge is disabled. Current status is prepared/verified, NOT live.
+Owner explicitly requested publication of the verified repair. Release branch `codex/entry-loading-recovery-20261014` starts from current main `6f927d8`; prepared BETA and PS2 from the verified local build. 108 file comparisons / 40 asset hashes pass. Follow protected-main review and normal merge; verify Pages and live entry before claiming publication. Preserve unrelated dirty receipts and untracked art. The local-only repair checkpoint below is historical.
 
-453/453 full tests, strict TypeScript/Vite build, 106 exact BETA/PS2 build file comparisons, 40 asset hashes and the 180-file M.O.T.H package check pass. Entry main-DvyUK1HM.js; API https://myschedule-festival.onrender.com. Current public M.O.T.H game is main's version plus only the embedded-desktop guard and adapter/SRI entry. Its media/data/staff files are byte-identical to current main. Male f00c08d4a11395680372becad22a85d057179a090e90f132c4eeb4ed5ef1ef48; original female 20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3; cabinet 465d019d8739c8449b6c1f83f69b8eaa2e49f1cbe881e160986e1970d7c11adf.
+# Entry loading recovery — 2026-10-14, LOCAL ONLY
 
-Evidence: art/beta-release-20261014/RELEASE.md, package-verification.json, moth-package-verification.json and prepared-game native screenshot. Full logs .artifacts/beta-release-20261014. The initial local-only entries below are historical. After required GitHub review, merge normally, wait for Pages and verify both live routes/entries/assets before calling it published. Physical phone/headset testing remains unperformed.
+Latest owner request: inspect published BETA `/beta/` stuck at sign-in while audio plays; Chrome, VR off. Fresh native Chrome entry succeeded, so the original failed request remains unconfirmed. Confirmed unbounded request paths are repaired locally. Full-body/inactivity bounds now cover the manifest, mirror and primary model downloads; actual bytes renew the deadline and update gate downloaded-size feedback. Admission has a 15-second deadline while responding queue/refusal behavior is preserved. Gate resists config redraw/repeated entry; failed entry mutes audio, preserves choices and re-enables retry. World code is awaited before replacing the gate.
+
+461/461 tests, strict TypeScript/Vite production build and diff check pass. Native private stalled-body test cancelled after 60 seconds, showed the retry message, preserved name/remember choice and entered successfully after release plus sound-on retry. One expected forced-timeout console error; no new unexpected errors in that fixture. Evidence: `art/entry-recovery-20261014/REVIEW.md`, `verification.json`, two screenshots and `.artifacts/entry-recovery-20261014/` logs. No BETA build, stage, commit, push or publication for this repair. Existing publication remains the previous release below. Preserve unrelated dirty receipts/untracked files. Current local dist is rebuilt; regular preview remains at 4173.
+
+# Published: BETA / PS2 arcade, avatar repairs and safe cleanup — 2026-10-14
+
+Owner authorized publication and confirmed latest-push review. PR #28 merged normally as `6f927d8998e7e7f8cf9b6a5ce3fb5209b989d1b0`; Pages built that commit at 2026-10-14T10:38:06Z. Both BETA and PS2 are live. Protected-main rules were preserved.
+
+453/453 tests, strict TypeScript/Vite build, 106 deployed-file hash comparisons, 40 package asset hashes and the 180-file M.O.T.H package check passed. Public/staff game entry/script/integrity files match the merged release. Native public BETA entry, movement to the cabinet, E launch, menu controls, Esc exit, button exit and fresh UUID re-entry passed with no captured console errors. Physical phone/headset checks remain unperformed.
+
+Publication receipts: `art/beta-release-20261014/RELEASE.md`, `public-verification.json`, `native-live-verification.json`, `live-arcade-controls.png`; full logs `.artifacts/beta-release-20261014/`. New receipt files and this handoff update are local documentation only. Prior local-only entries below are historical. Current remote main is the merge commit above; current working branch remains at the approved release head `410cfa2`. Preserve unrelated untracked files.
 
 # Active-project cleanup and live M.O.T.H source — 2026-10-14, LOCAL ONLY
 

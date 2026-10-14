@@ -1,3 +1,4 @@
+import { requestWithDeadline } from './RequestDeadline';
 import type { AvatarGesture, AvatarPalette, CarriedItem, NpcId, NpcNames, NpcProfile, PlayerState } from '../world/FestivalWorld';
 import type { VenueKey } from '../data/catalogue';
 import type { TrackedLimbs } from '../world/TrackedLimbs';
@@ -506,14 +507,16 @@ export class FestivalClient {
     try {
       const headers = new Headers({ 'content-type': 'application/json' });
       if (adminKey) headers.set('x-festival-admin-key', adminKey);
-      const response = await fetch(`${this.baseUrl}/api/session`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ name, palette, waitTicket: this.waitTicket, probe: true }),
-      });
-      const payload = await response.json() as {
-        session?: Session; state?: FestivalState; waiting?: WaitingPlace; error?: string;
-      };
+      const { response, payload } = await requestWithDeadline(async (signal) => {
+        const response = await fetch(`${this.baseUrl}/api/session`, {
+          method: 'POST', headers, signal,
+          body: JSON.stringify({ name, palette, waitTicket: this.waitTicket, probe: true }),
+        });
+        const payload = await response.json() as {
+          session?: Session; state?: FestivalState; waiting?: WaitingPlace; error?: string;
+        };
+        return { response, payload };
+      }, 15_000, 'Festival admission');
       if (response.status === 202 && payload.waiting) {
         this.waitTicket = payload.waiting.ticket;
         return { admitted: false, waiting: payload.waiting };

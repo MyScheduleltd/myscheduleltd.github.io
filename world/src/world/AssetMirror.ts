@@ -19,14 +19,58 @@
  * rest of the visit.
  */
 
+import { requestWithDeadline } from '../network/RequestDeadline';
+
 const REPOSITORY = 'MyScheduleltd/myscheduleltd.github.io';
 /** Only the published site: development and the review pages load locally. */
 const MIRRORED_HOSTS = new Set(['myscheduleltd.com', 'www.myscheduleltd.com']);
-/** Long enough for a cold jsDelivr edge, short enough not to strand anybody. */
-const FIRST_BYTE_MS = 10_000;
+/** No-progress limits cover headers and body, without cutting off a slow download. */
+const MANIFEST_MS = 10_000;
+const MIRROR_MS = 20_000;
+const SITE_MS = 60_000;
 
 let mirrorDown = false;
 let integrity: Promise<Record<string, string>> | undefined;
+
+type DownloadProgress = { file: string; received: number };
+const progressListeners = new Set<(progress: DownloadProgress) => void>();
+export function watchAssetDownloads(listener: (progress: DownloadProgress) => void): () => void {
+  progressListeners.add(listener);
+  return () => { progressListeners.delete(listener); };
+}
+
+async function download(url: string, milliseconds: number, mirrored = false): Promise<ArrayBuffer | undefined> {
+  return requestWithDeadline(async (signal, keepAlive) => {
+    const response = await fetch(url, { signal, ...(mirrored ? { mode: 'cors' as const, credentials: 'omit' as const } : {}) });
+    if (!response.ok) {
+      if (mirrored) return undefined;
+      throw new Error(`${fileName(url)}: ${response.status}`);
+    }
+    // Only arriving bytes renew the timer; successful headers alone do not.
+    if (!response.body) return response.arrayBuffer();
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value.length) continue;
+        chunks.push(value);
+        received += value.length;
+        keepAlive();
+        for (const listener of progressListeners) listener({ file: fileName(url), received });
+      }
+    } finally {
+      if (signal.aborted) void reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
+    const bytes = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    return bytes.buffer;
+  }, milliseconds, `${fileName(url)} download`);
+}
 
 /** Where jsDelivr keeps the same file, or nothing when it should not be used. */
 export function mirrorUrl(url: string, here: Location | URL = window.location): string | undefined {
@@ -42,8 +86,10 @@ export function mirrorUrl(url: string, here: Location | URL = window.location): 
 
 /** The published hashes, read once, from Pages — never from the mirror. */
 function hashes(assetUrl: string): Promise<Record<string, string>> {
-  integrity ??= fetch(new URL('asset-integrity.json', assetUrl).href, { cache: 'no-cache' })
-    .then((response) => (response.ok ? response.json() as Promise<Record<string, string>> : {}))
+  integrity ??= requestWithDeadline(async (signal) => {
+    const response = await fetch(new URL('asset-integrity.json', assetUrl).href, { cache: 'no-cache', signal });
+    return response.ok ? response.json() as Promise<Record<string, string>> : {};
+  }, MANIFEST_MS, 'Asset integrity download')
     .catch(() => ({}));
   return integrity;
 }
@@ -58,16 +104,10 @@ async function sha256(bytes: ArrayBuffer): Promise<string> {
 }
 
 async function fromMirror(mirror: string): Promise<ArrayBuffer | undefined> {
-  const abort = new AbortController();
-  const timer = window.setTimeout(() => abort.abort(), FIRST_BYTE_MS);
   try {
-    const response = await fetch(mirror, { signal: abort.signal, mode: 'cors', credentials: 'omit' });
-    window.clearTimeout(timer);
-    // Not there yet (a release newer than the mirror's copy): this file only.
-    if (!response.ok) return undefined;
-    return await response.arrayBuffer();
+    // A missing new file is not an outage of the whole mirror.
+    return await download(mirror, MIRROR_MS, true);
   } catch {
-    window.clearTimeout(timer);
     // Unreachable, refused or stalled: stop asking it for this visit.
     mirrorDown = true;
     return undefined;
@@ -85,9 +125,7 @@ export async function fetchAsset(url: string): Promise<ArrayBuffer> {
       if (bytes) console.warn(`The mirror's copy of ${fileName(url)} did not match; fetching it from the site instead.`);
     }
   }
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`${fileName(url)}: ${response.status}`);
-  return response.arrayBuffer();
+  return (await download(url, SITE_MS))!;
 }
 
 /** A picture, by way of `fetchAsset`, as a URL an image (or a TextureLoader) can open. */
