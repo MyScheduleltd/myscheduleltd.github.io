@@ -1,3 +1,11 @@
+# Publication requested: BETA / PS2 release prepared — 2026-10-14
+
+Owner requested publication of the accepted arcade/live-game/cleanup work. Integrated current main through 2f355a9 (newer M.O.T.H menu/audio, chart and sprite fixes) into codex/moth-arcade-wave-20261013. Update existing PR #28 / codex/male-swim-breaking-20261013 by normal fast-forward push; never bypass its required latest-push human approval. Auto-merge is disabled. Current status is prepared/verified, NOT live.
+
+453/453 full tests, strict TypeScript/Vite build, 106 exact BETA/PS2 build file comparisons, 40 asset hashes and the 180-file M.O.T.H package check pass. Entry main-DvyUK1HM.js; API https://myschedule-festival.onrender.com. Current public M.O.T.H game is main's version plus only the embedded-desktop guard and adapter/SRI entry. Its media/data/staff files are byte-identical to current main. Male f00c08d4a11395680372becad22a85d057179a090e90f132c4eeb4ed5ef1ef48; original female 20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3; cabinet 465d019d8739c8449b6c1f83f69b8eaa2e49f1cbe881e160986e1970d7c11adf.
+
+Evidence: art/beta-release-20261014/RELEASE.md, package-verification.json, moth-package-verification.json and prepared-game native screenshot. Full logs .artifacts/beta-release-20261014. The initial local-only entries below are historical. After required GitHub review, merge normally, wait for Pages and verify both live routes/entries/assets before calling it published. Physical phone/headset testing remains unperformed.
+
 # Active-project cleanup and live M.O.T.H source — 2026-10-14, LOCAL ONLY
 
 Owner requested a thorough safe cleanup and explicitly chose deletion of superseded source/review copies. Removed 377 obsolete files totalling 3,211,820,432 bytes (3.21 GB / 2.99 GiB): older working scenes/backups/baselines, rejected female generation, superseded review media, nine unused legacy website images, two identical font backups and the unused standalone dialog stylesheet. Removed the obsolete local M.O.T.H snapshot middleware/test/import. `world/.artifacts/` is now ignored for staging.
