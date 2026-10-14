@@ -1,14 +1,90 @@
-# Approved BETA follow-up — 2026-10-13, packages ready for required review
+# Publication requested: BETA / PS2 release prepared — 2026-10-14
 
-Owner requested “please publish to beta” after the male skin/neck/DJ wrist and floating-shirt-print repairs, and explicitly reverted the female regeneration. Release branch: `codex/avatar-print-release-20261013`. Earlier release PR #17 has merged. Current main (`8c78d72`) is integrated, preserving the subsequent M.O.T.H and server work.
+Owner requested publication of the accepted arcade/live-game/cleanup work. Integrated current main through 2f355a9 (newer M.O.T.H menu/audio, chart and sprite fixes) into codex/moth-arcade-wave-20261013. Update existing PR #28 / codex/male-swim-breaking-20261013 by normal fast-forward push; never bypass its required latest-push human approval. Auto-merge is disabled. Current status is prepared/verified, NOT live.
 
-Production TypeScript/Vite build and **432/432 tests pass**. Both channel packages match all 52 current build files; all 38 integrity hashes pass. Entry: `main-BoMZQ2dt.js`. Production API: `https://myschedule-festival.onrender.com`. Male SHA256: `1e0a00e35849c6f1f79a579c6ec136d14ebaa38d05d7504409eba6a4aa533f61`. Female is the original SHA256 `20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3`.
+453/453 full tests, strict TypeScript/Vite build, 106 exact BETA/PS2 build file comparisons, 40 asset hashes and the 180-file M.O.T.H package check pass. Entry main-DvyUK1HM.js; API https://myschedule-festival.onrender.com. Current public M.O.T.H game is main's version plus only the embedded-desktop guard and adapter/SRI entry. Its media/data/staff files are byte-identical to current main. Male f00c08d4a11395680372becad22a85d057179a090e90f132c4eeb4ed5ef1ef48; original female 20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3; cabinet 465d019d8739c8449b6c1f83f69b8eaa2e49f1cbe881e160986e1970d7c11adf.
 
-Evidence: `art/beta-release-20261013/RELEASE.md` and `package-verification.json`, plus male skating, face, DJ wrist, print-fitting and original-female browser screenshots in `art/avatar-followup-20261012/`. This release adds no server change relative to current main, so it does not require a new Render deployment. Physical webcam/headset checks remain unmeasured.
+Evidence: art/beta-release-20261014/RELEASE.md, package-verification.json, moth-package-verification.json and prepared-game native screenshot. Full logs .artifacts/beta-release-20261014. The initial local-only entries below are historical. After required GitHub review, merge normally, wait for Pages and verify both live routes/entries/assets before calling it published. Physical phone/headset testing remains unperformed.
 
-The initial package commit/push was not executed because automatic approval review hit an account limit. A later live account check allowed ordinary usage; the same approval path then succeeded. Release packages are committed and pushed on `codex/avatar-print-release-20261013`, awaiting a new protected-main PR review.
+# Active-project cleanup and live M.O.T.H source — 2026-10-14, LOCAL ONLY
 
-GitHub requires a fresh review including the final push from `macakinTT` or another authorized reviewer. Packages and a PR are not a live deployment. Do not bypass protection. Verify Pages and public asset hashes after merge before reporting publication complete.
+Owner requested a thorough safe cleanup and explicitly chose deletion of superseded source/review copies. Removed 377 obsolete files totalling 3,211,820,432 bytes (3.21 GB / 2.99 GiB): older working scenes/backups/baselines, rejected female generation, superseded review media, nine unused legacy website images, two identical font backups and the unused standalone dialog stylesheet. Removed the obsolete local M.O.T.H snapshot middleware/test/import. `world/.artifacts/` is now ignored for staging.
+
+All 1,393 protected runtime/release/source files remained hash-identical before/after cleanup and after verification. Current editable sources are indexed in `art/cleanup-20261014/REVIEW.md` and `deletion-manifest.json`; historical reports may link intentionally removed superseded intermediates. Preserve current sources, original accepted generation inputs, required shoulder/guitar/venue repair inputs, review template images and cached BETA/PS2 dependency chains. No current game model or frontend module was safely unused: 77 non-declaration TS modules are reachable from project entry pages.
+
+The cabinet now always launches `https://myscheduleltd.com/moth/`, even on localhost, with a new `arcadeLaunch` UUID per entry. Mobile/immersive routes also use a fresh public URL. The live entry supplies current versioned scripts/styles. Native check saw the release update from `moth-loading-20261014b` to `moth-loading-20261014d` on a later entry without copying the game. Surround clicks recover iframe focus before typing; native stage navigation, Exit click, Tab/Space Exit and E re-entry pass. In-frame Esc follows the current public game's controls unless its optional cabinet adapter is published; visible Exit is the reliable way back.
+
+**453/453 full tests, strict TypeScript/Vite build and diff check passed.** First sandbox attempt was denied loopback server ports; complete suite passed with that access. Native rebuilt world and live cabinet game have no captured console errors. No physical phone/headset checks. Evidence: `art/cleanup-20261014/`, `art/moth-arcade-live-20261014/`; full logs `.artifacts/cleanup-20261014/`. Preview restarted on 127.0.0.1:4173. No BETA package preparation, commit, staging, push or publication. All unrelated pre-existing dirty changes preserved.
+
+# M.O.T.H exit / wall fit / keyboard repair — 2026-10-14, LOCAL ONLY
+
+Latest request: move the single 離開遊戲 button into the bottom orange game interface, bring the full cabinet back outside the wall, and fix unresponsive game controls. Completed in the existing dirty `codex/moth-arcade-wave-20261013` checkout. No BETA build, staging, commit, push or publication performed. Preserve all unrelated avatar/game work.
+
+Exit is a single recessed orange button; projected-screen layout places its centre at 91.5% down the screen, with no extra title/helper text. Camera remains square to the actual screen. Native review at 1280x720, 1024x480 and 390x480 confirms no overlap with the game canvas; viewport override reset.
+
+Actual GLB back formerly penetrated the west wall by about .457 world units. `arcadeAgainstWallX()` and conservative loaded depth 2.12 place the root at X=20.52; actual back X=21.576704 clears the actual outside wall X=21.6 by .023296. Collider/ground seating follow the corrected root. Jukebox X and pair Z centre remain unchanged.
+
+Input focus was lost after clicking the surrounding cabinet. Session now focuses the iframe on load/ready and forwards parent-received game keys once via a source/origin-checked bridge to private native game handlers. Native iframe keys remain untouched. Hidden/exit paths release held keys. Control key releases preserve native Space button activation and focus. Bridge source and public mirror, cache version `moth-arcade-input-20261014a`, SRI and build recipe match.
+
+**30/30 targeted tests, TypeScript/Vite build and diff check passed.** Native gameplay navigated stage/difficulty, started office rhythm and scored 006000. Lost-focus recovery, Exit click/Esc, E re-entry and final-build native Tab -> Space Exit -> E re-entry pass with no console errors. Clock audit found no timing defect: earlier all-miss QA gaps exceeded the 85.161-second chart. Physical phone/headset not checked. Optional whole M.O.T.H package verification could not run because `.qa/moth/published-snapshot.json` is missing; do not claim that checker passed.
+
+Cabinet/male/female GLBs unchanged this turn. Current evidence: `art/moth-arcade-integration-20261014/REVIEW.md`, `validation.json`, five native screenshots; tests/build logs in `.artifacts/moth-arcade-integration-20261014/`. Latest provenance records corrected runtime placement. Preview remains on port 4173 and native review tab is left open. This checkpoint supersedes the preceding external exit prompt and X=21 cabinet placement; historical asset/character/release records below remain.
+
+# M.O.T.H orange cabinet / ground polish — 2026-10-14, LOCAL ONLY
+
+Latest user request: fix the floating cabinet, polish the whole texture/model and replace green with game orange. Completed locally in the existing dirty `codex/moth-arcade-wave-20261013` checkout. Do not reset or broadly stage unrelated work. No BETA build, staging, commit, push or deployment was performed for this refinement.
+
+The polished GLB has clean closed orange enamel panels (#ff5c21), ivory trim, charcoal lower front/rear, rebuilt beveled controls and redrawn crisp moth/guitarist print. The original Higgsfield silhouette and exact live-screen positions/transform remain. Final GLB: **1,696,612 bytes, 23 meshes, 11,769 triangles**, one shared 1024x1536 PNG; SHA256 `465d019d8739c8449b6c1f83f69b8eaa2e49f1cbe881e160986e1970d7c11adf`.
+
+Ground placement no longer borrows the jukebox's +.24 offset. `FestivalWorld.seatArcadeOnGround()` scans actual rendered ground/paving meshes after dressing completes; `MothArcadeCabinet.seatOnGround()` uses 25 footprint samples and a shallow overlapping rubber plinth buried beneath the lowest sample. Arcade and jukebox retain their centered combined footprint. Native first-person review confirms contact with paving.
+
+**28/28 targeted tests, TypeScript/Vite build and diff check passed.** Native local browser checks cover game keyboard menu navigation, fixed screen view, bottom-centered prompt at 1280x720 / 1024x480 / 390x480, Esc/button exit and E re-entry. Temporary viewport overrides reset. No browser console errors. Physical phone/headset checks were not performed. No avatar asset edits were made during this cabinet refinement; hashes are recorded in validation.json.
+
+Review/source/evidence: `art/moth-arcade-orange-20261014/REVIEW.md`, `provenance.json`, `validation.json`, native screenshots and Blender front/side/back renders. Source scene `MOTH orange cabinet 20261014`; `.artifacts/moth-arcade-orange-20261014/cabinet-polished.blend`, `polish-cabinet.py`, `optimize.mjs`, preserved `before.glb`, build/test logs. Use selected active scene only for Blender export to avoid including avatar scenes. Previous cabinet scenes and artifacts remain.
+
+Preview running at http://127.0.0.1:4173/?era=ps2&island&review=arcade&cycleMinute=15 . Native browser review tab left available. This local checkpoint supersedes old cabinet provenance/green texture figures; historical avatar/release entries below remain records of their respective checkpoints.
+
+# Male wave shoulder follow-up — 2026-10-13, added to BETA release PR #28
+
+Owner reported the raised arm pulling the swim torso unnaturally. Live Blender MCP confirmed chest/rib skin assigned entirely to upper-arm bones and inconsistent adjacent spinal weights. Repair uses a welded surface graph and a smooth shoulder/spine blend; only body JOINTS_0 and WEIGHTS_0 changed. All other accessors, images, transforms, shorts masks and the original female are unchanged.
+
+**438/438 full tests, 21/21 avatar checks, production TypeScript/Vite build, 104 package file comparisons and 38 combined integrity hashes pass.** Torso regression fails the preceding asset; seam checks cover wave/punch/Breaking frames. Built browser reviews five wave phases, front/side/rear, outfits 1–3, punch, Breaking floor support and an enlarged underarm view. No physical camera/headset validation was added.
+
+Current source male SHA256 `cf03029d1cc972b8760329de22ec83009bc31ed5dd7d8e3588aff5c3d1a9965b`; entry `main-BreJUSmk.js`; model `male-DTHPQ84S.glb`. API remains `https://myschedule-festival.onrender.com`. Branch `codex/male-swim-breaking-20261013` includes main through `9cf68bf`. PR #28 remains protected by required latest-push approval: https://github.com/MyScheduleltd/myscheduleltd.github.io/pull/28 . Do not claim live publication before merge, Pages success and live verification.
+
+Evidence: `art/male-wave-20261013/REVIEW.md`, contact sheets, preservation and package reports. Reproduction: `scripts/repair-male-shoulder-weights.py` through live Blender MCP after opening `.artifacts/male-wave-20261013/production-before.blend`; local `apply-weights.mjs` transfers the changed weights to the existing GLB. Baseline `male-before.glb`; final `wave-weights-fixed.blend`. Local: `http://127.0.0.1:4173/avatar-review.html?sex=male&outfit=4&pose=wave&phase=0.5&angle=0.6&zoom=1.2&look=1.5&check=wave-final`.
+
+The entries below are historical checkpoints, including the preceding shorts and hand candidate.
+
+# Male shorts hem / Breaking hand release — 2026-10-13, preceding BETA candidate
+
+Owner requested publication, then correctly identified skin-colour spill below the shorts. The preceding colour-only check missed it. Live Blender MCP found the skin-cleanup `_skin` label included the shorts' lower half. Native atlas samples identify 6,695 fabric/stripe triangles down to both real leg hems; 2,200 Blender vertex labels (3,637 exported vertices) are corrected. Only the GLB skin-mask accessor changed: all positions, normals, UVs, indices, weights, joint binds and embedded image bytes are preserved. Female remains the original model.
+
+**436/436 tests and TypeScript/Vite production build pass.** The new regression samples native cloth, both hems, stripes, front/rear/sides and guards bare-leg skin; it fails the preceding model. Built local browser checks include four angles with contrasting white skin and a saved magenta swimwear colour. Native black shorts now reach their complete hems. Previous 254-frame male Breaking palm/wrist checks and nine-frame visual review also remain passing.
+
+Approved BETA/PS2 packages contain `main-BE4fKoeL.js`; **104/104 files and all 38 combined integrity hashes pass**. Male SHA256 `b8cda2d2ddff137223a87af264116c9498e033a344d07c22b69a604d22d33e4c`; female SHA256 `20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3`. API remains `https://myschedule-festival.onrender.com`. Branch `codex/male-swim-breaking-20261013` includes current main through `9cf68bf`, preserving its M.O.T.H scoreboard release. GitHub requires one approving review, including approval of the latest push, and applies it to admins. Publish through the protected PR; do not bypass protection or claim live publication before merge and Pages verification.
+
+Evidence: `art/male-shorts-hem-20261013/REVIEW.md`, `preservation.json`, `package-verification.json`; dance evidence: `art/male-swim-breaking-20261013/`. Local final view: `http://127.0.0.1:4173/avatar-review.html?sex=male&outfit=4&pose=idle&angle=0&zoom=1.2&look=1.5&swimwear=ff00ff&check=shorts-hem-final` . The entries below are historical checkpoints.
+
+# Male swimwear / Breaking hand fix — 2026-10-13, preceding local review
+
+Owner confirmed black shorts with white stripes and reported wrong dance palm direction / wrists that did not turn. `ImportedAvatar.ts` retains his native black swimwear texture even for older saved swimsuit dye colours; female swimwear and all other dye slots keep their existing paths. Through live Blender MCP, the source floor-combo FBX hand frame is recorded in `moves.json` and `scripts/fixtures/dance-hand-reference.json`. Male dance hands align both palm and finger directions, with reference roll passed through forearms. Original motion samples, punch/female mapping and both GLB bytes are unchanged.
+
+**435/435 tests and TypeScript/Vite build pass.** All 254 source frames check palm/finger directions, wrists articulate and skin volume remains intact. Nine-frame contact sheet and enlarged floor-hand / saved-magenta swimwear views reviewed in the built local browser. Evidence: `art/male-swim-breaking-20261013/REVIEW.md`. Physical webcam/headset measurements are separate.
+
+Branch `codex/male-swim-breaking-20261013`; local, uncommitted and unstaged. No new PR or release-package change. BETA remains the verified PR #26 release below. Local view: `http://127.0.0.1:4173/avatar-review.html?sex=male&outfit=1&pose=dance&t=7.8&angle=0.6&zoom=1.2&look=1.5&check=breaking-hand-fix` .
+
+# BETA follow-up published and verified — 2026-10-13
+
+Owner approved and merged PR #26: https://github.com/MyScheduleltd/myscheduleltd.github.io/pull/26 . Merge commit `358e58936d1e73d6b041e540c6b674a96d15b47a`. GitHub Pages run `38317748104` completed successfully. This checkout is fast-forwarded to the merged main commit; the release record below is a local status update.
+
+Both live channels (`https://myscheduleltd.com/beta/` and `/beta/ps2/`) serve `main-BoMZQ2dt.js`. All **104/104 current release files** match the approved build byte for byte, including entries, manifests, JavaScript and models. Evidence: `.artifacts/beta-release-20261013/public-verification.json`, verified at `2026-10-12T22:43:23Z`.
+
+Male SHA256 `1e0a00e35849c6f1f79a579c6ec136d14ebaa38d05d7504409eba6a4aa533f61`. Female is the original SHA256 `20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3`; rejected regeneration stays offline. Production API is `https://myschedule-festival.onrender.com`. No additional server change was introduced by this release.
+
+Production TypeScript/Vite build and **432/432 tests pass**. Public browser entered the world, showed online status and the current male avatar, and captured no console errors. Screenshot: `.artifacts/beta-release-20261013/live-beta.png`. The final live browser check entered muted; it does not establish acoustic or physical webcam/headset validation.
+
+This publishes the accepted male skin/neck/DJ wrist and floating-print repairs, keeps the original female, and preserves other main changes. Earlier waiting-for-review/local-only statements below are historical checkpoints. Current protected-main rules still apply to future changes.
 
 # Prior BETA release — 2026-10-12, merged through PR #17
 

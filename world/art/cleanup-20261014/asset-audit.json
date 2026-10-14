@@ -1,0 +1,900 @@
+{
+  "referenced": [
+    {
+      "path": "docs/assets/FB_600_315.png",
+      "bytes": 24115,
+      "references": [
+        "pug/_layout.pug",
+        "docs/index.html",
+        "docs/about.html",
+        "docs/contact.html",
+        "docs/drBeauty.html",
+        "docs/portfolio.html"
+      ]
+    },
+    {
+      "path": "docs/assets/favicon.ico",
+      "bytes": 15406,
+      "references": [
+        "pug/_layout.pug",
+        "docs/index.html",
+        "docs/about.html",
+        "docs/contact.html",
+        "docs/drBeauty.html",
+        "docs/portfolio.html"
+      ]
+    },
+    {
+      "path": "docs/assets/FB_1200_630.png",
+      "bytes": 41975,
+      "references": [
+        "pug/_layout.pug",
+        "docs/index.html",
+        "docs/about.html",
+        "docs/contact.html",
+        "docs/drBeauty.html",
+        "docs/portfolio.html"
+      ]
+    },
+    {
+      "path": "docs/assets/logo.png",
+      "bytes": 322894,
+      "references": [
+        "pug/contact.pug",
+        "pug/_footer.pug",
+        "pug/drBeauty.pug",
+        "pug/about.pug",
+        "world/index.html",
+        "world/CODEX_HANDOFF.md",
+        "world/scripts/draw-outfit-prints.py",
+        "world/scripts/prepare-higgsfield-avatars.py",
+        "world/scripts/startup.test.mjs",
+        "world/scripts/prepare-blender-avatar.py",
+        "world/src/ui/App.ts",
+        "docs/about.html",
+        "docs/contact.html",
+        "docs/drBeauty.html",
+        "docs/portfolio.html",
+        "docs/js/drBeauty.js",
+        "docs/js/index.js",
+        "docs/js/portfolio.js"
+      ]
+    },
+    {
+      "path": "docs/assets/beautypage_frontpic1.jpg",
+      "bytes": 721464,
+      "references": [
+        "scss/drBeauty.scss",
+        "docs/css/drBeauty.css"
+      ]
+    },
+    {
+      "path": "docs/assets/KVN_1104-86.jpg",
+      "bytes": 7979079,
+      "references": [
+        "scss/drBeauty.scss",
+        "pug/drBeauty.pug",
+        "docs/drBeauty.html",
+        "docs/css/drBeauty.css"
+      ]
+    },
+    {
+      "path": "docs/assets/FB_200_200.png",
+      "bytes": 342774,
+      "references": [
+        "pug/_layout.pug",
+        "docs/index.html",
+        "docs/about.html",
+        "docs/contact.html",
+        "docs/drBeauty.html",
+        "docs/portfolio.html"
+      ]
+    },
+    {
+      "path": "docs/assets/member/202308239405.jpg",
+      "bytes": 3537225,
+      "references": [
+        "docs/js/allData.js"
+      ]
+    },
+    {
+      "path": "docs/assets/member/202308239575.jpg",
+      "bytes": 16138430,
+      "references": [
+        "docs/js/allData.js"
+      ]
+    },
+    {
+      "path": "docs/assets/member/202308230119.jpg",
+      "bytes": 2260156,
+      "references": [
+        "docs/js/allData.js"
+      ]
+    },
+    {
+      "path": "docs/assets/member/202308238795.jpg",
+      "bytes": 10453962,
+      "references": [
+        "docs/js/allData.js"
+      ]
+    },
+    {
+      "path": "docs/assets/member/202308230080.jpg",
+      "bytes": 1765225,
+      "references": [
+        "docs/js/allData.js"
+      ]
+    },
+    {
+      "path": "docs/assets/member/202308238969.jpg",
+      "bytes": 4875112,
+      "references": [
+        "docs/js/allData.js"
+      ]
+    },
+    {
+      "path": "docs/assets/member/202308238993.jpg",
+      "bytes": 17289932,
+      "references": [
+        "docs/js/allData.js"
+      ]
+    },
+    {
+      "path": "docs/assets/member/202308239341.jpg",
+      "bytes": 11824768,
+      "references": [
+        "docs/js/allData.js"
+      ]
+    },
+    {
+      "path": "docs/assets/member/202308239180.jpg",
+      "bytes": 6432252,
+      "references": [
+        "docs/js/allData.js"
+      ]
+    },
+    {
+      "path": "docs/assets/member/202308239547.jpg",
+      "bytes": 14792607,
+      "references": [
+        "docs/js/allData.js"
+      ]
+    },
+    {
+      "path": "docs/assets/member/202308230238.jpg",
+      "bytes": 11823217,
+      "references": [
+        "docs/js/allData.js"
+      ]
+    },
+    {
+      "path": "docs/assets/member/202308239744.jpg",
+      "bytes": 17198572,
+      "references": [
+        "docs/js/allData.js"
+      ]
+    },
+    {
+      "path": "docs/font/HanWangMing-subset.woff2",
+      "bytes": 143856,
+      "references": [
+        "world/src/style.css",
+        "docs/beta/ps2/assets/style-CfsbF_a0.css",
+        "docs/beta/ps2/assets/index-njZNhyaR.css",
+        "docs/beta/ps2/assets/style-Bv0uZPm6.css",
+        "docs/beta/ps2/assets/index-DVnKkMik.css",
+        "docs/beta/ps2/assets/style-CpAxkCiA.css",
+        "docs/beta/ps2/assets/style-SZ7U53ua.css",
+        "docs/beta/ps2/assets/style-CLlrj23b.css",
+        "docs/beta/ps2/assets/style-DT8lFcGV.css",
+        "docs/beta/ps2/assets/index-CF9G-ITv.css",
+        "docs/beta/ps2/assets/style-C_hVFX5f.css",
+        "docs/beta/ps2/assets/style-DsBf8-Cy.css",
+        "docs/beta/ps2/assets/index-CKNI0tBR.css",
+        "docs/beta/ps2/assets/style-DuWpCErR.css",
+        "docs/beta/ps2/assets/style-BGG3z46L.css",
+        "docs/beta/ps2/assets/style-PSiP5xGw.css",
+        "docs/beta/ps2/assets/style-vKnj4x5S.css",
+        "docs/beta/assets/index-B-cJQP4W.css",
+        "docs/beta/assets/style-CfsbF_a0.css",
+        "docs/beta/assets/index-njZNhyaR.css",
+        "docs/beta/assets/index-9w-ZuIfJ.css",
+        "docs/beta/assets/index-CeWWq-yP.css",
+        "docs/beta/assets/index-B32RoPiu.css",
+        "docs/beta/assets/index-pY1mFYgD.css",
+        "docs/beta/assets/index-BNuQD0aP.css",
+        "docs/beta/assets/index-BM25EiCN.css",
+        "docs/beta/assets/style-Bv0uZPm6.css",
+        "docs/beta/assets/index-Cb6XaAaG.css",
+        "docs/beta/assets/index-yH4myk2p.css",
+        "docs/beta/assets/index-CSmSoGup.css",
+        "docs/beta/assets/index-CH3LbzcN.css",
+        "docs/beta/assets/index-DVnKkMik.css",
+        "docs/beta/assets/index-Czd9QUPO.css",
+        "docs/beta/assets/style-CpAxkCiA.css",
+        "docs/beta/assets/index-Db73VJtj.css",
+        "docs/beta/assets/index-CV1dwnrB.css",
+        "docs/beta/assets/style-SZ7U53ua.css",
+        "docs/beta/assets/index-Cs5qfg-o.css",
+        "docs/beta/assets/style-DT8lFcGV.css",
+        "docs/beta/assets/index-CXgn16g5.css",
+        "docs/beta/assets/index-CsLupzve.css",
+        "docs/beta/assets/index-B2JJXdjx.css",
+        "docs/beta/assets/index-CF9G-ITv.css",
+        "docs/beta/assets/style-C_hVFX5f.css",
+        "docs/beta/assets/index-BlnVA3hR.css",
+        "docs/beta/assets/style-DuWpCErR.css",
+        "docs/beta/assets/index-DWi8IHbW.css",
+        "docs/beta/assets/index-DCbNf6vR.css",
+        "docs/beta/assets/index-BFGldJ5z.css",
+        "docs/beta/assets/style-BGG3z46L.css",
+        "docs/beta/assets/style-PSiP5xGw.css",
+        "docs/beta/assets/index-C8eCwUZu.css"
+      ]
+    },
+    {
+      "path": "docs/font/HanWangMingBlack.ttf",
+      "bytes": 8878296,
+      "references": [
+        "scss/_mixin.scss",
+        "docs/css/contact.css",
+        "docs/css/index.css",
+        "docs/css/about.css",
+        "docs/css/layout.css",
+        "docs/css/drBeauty.css",
+        "docs/css/portfolio.css"
+      ]
+    },
+    {
+      "path": "docs/font/BebasNeue-Regular.ttf",
+      "bytes": 60576,
+      "references": [
+        "scss/_mixin.scss",
+        "world/src/style.css",
+        "docs/beta/ps2/assets/style-CfsbF_a0.css",
+        "docs/beta/ps2/assets/index-njZNhyaR.css",
+        "docs/beta/ps2/assets/style-Bv0uZPm6.css",
+        "docs/beta/ps2/assets/index-DVnKkMik.css",
+        "docs/beta/ps2/assets/style-CpAxkCiA.css",
+        "docs/beta/ps2/assets/style-SZ7U53ua.css",
+        "docs/beta/ps2/assets/style-CLlrj23b.css",
+        "docs/beta/ps2/assets/style-DT8lFcGV.css",
+        "docs/beta/ps2/assets/index-CF9G-ITv.css",
+        "docs/beta/ps2/assets/style-C_hVFX5f.css",
+        "docs/beta/ps2/assets/style-DsBf8-Cy.css",
+        "docs/beta/ps2/assets/index-CKNI0tBR.css",
+        "docs/beta/ps2/assets/style-DuWpCErR.css",
+        "docs/beta/ps2/assets/style-BGG3z46L.css",
+        "docs/beta/ps2/assets/style-PSiP5xGw.css",
+        "docs/beta/ps2/assets/style-vKnj4x5S.css",
+        "docs/beta/assets/index-B-cJQP4W.css",
+        "docs/beta/assets/style-CfsbF_a0.css",
+        "docs/beta/assets/index-njZNhyaR.css",
+        "docs/beta/assets/index-9w-ZuIfJ.css",
+        "docs/beta/assets/index-CeWWq-yP.css",
+        "docs/beta/assets/index-B32RoPiu.css",
+        "docs/beta/assets/index-pY1mFYgD.css",
+        "docs/beta/assets/index-BNuQD0aP.css",
+        "docs/beta/assets/index-BM25EiCN.css",
+        "docs/beta/assets/style-Bv0uZPm6.css",
+        "docs/beta/assets/index-Cb6XaAaG.css",
+        "docs/beta/assets/index-yH4myk2p.css",
+        "docs/beta/assets/index-CSmSoGup.css",
+        "docs/beta/assets/index-CH3LbzcN.css",
+        "docs/beta/assets/index-DVnKkMik.css",
+        "docs/beta/assets/index-Czd9QUPO.css",
+        "docs/beta/assets/style-CpAxkCiA.css",
+        "docs/beta/assets/index-Db73VJtj.css",
+        "docs/beta/assets/index-CV1dwnrB.css",
+        "docs/beta/assets/style-SZ7U53ua.css",
+        "docs/beta/assets/index-Cs5qfg-o.css",
+        "docs/beta/assets/style-DT8lFcGV.css",
+        "docs/beta/assets/index-CXgn16g5.css",
+        "docs/beta/assets/index-CsLupzve.css",
+        "docs/beta/assets/index-B2JJXdjx.css",
+        "docs/beta/assets/index-CF9G-ITv.css",
+        "docs/beta/assets/style-C_hVFX5f.css",
+        "docs/beta/assets/index-BlnVA3hR.css",
+        "docs/beta/assets/style-DuWpCErR.css",
+        "docs/beta/assets/index-DWi8IHbW.css",
+        "docs/beta/assets/index-DCbNf6vR.css",
+        "docs/beta/assets/index-BFGldJ5z.css",
+        "docs/beta/assets/style-BGG3z46L.css",
+        "docs/beta/assets/style-PSiP5xGw.css",
+        "docs/beta/assets/index-C8eCwUZu.css",
+        "docs/css/contact.css",
+        "docs/css/index.css",
+        "docs/css/about.css",
+        "docs/css/layout.css",
+        "docs/css/drBeauty.css",
+        "docs/css/portfolio.css"
+      ]
+    },
+    {
+      "path": "world/src/assets/master-of-the-house.png",
+      "bytes": 132675,
+      "references": [
+        "world/CODEX_HANDOFF.md",
+        "world/src/world/FestivalWorld.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/company-logo.png",
+      "bytes": 24052,
+      "references": [
+        "world/index.html",
+        "world/scripts/startup.test.mjs",
+        "world/src/ui/App.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/cap-logo.png",
+      "bytes": 322894,
+      "references": [
+        "world/CODEX_HANDOFF.md",
+        "world/scripts/draw-outfit-prints.py",
+        "world/scripts/prepare-higgsfield-avatars.py",
+        "world/scripts/prepare-blender-avatar.py"
+      ]
+    },
+    {
+      "path": "world/src/assets/venue-scenery/valet.glb",
+      "bytes": 4540012,
+      "references": [
+        "world/src/world/VenueSceneryAssets.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/venue-scenery/box-office.glb",
+      "bytes": 4293768,
+      "references": [
+        "world/scripts/repair-venue-surfaces.py",
+        "world/src/world/VenueSceneryAssets.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/venue-scenery/temple-statue.glb",
+      "bytes": 2096404,
+      "references": [
+        "world/src/world/VenueSceneryAssets.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/venue-scenery/attendant.glb",
+      "bytes": 8647100,
+      "references": [
+        "world/CODEX_HANDOFF.md",
+        "world/scripts/repair-venue-surfaces.py",
+        "world/src/world/VenueSceneryAssets.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/venue-scenery/moth-arcade.glb",
+      "bytes": 1696612,
+      "references": [
+        "world/scripts/moth-arcade.test.mjs",
+        "world/scripts/moth-arcade-placement.test.mjs",
+        "world/src/world/MothArcade.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/band/stage.glb",
+      "bytes": 982120,
+      "references": [
+        "world/CODEX_HANDOFF.md",
+        "world/scripts/prepare-band.py",
+        "world/src/world/RooftopBand.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/band/drummer.glb",
+      "bytes": 1227560,
+      "references": [
+        "world/src/world/RooftopBand.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/band/vocal.glb",
+      "bytes": 1235612,
+      "references": [
+        "world/scripts/joint-surface-repair.py",
+        "world/src/world/RooftopBand.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/band/bonfire.glb",
+      "bytes": 209732,
+      "references": [
+        "world/CODEX_HANDOFF.md",
+        "world/scripts/prepare-band.py",
+        "world/src/world/RooftopBand.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/band/bass-player.glb",
+      "bytes": 2433252,
+      "references": [
+        "world/src/world/RooftopBand.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/band/band.json",
+      "bytes": 674,
+      "references": [
+        "world/scripts/prepare-band.py"
+      ]
+    },
+    {
+      "path": "world/src/assets/band/guitarist.glb",
+      "bytes": 2508856,
+      "references": [
+        "world/scripts/diagnose-guitar-fret.mjs",
+        "world/scripts/lighten-band-textures.py",
+        "world/scripts/asset-mirror.test.mjs",
+        "world/scripts/repair-guitar-fretting.mjs",
+        "world/scripts/guitar-contact.mjs",
+        "world/src/band-hand-review.ts",
+        "world/src/world/RooftopBand.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/outfits/vest-back.png",
+      "bytes": 40968,
+      "references": [
+        "world/scripts/prepare-outfit-prints.py",
+        "world/scripts/prepare-blender-avatar.py"
+      ]
+    },
+    {
+      "path": "world/src/assets/outfits/house-front.png",
+      "bytes": 2196,
+      "references": [
+        "world/scripts/prepare-outfit-prints.py",
+        "world/scripts/prepare-blender-avatar.py"
+      ]
+    },
+    {
+      "path": "world/src/assets/outfits/schedule-tag.png",
+      "bytes": 15380,
+      "references": [
+        "world/scripts/draw-outfit-prints.py"
+      ]
+    },
+    {
+      "path": "world/src/assets/outfits/schedule-front.png",
+      "bytes": 6193,
+      "references": [
+        "world/scripts/prepare-outfit-prints.py",
+        "world/scripts/prepare-blender-avatar.py"
+      ]
+    },
+    {
+      "path": "world/src/assets/outfits/vest-front.png",
+      "bytes": 49439,
+      "references": [
+        "world/scripts/prepare-outfit-prints.py",
+        "world/scripts/prepare-blender-avatar.py"
+      ]
+    },
+    {
+      "path": "world/src/assets/outfits/bros-back.png",
+      "bytes": 19797,
+      "references": [
+        "world/scripts/prepare-outfit-prints.py",
+        "world/scripts/prepare-blender-avatar.py"
+      ]
+    },
+    {
+      "path": "world/src/assets/outfits/schedule-back.png",
+      "bytes": 65575,
+      "references": [
+        "world/scripts/draw-outfit-prints.py",
+        "world/scripts/prepare-outfit-prints.py",
+        "world/scripts/prepare-blender-avatar.py"
+      ]
+    },
+    {
+      "path": "world/src/assets/avatars/female.glb",
+      "bytes": 1331836,
+      "references": [
+        "world/CODEX_HANDOFF.md",
+        "world/scripts/male-wardrobe-fit.test.mjs",
+        "world/src/world/ImportedAvatar.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/avatars/female-vest.jpg",
+      "bytes": 702404,
+      "references": [
+        "world/src/world/ImportedAvatar.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/avatars/male-dye.png",
+      "bytes": 483372,
+      "references": [
+        "world/src/world/ImportedAvatar.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/avatars/avatars.json",
+      "bytes": 933,
+      "references": [
+        "world/CODEX_HANDOFF.md",
+        "world/scripts/coastal-pose.test.mjs",
+        "world/scripts/prepare-higgsfield-avatars.py",
+        "world/src/world/ImportedAvatar.ts",
+        "world/src/world/NativeAvatarPalette.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/avatars/female-dye.png",
+      "bytes": 518815,
+      "references": [
+        "world/src/world/ImportedAvatar.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/avatars/male.glb",
+      "bytes": 14607748,
+      "references": [
+        "world/CODEX_HANDOFF.md",
+        "world/scripts/male-wardrobe-fit.test.mjs",
+        "world/src/world/ImportedAvatar.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/avatars/male-body-dye.png",
+      "bytes": 283439,
+      "references": [
+        "world/src/world/ImportedAvatar.ts"
+      ]
+    },
+    {
+      "path": "world/src/assets/avatars/male-vest.jpg",
+      "bytes": 742618,
+      "references": [
+        "world/src/world/ImportedAvatar.ts"
+      ]
+    },
+    {
+      "path": "world/public/floor-plan.svg",
+      "bytes": 17062,
+      "references": [
+        "world/scripts/export-floor-plan.mjs",
+        "world/src/ui/App.ts",
+        "docs/beta/ps2/assets/App-CnccmSQv.js",
+        "docs/beta/ps2/assets/App-Rs6OmkHn.js",
+        "docs/beta/ps2/assets/App-BnAiuOY7.js",
+        "docs/beta/ps2/assets/App-DUToOscT.js",
+        "docs/beta/ps2/assets/App-B9pR299u.js",
+        "docs/beta/ps2/assets/App-Br_iBFJR.js",
+        "docs/beta/ps2/assets/App-8nlfDVZU.js",
+        "docs/beta/ps2/assets/App-DMvkkTIW.js",
+        "docs/beta/ps2/assets/App-D6tKrt8g.js",
+        "docs/beta/ps2/assets/App-DKOWzNkq.js",
+        "docs/beta/ps2/assets/App-jdk2-1Vn.js",
+        "docs/beta/ps2/assets/App-DgIws76c.js",
+        "docs/beta/ps2/assets/App-iCT1MjlZ.js",
+        "docs/beta/ps2/assets/App-DIJdodQo.js",
+        "docs/beta/ps2/assets/App-1r1TIK55.js",
+        "docs/beta/ps2/assets/App-CLZT0wBE.js",
+        "docs/beta/ps2/assets/App-DU9bVZF0.js",
+        "docs/beta/ps2/assets/App-DEC664de.js",
+        "docs/beta/ps2/assets/App-r5p03CMo.js",
+        "docs/beta/ps2/assets/App-B_VnCEkt.js",
+        "docs/beta/ps2/assets/App-C-v8z73Z.js",
+        "docs/beta/ps2/assets/App-DXLq9kDH.js",
+        "docs/beta/ps2/assets/App-CzxqrD80.js",
+        "docs/beta/ps2/assets/App-DKGeiohs.js",
+        "docs/beta/ps2/assets/App-fCg78wsK.js",
+        "docs/beta/ps2/assets/App-CpfMEKcd.js",
+        "docs/beta/ps2/assets/App-CI1Hv4up.js",
+        "docs/beta/ps2/assets/App-BB90Xy0i.js",
+        "docs/beta/ps2/assets/App-D9Wn4L6f.js",
+        "docs/beta/ps2/assets/App-CU7387Ip.js",
+        "docs/beta/ps2/assets/App-CIUNmYvV.js",
+        "docs/beta/ps2/assets/App-CwBlvTBx.js",
+        "docs/beta/ps2/assets/App-DR6oToJ1.js",
+        "docs/beta/ps2/assets/App-DyIr7YQ4.js",
+        "docs/beta/ps2/assets/App-CH0lRp70.js",
+        "docs/beta/ps2/assets/App-DcaUCiKa.js",
+        "docs/beta/ps2/assets/App-D42twTSp.js",
+        "docs/beta/ps2/assets/App-Kj9VVlG7.js",
+        "docs/beta/ps2/assets/App-DNXo_xSi.js",
+        "docs/beta/ps2/assets/App-BW7cdzll.js",
+        "docs/beta/ps2/assets/App-eLwhOVFK.js",
+        "docs/beta/ps2/assets/App-CmSeKoZG.js",
+        "docs/beta/ps2/assets/App-DFNXZVfR.js",
+        "docs/beta/ps2/assets/App-DPWO2cYi.js",
+        "docs/beta/ps2/assets/App-CNcurObe.js",
+        "docs/beta/ps2/assets/App-CaSFm1BR.js",
+        "docs/beta/assets/App-DH9n_Cbp.js",
+        "docs/beta/assets/App-BXo1PG_b.js",
+        "docs/beta/assets/App-D-yr72Xi.js",
+        "docs/beta/assets/App-BUa1Ssv_.js",
+        "docs/beta/assets/App-D2xxGDzk.js",
+        "docs/beta/assets/App-_OQbmL2O.js",
+        "docs/beta/assets/App-BGeHp80R.js",
+        "docs/beta/assets/App-DiVVFY8b.js",
+        "docs/beta/assets/App-BHKQDqdV.js",
+        "docs/beta/assets/App-CVIbDqTI.js",
+        "docs/beta/assets/App-BmvF7NRm.js",
+        "docs/beta/assets/App-BnAiuOY7.js",
+        "docs/beta/assets/App-BsLuZq06.js",
+        "docs/beta/assets/App-T42eMY_P.js",
+        "docs/beta/assets/App-CPWdKZNb.js",
+        "docs/beta/assets/App-DUToOscT.js",
+        "docs/beta/assets/App-BUhfu_7G.js",
+        "docs/beta/assets/App-C_XPt645.js",
+        "docs/beta/assets/App-8nlfDVZU.js",
+        "docs/beta/assets/App-DCiX4-hC.js",
+        "docs/beta/assets/App-D6ql25EF.js",
+        "docs/beta/assets/App-n1dxgw8b.js",
+        "docs/beta/assets/App-jdk2-1Vn.js",
+        "docs/beta/assets/App-K9alyfyp.js",
+        "docs/beta/assets/App-DgIws76c.js",
+        "docs/beta/assets/App-iCT1MjlZ.js",
+        "docs/beta/assets/App-Bg77Flrb.js",
+        "docs/beta/assets/App-CLZT0wBE.js",
+        "docs/beta/assets/App-B8dGeTCT.js",
+        "docs/beta/assets/App-MYVRE7dy.js",
+        "docs/beta/assets/App-Dt9TIGZQ.js",
+        "docs/beta/assets/App-2eFm_oS0.js",
+        "docs/beta/assets/App-Bu3gJJjv.js",
+        "docs/beta/assets/App-r5p03CMo.js",
+        "docs/beta/assets/App-Qh_BZ-h1.js",
+        "docs/beta/assets/App-B_VnCEkt.js",
+        "docs/beta/assets/App-C-v8z73Z.js",
+        "docs/beta/assets/App-Dpv5YjWh.js",
+        "docs/beta/assets/App-CzxqrD80.js",
+        "docs/beta/assets/App-DKGeiohs.js",
+        "docs/beta/assets/App-B6WO-TEk.js",
+        "docs/beta/assets/App-CKinmhhX.js",
+        "docs/beta/assets/App-DRd-dMOX.js",
+        "docs/beta/assets/App-DsZ9iIQL.js",
+        "docs/beta/assets/App-CHQBoP-l.js",
+        "docs/beta/assets/App-CHgBJAJ7.js",
+        "docs/beta/assets/App-CRtjczeL.js",
+        "docs/beta/assets/App-CUqfJoZR.js",
+        "docs/beta/assets/App-DJmJSbH7.js",
+        "docs/beta/assets/App-Cfz37zhT.js",
+        "docs/beta/assets/App-BeT7_5eU.js",
+        "docs/beta/assets/App-D_3vyps1.js",
+        "docs/beta/assets/App-71jUPpxx.js",
+        "docs/beta/assets/App-ClJy_OsS.js",
+        "docs/beta/assets/App-jOoNfMsc.js",
+        "docs/beta/assets/App-Dgo4KtGr.js",
+        "docs/beta/assets/App-DmCekf0W.js",
+        "docs/beta/assets/App-BB90Xy0i.js",
+        "docs/beta/assets/App-BUQTQWlN.js",
+        "docs/beta/assets/App-CWuBlMAO.js",
+        "docs/beta/assets/App-Dw0UWgrB.js",
+        "docs/beta/assets/App-CU7387Ip.js",
+        "docs/beta/assets/App-DG43AbU_.js",
+        "docs/beta/assets/App--c012pBs.js",
+        "docs/beta/assets/App-BLNNUPmy.js",
+        "docs/beta/assets/App-veKbwZhR.js",
+        "docs/beta/assets/App-CIUNmYvV.js",
+        "docs/beta/assets/App-CwBlvTBx.js",
+        "docs/beta/assets/App-BjUvvyAi.js",
+        "docs/beta/assets/App-BImwzPiz.js",
+        "docs/beta/assets/App-DR6oToJ1.js",
+        "docs/beta/assets/App-CH0lRp70.js",
+        "docs/beta/assets/App-Bf-yNk4S.js",
+        "docs/beta/assets/App-BOM2vcYp.js",
+        "docs/beta/assets/App-BiseIWKv.js",
+        "docs/beta/assets/App-DcaUCiKa.js",
+        "docs/beta/assets/App-B5Xz9zsa.js",
+        "docs/beta/assets/App-BXlhs_zN.js",
+        "docs/beta/assets/App-jaRQh9gI.js",
+        "docs/beta/assets/App-DmG4zJZK.js",
+        "docs/beta/assets/App-B_yVDtKW.js",
+        "docs/beta/assets/App-CBVdhZ_w.js",
+        "docs/beta/assets/App-Cv0iLfrU.js",
+        "docs/beta/assets/App-YCschbhI.js",
+        "docs/beta/assets/App-Boy8T-rd.js",
+        "docs/beta/assets/App-DNXo_xSi.js",
+        "docs/beta/assets/App-BnDTeYnh.js",
+        "docs/beta/assets/App-eLwhOVFK.js",
+        "docs/beta/assets/App-CmSeKoZG.js",
+        "docs/beta/assets/App-DPWO2cYi.js",
+        "docs/beta/assets/App-uEIHRz5R.js",
+        "docs/beta/assets/App-CaSFm1BR.js"
+      ]
+    },
+    {
+      "path": "world/public/manifest.webmanifest",
+      "bytes": 278,
+      "references": [
+        "world/index.html",
+        "docs/beta/index.html",
+        "docs/beta/ps2/index.html"
+      ]
+    },
+    {
+      "path": "world/public/font/HanWangMing-subset.woff2",
+      "bytes": 143856,
+      "references": [
+        "world/src/style.css",
+        "docs/beta/ps2/assets/style-CfsbF_a0.css",
+        "docs/beta/ps2/assets/index-njZNhyaR.css",
+        "docs/beta/ps2/assets/style-Bv0uZPm6.css",
+        "docs/beta/ps2/assets/index-DVnKkMik.css",
+        "docs/beta/ps2/assets/style-CpAxkCiA.css",
+        "docs/beta/ps2/assets/style-SZ7U53ua.css",
+        "docs/beta/ps2/assets/style-CLlrj23b.css",
+        "docs/beta/ps2/assets/style-DT8lFcGV.css",
+        "docs/beta/ps2/assets/index-CF9G-ITv.css",
+        "docs/beta/ps2/assets/style-C_hVFX5f.css",
+        "docs/beta/ps2/assets/style-DsBf8-Cy.css",
+        "docs/beta/ps2/assets/index-CKNI0tBR.css",
+        "docs/beta/ps2/assets/style-DuWpCErR.css",
+        "docs/beta/ps2/assets/style-BGG3z46L.css",
+        "docs/beta/ps2/assets/style-PSiP5xGw.css",
+        "docs/beta/ps2/assets/style-vKnj4x5S.css",
+        "docs/beta/assets/index-B-cJQP4W.css",
+        "docs/beta/assets/style-CfsbF_a0.css",
+        "docs/beta/assets/index-njZNhyaR.css",
+        "docs/beta/assets/index-9w-ZuIfJ.css",
+        "docs/beta/assets/index-CeWWq-yP.css",
+        "docs/beta/assets/index-B32RoPiu.css",
+        "docs/beta/assets/index-pY1mFYgD.css",
+        "docs/beta/assets/index-BNuQD0aP.css",
+        "docs/beta/assets/index-BM25EiCN.css",
+        "docs/beta/assets/style-Bv0uZPm6.css",
+        "docs/beta/assets/index-Cb6XaAaG.css",
+        "docs/beta/assets/index-yH4myk2p.css",
+        "docs/beta/assets/index-CSmSoGup.css",
+        "docs/beta/assets/index-CH3LbzcN.css",
+        "docs/beta/assets/index-DVnKkMik.css",
+        "docs/beta/assets/index-Czd9QUPO.css",
+        "docs/beta/assets/style-CpAxkCiA.css",
+        "docs/beta/assets/index-Db73VJtj.css",
+        "docs/beta/assets/index-CV1dwnrB.css",
+        "docs/beta/assets/style-SZ7U53ua.css",
+        "docs/beta/assets/index-Cs5qfg-o.css",
+        "docs/beta/assets/style-DT8lFcGV.css",
+        "docs/beta/assets/index-CXgn16g5.css",
+        "docs/beta/assets/index-CsLupzve.css",
+        "docs/beta/assets/index-B2JJXdjx.css",
+        "docs/beta/assets/index-CF9G-ITv.css",
+        "docs/beta/assets/style-C_hVFX5f.css",
+        "docs/beta/assets/index-BlnVA3hR.css",
+        "docs/beta/assets/style-DuWpCErR.css",
+        "docs/beta/assets/index-DWi8IHbW.css",
+        "docs/beta/assets/index-DCbNf6vR.css",
+        "docs/beta/assets/index-BFGldJ5z.css",
+        "docs/beta/assets/style-BGG3z46L.css",
+        "docs/beta/assets/style-PSiP5xGw.css",
+        "docs/beta/assets/index-C8eCwUZu.css"
+      ]
+    },
+    {
+      "path": "world/public/font/BebasNeue-Regular.ttf",
+      "bytes": 60576,
+      "references": [
+        "scss/_mixin.scss",
+        "world/src/style.css",
+        "docs/beta/ps2/assets/style-CfsbF_a0.css",
+        "docs/beta/ps2/assets/index-njZNhyaR.css",
+        "docs/beta/ps2/assets/style-Bv0uZPm6.css",
+        "docs/beta/ps2/assets/index-DVnKkMik.css",
+        "docs/beta/ps2/assets/style-CpAxkCiA.css",
+        "docs/beta/ps2/assets/style-SZ7U53ua.css",
+        "docs/beta/ps2/assets/style-CLlrj23b.css",
+        "docs/beta/ps2/assets/style-DT8lFcGV.css",
+        "docs/beta/ps2/assets/index-CF9G-ITv.css",
+        "docs/beta/ps2/assets/style-C_hVFX5f.css",
+        "docs/beta/ps2/assets/style-DsBf8-Cy.css",
+        "docs/beta/ps2/assets/index-CKNI0tBR.css",
+        "docs/beta/ps2/assets/style-DuWpCErR.css",
+        "docs/beta/ps2/assets/style-BGG3z46L.css",
+        "docs/beta/ps2/assets/style-PSiP5xGw.css",
+        "docs/beta/ps2/assets/style-vKnj4x5S.css",
+        "docs/beta/assets/index-B-cJQP4W.css",
+        "docs/beta/assets/style-CfsbF_a0.css",
+        "docs/beta/assets/index-njZNhyaR.css",
+        "docs/beta/assets/index-9w-ZuIfJ.css",
+        "docs/beta/assets/index-CeWWq-yP.css",
+        "docs/beta/assets/index-B32RoPiu.css",
+        "docs/beta/assets/index-pY1mFYgD.css",
+        "docs/beta/assets/index-BNuQD0aP.css",
+        "docs/beta/assets/index-BM25EiCN.css",
+        "docs/beta/assets/style-Bv0uZPm6.css",
+        "docs/beta/assets/index-Cb6XaAaG.css",
+        "docs/beta/assets/index-yH4myk2p.css",
+        "docs/beta/assets/index-CSmSoGup.css",
+        "docs/beta/assets/index-CH3LbzcN.css",
+        "docs/beta/assets/index-DVnKkMik.css",
+        "docs/beta/assets/index-Czd9QUPO.css",
+        "docs/beta/assets/style-CpAxkCiA.css",
+        "docs/beta/assets/index-Db73VJtj.css",
+        "docs/beta/assets/index-CV1dwnrB.css",
+        "docs/beta/assets/style-SZ7U53ua.css",
+        "docs/beta/assets/index-Cs5qfg-o.css",
+        "docs/beta/assets/style-DT8lFcGV.css",
+        "docs/beta/assets/index-CXgn16g5.css",
+        "docs/beta/assets/index-CsLupzve.css",
+        "docs/beta/assets/index-B2JJXdjx.css",
+        "docs/beta/assets/index-CF9G-ITv.css",
+        "docs/beta/assets/style-C_hVFX5f.css",
+        "docs/beta/assets/index-BlnVA3hR.css",
+        "docs/beta/assets/style-DuWpCErR.css",
+        "docs/beta/assets/index-DWi8IHbW.css",
+        "docs/beta/assets/index-DCbNf6vR.css",
+        "docs/beta/assets/index-BFGldJ5z.css",
+        "docs/beta/assets/style-BGG3z46L.css",
+        "docs/beta/assets/style-PSiP5xGw.css",
+        "docs/beta/assets/index-C8eCwUZu.css",
+        "docs/css/contact.css",
+        "docs/css/index.css",
+        "docs/css/about.css",
+        "docs/css/layout.css",
+        "docs/css/drBeauty.css",
+        "docs/css/portfolio.css"
+      ]
+    },
+    {
+      "path": "world/public/review/mediapipe/pointing_up.jpg",
+      "bytes": 74461,
+      "references": [
+        "world/src/webcam-review.ts (template URL + named fixture)"
+      ]
+    },
+    {
+      "path": "world/public/review/mediapipe/thumb_up.jpg",
+      "bytes": 80388,
+      "references": [
+        "world/src/webcam-review.ts (template URL + named fixture)"
+      ]
+    }
+  ],
+  "unreferencedCandidates": [
+    {
+      "path": "docs/assets/aboutUs.jpg",
+      "bytes": 247435,
+      "references": []
+    },
+    {
+      "path": "docs/assets/return.png",
+      "bytes": 8847,
+      "references": []
+    },
+    {
+      "path": "docs/assets/mrBeauty1.jpg",
+      "bytes": 126582,
+      "references": []
+    },
+    {
+      "path": "docs/assets/android-icon-192x192.png",
+      "bytes": 28844,
+      "references": []
+    },
+    {
+      "path": "docs/assets/mrBeauty2.jpg",
+      "bytes": 89689,
+      "references": []
+    },
+    {
+      "path": "docs/assets/WhatsApp Image 2024-04-08 at 18.11.41.jpeg",
+      "bytes": 759,
+      "references": []
+    },
+    {
+      "path": "docs/assets/role.jpg",
+      "bytes": 91245,
+      "references": []
+    },
+    {
+      "path": "docs/assets/role_cover.jpg",
+      "bytes": 113566,
+      "references": []
+    },
+    {
+      "path": "docs/assets/logo_red.png",
+      "bytes": 234243,
+      "references": []
+    }
+  ]
+}

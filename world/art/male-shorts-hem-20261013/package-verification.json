@@ -1,0 +1,430 @@
+{
+  "status": "verified release packages; publication requires protected-main review",
+  "tests": 436,
+  "releaseFilesPerChannel": 52,
+  "verifiedFiles": 104,
+  "integrityHashesPerChannel": 19,
+  "mainEntry": "assets/main-BE4fKoeL.js",
+  "maleSHA256": "b8cda2d2ddff137223a87af264116c9498e033a344d07c22b69a604d22d33e4c",
+  "femaleSHA256": "20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3",
+  "productionAPI": "https://myschedule-festival.onrender.com",
+  "originalMotionSamples": "unchanged",
+  "files": [
+    {
+      "file": "../docs/beta/assets/App-CU7387Ip.js",
+      "sha256": "0edcc393e769c76c3640a40e6e710355996f45bf0b42503d4357b0c4e5ec611c"
+    },
+    {
+      "file": "../docs/beta/assets/AssetMirror-9_JaNnB3.js",
+      "sha256": "8552d95ac96af49d74b6a7ea1efc5732f544e1ef72a0b3ca966f1898659a8b36"
+    },
+    {
+      "file": "../docs/beta/assets/CoastalCirculation-FrcmfeTm.js",
+      "sha256": "57b14e6624f94d178adfdf88d446084f1f19b9665116e4fd376f417afed850f1"
+    },
+    {
+      "file": "../docs/beta/assets/CoastalSkateboard-BaZkd1Ei.js",
+      "sha256": "a029d5c6d76900601c5d2913c5d7fda079df0d0ca896d8aefc9073ea151caa56"
+    },
+    {
+      "file": "../docs/beta/assets/CoastalTerrain-BD-ZbkGs.js",
+      "sha256": "804a96b75ed669e39835566c03e5389a3a39b895626ee1fe0c37ab572c6706c3"
+    },
+    {
+      "file": "../docs/beta/assets/FestivalWorld-8LDlod8C.js",
+      "sha256": "82ee1cd3582e8363bef26f35b86242d6c6268b4f958ab1059d9e8e61c1b28f10"
+    },
+    {
+      "file": "../docs/beta/assets/ImportedAvatar-CjRdtfXS.js",
+      "sha256": "bfe3df827c112bcdff7e7d45baa5da93a7d3a325a498934bd9468fd2f46dfbd8"
+    },
+    {
+      "file": "../docs/beta/assets/NativeAvatarPalette-BUFHG0nX.js",
+      "sha256": "a230e6f7b9648e07fd44e9bb83fdbf168d0911121eec19c2572eec737da37d74"
+    },
+    {
+      "file": "../docs/beta/assets/PlanetCurve-CfdbLfpy.js",
+      "sha256": "a30f12c4829a420ca4ac5bfa8557328021ad073ac7e3e66bda75ecff6063f257"
+    },
+    {
+      "file": "../docs/beta/assets/RooftopBand-BI-CX2iC.js",
+      "sha256": "555ff53b228c921c80ec9beeed06a53cf0dfb526d9830f37da0e8de027ebe043"
+    },
+    {
+      "file": "../docs/beta/assets/WorldTopology-IZn7GvTk.js",
+      "sha256": "534abf5d130d2fc2ec4e39778daca6582f80fe59375d6e0b0f68c00f600e5c24"
+    },
+    {
+      "file": "../docs/beta/assets/XrControls-CGaV4bMa.js",
+      "sha256": "2c0c22f3bc77e3ceadf6b3e98368fc20c1c66cb1a0a694b6dde77e7fbcead16d"
+    },
+    {
+      "file": "../docs/beta/assets/asset-integrity.json",
+      "sha256": "7331f32823e072153d536c325692e515ff5d14651607c01475070b3b6a377b00"
+    },
+    {
+      "file": "../docs/beta/assets/attendant-DA2DY7mw.glb",
+      "sha256": "2248d11158447b6bd21866329c2ae157a760fe604a6acced046d1918032b9e1d"
+    },
+    {
+      "file": "../docs/beta/assets/avatar-BJssvwek.js",
+      "sha256": "8b5d997ba3e98efbb931c4ef94b9b414d38b93bde6832385ab9ca959952836fe"
+    },
+    {
+      "file": "../docs/beta/assets/band-DDk0oxfv.js",
+      "sha256": "1a396aa6b58f53d88aae1044a075904aea3a6b23d6a8288b69f5459f76804089"
+    },
+    {
+      "file": "../docs/beta/assets/bass-player-sXfXW-L8.glb",
+      "sha256": "30465dfd12eab622b67dfc97c555168895511963061fcc8f30fa5deb7a854b78"
+    },
+    {
+      "file": "../docs/beta/assets/bonfire-CGzqt4wQ.glb",
+      "sha256": "bdc6fbeb73879a9decca52e4a29aaf7f105bef5c1c2f4910652c188c9583735c"
+    },
+    {
+      "file": "../docs/beta/assets/box-office-CJ0mhUTc.glb",
+      "sha256": "c1066210b415ab7ae1296096ee566ebeca551eb810af8b3cf70619c6affc04d8"
+    },
+    {
+      "file": "../docs/beta/assets/coastalMap-Dmjz5Ufo.js",
+      "sha256": "bda3cd64168f0968e38ffa5066a760c56061f046f73b7f41f2f4d561f1aec513"
+    },
+    {
+      "file": "../docs/beta/assets/company-logo-BSEe3C7m.png",
+      "sha256": "4aa632a578ad51aa2f2b3016b72e0b21bdd8fe6a57c909e68eace3a794e0c88c"
+    },
+    {
+      "file": "../docs/beta/assets/drummer-UXXp3zjH.glb",
+      "sha256": "e08e903f762ee24cc746072a715b53ceb044cca707491ad33ea44dd7e1e91740"
+    },
+    {
+      "file": "../docs/beta/assets/female-BUDxbVEw.glb",
+      "sha256": "20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3"
+    },
+    {
+      "file": "../docs/beta/assets/female-dye-BYYSLeCK.png",
+      "sha256": "d612c1e72adfd68aeed1f0893c2c966b278bb5be99ccc51508278914d2e78314"
+    },
+    {
+      "file": "../docs/beta/assets/female-vest-DGupcca5.jpg",
+      "sha256": "34c76f78e5c38f89479bb2fb951bfd45e62e1d14680451b5f54b08443205003b"
+    },
+    {
+      "file": "../docs/beta/assets/guitarist-B1qSs6mg.glb",
+      "sha256": "af22ce2d0788c9f50c9c545b302145905466852e518aef41804a3966f7bdec4d"
+    },
+    {
+      "file": "../docs/beta/assets/main-BE4fKoeL.js",
+      "sha256": "45c7d3e6c70bf058a9736c7c8c39243cbdda5bcc6ff8f5f1a08c49902e2167c7"
+    },
+    {
+      "file": "../docs/beta/assets/male-D1ugzqxF.glb",
+      "sha256": "b8cda2d2ddff137223a87af264116c9498e033a344d07c22b69a604d22d33e4c"
+    },
+    {
+      "file": "../docs/beta/assets/male-body-dye-D99IrAsA.png",
+      "sha256": "623ef27ba59a5963387897e4c3a0fff9e2f17e817d10bc05577544fe6ed2d224"
+    },
+    {
+      "file": "../docs/beta/assets/male-dye-B3RvcOh0.png",
+      "sha256": "c329580bb359b013ff54c6b7a73bce380078dc5a4beaa068cc112ce58baf150a"
+    },
+    {
+      "file": "../docs/beta/assets/male-vest-Ddaouj1Z.jpg",
+      "sha256": "07ea10e5e9c17977277b9b0a12b3e38ad8183758dd959e844483ad5562516afe"
+    },
+    {
+      "file": "../docs/beta/assets/master-of-the-house-Ska7t2WR.png",
+      "sha256": "9f8455d4be48608e7ee61f501f0a12dfa73efe6349067c812cfaa17b04ec7cef"
+    },
+    {
+      "file": "../docs/beta/assets/modulepreload-polyfill-B5Qt9EMX.js",
+      "sha256": "d2a32840421496e872ade591618d2fa5c33797605d1aec04301717e5a90757d0"
+    },
+    {
+      "file": "../docs/beta/assets/stage-BdQPws-A.glb",
+      "sha256": "d1f0a92beba7a3b75dc134cf0459985139df534e064e0e047cffae49b0db5c79"
+    },
+    {
+      "file": "../docs/beta/assets/style-DuWpCErR.css",
+      "sha256": "a952b92c700f89aada438f44a71809f3717b5187b1e2785ec2efd0680994504b"
+    },
+    {
+      "file": "../docs/beta/assets/temple-statue-BXy3Qxcb.glb",
+      "sha256": "98dbecdda28f0fe470089aeba259f3137580c48b25f559b5bd20f59e2900761b"
+    },
+    {
+      "file": "../docs/beta/assets/three-BL93HLRP.js",
+      "sha256": "220ed0e7e6e683258b15bc709a3595c374e0c6f39ac25da5a8ac6d5874b4594e"
+    },
+    {
+      "file": "../docs/beta/assets/valet-CJg5oReV.glb",
+      "sha256": "2cbf7670e6d82fb49c929abd936766c59dca11ebce55f7b892269c67969fb3b8"
+    },
+    {
+      "file": "../docs/beta/assets/vocal-zFdg7T3j.glb",
+      "sha256": "f7c6176fb68379af179b2b8dc47426c9d748af4dd930b30817b1217cbd087d24"
+    },
+    {
+      "file": "../docs/beta/assets/webcam-BUId5Lgj.js",
+      "sha256": "3204641e034fd750f2f00c3da0f1ca4cdeac442c40fcb5ff1d263d4d952704c9"
+    },
+    {
+      "file": "../docs/beta/avatar-review.html",
+      "sha256": "da22c1fb30741ac51850cfd41186af38cf6a7f66ee67dd335a5c23f4eac896a2"
+    },
+    {
+      "file": "../docs/beta/band-review.html",
+      "sha256": "345179565b869ccf6ac7597d6a6716900c91aeab7321690654353977b85a141c"
+    },
+    {
+      "file": "../docs/beta/floor-plan.svg",
+      "sha256": "a2cf9613f0bbf9feb47f9925b614a0cb7fc210554871c2de4202ae599392dd17"
+    },
+    {
+      "file": "../docs/beta/font/BebasNeue-Regular.ttf",
+      "sha256": "f2d8f000fd44a71714be0321ae12d3d6bc8bb0ea290b0c1312516f4448cec117"
+    },
+    {
+      "file": "../docs/beta/font/HanWangMing-subset.woff2",
+      "sha256": "3b96075c8e8e815fd92f325566ecb2d0e727caa7ef306488e97ede06033b4520"
+    },
+    {
+      "file": "../docs/beta/index.html",
+      "sha256": "aae6fbb9e4c02352eacb3580ea9e64518fc522d2c2ff4a230c476f5ce9cfe9fa"
+    },
+    {
+      "file": "../docs/beta/location-review.html",
+      "sha256": "83f9b1b2b44a8ef006a7f30a84e16608f9dcc3cd21926d6c191981e5c2617d8b"
+    },
+    {
+      "file": "../docs/beta/manifest.webmanifest",
+      "sha256": "9ef2a7f92b13a42352bee13fab12d28ef533ccb28c1dfbbb2be3bb6aadd86706"
+    },
+    {
+      "file": "../docs/beta/rebuild-review.html",
+      "sha256": "69db39db8541cf534055a5cc6ec422c46b4dde338bf741a619442b4795827985"
+    },
+    {
+      "file": "../docs/beta/review/mediapipe/pointing_up.jpg",
+      "sha256": "ecf8ca2611d08fa25948a4fc10710af9120e88243a54da6356bacea17ff3e36e"
+    },
+    {
+      "file": "../docs/beta/review/mediapipe/thumb_up.jpg",
+      "sha256": "5d673c081ab13b8a1812269ff57047066f9c33c07db5f4178089e8cb3fdc0291"
+    },
+    {
+      "file": "../docs/beta/webcam-review.html",
+      "sha256": "e5baf471dffcaad3112ad82661f0ca95d724c5c897e913ea35a5fd10db227acd"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/App-CU7387Ip.js",
+      "sha256": "0edcc393e769c76c3640a40e6e710355996f45bf0b42503d4357b0c4e5ec611c"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/AssetMirror-9_JaNnB3.js",
+      "sha256": "8552d95ac96af49d74b6a7ea1efc5732f544e1ef72a0b3ca966f1898659a8b36"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/CoastalCirculation-FrcmfeTm.js",
+      "sha256": "57b14e6624f94d178adfdf88d446084f1f19b9665116e4fd376f417afed850f1"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/CoastalSkateboard-BaZkd1Ei.js",
+      "sha256": "a029d5c6d76900601c5d2913c5d7fda079df0d0ca896d8aefc9073ea151caa56"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/CoastalTerrain-BD-ZbkGs.js",
+      "sha256": "804a96b75ed669e39835566c03e5389a3a39b895626ee1fe0c37ab572c6706c3"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/FestivalWorld-8LDlod8C.js",
+      "sha256": "82ee1cd3582e8363bef26f35b86242d6c6268b4f958ab1059d9e8e61c1b28f10"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/ImportedAvatar-CjRdtfXS.js",
+      "sha256": "bfe3df827c112bcdff7e7d45baa5da93a7d3a325a498934bd9468fd2f46dfbd8"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/NativeAvatarPalette-BUFHG0nX.js",
+      "sha256": "a230e6f7b9648e07fd44e9bb83fdbf168d0911121eec19c2572eec737da37d74"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/PlanetCurve-CfdbLfpy.js",
+      "sha256": "a30f12c4829a420ca4ac5bfa8557328021ad073ac7e3e66bda75ecff6063f257"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/RooftopBand-BI-CX2iC.js",
+      "sha256": "555ff53b228c921c80ec9beeed06a53cf0dfb526d9830f37da0e8de027ebe043"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/WorldTopology-IZn7GvTk.js",
+      "sha256": "534abf5d130d2fc2ec4e39778daca6582f80fe59375d6e0b0f68c00f600e5c24"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/XrControls-CGaV4bMa.js",
+      "sha256": "2c0c22f3bc77e3ceadf6b3e98368fc20c1c66cb1a0a694b6dde77e7fbcead16d"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/asset-integrity.json",
+      "sha256": "7331f32823e072153d536c325692e515ff5d14651607c01475070b3b6a377b00"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/attendant-DA2DY7mw.glb",
+      "sha256": "2248d11158447b6bd21866329c2ae157a760fe604a6acced046d1918032b9e1d"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/avatar-BJssvwek.js",
+      "sha256": "8b5d997ba3e98efbb931c4ef94b9b414d38b93bde6832385ab9ca959952836fe"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/band-DDk0oxfv.js",
+      "sha256": "1a396aa6b58f53d88aae1044a075904aea3a6b23d6a8288b69f5459f76804089"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/bass-player-sXfXW-L8.glb",
+      "sha256": "30465dfd12eab622b67dfc97c555168895511963061fcc8f30fa5deb7a854b78"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/bonfire-CGzqt4wQ.glb",
+      "sha256": "bdc6fbeb73879a9decca52e4a29aaf7f105bef5c1c2f4910652c188c9583735c"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/box-office-CJ0mhUTc.glb",
+      "sha256": "c1066210b415ab7ae1296096ee566ebeca551eb810af8b3cf70619c6affc04d8"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/coastalMap-Dmjz5Ufo.js",
+      "sha256": "bda3cd64168f0968e38ffa5066a760c56061f046f73b7f41f2f4d561f1aec513"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/company-logo-BSEe3C7m.png",
+      "sha256": "4aa632a578ad51aa2f2b3016b72e0b21bdd8fe6a57c909e68eace3a794e0c88c"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/drummer-UXXp3zjH.glb",
+      "sha256": "e08e903f762ee24cc746072a715b53ceb044cca707491ad33ea44dd7e1e91740"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/female-BUDxbVEw.glb",
+      "sha256": "20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/female-dye-BYYSLeCK.png",
+      "sha256": "d612c1e72adfd68aeed1f0893c2c966b278bb5be99ccc51508278914d2e78314"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/female-vest-DGupcca5.jpg",
+      "sha256": "34c76f78e5c38f89479bb2fb951bfd45e62e1d14680451b5f54b08443205003b"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/guitarist-B1qSs6mg.glb",
+      "sha256": "af22ce2d0788c9f50c9c545b302145905466852e518aef41804a3966f7bdec4d"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/main-BE4fKoeL.js",
+      "sha256": "45c7d3e6c70bf058a9736c7c8c39243cbdda5bcc6ff8f5f1a08c49902e2167c7"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/male-D1ugzqxF.glb",
+      "sha256": "b8cda2d2ddff137223a87af264116c9498e033a344d07c22b69a604d22d33e4c"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/male-body-dye-D99IrAsA.png",
+      "sha256": "623ef27ba59a5963387897e4c3a0fff9e2f17e817d10bc05577544fe6ed2d224"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/male-dye-B3RvcOh0.png",
+      "sha256": "c329580bb359b013ff54c6b7a73bce380078dc5a4beaa068cc112ce58baf150a"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/male-vest-Ddaouj1Z.jpg",
+      "sha256": "07ea10e5e9c17977277b9b0a12b3e38ad8183758dd959e844483ad5562516afe"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/master-of-the-house-Ska7t2WR.png",
+      "sha256": "9f8455d4be48608e7ee61f501f0a12dfa73efe6349067c812cfaa17b04ec7cef"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/modulepreload-polyfill-B5Qt9EMX.js",
+      "sha256": "d2a32840421496e872ade591618d2fa5c33797605d1aec04301717e5a90757d0"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/stage-BdQPws-A.glb",
+      "sha256": "d1f0a92beba7a3b75dc134cf0459985139df534e064e0e047cffae49b0db5c79"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/style-DuWpCErR.css",
+      "sha256": "a952b92c700f89aada438f44a71809f3717b5187b1e2785ec2efd0680994504b"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/temple-statue-BXy3Qxcb.glb",
+      "sha256": "98dbecdda28f0fe470089aeba259f3137580c48b25f559b5bd20f59e2900761b"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/three-BL93HLRP.js",
+      "sha256": "220ed0e7e6e683258b15bc709a3595c374e0c6f39ac25da5a8ac6d5874b4594e"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/valet-CJg5oReV.glb",
+      "sha256": "2cbf7670e6d82fb49c929abd936766c59dca11ebce55f7b892269c67969fb3b8"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/vocal-zFdg7T3j.glb",
+      "sha256": "f7c6176fb68379af179b2b8dc47426c9d748af4dd930b30817b1217cbd087d24"
+    },
+    {
+      "file": "../docs/beta/ps2/assets/webcam-BUId5Lgj.js",
+      "sha256": "3204641e034fd750f2f00c3da0f1ca4cdeac442c40fcb5ff1d263d4d952704c9"
+    },
+    {
+      "file": "../docs/beta/ps2/avatar-review.html",
+      "sha256": "da22c1fb30741ac51850cfd41186af38cf6a7f66ee67dd335a5c23f4eac896a2"
+    },
+    {
+      "file": "../docs/beta/ps2/band-review.html",
+      "sha256": "345179565b869ccf6ac7597d6a6716900c91aeab7321690654353977b85a141c"
+    },
+    {
+      "file": "../docs/beta/ps2/floor-plan.svg",
+      "sha256": "a2cf9613f0bbf9feb47f9925b614a0cb7fc210554871c2de4202ae599392dd17"
+    },
+    {
+      "file": "../docs/beta/ps2/font/BebasNeue-Regular.ttf",
+      "sha256": "f2d8f000fd44a71714be0321ae12d3d6bc8bb0ea290b0c1312516f4448cec117"
+    },
+    {
+      "file": "../docs/beta/ps2/font/HanWangMing-subset.woff2",
+      "sha256": "3b96075c8e8e815fd92f325566ecb2d0e727caa7ef306488e97ede06033b4520"
+    },
+    {
+      "file": "../docs/beta/ps2/index.html",
+      "sha256": "aae6fbb9e4c02352eacb3580ea9e64518fc522d2c2ff4a230c476f5ce9cfe9fa"
+    },
+    {
+      "file": "../docs/beta/ps2/location-review.html",
+      "sha256": "83f9b1b2b44a8ef006a7f30a84e16608f9dcc3cd21926d6c191981e5c2617d8b"
+    },
+    {
+      "file": "../docs/beta/ps2/manifest.webmanifest",
+      "sha256": "9ef2a7f92b13a42352bee13fab12d28ef533ccb28c1dfbbb2be3bb6aadd86706"
+    },
+    {
+      "file": "../docs/beta/ps2/rebuild-review.html",
+      "sha256": "69db39db8541cf534055a5cc6ec422c46b4dde338bf741a619442b4795827985"
+    },
+    {
+      "file": "../docs/beta/ps2/review/mediapipe/pointing_up.jpg",
+      "sha256": "ecf8ca2611d08fa25948a4fc10710af9120e88243a54da6356bacea17ff3e36e"
+    },
+    {
+      "file": "../docs/beta/ps2/review/mediapipe/thumb_up.jpg",
+      "sha256": "5d673c081ab13b8a1812269ff57047066f9c33c07db5f4178089e8cb3fdc0291"
+    },
+    {
+      "file": "../docs/beta/ps2/webcam-review.html",
+      "sha256": "e5baf471dffcaad3112ad82661f0ca95d724c5c897e913ea35a5fd10db227acd"
+    }
+  ]
+}

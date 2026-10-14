@@ -1,0 +1,33 @@
+{
+  "schema": "animation_contact_sheet_report.v1",
+  "frames": [
+    "art/male-wave-20261013/motion/wave-0.png",
+    "art/male-wave-20261013/motion/wave-0.2.png",
+    "art/male-wave-20261013/motion/wave-0.5.png",
+    "art/male-wave-20261013/motion/wave-0.75.png",
+    "art/male-wave-20261013/motion/wave-1.png"
+  ],
+  "frame_diff": [
+    {
+      "from": "wave-0.png",
+      "to": "wave-0.2.png",
+      "mean_rgb_diff": 0.2932595486111111
+    },
+    {
+      "from": "wave-0.2.png",
+      "to": "wave-0.5.png",
+      "mean_rgb_diff": 0.33500325520833335
+    },
+    {
+      "from": "wave-0.5.png",
+      "to": "wave-0.75.png",
+      "mean_rgb_diff": 0.2863566984953704
+    },
+    {
+      "from": "wave-0.75.png",
+      "to": "wave-1.png",
+      "mean_rgb_diff": 0.3011161747685185
+    }
+  ],
+  "warnings": []
+}

@@ -1,0 +1,24 @@
+{
+  "channels": [
+    {
+      "channel": "docs/beta",
+      "matchingFiles": 53,
+      "validAssetHashes": 20
+    },
+    {
+      "channel": "docs/beta/ps2",
+      "matchingFiles": 53,
+      "validAssetHashes": 20
+    }
+  ],
+  "totalMatchingFiles": 106,
+  "totalValidAssetHashes": 40,
+  "entry": "./assets/main-DvyUK1HM.js",
+  "productionApi": "https://myschedule-festival.onrender.com",
+  "latestMain": "2f355a9a723251b14002d0a5164f98246f2e2243",
+  "currentMainMothGamePreservedExceptArcadeModeGuard": true,
+  "currentMainMothAssetsDataAndStaffPreserved": true,
+  "maleSha256": "f00c08d4a11395680372becad22a85d057179a090e90f132c4eeb4ed5ef1ef48",
+  "femaleSha256": "20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3",
+  "cabinetSha256": "465d019d8739c8449b6c1f83f69b8eaa2e49f1cbe881e160986e1970d7c11adf"
+}

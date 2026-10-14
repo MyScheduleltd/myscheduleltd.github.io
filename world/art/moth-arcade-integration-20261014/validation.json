@@ -1,0 +1,132 @@
+{
+  "verifiedAt": "2026-10-13T22:44:49.300955+00:00",
+  "scope": "Local runtime integration repair only; no publication or BETA build",
+  "tests": {
+    "passed": 30,
+    "failed": 0,
+    "command": "node --test scripts/moth-arcade.test.mjs scripts/moth-arcade-placement.test.mjs scripts/venue-world-repair.test.mjs scripts/venue-scenery.test.mjs",
+    "log": "../../.artifacts/moth-arcade-integration-20261014/tests.log"
+  },
+  "build": {
+    "command": "npm run build",
+    "status": "TypeScript and Vite passed",
+    "warning": "Existing Three.js chunk size warning only",
+    "assets": [
+      "dist/assets/ArcadeRules-C48HdV-z.js",
+      "dist/assets/App-CfDdXwl9.js",
+      "dist/assets/FestivalWorld-DREnRjGX.js"
+    ],
+    "log": "../../.artifacts/moth-arcade-integration-20261014/build.log"
+  },
+  "wall": {
+    "rootX": 20.52,
+    "wallOutsideX": 21.6,
+    "loadedBackX": 21.576704019628,
+    "clearance": 0.023295980372,
+    "previousPenetration": 0.456704019628,
+    "pairCentreZ": 13.5,
+    "testUses": "Actual production rooftop wall builder and loaded cabinet GLB; collider coverage, ground refitting and interaction reach"
+  },
+  "exit": {
+    "content": "\u96e2\u958b\u904a\u6232",
+    "placement": "Horizontal centre of the projected game viewport, 91.5 percent down its height, inside lower orange band",
+    "visual": "Recessed orange button without heading or helper text",
+    "layout": [
+      {
+        "viewport": [
+          1280,
+          720
+        ],
+        "frame": {
+          "x": 327,
+          "y": 110,
+          "width": 618,
+          "height": 513
+        },
+        "button": {
+          "x": 587.87890625,
+          "y": 561.390625,
+          "width": 96.2421875,
+          "height": 36
+        }
+      },
+      {
+        "viewport": [
+          1024,
+          480
+        ],
+        "frame": {
+          "x": 303,
+          "y": 66.5,
+          "width": 413,
+          "height": 343
+        },
+        "button": {
+          "x": 461.37890625,
+          "y": 368.84375,
+          "width": 96.2421875,
+          "height": 36
+        }
+      },
+      {
+        "viewport": [
+          390,
+          480
+        ],
+        "frame": {
+          "x": 30,
+          "y": 108,
+          "width": 326,
+          "height": 271
+        },
+        "button": {
+          "x": 153.0390625,
+          "y": 339.9609375,
+          "width": 79.921875,
+          "height": 32
+        }
+      }
+    ],
+    "nativeReview": "All three sizes keep button inside the orange band and clear of the game canvas; temporary overrides reset"
+  },
+  "input": {
+    "repair": "Focus iframe on load/ready. If a native key reaches parent after clicking surround, forward it once through origin/source-checked bridge to existing private game handlers. Native iframe input stays untouched.",
+    "heldKeys": "Release on document hide and session exit",
+    "accessibleExit": "Interactive control keydown remains native; keyup sends release without canceling default or moving focus. Native Tab then Space exits successfully.",
+    "nativeProof": [
+      "Click surround: parent focus BODY. Down/Down/O restores iframe focus and opens stage selection.",
+      "Native O advances stage/difficulty and starts office rhythm gameplay.",
+      "Timed native M/O/T/H gameplay produces note reactions and score 006000.",
+      "Exit click and Esc return to world. Nearby E prompt and E re-entry work.",
+      "Final rebuilt browser native Tab focuses Exit, Space exits, and E re-enters."
+    ],
+    "timerAudit": "No timing defect found. 85.161-second chart, 1.15-second minimum loading and 3.6-second countdown. Earlier all-miss debug runs came from long QA tool/model gaps; no timer change made."
+  },
+  "browser": {
+    "engine": "Codex in-app browser, native UI input",
+    "url": "http://127.0.0.1:4173/?era=ps2&island&review=arcade&cycleMinute=15",
+    "consoleErrors": [],
+    "physicalPhoneOrHeadset": "Not tested",
+    "screenshots": [
+      "integrated-exit.png",
+      "rhythm-input.png",
+      "wall-clearance.png",
+      "short-desktop.png",
+      "narrow-desktop.png"
+    ]
+  },
+  "preservation": {
+    "cabinetBytes": 1696612,
+    "cabinetSha256": "465d019d8739c8449b6c1f83f69b8eaa2e49f1cbe881e160986e1970d7c11adf",
+    "maleSha256": "f00c08d4a11395680372becad22a85d057179a090e90f132c4eeb4ed5ef1ef48",
+    "femaleSha256": "20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3",
+    "result": "All three GLBs unchanged during this runtime repair"
+  },
+  "supplementaryPackageCheck": {
+    "command": "node scripts/verify-moth-package.mjs",
+    "status": "Could not run: required .qa/moth/published-snapshot.json is absent from this checkout",
+    "relevantChecks": "Targeted arcade suite separately checks generated bridge mirrors, version/SRI and input origin/source validation"
+  },
+  "publication": "Local only",
+  "diffCheck": "git diff --check passed"
+}

@@ -20,6 +20,65 @@ function character(top='#18191b',cap){
  const parts=Object.fromEntries(root.userData.importedAvatar.meshes.map(m=>[m.userData.componentId,m]));
  return {root,rig,parts};
 }
+test('waving does not lift the male chest and side ribs with the upper arm',()=>{
+ const {root,rig,parts}=character(),body=parts.body,p=body.geometry.getAttribute('position');
+ const vertices=Array.from({length:p.count},(_,v)=>v).filter(v=>{
+  const x=Math.abs(p.getX(v)),y=p.getY(v);
+  // Central chest and the side ribs below the armpit are torso, not deltoid.
+  return y>.055&&y<.27&&(x<.12||(y<.125&&x<.145));
+ });
+ assert.ok(vertices.length>300,`exercise the actual front, back and side torso surface (${vertices.length} vertices)`);
+ const sample=()=>{
+  syncImportedAvatars(root);root.updateMatrixWorld(true);body.skeleton.update();
+  const inverse=body.skeleton.bones.find(b=>b.name==='Spine01').matrixWorld.clone().invert();
+  return vertices.map(v=>body.getVertexPosition(v,new THREE.Vector3()).applyMatrix4(body.matrixWorld).applyMatrix4(inverse));
+ };
+ const rest=sample();
+ for(const progress of [.1,.25,.32,.5,.68,.8,.95]){
+  walkCoastalPose(rig,0,0);waveCoastalPose(rig,progress*8,progress);
+  const points=sample(),movement=Math.max(...points.map((point,i)=>point.distanceTo(rest[i])));
+  assert.ok(movement<.004,`wave ${progress}: chest/ribs moved ${movement.toFixed(3)} in torso space toward the waving arm`);
+ }
+});
+test('male shoulder UV and normal splits stay welded through the wave and action clips',()=>{
+ const {root,rig,parts}=character(),body=parts.body,p=body.geometry.getAttribute('position');
+ const selected=new Set(Array.from({length:p.count},(_,v)=>v).filter(v=>
+  Math.abs(p.getX(v))>.09&&Math.abs(p.getX(v))<.225&&p.getY(v)>.17&&p.getY(v)<.325&&
+  body.geometry.getAttribute('_skin').getX(v)>.5&&body.geometry.getAttribute('_hair').getX(v)<.5));
+ const groups=new Map();
+ for(const v of selected){
+  const key=new THREE.Vector3().fromBufferAttribute(p,v).toArray().map(x=>Math.round(x*1e6)).join(',');
+  const ids=groups.get(key)??[];ids.push(v);groups.set(key,ids);
+ }
+ const seams=[...groups.values()].filter(ids=>ids.length>1);
+ assert.ok(seams.length>200,'exercise authored UV/normal splits across both shoulder surfaces');
+ const check=label=>{
+  syncImportedAvatars(root);root.updateMatrixWorld(true);body.skeleton.update();
+  const posed=new Map([...selected].map(v=>[v,body.getVertexPosition(v,new THREE.Vector3())]));
+  for(const ids of seams)for(const v of ids.slice(1))
+   assert.ok(posed.get(v).distanceTo(posed.get(ids[0]))<.00001,`${label}: shoulder seam opens between ${ids[0]} and ${v}`);
+ };
+ for(let frame=0;frame<=24;frame++){
+  walkCoastalPose(rig,0,0);waveCoastalPose(rig,frame/3,frame/24);check(`wave ${frame}`);
+ }
+ for(const move of ['punch','dance'])for(let frame=0;frame<=32;frame++){
+  root.userData.setImportedMove(move,frame*MOVE_SECONDS[move]/32);check(`${move} ${frame}`);
+ }
+});
+test('the lower waist cannot acquire a side bulge from the waving arm',()=>{
+ const {root,rig,parts}=character(),body=parts.body,p=body.geometry.getAttribute('position');
+ // Include the hip transition below the earlier chest/rib check. Its small
+ // residual arm weights raised the side of the stomach during a wave.
+ const ids=Array.from({length:p.count},(_,v)=>v).filter(v=>Math.abs(p.getX(v))<.16&&p.getY(v)>-.035&&p.getY(v)<.06);
+ assert.ok(ids.length>100,'exercise both low-waist side surfaces');
+ const sample=()=>{syncImportedAvatars(root);root.updateMatrixWorld(true);body.skeleton.update();return ids.map(v=>body.getVertexPosition(v,new THREE.Vector3()));};
+ const rest=sample();
+ for(const phase of [.1,.25,.5,.75,.95]){
+  walkCoastalPose(rig,0,0);waveCoastalPose(rig,phase*8,phase);const wave=sample();
+  const movement=Math.max(...wave.map((point,i)=>point.distanceTo(rest[i])));
+  assert.ok(movement<.00001,`wave ${phase}: low waist moved ${movement} with the hand`);
+ }
+});
 test('male shirt, vest and prints do not follow the thighs or head',()=>{
  const {parts}=character();
  for(const [id,mesh] of Object.entries(parts)){
@@ -30,6 +89,95 @@ test('male shirt, vest and prints do not follow the thighs or head',()=>{
    const bone=mesh.skeleton.bones[indices.getComponent(v,k)].name;
    assert.ok(!/Leg|Foot|Toe|^Head$|head_end|headfront/.test(bone),`${id} vertex ${v} follows ${bone}`);
   }
+ }
+});
+
+test('saved male swimwear colours cannot replace the black shorts and white stripe texture',()=>{
+ for(const colour of ['#ff00ff','#ffff00','#ffffff','#000000']){
+  const root=new THREE.Group(),palette={skin:'#fbc4a0',hair:'#55413b',top:'#18191b',bottoms:'#5b5a4d',swimwear:colour};
+  const rig=createCoastalAvatar(root,palette,true,new THREE.Group());attachImportedAvatar(root,rig,palette);setCoastalSwimwear(root,true);
+  const body=root.userData.importedAvatar.meshes.find(m=>m.userData.componentId==='body');
+  const shader={uniforms:{},vertexShader:'#include <skinning_vertex>',fragmentShader:'#include <map_fragment>'};
+  body.material.onBeforeCompile(shader,{});
+  assert.equal(shader.uniforms.avatarDyeOn.value.z,0,'saved colour still recolours his shorts');
+  assert.equal(shader.uniforms.avatarGarment.value.getHexString(),'191519');
+  assert.ok(body.material.map,'keep the original texture with its white side stripes');
+ }
+});
+
+test('native swim-short cloth and white stripes stay outside skin cleanup through both leg hems',async()=>{
+ const reference=JSON.parse(await readFile('scripts/fixtures/male-swimwear-surface.json','utf8'));
+ const {parts}=character(),body=parts.body,position=body.geometry.getAttribute('position'),skin=body.geometry.getAttribute('_skin');
+ const key=p=>p.map(x=>Math.round(x*1e6)).join(','),labels=new Map();
+ for(let v=0;v<position.count;v++){
+  const k=key([position.getX(v),position.getY(v),position.getZ(v)]);
+  labels.set(k,Math.max(labels.get(k)??0,skin.getX(v)));
+ }
+ assert.ok(reference.samples.some(s=>s.stripe),'acceptance samples need the white side stripes');
+ for(const side of [-1,1])assert.ok(reference.samples.some(s=>s.point[0]*side>.08&&s.point[2]<-.33),'acceptance samples need both original leg hems');
+ for(const sample of reference.samples)for(const [x,y,z] of sample.vertices){
+  const label=labels.get(key([x,z,-y]));
+  assert.notEqual(label,undefined,'native fabric sample missing from the export');
+  assert.equal(label,0,`skin cleanup spills onto native shorts at ${x},${y},${z}`);
+ }
+ // Skin below the fabric must still follow the selected skin colour.
+ let lowerLeg=0;
+ for(let v=0;v<position.count;v++)if(position.getY(v)<-.38&&position.getY(v)>-.60&&Math.abs(position.getX(v))<.20){
+  assert.equal(skin.getX(v),1,'shorts ownership extended onto bare legs');lowerLeg++;
+ }
+ assert.ok(lowerLeg>100,'bare-leg guard must exercise real skin');
+});
+
+test('male dance palms and fingers follow the source FBX hand frame and the wrists articulate',async()=>{
+ const reference=JSON.parse(await readFile('scripts/fixtures/dance-hand-reference.json','utf8'));
+ const {root}=character(),bones=new Map();root.traverse(o=>{if(o.isBone)bones.set(o.name,o);});
+ const rotations={Left:[],Right:[]};
+ for(const sample of reference.samples){
+  root.userData.setImportedMove('dance',sample.seconds);syncImportedAvatars(root);root.updateMatrixWorld(true);
+  for(const side of ['Left','Right']){
+   const actual=root.userData.importedHandFrame(side==='Left');
+   for(const axis of ['palm','fingers']){
+    const expected=new THREE.Vector3().fromArray(sample.hands[side][axis]);
+    assert.ok(actual[axis].dot(expected)>.9999,`${side} ${axis} direction differs from source at ${sample.seconds}s`);
+   }
+   rotations[side].push(bones.get(side+'Hand').quaternion.clone());
+  }
+ }
+ for(const side of ['Left','Right']){
+  const range=Math.max(...rotations[side].map(q=>q.angleTo(rotations[side][0])));
+  assert.ok(range>.5,`${side} wrist is frozen relative to the forearm`);
+ }
+ for(const seconds of [7.8,9.1])for(const side of ['Left','Right']){
+  root.userData.setImportedMove('dance',seconds);syncImportedAvatars(root);
+  assert.ok(root.userData.importedHandFrame(side==='Left').palm.y<-.85,`${side} floor-support palm faces away from the floor`);
+ }
+});
+
+test('male dance wrist skin retains volume across the source routine',async()=>{
+ const {root,rig,parts}=character(),body=parts.body,position=body.geometry.getAttribute('position'),vertices={};
+ for(const side of ['Left','Right']){
+  const index=name=>body.skeleton.bones.findIndex(b=>b.name===side+name);
+  const joint=name=>new THREE.Vector3().setFromMatrixPosition(body.skeleton.boneInverses[index(name)].clone().invert());
+  const wrist=joint('Hand'),axis=wrist.clone().sub(joint('ForeArm')).normalize();
+  vertices[side]=Array.from({length:position.count},(_,v)=>v).filter(v=>{
+   const delta=new THREE.Vector3().fromBufferAttribute(position,v).sub(wrist);
+   return Math.abs(delta.dot(axis))<.010&&delta.length()<.05;
+  });
+  assert.ok(vertices[side].length>100);
+ }
+ const radius=side=>{
+  const frame=root.userData.importedHandFrame(side==='Left');body.skeleton.update();
+  const axis=frame.forearm.clone().applyQuaternion(rig.visualRoot.getWorldQuaternion(new THREE.Quaternion()));
+  const points=vertices[side].map(v=>body.getVertexPosition(v,new THREE.Vector3()).applyMatrix4(body.matrixWorld));
+  const centre=points.reduce((a,b)=>a.add(b),new THREE.Vector3()).divideScalar(points.length);
+  return Math.sqrt(points.reduce((sum,p)=>{
+   const delta=p.clone().sub(centre);delta.addScaledVector(axis,-delta.dot(axis));return sum+delta.lengthSq();
+  },0)/points.length);
+ };
+ const rest=Object.fromEntries(['Left','Right'].map(side=>[side,radius(side)]));
+ for(let frame=0;frame<254;frame+=3){
+  root.userData.setImportedMove('dance',frame/24);syncImportedAvatars(root);root.updateMatrixWorld(true);
+  for(const side of ['Left','Right'])assert.ok(radius(side)/rest[side]>.72,`${side} wrist skin collapses at source frame ${frame+1}`);
  }
 });
 

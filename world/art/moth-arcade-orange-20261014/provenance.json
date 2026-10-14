@@ -1,0 +1,53 @@
+{
+  "source": "Existing Higgsfield cabinet silhouette and exact independent screen, locally rebuilt and polished in Blender",
+  "originalReferenceJob": "1551a0ec-d66a-4883-b965-2258a235c3ef",
+  "originalMeshJob": "e62abde6-2233-41ae-89f8-e974a9de6c16",
+  "scene": "MOTH orange cabinet 20261014",
+  "sourceBlend": "/Users/myscheduleai/Desktop/myschedule-pivot/release-npc-20261006/world/.artifacts/moth-arcade-orange-20261014/cabinet-polished.blend",
+  "recipe": "polish-cabinet.py",
+  "optimizer": "../../.artifacts/moth-arcade-orange-20261014/optimize.mjs",
+  "artwork": {
+    "generator": "Built-in image_gen",
+    "file": "side-artwork.png",
+    "prompts": "artwork-prompts.txt",
+    "mapping": "moth upper panel, guitarist lower panel, both sides and marquee moths",
+    "alpha": "MASK cutoff 0.9; no glow rendered"
+  },
+  "materials": {
+    "orange": "#ff5c21",
+    "source": "M.O.T.H docs/moth/styles.css --menu-orange",
+    "finish": "clean matte enamel, warm ivory trim, charcoal face and rear, burgundy and ivory print"
+  },
+  "preparation": "Closed manufactured panels fitted to the original profile; smooth beveled controls; grouped mesh roles; lossless Meshopt compression; same screen transform and positions",
+  "asset": {
+    "bytes": 1696612,
+    "sha256": "465d019d8739c8449b6c1f83f69b8eaa2e49f1cbe881e160986e1970d7c11adf",
+    "meshes": 23,
+    "triangles": 11769,
+    "textures": 1,
+    "screenTransformAndPositions": "byte-equivalent to previous screen",
+    "orange": "#ff5c21",
+    "textureSize": [
+      1024,
+      1536
+    ]
+  },
+  "position": {
+    "arcade": [
+      20.52,
+      11.6525
+    ],
+    "jukebox": [
+      21,
+      15.0525
+    ],
+    "combinedFootprintCentreZ": 13.5,
+    "wallSurfaceX": 21.6,
+    "loadedCabinetBackX": 21.576704019628,
+    "wallClearance": 0.023295980372
+  },
+  "ground": "Runtime fitting to rendered paving and terrain with a shallow overlapping plinth",
+  "preserved": "Prior generated/refined scenes and baseline GLB; male and female avatar assets",
+  "publication": "local only",
+  "integrationReview": "../moth-arcade-integration-20261014/REVIEW.md"
+}

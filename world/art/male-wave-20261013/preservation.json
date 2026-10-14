@@ -1,0 +1,10 @@
+{
+  "changedExportVertices": 4366,
+  "changedBlenderPositions": 2693,
+  "changedBlenderVertices": 3129,
+  "changedAccessors": 2,
+  "allOtherAccessors": "byte-identical including positions, normals, UVs, indices, skin/shorts labels, and joint binds",
+  "embeddedTextures": "all byte-identical",
+  "maleSHA256": "cf03029d1cc972b8760329de22ec83009bc31ed5dd7d8e3588aff5c3d1a9965b",
+  "femaleSHA256": "20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3"
+}

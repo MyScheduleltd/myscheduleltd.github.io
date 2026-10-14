@@ -1,0 +1,13 @@
+{
+  "bytes": 1696612,
+  "sha256": "465d019d8739c8449b6c1f83f69b8eaa2e49f1cbe881e160986e1970d7c11adf",
+  "meshes": 23,
+  "triangles": 11769,
+  "textures": 1,
+  "screenTransformAndPositions": "byte-equivalent to previous screen",
+  "orange": "#ff5c21",
+  "textureSize": [
+    1024,
+    1536
+  ]
+}

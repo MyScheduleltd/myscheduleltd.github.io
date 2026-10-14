@@ -1,0 +1,57 @@
+{
+  "schema": "animation_contact_sheet_report.v1",
+  "frames": [
+    "art/male-wave-20261013/after/00-underarm-close.png",
+    "art/male-wave-20261013/after/01-front.png",
+    "art/male-wave-20261013/after/02-side.png",
+    "art/male-wave-20261013/after/03-rear.png",
+    "art/male-wave-20261013/after/04-outfit1.png",
+    "art/male-wave-20261013/after/05-outfit2.png",
+    "art/male-wave-20261013/after/06-outfit3.png",
+    "art/male-wave-20261013/after/07-breaking.png",
+    "art/male-wave-20261013/after/08-punch.png"
+  ],
+  "frame_diff": [
+    {
+      "from": "00-underarm-close.png",
+      "to": "01-front.png",
+      "mean_rgb_diff": 12.756856553819444
+    },
+    {
+      "from": "01-front.png",
+      "to": "02-side.png",
+      "mean_rgb_diff": 3.2857421875
+    },
+    {
+      "from": "02-side.png",
+      "to": "03-rear.png",
+      "mean_rgb_diff": 2.98991283275463
+    },
+    {
+      "from": "03-rear.png",
+      "to": "04-outfit1.png",
+      "mean_rgb_diff": 7.656217447916667
+    },
+    {
+      "from": "04-outfit1.png",
+      "to": "05-outfit2.png",
+      "mean_rgb_diff": 0.2235297309027778
+    },
+    {
+      "from": "05-outfit2.png",
+      "to": "06-outfit3.png",
+      "mean_rgb_diff": 0.17868923611111112
+    },
+    {
+      "from": "06-outfit3.png",
+      "to": "07-breaking.png",
+      "mean_rgb_diff": 12.15935546875
+    },
+    {
+      "from": "07-breaking.png",
+      "to": "08-punch.png",
+      "mean_rgb_diff": 9.492242838541666
+    }
+  ],
+  "warnings": []
+}

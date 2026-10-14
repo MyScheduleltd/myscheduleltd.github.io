@@ -52,6 +52,8 @@ import { videoSyncPlan, videoJoinTime, bufferedAheadOf } from './VideoSync';
 import { stepAvoidance, AVOIDANCE_OFFSETS_FINE, type AvoidanceState } from './CameraAvoidance';
 import { pinchZoom, pinchSpread, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX } from './CameraInput';
 import { planRenderScale, RENDER_SCALE_FLOOR } from './RenderScale';
+import { MothArcadeCabinet, MothArcadeSession } from './MothArcade';
+import { arcadeIsNearest, ARCADE_WIDTH, ARCADE_DEPTH, cabinetPairPositions, arcadeAgainstWallX } from './ArcadeRules';
 
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>;
@@ -95,6 +97,7 @@ export type WorldAction =
   | { type: 'punched'; droppedMentor: boolean; by?: string }
   | { type: 'died'; by?: string }
   | { type: 'jukebox' }
+  | { type: 'arcade' }
   | { type: 'vrWatch'; venue: VenueKey }
   | { type: 'vrPhoto'; image?: string }
   | { type: 'vrArmsCalibrated' }
@@ -1012,7 +1015,8 @@ const NAV_POINTS: Record<string, [number, number]> = {
   // face, so its foot and head share a centre line.
   // The flight is approached along its own centre line from the south. From
   // the west a body walks into the kerb the handrail stands on.
-  roofStairApproach: [19.6, 16],
+  // Clear the two cabinets before joining the stair's centre line.
+  roofStairApproach: [19.6, 19.2],
   roofStairFoot: [19.6, 21],
   roofStairTop: [19.6, 35.05],
   // Straight in through the gap in the parapet before turning onto the deck.
@@ -1879,6 +1883,10 @@ export class FestivalWorld {
   private entranceSignText = { title: 'MYSCHEDULE', subtitle: 'VIRTUAL FESTIVAL' };
   private templeAltar?: { x: number; z: number };
   private jukebox?: { x: number; z: number };
+  private arcadeCabinet?: MothArcadeCabinet;
+  private arcadeSession?: MothArcadeSession;
+  private arcadeAperture?: THREE.Mesh;
+  private arcadeScreenLayout?: (frame: { x: number; y: number; width: number; height: number }) => void;
   /** The band on the roof over the pop-up shop; plays while the jukebox has a record on. */
   private rooftopBand?: RooftopBand;
   /** The beach easter egg. Scenery with one loop; not a resident. */
@@ -2208,6 +2216,7 @@ export class FestivalWorld {
   stop(): void {
     this.disposed = true;
     this.venueSceneryAssets.dispose();
+    this.stopArcadeGame(); this.arcadeCabinet?.dispose();
     this.renderer.setAnimationLoop(null);
     if (this.xrSession) void this.xrSession.end().catch(() => undefined);
     this.stopPhoneOrientation();
@@ -2661,6 +2670,45 @@ export class FestivalWorld {
     }
   }
 
+  startArcadeGame(url: string, exit: () => void, screenLayout?: (frame: { x: number; y: number; width: number; height: number }) => void): boolean {
+    const screen = this.arcadeCabinet?.screen;
+    if (!screen || this.arcadeSession || (this.xrActive && !this.xrSimulated)) return false;
+    this.keys.clear(); this.running = false; this.dancing = false;
+    this.cameraPointerReset();
+    this.setMovementVector(0, 0);
+    this.arcadeSession = new MothArcadeSession(screen, url, exit);
+    this.arcadeScreenLayout = screenLayout;
+    this.arcadeSession.mount(this.cssRenderer.domElement);
+    this.xrHud?.setVisible(false);
+    if (this.conservesMobileGpu) {
+      const frame = this.arcadeSession.frame;
+      this.arcadeAperture = new THREE.Mesh(new THREE.PlaneGeometry(frame.width, frame.height), projectorApertureMaterial);
+      this.arcadeAperture.position.copy(frame.centre).addScaledVector(frame.normal, .003);
+      this.arcadeAperture.quaternion.copy(frame.quaternion); this.arcadeAperture.visible = false;
+      this.projectorApertureScene.add(this.arcadeAperture);
+    }
+    return true;
+  }
+
+  stopArcadeGame(): void {
+    this.arcadeSession?.dispose(); this.arcadeSession = undefined;
+    this.arcadeScreenLayout = undefined;
+    this.arcadeAperture?.geometry.dispose(); this.arcadeAperture?.removeFromParent(); this.arcadeAperture = undefined;
+    this.xrHud?.setVisible(this.xrActive);
+    this.keys.clear(); this.setMovementVector(0, 0); this.running = false;
+  }
+
+  /** Place the review visitor at the real cabinet; E still uses normal interaction. */
+  focusArcadeForReview(): void {
+    const p = this.arcadeCabinet?.root.position;
+    if (!p) return;
+    const z = p.z + 1.35;
+    this.player.position.set(p.x - 3.1, this.groundHeightAt(p.x - 3.1, z, 0), z);
+    this.player.rotation.y = -Math.PI / 2;
+    this.cameraMode = 'follow'; this.cameraZoom = .86;
+    this.cameraOrbit.follow.yaw = -Math.PI / 2; this.cameraOrbit.follow.pitch = .3;
+  }
+
   /** 0.3 (gentle) to 2 (twitchy). 1 is the rate the world was built around. */
   setLookSensitivity(value: number): void {
     this.lookSensitivity = THREE.MathUtils.clamp(value, 0.1, 2);
@@ -3004,6 +3052,7 @@ export class FestivalWorld {
    * controllers and `updateXrInput` is already reading them.
    */
   private updateGamepad(delta: number): void {
+    if (this.arcadeSession) { this.gamepad.poll(); return; }
     if (this.xrActive && !this.xrSimulated) return;
     const frame = this.gamepad.poll();
     if (!frame) {
@@ -5641,6 +5690,7 @@ export class FestivalWorld {
    * being read as it was — this sits beside it and wins whenever it is pushed.
    */
   setMovementVector(horizontal: number, vertical: number): void {
+    if (this.arcadeSession) { this.stickX = this.stickY = 0; return; }
     this.stickX = THREE.MathUtils.clamp(horizontal, -1, 1);
     this.stickY = THREE.MathUtils.clamp(vertical, -1, 1);
   }
@@ -7417,6 +7467,10 @@ export class FestivalWorld {
   }
 
   interact(pickUpMentor = false): void {
+    if (this.arcadeSession) return;
+    if (this.nearArcade() && this.playerState !== 'seated') {
+      this.onAction({ type: 'arcade' }); return;
+    }
     if(performance.now()<this.drinkUntil||performance.now()<this.eatingUntil)return;
     if (this.playerState === 'seated') {
       // SHIFT+E drinks without leaving the stool; plain E stands up.
@@ -7722,6 +7776,7 @@ export class FestivalWorld {
   };
 
   private readonly keyDown = (event: KeyboardEvent): void => {
+    if (this.arcadeSession) return;
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
     const key = event.key.toLowerCase();
     this.running = event.shiftKey;
@@ -7878,6 +7933,7 @@ export class FestivalWorld {
   };
 
   private readonly cameraPointerDown = (event: PointerEvent): void => {
+    if (this.arcadeSession) return;
     // Pen and touch turn the camera and throw punches too; only the mouse's
     // other buttons are left alone.
     if (event.button !== 0) return;
@@ -8059,6 +8115,7 @@ export class FestivalWorld {
    * step the first time one of them changed.
    */
   private applyLookDelta(deltaX: number, deltaY: number, gain = 1): void {
+    if (this.arcadeSession) return;
     deltaX *= gain;
     deltaY *= gain;
     if (this.xrActive && this.xrSimulated) {
@@ -8113,6 +8170,7 @@ export class FestivalWorld {
    * under either hand.
    */
   private readonly cameraWheel = (event: WheelEvent): void => {
+    if (this.arcadeSession) return;
     // In the desktop preview the wheel is the only thing standing in for the
     // right stick, and a pass panel taller than the view is unreadable without
     // it. Only when the cursor is actually on the panel, so the wheel still
@@ -9295,6 +9353,7 @@ export class FestivalWorld {
     scenery.finish();
     this.createVenueEntrances();
     this.paving=this.scene.children.filter(object=>object.userData.groundFootprint).map(object=>({polygon:object.userData.groundFootprint,lift:object.userData.groundLift,exclusions:object.userData.groundExclusions}));
+    this.seatArcadeOnGround();
     this.createBeachPlanting();
 
     const lampMaterial = new THREE.MeshStandardMaterial({
@@ -9367,13 +9426,11 @@ export class FestivalWorld {
    * from, which here is the road to the west.
    */
   private createJukebox(): void {
-    // Against the west wall, centred under the venue's own sign rather than
-    // parked beside the stair. The sign hangs at the middle of the garage bay,
-    // and read from the road the two now line up. Both follow the shell, so
-    // moving the building again carries them together.
+    // Centre both cabinet footprints under the sign, with the arcade on the
+    // left as viewed from the road. Both positions follow the venue shell.
     const r = rooftopBounds;
     const x = r.minX - 1;
-    const z = (r.minZ + r.bayMaxZ) / 2;
+    const { arcadeZ, jukeboxZ: z } = cabinetPairPositions((r.minZ + r.bayMaxZ) / 2);
     const cabinet = new THREE.Group();
     // Stood on whatever the ground actually is here rather than on y = 0. The
     // festival's floor is not one plane — kerbs, aprons and the lot around the
@@ -9414,6 +9471,34 @@ export class FestivalWorld {
     // Turned a quarter, so the footprint's width and depth swap over.
     this.addCollider(x, z, 1.5, 2.4);
     this.jukebox = { x, z };
+    // The bay wall is .8 thick and centred at minX. The arcade is deeper than
+    // the jukebox: borrowing its centre put .45 of the cabinet inside that
+    // wall. Keep the full back face just clear of the wall's west surface.
+    const arcadeX = arcadeAgainstWallX(r.minX, .8);
+    const arcadeFloor = terrainHeightAt(arcadeX, arcadeZ);
+    this.arcadeCabinet = new MothArcadeCabinet(arcadeX, arcadeFloor, arcadeZ);
+    this.scene.add(this.arcadeCabinet.root);
+    this.addCollider(arcadeX, arcadeZ, ARCADE_DEPTH, ARCADE_WIDTH, .35, undefined, 'moth-arcade', arcadeFloor + 3.8);
+  }
+
+  private seatArcadeOnGround(): void {
+    const arcade = this.arcadeCabinet;
+    if (!arcade) return;
+    // Ground dressing is finished after the cabinets are created. Seat the
+    // arcade on those rendered surfaces, including clipped paving, rather
+    // than the jukebox's clearance offset (its own plinth extends below zero).
+    const surfaces: THREE.Object3D[] = [];
+    this.scene.traverse(object => {
+      if (object instanceof THREE.Mesh && (object.userData.groundFootprint || object.name === 'Coastal landform and seabed')) surfaces.push(object);
+    });
+    this.scene.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster();
+    arcade.seatOnGround((x, z) => {
+      ray.set(new THREE.Vector3(x, 20, z), new THREE.Vector3(0, -1, 0));
+      return ray.intersectObjects(surfaces, false)[0]?.point.y ?? terrainHeightAt(x, z);
+    });
+    const collider = this.colliders.find(c => c.label === 'moth-arcade');
+    if (collider) collider.maxY = arcade.root.position.y + 3.8;
   }
 
   /**
@@ -12017,14 +12102,29 @@ export class FestivalWorld {
         visibleProjectorScissors.set(venue, compositorScissor);
       }
     }
-    if (visibleProjectors.length) {
+    const arcadeScissor = this.arcadeSession?.scissor(this.camera, this.foregroundCanvas.clientWidth || window.innerWidth, this.foregroundCanvas.clientHeight || window.innerHeight);
+    if (visibleProjectors.length || arcadeScissor) {
       if (PLANET.on) { this.cssScene.matrixWorldAutoUpdate = false; bendCss3d(this.cssScene); }
       this.cssRenderer.render(this.cssScene, this.camera);
     }
+    if (arcadeScissor) {
+      const viewportHeight = this.foregroundCanvas.clientHeight || window.innerHeight;
+      this.arcadeSession?.renderScreen(arcadeScissor, viewportHeight);
+      this.arcadeScreenLayout?.({ ...arcadeScissor, y: viewportHeight - arcadeScissor.y - arcadeScissor.height });
+    }
     this.compositeMobileAvatars(visibleProjectors, visibleProjectorScissors);
+    // A desktop VR preview also uses a single WebGL context. Retain world
+    // depth while opening the live screen through its alpha canvas.
+    if (arcadeScissor && this.arcadeAperture) {
+      const autoClear = this.renderer.autoClear;
+      try {
+        this.arcadeAperture.visible = true; this.renderer.autoClear = false;
+        this.renderer.render(this.projectorApertureScene, this.camera);
+      } finally { this.arcadeAperture.visible = false; this.renderer.autoClear = autoClear; }
+    }
     const foregroundRenderer = this.foregroundRenderer;
-    this.foregroundCanvas.style.visibility = visibleProjectors.length && foregroundRenderer ? 'visible' : 'hidden';
-    if (visibleProjectors.length && foregroundRenderer) {
+    this.foregroundCanvas.style.visibility = (visibleProjectors.length || arcadeScissor) && foregroundRenderer ? 'visible' : 'hidden';
+    if ((visibleProjectors.length || arcadeScissor) && foregroundRenderer) {
       const sceneBackground = this.scene.background;
       this.scene.background = null;
       this.camera.layers.set(1);
@@ -12044,6 +12144,14 @@ export class FestivalWorld {
         this.projectorClipPlane.normal.set(0, 0, facing);
         this.projectorClipPlane.constant = -venueScreens[venue].position[2] * facing;
         foregroundRenderer.setScissor(scissor.x, scissor.y, scissor.width, scissor.height);
+        foregroundRenderer.clear(true, true, false);
+        foregroundRenderer.render(this.scene, this.camera);
+      }
+      if (arcadeScissor && this.arcadeSession) {
+        const screen = this.arcadeSession.frame;
+        this.projectorClipPlane.normal.copy(screen.normal);
+        this.projectorClipPlane.constant = -screen.normal.dot(screen.centre);
+        foregroundRenderer.setScissor(arcadeScissor.x, arcadeScissor.y, arcadeScissor.width, arcadeScissor.height);
         foregroundRenderer.clear(true, true, false);
         foregroundRenderer.render(this.scene, this.camera);
       }
@@ -12382,6 +12490,11 @@ export class FestivalWorld {
   }
 
   private updatePlayer(delta: number): void {
+    if (this.arcadeSession) {
+      this.moveVector.set(0, 0, 0); this.keys.clear(); this.stickX = this.stickY = 0;
+      this.player.visible = false;
+      return;
+    }
     if (this.originalPlayerIdle.visible && this.originalPlayerIdleRig) {
       this.animateRig(this.originalPlayerIdleRig, this.clock.elapsedTime * 1.2, 0.025);
     }
@@ -14500,6 +14613,21 @@ export class FestivalWorld {
   }
 
   private updateCamera(delta: number, _elapsed: number): void {
+    if (this.arcadeSession) {
+      const frame = this.arcadeSession.frame;
+      const halfFov = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+      // The exit control is part of the game's lower orange band, so the
+      // centered physical screen no longer needs an external HUD reserve.
+      const verticalFit = .72;
+      const distance = Math.max(frame.height / (2 * halfFov * verticalFit), frame.width / (2 * halfFov * this.camera.aspect * .84));
+      this.camera.position.copy(frame.centre).addScaledVector(frame.normal, distance);
+      if (this.camera.parent) {
+        this.camera.parent.updateWorldMatrix(true, false);
+        this.camera.position.applyMatrix4(this.camera.parent.matrixWorld.clone().invert());
+      }
+      this.camera.lookAt(frame.centre); this.player.visible = false;
+      return;
+    }
     this.settlePunchImpact();
     if (this.xrActive) {
       // Where the body actually is, not the floor under it.
@@ -15238,6 +15366,8 @@ export class FestivalWorld {
     this.promptAction = 'interact';
     this.promptActionable = true;
     this.promptSecondary = false;
+    if (this.arcadeSession) { this.promptActionable = false; return undefined; }
+    if (this.nearArcade() && this.playerState !== 'seated') return 'E / PLAY M.O.T.H';
     // A panel hung in front of somebody with no way to take it down is a trap:
     // the close button belongs to `#venue-screen`, which an immersive session
     // never shows. A screening on a venue's own wall does not need this —
@@ -15409,6 +15539,13 @@ export class FestivalWorld {
     ) < 4.2;
   }
 
+  private nearArcade(): boolean {
+    const arcade = this.arcadeCabinet;
+    if (!arcade || arcade.status !== 'ready' || this.arcadeSession) return false;
+    if (Math.abs(this.player.position.y - this.groundHeightAt(this.player.position.x, this.player.position.z, 0)) > 2.6) return false;
+    return arcadeIsNearest(this.player.position, arcade.root.position, this.jukebox);
+  }
+
   /** In front of the temple's wish wall, on the road side of it. */
   private nearWishWall(): boolean {
     const dx = WISH_WALL.x - this.player.position.x;
@@ -15457,6 +15594,7 @@ export class FestivalWorld {
    */
   private atAFixedPlace(): boolean {
     return this.nearClubBar()
+      || this.nearArcade()
       || this.nearJukebox()
       || this.nearShopCounter()
       || this.nearbyDj() !== undefined

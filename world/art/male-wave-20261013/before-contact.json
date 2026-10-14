@@ -1,0 +1,21 @@
+{
+  "schema": "animation_contact_sheet_report.v1",
+  "frames": [
+    "art/male-wave-20261013/before/01-front.png",
+    "art/male-wave-20261013/before/02-side.png",
+    "art/male-wave-20261013/before/03-rear.png"
+  ],
+  "frame_diff": [
+    {
+      "from": "01-front.png",
+      "to": "02-side.png",
+      "mean_rgb_diff": 4.08045066550926
+    },
+    {
+      "from": "02-side.png",
+      "to": "03-rear.png",
+      "mean_rgb_diff": 3.6894111689814815
+    }
+  ],
+  "warnings": []
+}

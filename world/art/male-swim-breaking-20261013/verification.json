@@ -1,0 +1,14 @@
+{
+  "status": "verified release candidate; protected-main review pending",
+  "full_tests": 436,
+  "source_animation_frames": 254,
+  "motion_samples_unchanged": true,
+  "male_sha256": "b8cda2d2ddff137223a87af264116c9498e033a344d07c22b69a604d22d33e4c",
+  "female_sha256": "20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3",
+  "swimwear": "fixed native black cloth with original white stripes, including older saved dye values",
+  "hand_alignment": "male dance palm and finger frame; roll carried through forearm",
+  "runtime_checks": "source hand directions, wrist articulation, wrist skin volume, floor-facing support palms",
+  "contact_sheet_frames": 9,
+  "original_male_sha256": "1e0a00e35849c6f1f79a579c6ec136d14ebaa38d05d7504409eba6a4aa533f61",
+  "shorts_hem_followup": "native cloth/stripe surfaces excluded from skin cleanup; only skin-mask accessor changed"
+}

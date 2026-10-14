@@ -19,6 +19,7 @@ import { ProgrammeClock } from '../data/programmeClock';
 import { QUESTS, QUEST_SECTIONS, QUEST_TOTAL, type QuestId } from '../data/quests';
 import { xrBindings, xrQuickActions, xrStickRows } from '../world/XrControls';
 import { armLeavingVr, type LeaveVrArming } from './LeaveVrConfirm';
+import { arcadeGameUrl, externalArcadeRequired } from '../world/ArcadeRules';
 
 /**
  * The rooms with lights that answer to a beat. Everywhere else is a cinema,
@@ -457,6 +458,7 @@ export class App {
   private localHitCount = 0;
   private localHitAt = 0;
   private jukeboxVolume = readStoredJukeboxVolume();
+  private arcadePlaying = false;
   private lookSensitivity = readStoredLookSensitivity();
   private gamepadBindings = readStoredGamepadBindings();
   private rebinding?: GamepadActionId;
@@ -1252,6 +1254,9 @@ export class App {
             <div class="venue-screen__actions" id="screen-actions"></div>
           </footer>
         </section>
+        <section class="moth-arcade-hud" id="moth-arcade-hud" aria-label="${zh ? '遊戲退出提示' : 'Game exit prompt'}" hidden>
+          <button type="button" data-arcade-exit>${zh ? '離開遊戲' : 'EXIT GAME'}</button>
+        </section>
         <section class="public-seat-hud" id="public-seat-hud" hidden>
           <div><span id="public-seat-mode">THE SHORE · PUBLIC SCREENING</span><strong id="public-seat-title">NOW PLAYING</strong></div>
           <div>
@@ -1780,6 +1785,8 @@ export class App {
         promptHidden: this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]')?.hidden,
         promptText: this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]')?.textContent,
       });
+    } else if (reviewTarget === 'arcade' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      this.world.focusArcadeForReview();
     } else if (reviewTarget === 'jukebox') {
       this.world.focusJukeboxForReview();
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.structureReviewSnapshot();
@@ -1953,6 +1960,7 @@ export class App {
       });
     }
     window.addEventListener('keydown', this.globalShortcut);
+    this.root.querySelector<HTMLButtonElement>('[data-arcade-exit]')?.addEventListener('click', () => this.closeArcadeGame());
     window.addEventListener('pointerup', this.liftJukeboxOnGesture, true);
     document.addEventListener('fullscreenchange', this.syncScreenFullscreenState);
     document.addEventListener('webkitfullscreenchange', this.syncScreenFullscreenState);
@@ -2374,7 +2382,42 @@ export class App {
     }, this.palette).catch(() => undefined);
   }
 
+  private openArcadeGame(): void {
+    if (externalArcadeRequired(window.matchMedia('(pointer: coarse)').matches, window.matchMedia('(any-pointer: fine)').matches, this.vrActive && !this.usesVrSimulation())) {
+      if (!this.confirmedLeavingVr('arcade', 'M.O.T.H')) return;
+      this.openLinkAndLeaveVr(arcadeGameUrl(false), 'M.O.T.H'); return;
+    }
+    this.closePanel(); this.closeFestivalPass();
+    const hud = this.root.querySelector<HTMLElement>('#moth-arcade-hud');
+    if (!this.world?.startArcadeGame(arcadeGameUrl(), () => this.closeArcadeGame(), frame => {
+      if (!hud) return;
+      // The game's wide view has an orange band below its 16:9
+      // canvas. Seat the exit control in that band, inside the live screen.
+      hud.style.left = `${frame.x + frame.width / 2}px`;
+      hud.style.top = `${frame.y + frame.height * .915}px`;
+      hud.style.maxWidth = `${Math.max(0, frame.width - 24)}px`;
+    })) return;
+    this.arcadePlaying = true;
+    const shell = this.root.querySelector<HTMLElement>('.world-shell');
+    if (shell) shell.dataset.arcadePlaying = 'true';
+    if (hud) hud.hidden = false;
+    this.world.audio.setMuted(true); this.world.setPublicScreenMuted(undefined, true);
+    this.applyJukeboxVolume(); this.syncMenuCapture();
+  }
+
+  private closeArcadeGame(): void {
+    this.world?.stopArcadeGame(); this.arcadePlaying = false;
+    const shell = this.root.querySelector<HTMLElement>('.world-shell');
+    if (shell) delete shell.dataset.arcadePlaying;
+    const hud = this.root.querySelector<HTMLElement>('#moth-arcade-hud');
+    if (hud) hud.hidden = true;
+    this.world?.audio.setMuted(this.audioMuted);
+    this.syncJukebox(); this.applyJukeboxVolume(); this.syncMenuCapture();
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  }
+
   private handleWorldAction(action: WorldAction): void {
+    if (action.type === 'arcade') { this.openArcadeGame(); return; }
     if (action.type === 'danceSelection') {
       if (this.activePanel || this.viewMode !== 'normal') return;
       this.closeFestivalPass();
@@ -3275,6 +3318,7 @@ export class App {
   }
 
   private syncVenueScreen(snapshot: WorldSnapshot): void {
+    if (this.arcadePlaying) { this.world?.setPublicScreenMuted(undefined, true); return; }
     this.activeVenue = snapshot.screeningVenue;
     this.syncPublicProjectors();
     this.world?.setPublicScreenMuted(
@@ -3389,6 +3433,10 @@ export class App {
   }
 
   private readonly globalShortcut = (event: KeyboardEvent): void => {
+    if (this.arcadePlaying) {
+      if (event.key === 'Escape') { event.preventDefault(); this.closeArcadeGame(); }
+      return;
+    }
     // Escape is what attendees reach for to leave anything that fills the
     // screen, and the browser no longer handles it for us.
     if (event.key === 'Escape' && this.screenMaximized) {
@@ -4653,6 +4701,7 @@ export class App {
     }
     if (status === 'offline' && detail) this.showWorldAlert(this.language === 'zh-TW' ? '離線模式 · 正在重新連線' : `OFFLINE MODE · ${detail}`);
     if (status === 'kicked') {
+      if (this.arcadePlaying) this.closeArcadeGame();
       this.world?.stop();
       this.showWorldAlert(this.language === 'zh-TW' ? '工作人員已結束此連線' : (detail ?? 'SESSION ENDED BY FESTIVAL STAFF'));
     }
@@ -4869,7 +4918,7 @@ export class App {
     // A tab nobody is looking at lets go of the record too: with the festival
     // open in two tabs or windows, both played it, a beat apart, and it came
     // across as the same song twice (the owner, October 3).
-    const silenced = this.audioMuted || inItsOwnRoom || document.hidden;
+    const silenced = this.audioMuted || this.arcadePlaying || inItsOwnRoom || document.hidden;
     if (silenced !== this.jukeboxSilenced) {
       this.jukeboxSilenced = silenced;
       this.applyJukeboxVolume();
@@ -5064,7 +5113,7 @@ export class App {
   private applyJukeboxVolume(): void {
     const frame = this.jukeboxFrame?.contentWindow;
     if (!frame) return;
-    const level = this.jukeboxSilenced || this.audioMuted ? 0 : Math.round(this.jukeboxVolume * 100);
+    const level = this.jukeboxSilenced || this.audioMuted || this.arcadePlaying ? 0 : Math.round(this.jukeboxVolume * 100);
     const send = (func: string, args: unknown[] = []) => {
       frame.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
     };
@@ -5605,7 +5654,7 @@ export class App {
    */
   private syncMenuCapture(): void {
     const pass = this.root.querySelector<HTMLElement>('#festival-pass');
-    const captured=Boolean(this.danceWheel) || Boolean(this.activePanel) || (pass ? !pass.hidden : false);
+    const captured=this.arcadePlaying || Boolean(this.danceWheel) || Boolean(this.activePanel) || (pass ? !pass.hidden : false);
     this.world?.setMenuOpen(captured);
     if (['127.0.0.1','localhost'].includes(window.location.hostname)) this.root.dataset.menuCapture=String(captured);
   }
@@ -7602,6 +7651,7 @@ export class App {
     if (value === 'E / READ THE WISH WALL') return 'E／看祈福牆';
     if (value === 'E / VIEW VENUE SCHEDULE') return 'E／看場地節目表';
     if (value === 'E / PUT A RECORD ON') return 'E／點歌';
+    if (value === 'E / PLAY M.O.T.H') return 'E／玩 M.O.T.H';
     if (value === 'SHIFT+E / DRINK UP') return 'SHIFT+E／喝一口';
     if (value.startsWith('E / EAT ')) {
       const snacks: Record<string, string> = {

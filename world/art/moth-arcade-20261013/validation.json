@@ -1,0 +1,26 @@
+{
+  "scope": "local built site",
+  "tests": 449,
+  "passed": 449,
+  "typescript": "pass",
+  "viteBuild": "pass",
+  "gitDiffCheck": "pass",
+  "browserChecks": [
+    "combined cabinet footprints centered under sign",
+    "real E proximity interaction",
+    "native M.O.T.H menu keys and story launch",
+    "normal desktop and desktop VR iframe click hit tests",
+    "fixed camera during gameplay",
+    "Esc and Exit restore world",
+    "re-entry",
+    "narrow desktop window keeps complete game screen visible"
+  ],
+  "physicalMobile": "not tested; external route covered by unit test",
+  "physicalHeadset": "not tested",
+  "beta": "not published",
+  "screenshots": [
+    "centered-pair.png",
+    "desktop-vr-screen.png",
+    "narrow-desktop.png"
+  ]
+}
