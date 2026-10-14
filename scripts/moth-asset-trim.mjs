@@ -29,6 +29,18 @@ export const TRIMMED_GROUPS = [
     files: ["assets/maps/finale_backstage/finale-backstage-private-room-loop-20260626.webp", "assets/maps/finale_backstage/finale-ending-taipei-dome-stage-20260627.webp", "assets/sprites/finale_chest/processed/sheet-transparent.webp", "assets/sprites/finale_duo_singing_refined/processed-v2/sheet-transparent.webp", "assets/sprites/finale_ending_film_overlay/processed-v1/sheet-transparent.webp", "assets/sprites/finale_forge_machine_v2/processed/sheet-transparent.webp", "assets/sprites/finale_forge_rewards/processed-v2/sheet-transparent.webp", "assets/ui/finale-forge-menu-texture-higgsfield-20260626.webp"] },
   { title: "The old home menu device", jobs: ["homeMp3MenuSheet"],
     files: ["assets/sprites/home_mp3_menu_industrial/processed/sheet-transparent.webp"] },
+  // Files the release lists that no code loads (owner, 2026-10-14: "delete the
+  // ones that are no longer needed"). Found by recording every request across
+  // every scene, fight, song and menu, then checked against the code: the
+  // lyrics window's art and the scenes' map files are named only in the game
+  // data (its sprite list and mapDataSource entries), which no code reads. The
+  // first map file, level1-layered-map.json, is still read at start-up. The
+  // app icon and manifest.json are not requested in a test browser but are
+  // kept: browsers read them when the game is installed to a home screen.
+  { title: "Unused: the old lyrics window's art and the scenes' unread map files", jobs: [],
+    files: ["assets/sprites/home_lyrics_window_controls/processed/sheet-transparent.webp", "assets/sprites/home_lyrics_window_icon/processed/sheet-transparent.webp",
+      "data/maps/level2-mosquito-boss-map.json", "data/maps/level2-stage3-map.json", "data/maps/level3-stage1-map.json",
+      "data/maps/level4-stage1-map.json", "data/maps/level5-stage1-map.json"] }
 ];
 
 export const TRIMMED_JOBS = new Set(TRIMMED_GROUPS.flatMap(group => group.jobs));

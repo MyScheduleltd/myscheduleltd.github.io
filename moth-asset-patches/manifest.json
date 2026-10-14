@@ -72,15 +72,6 @@
     185088
    ]
   },
-  "assets/sprites/home_lyrics_window_controls/processed/sheet-transparent.webp": {
-   "release": "187d8b995441ddb4d4e3bf757f26e52f7bfbeb09ff1ea57e1ffa742cc72b4e68",
-   "sha256": "443114aa8d422732a140e34a876ffb466be4a2e5b83d9838603de21393a551a0",
-   "pixelsCleaned": 1284,
-   "bytes": [
-    45556,
-    43446
-   ]
-  },
   "assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp": {
    "release": "380a236059cf74b331d224a90ec73aaf1920b8da5111c05f5b9ddefac65454fa",
    "sha256": "6244409543bbdca75c2aa8abfe720f0dddfd4709b3e60a3335c8f761ab992f45",

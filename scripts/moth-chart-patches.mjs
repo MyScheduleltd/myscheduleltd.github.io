@@ -1,6 +1,6 @@
 // Chart and fight-rule changes on top of the release's data/level1.json
-// (build-moth.mjs writes the result; verify-moth-package.mjs checks nothing
-// else changed).
+// (build-moth.mjs publishes the result, compact; verify-moth-package.mjs checks
+// nothing else changed).
 //
 // Level 2 (腥。禿油肥, 75 BPM): the release charted drum hits only, which left
 // 72.6–83.8 s, three and a half bars where the drums drop out under the rap,
@@ -28,37 +28,6 @@ export const LEVEL2_BREAK = {
     [400, 'T'], [404, 'O'], [408, 'T'], [410, 'M'], [412, 'O'], [416, 'T'], [420, 'O']],
   hardExtra: [[371, 'H'], [379, 'H'], [390, 'M'], [391, 'H'], [395, 'H'], [402, 'M'], [411, 'H'], [422, 'M']]
 };
-
-// The same additions as text, so the data file's diff is just the new notes
-// (re-serializing it would rewrite every 16.0 as 16).
-export function patchChartsText(text) {
-  const rhythm = text.indexOf('"level2BathroomRhythm": {');
-  const chart = text.indexOf('"chart": {', rhythm);
-  assert(rhythm > 0 && chart > rhythm, 'Level 2 chart');
-  const added = { easy: LEVEL2_BREAK.easy, hard: [...LEVEL2_BREAK.easy, ...LEVEL2_BREAK.hardExtra] };
-  for (const mode of ['easy', 'hard']) {
-    const list = text.indexOf(`"${mode}": [`, chart);
-    const anchor = `        [\n          ${LEVEL2_BREAK.before.toFixed(1)},\n`;
-    const at = text.indexOf(anchor, list);
-    assert(list > chart && at > list && text.lastIndexOf(`"${mode}": [`, at) === list, `Level 2 ${mode}: the note after the break`);
-    const notes = added[mode].slice().sort((a, b) => a[0] - b[0])
-      .map(([step, button]) => `        [\n          ${step.toFixed(1)},\n          "${button}",\n          0\n        ],\n`).join('');
-    text = text.slice(0, at) + notes + text.slice(at);
-  }
-  const version = '      "version": "drum-groove-20261008b",\n';
-  const at = text.indexOf(version, chart);
-  assert(at > chart && at < text.indexOf('"easy": [', chart), 'Level 2 chart version');
-  text = text.slice(0, at + version.length) + `      "breakNotes": ${JSON.stringify(breakNotes())},\n` + text.slice(at + version.length);
-  const concert = text.indexOf('"level6ConcertRhythm": {');
-  const target = '      "accuracyTarget": {\n        "easy": 0.75,\n        "hard": 0.85\n      },\n';
-  const end = () => text.indexOf('\n  "', concert + 1); // the next top-level key
-  const where = text.indexOf(target, concert);
-  assert(concert > 0 && where > concert && where < end(), 'Concert hype target');
-  text = text.slice(0, where) + `      "accuracyTarget": {\n        "easy": ${CONCERT_HYPE_TARGET.easy},\n        "hard": ${CONCERT_HYPE_TARGET.hard}\n      },\n` + text.slice(where + target.length);
-  const note = text.indexOf(CONCERT_NOTE[0], concert);
-  assert(note > concert && note < end(), 'Concert hype note');
-  return text.slice(0, note) + CONCERT_NOTE[1] + text.slice(note + CONCERT_NOTE[0].length);
-}
 
 const breakNotes = () => ({ steps: [LEVEL2_BREAK.after, LEVEL2_BREAK.before], follows: 'the song pulse under the rap (no drums)', added: '2026-10-13' });
 
