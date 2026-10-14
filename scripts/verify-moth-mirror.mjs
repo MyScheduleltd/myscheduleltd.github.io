@@ -9,8 +9,7 @@ import http from 'node:http';
 import path from 'node:path';
 import {chromium, webkit} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
-import {MOTH_MIRROR_COMMIT, MOTH_MIRROR_PATCH_COMMIT} from './moth-runtime-patches.mjs';
-import {KEY_FRINGE_SPRITES} from './moth-sprite-fringe.mjs';
+import {MOTH_MIRROR_COMMIT, MOTH_MIRROR_PINS} from './moth-runtime-patches.mjs';
 
 const docs = path.resolve(import.meta.dirname, '../docs');
 const out = path.resolve('.qa/moth/mirror');
@@ -61,17 +60,25 @@ async function enterOffice(page) {
   const {context, page, requests, errors, violations} = await livePage();
   const seconds = await enterOffice(page);
   await page.evaluate(() => bobbyGame.loadHitSfx());
-  assert.equal(await page.evaluate(() => Object.keys(bobbyGame.sfxBuffers).length), 27, 'All sound effects decode');
+  await page.waitForFunction(() => bobbyGame.sfxBuffers['menu-tick'] && bobbyGame.sfxBuffers['menu-click'], undefined, {timeout: 20000});
+  assert.equal(await page.evaluate(() => Object.keys(bobbyGame.sfxBuffers).length), 29, 'All sound effects decode (27 fight, 2 menu)');
   const media = requests.filter(url => /\.(webp|png|wav)(\?|$)/.test(url));
   const mirrored = media.filter(url => MIRROR.test(url));
   const fromSite = media.filter(url => url.startsWith('https://myscheduleltd.com/moth/assets/') && OFFICE.test(url));
   assert(mirrored.some(url => /foreground\.webp/.test(url)), 'Office background came from the mirror');
   assert(mirrored.filter(url => /\/sfx\//.test(url)).length >= 27, 'Sound effects came from the mirror');
   assert.deepEqual(fromSite, [], 'No office art fetched from Pages');
-  // The cleaned sprites come from the commit that published them, everything else from the original pin.
-  const patched = mirrored.filter(url => KEY_FRINGE_SPRITES.some(file => decodeURIComponent(url).includes('/docs/moth/' + file)));
-  assert(patched.length > 0 && patched.every(url => url.includes('@' + MOTH_MIRROR_PATCH_COMMIT + '/')), 'Cleaned sprites from the patch commit ' + JSON.stringify(patched.slice(0, 3)));
-  assert(mirrored.filter(url => !patched.includes(url)).every(url => url.includes('@' + MOTH_MIRROR_COMMIT + '/')), 'Other files from the original pin');
+  // Pinned files come from the commit that published them (none yet: this
+  // site), everything else from the original pin.
+  const pinned = [];
+  for (const pin of MOTH_MIRROR_PINS) {
+    const urls = mirrored.filter(url => pin.files.some(file => decodeURIComponent(url).includes('/docs/moth/' + file)));
+    pinned.push(...urls);
+    if (pin.commit) assert(urls.every(url => url.includes('@' + pin.commit + '/')), 'Pinned files from their commit ' + JSON.stringify(urls.slice(0, 3)));
+    else assert.deepEqual(urls, [], 'Files without a pinned commit load from this site');
+  }
+  assert(pinned.some(url => /level1_office/.test(url) || /\/sprites\//.test(url)), 'Cleaned sprites came from their commit');
+  assert(mirrored.filter(url => !pinned.includes(url)).every(url => url.includes('@' + MOTH_MIRROR_COMMIT + '/')), 'Other files from the original pin');
   assert(requests.some(url => url.startsWith('https://myscheduleltd.com/moth/asset-integrity.json')), 'Hashes read from this site');
   assert(!requests.some(url => /cdn\.jsdelivr\.net.*\.(js|json)(\?|$)/.test(url)), 'No code or configuration from the mirror');
   assert.deepEqual(violations, []);

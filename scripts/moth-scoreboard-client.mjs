@@ -125,6 +125,12 @@ export const SCOREBOARD_METHODS = String.raw`
     root.setAttribute('aria-modal', 'true');
     root.setAttribute('aria-labelledby', 'moth-board-title');
     for (const type of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'click', 'wheel']) root.addEventListener(type, event => event.stopPropagation(), { passive: true });
+    // Its buttons sound like the menus (moth-menu-sfx.mjs): the tabs tick, the
+    // rest click. Enter presses the focused button, so it sounds the same.
+    root.addEventListener('click', event => {
+      const button = event.target.closest?.('button');
+      if (button && !button.disabled) this.playMenuSfx(button.getAttribute('role') === 'tab' ? 'tick' : 'click');
+    });
     document.body.append(root);
     board.root = root;
     this.renderScoreboard();
@@ -281,11 +287,14 @@ export const SCOREBOARD_METHODS = String.raw`
     }
     const list = board.root.querySelector('.moth-board-list');
     if (code === 'ArrowLeft' || code === 'ArrowRight' || code === 'KeyA' || code === 'KeyD') {
-      board.mode = code === 'ArrowLeft' || code === 'KeyA' ? 'chill' : 'shoot';
+      const mode = code === 'ArrowLeft' || code === 'KeyA' ? 'chill' : 'shoot';
+      if (mode !== board.mode) this.playMenuSfx('tick');
+      board.mode = mode;
       this.renderScoreboard();
     } else if (code === 'ArrowUp' || code === 'ArrowDown' || code === 'KeyW' || code === 'KeyS') {
       list?.scrollBy({ top: (code === 'ArrowUp' || code === 'KeyW' ? -1 : 1) * 56 });
     } else if (code === 'Escape' || code === 'KeyH') {
+      this.playMenuSfx('click');
       this.closeScoreboard();
     } else if (code === 'Enter' || code === 'Space' || code === 'KeyO') {
       if (event.repeat) return event.preventDefault();

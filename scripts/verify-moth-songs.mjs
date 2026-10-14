@@ -50,8 +50,10 @@ const song = page => page.evaluate(() => {
 {
   const {context, page, errors} = await open();
   // The chapter's art first, at full speed; then no copies, and a trickle.
+  // (Loading also hands the song, not yet played, its copy: put it back on the stream.)
+  const stream = await page.evaluate(() => bobbyGame.level4ArcadeAudio.getAttribute('src'));
   await page.evaluate(() => bobbyGame.loadSceneAssets('level4-stage1'));
-  await page.evaluate(() => { const g = bobbyGame; g.songCopy = () => Promise.resolve(null); g.audioMirror = new Map(); });
+  await page.evaluate(stream => { const g = bobbyGame; g.songCopy = () => Promise.resolve(null); g.audioMirror = new Map(); g.level4ArcadeAudio.src = stream; }, stream);
   const cdp = await context.newCDPSession(page);
   await cdp.send('Network.enable');
   await cdp.send('Network.emulateNetworkConditions', {offline: false, latency: 0, downloadThroughput: 14000, uploadThroughput: -1});

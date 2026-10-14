@@ -5,7 +5,8 @@
 //  2. iPhone media volume (writes ignored, always reads 1): a fight song's
 //     silent priming play must start silent, entering level 4 (Chrome);
 //  3. a fade on a playing track glides, so slow frames cannot step it; a
-//     paused track takes its level at once (Chrome).
+//     paused track takes its level at once (Chrome);
+//  4. a fight song never changes source at its start (Chrome).
 // usage: node scripts/verify-moth-iphone.mjs http://127.0.0.1:5286/
 import assert from 'node:assert/strict';
 import {chromium, webkit} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
@@ -108,4 +109,46 @@ for (const fight of [
   console.log('volume PASS', JSON.stringify({priming, gain: result.gain, fightLevel: +result.level.toFixed(3)}));
   await browser.close();
 }
-console.log('PASS iPhone: blank backdrop copies recover (levels 2, 3, 7), silent priming, gliding fades');
+// 4. A fight song that has played (primed on its stream) takes its downloaded
+//    copy during the loading screen, muted, and never at the fight's start: an
+//    iPhone plays the start of a changed source at full volume (owner,
+//    2026-10-14: a burst after the count). Every fight, entered fresh (Chrome).
+{
+  const browser = await chromium.launch({executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required']});
+  const themes = {'level1-stage1': 'office', 'level2-stage2': 'bathroom', 'level3-stage2': 'massage', 'level4-stage1': 'arcade', 'studio-stage1': 'studio', 'level5-stage2': 'river', 'level6-stage2': 'concert'};
+  const report = {};
+  for (const [stage, theme] of Object.entries(themes)) {
+    const context = await browser.newContext({viewport: {width: 393, height: 852}});
+    await stubScoreboard(context);
+    await context.addInitScript(() => {
+      window.__changes = [];
+      const played = new WeakSet();
+      const src = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
+      Object.defineProperty(HTMLMediaElement.prototype, 'src', {configurable: true, get() { return src.get.call(this); }, set(value) {
+        if (played.has(this) && this === window.__fight) window.__changes.push({muted: this.muted, state: window.bobbyGame?.state, loading: Boolean(window.bobbyGame?.levelLoadingPresentation)});
+        src.set.call(this, value);
+      }});
+      const play = HTMLMediaElement.prototype.play;
+      HTMLMediaElement.prototype.play = function () {
+        if (this === window.__fight && window.bobbyGame?.state === 'playing') window.__start ||= {muted: this.muted, src: (this.getAttribute('src') || '').slice(0, 5)};
+        played.add(this);
+        return play.apply(this, arguments);
+      };
+    });
+    const page = await context.newPage();
+    const errors = [];
+    await boot(page, errors);
+    await page.keyboard.press('Shift');
+    await page.evaluate(([stage, theme]) => { const g = bobbyGame; window.__fight = g.getRhythmAudioFor(theme); g.freePlay = true; g.startStage(stage); }, [stage, theme]);
+    await page.waitForFunction(() => { const t = window.__fight; return t && !t.paused && t.currentTime > 1; }, undefined, {timeout: 60000});
+    const seen = await page.evaluate(() => ({changes: window.__changes, start: window.__start}));
+    assert(seen.changes.every(change => change.muted && change.loading), `${stage}: a played song changes source only muted, on the loading screen ${JSON.stringify(seen.changes)}`);
+    assert.deepEqual(seen.start, {muted: false, src: 'blob:'}, `${stage}: the fight starts on its downloaded copy, unmuted`);
+    assert.deepEqual(errors, []);
+    report[theme] = seen.changes.length;
+    await context.close();
+  }
+  console.log('song copy PASS', JSON.stringify(report));
+  await browser.close();
+}
+console.log('PASS iPhone: blank backdrop copies recover (levels 2, 3, 7), silent priming, gliding fades, song copies taken on the loading screen');
