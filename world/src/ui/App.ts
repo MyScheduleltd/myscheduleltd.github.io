@@ -20,6 +20,8 @@ import { QUESTS, QUEST_SECTIONS, QUEST_TOTAL, type QuestId } from '../data/quest
 import { xrBindings, xrQuickActions, xrStickRows } from '../world/XrControls';
 import { armLeavingVr, type LeaveVrArming } from './LeaveVrConfirm';
 import { arcadeGameUrl, externalArcadeRequired } from '../world/ArcadeRules';
+import { requestWithDeadline } from '../network/RequestDeadline';
+import { watchAssetDownloads } from '../world/AssetMirror';
 
 /**
  * The rooms with lights that answer to a beat. Everywhere else is a cinema,
@@ -521,6 +523,7 @@ export class App {
   private readonly programmeClock = new ProgrammeClock();
   private waitTimer?: number;
   private openingWorld=false;
+  private waitingForPlace=false;
   private gateCopy?: GateCopy;
   private controlledNpcId?: string;
   /** Visit-only onboarding: deliberately absent from local/session storage. */
@@ -561,7 +564,7 @@ export class App {
     // both in. Failures are swallowed — `enterWorld()` asks again and reports
     // properly if it is still not there.
     void this.preloadAvatar().catch(() => undefined);
-    this.preloadWorldModule();
+    void this.preloadWorldModule().catch(() => undefined);
     // Then the band, and the bodies nobody here is wearing yet, behind them
     // and still at the gate: the band used to start downloading only once
     // the world had opened, and reached the roof a minute later (the owner,
@@ -585,7 +588,7 @@ export class App {
       if (config.gateCopy) {
         this.gateCopy = config.gateCopy;
         // The gate is already on screen by now, so it has to be redrawn.
-        if (this.root.querySelector('#gate-form')) this.renderGate();
+        if (this.root.querySelector('#gate-form') && !this.waitingForPlace && !this.openingWorld) this.renderGate();
       }
       this.applySiteStyle();
       this.applyGateBackground();
@@ -911,6 +914,7 @@ export class App {
     this.root.querySelectorAll<HTMLButtonElement>('[data-language]').forEach((button) => {
       setButtonPressed(button, button.dataset.language === this.language);
       button.addEventListener('click', () => {
+        if (this.waitingForPlace || this.openingWorld) return;
         this.language = button.dataset.language as Language;
         const id = this.root.querySelector<HTMLInputElement>('#festival-id')?.value ?? '';
         this.currentId = id;
@@ -946,6 +950,7 @@ export class App {
     const form = this.root.querySelector<HTMLFormElement>('#gate-form');
     form?.addEventListener('submit', (event) => {
       event.preventDefault();
+      if (this.waitingForPlace || this.openingWorld) return;
       const submitter = (event as SubmitEvent).submitter as HTMLButtonElement | null;
       const input = this.root.querySelector<HTMLInputElement>('#festival-id');
       const id = input?.value.trim() ?? '';
@@ -993,12 +998,15 @@ export class App {
   }
 
   private async enterWhenThereIsRoom(muted: boolean): Promise<void> {
+    if (this.waitingForPlace || this.openingWorld) return;
+    this.waitingForPlace = true;
     this.audioMuted = muted;
     const zh = this.language === 'zh-TW';
     const form = this.root.querySelector<HTMLFormElement>('#gate-form');
     const notice = this.root.querySelector<HTMLElement>('#gate-waiting');
     const buttons = form?.querySelectorAll<HTMLButtonElement>('button[type="submit"]');
     const stopWaiting = () => {
+      this.waitingForPlace = false;
       window.clearTimeout(this.waitTimer);
       this.waitTimer = undefined;
       buttons?.forEach((button) => { button.disabled = false; });
@@ -1011,7 +1019,7 @@ export class App {
     buttons?.forEach((button) => { button.disabled = true; });
     if (notice) {
       notice.hidden = false;
-      notice.textContent = zh ? '正在開啟影展…' : 'OPENING THE FESTIVAL…';
+      notice.textContent = zh ? '正在連線影展…' : 'CONNECTING TO THE FESTIVAL…';
     }
 
     const ask = async (): Promise<void> => {
@@ -1062,15 +1070,38 @@ export class App {
     this.openingWorld=true;
     this.root.querySelectorAll<HTMLButtonElement>('#gate-form button[type="submit"]').forEach(b=>b.disabled=true);
     const waiting=this.root.querySelector<HTMLElement>('#gate-waiting');
-    if(waiting){waiting.hidden=false;waiting.textContent=this.language==='zh-TW'?'正在開啟影展…':'OPENING THE FESTIVAL…';}
+    if(waiting){waiting.hidden=false;waiting.textContent=this.language==='zh-TW'?'正在下載角色…':'LOADING THE CHARACTER…';}
+    let lastProgressAt = 0;
+    const stopProgress = watchAssetDownloads(({ file, received }) => {
+      if (!waiting || !/^(male|female)-.*\.glb$/.test(file)) return;
+      const now = performance.now();
+      if (now - lastProgressAt < 250) return;
+      lastProgressAt = now;
+      const megabytes = (received / 1_048_576).toFixed(1);
+      waiting.textContent = this.language === 'zh-TW'
+        ? `正在下載角色… 已下載 ${megabytes} MB` : `LOADING THE CHARACTER… ${megabytes} MB downloaded`;
+    });
     window.setTimeout(() => {
       // Only the bodies this visitor and the residents wear; the others arrive
       // behind them while the world is already running.
-      void this.preloadAvatar().then(() => {this.openingWorld=false;return this.enterWorld(this.audioMuted);}).catch(() => {
+      void this.preloadAvatar().then(() => {
+        stopProgress();
+        if (waiting) waiting.textContent = this.language === 'zh-TW' ? '正在建立影展…' : 'BUILDING THE FESTIVAL…';
+        return this.enterWorld(this.audioMuted);
+      }).then(() => {
         this.openingWorld=false;
+      }).catch((error: unknown) => {
+        stopProgress();
+        this.openingWorld=false;
+        this.entryAudio.setMuted(true);
+        console.error('Festival entry failed', error);
+        if (!this.world) {
+          sessionStorage.removeItem(INSIDE_KEY);
+          if (!this.root.querySelector('#gate-form')) this.renderGate();
+        }
         const notice=this.root.querySelector<HTMLElement>('#gate-waiting');
         if(notice){notice.hidden=false;notice.textContent=this.language==='zh-TW'
-          ? '角色下載未完成，請再次點選進入重試。' : 'Character download failed. Select enter again to retry.';}
+          ? '影展載入未完成，請再次點選進入重試。' : 'Festival loading failed. Select enter again to retry.';}
         this.root.querySelectorAll<HTMLButtonElement>('#gate-form button[type="submit"]').forEach(b=>b.disabled=false);
       });
     }, 50);
@@ -1089,8 +1120,9 @@ export class App {
 
   private prepareWorldTopology(): Promise<void> {
     if (!this.topology) {
-      this.topology = import('../world/WorldTopology').then(({ configureWorldTopology }) =>
-        configureWorldTopology(window.location.hostname, window.location.pathname, window.location.search));
+      this.topology = requestWithDeadline(() => import('../world/WorldTopology').then(({ configureWorldTopology }) =>
+        configureWorldTopology(window.location.hostname, window.location.pathname, window.location.search)),
+      30_000, 'World topology download');
       void this.topology.catch(() => { this.topology = undefined; });
     }
     return this.topology;
@@ -1099,23 +1131,27 @@ export class App {
   private mapGraphic: (zh: boolean) => string = () => '';
 
   private preloadAvatar(): Promise<void> {
-    return this.prepareWorldTopology().then(() => import('../world/ImportedAvatar')).then(({ loadImportedAvatar }) =>
-      loadImportedAvatar(undefined, avatarVariantsFor(this.palette), false));
+    return requestWithDeadline(() => this.prepareWorldTopology().then(() => import('../world/ImportedAvatar')),
+      30_000, 'Character code download')
+      .then(({ loadImportedAvatar }) => loadImportedAvatar(undefined, avatarVariantsFor(this.palette), false));
   }
 
   private worldModule?: Promise<typeof import('../world/FestivalWorld')>;
 
   private preloadWorldModule(): Promise<typeof import('../world/FestivalWorld')> {
     if (!this.worldModule) {
-      this.worldModule = this.prepareWorldTopology().then(() =>
+      this.worldModule = requestWithDeadline(() => this.prepareWorldTopology().then(() =>
         Promise.all([import('../world/FestivalWorld'), import('./coastalMap')]))
-        .then(([world, map]) => { this.mapGraphic = map.coastalMapGraphic; return world; });
+        .then(([world, map]) => { this.mapGraphic = map.coastalMapGraphic; return world; }),
+      45_000, 'World code download');
       void this.worldModule.catch(() => { this.worldModule = undefined; });
     }
     return this.worldModule;
   }
 
   private async enterWorld(muted: boolean): Promise<void> {
+    // Keep the loading/retry form visible until the world's code is usable.
+    const { FestivalWorld } = await this.preloadWorldModule();
     this.lockPageZoomForWorld();
     // Marked as soon as somebody is inside, so that if the phone throws this
     // tab away while it is locked, the restored tab knows it was already in
@@ -1297,7 +1333,6 @@ export class App {
     if (!canvas || !foregroundCanvas || !cssLayer) throw new Error('World rendering layers were not created.');
     this.renderChatStream();
 
-    const { FestivalWorld } = await this.preloadWorldModule();
     this.world = new FestivalWorld({
       canvas,
       audio: this.entryAudio,

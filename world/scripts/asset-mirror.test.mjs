@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { build } from 'esbuild';
+
+const compiled = await build({ entryPoints: ['src/world/AssetMirror.ts'], bundle: true, write: false, format: 'esm' });
 
 // The heavy files come from jsDelivr first and GitHub Pages second
 // (src/world/AssetMirror.ts). What matters is that nothing unchecked is ever
@@ -21,17 +24,18 @@ async function visit(routes, href = SITE) {
   const asked = [];
   const here = new URL(href);
   globalThis.window = { location: here, setTimeout, clearTimeout };
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, options) => {
     asked.push(String(url));
     const route = routes[String(url)];
     if (route === undefined) return new Response('missing', { status: 404 });
     if (route instanceof Error) throw route;
+    if (typeof route === 'function') return route(options);
     return typeof route === 'object' && 'json' in route
       ? new Response(JSON.stringify(route.json), { status: 200 })
       : new Response(route, { status: 200 });
   };
   fresh += 1;
-  const mirror = await import(`../src/world/AssetMirror.ts?visit=${fresh}`);
+  const mirror = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputFiles[0].text + `\n// visit ${fresh}`).toString('base64')}`);
   return { mirror, asked };
 }
 
@@ -99,4 +103,89 @@ test('anywhere but the published site, the mirror is not used at all', async () 
 test('the site\'s own copy failing is reported, not swallowed', async () => {
   const { mirror } = await visit({});
   await assert.rejects(() => mirror.fetchAsset(FILE), /guitarist-CtIfyK1n\.glb: 404/);
+});
+
+test('a mirror body stalled after successful headers is cancelled and falls back to the site', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let signal;
+  let headers;
+  const started = new Promise(resolve => { headers = resolve; });
+  const { mirror, asked } = await visit({
+    [MANIFEST]: { json: { 'guitarist-CtIfyK1n.glb': hashOf('guitar') } },
+    [MIRROR]: options => {
+      signal = options.signal;
+      headers();
+      return { ok: true, arrayBuffer: () => new Promise(() => {}) };
+    },
+    [FILE]: 'guitar',
+  });
+  const download = mirror.fetchAsset(FILE);
+  await started;
+  await Promise.resolve();
+  t.mock.timers.tick(20_001);
+  assert.equal(text(await download), 'guitar');
+  assert.equal(signal.aborted, true);
+  assert.equal(asked.at(-1), FILE);
+});
+
+test('a stalled integrity body stops holding the model download and uses the site', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let signal;
+  let headers;
+  const started = new Promise(resolve => { headers = resolve; });
+  const { mirror, asked } = await visit({
+    [MANIFEST]: options => {
+      signal = options.signal;
+      headers();
+      return { ok: true, json: () => new Promise(() => {}) };
+    },
+    [FILE]: 'guitar',
+  });
+  const download = mirror.fetchAsset(FILE);
+  await started;
+  t.mock.timers.tick(10_001);
+  assert.equal(text(await download), 'guitar');
+  assert.equal(signal.aborted, true);
+  assert.ok(!asked.includes(MIRROR), 'no mirror asset without a verified hash');
+});
+
+test('a stalled site model rejects so entry can display a retry instead of waiting forever', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let signal;
+  const { mirror } = await visit({
+    [FILE]: options => {
+      signal = options.signal;
+      return { ok: true, arrayBuffer: () => new Promise(() => {}) };
+    },
+  }, 'http://localhost/');
+  const failed = assert.rejects(mirror.fetchAsset(FILE), /download timed out/);
+  t.mock.timers.tick(60_001);
+  await failed;
+  assert.equal(signal.aborted, true);
+});
+
+test('a slow model stays usable while chunks arrive and reports progress', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let stream;
+  let askedForBody;
+  const started = new Promise(resolve => { askedForBody = resolve; });
+  const { mirror } = await visit({
+    [FILE]: () => new Response(new ReadableStream({ start(controller) { stream = controller; askedForBody(); } })),
+  }, 'http://localhost/');
+  const progress = [];
+  const stop = mirror.watchAssetDownloads(value => progress.push(value.received));
+  const download = mirror.fetchAsset(FILE);
+  await started;
+  await Promise.resolve();
+  for (const chunk of ['one', 'two', 'three']) {
+    // Total transfer exceeds the old 60-second limit, but never stalls.
+    t.mock.timers.tick(40_000);
+    stream.enqueue(new TextEncoder().encode(chunk));
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+  stream.close();
+  assert.equal(text(await download), 'onetwothree');
+  assert.deepEqual(progress, [3, 6, 11]);
+  stop();
 });
