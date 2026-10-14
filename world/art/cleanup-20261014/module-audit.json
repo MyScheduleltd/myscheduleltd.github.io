@@ -1,0 +1,16 @@
+{
+  "entryPages": [
+    "avatar-review.html",
+    "band-hand-review.html",
+    "band-review.html",
+    "index.html",
+    "location-review.html",
+    "rebuild-review.html",
+    "staff-history-review.html",
+    "venue-review.html",
+    "webcam-review.html"
+  ],
+  "sourceModules": 79,
+  "reachableModules": 77,
+  "orphanModules": []
+}

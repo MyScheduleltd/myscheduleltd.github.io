@@ -19,7 +19,7 @@ import { defineConfig, loadEnv, type Plugin } from 'vite';
  *   URL; it and the avatar decoder compile WebAssembly.
  * - connect-src: the festival service, and the tracker's pinned files on
  *   jsDelivr and Google Cloud Storage; Google's Drive API for the VR copies.
- * - frame-src: YouTube's players, the only frames the world embeds.
+ * - frame-src: YouTube's players and the public M.O.T.H arcade game.
  * - img-src and media-src take any https source: STAFF paste VR video links
  *   from CDNs of their choosing, and neither images nor video can run script.
  * - style-src keeps 'unsafe-inline' for the many style attributes the panels
@@ -38,7 +38,7 @@ const contentSecurityPolicy = (service: string): Plugin => ({
       "script-src 'self' blob: 'wasm-unsafe-eval'",
       "worker-src 'self' blob:",
       `connect-src 'self' ${serviceOrigin} https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googleapis.com https://drive.usercontent.google.com blob: data:`.replace(/\s+/g, ' '),
-      'frame-src https://www.youtube.com https://www.youtube-nocookie.com',
+      "frame-src 'self' https://myscheduleltd.com/moth/ https://www.youtube.com https://www.youtube-nocookie.com",
       "img-src 'self' data: blob: https:",
       "media-src 'self' blob: https:",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",

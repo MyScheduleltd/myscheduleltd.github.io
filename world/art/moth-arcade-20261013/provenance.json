@@ -1,0 +1,39 @@
+{
+  "generator": "Higgsfield",
+  "referenceModel": "GPT Image 2",
+  "referenceJob": "1551a0ec-d66a-4883-b965-2258a235c3ef",
+  "meshModel": "multi_image_to_3d",
+  "meshJob": "e62abde6-2233-41ae-89f8-e974a9de6c16",
+  "preparation": "Higgsfield source silhouette retained; live Blender polished closed orange cabinet and exact independent screen; shared redrawn artwork; lossless Meshopt compression; fitted runtime ground support",
+  "screenTriangles": 2,
+  "bytes": 1696612,
+  "sha256": "465d019d8739c8449b6c1f83f69b8eaa2e49f1cbe881e160986e1970d7c11adf",
+  "position": {
+    "arcade": [
+      20.52,
+      11.6525
+    ],
+    "jukebox": [
+      21,
+      15.0525
+    ],
+    "combinedFootprintCentreZ": 13.5,
+    "wallSurfaceX": 21.6,
+    "loadedCabinetBackX": 21.576704019628,
+    "wallClearance": 0.023295980372
+  },
+  "publication": "local only",
+  "refinementTriangles": 2300,
+  "refinementReview": "../moth-arcade-refinement-20261013/REVIEW.md",
+  "originalBodyTriangles": 8367,
+  "triangles": 11769,
+  "meshes": 23,
+  "textureSize": [
+    1024,
+    1536
+  ],
+  "orange": "#ff5c21",
+  "polishReview": "../moth-arcade-orange-20261014/REVIEW.md",
+  "polishProvenance": "../moth-arcade-orange-20261014/provenance.json",
+  "integrationReview": "../moth-arcade-integration-20261014/REVIEW.md"
+}

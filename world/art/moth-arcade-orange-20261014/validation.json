@@ -1,0 +1,69 @@
+{
+  "asset": {
+    "bytes": 1696612,
+    "sha256": "465d019d8739c8449b6c1f83f69b8eaa2e49f1cbe881e160986e1970d7c11adf",
+    "meshes": 23,
+    "triangles": 11769,
+    "textures": 1,
+    "screenTransformAndPositions": "byte-equivalent to previous screen",
+    "orange": "#ff5c21",
+    "textureSize": [
+      1024,
+      1536
+    ]
+  },
+  "tests": {
+    "passed": 28,
+    "failed": 0,
+    "command": "node --test scripts/moth-arcade.test.mjs scripts/venue-world-repair.test.mjs scripts/venue-scenery.test.mjs"
+  },
+  "build": "npm run build: TypeScript and Vite passed; existing Three.js chunk-size warning only",
+  "diffCheck": "passed",
+  "floor": {
+    "placement": "terrain plus actual rendered ground meshes, 25 footprint samples",
+    "support": "level shallow rubber plinth buried 2.5 cm beneath lowest sampled surface and overlapping body by 2 cm",
+    "nativeReview": "no visible air gap between plinth and paving in first-person close-up"
+  },
+  "browser": {
+    "engine": "Codex in-app browser",
+    "nativeControls": "Arrow Down changes game menu selection; Exit button and Esc return to world; nearby E prompt restored and E re-enters",
+    "fixedCamera": "clean physical orange surround; live game remains on the cabinet screen",
+    "hudLayout": [
+      {
+        "viewport": [
+          1280,
+          720
+        ],
+        "centreError": 0,
+        "bottomGap": 20,
+        "gameToPromptGap": 11
+      },
+      {
+        "viewport": [
+          1024,
+          480
+        ],
+        "centreError": 0,
+        "bottomGap": 20,
+        "gameToPromptGap": 9
+      },
+      {
+        "viewport": [
+          390,
+          480
+        ],
+        "centreError": 0,
+        "bottomGap": 20,
+        "gameToPromptGap": 9.703125
+      }
+    ],
+    "temporaryViewportOverride": "reset",
+    "consoleErrors": [],
+    "scope": "desktop and desktop responsive sizes; no physical phone/headset validation"
+  },
+  "avatarHashes": {
+    "male": "f00c08d4a11395680372becad22a85d057179a090e90f132c4eeb4ed5ef1ef48",
+    "female": "20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3"
+  },
+  "publication": "local only"
+}

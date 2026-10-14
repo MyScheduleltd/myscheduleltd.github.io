@@ -1,0 +1,4 @@
+{
+  "policy": "Preserve all cached JavaScript/CSS release dependency chains and both published channels",
+  "unreferencedAssetCandidates": []
+}

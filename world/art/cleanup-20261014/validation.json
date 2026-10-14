@@ -1,0 +1,27 @@
+{
+  "tests": {
+    "passed": 453,
+    "failed": 0,
+    "command": "npm run test",
+    "log": "../../.artifacts/cleanup-20261014/tests.log",
+    "environment": "Full suite passed with loopback server permission; first sandbox attempt could not bind test ports"
+  },
+  "build": {
+    "command": "npm run build",
+    "status": "TypeScript strict/noUnusedLocals/noUnusedParameters and Vite passed",
+    "log": "../../.artifacts/cleanup-20261014/build.log",
+    "warning": "Existing Three.js chunk-size warning"
+  },
+  "protectedFiles": 1393,
+  "changedProtectedFiles": [],
+  "deletedFiles": 377,
+  "deletedBytes": 3211820432,
+  "browser": {
+    "engine": "Codex in-app browser, native UI input",
+    "world": "Entry and avatar/cabinet/jukebox rendering passed after rebuilding and restarting preview",
+    "liveMoth": "Current public game loaded directly, native stage navigation, focus after surround click, Exit click, native Tab/Space Exit and E re-entry passed",
+    "consoleErrors": [],
+    "physicalDeviceValidation": "Not performed"
+  },
+  "publication": "Local only; no BETA/PS2 package preparation, deployment, staging or Git push"
+}

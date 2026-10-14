@@ -4310,6 +4310,7 @@ for (const level of this.config.secretLevels || []) {
   
 
   loadDeviceModePreference() {
+    if (document.documentElement.dataset.arcadePlay === "true") return "desktop";
     try {
       const stored = window.localStorage?.getItem(DEVICE_MODE_KEY);
       if (stored === "phone" || stored === "desktop") return stored;

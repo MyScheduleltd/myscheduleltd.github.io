@@ -259,6 +259,46 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
 #world-canvas.is-camera-dragging { cursor: grabbing; }
 .world-css3d { position: fixed; z-index: 1; inset: 0; overflow: hidden; pointer-events: none; }
 .world-css3d__renderer { position: absolute; inset: 0; pointer-events: none; }
+.moth-arcade-screen { overflow: hidden; background: #080a09; pointer-events: auto; backface-visibility: hidden; }
+.moth-arcade-screen iframe { display: block; width: 100%; height: 100%; border: 0; pointer-events: auto; }
+.moth-arcade-hud {
+  position: fixed; left: 50%; top: 80%;
+  transform: translate(-50%, -50%); z-index: 30;
+  width: max-content; padding: 0; background: transparent;
+}
+.moth-arcade-hud[hidden] { display: none; }
+.moth-arcade-hud button {
+  min-height: 36px; padding: 7px 18px; border: 1px solid #8b3218; border-radius: 3px;
+  background: #ed541e; color: #34180f; font: 800 14px/1.2 var(--condensed);
+  letter-spacing: .04em; white-space: nowrap; cursor: pointer;
+  box-shadow: inset 0 2px 3px #782a1940, inset 0 -1px 0 #ffa474;
+  text-shadow: 0 1px 0 #ff986a;
+}
+.moth-arcade-hud button:hover { background: #ff7439; }
+.moth-arcade-hud button:focus-visible { outline: 2px solid #34180f; outline-offset: 3px; }
+@media (max-width: 520px) {
+  .moth-arcade-hud button { min-height: 32px; padding: 6px 14px; font-size: 12px; }
+}
+.world-shell[data-arcade-playing='true'] #world-canvas,
+.world-shell[data-arcade-playing='true'] #world-foreground { pointer-events: none; }
+.world-shell[data-arcade-playing='true'] > .world-header,
+.world-shell[data-arcade-playing='true'] > .world-status,
+.world-shell[data-arcade-playing='true'] > .objective-count,
+.world-shell[data-arcade-playing='true'] > .pass-toggle,
+.world-shell[data-arcade-playing='true'] > .touch-controls,
+.world-shell[data-arcade-playing='true'] > .world-camera-controls,
+.world-shell[data-arcade-playing='true'] > .keyboard-help { visibility: hidden; }
+.world-shell[data-arcade-playing='true'] > .chat-stream,
+.world-shell[data-arcade-playing='true'] > .world-help,
+.world-shell[data-arcade-playing='true'] > .world-clock,
+.world-shell[data-arcade-playing='true'] > .world-objectives { visibility: hidden; }
+.world-shell[data-arcade-playing='true'] > .inventory-status,
+.world-shell[data-arcade-playing='true'] .controls-hint,
+.world-shell[data-arcade-playing='true'] > .vr-preview-exit,
+.world-shell[data-arcade-playing='true'] > .vr-resume,
+.world-shell[data-arcade-playing='true'] > .vr-recenter,
+.world-shell[data-arcade-playing='true'] > .head-track-toggle,
+.world-shell[data-arcade-playing='true'] > .head-track { visibility: hidden; }
 #world-foreground { z-index: 2; display: block; pointer-events: none; background: transparent; }
 /*
  * A phone keeps one WebGL context. Its CSS video therefore sits below the
@@ -267,6 +307,9 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
  */
 .world-shell--single-context-projectors #world-canvas { z-index: 1; background: transparent; }
 .world-shell--single-context-projectors .world-css3d { z-index: 0; }
+/* A fixed cabinet view has no avatar in front of its screen. Keep its iframe
+   above the canvas so desktop VR preview can also receive native game clicks. */
+.world-shell[data-arcade-playing='true'] .world-css3d { z-index: 1; }
 .world-shell[data-vr-active='true'][data-vr-simulated='false'] .world-css3d,
 .world-shell[data-vr-active='true'][data-vr-simulated='false'] #world-foreground { visibility: hidden !important; }
 /* Only where the painted HUD actually runs — a real headset session, or a

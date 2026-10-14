@@ -65,6 +65,20 @@ test('male shoulder UV and normal splits stay welded through the wave and action
   root.userData.setImportedMove(move,frame*MOVE_SECONDS[move]/32);check(`${move} ${frame}`);
  }
 });
+test('the lower waist cannot acquire a side bulge from the waving arm',()=>{
+ const {root,rig,parts}=character(),body=parts.body,p=body.geometry.getAttribute('position');
+ // Include the hip transition below the earlier chest/rib check. Its small
+ // residual arm weights raised the side of the stomach during a wave.
+ const ids=Array.from({length:p.count},(_,v)=>v).filter(v=>Math.abs(p.getX(v))<.16&&p.getY(v)>-.035&&p.getY(v)<.06);
+ assert.ok(ids.length>100,'exercise both low-waist side surfaces');
+ const sample=()=>{syncImportedAvatars(root);root.updateMatrixWorld(true);body.skeleton.update();return ids.map(v=>body.getVertexPosition(v,new THREE.Vector3()));};
+ const rest=sample();
+ for(const phase of [.1,.25,.5,.75,.95]){
+  walkCoastalPose(rig,0,0);waveCoastalPose(rig,phase*8,phase);const wave=sample();
+  const movement=Math.max(...wave.map((point,i)=>point.distanceTo(rest[i])));
+  assert.ok(movement<.00001,`wave ${phase}: low waist moved ${movement} with the hand`);
+ }
+});
 test('male shirt, vest and prints do not follow the thighs or head',()=>{
  const {parts}=character();
  for(const [id,mesh] of Object.entries(parts)){

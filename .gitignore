@@ -11,6 +11,8 @@ node_modules
 
 dist-ssr
 world/dist
+# Local editable scenes, intermediate exports and QA output are not website assets.
+world/.artifacts/
 # Image-to-3D working files. Reference crops and specs for building the
 # MENTOR model; nothing the site serves imports them.
 world/.img2threejs

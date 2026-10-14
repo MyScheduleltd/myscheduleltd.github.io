@@ -1,0 +1,10 @@
+{
+  "firstLiveSrc": "https://myscheduleltd.com/moth/?arcade=1&arcadeLaunch=d53744c8-705d-4aa7-893e-0bb5903f9420",
+  "secondLiveSrc": "https://myscheduleltd.com/moth/?arcade=1&arcadeLaunch=1c652545-7e71-4565-8522-5e68995f88bd",
+  "freshLaunch": true,
+  "initialScript": "./src/game.js?v=moth-loading-20261014b",
+  "finalScript": "./src/game.js?v=moth-loading-20261014d",
+  "finalLiveUrl": "https://myscheduleltd.com/moth/?arcade=1&arcadeLaunch=4ee8846e-6dfd-4600-aad4-2800d0b0a212",
+  "nativeControls": "Surround click, Down/Down/O opens stage selection; Exit click and E re-entry passed",
+  "consoleErrors": []
+}

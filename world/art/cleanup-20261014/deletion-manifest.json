@@ -1,0 +1,1914 @@
+{
+  "scope": "Active release-npc-20261006 checkout only; no deployment or sibling checkout deletion",
+  "preservedSourceFiles": {
+    "world/.artifacts/male-wave-side-20261013/waist-weight-fixed.blend": "Current editable male avatar after the accepted wave-side repair",
+    "world/.artifacts/moth-arcade-orange-20261014/cabinet-polished.blend": "Current editable polished cabinet source",
+    "world/.artifacts/attendant-forearms-20261011/forearms-and-fingers.blend": "Current editable attendant hand/forearm source",
+    "world/.artifacts/swim-body-match-20261011/swim-body-matched.blend": "Editable original female body and shared limb source",
+    "world/.artifacts/male-wave-20261013/production-before.blend": "Required input asserted by scripts/repair-male-shoulder-weights.py",
+    "world/.artifacts/venue-followup-20261010/guitarist-before.glb": "Default input of the retained guitar-fretting repair command",
+    "world/.artifacts/male-regeneration-20261012/model.glb": "Original accepted male generation source",
+    "world/.artifacts/male-regeneration-20261012/rigged-original.glb": "Original accepted male rig input",
+    "world/.artifacts/venue-repair-20261009/attendant.glb": "Required raw repair input in scripts/repair-venue-surfaces.py",
+    "world/.artifacts/venue-repair-20261009/box-office.glb": "Required raw repair input in scripts/repair-venue-surfaces.py",
+    "world/.artifacts/venue-repair-20261009/valet.glb": "Required raw repair input in scripts/repair-venue-surfaces.py",
+    "world/.artifacts/venue-assets-20261009/raw/valet.glb": "Original accepted venue source download",
+    "world/.artifacts/venue-assets-20261009/raw/box-office.glb": "Original accepted venue source download",
+    "world/.artifacts/venue-assets-20261009/raw/temple-statue.glb": "Original accepted venue source download",
+    "world/.artifacts/venue-assets-20261009/raw/attendant.glb": "Original accepted venue source download"
+  },
+  "plannedDeletions": [
+    {
+      "path": "world/.artifacts/venue-assets-20261009/statue-reference.png",
+      "bytes": 2902717,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/venue-assets-20261009/valet-reference.png",
+      "bytes": 3586078,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/venue-assets-20261009/booth-reference.png",
+      "bytes": 3623082,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/venue-assets-20261009/staff-reference.png",
+      "bytes": 2973285,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/venue-assets-20261008/statue-reference.png",
+      "bytes": 4662434,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/venue-assets-20261008/valet-reference.png",
+      "bytes": 4349000,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/venue-assets-20261008/valet-rejected.glb",
+      "bytes": 2731728,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/venue-assets-20261008/temple-statue-rejected.glb",
+      "bytes": 4109784,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/venue-assets-20261008/attendant-rejected.glb",
+      "bytes": 3786824,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/venue-assets-20261008/box-office-rejected.glb",
+      "bytes": 2624248,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/venue-assets-20261008/booth-reference.png",
+      "bytes": 3513686,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/venue-assets-20261008/staff-reference.png",
+      "bytes": 4032993,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/swim-body-match-20261011/male-profile-candidate.glb",
+      "bytes": 2879012,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/swim-body-match-20261011/female-candidate.glb",
+      "bytes": 2529448,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/swim-body-match-20261011/male-foot-before.glb",
+      "bytes": 1461328,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/swim-body-match-20261011/male-candidate.glb",
+      "bytes": 2877380,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/swim-body-match-20261011/male-before.glb",
+      "bytes": 1518340,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/swim-body-match-20261011/female-before.glb",
+      "bytes": 1350752,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/swim-body-match-20261011/before.blend",
+      "bytes": 17778263,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/swim-body-match-20261011/swim-body-matched.blend1",
+      "bytes": 20323104,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/avatar-followup-20261012/candidate.glb",
+      "bytes": 25064668,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/avatar-followup-20261012/male-regenerated.blend1",
+      "bytes": 83356244,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/avatar-followup-20261012/male-before.glb",
+      "bytes": 15130464,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/avatar-followup-20261012/before.blend",
+      "bytes": 75364109,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/avatar-followup-20261012/male-regenerated.blend",
+      "bytes": 110533639,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-surface-motion-20261012/body-texture.webp",
+      "bytes": 3947796,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/male-surface-motion-20261012/dye-before.png",
+      "bytes": 272777,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/male-surface-motion-20261012/male-before.glb",
+      "bytes": 13409696,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-surface-motion-20261012/before.blend",
+      "bytes": 60081743,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-surface-motion-20261012/texture_0.webp",
+      "bytes": 5068210,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/male-surface-motion-20261012/surface-motion-fixed.blend",
+      "bytes": 75364470,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-cap-fit-20261012/male-before.glb",
+      "bytes": 13697496,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-cap-fit-20261012/before.blend",
+      "bytes": 49655719,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-cap-fit-20261012/cap-fitted.blend",
+      "bytes": 49498924,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/venue-finish-20261009/guitarist-before.glb",
+      "bytes": 2403532,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/venue-repair-20261009/attendant-map-1.png",
+      "bytes": 3811376,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/venue-repair-20261009/attendant-map-0.png",
+      "bytes": 572156,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/venue-repair-20261009/attendant-map-2.png",
+      "bytes": 2349578,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/venue-repair-20261009/attendant-map-3.png",
+      "bytes": 1077360,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/attendant-forearms-20261011/before-fingers.blend",
+      "bytes": 17801822,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/attendant-forearms-20261011/right-hand-after.png",
+      "bytes": 883563,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/attendant-forearms-20261011/forearms-and-fingers.blend1",
+      "bytes": 17776901,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/attendant-forearms-20261011/hand-before.png",
+      "bytes": 854462,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/attendant-forearms-20261011/before.blend",
+      "bytes": 17792456,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/attendant-forearms-20261011/hand-after-closed.png",
+      "bytes": 870740,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/attendant-forearms-20261011/hand-after-attempt.png",
+      "bytes": 869981,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/attendant-forearms-20261011/repaired.blend",
+      "bytes": 17792418,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-wave-side-20261013/current-uncompressed.glb",
+      "bytes": 20727616,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-wave-side-20261013/male-fixed.glb",
+      "bytes": 14607748,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-wave-side-20261013/current-before.blend",
+      "bytes": 129164224,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-wave-side-20261013/male-before.glb",
+      "bytes": 14608328,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-wave-side-20261013/flank-smoothed.blend",
+      "bytes": 129164031,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-shorts-hem-20261013/male-before.glb",
+      "bytes": 14601556,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-shorts-hem-20261013/shorts-mask-fixed.blend",
+      "bytes": 111573097,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-shorts-hem-20261013/final-hem-closeup.png",
+      "bytes": 27341,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/male-wave-20261013/wave-before.blend",
+      "bytes": 111573041,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-wave-20261013/wave-weights-fixed.blend1",
+      "bytes": 111590706,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-wave-20261013/male-fixed.glb",
+      "bytes": 14608328,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-wave-20261013/rejected-position-blend.glb",
+      "bytes": 14591628,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-wave-20261013/male-before.glb",
+      "bytes": 14600760,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-wave-20261013/wave-weights-fixed.blend",
+      "bytes": 111590246,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-wave-20261013/weights-before.png",
+      "bytes": 78103,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/candidate.glb",
+      "bytes": 23049388,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/rejected-integrated.glb",
+      "bytes": 13304312,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/fitted-before-swimsuit.blend",
+      "bytes": 101976178,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/female-dye-before.png",
+      "bytes": 518815,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/female-before.glb",
+      "bytes": 1331836,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/image-2.webp",
+      "bytes": 5204002,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/generated-original.glb",
+      "bytes": 11473532,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/female-regenerated.blend",
+      "bytes": 110524229,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/female-regenerated.blend1",
+      "bytes": 101956445,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/rejected-body-dye.png",
+      "bytes": 272426,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/image-13.webp",
+      "bytes": 3979812,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/image-12.webp",
+      "bytes": 2797546,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/body-texture.png",
+      "bytes": 4852989,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/male-regeneration-20261012/candidate.glb",
+      "bytes": 25349412,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-regeneration-20261012/male-regenerated.blend1",
+      "bytes": 75364174,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-regeneration-20261012/outfits-before.blend",
+      "bytes": 49686922,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-regeneration-20261012/rejected-installed-male.glb",
+      "bytes": 1461404,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-regeneration-20261012/male-regenerated.blend",
+      "bytes": 75364104,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-regeneration-20261012/body-texture.png",
+      "bytes": 6241551,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/beta-release-20261013/live-beta.png",
+      "bytes": 76458,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/male-outfits-20261012/male-before.glb",
+      "bytes": 13742348,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-outfits-20261012/male-outfits-fixed.blend",
+      "bytes": 49654754,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/moth-arcade-orange-20261014/cabinet-polished.blend1",
+      "bytes": 133461696,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/moth-arcade-orange-20261014/before.glb",
+      "bytes": 2064600,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/moth-arcade-orange-20261014/cabinet-polished.glb",
+      "bytes": 1819980,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/moth-arcade-refinement-20261013/cabinet-refined.blend",
+      "bytes": 133301887,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/moth-arcade-refinement-20261013/refined-side.png",
+      "bytes": 663083,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/moth-arcade-refinement-20261013/before.glb",
+      "bytes": 2062728,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/moth-arcade-refinement-20261013/refined-front.png",
+      "bytes": 553910,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/moth-arcade-refinement-20261013/cabinet-refined.blend1",
+      "bytes": 133302518,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/moth-arcade-refinement-20261013/cabinet-refined.glb",
+      "bytes": 2168308,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/sign-breaking-20261010/tracked-hands.blend",
+      "bytes": 9090668,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/sign-breaking-20261010/tracked-hands.blend1",
+      "bytes": 9060976,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/sign-breaking-20261010/male-before.glb",
+      "bytes": 1619132,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/sign-breaking-20261010/female-before.glb",
+      "bytes": 1439712,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/moth-arcade-20261013/cabinet-reference.png",
+      "bytes": 5173181,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/moth-arcade-20261013/cabinet-prepared.blend",
+      "bytes": 132860064,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/moth-arcade-20261013/cabinet-generated.glb",
+      "bytes": 3703424,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/moth-arcade-20261013/cabinet-atlas.png",
+      "bytes": 1675453,
+      "reason": "Superseded local render or comparison screenshot"
+    },
+    {
+      "path": "world/.artifacts/moth-arcade-20261013/generated-before.blend",
+      "bytes": 132869579,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-tee-seams-20261012/tee-seams-fixed.blend",
+      "bytes": 60088029,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-tee-seams-20261012/tee-seams-fixed.blend1",
+      "bytes": 49581274,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-tee-seams-20261012/male-before.glb",
+      "bytes": 13416900,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/male-tee-seams-20261012/before.blend",
+      "bytes": 49498751,
+      "reason": "Superseded working scene, automatic backup, old baseline or intermediate export; current source and runtime GLB retained"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/mesh-job-retry.json",
+      "bytes": 0,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/current-job-status.json",
+      "bytes": 15631,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/hand-edge-summary.txt",
+      "bytes": 9004,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/full-tests.txt",
+      "bytes": 37076,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/smooth-finger-binding.py",
+      "bytes": 5813,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/image-names.json",
+      "bytes": 398,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/clothed-meshy7-job.json",
+      "bytes": 1222,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/full-tests-final.txt",
+      "bytes": 37201,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/meshy7-job.json",
+      "bytes": 0,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/front-job-v2.json",
+      "bytes": 0,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/final-tests.txt",
+      "bytes": 37119,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/cap-tests.txt",
+      "bytes": 1387,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/bind-fingers.py",
+      "bytes": 5124,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/prepare-textures.py",
+      "bytes": 944,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/build.txt",
+      "bytes": 4013,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/export-candidate.py",
+      "bytes": 905,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/front-job-v3.json",
+      "bytes": 2313,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/refine-candidate.py",
+      "bytes": 6861,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/mesh-job.json",
+      "bytes": 0,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/candidate-tests-v4.txt",
+      "bytes": 9956,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/uv-labels.json",
+      "bytes": 28891775,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/candidate-tests.txt",
+      "bytes": 15463,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/uv-labels-final.json",
+      "bytes": 20350362,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/front-job.json",
+      "bytes": 0,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/fit-wardrobe.py",
+      "bytes": 3771,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/inspect-hand.mjs",
+      "bytes": 3259,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/first-tests.txt",
+      "bytes": 9952,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/candidate-tests-v2.txt",
+      "bytes": 15475,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/hand-edge-report.json",
+      "bytes": 67368,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/candidate-tests-v3.txt",
+      "bytes": 12678,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/compress.mjs",
+      "bytes": 1764,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/clothed-front-job.json",
+      "bytes": 2390,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/targeted-final.txt",
+      "bytes": 11297,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/candidate-build.txt",
+      "bytes": 3952,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/recent-status.json",
+      "bytes": 45706,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/first-build.txt",
+      "bytes": 3952,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/.artifacts/female-regeneration-20261012/common-garments.py",
+      "bytes": 3879,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/source-front.png",
+      "bytes": 570202,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/built-feet-side.png",
+      "bytes": 14154,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/front-prompt-v2.txt",
+      "bytes": 1278,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/front-prompt.txt",
+      "bytes": 1700,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/built-hand-right-open.png",
+      "bytes": 14461,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/clothed-identity-reference.png",
+      "bytes": 11345,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/fitted-clothes-before.png",
+      "bytes": 583145,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/built-hand-left-fist.png",
+      "bytes": 14939,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/source-side.png",
+      "bytes": 538654,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/geometry-validation.json",
+      "bytes": 366,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/clothed-prompt.txt",
+      "bytes": 1355,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/built-swimsuit-front.png",
+      "bytes": 22334,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/built-hand-right-fist-back.png",
+      "bytes": 14526,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/restored-swimsuit-front.png",
+      "bytes": 577057,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/identity-reference.png",
+      "bytes": 8870,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/built-outfit1-front.png",
+      "bytes": 26256,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/built-feet-top.png",
+      "bytes": 19763,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/built-hand-left-open.png",
+      "bytes": 14754,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/built-outfit3-cap-dye.png",
+      "bytes": 27466,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/fitted-clothes-after.png",
+      "bytes": 591219,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/clothed-front.png",
+      "bytes": 3267785,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/restored-swimsuit-side.png",
+      "bytes": 540638,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/built-outfit2-skate.png",
+      "bytes": 29002,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/female-regeneration-20261012/front.png",
+      "bytes": 3497066,
+      "reason": "Rejected female regeneration explicitly reverted by owner"
+    },
+    {
+      "path": "world/art/sign-breaking-hands-20261011/webcam-real-index.png",
+      "bytes": 51009,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/sign-breaking-hands-20261011/female-right-fist.png",
+      "bytes": 19492,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/sign-breaking-hands-20261011/sign-back.png",
+      "bytes": 16025,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/sign-breaking-hands-20261011/male-right-fist.png",
+      "bytes": 21035,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/sign-breaking-hands-20261011/male-left-open.png",
+      "bytes": 21345,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/sign-breaking-hands-20261011/female-left-open.png",
+      "bytes": 20981,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/sign-breaking-hands-20261011/breaking-wheel.png",
+      "bytes": 50302,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/sign-breaking-hands-20261011/female-left-fist.png",
+      "bytes": 19397,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/sign-breaking-hands-20261011/female-left-fist-side.png",
+      "bytes": 19221,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/sign-breaking-hands-20261011/desktop-tracking-default.png",
+      "bytes": 134206,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/sign-breaking-hands-20261011/webcam-real-detector.png",
+      "bytes": 50944,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/sign-breaking-hands-20261011/female-right-open.png",
+      "bytes": 20361,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/female-feet.png",
+      "bytes": 13805,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/male-dressed.png",
+      "bytes": 27402,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/female-cuff-raised.png",
+      "bytes": 25454,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/male-foot-profile-top-built.png",
+      "bytes": 31047,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/male-foot-profile-side-built.png",
+      "bytes": 20323,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/male-cuff-raised.png",
+      "bytes": 27045,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/male-hand-open.png",
+      "bytes": 15679,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/male-feet.png",
+      "bytes": 16809,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/female-hand-open.png",
+      "bytes": 14289,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/female-hand-fist.png",
+      "bytes": 13241,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/female-arms.png",
+      "bytes": 24468,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/male-foot-profile-walk-built.png",
+      "bytes": 21246,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/swimwear-built-review.png",
+      "bytes": 183504,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/female-dressed.png",
+      "bytes": 25586,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/male-foot-profile-side-dev.png",
+      "bytes": 19734,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/male-front.png",
+      "bytes": 19926,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/male-arms.png",
+      "bytes": 23826,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/swim-body-match-20261011/female-front.png",
+      "bytes": 19840,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/avatar-followup-20261012/print-outfit2-skate.png",
+      "bytes": 33176,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/avatar-followup-20261012/print-outfit3-oblique.png",
+      "bytes": 30937,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/avatar-followup-20261012/dj-final.png",
+      "bytes": 31345,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/avatar-followup-20261012/female-original-restored.png",
+      "bytes": 29170,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/avatar-followup-20261012/dj-after-v1.png",
+      "bytes": 32206,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/avatar-followup-20261012/face-after-v1.png",
+      "bytes": 29203,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/avatar-followup-20261012/skate-after-v2.png",
+      "bytes": 31652,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/avatar-followup-20261012/skate-before.png",
+      "bytes": 31601,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/avatar-followup-20261012/face-after-v2.png",
+      "bytes": 28918,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/avatar-followup-20261012/skate-after-v1.png",
+      "bytes": 31866,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/avatar-followup-20261012/skate-final.png",
+      "bytes": 31309,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/avatar-followup-20261012/skate-outfit2.png",
+      "bytes": 31518,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/avatar-followup-20261012/face-before.png",
+      "bytes": 28877,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/avatar-followup-20261012/print-outfit1-profile.png",
+      "bytes": 29721,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/avatar-followup-20261012/print-outfit1-oblique.png",
+      "bytes": 30261,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/punch-0-outfit-1.png",
+      "bytes": 28620,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/punch-0.25-outfit-2.png",
+      "bytes": 27281,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/world-punch.png",
+      "bytes": 104437,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/punch-0.4-outfit-3.png",
+      "bytes": 26632,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/dance-contact.png",
+      "bytes": 165302,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/punch-contact.png",
+      "bytes": 178189,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/visual-review.png",
+      "bytes": 413828,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/dance-2.6-outfit-3.png",
+      "bytes": 19925,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/cap-orange-side.png",
+      "bytes": 21732,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/stand-cap-orange-front.png",
+      "bytes": 31567,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/punch-after.png",
+      "bytes": 31316,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/shirt-1-front.png",
+      "bytes": 26670,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/punch-0.9-outfit-3.png",
+      "bytes": 26156,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/dance-9.1-outfit-3.png",
+      "bytes": 18805,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/punch-before.png",
+      "bytes": 31310,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/world-breaking.png",
+      "bytes": 110468,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/dance-3.9-outfit-1.png",
+      "bytes": 20729,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/dance-1.3-outfit-2.png",
+      "bytes": 18940,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/shoes-rear.png",
+      "bytes": 24924,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/dance-10.3-outfit-2.png",
+      "bytes": 18798,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/dance-6.5-outfit-3.png",
+      "bytes": 17048,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/local-world.png",
+      "bytes": 105143,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/punch-0.7-outfit-1.png",
+      "bytes": 26707,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/dance-0-outfit-1.png",
+      "bytes": 19063,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/shirt-2-back.png",
+      "bytes": 25351,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/dance-5.2-outfit-2.png",
+      "bytes": 20703,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/shoes-front.png",
+      "bytes": 32582,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/cap-orange-back.png",
+      "bytes": 23798,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-surface-motion-20261012/dance-7.8-outfit-1.png",
+      "bytes": 18417,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-cap-fit-20261012/cap-off-left.png",
+      "bytes": 26021,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-cap-fit-20261012/cap-right.png",
+      "bytes": 27146,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-cap-fit-20261012/cap-back.png",
+      "bytes": 26462,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-cap-fit-20261012/cap-front-vest.png",
+      "bytes": 32234,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-cap-fit-20261012/cap-left.png",
+      "bytes": 27135,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-finish-20261009/guitar-fretting-world.png",
+      "bytes": 100554,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-finish-20261009/guitar-fretting-side.png",
+      "bytes": 29516,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-finish-20261009/shore-frontage.png",
+      "bytes": 83040,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-finish-20261009/attendant-outfit-world.png",
+      "bytes": 88628,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-finish-20261009/booth-exterior.png",
+      "bytes": 81179,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-finish-20261009/guitar-fretting-front.png",
+      "bytes": 37225,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-finish-20261009/booth-interior.png",
+      "bytes": 66191,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/staff-history-review-20261009/offerings.png",
+      "bytes": 65115,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/staff-history-review-20261009/wishes.png",
+      "bytes": 59182,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/staff-history-review-20261009/chat.png",
+      "bytes": 63769,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/attendant-forearms-20261011/before.png",
+      "bytes": 24891,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/attendant-forearms-20261011/after.png",
+      "bytes": 24320,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/attendant-forearms-20261011/right-hand-after.png",
+      "bytes": 24325,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/attendant-forearms-20261011/left-hand-after.png",
+      "bytes": 23210,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/attendant-forearms-20261011/palace-front-built.png",
+      "bytes": 82052,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/attendant-forearms-20261011/booth-side-built.png",
+      "bytes": 65852,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/attendant-forearms-20261011/palace-side-built.png",
+      "bytes": 75845,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/attendant-forearms-20261011/back.png",
+      "bytes": 22658,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/world-repair-20261009/temple-shell.png",
+      "bytes": 80416,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/world-repair-20261009/palace-close.png",
+      "bytes": 90570,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/world-repair-20261009/shore-programme.png",
+      "bytes": 76325,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/world-repair-20261009/film-after-exit.png",
+      "bytes": 102496,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/world-repair-20261009/shore-screen.png",
+      "bytes": 98262,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/world-repair-20261009/booth-occlusion.png",
+      "bytes": 90559,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/world-repair-20261009/stairs.png",
+      "bytes": 97618,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/world-repair-20261009/film-before-exit.png",
+      "bytes": 123622,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/world-repair-20261009/shore-collision.png",
+      "bytes": 63602,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-followup-20261010/guitar-front.png",
+      "bytes": 55908,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-followup-20261010/dance-wheel.png",
+      "bytes": 42648,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-followup-20261010/shop-roof-no-prompt.png",
+      "bytes": 78753,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-followup-20261010/booth-counter.png",
+      "bytes": 78532,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-followup-20261010/shop-ground-prompt.png",
+      "bytes": 88762,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-followup-20261010/guitar-side.png",
+      "bytes": 40972,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-followup-20261010/roof-no-shop-prompt.png",
+      "bytes": 101524,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-followup-20261010/guitar-front-time12.png",
+      "bytes": 56115,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-followup-20261010/guitar-other-side.png",
+      "bytes": 39964,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-shorts-hem-20261013/rear-white-skin.png",
+      "bytes": 24799,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-shorts-hem-20261013/other-side-white-skin.png",
+      "bytes": 23265,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-shorts-hem-20261013/front-white-skin.png",
+      "bytes": 24582,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-shorts-hem-20261013/side-white-skin.png",
+      "bytes": 23573,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-shorts-hem-20261013/final-front.png",
+      "bytes": 28271,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/final-wave.png",
+      "bytes": 30697,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/before-contact.png",
+      "bytes": 36065,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/wave-motion-contact.png",
+      "bytes": 40848,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/after-contact.png",
+      "bytes": 110841,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/motion/wave-0.5.png",
+      "bytes": 28128,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/motion/wave-0.2.png",
+      "bytes": 28054,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/motion/wave-0.75.png",
+      "bytes": 28036,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/motion/wave-1.png",
+      "bytes": 27553,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/motion/wave-0.png",
+      "bytes": 27553,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/before/03-rear.png",
+      "bytes": 27756,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/before/02-side.png",
+      "bytes": 25402,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/before/01-front.png",
+      "bytes": 29585,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/after/05-outfit2.png",
+      "bytes": 32696,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/after/08-punch.png",
+      "bytes": 27389,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/after/06-outfit3.png",
+      "bytes": 32364,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/after/03-rear.png",
+      "bytes": 26934,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/after/00-underarm-close.png",
+      "bytes": 31155,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/after/02-side.png",
+      "bytes": 24832,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/after/04-outfit1.png",
+      "bytes": 32436,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/after/01-front.png",
+      "bytes": 28437,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-wave-20261013/after/07-breaking.png",
+      "bytes": 26143,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-regeneration-20261012/built-outfit3-cap.png",
+      "bytes": 32218,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-regeneration-20261012/built-feet-side.png",
+      "bytes": 20301,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-regeneration-20261012/built-right-fist.png",
+      "bytes": 19829,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-regeneration-20261012/outfit3-cap-browser.png",
+      "bytes": 32708,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-regeneration-20261012/built-right-open.png",
+      "bytes": 19988,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-regeneration-20261012/original-front-browser.png",
+      "bytes": 39642,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-regeneration-20261012/built-male-full.png",
+      "bytes": 26610,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-review-20261009/palace-programme.png",
+      "bytes": 80026,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-review-20261009/temple.png",
+      "bytes": 60892,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-review-20261009/shore.png",
+      "bytes": 79494,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-review-20261009/palace.png",
+      "bytes": 87414,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-review-20261009/palace-rotated.png",
+      "bytes": 87257,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/venue-review-20261009/booth.png",
+      "bytes": 80642,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-outfits-20261012/outfit1-back.png",
+      "bytes": 30696,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-outfits-20261012/outfit3-front.png",
+      "bytes": 32604,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-outfits-20261012/outfit2-front.png",
+      "bytes": 32533,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-outfits-20261012/outfit1-front.png",
+      "bytes": 32252,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-outfits-20261012/outfit2-back.png",
+      "bytes": 31418,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-outfits-20261012/outfit3-back.png",
+      "bytes": 31135,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-outfits-20261012/outfit3-wave.png",
+      "bytes": 32900,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-outfits-20261012/outfit2-wave.png",
+      "bytes": 32863,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-outfits-20261012/outfit3-walk-cap.png",
+      "bytes": 31840,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/moth-arcade-refinement-20261013/local-close-up.png",
+      "bytes": 50976,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/moth-arcade-refinement-20261013/short-desktop.png",
+      "bytes": 44567,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/moth-arcade-refinement-20261013/narrow-desktop.png",
+      "bytes": 39749,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/moth-arcade-refinement-20261013/refined-side.png",
+      "bytes": 662276,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/moth-arcade-refinement-20261013/refined-front.png",
+      "bytes": 553910,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/moth-arcade-refinement-20261013/narrow-short-desktop.png",
+      "bytes": 29967,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/moth-arcade-refinement-20261013/centered-pair.png",
+      "bytes": 107846,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-swim-breaking-20261013/breaking-6.5.png",
+      "bytes": 32023,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-swim-breaking-20261013/swimwear-saved-magenta.png",
+      "bytes": 28090,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-swim-breaking-20261013/breaking-0.0.png",
+      "bytes": 29579,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-swim-breaking-20261013/breaking-2.6.png",
+      "bytes": 30626,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-swim-breaking-20261013/breaking-10.3.png",
+      "bytes": 26834,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-swim-breaking-20261013/breaking-1.3.png",
+      "bytes": 28926,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-swim-breaking-20261013/breaking-5.2.png",
+      "bytes": 31856,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-swim-breaking-20261013/floor-hands.png",
+      "bytes": 38645,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-swim-breaking-20261013/contact.png",
+      "bytes": 116975,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-swim-breaking-20261013/breaking-9.1.png",
+      "bytes": 29476,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-swim-breaking-20261013/breaking-3.9.png",
+      "bytes": 31971,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-swim-breaking-20261013/breaking-7.8.png",
+      "bytes": 27976,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/moth-arcade-20261013/prepared-back.png",
+      "bytes": 591310,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/moth-arcade-20261013/generated-preview.png",
+      "bytes": 541958,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/moth-arcade-20261013/narrow-desktop.png",
+      "bytes": 33557,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/moth-arcade-20261013/cabinet-gameplay.png",
+      "bytes": 33549,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/moth-arcade-20261013/prepared-front.png",
+      "bytes": 556864,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/moth-arcade-20261013/desktop-vr-screen.png",
+      "bytes": 82214,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/moth-arcade-20261013/prepared-side.png",
+      "bytes": 653884,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/moth-arcade-20261013/centered-pair.png",
+      "bytes": 110462,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-tee-seams-20261012/back-1.png",
+      "bytes": 33074,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-tee-seams-20261012/back-3.png",
+      "bytes": 33929,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-tee-seams-20261012/back-2.png",
+      "bytes": 34692,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-tee-seams-20261012/wave-2.png",
+      "bytes": 34391,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-tee-seams-20261012/front-1.png",
+      "bytes": 34755,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-tee-seams-20261012/wave-3.png",
+      "bytes": 37299,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-tee-seams-20261012/front-3.png",
+      "bytes": 34881,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "world/art/male-tee-seams-20261012/front-2.png",
+      "bytes": 34034,
+      "reason": "Superseded review image; written findings and latest evidence retained"
+    },
+    {
+      "path": "docs/assets/aboutUs.jpg",
+      "bytes": 247435,
+      "reason": "No reference in website HTML, CSS, JavaScript, manifests or source/build tools"
+    },
+    {
+      "path": "docs/assets/return.png",
+      "bytes": 8847,
+      "reason": "No reference in website HTML, CSS, JavaScript, manifests or source/build tools"
+    },
+    {
+      "path": "docs/assets/mrBeauty1.jpg",
+      "bytes": 126582,
+      "reason": "No reference in website HTML, CSS, JavaScript, manifests or source/build tools"
+    },
+    {
+      "path": "docs/assets/android-icon-192x192.png",
+      "bytes": 28844,
+      "reason": "No reference in website HTML, CSS, JavaScript, manifests or source/build tools"
+    },
+    {
+      "path": "docs/assets/mrBeauty2.jpg",
+      "bytes": 89689,
+      "reason": "No reference in website HTML, CSS, JavaScript, manifests or source/build tools"
+    },
+    {
+      "path": "docs/assets/WhatsApp Image 2024-04-08 at 18.11.41.jpeg",
+      "bytes": 759,
+      "reason": "No reference in website HTML, CSS, JavaScript, manifests or source/build tools"
+    },
+    {
+      "path": "docs/assets/role.jpg",
+      "bytes": 91245,
+      "reason": "No reference in website HTML, CSS, JavaScript, manifests or source/build tools"
+    },
+    {
+      "path": "docs/assets/role_cover.jpg",
+      "bytes": 113566,
+      "reason": "No reference in website HTML, CSS, JavaScript, manifests or source/build tools"
+    },
+    {
+      "path": "docs/assets/logo_red.png",
+      "bytes": 234243,
+      "reason": "No reference in website HTML, CSS, JavaScript, manifests or source/build tools"
+    },
+    {
+      "path": "docs/font/.font-spider/HanWangMingBlack.ttf",
+      "bytes": 8878296,
+      "reason": "Font-spider backup byte-identical to the retained current font"
+    },
+    {
+      "path": "docs/font/.font-spider/BebasNeue-Regular.ttf",
+      "bytes": 60576,
+      "reason": "Font-spider backup byte-identical to the retained current font"
+    },
+    {
+      "path": "docs/css/dialog.css",
+      "bytes": 258,
+      "reason": "Unused old standalone stylesheet; dialog SCSS remains imported by current layout and active CSS is retained"
+    }
+  ],
+  "totalFiles": 377,
+  "totalBytes": 3211820432,
+  "completedAt": "2026-10-14T07:56:56.347277+00:00",
+  "status": "deleted",
+  "removedCode": [
+    "world/scripts/local-moth-preview.mjs and its obsolete local-snapshot test/import"
+  ]
+}

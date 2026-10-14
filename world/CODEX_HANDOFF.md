@@ -1,3 +1,41 @@
+# Active-project cleanup and live M.O.T.H source — 2026-10-14, LOCAL ONLY
+
+Owner requested a thorough safe cleanup and explicitly chose deletion of superseded source/review copies. Removed 377 obsolete files totalling 3,211,820,432 bytes (3.21 GB / 2.99 GiB): older working scenes/backups/baselines, rejected female generation, superseded review media, nine unused legacy website images, two identical font backups and the unused standalone dialog stylesheet. Removed the obsolete local M.O.T.H snapshot middleware/test/import. `world/.artifacts/` is now ignored for staging.
+
+All 1,393 protected runtime/release/source files remained hash-identical before/after cleanup and after verification. Current editable sources are indexed in `art/cleanup-20261014/REVIEW.md` and `deletion-manifest.json`; historical reports may link intentionally removed superseded intermediates. Preserve current sources, original accepted generation inputs, required shoulder/guitar/venue repair inputs, review template images and cached BETA/PS2 dependency chains. No current game model or frontend module was safely unused: 77 non-declaration TS modules are reachable from project entry pages.
+
+The cabinet now always launches `https://myscheduleltd.com/moth/`, even on localhost, with a new `arcadeLaunch` UUID per entry. Mobile/immersive routes also use a fresh public URL. The live entry supplies current versioned scripts/styles. Native check saw the release update from `moth-loading-20261014b` to `moth-loading-20261014d` on a later entry without copying the game. Surround clicks recover iframe focus before typing; native stage navigation, Exit click, Tab/Space Exit and E re-entry pass. In-frame Esc follows the current public game's controls unless its optional cabinet adapter is published; visible Exit is the reliable way back.
+
+**453/453 full tests, strict TypeScript/Vite build and diff check passed.** First sandbox attempt was denied loopback server ports; complete suite passed with that access. Native rebuilt world and live cabinet game have no captured console errors. No physical phone/headset checks. Evidence: `art/cleanup-20261014/`, `art/moth-arcade-live-20261014/`; full logs `.artifacts/cleanup-20261014/`. Preview restarted on 127.0.0.1:4173. No BETA package preparation, commit, staging, push or publication. All unrelated pre-existing dirty changes preserved.
+
+# M.O.T.H exit / wall fit / keyboard repair — 2026-10-14, LOCAL ONLY
+
+Latest request: move the single 離開遊戲 button into the bottom orange game interface, bring the full cabinet back outside the wall, and fix unresponsive game controls. Completed in the existing dirty `codex/moth-arcade-wave-20261013` checkout. No BETA build, staging, commit, push or publication performed. Preserve all unrelated avatar/game work.
+
+Exit is a single recessed orange button; projected-screen layout places its centre at 91.5% down the screen, with no extra title/helper text. Camera remains square to the actual screen. Native review at 1280x720, 1024x480 and 390x480 confirms no overlap with the game canvas; viewport override reset.
+
+Actual GLB back formerly penetrated the west wall by about .457 world units. `arcadeAgainstWallX()` and conservative loaded depth 2.12 place the root at X=20.52; actual back X=21.576704 clears the actual outside wall X=21.6 by .023296. Collider/ground seating follow the corrected root. Jukebox X and pair Z centre remain unchanged.
+
+Input focus was lost after clicking the surrounding cabinet. Session now focuses the iframe on load/ready and forwards parent-received game keys once via a source/origin-checked bridge to private native game handlers. Native iframe keys remain untouched. Hidden/exit paths release held keys. Control key releases preserve native Space button activation and focus. Bridge source and public mirror, cache version `moth-arcade-input-20261014a`, SRI and build recipe match.
+
+**30/30 targeted tests, TypeScript/Vite build and diff check passed.** Native gameplay navigated stage/difficulty, started office rhythm and scored 006000. Lost-focus recovery, Exit click/Esc, E re-entry and final-build native Tab -> Space Exit -> E re-entry pass with no console errors. Clock audit found no timing defect: earlier all-miss QA gaps exceeded the 85.161-second chart. Physical phone/headset not checked. Optional whole M.O.T.H package verification could not run because `.qa/moth/published-snapshot.json` is missing; do not claim that checker passed.
+
+Cabinet/male/female GLBs unchanged this turn. Current evidence: `art/moth-arcade-integration-20261014/REVIEW.md`, `validation.json`, five native screenshots; tests/build logs in `.artifacts/moth-arcade-integration-20261014/`. Latest provenance records corrected runtime placement. Preview remains on port 4173 and native review tab is left open. This checkpoint supersedes the preceding external exit prompt and X=21 cabinet placement; historical asset/character/release records below remain.
+
+# M.O.T.H orange cabinet / ground polish — 2026-10-14, LOCAL ONLY
+
+Latest user request: fix the floating cabinet, polish the whole texture/model and replace green with game orange. Completed locally in the existing dirty `codex/moth-arcade-wave-20261013` checkout. Do not reset or broadly stage unrelated work. No BETA build, staging, commit, push or deployment was performed for this refinement.
+
+The polished GLB has clean closed orange enamel panels (#ff5c21), ivory trim, charcoal lower front/rear, rebuilt beveled controls and redrawn crisp moth/guitarist print. The original Higgsfield silhouette and exact live-screen positions/transform remain. Final GLB: **1,696,612 bytes, 23 meshes, 11,769 triangles**, one shared 1024x1536 PNG; SHA256 `465d019d8739c8449b6c1f83f69b8eaa2e49f1cbe881e160986e1970d7c11adf`.
+
+Ground placement no longer borrows the jukebox's +.24 offset. `FestivalWorld.seatArcadeOnGround()` scans actual rendered ground/paving meshes after dressing completes; `MothArcadeCabinet.seatOnGround()` uses 25 footprint samples and a shallow overlapping rubber plinth buried beneath the lowest sample. Arcade and jukebox retain their centered combined footprint. Native first-person review confirms contact with paving.
+
+**28/28 targeted tests, TypeScript/Vite build and diff check passed.** Native local browser checks cover game keyboard menu navigation, fixed screen view, bottom-centered prompt at 1280x720 / 1024x480 / 390x480, Esc/button exit and E re-entry. Temporary viewport overrides reset. No browser console errors. Physical phone/headset checks were not performed. No avatar asset edits were made during this cabinet refinement; hashes are recorded in validation.json.
+
+Review/source/evidence: `art/moth-arcade-orange-20261014/REVIEW.md`, `provenance.json`, `validation.json`, native screenshots and Blender front/side/back renders. Source scene `MOTH orange cabinet 20261014`; `.artifacts/moth-arcade-orange-20261014/cabinet-polished.blend`, `polish-cabinet.py`, `optimize.mjs`, preserved `before.glb`, build/test logs. Use selected active scene only for Blender export to avoid including avatar scenes. Previous cabinet scenes and artifacts remain.
+
+Preview running at http://127.0.0.1:4173/?era=ps2&island&review=arcade&cycleMinute=15 . Native browser review tab left available. This local checkpoint supersedes old cabinet provenance/green texture figures; historical avatar/release entries below remain records of their respective checkpoints.
+
 # Male wave shoulder follow-up — 2026-10-13, added to BETA release PR #28
 
 Owner reported the raised arm pulling the swim torso unnaturally. Live Blender MCP confirmed chest/rib skin assigned entirely to upper-arm bones and inconsistent adjacent spinal weights. Repair uses a welded surface graph and a smooth shoulder/spine blend; only body JOINTS_0 and WEIGHTS_0 changed. All other accessors, images, transforms, shorts masks and the original female are unchanged.

@@ -1,0 +1,12 @@
+{
+  "trackedFiles": 239,
+  "unchangedFiles": 237,
+  "unchangedStaffFiles": 3,
+  "intendedChangedFiles": [
+    "docs/moth/index.html",
+    "docs/moth/src/game.js"
+  ],
+  "gameChange": "one desktop-only embed override; remainder byte-identical",
+  "bridgeSha256": "dcb40548bb51135946d13c1f6b9f4c4ae3f7f47fa98bf9161be69283e00ea137",
+  "originalSnapshotVerifier": "not available: .qa/moth/published-snapshot.json missing in this checkout"
+}

@@ -78,6 +78,7 @@ publicCode = replaceOnce(publicCode, 'const DEBUG_TEXT_AUDIT = typeof window !==
 publicCode = replaceOnce(publicCode, 'window.bobbyGame = game;', 'mothGame = game;');
 publicCode = replaceOnce(publicCode, 'if (window.bobbyGame && window.bobbyGame.bootDone) return;', 'if (game.bootDone) return;');
 publicCode = publicCode.replaceAll('window.bobbyGame', 'mothGame');
+publicCode = replaceOnce(publicCode, '  loadDeviceModePreference() {', '  loadDeviceModePreference() {\n    if (document.documentElement.dataset.arcadePlay === "true") return "desktop";');
 publicCode = replaceOnce(publicCode, ' || this.progress?.flags?.debugSecretLevelsUnlocked === true', '');
 publicCode = `(() => {\n"use strict";\nlet mothGame = null;\n${namespace(publicCode, 'public')}\n})();\n`;
 assert(!/createDebugPanel|toggleDebugPanel|data-debug-action|debug-panel-toggle|window\.bobbyGame/.test(publicCode));
@@ -88,6 +89,9 @@ await fs.mkdir(path.join(output, 'src'), { recursive: true });
 await fs.mkdir(path.join(output, 'staff'), { recursive: true });
 await fs.writeFile(path.join(output, 'src/game.js'), publicCode);
 await fs.writeFile(path.join(output, 'staff/game.js'), staffCode);
+const arcadeBridge = await fs.readFile(path.join(root, 'scripts/moth-arcade-embed.js'), 'utf8');
+await fs.writeFile(path.join(output, 'src/arcade-embed.js'), arcadeBridge);
+const arcadeSri = 'sha384-' + crypto.createHash('sha384').update(arcadeBridge).digest('base64');
 const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' " + MOTH_MIRROR_ORIGIN + "/gh/MyScheduleltd/myscheduleltd.github.io@" + MOTH_MIRROR_COMMIT + "/docs/moth/ " + SCOREBOARD_API + "; font-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; worker-src 'none'";
 for (const audience of ['public', 'staff']) {
   const staff = audience === 'staff';
@@ -97,8 +101,8 @@ for (const audience of ['public', 'staff']) {
   html = html.replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />\n    <meta name="referrer" content="strict-origin-when-cross-origin" />${staff ? '\n    <meta name="robots" content="noindex, nofollow, noarchive" />\n    <base href="/moth/" />' : ''}`);
   html = html.replace('<html lang="en">', '<html lang="zh-Hant-TW">');
   html = html.replace('./manifest.json', staff ? '/moth/staff/manifest.json' : './manifest.json');
+  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-loading-20261013e' : 'moth-arcade-20261013a'}" integrity="${sri}" crossorigin="anonymous"></script>`);
   html = html.replace('mobile-deck-20261012a', 'moth-loading-20261013e');
-  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=moth-loading-20261013e" integrity="${sri}" crossorigin="anonymous"></script>`);
   await fs.writeFile(path.join(output, staff ? 'staff/index.html' : 'index.html'), html);
   const manifest = JSON.parse(await fs.readFile(path.join(sourceRoot, 'manifest.json'), 'utf8'));
   manifest.start_url = staff ? '/moth/staff/' : '/moth/';

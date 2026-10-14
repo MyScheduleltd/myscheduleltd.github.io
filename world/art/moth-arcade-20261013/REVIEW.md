@@ -1,0 +1,13 @@
+# M.O.T.H cabinet and male wave waist — local review
+
+The cabinet and jukebox footprints are centered together below the NIMA ROOFTOP sign, arcade left and jukebox right. The rooftop approach route avoids the relocated jukebox. Cabinet geometry was actually generated through Higgsfield and prepared in live Blender, with an independently aligned screen and a 1024 atlas. See provenance.json for job IDs and the shipped asset hash.
+
+Open http://127.0.0.1:4173/?era=ps2&island&review=arcade&cycleMinute=15 and enter the world. The review visitor starts close to the real cabinet; E follows the ordinary proximity rule. Desktop play fixes the camera on the physical screen and gives the original public M.O.T.H game keyboard and mouse focus. The exit box and Esc restore world controls and the previous audio preference. Mobile and immersive headset use the external public game. Desktop VR simulation embeds the game.
+
+The male waist retained stray upper-arm weights below the region repaired previously. Only 92 export vertices across 52 positions had their arm influences removed and their existing torso/hip/leg weights normalized. Position, normals, UVs, indices, textures, clothing, binds and animation accessors remain byte-identical. Female avatar remains byte-identical. The negative regression fails on the previous asset and passes on the repaired asset. See ../male-wave-side-20261013/preservation.json.
+
+Validation: 449 automated tests passed, TypeScript and Vite build passed. Actual local browser checks covered the centered pair, native game menu and story launch, fixed camera, native iframe click hit testing and keyboard focus in both normal desktop and desktop VR simulation, Esc, exit button, re-entry, and a narrow desktop panel that keeps the whole screen visible. Wave silhouettes inspected at phases 0.1, 0.5 and 0.9 including a rear view; wave-contact-sheet.png records the three frozen views. Physical mobile and headset checks were not performed.
+
+M.O.T.H public changes are confined to its index, a one-line embedded desktop override in the public game closure, and a trusted-origin Esc bridge. All 237 remaining tracked game files and all three staff files are byte-identical to HEAD; see moth-delta.json. Public SRI and local routing tests pass. The original published-snapshot verifier could not run because this checkout has no .qa/moth/published-snapshot.json. That limitation does not replace the delta or browser checks.
+
+No BETA build, deploy, commit or push was performed for this change. Publication must include both the world and public M.O.T.H bridge so Esc works across the iframe.
