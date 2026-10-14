@@ -6,6 +6,7 @@ import {rewriteCssArtwork} from './moth-runtime-patches.mjs';
 import {patchCharts} from './moth-chart-patches.mjs';
 import {TRIMMED_FILES} from './moth-asset-trim.mjs';
 import {KEY_FRINGE_MANIFEST} from './moth-sprite-fringe.mjs';
+import {ADDED_ASSETS} from './moth-asset-additions.mjs';
 const root = path.resolve(import.meta.dirname, '..');
 const dir = path.join(root, 'docs/moth');
 const snapshot = JSON.parse(await fs.readFile(path.join(root, '.qa/moth/published-snapshot.json'), 'utf8'));
@@ -52,6 +53,13 @@ for (const file of snapshot.files) {
   assert.equal(hash(data),file.sha256,`Published release asset changed: ${file.path}`);
   preserved++;
 }
+// Files beyond the release, as listed (moth-asset-additions.mjs).
+let added = 0;
+for (const [file, entry] of Object.entries(ADDED_ASSETS)) {
+  assert(!snapshot.files.some(release => release.path === file), `An addition replaces no release file: ${file}`);
+  assert.equal(hash(await fs.readFile(path.join(dir, file))), entry.sha256, `Addition: ${file}`);
+  added++;
+}
 async function walk(dir) {
   const results = [];
   for (const entry of await fs.readdir(dir, {withFileTypes:true})) {
@@ -85,7 +93,7 @@ assert.deepEqual(Object.keys(integrity).sort(), media.sort(), 'Integrity list co
 for (const file of media) assert.equal(integrity[file], hash(await fs.readFile(path.join(dir, file))), `Integrity hash: ${file}`);
 for (const page of ['index.html', 'staff/index.html']) {
   const policy = (await fs.readFile(path.join(dir, page), 'utf8')).match(/connect-src ([^;]+);/)[1];
-  assert.match(policy, /^'self' (https:\/\/cdn\.jsdelivr\.net\/gh\/MyScheduleltd\/myscheduleltd\.github\.io@[0-9a-f]{40}\/docs\/moth\/ ){1,2}https:\/\/beauty-boy\.vercel\.app\/api\/moth-scoreboard$/, 'Only the pinned mirror paths and the scoreboard API may be fetched');
+  assert.match(policy, /^'self' (https:\/\/cdn\.jsdelivr\.net\/gh\/MyScheduleltd\/myscheduleltd\.github\.io@[0-9a-f]{40}\/docs\/moth\/ ){1,3}https:\/\/beauty-boy\.vercel\.app\/api\/moth-scoreboard$/, 'Only the pinned mirror paths and the scoreboard API may be fetched');
 }
 assert(!/createDebugPanel|toggleDebugPanel|data-debug-action|debug-panel-toggle|window\.bobbyGame\s*=/.test(publicCode));
 assert(staffCode.includes('createDebugPanel'));
@@ -94,6 +102,6 @@ assert(staffCode.includes('moth.staff_progress_v1'));
 for (const file of excluded) {
   if (file.endsWith('test.html')) await assert.rejects(fs.stat(path.join(dir,file)),{code:'ENOENT'});
 }
-const report = {files:files.length, preservedReleaseAssets:preserved, retiredLeftOut:trimmed, cleanedSprites:baked, audioFiles:files.filter(f=>/\.(wav|m4a|mp3|ogg)$/.test(f)).length, integrity:true, debugSeparation:true, credentialPatternsFound:0, diagnosticPages:0};
+const report = {files:files.length, preservedReleaseAssets:preserved, retiredLeftOut:trimmed, cleanedSprites:baked, addedFiles:added, audioFiles:files.filter(f=>/\.(wav|m4a|mp3|ogg)$/.test(f)).length, integrity:true, debugSeparation:true, credentialPatternsFound:0, diagnosticPages:0};
 await fs.writeFile(path.join(root,'.qa/moth/package-report.json'),JSON.stringify(report,null,2)+'\n');
 console.log('PASS',JSON.stringify(report));

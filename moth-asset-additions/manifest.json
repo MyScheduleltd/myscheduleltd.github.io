@@ -1,0 +1,19 @@
+{
+  "note": "Files the game publishes beyond the release. Supplied by the owner on 2026-10-14 and processed by scripts/make-menu-sfx.py.",
+  "files": {
+    "assets/sfx/menu/menu-tick.wav": {
+      "sha256": "0890780f0735654e38b764d253790039155b9145ed24875eb5fe0bcf3b85fa8c",
+      "bytes": 11896,
+      "source": "ES_Mechanical, Click, Tick, Fast, Loopable, Clocks 01 - Epidemic Sound - 0000-0134.wav",
+      "use": "menu selection moves, playlist player buttons",
+      "trimDb": 0
+    },
+    "assets/sfx/menu/menu-click.wav": {
+      "sha256": "2b22d495d0c80002fbc010c802c5970de58cc5c5872e4e80b76a443fa5bae0ed",
+      "bytes": 8986,
+      "source": "ES_User Interface, Click, Button, Press, Click, Video Game, Variations - Epidemic Sound - 0000-0101.wav",
+      "use": "confirm, back, dialogue advance",
+      "trimDb": 6
+    }
+  }
+}

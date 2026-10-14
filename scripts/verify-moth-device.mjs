@@ -136,7 +136,8 @@ const rows = page => page.evaluate(() => {
   const sounds = async id => {
     await page.evaluate(id => { bobbyGame.returnToTitle(); bobbyGame.startStage(id); }, id);
     await page.waitForFunction(() => bobbyGame.state === 'playing' && !bobbyGame.levelLoadingPresentation && !bobbyGame.level1OfficeRhythm?.graphicsLoading, undefined, {timeout: 120000});
-    return page.evaluate(() => ({loaded: Object.keys(bobbyGame.sfxBuffers || {}).length, refreshes: bobbyGame.audioEngineRefreshes || 0,
+    // The fights' sounds (the menu's two are kept with them: moth-menu-sfx.mjs).
+    return page.evaluate(() => ({loaded: Object.keys(bobbyGame.sfxBuffers || {}).filter(name => !name.startsWith('menu-')).length, refreshes: bobbyGame.audioEngineRefreshes || 0,
       m: bobbyGame.playRhythmHitSfx('do', false, 'M'), o: bobbyGame.playRhythmHitSfx('do', false, 'O')}));
   };
   const first = await sounds('level4-stage1');

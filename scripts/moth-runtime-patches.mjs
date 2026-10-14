@@ -4,6 +4,8 @@ import { patchFightResume, FIGHT_RESUME_METHODS } from './moth-fight-resume.mjs'
 import { TRIMMED_JOBS } from './moth-asset-trim.mjs';
 import { KEY_FRINGE_SPRITES } from './moth-sprite-fringe.mjs';
 import { patchLyrics } from './moth-lyrics-patches.mjs';
+import { patchMenuSfx, MENU_SFX_METHODS } from './moth-menu-sfx.mjs';
+import { ADDED_ASSETS, MOTH_MIRROR_ADDITIONS_COMMIT } from './moth-asset-additions.mjs';
 
 // Keep the selected published game as the input. Both audiences get identical
 // loading/audio repairs before the public debug tools are stripped.
@@ -78,7 +80,7 @@ export function patchMothRuntime(source, ts) {
   // Definitions precede closures, but the registry must exist for secret jobs.
   const registry = `  createSceneAssetJobs() {\n    this.sceneAssetJobs = [];\n    ${definitions.join('\n    ')}\n    this.sceneAssetJobs.push(\n${jobs.map(job => `      {key:${JSON.stringify(job.key)}, group:${JSON.stringify(job.group)}, run:async () => {${job.run}}, release:() => {delete this.refs.${job.key};}}`).join(',\n')}\n    );\n    this.loadedSceneGroups = new Set();\n  }\n`;
   source = source.slice(0, start) + '      this.createSceneAssetJobs();\n' + source.slice(end);
-  once('  async loadLayeredMapConfig() {', registry + RUNTIME_METHODS + SCOREBOARD_METHODS + FIGHT_RESUME_METHODS + '\n  async loadLayeredMapConfig() {');
+  once('  async loadLayeredMapConfig() {', registry + RUNTIME_METHODS + SCOREBOARD_METHODS + FIGHT_RESUME_METHODS + MENU_SFX_METHODS + '\n  async loadLayeredMapConfig() {');
   once('const response = await fetch("./data/level1.json", { cache: "no-store" });\n      this.config = await response.json();', 'this.config = await fetchGameJson("./data/level1.json");');
   once('const response = await fetch(source, { cache: "no-store" });\n    if (!response.ok) throw new Error(`Could not load layered map data: ${source}`);\n    const layeredMap = await response.json();', 'const layeredMap = await fetchGameJson(source);');
   once('this.loadError = error instanceof Error ? error.message : String(error);\n      this.state = "failure";', 'this.showLoadRecovery(error);');
@@ -185,8 +187,9 @@ export function patchMothRuntime(source, ts) {
   once('  countInFightSong() {\n    const rhythm = this.level1OfficeRhythm;\n    if (!rhythm) return;', '  countInFightSong() {\n    const rhythm = this.level1OfficeRhythm;\n    if (!rhythm) return;\n    if (rhythm.countedInEarly) { rhythm.countedInEarly = false; return; }');
   // Music: a verified jsDelivr copy replaces a track's source only before its
   // first play, inside the tap that primes it, so iPhone's playback grant
-  // attaches to the copy. Otherwise the track streams from this site as before.
-  once('    if (this.rhythmTrackPriming.has(track)) return this.rhythmTrackPriming.get(track);\n    track.volume = 0;', '    if (this.rhythmTrackPriming.has(track)) return this.rhythmTrackPriming.get(track);\n    const mirrored = track.paused && this.mirroredAudioUrl(track.getAttribute("src"));\n    if (mirrored) track.src = mirrored;\n    track.volume = 0;');
+  // attaches to the copy. A track already played takes its copy during a
+  // loading screen instead (adoptSongCopy).
+  once('    if (this.rhythmTrackPriming.has(track)) return this.rhythmTrackPriming.get(track);\n    track.volume = 0;', '    if (this.rhythmTrackPriming.has(track)) return this.rhythmTrackPriming.get(track);\n    const mirrored = track.paused && !this.musicAudioRoutes?.get(track) && this.mirroredAudioUrl(track.getAttribute("src"));\n    if (mirrored) track.src = mirrored;\n    track.volume = 0;');
   once('return window.localStorage?.getItem(LANGUAGE_KEY) === "zh-TW" ? "zh-TW" : "en";\n    } catch {\n      return "en";', 'return window.localStorage?.getItem(LANGUAGE_KEY) === "en" ? "en" : "zh-TW";\n    } catch {\n      return "zh-TW";');
   once('this.setLanguage(this.language || "en", { persist: false, announce: false });', 'this.setLanguage(this.language || "zh-TW", { persist: false, announce: false });');
   once('    let audio = this.homePlaylistAudioCache.get(song.id);\n    if (!audio || audio.getAttribute("src") !== song.audioSrc) {\n      audio = new Audio(song.audioSrc);', '    let audio = this.homePlaylistAudioCache.get(song.id);\n    const source = this.mirroredAudioUrl(song.audioSrc) || song.audioSrc;\n    if (!audio || audio.getAttribute("src") !== source) {\n      audio = new Audio(source);');
@@ -224,6 +227,8 @@ export function patchMothRuntime(source, ts) {
   patchFightResume(once);
   // The owner's lyrics changes (scripts/moth-lyrics-patches.mjs).
   patchLyrics(once);
+  // Menu sounds (scripts/moth-menu-sfx.mjs).
+  patchMenuSfx(once);
   // A fight's song switches to its downloaded copy before it starts (useSongCopy),
   // waits under 載入中… if a stream runs dry, and judges nothing meanwhile.
   once('      track.pause();\n      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);\n      track.currentTime = this.getRhythmAudioStart();', '      track.pause();\n      this.useSongCopy(track);\n      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);\n      track.currentTime = this.getRhythmAudioStart();');
@@ -275,6 +280,12 @@ function backdropCopyHolds(layer, args) {
 }
 
 function makeLayer(width, height, painter) {`);
+  // An iPhone plays the start of a source changed after a track has played
+  // past the game's volume control (adoptSongCopy). Any other such track (the
+  // walking music changes song between chapters) starts its next play muted
+  // for a quarter second, under the fade-in it starts with.
+  once('    const fresh = audio.currentTime < 0.05 && audio.volume > 0 && !this.isBakedMusicTrack(audio);\n    const target = audio.volume;\n    if (fresh) audio.volume = 0;\n    const started = audio.play();\n',
+    '    const fresh = audio.currentTime < 0.05 && audio.volume > 0 && !this.isBakedMusicTrack(audio);\n    const target = audio.volume;\n    if (fresh) audio.volume = 0;\n    const source = audio.getAttribute("src") || audio.src;\n    const newSource = Boolean(route?.playedSource) && route.playedSource !== source;\n    if (route) route.playedSource = source;\n    if (newSource) audio.muted = true;\n    const started = audio.play();\n    if (newSource) {\n      const unmute = () => { audio.muted = false; };\n      started?.then(() => setTimeout(unmute, 250), unmute) ?? unmute();\n    }\n');
   // iPhone Safari ignores a media element's volume and always reads it back
   // as 1. A level set before a track is first routed through its GainNode
   // (prepareMusicAudio) was lost there, so the silent priming play of a fight
@@ -374,6 +385,7 @@ const RUNTIME_METHODS = `
     }));
     if (failure) throw failure;
     await songsReady;
+    await Promise.all(this.chapterTracks(groups).map(track => this.adoptSongCopy(track)));
     groups.forEach(group => this.loadedSceneGroups.add(group));
     this.sceneLoadProgress = null;
     this.prefetchHitSfx();
@@ -382,11 +394,15 @@ const RUNTIME_METHODS = `
     for (const group of groups) if (following[group]) this.chapterSongs([following[group]]).forEach(src => this.songCopy(src));
   }
 
-  // The fight songs a chapter's fights play.
-  chapterSongs(groups) {
+  // The fight songs a chapter's fights play: their players, and their files.
+  chapterTracks(groups) {
     const themes = {office: 'office', level2: 'bathroom', level3: 'massage', level4: 'arcade', studio: 'studio', level5: 'river', level6: 'concert'};
     return groups.map(group => themes[group] || this.getSecretLevel(group)?.theme).filter(Boolean)
-      .map(theme => this.getRhythmAudioFor(theme)?.getAttribute('src')).filter(Boolean);
+      .map(theme => this.getRhythmAudioFor(theme)).filter(Boolean);
+  }
+
+  chapterSongs(groups) {
+    return this.chapterTracks(groups).map(track => track.getAttribute('src')).filter(Boolean);
   }
 
   // The fights' sound files, fetched with the first chapter and again for any
@@ -506,11 +522,46 @@ const RUNTIME_METHODS = `
   }
 
   // Before a song starts from the top (or resumes), a copy that arrived after
-  // its first tap takes over from the stream.
+  // its first tap takes over from the stream, if the song has never played.
+  // An iPhone plays the start of a changed source past the game's volume
+  // control, so a song that has played keeps its source here: it took its
+  // copy on the loading screen (adoptSongCopy) or streams.
   useSongCopy(track) {
     const src = track?.getAttribute('src');
     const copy = src && !src.startsWith('blob:') && this.mirroredAudioUrl(src);
-    if (copy && track.paused) track.src = copy;
+    if (copy && track.paused && !this.musicAudioRoutes?.get(track)) track.src = copy;
+  }
+
+  // A fight song primed on its stream (the stage's own tap, before its copy
+  // had downloaded) took the copy at its start after the count, and on an
+  // iPhone that start burst out at full volume and cut off before the fade-in
+  // (owner, 2026-10-14, every fight). It takes the copy here instead, while
+  // the loading screen is up: the new source's first play happens now, muted
+  // and at zero, and stops a moment later.
+  async adoptSongCopy(track) {
+    const src = track?.getAttribute('src');
+    const copy = src && !src.startsWith('blob:') && this.mirroredAudioUrl(src);
+    if (!copy || !track.paused) return;
+    await this.rhythmTrackPriming?.get(track);
+    const route = this.musicAudioRoutes?.get(track);
+    if (!track.paused || track.getAttribute('src') !== src) return;
+    if (!route) {
+      track.src = copy;
+      return;
+    }
+    const level = track.volume;
+    track.volume = 0;
+    track.muted = true;
+    track.src = copy;
+    try {
+      await Promise.race([track.play(), new Promise((_, reject) => setTimeout(() => reject(new Error('Warm-up timed out')), 3000))]);
+      await new Promise(resolve => setTimeout(resolve, 250));
+    } catch {}
+    track.pause();
+    track.currentTime = 0;
+    track.muted = false;
+    track.volume = level;
+    route.playedSource = copy;
   }
 
   // A stream that runs dry mid-song (no copy, weak connection): the fight's
@@ -701,6 +752,13 @@ export const MOTH_MIRROR_COMMIT = '4a1cae2472c9fbece153cc1dbd0f0c1593dd9997';
 // after that commit; jsDelivr serves them from the commit that published them,
 // so every other file keeps its already-warm copy. Null: those load from Pages.
 export const MOTH_MIRROR_PATCH_COMMIT = 'd04046c3aba8dcef69d486205a5267d53c998f31';
+// Files jsDelivr serves from the commit that published them; everything else
+// comes from MOTH_MIRROR_COMMIT. A group without its commit yet loads from
+// this site.
+export const MOTH_MIRROR_PINS = [
+  { commit: MOTH_MIRROR_PATCH_COMMIT, files: KEY_FRINGE_SPRITES },
+  { commit: MOTH_MIRROR_ADDITIONS_COMMIT, files: Object.keys(ADDED_ASSETS) }
+];
 export const mirrorPath = commit => `${MOTH_MIRROR_ORIGIN}/gh/MyScheduleltd/myscheduleltd.github.io@${commit}/docs/moth/`;
 export const MOTH_MIRROR_ORIGIN = 'https://cdn.jsdelivr.net';
 
@@ -710,8 +768,7 @@ const IMAGE_LOADER = `const imageRequests = new Map();
 // configuration always come from this site.
 const MIRROR_BASE = ['myscheduleltd.com', 'www.myscheduleltd.com'].includes(location.hostname)
   ? '${mirrorPath(MOTH_MIRROR_COMMIT)}' : '';
-const MIRROR_PATCH_BASE = MIRROR_BASE && '${MOTH_MIRROR_PATCH_COMMIT ? mirrorPath(MOTH_MIRROR_PATCH_COMMIT) : ''}';
-const MIRROR_PATCHED = new Set(${JSON.stringify(KEY_FRINGE_SPRITES)});
+const MIRROR_PINNED = new Map(${JSON.stringify(MOTH_MIRROR_PINS.flatMap(pin => pin.files.map(file => [file, pin.commit ? mirrorPath(pin.commit) : ''])))});
 const MIRROR_ROOT = '/moth/';
 let assetIntegrity = null;
 
@@ -768,7 +825,7 @@ async function mirrorCopy(url) {
     assetIntegrity ||= fetchGameJson('/moth/asset-integrity.json');
     const file = decodeURIComponent(url.pathname.slice(MIRROR_ROOT.length));
     const expected = (await assetIntegrity)[file];
-    const base = MIRROR_PATCHED.has(file) ? MIRROR_PATCH_BASE : MIRROR_BASE;
+    const base = MIRROR_BASE && (MIRROR_PINNED.has(file) ? MIRROR_PINNED.get(file) : MIRROR_BASE);
     if (!expected || !base) return null;
     // One quick retry: jsDelivr can fail a file's first, uncached request.
     const source = base + url.pathname.slice(MIRROR_ROOT.length);

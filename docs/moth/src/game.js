@@ -521,6 +521,43 @@ const HIT_SFX = {
   "arcade-miss": "assets/sfx/arcade-miss.wav"
 };
 const HIT_SFX_GAIN = 0.95;
+const MENU_SFX = {"menu-tick":"assets/sfx/menu/menu-tick.wav","menu-click":"assets/sfx/menu/menu-click.wav"};
+// What an input asks for: arrows and the d-pad move a selection, O / Enter /
+// SPACE confirm, H / Esc go back.
+const menuKeyKind = code => /^(Arrow|Key[WASD]$)/.test(code) ? "move"
+  : ["Enter", "NumpadEnter", "Space", "KeyO"].includes(code) ? "confirm"
+  : ["Escape", "KeyH", "KeyB"].includes(code) ? "back" : "other";
+const menuActionKind = action => /^(nav|direction)-/.test(action || "") ? "move"
+  : ["advance", "jump", "primary"].includes(action) ? "confirm"
+  : ["back", "secondary"].includes(action) ? "back" : "other";
+
+// A 16-bit PCM WAV as a sound buffer, read here rather than by the
+// asynchronous decoder, so the sound is ready before the first tap. Anything
+// else is left to the decoder (null).
+function pcmWavBuffer(bytes) {
+  try {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (view.getUint32(0) !== 0x52494646 || view.getUint32(8) !== 0x57415645) return null;
+    let format = null;
+    for (let at = 12; at + 8 <= view.byteLength;) {
+      const id = view.getUint32(at), size = view.getUint32(at + 4, true), body = at + 8;
+      if (id === 0x666d7420) {
+        format = { type: view.getUint16(body, true), channels: view.getUint16(body + 2, true), rate: view.getUint32(body + 4, true), bits: view.getUint16(body + 14, true) };
+      } else if (id === 0x64617461) {
+        if (format?.type !== 1 || format.bits !== 16 || !format.channels) return null;
+        const frames = Math.floor(Math.min(size, view.byteLength - body) / 2 / format.channels);
+        const buffer = new AudioBuffer({ length: frames, numberOfChannels: format.channels, sampleRate: format.rate });
+        for (let channel = 0; channel < format.channels; channel++) {
+          const samples = buffer.getChannelData(channel);
+          for (let i = 0; i < frames; i++) samples[i] = view.getInt16(body + (i * format.channels + channel) * 2, true) / 32768;
+        }
+        return buffer;
+      }
+      at = body + size + (size & 1);
+    }
+  } catch {}
+  return null;
+}
 // Original supplied photo cutouts with transparent fighting-game callouts.
 const COMBO_CELEBRATIONS = [
   { caption: "NICE", sound: "combo-nice", photo: "assets/sprites/combo_celebrations/photos/nice.webp", face: { x: 38, y: 62, w: 185, h: 200 } },
@@ -2246,6 +2283,7 @@ class BobbyGame {
     this.createPortraitFightCanvas();
     this.syncAppHeight();
     this.bindInput();
+    this.loadMenuSfx();
   }
 
   // Draws a progress screen from the very first frame; without it the canvas
@@ -2398,6 +2436,7 @@ class BobbyGame {
       this.showLoadRecovery(error);
     }
     this.bootDone = true;
+    this.listenForMenuSounds();
     requestAnimationFrame(this.loop);
   }
 
@@ -2575,6 +2614,7 @@ for (const level of this.config.secretLevels || []) {
     }));
     if (failure) throw failure;
     await songsReady;
+    await Promise.all(this.chapterTracks(groups).map(track => this.adoptSongCopy(track)));
     groups.forEach(group => this.loadedSceneGroups.add(group));
     this.sceneLoadProgress = null;
     this.prefetchHitSfx();
@@ -2583,11 +2623,15 @@ for (const level of this.config.secretLevels || []) {
     for (const group of groups) if (following[group]) this.chapterSongs([following[group]]).forEach(src => this.songCopy(src));
   }
 
-  // The fight songs a chapter's fights play.
-  chapterSongs(groups) {
+  // The fight songs a chapter's fights play: their players, and their files.
+  chapterTracks(groups) {
     const themes = {office: 'office', level2: 'bathroom', level3: 'massage', level4: 'arcade', studio: 'studio', level5: 'river', level6: 'concert'};
     return groups.map(group => themes[group] || this.getSecretLevel(group)?.theme).filter(Boolean)
-      .map(theme => this.getRhythmAudioFor(theme)?.getAttribute('src')).filter(Boolean);
+      .map(theme => this.getRhythmAudioFor(theme)).filter(Boolean);
+  }
+
+  chapterSongs(groups) {
+    return this.chapterTracks(groups).map(track => track.getAttribute('src')).filter(Boolean);
   }
 
   // The fights' sound files, fetched with the first chapter and again for any
@@ -2707,11 +2751,46 @@ for (const level of this.config.secretLevels || []) {
   }
 
   // Before a song starts from the top (or resumes), a copy that arrived after
-  // its first tap takes over from the stream.
+  // its first tap takes over from the stream, if the song has never played.
+  // An iPhone plays the start of a changed source past the game's volume
+  // control, so a song that has played keeps its source here: it took its
+  // copy on the loading screen (adoptSongCopy) or streams.
   useSongCopy(track) {
     const src = track?.getAttribute('src');
     const copy = src && !src.startsWith('blob:') && this.mirroredAudioUrl(src);
-    if (copy && track.paused) track.src = copy;
+    if (copy && track.paused && !this.musicAudioRoutes?.get(track)) track.src = copy;
+  }
+
+  // A fight song primed on its stream (the stage's own tap, before its copy
+  // had downloaded) took the copy at its start after the count, and on an
+  // iPhone that start burst out at full volume and cut off before the fade-in
+  // (owner, 2026-10-14, every fight). It takes the copy here instead, while
+  // the loading screen is up: the new source's first play happens now, muted
+  // and at zero, and stops a moment later.
+  async adoptSongCopy(track) {
+    const src = track?.getAttribute('src');
+    const copy = src && !src.startsWith('blob:') && this.mirroredAudioUrl(src);
+    if (!copy || !track.paused) return;
+    await this.rhythmTrackPriming?.get(track);
+    const route = this.musicAudioRoutes?.get(track);
+    if (!track.paused || track.getAttribute('src') !== src) return;
+    if (!route) {
+      track.src = copy;
+      return;
+    }
+    const level = track.volume;
+    track.volume = 0;
+    track.muted = true;
+    track.src = copy;
+    try {
+      await Promise.race([track.play(), new Promise((_, reject) => setTimeout(() => reject(new Error('Warm-up timed out')), 3000))]);
+      await new Promise(resolve => setTimeout(resolve, 250));
+    } catch {}
+    track.pause();
+    track.currentTime = 0;
+    track.muted = false;
+    track.volume = level;
+    route.playedSource = copy;
   }
 
   // A stream that runs dry mid-song (no copy, weak connection): the fight's
@@ -2976,6 +3055,12 @@ for (const level of this.config.secretLevels || []) {
     root.setAttribute('aria-modal', 'true');
     root.setAttribute('aria-labelledby', 'moth-board-title');
     for (const type of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'click', 'wheel']) root.addEventListener(type, event => event.stopPropagation(), { passive: true });
+    // Its buttons sound like the menus (moth-menu-sfx.mjs): the tabs tick, the
+    // rest click. Enter presses the focused button, so it sounds the same.
+    root.addEventListener('click', event => {
+      const button = event.target.closest?.('button');
+      if (button && !button.disabled) this.playMenuSfx(button.getAttribute('role') === 'tab' ? 'tick' : 'click');
+    });
     document.body.append(root);
     board.root = root;
     this.renderScoreboard();
@@ -3132,11 +3217,14 @@ for (const level of this.config.secretLevels || []) {
     }
     const list = board.root.querySelector('.moth-board-list');
     if (code === 'ArrowLeft' || code === 'ArrowRight' || code === 'KeyA' || code === 'KeyD') {
-      board.mode = code === 'ArrowLeft' || code === 'KeyA' ? 'chill' : 'shoot';
+      const mode = code === 'ArrowLeft' || code === 'KeyA' ? 'chill' : 'shoot';
+      if (mode !== board.mode) this.playMenuSfx('tick');
+      board.mode = mode;
       this.renderScoreboard();
     } else if (code === 'ArrowUp' || code === 'ArrowDown' || code === 'KeyW' || code === 'KeyS') {
       list?.scrollBy({ top: (code === 'ArrowUp' || code === 'KeyW' ? -1 : 1) * 56 });
     } else if (code === 'Escape' || code === 'KeyH') {
+      this.playMenuSfx('click');
       this.closeScoreboard();
     } else if (code === 'Enter' || code === 'Space' || code === 'KeyO') {
       if (event.repeat) return event.preventDefault();
@@ -3487,6 +3575,80 @@ for (const level of this.config.secretLevels || []) {
     });
     this.songTime = kept.songTime;
     this.resumeFightAt(rhythm, kept.trackTime);
+  }
+
+  // Fetched like every sound (the verified jsDelivr copy, else this site) and
+  // kept with the fights' sounds, so an engine rebuild decodes them again too.
+  // One that fails is fetched again the next time it is wanted.
+  loadMenuSfx() {
+    this.sfxRaw ||= {};
+    this.sfxBuffers ||= {};
+    this.menuSfxLoading ||= {};
+    for (const [name, src] of Object.entries(MENU_SFX)) {
+      if (this.sfxBuffers[name] || this.menuSfxLoading[name]) continue;
+      this.menuSfxLoading[name] = fetchGameAsset(src).then(({ data }) => {
+        this.sfxRaw[name] = data.buffer;
+        const buffer = pcmWavBuffer(data);
+        if (buffer) this.sfxBuffers[name] = buffer;
+        else if (this.level1OfficeAudioContext) return this.decodeHitSfx(name, this.level1OfficeAudioContext);
+      }).catch(() => {}).finally(() => { delete this.menuSfxLoading[name]; });
+    }
+  }
+
+  playMenuSfx(kind) {
+    const name = kind === "tick" ? "menu-tick" : "menu-click";
+    if (!this.sfxBuffers?.[name]) {
+      this.loadMenuSfx();
+      return false;
+    }
+    return this.playFeedbackSfx(name, "menu", 1.4);
+  }
+
+  // What an input can change that has a sound.
+  menuSoundState() {
+    const menu = this.homeMenu, rhythm = this.level1OfficeRhythm, preview = this.songPreview;
+    const tutorial = rhythm?.tutorial;
+    return {
+      board: Boolean(this.scoreboard),
+      screen: [this.state, menu?.view, Boolean(menu?.difficultyPick), Boolean(this.pocketOpen), Boolean(this.pocketHomeConfirm),
+        Boolean(this.chest?.menuOpen), Boolean(this.walkPause), Boolean(this.scoreboard), this.levelLoadingPresentation?.stageId,
+        Boolean(this.fullscreenGuide && !this.fullscreenGuide.hidden)].join(),
+      // The line on screen, while a dialogue is: every scene keeps its place in
+      // a ...DialogueIndex, the office tutorial in its own.
+      dialogue: this.getControlMode() !== "dialogue" ? ""
+        : Object.keys(this).filter(key => /DialogueIndex$/.test(key)).map(key => key + this[key]).join()
+          + [tutorial?.mode, tutorial?.dialogueIndex, tutorial?.readyDialogueIndex].join(),
+      player: [menu?.playerSongId, preview?.id, Boolean(preview?.paused)].join(),
+      inPlayer: this.state === "title" && menu?.view === "playlistPlayer",
+      selection: [menu?.index, menu?.difficultyPick?.choice, this.walkPause?.choice, rhythm?.failureChoice,
+        this.level1OfficePauseChoice, this.level1ResultsChoice, this.level1UnlockChoice, this.pocketSelectedIndex,
+        this.chest?.selectedIndex, this.difficultyId, this.language, this.deviceMode,
+        menu?.view === "calibrate" ? this.getAudioOffsetSeconds() : ""].join()
+    };
+  }
+
+  playMenuSoundFor(before, kind) {
+    if (!before || before.board) return;
+    const after = this.menuSoundState();
+    if (before.screen !== after.screen || (before.dialogue && before.dialogue !== after.dialogue)) this.playMenuSfx("click");
+    // The player's buttons: a song can start a moment after the press.
+    else if (before.player !== after.player || (before.inPlayer && (kind === "move" || kind === "confirm"))) this.playMenuSfx("tick");
+    else if (before.selection !== after.selection) this.playMenuSfx(kind === "confirm" || kind === "back" ? "click" : "tick");
+  }
+
+  // Keys and taps on the screen: the state is noted before the game sees the
+  // input and compared once it has.
+  listenForMenuSounds() {
+    let before = null;
+    for (const type of ["keydown", "pointerdown", "pointerup"]) {
+      window.addEventListener(type, () => { before = this.menuSoundState(); }, { capture: true });
+      window.addEventListener(type, (event) => {
+        const state = before;
+        before = null;
+        if (this.isDebugPanelElement(event.target)) return;
+        this.playMenuSoundFor(state, type === "keydown" ? menuKeyKind(event.code) : "tap");
+      });
+    }
   }
 
   async loadLayeredMapConfig() {
@@ -5209,6 +5371,12 @@ for (const level of this.config.secretLevels || []) {
   }
 
   handleMobileControlDown(action, inputTimeStamp) {
+    const before = this.menuSoundState();
+    this.handleDeckPress(action, inputTimeStamp);
+    this.playMenuSoundFor(before, menuActionKind(action));
+  }
+
+  handleDeckPress(action, inputTimeStamp) {
     if (!action || this.mobileHeldActions.has(action)) return;
     this.mobileHeldActions.add(action);
     if (action === "fullscreen") { this.toggleFullscreen(); return; }
@@ -8455,7 +8623,15 @@ for (const level of this.config.secretLevels || []) {
     const fresh = audio.currentTime < 0.05 && audio.volume > 0 && !this.isBakedMusicTrack(audio);
     const target = audio.volume;
     if (fresh) audio.volume = 0;
+    const source = audio.getAttribute("src") || audio.src;
+    const newSource = Boolean(route?.playedSource) && route.playedSource !== source;
+    if (route) route.playedSource = source;
+    if (newSource) audio.muted = true;
     const started = audio.play();
+    if (newSource) {
+      const unmute = () => { audio.muted = false; };
+      started?.then(() => setTimeout(unmute, 250), unmute) ?? unmute();
+    }
     if (fresh) started?.then(() => {
       if (!audio.paused && audio.volume === 0 && !(this.audioFades || []).some((fade) => fade.audio === audio)) {
         this.fadeAudio(audio, target, DIALOGUE_BGM_FADE_SECONDS);
@@ -10145,7 +10321,7 @@ for (const level of this.config.secretLevels || []) {
   // engine is doing, for checking on the phone itself.
   getSfxTestLabel() {
     const context = this.level1OfficeAudioContext;
-    const loaded = Object.keys(this.sfxBuffers || {}).length;
+    const loaded = Object.keys(HIT_SFX).filter(name => this.sfxBuffers?.[name]).length;
     const state = context ? context.state : this.tr("NONE", "無");
     const mark = this.sfxTestResult === true ? " ✓" : this.sfxTestResult === false ? " ✕" : "";
     return `${this.tr("SOUND TEST", "音效測試")}: ${state} · ${loaded}/${Object.keys(HIT_SFX).length}${mark}`;
@@ -12556,7 +12732,7 @@ for (const level of this.config.secretLevels || []) {
     this.rhythmTrackPriming ||= new WeakMap();
     if (this.primedRhythmTracks.has(track)) return Promise.resolve();
     if (this.rhythmTrackPriming.has(track)) return this.rhythmTrackPriming.get(track);
-    const mirrored = track.paused && this.mirroredAudioUrl(track.getAttribute("src"));
+    const mirrored = track.paused && !this.musicAudioRoutes?.get(track) && this.mirroredAudioUrl(track.getAttribute("src"));
     if (mirrored) track.src = mirrored;
     track.volume = 0;
     this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);
@@ -27876,8 +28052,7 @@ const imageRequests = new Map();
 // configuration always come from this site.
 const MIRROR_BASE = ['myscheduleltd.com', 'www.myscheduleltd.com'].includes(location.hostname)
   ? 'https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@4a1cae2472c9fbece153cc1dbd0f0c1593dd9997/docs/moth/' : '';
-const MIRROR_PATCH_BASE = MIRROR_BASE && 'https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/';
-const MIRROR_PATCHED = new Set(["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","assets/sprites/home_lyrics_window_controls/processed/sheet-transparent.webp","assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","assets/sprites/secret_levels/processed/drb-squat.webp","assets/sprites/secret_levels/processed/gg-squat.webp","assets/sprites/secret_levels/processed/spa-tickle.webp","assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","assets/sprites/zuxian_idle/processed/sheet-transparent.webp"]);
+const MIRROR_PINNED = new Map([["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/home_lyrics_window_controls/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/drb-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/gg-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/spa-tickle.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_idle/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sfx/menu/menu-tick.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@94cc0c7ae4fe7b778f74eef4779f4832c113bb5d/docs/moth/"],["assets/sfx/menu/menu-click.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@94cc0c7ae4fe7b778f74eef4779f4832c113bb5d/docs/moth/"]]);
 const MIRROR_ROOT = '/moth/';
 let assetIntegrity = null;
 
@@ -27934,7 +28109,7 @@ async function mirrorCopy(url) {
     assetIntegrity ||= fetchGameJson('/moth/asset-integrity.json');
     const file = decodeURIComponent(url.pathname.slice(MIRROR_ROOT.length));
     const expected = (await assetIntegrity)[file];
-    const base = MIRROR_PATCHED.has(file) ? MIRROR_PATCH_BASE : MIRROR_BASE;
+    const base = MIRROR_BASE && (MIRROR_PINNED.has(file) ? MIRROR_PINNED.get(file) : MIRROR_BASE);
     if (!expected || !base) return null;
     // One quick retry: jsDelivr can fail a file's first, uncached request.
     const source = base + url.pathname.slice(MIRROR_ROOT.length);
