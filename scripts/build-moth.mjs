@@ -5,10 +5,11 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { patchMothRuntime, rewriteCssArtwork, cssArtworkLoader, MOTH_MIRROR_COMMIT, MOTH_MIRROR_PINS, mirrorPath } from './moth-runtime-patches.mjs';
 import { SCOREBOARD_API, SCOREBOARD_CSS } from './moth-scoreboard-client.mjs';
-import { patchCharts, patchChartsText } from './moth-chart-patches.mjs';
+import { patchCharts } from './moth-chart-patches.mjs';
 import { TRIMMED_FILES } from './moth-asset-trim.mjs';
 import { KEY_FRINGE_MANIFEST, patchedAsset } from './moth-sprite-fringe.mjs';
 import { ADDED_ASSETS, addedAsset } from './moth-asset-additions.mjs';
+import { trimRetiredCode } from './moth-code-trim.mjs';
 const require = createRequire(import.meta.url);
 const ts = require(process.env.MOTH_TYPESCRIPT_PATH || 'typescript');
 const root = path.resolve(import.meta.dirname, '..');
@@ -18,7 +19,11 @@ const snapshot = JSON.parse(await fs.readFile(path.join(root, '.qa/moth/publishe
 const sha = (data) => crypto.createHash('sha256').update(data).digest('hex');
 const cssArtwork = rewriteCssArtwork(await fs.readFile(path.join(sourceRoot, 'styles.css'), 'utf8'));
 assert.equal(cssArtwork.assets.length, 19);
-const original = patchMothRuntime(await fs.readFile(path.join(sourceRoot, 'src/game.js'), 'utf8'), ts) + cssArtworkLoader(cssArtwork.assets);
+// The release with its patches, and without the code of its retired parts
+// (moth-code-trim.mjs; MOTH_TRIM_AUDIT=1 keeps that code and records calls).
+const trim = trimRetiredCode(patchMothRuntime(await fs.readFile(path.join(sourceRoot, 'src/game.js'), 'utf8'), ts) + cssArtworkLoader(cssArtwork.assets), ts,
+  { audit: process.env.MOTH_TRIM_AUDIT === '1' });
+const original = trim.source;
 assert.match(await fs.readFile(path.join(sourceRoot, 'index.html'), 'utf8'), /mobile-deck-20261012a/);
 for (const file of snapshot.files) assert.equal(sha(await fs.readFile(path.join(sourceRoot, file.path))), file.sha256);
 await fs.mkdir(output, { recursive: true });
@@ -43,11 +48,11 @@ for (const file of snapshot.files) {
     continue;
   }
   if (file.path === 'data/level1.json') {
-    // The release's game data with the chart additions (moth-chart-patches.mjs).
+    // The release's game data with the chart additions (moth-chart-patches.mjs),
+    // compact: the game fetches it fresh at every start-up, and the release's
+    // indentation was more than half its size.
     const release = await fs.readFile(path.join(sourceRoot, file.path), 'utf8');
-    const patched = patchChartsText(release);
-    assert.deepEqual(JSON.parse(patched), patchCharts(JSON.parse(release)));
-    await fs.writeFile(dest, patched);
+    await fs.writeFile(dest, JSON.stringify(patchCharts(JSON.parse(release))) + '\n');
     continue;
   }
   await fs.copyFile(path.join(sourceRoot, file.path), dest);
@@ -138,8 +143,8 @@ for (const audience of ['public', 'staff']) {
   html = html.replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />\n    <meta name="referrer" content="strict-origin-when-cross-origin" />${staff ? '\n    <meta name="robots" content="noindex, nofollow, noarchive" />\n    <base href="/moth/" />' : ''}`);
   html = html.replace('<html lang="en">', '<html lang="zh-Hant-TW">');
   html = html.replace('./manifest.json', staff ? '/moth/staff/manifest.json' : './manifest.json');
-  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-loading-20261014d' : 'moth-cabinet-20261014a'}" integrity="${sri}" crossorigin="anonymous"></script>`);
-  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261014d');
+  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-loading-20261015a' : 'moth-cabinet-20261015a'}" integrity="${sri}" crossorigin="anonymous"></script>`);
+  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261015a');
   await fs.writeFile(path.join(output, staff ? 'staff/index.html' : 'index.html'), html);
   const manifest = JSON.parse(await fs.readFile(path.join(sourceRoot, 'manifest.json'), 'utf8'));
   manifest.start_url = staff ? '/moth/staff/' : '/moth/';
@@ -160,4 +165,4 @@ let header = await fs.readFile(headerFile, 'utf8');
 if (!header.includes('a.moth-link')) header = header.replace(' BETA\n', ' BETA\n            a.moth-link(href="/moth/") M.O.T.H\n');
 await fs.writeFile(headerFile, header);
 await fs.writeFile(path.join(root, '.qa/moth/build-report.json'), JSON.stringify({sourceRelease: 'mobile-deck-20261012a', publicSha256: sha(publicCode), staffSha256: sha(staffCode), removedDebugMethods: edits.length, csp, publicRuntimeGlobal: false, isolatedStorage: true}, null, 2) + '\n');
-console.log(`Built M.O.T.H public/staff pages from published release; removed ${edits.length} public debug methods.`);
+console.log(`Built M.O.T.H public/staff pages from published release; removed ${trim.removedMethods} retired methods and ${trim.removedHelpers.length} helpers${process.env.MOTH_TRIM_AUDIT === '1' ? ' (AUDIT BUILD: kept, recording calls)' : ''}, and ${edits.length} public debug methods.`);

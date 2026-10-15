@@ -80,9 +80,11 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
     await page.evaluate(()=>{bobbyGame.returnToTitle();bobbyGame.startStage('finale-stage1',{freePlay:true});});
     await page.waitForFunction(()=>bobbyGame.loadedSceneGroups.has('level6')&&!bobbyGame.levelLoadingPresentation,undefined,{timeout:90000});
     assert(!await page.evaluate(()=>bobbyGame.loadedSceneGroups.has('secret-xiaosi')));
-    await page.evaluate(()=>{bobbyGame.returnToTitle();bobbyGame.startLevelLoading('level1-stage0',()=>bobbyGame.startTutorialStage0());});
-    await page.waitForFunction(()=>bobbyGame.loadedSceneGroups.has('road')&&!bobbyGame.levelLoadingPresentation,undefined,{timeout:90000});
-    assert.equal(await page.evaluate(()=>bobbyGame.currentStageId),'level1-stage0');
+    // (The old road tutorial this step once loaded is retired: moth-code-trim.mjs.)
+    await page.evaluate(()=>{bobbyGame.returnToTitle();bobbyGame.startStage('level3-stage2',{skipAudio:true});});
+    await page.waitForFunction(()=>bobbyGame.loadedSceneGroups.has('level3')&&!bobbyGame.levelLoadingPresentation,undefined,{timeout:90000});
+    assert.equal(await page.evaluate(()=>bobbyGame.currentStageId),'level3-stage2');
+    assert(!await page.evaluate(()=>bobbyGame.loadedSceneGroups.has('level6')));
     // An earlier download must not reopen its scene after the target changes.
     await page.goto(new URL('moth/staff/?device=phone',base).href,{waitUntil:'domcontentloaded'});
     await page.waitForFunction(()=>window.bobbyGame?.bootDone);
