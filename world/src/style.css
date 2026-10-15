@@ -265,6 +265,7 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
   position: fixed; left: 50%; top: 80%;
   transform: translate(-50%, -50%); z-index: 30;
   width: max-content; padding: 0; background: transparent;
+  display: flex; align-items: center; justify-content: center; gap: 12px;
 }
 .moth-arcade-hud[hidden] { display: none; }
 .moth-arcade-hud button {
@@ -276,6 +277,21 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
 }
 .moth-arcade-hud button:hover { background: #ff7439; }
 .moth-arcade-hud button:focus-visible { outline: 2px solid #34180f; outline-offset: 3px; }
+.moth-arcade-screen:is(:fullscreen, :-webkit-full-screen) {
+  position: fixed; inset: 0; margin: 0;
+  width: 100% !important; height: 100% !important;
+  transform: none !important; visibility: visible !important;
+  display: flex; flex-direction: column; background: #ff6027;
+}
+.moth-arcade-screen:is(:fullscreen, :-webkit-full-screen) iframe {
+  flex: 1 1 0; min-height: 0; height: 0;
+}
+.moth-arcade-screen:is(:fullscreen, :-webkit-full-screen) .moth-arcade-hud {
+  position: static; flex: 0 0 auto; box-sizing: border-box;
+  left: auto !important; top: auto !important; transform: none;
+  width: 100%; max-width: none !important; min-height: 76px; padding: 20px 24px;
+  background: #ff6027;
+}
 @media (max-width: 520px) {
   .moth-arcade-hud button { min-height: 32px; padding: 6px 14px; font-size: 12px; }
 }

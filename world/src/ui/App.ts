@@ -461,6 +461,7 @@ export class App {
   private localHitAt = 0;
   private jukeboxVolume = readStoredJukeboxVolume();
   private arcadePlaying = false;
+  private arcadeFullscreenPending = false;
   private lookSensitivity = readStoredLookSensitivity();
   private gamepadBindings = readStoredGamepadBindings();
   private rebinding?: GamepadActionId;
@@ -1290,8 +1291,9 @@ export class App {
             <div class="venue-screen__actions" id="screen-actions"></div>
           </footer>
         </section>
-        <section class="moth-arcade-hud" id="moth-arcade-hud" aria-label="${zh ? '遊戲退出提示' : 'Game exit prompt'}" hidden>
+        <section class="moth-arcade-hud" id="moth-arcade-hud" aria-label="${zh ? '遊戲控制' : 'Game controls'}" hidden>
           <button type="button" data-arcade-exit>${zh ? '離開遊戲' : 'EXIT GAME'}</button>
+          <button type="button" data-arcade-fullscreen aria-pressed="false">${zh ? '全螢幕' : 'FULLSCREEN'}</button>
         </section>
         <section class="public-seat-hud" id="public-seat-hud" hidden>
           <div><span id="public-seat-mode">THE SHORE · PUBLIC SCREENING</span><strong id="public-seat-title">NOW PLAYING</strong></div>
@@ -1996,9 +1998,12 @@ export class App {
     }
     window.addEventListener('keydown', this.globalShortcut);
     this.root.querySelector<HTMLButtonElement>('[data-arcade-exit]')?.addEventListener('click', () => this.closeArcadeGame());
+    this.root.querySelector<HTMLButtonElement>('[data-arcade-fullscreen]')?.addEventListener('click', () => { void this.toggleArcadeFullscreen(); });
     window.addEventListener('pointerup', this.liftJukeboxOnGesture, true);
     document.addEventListener('fullscreenchange', this.syncScreenFullscreenState);
     document.addEventListener('webkitfullscreenchange', this.syncScreenFullscreenState);
+    document.addEventListener('fullscreenchange', this.syncArcadeFullscreenState);
+    document.addEventListener('webkitfullscreenchange', this.syncArcadeFullscreenState);
     // iOS still emits its proprietary gesture events on some embedded/Safari
     // paths even when touch-action has claimed the canvas. The world owns those
     // gestures, so do not let the browser reinterpret them as page scaling.
@@ -2424,31 +2429,91 @@ export class App {
     }
     this.closePanel(); this.closeFestivalPass();
     const hud = this.root.querySelector<HTMLElement>('#moth-arcade-hud');
-    if (!this.world?.startArcadeGame(arcadeGameUrl(), () => this.closeArcadeGame(), frame => {
+    if (!this.world?.startArcadeGame(arcadeGameUrl(), () => this.leaveArcadeOnEscape(), frame => {
       if (!hud) return;
       // The game's wide view has an orange band below its 16:9
-      // canvas. Seat the exit control in that band, inside the live screen.
-      hud.style.left = `${frame.x + frame.width / 2}px`;
-      hud.style.top = `${frame.y + frame.height * .915}px`;
+      // canvas. Centre the controls together in that band.
+      hud.style.left = `${frame.exitX ?? frame.x + frame.width / 2}px`;
+      hud.style.top = `${frame.exitY ?? frame.y + frame.height * .915}px`;
       hud.style.maxWidth = `${Math.max(0, frame.width - 24)}px`;
     })) return;
     this.arcadePlaying = true;
     const shell = this.root.querySelector<HTMLElement>('.world-shell');
     if (shell) shell.dataset.arcadePlaying = 'true';
+    this.root.querySelector<HTMLElement>('#world-css3d')?.removeAttribute('aria-hidden');
     if (hud) hud.hidden = false;
     this.world.audio.setMuted(true); this.world.setPublicScreenMuted(undefined, true);
     this.applyJukeboxVolume(); this.syncMenuCapture();
   }
 
   private closeArcadeGame(): void {
-    this.world?.stopArcadeGame(); this.arcadePlaying = false;
+    const screen = this.root.querySelector<HTMLElement>('.moth-arcade-screen');
+    this.arcadePlaying = false;
+    if (screen && this.screenOwnsFullscreen(screen)) void this.exitScreenFullscreen();
     const shell = this.root.querySelector<HTMLElement>('.world-shell');
-    if (shell) delete shell.dataset.arcadePlaying;
     const hud = this.root.querySelector<HTMLElement>('#moth-arcade-hud');
+    // Restore only the controls before disposing the screen. The live iframe
+    // never moves between parents, including when entering fullscreen.
+    if (shell && hud && hud.parentElement !== shell) shell.append(hud);
     if (hud) hud.hidden = true;
+    this.world?.stopArcadeGame();
+    if (shell) delete shell.dataset.arcadePlaying;
+    this.root.querySelector<HTMLElement>('#world-css3d')?.setAttribute('aria-hidden', 'true');
+    this.syncArcadeFullscreenState();
     this.world?.audio.setMuted(this.audioMuted);
     this.syncJukebox(); this.applyJukeboxVolume(); this.syncMenuCapture();
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  }
+
+  private async toggleArcadeFullscreen(): Promise<void> {
+    const screen = this.root.querySelector<HTMLElement>('.moth-arcade-screen');
+    if (!this.arcadePlaying || !screen || this.arcadeFullscreenPending) return;
+    this.arcadeFullscreenPending = true;
+    try {
+      if (this.screenOwnsFullscreen(screen)) await this.exitScreenFullscreen();
+      else {
+        const entered = await this.requestScreenFullscreen(screen);
+        // An Exit click can race the browser's asynchronous permission result.
+        if (!this.arcadePlaying || !screen.isConnected) {
+          if (this.screenOwnsFullscreen(screen)) await this.exitScreenFullscreen();
+        } else if (!entered) {
+          this.showWorldAlert(this.language === 'zh-TW' ? '瀏覽器無法開啟全螢幕' : 'FULLSCREEN IS UNAVAILABLE IN THIS BROWSER');
+        }
+      }
+    } finally {
+      this.arcadeFullscreenPending = false;
+      this.syncArcadeFullscreenState();
+    }
+  }
+
+  private readonly syncArcadeFullscreenState = (): void => {
+    const screen = this.root.querySelector<HTMLElement>('.moth-arcade-screen');
+    const hud = this.root.querySelector<HTMLElement>('#moth-arcade-hud');
+    const shell = this.root.querySelector<HTMLElement>('.world-shell');
+    if (!hud || !shell) return;
+    const fullscreen = this.arcadePlaying && !!screen && this.screenOwnsFullscreen(screen);
+    const host = fullscreen ? screen! : shell;
+    if (hud.parentElement !== host) {
+      host.append(hud);
+      // A click focuses the control. Return gameplay focus once per native
+      // transition, without interrupting later Tab navigation between buttons.
+      if (this.arcadePlaying && screen) {
+        const iframe = screen.querySelector<HTMLIFrameElement>('iframe');
+        iframe?.focus({ preventScroll: true }); iframe?.contentWindow?.focus();
+      }
+    }
+    const button = hud.querySelector<HTMLButtonElement>('[data-arcade-fullscreen]');
+    if (button) {
+      button.textContent = this.language === 'zh-TW'
+        ? (fullscreen ? '退出全螢幕' : '全螢幕') : (fullscreen ? 'EXIT FULLSCREEN' : 'FULLSCREEN');
+      button.setAttribute('aria-pressed', String(fullscreen));
+    }
+  };
+
+  private leaveArcadeOnEscape(): void {
+    const screen = this.root.querySelector<HTMLElement>('.moth-arcade-screen');
+    if (screen && this.screenOwnsFullscreen(screen)) void this.exitScreenFullscreen();
+    else this.closeArcadeGame();
   }
 
   private handleWorldAction(action: WorldAction): void {
@@ -3469,7 +3534,7 @@ export class App {
 
   private readonly globalShortcut = (event: KeyboardEvent): void => {
     if (this.arcadePlaying) {
-      if (event.key === 'Escape') { event.preventDefault(); this.closeArcadeGame(); }
+      if (event.key === 'Escape') { event.preventDefault(); this.leaveArcadeOnEscape(); }
       return;
     }
     // Escape is what attendees reach for to leave anything that fills the
