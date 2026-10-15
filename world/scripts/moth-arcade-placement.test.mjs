@@ -24,7 +24,7 @@ globalThis.fetch = async url => String(url).startsWith('blob:')
   : (assert.equal(String(url), 'http://127.0.0.1:4173/moth-arcade.glb'), new Response(asset));
 globalThis.Image = class { set src(_) {} };
 const compiled = await build({
-  stdin: { contents: "export { FestivalWorld, rooftopBounds } from './src/world/FestivalWorld'; export * as THREE from 'three';", resolveDir: process.cwd(), loader: 'ts' },
+  stdin: { contents: "export { FestivalWorld, rooftopBounds } from './src/world/FestivalWorld'; export { arcadeScreenFrame } from './src/world/MothArcade'; export { PLANET, planetBendPoint } from './src/world/PlanetCurve'; export * as THREE from 'three';", resolveDir: process.cwd(), loader: 'ts' },
   bundle: true, loader: { '.png': 'dataurl' }, platform: 'node', format: 'esm', write: false,
   plugins: [{ name: 'placement-fixture', setup(builder) {
     builder.onLoad({ filter: /FestivalWorld\.ts$/ }, async ({ path }) => ({
@@ -36,7 +36,7 @@ const compiled = await build({
     }));
   } }],
 });
-const { FestivalWorld, rooftopBounds, THREE } = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
+const { FestivalWorld, rooftopBounds, arcadeScreenFrame, PLANET, planetBendPoint, THREE } = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 
 test('the whole authored cabinet clears the actual rooftop wall while the pair stays centred', async () => {
   const world = Object.create(FestivalWorld.prototype);
@@ -89,4 +89,27 @@ test('the whole authored cabinet clears the actual rooftop wall while the pair s
   assert.ok(new THREE.Box3().setFromObject(arcade.root, true).max.x <= wallBounds.min.x - ARCADE_WALL_CLEARANCE + 1e-7);
   const visitor = { x: arcadeX - 3.1, z: arcade.root.position.z + 1.35 };
   assert.equal(arcadeIsNearest(visitor, arcade.root.position, jukebox), true, 'the real review approach must retain E access to this cabinet');
+
+  // Exercise the production play camera with the accepted tilted screen,
+  // rather than a synthetic vertical monitor that would conceal this defect.
+  const frame = arcadeScreenFrame(arcade.screen);
+  Object.assign(world, { arcadeSession: { frame }, player: new THREE.Group(),
+    camera: new THREE.PerspectiveCamera(58, 2808 / 1476, .1, 300) });
+  world.updateCamera(.016, 0);
+  world.camera.updateMatrixWorld(true);
+  const forward = world.camera.getWorldDirection(new THREE.Vector3());
+  assert.ok(Math.abs(forward.y) < 1e-9, 'playing must keep the camera level');
+  assert.equal(world.camera.fov, 58, 'retain normal world perspective and neighbour visibility');
+  assert.equal(world.player.visible, false);
+  const caseMesh = world.scene.getObjectByName('timber-case');
+  assert.ok(caseMesh, 'actual neighbouring jukebox geometry is present');
+  const bottom = caseMesh.localToWorld(new THREE.Vector3(-1.1, -1.425, -.65));
+  const top = caseMesh.localToWorld(new THREE.Vector3(-1.1, 1.425, -.65));
+  PLANET.radius = 320;
+  PLANET.centre.value.set(visitor.x, 0, visitor.z);
+  const projected = [bottom, top].map(p => planetBendPoint(p).project(world.camera));
+  assert.ok(projected.every(p => p.x > -1 && p.x < 1), 'keep the jukebox edge visible during play');
+  const lean = Math.abs(Math.atan2((projected[1].x - projected[0].x) * 2808,
+    (projected[1].y - projected[0].y) * 1476)) * 180 / Math.PI;
+  assert.ok(lean < .5, `jukebox must stand upright in the curved-world play view: ${lean} degrees`);
 });

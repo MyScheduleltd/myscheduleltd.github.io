@@ -1,0 +1,50 @@
+{
+  "verifiedAt": "2026-10-14T17:47:52.061986+00:00",
+  "publication": "local only",
+  "cause": "The jukebox has yaw-only placement and upright box geometry. Arcade play camera followed the accepted screen normal tilted 10.47 degrees, creating perspective convergence at viewport edges.",
+  "baseline": {
+    "tiltedScreenDegrees": 10.47,
+    "jukeboxEdgeLeanDegrees": 8.26,
+    "measurement": "actual asset projection, radius320, player x17.42 z13.0025, 1280x720"
+  },
+  "repair": [
+    "Keep the play camera level at screen-centre height with existing 58-degree FOV and fit",
+    "Project live iframe onto physical screen TL/TR/BR/BL with a single matrix3d",
+    "Project Exit anchor from same surface at u=.5 v=.915",
+    "Invalidate hidden/degenerate projections and recompute after resize"
+  ],
+  "geometryRegression": {
+    "actualProductionBuilderAndModel": true,
+    "jukeboxEdgeVisible": true,
+    "worldCurveRadius": 320,
+    "jukeboxLeanDegreesUpperBound": 0.5,
+    "aspect": 1.9024390243902438
+  },
+  "nativeChecks": {
+    "inAppBrowserViewport": [
+      1280,
+      720
+    ],
+    "visual": "Jukebox remains visible and upright; game fits tilted bezel; Exit remains in orange band",
+    "keyboard": "Down / Down / O opens stage selection",
+    "exitButton": "Click returns to normal world camera; E re-entry passed",
+    "consoleErrorsCaptured": [],
+    "chromePointer": "Native macOS Chrome click on projected stage-selection row opens stages; click Exit returns to world",
+    "chromeViewport": "2814x1722 window including browser chrome; visible canvas approximately 2814x1480",
+    "tooling": "IAB coordinate-click wrapper cannot target a projectively transformed iframe; native Chrome app pointer input verified real browser hit testing",
+    "localEsc": "Live child on localhost follows public game Esc menu controls; canonical parent adapter behavior is unchanged"
+  },
+  "tests": {
+    "passed": 464,
+    "failed": 0,
+    "strictTypeScript": "passed",
+    "productionBuild": "passed",
+    "diffCheck": "passed"
+  },
+  "assets": "No models, materials or textures changed",
+  "physicalDevices": "No phone/headset tests",
+  "screenshots": [
+    "before.png",
+    "after.png"
+  ]
+}

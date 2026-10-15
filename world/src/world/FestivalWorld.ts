@@ -1886,7 +1886,7 @@ export class FestivalWorld {
   private arcadeCabinet?: MothArcadeCabinet;
   private arcadeSession?: MothArcadeSession;
   private arcadeAperture?: THREE.Mesh;
-  private arcadeScreenLayout?: (frame: { x: number; y: number; width: number; height: number }) => void;
+  private arcadeScreenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number }) => void;
   /** The band on the roof over the pop-up shop; plays while the jukebox has a record on. */
   private rooftopBand?: RooftopBand;
   /** The beach easter egg. Scenery with one loop; not a resident. */
@@ -2670,7 +2670,7 @@ export class FestivalWorld {
     }
   }
 
-  startArcadeGame(url: string, exit: () => void, screenLayout?: (frame: { x: number; y: number; width: number; height: number }) => void): boolean {
+  startArcadeGame(url: string, exit: () => void, screenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number }) => void): boolean {
     const screen = this.arcadeCabinet?.screen;
     if (!screen || this.arcadeSession || (this.xrActive && !this.xrSimulated)) return false;
     this.keys.clear(); this.running = false; this.dancing = false;
@@ -12110,7 +12110,9 @@ export class FestivalWorld {
     if (arcadeScissor) {
       const viewportHeight = this.foregroundCanvas.clientHeight || window.innerHeight;
       this.arcadeSession?.renderScreen(arcadeScissor, viewportHeight);
-      this.arcadeScreenLayout?.({ ...arcadeScissor, y: viewportHeight - arcadeScissor.y - arcadeScissor.height });
+      const exitPoint = this.arcadeSession?.projectedScreenPoint(.5, .915);
+      this.arcadeScreenLayout?.({ ...arcadeScissor, y: viewportHeight - arcadeScissor.y - arcadeScissor.height,
+        exitX: exitPoint?.x, exitY: exitPoint?.y });
     }
     this.compositeMobileAvatars(visibleProjectors, visibleProjectorScissors);
     // A desktop VR preview also uses a single WebGL context. Retain world
@@ -14620,7 +14622,11 @@ export class FestivalWorld {
       // centered physical screen no longer needs an external HUD reserve.
       const verticalFit = .72;
       const distance = Math.max(frame.height / (2 * halfFov * verticalFit), frame.width / (2 * halfFov * this.camera.aspect * .84));
-      this.camera.position.copy(frame.centre).addScaledVector(frame.normal, distance);
+      // Keep world verticals upright. Following the screen's tilted normal
+      // pitched this close view down and made the neighbouring jukebox lean.
+      // The live panel follows the actual projected screen corners instead.
+      const direction = frame.normal.clone().setY(0).normalize();
+      this.camera.position.copy(frame.centre).addScaledVector(direction, distance);
       if (this.camera.parent) {
         this.camera.parent.updateWorldMatrix(true, false);
         this.camera.position.applyMatrix4(this.camera.parent.matrixWorld.clone().invert());

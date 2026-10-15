@@ -127,6 +127,41 @@ export function arcadeScreenFrame(screen: THREE.Mesh): ArcadeScreenFrame {
   };
 }
 
+export interface ArcadeScreenPoint { x: number; y: number }
+
+/** Map one flat DOM rectangle onto the physical screen's TL, TR, BR, BL corners. */
+export function arcadeQuadTransform(points: readonly ArcadeScreenPoint[], width: number, height: number): number[] | undefined {
+  if (points.length !== 4 || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0
+    || points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return undefined;
+  const [p0, p1, p2, p3] = points;
+  const edgeScale = Math.max(...points.map((p, i) => {
+    const next = points[(i + 1) % 4]; return (next.x - p.x) ** 2 + (next.y - p.y) ** 2;
+  }));
+  if (edgeScale < 1e-8) return undefined;
+  // A collapsed or folded quad has no safe, clickable projection. A convex
+  // screen may face either direction, but all four turns must agree.
+  const turns = points.map((p, i) => {
+    const next = points[(i + 1) % 4], after = points[(i + 2) % 4];
+    return (next.x - p.x) * (after.y - next.y) - (next.y - p.y) * (after.x - next.x);
+  });
+  if (turns.some(turn => Math.abs(turn) < edgeScale * 1e-8 || Math.sign(turn) !== Math.sign(turns[0]))) return undefined;
+  const dx1 = p1.x - p2.x, dx2 = p3.x - p2.x;
+  const dy1 = p1.y - p2.y, dy2 = p3.y - p2.y;
+  const dx3 = p0.x - p1.x + p2.x - p3.x, dy3 = p0.y - p1.y + p2.y - p3.y;
+  const determinant = dx1 * dy2 - dx2 * dy1;
+  if (Math.abs(determinant) < edgeScale * 1e-8) return undefined;
+  const gx = (dx3 * dy2 - dx2 * dy3) / determinant;
+  const gy = (dx1 * dy3 - dx3 * dy1) / determinant;
+  if ([1 + gx, 1 + gy, 1 + gx + gy].some(w => w <= 1e-8)) return undefined;
+  const matrix = [
+    (p1.x - p0.x + gx * p1.x) / width, (p1.y - p0.y + gx * p1.y) / width, 0, gx / width,
+    (p3.x - p0.x + gy * p3.x) / height, (p3.y - p0.y + gy * p3.y) / height, 0, gy / height,
+    0, 0, 1, 0,
+    p0.x, p0.y, 0, 1,
+  ];
+  return matrix.every(Number.isFinite) ? matrix : undefined;
+}
+
 /** One live iframe, mounted exactly on the generated cabinet's screen. */
 export class MothArcadeSession {
   readonly object: CSS3DObject;
@@ -135,6 +170,7 @@ export class MothArcadeSession {
   readonly origin: string;
   private readonly exit: () => void;
   private disposed = false;
+  private screenProjection?: number[];
 
   constructor(screen: THREE.Mesh, url: string, exit: () => void) {
     this.frame = arcadeScreenFrame(screen); this.exit = exit; this.origin = new URL(url).origin;
@@ -203,38 +239,61 @@ export class MothArcadeSession {
   };
 
   mount(host: HTMLElement): void {
-    // The camera is locked square to the cabinet during play. A flat DOM
-    // projection avoids WebKit losing iframe hit tests inside CSS 3D stacks.
+    // Use one directly projected DOM element: nested CSS3DRenderer perspective
+    // stacks can lose iframe hit tests in WebKit. The camera may stay level
+    // while this element follows the physical monitor's slight backward tilt.
     this.object.element.style.transformOrigin = '0 0';
     this.object.element.style.left = '0'; this.object.element.style.top = '0';
     host.append(this.object.element);
   }
 
-  renderScreen(box: { x: number; y: number; width: number; height: number }, viewportHeight: number): void {
+  renderScreen(_box: { x: number; y: number; width: number; height: number }, _viewportHeight: number): void {
     const element = this.object.element;
-    const width = 1024, height = Math.round(width * this.frame.height / this.frame.width);
-    element.style.transform = `translate(${box.x}px, ${viewportHeight - box.y - box.height}px) scale(${box.width / width}, ${box.height / height})`;
+    const matrix = this.screenProjection;
+    if (!matrix) { element.style.visibility = 'hidden'; return; }
+    element.style.transform = `matrix3d(${matrix.join(',')})`;
+    element.style.visibility = 'visible';
+  }
+
+  /** Position an overlay control within the same projected monitor surface. */
+  projectedScreenPoint(u: number, v: number): ArcadeScreenPoint | undefined {
+    const matrix = this.screenProjection;
+    if (!matrix || !Number.isFinite(u) || !Number.isFinite(v) || u < 0 || u > 1 || v < 0 || v > 1) return undefined;
+    const x = u * 1024, y = v * Math.round(1024 * this.frame.height / this.frame.width);
+    const w = matrix[3] * x + matrix[7] * y + matrix[15];
+    if (w <= 1e-8) return undefined;
+    const point = { x: (matrix[0] * x + matrix[4] * y + matrix[12]) / w, y: (matrix[1] * x + matrix[5] * y + matrix[13]) / w };
+    return Number.isFinite(point.x) && Number.isFinite(point.y) ? point : undefined;
   }
 
   scissor(camera: THREE.Camera, width: number, height: number): { x: number; y: number; width: number; height: number } | undefined {
+    this.screenProjection = undefined;
+    this.object.element.style.visibility = 'hidden';
+    if (this.disposed || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return undefined;
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.frame.quaternion);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.frame.quaternion);
-    const points = [-1, 1].flatMap(x => [-1, 1].map(y => {
+    const points = [[-1, 1], [1, 1], [1, -1], [-1, -1]].map(([x, y]) => {
       const point = this.frame.centre.clone().addScaledVector(right, x * this.frame.width / 2).addScaledVector(up, y * this.frame.height / 2);
       if (PLANET.on) planetBendPoint(point, point);
       return point.project(camera);
-    }));
-    if (points.some(p => p.z < -1 || p.z > 1)) return undefined;
+    });
+    if (points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z) || p.z < -1 || p.z > 1)) return undefined;
+    const corners = points.map(p => ({ x: (p.x + 1) * width / 2, y: (1 - p.y) * height / 2 }));
+    const projection = arcadeQuadTransform(corners, 1024, Math.round(1024 * this.frame.height / this.frame.width));
+    if (!projection) return undefined;
     const x = Math.max(0, Math.floor(Math.min(...points.map(p => (p.x + 1) * width / 2))));
     const y = Math.max(0, Math.floor(Math.min(...points.map(p => (p.y + 1) * height / 2))));
     const xmax = Math.min(width, Math.ceil(Math.max(...points.map(p => (p.x + 1) * width / 2))));
     const ymax = Math.min(height, Math.ceil(Math.max(...points.map(p => (p.y + 1) * height / 2))));
-    return xmax > x && ymax > y ? { x, y, width: xmax - x, height: ymax - y } : undefined;
+    if (xmax <= x || ymax <= y) return undefined;
+    this.screenProjection = projection;
+    return { x, y, width: xmax - x, height: ymax - y };
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.screenProjection = undefined;
     window.removeEventListener('message', this.message);
     window.removeEventListener('keydown', this.forwardKey, true);
     window.removeEventListener('keyup', this.forwardKey, true);

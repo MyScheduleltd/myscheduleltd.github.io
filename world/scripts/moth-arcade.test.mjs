@@ -20,8 +20,25 @@ globalThis.Element = class { closest() { return null; } };
 globalThis.document = { createElement: element, addEventListener() {}, removeEventListener() {} };
 const listeners = new Map();
 globalThis.window = { addEventListener: (n, f) => listeners.set(n, f), removeEventListener: n => listeners.delete(n) };
-const output = await build({ stdin: { contents: "export * from './src/world/MothArcade'; export * as THREE from 'three'; export { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; export { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';", resolveDir: process.cwd(), loader: 'ts' }, bundle: true, platform: 'node', format: 'esm', write: false });
-const { THREE, MothArcadeSession, arcadeScreenFrame, GLTFLoader, MeshoptDecoder } = await import('data:text/javascript;base64,' + Buffer.from(output.outputFiles[0].text).toString('base64'));
+const output = await build({ stdin: { contents: "export * from './src/world/MothArcade'; export * as THREE from 'three'; export { PLANET, planetBendPoint } from './src/world/PlanetCurve'; export { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; export { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';", resolveDir: process.cwd(), loader: 'ts' }, bundle: true, platform: 'node', format: 'esm', write: false });
+const { THREE, MothArcadeSession, arcadeScreenFrame, arcadeQuadTransform, PLANET, planetBendPoint, GLTFLoader, MeshoptDecoder } = await import('data:text/javascript;base64,' + Buffer.from(output.outputFiles[0].text).toString('base64'));
+
+function cssPoint(matrix, x, y) {
+  const w = matrix[3] * x + matrix[7] * y + matrix[15];
+  return { x: (matrix[0] * x + matrix[4] * y + matrix[12]) / w, y: (matrix[1] * x + matrix[5] * y + matrix[13]) / w };
+}
+function cssMatrix(session) { return session.object.element.style.transform.slice(9, -1).split(',').map(Number); }
+function physicalPoint(frame, camera, width, height, u, v) {
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(frame.quaternion);
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(frame.quaternion);
+  const p = frame.centre.clone().addScaledVector(right, (u - .5) * frame.width).addScaledVector(up, (.5 - v) * frame.height);
+  if (PLANET.on) planetBendPoint(p, p);
+  p.project(camera); return { x: (p.x + 1) * width / 2, y: (1 - p.y) * height / 2 };
+}
+function nearPoint(actual, expected, tolerance = 1e-7) {
+  assert.ok(actual && Math.hypot(actual.x - expected.x, actual.y - expected.y) < tolerance,
+    `projected point ${JSON.stringify(actual)} must match ${JSON.stringify(expected)}`);
+}
 
 test('arcade and jukebox outer edges centre together below the venue sign', () => {
   const {arcadeZ, jukeboxZ} = cabinetPairPositions(13.5);
@@ -147,7 +164,10 @@ test('the live frame fits the mesh and accepts exit only from its own origin and
   const box = session.scissor(camera, 1280, 720); assert.ok(box && box.width > 200 && box.height > 200);
   const host=element();let mounted;host.append=node=>{mounted=node;};session.mount(host);session.renderScreen(box,720);
   assert.equal(mounted,session.object.element);assert.equal(mounted.style.transformOrigin,'0 0');
-  assert.equal(mounted.style.transform,`translate(${box.x}px, ${720-box.y-box.height}px) scale(${box.width/1024}, ${box.height/853})`);
+  assert.match(mounted.style.transform,/^matrix3d\(/); assert.equal(mounted.style.visibility,'visible');
+  for (const [u,v] of [[0,0],[1,0],[1,1],[0,1]]) {
+    nearPoint(cssPoint(cssMatrix(session),u*1024,v*853),physicalPoint(session.frame,camera,1280,720,u,v));
+  }
   const message = listeners.get('message'), source = session.iframe.contentWindow;
   const posted = []; source.postMessage = (...args) => posted.push(args);
   let focused = 0; session.iframe.focus = () => focused++;
@@ -194,6 +214,67 @@ test('the live frame fits the mesh and accepts exit only from its own origin and
   assert.equal(listeners.has('keydown'), false); assert.equal(listeners.has('keyup'), false);
   assert.equal(listeners.has('pointerup'), false);
   assert.equal(posted.at(-1)[0].type, 'moth-arcade-release');
+});
+
+test('a single DOM homography follows all four corners of a level-camera tilted monitor after resize', () => {
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(1.34,1.116));
+  screen.position.set(20.32,2.48,11.65);screen.rotation.order='YXZ';screen.rotation.set(-.183,-Math.PI/2,0);
+  const session = new MothArcadeSession(screen,'https://myscheduleltd.com/moth/?arcade=1',()=>{});
+  const camera = new THREE.PerspectiveCamera(58,16/9,.1,100),parent=new THREE.Group();
+  parent.position.set(17,.28,12);parent.rotation.y=.7;parent.add(camera);parent.updateMatrixWorld(true);
+  const normal = session.frame.normal.clone();normal.y=0;normal.normalize();
+  const position=session.frame.centre.clone().addScaledVector(normal,1.42);
+  camera.position.copy(position).applyMatrix4(parent.matrixWorld.clone().invert());camera.lookAt(session.frame.centre);
+  camera.updateWorldMatrix(true,false);
+  const sourceHeight=Math.round(1024*session.frame.height/session.frame.width);
+  let previous;
+  for(const [width,height] of [[1280,720],[2808,1476],[1024,480],[390,680]]) {
+    camera.aspect=width/height;camera.updateProjectionMatrix();camera.updateWorldMatrix(true,false);
+    const box=session.scissor(camera,width,height);assert.ok(box);session.renderScreen(box,height);
+    const matrix=cssMatrix(session);assert.ok(matrix.every(Number.isFinite));
+    assert.notDeepEqual(matrix,previous,'viewport resizing must recompute the screen transform');previous=matrix;
+    for(const [u,v] of [[0,0],[1,0],[1,1],[0,1],[.5,.915]]) {
+      const expected=physicalPoint(session.frame,camera,width,height,u,v);
+      nearPoint(cssPoint(matrix,u*1024,v*sourceHeight),expected);
+      nearPoint(session.projectedScreenPoint(u,v),expected);
+    }
+    const tl=physicalPoint(session.frame,camera,width,height,0,0),tr=physicalPoint(session.frame,camera,width,height,1,0);
+    const bl=physicalPoint(session.frame,camera,width,height,0,1),br=physicalPoint(session.frame,camera,width,height,1,1);
+    assert.ok(Math.abs((tr.x-tl.x)-(br.x-bl.x))>1,'the live DOM must retain the real screen trapezoid, not expand to its bounding rectangle');
+  }
+  assert.equal(session.projectedScreenPoint(NaN,.5),undefined);assert.equal(session.projectedScreenPoint(-.1,.5),undefined);
+  session.dispose();assert.equal(session.projectedScreenPoint(.5,.915),undefined);
+});
+
+test('screen corners include the island projection and invalid views hide stale iframe placement', () => {
+  const screen=new THREE.Mesh(new THREE.PlaneGeometry(1.34,1.116));
+  screen.position.set(20.32,2.48,11.65);screen.rotation.order='YXZ';screen.rotation.set(-.183,-Math.PI/2,0);
+  const session=new MothArcadeSession(screen,'https://myscheduleltd.com/moth/?arcade=1',()=>{});
+  const camera=new THREE.PerspectiveCamera(58,16/9,.1,100);camera.position.set(18.9,2.48,11.65);camera.lookAt(screen.position);camera.updateMatrixWorld(true);
+  const previous={on:PLANET.on,radius:PLANET.radius,centre:PLANET.centre.value.clone()};
+  try {
+    PLANET.on=true;PLANET.radius=320;PLANET.centre.value.set(17.42,0,13.0025);
+    const box=session.scissor(camera,1280,720);assert.ok(box);session.renderScreen(box,720);
+    const sourceHeight=Math.round(1024*session.frame.height/session.frame.width);
+    for(const [u,v] of [[0,0],[1,0],[1,1],[0,1]]) {
+      nearPoint(cssPoint(cssMatrix(session),u*1024,v*sourceHeight),physicalPoint(session.frame,camera,1280,720,u,v));
+    }
+    camera.lookAt(new THREE.Vector3(15,2.48,11.65));camera.updateMatrixWorld(true);
+    assert.equal(session.scissor(camera,1280,720),undefined);
+    assert.equal(session.object.element.style.visibility,'hidden');assert.equal(session.projectedScreenPoint(.5,.915),undefined);
+    session.renderScreen(box,720);assert.equal(session.object.element.style.visibility,'hidden','a previous scissor must not revive a now-invalid projection');
+    assert.equal(session.scissor(camera,0,720),undefined);assert.equal(session.scissor(camera,1280,NaN),undefined);
+  } finally {PLANET.on=previous.on;PLANET.radius=previous.radius;PLANET.centre.value.copy(previous.centre);session.dispose();}
+});
+
+test('screen homography rejects collapsed, folded and nonfinite surfaces instead of producing a broken clickable transform', () => {
+  const quad=[{x:50,y:30},{x:380,y:40},{x:420,y:260},{x:20,y:250}];
+  const matrix=arcadeQuadTransform(quad,1024,853);assert.ok(matrix);
+  for(const [i,x,y] of [[0,0,0],[1,1024,0],[2,1024,853],[3,0,853]])nearPoint(cssPoint(matrix,x,y),quad[i]);
+  for(const points of [quad.slice(0,3),[quad[0],quad[2],quad[1],quad[3]],quad.map(p=>({x:p.x,y:30})),quad.map(p=>({x:p.x,y:Infinity}))]) {
+    assert.equal(arcadeQuadTransform(points,1024,853),undefined);
+  }
+  for(const [width,height] of [[0,853],[1024,0],[NaN,853],[1024,Infinity]])assert.equal(arcadeQuadTransform(quad,width,height),undefined);
 });
 
 const bridge = await readFile('../scripts/moth-arcade-embed.js', 'utf8');
@@ -278,4 +359,180 @@ test('public scripts retain valid SRI and desktop override without exposing game
   assert.match(game, /loadDeviceModePreference\(\) \{\s*if \(document.documentElement.dataset.arcadePlay === "true"\) return "desktop";/);
   assert.doesNotMatch(game, /window\.bobbyGame|createDebugPanel|data-debug-action/);
   const staff = await readFile('../docs/moth/staff/index.html', 'utf8'); assert.doesNotMatch(staff, /arcade-embed/);
+});
+
+// Exercise the actual App lifecycle methods. Keep their network/audio callers
+// stubbed, while retaining the DOM parentage and asynchronous browser results
+// that can otherwise reload a live iframe or strand controls in its wrapper.
+const appSource = await readFile('src/ui/App.ts', 'utf8');
+const appTree = ts.createSourceFile('App.ts', appSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+const appClass = appTree.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'App');
+assert.ok(appClass);
+const arcadeMethodNames = new Set([
+  'closeArcadeGame', 'toggleArcadeFullscreen', 'syncArcadeFullscreenState', 'leaveArcadeOnEscape',
+  'fullscreenElement', 'screenOwnsFullscreen', 'requestScreenFullscreen', 'exitScreenFullscreen',
+]);
+const arcadeMethods = appClass.members.filter(node => node.name && arcadeMethodNames.has(node.name.getText(appTree)));
+assert.equal(arcadeMethods.length, arcadeMethodNames.size);
+const arcadeAppCode = ts.transpileModule(`class ArcadeAppFixture { ${arcadeMethods.map(node => node.getText(appTree)).join('\n')} }`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+}).outputText + '\nArcadeAppFixture;';
+
+class ArcadeElement {
+  constructor(selector) { this.selector = selector; this.children = []; this.attributes = new Map(); this.dataset = {}; this.style = {}; this.hidden = false; this.moves = 0; }
+  get isConnected() { return this.connectedRoot || Boolean(this.parentElement?.isConnected); }
+  append(node) {
+    node.remove(); node.parentElement = this; this.children.push(node); node.moves++;
+  }
+  remove() {
+    if (!this.parentElement) return;
+    const siblings = this.parentElement.children; siblings.splice(siblings.indexOf(this), 1); this.parentElement = null;
+  }
+  querySelector(selector) {
+    for (const node of this.children) {
+      if (node.selector === selector) return node;
+      const nested = node.querySelector(selector); if (nested) return nested;
+    }
+    return null;
+  }
+  contains(node) { return node === this || this.children.some(child => child.contains(node)); }
+  setAttribute(name, value) { this.attributes.set(name, value); }
+  removeAttribute(name) { this.attributes.delete(name); }
+}
+
+function fullscreenAppFixture() {
+  const root = new ArcadeElement('root'); root.connectedRoot = true;
+  const shell = new ArcadeElement('.world-shell'), css = new ArcadeElement('#world-css3d');
+  const screen = new ArcadeElement('.moth-arcade-screen'), iframe = new ArcadeElement('iframe');
+  const hud = new ArcadeElement('#moth-arcade-hud'), button = new ArcadeElement('[data-arcade-fullscreen]');
+  const exit = new ArcadeElement('[data-arcade-exit]');
+  root.append(shell); shell.append(css); css.append(screen); screen.append(iframe); shell.append(hud); hud.append(exit); hud.append(button);
+  iframe.src = 'https://myscheduleltd.com/moth/?arcade=1&arcadeLaunch=preserve-state'; iframe.contentWindow = {};
+  shell.dataset.arcadePlaying = 'true';
+  const document = { fullscreenElement: null, activeElement: null };
+  const App = runInNewContext(arcadeAppCode, { document, HTMLElement: ArcadeElement });
+  const app = new App(); app.root = root; app.arcadePlaying = true; app.arcadeFullscreenPending = false;
+  app.language = 'zh-TW'; app.audioMuted = false;
+  const calls = { requests: [], exits: 0, stopped: 0, alerts: [], focused: [], windowFocused: 0, restoredBeforeDispose: false };
+  iframe.focus = options => { calls.focused.push(options); document.activeElement = iframe; };
+  iframe.blur = () => { document.activeElement = null; };
+  iframe.contentWindow.focus = () => calls.windowFocused++;
+  app.showWorldAlert = text => calls.alerts.push(text);
+  app.syncJukebox = app.applyJukeboxVolume = app.syncMenuCapture = () => {};
+  app.world = {
+    audio: { setMuted() {} },
+    stopArcadeGame() { calls.stopped++; calls.restoredBeforeDispose = hud.parentElement === shell; screen.remove(); },
+  };
+  const change = () => app.syncArcadeFullscreenState();
+  screen.requestFullscreen = () => { calls.requests.push(screen); document.fullscreenElement = screen; change(); return Promise.resolve(); };
+  document.exitFullscreen = () => { calls.exits++; document.fullscreenElement = null; document.webkitFullscreenElement = null; change(); return Promise.resolve(); };
+  return { app, root, shell, css, screen, iframe, hud, button, document, calls, change };
+}
+
+test('arcade native fullscreen contains both controls and preserves the same live iframe across return', async () => {
+  const f = fullscreenAppFixture(), contentWindow = f.iframe.contentWindow, src = f.iframe.src, moves = f.iframe.moves;
+  await f.app.toggleArcadeFullscreen();
+  assert.deepEqual(f.calls.requests, [f.screen], 'fullscreen the wrapper, not its cross-origin iframe');
+  assert.equal(f.hud.parentElement, f.screen); assert.equal(f.button.textContent, '退出全螢幕');
+  assert.equal(f.button.attributes.get('aria-pressed'), 'true');
+  assert.equal(f.calls.focused.length, 1); assert.equal(f.calls.windowFocused, 1);
+  assert.equal(f.calls.focused[0].preventScroll, true); assert.equal(f.document.activeElement, f.iframe);
+  f.document.activeElement = f.button;
+  f.change(); f.change();
+  assert.equal(f.hud.moves, 2, 'duplicate standard/WebKit notifications must not keep moving the controls');
+  assert.equal(f.calls.focused.length, 1); assert.equal(f.document.activeElement, f.button,
+    'duplicate notifications must preserve subsequent button keyboard navigation');
+  await f.app.toggleArcadeFullscreen();
+  assert.equal(f.calls.exits, 1); assert.equal(f.hud.parentElement, f.shell);
+  assert.equal(f.button.textContent, '全螢幕'); assert.equal(f.button.attributes.get('aria-pressed'), 'false');
+  assert.equal(f.iframe.parentElement, f.screen); assert.equal(f.iframe.moves, moves);
+  assert.equal(f.iframe.contentWindow, contentWindow); assert.equal(f.iframe.src, src);
+  assert.equal(f.calls.focused.length, 2); assert.equal(f.calls.windowFocused, 2); assert.equal(f.document.activeElement, f.iframe);
+  assert.equal(f.calls.stopped, 0); assert.equal(f.app.arcadePlaying, true);
+});
+
+test('browser-initiated fullscreen exit restores controls without exiting the running game', async () => {
+  const f = fullscreenAppFixture(); f.app.language = 'en';
+  await f.app.toggleArcadeFullscreen(); assert.equal(f.button.textContent, 'EXIT FULLSCREEN');
+  f.document.fullscreenElement = null; f.change();
+  assert.equal(f.hud.parentElement, f.shell); assert.equal(f.button.textContent, 'FULLSCREEN');
+  assert.equal(f.calls.focused.length, 2); assert.equal(f.calls.windowFocused, 2);
+  assert.equal(f.calls.stopped, 0); assert.equal(f.app.arcadePlaying, true);
+});
+
+test('fullscreen request rejection leaves the cabinet game and both controls usable', async () => {
+  const f = fullscreenAppFixture();
+  f.screen.requestFullscreen = () => { f.calls.requests.push(f.screen); return Promise.reject(new Error('Permission denied')); };
+  await f.app.toggleArcadeFullscreen();
+  assert.equal(f.document.fullscreenElement, null); assert.equal(f.hud.parentElement, f.shell);
+  assert.equal(f.button.textContent, '全螢幕'); assert.equal(f.app.arcadeFullscreenPending, false);
+  assert.equal(f.calls.alerts.length, 1); assert.equal(f.calls.stopped, 0); assert.equal(f.app.arcadePlaying, true);
+  assert.equal(f.calls.focused.length, 0, 'a refusal must not steal focus from the control');
+  assert.equal(f.iframe.parentElement, f.screen);
+  f.screen.requestFullscreen = () => { f.document.fullscreenElement = f.screen; f.change(); return Promise.resolve(); };
+  await f.app.toggleArcadeFullscreen(); assert.equal(f.hud.parentElement, f.screen, 'a refused request must not lock out a subsequent retry');
+});
+
+test('a pending fullscreen permission result admits only one request and does not claim fullscreen early', async () => {
+  const f = fullscreenAppFixture(); let resolve;
+  f.screen.requestFullscreen = () => { f.calls.requests.push(f.screen); return new Promise(done => { resolve = done; }); };
+  const pending = f.app.toggleArcadeFullscreen();
+  assert.equal(f.calls.requests.length, 1, 'the native request runs immediately in the button gesture');
+  assert.equal(f.app.arcadeFullscreenPending, true); assert.equal(f.hud.parentElement, f.shell);
+  assert.equal(f.calls.focused.length, 0, 'gameplay focus waits for the real fullscreen transition');
+  await f.app.toggleArcadeFullscreen(); assert.equal(f.calls.requests.length, 1);
+  f.document.fullscreenElement = f.screen; f.change(); resolve(); await pending;
+  assert.equal(f.app.arcadeFullscreenPending, false); assert.equal(f.hud.parentElement, f.screen);
+  assert.equal(f.calls.focused.length, 1); assert.equal(f.calls.windowFocused, 1);
+});
+
+test('Exit restores controls before removing the fullscreen wrapper and releases native fullscreen', async () => {
+  const f = fullscreenAppFixture(); await f.app.toggleArcadeFullscreen();
+  const focusCount = f.calls.focused.length;
+  f.app.closeArcadeGame();
+  assert.equal(f.calls.restoredBeforeDispose, true); assert.equal(f.calls.stopped, 1); assert.equal(f.calls.exits, 1);
+  assert.equal(f.hud.parentElement, f.shell); assert.equal(f.hud.hidden, true); assert.equal(f.screen.isConnected, false);
+  assert.equal(f.document.fullscreenElement, null); assert.equal(f.app.arcadePlaying, false);
+  assert.equal(f.shell.dataset.arcadePlaying, undefined); assert.equal(f.css.attributes.get('aria-hidden'), 'true');
+  assert.equal(f.button.attributes.get('aria-pressed'), 'false');
+  assert.equal(f.calls.focused.length, focusCount, 'teardown must not refocus the game it is about to remove');
+  assert.equal(f.calls.windowFocused, focusCount);
+});
+
+test('Exit while fullscreen is pending prevents a late browser result from stranding a closed game in fullscreen', async () => {
+  const f = fullscreenAppFixture(); let resolve;
+  f.screen.requestFullscreen = () => new Promise(done => { resolve = done; });
+  const pending = f.app.toggleArcadeFullscreen(); f.app.closeArcadeGame();
+  assert.equal(f.hud.parentElement, f.shell); assert.equal(f.calls.stopped, 1);
+  // A late acceptance exercises the defensive cleanup even when the removed
+  // element still appears as the browser's pending fullscreen target.
+  f.document.fullscreenElement = f.screen; resolve(); await pending;
+  assert.equal(f.document.fullscreenElement, null); assert.equal(f.calls.exits, 1);
+  assert.equal(f.hud.parentElement, f.shell); assert.equal(f.hud.hidden, true);
+  assert.equal(f.app.arcadePlaying, false); assert.equal(f.app.arcadeFullscreenPending, false);
+  assert.equal(f.calls.alerts.length, 0); assert.equal(f.iframe.moves, 1);
+  assert.equal(f.calls.focused.length, 0); assert.equal(f.calls.windowFocused, 0);
+});
+
+test('Escape returns fullscreen play to the cabinet, then leaves the game on the next press', async () => {
+  const f = fullscreenAppFixture(); await f.app.toggleArcadeFullscreen();
+  f.app.leaveArcadeOnEscape();
+  assert.equal(f.calls.exits, 1); assert.equal(f.calls.stopped, 0); assert.equal(f.app.arcadePlaying, true);
+  assert.equal(f.hud.parentElement, f.shell);
+  f.app.leaveArcadeOnEscape();
+  assert.equal(f.calls.stopped, 1); assert.equal(f.app.arcadePlaying, false);
+  assert.equal(f.calls.focused.length, 2, 'closing after returning from fullscreen must not refocus gameplay');
+  const other = fullscreenAppFixture(); other.document.fullscreenElement = new ArcadeElement('unrelated fullscreen');
+  other.app.leaveArcadeOnEscape();
+  assert.equal(other.calls.exits, 0, 'closing arcade play must not dismiss another element\'s fullscreen');
+  assert.equal(other.calls.stopped, 1);
+});
+
+test('arcade fullscreen uses the WebKit fallback while retaining native exit and control restore', async () => {
+  const f = fullscreenAppFixture(); delete f.screen.requestFullscreen; delete f.document.exitFullscreen;
+  f.screen.webkitRequestFullscreen = () => { f.document.webkitFullscreenElement = f.screen; f.change(); };
+  f.document.webkitExitFullscreen = () => { f.calls.exits++; f.document.webkitFullscreenElement = null; f.change(); };
+  await f.app.toggleArcadeFullscreen(); assert.equal(f.hud.parentElement, f.screen);
+  await f.app.toggleArcadeFullscreen(); assert.equal(f.calls.exits, 1); assert.equal(f.hud.parentElement, f.shell);
+  assert.equal(f.app.arcadeFullscreenPending, false);
 });

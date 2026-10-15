@@ -1,0 +1,44 @@
+{
+  "publication": "local only",
+  "status": "Implemented and verified locally in native Chrome",
+  "changes": [
+    "Matching fullscreen toggle next to Exit; centered as one row in the orange band",
+    "Fullscreen the existing screen wrapper, preserving its iframe and live game state",
+    "Move only the controls into the fullscreen tree and restore them before screen disposal",
+    "Native exit/Esc returns to cabinet; explicit Exit leaves game and browser fullscreen",
+    "Restore game keyboard focus once per fullscreen transition"
+  ],
+  "checks": {
+    "testsPassed": 472,
+    "testsFailed": 0,
+    "targetedArcadeTestsPassed": 20,
+    "strictTypeScript": "passed",
+    "productionBuild": "passed",
+    "diffCheck": "passed"
+  },
+  "browserChecks": {
+    "normalCabinet": "Two matching controls visually centered in the orange band at 1280x720; wide native Chrome return view also checked",
+    "nativeFullscreen": "Passed: actual Chrome fullscreen, chrome removed, game enlarged, Exit Game and Exit Fullscreen controls visible in centered orange strip",
+    "keyboard": "Down / Down / O immediately after fullscreen entry opened stage selection; Down immediately after Esc advanced stage selection from 1/8 to 2/8 without clicking the iframe",
+    "statePreservation": "Same child arcadeLaunch=cfedd3ff-d201-46a4-b2ba-d9f10ceb09bf persisted across entry, Esc return and subsequent fullscreen entries; stage menu remained active",
+    "esc": "Passed: native Esc returns to cabinet without closing game; fullscreen label and pressed state reset",
+    "exitGame": "Passed: clicking Exit Game while fullscreen closes child and native fullscreen, restores world and E / play prompt",
+    "exitFullscreenButton": "State returned to cabinet after attempted native Exit Fullscreen click, but native tool reported inactive context; direct button lifecycle is covered by App-method tests. Native Esc and Exit Game paths are unambiguous passes.",
+    "fullscreenScreenshotPixels": [
+      2880,
+      1800
+    ],
+    "returnScreenshotPixels": [
+      2814,
+      1722
+    ],
+    "cleanup": "Closed only verified QA tab; existing user Epidemic Sound tab visible afterward. Earlier Michael-profile tab may remain under user control; not closed blindly.",
+    "devices": "No physical phone/headset checks",
+    "console": "No native Chrome console capture used; do not claim a native console pass"
+  },
+  "screenshots": [
+    "cabinet-controls.png",
+    "chrome-fullscreen.png",
+    "chrome-return.png"
+  ]
+}
