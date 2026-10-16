@@ -1,0 +1,88 @@
+{
+  "description": "RGBA8 decoded source estimates for embedded images, not a measurement of live GPU residency; mipmapped estimates use a 4/3 multiplier",
+  "rows": [
+    {
+      "path": "world/src/assets/avatars/female.glb",
+      "images": 11,
+      "originalRgbaBytes": 23527128,
+      "budgetedRgbaBytes": 10001752
+    },
+    {
+      "path": "world/src/assets/avatars/male.glb",
+      "images": 13,
+      "originalRgbaBytes": 57081560,
+      "budgetedRgbaBytes": 18390360
+    },
+    {
+      "path": "world/src/assets/band/bass-player.glb",
+      "images": 3,
+      "originalRgbaBytes": 33558528,
+      "budgetedRgbaBytes": 8392704
+    },
+    {
+      "path": "world/src/assets/band/bonfire.glb",
+      "images": 2,
+      "originalRgbaBytes": 2097152,
+      "budgetedRgbaBytes": 2097152
+    },
+    {
+      "path": "world/src/assets/band/drummer.glb",
+      "images": 1,
+      "originalRgbaBytes": 16777216,
+      "budgetedRgbaBytes": 4194304
+    },
+    {
+      "path": "world/src/assets/band/guitarist.glb",
+      "images": 2,
+      "originalRgbaBytes": 33554432,
+      "budgetedRgbaBytes": 8388608
+    },
+    {
+      "path": "world/src/assets/band/stage.glb",
+      "images": 6,
+      "originalRgbaBytes": 6291456,
+      "budgetedRgbaBytes": 6291456
+    },
+    {
+      "path": "world/src/assets/band/vocal.glb",
+      "images": 2,
+      "originalRgbaBytes": 16781312,
+      "budgetedRgbaBytes": 4198400
+    },
+    {
+      "path": "world/src/assets/venue-scenery/attendant.glb",
+      "images": 4,
+      "originalRgbaBytes": 67108864,
+      "budgetedRgbaBytes": 16777216
+    },
+    {
+      "path": "world/src/assets/venue-scenery/box-office.glb",
+      "images": 4,
+      "originalRgbaBytes": 67108864,
+      "budgetedRgbaBytes": 16777216
+    },
+    {
+      "path": "world/src/assets/venue-scenery/moth-arcade.glb",
+      "images": 1,
+      "originalRgbaBytes": 6291456,
+      "budgetedRgbaBytes": 2797568
+    },
+    {
+      "path": "world/src/assets/venue-scenery/temple-statue.glb",
+      "images": 1,
+      "originalRgbaBytes": 16777216,
+      "budgetedRgbaBytes": 4194304
+    },
+    {
+      "path": "world/src/assets/venue-scenery/valet.glb",
+      "images": 4,
+      "originalRgbaBytes": 67108864,
+      "budgetedRgbaBytes": 16777216
+    }
+  ],
+  "originalDecodedMiB": 394.8822479248047,
+  "budgetedDecodedMiB": 113.75260925292969,
+  "originalMipmappedMiB": 526.5096638997396,
+  "budgetedMipmappedMiB": 151.6701456705729,
+  "reductionPercent": 71.19328360524553
+}

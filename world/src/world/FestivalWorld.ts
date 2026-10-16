@@ -9,6 +9,7 @@ import { setCoastalSwimwear } from './CoastalAvatar';
 import * as THREE from 'three';
 import { HeadTracking, type TrackedPoint } from './HeadTracking';
 import { batchStaticScenery, type StaticBatchReport } from './StaticBatch';
+import { mobileAssetBudgetSnapshot } from './MobileAssetBudget';
 import { GamepadInput, type GamepadActionId, type GamepadFrame } from './GamepadInput';
 import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
 import { dressBuildings, dressInteriors } from './WornArchitecture';
@@ -491,7 +492,7 @@ const shouldConserveMobileGpu = (): boolean => {
   try {
     const reviewTarget = new URLSearchParams(window.location.search).get('review');
     const loopbackReview = ['127.0.0.1', 'localhost'].includes(window.location.hostname)
-      && ['mobile-stability', 'screen-rooftop', 'screen-club'].includes(reviewTarget ?? '');
+      && ['mobile-stability', 'mobile-memory', 'screen-rooftop', 'screen-club'].includes(reviewTarget ?? '');
     return loopbackReview || window.matchMedia('(pointer: coarse) and (hover: none)').matches;
   } catch {
     return false;
@@ -5273,6 +5274,7 @@ export class FestivalWorld {
     lampPool: number;
     darkLampsLit: number;
     projectorActivation: ProjectorActivationReview | null;
+    textureBudget: ReturnType<typeof mobileAssetBudgetSnapshot>;
   } | undefined {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return undefined;
     let shadowLights = 0;
@@ -5328,6 +5330,7 @@ export class FestivalWorld {
       pendingSignRepaints: signRepaints.size,
       mobileGpuConservation: this.conservesMobileGpu,
       projectorActivation: this.projectorActivationReview ? { ...this.projectorActivationReview } : null,
+      textureBudget: mobileAssetBudgetSnapshot(),
       shadowLights,
       lampPool: this.lampPool.length,
       darkLampsLit,
@@ -8981,6 +8984,7 @@ export class FestivalWorld {
    * survive the page dying mid-write.
    */
   diagnosticSample(): Record<string, number | string | boolean> {
+    const images = mobileAssetBudgetSnapshot();
     return {
       up: Math.round(performance.now() / 1000),
       venue: this.projectorVenue() ?? '-',
@@ -9000,6 +9004,9 @@ export class FestivalWorld {
       x: Math.round(this.player.position.x),
       z: Math.round(this.player.position.z),
       lost: this.lostContexts.size > 0,
+      quality: this.graphicsMode,
+      imgMb: Math.round(images.decodedBytes / 1048576),
+      imgMax: images.largestEdge,
     };
   }
 
