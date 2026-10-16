@@ -1,4 +1,12 @@
 export const MOTH_GAME_URL = 'https://myscheduleltd.com/moth/';
+/** 2 November 2026, 00:00 in Taiwan (UTC+8), independent of the viewer's timezone. */
+export const ARCADE_UNLOCK_AT = Date.parse('2026-11-01T16:00:00.000Z');
+
+/** The release becomes playable at the exact boundary, without a page reload. */
+export function arcadeIsLocked(now = Date.now()): boolean {
+  return now < ARCADE_UNLOCK_AT;
+}
+
 export const ARCADE_HEIGHT = 3.8;
 export const ARCADE_WIDTH = 1.81;
 // Rounded outwards from the loaded cabinet, including its tilted front trim.

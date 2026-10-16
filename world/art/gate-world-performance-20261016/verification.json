@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-16",
+  "scope": "local only; publication prohibited until owner approval",
+  "branch": "codex/gate-world-performance-20261016",
+  "verification": {
+    "full_suite": {
+      "passed": 543,
+      "failed": 0
+    },
+    "strict_typescript": "passed",
+    "vite_build": "passed",
+    "git_diff_check": "passed"
+  },
+  "browser": {
+    "engine": "Codex in-app Chromium browser",
+    "desktop_sizes": [
+      [
+        1280,
+        720
+      ],
+      [
+        1440,
+        900
+      ]
+    ],
+    "phone_viewports": [
+      [
+        390,
+        844
+      ],
+      [
+        375,
+        667
+      ]
+    ],
+    "physical_phone_tested": false,
+    "sign_in": [
+      "live actual island and full curved ground framing",
+      "male/female, outfits, cap and live colors",
+      "drag and keyboard rotation",
+      "language redraw preserves name, disclosure and remember choice",
+      "mobile hides avatar and has no horizontal overflow",
+      "BETA kicker and subtitle absent",
+      "admission reaches entrance and removes overlay",
+      "no app console errors in disposable local-server entry/staff check"
+    ],
+    "staff": [
+      "authenticated disposable local service",
+      "only title/titleZh/nameLabel/nameLabelZh remain",
+      "background-loop editor absent",
+      "retained sign-in settings save successfully"
+    ],
+    "theater": {
+      "shore": "actual map travel mounted and played video; leaving released player",
+      "activation": "theater-shore.json",
+      "rooftop_and_club": "avatar and opaque-prop compositing inspected; selected upstream YouTube videos reported unavailable",
+      "arcade": "E launch, Down/Down/O stage-menu navigation and controls remain functional"
+    },
+    "motion_proof_limit": "Browser click waits finished before screenshot capture. The arrival screenshot proves completion; motion timing, stage stalls, hidden-tab/reduced-motion/cancel paths and exact endpoints are covered by 15 controller/camera/resource regressions."
+  },
+  "avatar": {
+    "real_production_pose_frames": 240,
+    "old_alternate_frame_vertical_jump_m": {
+      "male": 0.19428,
+      "female": 0.14066
+    },
+    "fixed_alternate_frame_vertical_error_m": 0,
+    "details": "../distant-avatar-20261016/pose-probe.json"
+  },
+  "build_boundary": "Only local npm run build; no BETA package, commit, push, PR or deployment. Standard build restored after disposable API override QA.",
+  "preview": "http://127.0.0.1:4173/?era=ps2&island&localReview=gate-20261016",
+  "entryMotionReview": "../entry-motion-20261016/REVIEW.md",
+  "arcadeReleaseLockReview": "../arcade-lock-20261016/REVIEW.md"
+}

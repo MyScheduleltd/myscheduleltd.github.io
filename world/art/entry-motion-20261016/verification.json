@@ -1,0 +1,33 @@
+{
+  "frames": 36,
+  "durationMs": 4387.8,
+  "progressMonotonic": true,
+  "firstProgress": 0.017583333253860474,
+  "finalProgress": 1,
+  "maxFrameGapMs": 2266.7,
+  "finalApproachMaxFrameGapMs": 66.8,
+  "menuEndsOffscreen": true,
+  "stableStudioWidth": true,
+  "overlayRemoved": true,
+  "previewDisposed": true,
+  "phone": {
+    "before": {
+      "previewVisible": "none",
+      "ready": false,
+      "width": 390
+    },
+    "after": {
+      "overflow": false,
+      "frames": 26
+    }
+  },
+  "initialMenuOpacity": "0.970441",
+  "menuObservedDuringSlide": true,
+  "scope": "local only",
+  "fullSuite": {
+    "passed": 534,
+    "failed": 0
+  },
+  "build": "strict TypeScript and Vite passed",
+  "physicalDevices": "not tested"
+}

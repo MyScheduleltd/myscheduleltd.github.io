@@ -42,7 +42,7 @@ test('arcade camera stays on the physical screen with a transformed desktop VR p
  const w=worldFixture(),parent=new THREE.Group(),screen=new THREE.Mesh(new THREE.PlaneGeometry(1.2,1));
  screen.position.set(21,2.5,11.65);screen.rotation.set(-.18,-Math.PI/2,0);screen.updateMatrixWorld(true);
  const frame={centre:screen.position.clone(),normal:new THREE.Vector3(0,0,1).applyQuaternion(screen.quaternion),quaternion:screen.quaternion.clone(),width:1.2,height:1};
- Object.assign(w,{camera:new THREE.PerspectiveCamera(50,16/9,.1,100),player:new THREE.Group(),arcadeSession:{frame},xrActive:true,xrSimulated:true,xrYaw:.7,xrSimPitch:.2});
+ Object.assign(w,{camera:new THREE.PerspectiveCamera(50,16/9,.1,100),player:new THREE.Group(),arcadeView:{frame},xrActive:true,xrSimulated:true,xrYaw:.7,xrSimPitch:.2});
  parent.position.set(17,.28,11.65);parent.rotation.y=.7;parent.add(w.camera);
  const expected=frame.centre.clone().addScaledVector(frame.normal,frame.height/(2*Math.tan(THREE.MathUtils.degToRad(25))*.72));
  for(const yaw of [.7,-1.5,2.2]){
@@ -63,10 +63,11 @@ test('arcade camera stays on the physical screen with a transformed desktop VR p
 test('arcade movement is held at zero and exiting clears held inputs and the screen aperture',()=>{
  const w=worldFixture(),aperture=new THREE.Mesh(new THREE.PlaneGeometry(1.2,1)),parent=new THREE.Scene();parent.add(aperture);
  let disposed=0,geometryDisposed=0;aperture.geometry.addEventListener('dispose',()=>geometryDisposed++);
- Object.assign(w,{arcadeSession:{dispose(){disposed++;}},arcadeAperture:aperture,arcadeScreenLayout:()=>{},keys:new Set(['KeyW']),stickX:1,stickY:1,running:true});
+ const view={dispose(){disposed++;}};
+ Object.assign(w,{arcadeSession:view,arcadeView:view,player:new THREE.Group(),arcadeAperture:aperture,arcadeScreenLayout:()=>{},keys:new Set(['KeyW']),stickX:1,stickY:1,running:true});
  w.setMovementVector(1,-1);assert.equal(w.stickX,0);assert.equal(w.stickY,0);
  w.stopArcadeGame();assert.equal(disposed,1);assert.equal(geometryDisposed,1);assert.equal(parent.children.length,0);
- assert.equal(w.arcadeSession,undefined);assert.equal(w.arcadeAperture,undefined);assert.equal(w.arcadeScreenLayout,undefined);assert.equal(w.keys.size,0);assert.equal(w.stickX,0);assert.equal(w.stickY,0);assert.equal(w.running,false);
+ assert.equal(w.arcadeSession,undefined);assert.equal(w.arcadeView,undefined);assert.equal(w.arcadeAperture,undefined);assert.equal(w.arcadeScreenLayout,undefined);assert.equal(w.keys.size,0);assert.equal(w.stickX,0);assert.equal(w.stickY,0);assert.equal(w.running,false);
 });
 test('short and narrow desktop windows keep the complete screen centered for its integrated exit control',()=>{
  const screen=new THREE.Mesh(new THREE.PlaneGeometry(1.2,1));
@@ -75,7 +76,7 @@ test('short and narrow desktop windows keep the complete screen centered for its
  const right=new THREE.Vector3(1,0,0).applyQuaternion(frame.quaternion),up=new THREE.Vector3(0,1,0).applyQuaternion(frame.quaternion);
  for(const width of [1024,390]){
   const height=480,w=worldFixture();
-  Object.assign(w,{camera:new THREE.PerspectiveCamera(50,width/height,.1,100),player:new THREE.Group(),arcadeSession:{frame},foregroundCanvas:{clientHeight:height}});
+  Object.assign(w,{camera:new THREE.PerspectiveCamera(50,width/height,.1,100),player:new THREE.Group(),arcadeView:{frame},foregroundCanvas:{clientHeight:height}});
   w.updateCamera(1/60,0);w.camera.updateWorldMatrix(true,false);
   const centre=frame.centre.clone().project(w.camera);
   assert.ok(Math.abs(centre.x)<1e-8 && Math.abs(centre.y)<1e-8,'the screen must stay centered after removing the external HUD reserve');

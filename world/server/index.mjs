@@ -242,10 +242,6 @@ const siteStyle = {
   brandOffsetY: 4,
   updatedAt: 0,
 };
-const gateBackground = {
-  youtubeId: 'Ffli-o0ocT0',
-  updatedAt: 0,
-};
 let mentorCarrierId = null;
 // Feeding loyalty is live festival state, like attendee sessions. Visitor
 // scores disappear when they leave; NPC scores last until this service
@@ -477,12 +473,8 @@ const publicNpcProfiles = () => Object.keys(npcNames).map((id) => ({
 // The words on the gate, in both languages. STAFF own these; the build carries
 // its own copy so the gate still reads before this is ever fetched.
 const gateCopy = {
-  kicker: 'BETA',
-  kickerZh: 'BETA',
   title: 'MY THEATRE',
   titleZh: '我的戲院',
-  intro: 'Follow the programme, take a seat, watch the work.',
-  introZh: '跟著節目表、入座，觀看作品。',
   nameLabel: 'ATTENDEE NAME',
   nameLabelZh: '觀影者名稱',
   updatedAt: 0,
@@ -750,7 +742,6 @@ const persistedSnapshot = () => ({
   savedAt: Date.now(),
   schedule: programmeSchedule,
   siteStyle,
-  gateBackground,
   customVideos: customVideosByVenue,
   npcNames,
   npcTitles,
@@ -975,14 +966,11 @@ const restorePersistedState = () => {
     siteStyle.updatedAt = clampNumber(saved.siteStyle.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0);
   }
 
-  if (validYoutubeId(saved.gateBackground?.youtubeId)) {
-    gateBackground.youtubeId = saved.gateBackground.youtubeId;
-    gateBackground.updatedAt = clampNumber(saved.gateBackground.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0);
-  }
-
+  // Older snapshots also carry a video backdrop, kicker and introduction.
+  // Only the live entrance's current editable labels are restored.
   if (saved.gateCopy && typeof saved.gateCopy === 'object') {
-    for (const field of ['kicker', 'kickerZh', 'title', 'titleZh', 'intro', 'introZh', 'nameLabel', 'nameLabelZh']) {
-      const value = safeText(saved.gateCopy[field], field.startsWith('intro') ? 300 : 80);
+    for (const field of ['title', 'titleZh', 'nameLabel', 'nameLabelZh']) {
+      const value = safeText(saved.gateCopy[field], 80);
       if (value) gateCopy[field] = value;
     }
     gateCopy.updatedAt = clampNumber(saved.gateCopy.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0);
@@ -1360,7 +1348,6 @@ const stateFor = (visitor) => ({
   messages: messages.filter((message) => canSeeMessage(visitor, message)).slice(-100),
   schedule: programmeSchedule,
   siteStyle,
-  gateBackground,
   mentorCarrierId,
   mentorFollower: mentorFollower(),
   mentorFeedCounts: mentorFeedCounts(),
@@ -1929,7 +1916,7 @@ const server = createServer(async (request, response) => {
       // DJ profiles dropped at boot, so every STAFF edit to a DJ card was lost
       // at the next deploy. It sat on `/api/admin/state` until 2026-10-12, where
       // the capture never looked.
-      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), schedule: programmeSchedule, siteStyle, gateBackground, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, djProfileSeed: DJ_PROFILE_SEED, shopLink, templeSign, entranceSign, gateCopy, trackTempos, trackDurations, immersiveSources, videoTitles, clubRequest, venueQueues, jukebox: jukeboxSnapshot(), wishes });
+      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), schedule: programmeSchedule, siteStyle, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, djProfileSeed: DJ_PROFILE_SEED, shopLink, templeSign, entranceSign, gateCopy, trackTempos, trackDurations, immersiveSources, videoTitles, clubRequest, venueQueues, jukebox: jukeboxSnapshot(), wishes });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
@@ -2749,7 +2736,6 @@ a{color:#e8b64a}</style>
           messages: messages.slice(-CHAT_HISTORY_LIMIT),
           schedule: programmeSchedule,
           siteStyle,
-          gateBackground,
           mentorCarrierId,
           mentorFollower: mentorFollower(),
           mentorFeedCounts: mentorFeedCounts(),
@@ -2869,16 +2855,6 @@ a{color:#e8b64a}</style>
         scheduleBroadcast();
         persist();
         return json(response, 200, { ok: true, siteStyle });
-      }
-      if (request.method === 'POST' && url.pathname === '/api/admin/gate-background') {
-        const youtubeUrl = safeText(payload.youtubeUrl, 300);
-        const youtubeId = youtubeIdFromUrl(youtubeUrl);
-        if (!youtubeId || !/^[A-Za-z0-9_-]{6,20}$/.test(youtubeId)) return apiError(response, 400, 'Invalid YouTube link.');
-        gateBackground.youtubeId = youtubeId;
-        gateBackground.updatedAt = Date.now();
-        scheduleBroadcast();
-        persist();
-        return json(response, 200, { ok: true, gateBackground });
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/key') {
         // The header already proved the caller holds the current key, but the
@@ -3052,8 +3028,8 @@ a{color:#e8b64a}</style>
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/gate-copy') {
         const next = {};
-        for (const field of ['kicker', 'kickerZh', 'title', 'titleZh', 'intro', 'introZh', 'nameLabel', 'nameLabelZh']) {
-          const value = safeText(payload[field], field.startsWith('intro') ? 300 : 80);
+        for (const field of ['title', 'titleZh', 'nameLabel', 'nameLabelZh']) {
+          const value = safeText(payload[field], 80);
           if (!value) return apiError(response, 400, 'Complete every gate field in both languages.');
           next[field] = value;
         }

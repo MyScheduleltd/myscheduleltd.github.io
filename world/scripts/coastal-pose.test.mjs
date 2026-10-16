@@ -11,7 +11,7 @@ globalThis.self=globalThis;
 globalThis.createImageBitmap=async(blob)=>{const bytes=await blob.arrayBuffer();const view=new DataView(bytes);return {width:view.getUint32(16),height:view.getUint32(20),close(){}};};
 globalThis.document = {createElement:()=>({width:64,height:64,getContext:()=>({fillRect(){}})})};
 const output=await build({stdin:{contents:"export {applyWornStyle} from './src/world/WornStyle'; export * from './src/world/MentorDog'; export * from './src/world/HandPose'; export * from './src/world/RooftopBand'; export { HeadTracking } from './src/world/HeadTracking'; export { FestivalWorld } from './src/world/FestivalWorld'; export * from './src/world/CoastalAvatar'; export * from './src/world/CoastalPose'; export * from './src/world/CoastalCarry'; export * from './src/world/ImportedAvatar'; export * from './src/world/CoastalSkateboard'; export * from './src/world/CoastalGeometry'; export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,loader:{'.png':'dataurl'},platform:'node',format:'esm',write:false});
-const {HeadTracking,RooftopBand,BAND_MEMBERS,FIST,FINGER_NAMES,handJointsFromLandmarks,handPoseFromJoints,MENTOR_NESTLE,applyWornStyle,waveCoastalPose,fallCoastalPose,landCoastalPose,djCoastalPose,hitCoastalPose,perchMentor,stepMentorGait,createMentorDog,poseCoastalCarry,loadImportedAvatar,attachImportedAvatar,syncImportedAvatars,COASTAL_CUP_OFFSET,COASTAL_STRAW_TIP,FestivalWorld,jumpCoastalArms,setCoastalSwimwear,punchCoastalPose,setCoastalFists,createCoastalSedan,CONVERTIBLE,walkCoastalPose,danceCoastalPose,COASTAL_STRIDE_LENGTH,THREE,createCoastalAvatar,supportCoastalPose,seatCoastalLegs,coastalFootHeights,skateCoastalPose,createCoastalSkateboard}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
+const {HeadTracking,RooftopBand,BAND_MEMBERS,FIST,FINGER_NAMES,handJointsFromLandmarks,handPoseFromJoints,MENTOR_NESTLE,applyWornStyle,waveCoastalPose,fallCoastalPose,landCoastalPose,djCoastalPose,hitCoastalPose,perchMentor,stepMentorGait,createMentorDog,poseCoastalCarry,loadImportedAvatar,attachImportedAvatar,importedAvatarRoots,syncImportedAvatars,COASTAL_CUP_OFFSET,COASTAL_STRAW_TIP,FestivalWorld,jumpCoastalArms,setCoastalSwimwear,punchCoastalPose,setCoastalFists,createCoastalSedan,CONVERTIBLE,walkCoastalPose,danceCoastalPose,COASTAL_STRIDE_LENGTH,THREE,createCoastalAvatar,supportCoastalPose,seatCoastalLegs,coastalFootHeights,skateCoastalPose,createCoastalSkateboard}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
 function character(){
   const root=new THREE.Group();root.position.y=.28;
   const rig=createCoastalAvatar(root,{skin:'#dfb590',hair:'#3b3633',top:'#d0cbc1',bottoms:'#44464a',swimwear:'#577467'},true,new THREE.Group());
@@ -1831,4 +1831,99 @@ test('both dressed avatars expose all five weighted distal digits in all three o
    for(let i=0;i<g.attributes.position.count;i+=11){const p=m.applyBoneTransform(i,new THREE.Vector3().fromBufferAttribute(g.attributes.position,i));assert.ok(Number.isFinite(p.x+p.y+p.z));}
   }
  }
+});
+
+test('distant avatar throttle retains the supported rendered pose while its authoritative root keeps moving',()=>{
+ for(const top of ['#18191b','#28191b']){
+  const {root,rig}=importedCharacter({top}),world=Object.create(FestivalWorld.prototype);
+  Object.assign(world,{locomotion:new WeakMap(),reviewLastDelta:1/60});world.footSurfaceAt=()=>0;
+  const mesh=bodyMesh(root),positions=mesh.geometry.getAttribute('position');
+  const sample=()=>{
+   root.updateMatrixWorld(true);mesh.skeleton.update();
+   return Array.from({length:Math.min(160,positions.count)},(_,i)=>{
+    const vertex=Math.floor(i*positions.count/Math.min(160,positions.count));
+    return mesh.localToWorld(mesh.applyBoneTransform(vertex,new THREE.Vector3().fromBufferAttribute(positions,vertex)));
+   });
+  };
+  for(const phase of [0,.7,1.5,2.5]){
+   root.userData.cullThrottle=false;
+   world.animateRig(rig,phase,.62);syncImportedAvatars(root);
+   const supported=sample(),offset=new THREE.Vector3(.04,.012,0);
+   root.position.add(offset);root.userData.cullThrottle=true;
+   world.animateRig(rig,phase+.1,.62);syncImportedAvatars(root);
+   const held=sample();
+   const movement=Math.max(...held.map((point,i)=>point.distanceTo(supported[i].clone().add(offset))));
+   assert.ok(movement<1e-7,`${top} throttled phase ${phase}: rendered skin shifts ${movement.toFixed(5)} beyond root travel`);
+  }
+  root.userData.cullThrottle=false;
+ }
+});
+
+test('the production distance throttle holds a complete floor-supported pose and resumes immediately nearby',()=>{
+ for(const top of ['#18191b','#28191b']){
+  const {root,rig}=importedCharacter({top}),world=Object.create(FestivalWorld.prototype);
+  const camera=new THREE.PerspectiveCamera(58,16/9,.1,300);camera.position.set(0,3,50);camera.lookAt(0,1,0);
+  Object.assign(world,{player:new THREE.Group(),camera,cameraWorldPosition:camera.position.clone(),avatarFrame:0,
+   avatarViewProjection:new THREE.Matrix4(),avatarFrustum:new THREE.Frustum(),avatarCentre:new THREE.Vector3(),
+   avatarSphere:new THREE.Sphere(),locomotion:new WeakMap(),reviewLastDelta:1/60});
+  world.footSurfaceAt=()=>0;
+  const mesh=bodyMesh(root),vertex=Math.floor(mesh.geometry.getAttribute('position').count*.47);
+  const renderedPoint=()=>{root.updateMatrixWorld(true);mesh.skeleton.update();return mesh.localToWorld(mesh.getVertexPosition(vertex,new THREE.Vector3()));};
+  let previous,held=0,posed=0;
+  for(let frame=0;frame<48;frame++){
+   root.position.z+=.04;world.cullAvatars();
+   world.animateRig(rig,frame/10,.62);syncImportedAvatars(root);
+   const current=renderedPoint();
+   assert.equal(root.userData.importedCulled(),false,'a visible distant body must remain drawn');
+   if(root.userData.cullThrottle&&previous){
+    assert.ok(current.distanceTo(previous.clone().add(new THREE.Vector3(0,0,.04)))<1e-7,'throttled skin changed relative to its moving root');held++;
+   }else posed++;
+   previous=current;
+  }
+  assert.ok(held>20&&posed>20,'exercise the actual alternating 35 m cadence');
+  camera.position.z=20;camera.lookAt(root.position);world.cameraWorldPosition.copy(camera.position);
+  for(let frame=0;frame<3;frame++){
+   world.cullAvatars();assert.equal(root.userData.cullThrottle,false,'nearby bodies must pose on every frame');
+   world.animateRig(rig,frame/10,.62);syncImportedAvatars(root);
+   assert.ok(Math.abs(lowestSole(root))<.04,'returning to the full pose must retain floor contact');
+  }
+ }
+});
+
+test('distant held skins retain their seated, skate and dance transforms as well as their bones',()=>{
+ for(const top of ['#18191b','#28191b'])for(const pose of ['seat','skate','dance']){
+  const {root,rig}=importedCharacter({top}),world=Object.create(FestivalWorld.prototype);
+  Object.assign(world,{locomotion:new WeakMap(),reviewLastDelta:1/60,clubBeat:{bpm:120},clock:{elapsedTime:7.8},npcs:[],remoteAvatars:new Map(),seats:[]});
+  world.footSurfaceAt=()=>0;world.groundHeightAt=()=>.28;
+  const animate=phase=>{
+   world.clock.elapsedTime=phase;
+   world.animateRig(rig,phase,.62,pose==='dance'?'dance':undefined,pose==='skate');
+   if(pose==='seat')world.poseRigSeated(rig);
+   syncImportedAvatars(root);root.updateMatrixWorld(true);
+  };
+  const sample=()=>root.userData.importedAvatar.meshes.filter(shown).flatMap(mesh=>{
+   mesh.skeleton.update();const p=mesh.geometry.getAttribute('position');
+   return Array.from({length:32},(_,i)=>mesh.localToWorld(mesh.getVertexPosition(Math.floor(i*p.count/32),new THREE.Vector3())));
+  });
+  root.userData.cullThrottle=false;animate(7.8);const posed=sample();
+  root.userData.cullThrottle=true;animate(7.9);const held=sample();
+  const changed=Math.max(...held.map((p,i)=>p.distanceTo(posed[i])));
+  assert.ok(changed<1e-7,`${top} ${pose}: held surface changed ${changed}`);
+  root.userData.cullThrottle=false;
+ }
+});
+
+test('disposing an avatar preview unregisters it and frees instance resources without disposing shared assets',()=>{
+ const first=importedCharacter(),second=importedCharacter(),a=bodyMesh(first.root),b=bodyMesh(second.root);
+ const model=first.rig.visualRoot.children.find(child=>child.name.startsWith('Higgsfield avatar'));
+ let geometryDisposals=0,materialDisposals=0;
+ a.geometry.addEventListener('dispose',()=>geometryDisposals++);a.material.addEventListener('dispose',()=>materialDisposals++);
+ a.skeleton.computeBoneTexture();const texture=a.skeleton.boneTexture;let textureDisposals=0;texture.addEventListener('dispose',()=>textureDisposals++);
+ assert.equal(a.geometry,b.geometry);assert.equal(importedAvatarRoots.has(first.root),true);
+ first.root.userData.disposeImportedAvatar();first.root.userData.disposeImportedAvatar();
+ assert.equal(importedAvatarRoots.has(first.root),false);assert.equal(importedAvatarRoots.has(second.root),true);
+ assert.equal(model?.parent===null,true,'the disposed model is detached');
+ assert.equal(materialDisposals,1);assert.equal(textureDisposals,1);assert.equal(geometryDisposals,0);
+ walkCoastalPose(second.rig,.7,.6);syncImportedAvatars(second.root);b.skeleton.update();
+ assert.ok(b.getVertexPosition(0,new THREE.Vector3()).toArray().every(Number.isFinite),'another instance still uses the shared geometry');
 });

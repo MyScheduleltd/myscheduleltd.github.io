@@ -181,17 +181,9 @@
     "brandOffsetY": 4,
     "updatedAt": 1787051404114
   },
-  "gateBackground": {
-    "youtubeId": "Ffli-o0ocT0",
-    "updatedAt": 0
-  },
   "gateCopy": {
-    "kicker": "BETA",
-    "kickerZh": "BETA",
     "title": "MY THEATRE",
     "titleZh": "我的戲院",
-    "intro": "Follow the programme, take a seat, watch the work.",
-    "introZh": "跟著節目表、入座,觀看作品。",
     "nameLabel": "ATTENDEE NAME",
     "nameLabelZh": "觀影者名稱",
     "updatedAt": 0

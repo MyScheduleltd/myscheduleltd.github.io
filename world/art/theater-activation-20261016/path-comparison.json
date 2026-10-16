@@ -1,0 +1,50 @@
+{
+  "methodology": "Actual FestivalWorld compositor and programme-update methods, executed against a 20-scenery-mesh/one-avatar resource-cache simulator. Counts are deterministic code-path evidence, not measured GPU time or real-device FPS. Main pass is primed before the first video activation. Baseline is local git HEAD, current same dependency graph.",
+  "baselineRevision": "7f25d177fd701919e0148447a78373507abaeb73",
+  "results": {
+    "baseline-desktop": {
+      "contexts": 2,
+      "activation": {
+        "geometryUploads": 21,
+        "shaderVariants": 1,
+        "shadowUpdates": 1,
+        "draws": 21
+      }
+    },
+    "baseline-mobile": {
+      "contexts": 1,
+      "activation": {
+        "geometryUploads": 1,
+        "shaderVariants": 2,
+        "shadowUpdates": 0,
+        "draws": 2
+      }
+    },
+    "baseline-programme-refreshes": {
+      "updates": 50,
+      "allocatedPosterCanvases": 50
+    },
+    "after-desktop": {
+      "contexts": 1,
+      "activation": {
+        "geometryUploads": 1,
+        "shaderVariants": 1,
+        "shadowUpdates": 0,
+        "draws": 2
+      }
+    },
+    "after-mobile": {
+      "contexts": 1,
+      "activation": {
+        "geometryUploads": 1,
+        "shaderVariants": 1,
+        "shadowUpdates": 0,
+        "draws": 2
+      }
+    },
+    "after-programme-refreshes": {
+      "updates": 50,
+      "allocatedPosterCanvases": 1
+    }
+  }
+}

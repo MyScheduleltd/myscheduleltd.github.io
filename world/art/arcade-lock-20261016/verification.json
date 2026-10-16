@@ -1,0 +1,67 @@
+{
+  "scope": "local only",
+  "unlockTaiwan": "2026-11-02T00:00:00+08:00",
+  "unlockUtc": "2026-11-01T16:00:00.000Z",
+  "fullSuite": {
+    "passed": 543,
+    "failed": 0
+  },
+  "releaseTests": 13,
+  "build": "passed",
+  "browser": {
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "closeup": {
+      "dialogCount": 0,
+      "exit": {
+        "bottom": 608.0546875,
+        "height": 36,
+        "left": 587.69921875,
+        "right": 683.94140625,
+        "top": 572.0546875,
+        "width": 96.2421875,
+        "x": 587.69921875,
+        "y": 572.0546875
+      },
+      "fullscreenHidden": true,
+      "gameIframes": [],
+      "locked": "true",
+      "menuCapture": "true",
+      "playing": "true"
+    },
+    "exitButton": {
+      "hudHidden": true,
+      "menuCapture": "false",
+      "playing": null
+    },
+    "escape": {
+      "gameIframes": 0,
+      "locked": null,
+      "menuCapture": "false"
+    },
+    "resized": {
+      "dialogCount": 0,
+      "exit": {
+        "bottom": 755.5703125,
+        "height": 36,
+        "left": 666.66015625,
+        "right": 762.90234375,
+        "top": 719.5703125,
+        "width": 96.2421875,
+        "x": 666.66015625,
+        "y": 719.5703125
+      },
+      "gameIframes": 0,
+      "height": 900,
+      "overflow": false,
+      "width": 1440
+    },
+    "consoleErrors": []
+  },
+  "physicalDevices": "not tested",
+  "publication": false,
+  "lockedViewTests": 6,
+  "mobile": "availability popup retained; touch-device branch covered by actual App tests"
+}

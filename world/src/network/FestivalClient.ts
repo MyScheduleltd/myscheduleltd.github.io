@@ -81,11 +81,6 @@ export interface SiteStyle {
   updatedAt: number;
 }
 
-export interface GateBackground {
-  youtubeId: string;
-  updatedAt: number;
-}
-
 export type CustomVideos = Record<VenueKey, CatalogueEntry[]>;
 
 /** Beats per minute per track, used to strobe the club in time. */
@@ -143,7 +138,6 @@ export interface FestivalState {
   messages: NetworkMessage[];
   schedule: ProgrammeSchedule;
   siteStyle: SiteStyle;
-  gateBackground: GateBackground;
   mentorCarrierId: string | null;
   mentorFollower: MentorFollower | null;
   mentorFeedCounts: MentorFeedCounts;
@@ -214,7 +208,6 @@ export interface AdminState {
   messages: NetworkMessage[];
   schedule: ProgrammeSchedule;
   siteStyle: SiteStyle;
-  gateBackground: GateBackground;
   mentorCarrierId: string | null;
   mentorFollower: MentorFollower | null;
   mentorFeedCounts: MentorFeedCounts;
@@ -277,12 +270,8 @@ export type DjProfiles = Record<string, DjProfile>;
 
 /** The words on the gate, in both languages. */
 export interface GateCopy {
-  kicker: string;
-  kickerZh: string;
   title: string;
   titleZh: string;
-  intro: string;
-  introZh: string;
   nameLabel: string;
   nameLabelZh: string;
   updatedAt: number;
@@ -373,7 +362,6 @@ export interface ShopLink {
 export interface PublicConfig {
   schedule: ProgrammeSchedule;
   siteStyle: SiteStyle;
-  gateBackground: GateBackground;
   customVideos: CustomVideos;
   npcNames: NpcNames;
   npcProfiles: NpcProfile[];
@@ -863,13 +851,6 @@ export class FestivalClient {
     await this.adminRequest('/api/admin/video-title', key, {
       method: 'POST',
       body: JSON.stringify({ youtubeId, ...titles }),
-    });
-  }
-
-  async updateGateBackground(key: string, youtubeUrl: string): Promise<void> {
-    await this.adminRequest('/api/admin/gate-background', key, {
-      method: 'POST',
-      body: JSON.stringify({ youtubeUrl }),
     });
   }
 

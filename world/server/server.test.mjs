@@ -353,7 +353,7 @@ test('staff wordmark settings are shared in public config', async () => {
   assert.equal(state.siteStyle.brandOffsetY, -6);
 });
 
-test('staff can change the looped YouTube background on the sign-in page', async () => {
+test('the retired sign-in video endpoint is removed and no longer appears in public or staff state', async () => {
   const updated = await fetch(`${baseUrl}/api/admin/gate-background`, {
     method: 'POST',
     headers: {
@@ -363,11 +363,108 @@ test('staff can change the looped YouTube background on the sign-in page', async
     },
     body: JSON.stringify({ youtubeUrl: 'https://youtu.be/dQw4w9WgXcQ' }),
   });
-  assert.equal(updated.status, 200);
+  assert.equal(updated.status, 404);
   const configResponse = await fetch(`${baseUrl}/api/config`);
   const config = await configResponse.json();
-  assert.equal(config.gateBackground.youtubeId, 'dQw4w9WgXcQ');
-  assert.ok(config.gateBackground.updatedAt > 0);
+  assert.equal(Object.hasOwn(config, 'gateBackground'), false);
+  const staff = await (await fetch(`${baseUrl}/api/admin/state`, {
+    headers: { 'x-festival-admin-key': 'test-admin-key' },
+  })).json();
+  assert.equal(Object.hasOwn(staff, 'gateBackground'), false);
+  assert.deepEqual(Object.keys(config.gateCopy).sort(), ['nameLabel', 'nameLabelZh', 'title', 'titleZh', 'updatedAt']);
+});
+
+test('staff edit only current sign-in titles and name labels without the retired kicker or subtitle', async () => {
+  const fields = { title: 'THE LIVE WORLD', titleZh: '即時世界', nameLabel: 'YOUR NAME', nameLabelZh: '你的名字' };
+  const updated = await fetch(`${baseUrl}/api/admin/gate-copy`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173' },
+    // A still-open older staff form may send its former fields. They must not
+    // be restored or broadcast, and must not block editing the retained ones.
+    body: JSON.stringify({ ...fields, kicker: 'OLD BETA', kickerZh: '舊版', intro: 'OLD SUBTITLE', introZh: '舊介紹' }),
+  });
+  assert.equal(updated.status, 200);
+  const payload = await updated.json();
+  for (const [field, value] of Object.entries(fields)) assert.equal(payload.gateCopy[field], value);
+  assert.deepEqual(Object.keys(payload.gateCopy).sort(), [...Object.keys(fields), 'updatedAt'].sort());
+  const response = await fetch(`${baseUrl}/api/admin/gate-copy`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173' },
+    body: JSON.stringify({ ...fields, nameLabelZh: '' }),
+  });
+  assert.equal(response.status, 400, 'required retained labels must still be validated');
+});
+
+test('legacy sign-in settings migrate without losing current titles, name labels or unrelated site styling', async () => {
+  const port = await freePort(), legacyUrl = `http://127.0.0.1:${port}`;
+  const stateFile = joinPath(temporaryDirectory, 'legacy-gate-state.json');
+  const retained = { title: 'PERSISTED THEATRE', titleZh: '保留戲院', nameLabel: 'GUEST NAME', nameLabelZh: '訪客名稱', updatedAt: 123 };
+  writeFileSync(stateFile, JSON.stringify({
+    version: 2, gateBackground: { youtubeId: 'dQw4w9WgXcQ', updatedAt: 99 },
+    gateCopy: { ...retained, kicker: 'OLD BETA', kickerZh: '舊標籤', intro: 'OLD SUBTITLE', introZh: '舊介紹' },
+    siteStyle: { brandFontSize: 31, brandOffsetX: 17 },
+  }));
+  let instance = await startServer(port, stateFile);
+  try {
+    const config = await (await fetch(`${legacyUrl}/api/config`)).json();
+    assert.deepEqual(config.gateCopy, retained);
+    assert.equal(Object.hasOwn(config, 'gateBackground'), false);
+    assert.equal(config.siteStyle.brandFontSize, 31); assert.equal(config.siteStyle.brandOffsetX, 17);
+    const sessionResponse = await fetch(`${legacyUrl}/api/session`, {
+      method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' },
+      body: JSON.stringify({ name: 'LEGACY GUEST' }),
+    });
+    assert.equal(sessionResponse.status, 201);
+    const session = await sessionResponse.json();
+    assert.deepEqual(session.state.gateCopy, retained);
+    assert.equal(Object.hasOwn(session.state, 'gateBackground'), false);
+    // Restoration itself does not rewrite an operator's disk. The next real
+    // settings save drops the retired fields from the persisted snapshot.
+    const save = await fetch(`${legacyUrl}/api/admin/style`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173' },
+      body: JSON.stringify({ brandFontSize: 31, brandOffsetX: 17 }),
+    });
+    assert.equal(save.status, 200);
+  } finally { await stopServer(instance); }
+  const persisted = JSON.parse(readFileSync(stateFile, 'utf8'));
+  assert.deepEqual(persisted.gateCopy, retained);
+  assert.equal(Object.hasOwn(persisted, 'gateBackground'), false, 'retired settings returned on persistence');
+  instance = await startServer(port, stateFile);
+  try {
+    const config = await (await fetch(`${legacyUrl}/api/config`)).json();
+    assert.deepEqual(config.gateCopy, retained);
+    assert.equal(config.siteStyle.brandFontSize, 31);
+  } finally { await stopServer(instance); }
+});
+
+test('capturing an older service cannot reintroduce retired sign-in settings into the committed seed', async () => {
+  const port = await freePort(), target = joinPath(temporaryDirectory, 'legacy-gate-capture.json');
+  const fields = { title: 'CAPTURED THEATRE', titleZh: '擷取戲院', nameLabel: 'NAME', nameLabelZh: '名稱', updatedAt: 27 };
+  const upstream = createHttpServer((request, response) => {
+    assert.equal(request.url, '/api/config');
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({
+      schedule: { shore: { name: 'SHORE', subtitle: 'FILMS', order: [], currentIndex: 0, mode: 'continuous' } },
+      gateCopy: { ...fields, kicker: 'OLD BETA', kickerZh: '舊版', intro: 'OLD SUBTITLE', introZh: '舊介紹' },
+      gateBackground: { youtubeId: 'dQw4w9WgXcQ', updatedAt: 99 },
+      siteStyle: { brandFontSize: 29 },
+    }));
+  });
+  await new Promise(resolve => upstream.listen(port, '127.0.0.1', resolve));
+  try {
+    await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, ['scripts/capture-state.mjs', `http://127.0.0.1:${port}`], {
+        cwd: new URL('..', import.meta.url), env: { ...process.env, FESTIVAL_SEED_FILE: target }, stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let output = ''; child.stdout.on('data', chunk => { output += chunk; }); child.stderr.on('data', chunk => { output += chunk; });
+      child.once('error', reject); child.once('exit', code => code === 0 ? resolve() : reject(new Error(output)));
+    });
+    const captured = JSON.parse(readFileSync(target, 'utf8'));
+    assert.deepEqual(captured.gateCopy, fields);
+    assert.equal(Object.hasOwn(captured, 'gateBackground'), false);
+    assert.equal(captured.siteStyle.brandFontSize, 29);
+  } finally { await new Promise(resolve => upstream.close(resolve)); }
 });
 
 test('staff can update NPC names and job titles across the festival', async () => {
@@ -823,12 +920,12 @@ test('staff settings survive a service restart', async () => {
 
   let instance = await startServer(port, stateFile);
   try {
-    const background = await fetch(`${restartUrl}/api/admin/gate-background`, {
+    const gate = await fetch(`${restartUrl}/api/admin/gate-copy`, {
       method: 'POST',
       headers: staffHeaders,
-      body: JSON.stringify({ youtubeUrl: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ' }),
+      body: JSON.stringify({ title: 'RESTART THEATRE', titleZh: '重啟戲院', nameLabel: 'VISITOR', nameLabelZh: '觀眾' }),
     });
-    assert.equal(background.status, 200);
+    assert.equal(gate.status, 200);
 
     const renamed = await fetch(`${restartUrl}/api/admin/npcs`, {
       method: 'POST',
@@ -871,7 +968,9 @@ test('staff settings survive a service restart', async () => {
     const configResponse = await fetch(`${restartUrl}/api/config`);
     assert.equal(configResponse.status, 200);
     const config = await configResponse.json();
-    assert.equal(config.gateBackground.youtubeId, 'aqz-KE-bpKQ');
+    assert.equal(config.gateCopy.title, 'RESTART THEATRE');
+    assert.equal(config.gateCopy.nameLabelZh, '觀眾');
+    assert.equal(Object.hasOwn(config, 'gateBackground'), false);
     assert.equal(config.npcNames.KENNY, 'RESTART KENNY');
     assert.equal(config.npcProfiles.find((profile) => profile.id === 'KENNY').title, 'Restart Director');
     assert.equal(config.customVideos.shore.at(-1).title, 'RESTART TEST WORK');
@@ -891,7 +990,8 @@ test('a discarded settings file leaves the festival on its defaults', async () =
   const instance = await startServer(port, 'off');
   try {
     const config = await (await fetch(`${throwawayUrl}/api/config`)).json();
-    assert.equal(config.gateBackground.youtubeId, 'Ffli-o0ocT0');
+    assert.equal(Object.hasOwn(config, 'gateBackground'), false);
+    assert.equal(config.gateCopy.title, 'MY THEATRE');
     assert.equal(config.npcNames.KENNY, 'KENNY');
   } finally {
     await stopServer(instance);

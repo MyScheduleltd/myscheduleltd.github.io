@@ -1,0 +1,40 @@
+{
+  "club": {
+    "boothFrontZ": 34.95,
+    "boothPlatformMargin": 1.25,
+    "cameraMode": "screening",
+    "compositedAvatarIds": [
+      "LOCAL-VISITOR",
+      "NPC:LOUI",
+      "NPC:XIEHGAN",
+      "VISITOR:projector-review-visitor"
+    ],
+    "contexts": 1,
+    "djForegroundLayer": true,
+    "djId": "XIEHGAN",
+    "djInteractionRange": 8,
+    "djMaxX": -66.93,
+    "djMinX": -68.78,
+    "djX": -68,
+    "localVisitorForegroundLayer": true,
+    "npcCount": 12,
+    "npcForegroundLayerCount": 12,
+    "originalVisitorForegroundLayer": true,
+    "remoteVisitorCount": 0,
+    "remoteVisitorForegroundLayerCount": 0,
+    "reviewNpcId": "LOUI",
+    "reviewVisitorForegroundLayer": true,
+    "screenCentered": true,
+    "screenDjGap": -8.14,
+    "screenOverlapsDj": true,
+    "screenWidth": 14.72,
+    "screenX": -68,
+    "screenY": 6.5,
+    "seated": true,
+    "singleContextComposite": true,
+    "stageDepth": 7.2,
+    "stageFrontZ": 33.7,
+    "venue": "club",
+    "venueCenterX": -68
+  }
+}

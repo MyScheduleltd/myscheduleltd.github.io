@@ -24,7 +24,7 @@ globalThis.fetch = async url => String(url).startsWith('blob:')
   : (assert.equal(String(url), 'http://127.0.0.1:4173/moth-arcade.glb'), new Response(asset));
 globalThis.Image = class { set src(_) {} };
 const compiled = await build({
-  stdin: { contents: "export { FestivalWorld, rooftopBounds } from './src/world/FestivalWorld'; export { arcadeScreenFrame } from './src/world/MothArcade'; export { PLANET, planetBendPoint } from './src/world/PlanetCurve'; export * as THREE from 'three';", resolveDir: process.cwd(), loader: 'ts' },
+  stdin: { contents: "export { FestivalWorld, rooftopBounds } from './src/world/FestivalWorld'; export { MothArcadeView } from './src/world/MothArcade'; export { PLANET, planetBendPoint } from './src/world/PlanetCurve'; export * as THREE from 'three';", resolveDir: process.cwd(), loader: 'ts' },
   bundle: true, loader: { '.png': 'dataurl' }, platform: 'node', format: 'esm', write: false,
   plugins: [{ name: 'placement-fixture', setup(builder) {
     builder.onLoad({ filter: /FestivalWorld\.ts$/ }, async ({ path }) => ({
@@ -36,7 +36,7 @@ const compiled = await build({
     }));
   } }],
 });
-const { FestivalWorld, rooftopBounds, arcadeScreenFrame, PLANET, planetBendPoint, THREE } = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
+const { FestivalWorld, rooftopBounds, MothArcadeView, PLANET, planetBendPoint, THREE } = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 
 test('the whole authored cabinet clears the actual rooftop wall while the pair stays centred', async () => {
   const world = Object.create(FestivalWorld.prototype);
@@ -92,8 +92,8 @@ test('the whole authored cabinet clears the actual rooftop wall while the pair s
 
   // Exercise the production play camera with the accepted tilted screen,
   // rather than a synthetic vertical monitor that would conceal this defect.
-  const frame = arcadeScreenFrame(arcade.screen);
-  Object.assign(world, { arcadeSession: { frame }, player: new THREE.Group(),
+  const arcadeView = new MothArcadeView(arcade.screen);
+  Object.assign(world, { arcadeView, player: new THREE.Group(),
     camera: new THREE.PerspectiveCamera(58, 2808 / 1476, .1, 300) });
   world.updateCamera(.016, 0);
   world.camera.updateMatrixWorld(true);

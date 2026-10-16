@@ -189,3 +189,20 @@ test('a slow model stays usable while chunks arrive and reports progress', async
   assert.deepEqual(progress, [3, 6, 11]);
   stop();
 });
+
+test('download progress uses a byte total only when it describes decoded data', async () => {
+  for (const compressed of [false, true]) {
+    const { mirror } = await visit({
+      [FILE]: () => new Response('model bytes', { headers: {
+        'content-length': compressed ? '4' : '11',
+        ...(compressed ? { 'content-encoding': 'gzip' } : {}),
+      } }),
+    }, 'http://localhost/');
+    const progress = [];
+    const stop = mirror.watchAssetDownloads(value => progress.push(value));
+    await mirror.fetchAsset(FILE);
+    stop();
+    assert.equal(progress.at(-1).received, 11);
+    assert.equal(progress.at(-1).total, compressed ? undefined : 11);
+  }
+});

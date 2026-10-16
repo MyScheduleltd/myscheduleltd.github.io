@@ -1,0 +1,30 @@
+[
+  {
+    "mode": "old-throttle",
+    "sex": "male",
+    "frames": 240,
+    "maxShift": 0.1942811743389128,
+    "maxVerticalShift": 0.1942811743389128
+  },
+  {
+    "mode": "old-throttle",
+    "sex": "female",
+    "frames": 240,
+    "maxShift": 0.14066123408915576,
+    "maxVerticalShift": 0.14066123408915576
+  },
+  {
+    "mode": "held-full-pose",
+    "sex": "male",
+    "frames": 240,
+    "maxShift": 3.552713678800501e-15,
+    "maxVerticalShift": 0
+  },
+  {
+    "mode": "held-full-pose",
+    "sex": "female",
+    "frames": 240,
+    "maxShift": 3.552713678800501e-15,
+    "maxVerticalShift": 0
+  }
+]

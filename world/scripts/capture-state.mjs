@@ -72,8 +72,10 @@ const seed = {
   }])),
   customVideos: live.customVideos ?? {},
   siteStyle: live.siteStyle,
-  gateBackground: live.gateBackground,
-  gateCopy: live.gateCopy,
+  // Older services still return the retired video/kicker/intro settings.
+  // A capture must not reintroduce controls removed from the live entrance.
+  gateCopy: live.gateCopy ? Object.fromEntries(['title', 'titleZh', 'nameLabel', 'nameLabelZh', 'updatedAt']
+    .filter(field => live.gateCopy[field] !== undefined).map(field => [field, live.gateCopy[field]])) : undefined,
   shopLink: live.shopLink,
   templeSign: live.templeSign,
   djProfiles: live.djProfiles,
