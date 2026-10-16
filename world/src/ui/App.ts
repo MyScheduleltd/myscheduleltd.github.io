@@ -497,6 +497,7 @@ export class App {
   private festivalServiceReady = false;
   private connectionStatus: ConnectionStatus = 'offline';
   private networkState?: FestivalState;
+  private sharedNetworkKey = '';
   private staffKey = sessionStorage.getItem(STAFF_KEY) ?? '';
   private adminState?: AdminState;
   private adminError = '';
@@ -1920,7 +1921,7 @@ export class App {
         this.root.dataset.mobileStabilityLive = live;
       }, 5_000);
       this.startPublicScreening(true);
-    } else if (['theater-activation', 'mobile-memory'].includes(reviewTarget ?? '') && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+    } else if (['theater-activation', 'mobile-memory', 'crowd-performance'].includes(reviewTarget ?? '') && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       // Loopback-only readout: follow normal walking/venue activation without
       // a stress fixture changing the work being measured.
       const sample = () => { this.root.dataset.festivalPerf = JSON.stringify(this.world?.performanceSnapshot()); };
@@ -4918,6 +4919,11 @@ export class App {
   }
 
   private handleNetworkState(state: FestivalState): void {
+    const sharedKey = JSON.stringify(Object.fromEntries(Object.entries(state)
+      .filter(([key]) => !['serverTime', 'selfId', 'visitors'].includes(key))));
+    const sharedChanged = sharedKey !== this.sharedNetworkKey;
+    this.sharedNetworkKey = sharedKey;
+    const previousRequestAt = this.networkState?.clubRequest?.at ?? 0;
     const previousSchedule = JSON.stringify(this.networkState?.schedule ?? {});
     const previousPamphletUpdatedAt = this.pamphlet.updatedAt;
     const previousMentorCarrierId = this.networkState?.mentorCarrierId ?? null;
@@ -4930,7 +4936,7 @@ export class App {
     }
     this.networkState = state;
     this.siteStyle = { ...this.siteStyle, ...state.siteStyle };
-    this.npcProfiles = this.normalizeNpcProfiles(state.npcProfiles, state.npcNames);
+    if (sharedChanged) this.npcProfiles = this.normalizeNpcProfiles(state.npcProfiles, state.npcNames);
     this.pamphlet = { ...this.pamphlet, ...state.pamphlet };
     if (state.gateCopy) this.gateCopy = state.gateCopy;
     const selfVisitor = state.visitors.find((visitor) => visitor.id === state.selfId);
@@ -4950,8 +4956,10 @@ export class App {
           : `${this.mentorName()} WAS PUT DOWN · MOVEMENT CONTROL RESTORED`);
       }
     }
-    this.applySiteStyle();
-    this.world?.setNpcProfiles(this.npcProfiles);
+    if (sharedChanged) {
+      this.applySiteStyle();
+      this.world?.setNpcProfiles(this.npcProfiles);
+    }
     const self = state.visitors.find((visitor) => visitor.id === state.selfId);
     // Whether the service is new enough to rule on death itself. It publishes
     // diedAt for every attendee once it can, even as a zero, so the field being
@@ -5027,6 +5035,12 @@ export class App {
     this.world?.setOccupiedSeats(
       state.seats.filter((seat) => seat.visitorId !== state.selfId).map((seat) => seat.seatId),
     );
+    if (!sharedChanged) {
+      if (this.activePanel === 'attendees' && previousAttendeeSignature !== this.attendeeListSignature(state, this.npcProfiles)) {
+        this.reopenPanelKeepingPlace('attendees');
+      }
+      return;
+    }
     // Anything said here and not yet come back from the service is kept on the
     // end, so a line does not vanish between being sent and being echoed. Each
     // is dropped the moment the service's own copy of it arrives.
@@ -5039,7 +5053,6 @@ export class App {
     ].slice(-100);
     this.renderChatStream();
     this.refreshOpenChatFeed();
-    const previousRequestAt = this.networkState?.clubRequest?.at ?? 0;
     this.syncClubBeat();
     const openSeatMenu = this.root.querySelector<HTMLElement>('#seat-menu');
     if (this.openDjBooth && openSeatMenu && !openSeatMenu.hidden && openSeatMenu.dataset.menuOwner === 'dj') {

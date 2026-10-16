@@ -1,0 +1,15 @@
+{
+  "visitors": 20,
+  "posts": 1400,
+  "seconds": 10.020032167,
+  "sseBytes": 69124285,
+  "sseBytesPerSecond": 6898609.091062013,
+  "stateEvents": 3360,
+  "maxChunkBytes": 20781,
+  "postLatencyMs": {
+    "p50": 1.1863750000002256,
+    "p95": 6.282290999999532,
+    "max": 9.419958000000406
+  },
+  "note": "Local transport latency excludes internet/mobile network and renderer costs"
+}

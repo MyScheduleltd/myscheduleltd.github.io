@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { HeadTracking, type TrackedPoint } from './HeadTracking';
 import { batchStaticScenery, type StaticBatchReport } from './StaticBatch';
 import { mobileAssetBudgetSnapshot } from './MobileAssetBudget';
+import { FrameTimings } from './FrameTimings';
 import { GamepadInput, type GamepadActionId, type GamepadFrame } from './GamepadInput';
 import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
 import { dressBuildings, dressInteriors } from './WornArchitecture';
@@ -333,6 +334,7 @@ interface RemoteAvatar {
   badge: THREE.Sprite;
   /** What this body was last seen wearing, so a change can be noticed. */
   wearing?: string;
+  updateKey?: string;
   target: THREE.Vector3;
   /** Where this body was told to be before the update now being played out. */
   previousTarget: THREE.Vector3;
@@ -1591,6 +1593,10 @@ export class FestivalWorld {
   /** What the static-scenery pass combined, for the performance review. */
   private staticBatchReport?: StaticBatchReport;
   private readonly remoteAvatars = new Map<string, RemoteAvatar>();
+  private readonly pendingRemoteVisitors = new Map<string, RemoteVisitorVisual>();
+  private latestRemoteVisitors: RemoteVisitorVisual[] = [];
+  private readonly frameTimings = new FrameTimings();
+  private framePhases = { residents: 0, visitors: 0, skins: 0, draw: 0 };
   private readonly remoteNpcControls = new Map<string, RemoteVisitorVisual>();
   private readonly occupiedSeats = new Set<string>();
   private readonly projectors = new Map<VenueKey, ProjectorSurface>();
@@ -5275,6 +5281,7 @@ export class FestivalWorld {
     darkLampsLit: number;
     projectorActivation: ProjectorActivationReview | null;
     textureBudget: ReturnType<typeof mobileAssetBudgetSnapshot>;
+    crowd: { visitors: number; pending: number; timings: ReturnType<FrameTimings['snapshot']>; phases: Record<'residents' | 'visitors' | 'skins' | 'draw', number> };
   } | undefined {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return undefined;
     let shadowLights = 0;
@@ -5331,6 +5338,8 @@ export class FestivalWorld {
       mobileGpuConservation: this.conservesMobileGpu,
       projectorActivation: this.projectorActivationReview ? { ...this.projectorActivationReview } : null,
       textureBudget: mobileAssetBudgetSnapshot(),
+      crowd: { visitors: this.remoteAvatars.size, pending: this.pendingRemoteVisitors.size,
+        timings: this.frameTimings.snapshot(), phases: { ...this.framePhases } },
       shadowLights,
       lampPool: this.lampPool.length,
       darkLampsLit,
@@ -5927,7 +5936,8 @@ export class FestivalWorld {
   }
 
   setRemoteVisitors(visitors: RemoteVisitorVisual[]): void {
-    const limit = this.graphicsMode === 'normal' ? 32 : 12;
+    this.latestRemoteVisitors = visitors;
+    const limit = 32;
     const priorityVisitors = visitors.filter((visitor) =>
       visitor.id === this.mentorCarrierId ||
       (this.mentorFollower?.kind === 'visitor' && visitor.id === this.mentorFollower.id) ||
@@ -5937,6 +5947,7 @@ export class FestivalWorld {
       ...visitors.filter((visitor) => !priorityVisitors.includes(visitor)),
     ].slice(0, limit);
     const activeIds = new Set(visibleVisitors.map((visitor) => visitor.id));
+    for (const id of this.pendingRemoteVisitors.keys()) if (!activeIds.has(id)) this.pendingRemoteVisitors.delete(id);
     this.remoteNpcControls.clear();
     for (const visitor of visibleVisitors) {
       if (visitor.npcId) this.remoteNpcControls.set(visitor.npcId, visitor);
@@ -5958,6 +5969,7 @@ export class FestivalWorld {
         this.standMentorOnGround(held, held.group.getWorldPosition(new THREE.Vector3()), held.group.rotation.y);
         held.waitUntil = performance.now() + 600;
       }
+      avatar.group.userData.disposeImportedAvatar?.();
       avatar.group.removeFromParent();
       const disposedMaterials = new Set<THREE.Material>();
       const disposedGeometries = new Set<THREE.BufferGeometry>();
@@ -6009,9 +6021,14 @@ export class FestivalWorld {
       } : visitor;
       let avatar = this.remoteAvatars.get(visitor.id);
       if (!avatar) {
-        avatar = this.createRemoteAvatar(displayVisitor);
-        this.remoteAvatars.set(visitor.id, avatar);
+        this.pendingRemoteVisitors.set(visitor.id, displayVisitor);
+        continue;
       }
+      // A room-wide snapshot also includes everyone who has not moved. Their
+      // interpolation clock belongs to their own readings, not other people.
+      const updateKey = JSON.stringify(displayVisitor);
+      if (avatar.updateKey === updateKey) continue;
+      avatar.updateKey = updateKey;
       // A body built once and never looked at again is fine for colours, which
       // nobody changes mid-visit — but a cap being taken off is exactly the
       // kind of thing somebody does while standing in front of you. Compared
@@ -6094,6 +6111,14 @@ export class FestivalWorld {
     }
     this.syncSharedMentorCarrier();
     this.applyControlledNpcVisibility();
+  }
+
+  private flushRemoteVisitor(): void {
+    const next = this.pendingRemoteVisitors.values().next().value;
+    if (!next) return;
+    this.pendingRemoteVisitors.delete(next.id);
+    this.remoteAvatars.set(next.id, this.createRemoteAvatar(next));
+    this.setRemoteVisitors(this.latestRemoteVisitors);
   }
 
   setOccupiedSeats(seatIds: string[]): void {
@@ -12148,14 +12173,21 @@ export class FestivalWorld {
     this.updatePlayer(delta);
     this.playerShadow.position.y=this.groundHeightAt(this.player.position.x,this.player.position.z,this.player.position.y)-AVATAR_GROUND_Y-this.player.position.y+.02;
     this.playerShadow.visible=this.playerState!=='swimming';
+    // One admission per frame: joining a full room cannot synchronously build
+    // nineteen calibrated skins inside a single network event.
+    this.flushRemoteVisitor();
     this.cullAvatars();
+    const residentsAt = performance.now();
     this.updateNpcs(delta, elapsed);
+    this.framePhases.residents = performance.now() - residentsAt;
     // Only while somebody could see it. It is a joke behind some trees, not a
     // thing worth a matrix update on every frame of the whole festival.
     if (this.beachCouple && this.cameraWorldPosition.distanceToSquared(this.beachCouple.root.position) < 4900) {
       animateBeachCouple(this.beachCouple, elapsed);
     }
+    const visitorsAt = performance.now();
     this.updateRemoteAvatars(delta, elapsed);
+    this.framePhases.visitors = performance.now() - visitorsAt;
     this.updateCamera(delta, elapsed);
     // Cheap: it compares one venue key and returns, unless somebody has just
     // walked into or out of a room.
@@ -12182,7 +12214,9 @@ export class FestivalWorld {
     this.updateWaterLayers();
     this.updateFireworks(delta, performance.now());
     this.updateClubBeat(elapsed);
+    const skinsAt = performance.now();
     syncImportedAvatars(this.scene);
+    this.framePhases.skins = performance.now() - skinsAt;
     for(const npc of this.npcs)if(npc.dogRig&&npc.group.parent&&npc.group.parent!==this.scene){
       const carrier=npc.group.parent as THREE.Group,rig=this.rigFor(carrier);
       if(rig)perchMentor(npc.group,npc.dogRig,rig.head,carrier.userData.importedHeadSupport?.()??new THREE.Vector3(0,.5,0),carrier.userData.importedHeadSurface?.());
@@ -12196,7 +12230,9 @@ export class FestivalWorld {
     if (PLANET.on) setPlanetCentre(this.player.position.x, this.player.position.z);
     this.islandDock?.update(elapsed);
     this.applyAerialReview();
+    const drawAt = performance.now();
     this.renderer.render(this.scene, this.camera);
+    this.framePhases.draw = performance.now() - drawAt;
     this.mainDrawCalls = this.renderer.info.render.calls;
     this.mainTriangles = this.renderer.info.render.triangles;
     const visibleProjectors: VenueKey[] = [];
@@ -12314,6 +12350,7 @@ export class FestivalWorld {
     // Record real frame gaps for two seconds around an actual player mount;
     // clamped animation delta would hide precisely the freeze being inspected.
     const activationReview = this.projectorActivationReview;
+    this.frameTimings.record(frameGap, performance.now() - frameStartedAt);
     // Include the first frame after the window as well: a long blocked frame
     // can cross the whole window, and must not disappear from the measurement.
     if (activationReview && frameStartedAt - frameGap - activationReview.startedAt <= 2_000) {
@@ -13706,6 +13743,9 @@ export class FestivalWorld {
       if (avatar.state === 'swimming') avatar.group.position.y += Math.sin(elapsed * 3.1) * 0.025;
       const moving = avatar.state==='walking' && avatar.moving;
       avatar.animationPhase += delta * (moving ? 8.2 : 1.4);
+      avatar.badge.visible = avatar.group.position.distanceToSquared(this.player.position) < 144;
+      if (avatar.group.userData.importedCulled?.() || avatar.group.userData.cullThrottle) continue;
+      const floor = this.groundHeightAt(avatar.group.position.x,avatar.group.position.z,avatar.group.position.y);
       const gesture = avatar.gesture === 'dance'
         ? 'dance'
         : performance.now() < avatar.gestureUntil ? avatar.gesture : undefined;
@@ -13718,7 +13758,6 @@ export class FestivalWorld {
         avatar.running && moving && avatar.state === 'walking',
         this.gestureProgress(gesture, avatar.gestureUntil),
       );
-      const floor=this.groundHeightAt(avatar.group.position.x,avatar.group.position.z,avatar.group.position.y);
       const airborne=avatar.state==='walking'&&avatar.group.position.y-floor>.6;
       if(airborne){
         avatar.group.userData.wasAirborne=true;
@@ -13736,8 +13775,6 @@ export class FestivalWorld {
       avatar.shownLimbs = mixLimbs(avatar.previousLimbs, avatar.limbs, playedLimbs);
       this.applyLimbs(avatar, avatar.shownLimbs);
 
-      const distance = avatar.group.position.distanceTo(this.player.position);
-      avatar.badge.visible = distance < 12;
     }
   }
 

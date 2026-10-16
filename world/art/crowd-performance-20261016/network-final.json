@@ -1,0 +1,17 @@
+{
+  "serverRssMiB": 100.34375,
+  "protocol": "delta-v1",
+  "visitors": 20,
+  "posts": 1400,
+  "seconds": 10.012770875,
+  "sseBytes": 12594240,
+  "sseBytesPerSecond": 1257817.6567932302,
+  "stateEvents": 3380,
+  "maxChunkBytes": 19823,
+  "postLatencyMs": {
+    "p50": 0.6216660000000047,
+    "p95": 1.890041999999994,
+    "max": 3.9447909999998956
+  },
+  "note": "Local transport latency excludes internet/mobile network and renderer costs"
+}

@@ -84,7 +84,7 @@ test('gate admission persists the token and a reloaded tab recovers before claim
   const session = { id: 'visitor-owned-by-tab', token: 'test-token' };
   const fetch = async (url, options) => {
     requests.push(new URL(url).pathname);
-    if (url.endsWith('/api/events')) return liveResponse();
+    if (new URL(url).pathname === '/api/events') return liveResponse();
     if (url.endsWith('/api/session/recover')) {
       assert.deepEqual(JSON.parse(options.body).session, session);
       return Response.json({ session, state: {} });
@@ -108,7 +108,7 @@ test('a replaced event stream cannot deliver a late stale state', async t => {
   const states = [], readers = [];
   let events = 0;
   const visitor = await client(async url => {
-    if (!url.endsWith('/api/events')) return Response.json({ session: { id: 'owned', token: 'test' }, state: { sequence: 0 } });
+    if (new URL(url).pathname !== '/api/events') return Response.json({ session: { id: 'owned', token: 'test' }, state: { sequence: 0 } });
     events++;
     let resolveRead;
     const reader = { read: () => new Promise(resolve => { resolveRead = resolve; }), cancel: async () => {}, releaseLock() {} };
@@ -123,4 +123,26 @@ test('a replaced event stream cannot deliver a late stale state', async t => {
   await settle();
   assert.deepEqual(states, [0, 2]);
   visitor.suspend();
+});
+
+test('compact stream updates merge by visitor id, preserving unchanged state and removals', async () => {
+  const states=[];
+  const visitor=await client(()=>Promise.resolve(Response.json({})),{onState:s=>states.push(s)});
+  const emit=(event,data)=>visitor.handleEventBlock(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  const full={selfId:'a',serverTime:1,visitors:[{id:'a',name:'A'},{id:'b',name:'B'}],messages:[],schedule:{shore:{youtubeId:'film'}}};
+  emit('state',full);emit('state-patch',{serverTime:2,visitors:[{id:'b',name:'New B'},{id:'c',name:'C'}]});
+  assert.deepEqual(states[1].visitors.map(v=>v.name),['A','New B','C']);
+  assert.equal(states[0].schedule,states[1].schedule);
+  emit('state-patch',{serverTime:3,removedVisitors:['b'],messages:[{text:'hi'}]});
+  assert.deepEqual(states[2].visitors.map(v=>v.id),['a','c']);assert.equal(states[2].messages[0].text,'hi');
+});
+
+test('slow presence requests cannot queue overlapping outdated positions', async () => {
+  let release,posts=0;
+  const visitor=await client(()=>{posts++;return new Promise(resolve=>{release=()=>resolve(Response.json({ok:true}));});});
+  visitor.session={id:'a',token:'test'};visitor.lastPresenceAt=-10000;
+  const first=visitor.publishPresence({moving:true,x:1},{});
+  visitor.lastPresenceAt=-10000;await visitor.publishPresence({moving:true,x:2},{});
+  assert.equal(posts,1);release();await first;
+  visitor.lastPresenceAt=-10000;const next=visitor.publishPresence({moving:true,x:3},{});assert.equal(posts,2);release();await next;
 });

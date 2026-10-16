@@ -1,0 +1,91 @@
+{
+  "status": "local_only_not_published",
+  "visitors": 20,
+  "tests": {
+    "passed": 564,
+    "failed": 0,
+    "strictTypeScript": "passed",
+    "viteBuild": "passed",
+    "note": "Final full suite and build passed after the invisible-peer floor-query assertion; focused pose/culling regression also passed 99/99. Logs: /tmp/myschedule-crowd-final-verify.log and /tmp/myschedule-crowd-final-poses.log."
+  },
+  "avatarSetup": {
+    "beforeMs": 4130.490084000001,
+    "afterMs": 610.4872909999996,
+    "reductionPercent": 85.21997926190883,
+    "method": "Node with actual rig/geometry; no GPU. New bodies additionally queued one per rendered frame."
+  },
+  "serverTransport": {
+    "beforeBytesPerSecond": 6898609.091062013,
+    "afterBytesPerSecond": 1258253.0809199633,
+    "reductionPercent": 81.76077142057254,
+    "afterPostLatencyMs": {
+      "p50": 0.3228329999997186,
+      "p95": 1.5242920000000595,
+      "max": 3.7926250000000437
+    },
+    "method": "20 authenticated local HTTP/SSE sessions, 1400 movement posts over approximately ten seconds. Not internet/mobile network latency.",
+    "finalRun": {
+      "serverRssMiB": 100.34375,
+      "protocol": "delta-v1",
+      "visitors": 20,
+      "posts": 1400,
+      "seconds": 10.012770875,
+      "sseBytes": 12594240,
+      "sseBytesPerSecond": 1257817.6567932302,
+      "stateEvents": 3380,
+      "maxChunkBytes": 19823,
+      "postLatencyMs": {
+        "p50": 0.6216660000000047,
+        "p95": 1.890041999999994,
+        "max": 3.9447909999998956
+      },
+      "note": "Local transport latency excludes internet/mobile network and renderer costs"
+    }
+  },
+  "browserCases": [
+    {
+      "case": "desktop-normal",
+      "visitors": 20,
+      "fps": 34.6,
+      "frameGapP95Ms": 31.6,
+      "maxFrameGapMs": 32.7
+    },
+    {
+      "case": "desktop-lite",
+      "visitors": 20,
+      "fps": 60,
+      "frameGapP95Ms": 18.8,
+      "maxFrameGapMs": 19.5
+    },
+    {
+      "case": "phone-sized-normal-mobile-budget",
+      "visitors": 20,
+      "fps": 50,
+      "frameGapP95Ms": 24.2,
+      "maxFrameGapMs": 30.4
+    },
+    {
+      "case": "phone-sized-lite-mobile-budget",
+      "visitors": 20,
+      "fps": 60,
+      "frameGapP95Ms": 18.8,
+      "maxFrameGapMs": 20.7
+    }
+  ],
+  "physicalIPhoneTested": false,
+  "serverRssMeasured": {
+    "atEndOfTwentyConnectionRunMiB": 100.34375,
+    "peakMeasured": false,
+    "physicalProductionHostMeasured": false
+  },
+  "optionalCheckBlock": "Earlier automatic approval-review usage limit resolved after reset; same optional server measurement completed without a bypass.",
+  "publicationRequires": [
+    "BETA/PS2 website packages",
+    "multiplayer service deployment and health/build verification"
+  ],
+  "preservation": "No docs public package or source-asset changes; no commit/push/publish.",
+  "renderExperiments": {
+    "retained": false,
+    "reason": "Shadow-count, cadence and avatar-lighting experiments showed no consistent frame-rate gain on the host; removed. Original appearance and rendering retained."
+  }
+}
