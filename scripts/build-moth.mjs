@@ -10,6 +10,7 @@ import { TRIMMED_FILES } from './moth-asset-trim.mjs';
 import { KEY_FRINGE_MANIFEST, patchedAsset } from './moth-sprite-fringe.mjs';
 import { ADDED_ASSETS, addedAsset } from './moth-asset-additions.mjs';
 import { trimRetiredCode } from './moth-code-trim.mjs';
+import { patchDeckCss, DECK_ART_KEPT } from './moth-deck-art.mjs';
 const require = createRequire(import.meta.url);
 const ts = require(process.env.MOTH_TYPESCRIPT_PATH || 'typescript');
 const root = path.resolve(import.meta.dirname, '..');
@@ -17,8 +18,9 @@ const sourceRoot = path.join(root, '.qa/moth/published');
 const output = path.join(root, 'docs/moth');
 const snapshot = JSON.parse(await fs.readFile(path.join(root, '.qa/moth/published-snapshot.json'), 'utf8'));
 const sha = (data) => crypto.createHash('sha256').update(data).digest('hex');
-const cssArtwork = rewriteCssArtwork(await fs.readFile(path.join(sourceRoot, 'styles.css'), 'utf8'));
-assert.equal(cssArtwork.assets.length, 19);
+// The deck in the pad's colours, without the art of earlier decks (moth-deck-art.mjs).
+const cssArtwork = rewriteCssArtwork(patchDeckCss(await fs.readFile(path.join(sourceRoot, 'styles.css'), 'utf8')));
+assert.equal(cssArtwork.assets.length, DECK_ART_KEPT);
 // The release with its patches, and without the code of its retired parts
 // (moth-code-trim.mjs; MOTH_TRIM_AUDIT=1 keeps that code and records calls).
 const trim = trimRetiredCode(patchMothRuntime(await fs.readFile(path.join(sourceRoot, 'src/game.js'), 'utf8'), ts) + cssArtworkLoader(cssArtwork.assets), ts,
@@ -143,8 +145,8 @@ for (const audience of ['public', 'staff']) {
   html = html.replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />\n    <meta name="referrer" content="strict-origin-when-cross-origin" />${staff ? '\n    <meta name="robots" content="noindex, nofollow, noarchive" />\n    <base href="/moth/" />' : ''}`);
   html = html.replace('<html lang="en">', '<html lang="zh-Hant-TW">');
   html = html.replace('./manifest.json', staff ? '/moth/staff/manifest.json' : './manifest.json');
-  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-loading-20261015a' : 'moth-cabinet-20261015a'}" integrity="${sri}" crossorigin="anonymous"></script>`);
-  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261015a');
+  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-loading-20261017a' : 'moth-cabinet-20261017a'}" integrity="${sri}" crossorigin="anonymous"></script>`);
+  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261017a');
   await fs.writeFile(path.join(output, staff ? 'staff/index.html' : 'index.html'), html);
   const manifest = JSON.parse(await fs.readFile(path.join(sourceRoot, 'manifest.json'), 'utf8'));
   manifest.start_url = staff ? '/moth/staff/' : '/moth/';

@@ -1,5 +1,5 @@
 {
-  "note": "Files the game publishes beyond the release. Supplied by the owner on 2026-10-14 and processed by scripts/make-menu-sfx.py.",
+  "note": "Files the game publishes beyond the release: the owner's menu sounds (2026-10-14, scripts/make-menu-sfx.py) and the deck's M/O/T/H buttons in the Super Famicom pad's colours (2026-10-17, scripts/make-moth-buttons.py).",
   "files": {
     "assets/sfx/menu/menu-tick.wav": {
       "sha256": "0890780f0735654e38b764d253790039155b9145ed24875eb5fe0bcf3b85fa8c",
@@ -14,6 +14,12 @@
       "source": "ES_User Interface, Click, Button, Press, Click, Video Game, Variations - Epidemic Sound - 0000-0101.wav",
       "use": "confirm, back, dialogue advance",
       "trimDb": 6
+    },
+    "assets/ui/mobile_moth_buttons_20261017/sheet.webp": {
+      "sha256": "4f83b554ea7e3a6d49bf0423471269bce72d10410ffde7a7b5cda1008063d0c7",
+      "bytes": 267244,
+      "source": "assets/ui/mobile_moth_buttons_20261002/sheet.webp (the release's grey sheet)",
+      "use": "the touch deck's M, O, T and H buttons"
     }
   }
 }

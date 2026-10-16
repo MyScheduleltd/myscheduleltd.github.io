@@ -7,6 +7,7 @@ import {patchCharts} from './moth-chart-patches.mjs';
 import {TRIMMED_FILES} from './moth-asset-trim.mjs';
 import {KEY_FRINGE_MANIFEST} from './moth-sprite-fringe.mjs';
 import {ADDED_ASSETS} from './moth-asset-additions.mjs';
+import {patchDeckCss} from './moth-deck-art.mjs';
 const root = path.resolve(import.meta.dirname, '..');
 const dir = path.join(root, 'docs/moth');
 const snapshot = JSON.parse(await fs.readFile(path.join(root, '.qa/moth/published-snapshot.json'), 'utf8'));
@@ -34,11 +35,13 @@ for (const file of snapshot.files) {
     continue;
   }
   if (file.path === 'styles.css') {
-    // The release's styles, with only their artwork url()s turned into the
-    // custom properties the game fills from the verified mirror.
+    // The release's styles, with the deck's pad-coloured buttons and without
+    // earlier decks' rules (moth-deck-art.mjs), and with their artwork url()s
+    // turned into the custom properties the game fills from the verified
+    // mirror.
     const releaseCss = await fs.readFile(path.join(root, '.qa/moth/published/styles.css'));
     assert.equal(hash(releaseCss), file.sha256);
-    assert(data.toString().startsWith(rewriteCssArtwork(releaseCss.toString()).css), 'Original game styles preserved');
+    assert(data.toString().startsWith(rewriteCssArtwork(patchDeckCss(releaseCss.toString())).css), 'Original game styles preserved');
     assert(!/url\("assets\//.test(data.toString()), 'No artwork fetched straight from Pages by the stylesheet');
     assert(data.toString().includes('.load-recovery section'));
     continue;

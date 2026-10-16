@@ -1,5 +1,6 @@
 // Files the game publishes beyond the release: the owner's menu sounds
-// (moth-menu-sfx.mjs). Each lives in moth-asset-additions/ at its published
+// (moth-menu-sfx.mjs) and the deck's buttons in the pad's colours
+// (moth-deck-art.mjs). Each lives in moth-asset-additions/ at its published
 // path, with its hash in moth-asset-additions/manifest.json; build-moth.mjs
 // publishes them alongside the release's files. jsDelivr serves them from the
 // commit that added them, MOTH_MIRROR_ADDITIONS_COMMIT; a file added later

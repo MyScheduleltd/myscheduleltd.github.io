@@ -1,7 +1,8 @@
 // Phone-deck and audio-engine behaviour (Chrome):
-//  1. the deck artwork from styles.css arrives through the game (all 19
-//     --moth-art-* properties filled), not as direct stylesheet downloads,
-//     with the M, T and H buttons in their track note colours;
+//  1. the deck artwork from styles.css arrives through the game (every
+//     --moth-art-* property filled), not as direct stylesheet downloads, and
+//     none of earlier decks' art is fetched; the M/O/T/H buttons are the
+//     published pad-coloured sheet, in their notes' colours;
 //  2. iOS settling the bottom safe area after launch, without a resize,
 //     re-lays out the deck exactly as a fresh load with that inset;
 //  3. after an idle (a minute on a menu or paused, a hidden page, a dead
@@ -13,6 +14,8 @@
 import assert from 'node:assert/strict';
 import {chromium} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
+import {DECK_ART_KEPT, RETIRED_DECK_ART, MOTH_BUTTON_SHEET} from './moth-deck-art.mjs';
+import {MOTH_NOTE_COLOURS} from './moth-fight-hud.mjs';
 
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const browser = await chromium.launch({executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--no-sandbox']});
@@ -31,34 +34,44 @@ const rows = page => page.evaluate(() => {
   const cdp = await context.newCDPSession(page);
   await cdp.send('Emulation.setSafeAreaInsetsOverride', {insets: {bottom: 0}});
   await page.goto(new URL('moth/?device=phone', base).href, {waitUntil: 'domcontentloaded'});
-  await page.waitForFunction(() => { const s = getComputedStyle(document.documentElement); for (let i = 0; i < 19; i++) if (!s.getPropertyValue('--moth-art-' + i).includes('blob:')) return false; return true; }, undefined, {timeout: 60000});
+  await page.waitForFunction(count => { const s = getComputedStyle(document.documentElement); for (let i = 0; i < count; i++) if (!s.getPropertyValue('--moth-art-' + i).includes('blob:')) return false; return true; }, DECK_ART_KEPT, {timeout: 60000});
   assert.deepEqual(stylesheetArt.filter(url => /mobile_|film-grain/.test(url)), [], 'No deck artwork fetched by the stylesheet itself');
-  // M, T and H wear their note colours; O and everything but the grey faces are untouched.
-  const tint = await page.evaluate(async () => {
+  const requested = await page.evaluate(() => performance.getEntriesByType('resource').map(entry => entry.name));
+  assert.deepEqual(RETIRED_DECK_ART.filter(file => requested.some(url => url.includes(file))), [], 'No retired deck art downloaded');
+  // The buttons show the published sheet as it is, each face in its notes' colour.
+  const sheet = MOTH_BUTTON_SHEET.current.split('?')[0];
+  // (The page's policy lets it read pictures, not fetch blobs, so the two are compared decoded.)
+  const buttons = await page.evaluate(async sheet => {
     const shown = getComputedStyle(document.querySelector('.mobile-moth__button')).backgroundImage.match(/url\("?([^")]+)/)[1];
     const read = async url => {
       const image = Object.assign(new Image(), {src: url});
       await image.decode();
       const canvas = Object.assign(document.createElement('canvas'), {width: image.width, height: image.height});
-      const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
-      return context.getImageData(0, 0, image.width, image.height);
+      const context = canvas.getContext('2d', {willReadFrequently: true}); context.drawImage(image, 0, 0);
+      return context;
     };
-    const [before, after] = await Promise.all([read('assets/ui/mobile_moth_buttons_20261002/sheet.webp'), read(shown)]);
-    const columns = [0, 1, 2, 3].map(() => ({changed: 0, r: 0, g: 0, b: 0}));
-    for (let i = 0; i < before.data.length; i += 4) {
-      if (Math.abs(before.data[i] - after.data[i]) + Math.abs(before.data[i + 1] - after.data[i + 1]) + Math.abs(before.data[i + 2] - after.data[i + 2]) < 24) continue;
-      const column = columns[Math.floor((i / 4 % before.width) * 4 / before.width)];
-      column.changed++; column.r += after.data[i]; column.g += after.data[i + 1]; column.b += after.data[i + 2];
-    }
-    return {shown: shown.slice(0, 5), columns: columns.map(c => c.changed ? {changed: c.changed, rgb: [c.r, c.g, c.b].map(v => Math.round(v / c.changed))} : {changed: 0})};
+    const [onDeck, published] = await Promise.all([read(shown), read(sheet)]);
+    const {width, height} = onDeck.canvas;
+    const a = onDeck.getImageData(0, 0, width, height).data, b = published.getImageData(0, 0, width, height).data;
+    let differing = 0;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) differing++;
+    // Each resting button's face, left of its letter.
+    const faces = [0, 1, 2, 3].map(column => {
+      const cell = width / 4, data = onDeck.getImageData(column * cell + cell * 0.2, height * 0.17, cell * 0.12, height * 0.06).data;
+      const rgb = [0, 0, 0];
+      for (let i = 0; i < data.length; i += 4) for (let c = 0; c < 3; c++) rgb[c] += data[i + c];
+      return rgb.map(v => Math.round(v / (data.length / 4)));
+    });
+    return {shown: shown.slice(0, 5), size: [width, height, published.canvas.width, published.canvas.height], differing, faces};
+  }, sheet);
+  assert.equal(buttons.shown, 'blob:', 'The deck shows the verified copy');
+  assert.deepEqual(buttons.size, [1024, 512, 1024, 512]);
+  assert.equal(buttons.differing, 0, 'The deck shows the published pad-coloured sheet, unchanged');
+  [...'MOTH'].forEach((name, index) => {
+    const want = [1, 3, 5].map(i => parseInt(MOTH_NOTE_COLOURS[name].slice(i, i + 2), 16));
+    assert(buttons.faces[index].every((v, c) => Math.abs(v - want[c]) <= 40), `${name} is ${MOTH_NOTE_COLOURS[name]}: ${buttons.faces[index]}`);
   });
-  const [m, o, t, h] = tint.columns;
-  assert.equal(tint.shown, 'blob:', 'The deck shows the game-made sheet');
-  assert.equal(o.changed, 0, 'O keeps its grey');
-  assert(m.changed > 5000 && m.rgb[2] > m.rgb[0] + 60, 'M is blue ' + JSON.stringify(m));
-  assert(t.changed > 5000 && t.rgb[0] > t.rgb[1] + 80 && t.rgb[2] > t.rgb[1], 'T is pink ' + JSON.stringify(t));
-  assert(h.changed > 5000 && h.rgb[1] > h.rgb[0] + 50 && h.rgb[1] > h.rgb[2], 'H is green ' + JSON.stringify(h));
-  console.log('tint PASS', JSON.stringify(tint.columns));
+  console.log('buttons PASS', JSON.stringify(buttons.faces));
   await page.waitForTimeout(3000);
   await cdp.send('Emulation.setSafeAreaInsetsOverride', {insets: {bottom: 34}});
   await page.waitForTimeout(2500);

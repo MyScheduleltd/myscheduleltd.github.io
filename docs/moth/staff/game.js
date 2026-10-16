@@ -519,13 +519,14 @@ const PORTRAIT_FIGHT = {
   width: 720,
   height: 776,
   scene: { x: 280, y: 0, w: 720, h: 508 },
-  // Bottom row: Bobby's panel on the left where it always was, the timing
-  // track beside it - a slice from just before the hit line (x 760) to 2.3 s
-  // ahead of it, scaled up so the notes read bigger than they did full-width.
-  // Both come from the same band of the frame (the life box's y 520-704, which
-  // the track shares) at the same scale, so their tops and bottoms line up.
-  badge: { src: { x: 20, y: 520, w: 196, h: 184 }, dest: { x: 8, y: 520, w: 264, h: 248 } },
-  track: { src: { x: 700, y: 520, w: 320, h: 184 }, dest: { x: 280, y: 520, w: 432, h: 248 } },
+  // Where the frame's lower panel starts, under the scene and its gutter.
+  hudY: 520,
+  // Under the scene: Dr. Beauty's row, then the timing track across the whole
+  // width, a slice from just before the hit line (x 760) to 3.3 s ahead of it,
+  // scaled up so the notes read bigger than they do full-width. The slice is
+  // the band of the frame's track that holds the notes and their rings.
+  stats: { x: 8, y: 520, w: 704, h: 46 },
+  track: { src: { x: 700, y: 540, w: 704 / 1.35, h: 196 / 1.35 }, dest: { x: 8, y: 572, w: 704, h: 196 } },
   letterboxY: (776 - 405) / 2
 };
 // The tall dialogue layout: the scene above the box, cropped to its middle and
@@ -1946,7 +1947,9 @@ const LEVEL1_OFFICE_ACTION_KEYS = {
 const MOTH_BUTTONS = ["M", "O", "T", "H"];
 const MOTH_KEY_CODES = { KeyM: "M", KeyO: "O", KeyT: "T", KeyH: "H" };
 const MOTH_ACTION_OF_BUTTON = { T: "do", M: "do", O: "accent", H: "accent" };
-const MOTH_NOTE_COLOURS = { T: "#ef3f78", O: "#4a4d53", M: "#3d7fd1", H: "#2f9467" };
+const MOTH_NOTE_COLOURS = {"M":"#2457c5","O":"#e0463e","T":"#ecb300","H":"#2ea878"};
+// The letter on a note: white, or dark on the yellow T.
+const MOTH_NOTE_LETTERS = { T: "#16171b" };
 // A hold may be let go this long before its tail ends and still count.
 const MOTH_HOLD_GRACE = 0.12;
 const CHEST_ITEM_IDS = [
@@ -3692,6 +3695,178 @@ for (const level of this.config.secretLevels || []) {
         this.playMenuSoundFor(state, type === "keydown" ? menuKeyKind(event.code) : "tap");
       });
     }
+  }
+
+  // The practice badge's colour: the fight's.
+  getPracticeBadgeAccent() {
+    return this.isConcertRhythm() ? "#8a3fb0" : this.isRiverRhythm() ? "#2f6f8f" : this.isArcadeRhythm() ? "#3552a8"
+      : this.isMassageRhythm() ? "#c0506a" : this.isBathroomRhythm() ? "#3a9a8a" : "#2d7ec2";
+  }
+
+  // A practice run's misses: 失誤, then a 正 for every five, stroke by stroke
+  // in the character's own order (up to four, then ×n), and the count at the
+  // right.
+  drawMissTally(target, row, misses, ink) {
+    const { x, y, right, glyph } = row;
+    const fullGroups = Math.floor(misses / 5);
+    const shownGroups = Math.min(fullGroups, 4);
+    target.textAlign = "left";
+    target.fillStyle = ink;
+    target.font = `900 ${row.font}px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace`;
+    target.fillText(this.tr("MISS", "失誤"), x, y);
+    let tallyX = x + row.indent;
+    target.fillStyle = "#b3202c";
+    for (let group = 0; group < shownGroups; group += 1) {
+      drawTallyZheng(target, tallyX, y - glyph / 2, glyph, 5);
+      tallyX += glyph + 5;
+    }
+    if (fullGroups > shownGroups) {
+      target.font = `900 ${row.font}px 'Courier New', monospace`;
+      target.fillText(`×${fullGroups}`, tallyX, y);
+    } else if (misses % 5 || !misses) {
+      if (misses % 5) drawTallyZheng(target, tallyX, y - glyph / 2, glyph, misses % 5);
+      else target.fillText("—", tallyX, y);
+    }
+    target.textAlign = "right";
+    target.fillStyle = ink;
+    target.font = `900 ${row.font}px 'Courier New', monospace`;
+    target.fillText(String(misses), right, y);
+  }
+
+  // A practice run's combo and score on a small green screen, like the
+  // handheld's own.
+  drawPracticeLcd(target, lcd, rhythm, ink) {
+    target.fillStyle = ink;
+    target.fillRect(lcd.x - 2, lcd.y - 2, lcd.w + 4, lcd.h + 4);
+    target.fillStyle = "#2a3a22";
+    target.fillRect(lcd.x, lcd.y, lcd.w, lcd.h);
+    target.fillStyle = "rgba(168, 224, 112, 0.08)";
+    for (let row = lcd.y + 2; row < lcd.y + lcd.h; row += 3) target.fillRect(lcd.x, row, lcd.w, 1);
+    target.font = "900 9px 'Courier New', monospace";
+    target.fillStyle = "#6f9a4c";
+    target.textAlign = "left";
+    target.fillText("COMBO", lcd.x + 7, lcd.y + 9);
+    target.textAlign = "right";
+    target.fillText("SCORE", lcd.x + lcd.w - 7, lcd.y + 9);
+    target.font = "900 16px 'Courier New', monospace";
+    target.fillStyle = "#b6ec7c";
+    target.textAlign = "left";
+    target.fillText(String(rhythm?.combo || 0).padStart(3, "0"), lcd.x + 7, lcd.y + 25);
+    target.textAlign = "right";
+    target.fillText(String(rhythm?.roundScore || 0).padStart(6, "0"), lcd.x + lcd.w - 7, lcd.y + 25);
+  }
+
+  // The phone's row above the track (PORTRAIT_FIGHT.stats): Dr. Beauty's
+  // name, hearts (level 7: the hype bar), combo and score in a line; in a
+  // practice run, his staff ID as a strip.
+  drawTallFightStats(target, rhythm) {
+    const box = PORTRAIT_FIGHT.stats;
+    target.save();
+    if (this.isHealthlessRun()) {
+      this.drawTallPracticeStrip(target, box, rhythm);
+      target.restore();
+      return;
+    }
+    target.fillStyle = "#08090d";
+    target.fillRect(box.x, box.y, box.w, box.h);
+    target.strokeStyle = "#f4f0dc";
+    target.lineWidth = 4;
+    target.strokeRect(box.x + 2, box.y + 2, box.w - 4, box.h - 4);
+    const mid = box.y + box.h / 2 + 1;
+    target.textBaseline = "middle";
+    target.font = "900 22px 'Courier New', monospace";
+    target.textAlign = "left";
+    target.fillStyle = "#f4f0dc";
+    target.fillText(HERO_TAG, box.x + 16, mid);
+    const nameEnd = box.x + 16 + target.measureText(HERO_TAG).width;
+    target.textAlign = "right";
+    target.fillStyle = "#f7f2de";
+    const score = `SCORE ${String(rhythm?.roundScore || 0).padStart(6, "0")}`;
+    target.fillText(score, box.x + box.w - 16, mid);
+    const comboEnd = box.x + box.w - 16 - target.measureText(score).width - 22;
+    const combo = `COMBO ${rhythm?.combo || 0}`;
+    target.fillStyle = "#8fe8ff";
+    target.fillText(combo, comboEnd, mid);
+    const left = nameEnd + 22, right = comboEnd - target.measureText(combo).width - 22;
+    if (this.isConcertRhythm()) {
+      this.drawConcertCrowdMeter(target, box, rhythm, this.time || 0, { x: left, y: box.y + 9, w: right - left, h: box.h - 18 });
+    } else {
+      const maxHearts = Math.max(1, rhythm?.maxHealth || 3);
+      const hearts = clamp(rhythm?.health ?? maxHearts, 0, maxHearts);
+      const pitch = Math.min(38, (right - left) / maxHearts);
+      target.font = "900 32px 'Courier New', monospace";
+      target.textAlign = "center";
+      for (let index = 0; index < maxHearts; index += 1) {
+        target.fillStyle = index < hearts ? "#ef3f78" : "#30343a";
+        target.fillText("♥", (left + right) / 2 + (index - (maxHearts - 1) / 2) * pitch, mid);
+      }
+    }
+    target.restore();
+  }
+
+  // The practice badge laid on its side: the fight's colour band with
+  // 員工證 · 練習, his ID photo and name, the 練習 stamp, the miss tally and
+  // the green screen.
+  drawTallPracticeStrip(target, box, rhythm) {
+    const ink = "#1b2130";
+    const paper = "#efe6cc";
+    const card = { x: box.x, y: box.y, w: box.w - 4, h: box.h - 4 };
+    target.textBaseline = "middle";
+    target.fillStyle = "rgba(0, 0, 0, 0.45)";
+    target.fillRect(card.x + 4, card.y + 4, card.w, card.h);
+    target.fillStyle = ink;
+    target.fillRect(card.x, card.y, card.w, card.h);
+    target.fillStyle = paper;
+    target.fillRect(card.x + 3, card.y + 3, card.w - 6, card.h - 6);
+    target.fillStyle = "rgba(255, 255, 255, 0.5)";
+    target.fillRect(card.x + 3, card.y + 3, card.w - 6, 2);
+    const mid = card.y + card.h / 2;
+
+    // The colour band, with the card's title in two lines.
+    const band = { x: card.x + 3, y: card.y + 3, w: 92, h: card.h - 6 };
+    target.fillStyle = this.getPracticeBadgeAccent();
+    target.fillRect(band.x, band.y, band.w, band.h);
+    target.fillStyle = ink;
+    target.fillRect(band.x + band.w, band.y, 2, band.h);
+    target.fillStyle = "#f7f2de";
+    target.textAlign = "center";
+    target.font = "900 13px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace";
+    target.fillText(this.tr("STAFF ID", "員工證"), band.x + band.w / 2, mid - 8);
+    target.fillText(this.tr("PRACTICE", "練習"), band.x + band.w / 2, mid + 9);
+
+    // ID photo and name.
+    let at = band.x + band.w + 12;
+    drawPortrait(target, this.refs.bobby, at + 3, card.y + 9, card.h - 18, true);
+    at += card.h - 18 + 14;
+    target.textAlign = "left";
+    target.fillStyle = ink;
+    target.font = "900 16px 'Courier New', monospace";
+    target.fillText(HERO_TAG, at, mid - 7);
+    target.font = "900 11px 'PingFang TC', 'Noto Sans TC', 'Courier New', sans-serif";
+    target.fillText(HERO_NAME_ZH, at, mid + 10);
+    at += 108;
+
+    // The practice stamp: red ink, knocked a few degrees off square.
+    target.save();
+    target.translate(at + 22, mid);
+    target.rotate(-0.21);
+    target.globalAlpha = 0.86;
+    target.strokeStyle = "#c8323c";
+    target.lineWidth = 2.5;
+    target.strokeRect(-22, -12, 44, 24);
+    target.lineWidth = 1;
+    target.strokeRect(-18, -8, 36, 16);
+    target.fillStyle = "#c8323c";
+    target.textAlign = "center";
+    target.font = "900 13px 'PingFang TC', 'Noto Sans TC', 'Courier New', sans-serif";
+    target.fillText(this.tr("DRILL", "練習"), 0, 1);
+    target.restore();
+    at += 58;
+
+    // The misses, and the counters on the green screen at the right end.
+    const lcd = { x: card.x + card.w - 3 - 8 - 196, y: card.y + 5, w: 196, h: card.h - 10 };
+    this.drawMissTally(target, { x: at, y: mid + 1, right: lcd.x - 14, indent: 40, glyph: 17, font: 14 }, Math.max(0, rhythm?.misses || 0), ink);
+    this.drawPracticeLcd(target, lcd, rhythm, ink);
   }
 
   async loadLayeredMapConfig() {
@@ -11075,7 +11250,7 @@ for (const level of this.config.secretLevels || []) {
     // Canvas strokes straddle their rectangle. Stop at the track's OUTER
     // edge, including its beat-pulse thickness, rather than its centreline.
     const trackBorderWidth = 5 + (rhythm.renderTelemetry?.groovePulse || 0) * 3;
-    const trackOuterEdge = Math.floor(PORTRAIT_FIGHT.badge.src.y - trackBorderWidth / 2);
+    const trackOuterEdge = Math.floor(PORTRAIT_FIGHT.hudY - trackBorderWidth / 2);
     const scene = { ...(tall ? PORTRAIT_FIGHT.scene : { x: 0, y: 0, w: VIEW_W }), h: trackOuterEdge - 2 };
     const bounds = { ...scene };
     const photoCrop = photo && getSpriteContentBox(photo, 0, 0, photo.width, photo.height);
@@ -11626,9 +11801,9 @@ for (const level of this.config.secretLevels || []) {
       // dimmed. A crop of the wide frame stretched to the whole view showed a
       // zoomed slice of desk with the characters cut at its edges, not the
       // fight (user, 2026-10-04).
-      const { scene: band, track, badge } = layout;
+      const { scene: band, track } = layout;
       target.drawImage(scene, band.x, band.y, band.w, band.h, 0, 0, band.w, band.h);
-      target.drawImage(scene, badge.src.x, badge.src.y, badge.src.w, badge.src.h, badge.dest.x, badge.dest.y, badge.dest.w, badge.dest.h);
+      this.drawTallFightStats(target, this.level1OfficeRhythm);
       target.drawImage(scene, track.src.x, track.src.y, track.src.w, track.src.h, track.dest.x, track.dest.y, track.dest.w, track.dest.h);
     } else {
       const srcH = 508;
@@ -11704,12 +11879,12 @@ for (const level of this.config.secretLevels || []) {
       target.imageSmoothingEnabled = false;
       return;
     }
-    const { scene, track, badge } = layout;
+    const { scene, track } = layout;
     // Include the scene/HUD gutter so a celebration cutout meets the native
     // portrait track exactly, without changing the scene's camera or scale.
-    const sceneCopyHeight = badge.src.y;
+    const sceneCopyHeight = layout.hudY;
     target.drawImage(canvas, scene.x, scene.y, scene.w, sceneCopyHeight, 0, 0, scene.w, sceneCopyHeight);
-    target.drawImage(canvas, badge.src.x, badge.src.y, badge.src.w, badge.src.h, badge.dest.x, badge.dest.y, badge.dest.w, badge.dest.h);
+    this.drawTallFightStats(target, this.level1OfficeRhythm);
     target.drawImage(canvas, track.src.x, track.src.y, track.src.w, track.src.h, track.dest.x, track.dest.y, track.dest.w, track.dest.h);
     target.strokeStyle = "#f7f2de";
     target.lineWidth = 4;
@@ -14813,9 +14988,9 @@ for (const level of this.config.secretLevels || []) {
 
   // The concert's life bar, where the hearts are in the other fights: the
   // crowd's heat, cold blue to red hot, ten pixel cells; CLIMAX once full.
-  drawConcertCrowdMeter(target, bounds, rhythm, motionTime = 0) {
+  drawConcertCrowdMeter(target, bounds, rhythm, motionTime = 0, row = null) {
     const hype = clamp(rhythm?.hype ?? 0.3, 0, 1);
-    const bar = { x: bounds.x + 22, y: bounds.y + 56, w: bounds.w - 44, h: 26 };
+    const bar = row || { x: bounds.x + 22, y: bounds.y + 56, w: bounds.w - 44, h: 26 };
     target.save();
     target.fillStyle = "#14161e";
     target.fillRect(bar.x, bar.y, bar.w, bar.h);
@@ -14844,7 +15019,16 @@ for (const level of this.config.secretLevels || []) {
     const label = rhythm?.climax
       ? this.tr("PEAK HYPE!", "嗨到最高點！")
       : this.tr("FILL THE HYPE TO WIN", "熱度填滿就過關");
-    drawFittedText(target, label, bar.x + bar.w / 2, bar.y + bar.h + 13, bounds.w - 16, 12, 900, 8);
+    if (row) {
+      target.font = "900 15px 'Courier New', 'PingFang TC', monospace";
+      target.lineJoin = "round";
+      target.lineWidth = 4;
+      target.strokeStyle = "#08090d";
+      target.strokeText(label, bar.x + bar.w / 2, bar.y + bar.h / 2 + 1, bar.w - 16);
+      target.fillText(label, bar.x + bar.w / 2, bar.y + bar.h / 2 + 1, bar.w - 16);
+    } else {
+      drawFittedText(target, label, bar.x + bar.w / 2, bar.y + bar.h + 13, bounds.w - 16, 12, 900, 8);
+    }
     target.restore();
   }
 
@@ -20396,7 +20580,7 @@ for (const level of this.config.secretLevels || []) {
         target.arc(x, railY, 21, 0, TAU);
         target.fill();
         target.stroke();
-        target.fillStyle = missed ? "#747982" : completed ? "#16171b" : "#ffffff";
+        target.fillStyle = missed ? "#747982" : completed ? "#16171b" : MOTH_NOTE_LETTERS[button] || "#ffffff";
         drawCentredGlyph(target, button, x, railY, "900 18px 'Courier New', monospace");
         // Every note carries its own ring, closing on it over its last
         // stretch to the hit line. (Only the next note used to have one, so
@@ -20435,19 +20619,22 @@ for (const level of this.config.secretLevels || []) {
       target.textAlign = "left";
       target.fillStyle = "#17130c";
       target.textBaseline = "bottom";
-      // The legend identifies the musical source the player listens for.
-      target.fillText(this.tr("M O T H = DRUMS", "M O T H = 鼓點"), ribbonBounds.x + 22, ribbonBounds.y + ribbonBounds.h - 12);
-      target.textAlign = "right";
-      target.fillText(this.tr("TAP / HOLD", "輕按 / 長按"), ribbonBounds.x + ribbonBounds.w - 22, ribbonBounds.y + ribbonBounds.h - 12);
-      target.textAlign = "right";
-      target.fillStyle = "#17130c";
-      target.fillText(
-        tutorialMode === "practice"
-          ? `${this.tr("PRACTICE", "練習")} ${Math.min(rhythm.tutorial.noteIndex + 1, rhythm.tutorial.notes.length)}/${rhythm.tutorial.notes.length}`
-          : this.formatRhythmPhaseCounter(phaseIndex),
-        ribbonBounds.x + ribbonBounds.w - 22,
-        ribbonBounds.y + 23
-      );
+      // The legend identifies the musical source the player listens for. The
+      // phone draws its own under its slice of the track (renderTallScreen).
+      if (!this.isTallScreenView()) {
+        target.fillText(this.tr("M O T H = DRUMS", "M O T H = 鼓點"), ribbonBounds.x + 22, ribbonBounds.y + ribbonBounds.h - 12);
+        target.textAlign = "right";
+        target.fillText(this.tr("TAP / HOLD", "輕按 / 長按"), ribbonBounds.x + ribbonBounds.w - 22, ribbonBounds.y + ribbonBounds.h - 12);
+        target.textAlign = "right";
+        target.fillStyle = "#17130c";
+        target.fillText(
+          tutorialMode === "practice"
+            ? `${this.tr("PRACTICE", "練習")} ${Math.min(rhythm.tutorial.noteIndex + 1, rhythm.tutorial.notes.length)}/${rhythm.tutorial.notes.length}`
+            : this.formatRhythmPhaseCounter(phaseIndex),
+          ribbonBounds.x + ribbonBounds.w - 22,
+          ribbonBounds.y + 23
+        );
+      }
 
       if (coachPrompt && coachPromptBounds) {
         this.drawGanganCoachChip(target, coachPromptBounds, coachPrompt, clamp(rhythm.judgment.timer / 0.18, 0, 1), motionTime);
@@ -20557,7 +20744,7 @@ for (const level of this.config.secretLevels || []) {
     if (this.canPauseLevel1Office() || this.state === "level1OfficePaused") {
       this.renderLevel1OfficePauseButton(target);
     }
-    this.renderLevel1OfficeFilmGrain(target, motionTime, VIEW_H);
+    this.renderLevel1OfficeFilmGrain(target, motionTime, VIEW_H, this.isTallScreenView() ? PORTRAIT_FIGHT.hudY : VIEW_H);
     target.restore();
   }
 
@@ -21026,8 +21213,7 @@ for (const level of this.config.secretLevels || []) {
   // counts anything, in 正 tally marks, and the practice run is a red rubber
   // stamp across the card - the same stamp Bobby is hitting the paperwork with.
   renderLevel1OfficePracticeBadge(target, bounds, rhythm) {
-    const bathroom = this.isBathroomRhythm();
-    const accent = this.isConcertRhythm() ? "#8a3fb0" : this.isRiverRhythm() ? "#2f6f8f" : this.isArcadeRhythm() ? "#3552a8" : this.isMassageRhythm() ? "#c0506a" : bathroom ? "#3a9a8a" : "#2d7ec2";
+    const accent = this.getPracticeBadgeAccent();
     const ink = "#1b2130";
     const paper = "#efe6cc";
     const x = bounds.x;
@@ -21099,53 +21285,13 @@ for (const level of this.config.secretLevels || []) {
     // the bottom bar. Font glyphs cannot do this - the 4-stroke stage is not a
     // character (止 has the bottom bar and no top one).
     const misses = Math.max(0, rhythm?.misses || 0);
-    const fullGroups = Math.floor(misses / 5);
-    const shownGroups = Math.min(fullGroups, 4);
     const rowY = y + 110;
     target.fillStyle = ink;
     target.fillRect(x + 12, rowY + 11, w - 26, 1);
-    target.textAlign = "left";
-    target.font = "900 12px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace";
-    target.fillText(this.tr("MISS", "失誤"), x + 14, rowY);
-    const glyph = 15;
-    let tallyX = x + 52;
-    target.fillStyle = "#b3202c";
-    for (let group = 0; group < shownGroups; group += 1) {
-      drawTallyZheng(target, tallyX, rowY - glyph / 2, glyph, 5);
-      tallyX += glyph + 5;
-    }
-    if (fullGroups > shownGroups) {
-      target.font = "900 12px 'Courier New', monospace";
-      target.fillText(`×${fullGroups}`, tallyX, rowY);
-    } else if (misses % 5 || !misses) {
-      if (misses % 5) drawTallyZheng(target, tallyX, rowY - glyph / 2, glyph, misses % 5);
-      else target.fillText("—", tallyX, rowY);
-    }
-    target.textAlign = "right";
-    target.fillStyle = ink;
-    target.font = "900 12px 'Courier New', monospace";
-    target.fillText(String(misses), x + w - 16, rowY);
+    this.drawMissTally(target, { x: x + 14, y: rowY, right: x + w - 16, indent: 38, glyph: 15, font: 12 }, misses, ink);
 
     // Counters on a small green LCD, like the handheld's own screen.
-    const lcd = { x: x + 12, y: y + h - 50, w: w - 26, h: 36 };
-    target.fillStyle = ink;
-    target.fillRect(lcd.x - 2, lcd.y - 2, lcd.w + 4, lcd.h + 4);
-    target.fillStyle = "#2a3a22";
-    target.fillRect(lcd.x, lcd.y, lcd.w, lcd.h);
-    target.fillStyle = "rgba(168, 224, 112, 0.08)";
-    for (let row = lcd.y + 2; row < lcd.y + lcd.h; row += 3) target.fillRect(lcd.x, row, lcd.w, 1);
-    target.font = "900 9px 'Courier New', monospace";
-    target.fillStyle = "#6f9a4c";
-    target.textAlign = "left";
-    target.fillText("COMBO", lcd.x + 7, lcd.y + 9);
-    target.textAlign = "right";
-    target.fillText("SCORE", lcd.x + lcd.w - 7, lcd.y + 9);
-    target.font = "900 16px 'Courier New', monospace";
-    target.fillStyle = "#b6ec7c";
-    target.textAlign = "left";
-    target.fillText(String(rhythm?.combo || 0).padStart(3, "0"), lcd.x + 7, lcd.y + 25);
-    target.textAlign = "right";
-    target.fillText(String(rhythm?.roundScore || 0).padStart(6, "0"), lcd.x + lcd.w - 7, lcd.y + 25);
+    this.drawPracticeLcd(target, { x: x + 12, y: y + h - 50, w: w - 26, h: 36 }, rhythm, ink);
     target.restore();
   }
 
@@ -22551,13 +22697,13 @@ for (const level of this.config.secretLevels || []) {
     this.renderLevel1OfficeFilmGrain(target, motionTime, sceneHeight);
   }
 
-  renderLevel1OfficeFilmGrain(target, motionTime, sceneHeight = VIEW_H) {
+  renderLevel1OfficeFilmGrain(target, motionTime, sceneHeight = VIEW_H, vignetteHeight = sceneHeight) {
     const frame = Math.floor(motionTime * 12);
     this.filmGrainCache ||= new Map();
-    let cached = this.filmGrainCache.get(sceneHeight);
+    let cached = this.filmGrainCache.get(`${sceneHeight}/${vignetteHeight}`);
     if (!cached) {
       const layer = document.createElement("canvas"); layer.width = VIEW_W; layer.height = sceneHeight;
-      cached = { layer, frame: null }; this.filmGrainCache.set(sceneHeight, cached);
+      cached = { layer, frame: null }; this.filmGrainCache.set(`${sceneHeight}/${vignetteHeight}`, cached);
     }
     if (cached.frame === frame) { target.drawImage(cached.layer, 0, 0); return; }
     const output = target; target = cached.layer.getContext("2d");
@@ -22592,7 +22738,7 @@ for (const level of this.config.secretLevels || []) {
     vignette.addColorStop(0, "rgba(0, 0, 0, 0)");
     vignette.addColorStop(1, "rgba(29, 8, 5, 0.3)");
     target.fillStyle = vignette;
-    target.fillRect(0, 0, VIEW_W, sceneHeight);
+    target.fillRect(0, 0, VIEW_W, vignetteHeight);
     target.restore();
     output.drawImage(cached.layer, 0, 0);
   }
@@ -25992,7 +26138,7 @@ const imageRequests = new Map();
 // configuration always come from this site.
 const MIRROR_BASE = ['myscheduleltd.com', 'www.myscheduleltd.com'].includes(location.hostname)
   ? 'https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@4a1cae2472c9fbece153cc1dbd0f0c1593dd9997/docs/moth/' : '';
-const MIRROR_PINNED = new Map([["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/drb-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/gg-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/spa-tickle.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_idle/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sfx/menu/menu-tick.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@94cc0c7ae4fe7b778f74eef4779f4832c113bb5d/docs/moth/"],["assets/sfx/menu/menu-click.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@94cc0c7ae4fe7b778f74eef4779f4832c113bb5d/docs/moth/"]]);
+const MIRROR_PINNED = new Map([["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/drb-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/gg-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/spa-tickle.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_idle/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sfx/menu/menu-tick.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@94cc0c7ae4fe7b778f74eef4779f4832c113bb5d/docs/moth/"],["assets/sfx/menu/menu-click.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@94cc0c7ae4fe7b778f74eef4779f4832c113bb5d/docs/moth/"],["assets/ui/mobile_moth_buttons_20261017/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@94cc0c7ae4fe7b778f74eef4779f4832c113bb5d/docs/moth/"]]);
 const MIRROR_ROOT = '/moth/';
 let assetIntegrity = null;
 
@@ -30037,36 +30183,9 @@ window.bobbyBuildId = BUILD_ID;
 game.init();
 
 // Deck artwork from styles.css (rewriteCssArtwork in moth-runtime-patches.mjs).
-
-async function tintMothButtons(blob) {
-  const image = await createImageBitmap(blob);
-  const canvas = Object.assign(document.createElement('canvas'), {width: image.width, height: image.height});
-  const context = canvas.getContext('2d', {willReadFrequently: true});
-  context.drawImage(image, 0, 0);
-  image.close?.();
-  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-  const data = pixels.data, width = canvas.width;
-  const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
-  const targets = [rgb(MOTH_NOTE_COLOURS.M), null, rgb(MOTH_NOTE_COLOURS.T), rgb(MOTH_NOTE_COLOURS.H)];
-  const luma = (r, g, b) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-  const face = luma(56, 61, 59);
-  for (let i = 0; i < data.length; i += 4) {
-    const target = targets[Math.floor((i / 4 % width) * 4 / width)];
-    const r = data[i], g = data[i + 1], b = data[i + 2];
-    if (!target || data[i + 3] < 10 || Math.max(r, g, b) - Math.min(r, g, b) > 34) continue;
-    const y = luma(r, g, b);
-    if (y < 0.09 || y > 0.8) continue;
-    const f = y / face, k = Math.min(1, (f - 1) * 0.55);
-    for (let c = 0; c < 3; c++) data[i + c] = Math.round(f <= 1 ? target[c] * f : target[c] + (255 - target[c]) * k);
-  }
-  context.putImageData(pixels, 0, 0);
-  return new Promise((resolve, reject) => canvas.toBlob(out => out ? resolve(out) : reject(new Error('tint')), 'image/png'));
-}
-
-for (const [index, src] of ["assets/sprites/ui/film-grain.png","assets/sprites/mobile_control_pad_kit/ui/joystick-base.webp?v=pad-art-20260702","assets/sprites/mobile_control_pad_kit/ui/joystick-knob.webp?v=pad-art-20260702","assets/ui/mobile_dpad_20260901/processed/sheet-transparent.webp?v=retro-arrows-20260901a","assets/sprites/mobile_round_button_kit/ui/round-dark.webp?v=roundpad-20260703","assets/sprites/mobile_round_button_kit/ui/round-dark-pressed.webp?v=roundpad-20260703","assets/sprites/mobile_round_button_kit/ui/round-orange.webp?v=roundpad-20260703","assets/sprites/mobile_round_button_kit/ui/round-orange-pressed.webp?v=roundpad-20260703","assets/sprites/mobile_b_button_press/higgsfield-20260713/processed/b-press-strip.webp?v=b-press-20260713","assets/sprites/mobile_control_pad_kit/ui/key-dark.webp?v=pad-art-20260702","assets/sprites/mobile_control_pad_kit/ui/key-dark-pressed.webp?v=pad-art-20260702","assets/sprites/mobile_control_pad_kit/ui/key-orange.webp?v=pad-art-20260702","assets/sprites/mobile_control_pad_kit/ui/key-orange-pressed.webp?v=pad-art-20260702","assets/ui/mobile_handheld_20260825/processed/button-flat-press-strip.webp?v=flat-handheld-20260825","assets/ui/mobile_flat_buttons_20260902/processed/rounds-transparent.webp?v=flat-buttons-20260902a","assets/ui/mobile_flat_buttons_20260902/processed/squares-transparent.webp?v=flat-buttons-20260902a","assets/ui/mobile_flat_buttons_20260902/processed/pills-transparent.webp?v=flat-buttons-20260902a","assets/ui/mobile_start_cap_20260908/processed/start-transparent.webp?v=start-cap-20260908a","assets/ui/mobile_moth_buttons_20261002/sheet.webp?v=moth-gpt-20261002c"].entries()) {
+for (const [index, src] of ["assets/sprites/ui/film-grain.png","assets/ui/mobile_dpad_20260901/processed/sheet-transparent.webp?v=retro-arrows-20260901a","assets/sprites/mobile_round_button_kit/ui/round-dark.webp?v=roundpad-20260703","assets/sprites/mobile_round_button_kit/ui/round-dark-pressed.webp?v=roundpad-20260703","assets/ui/mobile_flat_buttons_20260902/processed/pills-transparent.webp?v=flat-buttons-20260902a","assets/ui/mobile_start_cap_20260908/processed/start-transparent.webp?v=start-cap-20260908a","assets/ui/mobile_moth_buttons_20261017/sheet.webp?v=snes-20261017a"].entries()) {
   fetchGameAsset(src)
     .then(({data, type}) => new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'}))
-    .then(blob => src.includes('/mobile_moth_buttons_') ? tintMothButtons(blob).catch(() => blob) : blob)
     .then(blob => URL.createObjectURL(blob))
     .catch(() => new URL(src, document.baseURI).href)
     .then(url => document.documentElement.style.setProperty('--moth-art-' + index, 'url("' + url + '")'));
