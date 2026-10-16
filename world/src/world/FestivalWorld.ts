@@ -15659,16 +15659,6 @@ export class FestivalWorld {
     if (this.player.position.distanceTo(pamphletPosition) < 2.35) {
       return this.hasPamphlet ? 'E / OPEN FESTIVAL PAMPHLET' : 'E / TAKE FESTIVAL PAMPHLET';
     }
-    // Nothing to perform: these two describe where you are, they do not offer
-    // anything, so a tap on them should stay a tap on nothing.
-    if (this.playerState === 'swimming') {
-      this.promptActionable = false;
-      return 'SWIMMING · E / GREET WHEN AN ATTENDEE IS NEARBY';
-    }
-    if (this.player.position.z < -45) {
-      this.promptActionable = false;
-      return 'SWIMWEAR ON · ENTER WATER';
-    }
     this.promptActionable = false;
     return undefined;
   }
