@@ -1,3 +1,4 @@
+import { entryTips } from './EntryTips';
 import { AmbientAudio } from '../world/AmbientAudio';
 import { DanceWheel } from './DanceWheel';
 import { TOP_OUTFITS, topOutfit, avatarSex, outfitWire, type AvatarSex } from '../world/CoastalOutfits';
@@ -913,6 +914,7 @@ export class App {
         <div class="gate-entry" data-gate-entry hidden>
           <p data-gate-entry-label role="status"></p>
           <div class="gate-entry__track" role="progressbar" aria-label="${this.language === 'zh-TW' ? '影展載入進度' : 'Festival loading progress'}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
+          <p class="gate-entry__tip" data-gate-entry-tip></p>
         </div>
       </section>
     `;
@@ -1006,6 +1008,8 @@ export class App {
   private gatePreviewMount?: Promise<void>;
   private gateEntryOverlay?: HTMLElement;
   private gateEntryProgress = 0;
+  private gateTipTimer?: number;
+  private gateTipIndex = 0;
   private gateEntryAttempt = 0;
   private gateEntryFrames: unknown[] = [];
   private readonly gateEntryKeyCapture = (event: KeyboardEvent): void => {
@@ -1017,6 +1021,10 @@ export class App {
     this.gateEntryAttempt++;
     this.gateEntryFrames = [];
     this.gateEntryProgress = 0;
+    window.clearInterval(this.gateTipTimer);
+    this.gateTipIndex = 0;
+    this.showEntryTip();
+    this.gateTipTimer = window.setInterval(() => { this.gateTipIndex++; this.showEntryTip(); }, 5_000);
     window.addEventListener('keydown', this.gateEntryKeyCapture, true);
     window.addEventListener('keyup', this.gateEntryKeyCapture, true);
     this.gatePreview?.beginEntry();
@@ -1028,6 +1036,13 @@ export class App {
     gate?.classList.add('gate--entering');
     gate?.querySelector('.gate__layout')?.setAttribute('inert', '');
     this.setGateEntryProgress(.1, this.language === 'zh-TW' ? '正在下載角色…' : 'LOADING THE CHARACTER…');
+  }
+
+  private showEntryTip(): void {
+    const gate = this.gateEntryOverlay ?? this.root.querySelector<HTMLElement>('.gate--live');
+    const tip = gate?.querySelector<HTMLElement>('[data-gate-entry-tip]');
+    const tips = entryTips(this.language, window.matchMedia('(max-width: 800px), (pointer: coarse) and (max-width: 1000px)').matches);
+    if (tip) tip.textContent = tips[this.gateTipIndex % tips.length];
   }
 
   private setGateEntryProgress(progress: number, label: string): void {
@@ -1115,6 +1130,7 @@ export class App {
     if (attempt !== this.gateEntryAttempt || !this.openingWorld) return;
     await this.waitForGateExit();
     if (attempt !== this.gateEntryAttempt || !this.openingWorld) return;
+    window.clearInterval(this.gateTipTimer); this.gateTipTimer = undefined;
     this.gateEntryOverlay?.remove();
     this.gateEntryOverlay = undefined;
     this.disposeGatePreview();
@@ -1127,6 +1143,7 @@ export class App {
   }
 
   private cancelGateEntry(): void {
+    window.clearInterval(this.gateTipTimer); this.gateTipTimer = undefined;
     this.gateEntryAttempt++;
     window.removeEventListener('keydown', this.gateEntryKeyCapture, true);
     window.removeEventListener('keyup', this.gateEntryKeyCapture, true);
@@ -1310,7 +1327,7 @@ export class App {
     let lastProgressAt = 0;
     const downloads = new Map<string, { received: number; total: number }>();
     const stopProgress = watchAssetDownloads(({ file, received, total }) => {
-      if (!waiting || !/^(male|female)-.*\.glb$/.test(file)) return;
+      if (!waiting || !/^(male|female)(?:-.*)?\.glb$/.test(file)) return;
       if (total) downloads.set(file, { received: Math.min(received, total), total });
       const known = [...downloads.values()];
       const fraction = known.reduce((sum, item) => sum + item.received, 0) / (known.reduce((sum, item) => sum + item.total, 0) || 1);
@@ -1323,8 +1340,7 @@ export class App {
       this.setGateEntryProgress(.1 + fraction * .35, waiting.textContent);
     });
     window.setTimeout(() => {
-      // Only the bodies this visitor and the residents wear; the others arrive
-      // behind them while the world is already running.
+      // The selected body appears first; admission then waits for both bodies and their outfits.
       void this.preloadAvatar().then(async () => {
         stopProgress();
         if (waiting) waiting.textContent = this.language === 'zh-TW' ? '正在建立影展…' : 'BUILDING THE FESTIVAL…';
@@ -1400,6 +1416,9 @@ export class App {
     // Keep the loading/retry form visible until the world's code is usable.
     const { FestivalWorld } = await this.preloadWorldModule();
     await this.gatePreview?.awaitEntryProgress(.45);
+    this.setGateEntryProgress(.48, this.language === 'zh-TW' ? '正在準備角色與服裝…' : 'PREPARING CHARACTERS AND OUTFITS…');
+    const { loadImportedAvatar } = await import('../world/ImportedAvatar');
+    await loadImportedAvatar(undefined, ['male', 'female'], false);
     this.setGateEntryProgress(.5, this.language === 'zh-TW' ? '正在準備世界…' : 'PREPARING THE WORLD…');
     this.retainGateEntry();
     this.lockPageZoomForWorld();
@@ -1407,7 +1426,7 @@ export class App {
     // tab away while it is locked, the restored tab knows it was already in
     // and walks back rather than presenting a sign-in page.
     sessionStorage.setItem(INSIDE_KEY, '1');
-    // Delayed scenery and model uploads continue well past the first frame.
+    // Retain the guard through gameplay, beyond the completed entry work.
     // Clearing after eight seconds allowed a phone failing at 49 seconds to
     // auto-rejoin forever. Keep the guard through two minutes of gameplay.
     window.setTimeout(() => sessionStorage.removeItem(REJOIN_TRIES_KEY), 120_000);
@@ -1622,12 +1641,12 @@ export class App {
         if (this.festivalClient.online) void this.festivalClient.reportTrackDuration(venue, youtubeId, seconds);
       },
     });
+    await this.world.prepareAssets(progress => this.setGateEntryProgress(.6 + progress * .14,
+      this.language === 'zh-TW' ? '正在準備場景資源…' : 'PREPARING WORLD ASSETS…'));
     this.world.setNpcProfiles(this.npcProfiles);
+    if (this.networkState) this.world.setRemoteVisitors(this.remoteVisitorVisuals(this.networkState));
     this.world.setWishes(this.networkState?.wishes ?? []);
     this.syncArcadeRelease();
-    this.world.start();
-    // Other body variants are background work, after the visitor is inside.
-    void import('../world/ImportedAvatar').then(({ loadImportedAvatar }) => loadImportedAvatar()).catch(() => undefined);
     this.syncPublicProjectors();
     this.syncVrUi();
     // Both approved public channels share this application. The era flag
@@ -1657,12 +1676,6 @@ export class App {
           Number.isFinite(texture) ? texture : 1,
         );
       dial(amount, steps, grain);
-      // The world keeps building after the gate closes — club fittings, remote
-      // avatars, the evening's fireworks — so the pass runs again a few times
-      // rather than once, and is left on the window to dial by hand.
-      for (const delay of [400, 1_600, 6_000]) {
-        window.setTimeout(() => dial(amount, steps, grain), delay);
-      }
       (window as Window & {
         __festivalWorn?: (a: number, s?: number, g?: number) => unknown;
       }).__festivalWorn = (a: number, st?: number, g?: number) => dial(a, st ?? steps, g ?? grain);
@@ -2563,7 +2576,12 @@ export class App {
     // Never cleared: it lives as long as the page does, and the page is the
     // only thing that could have stopped it.
     window.setInterval(() => this.syncProgrammeBoard(), 1_000);
-    this.setGateEntryProgress(.75, this.language === 'zh-TW' ? '正在準備入口…' : 'PREPARING THE ENTRANCE…');
+    this.setGateEntryProgress(.75, this.language === 'zh-TW' ? '正在準備畫面…' : 'PREPARING THE SCENE…');
+    await this.world.prepareForPlay(progress => this.setGateEntryProgress(.75 + progress * .14,
+      this.language === 'zh-TW' ? (progress < .6 ? '正在準備場景資源…' : '正在準備畫面…')
+        : (progress < .6 ? 'PREPARING WORLD ASSETS…' : 'PREPARING GRAPHICS…')));
+    this.world.start();
+    this.setGateEntryProgress(.9, this.language === 'zh-TW' ? '正在準備入口…' : 'PREPARING THE ENTRANCE…');
     await this.completeGateEntry();
   }
 
@@ -4918,6 +4936,29 @@ export class App {
     else sessionStorage.removeItem(PRIVATE_PROGRESS_KEY);
   }
 
+  private remoteVisitorVisuals(state: FestivalState) {
+    return state.visitors
+      .filter((visitor) => visitor.id !== state.selfId)
+      .map((visitor) => ({
+        id: visitor.id,
+        name: visitor.name,
+        palette: visitor.palette,
+        x: visitor.presence.x,
+        y: visitor.presence.y,
+        z: visitor.presence.z,
+        rotation: visitor.presence.rotation,
+        state: visitor.presence.state,
+        moving: visitor.presence.moving,
+        running: visitor.presence.running,
+        gesture: visitor.hitAt && Date.now() - visitor.hitAt < 620 ? 'hit' : visitor.presence.gesture,
+        carriedItem: visitor.presence.carriedItem,
+        limbs: visitor.presence.limbs,
+        npcId: visitor.npcId,
+        originalName: visitor.originalName,
+        impersonationOrigin: visitor.impersonationOrigin,
+      }));
+  }
+
   private handleNetworkState(state: FestivalState): void {
     const sharedKey = JSON.stringify(Object.fromEntries(Object.entries(state)
       .filter(([key]) => !['serverTime', 'selfId', 'visitors'].includes(key))));
@@ -5010,26 +5051,7 @@ export class App {
     else this.openWishWall = false;
     this.world?.setSharedMentorCarrier(state.mentorCarrierId, state.selfId);
     this.world?.setMentorFollower(state.mentorFollower);
-    const remoteVisitors = state.visitors
-      .filter((visitor) => visitor.id !== state.selfId)
-      .map((visitor) => ({
-        id: visitor.id,
-        name: visitor.name,
-        palette: visitor.palette,
-        x: visitor.presence.x,
-        y: visitor.presence.y,
-        z: visitor.presence.z,
-        rotation: visitor.presence.rotation,
-        state: visitor.presence.state,
-        moving: visitor.presence.moving,
-        running: visitor.presence.running,
-        gesture: visitor.hitAt && Date.now() - visitor.hitAt < 620 ? 'hit' : visitor.presence.gesture,
-        carriedItem: visitor.presence.carriedItem,
-        limbs: visitor.presence.limbs,
-        npcId: visitor.npcId,
-        originalName: visitor.originalName,
-        impersonationOrigin: visitor.impersonationOrigin,
-      }));
+    const remoteVisitors = this.remoteVisitorVisuals(state);
     this.world?.setRemoteVisitors(remoteVisitors);
     this.world?.setSharedMentorCarrier(state.mentorCarrierId, state.selfId);
     this.world?.setOccupiedSeats(

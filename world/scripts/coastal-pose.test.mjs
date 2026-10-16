@@ -10,8 +10,8 @@ import { createHash } from 'node:crypto';
 globalThis.self=globalThis;
 globalThis.createImageBitmap=async(blob)=>{const bytes=await blob.arrayBuffer();const view=new DataView(bytes);return {width:view.getUint32(16),height:view.getUint32(20),close(){}};};
 globalThis.document = {createElement:()=>({width:64,height:64,getContext:()=>({fillRect(){}})})};
-const output=await build({stdin:{contents:"export {applyWornStyle} from './src/world/WornStyle'; export * from './src/world/MentorDog'; export * from './src/world/HandPose'; export * from './src/world/RooftopBand'; export { HeadTracking } from './src/world/HeadTracking'; export { FestivalWorld } from './src/world/FestivalWorld'; export * from './src/world/CoastalAvatar'; export * from './src/world/CoastalPose'; export * from './src/world/CoastalCarry'; export * from './src/world/ImportedAvatar'; export * from './src/world/CoastalSkateboard'; export * from './src/world/CoastalGeometry'; export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,loader:{'.png':'dataurl'},platform:'node',format:'esm',write:false});
-const {HeadTracking,RooftopBand,BAND_MEMBERS,FIST,FINGER_NAMES,handJointsFromLandmarks,handPoseFromJoints,MENTOR_NESTLE,applyWornStyle,waveCoastalPose,fallCoastalPose,landCoastalPose,djCoastalPose,hitCoastalPose,perchMentor,stepMentorGait,createMentorDog,poseCoastalCarry,loadImportedAvatar,attachImportedAvatar,importedAvatarRoots,syncImportedAvatars,COASTAL_CUP_OFFSET,COASTAL_STRAW_TIP,FestivalWorld,jumpCoastalArms,setCoastalSwimwear,punchCoastalPose,setCoastalFists,createCoastalSedan,CONVERTIBLE,walkCoastalPose,danceCoastalPose,COASTAL_STRIDE_LENGTH,THREE,createCoastalAvatar,supportCoastalPose,seatCoastalLegs,coastalFootHeights,skateCoastalPose,createCoastalSkateboard}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
+const output=await build({stdin:{contents:"export {applyWornStyle} from './src/world/WornStyle'; export * from './src/world/MentorDog'; export * from './src/world/HandPose'; export * from './src/world/RooftopBand'; export { HeadTracking } from './src/world/HeadTracking'; export { FestivalWorld } from './src/world/FestivalWorld'; export { CLUB_GRADE } from './src/world/CoastalTerrain'; export * from './src/world/CoastalAvatar'; export * from './src/world/CoastalPose'; export * from './src/world/CoastalCarry'; export * from './src/world/ImportedAvatar'; export * from './src/world/CoastalSkateboard'; export * from './src/world/CoastalGeometry'; export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,loader:{'.png':'dataurl'},platform:'node',format:'esm',write:false});
+const {CLUB_GRADE,HeadTracking,RooftopBand,BAND_MEMBERS,FIST,FINGER_NAMES,handJointsFromLandmarks,handPoseFromJoints,MENTOR_NESTLE,applyWornStyle,waveCoastalPose,fallCoastalPose,landCoastalPose,djCoastalPose,hitCoastalPose,perchMentor,stepMentorGait,createMentorDog,poseCoastalCarry,loadImportedAvatar,attachImportedAvatar,importedAvatarRoots,syncImportedAvatars,COASTAL_CUP_OFFSET,COASTAL_STRAW_TIP,FestivalWorld,jumpCoastalArms,setCoastalSwimwear,punchCoastalPose,setCoastalFists,createCoastalSedan,CONVERTIBLE,walkCoastalPose,danceCoastalPose,COASTAL_STRIDE_LENGTH,THREE,createCoastalAvatar,supportCoastalPose,seatCoastalLegs,coastalFootHeights,skateCoastalPose,createCoastalSkateboard}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
 function character(){
   const root=new THREE.Group();root.position.y=.28;
   const rig=createCoastalAvatar(root,{skin:'#dfb590',hair:'#3b3633',top:'#d0cbc1',bottoms:'#44464a',swimwear:'#577467'},true,new THREE.Group());
@@ -793,8 +793,8 @@ test('follow camera stays on the avatar side of a nearby building wall',()=>{
   const player=new THREE.Group();player.position.set(0,.28,0);
   Object.assign(world,{
     player,playerState:'walking',cameraMode:'follow',cameraReach:0,
-    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),lookTarget:new THREE.Vector3(),groundHeightAt:()=>0,
-    clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
+    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),lookTarget:player.position.clone().add(new THREE.Vector3(0,2.84,0)),groundHeightAt:()=>0,
+    wallAvoidance:{side:0,offset:0},
     colliders:[{minX:-5,maxX:5,minZ:2,maxZ:3,minY:-1,maxY:10}],
   });
   const eye=player.position.clone().add(new THREE.Vector3(0,2.84,0));
@@ -823,8 +823,8 @@ test('wall avoidance holds one side and returns to the usual orbit after clearan
   const world=Object.create(FestivalWorld.prototype);
   const player=new THREE.Group();player.position.set(0,.28,0);
   Object.assign(world,{player,playerState:'walking',cameraMode:'follow',cameraReach:0,
-    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),lookTarget:new THREE.Vector3(),groundHeightAt:()=>0,
-    clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
+    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),lookTarget:player.position.clone().add(new THREE.Vector3(0,2.84,0)),groundHeightAt:()=>0,
+    wallAvoidance:{side:0,offset:0},
     colliders:[{minX:-5,maxX:5,minZ:2,maxZ:3,minY:-1,maxY:10}]});
   const first=new THREE.Vector3(0,3.12,10);
   for(let frame=0;frame<240;frame++){first.set(0,3.12,10);world.pullCameraClearOfWalls(first,1/60);}
@@ -845,8 +845,8 @@ test('perspective orbit also stays away from a wall at its side',()=>{
   const world=Object.create(FestivalWorld.prototype);
   const player=new THREE.Group();player.position.set(0,.28,0);
   Object.assign(world,{player,playerState:'walking',cameraMode:'perspective',cameraReach:0,
-    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),lookTarget:new THREE.Vector3(),groundHeightAt:()=>0,
-    clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
+    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),lookTarget:player.position.clone().add(new THREE.Vector3(0,2.84,0)),groundHeightAt:()=>0,
+    wallAvoidance:{side:0,offset:0},
     colliders:[{minX:2,maxX:3,minZ:-5,maxZ:5,minY:-1,maxY:10}]});
   const eye=player.position.clone().add(new THREE.Vector3(0,2.84,0));
   const target=new THREE.Vector3(9,3.12,2);
@@ -854,63 +854,6 @@ test('perspective orbit also stays away from a wall at its side',()=>{
   // Closeness is permitted now; looking through the wall is not.
   assert.ok(world.cameraClearReach(eye,target)>=target.distanceTo(eye)-.32);
   assert.equal(world.wallAvoidance.offset,0,'the perspective orbit must not swing either');
-});
-
-test('club wall confinement finds room to the side before squeezing the camera',()=>{
-  const world=Object.create(FestivalWorld.prototype);
-  const player=new THREE.Group();player.position.set(-51.5,-15.7,15);
-  Object.assign(world,{player,playerState:'walking',cameraMode:'follow',
-    cameraOrbit:{follow:{yaw:Math.PI/2,pitch:.3},perspective:{yaw:.8,pitch:.4}},
-    lookTarget:new THREE.Vector3(),groundHeightAt:()=>-16,
-    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),
-    clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0}});
-  const target=new THREE.Vector3(-41.5,-12,15);
-  // The swing is eased now rather than snapped, so it is settled over a second
-  // of frames — a camera that jumped to its alternate in one frame is what made
-  // walking through the club dizzy.
-  for(let frame=0;frame<90;frame+=1)world.confineCameraToClub(target,1/60);
-  // The room still holds the camera inside its walls — that part has not
-  // changed — but it no longer hunts along them for a better view.
-  // The invariant that still matters: wherever the view ends up, it is inside
-  // the club. It used to be allowed a 1.6 minimum distance even when the orbit
-  // it was on had less room than that, which with the swing gone would put the
-  // lens through the wall and show the void behind it.
-  assert.ok(world.inClub(target.x,target.z),
-    `the camera left the room at ${target.x.toFixed(2)},${target.z.toFixed(2)}`);
-  assert.ok(target.distanceTo(player.position)<=7.5,'and never further out than the orbit asked for');
-  assert.equal(world.clubAvoidance.offset,0,'the club must not swing the view any more');
-  assert.equal(world.clubAvoidance.side,0);
-});
-
-test('the club camera commits to one side instead of swinging as you walk',()=>{
-  const world=Object.create(FestivalWorld.prototype);
-  const player=new THREE.Group();player.position.set(-51.5,-15.7,15);
-  Object.assign(world,{player,playerState:'walking',cameraMode:'follow',
-    cameraOrbit:{follow:{yaw:Math.PI/2,pitch:.3},perspective:{yaw:.8,pitch:.4}},
-    lookTarget:new THREE.Vector3(),groundHeightAt:()=>-16,
-    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),
-    clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0}});
-  const target=new THREE.Vector3(-41.5,-12,15);
-  for(let frame=0;frame<90;frame+=1)world.confineCameraToClub(target,1/60);
-  // The rule now, in its strongest form: walking moves the avatar and nothing
-  // else. This used to assert that a side had been *taken* and merely held on
-  // to; the owner tried that and asked for the swing gone altogether, because
-  // even a committed, eased swing reads as the world turning around somebody
-  // who is only pressing forward.
-  assert.equal(world.clubAvoidance.side,0,'no side may be taken any more');
-  assert.equal(world.clubAvoidance.offset,0,'and no swing applied');
-  let biggestSidestep=0;
-  let previous=target.clone();
-  for(let stepIndex=0;stepIndex<40;stepIndex+=1){
-    player.position.z+=0.25;
-    world.confineCameraToClub(target,1/60);
-    // The avatar's own 0.25 is subtracted; what is left is the camera moving
-    // of its own accord, which must be nothing.
-    biggestSidestep=Math.max(biggestSidestep,Math.hypot(target.x-previous.x,target.z-previous.z-0.25));
-    previous=target.clone();
-    assert.equal(world.clubAvoidance.offset,0,`the camera swung itself at step ${stepIndex}`);
-  }
-  assert.ok(biggestSidestep<0.06,`the camera moved itself ${biggestSidestep.toFixed(3)} sideways in one frame`);
 });
 
 test('approaching a building keeps the follow camera out of the face and the masonry',()=>{
@@ -921,10 +864,10 @@ test('approaching a building keeps the follow camera out of the face and the mas
     cameraMode:'follow',cameraZoom:1,cameraReach:0,playerState:'walking',
     cameraScratch:new THREE.Vector3(),cameraAim:new THREE.Euler(0,0,0,'YXZ'),
     cameraArcPivot:new THREE.Vector3(),cameraArcFrom:new THREE.Vector3(),cameraArcTo:new THREE.Vector3(),
-    clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
+    wallAvoidance:{side:0,offset:0},
     cameraOrbit:{follow:{yaw:0,pitch:Math.atan2(3.4,10)},perspective:{yaw:.8,pitch:.4}},
     colliders:[{minX:-5,maxX:5,minZ:2,maxZ:3,minY:-1,maxY:10}],
-    groundHeightAt:()=>0,confineCameraToClub(){},confineCameraOverWater(){},
+    groundHeightAt:()=>0,confineCameraOverWater(){},
     settlePunchImpact(){},applyCameraShake(){},applyDrunkenView(){},
   });
   let closest=Infinity;
@@ -1247,9 +1190,9 @@ test('the avatar stays put on screen however far the camera is turned',()=>{
       cameraMode:'follow',cameraZoom:1,cameraReach:0,playerState:'walking',cameraScratch:new THREE.Vector3(),
       cameraFollowY:Number.NaN,cameraFloorY:Number.NaN,
       cameraArcPivot:new THREE.Vector3(),cameraArcFrom:new THREE.Vector3(),cameraArcTo:new THREE.Vector3(),
-      clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
+      wallAvoidance:{side:0,offset:0},
       cameraOrbit:{follow:{yaw,pitch:Math.atan2(3.4,10)},perspective:{yaw:.8,pitch:.4}},
-      colliders:[],groundHeightAt:()=>0,confineCameraToClub(){},confineCameraOverWater(){},
+      colliders:[],groundHeightAt:()=>0,confineCameraOverWater(){},
       settlePunchImpact(){},applyCameraShake(){},applyDrunkenView(){}});
     for(let frame=0;frame<400;frame+=1)world.updateCamera(1/60,frame/60);
     camera.updateMatrixWorld(true);camera.updateProjectionMatrix();
@@ -1319,9 +1262,9 @@ test('the camera sits on its orbit and does not wobble along behind',()=>{
     const camera=new THREE.PerspectiveCamera();camera.position.set(0,5,-9);
     Object.assign(world,{player,camera,lookTarget:new THREE.Vector3(),cameraProbe:new THREE.Vector3(),
       cameraMode:'follow',cameraZoom:1,cameraReach:0,playerState:'walking',cameraScratch:new THREE.Vector3(),
-      clubAvoidance:{side:0,offset:0},wallAvoidance:{side:0,offset:0},
+      wallAvoidance:{side:0,offset:0},
       cameraOrbit:{follow:{yaw:.6,pitch:Math.atan2(3.4,10)},perspective:{yaw:.8,pitch:.4}},
-      colliders,groundHeightAt:ground,confineCameraToClub(){},confineCameraOverWater(){},
+      colliders,groundHeightAt:ground,confineCameraOverWater(){},
       settlePunchImpact(){},applyCameraShake(){},applyDrunkenView(){}});
     const direction=new THREE.Vector3();
     let previousDirection,previousCamera,previousPlayer,worstTurn=0,worstWobble=0;
@@ -1960,4 +1903,106 @@ test('unchanged palette/swim snapshots preserve the mounted appearance and pose'
   assert.ok(rig.visualRoot.position.distanceTo(position)<1e-9);
   root.userData.setImportedPalette({...BASE_PALETTE,top:'#291a1c'});assert.equal(root.userData.importedAvatar.sex,'female');
   root.userData.disposeImportedAvatar();
+});
+
+function clubCameraFixture(mode, yaw, pitch) {
+  const world=Object.create(FestivalWorld.prototype),player=new THREE.Group(),camera=new THREE.PerspectiveCamera();
+  const floor=x=>x>=-24?0:x<=-50?CLUB_GRADE:-(x+24)*CLUB_GRADE/26;
+  Object.assign(world,{player,camera,cameraMode:mode,cameraZoom:1,cameraReach:0,playerState:'walking',
+    cameraOrbit:{follow:{yaw,pitch},perspective:{yaw,pitch}},lookTarget:new THREE.Vector3(),
+    cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),colliders:[],
+    wallAvoidance:{side:0,offset:0},groundHeightAt:(x)=>floor(x),
+    settlePunchImpact(){},applyCameraShake(){},applyDrunkenView(){}});
+  return {world,player,camera,floor};
+}
+
+test('walking through the club entrance, stairs and room never overrides player yaw or pitch',()=>{
+  for(const mode of ['follow','perspective'])for(const pitch of [-.5,0,.3,.8])for(const yaw of [0,.7,Math.PI/2,Math.PI]){
+    const {world,player,camera,floor}=clubCameraFixture(mode,yaw,pitch);
+    const expected=new THREE.Vector3(-Math.sin(yaw)*Math.cos(pitch),-Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch));
+    for(let frame=0;frame<=320;frame++){
+      const x=-20.05-frame*.15;player.position.set(x,floor(x)+.28,23.5);
+      world.updateCamera(1/60,frame/60);
+      const actual=camera.getWorldDirection(new THREE.Vector3());
+      assert.ok(actual.distanceTo(expected)<1e-8,`${mode} x=${x} pitch=${pitch}: view turned ${actual.angleTo(expected)} rad without input`);
+    }
+  }
+});
+
+test('club wall avoidance preserves the selected view even at close range, and new input still rotates it',()=>{
+  const {world,player,camera}=clubCameraFixture('follow',0,.3);player.position.set(-65,CLUB_GRADE+.28,23.5);
+  world.colliders=[{minX:-75,maxX:-55,minZ:26,maxZ:27,minY:CLUB_GRADE,maxY:CLUB_GRADE+15}];
+  for(const pitch of [.3,-.4,.65]){
+    world.cameraOrbit.follow.pitch=pitch;
+    for(let frame=0;frame<60;frame++)world.updateCamera(1/60,frame/60);
+    const expected=new THREE.Vector3(0,-Math.sin(pitch),-Math.cos(pitch));
+    assert.ok(camera.getWorldDirection(new THREE.Vector3()).distanceTo(expected)<1e-8,'collision changed the chosen pitch');
+    const origin=world.lookTarget;
+    assert.ok(world.cameraClearReach(origin,camera.position)>=origin.distanceTo(camera.position)-.001,'camera passed through a wall');
+  }
+});
+
+
+test('club entry and exit retain the ordinary building orbit through lobby and ramp boundaries',()=>{
+  for(const mode of ['follow','perspective'])for(const zoom of [.8,1,1.5]){
+    const {world,player,camera,floor}=clubCameraFixture(mode,Math.PI/2,.3);
+    world.cameraZoom=zoom;
+    // The actual warehouse door is open here. Its walls and low ramp rails
+    // should not create an invisible camera box across the entrance.
+    world.colliders=[
+      {minX:-20.4,maxX:-19.6,minZ:0,maxZ:20.5,minY:CLUB_GRADE-1,maxY:CLUB_GRADE+15},
+      {minX:-20.4,maxX:-19.6,minZ:26.5,maxZ:42,minY:CLUB_GRADE-1,maxY:CLUB_GRADE+15},
+      {minX:-49.35,maxX:-24.4,minZ:27.21,maxZ:27.49,minY:CLUB_GRADE-.4,maxY:1.5,viewTop:1.5},
+    ];
+    const radius=(mode==='perspective'?11.68:10.56)*zoom;
+    const lead=mode==='perspective'?0:2.2;
+    let previous;
+    for(const direction of [-1,1])for(let frame=0;frame<=360;frame++){
+      const x=direction===-1?-16-frame*.15:-70+frame*.15;
+      player.position.set(x,floor(x)+.28,23.5);
+      world.updateCamera(1/60,frame/60);
+      assert.ok(Math.abs(camera.position.distanceTo(world.lookTarget)-radius)<1e-8,
+        `${mode} zoom=${zoom} x=${x}: clear entrance changed orbit distance`);
+      assert.ok(Math.abs(world.lookTarget.x-(x-lead))<1e-8,'club boundary replaced the normal aim point');
+      const offset=camera.position.clone().sub(player.position);
+      if(previous)assert.ok(offset.distanceTo(previous)<1e-8,'camera pulsed while crossing a room boundary');
+      previous=offset;
+      assert.equal(world.cameraZoom,zoom,'entry must preserve the player zoom setting');
+    }
+  }
+});
+
+test('club and temple use the same ordinary orbit when no wall obstructs the camera',()=>{
+  for(const mode of ['follow','perspective']){
+    const {world,player,camera}=clubCameraFixture(mode,.7,.3);
+    world.groundHeightAt=()=>CLUB_GRADE;
+    let offset,aim;
+    // Club room, lobby, exterior, temple: membership alone must not change zoom.
+    for(const [x,z] of [[-65,23.5],[-23,23.5],[-15,23.5],[88,4]]){
+      player.position.set(x,CLUB_GRADE+.28,z);world.cameraReach=0;
+      world.updateCamera(1/60,0);
+      const actual=camera.position.clone().sub(player.position);
+      const actualAim=world.lookTarget.clone().sub(player.position);
+      if(offset)assert.ok(actual.distanceTo(offset)<1e-8,'a building region changed the camera offset');
+      if(aim)assert.ok(actualAim.distanceTo(aim)<1e-8,'a building region changed the aim');
+      offset=actual;aim=actualAim;
+    }
+  }
+});
+
+
+test('the shared orbit keeps its aim and camera on the avatar side of a real building wall',()=>{
+  for(const [x,y,z,yaw,wall] of [
+    [-65,CLUB_GRADE+.28,1.2,0,{minX:-90,maxX:-20,minZ:-.4,maxZ:.4,minY:CLUB_GRADE-1,maxY:14}],
+    [104.8,6.28,4,-Math.PI/2,{minX:105.55,maxX:106.45,minZ:-14,maxZ:22,minY:4.8,maxY:20}],
+  ]){
+    const {world,player,camera}=clubCameraFixture('follow',yaw,.3);
+    player.position.set(x,y,z);world.groundHeightAt=()=>y-.28;world.colliders=[wall];
+    world.updateCamera(1/60,0);
+    const body=player.position.clone().add(new THREE.Vector3(0,1.4,0));
+    assert.ok(world.cameraClearReach(body,camera.position)>=body.distanceTo(camera.position)-.001,
+      'the follow lead must not put the camera across a wall from the avatar');
+    const expected=new THREE.Vector3(-Math.sin(yaw)*Math.cos(.3),-Math.sin(.3),-Math.cos(yaw)*Math.cos(.3));
+    assert.ok(camera.getWorldDirection(new THREE.Vector3()).distanceTo(expected)<1e-8,'wall changed the chosen view direction');
+  }
 });
