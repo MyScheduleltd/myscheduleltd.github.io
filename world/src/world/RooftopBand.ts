@@ -424,9 +424,11 @@ export class RooftopBand {
     this.flames = flames;
     const light = new THREE.PointLight(0xff8a3c, 18, 14, 1.6);
     light.position.set(0, .5, 0);
+    // Configure shared rendering layers before the asynchronous set becomes
+    // visible in its already-mounted group.
+    this.onLight?.(light);
     anchor.add(light);
     this.light = light;
-    this.onLight?.(light);
   }
 
   private flicker(elapsed: number): void {

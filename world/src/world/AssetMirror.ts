@@ -32,7 +32,7 @@ const SITE_MS = 60_000;
 let mirrorDown = false;
 let integrity: Promise<Record<string, string>> | undefined;
 
-type DownloadProgress = { file: string; received: number };
+type DownloadProgress = { file: string; received: number; total?: number };
 const progressListeners = new Set<(progress: DownloadProgress) => void>();
 export function watchAssetDownloads(listener: (progress: DownloadProgress) => void): () => void {
   progressListeners.add(listener);
@@ -49,6 +49,11 @@ async function download(url: string, milliseconds: number, mirrored = false): Pr
     // Only arriving bytes renew the timer; successful headers alone do not.
     if (!response.body) return response.arrayBuffer();
     const reader = response.body.getReader();
+    // Fetch exposes decoded bytes. A compressed Content-Length describes the
+    // wire representation and must not be used as their progress denominator.
+    const encoded = response.headers.get('content-encoding');
+    const length = Number(response.headers.get('content-length'));
+    const total = (!encoded || encoded === 'identity') && Number.isFinite(length) && length > 0 ? length : undefined;
     const chunks: Uint8Array[] = [];
     let received = 0;
     try {
@@ -59,7 +64,7 @@ async function download(url: string, milliseconds: number, mirrored = false): Pr
         chunks.push(value);
         received += value.length;
         keepAlive();
-        for (const listener of progressListeners) listener({ file: fileName(url), received });
+        for (const listener of progressListeners) listener({ file: fileName(url), received, total });
       }
     } finally {
       if (signal.aborted) void reader.cancel().catch(() => undefined);

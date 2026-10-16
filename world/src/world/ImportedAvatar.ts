@@ -962,6 +962,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     if (!mounted) return;
     mounted.model.removeFromParent();
     for (const mesh of mounted.meshes) (mesh.material as THREE.Material).dispose();
+    for (const skeleton of new Set(mounted.meshes.map(mesh => mesh.skeleton))) skeleton.dispose();
   };
 
   // A body that has not arrived yet is stood in for by one that has, and
@@ -1114,11 +1115,25 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
   const activeMove = () => move && performance.now() - move.at < 100 ? move : null;
   root.userData.importedMoveActive = () => activeMove()?.name ?? null;
 
+  // A throttled skin keeps a whole pose, including its solved floor offset.
+  // animateRig resets the visual root before preparing the next pose; keeping
+  // only the bones made distant bodies alternate between that reset height
+  // and their supported height. The network/collision root still moves every
+  // frame, carrying this held local pose with it.
+  const posedPosition = body.position.clone(), posedRotation = body.quaternion.clone(), posedScale = body.scale.clone();
+
   root.userData.syncImportedAvatar = () => {
     // Not drawn this frame, so nothing to rebuild. The next frame it is seen,
     // it is synced before it is drawn.
     // A distant body seen this frame is rebuilt every other frame.
-    if (culled || root.userData.cullThrottle) return;
+    if (culled) return;
+    if (root.userData.cullThrottle) {
+      body.position.copy(posedPosition);
+      body.quaternion.copy(posedRotation);
+      body.scale.copy(posedScale);
+      body.updateWorldMatrix(true, false);
+      return;
+    }
     // The procedural rig the bones follow; the model is rebuilt below.
     body.updateWorldMatrix(true, false);
     for (const child of body.children) if (child !== mounted.model) child.updateWorldMatrix(false, true);
@@ -1174,6 +1189,9 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       const skinned = node as THREE.SkinnedMesh;
       if (skinned.isSkinnedMesh && skinned.bindMode === THREE.AttachedBindMode) skinned.bindMatrixInverse.copy(skinned.matrixWorld).invert();
     }
+    posedPosition.copy(body.position);
+    posedRotation.copy(body.quaternion);
+    posedScale.copy(body.scale);
   };
 
   root.userData.setImportedSwimwear = (on: boolean) => { swimming = on; settle(); root.userData.syncImportedAvatar(); };
@@ -1426,6 +1444,14 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     settle();
   };
   arrivals.add(onArrival);
+  let disposed = false;
+  root.userData.disposeImportedAvatar = () => {
+    if (disposed) return;
+    disposed = true;
+    arrivals.delete(onArrival);
+    importedAvatarRoots.delete(root);
+    unmount(mounted);
+  };
 
   root.userData.sculptRuntime.parts = {};
   refresh();

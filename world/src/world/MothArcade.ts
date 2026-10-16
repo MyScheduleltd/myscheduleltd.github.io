@@ -13,6 +13,12 @@ export class MothArcadeCabinet {
   status: 'loading' | 'ready' | 'failed' = 'loading';
   private disposed = false;
   private floorSupport?: THREE.Mesh;
+  private locked = false;
+  private lockLanguage: 'en' | 'zh-TW' = 'zh-TW';
+  private authoredScreenMaterial?: THREE.Material | THREE.Material[];
+  private authoredScreenUv?: THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
+  private lockMaterial?: THREE.MeshBasicMaterial;
+  private lockTexture?: THREE.CanvasTexture;
 
   constructor(x: number, y: number, z: number) {
     this.root.name = 'M.O.T.H arcade cabinet';
@@ -21,6 +27,52 @@ export class MothArcadeCabinet {
     // The generated cabinet faces +Z; the road is west of the venue.
     this.root.rotation.y = -Math.PI / 2;
     this.ready = this.load();
+  }
+
+  /** Keep a release notice on the physical CRT, including while its GLB is loading. */
+  setLocked(locked: boolean, language: 'en' | 'zh-TW' = 'zh-TW'): void {
+    if (this.disposed || (this.locked === locked && this.lockLanguage === language)) return;
+    this.locked = locked; this.lockLanguage = language;
+    this.updateLockScreen();
+  }
+
+  private updateLockScreen(): void {
+    if (!this.screen || !this.authoredScreenMaterial) return;
+    this.releaseLockScreen();
+    if (!this.locked) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024; canvas.height = 856;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    paintArcadeLock(context, this.lockLanguage, canvas.width, canvas.height);
+    this.lockTexture = new THREE.CanvasTexture(canvas);
+    this.lockTexture.colorSpace = THREE.SRGBColorSpace;
+    this.lockMaterial = new THREE.MeshBasicMaterial({ map: this.lockTexture, toneMapped: false });
+    this.lockMaterial.name = 'M.O.T.H release lock notice';
+    this.lockMaterial.userData.preserveAuthoredSurface = true;
+    // The authored, formerly black CRT has no UVs. Project its local XY plane
+    // so the notice reads upright from the same front face as the live game.
+    const geometry = this.screen.geometry;
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox!, size = box.getSize(new THREE.Vector3());
+    const positions = geometry.getAttribute('position');
+    const uv = new Float32Array(positions.count * 2);
+    for (let i = 0; i < positions.count; i++) {
+      uv[i * 2] = (positions.getX(i) - box.min.x) / size.x;
+      uv[i * 2 + 1] = (positions.getY(i) - box.min.y) / size.y;
+    }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    this.screen.material = this.lockMaterial;
+  }
+
+  private releaseLockScreen(): void {
+    if (this.screen && this.authoredScreenMaterial) {
+      this.screen.material = this.authoredScreenMaterial;
+      if (this.authoredScreenUv) this.screen.geometry.setAttribute('uv', this.authoredScreenUv);
+      else this.screen.geometry.deleteAttribute('uv');
+    }
+    this.lockMaterial?.dispose(); this.lockTexture?.dispose();
+    this.lockMaterial = undefined; this.lockTexture = undefined;
   }
 
   /** A level cabinet on a shallow, recessed foot that reaches the lowest ground. */
@@ -77,12 +129,15 @@ export class MothArcadeCabinet {
         }
         if (node.userData.arcadeScreen) {
           this.screen = node;
+          this.authoredScreenMaterial = node.material;
+          this.authoredScreenUv = node.geometry.getAttribute('uv');
           // The live DOM picture supplies this surface. The foreground pass
           // still draws the physical bezel, controls and anything in front.
           node.layers.disable(1);
         }
       });
       if (!this.screen) throw new Error('Arcade cabinet is missing its authored screen surface');
+      this.updateLockScreen();
       this.root.add(model); this.root.updateMatrixWorld(true); this.status = 'ready';
     } catch (error) {
       this.status = 'failed';
@@ -90,7 +145,39 @@ export class MothArcadeCabinet {
     }
   }
 
-  dispose(): void { this.disposed = true; disposeCabinetModel(this.root); this.root.removeFromParent(); }
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true; this.releaseLockScreen();
+    disposeCabinetModel(this.root); this.root.removeFromParent();
+  }
+}
+
+function paintArcadeLock(context: CanvasRenderingContext2D, language: 'en' | 'zh-TW', width: number, height: number): void {
+  const orange = '#ff5c21', cream = '#f1e9d5';
+  context.fillStyle = '#15191c'; context.fillRect(0, 0, width, height);
+  context.strokeStyle = orange; context.lineWidth = 10;
+  context.strokeRect(24, 24, width - 48, height - 48);
+  context.strokeStyle = '#66503b'; context.lineWidth = 2;
+  context.strokeRect(42, 42, width - 84, height - 84);
+  context.textAlign = 'center'; context.textBaseline = 'middle';
+  context.fillStyle = cream; context.font = 'bold 76px Georgia, serif';
+  context.fillText('M.O.T.H', width / 2, 130);
+  context.fillStyle = orange; context.font = 'bold 23px sans-serif';
+  context.fillText('MASTER OF THE HOUSE', width / 2, 192);
+  // A simple padlock stays legible at world distance and needs no extra asset.
+  context.strokeStyle = orange; context.lineWidth = 12;
+  context.beginPath(); context.moveTo(width / 2 - 48, 346); context.lineTo(width / 2 - 48, 312);
+  context.arc(width / 2, 312, 48, Math.PI, 0);
+  context.lineTo(width / 2 + 48, 346); context.stroke();
+  context.strokeRect(width / 2 - 72, 338, 144, 106);
+  context.fillStyle = cream; context.font = 'bold 58px sans-serif';
+  context.fillText(language === 'en' ? 'CURRENTLY LOCKED' : '遊戲 COMING SOON', width / 2, 516);
+  context.fillStyle = orange; context.font = 'bold 51px sans-serif';
+  context.fillText('2026.11.02  00:00', width / 2, 618);
+  context.fillStyle = cream; context.font = '28px sans-serif';
+  context.fillText(language === 'en' ? 'TAIWAN TIME (UTC+8)' : '台灣時間（UTC+8）', width / 2, 680);
+  // Keep the lower screen band clear for the in-world Exit control.
+
 }
 
 function disposeCabinetModel(root: THREE.Object3D): void {
@@ -162,18 +249,64 @@ export function arcadeQuadTransform(points: readonly ArcadeScreenPoint[], width:
   return matrix.every(Number.isFinite) ? matrix : undefined;
 }
 
+/** The physical CRT's frame and projection, without a game, DOM or network. */
+export class MothArcadeView {
+  readonly frame: ArcadeScreenFrame;
+  protected disposed = false;
+  protected screenProjection?: number[];
+
+  constructor(screen: THREE.Mesh) { this.frame = arcadeScreenFrame(screen); }
+
+  /** Position an overlay control within the same projected monitor surface. */
+  projectedScreenPoint(u: number, v: number): ArcadeScreenPoint | undefined {
+    const matrix = this.screenProjection;
+    if (!matrix || !Number.isFinite(u) || !Number.isFinite(v) || u < 0 || u > 1 || v < 0 || v > 1) return undefined;
+    const x = u * 1024, y = v * Math.round(1024 * this.frame.height / this.frame.width);
+    const w = matrix[3] * x + matrix[7] * y + matrix[15];
+    if (w <= 1e-8) return undefined;
+    const point = { x: (matrix[0] * x + matrix[4] * y + matrix[12]) / w, y: (matrix[1] * x + matrix[5] * y + matrix[13]) / w };
+    return Number.isFinite(point.x) && Number.isFinite(point.y) ? point : undefined;
+  }
+
+  scissor(camera: THREE.Camera, width: number, height: number): { x: number; y: number; width: number; height: number } | undefined {
+    this.screenProjection = undefined;
+    if (this.disposed || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return undefined;
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.frame.quaternion);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.frame.quaternion);
+    const points = [[-1, 1], [1, 1], [1, -1], [-1, -1]].map(([x, y]) => {
+      const point = this.frame.centre.clone().addScaledVector(right, x * this.frame.width / 2).addScaledVector(up, y * this.frame.height / 2);
+      if (PLANET.on) planetBendPoint(point, point);
+      return point.project(camera);
+    });
+    if (points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z) || p.z < -1 || p.z > 1)) return undefined;
+    const corners = points.map(p => ({ x: (p.x + 1) * width / 2, y: (1 - p.y) * height / 2 }));
+    const projection = arcadeQuadTransform(corners, 1024, Math.round(1024 * this.frame.height / this.frame.width));
+    if (!projection) return undefined;
+    const x = Math.max(0, Math.floor(Math.min(...points.map(p => (p.x + 1) * width / 2))));
+    const y = Math.max(0, Math.floor(Math.min(...points.map(p => (p.y + 1) * height / 2))));
+    const xmax = Math.min(width, Math.ceil(Math.max(...points.map(p => (p.x + 1) * width / 2))));
+    const ymax = Math.min(height, Math.ceil(Math.max(...points.map(p => (p.y + 1) * height / 2))));
+    if (xmax <= x || ymax <= y) return undefined;
+    this.screenProjection = projection;
+    return { x, y, width: xmax - x, height: ymax - y };
+  }
+
+
+  dispose(): void {
+    this.disposed = true;
+    this.screenProjection = undefined;
+  }
+}
+
 /** One live iframe, mounted exactly on the generated cabinet's screen. */
-export class MothArcadeSession {
+export class MothArcadeSession extends MothArcadeView {
   readonly object: CSS3DObject;
   readonly iframe: HTMLIFrameElement;
-  readonly frame: ArcadeScreenFrame;
   readonly origin: string;
   private readonly exit: () => void;
-  private disposed = false;
-  private screenProjection?: number[];
 
   constructor(screen: THREE.Mesh, url: string, exit: () => void) {
-    this.frame = arcadeScreenFrame(screen); this.exit = exit; this.origin = new URL(url).origin;
+    super(screen); this.exit = exit; this.origin = new URL(url).origin;
     const element = document.createElement('div'); element.className = 'moth-arcade-screen';
     const width = 1024, height = Math.round(width * this.frame.height / this.frame.width);
     element.style.width = `${width}px`; element.style.height = `${height}px`;
@@ -255,45 +388,14 @@ export class MothArcadeSession {
     element.style.visibility = 'visible';
   }
 
-  /** Position an overlay control within the same projected monitor surface. */
-  projectedScreenPoint(u: number, v: number): ArcadeScreenPoint | undefined {
-    const matrix = this.screenProjection;
-    if (!matrix || !Number.isFinite(u) || !Number.isFinite(v) || u < 0 || u > 1 || v < 0 || v > 1) return undefined;
-    const x = u * 1024, y = v * Math.round(1024 * this.frame.height / this.frame.width);
-    const w = matrix[3] * x + matrix[7] * y + matrix[15];
-    if (w <= 1e-8) return undefined;
-    const point = { x: (matrix[0] * x + matrix[4] * y + matrix[12]) / w, y: (matrix[1] * x + matrix[5] * y + matrix[13]) / w };
-    return Number.isFinite(point.x) && Number.isFinite(point.y) ? point : undefined;
-  }
-
   scissor(camera: THREE.Camera, width: number, height: number): { x: number; y: number; width: number; height: number } | undefined {
-    this.screenProjection = undefined;
     this.object.element.style.visibility = 'hidden';
-    if (this.disposed || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return undefined;
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.frame.quaternion);
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.frame.quaternion);
-    const points = [[-1, 1], [1, 1], [1, -1], [-1, -1]].map(([x, y]) => {
-      const point = this.frame.centre.clone().addScaledVector(right, x * this.frame.width / 2).addScaledVector(up, y * this.frame.height / 2);
-      if (PLANET.on) planetBendPoint(point, point);
-      return point.project(camera);
-    });
-    if (points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z) || p.z < -1 || p.z > 1)) return undefined;
-    const corners = points.map(p => ({ x: (p.x + 1) * width / 2, y: (1 - p.y) * height / 2 }));
-    const projection = arcadeQuadTransform(corners, 1024, Math.round(1024 * this.frame.height / this.frame.width));
-    if (!projection) return undefined;
-    const x = Math.max(0, Math.floor(Math.min(...points.map(p => (p.x + 1) * width / 2))));
-    const y = Math.max(0, Math.floor(Math.min(...points.map(p => (p.y + 1) * height / 2))));
-    const xmax = Math.min(width, Math.ceil(Math.max(...points.map(p => (p.x + 1) * width / 2))));
-    const ymax = Math.min(height, Math.ceil(Math.max(...points.map(p => (p.y + 1) * height / 2))));
-    if (xmax <= x || ymax <= y) return undefined;
-    this.screenProjection = projection;
-    return { x, y, width: xmax - x, height: ymax - y };
+    return super.scissor(camera, width, height);
   }
 
   dispose(): void {
     if (this.disposed) return;
-    this.disposed = true;
-    this.screenProjection = undefined;
+    super.dispose();
     window.removeEventListener('message', this.message);
     window.removeEventListener('keydown', this.forwardKey, true);
     window.removeEventListener('keyup', this.forwardKey, true);

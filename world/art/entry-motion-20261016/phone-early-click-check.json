@@ -1,0 +1,11 @@
+{
+  "before": {
+    "previewVisible": "none",
+    "ready": false,
+    "width": 390
+  },
+  "after": {
+    "overflow": false,
+    "frames": 26
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "status": "local-only; no publication",
+  "gateCopyFields": [
+    "title",
+    "titleZh",
+    "nameLabel",
+    "nameLabelZh",
+    "updatedAt"
+  ],
+  "retiredGateCopyFields": [
+    "kicker",
+    "kickerZh",
+    "intro",
+    "introZh"
+  ],
+  "removedConfigField": "gateBackground",
+  "removedAdminRoute": {
+    "method": "POST",
+    "path": "/api/admin/gate-background",
+    "authenticatedStatus": 404
+  },
+  "retainedAdminRoute": "POST /api/admin/gate-copy",
+  "migration": "Legacy fields ignored on restore; current titles, labels and unrelated styling survive. Retired fields omitted on the next actual settings save and on captures from older services.",
+  "checks": {
+    "focusedServerTests": {
+      "passed": 6,
+      "failed": 0
+    },
+    "completeServerSuite": {
+      "passed": 77,
+      "failed": 0,
+      "durationMs": 19167.963084
+    },
+    "diffCheck": "passed"
+  },
+  "logs": [
+    ".artifacts/distant-avatars-20261016/gate-schema-targeted.log",
+    ".artifacts/distant-avatars-20261016/gate-schema-server-suite.log"
+  ]
+}

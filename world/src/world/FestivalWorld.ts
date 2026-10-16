@@ -15,9 +15,11 @@ import { dressBuildings, dressInteriors } from './WornArchitecture';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import type { VenueKey } from '../data/catalogue';
 import { AmbientAudio } from './AmbientAudio';
+import { createWorldRenderer } from './WorldRenderer';
 import masterOfTheHouseLogo from '../assets/master-of-the-house.png';
 import { DayNightCycle, type DayNightState } from './DayNightCycle';
 import { createStylizedWaterMaterial, tintStylizedWater } from './StylizedWater';
+import { createLiteSeaMaterial, LITE_SEA_TILE_METRES } from './LiteSea';
 import { createMentorDog, perchMentor, stepMentorGait, type MentorDogRig } from './MentorDog';
 import { RooftopBand, BAND_SCALE } from './RooftopBand';
 import { handJointsFromLandmarks, handJointsFromXR, handPoseFromJoints, limitHandPose, smoothHandPose, type HandJoints, type HandPose } from './HandPose';
@@ -52,8 +54,10 @@ import { videoSyncPlan, videoJoinTime, bufferedAheadOf } from './VideoSync';
 import { stepAvoidance, AVOIDANCE_OFFSETS_FINE, type AvoidanceState } from './CameraAvoidance';
 import { pinchZoom, pinchSpread, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX } from './CameraInput';
 import { planRenderScale, RENDER_SCALE_FLOOR } from './RenderScale';
-import { MothArcadeCabinet, MothArcadeSession } from './MothArcade';
-import { arcadeIsNearest, ARCADE_WIDTH, ARCADE_DEPTH, cabinetPairPositions, arcadeAgainstWallX } from './ArcadeRules';
+import { MothArcadeCabinet, MothArcadeSession, MothArcadeView } from './MothArcade';
+import { PreviewResourceLease } from './PreviewResourceLease';
+import { fitGateAerialCamera, fitGateAvatarCamera, gateAerialTarget, blendGateEntryCamera, type GateEntryCameraPose, type GatePreviewFrame, type GatePreviewCameraSnapshot } from './GatePreviewLayout';
+import { arcadeIsNearest, arcadeIsLocked, ARCADE_WIDTH, ARCADE_DEPTH, cabinetPairPositions, arcadeAgainstWallX } from './ArcadeRules';
 
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>;
@@ -212,6 +216,7 @@ interface ProjectorSurface {
   xrTexture?: THREE.VideoTexture;
   xrVideoUrl?: string;
   xrVideoFilmId?: string;
+  posterSignature?: string;
   xrVideoError?: boolean;
   /** True between `waiting` and the next `playing`: stopped for want of data. */
   xrBuffering?: boolean;
@@ -238,6 +243,19 @@ interface ProjectorSurface {
   currentTimeAt?: number;
   duration?: number;
   playing?: boolean;
+}
+
+interface ProjectorActivationReview {
+  venue: VenueKey;
+  startedAt: number;
+  mountMs: number;
+  frames: number;
+  maxFrameGapMs: number;
+  maxWorldRenderMs: number;
+  programsBefore: number;
+  programsAfter: number;
+  geometriesBefore: number;
+  geometriesAfter: number;
 }
 
 /**
@@ -443,6 +461,10 @@ interface WorldOptions {
   cssLayer: HTMLElement;
   graphicsMode: GraphicsMode;
   palette: AvatarPalette;
+  /** Silent, input-free sign-in scene, drawn by GatePreview's capped loop. */
+  preview?: boolean;
+  /** Mobile entrances omit the character rig entirely. */
+  previewAvatar?: boolean;
   xrPreferred?: boolean;
   /** The visitor's stored look sensitivity, if they have set one. */
   lookSensitivity?: number;
@@ -464,17 +486,7 @@ interface WorldOptions {
 
 const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
 
-/**
- * Phones get one WebGL context, not two.
- *
- * The foreground compositor exists only to redraw scene geometry over CSS3D
- * video. On WebKit a second renderer duplicates the scene's GPU resources and
- * then replays every draw call when a screening becomes visible. That is a
- * harsh trade on a handset already decoding video, and it was invisible to the
- * main renderer's diagnostics. Touch-only devices keep the video below the
- * main canvas and redraw only overlapping avatars over it in that same context;
- * desktop retains the exact composition it had.
- */
+/** Mobile render-budget choices, independent of the shared one-context compositor. */
 const shouldConserveMobileGpu = (): boolean => {
   try {
     const reviewTarget = new URLSearchParams(window.location.search).get('review');
@@ -1449,47 +1461,10 @@ const createNameTexture = (name: string) => {
 
 
 /**
- * The sea round the island prototype: a divided sheet, fine enough to follow
- * the planet, with every cell left out whose corners all stand on dry land —
- * so it runs under beaches and the harbour but never shows up through a
- * basement floor or the club's room below the street. In the plane's own XY,
- * for a mesh laid flat by rotating -90° about X.
+ * The sea around the island: a divided sheet follows the planet, omitting
+ * triangles whose corners all stand on dry land. In a flat plane's XY, with
+ * the surface subsequently rotated -90 degrees about X.
  */
-/**
- * One tile of 精簡's sea: the stylised sea's dark rounded cells on light
- * water, as a seamless Voronoi drawn once on a canvas.
- */
-function liteSeaTexture(): THREE.CanvasTexture {
-  const size = 128, count = 9;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const context = canvas.getContext('2d')!;
-  const image = context.createImageData(size, size);
-  let seed = 7;
-  const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const points = Array.from({ length: count }, () => [random() * size, random() * size]);
-  const light = [126, 184, 222], dark = [16, 52, 74];
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    let first = Infinity, second = Infinity;
-    for (const [px, py] of points) for (const ox of [-size, 0, size]) for (const oy of [-size, 0, size]) {
-      const d = Math.hypot(x - px - ox, y - py - oy);
-      if (d < first) { second = first; first = d; } else if (d < second) second = d;
-    }
-    // Light where two cells meet, dark inside, with a short soft edge.
-    // Wide light channels and rounded dark islands, as the 一般 sea draws.
-    const t = THREE.MathUtils.smoothstep(second - first, 5, 9);
-    const i = (y * size + x) * 4;
-    for (let c = 0; c < 3; c++) image.data[i + c] = Math.round(light[c] + (dark[c] - light[c]) * t);
-    image.data[i + 3] = 255;
-  }
-  context.putImageData(image, 0, 0);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.anisotropy = 4;
-  return texture;
-}
-
 function seaAroundIsland(span: number, cells: number, centreX: number, centreZ: number): THREE.BufferGeometry {
   const plane = new THREE.PlaneGeometry(span, span, cells, cells).toNonIndexed();
   const p = plane.getAttribute('position'), uv = plane.getAttribute('uv');
@@ -1575,10 +1550,17 @@ const createWaterReflectionTexture = () => {
 export class FestivalWorld {
   readonly audio: AmbientAudio;
 
+  private readonly preview: boolean;
+  private readonly gateAvatarScene = new THREE.Scene();
+  private readonly gateAvatarCamera = new THREE.PerspectiveCamera(32, 1, 0.1, 30);
+  private readonly gateAerialCamera = new THREE.PerspectiveCamera(46, 1, 1, 2000);
+  private gateEntryFrom?: GateEntryCameraPose;
+  private gateEntryElapsed?: number;
+  private gateResourceLease?: PreviewResourceLease;
+
   private readonly canvas: HTMLCanvasElement;
   private readonly foregroundCanvas: HTMLCanvasElement;
   private readonly renderer: THREE.WebGLRenderer;
-  private readonly foregroundRenderer?: THREE.WebGLRenderer;
   private readonly conservesMobileGpu: boolean;
   private readonly cssRenderer: CSS3DRenderer;
   private readonly scene = new THREE.Scene();
@@ -1828,6 +1810,12 @@ export class FestivalWorld {
    */
   private lookSensitivity = 0.2;
   private readonly projectorClipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 45.68);
+  // Keeping one clip plane from the first frame avoids a new material/shader
+  // variant when the first public screening redraws a transparent avatar.
+  // The normal world pass clips only beyond the entire festival's bounds.
+  private readonly inactiveProjectorClipPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 1_000_000);
+  private projectorActivationReview?: ProjectorActivationReview;
+  private projectorReviewFrameAt = 0;
   private readonly projectorCornerView = new THREE.Vector3();
   private readonly statueViewPosition = new THREE.Vector3();
   private readonly projectorViewPosition = new THREE.Vector3();
@@ -1884,7 +1872,10 @@ export class FestivalWorld {
   private templeAltar?: { x: number; z: number };
   private jukebox?: { x: number; z: number };
   private arcadeCabinet?: MothArcadeCabinet;
+  private arcadeLocked = arcadeIsLocked();
+  private arcadeLanguage: 'en' | 'zh-TW' = 'zh-TW';
   private arcadeSession?: MothArcadeSession;
+  private arcadeView?: MothArcadeView;
   private arcadeAperture?: THREE.Mesh;
   private arcadeScreenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number }) => void;
   /** The band on the roof over the pop-up shop; plays while the jukebox has a record on. */
@@ -2007,13 +1998,16 @@ export class FestivalWorld {
    */
   private baseFov = 58;
 
-  constructor({ audio, canvas, foregroundCanvas, cssLayer, graphicsMode, palette, xrPreferred = false, lookSensitivity, gamepadBindings, hudRoot, isChinese, paintHudInSimulation = false, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
+  constructor({ audio, canvas, foregroundCanvas, cssLayer, graphicsMode, palette, preview = false, previewAvatar = true, xrPreferred = false, lookSensitivity, gamepadBindings, hudRoot, isChinese, paintHudInSimulation = false, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
+    this.preview = preview;
     this.audio = audio ?? new AmbientAudio();
     this.canvas = canvas;
     this.foregroundCanvas = foregroundCanvas;
     this.graphicsMode = graphicsMode;
     this.palette = palette;
     this.xrPreferred = xrPreferred;
+    this.isChinese = isChinese ?? (() => false);
+    this.paintHudInSimulation = paintHudInSimulation;
     if (lookSensitivity !== undefined) this.setLookSensitivity(lookSensitivity);
     this.pendingGamepadBindings = gamepadBindings;
     this.onSnapshot = onSnapshot;
@@ -2024,54 +2018,22 @@ export class FestivalWorld {
     this.conservesMobileGpu = xrPreferred || shouldConserveMobileGpu();
     canvas.closest('.world-shell')?.classList.toggle(
       'world-shell--single-context-projectors',
-      this.conservesMobileGpu,
+      true,
     );
-    this.renderer = new THREE.WebGLRenderer({
-      canvas,
-      alpha: this.conservesMobileGpu,
-      antialias: graphicsMode === 'normal',
-      powerPreference: 'high-performance',
-    });
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.92;
     // three.js reads every new shader's log to report errors, which makes the
     // browser finish compiling it there and then: under a phone's CPU, a
     // second-long freeze whenever something new came into view (2026-10-01).
     // Only the developer's own machine checks.
     const checkShaders = ['127.0.0.1', 'localhost'].includes(window.location.hostname);
-    this.renderer.debug.checkShaderErrors = checkShaders;
-    this.renderer.shadowMap.enabled = graphicsMode === 'normal';
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.setPixelRatio(this.mainPixelRatio());
-    this.renderer.xr.enabled = true;
-    this.renderer.xr.setReferenceSpaceType('local-floor');
-    this.renderer.xr.setFramebufferScaleFactor(0.78);
-    this.renderer.xr.setFoveation(0.7);
-    if (!this.conservesMobileGpu) {
-      this.foregroundRenderer = new THREE.WebGLRenderer({
-        canvas: foregroundCanvas,
-        alpha: true,
-        antialias: false,
-        powerPreference: 'high-performance',
-      });
-      this.foregroundRenderer.debug.checkShaderErrors = checkShaders;
-      this.foregroundRenderer.outputColorSpace = THREE.SRGBColorSpace;
-      this.foregroundRenderer.toneMapping = THREE.ACESFilmicToneMapping;
-      this.foregroundRenderer.toneMappingExposure = 0.92;
-      // Matched to the main renderer. This pass redraws the same geometry over
-      // the finished picture, so any difference in how it is lit shows as a
-      // rectangle the shape of the scissor box: unshadowed, it laid a lit copy of
-      // the scene over the shadowed one, which is the pale block over the
-      // timetable — a board that stands in shadow.
-      this.foregroundRenderer.shadowMap.enabled = graphicsMode === 'normal';
-      this.foregroundRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      this.foregroundRenderer.setClearColor(0x000000, 0);
-      this.foregroundRenderer.clippingPlanes = [this.projectorClipPlane];
-      this.foregroundRenderer.setPixelRatio(this.foregroundPixelRatio());
-    } else {
-      foregroundCanvas.style.display = 'none';
-    }
+    this.renderer = createWorldRenderer({
+      canvas, normalGraphics: graphicsMode === 'normal', pixelRatio: this.mainPixelRatio(),
+      checkShaderErrors: checkShaders, inactiveClipPlane: this.inactiveProjectorClipPlane,
+    });
+    // The first desktop screening used to wake a second WebGL context and
+    // upload/compile the entire foreground world (including its shadows).
+    // Open the video through the existing canvas instead, just as on phones;
+    // desktop antialiasing, pixel ratio, lighting and render budget stay intact.
+    foregroundCanvas.style.display = 'none';
     this.cssRenderer = new CSS3DRenderer({ element: cssLayer });
     this.cssRenderer.domElement.classList.add('world-css3d__renderer');
 
@@ -2085,15 +2047,14 @@ export class FestivalWorld {
     this.dayNight = new DayNightCycle(this.scene, localTimeOverride);
     this.dayNight.setShadowsEnabled(graphicsMode === 'normal');
     this.dayNight.setAmbientLift(graphicsMode === 'normal' ? 0 : 0.85);
-    this.watchForContextLoss(canvas);
-    if (this.foregroundRenderer) this.watchForContextLoss(foregroundCanvas);
+    if (!preview) this.watchForContextLoss(canvas);
     // Kept up rather than done once. This world does not finish building at
     // load — the club's rig, the rooftop, the evening's fireworks all arrive
     // later — so the cull runs again on a slow interval. The first pass is in
     // start(), before anything has compiled; these later ones only write when
     // a new light has appeared, which is rare, so the recompile they can
     // trigger is rare with them.
-    this.lightCullTimer = window.setInterval(() => this.cullDecorativeLights(), 5_000);
+    if (!preview) this.lightCullTimer = window.setInterval(() => this.cullDecorativeLights(), 5_000);
     this.dayNight.directionalLight.layers.enable(1);
     this.dayNight.hemisphereLight.layers.enable(1);
     this.dayNight.moonLight.layers.enable(1);
@@ -2103,26 +2064,41 @@ export class FestivalWorld {
     this.scene.add(this.fireworkWorldLight);
     this.scene.add(this.xrRig);
     this.xrRig.add(this.camera);
-    this.createXrControllers();
+    if (!preview) this.createXrControllers();
     this.createEnvironment();
     this.keepSkyFlat();
     // The world keeps adding rooms and fittings after this, so the pass runs
     // again once they are in.
     if (PLANET.on) {
       subdivideSceneForPlanet(this.scene);
-      for (const delay of [1_500, 6_000]) window.setTimeout(() => subdivideSceneForPlanet(this.scene), delay);
+      if (!preview) for (const delay of [1_500, 6_000]) window.setTimeout(() => {
+        if (!this.disposed) subdivideSceneForPlanet(this.scene);
+      }, delay);
     }
     // Once the planet subdivision (last at 6 s) and the worn-style passes
     // (last 6 s after entry) have reshaped every mesh, the scenery that never
     // moves is baked into a few large meshes. `?nobatch` skips it, to compare.
-    if (!new URLSearchParams(window.location.search).has('nobatch')) {
+    if (!preview && !new URLSearchParams(window.location.search).has('nobatch')) {
       window.setTimeout(() => {
-        this.staticBatchReport = batchStaticScenery(this.scene);
+        if (!this.disposed) this.staticBatchReport = batchStaticScenery(this.scene);
       }, 9_000);
     }
-    this.createPlayer(palette);
-    this.createNpcCrowd();
-    this.createAtmosphere();
+    // No delayed dressing or imported scenery runs in this scene, so static
+    // meshes can be batched immediately instead of paying thousands of draws
+    // on every frame while someone is typing into the entrance form.
+    if (preview) this.staticBatchReport = batchStaticScenery(this.scene);
+
+    if (preview && previewAvatar) {
+      this.playerRig = this.createAvatarRig(this.player, palette, true);
+      this.gateAvatarScene.add(this.player);
+      const key = new THREE.DirectionalLight(0xfff1dc, 2.1);
+      key.position.set(-3, 6, 7);
+      this.gateAvatarScene.add(key, new THREE.HemisphereLight(0xeff2f5, 0x827567, 2));
+    } else if (!preview) {
+      this.createPlayer(palette);
+      this.createNpcCrowd();
+      this.createAtmosphere();
+    }
     this.scene.traverse((object) => {
       if (object.userData.projectorBackground) object.layers.disable(1);
       else object.layers.enable(1);
@@ -2150,6 +2126,24 @@ export class FestivalWorld {
     if (this.islandDock) {
       this.player.position.set(DOCK_ARRIVAL.x, this.groundHeightAt(DOCK_ARRIVAL.x, DOCK_ARRIVAL.z), DOCK_ARRIVAL.z);
       this.camera.position.set(DOCK_ARRIVAL.x, this.player.position.y + 5.2, DOCK_ARRIVAL.z + 7);
+    }
+
+    if (preview) {
+      // GatePreview owns timing, resize and pointer capture. The entrance must
+      // never start gameplay listeners, media, tracking or a second frame loop.
+      this.player.position.set(0, AVATAR_GROUND_Y, 0);
+      this.scene.traverse(object => {
+        // Emissive fixtures remain visible; expensive local light pools are
+        // not useful from this distance and would enlarge every shader.
+        if ((object as THREE.PointLight).isPointLight || (object as THREE.SpotLight).isSpotLight) object.visible = false;
+      });
+      this.renderer.xr.enabled = false;
+      this.renderer.shadowMap.enabled = false;
+      this.dayNight.setShadowsEnabled(false);
+      // Street fog is calibrated for somebody at ground level. The complete
+      // planet is hundreds of units away in this view and must remain legible.
+      this.scene.fog = new THREE.Fog(0x111521, 10_000, 20_000);
+      return;
     }
 
     window.addEventListener('resize', this.resize);
@@ -2192,12 +2186,11 @@ export class FestivalWorld {
     document.addEventListener('visibilitychange', this.resumeProjectorsOnReturn);
     window.addEventListener('pointerup', this.nudgeProjectorsOnGesture, true);
     this.hudRoot = hudRoot;
-    this.isChinese = isChinese ?? (() => false);
-    this.paintHudInSimulation = paintHudInSimulation;
     this.resize();
   }
 
   start(): void {
+    if (this.preview) return;
     // Before the first frame, deliberately.
     //
     // Turning a light off changes the number of lights in the scene, and that
@@ -2213,7 +2206,15 @@ export class FestivalWorld {
     this.renderer.setAnimationLoop(this.render);
   }
 
+  /** The first real frame is ready, but the entrance camera still covers it. */
+  setEntryHandoffPaused(paused: boolean): void {
+    if (this.preview || this.disposed || this.xrActive) return;
+    if (!paused) this.clock.getDelta();
+    this.renderer.setAnimationLoop(paused ? null : this.render);
+  }
+
   stop(): void {
+    if (this.disposed) return;
     this.disposed = true;
     this.venueSceneryAssets.dispose();
     this.stopArcadeGame(); this.arcadeCabinet?.dispose();
@@ -2251,14 +2252,175 @@ export class FestivalWorld {
     window.removeEventListener('pointerup', this.nudgeProjectorsOnGesture, true);
     this.stopFireworks();
     for (const venue of this.projectors.keys()) this.stopImmersiveVideo(venue);
+    if (this.preview) this.releaseGatePreview();
     this.renderer.dispose();
-    this.foregroundRenderer?.dispose();
+    if (this.preview) this.renderer.forceContextLoss();
     for (const projector of this.projectors.values()) {
       projector.element.remove();
       projector.xrPoster.geometry.dispose();
       projector.xrPoster.material.map?.dispose();
       projector.xrPoster.material.dispose();
     }
+  }
+
+  /** One silent context, two views, never the admission/gameplay frame loop. */
+  renderGatePreview(frame: GatePreviewFrame): GatePreviewCameraSnapshot | undefined {
+    if (!this.preview || this.disposed) return;
+    const { width, height, pixelRatio, elapsed, yaw, avatar } = frame;
+    const previousPlanetCentre = PLANET.centre.value.clone();
+    try {
+      const size = this.renderer.getSize(new THREE.Vector2());
+      if (this.renderer.getPixelRatio() !== pixelRatio) this.renderer.setPixelRatio(pixelRatio);
+      if (size.x !== width || size.y !== height) this.renderer.setSize(width, height, false);
+      const dayNight = this.dayNight.update();
+      this.renderer.toneMappingExposure = dayNight.exposure;
+      this.dayNight.atmosphere.update(dayNight.cycleMinute, new THREE.Vector3(0, 0, 10));
+      this.waterTextures[0]?.offset.set((elapsed * .004) % 1, (elapsed * .0015) % 1);
+      this.waterTextures[1]?.offset.set((-elapsed * .006) % 1, (elapsed * .003) % 1);
+      this.updateStylizedWater(elapsed);
+      this.updateWaterReflections(elapsed);
+      this.islandDock?.update(elapsed);
+      const centreX = (ISLAND.west + ISLAND.east) / 2, centreZ = (ISLAND.north + ISLAND.south) / 2;
+      if (frame.entry !== undefined) {
+        const progress = frame.entry;
+        const firstEntryFrame = !this.gateEntryFrom;
+        this.gateEntryElapsed ??= elapsed;
+        fitGateAerialCamera(this.gateAerialCamera, width / Math.max(height, 1), this.gateEntryElapsed);
+        this.gateEntryFrom ??= {
+          position: this.gateAerialCamera.position.clone(), target: gateAerialTarget(),
+          fov: this.gateAerialCamera.fov, near: this.gateAerialCamera.near, far: this.gateAerialCamera.far,
+        };
+        const spawnX = this.islandDock ? DOCK_ARRIVAL.x : 0;
+        const spawnZ = this.islandDock ? DOCK_ARRIVAL.z : 22;
+        this.player.position.set(spawnX, this.groundHeightAt(spawnX, spawnZ), spawnZ);
+        this.player.rotation.set(0, 0, 0);
+        if (this.playerRig || frame.entryAvatarReady) {
+          this.ensureGateAvatar();
+          if (this.player.parent !== this.scene) this.scene.add(this.player);
+          if (!this.playerShadow.parent) {
+            this.playerShadow.rotation.x = -Math.PI / 2;
+            this.playerShadow.position.y = -AVATAR_GROUND_Y + .02;
+            this.player.add(this.playerShadow);
+          }
+          if (this.playerRig) {
+            walkCoastalPose(this.playerRig, 0, 0);
+            supportCoastalPose(this.playerRig, (x, z, y) => this.footSurfaceAt(x, z, y));
+            syncImportedAvatars(this.scene);
+          }
+        }
+        // Use the game's own saved zoom, portrait FOV, colliders and follow
+        // policy. Its first frame will arrive at precisely this same camera.
+        if (firstEntryFrame || this.camera.aspect !== width / Math.max(height, 1)) this.resize();
+        this.updateCamera(0, 0);
+        const to: GateEntryCameraPose = {
+          position: this.camera.position.clone(), target: this.lookTarget.clone(),
+          fov: this.camera.fov, near: this.camera.near, far: this.camera.far,
+        };
+        blendGateEntryCamera(this.gateAerialCamera, this.gateEntryFrom, to, progress);
+        const centreMix = Math.min(1, progress / .92);
+        if (PLANET.on) setPlanetCentre(THREE.MathUtils.lerp(centreX, spawnX, centreMix), THREE.MathUtils.lerp(centreZ, spawnZ, centreMix));
+        const amount = progress * progress * (3 - 2 * progress);
+        if (this.scene.fog instanceof THREE.Fog) {
+          this.scene.fog.near = THREE.MathUtils.lerp(10_000, 34, amount);
+          this.scene.fog.far = THREE.MathUtils.lerp(20_000, frame.entryGraphicsMode === 'normal' ? 150 : LITE_FOG_FAR, amount);
+        }
+        this.dayNight.setAmbientLift(THREE.MathUtils.lerp(.85, frame.entryGraphicsMode === 'normal' ? 0 : .85, amount));
+      } else {
+        if (PLANET.on) setPlanetCentre(centreX, centreZ);
+        fitGateAerialCamera(this.gateAerialCamera, width / Math.max(height, 1), elapsed);
+      }
+      this.renderer.setScissorTest(false);
+      this.renderer.setViewport(0, 0, width, height);
+      this.renderer.autoClear = true;
+      this.gateResourceLease ??= PreviewResourceLease.forRenderer(this.renderer);
+      this.gateResourceLease.capture(() => this.renderer.render(this.scene, this.gateAerialCamera));
+      const cameraSnapshot: GatePreviewCameraSnapshot | undefined = frame.entry !== undefined ? {
+        position: this.gateAerialCamera.position.toArray() as [number, number, number], fov: this.gateAerialCamera.fov,
+      } : undefined;
+      if (!avatar) return cameraSnapshot;
+      this.ensureGateAvatar();
+      const entryParent = frame.entry !== undefined ? this.player.parent : undefined;
+      const entryPosition = entryParent ? this.player.position.clone() : undefined;
+      const entryRotation = entryParent ? this.player.quaternion.clone() : undefined;
+      const entryVisible = this.player.visible;
+      if (entryParent) {
+        // The same accepted avatar leaves its studio view while the background
+        // begins the approach. No extra model or renderer is needed for the slide.
+        this.gateAvatarScene.add(this.player);
+        this.player.position.set(0, AVATAR_GROUND_Y, 0);
+        this.player.visible = true;
+      }
+      this.player.rotation.y = yaw;
+      if (this.playerRig) walkCoastalPose(this.playerRig, 0, 0);
+      syncImportedAvatars(this.gateAvatarScene);
+      const studioViewport = frame.avatarViewport ?? avatar;
+      fitGateAvatarCamera(this.gateAvatarCamera, studioViewport.width, studioViewport.height);
+      this.renderer.setViewport(studioViewport.x, studioViewport.y, studioViewport.width, studioViewport.height);
+      this.renderer.setScissor(avatar.x, avatar.y, avatar.width, avatar.height);
+      this.renderer.setScissorTest(true);
+      this.renderer.autoClear = false;
+      this.renderer.clearDepth();
+      // The right-hand avatar is a studio view. The world's shared planet
+      // uniforms must not curve its ankles or move it off its own origin.
+      const radius = PLANET.radiusUniform.value;
+      PLANET.radiusUniform.value = 0;
+      try { this.gateResourceLease.capture(() => this.renderer.render(this.gateAvatarScene, this.gateAvatarCamera)); }
+      finally {
+        PLANET.radiusUniform.value = radius;
+        if (entryParent && entryPosition && entryRotation) {
+          entryParent.add(this.player);
+          this.player.position.copy(entryPosition);
+          this.player.quaternion.copy(entryRotation);
+          this.player.visible = entryVisible;
+        }
+        this.renderer.setScissorTest(false);
+        this.renderer.setViewport(0, 0, width, height);
+        this.renderer.autoClear = true;
+      }
+      return cameraSnapshot;
+    } finally {
+      // During the brief handoff the real world can draw in another context.
+      // Its next frame must see its own centre, never the preview's viewpoint.
+      PLANET.centre.value.copy(previousPlanetCentre);
+    }
+  }
+
+  /** Restore the entrance after a failed or cancelled admission. */
+  cancelGateEntry(): void {
+    if (!this.preview || this.disposed) return;
+    this.gateEntryFrom = undefined;
+    this.gateEntryElapsed = undefined;
+    if (this.playerRig) this.gateAvatarScene.add(this.player);
+    this.player.position.set(0, AVATAR_GROUND_Y, 0);
+    this.player.visible = true;
+    this.playerShadow.removeFromParent();
+    if (this.scene.fog instanceof THREE.Fog) { this.scene.fog.near = 10_000; this.scene.fog.far = 20_000; }
+    this.dayNight.setAmbientLift(.85);
+  }
+
+  private ensureGateAvatar(): void {
+    if (this.playerRig) return;
+    // A phone only needs a body once the player actually enters. A resized
+    // desktop can also create this view without replacing the world/context.
+    this.playerRig = this.createAvatarRig(this.player, this.palette, true);
+    this.gateAvatarScene.add(this.player);
+    const key = new THREE.DirectionalLight(0xfff1dc, 2.1);
+    key.position.set(-3, 6, 7);
+    this.gateAvatarScene.add(key, new THREE.HemisphereLight(0xeff2f5, 0x827567, 2));
+  }
+
+  private releaseGatePreview(): void {
+    this.gateResourceLease?.dispose();
+    this.gateResourceLease = undefined;
+    this.player.userData.disposeImportedAvatar?.();
+    this.player.removeFromParent();
+    this.scene.clear();
+    this.gateAvatarScene.clear();
+    // The real world can already be painting behind this exit overlay.
+    // Geometry and canvas texture caches are shared across its renderer, so
+    // dispatching dispose on them would evict the live world's GPU buffers.
+    // stop() disposes and loses this renderer's own context instead, freeing
+    // all preview VRAM without invalidating any shared CPU geometry or maps.
   }
 
   private createXrControllers(): void {
@@ -2670,18 +2832,29 @@ export class FestivalWorld {
     }
   }
 
+  setArcadeLocked(locked: boolean, language: 'en' | 'zh-TW' = 'zh-TW'): void {
+    this.arcadeLocked = locked; this.arcadeLanguage = language;
+    this.arcadeCabinet?.setLocked(locked, language);
+    if (locked && this.arcadeSession) this.stopArcadeGame();
+  }
+
+  /** Inspect the locked physical CRT with the same camera as an active game. */
+  startArcadeLockedView(_exit: () => void, screenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number }) => void): boolean {
+    const screen = this.arcadeCabinet?.screen;
+    if (!this.arcadeLocked || !screen || this.arcadeView || (this.xrActive && !this.xrSimulated)) return false;
+    this.beginArcadeView(new MothArcadeView(screen), screenLayout);
+    return true;
+  }
+
   startArcadeGame(url: string, exit: () => void, screenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number }) => void): boolean {
     const screen = this.arcadeCabinet?.screen;
-    if (!screen || this.arcadeSession || (this.xrActive && !this.xrSimulated)) return false;
-    this.keys.clear(); this.running = false; this.dancing = false;
-    this.cameraPointerReset();
-    this.setMovementVector(0, 0);
-    this.arcadeSession = new MothArcadeSession(screen, url, exit);
-    this.arcadeScreenLayout = screenLayout;
-    this.arcadeSession.mount(this.cssRenderer.domElement);
-    this.xrHud?.setVisible(false);
+    if (this.arcadeLocked || !screen || this.arcadeView || (this.xrActive && !this.xrSimulated)) return false;
+    const session = new MothArcadeSession(screen, url, exit);
+    this.beginArcadeView(session, screenLayout);
+    this.arcadeSession = session;
+    session.mount(this.cssRenderer.domElement);
     if (this.conservesMobileGpu) {
-      const frame = this.arcadeSession.frame;
+      const frame = session.frame;
       this.arcadeAperture = new THREE.Mesh(new THREE.PlaneGeometry(frame.width, frame.height), projectorApertureMaterial);
       this.arcadeAperture.position.copy(frame.centre).addScaledVector(frame.normal, .003);
       this.arcadeAperture.quaternion.copy(frame.quaternion); this.arcadeAperture.visible = false;
@@ -2690,12 +2863,22 @@ export class FestivalWorld {
     return true;
   }
 
+  private beginArcadeView(view: MothArcadeView, screenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number }) => void): void {
+    this.keys.clear(); this.running = false; this.dancing = false;
+    this.cameraPointerReset(); this.setMovementVector(0, 0);
+    this.stickX = this.stickY = 0;
+    this.arcadeView = view; this.arcadeScreenLayout = screenLayout;
+    this.player.visible = false;
+    this.xrHud?.setVisible(false);
+  }
+
   stopArcadeGame(): void {
-    this.arcadeSession?.dispose(); this.arcadeSession = undefined;
+    this.arcadeView?.dispose(); this.arcadeView = undefined; this.arcadeSession = undefined;
     this.arcadeScreenLayout = undefined;
     this.arcadeAperture?.geometry.dispose(); this.arcadeAperture?.removeFromParent(); this.arcadeAperture = undefined;
     this.xrHud?.setVisible(this.xrActive);
-    this.keys.clear(); this.setMovementVector(0, 0); this.running = false;
+    this.player.visible = true;
+    this.keys.clear(); this.setMovementVector(0, 0); this.stickX = this.stickY = 0; this.running = false;
   }
 
   /** Place the review visitor at the real cabinet; E still uses normal interaction. */
@@ -3052,7 +3235,7 @@ export class FestivalWorld {
    * controllers and `updateXrInput` is already reading them.
    */
   private updateGamepad(delta: number): void {
-    if (this.arcadeSession) { this.gamepad.poll(); return; }
+    if (this.arcadeView) { this.gamepad.poll(); return; }
     if (this.xrActive && !this.xrSimulated) return;
     const frame = this.gamepad.poll();
     if (!frame) {
@@ -3282,7 +3465,7 @@ export class FestivalWorld {
         panelMounted: Boolean(this.privatePanel),
         ownsVenue: this.privateVenue ?? null,
       } : null,
-      singleWebglContext: !this.foregroundRenderer,
+      singleWebglContext: true,
       controllers: this.xrControllers.length,
       hud: this.xrHud?.reviewSnapshot() ?? null,
       hudError: this.xrHudError ?? null,
@@ -5089,6 +5272,7 @@ export class FestivalWorld {
     shadowLights: number;
     lampPool: number;
     darkLampsLit: number;
+    projectorActivation: ProjectorActivationReview | null;
   } | undefined {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return undefined;
     let shadowLights = 0;
@@ -5118,8 +5302,8 @@ export class FestivalWorld {
     });
     return {
       drawCalls: this.mainDrawCalls,
-      foregroundDrawCalls: this.foregroundRenderer?.info.render.calls ?? this.singleContextForegroundDrawCalls,
-      contexts: this.foregroundRenderer ? 2 : 1,
+      foregroundDrawCalls: this.singleContextForegroundDrawCalls,
+      contexts: 1,
       triangles: this.mainTriangles,
       programs: this.renderer.info.programs?.length ?? 0,
       // What the GPU is actually holding. Draw calls decide whether a frame
@@ -5143,6 +5327,7 @@ export class FestivalWorld {
       npcs: this.npcs.length,
       pendingSignRepaints: signRepaints.size,
       mobileGpuConservation: this.conservesMobileGpu,
+      projectorActivation: this.projectorActivationReview ? { ...this.projectorActivationReview } : null,
       shadowLights,
       lampPool: this.lampPool.length,
       darkLampsLit,
@@ -5529,8 +5714,8 @@ export class FestivalWorld {
       reviewNpcId: this.projectorReviewNpcId,
       reviewVisitorForegroundLayer: this.projectorReviewVisitor?.group.layers.isEnabled(2) ?? false,
       compositedAvatarIds: this.lastSingleContextAvatarIds,
-      singleContextComposite: this.conservesMobileGpu,
-      contexts: this.foregroundRenderer ? 2 : 1,
+      singleContextComposite: true,
+      contexts: 1,
       stageDepth: venue === 'club' ? CLUB_STAGE_DEPTH : undefined,
       stageFrontZ: venue === 'club' ? Number(stageFrontZ.toFixed(2)) : undefined,
       boothFrontZ: venue === 'club' ? Number(boothFrontZ.toFixed(2)) : undefined,
@@ -5690,7 +5875,7 @@ export class FestivalWorld {
    * being read as it was — this sits beside it and wins whenever it is pushed.
    */
   setMovementVector(horizontal: number, vertical: number): void {
-    if (this.arcadeSession) { this.stickX = this.stickY = 0; return; }
+    if (this.arcadeView) { this.stickX = this.stickY = 0; return; }
     this.stickX = THREE.MathUtils.clamp(horizontal, -1, 1);
     this.stickY = THREE.MathUtils.clamp(vertical, -1, 1);
   }
@@ -5711,7 +5896,6 @@ export class FestivalWorld {
     this.performanceFrameCount = 0;
     if (this.stylizedWater) this.stylizedWater.visible = mode === 'normal';
     this.renderer.shadowMap.enabled = mode === 'normal';
-    if (this.foregroundRenderer) this.foregroundRenderer.shadowMap.enabled = mode === 'normal';
     this.dayNight.setShadowsEnabled(mode === 'normal');
     for (const spotlight of this.shadowSpotlights) spotlight.castShadow = mode === 'normal';
     this.applyRenderPixelRatios();
@@ -7153,6 +7337,8 @@ export class FestivalWorld {
     this.stopImmersiveVideo(venue);
     const signature = `${film.id}|${reloadToken}`;
     if (projector.signature === signature) return;
+    const measureActivation = ['127.0.0.1', 'localhost'].includes(window.location.hostname);
+    const activationStartedAt = measureActivation ? performance.now() : 0;
     projector.filmId = film.id;
     projector.youtubeId = film.youtubeId;
     projector.signature = signature;
@@ -7184,6 +7370,16 @@ export class FestivalWorld {
     projector.element.replaceChildren(iframe);
     projector.iframe = iframe;
     this.playerMounts += 1;
+    if (measureActivation) {
+      const programs = this.renderer.info.programs?.length ?? 0;
+      const geometries = this.renderer.info.memory.geometries;
+      this.projectorActivationReview = {
+        venue, startedAt: activationStartedAt, mountMs: performance.now() - activationStartedAt,
+        frames: 0, maxFrameGapMs: 0, maxWorldRenderMs: 0,
+        programsBefore: programs, programsAfter: programs,
+        geometriesBefore: geometries, geometriesAfter: geometries,
+      };
+    }
   }
 
   /**
@@ -7467,7 +7663,7 @@ export class FestivalWorld {
   }
 
   interact(pickUpMentor = false): void {
-    if (this.arcadeSession) return;
+    if (this.arcadeView) return;
     if (this.nearArcade() && this.playerState !== 'seated') {
       this.onAction({ type: 'arcade' }); return;
     }
@@ -7771,12 +7967,11 @@ export class FestivalWorld {
     this.camera.fov = this.baseFov;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
-    this.foregroundRenderer?.setSize(width, height, false);
     this.cssRenderer.setSize(width, height);
   };
 
   private readonly keyDown = (event: KeyboardEvent): void => {
-    if (this.arcadeSession) return;
+    if (this.arcadeView) return;
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
     const key = event.key.toLowerCase();
     this.running = event.shiftKey;
@@ -7933,7 +8128,7 @@ export class FestivalWorld {
   };
 
   private readonly cameraPointerDown = (event: PointerEvent): void => {
-    if (this.arcadeSession) return;
+    if (this.arcadeView) return;
     // Pen and touch turn the camera and throw punches too; only the mouse's
     // other buttons are left alone.
     if (event.button !== 0) return;
@@ -8115,7 +8310,7 @@ export class FestivalWorld {
    * step the first time one of them changed.
    */
   private applyLookDelta(deltaX: number, deltaY: number, gain = 1): void {
-    if (this.arcadeSession) return;
+    if (this.arcadeView) return;
     deltaX *= gain;
     deltaY *= gain;
     if (this.xrActive && this.xrSimulated) {
@@ -8170,7 +8365,7 @@ export class FestivalWorld {
    * under either hand.
    */
   private readonly cameraWheel = (event: WheelEvent): void => {
-    if (this.arcadeSession) return;
+    if (this.arcadeView) return;
     // In the desktop preview the wheel is the only thing standing in for the
     // right stick, and a pass panel taller than the view is unreadable without
     // it. Only when the cursor is actually on the panel, so the wheel still
@@ -8431,17 +8626,6 @@ export class FestivalWorld {
     return Math.min(window.devicePixelRatio, this.graphicsMode === 'normal' ? 1.25 : 1);
   }
 
-  private foregroundPixelRatio(): number {
-    // Matched to the main renderer. This pass redraws the same geometry over
-    // the finished picture, and the two only agree if they are shaded at the
-    // same resolution: at 0.78 against 1.25 the shadow bias, which is tuned for
-    // the main pass, came out as self-shadowing here — a rectangle of dimmed
-    // scene the shape of the scissor box, which is the block over the timetable.
-    // The pass only ever covers the screens' own rectangles, so this costs a
-    // fraction of a full-frame render.
-    return this.mainPixelRatio();
-  }
-
   /**
    * Where each mounted screen actually is on the page, against where the world
    * says it should be.
@@ -8622,7 +8806,6 @@ export class FestivalWorld {
 
   private applyRenderPixelRatios(): void {
     this.renderer.setPixelRatio(this.mainPixelRatio() * this.adaptiveRenderScale);
-    this.foregroundRenderer?.setPixelRatio(this.foregroundPixelRatio() * this.adaptiveRenderScale);
   }
 
   /**
@@ -8806,10 +8989,10 @@ export class FestivalWorld {
       live: [...this.projectors.values()].filter((projector) => Boolean(projector.iframe)).length,
       frames: document.querySelectorAll('iframe').length,
       draws: this.mainDrawCalls,
-      fgdraws: this.foregroundRenderer?.info.render.calls ?? this.singleContextForegroundDrawCalls,
-      ctx: this.foregroundRenderer ? 2 : 1,
+      fgdraws: this.singleContextForegroundDrawCalls,
+      ctx: 1,
       progs: this.renderer.info.programs?.length ?? 0,
-      fgprogs: this.foregroundRenderer?.info.programs?.length ?? 0,
+      fgprogs: 0,
       tex: this.renderer.info.memory.textures,
       geo: this.renderer.info.memory.geometries,
       mats: this.materialCountForDiagnostics(),
@@ -8862,12 +9045,8 @@ export class FestivalWorld {
     });
     canvas.addEventListener('webglcontextrestored', () => {
       if (!this.lostContexts.delete(canvas)) return;
-      // Two desktop contexts can be reclaimed together and restored one at a
-      // time. Resuming after the first would immediately draw through the other
-      // dead context, which is exactly the loop the loss handler exists to stop.
       if (this.lostContexts.size > 0) return;
       this.renderer.resetState();
-      this.foregroundRenderer?.resetState();
       this.renderer.setAnimationLoop(this.render);
     });
   }
@@ -8924,6 +9103,7 @@ export class FestivalWorld {
   }
 
   private createProjectorSurface(venue: VenueKey): void {
+    if (this.preview) return;
     const screen = venueScreens[venue];
     const element = document.createElement('div');
     element.className = `public-projector public-projector--${venue}`;
@@ -8956,6 +9136,12 @@ export class FestivalWorld {
   private refreshXrPoster(venue: VenueKey, filmTitle?: string): void {
     const projector = this.projectors.get(venue);
     if (!projector) return;
+    const title = (filmTitle ?? projector.pending?.film.title ?? 'PUBLIC SCREENING').toUpperCase();
+    const signature = JSON.stringify([title, Boolean(projector.pending?.film.immersiveUrl)]);
+    // Desktop programme updates also refresh the headset fallback. Rebuilding
+    // the same 1024px canvas every time allocated a new GPU texture for no
+    // visible change. A video texture or a removed map must still be replaced.
+    if (projector.posterSignature === signature && projector.xrPoster.material.map instanceof THREE.CanvasTexture) return;
     const canvas = document.createElement('canvas');
     canvas.width = 1024;
     canvas.height = 576;
@@ -8971,7 +9157,6 @@ export class FestivalWorld {
     context.fillText(venueScreens[venue].label.toUpperCase(), 62, 102);
     context.fillStyle = '#f5efe2';
     context.font = '900 70px sans-serif';
-    const title = (filmTitle ?? projector.pending?.film.title ?? 'PUBLIC SCREENING').toUpperCase();
     const words = title.split(/\s+/);
     const lines: string[] = [];
     let line = '';
@@ -8996,6 +9181,7 @@ export class FestivalWorld {
     texture.colorSpace = THREE.SRGBColorSpace;
     const previous = projector.xrPoster.material.map;
     projector.xrPoster.material.map = texture;
+    projector.posterSignature = signature;
     projector.xrPoster.material.needsUpdate = true;
     previous?.dispose();
   }
@@ -9127,27 +9313,7 @@ export class FestivalWorld {
     // owner, 2026-10-01). Now the 一般 sea's look, cheaply: light water broken
     // into dark rounded cells, opaque, lit by the day and drifting slowly.
     (ocean.material as THREE.Material).dispose();
-    const cellsMap = liteSeaTexture();
-    cellsMap.repeat.set(span / 14, span / 14);
-    const liteSea = new THREE.MeshLambertMaterial({ map: cellsMap });
-    // Moving, not only drifting: at a few centimetres a second the cells sat
-    // still and the sea looked dead (the owner, October 2). Each cell's edges
-    // now sway on two slow crossing swells, as the 一般 sea's do, for two sines
-    // a pixel.
-    const seaTime = { value: 0 };
-    liteSea.onBeforeCompile = (shader) => {
-      shader.uniforms.uSeaTime = seaTime;
-      shader.fragmentShader = shader.fragmentShader
-        .replace('void main() {', 'uniform float uSeaTime;\nvoid main() {')
-        .replace('#include <map_fragment>', `
-          vec2 seaUv = vMapUv + vec2(
-            .045 * sin(vMapUv.y * 9.4 + uSeaTime * 1.3) + .02 * sin(vMapUv.x * 4.1 - uSeaTime * .7),
-            .045 * sin(vMapUv.x * 8.2 - uSeaTime * 1.1) + .02 * sin(vMapUv.y * 3.7 + uSeaTime * .9));
-          diffuseColor *= texture2D(map, seaUv);`);
-    };
-    liteSea.customProgramCacheKey = () => 'lite-sea-v1';
-    liteSea.userData.seaTime = seaTime;
-    ocean.material = liteSea;
+    ocean.material = createLiteSeaMaterial(span);
     this.islandOcean = ocean;
     if (this.waterVolume) this.waterVolume.visible = false;
     // From the gate down to the pier, where the approach road used to run off the map.
@@ -9476,7 +9642,9 @@ export class FestivalWorld {
     // wall. Keep the full back face just clear of the wall's west surface.
     const arcadeX = arcadeAgainstWallX(r.minX, .8);
     const arcadeFloor = terrainHeightAt(arcadeX, arcadeZ);
+    if (this.preview) return; // Aerial scenery never downloads a close-up cabinet model.
     this.arcadeCabinet = new MothArcadeCabinet(arcadeX, arcadeFloor, arcadeZ);
+    this.arcadeCabinet.setLocked(this.arcadeLocked, this.arcadeLanguage);
     this.scene.add(this.arcadeCabinet.root);
     this.addCollider(arcadeX, arcadeZ, ARCADE_DEPTH, ARCADE_WIDTH, .35, undefined, 'moth-arcade', arcadeFloor + 3.8);
   }
@@ -10221,7 +10389,7 @@ export class FestivalWorld {
     const portrait = new THREE.Group();
     portrait.position.y = .75;
     deity.add(portrait);
-    void this.venueSceneryAssets.attach('statue', portrait, 3.7, oldFigure);
+    if (!this.preview) void this.venueSceneryAssets.attach('statue', portrait, 3.7, oldFigure);
     deity.position.set(altarX+1.9,t.podium+1.38,centerZ);
     deity.rotation.y=-Math.PI/2;this.scene.add(deity);
     // No halo. There was one, it was never parented to her, and it spent its
@@ -10849,7 +11017,7 @@ export class FestivalWorld {
     part([4.3,.16,.6],[0,1.5,1.6],teal);
     part([4.8,.3,4],[0,3.75,0],red);
     part([3.8,1.1,.12],[0,5.27,1.95],teal);
-    void this.venueSceneryAssets.attach('boxOffice', booth, 5.8, fallback);
+    if (!this.preview) void this.venueSceneryAssets.attach('boxOffice', booth, 5.8, fallback);
     const boothSign = new THREE.Mesh(new THREE.PlaneGeometry(3.55,.9),this.venueSignMaterials.get('drive-in')!);
     boothSign.name = 'DRIVE-IN 88 box office programme sign';
     boothSign.position.set(0,5.27,2.03);
@@ -10860,7 +11028,7 @@ export class FestivalWorld {
     clerk.name = 'Unlisted box office attendant';
     clerk.position.set(0,.12,.65);
     booth.add(clerk);
-    void this.venueSceneryAssets.attach('attendant', clerk, 3.25);
+    if (!this.preview) void this.venueSceneryAssets.attach('attendant', clerk, 3.25);
 
     const palace = new THREE.Group();
     palace.name = 'THE PALACE ticket inspection stand';
@@ -10869,14 +11037,14 @@ export class FestivalWorld {
     palace.position.set(stand.x, floor, stand.z);
     palace.rotation.y = stand.rotation;
     this.scene.add(palace);
-    void this.venueSceneryAssets.attach('valet', palace, 1.95);
+    if (!this.preview) void this.venueSceneryAssets.attach('valet', palace, 1.95);
     this.addCollider(stand.x,stand.z,1.3,1.6,.08,{minY:floor,maxY:floor+2,physical:true},'palace-ticket-stand',floor+2);
     const inspector = new THREE.Group();
     inspector.name = 'Unlisted Palace ticket inspector';
     const inspectorFloor = terrainHeightAt(stand.x-1.4,stand.z)+.03;
     inspector.position.set(0,inspectorFloor-floor,-1.4);
     palace.add(inspector);
-    void this.venueSceneryAssets.attach('attendant', inspector, 3.25);
+    if (!this.preview) void this.venueSceneryAssets.attach('attendant', inspector, 3.25);
     this.addCollider(stand.x-1.4,stand.z,.7,.7,.08,{minY:inspectorFloor,maxY:inspectorFloor+3.3,physical:true},'palace-ticket-inspector',inspectorFloor+3.3);
   }
 
@@ -11743,7 +11911,7 @@ export class FestivalWorld {
 
   /** The local PS2 neighbourhood avatar, with articulated unisex streetwear. */
   private createAvatarRig(parent: THREE.Group, palette: AvatarPalette, markPalette = false): AvatarRig {
-    window.setTimeout(() => this.castShadows(parent), 0);
+    if (!this.preview) window.setTimeout(() => { if (!this.disposed) this.castShadows(parent); }, 0);
     return attachImportedAvatar(parent,createCoastalAvatar(parent, palette, markPalette, this.createSkateboard(parent)),palette);
   }
 
@@ -11832,18 +12000,18 @@ export class FestivalWorld {
   }
 
   /**
-   * Composites every avatar over a phone's CSS projector without a second
+   * Composites every avatar over a CSS projector without a second
    * WebGL context. The transparent plane opens the exact projector in the
    * already-rendered main canvas, retaining closer furniture and avatars.
    * Layer two uses that same world depth when redrawing overlapping bodies.
    */
-  private compositeMobileAvatars(
+  private compositeProjectorAvatars(
     visibleProjectors: VenueKey[],
     visibleProjectorScissors: Map<VenueKey, { x: number; y: number; width: number; height: number }>,
   ): void {
     this.singleContextForegroundDrawCalls = 0;
     this.lastSingleContextAvatarIds = [];
-    if (!this.conservesMobileGpu || !visibleProjectors.length) {
+    if (!visibleProjectors.length) {
       for (const projector of this.projectors.values()) projector.aperture.visible = false;
       return;
     }
@@ -11855,10 +12023,13 @@ export class FestivalWorld {
 
     const sceneBackground = this.scene.background;
     const autoClear = this.renderer.autoClear;
-    const shadowsEnabled = this.renderer.shadowMap.enabled;
+    const shadowsAutoUpdate = this.renderer.shadowMap.autoUpdate;
+    const shadowsNeedUpdate = this.renderer.shadowMap.needsUpdate;
     const clippingPlanes = this.renderer.clippingPlanes;
     try {
       this.renderer.autoClear = false;
+      this.renderer.shadowMap.autoUpdate = false;
+      this.renderer.shadowMap.needsUpdate = false;
       this.renderer.setScissorTest(false);
       this.camera.layers.set(0);
       this.renderer.render(this.projectorApertureScene, this.camera);
@@ -11866,7 +12037,10 @@ export class FestivalWorld {
 
       this.scene.background = null;
       this.camera.layers.set(2);
-      this.renderer.shadowMap.enabled = false;
+      // Reuse the main pass's existing shadow maps and shader variant. Turning
+      // shadowMap.enabled off here compiled another full avatar variant on the
+      // first screening, and made the foreground silhouette brighter. Only
+      // stop shadow-map updates: the world depth and lighting remain the same.
       this.renderer.clippingPlanes = [this.projectorClipPlane];
       this.renderer.setScissorTest(true);
       const farthestFirst = [...visibleProjectors].sort(
@@ -11905,7 +12079,8 @@ export class FestivalWorld {
       for (const projector of this.projectors.values()) projector.aperture.visible = false;
       this.renderer.setScissorTest(false);
       this.renderer.autoClear = autoClear;
-      this.renderer.shadowMap.enabled = shadowsEnabled;
+      this.renderer.shadowMap.autoUpdate = shadowsAutoUpdate;
+      this.renderer.shadowMap.needsUpdate = shadowsNeedUpdate;
       this.renderer.clippingPlanes = clippingPlanes;
       this.camera.layers.set(0);
       this.scene.background = sceneBackground;
@@ -11930,6 +12105,9 @@ export class FestivalWorld {
       }
     }
     if (this.disposed) return;
+    const frameStartedAt = performance.now();
+    const frameGap = this.projectorReviewFrameAt ? frameStartedAt - this.projectorReviewFrameAt : 0;
+    this.projectorReviewFrameAt = frameStartedAt;
     const delta = Math.min(this.clock.getDelta(), 0.05);
     const elapsed = this.clock.elapsedTime;
     this.venueSceneryAssets.update(elapsed);
@@ -11989,10 +12167,9 @@ export class FestivalWorld {
     // only brightens what they reach, and after dark most of what is on screen
     // is dark paint under a dim sky — so a wall lit harder is still a dark
     // wall. This lifts the whole frame, materials included, which is what "too
-    // dark at night" actually describes. Both renderers, or the foreground
-    // pass composites at a different brightness from the world behind it.
+    // dark at night" actually describes. The video aperture and any avatar
+    // redraw use this same renderer, exposure and shadow maps.
     this.renderer.toneMappingExposure = dayNight.exposure;
-    if (this.foregroundRenderer) this.foregroundRenderer.toneMappingExposure = dayNight.exposure;
     this.updateWaterReflections(elapsed);
     this.updateStylizedWater(elapsed);
     this.updateWaterLayers();
@@ -12066,7 +12243,7 @@ export class FestivalWorld {
       const withinRange = this.cameraToProjector.length() < range;
       // With no iframe there is no DOM picture to mask: the ordinary WebGL
       // screen already supplies the black physical surface and occludes
-      // correctly on its own. Running the second renderer for an empty CSS
+      // correctly on its own. Running the aperture pass for an empty CSS
       // panel only repainted its scissor rectangle over nearby geometry — the
       // persistent translucent block beside the timetable — and paid for an
       // otherwise useless scene pass.
@@ -12102,19 +12279,19 @@ export class FestivalWorld {
         visibleProjectorScissors.set(venue, compositorScissor);
       }
     }
-    const arcadeScissor = this.arcadeSession?.scissor(this.camera, this.foregroundCanvas.clientWidth || window.innerWidth, this.foregroundCanvas.clientHeight || window.innerHeight);
-    if (visibleProjectors.length || arcadeScissor) {
+    const arcadeScissor = this.arcadeView?.scissor(this.camera, this.foregroundCanvas.clientWidth || window.innerWidth, this.foregroundCanvas.clientHeight || window.innerHeight);
+    if (visibleProjectors.length || (this.arcadeSession && arcadeScissor)) {
       if (PLANET.on) { this.cssScene.matrixWorldAutoUpdate = false; bendCss3d(this.cssScene); }
       this.cssRenderer.render(this.cssScene, this.camera);
     }
     if (arcadeScissor) {
       const viewportHeight = this.foregroundCanvas.clientHeight || window.innerHeight;
       this.arcadeSession?.renderScreen(arcadeScissor, viewportHeight);
-      const exitPoint = this.arcadeSession?.projectedScreenPoint(.5, .915);
+      const exitPoint = this.arcadeView?.projectedScreenPoint(.5, .915);
       this.arcadeScreenLayout?.({ ...arcadeScissor, y: viewportHeight - arcadeScissor.y - arcadeScissor.height,
         exitX: exitPoint?.x, exitY: exitPoint?.y });
     }
-    this.compositeMobileAvatars(visibleProjectors, visibleProjectorScissors);
+    this.compositeProjectorAvatars(visibleProjectors, visibleProjectorScissors);
     // A desktop VR preview also uses a single WebGL context. Retain world
     // depth while opening the live screen through its alpha canvas.
     if (arcadeScissor && this.arcadeAperture) {
@@ -12124,43 +12301,20 @@ export class FestivalWorld {
         this.renderer.render(this.projectorApertureScene, this.camera);
       } finally { this.arcadeAperture.visible = false; this.renderer.autoClear = autoClear; }
     }
-    const foregroundRenderer = this.foregroundRenderer;
-    this.foregroundCanvas.style.visibility = (visibleProjectors.length || arcadeScissor) && foregroundRenderer ? 'visible' : 'hidden';
-    if ((visibleProjectors.length || arcadeScissor) && foregroundRenderer) {
-      const sceneBackground = this.scene.background;
-      this.scene.background = null;
-      this.camera.layers.set(1);
-      foregroundRenderer.autoClear = false;
-      foregroundRenderer.setScissorTest(false);
-      foregroundRenderer.clear(true, true, false);
-      foregroundRenderer.setScissorTest(true);
-      const farthestFirst = visibleProjectors.sort(
-        (a, b) => venueScreens[a].position[2] - venueScreens[b].position[2],
-      );
-      for (const venue of farthestFirst) {
-        const scissor = visibleProjectorScissors.get(venue);
-        if (!scissor) continue;
-        // Keep the half of the scene between the screen and the viewer. Which
-        // half that is depends on the side the screen is watched from.
-        const facing = venueScreens[venue].facing;
-        this.projectorClipPlane.normal.set(0, 0, facing);
-        this.projectorClipPlane.constant = -venueScreens[venue].position[2] * facing;
-        foregroundRenderer.setScissor(scissor.x, scissor.y, scissor.width, scissor.height);
-        foregroundRenderer.clear(true, true, false);
-        foregroundRenderer.render(this.scene, this.camera);
-      }
-      if (arcadeScissor && this.arcadeSession) {
-        const screen = this.arcadeSession.frame;
-        this.projectorClipPlane.normal.copy(screen.normal);
-        this.projectorClipPlane.constant = -screen.normal.dot(screen.centre);
-        foregroundRenderer.setScissor(arcadeScissor.x, arcadeScissor.y, arcadeScissor.width, arcadeScissor.height);
-        foregroundRenderer.clear(true, true, false);
-        foregroundRenderer.render(this.scene, this.camera);
-      }
-      foregroundRenderer.setScissorTest(false);
-      foregroundRenderer.autoClear = true;
-      this.camera.layers.set(0);
-      this.scene.background = sceneBackground;
+    this.foregroundCanvas.style.visibility = 'hidden';
+
+    // The readout is exposed only by the existing loopback review snapshot.
+    // Record real frame gaps for two seconds around an actual player mount;
+    // clamped animation delta would hide precisely the freeze being inspected.
+    const activationReview = this.projectorActivationReview;
+    // Include the first frame after the window as well: a long blocked frame
+    // can cross the whole window, and must not disappear from the measurement.
+    if (activationReview && frameStartedAt - frameGap - activationReview.startedAt <= 2_000) {
+      activationReview.frames += 1;
+      activationReview.maxFrameGapMs = Math.max(activationReview.maxFrameGapMs, frameGap);
+      activationReview.maxWorldRenderMs = Math.max(activationReview.maxWorldRenderMs, performance.now() - frameStartedAt);
+      activationReview.programsAfter = this.renderer.info.programs?.length ?? 0;
+      activationReview.geometriesAfter = this.renderer.info.memory.geometries;
     }
 
     const now = performance.now();
@@ -12226,7 +12380,10 @@ export class FestivalWorld {
       // The cells drift, so it reads as water rather than a floor.
       const map = (this.islandOcean.material as THREE.MeshLambertMaterial).map;
       const seconds = performance.now() / 1000;
-      if (map && !stylised) map.offset.set(seconds * .012, seconds * .008);
+      if (map && !stylised) {
+        // Keep the drift at .168/.112 m/s as the atlas now covers more water.
+        map.offset.set(seconds * .168 / LITE_SEA_TILE_METRES, seconds * .112 / LITE_SEA_TILE_METRES);
+      }
       const seaTime = (this.islandOcean.material as THREE.Material).userData.seaTime as { value: number } | undefined;
       if (seaTime && !stylised) seaTime.value = seconds % 3600;
     }
@@ -12492,7 +12649,7 @@ export class FestivalWorld {
   }
 
   private updatePlayer(delta: number): void {
-    if (this.arcadeSession) {
+    if (this.arcadeView) {
       this.moveVector.set(0, 0, 0); this.keys.clear(); this.stickX = this.stickY = 0;
       this.player.visible = false;
       return;
@@ -14615,8 +14772,8 @@ export class FestivalWorld {
   }
 
   private updateCamera(delta: number, _elapsed: number): void {
-    if (this.arcadeSession) {
-      const frame = this.arcadeSession.frame;
+    if (this.arcadeView) {
+      const frame = this.arcadeView.frame;
       const halfFov = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
       // The exit control is part of the game's lower orange band, so the
       // centered physical screen no longer needs an external HUD reserve.
@@ -15146,6 +15303,15 @@ export class FestivalWorld {
     cameraTarget.y = Math.max(cameraTarget.y, floorY + 0.85);
   }
 
+  /** Register lights arriving after the initial projector-layer traversal. */
+  private registerBandLight(light: THREE.PointLight): void {
+    // Band assets arrive after the constructor's light-layer traversal. Its
+    // bonfire must light the ordinary scene and video-avatar redraw equally;
+    // differing light counts also create a fresh shader on the first screen.
+    light.layers.enable(2);
+    this.dayNight.addLampLight(light, 16);
+  }
+
   /**
    * The band's stage on the empty roof over the pop-up shop, behind the NIMA
    * ROOFTOP screen and facing the beach; their bonfire low in the roof's
@@ -15154,10 +15320,11 @@ export class FestivalWorld {
    * the roof only, never in the shop underneath.
    */
   private createRooftopBand(): void {
+    if (this.preview) return;
     const r = rooftopBounds;
     const stage = { x: ROOFTOP_CENTER_X, y: ROOF_Y, z: 12.2, yaw: Math.PI };
     const fire = { x: r.maxX - 4.5, y: ROOF_Y, z: r.deckMinZ - 3.4, yaw: Math.PI / 2 };
-    const band = new RooftopBand(stage, fire, light => this.dayNight.addLampLight(light, 16));
+    const band = new RooftopBand(stage, fire, light => this.registerBandLight(light));
     this.scene.add(band.group);
     this.rooftopBand = band;
     void band.load().catch(error => console.warn('The rooftop band did not load', error));
@@ -15372,8 +15539,8 @@ export class FestivalWorld {
     this.promptAction = 'interact';
     this.promptActionable = true;
     this.promptSecondary = false;
-    if (this.arcadeSession) { this.promptActionable = false; return undefined; }
-    if (this.nearArcade() && this.playerState !== 'seated') return 'E / PLAY M.O.T.H';
+    if (this.arcadeView) { this.promptActionable = false; return undefined; }
+    if (this.nearArcade() && this.playerState !== 'seated') return this.arcadeLocked ? 'E / M.O.T.H · LOCKED' : 'E / PLAY M.O.T.H';
     // A panel hung in front of somebody with no way to take it down is a trap:
     // the close button belongs to `#venue-screen`, which an immersive session
     // never shows. A screening on a venue's own wall does not need this —
@@ -15547,7 +15714,7 @@ export class FestivalWorld {
 
   private nearArcade(): boolean {
     const arcade = this.arcadeCabinet;
-    if (!arcade || arcade.status !== 'ready' || this.arcadeSession) return false;
+    if (!arcade || arcade.status !== 'ready' || this.arcadeView) return false;
     if (Math.abs(this.player.position.y - this.groundHeightAt(this.player.position.x, this.player.position.z, 0)) > 2.6) return false;
     return arcadeIsNearest(this.player.position, arcade.root.position, this.jukebox);
   }

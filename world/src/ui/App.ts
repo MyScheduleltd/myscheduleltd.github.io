@@ -19,9 +19,10 @@ import { ProgrammeClock } from '../data/programmeClock';
 import { QUESTS, QUEST_SECTIONS, QUEST_TOTAL, type QuestId } from '../data/quests';
 import { xrBindings, xrQuickActions, xrStickRows } from '../world/XrControls';
 import { armLeavingVr, type LeaveVrArming } from './LeaveVrConfirm';
-import { arcadeGameUrl, externalArcadeRequired } from '../world/ArcadeRules';
+import { arcadeGameUrl, externalArcadeRequired, ARCADE_UNLOCK_AT, arcadeIsLocked } from '../world/ArcadeRules';
 import { requestWithDeadline } from '../network/RequestDeadline';
 import { watchAssetDownloads } from '../world/AssetMirror';
+import type { GatePreview } from '../world/GatePreview';
 
 /**
  * The rooms with lights that answer to a beat. Everywhere else is a cinema,
@@ -44,7 +45,6 @@ import {
   type ConnectionStatus,
   type DjProfile,
   type FestivalState,
-  type GateBackground,
   type GateCopy,
   type PamphletContent,
   type ProgrammeMode,
@@ -200,9 +200,7 @@ function withoutOldDefaults(palette: AvatarPalette): AvatarPalette {
 
 const copy = {
   en: {
-    gateKicker: 'BETA',
     gateTitle: 'MY THEATRE',
-    gateIntro: 'Follow the programme, take a seat, watch the work.',
     festivalId: 'ATTENDEE NAME',
     remember: 'REMEMBER ME ON THIS DEVICE',
     sound: 'ENTER WITH SOUND',
@@ -226,9 +224,7 @@ const copy = {
     gateNote: 'MOVE: WASD / ARROWS · RUN: SHIFT · JUMP: SPACE · CAMERA: T · CHAT: ENTER',
   },
   'zh-TW': {
-    gateKicker: 'BETA',
     gateTitle: '我的戲院',
-    gateIntro: '跟著節目表、入座，觀看作品。',
     festivalId: '觀影者名稱',
     remember: '記住此裝置',
     sound: '開啟聲音進入',
@@ -341,10 +337,6 @@ const paletteLabels: Record<Language, Record<(typeof paletteInputs)[number], str
   en: { skin: 'SKIN', hair: 'HAIR', bottoms: 'BOTTOMS', swimwear: 'SWIMWEAR' },
   'zh-TW': { skin: '膚色', hair: '髮色', bottoms: '下身', swimwear: '泳裝' },
 };
-
-const defaultGateBackground: GateBackground = { youtubeId: 'Ffli-o0ocT0', updatedAt: 0 };
-const gateBackgroundUrl = (youtubeId: string) =>
-  `https://www.youtube-nocookie.com/embed/${encodeURIComponent(youtubeId)}?autoplay=1&mute=1&controls=0&loop=1&playlist=${encodeURIComponent(youtubeId)}&playsinline=1&rel=0`;
 
 const initialChat: ChatMessage[] = [
   { id: 'npc-1', author: 'MENTOR', channel: 'NEARBY', text: 'The public screenings are live in all three venues.', timestamp: Date.now() - 185000, npc: true },
@@ -461,7 +453,10 @@ export class App {
   private localHitAt = 0;
   private jukeboxVolume = readStoredJukeboxVolume();
   private arcadePlaying = false;
+  private arcadeLockedViewing = false;
   private arcadeFullscreenPending = false;
+  private arcadeNotice?: HTMLDialogElement;
+  private arcadeUnlockTimer?: number;
   private lookSensitivity = readStoredLookSensitivity();
   private gamepadBindings = readStoredGamepadBindings();
   private rebinding?: GamepadActionId;
@@ -518,7 +513,6 @@ export class App {
     brandOffsetY: 4,
     updatedAt: 0,
   };
-  private gateBackground: GateBackground = { ...defaultGateBackground };
   private npcProfiles: NpcProfile[] = DEFAULT_NPC_PROFILES.map((profile) => ({ ...profile }));
   private pamphlet: PamphletContent = { ...defaultPamphlet };
   private readonly programmeClock = new ProgrammeClock();
@@ -583,7 +577,6 @@ export class App {
     void this.festivalClient.publicConfig().then((config) => {
       this.festivalServiceReady = true;
       this.siteStyle = { ...this.siteStyle, ...config.siteStyle };
-      this.gateBackground = { ...this.gateBackground, ...config.gateBackground };
       this.npcProfiles = this.normalizeNpcProfiles(config.npcProfiles, config.npcNames);
       this.pamphlet = { ...this.pamphlet, ...config.pamphlet };
       if (config.gateCopy) {
@@ -592,7 +585,6 @@ export class App {
         if (this.root.querySelector('#gate-form') && !this.waitingForPlace && !this.openingWorld) this.renderGate();
       }
       this.applySiteStyle();
-      this.applyGateBackground();
     }).catch(() => undefined);
   }
 
@@ -714,9 +706,7 @@ export class App {
     const own = (value: string | undefined) => value ? this.escapeHtml(value) : '';
     return {
       ...base,
-      gateKicker: own(zh ? staff.kickerZh : staff.kicker) || base.gateKicker,
       gateTitle: own(zh ? staff.titleZh : staff.title) || base.gateTitle,
-      gateIntro: own(zh ? staff.introZh : staff.intro) || base.gateIntro,
       festivalId: own(zh ? staff.nameLabelZh : staff.nameLabel) || base.festivalId,
     };
   }
@@ -741,6 +731,9 @@ export class App {
    * one; the sound prompt is already on screen for exactly this case.
    */
   private rejoinAfterDiscard(): void {
+    // Keep the local entrance review at the form even when its browser tab
+    // inherited an already admitted session from another preview.
+    if (this.reviewsGateMotion()) return;
     if (sessionStorage.getItem(INSIDE_KEY) !== '1') return;
     const saved = readProfile();
     if (!saved?.id || !isValidId(saved.id)) return;
@@ -812,12 +805,15 @@ export class App {
 
   private renderGate(): void {
     const text = this.gateText();
+    const previous = this.root.querySelector<HTMLFormElement>('#gate-form');
+    const remember = previous?.querySelector<HTMLInputElement>('#remember-profile')?.checked ?? true;
+    const appearanceOpen = previous?.querySelector<HTMLDetailsElement>('.gate-appearance')?.open ?? false;
+    const optionsOpen = previous?.querySelector<HTMLDetailsElement>('.gate-options')?.open ?? false;
     document.documentElement.lang = this.language;
     this.root.innerHTML = `
-      <section class="gate" aria-labelledby="gate-title">
-        <div class="gate__atmosphere" aria-hidden="true">
-          <iframe class="gate__video${this.gateBackground.youtubeId === defaultGateBackground.youtubeId ? ' gate__video--cinematic' : ''}" src="${this.escapeAttribute(gateBackgroundUrl(this.gateBackground.youtubeId))}" title="" tabindex="-1" allow="autoplay; encrypted-media"></iframe>
-          <div class="gate__video-shade"></div>
+      <section class="gate gate--live" aria-labelledby="gate-title">
+        <div class="gate__atmosphere" data-gate-backdrop aria-hidden="true">
+          <div class="gate__world-shade"></div>
           <div class="gate__grain"></div>
         </div>
         <header class="gate__brand">
@@ -825,10 +821,9 @@ export class App {
           <span>MYSCHEDULE</span>
           <span class="phase-badge">${text.local}</span>
         </header>
+        <div class="gate__layout">
         <form class="gate-card" id="gate-form">
-          <p class="eyebrow">${text.gateKicker}</p>
           <h1 id="gate-title">${text.gateTitle}</h1>
-          <p class="gate-card__intro">${text.gateIntro}</p>
           <p class="gate-card__waiting" id="gate-waiting" role="status" hidden></p>
 
           <label class="field-label" for="festival-id">${text.festivalId}</label>
@@ -864,7 +859,7 @@ export class App {
                made the gate a form to fill in rather than a door to walk
                through, and most people take the figure they are given. Opened
                with one press for anybody who does not. -->
-          <details class="gate-appearance">
+          <details class="gate-appearance" ${appearanceOpen ? 'open' : ''}>
             <summary><span>${text.palette}</span><span class="gate-appearance__sign" aria-hidden="true">+</span></summary>
             ${this.appearanceFields('data-palette')}
           </details>
@@ -878,8 +873,10 @@ export class App {
                again. It reads as being logged out, over and over, and it was.
                What it keeps is a name and five colours, in this browser, and
                the box is still there to turn it off. -->
+          <details class="gate-options" ${optionsOpen ? 'open' : ''}>
+            <summary>${this.language === 'zh-TW' ? '更多選項' : 'MORE OPTIONS'}<span aria-hidden="true">+</span></summary>
           <label class="check-field">
-            <input id="remember-profile" type="checkbox" checked />
+            <input id="remember-profile" type="checkbox" ${remember ? 'checked' : ''} />
             <span>${text.remember}</span>
           </label>
 
@@ -887,6 +884,7 @@ export class App {
             <input id="vr-mode" type="checkbox" ${this.vrRequested ? 'checked' : ''} />
             <span><strong data-vr-gate-title>${text.vrMode}</strong><small data-vr-gate-note>${text.vrChecking}</small></span>
           </label>
+          </details>
 
           ${App.staffEntranceAsked() ? `
           <details class="gate-staff" open>
@@ -903,6 +901,18 @@ export class App {
           </div>
           <p class="gate-card__note">${text.gateNote}</p>
         </form>
+        <aside class="gate-avatar" data-gate-avatar tabindex="0" aria-label="${this.language === 'zh-TW' ? '你的角色預覽' : 'Your character preview'}" aria-describedby="gate-avatar-hint">
+          <div class="gate-avatar__caption">
+            <span class="eyebrow">${this.language === 'zh-TW' ? '你的角色' : 'YOUR CHARACTER'}</span>
+            <p id="gate-avatar-hint">${this.language === 'zh-TW' ? '拖曳旋轉 · 方向鍵微調' : 'DRAG TO ROTATE · ARROW KEYS TO TURN'}</p>
+          </div>
+        </aside>
+        </div>
+        <p class="gate-scene-status" data-gate-scene-status role="status">${this.language === 'zh-TW' ? '正在展開影展世界…' : 'OPENING THE FESTIVAL WORLD…'}</p>
+        <div class="gate-entry" data-gate-entry hidden>
+          <p data-gate-entry-label role="status"></p>
+          <div class="gate-entry__track" role="progressbar" aria-label="${this.language === 'zh-TW' ? '影展載入進度' : 'Festival loading progress'}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
+        </div>
       </section>
     `;
 
@@ -927,14 +937,14 @@ export class App {
       setButtonPressed(button, button.dataset.graphics === this.graphicsMode);
       button.addEventListener('click', () => {
         this.graphicsMode = button.dataset.graphics as GraphicsMode;
+        this.gatePreview?.setGraphicsMode(this.graphicsMode);
         this.root.querySelectorAll<HTMLButtonElement>('[data-graphics]').forEach((candidate) =>
           setButtonPressed(candidate, candidate === button),
         );
       });
     });
 
-    // Nothing to commit at the gate: the palette is not on a body yet.
-    this.bindAppearanceFields(this.root, 'data-palette', () => undefined);
+    this.bindAppearanceFields(this.root, 'data-palette', () => this.gatePreview?.setPalette(this.palette));
 
     this.syncVrGateControl();
     this.root.querySelector<HTMLInputElement>('#vr-mode')?.addEventListener('change', (event) => {
@@ -942,6 +952,7 @@ export class App {
       this.vrRequested = checked && this.canRequestVr();
       if (this.vrRequested) {
         this.graphicsMode = 'lite';
+        this.gatePreview?.setGraphicsMode('lite');
         this.root.querySelectorAll<HTMLButtonElement>('[data-graphics]').forEach((button) =>
           setButtonPressed(button, button.dataset.graphics === 'lite'),
         );
@@ -985,6 +996,227 @@ export class App {
       void this.entryAudio.start(muted).catch(() => {});
       void this.enterWhenThereIsRoom(muted);
     });
+    this.mountGatePreview();
+  }
+
+  private gatePreview?: GatePreview;
+  private gatePreviewFailed = false;
+  private gatePreviewGeneration = 0;
+  private gatePreviewMount?: Promise<void>;
+  private gateEntryOverlay?: HTMLElement;
+  private gateEntryProgress = 0;
+  private gateEntryAttempt = 0;
+  private gateEntryFrames: unknown[] = [];
+  private readonly gateEntryKeyCapture = (event: KeyboardEvent): void => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+
+  private beginGateEntry(): void {
+    this.gateEntryAttempt++;
+    this.gateEntryFrames = [];
+    this.gateEntryProgress = 0;
+    window.addEventListener('keydown', this.gateEntryKeyCapture, true);
+    window.addEventListener('keyup', this.gateEntryKeyCapture, true);
+    this.gatePreview?.beginEntry();
+    const gate = this.root.querySelector<HTMLElement>('.gate--live');
+    const menu = gate?.querySelector<HTMLElement>('.gate-card')?.getBoundingClientRect();
+    const avatar = gate?.querySelector<HTMLElement>('.gate-avatar')?.getBoundingClientRect();
+    if (menu) gate?.style.setProperty('--gate-form-exit', `${-Math.ceil(menu.right + 24)}px`);
+    if (avatar) gate?.style.setProperty('--gate-avatar-exit', `${Math.ceil(window.innerWidth - avatar.left + 24)}px`);
+    gate?.classList.add('gate--entering');
+    gate?.querySelector('.gate__layout')?.setAttribute('inert', '');
+    this.setGateEntryProgress(.1, this.language === 'zh-TW' ? '正在下載角色…' : 'LOADING THE CHARACTER…');
+  }
+
+  private setGateEntryProgress(progress: number, label: string): void {
+    if (!this.openingWorld) return;
+    this.gateEntryProgress = Math.max(this.gateEntryProgress, Math.min(1, Math.max(0, progress)));
+    this.gatePreview?.setEntryProgress(this.gateEntryProgress);
+    const gate = this.gateEntryOverlay ?? this.root.querySelector<HTMLElement>('.gate--live');
+    const indicator = gate?.querySelector<HTMLElement>('[data-gate-entry]');
+    if (indicator) indicator.hidden = false;
+    const text = indicator?.querySelector<HTMLElement>('[data-gate-entry-label]');
+    if (text) text.textContent = label;
+    const track = indicator?.querySelector<HTMLElement>('[role="progressbar"]');
+    track?.setAttribute('aria-valuenow', String(Math.round(this.gateEntryProgress * 100)));
+    track?.style.setProperty('--entry-progress', String(this.gateEntryProgress));
+  }
+
+  private retainGateEntry(): void {
+    const gate = this.root.querySelector<HTMLElement>('.gate--entering');
+    if (!gate) return;
+    this.gateEntryOverlay = gate;
+    gate.classList.add('gate--handoff');
+    document.body.append(gate);
+  }
+
+  private reviewsGateMotion(): boolean {
+    return ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+      && new URLSearchParams(window.location.search).get('review') === 'entry-motion';
+  }
+
+  private async prepareGateEntry(): Promise<void> {
+    const attempt = this.gateEntryAttempt;
+    const active = () => this.openingWorld && attempt === this.gateEntryAttempt;
+    try {
+      const ready = await requestWithDeadline(async () => {
+        await this.mountGatePreview();
+        if (!active()) return false;
+        const preview = this.gatePreview;
+        if (!preview) return false;
+        preview.beginEntry();
+        preview.setEntryProgress(this.gateEntryProgress);
+        return preview.ready();
+      }, 12_000, 'Entrance preview');
+      if (active() && !ready) this.disposeGatePreview();
+    } catch {
+      // An optional scenic preview must never prevent admission. A timed-out
+      // import is invalidated too, so it cannot mount after the real world.
+      if (active()) this.disposeGatePreview();
+    }
+  }
+
+  private async waitForGateExit(): Promise<void> {
+    const gate = this.gateEntryOverlay ?? this.root.querySelector<HTMLElement>('.gate--entering');
+    const animations = [...(gate?.querySelectorAll<HTMLElement>('.gate-card, .gate-avatar, .gate__brand') ?? [])]
+      .flatMap(element => element.getAnimations());
+    if (document.hidden || !animations.length) return;
+    await new Promise<void>(resolve => {
+      const done = () => { document.removeEventListener('visibilitychange', hidden); resolve(); };
+      const hidden = () => { if (document.hidden) done(); };
+      document.addEventListener('visibilitychange', hidden);
+      void Promise.allSettled(animations.map(animation => animation.finished)).then(done);
+    });
+  }
+
+  private async completeGateEntry(): Promise<void> {
+    const attempt = this.gateEntryAttempt;
+    // Give the actual world two animation frames to paint under the retained
+    // preview. No new progress is invented while network or model work stalls.
+    if (!document.hidden) await new Promise<void>(resolve => {
+      let first = 0, second = 0;
+      const done = () => {
+        cancelAnimationFrame(first); cancelAnimationFrame(second);
+        document.removeEventListener('visibilitychange', hidden);
+        resolve();
+      };
+      const hidden = () => { if (document.hidden) done(); };
+      document.addEventListener('visibilitychange', hidden);
+      first = requestAnimationFrame(() => { second = requestAnimationFrame(done); });
+    });
+    if (attempt !== this.gateEntryAttempt || !this.openingWorld) return;
+    // The actual world's first frame is ready underneath. Give the GPU to
+    // the moving preview until it hands over, rather than drawing both worlds.
+    this.world?.setEntryHandoffPaused(true);
+    this.setGateEntryProgress(1, this.language === 'zh-TW' ? '歡迎來到影展' : 'WELCOME TO THE FESTIVAL');
+    await this.gatePreview?.awaitEntryComplete();
+    if (attempt !== this.gateEntryAttempt || !this.openingWorld) return;
+    await this.waitForGateExit();
+    if (attempt !== this.gateEntryAttempt || !this.openingWorld) return;
+    this.gateEntryOverlay?.remove();
+    this.gateEntryOverlay = undefined;
+    this.disposeGatePreview();
+    this.world?.setEntryHandoffPaused(false);
+    if (this.reviewsGateMotion()) this.root.dataset.gateEntryMotion = JSON.stringify({
+      frames: this.gateEntryFrames, overlayRemoved: true, previewDisposed: !this.gatePreview,
+    });
+    window.removeEventListener('keydown', this.gateEntryKeyCapture, true);
+    window.removeEventListener('keyup', this.gateEntryKeyCapture, true);
+  }
+
+  private cancelGateEntry(): void {
+    this.gateEntryAttempt++;
+    window.removeEventListener('keydown', this.gateEntryKeyCapture, true);
+    window.removeEventListener('keyup', this.gateEntryKeyCapture, true);
+    this.gatePreview?.cancelEntry();
+    if (this.gateEntryOverlay) {
+      this.root.replaceChildren(this.gateEntryOverlay);
+      this.gateEntryOverlay.classList.remove('gate--handoff');
+      this.gateEntryOverlay = undefined;
+    }
+    const gate = this.root.querySelector<HTMLElement>('.gate--live');
+    gate?.classList.remove('gate--entering');
+    gate?.querySelector('.gate__layout')?.removeAttribute('inert');
+    const indicator = gate?.querySelector<HTMLElement>('[data-gate-entry]');
+    if (indicator) indicator.hidden = true;
+  }
+
+  private mountGatePreview(): Promise<void> {
+    const host = this.root.querySelector<HTMLElement>('[data-gate-backdrop]');
+    if (!host || this.world) return Promise.resolve();
+    const region = this.root.querySelector<HTMLElement>('[data-gate-avatar]') ?? undefined;
+    if (this.gatePreviewFailed) this.disposeGatePreview();
+    if (this.gatePreview) {
+      this.gatePreview.mount(host, region);
+      this.gatePreview.setPalette(this.palette);
+      if (this.openingWorld) {
+        this.gatePreview.beginEntry();
+        this.gatePreview.setEntryProgress(this.gateEntryProgress);
+      }
+      return Promise.resolve();
+    }
+    if (this.gatePreviewMount) return this.gatePreviewMount;
+    const generation = this.gatePreviewGeneration;
+    // Draw the form first. The optional live scene never gates admission.
+    const pending = this.prepareWorldTopology().then(() => import('../world/GatePreview')).then(({ GatePreview }) => {
+      if (generation !== this.gatePreviewGeneration || this.world) return;
+      const currentHost = this.root.querySelector<HTMLElement>('[data-gate-backdrop]');
+      if (!currentHost) return;
+      this.gatePreview = new GatePreview({
+        palette: this.palette, graphicsMode: this.graphicsMode,
+        onEntryFrame: this.reviewsGateMotion() ? sample => {
+          const gate = this.gateEntryOverlay ?? this.root.querySelector<HTMLElement>('.gate--live');
+          const menu = gate?.querySelector<HTMLElement>('.gate-card');
+          const rect = menu?.getBoundingClientRect();
+          const frame = { ...sample, menu: rect && menu ? {
+            x: rect.x, width: rect.width, opacity: getComputedStyle(menu).opacity,
+          } : undefined };
+          // Keep the beginning and latest frame even during a long download.
+          if (this.gateEntryFrames.length < 240) this.gateEntryFrames.push(frame);
+          else this.gateEntryFrames[239] = frame;
+        } : undefined,
+        onReady: () => {
+          if (generation !== this.gatePreviewGeneration) return;
+          const status = this.root.querySelector<HTMLElement>('[data-gate-scene-status]');
+          if (status) status.hidden = true;
+        },
+        onError: (error: unknown) => {
+          if (generation !== this.gatePreviewGeneration) return;
+          if (this.reviewsGateMotion()) this.root.dataset.gatePreviewError = String(error);
+          this.gatePreviewFailed = true;
+          const status = this.root.querySelector<HTMLElement>('[data-gate-scene-status]');
+          if (status) {
+            status.hidden = false;
+            status.textContent = this.language === 'zh-TW' ? '世界預覽暫時無法載入，仍可進入影展。' : 'The world preview is unavailable. You can still enter the festival.';
+          }
+        },
+      });
+      this.gatePreview.mount(currentHost, this.root.querySelector<HTMLElement>('[data-gate-avatar]') ?? undefined);
+      if (this.openingWorld) {
+        this.gatePreview.beginEntry();
+        this.gatePreview.setEntryProgress(this.gateEntryProgress);
+      }
+    }).catch((error: unknown) => {
+      if (generation !== this.gatePreviewGeneration) return;
+      if (this.reviewsGateMotion()) this.root.dataset.gatePreviewError = String(error);
+      const status = this.root.querySelector<HTMLElement>('[data-gate-scene-status]');
+      if (status) status.hidden = true;
+    }).finally(() => {
+      if (generation === this.gatePreviewGeneration) {
+        this.gatePreviewMount = undefined;
+      }
+    });
+    this.gatePreviewMount = pending;
+    return pending;
+  }
+
+  private disposeGatePreview(): void {
+    this.gatePreviewGeneration++;
+    this.gatePreviewMount = undefined;
+    this.gatePreviewFailed = false;
+    this.gatePreview?.dispose();
+    this.gatePreview = undefined;
   }
 
   /**
@@ -1069,31 +1301,43 @@ export class App {
   private enterWorldAfterGateFeedback(): void {
     if(this.openingWorld)return;
     this.openingWorld=true;
+    this.beginGateEntry();
+    const previewReady = this.prepareGateEntry();
     this.root.querySelectorAll<HTMLButtonElement>('#gate-form button[type="submit"]').forEach(b=>b.disabled=true);
     const waiting=this.root.querySelector<HTMLElement>('#gate-waiting');
     if(waiting){waiting.hidden=false;waiting.textContent=this.language==='zh-TW'?'正在下載角色…':'LOADING THE CHARACTER…';}
     let lastProgressAt = 0;
-    const stopProgress = watchAssetDownloads(({ file, received }) => {
+    const downloads = new Map<string, { received: number; total: number }>();
+    const stopProgress = watchAssetDownloads(({ file, received, total }) => {
       if (!waiting || !/^(male|female)-.*\.glb$/.test(file)) return;
+      if (total) downloads.set(file, { received: Math.min(received, total), total });
+      const known = [...downloads.values()];
+      const fraction = known.reduce((sum, item) => sum + item.received, 0) / (known.reduce((sum, item) => sum + item.total, 0) || 1);
       const now = performance.now();
       if (now - lastProgressAt < 250) return;
       lastProgressAt = now;
       const megabytes = (received / 1_048_576).toFixed(1);
       waiting.textContent = this.language === 'zh-TW'
         ? `正在下載角色… 已下載 ${megabytes} MB` : `LOADING THE CHARACTER… ${megabytes} MB downloaded`;
+      this.setGateEntryProgress(.1 + fraction * .35, waiting.textContent);
     });
     window.setTimeout(() => {
       // Only the bodies this visitor and the residents wear; the others arrive
       // behind them while the world is already running.
-      void this.preloadAvatar().then(() => {
+      void this.preloadAvatar().then(async () => {
         stopProgress();
         if (waiting) waiting.textContent = this.language === 'zh-TW' ? '正在建立影展…' : 'BUILDING THE FESTIVAL…';
+        this.setGateEntryProgress(.45, this.language === 'zh-TW' ? '正在建立影展…' : 'BUILDING THE FESTIVAL…');
+        await previewReady;
         return this.enterWorld(this.audioMuted);
       }).then(() => {
         this.openingWorld=false;
       }).catch((error: unknown) => {
         stopProgress();
         this.openingWorld=false;
+        this.world?.stop();
+        this.world = undefined;
+        this.cancelGateEntry();
         this.entryAudio.setMuted(true);
         console.error('Festival entry failed', error);
         if (!this.world) {
@@ -1104,6 +1348,7 @@ export class App {
         if(notice){notice.hidden=false;notice.textContent=this.language==='zh-TW'
           ? '影展載入未完成，請再次點選進入重試。' : 'Festival loading failed. Select enter again to retry.';}
         this.root.querySelectorAll<HTMLButtonElement>('#gate-form button[type="submit"]').forEach(b=>b.disabled=false);
+        this.mountGatePreview();
       });
     }, 50);
   }
@@ -1153,6 +1398,9 @@ export class App {
   private async enterWorld(muted: boolean): Promise<void> {
     // Keep the loading/retry form visible until the world's code is usable.
     const { FestivalWorld } = await this.preloadWorldModule();
+    await this.gatePreview?.awaitEntryProgress(.45);
+    this.setGateEntryProgress(.5, this.language === 'zh-TW' ? '正在準備世界…' : 'PREPARING THE WORLD…');
+    this.retainGateEntry();
     this.lockPageZoomForWorld();
     // Marked as soon as somebody is inside, so that if the phone throws this
     // tab away while it is locked, the restored tab knows it was already in
@@ -1334,6 +1582,7 @@ export class App {
     const cssLayer = this.root.querySelector<HTMLElement>('#world-css3d');
     if (!canvas || !foregroundCanvas || !cssLayer) throw new Error('World rendering layers were not created.');
     this.renderChatStream();
+    this.setGateEntryProgress(.6, this.language === 'zh-TW' ? '正在開啟影展…' : 'OPENING THE FESTIVAL…');
 
     this.world = new FestivalWorld({
       canvas,
@@ -1374,14 +1623,14 @@ export class App {
     });
     this.world.setNpcProfiles(this.npcProfiles);
     this.world.setWishes(this.networkState?.wishes ?? []);
+    this.syncArcadeRelease();
     this.world.start();
     // Other body variants are background work, after the visitor is inside.
     void import('../world/ImportedAvatar').then(({ loadImportedAvatar }) => loadImportedAvatar()).catch(() => undefined);
     this.syncPublicProjectors();
     this.syncVrUi();
-    // This entire App is now loaded only by the explicit local PS2 preview.
-    // These dials belong to that experimental world; ordinary beta uses its
-    // separately maintained restored build.
+    // Both approved public channels share this application. The era flag
+    // still selects the PS2-specific art defaults and local review dials.
     const era = new URLSearchParams(window.location.search).get('era');
     const ps2 = era === 'ps2';
     const wornDefault = this.graphicsMode === 'normal' ? '' : null;
@@ -1671,6 +1920,12 @@ export class App {
         this.root.dataset.mobileStabilityLive = live;
       }, 5_000);
       this.startPublicScreening(true);
+    } else if (reviewTarget === 'theater-activation' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      // Loopback-only readout: follow normal walking/venue activation without
+      // a stress fixture changing the work being measured.
+      const sample = () => { this.root.dataset.festivalPerf = JSON.stringify(this.world?.performanceSnapshot()); };
+      sample();
+      window.setInterval(sample, 250);
     } else if ((reviewTarget === 'screen-rooftop' || reviewTarget === 'screen-club') && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       const venue = reviewTarget === 'screen-rooftop' ? 'rooftop' : 'club';
       this.activeVenue = venue;
@@ -2023,6 +2278,7 @@ export class App {
       // where the festival's clock says it has got to.
       this.syncJukebox();
       if (document.hidden) return;
+      this.syncArcadeRelease();
       resumeEntryAudio();
       this.applyJukeboxVolume();
       // Coming back from a locked phone. Locking never fires pagehide, so
@@ -2306,6 +2562,8 @@ export class App {
     // Never cleared: it lives as long as the page does, and the page is the
     // only thing that could have stopped it.
     window.setInterval(() => this.syncProgrammeBoard(), 1_000);
+    this.setGateEntryProgress(.75, this.language === 'zh-TW' ? '正在準備入口…' : 'PREPARING THE ENTRANCE…');
+    await this.completeGateEntry();
   }
 
   private updateSnapshot(snapshot: WorldSnapshot): void {
@@ -2423,32 +2681,108 @@ export class App {
   }
 
   private openArcadeGame(): void {
-    if (externalArcadeRequired(window.matchMedia('(pointer: coarse)').matches, window.matchMedia('(any-pointer: fine)').matches, this.vrActive && !this.usesVrSimulation())) {
+    // A locked desktop visit uses the actual cabinet and its fixed camera;
+    // phones and immersive headsets retain the small availability dialog.
+    const locked = this.syncArcadeRelease();
+    if (this.arcadePlaying) return;
+    const external = externalArcadeRequired(window.matchMedia('(pointer: coarse)').matches,
+      window.matchMedia('(any-pointer: fine)').matches, this.vrActive && !this.usesVrSimulation());
+    if (external) {
+      if (locked) { this.showArcadeReleaseNotice(); return; }
       if (!this.confirmedLeavingVr('arcade', 'M.O.T.H')) return;
       this.openLinkAndLeaveVr(arcadeGameUrl(false), 'M.O.T.H'); return;
     }
     this.closePanel(); this.closeFestivalPass();
+    const world = this.world;
+    if (!world) return;
     const hud = this.root.querySelector<HTMLElement>('#moth-arcade-hud');
-    if (!this.world?.startArcadeGame(arcadeGameUrl(), () => this.leaveArcadeOnEscape(), frame => {
+    const layout = (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number }) => {
       if (!hud) return;
-      // The game's wide view has an orange band below its 16:9
-      // canvas. Centre the controls together in that band.
+      // Keep Exit on the same physical monitor in both the lock and game view.
       hud.style.left = `${frame.exitX ?? frame.x + frame.width / 2}px`;
       hud.style.top = `${frame.exitY ?? frame.y + frame.height * .915}px`;
       hud.style.maxWidth = `${Math.max(0, frame.width - 24)}px`;
-    })) return;
+    };
+    const exit = () => this.leaveArcadeOnEscape();
+    const started = locked ? world.startArcadeLockedView(exit, layout)
+      : world.startArcadeGame(arcadeGameUrl(), exit, layout);
+    if (!started) return;
+    this.arcadeLockedViewing = locked;
     this.arcadePlaying = true;
     const shell = this.root.querySelector<HTMLElement>('.world-shell');
-    if (shell) shell.dataset.arcadePlaying = 'true';
-    this.root.querySelector<HTMLElement>('#world-css3d')?.removeAttribute('aria-hidden');
-    if (hud) hud.hidden = false;
-    this.world.audio.setMuted(true); this.world.setPublicScreenMuted(undefined, true);
+    if (shell) {
+      shell.dataset.arcadePlaying = 'true'; shell.dataset.arcadeLocked = String(locked);
+    }
+    if (!locked) this.root.querySelector<HTMLElement>('#world-css3d')?.removeAttribute('aria-hidden');
+    if (hud) {
+      hud.hidden = false;
+      hud.setAttribute('aria-label', locked
+        ? (this.language === 'zh-TW' ? 'M.O.T.H 尚未開放 · 2026 年 11 月 2 日 00:00 台灣時間' : 'M.O.T.H locked until November 2, 2026, 00:00 Taiwan time')
+        : (this.language === 'zh-TW' ? '遊戲控制' : 'Game controls'));
+      const fullscreen = hud.querySelector<HTMLButtonElement>('[data-arcade-fullscreen]');
+      if (fullscreen) fullscreen.hidden = locked;
+    }
+    world.audio.setMuted(true); world.setPublicScreenMuted(undefined, true);
     this.applyJukeboxVolume(); this.syncMenuCapture();
+  }
+
+  private syncArcadeRelease(): boolean {
+    const now = Date.now() + this.serverClockOffset;
+    const locked = arcadeIsLocked(now);
+    this.world?.setArcadeLocked(locked, this.language);
+    window.clearTimeout(this.arcadeUnlockTimer);
+    this.arcadeUnlockTimer = undefined;
+    if (locked) {
+      // Timers can be throttled in background tabs. Visibility and service
+      // clock updates also recheck the instant, as does every interaction.
+      this.arcadeUnlockTimer = window.setTimeout(() => this.syncArcadeRelease(),
+        Math.min(2_147_483_647, Math.max(1, ARCADE_UNLOCK_AT - now)));
+      if (this.arcadePlaying && !this.arcadeLockedViewing) this.closeArcadeGame();
+    } else if (this.arcadeLockedViewing) {
+      // Somebody already looking at the cabinet sees it become the live game
+      // at release, without a page reload or a second Play interaction.
+      this.closeArcadeGame();
+      this.openArcadeGame();
+    } else if (this.arcadeNotice) {
+      this.arcadeNotice.close();
+      this.showWorldAlert(this.language === 'zh-TW' ? 'M.O.T.H 已開放遊玩' : 'M.O.T.H IS NOW AVAILABLE');
+    }
+    return locked;
+  }
+
+  private showArcadeReleaseNotice(): void {
+    if (this.arcadeNotice) return;
+    this.closePanel(); this.closeFestivalPass();
+    const zh = this.language === 'zh-TW';
+    const notice = document.createElement('dialog');
+    notice.className = 'moth-release-notice';
+    notice.setAttribute('aria-labelledby', 'moth-release-title');
+    notice.setAttribute('aria-describedby', 'moth-release-date');
+    notice.innerHTML = `<span class="moth-release-notice__label">M.O.T.H</span>
+      <h2 id="moth-release-title">${zh ? '遊戲尚未開放' : 'GAME LOCKED'}</h2>
+      <p id="moth-release-date">${zh ? '將於 2026 年 11 月 2 日<br>凌晨 12:00（台灣時間）開放遊玩。' : 'Available November 2, 2026<br>at 12:00 AM Taiwan time (UTC+8).'}</p>
+      <button type="button" autofocus>${zh ? '知道了' : 'GOT IT'}</button>`;
+    this.arcadeNotice = notice;
+    notice.querySelector('button')!.addEventListener('click', () => notice.close());
+    notice.addEventListener('click', event => { if (event.target === notice) {
+      const box = notice.getBoundingClientRect();
+      if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) notice.close();
+    } });
+    notice.addEventListener('keydown', event => event.stopPropagation());
+    notice.addEventListener('close', () => {
+      notice.remove();
+      if (this.arcadeNotice === notice) this.arcadeNotice = undefined;
+      this.syncMenuCapture();
+    }, { once: true });
+    this.root.append(notice);
+    this.syncMenuCapture();
+    notice.showModal();
   }
 
   private closeArcadeGame(): void {
     const screen = this.root.querySelector<HTMLElement>('.moth-arcade-screen');
     this.arcadePlaying = false;
+    this.arcadeLockedViewing = false;
     if (screen && this.screenOwnsFullscreen(screen)) void this.exitScreenFullscreen();
     const shell = this.root.querySelector<HTMLElement>('.world-shell');
     const hud = this.root.querySelector<HTMLElement>('#moth-arcade-hud');
@@ -2457,7 +2791,7 @@ export class App {
     if (shell && hud && hud.parentElement !== shell) shell.append(hud);
     if (hud) hud.hidden = true;
     this.world?.stopArcadeGame();
-    if (shell) delete shell.dataset.arcadePlaying;
+    if (shell) { delete shell.dataset.arcadePlaying; delete shell.dataset.arcadeLocked; }
     this.root.querySelector<HTMLElement>('#world-css3d')?.setAttribute('aria-hidden', 'true');
     this.syncArcadeFullscreenState();
     this.world?.audio.setMuted(this.audioMuted);
@@ -2467,7 +2801,7 @@ export class App {
 
   private async toggleArcadeFullscreen(): Promise<void> {
     const screen = this.root.querySelector<HTMLElement>('.moth-arcade-screen');
-    if (!this.arcadePlaying || !screen || this.arcadeFullscreenPending) return;
+    if (!this.arcadePlaying || this.arcadeLockedViewing || !screen || this.arcadeFullscreenPending) return;
     this.arcadeFullscreenPending = true;
     try {
       if (this.screenOwnsFullscreen(screen)) await this.exitScreenFullscreen();
@@ -3533,6 +3867,7 @@ export class App {
   }
 
   private readonly globalShortcut = (event: KeyboardEvent): void => {
+    if (this.arcadeNotice) return;
     if (this.arcadePlaying) {
       if (event.key === 'Escape') { event.preventDefault(); this.leaveArcadeOnEscape(); }
       return;
@@ -4589,10 +4924,12 @@ export class App {
     const previousAttendeeSignature = this.attendeeListSignature(this.networkState, this.npcProfiles);
     // Attendee clocks drift and some are simply wrong. Programme positions are
     // measured against the service clock instead.
-    if (state.serverTime) { this.serverClockOffset = state.serverTime - Date.now(); this.world?.setNpcClock(state.serverTime); }
+    if (state.serverTime) {
+      this.serverClockOffset = state.serverTime - Date.now(); this.world?.setNpcClock(state.serverTime);
+      if (this.world) this.syncArcadeRelease();
+    }
     this.networkState = state;
     this.siteStyle = { ...this.siteStyle, ...state.siteStyle };
-    this.gateBackground = { ...this.gateBackground, ...state.gateBackground };
     this.npcProfiles = this.normalizeNpcProfiles(state.npcProfiles, state.npcNames);
     this.pamphlet = { ...this.pamphlet, ...state.pamphlet };
     if (state.gateCopy) this.gateCopy = state.gateCopy;
@@ -5754,7 +6091,7 @@ export class App {
    */
   private syncMenuCapture(): void {
     const pass = this.root.querySelector<HTMLElement>('#festival-pass');
-    const captured=this.arcadePlaying || Boolean(this.danceWheel) || Boolean(this.activePanel) || (pass ? !pass.hidden : false);
+    const captured=this.arcadePlaying || Boolean(this.arcadeNotice) || Boolean(this.danceWheel) || Boolean(this.activePanel) || (pass ? !pass.hidden : false);
     this.world?.setMenuOpen(captured);
     if (['127.0.0.1','localhost'].includes(window.location.hostname)) this.root.dataset.menuCapture=String(captured);
   }
@@ -6262,9 +6599,7 @@ export class App {
         if (button) button.disabled = true;
         const field = (name: string) => String(data.get(name) ?? '');
         void this.festivalClient.updateGateCopy(this.staffKey, {
-          kicker: field('kicker'), kickerZh: field('kickerZh'),
           title: field('title'), titleZh: field('titleZh'),
-          intro: field('intro'), introZh: field('introZh'),
           nameLabel: field('nameLabel'), nameLabelZh: field('nameLabelZh'),
         }).then(async () => {
           await this.refreshAdminState(false);
@@ -6808,19 +7143,6 @@ export class App {
           this.reopenPanelKeepingPlace('admin');
         });
       });
-      panel.querySelector<HTMLFormElement>('#staff-gate-background-form')?.addEventListener('submit', (event) => {
-        event.preventDefault();
-        const form = event.currentTarget as HTMLFormElement;
-        const youtubeUrl = new FormData(form).get('youtubeUrl');
-        const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
-        if (button) button.disabled = true;
-        void this.festivalClient.updateGateBackground(this.staffKey, String(youtubeUrl ?? ''))
-          .then(() => this.refreshAdminState())
-          .catch((error) => {
-            this.adminError = error instanceof Error ? error.message : 'Gate background update failed.';
-            this.reopenPanelKeepingPlace('admin');
-          });
-      });
       panel.querySelectorAll<HTMLButtonElement>('[data-video-remove]').forEach((button) => {
         button.addEventListener('click', () => {
           const venue = button.dataset.venue as VenueKey;
@@ -7208,20 +7530,13 @@ export class App {
           ? '訪客進入前看到的文字。兩種語言都要填寫。'
           : 'What a visitor reads before entering. Both languages are required.'}</p>
         ${([
-          ['kickerZh', '小標（中）', 'KICKER (ZH)'],
-          ['kicker', '小標（英）', 'KICKER (EN)'],
           ['titleZh', '標題（中）', 'TITLE (ZH)'],
           ['title', '標題（英）', 'TITLE (EN)'],
-          ['introZh', '說明（中）', 'INTRO (ZH)'],
-          ['intro', '說明（英）', 'INTRO (EN)'],
           ['nameLabelZh', '名稱欄位（中）', 'NAME LABEL (ZH)'],
           ['nameLabel', '名稱欄位（英）', 'NAME LABEL (EN)'],
         ] as Array<[keyof GateCopy, string, string]>).map(([field, zhLabel, enLabel]) => {
           const value = String(this.adminState?.gateCopy?.[field] ?? this.gateCopy?.[field] ?? '');
-          // The two intros run to 300 characters and cannot be read in half a
-          // row, so they take the full width the way the pamphlet editor does.
-          const wide = String(field).startsWith('intro') ? ' class="staff-form__wide"' : '';
-          return `<label${wide}><span>${this.language === 'zh-TW' ? zhLabel : enLabel}</span><input name="${field}" maxlength="${String(field).startsWith('intro') ? 300 : 80}" value="${this.escapeAttribute(value)}" required /></label>`;
+          return `<label><span>${this.language === 'zh-TW' ? zhLabel : enLabel}</span><input name="${field}" maxlength="80" value="${this.escapeAttribute(value)}" required /></label>`;
         }).join('')}
         <button type="submit">${this.language === 'zh-TW' ? '儲存入口文字' : 'SAVE GATE COPY'}</button>
       </form>`)}
@@ -7382,12 +7697,6 @@ export class App {
         <label>${this.language === 'zh-TW' ? '垂直位置' : 'Y POSITION'}<input name="brandOffsetY" type="number" min="-80" max="80" step="1" value="${style.brandOffsetY}" /></label>
         <button type="submit">${this.language === 'zh-TW' ? '儲存' : 'SAVE'}</button>
       </form>
-      <h4 class="staff-subheading">${this.language === 'zh-TW' ? '登入頁面循環背景' : 'SIGN-IN LOOP BACKGROUND'}</h4>
-      <p class="staff-note">${this.language === 'zh-TW' ? '貼上允許嵌入的 YouTube 連結。影片會自動靜音並循環播放。' : 'Paste an embeddable YouTube link. It will autoplay muted and loop behind the sign-in form.'}</p>
-      <form class="staff-gate-background" id="staff-gate-background-form">
-        <label>${this.language === 'zh-TW' ? 'YouTube 連結' : 'YOUTUBE LINK'}<input name="youtubeUrl" type="url" required placeholder="https://youtu.be/..." value="https://youtu.be/${this.escapeAttribute(this.adminState.gateBackground?.youtubeId ?? this.gateBackground.youtubeId)}" /></label>
-        <button type="submit">${this.language === 'zh-TW' ? '更新背景' : 'UPDATE BACKGROUND'}</button>
-      </form>
       `)}
       ${this.staffSection('people', this.language === 'zh-TW' ? '角色與 NPC' : 'PEOPLE & NPCS', `
       <div class="staff-list">
@@ -7439,12 +7748,10 @@ export class App {
     try {
       this.adminState = await this.festivalClient.adminState(this.staffKey);
       this.siteStyle = { ...this.siteStyle, ...this.adminState.siteStyle };
-      this.gateBackground = { ...this.gateBackground, ...this.adminState.gateBackground };
       this.npcProfiles = this.normalizeNpcProfiles(this.adminState.npcProfiles, this.adminState.npcNames);
       this.pamphlet = { ...this.pamphlet, ...this.adminState.pamphlet };
       this.world?.setNpcProfiles(this.npcProfiles);
       this.applySiteStyle();
-      this.applyGateBackground();
       this.adminError = '';
     } catch (error) {
       this.adminState = undefined;
@@ -7915,15 +8222,6 @@ export class App {
     document.documentElement.style.setProperty('--brand-scale-x', String(this.siteStyle.brandScaleX));
     document.documentElement.style.setProperty('--brand-offset-x', `${this.siteStyle.brandOffsetX}px`);
     document.documentElement.style.setProperty('--brand-offset-y', `${this.siteStyle.brandOffsetY}px`);
-  }
-
-  private applyGateBackground(): void {
-    const frame = this.root.querySelector<HTMLIFrameElement>('.gate__video');
-    if (!frame) return;
-    const youtubeId = this.gateBackground.youtubeId || defaultGateBackground.youtubeId;
-    frame.classList.toggle('gate__video--cinematic', youtubeId === defaultGateBackground.youtubeId);
-    const next = gateBackgroundUrl(youtubeId);
-    if (frame.src !== next) frame.src = next;
   }
 
   private customFilms(venue: VenueKey): CatalogueEntry[] {

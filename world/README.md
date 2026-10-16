@@ -1,6 +1,6 @@
 # myschedule Virtual Festival — Phase 4 + 5 Pre-Launch Build
 
-This folder contains the isolated Three.js festival world, its authoritative live service, and its pre-launch production build. It does not build into or modify the existing production `../docs` website, and it has not been deployed.
+This folder contains the Three.js festival world and its authoritative live service. Local builds go to `world/dist`; after owner approval, the release scripts prepare the public BETA and PS2 channels in `docs/beta` and `docs/beta/ps2`.
 
 ## Local development
 
@@ -12,7 +12,7 @@ npm run dev
 
 `npm run dev` starts both the Vite client and the local festival service. The default staff key is `myschedule-local-admin` in development only.
 
-After entering the world, open **PASS → STAFF** to edit public programmes, the sign-in page's looped YouTube background, festival styling, pamphlet content, and NPCs. Every STAFF setting, plus chat history, is written to `server/festival-state.json` and is restored when the service starts again. Point `FESTIVAL_STATE_FILE` somewhere else to keep that file outside the repository, or set it to `off` for a throwaway instance that always boots from the built-in festival defaults.
+After entering the world, open **PASS → STAFF** to edit public programmes, sign-in titles and name labels, festival styling, pamphlet content, and NPCs. The sign-in background is a silent live world view. Every STAFF setting, plus chat history, is written to `server/festival-state.json` and is restored when the service starts again. Point `FESTIVAL_STATE_FILE` somewhere else to keep that file outside the repository, or set it to `off` for a throwaway instance that always boots from the built-in festival defaults.
 
 If port `5173` is already occupied by another local project, Vite automatically uses the next available port (for example, `5174`). Open the exact `Local:` URL printed in the terminal; live festival features remain connected on fallback localhost ports.
 

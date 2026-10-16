@@ -440,3 +440,53 @@ test('nothing on the pamphlet stand sits inside anything else', async () => {
     assert.ok(clear > 0.008, `a cover clears its stack by only ${clear.toFixed(4)}`);
   }
 });
+
+test('the ocean atlas has no old fourteen-metre stamp and joins seamlessly', async () => {
+  const { createLiteSeaPixels, LITE_SEA_TILE_METRES } = await import('../src/world/LiteSea.ts');
+  const pixels = createLiteSeaPixels(), size = Math.sqrt(pixels.length / 4);
+  assert.equal(size, 512, 'the baked surface stays within the mobile texture budget');
+  assert.deepEqual(createLiteSeaPixels(), pixels, 'redrawing or re-entering keeps the same sea');
+  assert.notDeepEqual(createLiteSeaPixels(17), pixels, 'different seeds produce different cell arrangements');
+  const difference = dx => {
+    let total = 0;
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      total += Math.abs(pixels[(y * size + x) * 4] - pixels[(y * size + (x + dx) % size) * 4]);
+    }
+    return total / (size * size);
+  };
+  const adjacent = difference(1);
+  const previousTileWidth = Math.round(14 / LITE_SEA_TILE_METRES * size);
+  assert.ok(difference(previousTileWidth) > adjacent * 2.5, 'the previously visible grid period is decorrelated');
+  assert.ok(difference(size / 2) > adjacent * 2.5, 'the atlas does not contain repeated quadrants');
+  for (const vertical of [false, true]) {
+    let seam = 0;
+    for (let i = 0; i < size; i++) {
+      const first = vertical ? i : i * size;
+      const last = vertical ? (size - 1) * size + i : i * size + size - 1;
+      seam += Math.abs(pixels[first * 4] - pixels[last * 4]);
+    }
+    assert.ok(seam / size < adjacent * 1.5, 'wrapped edges have no hard seam');
+  }
+  for (let i = 3; i < pixels.length; i += 4) assert.equal(pixels[i], 255, 'no transparent water holes');
+});
+
+test('world and sign-in oceans share baked pixels while retaining independent GPU ownership and animation', async () => {
+  const { createLiteSeaMaterial, LITE_SEA_TILE_METRES } = await import('../src/world/LiteSea.ts');
+  const preview = createLiteSeaMaterial(1500), world = createLiteSeaMaterial(1500);
+  assert.notEqual(preview.map, world.map, 'disposing sign-in cannot dispose the game texture');
+  assert.equal(preview.map.image.data, world.map.image.data, 'entry does not rebake the atlas');
+  assert.equal(world.map.repeat.x * LITE_SEA_TILE_METRES, 1500);
+  assert.equal(world.map.generateMipmaps, true, 'aerial views use mipmaps rather than shimmering cell edges');
+  assert.equal(world.map.minFilter, THREE.LinearMipmapLinearFilter);
+  assert.equal(world.transparent, false, 'the low-cost sea remains a single opaque lit layer');
+  let releasedWorldTexture = false;
+  world.map.addEventListener('dispose', () => { releasedWorldTexture = true; });
+  preview.map.dispose(); preview.dispose();
+  assert.equal(releasedWorldTexture, false);
+  const shader = { uniforms: {}, fragmentShader: 'void main() {\n#include <map_fragment>\n}' };
+  world.onBeforeCompile(shader, {});
+  world.userData.seaTime.value = 41;
+  assert.equal(shader.uniforms.uSeaTime.value, 41, 'the existing world clock animates the compiled material');
+  assert.equal((shader.fragmentShader.match(/texture2D\(/g) || []).length, 1, 'variation adds no extra texture samples');
+  world.map.dispose(); world.dispose();
+});
