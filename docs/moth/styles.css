@@ -294,23 +294,12 @@ body[data-device-mode="phone"] .film-grain-overlay {
 .mobile-controls[data-control-mode="menu"] .mobile-control-group--menu,
 .mobile-controls[data-control-mode="chest"] .mobile-control-group--menu,
 .mobile-controls[data-control-mode="pocket"] .mobile-control-group--menu,
-.mobile-controls[data-control-mode="action"] .mobile-control-group--dpad,
-.mobile-controls[data-control-mode="dialogue"] .mobile-control-group--dialogue,
-.mobile-controls[data-control-mode="overlay"] .mobile-control-group--overlay,
-.mobile-controls[data-control-mode="failure"] .mobile-control-group--failure {
+.mobile-controls[data-control-mode="action"] .mobile-control-group--dpad {
   display: grid;
 }
 
 .mobile-controls[data-control-mode="action"] .mobile-control-group--actions {
   display: block;
-}
-
-.mobile-controls[data-control-mode="rhythm"] .mobile-control-group--rhythm {
-  display: grid;
-}
-
-.mobile-controls[data-control-mode="office-rhythm"] .mobile-control-group--office-rhythm {
-  display: grid;
 }
 
 .mobile-control-group--menu {
@@ -328,34 +317,6 @@ body[data-device-mode="phone"] .film-grain-overlay {
   align-items: end;
   grid-template-columns: auto auto;
   gap: 12px;
-}
-
-.mobile-joystick {
-  position: relative;
-  width: 148px;
-  height: 148px;
-  border-radius: 50%;
-  background: var(--moth-art-1) center / 100% 100% no-repeat;
-  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.55));
-  pointer-events: auto;
-  touch-action: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.mobile-joystick.is-held {
-  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.55)) brightness(1.12);
-}
-
-.mobile-joystick__knob {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 72px;
-  height: 72px;
-  margin: -36px 0 0 -36px;
-  background: var(--moth-art-2) center / 100% 100% no-repeat;
-  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.6));
-  pointer-events: none;
 }
 
 /* Four independent, clickable Game Boy arrow keys. The Higgsfield sheet has
@@ -383,7 +344,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
   border-radius: 0;
   outline: 0;
   background-color: transparent;
-  background-image: var(--moth-art-3);
+  background-image: var(--moth-art-1);
   background-repeat: no-repeat;
   background-size: 400% 200%;
   background-position: var(--dpad-frame-x) 0%;
@@ -429,79 +390,6 @@ body[data-device-mode="phone"] .film-grain-overlay {
   height: 200px;
 }
 
-.mobile-control-group--rhythm {
-  left: 50%;
-  bottom: max(20px, env(safe-area-inset-bottom));
-  width: min(430px, calc(100vw - 32px));
-  transform: translateX(-50%);
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  place-items: center;
-  gap: 12px;
-}
-
-.mobile-control-group--office-rhythm {
-  left: 50%;
-  bottom: max(22px, env(safe-area-inset-bottom));
-  width: min(360px, calc(100vw - 48px));
-  transform: translateX(-50%);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  place-items: center;
-  gap: 24px;
-}
-
-.mobile-control-group--office-rhythm .mobile-button {
-  position: relative;
-  width: clamp(128px, 36vw, 148px);
-  height: clamp(70px, 18vw, 82px);
-  border: 6px solid #171a1b;
-  border-radius: 12px;
-  outline: 3px solid #8d2b22;
-  background: #ef3f78;
-  box-shadow: inset 0 -8px 0 rgba(66, 19, 17, 0.2);
-  color: #ffffff;
-  font-size: 15px;
-  line-height: 1.05;
-}
-
-.mobile-control-group--office-rhythm .mobile-button small {
-  display: block;
-  margin-top: 4px;
-  font-size: 10px;
-  opacity: 0.72;
-}
-
-.mobile-control-group--office-rhythm .mobile-button strong {
-  display: block;
-  font: 900 30px/1 'Courier New', monospace;
-}
-
-.mobile-control-group--office-rhythm .mobile-button--office-accent {
-  background: #45484d;
-}
-
-.mobile-button.mobile-button--round.mobile-button--rhythm {
-  position: relative;
-  width: clamp(64px, 18vw, 84px);
-  height: clamp(64px, 18vw, 84px);
-  font-size: 20px;
-}
-
-.mobile-button.mobile-button--rhythm-d {
-  color: #ff6b7d;
-}
-
-.mobile-button.mobile-button--rhythm-f {
-  color: #ffd36c;
-}
-
-.mobile-button.mobile-button--rhythm-j {
-  color: #8fe8ff;
-}
-
-.mobile-button.mobile-button--rhythm-k {
-  color: #c58cff;
-}
-
 .mobile-button.mobile-button--round {
   position: absolute;
   width: 68px;
@@ -511,7 +399,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
   border: none;
   border-image: none;
   border-radius: 50%;
-  background: var(--moth-art-4) center / calc(100% - 4px) calc(100% - 4px) no-repeat;
+  background: var(--moth-art-2) center / calc(100% - 4px) calc(100% - 4px) no-repeat;
   box-shadow: none;
   opacity: 0.88;
   overflow: visible;
@@ -520,82 +408,8 @@ body[data-device-mode="phone"] .film-grain-overlay {
 .mobile-button.mobile-button--round:active,
 .mobile-button.mobile-button--round.is-held {
   border-image: none;
-  background-image: var(--moth-art-5);
+  background-image: var(--moth-art-3);
   opacity: 1;
-}
-
-.mobile-button.mobile-button--arc-j {
-  right: 0;
-  bottom: 0;
-  width: 92px;
-  height: 92px;
-  font-size: 20px;
-  background-image: var(--moth-art-6);
-  color: #241505;
-  text-shadow: 1px 1px rgba(255, 235, 200, 0.5);
-}
-
-.mobile-button.mobile-button--arc-j:active,
-.mobile-button.mobile-button--arc-j.is-held {
-  background-image: var(--moth-art-7);
-}
-
-.mobile-button.mobile-button--arc-k {
-  right: 16px;
-  bottom: 116px;
-}
-
-
-.mobile-button.mobile-button--arc-space {
-  right: 116px;
-  bottom: 6px;
-  width: 78px;
-  height: 78px;
-  font-size: 12px;
-}
-
-.mobile-button.mobile-button--arc-b {
-  left: 0;
-  top: 0;
-  right: auto;
-  bottom: auto;
-  width: 64px;
-  height: 64px;
-  display: none;
-  /* Gold halo so the contextual interact button reads as "press me now". */
-  filter:
-    drop-shadow(0 3px 3px rgba(0, 0, 0, 0.55))
-    drop-shadow(0 0 10px rgba(255, 211, 108, 0.9));
-  color: #ffd36c;
-}
-
-@keyframes mobile-b-button-press {
-  from {
-    background-position: 0 0;
-  }
-  to {
-    background-position: 100% 0;
-  }
-}
-
-.mobile-button.mobile-button--arc-b:active,
-.mobile-button.mobile-button--arc-b.is-held {
-  background-image: var(--moth-art-8);
-  background-size: 400% 100%;
-  background-position: 0 0;
-  opacity: 1;
-  animation: mobile-b-button-press 150ms steps(3, end) forwards;
-  filter:
-    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.62))
-    drop-shadow(0 0 8px rgba(255, 171, 48, 0.96));
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mobile-button.mobile-button--arc-b:active,
-  .mobile-button.mobile-button--arc-b.is-held {
-    animation: none;
-    background-position: 100% 0;
-  }
 }
 
 .mobile-button.mobile-button--arc-r {
@@ -606,44 +420,16 @@ body[data-device-mode="phone"] .film-grain-overlay {
   display: none;
 }
 
-.mobile-controls[data-can-interact="1"] .mobile-button.mobile-button--arc-b {
-  display: flex; /* a label: flex keeps its text centred (see .haptic-switch) */
-}
-
 .mobile-controls[data-can-mount="1"] .mobile-button.mobile-button--arc-r {
   display: flex; /* a label: flex keeps its text centred (see .haptic-switch) */
 }
 
-.mobile-control-group--dialogue,
-.mobile-control-group--overlay {
-  right: max(18px, env(safe-area-inset-right));
-  bottom: max(18px, env(safe-area-inset-bottom));
-  grid-template-columns: 132px;
-  gap: 8px;
-}
-
-.mobile-controls[data-forge-open="1"] .mobile-control-group--overlay {
-  top: max(18px, env(safe-area-inset-top));
-  bottom: auto;
-}
-
-.mobile-control-group--failure {
-  left: 50%;
-  bottom: max(18px, env(safe-area-inset-bottom));
-  width: min(290px, calc(100vw - 28px));
-  transform: translateX(-50%);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-/* Buttons wear the Higgsfield retro MP3-hardware key art. border-image keeps
-   the cream rim and corners crisp at every button aspect ratio. */
+/* Every deck button; each kind wears its own art below. */
 .mobile-button {
   width: 100%;
   min-width: 0;
   min-height: 48px;
   border: 13px solid transparent;
-  border-image: var(--moth-art-9) 88 fill / 13px stretch;
   border-radius: 0;
   background: none;
   color: #f7f2de;
@@ -665,31 +451,8 @@ body[data-device-mode="phone"] .film-grain-overlay {
 .mobile-button:active,
 .mobile-button.is-held {
   transform: translateY(2px);
-  border-image-source: var(--moth-art-10);
   color: #ffd36c;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
-}
-
-.mobile-button--blank {
-  visibility: hidden;
-  pointer-events: none;
-}
-
-.mobile-button--primary {
-  border-image-source: var(--moth-art-11);
-  color: #241505;
-  text-shadow: 1px 1px rgba(255, 235, 200, 0.5);
-}
-
-.mobile-button--primary:active,
-.mobile-button--primary.is-held {
-  border-image-source: var(--moth-art-12);
-  color: #2a1200;
-  text-shadow: 1px 1px rgba(255, 235, 200, 0.5);
-}
-
-.mobile-button--wide {
-  grid-column: span 2;
 }
 
 /* Level 5 stage 1 intentionally has no jumping (depth movement instead). */
@@ -940,39 +703,9 @@ body[data-device-mode="phone"] .film-grain-overlay {
     gap: 8px;
   }
 
-  .mobile-joystick {
-    width: clamp(112px, 31vw, 136px);
-    height: clamp(112px, 31vw, 136px);
-    border: 4px solid #16191a;
-    outline: 3px solid #8d2b22;
-    background:
-      linear-gradient(#ff704d, #ff704d) center 8px / 4px 12px no-repeat,
-      linear-gradient(#ff704d, #ff704d) center calc(100% - 8px) / 4px 12px no-repeat,
-      linear-gradient(90deg, #ff704d, #ff704d) 8px center / 12px 4px no-repeat,
-      linear-gradient(90deg, #ff704d, #ff704d) calc(100% - 8px) center / 12px 4px no-repeat,
-      #222627;
-    box-shadow: none;
-    filter: none;
-  }
-
   .mobile-dpad {
     width: clamp(112px, 31vw, 136px);
     height: clamp(112px, 31vw, 136px);
-  }
-
-  .mobile-joystick__knob {
-    width: 72px;
-    height: 72px;
-    margin: -36px 0 0 -36px;
-    border: 3px solid #0c0e0f;
-    border-radius: 50%;
-    background: #3b4041;
-    box-shadow: none;
-    filter: none;
-  }
-
-  .mobile-joystick.is-held {
-    filter: none;
   }
 
   .mobile-control-group--actions {
@@ -986,23 +719,6 @@ body[data-device-mode="phone"] .film-grain-overlay {
     height: 264px;
     transform: none;
     transform-origin: top right;
-  }
-
-  .mobile-control-group--rhythm {
-    left: 32px;
-    right: 32px;
-    top: calc(var(--portrait-split) + clamp(150px, calc(var(--app-h, 100dvh) * 0.2), 184px));
-    bottom: auto;
-    width: auto;
-    transform: none;
-    gap: 12px;
-  }
-
-  .mobile-button.mobile-button--round.mobile-button--rhythm {
-    position: relative;
-    width: clamp(54px, 16.5vw, 70px);
-    height: clamp(54px, 16.5vw, 70px);
-    font-size: 18px;
   }
 
   .mobile-control-group--menu {
@@ -1100,11 +816,8 @@ body[data-device-mode="phone"] .film-grain-overlay {
     font-size: 9px;
   }
 
-
   /* Flat 2D portrait control language: solid faces, outlines, no perspective. */
-  .mobile-control-group--actions .mobile-button.mobile-button--round:not(.mobile-button--arc-b),
-  .mobile-control-group--rhythm .mobile-button.mobile-button--round,
-  .mobile-control-group--office-rhythm .mobile-button.mobile-button--round {
+  .mobile-control-group--actions .mobile-button.mobile-button--round:not(.mobile-button--arc-b) {
     border: 7px solid #1a1d1e;
     border-image: none;
     outline: 3px solid #8d2b22;
@@ -1119,36 +832,8 @@ body[data-device-mode="phone"] .film-grain-overlay {
     text-shadow: none;
   }
 
-  .mobile-control-group--actions .mobile-button.mobile-button--round.mobile-button--arc-j {
-    left: 117px;
-    right: auto;
-    top: 176px;
-    bottom: auto;
-    background: #ff704d;
-    color: #25120d;
-  }
-
-  .mobile-control-group--actions .mobile-button.mobile-button--arc-k {
-    left: 128px;
-    right: auto;
-    top: 90px;
-    bottom: auto;
-  }
-
-
-  .mobile-control-group--actions .mobile-button.mobile-button--arc-space {
-    left: 19px;
-    right: auto;
-    top: 176px;
-    bottom: auto;
-  }
-
   .mobile-control-group--actions .mobile-button.mobile-button--round:not(.mobile-button--arc-b):active,
-  .mobile-control-group--actions .mobile-button.mobile-button--round:not(.mobile-button--arc-b).is-held,
-  .mobile-control-group--rhythm .mobile-button.mobile-button--round:active,
-  .mobile-control-group--rhythm .mobile-button.mobile-button--round.is-held,
-  .mobile-control-group--office-rhythm .mobile-button.mobile-button--round:active,
-  .mobile-control-group--office-rhythm .mobile-button.mobile-button--round.is-held {
+  .mobile-control-group--actions .mobile-button.mobile-button--round:not(.mobile-button--arc-b).is-held {
     transform: scale(0.94);
     border-image: none;
     background: #b9b6b0;
@@ -1158,113 +843,11 @@ body[data-device-mode="phone"] .film-grain-overlay {
     text-shadow: none;
   }
 
-  .mobile-control-group--actions .mobile-button.mobile-button--round.mobile-button--arc-j:active,
-  .mobile-control-group--actions .mobile-button.mobile-button--round.mobile-button--arc-j.is-held {
-    background: #d95338;
-    color: #25120d;
-    text-shadow: none;
-  }
-
-  .mobile-button.mobile-button--arc-b {
-    border: 7px solid #1a1d1e;
-    outline: 3px solid #8d2b22;
-    background: #e6e1d7;
-    color: #181a1c;
-    box-shadow: none;
-    filter: none;
-    text-shadow: none;
-  }
-
-  .mobile-button.mobile-button--arc-b:active,
-  .mobile-button.mobile-button--arc-b.is-held {
-    background-image: var(--moth-art-13);
-    color: #181a1c;
-    filter: none;
-  }
-
-  .mobile-control-group--rhythm .mobile-button.mobile-button--rhythm-d {
-    color: #d82239;
-  }
-
-  .mobile-control-group--rhythm .mobile-button.mobile-button--rhythm-f {
-    color: #a36c00;
-  }
-
-  .mobile-control-group--rhythm .mobile-button.mobile-button--rhythm-j {
-    color: #087895;
-  }
-
-  .mobile-control-group--rhythm .mobile-button.mobile-button--rhythm-k {
-    color: #7d3da6;
-  }
-
-  .mobile-control-group--office-rhythm {
-    left: 50%;
-    right: auto;
-    top: calc(var(--portrait-split) + clamp(124px, calc(var(--app-h, 100dvh) * 0.16), 154px));
-    bottom: auto;
-    width: min(346px, calc(100dvw - 44px));
-    transform: translateX(-50%);
-    gap: 24px;
-  }
-
-  .mobile-control-group--office-rhythm .mobile-button {
-    position: relative;
-    width: clamp(118px, 34dvw, 140px);
-    height: clamp(74px, 20dvw, 88px);
-    border: 7px solid #1a1d1e;
-    border-image: none;
-    border-radius: 12px;
-    outline: 3px solid #8d2b22;
-    background: #ef3f78;
-    box-shadow: none;
-    overflow: visible;
-    filter: none;
-    color: #181a1c;
-    text-shadow: none;
-    font-size: 14px;
-  }
-
-  .mobile-control-group--office-rhythm .mobile-button--office-do {
-    color: #ffffff;
-  }
-
-  .mobile-control-group--office-rhythm .mobile-button--office-accent {
-    background: #45484d;
-    color: #ffffff;
-  }
-
-  .mobile-control-group--office-rhythm .mobile-button:active,
-  .mobile-control-group--office-rhythm .mobile-button.is-held {
-    transform: translateY(4px) scale(0.98);
-    background: #b9b6b0;
-    box-shadow: none;
-  }
-
-  .mobile-control-group--office-rhythm .mobile-button--office-accent:active,
-  .mobile-control-group--office-rhythm .mobile-button--office-accent.is-held {
-    background: #2f3236;
-  }
-
-  /* Contextual controls live above the main action cluster so a temporary B
-     or R button never collides with the joystick on narrow portrait phones. */
-  .mobile-button.mobile-button--arc-b {
-    left: 78px;
-    top: 8px;
-  }
-
   .mobile-button.mobile-button--arc-r {
     left: 81px;
     right: auto;
     top: 8px;
     bottom: auto;
-  }
-
-  /* SPACE, R and B used to need two rows because the L cap took the first
-     slot. With L retired the three of them fit one row inside the group's
-     190px, which keeps every cap clear of the arrow pad below. */
-  .mobile-controls[data-can-interact="1"][data-can-mount="1"] .mobile-button.mobile-button--arc-b {
-    left: 132px;
   }
 
   .mobile-controls[data-can-interact="1"][data-can-mount="1"] .mobile-button.mobile-button--arc-r {
@@ -1273,26 +856,6 @@ body[data-device-mode="phone"] .film-grain-overlay {
 
   .mobile-controls[data-control-mode="action"] .mobile-controls__handheld-brand {
     opacity: 0;
-  }
-
-  .mobile-control-group--dialogue,
-  .mobile-control-group--overlay {
-    right: max(34px, calc(env(safe-area-inset-right) + 24px));
-    top: calc(var(--portrait-split) + clamp(150px, calc(var(--app-h, 100dvh) * 0.2), 184px));
-    bottom: auto;
-    width: 116px;
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .mobile-controls[data-forge-open="1"] .mobile-control-group--overlay {
-    top: calc(var(--portrait-split) + 120px);
-    bottom: auto;
-  }
-
-  .mobile-control-group--failure {
-    top: calc(var(--portrait-split) + clamp(158px, calc(var(--app-h, 100dvh) * 0.21), 190px));
-    bottom: auto;
-    width: min(300px, calc(100vw - 58px));
   }
 
   .mobile-button {
@@ -1308,10 +871,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
     overflow: visible;
   }
 
-  .mobile-control-group--menu [data-mobile-action="jump"],
-  .mobile-control-group--dialogue .mobile-button,
-  .mobile-control-group--overlay .mobile-button,
-  .mobile-control-group--failure .mobile-button {
+  .mobile-control-group--menu [data-mobile-action="jump"] {
     border: 3px solid #17191a;
     border-image: none;
     border-radius: 999px;
@@ -1324,23 +884,8 @@ body[data-device-mode="phone"] .film-grain-overlay {
     text-shadow: none;
   }
 
-  .mobile-control-group--dialogue .mobile-button--primary,
-  .mobile-control-group--overlay .mobile-button--primary,
-  .mobile-control-group--failure .mobile-button--primary {
-    border-color: #17191a;
-    background: #ff704d;
-    color: #24110d;
-    text-shadow: none;
-  }
-
   .mobile-control-group--menu [data-mobile-action="jump"]:active,
-  .mobile-control-group--menu [data-mobile-action="jump"].is-held,
-  .mobile-control-group--dialogue .mobile-button:active,
-  .mobile-control-group--dialogue .mobile-button.is-held,
-  .mobile-control-group--overlay .mobile-button:active,
-  .mobile-control-group--overlay .mobile-button.is-held,
-  .mobile-control-group--failure .mobile-button:active,
-  .mobile-control-group--failure .mobile-button.is-held {
+  .mobile-control-group--menu [data-mobile-action="jump"].is-held {
     transform: scale(0.96);
     border-image: none;
     box-shadow: none;
@@ -1353,30 +898,14 @@ body[data-device-mode="phone"] .film-grain-overlay {
 }
 
 @media (max-height: 430px) {
-  body[data-touch-controls="1"] .mobile-controls[data-control-mode="rhythm"] .mobile-control-group--rhythm {
-    /* Landscape players tap the four full-size receptors drawn inside the
-       game viewport; a second floating D/F/J/K row only obscures the chart. */
-    display: none;
-  }
 
   .mobile-control-group--dpad {
     gap: 10px;
   }
 
-  .mobile-joystick {
-    width: 128px;
-    height: 128px;
-  }
-
   .mobile-dpad {
     width: 128px;
     height: 128px;
-  }
-
-  .mobile-joystick__knob {
-    width: 56px;
-    height: 56px;
-    margin: -28px 0 0 -28px;
   }
 
   .mobile-control-group--actions {
@@ -1392,31 +921,6 @@ body[data-device-mode="phone"] .film-grain-overlay {
 
   .mobile-button.mobile-button--round {
     border-radius: 50%;
-  }
-
-  .mobile-control-group--office-rhythm {
-    left: max(92px, calc(env(safe-area-inset-left) + 78px));
-    right: max(92px, calc(env(safe-area-inset-right) + 78px));
-    top: 204px;
-    bottom: auto;
-    width: auto;
-    transform: none;
-    grid-template-columns: 1fr 1fr;
-    gap: 0;
-  }
-
-  .mobile-control-group--office-rhythm .mobile-button {
-    width: 106px;
-    height: 62px;
-    font-size: 12px;
-  }
-
-  .mobile-control-group--office-rhythm .mobile-button--office-do {
-    justify-self: start;
-  }
-
-  .mobile-control-group--office-rhythm .mobile-button--office-accent {
-    justify-self: end;
   }
 }
 
@@ -1459,11 +963,6 @@ body[data-device-mode="phone"] .film-grain-overlay {
     bottom: auto;
   }
 
-  .mobile-joystick {
-    width: 100px;
-    height: 100px;
-  }
-
   .mobile-dpad {
     width: 100px;
     height: 100px;
@@ -1496,21 +995,8 @@ body[data-device-mode="phone"] .film-grain-overlay {
     height: 70px;
   }
 
-  .mobile-button.mobile-button--arc-b,
   .mobile-button.mobile-button--arc-r {
     top: 8px;
-  }
-
-  .mobile-control-group--actions .mobile-button.mobile-button--arc-k {
-    left: 128px;
-    right: auto;
-    top: 90px;
-    bottom: auto;
-  }
-
-
-  .mobile-control-group--actions .mobile-button.mobile-button--round.mobile-button--arc-j {
-    top: 176px;
   }
 
   .mobile-control-group--menu [data-mobile-action="jump"] {
@@ -1519,39 +1005,6 @@ body[data-device-mode="phone"] .film-grain-overlay {
 
   body[data-device-mode="phone"] .mobile-controls__handheld-speaker {
     display: none;
-  }
-
-
-  .mobile-control-group--rhythm {
-    top: calc(var(--portrait-split) + 78px);
-  }
-
-  .mobile-button.mobile-button--round.mobile-button--rhythm {
-    width: 54px;
-    height: 54px;
-  }
-
-  .mobile-control-group--office-rhythm {
-    top: calc(var(--portrait-split) + 76px);
-    width: min(270px, calc(100dvw - 64px));
-    gap: 16px;
-  }
-
-  .mobile-control-group--office-rhythm .mobile-button {
-    width: 112px;
-    height: 70px;
-    font-size: 12px;
-  }
-
-  .mobile-control-group--dialogue,
-  .mobile-control-group--overlay {
-    top: calc(var(--portrait-split) + 82px);
-    bottom: auto;
-  }
-
-  .mobile-control-group--failure {
-    top: calc(var(--portrait-split) + 92px);
-    bottom: auto;
   }
 }
 
@@ -1813,20 +1266,9 @@ body[data-device-mode="phone"] .film-grain-overlay {
   background-size: var(--cap-sheet-size);
 }
 
-.mobile-controls .mobile-button--cap-round {
+.mobile-controls .mobile-button--cap-pill {
   --cap-sheet-size: 200% 200%;
-  --cap-image: var(--moth-art-14);
-}
-
-.mobile-controls .mobile-button--cap-square {
-  --cap-sheet-size: 200% 200%;
-  --cap-image: var(--moth-art-15);
-}
-
-.mobile-controls .mobile-button--cap-pill,
-.mobile-controls .mobile-button--cap-enter {
-  --cap-sheet-size: 200% 200%;
-  --cap-image: var(--moth-art-16);
+  --cap-image: var(--moth-art-4);
 }
 
 .mobile-controls .mobile-button--capped {
@@ -1835,11 +1277,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
 
 .mobile-controls .mobile-control-group--menu [data-mobile-action="back"],
 .mobile-controls .mobile-control-group--menu [data-mobile-action="advance"],
-.mobile-controls .mobile-control-group--menu [data-mobile-action="jump"],
-.mobile-controls .mobile-control-group--office-rhythm [data-mobile-action="office-do"],
-.mobile-controls .mobile-control-group--office-rhythm [data-mobile-action="office-accent"],
-.mobile-controls .mobile-control-group--dialogue [data-mobile-action="advance"],
-.mobile-controls .mobile-control-group--failure [data-mobile-action="advance"] {
+.mobile-controls .mobile-control-group--menu [data-mobile-action="jump"] {
   border: 0;
   border-image: none;
   outline: 0;
@@ -1874,36 +1312,9 @@ body[data-device-mode="phone"] .film-grain-overlay {
   transform: translateX(-50%);
 }
 
-.mobile-controls .mobile-control-group--office-rhythm [data-mobile-action="office-do"] {
-  --cap-x: 0%;
-  color: #fff4dc;
-}
-
-.mobile-controls .mobile-control-group--office-rhythm [data-mobile-action="office-accent"] {
-  --cap-x: 100%;
-  color: #eef1f4;
-}
-
-.mobile-controls .mobile-button--cap-enter {
-  --cap-x: 100%;
-  color: #2a140c;
-}
-
 .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"]:active,
 .mobile-controls .mobile-control-group--menu [data-mobile-action="jump"].is-held {
   transform: translateX(-50%) translateY(1px);
-}
-
-.mobile-controls .mobile-control-group--office-rhythm .mobile-button--capped {
-  /* Landscape keeps these compact so the cap never reaches down into the
-     timing rail; portrait has room for the full-size cap (below). */
-  width: clamp(76px, 20vw, 92px);
-  height: clamp(76px, 20vw, 92px);
-  padding: 0 8px;
-}
-
-.mobile-controls .mobile-control-group--office-rhythm .mobile-button--capped strong {
-  font: 900 22px/1 "Courier New", monospace;
 }
 
 /* Short portrait decks (390x700 and below) have less room between the menu caps
@@ -1956,29 +1367,6 @@ body[data-device-mode="phone"] .film-grain-overlay {
 
 /* Landscape anchors the pair above the timing rail rather than inheriting the
    portrait deck's top offset, which pushed the caps down over the notes. */
-@media (orientation: landscape) {
-  .mobile-controls .mobile-control-group--office-rhythm {
-    top: auto;
-    bottom: calc(122px + env(safe-area-inset-bottom));
-  }
-}
-
-@media (orientation: portrait) {
-  .mobile-controls .mobile-control-group--office-rhythm .mobile-button--capped {
-    width: clamp(104px, 27vw, 124px);
-    height: clamp(104px, 27vw, 124px);
-    padding: 0 10px;
-  }
-
-  .mobile-controls .mobile-control-group--office-rhythm .mobile-button--capped strong {
-    font: 900 30px/1 "Courier New", monospace;
-  }
-}
-
-.mobile-controls .mobile-control-group--office-rhythm .mobile-button--capped small {
-  opacity: 0.85;
-}
-
 /* ---------------------------------------------------------------------------
    Persistent mobile hardware deck (2026-09-02)
 
@@ -2060,26 +1448,12 @@ body[data-device-mode="phone"] .film-grain-overlay {
   transform: none;
 }
 
-.mobile-controls .mobile-control-group--actions .mobile-button--arc-space,
-.mobile-controls .mobile-control-group--actions .mobile-button--arc-b,
 .mobile-controls .mobile-control-group--actions .mobile-button--arc-r {
   right: auto;
   bottom: auto;
   width: 54px;
   height: 54px;
   min-height: 0;
-}
-
-
-.mobile-controls .mobile-control-group--actions .mobile-button--arc-space {
-  left: 0;
-  top: 0;
-  font-size: 9px;
-}
-
-.mobile-controls .mobile-control-group--actions .mobile-button--arc-b {
-  left: 66px;
-  top: 0;
 }
 
 .mobile-controls .mobile-control-group--actions .mobile-button--arc-r {
@@ -2300,15 +1674,6 @@ body[data-device-mode="phone"] .film-grain-overlay {
     height: 40px;
     font-size: 11px;
   }
-
-  /* The two-cap rhythm row, when it exists, follows the same midline. */
-  body[data-touch-controls="1"] .mobile-controls .mobile-control-group--office-rhythm {
-    left: 50%;
-    right: auto;
-    top: auto;
-    bottom: calc(var(--stage-bottom, 0px) + 10px);
-    transform: translateX(-50%);
-  }
 }
 
 /* SPACE moved onto the persistent pill and the B cap was retired entirely -
@@ -2395,7 +1760,6 @@ body[data-device-mode="phone"] .film-grain-overlay {
   }
 }
 
-
 /* ---------------------------------------------------------------------------
    START cap (2026-09-08)
 
@@ -2408,7 +1772,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
 .mobile-controls .mobile-button--cap-start {
   --cap-sheet-size: 100% 200%;
   --cap-x: 0%;
-  --cap-image: var(--moth-art-17);
+  --cap-image: var(--moth-art-5);
   color: #efe3c4;
 }
 
@@ -2496,7 +1860,6 @@ body[data-touch-controls="1"] .mobile-controls .mobile-control-group--system {
   }
 }
 
-
 /* Short portrait decks have to fit SPACE and the START cap in the same band, so
    the pill slims down and lifts to leave the bottom strip for the cap. */
 @media (orientation: portrait) and (max-height: 760px) {
@@ -2511,7 +1874,6 @@ body[data-touch-controls="1"] .mobile-controls .mobile-control-group--system {
     font-size: 9px;
   }
 }
-
 
 /* The shortest decks need one more notch of separation. */
 /* The shortest decks cannot stack SPACE above the START cap and keep both at a
@@ -2584,7 +1946,6 @@ body[data-touch-controls="1"] .mobile-controls .mobile-control-group--system {
     transform: translateX(-50%);
   }
 }
-
 
 /* ---------------------------------------------------------------------------
    The tall portrait screen (2026-09-28)
@@ -2660,7 +2021,6 @@ body[data-touch-controls="1"] .mobile-controls .mobile-control-group--system {
     transform: none;
   }
 }
-
 
 /* The deck's molded panel reaches the bottom of the phone in the tall layout:
    its old 74px gap held the START cap, which now lives on the brand row. */
@@ -2758,7 +2118,7 @@ body[data-touch-controls="1"] .mobile-controls .mobile-moth__button {
   border-radius: 0;
   outline: 0;
   background-color: transparent;
-  background-image: var(--moth-art-18);
+  background-image: var(--moth-art-6);
   background-repeat: no-repeat;
   background-size: 400% 200%;
   background-position: var(--moth-x) 0%;

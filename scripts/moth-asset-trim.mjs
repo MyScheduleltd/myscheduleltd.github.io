@@ -12,6 +12,8 @@
 // when one is equipped), the playlist player's waveforms and the office desk
 // art (drawn in the fight's other desk layout).
 
+import { RETIRED_DECK_ART } from './moth-deck-art.mjs';
+
 export const TRIMMED_GROUPS = [
   { title: "Level 1: the old road chase and tutorial ride (and their HUD, map and dialogue frame)", jobs: ["boss", "ganganSheet", "ganganAttackSheet", "ganganCandySheet", "ganganDefeatExitSheet", "ganganBikeExitSheet", "ganganHealthBarSheet", "levelMap", "tutorialStage0Map", "mapProps", "bobbyRideSheet", "bobbyAttackSheet", "bobbyTutorialIntroSheet", "loadingTransitionSheet", "dialogueFrameSheet"],
     files: ["assets/maps/level1_layered/level1-reference-base.webp", "assets/maps/level1_stage0/level1-stage0-tutorial.webp", "assets/sprites/bobby_orange_diaper_attack/processed-v4/sheet-transparent.webp", "assets/sprites/bobby_orange_ride/processed-v4/sheet-transparent.webp", "assets/sprites/bobby_tutorial_intro/processed-v5/sheet-transparent.webp", "assets/sprites/dialogue_ui_frame/processed/sheet-transparent.webp", "assets/sprites/gangan_bike_exit_level1/processed/sheet-transparent.webp", "assets/sprites/gangan_candy_eat/processed/sheet-transparent.webp", "assets/sprites/gangan_defeat_exit/processed/sheet-transparent.webp", "assets/sprites/gangan_health_bar_ui/processed/sheet-transparent.webp", "assets/sprites/gangan_scooter_ride/processed-v2/sheet-transparent.webp", "assets/sprites/gangan_scooter_throw_fixed/processed-v2/sheet-transparent.webp", "assets/sprites/loading_transition_level1/processed/sheet-transparent.webp", "referenceimages/ChatGPT Image 2026年5月3日 上午03_57_57.webp"] },
@@ -40,7 +42,10 @@ export const TRIMMED_GROUPS = [
   { title: "Unused: the old lyrics window's art and the scenes' unread map files", jobs: [],
     files: ["assets/sprites/home_lyrics_window_controls/processed/sheet-transparent.webp", "assets/sprites/home_lyrics_window_icon/processed/sheet-transparent.webp",
       "data/maps/level2-mosquito-boss-map.json", "data/maps/level2-stage3-map.json", "data/maps/level3-stage1-map.json",
-      "data/maps/level4-stage1-map.json", "data/maps/level5-stage1-map.json"] }
+      "data/maps/level4-stage1-map.json", "data/maps/level5-stage1-map.json"] },
+  // The touch deck's art from earlier designs, and the grey M/O/T/H sheet the
+  // pad-coloured one replaced (owner, 2026-10-17; moth-deck-art.mjs).
+  { title: "The touch deck's old art", jobs: [], files: RETIRED_DECK_ART }
 ];
 
 export const TRIMMED_JOBS = new Set(TRIMMED_GROUPS.flatMap(group => group.jobs));
