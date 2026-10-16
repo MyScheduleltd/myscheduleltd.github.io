@@ -8111,8 +8111,6 @@ export class App {
     if (value === 'E / PUT MENTOR DOWN') return `E／放下 ${mentorName}`;
     if (value === 'POPCORN COLLECTED') return '已拿取爆米花';
     if (value === 'E / TAKE POPCORN') return 'E／拿取爆米花';
-    if (value.startsWith('SWIMMING')) return '游泳中 · 靠近觀影者可揮手';
-    if (value.startsWith('SWIMWEAR ON')) return '已換泳裝 · 進入水中';
     if (value.startsWith('E / OPEN')) return 'E／開啟節目表';
     return value;
   }
