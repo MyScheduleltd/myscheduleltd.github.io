@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import legacySource from '../../docs/js/allData.js';
 import { verifyCheckMacValue } from './ecpay.mjs';
 import { STAFF_OFFERING_LIMIT, offeringExpired, offeringTime, trimOfferingHistory } from './offering-history.mjs';
+import { StateDelta } from './state-delta.mjs';
 import {
   DONATION_PRESETS, MAX_DONATION, MIN_DONATION,
   buildInvoice, buildOrder, ecpayConfig, readInvoiceReply,
@@ -25,10 +26,9 @@ const trackDurations = {};
 const NOMINAL_TRACK_SECONDS = 240;
 /**
  * How many attendees the world holds at once. Traffic grows with the square of
- * this, because every attendee is sent a state that lists every attendee: at
- * twenty the service pushes about 0.9 MB/s at a full house, which the free
- * instance carries comfortably. Past that the room stops being pleasant before
- * it stops working. Raise it with FESTIVAL_MAX_VISITORS on a larger instance.
+ * this. Modern clients negotiate per-connection updates so movement does not
+ * resend biographies, programmes and unchanged visitors. Old clients retain
+ * complete snapshots. Raise the limit only after measuring the larger room.
  */
 const MAX_VISITORS = Math.max(1, Number(process.env.FESTIVAL_MAX_VISITORS ?? 20));
 /**
@@ -1369,7 +1369,15 @@ const stateFor = (visitor) => ({
   wishes,
 });
 
+const streamDeltas = new WeakMap();
 const writeEvent = (response, event, data) => {
+  // A stalled phone must not accumulate an unbounded queue of stale positions.
+  // Its normal reconnect receives a fresh complete state.
+  if (response.destroyed || response.writableEnded) return;
+  if (response.writableLength > 256 * 1024) { response.destroy(); return; }
+  if (event === 'state' && streamDeltas.has(response)) {
+    ({ event, data } = streamDeltas.get(response).encode(data));
+  }
   response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 };
 
@@ -2298,6 +2306,7 @@ a{color:#e8b64a}</style>
         'x-accel-buffering': 'no',
       });
       response.write(': connected\n\n');
+      if (url.searchParams.get('updates') === 'delta-v1') streamDeltas.set(response, new StateDelta());
       const responseSet = streams.get(visitor.id) ?? new Set();
       // A few tabs are normal; hundreds from one session are an attack on the
       // instance's sockets. The oldest gives way, as a reconnect would.
@@ -2339,7 +2348,8 @@ a{color:#e8b64a}</style>
         // Height, without which the roof deck seven units up and the basement
         // sixteen down both drew their occupants standing in the street.
         y: Math.max(-24, Math.min(16, Number(payload.y) || 0)),
-        z: Math.max(-80, Math.min(65, Number(payload.z) || 0)),
+        // The island ferry entrance extends beyond the old north gate bound.
+        z: Math.max(-80, Math.min(101, Number(payload.z) || 0)),
         rotation: Number(payload.rotation) || 0,
         location: safeText(payload.location, 40) || 'FESTIVAL GATE',
         state: ['walking', 'seated', 'swimming'].includes(payload.state) ? payload.state : 'walking',

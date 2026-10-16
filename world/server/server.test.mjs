@@ -2815,3 +2815,11 @@ test('a resident\'s music credits keep their lines, and an introduction save lea
   // Put the owner's list back for whatever runs after.
   await save({ creditsZh: profile.creditsZh, credits: profile.credits });
 });
+
+test('the island ferry entrance survives validated presence bounds',async()=>{
+  const s=await join('Dock crowd');
+  const r=await fetch(`${baseUrl}/api/presence`,{method:'POST',headers:auth(s),body:JSON.stringify({x:1.2,y:-.29,z:93.5,rotation:.7,state:'walking',moving:true,venue:'shore'})});
+  assert.equal(r.status,202);
+  const state=await fetch(`${baseUrl}/api/admin/state`,{headers:{'x-festival-admin-key':'test-admin-key'}}).then(r=>r.json());
+  assert.equal(state.visitors.find(v=>v.id===s.id).presence.z,93.5);
+});

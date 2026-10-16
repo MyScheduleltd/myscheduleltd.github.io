@@ -1927,3 +1927,37 @@ test('disposing an avatar preview unregisters it and frees instance resources wi
  walkCoastalPose(second.rig,.7,.6);syncImportedAvatars(second.root);b.skeleton.update();
  assert.ok(b.getVertexPosition(0,new THREE.Vector3()).toArray().every(Number.isFinite),'another instance still uses the shared geometry');
 });
+
+test('a full room in Lite builds one body per frame and departure preserves shared geometry',()=>{
+  const world=Object.create(FestivalWorld.prototype);
+  Object.assign(world,{graphicsMode:'lite',latestRemoteVisitors:[],pendingRemoteVisitors:new Map(),remoteAvatars:new Map(),remoteNpcControls:new Map(),npcs:[],player:new THREE.Group(),groundHeightAt:()=>.28,syncSharedMentorCarrier(){},mentorHeldBy(){}});
+  const scene=new THREE.Scene();let created=0;
+  world.createRemoteAvatar=v=>{
+    created++;const {root:group,rig}=importedCharacter();scene.add(group);group.position.set(v.x,.28,v.z);
+    const badge=new THREE.Sprite(new THREE.SpriteMaterial());group.add(badge);
+    return {group,rig,badge,carriedProp:new THREE.Group(),target:group.position.clone(),previousTarget:group.position.clone(),targetRotation:0,previousRotation:0,targetAt:performance.now(),updateInterval:220,gestureUntil:0,animationPhase:0,name:v.name};
+  };
+  const visitors=Array.from({length:20},(_,i)=>({id:String(i),name:'Crowd'+i,originalName:'Crowd'+i,palette:{...BASE_PALETTE},x:i,y:.28,z:93.5,rotation:0,state:'walking',moving:true}));
+  world.setRemoteVisitors(visitors);assert.equal(created,0,'network callback must not create a room of skins');
+  world.flushRemoteVisitor();assert.equal(created,1);assert.equal(world.pendingRemoteVisitors.size,19);
+  const first=world.remoteAvatars.get('0'), clock=first.targetAt;
+  world.setRemoteVisitors(visitors.map(v=>({...v,palette:{...v.palette}})));assert.equal(first.targetAt,clock,'other visitors cannot restart this interpolation clock');
+  for(let i=1;i<20;i++)world.flushRemoteVisitor();assert.equal(world.remoteAvatars.size,20,'lite keeps all attendees');
+  const shared=bodyMesh(first.group).geometry;let disposed=0;shared.addEventListener('dispose',()=>disposed++);
+  for(const avatar of world.remoteAvatars.values())avatar.group.userData.setImportedCulled(true);
+  world.groundHeightAt=()=>{throw Error('invisible peers must not solve feet');};
+  world.updateRemoteAvatars(1/60,1);
+  world.setRemoteVisitors(visitors.slice(1));assert.equal(importedAvatarRoots.has(first.group),false);assert.equal(disposed,0,'departing visitors do not evict shared buffers');
+  world.setRemoteVisitors([]);assert.equal(world.remoteAvatars.size,0);assert.equal(world.pendingRemoteVisitors.size,0);assert.equal(disposed,0);
+});
+
+test('unchanged palette/swim snapshots preserve the mounted appearance and pose',()=>{
+  const {root,rig}=importedCharacter();walkCoastalPose(rig,1,.6);supportCoastalPose(rig,()=>0);
+  const parts=root.userData.sculptRuntime.parts, metadata=root.userData.importedAvatar;
+  const position=rig.visualRoot.position.clone();
+  for(let i=0;i<20;i++){root.userData.setImportedSwimwear(false);root.userData.setImportedPalette({...BASE_PALETTE});}
+  assert.equal(root.userData.sculptRuntime.parts,parts);assert.equal(root.userData.importedAvatar,metadata);
+  assert.ok(rig.visualRoot.position.distanceTo(position)<1e-9);
+  root.userData.setImportedPalette({...BASE_PALETTE,top:'#291a1c'});assert.equal(root.userData.importedAvatar.sex,'female');
+  root.userData.disposeImportedAvatar();
+});

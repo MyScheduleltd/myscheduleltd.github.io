@@ -435,6 +435,8 @@ export class FestivalClient {
   private reconnectAttempt = 0;
   private lastPresenceAt = 0;
   private lastPresence = '';
+  private presenceInFlight = false;
+  private streamState?: FestivalState;
   private closed = false;
   private waitTicket = '';
   private suspended = false;
@@ -677,7 +679,7 @@ export class FestivalClient {
   }
 
   async publishPresence(presence: NetworkPresence, palette: AvatarPalette): Promise<void> {
-    if (!this.session || this.closed) return;
+    if (!this.session || this.closed || this.presenceInFlight) return;
     if (this.identity) this.identity.palette = palette;
     const payload = JSON.stringify({ ...presence, palette });
     const now = performance.now();
@@ -691,7 +693,9 @@ export class FestivalClient {
     if (now - this.lastPresenceAt < interval) return;
     this.lastPresence = payload;
     this.lastPresenceAt = now;
-    await this.request('/api/presence', { method: 'POST', body: payload }, false);
+    this.presenceInFlight = true;
+    try { await this.request('/api/presence', { method: 'POST', body: payload }, false); }
+    finally { this.presenceInFlight = false; }
   }
 
   /**
@@ -1203,7 +1207,8 @@ export class FestivalClient {
     const controller = this.abortController;
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     try {
-      const response = await fetch(`${this.baseUrl}/api/events`, {
+      this.streamState = undefined;
+      const response = await fetch(`${this.baseUrl}/api/events?updates=delta-v1`, {
         headers: this.headers({ accept: 'text/event-stream' }),
         signal: controller.signal,
       });
@@ -1262,7 +1267,18 @@ export class FestivalClient {
     }
     if (!data.length) return;
     const payload = JSON.parse(data.join('\n')) as FestivalState | { reason?: string };
-    if (event === 'state') this.onState(payload as FestivalState);
+    if (event === 'state') {
+      this.streamState = payload as FestivalState;
+      this.onState(this.streamState);
+    }
+    if (event === 'state-patch' && this.streamState) {
+      const { visitors: changed, removedVisitors = [], ...fields } = payload as Partial<FestivalState> & { removedVisitors?: string[] };
+      const visitors = new Map(this.streamState.visitors.map(visitor => [visitor.id, visitor]));
+      for (const id of removedVisitors) visitors.delete(id);
+      for (const visitor of changed ?? []) visitors.set(visitor.id, visitor);
+      this.streamState = { ...this.streamState, ...fields, visitors: [...visitors.values()] };
+      this.onState(this.streamState);
+    }
     if (event === 'kicked') {
       this.closed = true;
       this.session = undefined;

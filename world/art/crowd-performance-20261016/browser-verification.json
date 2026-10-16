@@ -1,0 +1,263 @@
+{
+  "cases": [
+    {
+      "case": "desktop-normal",
+      "perf": {
+        "drawCalls": 847,
+        "foregroundDrawCalls": 0,
+        "contexts": 1,
+        "triangles": 2992528,
+        "programs": 158,
+        "textures": 311,
+        "geometries": 528,
+        "heapMb": 268,
+        "sceneObjects": 5770,
+        "lights": 36,
+        "lampsLit": 17,
+        "lampsTotal": 33,
+        "lastCullSeen": 26,
+        "staticBatch": {
+          "examined": 2143,
+          "batchedPieces": 1945,
+          "batches": 108,
+          "sharedMaterials": 932,
+          "releasedGeometries": 839,
+          "releasedMaterials": 299
+        },
+        "sinceCullMs": 183,
+        "mode": "normal",
+        "shadowCasters": 1799,
+        "livePlayers": 0,
+        "colliders": 285,
+        "npcs": 12,
+        "pendingSignRepaints": 20,
+        "mobileGpuConservation": false,
+        "projectorActivation": null,
+        "textureBudget": {
+          "decodedImages": 0,
+          "originalBytes": 0,
+          "decodedBytes": 0,
+          "largestEdge": 0,
+          "activeModels": 0,
+          "peakActiveModels": 0
+        },
+        "crowd": {
+          "visitors": 19,
+          "pending": 0,
+          "timings": {
+            "frames": 240,
+            "fps": 34.6,
+            "gapP95Ms": 31.6,
+            "gapMaxMs": 32.7,
+            "workP95Ms": 15.1,
+            "workMaxMs": 16.7
+          },
+          "phases": {
+            "residents": 1.5,
+            "visitors": 2.1000003814697266,
+            "skins": 0.40000009536743164,
+            "draw": 10.599999904632568
+          }
+        },
+        "shadowLights": 2,
+        "lampPool": 6,
+        "darkLampsLit": 1
+      }
+    },
+    {
+      "case": "desktop-lite",
+      "perf": {
+        "drawCalls": 846,
+        "foregroundDrawCalls": 0,
+        "contexts": 1,
+        "triangles": 3109132,
+        "programs": 232,
+        "textures": 313,
+        "geometries": 530,
+        "heapMb": 174,
+        "sceneObjects": 5770,
+        "lights": 36,
+        "lampsLit": 13,
+        "lampsTotal": 33,
+        "lastCullSeen": 26,
+        "staticBatch": {
+          "examined": 2143,
+          "batchedPieces": 1945,
+          "batches": 108,
+          "sharedMaterials": 932,
+          "releasedGeometries": 839,
+          "releasedMaterials": 299
+        },
+        "sinceCullMs": 2371,
+        "mode": "lite",
+        "shadowCasters": 1796,
+        "livePlayers": 0,
+        "colliders": 285,
+        "npcs": 12,
+        "pendingSignRepaints": 20,
+        "mobileGpuConservation": false,
+        "projectorActivation": null,
+        "textureBudget": {
+          "decodedImages": 0,
+          "originalBytes": 0,
+          "decodedBytes": 0,
+          "largestEdge": 0,
+          "activeModels": 0,
+          "peakActiveModels": 0
+        },
+        "crowd": {
+          "visitors": 19,
+          "pending": 0,
+          "timings": {
+            "frames": 240,
+            "fps": 60,
+            "gapP95Ms": 18.8,
+            "gapMaxMs": 19.5,
+            "workP95Ms": 12.2,
+            "workMaxMs": 13.6
+          },
+          "phases": {
+            "residents": 1.8000001907348633,
+            "visitors": 2.0999999046325684,
+            "skins": 0.5,
+            "draw": 7.699999809265137
+          }
+        },
+        "shadowLights": 0,
+        "lampPool": 6,
+        "darkLampsLit": 1
+      }
+    },
+    {
+      "case": "phone-sized-normal-mobile-budget",
+      "perf": {
+        "drawCalls": 642,
+        "foregroundDrawCalls": 0,
+        "contexts": 1,
+        "triangles": 2304265,
+        "programs": 104,
+        "textures": 250,
+        "geometries": 472,
+        "heapMb": 197,
+        "sceneObjects": 5770,
+        "lights": 36,
+        "lampsLit": 17,
+        "lampsTotal": 33,
+        "lastCullSeen": 26,
+        "staticBatch": {
+          "examined": 2143,
+          "batchedPieces": 1945,
+          "batches": 108,
+          "sharedMaterials": 932,
+          "releasedGeometries": 839,
+          "releasedMaterials": 299
+        },
+        "sinceCullMs": 476,
+        "mode": "normal",
+        "shadowCasters": 1799,
+        "livePlayers": 0,
+        "colliders": 285,
+        "npcs": 12,
+        "pendingSignRepaints": 20,
+        "mobileGpuConservation": true,
+        "projectorActivation": null,
+        "textureBudget": {
+          "decodedImages": 59,
+          "originalBytes": 497950128,
+          "decodedBytes": 140249776,
+          "largestEdge": 1024,
+          "activeModels": 0,
+          "peakActiveModels": 1
+        },
+        "crowd": {
+          "visitors": 19,
+          "pending": 0,
+          "timings": {
+            "frames": 240,
+            "fps": 50,
+            "gapP95Ms": 24.2,
+            "gapMaxMs": 30.4,
+            "workP95Ms": 12.3,
+            "workMaxMs": 14
+          },
+          "phases": {
+            "residents": 1,
+            "visitors": 1.8000001907348633,
+            "skins": 0.5,
+            "draw": 9.300000190734863
+          }
+        },
+        "shadowLights": 2,
+        "lampPool": 6,
+        "darkLampsLit": 1
+      }
+    },
+    {
+      "case": "phone-sized-lite-mobile-budget",
+      "perf": {
+        "drawCalls": 625,
+        "foregroundDrawCalls": 0,
+        "contexts": 1,
+        "triangles": 2304111,
+        "programs": 165,
+        "textures": 258,
+        "geometries": 473,
+        "heapMb": 206,
+        "sceneObjects": 5770,
+        "lights": 36,
+        "lampsLit": 13,
+        "lampsTotal": 33,
+        "lastCullSeen": 26,
+        "staticBatch": {
+          "examined": 2143,
+          "batchedPieces": 1945,
+          "batches": 108,
+          "sharedMaterials": 932,
+          "releasedGeometries": 839,
+          "releasedMaterials": 299
+        },
+        "sinceCullMs": 4908,
+        "mode": "lite",
+        "shadowCasters": 1796,
+        "livePlayers": 0,
+        "colliders": 285,
+        "npcs": 12,
+        "pendingSignRepaints": 20,
+        "mobileGpuConservation": true,
+        "projectorActivation": null,
+        "textureBudget": {
+          "decodedImages": 59,
+          "originalBytes": 497950128,
+          "decodedBytes": 140249776,
+          "largestEdge": 1024,
+          "activeModels": 0,
+          "peakActiveModels": 1
+        },
+        "crowd": {
+          "visitors": 19,
+          "pending": 0,
+          "timings": {
+            "frames": 240,
+            "fps": 60,
+            "gapP95Ms": 18.8,
+            "gapMaxMs": 20.7,
+            "workP95Ms": 9.5,
+            "workMaxMs": 10.7
+          },
+          "phases": {
+            "residents": 0.8000001907348633,
+            "visitors": 1.799999713897705,
+            "skins": 0.39999961853027344,
+            "draw": 5.5
+          }
+        },
+        "shadowLights": 0,
+        "lampPool": 6,
+        "darkLampsLit": 1
+      }
+    }
+  ],
+  "errors": [],
+  "physicalIPhoneTested": false,
+  "method": "One real UI client plus 19 public-API clients on isolated local service. Phone-sized 390x700 on desktop GPU with mobile asset/conservation path enabled; not iPhone hardware emulation. Steady rolling windows after startup/mode shader warm-up."
+}

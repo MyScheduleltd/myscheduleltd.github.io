@@ -312,6 +312,16 @@ interface Hand { bone: THREE.Bone; tips: number[]; palm: THREE.Vector3; thumb: T
 interface Finger { bones: THREE.Bone[]; rest: THREE.Quaternion[]; curl: THREE.Vector3[]; spread: THREE.Vector3 }
 interface FingerRig { fingers: Record<FingerName, Finger>; rest: HandPose }
 interface Sole { mesh: THREE.SkinnedMesh; vertex: number; side: Side }
+type SoleIndex = Pick<Sole, 'vertex' | 'side'>;
+interface BodyMeasurements {
+  hands: Map<Side, { owned: number[]; points: THREE.Vector3[] }>;
+  contacts?: Map<Side, { heel: number[]; ball: number[] }>;
+  soles: WeakMap<THREE.BufferGeometry, SoleIndex[]>;
+  barefoot?: { offsets: Map<string, THREE.Quaternion>; soles: SoleIndex[] };
+}
+// Geometry and the control rig's rest frame determine these measurements,
+// never the visitor's palette or world position. Keep no instance bones here.
+const bodyMeasurements = new WeakMap<THREE.Group, Map<string, BodyMeasurements>>();
 interface Mounted {
   key: AvatarVariant;
   /** Each moved bone's rest turn in the body's frame, and the standing hip height. */
@@ -401,6 +411,9 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       controlDirection.set(name, body.worldToLocal(next.getWorldPosition(new THREE.Vector3())).sub(from).normalize());
     }
   }
+  const measurementKey = JSON.stringify([...controlRest].map(([name, q]) =>
+    [name, ...q.toArray(), ...(controlDirection.get(name)?.toArray() ?? [])]
+      .map(v => typeof v === 'number' ? Math.round(v * 1e6) / 1e6 : v)));
 
   let sex: AvatarSex = avatarSex(palette.top);
   let outfit = topOutfit(palette.top);
@@ -414,6 +427,10 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
 
   const mount = (key: AvatarVariant): Mounted => {
     const template = templates.get(key)!;
+    let measurements = bodyMeasurements.get(template.scene);
+    if (!measurements) bodyMeasurements.set(template.scene, measurements = new Map());
+    let measured = measurements.get(measurementKey);
+    if (!measured) measurements.set(measurementKey, measured = { soles: new WeakMap(), hands: new Map() });
     const model = clone(template.scene) as THREE.Group;
     model.name = `Higgsfield avatar · ${key}`;
     model.scale.setScalar(MODEL_SCALE);
@@ -497,6 +514,9 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     // the skin's bind matrices, so it only means anything once skinned.
     const probe = (mesh: THREE.SkinnedMesh) => {
       mesh.skeleton.update();
+      // All vertices in one measurement use the same pose. Rewalking the
+      // parent chain for each vertex made a roomful of joins block for seconds.
+      const meshToBody = new THREE.Matrix4().copy(body.matrixWorld).invert().multiply(mesh.matrixWorld);
       const position = mesh.geometry.getAttribute('position');
       const skinIndex = mesh.geometry.getAttribute('skinIndex');
       const skinWeight = mesh.geometry.getAttribute('skinWeight');
@@ -506,7 +526,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
         for (let k = 0; k < 4; k++) if (indices.includes(skinIndex.getComponent(vertex, k))) w += skinWeight.getComponent(vertex, k);
         return w;
       };
-      const vertexAt = (vertex: number) => body.worldToLocal(mesh.localToWorld(mesh.applyBoneTransform(vertex, new THREE.Vector3().fromBufferAttribute(position, vertex))));
+      const vertexAt = (vertex: number) => mesh.applyBoneTransform(vertex, new THREE.Vector3().fromBufferAttribute(position, vertex)).applyMatrix4(meshToBody);
       return { position, boneIndex, weightOn, vertexAt };
     };
 
@@ -519,9 +539,13 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       // The hand and its finger bones: the fingers are rigged separately.
       const indices = bodyMesh.skeleton.bones.map((b, i) => b.name.startsWith(side + 'Hand') ? i : -1).filter(i => i >= 0);
       const wrist = at(bone);
-      const owned: number[] = [];
-      for (let v = 0; v < skin.position.count; v++) if (skin.weightOn(v, indices) > .5) owned.push(v);
-      const points = owned.map(skin.vertexAt);
+      let handMeasurement = measured.hands.get(side);
+      if (!handMeasurement) {
+        const owned: number[] = [];
+        for (let v = 0; v < skin.position.count; v++) if (skin.weightOn(v, indices) > .5) owned.push(v);
+        measured.hands.set(side, handMeasurement = { owned, points: owned.map(skin.vertexAt) });
+      }
+      const { owned, points } = handMeasurement;
       const centre = points.reduce((sum, p) => sum.add(p), new THREE.Vector3()).divideScalar(Math.max(1, points.length));
       // With finger bones, the hand is measured off them: the fingers point
       // from the wrist to the knuckles, and the palm faces the way the
@@ -643,7 +667,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     // shoes. Calibrate its heel/ball plane after closing the A-pose legs:
     // measuring at bind rest misses the vertices shared with the shin.
     // This only changes the barefoot ankle mapping, never mesh/garment data.
-    const bareContacts = new Map<Side, { heel: number[]; ball: number[] }>();
+    const bareContacts = measured.contacts ?? new Map<Side, { heel: number[]; ball: number[] }>();
     const savedBones = key === 'male' ? [...bones.values()].map(b => ({ bone: b, rest: b.quaternion.clone() })) : [];
     const poseBareRest = () => {
       for (const link of links) {
@@ -654,7 +678,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       root.updateMatrixWorld(true);
       bodyMesh.skeleton.update();
     };
-    if (key === 'male') {
+    if (key === 'male' && !measured.contacts) {
       const m = probe(bodyMesh), dressedOnly = bodyMesh.geometry.getAttribute('_dressed');
       for (const side of ['Left', 'Right'] as Side[]) {
         const ids = [m.boneIndex(side + 'Foot'), m.boneIndex(side + 'ToeBase')];
@@ -667,10 +691,13 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
           ball: points.filter(({ p }) => p.z > z0 + length * .2 && p.z < z0 + length * .8).map(({ v }) => v),
         });
       }
+      measured.contacts = bareContacts;
     }
 
     // The soles: the lowest point and outlines of the shown foot surface.
-    const solesOf = (mesh: THREE.SkinnedMesh): Sole[] => {
+    const solesOf = (mesh: THREE.SkinnedMesh, calibrated = false): Sole[] => {
+      const cached = !calibrated && measured.soles.get(mesh.geometry);
+      if (cached) return cached.map(point => ({ ...point, mesh }));
       const m = probe(mesh);
       const out: Sole[] = [];
       for (const side of ['Left', 'Right'] as Side[]) {
@@ -703,6 +730,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
         outline(sole);
         for (const v of picked) out.push({ mesh, vertex: v, side });
       }
+      if (!calibrated) measured.soles.set(mesh.geometry, out.map(({ vertex, side }) => ({ vertex, side })));
       return out;
     };
     const soles = { bare: solesOf(bodyMesh), shod: shoes ? solesOf(shoes) : solesOf(bodyMesh) };
@@ -710,6 +738,11 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     const calibrateBareFeet = () => {
       if (key !== 'male' || barefootCalibrated) return;
       barefootCalibrated = true;
+      if (measured.barefoot) {
+        for (const link of links) link.bareOffset = measured.barefoot.offsets.get(link.bone.name)?.clone();
+        soles.bare = measured.barefoot.soles.map(point => ({ ...point, mesh: bodyMesh }));
+        return;
+      }
       // The world stands with a small leg spread and soft knees. Preserve
       // every current control while measuring that pose once for this skin.
       const controls = [...new Set(map.map(([, control]) => control))].map(control => ({ control, rest: control.quaternion.clone() }));
@@ -758,7 +791,11 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
         if (settled) break;
         poseBareRest();
       }
-      soles.bare = solesOf(bodyMesh);
+      soles.bare = solesOf(bodyMesh, true);
+      measured.barefoot = {
+        offsets: new Map(links.filter(link => link.bareOffset).map(link => [link.bone.name, link.bareOffset!.clone()])),
+        soles: soles.bare.map(({ vertex, side }) => ({ vertex, side })),
+      };
       for (const { control, rest } of controls) control.quaternion.copy(rest);
       for (const { bone, rest } of savedBones) bone.quaternion.copy(rest);
       root.updateMatrixWorld(true);
@@ -1196,7 +1233,10 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     posedScale.copy(body.scale);
   };
 
-  root.userData.setImportedSwimwear = (on: boolean) => { swimming = on; settle(); root.userData.syncImportedAvatar(); };
+  root.userData.setImportedSwimwear = (on: boolean) => {
+    if (swimming === on) return;
+    swimming = on; settle(); root.userData.syncImportedAvatar();
+  };
   /** Take the head off (in a headset) or put it back. A body mounted later follows. */
   root.userData.setImportedHeadHidden = (hidden: boolean) => { headHidden = hidden; refresh(); };
   root.userData.setImportedFists = (closed: boolean) => { fists.Left = fists.Right = closed; };
@@ -1356,6 +1396,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
         const positions = mesh.geometry.getAttribute('position');
         const ids = mesh.geometry.getAttribute('skinIndex'), weights = mesh.geometry.getAttribute('skinWeight');
         const head = mesh.skeleton.bones.indexOf(headBone);
+        const meshToHead = new THREE.Matrix4().copy(rig.head.matrixWorld).invert().multiply(mesh.matrixWorld);
         for (let i = 0; i < positions.count; i++) {
           // Only the head can be the crown: a raised hand is not a perch.
           let onHead = 0;
@@ -1363,8 +1404,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
           if (onHead < .5) continue;
           probe.fromBufferAttribute(positions, i);
           mesh.applyBoneTransform(i, probe);
-          mesh.localToWorld(probe);
-          surface.push(rig.head.worldToLocal(probe.clone()));
+          surface.push(probe.clone().applyMatrix4(meshToHead));
         }
       }
       if (!surface.length) return rig.head.worldToLocal(root.localToWorld(new THREE.Vector3(0, rig.headTop, 0)));
@@ -1432,7 +1472,12 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     if (changed) { measureHead(); root.userData.syncImportedAvatar(); }
   };
 
+  const paletteKey = (p: AvatarPalette) => JSON.stringify(p);
+  let appliedPalette = paletteKey(palette);
   root.userData.setImportedPalette = (p: AvatarPalette) => {
+    const next = paletteKey(p);
+    if (next === appliedPalette) return;
+    appliedPalette = next;
     current = p;
     wearingCap = Boolean(p.cap);
     outfit = topOutfit(p.top);
