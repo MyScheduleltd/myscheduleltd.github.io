@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { parseGameModel } from './MobileAssetBudget';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { fetchAsset } from './AssetMirror';
@@ -118,8 +119,8 @@ export class RooftopBand {
     loader.setMeshoptDecoder(MeshoptDecoder);
     const get = async (name: BandMember | 'stage' | 'bonfire') => {
       const data = files?.[name];
-      if (data) return loader.parseAsync(data, '');
-      const gltf = await loader.parseAsync(await bandBytes(name), '');
+      if (data) return parseGameModel(loader, data);
+      const gltf = await parseGameModel(loader, await bandBytes(name));
       // Built: the 8.5 MB of bytes need not be kept as well.
       used.add(name);
       fetched.delete(name);

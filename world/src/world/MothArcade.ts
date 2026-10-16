@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { parseGameModel } from './MobileAssetBudget';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
@@ -110,7 +111,7 @@ export class MothArcadeCabinet {
   private async load(): Promise<void> {
     try {
       const bytes = await fetchAsset(new URL('../assets/venue-scenery/moth-arcade.glb', import.meta.url).href);
-      const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(bytes, '');
+      const gltf = await parseGameModel(new GLTFLoader().setMeshoptDecoder(MeshoptDecoder), bytes);
       if (this.disposed) { disposeCabinetModel(gltf.scene); return; }
       const model = gltf.scene;
       const box = new THREE.Box3().setFromObject(model), size = box.getSize(new THREE.Vector3());

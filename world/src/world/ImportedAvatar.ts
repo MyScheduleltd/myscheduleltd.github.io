@@ -10,6 +10,7 @@ import { DEFAULT_ACCESSORY_COLOURS } from './AvatarAccessories';
 import movesData from '../data/moves.json';
 import { walkCoastalPose, levelCoastalFeet } from './CoastalPose';
 import { assetObjectUrl, fetchAsset } from './AssetMirror';
+import { loadBudgetedTexture, mobileAssetBudgetEnabled, parseGameModel } from './MobileAssetBudget';
 
 /**
  * The punch and the dance, from the owner's Mixamo files (2026-10-01; see
@@ -160,7 +161,8 @@ async function loadVest(key: AvatarVariant, like?: THREE.Texture): Promise<THREE
 async function loadPicture(url: string): Promise<THREE.Texture> {
   const objectUrl = await assetObjectUrl(url);
   try {
-    return await new THREE.TextureLoader().loadAsync(objectUrl);
+    return await (mobileAssetBudgetEnabled() && typeof createImageBitmap !== 'undefined'
+      ? loadBudgetedTexture(objectUrl) : new THREE.TextureLoader().loadAsync(objectUrl));
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
@@ -200,7 +202,7 @@ function loadVariant(key: AvatarVariant, bytes?: ArrayBuffer): Promise<void> {
   const promise = (async () => {
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
-    const gltf = await loader.parseAsync(bytes ?? await fetchAsset(modelUrl(key)), '');
+    const gltf = await parseGameModel(loader, bytes ?? await fetchAsset(modelUrl(key)));
     const template: Template = { scene: gltf.scene };
     let map: THREE.Texture | undefined;
     let separateBody = false;

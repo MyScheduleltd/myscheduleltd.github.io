@@ -1920,7 +1920,7 @@ export class App {
         this.root.dataset.mobileStabilityLive = live;
       }, 5_000);
       this.startPublicScreening(true);
-    } else if (reviewTarget === 'theater-activation' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+    } else if (['theater-activation', 'mobile-memory'].includes(reviewTarget ?? '') && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       // Loopback-only readout: follow normal walking/venue activation without
       // a stress fixture changing the work being measured.
       const sample = () => { this.root.dataset.festivalPerf = JSON.stringify(this.world?.performanceSnapshot()); };

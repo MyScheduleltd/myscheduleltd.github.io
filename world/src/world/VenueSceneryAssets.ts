@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { fetchAsset } from './AssetMirror';
 import { applyAvatarColourLighting } from './ImportedAvatar';
+import { parseGameModel } from './MobileAssetBudget';
 
 export type ScenicAsset = 'attendant' | 'boxOffice' | 'valet' | 'statue';
 function assetUrl(kind: ScenicAsset): string {
@@ -29,7 +30,7 @@ export class VenueSceneryAssets {
     let loaded = this.loads.get(kind);
     if (!loaded) {
       this.status[kind] = 'loading';
-      loaded = fetchAsset(assetUrl(kind)).then((bytes) => new GLTFLoader().parseAsync(bytes, '')).then((gltf) => {
+      loaded = fetchAsset(assetUrl(kind)).then((bytes) => parseGameModel(new GLTFLoader(), bytes)).then((gltf) => {
         gltf.scene.traverse((object) => {
           // These downloads arrive after the world's initial layer traversal.
           // The foreground pass must occlude video behind the entire model.

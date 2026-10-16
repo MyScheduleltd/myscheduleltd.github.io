@@ -1,0 +1,32 @@
+{
+  "status": "local_only_not_published",
+  "device_acceptance": "Physical iPhone 16 Pro Safari normal quality test pending",
+  "method": "Previously observed local browser normal entry and active walking; values transcribed from successful tool output, not a new browser capture",
+  "normalGraphics": true,
+  "shadowLights": 2,
+  "textureBudget": {
+    "decodedImages": 59,
+    "originalBytes": 497950128,
+    "decodedBytes": 140249776,
+    "largestEdge": 1024,
+    "activeModels": 0,
+    "peakActiveModels": 1
+  },
+  "afterWalking": {
+    "contexts": 1,
+    "drawCalls": 466,
+    "triangles": 1149630,
+    "programs": 129,
+    "textures": 160,
+    "geometries": 463,
+    "heapMb": 155,
+    "sceneObjects": 3196,
+    "shadowCasters": 971
+  },
+  "limits": [
+    "Decoded byte estimates are not measurements of total process memory or GPU residency",
+    "Native Mac Safari unavailable because Mac is locked; owner will test phone manually",
+    "Final browser capture blocked by automatic approval review usage limit",
+    "No physical-device crash resolution demonstrated"
+  ]
+}
