@@ -59,7 +59,7 @@ export function fitGateAerialCamera(camera: THREE.PerspectiveCamera, aspect: num
   camera.aspect = Math.max(.2, aspect);
   camera.fov = 46;
   const centre = gateAerialTarget();
-  const direction = new THREE.Vector3(.38 + Math.sin(elapsed * .018) * .055, 1, .78).normalize();
+  const direction = new THREE.Vector3(.38 + Math.sin(elapsed * .018) * .055, 1.32, .66).normalize();
   const vertical = THREE.MathUtils.degToRad(camera.fov / 2);
   const horizontal = Math.atan(Math.tan(vertical) * camera.aspect);
   // Fitting only the coastline cuts off the rounded ocean below it. Fit the

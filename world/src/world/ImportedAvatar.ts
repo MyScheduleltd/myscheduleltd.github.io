@@ -1,5 +1,6 @@
 import { topOutfit, avatarSex, type AvatarSex } from './CoastalOutfits';
 import * as THREE from 'three';
+import { FrameWorkQueue } from './FrameWorkQueue';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
@@ -121,8 +122,9 @@ interface Template { scene: THREE.Group; dye?: THREE.Texture; bodyDye?: THREE.Te
 const templates = new Map<AvatarVariant, Template>();
 const pending = new Map<AvatarVariant, Promise<void>>();
 /** Avatars waiting for a body or its finishing layers to arrive. */
-const arrivals = new Set<() => void>();
-const announce = () => { for (const listener of [...arrivals]) listener(); };
+const arrivals = new Set<(key: AvatarVariant) => void>();
+const arrivalWork = new FrameWorkQueue();
+const announce = (key: AvatarVariant) => { for (const listener of [...arrivals]) listener(key); };
 
 function modelUrl(key: AvatarVariant): string {
   return key === 'male'
@@ -212,14 +214,14 @@ function loadVariant(key: AvatarVariant, bytes?: ArrayBuffer): Promise<void> {
     } });
     sharpenBody(map);
     templates.set(key, template);
-    announce();
-    // The dye mask and the vest follow on their own: a body is usable without
-    // them, and nobody should wait at the gate for a colour.
-    if (!bytes) void Promise.all([
+    // Admission waits for the finishing layers too: settling them in play
+    // rebuilt every visible body and uploaded textures after control returned.
+    if (!bytes) await Promise.all([
       loadDye(key).then(t => { template.dye = t; }),
       ...(separateBody ? [loadDye(key, true).then(t => { template.bodyDye = t; })] : []),
       loadVest(key, map).then(t => { template.vest = t; }),
-    ]).then(announce);
+    ]);
+    announce(key);
   })().catch(error => { pending.delete(key); throw error; });
   pending.set(key, promise);
   return promise;
@@ -228,7 +230,8 @@ function loadVariant(key: AvatarVariant, bytes?: ArrayBuffer): Promise<void> {
 /**
  * Load the bodies. Resolves once `first` are in — the male body the residents
  * mostly wear, and whichever the visitor is wearing — and fetches the other
- * behind it. `files` lets tests hand every body over directly.
+ * behind it. Admission explicitly requests both, including finishing layers.
+ * `files` lets tests hand every body over directly.
  */
 export function loadImportedAvatar(files?: Partial<Record<AvatarVariant, ArrayBuffer>>, first: AvatarVariant[] = ['male'], background = true): Promise<void> {
   if (files) return Promise.all(AVATAR_VARIANTS.map(key => loadVariant(key, files[key]))).then(() => undefined);
@@ -239,6 +242,23 @@ export function loadImportedAvatar(files?: Partial<Record<AvatarVariant, ArrayBu
     () => undefined,
   );
   return essential.then(() => undefined);
+}
+
+/** Include dye/wardrobe uniforms that are not ordinary material map properties. */
+export function importedAvatarTextures(): THREE.Texture[] {
+  const textures = new Set<THREE.Texture>();
+  for (const template of templates.values()) {
+    for (const map of [template.dye, template.bodyDye, template.vest]) if (map) textures.add(map);
+    // Include currently hidden garments, without uploading obsolete procedural
+    // fallback-body textures retained elsewhere in the live scene.
+    template.scene.traverse(object => {
+      const material = (object as THREE.Mesh).material;
+      for (const surface of Array.isArray(material) ? material : material ? [material] : []) {
+        for (const value of Object.values(surface)) if (value instanceof THREE.Texture) textures.add(value);
+      }
+    });
+  }
+  return [...textures];
 }
 
 type Side = 'Left' | 'Right';
@@ -1485,10 +1505,13 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     settle();
   };
 
-  const onArrival = () => {
+  const settleArrival = () => {
     // An avatar taken out of the world stops listening.
     if (!root.parent) { arrivals.delete(onArrival); return; }
     settle();
+  };
+  const onArrival = (key: AvatarVariant) => {
+    if (key === mounted.key || key === resolve(wanted())) arrivalWork.add(settleArrival);
   };
   arrivals.add(onArrival);
   let disposed = false;
@@ -1496,6 +1519,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     if (disposed) return;
     disposed = true;
     arrivals.delete(onArrival);
+    arrivalWork.delete(settleArrival);
     importedAvatarRoots.delete(root);
     unmount(mounted);
   };

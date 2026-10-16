@@ -19,6 +19,7 @@ function assetUrl(kind: ScenicAsset): string {
 /** Meshy scenery is local game data, fetched through the same verified mirror. */
 export class VenueSceneryAssets {
   private disposed = false;
+  private attachments: Promise<void>[] = [];
   private readonly motion = new THREE.Quaternion();
   private readonly motionEuler = new THREE.Euler();
   private loads = new Map<ScenicAsset, Promise<THREE.Group>>();
@@ -62,7 +63,16 @@ export class VenueSceneryAssets {
     return loaded;
   }
 
-  async attach(kind: ScenicAsset, parent: THREE.Group, height: number, fallback?: THREE.Object3D): Promise<void> {
+  attach(kind: ScenicAsset, parent: THREE.Group, height: number, fallback?: THREE.Object3D): Promise<void> {
+    const attachment = this.attachModel(kind, parent, height, fallback);
+    this.attachments.push(attachment);
+    return attachment;
+  }
+
+  /** Wait for placement, not just download completion, before graphics preparation. */
+  async ready(): Promise<void> { await Promise.all(this.attachments); }
+
+  private async attachModel(kind: ScenicAsset, parent: THREE.Group, height: number, fallback?: THREE.Object3D): Promise<void> {
     try {
       const original = await this.load(kind);
       if (this.disposed) return;

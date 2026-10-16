@@ -11,6 +11,8 @@ import { HeadTracking, type TrackedPoint } from './HeadTracking';
 import { batchStaticScenery, type StaticBatchReport } from './StaticBatch';
 import { mobileAssetBudgetSnapshot } from './MobileAssetBudget';
 import { FrameTimings } from './FrameTimings';
+import { selectDecorativeLights } from './LightBudget';
+import { warmScenePrograms, uploadSceneTextures } from './SceneWarmup';
 import { GamepadInput, type GamepadActionId, type GamepadFrame } from './GamepadInput';
 import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
 import { dressBuildings, dressInteriors } from './WornArchitecture';
@@ -39,7 +41,7 @@ import { ROAD_POLYGONS, streetLampObstructsRoute } from './CoastalCirculation';
 import { CoastalScenery } from './CoastalScenery';
 import { VenueSceneryAssets } from './VenueSceneryAssets';
 import { createCoastalAvatar } from './CoastalAvatar';
-import { attachImportedAvatar, syncImportedAvatars, importedAvatarRoots, AVATAR_NATIVE, MOVE_SECONDS, PUNCH_CONTACT_SECONDS } from './ImportedAvatar';
+import { importedAvatarTextures, attachImportedAvatar, syncImportedAvatars, importedAvatarRoots, AVATAR_NATIVE, MOVE_SECONDS, PUNCH_CONTACT_SECONDS } from './ImportedAvatar';
 import { createCoastalSkateboard } from './CoastalSkateboard';
 import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, setCoastalFists, releaseCoastalGrips, walkCoastalPose, danceCoastalPose, COASTAL_STRIDE_LENGTH, skateCoastalPose, levelCoastalFeet, supportCoastalPose, seatCoastalLegs, coastalFootHeights } from './CoastalPose';
 import { coastalRoof, createCoastalSedan, CONVERTIBLE } from './CoastalGeometry';
@@ -208,6 +210,7 @@ interface Seat {
 }
 
 interface ProjectorSurface {
+  parked?: boolean;
   element: HTMLDivElement;
   object: CSS3DObject;
   /** The screen-shaped aperture used by the one-context phone compositor. */
@@ -1596,11 +1599,13 @@ export class FestivalWorld {
   private readonly pendingRemoteVisitors = new Map<string, RemoteVisitorVisual>();
   private latestRemoteVisitors: RemoteVisitorVisual[] = [];
   private readonly frameTimings = new FrameTimings();
+  private entryFrameTimings?: ReturnType<FrameTimings['snapshot']>;
   private framePhases = { residents: 0, visitors: 0, skins: 0, draw: 0 };
   private readonly remoteNpcControls = new Map<string, RemoteVisitorVisual>();
   private readonly occupiedSeats = new Set<string>();
   private readonly projectors = new Map<VenueKey, ProjectorSurface>();
   private mountedProjectorVenue?: VenueKey;
+  private projectorLeaveAt?: number;
   /** Loopback-only override for the timetable/projector overlap regression. */
   private reviewProjectorVenue?: VenueKey;
   private lastProjectorNudgeAt = 0;
@@ -1879,6 +1884,7 @@ export class FestivalWorld {
   private templeAltar?: { x: number; z: number };
   private jukebox?: { x: number; z: number };
   private arcadeCabinet?: MothArcadeCabinet;
+  private bandLoad?: Promise<void>;
   private arcadeLocked = arcadeIsLocked();
   private arcadeLanguage: 'en' | 'zh-TW' = 'zh-TW';
   private arcadeSession?: MothArcadeSession;
@@ -1916,7 +1922,6 @@ export class FestivalWorld {
    * frame and the hysteresis meant to steady the view was what shook it. They
    * now run the same policy over their own state. See CameraAvoidance.
    */
-  private readonly clubAvoidance: AvoidanceState = { side: 0, offset: 0 };
   private readonly wallAvoidance: AvoidanceState = { side: 0, offset: 0 };
   private punchPointerX = 0;
   private punchPointerY = 0;
@@ -2074,22 +2079,7 @@ export class FestivalWorld {
     if (!preview) this.createXrControllers();
     this.createEnvironment();
     this.keepSkyFlat();
-    // The world keeps adding rooms and fittings after this, so the pass runs
-    // again once they are in.
-    if (PLANET.on) {
-      subdivideSceneForPlanet(this.scene);
-      if (!preview) for (const delay of [1_500, 6_000]) window.setTimeout(() => {
-        if (!this.disposed) subdivideSceneForPlanet(this.scene);
-      }, delay);
-    }
-    // Once the planet subdivision (last at 6 s) and the worn-style passes
-    // (last 6 s after entry) have reshaped every mesh, the scenery that never
-    // moves is baked into a few large meshes. `?nobatch` skips it, to compare.
-    if (!preview && !new URLSearchParams(window.location.search).has('nobatch')) {
-      window.setTimeout(() => {
-        if (!this.disposed) this.staticBatchReport = batchStaticScenery(this.scene);
-      }, 9_000);
-    }
+    if (PLANET.on) subdivideSceneForPlanet(this.scene);
     // No delayed dressing or imported scenery runs in this scene, so static
     // meshes can be batched immediately instead of paying thousands of draws
     // on every frame while someone is typing into the entrance form.
@@ -2213,10 +2203,61 @@ export class FestivalWorld {
     this.renderer.setAnimationLoop(this.render);
   }
 
+  /** Complete fixed downloads and placement before wiring the interactive UI. */
+  async prepareAssets(onProgress?: (progress: number) => void): Promise<void> {
+    if (this.preview || this.disposed) return;
+    const assets = [this.venueSceneryAssets?.ready(), this.arcadeCabinet?.ready, this.bandLoad,
+      typeof document !== 'undefined' ? document.fonts?.ready : undefined].filter(Boolean);
+    let completed = 0;
+    await Promise.all(assets.map(async pending => { await pending; onProgress?.(++completed / assets.length); }));
+    if (this.disposed) return;
+    if (this.arcadeCabinet?.status === 'failed' || (this.rooftopBand && !this.rooftopBand.ready)) {
+      throw new Error('World models did not finish loading. Retry admission.');
+    }
+  }
+
+  /** Finish static geometry and GPU programs while the loading view still owns input. */
+  async prepareForPlay(onProgress?: (progress: number) => void): Promise<void> {
+    if (this.preview || this.disposed) return;
+    // Live visitors and streamed films remain runtime data; all fixed assets
+    // finish placement before subdivision, batching and GPU preparation.
+    await this.prepareAssets(progress => onProgress?.(progress * .55));
+    // Let zero-delay attachment work and the loading view paint first.
+    await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+    if (this.disposed) return;
+    const waiting = this.pendingRemoteVisitors.size;
+    for (let i = 0; i < waiting && this.pendingRemoteVisitors.size && !this.disposed; i++) {
+      this.flushRemoteVisitor();
+      await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+    }
+    if (this.disposed) return;
+    if (PLANET.on) subdivideSceneForPlanet(this.scene);
+    if (!new URLSearchParams(window.location.search).has('nobatch')) {
+      this.staticBatchReport = batchStaticScenery(this.scene);
+    }
+    this.cullDecorativeLights();
+    onProgress?.(.65);
+    await warmScenePrograms(this.renderer, this.scene, this.camera);
+    await uploadSceneTextures(this.renderer, this.scene, importedAvatarTextures());
+    onProgress?.(.95);
+    // The aperture meshes are hidden between draws, but their shared material
+    // must be prepared before the first video opens.
+    const aperture = this.projectors.values().next().value?.aperture as THREE.Mesh | undefined;
+    if (!this.disposed && aperture) {
+      const surface = new THREE.Group(); surface.add(aperture.clone(false));
+      await this.renderer.compileAsync(surface, this.camera, this.projectorApertureScene);
+    }
+    onProgress?.(1);
+  }
+
   /** The first real frame is ready, but the entrance camera still covers it. */
   setEntryHandoffPaused(paused: boolean): void {
     if (this.preview || this.disposed || this.xrActive) return;
-    if (!paused) this.clock.getDelta();
+    if (!paused) {
+      this.clock.getDelta(); this.projectorReviewFrameAt = 0;
+      this.entryFrameTimings = this.frameTimings?.snapshot();
+      this.frameTimings?.reset();
+    }
     this.renderer.setAnimationLoop(paused ? null : this.render);
   }
 
@@ -5277,18 +5318,22 @@ export class FestivalWorld {
     pendingSignRepaints: number;
     mobileGpuConservation: boolean;
     shadowLights: number;
+    lightTypes: { point: number; spot: number };
     lampPool: number;
     darkLampsLit: number;
     projectorActivation: ProjectorActivationReview | null;
     textureBudget: ReturnType<typeof mobileAssetBudgetSnapshot>;
-    crowd: { visitors: number; pending: number; timings: ReturnType<FrameTimings['snapshot']>; phases: Record<'residents' | 'visitors' | 'skins' | 'draw', number> };
+    crowd: { visitors: number; pending: number; timings: ReturnType<FrameTimings['snapshot']>; entryTimings?: ReturnType<FrameTimings['snapshot']>; phases: Record<'residents' | 'visitors' | 'skins' | 'draw', number> };
   } | undefined {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return undefined;
     let shadowLights = 0;
     let darkLampsLit = 0;
+    const lightTypes = { point: 0, spot: 0 };
     this.scene.traverseVisible((object) => {
       const light = object as THREE.Light & { isPointLight?: boolean; isSpotLight?: boolean };
       if (!light.isLight) return;
+      if (light.isPointLight) lightTypes.point++;
+      if (light.isSpotLight) lightTypes.spot++;
       if (light.castShadow) shadowLights += 1;
       if ((light.isPointLight || light.isSpotLight) && light.intensity < 1e-3) darkLampsLit += 1;
     });
@@ -5339,8 +5384,9 @@ export class FestivalWorld {
       projectorActivation: this.projectorActivationReview ? { ...this.projectorActivationReview } : null,
       textureBudget: mobileAssetBudgetSnapshot(),
       crowd: { visitors: this.remoteAvatars.size, pending: this.pendingRemoteVisitors.size,
-        timings: this.frameTimings.snapshot(), phases: { ...this.framePhases } },
+        timings: this.frameTimings.snapshot(), entryTimings: this.entryFrameTimings, phases: { ...this.framePhases } },
       shadowLights,
+      lightTypes,
       lampPool: this.lampPool.length,
       darkLampsLit,
     };
@@ -7309,6 +7355,25 @@ export class FestivalWorld {
    */
   private updateProjectorMounts(): void {
     const wanted = this.projectorVenue();
+    // Keep the single muted player through a short step outside a room. Crossing
+    // a door edge must not repeatedly rebuild a cross-origin media pipeline.
+    const mounted = this.mountedProjectorVenue ? this.projectors.get(this.mountedProjectorVenue) : undefined;
+    if (!wanted && mounted?.iframe && !(this.xrActive && !this.xrSimulated)) {
+      this.projectorLeaveAt ??= performance.now();
+      if (!mounted.parked) {
+        mounted.parked = true;
+        mounted.iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*');
+      }
+      if (performance.now() - this.projectorLeaveAt < 8_000) return;
+    } else {
+      this.projectorLeaveAt = undefined;
+      if (mounted?.parked && wanted === this.mountedProjectorVenue) {
+        mounted.parked = false;
+        const offset = mounted.pending?.offsetSeconds;
+        if (offset !== undefined && offset > 0) mounted.iframe?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [Math.floor(offset), true] }), '*');
+        if (!mounted.paused) mounted.iframe?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
+      }
+    }
     if (wanted === this.mountedProjectorVenue) return;
     this.mountedProjectorVenue = wanted;
     for (const venue of this.projectors.keys()) {
@@ -7352,6 +7417,7 @@ export class FestivalWorld {
       this.refreshXrPoster(venue, film.title);
     }
     if (venue !== this.projectorVenue()) {
+      if (venue === this.mountedProjectorVenue && this.projectorLeaveAt !== undefined && performance.now() - this.projectorLeaveAt < 8_000) return;
       this.releaseProjector(venue);
       return;
     }
@@ -7365,13 +7431,15 @@ export class FestivalWorld {
     this.stopImmersiveVideo(venue);
     const signature = `${film.id}|${reloadToken}`;
     if (projector.signature === signature) return;
+    this.releaseProjector(venue);
+    projector.parked = false;
     const measureActivation = ['127.0.0.1', 'localhost'].includes(window.location.hostname);
     const activationStartedAt = measureActivation ? performance.now() : 0;
     projector.filmId = film.id;
     projector.youtubeId = film.youtubeId;
     projector.signature = signature;
     const playerUrl = new URL(film.embedUrl.replace('youtube-nocookie.com', 'youtube.com'));
-    playerUrl.searchParams.set('autoplay', '1');
+    playerUrl.searchParams.set('autoplay', projector.paused ? '0' : '1');
     playerUrl.searchParams.set('mute', '1');
     playerUrl.searchParams.set('controls', '0');
     playerUrl.searchParams.set('playsinline', '1');
@@ -7394,6 +7462,7 @@ export class FestivalWorld {
         func: projector.muted ? 'mute' : 'unMute',
         args: [],
       }), '*');
+      if (projector.paused || projector.parked) iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*');
     });
     projector.element.replaceChildren(iframe);
     projector.iframe = iframe;
@@ -7476,6 +7545,7 @@ export class FestivalWorld {
   setPublicScreenPaused(venue: VenueKey, paused: boolean): void {
     const projector = this.projectors.get(venue);
     if (!projector) return;
+    if (projector.paused === paused) return;
     // Remembered, so that the nudges below never restart a venue STAFF have
     // deliberately stopped. Everything else may be woken; this may not.
     projector.paused = paused;
@@ -7485,7 +7555,7 @@ export class FestivalWorld {
     }
     projector.iframe?.contentWindow?.postMessage(JSON.stringify({
       event: 'command',
-      func: paused ? 'pauseVideo' : 'playVideo',
+      func: paused || projector.parked ? 'pauseVideo' : 'playVideo',
       args: [],
     }), '*');
   }
@@ -7501,7 +7571,7 @@ export class FestivalWorld {
    */
   private nudgeProjectorsToPlay(): void {
     for (const projector of this.projectors.values()) {
-      if (projector.paused) continue;
+      if (projector.paused || projector.parked) continue;
       if (projector.xrVideo) void projector.xrVideo.play().catch(() => {});
       projector.iframe?.contentWindow?.postMessage(JSON.stringify({
         event: 'command', func: 'playVideo', args: [],
@@ -8946,10 +9016,7 @@ export class FestivalWorld {
       const distance = (light as THREE.PointLight).distance || 30;
       return light.intensity * distance;
     };
-    lamps.sort((a, b) => reach(b) - reach(a));
-    lamps.forEach((light, index) => {
-      light.visible = index < FestivalWorld.LITE_LAMPS;
-    });
+    selectDecorativeLights(lamps, false, light => -reach(light));
     this.lastCullSeen = lamps.length;
     this.lastCullAt = Math.round(performance.now());
   }
@@ -8958,9 +9025,6 @@ export class FestivalWorld {
   private lastCullAt = 0;
   private decorativeLamps: THREE.Light[] = [];
   private lampBudgetAt = 0;
-
-  /** How many decorative lamps 一般 keeps lit at once, nearest first. */
-  private static readonly NORMAL_LAMPS = 10;
 
   /**
    * On 一般, only the decorative lamps nearest the visitor are lit.
@@ -8977,22 +9041,25 @@ export class FestivalWorld {
     if (now - this.lampBudgetAt < 600) return;
     this.lampBudgetAt = now;
     const at = this.player.position;
-    const ranked = this.decorativeLamps
-      .map((light) => {
+    selectDecorativeLights(this.decorativeLamps, true, (light) => {
         light.getWorldPosition(this.lampBudgetProbe);
         const reach = (light as THREE.PointLight).distance || 30;
-        return { light, score: this.lampBudgetProbe.distanceTo(at) - reach * .5 };
-      })
-      .sort((a, b) => a.score - b.score);
-    ranked.forEach(({ light }, index) => { light.visible = index < FestivalWorld.NORMAL_LAMPS; });
-    this.lastCullSeen = ranked.length;
+        return this.lampBudgetProbe.distanceTo(at) - reach * .5;
+      });
+    for (const light of this.decorativeLamps) {
+      const spot = light as THREE.SpotLight;
+      if (!spot.isSpotLight || !spot.castShadow || !spot.visible) continue;
+      spot.getWorldPosition(this.lampBudgetProbe);
+      // Preserve the shader's shadow slot, but do not redraw a distant
+      // basement shadow map while the visitor is standing at the ferry.
+      spot.shadow.autoUpdate = this.lampBudgetProbe.distanceTo(at) < spot.distance * 1.5;
+      if (!spot.shadow.autoUpdate) spot.shadow.needsUpdate = false;
+    }
+    this.lastCullSeen = this.decorativeLamps.length;
     this.lastCullAt = Math.round(now);
   }
 
   private readonly lampBudgetProbe = new THREE.Vector3();
-
-  /** How many placed lamps a light-setting device keeps. */
-  private static readonly LITE_LAMPS = 6;
 
   private playerMounts = 0;
   private playerReleases = 0;
@@ -12295,7 +12362,7 @@ export class FestivalWorld {
       // the CSS backface then disappears but the foreground mask keeps drawing,
       // turning the black rear panel into a clipped portal through the venue.
       const cameraOnViewingSide = (this.cameraWorldPosition.z - screen.position[2]) * screen.facing > 0.02;
-      const wantsVisible = Boolean(projector.iframe) && roomMatches && withinRange &&
+      const wantsVisible = Boolean(projector.iframe) && !projector.parked && roomMatches && withinRange &&
         cameraOnViewingSide &&
         screenIsInFront && screenTouchesViewport;
       const compositorScissor = wantsVisible ? this.projectorScissor(venue) : undefined;
@@ -12910,8 +12977,8 @@ export class FestivalWorld {
      * This read the rendered camera's own facing, and that facing is whatever
      * `lookAt` produced from wherever the lens had been moved to. So walking
      * closed a loop: a step moved the avatar, the lens was repositioned around
-     * it — pulled in by clearance, eased, or jumped when `confineCameraToClub`
-     * swapped the look target for one 2.2 units away on crossing the threshold
+     * it — pulled in by clearance, eased, or given a different look target
+     * on crossing a room threshold
      * — the facing turned, "forward" turned with it, and the next step went
      * somewhere slightly different. Near a doorway that is a circle you cannot
      * walk out of, which is exactly what leaving SLAP AND POP became.
@@ -14933,6 +15000,14 @@ export class FestivalWorld {
         this.player.position.y + (this.cameraMode === 'perspective' ? 1.65 : 1.4),
         this.player.position.z - Math.cos(orbit.yaw) * lead,
       );
+      if (lead > 0) {
+        // The follow aim leads the body. Keep that pivot on the body's side
+        // of a real wall before shortening the orbit around it, or an aim
+        // across the masonry could strand the camera outside the room.
+        const bodyAim = this.player.position.clone().setY(this.lookTarget.y);
+        const clearLead = this.cameraClearReach(bodyAim, this.lookTarget);
+        if (clearLead < lead) this.lookTarget.lerpVectors(bodyAim, this.lookTarget, clearLead / lead);
+      }
       const radius = (this.cameraMode === 'perspective' ? 11.68 : 10.56) * this.cameraZoom;
       const horizontalRadius = Math.cos(orbit.pitch) * radius;
       cameraTarget.copy(this.lookTarget).add(new THREE.Vector3(
@@ -14941,7 +15016,8 @@ export class FestivalWorld {
         Math.cos(orbit.yaw) * horizontalRadius,
       ));
     }
-    this.confineCameraToClub(cameraTarget, delta);
+    // Use the same orbit and physical wall avoidance as the temple. Room and
+    // ramp membership must not impose a shorter camera distance or a new aim.
     this.confineCameraOverWater(cameraTarget);
     this.pullCameraClearOfWalls(cameraTarget, delta);
     /**
@@ -14967,7 +15043,7 @@ export class FestivalWorld {
     // target is already clear. Check the rendered position as well as the
     // target, and snap inward only when the old position is obstructed.
     if (this.cameraMode !== 'screening' && this.playerState !== 'swimming') {
-      const eye = this.player.position.clone().add(new THREE.Vector3(0, AVATAR_EYE_OFFSET, 0));
+      const eye = this.cameraCollisionOrigin();
       const actualReach = eye.distanceTo(this.camera.position);
       const clearReach = this.cameraClearReach(eye, this.camera.position);
       if (clearReach < actualReach - 0.001) {
@@ -15175,6 +15251,11 @@ export class FestivalWorld {
     return reach;
   }
 
+  /** A shared orbit pivot prevents zoom and pitch jumps at building boundaries. */
+  private cameraCollisionOrigin(): THREE.Vector3 {
+    return this.lookTarget.clone();
+  }
+
   private pullCameraClearOfWalls(cameraTarget: THREE.Vector3, delta: number): void {
     if (this.playerState === 'swimming') return;
     // Not while seated at a screening. Everywhere else the look target is the
@@ -15186,29 +15267,16 @@ export class FestivalWorld {
     // down anywhere with a screen filled the whole frame with the film.
     //
     // The seated camera does not need this: it is placed at a known offset from
-    // a registered seat inside a room, and confineCameraToClub already holds it
-    // within the walls.
+    // a registered seat inside a room.
     if (this.cameraMode === 'screening') return;
-    const eye = this.player.position.clone().add(new THREE.Vector3(0, AVATAR_EYE_OFFSET, 0));
+    const eye = this.cameraCollisionOrigin();
     this.cameraProbe.subVectors(cameraTarget, eye);
     const reach = this.cameraProbe.length();
     if (reach < 0.001) return;
     this.cameraProbe.divideScalar(reach);
     let safe = this.cameraClearReach(eye, cameraTarget);
-    /**
-     * A straight retreat puts the lens on the avatar's face when a wall is just
-     * behind it, so the view leans aside while there is still room to.
-     *
-     * This used to write `cameraTarget` outright, which is a swing arriving in
-     * one frame, and it kept its committed side in the same field the club's
-     * confinement was using — so the two overwrote each other and the "keep the
-     * side you are on" rule became "change sides every frame". On the rooftop
-     * stairs that is a camera that rotates everywhere. It now eases its swing
-     * like the club's does, over its own state, through the same policy. On
-     * stairs and slopes it does not swing at all: `steerAllowed` is false there
-     * and the view simply closes in, which is steady even when the ground is
-     * not.
-     */
+    // The shared avoidance policy only shortens the orbit while automatic
+    // steering is disabled; yaw and pitch remain under player control.
     const rotated = new THREE.Vector3();
     const up = new THREE.Vector3(0, 1, 0);
     const reachAtOffset = (offset: number): number => {
@@ -15260,99 +15328,14 @@ export class FestivalWorld {
     this.lookTarget.y = waterline + 1.15;
   }
 
-  private confineCameraToClub(cameraTarget: THREE.Vector3, delta: number): void {
-    const { x, z } = this.player.position;
-    if (!this.inClub(x, z)) return;
-    const b = clubBounds;
-    const inset = 1.1;
-    let minX = b.roomMinX + inset;
-    let maxX = b.roomMaxX - inset;
-    let minZ = b.roomMinZ + inset;
-    let maxZ = b.roomMaxZ - inset;
-    let ceiling = CLUB_FLOOR_Y + CLUB_ROOM_HEIGHT - 1.4;
-    if (this.inClubLobby(x, z)) {
-      minX = b.lobbyMinX + inset;
-      maxX = b.lobbyMaxX - inset;
-      minZ = b.lobbyMinZ + inset;
-      maxZ = b.lobbyMaxZ - inset;
-      ceiling = 4.2;
-    } else if (this.onClubStairs(x, z)) {
-      minX = b.stairBottomX + 0.6;
-      maxX = b.stairTopX - 0.6;
-      minZ = b.stairMinZ + 0.6;
-      maxZ = b.stairMaxZ - 0.6;
-      ceiling = 4.2;
-    }
-
-    // A screening view is aimed at the screen on purpose; pulling its target
-    // back onto the attendee is what left the bar looking at the counter.
-    if (this.cameraMode === 'first-person' || this.cameraMode === 'screening') return;
-    const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
-    let dirX = Math.sin(orbit.yaw);
-    let dirZ = Math.cos(orbit.yaw);
-    const reach = (direction: number, low: number, high: number, from: number): number => {
-      if (Math.abs(direction) < 0.0001) return Number.POSITIVE_INFINITY;
-      return direction > 0 ? (high - from) / direction : (low - from) / direction;
-    };
-    const preferred = 7.4;
-    const roomReach = (dx: number, dz: number): number => Math.min(
-      preferred, reach(dx, minX, maxX, x), reach(dz, minZ, maxZ, z),
-    );
-    /**
-     * Swing the view round an obstruction — but commit to a side, and ease.
-     *
-     * Walking must not move the camera: only the drag turns the view. This
-     * exists so the lens does not end up in a wall, nothing more, and on
-     * stairs it does not run at all. The policy, the hysteresis and the easing
-     * all live in CameraAvoidance so this and `pullCameraClearOfWalls` cannot
-     * drift apart again — they used to share one field and spent every frame
-     * overruling each other.
-     */
-    const plan = stepAvoidance(this.clubAvoidance, {
-      reachAt: (offset) => (offset === 0
-        ? roomReach(dirX, dirZ)
-        : roomReach(Math.sin(orbit.yaw + offset), Math.cos(orbit.yaw + offset))),
-      preferred,
-      steerAllowed: this.cameraSteeringAllowed(),
-      delta,
-    });
-    this.clubAvoidance.side = plan.side;
-    this.clubAvoidance.offset = plan.offset;
-    let available = plan.available;
-    if (Math.abs(plan.offset) > 0.001) {
-      const yaw = orbit.yaw + plan.offset;
-      dirX = Math.sin(yaw);
-      dirZ = Math.cos(yaw);
-    }
-    /**
-     * The room's own limit outranks the comfortable minimum.
-     *
-     * `Math.max(1.6, available)` was safe while the view could swing: if the
-     * orbit it was asked for had less than 1.6 of room, it went and found a
-     * direction that had more. With the swing gone that floor can push the
-     * camera straight through the room's wall and show the void behind it, so
-     * the cap wins and the view is allowed to come very close instead. The
-     * avatar is faded out before the lens reaches their head.
-     */
-    const radius = Math.max(0.35, Math.min(available, preferred));
-    const squeeze = (preferred - radius) / preferred;
-    const floorY = this.groundHeightAt(x, z);
-
-    this.lookTarget.set(x, floorY + 1.3, z);
-    cameraTarget.set(
-      x + dirX * radius,
-      Math.min(floorY + 2.3 + squeeze * 2.6 + Math.sin(orbit.pitch) * 1.3, ceiling),
-      z + dirZ * radius,
-    );
-    cameraTarget.y = Math.max(cameraTarget.y, floorY + 0.85);
-  }
-
   /** Register lights arriving after the initial projector-layer traversal. */
   private registerBandLight(light: THREE.PointLight): void {
     // Band assets arrive after the constructor's light-layer traversal. Its
     // bonfire must light the ordinary scene and video-avatar redraw equally;
     // differing light counts also create a fresh shader on the first screen.
     light.layers.enable(2);
+    // Enter the existing point-light quota, never temporarily add a shader slot.
+    light.visible = false;
     this.dayNight.addLampLight(light, 16);
   }
 
@@ -15371,7 +15354,8 @@ export class FestivalWorld {
     const band = new RooftopBand(stage, fire, light => this.registerBandLight(light));
     this.scene.add(band.group);
     this.rooftopBand = band;
-    void band.load().catch(error => console.warn('The rooftop band did not load', error));
+    this.bandLoad = band.load();
+    void this.bandLoad.catch(error => console.warn('The rooftop band did not load', error));
     const roof = { minY: ROOF_Y - 1, maxY: ROOF_Y + 3.5 };
     const m = BAND_SCALE;
     // Stage-frame metres to the world: the stage is turned to face -z.

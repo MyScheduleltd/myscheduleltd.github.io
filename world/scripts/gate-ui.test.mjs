@@ -11,14 +11,15 @@ import ts from 'typescript';
 const source = await readFile('src/ui/App.ts', 'utf8');
 const tree = ts.createSourceFile('App.ts', source, ts.ScriptTarget.Latest, true);
 const appClass = tree.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'App');
-const methods = ['mountGatePreview', 'disposeGatePreview', 'beginGateEntry', 'setGateEntryProgress',
+const methods = ['mountGatePreview', 'disposeGatePreview', 'beginGateEntry', 'showEntryTip', 'setGateEntryProgress',
   'retainGateEntry', 'prepareGateEntry', 'waitForGateExit', 'completeGateEntry', 'cancelGateEntry', 'enterWhenThereIsRoom'].map(name => {
   const method = appClass.members.find(node => node.name?.getText(tree) === name);
   assert.ok(method, name);
   return method.getText(tree);
 }).join('\n').replace("import('../world/GatePreview')", 'loadPreview()');
 const deadline = (await readFile('src/network/RequestDeadline.ts', 'utf8')).replace('export async function', 'async function');
-const script = ts.transpileModule(`${deadline}\nclass GateLifecycle {
+const tipsSource = (await readFile('src/ui/EntryTips.ts', 'utf8')).replace('export function', 'function');
+const script = ts.transpileModule(`${tipsSource}\n${deadline}\nclass GateLifecycle {
   gatePreviewGeneration = 0;
   gatePreviewFailed = false;
   gateEntryProgress = 0;
@@ -38,7 +39,7 @@ function fixture({ manualFrames = false } = {}) {
   const instances = [];
   const nodes = { host: {}, avatar: {}, status: { hidden: false, textContent: '' } };
   let module = deferred(), imports = 0, clock = 0, nextHandle = 0;
-  const timers = new Map(), frames = new Map();
+  const timers = new Map(), frames = new Map(), intervals = new Map();
   const later = (callback, milliseconds) => { const id = ++nextHandle; timers.set(id, { callback, at: clock + milliseconds }); return id; };
   const stepFrame = () => { const batch = [...frames.values()]; frames.clear(); for (const callback of batch) callback(clock); };
   const requestFrame = callback => {
@@ -60,6 +61,9 @@ function fixture({ manualFrames = false } = {}) {
   }
   const document = new EventTarget(); document.hidden = false;
   const window = new EventTarget(); window.innerWidth = 1280; window.setTimeout = later; window.clearTimeout = id => timers.delete(id);
+  window.matchMedia = () => ({matches:false});
+  window.setInterval = (callback, milliseconds) => { const id=++nextHandle; intervals.set(id,{callback,milliseconds,at:clock+milliseconds}); return id; };
+  window.clearInterval = id => intervals.delete(id);
   const context = { loadPreview: () => { imports++; return module.promise; }, document, window, AbortController,
     setTimeout: later, clearTimeout: id => timers.delete(id),
     cancelAnimationFrame: id => frames.delete(id), requestAnimationFrame: requestFrame };
@@ -70,9 +74,9 @@ function fixture({ manualFrames = false } = {}) {
     return selector === '[data-gate-backdrop]' ? nodes.host
       : selector === '[data-gate-avatar]' ? nodes.avatar : nodes.status;
   } };
-  return { app, nodes, instances, context, stepFrame, pendingTimers: timers,
+  return { app, nodes, instances, context, stepFrame, pendingTimers: timers, intervals,
     imports: () => imports,
-    advance(milliseconds) { clock += milliseconds; for (const [id, timer] of [...timers]) if (timer.at <= clock) { timers.delete(id); timer.callback(); } },
+    advance(milliseconds) { clock += milliseconds; for(const timer of intervals.values()) if(timer.at<=clock){timer.at=clock+timer.milliseconds;timer.callback();} for (const [id, timer] of [...timers]) if (timer.at <= clock) { timers.delete(id); timer.callback(); } },
     pendingModule: () => module, replaceModule: () => { module = deferred(); },
     resolve: (which = module) => which.resolve({ GatePreview: Preview }), reject: error => module.reject(error) };
 }
@@ -175,13 +179,13 @@ function transitionFixture({ preview: hasPreview = true, manualFrames = false } 
   const f = fixture({ manualFrames });
   const classes = new Set(['gate--live']);
   const layout = { inert: false, setAttribute() { this.inert = true; }, removeAttribute() { this.inert = false; } };
-  const label = { textContent: '' };
+  const label = { textContent: '' }, tip = {textContent:''};
   const track = { value: 0, style: { setProperty() {} }, setAttribute(_name, value) { this.value = Number(value); } };
   const indicator = { hidden: true, querySelector: name => name === '[data-gate-entry-label]' ? label : track };
   const card = { getBoundingClientRect: () => ({ left: 60, right: 510, width: 450 }) };
   const avatar = { getBoundingClientRect: () => ({ left: 650, right: 1220, width: 570 }) };
   const gate = { style: { setProperty() {} }, classList: { add: n => classes.add(n), remove: n => classes.delete(n) },
-    querySelector: name => name === '.gate__layout' ? layout : name === '.gate-card' ? card : name === '.gate-avatar' ? avatar : indicator,
+    querySelector: name => name === '[data-gate-entry-tip]' ? tip : name === '.gate__layout' ? layout : name === '.gate-card' ? card : name === '.gate-avatar' ? avatar : indicator,
     querySelectorAll: () => [],
     remove() { this.removed = true; } };
   let ownedByRoot = true;
@@ -197,7 +201,7 @@ function transitionFixture({ preview: hasPreview = true, manualFrames = false } 
     cancelEntry: () => calls.push('cancel'), awaitEntryComplete: () => completion,
     dispose: () => calls.push('dispose') };
   if (hasPreview) f.app.gatePreview = preview;
-  return { ...f, gate, layout, indicator, track, classes, calls, finish, ownedByRoot: () => ownedByRoot };
+  return { ...f, gate, layout, indicator, track, tip, classes, calls, finish, ownedByRoot: () => ownedByRoot };
 }
 
 test('entry progress stays at completed work while a download stalls or restarts', () => {
@@ -395,4 +399,16 @@ test('queueing and refusal retain the editable gate; only successful admission b
       assert.ok(buttons.every(button => !button.disabled)); assert.equal(notice.textContent, place.error);
     } else { assert.equal(entries, 1); assert.equal(f.app.waitingForPlace, false); }
   }
+});
+
+
+test('admission rotates one device-specific tip, retains it through handoff, and cancels timers on retry or entry', async()=>{
+  const f=transitionFixture();f.context.window.matchMedia=()=>({matches:true});f.app.language='zh-TW';
+  f.app.beginGateEntry();const first=f.tip.textContent;
+  assert.ok(first.includes('搖桿'));assert.equal(f.intervals.size,1);
+  f.advance(5000);assert.notEqual(f.tip.textContent,first);
+  f.app.retainGateEntry();f.advance(5000);assert.ok(f.tip.textContent.includes('酒吧'));
+  f.app.cancelGateEntry();assert.equal(f.intervals.size,0);
+  f.app.beginGateEntry();assert.equal(f.tip.textContent,first);assert.equal(f.intervals.size,1);
+  const done=f.app.completeGateEntry();await settle();f.finish();await done;assert.equal(f.intervals.size,0);
 });
