@@ -106,6 +106,8 @@ export interface StaticBatchReport {
   batches: number;
   /** Pieces moved onto an identical twin of their material. */
   sharedMaterials: number;
+  releasedGeometries: number;
+  releasedMaterials: number;
 }
 
 export function batchStaticScenery(scene: THREE.Scene, excluded: Set<THREE.Object3D> = new Set()): StaticBatchReport {
@@ -126,6 +128,8 @@ export function batchStaticScenery(scene: THREE.Scene, excluded: Set<THREE.Objec
     });
   }
 
+  const replacedGeometries = new Set(candidates.map(mesh => mesh.geometry));
+  const replacedMaterials = new Set(candidates.map(mesh => mesh.material as THREE.Material));
   // Identical materials first, so that pieces which only differ in which copy
   // of the same material they were given end up in one batch.
   const twins = new Map<string, THREE.Material>();
@@ -184,5 +188,20 @@ export function batchStaticScenery(scene: THREE.Scene, excluded: Set<THREE.Objec
     batchedPieces += members.length;
     batches += 1;
   }
-  return { examined, batchedPieces, batches, sharedMaterials };
+  // These pieces have already drawn before the delayed batching pass. Merely
+  // detaching them leaves their GPU buffers and programs allocated alongside
+  // the merged copies. Keep anything still used anywhere in the scene,
+  // including hidden/dynamic objects and shared primitive geometry. dispose()
+  // releases GPU allocations; the CPU data stays reusable by geometry caches.
+  scene.traverse(object => {
+    const mesh = object as THREE.Mesh;
+    if (mesh.geometry) replacedGeometries.delete(mesh.geometry);
+    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      if (material) replacedMaterials.delete(material);
+    }
+  });
+  for (const geometry of replacedGeometries) geometry.dispose();
+  for (const material of replacedMaterials) material.dispose();
+  return { examined, batchedPieces, batches, sharedMaterials,
+    releasedGeometries: replacedGeometries.size, releasedMaterials: replacedMaterials.size };
 }

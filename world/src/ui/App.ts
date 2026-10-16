@@ -1406,10 +1406,10 @@ export class App {
     // tab away while it is locked, the restored tab knows it was already in
     // and walks back rather than presenting a sign-in page.
     sessionStorage.setItem(INSIDE_KEY, '1');
-    // Settled: the world has been up long enough that whatever brought this
-    // page down is not going to. Until this fires, an automatic re-entry counts
-    // as a failed one.
-    window.setTimeout(() => sessionStorage.removeItem(REJOIN_TRIES_KEY), 8_000);
+    // Delayed scenery and model uploads continue well past the first frame.
+    // Clearing after eight seconds allowed a phone failing at 49 seconds to
+    // auto-rejoin forever. Keep the guard through two minutes of gameplay.
+    window.setTimeout(() => sessionStorage.removeItem(REJOIN_TRIES_KEY), 120_000);
     this.startBlackBox();
     const zh = this.language === 'zh-TW';
     const vrPreview = this.usesVrSimulation();

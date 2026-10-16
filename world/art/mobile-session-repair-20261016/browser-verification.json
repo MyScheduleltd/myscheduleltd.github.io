@@ -1,0 +1,363 @@
+{
+  "layout": [
+    {
+      "controls": {
+        ".audio-resume": {
+          "bottom": 457,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 381,
+          "width": 92,
+          "x": 289,
+          "y": 413
+        },
+        ".pass-toggle": {
+          "bottom": 686,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 376,
+          "width": 92,
+          "x": 284,
+          "y": 642
+        },
+        ".touch-ring__hit": {
+          "bottom": 611,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 58,
+          "hidden": false,
+          "overflow": false,
+          "right": 365,
+          "width": 58,
+          "x": 307,
+          "y": 553
+        },
+        ".touch-ring__key--a": {
+          "bottom": 511,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 381,
+          "width": 44,
+          "x": 337,
+          "y": 467
+        },
+        ".touch-ring__key--b": {
+          "bottom": 511,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 333,
+          "width": 44,
+          "x": 289,
+          "y": 467
+        },
+        ".touch-ring__key--c": {
+          "bottom": 535,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 285,
+          "width": 44,
+          "x": 241,
+          "y": 491
+        },
+        ".touch-ring__key--d": {
+          "bottom": 582,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 254,
+          "width": 44,
+          "x": 210,
+          "y": 538
+        },
+        ".touch-ring__key--e": {
+          "bottom": 630,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 254,
+          "width": 44,
+          "x": 210,
+          "y": 586
+        }
+      },
+      "viewport": {
+        "height": 700,
+        "width": 390
+      }
+    },
+    {
+      "controls": {
+        ".audio-resume": {
+          "bottom": 325,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 311,
+          "width": 92,
+          "x": 219,
+          "y": 281
+        },
+        ".pass-toggle": {
+          "bottom": 554,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 306,
+          "width": 92,
+          "x": 214,
+          "y": 510
+        },
+        ".touch-ring__hit": {
+          "bottom": 479,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 58,
+          "hidden": false,
+          "overflow": false,
+          "right": 295,
+          "width": 58,
+          "x": 237,
+          "y": 421
+        },
+        ".touch-ring__key--a": {
+          "bottom": 379,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 311,
+          "width": 44,
+          "x": 267,
+          "y": 335
+        },
+        ".touch-ring__key--b": {
+          "bottom": 379,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 263,
+          "width": 44,
+          "x": 219,
+          "y": 335
+        },
+        ".touch-ring__key--c": {
+          "bottom": 403,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 215,
+          "width": 44,
+          "x": 171,
+          "y": 359
+        },
+        ".touch-ring__key--d": {
+          "bottom": 450,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 184,
+          "width": 44,
+          "x": 140,
+          "y": 406
+        },
+        ".touch-ring__key--e": {
+          "bottom": 498,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 184,
+          "width": 44,
+          "x": 140,
+          "y": 454
+        }
+      },
+      "viewport": {
+        "height": 568,
+        "width": 320
+      }
+    },
+    {
+      "controls": {
+        ".audio-resume": {
+          "bottom": 162,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 734,
+          "width": 92,
+          "x": 642,
+          "y": 118
+        },
+        ".pass-toggle": {
+          "bottom": 350,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 34,
+          "hidden": false,
+          "overflow": false,
+          "right": 730,
+          "width": 78,
+          "x": 652,
+          "y": 316
+        },
+        ".touch-ring__hit": {
+          "bottom": 308,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 50,
+          "hidden": false,
+          "overflow": false,
+          "right": 705,
+          "width": 50,
+          "x": 655,
+          "y": 258
+        },
+        ".touch-ring__key--a": {
+          "bottom": 216,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 734,
+          "width": 44,
+          "x": 690,
+          "y": 172
+        },
+        ".touch-ring__key--b": {
+          "bottom": 216,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 686,
+          "width": 44,
+          "x": 642,
+          "y": 172
+        },
+        ".touch-ring__key--c": {
+          "bottom": 238,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 638,
+          "width": 44,
+          "x": 594,
+          "y": 194
+        },
+        ".touch-ring__key--d": {
+          "bottom": 260,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 590,
+          "width": 44,
+          "x": 546,
+          "y": 216
+        },
+        ".touch-ring__key--e": {
+          "bottom": 310,
+          "fontFamily": "\"Barlow Condensed\", Impact, sans-serif",
+          "fontWeight": "800",
+          "height": 44,
+          "hidden": false,
+          "overflow": false,
+          "right": 588,
+          "width": 44,
+          "x": 544,
+          "y": 266
+        }
+      },
+      "viewport": {
+        "height": 360,
+        "width": 740
+      }
+    }
+  ],
+  "performance": {
+    "colliders": 285,
+    "contexts": 1,
+    "darkLampsLit": 1,
+    "drawCalls": 416,
+    "foregroundDrawCalls": 0,
+    "geometries": 516,
+    "heapMb": 143,
+    "lampPool": 6,
+    "lampsLit": 17,
+    "lampsTotal": 33,
+    "lastCullSeen": 26,
+    "lights": 36,
+    "livePlayers": 0,
+    "mobileGpuConservation": false,
+    "mode": "normal",
+    "npcs": 12,
+    "pendingSignRepaints": 20,
+    "programs": 134,
+    "projectorActivation": null,
+    "sceneObjects": 3053,
+    "shadowCasters": 925,
+    "shadowLights": 2,
+    "sinceCullMs": 363,
+    "staticBatch": {
+      "batchedPieces": 1945,
+      "batches": 108,
+      "examined": 2143,
+      "releasedGeometries": 839,
+      "releasedMaterials": 299,
+      "sharedMaterials": 932
+    },
+    "textures": 174,
+    "triangles": 829097
+  },
+  "consoleErrors": [],
+  "checkedAt": "2026-10-16T10:26:19.930279+00:00",
+  "fullTests": {
+    "pass": 547,
+    "fail": 0
+  },
+  "strictBuild": "passed",
+  "layoutAssertions": "all passed; minimum Run/Jump gap 10px",
+  "actualReloadRejoin": "online under original name; disposable backend reports one visitor",
+  "enableSoundClick": "prompt dismissed; world stayed online",
+  "physicalIPhoneTested": false,
+  "publication": "local only"
+}

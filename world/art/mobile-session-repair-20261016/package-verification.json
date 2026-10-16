@@ -1,0 +1,577 @@
+{
+  "status": "prepared; protected-main review pending",
+  "verifiedAt": "2026-10-16T10:30:05.361893+00:00",
+  "base": "7a497cd2004729e53ad2292fbed29b8180114466",
+  "channels": [
+    {
+      "channel": "beta",
+      "files": [
+        {
+          "file": "assets/App-AfEy_j2q.js",
+          "sha256": "b61da250fdad614387ea1485d2c06bd9314966f403b432681b1e5650817258ae",
+          "bytes": 334306
+        },
+        {
+          "file": "assets/ArcadeRules-CkMQ5bT7.js",
+          "sha256": "2434765bd5ec44c27683256d859f53866d1a4b47a15746f54803d04c76df11fd",
+          "bytes": 12267
+        },
+        {
+          "file": "assets/AssetMirror-6UT4UIag.js",
+          "sha256": "32168a7f4a2f9f85c203100e8f571608d1b81ca980629573f99cfb9656ce3d43",
+          "bytes": 2374
+        },
+        {
+          "file": "assets/CoastalCirculation-eNc7TNFp.js",
+          "sha256": "ee2e75df57d95940f1345c21d1e4f3b94ed2a114bad0ebf93565bdf39f122d1e",
+          "bytes": 2926
+        },
+        {
+          "file": "assets/CoastalSkateboard-D5pRLQVa.js",
+          "sha256": "92b2cfc610f4734609c45f8e1ebc9aea1cad26d2c22aebb6a3a87ded3bd586f7",
+          "bytes": 31381
+        },
+        {
+          "file": "assets/CoastalTerrain-CZPBWacc.js",
+          "sha256": "247ca3f391c7c98cd4eb201edb1bcf17bdbfc94391262d08eece59b76fc2e113",
+          "bytes": 9279
+        },
+        {
+          "file": "assets/FestivalWorld-BuxDc5rp.js",
+          "sha256": "94d02b66b34a1087b7159b2bd95e77b3bfb542d52fe64d05f08188b0411cce9e",
+          "bytes": 437126
+        },
+        {
+          "file": "assets/GatePreview-D6IGOzhx.js",
+          "sha256": "518e113c77b9b7e8d2dc42a35f43a05ce6cd2792199598802afbd640084952f4",
+          "bytes": 9415
+        },
+        {
+          "file": "assets/ImportedAvatar-BeJAMzXg.js",
+          "sha256": "91fb39b5efd44c355690e9bcccffb76dd589792a3320b8a524991c0833e4561a",
+          "bytes": 255444
+        },
+        {
+          "file": "assets/NativeAvatarPalette-BUFHG0nX.js",
+          "sha256": "a230e6f7b9648e07fd44e9bb83fdbf168d0911121eec19c2572eec737da37d74",
+          "bytes": 1630
+        },
+        {
+          "file": "assets/PlanetCurve-wgzUJgPN.js",
+          "sha256": "14a63decb19cd1b13e91137aeef5472f449ed66243f58d71d4d9be5ef27d5f53",
+          "bytes": 5141
+        },
+        {
+          "file": "assets/RooftopBand-DIPNYn63.js",
+          "sha256": "52f679a8085d179c40f7c2359ea49534ebb234d218e681ab7c85a1c2e6f930f5",
+          "bytes": 8665
+        },
+        {
+          "file": "assets/WorldTopology-BBxheR-H.js",
+          "sha256": "a369163100efcefa17b7b3c148d060ddc717fd9244bc3bbda1f59ef592161f6a",
+          "bytes": 1088
+        },
+        {
+          "file": "assets/asset-integrity.json",
+          "sha256": "3c92707ed2d09a176182a12eda5590e5fa282b7c87db0882cd460d8078b2060b",
+          "bytes": 1585
+        },
+        {
+          "file": "assets/attendant-DA2DY7mw.glb",
+          "sha256": "2248d11158447b6bd21866329c2ae157a760fe604a6acced046d1918032b9e1d",
+          "bytes": 8647100
+        },
+        {
+          "file": "assets/avatar-C9IAR68P.js",
+          "sha256": "97a0485e1c72e93984bc4e6fb5d52e7eb34dbace56bc7049caf3b685ace69b03",
+          "bytes": 15148
+        },
+        {
+          "file": "assets/band-DnudJzVZ.js",
+          "sha256": "8157a8fa05854de0e9f37bd984ef7d33ed2e6d8ed73c4fe098c4dedf46de0b48",
+          "bytes": 4847
+        },
+        {
+          "file": "assets/bass-player-sXfXW-L8.glb",
+          "sha256": "30465dfd12eab622b67dfc97c555168895511963061fcc8f30fa5deb7a854b78",
+          "bytes": 2433252
+        },
+        {
+          "file": "assets/bonfire-CGzqt4wQ.glb",
+          "sha256": "bdc6fbeb73879a9decca52e4a29aaf7f105bef5c1c2f4910652c188c9583735c",
+          "bytes": 209732
+        },
+        {
+          "file": "assets/box-office-CJ0mhUTc.glb",
+          "sha256": "c1066210b415ab7ae1296096ee566ebeca551eb810af8b3cf70619c6affc04d8",
+          "bytes": 4293768
+        },
+        {
+          "file": "assets/coastalMap-DzHHBrqO.js",
+          "sha256": "778769ce90f09292308213360c9758c3f3ea3a1bb161a3ff2469f36b8edeec33",
+          "bytes": 4745
+        },
+        {
+          "file": "assets/company-logo-BSEe3C7m.png",
+          "sha256": "4aa632a578ad51aa2f2b3016b72e0b21bdd8fe6a57c909e68eace3a794e0c88c",
+          "bytes": 24052
+        },
+        {
+          "file": "assets/drummer-UXXp3zjH.glb",
+          "sha256": "e08e903f762ee24cc746072a715b53ceb044cca707491ad33ea44dd7e1e91740",
+          "bytes": 1227560
+        },
+        {
+          "file": "assets/female-BUDxbVEw.glb",
+          "sha256": "20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3",
+          "bytes": 1331836
+        },
+        {
+          "file": "assets/female-dye-BYYSLeCK.png",
+          "sha256": "d612c1e72adfd68aeed1f0893c2c966b278bb5be99ccc51508278914d2e78314",
+          "bytes": 518815
+        },
+        {
+          "file": "assets/female-vest-DGupcca5.jpg",
+          "sha256": "34c76f78e5c38f89479bb2fb951bfd45e62e1d14680451b5f54b08443205003b",
+          "bytes": 702404
+        },
+        {
+          "file": "assets/guitarist-B1qSs6mg.glb",
+          "sha256": "af22ce2d0788c9f50c9c545b302145905466852e518aef41804a3966f7bdec4d",
+          "bytes": 2508856
+        },
+        {
+          "file": "assets/main-dYE3Si4K.js",
+          "sha256": "c77ff8426932e09d94f72c9590238e8b84870b4443ac341d5c3e1211ba13617d",
+          "bytes": 2880
+        },
+        {
+          "file": "assets/male-body-dye-D99IrAsA.png",
+          "sha256": "623ef27ba59a5963387897e4c3a0fff9e2f17e817d10bc05577544fe6ed2d224",
+          "bytes": 283439
+        },
+        {
+          "file": "assets/male-d_Cv4L7K.glb",
+          "sha256": "f00c08d4a11395680372becad22a85d057179a090e90f132c4eeb4ed5ef1ef48",
+          "bytes": 14607748
+        },
+        {
+          "file": "assets/male-dye-B3RvcOh0.png",
+          "sha256": "c329580bb359b013ff54c6b7a73bce380078dc5a4beaa068cc112ce58baf150a",
+          "bytes": 483372
+        },
+        {
+          "file": "assets/male-vest-Ddaouj1Z.jpg",
+          "sha256": "07ea10e5e9c17977277b9b0a12b3e38ad8183758dd959e844483ad5562516afe",
+          "bytes": 742618
+        },
+        {
+          "file": "assets/master-of-the-house-Ska7t2WR.png",
+          "sha256": "9f8455d4be48608e7ee61f501f0a12dfa73efe6349067c812cfaa17b04ec7cef",
+          "bytes": 132675
+        },
+        {
+          "file": "assets/meshopt_decoder.module-BSFtUVyv.js",
+          "sha256": "469ceaebc0b33a46de67045ae66d8762b1e5d90214814a6d8c28ef196a59b9ed",
+          "bytes": 70667
+        },
+        {
+          "file": "assets/modulepreload-polyfill-B5Qt9EMX.js",
+          "sha256": "d2a32840421496e872ade591618d2fa5c33797605d1aec04301717e5a90757d0",
+          "bytes": 711
+        },
+        {
+          "file": "assets/moth-arcade-CatgpBDX.glb",
+          "sha256": "465d019d8739c8449b6c1f83f69b8eaa2e49f1cbe881e160986e1970d7c11adf",
+          "bytes": 1696612
+        },
+        {
+          "file": "assets/stage-BdQPws-A.glb",
+          "sha256": "d1f0a92beba7a3b75dc134cf0459985139df534e064e0e047cffae49b0db5c79",
+          "bytes": 982120
+        },
+        {
+          "file": "assets/style-BSdf2O1l.css",
+          "sha256": "966cee4c0df2597784e5571f2c6b93d16d568d765779d5eeb6b846cfb5f61bfa",
+          "bytes": 109061
+        },
+        {
+          "file": "assets/temple-statue-BXy3Qxcb.glb",
+          "sha256": "98dbecdda28f0fe470089aeba259f3137580c48b25f559b5bd20f59e2900761b",
+          "bytes": 2096404
+        },
+        {
+          "file": "assets/three-BPA3EDf9.js",
+          "sha256": "6c62cb74471da8781e24e545fa5e9d52dd2294780a0fc466dad036c43a8f5c51",
+          "bytes": 584277
+        },
+        {
+          "file": "assets/valet-CJg5oReV.glb",
+          "sha256": "2cbf7670e6d82fb49c929abd936766c59dca11ebce55f7b892269c67969fb3b8",
+          "bytes": 4540012
+        },
+        {
+          "file": "assets/vocal-zFdg7T3j.glb",
+          "sha256": "f7c6176fb68379af179b2b8dc47426c9d748af4dd930b30817b1217cbd087d24",
+          "bytes": 1235612
+        },
+        {
+          "file": "assets/webcam-BthXXVXc.js",
+          "sha256": "1627b452cdb464276fe503ac348157e302de3e0657b1077a7bbe7cb9e5b919de",
+          "bytes": 5796
+        },
+        {
+          "file": "avatar-review.html",
+          "sha256": "99e6c4320c666d9ee1b03b86c73ee910d9c90acb110d500a81f812c678212497",
+          "bytes": 1336
+        },
+        {
+          "file": "band-review.html",
+          "sha256": "e8195727ada30d67e2d3668f8c58e32e87cf023b63c2b6de9566f508dc41e245",
+          "bytes": 831
+        },
+        {
+          "file": "floor-plan.svg",
+          "sha256": "a2cf9613f0bbf9feb47f9925b614a0cb7fc210554871c2de4202ae599392dd17",
+          "bytes": 17062
+        },
+        {
+          "file": "font/BebasNeue-Regular.ttf",
+          "sha256": "f2d8f000fd44a71714be0321ae12d3d6bc8bb0ea290b0c1312516f4448cec117",
+          "bytes": 60576
+        },
+        {
+          "file": "font/HanWangMing-subset.woff2",
+          "sha256": "3b96075c8e8e815fd92f325566ecb2d0e727caa7ef306488e97ede06033b4520",
+          "bytes": 143856
+        },
+        {
+          "file": "index.html",
+          "sha256": "08863e031c5af07ae490667cd0fda0d5016125ee7f83a37eb3f672e55e07791f",
+          "bytes": 2682
+        },
+        {
+          "file": "location-review.html",
+          "sha256": "af8f0586993b539e5b5130ede59a8222faa9a2453afe0f17774fd654925b4f5a",
+          "bytes": 1515
+        },
+        {
+          "file": "manifest.webmanifest",
+          "sha256": "9ef2a7f92b13a42352bee13fab12d28ef533ccb28c1dfbbb2be3bb6aadd86706",
+          "bytes": 278
+        },
+        {
+          "file": "rebuild-review.html",
+          "sha256": "69db39db8541cf534055a5cc6ec422c46b4dde338bf741a619442b4795827985",
+          "bytes": 3106
+        },
+        {
+          "file": "review/mediapipe/pointing_up.jpg",
+          "sha256": "ecf8ca2611d08fa25948a4fc10710af9120e88243a54da6356bacea17ff3e36e",
+          "bytes": 74461
+        },
+        {
+          "file": "review/mediapipe/thumb_up.jpg",
+          "sha256": "5d673c081ab13b8a1812269ff57047066f9c33c07db5f4178089e8cb3fdc0291",
+          "bytes": 80388
+        },
+        {
+          "file": "webcam-review.html",
+          "sha256": "bf03747ad4c13b7881e8d9de88bc87eff311cbdd584f8673b9b77a6d7542a848",
+          "bytes": 3489
+        }
+      ],
+      "assetIntegrityHashes": 20
+    },
+    {
+      "channel": "ps2",
+      "files": [
+        {
+          "file": "assets/App-AfEy_j2q.js",
+          "sha256": "b61da250fdad614387ea1485d2c06bd9314966f403b432681b1e5650817258ae",
+          "bytes": 334306
+        },
+        {
+          "file": "assets/ArcadeRules-CkMQ5bT7.js",
+          "sha256": "2434765bd5ec44c27683256d859f53866d1a4b47a15746f54803d04c76df11fd",
+          "bytes": 12267
+        },
+        {
+          "file": "assets/AssetMirror-6UT4UIag.js",
+          "sha256": "32168a7f4a2f9f85c203100e8f571608d1b81ca980629573f99cfb9656ce3d43",
+          "bytes": 2374
+        },
+        {
+          "file": "assets/CoastalCirculation-eNc7TNFp.js",
+          "sha256": "ee2e75df57d95940f1345c21d1e4f3b94ed2a114bad0ebf93565bdf39f122d1e",
+          "bytes": 2926
+        },
+        {
+          "file": "assets/CoastalSkateboard-D5pRLQVa.js",
+          "sha256": "92b2cfc610f4734609c45f8e1ebc9aea1cad26d2c22aebb6a3a87ded3bd586f7",
+          "bytes": 31381
+        },
+        {
+          "file": "assets/CoastalTerrain-CZPBWacc.js",
+          "sha256": "247ca3f391c7c98cd4eb201edb1bcf17bdbfc94391262d08eece59b76fc2e113",
+          "bytes": 9279
+        },
+        {
+          "file": "assets/FestivalWorld-BuxDc5rp.js",
+          "sha256": "94d02b66b34a1087b7159b2bd95e77b3bfb542d52fe64d05f08188b0411cce9e",
+          "bytes": 437126
+        },
+        {
+          "file": "assets/GatePreview-D6IGOzhx.js",
+          "sha256": "518e113c77b9b7e8d2dc42a35f43a05ce6cd2792199598802afbd640084952f4",
+          "bytes": 9415
+        },
+        {
+          "file": "assets/ImportedAvatar-BeJAMzXg.js",
+          "sha256": "91fb39b5efd44c355690e9bcccffb76dd589792a3320b8a524991c0833e4561a",
+          "bytes": 255444
+        },
+        {
+          "file": "assets/NativeAvatarPalette-BUFHG0nX.js",
+          "sha256": "a230e6f7b9648e07fd44e9bb83fdbf168d0911121eec19c2572eec737da37d74",
+          "bytes": 1630
+        },
+        {
+          "file": "assets/PlanetCurve-wgzUJgPN.js",
+          "sha256": "14a63decb19cd1b13e91137aeef5472f449ed66243f58d71d4d9be5ef27d5f53",
+          "bytes": 5141
+        },
+        {
+          "file": "assets/RooftopBand-DIPNYn63.js",
+          "sha256": "52f679a8085d179c40f7c2359ea49534ebb234d218e681ab7c85a1c2e6f930f5",
+          "bytes": 8665
+        },
+        {
+          "file": "assets/WorldTopology-BBxheR-H.js",
+          "sha256": "a369163100efcefa17b7b3c148d060ddc717fd9244bc3bbda1f59ef592161f6a",
+          "bytes": 1088
+        },
+        {
+          "file": "assets/asset-integrity.json",
+          "sha256": "3c92707ed2d09a176182a12eda5590e5fa282b7c87db0882cd460d8078b2060b",
+          "bytes": 1585
+        },
+        {
+          "file": "assets/attendant-DA2DY7mw.glb",
+          "sha256": "2248d11158447b6bd21866329c2ae157a760fe604a6acced046d1918032b9e1d",
+          "bytes": 8647100
+        },
+        {
+          "file": "assets/avatar-C9IAR68P.js",
+          "sha256": "97a0485e1c72e93984bc4e6fb5d52e7eb34dbace56bc7049caf3b685ace69b03",
+          "bytes": 15148
+        },
+        {
+          "file": "assets/band-DnudJzVZ.js",
+          "sha256": "8157a8fa05854de0e9f37bd984ef7d33ed2e6d8ed73c4fe098c4dedf46de0b48",
+          "bytes": 4847
+        },
+        {
+          "file": "assets/bass-player-sXfXW-L8.glb",
+          "sha256": "30465dfd12eab622b67dfc97c555168895511963061fcc8f30fa5deb7a854b78",
+          "bytes": 2433252
+        },
+        {
+          "file": "assets/bonfire-CGzqt4wQ.glb",
+          "sha256": "bdc6fbeb73879a9decca52e4a29aaf7f105bef5c1c2f4910652c188c9583735c",
+          "bytes": 209732
+        },
+        {
+          "file": "assets/box-office-CJ0mhUTc.glb",
+          "sha256": "c1066210b415ab7ae1296096ee566ebeca551eb810af8b3cf70619c6affc04d8",
+          "bytes": 4293768
+        },
+        {
+          "file": "assets/coastalMap-DzHHBrqO.js",
+          "sha256": "778769ce90f09292308213360c9758c3f3ea3a1bb161a3ff2469f36b8edeec33",
+          "bytes": 4745
+        },
+        {
+          "file": "assets/company-logo-BSEe3C7m.png",
+          "sha256": "4aa632a578ad51aa2f2b3016b72e0b21bdd8fe6a57c909e68eace3a794e0c88c",
+          "bytes": 24052
+        },
+        {
+          "file": "assets/drummer-UXXp3zjH.glb",
+          "sha256": "e08e903f762ee24cc746072a715b53ceb044cca707491ad33ea44dd7e1e91740",
+          "bytes": 1227560
+        },
+        {
+          "file": "assets/female-BUDxbVEw.glb",
+          "sha256": "20ba19cc771ac0a8a81e140aaf8072bed056c19c61aec7618b4bebd91ec2c5b3",
+          "bytes": 1331836
+        },
+        {
+          "file": "assets/female-dye-BYYSLeCK.png",
+          "sha256": "d612c1e72adfd68aeed1f0893c2c966b278bb5be99ccc51508278914d2e78314",
+          "bytes": 518815
+        },
+        {
+          "file": "assets/female-vest-DGupcca5.jpg",
+          "sha256": "34c76f78e5c38f89479bb2fb951bfd45e62e1d14680451b5f54b08443205003b",
+          "bytes": 702404
+        },
+        {
+          "file": "assets/guitarist-B1qSs6mg.glb",
+          "sha256": "af22ce2d0788c9f50c9c545b302145905466852e518aef41804a3966f7bdec4d",
+          "bytes": 2508856
+        },
+        {
+          "file": "assets/main-dYE3Si4K.js",
+          "sha256": "c77ff8426932e09d94f72c9590238e8b84870b4443ac341d5c3e1211ba13617d",
+          "bytes": 2880
+        },
+        {
+          "file": "assets/male-body-dye-D99IrAsA.png",
+          "sha256": "623ef27ba59a5963387897e4c3a0fff9e2f17e817d10bc05577544fe6ed2d224",
+          "bytes": 283439
+        },
+        {
+          "file": "assets/male-d_Cv4L7K.glb",
+          "sha256": "f00c08d4a11395680372becad22a85d057179a090e90f132c4eeb4ed5ef1ef48",
+          "bytes": 14607748
+        },
+        {
+          "file": "assets/male-dye-B3RvcOh0.png",
+          "sha256": "c329580bb359b013ff54c6b7a73bce380078dc5a4beaa068cc112ce58baf150a",
+          "bytes": 483372
+        },
+        {
+          "file": "assets/male-vest-Ddaouj1Z.jpg",
+          "sha256": "07ea10e5e9c17977277b9b0a12b3e38ad8183758dd959e844483ad5562516afe",
+          "bytes": 742618
+        },
+        {
+          "file": "assets/master-of-the-house-Ska7t2WR.png",
+          "sha256": "9f8455d4be48608e7ee61f501f0a12dfa73efe6349067c812cfaa17b04ec7cef",
+          "bytes": 132675
+        },
+        {
+          "file": "assets/meshopt_decoder.module-BSFtUVyv.js",
+          "sha256": "469ceaebc0b33a46de67045ae66d8762b1e5d90214814a6d8c28ef196a59b9ed",
+          "bytes": 70667
+        },
+        {
+          "file": "assets/modulepreload-polyfill-B5Qt9EMX.js",
+          "sha256": "d2a32840421496e872ade591618d2fa5c33797605d1aec04301717e5a90757d0",
+          "bytes": 711
+        },
+        {
+          "file": "assets/moth-arcade-CatgpBDX.glb",
+          "sha256": "465d019d8739c8449b6c1f83f69b8eaa2e49f1cbe881e160986e1970d7c11adf",
+          "bytes": 1696612
+        },
+        {
+          "file": "assets/stage-BdQPws-A.glb",
+          "sha256": "d1f0a92beba7a3b75dc134cf0459985139df534e064e0e047cffae49b0db5c79",
+          "bytes": 982120
+        },
+        {
+          "file": "assets/style-BSdf2O1l.css",
+          "sha256": "966cee4c0df2597784e5571f2c6b93d16d568d765779d5eeb6b846cfb5f61bfa",
+          "bytes": 109061
+        },
+        {
+          "file": "assets/temple-statue-BXy3Qxcb.glb",
+          "sha256": "98dbecdda28f0fe470089aeba259f3137580c48b25f559b5bd20f59e2900761b",
+          "bytes": 2096404
+        },
+        {
+          "file": "assets/three-BPA3EDf9.js",
+          "sha256": "6c62cb74471da8781e24e545fa5e9d52dd2294780a0fc466dad036c43a8f5c51",
+          "bytes": 584277
+        },
+        {
+          "file": "assets/valet-CJg5oReV.glb",
+          "sha256": "2cbf7670e6d82fb49c929abd936766c59dca11ebce55f7b892269c67969fb3b8",
+          "bytes": 4540012
+        },
+        {
+          "file": "assets/vocal-zFdg7T3j.glb",
+          "sha256": "f7c6176fb68379af179b2b8dc47426c9d748af4dd930b30817b1217cbd087d24",
+          "bytes": 1235612
+        },
+        {
+          "file": "assets/webcam-BthXXVXc.js",
+          "sha256": "1627b452cdb464276fe503ac348157e302de3e0657b1077a7bbe7cb9e5b919de",
+          "bytes": 5796
+        },
+        {
+          "file": "avatar-review.html",
+          "sha256": "99e6c4320c666d9ee1b03b86c73ee910d9c90acb110d500a81f812c678212497",
+          "bytes": 1336
+        },
+        {
+          "file": "band-review.html",
+          "sha256": "e8195727ada30d67e2d3668f8c58e32e87cf023b63c2b6de9566f508dc41e245",
+          "bytes": 831
+        },
+        {
+          "file": "floor-plan.svg",
+          "sha256": "a2cf9613f0bbf9feb47f9925b614a0cb7fc210554871c2de4202ae599392dd17",
+          "bytes": 17062
+        },
+        {
+          "file": "font/BebasNeue-Regular.ttf",
+          "sha256": "f2d8f000fd44a71714be0321ae12d3d6bc8bb0ea290b0c1312516f4448cec117",
+          "bytes": 60576
+        },
+        {
+          "file": "font/HanWangMing-subset.woff2",
+          "sha256": "3b96075c8e8e815fd92f325566ecb2d0e727caa7ef306488e97ede06033b4520",
+          "bytes": 143856
+        },
+        {
+          "file": "index.html",
+          "sha256": "08863e031c5af07ae490667cd0fda0d5016125ee7f83a37eb3f672e55e07791f",
+          "bytes": 2682
+        },
+        {
+          "file": "location-review.html",
+          "sha256": "af8f0586993b539e5b5130ede59a8222faa9a2453afe0f17774fd654925b4f5a",
+          "bytes": 1515
+        },
+        {
+          "file": "manifest.webmanifest",
+          "sha256": "9ef2a7f92b13a42352bee13fab12d28ef533ccb28c1dfbbb2be3bb6aadd86706",
+          "bytes": 278
+        },
+        {
+          "file": "rebuild-review.html",
+          "sha256": "69db39db8541cf534055a5cc6ec422c46b4dde338bf741a619442b4795827985",
+          "bytes": 3106
+        },
+        {
+          "file": "review/mediapipe/pointing_up.jpg",
+          "sha256": "ecf8ca2611d08fa25948a4fc10710af9120e88243a54da6356bacea17ff3e36e",
+          "bytes": 74461
+        },
+        {
+          "file": "review/mediapipe/thumb_up.jpg",
+          "sha256": "5d673c081ab13b8a1812269ff57047066f9c33c07db5f4178089e8cb3fdc0291",
+          "bytes": 80388
+        },
+        {
+          "file": "webcam-review.html",
+          "sha256": "bf03747ad4c13b7881e8d9de88bc87eff311cbdd584f8673b9b77a6d7542a848",
+          "bytes": 3489
+        }
+      ],
+      "assetIntegrityHashes": 20
+    }
+  ],
+  "fullTests": 547,
+  "build": "strict TypeScript and Vite passed",
+  "physicalIPhoneTested": false,
+  "entry": "main-dYE3Si4K.js",
+  "preservedPublicTrees": {
+    "moth": "6aea2f97882bf829d82dd0e11cfddce48e927418",
+    "outsideBetaTrackedChanges": 0
+  }
+}
