@@ -492,6 +492,12 @@ export class FestivalClient {
   }
 
   private async performPlaceRequest(name: string, palette: AvatarPalette, adminKey: string): Promise<PlaceResult> {
+    // A discarded/reloaded tab reaches admission before connect(). Recover
+    // its token here, or its own still-live name is refused as a duplicate.
+    if (readStoredSession() && await this.reclaimStoredSession(name, palette)) {
+      this.identity = { name, palette };
+      return { admitted: true };
+    }
     try {
       const headers = new Headers({ 'content-type': 'application/json' });
       if (adminKey) headers.set('x-festival-admin-key', adminKey);
@@ -515,6 +521,7 @@ export class FestivalClient {
         this.session = payload.session;
         this.reconnectAttempt = 0;
         this.identity = { name, palette };
+        this.rememberSession(name);
         this.onState(payload.state);
         this.onStatus('online');
         void this.openEventStream();
@@ -623,13 +630,17 @@ export class FestivalClient {
       return false;
     }
     try {
-      const response = await fetch(`${this.baseUrl}/api/session/recover`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ session: stored.session, name, palette }),
-      });
-      const payload = await response.json() as { session?: Session; state?: FestivalState };
+      const { response, payload } = await requestWithDeadline(async signal => {
+        const response = await fetch(`${this.baseUrl}/api/session/recover`, {
+          method: 'POST', signal,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ session: stored.session, name, palette }),
+        });
+        const payload = await response.json() as { session?: Session; state?: FestivalState };
+        return { response, payload };
+      }, 15_000, 'Festival session recovery');
       if (!response.ok || !payload.session || !payload.state) return false;
+      this.identity = { name, palette };
       this.session = payload.session;
       this.reconnectAttempt = 0;
       this.joinAttempt = 0;
@@ -1189,11 +1200,17 @@ export class FestivalClient {
     this.lastStreamAt = Date.now();
     this.abortController?.abort();
     this.abortController = new AbortController();
+    const controller = this.abortController;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     try {
       const response = await fetch(`${this.baseUrl}/api/events`, {
         headers: this.headers({ accept: 'text/event-stream' }),
-        signal: this.abortController.signal,
+        signal: controller.signal,
       });
+      if (generation !== this.streamGeneration || controller.signal.aborted) {
+        void response.body?.cancel().catch(() => undefined);
+        return;
+      }
       if (response.status === 401) {
         await this.recoverSession();
         return;
@@ -1201,11 +1218,12 @@ export class FestivalClient {
       if (!response.ok || !response.body) throw new Error('Live festival stream is unavailable.');
       this.reconnectAttempt = 0;
       this.onStatus('online');
-      const reader = response.body.getReader();
+      reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       while (!this.closed) {
         const { value, done } = await reader.read();
+        if (generation !== this.streamGeneration || controller.signal.aborted) return;
         if (done) break;
         this.lastStreamAt = Date.now();
         buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
@@ -1224,6 +1242,13 @@ export class FestivalClient {
       if (generation !== this.streamGeneration) return;
       this.streamAlive = false;
       if (!this.closed && !(error instanceof DOMException && error.name === 'AbortError')) this.scheduleReconnect();
+    } finally {
+      // A mobile transport may complete an old read after a replacement is
+      // online. Release that reader without touching the new stream's state.
+      if (reader) {
+        void reader.cancel().catch(() => undefined);
+        reader.releaseLock();
+      }
     }
   }
 
