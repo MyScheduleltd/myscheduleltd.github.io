@@ -6,12 +6,13 @@
 // letter, so its notes stand out on it. On every device.
 //
 // The phone (the tall view, renderTallScreen): the timing track runs the whole
-// width, a slice of the frame's track from just before the hit line to 3.3 s
-// ahead of it (1.9 s before) at the same size. Dr. Beauty's box beside it is
-// now one row above it, drawn at the phone's own resolution: his hearts,
-// combo and score, or level 7's hype bar in the hearts' place, or in practice
-// runs his staff ID as a strip (the badge's ID photo, 練習 stamp, 正 miss tally
-// and green screen). Computers keep the box beside the track.
+// width at the same size as before, its hit line and row of notes in the
+// middle of it, 1.9 s of notes either side. Dr. Beauty's box beside it is now
+// one row above it, drawn at the phone's own resolution: his hearts, combo and
+// score, or level 7's hype bar in the hearts' place, or in practice runs his
+// staff ID as a strip (the badge's ID photo, 練習 stamp, 正 miss tally and green
+// screen). GANGAN's feedback moves off the track to just above that row, as
+// wide as its line. Computers keep the box beside the track.
 
 export const MOTH_NOTE_COLOURS = { M: "#2457c5", O: "#e0463e", T: "#ecb300", H: "#2ea878" };
 
@@ -29,11 +30,11 @@ const MOTH_NOTE_LETTERS = { T: "#16171b" };`);
   // Where the frame's lower panel starts, under the scene and its gutter.
   hudY: 520,
   // Under the scene: Dr. Beauty's row, then the timing track across the whole
-  // width, a slice from just before the hit line (x 760) to 3.3 s ahead of it,
-  // scaled up so the notes read bigger than they do full-width. The slice is
-  // the band of the frame's track that holds the notes and their rings.
+  // width: a slice of the frame's track centred on its hit line (x 760) and
+  // its row of notes (y 616), scaled up so the notes read bigger than they do
+  // full-width.
   stats: { x: 8, y: 520, w: 704, h: 46 },
-  track: { src: { x: 700, y: 540, w: 704 / 1.35, h: 196 / 1.35 }, dest: { x: 8, y: 572, w: 704, h: 196 } },
+  track: { src: { x: 760 - 352 / 1.35, y: 616 - 98 / 1.35, w: 704 / 1.35, h: 196 / 1.35 }, dest: { x: 8, y: 572, w: 704, h: 196 } },
   letterboxY: (776 - 405) / 2
 };
 `);
@@ -67,6 +68,20 @@ const MOTH_NOTE_LETTERS = { T: "#16171b" };`);
   once('    target.fillStyle = vignette;\n    target.fillRect(0, 0, VIEW_W, sceneHeight);', '    target.fillStyle = vignette;\n    target.fillRect(0, 0, VIEW_W, vignetteHeight);');
   once('    this.renderLevel1OfficeFilmGrain(target, motionTime, VIEW_H);\n    target.restore();\n  }\n\n  getRhythmPaperInk() {',
     '    this.renderLevel1OfficeFilmGrain(target, motionTime, VIEW_H, this.isTallScreenView() ? PORTRAIT_FIGHT.hudY : VIEW_H);\n    target.restore();\n  }\n\n  getRhythmPaperInk() {');
+  // GANGAN's feedback sits just above Dr. Beauty's row, over the foot of the
+  // scene, so nothing but the notes is on the track (owner, 2026-10-17): from
+  // the row's left edge, as wide as its line. The frame's own box would show
+  // in the phone's slice of the track, so the phone leaves it out.
+  once('    const coachPromptBounds = coachPrompt\n      ? { x: ribbonBounds.x + 18, y: ribbonBounds.y + 10, w: 432, h: 52 }',
+    '    const coachPromptBounds = coachPrompt && !this.isTallScreenView()\n      ? { x: ribbonBounds.x + 18, y: ribbonBounds.y + 10, w: 432, h: 52 }');
+  once(`    // GANGAN's box, drawn at this size rather than copied: in the wide frame
+    // it sits on a part of the track this view leaves out. Across the top of
+    // the track, clear of the notes.
+`, `    // GANGAN's box, drawn at this size rather than copied: in the wide frame
+    // it sits on a part of the track this view leaves out. Just above Dr.
+    // Beauty's row, so the track holds only the notes.
+`);
+  once('      const chip = { x: track.dest.x + 10, y: track.dest.y + 12, w: track.dest.w - 20, h: 58 };', '      const chip = { x: layout.stats.x, y: layout.stats.y - 64, w: this.getTallCoachChipWidth(target, coachPrompt, 58), h: 58 };');
   // The frame's own legend and phase counter sit at the right end of its
   // track, which the phone's slice now takes in; the phone draws its legend
   // itself.
@@ -106,6 +121,23 @@ ${block.split('\n').slice(1, -1).map(line => '  ' + line).join('\n')}
 }
 
 export const FIGHT_HUD_METHODS = `
+  // The width of the phone's feedback box (drawGanganCoachChip, h tall): its
+  // line at full size and the box's margins, at least 240 (scaled from the
+  // box's own 52-px height) and at most the row's width.
+  getTallCoachChipWidth(target, prompt, h) {
+    const k = h / 52;
+    target.save();
+    const measure = (text, size) => {
+      target.font = \`900 \${Math.round(size * k)}px \${CANVAS_UI_FONT}\`;
+      return target.measureText(String(text ?? "")).width;
+    };
+    const line = prompt.timingOnly
+      ? Math.max(138 * k + measure(prompt.text, 18), 30 * k + measure(prompt.detail, 15))
+      : 80 * k + measure(prompt.text, 14);
+    target.restore();
+    return clamp(Math.ceil(line + 6 * k), Math.round(240 * k), PORTRAIT_FIGHT.stats.w);
+  }
+
   // The practice badge's colour: the fight's.
   getPracticeBadgeAccent() {
     return this.isConcertRhythm() ? "#8a3fb0" : this.isRiverRhythm() ? "#2f6f8f" : this.isArcadeRhythm() ? "#3552a8"

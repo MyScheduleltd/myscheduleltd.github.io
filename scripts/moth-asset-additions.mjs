@@ -11,4 +11,4 @@ import path from 'node:path';
 const root = path.resolve(import.meta.dirname, '..');
 export const ADDED_ASSETS = JSON.parse(fs.readFileSync(path.join(root, 'moth-asset-additions/manifest.json'), 'utf8')).files;
 export const addedAsset = file => path.join(root, 'moth-asset-additions', file);
-export const MOTH_MIRROR_ADDITIONS_COMMIT = '94cc0c7ae4fe7b778f74eef4779f4832c113bb5d';
+export const MOTH_MIRROR_ADDITIONS_COMMIT = '417b061a369e893ee9f3ffb4520743061dba9eb0';
