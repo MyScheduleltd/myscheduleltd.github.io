@@ -463,6 +463,7 @@ const HIT_SFX = {
   "arcade-miss": "assets/sfx/arcade-miss.wav"
 };
 const HIT_SFX_GAIN = 0.95;
+const MEME_CHEST = {"sheet":"assets/sprites/level4_meme_chest/sheet.webp","picture":"assets/memes/level4-meme.png","x":540,"size":128};
 const MENU_SFX = {"menu-tick":"assets/sfx/menu/menu-tick.wav","menu-click":"assets/sfx/menu/menu-click.wav"};
 // What an input asks for: arrows and the d-pad move a selection, O / Enter /
 // SPACE confirm, H / Esc go back.
@@ -666,11 +667,11 @@ const LEVEL1_OFFICE_RANK_COLORS = Object.freeze({
   D: "#ff9d5a",
   F: "#ff5a72"
 });
-// One-time save rule: run progress lives in sessionStorage only, so closing
-// the tab/app wipes everything and the next visit starts a brand-new game.
+// Story progress is kept on the device until a new story starts
+// (moth-story-save.mjs).
 function getRunStorage() {
   try {
-    return window.sessionStorage || null;
+    return window.localStorage || null;
   } catch {
     return null;
   }
@@ -2352,7 +2353,7 @@ class BobbyGame {
         track.volume = BGM_VOLUME;
         this.fightCutAudio[level.theme] = track;
       }
-      this.purgeLegacyPersistentSaves();
+      this.adoptSessionSaves();
       this.savedGame = this.loadSavedGame();
       this.progress = this.loadProgress();
       this.preloadHomePlaylistAudio();
@@ -3697,6 +3698,26 @@ for (const level of this.config.secretLevels || []) {
     }
   }
 
+  // One of Dr. Beauty's hearts, in the colour and font already set. A heart
+  // that has just come back (every 10 in a row) swells and glows for a moment.
+  drawFightHeart(target, x, y, index) {
+    const rhythm = this.level1OfficeRhythm, back = rhythm?.celebrationHeart;
+    const age = back?.index === index && index < rhythm.health ? (this.time || 0) - back.at : Infinity;
+    if (!(age >= 0 && age < 0.9)) {
+      target.fillText("♥", x, y);
+      return;
+    }
+    const glow = 1 - age / 0.9;
+    target.save();
+    target.translate(x, y);
+    target.scale(1 + 0.45 * glow, 1 + 0.45 * glow);
+    target.shadowColor = "#ffd0de";
+    target.shadowBlur = 22 * glow;
+    target.fillStyle = "#ff6f9b";
+    target.fillText("♥", 0, 0);
+    target.restore();
+  }
+
   // The width of the phone's feedback box (drawGanganCoachChip, h tall): its
   // line at full size and the box's margins, at least 240 (scaled from the
   // box's own 52-px height) and at most the row's width.
@@ -3815,7 +3836,7 @@ for (const level of this.config.secretLevels || []) {
       target.textAlign = "center";
       for (let index = 0; index < maxHearts; index += 1) {
         target.fillStyle = index < hearts ? "#ef3f78" : "#30343a";
-        target.fillText("♥", (left + right) / 2 + (index - (maxHearts - 1) / 2) * pitch, mid);
+        this.drawFightHeart(target, (left + right) / 2 + (index - (maxHearts - 1) / 2) * pitch, mid, index);
       }
     }
     target.restore();
@@ -3884,6 +3905,121 @@ for (const level of this.config.secretLevels || []) {
     const lcd = { x: card.x + card.w - 3 - 8 - 196, y: card.y + 5, w: 196, h: card.h - 10 };
     this.drawMissTally(target, { x: at, y: mid + 1, right: lcd.x - 14, indent: 40, glyph: 17, font: 14 }, Math.max(0, rhythm?.misses || 0), ink);
     this.drawPracticeLcd(target, lcd, rhythm, ink);
+  }
+
+  // ---- Level 4's basement chest ----
+  // Once Bonita's game is won in story mode (or previewed from the staff tools).
+  hasLevel4MemeChest() {
+    const flags = this.progress?.flags || {};
+    return this.state === "level4" && !this.freePlay && Boolean(flags.level4BossDefeated || this.debugLevel4Won);
+  }
+
+  isLevel4NearMemeChest() {
+    return this.level4Rail === "lower" && this.hasLevel4MemeChest() && !this.memeView
+      && Math.abs((this.sewerPlayer?.x ?? -999) - MEME_CHEST.x) <= 96;
+  }
+
+  openLevel4MemeChest() {
+    if (!this.memeChest || this.memeChest.state === "opening") return;
+    this.memeChest = { state: "opening", at: this.time || 0 };
+    if (this.sewerPlayer) { this.sewerPlayer.vx = 0; this.sewerPlayer.facing = MEME_CHEST.x >= this.sewerPlayer.x ? 1 : -1; }
+    this.playMenuSfx?.("click");
+    if (!this.progress) this.progress = this.createDefaultProgress();
+    this.progress.flags = { ...(this.progress.flags || {}), level4MemeChestOpened: true };
+    this.saveProgress();
+  }
+
+  // The lid lifts for half a second, then the picture comes up.
+  updateLevel4MemeChest() {
+    const chest = this.memeChest;
+    if (chest?.state === "opening" && (this.time || 0) - chest.at >= 0.5) {
+      chest.state = "open";
+      this.showMeme();
+    }
+  }
+
+  // Closed, with a glint on the lock now and then; lifting; open.
+  drawLevel4MemeChest(side) {
+    const sheet = this.memeChestSheet;
+    if (!sheet) return;
+    const chest = this.memeChest || { state: "closed", at: 0 };
+    const time = this.time || 0;
+    const frame = chest.state === "open" ? 3
+      : chest.state === "opening" ? (time - chest.at < 0.22 ? 2 : 3)
+      : time % 1.6 < 0.2 ? 1 : 0;
+    // Its front turned to Dr. Beauty, whichever side he is on.
+    const facing = (this.sewerPlayer?.x ?? MEME_CHEST.x + 1) >= MEME_CHEST.x ? 1 : -1;
+    drawBundleFrame(this.ctx, sheet, { frameWidth: 256, frameHeight: 256, cols: 2 }, frame, MEME_CHEST.x, side.floorY ?? 650,
+      MEME_CHEST.size, MEME_CHEST.size, { x: 0.5, y: 0.985 }, { facing });
+  }
+
+  showMeme() {
+    if (this.memeView) return;
+    const root = document.createElement("div");
+    root.className = "moth-meme";
+    root.setAttribute("role", "dialog");
+    root.setAttribute("aria-modal", "true");
+    const phone = this.usesTouchControls();
+    root.innerHTML = `<section><h2>${this.tr("BONITA'S CHEST", "BONITA 的寶箱")}</h2><img alt="" src="${MEME_CHEST.picture}">`
+      + (phone ? `<p>${this.tr("Or press and hold the picture to save it.", "也可以長按圖片儲存。")}</p>` : "")
+      + `<div class="moth-meme-actions"><button type="button" data-meme-save>${this.tr("SAVE", "儲存")}</button><button type="button" data-meme-close>${this.tr("CLOSE", "關閉")}</button></div></section>`;
+    // Its taps are its own, as the scoreboard's are.
+    for (const type of ["pointerdown", "pointerup", "touchstart", "touchend", "click"]) root.addEventListener(type, event => event.stopPropagation());
+    root.querySelector("[data-meme-save]").addEventListener("click", () => this.saveMeme());
+    root.querySelector("[data-meme-close]").addEventListener("click", () => this.closeMeme());
+    document.body.append(root);
+    const view = this.memeView = { root, file: null };
+    // Read ahead of the tap: iPhone shares only from inside the tap itself.
+    fetch(MEME_CHEST.picture).then(response => response.blob())
+      .then(blob => { view.file = new File([blob], "dr-beauty-meme.png", { type: blob.type || "image/png" }); }).catch(() => {});
+    root.querySelector("[data-meme-save]").focus({ preventScroll: true });
+    this.releaseHeldInputs?.();
+    this.updateMobileControls(true);
+  }
+
+  // A phone's share sheet (儲存影像 keeps it in Photos); otherwise a download.
+  saveMeme() {
+    const view = this.memeView;
+    if (!view) return;
+    this.playMenuSfx?.("click");
+    const file = view.file;
+    if (file && this.usesTouchControls() && navigator.canShare?.({ files: [file] })) {
+      navigator.share({ files: [file], title: "MASTER OF THE HOUSE" }).catch(() => {});
+      return;
+    }
+    const url = file ? URL.createObjectURL(file) : MEME_CHEST.picture;
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "dr-beauty-meme.png";
+    document.body.append(link);
+    link.click();
+    link.remove();
+    if (file) setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+
+  closeMeme() {
+    if (!this.memeView) return;
+    this.playMenuSfx?.("click");
+    this.memeView.root.remove();
+    this.memeView = null;
+    this.updateMobileControls(true);
+  }
+
+  handleMemeKey(event) {
+    const code = event.code;
+    if (["Enter", "NumpadEnter", "Space", "KeyO"].includes(code)) {
+      if (!event.repeat) this.saveMeme();
+    } else if (["Escape", "KeyH"].includes(code)) {
+      this.closeMeme();
+    } else return;
+    event.preventDefault();
+  }
+
+  // Where Dr. Beauty stood when he took up 祖賢's massage; without one (a fight
+  // resumed from the main menu), beside her, facing her.
+  getLevel3FightSpot() {
+    const boss = this.config?.level3?.stage1?.boss || {};
+    return this.level3FightSpot || { x: (boss.x ?? 1026) - (boss.triggerRadius ?? 168) * 0.6, facing: 1 };
   }
 
   async loadLayeredMapConfig() {
@@ -4150,6 +4286,7 @@ for (const level of this.config.secretLevels || []) {
     }, { capture: true });
     window.addEventListener("keydown", (event) => {
       if (this.scoreboard) { this.handleScoreboardKey(event); return; }
+      if (this.memeView) { this.handleMemeKey(event); return; }
       if (this.loadError) { if (["Enter", "Space", "KeyO"].includes(event.code) && !event.repeat) window.location.reload(); event.preventDefault(); return; }
       if (this.audioRecoveryVisible()) {
         if (["Enter", "Space", "KeyO"].includes(event.code) && !event.repeat) this.recoverGameAudio();
@@ -4461,10 +4598,11 @@ for (const level of this.config.secretLevels || []) {
     document.addEventListener("freeze", staleAudio("frozen"));
     navigator.mediaDevices?.addEventListener?.("devicechange", staleAudio("device"));
     window.addEventListener("pageshow", () => this.resumeAudioAfterReturn());
-    // Kept only while hidden: a page that comes back was not reloaded.
-    document.addEventListener("visibilitychange", () => { if (document.hidden) this.keepFightForReload(); else this.forgetKeptFight(); });
+    // Kept while hidden: a page that comes back to its fight was not reloaded.
+    // (One kept on the way to the main menu waits there for 繼續.)
+    document.addEventListener("visibilitychange", () => { if (document.hidden) this.keepFightForReload(); else if (this.level1OfficeRhythm) this.forgetKeptFight(); });
     window.addEventListener("pagehide", () => this.keepFightForReload());
-    window.addEventListener("pageshow", event => { if (event.persisted) this.forgetKeptFight(); });
+    window.addEventListener("pageshow", event => { if (event.persisted && this.level1OfficeRhythm) this.forgetKeptFight(); });
 
     // The landscape deck is positioned against the letterboxed canvas, not the
     // viewport, so the buttons live inside the game frame instead of floating
@@ -5627,6 +5765,8 @@ for (const level of this.config.secretLevels || []) {
     `;
     document.body.appendChild(root);
     root.addEventListener("contextmenu", (event) => event.preventDefault());
+    // A long press beside a button must not bring up the magnifier.
+    root.addEventListener("touchstart", (event) => { if (!event.target.closest?.("[data-mobile-action]")) event.preventDefault(); }, { passive: false });
     this.mobileButtonPressResetters = [];
     root.querySelectorAll("[data-mobile-action]").forEach((button) => {
       const declaredAction = button.dataset.mobileAction;
@@ -5749,6 +5889,7 @@ for (const level of this.config.secretLevels || []) {
   // O interact, H light, M heavy, T block), "office-rhythm" (a fight: each
   // button is its own note) or a menu (O confirm, H back).
   getControlMode() {
+    if (this.memeView) return "menu";
     // The walking pause menu: J chooses, K resumes, arrows move.
     if (this.walkPause) return "dialogue";
     // While loading, the title's deck is already in place (inert: input waits
@@ -5936,7 +6077,8 @@ for (const level of this.config.secretLevels || []) {
     }
     if (this.state === "level3") return this.isLevel3NearBoss();
     if (this.state === "level4") {
-      return (this.level4Rail === "lower" && this.chest?.revealed && this.isNearChest())
+      return this.isLevel4NearMemeChest()
+        || (this.level4Rail === "lower" && this.chest?.revealed && this.isNearChest())
         || this.isLevel4NearLadder()
         || this.isLevel4NearLeftDoor();
     }
@@ -6073,6 +6215,11 @@ for (const level of this.config.secretLevels || []) {
       return;
     }
     if (this.levelLoadingPresentation) return;
+    if (this.memeView) {
+      if (action === "advance") this.saveMeme();
+      else if (action === "back") this.closeMeme();
+      return;
+    }
     // In a menu every press answers under the finger: arrows lightly, J / K
     // (choose, back) firmer. Fights have their own on-the-beat haptics.
     if (MENU_HAPTIC_STATES.has(this.state) || this.pocketOpen || this.chest?.menuOpen || this.walkPause) {
@@ -6713,14 +6860,17 @@ for (const level of this.config.secretLevels || []) {
     return true;
   }
 
-  purgeLegacyPersistentSaves() {
-    // Saves used to live in localStorage; the one-time-save rule keeps runs in
-    // sessionStorage only, so old persistent data must not resurrect them.
+  // A story kept in this tab's session from before saves moved to the device
+  // is moved over, so it carries on.
+  adoptSessionSaves() {
     try {
-      window.localStorage?.removeItem(SAVE_KEY);
-      window.localStorage?.removeItem(PROGRESS_KEY);
+      for (const key of [SAVE_KEY, PROGRESS_KEY]) {
+        const kept = window.sessionStorage?.getItem(key);
+        if (kept && !window.localStorage?.getItem(key)) window.localStorage?.setItem(key, kept);
+        window.sessionStorage?.removeItem(key);
+      }
     } catch {
-      // Storage unavailable; nothing to purge.
+      // Storage unavailable; the game plays without a save.
     }
   }
 
@@ -11249,6 +11399,10 @@ for (const level of this.config.secretLevels || []) {
       stamp: makeComboCallout(item.caption, this.tr(`${rhythm.combo} COMBO!`, `連擊 ${rhythm.combo}！`), index)
     };
     rhythm.comboMilestone = { at: this.time, combo: rhythm.combo };
+    if (!this.isHealthlessRun() && !this.isConcertRhythm() && rhythm.health < rhythm.maxHealth) {
+      rhythm.health += 1;
+      rhythm.celebrationHeart = { index: rhythm.health - 1, at: this.time };
+    }
     if (this.isMassageRhythm()) this.setMassageMood("blissful", 1.1);
     this.stopFeedbackChannel("miss");
     this.playFeedbackSfx(item.sound, "celebration", 1.4);
@@ -11755,10 +11909,13 @@ for (const level of this.config.secretLevels || []) {
     if (prompt && prompt.frame === this.renderFrame && prompt.text) {
       target.save();
       target.font = "900 24px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace";
-      const w = Math.min(PORTRAIT_FIGHT.width - 24, Math.max(360, target.measureText(String(prompt.text)).width + 48));
-      const h = 50;
-      const x = (PORTRAIT_FIGHT.width - w) / 2;
-      const y = walk.worldH - h - 22;
+      // At the top beside the 暫停 button, centred in the room it leaves.
+      const pause = this.getLevel1OfficePauseButtonRect();
+      const left = 8 + pause.w + 10, room = PORTRAIT_FIGHT.width - 8 - left;
+      const w = Math.min(room, Math.max(300, target.measureText(String(prompt.text)).width + 48));
+      const h = pause.h;
+      const x = left + (room - w) / 2;
+      const y = 8;
       target.fillStyle = "rgba(8, 15, 24, 0.9)";
       target.fillRect(x, y, w, h);
       target.strokeStyle = prompt.accent || "#8fe8ff";
@@ -13156,8 +13313,9 @@ for (const level of this.config.secretLevels || []) {
       }
       return this.resumeLevel1Office();
     }
-    if (!this.level1OfficePauseConfirm) {
-      // Quitting mid-shift throws the round away, so it asks once.
+    if (!this.level1OfficePauseConfirm && this.freePlay) {
+      // Quitting a practice run throws it away, so it asks once. A story fight
+      // is kept for the main menu's 繼續.
       this.level1OfficePauseConfirm = true;
       return true;
     }
@@ -13166,6 +13324,7 @@ for (const level of this.config.secretLevels || []) {
 
   quitLevel1OfficeToTitle() {
     const rhythm = this.level1OfficeRhythm;
+    if (!this.freePlay) this.keepFightForReload();
     // The round is abandoned: its points never happened.
     if (rhythm) this.score = Math.max(0, (this.score || 0) - (rhythm.roundScore || 0));
     this.level1OfficePauseConfirm = false;
@@ -14236,9 +14395,12 @@ for (const level of this.config.secretLevels || []) {
       return;
     }
     if (this.isMassageRhythm()) {
-      // Back to the living room, where 祖賢's post-fight exchange waits.
+      // Back to the living room, where 祖賢's post-fight exchange waits, at
+      // the spot where the massage began.
       this.level1OfficeRhythm = null;
-      this.enterLevel3Stage1({ postBossReady: true });
+      const spot = this.getLevel3FightSpot();
+      this.enterLevel3Stage1({ postBossReady: true, spawnX: spot.x });
+      if (this.sewerPlayer) this.sewerPlayer.facing = spot.facing;
       this.updateMobileControls(true);
       return;
     }
@@ -15201,6 +15363,7 @@ for (const level of this.config.secretLevels || []) {
     if (this.sewerPlayer) {
       this.sewerPlayer.vx = 0;
       this.sewerPlayer.facing = 1;
+      this.level4FightX = this.sewerPlayer.x;
     }
   }
 
@@ -15392,12 +15555,13 @@ for (const level of this.config.secretLevels || []) {
     this.sewerFx = [];
     this.floaters = [];
     this.level4Rail = "upper";
+    const spotX = this.level4FightX ?? (bonita.x ?? 960) - 168;
     this.sewerPlayer = {
-      x: (bonita.x ?? 960) - 168,
+      x: spotX,
       y: side.floorY ?? 466,
       vx: 0,
       vy: 0,
-      facing: 1,
+      facing: spotX > (bonita.x ?? 960) ? -1 : 1,
       scale: side.playerScale ?? 1.32,
       grounded: true,
       crouching: false,
@@ -15459,6 +15623,7 @@ for (const level of this.config.secretLevels || []) {
       this.sewerPlayer.facing = this.level3Boss.x >= this.sewerPlayer.x ? 1 : -1;
       this.sewerPlayer.vx = 0;
     }
+    if (this.level3Boss.phase !== "postBoss" && this.sewerPlayer) this.level3FightSpot = { x: this.sewerPlayer.x, facing: this.sewerPlayer.facing };
     this.startLevel3Dialogue(this.level3Boss.phase === "postBoss" ? "level3PostBoss" : "level3PreBoss");
   }
 
@@ -16668,6 +16833,8 @@ for (const level of this.config.secretLevels || []) {
     this.level4BossEncountered = false;
     this.level4Boss = null;
     this.level4BossShots = [];
+    this.memeChest = { state: this.progress?.flags?.level4MemeChestOpened ? "open" : "closed", at: 0 };
+    if (!this.memeChestSheet) loadImage(MEME_CHEST.sheet).then(image => { this.memeChestSheet = image; }).catch(() => {});
     const side = this.getLevel4ActiveSideView();
     const hiddenChest = stage.hiddenChest || {};
     this.chest = {
@@ -16734,6 +16901,10 @@ for (const level of this.config.secretLevels || []) {
   }
 
   tryLevel4Interact() {
+    if (this.isLevel4NearMemeChest()) {
+      this.openLevel4MemeChest();
+      return;
+    }
     if (this.isLevel4NearLeftDoor()) {
       if (!this.canExitLevel4ToLevel5()) {
         this.floaters.push({
@@ -18843,6 +19014,7 @@ for (const level of this.config.secretLevels || []) {
   }
 
   updateLevel4(dt) {
+    this.updateLevel4MemeChest();
     const side = this.getLevel4ActiveSideView();
     const hiddenChest = this.getLevel4Stage1Config().hiddenChest || {};
     const liveAudioTime = this.sewerAudio && !this.sewerAudio.paused ? this.sewerAudio.currentTime : null;
@@ -20474,11 +20646,7 @@ for (const level of this.config.secretLevels || []) {
         // maxHearts is; at five the old fixed 46px pitch ran off the right edge.
         const heartPitch = Math.min(46, (lifeBounds.w - 44) / Math.max(1, maxHearts));
         const heartsWidth = heartPitch * (maxHearts - 1);
-        target.fillText(
-          "♥",
-          lifeBounds.x + lifeBounds.w / 2 - heartsWidth / 2 + heartIndex * heartPitch,
-          lifeBounds.y + 72
-        );
+        this.drawFightHeart(target, lifeBounds.x + lifeBounds.w / 2 - heartsWidth / 2 + heartIndex * heartPitch, lifeBounds.y + 72, heartIndex);
       }
       // The hearts row is the count; no "HEARTS n/5" line under it (user,
       // 2026-09-30), so the three rows spread over the box.
@@ -23710,6 +23878,9 @@ for (const level of this.config.secretLevels || []) {
         draw: () => this.drawLevel4HiddenChest()
       });
     }
+    if (this.level4Rail === "lower" && this.hasLevel4MemeChest()) {
+      drawables.push({ y: (side.floorY ?? 650) - 1, draw: () => this.drawLevel4MemeChest(side) });
+    }
     drawables.push({
       y: bobby.y,
       draw: () => {
@@ -23731,7 +23902,10 @@ for (const level of this.config.secretLevels || []) {
       const nearLadder = this.isLevel4NearLadder();
       const nearLeftDoor = this.isLevel4NearLeftDoor();
       const nearChest = this.level4Rail === "lower" && this.chest?.revealed && this.isNearChest();
-      const prompt = this.chest?.state === "revealing"
+      const nearMemeChest = this.isLevel4NearMemeChest();
+      const prompt = nearMemeChest
+        ? this.tr("O OPEN THE CHEST", "O 打開寶箱")
+        : this.chest?.state === "revealing"
         ? "牆後有東西正在出現..."
         : nearChest
           ? "O 開啟隱藏寶箱"
@@ -23747,12 +23921,12 @@ for (const level of this.config.secretLevels || []) {
           ? "找梯子回房間"
           // Like Level 3's: who to go to, then the way out.
           : (this.progress?.flags?.level4BossDefeated || this.debugLevel4Won) && this.level4BossEncountered
-            ? "往左離開"
+            ? (this.hasLevel4MemeChest() && !this.progress?.flags?.level4MemeChestOpened ? "地下室出現了寶箱 · 往左離開" : "往左離開")
             : "靠近Bonita";
       drawObjectivePrompt(
         this.ctx,
         prompt,
-        nearChest || nearLadder || nearLeftDoor || this.chest?.state === "revealing" ? "#ffd36c" : "#8fe8ff",
+        nearMemeChest || nearChest || nearLadder || nearLeftDoor || this.chest?.state === "revealing" ? "#ffd36c" : "#8fe8ff",
         this.time,
         VIEW_H - 132
       );
@@ -26155,7 +26329,7 @@ const imageRequests = new Map();
 // configuration always come from this site.
 const MIRROR_BASE = ['myscheduleltd.com', 'www.myscheduleltd.com'].includes(location.hostname)
   ? 'https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@4a1cae2472c9fbece153cc1dbd0f0c1593dd9997/docs/moth/' : '';
-const MIRROR_PINNED = new Map([["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/drb-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/gg-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/spa-tickle.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_idle/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sfx/menu/menu-tick.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@417b061a369e893ee9f3ffb4520743061dba9eb0/docs/moth/"],["assets/sfx/menu/menu-click.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@417b061a369e893ee9f3ffb4520743061dba9eb0/docs/moth/"],["assets/ui/mobile_moth_buttons_20261017/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@417b061a369e893ee9f3ffb4520743061dba9eb0/docs/moth/"]]);
+const MIRROR_PINNED = new Map([["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/drb-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/gg-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/spa-tickle.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_idle/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sfx/menu/menu-tick.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@7874c83e84e717569e126502a7795bd0befd1572/docs/moth/"],["assets/sfx/menu/menu-click.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@7874c83e84e717569e126502a7795bd0befd1572/docs/moth/"],["assets/ui/mobile_moth_buttons_20261017/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@7874c83e84e717569e126502a7795bd0befd1572/docs/moth/"],["assets/sprites/level4_meme_chest/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@7874c83e84e717569e126502a7795bd0befd1572/docs/moth/"],["assets/memes/level4-meme.png","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@7874c83e84e717569e126502a7795bd0befd1572/docs/moth/"]]);
 const MIRROR_ROOT = '/moth/';
 let assetIntegrity = null;
 
@@ -29971,11 +30145,9 @@ function drawObjectivePrompt(target, text, accent, time, y = VIEW_H - 74) {
     game.tallPrompt = { text, accent, frame: game.renderFrame };
     return;
   }
-  // On phones the joystick/button clusters overlay the bottom of the canvas;
-  // keep every stage instruction above them so it stays readable.
-  if (typeof document !== "undefined" && document.body?.dataset?.deviceMode === "phone") {
-    y = Math.min(y, VIEW_H - 216);
-  }
+  // At the top, level with the 暫停 button and clear of it on both sides.
+  const pause = game?.getLevel1OfficePauseButtonRect?.() || { x: 18, y: 16, w: 112, h: 44 };
+  y = pause.y;
   const h = 44;
   const pulse = 0.5 + Math.sin(time * 5.2) * 0.5;
 
@@ -29983,7 +30155,7 @@ function drawObjectivePrompt(target, text, accent, time, y = VIEW_H - 74) {
   // Size the box to the text (min 520) so long prompts are fully boxed in.
   target.font = `900 22px ${CANVAS_UI_FONT}`;
   const measured = target.measureText(String(text ?? "")).width;
-  const w = Math.min(VIEW_W - 24, Math.max(520, Math.ceil(measured + 60)));
+  const w = Math.min(VIEW_W - 2 * (pause.x + pause.w + 12), Math.max(520, Math.ceil(measured + 60)));
   const x = (VIEW_W - w) / 2;
   target.fillStyle = "rgba(3, 5, 10, 0.72)";
   target.fillRect(x - 6, y - 6, w + 12, h + 12);

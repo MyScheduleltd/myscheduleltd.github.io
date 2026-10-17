@@ -9,8 +9,9 @@
 // iPhone may also reload the page while it is locked (a home-screen app
 // especially), which used to send 繼續 on the main menu back to the start of
 // the level. While the page is hidden the fight's state is kept, and the
-// main menu's 繼續 restores it mid-song after the same count. Coming back
-// without a reload forgets it.
+// main menu's 繼續 restores it mid-song after the same count. Coming back to
+// the fight without a reload forgets it. Leaving a story fight for the main
+// menu keeps it the same way (moth-story-save.mjs).
 //
 // No note is judged during any count.
 
@@ -19,7 +20,7 @@ export function patchFightResume(once) {
   // Back from the lock screen or another app.
   once('    if (!document.hidden && this.audioInterruption?.fromHidden && !this.audioRecoveryVisible()) {\n      this.recoverGameAudio({ automatic: true });', '    if (!document.hidden && this.audioInterruption?.fromHidden && !this.audioRecoveryVisible()) {\n      if (this.countDownInterruptedFight()) return;\n      this.recoverGameAudio({ automatic: true });');
   once('event.preventDefault(); event.stopPropagation(); this.recoverGameAudio();', 'event.preventDefault(); event.stopPropagation(); if (!this.countDownFightAfterTap()) this.recoverGameAudio();');
-  once('    window.addEventListener("pageshow", () => this.resumeAudioAfterReturn());', '    window.addEventListener("pageshow", () => this.resumeAudioAfterReturn());\n    // Kept only while hidden: a page that comes back was not reloaded.\n    document.addEventListener("visibilitychange", () => { if (document.hidden) this.keepFightForReload(); else this.forgetKeptFight(); });\n    window.addEventListener("pagehide", () => this.keepFightForReload());\n    window.addEventListener("pageshow", event => { if (event.persisted) this.forgetKeptFight(); });');
+  once('    window.addEventListener("pageshow", () => this.resumeAudioAfterReturn());', '    window.addEventListener("pageshow", () => this.resumeAudioAfterReturn());\n    // Kept while hidden: a page that comes back to its fight was not reloaded.\n    // (One kept on the way to the main menu waits there for 繼續.)\n    document.addEventListener("visibilitychange", () => { if (document.hidden) this.keepFightForReload(); else if (this.level1OfficeRhythm) this.forgetKeptFight(); });\n    window.addEventListener("pagehide", () => this.keepFightForReload());\n    window.addEventListener("pageshow", event => { if (event.persisted && this.level1OfficeRhythm) this.forgetKeptFight(); });');
   // 暫停 → 繼續.
   once('    const track = this.getActiveLevel1OfficeRhythmAudio();\n    if (track) track.pause();\n    this.releaseHeldInputs();', '    const track = this.getActiveLevel1OfficeRhythmAudio();\n    this.level1OfficePausedAt = track?.currentTime;\n    if (track) track.pause();\n    this.releaseHeldInputs();');
   once('    this.state = "playing";\n    const resumeTrack = this.getActiveLevel1OfficeRhythmAudio();\n    if (resumeTrack && !this.level1OfficeRhythm?.skipAudio) {\n      const resumed = this.playMusicAudio(resumeTrack);\n      if (resumed?.catch) resumed.catch(() => {});\n    }', '    this.state = "playing";\n    const resumeTrack = this.getActiveLevel1OfficeRhythmAudio();\n    const pausedAt = Number.isFinite(this.level1OfficePausedAt) ? this.level1OfficePausedAt : resumeTrack?.currentTime;\n    // In the tap: keep (or regain) iPhone\'s permission to play after the count.\n    if (resumeTrack && !this.level1OfficeRhythm?.skipAudio) this.primeRhythmTrack(resumeTrack, pausedAt);\n    this.resumeFightAt(this.level1OfficeRhythm, pausedAt);');
