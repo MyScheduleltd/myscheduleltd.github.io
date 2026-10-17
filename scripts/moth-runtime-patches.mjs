@@ -6,6 +6,9 @@ import { KEY_FRINGE_SPRITES } from './moth-sprite-fringe.mjs';
 import { patchLyrics } from './moth-lyrics-patches.mjs';
 import { patchMenuSfx, MENU_SFX_METHODS } from './moth-menu-sfx.mjs';
 import { patchFightHud, FIGHT_HUD_METHODS } from './moth-fight-hud.mjs';
+import { patchStorySave } from './moth-story-save.mjs';
+import { patchWalkScenes, WALK_SCENE_METHODS } from './moth-walk-scenes.mjs';
+import { patchDeckTouch } from './moth-deck-art.mjs';
 import { ADDED_ASSETS, MOTH_MIRROR_ADDITIONS_COMMIT } from './moth-asset-additions.mjs';
 
 // Keep the selected published game as the input. Both audiences get identical
@@ -88,7 +91,7 @@ export function patchMothRuntime(source, ts) {
   // Definitions precede closures, but the registry must exist for secret jobs.
   const registry = `  createSceneAssetJobs() {\n    this.sceneAssetJobs = [];\n    ${definitions.join('\n    ')}\n    this.sceneAssetJobs.push(\n${jobs.map(job => `      {key:${JSON.stringify(job.key)}, group:${JSON.stringify(job.group)}, run:async () => {${job.run}}, release:() => {delete this.refs.${job.key};}}`).join(',\n')}\n    );\n    this.loadedSceneGroups = new Set();\n  }\n`;
   source = source.slice(0, start) + '      this.createSceneAssetJobs();\n' + source.slice(end);
-  once('  async loadLayeredMapConfig() {', registry + RUNTIME_METHODS + SCOREBOARD_METHODS + FIGHT_RESUME_METHODS + MENU_SFX_METHODS + FIGHT_HUD_METHODS + '\n  async loadLayeredMapConfig() {');
+  once('  async loadLayeredMapConfig() {', registry + RUNTIME_METHODS + SCOREBOARD_METHODS + FIGHT_RESUME_METHODS + MENU_SFX_METHODS + FIGHT_HUD_METHODS + WALK_SCENE_METHODS + '\n  async loadLayeredMapConfig() {');
   once('const response = await fetch("./data/level1.json", { cache: "no-store" });\n      this.config = await response.json();', 'this.config = await fetchGameJson("./data/level1.json");');
   once('const response = await fetch(source, { cache: "no-store" });\n    if (!response.ok) throw new Error(`Could not load layered map data: ${source}`);\n    const layeredMap = await response.json();', 'const layeredMap = await fetchGameJson(source);');
   once('this.loadError = error instanceof Error ? error.message : String(error);\n      this.state = "failure";', 'this.showLoadRecovery(error);');
@@ -239,6 +242,12 @@ export function patchMothRuntime(source, ts) {
   patchMenuSfx(once);
   // The pad's colours and the phone's fight layout (scripts/moth-fight-hud.mjs).
   patchFightHud(once, edit);
+  // Story mode keeps its place (scripts/moth-story-save.mjs).
+  patchStorySave(once, edit);
+  // The walking scenes: the instruction bar, where fights return to (scripts/moth-walk-scenes.mjs).
+  patchWalkScenes(once, edit);
+  // No iPhone magnifier on the touch deck (scripts/moth-deck-art.mjs).
+  patchDeckTouch(once);
   // A fight's song switches to its downloaded copy before it starts (useSongCopy),
   // waits under 載入中… if a stream runs dry, and judges nothing meanwhile.
   once('      track.pause();\n      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);\n      track.currentTime = this.getRhythmAudioStart();', '      track.pause();\n      this.useSongCopy(track);\n      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);\n      track.currentTime = this.getRhythmAudioStart();');

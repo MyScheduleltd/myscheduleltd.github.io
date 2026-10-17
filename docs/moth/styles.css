@@ -2420,6 +2420,13 @@ body[data-device-mode="phone"][data-rhythm-active="1"] .film-grain-overlay::afte
   box-shadow: 4px 5px 0 #354838; text-align: center; font: inherit; cursor: pointer;
 }
 
+/* No long-press magnifier or callout on an iPhone (moth-deck-art.mjs). */
+html, body, .mobile-controls, .mobile-controls * {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .load-recovery { background: #1216134d; }
 .load-recovery section { background: repeating-linear-gradient(#242b28 0 3px, #202623 3px 4px); color: #f7f2de; border: 4px solid #ce3f49; box-shadow: 8px 8px 0 #111613; }
 .load-recovery small { color: #8fe8ff; }
@@ -2459,3 +2466,17 @@ body[data-device-mode="phone"][data-rhythm-active="1"] .film-grain-overlay::afte
 .moth-board-post label { grid-column: 1 / -1; color: #ffd36c; font-size: 13px; }
 .moth-board input { min-width: 0; font: inherit; font-size: 18px; color: #2a2f2a; background: #f4efd8; border: 3px solid #141a16; border-radius: 0; padding: 8px 10px; }
 .moth-board-message { margin: 0; min-height: 1.3em; color: #ffd36c; font-size: 14px; overflow-wrap: anywhere; }
+
+.moth-meme { position: fixed; inset: 0; z-index: 10002; display: grid; place-items: center; box-sizing: border-box;
+  padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  background: #0d110ed9; touch-action: manipulation; color: #f7f2de; font: 700 16px/1.45 "Courier New", "PingFang TC", "Noto Sans TC", monospace; }
+.moth-meme section { box-sizing: border-box; width: min(520px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: 12px; padding: 18px;
+  background: repeating-linear-gradient(#2c3b30 0 3px, #28362c 3px 4px); border: 4px solid #d8d2b4; outline: 3px solid #141a16; box-shadow: 8px 8px 0 #0b0e0c; }
+.moth-meme h2 { margin: 0; padding-left: 12px; border-left: 6px solid #ffd36c; font-size: clamp(20px, 5vw, 26px); letter-spacing: .06em; }
+.moth-meme img { display: block; width: 100%; min-height: 0; flex: 1 1 auto; object-fit: contain; background: #141a16; border: 2px solid #5b6f5e;
+  -webkit-touch-callout: default; -webkit-user-select: auto; user-select: auto; }
+.moth-meme p { margin: 0; color: #8fe8ff; font-size: 13px; }
+.moth-meme-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.moth-meme button { font: inherit; font-weight: 900; font-size: 18px; padding: 12px; background: #344439; color: #f7f2de; border: 3px solid #dcd8bd; box-shadow: 4px 5px 0 #141a16; }
+.moth-meme button[data-meme-save] { background: #ffd36c; color: #1b2130; }
+.moth-meme button:focus-visible { outline: 3px solid #ffd36c; outline-offset: 4px; }

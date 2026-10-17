@@ -1,5 +1,5 @@
 {
-  "note": "Files the game publishes beyond the release: the owner's menu sounds (2026-10-14, scripts/make-menu-sfx.py) and the deck's M/O/T/H buttons in the Super Famicom pad's colours (2026-10-17, scripts/make-moth-buttons.py).",
+  "note": "Files the game publishes beyond the release: the owner's menu sounds (2026-10-14, scripts/make-menu-sfx.py), the deck's M/O/T/H buttons in the Super Famicom pad's colours (2026-10-17, scripts/make-moth-buttons.py), and level 4's basement chest with its picture (2026-10-18, scripts/make-meme-chest.py and, until the owner's meme arrives, scripts/make-meme-standin.py).",
   "files": {
     "assets/sfx/menu/menu-tick.wav": {
       "sha256": "0890780f0735654e38b764d253790039155b9145ed24875eb5fe0bcf3b85fa8c",
@@ -20,6 +20,18 @@
       "bytes": 267244,
       "source": "assets/ui/mobile_moth_buttons_20261002/sheet.webp (the release's grey sheet)",
       "use": "the touch deck's M, O, T and H buttons"
+    },
+    "assets/sprites/level4_meme_chest/sheet.webp": {
+      "sha256": "a7223526b6ea279196e17f79f5b18d84dd9243b5866a3ad8af25196054b6486f",
+      "bytes": 213964,
+      "source": "generated with Nano Banana 2 from the level 4 basement and the release's old wall chest (.qa/moth/generated/level4-meme-chest-20261018.png)",
+      "use": "level 4's basement chest"
+    },
+    "assets/memes/level4-meme.png": {
+      "sha256": "7d0fbd1a93d6e034c3fb98f2f467e5b29cc6595b8aceaf329c145a7ad8668e36",
+      "bytes": 133286,
+      "source": "stand-in card until the owner's meme arrives",
+      "use": "the picture in level 4's basement chest"
     }
   }
 }

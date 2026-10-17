@@ -13,6 +13,9 @@
 // staff ID as a strip (the badge's ID photo, 練習 stamp, 正 miss tally and green
 // screen). GANGAN's feedback moves off the track to just above that row, as
 // wide as its line. Computers keep the box beside the track.
+//
+// Hearts (owner, 2026-10-18): in story mode every 10 in a row gives back one
+// heart, up to the full five; it glows as it returns. Level 7 has no hearts.
 
 export const MOTH_NOTE_COLOURS = { M: "#2457c5", O: "#e0463e", T: "#ecb300", H: "#2ea878" };
 
@@ -107,6 +110,16 @@ ${block.split('\n').slice(1, -1).map(line => '  ' + line).join('\n')}
     }
 `);
 
+  // A heart back for every 10 in a row (on the combo celebration's beat).
+  once('    rhythm.comboMilestone = { at: this.time, combo: rhythm.combo };\n', `    rhythm.comboMilestone = { at: this.time, combo: rhythm.combo };
+    if (!this.isHealthlessRun() && !this.isConcertRhythm() && rhythm.health < rhythm.maxHealth) {
+      rhythm.health += 1;
+      rhythm.celebrationHeart = { index: rhythm.health - 1, at: this.time };
+    }
+`);
+  once('        target.fillText(\n          "♥",\n          lifeBounds.x + lifeBounds.w / 2 - heartsWidth / 2 + heartIndex * heartPitch,\n          lifeBounds.y + 72\n        );',
+    '        this.drawFightHeart(target, lifeBounds.x + lifeBounds.w / 2 - heartsWidth / 2 + heartIndex * heartPitch, lifeBounds.y + 72, heartIndex);');
+
   // The practice badge's parts the phone's strip shares.
   once('    const bathroom = this.isBathroomRhythm();\n    const accent = this.isConcertRhythm() ? "#8a3fb0" : this.isRiverRhythm() ? "#2f6f8f" : this.isArcadeRhythm() ? "#3552a8" : this.isMassageRhythm() ? "#c0506a" : bathroom ? "#3a9a8a" : "#2d7ec2";',
     '    const accent = this.getPracticeBadgeAccent();');
@@ -121,6 +134,26 @@ ${block.split('\n').slice(1, -1).map(line => '  ' + line).join('\n')}
 }
 
 export const FIGHT_HUD_METHODS = `
+  // One of Dr. Beauty's hearts, in the colour and font already set. A heart
+  // that has just come back (every 10 in a row) swells and glows for a moment.
+  drawFightHeart(target, x, y, index) {
+    const rhythm = this.level1OfficeRhythm, back = rhythm?.celebrationHeart;
+    const age = back?.index === index && index < rhythm.health ? (this.time || 0) - back.at : Infinity;
+    if (!(age >= 0 && age < 0.9)) {
+      target.fillText("♥", x, y);
+      return;
+    }
+    const glow = 1 - age / 0.9;
+    target.save();
+    target.translate(x, y);
+    target.scale(1 + 0.45 * glow, 1 + 0.45 * glow);
+    target.shadowColor = "#ffd0de";
+    target.shadowBlur = 22 * glow;
+    target.fillStyle = "#ff6f9b";
+    target.fillText("♥", 0, 0);
+    target.restore();
+  }
+
   // The width of the phone's feedback box (drawGanganCoachChip, h tall): its
   // line at full size and the box's margins, at least 240 (scaled from the
   // box's own 52-px height) and at most the row's width.
@@ -239,7 +272,7 @@ export const FIGHT_HUD_METHODS = `
       target.textAlign = "center";
       for (let index = 0; index < maxHearts; index += 1) {
         target.fillStyle = index < hearts ? "#ef3f78" : "#30343a";
-        target.fillText("♥", (left + right) / 2 + (index - (maxHearts - 1) / 2) * pitch, mid);
+        this.drawFightHeart(target, (left + right) / 2 + (index - (maxHearts - 1) / 2) * pitch, mid, index);
       }
     }
     target.restore();

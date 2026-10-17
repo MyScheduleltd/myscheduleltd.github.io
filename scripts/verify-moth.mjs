@@ -60,8 +60,10 @@ for (const [name, type] of [['chrome', chromium], ['webkit', webkit]]) {
     await page.locator('[data-debug-fight="level1-stage1"]').click();
     await page.waitForFunction(() => window.bobbyGame?.state === 'playing', undefined, {timeout:60000});
     await page.screenshot({path:path.join(out, `${name}-staff.png`)});
-    const keys = await page.evaluate(() => Object.keys(sessionStorage).filter(key => /progress/.test(key)));
-    assert(keys.some(key => key.startsWith('moth.staff')));
+    // Story progress is kept on the device (moth-story-save.mjs), each build
+    // under its own key; this page played the public game first.
+    const keys = await page.evaluate(() => Object.keys(localStorage).filter(key => /progress/.test(key)));
+    assert(keys.includes('moth.staff_progress_v1') && keys.includes('moth.public_progress_v1'), JSON.stringify(keys));
     report.push({engine:name, audience:'staff', debugWorks:true, isolatedStorage:true, violations:await page.evaluate(() => window.__qaViolations)});
     await page.goto(new URL('moth/', base).href, {waitUntil:'domcontentloaded'});
     await page.waitForFunction(() => window.__qaDraws.some(text => /STORY MODE|故事模式/.test(text)), undefined, {timeout:180000});
