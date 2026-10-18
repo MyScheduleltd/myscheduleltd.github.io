@@ -443,6 +443,85 @@ test('admission waits a bounded moment for the warm player to answer, and not at
   }finally{globalThis.window=savedWindow;}
 });
 
+test('under the loading view the warm player plays its first film muted, stops once it plays, and reports nothing to any screen',()=>withFakeDom((iframes)=>{
+  const {world,reports,say}=playerWorld();
+  world.place=undefined;world.admitting=true;world.firstFilmWindow=true;
+  world.setPublicScreening('palace',FILM_A,0,'p1');
+  const [frame]=iframes,player=world.screenPlayer;
+  say(frame,{event:'initialDelivery',info:{videoData:{video_id:'aaaaaaaaaaa'},playerState:5}});
+  assert.deepEqual(frame.posted.map(c=>c.func),['mute','playVideo'],'played, muted, as soon as it answers');
+  assert.equal(player.firstFilm,'playing');
+  say(frame,{event:'onStateChange',info:3});
+  assert.equal(frame.posted.length,2,'still buffering: left to start');
+  say(frame,{event:'infoDelivery',info:{duration:100,currentTime:0.2,playerState:1}});
+  assert.deepEqual(frame.posted.map(c=>c.func),['mute','playVideo','stopVideo'],'and stopped the moment it plays');
+  assert.equal(player.firstFilm,'stopping');
+  say(frame,{event:'onStateChange',info:5});
+  assert.equal(player.firstFilm,'done');
+  assert.deepEqual(reports.durations,[],'no screen holds it, so its length goes nowhere');
+  assert.equal(world.projectors.get('palace').currentTime,undefined);
+  // Then the first doorway is an ordinary swap, and the first film is not repeated.
+  world.admitting=false;world.firstFilmWindow=false;
+  world.place='palace';world.updateProjectorMounts();
+  say(frame,{event:'onStateChange',info:1});
+  assert.deepEqual(frame.posted.slice(3).map(c=>c.func),['loadVideoById','mute']);
+  assert.equal(iframes.length,1);
+}));
+
+test('the first film waits for the fixed downloads, never starts once admission is over, and leaves a screen\'s film alone',()=>withFakeDom((iframes)=>{
+  // Still downloading the world: answered, but not played.
+  const early=playerWorld();
+  early.world.admitting=true;early.world.firstFilmWindow=false;
+  early.world.setPublicScreening('palace',FILM_A,0,'p1');
+  early.say(iframes[0],{event:'initialDelivery',info:{videoData:{video_id:'aaaaaaaaaaa'}}});
+  assert.deepEqual(iframes[0].posted,[]);
+  // Answering only once the festival is running: never played at a random moment.
+  early.world.admitting=false;early.world.firstFilmWindow=true;early.world.screenPlayer.firstFilm=undefined;
+  early.world.playFirstFilm(early.world.screenPlayer);
+  assert.deepEqual(iframes[0].posted,[]);
+  // Admitted straight into a venue: the screen's own film is the first film.
+  const inside=playerWorld();
+  inside.world.place='palace';inside.world.admitting=true;inside.world.firstFilmWindow=true;
+  inside.world.setPublicScreening('palace',FILM_A,30,'p1');inside.world.mountedProjectorVenue='palace';
+  const frame=iframes[1];
+  inside.say(frame,{event:'initialDelivery',info:{videoData:{video_id:'aaaaaaaaaaa'}}});
+  inside.say(frame,{event:'onStateChange',info:1});
+  assert.deepEqual(frame.posted.map(c=>c.func),['loadVideoById','mute'],'nothing played or stopped over the screen\'s film');
+  assert.equal(inside.world.screenPlayer.firstFilm,undefined);
+  // 一般: measured no better for it, so admission doesn't pay for it.
+  const general=playerWorld();
+  general.world.graphicsMode='normal';general.world.admitting=true;general.world.firstFilmWindow=true;
+  general.world.setPublicScreening('palace',FILM_A,0,'p1');
+  general.say(iframes[2],{event:'initialDelivery',info:{videoData:{video_id:'aaaaaaaaaaa'}}});
+  assert.deepEqual(iframes[2].posted,[]);
+  assert.equal(general.world.screenPlayer.firstFilm,undefined);
+}));
+
+test('admission gives the first film a bounded moment, and stops it before the world opens even if it never started',async()=>{
+  const savedWindow=globalThis.window;
+  globalThis.window={setTimeout:(f,ms)=>setTimeout(f,ms)};
+  try{
+    const posted=[];
+    const world=Object.create(FestivalWorld.prototype);
+    Object.assign(world,{disposed:false,admitting:true,firstFilmWindow:true});
+    let t=Date.now();await world.screenPlayerFirstFilm(2000);assert.ok(Date.now()-t<50,'no player, no wait');
+    world.firstFilmWindow=true;
+    world.screenPlayer={iframe:{contentWindow:{postMessage:(m)=>posted.push(JSON.parse(m).func)}},ready:true};
+    // It plays after 150 ms and has stopped 100 ms later.
+    setTimeout(()=>world.stopFirstFilm(world.screenPlayer),150);
+    setTimeout(()=>{world.screenPlayer.firstFilm='done';},250);
+    t=Date.now();await world.screenPlayerFirstFilm(2000);const started=Date.now()-t;
+    assert.ok(started>=200&&started<700,`returns once it has stopped (${started} ms)`);
+    assert.deepEqual(posted,['mute','playVideo','stopVideo']);
+    assert.equal(world.firstFilmWindow,false,'and nothing can start it after this');
+    // A player that never gets going is stopped at the limit all the same.
+    posted.length=0;world.firstFilmWindow=true;world.screenPlayer.firstFilm=undefined;
+    t=Date.now();await world.screenPlayerFirstFilm(250);const capped=Date.now()-t;
+    assert.deepEqual(posted,['mute','playVideo','stopVideo']);
+    assert.ok(capped>=200&&capped<1100,`bounded: the start, then the stop (${capped} ms)`);
+  }finally{globalThis.window=savedWindow;}
+});
+
 test('asset notifications settle one body per paint, coalesce repeats, and cancel disposed bodies',async()=>{
   const {FrameWorkQueue}=await import('data:text/javascript;base64,'+Buffer.from((await build({entryPoints:['src/world/FrameWorkQueue.ts'],bundle:true,write:false,format:'esm',platform:'node'})).outputFiles[0].text).toString('base64'));
   const frames=[],done=[];const queue=new FrameWorkQueue(run=>frames.push(run));

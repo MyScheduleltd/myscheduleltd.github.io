@@ -1,4 +1,37 @@
-# Current Claude continuation — one YouTube player for every screen, 2026-10-18 (Asia/Taipei)
+# Current Claude continuation — the first film under the loading view, 2026-10-18 (Asia/Taipei)
+
+**LOCAL ONLY until the owner approves.** Committed on top of the one-player commit `2a69688` (section below). Nothing published, pushed or deployed.
+
+**Problem.** With one shared player, every venue entry after the first was under 50 ms in the WebKit hitch probe, but the first venue still cost 47–102 ms, even when the player had answered during loading. That is WebKit starting the page's first film. Later swaps don't repeat it.
+
+**Change** (`FestivalWorld.ts`, `playFirstFilm` / `stopFirstFilm` / `screenPlayerFirstFilm`): in 精簡, once the warm player has answered, it is played muted under the loading view and stopped as soon as it reports playing.
+- **When.** Only after `prepareAssets`, when the fixed downloads are done (`firstFilmWindow`), so a cold phone isn't downloading film and world at once. Only while admitting and while no screen holds the player. If a visitor is admitted straight into a venue, that screen's film is the first film and is left alone.
+- **Bounded.** It usually overlaps the warm-up. At the end, admission waits up to 2 s (`SCREEN_PLAYER_FIRST_FILM_WAIT_MS`) for it to play. Then it is stopped whether it started or not, and admission waits up to 0.4 s for the stop to land. The window then closes, so a player that answers late (after the 3 s answer cap) never starts a film at some moment in the festival. If admission fails, `stop()` tears the player down.
+- **One decoder.** Nothing else decodes during loading. `stopVideo` unloads the media (state 5), the same as `releaseProjector`, so a phone holds one decoder briefly and none after.
+- **No screen hears it.** No projector holds the iframe, so its duration, playhead and "ended" reports go nowhere: nothing reaches the shared duration table.
+- **精簡 only** (`graphicsMode !== 'normal'`, which is what a phone gets: `App.looksLikeAPhone() ? 'lite'`). In 一般 it made no measurable difference (below) and cost the same admission time. Desktop Chrome runs YouTube in its own process anyway.
+
+**Measured** (`tools/hitch-probe.mjs`, Playwright 1.62 WebKit, iPhone 15 Pro viewport, M2, own disposable API on 8796, production builds of `2a69688` vs this). Steps `settle,palace,shore,drive-in,club,rooftop`. 5 runs per side per mode, before and after interleaved, alternating which side went first. Each figure is the worst frame gap at that step, median of 5, ms; [frames >50 ms summed over the 5 runs]. Compile frames excluded (none occurred).
+
+| | entry | Palace | Shore | Drive-In | Club | Rooftop | admission, median (range) |
+|---|---|---|---|---|---|---|---|
+| 精簡 before | 20 | 66 [6] | 40 [0] | 21 | 26 | 21 [0] | 7.5 s (6.3–8.8) |
+| 精簡 after | 21 | **44 [2]** | 33 [1] | 19 | 35 | 20 [1] | 7.8 s (6.2–8.1) |
+| 一般 before | 33 | 51 [4] | 38 [1] | 43 | 36 [1] | 32 | 7.4 s (6.0–9.0) |
+| 一般 with it (not kept) | 32 | 54 [5] | 38 | 37 | 33 [2] | 32 | 8.1 s (6.6–10.6) |
+
+- **精簡 Palace:** worst frame 79/103/52/52/66 → 44/41/42/53/58 ms. Jank at that step (time over 34 ms, summed) fell from a median of 46 ms to 12. Every other step is unchanged within noise.
+- **一般 Palace:** the worst frames are the arrival itself, two 40–70 ms frames in both builds, like the ~35 ms pair at Shore and Drive-In. Jank 29 → 30. So the final build skips it in 一般, which then behaves exactly as before (one sanity run of the final build: no film under loading, Palace 47 ms, admission 6.0 s).
+- **Admission.** In every run the player answered late in loading (4.8–8.7 s in), so it, not the warm-up, sets when the world opens. Before, the world opened 0.1–1.1 s after the answer; with the first film, 1.1–2.9 s after it. In 3 of 10 runs the film took 1.9–2.4 s to be stopped, which is at or near the 2 s cap. The Palace gain held in both of those that were 精簡 runs, so the cost seems to be paid when playback starts up, not at the first picture.
+- **Download.** One streamed film request (YouTube's UMP POST to googlevideo.com) opens when it plays and is cancelled by the stop 0.6–0.7 s later, still under loading. Its size can't be read once cancelled. The player also fetches ~0.24 MB more of its own script, against ~48 MB for gate + loading.
+- **Lab** (scratch, not kept): a bare page with a hidden, cued player. A muted `playVideo` reached playing about 1.4 s after the command, and the stop landed in about 60 ms.
+- **Not measured on a phone.** Headless WebKit takes 5–13 s to start a YouTube embed. How long a real iPhone takes to answer and to play decides whether the 3 s and 2 s caps ever bite.
+- `npm run verify`: 613/613 + build. New tests in `scripts/projector-occlusion.test.mjs`: played muted once it answers, stopped once it plays, no reports to screens, no repeat at the first doorway; waits for the fixed downloads, never starts after admission, leaves a screen's film alone, not in 一般; bounded wait that stops it even if it never started.
+- `tools/hitch-probe.mjs`: the per-frame `player` field also shows the first film's stage (`ready playing` / `ready stopping` / `ready done`).
+
+---
+
+# Previous continuation — one YouTube player for every screen, 2026-10-18 (Asia/Taipei)
 
 **LOCAL ONLY until the owner approves.** Built on the uncommitted iPhone-freeze work below (snapshot of `release-sfx-20261018` as of 15:41). Remedies the "Left:" line there: the freeze on walking into a screened venue.
 

@@ -242,6 +242,8 @@ interface ScreenPlayer {
    * so a report can still be about the film it had before the latest switch.
    */
   reportedVideoId?: string;
+  /** The muted first play under the loading view (`playFirstFilm`). */
+  firstFilm?: 'playing' | 'stopping' | 'done';
 }
 
 interface ProjectorSurface {
@@ -872,6 +874,10 @@ const videoIdFromWatchUrl = (url: unknown): string | undefined => {
 };
 /** How long admission waits for the warm YouTube player to answer (`screenPlayerAnswered`). */
 const SCREEN_PLAYER_ADMISSION_WAIT_MS = 3_000;
+/** How long admission then waits for its first film to start (`screenPlayerFirstFilm`). */
+const SCREEN_PLAYER_FIRST_FILM_WAIT_MS = 2_000;
+/** And for the stop that follows to land. */
+const SCREEN_PLAYER_FIRST_STOP_WAIT_MS = 400;
 /** Commands that decide what the shared player is doing (`commandProjector`). */
 const PLAYBACK_PLAYER_COMMANDS = new Set(['loadVideoById', 'cueVideoById', 'stopVideo', 'seekTo', 'playVideo', 'pauseVideo']);
 /** And the ones that make any of those still waiting moot. */
@@ -1687,6 +1693,8 @@ export class FestivalWorld {
   private screenPlayer?: ScreenPlayer;
   /** Until `start()`: the loading view is up, and a player start-up costs no frame. */
   private admitting = true;
+  /** From the end of the fixed downloads to the end of admission (`playFirstFilm`). */
+  private firstFilmWindow = false;
   private mountedProjectorVenue?: VenueKey;
   private projectorLeaveAt?: number;
   /** Loopback-only override for the timetable/projector overlap regression. */
@@ -2318,9 +2326,13 @@ export class FestivalWorld {
     // Live visitors and streamed films remain runtime data; all fixed assets
     // finish placement before subdivision, batching and GPU preparation.
     await this.prepareAssets(progress => onProgress?.(progress * .55));
+    // The fixed downloads are done, so the player's first film may run as soon
+    // as it answers, alongside the work below (`playFirstFilm`).
+    this.firstFilmWindow = true;
     // Usually already started by the programme (`setPublicScreening`); first
     // either way, so its start-up overlaps everything below.
     this.warmScreenPlayer();
+    if (this.screenPlayer) this.playFirstFilm(this.screenPlayer);
     // Let zero-delay attachment work and the loading view paint first.
     await new Promise<void>(resolve => window.setTimeout(resolve, 0));
     if (this.disposed) return;
@@ -2359,6 +2371,7 @@ export class FestivalWorld {
     // The programme may only have arrived during the warm-up.
     this.warmScreenPlayer();
     await this.screenPlayerAnswered(SCREEN_PLAYER_ADMISSION_WAIT_MS);
+    await this.screenPlayerFirstFilm(SCREEN_PLAYER_FIRST_FILM_WAIT_MS);
     onProgress?.(1);
   }
 
@@ -7772,6 +7785,68 @@ export class FestivalWorld {
     const queued = player.queued;
     player.queued = [];
     for (const { message } of queued) player.iframe?.contentWindow?.postMessage(message, '*');
+    this.playFirstFilm(player);
+  }
+
+  /**
+   * Plays the warm player for a moment, muted and hidden, then stops it.
+   *
+   * The first film a page plays costs WebKit far more than any after it. With
+   * the player built and answering long before, the first venue somebody
+   * walked into still had 47–102 ms frames, and every later one stayed under
+   * 50 ms (hitch probe, 2026-10-18). This pays for it under the loading view.
+   * Only after the fixed downloads, so a cold phone isn't fetching film and
+   * world at once, and only while no screen holds the player. Stopping
+   * unloads the media, so a phone holds one decoder for that moment and none
+   * after it.
+   *
+   * 精簡 only, which is what a phone gets. There it took the first venue's
+   * worst frame from 66 to 44 ms (median of 5). In 一般 the first doorway's
+   * worst frames are the view itself, and the same with or without this, so
+   * it would only add its 1–2 s to admission (and desktop Chrome runs the
+   * player in another process anyway).
+   */
+  private playFirstFilm(player: ScreenPlayer): void {
+    if (this.graphicsMode === 'normal') return;
+    if (!this.firstFilmWindow || !this.admitting || this.disposed || this.screenPlayer !== player) return;
+    if (!player.iframe || !player.ready || player.venue || player.firstFilm) return;
+    player.firstFilm = 'playing';
+    this.tellScreenPlayer(player, 'mute');
+    this.tellScreenPlayer(player, 'playVideo');
+  }
+
+  /** Ends the first film, unless a screen has taken the player meanwhile. */
+  private stopFirstFilm(player: ScreenPlayer): void {
+    if (player.firstFilm !== 'playing') return;
+    // A screen that took it has already swapped the film, and owns it now.
+    if (player.venue) { player.firstFilm = 'done'; return; }
+    player.firstFilm = 'stopping';
+    this.tellScreenPlayer(player, 'stopVideo');
+  }
+
+  /**
+   * Until the first film has started and stopped, or `limitMs` has passed.
+   * Started or not by then, it is stopped here: it must never start up later,
+   * at some moment in the festival.
+   */
+  private async screenPlayerFirstFilm(limitMs: number): Promise<void> {
+    const player = this.screenPlayer;
+    if (player) this.playFirstFilm(player);
+    const pause = () => new Promise<void>(resolve => window.setTimeout(resolve, 100));
+    const waitWhile = async (stage: ScreenPlayer['firstFilm'], until: number) => {
+      while (player?.firstFilm === stage && this.screenPlayer === player && !this.disposed && performance.now() < until) await pause();
+    };
+    await waitWhile('playing', performance.now() + limitMs);
+    if (player) this.stopFirstFilm(player);
+    await waitWhile('stopping', performance.now() + SCREEN_PLAYER_FIRST_STOP_WAIT_MS);
+    this.firstFilmWindow = false;
+  }
+
+  /** A command straight to the shared player, for when no screen holds it. */
+  private tellScreenPlayer(player: ScreenPlayer, func: string): void {
+    try {
+      player.iframe?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args: [] }), '*');
+    } catch { /* a cross-origin frame that has already gone */ }
   }
 
   /**
@@ -8981,6 +9056,10 @@ export class FestivalWorld {
       const reported = info?.videoData?.video_id || videoIdFromWatchUrl(info?.videoUrl);
       if (reported) player.reportedVideoId = reported;
       this.screenPlayerReady(player);
+      // The first film under the loading view: stopped once it is playing.
+      const state = payload.event === 'onStateChange' && typeof payload.info === 'number' ? payload.info : info?.playerState;
+      if (state === 1) this.stopFirstFilm(player);
+      else if (state === 5 && player.firstFilm === 'stopping') player.firstFilm = 'done';
     }
     // One player serves every screen. A report still about the film it had
     // before the latest switch must not be credited to the new one: a wrong
