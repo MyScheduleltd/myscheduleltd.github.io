@@ -533,7 +533,7 @@ test('asset notifications settle one body per paint, coalesce repeats, and cance
 });
 
 test('admission prepares the existing room before GPU warmup, without starting the gameplay loop',async()=>{
-  const savedWindow=globalThis.window;globalThis.window={setTimeout:run=>setTimeout(run,0),location:{search:'?nobatch'}};
+  const savedWindow=globalThis.window;globalThis.window={setTimeout:run=>setTimeout(run,0),setInterval:(run,ms)=>setInterval(run,ms),clearInterval:id=>clearInterval(id),location:{search:'?nobatch'}};
   try{
     const world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera();let created=0,compiled=0,drawn=0;
     // The warm-up stand of every body is the avatar code's to build; here it is an empty group.
@@ -545,8 +545,27 @@ test('admission prepares the existing room before GPU warmup, without starting t
 });
 
 
+test('a slow film player gets its own stretch of the loading bar, which keeps moving while it waits',async()=>{
+  const savedWindow=globalThis.window;globalThis.window={setTimeout:(run,ms)=>setTimeout(run,ms),setInterval:(run,ms)=>setInterval(run,ms),clearInterval:id=>clearInterval(id),location:{search:'?nobatch'}};
+  try{
+    const world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene();
+    Object.assign(world,{scene,camera:new THREE.PerspectiveCamera(),pendingRemoteVisitors:new Map(),projectors:new Map(),cullDecorativeLights(){},warmAvatarVariants(){return new THREE.Group();},
+      renderer:{shadowMap:{},info:{programs:[]},render(){},async compileAsync(){}},warmScreenPlayer(){},screenPlayer:{iframe:{},ready:false}});
+    setTimeout(()=>{world.screenPlayer.ready=true;},1100);
+    const seen=[];await world.prepareForPlay((progress,stage)=>seen.push([progress,stage]));
+    const waiting=seen.filter(([,stage])=>stage==='screens').map(([progress])=>progress);
+    assert.ok(waiting.length>=3,`it reports while it waits (${waiting.length})`);
+    assert.ok(waiting.every((progress,i)=>i===0||progress>=waiting[i-1]),'always forward');
+    assert.deepEqual(seen.at(-1),[1,'screens'],'and ends on its own stretch');
+    // An answer already in: no stretch at all.
+    world.screenPlayer.ready=true;
+    const quick=[];await world.prepareForPlay((progress,stage)=>quick.push(stage));
+    assert.ok(!quick.includes('screens'));
+  }finally{globalThis.window=savedWindow;}
+});
+
 test('admission cannot compile or finish before fixed assets are placed', async () => {
-  const savedWindow=globalThis.window;globalThis.window={setTimeout:run=>setTimeout(run,0),location:{search:'?nobatch'}};
+  const savedWindow=globalThis.window;globalThis.window={setTimeout:run=>setTimeout(run,0),setInterval:(run,ms)=>setInterval(run,ms),clearInterval:id=>clearInterval(id),location:{search:'?nobatch'}};
   try {
     const world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene();
     let finishScenery,finishBand,finishArcade,compiled=0,complete=false;

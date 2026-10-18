@@ -2751,9 +2751,10 @@ export class App {
     // only thing that could have stopped it.
     window.setInterval(() => this.syncProgrammeBoard(), 1_000);
     this.setGateEntryProgress(.75, this.language === 'zh-TW' ? '正在準備畫面…' : 'PREPARING THE SCENE…');
-    await this.world.prepareForPlay(progress => this.setGateEntryProgress(.75 + progress * .14,
-      this.language === 'zh-TW' ? (progress < .6 ? '正在準備場景資源…' : '正在準備畫面…')
-        : (progress < .6 ? 'PREPARING WORLD ASSETS…' : 'PREPARING GRAPHICS…')));
+    // The film player's wait has its own stretch of the bar, so it is seen to move.
+    await this.world.prepareForPlay((progress, stage) => this.setGateEntryProgress(stage === 'screens' ? .84 + progress * .05 : .75 + progress * .09,
+      this.language === 'zh-TW' ? (stage === 'screens' ? '正在準備放映…' : progress < .6 ? '正在準備場景資源…' : '正在準備畫面…')
+        : (stage === 'screens' ? 'PREPARING THE SCREENS…' : progress < .6 ? 'PREPARING WORLD ASSETS…' : 'PREPARING GRAPHICS…')));
     // The sounds belong to the entrance, so nobody waits for them inside.
     if (!this.entryAudio.worldSoundsReady()) {
       let timer = 0;

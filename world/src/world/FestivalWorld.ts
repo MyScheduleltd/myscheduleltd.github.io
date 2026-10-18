@@ -2321,7 +2321,8 @@ export class FestivalWorld {
   }
 
   /** Finish static geometry and GPU programs while the loading view still owns input. */
-  async prepareForPlay(onProgress?: (progress: number) => void): Promise<void> {
+  /** `onProgress(fraction)` through the build and warm-up; then, while waiting on the film player, `onProgress(fraction of that wait, 'screens')`. */
+  async prepareForPlay(onProgress?: (progress: number, stage?: 'screens') => void): Promise<void> {
     if (this.preview || this.disposed) return;
     // Live visitors and streamed films remain runtime data; all fixed assets
     // finish placement before subdivision, batching and GPU preparation.
@@ -2370,9 +2371,21 @@ export class FestivalWorld {
     }
     // The programme may only have arrived during the warm-up.
     this.warmScreenPlayer();
-    await this.screenPlayerAnswered(SCREEN_PLAYER_ADMISSION_WAIT_MS);
-    await this.screenPlayerFirstFilm(SCREEN_PLAYER_FIRST_FILM_WAIT_MS);
-    onProgress?.(1);
+    // Waiting on the film player can take five seconds on a slow phone. Past
+    // a moment, the bar says so and keeps edging on (the owner, 2026-10-18).
+    const waitFrom = performance.now();
+    let waited = false;
+    const screenWait = window.setInterval(() => {
+      waited = true;
+      onProgress?.(1 - Math.exp(-(performance.now() - waitFrom) / 2_000), 'screens');
+    }, 250);
+    try {
+      await this.screenPlayerAnswered(SCREEN_PLAYER_ADMISSION_WAIT_MS);
+      await this.screenPlayerFirstFilm(SCREEN_PLAYER_FIRST_FILM_WAIT_MS);
+    } finally {
+      window.clearInterval(screenWait);
+    }
+    onProgress?.(1, waited ? 'screens' : undefined);
   }
 
   private warmupReport?: { kinds: number; programs: number };
