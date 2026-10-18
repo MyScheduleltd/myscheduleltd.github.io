@@ -5,7 +5,7 @@
 //     practice run; GANGAN's feedback just above that row, off the track,
 //     from the row's left edge and as wide as its line;
 //  2. the phone's track is centred on its hit line and its row of notes, and
-//     the notes are in the pad's colours (T's letter dark), where they are
+//     the notes are in the pad's colours (every letter cream), where they are
 //     drawn, out to 1.5 s ahead;
 //  3. on a computer Dr. Beauty's box stays beside the track.
 // Each frame is drawn on demand (render, then renderTallScreen) and read in
@@ -129,7 +129,8 @@ for (const run of [
     assert(visible.length >= 2, `${run.name}: notes on the track ${JSON.stringify(shot.noteSamples)}`);
     for (const note of visible) {
       assert(near(note.colour, rgb(MOTH_NOTE_COLOURS[note.button]), 40), `${run.name}: ${note.button} note in its colour ${JSON.stringify(note)}`);
-      if (note.button === 'T') assert(Math.max(...note.centre) < 90, `${run.name}: T's letter is dark ${JSON.stringify(note)}`);
+      // T's stem is at the note's centre: cream, like the other letters (owner, 2026-10-18).
+      if (note.button === 'T') assert(Math.min(...note.centre) > 170, `${run.name}: T's letter is cream ${JSON.stringify(note)}`);
     }
     const far = shot.noteSamples.find(note => note.ahead > 1.2 && note.ahead < 1.75);
     if (far) assert(far.tallX < 712 && near(far.colour, rgb(MOTH_NOTE_COLOURS[far.button]), 40), `${run.name}: a note ${far.ahead.toFixed(2)} s ahead is on the track ${JSON.stringify(far)}`);
