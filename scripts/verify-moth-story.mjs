@@ -186,19 +186,25 @@ for (const phone of [false, true]) {
     const read = (context, x, y) => [...context.getImageData(x, y, 1, 1).data.slice(0, 3)];
     const accent = ([r, gg, b]) => (Math.abs(r - 0x8f) < 30 && Math.abs(gg - 0xe8) < 30 && Math.abs(b - 0xff) < 30) || (Math.abs(r - 0xff) < 30 && Math.abs(gg - 0xd3) < 30 && Math.abs(b - 0x6c) < 40);
     if (phone) {
-      const pause = g.getLevel1OfficePauseButtonRect(), left = 8 + pause.w + 10, middle = Math.round(left + (720 - 8 - left) / 2);
-      // Its line centred in the bar: the bar's frame and the line's pale text, across the middle row.
-      const row = [...g.portraitCtx.getImageData(0, Math.round(8 + pause.h / 2), 720, 1).data];
-      const xs = test => Array.from({length: 720}, (_, x) => x).filter(x => x >= left && test(row.slice(x * 4, x * 4 + 3)));
-      const frame = xs(accent), text = xs(([r, gg, b]) => r > 200 && gg > 200 && b > 170);
-      const offCentre = Math.round((text[0] + text.at(-1)) / 2 - (frame[0] + frame.at(-1)) / 2);
-      return {top: accent(read(g.portraitCtx, middle, 10)), bottom: accent(read(g.portraitCtx, 360, 776 - 22 - 50 + 2)), pauseRight: 8 + pause.w, barLeft: left, offCentre};
+      // In its own row under 暫停, centred across the screen, its line centred in it. The
+      // bar's sides are the columns of its frame colour at two heights; its line, the pale
+      // text between them on the middle row.
+      const pause = g.getLevel1OfficePauseButtonRect(), barTop = 8 + pause.h + 8;
+      const sides = top => Array.from({length: 720}, (_, x) => x).filter(x => accent(read(g.portraitCtx, x, top + 12)) && accent(read(g.portraitCtx, x, top + pause.h - 12)));
+      const frame = sides(barTop);
+      const row = [...g.portraitCtx.getImageData(0, Math.round(barTop + pause.h / 2), 720, 1).data];
+      const text = Array.from({length: 720}, (_, x) => x).filter(x => x > frame[0] + 4 && x < frame.at(-1) - 4 && row[x * 4] > 200 && row[x * 4 + 1] > 200 && row[x * 4 + 2] > 170);
+      const barCentre = (frame[0] + frame.at(-1)) / 2;
+      return {top: accent(read(g.portraitCtx, 360, barTop + 2)), bottom: accent(read(g.portraitCtx, 360, 776 - 22 - 50 + 2)),
+        besidePause: sides(8).filter(x => x > 8 + pause.w + 4).length, barCentre, offCentre: Math.round((text[0] + text.at(-1)) / 2 - barCentre)};
     }
     return {top: accent(read(g.ctx, 640, 19)), bottom: accent(read(g.ctx, 640, 720 - 132 + 3))};
   }, phone);
   const upstairs = await bar();
   assert(upstairs.top && !upstairs.bottom, `${phone ? 'phone' : 'computer'}: the bar at the top ${JSON.stringify(upstairs)}`);
   if (phone) {
+    assert.equal(upstairs.besidePause, 0, `phone: nothing of the bar in 暫停's row ${JSON.stringify(upstairs)}`);
+    assert(Math.abs(upstairs.barCentre - 360) <= 2, `phone: the bar centred across the screen ${JSON.stringify(upstairs)}`);
     assert(Math.abs(upstairs.offCentre) <= 6, `phone: the line centred in its bar ${JSON.stringify(upstairs)}`);
     console.log('phone bar PASS', JSON.stringify(upstairs));
     assert.deepEqual(errors, []);
@@ -240,5 +246,37 @@ for (const phone of [false, true]) {
   console.log('level 4 PASS', JSON.stringify({upstairs, took, back, after}));
   await context.close();
 }
+// 7. The staff tools' previews (practice runs): the chest is in the basement after 'L4
+// After Win Talk', 'L4 Basement Chest' goes straight to it, and opening it there
+// leaves the save alone.
+{
+  const context = await browser.newContext({viewport: {width: 1280, height: 800}});
+  await stubScoreboard(context);
+  const {page, errors} = await open(context);
+  const panel = async stage => {
+    await page.keyboard.press('KeyP');
+    await page.click(`[data-debug-stage="${stage}"]`);
+    // Chrome leaves the clicked button focused; a later key would press it again.
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press('KeyP');
+  };
+  await panel('level4-postboss-dialogue');
+  await page.waitForFunction(() => bobbyGame.state === 'level4PostBossDialogue', undefined, {timeout: 90000});
+  for (let i = 0; i < 40 && await page.evaluate(() => bobbyGame.state === 'level4PostBossDialogue'); i++) await page.evaluate(() => bobbyGame.advanceLevel4PostBossDialogue());
+  const afterTalk = await page.evaluate(() => { const g = bobbyGame; g.sewerPlayer.x = 1082; g.tryLevel4LadderInteract(); return {state: g.state, practice: g.freePlay, rail: g.level4Rail, chest: g.hasLevel4MemeChest()}; });
+  assert.deepEqual(afterTalk, {state: 'level4', practice: true, rail: 'lower', chest: true}, 'The chest after L4 After Win Talk');
+  await panel('level4-meme-chest');
+  await page.waitForFunction(() => bobbyGame.state === 'level4' && bobbyGame.level4Rail === 'lower' && bobbyGame.memeChestSheet, undefined, {timeout: 90000});
+  const straight = await page.evaluate(() => ({near: bobbyGame.isLevel4NearMemeChest(), chest: bobbyGame.memeChest.state}));
+  assert.deepEqual(straight, {near: true, chest: 'closed'}, 'L4 Basement Chest: beside the closed chest');
+  await page.keyboard.press('KeyO');
+  await page.waitForFunction(() => bobbyGame.memeView && document.querySelector('.moth-meme img')?.naturalWidth > 0, undefined, {timeout: 10000});
+  await page.keyboard.press('KeyH');
+  const preview = await page.evaluate(() => ({open: Boolean(bobbyGame.memeView), chest: bobbyGame.memeChest.state, saved: Boolean(bobbyGame.progress?.flags?.level4MemeChestOpened)}));
+  assert.deepEqual(preview, {open: false, chest: 'open', saved: false}, 'Opened in a preview, not saved');
+  assert.deepEqual(errors, []);
+  console.log('staff tools PASS', JSON.stringify({afterTalk, straight, preview}));
+  await context.close();
+}
 await browser.close();
-console.log('PASS story: kept on the device, 繼續 mid-fight, level 3 and 4 returns, hearts every 10, deck long press, level 4 chest, bar at the top');
+console.log('PASS story: kept on the device, 繼續 mid-fight, level 3 and 4 returns, hearts every 10, deck long press, level 4 chest, bar at the top, staff chest previews');

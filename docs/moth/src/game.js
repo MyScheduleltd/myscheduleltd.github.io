@@ -3798,10 +3798,11 @@ for (const level of this.config.secretLevels || []) {
   }
 
   // ---- Level 4's basement chest ----
-  // Once Bonita's game is won in story mode (or previewed from the staff tools).
+  // Once Bonita's game is won in story mode, or in the staff tools' previews
+  // of the win (which run as practice).
   hasLevel4MemeChest() {
     const flags = this.progress?.flags || {};
-    return this.state === "level4" && !this.freePlay && Boolean(flags.level4BossDefeated || this.debugLevel4Won);
+    return this.state === "level4" && Boolean(this.debugLevel4Won || (!this.freePlay && flags.level4BossDefeated));
   }
 
   isLevel4NearMemeChest() {
@@ -3814,6 +3815,8 @@ for (const level of this.config.secretLevels || []) {
     this.memeChest = { state: "opening", at: this.time || 0 };
     if (this.sewerPlayer) { this.sewerPlayer.vx = 0; this.sewerPlayer.facing = MEME_CHEST.x >= this.sewerPlayer.x ? 1 : -1; }
     this.playMenuSfx?.("click");
+    // A preview from the staff tools leaves the save as it was.
+    if (this.freePlay) return;
     if (!this.progress) this.progress = this.createDefaultProgress();
     this.progress.flags = { ...(this.progress.flags || {}), level4MemeChestOpened: true };
     this.saveProgress();
@@ -11060,13 +11063,13 @@ for (const level of this.config.secretLevels || []) {
     if (prompt && prompt.frame === this.renderFrame && prompt.text) {
       target.save();
       target.font = "900 24px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace";
-      // At the top beside the 暫停 button, centred in the room it leaves.
+      // In its own row under the 暫停 button, centred across the screen and
+      // as wide as its line.
       const pause = this.getLevel1OfficePauseButtonRect();
-      const left = 8 + pause.w + 10, room = PORTRAIT_FIGHT.width - 8 - left;
-      const w = Math.min(room, Math.max(300, target.measureText(String(prompt.text)).width + 48));
+      const w = Math.min(PORTRAIT_FIGHT.width - 32, Math.max(300, target.measureText(String(prompt.text)).width + 48));
       const h = pause.h;
-      const x = left + (room - w) / 2;
-      const y = 8;
+      const x = (PORTRAIT_FIGHT.width - w) / 2;
+      const y = 8 + pause.h + 8;
       target.fillStyle = "rgba(8, 15, 24, 0.9)";
       target.fillRect(x, y, w, h);
       target.strokeStyle = prompt.accent || "#8fe8ff";
@@ -23072,7 +23075,7 @@ for (const level of this.config.secretLevels || []) {
           ? "找梯子回房間"
           // Like Level 3's: who to go to, then the way out.
           : (this.progress?.flags?.level4BossDefeated || this.debugLevel4Won) && this.level4BossEncountered
-            ? (this.hasLevel4MemeChest() && !this.progress?.flags?.level4MemeChestOpened ? "地下室出現了寶箱 · 往左離開" : "往左離開")
+            ? (this.hasLevel4MemeChest() && this.memeChest?.state === "closed" ? "地下室出現了寶箱 · 往左離開" : "往左離開")
             : "靠近Bonita";
       drawObjectivePrompt(
         this.ctx,
