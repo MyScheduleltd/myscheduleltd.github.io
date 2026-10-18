@@ -1,3 +1,16 @@
+# Release 2026-10-18 (evening) — owner: "please publish, including the work from the branches"
+
+Branch `claude/drunk-and-mobile-20261018`, rebased on origin/main `4e4d59a` (PRs #47/#48 are M.O.T.H only: no `world/` or `docs/beta/` file). Commits:
+1. Drunkenness → WASTED, iPhone freeze fixes, sign-in loading bar (the sections further down).
+2. One shared YouTube player for every screen — cherry-picked from `claude/confident-goldberg-44a643` (`2a69688`).
+3. The first film under the loading view in 精簡 — cherry-picked from `claude/determined-villani-cff2ef` (`940dbcf`). Both applied cleanly: `FestivalWorld.ts` here was byte-identical to their 15:41 snapshot base.
+4. Owner's answer: while entering waits on the film player (up to 3 s + 2 s), the entering bar gets its own stretch (84–89%), labelled 正在準備放映… / PREPARING THE SCREENS…, and keeps edging forward (`prepareForPlay(onProgress(fraction, 'screens'))`).
+5. The published bundle (`publish-beta.mjs --channel beta`, then `prune-published.mjs --apply`).
+
+**After merge:** the owner deploys Render (the `passout` gesture is new in `server/index.mjs`; until then others see only the jump to the temple); purge jsDelivr for the new `docs/beta/assets/*` files; check the live page. Not measured on a real iPhone: the YouTube waits' real cost and the freeze fixes.
+
+---
+
 # Current Claude continuation — the first film under the loading view, 2026-10-18 (Asia/Taipei)
 
 **LOCAL ONLY until the owner approves.** Committed on top of the one-player commit `2a69688` (section below). Nothing published, pushed or deployed.
