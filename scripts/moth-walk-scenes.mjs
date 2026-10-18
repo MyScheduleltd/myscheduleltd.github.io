@@ -65,15 +65,22 @@ export function patchWalkScenes(once, edit) {
   once(`      const w = Math.min(PORTRAIT_FIGHT.width - 24, Math.max(360, target.measureText(String(prompt.text)).width + 48));
       const h = 50;
       const x = (PORTRAIT_FIGHT.width - w) / 2;
-      const y = walk.worldH - h - 22;`, `      // At the top beside the 暫停 button, centred in the room it leaves.
+      const y = walk.worldH - h - 22;`, `      // In its own row under the 暫停 button, centred across the screen and
+      // as wide as its line.
       const pause = this.getLevel1OfficePauseButtonRect();
-      const left = 8 + pause.w + 10, room = PORTRAIT_FIGHT.width - 8 - left;
-      const w = Math.min(room, Math.max(300, target.measureText(String(prompt.text)).width + 48));
+      const w = Math.min(PORTRAIT_FIGHT.width - 32, Math.max(300, target.measureText(String(prompt.text)).width + 48));
       const h = pause.h;
-      const x = left + (room - w) / 2;
-      const y = 8;`);
+      const x = (PORTRAIT_FIGHT.width - w) / 2;
+      const y = 8 + pause.h + 8;`);
   once('      drawFittedText(target, String(prompt.text), PORTRAIT_FIGHT.width / 2, y + h / 2 + 1, w - 28, 24, 900, 13);',
     '      drawFittedText(target, String(prompt.text), x + w / 2, y + h / 2 + 1, w - 28, 24, 900, 13);');
+  // The staff tools' previews run as practice: the chest shows after 'L4
+  // After Win Talk', and 'L4 Basement Chest' goes straight to it (both set
+  // debugLevel4Won, in moth-runtime-patches.mjs).
+  once('            <button type="button" data-debug-stage="level4-postboss-dialogue">L4 After Win Talk</button>\n',
+    '            <button type="button" data-debug-stage="level4-postboss-dialogue">L4 After Win Talk</button>\n            <button type="button" data-debug-stage="level4-meme-chest">L4 Basement Chest</button>\n');
+  once('      this.startLevel4PostBossDialogue();\n    } else if (stageId === "studio-stage1") {\n      await this.startStudioFight({ skipAudio: true });',
+    '      this.startLevel4PostBossDialogue();\n    } else if (stageId === "level4-meme-chest") {\n      this.enterLevel4Stage1({ rail: "lower", spawnX: MEME_CHEST.x + 70 });\n      if (this.sewerPlayer) this.sewerPlayer.facing = -1;\n    } else if (stageId === "studio-stage1") {\n      await this.startStudioFight({ skipAudio: true });');
 
   // Level 3: back to the spot where the massage began.
   once('    this.startLevel3Dialogue(this.level3Boss.phase === "postBoss" ? "level3PostBoss" : "level3PreBoss");',
@@ -87,7 +94,7 @@ export function patchWalkScenes(once, edit) {
   once('    if (this.level4Rail === "lower" && this.chest?.revealed) {\n      drawables.push({\n        y: stage.hiddenChest?.y ?? 668,\n        draw: () => this.drawLevel4HiddenChest()\n      });\n    }\n',
     '    if (this.level4Rail === "lower" && this.chest?.revealed) {\n      drawables.push({\n        y: stage.hiddenChest?.y ?? 668,\n        draw: () => this.drawLevel4HiddenChest()\n      });\n    }\n    if (this.level4Rail === "lower" && this.hasLevel4MemeChest()) {\n      drawables.push({ y: (side.floorY ?? 650) - 1, draw: () => this.drawLevel4MemeChest() });\n    }\n');
   once('      const prompt = this.chest?.state === "revealing"\n', '      const nearMemeChest = this.isLevel4NearMemeChest();\n      const prompt = nearMemeChest\n        ? this.tr("O OPEN THE CHEST", "O 打開寶箱")\n        : this.chest?.state === "revealing"\n');
-  once('            ? "往左離開"\n', '            ? (this.hasLevel4MemeChest() && !this.progress?.flags?.level4MemeChestOpened ? "地下室出現了寶箱 · 往左離開" : "往左離開")\n');
+  once('            ? "往左離開"\n', '            ? (this.hasLevel4MemeChest() && this.memeChest?.state === "closed" ? "地下室出現了寶箱 · 往左離開" : "往左離開")\n');
   once('        nearChest || nearLadder || nearLeftDoor || this.chest?.state === "revealing" ? "#ffd36c" : "#8fe8ff",',
     '        nearMemeChest || nearChest || nearLadder || nearLeftDoor || this.chest?.state === "revealing" ? "#ffd36c" : "#8fe8ff",');
   once('  tryLevel4Interact() {\n', '  tryLevel4Interact() {\n    if (this.isLevel4NearMemeChest()) {\n      this.openLevel4MemeChest();\n      return;\n    }\n');
@@ -113,10 +120,11 @@ const MEME_CHEST = ${JSON.stringify(MEME_CHEST)};`);
 
 export const WALK_SCENE_METHODS = `
   // ---- Level 4's basement chest ----
-  // Once Bonita's game is won in story mode (or previewed from the staff tools).
+  // Once Bonita's game is won in story mode, or in the staff tools' previews
+  // of the win (which run as practice).
   hasLevel4MemeChest() {
     const flags = this.progress?.flags || {};
-    return this.state === "level4" && !this.freePlay && Boolean(flags.level4BossDefeated || this.debugLevel4Won);
+    return this.state === "level4" && Boolean(this.debugLevel4Won || (!this.freePlay && flags.level4BossDefeated));
   }
 
   isLevel4NearMemeChest() {
@@ -129,6 +137,8 @@ export const WALK_SCENE_METHODS = `
     this.memeChest = { state: "opening", at: this.time || 0 };
     if (this.sewerPlayer) { this.sewerPlayer.vx = 0; this.sewerPlayer.facing = MEME_CHEST.x >= this.sewerPlayer.x ? 1 : -1; }
     this.playMenuSfx?.("click");
+    // A preview from the staff tools leaves the save as it was.
+    if (this.freePlay) return;
     if (!this.progress) this.progress = this.createDefaultProgress();
     this.progress.flags = { ...(this.progress.flags || {}), level4MemeChestOpened: true };
     this.saveProgress();

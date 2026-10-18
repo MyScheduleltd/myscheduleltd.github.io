@@ -336,7 +336,7 @@ function makeLayer(width, height, painter) {`);
   // "L4 After Win Talk" previews the talk without saving the win, so the door
   // stayed shut; that preview now counts Bonita as beaten until the next jump
   // or the title, so the room can be left into the next scene.
-  once('  async debugJumpToStage(stageId) {\n', '  async debugJumpToStage(stageId) {\n    const scene = /^studio/.test(stageId) ? "studio-stage1" : stageId;\n    if (!this.sceneAssetsReady(scene)) {\n      this.startLevelLoading(scene, () => this.debugJumpToStage(stageId));\n      return;\n    }\n    this.debugLevel4Won = stageId === "level4-postboss-dialogue";\n');
+  once('  async debugJumpToStage(stageId) {\n', '  async debugJumpToStage(stageId) {\n    const scene = /^studio/.test(stageId) ? "studio-stage1" : stageId;\n    if (!this.sceneAssetsReady(scene)) {\n      this.startLevelLoading(scene, () => this.debugJumpToStage(stageId));\n      return;\n    }\n    this.debugLevel4Won = ["level4-postboss-dialogue", "level4-meme-chest"].includes(stageId);\n');
   const won = 'this.progress?.flags?.level4BossDefeated';
   assert.equal(source.split(won).length, 3, 'Level 4 exit checks');
   source = source.replaceAll(won, '(this.progress?.flags?.level4BossDefeated || this.debugLevel4Won)');
