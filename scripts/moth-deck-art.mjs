@@ -13,6 +13,12 @@
 // (only the ones listed in DECK_ART_KEPT ever show). Rules for buttons the
 // game never creates go, and so do the old art's declarations; the files are
 // not published (moth-asset-trim.mjs).
+//
+// On an iPhone a long press that missed a button by a little brought up the
+// text magnifier over the deck (owner, 2026-10-18). The deck turns off the
+// long-press callout and selection, and a touch on the deck beside its
+// buttons is not left to Safari. Touches on the buttons themselves keep their
+// default, which plays the haptic tick (the switch inside each label).
 import assert from 'node:assert/strict';
 
 export const MOTH_BUTTON_SHEET = {
@@ -82,7 +88,19 @@ export function patchDeckCss(css) {
   css = replaceOnce(css, '/* Buttons wear the Higgsfield retro MP3-hardware key art. border-image keeps\n   the cream rim and corners crisp at every button aspect ratio. */\n',
     '/* Every deck button; each kind wears its own art below. */\n');
   for (const file of RETIRED_DECK_ART) assert(!css.includes(file), `Retired deck art still named: ${file}`);
-  return css;
+  return css + `
+/* No long-press magnifier or callout on an iPhone (moth-deck-art.mjs). */
+html, body, .mobile-controls, .mobile-controls * {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+`;
+}
+
+export function patchDeckTouch(once) {
+  once('    root.addEventListener("contextmenu", (event) => event.preventDefault());\n',
+    '    root.addEventListener("contextmenu", (event) => event.preventDefault());\n    // A long press beside a button must not bring up the magnifier.\n    root.addEventListener("touchstart", (event) => { if (!event.target.closest?.("[data-mobile-action]")) event.preventDefault(); }, { passive: false });\n');
 }
 
 function replaceOnce(source, before, after) {
