@@ -32,12 +32,21 @@ const open = async (context, url = staff) => {
   return {page, errors};
 };
 const fighting = (page, label = '') => page.waitForFunction(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm && !bobbyGame.level1OfficeRhythm.graphicsLoading
-  && !(bobbyGame.stageCountdown > 0) && bobbyGame.level1OfficeRhythm.tutorial?.mode === 'done' && bobbyGame.songTime > 0, undefined, {timeout: 90000}).catch(async error => { throw new Error(label + ' ' + JSON.stringify(await page.evaluate(() => ({state: bobbyGame.state, stage: bobbyGame.currentStageId, rhythm: Boolean(bobbyGame.level1OfficeRhythm), mode: bobbyGame.level1OfficeRhythm?.tutorial?.mode, loading: bobbyGame.level1OfficeRhythm?.graphicsLoading, countdown: bobbyGame.stageCountdown, songTime: bobbyGame.songTime})))); });
+  && !(bobbyGame.stageCountdown > 0) && bobbyGame.level1OfficeRhythm.tutorial?.mode === 'done' && bobbyGame.songTime > 0, undefined, {timeout: 180000}).catch(async error => { throw new Error(label + ' ' + JSON.stringify(await page.evaluate(() => ({state: bobbyGame.state, stage: bobbyGame.currentStageId, rhythm: Boolean(bobbyGame.level1OfficeRhythm), mode: bobbyGame.level1OfficeRhythm?.tutorial?.mode, loading: bobbyGame.level1OfficeRhythm?.graphicsLoading, countdown: bobbyGame.stageCountdown, songTime: bobbyGame.songTime})))); });
 
-// Story fights open with their scene's dialogue: O through it.
+// Story fights open with their scene's dialogue: O through it. On the live site a
+// chapter can take a while to load, so presses wait for the loading screen to end
+// (an O there would be lost) and the loading time is noted.
+const loadingSeconds = [];
 const throughDialogue = async page => {
-  for (let i = 0; i < 80 && !(await page.evaluate(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm)); i++) {
-    await page.keyboard.press('KeyO');
+  const deadline = Date.now() + 180000;
+  let loadingSince = null;
+  for (let presses = 0; presses < 80 && Date.now() < deadline;) {
+    const state = await page.evaluate(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm ? 'fight' : bobbyGame.state);
+    if (state === 'loading') loadingSince ??= Date.now();
+    else if (loadingSince) { loadingSeconds.push(Math.round((Date.now() - loadingSince) / 100) / 10); loadingSince = null; }
+    if (state === 'fight') return;
+    if (state !== 'loading') { await page.keyboard.press('KeyO'); presses++; }
     await page.waitForTimeout(300);
   }
 };
@@ -279,4 +288,5 @@ for (const phone of [false, true]) {
   await context.close();
 }
 await browser.close();
+console.log('loading screens (s)', JSON.stringify(loadingSeconds));
 console.log('PASS story: kept on the device, 繼續 mid-fight, level 3 and 4 returns, hearts every 10, deck long press, level 4 chest, bar at the top, staff chest previews');
