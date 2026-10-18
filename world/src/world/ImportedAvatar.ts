@@ -10,7 +10,7 @@ import { FINGER_NAMES, FIST, handPoseFromJoints, mixHandPose, type FingerName, t
 import { DEFAULT_ACCESSORY_COLOURS } from './AvatarAccessories';
 import movesData from '../data/moves.json';
 import { walkCoastalPose, levelCoastalFeet } from './CoastalPose';
-import { assetObjectUrl, fetchAsset } from './AssetMirror';
+import { assetObjectUrl, fetchAsset, watchAssetDownloads } from './AssetMirror';
 import { loadBudgetedTexture, mobileAssetBudgetEnabled, parseGameModel } from './MobileAssetBudget';
 
 /**
@@ -121,6 +121,8 @@ const DYED = new Set(['body', 'garment-tee', 'garment-trousers', 'garment-shoes'
 interface Template { scene: THREE.Group; dye?: THREE.Texture; bodyDye?: THREE.Texture; vest?: THREE.Texture }
 const templates = new Map<AvatarVariant, Template>();
 const pending = new Map<AvatarVariant, Promise<void>>();
+/** Bodies loaded with their finishing layers: ready to draw as they should look. */
+const finished = new Set<AvatarVariant>();
 /** Avatars waiting for a body or its finishing layers to arrive. */
 const arrivals = new Set<(key: AvatarVariant) => void>();
 const arrivalWork = new FrameWorkQueue();
@@ -142,6 +144,37 @@ function vestUrl(key: AvatarVariant): string | undefined {
   return key === 'male'
     ? new URL('../assets/avatars/male-vest.jpg', import.meta.url).href
     : new URL('../assets/avatars/female-vest.jpg', import.meta.url).href;
+}
+
+function bodyDyeUrl(): string {
+  return new URL('../assets/avatars/male-body-dye.png', import.meta.url).href;
+}
+
+declare const __AVATAR_BYTES__: Record<string, number> | undefined;
+/** Each avatar file's size by its source name, from the build (vite.config.ts); none in tests. */
+const AVATAR_BYTES: Record<string, number> = typeof __AVATAR_BYTES__ === 'undefined' ? {} : __AVATAR_BYTES__;
+/** What a body downloads, by source name and URL. */
+const avatarFiles = (key: AvatarVariant): Array<[string, () => string | undefined]> => key === 'male'
+  ? [['male.glb', () => modelUrl(key)], ['male-dye.png', () => dyeUrl(key)], ['male-body-dye.png', bodyDyeUrl], ['male-vest.jpg', () => vestUrl(key)]]
+  : [['female.glb', () => modelUrl(key)], ['female-dye.png', () => dyeUrl(key)], ['female-vest.jpg', () => vestUrl(key)]];
+/** Bytes in so far, by published file name. */
+const arrived = new Map<string, number>();
+watchAssetDownloads(({ file, received }) => { arrived.set(file, received); });
+
+/**
+ * How much of a body has arrived, from 0 to 1, for the sign-in page's loading
+ * bar: its model, dye masks and vest, by bytes. 1 only once it is ready to draw.
+ */
+export function avatarLoadFraction(key: AvatarVariant): number {
+  if (finished.has(key)) return 1;
+  let have = 0, total = 0;
+  for (const [source, url] of avatarFiles(key)) {
+    const bytes = AVATAR_BYTES[source], href = bytes ? url() : undefined;
+    if (!bytes || !href) continue;
+    total += bytes;
+    have += Math.min(bytes, arrived.get(new URL(href).pathname.split('/').pop() ?? '') ?? 0);
+  }
+  return total ? Math.min(.99, have / total) : 0;
 }
 
 /** The body's texture with the utility vest painted over the tee. */
@@ -173,8 +206,7 @@ async function loadPicture(url: string): Promise<THREE.Texture> {
 async function loadDye(key: AvatarVariant, separateBody = false): Promise<THREE.Texture | undefined> {
   if (typeof window === 'undefined' || typeof Image === 'undefined') return undefined;
   try {
-    const texture = await loadPicture(separateBody
-      ? new URL('../assets/avatars/male-body-dye.png', import.meta.url).href : dyeUrl(key));
+    const texture = await loadPicture(separateBody ? bodyDyeUrl() : dyeUrl(key));
     // Weights, not colours, and filtered exactly like the texture they
     // describe, so the two always agree about which texel is which.
     texture.flipY = false;
@@ -221,6 +253,7 @@ function loadVariant(key: AvatarVariant, bytes?: ArrayBuffer): Promise<void> {
       ...(separateBody ? [loadDye(key, true).then(t => { template.bodyDye = t; })] : []),
       loadVest(key, map).then(t => { template.vest = t; }),
     ]);
+    finished.add(key);
     announce(key);
   })().catch(error => { pending.delete(key); throw error; });
   pending.set(key, promise);
@@ -231,10 +264,10 @@ function loadVariant(key: AvatarVariant, bytes?: ArrayBuffer): Promise<void> {
  * Load the bodies. Resolves once `first` are in — the male body the residents
  * mostly wear, and whichever the visitor is wearing — and fetches the other
  * behind it. Admission explicitly requests both, including finishing layers.
- * `files` lets tests hand every body over directly.
+ * `files` lets tests hand bodies over directly, and loads only those.
  */
 export function loadImportedAvatar(files?: Partial<Record<AvatarVariant, ArrayBuffer>>, first: AvatarVariant[] = ['male'], background = true): Promise<void> {
-  if (files) return Promise.all(AVATAR_VARIANTS.map(key => loadVariant(key, files[key]))).then(() => undefined);
+  if (files) return Promise.all(AVATAR_VARIANTS.filter(key => files[key]).map(key => loadVariant(key, files[key]))).then(() => undefined);
   const wanted = [...new Set<AvatarVariant>(['male', ...first])];
   const essential = Promise.all(wanted.map(key => loadVariant(key)));
   if (background) void essential.then(
@@ -242,6 +275,18 @@ export function loadImportedAvatar(files?: Partial<Record<AvatarVariant, ArrayBu
     () => undefined,
   );
   return essential.then(() => undefined);
+}
+
+/**
+ * The sign-in page's body. The visitor's own comes first, so hers appears as
+ * soon as her own files are in rather than after his 8 MB as well (the owner,
+ * 2026-10-18); the male body, which the residents wear and the world needs
+ * before it starts, follows behind it. The total download is the same.
+ */
+export function loadOwnAvatar(key: AvatarVariant): Promise<void> {
+  const own = loadVariant(key);
+  if (key !== 'male') void own.then(() => loadVariant('male')).catch(() => undefined);
+  return own;
 }
 
 /** Include dye/wardrobe uniforms that are not ordinary material map properties. */
@@ -401,7 +446,9 @@ function headSurface(points: THREE.Vector3[]): (x: number, z: number) => number 
 }
 
 export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette: AvatarPalette): AvatarRig {
-  if (!templates.has('male')) throw new Error('The male body must finish loading before the world starts.');
+  // The world loads both before it starts. The sign-in page may draw hers
+  // before his has arrived (loadOwnAvatar); either stands in for the other.
+  if (!templates.size) throw new Error('A body must finish loading before an avatar can wear it.');
   const body = rig.visualRoot!;
   body.scale.setScalar(1);
   // Every procedural surface goes, swimwear included; the rig stays.
@@ -858,12 +905,16 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
         material.polygonOffset = true;
         material.polygonOffsetFactor = -2;
         material.polygonOffsetUnits = -2;
-        if (material.map) {
+        // Once per print, not once per body: every avatar of a template shares
+        // these textures, and flagging them again re-uploaded each print, with
+        // its mipmaps, to the GPU every time somebody joined (2026-10-18).
+        if (material.map && !material.map.userData.printSampling) {
           const printMap = material.map;
           printMap.wrapS = printMap.wrapT = THREE.ClampToEdgeWrapping;
           printMap.minFilter = THREE.LinearMipmapLinearFilter;
           printMap.magFilter = THREE.LinearFilter;
           printMap.anisotropy = 8;
+          printMap.userData.printSampling = true;
           printMap.needsUpdate = true;
         }
         // Lettering stays legible from further off: sample a sharper mip
@@ -1026,7 +1077,8 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
 
   // A body that has not arrived yet is stood in for by one that has, and
   // swapped for the real one the moment it lands.
-  const resolve = (want: AvatarVariant): AvatarVariant => templates.has(want) ? want : 'male';
+  const resolve = (want: AvatarVariant): AvatarVariant => templates.has(want) ? want
+    : templates.has('male') ? 'male' : AVATAR_VARIANTS.find(key => templates.has(key))!;
   let mounted = mount(resolve(wanted()));
   // Off-screen: the skin is not drawn and not re-posed. Decided per frame by
   // the world from where the body is drawn (see FestivalWorld.cullAvatars).

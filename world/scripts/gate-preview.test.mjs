@@ -17,7 +17,7 @@ const bundle = await build({ entryPoints: ['src/world/GatePreview.ts'], bundle: 
         setAvatarPalette(palette) { this.palettes.push(palette); }
         cancelGateEntry() { this.cancelled=(this.cancelled??0)+1; }
         stop() { this.stopped++; }
-      }` : 'export const loadImportedAvatar = (...args) => globalThis.__gatePreviewTestLoad(...args);' }));
+      }` : 'export const loadOwnAvatar = (...args) => globalThis.__gatePreviewTestLoad(...args);' }));
   }}],
 });
 const { GatePreview } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);

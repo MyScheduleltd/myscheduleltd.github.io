@@ -1,3 +1,33 @@
+# Current Claude continuation — drunkenness, WASTED, iPhone freezes, 2026-10-18 (Asia/Taipei)
+
+**LOCAL ONLY until the owner approves.** Worktree `release-sfx-20261018`, branch `claude/drunk-and-mobile-20261018` from origin/main `d157a6d` (PR #46 live). Uncommitted.
+
+## Drinking (owner's answers 2026-10-18)
+- Every drink deepens it: 1–2 tipsy (sway), 3–5 drunk (stronger sway, double vision, blur), 6–9 wasted (darkening edges, the walk weaves and sometimes stumbles, always steerable; not in a headset), 10 passes out. Drinks wear off 2 min after the last, one per 2 min (`drinkLevel()`, `SOBER_*`).
+- Tenth drink: after the sip the body collapses (`passout` gesture, `passOutCoastalPose`, `restOnFloor`), movement/jumps blocked, WASTED screen (`showPassOut`, `.world-death[data-kind=wasted]`: 你喝掛了 / 喝了十杯 · 於寺廟醒來), wake at the temple (`respawnAtTemple`) with a 20 s hangover (4 drinks' worth, fading).
+- Double vision = one frame copy + quad (`drawDoubleVision`; RGBA copy + raw ShaderMaterial — an sRGB FramebufferTexture is refused by copyTexSubImage2D); blur = CSS filter on the render layers and `--drunk-dark` vignette (`applyDrunkScreen`), cleared entirely when sober.
+- Server: `passout` added to the presence gesture allow-list so others see the collapse — **needs a manual Render deploy** after merge; until then others only see the jump to the temple.
+- Loopback QA: `__festivalDrinks(n)`. Tests in `coastal-pose.test.mjs` (wear-off, pass-out → temple + hangover, lying on the floor, weave) and `server.test.mjs`.
+
+## iPhone lag/freezes — measured in WebKit (`tools/hitch-probe.mjs`, Playwright 1.62 WebKit, iPhone 15 Pro viewport, `COLD=1` clears its shader cache)
+Cold-cache causes found and fixed:
+1. Sun/moon `castShadow` toggled with brightness → the shadowed-light count (part of every lit shader key) changed on the first frame after warm-up and at every sunrise/sunset → every lit material recompiled (6.5 s first frame, later freezes). Now both always cast; only `shadow.autoUpdate` follows brightness (`castsShadowWhileLit`). LightLoop already skips a zero-colour directional light, shadow lookup included.
+2. Warm-up only compiled visible objects and no shadow-pass programs → 60–460 ms freezes on first sight of each area. Now `warmByDrawing` (SceneWarmup.ts) draws one of each material/object kind, hidden ones included, lights unchanged, in batches under the loading view; `warmAvatarVariants` adds every sex × outfit for it.
+3. Shared avatar print textures were flagged `needsUpdate` on every avatar build → re-upload per arrival. Now once per texture.
+4. Remote bodies built at most every 150 ms (`REMOTE_ADMISSION_SPACING_MS`), not every frame.
+Cold 一般 before → after: first world frame 6.5 s → no compile; temple 461 → 35 ms, rooftop 285 → 65, first crowd 851 → 127, in-world shader links 25+ → 1. 精簡 similar (rooftop 247 → 49, temple 247 → 42, walk 120 → 20).
+Left: entering a screened venue still costs ~70–130 ms outside the frame (YouTube player start-up in the page; fixing means reusing one player across venues); each remote body is still a ~60 ms frame; the sign-in preview compiles 1.4 s cold. Note: probe runs queue for admission when crowd bots from a previous run still hold places on the local service (2-min grace).
+
+## Sign-in loading bar (owner's answers 2026-10-18: one bar bottom right, percentage, her body first)
+- Replaces the bottom-right 正在展開影展世界… line with words + percentage + a red track (`.gate-scene-status`; on phones it sits under the form, full width). `GateLoadMeter` (src/ui) turns the globe's steps (topology → code → first paint; eases toward the next step but never reaches it) and the character's real bytes into one monotonic percentage: globe 35% / character 65% on a wide screen, globe only on phones (no character there). Label switches to 正在下載角色… once the globe has painted. Holds at 100%, fades, hides; a language redraw doesn't replay it. A body chosen in 角色配色 that isn't downloaded yet brings the bar back for that body.
+- Character bytes: `avatarLoadFraction(key)` in ImportedAvatar, from `watchAssetDownloads` and each file's size baked in at build (`__AVATAR_BYTES__`, vite.config.ts), so totals are known before downloads start.
+- The character download now starts beside the globe's code (`fetchGateCharacter`), not after the globe is built, and `loadOwnAvatar` fetches the visitor's own body first; his (needed for the world) follows. `attachImportedAvatar` now needs any one body, not specifically his. Slow-link run (1.2 MB/s shared): male visitor bar done 12.9 s; female 7.1 s (was ~13 s, waiting for his 8 MB too). Entering still loads both before the world starts.
+- Tests: `gate-load-meter.test.mjs`, `own-avatar-first.test.mjs`, new bar cases in `gate-ui.test.mjs`. Slow-link tools in scratch `gatebar/` (slow-serve.mjs, timeline.mjs, switch.mjs, phone.mjs).
+
+`npm run verify`: 603/603 + build before the loading bar. Local review: Vite 4184 + API 8792 (launch configs `drunk-world-4184`, `drunk-api-8792`), production bundle on 4185 (`phone-probe-4185`, dist in scratch).
+
+---
+
 # Release 2026-10-18 — owner said "please publish"
 
 Branch `claude/world-sfx-release-20261018`, cut from origin/main `5dc2fbc` (PR #45 M.O.T.H, which touches no `world/` or `docs/beta/` file) in a clean worktree `release-sfx-20261018`; only the release files were copied from `release-npc-20261006/world` (its old receipts, diagnostics and evidence art stay there, uncommitted). Contents: rotating sign-in/loading tips, world SFX (menus, day/night/ocean ambience, indoor muffle), avatar SFX + 角色音效 slider, same-resolution texture re-encode, review pages off the build, `/beta/ps2/` deleted (no redirect), stale hashed files pruned (`scripts/prune-published.mjs --apply`: docs/beta 676 → 82 MB), and the five island frame-cost cuts below. `npm run verify` 597/597 + build; entry `main-DFrI7-ap.js`; both the new and the previously live entry pages resolve every hashed file. No server change, so no Render deploy. After merge: purge jsDelivr for the new `docs/beta/assets/*` files and check the live page (memories `jsdelivr-asset-mirror`, `pages-cache-stale-bundle`).

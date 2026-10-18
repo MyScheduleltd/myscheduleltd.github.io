@@ -29,3 +29,69 @@ export async function uploadSceneTextures(renderer: THREE.WebGLRenderer, scene: 
     await new Promise<void>(resolve => setTimeout(resolve, 0));
   }
 }
+
+const drawable = (object: THREE.Object3D): boolean =>
+  Boolean((object as THREE.Mesh).isMesh || (object as THREE.Sprite).isSprite || (object as THREE.Line).isLine || (object as THREE.Points).isPoints);
+
+/**
+ * Compiles by drawing (2026-10-18).
+ *
+ * `warmScenePrograms` asks three.js for the programs of what is visible, and in
+ * WebKit — Safari, every iPhone — that left the real cost for later: a cold
+ * run in Playwright's WebKit spent 6.3 s linking 44 programs in the first
+ * world frame, then froze for 60–460 ms at a time on the way round the island,
+ * as each new thing came into view. What it missed: everything hidden or
+ * culled when it ran (NPCs out of sight, props, the band, the arcade, a second
+ * body type), and every shadow-pass program, which only a draw with shadows on
+ * builds. Metal also builds a pipeline per program at its first real draw.
+ *
+ * So, under the loading view, one of each kind of draw is drawn — one per
+ * material and object type — a batch at a time, with a task between batches so
+ * the loading animation keeps moving. Every light keeps the visibility it had,
+ * because the number of lights is part of every program's key; only drawables
+ * and the groups holding them are shown, and all of it is put back after.
+ */
+export async function warmByDrawing(
+  renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera,
+  onProgress?: (progress: number) => void, batchSize = 24,
+): Promise<{ kinds: number; programs: number }> {
+  const drawables: THREE.Object3D[] = [];
+  scene.traverse(object => { if (drawable(object)) drawables.push(object); });
+  const kinds = new Map<string, THREE.Object3D>();
+  for (const object of drawables) {
+    const mesh = object as THREE.Mesh & { isBatchedMesh?: boolean };
+    const materials = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
+    const key = [object.type, (mesh as unknown as THREE.SkinnedMesh).isSkinnedMesh, (mesh as unknown as THREE.InstancedMesh).isInstancedMesh,
+      mesh.isBatchedMesh, object.castShadow, object.receiveShadow, Boolean(mesh.morphTargetInfluences?.length),
+      mesh.customDepthMaterial?.uuid, mesh.customDistanceMaterial?.uuid, ...materials.map(material => material.uuid)].join('|');
+    if (!kinds.has(key)) kinds.set(key, object);
+  }
+  const lit = new Set<THREE.Object3D>();
+  scene.traverseVisible(object => { if ((object as THREE.Light).isLight) lit.add(object); });
+  const lights: THREE.Object3D[] = [];
+  const visibility = new Map<THREE.Object3D, boolean>();
+  scene.traverse(object => {
+    visibility.set(object, object.visible);
+    if ((object as THREE.Light).isLight) lights.push(object);
+  });
+  const representatives = [...kinds.values()];
+  const culling = new Map(representatives.map(object => [object, object.frustumCulled] as const));
+  try {
+    for (const object of representatives) object.frustumCulled = false;
+    for (let start = 0; start < representatives.length; start += batchSize) {
+      for (const object of drawables) object.visible = false;
+      for (const object of representatives.slice(start, start + batchSize)) {
+        for (let node: THREE.Object3D | null = object; node; node = node.parent) node.visible = true;
+      }
+      for (const light of lights) light.visible = lit.has(light);
+      renderer.shadowMap.needsUpdate = true;
+      renderer.render(scene, camera);
+      onProgress?.(Math.min(1, (start + batchSize) / representatives.length));
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    }
+  } finally {
+    for (const [object, visible] of visibility) object.visible = visible;
+    for (const [object, culled] of culling) object.frustumCulled = culled;
+  }
+  return { kinds: representatives.length, programs: renderer.info.programs?.length ?? 0 };
+}

@@ -11,15 +11,16 @@ import ts from 'typescript';
 const source = await readFile('src/ui/App.ts', 'utf8');
 const tree = ts.createSourceFile('App.ts', source, ts.ScriptTarget.Latest, true);
 const appClass = tree.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'App');
-const methods = ['mountGatePreview', 'disposeGatePreview', 'beginGateEntry', 'startGateTips', 'showGateTip', 'stopGateTips', 'setGateEntryProgress',
+const methods = ['mountGatePreview', 'disposeGatePreview', 'gateShowsCharacter', 'fetchGateCharacter', 'followGateLoad', 'tickGateLoad', 'stopGateLoad', 'paintGateLoad', 'beginGateEntry', 'startGateTips', 'showGateTip', 'stopGateTips', 'setGateEntryProgress',
   'retainGateEntry', 'prepareGateEntry', 'waitForGateExit', 'completeGateEntry', 'cancelGateEntry', 'enterWhenThereIsRoom'].map(name => {
   const method = appClass.members.find(node => node.name?.getText(tree) === name);
   assert.ok(method, name);
   return method.getText(tree);
-}).join('\n').replace("import('../world/GatePreview')", 'loadPreview()');
+}).join('\n').replace("import('../world/GatePreview')", 'loadPreview()').replace("import('../world/ImportedAvatar')", 'loadAvatars()');
 const deadline = (await readFile('src/network/RequestDeadline.ts', 'utf8')).replace('export async function', 'async function');
 const tipsSource = (await readFile('src/ui/EntryTips.ts', 'utf8')).replaceAll('export function', 'function').replaceAll('export class', 'class');
-const script = ts.transpileModule(`${tipsSource}\n${deadline}\nclass GateLifecycle {
+const meterSource = (await readFile('src/ui/GateLoadMeter.ts', 'utf8')).replace(/^export /gm, '');
+const script = ts.transpileModule(`${tipsSource}\n${deadline}\n${meterSource}\nclass GateLifecycle {
   gatePreviewGeneration = 0;
   gatePreviewFailed = false;
   gateEntryProgress = 0;
@@ -34,10 +35,18 @@ const script = ts.transpileModule(`${tipsSource}\n${deadline}\nclass GateLifecyc
 }; globalThis.GateLifecycle = GateLifecycle; globalThis.TipRotation = TipRotation; globalThis.entryTips = entryTips;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
 const settle = async () => { for (let n = 0; n < 10; n++) await Promise.resolve(); };
+/** The sign-in page's loading bar: its words, its percentage and its track. */
+const statusNode = () => {
+  const label = { textContent: '' }, percent = { textContent: '' }, track = { attributes: {}, setAttribute(name, value) { this.attributes[name] = value; } };
+  return { hidden: false, textContent: '', dataset: {}, style: { values: {}, setProperty(name, value) { this.values[name] = value; } }, label, percent, track,
+    querySelector: name => name === '[data-gate-scene-label]' ? label : name === '[data-gate-scene-percent]' ? percent : name === '[role="progressbar"]' ? track : null };
+};
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 function fixture({ manualFrames = false } = {}) {
   const instances = [];
-  const nodes = { host: {}, avatar: {}, status: { hidden: false, textContent: '' } };
+  const nodes = { host: {}, avatar: {}, status: statusNode() };
+  // The character module as the sign-in page sees it: how much of a body is in.
+  const avatars = { fraction: 0, loads: [], avatarLoadFraction() { return this.fraction; }, loadOwnAvatar(key) { this.loads.push(key); return Promise.resolve(); } };
   let module = deferred(), imports = 0, clock = 0, nextHandle = 0;
   const timers = new Map(), frames = new Map(), intervals = new Map();
   const later = (callback, milliseconds) => { const id = ++nextHandle; timers.set(id, { callback, at: clock + milliseconds }); return id; };
@@ -66,7 +75,8 @@ function fixture({ manualFrames = false } = {}) {
   window.matchMedia = () => ({matches:false});
   window.setInterval = (callback, milliseconds) => { const id=++nextHandle; intervals.set(id,{callback,milliseconds,at:clock+milliseconds}); return id; };
   window.clearInterval = id => intervals.delete(id);
-  const context = { loadPreview: () => { imports++; return module.promise; }, document, window, AbortController,
+  const context = { loadPreview: () => { imports++; return module.promise; }, loadAvatars: () => Promise.resolve(avatars), document, window, AbortController,
+    performance: { now: () => clock }, avatarSex: top => top === '#28191b' ? 'female' : 'male',
     setTimeout: later, clearTimeout: id => timers.delete(id),
     cancelAnimationFrame: id => frames.delete(id), requestAnimationFrame: requestFrame };
   runInNewContext(script, context);
@@ -76,7 +86,7 @@ function fixture({ manualFrames = false } = {}) {
     return selector === '[data-gate-backdrop]' ? nodes.host
       : selector === '[data-gate-avatar]' ? nodes.avatar : nodes.status;
   } };
-  return { app, nodes, instances, context, stepFrame, pendingTimers: timers, intervals,
+  return { app, nodes, avatars, instances, context, stepFrame, pendingTimers: timers, intervals,
     imports: () => imports,
     advance(milliseconds) { clock += milliseconds; for(const timer of intervals.values()) if(timer.at<=clock){timer.at=clock+timer.milliseconds;timer.callback();} for (const [id, timer] of [...timers]) if (timer.at <= clock) { timers.delete(id); timer.callback(); } },
     pendingModule: () => module, replaceModule: () => { module = deferred(); },
@@ -174,7 +184,81 @@ test('a failed renderer is replaced on redraw and its error remains visible unti
   assert.equal(f.instances.length, 2);
   assert.equal(f.nodes.status.hidden, false);
   f.instances[1].options.onReady();
+  assert.equal(f.nodes.status.hidden, false, 'the error gives way to the loading bar, still waiting for the character');
+  assert.equal(f.nodes.status.dataset.state, 'loading');
+  f.avatars.fraction = 1;
+  f.advance(150);
+  assert.equal(f.nodes.status.dataset.state, 'done');
+  f.advance(750);
   assert.equal(f.nodes.status.hidden, true);
+});
+
+test('the sign-in bar counts the globe, then the character, and leaves once both are in', async () => {
+  const f = fixture();
+  const { status } = f.nodes;
+  f.app.mountGatePreview();
+  assert.equal(status.label.textContent, 'OPENING THE FESTIVAL WORLD…');
+  assert.equal(status.percent.textContent, '0%');
+  await settle();
+  assert.deepEqual(f.avatars.loads, ['male'], 'the character downloads beside the globe\'s code, not after it');
+  f.resolve();
+  await settle();
+  f.advance(150);
+  const code = parseInt(status.percent.textContent);
+  assert.ok(code > 0 && code < 35, `the globe's code is in (${code}%)`);
+  f.instances[0].options.onReady();
+  assert.equal(status.label.textContent, 'LOADING THE CHARACTER…');
+  assert.equal(status.percent.textContent, '35%');
+  f.avatars.fraction = .5;
+  f.advance(150);
+  assert.equal(status.percent.textContent, `${Math.floor((.35 + .65 * .5) * 100)}%`);
+  assert.equal(status.track.attributes['aria-valuenow'], String(Math.floor((.35 + .65 * .5) * 100)));
+  f.avatars.fraction = 1;
+  f.advance(150);
+  assert.equal(status.percent.textContent, '100%');
+  assert.equal(status.dataset.state, 'done');
+  assert.equal(status.hidden, false, 'it holds at 100% while it fades');
+  f.advance(750);
+  assert.equal(status.hidden, true);
+  assert.equal(f.intervals.size, 0, 'and stops ticking');
+  // A language change redraws the page; the bar does not come back.
+  f.nodes.status = statusNode();
+  f.app.mountGatePreview();
+  assert.equal(f.nodes.status.hidden, true);
+});
+
+test('a phone waits only for the globe, and a body chosen later gets the bar back', async () => {
+  const f = fixture();
+  f.context.window.matchMedia = () => ({ matches: true });
+  f.app.mountGatePreview();
+  f.resolve();
+  await settle();
+  assert.deepEqual(f.avatars.loads, [], 'phones leave the character off the sign-in page');
+  f.instances[0].options.onReady();
+  assert.equal(f.nodes.status.label.textContent, 'OPENING THE FESTIVAL WORLD…');
+  assert.equal(f.nodes.status.dataset.state, 'done');
+  f.advance(750);
+  assert.equal(f.nodes.status.hidden, true);
+
+  const desk = fixture();
+  desk.app.mountGatePreview();
+  desk.resolve();
+  await settle();
+  desk.avatars.fraction = 1;
+  desk.instances[0].options.onReady();
+  desk.advance(750);
+  assert.equal(desk.nodes.status.hidden, true);
+  // Her body, chosen in 角色配色 before it has been downloaded.
+  desk.avatars.fraction = .3;
+  desk.app.palette = { top: '#28191b' };
+  desk.app.followGateLoad();
+  assert.equal(desk.nodes.status.hidden, false);
+  assert.equal(desk.nodes.status.label.textContent, 'LOADING THE CHARACTER…');
+  assert.equal(desk.nodes.status.percent.textContent, '30%');
+  desk.avatars.fraction = 1;
+  desk.advance(150);
+  desk.advance(750);
+  assert.equal(desk.nodes.status.hidden, true);
 });
 
 function transitionFixture({ preview: hasPreview = true, manualFrames = false } = {}) {

@@ -286,9 +286,12 @@ test('asset notifications settle one body per paint, coalesce repeats, and cance
 test('admission prepares the existing room before GPU warmup, without starting the gameplay loop',async()=>{
   const savedWindow=globalThis.window;globalThis.window={setTimeout:run=>setTimeout(run,0),location:{search:'?nobatch'}};
   try{
-    const world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera();let created=0,compiled=0;
-    Object.assign(world,{scene,camera,preview:false,disposed:false,pendingRemoteVisitors:new Map([['a',1],['b',2],['c',3]]),projectors:new Map(),cullDecorativeLights(){},flushRemoteVisitor(){this.pendingRemoteVisitors.delete(this.pendingRemoteVisitors.keys().next().value);scene.add(new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial()));created++;},renderer:{async compileAsync(root,cam,target){compiled++;assert.equal(created,3);assert.equal(root.children.length,3);assert.equal(cam,camera);assert.equal(target,scene);},setAnimationLoop(){throw Error('admission started gameplay before preparation completed');}}});
+    const world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera();let created=0,compiled=0,drawn=0;
+    // The warm-up stand of every body is the avatar code's to build; here it is an empty group.
+    Object.assign(world,{scene,camera,preview:false,disposed:false,pendingRemoteVisitors:new Map([['a',1],['b',2],['c',3]]),projectors:new Map(),cullDecorativeLights(){},warmAvatarVariants(){const stand=new THREE.Group();scene.add(stand);return stand;},flushRemoteVisitor(){this.pendingRemoteVisitors.delete(this.pendingRemoteVisitors.keys().next().value);scene.add(new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial()));created++;},renderer:{shadowMap:{},info:{programs:[]},render(root,cam){assert.equal(compiled,1,'drawn after compiling');assert.equal(root,scene);assert.equal(cam,camera);drawn++;},async compileAsync(root,cam,target){compiled++;assert.equal(created,3);assert.equal(root.children.length,3);assert.equal(cam,camera);assert.equal(target,scene);},setAnimationLoop(){throw Error('admission started gameplay before preparation completed');}}});
     await world.prepareForPlay();assert.equal(created,3);assert.equal(compiled,1);assert.equal(world.pendingRemoteVisitors.size,0);
+    assert.ok(drawn>=1,'then every kind of draw is drawn once under the loading view');
+    assert.equal(scene.children.some(child=>child.type==='Group'),false,'and the stand of bodies is gone again');
   }finally{globalThis.window=savedWindow;}
 });
 
@@ -300,7 +303,7 @@ test('admission cannot compile or finish before fixed assets are placed', async 
     let finishScenery,finishBand,finishArcade,compiled=0,complete=false;
     const scenery=new Promise(resolve=>finishScenery=resolve),band=new Promise(resolve=>finishBand=resolve),arcade=new Promise(resolve=>finishArcade=resolve);
     const progress=[];
-    Object.assign(world,{scene,camera:new THREE.PerspectiveCamera(),pendingRemoteVisitors:new Map(),projectors:new Map(),venueSceneryAssets:{ready:()=>scenery},bandLoad:band,rooftopBand:{ready:true},arcadeCabinet:{ready:arcade,status:'ready'},cullDecorativeLights(){},renderer:{async compileAsync(){compiled++;}}});
+    Object.assign(world,{scene,camera:new THREE.PerspectiveCamera(),pendingRemoteVisitors:new Map(),projectors:new Map(),venueSceneryAssets:{ready:()=>scenery},bandLoad:band,rooftopBand:{ready:true},arcadeCabinet:{ready:arcade,status:'ready'},cullDecorativeLights(){},warmAvatarVariants(){return new THREE.Group();},renderer:{shadowMap:{},info:{programs:[]},render(){},async compileAsync(){compiled++;}}});
     const prepared=world.prepareForPlay(p=>progress.push(p)).then(()=>complete=true);
     await new Promise(resolve=>setImmediate(resolve));assert.equal(compiled,0);
     finishScenery();finishArcade();await new Promise(resolve=>setImmediate(resolve));assert.equal(complete,false);assert.equal(compiled,0);

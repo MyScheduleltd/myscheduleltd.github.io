@@ -25,6 +25,7 @@ import { arcadeGameUrl, externalArcadeRequired, ARCADE_UNLOCK_AT, arcadeIsLocked
 import { requestWithDeadline } from '../network/RequestDeadline';
 import { watchAssetDownloads } from '../world/AssetMirror';
 import type { GatePreview } from '../world/GatePreview';
+import { GateLoadMeter } from './GateLoadMeter';
 
 /**
  * The rooms with lights that answer to a beat. Everywhere else is a cinema,
@@ -953,7 +954,10 @@ export class App {
           </div>
         </aside>
         </div>
-        <p class="gate-scene-status" data-gate-scene-status role="status">${this.language === 'zh-TW' ? '正在展開影展世界…' : 'OPENING THE FESTIVAL WORLD…'}</p>
+        <div class="gate-scene-status" data-gate-scene-status>
+          <p><span data-gate-scene-label>${this.language === 'zh-TW' ? '正在展開影展世界…' : 'OPENING THE FESTIVAL WORLD…'}</span> <b data-gate-scene-percent>0%</b></p>
+          <div class="gate-scene-status__track" role="progressbar" aria-label="${this.language === 'zh-TW' ? '世界與角色載入進度' : 'World and character loading progress'}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
+        </div>
         <div class="gate-entry" data-gate-entry hidden>
           <p data-gate-entry-label role="status"></p>
           <div class="gate-entry__track" role="progressbar" aria-label="${this.language === 'zh-TW' ? '影展載入進度' : 'Festival loading progress'}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
@@ -992,7 +996,10 @@ export class App {
       });
     });
 
-    this.bindAppearanceFields(this.root, 'data-palette', () => this.gatePreview?.setPalette(this.palette));
+    this.bindAppearanceFields(this.root, 'data-palette', () => {
+      this.gatePreview?.setPalette(this.palette);
+      this.followGateLoad();
+    });
 
     this.syncVrGateControl();
     this.root.querySelector<HTMLInputElement>('#vr-mode')?.addEventListener('change', (event) => {
@@ -1051,6 +1058,12 @@ export class App {
   private gatePreviewFailed = false;
   private gatePreviewGeneration = 0;
   private gatePreviewMount?: Promise<void>;
+  /** The sign-in page's loading bar (GateLoadMeter), its ticker, and whether it has faded out. */
+  private gateLoad?: GateLoadMeter;
+  private gateLoadTimer = 0;
+  private gateLoadSettled = false;
+  /** The character module, once the sign-in page has it, for how much of a body is in. */
+  private gateAvatars?: typeof import('../world/ImportedAvatar');
   private gateEntryOverlay?: HTMLElement;
   private gateEntryProgress = 0;
   private gateTipTimer?: number;
@@ -1228,6 +1241,7 @@ export class App {
     if (!host || this.world) return Promise.resolve();
     const region = this.root.querySelector<HTMLElement>('[data-gate-avatar]') ?? undefined;
     if (this.gatePreviewFailed) this.disposeGatePreview();
+    this.followGateLoad();
     if (this.gatePreview) {
       this.gatePreview.mount(host, region);
       this.gatePreview.setPalette(this.palette);
@@ -1240,8 +1254,15 @@ export class App {
     if (this.gatePreviewMount) return this.gatePreviewMount;
     const generation = this.gatePreviewGeneration;
     // Draw the form first. The optional live scene never gates admission.
-    const pending = this.prepareWorldTopology().then(() => import('../world/GatePreview')).then(({ GatePreview }) => {
+    const pending = this.prepareWorldTopology().then(() => {
+      if (generation === this.gatePreviewGeneration) {
+        this.gateLoad?.globe('topology', performance.now());
+        this.fetchGateCharacter(generation);
+      }
+      return import('../world/GatePreview');
+    }).then(({ GatePreview }) => {
       if (generation !== this.gatePreviewGeneration || this.world) return;
+      this.gateLoad?.globe('code', performance.now());
       const currentHost = this.root.querySelector<HTMLElement>('[data-gate-backdrop]');
       if (!currentHost) return;
       this.gatePreview = new GatePreview({
@@ -1259,17 +1280,20 @@ export class App {
         } : undefined,
         onReady: () => {
           if (generation !== this.gatePreviewGeneration) return;
-          const status = this.root.querySelector<HTMLElement>('[data-gate-scene-status]');
-          if (status) status.hidden = true;
+          this.gateLoad?.globe('painted', performance.now());
+          this.tickGateLoad();
         },
         onError: (error: unknown) => {
           if (generation !== this.gatePreviewGeneration) return;
           if (this.reviewsGateMotion()) this.root.dataset.gatePreviewError = String(error);
           this.gatePreviewFailed = true;
+          this.stopGateLoad();
           const status = this.root.querySelector<HTMLElement>('[data-gate-scene-status]');
           if (status) {
             status.hidden = false;
-            status.textContent = this.language === 'zh-TW' ? '世界預覽暫時無法載入，仍可進入影展。' : 'The world preview is unavailable. You can still enter the festival.';
+            status.dataset.state = 'failed';
+            const label = status.querySelector<HTMLElement>('[data-gate-scene-label]') ?? status;
+            label.textContent = this.language === 'zh-TW' ? '世界預覽暫時無法載入，仍可進入影展。' : 'The world preview is unavailable. You can still enter the festival.';
           }
         },
       });
@@ -1281,6 +1305,7 @@ export class App {
     }).catch((error: unknown) => {
       if (generation !== this.gatePreviewGeneration) return;
       if (this.reviewsGateMotion()) this.root.dataset.gatePreviewError = String(error);
+      this.stopGateLoad();
       const status = this.root.querySelector<HTMLElement>('[data-gate-scene-status]');
       if (status) status.hidden = true;
     }).finally(() => {
@@ -1298,6 +1323,82 @@ export class App {
     this.gatePreviewFailed = false;
     this.gatePreview?.dispose();
     this.gatePreview = undefined;
+    this.stopGateLoad();
+  }
+
+  /** Phones leave the character off the sign-in page (GatePreview, style.css). */
+  private gateShowsCharacter(): boolean {
+    return !window.matchMedia('(max-width: 800px), (pointer: coarse) and (max-width: 1000px)').matches;
+  }
+
+  /**
+   * Start the character's download beside the globe's code, not after the
+   * globe has been built. Its errors are the preview's to report: it asks for
+   * the same body again.
+   */
+  private fetchGateCharacter(generation: number): void {
+    if (!this.gateShowsCharacter()) return;
+    void import('../world/ImportedAvatar').then(avatars => {
+      this.gateAvatars = avatars;
+      if (generation !== this.gatePreviewGeneration || this.world) return;
+      void avatars.loadOwnAvatar(avatarSex(this.palette.top)).catch(() => undefined);
+    }, () => undefined);
+  }
+
+  /**
+   * The loading bar for whatever the sign-in page is still waiting for: the
+   * globe and the character at first, and later a body chosen in 角色配色
+   * that has not been downloaded yet.
+   */
+  private followGateLoad(): void {
+    const character = this.gateShowsCharacter();
+    const meter = this.gateLoad;
+    if (!meter || (meter.done && character && this.gateAvatars && this.gateAvatars.avatarLoadFraction(avatarSex(this.palette.top)) < 1)) {
+      this.gateLoad = new GateLoadMeter(performance.now(), { globe: !meter, character });
+      this.gateLoadSettled = false;
+    }
+    if (!this.gateLoad!.done && !this.gateLoadTimer) this.gateLoadTimer = window.setInterval(() => this.tickGateLoad(), 150);
+    this.tickGateLoad();
+  }
+
+  private tickGateLoad(): void {
+    const meter = this.gateLoad;
+    if (!meter) return;
+    if (this.gateAvatars && this.gateShowsCharacter()) meter.characterProgress(this.gateAvatars.avatarLoadFraction(avatarSex(this.palette.top)));
+    this.paintGateLoad();
+    if (meter.done && this.gateLoadTimer) { window.clearInterval(this.gateLoadTimer); this.gateLoadTimer = 0; }
+  }
+
+  private stopGateLoad(): void {
+    if (this.gateLoadTimer) window.clearInterval(this.gateLoadTimer);
+    this.gateLoadTimer = 0;
+    this.gateLoad = undefined;
+  }
+
+  private paintGateLoad(): void {
+    const meter = this.gateLoad;
+    const status = this.root.querySelector<HTMLElement>('[data-gate-scene-status]');
+    if (!meter || !status || this.gatePreviewFailed) return;
+    const { percent, stage, done } = meter.read(performance.now());
+    const zh = this.language === 'zh-TW';
+    const label = status.querySelector<HTMLElement>('[data-gate-scene-label]');
+    if (label) label.textContent = stage === 'world' ? (zh ? '正在展開影展世界…' : 'OPENING THE FESTIVAL WORLD…') : (zh ? '正在下載角色…' : 'LOADING THE CHARACTER…');
+    const shown = status.querySelector<HTMLElement>('[data-gate-scene-percent]');
+    if (shown) shown.textContent = `${percent}%`;
+    status.querySelector<HTMLElement>('[role="progressbar"]')?.setAttribute('aria-valuenow', String(percent));
+    status.style.setProperty('--gate-load', String(percent / 100));
+    if (!done) { status.hidden = false; status.dataset.state = 'loading'; return; }
+    // A redrawn page (another language) does not replay the fade.
+    if (this.gateLoadSettled) { status.hidden = true; return; }
+    if (status.dataset.state === 'done') return;
+    // Holds at 100% a moment, fades (style.css), then leaves the page.
+    status.dataset.state = 'done';
+    window.setTimeout(() => {
+      if (this.gateLoad !== meter) return;
+      this.gateLoadSettled = true;
+      const current = this.root.querySelector<HTMLElement>('[data-gate-scene-status]');
+      if (current) current.hidden = true;
+    }, 750);
   }
 
   /**
@@ -1505,6 +1606,7 @@ export class App {
         <div class="world-css3d" id="world-css3d" aria-hidden="true"></div>
         <canvas id="world-foreground" aria-hidden="true"></canvas>
         <div class="world-vignette" aria-hidden="true"></div>
+        <div class="world-drunk" aria-hidden="true"></div>
         <div class="world-grain" aria-hidden="true"></div>
         <div class="world-impact" data-impact aria-hidden="true"></div>
         <div class="world-death" aria-live="polite"></div>
@@ -1765,6 +1867,9 @@ export class App {
         () => this.world?.mentorFollowerReviewSnapshot();
       (window as Window & { __festivalProjectors?: () => unknown }).__festivalProjectors =
         () => this.world?.projectorAlignmentSnapshot();
+      // __festivalDrinks(n): n drinks down in a row, as at the bar; ten passes out.
+      (window as Window & { __festivalDrinks?: (count: number) => unknown }).__festivalDrinks =
+        (count) => this.world?.reviewDrinks(count);
     }
     if (reviewTarget === 'coastal' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       const query = new URLSearchParams(window.location.search);
@@ -3176,6 +3281,10 @@ export class App {
       });
       return;
     }
+    if (action.type === 'passedOut') {
+      this.showPassOut();
+      return;
+    }
     if (action.type === 'died') {
       const zh = this.language === 'zh-TW';
       this.flashImpact('1');
@@ -3234,9 +3343,16 @@ export class App {
       return;
     }
     if (action.type === 'drank') {
-      this.showWorldAlert(action.drunk
-        ? (this.language === 'zh-TW' ? `第 ${action.drinks} 杯 · 房間開始晃了` : `THAT IS ${action.drinks} · THE ROOM IS MOVING`)
-        : (this.language === 'zh-TW' ? `喝了第 ${action.drinks} 杯` : `DRINK ${action.drinks} DOWN`));
+      // The tenth says nothing: WASTED says it.
+      if (action.drinks >= 10) return;
+      const zh = this.language === 'zh-TW', n = action.drinks;
+      this.showWorldAlert(n <= 2
+        ? (zh ? `第 ${n} 杯 · 微醺` : `DRINK ${n} · TIPSY`)
+        : n <= 5
+          ? (zh ? `第 ${n} 杯 · 房間開始晃了` : `THAT IS ${n} · THE ROOM IS MOVING`)
+          : n <= 8
+            ? (zh ? `第 ${n} 杯 · 腳步不穩了` : `THAT IS ${n} · LEGS GOING`)
+            : (zh ? `第 ${n} 杯 · 再一杯就掛了` : `THAT IS ${n} · ONE MORE AND YOU ARE OUT`));
       return;
     }
     if (action.type === 'dj') {
@@ -5690,6 +5806,26 @@ export class App {
     this.deathTimer = window.setTimeout(() => {
       delete layer.dataset.shown;
     }, 3_400);
+  }
+
+  /**
+   * The tenth drink (owner, 2026-10-18). The death card's layer and type, but
+   * the world swims and blurs before the dark sinks over it, and the word
+   * itself sways. It holds through the move to the temple and lifts on the
+   * hangover.
+   */
+  private showPassOut(): void {
+    const layer = document.querySelector<HTMLElement>('.world-death');
+    if (!layer) return;
+    const zh = this.language === 'zh-TW';
+    layer.innerHTML = `<strong>${zh ? '你喝掛了' : 'WASTED'}</strong><small>${zh ? '喝了十杯 · 於寺廟醒來' : 'TEN DRINKS · YOU WAKE IN THE TEMPLE'}</small>`;
+    window.clearTimeout(this.deathTimer);
+    layer.dataset.kind = 'wasted';
+    layer.dataset.shown = 'on';
+    this.deathTimer = window.setTimeout(() => {
+      delete layer.dataset.shown;
+      this.deathTimer = window.setTimeout(() => { delete layer.dataset.kind; }, 1_200);
+    }, 4_800);
   }
 
   /**

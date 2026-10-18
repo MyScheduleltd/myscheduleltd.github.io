@@ -357,6 +357,31 @@ export function landCoastalPose(rig:AvatarRig,progress:number,severity=1):void {
   levelCoastalFeet(rig);
 }
 
+/**
+ * Passing out on the tenth drink (owner, 2026-10-18): the knees go, the body
+ * sags over them, then goes over backwards onto the floor with the arms flung
+ * out, and stays there. Pivoted at the body's origin and tipped about its own
+ * left-right axis, so it lies face up along the ground behind where it stood;
+ * the caller lifts it until it rests on the floor rather than in it.
+ */
+export function passOutCoastalPose(rig:AvatarRig,progress:number):void {
+  walkCoastalPose(rig,0,0);
+  const t=THREE.MathUtils.clamp(progress,0,1);
+  const ease=(v:number)=>{v=THREE.MathUtils.clamp(v,0,1);return v*v*(3-2*v);};
+  // The sag, then the legs going slack as the body lands flat.
+  const buckle=ease(t/.2)*(1-ease((t-.34)/.2));
+  const fall=ease((t-.14)/.26);
+  const knee=.95*buckle+.18*fall;
+  rig.leftLeg.rotation.x=-knee*.5;rig.rightLeg.rotation.x=-knee*.4+.08*fall;
+  rig.leftLeg.rotation.z=-.10*fall;rig.rightLeg.rotation.z=.12*fall;
+  rig.leftKnee?.rotation.set(knee,0,0);rig.rightKnee?.rotation.set(knee*.85,0,0);
+  rig.torso.rotation.x=.38*buckle-.06*fall;rig.head.rotation.set(.28*buckle-.22*fall,.35*fall,0);
+  rig.leftArm.rotation.set(-.25*buckle-.1*fall,0,-.2-1.15*fall);
+  rig.rightArm.rotation.set(-.2*buckle,0,.2+1.3*fall);
+  rig.leftElbow?.rotation.set(-.3-.2*fall,0,0);rig.rightElbow?.rotation.set(-.25,0,0);
+  if(rig.visualRoot)rig.visualRoot.rotation.x=-Math.PI/2*fall;
+}
+
 /** Four-bar phrase: cue the inner record edge, then adjust a channel fader. */
 export function djCoastalPose(rig:AvatarRig,seconds:number):void {
   walkCoastalPose(rig,0,0);

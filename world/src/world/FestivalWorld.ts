@@ -13,7 +13,7 @@ import { ShadowCasterCulling, shareShadowDepthMaterials } from './ShadowCasters'
 import { mobileAssetBudgetSnapshot } from './MobileAssetBudget';
 import { FrameTimings } from './FrameTimings';
 import { selectDecorativeLights } from './LightBudget';
-import { warmScenePrograms, uploadSceneTextures } from './SceneWarmup';
+import { warmScenePrograms, uploadSceneTextures, warmByDrawing } from './SceneWarmup';
 import { GamepadInput, type GamepadActionId, type GamepadFrame } from './GamepadInput';
 import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
 import { dressBuildings, dressInteriors } from './WornArchitecture';
@@ -44,7 +44,7 @@ import { VenueSceneryAssets } from './VenueSceneryAssets';
 import { createCoastalAvatar } from './CoastalAvatar';
 import { importedAvatarTextures, attachImportedAvatar, syncImportedAvatars, importedAvatarRoots, AVATAR_NATIVE, MOVE_SECONDS, PUNCH_CONTACT_SECONDS } from './ImportedAvatar';
 import { createCoastalSkateboard } from './CoastalSkateboard';
-import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, setCoastalFists, releaseCoastalGrips, walkCoastalPose, plantedFoot, danceCoastalPose, COASTAL_STRIDE_LENGTH, skateCoastalPose, levelCoastalFeet, supportCoastalPose, seatCoastalLegs, coastalFootHeights } from './CoastalPose';
+import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, setCoastalFists, releaseCoastalGrips, walkCoastalPose, plantedFoot, passOutCoastalPose, danceCoastalPose, COASTAL_STRIDE_LENGTH, skateCoastalPose, levelCoastalFeet, supportCoastalPose, seatCoastalLegs, coastalFootHeights } from './CoastalPose';
 import { coastalRoof, createCoastalSedan, CONVERTIBLE } from './CoastalGeometry';
 import { XrHud } from './XrHud';
 import { XR_HOLD_MS, xrBindingFor, type XrAction } from './XrControls';
@@ -72,7 +72,7 @@ type PhoneOrientationPermission = 'idle' | 'granted' | 'denied' | 'unavailable';
 export type GraphicsMode = 'normal' | 'lite';
 export type CameraMode = 'follow' | 'perspective' | 'first-person' | 'screening';
 export type PlayerState = 'walking' | 'seated' | 'swimming';
-export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink' | 'eat' | 'jump' | 'stumble' | 'offer' | 'bow' | 'punch' | 'hit' | 'tumble';
+export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink' | 'eat' | 'jump' | 'stumble' | 'offer' | 'bow' | 'punch' | 'hit' | 'tumble' | 'passout';
 export type CarriedItem = 'POPCORN' | 'MENTOR' | 'DRINK' | 'HOTDOG' | 'PIZZA' | 'CHICKEN';
 // The roster moved to `NpcRoster.ts` so the gate can name residents without
 // importing the whole world; re-exported here so existing imports still work.
@@ -105,6 +105,7 @@ export type WorldAction =
   | { type: 'punch'; struck?: string; targetId?: string }
   | { type: 'punched'; droppedMentor: boolean; by?: string }
   | { type: 'died'; by?: string }
+  | { type: 'passedOut' }
   | { type: 'jukebox' }
   | { type: 'arcade' }
   | { type: 'vrWatch'; venue: VenueKey }
@@ -609,6 +610,8 @@ const PORTRAIT_ASPECT = 1.35;
  * short enough that walking past a door does not start a film.
  */
 const PROJECTOR_WARM_MARGIN = 6;
+/** Remote visitors' bodies are built at most this often, so a crowd arriving is not one long stutter. */
+const REMOTE_ADMISSION_SPACING_MS = 150;
 /** How often the sound beds hear where the visitor is. */
 const AMBIENCE_UPDATE_MS = 200;
 /** The waves are at full strength within this distance of the water and silent beyond the second. */
@@ -888,7 +891,21 @@ const clubLightColors = [0xff2f6d, 0x38e0ff, 0xffd23f, 0x8c4bff, 0x2fff9e, 0xff6
 // The street elevation is kept to the house colours: pink and orange.
 // How far north the club sits, keeping it clear of the red carpet and road.
 const EDIBLE_ITEMS: CarriedItem[] = ['POPCORN', 'DRINK', 'HOTDOG', 'PIZZA', 'CHICKEN'];
-const DRUNK_DURATION_MS = 45_000;
+/**
+ * Drinking (owner, 2026-10-18). Every drink takes the attendee further: one or
+ * two is tipsy, three to five drunk (the view sways and doubles), six to nine
+ * wasted (the edges darken and the walk weaves), and the tenth puts them on the
+ * floor. Two minutes after the last drink they start to wear off, one every two
+ * minutes, so only steady drinking ends on the floor.
+ */
+const PASS_OUT_DRINKS = 10;
+const SOBER_HOLD_MS = 120_000;
+const SOBER_PER_DRINK_MS = 120_000;
+/** From the knees going to waking at the temple, under the WASTED screen. */
+const PASSOUT_SPAN_MS = 2_600;
+/** Waking up is not sobering up: a few drinks' worth that fades over this long. */
+const HANGOVER_MS = 20_000;
+const HANGOVER_DRINKS = 4;
 /**
  * How long the struck gestures run for.
  *
@@ -919,6 +936,7 @@ const GESTURE_SPAN_MS: Partial<Record<AvatarGesture, number>> = {
   // donate() actually sets.
   offer: 1_500,
   bow: 1_500,
+  passout: PASSOUT_SPAN_MS,
 };
 /** How far into the swing the fist arrives. */
 // When the jab's fist arrives: the hit is felt then, not when the arm leaves.
@@ -1649,8 +1667,17 @@ export class FestivalWorld {
   private drinkUntil = 0;
   private eatingUntil = 0;
   private eatingItem?: CarriedItem;
-  private drunkUntil = 0;
+  /** When the current count of drinks was last added to; they wear off from here. */
+  private lastDrinkAt = 0;
+  private hangoverUntil = 0;
+  /** The tenth drink knocks the attendee out once its sip is finished. */
+  private passOutAt = 0;
+  private passedOutUntil = 0;
+  private nextDrunkStumbleAt = 0;
   private drunkPhase = 0;
+  private readonly doubleVisionSize = new THREE.Vector2();
+  private doubleVision?: { texture: THREE.FramebufferTexture; scene: THREE.Scene; camera: THREE.OrthographicCamera; material: THREE.ShaderMaterial };
+  private drunkScreen = -1;
   private reviewFrameCount = 0;
   private reviewLastDelta = 0;
   private readonly shadowSpotlights: THREE.SpotLight[] = [];
@@ -2258,6 +2285,15 @@ export class FestivalWorld {
     onProgress?.(.65);
     await warmScenePrograms(this.renderer, this.scene, this.camera);
     await uploadSceneTextures(this.renderer, this.scene, importedAvatarTextures());
+    onProgress?.(.7);
+    // Every body anybody can arrive in, so the first of each is not compiled
+    // in the middle of the festival; then one of each kind of draw.
+    const stand = this.warmAvatarVariants();
+    try {
+      this.warmupReport = await warmByDrawing(this.renderer, this.scene, this.camera, progress => onProgress?.(.7 + progress * .25));
+    } finally {
+      stand.removeFromParent();
+    }
     onProgress?.(.95);
     // The aperture meshes are hidden between draws, but their shared material
     // must be prepared before the first video opens.
@@ -2267,6 +2303,23 @@ export class FestivalWorld {
       await this.renderer.compileAsync(surface, this.camera, this.projectorApertureScene);
     }
     onProgress?.(1);
+  }
+
+  private warmupReport?: { kinds: number; programs: number };
+  /** Every sex and outfit, posed out of sight of nothing, for the warm-up only. */
+  private warmAvatarVariants(): THREE.Group {
+    const stand = new THREE.Group();
+    stand.name = 'Warm-up avatars';
+    for (const outfit of TOP_OUTFITS) {
+      for (const top of [outfit.wire, outfit.wireFemale]) {
+        const body = new THREE.Group();
+        this.createAvatarRig(body, { ...this.palette, top });
+        stand.add(body);
+      }
+    }
+    stand.position.copy(this.player.position);
+    this.scene.add(stand);
+    return stand;
   }
 
   /** The first real frame is ready, but the entrance camera still covers it. */
@@ -2286,7 +2339,7 @@ export class FestivalWorld {
     this.venueSceneryAssets.dispose();
     this.stopArcadeGame(); this.arcadeCabinet?.dispose();
     this.renderer.setAnimationLoop(null);
-    if (!this.preview) { this.audio.setAmbientMix(undefined); this.audio.setSkating(false); }
+    if (!this.preview) { this.audio.setAmbientMix(undefined); this.audio.setSkating(false); this.applyDrunkScreen(0); }
     if (this.xrSession) void this.xrSession.end().catch(() => undefined);
     this.stopPhoneOrientation();
     // Everything the tracker downloaded goes with the world. It was only ever
@@ -3269,7 +3322,7 @@ export class FestivalWorld {
         // reaches for when the view stops feeling right, so it is where sobering
         // up belongs — rather than on *any* press, which would end the effect
         // the moment you did anything at all.
-        this.drunkUntil = 0;
+        this.soberUp();
         this.xrHud?.setDrunkenness(0, 0);
         // The interface comes back with it: the layer holds its heading inside
         // a dead zone now, so after a long session it can be sitting off to one
@@ -5345,6 +5398,7 @@ export class FestivalWorld {
     projectorActivation: ProjectorActivationReview | null;
     textureBudget: ReturnType<typeof mobileAssetBudgetSnapshot>;
     crowd: { visitors: number; pending: number; timings: ReturnType<FrameTimings['snapshot']>; entryTimings?: ReturnType<FrameTimings['snapshot']>; phases: Record<'residents' | 'visitors' | 'skins' | 'draw', number> };
+    warmup?: { kinds: number; programs: number };
   } | undefined {
     if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return undefined;
     let shadowLights = 0;
@@ -5405,6 +5459,7 @@ export class FestivalWorld {
       mobileGpuConservation: this.conservesMobileGpu,
       projectorActivation: this.projectorActivationReview ? { ...this.projectorActivationReview } : null,
       textureBudget: mobileAssetBudgetSnapshot(),
+      warmup: this.warmupReport,
       crowd: { visitors: this.remoteAvatars.size, pending: this.pendingRemoteVisitors.size,
         timings: this.frameTimings.snapshot(), entryTimings: this.entryFrameTimings, phases: { ...this.framePhases } },
       shadowLights,
@@ -6181,12 +6236,13 @@ export class FestivalWorld {
     this.applyControlledNpcVisibility();
   }
 
-  private flushRemoteVisitor(): void {
+  private flushRemoteVisitor(): boolean {
     const next = this.pendingRemoteVisitors.values().next().value;
-    if (!next) return;
+    if (!next) return false;
     this.pendingRemoteVisitors.delete(next.id);
     this.remoteAvatars.set(next.id, this.createRemoteAvatar(next));
     this.setRemoteVisitors(this.latestRemoteVisitors);
+    return true;
   }
 
   setOccupiedSeats(seatIds: string[]): void {
@@ -7778,9 +7834,11 @@ export class FestivalWorld {
     this.playerGestureUntil = this.drinkUntil;
     this.carriedItem = undefined;
     this.syncCarriedPropAnchor();
-    this.drinks += 1;
-    // Enough of them and the room starts to move on its own.
-    if (this.drinks >= 3) this.drunkUntil = performance.now() + DRUNK_DURATION_MS;
+    const now = performance.now();
+    // What has not yet worn off, counting a drink half gone as still there.
+    this.drinks = Math.ceil(this.drinksLeft(now) - 1e-6) + 1;
+    this.lastDrinkAt = now;
+    if (this.drinks >= PASS_OUT_DRINKS) this.passOutAt = this.drinkUntil;
     this.onAction({ type: 'drank', drinks: this.drinks, drunk: this.drinks >= 3 });
   }
 
@@ -8150,6 +8208,7 @@ export class FestivalWorld {
 
   private jump(): void {
     if (this.playerState === 'seated' || this.playerState === 'swimming') return;
+    if (performance.now() < this.passedOutUntil) return;
     if (this.airborne || this.isMentorControlLocked()) return;
     if (performance.now() < this.stumbleUntil) return;
     this.dancing = false;
@@ -12270,9 +12329,11 @@ export class FestivalWorld {
     this.updatePlayer(delta);
     this.playerShadow.position.y=this.groundHeightAt(this.player.position.x,this.player.position.z,this.player.position.y)-AVATAR_GROUND_Y-this.player.position.y+.02;
     this.playerShadow.visible=this.playerState!=='swimming';
-    // One admission per frame: joining a full room cannot synchronously build
-    // nineteen calibrated skins inside a single network event.
-    this.flushRemoteVisitor();
+    // One admission at a time, and never two in a row: building a body takes
+    // about 30 ms of a frame, so a crowd arriving at once was a stutter as long
+    // as the crowd (WebKit probe, 2026-10-18). Spaced out, it is a single
+    // slightly late frame now and then while they appear.
+    if (frameStartedAt >= this.nextAdmissionAt && this.flushRemoteVisitor()) this.nextAdmissionAt = frameStartedAt + REMOTE_ADMISSION_SPACING_MS;
     this.cullAvatars();
     const residentsAt = performance.now();
     this.updateNpcs(delta, elapsed);
@@ -12340,6 +12401,7 @@ export class FestivalWorld {
     this.framePhases.draw = performance.now() - drawAt;
     this.mainDrawCalls = this.renderer.info.render.calls;
     this.mainTriangles = this.renderer.info.render.triangles;
+    this.drawDoubleVision();
     const visibleProjectors: VenueKey[] = [];
     const visibleProjectorScissors = new Map<VenueKey, { x: number; y: number; width: number; height: number }>();
     const immersiveXr = this.xrActive && !this.xrSimulated;
@@ -12839,6 +12901,7 @@ export class FestivalWorld {
       }
       return;
     }
+    if (this.updatePassOut()) return;
     /**
      * The keyboard, unless a headset has already answered.
      *
@@ -12862,7 +12925,8 @@ export class FestivalWorld {
         ? Number(this.keys.has('s') || this.keys.has('arrowdown')) -
           Number(this.keys.has('w') || this.keys.has('arrowup'))
         : this.stickY;
-      this.moveVector.set(horizontal, 0, vertical);
+      const [steerX, steerZ] = this.drunkenSteer(horizontal, vertical);
+      this.moveVector.set(steerX, 0, steerZ);
       if (this.moveVector.lengthSq() > 0) {
         this.dancing = false;
         const running = this.running && !this.dancing;
@@ -12872,7 +12936,7 @@ export class FestivalWorld {
         // Winded by the landing: the legs are under you again but not yet
         // carrying you at full pace.
         const recovering = performance.now() < this.stumbleUntil ? 0.42 : 1;
-        this.movePlayer(horizontal, vertical, speed * recovering * delta);
+        this.movePlayer(steerX, steerZ, speed * recovering * delta);
       }
     }
     this.applyKnockback(delta);
@@ -13028,6 +13092,8 @@ export class FestivalWorld {
   }
 
   private movePlayer(horizontal: number, vertical: number, distance: number, view: THREE.Object3D = this.camera): void {
+    // Out cold: no key, stick or headset moves the body on the floor.
+    if (performance.now() < this.passedOutUntil) return;
     /**
      * Camera-relative, but relative to the orbit the visitor set — not to where
      * the lens happens to be pointing this frame.
@@ -13998,7 +14064,7 @@ export class FestivalWorld {
   private locomotion = new WeakMap<AvatarRig,{x:number;z:number;phase:number;blend:number}>();
 
   private animateRig(rig: AvatarRig, phase: number, stride: number, gesture?: AvatarGesture, skating = false, progress = 0): void {
-    if(rig.visualRoot){rig.visualRoot.position.y=0;rig.visualRoot.rotation.y=0;}
+    if(rig.visualRoot){rig.visualRoot.position.y=0;rig.visualRoot.rotation.y=0;rig.visualRoot.rotation.x=0;}
     setCoastalFists(rig,gesture==='punch');releaseCoastalGrips(rig);
     const root=rig.visualRoot?.parent;
     if(root){
@@ -14023,6 +14089,7 @@ export class FestivalWorld {
       skateCoastalPose(rig,phase);
       if(arms){rig.leftArm.quaternion.copy(arms[0]!);rig.rightArm.quaternion.copy(arms[1]!);if(arms[2])rig.leftElbow?.quaternion.copy(arms[2]);if(arms[3])rig.rightElbow?.quaternion.copy(arms[3]);}
     }
+    else if(gesture==='passout'){this.restOnFloor(rig);return;}
     else levelCoastalFeet(rig);
     // Not for a body nobody can see this frame (cullAvatars): its feet are
     // planted again on the first frame it is drawn.
@@ -14097,6 +14164,9 @@ export class FestivalWorld {
       // Straightening as the feet come back down is what sells the landing.
       const tuck = Math.max(0, 1 - Math.abs(lift)) * 0.5;
       this.foldJoints(rig, .35, .35, 1.1 - tuck, 0.75 - tuck * 0.6);
+      return;
+    } else if (gesture === 'passout') {
+      passOutCoastalPose(rig, progress);
       return;
     } else if (gesture === 'tumble') {
       if(rig === this.playerRig && this.airborne) fallCoastalPose(rig, this.verticalVelocity);
@@ -14402,6 +14472,7 @@ export class FestivalWorld {
     }
   }
 
+  private nextAdmissionAt = 0;
   private ambienceAt = -Infinity;
   /**
    * Where the visitor stands, for the sound beds: how dark it is, how near the
@@ -15189,11 +15260,203 @@ export class FestivalWorld {
     this.cameraShake = Math.max(0, amount - delta * 3.6);
   }
 
-  /** How far gone the attendee is, 0 to 1, easing off as it wears away. */
-  drunkenness(): number {
-    const remaining = this.drunkUntil - performance.now();
-    if (remaining <= 0) return 0;
-    return Math.min(1, remaining / (DRUNK_DURATION_MS * 0.55));
+  /** Loopback review: `count` drinks down in a row, through the ordinary path; the tenth passes out. */
+  reviewDrinks(count: number): { drinks: number; level: number } {
+    for (let n = 0; n < count; n++) {
+      if (performance.now() < this.passedOutUntil || this.passOutAt) break;
+      this.carriedItem = 'DRINK';
+      this.drinkUntil = 0;
+      this.drinkInHand();
+    }
+    return { drinks: this.drinks, level: this.drinkLevel() };
+  }
+
+  /** Drinks still in the attendee: held for two minutes, then one every two minutes. */
+  private drinksLeft(now = performance.now()): number {
+    if (!this.drinks) return 0;
+    const worn = Math.max(0, now - this.lastDrinkAt - SOBER_HOLD_MS) / SOBER_PER_DRINK_MS;
+    return Math.max(0, this.drinks - worn);
+  }
+
+  /** How many drinks' worth the attendee feels: the drinks left, or the hangover if that is worse. */
+  drinkLevel(now = performance.now()): number {
+    if (now < this.passedOutUntil) return PASS_OUT_DRINKS;
+    const hangover = now < this.hangoverUntil ? HANGOVER_DRINKS * (this.hangoverUntil - now) / HANGOVER_MS : 0;
+    return Math.max(this.drinksLeft(now), hangover);
+  }
+
+  /** How far gone the attendee is, 0 to 1: nine drinks is all the way. */
+  drunkenness(now = performance.now()): number {
+    return Math.min(1, this.drinkLevel(now) / 9);
+  }
+
+  /** Recentre in a headset, and waking up at the temple, clear the count. */
+  private soberUp(): void {
+    this.drinks = 0;
+    this.lastDrinkAt = 0;
+    this.hangoverUntil = 0;
+  }
+
+  /**
+   * Wasted, the walk weaves: from the sixth drink the way the attendee is
+   * heading drifts either side of where they steer, and now and then the legs
+   * go from under them for a moment. It never takes the steering away, so
+   * anyone can still walk out of anywhere. Not in a headset, where a body
+   * that drifts on its own is the fastest way to make someone ill.
+   */
+  private drunkenSteer(horizontal: number, vertical: number): [number, number] {
+    if (!horizontal && !vertical) return [horizontal, vertical];
+    if ((this.xrActive && !this.xrSimulated) || this.playerState !== 'walking') return [horizontal, vertical];
+    const now = performance.now();
+    const weave = THREE.MathUtils.clamp((this.drinkLevel(now) - 5) / 4, 0, 1);
+    if (weave <= 0) { this.nextDrunkStumbleAt = 0; return [horizontal, vertical]; }
+    const t = this.clock.elapsedTime;
+    const angle = (Math.sin(t * 1.7) * 0.6 + Math.sin(t * 0.63 + 1.3) * 0.4) * 0.55 * weave;
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    if (!this.nextDrunkStumbleAt) this.nextDrunkStumbleAt = now + 4_000 + Math.random() * 4_000;
+    else if (now >= this.nextDrunkStumbleAt) {
+      this.nextDrunkStumbleAt = now + (9_000 - 5_000 * weave) * (0.6 + Math.random() * 0.8);
+      if (!this.skating && !this.airborne && now >= this.playerGestureUntil) {
+        this.stumbleUntil = now + GESTURE_SPAN_MS.stumble!;
+        this.playerGesture = 'stumble';
+        this.playerGestureUntil = this.stumbleUntil;
+      }
+    }
+    return [horizontal * cos - vertical * sin, horizontal * sin + vertical * cos];
+  }
+
+  /**
+   * The tenth drink, once its sip is done: the body goes down where it stands,
+   * WASTED comes up over everything, and the attendee wakes facing the altar
+   * with a hangover. Everything held is let go of, as when going down in a
+   * fight. Returns true while the body is on the floor, so nothing else moves it.
+   */
+  private updatePassOut(): boolean {
+    const now = performance.now();
+    if (this.passOutAt && now >= this.passOutAt) {
+      this.passOutAt = 0;
+      this.dancing = false;
+      this.running = false;
+      if (this.carriedItem === 'MENTOR') this.putDownMentor();
+      this.carriedItem = undefined;
+      this.stowedItem = undefined;
+      this.carriedProp.visible = false;
+      if (this.playerState === 'seated') this.standUp();
+      this.playerGesture = 'passout';
+      this.playerGestureUntil = now + PASSOUT_SPAN_MS;
+      this.passedOutUntil = now + PASSOUT_SPAN_MS;
+      this.onAction({ type: 'passedOut' });
+    }
+    if (!this.passedOutUntil) return false;
+    if (now < this.passedOutUntil) {
+      this.moveVector.set(0, 0, 0);
+      if (this.playerRig) {
+        this.animateRig(this.playerRig, this.clock.elapsedTime * 1.2, 0.018, 'passout', false,
+          this.gestureProgress('passout', this.playerGestureUntil, now));
+      }
+      return true;
+    }
+    this.passedOutUntil = 0;
+    this.playerGestureUntil = 0;
+    this.respawnAtTemple();
+    this.soberUp();
+    this.hangoverUntil = now + HANGOVER_MS;
+    return false;
+  }
+
+  /**
+   * Lying down, the feet are no longer what the body stands on. The lowest of
+   * its joints is lifted to just above the floor, which is where the back of a
+   * body lying on it is, whatever the figure's size.
+   */
+  private restOnFloor(rig: AvatarRig): void {
+    const root = rig.visualRoot?.parent;
+    if (!rig.visualRoot || !root) return;
+    root.updateWorldMatrix(true, true);
+    const joint = new THREE.Vector3();
+    let lowest = Infinity;
+    for (const part of [rig.head, rig.torso, rig.leftArm, rig.rightArm, rig.leftLeg, rig.rightLeg, rig.leftKnee, rig.rightKnee, rig.leftElbow, rig.rightElbow]) {
+      if (!part) continue;
+      lowest = Math.min(lowest, part.getWorldPosition(joint).y);
+    }
+    if (!Number.isFinite(lowest)) return;
+    const floor = this.groundHeightAt(root.position.x, root.position.z, root.position.y);
+    const scale = root.getWorldScale(joint).y || 1;
+    const lift = (floor + 0.13 - lowest) / scale;
+    if (lift > 0) rig.visualRoot.position.y += Math.min(lift, 1.5);
+  }
+
+  /**
+   * The drink, on the screen itself: from the third drink the picture doubles
+   * (a copy of the frame drifting beside it) and softens, and from the sixth
+   * the edges darken in. One copy of the finished frame and one quad, only
+   * while drunk; nothing at all when sober. A headset gets its haze instead.
+   */
+  private drawDoubleVision(): void {
+    const level = this.drinkLevel();
+    const ghost = this.xrActive && !this.xrSimulated ? 0 : THREE.MathUtils.clamp((level - 2) / 6, 0, 1);
+    this.applyDrunkScreen(level);
+    if (ghost <= 0.01) return;
+    const size = this.renderer.getDrawingBufferSize(this.doubleVisionSize);
+    const width = Math.floor(size.x), height = Math.floor(size.y);
+    if (!this.doubleVision || this.doubleVision.texture.image.width !== width || this.doubleVision.texture.image.height !== height) {
+      this.doubleVision?.texture.dispose();
+      // Plain RGBA, the drawing buffer's own format: a copy into an sRGB
+      // texture is refused. Its values are already display-encoded, so the
+      // shader hands them straight back without converting them again.
+      const texture = new THREE.FramebufferTexture(width, height);
+      if (this.doubleVision) {
+        this.doubleVision.material.uniforms.map!.value = texture;
+        this.doubleVision.texture = texture;
+      } else {
+        const material = new THREE.ShaderMaterial({
+          uniforms: { map: { value: texture }, opacity: { value: 0 }, offset: { value: new THREE.Vector2() } },
+          vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+          fragmentShader: 'uniform sampler2D map; uniform float opacity; uniform vec2 offset; varying vec2 vUv;'
+            + ' void main() { gl_FragColor = vec4(texture2D(map, vUv - offset).rgb, opacity); }',
+          transparent: true, depthTest: false, depthWrite: false,
+        });
+        const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+        quad.frustumCulled = false;
+        const scene = new THREE.Scene();
+        scene.add(quad);
+        this.doubleVision = { texture, scene, camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), material };
+      }
+    }
+    const view = this.doubleVision!;
+    this.renderer.copyFramebufferToTexture(view.texture);
+    // The copy drifts out to one side and back, never quite settling.
+    const drift = 0.004 + 0.012 * ghost;
+    (view.material.uniforms.offset!.value as THREE.Vector2).set(
+      Math.sin(this.drunkPhase * 0.9) * drift + drift * 0.6, Math.sin(this.drunkPhase * 0.6) * drift * 0.35);
+    view.material.uniforms.opacity!.value = 0.2 + 0.25 * ghost;
+    const autoClear = this.renderer.autoClear;
+    this.renderer.autoClear = false;
+    this.renderer.render(view.scene, view.camera);
+    this.renderer.autoClear = autoClear;
+  }
+
+  /**
+   * Softening and the closing dark, on the page rather than in the scene: a
+   * blur the compositor applies to the drawn layers and a vignette above them.
+   * Written only when it changes, and cleared outright when sober, so a sober
+   * frame carries no filter at all.
+   */
+  private applyDrunkScreen(level: number): void {
+    const step = Math.round(level * 4) / 4;
+    if (step === this.drunkScreen) return;
+    this.drunkScreen = step;
+    const headset = this.xrActive && !this.xrSimulated;
+    const blur = headset ? 0 : THREE.MathUtils.clamp((step - 2) / 7, 0, 1) * 1.6;
+    const dark = headset ? 0 : THREE.MathUtils.clamp((step - 5) / 4, 0, 1);
+    for (const layer of [this.canvas, this.foregroundCanvas, this.cssRenderer.domElement]) {
+      if (layer) layer.style.filter = blur > 0.05 ? `blur(${blur.toFixed(2)}px)` : '';
+    }
+    const shell = this.canvas.parentElement;
+    if (shell) {
+      if (dark > 0) shell.style.setProperty('--drunk-dark', dark.toFixed(2));
+      else shell.style.removeProperty('--drunk-dark');
+    }
   }
 
   /**
@@ -15228,12 +15491,15 @@ export class FestivalWorld {
       }
       return;
     }
-    this.drunkPhase += delta * 1.6;
-    // A gentle list rather than a capsize. Roll is added on top of the
-    // orientation lookAt produced, never used to overwrite it.
-    this.camera.rotation.z += Math.sin(this.drunkPhase) * 0.045 * amount;
-    this.camera.position.x += Math.sin(this.drunkPhase * 0.8) * 0.12 * amount;
-    this.camera.fov += ((this.baseFov + amount * 3.5) - this.camera.fov) * 0.06;
+    // Tipsy is a gentle list; wasted, from the sixth drink, close to twice it.
+    const heavy = THREE.MathUtils.clamp((this.drinkLevel() - 5) / 4, 0, 1);
+    this.drunkPhase += delta * (1.3 + 0.6 * amount);
+    // Roll is added on top of the orientation lookAt produced, never used to
+    // overwrite it.
+    this.camera.rotation.z += Math.sin(this.drunkPhase) * (0.045 * amount + 0.04 * heavy);
+    this.camera.position.x += Math.sin(this.drunkPhase * 0.8) * (0.12 * amount + 0.1 * heavy);
+    const breathe = Math.sin(this.drunkPhase * 0.5) * 1.5 * heavy;
+    this.camera.fov += ((this.baseFov + amount * 3.5 + breathe) - this.camera.fov) * 0.06;
     this.camera.updateProjectionMatrix();
   }
 

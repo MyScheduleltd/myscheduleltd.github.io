@@ -1,5 +1,5 @@
 import { FestivalWorld, type AvatarPalette, type GraphicsMode } from './FestivalWorld';
-import { loadImportedAvatar } from './ImportedAvatar';
+import { loadOwnAvatar } from './ImportedAvatar';
 import { avatarSex } from './CoastalOutfits';
 import { gateAvatarScissor, gateAvatarViewport, type GatePreviewCameraSnapshot, type GatePreviewRect } from './GatePreviewLayout';
 
@@ -91,7 +91,8 @@ export class GatePreview {
     if (!this.mobileQuery.matches) {
       // ImportedAvatar settles late arrivals against its most recent palette.
       // A female selection cannot be overwritten by an older male request.
-      void loadImportedAvatar(undefined, [avatarSex(palette.top)], false)
+      // Hers is drawn as soon as her own body is in; his follows behind.
+      void loadOwnAvatar(avatarSex(palette.top))
         .then(() => {
           if (this.disposed) return;
           this.avatarReady = true;
@@ -137,7 +138,7 @@ export class GatePreview {
     this.pointer = undefined;
     // Phones omit the studio avatar, but need this same cached body as the
     // camera reaches the player's actual dock entrance.
-    void loadImportedAvatar(undefined, [avatarSex(this.palette.top)], false).then(() => {
+    void loadOwnAvatar(avatarSex(this.palette.top)).then(() => {
       if (this.disposed || this.entry !== entry) return;
       this.avatarReady = true;
       this.world?.setAvatarPalette(this.palette);

@@ -648,6 +648,7 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
 .world-shell[data-view] > canvas,
 .world-shell[data-view] > .world-css3d,
 .world-shell[data-view] > .world-vignette,
+.world-shell[data-view] > .world-drunk,
 .world-shell[data-view] > .world-impact,
 .world-shell[data-view] > .world-death,
 .world-shell[data-view] > .world-camera-hint:not([hidden]),
@@ -905,6 +906,29 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .world-death { transition: opacity .3s linear, background-color .3s linear; }
+}
+/* Wasted (owner, 2026-10-18). The world has already swum and doubled by the
+   time this starts, so the dark comes in slowly, as if the eyes are closing,
+   and the word itself will not keep still. */
+.world-death[data-kind="wasted"] { transition: opacity .9s ease-out, background-color .9s ease-out; }
+.world-death[data-kind="wasted"][data-shown] {
+  background: rgba(2, 2, 3, .94);
+  transition: opacity 1.4s cubic-bezier(.5, 0, .9, .6), background-color 1.4s cubic-bezier(.5, 0, .9, .6);
+}
+.world-death[data-kind="wasted"] strong { animation: world-wasted-sway 2.6s ease-in-out infinite; }
+.world-death[data-kind="wasted"] small { transition-delay: .6s; }
+@keyframes world-wasted-sway {
+  0%, 100% { transform: rotate(-2.5deg) skewX(4deg); filter: blur(.6px); }
+  50% { transform: rotate(2deg) skewX(-3deg) translateX(6px); filter: blur(0); }
+}
+/* The edges closing in, from the sixth drink; --drunk-dark is set by the world. */
+.world-drunk {
+  position: fixed; inset: 0; z-index: 3; pointer-events: none;
+  opacity: var(--drunk-dark, 0);
+  background: radial-gradient(ellipse at center, transparent 38%, rgba(18, 8, 4, .55) 72%, rgba(6, 2, 1, .9) 100%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .world-death[data-kind="wasted"] strong { animation: none; }
 }
 /* Taking a punch. Red closes in from the edges rather than washing the middle,
    so the blow is unmistakable without hiding the thing that threw it. Sits over
@@ -2561,8 +2585,15 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .gate-avatar__caption { position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; pointer-events: none; }
 .gate-avatar__caption .eyebrow { color: var(--paper); text-shadow: 0 2px 8px #0008; }
 .gate-avatar__caption p { margin: 9px 0 0; color: #f5efe2a8; font: 700 11px var(--condensed); letter-spacing: .1em; }
-.gate-scene-status { position: fixed; right: 24px; bottom: 17px; max-width: 45vw; margin: 0; font: 700 11px var(--condensed); letter-spacing: .08em; color: #f5efe2b3; }
+/* The sign-in page's loading bar: the globe, then the character (App.paintGateLoad). */
+.gate-scene-status { position: fixed; right: 24px; bottom: 17px; width: min(300px, 45vw); margin: 0; font: 700 11px var(--condensed); letter-spacing: .08em; color: #f5efe2b3; transition: opacity 400ms ease 300ms; }
 .gate-scene-status[hidden] { display: none; }
+.gate-scene-status p { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 7px; }
+.gate-scene-status b { color: var(--paper); font-variant-numeric: tabular-nums; }
+.gate-scene-status__track { height: 3px; background: #f5efe23d; overflow: hidden; }
+.gate-scene-status__track > span { display: block; height: 100%; background: #d5484f; transform: scaleX(var(--gate-load, 0)); transform-origin: left; transition: transform 160ms ease-out; }
+.gate-scene-status[data-state="done"] { opacity: 0; }
+.gate-scene-status[data-state="failed"] b, .gate-scene-status[data-state="failed"] .gate-scene-status__track { display: none; }
 #app:has(.gate--live)::after { animation: none; opacity: .045; }
 @media (max-width: 800px), (pointer: coarse) and (max-width: 1000px) {
   .gate--live { display: block; padding: 100px 22px 32px; height: 100dvh; overflow-y: auto; }
@@ -2573,7 +2604,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .gate--live .gate-grid { grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0 16px; }
   .gate-avatar { display: none; }
   .gate__world-shade { background: linear-gradient(90deg, #080b0edb, #080b0ea6), linear-gradient(0deg, #080b0e8c, transparent); }
-  .gate-scene-status { position: static; max-width: 460px; margin: 18px auto 0; }
+  .gate-scene-status { position: static; width: 100%; max-width: 460px; margin: 18px auto 0; }
   .gate--live .gate__brand { padding: 16px 18px; }
   .gate--live .phase-badge { font-size: 10px; }
 }
@@ -2597,7 +2628,8 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .gate-entry__track { height: 3px; background: #f5efe23d; }
 .gate-entry__track > span { display: block; width: 100%; height: 100%; background: #d5484f; transform: scaleX(var(--entry-progress, 0)); transform-origin: left; transition: transform 160ms ease-out; }
 @media (prefers-reduced-motion: reduce) {
-  .gate--live .gate-card, .gate--live .gate-avatar, .gate--live .gate__brand, .gate--entering .gate__world-shade, .gate-entry__track > span { transition: none; }
+  .gate--live .gate-card, .gate--live .gate-avatar, .gate--live .gate__brand, .gate--entering .gate__world-shade, .gate-entry__track > span,
+  .gate-scene-status, .gate-scene-status__track > span { transition: none; }
 }
 @media (max-height: 660px) and (min-width: 801px) and (pointer: fine) {
   .gate--live { padding-top: 86px; padding-bottom: 20px; }
