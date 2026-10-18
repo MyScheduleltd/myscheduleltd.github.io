@@ -90,7 +90,8 @@ for (const [label, viewport, device] of [['phone', {width: 390, height: 844}, 'p
   // straight after, and a tap on its own close button (a phone's tap clicks what
   // comes up under the finger), must not close it.
   await page.evaluate(() => bobbyGame.startLevel6WakeUp());
-  await page.waitForFunction(() => bobbyGame.state === 'level6WakeUp' && bobbyGame.level6WakeTimer >= 5.6, undefined, {timeout: 60000});
+  // Run against the live site, the wake-up scene's chapter can take a minute to load (58 s on 2026-10-18).
+  await page.waitForFunction(() => bobbyGame.state === 'level6WakeUp' && bobbyGame.level6WakeTimer >= 5.6, undefined, {timeout: 240000});
   for (let i = 0; i < 12 && !(await page.evaluate(() => Boolean(bobbyGame.scoreboard))); i++) {
     if (label === 'phone') await page.locator('.mobile-moth__button--o').tap();
     else await page.keyboard.press('KeyO');
