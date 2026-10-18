@@ -261,16 +261,186 @@ test('unchanged programme snapshots do not send repeated playback commands, and 
   assert.deepEqual(commands.slice(-2),['pauseVideo','pauseVideo'],'STAFF resuming a programme woke a parked decoder');
 });
 
-test('a short doorway crossing reuses one paused decoder, rejoins the clock, and releases it after a bounded stay',()=>{
+test('a short doorway crossing reuses one paused decoder, rejoins the clock, and stops it after a bounded stay without discarding the player',()=>{
   const saved=globalThis.performance;let now=1000;Object.defineProperty(globalThis,'performance',{configurable:true,value:{now:()=>now}});
   try{
-    let place='club';const commands=[],releases=[];const frame={contentWindow:{postMessage(data){commands.push(JSON.parse(data));}},src:'film',removeAttribute(){}};
-    const p={iframe:frame,element:{replaceChildren(){releases.push('club');}},paused:false,pending:{offsetSeconds:90},signature:'same'};
+    let place='club';const commands=[];const frame={contentWindow:{postMessage(data){commands.push(JSON.parse(data));}},src:'film',removeAttribute(){}};
+    const p={iframe:frame,paused:false,pending:{offsetSeconds:90},signature:'same'};
     const world=Object.create(FestivalWorld.prototype);Object.assign(world,{projectors:new Map([['club',p]]),mountedProjectorVenue:'club',projectorLeaveAt:undefined,playheads:new Map(),playerReleases:0,projectorVenue:()=>place,stopImmersiveVideo(){},applyPrivateScreening(){}});
     place=undefined;world.updateProjectorMounts();world.updateProjectorMounts();assert.equal(p.iframe,frame);assert.equal(p.parked,true);assert.deepEqual(commands.map(c=>c.func),['pauseVideo']);
-    now+=3000;place='club';world.updateProjectorMounts();assert.equal(p.iframe,frame);assert.equal(p.parked,false);assert.deepEqual(commands.map(c=>c.func),['pauseVideo','seekTo','playVideo']);assert.deepEqual(commands[1].args,[90,true]);assert.deepEqual(releases,[]);
-    place=undefined;world.updateProjectorMounts();now+=8001;world.updateProjectorMounts();assert.equal(p.iframe,undefined);assert.equal(frame.src,'about:blank');assert.deepEqual(releases,['club']);
+    now+=3000;place='club';world.updateProjectorMounts();assert.equal(p.iframe,frame);assert.equal(p.parked,false);assert.deepEqual(commands.map(c=>c.func),['pauseVideo','seekTo','playVideo']);assert.deepEqual(commands[1].args,[90,true]);
+    place=undefined;world.updateProjectorMounts();now+=8001;world.updateProjectorMounts();
+    assert.equal(p.iframe,undefined,'the venue lets go of the player');
+    assert.equal(commands.at(-1).func,'stopVideo','and it stops, which unloads the media');
+    assert.equal(frame.src,'film','but the player itself is kept: building another is the doorway freeze');
+    assert.equal(world.playerReleases,1);
   }finally{Object.defineProperty(globalThis,'performance',{configurable:true,value:saved});}
+});
+
+// Just enough DOM for the one shared player: panels, iframes and what they are told.
+const withFakeDom=(run)=>{
+  const saved={window:globalThis.window,document:globalThis.document};
+  const iframes=[];
+  const make=(tag)=>{
+    const element={tag,style:{},attributes:{},children:[],listeners:new Map(),isConnected:false,className:'',
+      setAttribute(k,v){this.attributes[k]=String(v);},removeAttribute(k){delete this.attributes[k];},
+      replaceChildren(...kids){this.children=kids;},addEventListener(type,listener){this.listeners.set(type,listener);},
+      getBoundingClientRect(){return{left:0,top:0,right:0,bottom:0,width:0,height:0};}};
+    if(tag==='iframe'){element.posted=[];element.contentWindow={postMessage:(message)=>element.posted.push(JSON.parse(message))};iframes.push(element);}
+    return element;
+  };
+  globalThis.document={createElement:make};
+  globalThis.window={location:{hostname:'festival.test',origin:'https://festival.test',href:'https://festival.test/'},setInterval:()=>1,clearInterval(){}};
+  try{return run(iframes);}finally{globalThis.window=saved.window;globalThis.document=saved.document;}
+};
+const FILM_A={id:'film-a',title:'A',embedUrl:'https://www.youtube-nocookie.com/embed/aaaaaaaaaaa',youtubeId:'aaaaaaaaaaa'};
+const FILM_B={id:'film-b',title:'B',embedUrl:'https://www.youtube-nocookie.com/embed/bbbbbbbbbbb',youtubeId:'bbbbbbbbbbb'};
+const playerWorld=(venues=['palace','shore'])=>{
+  const world=Object.create(FestivalWorld.prototype);
+  const reports={durations:[],advances:[]};
+  let laidOut=0;
+  Object.assign(world,{
+    projectors:new Map(venues.map(venue=>[venue,{muted:true,xrPoster:{visible:false}}])),
+    cssScene:new THREE.Scene(),camera:new THREE.PerspectiveCamera(),
+    cssRenderer:{render(){laidOut++;if(world.screenPlayer)world.screenPlayer.element.isConnected=true;}},
+    playheads:new Map(),playerMounts:0,playerReleases:0,privateVenue:undefined,xrActive:false,xrSimulated:false,xrPreferred:false,preview:false,disposed:false,
+    mountedProjectorVenue:undefined,projectorLeaveAt:undefined,place:undefined,
+    projectorVenue(){return this.place;},stopImmersiveVideo(){},refreshXrPoster(){},applyPrivateScreening(){},
+    onProjectorDuration:(venue,id,seconds)=>reports.durations.push([venue,id,seconds]),
+    onProjectorAdvance:(venue,id)=>reports.advances.push([venue,id]),
+  });
+  const say=(iframe,payload)=>world.handleProjectorMessage({origin:'https://www.youtube.com',source:iframe.contentWindow,data:JSON.stringify(payload)});
+  return {world,reports,say,laidOut:()=>laidOut};
+};
+
+test('walking between screens moves one player and swaps the film instead of building another',()=>withFakeDom((iframes)=>{
+  const {world,reports,say}=playerWorld();
+  world.place='palace';
+  world.setPublicScreening('shore',FILM_B,40,'s1');
+  assert.equal(iframes.length,0,'a screen nobody is at gets no player');
+  world.setPublicScreening('palace',FILM_A,30,'p1');
+  world.mountedProjectorVenue='palace';
+  assert.equal(iframes.length,1);
+  const [frame]=iframes,player=world.screenPlayer;
+  assert.match(frame.src,/embed\/aaaaaaaaaaa\?.*autoplay=1.*start=30/);
+  assert.equal(world.projectors.get('palace').iframe,frame);
+  assert.equal(player.venue,'palace');
+  assert.ok(Math.abs(player.object.position.z-(-48.18))<1e-6,'the panel hangs on the Palace screen');
+  assert.ok(player.element.isConnected,'laid out at once, so the iframe starts loading now');
+  assert.deepEqual(frame.posted,[],'nothing is sent before the player can hear it');
+  say(frame,{event:'initialDelivery',info:{videoData:{video_id:'aaaaaaaaaaa'},duration:100,currentTime:30,playerState:1}});
+  assert.deepEqual(frame.posted.map(c=>c.func),['mute'],'what waited is sent once it answers');
+  assert.deepEqual(reports.durations,[['palace','aaaaaaaaaaa',100]]);
+
+  world.place='shore';
+  world.updateProjectorMounts();
+  assert.equal(iframes.length,1,'no second player');
+  assert.equal(world.projectors.get('palace').iframe,undefined);
+  assert.equal(world.projectors.get('shore').iframe,frame);
+  assert.equal(player.venue,'shore');
+  assert.ok(Math.abs(player.object.position.z-(-35.68))<1e-6,'the same panel, re-aimed at the Shore screen');
+  assert.equal(frame.src.includes('aaaaaaaaaaa'),true,'the iframe is never reloaded');
+  assert.deepEqual(frame.posted.slice(1).map(c=>c.func),['stopVideo','loadVideoById','mute']);
+  assert.deepEqual(frame.posted[2].args,[{videoId:'bbbbbbbbbbb',startSeconds:40}]);
+  assert.ok(world.playheads.has('palace'),'the Palace keeps where its film had got to');
+}));
+
+test('the shared panel turns to face each screen and back again',()=>withFakeDom(()=>{
+  const {world}=playerWorld(['club','rooftop','shore']);
+  const player=world.ensureScreenPlayer();
+  world.aimScreenPlayer(player,'club');
+  assert.equal(player.object.rotation.y,Math.PI,'the club screen is watched from the other side');
+  assert.equal(player.element.className,'public-projector public-projector--club');
+  world.aimScreenPlayer(player,'rooftop');
+  assert.equal(player.object.rotation.y,0,'and the next screen does not inherit the turn');
+  assert.ok(Math.abs(player.object.position.z-19.9)<1e-6);
+  world.aimScreenPlayer(player,'shore');
+  assert.ok(Math.abs(player.object.scale.x-0.0095)<1e-9,'each screen keeps its own size');
+}));
+
+test('reports still about the previous film are not credited to the new one',()=>withFakeDom((iframes)=>{
+  const {world,reports,say}=playerWorld();
+  world.place='palace';world.setPublicScreening('palace',FILM_A,0,'p1');world.mountedProjectorVenue='palace';
+  const [frame]=iframes;
+  say(frame,{event:'initialDelivery',info:{videoData:{video_id:'aaaaaaaaaaa'},duration:100}});
+  world.setPublicScreening('shore',FILM_B,0,'s1');world.place='shore';world.updateProjectorMounts();
+  reports.durations.length=0;
+  // In flight from before the switch: A's length, A's playhead, A ending.
+  say(frame,{event:'infoDelivery',info:{duration:100,currentTime:99,playerState:1}});
+  say(frame,{event:'onStateChange',info:0});
+  assert.deepEqual(reports.durations,[],'A\'s length would cut B short for everyone');
+  assert.equal(world.projectors.get('shore').currentTime,undefined);
+  assert.deepEqual(reports.advances,[],'A ending must not skip B');
+  // Then the player names B, and B's own reports count.
+  say(frame,{event:'infoDelivery',info:{videoData:{video_id:'bbbbbbbbbbb'},duration:200,currentTime:3,playerState:1}});
+  assert.deepEqual(reports.durations,[['shore','bbbbbbbbbbb',200]]);
+  assert.equal(world.projectors.get('shore').currentTime,3);
+  say(frame,{event:'onStateChange',info:0});
+  assert.deepEqual(reports.advances,[['shore','bbbbbbbbbbb']]);
+}));
+
+test('an unplayable film straight after a switch still moves the programme on',()=>withFakeDom((iframes)=>{
+  const {world,reports,say}=playerWorld();
+  world.place='palace';world.setPublicScreening('palace',FILM_A,0,'p1');world.mountedProjectorVenue='palace';
+  const [frame]=iframes;
+  say(frame,{event:'initialDelivery',info:{videoData:{video_id:'aaaaaaaaaaa'}}});
+  world.setPublicScreening('shore',FILM_B,0,'s1');world.place='shore';world.updateProjectorMounts();
+  say(frame,{event:'onError',info:150});
+  assert.deepEqual(reports.advances,[['shore','bbbbbbbbbbb']]);
+}));
+
+test('the player is built under the loading view, cued, and the first screen only swaps the film',()=>withFakeDom((iframes)=>{
+  const {world,say,laidOut}=playerWorld();
+  world.place=undefined;world.admitting=true;
+  world.setPublicScreening('palace',FILM_A,0,'p1');
+  assert.equal(iframes.length,1,'the first film known during loading starts it');
+  world.setPublicScreening('shore',FILM_B,12,'s1');
+  world.admitting=false;
+  const [frame]=iframes;
+  assert.match(frame.src,/autoplay=0/,'cued, so nothing is decoded until a screen asks');
+  assert.equal(laidOut(),1);assert.equal(world.screenPlayer.venue,undefined);
+  world.warmScreenPlayer();assert.equal(iframes.length,1,'built once');
+  // Two doorways before the player has answered: only the latest film is sent.
+  world.place='palace';world.updateProjectorMounts();
+  world.place='shore';world.updateProjectorMounts();
+  assert.equal(iframes.length,1);
+  assert.deepEqual(frame.posted,[]);
+  say(frame,{event:'initialDelivery',info:{videoData:{video_id:'aaaaaaaaaaa'}}});
+  assert.deepEqual(frame.posted.map(c=>c.func),['loadVideoById','mute'],'the Palace film and its stop are moot by now');
+  assert.deepEqual(frame.posted[0].args,[{videoId:'bbbbbbbbbbb',startSeconds:12}]);
+}));
+
+test('a paused venue is cued rather than started, and a headset or the gate preview builds no warm player',()=>withFakeDom((iframes)=>{
+  const {world,say}=playerWorld();
+  world.setPublicScreening('palace',FILM_A,0,'p1');
+  assert.equal(iframes.length,0,'nothing is built once the festival is running');
+  world.warmScreenPlayer();
+  const [frame]=iframes;
+  say(frame,{event:'initialDelivery',info:{videoData:{video_id:'aaaaaaaaaaa'}}});
+  world.projectors.get('shore').paused=true;
+  world.place='shore';world.setPublicScreening('shore',FILM_B,5,'s1');
+  assert.equal(frame.posted[0].func,'cueVideoById');
+  for(const flag of ['xrPreferred','preview']){
+    const other=playerWorld();other.world[flag]=true;other.world.admitting=true;
+    other.world.setPublicScreening('palace',FILM_A,0,'p1');other.world.warmScreenPlayer();
+  }
+  assert.equal(iframes.length,1);
+}));
+
+test('admission waits a bounded moment for the warm player to answer, and not at all without one',async()=>{
+  const savedWindow=globalThis.window;
+  globalThis.window={setTimeout:(f,ms)=>setTimeout(f,ms)};
+  try{
+    const world=Object.create(FestivalWorld.prototype);world.disposed=false;
+    let t=Date.now();await world.screenPlayerAnswered(3000);assert.ok(Date.now()-t<50,'no player, no wait');
+    world.screenPlayer={iframe:{},ready:false};
+    setTimeout(()=>{world.screenPlayer.ready=true;},150);
+    t=Date.now();await world.screenPlayerAnswered(3000);const answered=Date.now()-t;
+    assert.ok(answered>=100&&answered<600,`returns once it answers (${answered} ms)`);
+    world.screenPlayer.ready=false;
+    t=Date.now();await world.screenPlayerAnswered(250);const capped=Date.now()-t;
+    assert.ok(capped>=200&&capped<700,`and gives up at the limit (${capped} ms)`);
+  }finally{globalThis.window=savedWindow;}
 });
 
 test('asset notifications settle one body per paint, coalesce repeats, and cancel disposed bodies',async()=>{

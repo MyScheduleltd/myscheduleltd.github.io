@@ -76,6 +76,8 @@ await page.addInitScript(() => {
         buffer: Math.round((cost.buffer - before.buffer) * 10) / 10, links: cost.links - before.links, programs: w?.renderer?.info.programs?.length ?? 0,
         phase: Object.fromEntries(Object.entries(rec.phase).filter(([, v]) => v > 2).map(([k, v]) => [k, Math.round(v * 10) / 10])),
         visitors: w?.remoteAvatars?.size ?? 0, projector: w?.mountedProjectorVenue ?? '',
+        // The shared YouTube player: none yet, still starting, or answering.
+        player: w?.screenPlayer?.iframe ? (w.screenPlayer.ready ? 'ready' : 'starting') : '',
         // What the new programs are: material type and the start of three's cache key.
         made: (w?.renderer?.info.programs ?? []).filter((p) => !known.has(p.id) && known.add(p.id)).map((p) => `${p.name}`).slice(0, 40),
       });

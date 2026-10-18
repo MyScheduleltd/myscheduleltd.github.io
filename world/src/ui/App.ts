@@ -1808,6 +1808,10 @@ export class App {
         if (this.festivalClient.online) void this.festivalClient.reportTrackDuration(venue, youtubeId, seconds);
       },
     });
+    // The programme as it stands, before the downloads: the world starts its
+    // one YouTube player as soon as it knows a film, and every second of the
+    // loading view it gets is a second less of start-up inside the festival.
+    this.syncPublicProjectors();
     await this.world.prepareAssets(progress => this.setGateEntryProgress(.6 + progress * .14,
       this.language === 'zh-TW' ? '正在準備場景資源…' : 'PREPARING WORLD ASSETS…'));
     this.world.setNpcProfiles(this.npcProfiles);

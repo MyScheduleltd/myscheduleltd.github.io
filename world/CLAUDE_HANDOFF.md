@@ -1,4 +1,37 @@
-# Current Claude continuation — drunkenness, WASTED, iPhone freezes, 2026-10-18 (Asia/Taipei)
+# Current Claude continuation — one YouTube player for every screen, 2026-10-18 (Asia/Taipei)
+
+**LOCAL ONLY until the owner approves.** Built on the uncommitted iPhone-freeze work below (snapshot of `release-sfx-20261018` as of 15:41). Remedies the "Left:" line there: the freeze on walking into a screened venue.
+
+**Cause.** Every venue built its own YouTube iframe as somebody walked in and destroyed it as they left. WebKit (Safari) runs a cross-origin frame on the page's own thread, so each player start-up was 40–160 ms frames for a second or two, outside the world's frame (frame JS stayed at 4–7 ms).
+
+**Change** (`FestivalWorld.ts`, `ScreenPlayer` doc comment): one iframe in one CSS3D panel for the whole page.
+- **Moving it.** Entering a venue re-aims the panel (position, `facing` turn, scale from `venueScreens`) and swaps the film with postMessage `loadVideoById`, or `cueVideoById` if STAFF paused it. The iframe never moves in the document; moving it would reload it.
+- **Releasing a venue.** `releaseProjector` sends `stopVideo` and keeps the player. In WebKit, stopping unloads the media straight away (state 5, duration 0). A player that is never detached can't leave decoders behind, so phones still hold at most one, and the old "stop, blank, detach" teardown now only runs in `dispose()`.
+- **Built during loading.** The first programme to arrive (App now syncs it straight after constructing the world) starts the player, cued and not playing. `prepareForPlay` then waits up to 3 s (`SCREEN_PLAYER_ADMISSION_WAIT_MS`) for it to answer. Not built for a headset (`xrPreferred`) or the gate preview.
+- **Commands wait until the player answers** (`commandProjector`, `screenPlayerReady`). Before that, a newer film or stop replaces the waiting playback commands. 'listening' is re-sent every 500 ms until the first message arrives, as YouTube's own API does.
+- **Stale reports.** One player serves every screen, so a duration, playhead or "ended" report still about the previous film is ignored until the player names the new one (`videoData.video_id` / `videoUrl`). Otherwise a wrong length would go into the shared duration table (see `App.syncPublicProjectors`). Errors are not filtered, so an unplayable film still moves the programme on.
+- **Render loop.** Only the screen holding the player is composited, and the shared panel's visibility is set once per frame. `projectorScissor` uses the panel's rectangle only once it has been laid out on that screen. `publicScreenBoxes` uses `venueScreens`. A new setting: the volume slider now applies to the player whenever it moves to a screen (each new iframe used to start at full volume).
+- Everything else is unchanged: programme clock offsets, muting, the 8 s doorway grace, STAFF pause, maximized and private screenings, foreground avatar compositing, and the phone rule of loading a screen only from inside the room.
+
+**Measured** (`tools/hitch-probe.mjs`, Playwright 1.62 WebKit, iPhone 15 Pro viewport, warm shader cache, own disposable API on 8793). Steps `settle,palace,shore,drive-in,club,rooftop`; 3 runs per side, before and after interleaved. Each figure is the worst frame gap at that venue entry, median of the 3 runs, ms. Compile frames excluded (none occurred).
+
+| | Palace | Shore | Drive-In | Club | Rooftop | frames >50 ms at venue entries (3 runs) |
+|---|---|---|---|---|---|---|
+| 一般 before | 133 | 72 | 61 | 90 | 37 | 29 |
+| 一般 after | 88 | 39 | 40 | 26 | 29 | 9 |
+| 精簡 before | 117 | 56 | 22 | 41 | 20 | 13 |
+| 精簡 after | 68 | 40 | 19 | 19 | 19 | 4 |
+
+- **Every venue after the first:** worst frame under 50 ms (one 102 ms rooftop frame in one run, while the player was still parked at the club, so not a switch).
+- **The first venue still costs 47–102 ms** even when the player had answered during loading. That is WebKit starting the page's first film; later swaps don't repeat it. Possible follow-up: start and stop the player once under the loading view. Not done, because it downloads video during asset loading.
+- **Admission time.** Before: 5.6–5.8 s. After: 5.6–9.3 s. The player answered before the world opened in 5 of 6 runs. In the sixth it didn't answer within the 3 s cap, so the rest of its start-up landed in the Palace step. Headless WebKit takes 5–13 s to start a YouTube embed (lab: `fresh` iframe 17–194 ms of jank vs `loadVideoById` after a stop 0 ms). A real iPhone should be faster, but this is **not measured on a phone**.
+- **Checks.** One panel and the same iframe across all five venues, never reloaded, with the alignment readout (`__festivalProjectors`) identical to the old bundle in WebKit and Chrome. In desktop Chrome the films play in the moved panel (Palace/Shore/Drive-In). The local service's club and rooftop films refuse embedding in both old and new bundles. Headless WebKit screenshots never paint the CSS3D iframe, so screens look black there in both bundles.
+- `npm run verify`: 610/610 + build. New tests in `scripts/projector-occlusion.test.mjs`: one player moved between screens, stale reports, error after a switch, built under loading and queued until it answers, paused venues cued, panel orientation, bounded admission wait. The doorway test now expects "stopped, kept".
+- `tools/hitch-probe.mjs` records the shared player's state per frame (`player`: '' / starting / ready).
+
+---
+
+# Previous continuation — drunkenness, WASTED, iPhone freezes, 2026-10-18 (Asia/Taipei)
 
 **LOCAL ONLY until the owner approves.** Worktree `release-sfx-20261018`, branch `claude/drunk-and-mobile-20261018` from origin/main `d157a6d` (PR #46 live). Uncommitted.
 

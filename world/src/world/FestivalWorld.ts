@@ -211,10 +211,41 @@ interface Seat {
   footFloor?: number;
 }
 
-interface ProjectorSurface {
-  parked?: boolean;
+/**
+ * The page's one YouTube player, and the CSS3D panel it sits in.
+ *
+ * Starting a YouTube embed costs Safari 70–160 ms of the page's own main
+ * thread, spread over the second or two it takes (WebKit runs a cross-origin
+ * frame on the page's thread). Every venue used to build its own player as
+ * somebody walked in and destroy it as they left, so every doorway was a
+ * freeze. The page only ever runs one screen at a time anyway, so it keeps one
+ * player, built while the loading view is up, and moves it: the panel's
+ * transform is re-aimed at the screen in use and the film is swapped with
+ * `loadVideoById`. The iframe itself never moves in the document — moving an
+ * iframe reloads it.
+ */
+interface ScreenPlayer {
   element: HTMLDivElement;
   object: CSS3DObject;
+  iframe?: HTMLIFrameElement;
+  /** The screen it is on, if any. Only that venue's `iframe` is set. */
+  venue?: VenueKey;
+  /** The screen the CSS3D renderer last laid the panel out on. */
+  laidOutAt?: VenueKey;
+  /** The embed has spoken. It drops commands sent before then. */
+  ready: boolean;
+  /** Commands held until it is ready, oldest first. */
+  queued: Array<{ func: string; message: string }>;
+  listenTimer?: number;
+  /**
+   * The video the player last said it holds. One player serves every screen,
+   * so a report can still be about the film it had before the latest switch.
+   */
+  reportedVideoId?: string;
+}
+
+interface ProjectorSurface {
+  parked?: boolean;
   /** The screen-shaped aperture used by the one-context phone compositor. */
   aperture: THREE.Mesh;
   /** A lightweight, policy-safe sign used while DOM/YouTube is outside WebXR. */
@@ -232,6 +263,7 @@ interface ProjectorSurface {
   xrStalledSince?: number;
   xrFailedUrl?: string;
   volume?: number;
+  /** The shared player's iframe while this screen holds it (`ScreenPlayer`). */
   iframe?: HTMLIFrameElement;
   filmId?: string;
   youtubeId?: string;
@@ -829,6 +861,21 @@ const AVATAR_SWIM_Y = SEA_Y - 2.22;
  */
 
 
+/** The `v` of a YouTube watch URL, as the embed reports its video. */
+const videoIdFromWatchUrl = (url: unknown): string | undefined => {
+  if (typeof url !== 'string') return undefined;
+  try {
+    return new URL(url).searchParams.get('v') || undefined;
+  } catch {
+    return undefined;
+  }
+};
+/** How long admission waits for the warm YouTube player to answer (`screenPlayerAnswered`). */
+const SCREEN_PLAYER_ADMISSION_WAIT_MS = 3_000;
+/** Commands that decide what the shared player is doing (`commandProjector`). */
+const PLAYBACK_PLAYER_COMMANDS = new Set(['loadVideoById', 'cueVideoById', 'stopVideo', 'seekTo', 'playVideo', 'pauseVideo']);
+/** And the ones that make any of those still waiting moot. */
+const REPLACING_PLAYER_COMMANDS = new Set(['loadVideoById', 'cueVideoById', 'stopVideo']);
 /** The only origins a projector or jukebox player can legitimately speak from. */
 const PROJECTOR_ORIGINS = new Set([
   'https://www.youtube.com',
@@ -1637,6 +1684,9 @@ export class FestivalWorld {
   private readonly remoteNpcControls = new Map<string, RemoteVisitorVisual>();
   private readonly occupiedSeats = new Set<string>();
   private readonly projectors = new Map<VenueKey, ProjectorSurface>();
+  private screenPlayer?: ScreenPlayer;
+  /** Until `start()`: the loading view is up, and a player start-up costs no frame. */
+  private admitting = true;
   private mountedProjectorVenue?: VenueKey;
   private projectorLeaveAt?: number;
   /** Loopback-only override for the timetable/projector overlap regression. */
@@ -2233,6 +2283,7 @@ export class FestivalWorld {
 
   start(): void {
     if (this.preview) return;
+    this.admitting = false;
     // Before the first frame, deliberately.
     //
     // Turning a light off changes the number of lights in the scene, and that
@@ -2267,6 +2318,9 @@ export class FestivalWorld {
     // Live visitors and streamed films remain runtime data; all fixed assets
     // finish placement before subdivision, batching and GPU preparation.
     await this.prepareAssets(progress => onProgress?.(progress * .55));
+    // Usually already started by the programme (`setPublicScreening`); first
+    // either way, so its start-up overlaps everything below.
+    this.warmScreenPlayer();
     // Let zero-delay attachment work and the loading view paint first.
     await new Promise<void>(resolve => window.setTimeout(resolve, 0));
     if (this.disposed) return;
@@ -2302,6 +2356,9 @@ export class FestivalWorld {
       const surface = new THREE.Group(); surface.add(aperture.clone(false));
       await this.renderer.compileAsync(surface, this.camera, this.projectorApertureScene);
     }
+    // The programme may only have arrived during the warm-up.
+    this.warmScreenPlayer();
+    await this.screenPlayerAnswered(SCREEN_PLAYER_ADMISSION_WAIT_MS);
     onProgress?.(1);
   }
 
@@ -2376,8 +2433,23 @@ export class FestivalWorld {
     if (this.preview) this.releaseGatePreview();
     this.renderer.dispose();
     if (this.preview) this.renderer.forceContextLoss();
+    // The page is going, so this is the one place the shared player is torn
+    // down: stopped and blanked before it leaves the document, in that order
+    // (see `releaseProjector` for why a detached embed is not enough).
+    const player = this.screenPlayer;
+    if (player) {
+      window.clearInterval(player.listenTimer);
+      if (player.iframe) {
+        try {
+          player.iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'stopVideo', args: [] }), '*');
+        } catch { /* a cross-origin frame that has already gone */ }
+        player.iframe.src = 'about:blank';
+        player.iframe.removeAttribute('allow');
+      }
+      player.element.remove();
+      this.screenPlayer = undefined;
+    }
     for (const projector of this.projectors.values()) {
-      projector.element.remove();
       projector.xrPoster.geometry.dispose();
       projector.xrPoster.material.map?.dispose();
       projector.xrPoster.material.dispose();
@@ -2762,8 +2834,8 @@ export class FestivalWorld {
       projector.xrFailedUrl = undefined;
       this.releaseProjector(venue);
       projector.xrPoster.visible = true;
-      projector.element.style.visibility = 'hidden';
     }
+    if (!simulated && this.screenPlayer) this.screenPlayer.element.style.visibility = 'hidden';
     if (!simulated) this.mountedProjectorVenue = undefined;
     this.xrActive = true;
     this.player.visible = false;
@@ -4064,11 +4136,12 @@ export class FestivalWorld {
 
   private publicScreenBoxes(): THREE.Box3[] {
     const boxes: THREE.Box3[] = [];
-    for (const projector of this.projectors.values()) {
-      const scale = projector.object.scale.x || 1;
-      const wide = (projector.element.offsetWidth || 1600) * scale;
-      const tall = (projector.element.offsetHeight || 900) * scale;
-      const at = projector.object.position;
+    for (const venue of this.projectors.keys()) {
+      // The framed panel's size, wherever the one shared panel happens to be.
+      const { scale, position } = venueScreens[venue];
+      const wide = projectorApertureGeometry.parameters.width * scale;
+      const tall = projectorApertureGeometry.parameters.height * scale;
+      const at = new THREE.Vector3(...position);
       // Generous through the screen's own depth: a unit does not have to be in
       // front of the picture to spoil it, only near enough to be in shot.
       boxes.push(new THREE.Box3(
@@ -5140,9 +5213,15 @@ export class FestivalWorld {
       screenZ: screen.position[2],
       cameraOnViewingSide: (this.camera.position.z - screen.position[2]) * screen.facing > 0.02,
       iframeMounted: Boolean(projector?.iframe),
-      cssVisibility: projector?.element.style.visibility || '',
+      cssVisibility: this.projectorPanelVisibility('shore'),
       foregroundVisibility: this.foregroundCanvas.style.visibility,
     };
+  }
+
+  /** A screen's CSS panel visibility; screens without the shared player have none. */
+  private projectorPanelVisibility(venue: VenueKey): string {
+    const player = this.screenPlayer;
+    return player?.venue === venue ? player.element.style.visibility : 'hidden';
   }
 
   timetableReviewSnapshot(): {
@@ -5158,7 +5237,7 @@ export class FestivalWorld {
       mountedProjectorVenue: this.mountedProjectorVenue,
       iframeVenues: [...this.projectors].filter(([, projector]) => Boolean(projector.iframe)).map(([venue]) => venue),
       visibleCssProjectors: [...this.projectors]
-        .filter(([, projector]) => projector.element.style.visibility !== 'hidden')
+        .filter(([venue]) => this.projectorPanelVisibility(venue) !== 'hidden')
         .map(([venue]) => venue),
       foregroundVisibility: this.foregroundCanvas.style.visibility,
       suppressedProjectorVenues: this.reviewSuppressedProjectors,
@@ -6255,8 +6334,9 @@ export class FestivalWorld {
   }
 
   /**
-   * Tears down a venue's player. Video decode is the most expensive thing on
-   * the page, so screens the attendee cannot see do not keep one running.
+   * Takes the shared player off a venue's screen and stops it. Video decode is
+   * the most expensive thing on the page, so screens the attendee cannot see do
+   * not keep one running.
    */
   private releaseProjector(venue: VenueKey): void {
     const projector = this.projectors.get(venue);
@@ -6271,28 +6351,25 @@ export class FestivalWorld {
         duration: projector.duration,
       });
     }
-    // Stopped and blanked before it is detached, in that order.
+    // Stopped, and kept.
     //
-    // Detaching an iframe does not reliably end what it was doing. WebKit keeps
-    // the media pipeline behind a YouTube embed alive after the element leaves
-    // the document, so a player torn down this way can go on holding a decoder
-    // and the memory behind it. Every screening that starts and every track
-    // ordered from the jukebox swaps a player, so on a phone those pile up
-    // until the tab is killed — which is the crash, and it is why it happens on
-    // both betas and while the visitor is doing nothing but standing there.
+    // This used to blank the iframe and detach it, because detaching alone
+    // does not end what an embed was doing: WebKit keeps the media pipeline
+    // behind a detached YouTube player alive, so every screening and jukebox
+    // track that swapped players left one more decoder behind, and on a phone
+    // those piled up until the tab was killed. Then each new venue built a new
+    // player, and building one is the freeze at every door (`ScreenPlayer`).
     //
-    // Telling it to stop first, then pointing it at nothing, gives WebKit an
-    // unambiguous instruction to release the decoder before the element goes.
-    const going = projector.iframe;
-    try {
-      going.contentWindow?.postMessage(
-        JSON.stringify({ event: 'command', func: 'stopVideo', args: [] }),
-        '*',
-      );
-    } catch { /* a cross-origin frame that has already gone */ }
-    going.src = 'about:blank';
-    going.removeAttribute('allow');
-    projector.element.replaceChildren();
+    // The player is now never detached, so there is nothing to leave behind,
+    // and `stopVideo` unloads the media itself (WebKit, 2026-10-18: state 5,
+    // duration 0 straight after). One player, one decoder at most, and nothing
+    // to rebuild on the way into the next room.
+    this.commandProjector(projector, 'stopVideo');
+    const player = this.screenPlayer;
+    if (player?.iframe === projector.iframe) {
+      player.venue = undefined;
+      player.element.style.visibility = 'hidden';
+    }
     this.playerReleases += 1;
     projector.iframe = undefined;
     projector.signature = undefined;
@@ -7440,7 +7517,7 @@ export class FestivalWorld {
       this.projectorLeaveAt ??= performance.now();
       if (!mounted.parked) {
         mounted.parked = true;
-        mounted.iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*');
+        this.commandProjector(mounted, 'pauseVideo');
       }
       if (performance.now() - this.projectorLeaveAt < 8_000) return;
     } else {
@@ -7448,8 +7525,8 @@ export class FestivalWorld {
       if (mounted?.parked && wanted === this.mountedProjectorVenue) {
         mounted.parked = false;
         const offset = mounted.pending?.offsetSeconds;
-        if (offset !== undefined && offset > 0) mounted.iframe?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [Math.floor(offset), true] }), '*');
-        if (!mounted.paused) mounted.iframe?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
+        if (offset !== undefined && offset > 0) this.commandProjector(mounted, 'seekTo', [Math.floor(offset), true]);
+        if (!mounted.paused) this.commandProjector(mounted, 'playVideo');
       }
     }
     if (wanted === this.mountedProjectorVenue) return;
@@ -7486,6 +7563,10 @@ export class FestivalWorld {
     const projector = this.projectors.get(venue);
     if (!projector) return;
     projector.pending = { film, offsetSeconds, reloadToken };
+    // The first programme to arrive while the loading view is still up starts
+    // the shared player, so its start-up has as long as possible to finish
+    // before anybody is walking about.
+    if (this.admitting) this.warmScreenPlayer();
     // A private screening owns this screen until it ends. The programme keeps
     // being recorded above, so handing the screen back later puts on whatever
     // the festival has reached by then, not what it was showing when you sat.
@@ -7509,6 +7590,9 @@ export class FestivalWorld {
     this.stopImmersiveVideo(venue);
     const signature = `${film.id}|${reloadToken}`;
     if (projector.signature === signature) return;
+    // Whichever screen has the player gives it up first, keeping its playhead.
+    const holder = this.screenPlayer?.venue;
+    if (holder && holder !== venue) this.releaseProjector(holder);
     this.releaseProjector(venue);
     projector.parked = false;
     const measureActivation = ['127.0.0.1', 'localhost'].includes(window.location.hostname);
@@ -7516,34 +7600,23 @@ export class FestivalWorld {
     projector.filmId = film.id;
     projector.youtubeId = film.youtubeId;
     projector.signature = signature;
-    const playerUrl = new URL(film.embedUrl.replace('youtube-nocookie.com', 'youtube.com'));
-    playerUrl.searchParams.set('autoplay', projector.paused ? '0' : '1');
-    playerUrl.searchParams.set('mute', '1');
-    playerUrl.searchParams.set('controls', '0');
-    playerUrl.searchParams.set('playsinline', '1');
-    playerUrl.searchParams.set('rel', '0');
-    playerUrl.searchParams.set('enablejsapi', '1');
-    playerUrl.searchParams.set('modestbranding', '1');
-    playerUrl.searchParams.set('start', String(this.resumeOffset(venue, film.youtubeId, offsetSeconds)));
-    if (window.location.origin !== 'null') playerUrl.searchParams.set('origin', window.location.origin);
-    playerUrl.searchParams.set('widget_referrer', window.location.href);
-    const iframe = document.createElement('iframe');
-    iframe.title = `Public screening — ${film.title}`;
-    iframe.src = playerUrl.toString();
-    iframe.allow = 'autoplay; encrypted-media; picture-in-picture';
-    iframe.referrerPolicy = 'strict-origin-when-cross-origin';
-    iframe.tabIndex = -1;
-    iframe.addEventListener('load', () => {
-      iframe.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: `myschedule-${venue}` }), '*');
-      iframe.contentWindow?.postMessage(JSON.stringify({
-        event: 'command',
-        func: projector.muted ? 'mute' : 'unMute',
-        args: [],
-      }), '*');
-      if (projector.paused || projector.parked) iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*');
-    });
-    projector.element.replaceChildren(iframe);
-    projector.iframe = iframe;
+    const startSeconds = this.resumeOffset(venue, film.youtubeId, offsetSeconds);
+    const player = this.ensureScreenPlayer();
+    this.aimScreenPlayer(player, venue);
+    if (player.iframe) {
+      projector.iframe = player.iframe;
+      // A film swap inside the running player: no new document, no new script.
+      // Paused by STAFF means shown at its place, not started.
+      this.commandProjector(projector, projector.paused ? 'cueVideoById' : 'loadVideoById', [{ videoId: film.youtubeId, startSeconds }]);
+      player.iframe.title = `Public screening — ${film.title}`;
+    } else {
+      // Only when the loading view could not build it (no programme yet).
+      projector.iframe = this.createScreenPlayerFrame(player, film, startSeconds, !projector.paused);
+    }
+    this.commandProjector(projector, projector.muted ? 'mute' : 'unMute');
+    // The player outlives each screen, so it is told the level rather than
+    // starting at full volume whatever the slider says.
+    if (projector.volume !== undefined) this.commandProjector(projector, 'setVolume', [Math.round(projector.volume * 100)]);
     this.playerMounts += 1;
     if (measureActivation) {
       const programs = this.renderer.info.programs?.length ?? 0;
@@ -7555,6 +7628,150 @@ export class FestivalWorld {
         geometriesBefore: geometries, geometriesAfter: geometries,
       };
     }
+  }
+
+  /** The shared panel, made on first use; no player in it yet. */
+  private ensureScreenPlayer(): ScreenPlayer {
+    if (this.screenPlayer) return this.screenPlayer;
+    const element = document.createElement('div');
+    element.className = 'public-projector';
+    element.style.pointerEvents = 'none';
+    element.style.visibility = 'hidden';
+    const object = new CSS3DObject(element);
+    this.cssScene.add(object);
+    this.screenPlayer = { element, object, ready: false, queued: [] };
+    return this.screenPlayer;
+  }
+
+  /** Puts the panel on a venue's screen. Only its transform changes. */
+  private aimScreenPlayer(player: ScreenPlayer, venue: VenueKey): void {
+    const screen = venueScreens[venue];
+    player.object.position.set(...screen.position);
+    player.object.rotation.set(0, screen.facing === -1 ? Math.PI : 0, 0);
+    player.object.scale.setScalar(screen.scale);
+    player.element.className = `public-projector public-projector--${venue}`;
+    player.element.setAttribute('aria-label', `${screen.label} public projector screen`);
+    player.venue = venue;
+  }
+
+  /**
+   * Starts the page's one YouTube player. This is the expensive part, so it
+   * happens once: under the loading view when the programme is known by then
+   * (`warmScreenPlayer`), otherwise at the first screen.
+   */
+  private createScreenPlayerFrame(
+    player: ScreenPlayer,
+    film: { title: string; embedUrl: string },
+    startSeconds: number,
+    autoplay: boolean,
+  ): HTMLIFrameElement {
+    const playerUrl = new URL(film.embedUrl.replace('youtube-nocookie.com', 'youtube.com'));
+    playerUrl.searchParams.set('autoplay', autoplay ? '1' : '0');
+    playerUrl.searchParams.set('mute', '1');
+    playerUrl.searchParams.set('controls', '0');
+    playerUrl.searchParams.set('playsinline', '1');
+    playerUrl.searchParams.set('rel', '0');
+    playerUrl.searchParams.set('enablejsapi', '1');
+    playerUrl.searchParams.set('modestbranding', '1');
+    playerUrl.searchParams.set('start', String(Math.max(0, Math.floor(startSeconds))));
+    if (window.location.origin !== 'null') playerUrl.searchParams.set('origin', window.location.origin);
+    playerUrl.searchParams.set('widget_referrer', window.location.href);
+    const iframe = document.createElement('iframe');
+    iframe.title = `Public screening — ${film.title}`;
+    iframe.src = playerUrl.toString();
+    iframe.allow = 'autoplay; encrypted-media; picture-in-picture';
+    iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+    iframe.tabIndex = -1;
+    const listen = () => iframe.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 'myschedule-projector' }), '*');
+    iframe.addEventListener('load', () => {
+      if (this.disposed || this.screenPlayer !== player || player.iframe !== iframe) return;
+      listen();
+      // YouTube's own API keeps asking until the player answers, because one
+      // ask at load can arrive before it is listening. Until it answers, every
+      // command waits (`commandProjector`), so an unheard ask would strand them.
+      window.clearInterval(player.listenTimer);
+      let asks = 0;
+      player.listenTimer = window.setInterval(() => {
+        if (player.ready || player.iframe !== iframe || this.screenPlayer !== player || ++asks > 40) {
+          window.clearInterval(player.listenTimer);
+          return;
+        }
+        listen();
+      }, 500);
+    });
+    player.iframe = iframe;
+    player.ready = false;
+    player.queued = [];
+    player.reportedVideoId = undefined;
+    player.element.replaceChildren(iframe);
+    // CSS3DRenderer puts a panel into the page on its first draw, and an
+    // iframe outside the page does not load. Lay it out now, hidden, so the
+    // start-up runs here — under the loading view — and not on whichever frame
+    // somebody first looks at a screen.
+    if (!player.element.isConnected) {
+      this.cssRenderer.render(this.cssScene, this.camera);
+      player.laidOutAt = player.venue;
+    }
+    return iframe;
+  }
+
+  /**
+   * Builds the shared player while the loading view is up, so walking into
+   * the first venue costs a film swap and not a player start-up. Cued with
+   * whatever any venue is showing, not played: nothing is decoded until a
+   * screen asks. A headset never shows it, so it is not built for one.
+   */
+  private warmScreenPlayer(): void {
+    if (this.preview || this.disposed || this.xrPreferred || this.screenPlayer?.iframe) return;
+    const pending = [...this.projectors.values()].find((projector) => projector.pending)?.pending;
+    if (!pending) return;
+    this.createScreenPlayerFrame(this.ensureScreenPlayer(), pending.film, 0, false);
+  }
+
+  /**
+   * A command for the player on a venue's screen. The shared player drops
+   * anything sent before it is ready, so those wait, in order; a newer film or
+   * a stop replaces the playback commands still waiting for the old one, and a
+   * repeated command replaces its own earlier copy.
+   */
+  private commandProjector(projector: ProjectorSurface, func: string, args: unknown[] = []): void {
+    const iframe = projector.iframe;
+    if (!iframe) return;
+    const message = JSON.stringify({ event: 'command', func, args });
+    const player = this.screenPlayer;
+    if (player?.iframe === iframe && !player.ready) {
+      const replaces = REPLACING_PLAYER_COMMANDS.has(func);
+      player.queued = player.queued.filter((queued) => queued.func !== func && !(replaces && PLAYBACK_PLAYER_COMMANDS.has(queued.func)));
+      player.queued.push({ func, message });
+      return;
+    }
+    try {
+      iframe.contentWindow?.postMessage(message, '*');
+    } catch { /* a cross-origin frame that has already gone */ }
+  }
+
+  /**
+   * Until the warm player has answered, or `limitMs` has passed. Its start-up
+   * is the cost being moved out of the festival, so admission gives it a
+   * bounded moment to finish under the loading view rather than in the first
+   * seconds of walking about. Usually done by now: the warm-up above takes
+   * longer than a player start-up does.
+   */
+  private async screenPlayerAnswered(limitMs: number): Promise<void> {
+    const until = performance.now() + limitMs;
+    while (this.screenPlayer?.iframe && !this.screenPlayer.ready && !this.disposed && performance.now() < until) {
+      await new Promise<void>(resolve => window.setTimeout(resolve, 100));
+    }
+  }
+
+  /** The player has answered: send what was waiting for it. */
+  private screenPlayerReady(player: ScreenPlayer): void {
+    if (player.ready) return;
+    player.ready = true;
+    window.clearInterval(player.listenTimer);
+    const queued = player.queued;
+    player.queued = [];
+    for (const { message } of queued) player.iframe?.contentWindow?.postMessage(message, '*');
   }
 
   /**
@@ -7631,11 +7848,7 @@ export class FestivalWorld {
       if (paused) projector.xrVideo.pause();
       else void projector.xrVideo.play().catch(() => {});
     }
-    projector.iframe?.contentWindow?.postMessage(JSON.stringify({
-      event: 'command',
-      func: paused || projector.parked ? 'pauseVideo' : 'playVideo',
-      args: [],
-    }), '*');
+    this.commandProjector(projector, paused || projector.parked ? 'pauseVideo' : 'playVideo');
   }
 
   /**
@@ -7651,9 +7864,7 @@ export class FestivalWorld {
     for (const projector of this.projectors.values()) {
       if (projector.paused || projector.parked) continue;
       if (projector.xrVideo) void projector.xrVideo.play().catch(() => {});
-      projector.iframe?.contentWindow?.postMessage(JSON.stringify({
-        event: 'command', func: 'playVideo', args: [],
-      }), '*');
+      this.commandProjector(projector, 'playVideo');
     }
   }
 
@@ -7664,11 +7875,7 @@ export class FestivalWorld {
       if (projectorMuted === projector.muted) continue;
       projector.muted = projectorMuted;
       if (projector.xrVideo) projector.xrVideo.muted = projectorMuted;
-      projector.iframe?.contentWindow?.postMessage(JSON.stringify({
-        event: 'command',
-        func: projectorMuted ? 'mute' : 'unMute',
-        args: [],
-      }), '*');
+      this.commandProjector(projector, projectorMuted ? 'mute' : 'unMute');
     }
   }
 
@@ -7687,11 +7894,7 @@ export class FestivalWorld {
     for (const projector of this.projectors.values()) {
       projector.volume = THREE.MathUtils.clamp(value, 0, 1);
       if (projector.xrVideo) projector.xrVideo.volume = projector.volume;
-      projector.iframe?.contentWindow?.postMessage(JSON.stringify({
-        event: 'command',
-        func: 'setVolume',
-        args: [Math.round(THREE.MathUtils.clamp(value, 0, 1) * 100)],
-      }), '*');
+      this.commandProjector(projector, 'setVolume', [Math.round(projector.volume * 100)]);
     }
   }
 
@@ -8749,7 +8952,9 @@ export class FestivalWorld {
     this.canvas.classList.remove('is-camera-dragging');
   };
 
-  private readonly projectorMessage = (event: MessageEvent): void => {
+  private readonly projectorMessage = (event: MessageEvent): void => this.handleProjectorMessage(event);
+
+  private handleProjectorMessage(event: MessageEvent): void {
     // Exact origins, not a substring. `origin.includes('youtube.com')` is also
     // true of `https://youtube.com.example.net`, which anybody can register —
     // and a page that has framed this one can post to it with its own origin.
@@ -8758,17 +8963,35 @@ export class FestivalWorld {
     if (!PROJECTOR_ORIGINS.has(event.origin)) return;
     let payload: {
       event?: string;
-      info?: number | { playerState?: number; errorCode?: number; currentTime?: number; duration?: number };
+      info?: number | {
+        playerState?: number; errorCode?: number; currentTime?: number; duration?: number;
+        videoData?: { video_id?: string }; videoUrl?: string;
+      };
     };
     try {
       payload = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
     } catch {
       return;
     }
-    const info = typeof payload.info === 'object' ? payload.info : undefined;
+    const info = typeof payload?.info === 'object' && payload.info !== null ? payload.info : undefined;
+    const player = this.screenPlayer;
+    if (player?.iframe && player.iframe.contentWindow === event.source) {
+      // Which video this is about. It names itself whenever its state changes,
+      // and right after every switch (WebKit, 2026-10-18).
+      const reported = info?.videoData?.video_id || videoIdFromWatchUrl(info?.videoUrl);
+      if (reported) player.reportedVideoId = reported;
+      this.screenPlayerReady(player);
+    }
+    // One player serves every screen. A report still about the film it had
+    // before the latest switch must not be credited to the new one: a wrong
+    // duration goes into the shared table and cuts the film short for everyone
+    // (see App.syncPublicProjectors), and a stale "ended" would skip it.
+    const from = (projector: ProjectorSurface): boolean => Boolean(projector.iframe) && projector.iframe!.contentWindow === event.source;
+    const about = (projector: ProjectorSurface): boolean => from(projector) &&
+      !(player !== undefined && player.iframe === projector.iframe && player.reportedVideoId !== undefined && player.reportedVideoId !== projector.youtubeId);
     if (info && typeof info.duration === 'number' && info.duration > 0) {
       for (const [venue, projector] of this.projectors) {
-        if (!projector.iframe || projector.iframe.contentWindow !== event.source) continue;
+        if (!about(projector)) continue;
         projector.duration = info.duration;
         if (projector.youtubeId) this.onProjectorDuration?.(venue, projector.youtubeId, info.duration);
         break;
@@ -8778,7 +9001,7 @@ export class FestivalWorld {
       // The projector is the only thing that knows where the public screening
       // actually is. Record it so a maximized screening can join in progress.
       for (const projector of this.projectors.values()) {
-        if (!projector.iframe || projector.iframe.contentWindow !== event.source) continue;
+        if (!about(projector)) continue;
         projector.currentTime = info.currentTime;
         projector.currentTimeAt = performance.now();
         if (typeof info.playerState === 'number') projector.playing = info.playerState === 1;
@@ -8790,14 +9013,15 @@ export class FestivalWorld {
     const unavailable = payload.event === 'onError' || Boolean(info?.errorCode);
     if (!ended && !unavailable) return;
     for (const [venue, projector] of this.projectors) {
-      if (!projector.iframe || projector.iframe.contentWindow !== event.source || !projector.youtubeId) continue;
+      // An error, though, is about the new film: the one before it was playing.
+      if (!(unavailable ? from(projector) : about(projector)) || !projector.youtubeId) continue;
       const now = performance.now();
       if (projector.lastAdvanceAt && now - projector.lastAdvanceAt < 1800) return;
       projector.lastAdvanceAt = now;
       this.onProjectorAdvance?.(venue, projector.youtubeId);
       return;
     }
-  };
+  }
 
   private mainPixelRatio(): number {
     // 精簡 draws one pixel per CSS pixel and the page enlarges it without
@@ -8824,7 +9048,8 @@ export class FestivalWorld {
     const round = (value: number) => Number(value.toFixed(1));
     const screens: Record<string, unknown> = {};
     for (const [venue, projector] of this.projectors) {
-      if (!projector.iframe || projector.element.style.visibility === 'hidden') continue;
+      const panel = this.screenPlayer?.element;
+      if (!projector.iframe || !panel || this.projectorPanelVisibility(venue) === 'hidden') continue;
       const screen = venueScreens[venue];
       // The four corners, projected and turned into page pixels — the same
       // rectangle the browser's own layout of the CSS panel should produce.
@@ -8842,7 +9067,7 @@ export class FestivalWorld {
         minX = Math.min(minX, pixelX); maxX = Math.max(maxX, pixelX);
         minY = Math.min(minY, pixelY); maxY = Math.max(maxY, pixelY);
       }
-      const rect = projector.element.getBoundingClientRect();
+      const rect = panel.getBoundingClientRect();
       screens[venue] = {
         expected: [round(minX), round(minY), round(maxX - minX), round(maxY - minY)],
         actual: [round(rect.left), round(rect.top), round(rect.width), round(rect.height)],
@@ -8900,7 +9125,10 @@ export class FestivalWorld {
     }
     // The browser is the authority on where it actually paints the panel, so
     // the box is never allowed to be smaller than the element's own rectangle.
-    const panel = this.projectors.get(venue)?.element.getBoundingClientRect();
+    // Only once the shared panel has been laid out on this screen: on the frame
+    // it moves here, its rectangle is still the last screen's.
+    const player = this.screenPlayer;
+    const panel = player?.laidOutAt === venue ? player.element.getBoundingClientRect() : undefined;
     if (panel && panel.width > 0 && panel.height > 0) {
       minX = Math.min(minX, panel.left);
       maxX = Math.max(maxX, panel.right);
@@ -9290,16 +9518,9 @@ export class FestivalWorld {
   private createProjectorSurface(venue: VenueKey): void {
     if (this.preview) return;
     const screen = venueScreens[venue];
-    const element = document.createElement('div');
-    element.className = `public-projector public-projector--${venue}`;
-    element.setAttribute('aria-label', `${screen.label} public projector screen`);
-    element.style.pointerEvents = 'none';
-    const object = new CSS3DObject(element);
-    object.userData.venue = venue;
-    object.position.set(...screen.position);
-    if (screen.facing === -1) object.rotation.y = Math.PI;
-    object.scale.setScalar(screen.scale);
-    this.cssScene.add(object);
+    // The picture itself is the one shared panel (`ScreenPlayer`), moved here
+    // when this screen is in use; each screen keeps its own aperture and poster.
+    this.ensureScreenPlayer();
     const aperture = new THREE.Mesh(projectorApertureGeometry, projectorApertureMaterial);
     aperture.position.set(...screen.position);
     if (screen.facing === -1) aperture.rotation.y = Math.PI;
@@ -9314,7 +9535,7 @@ export class FestivalWorld {
     if (screen.facing === -1) xrPoster.rotation.y = Math.PI;
     xrPoster.visible = false;
     this.scene.add(xrPoster);
-    this.projectors.set(venue, { element, object, aperture, xrPoster, muted: true });
+    this.projectors.set(venue, { aperture, xrPoster, muted: true });
     this.refreshXrPoster(venue, 'PUBLIC SCREENING');
   }
 
@@ -12408,11 +12629,12 @@ export class FestivalWorld {
     const boardScissor = immersiveXr ? undefined : this.statueScissor();
     this.camera.getWorldPosition(this.cameraWorldPosition);
     this.reviewSuppressedProjectors = [];
+    // One panel serves every screen, and only the screen holding the player
+    // has anything to show: the rest are plain WebGL and need no compositing.
+    const panel = this.screenPlayer?.element;
+    let panelVisible = false;
     for (const [venue, projector] of this.projectors) {
-      if (immersiveXr) {
-        projector.element.style.visibility = 'hidden';
-        continue;
-      }
+      if (immersiveXr || !projector.iframe || !panel) continue;
       const screen = venueScreens[venue];
       this.projectorWorldPosition.set(...screen.position);
       this.camera.getWorldDirection(this.cameraDirection);
@@ -12478,21 +12700,21 @@ export class FestivalWorld {
       // while it was out of sight — or while the browser was in the background,
       // which phones do on their own — otherwise stays stopped once it is
       // looked at again, and the screen sits there showing a still.
-      if (visible && projector.element.style.visibility === 'hidden' && !projector.paused) {
-        projector.iframe?.contentWindow?.postMessage(JSON.stringify({
-          event: 'command', func: 'playVideo', args: [],
-        }), '*');
+      if (visible && panel.style.visibility === 'hidden' && !projector.paused) {
+        this.commandProjector(projector, 'playVideo');
       }
-      projector.element.style.visibility = visible ? 'visible' : 'hidden';
+      panelVisible = visible;
       if (visible && compositorScissor) {
         visibleProjectors.push(venue);
         visibleProjectorScissors.set(venue, compositorScissor);
       }
     }
+    if (panel) panel.style.visibility = panelVisible ? 'visible' : 'hidden';
     const arcadeScissor = this.arcadeView?.scissor(this.camera, this.foregroundCanvas.clientWidth || window.innerWidth, this.foregroundCanvas.clientHeight || window.innerHeight);
     if (visibleProjectors.length || (this.arcadeSession && arcadeScissor)) {
       if (PLANET.on) { this.cssScene.matrixWorldAutoUpdate = false; bendCss3d(this.cssScene); }
       this.cssRenderer.render(this.cssScene, this.camera);
+      if (this.screenPlayer) this.screenPlayer.laidOutAt = this.screenPlayer.venue;
     }
     if (arcadeScissor) {
       const viewportHeight = this.foregroundCanvas.clientHeight || window.innerHeight;
