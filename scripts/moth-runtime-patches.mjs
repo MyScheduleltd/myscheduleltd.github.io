@@ -248,6 +248,13 @@ export function patchMothRuntime(source, ts) {
   patchWalkScenes(once, edit);
   // No iPhone magnifier on the touch deck (scripts/moth-deck-art.mjs).
   patchDeckTouch(once);
+  // A fight's clock is the playhead less the output delay, so it stops just
+  // short of the track's end. The hidden levels' charts run to the very end of
+  // their songs, so they never finished: the results never came, and a tap
+  // played the spent song again (owner, 2026-10-18). A track that has ended
+  // within the chart's last second has finished the song too.
+  once('      : this.songTime >= duration;\n    if (this.isConcertRhythm()) this.updateConcertCrowd(rhythm, songFinished);',
+    '      : this.songTime >= duration || (!rhythm.skipAudio && this.songTime >= duration - 1 && Boolean(this.getActiveLevel1OfficeRhythmAudio()?.ended));\n    if (this.isConcertRhythm()) this.updateConcertCrowd(rhythm, songFinished);');
   // A fight's song switches to its downloaded copy before it starts (useSongCopy),
   // waits under 載入中… if a stream runs dry, and judges nothing meanwhile.
   once('      track.pause();\n      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);\n      track.currentTime = this.getRhythmAudioStart();', '      track.pause();\n      this.useSongCopy(track);\n      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);\n      track.currentTime = this.getRhythmAudioStart();');

@@ -1952,8 +1952,6 @@ const MOTH_BUTTONS = ["M", "O", "T", "H"];
 const MOTH_KEY_CODES = { KeyM: "M", KeyO: "O", KeyT: "T", KeyH: "H" };
 const MOTH_ACTION_OF_BUTTON = { T: "do", M: "do", O: "accent", H: "accent" };
 const MOTH_NOTE_COLOURS = {"M":"#2457c5","O":"#e0463e","T":"#ecb300","H":"#2ea878"};
-// The letter on a note: white, or dark on the yellow T.
-const MOTH_NOTE_LETTERS = { T: "#16171b" };
 // A hold may be let go this long before its tail ends and still count.
 const MOTH_HOLD_GRACE = 0.12;
 const CHEST_ITEM_IDS = [
@@ -2983,7 +2981,12 @@ for (const level of this.config.secretLevels || []) {
     const run = this.progress?.storyRun;
     const result = final || run?.boardShown ? this.storyRunResult(run) : null;
     const board = { final, onClose, result, mode: result?.mode || (this.difficultyId === 'shoot' ? 'shoot' : 'chill'),
-      entries: {}, status: { chill: 'loading', shoot: 'loading' }, draftId: result?.run.posted?.id || '', message: '', posting: false };
+      entries: {}, status: { chill: 'loading', shoot: 'loading' }, draftId: result?.run.posted?.id || '', message: '', posting: false,
+      // The final board opens on the press that ends the wake-up scene. Players
+      // tap on through it, and a phone's tap also clicks whatever comes up under
+      // the finger (its buttons sit over the deck's): owner, 2026-10-18, it
+      // closed before anyone saw it. For a second it takes no presses at all.
+      quietUntil: final ? performance.now() + 1000 : 0 };
     this.scoreboard = board;
     this.releaseHeldInputs?.();
     const root = document.createElement('div');
@@ -2992,6 +2995,11 @@ for (const level of this.config.secretLevels || []) {
     root.setAttribute('aria-modal', 'true');
     root.setAttribute('aria-labelledby', 'moth-board-title');
     for (const type of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'click', 'wheel']) root.addEventListener(type, event => event.stopPropagation(), { passive: true });
+    for (const type of ['mousedown', 'click']) root.addEventListener(type, event => {
+      if (performance.now() >= board.quietUntil) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }, { capture: true });
     // Its buttons sound like the menus (moth-menu-sfx.mjs): the tabs tick, the
     // rest click. Enter presses the focused button, so it sounds the same.
     root.addEventListener('click', event => {
@@ -3001,7 +3009,10 @@ for (const level of this.config.secretLevels || []) {
     document.body.append(root);
     board.root = root;
     this.renderScoreboard();
-    root.querySelector('[data-board-close]')?.focus({ preventScroll: true });
+    // The final board starts with nothing selected, so no single press closes
+    // it: O or Enter first selects the ID box (or the close button).
+    if (!final) root.querySelector('[data-board-close]')?.focus({ preventScroll: true });
+    else document.activeElement?.blur?.();
     for (const mode of ['chill', 'shoot']) this.fetchScoreboard(mode);
     this.prepareScoreCard();
   }
@@ -3145,6 +3156,7 @@ for (const level of this.config.secretLevels || []) {
 
   handleScoreboardKey(event) {
     const board = this.scoreboard;
+    if (performance.now() < board.quietUntil) return event.preventDefault();
     const typing = event.target?.tagName === 'INPUT';
     const code = event.code;
     if (typing) {
@@ -13455,7 +13467,7 @@ for (const level of this.config.secretLevels || []) {
     const fullSongTrack = spec.fullSong && !rhythm.skipAudio && this.getActiveLevel1OfficeRhythmAudio();
     const songFinished = fullSongTrack
       ? fullSongTrack.ended || (Number.isFinite(fullSongTrack.duration) && fullSongTrack.currentTime >= fullSongTrack.duration)
-      : this.songTime >= duration;
+      : this.songTime >= duration || (!rhythm.skipAudio && this.songTime >= duration - 1 && Boolean(this.getActiveLevel1OfficeRhythmAudio()?.ended));
     if (this.isConcertRhythm()) this.updateConcertCrowd(rhythm, songFinished);
     if (songFinished && !rhythm.ending) {
       this.stopRhythmFeedback();
@@ -19919,7 +19931,7 @@ for (const level of this.config.secretLevels || []) {
         target.arc(x, railY, 21, 0, TAU);
         target.fill();
         target.stroke();
-        target.fillStyle = missed ? "#747982" : completed ? "#16171b" : MOTH_NOTE_LETTERS[button] || "#ffffff";
+        target.fillStyle = missed ? "#747982" : completed ? "#16171b" : "#ffffff";
         drawCentredGlyph(target, button, x, railY, "900 18px 'Courier New', monospace");
         // Every note carries its own ring, closing on it over its last
         // stretch to the hit line. (Only the next note used to have one, so
@@ -29525,7 +29537,7 @@ window.bobbyBuildId = BUILD_ID;
 game.init();
 
 // Deck artwork from styles.css (rewriteCssArtwork in moth-runtime-patches.mjs).
-for (const [index, src] of ["assets/sprites/ui/film-grain.png","assets/ui/mobile_dpad_20260901/processed/sheet-transparent.webp?v=retro-arrows-20260901a","assets/sprites/mobile_round_button_kit/ui/round-dark.webp?v=roundpad-20260703","assets/sprites/mobile_round_button_kit/ui/round-dark-pressed.webp?v=roundpad-20260703","assets/ui/mobile_flat_buttons_20260902/processed/pills-transparent.webp?v=flat-buttons-20260902a","assets/ui/mobile_start_cap_20260908/processed/start-transparent.webp?v=start-cap-20260908a","assets/ui/mobile_moth_buttons_20261017/sheet.webp?v=snes-20261017a"].entries()) {
+for (const [index, src] of ["assets/sprites/ui/film-grain.png","assets/ui/mobile_dpad_20260901/processed/sheet-transparent.webp?v=retro-arrows-20260901a","assets/sprites/mobile_round_button_kit/ui/round-dark.webp?v=roundpad-20260703","assets/sprites/mobile_round_button_kit/ui/round-dark-pressed.webp?v=roundpad-20260703","assets/ui/mobile_flat_buttons_20260902/processed/pills-transparent.webp?v=flat-buttons-20260902a","assets/ui/mobile_start_cap_20260908/processed/start-transparent.webp?v=start-cap-20260908a","assets/ui/mobile_moth_buttons_20261017/sheet.webp?v=snes-20261018a"].entries()) {
   fetchGameAsset(src)
     .then(({data, type}) => new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'}))
     .then(blob => URL.createObjectURL(blob))

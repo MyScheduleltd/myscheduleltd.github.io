@@ -2,8 +2,9 @@
 //
 // Colours: the Super Famicom pad's, M blue, O red, T yellow, H green, on the
 // notes and on the deck's buttons (scripts/make-moth-buttons.py makes their
-// sheet from this table). T is a deeper yellow than the track's, with a dark
-// letter, so its notes stand out on it. On every device.
+// sheet from this table). T is a deeper yellow than the track's, so its notes
+// stand out on it; its letter is cream like the others' (owner, 2026-10-18:
+// the dark T looked out of place). On every device.
 //
 // The phone (the tall view, renderTallScreen): the timing track runs the whole
 // width at the same size as before, its hit line and row of notes in the
@@ -20,10 +21,7 @@
 export const MOTH_NOTE_COLOURS = { M: "#2457c5", O: "#e0463e", T: "#ecb300", H: "#2ea878" };
 
 export function patchFightHud(once, edit) {
-  once('const MOTH_NOTE_COLOURS = { T: "#ef3f78", O: "#4a4d53", M: "#3d7fd1", H: "#2f9467" };', `const MOTH_NOTE_COLOURS = ${JSON.stringify(MOTH_NOTE_COLOURS)};
-// The letter on a note: white, or dark on the yellow T.
-const MOTH_NOTE_LETTERS = { T: "#16171b" };`);
-  once('        target.fillStyle = missed ? "#747982" : completed ? "#16171b" : "#ffffff";', '        target.fillStyle = missed ? "#747982" : completed ? "#16171b" : MOTH_NOTE_LETTERS[button] || "#ffffff";');
+  once('const MOTH_NOTE_COLOURS = { T: "#ef3f78", O: "#4a4d53", M: "#3d7fd1", H: "#2f9467" };', `const MOTH_NOTE_COLOURS = ${JSON.stringify(MOTH_NOTE_COLOURS)};`);
 
   // The tall view's layout.
   edit('const PORTRAIT_FIGHT = {\n', '  letterboxY: (776 - 405) / 2\n};\n', () => `const PORTRAIT_FIGHT = {

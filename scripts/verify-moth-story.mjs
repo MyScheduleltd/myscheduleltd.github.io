@@ -287,6 +287,25 @@ for (const phone of [false, true]) {
   console.log('staff tools PASS', JSON.stringify({afterTalk, straight, preview}));
   await context.close();
 }
+// 8. The hidden levels end: their charts run to the very end of their songs,
+// where the fight's clock (the playhead less the output delay) never arrives.
+{
+  const context = await browser.newContext({viewport: {width: 1280, height: 800}});
+  await stubScoreboard(context);
+  const {page, errors} = await open(context);
+  const ends = {};
+  for (const stage of ['secret-xiaosi', 'secret-getdown']) {
+    await page.evaluate(stage => { const g = bobbyGame; g.returnToTitle(); if (!g.progress) g.progress = g.createDefaultProgress(); g.progress.flags.debugSecretLevelsUnlocked = true; g.startStage(stage); }, stage);
+    await page.waitForFunction(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm && !bobbyGame.level1OfficeRhythm.graphicsLoading && bobbyGame.songTime > 1, undefined, {timeout: 180000});
+    const length = await page.evaluate(() => { const track = bobbyGame.getActiveLevel1OfficeRhythmAudio(); track.currentTime = track.duration - 3; return {track: track.duration, chart: bobbyGame.getActiveRhythmDuration()}; });
+    await page.waitForFunction(() => bobbyGame.state === 'level1OfficeResults', undefined, {timeout: 20000})
+      .catch(async () => { throw new Error(stage + ' never finished ' + JSON.stringify(await page.evaluate(() => ({state: bobbyGame.state, songTime: bobbyGame.songTime, ended: bobbyGame.getActiveLevel1OfficeRhythmAudio()?.ended})))); });
+    ends[stage] = length;
+  }
+  assert.deepEqual(errors, []);
+  console.log('hidden levels PASS', JSON.stringify(ends));
+  await context.close();
+}
 await browser.close();
 console.log('loading screens (s)', JSON.stringify(loadingSeconds));
-console.log('PASS story: kept on the device, 繼續 mid-fight, level 3 and 4 returns, hearts every 10, deck long press, level 4 chest, bar at the top, staff chest previews');
+console.log('PASS story: kept on the device, 繼續 mid-fight, level 3 and 4 returns, hearts every 10, deck long press, level 4 chest, bar at the top, staff chest previews, hidden levels end');
