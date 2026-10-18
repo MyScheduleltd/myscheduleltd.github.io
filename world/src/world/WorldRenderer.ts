@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { installLightEarlyOut } from './LightLoop';
 
 interface WorldRendererOptions {
   canvas: HTMLCanvasElement;
@@ -14,6 +15,8 @@ export function createWorldRenderer(
   create: (parameters: THREE.WebGLRendererParameters) => THREE.WebGLRenderer =
     (parameters) => new THREE.WebGLRenderer(parameters),
 ): THREE.WebGLRenderer {
+  // Before anything compiles: every lit shader is built from the patched chunk.
+  installLightEarlyOut();
   const renderer = create({
     canvas: options.canvas, alpha: true,
     antialias: options.normalGraphics, powerPreference: 'high-performance',

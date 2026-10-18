@@ -11,14 +11,14 @@ import ts from 'typescript';
 const source = await readFile('src/ui/App.ts', 'utf8');
 const tree = ts.createSourceFile('App.ts', source, ts.ScriptTarget.Latest, true);
 const appClass = tree.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'App');
-const methods = ['mountGatePreview', 'disposeGatePreview', 'beginGateEntry', 'showEntryTip', 'setGateEntryProgress',
+const methods = ['mountGatePreview', 'disposeGatePreview', 'beginGateEntry', 'startGateTips', 'showGateTip', 'stopGateTips', 'setGateEntryProgress',
   'retainGateEntry', 'prepareGateEntry', 'waitForGateExit', 'completeGateEntry', 'cancelGateEntry', 'enterWhenThereIsRoom'].map(name => {
   const method = appClass.members.find(node => node.name?.getText(tree) === name);
   assert.ok(method, name);
   return method.getText(tree);
 }).join('\n').replace("import('../world/GatePreview')", 'loadPreview()');
 const deadline = (await readFile('src/network/RequestDeadline.ts', 'utf8')).replace('export async function', 'async function');
-const tipsSource = (await readFile('src/ui/EntryTips.ts', 'utf8')).replace('export function', 'function');
+const tipsSource = (await readFile('src/ui/EntryTips.ts', 'utf8')).replaceAll('export function', 'function').replaceAll('export class', 'class');
 const script = ts.transpileModule(`${tipsSource}\n${deadline}\nclass GateLifecycle {
   gatePreviewGeneration = 0;
   gatePreviewFailed = false;
@@ -31,7 +31,7 @@ const script = ts.transpileModule(`${tipsSource}\n${deadline}\nclass GateLifecyc
   graphicsMode = 'normal';
   language = 'en';
   ${methods}
-}; globalThis.GateLifecycle = GateLifecycle;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+}; globalThis.GateLifecycle = GateLifecycle; globalThis.TipRotation = TipRotation; globalThis.entryTips = entryTips;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
 const settle = async () => { for (let n = 0; n < 10; n++) await Promise.resolve(); };
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -61,6 +61,8 @@ function fixture({ manualFrames = false } = {}) {
   }
   const document = new EventTarget(); document.hidden = false;
   const window = new EventTarget(); window.innerWidth = 1280; window.setTimeout = later; window.clearTimeout = id => timers.delete(id);
+  const history = new Map();
+  window.localStorage = { getItem:key=>history.get(key)??null, setItem:(key,value)=>history.set(key,value) };
   window.matchMedia = () => ({matches:false});
   window.setInterval = (callback, milliseconds) => { const id=++nextHandle; intervals.set(id,{callback,milliseconds,at:clock+milliseconds}); return id; };
   window.clearInterval = id => intervals.delete(id);
@@ -179,13 +181,13 @@ function transitionFixture({ preview: hasPreview = true, manualFrames = false } 
   const f = fixture({ manualFrames });
   const classes = new Set(['gate--live']);
   const layout = { inert: false, setAttribute() { this.inert = true; }, removeAttribute() { this.inert = false; } };
-  const label = { textContent: '' }, tip = {textContent:''};
+  const label = { textContent: '' }, tip = {textContent:''}, signInTip = {textContent:''};
   const track = { value: 0, style: { setProperty() {} }, setAttribute(_name, value) { this.value = Number(value); } };
   const indicator = { hidden: true, querySelector: name => name === '[data-gate-entry-label]' ? label : track };
   const card = { getBoundingClientRect: () => ({ left: 60, right: 510, width: 450 }) };
   const avatar = { getBoundingClientRect: () => ({ left: 650, right: 1220, width: 570 }) };
   const gate = { style: { setProperty() {} }, classList: { add: n => classes.add(n), remove: n => classes.delete(n) },
-    querySelector: name => name === '[data-gate-entry-tip]' ? tip : name === '.gate__layout' ? layout : name === '.gate-card' ? card : name === '.gate-avatar' ? avatar : indicator,
+    querySelector: name => name === '[data-gate-entry-tip]' ? tip : name === '[data-gate-signin-tip]' ? signInTip : name === '#gate-form' ? {} : name === '.gate__layout' ? layout : name === '.gate-card' ? card : name === '.gate-avatar' ? avatar : indicator,
     querySelectorAll: () => [],
     remove() { this.removed = true; } };
   let ownedByRoot = true;
@@ -201,7 +203,7 @@ function transitionFixture({ preview: hasPreview = true, manualFrames = false } 
     cancelEntry: () => calls.push('cancel'), awaitEntryComplete: () => completion,
     dispose: () => calls.push('dispose') };
   if (hasPreview) f.app.gatePreview = preview;
-  return { ...f, gate, layout, indicator, track, tip, classes, calls, finish, ownedByRoot: () => ownedByRoot };
+  return { ...f, gate, layout, indicator, track, tip, signInTip, classes, calls, finish, ownedByRoot: () => ownedByRoot };
 }
 
 test('entry progress stays at completed work while a download stalls or restarts', () => {
@@ -402,13 +404,69 @@ test('queueing and refusal retain the editable gate; only successful admission b
 });
 
 
-test('admission rotates one device-specific tip, retains it through handoff, and cancels timers on retry or entry', async()=>{
+test('loading tips rotate through a complete shuffled round and clean up on successful entry', async()=>{
   const f=transitionFixture();f.context.window.matchMedia=()=>({matches:true});f.app.language='zh-TW';
-  f.app.beginGateEntry();const first=f.tip.textContent;
-  assert.ok(first.includes('搖桿'));assert.equal(f.intervals.size,1);
-  f.advance(5000);assert.notEqual(f.tip.textContent,first);
-  f.app.retainGateEntry();f.advance(5000);assert.ok(f.tip.textContent.includes('酒吧'));
-  f.app.cancelGateEntry();assert.equal(f.intervals.size,0);
-  f.app.beginGateEntry();assert.equal(f.tip.textContent,first);assert.equal(f.intervals.size,1);
+  f.app.beginGateEntry();const seen=[f.tip.textContent];assert.equal(f.intervals.size,1);
+  const expected=Array.from(f.context.entryTips('zh-TW',true));
+  for(let i=1;i<expected.length;i++){f.advance(5000);seen.push(f.tip.textContent);}
+  assert.deepEqual(new Set(seen),new Set(expected),'show every mobile tip once before repeating');
+  f.app.retainGateEntry();const last=f.tip.textContent;f.advance(5000);assert.notEqual(f.tip.textContent,last);
   const done=f.app.completeGateEntry();await settle();f.finish();await done;assert.equal(f.intervals.size,0);
+});
+
+test('sign-in tips rotate under Donate, survive locale rerender, and resume after an admission retry',()=>{
+  const f=transitionFixture();f.app.startGateTips('sign-in');
+  const first=f.signInTip.textContent;assert.equal(f.intervals.size,1);
+  f.advance(5000);assert.notEqual(f.signInTip.textContent,first);
+  const index=f.app.gateSignInTips.current;
+  f.app.language='zh-TW';f.context.window.matchMedia=()=>({matches:true});
+  f.app.startGateTips('sign-in');assert.equal(f.intervals.size,1,'rerender must replace, not duplicate, the timer');
+  assert.equal(f.app.gateSignInTips.current,index,'locale changes must retain the current place');
+  assert.equal(f.signInTip.textContent,f.context.entryTips('zh-TW',true)[index]);
+  const before=f.signInTip.textContent;f.app.beginGateEntry();assert.equal(f.intervals.size,1);
+  f.app.cancelGateEntry();assert.equal(f.intervals.size,1,'retry restores the one visible sign-in timer');
+  assert.equal(f.signInTip.textContent,before);f.advance(5000);assert.notEqual(f.signInTip.textContent,before);
+  const loadingFirst=f.tip.textContent;f.app.beginGateEntry();assert.notEqual(f.tip.textContent,loadingFirst,'a new admission starts with a different tip');
+  f.app.stopGateTips();assert.equal(f.intervals.size,0);
+});
+
+test('tip rounds change every position across visits and never repeat at the cycle boundary',()=>{
+  const f=fixture(),history=new Map();
+  const storage={getItem:key=>history.get(key)??null,setItem:(key,value)=>history.set(key,value)};
+  for(const random of [()=>0,()=>.999,Math.random]){
+    let previous;
+    for(let visit=0;visit<30;visit++){
+      const deck=new f.context.TipRotation(7,'round',storage,random),order=[];
+      for(let i=0;i<7;i++){order.push(deck.current);deck.next();}
+      assert.deepEqual([...order].sort(),[0,1,2,3,4,5,6]);
+      if(previous)assert.ok(order.every((value,index)=>value!==previous[index]));
+      assert.notEqual(deck.current,order[6],'new cycle repeats the last tip');
+      // History keeps the opening round, even after rotating into later rounds.
+      previous=JSON.parse(history.get('round'));
+    }
+  }
+});
+
+test('corrupt or blocked tip history cannot block the sign-in or loading tips',()=>{
+  const f=fixture();
+  for(const getItem of [()=>'{broken',()=>JSON.stringify([0,0,1,2,3,4,5]),()=>{throw Error('blocked');}]){
+    const deck=new f.context.TipRotation(7,'round',{getItem,setItem(){throw Error('blocked');}},()=>0);
+    const shown=[];for(let i=0;i<7;i++){shown.push(deck.current);deck.next();}
+    assert.equal(new Set(shown).size,7);
+  }
+  const t=transitionFixture();t.app.startGateTips('sign-in');t.gate.querySelector=()=>undefined;
+  t.advance(5000);assert.equal(t.intervals.size,0,'removed tip node must stop its timer');
+});
+
+
+test('a long visit does not replace the opening-order history used by the next visit',()=>{
+  const f=fixture(),history=new Map();
+  const storage={getItem:key=>history.get(key)??null,setItem:(key,value)=>history.set(key,value)};
+  const first=new f.context.TipRotation(7,'long-visit',storage,()=>0);
+  const opening=JSON.parse(history.get('long-visit'));
+  for(let i=0;i<80;i++)first.next();
+  assert.deepEqual(JSON.parse(history.get('long-visit')),opening);
+  const next=new f.context.TipRotation(7,'long-visit',storage,()=>0),shown=[];
+  for(let i=0;i<7;i++){shown.push(next.current);next.next();}
+  assert.ok(shown.every((value,index)=>value!==opening[index]));
 });

@@ -2552,7 +2552,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .gate--live .button { min-height: 48px; font-size: 16px; }
 .gate--live .button--secondary { color: var(--paper); border: 1px solid #f5efe28c; background: #08090a4d; }
 .gate--live .gate-donate { min-height: 34px; border-color: #f5efe233; font-size: 13px; }
-.gate--live .gate-card__note { color: #f5efe28c; white-space: normal; font-size: 10px; line-height: 1.5; }
+.gate--live .gate-card__note { min-height: 3em; color: #f5efe28c; white-space: normal; font-size: 10px; line-height: 1.5; }
 .gate--live .field-error { color: #ffb1ac; }
 .gate-avatar { position: relative; height: min(660px, calc(100dvh - 170px)); min-height: 380px; align-self: stretch; cursor: grab; touch-action: none; user-select: none; }
 .gate-avatar:active { cursor: grabbing; }

@@ -207,8 +207,9 @@ function carryingWorld() {
 }
 
 test('consuming a drink retains its visible cup through the sip and removes it afterward',()=>{
-  const {world}=carryingWorld();
+  const {world}=carryingWorld();const sounds=[];world.audio={playAvatarSound:(kind,delay)=>sounds.push([kind,delay])};
   world.drinkInHand();
+  assert.deepEqual(sounds,[['drink',.45]],'the sip sounds as the straw reaches the mouth');
   assert.equal(world.carriedItem,undefined,'inventory is consumed immediately');
   assert.equal(world.drinks,1);
   assert.equal(world.carriedProp.visible,true,'the sip must not animate an empty hand');
@@ -252,8 +253,10 @@ test('sip raises the straw to the actual mouth and returns the cup, with palms o
 
 test('popcorn eating retains the left carton while the right hand carries a bite to the mouth',()=>{
   const {world,root,rig}=carryingWorld();world.carriedItem='POPCORN';world.syncCarriedPropAnchor();
+  const sounds=[];world.audio={playAvatarSound:(kind,delay)=>sounds.push([kind,delay])};
   world.nearbySeat=()=>undefined;
   world.interact();
+  assert.deepEqual(sounds,[['eat',.6]],'the crunch lands as the bite reaches the lips');
   assert.equal(world.playerGesture,'eat');assert.equal(world.carriedItem,undefined);
   assert.equal(world.carriedPropKind,'POPCORN');assert.equal(world.carriedProp.visible,true);
   world.animateRig(rig,0,0,'eat',false,.5);root.updateWorldMatrix(true,true);
@@ -263,6 +266,16 @@ test('popcorn eating retains the left carton while the right hand carries a bite
   world.eatingUntil=0;world.syncCarriedPropAnchor();assert.equal(world.carriedProp.visible,false);
 });
 
+test('only popcorn crunches: the other foods wait for sounds of their own',()=>{
+  for(const item of ['HOTDOG','PIZZA','CHICKEN']){
+    const {world}=carryingWorld();world.carriedItem=item;world.syncCarriedPropAnchor();
+    const sounds=[];world.audio={playAvatarSound:(kind)=>sounds.push(kind)};
+    world.nearbySeat=()=>undefined;
+    world.interact();
+    assert.equal(world.playerGesture,'eat',item);
+    assert.deepEqual(sounds,[],item);
+  }
+});
 
 const AVATAR_FILES=['male','female'];
 const avatarBytes=Object.fromEntries(await Promise.all(AVATAR_FILES.map(async key=>{
