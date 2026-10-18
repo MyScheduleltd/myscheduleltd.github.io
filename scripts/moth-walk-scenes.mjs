@@ -12,7 +12,8 @@
 //
 // Level 4's basement chest: once Bonita's game is won in story mode, a chest
 // stands in the basement (new art in the game's style, scripts/make-meme-
-// chest.py), its front turned to Dr. Beauty. Near it O opens it: the lid
+// chest.py): flat and seen from the front like the crates, their size, and
+// against the back wall with them, under the lamp. Near it O opens it: the lid
 // lifts, and a picture comes up to keep, with 儲存 (the share sheet on a
 // phone, where 儲存影像 puts it in Photos; a download on a computer; a long
 // press on the picture also saves it on a phone) and 關閉. Until it is
@@ -22,9 +23,13 @@
 export const MEME_CHEST = {
   sheet: 'assets/sprites/level4_meme_chest/sheet.webp',
   picture: 'assets/memes/level4-meme.png',
-  // On the basement floor, left of where the ladder comes down.
-  x: 540,
-  size: 128
+  // Under the basement's lamp, standing on the back wall's line with the
+  // crates and the robot (Dr. Beauty walks in front, his feet at about 670).
+  x: 450,
+  y: 655,
+  // The frame's size, for a closed chest about 52 high (198 of the frame's
+  // 256; the red crate is 57).
+  size: 67
 };
 
 export const MEME_CSS = `
@@ -67,6 +72,8 @@ export function patchWalkScenes(once, edit) {
       const h = pause.h;
       const x = left + (room - w) / 2;
       const y = 8;`);
+  once('      drawFittedText(target, String(prompt.text), PORTRAIT_FIGHT.width / 2, y + h / 2 + 1, w - 28, 24, 900, 13);',
+    '      drawFittedText(target, String(prompt.text), x + w / 2, y + h / 2 + 1, w - 28, 24, 900, 13);');
 
   // Level 3: back to the spot where the massage began.
   once('    this.startLevel3Dialogue(this.level3Boss.phase === "postBoss" ? "level3PostBoss" : "level3PreBoss");',
@@ -78,7 +85,7 @@ export function patchWalkScenes(once, edit) {
     '    this.level4DialogueIndex = 0;\n    this.state = "level4Dialogue";\n    this.pocketOpen = false;\n    if (this.chest) this.chest.menuOpen = false;\n    if (this.sewerPlayer) {\n      this.sewerPlayer.vx = 0;\n      this.sewerPlayer.facing = 1;\n      this.level4FightX = this.sewerPlayer.x;\n    }\n');
   // Level 4's basement chest.
   once('    if (this.level4Rail === "lower" && this.chest?.revealed) {\n      drawables.push({\n        y: stage.hiddenChest?.y ?? 668,\n        draw: () => this.drawLevel4HiddenChest()\n      });\n    }\n',
-    '    if (this.level4Rail === "lower" && this.chest?.revealed) {\n      drawables.push({\n        y: stage.hiddenChest?.y ?? 668,\n        draw: () => this.drawLevel4HiddenChest()\n      });\n    }\n    if (this.level4Rail === "lower" && this.hasLevel4MemeChest()) {\n      drawables.push({ y: (side.floorY ?? 650) - 1, draw: () => this.drawLevel4MemeChest(side) });\n    }\n');
+    '    if (this.level4Rail === "lower" && this.chest?.revealed) {\n      drawables.push({\n        y: stage.hiddenChest?.y ?? 668,\n        draw: () => this.drawLevel4HiddenChest()\n      });\n    }\n    if (this.level4Rail === "lower" && this.hasLevel4MemeChest()) {\n      drawables.push({ y: (side.floorY ?? 650) - 1, draw: () => this.drawLevel4MemeChest() });\n    }\n');
   once('      const prompt = this.chest?.state === "revealing"\n', '      const nearMemeChest = this.isLevel4NearMemeChest();\n      const prompt = nearMemeChest\n        ? this.tr("O OPEN THE CHEST", "O 打開寶箱")\n        : this.chest?.state === "revealing"\n');
   once('            ? "往左離開"\n', '            ? (this.hasLevel4MemeChest() && !this.progress?.flags?.level4MemeChestOpened ? "地下室出現了寶箱 · 往左離開" : "往左離開")\n');
   once('        nearChest || nearLadder || nearLeftDoor || this.chest?.state === "revealing" ? "#ffd36c" : "#8fe8ff",',
@@ -136,8 +143,10 @@ export const WALK_SCENE_METHODS = `
     }
   }
 
-  // Closed, with a glint on the lock now and then; lifting; open.
-  drawLevel4MemeChest(side) {
+  // Closed, with a glint on the lock now and then; lifting; open. A soft
+  // shadow sets it on the floor.
+  drawLevel4MemeChest() {
+    this.getMemePicture();
     const sheet = this.memeChestSheet;
     if (!sheet) return;
     const chest = this.memeChest || { state: "closed", at: 0 };
@@ -145,10 +154,30 @@ export const WALK_SCENE_METHODS = `
     const frame = chest.state === "open" ? 3
       : chest.state === "opening" ? (time - chest.at < 0.22 ? 2 : 3)
       : time % 1.6 < 0.2 ? 1 : 0;
-    // Its front turned to Dr. Beauty, whichever side he is on.
-    const facing = (this.sewerPlayer?.x ?? MEME_CHEST.x + 1) >= MEME_CHEST.x ? 1 : -1;
-    drawBundleFrame(this.ctx, sheet, { frameWidth: 256, frameHeight: 256, cols: 2 }, frame, MEME_CHEST.x, side.floorY ?? 650,
-      MEME_CHEST.size, MEME_CHEST.size, { x: 0.5, y: 0.985 }, { facing });
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.translate(MEME_CHEST.x, MEME_CHEST.y);
+    ctx.scale(1, 0.16);
+    const shadow = ctx.createRadialGradient(0, 0, 0, 0, 0, MEME_CHEST.size * 0.5);
+    shadow.addColorStop(0, "rgba(6, 4, 2, 0.55)");
+    shadow.addColorStop(1, "rgba(6, 4, 2, 0)");
+    ctx.fillStyle = shadow;
+    ctx.fillRect(-MEME_CHEST.size * 0.5, -MEME_CHEST.size * 0.5, MEME_CHEST.size, MEME_CHEST.size);
+    ctx.restore();
+    drawBundleFrame(ctx, sheet, { frameWidth: 256, frameHeight: 256, cols: 2 }, frame, MEME_CHEST.x, MEME_CHEST.y,
+      MEME_CHEST.size, MEME_CHEST.size, { x: 0.5, y: 252 / 256 });
+  }
+
+  // The picture, read once through the hash-checked mirror like the game's
+  // other files (this site's copy if that fails), from when the chest comes
+  // into view: Pages is slow from Taiwan. One copy is shown and shared, as
+  // iPhone shares only a file already in hand when 儲存 is tapped.
+  getMemePicture() {
+    this.memePicture ||= fetchGameAsset(MEME_CHEST.picture).then(({ data, type }) => {
+      const file = new File([data], "dr-beauty-meme.png", { type: type.startsWith("image/") ? type : "image/png" });
+      return { file, url: URL.createObjectURL(file) };
+    }).catch(() => null);
+    return this.memePicture;
   }
 
   showMeme() {
@@ -158,7 +187,7 @@ export const WALK_SCENE_METHODS = `
     root.setAttribute("role", "dialog");
     root.setAttribute("aria-modal", "true");
     const phone = this.usesTouchControls();
-    root.innerHTML = \`<section><h2>\${this.tr("BONITA'S CHEST", "BONITA 的寶箱")}</h2><img alt="" src="\${MEME_CHEST.picture}">\`
+    root.innerHTML = \`<section><h2>\${this.tr("BONITA'S CHEST", "BONITA 的寶箱")}</h2><img alt="">\`
       + (phone ? \`<p>\${this.tr("Or press and hold the picture to save it.", "也可以長按圖片儲存。")}</p>\` : "")
       + \`<div class="moth-meme-actions"><button type="button" data-meme-save>\${this.tr("SAVE", "儲存")}</button><button type="button" data-meme-close>\${this.tr("CLOSE", "關閉")}</button></div></section>\`;
     // Its taps are its own, as the scoreboard's are.
@@ -167,9 +196,11 @@ export const WALK_SCENE_METHODS = `
     root.querySelector("[data-meme-close]").addEventListener("click", () => this.closeMeme());
     document.body.append(root);
     const view = this.memeView = { root, file: null };
-    // Read ahead of the tap: iPhone shares only from inside the tap itself.
-    fetch(MEME_CHEST.picture).then(response => response.blob())
-      .then(blob => { view.file = new File([blob], "dr-beauty-meme.png", { type: blob.type || "image/png" }); }).catch(() => {});
+    const image = root.querySelector("img");
+    this.getMemePicture().then(picture => {
+      view.file = picture?.file || null;
+      image.src = picture?.url || MEME_CHEST.picture;
+    });
     root.querySelector("[data-meme-save]").focus({ preventScroll: true });
     this.releaseHeldInputs?.();
     this.updateMobileControls(true);

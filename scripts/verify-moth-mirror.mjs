@@ -124,6 +124,31 @@ async function enterOffice(page) {
   await context.close();
 }
 
+// 1c. Level 4's basement chest after the win: its art, and the picture in it
+// (read as the chest comes into view), from the commit that added them.
+{
+  const {context, page, requests, errors} = await livePage();
+  await page.goto('https://myscheduleltd.com/moth/staff/?device=desktop', {waitUntil: 'domcontentloaded'});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone && bobbyGame.state === 'title', undefined, {timeout: 60000});
+  await page.evaluate(() => {
+    const g = bobbyGame;
+    g.debugUnlockAllStages(); g.startStoryRun('chill');
+    g.progress.flags = {...g.progress.flags, level4BossDefeated: true};
+    g.startStage('level4-stage1', {freePlay: false});
+  });
+  await page.waitForFunction(() => bobbyGame.state === 'level4' && bobbyGame.memeChestSheet, undefined, {timeout: 120000});
+  await page.evaluate(() => { const g = bobbyGame; g.sewerPlayer.x = 1082; g.tryLevel4LadderInteract(); g.sewerPlayer.x = 500; });
+  await page.waitForFunction(() => bobbyGame.memePicture, undefined, {timeout: 10000});
+  assert(await page.evaluate(async () => Boolean(await bobbyGame.memePicture)), 'The picture is read before the chest opens');
+  const chest = requests.filter(url => /level4_meme_chest|level4-meme/.test(url));
+  const pin = MOTH_MIRROR_PINS.find(entry => entry.files.includes('assets/memes/level4-meme.png'));
+  assert.equal(chest.length, 2, JSON.stringify(chest));
+  assert(chest.every(url => MIRROR.test(url) && url.includes('@' + pin.commit + '/')), 'Chest art and picture from their commit ' + JSON.stringify(chest));
+  assert.deepEqual(errors, []);
+  console.log('chest PASS', {files: chest.length, commit: pin.commit.slice(0, 7)});
+  await context.close();
+}
+
 // 2. A mirror copy that fails its hash is discarded for this site's copy.
 {
   const {context, page, requests, warnings, errors} = await livePage({tamper: true});
@@ -183,4 +208,4 @@ async function enterOffice(page) {
 
 fs.writeFileSync(path.join(out, `${engine}-report.json`), JSON.stringify(report, null, 2) + '\n');
 await browser.close();
-console.log(engine, 'PASS mirror, hash fallback, mirror outage, and slow steady downloads');
+console.log(engine, 'PASS mirror, basement chest, hash fallback, mirror outage, and slow steady downloads');

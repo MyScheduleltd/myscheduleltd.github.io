@@ -15,6 +15,8 @@
 //     on a computer and on a phone.
 // usage: node scripts/verify-moth-story.mjs http://127.0.0.1:5286/
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
 import {chromium} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
 
@@ -185,13 +187,19 @@ for (const phone of [false, true]) {
     const accent = ([r, gg, b]) => (Math.abs(r - 0x8f) < 30 && Math.abs(gg - 0xe8) < 30 && Math.abs(b - 0xff) < 30) || (Math.abs(r - 0xff) < 30 && Math.abs(gg - 0xd3) < 30 && Math.abs(b - 0x6c) < 40);
     if (phone) {
       const pause = g.getLevel1OfficePauseButtonRect(), left = 8 + pause.w + 10, middle = Math.round(left + (720 - 8 - left) / 2);
-      return {top: accent(read(g.portraitCtx, middle, 10)), bottom: accent(read(g.portraitCtx, 360, 776 - 22 - 50 + 2)), pauseRight: 8 + pause.w, barLeft: left};
+      // Its line centred in the bar: the bar's frame and the line's pale text, across the middle row.
+      const row = [...g.portraitCtx.getImageData(0, Math.round(8 + pause.h / 2), 720, 1).data];
+      const xs = test => Array.from({length: 720}, (_, x) => x).filter(x => x >= left && test(row.slice(x * 4, x * 4 + 3)));
+      const frame = xs(accent), text = xs(([r, gg, b]) => r > 200 && gg > 200 && b > 170);
+      const offCentre = Math.round((text[0] + text.at(-1)) / 2 - (frame[0] + frame.at(-1)) / 2);
+      return {top: accent(read(g.portraitCtx, middle, 10)), bottom: accent(read(g.portraitCtx, 360, 776 - 22 - 50 + 2)), pauseRight: 8 + pause.w, barLeft: left, offCentre};
     }
     return {top: accent(read(g.ctx, 640, 19)), bottom: accent(read(g.ctx, 640, 720 - 132 + 3))};
   }, phone);
   const upstairs = await bar();
   assert(upstairs.top && !upstairs.bottom, `${phone ? 'phone' : 'computer'}: the bar at the top ${JSON.stringify(upstairs)}`);
   if (phone) {
+    assert(Math.abs(upstairs.offCentre) <= 6, `phone: the line centred in its bar ${JSON.stringify(upstairs)}`);
     console.log('phone bar PASS', JSON.stringify(upstairs));
     assert.deepEqual(errors, []);
     await context.close();
@@ -207,14 +215,24 @@ for (const phone of [false, true]) {
   await page.waitForFunction(() => /^level4/.test(bobbyGame.state) && bobbyGame.sewerPlayer, undefined, {timeout: 30000});
   const back = await page.evaluate(() => ({state: bobbyGame.state, x: bobbyGame.sewerPlayer.x, facing: bobbyGame.sewerPlayer.facing, won: bobbyGame.progress.flags.level4BossDefeated}));
   assert.deepEqual(back, {state: 'level4PostBossDialogue', x: took.x, facing: -1, won: true}, 'Back where the game began');
-  // The basement chest: O opens it, O saves the picture, H closes it.
-  await page.evaluate(() => { const g = bobbyGame; g.state = 'level4'; g.sewerPlayer.x = 1082; g.tryLevel4LadderInteract(); g.sewerPlayer.x = 600; });
+  // The basement chest: O opens it, O saves the picture, H closes it. The
+  // picture is read once, through the game's file loader, as the chest comes
+  // into view; that copy is shown and saved.
+  const pictureRequests = [];
+  page.on('request', request => { if (request.url().includes('level4-meme.png')) pictureRequests.push(request.url()); });
+  await page.evaluate(() => { const g = bobbyGame; g.state = 'level4'; g.sewerPlayer.x = 1082; g.tryLevel4LadderInteract(); g.sewerPlayer.x = 500; });
   const near = await page.evaluate(() => ({near: bobbyGame.isLevel4NearMemeChest(), interact: bobbyGame.isMobileInteractAvailable()}));
   assert.deepEqual(near, {near: true, interact: true}, 'The chest is in reach in the basement');
+  await page.waitForFunction(() => bobbyGame.memePicture, undefined, {timeout: 10000});
+  assert(await page.evaluate(async () => Boolean(await bobbyGame.memePicture)), 'The picture is read before the chest opens');
   await page.keyboard.press('KeyO');
   await page.waitForFunction(() => bobbyGame.memeView && document.querySelector('.moth-meme img')?.naturalWidth > 0, undefined, {timeout: 10000});
+  assert(await page.evaluate(() => document.querySelector('.moth-meme img').src.startsWith('blob:')), 'The picture shown is the copy read ahead');
   const [download] = await Promise.all([page.waitForEvent('download', {timeout: 10000}), page.keyboard.press('KeyO')]);
   assert.equal(download.suggestedFilename(), 'dr-beauty-meme.png');
+  const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  assert.equal(sha(await download.path()), sha(new URL('../moth-asset-additions/assets/memes/level4-meme.png', import.meta.url)), 'The saved picture is the published one');
+  assert.equal(pictureRequests.length, 1, JSON.stringify(pictureRequests));
   await page.keyboard.press('KeyH');
   const after = await page.evaluate(() => ({open: Boolean(bobbyGame.memeView), chest: bobbyGame.memeChest.state, opened: bobbyGame.progress.flags.level4MemeChestOpened, kept: JSON.parse(localStorage.getItem('moth.staff_progress_v1')).flags.level4MemeChestOpened}));
   assert.deepEqual(after, {open: false, chest: 'open', opened: true, kept: true}, 'Closed, the chest stays open and remembered');
