@@ -152,6 +152,18 @@ function solveLeg(z:number,y:number,k:number):[number,number]{
   return [Math.atan2(z,y)-Math.atan2(Z,Y),bend];
 }
 
+/**
+ * Which foot came down between two gait phases, if one did. The walk below
+ * plants the left foot on each whole cycle and the right half a cycle later,
+ * in either direction of travel; a jump of more than one plant is a teleport,
+ * not a step.
+ */
+export function plantedFoot(previous:number,phase:number):'left'|'right'|undefined {
+  const before=Math.floor(previous/Math.PI),after=Math.floor(phase/Math.PI);
+  if(before===after||Math.abs(after-before)>1)return undefined;
+  return ((Math.max(before,after)%2)+2)%2===0?'left':'right';
+}
+
 export function walkCoastalPose(rig:AvatarRig,phase:number,amount=1):void {
   amount=THREE.MathUtils.clamp(amount,0,1);
   const imported=rig.visualRoot?.parent?.userData.importedAvatar;

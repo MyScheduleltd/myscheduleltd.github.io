@@ -32,6 +32,11 @@ export const STATIC_PROP_NAMES = new Set([
   'Seated gilded temple statue',
   'Enamel framed speaker',
   'Framed enamel sign',
+  // The stall's four display cartons are 116 pieces, every one a shadow
+  // caster: drawn one by one into the sun's map, which covers the whole
+  // island, they were over a quarter of the shadow pass wherever you stood.
+  'Popcorn concession',
+  'Jukebox cabinet',
 ]);
 
 /** Flags the worn style reads off a mesh; a batch keeps those its pieces share. */

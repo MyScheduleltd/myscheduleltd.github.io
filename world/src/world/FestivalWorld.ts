@@ -9,6 +9,7 @@ import { setCoastalSwimwear } from './CoastalAvatar';
 import * as THREE from 'three';
 import { HeadTracking, type TrackedPoint } from './HeadTracking';
 import { batchStaticScenery, type StaticBatchReport } from './StaticBatch';
+import { ShadowCasterCulling, shareShadowDepthMaterials } from './ShadowCasters';
 import { mobileAssetBudgetSnapshot } from './MobileAssetBudget';
 import { FrameTimings } from './FrameTimings';
 import { selectDecorativeLights } from './LightBudget';
@@ -21,7 +22,7 @@ import type { VenueKey } from '../data/catalogue';
 import { AmbientAudio } from './AmbientAudio';
 import { createWorldRenderer } from './WorldRenderer';
 import masterOfTheHouseLogo from '../assets/master-of-the-house.png';
-import { DayNightCycle, type DayNightState } from './DayNightCycle';
+import { DayNightCycle, nightAmountAt, type DayNightState } from './DayNightCycle';
 import { createStylizedWaterMaterial, tintStylizedWater } from './StylizedWater';
 import { createLiteSeaMaterial, LITE_SEA_TILE_METRES } from './LiteSea';
 import { createMentorDog, perchMentor, stepMentorGait, type MentorDogRig } from './MentorDog';
@@ -33,7 +34,7 @@ import { createBeachCouple, animateBeachCouple, type BeachCoupleRig } from './Be
 import { applyAvatarAccessories } from './AvatarAccessories';
 import { PLANET, keepFlat, setPlanetCentre, bendCss3d, subdivideSceneForPlanet, planetBendPoint } from './PlanetCurve';
 import { IslandDock, DOCK_ARRIVAL } from './IslandDock';
-import { ISLAND, ISLAND_COVE, islandTerrain, SEA_Y, TEMPLE_GRADE, TEMPLE_STAIRS, TEMPLE_STAIR_VISUAL_OVERLAP, templeStairPitch, templeStairX, templeTreadTop, SHORE_GRADE, CLUB_GRADE, HILL_WALK, terrainHeightAt, isSwimmingDepth, createCoastalTerrain, createGroundRibbon, insidePaving, type PlanPoint } from './CoastalTerrain';
+import { ISLAND, ISLAND_COVE, islandTerrain, SEA_Y, TEMPLE_GRADE, TEMPLE_STAIRS, TEMPLE_STAIR_VISUAL_OVERLAP, templeStairPitch, templeStairX, templeTreadTop, SHORE_GRADE, CLUB_GRADE, HILL_WALK, terrainHeightAt, isSwimmingDepth, distanceToWater, createCoastalTerrain, createGroundRibbon, insidePaving, type PlanPoint } from './CoastalTerrain';
 import { poseCoastalCarry } from './CoastalCarry';
 import { moveCoastalBody, overlapsBodyHeight, coastalDetour, coastalRouteAround } from './CoastalCollision';
 import { pixelSurface, worldSurfaceUV } from './CoastalSurfaces';
@@ -43,7 +44,7 @@ import { VenueSceneryAssets } from './VenueSceneryAssets';
 import { createCoastalAvatar } from './CoastalAvatar';
 import { importedAvatarTextures, attachImportedAvatar, syncImportedAvatars, importedAvatarRoots, AVATAR_NATIVE, MOVE_SECONDS, PUNCH_CONTACT_SECONDS } from './ImportedAvatar';
 import { createCoastalSkateboard } from './CoastalSkateboard';
-import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, setCoastalFists, releaseCoastalGrips, walkCoastalPose, danceCoastalPose, COASTAL_STRIDE_LENGTH, skateCoastalPose, levelCoastalFeet, supportCoastalPose, seatCoastalLegs, coastalFootHeights } from './CoastalPose';
+import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, setCoastalFists, releaseCoastalGrips, walkCoastalPose, plantedFoot, danceCoastalPose, COASTAL_STRIDE_LENGTH, skateCoastalPose, levelCoastalFeet, supportCoastalPose, seatCoastalLegs, coastalFootHeights } from './CoastalPose';
 import { coastalRoof, createCoastalSedan, CONVERTIBLE } from './CoastalGeometry';
 import { XrHud } from './XrHud';
 import { XR_HOLD_MS, xrBindingFor, type XrAction } from './XrControls';
@@ -608,6 +609,20 @@ const PORTRAIT_ASPECT = 1.35;
  * short enough that walking past a door does not start a film.
  */
 const PROJECTOR_WARM_MARGIN = 6;
+/** How often the sound beds hear where the visitor is. */
+const AMBIENCE_UPDATE_MS = 200;
+/** The waves are at full strength within this distance of the water and silent beyond the second. */
+const OCEAN_FULL_WITHIN = 6;
+const OCEAN_SILENT_AT = 36;
+/** How much of the outdoors is heard in each roofed room: 1 would be none of it taken away. */
+const INDOORS = { palace: 0.2, clubLobby: 0.4, clubRoom: 0.1 } as const;
+/**
+ * Seconds from the start of the gesture to its sound: the drink reaches the
+ * straw at about 0.55 s of its 1.8 s, the popcorn the lips at about 1.0 s of
+ * its 2 s, and each recording takes a moment to get to its sip or its crunch.
+ */
+const DRINK_SOUND_DELAY = 0.45;
+const EAT_SOUND_DELAY = 0.6;
 /**
  * How far away a resident stops being posed on a phone. Roughly the width of
  * the square: past it a body is a few pixels tall and its limbs cannot be made
@@ -1967,6 +1982,9 @@ export class FestivalWorld {
   private performanceWindowStartedAt = performance.now();
   private performanceFrameCount = 0;
   private mainDrawCalls = 0;
+  /** Shadow casters whose shadow could not reach the view, last frame (ShadowCasters.ts). */
+  private readonly shadowCasterCulling = new ShadowCasterCulling();
+  private shadowCastersSkipped = 0;
   private mainTriangles = 0;
   private singleContextForegroundDrawCalls = 0;
   private adaptiveRenderScale = 1;
@@ -2235,6 +2253,7 @@ export class FestivalWorld {
     if (!new URLSearchParams(window.location.search).has('nobatch')) {
       this.staticBatchReport = batchStaticScenery(this.scene);
     }
+    shareShadowDepthMaterials(this.scene);
     this.cullDecorativeLights();
     onProgress?.(.65);
     await warmScenePrograms(this.renderer, this.scene, this.camera);
@@ -2267,6 +2286,7 @@ export class FestivalWorld {
     this.venueSceneryAssets.dispose();
     this.stopArcadeGame(); this.arcadeCabinet?.dispose();
     this.renderer.setAnimationLoop(null);
+    if (!this.preview) { this.audio.setAmbientMix(undefined); this.audio.setSkating(false); }
     if (this.xrSession) void this.xrSession.end().catch(() => undefined);
     this.stopPhoneOrientation();
     // Everything the tracker downloaded goes with the world. It was only ever
@@ -5312,6 +5332,7 @@ export class FestivalWorld {
     sinceCullMs: number | null;
     mode: GraphicsMode;
     shadowCasters: number;
+    shadowCastersSkipped: number;
     livePlayers: number;
     colliders: number;
     npcs: number;
@@ -5376,6 +5397,7 @@ export class FestivalWorld {
       sinceCullMs: this.lastCullAt ? Math.round(performance.now()) - this.lastCullAt : null,
       mode: this.graphicsMode,
       shadowCasters,
+      shadowCastersSkipped: this.shadowCastersSkipped,
       livePlayers: [...this.projectors.values()].filter((projector) => Boolean(projector.iframe)).length,
       colliders: this.colliders.length,
       npcs: this.npcs.length,
@@ -7749,6 +7771,8 @@ export class FestivalWorld {
 
   /** Takes the drink that is in hand. Written once; three paths reach it. */
   private drinkInHand(): void {
+    // Optional: the pose tests build bare worlds without any sound.
+    this.audio?.playAvatarSound('drink', DRINK_SOUND_DELAY);
     this.drinkUntil = performance.now() + 1_800;
     this.playerGesture = 'drink';
     this.playerGestureUntil = this.drinkUntil;
@@ -7855,6 +7879,8 @@ export class FestivalWorld {
     if (this.carriedItem && EDIBLE_ITEMS.includes(this.carriedItem) && this.carriedItem !== 'DRINK') {
       this.playerGesture = 'eat';
       this.eatingItem = this.carriedItem;
+      // Popcorn only: the other foods wait for sounds of their own (owner).
+      if (this.eatingItem === 'POPCORN') this.audio?.playAvatarSound('eat', EAT_SOUND_DELAY);
       this.eatingUntil = performance.now() + 2_000;
       this.playerGestureUntil = this.eatingUntil;
       this.carriedItem = undefined;
@@ -9170,6 +9196,7 @@ export class FestivalWorld {
       const scale = mesh.getWorldScale(scaled);
       mesh.castShadow = Math.max(size.x * scale.x, size.y * scale.y, size.z * scale.z) >= 0.15;
     });
+    if (on) shareShadowDepthMaterials(root);
   }
 
   private addCollider(
@@ -9697,6 +9724,7 @@ export class FestivalWorld {
     const x = r.minX - 1;
     const { arcadeZ, jukeboxZ: z } = cabinetPairPositions((r.minZ + r.bayMaxZ) / 2);
     const cabinet = new THREE.Group();
+    cabinet.name = 'Jukebox cabinet';
     // Stood on whatever the ground actually is here rather than on y = 0. The
     // festival's floor is not one plane — kerbs, aprons and the lot around the
     // rooftop all sit proud of the street — so a cabinet built from zero had
@@ -11060,6 +11088,8 @@ export class FestivalWorld {
 
   private createConcession(): void {
     const booth = new THREE.Group();
+    // Named for the static batch: nothing on it moves (StaticBatch.ts).
+    booth.name = 'Popcorn concession';
     booth.position.copy(concessionPosition);
     this.mesh([3.1,.18,2.5],[0,.09,0],material(0x3b4540),booth).userData.wornNoMasonry=true;
     this.mesh([3.2,2.25,2.6],[0,1.305,0],material(0x9e4b3c),booth).userData.wornNoMasonry=true;
@@ -12266,6 +12296,7 @@ export class FestivalWorld {
     this.updateXrArms();
     this.updateTrackedBody(delta);
     const dayNight = this.dayNight.update();
+    this.updateAmbience(frameStartedAt, dayNight.cycleMinute);
     // After the day-night cycle has set the lamps: the bonfire wavers its own.
     this.rooftopBand?.update(delta, elapsed);
     this.dayNight.atmosphere.update(dayNight.cycleMinute, this.player.position);
@@ -12298,7 +12329,14 @@ export class FestivalWorld {
     this.islandDock?.update(elapsed);
     this.applyAerialReview();
     const drawAt = performance.now();
-    this.renderer.render(this.scene, this.camera);
+    // A headset draws each eye from its own camera; that view is not culled.
+    this.shadowCastersSkipped = this.renderer.shadowMap.enabled && !this.xrActive
+      ? this.shadowCasterCulling.hide(this.scene, this.camera, drawAt, this.player) : 0;
+    try {
+      this.renderer.render(this.scene, this.camera);
+    } finally {
+      this.shadowCasterCulling.restore();
+    }
     this.framePhases.draw = performance.now() - drawAt;
     this.mainDrawCalls = this.renderer.info.render.calls;
     this.mainTriangles = this.renderer.info.render.triangles;
@@ -12949,7 +12987,27 @@ export class FestivalWorld {
         this.poseRigSwimming(this.playerRig,this.clock.elapsedTime);
       }
       if (performance.now() < this.pickupUntil && !this.carriedProp.visible) this.playerRig.leftArm.rotation.x = -1.15;
+      this.updateFootsteps();
     }
+    if (!this.preview) this.audio?.setSkating(this.skating);
+  }
+
+  private footstepPhase?: number;
+  /**
+   * A footstep each time a foot is planted. The gait phase advances with the
+   * distance the body actually covers, and the walk puts the left foot down
+   * on each whole cycle and the right halfway between, so the sound follows
+   * the feet whatever the speed. Walking only: not riding, swimming, sitting,
+   * dancing or in the air.
+   */
+  private updateFootsteps(): void {
+    const gait = this.playerRig ? this.locomotion.get(this.playerRig) : undefined;
+    const previous = this.footstepPhase;
+    this.footstepPhase = gait?.phase;
+    if (!gait || previous === undefined || this.preview) return;
+    const walking = this.playerState === 'walking' && !this.skating && !this.airborne && !this.dancing && gait.blend > 0.5;
+    const foot = walking ? plantedFoot(previous, gait.phase) : undefined;
+    if (foot) this.audio?.playAvatarSound(foot === 'left' ? 'step-left' : 'step-right');
   }
 
   /**
@@ -14130,6 +14188,13 @@ export class FestivalWorld {
    * with a bob that follows the same beat the lights use.
    */
   private poseRigDj(rig: AvatarRig, elapsed: number): void {
+    // Not for a body that is not rebuilt this frame (cullAvatars), as with the
+    // foot planting in animateRig. Each hand reach re-derives the whole body's
+    // matrices up to six times: from the square, with both booths out of
+    // sight, it was a tenth of a phone's frame (2026-10-17). The pose is a
+    // function of the clock alone, so the first frame the DJ is drawn has it.
+    const root = rig.visualRoot?.parent;
+    if (root?.userData.importedCulled?.() || root?.userData.cullThrottle) return;
     djCoastalPose(rig,elapsed);
     supportCoastalPose(rig,(x,z,y)=>this.footSurfaceAt(x,z,y));
   }
@@ -14335,6 +14400,51 @@ export class FestivalWorld {
       rig.tail.rotation.z = 0.2 * strike;
       return;
     }
+  }
+
+  private ambienceAt = -Infinity;
+  /**
+   * Where the visitor stands, for the sound beds: how dark it is, how near the
+   * sea, and whether there are walls around them. A few times a second is
+   * plenty; the beds glide over a second or more anyway.
+   */
+  private updateAmbience(now: number, cycleMinute: number): void {
+    if (this.preview || now - this.ambienceAt < AMBIENCE_UPDATE_MS) return;
+    this.ambienceAt = now;
+    const { x, z } = this.player.position;
+    this.audio.setAmbientMix({ night: nightAmountAt(cycleMinute), ocean: this.oceanNearness(x, z), outdoors: this.outdoorsAt(x, z) });
+  }
+
+  /** The mix the beds would be given at a point, for loopback review. */
+  ambienceReviewAt(x = this.player.position.x, z = this.player.position.z): Record<string, unknown> {
+    const minute = this.dayNight.getState().cycleMinute;
+    return { x, z, minute, night: nightAmountAt(minute), ocean: this.oceanNearness(x, z), outdoors: this.outdoorsAt(x, z) };
+  }
+
+  /** 1 at the water's edge, on the landing or in the sea, fading to 0 inland. */
+  private oceanNearness(x: number, z: number): number {
+    if (this.playerState === 'swimming' || this.islandDock?.heightAt(x, z) !== undefined) return 1;
+    const t = (distanceToWater(x, z, OCEAN_SILENT_AT) - OCEAN_FULL_WITHIN) / (OCEAN_SILENT_AT - OCEAN_FULL_WITHIN);
+    const c = Math.min(1, Math.max(0, t));
+    return 1 - c * c * (3 - 2 * c);
+  }
+
+  /**
+   * How much of the outdoors reaches the visitor. The two roofed rooms dial it
+   * down (owner, 2026-10-17); the club further the deeper one goes, so the
+   * stair run fades from the lobby's level to the dance floor's.
+   */
+  private outdoorsAt(x: number, z: number): number {
+    if (this.inClubRoom(x, z)) return INDOORS.clubRoom;
+    if (this.onClubStairs(x, z)) {
+      const b = clubBounds;
+      const t = Math.min(1, Math.max(0, (x - b.stairBottomX) / (b.stairTopX - b.stairBottomX)));
+      return INDOORS.clubRoom + (INDOORS.clubLobby - INDOORS.clubRoom) * t;
+    }
+    if (this.inClubLobby(x, z)) return INDOORS.clubLobby;
+    // The Palace's hall, inside its walls: the same box the screening uses.
+    if (x < -24 && x > -46 && z < -31 && z > -49.2) return INDOORS.palace;
+    return 1;
   }
 
   /** True while the position is anywhere inside the club building. */

@@ -8,8 +8,8 @@
       "reference_image_url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/cffd5ead-fd5c-4302-81e5-07d2e99c84c4_resize.jpg",
       "rigged": true,
       "requested_polycount": 10000,
-      "bytes": 8647100,
-      "sha256": "2248d11158447b6bd21866329c2ae157a760fe604a6acced046d1918032b9e1d",
+      "bytes": 3687768,
+      "sha256": "122a55e1038104ab3f583de9bd920b40e537b9ee2957aab170180cbd187bd485",
       "triangles": 19115,
       "source_preserved": false,
       "original_sha256": "64954bebd96939445591068c36e4ba137e1d2aaaff5f301f3077ee4d9f6293c5",
@@ -29,6 +29,11 @@
             0.8876429796218872
           ],
           "retained_thumb_palm_wrist": true
+        },
+        "texture_reencode_20261017": {
+          "previous_sha256": "2248d11158447b6bd21866329c2ae157a760fe604a6acced046d1918032b9e1d",
+          "previous_bytes": 8647100,
+          "note": "Image maps re-encoded as lossy WebP at the same 2048 size (EXT_texture_webp; colour q90, normal maps q96–99 or near-lossless), each kept only at PSNR >= 40 dB (normals >= 42 dB) against the previous map. Geometry, skins, UVs and materials byte-identical."
         }
       }
     },
@@ -40,8 +45,8 @@
       "reference_image_url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/54bb7168-2bf6-402a-9832-947ac6c5d38e.png",
       "rigged": false,
       "requested_polycount": 6000,
-      "bytes": 4293768,
-      "sha256": "c1066210b415ab7ae1296096ee566ebeca551eb810af8b3cf70619c6affc04d8",
+      "bytes": 1318356,
+      "sha256": "205defc538ef6b9ce6fb01fa4d7649160bb9516060416c4b68ca56694ac59cf2",
       "triangles": 1988,
       "source_preserved": false,
       "original_sha256": "95a355275ff7236e37dee527e21cbfd0467216048c7fc6b6d2569911ddde396e",
@@ -51,7 +56,12 @@
         "bytes": 4293768,
         "sha256": "c1066210b415ab7ae1296096ee566ebeca551eb810af8b3cf70619c6affc04d8",
         "counter_fit": "Counter width 1.44 fits the 1.46 gap between the post inner faces, with 0.01 clearance per side.",
-        "sign_back": "128 rear faces use texture-free matte teal; front artwork unchanged."
+        "sign_back": "128 rear faces use texture-free matte teal; front artwork unchanged.",
+        "texture_reencode_20261017": {
+          "previous_sha256": "c1066210b415ab7ae1296096ee566ebeca551eb810af8b3cf70619c6affc04d8",
+          "previous_bytes": 4293768,
+          "note": "Image maps re-encoded as lossy WebP at the same 2048 size (EXT_texture_webp; colour q90, normal maps q96–99 or near-lossless), each kept only at PSNR >= 40 dB (normals >= 42 dB) against the previous map. Geometry, skins, UVs and materials byte-identical."
+        }
       }
     },
     {
@@ -62,10 +72,18 @@
       "reference_image_url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/51569934-793a-4a5c-aae1-e6bf2de25242.png",
       "rigged": false,
       "requested_polycount": 4000,
-      "bytes": 4540012,
-      "sha256": "2cbf7670e6d82fb49c929abd936766c59dca11ebce55f7b892269c67969fb3b8",
+      "bytes": 1614732,
+      "sha256": "32d3ef3b7acc0e3ab3556539bda31574c39cc8096dfa969f0b4787d66996e969",
       "triangles": 6696,
-      "source_preserved": true
+      "source_preserved": false,
+      "original_sha256": "2cbf7670e6d82fb49c929abd936766c59dca11ebce55f7b892269c67969fb3b8",
+      "local_repair": {
+        "texture_reencode_20261017": {
+          "previous_sha256": "2cbf7670e6d82fb49c929abd936766c59dca11ebce55f7b892269c67969fb3b8",
+          "previous_bytes": 4540012,
+          "note": "Image maps re-encoded as lossy WebP at the same 2048 size (EXT_texture_webp; colour q90, normal maps q96–99 or near-lossless), each kept only at PSNR >= 40 dB (normals >= 42 dB) against the previous map. Geometry, skins, UVs and materials byte-identical."
+        }
+      }
     },
     {
       "asset": "temple-statue",
@@ -73,13 +91,21 @@
       "generation": "7f4404b8-187b-42a3-b6e2-0cc3603439cb",
       "original_glb_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/hf_20261008_162706_7f4404b8-187b-42a3-b6e2-0cc3603439cb.glb",
       "reference_image_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/hf_20261008_162204_32b83455-6cb0-46cb-b8b0-645eb170d58a.png",
-      "bytes": 2096404,
-      "sha256": "98dbecdda28f0fe470089aeba259f3137580c48b25f559b5bd20f59e2900761b",
+      "bytes": 437836,
+      "sha256": "9d6cce6e8220f74163609389caa6016f25a6cd8594b830252168a14889c9cac4",
       "rigged": true,
       "triangles": 935,
-      "source_preserved": true
+      "source_preserved": false,
+      "original_sha256": "98dbecdda28f0fe470089aeba259f3137580c48b25f559b5bd20f59e2900761b",
+      "local_repair": {
+        "texture_reencode_20261017": {
+          "previous_sha256": "98dbecdda28f0fe470089aeba259f3137580c48b25f559b5bd20f59e2900761b",
+          "previous_bytes": 2096404,
+          "note": "Image maps re-encoded as lossy WebP at the same 2048 size (EXT_texture_webp; colour q90, normal maps q96–99 or near-lossless), each kept only at PSNR >= 40 dB (normals >= 42 dB) against the previous map. Geometry, skins, UVs and materials byte-identical."
+        }
+      }
     }
   ],
-  "preparation": "Original Meshy downloads retained in raw artifacts. Selective attendant sleeve/trouser material repairs exclude arm-owned skin faces. Six rounded finger gaps close the generated hand openings while retaining the authored palm, thumb, wrist and 24-bone rig. Booth plaster, posts and cabinet use closed clean surfaces under the original roof/sign. Original 2K image maps retained; no texture resizing. Other assets remain byte-for-byte originals.",
+  "preparation": "Original Meshy downloads retained in raw artifacts. Selective attendant sleeve/trouser material repairs exclude arm-owned skin faces. Six rounded finger gaps close the generated hand openings while retaining the authored palm, thumb, wrist and 24-bone rig. Booth plaster, posts and cabinet use closed clean surfaces under the original roof/sign. Original 2K image maps retained; no texture resizing. Other assets remain byte-for-byte originals. 2026-10-17 (owner: slim downloads, same resolution): Image maps re-encoded as lossy WebP at the same 2048 size (EXT_texture_webp; colour q90, normal maps q96–99 or near-lossless), each kept only at PSNR >= 40 dB (normals >= 42 dB) against the previous map. Geometry, skins, UVs and materials byte-identical.",
   "status": "Owner approved publication on 2026-10-10; packaged for protected pull request, not yet deployed."
 }

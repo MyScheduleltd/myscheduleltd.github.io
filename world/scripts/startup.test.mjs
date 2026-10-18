@@ -43,14 +43,17 @@ test('sound-on entry unlocks audio before admission and avatar downloads', async
 });
 
 test('audio gains recover on unmute after a suspended context without constructing a second graph', async () => {
- const {AmbientAudio}=await import('../src/world/AmbientAudio.ts');
+ // Bundled: the module reaches the asset mirror through extensionless imports.
+ const bundle=await build({entryPoints:['src/world/AmbientAudio.ts'],bundle:true,write:false,format:'esm',platform:'node'});
+ const {AmbientAudio}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
  let constructed=0;
- const gain=()=>({gain:{value:0,setTargetAtTime(v){this.value=v}},connect(){}});
+ const param=(value)=>({value,setTargetAtTime(v){this.value=v}});
+ const gain=()=>({gain:param(0),connect(){}});
  globalThis.AudioContext=class {
   state='suspended'; currentTime=0; sampleRate=8; destination={}; resumes=0;
   constructor(){constructed++;}
   createGain(){return gain();} createBuffer(){return {getChannelData:()=>new Float32Array(24)};}
-  createBufferSource(){return {connect(){},start(){}};} createBiquadFilter(){return {connect(){},frequency:{},Q:{}};}
+  createBufferSource(){return {connect(){},start(){}};} createBiquadFilter(){return {connect(){},frequency:param(350),Q:param(1)};}
   async resume(){this.resumes++;this.state='running';}
  };
  try {

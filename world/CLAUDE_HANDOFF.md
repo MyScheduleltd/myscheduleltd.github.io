@@ -1,11 +1,172 @@
+# Release 2026-10-18 — owner said "please publish"
+
+Branch `claude/world-sfx-release-20261018`, cut from origin/main `5dc2fbc` (PR #45 M.O.T.H, which touches no `world/` or `docs/beta/` file) in a clean worktree `release-sfx-20261018`; only the release files were copied from `release-npc-20261006/world` (its old receipts, diagnostics and evidence art stay there, uncommitted). Contents: rotating sign-in/loading tips, world SFX (menus, day/night/ocean ambience, indoor muffle), avatar SFX + 角色音效 slider, same-resolution texture re-encode, review pages off the build, `/beta/ps2/` deleted (no redirect), stale hashed files pruned (`scripts/prune-published.mjs --apply`: docs/beta 676 → 82 MB), and the five island frame-cost cuts below. `npm run verify` 597/597 + build; entry `main-DFrI7-ap.js`; both the new and the previously live entry pages resolve every hashed file. No server change, so no Render deploy. After merge: purge jsDelivr for the new `docs/beta/assets/*` files and check the live page (memories `jsdelivr-asset-mirror`, `pages-cache-stale-bundle`).
+
+The "LOCAL ONLY" lines in the sections below describe the state before this release.
+
+# Current Claude continuation — island frame cost, 2026-10-18 (Asia/Taipei)
+
+**LOCAL ONLY, same rules as below: nothing published, committed, pushed or deployed; docs/ untouched.** Same checkout and branch; these changes are uncommitted alongside the SFX/tips work.
+
+## What changed (each one checked to leave the picture unchanged)
+
+- **Lamps skip pixels they cannot reach** — `src/world/LightLoop.ts`, installed by `createWorldRenderer`. three.js ran the full lighting model for all 17 lit lamps on every pixel; the patched `lights_fragment_begin` wraps each light in `if ( directLight.visible )` (directional: colour ≠ 0), where its contribution is exactly zero. Light count unchanged, so no recompiles.
+- **Popcorn stall and jukebox merged as static scenery** — named `Popcorn concession` / `Jukebox cabinet` in `FestivalWorld.ts`, added to `STATIC_PROP_NAMES`. The four display cartons were 116 shadow-casting pieces drawn one by one into the island-wide sun shadow map every frame, wherever you stood.
+- **Skinned/morphing shadow casters get their own depth material** — `shareShadowDepthMaterials()` in `src/world/ShadowCasters.ts` (after batching, and in `castShadows`). three.js re-derived its one shared depth program each time the shadow pass switched between a body and a prop.
+- **Shadow casters whose shadow cannot reach the view sit out that draw** — `ShadowCasterCulling` around `renderer.render` in `render()`. The ray from each caster along the sun/moon is tested against the camera frustum in the planet curve's bent space, down to floor −20 (the seabed bottoms out at −19.5). Anything within a lamp shadow's reach and the visitor's own body are always kept; headsets skip it; `castShadow` is restored right after the draw. Loopback readout: `__festivalPerf().shadowCastersSkipped`.
+- **Off-screen DJs are not posed** — `poseRigDj` returns when `cullAvatars` marks the body culled/throttled (same rule as `animateRig`'s foot planting). Its hand reach re-derives the whole body six times per hand: 7.6–10% of a throttled phone frame with both booths out of sight.
+- Not touched: textures, lights, shadow resolution, art. Transparent double-sided materials (shirt prints, windscreens, cloud banks) still take three.js's two passes, which re-derive programs every frame; a single pass could change blending, so it was left.
+
+## Measured
+
+`tools/frame-cost-probe.mjs` (new): headless Chrome on an M2, adaptive render scale pinned at 1, `cycleMinute=12`, fixed spots and cameras; phone = 390×844 @3×, touch, CPU ×4. "Before" is this session's changes switched off in the same tree, run minutes before "after" on a quiet machine. Visitors present (ghost probe sessions on the local API) were 0–2 per run; NPC positions vary.
+
+**Desktop 一般 (1440×900)** — before → after
+
+| Spot | fps | slow frames (p90 ms) | GPU ms | script ms | draws (main) | draws (shadow) |
+|---|---|---|---|---|---|---|
+| Gate | 60 → 60 | 16.7 → 16.7 | 14.5 → 10.7 | 6.8 → 5.8 | 549 → 385 | 407 → 240 |
+| MY SQUARE | 60 → 60 | 16.7 → 16.7 | 12.3 → 11.6 | 5.3 → 4.2 | 191 → 166 | 327 → 137 |
+| The Shore | 60 → 60 | 16.7 → 16.7 | 15.6 → 12.1 | 5.8 → 5.8 | 318 → 289 | 350 → 258 |
+| Club room | 60 → 60 | 16.7 → 16.7 | 22.1 → 18.5 | 5.4 → 4.9 | 149 → 149 | 286 → 103 |
+| Rooftop | 60 → 60 | 16.7 → 16.7 | 12.4 → 13.0 | 5.6 → 5.7 | 193 → 207 | 288 → 211 |
+
+**Desktop 精簡** — before → after
+
+| Spot | fps | slow frames (p90 ms) | GPU ms | script ms | draws (main) |
+|---|---|---|---|---|---|
+| Gate | 60 → 60 | 16.7 → 16.7 | 9.2 → 7.5 | 5.3 → 5.1 | 533 → 368 |
+| MY SQUARE | 60 → 60 | 16.7 → 16.7 | 6.4 → 5.6 | 4.3 → 4.0 | 180 → 182 |
+| The Shore | 60 → 60 | 16.7 → 16.7 | 8.3 → 7.7 | 5.0 → 5.1 | 317 → 296 |
+| Club room | 60 → 60 | 16.7 → 16.7 | 10.9 → 8.4 | 4.9 → 4.6 | 172 → 163 |
+| Rooftop | 60 → 60 | 16.7 → 16.7 | 7.5 → 7.3 | 4.8 → 5.0 | 196 → 208 |
+
+**Phone 一般 (390×844 @3×, CPU ×4)** — before → after
+
+| Spot | fps | slow frames (p90 ms) | GPU ms | script ms | draws (main) | draws (shadow) |
+|---|---|---|---|---|---|---|
+| Gate | 52 → 60 | 33.3 → 16.7 | 11.8 → 10.4 | 18.5 → 15.7 | 353 → 235 | 312 → 152 |
+| MY SQUARE | 60 → 60 | 16.7 → 16.7 | 10.6 → 8.9 | 14.4 → 12.0 | 165 → 150 | 303 → 157 |
+| The Shore | 45 → 59 | 33.4 → 16.7 | 13.6 → 9.1 | 21.4 → 16.2 | 220 → 191 | 346 → 218 |
+| Club room | 54 → 60 | 33.3 → 16.7 | 19.7 → 15.4 | 17.5 → 14.6 | 96 → 97 | 301 → 90 |
+| Rooftop | 51 → 58 | 33.3 → 16.8 | 13.0 → 12.3 | 18.7 → 16.5 | 155 → 155 | 319 → 174 |
+
+**Phone 精簡 (CPU ×4)** — before → after
+
+| Spot | fps | slow frames (p90 ms) | GPU ms | script ms | draws (main) |
+|---|---|---|---|---|---|
+| Gate | 60 → 60 | 16.7 → 16.7 | 3.8 → 3.7 | 14.7 → 10.9 | 372 → 249 |
+| MY SQUARE | 60 → 60 | 16.7 → 16.7 | 3.1 → 2.7 | 10.6 → 7.1 | 173 → 141 |
+| The Shore | 60 → 60 | 16.7 → 16.7 | 4.9 → 4.8 | 13.5 → 13.2 | 218 → 208 |
+| Club room | 60 → 60 | 16.7 → 16.7 | 4.6 → 4.4 | 12.4 → 11.2 | 96 → 95 |
+| Rooftop | 60 → 60 | 16.7 → 16.7 | 4.5 → 4.2 | 13.0 → 12.4 | 163 → 164 |
+
+- three.js resets its draw counter after the shadow pass, so `__festivalPerf().drawCalls` never included shadow draws; the probe counts them separately.
+- In-page A/B of the light patch alone (same page, alternating shader variants): desktop GPU −11 to −31% on 一般, −15 to −20% on 精簡.
+- **The ~2,200 draw calls, and the 28 ms gate GPU figure from 2026-10-17, are not the baseline.** The 28 ms was measured while the machine was busy (other GPU work running), which inflated the timer queries. Use the paired numbers above.
+- Pixel checks (frozen frame, byte comparison, `art/frame-cost-20261018/ab-checks.json`). Shared depth materials and shadow culling: 0 differing pixels (culling in 7 views by day and by night). Merging the two props: 0 px at 4 spots, 2 px at the gate. Light patch: 0 px at 3 spots, ≤10 px of float rounding at the gate and rooftop. Before/after screenshot pairs at the same cameras: `art/frame-cost-20261018/screens/`.
+- `npm run test` 597/597 (new `scripts/frame-cost.test.mjs`, 7 tests); `npm run build` passes.
+
+## Rerun
+
+Vite 4183 + disposable API 8791 as below, then e.g. `PIN=1 MODE=normal node tools/frame-cost-probe.mjs "http://127.0.0.1:4183/?era=ps2&island&review=perf&cycleMinute=12" desk-normal` (phones: `PHONE=1 CPU=4 NOSHOT=1`; screenshots hang under CPU throttling). Not yet measured on a real phone.
+
+---
+
+# Previous continuation — world SFX, slimmer downloads, PS2 channel retired, 2026-10-17 (Asia/Taipei)
+
+**LOCAL ONLY. The owner said not to publish anything until they approve. Do not run publish-beta.mjs or prune-published.mjs --apply, stage/commit/push, open a release PR, change docs/, deploy Pages or deploy Render for this work.** Same checkout, branch and HEAD as the tips continuation below; both sets of changes are uncommitted together.
+
+## Owner request and decisions (asked and answered 2026-10-17)
+
+- Click SFX on every menu/prompt/button click and hover SFX on every menu selection, the sign-in page included. Own slider **介面音效 / UI SOUNDS**. Hovers only after the first click/keypress (browser rule, owner accepted) and only on mouse devices.
+- Ambience replaces the old filtered-noise hum: day = Seaside Promenade walla, night = Rural Quiet Evening, ocean = Beach Waves at Night. Night follows the light: fades in over sunset + blue hour (cycle minutes 25–35), full 35–60, fades out over dawn (0–5), equal-power crossfade. Waves fade in within ~36 units of water, full within 6, on the landing deck and while swimming.
+- Indoors = The Basement (lobby 0.4, stair ramp, dance floor 0.1) and The Palace hall (0.2), with a low-pass muffle down to ~900 Hz. Rooftop garage stays outdoors.
+- All SFX are fetched/decoded at the sign-in page and awaited before the world opens (max 8 s extra, then they fade in late).
+- Clean-up: slim world downloads by re-encoding textures at the SAME resolution; keep review pages off the public build; prune stale published bundles keeping current + previous release; delete /beta/ps2/ with **no redirect**. Live server data is NOT to be touched.
+
+## Files
+
+- `src/world/AmbientAudio.ts` rewritten: beds via Web Audio (`loopStart/loopEnd` inside 0.5 s self-padding so decoder delay never clicks), mono beds on coarse-pointer phones, decode in an `OfflineAudioContext` so the sign-in page needs no gesture, `unlock()`, `playInterfaceSound()`, `setAmbientMix()`, `volumes()`, loopback `snapshot()`. URLs resolve lazily (node test bundles evaluate it from a data: URL).
+- `src/ui/InterfaceSounds.ts`: one delegated capture listener (click/change/pointerover/focusin + unlock on gestures). Text fields and sliders are silent; disabled/inert controls silent; 30 ms click / 45 ms hover spacing.
+- `src/world/FestivalWorld.ts`: `updateAmbience()` every 200 ms from `render()`; `oceanNearness`, `outdoorsAt`, `ambienceReviewAt`; `stop()` fades beds out. Constants `AMBIENCE_UPDATE_MS`, `OCEAN_FULL_WITHIN/SILENT_AT`, `INDOORS`. `DayNightCycle.nightAmountAt`, `CoastalTerrain.distanceToWater` are pure helpers.
+- `src/ui/App.ts`: installs sounds in `mount()`, preloads beds behind the band, waits for them before `world.start()`, sound panel draws current values and persists master/ambient/ui in localStorage (`myschedule-volume-*-v1`). Loopback hooks `__festivalAudio()` and `__festivalAmbienceAt(x, z)`.
+- `src/assets/audio/` (rebuild with `tools/build-sfx.py <outDir>`): 3 beds × stereo/mono MP3 (128k/64k, 2.4 MB desktop, 1.2 MB phone) + click/hover WAV. Built from the owner's masters in `/Users/myscheduleai/Desktop/Michael/MSSWEB/SFX/` (day 31–91 s, night 139–184 s, ocean 175–220 s, 5 s crossfade, −24 dBFS RMS). Seams verified after MP3 decode with 0/1105/2112-sample start shifts.
+- Textures re-encoded inside GLBs with `tools/repack-glb-textures.mjs` (image bytes only; meshopt streams, skins, UVs byte-identical; validator warnings unchanged): male 13.9→7.9 MB (q97, lettering checked at 3× zoom), attendant 8.3→3.5, valet 4.3→1.5, box-office 4.1→1.3, temple-statue 2.0→0.4, female/guitarist/bass smaller. Provenance updated in `art/VENUE_ASSET_PROVENANCE_20261009.json`. Originals of the eight edited GLBs are in git (HEAD).
+- `vite.config.ts`: only `index.html` is built; `dist/review` removed after build; mp3/wav added to `asset-integrity.json` so audio comes through jsDelivr. dist/assets 48 → 33 MB including the new audio.
+- PS2 channel retired in code: `publish-beta.mjs` accepts only `--channel beta`; `/beta/ps2/` removed from `WorldTopology` and `artPreviewPolicy` (tests updated).
+- `scripts/prune-published.mjs`: report-only by default. At release, after publishing, it removes docs/beta/ps2 (437 MB), the review pages + docs/beta/review, and 535 stale hashed files, keeping the on-disk and previously published entry pages' reachable set (45 files). Dry run today: 626 MB.
+- Tests: new `scripts/ambient-audio.test.mjs` (6); `startup.test.mjs` audio test now bundles the module. `npm run test` 587/587, `npm run build` passes.
+
+## Browser verification (local 4183/8791, loopback API)
+
+Sign-in: cues + all beds decoded before any click; first real click starts the context; clicks and hovers counted. Entry with sound: in world after 9 s, spawned on the landing deck (ocean 1, dawn night→day crossfade in progress). Fast travel to the Basement forecourt: ocean 0; walking in, outdoors 1 → 0.4 (lobby) → ramp → 0.1 (dance floor), muffle 20 kHz → 916 Hz. Grid sampling: Palace hall 0.2, gate ocean 0.9, south beach 0.95. Phone emulation: beds decode mono. No console errors. The pane cannot play or hear audio and delivers hover events in bursts (merged by the 45 ms spacing); listening on real speakers/phones is still owed to the owner.
+
+## Avatar SFX — done locally 2026-10-18 (owner request 2026-10-17)
+
+Owner decisions: own avatar only (no remote/NPC sounds); eating sound for POPCORN only (hot dog/pizza/chicken stay silent — those item types remain in code, but no current vendor hands them out); footsteps vary ±3% pitch and up to 15% level; slider 角色音效 / AVATAR SOUNDS directly under 介面音效, default 0.6, persisted as `myschedule-volume-avatar-v1`.
+
+- Files: `src/assets/audio/avatar-step-left|right.wav`, `avatar-eat-popcorn.wav`, `avatar-drink.wav` (trimmed to onset, 460–620 ms, matched at −20 dBFS active RMS), `avatar-skate.mp3` (5.4 s loop, 1.2 s crossfade, last 50 ms click dropped). Rebuild: `python3 tools/build-sfx.py <outDir> avatar`.
+- `AmbientAudio`: avatar channel straight to master (never muffled), `playAvatarSound(kind, delay)`, `setSkating(on)` (0.08 s in / 0.18 s out), `setAvatarVolume`. `preloadAmbience`/`ambienceReady` renamed `preloadWorldSounds`/`worldSoundsReady` and now cover the avatar sounds, so they load at sign-in with the beds.
+- `FestivalWorld`: `updateFootsteps()` uses `plantedFoot()` (new, `CoastalPose.ts`) on the player's gait phase — walking only, not riding (SHIFT on land = board), swimming, seated, dancing or airborne. `drinkInHand()` plays the sip at +0.45 s; the eat branch plays the crunch at +0.6 s for POPCORN. Calls are `this.audio?.` because pose tests build bare worlds.
+- Tests: `ambient-audio.test.mjs` 8 (foot plant + avatar channel added); `coastal-pose.test.mjs` asserts the drink/popcorn timings and that other foods are silent. `npm run test` 591/591 + the new pose test; build passes.
+- Browser (loopback): all 5 avatar sounds decoded on the sign-in page in ~1 s; walking 11 units gave 9 steps, none when stopped; SHIFT-riding raised the board to 0.75 with no steps and back to 0 when it stopped; panel shows the slider in the right place. Eat/drink timing proven in node tests, not heard. Not yet listened to by the owner.
+
+## Release checklist (only after the owner approves)
+
+Build → `publish-beta.mjs --channel beta` → `prune-published.mjs` (read the report) → `--apply` → protected PR. After merge, purge jsDelivr for each new `assets/*.mp3|wav|glb` (see memory `jsdelivr-asset-mirror`). Nothing server-side changed.
+
+---
+
+# Previous continuation — randomized tips, 2026-10-17 (Asia/Taipei)
+
+**LOCAL ONLY. The owner explicitly said not to publish until further approval. Do not run build:beta, stage/commit/push, open a release PR, change docs/, deploy Pages or deploy Render for this work.** The historical instructions below that imply automatic publication are obsolete.
+
+## Active checkout and baseline
+
+- Work in `/Users/myscheduleai/Desktop/myschedule-pivot/release-npc-20261006/world`, repository root `/Users/myscheduleai/Desktop/myschedule-pivot/release-npc-20261006`.
+- Branch `codex/water-prompts-release-20261017`, HEAD `ceeabfa4de7e545e03ff8db911e09cdcc78aee31` (published PR43 water prompts plus the separate PR44 M.O.T.H release). The tip changes below are uncommitted and unpublished.
+- Preserve unrelated dirty historical receipts, source/review art, diagnostics and `art/payment-review-20261017/`. Do not reset/clean or broad-stage. No game/server/asset changes were needed for this tip request.
+
+## Owner request and completed local behavior
+
+Randomize the tips below the entry-loading progress bar on each admission, and replace the static controls sentence beneath Donate with rotating randomized tips on the sign-in page. Both areas rotate every5seconds through the existing7 bilingual/device-appropriate tips, with no repeats until the round finishes. Consecutive rounds do not repeat their boundary tip. Separate sign-in/loading histories keep every opening-round position different from the previous visit, including after long visits which cycle multiple times. The histories contain only7 numeric tip indices per stage.
+
+Language redraws keep the current tip/order rather than starting over; desktop/mobile wording is resolved at paint time. A single active timer switches from sign-in to loading, stops on successful entry or missing UI, and resumes the sign-in sequence on failed/cancelled admission. Reserved note height prevents shifting/clipping as tips wrap. Existing topic text and gameplay behavior are unchanged; the old static gateNote translations are removed.
+
+## Files and implementation
+
+- `src/ui/EntryTips.ts`: existing localized tip content plus Fisher–Yates shuffle, fixed-position repair, `TipRotation`, and `createTipRotation`. Only opening orders persist in localStorage keys `myschedule:tips:sign-in:v1` and `myschedule:tips:loading:v1`; later cycles must not overwrite that visit's opening-order history. Storage/corrupt-history failures are caught, so tips still shuffle without blocking admission. Persistence-based cross-visit guarantees require accessible browser storage.
+- `src/ui/App.ts`: `[data-gate-signin-tip]`, `startGateTips`, `showGateTip`, `stopGateTips`; `gateSignInTips` retained on gate redraw, loading order recreated per admission. One timer, no parallel hidden-menu timer.
+- `src/style.css`: `.gate--live .gate-card__note` reserves3em; font/colors retained.
+- `scripts/gate-ui.test.mjs`: production-method/fake-clock coverage for complete shuffled rounds, cross-visit positions, boundary repeats, long visits, language/device redraws, retry/teardown and unavailable history. Existing gate-preview tests also pass.
+- This file and `CODEX_HANDOFF.md`: current local continuation. Historical architectural notes below are not current paths or release instructions.
+
+## Verification and limits
+
+- `node --test scripts/gate-ui.test.mjs scripts/gate-preview.test.mjs`: **43/43 passed** after final change. Log `/tmp/myschedule-random-tips-final-tests.log`.
+- `npm run build`: strict TypeScript and standard Vite build passed after final change. Log `/tmp/myschedule-random-tips-build.log`. This only rebuilds ignored local `dist/`; no BETA packaging. Source diff check clean. Full server/gameplay suite was not rerun for this isolated UI change.
+- Local browser: sign-in text visibly changed over time and on a fresh visit; Chinese/English switching retained the current tip. At390x700 the note sat12px below Donate and stayed within width. Loading showed a randomized, mobile-appropriate tip; admission completed normally and no console errors were captured. Loading finished before the second timed browser sample, so continued loading rotation/cleanup is established by the production-method fake-clock tests, not a second observed loading screenshot. Phone-sized Mac browser is not a physical iPhone test.
+- Evidence `art/random-tips-20261017/`: `sign-in.png`, `phone-sign-in.png`, `phone-loading.png`, `browser-observations.json`. Temporary viewport override reset. Browser tab3 retained at desktop sign-in as review output.
+
+## Resume locally
+
+Open `http://127.0.0.1:4183/?era=ps2&island&localReview=random-tips-20261017`. Wait5seconds beneath Donate to see the next tip; reload to review a new opening order; enter silently to see the independent loading tip order. No additional requested feature remains unfinished; continue with owner feedback/local review.
+
+Loopback-only services were started for this review and left running:
+
+- Vite4183 (exec67568): `env VITE_FESTIVAL_SERVER_URL=http://127.0.0.1:8791 node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 4183 --strictPort`
+- Disposable API8791 (exec59556): `env FESTIVAL_PORT=8791 FESTIVAL_HOST=127.0.0.1 FESTIVAL_STATE_FILE=off FESTIVAL_SEED_FILE=off FESTIVAL_YOUTUBE_TITLES=off node server/index.mjs`
+
+Check listeners before restarting; do not stop unrelated services. Keep the explicit local API override and disabled persistence for QA; do not send simulated clients to the production multiplayer service. Publication requires a new explicit owner request and normal protected-main review, packaging and live verification.
+
+---
+
 # Claude handoff — myschedule Virtual Festival
 
 Last updated: 2026-08-25 (Asia/Taipei)
 
-> **Superseded.** Read `CODEX_HANDOFF.md` first. The instructions below not to publish,
-> and the reference to the `codex/pivot-exploration` branch, are both out of date: the
-> build now ships to `docs/beta` on `main` every turn. What remains useful here is the
-> older architectural description, not the process.
+> **Historical archive below.** The current continuation instructions are at the top of this file and in `CODEX_HANDOFF.md`. Do not treat the old branches, paths or automatic-publication statements below as current instructions.
 
 Current continuation: the published `15c9354` baseline removed the clipping wall
 conduit and fixed mobile sign-canvas retention plus the phone's duplicate WebGL

@@ -1,9 +1,9 @@
-/** The approved island world is shared by the two public festival channels. */
+/** The approved island world, on the public festival channel (/beta/ps2/ retired 2026-10-17). */
 export function worldTopologyFor(hostname: string, pathname: string, search: string): { island: boolean; radius: number | null } {
   const params = new URLSearchParams(search);
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(hostname);
   const festival = ['myscheduleltd.com', 'www.myscheduleltd.com'].includes(hostname)
-    && ['/beta/', '/beta/index.html', '/beta/ps2/', '/beta/ps2/index.html'].includes(pathname);
+    && ['/beta/', '/beta/index.html'].includes(pathname);
   const requested = params.get('island');
   const enabled = festival || (local && (params.get('era') === 'ps2' || requested !== null));
   if (!enabled || requested === 'off') return { island: false, radius: null };

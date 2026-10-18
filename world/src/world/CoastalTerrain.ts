@@ -187,6 +187,23 @@ export function isSwimmingDepth(x: number, z: number): boolean {
   return terrainHeightAt(x,z) < SEA_Y-1.25;
 }
 
+/**
+ * Roughly how far it is to open water, out to `limit`, or Infinity beyond it:
+ * rings of ground samples, nearest first, spaced about every five units. For
+ * the waves' loudness, which only needs to know how close the sea is.
+ */
+export function distanceToWater(x: number, z: number, limit = 40): number {
+  if (terrainHeightAt(x, z) < SEA_Y) return 0;
+  for (let radius = 2; radius <= limit; radius += radius < 12 ? 2 : 4) {
+    const steps = Math.max(12, Math.ceil(radius * 1.25));
+    for (let step = 0; step < steps; step++) {
+      const angle = step / steps * Math.PI * 2;
+      if (terrainHeightAt(x + Math.cos(angle) * radius, z + Math.sin(angle) * radius) < SEA_Y) return radius;
+    }
+  }
+  return Infinity;
+}
+
 export function createCoastalTerrain(): THREE.Mesh {
   const positions:number[]=[], colours:number[]=[];
   const soil=new THREE.Color(0x72765c), sand=new THREE.Color(0xc0aa7c);

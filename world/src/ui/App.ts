@@ -1,5 +1,6 @@
-import { entryTips } from './EntryTips';
+import { createTipRotation, entryTips, type TipRotation } from './EntryTips';
 import { AmbientAudio } from '../world/AmbientAudio';
+import { installInterfaceSounds } from './InterfaceSounds';
 import { DanceWheel } from './DanceWheel';
 import { TOP_OUTFITS, topOutfit, avatarSex, outfitWire, type AvatarSex } from '../world/CoastalOutfits';
 import { avatarVariantsFor, AVATAR_NATIVE } from '../world/NativeAvatarPalette';
@@ -222,7 +223,6 @@ const copy = {
     vrDesktopNote: 'Use VR headset for full experience.',
     vrPhoneMode: 'PHONE MOTION VR',
     vrPhoneNote: 'Use VR headset for full experience.',
-    gateNote: 'MOVE: WASD / ARROWS · RUN: SHIFT · JUMP: SPACE · CAMERA: T · CHAT: ENTER',
   },
   'zh-TW': {
     gateTitle: '我的戲院',
@@ -246,7 +246,6 @@ const copy = {
     vrDesktopNote: '使用 VR 頭戴裝置可獲得完整體驗。',
     vrPhoneMode: '手機動態 VR',
     vrPhoneNote: '使用 VR 頭戴裝置可獲得完整體驗。',
-    gateNote: '移動：WASD／方向鍵 · 奔跑：SHIFT · 跳躍：SPACE · 鏡頭：T · 聊天：ENTER',
   },
 } as const;
 
@@ -260,6 +259,28 @@ const LOCAL_HITS_TO_DIE = 5;
 const LOCAL_HIT_MEMORY_MS = 30_000;
 
 const JUKEBOX_VOLUME_KEY = 'myschedule-jukebox-volume-v1';
+/** The festival's own sliders, kept per browser like the jukebox's. */
+const AUDIO_VOLUME_KEYS = {
+  master: 'myschedule-volume-master-v1',
+  ambient: 'myschedule-volume-ambient-v1',
+  ui: 'myschedule-volume-ui-v1',
+  avatar: 'myschedule-volume-avatar-v1',
+} as const;
+const readStoredVolume = (key: string): number | undefined => {
+  try {
+    const raw = window.localStorage.getItem(key);
+    const value = raw === null ? Number.NaN : Number(raw);
+    return Number.isFinite(value) && value >= 0 && value <= 1 ? value : undefined;
+  } catch {
+    return undefined;
+  }
+};
+/**
+ * How long admission waits on the world's sounds once everything else is
+ * ready. They are fetched from the sign-in page on, so this only runs out on a
+ * very slow line — and then the beds fade in when they arrive.
+ */
+const AMBIENCE_ENTRY_WAIT_MS = 8_000;
 /**
  * How far the view turns for a given drag, everywhere. 1 is the rate the world
  * was built around; VR applies a comfort factor of its own on top, so the
@@ -530,6 +551,16 @@ export class App {
   constructor(root: HTMLElement) {
     this.root = root;
     this.entryAudio.onStateChange = () => this.syncAudioResumeUi();
+    // The menus click from the sign-in page on, unless this tab chose silence.
+    this.entryAudio.setMuted(readSession<boolean>(AUDIO_MUTED_KEY, false));
+    const masterVolume = readStoredVolume(AUDIO_VOLUME_KEYS.master);
+    const ambientVolume = readStoredVolume(AUDIO_VOLUME_KEYS.ambient);
+    const interfaceVolume = readStoredVolume(AUDIO_VOLUME_KEYS.ui);
+    const avatarVolume = readStoredVolume(AUDIO_VOLUME_KEYS.avatar);
+    if (masterVolume !== undefined) this.entryAudio.setMasterVolume(masterVolume);
+    if (ambientVolume !== undefined) this.entryAudio.setAmbientVolume(ambientVolume);
+    if (interfaceVolume !== undefined) this.entryAudio.setInterfaceVolume(interfaceVolume);
+    if (avatarVolume !== undefined) this.entryAudio.setAvatarVolume(avatarVolume);
     const saved = readProfile();
     const browserLanguage: Language = navigator.language.toLowerCase().startsWith('zh') ? 'zh-TW' : 'en';
     this.language = saved?.language ?? browserLanguage;
@@ -554,6 +585,15 @@ export class App {
 
   mount(): void {
     this.renderGate();
+    installInterfaceSounds(this.entryAudio);
+    void this.entryAudio.loadInterfaceSounds();
+    if (['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      // The festival's own sound, from the sign-in page on: __festivalAudio()
+      // for what is playing, __festivalAmbienceAt(x, z) for the mix anywhere.
+      (window as Window & { __festivalAudio?: () => unknown }).__festivalAudio = () => this.entryAudio.snapshot();
+      (window as Window & { __festivalAmbienceAt?: (x?: number, z?: number) => unknown }).__festivalAmbienceAt =
+        (x, z) => this.world?.ambienceReviewAt(x, z);
+    }
     // Start the download behind the usable sign-in form. Retry on entry if it fails.
     // Both halves of the festival, fetched while the gate is on screen: the
     // avatar model and the world's own code. Neither blocks the gate, and by
@@ -571,6 +611,9 @@ export class App {
       .then(([band, avatars]) => {
         band.prefetchBand();
         void avatars.loadImportedAvatar(undefined, ['male'], true).catch(() => undefined);
+        // The world's sounds, so the beds and the avatar's own are decoded
+        // before anybody is in.
+        void this.entryAudio.preloadWorldSounds();
       })
       .catch(() => undefined);
     this.watchForANewerBuild();
@@ -901,7 +944,7 @@ export class App {
             <button class="button button--secondary" type="submit" data-audio="muted">${text.muted}</button>
             <button class="button button--secondary gate-donate" type="button" data-gate-donate>Donate</button>
           </div>
-          <p class="gate-card__note">${text.gateNote}</p>
+          <p class="gate-card__note" data-gate-signin-tip></p>
         </form>
         <aside class="gate-avatar" data-gate-avatar tabindex="0" aria-label="${this.language === 'zh-TW' ? '你的角色預覽' : 'Your character preview'}" aria-describedby="gate-avatar-hint">
           <div class="gate-avatar__caption">
@@ -918,6 +961,8 @@ export class App {
         </div>
       </section>
     `;
+
+    this.startGateTips('sign-in');
 
     // Giving without coming in: the temple's sheet, worded as a donation.
     this.root.querySelector<HTMLButtonElement>('[data-gate-donate]')?.addEventListener('click', () => {
@@ -1009,7 +1054,8 @@ export class App {
   private gateEntryOverlay?: HTMLElement;
   private gateEntryProgress = 0;
   private gateTipTimer?: number;
-  private gateTipIndex = 0;
+  private gateSignInTips?: TipRotation;
+  private gateLoadingTips?: TipRotation;
   private gateEntryAttempt = 0;
   private gateEntryFrames: unknown[] = [];
   private readonly gateEntryKeyCapture = (event: KeyboardEvent): void => {
@@ -1021,10 +1067,7 @@ export class App {
     this.gateEntryAttempt++;
     this.gateEntryFrames = [];
     this.gateEntryProgress = 0;
-    window.clearInterval(this.gateTipTimer);
-    this.gateTipIndex = 0;
-    this.showEntryTip();
-    this.gateTipTimer = window.setInterval(() => { this.gateTipIndex++; this.showEntryTip(); }, 5_000);
+    this.startGateTips('loading');
     window.addEventListener('keydown', this.gateEntryKeyCapture, true);
     window.addEventListener('keyup', this.gateEntryKeyCapture, true);
     this.gatePreview?.beginEntry();
@@ -1038,11 +1081,30 @@ export class App {
     this.setGateEntryProgress(.1, this.language === 'zh-TW' ? '正在下載角色…' : 'LOADING THE CHARACTER…');
   }
 
-  private showEntryTip(): void {
+  private startGateTips(stage: 'sign-in' | 'loading'): void {
+    this.stopGateTips();
+    const count = entryTips(this.language, false).length;
+    if (stage === 'loading') this.gateLoadingTips = createTipRotation(stage, count);
+    else this.gateSignInTips ??= createTipRotation(stage, count);
+    if (!this.showGateTip(stage)) return;
+    this.gateTipTimer = window.setInterval(() => {
+      if (!this.showGateTip(stage, true)) this.stopGateTips();
+    }, 5_000);
+  }
+
+  private showGateTip(stage: 'sign-in' | 'loading', advance = false): boolean {
     const gate = this.gateEntryOverlay ?? this.root.querySelector<HTMLElement>('.gate--live');
-    const tip = gate?.querySelector<HTMLElement>('[data-gate-entry-tip]');
-    const tips = entryTips(this.language, window.matchMedia('(max-width: 800px), (pointer: coarse) and (max-width: 1000px)').matches);
-    if (tip) tip.textContent = tips[this.gateTipIndex % tips.length];
+    const tip = gate?.querySelector<HTMLElement>(stage === 'loading' ? '[data-gate-entry-tip]' : '[data-gate-signin-tip]');
+    if (!tip) return false;
+    const rotation = stage === 'loading' ? this.gateLoadingTips : this.gateSignInTips;
+    if (advance) rotation?.next();
+    const mobile = window.matchMedia('(max-width: 800px), (pointer: coarse) and (max-width: 1000px)').matches;
+    tip.textContent = entryTips(this.language, mobile)[rotation?.current ?? 0];
+    return true;
+  }
+
+  private stopGateTips(): void {
+    window.clearInterval(this.gateTipTimer); this.gateTipTimer = undefined;
   }
 
   private setGateEntryProgress(progress: number, label: string): void {
@@ -1130,7 +1192,7 @@ export class App {
     if (attempt !== this.gateEntryAttempt || !this.openingWorld) return;
     await this.waitForGateExit();
     if (attempt !== this.gateEntryAttempt || !this.openingWorld) return;
-    window.clearInterval(this.gateTipTimer); this.gateTipTimer = undefined;
+    this.stopGateTips();
     this.gateEntryOverlay?.remove();
     this.gateEntryOverlay = undefined;
     this.disposeGatePreview();
@@ -1143,7 +1205,7 @@ export class App {
   }
 
   private cancelGateEntry(): void {
-    window.clearInterval(this.gateTipTimer); this.gateTipTimer = undefined;
+    this.stopGateTips();
     this.gateEntryAttempt++;
     window.removeEventListener('keydown', this.gateEntryKeyCapture, true);
     window.removeEventListener('keyup', this.gateEntryKeyCapture, true);
@@ -1158,6 +1220,7 @@ export class App {
     gate?.querySelector('.gate__layout')?.removeAttribute('inert');
     const indicator = gate?.querySelector<HTMLElement>('[data-gate-entry]');
     if (indicator) indicator.hidden = true;
+    if (gate?.querySelector('#gate-form')) this.startGateTips('sign-in');
   }
 
   private mountGatePreview(): Promise<void> {
@@ -1415,6 +1478,8 @@ export class App {
   private async enterWorld(muted: boolean): Promise<void> {
     // Keep the loading/retry form visible until the world's code is usable.
     const { FestivalWorld } = await this.preloadWorldModule();
+    // Again here, for an entry that skipped the sign-in page or lost its first try.
+    const ambience = this.entryAudio.preloadWorldSounds();
     await this.gatePreview?.awaitEntryProgress(.45);
     this.setGateEntryProgress(.48, this.language === 'zh-TW' ? '正在準備角色與服裝…' : 'PREPARING CHARACTERS AND OUTFITS…');
     const { loadImportedAvatar } = await import('../world/ImportedAvatar');
@@ -2580,6 +2645,12 @@ export class App {
     await this.world.prepareForPlay(progress => this.setGateEntryProgress(.75 + progress * .14,
       this.language === 'zh-TW' ? (progress < .6 ? '正在準備場景資源…' : '正在準備畫面…')
         : (progress < .6 ? 'PREPARING WORLD ASSETS…' : 'PREPARING GRAPHICS…')));
+    // The sounds belong to the entrance, so nobody waits for them inside.
+    if (!this.entryAudio.worldSoundsReady()) {
+      let timer = 0;
+      await Promise.race([ambience, new Promise<void>((resolve) => { timer = window.setTimeout(resolve, AMBIENCE_ENTRY_WAIT_MS); })]);
+      window.clearTimeout(timer);
+    }
     this.world.start();
     this.setGateEntryProgress(.9, this.language === 'zh-TW' ? '正在準備入口…' : 'PREPARING THE ENTRANCE…');
     await this.completeGateEntry();
@@ -6294,16 +6365,22 @@ export class App {
             ${jukebox.tracks.map((track) => `<button type="button" data-jukebox-pick="${this.escapeAttribute(track.id)}">${this.escapeHtml(track.title)}</button>`).join('')}
           </div>`;
       }
-      case 'sound':
+      case 'sound': {
+        // Drawn from the audio itself: a fixed default here put every slider
+        // back to it whenever the panel was opened again.
+        const volumes = this.entryAudio.volumes();
         return `
-          <label class="range-field"><span>${this.language === 'zh-TW' ? '主音量' : 'MASTER'}</span><input data-volume="master" type="range" min="0" max="1" value="0.7" step="0.01" /></label>
-          <label class="range-field"><span>${this.language === 'zh-TW' ? '環境音' : 'ENVIRONMENT'}</span><input data-volume="ambient" type="range" min="0" max="1" value="0.28" step="0.01" /></label>
-          <label class="range-field"><span>${this.language === 'zh-TW' ? '放映音量' : 'SCREENING'}</span><input data-volume="screening" type="range" min="0" max="1" value="0.85" step="0.01" /></label>
+          <label class="range-field"><span>${this.language === 'zh-TW' ? '主音量' : 'MASTER'}</span><input data-volume="master" type="range" min="0" max="1" value="${volumes.master}" step="0.01" /></label>
+          <label class="range-field"><span>${this.language === 'zh-TW' ? '環境音' : 'ENVIRONMENT'}</span><input data-volume="ambient" type="range" min="0" max="1" value="${volumes.ambient}" step="0.01" /></label>
+          <label class="range-field"><span>${this.language === 'zh-TW' ? '介面音效' : 'UI SOUNDS'}</span><input data-volume="ui" type="range" min="0" max="1" value="${volumes.ui}" step="0.01" /></label>
+          <label class="range-field"><span>${this.language === 'zh-TW' ? '角色音效' : 'AVATAR SOUNDS'}</span><input data-volume="avatar" type="range" min="0" max="1" value="${volumes.avatar}" step="0.01" /></label>
+          <label class="range-field"><span>${this.language === 'zh-TW' ? '放映音量' : 'SCREENING'}</span><input data-volume="screening" type="range" min="0" max="1" value="${volumes.screening}" step="0.01" /></label>
           <label class="range-field"><span>${this.language === 'zh-TW' ? '點唱機' : 'JUKEBOX'}</span><input data-volume="jukebox" type="range" min="0" max="1" value="${this.jukeboxVolume}" step="0.01" /></label>
           <p class="panel-note">${this.language === 'zh-TW'
             ? '點唱機音量只影響你自己，不會改變別人聽到的。'
             : 'The jukebox slider is yours alone — it does not change what anybody else hears.'}</p>
           <button class="panel-button" data-mute="true">${this.audioMuted ? (this.language === 'zh-TW' ? '開啟聲音' : 'UNMUTE') : (this.language === 'zh-TW' ? '靜音' : 'MUTE')}</button>`;
+      }
       case 'graphics': {
         const zh = this.language === 'zh-TW';
         return `
@@ -6602,8 +6679,11 @@ export class App {
     panel.querySelectorAll<HTMLInputElement>('[data-volume]').forEach((input) => {
       input.addEventListener('input', () => {
         const value = Number(input.value);
-        if (input.dataset.volume === 'master') this.world?.audio.setMasterVolume(value);
-        if (input.dataset.volume === 'ambient') this.world?.audio.setAmbientVolume(value);
+        const stored = (key: string) => { try { window.localStorage.setItem(key, String(value)); } catch { /* private mode */ } };
+        if (input.dataset.volume === 'master') { this.entryAudio.setMasterVolume(value); stored(AUDIO_VOLUME_KEYS.master); }
+        if (input.dataset.volume === 'ambient') { this.entryAudio.setAmbientVolume(value); stored(AUDIO_VOLUME_KEYS.ambient); }
+        if (input.dataset.volume === 'ui') { this.entryAudio.setInterfaceVolume(value); stored(AUDIO_VOLUME_KEYS.ui); }
+        if (input.dataset.volume === 'avatar') { this.entryAudio.setAvatarVolume(value); stored(AUDIO_VOLUME_KEYS.avatar); }
         if (input.dataset.volume === 'jukebox') {
           this.jukeboxVolume = value;
           try { window.localStorage.setItem(JUKEBOX_VOLUME_KEY, String(value)); } catch { /* private mode */ }

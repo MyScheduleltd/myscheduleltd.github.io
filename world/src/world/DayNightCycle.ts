@@ -148,6 +148,20 @@ const phaseAt = (minute: number): { phase: DayPhase; start: number; end: number 
   return { phase: 'night', start: 35, end: 60 };
 };
 
+/**
+ * How far into night the hour is, for the sound beds: 0 by day, 1 by night.
+ * It follows the light — night takes over through sunset and blue hour and
+ * hands back through dawn (owner, 2026-10-17).
+ */
+export function nightAmountAt(minute: number): number {
+  const m = ((minute % 60) + 60) % 60;
+  const ease = (t: number) => { const c = Math.min(1, Math.max(0, t)); return c * c * (3 - 2 * c); };
+  if (m < 5) return 1 - ease(m / 5);
+  if (m < 25) return 0;
+  if (m < 35) return ease((m - 25) / 10);
+  return 1;
+}
+
 export class DayNightCycle {
   readonly atmosphere: CoastalSky;
   readonly directionalLight = new THREE.DirectionalLight(0xffffff, 1);

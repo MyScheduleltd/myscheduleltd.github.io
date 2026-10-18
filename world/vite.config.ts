@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { rm } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 
 /**
@@ -53,7 +55,7 @@ const contentSecurityPolicy = (service: string): Plugin => ({
 });
 
 /**
- * The SHA-256 of every model and picture the world fetches, published on
+ * The SHA-256 of every model, picture and sound the world fetches, published on
  * Pages beside them as `assets/asset-integrity.json`.
  *
  * Those files are fetched from jsDelivr's copy of this repository first
@@ -66,7 +68,7 @@ const assetIntegrity = (): Plugin => ({
   generateBundle(_options, bundle) {
     const hashes: Record<string, string> = {};
     for (const [fileName, item] of Object.entries(bundle)) {
-      if (item.type !== 'asset' || !/\.(glb|png|jpe?g|webp)$/i.test(fileName)) continue;
+      if (item.type !== 'asset' || !/\.(glb|png|jpe?g|webp|mp3|wav)$/i.test(fileName)) continue;
       const bytes = typeof item.source === 'string' ? Buffer.from(item.source) : Buffer.from(item.source);
       hashes[fileName.split('/').pop()!] = `sha256-${createHash('sha256').update(bytes).digest('base64')}`;
     }
@@ -74,25 +76,35 @@ const assetIntegrity = (): Plugin => ({
   },
 });
 
+/**
+ * The review pages are loopback tools and no longer ship (owner, 2026-10-17).
+ * Vite copies `public/` wholesale, so their fixtures under `public/review` are
+ * taken back out of the build here; the dev server still serves them.
+ */
+const withoutReviewFixtures = (): Plugin => ({
+  name: 'festival-without-review-fixtures',
+  apply: 'build',
+  async closeBundle() {
+    await rm(fileURLToPath(new URL('./dist/review', import.meta.url)), { recursive: true, force: true });
+  },
+});
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     base: './',
-    plugins: [contentSecurityPolicy(env.VITE_FESTIVAL_SERVER_URL ?? ''), assetIntegrity()],
+    plugins: [contentSecurityPolicy(env.VITE_FESTIVAL_SERVER_URL ?? ''), assetIntegrity(), withoutReviewFixtures()],
     build: {
       outDir: 'dist',
       emptyOutDir: true,
       sourcemap: false,
       rollupOptions: {
-        // The review pages go out with the PS2 preview, so the owner can see the
-        // avatars, the band and the prompts beside the world (2026-09-30).
+        // The world only. The review pages (rebuild, avatar, webcam, band,
+        // location) went out with the PS2 preview from 2026-09-30; the owner
+        // took them off the public site on 2026-10-17. They still open from
+        // the dev server.
         input: {
           main: 'index.html',
-          rebuild: 'rebuild-review.html',
-          avatar: 'avatar-review.html',
-          webcam: 'webcam-review.html',
-          band: 'band-review.html',
-          location: 'location-review.html',
         },
         output: {
           manualChunks: {

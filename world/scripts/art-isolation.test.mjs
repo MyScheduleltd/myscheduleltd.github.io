@@ -25,11 +25,9 @@ test('the publication entry point refuses unapproved channels and unspecified pu
   }
 });
 
-test('approved public beta and PS2 routes open without changing production', () => {
-  assert.equal(canOpenArtPreview('myscheduleltd.com','?era=ps2','/beta/ps2/'),true);
-  for(const path of ['/','/beta/ps2-evil/'])assert.equal(canOpenArtPreview('myscheduleltd.com','?era=ps2',path),false);
-  assert.equal(canOpenArtPreview('myscheduleltd.com','','/beta/ps2/'),true);
-  assert.equal(canOpenArtPreview('preview.example.com','?era=ps2','/beta/ps2/'),false);
+test('only the public beta route opens; the retired PS2 channel and lookalikes do not', () => {
+  for(const path of ['/','/beta/ps2/','/beta/ps2/index.html','/beta/ps2-evil/'])assert.equal(canOpenArtPreview('myscheduleltd.com','?era=ps2',path),false);
+  assert.equal(canOpenArtPreview('preview.example.com','?era=ps2','/beta/'),false);
 });
 
 test('ordinary beta is approved with or without era query', () => {
