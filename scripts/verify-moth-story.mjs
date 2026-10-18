@@ -32,12 +32,21 @@ const open = async (context, url = staff) => {
   return {page, errors};
 };
 const fighting = (page, label = '') => page.waitForFunction(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm && !bobbyGame.level1OfficeRhythm.graphicsLoading
-  && !(bobbyGame.stageCountdown > 0) && bobbyGame.level1OfficeRhythm.tutorial?.mode === 'done' && bobbyGame.songTime > 0, undefined, {timeout: 90000}).catch(async error => { throw new Error(label + ' ' + JSON.stringify(await page.evaluate(() => ({state: bobbyGame.state, stage: bobbyGame.currentStageId, rhythm: Boolean(bobbyGame.level1OfficeRhythm), mode: bobbyGame.level1OfficeRhythm?.tutorial?.mode, loading: bobbyGame.level1OfficeRhythm?.graphicsLoading, countdown: bobbyGame.stageCountdown, songTime: bobbyGame.songTime})))); });
+  && !(bobbyGame.stageCountdown > 0) && bobbyGame.level1OfficeRhythm.tutorial?.mode === 'done' && bobbyGame.songTime > 0, undefined, {timeout: 180000}).catch(async error => { throw new Error(label + ' ' + JSON.stringify(await page.evaluate(() => ({state: bobbyGame.state, stage: bobbyGame.currentStageId, rhythm: Boolean(bobbyGame.level1OfficeRhythm), mode: bobbyGame.level1OfficeRhythm?.tutorial?.mode, loading: bobbyGame.level1OfficeRhythm?.graphicsLoading, countdown: bobbyGame.stageCountdown, songTime: bobbyGame.songTime})))); });
 
-// Story fights open with their scene's dialogue: O through it.
+// Story fights open with their scene's dialogue: O through it. On the live site a
+// chapter can take a while to load, so presses wait for the loading screen to end
+// (an O there would be lost) and the loading time is noted.
+const loadingSeconds = [];
 const throughDialogue = async page => {
-  for (let i = 0; i < 80 && !(await page.evaluate(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm)); i++) {
-    await page.keyboard.press('KeyO');
+  const deadline = Date.now() + 180000;
+  let loadingSince = null;
+  for (let presses = 0; presses < 80 && Date.now() < deadline;) {
+    const state = await page.evaluate(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm ? 'fight' : bobbyGame.state);
+    if (state === 'loading') loadingSince ??= Date.now();
+    else if (loadingSince) { loadingSeconds.push(Math.round((Date.now() - loadingSince) / 100) / 10); loadingSince = null; }
+    if (state === 'fight') return;
+    if (state !== 'loading') { await page.keyboard.press('KeyO'); presses++; }
     await page.waitForTimeout(300);
   }
 };
@@ -278,5 +287,25 @@ for (const phone of [false, true]) {
   console.log('staff tools PASS', JSON.stringify({afterTalk, straight, preview}));
   await context.close();
 }
+// 8. The hidden levels end: their charts run to the very end of their songs,
+// where the fight's clock (the playhead less the output delay) never arrives.
+{
+  const context = await browser.newContext({viewport: {width: 1280, height: 800}});
+  await stubScoreboard(context);
+  const {page, errors} = await open(context);
+  const ends = {};
+  for (const stage of ['secret-xiaosi', 'secret-getdown']) {
+    await page.evaluate(stage => { const g = bobbyGame; g.returnToTitle(); if (!g.progress) g.progress = g.createDefaultProgress(); g.progress.flags.debugSecretLevelsUnlocked = true; g.startStage(stage); }, stage);
+    await page.waitForFunction(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm && !bobbyGame.level1OfficeRhythm.graphicsLoading && bobbyGame.songTime > 1, undefined, {timeout: 180000});
+    const length = await page.evaluate(() => { const track = bobbyGame.getActiveLevel1OfficeRhythmAudio(); track.currentTime = track.duration - 3; return {track: track.duration, chart: bobbyGame.getActiveRhythmDuration()}; });
+    await page.waitForFunction(() => bobbyGame.state === 'level1OfficeResults', undefined, {timeout: 20000})
+      .catch(async () => { throw new Error(stage + ' never finished ' + JSON.stringify(await page.evaluate(() => ({state: bobbyGame.state, songTime: bobbyGame.songTime, ended: bobbyGame.getActiveLevel1OfficeRhythmAudio()?.ended})))); });
+    ends[stage] = length;
+  }
+  assert.deepEqual(errors, []);
+  console.log('hidden levels PASS', JSON.stringify(ends));
+  await context.close();
+}
 await browser.close();
-console.log('PASS story: kept on the device, 繼續 mid-fight, level 3 and 4 returns, hearts every 10, deck long press, level 4 chest, bar at the top, staff chest previews');
+console.log('loading screens (s)', JSON.stringify(loadingSeconds));
+console.log('PASS story: kept on the device, 繼續 mid-fight, level 3 and 4 returns, hearts every 10, deck long press, level 4 chest, bar at the top, staff chest previews, hidden levels end');

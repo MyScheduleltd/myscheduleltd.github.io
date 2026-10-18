@@ -23,7 +23,7 @@ import assert from 'node:assert/strict';
 
 export const MOTH_BUTTON_SHEET = {
   release: 'assets/ui/mobile_moth_buttons_20261002/sheet.webp?v=moth-gpt-20261002c',
-  current: 'assets/ui/mobile_moth_buttons_20261017/sheet.webp?v=snes-20261017a'
+  current: 'assets/ui/mobile_moth_buttons_20261017/sheet.webp?v=snes-20261018a'
 };
 
 export const RETIRED_DECK_ART = [

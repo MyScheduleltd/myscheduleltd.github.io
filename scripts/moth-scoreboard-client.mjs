@@ -116,7 +116,12 @@ export const SCOREBOARD_METHODS = String.raw`
     const run = this.progress?.storyRun;
     const result = final || run?.boardShown ? this.storyRunResult(run) : null;
     const board = { final, onClose, result, mode: result?.mode || (this.difficultyId === 'shoot' ? 'shoot' : 'chill'),
-      entries: {}, status: { chill: 'loading', shoot: 'loading' }, draftId: result?.run.posted?.id || '', message: '', posting: false };
+      entries: {}, status: { chill: 'loading', shoot: 'loading' }, draftId: result?.run.posted?.id || '', message: '', posting: false,
+      // The final board opens on the press that ends the wake-up scene. Players
+      // tap on through it, and a phone's tap also clicks whatever comes up under
+      // the finger (its buttons sit over the deck's): owner, 2026-10-18, it
+      // closed before anyone saw it. For a second it takes no presses at all.
+      quietUntil: final ? performance.now() + 1000 : 0 };
     this.scoreboard = board;
     this.releaseHeldInputs?.();
     const root = document.createElement('div');
@@ -125,6 +130,11 @@ export const SCOREBOARD_METHODS = String.raw`
     root.setAttribute('aria-modal', 'true');
     root.setAttribute('aria-labelledby', 'moth-board-title');
     for (const type of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'click', 'wheel']) root.addEventListener(type, event => event.stopPropagation(), { passive: true });
+    for (const type of ['mousedown', 'click']) root.addEventListener(type, event => {
+      if (performance.now() >= board.quietUntil) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }, { capture: true });
     // Its buttons sound like the menus (moth-menu-sfx.mjs): the tabs tick, the
     // rest click. Enter presses the focused button, so it sounds the same.
     root.addEventListener('click', event => {
@@ -134,7 +144,10 @@ export const SCOREBOARD_METHODS = String.raw`
     document.body.append(root);
     board.root = root;
     this.renderScoreboard();
-    root.querySelector('[data-board-close]')?.focus({ preventScroll: true });
+    // The final board starts with nothing selected, so no single press closes
+    // it: O or Enter first selects the ID box (or the close button).
+    if (!final) root.querySelector('[data-board-close]')?.focus({ preventScroll: true });
+    else document.activeElement?.blur?.();
     for (const mode of ['chill', 'shoot']) this.fetchScoreboard(mode);
     this.prepareScoreCard();
   }
@@ -278,6 +291,7 @@ export const SCOREBOARD_METHODS = String.raw`
 
   handleScoreboardKey(event) {
     const board = this.scoreboard;
+    if (performance.now() < board.quietUntil) return event.preventDefault();
     const typing = event.target?.tagName === 'INPUT';
     const code = event.code;
     if (typing) {

@@ -8,7 +8,7 @@ sheet (columns M, O, T, H; a resting row over a pressed one), whose buttons are
 grey with a red base: each grey shade takes the button's colour at the same
 lightness, and the base a darker shade of it, so every button is one colour
 of plastic. The dark outline is left alone, and the letters stay
-cream, apart from T's, which is ink so that it reads on yellow; the green
+cream, T's too (owner, 2026-10-18: an ink T looked out of place); the green
 glint becomes white. The colours are
 MOTH_NOTE_COLOURS in scripts/moth-fight-hud.mjs, the notes' own.
 
@@ -27,7 +27,6 @@ from PIL import Image
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE = 'assets/ui/mobile_moth_buttons_20261002/sheet.webp'
 OUT = 'assets/ui/mobile_moth_buttons_20261017/sheet.webp'
-INK = (42, 34, 16)
 
 
 def note_colours():
@@ -94,9 +93,6 @@ def main():
         # The glint, a white shine rather than the old green one.
         shine = 255 - (255 - luma[..., None] * 255) * 0.5
         out = np.where((here & glint)[..., None], np.repeat(shine, 3, axis=-1), out)
-        if name == 'T':
-            ink = np.array(INK, dtype=np.float64) * (luma / 0.9)[..., None]
-            out = np.where((here & letter)[..., None], np.clip(ink, 0, 255), out)
     result = np.dstack([np.round(out), alpha]).astype(np.uint8)
     path = os.path.join(ROOT, 'moth-asset-additions', OUT)
     os.makedirs(os.path.dirname(path), exist_ok=True)

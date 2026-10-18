@@ -85,10 +85,31 @@ for (const [label, viewport, device] of [['phone', {width: 390, height: 844}, 'p
   // Others are already on the board (11 posted; the top 10 remain).
   if (label === 'phone') { await seed('shoot', 11, 0.9); await seed('chill', 4, 0.8); }
 
-  // Before the credits: the board, the run's total, and its standing.
-  await page.evaluate(() => bobbyGame.startFinaleEnding());
+  // Before the credits: the board, the run's total, and its standing. It opens on
+  // the press that ends the wake-up scene, and players press on: the presses
+  // straight after, and a tap on its own close button (a phone's tap clicks what
+  // comes up under the finger), must not close it.
+  await page.evaluate(() => bobbyGame.startLevel6WakeUp());
+  await page.waitForFunction(() => bobbyGame.state === 'level6WakeUp' && bobbyGame.level6WakeTimer >= 5.6, undefined, {timeout: 60000});
+  for (let i = 0; i < 12 && !(await page.evaluate(() => Boolean(bobbyGame.scoreboard))); i++) {
+    if (label === 'phone') await page.locator('.mobile-moth__button--o').tap();
+    else await page.keyboard.press('KeyO');
+    await page.waitForTimeout(150);
+  }
   await page.locator('.moth-board').waitFor();
-  assert.notEqual(await page.evaluate(() => bobbyGame.state), 'finaleEnding', 'The credits wait for the board');
+  const close = await page.locator('[data-board-close]').boundingBox();
+  for (let i = 0; i < 3; i++) {
+    await page.keyboard.press(['KeyO', 'Enter', 'Space'][i]);
+    if (label === 'phone') await page.touchscreen.tap(close.x + close.width / 2, close.y + close.height / 2);
+    else await page.mouse.click(close.x + close.width / 2, close.y + close.height / 2);
+  }
+  const held = await page.evaluate(() => ({board: Boolean(document.querySelector('.moth-board')), state: bobbyGame.state, focused: document.activeElement?.dataset?.focusKey || document.activeElement?.tagName}));
+  assert.equal(held.board, true, 'The board stays through the presses that follow it ' + JSON.stringify(held));
+  assert.notEqual(held.state, 'finaleEnding', 'The credits wait for the board');
+  // After its first second, one O selects the ID box rather than closing it.
+  await page.waitForFunction(() => performance.now() >= bobbyGame.scoreboard.quietUntil);
+  await page.keyboard.press('KeyO');
+  assert.deepEqual(await page.evaluate(() => ({board: Boolean(bobbyGame.scoreboard), focused: document.activeElement?.tagName})), {board: true, focused: 'INPUT'}, 'One O selects the ID box');
   await page.waitForFunction(() => !document.querySelector('.moth-board-list .state'), undefined, {timeout: 15000});
   assert.equal(await page.locator('.moth-board-list li').count(), 10, 'The top 10');
   const total = Object.values(mine).reduce((a, b) => a + b);
@@ -145,6 +166,7 @@ for (const [label, viewport, device] of [['phone', {width: 390, height: 844}, 'p
   // A run that never reached the server for its ticket can't be posted, and says why.
   await page.evaluate(scores => { bobbyGame.progress.storyRun = {id: 'offline-run', difficulty: 'chill', scores, startedAt: Date.now(), ticket: null}; bobbyGame.startFinaleEnding(); }, runScores('chill', 0.5));
   await page.locator('.moth-board').waitFor();
+  await page.waitForFunction(() => performance.now() >= bobbyGame.scoreboard.quietUntil);
   assert.match(await page.locator('.moth-board-run p').innerText(), /could not reach the scoreboard|開始時沒有連上排行榜/);
   assert.equal(await page.locator('.moth-board-post input').count(), 0, 'No ID entry for an unverified run');
   await page.locator('[data-board-close]').click();

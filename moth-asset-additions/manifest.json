@@ -16,8 +16,8 @@
       "trimDb": 6
     },
     "assets/ui/mobile_moth_buttons_20261017/sheet.webp": {
-      "sha256": "4f83b554ea7e3a6d49bf0423471269bce72d10410ffde7a7b5cda1008063d0c7",
-      "bytes": 267244,
+      "sha256": "c7c2ac1ccf90c6776a79fab9ffa9f77e64cf4d5e1eebdc6560992993b18f2653",
+      "bytes": 267680,
       "source": "assets/ui/mobile_moth_buttons_20261002/sheet.webp (the release's grey sheet)",
       "use": "the touch deck's M, O, T and H buttons"
     },
