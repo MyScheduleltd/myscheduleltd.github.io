@@ -466,7 +466,7 @@ const HIT_SFX = {
   "arcade-miss": "assets/sfx/arcade-miss.wav"
 };
 const HIT_SFX_GAIN = 0.95;
-const MEME_CHEST = {"sheet":"assets/sprites/level4_meme_chest/sheet.webp","picture":"assets/memes/level4-meme.png","x":540,"size":128};
+const MEME_CHEST = {"sheet":"assets/sprites/level4_meme_chest/sheet.webp","picture":"assets/memes/level4-meme.png","x":450,"y":655,"size":67};
 const MENU_SFX = {"menu-tick":"assets/sfx/menu/menu-tick.wav","menu-click":"assets/sfx/menu/menu-click.wav"};
 // What an input asks for: arrows and the d-pad move a selection, O / Enter /
 // SPACE confirm, H / Esc go back.
@@ -3828,8 +3828,10 @@ for (const level of this.config.secretLevels || []) {
     }
   }
 
-  // Closed, with a glint on the lock now and then; lifting; open.
-  drawLevel4MemeChest(side) {
+  // Closed, with a glint on the lock now and then; lifting; open. A soft
+  // shadow sets it on the floor.
+  drawLevel4MemeChest() {
+    this.getMemePicture();
     const sheet = this.memeChestSheet;
     if (!sheet) return;
     const chest = this.memeChest || { state: "closed", at: 0 };
@@ -3837,10 +3839,30 @@ for (const level of this.config.secretLevels || []) {
     const frame = chest.state === "open" ? 3
       : chest.state === "opening" ? (time - chest.at < 0.22 ? 2 : 3)
       : time % 1.6 < 0.2 ? 1 : 0;
-    // Its front turned to Dr. Beauty, whichever side he is on.
-    const facing = (this.sewerPlayer?.x ?? MEME_CHEST.x + 1) >= MEME_CHEST.x ? 1 : -1;
-    drawBundleFrame(this.ctx, sheet, { frameWidth: 256, frameHeight: 256, cols: 2 }, frame, MEME_CHEST.x, side.floorY ?? 650,
-      MEME_CHEST.size, MEME_CHEST.size, { x: 0.5, y: 0.985 }, { facing });
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.translate(MEME_CHEST.x, MEME_CHEST.y);
+    ctx.scale(1, 0.16);
+    const shadow = ctx.createRadialGradient(0, 0, 0, 0, 0, MEME_CHEST.size * 0.5);
+    shadow.addColorStop(0, "rgba(6, 4, 2, 0.55)");
+    shadow.addColorStop(1, "rgba(6, 4, 2, 0)");
+    ctx.fillStyle = shadow;
+    ctx.fillRect(-MEME_CHEST.size * 0.5, -MEME_CHEST.size * 0.5, MEME_CHEST.size, MEME_CHEST.size);
+    ctx.restore();
+    drawBundleFrame(ctx, sheet, { frameWidth: 256, frameHeight: 256, cols: 2 }, frame, MEME_CHEST.x, MEME_CHEST.y,
+      MEME_CHEST.size, MEME_CHEST.size, { x: 0.5, y: 252 / 256 });
+  }
+
+  // The picture, read once through the hash-checked mirror like the game's
+  // other files (this site's copy if that fails), from when the chest comes
+  // into view: Pages is slow from Taiwan. One copy is shown and shared, as
+  // iPhone shares only a file already in hand when 儲存 is tapped.
+  getMemePicture() {
+    this.memePicture ||= fetchGameAsset(MEME_CHEST.picture).then(({ data, type }) => {
+      const file = new File([data], "dr-beauty-meme.png", { type: type.startsWith("image/") ? type : "image/png" });
+      return { file, url: URL.createObjectURL(file) };
+    }).catch(() => null);
+    return this.memePicture;
   }
 
   showMeme() {
@@ -3850,7 +3872,7 @@ for (const level of this.config.secretLevels || []) {
     root.setAttribute("role", "dialog");
     root.setAttribute("aria-modal", "true");
     const phone = this.usesTouchControls();
-    root.innerHTML = `<section><h2>${this.tr("BONITA'S CHEST", "BONITA 的寶箱")}</h2><img alt="" src="${MEME_CHEST.picture}">`
+    root.innerHTML = `<section><h2>${this.tr("BONITA'S CHEST", "BONITA 的寶箱")}</h2><img alt="">`
       + (phone ? `<p>${this.tr("Or press and hold the picture to save it.", "也可以長按圖片儲存。")}</p>` : "")
       + `<div class="moth-meme-actions"><button type="button" data-meme-save>${this.tr("SAVE", "儲存")}</button><button type="button" data-meme-close>${this.tr("CLOSE", "關閉")}</button></div></section>`;
     // Its taps are its own, as the scoreboard's are.
@@ -3859,9 +3881,11 @@ for (const level of this.config.secretLevels || []) {
     root.querySelector("[data-meme-close]").addEventListener("click", () => this.closeMeme());
     document.body.append(root);
     const view = this.memeView = { root, file: null };
-    // Read ahead of the tap: iPhone shares only from inside the tap itself.
-    fetch(MEME_CHEST.picture).then(response => response.blob())
-      .then(blob => { view.file = new File([blob], "dr-beauty-meme.png", { type: blob.type || "image/png" }); }).catch(() => {});
+    const image = root.querySelector("img");
+    this.getMemePicture().then(picture => {
+      view.file = picture?.file || null;
+      image.src = picture?.url || MEME_CHEST.picture;
+    });
     root.querySelector("[data-meme-save]").focus({ preventScroll: true });
     this.releaseHeldInputs?.();
     this.updateMobileControls(true);
@@ -11051,7 +11075,7 @@ for (const level of this.config.secretLevels || []) {
       target.fillStyle = "#f7f2de";
       target.textAlign = "center";
       target.textBaseline = "middle";
-      drawFittedText(target, String(prompt.text), PORTRAIT_FIGHT.width / 2, y + h / 2 + 1, w - 28, 24, 900, 13);
+      drawFittedText(target, String(prompt.text), x + w / 2, y + h / 2 + 1, w - 28, 24, 900, 13);
       target.restore();
     }
   }
@@ -23006,7 +23030,7 @@ for (const level of this.config.secretLevels || []) {
       });
     }
     if (this.level4Rail === "lower" && this.hasLevel4MemeChest()) {
-      drawables.push({ y: (side.floorY ?? 650) - 1, draw: () => this.drawLevel4MemeChest(side) });
+      drawables.push({ y: (side.floorY ?? 650) - 1, draw: () => this.drawLevel4MemeChest() });
     }
     drawables.push({
       y: bobby.y,

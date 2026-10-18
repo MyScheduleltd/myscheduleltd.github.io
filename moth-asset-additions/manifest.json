@@ -22,14 +22,14 @@
       "use": "the touch deck's M, O, T and H buttons"
     },
     "assets/sprites/level4_meme_chest/sheet.webp": {
-      "sha256": "a7223526b6ea279196e17f79f5b18d84dd9243b5866a3ad8af25196054b6486f",
-      "bytes": 213964,
-      "source": "generated with Nano Banana 2 from the level 4 basement and the release's old wall chest (.qa/moth/generated/level4-meme-chest-20261018.png)",
+      "sha256": "2bce014f11a181ae033c21a586155d4c79d1d0c12fa2bfe00b9be326a226dd08",
+      "bytes": 135882,
+      "source": "generated with Nano Banana 2 from the level 4 basement and a close-up of its crates, flat and front-on (.qa/moth/generated/level4-meme-chest-flat-20261018.png)",
       "use": "level 4's basement chest"
     },
     "assets/memes/level4-meme.png": {
-      "sha256": "7d0fbd1a93d6e034c3fb98f2f467e5b29cc6595b8aceaf329c145a7ad8668e36",
-      "bytes": 133286,
+      "sha256": "48b09c3c417068dba9e3ca28492bea58983229f9432edd8bdcfe5c14512b9ed6",
+      "bytes": 102624,
       "source": "stand-in card until the owner's meme arrives",
       "use": "the picture in level 4's basement chest"
     }
