@@ -312,6 +312,23 @@ export class DayNightCycle {
     }
   }
 
+  /**
+   * Both the sun and the moon are always shadow casters (with shadows on);
+   * only drawing the shadow map stops while one is too faint to need it.
+   *
+   * Turning `castShadow` on and off with the light changed how many shadowed
+   * lights there were, which is part of every lit shader's key: at each sunrise
+   * and sunset, and on the first frame after the loading warm-up, every lit
+   * material in the world recompiled — seconds of frozen picture in Safari
+   * (WebKit probe, 2026-10-18). A light that has set has a colour of exactly
+   * zero, and the light loop skips it whole, shadow lookup included
+   * (LightLoop.ts), so the constant count costs nothing per pixel.
+   */
+  private castsShadowWhileLit(light: THREE.DirectionalLight): void {
+    light.castShadow = this.shadowsEnabled;
+    light.shadow.autoUpdate = this.shadowsEnabled && light.intensity > 0.12;
+  }
+
   getState(): DayNightState {
     return this.state;
   }
@@ -419,7 +436,7 @@ export class DayNightCycle {
       ? THREE.MathUtils.lerp(0.82, 0.42, visibleSunElevation)
       : 0;
     this.directionalLight.intensity = sunIntensity * sunAboveHorizon;
-    this.directionalLight.castShadow = this.shadowsEnabled && this.directionalLight.intensity > 0.12;
+    this.castsShadowWhileLit(this.directionalLight);
     this.directionalLight.position.copy(sunPosition).multiplyScalar(0.48);
     this.directionalLight.target.position.set(0, 0, -18);
 
@@ -442,7 +459,7 @@ export class DayNightCycle {
       ? THREE.MathUtils.lerp(0.76, 0.42, visibleMoonElevation)
       : 0;
     this.moonLight.intensity = moonIntensity * moonAboveHorizon;
-    this.moonLight.castShadow = this.shadowsEnabled && this.moonLight.intensity > 0.12;
+    this.castsShadowWhileLit(this.moonLight);
     this.moonLight.position.copy(moonPosition).multiplyScalar(0.5);
     this.moonLight.target.position.set(0, 0, -22);
 

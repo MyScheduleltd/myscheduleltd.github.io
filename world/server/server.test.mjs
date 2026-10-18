@@ -756,6 +756,21 @@ test('MENTOR pickup is exclusive and shared while STAFF control remains attached
   assert.equal(feedingVisitor.presence.moving, true);
   assert.equal(feedingVisitor.presence.gesture, 'feed');
 
+  // The tenth drink's collapse is relayed so others see the body go down; a
+  // gesture the service does not know is still dropped.
+  for (const [gesture, expected] of [['passout', 'passout'], ['levitate', undefined]]) {
+    const sent = await fetch(`${baseUrl}/api/presence`, {
+      method: 'POST',
+      headers: auth(carrier),
+      body: JSON.stringify({ x: 0, z: 0, rotation: 0, location: 'MY SQUARE', state: 'walking', moving: false, venue: 'shore', gesture }),
+    });
+    assert.equal(sent.status, 202);
+    const relayed = await (await fetch(`${baseUrl}/api/admin/state`, {
+      headers: { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173' },
+    })).json();
+    assert.equal(relayed.visitors.find((visitor) => visitor.id === carrier.id).presence.gesture, expected, gesture);
+  }
+
   const pickedUp = await fetch(`${baseUrl}/api/mentor/pick-up`, {
     method: 'POST',
     headers: auth(carrier),

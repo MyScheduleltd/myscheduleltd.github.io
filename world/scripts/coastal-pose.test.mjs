@@ -219,6 +219,83 @@ test('consuming a drink retains its visible cup through the sip and removes it a
   assert.equal(world.carriedProp.visible,false,'the consumed cup disappears after the sip');
 });
 
+/** Runs `body` with performance.now() pinned to a clock the test moves. */
+function onTheClock(body){
+  const real=performance.now;let now=1_000_000;
+  Object.defineProperty(performance,'now',{value:()=>now,configurable:true});
+  try{return body({advance:(ms)=>{now+=ms;},at:()=>now});}
+  finally{Object.defineProperty(performance,'now',{value:real,configurable:true});}
+}
+function drinkingWorld(){
+  const {world,root,rig}=carryingWorld();
+  Object.assign(world,{clock:new THREE.Clock(),camera:new THREE.PerspectiveCamera(),cameraOrbit:{follow:{yaw:0},perspective:{yaw:0}},
+    knockback:new THREE.Vector3(),moveVector:new THREE.Vector3(),playerGestureUntil:0,stumbleUntil:0,xrActive:false,xrSimulated:false});
+  const actions=[];world.onAction=(action)=>actions.push(action);
+  const drink=()=>{world.carriedItem='DRINK';world.drinkUntil=0;world.drinkInHand();};
+  return {world,root,rig,actions,drink};
+}
+
+test('each drink takes the attendee further, and they wear off two minutes after the last, one every two minutes',()=>onTheClock(({advance})=>{
+  const {world,drink}=drinkingWorld();
+  for(let n=1;n<=4;n++){drink();advance(10_000);}
+  assert.equal(world.drinkLevel(),4);
+  assert.ok(Math.abs(world.drunkenness()-4/9)<1e-9,'nine drinks is all the way');
+  // Ten seconds after the last drink now.
+  advance(100_000);assert.equal(world.drinkLevel(),4,'held for two minutes after the last drink');
+  advance(70_000);assert.ok(Math.abs(world.drinkLevel()-3.5)<1e-9,'then wearing off, a drink every two minutes');
+  drink();assert.equal(world.drinks,5,'a half-gone drink still counts');
+  advance(120_000+8*120_000);assert.equal(world.drinkLevel(),0,'sober again in the end');
+}));
+
+test('the tenth drink puts the body on the floor, then it wakes at the temple with a hangover',()=>onTheClock(({advance})=>{
+  const {world,root,rig,actions,drink}=drinkingWorld();
+  for(let n=1;n<=9;n++){drink();advance(2_000);}
+  assert.ok(!world.passOutAt,'nine is not enough');
+  drink();
+  assert.equal(actions.at(-1).drinks,10);
+  advance(1_000);assert.equal(world.updatePassOut(),false,'the sip finishes first');
+  advance(900);assert.equal(world.updatePassOut(),true,'then down');
+  assert.equal(actions.at(-1).type,'passedOut');
+  assert.equal(world.playerGesture,'passout');
+  const before=root.position.clone();
+  world.movePlayer(0,-1,5);world.jump();
+  assert.ok(root.position.distanceTo(before)<1e-9,'nothing moves a body on the floor');
+  assert.equal(world.airborne,undefined);
+  advance(2_700);assert.equal(world.updatePassOut(),false,'up again');
+  assert.ok(root.position.x>60,'at the temple');
+  assert.equal(world.drinks,0);
+  assert.ok(Math.abs(world.drinkLevel()-4)<0.01,'waking is not sobering');
+  advance(10_000);assert.ok(Math.abs(world.drinkLevel()-2)<0.01);
+  advance(10_001);assert.equal(world.drinkLevel(),0,'twenty seconds of it');
+}));
+
+test('the passed-out body lies on the floor, and stands normally again afterwards',()=>{
+  const {world,root,rig}=drinkingWorld();
+  root.position.set(0,.28,0);
+  const head=()=>rig.head.getWorldPosition(new THREE.Vector3());
+  world.animateRig(rig,0,.025);root.updateWorldMatrix(true,true);
+  const standing=head().y;
+  world.animateRig(rig,0,.025,'passout',false,1);root.updateWorldMatrix(true,true);
+  const lying=head().y;
+  assert.ok(standing-lying>1,'the head comes down to the floor');
+  for(const part of [rig.head,rig.torso,rig.leftLeg,rig.rightLeg,rig.leftArm,rig.rightArm])
+    assert.ok(part.getWorldPosition(new THREE.Vector3()).y>=.28+.12,'resting on it, not through it');
+  world.animateRig(rig,0,.025);root.updateWorldMatrix(true,true);
+  assert.ok(Math.abs(head().y-standing)<1e-6,'and nothing of the fall is left behind');
+});
+
+test('wasted, the walk weaves but stays steerable; tipsy and in a headset it does not',()=>onTheClock(({advance})=>{
+  const {world,drink}=drinkingWorld();
+  world.clock.elapsedTime=1.2;
+  for(let n=1;n<=5;n++)drink();
+  assert.deepEqual(world.drunkenSteer(0,-1),[0,-1],'five drinks leaves the walk alone');
+  for(let n=6;n<=9;n++)drink();
+  const [x,z]=world.drunkenSteer(0,-1);
+  assert.ok(Math.abs(Math.hypot(x,z)-1)<1e-9,'the same speed');
+  assert.ok(Math.abs(x)>.05&&z<-.8,'drifting off the line, still forwards');
+  world.xrActive=true;assert.deepEqual(world.drunkenSteer(0,-1),[0,-1],'never in a headset');
+}));
+
 test('sitting preserves the drinking arm and keeps the cup on its wrist socket',()=>{
   const {world,root,rig}=carryingWorld();
   world.animateRig(rig,0,0,'drink');

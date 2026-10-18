@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { readdirSync, statSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
@@ -89,10 +90,22 @@ const withoutReviewFixtures = (): Plugin => ({
   },
 });
 
+/**
+ * The size of every avatar file, so the sign-in page's loading bar knows each
+ * download's total before it starts (src/world/ImportedAvatar.ts). Assets are
+ * published byte for byte, so the source files' sizes are the downloads'.
+ */
+const avatarBytes = (): Record<string, number> => {
+  const folder = fileURLToPath(new URL('./src/assets/avatars/', import.meta.url));
+  return Object.fromEntries(readdirSync(folder).filter(name => /\.(glb|png|jpe?g)$/i.test(name))
+    .map(name => [name, statSync(`${folder}${name}`).size]));
+};
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     base: './',
+    define: { __AVATAR_BYTES__: JSON.stringify(avatarBytes()) },
     plugins: [contentSecurityPolicy(env.VITE_FESTIVAL_SERVER_URL ?? ''), assetIntegrity(), withoutReviewFixtures()],
     build: {
       outDir: 'dist',

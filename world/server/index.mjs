@@ -2356,7 +2356,8 @@ a{color:#e8b64a}</style>
         moving: payload.moving === true,
         running: payload.running === true,
         venue: isVenue(payload.venue) ? payload.venue : 'shore',
-        gesture: ['wave', 'feed', 'tail-wag', 'dance', 'drink', 'eat', 'jump', 'stumble', 'offer', 'bow', 'punch', 'hit'].includes(payload.gesture) ? payload.gesture : undefined,
+        // `passout`: the tenth drink puts the body on the floor (2026-10-18).
+        gesture: ['wave', 'feed', 'tail-wag', 'dance', 'drink', 'eat', 'jump', 'stumble', 'offer', 'bow', 'punch', 'hit', 'passout'].includes(payload.gesture) ? payload.gesture : undefined,
         carriedItem: payload.carriedItem === 'MENTOR'
           ? (mentorCarrierId === visitor.id ? 'MENTOR' : undefined)
           : ['POPCORN', 'DRINK', 'HOTDOG', 'PIZZA', 'CHICKEN'].includes(payload.carriedItem)
