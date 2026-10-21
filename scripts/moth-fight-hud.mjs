@@ -9,14 +9,18 @@
 // The phone (the tall view, renderTallScreen): the timing track runs the whole
 // width at the same size as before, its hit line and row of notes in the
 // middle of it, 1.9 s of notes either side. Dr. Beauty's box beside it is now
-// one row above it, drawn at the phone's own resolution: his hearts, combo and
-// score, or level 7's hype bar in the hearts' place, or in practice runs his
+// one row above it, drawn at the phone's own resolution: his misses, combo and
+// score, or level 7's hype bar in the misses' place, or in practice runs his
 // staff ID as a strip (the badge's ID photo, 練習 stamp, 正 miss tally and green
 // screen). GANGAN's feedback moves off the track to just above that row, as
 // wide as its line. Computers keep the box beside the track.
 //
-// Hearts (owner, 2026-10-18): in story mode every 10 in a row gives back one
-// heart, up to the full five; it glows as it returns. Level 7 has no hearts.
+// No hearts (owner, 2026-10-22): story fights can no longer be lost. Misses
+// cost nothing but the rank, as in practice; level 5's reach and level 7's
+// hype are shown but no longer fail a story fight. In the hearts' place,
+// Dr. Beauty's box and the phone's row show the misses, the practice badge's
+// 失誤 tally in his box's colours. (The heart back every 10 in a row went with
+// them.)
 
 export const MOTH_NOTE_COLOURS = { M: "#2457c5", O: "#e0463e", T: "#ecb300", H: "#2ea878" };
 
@@ -108,15 +112,29 @@ ${block.split('\n').slice(1, -1).map(line => '  ' + line).join('\n')}
     }
 `);
 
-  // A heart back for every 10 in a row (on the combo celebration's beat).
-  once('    rhythm.comboMilestone = { at: this.time, combo: rhythm.combo };\n', `    rhythm.comboMilestone = { at: this.time, combo: rhythm.combo };
-    if (!this.isHealthlessRun() && !this.isConcertRhythm() && rhythm.health < rhythm.maxHealth) {
-      rhythm.health += 1;
-      rhythm.celebrationHeart = { index: rhythm.health - 1, at: this.time };
-    }
+  // No hearts: every run is healthless, and the practice look keys off
+  // practice itself.
+  once('  isHealthlessRun() {\n    return Boolean(this.freePlay);\n  }', '  // No fight is lost on hearts, in story mode either (owner, 2026-10-22).\n  isHealthlessRun() {\n    return true;\n  }');
+  once('    if (this.isHealthlessRun()) {\n      this.renderLevel1OfficePracticeBadge(target, lifeBounds, rhythm);', '    if (this.freePlay) {\n      this.renderLevel1OfficePracticeBadge(target, lifeBounds, rhythm);');
+  // Level 5's reach and level 7's hype no longer fail a story fight.
+  once('      if (this.isConcertRhythm()) rhythm.reviewResult = rhythm.hype >= 1 - 1e-9 ? "PASSED" : "COLD";',
+    '      if (this.isConcertRhythm()) rhythm.reviewResult = rhythm.hype >= 1 - 1e-9 || !this.freePlay ? "PASSED" : "COLD";');
+  once('        if (reach.bobby < reach.gangan) rhythm.reviewResult = "OUT-REACHED";',
+    '        if (reach.bobby < reach.gangan && this.freePlay) rhythm.reviewResult = "OUT-REACHED";');
+  // Their results say how it went: a cold crowd or GAN GAN ahead, though passed.
+  once('    const outReached = rhythm.reviewResult === "OUT-REACHED";\n', '    const outReached = rhythm.reviewResult === "OUT-REACHED";\n    const ganganAhead = Boolean(rhythm.riverFinal && rhythm.riverFinal.bobby < rhythm.riverFinal.gangan);\n');
+  once('      ? (passed ? this.tr("THE CROWD WENT WILD", "全場嗨翻") : this.tr("THE CROWD WENT COLD", "全場冷掉了"))',
+    '      ? (passed && rhythm.hype >= 1 - 1e-9 ? this.tr("THE CROWD WENT WILD", "全場嗨翻") : this.tr("THE CROWD WENT COLD", "全場冷掉了"))');
+  once('      ? (passed ? this.tr("FURTHEST STREAM", "尿得最遠") : outReached ? this.tr("GAN GAN WINS", "GAN GAN 尿得比較遠") : this.tr("RAN DRY", "尿不出來了"))',
+    '      ? (passed && !ganganAhead ? this.tr("FURTHEST STREAM", "尿得最遠") : outReached || ganganAhead ? this.tr("GAN GAN WINS", "GAN GAN 尿得比較遠") : this.tr("RAN DRY", "尿不出來了"))');
+  // His box: the misses in the hearts' row.
+  edit('      target.font = "900 30px \'Courier New\', monospace";\n      for (let heartIndex = 0; heartIndex < maxHearts; heartIndex += 1) {\n', '          lifeBounds.y + 72\n        );\n      }\n', () =>
+    `      if (!this.isConcertRhythm()) {
+        target.save();
+        this.drawMissTally(target, { x: lifeBounds.x + 22, y: lifeBounds.y + 72, right: lifeBounds.x + lifeBounds.w - 22, indent: 50, glyph: 18, font: 17, maxGroups: 3, tally: "#ef3f78" }, Math.max(0, rhythm?.misses || 0), "#f4f0dc");
+        target.restore();
+      }
 `);
-  once('        target.fillText(\n          "♥",\n          lifeBounds.x + lifeBounds.w / 2 - heartsWidth / 2 + heartIndex * heartPitch,\n          lifeBounds.y + 72\n        );',
-    '        this.drawFightHeart(target, lifeBounds.x + lifeBounds.w / 2 - heartsWidth / 2 + heartIndex * heartPitch, lifeBounds.y + 72, heartIndex);');
 
   // The practice badge's parts the phone's strip shares.
   once('    const bathroom = this.isBathroomRhythm();\n    const accent = this.isConcertRhythm() ? "#8a3fb0" : this.isRiverRhythm() ? "#2f6f8f" : this.isArcadeRhythm() ? "#3552a8" : this.isMassageRhythm() ? "#c0506a" : bathroom ? "#3a9a8a" : "#2d7ec2";',
@@ -132,26 +150,6 @@ ${block.split('\n').slice(1, -1).map(line => '  ' + line).join('\n')}
 }
 
 export const FIGHT_HUD_METHODS = `
-  // One of Dr. Beauty's hearts, in the colour and font already set. A heart
-  // that has just come back (every 10 in a row) swells and glows for a moment.
-  drawFightHeart(target, x, y, index) {
-    const rhythm = this.level1OfficeRhythm, back = rhythm?.celebrationHeart;
-    const age = back?.index === index && index < rhythm.health ? (this.time || 0) - back.at : Infinity;
-    if (!(age >= 0 && age < 0.9)) {
-      target.fillText("♥", x, y);
-      return;
-    }
-    const glow = 1 - age / 0.9;
-    target.save();
-    target.translate(x, y);
-    target.scale(1 + 0.45 * glow, 1 + 0.45 * glow);
-    target.shadowColor = "#ffd0de";
-    target.shadowBlur = 22 * glow;
-    target.fillStyle = "#ff6f9b";
-    target.fillText("♥", 0, 0);
-    target.restore();
-  }
-
   // The width of the phone's feedback box (drawGanganCoachChip, h tall): its
   // line at full size and the box's margins, at least 240 (scaled from the
   // box's own 52-px height) and at most the row's width.
@@ -175,26 +173,28 @@ export const FIGHT_HUD_METHODS = `
       : this.isMassageRhythm() ? "#c0506a" : this.isBathroomRhythm() ? "#3a9a8a" : "#2d7ec2";
   }
 
-  // A practice run's misses: 失誤, then a 正 for every five, stroke by stroke
-  // in the character's own order (up to four, then ×n), and the count at the
-  // right.
+  // A fight's misses: 失誤, then a 正 for every five, stroke by stroke in the
+  // character's own order (up to four, or row.maxGroups, then ×n where it
+  // fits before the count), and the count at the right; the strokes in red,
+  // or row.tally.
   drawMissTally(target, row, misses, ink) {
     const { x, y, right, glyph } = row;
     const fullGroups = Math.floor(misses / 5);
-    const shownGroups = Math.min(fullGroups, 4);
+    const shownGroups = Math.min(fullGroups, row.maxGroups || 4);
     target.textAlign = "left";
     target.fillStyle = ink;
     target.font = \`900 \${row.font}px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace\`;
     target.fillText(this.tr("MISS", "失誤"), x, y);
     let tallyX = x + row.indent;
-    target.fillStyle = "#b3202c";
+    target.fillStyle = row.tally || "#b3202c";
     for (let group = 0; group < shownGroups; group += 1) {
       drawTallyZheng(target, tallyX, y - glyph / 2, glyph, 5);
       tallyX += glyph + 5;
     }
     if (fullGroups > shownGroups) {
       target.font = \`900 \${row.font}px 'Courier New', monospace\`;
-      target.fillText(\`×\${fullGroups}\`, tallyX, y);
+      const mark = \`×\${fullGroups}\`;
+      if (tallyX + target.measureText(mark).width <= right - target.measureText(String(misses)).width - 8) target.fillText(mark, tallyX, y);
     } else if (misses % 5 || !misses) {
       if (misses % 5) drawTallyZheng(target, tallyX, y - glyph / 2, glyph, misses % 5);
       else target.fillText("—", tallyX, y);
@@ -229,12 +229,12 @@ export const FIGHT_HUD_METHODS = `
   }
 
   // The phone's row above the track (PORTRAIT_FIGHT.stats): Dr. Beauty's
-  // name, hearts (level 7: the hype bar), combo and score in a line; in a
+  // name, misses (level 7: the hype bar), combo and score in a line; in a
   // practice run, his staff ID as a strip.
   drawTallFightStats(target, rhythm) {
     const box = PORTRAIT_FIGHT.stats;
     target.save();
-    if (this.isHealthlessRun()) {
+    if (this.freePlay) {
       this.drawTallPracticeStrip(target, box, rhythm);
       target.restore();
       return;
@@ -263,15 +263,8 @@ export const FIGHT_HUD_METHODS = `
     if (this.isConcertRhythm()) {
       this.drawConcertCrowdMeter(target, box, rhythm, this.time || 0, { x: left, y: box.y + 9, w: right - left, h: box.h - 18 });
     } else {
-      const maxHearts = Math.max(1, rhythm?.maxHealth || 3);
-      const hearts = clamp(rhythm?.health ?? maxHearts, 0, maxHearts);
-      const pitch = Math.min(38, (right - left) / maxHearts);
-      target.font = "900 32px 'Courier New', monospace";
-      target.textAlign = "center";
-      for (let index = 0; index < maxHearts; index += 1) {
-        target.fillStyle = index < hearts ? "#ef3f78" : "#30343a";
-        this.drawFightHeart(target, (left + right) / 2 + (index - (maxHearts - 1) / 2) * pitch, mid, index);
-      }
+      // The count just after the tally, clear of COMBO.
+      this.drawMissTally(target, { x: left, y: mid, right: Math.min(right, left + 165), indent: 50, glyph: 20, font: 18, maxGroups: 3, tally: "#ef3f78" }, Math.max(0, rhythm?.misses || 0), "#f4f0dc");
     }
     target.restore();
   }

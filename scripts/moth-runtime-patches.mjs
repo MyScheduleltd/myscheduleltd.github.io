@@ -274,7 +274,8 @@ export function patchMothRuntime(source, ts) {
   once('    this.level1OfficeRhythm.hype = this.getActiveRhythmSpec().crowd?.start ?? 0.3;', '    this.level1OfficeRhythm.hype = 0;');
   once('    rhythm.hypePulse = kind === "miss" ? -1 : 1;', '    rhythm.hypePulse = kind === "miss" ? -1 : 1;\n    if (kind === "miss") rhythm.hypeMissAt = performance.now();');
   once('    target.strokeStyle = rhythm?.climax ? `rgba(255, 239, 99, ${0.6 + 0.4 * Math.sin(motionTime * 10)})` : "#f4f0dc";', '    const missFlash = performance.now() - (rhythm?.hypeMissAt ?? -1e9) < 320;\n    target.strokeStyle = missFlash ? "#ff4866" : rhythm?.climax ? `rgba(255, 239, 99, ${0.6 + 0.4 * Math.sin(motionTime * 10)})` : "#f4f0dc";');
-  once('      : this.tr("FILL HYPE BY SONG END", "歌曲結束時熱度要滿");', '      : this.tr("FILL THE HYPE TO WIN", "熱度填滿就過關");');
+  // A story run can't be lost (moth-fight-hud.mjs, 2026-10-22), so there the meter only asks for the hype.
+  once('      : this.tr("FILL HYPE BY SONG END", "歌曲結束時熱度要滿");', '      : this.freePlay ? this.tr("FILL THE HYPE TO WIN", "熱度填滿就過關") : this.tr("FILL THE HYPE", "把熱度填滿");');
   // The retired lane fight's music cut is no longer preloaded at start-up
   // (moth-asset-trim.mjs); its fight is not in the game.
   once('        ["concert", this.config.level6ConcertRhythm],\n        ["level6", this.config.level6?.stage2]\n', '        ["concert", this.config.level6ConcertRhythm]\n');

@@ -3609,26 +3609,6 @@ for (const level of this.config.secretLevels || []) {
     }
   }
 
-  // One of Dr. Beauty's hearts, in the colour and font already set. A heart
-  // that has just come back (every 10 in a row) swells and glows for a moment.
-  drawFightHeart(target, x, y, index) {
-    const rhythm = this.level1OfficeRhythm, back = rhythm?.celebrationHeart;
-    const age = back?.index === index && index < rhythm.health ? (this.time || 0) - back.at : Infinity;
-    if (!(age >= 0 && age < 0.9)) {
-      target.fillText("♥", x, y);
-      return;
-    }
-    const glow = 1 - age / 0.9;
-    target.save();
-    target.translate(x, y);
-    target.scale(1 + 0.45 * glow, 1 + 0.45 * glow);
-    target.shadowColor = "#ffd0de";
-    target.shadowBlur = 22 * glow;
-    target.fillStyle = "#ff6f9b";
-    target.fillText("♥", 0, 0);
-    target.restore();
-  }
-
   // The width of the phone's feedback box (drawGanganCoachChip, h tall): its
   // line at full size and the box's margins, at least 240 (scaled from the
   // box's own 52-px height) and at most the row's width.
@@ -3652,26 +3632,28 @@ for (const level of this.config.secretLevels || []) {
       : this.isMassageRhythm() ? "#c0506a" : this.isBathroomRhythm() ? "#3a9a8a" : "#2d7ec2";
   }
 
-  // A practice run's misses: 失誤, then a 正 for every five, stroke by stroke
-  // in the character's own order (up to four, then ×n), and the count at the
-  // right.
+  // A fight's misses: 失誤, then a 正 for every five, stroke by stroke in the
+  // character's own order (up to four, or row.maxGroups, then ×n where it
+  // fits before the count), and the count at the right; the strokes in red,
+  // or row.tally.
   drawMissTally(target, row, misses, ink) {
     const { x, y, right, glyph } = row;
     const fullGroups = Math.floor(misses / 5);
-    const shownGroups = Math.min(fullGroups, 4);
+    const shownGroups = Math.min(fullGroups, row.maxGroups || 4);
     target.textAlign = "left";
     target.fillStyle = ink;
     target.font = `900 ${row.font}px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace`;
     target.fillText(this.tr("MISS", "失誤"), x, y);
     let tallyX = x + row.indent;
-    target.fillStyle = "#b3202c";
+    target.fillStyle = row.tally || "#b3202c";
     for (let group = 0; group < shownGroups; group += 1) {
       drawTallyZheng(target, tallyX, y - glyph / 2, glyph, 5);
       tallyX += glyph + 5;
     }
     if (fullGroups > shownGroups) {
       target.font = `900 ${row.font}px 'Courier New', monospace`;
-      target.fillText(`×${fullGroups}`, tallyX, y);
+      const mark = `×${fullGroups}`;
+      if (tallyX + target.measureText(mark).width <= right - target.measureText(String(misses)).width - 8) target.fillText(mark, tallyX, y);
     } else if (misses % 5 || !misses) {
       if (misses % 5) drawTallyZheng(target, tallyX, y - glyph / 2, glyph, misses % 5);
       else target.fillText("—", tallyX, y);
@@ -3706,12 +3688,12 @@ for (const level of this.config.secretLevels || []) {
   }
 
   // The phone's row above the track (PORTRAIT_FIGHT.stats): Dr. Beauty's
-  // name, hearts (level 7: the hype bar), combo and score in a line; in a
+  // name, misses (level 7: the hype bar), combo and score in a line; in a
   // practice run, his staff ID as a strip.
   drawTallFightStats(target, rhythm) {
     const box = PORTRAIT_FIGHT.stats;
     target.save();
-    if (this.isHealthlessRun()) {
+    if (this.freePlay) {
       this.drawTallPracticeStrip(target, box, rhythm);
       target.restore();
       return;
@@ -3740,15 +3722,8 @@ for (const level of this.config.secretLevels || []) {
     if (this.isConcertRhythm()) {
       this.drawConcertCrowdMeter(target, box, rhythm, this.time || 0, { x: left, y: box.y + 9, w: right - left, h: box.h - 18 });
     } else {
-      const maxHearts = Math.max(1, rhythm?.maxHealth || 3);
-      const hearts = clamp(rhythm?.health ?? maxHearts, 0, maxHearts);
-      const pitch = Math.min(38, (right - left) / maxHearts);
-      target.font = "900 32px 'Courier New', monospace";
-      target.textAlign = "center";
-      for (let index = 0; index < maxHearts; index += 1) {
-        target.fillStyle = index < hearts ? "#ef3f78" : "#30343a";
-        this.drawFightHeart(target, (left + right) / 2 + (index - (maxHearts - 1) / 2) * pitch, mid, index);
-      }
+      // The count just after the tally, clear of COMBO.
+      this.drawMissTally(target, { x: left, y: mid, right: Math.min(right, left + 165), indent: 50, glyph: 20, font: 18, maxGroups: 3, tally: "#ef3f78" }, Math.max(0, rhythm?.misses || 0), "#f4f0dc");
     }
     target.restore();
   }
@@ -8170,8 +8145,9 @@ for (const level of this.config.secretLevels || []) {
 
   // Stage select is practice, not a run: a miss costs the rating, never the
   // round. Story mode keeps its hearts.
+  // No fight is lost on hearts, in story mode either (owner, 2026-10-22).
   isHealthlessRun() {
-    return Boolean(this.freePlay);
+    return true;
   }
 
   // The single place that decides whether an empty heart bar ends a fight.
@@ -10574,10 +10550,6 @@ for (const level of this.config.secretLevels || []) {
       stamp: makeComboCallout(item.caption, this.tr(`${rhythm.combo} COMBO!`, `連擊 ${rhythm.combo}！`), index)
     };
     rhythm.comboMilestone = { at: this.time, combo: rhythm.combo };
-    if (!this.isHealthlessRun() && !this.isConcertRhythm() && rhythm.health < rhythm.maxHealth) {
-      rhythm.health += 1;
-      rhythm.celebrationHeart = { index: rhythm.health - 1, at: this.time };
-    }
     if (this.isMassageRhythm()) this.setMassageMood("blissful", 1.1);
     this.stopFeedbackChannel("miss");
     this.playFeedbackSfx(item.sound, "celebration", 1.4);
@@ -13485,7 +13457,7 @@ for (const level of this.config.secretLevels || []) {
       // Nobody is knocked out of a free-play run; the song ending is simply
       // the end.
       rhythm.reviewResult = rhythm.health > 0 || this.isHealthlessRun() ? "PASSED" : "HEALTH DEPLETED";
-      if (this.isConcertRhythm()) rhythm.reviewResult = rhythm.hype >= 1 - 1e-9 ? "PASSED" : "COLD";
+      if (this.isConcertRhythm()) rhythm.reviewResult = rhythm.hype >= 1 - 1e-9 || !this.freePlay ? "PASSED" : "COLD";
       if (this.isConcertRhythm() && rhythm.reviewResult === "COLD") {
         this.failLevel1OfficeHealth({ reason: "cold" });
         return;
@@ -13493,7 +13465,7 @@ for (const level of this.config.secretLevels || []) {
       if (rhythm.reviewResult === "PASSED" && this.isRiverRhythm()) {
         const reach = this.getRiverReach(rhythm);
         rhythm.riverFinal = reach;
-        if (reach.bobby < reach.gangan) rhythm.reviewResult = "OUT-REACHED";
+        if (reach.bobby < reach.gangan && this.freePlay) rhythm.reviewResult = "OUT-REACHED";
       }
       rhythm.reaction = rhythm.health > 0 ? "approve" : "laugh";
       rhythm.reactionTimer = rhythm.reviewTimer;
@@ -14372,7 +14344,7 @@ for (const level of this.config.secretLevels || []) {
     target.fillStyle = rhythm?.climax ? "#ffef63" : hype < 0.2 ? "#8fb4ff" : "#f7f2de";
     const label = rhythm?.climax
       ? this.tr("PEAK HYPE!", "嗨到最高點！")
-      : this.tr("FILL THE HYPE TO WIN", "熱度填滿就過關");
+      : this.freePlay ? this.tr("FILL THE HYPE TO WIN", "熱度填滿就過關") : this.tr("FILL THE HYPE", "把熱度填滿");
     if (row) {
       target.font = "900 15px 'Courier New', 'PingFang TC', monospace";
       target.lineJoin = "round";
@@ -19800,7 +19772,7 @@ for (const level of this.config.secretLevels || []) {
     target.fillRect(0, ribbonTop, VIEW_W, VIEW_H - ribbonTop);
     // Stage select plays without hearts, so its profile is Bobby's staff ID
     // badge instead: the practice stamp, a tally of misses and the counters.
-    if (this.isHealthlessRun()) {
+    if (this.freePlay) {
       this.renderLevel1OfficePracticeBadge(target, lifeBounds, rhythm);
     } else {
       target.strokeStyle = "#f4f0dc";
@@ -19814,14 +19786,10 @@ for (const level of this.config.secretLevels || []) {
       const maxHearts = this.isConcertRhythm() ? 0 : Math.max(1, rhythm?.maxHealth || 3);
       const currentHearts = clamp(rhythm?.health ?? maxHearts, 0, maxHearts);
       if (this.isConcertRhythm()) this.drawConcertCrowdMeter(target, lifeBounds, rhythm, motionTime);
-      target.font = "900 30px 'Courier New', monospace";
-      for (let heartIndex = 0; heartIndex < maxHearts; heartIndex += 1) {
-        target.fillStyle = heartIndex < currentHearts ? "#ef3f78" : "#30343a";
-        // Spaced from the panel's centre so the row stays inside it whatever
-        // maxHearts is; at five the old fixed 46px pitch ran off the right edge.
-        const heartPitch = Math.min(46, (lifeBounds.w - 44) / Math.max(1, maxHearts));
-        const heartsWidth = heartPitch * (maxHearts - 1);
-        this.drawFightHeart(target, lifeBounds.x + lifeBounds.w / 2 - heartsWidth / 2 + heartIndex * heartPitch, lifeBounds.y + 72, heartIndex);
+      if (!this.isConcertRhythm()) {
+        target.save();
+        this.drawMissTally(target, { x: lifeBounds.x + 22, y: lifeBounds.y + 72, right: lifeBounds.x + lifeBounds.w - 22, indent: 50, glyph: 18, font: 17, maxGroups: 3, tally: "#ef3f78" }, Math.max(0, rhythm?.misses || 0), "#f4f0dc");
+        target.restore();
       }
       // The hearts row is the count; no "HEARTS n/5" line under it (user,
       // 2026-09-30), so the three rows spread over the box.
@@ -20124,12 +20092,13 @@ for (const level of this.config.secretLevels || []) {
     const panel = { x: 184, y: 62, w: 912, h: 596 };
     const rankColor = LEVEL1_OFFICE_RANK_COLORS[result.rank] || "#f7f2de";
     const outReached = rhythm.reviewResult === "OUT-REACHED";
+    const ganganAhead = Boolean(rhythm.riverFinal && rhythm.riverFinal.bobby < rhythm.riverFinal.gangan);
     const title = this.isSecretRhythm()
       ? this.tr("SONG COMPLETE", "歌曲完成")
       : this.isConcertRhythm()
-      ? (passed ? this.tr("THE CROWD WENT WILD", "全場嗨翻") : this.tr("THE CROWD WENT COLD", "全場冷掉了"))
+      ? (passed && rhythm.hype >= 1 - 1e-9 ? this.tr("THE CROWD WENT WILD", "全場嗨翻") : this.tr("THE CROWD WENT COLD", "全場冷掉了"))
       : this.isRiverRhythm()
-      ? (passed ? this.tr("FURTHEST STREAM", "尿得最遠") : outReached ? this.tr("GAN GAN WINS", "GAN GAN 尿得比較遠") : this.tr("RAN DRY", "尿不出來了"))
+      ? (passed && !ganganAhead ? this.tr("FURTHEST STREAM", "尿得最遠") : outReached || ganganAhead ? this.tr("GAN GAN WINS", "GAN GAN 尿得比較遠") : this.tr("RAN DRY", "尿不出來了"))
       : this.isArcadeRhythm()
       ? (passed ? this.tr("YOU WIN!", "你贏了！") : this.tr("K.O.", "你被 K.O. 了"))
       : this.isMassageRhythm()
