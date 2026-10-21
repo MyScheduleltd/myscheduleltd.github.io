@@ -918,8 +918,17 @@ const DEBUG_CONVERSATION_SCENES = [
 ];
 // The game credits as the user supplied them on 2026-09-30
 // (data/source-text/credits-2026-09-30.txt). A "♪ " line heads a song; "" is a gap.
-// The "Game created by ..." line heads the page, above the sheet.
+// Who made the game and the production lines open it (moth-credits.mjs).
+const GAME_CREDIT_PRODUCTION = new Set(["我的檔期有限公司出品","A MY SCHEDULE PRODUCTION","@myscheduleltd"]);
 const GAME_CREDIT_LINES = [
+  "",
+  "遊戲製作 Game Development ｜麥克爾·大島秀夫 Michael.",
+  "遊戲企劃 Game Design｜美麗本人 Dr. Beauty ／就叫麥克爾吧 Michael. ／小賊賊  MinYun Lee",
+  "",
+  "我的檔期有限公司出品",
+  "A MY SCHEDULE PRODUCTION",
+  "@myscheduleltd",
+  "",
   "♪ 醬擠 ft. 史今（Like Deez ft. SJin）",
   "",
   "中文歌名 Chinese Song Title｜醬擠 ft.史今",
@@ -24572,8 +24581,8 @@ for (const level of this.config.secretLevels || []) {
 
   getFinaleCreditEntries() {
     return [
-      { kind: "title", text: "Game created by Michael. The Alchemist. @myscheduleltd" },
-      ...GAME_CREDIT_LINES.map(text => ({ kind: !text ? "spacer" : text.startsWith("♪ ") ? "song" : "line", text }))
+      { kind: "title", text: "Game Credits" },
+      ...GAME_CREDIT_LINES.map(text => ({ kind: !text ? "spacer" : GAME_CREDIT_PRODUCTION.has(text) ? "title" : text.startsWith("♪ ") ? "song" : "line", text }))
     ];
   }
 
@@ -24584,10 +24593,7 @@ for (const level of this.config.secretLevels || []) {
     const rows = this.getFinaleCreditEntries().map(entry => {
       const size = entry.kind === "title" ? 26 : entry.kind === "song" ? 24 : 20;
       target.font = `900 ${size}px ${CANVAS_UI_FONT}`;
-      const lines = entry.kind === "spacer" ? [] : entry.kind === "title"
-        ? [...getWrappedCanvasLines(target, "Game created by Michael.", width - 28),
-          ...getWrappedCanvasLines(target, "The Alchemist.", width - 28), "@myscheduleltd"]
-        : getWrappedCanvasLines(target, entry.text, width - 28);
+      const lines = entry.kind === "spacer" ? [] : getWrappedCanvasLines(target, entry.text, width - 28);
       const row = { ...entry, size, lines, y: height, height: lines.length ? lines.length * (size * 1.4) + 16 : 24 };
       height += row.height;
       return row;
@@ -28130,7 +28136,7 @@ function drawPortraitHomeScreen(target, menu, items, songPreview, waveformSheets
     target.textAlign = "center";
     const barBaseline = target.textBaseline;
     target.textBaseline = "middle";
-    drawFittedText(target, "Game created by Michael. The Alchemist. @myscheduleltd", layout.title.x + layout.title.w / 2, layout.title.y + layout.title.h / 2 + HOME_BAR_TEXT_NUDGE, layout.title.w - 60, 30, 900, 16);
+    drawFittedText(target, "Game Credits", layout.title.x + layout.title.w / 2, layout.title.y + layout.title.h / 2 + HOME_BAR_TEXT_NUDGE, layout.title.w - 60, 30, 900, 16);
     target.textBaseline = barBaseline;
     target.textAlign = "left";
     drawHomeOfficePaper(target, layout.content, { holes: false });
@@ -28159,6 +28165,7 @@ function drawPortraitHomeScreen(target, menu, items, songPreview, waveformSheets
         fontSize: 24,
         color: "#20252a",
         headingColor: "#a43d2e",
+        centredLines: GAME_CREDIT_PRODUCTION,
         trackColor: "rgba(32, 37, 42, 0.2)",
         thumbColor: "#a43d2e"
       }
@@ -28284,6 +28291,13 @@ function drawHomeLyricsText(target, lines, x, y, maxWidth, maxHeight, scroll = 0
     }
     // A "♪ " line is a heading (a song's name in the credits).
     const heading = options.headingColor && line.startsWith("♪ ");
+    // A centred line (the credits' production lines) takes the headings' colour.
+    if (options.centredLines?.has(line)) {
+      target.textAlign = "center";
+      cursorY = drawWrappedHomeLine(target, line, x + maxWidth / 2, cursorY, maxWidth, lineHeight, fontSize, options.headingColor || color);
+      target.textAlign = "left";
+      return;
+    }
     cursorY = drawWrappedHomeLine(target, line, x, cursorY, maxWidth, lineHeight, fontSize, heading ? options.headingColor : color);
   });
   target.restore();

@@ -9,6 +9,7 @@ import { patchFightHud, FIGHT_HUD_METHODS } from './moth-fight-hud.mjs';
 import { patchStorySave } from './moth-story-save.mjs';
 import { patchWalkScenes, WALK_SCENE_METHODS } from './moth-walk-scenes.mjs';
 import { patchDeckTouch } from './moth-deck-art.mjs';
+import { patchCredits } from './moth-credits.mjs';
 import { ADDED_ASSETS, MOTH_MIRROR_ADDITIONS_COMMIT } from './moth-asset-additions.mjs';
 
 // Keep the selected published game as the input. Both audiences get identical
@@ -248,6 +249,8 @@ export function patchMothRuntime(source, ts) {
   patchWalkScenes(once, edit);
   // No iPhone magnifier on the touch deck (scripts/moth-deck-art.mjs).
   patchDeckTouch(once);
+  // The game credits: who made it, the production lines (scripts/moth-credits.mjs).
+  patchCredits(once);
   // A fight's clock is the playhead less the output delay, so it stops just
   // short of the track's end. The hidden levels' charts run to the very end of
   // their songs, so they never finished: the results never came, and a tap
