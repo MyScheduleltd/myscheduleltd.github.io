@@ -1,12 +1,12 @@
 // Story mode keeps its place, and the owner's 2026-10-18 fixes (Chrome):
 //  1. a story is kept on the device: leaving a story fight from its pause menu
 //     asks nothing, and the main menu's 繼續 in a later tab returns to that
-//     moment after the 3-2-1, with the same hearts and combo; a practice run
+//     moment after the 3-2-1, with the same combo and score; a practice run
 //     still asks before throwing itself away;
 //  2. a story kept in the session from before the change moves to the device;
 //  3. after 祖賢's massage Dr. Beauty is back where it began, facing her;
-//  4. every 10 in a row gives back one heart in a story fight, up to five, and
-//     none in practice or in level 7;
+//  4. no failing in story mode (2026-10-22): misses cost no hearts, and level 7
+//     with a cold crowd and level 5 out-reached still pass;
 //  5. a touch on the deck beside its buttons is not left to Safari (no iPhone
 //     magnifier), and one on a button is;
 //  6. level 4: Dr. Beauty is back where Bonita's game began; after the win
@@ -117,7 +117,7 @@ const throughDialogue = async page => {
   await context.close();
 }
 
-// 3 and 4. Level 3's living room after the massage; hearts back every 10.
+// 3 and 4. Level 3's living room after the massage; no failing in story mode.
 {
   const context = await browser.newContext({viewport: {width: 1280, height: 800}});
   await stubScoreboard(context);
@@ -133,26 +133,32 @@ const throughDialogue = async page => {
   assert.equal(took.state, 'level3Dialogue');
   for (let i = 0; i < 40 && await page.evaluate(() => bobbyGame.state === 'level3Dialogue'); i++) await page.evaluate(() => bobbyGame.advanceLevel3Dialogue());
   await fighting(page);
-  const hearts = await page.evaluate(() => {
-    const g = bobbyGame, rhythm = g.level1OfficeRhythm, out = [];
-    const milestone = (health, combo) => { rhythm.health = health; rhythm.combo = combo; rhythm.lastCelebratedCombo = 0; g.celebrateRhythmCombo(); return rhythm.health; };
-    out.push(milestone(3, 10), milestone(4, 20), milestone(5, 30), milestone(2, 7));
-    g.freePlay = true; out.push(milestone(2, 40)); g.freePlay = false;
-    return {out, glow: rhythm.celebrationHeart?.index};
+  // No hearts (owner, 2026-10-22): misses cost a story fight nothing.
+  const missed = await page.evaluate(() => {
+    const g = bobbyGame, rhythm = g.level1OfficeRhythm, before = rhythm.health;
+    for (const note of rhythm.notes.filter(note => note.status === 'pending').slice(0, 15)) g.registerLevel1OfficeMiss(note);
+    return {lost: before - rhythm.health, misses: rhythm.misses, state: g.state};
   });
-  assert.deepEqual(hearts.out, [4, 5, 5, 2, 2], 'A heart back at every 10 in a row, up to five, none in practice');
-  await page.evaluate(() => { const g = bobbyGame; g.level1OfficeRhythm.health = 5; g.startLevel1OfficeResults(); g.continueLevel1OfficeResults(); });
+  assert(missed.lost === 0 && missed.misses >= 15 && missed.state === 'playing', 'Misses cost no hearts ' + JSON.stringify(missed));
+  await page.evaluate(() => { const g = bobbyGame; g.startLevel1OfficeResults(); g.continueLevel1OfficeResults(); });
   await page.waitForFunction(() => bobbyGame.state === 'level3' && bobbyGame.sewerPlayer, undefined, {timeout: 30000});
   const back = await page.evaluate(() => ({x: bobbyGame.sewerPlayer.x, facing: bobbyGame.sewerPlayer.facing, phase: bobbyGame.level3Boss?.phase}));
   assert.deepEqual(back, {x: took.x, facing: took.facing, phase: 'postBoss'}, `Back where the massage began, not the entrance (${took.entrance})`);
-  // Level 7 has no hearts to give back.
-  await page.evaluate(() => { bobbyGame.returnToTitle(); bobbyGame.startStage('level6-stage2', {freePlay: false}); });
-  await throughDialogue(page);
-  await fighting(page);
-  const concert = await page.evaluate(() => { const r = bobbyGame.level1OfficeRhythm; const before = r.health; r.combo = 10; r.lastCelebratedCombo = 0; bobbyGame.celebrateRhythmCombo(); return [before, r.health]; });
-  assert.equal(concert[0], concert[1], 'Level 7 unchanged');
+  // Level 7 with its crowd cold and level 5 out-reached by GANGAN, played to the
+  // end of their songs untouched: a story fight still passes.
+  const ends = {};
+  for (const stage of ['level6-stage2', 'level5-stage2']) {
+    await page.evaluate(stage => { bobbyGame.returnToTitle(); bobbyGame.startStage(stage, {freePlay: false}); }, stage);
+    await throughDialogue(page);
+    await fighting(page, stage);
+    await page.evaluate(() => { const track = bobbyGame.getActiveLevel1OfficeRhythmAudio(); track.currentTime = track.duration - 2; });
+    await page.waitForFunction(() => ['level1OfficeResults', 'failure'].includes(bobbyGame.state), undefined, {timeout: 60000});
+    ends[stage] = await page.evaluate(() => { const r = bobbyGame.level1OfficeRhythm; return {state: bobbyGame.state, hype: r?.hype, reach: r?.riverFinal}; });
+  }
+  assert(ends['level6-stage2'].hype < 1 && ends['level5-stage2'].reach && ends['level5-stage2'].reach.bobby < ends['level5-stage2'].reach.gangan, 'Each would have failed before ' + JSON.stringify(ends));
+  assert.deepEqual(Object.values(ends).map(end => end.state), ['level1OfficeResults', 'level1OfficeResults'], 'Both pass ' + JSON.stringify(ends));
   assert.deepEqual(errors, []);
-  console.log('level 3 return PASS', JSON.stringify({took, back}), 'hearts PASS', JSON.stringify(hearts));
+  console.log('level 3 return PASS', JSON.stringify({took, back}), 'no hearts PASS', JSON.stringify({missed, ends}));
   await context.close();
 }
 
@@ -308,4 +314,4 @@ for (const phone of [false, true]) {
 }
 await browser.close();
 console.log('loading screens (s)', JSON.stringify(loadingSeconds));
-console.log('PASS story: kept on the device, 繼續 mid-fight, level 3 and 4 returns, hearts every 10, deck long press, level 4 chest, bar at the top, staff chest previews, hidden levels end');
+console.log('PASS story: kept on the device, 繼續 mid-fight, level 3 and 4 returns, no failing in story, deck long press, level 4 chest, bar at the top, staff chest previews, hidden levels end');
