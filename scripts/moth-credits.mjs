@@ -13,6 +13,7 @@ export const GAME_CREDIT_HEAD = [
   '',
   '遊戲製作 Game Development ｜麥克爾·大島秀夫 Michael.',
   '遊戲企劃 Game Design｜美麗本人 Dr. Beauty ／就叫麥克爾吧 Michael. ／小賊賊  MinYun Lee',
+  '遊戲音效設計 Game Sound Design ｜Nuno',
   '',
   '我的檔期有限公司出品',
   'A MY SCHEDULE PRODUCTION',
