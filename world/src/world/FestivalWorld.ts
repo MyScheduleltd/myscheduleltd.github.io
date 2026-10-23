@@ -85,6 +85,7 @@ import { planRenderScale, RENDER_SCALE_FLOOR } from './RenderScale';
 import { ARCADE_LOCK_KEYHOLE, MothArcadeCabinet, MothArcadeSession, MothArcadeView } from './MothArcade';
 import { PreviewResourceLease } from './PreviewResourceLease';
 import { CutawayLens, CUTAWAY_LENS, type CutawayRoom } from './CutawayLens';
+import { PlanGrid } from './PlanGrid';
 import { fitGateAerialCamera, fitGateAvatarCamera, gateAerialTarget, blendGateEntryCamera, type GateEntryCameraPose, type GatePreviewFrame, type GatePreviewCameraSnapshot } from './GatePreviewLayout';
 import { arcadeIsNearest, arcadeIsLocked, ARCADE_WIDTH, ARCADE_DEPTH, cabinetPairPositions, arcadeAgainstWallX } from './ArcadeRules';
 
@@ -674,6 +675,8 @@ const OCEAN_SILENT_AT = 36;
 const INDOORS = { palace: 0.2, clubLobby: 0.4, clubRoom: 0.1 } as const;
 /** The sign-in globe's sky fill: the night fill before 2026-10-21, which lit it evenly. */
 const GATE_GLOBE_FILL = 1.45;
+/** Colliders are filed in the plan grid with this margin: any query radius up to it is exact. */
+const COLLIDER_GRID_MARGIN = 1;
 /** Distances in world units from the attendee past which bodies are simpler. */
 const FAR_PLAYER = { simpler: 20, slower: 40 } as const;
 /**
@@ -15149,15 +15152,24 @@ export class FestivalWorld {
 
   private paving: Array<{polygon:PlanPoint[];lift:number;exclusions?:PlanPoint[][];bounds:[number,number,number,number]}>=[];
 
+  private pavingIndex?: PlanGrid<FestivalWorld['paving'][number]>;
+  private pavingIndexOf?: FestivalWorld['paving'];
+
   private pavingLiftAt(x:number,z:number):number {
-    // Asked for every body, every frame: the bounds turn away most surfaces
-    // before the polygon test (2026-10-23, a crowd's largest world-side cost).
-    let lift=0;
-    for(const surface of this.paving){
-      const [minX,maxX,minZ,maxZ]=surface.bounds;
-      if(surface.lift<=lift||x<minX||x>maxX||z<minZ||z>maxZ)continue;
-      if(insidePaving(x,z,surface.polygon)&&!surface.exclusions?.some(p=>insidePaving(x,z,p)))lift=surface.lift;
+    // Asked for every body and every camera step, every frame: only the
+    // surfaces filed near the point, and their bounds, before the polygon test
+    // (2026-10-23, the largest world-side cost on a phone).
+    const grid=this.pavingIndex??=new PlanGrid<FestivalWorld['paving'][number]>();
+    if(this.pavingIndexOf!==this.paving){
+      grid.clear();this.pavingIndexOf=this.paving;
+      for(const surface of this.paving)grid.add(surface,...surface.bounds);
     }
+    let lift=0;
+    grid.forEach(x,z,surface=>{
+      const [minX,maxX,minZ,maxZ]=surface.bounds;
+      if(surface.lift<=lift||x<minX||x>maxX||z<minZ||z>maxZ)return;
+      if(insidePaving(x,z,surface.polygon)&&!surface.exclusions?.some(p=>insidePaving(x,z,p)))lift=surface.lift;
+    });
     return lift;
   }
 
@@ -15231,12 +15243,37 @@ export class FestivalWorld {
    * dressing, the ground tests — asking the question they were written to ask.
    */
   private staticCollides(x: number, z: number, y = this.player.position.y, radius = 0): boolean {
-    return this.colliders.some(
-      (collider) =>
-        x > collider.minX - radius && x < collider.maxX + radius &&
-        z > collider.minZ - radius && z < collider.maxZ + radius &&
-        overlapsBodyHeight(y,collider),
-    );
+    const hits = (collider: Collider) =>
+      x > collider.minX - radius && x < collider.maxX + radius &&
+      z > collider.minZ - radius && z < collider.maxZ + radius &&
+      overlapsBodyHeight(y,collider);
+    // Colliders are filed with a unit's margin, so any radius up to that is answered from the grid.
+    return radius <= COLLIDER_GRID_MARGIN ? this.colliderGrid().some(x, z, hits) : this.colliders.some(hits);
+  }
+
+  // Made on first use: worlds built bare in the tests skip field initialisers.
+  private colliderIndex?: PlanGrid<Collider>;
+  private colliderIndexOf?: Collider[];
+  private colliderIndexCount = 0;
+
+  /**
+   * The colliders filed near a point. Colliders are only ever added, so the
+   * grid follows the list by filing the new ones; a list replaced outright
+   * (a test fixture) is filed afresh.
+   */
+  private colliderGrid(): PlanGrid<Collider> {
+    const grid = this.colliderIndex ??= new PlanGrid<Collider>();
+    if (this.colliderIndexOf !== this.colliders) {
+      grid.clear();
+      this.colliderIndexOf = this.colliders;
+      this.colliderIndexCount = 0;
+    }
+    const m = COLLIDER_GRID_MARGIN;
+    while (this.colliderIndexCount < this.colliders.length) {
+      const c = this.colliders[this.colliderIndexCount++];
+      grid.add(c, c.minX - m, c.maxX + m, c.minZ - m, c.maxZ + m);
+    }
+    return grid;
   }
 
   /** How wide a body is, for the purpose of not being inside a wall. */
@@ -16044,7 +16081,7 @@ export class FestivalWorld {
     // floor. That must not turn the same low chair into a head-height wall.
     const seatFloor=this.playerState==='seated'?this.activeSeat?.position.y:undefined;
     const headHeight = Math.max(this.player.position.y,seatFloor??-Infinity) + 2.2;
-    return this.colliders.some(collider => {
+    return this.colliderGrid().some(x, z, collider => {
       // A thin freestanding utility pole in front of the open rooftop stair
       // briefly crosses the image, rather than acting as a building wall.
       // Its original collider still prevents the body from walking through it.

@@ -28,7 +28,7 @@ import type { GatePreview } from '../world/GatePreview';
 import { GateLoadMeter } from './GateLoadMeter';
 import { readNoirPreference, saveNoirPreference, applyNoirMode, noirButtonMarkup, syncNoirButton } from './NoirMode';
 import { installFloatingChat } from './FloatingChat';
-import { readDesktopActions, saveDesktopActions, jukeboxPromptVisible, drinkStatusText, type JukeboxPromptMemory } from './OverlayPreferences';
+import { readDesktopActions, saveDesktopActions, dropBeatAction, drinkStatusText } from './OverlayPreferences';
 import {bindJukeboxShelf,jukeboxShelfMarkup} from './JukeboxShelf';
 import {ArcadePreviewClient,type ArcadePreviewState} from '../network/ArcadePreview';
 import {createArcadePreviewNotice,type ArcadePreviewDialog} from './ArcadePreviewNotice';
@@ -520,13 +520,13 @@ export class App {
   private desktopActions = readDesktopActions();
   private drinkCount = 0;
   private chatFloatingDispose?: () => void;
-  private jukeboxPromptGeneration = 0;
   private jukeboxReportedState?: number;
   /** A record this listener's player refused; no DROP THE BEAT for it. */
   private jukeboxFailedId?: string;
   /** Keeps an open dialogue box tall enough to cover the chat comments. */
   private dialogueCover?: () => void;
-  private readonly jukeboxPromptMemory: JukeboxPromptMemory = {};
+  /** The jukebox is silent here by design: a theatre, the club, the deck, or a film on a phone. */
+  private jukeboxSilentHere = false;
   private cameraHintTimer = 0;
   private impactTimer = 0;
   private deathTimer = 0;
@@ -1674,7 +1674,6 @@ export class App {
           <button class="audio-resume" type="button" data-audio-resume hidden>${zh ? '開啟聲音' : 'ENABLE SOUND'}</button>
           <button class="world-chat-shortcut" type="button" data-world-chat aria-controls="panel">${zh ? '聊天' : 'CHAT'}</button>
         </div>
-        <button class="jukebox-sound" type="button" data-jukebox-sound hidden>DROP THE BEAT</button>
         <section class="vr-entry" data-vr-entry hidden aria-live="polite">
           <p class="eyebrow">${phoneVrPreview ? 'PHONE MOTION · VR PREVIEW' : vrPreview ? 'DESKTOP SIMULATION · WEBXR' : 'META QUEST · WEBXR'}</p>
           <h2>${phoneVrPreview
@@ -1747,7 +1746,7 @@ export class App {
           ${noirButtonMarkup(this.noirEnabled, zh)}
           <button type="button" class="desktop-actions-toggle" data-desktop-actions-toggle aria-pressed="${this.desktopActions}"><span aria-hidden="true">✥</span>${zh ? '桌面動作按鈕' : 'DESKTOP ACTION BUTTONS'}<small data-desktop-actions-status>${this.desktopActions ? 'ON' : 'OFF'}</small></button>
           ${Object.entries(panelLabels[this.language])
-            .map(([id, label], index) => `<button type="button" data-panel="${id}"><span>${String(index + 1).padStart(2, '0')}</span>${label}${id === 'quests' ? `<small data-quest-count>0/${QUEST_TOTAL}</small>` : ''}</button>`)
+            .map(([id, label], index) => `<button type="button" data-panel="${id}"><span>${String(index + 1).padStart(2, '0')}</span>${label}${id === 'quests' ? `<small data-quest-count>0/${QUEST_TOTAL}</small>` : ''}</button>${id === 'jukebox' ? `<button type="button" class="festival-pass__beat" data-drop-beat><span aria-hidden="true">♪</span>DROP THE BEAT</button>` : ''}`)
             .join('')}
           <button type="button" class="festival-pass__fireworks" data-replay-fireworks hidden><span>★</span>${zh ? '重播煙火' : 'REPLAY FIREWORKS'}</button>
           <button type="button" data-arcade-access${this.arcadePreviewActive()?'':' hidden'}>${zh?'M.O.T.H 序號':'M.O.T.H CODE'}</button>
@@ -2289,24 +2288,6 @@ export class App {
     } else if (reviewTarget === 'temple' || reviewTarget === 'temple-altar') {
       this.world.focusTempleForReview(reviewTarget === 'temple-altar');
       (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => this.world?.structureReviewSnapshot();
-    } else if (reviewTarget === 'jukebox-sound' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
-      this.world.focusJukeboxForReview();
-      this.jukeboxVolume = DEFAULT_JUKEBOX_VOLUME;
-      this.jukeboxPlayingId = 'review-jukebox-track';
-      window.setTimeout(() => {
-        this.audioMuted = false;
-        this.jukeboxSilenced = false;
-        this.updateJukeboxSoundPrompt();
-        document.documentElement.dataset.jukeboxSoundReview = JSON.stringify({
-          volume: this.jukeboxVolume,
-          promptHidden: this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]')?.hidden,
-        });
-      }, 0);
-      (window as Window & { __festivalReview?: () => unknown }).__festivalReview = () => ({
-        volume: this.jukeboxVolume,
-        promptHidden: this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]')?.hidden,
-        promptText: this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]')?.textContent,
-      });
     } else if (reviewTarget === 'arcade' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       this.world.focusArcadeForReview();
     } else if (reviewTarget === 'jukebox') {
@@ -2414,6 +2395,7 @@ export class App {
         this.openPanel(button.dataset.panel as PanelId);
       });
     });
+    this.root.querySelector<HTMLButtonElement>('[data-drop-beat]')?.addEventListener('click', () => this.dropTheBeat());
     this.root.querySelector<HTMLButtonElement>('[data-replay-fireworks]')?.addEventListener('click', () => {
       if (!this.questCelebrated) return;
       this.closeFestivalPass();
@@ -2512,13 +2494,6 @@ export class App {
     for (const type of ['gesturestart', 'gesturechange', 'gestureend', 'dblclick']) {
       this.root.addEventListener(type, preventBrowserZoom, { passive: false });
     }
-    this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]')?.addEventListener('click', () => {
-      this.applyJukeboxVolume();
-      // Again a moment later: the player can accept the connection a beat after
-      // it is spoken to, and the press is the only permission we will get.
-      window.setTimeout(() => this.applyJukeboxVolume(), 400);
-      this.updateJukeboxSoundPrompt();
-    });
     document.addEventListener('visibilitychange', () => {
       // Out of sight, the record is let go; back in sight, picked up again
       // where the festival's clock says it has got to.
@@ -5739,7 +5714,6 @@ export class App {
    */
   private syncJukebox(): void {
     this.syncJukeboxPlayer();
-    this.updateJukeboxSoundPrompt();
     if (['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       document.documentElement.dataset.jukeboxReview = JSON.stringify(this.jukeboxReviewSnapshot());
     }
@@ -5764,20 +5738,10 @@ export class App {
       playingId: this.jukeboxPlayingId ?? null,
       frameMounted: Boolean(frame),
       frameSrcId: frame?.src.includes('/embed/') ? frame.src.split('/embed/')[1]?.split('?')[0] ?? null : null,
-      promptHidden: this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]')?.hidden ?? null,
     };
   }
 
   private syncJukeboxPlayer(): void {
-    // Keep the local browser-review fixture independent of whatever happens to
-    // be playing on a developer's already-running service. Without this guard,
-    // the next presence update can replace the simulated record before the
-    // prompt has been inspected.
-    const reviewTarget = new URLSearchParams(window.location.search).get('review');
-    if (reviewTarget === 'jukebox-sound' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
-      this.updateJukeboxSoundPrompt();
-      return;
-    }
     const jukebox = this.networkState?.jukebox;
     const playing = jukebox?.nowPlaying;
     // The rooftop band plays whenever a record is on, heard here or not.
@@ -5798,6 +5762,7 @@ export class App {
     // screen's film is on — the Shore's open-air screen as much as a theatre —
     // the record lets go. Both together were the tab iOS killed.
     const phoneFilm = this.usesSingleFilmPlayer() && Boolean(this.world?.screenFilmShowing());
+    this.jukeboxSilentHere = inItsOwnRoom || phoneFilm;
     const silenced = this.audioMuted || this.arcadePlaying || inItsOwnRoom || document.hidden || phoneFilm;
     if (silenced !== this.jukeboxSilenced) {
       this.jukeboxSilenced = silenced;
@@ -5825,38 +5790,6 @@ export class App {
     this.jukeboxStartedAt = playing.startedAt;
     const offset = Math.max(0, Math.floor((Date.now() - playing.startedAt) / 1000));
     this.mountJukeboxFrame(playing.youtubeId, offset);
-    this.updateJukeboxSoundPrompt();
-  }
-
-  /**
-   * A phone will not let a page raise a sound on its own account, and quietly
-   * nudging the player from here does not help: the command crosses into
-   * YouTube's own frame, and a finger that touched this page is not a finger
-   * that touched that one. What it does honour is an unmute asked for in the
-   * moment somebody presses something. So there is something to press. It
-   * appears only when a record is actually playing, only where sound was asked
-   * for, and only until it has been used once.
-   */
-  private updateJukeboxSoundPrompt(): void {
-    const button = this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]');
-    if (!button) return;
-    const wantsSound = !this.audioMuted && !this.jukeboxSilenced && this.jukeboxVolume > 0
-      && !(this.jukeboxPlayingId && this.jukeboxFailedId === this.jukeboxPlayingId);
-    // The player itself is the only honest witness to whether the square can be
-    // heard, so the prompt is offered exactly while a record is on, sound was
-    // asked for, and the player says it is making none.
-    //
-    // This used to be latched by a flag set the first time the prompt was
-    // pressed, and that flag outlived the player it was pressed for. Walking
-    // into a venue tears the jukebox frame down — deliberately, because a phone
-    // will not carry the screening's player and this one at once — and walking
-    // out builds a new one, muted like every other. The new player needed the
-    // same permission the old one had been given, and the only control that
-    // could ask for it had been retired for the rest of the visit. So the
-    // square came back silent, with nothing on screen admitting it.
-    const audible = this.jukeboxReportedMuted === false && (this.jukeboxReportedVolume ?? 0) > 0 && this.jukeboxReportedState === 1;
-    button.hidden = !jukeboxPromptVisible(this.jukeboxPromptMemory,
-      this.jukeboxPlayingId ? `${this.jukeboxPlayingId}:${this.jukeboxPromptGeneration}` : undefined, wantsSound, audible, performance.now());
   }
 
   private mountJukeboxFrame(youtubeId: string, offsetSeconds: number): void {
@@ -5911,7 +5844,7 @@ export class App {
     // the frame is being pointed at a new video and starts muted again.
     this.jukeboxReportedMuted = undefined;
     this.jukeboxReportedVolume = undefined;
-    this.jukeboxReportedState = undefined; this.jukeboxPromptGeneration++;
+    this.jukeboxReportedState = undefined;
     frame.src = url.toString();
     this.applyJukeboxVolume();
   }
@@ -5947,7 +5880,6 @@ export class App {
     if (typeof info?.muted === 'boolean') this.jukeboxReportedMuted = info.muted;
     if (typeof info?.volume === 'number') this.jukeboxReportedVolume = info.volume;
     if (typeof info?.playerState === 'number') this.jukeboxReportedState = info.playerState;
-    this.updateJukeboxSoundPrompt();
     const seconds = info?.duration;
     if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 5) return;
     const youtubeId = this.jukeboxPlayingId;
@@ -5958,7 +5890,6 @@ export class App {
 
   private stopJukebox(): void {
     this.jukeboxPlayingId = undefined;
-    this.updateJukeboxSoundPrompt();
     if (!this.jukeboxFrame) return;
     // Stopped and blanked before it is detached. Removing an iframe does not
     // reliably end what it was doing — WebKit keeps the media pipeline behind a
@@ -5989,7 +5920,6 @@ export class App {
     this.jukeboxStartedAt = 0;
     this.jukeboxReportedMuted = undefined;
     this.jukeboxReportedVolume = undefined;
-    this.updateJukeboxSoundPrompt();
   }
 
   private usesSingleFilmPlayer(): boolean {
@@ -6017,6 +5947,59 @@ export class App {
     this.applyJukeboxVolume();
   };
 
+  /** The festival's sound, off or on: the world, the screens and the jukebox together. */
+  private setFestivalMuted(muted: boolean): void {
+    this.audioMuted = muted;
+    sessionStorage.setItem(AUDIO_MUTED_KEY, JSON.stringify(this.audioMuted));
+    this.syncAudioResumeUi();
+    this.world?.audio.setMuted(this.audioMuted);
+    // The jukebox is its own player and was never told, so turning the
+    // festival's sound on left the square silent until the slider was moved.
+    this.applyJukeboxVolume();
+    this.sendScreenCommand(this.audioMuted ? 'mute' : 'unMute');
+    this.world?.setPublicScreenMuted(
+      this.snapshot?.inTheater ? this.activeVenue : undefined,
+      this.audioMuted || !this.snapshot?.inTheater || this.screenMode === 'private',
+    );
+  }
+
+  /**
+   * DROP THE BEAT, from the PASS menu (`dropBeatAction`; owner, 2026-10-23).
+   * Pressing it means "I want to hear the record": a visitor who came in
+   * silent or turned the festival's sound off has it turned on, and a jukebox
+   * slider left at nothing comes back to its default. The press is also the
+   * gesture a browser asks for before a player may make a sound.
+   */
+  private dropTheBeat(): void {
+    const zh = this.language === 'zh-TW';
+    const recordOn = Boolean(this.networkState?.jukebox?.nowPlaying);
+    if (recordOn && this.audioMuted) {
+      this.setFestivalMuted(false);
+      void this.world?.audio.start(false).then(() => this.syncAudioResumeUi()).catch(() => this.syncAudioResumeUi());
+    }
+    if (recordOn && this.jukeboxVolume <= 0) {
+      this.jukeboxVolume = DEFAULT_JUKEBOX_VOLUME;
+      try { window.localStorage.setItem(JUKEBOX_VOLUME_KEY, String(this.jukeboxVolume)); } catch { /* private mode */ }
+    }
+    this.syncJukebox();
+    const audible = this.jukeboxReportedMuted === false && (this.jukeboxReportedVolume ?? 0) > 0 && this.jukeboxReportedState === 1;
+    const action = dropBeatAction({ recordOn, silentHere: this.jukeboxSilentHere, audible });
+    if (action === 'already-playing') return;
+    this.closeFestivalPass();
+    if (action === 'no-music') {
+      this.showWorldAlert(zh ? '點唱機目前沒有播放音樂' : 'THERE IS NO MUSIC CURRENTLY PLAYING IN THE JUKEBOX');
+      return;
+    }
+    if (action === 'outdoors-only') {
+      this.showWorldAlert(zh ? '點唱機在戶外播放，走出去就能聽到' : 'THE JUKEBOX PLAYS OUTDOORS · STEP OUTSIDE TO HEAR IT');
+      return;
+    }
+    this.applyJukeboxVolume();
+    // Again a moment later: the player can accept the connection a beat after
+    // it is spoken to, and the press is the only permission we will get.
+    window.setTimeout(() => this.applyJukeboxVolume(), 400);
+  }
+
   private applyJukeboxVolume(): void {
     const frame = this.jukeboxFrame?.contentWindow;
     if (!frame) return;
@@ -6027,7 +6010,6 @@ export class App {
     // Announce this page as a listener first. Without it a player that has not
     // been spoken to yet discards the commands that follow.
     frame.postMessage(JSON.stringify({ event: 'listening', id: 'jukebox' }), '*');
-    this.updateJukeboxSoundPrompt();
     send('setVolume', [level]);
     if (level === 0) send('mute');
     else {
@@ -7059,18 +7041,7 @@ export class App {
       panel.querySelectorAll<HTMLButtonElement>('[data-world-camera]').forEach(choice=>choice.setAttribute('aria-pressed',String(choice===button)));
     }));
     panel.querySelector<HTMLButtonElement>('[data-mute]')?.addEventListener('click', (event) => {
-      this.audioMuted = !this.audioMuted;
-      sessionStorage.setItem(AUDIO_MUTED_KEY, JSON.stringify(this.audioMuted));
-      this.syncAudioResumeUi();
-      this.world?.audio.setMuted(this.audioMuted);
-      // The jukebox is its own player and was never told, so turning the
-      // festival's sound on left the square silent until the slider was moved.
-      this.applyJukeboxVolume();
-      this.sendScreenCommand(this.audioMuted ? 'mute' : 'unMute');
-      this.world?.setPublicScreenMuted(
-        this.snapshot?.inTheater ? this.activeVenue : undefined,
-        this.audioMuted || !this.snapshot?.inTheater || this.screenMode === 'private',
-      );
+      this.setFestivalMuted(!this.audioMuted);
       (event.currentTarget as HTMLButtonElement).textContent = this.audioMuted
         ? (this.language === 'zh-TW' ? '開啟聲音' : 'UNMUTE')
         : (this.language === 'zh-TW' ? '靜音' : 'MUTE');
