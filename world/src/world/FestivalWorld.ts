@@ -1,9 +1,13 @@
-import { SCREENING_SITES, SHORE_SIGN, VENUE_STANDS, venueStandNear, screeningContains } from './CoastalVenues';
+import { FireworksShow } from './FireworksShow';
+import { NpcIndicators, createNpcIdentityTexture, NPC_INDICATOR } from './NpcIndicator';
+import { WorldCamera, ISOMETRIC_VIEW, isometricExtraDepth, WORLD_CAMERA_MODES, nextWorldCameraMode, mobileFollowYaw, type WorldCameraMode } from './WorldCamera';
+import {DialogueCameraTransition,NpcDialogueClock} from './DialogueCamera';
+import { SCREENING_SITES, DRIVE_IN_PARKING, SHORE_SIGN, VENUE_STANDS, venueStandNear, screeningContains } from './CoastalVenues';
 import { DEFAULT_NPC_PROFILES, DOUBLE_TAP_INTRODUCTION, FEMALE_RESIDENTS,
   type NpcId, type NpcProfile, type MentorFollowerTarget } from './NpcRoster';
 import { TOP_OUTFITS, outfitWire } from './CoastalOutfits';
 import { npcSeed, sampleNpcMotion, type NpcLeg } from './SharedNpcMotion';
-import { createCoastalPopcorn, createCoastalDrink, createCoastalPamphletStand, createCoastalDeity, createCoastalSignFrame } from './CoastalProps';
+import { createCoastalPopcorn, createCoastalDrink, createCoastalPamphletStand, createCoastalDeity } from './CoastalProps';
 import { createCoastalDecks, createCoastalSpeaker, createCoastalJukebox } from './CoastalFurniture';
 import { setCoastalSwimwear } from './CoastalAvatar';
 import * as THREE from 'three';
@@ -41,11 +45,30 @@ import { pixelSurface, worldSurfaceUV } from './CoastalSurfaces';
 import { ROAD_POLYGONS, streetLampObstructsRoute } from './CoastalCirculation';
 import { CoastalScenery } from './CoastalScenery';
 import { VenueSceneryAssets } from './VenueSceneryAssets';
+import { createFestivalAttendant } from './FestivalAttendant';
+import { EnvironmentMaterials, environmentAssetsFromUrls, tagEnvironmentSurface, type EnvironmentFamily, type EnvironmentSurface } from './EnvironmentMaterials';
+import { applyEnvironmentArchitecture } from './EnvironmentArchitecture';
+import { EnvironmentAssets, environmentModelAssetsFromUrls, ENVIRONMENT_ASSET_ROOT } from './EnvironmentAssets';
+import { prepareEnvironmentReflections, type EnvironmentReflectionHandle } from './EnvironmentReflections';
+import { applyDriveInLicensePlates, type DriveInLicensePlateHandle } from './DriveInLicensePlates';
+import { applyEnvironmentArt } from './EnvironmentArt';
+import { createNeonSignTexture, repaintNeonSignTexture, createNeonSignFrame, disposeNeonSignFrame, disposeNeonSignTextures, type NeonSignStyle } from './NeonSigns';
+import { applyWorldFilmGrain, setWorldFilmGrainFrame } from './WorldFilmGrain';
+import { applyPlanetLightAnchors, disposePlanetLightAnchors } from './PlanetLightAnchors';
+import { polishPalacePilasters, type PalacePilasterFinishHandle } from './PalacePilasterFinish';
+import { ROOFTOP_STAIR_OPEN_GUARD, rooftopStairGuardCameraTop, rooftopStairCameraFloor, rooftopStairPassesSlenderPole } from './RooftopCamera';
+import { createRooftopStairGuard } from './RooftopStairGuard';
+import { applyDriveInCarArt, type DriveInCarArtHandle } from './DriveInCarArt';
 import { createCoastalAvatar } from './CoastalAvatar';
 import { importedAvatarTextures, attachImportedAvatar, syncImportedAvatars, importedAvatarRoots, AVATAR_NATIVE, MOVE_SECONDS, PUNCH_CONTACT_SECONDS } from './ImportedAvatar';
 import { createCoastalSkateboard } from './CoastalSkateboard';
 import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, setCoastalFists, releaseCoastalGrips, walkCoastalPose, plantedFoot, passOutCoastalPose, danceCoastalPose, COASTAL_STRIDE_LENGTH, skateCoastalPose, levelCoastalFeet, supportCoastalPose, seatCoastalLegs, coastalFootHeights } from './CoastalPose';
 import { coastalRoof, createCoastalSedan, CONVERTIBLE } from './CoastalGeometry';
+import { createConvertibleSeatProxy } from './ConvertibleSeat';
+import { TempleTrimAtlas } from './TempleTrimAtlas';
+import { applyTempleArchitecture, type TempleArchitectureHandle } from './TempleArchitecture';
+import { createWishWallFrame, type WishWallFrameHandle } from './WishWallFrame';
+import { polishPamphletSurface, type PamphletSurfaceHandle } from './PamphletSurface';
 import { XrHud } from './XrHud';
 import { XR_HOLD_MS, xrBindingFor, type XrAction } from './XrControls';
 import {
@@ -59,8 +82,9 @@ import { videoSyncPlan, videoJoinTime, bufferedAheadOf } from './VideoSync';
 import { stepAvoidance, AVOIDANCE_OFFSETS_FINE, type AvoidanceState } from './CameraAvoidance';
 import { pinchZoom, pinchSpread, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX } from './CameraInput';
 import { planRenderScale, RENDER_SCALE_FLOOR } from './RenderScale';
-import { MothArcadeCabinet, MothArcadeSession, MothArcadeView } from './MothArcade';
+import { ARCADE_LOCK_KEYHOLE, MothArcadeCabinet, MothArcadeSession, MothArcadeView } from './MothArcade';
 import { PreviewResourceLease } from './PreviewResourceLease';
+import { CutawayLens, CUTAWAY_LENS, type CutawayRoom } from './CutawayLens';
 import { fitGateAerialCamera, fitGateAvatarCamera, gateAerialTarget, blendGateEntryCamera, type GateEntryCameraPose, type GatePreviewFrame, type GatePreviewCameraSnapshot } from './GatePreviewLayout';
 import { arcadeIsNearest, arcadeIsLocked, ARCADE_WIDTH, ARCADE_DEPTH, cabinetPairPositions, arcadeAgainstWallX } from './ArcadeRules';
 
@@ -70,7 +94,7 @@ type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & {
 type PhoneOrientationPermission = 'idle' | 'granted' | 'denied' | 'unavailable';
 
 export type GraphicsMode = 'normal' | 'lite';
-export type CameraMode = 'follow' | 'perspective' | 'first-person' | 'screening';
+export type CameraMode = WorldCameraMode;
 export type PlayerState = 'walking' | 'seated' | 'swimming';
 export type AvatarGesture = 'wave' | 'feed' | 'tail-wag' | 'dance' | 'drink' | 'eat' | 'jump' | 'stumble' | 'offer' | 'bow' | 'punch' | 'hit' | 'tumble' | 'passout';
 export type CarriedItem = 'POPCORN' | 'MENTOR' | 'DRINK' | 'HOTDOG' | 'PIZZA' | 'CHICKEN';
@@ -91,7 +115,9 @@ export type WorldAction =
   | { type: 'pamphlet' }
   | { type: 'swim'; active: boolean; stowedPopcorn?: boolean }
   | { type: 'greet'; target: string; gesture: 'wave' | 'tail-wag' }
-  | { type: 'npcIntroduction'; id: string; name: string; title: string; introduction: string }
+  // 'dialogue' after a wave: the conversation shot and the full-width box.
+  // 'menu' for SHIFT+E and the attendee list: the plain introduction card.
+  | { type: 'npcIntroduction'; id: string; name: string; title: string; introduction: string; presentation: 'dialogue' | 'menu' }
   | { type: 'treat'; target: string }
   | { type: 'mentor'; active: boolean; discardedPopcorn?: boolean }
   | { type: 'programme'; venue?: VenueKey }
@@ -125,6 +151,10 @@ export interface AvatarPalette {
   top: string;
   bottoms: string;
   swimwear: string;
+  // Optional dyes preserve the original painted garments in saved profiles.
+  // `top` remains the compatible outfit/body wire, never a shirt colour.
+  shirt?: string;
+  shoes?: string;
   // Accessories. A colour means it is worn; absent means it is not, so one
   // field carries both answers and an older client that has never heard of
   // them simply sends nothing and wears nothing.
@@ -144,6 +174,7 @@ export type AvatarColourSlot = 'skin' | 'hair' | 'top' | 'bottoms' | 'swimwear';
 
 export interface WorldSnapshot {
   cameraMode: CameraMode;
+  dialogueNpcId?: string;
   /** True after an active VR visitor has turned their head/view far enough to look around. */
   vrLookedAround: boolean;
   location: string;
@@ -155,6 +186,9 @@ export interface WorldSnapshot {
   screeningVenue: VenueKey;
   outfit: 'festival' | 'swimwear';
   carriedItem?: CarriedItem;
+  carryingMentor?: boolean;
+  /** Remaining drinks, rounded up consistently as their effect wears off. */
+  drinks: number;
   stowedItem?: 'POPCORN';
   hasPamphlet: boolean;
   npcCount: number;
@@ -457,25 +491,6 @@ interface WaterReflectionVisual {
   kind: 'sun' | 'moon';
 }
 
-interface FireworkRocket {
-  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
-  trail: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
-  velocity: number;
-  targetY: number;
-  colour: THREE.Color;
-}
-
-interface FireworkBurst {
-  points: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
-  velocities: Float32Array;
-  reflection: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
-  origin: THREE.Vector3;
-  age: number;
-  lifetime: number;
-  peakIntensity: number;
-  currentIntensity: number;
-}
-
 interface Collider {
   physical?: boolean;
   label?: string;
@@ -565,7 +580,7 @@ const statuePosition = new THREE.Vector3(0, 0, -6.2);
  * collider and not the artwork — just how much of the screen it can cover, so
  * a video is not painted over a horse standing in front of it.
  */
-const statueBlockSize = { width: GANGAN_STATUE_SIZE.width, height: GANGAN_STATUE_SIZE.height, depth: GANGAN_STATUE_SIZE.depth } as const;
+const statueBlockSize = { width: 7.6, height: GANGAN_STATUE_SIZE.height, depth: GANGAN_STATUE_SIZE.depth } as const;
 const statueBlockCenterY = GANGAN_STATUE_SIZE.height / 2;
 // Level with the first lamp up the road at z = 16, and pulled in off the kerb.
 // The stalls carry colliders wider than the stalls themselves — the popcorn
@@ -584,7 +599,7 @@ const concessionPosition = new THREE.Vector3(-20, 0, -25);
 // Right in front of the statue, on the gate side: walking in you meet the
 // pamphlets first and the horse behind them. Just clear of the statue's own
 // footprint, so the two read as one arrangement.
-const pamphletPosition = new THREE.Vector3(0, 0, -1.4);
+const pamphletPosition = new THREE.Vector3(statuePosition.x, 0, statuePosition.z + 4.2);
 /**
  * The temple's wish wall: on the flat ground at the foot of 美麗仙人's
  * stairs, south of the flight (which spans z -2.5..10.5), facing the road
@@ -594,6 +609,8 @@ const pamphletPosition = new THREE.Vector3(0, 0, -1.4);
  * about x = 69. The larger board sits farther south so its cap clears the stairs.
  */
 const WISH_WALL = { x: 67.6, z: -7.5, scale: 1.5 } as const;
+/** How many notes the board in the world hangs at once; the service keeps thirty. */
+const WISH_BOARD_LIMIT = 6;
 // Where the sea meets the sand. Every water plane ends here and every piece of
 // beach starts here: overlapping the two put opaque sand and a water surface at
 // the same height, and they fought for the same pixels along the whole shore.
@@ -653,6 +670,8 @@ const OCEAN_FULL_WITHIN = 6;
 const OCEAN_SILENT_AT = 36;
 /** How much of the outdoors is heard in each roofed room: 1 would be none of it taken away. */
 const INDOORS = { palace: 0.2, clubLobby: 0.4, clubRoom: 0.1 } as const;
+/** The sign-in globe's sky fill: the night fill before 2026-10-21, which lit it evenly. */
+const GATE_GLOBE_FILL = 1.45;
 /**
  * Seconds from the start of the gesture to its sound: the drink reaches the
  * straw at about 0.55 s of its 1.8 s, the popcorn the lips at about 1.0 s of
@@ -1402,6 +1421,13 @@ const material = (
   metalness = 0.05,
 ): THREE.MeshStandardMaterial => new THREE.MeshStandardMaterial({ color, roughness, metalness });
 
+/** Explicit construction intent: shared tiles never guess from object colours. */
+const environmentMaterial = (family: EnvironmentFamily, color: number, roughness = .85, metalness = .05): THREE.MeshStandardMaterial => {
+  const surface = material(color, roughness, metalness);
+  surface.userData.environmentSurface = { family, tint: 'source', uv: 'world' } satisfies EnvironmentSurface;
+  return surface;
+};
+
 /**
  * The brand's own display face, and the one hard problem with putting a font on
  * a sign: a canvas draws with whatever font is resolved at that instant, and a
@@ -1488,43 +1514,12 @@ const createImageSignTexture = (source: string, background = '#151517', aspect=2
   return texture;
 };
 
-const createTextTexture = (lines: string[], foreground = '#eee4cc', background = '#354842', aspect=2) => {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1024;
-  canvas.height = Math.round(1024/aspect);
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('Canvas 2D context unavailable.');
-  const paint = () => {
-    context.fillStyle = background;
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.strokeStyle = '#8d654b';
-    context.lineWidth = Math.max(3,canvas.height*.022);
-    context.strokeRect(22, 22, canvas.width - 44, canvas.height - 44);
-    context.fillStyle = foreground;
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    lines.forEach((line, index) => {
-      const heading = index === 0;
-      let size=canvas.height*(heading?.36:.17);
-      context.font=signFont(size,heading);
-      size*=Math.min(1,(canvas.width-100)/Math.max(1,context.measureText(line).width));
-      context.font=signFont(size,heading);
-      context.fillText(line,canvas.width/2,canvas.height*(heading?.41:.76));
-    });
-  };
-  paint();
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const repaint = () => {
-    paint();
-    texture.needsUpdate = true;
-  };
-  if (!brandFontLoaded) {
+const createTextTexture = (lines: string[], _foreground = '#eee4cc', _background = '#354842', aspect=2, style?:NeonSignStyle) => {
+  const texture=createNeonSignTexture(lines,{aspect,style,font:signFont});
+  if(!brandFontLoaded){
+    const repaint=()=>repaintNeonSignTexture(texture);
     signRepaints.add(repaint);
-    // Material.dispose() does not dispose its maps, so callers explicitly
-    // dispose replaced sign textures. Drop the pending callback at that same
-    // moment or it becomes a permanent root for the old 1024 x 512 canvas.
-    texture.addEventListener('dispose', () => signRepaints.delete(repaint));
+    texture.addEventListener('dispose',()=>signRepaints.delete(repaint));
   }
   return texture;
 };
@@ -1654,11 +1649,12 @@ export class FestivalWorld {
   private readonly foregroundCanvas: HTMLCanvasElement;
   private readonly renderer: THREE.WebGLRenderer;
   private readonly conservesMobileGpu: boolean;
+  private readonly mobileCameraControls=shouldConserveMobileGpu();
   private readonly cssRenderer: CSS3DRenderer;
   private readonly scene = new THREE.Scene();
   private readonly cssScene = new THREE.Scene();
   private readonly projectorApertureScene = new THREE.Scene();
-  private readonly camera = new THREE.PerspectiveCamera(58, 1, 0.1, 300);
+  private readonly camera = new WorldCamera(58, 1, 0.1, 300);
   private readonly dayNight: DayNightCycle;
   private readonly player = new THREE.Group();
   private readonly originalPlayerIdle = new THREE.Group();
@@ -1672,6 +1668,25 @@ export class FestivalWorld {
   private readonly seats: Seat[] = [];
   private readonly npcs: NpcAvatar[] = [];
   private readonly venueSceneryAssets = new VenueSceneryAssets();
+  private readonly environmentMaterials = new EnvironmentMaterials({ assets: environmentAssetsFromUrls(
+    import.meta.glob<string>('../assets/environment/*.webp', { eager: true, query: '?url', import: 'default' }),
+  ) });
+  // Only the models the world places. A wildcard published every GLB in the
+  // folder, the retired horse-and-rider statue and the review page's car
+  // among them (owner's clean-up, 2026-10-23).
+  private readonly environmentModels = new EnvironmentAssets({ assets: environmentModelAssetsFromUrls(
+    import.meta.glob<string>('../assets/environment/{street-lamp,cinema-pilaster,victory-statue,pamphlet-stand}{,-mobile}.glb', { eager: true, query: '?url', import: 'default' }),
+  ) });
+  private readonly environmentLampMaterials = new Set<THREE.MeshStandardMaterial>();
+  private readonly templeTrimAtlas = new TempleTrimAtlas(import.meta.glob<string>('../assets/environment/temple-trim*.webp', { eager:true, query:'?url', import:'default' }));
+  private templeArchitecture?: TempleArchitectureHandle;
+  private wishWallFrame?: WishWallFrameHandle;
+  private pamphletSurface?: PamphletSurfaceHandle;
+  private palacePilasterFinish?:PalacePilasterFinishHandle;
+  private environmentPrepared = false;
+  private environmentReflections?: EnvironmentReflectionHandle;
+  private driveInCarArt?: DriveInCarArtHandle;
+  private driveInLicensePlates?: DriveInLicensePlateHandle;
   /** The served roster, by id, so a prompt can offer what STAFF have written. */
   private readonly npcProfileById = new Map<string, NpcProfile>();
   private readonly avatarFrustum = new THREE.Frustum();
@@ -1710,7 +1725,7 @@ export class FestivalWorld {
   private readonly clubFacadeGlows: THREE.PointLight[] = [];
   private readonly lampPosts: Array<{ x: number; z: number; height: number; targetX: number; castsShadow: boolean }> = [];
   private readonly lampPool: THREE.SpotLight[] = [];
-  private lampPoolAt = 0;
+  private lampPoolAt = -Infinity;
   private clubFloorLight?: THREE.PointLight;
   private clubNeon?: THREE.Mesh;
   private clubBoothGlow?: THREE.Mesh;
@@ -1926,6 +1941,8 @@ export class FestivalWorld {
   // variant when the first public screening redraws a transparent avatar.
   // The normal world pass clips only beyond the entire festival's bounds.
   private readonly inactiveProjectorClipPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 1_000_000);
+  /** Indoors in the isometric view, the circle the room is seen through. */
+  private readonly cutawayLens = new CutawayLens();
   private projectorActivationReview?: ProjectorActivationReview;
   private projectorReviewFrameAt = 0;
   private readonly projectorCornerView = new THREE.Vector3();
@@ -1940,22 +1957,15 @@ export class FestivalWorld {
   private projectorReviewNpcId?: string;
   private projectorReviewVisitor?: RemoteAvatar;
   private lastSingleContextAvatarIds: string[] = [];
+  private neonFrames:THREE.Group[]=[];
   private readonly venueSignMaterials = new Map<VenueKey, THREE.MeshBasicMaterial>();
   private readonly venueSignSignatures = new Map<VenueKey, string>();
   private readonly waterTextures: THREE.CanvasTexture[] = [];
   private readonly waterReflections: WaterReflectionVisual[] = [];
-  private readonly fireworkRockets: FireworkRocket[] = [];
-  private readonly fireworkBursts: FireworkBurst[] = [];
-  /**
-   * One light exists for the lifetime of the world and follows the brightest
-   * firework. Adding and removing PointLights changes Three's shader defines,
-   * which made the first burst compile a succession of new scene programs and
-   * freeze the festival. A fixed light keeps the real illumination without
-   * changing the renderer's light count while the celebration is running.
-   */
-  private readonly fireworkWorldLight = new THREE.PointLight(0xffffff, 0, 82, 1.45);
-  private fireworksUntil = 0;
-  private nextFireworkAt = 0;
+  private fireworksShow?: FireworksShow;
+  private templeFireworks?: FireworksShow;
+  private templeCelebrationId?: string;
+  private npcIndicators?: NpcIndicators;
   private stylizedWater?: THREE.Mesh;
   /** The island prototype's landing (?island); absent otherwise. */
   private islandDock?: IslandDock;
@@ -1968,9 +1978,9 @@ export class FestivalWorld {
   private stylizedWaterMaterial?: THREE.ShaderMaterial;
   private readonly cameraOrbit = {
     follow: { yaw: 0, pitch: Math.atan2(3.4, 10) },
-    perspective: { yaw: Math.atan2(7.8, 7.2), pitch: Math.atan2(4.85, Math.hypot(7.8, 7.2)) },
   };
-  private readonly screeningOrbit = { yaw: 0, pitch: 0 };
+  private lastManualLookAt = -Infinity;
+  private mobileMoveYaw?:number;
   /**
    * How far back the orbit cameras sit, as a multiple of their resting
    * distance. Held between a shoulder-close view and roughly twice the default,
@@ -1990,7 +2000,7 @@ export class FestivalWorld {
   private arcadeSession?: MothArcadeSession;
   private arcadeView?: MothArcadeView;
   private arcadeAperture?: THREE.Mesh;
-  private arcadeScreenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number }) => void;
+  private arcadeScreenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number; lock?: { x: number; y: number; width: number; height: number } }) => void;
   /** The band on the roof over the pop-up shop; plays while the jukebox has a record on. */
   private rooftopBand?: RooftopBand;
   /** The beach easter egg. Scenery with one loop; not a resident. */
@@ -2045,12 +2055,13 @@ export class FestivalWorld {
   private graphicsMode: GraphicsMode;
   private palette: AvatarPalette;
   private playerState: PlayerState = 'walking';
-  private previousCameraMode: Exclude<CameraMode, 'screening'> = 'follow';
   private outfit: 'festival' | 'swimwear' = 'festival';
   private carriedItem?: CarriedItem;
   private stowedItem?: 'POPCORN';
   private hasPamphlet = false;
   private activeSeat?: Seat;
+  private npcDialogue?: {npc:NpcAvatar; transition:DialogueCameraTransition};
+  private npcDialogueClock?: NpcDialogueClock;
   private playerGestureUntil = 0;
   private playerGesture?: AvatarGesture;
   private controlledNpcId?: string;
@@ -2060,6 +2071,7 @@ export class FestivalWorld {
       session finishes publishing its last empty follower state. */
   private mentorGreetingReview = false;
   private selfVisitorId?: string;
+  private carryingMentor = false;
   private mentorClaimPending = false;
   private mentorReleasePending = false;
   private pickupUntil = 0;
@@ -2175,8 +2187,17 @@ export class FestivalWorld {
     this.dayNight.moonLight.layers.enable(1);
     this.dayNight.sunObject.layers.enable(1);
     this.dayNight.moonObject.layers.enable(1);
-    this.fireworkWorldLight.castShadow = false;
-    this.scene.add(this.fireworkWorldLight);
+    if (!preview) this.fireworksShow = new FireworksShow(this.scene, {
+      quality: graphicsMode, seaY: SEA_Y,
+      onCue: cue => { if (cue.kind === 'burst') this.audio.playFireworkCue(cue.pattern); },
+    });
+    if (!preview) {
+      this.templeFireworks = new FireworksShow(this.scene, { quality: graphicsMode, seaY: SEA_Y, score: 'temple',
+        onCue: cue => { if (cue.kind === 'burst') this.audio.playFireworkCue(cue.pattern); } });
+      this.templeFireworks.root.name = 'shared-temple-donation-fireworks';
+      this.templeFireworks.root.position.set((TEMPLE.minX + TEMPLE.maxX) / 2, TEMPLE_GRADE + 13,
+        (TEMPLE.minZ + TEMPLE.maxZ) / 2 + 96);
+    }
     this.scene.add(this.xrRig);
     this.xrRig.add(this.camera);
     if (!preview) this.createXrControllers();
@@ -2199,6 +2220,7 @@ export class FestivalWorld {
       this.createNpcCrowd();
       this.createAtmosphere();
     }
+    applyPlanetLightAnchors(this.scene);
     this.scene.traverse((object) => {
       if (object.userData.projectorBackground) object.layers.disable(1);
       else object.layers.enable(1);
@@ -2227,6 +2249,7 @@ export class FestivalWorld {
       this.player.position.set(DOCK_ARRIVAL.x, this.groundHeightAt(DOCK_ARRIVAL.x, DOCK_ARRIVAL.z), DOCK_ARRIVAL.z);
       this.camera.position.set(DOCK_ARRIVAL.x, this.player.position.y + 5.2, DOCK_ARRIVAL.z + 7);
     }
+    if(!preview)this.updateLampPool();
 
     if (preview) {
       // GatePreview owns timing, resize and pointer capture. The entrance must
@@ -2310,7 +2333,8 @@ export class FestivalWorld {
   /** Complete fixed downloads and placement before wiring the interactive UI. */
   async prepareAssets(onProgress?: (progress: number) => void): Promise<void> {
     if (this.preview || this.disposed) return;
-    const assets = [this.venueSceneryAssets?.ready(), this.arcadeCabinet?.ready, this.bandLoad,
+    const trimReady=!this.environmentPrepared&&this.environmentUpgradeEnabled()?this.templeTrimAtlas?.prepare():undefined;
+    const assets = [this.venueSceneryAssets?.ready(), this.environmentModels?.ready(), this.arcadeCabinet?.ready, this.bandLoad,trimReady,
       typeof document !== 'undefined' ? document.fonts?.ready : undefined].filter(Boolean);
     let completed = 0;
     await Promise.all(assets.map(async pending => { await pending; onProgress?.(++completed / assets.length); }));
@@ -2318,6 +2342,36 @@ export class FestivalWorld {
     if (this.arcadeCabinet?.status === 'failed' || (this.rooftopBand && !this.rooftopBand.ready)) {
       throw new Error('World models did not finish loading. Retry admission.');
     }
+    // Fixed art is placed and uploaded under the same loading view as the
+    // existing town. The comparison switch exists only on loopback.
+    const legacyEnvironment = ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+      && new URLSearchParams(window.location.search).get('environment') === 'legacy';
+    if (!this.environmentPrepared && !legacyEnvironment) {
+      this.environmentPrepared = true;
+      applyEnvironmentArchitecture(this.scene, { keepClear: this.publicScreenBoxes() });
+      this.templeArchitecture=applyTempleArchitecture(this.scene,{decorativeMaterial:this.templeTrimAtlas?.material});
+      this.scene.traverse(object => {
+        const mesh = object as THREE.Mesh;
+        if (!mesh.isMesh || Array.isArray(mesh.material)) return;
+        const surface = mesh.material.userData.environmentSurface as EnvironmentSurface | undefined;
+        if (!surface) return;
+        tagEnvironmentSurface(mesh, surface.family, surface);
+        // Only the explicitly marked static construction materials use this
+        // exemption; the actual picture backdrops have no such marker.
+        mesh.userData.environmentAllowProjectorBackground = true;
+      });
+      await this.environmentMaterials.prepare(this.scene);
+      if (this.disposed) return;
+      this.driveInCarArt=applyDriveInCarArt(this.scene);
+      this.pamphletSurface=polishPamphletSurface(this.scene);
+      this.palacePilasterFinish=polishPalacePilasters(this.scene);
+      this.driveInLicensePlates=applyDriveInLicensePlates(this.scene);
+      if (this.environmentModels) this.environmentReflections=prepareEnvironmentReflections(this.renderer,this.scene);
+      this.finishNeonSigns();
+      applyEnvironmentArt(this.scene);
+      applyWorldFilmGrain(this.scene);
+    }
+    applyPlanetLightAnchors(this.scene);
   }
 
   /** Finish static geometry and GPU programs while the loading view still owns input. */
@@ -2327,6 +2381,7 @@ export class FestivalWorld {
     // Live visitors and streamed films remain runtime data; all fixed assets
     // finish placement before subdivision, batching and GPU preparation.
     await this.prepareAssets(progress => onProgress?.(progress * .55));
+    if (this.disposed) return;
     // The fixed downloads are done, so the player's first film may run as soon
     // as it answers, alongside the work below (`playFirstFilm`).
     this.firstFilmWindow = true;
@@ -2418,8 +2473,30 @@ export class FestivalWorld {
 
   stop(): void {
     if (this.disposed) return;
+    this.closeNpcDialogue();
     this.disposed = true;
+    this.renderer.setAnimationLoop(null);
+    disposePlanetLightAnchors(this.scene);
+    disposeNeonSignTextures(this.scene);
+    for(const frame of this.neonFrames)disposeNeonSignFrame(frame);
+    this.neonFrames=[];
+    this.npcIndicators?.dispose();
+    for(const npc of this.npcs){const map=npc.badge.material.map;if(map?.userData.npcIdentity){map.dispose();npc.badge.material.dispose();}}
+    this.fireworksShow?.dispose();
+    this.templeFireworks?.dispose();
+    this.environmentReflections?.dispose();
+    this.palacePilasterFinish?.dispose();
+    this.pamphletSurface?.dispose();
+    this.templeArchitecture?.dispose();
+    this.wishWallFrame?.dispose();
+    this.templeTrimAtlas?.dispose();
+    this.wishWallTexture?.dispose();this.wishWallTexture=undefined;
+    if(this.wishWallCanvas){this.wishWallCanvas.width=this.wishWallCanvas.height=1;this.wishWallCanvas=undefined;}
+    this.driveInCarArt?.dispose();
+    this.driveInLicensePlates?.dispose();
     this.venueSceneryAssets.dispose();
+    this.environmentMaterials.dispose();
+    this.environmentModels?.dispose();
     this.stopArcadeGame(); this.arcadeCabinet?.dispose();
     this.renderer.setAnimationLoop(null);
     if (!this.preview) { this.audio.setAmbientMix(undefined); this.audio.setSkating(false); this.applyDrunkScreen(0); }
@@ -2500,6 +2577,8 @@ export class FestivalWorld {
       this.updateWaterReflections(elapsed);
       this.islandDock?.update(elapsed);
       const centreX = (ISLAND.west + ISLAND.east) / 2, centreZ = (ISLAND.north + ISLAND.south) / 2;
+      // 0 on the sign-in page, 1 once the entry camera has landed in the world.
+      let worldLight = 0;
       if (frame.entry !== undefined) {
         const progress = frame.entry;
         const firstEntryFrame = !this.gateEntryFrom;
@@ -2539,6 +2618,7 @@ export class FestivalWorld {
         const centreMix = Math.min(1, progress / .92);
         if (PLANET.on) setPlanetCentre(THREE.MathUtils.lerp(centreX, spawnX, centreMix), THREE.MathUtils.lerp(centreZ, spawnZ, centreMix));
         const amount = progress * progress * (3 - 2 * progress);
+        worldLight = amount;
         if (this.scene.fog instanceof THREE.Fog) {
           this.scene.fog.near = THREE.MathUtils.lerp(10_000, 34, amount);
           this.scene.fog.far = THREE.MathUtils.lerp(20_000, frame.entryGraphicsMode === 'normal' ? 150 : LITE_FOG_FAR, amount);
@@ -2551,8 +2631,24 @@ export class FestivalWorld {
       this.renderer.setScissorTest(false);
       this.renderer.setViewport(0, 0, width, height);
       this.renderer.autoClear = true;
+      // The sign-in globe is seen from far outside the sky, which is a dome to
+      // stand inside: drawn from out here it showed as a pale disc behind the
+      // globe (owner, 2026-10-22). Its flat background colour stays.
+      const dome = this.dayNight.atmosphere.dome, domeWasVisible = dome.visible;
+      dome.visible = worldLight >= 1;
+      // Lit evenly, the way the sign-in page always looked: the night fill was
+      // lowered for the streets, which left the globe's far side to the moon
+      // alone and read as a shadow across it. Eased back to the world's own
+      // fill as the entry camera comes down.
+      const hemisphere = this.dayNight.hemisphereLight, worldFill = hemisphere.intensity;
+      hemisphere.intensity = THREE.MathUtils.lerp(Math.max(worldFill, GATE_GLOBE_FILL), worldFill, worldLight);
       this.gateResourceLease ??= PreviewResourceLease.forRenderer(this.renderer);
-      this.gateResourceLease.capture(() => this.renderer.render(this.scene, this.gateAerialCamera));
+      try {
+        this.gateResourceLease.capture(() => this.renderer.render(this.scene, this.gateAerialCamera));
+      } finally {
+        dome.visible = domeWasVisible;
+        hemisphere.intensity = worldFill;
+      }
       const cameraSnapshot: GatePreviewCameraSnapshot | undefined = frame.entry !== undefined ? {
         position: this.gateAerialCamera.position.toArray() as [number, number, number], fov: this.gateAerialCamera.fov,
       } : undefined;
@@ -3058,14 +3154,14 @@ export class FestivalWorld {
   }
 
   /** Inspect the locked physical CRT with the same camera as an active game. */
-  startArcadeLockedView(_exit: () => void, screenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number }) => void): boolean {
+  startArcadeLockedView(_exit: () => void, screenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number; lock?: { x: number; y: number; width: number; height: number } }) => void): boolean {
     const screen = this.arcadeCabinet?.screen;
     if (!this.arcadeLocked || !screen || this.arcadeView || (this.xrActive && !this.xrSimulated)) return false;
     this.beginArcadeView(new MothArcadeView(screen), screenLayout);
     return true;
   }
 
-  startArcadeGame(url: string, exit: () => void, screenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number }) => void): boolean {
+  startArcadeGame(url: string, exit: () => void, screenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number; lock?: { x: number; y: number; width: number; height: number } }) => void): boolean {
     const screen = this.arcadeCabinet?.screen;
     if (this.arcadeLocked || !screen || this.arcadeView || (this.xrActive && !this.xrSimulated)) return false;
     const session = new MothArcadeSession(screen, url, exit);
@@ -3082,7 +3178,7 @@ export class FestivalWorld {
     return true;
   }
 
-  private beginArcadeView(view: MothArcadeView, screenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number }) => void): void {
+  private beginArcadeView(view: MothArcadeView, screenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number; lock?: { x: number; y: number; width: number; height: number } }) => void): void {
     this.keys.clear(); this.running = false; this.dancing = false;
     this.cameraPointerReset(); this.setMovementVector(0, 0);
     this.stickX = this.stickY = 0;
@@ -3745,30 +3841,35 @@ export class FestivalWorld {
    * festival service, so another attendee neither renders nor receives it.
    */
   startFireworks(durationMs = 125_000): void {
-    const now = performance.now();
-    this.fireworksUntil = now + Math.max(120_000, durationMs);
-    this.nextFireworkAt = now;
+    this.audio.stopFireworks();
+    void this.audio.prepareFireworks();
+    this.fireworksShow?.start(performance.now(), durationMs);
   }
 
   stopFireworks(): void {
-    this.fireworksUntil = 0;
-    this.nextFireworkAt = 0;
-    while (this.fireworkRockets.length) this.removeFireworkRocket(this.fireworkRockets.pop()!);
-    while (this.fireworkBursts.length) this.removeFireworkBurst(this.fireworkBursts.pop()!);
-    this.fireworkWorldLight.intensity = 0;
+    this.fireworksShow?.stop();
+    this.audio.stopFireworks();
   }
 
-  /** Local QA summary: exposes counts, never the scene or mutable effect. */
-  fireworksReviewSnapshot(): { active: boolean; rockets: number; bursts: number; particles: number; lights: number; reflections: number; reflectionHeights: number[] } {
-    return {
-      active: this.fireworksUntil > performance.now(),
-      rockets: this.fireworkRockets.length,
-      bursts: this.fireworkBursts.length,
-      particles: this.fireworkBursts.reduce((total, burst) => total + burst.velocities.length / 3, 0),
-      lights: this.fireworkWorldLight.intensity > 0.01 ? 1 : 0,
-      reflections: this.fireworkBursts.length,
-      reflectionHeights: this.fireworkBursts.map(b=>b.reflection.position.y),
-    };
+  /** Only the authenticated service's anonymous payment event reaches this path. */
+  syncDonationCelebration(event: { id: string; startedAt: number; durationMs: number } | null | undefined, serverTime: number): void {
+    if (!event || !Number.isFinite(serverTime) || !Number.isFinite(event.startedAt)
+      || event.durationMs !== 24_000 || typeof event.id !== 'string') {
+      this.templeFireworks?.stop(); return;
+    }
+    const elapsed = serverTime - event.startedAt;
+    if (elapsed < -2_000 || elapsed >= event.durationMs) { this.templeFireworks?.stop(); return; }
+    if (this.templeCelebrationId === event.id) return;
+    this.templeCelebrationId = event.id;
+    void this.audio.prepareFireworks();
+    this.templeFireworks?.start(performance.now() - Math.max(0, elapsed), event.durationMs);
+  }
+
+  /** Local QA counts from the same scored show the visitor sees. */
+  fireworksReviewSnapshot() {
+    return this.fireworksShow?.snapshot() ?? { active: false, rockets: 0, bursts: 0,
+      particles: 0, lights: 0, reflections: 0, reflectionHeights: [], phase: 'off',
+      patterns: [], budget: 0, drawCalls: 0 };
   }
 
   /** Local review helper used by the in-app visual QA route. */
@@ -3956,7 +4057,7 @@ export class FestivalWorld {
     // its own position field is then a few centimetres from their hands.
     const where = mentor.group.getWorldPosition(new THREE.Vector3());
     return {
-      carried: this.carriedItem === 'MENTOR' || Boolean(this.mentorCarrierId),
+      carried: this.isCarryingMentor() || Boolean(this.mentorCarrierId),
       parentedTo: mentor.group.parent?.type ?? 'none',
       xz: [Number(where.x.toFixed(2)), Number(where.z.toFixed(2))],
       fromDropPoint: Number(where.distanceTo(this.player.position).toFixed(2)),
@@ -4236,6 +4337,7 @@ export class FestivalWorld {
     setWornCheap(this.graphicsMode !== 'normal');
     const patched = applyWornStyle(this.scene, this.publicScreenBoxes(), this.interiorRooms());
     setWornStyle(amount, steps, grain, texture);
+    applyWorldFilmGrain(this.scene);
     return patched;
   }
 
@@ -4502,8 +4604,8 @@ export class FestivalWorld {
       this.cameraZoom = view === 'overview' ? 3.2 : .4;
       this.cameraOrbit.follow.yaw = view === 'overview' ? -.35 : 0;
       if (view === 'avatar' || view === 'hit') {
-        this.cameraMode = 'perspective'; this.cameraZoom = .5;
-        this.cameraOrbit.perspective.yaw = .14; this.cameraOrbit.perspective.pitch = .12;
+        this.cameraMode = 'follow'; this.cameraZoom = .5;
+        this.cameraOrbit.follow.yaw = .14; this.cameraOrbit.follow.pitch = .12;
       }
       this.cameraOrbit.follow.pitch = view === 'overview' ? .9 : .08;
       this.player.rotation.y = 0;
@@ -4512,8 +4614,8 @@ export class FestivalWorld {
       this.focusCoastalForReview('avatar');
       if (view === 'drink-seat') {
         this.focusClubBarForReview();
-        this.cameraMode = 'perspective'; this.cameraZoom = .5;
-        this.cameraOrbit.perspective.yaw = 1.6; this.cameraOrbit.perspective.pitch = .12;
+        this.cameraMode = 'follow'; this.cameraZoom = .5;
+        this.cameraOrbit.follow.yaw = 1.6; this.cameraOrbit.follow.pitch = .12;
       }
       this.carriedItem = view === 'popcorn' ? 'POPCORN' : 'DRINK';
       this.syncCarriedPropAnchor();
@@ -4820,9 +4922,8 @@ export class FestivalWorld {
     if (!seat) return;
     this.activeSeat = seat;
     this.playerState = 'seated';
-    // Looking at the body, not at the film. The screening camera is what a
-    // visitor gets and it is the one view from which the thing this fixture
-    // exists to check cannot be seen at all.
+    // This art fixture deliberately frames the body for seat-fit inspection.
+    // Ordinary seat entry and public screening retain the chosen player view.
     this.cameraMode = 'follow';
     this.cameraZoom=1.3;this.cameraOrbit.follow.yaw=1.0;this.cameraOrbit.follow.pitch=.35;
     this.player.position.copy(this.seatAnchor(seat));
@@ -4894,6 +4995,8 @@ export class FestivalWorld {
       }
     });
     const groundY = this.groundHeightAt(seat.position.x, seat.position.z) - AVATAR_GROUND_Y;
+    const contactPoints = this.player.userData.importedSeatContactPoints?.(padBox) as THREE.Vector3[] | undefined;
+    const contactBottom = contactPoints?.length ? Math.min(...contactPoints.map(p=>p.y)) : undefined;
     return {
       seated: true,
       seatId: seat.id,
@@ -4914,6 +5017,12 @@ export class FestivalWorld {
       groundY: Number(groundY.toFixed(3)),
       footAboveGround: footY === null ? null : Number((footY - groundY).toFixed(3)),
       soleHeights: coastalFootHeights(rig).map(y=>Number(y.toFixed(3))),
+      renderedContact: contactBottom===undefined?null:{
+        probes:contactPoints!.length,
+        bottom:Number(contactBottom.toFixed(4)),
+        gap:Number((contactBottom-padTop).toFixed(4)),
+        visualOffset:Number((rig.visualRoot?.position.y??0).toFixed(4)),
+      },
       styled: wornMeshesRequested(),
     };
   }
@@ -5401,7 +5510,6 @@ export class FestivalWorld {
     if (!stool) return;
     this.activeSeat = stool;
     this.playerState = 'seated';
-    this.cameraMode = 'screening';
     this.player.position.copy(this.seatAnchor(stool));
     this.player.rotation.y = stool.facing ?? Math.PI;
   }
@@ -5751,7 +5859,7 @@ export class FestivalWorld {
       if (object instanceof THREE.Mesh) primitiveKinds.add(object.geometry.type);
     });
     return {
-      carried: this.carriedItem === 'MENTOR',
+      carried: this.isCarryingMentor(),
       dogBounds: { min: dogBounds.min.toArray(), max: dogBounds.max.toArray() },
       hairBounds: { min: hairBounds.min.toArray(), max: hairBounds.max.toArray() },
       clearance: dogBounds.min.y - hairBounds.max.y,
@@ -5848,8 +5956,6 @@ export class FestivalWorld {
     this.playerState = 'seated';
     this.player.position.copy(this.seatAnchor(seat));
     this.player.rotation.y = Math.PI;
-    this.previousCameraMode = 'follow';
-    this.cameraMode = 'screening';
     this.syncCarriedPropAnchor();
   }
 
@@ -5862,10 +5968,6 @@ export class FestivalWorld {
     this.playerState = 'seated';
     this.player.position.copy(this.seatAnchor(seat));
     this.player.rotation.y = seat.facing ?? Math.PI;
-    this.previousCameraMode = 'follow';
-    this.cameraMode = 'screening';
-    this.screeningOrbit.yaw = 0;
-    this.screeningOrbit.pitch = 0;
     if (venue === 'club' || venue === 'rooftop') this.stageAvatarForegroundReview(venue);
   }
 
@@ -5965,7 +6067,9 @@ export class FestivalWorld {
   }
 
   setCameraMode(mode: CameraMode): void {
-    this.cameraMode = mode;
+    if(!WORLD_CAMERA_MODES.includes(mode))return;
+    this.cameraMode = mode;this.cameraReach=0;this.lastManualLookAt=performance.now();
+    this.mobileMoveYaw=mode==='follow'&&this.mobileCameraControls&&Math.hypot(this.stickX,this.stickY)>.08?this.cameraOrbit.follow.yaw:undefined;
   }
 
   setNpcProfiles(profiles: NpcProfile[]): void {
@@ -5980,11 +6084,12 @@ export class FestivalWorld {
       // would silently drop every biography anybody ever wrote.
       this.npcProfileById.set(profile.id, profile);
       const name = profile.name.trim() || profile.id;
-      if (name === npc.name) continue;
+      const title=profile.title?.trim()||DEFAULT_NPC_PROFILES.find(p=>p.id===profile.id)?.title||'Festival Staff';
+      if (name === npc.name&&npc.badge.material.map?.userData.npcIdentity?.title===title) continue;
       npc.name = name;
       const material = npc.badge.material as THREE.SpriteMaterial;
       const previousTexture = material.map;
-      material.map = createNameTexture(name);
+      material.map = createNpcIdentityTexture(name,title);
       material.needsUpdate = true;
       previousTexture?.dispose();
     }
@@ -5999,7 +6104,7 @@ export class FestivalWorld {
     // MENTOR is parented to the active avatar while carried. Put him down
     // before changing identities so he cannot remain attached to an NPC that
     // has returned to autonomous movement.
-    if (this.carriedItem === 'MENTOR' && npcId !== this.controlledNpcId) this.putDownMentor();
+    if (this.isCarryingMentor() && npcId !== this.controlledNpcId) this.putDownMentor();
     if (this.playerState === 'seated') this.standUp();
     if (this.playerState === 'swimming') this.setSwimming(false);
 
@@ -6035,14 +6140,13 @@ export class FestivalWorld {
     if (carrierId === selfVisitorId) this.mentorClaimPending = false;
     if (carrierId && carrierId !== selfVisitorId) this.mentorClaimPending = false;
     if (!carrierId) this.mentorReleasePending = false;
-    if (carrierId === selfVisitorId && this.carriedItem !== 'MENTOR' && !this.mentorReleasePending) {
+    if (carrierId === selfVisitorId && !this.isCarryingMentor() && !this.mentorReleasePending) {
       const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
       if (mentor?.dogRig) {
-        this.carriedItem = 'MENTOR';
-        this.stowedItem = undefined;
+        this.carryingMentor = true;
         this.attachMentorToCarrier(mentor, this.activeCarrierGroup());
       }
-    } else if (this.carriedItem === 'MENTOR' && carrierId !== selfVisitorId && !this.mentorClaimPending) {
+    } else if (this.isCarryingMentor() && carrierId !== selfVisitorId && !this.mentorClaimPending) {
       this.putDownMentor(false);
     }
     if (this.isMentorControlLocked()) {
@@ -6061,7 +6165,7 @@ export class FestivalWorld {
 
   rejectMentorCarry(): void {
     this.mentorClaimPending = false;
-    if (this.carriedItem === 'MENTOR') this.putDownMentor(false);
+    if (this.isCarryingMentor()) this.putDownMentor(false);
   }
 
   restoreMentorCarry(): void {
@@ -6074,7 +6178,9 @@ export class FestivalWorld {
     for (const npc of this.npcs) {
       npc.group.visible = true;
     }
-    this.player.visible = !this.controlledNpcId;
+    // Network/profile updates may arrive between frames. Preserve the active
+    // view's visibility instead of reviving the body until updatePlayer runs.
+    this.player.visible = !this.xrActive && !this.controlledNpcId && this.cameraMode !== 'first-person' && !this.arcadeView;
   }
 
   requestDanceSelection(): void {
@@ -6097,14 +6203,12 @@ export class FestivalWorld {
   }
 
   toggleCameraMode(): CameraMode {
-    if (this.cameraMode === 'screening') return this.cameraMode;
-    const order: CameraMode[] = ['follow', 'perspective', 'first-person'];
-    const next = order[(order.indexOf(this.cameraMode) + 1) % order.length];
-    this.cameraMode = next;
+    this.setCameraMode(nextWorldCameraMode(this.cameraMode));
     return this.cameraMode;
   }
 
   setMovementKey(key: 'w' | 'a' | 's' | 'd', active: boolean): void {
+    if(this.npcDialogue)return;
     if (active) this.keys.add(key);
     else this.keys.delete(key);
   }
@@ -6115,13 +6219,18 @@ export class FestivalWorld {
    * being read as it was — this sits beside it and wins whenever it is pushed.
    */
   setMovementVector(horizontal: number, vertical: number): void {
+    if(this.npcDialogue){this.stickX=this.stickY=0;return;}
     if (this.arcadeView) { this.stickX = this.stickY = 0; return; }
+    if(this.mobileCameraControls&&this.cameraMode==='follow'&&Math.hypot(horizontal,vertical)>.08&&Math.hypot(this.stickX,this.stickY)<=.08)this.mobileMoveYaw=this.cameraOrbit.follow.yaw;
+    if(Math.hypot(horizontal,vertical)<=.08)this.mobileMoveYaw=undefined;
     this.stickX = THREE.MathUtils.clamp(horizontal, -1, 1);
     this.stickY = THREE.MathUtils.clamp(vertical, -1, 1);
   }
 
   setGraphicsMode(mode: GraphicsMode): void {
     this.graphicsMode = mode;
+    this.fireworksShow?.setQuality(mode);
+    this.templeFireworks?.setQuality(mode);
     this.dayNight.setAmbientLift(mode === 'normal' ? 0 : 0.85);
     if (mode === 'normal') {
       this.scene.traverse((object) => {
@@ -6606,6 +6715,7 @@ export class FestivalWorld {
       if (this.privatePanel?.video === video) video.muted = false;
     }).catch(() => { /* a later headset gesture retries it */ });
     this.scene.add(mesh);
+    mesh.userData.filmGrainExclude=true;
     this.privatePanel = { mesh, video, texture };
     this.placePrivatePanel();
   }
@@ -7255,7 +7365,7 @@ export class FestivalWorld {
     if (limbs.tr) rig.torso.rotation.z += limbs.tr[0];
     if (limbs.hr) rig.head.rotation.z += limbs.hr[0];
     if (limbs.h) { rig.head.rotation.y += limbs.h[0]; rig.head.rotation.x -= limbs.h[1]; }
-    if (limbs.g) {
+    if (limbs.g && avatar.state !== 'seated') {
       const g = limbs.g;
       rig.leftLeg.rotation.set(g[0], 0, g[1]); rig.leftKnee?.rotation.set(g[2], 0, 0);
       rig.rightLeg.rotation.set(g[3], 0, g[4]); rig.rightKnee?.rotation.set(g[5], 0, 0);
@@ -7894,7 +8004,7 @@ export class FestivalWorld {
     const signMaterial = this.venueSignMaterials.get(venue);
     if (!signMaterial) return;
     const ratios:Record<VenueKey,number>={palace:15.8/3.3,'drive-in':3.55/.9,shore:5.6/3.15,club:11/2.8,rooftop:7.4/2};
-    const next = createTextTexture([nextName,nextSubtitle],'#eee4cc','#354842',ratios[venue]);
+    const next = createTextTexture([nextName,nextSubtitle],'#eee4cc','#354842',ratios[venue],venue);
     const previous = signMaterial.map;
     signMaterial.map = next;
     signMaterial.needsUpdate = true;
@@ -8000,13 +8110,13 @@ export class FestivalWorld {
     };
     this.player.position.copy(positions[destination]);
     this.player.position.y = this.groundHeightAt(this.player.position.x, this.player.position.z, 0);
-    if (destination === 'rooftop' && this.cameraMode !== 'first-person') {
+    if (destination === 'rooftop' && this.cameraMode === 'follow') {
       // The pop-up shop is open on its south face. A follow camera retaining
       // yaw 0 sits north of this arrival, inside that bay, so its roof and
       // counter fill the frame as clipped horizontal walls. Put the orbit on
       // the visitor's seaward side and make the next camera probe establish a
       // fresh safe reach for this location.
-      const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
+      const orbit = this.cameraOrbit.follow;
       orbit.yaw = Math.PI;
       this.cameraReach = 0;
     }
@@ -8134,6 +8244,7 @@ export class FestivalWorld {
   }
 
   interact(pickUpMentor = false): void {
+    if(this.npcDialogue)return;
     if (this.arcadeView) return;
     if (this.nearArcade() && this.playerState !== 'seated') {
       this.onAction({ type: 'arcade' }); return;
@@ -8145,7 +8256,8 @@ export class FestivalWorld {
         this.drinkInHand();
         return;
       }
-      if (!pickUpMentor && this.nearClubBar() && !this.carriedItem) {
+      if (!pickUpMentor && this.nearClubBar() && this.carriedItem!=='DRINK') {
+        if(this.carriedItem==='MENTOR')this.carryingMentor=true;
         this.carriedItem = 'DRINK';
         this.syncCarriedPropAnchor();
         this.pickupUntil = performance.now() + 700;
@@ -8170,13 +8282,13 @@ export class FestivalWorld {
      * can be another visitor, who has no profile; then this falls through and
      * SHIFT+E still means the dog.
      */
-    const followerGreeting = this.mentorFollowsActiveAvatar() ? this.nearestSocialTarget() : undefined;
+    const followerGreeting = this.mentorFollowsActiveAvatar()&&!this.atAFixedPlace() ? this.nearestSocialTarget() : undefined;
     if (followerGreeting) {
       if (!pickUpMentor) {
         this.greetSocialTarget(followerGreeting);
         return;
       }
-      if (this.openNpcIntroduction(followerGreeting)) return;
+      if (this.openNpcIntroduction(followerGreeting, 'menu')) return;
     }
 
     // Where the prompt offers `· SHIFT+E / DRINK UP` beside a counter, the hold
@@ -8207,34 +8319,12 @@ export class FestivalWorld {
       }
       this.activeSeat = seat;
       this.playerState = 'seated';
-      this.previousCameraMode = this.cameraMode === 'perspective' ? 'perspective' : 'follow';
       // A bar stool is not a seat in an auditorium: it keeps the orbit camera,
       // so dragging still looks around the room rather than locking onto a
       // screen nobody sat down to watch.
-      this.cameraMode = 'screening';
-      this.screeningOrbit.yaw = 0;
-      this.screeningOrbit.pitch = 0;
-      this.player.position.copy(this.seatAnchor(seat));
+          this.player.position.copy(this.seatAnchor(seat));
       this.player.rotation.y = seat.facing ?? Math.PI;
       this.onAction({ type: 'seated', seatId: seat.id, venue: seat.venue });
-      return;
-    }
-
-    if (this.carriedItem === 'MENTOR') {
-      this.putDownMentor();
-      return;
-    }
-
-    if (this.carriedItem && EDIBLE_ITEMS.includes(this.carriedItem) && this.carriedItem !== 'DRINK') {
-      this.playerGesture = 'eat';
-      this.eatingItem = this.carriedItem;
-      // Popcorn only: the other foods wait for sounds of their own (owner).
-      if (this.eatingItem === 'POPCORN') this.audio?.playAvatarSound('eat', EAT_SOUND_DELAY);
-      this.eatingUntil = performance.now() + 2_000;
-      this.playerGestureUntil = this.eatingUntil;
-      this.carriedItem = undefined;
-      this.syncCarriedPropAnchor();
-      this.onAction({ type: 'ate' });
       return;
     }
 
@@ -8270,6 +8360,7 @@ export class FestivalWorld {
     }
 
     if (this.nearClubBar()) {
+      if(this.carriedItem==='MENTOR')this.carryingMentor=true;
       this.carriedItem = 'DRINK';
       this.stowedItem = undefined;
       this.syncCarriedPropAnchor();
@@ -8277,13 +8368,23 @@ export class FestivalWorld {
       this.onAction({ type: 'drinkOrdered' });
       return;
     }
-    if (this.player.position.distanceTo(concessionPosition) < 2.5) {
+    if (this.player.position.distanceTo(concessionPosition) < 2.5 &&
+      (!this.carriedItem || this.carriedItem === 'MENTOR' || this.carriedItem === 'DRINK')) {
+      if(this.carriedItem==='MENTOR')this.carryingMentor=true;
       this.carriedItem = 'POPCORN';
       this.syncCarriedPropAnchor();
       this.pickupUntil = performance.now() + 750;
       this.onAction({ type: 'food', item: 'POPCORN' });
       return;
     }
+
+    if (this.carriedItem && EDIBLE_ITEMS.includes(this.carriedItem) && this.carriedItem !== 'DRINK') {
+      this.playerGesture = 'eat';this.eatingItem = this.carriedItem;
+      if(this.eatingItem==='POPCORN')this.audio?.playAvatarSound('eat',EAT_SOUND_DELAY);
+      this.eatingUntil=performance.now()+2000;this.playerGestureUntil=this.eatingUntil;
+      this.carriedItem=undefined;this.syncCarriedPropAnchor();this.onAction({type:'ate'});return;
+    }
+    if(this.isCarryingMentor()&&!this.carriedItem){this.putDownMentor();return;}
 
     // When MENTOR is loyal to the body being controlled he naturally stays in
     // feeding range all the time. A nearby attendee must outrank that permanent
@@ -8329,11 +8430,31 @@ export class FestivalWorld {
 
     const socialTarget = this.nearestSocialTarget();
     if (socialTarget) {
-      if (pickUpMentor && this.openNpcIntroduction(socialTarget)) return;
+      if (pickUpMentor && this.openNpcIntroduction(socialTarget, 'menu')) return;
       this.greetSocialTarget(socialTarget);
       return;
     }
 
+  }
+
+  private mentorForExplicitAction(): NpcAvatar | undefined {
+    if(this.controlledNpcId==='MENTOR')return undefined;
+    const mentor=this.npcs.find(npc=>npc.id==='MENTOR');
+    if(!mentor?.dogRig)return undefined;
+    if(this.isCarryingMentor())return mentor;
+    return this.nearbyMentor();
+  }
+
+  mentorAction(action:'feed'|'pet'|'carry'): boolean {
+    const mentor=this.mentorForExplicitAction();if(!mentor)return false;
+    if(action==='carry'){
+      if(this.isCarryingMentor())this.putDownMentor();else this.pickUpMentor();
+    }else if(action==='feed')this.feedMentor(mentor);
+    else {
+      const now=performance.now();mentor.gesture='tail-wag';mentor.gestureUntil=now+1800;
+      this.playerGesture='wave';this.playerGestureUntil=now+1000;
+    }
+    return true;
   }
 
   private feedMentor(mentor: NpcAvatar): void {
@@ -8369,7 +8490,7 @@ export class FestivalWorld {
   openMentorIntroduction(): boolean {
     const mentor = this.nearbyMentor();
     if (!mentor) return false;
-    return this.openNpcIntroduction({ name: mentor.name, npc: mentor });
+    return this.openNpcIntroduction({ name: mentor.name, npc: mentor }, 'menu');
   }
 
   /**
@@ -8380,8 +8501,12 @@ export class FestivalWorld {
    * than nothing happening. A resident with no biography written yet still
    * opens: their name and job title are worth showing, and the card fills out
    * on its own as STAFF write.
+   *
+   * Only a wave starts a conversation — the two-shot, the resident holding
+   * still, the full-width box. Asking for the introduction outright (SHIFT+E)
+   * opens the plain card and leaves the camera alone.
    */
-  private openNpcIntroduction(target: { name: string; npc?: NpcAvatar }): boolean {
+  private openNpcIntroduction(target: { name: string; npc?: NpcAvatar }, presentation: 'dialogue' | 'menu'): boolean {
     const npc = target.npc;
     if (!npc) return false;
     const profile = this.npcProfileById.get(npc.id);
@@ -8391,14 +8516,35 @@ export class FestivalWorld {
       npc.group.position.x - this.player.position.x,
       npc.group.position.z - this.player.position.z,
     ), 0);
+    if(presentation==='menu')this.closeNpcDialogue();
+    else if(this.npcDialogue?.npc!==npc){
+      this.closeNpcDialogue();
+      this.npcDialogue={npc,transition:new DialogueCameraTransition(this.camera.position,this.lookTarget)};
+      if(this.sharedNpcRoutes&&!npc.station&&!this.remoteNpcControls.has(npc.id)&&!(npc.id==='MENTOR'&&(this.isCarryingMentor()||this.mentorCarrierId))){
+        this.npcDialogueClock??=new NpcDialogueClock();
+        this.npcDialogueClock.hold(npc.id,npc.group.userData.sharedNpcPresentationTime??(Date.now()+this.npcClockOffset)/1000,performance.now());
+      }
+      this.keys.clear();this.stickX=this.stickY=0;this.mobileMoveYaw=undefined;this.moveVector.set(0,0,0);this.running=false;this.dancing=false;
+      this.cameraPointerReset();
+    }
     this.onAction({
       type: 'npcIntroduction',
       id: npc.id,
       name: profile?.name?.trim() || npc.name,
       title: profile?.title?.trim() ?? '',
       introduction: profile?.introduction?.trim() ?? '',
+      presentation,
     });
     return true;
+  }
+
+  /** The dialogue UI owns the lifetime; closing restores the selected camera
+   * and releases fresh movement input without replaying a key held behind it. */
+  closeNpcDialogue(): void {
+    if(!this.npcDialogue)return;
+    this.npcDialogueClock?.release(this.npcDialogue.npc.id,performance.now());
+    this.npcDialogue=undefined;this.keys.clear();this.stickX=this.stickY=0;this.mobileMoveYaw=undefined;
+    this.lastManualLookAt=performance.now();this.cameraReach=0;
   }
 
   private greetSocialTarget(target: { name: string; npc?: NpcAvatar; remote?: RemoteAvatar }): void {
@@ -8422,6 +8568,7 @@ export class FestivalWorld {
       ), 0);
     }
     this.onAction({ type: 'greet', target: target.name, gesture });
+    if(target.npc)this.openNpcIntroduction(target, 'dialogue');
   }
 
   private readonly resize = (): void => {
@@ -8444,6 +8591,7 @@ export class FestivalWorld {
   };
 
   private readonly keyDown = (event: KeyboardEvent): void => {
+    if(this.npcDialogue)return;
     if (this.arcadeView) return;
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
     const key = event.key.toLowerCase();
@@ -8498,6 +8646,7 @@ export class FestivalWorld {
   }
 
   private jump(): void {
+    if(this.npcDialogue)return;
     if (this.playerState === 'seated' || this.playerState === 'swimming') return;
     if (performance.now() < this.passedOutUntil) return;
     if (this.airborne || this.isMentorControlLocked()) return;
@@ -8515,6 +8664,7 @@ export class FestivalWorld {
    * is nearest. Nothing is counted or kept — the bow is the whole of it.
    */
   private donate(): void {
+    if(this.npcDialogue)return;
     if (this.playerState === 'swimming' || this.airborne) return;
     const now = performance.now();
     if (now - this.lastDonationAt < 1_200) return;
@@ -8663,7 +8813,7 @@ export class FestivalWorld {
    * attendee's own eyes; there is no distance in either to pull on.
    */
   private canPinchZoom(): boolean {
-    return this.cameraMode !== 'screening' && this.cameraMode !== 'first-person';
+    return !this.npcDialogue&&this.cameraMode !== 'first-person';
   }
 
   /**
@@ -8779,9 +8929,8 @@ export class FestivalWorld {
    * Turn the view by a delta in the same units a pointer drag produces.
    *
    * Split out of the pointer handler so a right stick can reach exactly the
-   * same branches — the VR preview, the seated screening camera and the two
-   * orbits all clamp differently, and a second copy of that would drift out of
-   * step the first time one of them changed.
+   * same branches: VR preview, manual third/first person and the fixed diagonal.
+   * Keeping one path makes mouse, touch and controller look agree.
    */
   private applyLookDelta(deltaX: number, deltaY: number, gain = 1): void {
     if (this.arcadeView) return;
@@ -8800,15 +8949,11 @@ export class FestivalWorld {
       );
       return;
     }
-    if (this.cameraMode === 'screening') {
-      this.screeningOrbit.yaw = THREE.MathUtils.clamp(
-        this.screeningOrbit.yaw - deltaX * 0.0034 * this.lookSensitivity, -1.5, 1.5);
-      this.screeningOrbit.pitch = THREE.MathUtils.clamp(
-        this.screeningOrbit.pitch + deltaY * 0.0028 * this.lookSensitivity, -0.3, 0.28);
-      return;
-    }
-    const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
+    if(this.npcDialogue||this.cameraMode==='isometric')return;
+    if(deltaX||deltaY)this.lastManualLookAt=performance.now();
+    const orbit = this.cameraOrbit.follow;
     orbit.yaw -= deltaX * 0.0042 * this.lookSensitivity;
+    if(this.mobileMoveYaw!==undefined)this.mobileMoveYaw=orbit.yaw;
     // First person looks level and can tip below the horizon; the orbit
     // cameras sit above the avatar and must stay there — except on a seat,
     // where the screen is high on a far wall and a camera pinned above the
@@ -8839,6 +8984,7 @@ export class FestivalWorld {
    * under either hand.
    */
   private readonly cameraWheel = (event: WheelEvent): void => {
+    if(this.npcDialogue)return;
     if (this.arcadeView) return;
     // In the desktop preview the wheel is the only thing standing in for the
     // right stick, and a pass panel taller than the view is unreadable without
@@ -8853,7 +8999,7 @@ export class FestivalWorld {
     }
     // Seated at a screen and in first person the distance is not the
     // attendee's to set: one is framed on the screen, the other is an eyeline.
-    if (this.cameraMode === 'screening' || this.cameraMode === 'first-person') return;
+    if (this.cameraMode === 'first-person') return;
     event.preventDefault();
     // Wheel deltas arrive in lines or pages depending on the device.
     const lines = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1;
@@ -8901,6 +9047,7 @@ export class FestivalWorld {
 
   /** A jab. Whoever is in front of it is told by the service, not by us. */
   private punch(): void {
+    if(this.npcDialogue)return;
     if (this.playerState === 'seated' || this.playerState === 'swimming') return;
     if (this.isMentorControlLocked()) return;
     const now = performance.now();
@@ -8972,7 +9119,7 @@ export class FestivalWorld {
     // Off balance rather than frozen: movement still answers, at the same
     // reduced pace a bad landing costs, so nobody is held still to be hit again.
     this.stumbleUntil = Math.max(this.stumbleUntil, now + 520);
-    const droppedMentor = this.carriedItem === 'MENTOR';
+    const droppedMentor = this.isCarryingMentor();
     if (droppedMentor) this.putDownMentor();
     this.onAction({ type: 'punched', droppedMentor, by });
   }
@@ -8994,7 +9141,7 @@ export class FestivalWorld {
     this.playerGestureUntil = now + 1_600;
     this.cameraShake = 1.8;
     this.knockback.set(0, 0, 0);
-    if (this.carriedItem === 'MENTOR') this.putDownMentor();
+    if (this.isCarryingMentor()) this.putDownMentor();
     this.carriedItem = undefined;
     this.stowedItem = undefined;
     this.carriedProp.visible = false;
@@ -9017,7 +9164,7 @@ export class FestivalWorld {
     // Facing the altar, which is east of here.
     this.player.rotation.y = Math.PI / 2;
     this.cameraOrbit.follow.yaw = -Math.PI / 2;
-    this.cameraOrbit.perspective.yaw = -Math.PI / 2;
+    this.cameraOrbit.follow.yaw = -Math.PI / 2;
     // The camera is eased towards its mark every frame; without this it flies
     // the length of the festival to catch up with a body that has just been
     // moved across it.
@@ -9405,8 +9552,6 @@ export class FestivalWorld {
       // this could only lose, and did: six lamps hidden, five back on within
       // three seconds. The pool is made smaller where it is built instead.
       if (this.lampPool.includes(light as THREE.SpotLight)) return;
-      // The fireworks' light is the show's own, lit only while it runs.
-      if (light === this.fireworkWorldLight) return;
       lamps.push(light);
     });
     this.decorativeLamps = lamps;
@@ -9625,6 +9770,7 @@ export class FestivalWorld {
     );
     xrPoster.position.set(screen.position[0], screen.position[1], screen.position[2] + screen.facing * 0.025);
     if (screen.facing === -1) xrPoster.rotation.y = Math.PI;
+    xrPoster.userData.filmGrainExclude=true;
     xrPoster.visible = false;
     this.scene.add(xrPoster);
     this.projectors.set(venue, { aperture, xrPoster, muted: true });
@@ -9707,6 +9853,17 @@ export class FestivalWorld {
     return spotlight;
   }
 
+  environmentReviewSnapshot(): unknown {
+    return { materials: this.environmentMaterials.snapshot(), models: this.environmentModels?.snapshot(), architecture: this.scene.userData.environmentArchitectureReport,
+      art:this.scene.userData.environmentArtReport,reflections:this.environmentReflections?.report,cars:this.driveInCarArt?.report,plates:this.driveInLicensePlates?.report,
+      palacePilasters:this.palacePilasterFinish?.report,filmGrain:this.scene.userData.worldFilmGrainReport,lightAnchors:this.scene.userData.planetLightAnchors,temple:this.templeArchitecture?.report,templeTrim:this.templeTrimAtlas?.report,wishWall:this.wishWallFrame?.report,pamphlet:this.pamphletSurface?.report };
+  }
+
+  private environmentUpgradeEnabled(): boolean {
+    return !(['127.0.0.1', 'localhost'].includes(window.location.hostname)
+      && new URLSearchParams(window.location.search).get('environment') === 'legacy');
+  }
+
   private createLampPost(
     x: number,
     z: number,
@@ -9719,7 +9876,8 @@ export class FestivalWorld {
     if((this.scene.userData.treeCanopies??[]).some((c:{x:number;z:number;radius:number})=>Math.hypot(x-c.x,z-c.z)<c.radius+1.2))return;
     const base = this.groundHeightAt(x,z,terrainHeightAt(x,z)+AVATAR_GROUND_Y)-AVATAR_GROUND_Y;
     const enamel=material(0x354d47,.85,.12),stone=material(0xa9a58e,.95),brass=material(0xb3a47c,.75,.18);
-    const fitting=(size:[number,number,number],pos:[number,number,number],mat:THREE.Material)=>{const m=this.mesh(size,pos,mat);m.userData.wornNoMasonry=true;return m;};
+    const oldFittings: THREE.Mesh[] = [];
+    const fitting=(size:[number,number,number],pos:[number,number,number],mat:THREE.Material)=>{const m=this.mesh(size,pos,mat);m.userData.wornNoMasonry=true;oldFittings.push(m);return m;};
     fitting([.58,.18,.58],[x,base+.09,z],stone);
     fitting([.32,.8,.32],[x,base+.4,z],enamel);
     fitting([.2,height-.6,.2],[x,base+.6+(height-.6)/2,z],enamel);
@@ -9728,6 +9886,24 @@ export class FestivalWorld {
     for(const dx of [-.32,.32])for(const dz of [-.32,.32])fitting([.06,.6,.06],[x+dx,base+height+.05,z+dz],enamel);
     fitting([.84,.13,.84],[x,base+height+.39,z],enamel);
     fitting([.58,.12,.58],[x,base+height+.5,z],brass);
+    if (this.environmentModels && this.environmentUpgradeEnabled()) {
+      const holder = new THREE.Group(); holder.name = ENVIRONMENT_ASSET_ROOT;
+      holder.position.set(x,base,z); this.scene.add(holder);
+      void this.environmentModels.attach('street-lamp',holder,{
+        exactSize:[.84,height+.56,.84],fallback:oldFittings,receiveShadow:this.graphicsMode==='normal',
+      }).then(ready => {
+        if (!ready || this.disposed) return;
+        holder.traverse(object => {
+          const mesh = object as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+            const surface = m as THREE.MeshStandardMaterial;
+            if (surface.name !== 'Lantern glass' || this.environmentLampMaterials.has(surface)) continue;
+            this.environmentLampMaterials.add(surface); this.dayNight.addLampMaterial(surface);
+          }
+        });
+      });
+    }
     this.addCollider(x, z, 0.28, 0.28, 0.18, { minY: base, maxY: base+height+.3 }, 'street-lamp',base+height+.3);
     this.colliders[this.colliders.length-1].physical=true;
     // Every post is a light source, but the lights themselves come from a
@@ -9815,7 +9991,7 @@ export class FestivalWorld {
     this.islandOcean = ocean;
     if (this.waterVolume) this.waterVolume.visible = false;
     // From the gate down to the pier, where the approach road used to run off the map.
-    this.scene.add(createGroundRibbon('Island landing path', [[0, GATE_Z + 1], [0, ISLAND_COVE.z - 1]], 6, material(0x9a917e), .03));
+    this.scene.add(createGroundRibbon('Island landing path', [[0, GATE_Z + 1], [0, ISLAND_COVE.z - 1]], 6, environmentMaterial('stone',0x9a917e), .03));
     sea.uniforms.uDeepOpacity.value = .9;
     if (['127.0.0.1', 'localhost'].includes(window.location.hostname)) Object.assign(window, { __islandScene: this.scene, __islandWorld: this });
     this.islandDock = new IslandDock();
@@ -9857,7 +10033,7 @@ export class FestivalWorld {
 
   private createEnvironment(): void {
     this.scene.add(createCoastalTerrain());
-    this.scene.add(createGroundRibbon('Festival square', [[0, 11], [0, -16]], 31, material(0xa79e87), .025));
+    this.scene.add(createGroundRibbon('Festival square', [[0, 11], [0, -16]], 31, environmentMaterial('stone',0xa79e87), .025));
 
     const deepWaterTexture = createWaterTexture(false);
     const surfaceWaterTexture = createWaterTexture(true);
@@ -9958,13 +10134,13 @@ export class FestivalWorld {
       const gateSign = new THREE.Mesh(
         new THREE.PlaneGeometry(22, 3.8),
         new THREE.MeshBasicMaterial({
-          map: createTextTexture([this.entranceSignText.title, this.entranceSignText.subtitle],'#eee4cc','#354842',22/3.8),
+          map: createTextTexture([this.entranceSignText.title, this.entranceSignText.subtitle],'#eee4cc','#354842',22/3.8,'entrance'),
         }),
       );
       this.entranceSignMaterials.push(gateSign.material as THREE.MeshBasicMaterial);
       gateSign.position.set(0, 11.2, GATE_Z + facing * 0.9);
       if (facing < 0) gateSign.rotation.y = Math.PI;
-      const frame=createCoastalSignFrame(22,3.8);frame.position.copy(gateSign.position);frame.rotation.copy(gateSign.rotation);this.scene.add(frame);
+      const frame=this.ownNeonFrame(createNeonSignFrame(22,3.8,'entrance'));frame.position.copy(gateSign.position);frame.rotation.copy(gateSign.rotation);this.scene.add(frame);
       gateSign.position.z+=facing*.035;this.scene.add(gateSign);
       // Short stubs back to the bar, so the panel reads as mounted on it.
       for (const side of [-1, 1]) {
@@ -9998,7 +10174,7 @@ export class FestivalWorld {
     this.createWishWall();
 
     // Only the western block remains: the eastern one is the temple now.
-    const buildingMat = material(0x26262a);
+    const buildingMat = environmentMaterial('plaster',0x26262a);
     this.mesh([8, 15, 27], [-99, 7.5, 4], buildingMat);
     this.mesh([7.2, 1.2, 0.3], [-99, 10.2, 17.65], material(0xa31820));
     this.addCollider(-99, 4, 8, 27, 0.2, { minY: -0.4, maxY: 40 });
@@ -10015,6 +10191,15 @@ export class FestivalWorld {
     scenery.buildCirculation();
     scenery.buildPlanting();
     scenery.finish();
+    if (this.environmentModels && this.environmentUpgradeEnabled()) {
+      // Generated shallow Art Deco fluting sits within the existing Palace
+      // pier padding. The 20-unit entrance and live marquee stay clear.
+      for (const x of [-45,-25]) {
+        const pilaster = new THREE.Group(); pilaster.name = ENVIRONMENT_ASSET_ROOT;
+        pilaster.position.set(x,.02,-30.64); this.scene.add(pilaster);
+        void this.environmentModels.attach('cinema-pilaster',pilaster,{exactSize:[1,8,.24],receiveShadow:this.graphicsMode==='normal'});
+      }
+    }
     this.createVenueEntrances();
     this.paving=this.scene.children.filter(object=>object.userData.groundFootprint).map(object=>({polygon:object.userData.groundFootprint,lift:object.userData.groundLift,exclusions:object.userData.groundExclusions}));
     this.seatArcadeOnGround();
@@ -10064,9 +10249,7 @@ export class FestivalWorld {
       }
     }
 
-    // Palace floodlights are mounted invisibly beneath the entrance marquee.
-    // The former emissive cubes floated in the sky and read as stray objects.
-    this.addSpotlight([-35, 8.05, -31.15], [-35, 0, -35.5], 90, 26, true, 0xffb86b);
+    // Palace wall floodlight removed with the out-of-place facade lamps.
 
     for (const z of [-18, -29]) {
       for (const x of [23, 47]) {
@@ -10179,18 +10362,57 @@ export class FestivalWorld {
    * The timetable itself has not gone anywhere — it lives in the festival pass,
    * which is where anybody actually reads it.
    */
+  private ownNeonFrame(frame:THREE.Group):THREE.Group {
+    frame.traverse(object=>{
+      const mesh=object as THREE.Mesh;if(!mesh.isMesh)return;
+      mesh.userData.dynamic=true;
+      for(const material of Array.isArray(mesh.material)?mesh.material:[mesh.material])material.toneMapped=false;
+    });
+    (this.neonFrames??=[]).push(frame);return frame;
+  }
+
+  private mountNeonFrame(panel:THREE.Mesh,width:number,height:number,style:NeonSignStyle):void {
+    const frame=this.ownNeonFrame(createNeonSignFrame(width,height,style));
+    frame.position.copy(panel.position);frame.quaternion.copy(panel.quaternion);
+    (panel.parent??this.scene).add(frame);
+  }
+
+  private finishNeonSigns():void {
+    this.scene.traverse(object=>{
+      const mesh=object as THREE.Mesh;if(!mesh.isMesh)return;
+      for(const material of Array.isArray(mesh.material)?mesh.material:[mesh.material]){
+        if(!(material as THREE.MeshBasicMaterial).map?.userData.neonSign)continue;
+        material.toneMapped=false;material.userData.preserveAuthoredSurface=true;
+      }
+    });
+  }
+
   private createGanganStatue(): void {
     const statue = createGanganStatue();
+    const discardedGeometry = new Set<THREE.BufferGeometry>(), discardedMaterial = new Set<THREE.Material>();
+    for (const child of [...statue.children]) {
+      if (child.name.startsWith('plinth-')) { child.rotation.y = -Math.PI / 2; continue; }
+      child.removeFromParent(); child.traverse(node => {
+        const mesh = node as THREE.Mesh; if (!mesh.isMesh) return;
+        discardedGeometry.add(mesh.geometry); for (const surface of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) discardedMaterial.add(surface);
+      });
+    }
+    for (const geometry of discardedGeometry) geometry.dispose(); for (const surface of discardedMaterial) surface.dispose();
     statue.position.set(statuePosition.x, 0, statuePosition.z);
-    // Turned a quarter, clockwise seen from above, so the horse stands across
-    // the road rather than down it. An arrival gets the animal in profile —
-    // the only view in which a horse reads as a horse — with GANGAN's own
-    // shoulders turned back out of that line towards them, which is the
-    // arrangement the painting uses.
-    statue.rotation.y = -Math.PI / 2;
+    statue.rotation.y = 0;
     this.scene.add(statue);
-    // Walked around, not climbed. The quarter turn swaps the plinth's sides,
-    // so the footprint is given the other way round.
+    const prototype = new THREE.Group(); prototype.name = 'Victory portrait fallback'; statue.add(prototype);
+    void this.venueSceneryAssets.attachVictoryStatue(prototype);
+    if (this.environmentModels && this.environmentUpgradeEnabled()) {
+      const generated = new THREE.Group(); generated.name = 'Higgsfield victory statue mount'; generated.position.y = 2.32; statue.add(generated);
+      void this.environmentModels.attach('victory-statue', generated, {
+        height: 7.3, maxWidth: 7.6, maxDepth: 7.2, fallback: [prototype], castShadow: true, receiveShadow: true,
+      }).then(installed => {
+        if (!installed) return;
+        this.venueSceneryAssets.discardVictoryStatue(prototype); prototype.removeFromParent();
+      });
+    }
+    // Keep the original rotated plinth's walk-around clearance.
     this.addCollider(statuePosition.x, statuePosition.z, 4.9, 6.3);
   }
 
@@ -10205,7 +10427,7 @@ export class FestivalWorld {
     this.addCollider(0, -46, 19, 1.5);
 
     this.createProjectorSurface('shore');
-    const shoreSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['THE SHORE', 'MUSIC VIDEO']) });
+    const shoreSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['THE SHORE', 'MUSIC VIDEO'],undefined,undefined,5.6/3.15,'shore') });
     this.venueSignMaterials.set('shore', shoreSignMaterial);
     const shoreSign = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 3.15), shoreSignMaterial);
     shoreSign.userData.dynamic = true;
@@ -10213,7 +10435,7 @@ export class FestivalWorld {
     // the first seating row. Geometry, map and interaction share SHORE_SIGN.
     const shoreSignX=SHORE_SIGN.x-SCREENING_SITES.shore.dx;
     const shoreSignZ=SHORE_SIGN.z-SCREENING_SITES.shore.dz;
-    const shoreBoard=createCoastalSignFrame(SHORE_SIGN.width,3.15);shoreBoard.position.set(shoreSignX,3.35,shoreSignZ);shoreBoard.rotation.y=SHORE_SIGN.rotation;
+    const shoreBoard=this.ownNeonFrame(createNeonSignFrame(SHORE_SIGN.width,3.15,'shore'));shoreBoard.position.set(shoreSignX,3.35,shoreSignZ);shoreBoard.rotation.y=SHORE_SIGN.rotation;
     shoreSign.position.z=.035;shoreBoard.add(shoreSign);
     for(const x of [-2.15,2.15]){
       const ground = (dx:number,dz:number) => terrainHeightAt(
@@ -10279,15 +10501,16 @@ export class FestivalWorld {
     // walls. The previous 21-unit width entered both pillar footprints and
     // shimmered against their masonry at the front edge.
     const carpet = this.mesh([18.4, 0.08, 15.2], [centerX, 0.21, -40.6], material(0x4b181c));
+    (carpet.material as THREE.Material).userData.environmentAccent='redFabric';
     carpet.receiveShadow = true;
     carpet.userData.projectorBackground = true;
 
-    const wallMaterial = material(0xb5ab92, 0.94, 0);
+    const wallMaterial = environmentMaterial('plaster',0xb5ab92, 0.94, 0);
     this.mesh([1, 10, 18], [centerX - 10.5, 5, centerZ], wallMaterial);
     this.mesh([1, 10, 18], [centerX + 10.5, 5, centerZ], wallMaterial);
     this.addCollider(centerX - 10.5, centerZ, 1, 18, 0.16);
     this.addCollider(centerX + 10.5, centerZ, 1, 18, 0.16);
-    const palaceSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['THE PALACE', 'COMMERCIAL']) });
+    const palaceSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['THE PALACE', 'COMMERCIAL'],undefined,undefined,15.8/3.3,'palace') });
     this.venueSignMaterials.set('palace', palaceSignMaterial);
     const marquee = new THREE.Mesh(
       new THREE.PlaneGeometry(15.8, 3.3),
@@ -10295,6 +10518,7 @@ export class FestivalWorld {
     );
     marquee.position.set(centerX, 8.5, -30.92);
     this.scene.add(marquee);
+    this.mountNeonFrame(marquee,15.8,3.3,'palace');
 
     const screen = this.mesh([15.3, 8.5, 0.55], [centerX, 5.7, screenZ], material(0x050506, 0.72));
     screen.castShadow = true;
@@ -10307,14 +10531,15 @@ export class FestivalWorld {
     this.mesh([22,.6,1],[centerX,9.8,-49.05],wallMaterial).userData.wornNoMasonry=true;
     this.mesh([22,9.8,.6],[centerX,4.9,-49.05],wallMaterial).userData.wornNoMasonry=true;
     this.addCollider(centerX,-49.05,22,.6,.05,{minY:0,maxY:10.1,physical:true},'palace-rear-wall',10.1);
-    const roof=this.mesh([22.4,.42,17.1],[centerX,10.25,-40.75],material(0x4f5957));
+    const roof=this.mesh([22.4,.42,17.1],[centerX,10.25,-40.75],environmentMaterial('stone',0x4f5957));
     roof.name='Palace auditorium roof';roof.userData.wornNoMasonry=true;
     for(const x of [centerX-10.9,centerX+10.9])this.mesh([.25,.45,17.1],[x,10.65,-40.75],wallMaterial).userData.wornNoMasonry=true;
     for(const z of [-49.2,-32.3])this.mesh([22.4,.45,.25],[centerX,10.65,z],wallMaterial).userData.wornNoMasonry=true;
-    for(const z of [-45,-39,-33])this.mesh([21,.3,.25],[centerX,9.91,z],material(0x4b4440)).userData.wornNoMasonry=true;
+    for(const z of [-45,-39,-33])this.mesh([21,.3,.25],[centerX,9.91,z],environmentMaterial('wood',0x4b4440)).userData.wornNoMasonry=true;
     this.addCollider(centerX,-40.75,22.4,17.1,0,{minY:10.04,maxY:10.91,physical:true},'palace-roof',10.91);
 
     const seatMaterial = material(0x9a2028);
+    seatMaterial.userData.environmentAccent='redFabric';
     for (let row = 0; row < 3; row += 1) {
       for (let column = -2; column <= 2; column += 1) {
         const x = centerX + column * 2.75;
@@ -10341,7 +10566,7 @@ export class FestivalWorld {
 
   private createDriveIn(): void {
     const centerX = 35;
-    const asphalt = this.mesh([25, 0.14, 22], [centerX, 0.04, -24.5], material(0x25282b));
+    const asphalt = this.mesh([25, 0.14, 22], [centerX, 0.04, -24.5], environmentMaterial('asphalt',0x25282b));
     asphalt.receiveShadow = true;
     asphalt.userData.projectorBackground = true;
     // Four dividers define three centered bays. The previous three lines ran
@@ -10358,24 +10583,30 @@ export class FestivalWorld {
     this.addCollider(centerX, -36, 19, 1.4);
     this.createProjectorSurface('drive-in');
 
-    const driveSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['DRIVE-IN 88', 'TELEVISION'],'#eee4cc','#354842',3.55/.9) });
+    const driveSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['DRIVE-IN 88', 'TELEVISION'],'#eee4cc','#354842',3.55/.9,'drive-in') });
     this.venueSignMaterials.set('drive-in', driveSignMaterial);
     // The sign is mounted on the new box office by createVenueEntrances().
 
-    const carColors = [0x8f1720, 0xd3b356, 0x315c70, 0xd8d0bc, 0x6d4f7d, 0x335d3f];
+    const carColors = [0xc74935,0xd4b24a,0x38678e,0xd4d1b8,0x745b90,0x3b7657];
+    // The fitted car is 5.76 long. Leave a 3-unit (~1.5m) aisle between bumpers.
+    // Keep the back row fixed so the existing arrival at world (0,-26) is clear.
     let carIndex = 0;
     for (let row = 0; row < 2; row += 1) {
       for (let column = -1; column <= 1; column += 1) {
-        const x = centerX + column * 7.2;
-        const z = -20.5 - row * 6.2;
+        const x = centerX + column * DRIVE_IN_PARKING.columnSpacing;
+        const z = DRIVE_IN_PARKING.backRowZ - row * DRIVE_IN_PARKING.rowSpacing;
         const car = createCoastalSedan(carColors[carIndex % carColors.length]);
+        car.userData.driveInPaint=carColors[carIndex % carColors.length];
+        // The back row is farther from the screen (-Z); preserve seat IDs.
+        car.userData.driveInSeatNumber=row*3+column+2;
         car.position.set(x, .10, z);
         this.scene.add(car);
         this.addCollider(x, z, 3.75, 5.7, 0.08, { minY: .1, maxY: 2.16, physical:true },'convertible-car',2.16);
+        const cushion=createConvertibleSeatProxy(car,car.userData.cushion as THREE.Mesh);
         this.seats.push({
           id: `DRIVE-${row + 1}-${column + 2}`,
           venue: 'drive-in',
-          cushion:car.userData.cushion as THREE.Mesh,
+          cushion,
           forward:-.3,
           footFloor:.10+CONVERTIBLE.footFloor,
           position: new THREE.Vector3(x+CONVERTIBLE.seatX, 0, z+CONVERTIBLE.seatZ),
@@ -10395,12 +10626,13 @@ export class FestivalWorld {
     const buildingDepth=b.buildingMaxZ-b.buildingMinZ;
     const ceiling=floor+CLUB_ROOM_HEIGHT;
     const belowGround={minY:floor-1,maxY:ceiling};
-    const concrete=material(0x777c6f,.97,0);
-    const brick=material(0x8a6653,.94,0);
+    const concrete=environmentMaterial('stone',0x777c6f,.97,0);
+    const brick=environmentMaterial('brick',0x8a6653,.94,0);
     const iron=material(0x3b4b49,.9,.15);
     const roomWall=new THREE.MeshStandardMaterial({color:0x778077,roughness:.93,emissive:0x222c32,emissiveIntensity:.2});
-    const roomShell=material(0x505950,.96,0);
-    const paving=material(0x9b9884,.95,0);
+    roomWall.userData.environmentSurface = { family: 'plaster', tint: 'source', uv: 'world' } satisfies EnvironmentSurface;
+    const roomShell=environmentMaterial('stone',0x505950,.96,0);
+    const paving=environmentMaterial('stone',0x9b9884,.95,0);
     // Two floor levels within one supported warehouse volume. Its lower floor
     // is above the sea; the 26-unit descent is a 3.85% ramp, not fourteen tall steps.
     const foundation=this.mesh([buildingWidth+.2,.6,buildingDepth+.2],[buildingCenterX,floor-.3,(b.buildingMinZ+b.buildingMaxZ)/2],roomShell);foundation.name='Club continuous foundation';foundation.userData.projectorBackground=true;foundation.userData.wornNoMasonry=true;
@@ -10482,29 +10714,14 @@ export class FestivalWorld {
       this.mesh([.45,2.5,to-from],[-49.8,.25,(from+to)/2],iron).userData.wornNoMasonry=true;
       this.addCollider(-49.8,(from+to)/2,.45,to-from,.1,{minY:floor-1,maxY:1.5},'gallery-balustrade',1.5);
     }
-    const signMaterial=new THREE.MeshBasicMaterial({map:createTextTexture(['SLAP AND POP','WAREHOUSE · XIEH GAN'],'#ddd0b4','#344844')});
+    const signMaterial=new THREE.MeshBasicMaterial({map:createTextTexture(['SLAP AND POP','WAREHOUSE · XIEH GAN'],'#ddd0b4','#344844',11/2.8,'club')});
     this.venueSignMaterials.set('club',signMaterial);
     const sign=new THREE.Mesh(new THREE.PlaneGeometry(11,2.8),signMaterial);
-    sign.position.set(-19.12,8.1,opening);sign.rotation.y=Math.PI/2;this.scene.add(sign);
+    sign.position.set(-19.12,8.1,opening);sign.rotation.y=Math.PI/2;this.scene.add(sign);this.mountNeonFrame(sign,11,2.8,'club');
     const entranceCanopy=this.mesh([4,.3,9],[-18.3,6.2,opening],iron);
     entranceCanopy.userData.wornNoMasonry=true;
     this.clubNeon=this.mesh([.16,.16,9.5],[-16.2,6.1,opening],new THREE.MeshBasicMaterial({color:0xe39865}));
-    // Wall-mounted enamel bulkheads, centred between the warehouse bays.
-    for(let index=0;index<6;index++){
-      const x=-79.5+index*10,y=5.5;
-      const enamel=material(0x3d5651),cage=material(0xaca184);
-      this.mesh([1.6,1.2,.22],[x,y,-.52],enamel).userData.wornNoMasonry=true;
-      const lens=this.mesh([1.08,.64,.16],[x,y,-.66],new THREE.MeshBasicMaterial({color:0xe8c985}));
-      lens.userData.wornNoGrain=true;this.clubFacadeLights.push(lens);
-      this.mesh([1.48,.13,.52],[x,y+.52,-.67],enamel).userData.wornNoMasonry=true;
-      for(const dx of [-.39,0,.39])this.mesh([.035,.73,.04],[x+dx,y,-.765],cage).userData.wornNoMasonry=true;
-      for(const dy of [-.36,.36])this.mesh([1.15,.035,.04],[x,y+dy,-.765],cage).userData.wornNoMasonry=true;
-    }
-    for(const x of [-79.5,-59.5,-39.5]){
-      const glow=new THREE.PointLight(0xe8c985,0,12,1.7);
-      glow.position.set(x,5.5,-1.05);this.scene.add(glow);this.clubFacadeGlows.push(glow);
-    }
-
+    // The owner removed the warehouse wall bulkheads and their light pools.
     // Back wall screen.
     this.createProjectorSurface('club');
     this.mesh([17, 10.4, 0.4], [CLUB_STAGE_X, floor + CLUB_ROOM_HEIGHT / 2, b.roomMaxZ - 0.25], material(0x050506, 0.72));
@@ -10557,9 +10774,9 @@ export class FestivalWorld {
     const counterHeight = 2.2;
     const stoolHeight = 1.5;
     const stoolPadTop = barFloor + stoolHeight;
-    this.mesh([20, counterHeight - 0.14, 1.4], [-68, barFloor + (counterHeight - 0.14) / 2, barZ], material(0x2b1d1f, 0.55, 0.35));
+    this.mesh([20, counterHeight - 0.14, 1.4], [-68, barFloor + (counterHeight - 0.14) / 2, barZ], environmentMaterial('wood',0x2b1d1f, 0.55, 0.35));
     this.addCollider(-68, barZ, 20.4, 1.7, 0.1, {minY:floor,maxY:barFloor+counterHeight,physical:true}, 'bar-counter',barFloor+counterHeight);
-    this.mesh([20.4, 0.14, 1.7], [-68, barFloor + counterHeight - 0.07, barZ], material(0x4a3326, 0.4, 0.45));
+    this.mesh([20.4, 0.14, 1.7], [-68, barFloor + counterHeight - 0.07, barZ], environmentMaterial('wood',0x4a3326, 0.4, 0.45));
     for (let index = 0; index < 6; index += 1) {
       const x = -76 + index * 3.2;
       this.mesh([0.5, stoolHeight - 0.14, 0.5], [x, barFloor + (stoolHeight - 0.14) / 2, stoolZ], material(0x1a1a1f, 0.6, 0.3));
@@ -10579,7 +10796,7 @@ export class FestivalWorld {
       });
     }
     // Supported back-bar shelving; every bottle sits on a shelf surface.
-    const shelfWood=material(0x8b7255),barTile=material(0x57736a),brass=material(0xb19a68);
+    const shelfWood=environmentMaterial('wood',0x8b7255),barTile=environmentMaterial('ceramic',0x57736a),brass=material(0xb19a68);
     for(let n=0;n<20;n++)this.mesh([.94,1.63,.055],[-77.5+n,barFloor+1.02,barZ+.718],barTile);
     this.mesh([19.6,.10,.10],[-68,barFloor+.44,barZ+.95],brass);
     for(const x of [-77,-68,-59])this.mesh([.10,.42,.10],[x,barFloor+.22,barZ+.95],brass);
@@ -10687,7 +10904,7 @@ export class FestivalWorld {
     this.entranceSignText = next;
     for (const material of this.entranceSignMaterials) {
       const previous = material.map;
-      material.map = createTextTexture([this.entranceSignText.title, this.entranceSignText.subtitle],'#eee4cc','#354842',22/3.8);
+      material.map = createTextTexture([this.entranceSignText.title, this.entranceSignText.subtitle],'#eee4cc','#354842',22/3.8,'entrance');
       material.needsUpdate = true;
       previous?.dispose();
     }
@@ -10703,7 +10920,7 @@ export class FestivalWorld {
     this.templeSignText = next;
     if (!this.templeSignMaterial) return;
     const previous = this.templeSignMaterial.map;
-    this.templeSignMaterial.map = createTextTexture([this.templeSignText.name, this.templeSignText.label]);
+    this.templeSignMaterial.map = createTextTexture([this.templeSignText.name, this.templeSignText.label],undefined,undefined,8.4/2.4,'temple');
     this.templeSignMaterial.needsUpdate = true;
     previous?.dispose();
   }
@@ -10719,11 +10936,11 @@ export class FestivalWorld {
     const centerZ = (t.minZ + t.maxZ) / 2;
     const width = t.maxX - t.minX;
     const depth = t.maxZ - t.minZ;
-    const stone = material(0xa9a094, 0.9, 0.04);
-    const paleStone = material(0xc3bbae, 0.88, 0.04);
-    const lacquer = material(0x8f1d1d, 0.6, 0.16);
-    const timber = material(0x5d2f22, 0.75, 0.08);
-    const tile = material(0x2f5a4a, 0.55, 0.28);
+    const stone = environmentMaterial('stone',0xa9a094, 0.9, 0.04);
+    const paleStone = environmentMaterial('stone',0xc3bbae, 0.88, 0.04);
+    const lacquer = environmentMaterial('wood',0x8f1d1d, 0.6, 0.16);
+    const timber = environmentMaterial('wood',0x5d2f22, 0.75, 0.08);
+    const tile = environmentMaterial('ceramic',0x2f5a4a, 0.55, 0.28);
     const gold = material(0xbca15c, .78, .22);
 
     // Podium, and the three steps that climb it from the festival side.
@@ -10810,7 +11027,7 @@ export class FestivalWorld {
 
     // The name over the door.
     this.templeSignMaterial = new THREE.MeshBasicMaterial({
-      map: createTextTexture([this.templeSignText.name, this.templeSignText.label]),
+      map: createTextTexture([this.templeSignText.name, this.templeSignText.label],undefined,undefined,8.4/2.4,'temple'),
     });
     const templeSign = new THREE.Mesh(new THREE.PlaneGeometry(8.4, 2.4), this.templeSignMaterial);
     // Hung outside the building on a bracket, clear of the eaves. Held tight to
@@ -10839,6 +11056,7 @@ export class FestivalWorld {
     this.mesh([0.3, 0.3, 8.6], [t.minX - 4.6, signY + 1.8, centerZ], signBracket);
     templeSign.rotation.y = -Math.PI / 2;
     this.scene.add(templeSign);
+    this.mountNeonFrame(templeSign,8.4,2.4,'temple');
 
     // The altar, at the far end facing the door: a low offering table with the
     // god seated above it. Not a pillar — a figure, in the same blocky idiom as
@@ -10853,7 +11071,7 @@ export class FestivalWorld {
     const tableWidth = 6.6;
     this.mesh([tableWidth - 1.4, 1.1, 12], [tableCenterX, t.podium + 0.55, centerZ], stone);
     this.mesh([tableWidth, 0.28, 12.6], [tableCenterX, t.podium + 1.24, centerZ], timber);
-    const altarWood=material(0x794b38,.91),altarTrim=material(0xbda56c,.84),altarGreen=material(0x3c5348,.95);
+    const altarWood=environmentMaterial('wood',0x794b38,.91),altarTrim=material(0xbda56c,.84),altarGreen=environmentMaterial('ceramic',0x3c5348,.95);
     this.mesh([tableWidth-.7,.2,12.3],[tableCenterX,t.podium+.12,centerZ],paleStone).userData.wornNoMasonry=true;
     for(const z of [centerZ-4,centerZ,centerZ+4]){
       this.mesh([.12,.72,3.5],[tableCenterX-(tableWidth-1.4)/2-.07,t.podium+.65,z],altarWood).userData.wornNoMasonry=true;
@@ -10946,8 +11164,8 @@ export class FestivalWorld {
     const bayDepth = r.bayMaxZ - r.minZ;
     const deckCenterZ = (r.deckMinZ + r.maxZ) / 2;
     const deckDepth = r.maxZ - r.deckMinZ;
-    const brick = material(0x927a62, 0.95, 0);
-    const warmConcrete = material(0x4a3d35, 0.75, 0.12);
+    const brick = environmentMaterial('brick',0x927a62, 0.95, 0);
+    const warmConcrete = environmentMaterial('stone',0x4a3d35, 0.75, 0.12);
     const aboveGround = { minY: -0.4, maxY: 60 };
     const onDeck = { minY: ROOF_Y - 1, maxY: 60 };
     // The parapet is 1.5 tall and was solid all the way to the sky, so there
@@ -10976,7 +11194,7 @@ export class FestivalWorld {
     shopRoof.receiveShadow = true;
 
     // Garage bay: floor, side walls, open to the south.
-    const shopFloor=this.mesh([width,.5,bayDepth],[centerX,-.17,bayCenterZ],material(0x796c59,.95));shopFloor.name="Shop finished floor";shopFloor.userData.wornNoMasonry=true;
+    const shopFloor=this.mesh([width,.5,bayDepth],[centerX,-.17,bayCenterZ],environmentMaterial('stone',0x796c59,.95));shopFloor.name="Shop finished floor";shopFloor.userData.wornNoMasonry=true;
     for (const x of [r.minX, r.maxX]) {
       this.mesh([0.8, ROOF_Y, bayDepth], [x, ROOF_Y / 2, bayCenterZ], brick);
       this.addCollider(x, bayCenterZ, 0.8, bayDepth, 0.16, aboveGround);
@@ -10986,10 +11204,10 @@ export class FestivalWorld {
     // counters, with the shopfront facing the Drive-In the way the stalls did.
     const counterZ = r.bayMaxZ - 2.4;
     this.mesh([30.6,.18,2.25],[centerX,.17,counterZ],material(0x35403b)).userData.wornNoMasonry=true;
-    this.mesh([31,2.1,2.6],[centerX,1.31,counterZ],material(0x544438,.95)).userData.wornNoMasonry=true;
-    this.mesh([31.6,.20,3],[centerX,2.46,counterZ],material(0xa78d67,.88,.05)).userData.wornNoMasonry=true;
+    this.mesh([31,2.1,2.6],[centerX,1.31,counterZ],environmentMaterial('wood',0x544438,.95)).userData.wornNoMasonry=true;
+    this.mesh([31.6,.20,3],[centerX,2.46,counterZ],environmentMaterial('wood',0xa78d67,.88,.05)).userData.wornNoMasonry=true;
     this.addCollider(centerX, counterZ, 31, 2.6, 0.16, { minY: -0.4, maxY: ROOF_Y }, 'shop-counter');
-    const shopTimber=material(0x8b7054,.94),shopEnamel=material(0x354d47,.85),shopCloth=material(0xc5bea6,.98);
+    const shopTimber=environmentMaterial('wood',0x8b7054,.94),shopEnamel=material(0x354d47,.85),shopCloth=material(0xc5bea6,.98);
     for(let i=0;i<8;i++){
       const x=centerX-13.6+i*3.9;
       this.mesh([3.55,1.6,.08],[x,1.3,counterZ-1.34],shopCloth).userData.wornNoMasonry=true;
@@ -11028,13 +11246,14 @@ export class FestivalWorld {
     this.shopCounter = { x: centerX, y: .28, z: counterZ - 4.2 };
 
     const rooftopSignMaterial = new THREE.MeshBasicMaterial({
-      map: createTextTexture(['NIMA ROOFTOP', DEFAULT_VENUE_SUBTITLES.rooftop]),
+      map: createTextTexture(['NIMA ROOFTOP', DEFAULT_VENUE_SUBTITLES.rooftop],undefined,undefined,7.4/2,'rooftop'),
     });
     this.venueSignMaterials.set('rooftop', rooftopSignMaterial);
     const rooftopSign = new THREE.Mesh(new THREE.PlaneGeometry(7.4, 2), rooftopSignMaterial);
     rooftopSign.position.set(r.minX - 0.42, 5.3, bayCenterZ);
     rooftopSign.rotation.y = -Math.PI / 2;
     this.scene.add(rooftopSign);
+    this.mountNeonFrame(rooftopSign,7.4,2,'rooftop');
     const rooftopSignGlow = new THREE.PointLight(0xffcf94, 20, 16, 1.5);
     rooftopSignGlow.position.set(r.minX - 2.2, 5.2, bayCenterZ);
     this.scene.add(rooftopSignGlow);
@@ -11219,11 +11438,11 @@ export class FestivalWorld {
     const halfHeight = ROOF_Y / 2;
     const stairObjects=new Set(this.scene.children);
     // Weathered stone and painted iron echo the town's paving and balcony rails.
-    treadMaterial=material(0xaaa08b,.98);
+    treadMaterial=environmentMaterial('stone',0xaaa08b,.98);
     treadMaterial.map=pixelSurface('plaster');
-    wallMaterial=material(0x7c8274,.98);
+    wallMaterial=environmentMaterial('ceramic',0x7c8274,.98);
     wallMaterial.map=pixelSurface('ceramic');
-    const treadFinish=material(0xc5b799,.97);
+    const treadFinish=environmentMaterial('stone',0xc5b799,.97);
     treadFinish.map=pixelSurface('plaster');
     const railColour = material(0x426158,.88,.12);
     // The open side. Its kerb and its posts stand on the flight's own masonry,
@@ -11233,7 +11452,6 @@ export class FestivalWorld {
     const massCenterX = (massMinX + r.stairMaxX) / 2;
     const massWidth = r.stairMaxX - massMinX;
     const railX = r.stairMinX - kerbWidth / 2;
-    const handrail = 1.8;
     const ground = -0.5;
 
     /**
@@ -11287,72 +11505,11 @@ export class FestivalWorld {
     // roof in half.
     landing(r.stairTopZ, r.stairMaxZ, ROOF_Y, r.minX);
 
-    /**
-     * One guard for the whole climb, drawn the way the club ramp's rails are:
-     * a handrail and a mid-rail on square posts with base plates.
-     *
-     * Each flight used to carry its own rail, overshooting its ends by a
-     * quarter unit, and each landing carried another — so at every landing
-     * two rails, two mid-rails and three posts crossed at different heights,
-     * which is what read as messy. Now the rail follows one line: parallel to
-     * the nosings up each flight and level across each landing, bending only
-     * at a post, where a cap covers the joint.
-     */
-    // What each post stands on: the kerb along the open edge.
-    const kerbTop = (z: number): number => {
-      if (z < r.stairLandingMinZ) return ROOF_RISER * (Math.floor((z - r.stairMinZ) / ROOF_GOING) + 1) + 0.36;
-      if (z < r.stairLandingMaxZ) return halfHeight + 0.36;
-      if (z < r.stairTopZ) return halfHeight + ROOF_RISER * (Math.floor((z - r.stairLandingMaxZ) / ROOF_GOING) + 1) + 0.36;
-      return ROOF_Y + 0.36;
-    };
-    // The rail's line, bending only where the stair does. Up the first flight
-    // it runs parallel to the nosings and meets the landing's level exactly at
-    // the landing's edge. It stays level to the far edge of the landing, then
-    // steps up one riser on a post — a gooseneck — so the second flight's rail
-    // starts over its own first step, parallel to its nosings. It used to start
-    // climbing a whole going early, out over the landing, which is what read as
-    // misaligned from the street.
-    const flightTwo = (z: number): number => halfHeight + ROOF_RISER + (z - r.stairLandingMaxZ) * ROOF_RISER / ROOF_GOING;
-    const landingEnd = r.stairLandingMaxZ - 0.04;
-    const path: Array<[number, number]> = [
-      [r.stairMinZ + 0.16, ROOF_RISER + 0.16 * ROOF_RISER / ROOF_GOING],
-      [r.stairLandingMinZ + 0.04, halfHeight],
-      [landingEnd, halfHeight],
-      [landingEnd, flightTwo(landingEnd)],
-      [r.stairTopZ + 0.04, ROOF_Y],
-      [r.stairMaxZ - 0.14, ROOF_Y],
-    ];
-    const midRail = handrail / 2;
-    const rail = (a: THREE.Vector3, b: THREE.Vector3, size: number): void => {
-      const direction = b.clone().sub(a);
-      const mesh = keepAsBuilt(this.mesh([size, size, direction.length()], a.clone().add(b).multiplyScalar(0.5).toArray() as [number, number, number], railColour));
-      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction.normalize());
-      mesh.name = 'NIMA stair guard rail';
-    };
-    for (let i = 0; i < path.length - 1; i += 1) {
-      const [za, ya] = path[i], [zb, yb] = path[i + 1];
-      for (const [height, size] of [[handrail, 0.13], [midRail, 0.075]] as const) {
-        rail(new THREE.Vector3(railX, ya + height, za), new THREE.Vector3(railX, yb + height, zb), size);
-      }
-    }
-    // A post at every bend, taking the higher rail where it steps, and between
-    // bends never more than about two goings apart.
-    const posts = new Map<number, { base: number; bend: boolean }>();
-    for (const [z, y] of path) posts.set(z, { base: Math.max(y, posts.get(z)?.base ?? -Infinity), bend: true });
-    for (let i = 0; i < path.length - 1; i += 1) {
-      const [za, ya] = path[i], [zb, yb] = path[i + 1];
-      const span = zb - za;
-      if (span <= 0) continue;
-      const count = Math.ceil(span / (ROOF_GOING * 2.2));
-      for (let k = 1; k < count; k += 1) posts.set(za + span * k / count, { base: ya + (yb - ya) * k / count, bend: false });
-    }
-    for (const [z, { base, bend }] of posts) {
-      const foot = kerbTop(z), top = base + handrail;
-      keepAsBuilt(this.mesh([bend ? 0.15 : 0.11, top - foot, bend ? 0.15 : 0.11], [railX, (top + foot) / 2, z], railColour));
-      keepAsBuilt(this.mesh([0.26, 0.05, 0.26], [railX, foot + 0.025, z], railColour));
-      // A cap over each bend's post covers the rail's joint.
-      if (bend) keepAsBuilt(this.mesh([0.2, 0.07, 0.2], [railX, top + 0.035, z], railColour));
-    }
+    // Every base plate sits inside one actual tread or landing. The two
+    // continuous rails use mitred joints at the exact flight boundaries.
+    const guard=createRooftopStairGuard(r,ROOF_Y,railColour);
+    this.scene.add(guard.root);
+    this.scene.userData.rooftopStairGuardReport=guard.report;
     // The landing and deck used to stop on the exact same x plane. At grazing
     // camera angles that shared edge opened into a dark clipped strip. This
     // shallow stone threshold overlaps both slabs and gives the entrance one
@@ -11386,7 +11543,7 @@ export class FestivalWorld {
     // below that and still held, but a jump from the deck carries over it —
     // this kerb runs the length of the deck's west edge and was the invisible
     // wall there.
-    this.addCollider(railX, runCenterZ, kerbWidth, runDepth, 0.16, { minY: -0.4, maxY: ROOF_Y + 1.5 });
+    this.addCollider(railX, runCenterZ, kerbWidth, runDepth, 0.16, { minY: -0.4, maxY: ROOF_Y + 1.5 }, ROOFTOP_STAIR_OPEN_GUARD);
     // Stringer wall between the flights and the shell, stopping short of the
     // top landing so the last step opens straight onto the deck.
     const stringerDepth = r.stairTopZ - r.stairMinZ;
@@ -11468,13 +11625,14 @@ export class FestivalWorld {
     for(const x of [-1.45,1.45])this.mesh([.14,2.25,.12],[x,1.305,1.34],material(0xdecbaa),booth).userData.wornNoMasonry=true;
     for(const x of [-1,-.5,0,.5,1])this.mesh([.18,.78,.06],[x,.69,1.34],material(0xdecbaa),booth).userData.wornNoMasonry=true;
     this.mesh([3.8,.22,3.1],[0,2.54,0],material(0x796046),booth).userData.wornNoMasonry=true;
-    const signTexture = createTextTexture(['POP!', 'TAKE ONE'], '#f5efe2', '#a91c24');
+    const signTexture = createTextTexture(['POP!', 'TAKE ONE'], '#f5efe2', '#a91c24',2,'popcorn');
     const sign = new THREE.Mesh(
       new THREE.PlaneGeometry(2.5, 1.25),
       new THREE.MeshBasicMaterial({ map: signTexture }),
     );
     sign.position.set(0,1.76,1.405);
     booth.add(sign);
+    this.mountNeonFrame(sign,2.5,1.25,'popcorn');
     const carton=createCoastalPopcorn();carton.position.set(-.85,3.01,0);booth.add(carton);
     const tray=this.mesh([1.5,.10,.95],[.60,2.70,0],material(0xdecbaa),booth);tray.userData.wornNoMasonry=true;
     for(const x of [.2,.65,1.1]){const small=createCoastalPopcorn();small.scale.setScalar(.65);small.position.set(x,2.99,0);booth.add(small);}
@@ -11524,12 +11682,16 @@ export class FestivalWorld {
     boothSign.position.set(0,5.27,2.03);
     boothSign.userData.dynamic = true;
     booth.add(boothSign);
+    this.mountNeonFrame(boothSign,3.55,.9,'drive-in');
     this.addCollider(booth.position.x, booth.position.z, 4.8, 4, .08, { minY: -.8, maxY: 5.1, physical:true }, 'drive-in-ticket-booth',5.1);
     const clerk = new THREE.Group();
     clerk.name = 'Unlisted box office attendant';
     clerk.position.set(0,.12,.65);
     booth.add(clerk);
-    if (!this.preview) void this.venueSceneryAssets.attach('attendant', clerk, 3.25);
+    if (!this.preview) {
+      const staff=createFestivalAttendant(clerk,3.25);
+      this.venueSceneryAssets.registerFestivalAttendant(staff.rig);
+    }
 
     const palace = new THREE.Group();
     palace.name = 'THE PALACE ticket inspection stand';
@@ -11545,7 +11707,10 @@ export class FestivalWorld {
     const inspectorFloor = terrainHeightAt(stand.x-1.4,stand.z)+.03;
     inspector.position.set(0,inspectorFloor-floor,-1.4);
     palace.add(inspector);
-    if (!this.preview) void this.venueSceneryAssets.attach('attendant', inspector, 3.25);
+    if (!this.preview) {
+      const staff=createFestivalAttendant(inspector,3.25);
+      this.venueSceneryAssets.registerFestivalAttendant(staff.rig);
+    }
     this.addCollider(stand.x-1.4,stand.z,.7,.7,.08,{minY:inspectorFloor,maxY:inspectorFloor+3.3,physical:true},'palace-ticket-inspector',inspectorFloor+3.3);
   }
 
@@ -11560,37 +11725,14 @@ export class FestivalWorld {
    * (E / 看祈福牆) — painted text is only legible up close.
    */
   private createWishWall(): void {
-    const group = new THREE.Group();
-    group.name = 'wish-wall';
+    this.wishWallFrame=createWishWallFrame(this.templeTrimAtlas?.material);
+    const group = this.wishWallFrame.root;
     const ground = terrainHeightAt(WISH_WALL.x, WISH_WALL.z);
     group.position.set(WISH_WALL.x, ground, WISH_WALL.z);
     group.scale.setScalar(WISH_WALL.scale);
     // Facing -x: the road and the plaza beyond it.
     group.rotation.y = -Math.PI / 2;
-    const red = material(0x8e2a22);
-    const wood = material(0x4a1c18);
-    const tile = material(0x1f3f3a);
     const width = 4.6;
-    const post = new THREE.BoxGeometry(0.24, 3.7, 0.24);
-    for (const side of [-1, 1]) {
-      const pillar = new THREE.Mesh(post, red);
-      pillar.position.set(side * (width / 2 + 0.16), 1.85, 0);
-      pillar.castShadow = true;
-      group.add(pillar);
-    }
-    const back = new THREE.Mesh(new THREE.BoxGeometry(width, 2.7, 0.14), wood);
-    back.position.set(0, 1.95, -0.02);
-    back.castShadow = true;
-    back.receiveShadow = true;
-    group.add(back);
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(width + 1.0, 0.2, 0.95), tile);
-    cap.position.set(0, 3.55, 0);
-    cap.rotation.x = 0.08;
-    cap.castShadow = true;
-    group.add(cap);
-    const ridge = new THREE.Mesh(new THREE.BoxGeometry(width + 1.2, 0.12, 0.22), red);
-    ridge.position.set(0, 3.7, 0.02);
-    group.add(ridge);
     const canvas = document.createElement('canvas');
     canvas.width = 2048;
     canvas.height = 1184;
@@ -11607,12 +11749,17 @@ export class FestivalWorld {
     this.paintWishWall();
     // Thin along the road, so it stops nobody walking past but cannot be
     // walked through.
-    this.addCollider(WISH_WALL.x, WISH_WALL.z, 0.5 * WISH_WALL.scale, (width + 0.6) * WISH_WALL.scale, 0.12, undefined, 'wish-wall', 3.8 * WISH_WALL.scale);
+    this.addCollider(WISH_WALL.x, WISH_WALL.z, 0.5 * WISH_WALL.scale, (width + 0.6) * WISH_WALL.scale, 0.12, undefined, 'wish-wall', ground + 3.8 * WISH_WALL.scale);
   }
 
   /** The notes to show, newest first; repaints the board. */
+  /**
+   * The board in the world hangs the newest WISH_BOARD_LIMIT, newest first; a
+   * new one pushes the oldest of them off (the owner, 2026-10-22). The 祈福牆
+   * sheet in the interface still lists every note the service keeps.
+   */
   setWishes(wishes: Array<{ name: string; message: string }>): void {
-    const next = wishes.slice(-30).reverse().map((wish) => ({ name: wish.name, message: wish.message }));
+    const next = wishes.slice(-WISH_BOARD_LIMIT).reverse().map((wish) => ({ name: wish.name, message: wish.message }));
     if (JSON.stringify(next) === JSON.stringify(this.wishWallNotes)) return;
     this.wishWallNotes = next;
     this.paintWishWall();
@@ -11623,11 +11770,12 @@ export class FestivalWorld {
     const context = canvas?.getContext('2d');
     if (!canvas || !context || !this.wishWallTexture) return;
     const font = '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif';
-    context.fillStyle = '#3d1714';
+    context.fillStyle = '#38241e';
     context.fillRect(0, 0, canvas.width, canvas.height);
     // The header: what this is, in both languages.
-    context.fillStyle = '#8e2a22';
+    context.fillStyle = '#c8422c';
     context.fillRect(0, 0, canvas.width, 150);
+    context.fillStyle = '#d7ae62';context.fillRect(0,144,canvas.width,6);
     context.fillStyle = '#f4ead2';
     context.textBaseline = 'middle';
     context.textAlign = 'center';
@@ -11642,10 +11790,10 @@ export class FestivalWorld {
       this.wishWallTexture.needsUpdate = true;
       return;
     }
-    // Fewer notes, bigger cards: the grid grows towards 6 × 5 as the wall
-    // fills, and the lettering scales with the card.
-    const shown = notes.slice(0, 30);
-    const columns = shown.length <= 2 ? 2 : shown.length <= 6 ? 3 : shown.length <= 12 ? 4 : shown.length <= 20 ? 5 : 6;
+    // Fewer notes, bigger cards: two across until the board holds its full
+    // six in three columns, and the lettering scales with the card.
+    const shown = notes.slice(0, WISH_BOARD_LIMIT);
+    const columns = shown.length <= 2 ? 2 : 3;
     const rows = Math.max(2, Math.ceil(shown.length / columns));
     const gap = 22;
     const cardW = (canvas.width - gap * (columns + 1)) / columns;
@@ -11677,9 +11825,9 @@ export class FestivalWorld {
       context.save();
       context.translate(x + cardW / 2, y + cardH / 2);
       context.rotate(((index * 37) % 7 - 3) * 0.006);
-      context.fillStyle = '#f2e3c2';
+      context.fillStyle = '#fff0cd';
       context.fillRect(-cardW / 2, -cardH / 2, cardW, cardH);
-      context.fillStyle = '#b8342a';
+      context.fillStyle = '#dc5233';
       context.fillRect(-cardW / 2, -cardH / 2, cardW, Math.max(8, cardH * 0.05));
       const pad = Math.max(14, cardW * 0.06);
       context.textAlign = 'left';
@@ -11700,14 +11848,19 @@ export class FestivalWorld {
 
   private createPamphletStand(): void {
     const stand=createCoastalPamphletStand();
+    const fallback = [...stand.children];
     stand.position.copy(pamphletPosition);
     const label = new THREE.Mesh(
       new THREE.PlaneGeometry(1.75, 0.72),
-      new THREE.MeshBasicMaterial({ map: createTextTexture(['FESTIVAL', 'PAMPHLET']) }),
+      new THREE.MeshBasicMaterial({ map: createTextTexture(['FESTIVAL', 'PAMPHLET'],undefined,undefined,1.75/.72,'pamphlet') }),
     );
     label.position.set(0, .87, .619);
     stand.add(label);
+    this.mountNeonFrame(label,1.75,.72,'pamphlet');
     this.scene.add(stand);
+    if (this.environmentModels && this.environmentUpgradeEnabled()) void this.environmentModels.attach('pamphlet-stand',stand,{
+      exactSize:[2.05,1.9,1.12],fallback,receiveShadow:this.graphicsMode==='normal',
+    });
     // Chest height: the view rides over it rather than being stopped by it.
     this.addCollider(pamphletPosition.x, pamphletPosition.z, 2.2, 1.35, 0.12, undefined, 'pamphlet', 2.1);
   }
@@ -11867,14 +12020,16 @@ export class FestivalWorld {
     remoteCarriedProp.visible = false;
     npc.add(remoteCarriedProp);
     const badge = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: createNameTexture(profile.name),
+      map: createNpcIdentityTexture(profile.name,profile.title),
       transparent: true,
       depthTest: true,
       depthWrite: false,
     }));
     badge.position.set(0, dogRig ? 1.25 : 3.48, 0);
-    badge.scale.set(1.55, 0.39, 1);
+    badge.scale.set(NPC_INDICATOR.identityWidth,badge.material.map!.userData.npcIdentity.height,1);
     badge.visible = false;
+    badge.userData.npcLabelRequested=false;
+    npc.userData.nameBadge=badge;
     npc.add(badge);
     // Residents open on the venue they are spending their first dwell at, and
     // on that venue's own loop. They used to start on a separate list of hand
@@ -11942,15 +12097,18 @@ export class FestivalWorld {
     return avatar;
   }
 
+  private isCarryingMentor(): boolean {
+    return this.carryingMentor === true || this.carriedItem === 'MENTOR';
+  }
+
   private pickUpMentor(): void {
     const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
-    if (!mentor?.dogRig || this.carriedItem === 'MENTOR') return;
-    const discardedPopcorn = this.carriedItem === 'POPCORN' || this.stowedItem === 'POPCORN';
-    this.carriedItem = 'MENTOR';
+    if (!mentor?.dogRig || this.isCarryingMentor()) return;
+    const discardedPopcorn = false;
+    this.carryingMentor = true;
     this.mentorClaimPending = true;
     this.mentorReleasePending = false;
-    this.stowedItem = undefined;
-    this.carriedProp.visible = false;
+    this.syncCarriedPropAnchor();
     this.attachMentorToCarrier(mentor, this.activeCarrierGroup());
     mentor.waitUntil = Number.POSITIVE_INFINITY;
     mentor.stuckFor = 0;
@@ -12089,7 +12247,7 @@ export class FestivalWorld {
 
   private putDownMentor(emitAction = true): void {
     const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
-    if (!mentor?.dogRig || this.carriedItem !== 'MENTOR') return;
+    if (!mentor?.dogRig || !this.isCarryingMentor()) return;
     const forward = new THREE.Vector3(Math.sin(this.player.rotation.y), 0, Math.cos(this.player.rotation.y));
     const right = new THREE.Vector3(forward.z, 0, -forward.x);
     const candidates = [
@@ -12127,7 +12285,9 @@ export class FestivalWorld {
     mentor.recovering = false;
     mentor.waitUntil = performance.now() + 1250;
     mentor.stuckFor = 0;
-    this.carriedItem = undefined;
+    this.carryingMentor = false;
+    if(this.carriedItem === 'MENTOR')this.carriedItem = undefined;
+    this.syncCarriedPropAnchor();
     if (emitAction) {
       this.mentorReleasePending = true;
       this.onAction({ type: 'mentor', active: false });
@@ -12138,7 +12298,7 @@ export class FestivalWorld {
     const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
     if (!mentor?.dogRig) return;
     if (!this.mentorCarrierId) {
-      if (mentor.group.parent !== this.scene && this.carriedItem !== 'MENTOR') {
+      if (mentor.group.parent !== this.scene && !this.isCarryingMentor()) {
         const worldPosition = mentor.group.getWorldPosition(new THREE.Vector3());
         const worldYaw = new THREE.Euler().setFromQuaternion(
           mentor.group.getWorldQuaternion(new THREE.Quaternion()),
@@ -12355,6 +12515,7 @@ export class FestivalWorld {
     badge.position.set(0, 3.48, 0);
     badge.scale.set(1.7, 0.42, 1);
     group.add(badge);
+    group.userData.nameBadge=badge;
     const carriedProp = new THREE.Group();
     this.populatePopcornProp(carriedProp);
     this.positionPopcornProp(carriedProp);
@@ -12413,7 +12574,9 @@ export class FestivalWorld {
   /** The local PS2 neighbourhood avatar, with articulated unisex streetwear. */
   private createAvatarRig(parent: THREE.Group, palette: AvatarPalette, markPalette = false): AvatarRig {
     if (!this.preview) window.setTimeout(() => { if (!this.disposed) this.castShadows(parent); }, 0);
-    return attachImportedAvatar(parent,createCoastalAvatar(parent, palette, markPalette, this.createSkateboard(parent)),palette);
+    const rig=attachImportedAvatar(parent,createCoastalAvatar(parent, palette, markPalette, this.createSkateboard(parent)),palette);
+    if(!this.preview)applyWorldFilmGrain(parent);
+    return rig;
   }
 
   private createAtmosphere(): void {
@@ -12611,6 +12774,7 @@ export class FestivalWorld {
     this.projectorReviewFrameAt = frameStartedAt;
     const delta = Math.min(this.clock.getDelta(), 0.05);
     const elapsed = this.clock.elapsedTime;
+    setWorldFilmGrainFrame(elapsed);
     this.venueSceneryAssets.update(elapsed);
     this.reviewFrameCount += 1;
     this.reviewLastDelta = delta;
@@ -12660,6 +12824,7 @@ export class FestivalWorld {
     this.updateRemoteAvatars(delta, elapsed);
     this.framePhases.visitors = performance.now() - visitorsAt;
     this.updateCamera(delta, elapsed);
+    this.updateIsometricCutaway(delta);
     // Cheap: it compares one venue key and returns, unless somebody has just
     // walked into or out of a room.
     this.updateProjectorMounts();
@@ -12702,6 +12867,7 @@ export class FestivalWorld {
     if (PLANET.on) setPlanetCentre(this.player.position.x, this.player.position.z);
     this.islandDock?.update(elapsed);
     this.applyAerialReview();
+    this.updateNpcIndicators();
     const drawAt = performance.now();
     // A headset draws each eye from its own camera; that view is not culled.
     this.shadowCastersSkipped = this.renderer.shadowMap.enabled && !this.xrActive
@@ -12812,8 +12978,12 @@ export class FestivalWorld {
       const viewportHeight = this.foregroundCanvas.clientHeight || window.innerHeight;
       this.arcadeSession?.renderScreen(arcadeScissor, viewportHeight);
       const exitPoint = this.arcadeView?.projectedScreenPoint(.5, .915);
+      // Where the padlock's keyhole space lands on screen, for ENTER CODE.
+      const lockA = this.arcadeView?.projectedScreenPoint(ARCADE_LOCK_KEYHOLE.left, ARCADE_LOCK_KEYHOLE.top);
+      const lockB = this.arcadeView?.projectedScreenPoint(ARCADE_LOCK_KEYHOLE.right, ARCADE_LOCK_KEYHOLE.bottom);
+      const lock = lockA && lockB ? { x: Math.min(lockA.x, lockB.x), y: Math.min(lockA.y, lockB.y), width: Math.abs(lockB.x - lockA.x), height: Math.abs(lockB.y - lockA.y) } : undefined;
       this.arcadeScreenLayout?.({ ...arcadeScissor, y: viewportHeight - arcadeScissor.y - arcadeScissor.height,
-        exitX: exitPoint?.x, exitY: exitPoint?.y });
+        exitX: exitPoint?.x, exitY: exitPoint?.y, lock });
     }
     this.compositeProjectorAvatars(visibleProjectors, visibleProjectorScissors);
     // A desktop VR preview also uses a single WebGL context. Retain world
@@ -12846,6 +13016,7 @@ export class FestivalWorld {
     if (now - this.lastSnapshotAt > 200) {
       this.onSnapshot({
         cameraMode: this.cameraMode,
+        dialogueNpcId:this.npcDialogue?.npc.id,
         vrLookedAround: this.xrLookedAround,
         location: this.locationName(),
         dayNight,
@@ -12855,6 +13026,8 @@ export class FestivalWorld {
         screeningVenue: this.screeningVenue(),
         outfit: this.outfit,
         carriedItem: this.carriedItem ?? (performance.now()<this.drinkUntil?'DRINK':performance.now()<this.eatingUntil?this.eatingItem:undefined),
+        carryingMentor: this.isCarryingMentor(),
+      drinks: Math.max(0, Math.ceil(this.drinksLeft() - 1e-6)),
         stowedItem: this.stowedItem,
         hasPamphlet: this.hasPamphlet,
         npcCount: this.npcs.length,
@@ -12941,8 +13114,8 @@ export class FestivalWorld {
     const night = state.moon.strength > state.sun.strength;
     const body = night ? state.moon : state.sun;
     tintStylizedWater(material, night
-      ? { deep: 0x0a2233, mid: 0x1d4d66, highlight: 0xbcd8ea, glint: body.color, glintStrength: body.strength * 0.55 }
-      : { deep: 0x0d3346, mid: 0x2f7f96, highlight: 0xe4f6f6, glint: body.color, glintStrength: body.strength * 0.65 });
+      ? { deep: 0x101e42, mid: 0x243e6b, highlight: 0xb5c7de, glint: body.color, glintStrength: body.strength * 0.55 }
+      : { deep: 0x172d5a, mid: 0x365f91, highlight: 0xd5e3ed, glint: body.color, glintStrength: body.strength * 0.65 });
     (material.uniforms.uGlintOrigin.value as THREE.Vector2).set(body.x, -70);
 
     // A ring follows an attendee who is in the water.
@@ -12975,208 +13148,40 @@ export class FestivalWorld {
   }
 
   private updateFireworks(delta: number, now: number): void {
-    const running = now < this.fireworksUntil;
-    const rocketCap = this.graphicsMode === 'normal' ? 2 : 1;
-    const burstCap = this.graphicsMode === 'normal' ? 4 : 2;
-    if (running && now >= this.nextFireworkAt && this.fireworkRockets.length < rocketCap && this.fireworkBursts.length < burstCap) {
-      this.spawnFireworkRocket();
-      const finale = this.fireworksUntil - now < 20_000;
-      const minimum = finale ? (this.graphicsMode === 'normal' ? 520 : 900) : (this.graphicsMode === 'normal' ? 950 : 1_450);
-      const spread = finale ? (this.graphicsMode === 'normal' ? 380 : 520) : (this.graphicsMode === 'normal' ? 550 : 650);
-      this.nextFireworkAt = now + minimum + Math.random() * spread;
-    }
-
-    for (let index = this.fireworkRockets.length - 1; index >= 0; index -= 1) {
-      const rocket = this.fireworkRockets[index];
-      rocket.mesh.position.y += rocket.velocity * delta;
-      rocket.velocity -= 1.15 * delta;
-      const positions = rocket.trail.geometry.getAttribute('position') as THREE.BufferAttribute;
-      for (let trailIndex = 0; trailIndex < positions.count; trailIndex += 1) {
-        positions.setXYZ(
-          trailIndex,
-          rocket.mesh.position.x,
-          rocket.mesh.position.y - trailIndex * 0.38,
-          rocket.mesh.position.z,
-        );
-      }
-      positions.needsUpdate = true;
-      if (rocket.mesh.position.y < rocket.targetY) continue;
-      this.explodeFirework(rocket);
-      this.fireworkRockets.splice(index, 1);
-    }
-
-    for (let index = this.fireworkBursts.length - 1; index >= 0; index -= 1) {
-      const burst = this.fireworkBursts[index];
-      burst.age += delta;
-      const fade = Math.max(0, 1 - burst.age / burst.lifetime);
-      const positions = burst.points.geometry.getAttribute('position') as THREE.BufferAttribute;
-      const positionArray = positions.array as Float32Array;
-      const horizontalDrag = Math.pow(0.988, delta * 60);
-      const verticalDrag = Math.pow(0.991, delta * 60);
-      for (let offset = 0; offset < positionArray.length; offset += 3) {
-        burst.velocities[offset] *= horizontalDrag;
-        burst.velocities[offset + 1] = burst.velocities[offset + 1] * verticalDrag - 3.1 * delta;
-        burst.velocities[offset + 2] *= horizontalDrag;
-        positionArray[offset] += burst.velocities[offset] * delta;
-        positionArray[offset + 1] += burst.velocities[offset + 1] * delta;
-        positionArray[offset + 2] += burst.velocities[offset + 2] * delta;
-      }
-      positions.needsUpdate = true;
-      burst.points.material.opacity = Math.pow(fade, 1.35);
-      burst.currentIntensity = burst.peakIntensity * Math.pow(fade, 2.2) * (0.82 + Math.random() * 0.18);
-      burst.reflection.material.opacity = Math.round(.38 * Math.pow(fade, 1.7) * 16) / 16;
-      // Short, stepped glints stay on the sea's pixel grid instead of stretching.
-      burst.reflection.scale.x = 10 + (Math.floor(burst.age * 5) % 3) * .5;
-      if (burst.age < burst.lifetime) continue;
-      this.removeFireworkBurst(burst);
-      this.fireworkBursts.splice(index, 1);
-    }
-    this.updateFireworkWorldLight();
+    this.fireworksShow?.update(delta, now);
+    this.templeFireworks?.update(delta, now);
   }
 
-  private updateFireworkWorldLight(): void {
-    let brightest: FireworkBurst | undefined;
-    for (const burst of this.fireworkBursts) {
-      if (!brightest || burst.currentIntensity > brightest.currentIntensity) brightest = burst;
+  private updateNpcIndicators(): void {
+    if (this.npcIndicators?.report.badges !== this.npcs.length) {
+      this.npcIndicators?.dispose();
+      this.npcIndicators = new NpcIndicators(this.scene, this.npcs.map(npc => ({
+        id: npc.id, group: npc.group, head: npc.rig?.head ?? npc.dogRig?.head,
+        crown: npc.rig ? () => npc.group.userData.importedHeadSupport?.() : undefined,
+        identity:npc.badge,
+        headOffset: npc.dogRig ? new THREE.Vector3(0, .37, 0) : undefined,
+        headTop: npc.rig?.headTop,
+      })));
     }
-    if (brightest) {
-      this.fireworkWorldLight.position.copy(brightest.origin);
-      this.fireworkWorldLight.color.copy(brightest.points.material.color);
-      this.fireworkWorldLight.intensity = brightest.currentIntensity;
-      return;
-    }
-    const rocket = this.fireworkRockets[0];
-    if (rocket) {
-      this.fireworkWorldLight.position.copy(rocket.mesh.position);
-      this.fireworkWorldLight.color.copy(rocket.colour);
-      this.fireworkWorldLight.intensity = 34;
-      return;
-    }
-    this.fireworkWorldLight.intensity = 0;
-  }
-
-  private spawnFireworkRocket(): void {
-    const colours = [0xe7c77c, 0xa7c9b4, 0xd48466, 0xc5d5cc];
-    const colour = new THREE.Color(colours[Math.floor(Math.random() * colours.length)]);
-    const mesh = new THREE.Mesh(
-      new THREE.OctahedronGeometry(this.graphicsMode === 'normal' ? .22 : .26,0),
-      new THREE.MeshBasicMaterial({ color: colour, toneMapped: false }),
-    );
-    // Kept in the part of the horizon visible from the Shore: the earlier,
-    // wider arc was physically over the sea but most bursts opened just beyond
-    // a normal camera's vertical or horizontal field of view.
-    mesh.position.set(THREE.MathUtils.randFloat(-34, 34), 0.8, THREE.MathUtils.randFloat(-101, -88));
-    mesh.userData.projectorBackground = true;
-    const trailGeometry = new THREE.BufferGeometry();
-    trailGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(8 * 3), 3));
-    const trail = new THREE.Points(trailGeometry, new THREE.PointsMaterial({
-      size:.18,sizeAttenuation:true,
-      color: colour,
-      transparent: true,
-      opacity: 0.78,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      toneMapped: false,
-    }));
-    trail.userData.projectorBackground = true;
-    this.scene.add(mesh, trail);
-    this.fireworkRockets.push({
-      mesh,
-      trail,
-      velocity: THREE.MathUtils.randFloat(16.5, 21.5),
-      targetY: THREE.MathUtils.randFloat(13, 24),
-      colour,
-    });
-  }
-
-  private explodeFirework(rocket: FireworkRocket): void {
-    const origin = rocket.mesh.position.clone();
-    this.removeFireworkRocket(rocket);
-    const count = this.graphicsMode === 'normal' ? 40 : 24;
-    const pattern = Math.floor(Math.random() * 2);
-    const positions = new Float32Array(count * 3);
-    const velocities = new Float32Array(count * 3);
-    for (let index = 0; index < count; index += 1) {
-      const offset = index * 3;
-      positions[offset] = origin.x;
-      positions[offset + 1] = origin.y;
-      positions[offset + 2] = origin.z;
-      const spoke=index%8,ring=Math.floor(index/8),angle=spoke/8*Math.PI*2+(pattern?Math.PI/8:0);
-      const speed=4.4+ring*1.35;
-      velocities[offset]=Math.cos(angle)*speed;
-      velocities[offset+1]=Math.sin(angle)*speed;
-      velocities[offset+2]=(ring%2?1:-1)*.7;
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const points = new THREE.Points(geometry, new THREE.PointsMaterial({
-      color: rocket.colour,
-      size: this.graphicsMode === 'normal' ? .44 : .56,
-      sizeAttenuation: true,
-      transparent: true,
-      opacity: 1,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      toneMapped: false,
-    }));
-    points.userData.projectorBackground = true;
-    points.frustumCulled = false;
-    const peakIntensity = this.graphicsMode === 'normal' ? 165 : 110;
-
-    const reflectionMaterial = new THREE.MeshBasicMaterial({
-      color: rocket.colour,
-      transparent: true,
-      opacity: 0.52,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      toneMapped: false,
-      side: THREE.DoubleSide,
-    });
-    const reflectionGeometry=new THREE.BufferGeometry(),glints:number[]=[];
-    for(let row=0;row<8;row++){
-      const y=-.5+row/8,w=(row%3===0?.32:.18)*(1-row*.065),x=(row%2?.09:-.09);
-      glints.push(x-w,y,0,x+w,y,0,x+w,y+.035,0,x-w,y,0,x+w,y+.035,0,x-w,y+.035,0);
-    }
-    reflectionGeometry.setAttribute('position',new THREE.Float32BufferAttribute(glints,3));reflectionGeometry.computeVertexNormals();
-    const reflection = new THREE.Mesh(reflectionGeometry, reflectionMaterial);
-    reflection.rotation.x = -Math.PI / 2;
-    reflection.position.set(Math.round(origin.x * .82 * 2)/2, SEA_Y + .018, THREE.MathUtils.clamp(origin.z + 21, -88, -74));
-    reflection.scale.set(10, 18, 1);
-    reflection.renderOrder = 5;
-    reflection.userData.projectorBackground = true;
-    this.scene.add(points, reflection);
-    this.fireworkBursts.push({
-      points,
-      velocities,
-      reflection,
-      origin,
-      age: 0,
-      lifetime: THREE.MathUtils.randFloat(2.4, 3.8),
-      peakIntensity,
-      currentIntensity: peakIntensity,
-    });
-  }
-
-  private removeFireworkRocket(rocket: FireworkRocket): void {
-    this.scene.remove(rocket.mesh, rocket.trail);
-    rocket.mesh.geometry.dispose();
-    rocket.mesh.material.dispose();
-    rocket.trail.geometry.dispose();
-    rocket.trail.material.dispose();
-  }
-
-  private removeFireworkBurst(burst: FireworkBurst): void {
-    this.scene.remove(burst.points, burst.reflection);
-    burst.points.geometry.dispose();
-    burst.points.material.dispose();
-    burst.reflection.geometry.dispose();
-    burst.reflection.material.dispose();
+    this.npcIndicators.update(this.camera, { localPlayerNpcId: this.controlledNpcId,
+      remotePlayerNpcIds: this.remoteNpcControls });
   }
 
   private updatePlayer(delta: number): void {
     if (this.arcadeView) {
       this.moveVector.set(0, 0, 0); this.keys.clear(); this.stickX = this.stickY = 0;
       this.player.visible = false;
+      return;
+    }
+    if(this.npcDialogue){
+      this.moveVector.set(0,0,0);this.keys.clear();this.stickX=this.stickY=0;
+      this.player.visible=!this.xrActive&&!this.controlledNpcId&&this.cameraMode!=='first-person';
+      this.syncCarriedPropAnchor();
+      if(this.playerRig){
+        const gesture=performance.now()<this.playerGestureUntil?this.playerGesture:undefined;
+        this.animateRig(this.playerRig,this.clock.elapsedTime*1.2,.018,gesture,false,this.gestureProgress(gesture,this.playerGestureUntil));
+        if(this.playerState==='seated')this.poseRigSeated(this.playerRig,gesture);
+      }
       return;
     }
     if (this.originalPlayerIdle.visible && this.originalPlayerIdleRig) {
@@ -13195,9 +13200,13 @@ export class FestivalWorld {
       if (this.playerRig) this.animateRig(this.playerRig, this.clock.elapsedTime * 1.2, 0.018);
       return;
     }
+    // Before the seat, not after it: the tenth drink is usually taken on a bar
+    // stool, and checking only once the attendee had walked off meant nobody
+    // went down until they stood up. updatePassOut stands them up itself.
+    if (this.updatePassOut()) return;
     if (this.playerState === 'seated') {
       this.moveVector.set(0, 0, 0);
-      this.player.visible = !this.xrActive && !this.controlledNpcId;
+      this.player.visible = !this.xrActive && !this.controlledNpcId && this.cameraMode !== 'first-person';
       this.syncCarriedPropAnchor();
       if (this.playerRig) {
         // The gesture was never handed over, so a drink taken on a stool was
@@ -13215,7 +13224,6 @@ export class FestivalWorld {
       }
       return;
     }
-    if (this.updatePassOut()) return;
     /**
      * The keyboard, unless a headset has already answered.
      *
@@ -13406,6 +13414,7 @@ export class FestivalWorld {
   }
 
   private movePlayer(horizontal: number, vertical: number, distance: number, view: THREE.Object3D = this.camera): void {
+    if(this.npcDialogue){this.moveVector.set(0,0,0);return;}
     // Out cold: no key, stick or headset moves the body on the floor.
     if (performance.now() < this.passedOutUntil) return;
     /**
@@ -13442,8 +13451,8 @@ export class FestivalWorld {
      * all; the phone preview does not, so it has to be named.
      */
     if (view === this.camera && !this.xrActive && this.cameraMode !== 'first-person') {
-      const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
-      this.cameraDirection.set(-Math.sin(orbit.yaw), 0, -Math.cos(orbit.yaw));
+      const yaw=this.cameraMode==='isometric'?ISOMETRIC_VIEW.yaw:(this.mobileMoveYaw??this.cameraOrbit.follow.yaw);
+      this.cameraDirection.set(-Math.sin(yaw), 0, -Math.cos(yaw));
     } else {
       view.getWorldDirection(this.cameraDirection);
       this.cameraDirection.y = 0;
@@ -13677,7 +13686,10 @@ export class FestivalWorld {
   }
 
   private updateSharedNpc(npc:NpcAvatar,elapsed:number):void {
-    const sample=sampleNpcMotion(this.sharedNpcRoute(npc),(Date.now()+this.npcClockOffset)/1000,npcSeed(npc.id)%800);
+    const sharedTime=(Date.now()+this.npcClockOffset)/1000;
+    const presentationTime=this.npcDialogueClock?.sample(npc.id,sharedTime,performance.now())??sharedTime;
+    npc.group.userData.sharedNpcPresentationTime=presentationTime;
+    const sample=sampleNpcMotion(this.sharedNpcRoute(npc),presentationTime,npcSeed(npc.id)%800);
     npc.group.position.set(sample.x,this.groundHeightAt(sample.x,sample.z,sample.y),sample.z);
     if(sample.moving)npc.group.rotation.y=sample.rotation;
     npc.stuckFor=0;npc.recovering=false;
@@ -13806,6 +13818,8 @@ export class FestivalWorld {
       if (remoteController) {
         npc.group.visible = true;
         npc.badge.visible = false;
+        const remoteSeat=remoteController.state==='seated'&&!npc.dogRig?this.seats.find(s=>
+          Math.hypot(s.position.x-remoteController.x,s.position.z+this.seatForward(s)-remoteController.z)<.25):undefined;
         this.npcControlTarget.set(
           remoteController.x,
           // A dog floats higher than a person does. Sunk to the human
@@ -13814,12 +13828,17 @@ export class FestivalWorld {
           // depending on who was looking.
           remoteController.state === 'swimming'
             ? (npc.dogRig ? MENTOR_SWIM_Y : AVATAR_SWIM_Y)
-            : AVATAR_GROUND_Y,
+            : remoteController.state==='seated'
+              ? remoteSeat?this.seatAnchor(remoteSeat).y:remoteController.y??AVATAR_GROUND_Y
+              : AVATAR_GROUND_Y,
           remoteController.z,
         );
         const positionError = npc.group.position.distanceTo(this.npcControlTarget);
         const smoothing = 1 - Math.exp(-delta * 8);
         npc.group.position.lerp(this.npcControlTarget, smoothing);
+        // Taking a known seat changes support planes immediately. Interpolating
+        // its Y from the street leaves a rooftop resident below their cushion.
+        if(remoteSeat)npc.group.position.y=this.npcControlTarget.y;
         const rotationDelta = Math.atan2(
           Math.sin(remoteController.rotation - npc.group.rotation.y),
           Math.cos(remoteController.rotation - npc.group.rotation.y),
@@ -13856,6 +13875,14 @@ export class FestivalWorld {
       }
       npc.group.visible = true;
       npc.remoteCarriedProp.visible = false;
+      if(this.npcDialogue?.npc===npc){
+        const gesture=now<npc.gestureUntil?npc.gesture:undefined;
+        npc.group.rotation.y=Math.atan2(this.player.position.x-npc.group.position.x,this.player.position.z-npc.group.position.z);
+        if(npc.rig)this.animateRig(npc.rig,elapsed*2.2,.025,gesture,false,this.gestureProgress(gesture,npc.gestureUntil));
+        if(npc.dogRig)this.animateMentorDog(npc.dogRig,elapsed*1.4,false,gesture==='tail-wag',now<npc.eatUntil);
+        const distance=npc.group.position.distanceTo(this.player.position);if(distance<nearestDistance){nearestDistance=distance;nearestNpc=npc;}
+        continue;
+      }
       if (npc.station && npc.id !== this.controlledNpcId) {
         npc.group.position.copy(npc.station.position);
         npc.group.rotation.y = npc.station.rotationY;
@@ -13878,7 +13905,7 @@ export class FestivalWorld {
         }
         continue;
       }
-      if (npc.id === 'MENTOR' && this.carriedItem === 'MENTOR') {
+      if (npc.id === 'MENTOR' && this.isCarryingMentor()) {
         npc.badge.visible = false;
         // A carried MENTOR keeps eating and wagging even before the service
         // confirms the shared carrier, and while the carrier is seated.
@@ -14201,12 +14228,13 @@ export class FestivalWorld {
       }
     }
     for (const npc of this.npcs) {
-      if (npc.id === this.controlledNpcId || this.remoteNpcControls.has(npc.id) ||
-        (npc.id === 'MENTOR' && (this.carriedItem === 'MENTOR' || Boolean(this.mentorCarrierId)))) {
+      if (npc.id === this.controlledNpcId || this.remoteNpcControls.has(npc.id)) {
         npc.badge.visible = false;
+        npc.badge.userData.npcLabelRequested=false;
         continue;
       }
-      npc.badge.visible = npc === nearestNpc || npc.gestureUntil > now;
+      npc.badge.visible = npc === nearestNpc || npc.gestureUntil > now ||(npc.id==='MENTOR'&&(this.isCarryingMentor()||Boolean(this.mentorCarrierId)));
+      npc.badge.userData.npcLabelRequested=npc.badge.visible;
     }
   }
 
@@ -14599,7 +14627,9 @@ export class FestivalWorld {
     if(rig.visualRoot){rig.visualRoot.position.y=0;rig.visualRoot.rotation.y=0;}
     const origin=rig.visualRoot?.parent?.position;
     const seat=origin?this.seats.find(s=>Math.hypot(s.position.x-origin.x,s.position.z+this.seatForward(s)-origin.z)<.25):undefined;
-    seatCoastalLegs(rig,(x,z,y)=>seat?.footFloor??this.footSurfaceAt(x,z,y));
+    const pad=seat?.cushion?new THREE.Box3().setFromObject(seat.cushion)
+      :seat?this.seatPad(seat.position.x,seat.position.z+this.seatForward(seat),seat.position.y):undefined;
+    seatCoastalLegs(rig,(x,z,y)=>seat?.footFloor??this.footSurfaceAt(x,z,y),pad);
     rig.torso.rotation.set(0,0,0);rig.head.rotation.set(0,0,0);
     rig.leftArm.rotation.x = -0.12;
     rig.leftArm.rotation.z = -.18;
@@ -14830,6 +14860,52 @@ export class FestivalWorld {
     // The Palace's hall, inside its walls: the same box the screening uses.
     if (x < -24 && x > -46 && z < -31 && z > -49.2) return INDOORS.palace;
     return 1;
+  }
+
+  /**
+   * The roofed room the attendee is in, where the isometric view looks in
+   * through the cutaway lens: its footprint and the height its roof is cut at,
+   * just under its own ceiling so nothing hanging or standing in it is cut.
+   */
+  private isometricRoom(): Omit<CutawayRoom, 'floor'> | undefined {
+    const { x, z, y } = this.player.position, c = clubBounds, r = rooftopBounds, s = TEMPLE_STAIRS;
+    // The club's ceiling, room and ground floor alike.
+    const clubCeiling = CLUB_FLOOR_Y + CLUB_ROOM_HEIGHT - .1;
+    if (this.inClubRoom(x, z)) return { minX: c.roomMinX, maxX: c.roomMaxX, minZ: c.roomMinZ, maxZ: c.roomMaxZ, ceiling: clubCeiling };
+    if (this.inClubLobby(x, z) || this.onClubStairs(x, z)) return { minX: c.lobbyMinX, maxX: c.lobbyMaxX, minZ: c.lobbyMinZ, maxZ: c.lobbyMaxZ, ceiling: clubCeiling };
+    // The Palace's hall: the same box its screening and ambience use. Its roof's
+    // underside is at 10.04 and the screen's top edge at 9.95.
+    if (x < -24 && x > -46 && z < -31 && z > -49.2) return { minX: -46, maxX: -24, minZ: -49.2, maxZ: -31, ceiling: 10 };
+    // The temple's ceiling is 10.2 over its floor; the lanterns' cords hang from it.
+    const templeFloor = TEMPLE_FLOOR_Y - AVATAR_GROUND_Y;
+    if (x > TEMPLE.minX && x < TEMPLE.maxX && z > TEMPLE.minZ && z < TEMPLE.maxZ) return { ...TEMPLE, ceiling: templeFloor + 10 };
+    // The approach stairs and the podium in front of the door (owner,
+    // 2026-10-23): the temple stands on the camera's side of them, so the lens
+    // opens over the stairs too, cutting above the temple's floor at least.
+    if (x > s.start && x < TEMPLE.minX && z > s.centerZ - s.width / 2 && z < s.centerZ + s.width / 2) {
+      return { minX: s.start, maxX: TEMPLE.minX, minZ: s.centerZ - s.width / 2, maxZ: s.centerZ + s.width / 2,
+        ceiling: Math.max(y - AVATAR_GROUND_Y + CUTAWAY_LENS.overhead, templeFloor + CUTAWAY_LENS.sill), nearWalls: false };
+    }
+    // The pop-up shop in the garage bay, under the deck rather than on it; the
+    // deck slab's underside is at 6.35.
+    if (x > r.minX && x < r.maxX && z > r.minZ && z < r.bayMaxZ && y < ROOF_Y) {
+      return { minX: r.minX, maxX: r.maxX, minZ: r.minZ, maxZ: r.bayMaxZ, ceiling: ROOF_Y - .7 };
+    }
+    return undefined;
+  }
+
+  /**
+   * Indoors in the isometric view the attendee is seen through a lens (owner,
+   * 2026-10-23): inside a soft-edged circle round them the roof, and the walls
+   * on the camera's side, are cut away; the building outside it stays whole.
+   */
+  private updateIsometricCutaway(delta: number): void {
+    const isometric = this.cameraMode === 'isometric' && !this.xrActive && !this.arcadeView && !this.aerialReview;
+    if (!isometric) { this.cutawayLens.close(); return; }
+    const room = this.isometricRoom(), { x, z } = this.player.position;
+    // The floor, not the body: a jump must not lift the cut with it.
+    const floor = room && this.groundHeightAt(x, z) - AVATAR_GROUND_Y;
+    this.cutawayLens.update(this.camera as WorldCamera, this.player.position, room && { ...room, floor: floor! }, delta);
   }
 
   /** True while the position is anywhere inside the club building. */
@@ -15235,6 +15311,7 @@ export class FestivalWorld {
     // makes the paragraph above true however many neighbours a body has.
     const limit = 0.9 * delta;
     for (let index = 0; index < crowd.length; index += 1) {
+      if(crowd[index]===this.npcDialogue?.npc)continue;
       const length = Math.hypot(nudgeX[index], nudgeZ[index]);
       if (length < 1e-6) continue;
       const scale = Math.min(1, limit / length) ;
@@ -15263,7 +15340,7 @@ export class FestivalWorld {
     for (const other of this.npcs) {
       if (other === npc || Math.abs(other.group.position.y-y)>1.8) continue;
       if (other.id === this.controlledNpcId) continue;
-      if (other.id === 'MENTOR' && (this.carriedItem === 'MENTOR' || Boolean(this.mentorCarrierId))) continue;
+      if (other.id === 'MENTOR' && (this.isCarryingMentor() || Boolean(this.mentorCarrierId))) continue;
       const dx = other.group.position.x - x;
       const dz = other.group.position.z - z;
       if (dx * dx + dz * dz < radiusSq) return true;
@@ -15349,7 +15426,7 @@ export class FestivalWorld {
 
     for (const npc of this.npcs) {
       if (npc.id === this.controlledNpcId) continue;
-      if (npc.id === 'MENTOR' && (this.carriedItem === 'MENTOR' || Boolean(this.mentorCarrierId))) continue;
+      if (npc.id === 'MENTOR' && (this.isCarryingMentor() || Boolean(this.mentorCarrierId))) continue;
       separate(npc.group.position, npc);
     }
     for (const avatar of this.remoteAvatars.values()) separate(avatar.group.position);
@@ -15378,6 +15455,7 @@ export class FestivalWorld {
   }
 
   private updateCamera(delta: number, _elapsed: number): void {
+    (this.camera as WorldCamera).setIsometric?.(this.cameraMode==='isometric'&&!this.xrActive&&!this.arcadeView&&!this.aerialReview,this.cameraZoom);
     if (this.arcadeView) {
       const frame = this.arcadeView.frame;
       const halfFov = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
@@ -15445,25 +15523,36 @@ export class FestivalWorld {
       this.player.visible = false;
       return;
     }
+    if(this.npcDialogue&&this.cameraMode!=='isometric'){
+      const subject=this.npcDialogue.npc.group.getWorldPosition(new THREE.Vector3());
+      const frame=this.npcDialogue.transition.frame(this.cameraMode,this.player.position,subject,{aspect:this.camera.aspect,fov:this.camera.fov,playerEyeHeight:AVATAR_EYE_OFFSET,subjectEyeHeight:this.npcDialogue.npc.dogRig ? .75 : AVATAR_EYE_OFFSET,clearReach:(from,to)=>this.cameraClearReach(from,to)});
+      if(frame){
+        const pose=this.npcDialogue.transition.step(frame,delta);this.lookTarget.copy(pose.target);this.camera.position.copy(pose.position);
+        this.player.visible=!this.controlledNpcId&&this.cameraMode!=='first-person';
+        this.camera.lookAt(this.lookTarget);return;
+      }
+    }
+    if(this.cameraMode==='follow'&&this.mobileCameraControls&&!this.cameraDragging){
+      this.cameraOrbit.follow.yaw=mobileFollowYaw(this.cameraOrbit.follow.yaw,this.travelHeading??0,delta,performance.now(),this.lastManualLookAt??-Infinity,Math.hypot(this.stickX??0,this.stickY??0)>.08&&this.moveVector.lengthSq()>1e-6&&this.playerState!=='seated');
+    }
     const cameraTarget = this.player.position.clone();
-    if (this.cameraMode === 'screening') {
-      const venue = this.activeSeat?.venue ?? this.screeningVenue();
-      // Height is relative to the seat, not an absolute 3.6: the club's floor
-      // is sixteen units down, so a fixed height put the camera above the roof.
-      // The side comes from which way the screen faces, or the camera ends up
-      // behind it in the venues whose audience sits to the north.
-      cameraTarget.set(
-        this.player.position.x,
-        this.player.position.y + 3.3,
-        this.player.position.z + 2.6 * venueScreens[venue].facing,
-      );
-      this.lookTarget.set(...venueScreens[venue].target);
-      const viewingDistance = Math.max(9, this.lookTarget.distanceTo(cameraTarget));
-      const forward = this.lookTarget.clone().sub(cameraTarget).normalize();
-      const right = new THREE.Vector3(-forward.z, 0, forward.x).normalize();
-      this.lookTarget.addScaledVector(right, this.screeningOrbit.yaw * viewingDistance * 0.92);
-      this.lookTarget.y -= this.screeningOrbit.pitch * viewingDistance * 0.68;
-    } else if (this.cameraMode === 'first-person') {
+    if(this.cameraMode==='isometric'){
+      this.lookTarget.copy(this.player.position).add(new THREE.Vector3(0,1.4,0));
+      cameraTarget.copy(this.lookTarget).add(new THREE.Vector3(Math.sin(ISOMETRIC_VIEW.yaw)*Math.cos(ISOMETRIC_VIEW.pitch),Math.sin(ISOMETRIC_VIEW.pitch),Math.cos(ISOMETRIC_VIEW.yaw)*Math.cos(ISOMETRIC_VIEW.pitch)).multiplyScalar(ISOMETRIC_VIEW.distance));
+      // Never pulled in front of a wall, indoors or out. Outdoors a tree, a
+      // house or a screen between the camera and the attendee is drawn whole,
+      // and may hide them for a moment, as in any isometric game (owner,
+      // 2026-10-22). Indoors the pull put the near plane inside the building,
+      // which sliced the ground away with the wall: the empty sky showed under
+      // the pop-up shop (owner, 2026-10-23). The cutaway lens opens the room
+      // instead (`updateIsometricCutaway`), and the box always reaches back far
+      // enough that nothing near the camera is sliced.
+      this.cameraReach=0;
+      (this.camera as WorldCamera).setIsometricBehind?.(isometricExtraDepth(this.camera.top));
+      this.camera.position.copy(cameraTarget);this.camera.lookAt(this.lookTarget);
+      return;
+    }
+    if (this.cameraMode === 'first-person') {
       const orbit = this.cameraOrbit.follow;
       const eye = this.player.position.clone().add(new THREE.Vector3(0, AVATAR_EYE_OFFSET, 0));
       cameraTarget.copy(eye);
@@ -15478,7 +15567,7 @@ export class FestivalWorld {
       this.applyCameraShake(delta);
       return;
     } else {
-      const orbit = this.cameraOrbit[this.cameraMode === 'perspective' ? 'perspective' : 'follow'];
+      const orbit = this.cameraOrbit.follow;
       /**
        * The lead turns with the camera; the height is taken raw.
        *
@@ -15489,10 +15578,10 @@ export class FestivalWorld {
        * treads, and the stair it was aimed at turned out to be a continuous
        * ramp, so it was buying nothing and costing that.
        */
-      const lead = this.cameraMode === 'perspective' ? 0 : 2.2;
+      const lead = 2.2;
       this.lookTarget.set(
         this.player.position.x - Math.sin(orbit.yaw) * lead,
-        this.player.position.y + (this.cameraMode === 'perspective' ? 1.65 : 1.4),
+        this.player.position.y + 1.4,
         this.player.position.z - Math.cos(orbit.yaw) * lead,
       );
       if (lead > 0) {
@@ -15503,7 +15592,7 @@ export class FestivalWorld {
         const clearLead = this.cameraClearReach(bodyAim, this.lookTarget);
         if (clearLead < lead) this.lookTarget.lerpVectors(bodyAim, this.lookTarget, clearLead / lead);
       }
-      const radius = (this.cameraMode === 'perspective' ? 11.68 : 10.56) * this.cameraZoom;
+      const radius = 10.56 * this.cameraZoom;
       const horizontalRadius = Math.cos(orbit.pitch) * radius;
       cameraTarget.copy(this.lookTarget).add(new THREE.Vector3(
         Math.sin(orbit.yaw) * horizontalRadius,
@@ -15537,7 +15626,7 @@ export class FestivalWorld {
     // Easing the camera position can itself carry it through a wall while the
     // target is already clear. Check the rendered position as well as the
     // target, and snap inward only when the old position is obstructed.
-    if (this.cameraMode !== 'screening' && this.playerState !== 'swimming') {
+    if (this.playerState !== 'swimming') {
       const eye = this.cameraCollisionOrigin();
       const actualReach = eye.distanceTo(this.camera.position);
       const clearReach = this.cameraClearReach(eye, this.camera.position);
@@ -15651,7 +15740,7 @@ export class FestivalWorld {
       this.passOutAt = 0;
       this.dancing = false;
       this.running = false;
-      if (this.carriedItem === 'MENTOR') this.putDownMentor();
+      if (this.isCarryingMentor()) this.putDownMentor();
       this.carriedItem = undefined;
       this.stowedItem = undefined;
       this.carriedProp.visible = false;
@@ -15855,7 +15944,7 @@ export class FestivalWorld {
    * even when the ground is not.
    */
   private cameraSteeringAllowed(): boolean {
-    if (!CAMERA_MAY_STEER) return false;
+    if (this.cameraMode==='isometric'||!CAMERA_MAY_STEER) return false;
     if (this.airborne) return false;
     const { x, z } = this.player.position;
     const here = this.groundHeightAt(x, z);
@@ -15879,17 +15968,23 @@ export class FestivalWorld {
    * threw the camera in against the nearest seat back.
    */
   private blocksCamera(x: number, z: number, y: number): boolean {
-    const headHeight = this.player.position.y + 2.2;
-    return this.colliders.some(
-      (collider) =>
-        x > collider.minX && x < collider.maxX && z > collider.minZ && z < collider.maxZ &&
-        (collider.minY === undefined || y >= collider.minY) &&
-        (collider.maxY === undefined || y <= collider.maxY) &&
-        // Where it really tops out, falling back to the band when nothing
-        // better is known. Undefined on both means a wall, which always counts.
-        ((collider.viewTop ?? collider.maxY) === undefined ||
-          (collider.viewTop ?? collider.maxY)! > headHeight),
-    );
+    // Cushion fitting can lower the network root below the seat's nominal
+    // floor. That must not turn the same low chair into a head-height wall.
+    const seatFloor=this.playerState==='seated'?this.activeSeat?.position.y:undefined;
+    const headHeight = Math.max(this.player.position.y,seatFloor??-Infinity) + 2.2;
+    return this.colliders.some(collider => {
+      // A thin freestanding utility pole in front of the open rooftop stair
+      // briefly crosses the image, rather than acting as a building wall.
+      // Its original collider still prevents the body from walking through it.
+      if(rooftopStairPassesSlenderPole(collider,this.player.position.x,this.player.position.z,rooftopBounds))return false;
+      const viewTop=collider.label===ROOFTOP_STAIR_OPEN_GUARD
+        ?rooftopStairGuardCameraTop(z,rooftopBounds,ROOF_Y):(collider.viewTop??collider.maxY);
+      return x>collider.minX&&x<collider.maxX&&z>collider.minZ&&z<collider.maxZ
+        &&(collider.minY===undefined||y>=collider.minY)
+        &&(collider.maxY===undefined||y<=collider.maxY)
+        &&(viewTop===undefined||y<=viewTop)
+        &&(viewTop===undefined||viewTop>headHeight);
+    });
   }
 
   private cameraClearReach(eye: THREE.Vector3, target: THREE.Vector3): number {
@@ -15903,7 +15998,8 @@ export class FestivalWorld {
       const x = eye.x + vector.x * distance;
       const y = eye.y + vector.y * distance;
       const z = eye.z + vector.z * distance;
-      return this.blocksCamera(x, z, y) || y < this.groundHeightAt(x, z, this.player.position.y) + 0.45;
+      const floor=rooftopStairCameraFloor(x,z,rooftopBounds,ROOF_Y)??this.groundHeightAt(x,z,this.player.position.y);
+      return this.blocksCamera(x,z,y)||y<floor+.45;
     };
     let previous = 0;
     for (let travelled = step; travelled <= reach + step; travelled += step) {
@@ -15948,17 +16044,8 @@ export class FestivalWorld {
 
   private pullCameraClearOfWalls(cameraTarget: THREE.Vector3, delta: number): void {
     if (this.playerState === 'swimming') return;
-    // Not while seated at a screening. Everywhere else the look target is the
-    // attendee's own head, so walking out from it towards the camera walks out
-    // from the body — which is what this is for. In the screening view the look
-    // target is the screen itself, thirty-odd units away across the room, so
-    // the same walk started at the screen and stopped at the first thing it
-    // met, pinning the camera about a unit from the panel. That is why sitting
-    // down anywhere with a screen filled the whole frame with the film.
-    //
-    // The seated camera does not need this: it is placed at a known offset from
-    // a registered seat inside a room.
-    if (this.cameraMode === 'screening') return;
+    // All three player views stay anchored to the attendee while seated too.
+    // Clearance therefore starts at the same body pivot during a screening.
     const eye = this.cameraCollisionOrigin();
     this.cameraProbe.subVectors(cameraTarget, eye);
     const reach = this.cameraProbe.length();
@@ -16257,7 +16344,7 @@ export class FestivalWorld {
     this.promptAction = 'interact';
     this.promptActionable = true;
     this.promptSecondary = false;
-    if (this.arcadeView) { this.promptActionable = false; return undefined; }
+    if (this.arcadeView||this.npcDialogue) { this.promptActionable = false; return undefined; }
     if (this.nearArcade() && this.playerState !== 'seated') return this.arcadeLocked ? 'E / M.O.T.H · LOCKED' : 'E / PLAY M.O.T.H';
     // A panel hung in front of somebody with no way to take it down is a trap:
     // the close button belongs to `#venue-screen`, which an immersive session
@@ -16284,18 +16371,17 @@ export class FestivalWorld {
         this.promptActionable = false;
         return `${seat.id} · OCCUPIED`;
       }
-      return this.carriedItem === 'MENTOR' ? `E TO SIT · ${seat.id}` : `E / TAKE SEAT ${seat.id}`;
+      return this.isCarryingMentor() ? `E TO SIT · ${seat.id}` : `E / TAKE SEAT ${seat.id}`;
     }
-    if (this.carriedItem === 'MENTOR') return 'E / PUT MENTOR DOWN';
     if (this.player.position.distanceTo(concessionPosition) < 2.5) {
       // Was a dead end that only told you what you were holding. Eating has
       // always been what E does with anything edible; nothing ever said so, and
       // on a phone, where the prompt is the only way to reach an action, that
       // meant it could not be done at all.
-      if (this.carriedItem) return this.eatingLabel() ?? 'POPCORN COLLECTED';
+      if (this.carriedItem&&this.carriedItem!=='MENTOR') return this.eatingLabel() ?? 'POPCORN COLLECTED';
       return 'E / TAKE POPCORN';
     }
-    const followerGreeting = this.mentorFollowsActiveAvatar() ? this.nearestSocialTarget() : undefined;
+    const followerGreeting = this.mentorFollowsActiveAvatar()&&!this.atAFixedPlace() ? this.nearestSocialTarget() : undefined;
     if (followerGreeting) return this.socialLabel(followerGreeting);
     // Both at once: a key each, and the prompt says which is which. Gives way
     // like the branch below it — this one did not, and while MENTOR follows you
@@ -16308,9 +16394,7 @@ export class FestivalWorld {
     }
     if (this.nearbyMentor() && !this.mentorGivesWay()) {
       this.promptSecondary = true;
-      return this.carriedItem === 'POPCORN'
-        ? 'E / GIVE MENTOR A TREAT · SHIFT+E / PICK UP (POPCORN WILL BE LOST)' + DOUBLE_TAP_INTRODUCTION
-        : 'E / GIVE MENTOR A TREAT · SHIFT+E / PICK UP' + DOUBLE_TAP_INTRODUCTION;
+      return 'E / GIVE MENTOR A TREAT · SHIFT+E / PICK UP' + DOUBLE_TAP_INTRODUCTION;
     }
     /**
      * Somewhere you walked up to outranks what you happen to be holding.
@@ -16339,6 +16423,7 @@ export class FestivalWorld {
       this.promptAction = 'shift';
       return 'SHIFT+E / DRINK UP';
     }
+    if(this.isCarryingMentor()&&!this.carriedItem)return 'E / PUT MENTOR DOWN';
     // Anything else edible, wherever you happen to be standing with it.
     const eating = this.eatingLabel();
     if (eating) return eating;
@@ -16475,6 +16560,7 @@ export class FestivalWorld {
    */
   private atAFixedPlace(): boolean {
     return this.nearClubBar()
+      || this.player.position.distanceTo(concessionPosition)<2.5
       || this.nearArcade()
       || this.nearJukebox()
       || this.nearShopCounter()
@@ -16489,12 +16575,11 @@ export class FestivalWorld {
 
   /** A following MENTOR gives way to whatever you have walked up to. */
   private mentorGivesWay(): boolean {
-    if (!this.mentorFollowsActiveAvatar()) return false;
     return this.atAFixedPlace();
   }
 
   private nearbyMentor(): NpcAvatar | undefined {
-    if (this.carriedItem === 'MENTOR') return undefined;
+    if (this.isCarryingMentor()) return undefined;
     const mentor = this.npcs.find((npc) => npc.id === 'MENTOR');
     if (mentor?.id === this.controlledNpcId || this.mentorCarrierId) return undefined;
     if (!mentor?.dogRig || mentor.group.parent !== this.scene) return undefined;
@@ -16567,7 +16652,7 @@ export class FestivalWorld {
     if (active && !wasSwimming) {
       this.playerState = 'swimming';
       this.cameraOrbit.follow.pitch = SWIM_CAMERA_PITCH;
-      this.cameraOrbit.perspective.pitch = SWIM_CAMERA_PITCH;
+      this.cameraOrbit.follow.pitch = SWIM_CAMERA_PITCH;
       this.setOutfit(true);
       const stowedPopcorn = this.carriedItem === 'POPCORN';
       if (stowedPopcorn) {
@@ -16605,9 +16690,6 @@ export class FestivalWorld {
     }
     this.activeSeat = undefined;
     this.playerState = 'walking';
-    this.cameraMode = this.previousCameraMode;
-    this.screeningOrbit.yaw = 0;
-    this.screeningOrbit.pitch = 0;
     this.onAction({ type: 'stood' });
   }
 }

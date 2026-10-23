@@ -50,6 +50,16 @@ services:
       # limit. Anyone past it waits at the gate.
       - key: FESTIVAL_MAX_VISITORS
         value: "20"
+      # Where the wish wall keeps its newest thirty notes, so a deploy or the
+      # free plan's sleep no longer empties it (the owner, 2026-10-22). Upstash
+      # Redis REST credentials; the M.O.T.H scoreboard's database will do, the
+      # wall uses its own key (festival:wishes). Secrets: set in the dashboard.
+      # KV_REST_API_URL / KV_REST_API_TOKEN, as Vercel names them, also work.
+      # Without them the wall is memory only, as before.
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
       # Where ECPay reports a completed payment to. Declared here rather than
       # left to the dashboard because it is the switch that turns the temple's
       # offering on, it holds no secret — it is this service's own public

@@ -241,6 +241,7 @@ export class XrHud {
   private hover?:HudTarget;
 
   constructor(options:XrHudOptions){
+    this.head.userData.filmGrainExclude=true;this.viewLock.userData.filmGrainExclude=true;this.placed.userData.filmGrainExclude=true;
     this.scene = options.scene;
     this.root = options.root;
     this.zh = options.zh;

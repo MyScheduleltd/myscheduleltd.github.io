@@ -1,7 +1,9 @@
 import * as THREE from 'three';
+import {createNeonSignTexture} from './NeonSigns';
 import { COASTAL_ROUTES, ROAD_POLYGONS } from './CoastalCirculation';
 import { pixelSurface, worldSurfaceUV, excludeRoads } from './CoastalSurfaces';
 import { coastalMaterial } from './CoastalAvatar';
+import { tagEnvironmentSurface, type EnvironmentFamily } from './EnvironmentMaterials';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TEMPLE_STAIR_FOOTPRINT, SHORE_GRADE, INLAND_HOUSES, terrainHeightAt, createGroundRibbon, groundRibbonEdges, type PlanPoint } from './CoastalTerrain';
 
@@ -14,10 +16,20 @@ export class CoastalScenery {
   private batches=new Map<THREE.Material,THREE.BufferGeometry[]>();
   private detailBounds:Array<{min:number[];max:number[];contact:number[];geometry:string}>=[];
   readonly mats=Object.fromEntries(Object.entries(colours).map(([key,color])=>[
-    key,coastalMaterial(color),
+    key,key==='iron'||key==='ink'
+      ? new THREE.MeshStandardMaterial({color,roughness:key==='iron'?.74:.86,metalness:.12})
+      : coastalMaterial(color),
   ])) as Record<keyof typeof colours,THREE.MeshStandardMaterial>;
   private leaves=[0x52654a,0x6c7950,0x3d574b].map(color=>new THREE.MeshStandardMaterial({color,roughness:1,flatShading:true,side:THREE.DoubleSide}));
   constructor(private scene:THREE.Scene,private solid:Solid,private clear:Clear){
+    // This palette belongs only to fixed town details. Keep the dark joinery
+    // and metal physically shaded while leaving character materials alone.
+    this.mats.iron.userData.preserveAuthoredSurface=true;
+    this.mats.ink.userData.preserveAuthoredSurface=true;
+    this.mats.red.userData.environmentAccent='vermilion';
+    this.mats.iron.userData.environmentAccent='ink';
+    this.mats.ink.userData.environmentAccent='ink';
+    this.leaves.forEach(material=>{material.userData.environmentAccent='foliage';});
     this.mats.shell.map=pixelSurface('plaster');this.mats.brick.map=pixelSurface('brick');
     this.mats.teal.map=pixelSurface('ceramic');this.mats.concrete.map=pixelSurface('plaster');
   }
@@ -42,19 +54,8 @@ export class CoastalScenery {
     }
   }
   private sign(text:string,sub:string,at:[number,number,number],w:number,h:number,angle=0):void{
-    const canvas=document.createElement('canvas');canvas.width=768;canvas.height=Math.max(96,Math.round(768*h/w));
-    const c=canvas.getContext('2d')!,W=canvas.width,H=canvas.height;
-    c.fillStyle='#d2c4a8';c.fillRect(0,0,W,H);
-    c.fillStyle='#84392f';c.fillRect(0,0,W,Math.max(3,H*.025));
-    c.textAlign='center';c.textBaseline='middle';c.fillStyle='#303638';
-    for(const [line,scale,y] of [[text,.36,.40],[sub,.17,.77]] as const){
-      let size=H*scale;c.font=`bold ${size}px sans-serif`;
-      size*=Math.min(1,(W-40)/Math.max(1,c.measureText(line).width));
-      c.font=`bold ${size}px sans-serif`;c.fillText(line,W/2,H*y);
-    }
-    const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;
-    texture.magFilter=THREE.NearestFilter;
-    const mesh=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({map:texture,side:THREE.DoubleSide}));
+    const texture=createNeonSignTexture([text,sub],{aspect:w/h,style:'festival',maxEdge:768});
+    const mesh=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({map:texture,side:THREE.DoubleSide,toneMapped:false}));
     mesh.position.set(...at);mesh.rotation.y=angle;mesh.name=text;mesh.userData.coastalAuthored=true;this.scene.add(mesh);
   }
   private canopy(x:number,z:number,w:number,d:number,y:number):void{
@@ -254,21 +255,29 @@ export class CoastalScenery {
   buildCirculation():void{
     const m=this.mats;
     const paved:PlanPoint[][]=[];
-    const ribbon=(name:string,points:readonly PlanPoint[],width:number,mat:THREE.Material,lift=.055)=>{
+    // Painted road markings retain their colour and footprint, with no stone
+    // tile over the white stripes. One material is shared by every marking.
+    const paint=new THREE.MeshStandardMaterial({color:m.shell.color,roughness:.93});
+    paint.userData.environmentAccent='yellow';
+    paint.userData.preserveAuthoredSurface=true;
+    const ribbon=(name:string,points:readonly PlanPoint[],width:number,mat:THREE.Material,lift=.055,family?:EnvironmentFamily)=>{
       const ground=createGroundRibbon(name,points,width,mat,lift);
       if(COASTAL_ROUTES.some(r=>r.name===name&&r.kind==='walk')) {
         excludeRoads(ground,[...ROAD_POLYGONS,...paved,TEMPLE_STAIR_FOOTPRINT]);
         const edges=groundRibbonEdges(points,width);
         for(let i=1;i<edges.length;i++)paved.push([edges[i-1][0],edges[i][0],edges[i][1],edges[i-1][1]]);
       }
-      worldSurfaceUV(ground.geometry);this.scene.add(ground);
+      worldSurfaceUV(ground.geometry);
+      if(family)tagEnvironmentSurface(ground,family);
+      this.scene.add(ground);
     };
     const asphalt=coastalMaterial(0x565d67);asphalt.map=pixelSurface('asphalt');
     for(const route of COASTAL_ROUTES) {
-      const mat=route.kind==='road'?asphalt:route.kind==='carpet'?m.red:m.shell;
-      ribbon(route.name,route.points,route.width,mat,route.kind==='road'?.035:route.kind==='carpet'?.075:route.kind==='crossing'?.065:.055);
+      const mat=route.kind==='road'?asphalt:route.kind==='carpet'?m.red:route.kind==='crossing'?paint:m.shell;
+      const family=route.kind==='road'?'asphalt':route.kind==='walk'?'stone':undefined;
+      ribbon(route.name,route.points,route.width,mat,route.kind==='road'?.035:route.kind==='carpet'?.075:route.kind==='crossing'?.065:.055,family);
     }
-    for(let z=30;z<62;z+=7) ribbon('Arrival centre marking',[[0,z],[0,z+2]],.18,m.shell,.065);
+    for(let z=30;z<62;z+=7) ribbon('Arrival centre marking',[[0,z],[0,z+2]],.18,paint,.065);
     for(const [x,z] of [[-13,11],[-13,-10],[13,11],[16,-16],[-39,-20],[-19,29]] as const){
       if(!this.clear(x,z,1))continue;
       const base=terrainHeightAt(x,z);
@@ -282,6 +291,12 @@ export class CoastalScenery {
   }
   finish():void{
     this.scene.userData.coastalDetailBounds=this.detailBounds;
+    // Exact palette ownership opts in only constructed town surfaces. Leaf
+    // materials are deliberately absent from this mapping.
+    const families=new Map<THREE.Material,EnvironmentFamily>([
+      [this.mats.shell,'plaster'],[this.mats.brick,'brick'],[this.mats.teal,'ceramic'],
+      [this.mats.concrete,'stone'],[this.mats.wood,'wood'],
+    ]);
     for(const [mat,geometries] of this.batches){
       const clean=geometries.map(g=>{
         const next=g.index?g.toNonIndexed():g;
@@ -293,6 +308,7 @@ export class CoastalScenery {
       if(!combined)throw new Error('Coastal geometry batch mismatch');
       const mesh=new THREE.Mesh(combined,mat);mesh.receiveShadow=true;
       mesh.name='Authored coastal town details';mesh.userData.coastalAuthored=true;mesh.userData.wornNoMasonry=true;
+      const family=families.get(mat);if(family)tagEnvironmentSurface(mesh,family);
       this.scene.add(mesh);
     }
     this.batches.clear();

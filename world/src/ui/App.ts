@@ -2,7 +2,7 @@ import { createTipRotation, entryTips, type TipRotation } from './EntryTips';
 import { AmbientAudio } from '../world/AmbientAudio';
 import { installInterfaceSounds } from './InterfaceSounds';
 import { DanceWheel } from './DanceWheel';
-import { TOP_OUTFITS, topOutfit, avatarSex, outfitWire, type AvatarSex } from '../world/CoastalOutfits';
+import { TOP_OUTFITS, AVATAR_CLOTHING_DEFAULTS, topOutfit, avatarSex, outfitWire, type AvatarSex } from '../world/CoastalOutfits';
 import { avatarVariantsFor, AVATAR_NATIVE } from '../world/NativeAvatarPalette';
 import {
   catalogue,
@@ -26,6 +26,12 @@ import { requestWithDeadline } from '../network/RequestDeadline';
 import { watchAssetDownloads } from '../world/AssetMirror';
 import type { GatePreview } from '../world/GatePreview';
 import { GateLoadMeter } from './GateLoadMeter';
+import { readNoirPreference, saveNoirPreference, applyNoirMode, noirButtonMarkup, syncNoirButton } from './NoirMode';
+import { installFloatingChat } from './FloatingChat';
+import { readDesktopActions, saveDesktopActions, jukeboxPromptVisible, drinkStatusText, type JukeboxPromptMemory } from './OverlayPreferences';
+import {bindJukeboxShelf,jukeboxShelfMarkup} from './JukeboxShelf';
+import {ArcadePreviewClient,type ArcadePreviewState} from '../network/ArcadePreview';
+import {createArcadePreviewNotice,type ArcadePreviewDialog} from './ArcadePreviewNotice';
 
 /**
  * The rooms with lights that answer to a beat. Everywhere else is a cinema,
@@ -73,6 +79,7 @@ import {
   DOUBLE_TAP_INTRODUCTION,
   npcIntroductionIn,
   npcTitleIn,
+  npcCharacterTitleIn,
   type NpcId,
   type NpcNames,
   type NpcProfile,
@@ -355,10 +362,10 @@ const panelLabels: Record<Language, Record<PanelId, string>> = {
   },
 };
 
-const paletteInputs = ['skin', 'hair', 'bottoms', 'swimwear'] as const;
+const paletteInputs = ['skin', 'hair', 'shirt', 'bottoms', 'swimwear', 'shoes'] as const;
 const paletteLabels: Record<Language, Record<(typeof paletteInputs)[number], string>> = {
-  en: { skin: 'SKIN', hair: 'HAIR', bottoms: 'BOTTOMS', swimwear: 'SWIMWEAR' },
-  'zh-TW': { skin: '膚色', hair: '髮色', bottoms: '下身', swimwear: '泳裝' },
+  en: { skin: 'SKIN', hair: 'HAIR', shirt: 'SHIRT', bottoms: 'BOTTOMS', swimwear: 'SWIMWEAR', shoes: 'SHOES' },
+  'zh-TW': { skin: '膚色', hair: '髮色', shirt: '上衣', bottoms: '下身', swimwear: '泳裝', shoes: '鞋子' },
 };
 
 const initialChat: ChatMessage[] = [
@@ -479,6 +486,11 @@ export class App {
   private arcadeLockedViewing = false;
   private arcadeFullscreenPending = false;
   private arcadeNotice?: HTMLDialogElement;
+  private readonly arcadePreview=new ArcadePreviewClient((action,payload)=>this.festivalClient.arcadePreviewRequest(action,payload),()=>Date.now()+this.serverClockOffset);
+  private arcadePreviewChecking?:Promise<void>;
+  private arcadePreviewPending=false;
+  private arcadePreviewPendingCodes=new Set<string>();
+  private arcadePreviewWatcher?:number;
   private arcadeUnlockTimer?: number;
   private lookSensitivity = readStoredLookSensitivity();
   private gamepadBindings = readStoredGamepadBindings();
@@ -504,6 +516,17 @@ export class App {
   private jukeboxRendered = '';
   private viewMode: 'normal' | 'camera' | 'postcard' | 'film' = 'normal';
   private postcardFilter = 'none';
+  private noirEnabled = readNoirPreference();
+  private desktopActions = readDesktopActions();
+  private drinkCount = 0;
+  private chatFloatingDispose?: () => void;
+  private jukeboxPromptGeneration = 0;
+  private jukeboxReportedState?: number;
+  /** A record this listener's player refused; no DROP THE BEAT for it. */
+  private jukeboxFailedId?: string;
+  /** Keeps an open dialogue box tall enough to cover the chat comments. */
+  private dialogueCover?: () => void;
+  private readonly jukeboxPromptMemory: JukeboxPromptMemory = {};
   private cameraHintTimer = 0;
   private impactTimer = 0;
   private deathTimer = 0;
@@ -551,6 +574,7 @@ export class App {
 
   constructor(root: HTMLElement) {
     this.root = root;
+    applyNoirMode(document.documentElement, this.noirEnabled);
     this.entryAudio.onStateChange = () => this.syncAudioResumeUi();
     // The menus click from the sign-in page on, unless this tab chose silence.
     this.entryAudio.setMuted(readSession<boolean>(AUDIO_MUTED_KEY, false));
@@ -586,6 +610,7 @@ export class App {
 
   mount(): void {
     this.renderGate();
+    this.watchArcadePreview();
     installInterfaceSounds(this.entryAudio);
     void this.entryAudio.loadInterfaceSounds();
     if (['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
@@ -944,6 +969,7 @@ export class App {
             <button class="button button--primary" type="submit" data-audio="sound">${text.sound}</button>
             <button class="button button--secondary" type="submit" data-audio="muted">${text.muted}</button>
             <button class="button button--secondary gate-donate" type="button" data-gate-donate>Donate</button>
+            <button class="button button--secondary gate-arcade-access" type="button" data-arcade-access${this.arcadePreviewActive()?'':' hidden'}>${this.language==='zh-TW'?'M.O.T.H 序號':'M.O.T.H CODE'}</button>
           </div>
           <p class="gate-card__note" data-gate-signin-tip></p>
         </form>
@@ -974,6 +1000,7 @@ export class App {
       const title = this.root.querySelector<HTMLElement>('#gate-title')?.textContent?.trim();
       void this.openOffering(title || (this.language === 'zh-TW' ? '我的戲院' : 'MY THEATRE'), 'gate');
     });
+    this.bindArcadePreviewButtons();
     this.root.querySelectorAll<HTMLButtonElement>('[data-language]').forEach((button) => {
       setButtonPressed(button, button.dataset.language === this.language);
       button.addEventListener('click', () => {
@@ -1643,7 +1670,10 @@ export class App {
         <button class="world-camera-hide" type="button" data-camera-hide hidden
           aria-label="${zh ? '顯示或隱藏相機介面' : 'Show or hide camera controls'}">${zh ? '隱藏' : 'HIDE'}</button>
         <button class="zoom-reset" type="button" data-zoom-reset hidden>${zh ? '重設縮放' : 'RESET ZOOM'}</button>
-        <button class="audio-resume" type="button" data-audio-resume hidden>${zh ? '開啟聲音' : 'ENABLE SOUND'}</button>
+        <div class="world-quick-actions" role="group" aria-label="${zh ? '聊天與聲音' : 'Chat and sound'}">
+          <button class="audio-resume" type="button" data-audio-resume hidden>${zh ? '開啟聲音' : 'ENABLE SOUND'}</button>
+          <button class="world-chat-shortcut" type="button" data-world-chat aria-controls="panel">${zh ? '聊天' : 'CHAT'}</button>
+        </div>
         <button class="jukebox-sound" type="button" data-jukebox-sound hidden>DROP THE BEAT</button>
         <section class="vr-entry" data-vr-entry hidden aria-live="polite">
           <p class="eyebrow">${phoneVrPreview ? 'PHONE MOTION · VR PREVIEW' : vrPreview ? 'DESKTOP SIMULATION · WEBXR' : 'META QUEST · WEBXR'}</p>
@@ -1704,18 +1734,23 @@ export class App {
           <p id="phase-label">${zh ? '同步影展光線' : 'SYNCING FESTIVAL LIGHT'}</p>
         </section>
         <div class="inventory-status" id="inventory-status" aria-live="polite"></div>
+        <div class="drink-status" id="drink-status" role="status" hidden></div>
         <button class="objective-count" type="button" data-panel="quests" aria-label="${zh ? '開啟任務進度' : 'Open objective progress'}">
           <span>${zh ? '任務' : 'OBJECTIVES'}</span><strong data-objective-count>0/${QUEST_TOTAL}</strong>
         </button>
+        <button class="mobile-view-cycle" type="button" data-world-camera-cycle aria-label="${zh ? '切換鏡頭' : 'Change camera view'}"><span>${zh ? '鏡頭' : 'VIEW'}</span><strong data-world-camera-name>${zh ? '第三人稱' : 'THIRD PERSON'}</strong></button>
         <button class="pass-toggle" id="pass-toggle" type="button" aria-expanded="false" aria-controls="festival-pass">
           <span>${zh ? '通行證' : 'PASS'}</span><span>+</span>
         </button>
         <nav class="festival-pass" id="festival-pass" aria-label="Festival pass menu" hidden>
           <p class="festival-pass__title">${copy[this.language].menu}</p>
+          ${noirButtonMarkup(this.noirEnabled, zh)}
+          <button type="button" class="desktop-actions-toggle" data-desktop-actions-toggle aria-pressed="${this.desktopActions}"><span aria-hidden="true">✥</span>${zh ? '桌面動作按鈕' : 'DESKTOP ACTION BUTTONS'}<small data-desktop-actions-status>${this.desktopActions ? 'ON' : 'OFF'}</small></button>
           ${Object.entries(panelLabels[this.language])
             .map(([id, label], index) => `<button type="button" data-panel="${id}"><span>${String(index + 1).padStart(2, '0')}</span>${label}${id === 'quests' ? `<small data-quest-count>0/${QUEST_TOTAL}</small>` : ''}</button>`)
             .join('')}
           <button type="button" class="festival-pass__fireworks" data-replay-fireworks hidden><span>★</span>${zh ? '重播煙火' : 'REPLAY FIREWORKS'}</button>
+          <button type="button" data-arcade-access${this.arcadePreviewActive()?'':' hidden'}>${zh?'M.O.T.H 序號':'M.O.T.H CODE'}</button>
         </nav>
         <section class="panel" id="panel" aria-live="polite" hidden></section>
         <section class="venue-screen" id="venue-screen" aria-label="Private festival screening" hidden>
@@ -1728,6 +1763,7 @@ export class App {
         </section>
         <section class="moth-arcade-hud" id="moth-arcade-hud" aria-label="${zh ? '遊戲控制' : 'Game controls'}" hidden>
           <button type="button" data-arcade-exit>${zh ? '離開遊戲' : 'EXIT GAME'}</button>
+          <button type="button" data-arcade-access data-arcade-hud-code hidden>${zh?'輸入序號':'ENTER CODE'}</button>
           <button type="button" data-arcade-fullscreen aria-pressed="false">${zh ? '全螢幕' : 'FULLSCREEN'}</button>
         </section>
         <section class="public-seat-hud" id="public-seat-hud" hidden>
@@ -1742,7 +1778,7 @@ export class App {
         <section class="seat-menu" id="seat-menu" aria-labelledby="seat-menu-title" hidden></section>
         <button class="interaction-toast" id="interaction-toast" type="button" hidden></button>
         <div class="world-alert" id="world-alert" role="status" hidden></div>
-        <div class="touch-controls" aria-hidden="true">
+        <div class="touch-controls" role="group" aria-label="${zh ? '角色動作' : 'Avatar actions'}">
           <div class="touch-stick" data-stick><span class="touch-stick__knob" data-stick-knob></span><span class="touch-stick__caption">${zh ? '移動' : 'MOVE'}</span></div>
           <div class="touch-ring">
             <button type="button" class="touch-ring__hit" data-touch-act="punch" aria-label="${zh ? '出拳' : 'Punch'}">${zh ? '拳' : 'HIT'}</button>
@@ -1769,6 +1805,8 @@ export class App {
     const cssLayer = this.root.querySelector<HTMLElement>('#world-css3d');
     if (!canvas || !foregroundCanvas || !cssLayer) throw new Error('World rendering layers were not created.');
     this.renderChatStream();
+    const shell = this.root.querySelector<HTMLElement>('.world-shell');
+    if (shell) shell.dataset.desktopActions = String(this.desktopActions);
     this.setGateEntryProgress(.6, this.language === 'zh-TW' ? '正在開啟影展…' : 'OPENING THE FESTIVAL…');
 
     this.world = new FestivalWorld({
@@ -1817,13 +1855,16 @@ export class App {
     this.world.setNpcProfiles(this.npcProfiles);
     if (this.networkState) this.world.setRemoteVisitors(this.remoteVisitorVisuals(this.networkState));
     this.world.setWishes(this.networkState?.wishes ?? []);
+    if (this.networkState) this.world.syncDonationCelebration(this.networkState.donationCelebration, this.networkState.serverTime);
     this.syncArcadeRelease();
     this.syncPublicProjectors();
     this.syncVrUi();
-    // Both approved public channels share this application. The era flag
-    // still selects the PS2-specific art defaults and local review dials.
+    // The era flag selects the PS2-specific art defaults and review dials on
+    // a loopback review only. On the public site it is retired (owner,
+    // 2026-10-23): it forced the heavier shading on in 精簡 mode, so an old
+    // /beta/?era=ps2 link now opens the same /beta/ as everyone else.
     const era = new URLSearchParams(window.location.search).get('era');
-    const ps2 = era === 'ps2';
+    const ps2 = era === 'ps2' && ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
     const wornDefault = this.graphicsMode === 'normal' ? '' : null;
     const wornFlag = new URLSearchParams(window.location.search).get('worn')
       ?? (ps2 ? '' : wornDefault);
@@ -1833,11 +1874,11 @@ export class App {
       const stepsFlag = new URLSearchParams(window.location.search).get('wornSteps');
       const steps = stepsFlag === null ? 16 : Number.parseFloat(stepsFlag);
       const grainFlag = new URLSearchParams(window.location.search).get('wornGrain');
-      const grain = grainFlag === null ? .18 : Number.parseFloat(grainFlag);
+      const grain = grainFlag === null ? .55 : Number.parseFloat(grainFlag);
       const warpFlag = new URLSearchParams(window.location.search).get('wornWarp');
       const warp = warpFlag === null ? 1 : Number.parseFloat(warpFlag);
       const textureFlag = new URLSearchParams(window.location.search).get('wornTexture');
-      const texture = textureFlag === null ? .65 : Number.parseFloat(textureFlag);
+      const texture = textureFlag === null ? .95 : Number.parseFloat(textureFlag);
       const dial = (nextAmount: number, nextSteps: number, nextGrain: number) =>
         world.applyWornStyleForReview(
           Number.isFinite(nextAmount) ? nextAmount : 1,
@@ -2351,6 +2392,21 @@ export class App {
       this.syncMenuCapture();
     });
 
+    this.root.querySelector<HTMLButtonElement>('[data-noir-toggle]')?.addEventListener('click', event => {
+      this.noirEnabled = !this.noirEnabled;
+      applyNoirMode(document.documentElement, this.noirEnabled);
+      saveNoirPreference(this.noirEnabled);
+      syncNoirButton(event.currentTarget as HTMLButtonElement, this.noirEnabled, this.language === 'zh-TW');
+    });
+    this.root.querySelector<HTMLButtonElement>('[data-desktop-actions-toggle]')?.addEventListener('click', event => {
+      this.desktopActions = !this.desktopActions; saveDesktopActions(this.desktopActions);
+      this.root.querySelector<HTMLElement>('.world-shell')!.dataset.desktopActions = String(this.desktopActions);
+      const button = event.currentTarget as HTMLButtonElement; button.setAttribute('aria-pressed', String(this.desktopActions));
+      const status = button.querySelector<HTMLElement>('[data-desktop-actions-status]'); if (status) status.textContent = this.desktopActions ? 'ON' : 'OFF';
+      if (!this.desktopActions) this.world?.setRunning(false);
+      if (!this.desktopActions) this.root.querySelector('[data-touch-act="run"]')?.classList.remove('is-active');
+    });
+
     this.root.querySelectorAll<HTMLButtonElement>('[data-panel]').forEach((button) => {
       button.addEventListener('click', () => {
         this.programmeVenue = undefined;
@@ -2441,6 +2497,7 @@ export class App {
     }
     window.addEventListener('keydown', this.globalShortcut);
     this.root.querySelector<HTMLButtonElement>('[data-arcade-exit]')?.addEventListener('click', () => this.closeArcadeGame());
+    this.bindArcadePreviewButtons();
     this.root.querySelector<HTMLButtonElement>('[data-arcade-fullscreen]')?.addEventListener('click', () => { void this.toggleArcadeFullscreen(); });
     window.addEventListener('pointerup', this.liftJukeboxOnGesture, true);
     document.addEventListener('fullscreenchange', this.syncScreenFullscreenState);
@@ -2550,6 +2607,14 @@ export class App {
     this.root.querySelector<HTMLButtonElement>('[data-camera-step]')?.addEventListener('click', () => {
       this.cycleViewMode();
     });
+    this.root.querySelector<HTMLButtonElement>('[data-world-camera-cycle]')?.addEventListener('click', () => {
+      this.world?.toggleCameraMode();
+    });
+    this.root.querySelector<HTMLButtonElement>('[data-world-chat]')?.addEventListener('click', event => {
+      event.stopPropagation();
+      this.openPanel('chat');
+      this.root.querySelector<HTMLInputElement>('#chat-message')?.focus({ preventScroll: true });
+    });
     // Clearing the frame is a decision, and so is getting it back. This takes
     // the filter tab and the way out off the picture together; a press on the
     // frame itself is what returns them.
@@ -2579,6 +2644,19 @@ export class App {
       for (const done of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) {
         button.addEventListener(done, end);
       }
+      button.addEventListener('blur', end);
+      for (const kind of ['keydown', 'keyup']) button.addEventListener(kind, event => {
+        if ((event as KeyboardEvent).key === ' ' || (event as KeyboardEvent).key === 'Enter') event.stopPropagation();
+      });
+      button.addEventListener('click', event => {
+        if (event.detail !== 0) return;
+        if (act === 'jump') this.world?.jumpFromTouch();
+        else if (act === 'punch') this.world?.punchFromTouch();
+        else if (act === 'dance') this.world?.requestDanceSelection();
+        else if (act === 'offer') this.world?.offerFromTouch();
+        else if (act === 'photo') this.cycleViewMode();
+        else if (act === 'run') { const active = button.classList.toggle('is-active'); this.world?.setRunning(active); }
+      });
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-move]').forEach((button) => {
       const key = button.dataset.move as 'w' | 'a' | 's' | 'd';
@@ -2736,6 +2814,7 @@ export class App {
     // longer than a glance at a notification and long enough to walk back into
     // the same festival rather than a new one.
     window.addEventListener('pagehide', () => {
+      if (this.root.querySelector<HTMLElement>('#seat-menu')?.dataset.menuOwner === 'npc') this.hideSeatMenu();
       this.pausePrivateScreening();
       this.festivalClient.suspend();
     });
@@ -2775,7 +2854,7 @@ export class App {
     if (snapshot.moving && snapshot.running) this.completeQuest('run');
     if (this.vrRequested) {
       if (snapshot.vrLookedAround) this.completeQuest('camera');
-    } else if (snapshot.cameraMode !== 'follow' && snapshot.cameraMode !== 'screening') {
+    } else if (snapshot.cameraMode !== 'follow') {
       this.completeQuest('camera');
     }
     if (snapshot.location === 'THE PALACE') this.completeQuest('palace');
@@ -2788,6 +2867,8 @@ export class App {
     const phase = this.root.querySelector<HTMLElement>('#phase-label');
     const toast = this.root.querySelector<HTMLButtonElement>('#interaction-toast');
     const inventory = this.root.querySelector<HTMLElement>('#inventory-status');
+    if (typeof snapshot.drinks === 'number') this.drinkCount = snapshot.drinks;
+    this.syncDrinkStatus();
     if (location) location.textContent = this.localizeLocation(snapshot.location);
     if (clock) {
       clock.textContent = new Intl.DateTimeFormat(this.language, {
@@ -2802,9 +2883,20 @@ export class App {
         ? { dawn: '晨曦', morning: '上午', daylight: '日光', 'golden-hour': '黃金時刻', sunset: '日落', 'blue-hour': '藍調時刻', night: '夜晚' }
         : { dawn: 'DAWN', morning: 'MORNING', daylight: 'DAYLIGHT', 'golden-hour': 'GOLDEN HOUR', sunset: 'SUNSET', 'blue-hour': 'BLUE HOUR', night: 'NIGHT' };
       const cameraNames = this.language === 'zh-TW'
-        ? { follow: '跟隨鏡頭', perspective: '視角鏡頭', 'first-person': '第一人稱', screening: '觀影鏡頭' }
-        : { follow: 'FOLLOW CAMERA', perspective: 'PERSPECTIVE CAMERA', 'first-person': 'FIRST PERSON', screening: 'SCREENING CAMERA' };
+        ? { follow: '第三人稱', 'first-person': '第一人稱', isometric: '等角俯視' }
+        : { follow: 'THIRD PERSON', 'first-person': 'FIRST PERSON', isometric: 'ISOMETRIC' };
       phase.textContent = `${phaseNames[snapshot.dayNight.phase]} · ${cameraNames[snapshot.cameraMode]}`;
+      const viewButton=this.root.querySelector<HTMLButtonElement>('[data-world-camera-cycle]');
+      if(viewButton){
+        const name=cameraNames[snapshot.cameraMode];const nameSlot=viewButton.querySelector<HTMLElement>('[data-world-camera-name]');
+        if(nameSlot&&nameSlot.textContent!==name)nameSlot.textContent=name;
+        viewButton.setAttribute('aria-label',`${this.language==='zh-TW'?'目前鏡頭':'Current view'}: ${name}. ${this.language==='zh-TW'?'點按切換鏡頭':'Tap to change view'}`);
+        const placement=`${window.innerWidth}x${window.innerHeight}`;
+        if(viewButton.dataset.placement!==placement){
+          const objective=this.root.querySelector<HTMLElement>('.objective-count');
+          if(objective){const box=objective.getBoundingClientRect();if(box.width>0&&box.height>0){viewButton.style.left=`${box.left}px`;viewButton.style.top=`${box.bottom+8}px`;viewButton.dataset.placement=placement;}}
+        }
+      }
     }
     if (toast) {
       // Theater screens already carry a persistent STAND button, so repeating
@@ -2841,7 +2933,7 @@ export class App {
         snapshot.carriedItem === 'HOTDOG' ? (this.language === 'zh-TW' ? '手拿熱狗' : 'HOLDING A HOT DOG') : undefined,
         snapshot.carriedItem === 'PIZZA' ? (this.language === 'zh-TW' ? '手拿披薩' : 'HOLDING PIZZA') : undefined,
         snapshot.carriedItem === 'CHICKEN' ? (this.language === 'zh-TW' ? '手拿炸雞' : 'HOLDING FRIED CHICKEN') : undefined,
-        snapshot.carriedItem === 'MENTOR' ? (this.language === 'zh-TW' ? `頭頂 ${this.mentorName()}` : `CARRYING ${this.mentorName()}`) : undefined,
+        snapshot.carryingMentor || snapshot.carriedItem === 'MENTOR' ? (this.language === 'zh-TW' ? `頭頂 ${this.mentorName()}` : `CARRYING ${this.mentorName()}`) : undefined,
         snapshot.stowedItem ? (this.language === 'zh-TW' ? '爆米花已收起' : `${snapshot.stowedItem} STOWED`) : undefined,
         snapshot.hasPamphlet ? (this.language === 'zh-TW' ? '影展手冊' : 'PAMPHLET') : undefined,
         `${snapshot.npcCount} NPC`,
@@ -2896,12 +2988,20 @@ export class App {
     const world = this.world;
     if (!world) return;
     const hud = this.root.querySelector<HTMLElement>('#moth-arcade-hud');
-    const layout = (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number }) => {
+    const layout = (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number; lock?: { x: number; y: number; width: number; height: number } }) => {
       if (!hud) return;
       // Keep Exit on the same physical monitor in both the lock and game view.
-      hud.style.left = `${frame.exitX ?? frame.x + frame.width / 2}px`;
-      hud.style.top = `${frame.exitY ?? frame.y + frame.height * .915}px`;
+      const exitX = frame.exitX ?? frame.x + frame.width / 2, exitY = frame.exitY ?? frame.y + frame.height * .915;
+      hud.style.left = `${exitX}px`;
+      hud.style.top = `${exitY}px`;
       hud.style.maxWidth = `${Math.max(0, frame.width - 24)}px`;
+      // ENTER CODE sits inside the padlock's body, measured from the HUD's centre (Exit).
+      if (frame.lock) {
+        hud.style.setProperty('--lock-dx', `${frame.lock.x + frame.lock.width / 2 - exitX}px`);
+        hud.style.setProperty('--lock-dy', `${frame.lock.y + frame.lock.height / 2 - exitY}px`);
+        hud.style.setProperty('--lock-w', `${frame.lock.width}px`);
+        hud.style.setProperty('--lock-h', `${frame.lock.height}px`);
+      }
     };
     const exit = () => this.leaveArcadeOnEscape();
     const started = locked ? world.startArcadeLockedView(exit, layout)
@@ -2922,61 +3022,96 @@ export class App {
       const fullscreen = hud.querySelector<HTMLButtonElement>('[data-arcade-fullscreen]');
       if (fullscreen) fullscreen.hidden = locked;
     }
+    this.syncArcadePreviewButtons();
     world.audio.setMuted(true); world.setPublicScreenMuted(undefined, true);
     this.applyJukeboxVolume(); this.syncMenuCapture();
   }
 
-  private syncArcadeRelease(): boolean {
-    const now = Date.now() + this.serverClockOffset;
-    const locked = arcadeIsLocked(now);
-    this.world?.setArcadeLocked(locked, this.language);
-    window.clearTimeout(this.arcadeUnlockTimer);
-    this.arcadeUnlockTimer = undefined;
-    if (locked) {
-      // Timers can be throttled in background tabs. Visibility and service
-      // clock updates also recheck the instant, as does every interaction.
-      this.arcadeUnlockTimer = window.setTimeout(() => this.syncArcadeRelease(),
-        Math.min(2_147_483_647, Math.max(1, ARCADE_UNLOCK_AT - now)));
-      if (this.arcadePlaying && !this.arcadeLockedViewing) this.closeArcadeGame();
-    } else if (this.arcadeLockedViewing) {
-      // Somebody already looking at the cabinet sees it become the live game
-      // at release, without a page reload or a second Play interaction.
-      this.closeArcadeGame();
-      this.openArcadeGame();
-    } else if (this.arcadeNotice) {
-      this.arcadeNotice.close();
-      this.showWorldAlert(this.language === 'zh-TW' ? 'M.O.T.H 已開放遊玩' : 'M.O.T.H IS NOW AVAILABLE');
+  private arcadePreviewActive():boolean {
+    return arcadeIsLocked(Date.now()+this.serverClockOffset)&&!this.arcadePreview.state.released;
+  }
+
+  private bindArcadePreviewButtons():void {
+    this.root.querySelectorAll<HTMLButtonElement>('[data-arcade-access]').forEach(button=>{
+      if(button.dataset.arcadeAccessBound)return;button.dataset.arcadeAccessBound='true';
+      button.addEventListener('click',()=>this.showArcadeReleaseNotice());
+    });
+    this.syncArcadePreviewButtons();
+  }
+
+  private syncArcadePreviewButtons():void {
+    const active=this.arcadePreviewActive(),count=this.arcadePreview.state.codes.length,zh=this.language==='zh-TW';
+    this.root.querySelectorAll<HTMLButtonElement>('[data-arcade-access]').forEach(button=>{
+      const hud=button.hasAttribute('data-arcade-hud-code');
+      button.hidden=!active||(hud&&(!this.arcadeLockedViewing||this.arcadePreview.state.unlocked));
+      button.textContent=hud?(zh?'輸入序號':'ENTER CODE'):`M.O.T.H ${zh?'序號':'CODE'}${count?' · '+count:''}`;
+    });
+    if(!active){
+      const go=this.root.querySelector<HTMLButtonElement>('[data-offering-go][data-arcade-preparing]');
+      if(go){delete go.dataset.arcadePreparing;go.disabled=false;}
+      const note=this.root.querySelector<HTMLElement>('[data-arcade-preparation]');if(note)note.hidden=true;
     }
-    return locked;
+  }
+
+  private acceptArcadePreview(state:ArcadePreviewState):void {
+    const hasNew=state.codes.some(entry=>!this.arcadePreviewKnownCodes.has(entry.code));
+    this.arcadePreviewKnownCodes=new Set(state.codes.map(entry=>entry.code));
+    if(state.released||state.codes.some(entry=>!this.arcadePreviewPendingCodes.has(entry.code)))this.arcadePreviewPending=false;
+    this.syncArcadePreviewButtons();this.syncArcadeRelease();
+    (this.arcadeNotice as ArcadePreviewDialog|undefined)?.refreshArcadePreview?.();
+    if(hasNew){
+      const message=this.language==='zh-TW'?'M.O.T.H 序號已準備好；請開啟「M.O.T.H 序號」。':'Your M.O.T.H code is ready. Open M.O.T.H CODE.';
+      if(this.world)this.showWorldAlert(message);
+      else{const waiting=this.root.querySelector<HTMLElement>('#gate-waiting');if(waiting){waiting.textContent=message;waiting.hidden=false;}}
+    }
+  }
+
+  private arcadePreviewKnownCodes=new Set<string>();
+  private refreshArcadePreview():Promise<void> {
+    if(this.arcadePreviewChecking)return this.arcadePreviewChecking;
+    this.arcadePreviewChecking=this.arcadePreview.status().then(state=>this.acceptArcadePreview(state)).catch(()=>undefined)
+      .finally(()=>{this.arcadePreviewChecking=undefined;});
+    return this.arcadePreviewChecking;
+  }
+
+  private watchArcadePreview():void {
+    if(this.arcadePreviewWatcher!==undefined)return;
+    this.syncArcadeRelease();void this.refreshArcadePreview();
+    const returned=()=>{if(!document.hidden)void this.refreshArcadePreview();};
+    document.addEventListener('visibilitychange',returned);window.addEventListener('focus',returned);
+    this.arcadePreviewWatcher=window.setInterval(()=>{
+      if(!this.arcadePreviewActive()){window.clearInterval(this.arcadePreviewWatcher);this.arcadePreviewWatcher=undefined;this.syncArcadePreviewButtons();return;}
+      if(this.arcadePreviewPending&&!document.hidden)void this.refreshArcadePreview();
+    },8000);
+  }
+
+  private syncArcadeRelease(): boolean {
+    const now=Date.now()+this.serverClockOffset,publicLocked=arcadeIsLocked(now)&&!this.arcadePreview.state.released;
+    const locked=publicLocked&&!this.arcadePreview.state.unlocked;
+    this.world?.setArcadeLocked(locked,this.language);
+    window.clearTimeout(this.arcadeUnlockTimer);this.arcadeUnlockTimer=undefined;
+    if(publicLocked){
+      this.arcadeUnlockTimer=window.setTimeout(()=>this.syncArcadeRelease(),Math.min(2_147_483_647,Math.max(1,ARCADE_UNLOCK_AT-now)));
+      if(locked&&this.arcadePlaying&&!this.arcadeLockedViewing)this.closeArcadeGame();
+      // Redeeming never launches an external tab after an await. The dialog's
+      // explicit PLAY button retains the user's gesture on phone/headset.
+      if(!locked&&this.arcadeLockedViewing)this.closeArcadeGame();
+    }else if(this.arcadeLockedViewing){
+      this.closeArcadeGame();this.openArcadeGame();
+    }
+    if(!publicLocked&&this.arcadeNotice){this.arcadeNotice.close();this.showWorldAlert(this.language==='zh-TW'?'M.O.T.H 已開放遊玩':'M.O.T.H IS NOW AVAILABLE');}
+    this.syncArcadePreviewButtons();return locked;
   }
 
   private showArcadeReleaseNotice(): void {
-    if (this.arcadeNotice) return;
-    this.closePanel(); this.closeFestivalPass();
-    const zh = this.language === 'zh-TW';
-    const notice = document.createElement('dialog');
-    notice.className = 'moth-release-notice';
-    notice.setAttribute('aria-labelledby', 'moth-release-title');
-    notice.setAttribute('aria-describedby', 'moth-release-date');
-    notice.innerHTML = `<span class="moth-release-notice__label">M.O.T.H</span>
-      <h2 id="moth-release-title">${zh ? '遊戲尚未開放' : 'GAME LOCKED'}</h2>
-      <p id="moth-release-date">${zh ? '將於 2026 年 11 月 2 日<br>凌晨 12:00（台灣時間）開放遊玩。' : 'Available November 2, 2026<br>at 12:00 AM Taiwan time (UTC+8).'}</p>
-      <button type="button" autofocus>${zh ? '知道了' : 'GOT IT'}</button>`;
-    this.arcadeNotice = notice;
-    notice.querySelector('button')!.addEventListener('click', () => notice.close());
-    notice.addEventListener('click', event => { if (event.target === notice) {
-      const box = notice.getBoundingClientRect();
-      if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) notice.close();
-    } });
-    notice.addEventListener('keydown', event => event.stopPropagation());
-    notice.addEventListener('close', () => {
-      notice.remove();
-      if (this.arcadeNotice === notice) this.arcadeNotice = undefined;
-      this.syncMenuCapture();
-    }, { once: true });
-    this.root.append(notice);
-    this.syncMenuCapture();
-    notice.showModal();
+    if(this.arcadeNotice||!this.arcadePreviewActive())return;
+    this.closePanel();this.closeFestivalPass();
+    const notice=createArcadePreviewNotice({client:this.arcadePreview,zh:this.language==='zh-TW',canPlay:Boolean(this.world),
+      changed:state=>this.acceptArcadePreview(state),play:()=>{this.closeArcadeGame();this.openArcadeGame();}});
+    this.arcadeNotice=notice;
+    notice.addEventListener('click',event=>{if(event.target===notice){const b=notice.getBoundingClientRect();if(event.clientX<b.left||event.clientX>b.right||event.clientY<b.top||event.clientY>b.bottom)notice.close();}});
+    notice.addEventListener('close',()=>{notice.remove();if(this.arcadeNotice===notice)this.arcadeNotice=undefined;this.syncMenuCapture();},{once:true});
+    this.root.append(notice);this.syncMenuCapture();notice.showModal();
   }
 
   private closeArcadeGame(): void {
@@ -3260,7 +3395,7 @@ export class App {
     }
     if (action.type === 'npcIntroduction') {
       // The world hands over one language; the roster here has both.
-      this.openNpcAbout(this.npcProfiles.find((profile) => profile.id === action.id) ?? action);
+      this.openNpcAbout(this.npcProfiles.find((profile) => profile.id === action.id) ?? action, action.presentation);
       return;
     }
     if (action.type === 'greet') {
@@ -3348,6 +3483,7 @@ export class App {
       return;
     }
     if (action.type === 'drank') {
+      this.drinkCount = action.drinks; this.syncDrinkStatus();
       // The tenth says nothing: WASTED says it.
       if (action.drinks >= 10) return;
       const zh = this.language === 'zh-TW', n = action.drinks;
@@ -4078,6 +4214,9 @@ export class App {
   }
 
   private readonly globalShortcut = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape' && this.root.querySelector<HTMLElement>('#seat-menu')?.dataset.menuOwner === 'npc') {
+      event.preventDefault(); this.hideSeatMenu(); return;
+    }
     if (this.arcadeNotice) return;
     if (this.arcadePlaying) {
       if (event.key === 'Escape') { event.preventDefault(); this.leaveArcadeOnEscape(); }
@@ -4584,8 +4723,9 @@ export class App {
   private openSeatMenu(seatId: string, venue: VenueKey = this.activeVenue): void {
     const menu = this.root.querySelector<HTMLElement>('#seat-menu');
     if (!menu) return;
+    this.world?.closeNpcDialogue(); menu.classList.remove('npc-dialogue'); menu.removeAttribute('role'); menu.removeAttribute('aria-modal');
     this.openDjBooth = undefined;
-    menu.dataset.menuOwner = 'screening';
+    this.prepareSeatMenu(menu, 'screening');
     this.activeVenue = venue;
     this.activeSeatId = seatId;
     const resumable = this.privateProgress
@@ -4628,8 +4768,9 @@ export class App {
   private openDjRequest(djName: string, venue: 'club' | 'rooftop' = 'club'): void {
     const menu = this.root.querySelector<HTMLElement>('#seat-menu');
     if (!menu) return;
+    this.world?.closeNpcDialogue(); menu.classList.remove('npc-dialogue'); menu.removeAttribute('role'); menu.removeAttribute('aria-modal');
     this.openDjBooth = { name: djName, venue, view: 'requests' };
-    menu.dataset.menuOwner = 'dj';
+    this.prepareSeatMenu(menu, 'dj');
     const zh = this.language === 'zh-TW';
     const nowPlaying = this.publicFilm(venue);
     const queue = this.networkState?.venueQueues?.[venue] ?? [];
@@ -4789,7 +4930,7 @@ export class App {
     const profile = djProfileFor(venue, this.networkState?.djProfiles, djName);
     if (!profile) return;
     this.openDjBooth = { name: djName, venue, view: 'about' };
-    menu.dataset.menuOwner = 'dj';
+    this.prepareSeatMenu(menu, 'dj');
     const canEdit = Boolean(this.staffKey) && this.festivalClient.online;
     const hasCredits = Boolean((zh ? profile.creditsZh : profile.credits)?.trim());
     const paragraphs = (text: string) => text
@@ -4869,7 +5010,7 @@ export class App {
     const zh = this.language === 'zh-TW';
     const wishes = [...(this.networkState?.wishes ?? [])].reverse();
     this.openWishWall = true;
-    menu.dataset.menuOwner = 'wishes';
+    this.prepareSeatMenu(menu, 'wishes');
     menu.hidden = false;
     menu.innerHTML = `
       ${this.seatMenuClose()}
@@ -4903,7 +5044,7 @@ export class App {
     const profile = djProfileFor(venue, this.networkState?.djProfiles, djName);
     if (!profile) return;
     this.openDjBooth = { name: djName, venue, view: 'credits' };
-    menu.dataset.menuOwner = 'dj';
+    this.prepareSeatMenu(menu, 'dj');
     const canEdit = Boolean(this.staffKey) && this.festivalClient.online;
     const text = (zh ? profile.creditsZh : profile.credits) ?? '';
     const lines = text.split(/\n+/).map((line) => line.trim().replace(/^[·•‧・\-]\s*/, '')).filter(Boolean);
@@ -4993,7 +5134,7 @@ export class App {
     const menu = this.root.querySelector<HTMLElement>('#seat-menu');
     if (!menu) return;
     this.openDjBooth = undefined;
-    menu.dataset.menuOwner = 'screening';
+    this.prepareSeatMenu(menu, 'screening');
     this.activeVenue = venue;
     menu.hidden = false;
     menu.innerHTML = `
@@ -5017,6 +5158,28 @@ export class App {
   }
 
   /**
+   * An open dialogue box rises until it covers the chat comments behind it
+   * (owner, 2026-10-23), on phones as on desktops. Measured from their top
+   * edge, since how many there are and how tall depends on the screen, and
+   * kept up to date as comments arrive or the window turns.
+   */
+  private coverChatWithDialogue(menu: HTMLElement): void {
+    if (!this.dialogueCover) {
+      const stream = this.root.querySelector<HTMLElement>('#chat-stream');
+      const fit = () => {
+        if (!menu.classList.contains('npc-dialogue') || menu.hidden) { menu.style.removeProperty('--dialogue-cover'); return; }
+        // Nothing to cover where the comments are hidden (landscape phones, the arcade).
+        const box = stream?.getBoundingClientRect(), top = box && box.height > 0 ? box.top : window.innerHeight;
+        menu.style.setProperty('--dialogue-cover', `${Math.max(0, Math.ceil(window.innerHeight - top + 14))}px`);
+      };
+      this.dialogueCover = fit;
+      window.addEventListener('resize', fit);
+      if (stream && typeof ResizeObserver !== 'undefined') new ResizeObserver(fit).observe(stream);
+    }
+    this.dialogueCover();
+  }
+
+  /**
    * A resident's introduction, opened by holding the greeting on them.
    *
    * Rendered into `#seat-menu` with an owner of its own, exactly as the DJ
@@ -5029,23 +5192,33 @@ export class App {
    * will open with a name and a job title and no biography under them. That is
    * the intended state, not an error — the card fills out as STAFF write.
    */
-  private openNpcAbout(profile: NpcProfile): void {
+
+  /**
+   * A resident's introduction. After a wave it is the conversation: a
+   * full-width box under the two-shot. Asked for directly — SHIFT+E or the
+   * attendee list — it is the plain centred card it always was.
+   */
+  private openNpcAbout(profile: NpcProfile, presentation: 'dialogue' | 'menu' = 'menu'): void {
     const menu = this.root.querySelector<HTMLElement>('#seat-menu');
     if (!menu) return;
     const zh = this.language === 'zh-TW';
     // No service, nowhere to save. The introduction itself still shows.
     const canEdit = Boolean(this.staffKey) && this.festivalClient.online;
-    const title = npcTitleIn(profile, zh);
+    const title = npcCharacterTitleIn(profile, zh);
     const paragraphs = npcIntroductionIn(profile, zh)
       .split(/\n+/)
       .map((line) => line.trim())
       .filter(Boolean)
       .map((line) => `<p>${this.escapeHtml(line)}</p>`)
       .join('');
+    const dialogue = presentation === 'dialogue';
     menu.dataset.menuOwner = 'npc';
+    menu.classList.toggle('npc-dialogue', dialogue);
+    if (dialogue) { menu.setAttribute('role', 'dialog'); menu.setAttribute('aria-modal', 'true'); }
+    else { menu.removeAttribute('role'); menu.removeAttribute('aria-modal'); }
     menu.hidden = false;
-    menu.innerHTML = `
-      ${this.seatMenuClose()}
+    this.coverChatWithDialogue(menu);
+    const card = `
       <p class="eyebrow">${zh ? '團隊介紹' : 'THE TEAM'}</p>
       <h2 id="seat-menu-title">${this.escapeHtml(profile.name)}</h2>
       ${title ? `<p class="dj-about__role">${this.escapeHtml(title)}</p>` : ''}
@@ -5064,12 +5237,23 @@ export class App {
           : 'Leave both empty for no introduction. With only one filled in, readers of the other language see that one. The name and job title are edited in the STAFF panel.'}</p>
         <button type="submit">${zh ? '儲存介紹' : 'SAVE INTRODUCTION'}</button>
       </form>` : ''}
-      <button class="seat-menu__back dj-about__back" type="button" data-npc-about-close>${zh ? '關閉' : 'CLOSE'}</button>`;
+      ${dialogue ? '' : `<button class="seat-menu__back dj-about__back" type="button" data-npc-about-close>${zh ? '關閉' : 'CLOSE'}</button>`}`;
+    // The dialogue closes from its × alone (owner, 2026-10-22); the card keeps 關閉.
+    menu.innerHTML = `${this.seatMenuClose()}${dialogue ? `<div class="npc-dialogue__content">${card}</div>` : card}`;
 
     menu.querySelector<HTMLButtonElement>('[data-npc-about-close]')?.addEventListener('click', () => {
       this.hideSeatMenu();
     });
     this.onSeatMenuClose(menu, () => this.hideSeatMenu());
+    this.syncMenuCapture();
+    menu.querySelector<HTMLButtonElement>('[data-seat-close]')?.focus();
+    menu.onkeydown = event => {
+      if (event.key !== 'Tab' || menu.dataset.menuOwner !== 'npc') return;
+      const buttons = [...menu.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), a[href]')].filter(element => element.getClientRects().length);
+      const first = buttons[0], last = buttons.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
     menu.querySelector<HTMLFormElement>('[data-npc-about-edit]')?.addEventListener('submit', (event) => {
       event.preventDefault();
       const form = event.currentTarget as HTMLFormElement;
@@ -5089,7 +5273,7 @@ export class App {
         })
         .then(() => {
           this.showWorldAlert(zh ? '介紹已儲存' : 'INTRODUCTION SAVED');
-          this.openNpcAbout({ ...profile, introduction, introductionZh });
+          this.openNpcAbout({ ...profile, introduction, introductionZh }, presentation);
         })
         .catch((error) => {
           if (submit) submit.disabled = false;
@@ -5102,9 +5286,19 @@ export class App {
     const menu = this.root.querySelector<HTMLElement>('#seat-menu');
     this.openDjBooth = undefined;
     if (menu) {
+      if (menu.dataset.menuOwner === 'npc') this.world?.closeNpcDialogue();
       menu.hidden = true;
+      menu.onkeydown = null;
+      menu.classList.remove('npc-dialogue'); menu.removeAttribute('role'); menu.removeAttribute('aria-modal');
       delete menu.dataset.menuOwner;
     }
+    this.syncMenuCapture();
+  }
+
+  private prepareSeatMenu(menu: HTMLElement, owner: string): void {
+    if (menu.dataset.menuOwner === 'npc') this.world?.closeNpcDialogue();
+    menu.classList.remove('npc-dialogue'); menu.removeAttribute('role'); menu.removeAttribute('aria-modal'); menu.onkeydown = null;
+    menu.dataset.menuOwner = owner;
   }
 
   private privateScreenOpen(): boolean {
@@ -5152,6 +5346,7 @@ export class App {
   }
 
   private handleNetworkState(state: FestivalState): void {
+    this.world?.syncDonationCelebration(state.donationCelebration, state.serverTime);
     const sharedKey = JSON.stringify(Object.fromEntries(Object.entries(state)
       .filter(([key]) => !['serverTime', 'selfId', 'visitors'].includes(key))));
     const sharedChanged = sharedKey !== this.sharedNetworkKey;
@@ -5366,6 +5561,8 @@ export class App {
     if (status === 'offline' && detail) this.showWorldAlert(this.language === 'zh-TW' ? '離線模式 · 正在重新連線' : `OFFLINE MODE · ${detail}`);
     if (status === 'kicked') {
       if (this.arcadePlaying) this.closeArcadeGame();
+      if (this.root.querySelector<HTMLElement>('#seat-menu')?.dataset.menuOwner === 'npc') this.hideSeatMenu();
+      this.chatFloatingDispose?.(); this.chatFloatingDispose = undefined;
       this.world?.stop();
       this.showWorldAlert(this.language === 'zh-TW' ? '工作人員已結束此連線' : (detail ?? 'SESSION ENDED BY FESTIVAL STAFF'));
     }
@@ -5528,6 +5725,7 @@ export class App {
    */
   private syncJukebox(): void {
     this.syncJukeboxPlayer();
+    this.updateJukeboxSoundPrompt();
     if (['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
       document.documentElement.dataset.jukeboxReview = JSON.stringify(this.jukeboxReviewSnapshot());
     }
@@ -5624,7 +5822,8 @@ export class App {
   private updateJukeboxSoundPrompt(): void {
     const button = this.root.querySelector<HTMLButtonElement>('[data-jukebox-sound]');
     if (!button) return;
-    const wantsSound = !this.audioMuted && !this.jukeboxSilenced && this.jukeboxVolume > 0;
+    const wantsSound = !this.audioMuted && !this.jukeboxSilenced && this.jukeboxVolume > 0
+      && !(this.jukeboxPlayingId && this.jukeboxFailedId === this.jukeboxPlayingId);
     // The player itself is the only honest witness to whether the square can be
     // heard, so the prompt is offered exactly while a record is on, sound was
     // asked for, and the player says it is making none.
@@ -5637,8 +5836,9 @@ export class App {
     // same permission the old one had been given, and the only control that
     // could ask for it had been retired for the rest of the visit. So the
     // square came back silent, with nothing on screen admitting it.
-    const audible = this.jukeboxReportedMuted === false && (this.jukeboxReportedVolume ?? 0) > 0;
-    button.hidden = !this.jukeboxPlayingId || !wantsSound || audible;
+    const audible = this.jukeboxReportedMuted === false && (this.jukeboxReportedVolume ?? 0) > 0 && this.jukeboxReportedState === 1;
+    button.hidden = !jukeboxPromptVisible(this.jukeboxPromptMemory,
+      this.jukeboxPlayingId ? `${this.jukeboxPlayingId}:${this.jukeboxPromptGeneration}` : undefined, wantsSound, audible, performance.now());
   }
 
   private mountJukeboxFrame(youtubeId: string, offsetSeconds: number): void {
@@ -5693,6 +5893,7 @@ export class App {
     // the frame is being pointed at a new video and starts muted again.
     this.jukeboxReportedMuted = undefined;
     this.jukeboxReportedVolume = undefined;
+    this.jukeboxReportedState = undefined; this.jukeboxPromptGeneration++;
     frame.src = url.toString();
     this.applyJukeboxVolume();
   }
@@ -5705,19 +5906,31 @@ export class App {
   private readonly jukeboxMessage = (event: MessageEvent): void => {
     if (!this.jukeboxFrame || event.source !== this.jukeboxFrame.contentWindow) return;
     if (typeof event.data !== 'string') return;
-    let payload: { event?: string; info?: { duration?: number; muted?: boolean; volume?: number } };
+    let payload: { event?: string; info?: { duration?: number; muted?: boolean; volume?: number; playerState?: number } | number };
     try {
       payload = JSON.parse(event.data) as typeof payload;
     } catch {
       return;
     }
+    if (!payload || typeof payload !== 'object') return;
     // Volume and mute arrive on the same channel as the length, sometimes in a
     // payload carrying nothing else, so they are read before the length check
     // has a chance to drop the message.
-    if (typeof payload?.info?.muted === 'boolean') this.jukeboxReportedMuted = payload.info.muted;
-    if (typeof payload?.info?.volume === 'number') this.jukeboxReportedVolume = payload.info.volume;
-    if (payload?.info && ('muted' in payload.info || 'volume' in payload.info)) this.updateJukeboxSoundPrompt();
-    const seconds = payload?.info?.duration;
+    if (payload.event === 'onStateChange' && typeof payload.info === 'number') this.jukeboxReportedState = payload.info;
+    // The player cannot play this record here (YouTube's 2/5/100/101/150/152).
+    // Pressing DROP THE BEAT cannot change that, so it goes; and the service
+    // is told, which moves the jukebox on if YouTube confirms the record is
+    // unplayable everywhere (the owner, 2026-10-22).
+    if (payload.event === 'onError' && this.jukeboxPlayingId && this.jukeboxFailedId !== this.jukeboxPlayingId) {
+      this.jukeboxFailedId = this.jukeboxPlayingId;
+      if (this.festivalClient.online) void this.festivalClient.reportJukeboxUnplayable(this.jukeboxPlayingId).catch(() => {});
+    }
+    const info = typeof payload.info === 'object' && payload.info ? payload.info : undefined;
+    if (typeof info?.muted === 'boolean') this.jukeboxReportedMuted = info.muted;
+    if (typeof info?.volume === 'number') this.jukeboxReportedVolume = info.volume;
+    if (typeof info?.playerState === 'number') this.jukeboxReportedState = info.playerState;
+    this.updateJukeboxSoundPrompt();
+    const seconds = info?.duration;
     if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 5) return;
     const youtubeId = this.jukeboxPlayingId;
     if (!youtubeId || this.jukeboxReportedDurations.get(youtubeId) === Math.round(seconds)) return;
@@ -5885,6 +6098,8 @@ export class App {
       unavailable(gate ? (zh ? '捐款尚未開放' : 'DONATIONS ARE NOT OPEN YET') : (zh ? '供養尚未開放' : 'OFFERINGS ARE NOT OPEN YET'));
       return;
     }
+    const previewCheckout=Boolean(options.arcadePreviewUntil&&this.arcadePreviewActive());
+    let arcadeDeviceKey:JsonWebKey|undefined;
     const sheet = document.createElement('div');
     sheet.id = 'offering';
     sheet.className = 'offering';
@@ -5926,6 +6141,7 @@ export class App {
             ? '綠界會把電子發票通知寄到這個信箱；選手機條碼時，發票會存進你的手機條碼載具。不勾選也照開，只是寄到影展自己的信箱。'
             : 'ECPay emails the invoice notice here; with a phone barcode the invoice is also stored in that carrier. Unticked, it is still issued — just to the festival\u2019s own address instead.'}</p>
         </div>` : ''}
+        ${previewCheckout?`<p class="offering__note" data-arcade-preparation>${zh?'正在為此瀏覽器準備 M.O.T.H 搶先體驗…':'Preparing M.O.T.H early access for this browser…'}</p>`:''}
         <p class="offering__error" data-offering-error hidden></p>
         <button type="button" class="offering__go" data-offering-go>${gate ? 'Donate' : (zh ? '感謝供養' : 'MY DEEPEST GRATITUDE')}</button>
         <p class="offering__note">${gate
@@ -5944,6 +6160,18 @@ export class App {
       error.textContent = message;
       error.hidden = false;
     };
+    const go=sheet.querySelector<HTMLButtonElement>('[data-offering-go]')!;
+    if(previewCheckout){
+      go.disabled=true;go.dataset.arcadePreparing='true';
+      void this.arcadePreview.checkoutKey().then(key=>{
+        if(!sheet.isConnected)return;arcadeDeviceKey=key;delete go.dataset.arcadePreparing;go.disabled=false;
+        const note=sheet.querySelector<HTMLElement>('[data-arcade-preparation]');
+        if(note)note.textContent=zh?'完成這筆供養後，你會拿到一組 M.O.T.H 序號，在 11 月 2 日開放前就能解鎖影展裡的遊戲機，任何裝置都能用。序號只會顯示在這個瀏覽器上，請抄下保存。':'Once this offering is paid, you receive a M.O.T.H code that unlocks the cabinet in the festival before it opens on November 2, on any device. It is only shown in this browser, so keep a copy.';
+      }).catch(()=>{
+        if(!sheet.isConnected)return;
+        complain(zh?'此瀏覽器無法儲存遊戲機金鑰。請允許瀏覽器儲存資料後再付款。':'This browser could not save its arcade key. Allow browser storage and try again before paying.');
+      });
+    }
     /**
      * Take the complaint back once the visitor has moved on from it.
      *
@@ -6033,6 +6261,7 @@ export class App {
 
     sheet.querySelector('[data-offering-go]')?.addEventListener('click', () => {
       reassure();
+      if(previewCheckout&&this.arcadePreviewActive()&&!arcadeDeviceKey)return complain(zh?'尚未準備好此瀏覽器的搶先體驗，請稍候或檢查瀏覽器儲存權限。':'Arcade access is not ready for this browser. Wait or check browser storage before paying.');
       const typed = custom?.value.trim();
       const amount = typed ? Math.trunc(Number(typed)) : chosen;
       if (!Number.isFinite(amount) || amount < options.min || amount > options.max) {
@@ -6069,7 +6298,10 @@ export class App {
       // from the sign-in page with whatever is typed in the gate's name field.
       const gateName = gate ? (this.root.querySelector<HTMLInputElement>('input[name="festivalId"]')?.value.trim() ?? '') : '';
       const wish = { message: message?.value.trim() ?? '', displayName: gateName };
-      void this.festivalClient.beginDonation(amount, address, wanted, code, wish).then((started) => {
+      go.disabled=true;
+      if(arcadeDeviceKey){this.arcadePreviewPending=true;this.arcadePreviewPendingCodes=new Set(this.arcadePreview.state.codes.map(entry=>entry.code));}
+      void this.festivalClient.beginDonation(amount,address,wanted,code,wish,this.arcadePreviewActive()?arcadeDeviceKey:undefined).then((started) => {
+        if(arcadeDeviceKey)void this.refreshArcadePreview();
         if (tab) tab.location.replace(started.checkoutUrl);
         // No tab means a blocker took it. On a flat screen the offering goes
         // in this window instead — the festival reloads on the way back,
@@ -6085,6 +6317,8 @@ export class App {
         close();
       }).catch((failure: unknown) => {
         tab?.close();
+        go.disabled=false;
+        this.arcadePreviewPending=false;
         complain(failure instanceof Error ? failure.message : (zh ? '無法開始付款。' : 'Could not start the payment.'));
       });
     });
@@ -6108,6 +6342,8 @@ export class App {
    * somebody for money it has not received.
    */
   private awaitTheOffering(pending: { id: string; amount: number; paymentType: string }): void {
+    if(!this.arcadePreviewPending){this.arcadePreviewPending=this.arcadePreviewActive();this.arcadePreviewPendingCodes=new Set(this.arcadePreview.state.codes.map(entry=>entry.code));}
+    void this.refreshArcadePreview();
     const zh = this.language === 'zh-TW';
     const deity = this.networkState?.templeSign?.name ?? '美麗本人';
     const store = pending.paymentType.startsWith('CVS') || pending.paymentType.startsWith('BARCODE');
@@ -6122,6 +6358,7 @@ export class App {
   }
 
   private thankTheOffering(receipt: { id: string; amount: number; invoice: string | null }): void {
+    void this.refreshArcadePreview();
     const zh = this.language === 'zh-TW';
     const deity = this.networkState?.templeSign?.name ?? '美麗本人';
     if (receipt.invoice) {
@@ -6223,6 +6460,12 @@ export class App {
     }, 2200);
   }
 
+  private syncDrinkStatus(): void {
+    const badge = this.root.querySelector<HTMLElement>('#drink-status'); if (!badge) return;
+    badge.hidden = this.drinkCount <= 0;
+    const text = drinkStatusText(this.drinkCount, this.language === 'zh-TW'); if (badge.textContent !== text) badge.textContent = text;
+  }
+
   private questPanelContent(): string {
     const language = this.language;
     const done = this.completedQuests.size;
@@ -6288,6 +6531,8 @@ export class App {
   private openPanel(panelId: PanelId): void {
     const panel = this.root.querySelector<HTMLElement>('#panel');
     if (!panel) return;
+    if (this.root.querySelector<HTMLElement>('#seat-menu')?.dataset.menuOwner === 'npc') this.hideSeatMenu();
+    this.chatFloatingDispose?.(); this.chatFloatingDispose = undefined;
     if (panelId === 'map') this.completeQuest('map');
     if (panelId === 'programme') this.completeQuest('programme');
     this.closeFestivalPass();
@@ -6304,6 +6549,7 @@ export class App {
     });
     this.syncMenuCapture();
     this.bindPanelActions(panelId, panel);
+    if (panelId === 'chat') this.chatFloatingDispose = installFloatingChat(panel, this.language === 'zh-TW');
     if (panelId === 'admin' && this.staffKey && !this.adminState && !this.adminError) void this.refreshAdminState();
   }
 
@@ -6321,6 +6567,7 @@ export class App {
 
   /** Close whichever panel is open, the way its own × does. */
   private closePanel(): void {
+    this.chatFloatingDispose?.(); this.chatFloatingDispose = undefined;
     const panel = this.root.querySelector<HTMLElement>('#panel');
     if (panel) {
       panel.hidden = true;
@@ -6338,7 +6585,7 @@ export class App {
    */
   private syncMenuCapture(): void {
     const pass = this.root.querySelector<HTMLElement>('#festival-pass');
-    const captured=this.arcadePlaying || Boolean(this.arcadeNotice) || Boolean(this.danceWheel) || Boolean(this.activePanel) || (pass ? !pass.hidden : false);
+    const captured=this.arcadePlaying || Boolean(this.arcadeNotice) || Boolean(this.danceWheel) || Boolean(this.activePanel) || this.root.querySelector<HTMLElement>('#seat-menu')?.dataset.menuOwner === 'npc' || (pass ? !pass.hidden : false);
     this.world?.setMenuOpen(captured);
     if (['127.0.0.1','localhost'].includes(window.location.hostname)) this.root.dataset.menuCapture=String(captured);
   }
@@ -6532,13 +6779,16 @@ export class App {
             <button data-world-graphics="normal" aria-pressed="${this.graphicsMode === 'normal'}">${zh ? '一般' : 'NORMAL'}</button>
             <button data-world-graphics="lite" aria-pressed="${this.graphicsMode === 'lite'}">${zh ? '精簡' : 'LITE'}</button>
           </div>
-          <button class="panel-button" data-camera-toggle>${zh ? '切換視角鏡頭' : 'TOGGLE PERSPECTIVE CAMERA'}</button>
+          <div class="segmented segmented--dark world-view-choices">
+            ${[['follow',zh?'第三人稱':'THIRD PERSON'],['first-person',zh?'第一人稱':'FIRST PERSON'],['isometric',zh?'等角俯視':'ISOMETRIC']].map(([mode,label])=>`<button data-world-camera="${mode}" aria-pressed="${(this.snapshot?.cameraMode??'follow')===mode}">${label}</button>`).join('')}
+          </div>
+          <p class="setting-hint">${zh?'鏡頭選擇會保留，包括入座與觀影時。等角俯視保持固定對角線方向。':'Your view stays selected while seated and watching. Isometric keeps a fixed diagonal angle.'}</p>
         </section>
         <section class="setting-group">
           <h3>${zh ? '鏡頭靈敏度' : 'LOOK SENSITIVITY'}</h3>
           <p class="panel-intro">${zh
-            ? '拖曳時鏡頭轉動的幅度，所有視角都適用。覺得暈就往左調。'
-            : 'How far a drag turns the view, in every camera. Move it left if looking around makes you dizzy.'}</p>
+            ? '調整第一人稱與第三人稱拖曳轉動的幅度。等角俯視保持固定方向。覺得暈就往左調。'
+            : 'How far a drag turns first-person and third-person views. Isometric stays fixed. Move it left if looking around makes you dizzy.'}</p>
           <label class="range-field"><span>${zh ? '靈敏度' : 'SENSITIVITY'}</span><input data-look-sensitivity type="range" min="0.1" max="2" value="${this.lookSensitivity}" step="0.05" /></label>
           <p class="setting-readout" data-look-sensitivity-readout>${this.lookSensitivityLabel()}</p>
           <p class="setting-hint">${zh ? '關掉這個面板後拖曳畫面才看得出差別。' : 'Close this panel and drag the world to feel the difference.'}</p>
@@ -6773,9 +7023,11 @@ export class App {
       if (readout) readout.textContent = this.lookSensitivityLabel();
       try { window.localStorage.setItem(LOOK_SENSITIVITY_KEY, String(value)); } catch { /* private mode */ }
     });
-    panel.querySelector<HTMLButtonElement>('[data-camera-toggle]')?.addEventListener('click', () => {
-      this.world?.toggleCameraMode();
-    });
+    panel.querySelectorAll<HTMLButtonElement>('[data-world-camera]').forEach(button=>button.addEventListener('click',()=>{
+      const mode=button.dataset.worldCamera;if(mode!=='follow'&&mode!=='first-person'&&mode!=='isometric')return;
+      this.world?.setCameraMode(mode);
+      panel.querySelectorAll<HTMLButtonElement>('[data-world-camera]').forEach(choice=>choice.setAttribute('aria-pressed',String(choice===button)));
+    }));
     panel.querySelector<HTMLButtonElement>('[data-mute]')?.addEventListener('click', (event) => {
       this.audioMuted = !this.audioMuted;
       sessionStorage.setItem(AUDIO_MUTED_KEY, JSON.stringify(this.audioMuted));
@@ -6883,7 +7135,7 @@ export class App {
       // Every jukebox control goes the same way: send it, then re-read the
       // state so the panel shows what the service actually did.
       const jukeboxAction = (payload: Parameters<typeof this.festivalClient.updateJukebox>[1]) => {
-        void this.festivalClient.updateJukebox(this.staffKey, payload)
+        return this.festivalClient.updateJukebox(this.staffKey, payload)
           .then(() => { this.adminError = ''; return this.refreshAdminState(); })
           .catch((error) => {
             this.adminError = error instanceof Error ? error.message : 'Jukebox update failed.';
@@ -6898,6 +7150,7 @@ export class App {
           direction: button.dataset.direction === 'up' ? 'up' : 'down',
         }));
       });
+      bindJukeboxShelf(panel,this.staffJukebox()?.tracks??[],stockOrder=>jukeboxAction({stockOrder}));
       panel.querySelectorAll<HTMLButtonElement>('[data-jukebox-drop]').forEach((button) => {
         button.addEventListener('click', () => jukeboxAction({ drop: button.dataset.jukeboxDrop ?? '' }));
       });
@@ -7852,8 +8105,7 @@ export class App {
         </ol>
         <span class="eyebrow">${this.language === 'zh-TW' ? '機器裡的唱片' : 'IN THE MACHINE'}</span>
         <ul class="staff-list">
-          ${(this.staffJukebox()?.tracks ?? []).map((track) => `<li><strong>${this.escapeHtml(track.title)}</strong><button type="button" data-jukebox-remove="${this.escapeAttribute(track.id)}">${this.language === 'zh-TW' ? '取出' : 'REMOVE'}</button></li>`).join('')
-            || `<li><small>${this.language === 'zh-TW' ? '點唱機是空的。' : 'The jukebox is empty.'}</small></li>`}
+          ${jukeboxShelfMarkup(this.staffJukebox()?.tracks??[],this.language==='zh-TW',text=>this.escapeHtml(text))}
         </ul>
       </div>`)}
       ${this.staffSection('entrance', this.language === 'zh-TW' ? '影展拱門' : 'ENTRANCE ARCH', `
@@ -8084,7 +8336,7 @@ export class App {
   /**
    * The colours and the accessories, written once.
    *
-   * The gate and the character panel ask for exactly the same eleven things,
+   * The gate and the character panel share their appearance controls,
    * and when they were written twice they drifted twice — a slot added in one
    * and missing from the other reads as a bug in the world rather than in the
    * markup. `attribute` is the only difference between them: the gate edits a
@@ -8108,7 +8360,12 @@ export class App {
   private appearanceFields(attribute: 'data-palette' | 'data-world-palette'): string {
     const zh = this.language === 'zh-TW';
     const colours = paletteInputs
-      .map((slot) => `<label class="swatch"><span>${paletteLabels[this.language][slot]}</span><input type="color" ${attribute}="${slot}" value="${this.palette[slot]}" /></label>`)
+      .map((slot) => {
+        // The dye fields are optional: just opening a picker must not replace
+        // the authored black cloth or the original two-tone sneaker atlas.
+        const value = this.palette[slot] ?? (slot === 'shirt' || slot === 'shoes' ? AVATAR_CLOTHING_DEFAULTS[slot] : defaultPalette[slot]);
+        return `<label class="swatch"><span>${paletteLabels[this.language][slot]}</span><input type="color" ${attribute}="${slot}" value="${value}" ${slot === 'shirt' && topOutfit(this.palette.top) === '4' ? 'disabled' : ''} /></label>`;
+      })
       .join('');
     // The cap is a separate mesh, with the same optional control at gate and in-world.
     const worn = ACCESSORY_SLOTS
@@ -8149,7 +8406,9 @@ export class App {
     scope.querySelector<HTMLSelectElement>(`[${attribute}-outfit]`)?.addEventListener('change', event => {
       const value=(event.currentTarget as HTMLSelectElement).value;
       if(!TOP_OUTFITS.some(outfit=>outfit.wire===value||outfit.wireFemale===value))return;
-      this.palette={...this.palette,top:value};commit();
+      this.palette={...this.palette,top:value};
+      scope.querySelectorAll<HTMLInputElement>(`input[${attribute}="shirt"]`).forEach(input => { input.disabled = topOutfit(value) === '4'; });
+      commit();
     });
     // The body rides in the outfit's wire, so changing it keeps the outfit.
     // Colours still at the old body's own shades move to the new body's, so

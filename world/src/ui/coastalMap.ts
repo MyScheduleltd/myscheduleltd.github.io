@@ -1,4 +1,4 @@
-import { SCREENING_SITES, SHORE_SIGN } from '../world/CoastalVenues';
+import { SCREENING_SITES, DRIVE_IN_PARKING, SHORE_SIGN } from '../world/CoastalVenues';
 import { COASTAL_ROUTES, ROAD_POLYGONS } from '../world/CoastalCirculation';
 import { TEMPLE_STAIRS, templeStairX, shorelineAt } from '../world/CoastalTerrain';
 
@@ -8,7 +8,8 @@ export function coastalMapGraphic(zh:boolean):string {
   const routes=COASTAL_ROUTES.map(route=>`<polyline ${route.kind==='walk'?'mask="url(#pavement-clearance)"':''} points="${route.points.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${route.kind==='road'?'#666c68':route.kind==='carpet'?'#993e3a':'#e7ddc4'}" stroke-width="${route.width}" stroke-linejoin="miter"/>`).join('');
   const label=(x:number,z:number,n:string)=>`<g transform="translate(${x} ${z})"><circle r="4" fill="#f0e7d2" stroke="#474d48" stroke-width=".5"/><text text-anchor="middle" dy="1.6" font-size="4.8" fill="#252e30">${n}</text></g>`;
   const shore=SCREENING_SITES.shore,drive=SCREENING_SITES['drive-in'];
-  const carBays=[0,1].flatMap(row=>[-1,0,1].map(column=>`<rect x="${35+column*7.2-1.8}" y="${-20.5-row*6.2-2.8}" width="3.6" height="5.6" rx=".5" fill="#ad7661" stroke="#eee2cb" stroke-width=".4"/>`)).join('');
+  const parking=DRIVE_IN_PARKING;
+  const carBays=[0,1].flatMap(row=>[-1,0,1].map(column=>`<rect x="${35+column*parking.columnSpacing-parking.carWidth/2}" y="${parking.backRowZ-row*parking.rowSpacing-parking.carLength/2}" width="${parking.carWidth}" height="${parking.carLength}" rx=".5" fill="#ad7661" stroke="#eee2cb" stroke-width=".4"/>`)).join('');
   return `<svg class="coastal-plan" viewBox="-108 -78 232 156" role="img" aria-label="${zh?'沿岸影展街區、地形與步行路線':'Coastal festival streets, terrain and walking routes'}">
     <rect x="-108" y="-78" width="232" height="156" fill="#abb29a"/>
     <path d="M-108,-78 L${coast} L128,-78 Z" fill="#69999d"/>

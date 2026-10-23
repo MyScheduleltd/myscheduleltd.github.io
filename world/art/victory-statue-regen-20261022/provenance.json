@@ -1,0 +1,50 @@
+{
+ "source": {
+  "meshyRaw": {
+   "file": "higgsfield-meshy7-raw.glb",
+   "sha256": "76a056e0e6603179c45b6cc6a5f3e92a4bf7d4c88f7a7146a66d121543fde35d",
+   "bytes": 3171708,
+   "jobId": "f0b83dca-c23a-48fa-b028-ddebddf27eea"
+  },
+  "tripoRawRejected": {
+   "file": null,
+   "sha256": "6bff8eeed2f8e33df66f21bfadf1e1fe59ba7dc31db2463584fb065cbf39301b",
+   "jobId": "b1b642d7-5c73-46af-a641-643643caf431",
+   "reason": "2.0M triangles, harsher face with open staring eyes; Meshy matched the reference closer",
+   "note": "Not kept in the tree (58 MB); re-download from the Higgsfield job if needed."
+  }
+ },
+ "blender": {
+  "file": "refined-blender.glb",
+  "sha256": "8962196763fca8741e1dce3c8ee9ba6ff799791ef5c81778fc76f490daac1b39",
+  "script": "refine_statue.py",
+  "args": [
+   "higgsfield-meshy7-raw.glb",
+   "<previous installed desktop statue, colour reference>",
+   "refined-blender.glb",
+   "refine-report.json",
+   "8000",
+   "0.75",
+   "2048"
+  ]
+ },
+ "installed": {
+  "desktop": {
+   "file": "src/assets/environment/victory-statue.glb",
+   "sha256": "925c0f825469731c92d23e3c363e091e7fc5cabbbd8bd944beb73aaec5ec1a3c",
+   "bytes": 550516,
+   "colourMap": 1024
+  },
+  "mobile": {
+   "file": "src/assets/environment/victory-statue-mobile.glb",
+   "sha256": "45a39559c9c2add409057fb078f6f86fa8d7a9e2cafc705242b4ee0b1ae013b3",
+   "bytes": 400296,
+   "colourMap": 512
+  }
+ },
+ "previousInstalled": {
+  "desktop": "9e62ce6fe2e8c3e18f8c02dd795f4080eecc7fc7b28615e4800c54acc65f9287",
+  "mobile": "43f239496866479b96312408868b53ffcb4a65f870b6b278641ab591272fb4c6",
+  "from": "../victory-statue-face-20261022"
+ }
+}

@@ -13,6 +13,7 @@
  *
  *     node world/scripts/capture-state.mjs
  *     node world/scripts/capture-state.mjs http://127.0.0.1:8787
+ *     node world/scripts/capture-state.mjs --jukebox-only
  *
  * FESTIVAL_SEED_FILE, the variable the service boots from, writes the capture
  * somewhere other than the committed seed; the tests use it to check that a
@@ -26,7 +27,9 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const service = (process.argv[2] ?? 'https://myschedule-festival.onrender.com').replace(/\/$/, '');
+const arguments_=process.argv.slice(2);
+const jukeboxOnly=arguments_.includes('--jukebox-only');
+const service = (arguments_.find(argument=>!argument.startsWith('--')) ?? 'https://myschedule-festival.onrender.com').replace(/\/$/, '');
 const configuredTarget = (process.env.FESTIVAL_SEED_FILE ?? '').trim();
 const target = configuredTarget && configuredTarget !== 'off'
   ? resolve(configuredTarget)
@@ -43,6 +46,16 @@ const live = await response.json();
 // is not where it belongs (see server.test.mjs), so it is carried over from the
 // seed already in the repository rather than dropped.
 const previous = await readFile(target, 'utf8').then(JSON.parse).catch(() => ({}));
+
+// A catalogue-only capture cannot overwrite newer local venue/NPC edits.
+// The array order is itself the shelf order, not the temporary request queue.
+if(jukeboxOnly){
+  if(!Array.isArray(live.jukebox?.tracks))throw new Error('The service returned no jukebox catalogue; the seed was left unchanged.');
+  const jukeboxTracks=live.jukebox.tracks.map(track=>({id:track.id,youtubeId:track.youtubeId,title:track.title}));
+  await writeFile(target,`${JSON.stringify({...previous,jukeboxTracks,jukeboxCapturedAt:new Date().toISOString(),jukeboxCapturedFrom:service},null,2)}\n`,'utf8');
+  console.log(`Saved ${jukeboxTracks.length} jukebox records in shelf order from ${service}; other seeded settings were preserved.`);
+  process.exit(0);
+}
 
 if (!live.schedule || typeof live.schedule !== 'object') {
   console.error('That response carried no programme, so there is nothing to save.');

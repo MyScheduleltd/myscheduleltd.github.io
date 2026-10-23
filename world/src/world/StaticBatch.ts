@@ -37,6 +37,7 @@ export const STATIC_PROP_NAMES = new Set([
   // island, they were over a quarter of the shadow pass wherever you stood.
   'Popcorn concession',
   'Jukebox cabinet',
+  'Higgsfield environment asset',
 ]);
 
 /** Flags the worn style reads off a mesh; a batch keeps those its pieces share. */
@@ -61,6 +62,9 @@ const batchable = (mesh: THREE.Object3D, excluded: Set<THREE.Object3D>): mesh is
   const m = mesh as THREE.Mesh;
   if (!m.isMesh || (m as THREE.SkinnedMesh).isSkinnedMesh || (m as THREE.InstancedMesh).isInstancedMesh) return false;
   if (excluded.has(m) || m.children.length || m.renderOrder !== 0 || !m.visible || !m.frustumCulled) return false;
+  // A hidden fallback can be a group whose leaf meshes remain individually
+  // visible. Moving those leaves into a scene-root batch would resurrect it.
+  for (let parent = m.parent; parent; parent = parent.parent) if (!parent.visible) return false;
   if (Array.isArray(m.material) || !m.material || (m.material as THREE.Material).transparent) return false;
   if (m.userData.projectorBackground || m.userData.dynamic) return false;
   if (!m.geometry?.attributes?.position) return false;

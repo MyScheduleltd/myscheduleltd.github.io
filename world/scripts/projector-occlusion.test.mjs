@@ -533,11 +533,13 @@ test('asset notifications settle one body per paint, coalesce repeats, and cance
 });
 
 test('admission prepares the existing room before GPU warmup, without starting the gameplay loop',async()=>{
-  const savedWindow=globalThis.window;globalThis.window={setTimeout:run=>setTimeout(run,0),setInterval:(run,ms)=>setInterval(run,ms),clearInterval:id=>clearInterval(id),location:{search:'?nobatch'}};
+  const savedWindow=globalThis.window;globalThis.window={setTimeout:run=>setTimeout(run,0),setInterval:(run,ms)=>setInterval(run,ms),clearInterval:id=>clearInterval(id),location:{hostname:'127.0.0.1',search:'?nobatch'}};
   try{
-    const world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera();let created=0,compiled=0,drawn=0;
+    const world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera();let created=0,compiled=0,drawn=0,environmentReady=false;
     // The warm-up stand of every body is the avatar code's to build; here it is an empty group.
-    Object.assign(world,{scene,camera,preview:false,disposed:false,pendingRemoteVisitors:new Map([['a',1],['b',2],['c',3]]),projectors:new Map(),cullDecorativeLights(){},warmAvatarVariants(){const stand=new THREE.Group();scene.add(stand);return stand;},flushRemoteVisitor(){this.pendingRemoteVisitors.delete(this.pendingRemoteVisitors.keys().next().value);scene.add(new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial()));created++;},renderer:{shadowMap:{},info:{programs:[]},render(root,cam){assert.equal(compiled,1,'drawn after compiling');assert.equal(root,scene);assert.equal(cam,camera);drawn++;},async compileAsync(root,cam,target){compiled++;assert.equal(created,3);assert.equal(root.children.length,3);assert.equal(cam,camera);assert.equal(target,scene);},setAnimationLoop(){throw Error('admission started gameplay before preparation completed');}}});
+    // Object.create bypasses field initializers. Supply the texture-preparation
+    // resource explicitly, while keeping the real architectural placement.
+    Object.assign(world,{scene,camera,preview:false,disposed:false,environmentMaterials:{async prepare(root){assert.equal(root,scene);assert.ok(root.userData.environmentArchitectureReport.triangles>0);environmentReady=true;}},pendingRemoteVisitors:new Map([['a',1],['b',2],['c',3]]),projectors:new Map(),cullDecorativeLights(){},warmAvatarVariants(){const stand=new THREE.Group();scene.add(stand);return stand;},flushRemoteVisitor(){this.pendingRemoteVisitors.delete(this.pendingRemoteVisitors.keys().next().value);const body=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial());body.name='Admission test body';scene.add(body);created++;},renderer:{shadowMap:{},info:{programs:[]},render(root,cam){assert.equal(compiled,1,'drawn after compiling');assert.equal(root,scene);assert.equal(cam,camera);drawn++;},async compileAsync(root,cam,target){compiled++;assert.equal(environmentReady,true,'environment maps settle before GPU compilation');assert.equal(created,3);assert.equal(root.children.filter(child=>child.name==='Admission test body').length,3);assert.equal(root.children.filter(child=>child.userData.environmentArchitecture).length,scene.userData.environmentArchitectureReport.meshes);assert.equal(cam,camera);assert.equal(target,scene);},setAnimationLoop(){throw Error('admission started gameplay before preparation completed');}}});
     await world.prepareForPlay();assert.equal(created,3);assert.equal(compiled,1);assert.equal(world.pendingRemoteVisitors.size,0);
     assert.ok(drawn>=1,'then every kind of draw is drawn once under the loading view');
     assert.equal(scene.children.some(child=>child.type==='Group'),false,'and the stand of bodies is gone again');
@@ -546,10 +548,10 @@ test('admission prepares the existing room before GPU warmup, without starting t
 
 
 test('a slow film player gets its own stretch of the loading bar, which keeps moving while it waits',async()=>{
-  const savedWindow=globalThis.window;globalThis.window={setTimeout:(run,ms)=>setTimeout(run,ms),setInterval:(run,ms)=>setInterval(run,ms),clearInterval:id=>clearInterval(id),location:{search:'?nobatch'}};
+  const savedWindow=globalThis.window;globalThis.window={setTimeout:(run,ms)=>setTimeout(run,ms),setInterval:(run,ms)=>setInterval(run,ms),clearInterval:id=>clearInterval(id),location:{hostname:'127.0.0.1',search:'?nobatch'}};
   try{
     const world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene();
-    Object.assign(world,{scene,camera:new THREE.PerspectiveCamera(),pendingRemoteVisitors:new Map(),projectors:new Map(),cullDecorativeLights(){},warmAvatarVariants(){return new THREE.Group();},
+    Object.assign(world,{scene,camera:new THREE.PerspectiveCamera(),environmentMaterials:{async prepare(){}},pendingRemoteVisitors:new Map(),projectors:new Map(),cullDecorativeLights(){},warmAvatarVariants(){return new THREE.Group();},
       renderer:{shadowMap:{},info:{programs:[]},render(){},async compileAsync(){}},warmScreenPlayer(){},screenPlayer:{iframe:{},ready:false}});
     setTimeout(()=>{world.screenPlayer.ready=true;},1100);
     const seen=[];await world.prepareForPlay((progress,stage)=>seen.push([progress,stage]));
@@ -565,17 +567,19 @@ test('a slow film player gets its own stretch of the loading bar, which keeps mo
 });
 
 test('admission cannot compile or finish before fixed assets are placed', async () => {
-  const savedWindow=globalThis.window;globalThis.window={setTimeout:run=>setTimeout(run,0),setInterval:(run,ms)=>setInterval(run,ms),clearInterval:id=>clearInterval(id),location:{search:'?nobatch'}};
+  const savedWindow=globalThis.window;globalThis.window={setTimeout:run=>setTimeout(run,0),setInterval:(run,ms)=>setInterval(run,ms),clearInterval:id=>clearInterval(id),location:{hostname:'127.0.0.1',search:'?nobatch'}};
   try {
     const world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene();
-    let finishScenery,finishBand,finishArcade,compiled=0,complete=false;
+    let finishScenery,finishBand,finishArcade,finishEnvironment,compiled=0,complete=false,environmentStarted=false;
     const scenery=new Promise(resolve=>finishScenery=resolve),band=new Promise(resolve=>finishBand=resolve),arcade=new Promise(resolve=>finishArcade=resolve);
+    const environment=new Promise(resolve=>finishEnvironment=resolve);
     const progress=[];
-    Object.assign(world,{scene,camera:new THREE.PerspectiveCamera(),pendingRemoteVisitors:new Map(),projectors:new Map(),venueSceneryAssets:{ready:()=>scenery},bandLoad:band,rooftopBand:{ready:true},arcadeCabinet:{ready:arcade,status:'ready'},cullDecorativeLights(){},warmAvatarVariants(){return new THREE.Group();},renderer:{shadowMap:{},info:{programs:[]},render(){},async compileAsync(){compiled++;}}});
+    Object.assign(world,{scene,camera:new THREE.PerspectiveCamera(),environmentMaterials:{prepare(root){environmentStarted=true;assert.equal(root,scene);assert.ok(scene.userData.environmentArchitectureReport.triangles>0,'geometry precedes environment maps');return environment;}},pendingRemoteVisitors:new Map(),projectors:new Map(),venueSceneryAssets:{ready:()=>scenery},bandLoad:band,rooftopBand:{ready:true},arcadeCabinet:{ready:arcade,status:'ready'},cullDecorativeLights(){},warmAvatarVariants(){return new THREE.Group();},renderer:{shadowMap:{},info:{programs:[]},render(){},async compileAsync(){compiled++;}}});
     const prepared=world.prepareForPlay(p=>progress.push(p)).then(()=>complete=true);
-    await new Promise(resolve=>setImmediate(resolve));assert.equal(compiled,0);
-    finishScenery();finishArcade();await new Promise(resolve=>setImmediate(resolve));assert.equal(complete,false);assert.equal(compiled,0);
-    finishBand();await prepared;assert.equal(compiled,1);assert.equal(progress.at(-1),1);assert.equal(complete,true);
+    await new Promise(resolve=>setImmediate(resolve));assert.equal(compiled,0);assert.equal(environmentStarted,false);
+    finishScenery();finishArcade();await new Promise(resolve=>setImmediate(resolve));assert.equal(complete,false);assert.equal(compiled,0);assert.equal(environmentStarted,false);
+    finishBand();await new Promise(resolve=>setImmediate(resolve));assert.equal(environmentStarted,true);assert.equal(compiled,0);assert.equal(complete,false,'environment preparation is part of admission');
+    finishEnvironment();await prepared;assert.equal(compiled,1);assert.equal(progress.at(-1),1);assert.equal(complete,true);
   }finally{globalThis.window=savedWindow;}
 });
 

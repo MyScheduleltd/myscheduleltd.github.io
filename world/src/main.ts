@@ -16,17 +16,17 @@ if (canOpenArtPreview(window.location.hostname, window.location.search, window.l
   const panel = document.createElement('section');
   panel.style.cssText = 'max-width:38rem;margin:12vh auto;padding:2rem;font:18px/1.6 system-ui;color:#e8e5df';
   const title = document.createElement('h1');
-  title.textContent = 'PS2 art preview';
+  title.textContent = 'MYSCHEDULE festival';
   const text = document.createElement('p');
-  text.textContent = 'This redesign opens on the dedicated PS2 preview with ?era=ps2.';
+  text.textContent = 'The festival opens at /beta/.';
   const link = document.createElement('a');
-  link.href = 'https://myscheduleltd.com/beta/?era=ps2';
+  link.href = 'https://myscheduleltd.com/beta/';
   if (['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)) {
     const preview = new URL(window.location.href);
     preview.searchParams.set('era', 'ps2');
     link.href = preview.href;
   }
-  link.textContent = 'Open the PS2 preview';
+  link.textContent = 'Open the festival';
   panel.append(title, text, link);
   root.appendChild(panel);
   document.documentElement.dataset.artPreview = 'not-opened';

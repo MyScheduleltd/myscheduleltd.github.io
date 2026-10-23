@@ -153,6 +153,14 @@ export class MothArcadeCabinet {
   }
 }
 
+/**
+ * The padlock's body on the 1024 × 856 locked screen, as fractions of it, and
+ * the clear space inside its stroke. ENTER CODE is seated in that space by the
+ * interface, so the lock itself is what a donor taps.
+ */
+export const ARCADE_LOCK_BODY = Object.freeze({ left: 440 / 1024, top: 338 / 856, right: 584 / 1024, bottom: 444 / 856 });
+export const ARCADE_LOCK_KEYHOLE = Object.freeze({ left: 452 / 1024, top: 350 / 856, right: 572 / 1024, bottom: 432 / 856 });
+
 function paintArcadeLock(context: CanvasRenderingContext2D, language: 'en' | 'zh-TW', width: number, height: number): void {
   const orange = '#ff5c21', cream = '#f1e9d5';
   context.fillStyle = '#15191c'; context.fillRect(0, 0, width, height);
@@ -170,7 +178,8 @@ function paintArcadeLock(context: CanvasRenderingContext2D, language: 'en' | 'zh
   context.beginPath(); context.moveTo(width / 2 - 48, 346); context.lineTo(width / 2 - 48, 312);
   context.arc(width / 2, 312, 48, Math.PI, 0);
   context.lineTo(width / 2 + 48, 346); context.stroke();
-  context.strokeRect(width / 2 - 72, 338, 144, 106);
+  const body = ARCADE_LOCK_BODY;
+  context.strokeRect(width * body.left, height * body.top, width * (body.right - body.left), height * (body.bottom - body.top));
   context.fillStyle = cream; context.font = 'bold 58px sans-serif';
   context.fillText(language === 'en' ? 'CURRENTLY LOCKED' : '遊戲 COMING SOON', width / 2, 516);
   context.fillStyle = orange; context.font = 'bold 51px sans-serif';

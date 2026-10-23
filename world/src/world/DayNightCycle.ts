@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CoastalSky } from './CoastalSky';
+import { SolarClock, solarOrbitAtHour, type SolarClockOptions } from './SolarClock';
 
 export type DayPhase =
   | 'dawn'
@@ -17,6 +18,9 @@ export interface DayNightState {
   phaseProgress: number;
   /** What the renderer should be exposed at right now. See LightingKeyframe. */
   exposure: number;
+  localHour:number;
+  clockSource:'device'|'time-zone'|'review';
+  timeZone:string;
 }
 
 export interface WaterReflectionState {
@@ -33,35 +37,22 @@ interface LightingKeyframe {
   ambientIntensity: number;
   lampIntensity: number;
   moonIntensity: number;
-  /**
-   * How hard the whole frame is exposed at this hour.
-   *
-   * The lever the last few passes were missing. Raising a light only brightens
-   * what that light reaches, and after dark most of what a visitor is looking
-   * at is dark paint under a dim sky — so a wall lit harder is still a dark
-   * wall, and the fill had been pushed to daylight strength without the street
-   * ever looking lit.
-   *
-   * It also pays back what the styled shading takes. Flat shading gives every
-   * face its own true normal, so faces turned away from the light go properly
-   * dark instead of borrowing brightness from their neighbours through averaged
-   * ones. The world genuinely got darker when that arrived, and nothing had
-   * compensated for it.
-   */
+  /** Whole-frame exposure. Keep highlights controlled while the key shapes forms. */
   exposure: number;
 }
 
 const CYCLE_MINUTES = 60;
-const CYCLE_MS = CYCLE_MINUTES * 60 * 1000;
-const SYNC_EPOCH = Date.UTC(2026, 0, 1, 0, 0, 0);
 const CELESTIAL_HORIZON_Y = 0.2;
-const CELESTIAL_OCEAN_Z = -170;
-const SUN_ORBIT_X = 72;
-const SUN_ORBIT_Y = 62;
 const SUN_RADIUS = 6.8;
-const MOON_ORBIT_X = 66;
-const MOON_ORBIT_Y = 54;
 const MOON_RADIUS = 5.2;
+/** Art direction only: no extra sources, shadow maps or material variants. */
+export const CINEMATIC_LIGHTING = Object.freeze({
+  skyFill: 0x9dbbff,
+  groundBounce: 0x43516c,
+  nightKey: 0xffdda6,
+  mobileFillAddition: .24,
+  maxAmbientLift: 1,
+});
 
 const frame = (
   minute: number,
@@ -85,58 +76,42 @@ const frame = (
   exposure,
 });
 
-// Night was lit almost entirely by things that glow. The fill sat at 0.38
-// against daylight's 1.35, and the moon carried under 1, so anything that was
-// not a screen or a neon sign had almost nothing to reflect and went to black.
-// Three changes, and the order matters more than the numbers:
-//
-//   1. The fill is roughly doubled. This is what lets a wall be a wall after
-//      dark. It is still barely half of daylight, so night stays night.
-//   2. The moon is raised past the fill, so it reads as the key light. Fill
-//      alone lifts everything into a flat grey; a key gives a lit side and a
-//      shaded side, which is what makes a shape legible rather than merely
-//      visible.
-//   3. Sky and fog come up off black. Distance was dissolving into a void, and
-//      a void reads as darker than a dim sky does, whatever the lights nearby
-//      are doing.
-//
-// The lamps are untouched. They were already the brightest thing out there, and
-// raising them further would have lit pools on a black ground instead of a
-// world at night.
+// Warm directional highlights separate the authored relief from cool shadows.
+// A bounded blue fill keeps roads legible; it no longer lights midnight like
+// midday. The existing moon supplies the night key and lanterns remain local.
+// `sky` is the gradient's middle band, and the flat colour behind it.
 const KEYFRAMES: LightingKeyframe[] = [
-  frame(0, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 1.05, 0.2, 0.30, 1.08),
-  frame(5, 0x4b8dcc, 0x899fae, 0xffd3a6, 1.45, 1.05, 0.08, 0, 0.96),
-  frame(20, 0x3d83d8, 0x93afc5, 0xfff1d0, 2.2, 1.35, 0, 0, 0.92),
-  // Sunset and the half hour around it were the darkest the world ever got,
-  // and darker than the middle of the night — which is the wrong way round and
-  // is what the owner kept walking into.
-  //
-  // The trough is between these two frames. The sun drops from 2.2 to 1.1 over
-  // ten minutes, the fill was sitting at its own low point of 0.86 through
-  // exactly that stretch, and the lamps had not come up yet: nothing was
-  // holding the scene while the one light that had been carrying it went out.
-  // The fill and the lamps now come up as the sun goes down, so the handover
-  // happens rather than a gap opening in the middle of it.
-  frame(25, 0xd28b62, 0xb28a76, 0xffa65c, 2.0, 1.2, 0.4, 0, 0.98),
-  frame(30, 0x8e4c4b, 0x6e5259, 0xff5d38, 1.25, 1.3, 1.05, 0.14, 1.2),
-  // The fill now runs at very nearly the strength it does at noon, and the
-  // thing that keeps this reading as night rather than day is its colour, not
-  // its weakness: a cool blue fill under a dark navy sky is a moonlit street,
-  // while the same street dimmed to a third is just a street nobody can see.
-  // The fill is the only light the street is guaranteed after dark. The sun is
-  // under the horizon and the moon only counts while it is over it, so on the
-  // stretch of the night the moon rides low there was nothing else out there —
-  // which is why the road kept reading black however high the moon went. The
-  // fill now carries the street on its own, and the moon is the shaping light
-  // on top of it rather than the thing holding the whole scene up.
-  frame(35, 0x44608a, 0x516184, 0x7889c7, 0.35, 1.4, 1.35, 0.45, 1.3),
-  frame(42, 0x263760, 0x2f3d63, 0x6072a8, 0.09, 1.5, 1.75, 1.15, 1.42),
-  frame(52, 0x212f56, 0x2a375a, 0x4a5d8c, 0.04, 1.48, 1.9, 1.35, 1.42),
-  // The same instant as minute 0, so it carries the same numbers. It did not —
-  // the fill was 0.84 here and 0.78 there — and the cycle stepped every time it
-  // came round.
-  frame(60, 0x87676a, 0x6d6262, 0xffb28a, 1.15, 1.05, 0.2, 0.30, 1.08),
+  frame(0, 0xeda08c, 0x9a86a8, 0xff8b3b, 1.25, .90, .22, .40, 1.08),
+  frame(5, 0x267bd9, 0x6ba7b8, 0xffcc8f, 1.60, .95, .08, 0, .98),
+  frame(20, 0x1758c4, 0x6badd0, 0xffe0ac, 2.30, 1.02, 0, 0, .96),
+  frame(25, 0xf27a5e, 0xc07e5c, 0xffa43c, 2.10, .98, .40, 0, 1.02),
+  // Lamps and blue bounce bridge the low-angle sun/moon handover.
+  frame(30, 0xd9667a, 0x6e5a8f, 0xff562d, 1.30, .96, 1.0, .62, 1.16),
+  frame(35, 0x1d3e91, 0x234d86, 0x6a91f0, .35, .84, 1.18, 1.25, 1.23),
+  frame(42, 0x101e62, 0x17396b, 0x5379d9, .09, .78, 1.48, 1.75, 1.26),
+  frame(52, 0x0b194b, 0x113e64, 0x4178bf, .04, .80, 1.56, 1.65, 1.26),
+  // Identical to minute zero: no brightness or colour seam at sunrise.
+  frame(60, 0xeda08c, 0x9a86a8, 0xff8b3b, 1.25, .90, .22, .40, 1.08),
 ];
+
+/**
+ * The sky as a film would light it rather than one flat purple (the owner,
+ * 2026-10-22): at dusk an orange-gold horizon, a coral band, deep blue
+ * overhead; at dawn a pale gold horizon, peach, soft blue. Full day and full
+ * night keep their single flat colour. The glow is a warm bank that sits on
+ * the horizon on the sun's side. One row per KEYFRAMES row, same minutes.
+ */
+const SKY_GRADIENT: ReadonlyArray<{ horizon: THREE.Color; zenith: THREE.Color; glow: THREE.Color; glowStrength: number }> = [
+  [0xf7c27a, 0x5f86c4, 0xffd79c, .55],
+  [0x267bd9, 0x267bd9, 0xfff0d0, 0],
+  [0x1758c4, 0x1758c4, 0xffe3b0, 0],
+  [0xffa24f, 0x3a5fb4, 0xffc06a, .65],
+  [0xf28a4a, 0x253e8f, 0xffb067, .6],
+  [0x5b5a98, 0x152f80, 0xff9a6a, .15],
+  [0x101e62, 0x101e62, 0x4466aa, 0],
+  [0x0b194b, 0x0b194b, 0x4466aa, 0],
+  [0xf7c27a, 0x5f86c4, 0xffd79c, .55],
+].map(([horizon, zenith, glow, glowStrength]) => ({ horizon: new THREE.Color(horizon), zenith: new THREE.Color(zenith), glow: new THREE.Color(glow), glowStrength }));
 
 const phaseAt = (minute: number): { phase: DayPhase; start: number; end: number } => {
   if (minute < 5) return { phase: 'dawn', start: 0, end: 5 };
@@ -165,16 +140,14 @@ export function nightAmountAt(minute: number): number {
 export class DayNightCycle {
   readonly atmosphere: CoastalSky;
   readonly directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-  // The lower half of the fill was very nearly black, so every underside and
-  // every face turned away from the moon fell out of the picture after dark.
-  // A dim cool bounce keeps them in it without lighting them from below.
-  readonly hemisphereLight = new THREE.HemisphereLight(0xb8d6ff, 0x4b5468, 1);
-  readonly moonLight = new THREE.DirectionalLight(0xaac8ff, 0);
+  readonly hemisphereLight = new THREE.HemisphereLight(CINEMATIC_LIGHTING.skyFill, CINEMATIC_LIGHTING.groundBounce, 1);
+  readonly moonLight = new THREE.DirectionalLight(CINEMATIC_LIGHTING.nightKey, 0);
   readonly sunObject = new THREE.Group();
   readonly moonObject = new THREE.Group();
 
   private readonly scene: THREE.Scene;
   private readonly fixedCycleMinute?: number;
+  private readonly solarClock:SolarClock;
   private readonly lampMaterials: THREE.MeshStandardMaterial[] = [];
   private readonly lampLights: Array<{ light: THREE.Light; intensityScale: number }> = [];
   private readonly sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffb75e, fog: false, transparent: true });
@@ -188,16 +161,20 @@ export class DayNightCycle {
     phase: 'dawn',
     phaseProgress: 0,
     exposure: 1,
+    localHour:6,
+    clockSource:'device',
+    timeZone:'',
   };
   private readonly waterReflectionState: WaterReflectionState = {
     sun: { x: 0, strength: 0, elevation: 0, color: new THREE.Color(0xffb86b) },
     moon: { x: 0, strength: 0, elevation: 0, color: new THREE.Color(0xaac8ff) },
   };
 
-  constructor(scene: THREE.Scene, fixedCycleMinute?: number) {
+  constructor(scene: THREE.Scene, fixedCycleMinute?: number, clockOptions:SolarClockOptions={}) {
     this.scene = scene;
     this.atmosphere = new CoastalSky(scene);
     this.fixedCycleMinute = fixedCycleMinute;
+    this.solarClock=new SolarClock(clockOptions);
     this.directionalLight.position.set(36, 42, 24);
     this.directionalLight.castShadow = true;
     this.directionalLight.shadow.mapSize.set(1024, 1024);
@@ -301,7 +278,7 @@ export class DayNightCycle {
   private ambientLift = 0;
 
   setAmbientLift(lift: number): void {
-    this.ambientLift = Math.max(0, lift);
+    this.ambientLift = THREE.MathUtils.clamp(Number.isFinite(lift) ? lift : 0, 0, CINEMATIC_LIGHTING.maxAmbientLift);
   }
 
   setShadowsEnabled(enabled: boolean): void {
@@ -356,20 +333,23 @@ export class DayNightCycle {
   }
 
   update(now = Date.now()): DayNightState {
-    const elapsed = ((now - SYNC_EPOCH) % CYCLE_MS + CYCLE_MS) % CYCLE_MS;
+    const clock=this.solarClock.read(now);
     const cycleMinute = this.fixedCycleMinute === undefined
-      ? (elapsed / CYCLE_MS) * CYCLE_MINUTES
+      ? clock.cycleMinute
       : THREE.MathUtils.clamp(this.fixedCycleMinute, 0, CYCLE_MINUTES - 0.001);
+    const localHour=this.fixedCycleMinute===undefined?clock.localHour:(6+cycleMinute/CYCLE_MINUTES*24)%24;
     const phaseData = phaseAt(cycleMinute);
     const phaseProgress =
       (cycleMinute - phaseData.start) / Math.max(phaseData.end - phaseData.start, 0.001);
 
     let from = KEYFRAMES[0];
     let to = KEYFRAMES[1];
+    let fromIndex = 0;
     for (let index = 0; index < KEYFRAMES.length - 1; index += 1) {
       if (cycleMinute >= KEYFRAMES[index].minute && cycleMinute < KEYFRAMES[index + 1].minute) {
         from = KEYFRAMES[index];
         to = KEYFRAMES[index + 1];
+        fromIndex = index;
         break;
       }
     }
@@ -402,30 +382,23 @@ export class DayNightCycle {
 
     this.scene.background = sky;
     if (this.scene.fog instanceof THREE.Fog) this.scene.fog.color.copy(fog);
+    const gradientFrom = SKY_GRADIENT[fromIndex], gradientTo = SKY_GRADIENT[Math.min(fromIndex + 1, SKY_GRADIENT.length - 1)];
     this.directionalLight.color.copy(sun);
-    // Lifted where the placed lamps were taken away.
-    //
-    // The light setting keeps three street lamps instead of six and hides all
-    // but a handful of the rest, which bought most of the mobile frame back and
-    // took the streets with it. The lamps are what made a phone slow; the
-    // ambient is nearly free, because one hemisphere light costs the same
-    // whether it is bright or dim. So the setting that loses the lamps gets the
-    // sky turned up in their place, and only after dusk — daylight never needed
-    // them and does not want the lift.
+    // Mobile keeps fewer local lamps. A small additive blue bounce replaces
+    // some of their visibility without doubling the entire night's fill.
     const darkness = 1 - THREE.MathUtils.clamp(sunElevationHint, 0, 1);
-    this.hemisphereLight.intensity = ambientIntensity * (1 + this.ambientLift * darkness);
-    // One full solar orbit per festival cycle. The world camera mirrors the
-    // ocean's x-axis on screen, so the positive-to-negative path is the one
-    // visitors read as sunrise on the left and sunset on the right. There is no
-    // reset jump and no opacity-based disappearance in mid-air.
-    const solarAngle = (cycleMinute / CYCLE_MINUTES) * Math.PI * 2;
-    const sunElevation = Math.sin(solarAngle);
-    const sunPosition = new THREE.Vector3(
-      Math.cos(solarAngle) * SUN_ORBIT_X,
-      CELESTIAL_HORIZON_Y + sunElevation * SUN_ORBIT_Y,
-      CELESTIAL_OCEAN_Z,
-    );
+    this.hemisphereLight.intensity = ambientIntensity + this.ambientLift * CINEMATIC_LIGHTING.mobileFillAddition * darkness;
+    // A full civil day on the island's dock-to-beach axis: sunrise at the
+    // +Z entrance, overhead near noon, sunset at the opposite -Z beach.
+    // The fixed-minute override remains solely for deterministic local QA.
+    const sunOrbit=solarOrbitAtHour(localHour),sunElevation=sunOrbit.elevation;
+    const sunPosition = new THREE.Vector3(sunOrbit.x,sunOrbit.y,sunOrbit.z);
     this.sunObject.position.copy(sunPosition);
+    this.atmosphere.setSky(fog,
+      gradientFrom.horizon.clone().lerp(gradientTo.horizon, mix), sky,
+      gradientFrom.zenith.clone().lerp(gradientTo.zenith, mix),
+      gradientFrom.glow.clone().lerp(gradientTo.glow, mix),
+      THREE.MathUtils.lerp(gradientFrom.glowStrength, gradientTo.glowStrength, mix), sunPosition);
     this.sunObject.visible = sunPosition.y > CELESTIAL_HORIZON_Y - SUN_RADIUS;
     this.sunMaterial.opacity = 1;
     this.sunMaterial.color.copy(sun);
@@ -438,17 +411,12 @@ export class DayNightCycle {
     this.directionalLight.intensity = sunIntensity * sunAboveHorizon;
     this.castsShadowWhileLit(this.directionalLight);
     this.directionalLight.position.copy(sunPosition).multiplyScalar(0.48);
-    this.directionalLight.target.position.set(0, 0, -18);
+    this.directionalLight.target.position.set(0, 0, 0);
 
     // The moon runs the same continuous orbit half a cycle behind the sun: it
     // rises as the sun sets, crosses the night sky, and sets as dawn arrives.
-    const lunarAngle = solarAngle + Math.PI;
-    const moonElevation = Math.sin(lunarAngle);
-    const moonPosition = new THREE.Vector3(
-      Math.cos(lunarAngle) * MOON_ORBIT_X,
-      CELESTIAL_HORIZON_Y + moonElevation * MOON_ORBIT_Y,
-      CELESTIAL_OCEAN_Z,
-    );
+    const moonOrbit=solarOrbitAtHour(localHour+12,205,130),moonElevation=moonOrbit.elevation;
+    const moonPosition = new THREE.Vector3(moonOrbit.x,moonOrbit.y,moonOrbit.z);
     this.moonObject.position.copy(moonPosition);
     this.moonObject.visible = moonPosition.y > CELESTIAL_HORIZON_Y - MOON_RADIUS;
     this.moonMaterial.opacity = 1;
@@ -461,7 +429,7 @@ export class DayNightCycle {
     this.moonLight.intensity = moonIntensity * moonAboveHorizon;
     this.castsShadowWhileLit(this.moonLight);
     this.moonLight.position.copy(moonPosition).multiplyScalar(0.5);
-    this.moonLight.target.position.set(0, 0, -22);
+    this.moonLight.target.position.set(0, 0, 0);
 
     // Reflections follow the actual celestial positions and fade in as each
     // light moves over the sea. This avoids a uniform highlight that appears
@@ -499,6 +467,9 @@ export class DayNightCycle {
       phase: phaseData.phase,
       phaseProgress,
       exposure,
+      localHour,
+      clockSource:this.fixedCycleMinute===undefined?clock.clockSource:'review',
+      timeZone:clock.timeZone,
     };
     return this.state;
   }

@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "sourcePath": "/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world/art/victory-statue-regen-20261022/refined-blender.glb",
+  "outputPath": "/private/tmp/claude-501/-Users-myscheduleai-Desktop-myschedule-pivot/6cc792b3-6707-45fa-8fab-638db8447a57/scratchpad/regen/mob512.glb",
+  "sourceBytes": 3580124,
+  "sourceSha256": "8962196763fca8741e1dce3c8ee9ba6ff799791ef5c81778fc76f490daac1b39",
+  "maxImageSize": 512,
+  "roleSizes": {},
+  "quality": 90,
+  "images": [
+    {
+      "index": 0,
+      "roles": [
+        "color"
+      ],
+      "imageLimit": 512,
+      "lossless": false,
+      "renormalizedNormal": false,
+      "converted": true,
+      "sourceBytes": 3266253,
+      "outputBytes": 86316,
+      "sourceFormat": "png",
+      "outputFormat": "webp",
+      "sourceWidth": 2048,
+      "sourceHeight": 2048,
+      "width": 512,
+      "height": 512,
+      "sourceHasTransparency": false,
+      "hasAlpha": false,
+      "sourceSha256": "766c802b668a63a51dc6d01de5384b7fc68581f7bbc140d741f3f1b53425d9ec",
+      "outputSha256": "945a33779fa0f95c1d11c130247320dca331ca90c3cb9703ae04ba0ffc29f3a1",
+      "estimatedRgba8BaseLevelBytes": 1048576,
+      "estimatedRgba8WithMipChainBytes": 1398102
+    }
+  ],
+  "unchangedNonImageBufferViews": [
+    {
+      "index": 0,
+      "bytes": 99156,
+      "sha256": "abca94111926130534a839d4216dadc6084005856edb9e90d2436e6ff2946977"
+    },
+    {
+      "index": 1,
+      "bytes": 99156,
+      "sha256": "4bb1a92f3842b324d976de5d673e67d41e21ff0f9a101b48347b93f872d559b0"
+    },
+    {
+      "index": 2,
+      "bytes": 66104,
+      "sha256": "1333538960328202bbde9d51c7610d624b7110075df674d6c2579c9787c23ff4"
+    },
+    {
+      "index": 3,
+      "bytes": 48000,
+      "sha256": "d9d649b5a26f4d763fea84e12baa9efcb1b522a2ccbaf1bb8f52907d78ebfe66"
+    }
+  ],
+  "warnings": [],
+  "outputBytes": 400296,
+  "outputSha256": "45a39559c9c2add409057fb078f6f86fa8d7a9e2cafc705242b4ee0b1ae013b3",
+  "savedBytes": 3179828,
+  "geometryBytePreservation": "All original non-image bufferView payloads were SHA-256 checked after relocation; unchanged byte-for-byte. No triangle count, normals, UVs, skin, or animation changes.",
+  "estimatedConvertedImageRgba8WithMipChainBytes": 1398102,
+  "limitations": "Texture resizing and lossy WebP change texels. GPU estimates exclude unconverted images, driver overhead, geometry, and the rest of the scene. This does not establish visual quality, watertightness, mobile frame rate, or loading correctness. Run inspect-glb and a browser review."
+}

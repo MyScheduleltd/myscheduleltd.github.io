@@ -6,12 +6,41 @@ import { build } from 'esbuild';
 // (WebKit probe, 2026-10-18). These pin the two causes that were fixed.
 const bundle = await build({
   stdin: {
-    contents: "export { DayNightCycle } from './src/world/DayNightCycle'; export { warmByDrawing } from './src/world/SceneWarmup'; export * as THREE from 'three';",
+    contents: "export { DayNightCycle } from './src/world/DayNightCycle'; export { warmByDrawing } from './src/world/SceneWarmup'; export { applyWornStyle } from './src/world/WornStyle'; export * as THREE from 'three';",
     resolveDir: process.cwd(), loader: 'ts',
   },
   bundle: true, platform: 'node', format: 'esm', write: false,
 });
-const { DayNightCycle, warmByDrawing, THREE } = await import('data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+const { DayNightCycle, warmByDrawing, applyWornStyle, THREE } = await import('data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+
+test('the authored sky gradient survives the real worn-style traversal while ordinary world shaders retain their dither', () => {
+  const paint = new Proxy({ createRadialGradient: () => ({ addColorStop() {} }),
+    getImageData: (_x, _y, width, height) => ({ width, height, data: new Uint8ClampedArray(width * height * 4) }) },
+  { get: (target, key) => key in target ? target[key] : () => {} });
+  globalThis.document ??= { createElement: () => ({ width: 1, height: 1, getContext: () => paint }) };
+  const scene = new THREE.Scene(), cycle = new DayNightCycle(scene);
+  const wallMaterial = new THREE.MeshStandardMaterial(), wall = new THREE.Mesh(new THREE.BoxGeometry(), wallMaterial);
+  scene.add(wall);
+  const sky = cycle.atmosphere.dome.material;
+  const originalFragment = sky.fragmentShader, originalUniforms = Object.keys(sky.uniforms);
+  assert.ok(applyWornStyle(scene) > 0);
+  applyWornStyle(scene); // Late scenery calls the pass again after warm-up.
+  const skyShader = { uniforms: { ...sky.uniforms }, vertexShader: sky.vertexShader, fragmentShader: sky.fragmentShader };
+  sky.onBeforeCompile(skyShader, {});
+  assert.equal(sky.defines.WORN_STYLE, undefined, 'the custom sky never opts into built-in worn shader patches');
+  assert.equal(sky.userData.wornPatched, undefined);
+  assert.equal(skyShader.fragmentShader, originalFragment);
+  assert.deepEqual(Object.keys(skyShader.uniforms), originalUniforms);
+  assert.match(skyShader.fragmentShader, /#include <colorspace_fragment>/, 'authored linear colours still receive output colour conversion');
+  assert.ok(['horizon', 'middle', 'zenith', 'glow', 'sunDirection', 'glowStrength'].every((key) => key in skyShader.uniforms));
+  assert.doesNotMatch(skyShader.fragmentShader, /uWornSteps|uWornAmount/);
+  const worldShader = { uniforms: {}, vertexShader: THREE.ShaderLib.standard.vertexShader, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
+  wallMaterial.onBeforeCompile(worldShader, {});
+  assert.equal(wallMaterial.defines.WORN_STYLE, '');
+  assert.match(worldShader.fragmentShader, /uniform float uWornSteps/);
+  assert.match(worldShader.fragmentShader, /float wornSteps = max\(uWornSteps/);
+  assert.ok(worldShader.uniforms.uWornSteps && worldShader.uniforms.uWornAmount, 'ordinary geometry retains the shared world style');
+});
 
 test('the number of shadowed lights never changes over the day, so no lit shader recompiles at sunrise or sunset', () => {
   // The sky and halos paint canvases; any 2D context that accepts the calls will do.
@@ -24,8 +53,8 @@ test('the number of shadowed lights never changes over the day, so no lit shader
   cycle.setShadowsEnabled(true);
   const seen = new Set();
   const updating = { sun: new Set(), moon: new Set() };
-  for (let minute = 0; minute < 60; minute += 0.5) {
-    cycle.update(Date.UTC(2026, 9, 18, 0, 0) + minute * 60_000);
+  for (let hour = 0; hour < 24; hour += 0.25) {
+    cycle.update(Date.UTC(2026, 9, 18, 0, 0) + hour * 3_600_000);
     seen.add(`${cycle.directionalLight.castShadow}/${cycle.moonLight.castShadow}`);
     updating.sun.add(cycle.directionalLight.shadow.autoUpdate);
     updating.moon.add(cycle.moonLight.shadow.autoUpdate);

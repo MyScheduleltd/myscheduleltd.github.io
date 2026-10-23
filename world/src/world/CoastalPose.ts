@@ -78,7 +78,7 @@ export function skateCoastalPose(rig:AvatarRig,phase:number):void {
 }
 
 /** Solve each seated shin against its real floor; tall stools leave legs naturally hanging. */
-export function seatCoastalLegs(rig:AvatarRig,floor:WalkingFloor):void {
+export function seatCoastalLegs(rig:AvatarRig,floor:WalkingFloor,pad?:THREE.Box3):void {
   const body=rig.visualRoot,root=body?.parent;
   if(!body||!root)return;
   body.position.y=0;root.updateWorldMatrix(true,false);
@@ -97,7 +97,7 @@ export function seatCoastalLegs(rig:AvatarRig,floor:WalkingFloor):void {
     }else low=high;
     gap((low+high)/2);
   }
-  root.userData.supportImportedSeat?.(floor);
+  root.userData.supportImportedSeat?.(floor,pad);
 }
 
 export function coastalFootHeights(rig:AvatarRig):number[] {

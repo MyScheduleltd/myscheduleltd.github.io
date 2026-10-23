@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { WorldCamera, ISOMETRIC_VIEW } from '../src/world/WorldCamera.ts';
 
 // The geometry tests need a canvas handle, not a renderer or a fabricated image.
 // Geometry-only tests retain PNG dimensions for the embedded cap texture.
@@ -269,6 +270,19 @@ test('the tenth drink puts the body on the floor, then it wakes at the temple wi
   advance(10_001);assert.equal(world.drinkLevel(),0,'twenty seconds of it');
 }));
 
+test('the tenth drink on a bar stool puts them down at once, not when they next stand up',()=>onTheClock(({advance})=>{
+  const {world,actions,drink}=drinkingWorld();
+  const stood=[];
+  Object.assign(world,{playerState:'seated',originalPlayerIdle:{visible:false},isMentorControlLocked:()=>false,
+    standUp(){stood.push(this.playerState);this.playerState='walking';}});
+  for(let n=1;n<=9;n++){drink();advance(2_000);}
+  drink();advance(1_900);
+  world.updatePlayer(1/60);
+  assert.equal(actions.at(-1).type,'passedOut','still on the stool, the tenth drink still lands');
+  assert.deepEqual(stood,['seated'],'the stool lets them go on the way down');
+  assert.equal(world.playerGesture,'passout');
+}));
+
 test('the passed-out body lies on the floor, and stands normally again afterwards',()=>{
   const {world,root,rig}=drinkingWorld();
   root.position.set(0,.28,0);
@@ -477,12 +491,18 @@ test('imported hands bring the straw and popcorn to the mouth',()=>{
   }
 });
 
-test('seated imported shoes meet the floor without moving the seated body',()=>{
+test('seated imported shoes reach a reachable floor and hang naturally when the shin is too short',()=>{
   const {root,rig}=importedCharacter();root.position.y=.4+.23-1.1;
-  const seatedY=root.position.y;seatCoastalLegs(rig,()=>-.28);syncImportedAvatars(root);
-  const lowest=lowestSole(root);
-  assert.ok(Math.abs(lowest+.28)<.035,`seated shoe contact: ${lowest}`);
-  assert.equal(root.position.y,seatedY);
+  const seatedY=root.position.y;
+  const pad=new THREE.Box3(new THREE.Vector3(-.65,.22,-.7),new THREE.Vector3(.65,.4,.7));
+  for(const floor of [0,-.28]){
+    seatCoastalLegs(rig,()=>floor,pad);syncImportedAvatars(root);
+    const lowest=lowestSole(root);
+    if(floor===0)assert.ok(Math.abs(lowest)<.005,`reachable floor contact: ${lowest}`);
+    else assert.ok(lowest>floor&&lowest<floor+.25,`natural hanging shoes: ${lowest}`);
+    assert.ok(Math.abs(rig.leftLeg.rotation.x+Math.PI/2)<1e-6,'floor reach must not tip the supporting thigh');
+    assert.equal(root.position.y,seatedY);
+  }
 });
 
 test('every avatar file carries one skinned body, four influences and finite weights',()=>{
@@ -931,10 +951,10 @@ test('wall avoidance holds one side and returns to the usual orbit after clearan
   assert.ok(Math.abs(clear.x)<.05,`the camera should return to the preferred orbit after the wall, got x=${clear.x}`);
 });
 
-test('perspective orbit also stays away from a wall at its side',()=>{
+test('fixed isometric clearance also stays away from a wall at its side',()=>{
   const world=Object.create(FestivalWorld.prototype);
   const player=new THREE.Group();player.position.set(0,.28,0);
-  Object.assign(world,{player,playerState:'walking',cameraMode:'perspective',cameraReach:0,
+  Object.assign(world,{player,playerState:'walking',cameraMode:'isometric',cameraReach:0,
     cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),lookTarget:player.position.clone().add(new THREE.Vector3(0,2.84,0)),groundHeightAt:()=>0,
     wallAvoidance:{side:0,offset:0},
     colliders:[{minX:2,maxX:3,minZ:-5,maxZ:5,minY:-1,maxY:10}]});
@@ -943,7 +963,7 @@ test('perspective orbit also stays away from a wall at its side',()=>{
   for(let frame=0;frame<240;frame++){target.set(9,3.12,2);world.pullCameraClearOfWalls(target,1/60);}
   // Closeness is permitted now; looking through the wall is not.
   assert.ok(world.cameraClearReach(eye,target)>=target.distanceTo(eye)-.32);
-  assert.equal(world.wallAvoidance.offset,0,'the perspective orbit must not swing either');
+  assert.equal(world.wallAvoidance.offset,0,'the fixed diagonal must not swing around a wall');
 });
 
 test('approaching a building keeps the follow camera out of the face and the masonry',()=>{
@@ -1996,10 +2016,10 @@ test('unchanged palette/swim snapshots preserve the mounted appearance and pose'
 });
 
 function clubCameraFixture(mode, yaw, pitch) {
-  const world=Object.create(FestivalWorld.prototype),player=new THREE.Group(),camera=new THREE.PerspectiveCamera();
+  const world=Object.create(FestivalWorld.prototype),player=new THREE.Group(),camera=new WorldCamera();
   const floor=x=>x>=-24?0:x<=-50?CLUB_GRADE:-(x+24)*CLUB_GRADE/26;
   Object.assign(world,{player,camera,cameraMode:mode,cameraZoom:1,cameraReach:0,playerState:'walking',
-    cameraOrbit:{follow:{yaw,pitch},perspective:{yaw,pitch}},lookTarget:new THREE.Vector3(),
+    cameraOrbit:{follow:{yaw,pitch}},lookTarget:new THREE.Vector3(),
     cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),colliders:[],
     wallAvoidance:{side:0,offset:0},groundHeightAt:(x)=>floor(x),
     settlePunchImpact(){},applyCameraShake(){},applyDrunkenView(){}});
@@ -2007,7 +2027,7 @@ function clubCameraFixture(mode, yaw, pitch) {
 }
 
 test('walking through the club entrance, stairs and room never overrides player yaw or pitch',()=>{
-  for(const mode of ['follow','perspective'])for(const pitch of [-.5,0,.3,.8])for(const yaw of [0,.7,Math.PI/2,Math.PI]){
+  for(const mode of ['follow'])for(const pitch of [-.5,0,.3,.8])for(const yaw of [0,.7,Math.PI/2,Math.PI]){
     const {world,player,camera,floor}=clubCameraFixture(mode,yaw,pitch);
     const expected=new THREE.Vector3(-Math.sin(yaw)*Math.cos(pitch),-Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch));
     for(let frame=0;frame<=320;frame++){
@@ -2034,7 +2054,7 @@ test('club wall avoidance preserves the selected view even at close range, and n
 
 
 test('club entry and exit retain the ordinary building orbit through lobby and ramp boundaries',()=>{
-  for(const mode of ['follow','perspective'])for(const zoom of [.8,1,1.5]){
+  for(const mode of ['follow'])for(const zoom of [.8,1,1.5]){
     const {world,player,camera,floor}=clubCameraFixture(mode,Math.PI/2,.3);
     world.cameraZoom=zoom;
     // The actual warehouse door is open here. Its walls and low ramp rails
@@ -2044,8 +2064,8 @@ test('club entry and exit retain the ordinary building orbit through lobby and r
       {minX:-20.4,maxX:-19.6,minZ:26.5,maxZ:42,minY:CLUB_GRADE-1,maxY:CLUB_GRADE+15},
       {minX:-49.35,maxX:-24.4,minZ:27.21,maxZ:27.49,minY:CLUB_GRADE-.4,maxY:1.5,viewTop:1.5},
     ];
-    const radius=(mode==='perspective'?11.68:10.56)*zoom;
-    const lead=mode==='perspective'?0:2.2;
+    const radius=10.56*zoom;
+    const lead=2.2;
     let previous;
     for(const direction of [-1,1])for(let frame=0;frame<=360;frame++){
       const x=direction===-1?-16-frame*.15:-70+frame*.15;
@@ -2063,7 +2083,7 @@ test('club entry and exit retain the ordinary building orbit through lobby and r
 });
 
 test('club and temple use the same ordinary orbit when no wall obstructs the camera',()=>{
-  for(const mode of ['follow','perspective']){
+  for(const mode of ['follow','isometric']){
     const {world,player,camera}=clubCameraFixture(mode,.7,.3);
     world.groundHeightAt=()=>CLUB_GRADE;
     let offset,aim;
@@ -2077,6 +2097,28 @@ test('club and temple use the same ordinary orbit when no wall obstructs the cam
       if(aim)assert.ok(actualAim.distanceTo(aim)<1e-8,'a building region changed the aim');
       offset=actual;aim=actualAim;
     }
+  }
+});
+
+test('isometric club entry keeps its true orthographic scale and fixed diagonal through real lobby walls',()=>{
+  const {world,player,camera,floor}=clubCameraFixture('isometric',-.8,-.4);
+  const expected=new THREE.Vector3(-Math.sin(ISOMETRIC_VIEW.yaw)*Math.cos(ISOMETRIC_VIEW.pitch),-Math.sin(ISOMETRIC_VIEW.pitch),-Math.cos(ISOMETRIC_VIEW.yaw)*Math.cos(ISOMETRIC_VIEW.pitch));
+  world.colliders=[
+    {minX:-20.4,maxX:-19.6,minZ:0,maxZ:20.5,minY:CLUB_GRADE-1,maxY:CLUB_GRADE+15},
+    {minX:-20.4,maxX:-19.6,minZ:26.5,maxZ:42,minY:CLUB_GRADE-1,maxY:CLUB_GRADE+15},
+    {minX:-49.35,maxX:-24.4,minZ:27.21,maxZ:27.49,minY:CLUB_GRADE-.4,maxY:1.5,viewTop:1.5},
+  ];
+  for(const zoom of [.8,1,1.5])for(const direction of [-1,1])for(let frame=0;frame<=360;frame++){
+    const x=direction===-1?-16-frame*.15:-70+frame*.15;
+    world.cameraZoom=zoom;player.position.set(x,floor(x)+.28,23.5);world.updateCamera(1/60,frame/60);
+    assert.equal(camera.isOrthographicCamera,true);
+    assert.ok(Math.abs((camera.right-camera.left)-ISOMETRIC_VIEW.span*zoom)<1e-8,'walls cannot zoom the orthographic frustum');
+    assert.ok(camera.getWorldDirection(new THREE.Vector3()).distanceTo(expected)<1e-8,'club membership or collision changed the fixed diagonal');
+    assert.ok(world.lookTarget.distanceTo(player.position.clone().add(new THREE.Vector3(0,1.4,0)))<1e-8,'club membership changed the isometric body pivot');
+    const reach=world.lookTarget.distanceTo(camera.position);
+    // Never pulled in front of the lobby walls (owner, 2026-10-23): the box reaches back past them and the cutaway lens opens the room.
+    assert.ok(Math.abs(reach-ISOMETRIC_VIEW.distance)<1e-6,'the isometric camera was pulled in');
+    assert.equal(world.cameraZoom,zoom);
   }
 });
 

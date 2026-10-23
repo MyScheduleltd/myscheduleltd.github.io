@@ -1,6 +1,6 @@
 /** Fixed outfit identifiers in the legacy top-colour wire slot. This preserves
  * compatibility with saved passes and the deployed presence service. Legacy
- * colours resolve to the first outfit; no arbitrary colour dyes these garments.
+ * colours resolve to the first outfit. Shirt/shoe dyes travel independently.
  *
  * The body travels in the same slot. The presence service passes any hex
  * colour through untouched, so a female body needs no change on the service:
@@ -17,6 +17,10 @@ export const TOP_OUTFITS = [
 export type OutfitId = (typeof TOP_OUTFITS)[number]['id'];
 
 export type AvatarSex = 'male' | 'female';
+
+/** Picker defaults only. Omitted palette fields retain the original atlas,
+ * including native shoe panels/soles, rather than dyeing a saved avatar. */
+export const AVATAR_CLOTHING_DEFAULTS = { shirt: '#18191b', shoes: '#f2f0e9' } as const;
 
 export function topOutfit(top?: string): OutfitId {
   const wire = top?.toLowerCase();

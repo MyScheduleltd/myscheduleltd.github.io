@@ -22,6 +22,16 @@
 
 * { box-sizing: border-box; }
 html, body, #app { width: 100%; min-height: 100%; margin: 0; }
+/* One personal output treatment includes the world, cross-origin screening
+   frames and every interface sheet. Filtering the document root preserves the
+   viewport containing block used by fixed HUDs; body/#app filters would not. */
+:root[data-noir='on'] { filter: grayscale(1); }
+/* Fullscreen elements enter the browser's top layer, outside normal ancestor
+   compositing. Keep a requested screening frame monochrome there as well. */
+:root[data-noir='on'] :fullscreen { filter: grayscale(1); }
+:root[data-noir='on'] :-webkit-full-screen { filter: grayscale(1); }
+:root[data-noir='on'] dialog[open] { filter: grayscale(1); }
+
 body { overflow: hidden; }
 /* touch-action is not inherited, so putting it on the body only ever governed
    taps that landed on the body itself — every panel, button and card below it
@@ -278,6 +288,13 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
 }
 .moth-arcade-hud button:hover { background: #ff7439; }
 .moth-arcade-hud button:focus-visible { outline: 2px solid #34180f; outline-offset: 3px; }
+[data-arcade-access][hidden] { display: none !important; }
+/* Seated in the padlock's body on the locked screen (MothArcade's keyhole
+   space, projected by the world each frame), so it never crosses the lock's
+   stroke or the screen's frame; the lettering scales with the lock. */
+.moth-arcade-hud [data-arcade-hud-code] { position: absolute; left: calc(50% + var(--lock-dx, 0px)); top: calc(50% + var(--lock-dy, -200px)); transform: translate(-50%, -50%);
+  box-sizing: border-box; width: var(--lock-w, 96px); height: var(--lock-h, 64px); min-height: 0; padding: 0 4px; display: grid; place-items: center;
+  overflow: hidden; font-size: clamp(9px, calc(var(--lock-h, 64px) * .3), 18px); line-height: 1; }
 .moth-release-notice {
   width: min(390px, calc(100vw - 48px)); box-sizing: border-box;
   padding: 30px; border: 2px solid #ff6027; background: #171713; color: #f1ead7;
@@ -292,6 +309,20 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
   background: #ee5926; color: #24140d; font: 800 16px var(--condensed); cursor: pointer;
 }
 .moth-release-notice button:focus-visible { outline: 2px solid #f1ead7; outline-offset: 4px; }
+.arcade-preview-notice { width: min(460px,calc(100vw - 28px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; }
+.arcade-preview-notice p { margin-bottom: 14px; line-height: 1.55; }
+.arcade-preview-notice .arcade-preview-note { font-size: 12px; opacity: .75; }
+.arcade-preview-notice form { display: flex; gap: 8px; align-items: end; text-align: left; }
+.arcade-preview-notice label { flex: 1; min-width: 0; font: 700 12px var(--condensed); letter-spacing: .08em; }
+.arcade-preview-notice input { display: block; box-sizing: border-box; width: 100%; min-height: 44px; margin-top: 7px; padding: 10px; background: #0b1116; border: 1px solid #557778; color: #fff4d8; font: 14px monospace; }
+.arcade-preview-notice button { padding: 10px 14px; }
+.arcade-preview-notice button:disabled { opacity: .5; cursor: wait; }
+.arcade-preview-notice [hidden] { display: none !important; }
+.arcade-preview-notice h3 { font: 700 12px var(--condensed); color: #74d6ce; letter-spacing: .08em; }
+.arcade-preview-code { display: flex; gap: 8px; align-items: center; margin: 8px 0; text-align: left; }
+.arcade-preview-code code { flex: 1; min-width: 0; overflow-wrap: anywhere; font: 13px monospace; color: #f0d295; }
+.arcade-preview-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.arcade-preview-notice [data-arcade-code-status] { min-height: 2.5em; padding-top: 12px; font-size: 13px; }
 .moth-arcade-screen:is(:fullscreen, :-webkit-full-screen) {
   position: fixed; inset: 0; margin: 0;
   width: 100% !important; height: 100% !important;
@@ -603,6 +634,7 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
   font: 700 13px var(--condensed);
 }
 .staff-jukebox .staff-list li button { flex: none; }
+.staff-jukebox__stock-controls { display: flex; flex: none; gap: 4px; }
 
 .staff-jukebox button {
   padding: 4px 9px; cursor: pointer; border: 1px solid var(--ink);
@@ -969,6 +1001,19 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
   background: rgba(8,9,10,.58); font: 800 9px var(--condensed); letter-spacing: .09em; cursor: pointer;
 }
 .objective-count strong { color: #ff5264; font: inherit; }
+/* The view chip is the objectives ticket's twin with a cream tab. The ticket is
+   painted on ::before because clip-path also clips hit-testing, which would
+   swallow the taller touch target ::after adds on phones. */
+.mobile-view-cycle { display:inline-flex;align-items:center;gap:7px;position:fixed;z-index:4;left:14px;top:220px;min-height:25px;padding:5px 9px 5px 12px;border:0;color:var(--paper);background:none;font:800 9px var(--condensed);letter-spacing:.09em;cursor:pointer;touch-action:manipulation; }
+.mobile-view-cycle::before { content:'';position:absolute;inset:0;z-index:-1;border-left:3px solid var(--paper);background:rgba(14,16,17,.85);clip-path:polygon(0 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%); }
+.mobile-view-cycle > * { font:inherit;pointer-events:none; }
+.mobile-view-cycle strong { border-left:1px dashed rgba(243,237,222,.4);padding-left:8px; }
+.mobile-view-cycle:hover::before { background:rgba(8,9,10,.95); }
+.mobile-view-cycle:focus-visible { outline:0; }
+.mobile-view-cycle:focus-visible::before { box-shadow:inset 0 0 0 3px var(--paper); }
+@media (pointer:coarse) { .mobile-view-cycle::after { content:'';position:absolute;left:0;right:-12px;top:-4px;bottom:-11px; } }
+.world-view-choices { flex-wrap:wrap; }
+.world-shell[data-arcade-playing='true'] .mobile-view-cycle,.world-shell[data-vr-painted='true'] .mobile-view-cycle,.world-shell[data-view] .mobile-view-cycle { display:none; }
 .objective-count:hover, .objective-count:focus-visible { border-color: #ff5264; background: rgba(8,9,10,.82); }
 .pass-toggle {
   position: fixed; z-index: 31; right: 16px; bottom: 16px; width: 92px; height: 44px; display: flex; justify-content: space-between; align-items: center;
@@ -986,6 +1031,12 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
      including when it is opened over an already-open settings or quest panel. */
   position: fixed; z-index: 30; right: 22px; bottom: 81px; width: min(320px, calc(100vw - 44px));
   padding: 12px; color: var(--ink); background: var(--paper); box-shadow: 14px 14px 0 rgba(0,0,0,.6);
+  /* Every viewport can be short, including a desktop with enlarged text. */
+  max-height: calc(100vh - 103px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height: calc(100dvh - 103px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  min-height: 0; overflow-y: auto; overflow-x: hidden;
+  -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y;
+  scroll-padding-block: 10px; scrollbar-gutter: stable;
 }
 .festival-pass[hidden], .panel[hidden], .interaction-toast[hidden] { display: none; }
 .festival-pass__title { margin: 5px 7px 10px; font: 900 23px var(--condensed); }
@@ -994,6 +1045,12 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
 .festival-pass button span { color: var(--red); font-size: 11px; }
 .festival-pass button:hover { padding-left: 13px; color: white; background: var(--ink); }
 .festival-pass button small { margin-left: auto; font: 800 11px var(--condensed); opacity: .62; }
+.festival-pass .festival-pass__noir { align-items: center; min-height: 44px; gap: 10px; }
+.festival-pass .festival-pass__noir-label { color: inherit; font: inherit; }
+.festival-pass__power { flex: 0 0 20px; color: var(--red); }
+.festival-pass .festival-pass__noir small { opacity: 1; }
+.festival-pass .festival-pass__noir[aria-pressed='true'] { color: var(--paper); background: var(--ink); }
+.festival-pass .festival-pass__noir[aria-pressed='true'] .festival-pass__power { color: var(--paper); }
 .festival-pass__fireworks { color: var(--red) !important; }
 .festival-pass__fireworks:hover { color: white !important; background: var(--red) !important; }
 .panel {
@@ -1378,6 +1435,7 @@ button:active { filter: brightness(.88); scale: .96; }
 .interaction-toast.is-holdable { background-image: linear-gradient(var(--red), var(--red)); background-repeat: no-repeat; background-size: 0 100%; }
 .interaction-toast.is-holding { background-size: 100% 100%; transition: background-size .45s linear; }
 .interaction-toast.is-actionable { animation: action-pulse 1.8s ease-in-out infinite; }
+/* MENTOR's commands are independent of the place named by the nearby prompt. */
 .world-alert { position: fixed; z-index: 12; left: 50%; top: 86px; transform: translateX(-50%); border: 1px solid white; padding: 11px 15px; color: white; background: var(--red); font: 800 13px var(--condensed); letter-spacing: .05em; }
 .world-alert:not([hidden]) { animation: alert-in .24s ease-out; }
 .controls-hint { position: fixed; z-index: 3; left: 22px; bottom: 22px; font: 700 11px var(--condensed); letter-spacing: .07em; text-shadow: 0 2px 8px black; }.controls-hint span { color: #ed434d; margin-right: 3px; }.controls-hint span:nth-child(2) { margin-left: 12px; }
@@ -2449,17 +2507,90 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   color: var(--paper); background: rgba(14,16,17,.85); text-shadow: none;
   clip-path: polygon(0 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%);
 }
-.chat-stream__item header { border-bottom: 1px dashed rgba(243,237,222,.22); padding-bottom: 5px; }
 /* Location is printed like a programme section, not a colour-coded badge. */
 .chat-stream__channel { color: #e8e2d5; background: transparent; border: 1px solid rgba(232,226,213,.48); padding: 1px 5px; letter-spacing: .08em; text-shadow: none; }
 .chat-stream__item strong { letter-spacing: .08em; }
 .chat-stream__item p { margin-top: 6px; }
+/* Liquid glass is confined to the three comment cards, with a dark tint for text. */
+/* No hairline round the card and no dashed rule under the name (owner, 2026-10-23): the frosted glass alone. */
+.chat-stream__item { clip-path: none; border: 1px solid transparent; border-radius: 14px; background: linear-gradient(135deg,rgba(215,237,242,.15),rgba(12,23,29,.62) 50%,rgba(17,20,25,.48)); -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2); box-shadow: none; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+.chat-stream__channel { border-color: rgba(123,227,222,.45); color: #c2fff8; border-radius: 5px; }
+.panel--chat { border-radius: 14px; background: rgba(12,21,27,.68); -webkit-backdrop-filter: blur(12px) saturate(1.15); backdrop-filter: blur(12px) saturate(1.15); box-shadow: 0 14px 45px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.18); }
+.panel--chat .panel__header { flex: 0 0 auto; border-radius: 13px 13px 0 0; }
+.panel--chat [data-chat-drag] { flex: 1; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; padding: 10px 4px; margin-block: 0; }
+.panel--chat [data-chat-drag]::after { content: ' ⠿'; color: #83d6d0; }
+.panel--chat [data-chat-drag]:focus-visible, .chat-resize:focus-visible { outline: 2px solid #7fe5dd; outline-offset: -2px; }
+.panel--chat.is-chat-adjusting { user-select: none; }
+.panel--chat.is-chat-adjusting [data-chat-drag] { cursor: grabbing; }
+.chat-resize { position: absolute; right: 0; bottom: 0; width: 44px; height: 44px; border: 0; border-radius: 8px 0 12px 0; padding: 0; color: #9ce1dc; background: rgba(12,24,29,.8); font: 900 24px var(--condensed); cursor: nwse-resize; touch-action: none; }
+.panel--chat .panel__body { padding-bottom: 47px; }
+/* A HUD ticket like 任務, not a lit sign: charcoal, cream lettering, the clipped
+   corner and the festival red tab. */
+.drink-status { position: fixed; z-index: 5; right: 16px; top: calc(112px + env(safe-area-inset-top)); border: 0; border-left: 3px solid #ed434d; border-bottom: 1px solid rgba(243,237,222,.55); border-radius: 0; padding: 6px 11px 6px 10px; color: var(--paper); background: rgba(14,16,17,.85); clip-path: polygon(0 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%); font: 800 11px var(--condensed); letter-spacing: .09em; pointer-events: none; }
+.drink-status[hidden] { display: none; }
+.world-shell[data-arcade-playing='true'] .drink-status, .world-shell[data-vr-painted='true'] .drink-status { display: none; }
+/* After a wave the conversation runs the full width of the screen along the
+   bottom, on the 通行證 menu's paper: black condensed name, the job in festival
+   red, the menu's hard black shadow (cast upward here, the only side it can
+   show). DialogueCamera keeps both actors above its top edge. */
+.npc-dialogue { top: auto; left: 0; right: 0; bottom: 0; transform: none; width: auto; max-width: none; max-height: max(min(34dvh, 380px), var(--dialogue-cover, 0px)); min-height: var(--dialogue-cover, 0px);
+  padding: 22px max(28px, env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) max(28px, env(safe-area-inset-left));
+  border: 0; border-top: 4px solid var(--ink); border-radius: 0; color: var(--ink); background: var(--paper); box-shadow: 0 -10px 0 rgba(0,0,0,.6); }
+.npc-dialogue .eyebrow { color: var(--red); }
+.npc-dialogue h2 { padding-right: 52px; color: var(--ink); font-size: clamp(34px, 5vw, 64px); line-height: .95; letter-spacing: .01em; }
+.npc-dialogue .dj-about__role { color: var(--red); border-color: rgba(17,17,19,.25); font-size: clamp(14px, 1.4vw, 18px); }
+.npc-dialogue .dj-about__body, .npc-dialogue .dj-about__hint { text-align: center; }
+.npc-dialogue .dj-about__body { font-size: clamp(16px, 1.55vw, 20px); line-height: 1.65; }
+.npc-dialogue .dj-about__hint { color: var(--ink); opacity: .7; }
+.npc-dialogue .seat-menu__close, .npc-dialogue .seat-menu__back, .npc-dialogue .dj-about__edit button { color: var(--ink); border-color: var(--ink); background: transparent; }
+.npc-dialogue .seat-menu__close:hover, .npc-dialogue .seat-menu__back:hover, .npc-dialogue .seat-menu__close:focus-visible, .npc-dialogue .seat-menu__back:focus-visible { color: var(--paper); background: var(--ink); }
+.npc-dialogue textarea { color: var(--ink); background: #fffaf0; border-color: rgba(17,17,19,.45); }
+.npc-dialogue { overflow: visible; }
+.npc-dialogue__content { max-height: calc(max(min(34dvh, 380px), var(--dialogue-cover, 0px)) - 40px); overflow-y: auto; overscroll-behavior: contain; padding-right: 8px; }
+/* Tall enough to cover the chat comments behind it (owner, 2026-10-23; the
+   height is measured in App.coverChatWithDialogue), with the words kept in
+   the middle of the height. */
+.npc-dialogue:not([hidden]) { display: flex; flex-direction: column; justify-content: center; }
+/* Wide enough for columns: who they are on the left, what they say in the
+   middle. The third column mirrors the first, so the words sit on the box's
+   centre line (owner, 2026-10-22) and clear of the × in the corner. */
+@media (min-width: 720px) {
+  .npc-dialogue__content { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(0, 2.6fr) minmax(200px, 1fr); column-gap: 44px; align-items: start; }
+  .npc-dialogue__content > .eyebrow, .npc-dialogue__content > h2, .npc-dialogue__content > .dj-about__role { grid-column: 1; margin: 0; }
+  .npc-dialogue__content > h2 { margin: 6px 0 8px; }
+  /* Middle of the box both ways (owner, 2026-10-22): the line sits on the
+     box's centre line and halfway down the name column beside it. */
+  .npc-dialogue__content > .dj-about__body, .npc-dialogue__content > .dj-about__hint { grid-column: 2; grid-row: 1 / span 4; margin: 0; align-self: center; }
+  .npc-dialogue__content > .dj-about__back { grid-column: 1; justify-self: start; margin-top: 14px; }
+  .npc-dialogue__content > .dj-about__edit { grid-column: 1 / -1; }
+}
+.world-shell:has(> .npc-dialogue:not([hidden])) > :is(.pass-toggle,.objective-count,.mobile-view-cycle,.interaction-toast) { pointer-events: none; }
+@media (max-height:500px) and (orientation:landscape) {
+  .npc-dialogue { max-height: max(36dvh, var(--dialogue-cover, 0px)); padding: 12px max(52px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left)); }
+  .npc-dialogue[hidden] { display: none; }
+  .npc-dialogue__content { display: grid; grid-template-columns: minmax(130px,1fr) minmax(0,2.4fr) minmax(130px,1fr); column-gap: 22px; max-height: calc(max(36dvh, var(--dialogue-cover, 0px)) - 24px); }
+  .npc-dialogue h2 { font-size: clamp(26px, 4vw, 40px); }
+  .npc-dialogue__content > .eyebrow, .npc-dialogue__content > h2, .npc-dialogue__content > .dj-about__role { grid-column: 1; margin: 0; }
+  .npc-dialogue__content > .dj-about__body, .npc-dialogue__content > .dj-about__hint { grid-column: 2; grid-row: 1 / span 3; max-height: 22dvh; overflow-y: auto; margin: 0; font-size: 13px; align-self: center; }
+  .npc-dialogue__content > .dj-about__back { display: none; }
+  .npc-dialogue__content > .dj-about__edit { grid-column: 1 / -1; }
+}
+@media (hover:hover) and (pointer:fine) {
+  .world-shell[data-desktop-actions='true'] > .touch-controls { display: contents; }
+  .world-shell[data-desktop-actions='true'] .touch-stick { display: none; }
+  .world-shell[data-desktop-actions='true'] .touch-ring { display: grid; position: fixed; z-index: 5; right: 16px; bottom: 78px; width: 228px; grid-template-columns: repeat(3,1fr); gap: 7px; }
+  /* The phone's buttons, laid out as a grid: charcoal squares with a cream top
+     edge and clipped corners, and the red HIT key. */
+  .world-shell[data-desktop-actions='true'] .touch-ring > button { position: static; display: grid; place-items: center; width: auto; min-height: 44px; padding: 7px; border: 1px solid var(--line); border-top: 2px solid var(--paper); border-radius: 0; color: var(--paper); background: rgba(17,17,19,.9); clip-path: polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px); font: 800 11px var(--condensed); letter-spacing: .08em; cursor: pointer; }
+  .world-shell[data-desktop-actions='true'] .touch-ring > .touch-ring__hit { border-color: var(--red); border-top-color: var(--paper); background: var(--red); font-size: 13px; }
+  .world-shell[data-desktop-actions='true'] .touch-ring > button:hover, .world-shell[data-desktop-actions='true'] .touch-ring > button.is-active { color: var(--ink); background: var(--paper); border-color: var(--red); }
+  .world-shell:has(> .festival-pass:not([hidden])) .touch-ring, .world-shell:has(> .panel:not([hidden])) .touch-ring, .world-shell:has(> .seat-menu:not([hidden])) .touch-ring { visibility: hidden; }
+}
 .pass-toggle:focus-visible, .objective-count:focus-visible, .interaction-toast:focus-visible {
   outline: 0; box-shadow: inset 0 0 0 3px var(--paper);
 }
 @media (max-width: 640px) {
   .chat-stream__item { padding: 6px 10px 8px; }
-  .chat-stream__item header { padding-bottom: 3px; }
   .chat-stream__item p { margin-top: 4px; }
   .interaction-toast { padding: 10px 14px; }
 }
@@ -2504,26 +2635,52 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .dance-selector__actions button { border:1px solid var(--line); background:var(--ink); color:var(--paper); padding:10px 16px; cursor:pointer; font:700 18px var(--condensed); }
 .dance-selector kbd { font:600 12px var(--condensed); opacity:.65; margin-left:8px; }
 
-.audio-resume { position:absolute; right:1rem; bottom:5rem; z-index:35; padding:.65rem 1rem; color:var(--paper); background:var(--red); border:1px solid var(--paper); font:800 13px/1.2 var(--condensed); letter-spacing:.08em; cursor:pointer; }
+.world-quick-actions { position: fixed; right: 16px; bottom: 80px; z-index: 35; display: flex; flex-direction: column; gap: 8px; width: 132px; pointer-events: none; }
+.world-quick-actions > button { pointer-events: auto; min-height: 44px; width: 100%; }
+.audio-resume { padding:.65rem 1rem; color:var(--paper); background:var(--red); border:1px solid var(--paper); font:800 13px/1.2 var(--condensed); letter-spacing:.08em; cursor:pointer; }
 .audio-resume[hidden] { display:none; }
+.world-chat-shortcut { display: none; padding: 8px 6px; border: 1px solid var(--line); border-top: 2px solid var(--paper); color: var(--paper); background: rgba(17,17,19,.92); font: 800 12px/1.2 var(--condensed); letter-spacing: .08em; cursor: pointer; touch-action: manipulation; }
+.world-quick-actions > button:focus-visible { outline: 2px solid var(--paper); outline-offset: 3px; }
+.world-shell:has(> .festival-pass:not([hidden])) .world-quick-actions,
+.world-shell:has(> .panel:not([hidden])) .world-quick-actions,
+.world-shell:has(> .seat-menu:not([hidden])) .world-quick-actions,
+.world-shell[data-arcade-playing='true'] .world-quick-actions,
+.world-shell[data-vr-painted='true'] .world-quick-actions { visibility: hidden; }
+/* A screening is the thing being watched: chat and sound go behind the film
+   (z 7) like the action keys already do, rather than over the picture. */
+.world-shell:has(> #venue-screen:not([hidden])) .world-quick-actions { z-index: 6; }
+@media (hover: hover) and (pointer: fine) {
+  .world-shell[data-desktop-actions='true'] .world-quick-actions { right: 16px; bottom: 183px; width: 228px; }
+  .world-shell[data-desktop-actions='true'] .world-chat-shortcut { display: grid; place-items: center; }
+}
 @media (max-width: 800px), (pointer: coarse) and (hover: none) {
-  .audio-resume {
-    position: fixed; right: calc(9px + env(safe-area-inset-right));
+  .world-quick-actions {
+    right: calc(9px + env(safe-area-inset-right));
     bottom: calc(243px + env(safe-area-inset-bottom));
-    width: 92px; min-height: 44px; padding: 8px 6px;
+    width: 92px;
     max-width: calc(100vw - 18px - env(safe-area-inset-left) - env(safe-area-inset-right));
+  }
+  .world-chat-shortcut { display: grid; place-items: center; }
+  .world-quick-actions > button {
+    padding: 8px 6px;
     font: 800 11px/1.2 var(--condensed);
     border-top: 2px solid var(--paper);
     clip-path: polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);
   }
-  /* The recovery prompt and a nearby-world action may be visible together. */
-  .world-shell:has(.audio-resume:not([hidden])) .interaction-toast {
-    bottom: calc(300px + env(safe-area-inset-bottom));
+  /* Leave the right-hand column for CHAT / ENABLE SOUND. World prompts and
+     the explicit MENTOR commands retain a separate lane beside it. */
+  .world-shell .interaction-toast, .world-shell .interaction-toast--dj {
+    left: calc(14px + env(safe-area-inset-left)); right: auto; transform: none;
+    max-width: calc(100vw - 124px - env(safe-area-inset-left) - env(safe-area-inset-right));
+    bottom: calc(246px + env(safe-area-inset-bottom));
   }
 }
+@media (orientation: portrait) and (max-width: 800px), (orientation: portrait) and (pointer: coarse) and (hover: none) {
+}
 @media (orientation: landscape) and (max-height: 600px), (orientation: landscape) and (pointer: coarse) and (hover: none) {
-  .audio-resume { right: calc(6px + env(safe-area-inset-right)); bottom: calc(198px + env(safe-area-inset-bottom)); }
-  .world-shell:has(.audio-resume:not([hidden])) .interaction-toast { bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--a, .touch-ring__key--b { bottom: calc(110px + env(safe-area-inset-bottom)); }
+  .world-quick-actions { right: calc(6px + env(safe-area-inset-right)); bottom: calc(164px + env(safe-area-inset-bottom)); }
+  .world-shell .interaction-toast, .world-shell .interaction-toast--dj { left: 50%; transform: translateX(-50%); max-width: min(46vw, 320px); bottom: calc(16px + env(safe-area-inset-bottom)); }
 }
 
 /* The sign-in stage shares the world's palette, with room to see the island. */
@@ -2581,7 +2738,8 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .gate-avatar { position: relative; height: min(660px, calc(100dvh - 170px)); min-height: 380px; align-self: stretch; cursor: grab; touch-action: none; user-select: none; }
 .gate-avatar:active { cursor: grabbing; }
 .gate-avatar:focus-visible { outline: none; }
-.gate-avatar:focus-visible .gate-avatar__caption { text-decoration: underline; text-underline-offset: 5px; }
+/* No underline on the caption (owner, 2026-10-22): Chrome counts a click on a
+   focusable figure as visible focus, so the underline showed on every drag. */
 .gate-avatar__caption { position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; pointer-events: none; }
 .gate-avatar__caption .eyebrow { color: var(--paper); text-shadow: 0 2px 8px #0008; }
 .gate-avatar__caption p { margin: 9px 0 0; color: #f5efe2a8; font: 700 11px var(--condensed); letter-spacing: .1em; }
