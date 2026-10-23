@@ -2467,6 +2467,9 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 /* Retain the original charcoal, cream and red HUD palette. */
 .interaction-toast.is-actionable { animation: none; }
 @media (prefers-reduced-motion: reduce) { .world-alert:not([hidden]) { animation: none; } }
+/* With DROP THE BEAT showing (64px down, about 36 tall), an alert such as
+   已排入點唱機 drops below it instead of covering it (owner, 2026-10-23). */
+.world-shell:has(.jukebox-sound:not([hidden])) .world-alert { top: calc(112px + env(safe-area-inset-top)); }
 @media (orientation: landscape) and (max-height: 600px) {
   /* The compact counter owns the band beneath the header in every input mode. */
   .world-status, .inventory-status, .chat-stream, .controls-hint { display: none; }
@@ -2522,7 +2525,8 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .panel--chat [data-chat-drag]:focus-visible, .chat-resize:focus-visible { outline: 2px solid #7fe5dd; outline-offset: -2px; }
 .panel--chat.is-chat-adjusting { user-select: none; }
 .panel--chat.is-chat-adjusting [data-chat-drag] { cursor: grabbing; }
-.chat-resize { position: absolute; right: 0; bottom: 0; width: 44px; height: 44px; border: 0; border-radius: 8px 0 12px 0; padding: 0; color: #9ce1dc; background: rgba(12,24,29,.8); font: 900 24px var(--condensed); cursor: nwse-resize; touch-action: none; }
+.chat-resize { position: absolute; right: 0; bottom: 0; width: 44px; height: 44px; border: 0; border-radius: 8px 0 12px 0; padding: 0; color: var(--paper); background: rgba(12,24,29,.8); cursor: nwse-resize; touch-action: none; }
+.chat-resize::before { content: ''; position: absolute; right: 9px; bottom: 9px; width: 18px; height: 18px; background: repeating-linear-gradient(135deg,transparent 0 4px,currentColor 4px 6px); clip-path: polygon(100% 0,100% 100%,0 100%); opacity: .86; pointer-events: none; }
 .panel--chat .panel__body { padding-bottom: 47px; }
 /* A HUD ticket like 任務, not a lit sign: charcoal, cream lettering, the clipped
    corner and the festival red tab. */
@@ -2574,6 +2578,11 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .npc-dialogue__content > .dj-about__body, .npc-dialogue__content > .dj-about__hint { grid-column: 2; grid-row: 1 / span 3; max-height: 22dvh; overflow-y: auto; margin: 0; font-size: 13px; align-self: center; }
   .npc-dialogue__content > .dj-about__back { display: none; }
   .npc-dialogue__content > .dj-about__edit { grid-column: 1 / -1; }
+}
+/* The switch only means anything with a mouse: a phone or tablet already has
+   its thumb controls, so the PASS menu leaves it out there (owner, 2026-10-23). */
+@media not all and (hover:hover) and (pointer:fine) {
+  .festival-pass .desktop-actions-toggle { display: none; }
 }
 @media (hover:hover) and (pointer:fine) {
   .world-shell[data-desktop-actions='true'] > .touch-controls { display: contents; }

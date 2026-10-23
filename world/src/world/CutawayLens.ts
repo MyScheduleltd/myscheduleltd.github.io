@@ -34,7 +34,7 @@ export const CUTAWAY_LENS = Object.freeze({
    * NPC ticket, which reach about 4.1.
    */
   overhead: 4.6,
-  /** The near walls are cut down to this far above the floor or the street, whichever is higher. */
+  /** The near walls are cut down to this far above the floor or the ground outside, whichever is higher. */
   sill: .3,
   /** Where a near wall starts, measured in from the room's edge: its thickness and a little. */
   wall: 1.2,
@@ -49,7 +49,9 @@ export const CUTAWAY_LENS = Object.freeze({
  * the roof is cut at. `nearWalls` false is open ground with a building on the
  * camera's side, where only the overhead cut applies.
  */
-export interface CutawayRoom { minX: number; maxX: number; minZ: number; maxZ: number; floor: number; ceiling: number; nearWalls?: boolean }
+export interface CutawayRoom { minX: number; maxX: number; minZ: number; maxZ: number; floor: number; ceiling: number; nearWalls?: boolean;
+  /** The highest ground on the camera's side, near the attendee: the near walls are never cut below it. */
+  ground?: number }
 
 /** The orthographic box the lens is measured against. */
 export type CutawayCamera = THREE.Camera & { left: number; right: number; top: number; bottom: number };
@@ -164,6 +166,9 @@ export class CutawayLens {
     const nearZ = sz > 0 ? r.maxZ - CUTAWAY_LENS.wall : r.minZ + CUTAWAY_LENS.wall;
     if (r.nearWalls === false) cutawayUniforms.cutawayNear.value.set(1, 1, 1e9, 1e9);
     else cutawayUniforms.cutawayNear.value.set(sx, sz, nearX * sx, nearZ * sz);
-    cutawayUniforms.cutawayLevels.value.set(Math.max(r.floor, 0) + CUTAWAY_LENS.sill, r.ceiling, 0, 0);
+    // Never below the street outside: the club's lobby is lower than the
+    // pavement at its door, and cutting there showed the empty sky (owner,
+    // 2026-10-23).
+    cutawayUniforms.cutawayLevels.value.set(Math.max(r.floor, r.ground ?? 0, 0) + CUTAWAY_LENS.sill, r.ceiling, 0, 0);
   }
 }

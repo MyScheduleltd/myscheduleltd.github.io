@@ -39,6 +39,8 @@ test('real chat pointer/keyboard handles save bounded geometry, restore after a 
   const style = { removeProperty(key) { delete this[key.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase())]; } }, classes = new Set();
   const panel = { style, querySelector: () => header, append() {}, classList: { add: key => classes.add(key), remove: key => classes.delete(key) } };
   const dispose = installFloatingChat(panel, false); const originalHeight = parseFloat(style.height); assert.equal(style.maxHeight, 'none', 'the floating viewport solver replaces the legacy phone sheet height cap');
+  assert.ok(!handle.textContent, 'the resize grip contains no text that a phone can substitute with an emoji');
+  assert.equal(handle.attributes['aria-label'], 'Resize chat window; use arrow keys');
   window.visualViewport.height = 280; viewportEvents.get('resize')(); assert.ok(parseFloat(style.height) <= 256);
   window.visualViewport.height = 800; viewportEvents.get('resize')(); assert.equal(parseFloat(style.height), originalHeight);
   const pointer = (currentTarget, x, y) => ({ button: 0, pointerId: 1, clientX: x, clientY: y, currentTarget, preventDefault() {}, stopPropagation() {} });
@@ -47,6 +49,10 @@ test('real chat pointer/keyboard handles save bounded geometry, restore after a 
   assert.ok(values.has(CHAT_LAYOUT_KEY));
   handle.handlers.get('keydown')({ key: 'ArrowLeft', shiftKey: true, currentTarget: handle, preventDefault() {}, stopPropagation() {} });
   assert.equal(JSON.parse(values.get(CHAT_LAYOUT_KEY)).width, 530);
+  const beforeResize={width:parseFloat(style.width),height:parseFloat(style.height)};
+  handle.handlers.get('pointerdown')(pointer(handle,100,100));handle.handlers.get('pointermove')(pointer(handle,120,90));handle.handlers.get('pointerup')();
+  assert.equal(parseFloat(style.width),beforeResize.width+20);assert.equal(parseFloat(style.height),beforeResize.height-10);
+  assert.equal(JSON.parse(values.get(CHAT_LAYOUT_KEY)).width,beforeResize.width+20,'the drawn grip preserves captured-pointer resize persistence');
   dispose(); assert.equal(header.handlers.size, 0); assert.equal(handle.handlers.size, 0); assert.equal(windowEvents.size, 0); assert.equal(viewportEvents.size, 0); assert.equal(handle.removed, true); assert.equal(style.width, undefined); assert.equal(style.maxHeight, undefined);
 });
 
@@ -66,11 +72,11 @@ test('DROP THE BEAT survives transient unmute reports and gives a rebuilt stream
 
 const source = await readFile('src/ui/App.ts', 'utf8'), tree = ts.createSourceFile('App.ts', source, ts.ScriptTarget.Latest, true);
 const app = tree.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'App');
-const methods = ['syncDrinkStatus', 'syncMenuCapture', 'hideSeatMenu', 'prepareSeatMenu', 'globalShortcut', 'updateJukeboxSoundPrompt', 'jukeboxMessage'].map(name => {
+const methods = ['syncDrinkStatus', 'syncMenuCapture', 'hideSeatMenu', 'prepareSeatMenu', 'globalShortcut', 'updateJukeboxSoundPrompt', 'jukeboxMessage', 'usesSingleFilmPlayer', 'preparePhoneFilmPlayback', 'stopJukebox', 'renderScreen', 'releaseVenueFilmFrame'].map(name => {
   const method = app.members.find(node => node.name?.getText(tree) === name); assert.ok(method, name); return method.getText(tree);
 }).join('\n');
 const script = ts.transpileModule(`class OverlayHarness { ${methods} }; globalThis.OverlayHarness=OverlayHarness;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-const globals = { drinkStatusText, jukeboxPromptVisible, performance: { now: () => 0 }, window: { location: { hostname: '127.0.0.1' } } };
+const globals = { URL, drinkStatusText, jukeboxPromptVisible, performance: { now: () => 0 }, window: { location: { hostname: '127.0.0.1', origin: 'http://127.0.0.1', href: 'http://127.0.0.1/beta/' } } };
 runInNewContext(script, globals); const { OverlayHarness } = globals;
 const fixture = () => {
   const menu = { dataset: { menuOwner: 'npc' }, hidden: false, classList: { remove() {} }, removeAttribute() {} }, badge = { hidden: true, textContent: '' }, pass = { hidden: true }, prompt = { hidden: false };
@@ -95,4 +101,40 @@ test('the actual jukebox message path requires real playing state as well as unm
   assert.equal(ui.jukeboxReportedState, 3); assert.equal(prompt.hidden, false);
   ui.jukeboxMessage({ source: frameWindow, data: JSON.stringify({ event: 'onStateChange', info: 1 }) });
   assert.equal(ui.jukeboxReportedState, 1); assert.equal(prompt.hidden, false, 'six-second minimum still applies to the genuine playing acknowledgement');
+});
+
+test('the actual phone film handoff stops and blanks its record synchronously while desktop retains playback', () => {
+ const {ui}=fixture(),events=[];
+ globals.window.matchMedia=()=>({matches:true});globals.window.setTimeout=()=>0;globals.window.removeEventListener=()=>{};
+ const frame={style:{},contentWindow:{postMessage:message=>events.push(JSON.parse(message).func)},addEventListener(){},remove(){}};
+ Object.defineProperty(frame,'src',{set(value){events.push(value);}});ui.jukeboxFrame=frame;
+ ui.preparePhoneFilmPlayback();
+ assert.deepEqual(events,['stopVideo','mute','about:blank']);assert.equal(ui.jukeboxFrame,undefined);assert.equal(ui.jukeboxSilenced,true);
+ const desktop=fixture().ui;globals.window.matchMedia=()=>({matches:false});desktop.jukeboxFrame=frame;desktop.preparePhoneFilmPlayback();
+ assert.equal(desktop.jukeboxFrame,frame);assert.equal(desktop.jukeboxSilenced,false);assert.equal(events.length,3);
+ delete globals.window.matchMedia;
+});
+
+test('actual film-to-film replacement stops and blanks the previous decoder before the next iframe is inserted', () => {
+ for(const phone of [false,true]){
+  const events=[],ui=new OverlayHarness();globals.window.matchMedia=()=>({matches:phone});
+  const old={contentWindow:{postMessage:message=>events.push(JSON.parse(message).func)}};
+  Object.defineProperty(old,'src',{set(value){events.push(value);}});
+  let frames=[old];
+  const frame={querySelectorAll:()=>frames};Object.defineProperty(frame,'innerHTML',{set(value){events.push(value?'insert-next':'clear-old');frames=[];}});
+  const screen={classList:{toggle(){}}},actions={querySelector:()=>null};
+  const root={querySelector:selector=>({'#venue-screen':screen,'#screen-frame':frame,'#screen-mode':{},'#screen-title':{},'#screen-actions':actions,'.world-shell':{setAttribute(){}}})[selector]};
+  Object.assign(ui,{root,language:'en',audioMuted:false,world:{setExternalFilmPlayback(value){events.push(['external',value]);}},
+   preparePhoneFilmPlayback(){if(phone)events.push('stop-jukebox');},escapeAttribute:value=>value,filmTitle:film=>film.title});
+  ui.renderScreen({title:'Next film',embedUrl:'https://www.youtube.com/embed/abcdefghijk',youtubeId:'abcdefghijk'},'private',12,false);
+  assert.deepEqual(events.slice(-4),['stopVideo','about:blank','clear-old','insert-next']);
+  if(phone)assert.deepEqual(events.slice(0,2),['stop-jukebox',['external',true]],'both other phone players yield before the new personal film');
+ }
+ delete globals.window.matchMedia;
+});
+
+test('the offering preparation copy matches the notice without any-device or sharing promises',()=>{
+ const copy=source.split("[data-arcade-preparation]").at(-1).split('.catch')[0];
+ assert.doesNotMatch(copy,/任何裝置都能用|on any device|分享給朋友|share it/i);
+ assert.match(copy,/請抄下保存/);assert.match(copy,/keep a copy/);
 });

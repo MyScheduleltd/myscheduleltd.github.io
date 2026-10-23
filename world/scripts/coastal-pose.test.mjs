@@ -11,8 +11,8 @@ import { WorldCamera, ISOMETRIC_VIEW } from '../src/world/WorldCamera.ts';
 globalThis.self=globalThis;
 globalThis.createImageBitmap=async(blob)=>{const bytes=await blob.arrayBuffer();const view=new DataView(bytes);return {width:view.getUint32(16),height:view.getUint32(20),close(){}};};
 globalThis.document = {createElement:()=>({width:64,height:64,getContext:()=>({fillRect(){}})})};
-const output=await build({stdin:{contents:"export {applyWornStyle} from './src/world/WornStyle'; export * from './src/world/MentorDog'; export * from './src/world/HandPose'; export * from './src/world/RooftopBand'; export { HeadTracking } from './src/world/HeadTracking'; export { FestivalWorld } from './src/world/FestivalWorld'; export { CLUB_GRADE } from './src/world/CoastalTerrain'; export * from './src/world/CoastalAvatar'; export * from './src/world/CoastalPose'; export * from './src/world/CoastalCarry'; export * from './src/world/ImportedAvatar'; export * from './src/world/CoastalSkateboard'; export * from './src/world/CoastalGeometry'; export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,loader:{'.png':'dataurl'},platform:'node',format:'esm',write:false});
-const {CLUB_GRADE,HeadTracking,RooftopBand,BAND_MEMBERS,FIST,FINGER_NAMES,handJointsFromLandmarks,handPoseFromJoints,MENTOR_NESTLE,applyWornStyle,waveCoastalPose,fallCoastalPose,landCoastalPose,djCoastalPose,hitCoastalPose,perchMentor,stepMentorGait,createMentorDog,poseCoastalCarry,loadImportedAvatar,attachImportedAvatar,importedAvatarRoots,syncImportedAvatars,COASTAL_CUP_OFFSET,COASTAL_STRAW_TIP,FestivalWorld,jumpCoastalArms,setCoastalSwimwear,punchCoastalPose,setCoastalFists,createCoastalSedan,CONVERTIBLE,walkCoastalPose,danceCoastalPose,COASTAL_STRIDE_LENGTH,THREE,createCoastalAvatar,supportCoastalPose,seatCoastalLegs,coastalFootHeights,skateCoastalPose,createCoastalSkateboard}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
+const output=await build({stdin:{contents:"export { PLANET } from './src/world/PlanetCurve'; export {applyWornStyle} from './src/world/WornStyle'; export * from './src/world/MentorDog'; export * from './src/world/HandPose'; export * from './src/world/RooftopBand'; export { HeadTracking } from './src/world/HeadTracking'; export { FestivalWorld } from './src/world/FestivalWorld'; export { CLUB_GRADE } from './src/world/CoastalTerrain'; export * from './src/world/CoastalAvatar'; export * from './src/world/CoastalPose'; export * from './src/world/CoastalCarry'; export * from './src/world/ImportedAvatar'; export * from './src/world/CoastalSkateboard'; export * from './src/world/CoastalGeometry'; export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,loader:{'.png':'dataurl'},platform:'node',format:'esm',write:false});
+const {PLANET,disposeImportedAvatars,CLUB_GRADE,HeadTracking,RooftopBand,BAND_MEMBERS,FIST,FINGER_NAMES,handJointsFromLandmarks,handPoseFromJoints,MENTOR_NESTLE,applyWornStyle,waveCoastalPose,fallCoastalPose,landCoastalPose,djCoastalPose,hitCoastalPose,perchMentor,stepMentorGait,createMentorDog,poseCoastalCarry,loadImportedAvatar,attachImportedAvatar,importedAvatarRoots,syncImportedAvatars,COASTAL_CUP_OFFSET,COASTAL_STRAW_TIP,FestivalWorld,jumpCoastalArms,setCoastalSwimwear,punchCoastalPose,setCoastalFists,createCoastalSedan,CONVERTIBLE,walkCoastalPose,danceCoastalPose,COASTAL_STRIDE_LENGTH,THREE,createCoastalAvatar,supportCoastalPose,seatCoastalLegs,coastalFootHeights,skateCoastalPose,createCoastalSkateboard}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
 function character(){
   const root=new THREE.Group();root.position.y=.28;
   const rig=createCoastalAvatar(root,{skin:'#dfb590',hair:'#3b3633',top:'#d0cbc1',bottoms:'#44464a',swimwear:'#577467'},true,new THREE.Group());
@@ -1920,6 +1920,8 @@ test('the production distance throttle holds a complete floor-supported pose and
    avatarViewProjection:new THREE.Matrix4(),avatarFrustum:new THREE.Frustum(),avatarCentre:new THREE.Vector3(),
    avatarSphere:new THREE.Sphere(),locomotion:new WeakMap(),reviewLastDelta:1/60});
   world.footSurfaceAt=()=>0;
+  // Distance is measured from the attendee (2026-10-23): 30 m away is the every-other-frame band.
+  world.player.position.set(0,0,30);
   const mesh=bodyMesh(root),vertex=Math.floor(mesh.geometry.getAttribute('position').count*.47);
   const renderedPoint=()=>{root.updateMatrixWorld(true);mesh.skeleton.update();return mesh.localToWorld(mesh.getVertexPosition(vertex,new THREE.Vector3()));};
   let previous,held=0,posed=0;
@@ -1933,13 +1935,21 @@ test('the production distance throttle holds a complete floor-supported pose and
    }else posed++;
    previous=current;
   }
-  assert.ok(held>20&&posed>20,'exercise the actual alternating 35 m cadence');
-  camera.position.z=20;camera.lookAt(root.position);world.cameraWorldPosition.copy(camera.position);
+  assert.ok(held>20&&posed>20,'exercise the actual alternating 20–40 m cadence');
+  assert.equal(mesh.castShadow,false,'past 20 m a body casts no shadow');
+  assert.equal(root.matrixWorldAutoUpdate,true,'a body in view keeps its matrices updated');
+  camera.position.z=20;camera.lookAt(root.position);world.cameraWorldPosition.copy(camera.position);world.player.position.set(0,0,6);
   for(let frame=0;frame<3;frame++){
    world.cullAvatars();assert.equal(root.userData.cullThrottle,false,'nearby bodies must pose on every frame');
    world.animateRig(rig,frame/10,.62);syncImportedAvatars(root);
    assert.ok(Math.abs(lowestSole(root))<.04,'returning to the full pose must retain floor contact');
   }
+  assert.equal(mesh.castShadow,true,'close up the shadow is back');
+  // Out of view: not drawn, and its parts skip the scene's matrix update.
+  camera.lookAt(0,1,200);camera.updateMatrixWorld(true);world.cullAvatars();
+  assert.equal(root.userData.importedCulled(),true);assert.equal(root.matrixWorldAutoUpdate,false);
+  camera.lookAt(root.position);camera.updateMatrixWorld(true);world.cullAvatars();
+  assert.equal(root.matrixWorldAutoUpdate,true,'back in view, updated before it is drawn');
  }
 });
 
@@ -1979,6 +1989,77 @@ test('disposing an avatar preview unregisters it and frees instance resources wi
  assert.equal(materialDisposals,1);assert.equal(textureDisposals,1);assert.equal(geometryDisposals,0);
  walkCoastalPose(second.rig,.7,.6);syncImportedAvatars(second.root);b.skeleton.update();
  assert.ok(b.getVertexPosition(0,new THREE.Vector3()).toArray().every(Number.isFinite),'another instance still uses the shared geometry');
+});
+
+test('both graphics modes release every warm-up avatar on repeated entry without freeing live shared assets',()=>{
+ const live=importedCharacter(),liveMesh=bodyMesh(live.root);
+ const scene=new THREE.Scene();scene.add(live.root);
+ const baseline=new Set(importedAvatarRoots),sharedGeometry=liveMesh.geometry,sharedMap=liveMesh.material.map;
+ let sharedDisposed=0;
+ sharedGeometry.addEventListener('dispose',()=>sharedDisposed++);
+ sharedMap?.addEventListener('dispose',()=>sharedDisposed++);
+ try {
+  for(const graphicsMode of ['normal','lite'])for(let entry=0;entry<2;entry++){
+   const world=Object.create(FestivalWorld.prototype);
+   Object.assign(world,{scene,player:live.root,palette:{...BASE_PALETTE},preview:true,graphicsMode});
+   const stand=world.warmAvatarVariants(),roots=[...stand.children];
+   assert.equal(roots.length,8,'every sex and all four outfits are warmed');
+   assert.equal(importedAvatarRoots.size,baseline.size+8);
+   let materialsDisposed=0,boneTexturesDisposed=0;
+   const materials=new Set(),skeletons=new Set();
+   stand.traverse(object=>{if(object.isSkinnedMesh){materials.add(object.material);skeletons.add(object.skeleton);}});
+   for(const material of materials)material.addEventListener('dispose',()=>materialsDisposed++);
+   for(const skeleton of skeletons){skeleton.computeBoneTexture();skeleton.boneTexture.addEventListener('dispose',()=>boneTexturesDisposed++);}
+   assert.ok(materials.size>0&&skeletons.size>0,'exercise actual cloned material/skeleton allocations');
+   disposeImportedAvatars(stand);disposeImportedAvatars(stand);stand.removeFromParent();
+   assert.equal(materialsDisposed,materials.size,'each owned material is disposed once');
+   assert.equal(boneTexturesDisposed,skeletons.size,'each owned GPU bone texture is disposed once');
+   assert.deepEqual(new Set(importedAvatarRoots),baseline,'temporary bodies do not accumulate between entries');
+   assert.ok(roots.every(root=>!importedAvatarRoots.has(root)));
+   assert.equal(sharedDisposed,0,'template geometry and maps remain alive');
+   walkCoastalPose(live.rig,entry+.4,.6);syncImportedAvatars(live.root);liveMesh.skeleton.update();
+   assert.ok(liveMesh.getVertexPosition(0,new THREE.Vector3()).toArray().every(Number.isFinite),'the surviving body remains skinnable');
+  }
+ } finally {live.root.userData.disposeImportedAvatar();}
+});
+
+test('globe culling uses flat proximity and restores full shadows for self, a controlled NPC and headset views',()=>{
+ const {root}=importedCharacter(),world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene(),player=new THREE.Group();
+ scene.add(root,player);
+ const camera=new THREE.PerspectiveCamera(75,16/9,.1,300);player.position.set(70,0,12);
+ camera.position.set(70,8,60);camera.lookAt(90,1,12);
+ Object.assign(world,{scene,player,camera,npcs:[],xrActive:false,xrSimulated:false,avatarFrame:0,
+  avatarViewProjection:new THREE.Matrix4(),avatarFrustum:new THREE.Frustum(),avatarCentre:new THREE.Vector3(),avatarSphere:new THREE.Sphere()});
+ const old={on:PLANET.on,radius:PLANET.radius,centre:PLANET.centre.value.clone()};
+ try {
+  PLANET.on=true;PLANET.radius=170;PLANET.centre.value.set(70,0,12);
+  root.position.set(89.98,.28,12);
+  for(let frame=0;frame<8;frame++){world.cullAvatars();assert.equal(root.userData.cullThrottle,false,'a body within 20 flat world units always poses');}
+  assert.equal(bodyMesh(root).castShadow,true,'the bend cannot make a nearby body shadowless');
+  root.position.x=110.1;
+  let held=0;for(let frame=0;frame<8;frame++){world.cullAvatars();if(root.userData.cullThrottle)held++;}
+  assert.equal(held,6,'past 40 flat world units is every fourth frame even when its projection falls below 40');
+  assert.equal(bodyMesh(root).castShadow,false);
+  world.npcs=[{id:'CONTROLLED',group:root}];world.controlledNpcId='CONTROLLED';world.cullAvatars();
+  assert.equal(bodyMesh(root).castShadow,true);assert.equal(root.userData.cullThrottle,false);
+  world.controlledNpcId=undefined;world.cullAvatars();assert.equal(bodyMesh(root).castShadow,false);
+  world.xrActive=true;world.cullAvatars();assert.equal(bodyMesh(root).castShadow,true,'headset exemption restores a previously distant caster');
+  world.xrActive=false;world.cullAvatars();assert.equal(bodyMesh(root).castShadow,false);
+  world.player=root;world.cullAvatars();assert.equal(bodyMesh(root).castShadow,true,'self exemption restores a previously distant caster');
+ } finally {PLANET.on=old.on;PLANET.radius=old.radius;PLANET.centre.value.copy(old.centre);root.userData.disposeImportedAvatar();}
+});
+
+test('one world cannot cull or throttle avatars belonging to another scene or detached preview',()=>{
+ const own=importedCharacter(),foreign=importedCharacter(),detached=importedCharacter();
+ const scene=new THREE.Scene(),other=new THREE.Scene();scene.add(own.root);other.add(foreign.root);
+ const camera=new THREE.PerspectiveCamera(58,1,.1,300);camera.position.set(0,2,50);camera.lookAt(0,1,0);
+ const world=Object.create(FestivalWorld.prototype);
+ Object.assign(world,{scene,player:new THREE.Group(),npcs:[],camera,avatarFrame:0,avatarViewProjection:new THREE.Matrix4(),avatarFrustum:new THREE.Frustum(),avatarCentre:new THREE.Vector3(),avatarSphere:new THREE.Sphere()});
+ try {
+  for(const {root} of [foreign,detached]){root.userData.setImportedCulled(true);root.userData.cullThrottle='unchanged';root.userData.setImportedFarShadowless(true);root.matrixWorldAutoUpdate=false;}
+  world.cullAvatars();assert.equal(own.root.userData.importedCulled(),false);
+  for(const {root} of [foreign,detached]){assert.equal(root.userData.importedCulled(),true);assert.equal(root.userData.cullThrottle,'unchanged');assert.equal(root.matrixWorldAutoUpdate,false);assert.equal(root.userData.importedAvatar.meshes.find(m=>m.userData.componentId==='body').castShadow,false);}
+ } finally {for(const {root} of [own,foreign,detached])root.userData.disposeImportedAvatar();}
 });
 
 test('a full room in Lite builds one body per frame and departure preserves shared geometry',()=>{

@@ -345,6 +345,40 @@ test('walking between screens moves one player and swaps the film instead of bui
   assert.ok(world.playheads.has('palace'),'the Palace keeps where its film had got to');
 }));
 
+test('film ownership is handed off synchronously before an iframe loads and before shared film load/play commands',()=>withFakeDom((iframes)=>{
+ const {world,say}=playerWorld();let jukeboxAlive=true,handoffs=0;
+ world.onBeforeFilmPlayback=()=>{jukeboxAlive=false;handoffs++;};
+ world.place='palace';world.setPublicScreening('palace',FILM_A,0);
+ assert.equal(jukeboxAlive,false,'initial iframe creation cannot leave the jukebox decoder running');
+ assert.equal(handoffs,1);const [frame]=iframes;
+ say(frame,{event:'initialDelivery',info:{videoData:{video_id:FILM_A.youtubeId},duration:100}});
+ const originalPost=frame.contentWindow.postMessage;
+ frame.contentWindow.postMessage=(message)=>{
+  const {func}=JSON.parse(message);
+  if(['loadVideoById','cueVideoById','playVideo'].includes(func))assert.equal(jukeboxAlive,false,`${func} preceded the ownership handoff`);
+  originalPost(message);
+ };
+ jukeboxAlive=true;world.setPublicScreening('palace',FILM_B,20);
+ assert.equal(jukeboxAlive,false);
+ jukeboxAlive=true;world.commandProjector(world.projectors.get('palace'),'playVideo');assert.equal(jukeboxAlive,false);
+ jukeboxAlive=true;world.tellScreenPlayer(world.screenPlayer,'playVideo');assert.equal(jukeboxAlive,false,'admission playback follows the same rule');
+ assert.equal(iframes.length,1,'handoff retains the reusable shared film iframe');
+}));
+
+test('a phone personal/fullscreen film stops the venue decoder and resumes its latest programme in the same iframe',()=>withFakeDom((iframes)=>{
+ const {world,say}=playerWorld();world.place='palace';world.setPublicScreening('palace',FILM_A,0);world.mountedProjectorVenue='palace';
+ const [frame]=iframes;say(frame,{event:'initialDelivery',info:{videoData:{video_id:FILM_A.youtubeId},duration:100}});
+ world.setExternalFilmPlayback(true);
+ assert.equal(frame.posted.at(-1).func,'stopVideo');assert.equal(world.projectors.get('palace').iframe,undefined);
+ assert.equal(world.screenPlayer.iframe,frame,'the stopped reusable iframe is retained');assert.equal(world.screenFilmShowing(),true,'the external film retains exclusive phone ownership');
+ const stoppedCommands=frame.posted.length;
+ world.setPublicScreening('palace',FILM_B,32,'new-programme');world.updateProjectorMounts();world.nudgeProjectorsToPlay();
+ assert.equal(frame.posted.length,stoppedCommands,'programme refreshes and touch nudges cannot restart the underlying movie');
+ world.setExternalFilmPlayback(false);
+ assert.equal(iframes.length,1);assert.equal(world.projectors.get('palace').iframe,frame);
+ const load=frame.posted.findLast(message=>message.func==='loadVideoById');assert.equal(load.args[0].videoId,FILM_B.youtubeId);assert.equal(load.args[0].startSeconds,32);
+}));
+
 test('the shared panel turns to face each screen and back again',()=>withFakeDom(()=>{
   const {world}=playerWorld(['club','rooftop','shore']);
   const player=world.ensureScreenPlayer();
@@ -544,6 +578,27 @@ test('admission prepares the existing room before GPU warmup, without starting t
     assert.ok(drawn>=1,'then every kind of draw is drawn once under the loading view');
     assert.equal(scene.children.some(child=>child.type==='Group'),false,'and the stand of bodies is gone again');
   }finally{globalThis.window=savedWindow;}
+});
+
+test('admission disposes temporary avatar instances after a successful or failed warm-up in both graphics modes',async()=>{
+ const savedWindow=globalThis.window;
+ globalThis.window={setTimeout:run=>setTimeout(run,0),setInterval,clearInterval,location:{hostname:'127.0.0.1',search:'?nobatch'}};
+ try {
+  for(const graphicsMode of ['normal','lite'])for(const failDraw of [false,true]){
+   const scene=new THREE.Scene(),world=Object.create(FestivalWorld.prototype),stand=new THREE.Group();
+   let disposed=0,drawn=0;
+   const body=new THREE.Group();body.userData.disposeImportedAvatar=()=>disposed++;
+   body.add(new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial()));stand.add(body);
+   Object.assign(world,{scene,camera:new THREE.PerspectiveCamera(),graphicsMode,preview:false,disposed:false,
+    async prepareAssets(){},pendingRemoteVisitors:new Map(),projectors:new Map(),cullDecorativeLights(){},warmScreenPlayer(){},
+    warmAvatarVariants(){scene.add(stand);return stand;},
+    renderer:{shadowMap:{},info:{programs:[]},async compileAsync(){},initTexture(){},render(){drawn++;if(failDraw)throw Error('driver warm-up failed');}}});
+   if(failDraw)await assert.rejects(world.prepareForPlay(),/driver warm-up failed/);else await world.prepareForPlay();
+   assert.ok(drawn>0,'the failure happens after a temporary avatar was prepared for drawing');
+   assert.equal(disposed,1,`${graphicsMode}: warm-up ownership is released even when the driver throws`);
+   assert.equal(stand.parent,null,'temporary stand leaves the live scene');
+  }
+ } finally {globalThis.window=savedWindow;}
 });
 
 

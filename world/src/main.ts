@@ -4,6 +4,17 @@ import { canOpenArtPreview } from './artPreviewPolicy';
 const root = document.querySelector<HTMLElement>('#app');
 if (!root) throw new Error('Application root is missing.');
 
+// `?era=ps2` is retired on the public site (owner, 2026-10-23): an old link
+// opens the same /beta/ as everyone else, and the address bar drops it.
+// Loopback review still uses it to open the island.
+if (!['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)) {
+  const address = new URL(window.location.href);
+  if (address.searchParams.has('era')) {
+    address.searchParams.delete('era');
+    window.history.replaceState(window.history.state, '', `${address.pathname}${address.search}${address.hash}`);
+  }
+}
+
 async function openWorld(into: HTMLElement): Promise<void> {
   const { App } = await import('./ui/App');
   new App(into).mount();
