@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { fetchAsset } from './AssetMirror';
 import { loadBudgetedTexture, mobileAssetBudgetEnabled } from './MobileAssetBudget';
+import type { GpuTextureLease } from './GpuTextureRuntime';
 
 export const ENVIRONMENT_FAMILIES = ['plaster', 'brick', 'ceramic', 'asphalt', 'wood', 'stone'] as const;
 export type EnvironmentFamily = typeof ENVIRONMENT_FAMILIES[number];
@@ -31,12 +32,15 @@ export function excludeEnvironmentObject<T extends THREE.Object3D>(object: T): T
 }
 
 /** Accept Vite's eager ?url glob; absent optional maps produce no requests. */
-export function environmentAssetsFromUrls(files: Record<string, string>): EnvironmentAssets {
+export function environmentAssetsFromUrls(files: Record<string, string>, preferCompressed = false): EnvironmentAssets {
   const assets: EnvironmentAssets = {};
-  for (const [path, url] of Object.entries(files)) {
+  // Sort raster first so an installed compressed map wins only by explicit
+  // compression selection, independently of glob/object insertion order.
+  for (const [path, url] of Object.entries(files).sort(([a], [b]) => Number(a.endsWith('.ktx2')) - Number(b.endsWith('.ktx2')))) {
     const name = path.split('/').pop() ?? '';
-    const match = /^(plaster|brick|ceramic|asphalt|wood|stone)(?:-(normal|roughness))?\.webp$/.exec(name);
+    const match = /^(plaster|brick|ceramic|asphalt|wood|stone)(?:-(normal|roughness))?\.(webp|ktx2)$/.exec(name);
     if (!match) continue;
+    if (match[3] === 'ktx2' && (!preferCompressed || !path.includes('/compressed/'))) continue;
     const family = match[1] as EnvironmentFamily;
     (assets[family] ??= {})[(match[2] ?? 'color') as EnvironmentTextureRole] = url;
   }
@@ -71,6 +75,7 @@ export interface EnvironmentMaterialReport {
 
 export interface EnvironmentMaterialOptions {
   assets: EnvironmentAssets;
+  fallbackAssets?: EnvironmentAssets;
   mobile?: boolean;
 }
 
@@ -84,12 +89,14 @@ const errorText = (error: unknown): string => error instanceof Error ? error.mes
  */
 export class EnvironmentMaterials {
   private readonly assets: EnvironmentAssets;
+  private readonly fallbackAssets: EnvironmentAssets;
   private readonly mobile: boolean;
   private readonly loads = new Map<EnvironmentFamily, Promise<TextureSet>>();
   private readonly materials = new Map<string, THREE.MeshStandardMaterial>();
   private readonly textures = new Set<THREE.Texture>();
   private readonly applied = new WeakSet<THREE.Mesh>();
   private disposed = false;
+  private gpuTextures?: GpuTextureLease;
   private encodedBytes = 0;
   private decodedBytes = 0;
   private taggedCount = 0;
@@ -103,7 +110,14 @@ export class EnvironmentMaterials {
 
   constructor(options: EnvironmentMaterialOptions) {
     this.assets = options.assets;
+    this.fallbackAssets = options.fallbackAssets ?? {};
     this.mobile = options.mobile ?? mobileAssetBudgetEnabled();
+  }
+
+  /** Set after renderer creation, before any family begins its preparation. */
+  useGpuTextures(runtime: GpuTextureLease): void {
+    if (this.loads.size) throw new Error('GPU textures must be configured before environment preparation');
+    this.gpuTextures = runtime;
   }
 
   private async loadTexture(url: string, role: EnvironmentTextureRole): Promise<THREE.Texture> {
@@ -112,13 +126,19 @@ export class EnvironmentMaterials {
     const bytes = await fetchAsset(url);
     if (this.disposed) throw new Error('Environment materials disposed');
     this.encodedBytes += bytes.byteLength;
-    const objectUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/webp' }));
     let texture: THREE.Texture;
-    try {
-      texture = await (this.mobile && typeof createImageBitmap !== 'undefined'
-        ? loadBudgetedTexture(objectUrl)
-        : new THREE.TextureLoader().loadAsync(objectUrl));
-    } finally { URL.revokeObjectURL(objectUrl); }
+    const ktx = /\.ktx2(?:$|[?#])/i.test(url);
+    if (ktx) {
+      if (!this.gpuTextures) throw new Error('GPU texture runtime is not configured');
+      texture = await this.gpuTextures.decode(bytes);
+    } else {
+      const objectUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/webp' }));
+      try {
+        texture = await (this.mobile && typeof createImageBitmap !== 'undefined'
+          ? loadBudgetedTexture(objectUrl)
+          : new THREE.TextureLoader().loadAsync(objectUrl));
+      } finally { URL.revokeObjectURL(objectUrl); }
+    }
     if (this.disposed) { this.releaseTexture(texture); throw new Error('Environment materials disposed'); }
     texture.colorSpace = role === 'color' ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
@@ -126,10 +146,12 @@ export class EnvironmentMaterials {
     texture.minFilter = THREE.LinearMipmapLinearFilter;
     texture.anisotropy = 2;
     texture.flipY = false;
-    texture.generateMipmaps = true;
+    texture.generateMipmaps = !ktx;
     texture.needsUpdate = true;
     const image = texture.image as { width?: number; height?: number };
-    this.decodedBytes += (image?.width ?? 0) * (image?.height ?? 0) * 4;
+    // KTX2 uses typed mip data rather than a retained decoded RGBA bitmap.
+    // Actual transcode format/mip allocations are reported by its runtime.
+    if (!ktx) this.decodedBytes += (image?.width ?? 0) * (image?.height ?? 0) * 4;
     this.textures.add(texture);
     return texture;
   }
@@ -155,7 +177,16 @@ export class EnvironmentMaterials {
           try { set[role] = await this.loadTexture(url, role); report.maps.push(role); }
           catch (error) {
             report.errors.push(`${role}: ${errorText(error)}`);
-            if (role === 'color') break;
+            const fallback = this.fallbackAssets[family]?.[role];
+            // A missing/blocked decoder or corrupt compressed tile must not
+            // strip the released artwork. Keep the failure in diagnostics.
+            if (!this.disposed && /\.ktx2(?:$|[?#])/i.test(url) && fallback && fallback !== url) {
+              try {
+                set[role] = await this.loadTexture(fallback, role);
+                report.maps.push(role);
+              } catch (fallbackError) { report.errors.push(`${role} raster fallback: ${errorText(fallbackError)}`); }
+            }
+            if (role === 'color' && !set.color) break;
           }
         }
         report.state = !set.color ? 'failed' : report.errors.length ? 'partial' : 'ready';
