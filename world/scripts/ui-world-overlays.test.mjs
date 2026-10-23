@@ -1,0 +1,98 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+import { readFile } from 'node:fs/promises';
+import { runInNewContext } from 'node:vm';
+import ts from 'typescript';
+const compiled = await build({ stdin: { contents: "export * from './src/ui/FloatingChat';export * from './src/ui/OverlayPreferences';", resolveDir: process.cwd(), loader: 'ts' }, bundle: true, write: false, platform: 'node', format: 'esm' });
+const helpers = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
+const { boundChatRect, readChatRect, installFloatingChat, CHAT_LAYOUT_KEY, readDesktopActions, saveDesktopActions, DESKTOP_ACTIONS_KEY, jukeboxPromptVisible, drinkStatusText } = helpers;
+
+test('saved chat geometry stays bounded on desktop, phone, landscape and an on-screen keyboard viewport', () => {
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 402, height: 874 }, { width: 874, height: 402 }, { width: 402, height: 280, top: 110 }, { width: 320, height: 90 }]) {
+    for (const rect of [{ left: -900, top: -300, width: 9000, height: 9000 }, { left: 5000, top: 6000, width: 200, height: 200 }]) {
+      const result = boundChatRect(rect, viewport);
+      assert.ok(result.left >= (viewport.left ?? 0)); assert.ok(result.top >= (viewport.top ?? 0));
+      assert.ok(result.left + result.width <= (viewport.left ?? 0) + viewport.width); assert.ok(result.top + result.height <= (viewport.top ?? 0) + viewport.height);
+    }
+    const stored = { getItem(key) { assert.equal(key, CHAT_LAYOUT_KEY); return JSON.stringify({ left: 60, top: 90, width: 500, height: 450 }); } };
+    assert.deepEqual(readChatRect(stored, viewport), boundChatRect({ left: 60, top: 90, width: 500, height: 450 }, viewport));
+  }
+  const denied = { getItem() { throw Error('denied'); } }; assert.doesNotThrow(() => readChatRect(denied, { width: 402, height: 700 }));
+  for (const bad of ['{broken', '{"left":null}', '{"left":"1","top":3,"width":4,"height":5}']) assert.ok(Number.isFinite(readChatRect({ getItem: () => bad }, { width: 402, height: 700 }).width));
+});
+
+test('desktop actions are explicitly opted into locally and remain usable when storage is denied', () => {
+  const values = new Map(), storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
+  assert.equal(readDesktopActions(storage), false); saveDesktopActions(true, storage); assert.deepEqual([...values], [[DESKTOP_ACTIONS_KEY, '1']]);
+  assert.equal(readDesktopActions(storage), true); saveDesktopActions(false, storage); assert.equal(readDesktopActions(storage), false);
+  assert.equal(readDesktopActions({ getItem() { throw Error('denied'); } }), false);
+  assert.doesNotThrow(() => saveDesktopActions(true, { setItem() { throw Error('denied'); } }));
+});
+
+test('real chat pointer/keyboard handles save bounded geometry, restore after a temporary keyboard viewport and remove listeners on close', () => {
+  const values = new Map(), windowEvents = new Map(), viewportEvents = new Map();
+  globalThis.localStorage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
+  globalThis.window = { innerWidth: 1280, innerHeight: 800, visualViewport: { width: 1280, height: 800, offsetLeft: 0, offsetTop: 0, addEventListener: (key, handler) => viewportEvents.set(key, handler), removeEventListener: key => viewportEvents.delete(key) }, addEventListener: (key, handler) => windowEvents.set(key, handler), removeEventListener: key => windowEvents.delete(key) };
+  const element = () => ({ dataset: {}, attributes: {}, handlers: new Map(), setAttribute(key, value) { this.attributes[key] = value; }, addEventListener(key, handler) { this.handlers.set(key, handler); }, removeEventListener(key) { this.handlers.delete(key); }, setPointerCapture() {}, remove() { this.removed = true; } });
+  const header = element(), handle = element(); globalThis.document = { createElement: () => handle };
+  const style = { removeProperty(key) { delete this[key.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase())]; } }, classes = new Set();
+  const panel = { style, querySelector: () => header, append() {}, classList: { add: key => classes.add(key), remove: key => classes.delete(key) } };
+  const dispose = installFloatingChat(panel, false); const originalHeight = parseFloat(style.height); assert.equal(style.maxHeight, 'none', 'the floating viewport solver replaces the legacy phone sheet height cap');
+  window.visualViewport.height = 280; viewportEvents.get('resize')(); assert.ok(parseFloat(style.height) <= 256);
+  window.visualViewport.height = 800; viewportEvents.get('resize')(); assert.equal(parseFloat(style.height), originalHeight);
+  const pointer = (currentTarget, x, y) => ({ button: 0, pointerId: 1, clientX: x, clientY: y, currentTarget, preventDefault() {}, stopPropagation() {} });
+  header.handlers.get('pointerdown')(pointer(header, 100, 100)); header.handlers.get('pointermove')(pointer(header, 3000, -1000)); header.handlers.get('pointerup')();
+  assert.ok(parseFloat(style.left) + parseFloat(style.width) <= 1280); assert.equal(parseFloat(style.top), 12);
+  assert.ok(values.has(CHAT_LAYOUT_KEY));
+  handle.handlers.get('keydown')({ key: 'ArrowLeft', shiftKey: true, currentTarget: handle, preventDefault() {}, stopPropagation() {} });
+  assert.equal(JSON.parse(values.get(CHAT_LAYOUT_KEY)).width, 530);
+  dispose(); assert.equal(header.handlers.size, 0); assert.equal(handle.handlers.size, 0); assert.equal(windowEvents.size, 0); assert.equal(viewportEvents.size, 0); assert.equal(handle.removed, true); assert.equal(style.width, undefined); assert.equal(style.maxHeight, undefined);
+});
+
+test('DROP THE BEAT survives transient unmute reports and gives a rebuilt stream its own six-second recovery window', () => {
+  const state = {};
+  assert.equal(jukeboxPromptVisible(state, 'song:1', true, false, 0), true);
+  for (const now of [200, 1600, 3000, 5999]) assert.equal(jukeboxPromptVisible(state, 'song:1', true, true, now), true);
+  assert.equal(jukeboxPromptVisible(state, 'song:1', true, true, 6000), false);
+  assert.equal(jukeboxPromptVisible(state, undefined, false, false, 6100), false, 'film exit tears down the prior player');
+  assert.equal(jukeboxPromptVisible(state, 'song:2', true, true, 7000), true);
+  assert.equal(jukeboxPromptVisible(state, 'song:2', true, false, 12000), true, 'buffering never counts as audible playback');
+  assert.equal(jukeboxPromptVisible(state, 'song:2', true, true, 13000), true);
+  assert.equal(jukeboxPromptVisible(state, 'song:2', true, true, 14499), true);
+  assert.equal(jukeboxPromptVisible(state, 'song:2', true, true, 14500), false);
+  assert.equal(jukeboxPromptVisible(state, 'song:2', false, false, 15000), false, 'muted attendee never gets a recovery request');
+});
+
+const source = await readFile('src/ui/App.ts', 'utf8'), tree = ts.createSourceFile('App.ts', source, ts.ScriptTarget.Latest, true);
+const app = tree.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'App');
+const methods = ['syncDrinkStatus', 'syncMenuCapture', 'hideSeatMenu', 'prepareSeatMenu', 'globalShortcut', 'updateJukeboxSoundPrompt', 'jukeboxMessage'].map(name => {
+  const method = app.members.find(node => node.name?.getText(tree) === name); assert.ok(method, name); return method.getText(tree);
+}).join('\n');
+const script = ts.transpileModule(`class OverlayHarness { ${methods} }; globalThis.OverlayHarness=OverlayHarness;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+const globals = { drinkStatusText, jukeboxPromptVisible, performance: { now: () => 0 }, window: { location: { hostname: '127.0.0.1' } } };
+runInNewContext(script, globals); const { OverlayHarness } = globals;
+const fixture = () => {
+  const menu = { dataset: { menuOwner: 'npc' }, hidden: false, classList: { remove() {} }, removeAttribute() {} }, badge = { hidden: true, textContent: '' }, pass = { hidden: true }, prompt = { hidden: false };
+  const root = { dataset: {}, querySelector: selector => ({ '#seat-menu': menu, '#drink-status': badge, '#festival-pass': pass, '[data-jukebox-sound]': prompt })[selector] };
+  const calls = [], ui = new OverlayHarness(); Object.assign(ui, { root, world: { closeNpcDialogue() { calls.push('close-dialogue'); }, setMenuOpen(value) { calls.push(['menu', value]); } }, language: 'en', drinkCount: 4, jukeboxPromptMemory: {}, jukeboxVolume: .5, audioMuted: false, jukeboxSilenced: false, jukeboxPlayingId: 'song', jukeboxPromptGeneration: 1 });
+  return { ui, menu, badge, calls, prompt };
+};
+
+test('the actual App keeps drink status separate from transient alerts and releases dialogue camera on close, replacement and Escape', () => {
+  const { ui, menu, badge, calls } = fixture(); ui.syncDrinkStatus(); assert.equal(badge.hidden, false); assert.equal(badge.textContent, '4 DRINKS');
+  ui.syncDrinkStatus(); assert.equal(badge.textContent, '4 DRINKS'); ui.drinkCount = 0; ui.syncDrinkStatus(); assert.equal(badge.hidden, true);
+  ui.syncMenuCapture(); assert.equal(calls.at(-1)[1], true);
+  ui.hideSeatMenu(); assert.equal(menu.hidden, true); assert.equal(menu.dataset.menuOwner, undefined); assert.equal(calls.at(-1)[1], false);
+  menu.dataset.menuOwner = 'npc'; ui.prepareSeatMenu(menu, 'screening'); assert.equal(menu.dataset.menuOwner, 'screening'); assert.equal(calls.at(-1), 'close-dialogue');
+  menu.dataset.menuOwner = 'npc'; menu.hidden = false; let prevented = false;
+  ui.globalShortcut({ key: 'Escape', preventDefault() { prevented = true; } }); assert.equal(prevented, true); assert.equal(menu.hidden, true); assert.equal(calls.at(-1)[1], false);
+});
+
+test('the actual jukebox message path requires real playing state as well as unmuted volume', () => {
+  const { ui, prompt } = fixture(), frameWindow = {}; ui.jukeboxFrame = { contentWindow: frameWindow }; ui.jukeboxReportedDurations = new Map();
+  ui.jukeboxMessage({ source: frameWindow, data: JSON.stringify({ event: 'infoDelivery', info: { muted: false, volume: 50, playerState: 3 } }) });
+  assert.equal(ui.jukeboxReportedState, 3); assert.equal(prompt.hidden, false);
+  ui.jukeboxMessage({ source: frameWindow, data: JSON.stringify({ event: 'onStateChange', info: 1 }) });
+  assert.equal(ui.jukeboxReportedState, 1); assert.equal(prompt.hidden, false, 'six-second minimum still applies to the genuine playing acknowledgement');
+});

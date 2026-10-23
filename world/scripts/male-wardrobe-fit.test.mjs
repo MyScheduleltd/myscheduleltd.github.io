@@ -92,15 +92,15 @@ test('male shirt, vest and prints do not follow the thighs or head',()=>{
  }
 });
 
-test('saved male swimwear colours cannot replace the black shorts and white stripe texture',()=>{
+test('saved male swimwear colours dye the shorts while retaining the white stripe texture and its mask',()=>{
  for(const colour of ['#ff00ff','#ffff00','#ffffff','#000000']){
   const root=new THREE.Group(),palette={skin:'#fbc4a0',hair:'#55413b',top:'#18191b',bottoms:'#5b5a4d',swimwear:colour};
   const rig=createCoastalAvatar(root,palette,true,new THREE.Group());attachImportedAvatar(root,rig,palette);setCoastalSwimwear(root,true);
   const body=root.userData.importedAvatar.meshes.find(m=>m.userData.componentId==='body');
   const shader={uniforms:{},vertexShader:'#include <skinning_vertex>',fragmentShader:'#include <map_fragment>'};
   body.material.onBeforeCompile(shader,{});
-  assert.equal(shader.uniforms.avatarDyeOn.value.z,0,'saved colour still recolours his shorts');
-  assert.equal(shader.uniforms.avatarGarment.value.getHexString(),'191519');
+  assert.equal(shader.uniforms.avatarDyeOn.value.z,1,'chosen male swimsuit colour must reach the cloth mask');
+  assert.equal(shader.uniforms.avatarGarment.value.getHexString(),colour.slice(1));
   assert.ok(body.material.map,'keep the original texture with its white side stripes');
  }
 });
@@ -413,7 +413,18 @@ test('hair dye includes the lower curls on both sides and the rear, without dyei
  assert.ok(bottom.length>100,'sample the curls behind the neck, below the face');
  assert.ok(bottom.filter(v=>hair.getX(v)>.5).length/bottom.length>.95,'bottom rear hair remains undyed');
  // Recovered sneakers have a different atlas and must retain their artwork.
- assert.equal(parts['garment-shoes'].material.customProgramCacheKey(),'higgsfield-avatar-even-v2');
+ const shoes=parts['garment-shoes'],shoeMaterial=shoes.material,shoeMap=shoeMaterial.map;
+ assert.ok(shoes.userData.footwear_source,'exercise the recovered footwear with its separate source atlas');
+ assert.ok(shoeMap);assert.notEqual(shoeMap,body.material.map,'footwear must not inherit the body dye atlas');
+ assert.match(shoeMaterial.customProgramCacheKey(),/^higgsfield-avatar-dye-v15-shoes-/);
+ const shoeShader={uniforms:{},vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};
+ shoeMaterial.onBeforeCompile(shoeShader,{});
+ assert.ok(shoeShader.uniforms.avatarEven,'keep the shared scene-lit avatar bands');
+ assert.equal(shoeShader.uniforms.avatarDyeOn.value.x,0);assert.equal(shoeShader.uniforms.avatarDyeOn.value.y,0);
+ assert.equal(shoeShader.uniforms.avatarDyeOn.value.z,0,'absent shoe dye retains the recovered sneaker artwork');
+ assert.ok(shoeShader.fragmentShader.includes('dyeMask=vec3(0.,0.,1.-smoothstep(.24,.52,garmentLuma))'),'only the component-owned upper mask may dye the shoes');
+ assert.ok(shoeShader.uniforms.worldFilmFrame,'the added film finish must still reach footwear');
+ assert.equal(shoeMaterial.map,shoeMap,'shader composition cannot replace the authored sneaker artwork');
 });
 test('male elbow skin follows its arm joints through actual punch and dance clips',()=>{
  const {root,parts}=character(),body=parts.body,p=body.geometry.getAttribute('position'),si=body.geometry.getAttribute('skinIndex'),sw=body.geometry.getAttribute('skinWeight');

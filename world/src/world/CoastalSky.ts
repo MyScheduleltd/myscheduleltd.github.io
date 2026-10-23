@@ -25,6 +25,44 @@ function cloudTexture(variant: number): THREE.CanvasTexture {
   return texture;
 }
 
+/** Inside the camera's far plane (300) with the player's orbit added, outside the stars (253). */
+export const SKY_DOME_RADIUS = 270;
+const SKY_VERTEX = `varying vec3 vDirection;
+void main() {
+  vDirection = position;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+// Horizon to middle to zenith by elevation, plus a warm bank towards the sun
+// that hugs the horizon: what a flat background colour could never show. At
+// and below the horizon it is the fog's colour, so fogged land and sea meet
+// the sky without a seam.
+const SKY_FRAGMENT = `uniform vec3 fogColour;
+uniform vec3 horizon;
+uniform vec3 middle;
+uniform vec3 zenith;
+uniform vec3 glow;
+uniform vec3 sunDirection;
+uniform float glowStrength;
+varying vec3 vDirection;
+void main() {
+  vec3 d = normalize(vDirection);
+  float e = d.y;
+  // Wide, overlapping blends (owner, 2026-10-23). The pale horizon used to
+  // turn blue within the first eleven degrees, which read as two colours
+  // dissolving into each other rather than one sky.
+  vec3 colour = mix(mix(horizon, middle, smoothstep(-0.02, 0.5, e)), zenith, smoothstep(0.28, 0.95, e));
+  vec2 around = normalize(d.xz + vec2(1e-5));
+  vec2 towardSun = normalize(sunDirection.xz + vec2(1e-5));
+  float facing = pow(max(dot(around, towardSun), 0.0), 3.0);
+  float band = 1.0 - smoothstep(0.0, 0.42, abs(e - 0.03));
+  colour = mix(colour, glow, glowStrength * facing * band);
+  // The fog's colour at the horizon fades into the sky over about fifteen
+  // degrees, not three: a narrow fade read as a second colour laid on top.
+  colour = mix(fogColour, colour, smoothstep(-0.01, 0.26, e));
+  gl_FragColor = vec4(colour, 1.0);
+  #include <colorspace_fragment>
+}`;
+
 export function nightSkyAmount(minute: number): number {
   return THREE.MathUtils.smoothstep(minute,31,39)*(1-THREE.MathUtils.smoothstep(minute,54,60));
 }
@@ -38,6 +76,8 @@ export class CoastalSky {
   private readonly sunset=new THREE.Color(0xefb393);
   private readonly moonlight=new THREE.Color(0x64799f);
   private lastMinute=0;
+  /** Drawn first and behind everything; follows the observer, never turns with the stars. */
+  readonly dome: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
 
   constructor(scene: THREE.Scene) {
     this.root.name='coastal-atmosphere';this.root.userData.projectorBackground=true;
@@ -66,14 +106,38 @@ export class CoastalSky {
     this.starMaterial=new THREE.PointsMaterial({size:1.8,sizeAttenuation:false,vertexColors:true,transparent:true,opacity:0,fog:false,depthWrite:false,toneMapped:false});
     this.starMaterial.userData.wornNoGrain=true;
     this.stars=new THREE.Points(g,this.starMaterial);this.stars.name='night-stars';this.stars.renderOrder=-3;this.root.add(this.stars);scene.add(this.root);
+    const domeMaterial=new THREE.ShaderMaterial({
+      name:'sky-gradient',vertexShader:SKY_VERTEX,fragmentShader:SKY_FRAGMENT,side:THREE.BackSide,depthTest:false,depthWrite:false,fog:false,toneMapped:false,
+      uniforms:{fogColour:{value:new THREE.Color()},horizon:{value:new THREE.Color()},middle:{value:new THREE.Color()},zenith:{value:new THREE.Color()},glow:{value:new THREE.Color()},sunDirection:{value:new THREE.Vector3(0,1,0)},glowStrength:{value:0}},
+    });
+    // This authored gradient has its own vertex/fragment contract. WornStyle
+    // patches built-in shader anchors; applying just its final colour step
+    // here would reference uniforms its declaration anchor never installed.
+    domeMaterial.userData.preserveAuthoredSurface=true;
+    domeMaterial.userData.wornNoGrain=true;domeMaterial.userData.filmGrainExclude=true;
+    // Down to about twenty degrees under the horizon, which is as low as any view looks past the land.
+    this.dome=new THREE.Mesh(new THREE.SphereGeometry(SKY_DOME_RADIUS,32,14,0,Math.PI*2,0,Math.PI*.62),domeMaterial);
+    this.dome.name='sky-dome';this.dome.renderOrder=-10;this.dome.frustumCulled=false;
+    this.dome.userData.projectorBackground=true;this.dome.userData.filmGrainExclude=true;this.dome.userData.environmentExclude=true;
+    scene.add(this.dome);
+  }
+
+  /** The keyframed gradient for this moment, and where the sun is (any length). */
+  setSky(fog:THREE.Color,horizon:THREE.Color,middle:THREE.Color,zenith:THREE.Color,glow:THREE.Color,glowStrength:number,sunDirection:THREE.Vector3): void {
+    const u=this.dome.material.uniforms;
+    u.fogColour.value.copy(fog);u.horizon.value.copy(horizon);u.middle.value.copy(middle);u.zenith.value.copy(zenith);u.glow.value.copy(glow);
+    u.glowStrength.value=glowStrength;u.sunDirection.value.copy(sunDirection);
   }
 
   update(minute:number,observer:THREE.Vector3,now=Date.now()): void {
     this.lastMinute=minute;
     this.root.position.set(observer.x,0,observer.z);
+    this.dome.position.set(observer.x,observer.y,observer.z);
     this.root.rotation.y=(now*.07/3600000)%(Math.PI*2);
     const night=nightSkyAmount(minute);
-    const dusk=THREE.MathUtils.smoothstep(minute,21,28)*(1-THREE.MathUtils.smoothstep(minute,30,37));
+    // Sunset and sunrise both colour the clouds; dawn is the start of the cycle.
+    const dusk=THREE.MathUtils.smoothstep(minute,21,28)*(1-THREE.MathUtils.smoothstep(minute,30,37))
+      +(1-THREE.MathUtils.smoothstep(minute,2,8))+THREE.MathUtils.smoothstep(minute,56,60);
     for(const m of this.clouds){m.color.copy(this.daylight).lerp(this.sunset,dusk).lerp(this.moonlight,night);m.opacity=1;}
     this.starMaterial.opacity=night*.95;this.stars.visible=night>.001;
   }

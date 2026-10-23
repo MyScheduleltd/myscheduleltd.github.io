@@ -1,14 +1,15 @@
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join as joinPath } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer as createHttpServer } from 'node:http';
 import { aesDecrypt, aesEncrypt, checkMacValue } from './ecpay.mjs';
 import { ecpayConfig } from './donations.mjs';
-import { randomUUID } from 'node:crypto';
+import { generateKeyPairSync, randomUUID, sign } from 'node:crypto';
+import { arcadeProofText } from './arcade-preview.mjs';
 
 const temporaryDirectory = mkdtempSync(joinPath(tmpdir(), 'festival-test-'));
 let baseUrl;
@@ -49,6 +50,9 @@ const startServer = async (port, stateFile, seedFile = 'off', extraEnv = {}) => 
       // money. Nothing here contacts ECPay: the tests exercise this service's
       // own half — what it signs, what it accepts, and what it refuses.
       ECPAY_PUBLIC_URL: `http://127.0.0.1:${port}`,
+      // Never the developer's real Upstash: only a test that hands over its
+      // own fake store gets one.
+      UPSTASH_REDIS_REST_URL: '', UPSTASH_REDIS_REST_TOKEN: '', KV_REST_API_URL: '', KV_REST_API_TOKEN: '',
       ...extraEnv,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -105,6 +109,109 @@ const auth = (session) => ({
   'x-festival-session': session.id,
   'content-type': 'application/json',
   origin: 'http://127.0.0.1:5173',
+});
+
+const firstSharedState = async session => {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 3000);
+  try {
+    const response = await fetch(`${baseUrl}/api/events`, { headers: auth(session), signal: abort.signal });
+    const reader = response.body.getReader(); let text = '';
+    while (true) {
+      const part = await reader.read(); if (part.done) throw Error('Missing shared state');
+      text += new TextDecoder().decode(part.value);
+      const match = text.match(/event: state\ndata: ([^\n]+)/);
+      if (match) return JSON.parse(match[1]);
+    }
+  } finally { clearTimeout(timer); abort.abort(); }
+};
+
+test('new paid arcade codes are private, work on any browser they are typed into, are replay-safe and restored after a service restart', async () => {
+  const port = await freePort(), url = `http://127.0.0.1:${port}`;
+  const stateFile = joinPath(temporaryDirectory, 'arcade-preview-private.json');
+  // Freeze only this disposable child through Node's test preload. No clock override exists in the server API.
+  const env = { ECPAY_INVOICE: 'off', NODE_OPTIONS: '--import=data:text/javascript,Date.now%3D()%3D%3EDate.parse(%222026-10-22T08%3A00%3A00Z%22)' };
+  let instance = await startServer(port, stateFile, 'off', env);
+  const owner = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const other = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const post = (path, data) => fetch(url + path, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' }, body: JSON.stringify(data) });
+  const signed = async (pair, action, code = '') => {
+    const publicKey = pair.publicKey.export({ format: 'jwk' });
+    const response = await post('/api/arcade-preview/challenge', { publicKey, action });
+    assert.equal(response.status, 200);
+    const { nonce } = await response.json();
+    return { publicKey, nonce, code, signature: sign('sha256', Buffer.from(arcadeProofText(action, nonce, code)),
+      { key: pair.privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url') };
+  };
+  const status = async pair => {
+    const response = await post('/api/arcade-preview/status', await signed(pair, 'status'));
+    assert.equal(response.status, 200); return response.json();
+  };
+  try {
+    const invalid = await post('/api/donation', { amount: 52, email: 'arcade@example.com', arcadeDeviceKey: { kty: 'EC' } });
+    assert.equal(invalid.status, 400);
+    const begin = await post('/api/donation', { amount: 52, arcadeDeviceKey: owner.publicKey.export({ format: 'jwk' }) });
+    assert.equal(begin.status, 200); const { id } = await begin.json();
+    assert.deepEqual((await status(owner)).codes, [], 'no ticket before settlement');
+    const notice = { CustomField1: id, RtnCode: '1', TradeAmt: '52', PaymentType: 'Credit_CreditCard', TradeNo: 'arcade-stage-proof' };
+    const notify = data => fetch(url + '/api/ecpay/notify', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(data) });
+    assert.equal((await notify({ ...notice, CheckMacValue: 'forged' })).status, 400);
+    assert.deepEqual((await status(owner)).codes, [], 'forgery cannot issue a ticket');
+    const paid = { ...notice, CheckMacValue: checkMacValue(notice, 'pwFHCqoQZGmho4w6', 'EkRm7iFT261dpevs') };
+    assert.equal(await notify(paid).then(r => r.text()), '1|OK');
+    const received = await status(owner); assert.equal(received.codes.length, 1); assert.equal(received.unlocked, false);
+    const code = received.codes[0].code;
+    assert.equal(JSON.parse(readFileSync(stateFile, 'utf8')).arcadePreview[0].code, code,
+      'the callback response is sent after the ticket is written, without waiting for a graceful shutdown');
+    assert.deepEqual((await status(other)).codes, [], 'another browser never sees the code');
+    const shared = await post('/api/arcade-preview/redeem', await signed(other, 'redeem', code));
+    assert.equal(shared.status, 200, 'but the code unlocks it when typed in (codes work on any device)');
+    assert.equal((await shared.json()).unlocked, true);
+    const proof = await signed(owner, 'redeem', code);
+    const redeemed = await post('/api/arcade-preview/redeem', proof);
+    assert.equal(redeemed.status, 200); assert.equal((await redeemed.json()).unlocked, true);
+    assert.ok(JSON.parse(readFileSync(stateFile, 'utf8')).arcadePreview[0].redeemedAt,
+      'redemption is checkpointed before returning an unlock');
+    assert.equal((await post('/api/arcade-preview/redeem', proof)).status, 403, 'proof replay fails');
+    const blockedWrite = `${stateFile}.${instance.pid}.tmp`;
+    mkdirSync(blockedWrite);
+    assert.equal((await notify(paid)).status, 503, 'a failed durable checkpoint is retryable, never acknowledged as saved');
+    rmSync(blockedWrite, { recursive: true });
+    assert.equal(await notify(paid).then(r => r.text()), '1|OK', 'an already-paid duplicate retries the checkpoint');
+    assert.equal((await status(owner)).codes.length, 1, 'duplicate callback retains one random ticket');
+    for (const path of ['/api/config', `/api/donation/${id}`]) {
+      const publicText = await fetch(url + path).then(r => r.text());
+      assert.ok(!publicText.includes(code)); assert.ok(!publicText.includes('arcadeDeviceKey'));
+    }
+    const staffText = await fetch(url + '/api/admin/state', { headers: { 'x-festival-admin-key': 'test-admin-key' } }).then(r => r.text());
+    assert.ok(!staffText.includes(code), 'staff records do not expose a donor ticket either');
+    await new Promise(resolve => { instance.once('exit', resolve); instance.kill('SIGKILL'); });
+    instance = await startServer(port, stateFile, 'off', env);
+    const restored = await status(owner); assert.equal(restored.unlocked, true); assert.equal(restored.codes[0].code, code);
+    assert.equal((await status(other)).unlocked, true, 'the other browser that entered the code stays unlocked after a restart');
+    assert.deepEqual((await status(other)).codes, []);
+  } finally { await stopServer(instance); }
+});
+
+test('public resident job titles match the owner list without inventing introductions', async () => {
+  const config = await fetch(`${baseUrl}/api/config`).then(r => r.json());
+  const expected = {DRBEAUTY:'Artist',KENNY:'DIRECTOR',LOUI:'DIRECTOR',MENTOR:'VIDEO EDITOR',MICHAEL:'DIRECTOR',MINYUN:'ADMINISTRATOR',NUNO:'SOUND ENGINEER',SEBINE:'DIRECTOR',VIOLA:'PROJECT MANAGER',XIEHGAN:'BOSS',YO:'SOCIAL',ZC:'DIRECTOR'};
+  for (const [id,title] of Object.entries(expected)) {
+    const profile = config.npcProfiles.find(p => p.id === id);
+    assert.equal(profile?.title,title); assert.equal(profile.introduction,'');
+  }
+  assert.equal(config.npcNames.MINYUN,'MIN YUN LEE');assert.equal(config.npcProfiles.find(p=>p.id==='MINYUN').name,'MIN YUN LEE');
+});
+
+test('the old MINYUN default becomes its full name while stored STAFF names remain exact across restarts',async()=>{
+ const port=await freePort(),stateFile=joinPath(temporaryDirectory,'npc-full-name-state.json'),url=`http://127.0.0.1:${port}`;
+ writeFileSync(stateFile,JSON.stringify({npcNames:{MINYUN:'MINYUN',KENNY:'Custom K'},npcTitles:{MINYUN:'ADMINISTRATOR',KENNY:'Custom Director'}}));
+ let instance=await startServer(port,stateFile);
+ try{
+  let config=await(await fetch(url+'/api/config')).json();assert.equal(config.npcNames.MINYUN,'MIN YUN LEE');assert.equal(config.npcNames.KENNY,'Custom K');assert.equal(config.npcProfiles.find(p=>p.id==='KENNY').title,'Custom Director');
+  const updated=await fetch(url+'/api/admin/npcs',{method:'POST',headers:{'content-type':'application/json','x-festival-admin-key':'test-admin-key',origin:'http://127.0.0.1:5173'},body:JSON.stringify({npcId:'MINYUN',name:'Min Y. Lee',title:'Custom Admin'})});assert.equal(updated.status,200);
+  await stopServer(instance);instance=await startServer(port,stateFile);config=await(await fetch(url+'/api/config')).json();assert.equal(config.npcNames.MINYUN,'Min Y. Lee');assert.equal(config.npcProfiles.find(p=>p.id==='MINYUN').title,'Custom Admin');
+ }finally{await stopServer(instance);}
 });
 
 test('a sign-in donation is listed, invoiced and restored for STAFF without a visitor session', async () => {
@@ -1123,7 +1230,7 @@ test('the club is a full venue with the DR.BEAUTY records', async () => {
   assert.equal(club.order.includes('rMicadJVzH8'), true);
   assert.equal(typeof club.startedAt, 'number', 'the club runs on the same programme clock');
   assert.equal(config.customVideos.club.length, 0);
-  assert.equal(config.npcProfiles.some((profile) => profile.id === 'XIEHGAN' && profile.name === 'XIEH GAN' && profile.title === 'Resident DJ'), true);
+  assert.equal(config.npcProfiles.some((profile) => profile.id === 'XIEHGAN' && profile.name === 'XIEH GAN' && profile.title === 'BOSS'), true);
 });
 
 test('staff set a track tempo and it is rejected outside a musical range', async () => {
@@ -1972,6 +2079,8 @@ test('the checkout page carries a signed form and never the key', async () => {
 test('a forged payment notification is refused, and a real one is acknowledged', async () => {
   const { checkMacValue } = await import('./ecpay.mjs');
   const session = await join('NOTIFY TEST');
+  const other = await join('CELEBRATION VIEWER');
+  const beforeCelebration = (await firstSharedState(other)).donationCelebration;
   const started = await (await fetch(`${baseUrl}/api/donation`, {
     method: 'POST', headers: auth(session), body: JSON.stringify({ amount: 500, email: 'donor@example.com' }),
   })).json();
@@ -1985,6 +2094,7 @@ test('a forged payment notification is refused, and a real one is acknowledged',
   assert.equal(await forged.text(), '0|CheckMacValue');
   const stillPending = await (await fetch(`${baseUrl}/api/donation/${started.id}`)).json();
   assert.equal(stillPending.state, 'pending', 'a forgery must not mark anything paid');
+  assert.deepEqual((await firstSharedState(other)).donationCelebration, beforeCelebration, 'forgery cannot launch fireworks');
 
   // ECPay's own stage credentials, which is what the service is configured
   // with when nothing else is set.
@@ -2011,6 +2121,23 @@ test('a forged payment notification is refused, and a real one is acknowledged',
   assert.equal(await real.text(), '1|OK', 'anything else and ECPay retries for a day');
   const paid = await (await fetch(`${baseUrl}/api/donation/${started.id}`)).json();
   assert.equal(paid.state, 'paid');
+  const shared = (await firstSharedState(session)).donationCelebration;
+  assert.ok(shared && shared.id !== beforeCelebration?.id);
+  assert.deepEqual(Object.keys(shared).sort(), ['durationMs','id','startedAt']);
+  assert.equal(shared.durationMs, 24_000);
+  assert.deepEqual((await firstSharedState(other)).donationCelebration, shared, 'the donor and another attendee see the same score and clock');
+  const late = await join('LATE CELEBRATION');
+  assert.deepEqual((await firstSharedState(late)).donationCelebration, shared, 'late joins receive the active event');
+  await fetch(`${baseUrl}/api/ecpay/notify`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ ...notice, CheckMacValue: checkMacValue(notice, 'pwFHCqoQZGmho4w6', 'EkRm7iFT261dpevs') }) });
+  assert.deepEqual((await firstSharedState(other)).donationCelebration, shared, 'ECPay retries never relaunch an already paid offering');
+  await fetch(`${baseUrl}/api/presence`, { method:'POST', headers:auth(other), body:JSON.stringify({ donationCelebration:{id:'forged',startedAt:Date.now(),durationMs:24_000} }) });
+  assert.deepEqual((await firstSharedState(other)).donationCelebration, shared, 'presence cannot author a payment celebration');
+  const unpaid = await fetch(`${baseUrl}/api/donation`, { method:'POST', headers:auth(other), body:JSON.stringify({amount:100}) }).then(r=>r.json());
+  const failedNotice = { ...notice, CustomField1:unpaid.id, RtnCode:'0', TradeAmt:'100' };
+  await fetch(`${baseUrl}/api/ecpay/notify`, { method:'POST', headers:{'content-type':'application/x-www-form-urlencoded'},
+    body:new URLSearchParams({...failedNotice,CheckMacValue:checkMacValue(failedNotice,'pwFHCqoQZGmho4w6','EkRm7iFT261dpevs')}) });
+  assert.deepEqual((await firstSharedState(other)).donationCelebration, shared, 'an authenticated failed checkout does not launch a celebration');
 });
 
 test('the amount that counts is the one ECPay reports, not the one asked for', async () => {
@@ -2030,18 +2157,35 @@ test('the amount that counts is the one ECPay reports, not the one asked for', a
 });
 
 
-test('fixed outfit IDs and independent trouser colours survive join and presence updates',async()=>{
- for(const top of ['#18191b','#191a1c','#1a1b1d']){
-  const palette={top,bottoms:'#718262'};
-  const response=await fetch(`${baseUrl}/api/session`,{method:'POST',headers:{'content-type':'application/json',origin:'http://127.0.0.1:5173'},body:JSON.stringify({name:'OUTFIT CHECK',palette})});
-  assert.equal(response.status,201);const session=(await response.json()).session;
+test('fixed outfit IDs and independent garment colours survive join, presence, remote state and session recovery',async()=>{
+ for(const top of ['#18191b','#191a1c','#1a1b1d','#28191b','#291a1c','#2a1b1d']){
+  const palette={top,shirt:'#a33249',shoes:'#327ab8',bottoms:'#718262',swimwear:'#cf5c27'};
+  const name=`DYE ${top.slice(1)}`;
+  const response=await fetch(`${baseUrl}/api/session`,{method:'POST',headers:{'content-type':'application/json',origin:'http://127.0.0.1:5173'},body:JSON.stringify({name,palette})});
+  assert.equal(response.status,201);const joined=await response.json(),session=joined.session;
+  assert.deepEqual(Object.fromEntries(Object.keys(palette).map(slot=>[slot,joined.state.visitors.find(v=>v.id===session.id).palette[slot]])),palette);
   for(const state of ['walking','swimming','walking']){
    const updated=await fetch(`${baseUrl}/api/presence`,{method:'POST',headers:auth(session),body:JSON.stringify({x:0,z:0,state,palette})});
    assert.equal(updated.status,202);
    const shared=await (await fetch(`${baseUrl}/api/admin/state`,{headers:{'x-festival-admin-key':'test-admin-key',origin:'http://127.0.0.1:5173'}})).json();
    const visitor=shared.visitors.find(v=>v.id===session.id);
-   assert.equal(visitor.palette.top,top);assert.equal(visitor.palette.bottoms,palette.bottoms);assert.equal(visitor.presence.state,state);
+   for(const slot of Object.keys(palette))assert.equal(visitor.palette[slot],palette[slot],slot);
+   assert.equal(visitor.presence.state,state);
   }
+  const recovered=await fetch(`${baseUrl}/api/session/recover`,{method:'POST',headers:{'content-type':'application/json',origin:'http://127.0.0.1:5173'},body:JSON.stringify({session,name,palette})});
+  assert.equal(recovered.status,200);
+  const restored=(await recovered.json()).state.visitors.find(v=>v.id===session.id);
+  for(const slot of Object.keys(palette))assert.equal(restored.palette[slot],palette[slot],`recovered ${slot}`);
+  const remote=(await firstSharedState(session)).visitors.find(v=>v.id===session.id);
+  assert.equal(remote.palette.shirt,palette.shirt);assert.equal(remote.palette.shoes,palette.shoes);
+ }
+});
+
+test('optional garment dyes reject malformed values and stay absent on an older pass',async()=>{
+ for(const [index,garments] of [{},{shirt:'red',shoes:'#123'},{shirt:'#1234567',shoes:null},{shirt:{colour:'#123456'},shoes:123456},{shirt:['#123456'],shoes:['#123456']}].entries()){
+  const response=await fetch(`${baseUrl}/api/session`,{method:'POST',headers:{'content-type':'application/json',origin:'http://127.0.0.1:5173'},body:JSON.stringify({name:`UNDYED ${index}`,palette:{top:'#18191b',...garments}})});
+  assert.equal(response.status,201);const joined=await response.json(),palette=joined.state.visitors.find(v=>v.id===joined.session.id).palette;
+  assert.equal(palette.top,'#18191b');assert.equal(Object.hasOwn(palette,'shirt'),false);assert.equal(Object.hasOwn(palette,'shoes'),false);
  }
 });
 
@@ -2666,6 +2810,44 @@ test('a jukebox record plays its own length, not a guess, and a length heard is 
   }
 });
 
+test('a record YouTube will not embed is skipped when a listener reports it; one that plays is not', async () => {
+  // A stand-in for YouTube's oEmbed: one record refused (401), the other fine.
+  const youtube = createHttpServer((request, response) => {
+    const target = new URL(request.url, 'http://x').searchParams.get('url') ?? '';
+    const refused = target.includes('UvynvnxZJ3Q');
+    response.writeHead(refused ? 401 : 200, { 'content-type': 'application/json' });
+    response.end(refused ? 'Unauthorized' : '{"title":"fine"}');
+  });
+  await new Promise((resolve) => youtube.listen(0, '127.0.0.1', resolve));
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const seedFile = joinPath(temporaryDirectory, 'unplayable-seed.json');
+  writeFileSync(seedFile, JSON.stringify({ version: 1,
+    jukeboxTracks: [{ id: 'UvynvnxZJ3Q', youtubeId: 'UvynvnxZJ3Q', title: 'TAKEN DOWN' }, { id: 'bc0KhhjJP98', youtubeId: 'bc0KhhjJP98', title: 'PLAYS' }],
+    trackDurations: { UvynvnxZJ3Q: 200, bc0KhhjJP98: 200 } }), 'utf8');
+  const instance = await startServer(port, joinPath(temporaryDirectory, 'unplayable-state.json'), seedFile, {
+    FESTIVAL_YOUTUBE_TITLES: 'on', FESTIVAL_YOUTUBE_ORIGIN: `http://127.0.0.1:${youtube.address().port}`,
+  });
+  try {
+    const session = await fetch(`${url}/api/session`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' }, body: JSON.stringify({ name: 'LISTENER' }) })
+      .then((r) => r.json()).then((r) => r.session);
+    const as = { authorization: `Bearer ${session.token}`, 'x-festival-session': session.id, 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' };
+    const deck = async () => (await fetch(`${url}/api/config`).then((r) => r.json())).jukebox;
+    for (const trackId of ['UvynvnxZJ3Q', 'bc0KhhjJP98']) await fetch(`${url}/api/jukebox/request`, { method: 'POST', headers: as, body: JSON.stringify({ trackId }) });
+    assert.equal((await deck()).nowPlaying.youtubeId, 'UvynvnxZJ3Q');
+    const report = (youtubeId) => fetch(`${url}/api/jukebox/unplayable`, { method: 'POST', headers: as, body: JSON.stringify({ youtubeId }) }).then((r) => r.json());
+    assert.equal((await report('bc0KhhjJP98')).skipped, false, 'only the record on the deck can be reported');
+    assert.equal((await report('UvynvnxZJ3Q')).skipped, true, 'YouTube refuses it everywhere: skipped');
+    assert.equal((await deck()).nowPlaying.youtubeId, 'bc0KhhjJP98', 'and the next in line takes its place');
+    assert.equal((await report('bc0KhhjJP98')).skipped, false, 'YouTube plays this one, so one listener cannot skip it');
+    assert.equal((await deck()).nowPlaying.youtubeId, 'bc0KhhjJP98');
+    assert.equal((await fetch(`${url}/api/jukebox/unplayable`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' }, body: '{}' })).status, 401);
+  } finally {
+    await stopServer(instance);
+    await new Promise((resolve) => youtube.close(resolve));
+  }
+});
+
 test('lengths nobody has on file are looked up on YouTube when the service starts', async () => {
   // A stand-in for YouTube's watch page: the length is all that is read.
   const asked = [];
@@ -2808,6 +2990,136 @@ test('a note left with an offering goes on the wish wall once paid, never to dis
   } finally {
     await stopServer(instance);
   }
+});
+
+test('with Upstash configured, the wish wall survives a restart and keeps the newest thirty', async () => {
+  // A stand-in for Upstash's REST API: GET and SET of one key, bearer token checked.
+  const stored = new Map(), seen = [];
+  const upstash = createHttpServer((request, response) => {
+    let body = '';
+    request.on('data', (chunk) => { body += chunk; });
+    request.on('end', () => {
+      const [command, key, value] = JSON.parse(body || '[]');
+      seen.push([command, key, request.headers.authorization]);
+      response.setHeader('content-type', 'application/json');
+      if (request.headers.authorization !== 'Bearer wish-token') { response.statusCode = 401; return response.end('{"error":"unauthorised"}'); }
+      if (command === 'SET') { stored.set(key, value); return response.end('{"result":"OK"}'); }
+      if (command === 'GET') return response.end(JSON.stringify({ result: stored.get(key) ?? null }));
+      response.end('{"error":"unexpected"}');
+    });
+  });
+  await new Promise((resolve) => upstash.listen(0, '127.0.0.1', resolve));
+  const store = { UPSTASH_REDIS_REST_URL: `http://127.0.0.1:${upstash.address().port}/`, UPSTASH_REDIS_REST_TOKEN: 'wish-token' };
+  const config = ecpayConfig();
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const stateFile = joinPath(temporaryDirectory, 'wish-store-state.json');
+  const staff = { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173', 'content-type': 'application/json' };
+  const wall = async () => (await fetch(`${url}/api/config`).then((r) => r.json())).wishes;
+  const offer = async (message) => {
+    const { id } = await fetch(`${url}/api/donation`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' }, body: JSON.stringify({ amount: 30, email: 'guest@example.com', receipt: true, message, displayName: 'GUEST' }) }).then((r) => r.json());
+    const tradeNo = (await fetch(`${url}/api/admin/state`, { headers: staff }).then((r) => r.json())).offerings.find((o) => o.id === id).tradeNo;
+    const notice = { MerchantID: config.payment.merchantId, MerchantTradeNo: tradeNo, RtnCode: '1', RtnMsg: 'Succeeded', TradeAmt: '30', TradeNo: '2510220000000001', PaymentType: 'Credit_CreditCard', PaymentDate: '2026/10/22 12:00:00', CustomField1: id };
+    notice.CheckMacValue = checkMacValue(notice, config.payment.hashKey, config.payment.hashIV);
+    await fetch(`${url}/api/ecpay/notify`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(notice).toString() });
+  };
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 300));
+  let instance = await startServer(port, stateFile, 'off', store);
+  try {
+    await offer('第一則祝福');
+    await settled();
+    assert.deepEqual(JSON.parse(stored.get('festival:wishes')).map((w) => w.message), ['第一則祝福'], 'saved as soon as it goes up');
+    await stopServer(instance);
+    instance = await startServer(port, stateFile, 'off', store);
+    await settled();
+    assert.deepEqual((await wall()).map((w) => w.message), ['第一則祝福'], 'still there after a restart');
+    assert.ok(!readFileSync(stateFile, 'utf8').includes('第一則祝福'), 'never in the state file');
+    for (let index = 1; index <= 30; index += 1) await offer(`wish ${index}`);
+    await settled();
+    const full = await wall();
+    assert.equal(full.length, 30);
+    assert.equal(full[0].message, 'wish 1', 'the oldest went first when the thirty-first arrived');
+    assert.deepEqual(JSON.parse(stored.get('festival:wishes')).map((w) => w.message), full.map((w) => w.message));
+    await fetch(`${url}/api/admin/wishes/remove`, { method: 'POST', headers: staff, body: JSON.stringify({ id: full[5].id }) });
+    await settled();
+    assert.equal(JSON.parse(stored.get('festival:wishes')).length, 29, 'a STAFF removal is saved too');
+    assert.ok(seen.every(([, key, auth]) => key === 'festival:wishes' && auth === 'Bearer wish-token'));
+  } finally {
+    await stopServer(instance);
+    await new Promise((resolve) => upstash.close(resolve));
+  }
+});
+
+test('wish startup never replaces retained history before a delayed or initially failed Redis GET succeeds', async (t) => {
+  for (const initialFailure of [false, true]) await t.test(initialFailure ? 'GET outage then recovery' : 'delayed GET', async () => {
+    const retained = Array.from({ length: 30 }, (_, index) => ({ id: `retained-${index}`, name: 'GUEST', message: `retained ${index}`, at: Date.now() - 60_000 + index }));
+    const stored = new Map([['festival:wishes', JSON.stringify(retained)]]), commands = [];
+    let releaseRead, reads = 0;
+    const upstash = createHttpServer((request, response) => {
+      let body = '';
+      request.on('data', (chunk) => { body += chunk; });
+      request.on('end', () => {
+        const [command, key, value] = JSON.parse(body);
+        commands.push(command); response.setHeader('content-type', 'application/json');
+        if (command === 'SET') { stored.set(key, value); return response.end('{"result":"OK"}'); }
+        reads++;
+        if (initialFailure && reads === 1) { response.statusCode = 503; return response.end('{"error":"temporary outage"}'); }
+        if (reads === (initialFailure ? 2 : 1)) {
+          // Snapshot what was retained before a donor can post. A broken
+          // implementation SETs its live-only array while this GET is held.
+          const history = stored.get(key);
+          releaseRead = () => response.end(JSON.stringify({ result: history }));
+          return;
+        }
+        response.end(JSON.stringify({ result: stored.get(key) ?? null }));
+      });
+    });
+    await new Promise((resolve) => upstash.listen(0, '127.0.0.1', resolve));
+    const port = await freePort(), url = `http://127.0.0.1:${port}`;
+    const env = { ECPAY_INVOICE: 'off', UPSTASH_REDIS_REST_URL: `http://127.0.0.1:${upstash.address().port}`, UPSTASH_REDIS_REST_TOKEN: 'wish-token' };
+    const stateFile = joinPath(temporaryDirectory, `wish-store-startup-${initialFailure}.json`);
+    const staff = { 'x-festival-admin-key': 'test-admin-key', origin: 'http://127.0.0.1:5173', 'content-type': 'application/json' };
+    const wall = async () => (await fetch(`${url}/api/config`).then((r) => r.json())).wishes;
+    const until = async (check) => {
+      const deadline = Date.now() + 5_000;
+      while (!await check()) {
+        assert.ok(Date.now() < deadline, 'wish startup/retry completed before deadline');
+        await new Promise((resolve) => setTimeout(resolve, 15));
+      }
+    };
+    const offer = async (message) => {
+      const started = await fetch(`${url}/api/donation`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' }, body: JSON.stringify({ amount: 30, message, displayName: 'LIVE GUEST' }) });
+      assert.equal(started.status, 200); const { id } = await started.json();
+      const notice = { CustomField1: id, RtnCode: '1', TradeAmt: '30', PaymentType: 'Credit_CreditCard', TradeNo: `startup-${id}` };
+      notice.CheckMacValue = checkMacValue(notice, 'pwFHCqoQZGmho4w6', 'EkRm7iFT261dpevs');
+      const paid = await fetch(`${url}/api/ecpay/notify`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(notice) });
+      assert.equal(paid.status, 200); assert.equal(await paid.text(), '1|OK', 'Redis startup never blocks or fails a valid payment notice');
+      return id;
+    };
+    let instance = await startServer(port, stateFile, 'off', env);
+    try {
+      const removedId = await offer('posted then removed during startup');
+      await offer('newest survives recovery');
+      const removed = await fetch(`${url}/api/admin/wishes/remove`, { method: 'POST', headers: staff, body: JSON.stringify({ id: removedId }) });
+      assert.equal(removed.status, 200);
+      assert.deepEqual((await wall()).map((w) => w.message), ['newest survives recovery'], 'new wishes stay usable while retained history is unavailable');
+      assert.equal(commands.filter((command) => command === 'SET').length, 0, 'unread history cannot be overwritten');
+      assert.equal(JSON.parse(stored.get('festival:wishes')).length, 30);
+      await until(() => Boolean(releaseRead)); releaseRead(); releaseRead = undefined;
+      await until(() => JSON.parse(stored.get('festival:wishes')).at(-1)?.message === 'newest survives recovery');
+      const expected = [...retained.slice(1).map((w) => w.message), 'newest survives recovery'];
+      assert.deepEqual((await wall()).map((w) => w.message), expected);
+      assert.deepEqual(JSON.parse(stored.get('festival:wishes')).map((w) => w.message), expected, 'the merged wall, not just the live delta, is retained');
+      await stopServer(instance); instance = await startServer(port, stateFile, 'off', env);
+      await until(async () => (await wall()).length === 30);
+      assert.deepEqual((await wall()).map((w) => w.message), expected, 'all thirty survive a second process');
+      assert.ok(!readFileSync(stateFile, 'utf8').includes('newest survives recovery'), 'notes remain outside the state file');
+    } finally {
+      releaseRead?.();
+      await stopServer(instance);
+      await new Promise((resolve) => upstash.close(resolve));
+    }
+  });
 });
 
 test('a resident\'s music credits keep their lines, and an introduction save leaves them alone', async () => {

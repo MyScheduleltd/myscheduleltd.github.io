@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { installLightEarlyOut } from './LightLoop';
+import { installCutawayLens } from './CutawayLens';
 
 interface WorldRendererOptions {
   canvas: HTMLCanvasElement;
@@ -17,6 +18,7 @@ export function createWorldRenderer(
 ): THREE.WebGLRenderer {
   // Before anything compiles: every lit shader is built from the patched chunk.
   installLightEarlyOut();
+  installCutawayLens();
   const renderer = create({
     canvas: options.canvas, alpha: true,
     antialias: options.normalGraphics, powerPreference: 'high-performance',

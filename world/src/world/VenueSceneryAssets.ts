@@ -4,11 +4,16 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { fetchAsset } from './AssetMirror';
 import { applyAvatarColourLighting } from './ImportedAvatar';
 import { parseGameModel } from './MobileAssetBudget';
+import type { AvatarRig } from './FestivalWorld';
+import { createVictoryStatue, disposeVictoryStatue, VICTORY_STATUE_HEIGHT, VICTORY_PLINTH_TOP } from './VictoryStatue';
 
 export type ScenicAsset = 'attendant' | 'boxOffice' | 'valet' | 'statue';
 function assetUrl(kind: ScenicAsset): string {
-  const urls: Record<ScenicAsset, string> = {
-    attendant: new URL('../assets/venue-scenery/attendant.glb', import.meta.url).href,
+  // The Meshy attendant is retired: the festival's attendants are avatar rigs
+  // (`registerFestivalAttendant`). Not imported, so its 3.7 MB model no
+  // longer ships with every release (owner's clean-up, 2026-10-23).
+  if (kind === 'attendant') throw new Error('The Meshy attendant model is retired.');
+  const urls: Record<Exclude<ScenicAsset, 'attendant'>, string> = {
     boxOffice: new URL('../assets/venue-scenery/box-office.glb', import.meta.url).href,
     valet: new URL('../assets/venue-scenery/valet.glb', import.meta.url).href,
     statue: new URL('../assets/venue-scenery/temple-statue.glb', import.meta.url).href,
@@ -25,6 +30,7 @@ export class VenueSceneryAssets {
   private loads = new Map<ScenicAsset, Promise<THREE.Group>>();
   private instances: Array<{ kind: ScenicAsset; model: THREE.Object3D }> = [];
   private attendants: Array<{ spine?: THREE.Bone; head?: THREE.Bone; spineRest?: THREE.Quaternion; headRest?: THREE.Quaternion; phase: number }> = [];
+  private nativeAttendants:Array<{rig:AvatarRig;spineRest:THREE.Quaternion;headRest:THREE.Quaternion;phase:number}>=[];
   readonly status: Partial<Record<ScenicAsset, 'loading' | 'ready' | 'failed'>> = {};
 
   private load(kind: ScenicAsset): Promise<THREE.Group> {
@@ -67,6 +73,27 @@ export class VenueSceneryAssets {
     const attachment = this.attachModel(kind, parent, height, fallback);
     this.attachments.push(attachment);
     return attachment;
+  }
+
+  /** Reuse the exact temple portrait head with a closed static victory body. */
+  attachVictoryStatue(parent: THREE.Group, height = VICTORY_STATUE_HEIGHT, baseY = VICTORY_PLINTH_TOP): Promise<void> {
+    const attachment = this.load('statue').then(original => {
+      if (this.disposed) return;
+      // A faster generated replacement can retire this fallback before the
+      // shared temple download finishes; never create a hidden late prototype.
+      if (!parent.visible) return;
+      const model = createVictoryStatue(original, height); model.position.y += baseY;
+      parent.add(model); this.instances.push({ kind: 'statue', model });
+    }).catch(error => { console.warn('Victory portrait could not be attached', error); });
+    this.attachments.push(attachment); return attachment;
+  }
+
+  /** Retire only the code fallback; the shared seated portrait stays cached. */
+  discardVictoryStatue(parent: THREE.Group): void {
+    this.instances = this.instances.filter(({ model }) => {
+      if (model.parent !== parent || !model.userData.victoryStatue) return true;
+      model.removeFromParent(); disposeVictoryStatue(model); return false;
+    });
   }
 
   /** Wait for placement, not just download completion, before graphics preparation. */
@@ -128,16 +155,24 @@ export class VenueSceneryAssets {
     this.attendants.push({ spine, head, spineRest: spine?.quaternion.clone(), headRest: head?.quaternion.clone(), phase: this.attendants.length * 2.4 });
   }
 
+  registerFestivalAttendant(rig:AvatarRig):void {
+    this.nativeAttendants.push({rig,spineRest:rig.torso.quaternion.clone(),headRest:rig.head.quaternion.clone(),phase:this.nativeAttendants.length*2.4});
+  }
+
   update(elapsed: number): void {
     // Small, independently phased motions keep both staff at their posts.
     for (const rig of this.attendants) {
       if (rig.spine && rig.spineRest) rig.spine.quaternion.copy(rig.spineRest).multiply(this.motion.setFromEuler(this.motionEuler.set(Math.sin(elapsed * 1.3 + rig.phase) * .008, 0, 0)));
       if (rig.head && rig.headRest) rig.head.quaternion.copy(rig.headRest).multiply(this.motion.setFromEuler(this.motionEuler.set(0, Math.sin(elapsed * .35 + rig.phase) * .065, 0)));
     }
+    for(const {rig,spineRest,headRest,phase} of this.nativeAttendants){
+      rig.torso.quaternion.copy(spineRest).multiply(this.motion.setFromEuler(this.motionEuler.set(Math.sin(elapsed*1.3+phase)*.008,0,0)));
+      rig.head.quaternion.copy(headRest).multiply(this.motion.setFromEuler(this.motionEuler.set(0,Math.sin(elapsed*.35+phase)*.065,0)));
+    }
   }
 
   reviewSnapshot(): unknown {
-    return { status: { ...this.status }, instances: this.instances.map(({kind, model}) => {
+    return { status: { ...this.status }, nativeAttendants:this.nativeAttendants.length,instances: this.instances.map(({kind, model}) => {
       model.updateWorldMatrix(true, true);
       let triangles = 0, skinnedMeshes = 0, bones = 0;
       model.traverse(node => {
@@ -156,7 +191,12 @@ export class VenueSceneryAssets {
   }
 
   dispose(): void {
-    this.disposed = true; this.attendants.length = 0; this.instances.length = 0;
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const { model } of this.instances) if (model.userData.victoryStatue) disposeVictoryStatue(model);
+    this.attendants.length = 0;
+    for(const {rig}of this.nativeAttendants)rig.visualRoot?.parent?.userData.disposeImportedAvatar?.();
+    this.nativeAttendants.length=0;this.instances.length = 0;
     for (const pending of this.loads.values()) void pending.then(model => model.traverse(node => {
       const mesh = node as THREE.Mesh;
       if (!mesh.isMesh) return;

@@ -1,0 +1,42 @@
+{
+ "raw": "art/victory-statue-regen-20261022/higgsfield-meshy7-raw.glb",
+ "out": "/private/tmp/claude-501/-Users-myscheduleai-Desktop-myschedule-pivot/6cc792b3-6707-45fa-8fab-638db8447a57/scratchpad/regen/refined-v5.glb",
+ "trianglesBefore": 29530,
+ "trianglesAfter": 8000,
+ "mergedVertices": 16835,
+ "debrisFaces": 0,
+ "islands": 1,
+ "heldVertices": 8131,
+ "decimateRatio": 0.2709109380291229,
+ "holdFactor": 0.75,
+ "vertices": 3943,
+ "colour": {
+  "reference": [
+   0.5989192719190887,
+   0.4926174597642693,
+   0.25023650643538276
+  ],
+  "raw": [
+   0.5689294344701825,
+   0.45136400437575397,
+   0.28762347992470366
+  ],
+  "gain": [
+   1.0527127542220316,
+   1.091397309020177,
+   0.8700141813905167
+  ]
+ },
+ "image": {
+  "name": "victory-statue-colour",
+  "size": [
+   2048,
+   2048
+  ]
+ },
+ "size": [
+  1.5721158981323242,
+  0.6041079759597778,
+  1.8980251550674438
+ ]
+}

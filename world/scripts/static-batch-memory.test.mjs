@@ -41,3 +41,30 @@ test('a second batch pass releases nothing still referenced by the world', () =>
   assert.equal(report.releasedMaterials, 0);
   assert.equal(report.batchedPieces, 0);
 });
+
+test('hidden fallback ancestors keep visible descendants out of batches without changing their restore state', () => {
+  const scene = new THREE.Scene(), geometry = new THREE.BoxGeometry(), material = new THREE.MeshStandardMaterial();
+  const statue = new THREE.Group(); statue.name = 'gangan-statue'; scene.add(statue);
+  const fallbackBody = new THREE.Group(); fallbackBody.visible = false; statue.add(fallbackBody);
+  const hiddenRoot = new THREE.Group(); hiddenRoot.name = 'Festival pamphlet rack'; hiddenRoot.visible = false; scene.add(hiddenRoot);
+  const hiddenLeaves = [];
+  for (const parent of [fallbackBody, hiddenRoot]) {
+    for (let i = 0; i < 2; i++) {
+      const mesh = new THREE.Mesh(geometry, material); mesh.position.x = 10 + i; parent.add(mesh); hiddenLeaves.push(mesh);
+    }
+  }
+  for (let i = 0; i < 2; i++) {
+    const mesh = new THREE.Mesh(geometry, material); mesh.position.x = i * 2; statue.add(mesh);
+  }
+  let disposed = 0; geometry.addEventListener('dispose', () => disposed++);
+  const report = batchStaticScenery(scene), merged = scene.getObjectByName('static-batch');
+  assert.equal(report.batchedPieces, 2); assert.equal(report.batches, 1);
+  assert.equal(merged.geometry.getAttribute('position').count, 72);
+  assert.ok(merged.geometry.boundingBox.max.x < 3, 'hidden fallback geometry entered the visible batch');
+  assert.equal(fallbackBody.children.length, 2); assert.equal(hiddenRoot.children.length, 2);
+  assert.equal(fallbackBody.visible, false); assert.equal(hiddenRoot.visible, false);
+  for (const mesh of hiddenLeaves) { assert.equal(mesh.visible, true); assert.equal(mesh.geometry, geometry); }
+  assert.equal(disposed, 0, 'hidden consumers retain their shared source geometry');
+  fallbackBody.visible = true; hiddenRoot.visible = true;
+  assert.ok(hiddenLeaves.every(mesh => mesh.visible && mesh.parent.visible), 'restoring the original parent must still restore the original leaves');
+});

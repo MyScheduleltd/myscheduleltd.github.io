@@ -3,6 +3,8 @@ import { parseGameModel } from './MobileAssetBudget';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { fetchAsset } from './AssetMirror';
+import { applyAvatarColourLighting } from './ImportedAvatar';
+import { applyWorldFilmGrain } from './WorldFilmGrain';
 
 /**
  * The band on the roof over the pop-up shop. While the jukebox has a record on
@@ -186,8 +188,20 @@ export class RooftopBand {
       // the drummer's reach): skinned bounds are measured once, at rest.
       model.traverse(o => {
         if (o instanceof THREE.SkinnedMesh) o.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, .9, 0), 1.5);
-        if (o instanceof THREE.Mesh) o.castShadow = true;
+        if (o instanceof THREE.Mesh) {
+          o.castShadow = true;o.receiveShadow=true;
+          const materials=Array.isArray(o.material)?o.material:[o.material];
+          o.material=materials.map(original=>{
+            const material=original instanceof THREE.MeshStandardMaterial?original:new THREE.MeshStandardMaterial({
+              color:(original as THREE.MeshBasicMaterial).color,map:(original as THREE.MeshBasicMaterial).map,
+              transparent:original.transparent,opacity:original.opacity,alphaTest:original.alphaTest,side:original.side,
+            });
+            applyAvatarColourLighting(material);return material;
+          });
+          if(!Array.isArray(o.material)||o.material.length===1)o.material=(o.material as THREE.Material[])[0];
+        }
       });
+      applyWorldFilmGrain(model);
       const carried: THREE.Object3D[] = [];
       model.traverse(o => { if (o.name.startsWith('prop-')) carried.push(o); });
       const mixer = new THREE.AnimationMixer(model);

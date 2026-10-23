@@ -92,8 +92,29 @@ test('building the real Shore feet cannot deform shared walls, stairs or screen 
  w.buildOnGrade(()=>w.createShoreScreen(),site.grade,site.dx,site.dz);
  assert.deepEqual(Array.from(boxGeometry.attributes.position.array),before);
  assert.deepEqual(Array.from(boxGeometry.attributes.normal.array),normals);
- const board=w.scene.children.find(n=>n.name==='Framed enamel sign');
+ const board=w.scene.children.find(n=>n.userData.neonSignFrame?.style==='shore');
+ assert.ok(board,'the real Shore builder must retain its dedicated neon surround');
  assert.equal(board.position.x,SHORE_SIGN.x);assert.equal(board.position.z,SHORE_SIGN.z);
+ const label=board.children.find(n=>n.material===w.venueSignMaterials.get('shore'));
+ assert.ok(label,'staff-editable Shore lettering remains a separate panel');
+ assert.equal(label.geometry.parameters.width,SHORE_SIGN.width);assert.equal(label.position.z,.035);
+ assert.equal(label.material.map.userData.neonSign.style,'shore');
+ assert.deepEqual(label.material.map.userData.neonSign.lines,['THE SHORE','MUSIC VIDEO']);
+ const frameMeshes=board.children.filter(n=>n.isMesh&&n!==label&&n.material.isMeshBasicMaterial);
+ assert.ok(frameMeshes.length>0&&frameMeshes.length<=3,'the neon surround must keep its bounded draw cost');
+ let frameTriangles=0;
+ for(const part of frameMeshes){
+  assert.equal(part.material.transparent,false,'glow is baked rather than stacked transparent cards');
+  frameTriangles+=(part.geometry.index?.count??part.geometry.attributes.position.count)/3;
+  part.updateMatrix();const p=part.geometry.attributes.position;
+  for(let i=0;i<p.count;i++){
+   const local=new THREE.Vector3().fromBufferAttribute(p,i).applyMatrix4(part.matrix);
+   assert.ok(local.z<label.position.z,'the surround must never cover the live lettering plane');
+   assert.ok(Math.abs(local.x)<=(SHORE_SIGN.width+.26001)/2,'the neon frame expanded the established board footprint');
+  }
+ }
+ assert.ok(frameTriangles<=150,'the surround must remain a small prop');
+ assert.equal(board.children.some(n=>n.isLight),false,'the new surround must not add a real-time light');
  const feet=board.children.filter(n=>n.scale.x===.6);
  assert.equal(feet.length,2);assert.ok(feet.every(n=>n.geometry!==boxGeometry));
  for(const foot of feet){foot.updateWorldMatrix(true,false);const p=foot.geometry.attributes.position;for(let i=0;i<p.count;i++){
@@ -118,7 +139,7 @@ test('the actual Shore board blocks movement across its centre and both posts af
  }
 });
 test('new ticket stands block avatars from all sides including elevated body overlaps',()=>{
- const w=worldFixture();w.venueSignMaterials.set('drive-in',new THREE.MeshBasicMaterial());w.createVenueEntrances();
+ const w=worldFixture();w.preview=true;w.venueSignMaterials.set('drive-in',new THREE.MeshBasicMaterial());w.createVenueEntrances();
  for(const label of ['drive-in-ticket-booth','palace-ticket-stand','palace-ticket-inspector']){
   const c=w.colliders.find(c=>c.label===label),x=(c.minX+c.maxX)/2,z=(c.minZ+c.maxZ)/2;
   assert.equal(c.physical,true);

@@ -79,6 +79,11 @@ const avatarFile = (kind: AvatarSound): string => ({
   drink: new URL('../assets/audio/avatar-drink.wav', import.meta.url),
 })[kind].href;
 const skateFile = (): string => new URL('../assets/audio/avatar-skate.mp3', import.meta.url).href;
+const fireworkFile = (kind: string): string => ({
+  willow: new URL('../assets/audio/fireworks-willow.mp3', import.meta.url),
+  peony: new URL('../assets/audio/fireworks-peony.mp3', import.meta.url),
+  ring: new URL('../assets/audio/fireworks-ring.mp3', import.meta.url),
+})[kind as 'willow' | 'peony' | 'ring'].href;
 
 const AVATAR_KINDS: readonly AvatarSound[] = ['step-left', 'step-right', 'eat', 'drink'];
 /** Balance within the avatar's channel; the one-shots share one loudness. */
@@ -143,6 +148,10 @@ export class AmbientAudio {
   private skateSource?: AudioBufferSourceNode;
   private skating = false;
   private avatarPlayed = 0;
+  private readonly fireworkBuffers = new Map<string, AudioBuffer>();
+  private readonly fireworkVoices = new Set<AudioBufferSourceNode>();
+  private fireworksLoading?: Promise<void>;
+  private fireworksPlayed = 0;
   private readonly targets = new Map<AudioParam, number>();
   private bedsLoading?: Promise<void>;
   private cuesLoading?: Promise<void>;
@@ -247,6 +256,9 @@ export class AmbientAudio {
         this.skateBuffer ??= await decode(skateFile(), this.context);
         this.startSkate();
       })(),
+      // The fireworks' three short bursts too (46 KB), so a show never starts
+      // with a download (owner, 2026-10-23: everything loads at the gate).
+      this.prepareFireworks(),
     ]).then(() => undefined).catch(() => { this.bedsLoading = undefined; });
     return this.bedsLoading;
   }
@@ -254,6 +266,37 @@ export class AmbientAudio {
   worldSoundsReady(): boolean {
     return this.bedBuffers.size === Object.keys(BEDS).length
       && this.avatarBuffers.size === AVATAR_KINDS.length && Boolean(this.skateBuffer);
+  }
+
+  /** Small burst excerpts from the owner's recording, never the 31 MB master; loaded with the world's sounds. */
+  prepareFireworks(): Promise<void> {
+    this.fireworksLoading ??= Promise.all(['willow', 'peony', 'ring'].map(async kind => {
+      if (!this.fireworkBuffers.has(kind)) this.fireworkBuffers.set(kind, await decode(fireworkFile(kind), this.context));
+    })).then(() => undefined).catch(() => { this.fireworksLoading = undefined; });
+    return this.fireworksLoading;
+  }
+
+  /** Scored visual bursts request sounds now; late loads never queue stale bangs. */
+  playFireworkCue(pattern: string): void {
+    const context = this.context, buffer = this.fireworkBuffers.get(pattern === 'comet' ? 'ring' : pattern);
+    if (!context || context.state !== 'running' || !buffer || !this.muffle || this.muted
+      || this.masterVolume <= 0 || this.ambientVolume <= 0 || !this.mix) return;
+    if (this.fireworkVoices.size >= 3) {
+      const oldest = this.fireworkVoices.values().next().value;
+      if (oldest) { this.fireworkVoices.delete(oldest); oldest.stop(); oldest.disconnect(); }
+    }
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(this.muffle); // The existing ambient slider, master mute and walls apply.
+    source.onended = () => { this.fireworkVoices.delete(source); source.disconnect(); };
+    this.fireworkVoices.add(source);
+    source.start();
+    this.fireworksPlayed++;
+  }
+
+  stopFireworks(): void {
+    for (const source of this.fireworkVoices) { source.stop(); source.disconnect(); }
+    this.fireworkVoices.clear();
   }
 
   /**
@@ -319,6 +362,7 @@ export class AmbientAudio {
       cuesPlayed: this.cuesPlayed,
       avatarReady: this.avatarBuffers.size + (this.skateBuffer ? 1 : 0),
       avatarPlayed: this.avatarPlayed,
+      fireworks: { ready: this.fireworkBuffers.size, playing: this.fireworkVoices.size, played: this.fireworksPlayed, maxVoices: 3 },
       skating: this.skating,
       skateLevel: level(this.skateGain?.gain),
       bedsReady: [...this.bedBuffers.keys()],

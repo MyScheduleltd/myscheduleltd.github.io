@@ -132,6 +132,7 @@ export interface MentorFeedCounts {
 
 export interface FestivalState {
   serverTime: number;
+  donationCelebration?: { id: string; startedAt: number; durationMs: number } | null;
   selfId: string;
   visitors: NetworkVisitor[];
   seats: Array<{ seatId: string; visitorId: string }>;
@@ -331,6 +332,7 @@ export interface DonationOptions {
   invoice: boolean;
   /** Whether the sheet may offer the receipt as a choice rather than demand it. */
   receiptOptional: boolean;
+  arcadePreviewUntil?: number;
 }
 
 export interface JukeboxState {
@@ -717,6 +719,7 @@ export class FestivalClient {
      * the name to sign it with.
      */
     wish: { message?: string; displayName?: string } = {},
+    arcadeDeviceKey?: JsonWebKey,
   ): Promise<{ id: string; checkoutUrl: string }> {
     const response = await this.request('/api/donation', {
       method: 'POST',
@@ -727,6 +730,7 @@ export class FestivalClient {
         ...(mobileBarcode ? { carrier: 'mobile', mobileBarcode } : {}),
         ...(wish.message ? { message: wish.message } : {}),
         ...(wish.displayName ? { displayName: wish.displayName } : {}),
+        ...(arcadeDeviceKey ? {arcadeDeviceKey} : {}),
       }),
     });
     return await response.json() as { id: string; checkoutUrl: string };
@@ -736,6 +740,21 @@ export class FestivalClient {
     const response = await fetch(`${this.baseUrl}/api/donation/options`, { headers: { accept: 'application/json' } });
     if (!response.ok) throw new Error('Offerings are unavailable.');
     return await response.json() as DonationOptions;
+  }
+
+  /** Signed browser-owned access also works before a festival session exists. */
+  async arcadePreviewRequest(action:'challenge'|'status'|'redeem',payload:Record<string,unknown>):Promise<Record<string,unknown>> {
+    const response=await this.request(`/api/arcade-preview/${action}`,{method:'POST',body:JSON.stringify(payload)});
+    return await response.json() as Record<string,unknown>;
+  }
+
+  /** The record on the deck would not play here; the service checks with YouTube before skipping it. */
+  async reportJukeboxUnplayable(youtubeId: string): Promise<void> {
+    if (!this.session || this.closed) return;
+    await this.request('/api/jukebox/unplayable', {
+      method: 'POST',
+      body: JSON.stringify({ youtubeId }),
+    }, false).catch(() => undefined);
   }
 
   async requestJukeboxTrack(
@@ -762,6 +781,7 @@ export class FestivalClient {
 
   async updateJukebox(key: string, payload: {
     url?: string; title?: string; remove?: string;
+    stockOrder?: string[];
     reorder?: string; direction?: 'up' | 'down'; drop?: string; skip?: boolean; stop?: boolean;
   }): Promise<void> {
     await this.adminRequest('/api/admin/jukebox', key, {

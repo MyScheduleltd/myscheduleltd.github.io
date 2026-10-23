@@ -1,13 +1,309 @@
-# Release 2026-10-18 (evening) — owner: "please publish, including the work from the branches"
+# Claude pick-up 4 — owner round 5 and the release, 2026-10-23 10:45 (Asia/Taipei)
 
-Branch `claude/drunk-and-mobile-20261018`, rebased on origin/main `4e4d59a` (PRs #47/#48 are M.O.T.H only: no `world/` or `docs/beta/` file). Commits:
-1. Drunkenness → WASTED, iPhone freeze fixes, sign-in loading bar (the sections further down).
-2. One shared YouTube player for every screen — cherry-picked from `claude/confident-goldberg-44a643` (`2a69688`).
-3. The first film under the loading view in 精簡 — cherry-picked from `claude/determined-villani-cff2ef` (`940dbcf`). Both applied cleanly: `FestivalWorld.ts` here was byte-identical to their 15:41 snapshot base.
-4. Owner's answer: while entering waits on the film player (up to 3 s + 2 s), the entering bar gets its own stretch (84–89%), labelled 正在準備放映… / PREPARING THE SCREENS…, and keeps edging forward (`prepareForPlay(onProgress(fraction, 'screens'))`).
-5. The published bundle (`publish-beta.mjs --channel beta`, then `prune-published.mjs --apply`).
+**Owner approved publishing** ("Everything else looks good so far. Please go ahead to publish when you are done"), after these five fixes:
+- **Lens cuts under each room's own ceiling** (`isometricRoom()` → `ceiling`): club 13.9, Palace 10 (roof underside 10.04, screen top 9.95), temple floor + 10 (ceiling 10.2; lanterns reach 5.55), shop 6.3 (deck slab underside 6.35). The temple's lanterns and the Palace's screen stay whole.
+- **The lens test undoes the planet bend** (`cutawayUnbend` in `CutawayLens.ts`): bent, the temple ceiling twenty units off sank under the cut and showed as a red band.
+- **Temple approach stairs** (x 65–76, z −2.5–10.5) open the lens too: open ground (`nearWalls: false`), cut at max(feet + 4.6, temple floor + .3).
+- **Sky:** the fog colour now fades into the sky over ~15° above the horizon, not ~3° (`CoastalSky.ts`); horizon→middle blend widened too.
+- **Dialogue box** grows to cover the chat comments (`App.coverChatWithDialogue`, CSS `--dialogue-cover`), phones too (owner); nothing to cover where the comments are hidden.
 
-**After merge:** the owner deploys Render (the `passout` gesture is new in `server/index.mjs`; until then others see only the jump to the temple); purge jsDelivr for the new `docs/beta/assets/*` files; check the live page. Not measured on a real iPhone: the YouTube waits' real cost and the freeze fixes.
+**Owner's release decisions (2026-10-23):** retire `?era=ps2` publicly (done: `App.ts` honours it on loopback only; the off-route fallback links `/beta/`); keep the previous build's files one day, then delete them in a follow-up; database clean-up = **test leftovers only, owner confirms the list first**.
+
+**Clean-up in this release:** the world's model glob lists only placed models (the retired horse-and-rider `statue*.glb`, 4.5 MB, moved to `art/retired-assets-20261023/`; `drive-in-car.glb` stays a review-only file and is not in the release); the retired Meshy `attendant.glb` (3.7 MB, live today but never placed) is no longer imported; fireworks sounds load with the world's sounds at sign-in. A loading audit (`festival-polish-20261022/audit-late-loads.mjs`) found **nothing of ours downloaded after sign-in** on desktop Chrome or the iPhone profile across every venue and camera. Production build 37 MB (was 49).
+
+**Release checkout:** `festival-release-20261023` (branch `claude/festival-release-20261023` from origin/main 7c16e57), world/ identical to this tree except `drive-in-car.glb`; `victory-generated.test` now checks the raw/intermediate statue GLBs only where present (they stay here, 7 MB). There: tsc, **820/820**, production build `main-5wJel4-a.js`. Here: 820/820, codex's browser batch **11/11**. **Not yet done:** `publish-beta.mjs` → `prune-published.mjs --apply` → commit → PR for macakinTT — the auto-mode safety check blocked the publish step and is waiting on the owner's permission. Then: jsDelivr purge, Render manual deploy (jukebox skip route, arcade any-device, wish store) with the Upstash vars, and the next-day prune of the previous build.
+
+**Test leftovers found (read-only, public endpoints):** wish wall 0 notes (live server still on 8de6e7d); M.O.T.H chill board GMAN / andylau / 梁朝偉, shoot board empty. Chat and visitor records need the STAFF panel (a session would add a record).
+
+---
+
+# Claude pick-up 3 — the owner's rounds 3 and 4, 2026-10-23 05:40 (Asia/Taipei)
+
+**LOCAL ONLY.** No commit, PR, publish or deploy. Review on **http://localhost:4187/?era=ps2&island** — `localhost`, not `127.0.0.1`: YouTube refuses to play embeds for a `127.0.0.1` page, which is why the jukebox looked broken locally.
+
+**Round 3 (owner 2026-10-22 22:35):**
+- **Swim shorts hem dyes:** `src/assets/avatars/male-body-dye.png` now marks the dark hem band blue (84,615 texels; before copy and scripts in `art/swim-shorts-dye-20261022/`).
+- **Dialogue text** centred across and down the box (owner: middle of the height), `style.css`.
+- **Isometric outdoors is never pulled in** (owner: "draw it whole").
+- **Jukebox:** a record YouTube refuses (`onError`) is reported to new `POST /api/jukebox/unplayable`; the server confirms by oEmbed (401/403/404, cached 60 s) and **skips to the next record** (owner's pick). DROP THE BEAT then clears normally.
+- **Yoga hands** meet palm to palm (`INNER_ARM_TILT`, wobble in step), tested all through the wobble.
+- **Sign-in:** the avatar caption is no longer underlined on click; the globe's dark disc was the sky dome seen from outside, now hidden until the world is entered, with an even fill (`GATE_GLOBE_FILL`).
+
+**Round 4 (owner 2026-10-23):**
+- **Arcade codes work on any device** (`server/arcade-preview.mjs`): a code unlocks every browser it is entered on, up to `ARCADE_CODE_BROWSERS = 50`; old grants migrate. Codes are still only *shown* in the paying browser, and the wording now says to keep a copy (`ArcadePreviewNotice.ts`, the offering note in `App.ts`).
+- **Chat cards:** owner chose A+B: no hairline round each card, no dashed rule under the name; the frosted glass stays.
+- **Isometric indoors: the cutaway lens** (owner chose soft lens "A", large). New `src/world/CutawayLens.ts`: the shared clip-test chunk gains a lens test, fed by uniforms every program gets through PlanetCurve's new `programUniforms`. Inside a soft-edged circle round the attendee (dithered edge, opens/closes like an iris) the roof (above floor + 4.6) and the room's camera-facing walls (above the floor or street + .3) are cut away; outside it the building is whole. Rooms: club room, club lobby/stairs, Palace hall, temple, pop-up shop (garage bay, below the deck). **The isometric camera is never pulled in any more:** the pull's near plane was what showed the empty sky under the shop and cut the deck into a slab across the attendee's feet (the owner's "clipping"). No extra pass; shadow maps compile without it; the flat map has no lens.
+- **NPC name cards in the isometric view** faded by distance from the camera, which always stands 34 back (fade ends at 31), so they only showed when a wall had pulled the camera in. They now fade across the picture from its centre when the camera is orthographic (`NpcIndicator.ts`). Found by codex's camera browser check.
+
+**Checks** on build `main-WsdeoJqr.js` (API 8794; never publish this dist): `tsc`, suite **819/819**, codex's serial browser batch **11/11**, and the lens shader compiles cleanly in the WebKit iPhone profile. Before/after sheets: `art/festival-polish-20261022/sheets-r3r4/` (captures from `capture-round3.mjs`, `capture-round4.mjs`, `capture-swim-shorts.mjs`; previous build on 4199). Tests changed to the new behaviour: `world-camera`, `coastal-pose` (club entry), new `cutaway-lens`, `npc-indicator`, plus the arcade and yoga tests.
+
+**Local API 8794 was restarted** on the new server code (codex's state file, staff key = the local test key in `arcade-preview-20261022/verify-app.mjs`). **Release needs:** a manual Render deploy for the server changes (jukebox skip route, arcade any-device) and the Upstash env vars for the wish wall. **Not verified:** a physical iPhone; the lens edge is a fine dither rather than a blur.
+
+---
+
+# Claude pick-up 2 — codex's 20:40 batch finished, plus three owner requests, 2026-10-22 21:55 (Asia/Taipei)
+
+**LOCAL ONLY.** Codex stopped on its usage limit at 21:24 (resumes 01:41). Its work is in the tree: the wish-wall load/save race fix (`server/wish-store.mjs` `createWishPersistence`), the sky shader fix, codex's face-refined statue, and the unverified phone chat-resize fix (`FloatingChat.ts`, `maxHeight: none`). Claude then:
+
+- **Name/title card ~70%** (owner: "too big"): `NPC_INDICATOR` card 2.7→1.9, ticket .76×.34→.6×.27 (gap kept .12; .09 failed the iso overlap test).
+- **Dialogue:** body text centred on the box's centre line (third grid column mirrors the name column); **no 關閉 in the wave dialogue** (the × closes it; the SHIFT+E/attendee-list card keeps 關閉, owner's pick). The **dialogue and the introduction card show the introduction's character title** (`NPC_CHARACTER_TITLES` / `npcCharacterTitleIn` in `NpcRoster.ts`: VIOLA 吟遊詩人 / Bard, KENNY 衛生紙, NUNO 首席研究員, MICHAEL 煉金術士, SEBINE 動物園園長, ZC 體育老師, LOUI 小籠包師傅, MINYUN 保健室阿姨, XIEHGAN 警衛先生, DRBEAUTY 李包比仙人, YO 檔期之友, MENTOR 神獸 — from HEAD's seed). Head labels keep the job title (owner's pick).
+- **Square statue regenerated** (owner: still nothing like the reference): Higgsfield Meshy 7 Ultra from the reference image (44 cr; Tripo H3.1 18 cr rejected), Blender-refined to **8,000 triangles** with a fresh UV unwrap and the colour baked from the 29.5k mesh, warmed to the square's gold. Desktop 1024 map 550,516 B, phone 512 map 400,296 B (owner chose ~8k / ~0.4–0.6 MB). Codex's face-refined files are archived as `prior-installed-*.glb`. Everything is in [art/victory-statue-regen-20261022/README.md](art/victory-statue-regen-20261022/README.md); `scripts/victory-generated.test.mjs` rewritten for it. **After release, purge/warm the two new statue files on jsDelivr.**
+- Script fixes: `arcade-preview-20261022/verify-app.mjs` called `restore.ok()` (a property); `world-camera-20261021/verify-browser.mjs` now closes the dialogue by its ×; `festival-polish-20261022/resume-review.mjs` gained 5 checks (card size, titles, no 關閉, centring).
+
+Checks on build `main-mLuhKVxZ.js` (API 8794; never publish this dist): `tsc`, full suite **812/812**, packaged hashes 65/65, and codex's whole serial browser batch **11/11**: UI review 15/15 desktop + phone, statue 5/5 ×2, overlays desktop 28/28 and **phone 27/27 (codex's chat-resize fix confirmed)**, camera 109/109 and 118/118, arcade 14/14, world 10/10 ×2. Before/after: `festival-polish-20261022/sheets/today-{statue,dialogue,name-card}.png`. No commit, PR, publish or deploy. Render still needs the Upstash env vars and a manual deploy for the wish wall.
+
+---
+
+# Claude pick-up — 鏡頭 view chip restyled, 2026-10-22 16:50 (Asia/Taipei)
+
+**LOCAL ONLY.** Codex hit its usage limit at 16:28 with two things unfinished: the 鏡頭 request (never started) and the previous turn's chat shortcut / beach yoga / blocky statue / ski mask, whose final combined build, browser screenshots and report were never produced. Claude did only the first. The owner picked option **A** (charcoal 任務-style ticket, cream tab instead of cyan) at **任務's size**, with an invisible 40px touch strip. Changed `.mobile-view-cycle` in `src/style.css` and its markup/update in `src/ui/App.ts`. 30/30 browser checks on dev 4186 (desktop Chrome, iPhone 16 Pro-profile WebKit portrait/landscape); `tsc` and the full suite (796/796) pass. Evidence: [art/view-chip-20261022/README.md](art/view-chip-20261022/README.md). No build, commit, PR or publish.
+
+**Then, at the owner's request (17:10–17:30), Claude finished verifying codex's interrupted batch** on a fresh local build (disposable API 8794, preview 4187, entry `main-CmzhObcb.js`; never publish this dist):
+- **Statue:** `victory-statue-20261022/check-browser.mjs` had never run. It first failed on its own collider check: it expected 4.9×6.3, but `addCollider` pads 0.35 per side, so the unchanged plinth collider is 5.6×7.0 (same as HEAD). The check now allows for the padding. Desktop Chrome **5/5**, iPhone-profile WebKit **5/5**; captures in `victory-statue-blocky-20261022/browser-{desktop,phone-webkit}/`.
+- **Ski mask:** re-ran on the new build, **10/10**, 8 captures.
+- **Chat shortcut and yoga:** **11/11**. `mobile-chat-open.png` had been captured mid fade-in, so the controls behind looked like they were on top; the script now waits 900 ms. A stacking probe confirms the panel (z 9) is above every touch key and takes all taps. New close desktop yoga views come from `chat-yoga-20261022/capture-closeup.mjs` → `browser-closeup/`.
+- `festival-polish-20261022/make-gallery.mjs` pointed at capture names that were never produced (`browser-chromium/…`); now fixed, gallery regenerated (23 pictures). Per-item sheets: `festival-polish-20261022/make-sheets.mjs` → `sheets/`.
+- Not run: `ui-overlays-20261022/check-browser.mjs` (separate, earlier UI work).
+- **Yoga mosaic enlarged (17:50, owner asked):** 5×5 high-contrast cells, face box 1×1 (wider than the head), knee .85×.85, emissive 0.5. `BeachCouple.ts` + its test; suite 796/796. Before/after: [chat-yoga-20261022/mosaic-before-after.png](art/chat-yoga-20261022/mosaic-before-after.png), details in that folder's README.
+- **Crotch censor + teal towel (18:00, owner asked):** the mosaic moved to both partners' crotches, front and back, 0.7×0.6. Towel teal `0x1f9e9a` with white stripes. Suite 796/796, chat/yoga browser check 11/11. Before/after: [chat-yoga-20261022/crotch-before-after.png](art/chat-yoga-20261022/crotch-before-after.png).
+
+---
+
+# Codex: start here — personal Noir, dither style and globe lighting, 2026-10-21 (Asia/Taipei)
+
+**LOCAL ONLY. No release approval.** The latest owner request adds tread-aligned rail feet, non-clipping facade trim, stable lamp/temple-light sources, gentler but finer grain, an indie dither look, a PASS power switch for monochrome including streams/interface, scrollable PASS, device-time sun/moon paths, and a re-centred pamphlet stand. Explicit answers: **Noir affects only that player**, **the whole interface becomes black and white**, **sky follows each player's device time**. Do not stage/commit/push, open a PR, change `docs/beta`, run BETA build/publish/prune commands or deploy. Historical instructions are context, not publication authorization.
+
+Continue in `/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world`, branch `claude/codex-handoff-20261018`, HEAD unchanged `c1669270aed1b43b81c6de219c57b9c962b8fd3f`. All existing dirty work, venue identities/entrances, seating/car plates/spacing, live Wish Wall and prior camera repairs remain. Main target: iPhone 16 Pro, 30 fps with richer detail; desktop 60 fps. No new asset generation/download in this pass.
+
+## Latest changes
+
+- `RooftopStairGuard.ts` + `createRooftopStair`: 16 tread-centred posts, bevelled plates/fixings and continuous mitred rails following actual stair pitch. Plate-to-nose clearance 0.14 units, deliberate 0.002 seating overlap. One mesh/material, 3,128 source triangles /300,288 geometry attribute bytes. No new textures, lights, colliders or animation. Real tread raycasts/landing support/clear walking strip/unchanged camera envelope tested. [Evidence](art/rooftop-stair-guard-20261021/README.md).
+- `EnvironmentArchitecture.ts`: shallow cream warehouse accents and dark caps now stop before original projecting brick piers, with 0.06 reveals and no tiny offcuts. Every basement detail triangle clears all five pier volumes. Other facade joinery/openings inspected; 232 pieces /7,040 triangles and materials/batches unchanged.
+- `WorldFilmGrain.ts`: strength **.15→.13**, clump share **.18→.12**, clump cell **2.5→2.25px**. Fine component increases 82→88%. Added hue-preserving **8×8 ordered Bayer luminance dithering**, 12 light bands, .65 blend, 1.5px pattern scale; bounded gain keeps near-black paint dark. Includes world/avatars, preserves PBR/dye/rig/planet hook chains and prior protected media/HUD exclusions. No extra shader texture, render target or draw pass.
+- `NoirMode.ts`, `App.ts`, `style.css`: personal **黑白電影 / NOIR** power button in PASS, ON/OFF and `aria-pressed`, persisted only in localStorage. Root grayscale includes world, CSS3D/streaming iframes, menus/captions and body-mounted sheets; explicit browser fullscreen/dialog treatment. Existing fixed HUD bounds stay unchanged. PASS scrolls within viewport/safe-area bounds on desktop/portrait/landscape. No server preference/shared-state field. Native immersive WebXR and OS-owned media output are outside this DOM filter. [Functional/pixel QA](art/noir-ui-20261021/README.md).
+- `PlanetLightAnchors.ts`: point/spot sources and spotlight targets receive the exact globe transform in renderer-facing matrices; authored placement/budget coordinates remain flat. Prevents the geometry/light separation as planet centre follows the attendee. Idempotent hooks restore on stop; no new lights/shadow slots or per-frame traversal. Initial lamp-pool assignment now happens after dock spawn without initial throttle; gate preview's distant local-light pool remains off.
+- `SolarClock.ts`, `DayNightCycle.ts`: live visual sky follows device-local civil time, sunrise toward **+Z entrance dock**, sunset toward **−Z beach**, moon opposite. Fixed local review override retained. Programme/film synchronization/festival clocks untouched. A stylized **06:00–18:00 civil-day orbit**, not seasonal sunrise/latitude/date astronomy or lunar ephemeris.
+- Pamphlet stand stays on the actual statue centreline, moved **Z−1.4→−2.0**, explicitly `statuePosition.x`, `statuePosition.z+4.2`. Real mesh bases already aligned laterally within .00064 units; no arbitrary X shift. New visible plinth gap ~.985 and collider gap .255, no overlap; interaction position follows it.
+
+## Final local verification
+
+- **695/695 full-suite checks pass**, zero failures/skips. Final shadow-dither refinement also passes all 5 shader regressions. Strict TypeScript/local production build and `git diff --check` pass. `art/world-style-20261021/reports/` holds final logs/captures. Builds use disposable API8794; **never publish that dist**.
+- Noir/PASS: Chrome **16/16**, iPhone 16 Pro-profile WebKit **15/15** checks. Actual world/interface and deterministic cross-origin iframe/modal pixels become equal RGB channels; fixed HUD/menu/canvas shift **0px**. Reload persistence and every original PASS item tested at 1280×500, 900×400, 402×700 and 874×402. Chrome DOM fullscreen passes; phone automation lacks that API. The iframe is locally fulfilled at an allowed provider origin, preserving CSP; this does **not** certify external movie playback.
+- Light/sky: **203 source +70 spotlight-target comparisons** across seven real globe centres, maximum coordinate error **0**; device-clock difference .014s. Nearby-centre street/temple captures visually show attached pools/sources. Five sky views cover 06:00 glow, 06:15 emerging disc, noon sun, 18:00 opposite-beach sunset and midnight moon. No page/shader errors. Audit precedes only the final spawn-pool initialization placement fix and shadow-gain refinement; transform/orbit code unchanged.
+- Latest 100-frame normal-quality art samples: desktop Chrome Metal p95 **16.7–16.8ms**, max16.8ms; Mac WebKit phone profile colour p95 **18–20ms**, max35ms. Noir phone avatar p95 **18ms**, max24ms. Zero page errors. These are isolated browser samples, not physical-phone/crowded/media proof. [Final metrics/source hashes](art/world-style-20261021/reports/final-validation.json).
+- New colour, trim, rail, stand and phone/Noir art captures are in `art/world-style-20261021/`; matched rail views in its linked rail folder. Art cameras hide UI/media overlays and remote attendees and push aerial fog back; resident NPCs remain. Rail art isolates attendance. Frame samples/limits are in the latest report and README. **Physical iPhone sustained/thermal, busy multiplayer/media playback and existing entry/first-venue hitches remain unverified.**
+
+**World:** http://127.0.0.1:4187/?era=ps2&island
+
+**Latest gallery:** http://127.0.0.1:4186/art/world-style-20261021/index.html
+
+**Methods/limits/reproduction:** [art/world-style-20261021/README.md](art/world-style-20261021/README.md).
+
+Reuse nonpersistent API8794, dev4186 and preview4187; GPU checks run serially away from builds/tests. Normal local build: `VITE_FESTIVAL_SERVER_URL=http://127.0.0.1:8794 npm run build`. Explicit owner approval and the normal release verification are still required before publication.
+
+---
+
+# Previous local neon signs, tray geometry and rooftop camera, 2026-10-21 (Asia/Taipei)
+
+**LOCAL ONLY. No publication approval.** Latest owner choices: keep all current sign wording; Hong Kong 1980s/90s neon shapes/lettering/colours; stronger, denser film texture across the **3D world including avatars**, with **UI and film screens clear**; **remove the pictured wall lamps and their light pools**. The screenshot repairs also cover the pamphlet top, Palace white streaks, rooftop stair zoom and tilted Wish Wall blue cap. Do not stage, commit, push, open a PR, change `docs/beta`, run BETA build/publish/prune commands or deploy. Older release instructions and attached documents are context, not current authorization.
+
+Continue in `/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world`, branch `claude/codex-handoff-20261018`, unchanged HEAD `c1669270aed1b43b81c6de219c57b9c962b8fd3f`. Existing dirty changes and accepted layout/entrances, temple identity, live Wish Wall, car colours/number plates and widened rows remain intact. Target remains **iPhone 16 Pro at 30fps with richer detail**, desktop 60 fps.
+
+## Latest local result
+
+- **Pamphlet upper geometry rebuilt**, rather than another texture-only cleanup: planar sloping bed, straight beveled timber rails/dividers, three aligned paper stacks. All 420 retained lower-cabinet triangle POSITION/NORMAL/UV tuples, original material and four embedded image payloads stay exact; fitted bounds unchanged. Each actual runtime GLB now **1,046triangles /2primitives /2,285vertices**, down 493 triangles and 33,584 bytes. Desktop **1,105,284 B**, mobile **753,340 B**. Actual emitted source hashes verified. [Provenance/audits](art/pamphlet-tray-20261020/README.md).
+- **Removed pictured facade lamps/pools:** six warehouse fixtures/cages/lenses and their three point lights; Palace facade flood spotlight. Unrelated stair, temple and street lighting retained. No new neon real-time lights.
+- **Palace streak diagnosis:** original pilaster albedo had a cream shaft and burgundy ends; textures loaded correctly. `PalacePilasterFinish.ts` scopes satin bronze to the two imported Palace relief meshes. Original geometry/maps/materials shared elsewhere remain intact. [Inspection](art/palace-pilaster-20261020/README.md).
+- **Rooftop camera:** `RooftopCamera.ts` makes camera-only guard heights follow the actual sloping open rail and queries rendered tread tops rather than the avatar pitch line. The real keyboard route also exposed a thin town utility pole at x13,z21.5 that shortened the camera to 7.835. Only explicitly labelled utility poles with small padded footprints and known tall bounds pass the camera ray while the attendee is on the exact stair/landing footprint. Body collision and real masonry/stringer camera avoidance remain. No automatic yaw/pitch/zoom changes. [Diagnosis/regressions/browser route](art/rooftop-camera-20261020/README.md).
+- **Wish Wall cap levelled:** blue roof and gold lip authored X rotation 0.08→0; frame envelope/posts/live text keepout retained.
+- **Neon signs:** `NeonSigns.ts` creates bounded CanvasTextures with unchanged editable wording, tube-outline lettering, venue-specific colours, dark enamel, stepped/rounded borders and cinema bulbs. Entrance, Palace, Slap and Pop, NIMA, Temple, Shore, drive-in, pamphlet, popcorn and staff dormitory signs updated. Ten physical frames use 3 opaque meshes /108 source triangles each; gate/Shore frames are replacements, so 1,080 is not a net triangle increase. Curvature retained. No image-generation job needed for exact text; prior Higgsfield assets/provenance retained. Cleanup releases owned tagged canvases/materials before frame removal and handles replaced subdivision geometry.
+- **Denser film grain:** `WorldFilmGrain.ts`, strength 0.15, 18 exposures/sec, every eligible world fragment plus a small clump component. Includes late imported avatars after dye/lighting hooks. No additional image/render target/draw pass. VideoTexture materials, film posters/private screens, transparent UI and XR HUD ancestry excluded. Existing CSS media/UI remain outside the world shader. Minimal `PlanetCurve.ts` hook-identity helper prevents repeated patch nesting and shader churn.
+
+## Validation and review
+
+- Final **684/684 tests pass**, no failures/skips; strict TypeScript/local production build pass; `git diff --check` clean. Lifecycle, exact text, real town pole/body collision and actual camera solver regressions included. Logs: `art/neon-world-20261020/reports/`.
+- Fresh **14 desktop** after-captures plus 14 matching previous-version views and **3 Mac WebKit iPhone 16 Pro profile** captures. Visually inspected all new desktop views and phone stand; before/after gallery verified in the in-app browser. Art views hide HUD/media overlays and remote meshes, preserve resident NPCs, and push aerial fog back. They are appearance evidence, not crowded play or movie-playback proof.
+- Actual final production-preview keyboard climb/descent is recorded separately under `art/rooftop-camera-20261020/browser-desktop/` and `browser-iphone16pro/`. One initial placement, real D/A key events and unchanged terrain/static body solver; dynamic attendees isolated for a stable camera route, **all 285 static colliders retained**. Selected yaw/pitch/zoom remain fixed. Both final production-preview routes pass: **261 animated samples total**, reach **10.56 throughout**, zero ground-height error/airborne samples/world or external-media errors. Original pole failure is preserved in `diagnosis-production-pole-before/`.
+- Three 100-frame art-view samples: desktop Chrome Metal p95 **16.7–16.8ms**, max16.8ms; Mac WebKit phone profile p95 **18ms**, max27ms. Both art capture reports have zero page errors. **Not physical iPhone sustained/thermal, busy multiplayer or film-playback proof.** Existing entry/first-venue hitches remain outside this task.
+- Current incremental imported environment/car art transfer **7,994,094B mobile /9,415,718B desktop**; imported texture estimates remain75,928,892B /113,677,628B. Fourteen current neon canvases separately estimate19,922,947B RGBA8+mips, replacing former sign canvases rather than all-new allocation. Excludes existing world, geometry, render targets, drivers/transients. [Budget/hashes](art/neon-world-20261020/reports/asset-budget.json).
+
+**Local world:** http://127.0.0.1:4187/?era=ps2&island
+**Latest screenshot gallery:** http://127.0.0.1:4186/art/neon-world-20261020/index.html
+**Full methods/limits/reproduction:** [art/neon-world-20261020/README.md](art/neon-world-20261020/README.md).
+
+Reuse nonpersistent API8794, dev4186 and preview4187. Local build: `VITE_FESTIVAL_SERVER_URL=http://127.0.0.1:8794 npm run build`. **Never publish this disposable-API dist.** Explicit owner approval and normal release checks are required before any publication. Run GPU browser QA serially away from builds/tests.
+
+---
+
+# Previous local polished pamphlet stand, temple and Wish Wall, 2026-10-20 (Asia/Taipei)
+
+**LOCAL ONLY. No publication approval.** The owner requested pamphlet surface polish and upgrades to the temple/message board. Explicit answers: **preserve the temple identity and footprint; enrich its details**, and **message board means the Festival Wish Wall beside the temple**. Do not stage, commit, push, open a PR, change `docs/beta`, run `build:beta`/publish/prune commands or deploy. Historical release instructions below are context, not current authorization.
+
+Continue in `/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world`, branch `claude/codex-handoff-20261018`, unchanged HEAD `c1669270aed1b43b81c6de219c57b9c962b8fd3f`. Earlier car spacing/plates, environment upgrades and dirty files are retained.
+
+## Latest local result
+
+- Repaired both actual pamphlet GLBs' mild normal seams and added a stand-only material finish. Selected cabinet/wood/brass mild shading discontinuities above 10° drop **43→2**; protected paper/sharp features stay intact. Ordered triangle POSITION/UV tuples, materials, nodes and fitted bounds are unchanged. **1,539 triangles**, +27 render vertices/+864 geometry bytes. Final texture-seam cleanup (20 October) changes three broad panel edge regions and re-encodes only albedo at WebP quality 90; unrelated albedo texels have small compression drift (p95 max-channel delta 4/255), while other three encoded maps stay exact. Decoded edge-luminance p95 discontinuity drops .02859→.01317 desktop, .02086→.01581 mobile. Desktop **1,138,868B**, mobile **786,924B**, both smaller than originals; final hashes/audits in `art/pamphlet-polish-20261019/`. `PamphletSurface.ts` reduces low-metal normal-map perturbation by 80%, adds a .55 roughness floor and uses .3 retro print strength. Brass detail and other models' shared materials remain intact. Isolated front/quarter/side/back views are materially smoother; authored weathering/colour variation remains.
+- `TempleArchitecture.ts`: **5,604 added source triangles, 421 pieces, 6 merged meshes, 537,984 geometry bytes**. Roof courses/hip caps/rafters, bracket sets, column shoes/capitals, latticework, foundation courses and four friezes. Preserves original identity, footprint, two-tier roof, upturned corners, entrance/sign/stair flight and deity/altar. Every new triangle is tested against doorway/sign/altar/stair keepouts. No new lights, colliders or per-frame work.
+- `WishWallFrame.ts`: beveled timber, stone shoes, brass hardware, glazed teal cap and ornament inlay. **1,060 source triangles, 29 pieces, 6 meshes**, inside the former roof/post envelope. The live content plane/canvas and latest-30-message data/payment flow stay intact; the colours use warm paper/vermilion. Every frame triangle avoids the full text volume. Its camera-avoidance top now includes ground elevation; X/Z collider plan unchanged.
+- New Higgsfield **gpt_image_2_5** atlas job `e659ae78-bc03-42a7-8a6e-58477bee069f`, complete, raw image viewed. Four decorative bands shared by temple and wall. `TempleTrimAtlas.ts` selects **512px/121,878B mobile** or **1024px/380,070B desktop**, using one shared colour texture/material before batching/warmup. This is generated decorative colour with baked pictorial shading, not measured PBR/displacement. No Higgsfield project was created, no job pending. Prompt/result/raw/preparation/hashes are in `art/temple-wishwall-20261019/`.
+- `FestivalWorld.ts` integrates preparation/reporting/cleanup; disposed checks prevent late art or warmup allocation if closed during asynchronous preparation. Four Wish Wall family surfaces now actually receive the shared wood/ceramic/stone maps; brass/atlas stay authored. Shared atlas ownership, UV orientation, shader order and protected live content were independently reviewed.
+
+## Validation and review
+
+- Final **663/663 tests pass**, no failures/skips; strict TypeScript/local build pass, `git diff --check` clean. Tests include actual live message/canvas reuse, empty/CJK/full/repeated updates, family map application, atlas late-load cleanup, stand-only material scoping and cancellation after teardown. Logs: `art/temple-wishwall-20261019/reports/tests.log`, `wish-wall-tests-final.log`, `build.log`.
+- Actual final production-browser screenshots: **6 desktop daylight, 4 phone, 3 night**. Visually inspected temple entrance/sign/interior, wall empty/with notes, stand day/night. Wish Wall readable-menu open/close works in desktop Chrome and Mac WebKit phone profile; zero page errors. Two sample wishes are client-only fixtures pinned against disposable-server polls: **no offering/payment/wish was submitted**.
+- Desktop Chrome Metal 100-frame samples p95 **16.7–16.8ms**, max **16.8ms**. Mac WebKit with iPhone 16 Pro viewport/DPR p95 **18–19ms**, max **27ms**; lighter models and **512px atlas confirmed**. These are local browser results, **not sustained physical iPhone/thermal, busy multiplayer or film-playback proof**. Phone cameras were improved after baseline, so before/after phone timings are not identical-camera comparisons. Existing entry/first-venue hitches remain outside this task.
+- Separate **16/16 isolated model captures**, zero page/console/request errors: both asset profiles, before/after, front/quarter/side/back. `art/pamphlet-polish-20261019/isolated-review/`. Mobile here selects the lighter GLB at the same desktop viewport, not a physical phone. No silhouette/bounds changes.
+- Fresh local gallery, verified in the in-app browser: **http://127.0.0.1:4186/art/temple-wishwall-20261019/index.html**. Includes before/after, daylight, night and phone captures. Earlier world gallery remains useful for other areas but predates this temple/wall/stand pass. Art cameras hide HUD/media overlays and remote visitor meshes only in their client; resident NPCs may remain. Blank cinema screens are not playback proof.
+- Combined incremental new environment/car/reflection/plate art plus this task: **8,027,678B mobile / 9,449,302B desktop download**, estimated texture allocation **75,928,892B / 113,677,628B**. Excludes existing world, geometry, render targets, driver/loading overhead and small JS changes. Latest atlas adds ~1.33MiB / 5.33MiB RGBA8+mips; no new real-time lights. Details in `reports/asset-budget.json`.
+
+Full methods, provenance, hashes, limits and reproduction: [art/temple-wishwall-20261019/README.md](art/temple-wishwall-20261019/README.md). Reuse API8794 (nonpersistent), dev4186 and preview4187; run GPU/browser performance checks serially away from builds/tests. The local build uses `VITE_FESTIVAL_SERVER_URL=http://127.0.0.1:8794` for the disposable API. **Never publish this `dist`.** Explicit owner approval and normal release verification remain required.
+
+---
+
+# Previous local wider car rows and current world screenshots, 2026-10-19 (Asia/Taipei)
+
+**LOCAL ONLY. No release approval.** The owner asked to separate the two car rows and send current-world screenshots. No staging/commit/push/deployment or `docs/beta` changes. The existing checkout and disposable local API are reused.
+
+## Latest spacing adjustment and screenshots
+
+- Increased bumper-to-bumper gap **0.44 → 3 scene units**. The project explicitly uses approximately **0.5m per unit** (`CoastalTerrain.ts:4`), so this is about **1.5m**. The first optional question incorrectly called 3 units 3m; a corrected question explained the scale and offered 3 units versus a true 3m redesign. No answer was received before the owner's subsequent “Try again”/“Resume”; continued with the recommended 3-unit clear walking aisle. Do not describe this as 3 physical metres.
+- Back row plates 1–3 remain at world z **−30.5**, preserving arrival `(0,−26)` and the approach. Front row plates 4–6 move from **−36.7 to −39.26**. Row-center pitch is **8.76**, matching the 5.76-long cars plus a 3-unit gap. X positions, colours, seat IDs, support heights and plate numbers are retained. Geometry, seat anchors and colliders all use the same placement. Front bumpers remain on the existing asphalt and about 2.81 units clear of the screen collider; no screen, terrain or booth relocation.
+- `DRIVE_IN_PARKING` in `CoastalVenues.ts` is now shared by `FestivalWorld.ts` and `src/ui/coastalMap.ts`. The map uses the actual fitted 4.02×5.76 envelope and wider pitch. `public/floor-plan.svg` was regenerated **locally** by the normal build; this is a source artifact, not publication.
+- The real-GLB seat regression now measures a 3-unit gap between imported bumper bounds, standing-visitor clearance across the full aisle, clear arrival and a separate screen-side passage. Existing real/fallback seating and plate batching/disposal checks remain. Final logs are `art/car-upgrade-20261019/reports/row-spacing-tests.log`, `row-spacing-full-tests.log` and `row-spacing-build.log`.
+- Final **654/654 tests** and the local build/TypeScript pass. Browser recheck of the relocated layout: both native avatar bodies in all six seats plus two stand-up checks, **14/14 pass**, zero page errors/failures (`art/car-upgrade-20261019/row-spacing-seating/measurements.json`). This is a desktop local-browser check, not a fresh physical-phone test.
+- Fresh **1600×1000** screenshots, inspected for framing, are in `art/world-review-20261019/`: full island, square/statue/pamphlet stand, wider drive-in, Palace, Shore, shops/NIMA rooftop, square at night and shops at night. `capture-gallery.mjs` reproduces them against local preview 4187. `capture-report.json` includes post-batch car-root coordinates and all six plate numbers to prove the new layout. No page errors. These are actual browser screenshots, not new concept images.
+- Gallery: `http://127.0.0.1:4186/art/world-review-20261019/index.html`. Art-only cameras hide HUD/media overlays and remote visitor meshes in their test client and push fog back; presence data is unchanged. Blank cinema screens are not playback evidence. No new performance or physical-device claim is made for this spacing edit.
+
+The car mesh/material polish below remains unchanged. Explicit approval is still required before any publication. Local production preview retains API override `http://127.0.0.1:8794`; **do not publish that build**.
+
+---
+
+# Previous local car polish and seat-number plates, 2026-10-19 (Asia/Taipei)
+
+**LOCAL ONLY. No release approval.** No staging, commit, push, PR, `docs/beta` changes or deployment. Continue in the existing `release-sfx-20261018/world` checkout; HEAD remains `c1669270aed1b43b81c6de219c57b9c962b8fd3f`. Historical release instructions below do not authorize shipping these changes.
+
+## Latest owner answers and completed polish
+
+The owner found the generated car surfaces rough/uneven and requested seat numbers on the plates. Explicit answers: **clean painted metal, subtle retro grain, smooth body panels**; **large 1–6, left-to-right across the back row, then front row**. Here back means farther from the screen (screen is −Z): numbers 1/2/3 at x −7.2/0/7.2, z −30.5; 4/5/6 at the same x, z −36.7. Existing seat IDs `DRIVE-1-1`…`DRIVE-2-3` remain unchanged.
+
+- Repaired the actual GLB's UV-split paint normals offline with angle-weighted, edge-connected corner fans and a 40° crease limit. Unit normals alone had not been enough: the previous source had 120 mild geometric edges with >10° shading discontinuity; the accepted asset has **zero** across the same 803 edges. Sharp folds and opposite shell faces stay separated. No subdivision or positional fairing was needed after visual review.
+- Independent numeric comparison proves every ordered triangle POSITION/UV tuple, every trim NORMAL, image byte payload, material and node transform is unchanged. Only paint normals and compact accessor/index storage changed. Seat contacts, source silhouette and fitted bounds `[4.02,2.05,5.76]` therefore remain exact. This supersedes the initial upgrade's blanket normal-byte-preservation claim below.
+- Runtime `DriveInCarArt.ts` now compresses baked paint brightness, uses masked roughness `.29` / metalness `.10`, and removes 96% of the paint-only normal-map perturbation. Neutral texels retain the source treatment. Car paint uses `.28` of the environment print strength; all other environment materials retain strength 1. Six colours still share maps and one shader program. Chrome, tyres, cream seats and red tail lamps are retained. The source windshield reflection/small details remain baked approximations.
+- `DriveInLicensePlates.ts` adds opaque rear housings over all generated plate lettering and six readable atlas numerals. One 512×128 canvas atlas, two shared materials, **84 additional source triangles across six cars**, about **349,526 bytes** estimated shared RGBA8 storage with mips. Plates fit inside the previous bumper envelope. Fallback cars get the same number on their own fitted mount if loading fails. No new lights/collision/seat changes. Preparation is after model loading, before planet subdivision/batching/warm-up; cleanup owns only plate resources.
+- Final shared car file **1,622,280 bytes** (44,616 fewer than before polish), **9,054 triangles**, two primitives/four shared embedded maps. SHA-256 `c34c52f1d55a78c3f6fbb15bc6ebe6578683f33fa54131bdc664e1cb3652d0a4`. Untouched raw Higgsfield source and `convertible-before-polish.glb` are retained under `art/car-upgrade-20261019/`.
+
+## Latest validation and review
+
+- **654/654 tests pass**, no failures/skips; local production build includes strict TypeScript and passes. The suite needed sandbox permission for temporary loopback server listeners; the initial unprivileged attempt failed `listen EPERM`, then the permitted local run passed. Logs: `reports/polish-tests.log`, `polish-build.log` inside the car art folder. `git diff --check` clean; no staged or `docs/beta` changes.
+- All six colours/atlas cells, front and rear appearances, source-plate coverage, exact fitted bounds and GPU shader compilation checked in `polished-review/`. Physical numbering after batching checked by `verify-world-plates.mjs`, evidence in `polished-world-plates/` and `polished-world-plates-night/`. The fixed-camera art views hide HUD/remote visitor meshes only in their own test client and stop its render loop for the screenshot; they are not crowd/performance/media-playback evidence.
+- Separate production-browser frame samples: desktop p95/max **16.8/16.8 ms**, phone-size Mac WebKit with iPhone 16 Pro viewport/DPR p95/max **19/19 ms**, no page errors; all six models/plates ready. Evidence in `polished-desktop/` and `polished-iphone16pro/`. These samples isolate remote visitor meshes; draw calls 65/64 are not an equivalent crowd comparison with older captures. No sustained physical iPhone, thermal or busy multiplayer test was performed.
+- Combined incremental environment+car model/map download: **7,908,240 bytes mobile / 9,094,788 desktop**. Texture estimates including the plate atlas: **74,530,790 / 108,085,222 bytes**. See `reports/polish-budget.json`; excludes existing world, geometry, render targets, driver/loading overhead and small JS bundle changes. Car textures themselves remain shared 8,475,992 estimated bytes with mips.
+- Local production preview `http://127.0.0.1:4187/?era=ps2&island&review=coastal&view=drive&cycleMinute=12` (night 42); isolated model `http://127.0.0.1:4186/car-review.html?source=new&view=hero` or `view=rear`. The viewer's six colour buttons show corresponding numbers 1–6. Normal sign-in gate remains in the world. Disposable local API 8794 is embedded in this build; **do not publish it**.
+
+Full details/scripts/audits are in [art/car-upgrade-20261019/README.md](art/car-upgrade-20261019/README.md). Physical iPhone 16 Pro sustained performance, network delivery, crowded multiplayer and third-party video playback remain unverified. Existing loading/first-venue hitches below remain open. Nothing published.
+
+---
+
+# Previous local drive-in car upgrade, 2026-10-19 (Asia/Taipei)
+
+**LOCAL ONLY. No release approval has been given.** The owner's no-publish instruction still governs all environment and car changes below. No staging, commit, push, PR, `docs/beta` change, Pages or Render deployment. The existing checkout/branch and local services below are reused.
+
+## Latest owner request: upgrade the drive-in theater cars too
+
+- Replaced all six primitive cars with one shared Higgsfield-generated retro convertible GLB in six vibrant paint colours: vermilion, amber, cyan, cream, cobalt and jade. Optional style question received no answer; proceeded with detailed 1970s–80s convertibles, matching the existing festival identity and the latest palette references.
+- Detailed fenders/bonnet/boot, round tyres/alloy wheels, chrome bumpers, grille/lights, door seams/handles/mirrors, cream ribbed seats, dashboard and folded top. This remains a stationary seating prop. Parking, colliders, aisles, driver x/z and the screen location are retained. The generated opaque windshield reflection and some small details remain baked approximations.
+- `src/assets/environment/drive-in-car.glb`: **1,666,896 bytes, 9,054 triangles, two single-material primitives, four embedded shared maps**, no skins/animations/external URIs/invalid normals. One download/source for all six. Base colour 1k, normal/packed PBR 512, black emissive 128; **8.083 MiB** estimated additional shared texture storage with mips, plus geometry/driver/transient costs not included. Source attributes, winding, triangles and node transforms preserved; only image sizes/encoding and material/index groups changed.
+- `DriveInCarArt.ts`: six material/uniform paint variants, shared textures/shader, per-texel red selection limited to an explicit paint group. Chrome, tyres and upholstery are protected; both rear-lamp lens regions were separately checked/excluded. Reuses the existing small reflection atlas and print treatment. No new runtime lights.
+- `EnvironmentAssets.ts` recognizes the fifth model kind. `FestivalWorld.createDriveIn()` attaches six fitted instances before existing admission/batching/warm-up. Source faces −X, so runtime yaw is `−π/2` toward screen −Z. Fitted bounds `[4.02,2.05,5.76]`, matching the previous mirror/bumper envelope. Originals remain on load failure.
+- Fixed a **pre-existing car-seat batching defect**: the visible cushion was detached/merged and `Seat.cushion` lost its parent transform. `ConvertibleSeat.ts` keeps hidden, non-rendering, non-raycasting support proxies attached to each car. The loaded leather measures `.7426/.7568` near the hip/cushion marker, so successful loading sets the proxy top to `.76`; fallback remains `.86`. Forward `−.3`, thigh clearance `.23`, and foot support `.38` remain. The shift completes before admission/batching. Real-GLB regressions cover all six, both actual solved soles, grading, batching and 404 fallback.
+
+## Latest validation
+
+- **651/651 tests pass**, zero failures/skips; local production build and strict TypeScript pass. `git diff --check` clean. Runtime car is emitted and SHA-256 protected in the local build; neither car/environment review pages nor public review fixtures ship in its input/output.
+- Desktop drive-in p95 **16.7 ms** (old 16.8), draw calls **72** (old 80). Mac WebKit using iPhone 16 Pro viewport/DPR: p95 **19 ms**, max **20 ms** (old p95 18, max 19); draw calls **73** (old 77). Lite phone p95 **18 ms**, max **19 ms**. All cars/colours ready, no page errors. These are individual browser samples, not real-phone proof; remote visitors/planet policies can vary scene triangle totals.
+- Both native avatar bodies checked in all six cars, standing up and clear screen views, on desktop **and phone-size WebKit**: twelve seat checks + two exit checks per engine, all pass. Hip clearance `.23`, no leg/pad intersection. Front/back/side/overhead and cyan-versus-red tail-lamp materials inspected. Headless YouTube showed its unavailable-video notice, so screen geometry was verified; playback was not certified.
+- New car + previous environment art incremental transfer totals: **7,952,856 bytes mobile / 9,139,404 desktop**. Shared texture estimates including mips/atlas: **74,181,264 bytes mobile / 107,735,696 desktop** (about 70.74 / 102.74 MiB), excluding existing world, geometry, render targets, driver overhead and loading transients.
+- **Still open:** physical iPhone 16 Pro sustained play/thermal memory, actual network/CDN and busy multiplayer/media playback. Existing loading/first-venue hitches below are not claimed fixed. Nothing published; explicit owner approval required before release.
+
+Full source jobs/prompts, raw files, preparation scripts, audits, hashes, budget and evidence: [art/car-upgrade-20261019/README.md](art/car-upgrade-20261019/README.md). Evidence is under that folder's `reports/`, `review/`, `seating-desktop/`, `seating-iphone16pro/`, and before/after captures. A first night screenshot was rejected for obstruction by another local review visitor; the final night art capture hides remote visitor meshes only in its test client, without changing presence/server state. It is not crowd-performance evidence.
+
+Review the theater at `http://127.0.0.1:4187/?era=ps2&island&review=coastal&view=drive&cycleMinute=12` (night 42), or the localhost-only model/colour/seat viewer at `http://127.0.0.1:4186/car-review.html?source=new&view=hero`. Main world still uses the normal gate. `art/car-upgrade-20261019/verify-cars.mjs` reproduces the seating checks against disposable API 8794. All services/run commands remain as documented below; never publish the disposable API build override.
+
+---
+
+# Previous local environment art upgrade, 2026-10-19 (Asia/Taipei)
+
+**LOCAL ONLY. The owner explicitly requires approval before publication.** Do not run `build:beta`, `publish-beta.mjs`, `prune-published.mjs --apply`, stage/commit/push, create a release PR, change `docs/beta`, or deploy Pages/Render for this work. The older release instructions below describe previous releases and do not authorize shipping this upgrade.
+
+Active checkout: `/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world`, repository one level above; branch `claude/codex-handoff-20261018`, baseline HEAD `c1669270aed1b43b81c6de219c57b9c962b8fd3f`. Changes are uncommitted. No public files or live server data were changed.
+
+## Owner's current request and answers
+
+- Upgrade buildings, theaters, roads, lamps, pamphlet stand and square statue through Higgsfield, with richer design/materials and less primitive-looking geometry. Cyberpunk 2077 is a craft/detail reference; keep the festival world identity, silhouettes, footprints and entrances.
+- iPhone/mobile and desktop, lighter phone assets. Explicit target: **iPhone 16 Pro, 30 fps with richer detail**; desktop target 60 fps.
+- Latest seven attached references: bright, saturated, vibrant environment colours, with more noticeable retro texture. Applied vermilion/red and amber/cream against cobalt/teal, fine print grain and ordered dithering.
+- Optional follow-up answers were not received; proceeded with warm daylight / cobalt-teal night / amber accents, stronger surface-print texture, and environment/prop colours while preserving avatar colours, logos, lettering and UI.
+
+## Implemented locally
+
+- `src/world/EnvironmentMaterials.ts`: six Higgsfield tile families, explicit surface tags, shared albedo/normal/roughness, world-scale UVs, mobile-budgeted decode, authored-surface protection and fallback handling. Preserves existing emissive fill. Tile normal/roughness maps are **albedo-derived approximations**, not measured PBR.
+- `EnvironmentAssets.ts` + `src/assets/environment/`: four Higgsfield image-to-3D GLBs (street lamp, pamphlet stand, cinema relief, GANGAN horse/rider). Shared sources, awaited placement, fixed dimensions, original fallbacks hidden only after success. Mobile selects separate 1k albedo statue/stand GLBs; desktop 2k. No skins/animations/external URIs or invalid normals in final audits. Statue remains gold with cap, hair/beard, cloak, horse, same root/yaw/location; pamphlet retains the readable live label. Lantern glass alone follows the existing lamp controller.
+- `EnvironmentArchitecture.ts`: 7,040 source triangles, 232 details coalesced into 19 regional/material meshes; chamfered cornices/trim, roof seams and supports across venues, shops, temple and houses. Existing colliders/projector openings/layout retained. NIMA deck and basement ceiling untouched.
+- `EnvironmentArt.ts`: saturated reference palette and fine surface grain / 18-level ordered dithering. Preserves authored normal/maps and smooth shading, explicit tags exclude avatars/film/sign text. `CoastalScenery`, `CoastalTerrain`, `DayNightCycle`, and worn-style defaults in `App.ts` use the richer palette/texture; no new lights or full-screen grain overlay.
+- `EnvironmentReflections.ts`: one small local PMREM atlas on imported environment materials only. Preparation precedes subdivision/batching/warm-up. Releases/restores resources on stop.
+- `StaticBatch.ts`: respects hidden ancestors so original replacement fallbacks cannot reappear after batching. Regression test included.
+- `environment-review.html` / `src/environment-review.ts`: localhost-only isolated model viewer, excluded from production build inputs. `tools/hitch-probe.mjs` now accepts `DEVICE=` for the iPhone 16 Pro browser profile.
+
+Full provenance, source jobs, methods, budgets, remaining limits and reproducible review commands: [art/environment-upgrade-20261019/README.md](art/environment-upgrade-20261019/README.md). Raw Higgsfield sources and final view screenshots are preserved beside it. No new generation is pending.
+
+## Validation and limits
+
+- Final `npm test`: **645/645 pass**, zero failures/skips. Strict TypeScript and local production build passed; `git diff --check` clean. Evidence: `art/environment-upgrade-20261019/reports/`.
+- Local production desktop five views: p95 16.7–16.8 ms, no page errors; correct desktop models loaded. Night views also inspected. Front/back model surfaces and statue side checked visually.
+- Mac WebKit with iPhone 16 Pro viewport/DPR: six normal-mode views p95 18–19 ms, max 24 ms, no page errors. Three lite-mode views p95 18–19 ms, max 20 ms. Correct lighter mobile bytes verified. This is **browser emulation, not physical iPhone validation**.
+- Movement/first venues in normal mode: p95 18–22 ms; walk max 35 ms; first Palace max 70 ms and Shore 51 ms. Untouched baseline: Palace 105 ms, Shore 46 ms. Both had zero in-world shader links. Loading-view maximum stall about 0.97 s in both; sampled admission 6.84 s upgraded versus 6.12 s baseline. YouTube WebKit placard warnings retained separately; no app errors. Individual local samples, not guarantees.
+- Incremental art transfer: mobile **6,285,960 bytes**, desktop **7,472,508**. Estimated extra shared RGBA8 texture storage with mips/reflection: **62.66 MiB mobile / 94.66 MiB desktop**, excluding existing world, geometry, render targets, driver overhead and loading transients. Details/hashes: `reports/asset-budget.json`.
+- **Open before release acceptance:** sustained physical iPhone 16 Pro play/thermal memory, real network/CDN delivery, and busy multiplayer crowd. Do not promise zero lag or claim those checks are complete. Existing first-venue/YouTube and loading hitches remain visible in the reports.
+
+## Local review services
+
+- Disposable API `http://127.0.0.1:8794` (`FESTIVAL_STATE_FILE=off FESTIVAL_SEED_FILE=off`), dev client 4186, local production preview 4187. Production was built with `VITE_FESTIVAL_SERVER_URL=http://127.0.0.1:8794`.
+- Day: `http://127.0.0.1:4187/?era=ps2&island&review=coastal&view=square&cycleMinute=12`; night uses `cycleMinute=42`. The normal sign-in gate remains. `view=palace`, `shop`, `shore`, `drive`, `housesEast`, `clubExterior`, `pamphlet`, `templeSide` review other areas.
+- Isolated props on dev: `http://127.0.0.1:4186/environment-review.html?asset=statue&source=new` (also `street-lamp`, `pamphlet-stand`, `cinema-pilaster`).
+- Untouched HEAD comparison under `/private/tmp/festival-environment-baseline.uyaOSx`, local preview 4188; node_modules symlinked, local API only. Browser tests were serial and did not enter live. Run commands are in the art README. Do not accidentally ship the disposable API override.
+
+---
+
+# Historical state after PR #49, 2026-10-18 22:50 (Asia/Taipei)
+
+**LIVE.** PR #49 (`claude/drunk-and-mobile-20261018`) was approved and merged by macakinTT as `8de6e7d`; GitHub Pages built it. `/beta/` serves entry `assets/main-B4ExJkeK.js`. Since then main has only M.O.T.H PR #50 (`9d21b82`, no `world/` or `docs/beta/` file). The source for the live bundle **is on main** now: `world/` at `9d21b82` builds it.
+
+## What is live (details in the sections below)
+- **Drinking:** builds from drink 1 (tipsy → drunk → wasted); the 10th passes out → WASTED screen (你喝掛了 / 喝了十杯 · 於寺廟醒來) → wake at the temple with a 20 s hangover. One drink wears off every 2 min after a 2 min hold. Loopback QA: `__festivalDrinks(n)`.
+- **iPhone freezes (WebKit-measured):** constant sun/moon `castShadow` (`castsShadowWhileLit`), `warmByDrawing` under the loading view, print textures uploaded once, remote bodies spaced 150 ms.
+- **One YouTube player for every screen** (`ScreenPlayer` in `FestivalWorld.ts`): one iframe in one CSS3D panel, re-aimed per venue, films swapped with `loadVideoById`, `stopVideo` on leaving; built during loading, admission waits ≤ 3 s for it to answer (`SCREEN_PLAYER_ADMISSION_WAIT_MS`). Stale duration/playhead/ended reports are ignored until the player names the new film.
+- **First film under the loading view, 精簡 only** (`playFirstFilm` / `screenPlayerFirstFilm`): played muted and stopped as soon as it plays, ≤ 2 s (`SCREEN_PLAYER_FIRST_FILM_WAIT_MS`). Skipped in 一般 (no measured gain).
+- **Entering bar:** a wait on the film player longer than 250 ms gets its own stretch (84–89%), labelled 正在準備放映… / PREPARING THE SCREENS…, edging forward (`prepareForPlay(onProgress(fraction, 'screens'))`).
+- **Sign-in loading bar** (`src/ui/GateLoadMeter.ts`, `App.followGateLoad/tickGateLoad/paintGateLoad`): one bar bottom right, percentage; globe in steps, character in real bytes (`avatarLoadFraction`, sizes from `__AVATAR_BYTES__` in vite.config.ts); phones globe only. The character downloads beside the globe's code, the visitor's own body first (`loadOwnAvatar`); `attachImportedAvatar` accepts any one loaded body.
+
+## Checked after the merge
+- All 47 files the live entry loads return 200; the previously live entry also resolves (prune keeps two releases).
+- Live sign-in page in WebKit, desktop and iPhone size: bar to 100% and hidden, globe + character drawn, models/pictures/sounds from jsDelivr, **no errors**. The world was **not entered** on live (so no test visitor appeared).
+- jsDelivr: the 10 new files (all code) purged. No mirrored file changed: `asset-integrity.json` has the same 33 hashes as before.
+- `npm run verify`: 621/621 + build.
+
+## Open
+1. **Render deploy — owner, by hand.** `server/index.mjs` now allows the `passout` gesture. Until it is deployed, others see a passed-out player only jump to the temple, not collapse. Never ship codex's server copy.
+2. **Not tried on a real iPhone**: the freeze fixes, the YouTube waits' real cost (headless WebKit takes 5–13 s to start an embed; caps are 3 s + 2 s), the drunk effects' frame cost.
+3. **Known remaining hitches** (WebKit): each remote body arriving is a ~60 ms frame; the sign-in preview compiles ~1.4 s on a cold cache; the first venue in 一般 still has one 40–70 ms arrival frame.
+4. Local only, already merged — safe to delete when convenient: branches `claude/confident-goldberg-44a643`, `claude/determined-villani-cff2ef` (myschedule-pivot repo worktrees under `.claude/worktrees/`).
+
+## How to ship (unchanged)
+Branch from `origin/main` in a clean worktree; never `git add -A` (stage explicit paths). `cd world && npm run verify && npm run build && node scripts/publish-beta.mjs --channel beta && node scripts/prune-published.mjs --apply`; commit `docs/beta` + sources; push the branch; `gh pr create`; macakinTT approves (and may merge it himself — check `gh pr view N --json state` before merging). After merge: purge new mirrored files on jsDelivr (`curl https://purge.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@main/docs/beta/assets/<file>`), check the live page (index.html is cached 600 s). `/beta/ps2/` is retired: publish `docs/beta` only. Nothing ships without the owner's OK.
+
+Tools: `tools/hitch-probe.mjs` (WebKit frame-by-frame hitches; Playwright 1.62, `COLD=1` clears the shader cache, `MODE=lite`, `STEPS=`); it needs a production build pointed at a disposable local service, never the live one.
 
 ---
 

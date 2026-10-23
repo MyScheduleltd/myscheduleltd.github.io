@@ -24,6 +24,24 @@ export const PLANET = {
   radiusUniform: { value: 170 },
 };
 
+/**
+ * Uniforms every program receives alongside the bend, for other shared chunk
+ * patches (the isometric cutaway lens). Read at compile time, so a module may
+ * register before or after the curve is installed.
+ */
+export const programUniforms: Record<string, THREE.IUniform> = {};
+
+/** Accessor reads create fresh uniform wrappers. Art patches compare the
+ * underlying material hook so those wrappers do not defeat idempotence. */
+export const MATERIAL_COMPILE_HOOK=Symbol('material-compile-hook');
+export function materialCompileHookIdentity(hook:THREE.Material['onBeforeCompile']):THREE.Material['onBeforeCompile'] {
+  type Wrapped=THREE.Material['onBeforeCompile']&{[MATERIAL_COMPILE_HOOK]?:THREE.Material['onBeforeCompile']};
+  let current=hook;
+  while((current as Wrapped)[MATERIAL_COMPILE_HOOK]&&(current as Wrapped)[MATERIAL_COMPILE_HOOK]!==current)
+    current=(current as Wrapped)[MATERIAL_COMPILE_HOOK]!;
+  return current;
+}
+
 /** GLSL for a vertex stage: the declarations and `planetBend(world)`. */
 export const PLANET_GLSL = /* glsl */ `
 uniform vec3 planetCentre;
@@ -89,11 +107,14 @@ export function installPlanetCurve(radius: number): void {
     configurable: true,
     get(this: THREE.Material) {
       const hook = own.get(this);
-      return (shader: THREE.WebGLProgramParametersWithUniforms, renderer: THREE.WebGLRenderer) => {
+      const wrapper=(shader: THREE.WebGLProgramParametersWithUniforms, renderer: THREE.WebGLRenderer) => {
+        Object.assign(shader.uniforms, programUniforms);
         shader.uniforms.planetCentre = PLANET.centre;
         shader.uniforms.planetRadius = PLANET.radiusUniform;
         hook?.call(this, shader, renderer);
       };
+      Object.defineProperty(wrapper,MATERIAL_COMPILE_HOOK,{value:hook??noop});
+      return wrapper;
     },
     set(this: THREE.Material, hook: THREE.Material['onBeforeCompile']) {
       own.set(this, hook);

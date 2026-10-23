@@ -206,14 +206,14 @@ export function distanceToWater(x: number, z: number, limit = 40): number {
 
 export function createCoastalTerrain(): THREE.Mesh {
   const positions:number[]=[], colours:number[]=[];
-  const soil=new THREE.Color(0x72765c), sand=new THREE.Color(0xc0aa7c);
+  const soil=new THREE.Color(0x426b4e), sand=new THREE.Color(0xe0d4b8);
   // The island's beach: sand from a few units inside the outline outwards.
   const beachy=(x:number,z:number,c:THREE.Color)=>{
     if(!island)return;
     const out=islandOutside(x,z);
     if(out>-ISLAND.beach)c.lerp(out>2.5?wet:sand,smooth((out+ISLAND.beach*.6)/(ISLAND.beach*.4)));
   };
-  const wet=new THREE.Color(0x857858), cut=new THREE.Color(0x82806d);
+  const wet=new THREE.Color(0x968568), cut=new THREE.Color(0x536d57);
   const colour=new THREE.Color();
   const vertex=(x:number,z:number)=>{
     const y=gridGrade(x,z);

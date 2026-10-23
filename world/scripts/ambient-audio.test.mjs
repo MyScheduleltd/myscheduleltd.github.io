@@ -30,6 +30,7 @@ class Filter extends AudioNode { type = ''; Q = new Param(1); frequency = new Pa
 class Source extends AudioNode {
   constructor(context) { super(); this.context = context; this.loop = false; this.loopStart = 0; this.loopEnd = 0; this.playbackRate = new Param(1); }
   start(when = 0, offset = 0) { this.started = { when, offset }; this.context.started.push(this); }
+  stop() { this.stopped = true; }
 }
 const decoded = (url) => ({ url, duration: /night|ocean/.test(url) ? 46 : /day/.test(url) ? 61 : /skate/.test(url) ? 6.4 : 0.08 });
 globalThis.OfflineAudioContext = class { decodeAudioData(bytes) { return Promise.resolve(decoded(fileOf.get(bytes))); } };
@@ -60,6 +61,33 @@ const graph = (context) => {
   const bySource = (name) => context.started.find((s) => s.buffer?.url?.includes(name));
   return { bySource };
 };
+
+test('recorded fireworks load lazily, obey ambient/master mute, and keep at most three live voices', async () => {
+  const audio = new AmbientAudio();
+  await audio.start(false);
+  audio.setAmbientMix({ night: 1, ocean: 0, outdoors: 1 });
+  audio.playFireworkCue('peony');
+  assert.equal(audio.snapshot().fireworks.played, 0, 'no stale sound queued before decoding');
+  await audio.prepareFireworks();
+  assert.equal(audio.snapshot().fireworks.ready, 3);
+  const context = contexts.at(-1);
+  for (const pattern of ['willow', 'ring', 'peony', 'comet']) audio.playFireworkCue(pattern);
+  assert.equal(audio.snapshot().fireworks.playing, 3);
+  assert.equal(audio.snapshot().fireworks.played, 4);
+  const voices = context.started.filter(source => /fireworks-/.test(source.buffer?.url));
+  assert.equal(voices.length, 4);
+  assert.equal(voices[0].stopped, true, 'oldest voice is removed at the limit');
+  assert.equal(voices[1].output.type, 'lowpass', 'same outdoor muffle and ambient bus as the recording beds');
+  audio.setMuted(true); audio.playFireworkCue('willow');
+  audio.setMuted(false); audio.setAmbientVolume(0); audio.playFireworkCue('willow');
+  audio.setAmbientVolume(.3); audio.setMasterVolume(0); audio.playFireworkCue('willow');
+  assert.equal(audio.snapshot().fireworks.played, 4);
+  audio.stopFireworks();
+  assert.equal(audio.snapshot().fireworks.playing, 0);
+  assert.ok(voices.every(source => source.stopped));
+  audio.setMasterVolume(.7); audio.setAmbientMix(undefined); audio.playFireworkCue('ring');
+  assert.equal(audio.snapshot().fireworks.played, 4, 'cannot play after leaving the world');
+});
 
 test('night follows the light: day until sunset, night through blue hour, day again over dawn', () => {
   for (const minute of [5, 12, 20, 24.9]) assert.equal(nightAmountAt(minute), 0, `minute ${minute}`);
@@ -95,6 +123,8 @@ test('the beds loop inside their padding, start silent, and follow the mix', asy
   assert.deepEqual(fetched.map((url) => url.split('/').pop()).sort(), [
     'ambience-day.mp3', 'ambience-night.mp3', 'ambience-ocean.mp3',
     'avatar-drink.wav', 'avatar-eat-popcorn.wav', 'avatar-skate.mp3', 'avatar-step-left.wav', 'avatar-step-right.wav',
+    // The fireworks' bursts load with the world, so a show never waits on a download.
+    'fireworks-peony.mp3', 'fireworks-ring.mp3', 'fireworks-willow.mp3',
   ]);
   const { bySource } = graph(context);
   const day = bySource('ambience-day'), night = bySource('ambience-night'), ocean = bySource('ambience-ocean');

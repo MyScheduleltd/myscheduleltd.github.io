@@ -31,7 +31,9 @@ if (process.env.COLD) {
   rmSync(join(caches, 'com.apple.WebKit.GPU+org.webkit.Playwright'), { recursive: true, force: true });
 }
 const browser = await webkit.launch({ headless: true });
-const context = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+const device=process.env.DEVICE??'iPhone 15 Pro';
+if(!devices[device])throw Error(`Unknown browser device profile: ${device}`);
+const context = await browser.newContext({ ...devices[device] });
 const page = await context.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e).slice(0, 300)));
@@ -166,6 +168,6 @@ console.table(table);
 const worst = [...frames].sort((a, b) => b.js - a.js).slice(0, 15);
 console.log('Slowest frames (main-thread ms):');
 for (const f of worst) console.log(`  ${f.label.padEnd(9)} js ${String(f.js).padStart(6)}  gap ${String(f.gap).padStart(6)}  compile ${f.compile} (${f.links} links, ${f.programs} programs) texture ${f.texture} buffer ${f.buffer}  ${JSON.stringify(f.phase)}  visitors ${f.visitors} ${f.projector}${f.made?.length ? '\n      new: ' + [...new Set(f.made)].map((n) => `${n} x${f.made.filter((m) => m === n).length}`).join(', ') : ''}`);
-writeFileSync(join(out, `hitch-${label}.json`), JSON.stringify({ label, mode, admission, errors, table, frames }, null, 1));
+writeFileSync(join(out, `hitch-${label}.json`), JSON.stringify({ label, device, mode, admission, errors, table, frames }, null, 1));
 if (errors.length) console.log('errors:', errors.slice(0, 5));
 await browser.close();

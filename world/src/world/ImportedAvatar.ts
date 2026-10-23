@@ -12,6 +12,10 @@ import movesData from '../data/moves.json';
 import { walkCoastalPose, levelCoastalFeet } from './CoastalPose';
 import { assetObjectUrl, fetchAsset, watchAssetDownloads } from './AssetMirror';
 import { loadBudgetedTexture, mobileAssetBudgetEnabled, parseGameModel } from './MobileAssetBudget';
+import { applyWorldFilmGrain } from './WorldFilmGrain';
+import { createImportedSeatSupport } from './ImportedSeatSupport';
+import { avatarLightBands, applyAvatarPixelTexture, AVATAR_PIXEL_STYLE } from './AvatarPixelStyle';
+import { staffMaskOpeningShader } from './StaffBalaclava';
 
 /**
  * The punch and the dance, from the owner's Mixamo files (2026-10-01; see
@@ -82,7 +86,7 @@ export const PUNCH_CONTACT_SECONDS = MOVES.punch.contact ?? .33;
  */
 export type AvatarVariant = AvatarSex;
 export const AVATAR_VARIANTS: AvatarVariant[] = ['male', 'female'];
-type DyeSlot = 'skin' | 'hair' | 'bottoms' | 'swimwear';
+type DyeSlot = 'skin' | 'hair' | 'bottoms' | 'swimwear' | 'shirt' | 'shoes';
 type Meta = { sex: AvatarSex; mouth: number[]; native: Partial<Record<DyeSlot, string>>; reference: Partial<Record<DyeSlot, number>>; cap?: { band: number; top: number } };
 const META = avatarMeta as unknown as Record<AvatarVariant, Meta>;
 
@@ -308,48 +312,22 @@ export function importedAvatarTextures(): THREE.Texture[] {
 
 type Side = 'Left' | 'Right';
 /**
- * How evenly an avatar is lit. The generated models carry their own colours
- * as emission: self-lit, which is how they look in the generator and on the
- * reference sheets. Lit by the world instead, every small bump of the
- * generated mesh drew a shadow — a nose and a pout on her face, a patchwork
- * of facets on his legs. So an avatar takes the scene's light as an amount
- * (ambient, sky and sun colours, so dusk and night still reach it) and mostly
- * ignores which way each face turns; a little directional shading remains so
- * it still stands in the world.
+ * Softness of the deliberate light bands. Scene intensity, colour, direction
+ * and cast shadows remain present at every setting, including on the face.
  */
 const AVATAR_EVEN = { value: .72 };
 export function setAvatarEvenness(amount: number): void {
   AVATAR_EVEN.value = THREE.MathUtils.clamp(amount, 0, 1);
 }
 function evenLight(shader: THREE.WebGLProgramParametersWithUniforms): void {
-  shader.uniforms.avatarEven = AVATAR_EVEN;
-  shader.fragmentShader = 'uniform float avatarEven;\n' + shader.fragmentShader.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
-    {
-      vec3 evenIrradiance = ambientLightColor;
-      #if NUM_HEMI_LIGHTS > 0
-        for (int i = 0; i < NUM_HEMI_LIGHTS; i++) evenIrradiance += mix(hemisphereLights[i].groundColor, hemisphereLights[i].skyColor, .7);
-      #endif
-      #if NUM_DIR_LIGHTS > 0
-        for (int i = 0; i < NUM_DIR_LIGHTS; i++) evenIrradiance += directionalLights[i].color * .6;
-      #endif
-      vec3 litDiffuse = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse;
-      // The generated colours whatever the hour (the owner, October 2: her
-      // hair read red-brown and her skin tan under the island's warm light).
-      // The light's colour and strength are dropped: what is left of it is
-      // only how much brighter or darker this face is lit than the body as
-      // a whole, a little of it, so the body still stands in the scene.
-      vec3 luma = vec3(.2126, .7152, .0722);
-      float evenLit = dot(evenIrradiance * BRDF_Lambert(material.diffuseColor), luma);
-      float shade = clamp(dot(litDiffuse, luma) / max(evenLit, 1e-4), .75, 1.15);
-      reflectedLight.directDiffuse = material.diffuseColor * mix(1., shade, 1. - avatarEven);
-      reflectedLight.indirectDiffuse = vec3(0.);
-      reflectedLight.directSpecular = vec3(0.);
-    }`);
+  avatarLightBands(shader, AVATAR_EVEN);
 }
 
-/** Match new generated people to the existing visitors' colour response. */
+const scenicAvatarMaterials=new WeakSet<THREE.Material>();
+/** Match generated people to the visitors' scene-lit pixel response. */
 export function applyAvatarColourLighting(material: THREE.MeshStandardMaterial): void {
-  material.toneMapped = false;
+  if(scenicAvatarMaterials.has(material))return;scenicAvatarMaterials.add(material);
+  material.toneMapped = true;
   // Meshy's optional baked emission duplicates illumination from the world.
   // Keep that source map in the GLB, but light people once like native avatars.
   material.emissiveIntensity = 0;
@@ -364,7 +342,8 @@ export function applyAvatarColourLighting(material: THREE.MeshStandardMaterial):
     `);
     evenLight(shader);
   };
-  material.customProgramCacheKey = () => 'higgsfield-scenery-avatar-even-v2';
+  material.customProgramCacheKey = () => 'higgsfield-scenery-avatar-lit-v3';
+  applyAvatarPixelTexture(material,false,AVATAR_PIXEL_STYLE.clothWear);
 }
 
 interface Link { bone: THREE.Bone; control: THREE.Object3D; offset: THREE.Quaternion; bareOffset?: THREE.Quaternion }
@@ -487,6 +466,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
   let wearingCap = Boolean(palette.cap);
   let swimming = false;
   let headHidden = false;
+  let staffMasked = false;
   let current = palette;
   // Outfit 4 is the swimsuit worn on land; in the water everyone wears theirs.
   const dressed = () => !swimming && outfit !== '4';
@@ -871,6 +851,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     const reference = META[key].reference;
     const shared: Record<string, THREE.IUniform> = {
       avatarHideHead: { value: headHidden ? 1 : 0 },
+      avatarStaffMask: { value: staffMasked ? 1 : 0 },
       avatarDye: { value: template.dye ?? null },
       avatarSkin: { value: new THREE.Color() },
       avatarCleanSkin: { value: new THREE.Color(META[key].native.skin ?? '#fbd2c0') },
@@ -889,11 +870,10 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       material.metalness = 0;
       material.userData.wornNoMasonry = true;
       material.userData.wornNoGrain = true;
-      // Shown in the colours it was generated in: not through the world's
-      // filmic curve and its exposure for the hour, which shifted them.
-      material.toneMapped = false;
+      material.toneMapped = true;
+      material.emissiveIntensity = 0;
       material.onBeforeCompile = shader => evenLight(shader);
-      material.customProgramCacheKey = () => 'higgsfield-avatar-even-v2';
+      material.customProgramCacheKey = () => 'higgsfield-avatar-lit-v3';
       if (component.startsWith('print-') || component === 'cap-logo') {
         // Blended, not cut out. A cut-out drops every texel under half
         // opacity, and from a distance the averaged thin strokes of a print
@@ -930,17 +910,16 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
               diffuseColor *= texture2D( map, vMapUv, -0.8 );
             #endif`);
         };
-        material.customProgramCacheKey = () => 'higgsfield-avatar-print-v4';
+        material.customProgramCacheKey = () => 'higgsfield-avatar-print-v5';
       }
-      // Recovered footwear uses the original shoe UVs rather than the
-      // garment atlas. Applying that atlas's dye mask colors its soles as hair.
-      if (component === 'garment-shoes' && mesh.userData.footwear_source) continue;
       if (!DYED.has(component)) continue;
       // Looking into a sleeve or a trouser leg shows its inside, not the sky.
       if (component.startsWith('garment-')) material.side = THREE.DoubleSide;
-      // The garment dye of this mesh: the swimsuit on the body, the trousers
-      // on the trousers; the tee and the shoes keep their own colours.
-      const slot: DyeSlot = component === 'body' ? 'swimwear' : 'bottoms';
+      // Garment-specific masks keep shoes/tee independent of the trouser
+      // atlas's blue class. Recovered shoes have their own source UVs.
+      const slot: DyeSlot = component === 'body' ? 'swimwear'
+        : component === 'garment-tee' ? 'shirt' : component === 'garment-shoes' ? 'shoes' : 'bottoms';
+      const garmentOnly = slot === 'shirt' || slot === 'shoes';
       const index = (name: string) => mesh.skeleton.bones.findIndex(b => b.name === name);
       // In a headset the head and neck are taken off, as the owner asked:
       // looking down, the visitor sees their shoulders.
@@ -951,7 +930,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
         avatarCover: { value: 0 },
         avatarSwim: { value: 0 },
         avatarDyeOn: { value: new THREE.Vector3() },
-        avatarReference: { value: new THREE.Vector3(reference.skin ?? .5, reference.hair ?? .05, reference[slot] ?? .05) },
+        avatarReference: { value: new THREE.Vector3(reference.skin ?? .5, reference.hair ?? .05, reference[slot] ?? (slot === 'shirt' ? .018 : .04)) },
         avatarGarment: { value: new THREE.Color() },
       };
       uniforms.set(mesh, own);
@@ -1001,7 +980,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
           #endif`);
         shader.fragmentShader = `uniform sampler2D avatarDye;
           uniform vec3 avatarDyeOn, avatarReference, avatarSkin, avatarCleanSkin, avatarHair, avatarGarment;
-          uniform float avatarCover, avatarSwim;
+          uniform float avatarCover, avatarSwim, avatarStaffMask;
           varying float vAvatarHead;
           varying float vAvatarCovered;
           varying float vAvatarDressed;
@@ -1011,7 +990,10 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
           ` + shader.fragmentShader;
         // Each dye keeps the texel's own light and shade, measured against
         // the median of its class, so a recoloured body keeps its folds.
-        shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `if (vAvatarHead > 1.) discard;
+        shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
+          bool staffEyeOpening=avatarStaffMask>.5&&vAvatarSkin>.5&&vAvatarHair<.15
+            &&${staffMaskOpeningShader('vAvatarRestPosition')};
+          if (vAvatarHead > 1. && !staffEyeOpening) discard;
           if (avatarCover > .5 && vAvatarCovered > .5) discard;
           if (avatarSwim > .5 && vAvatarDressed > .5) discard;
           ${skinSurface && key === 'male' ? `
@@ -1024,6 +1006,13 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
           #include <map_fragment>
           #ifdef USE_MAP
             vec3 dyeMask = texture2D(avatarDye, vMapUv).rgb;
+            ${garmentOnly ? `
+            // Only the dark painted cloth/upper is dyed. White lettering,
+            // laces, piping and pale rubber retain their exact source colour.
+            // Component ownership excludes skin and other garment UV islands.
+            float garmentLuma=dot(diffuseColor.rgb,vec3(.2126,.7152,.0722));
+            dyeMask=vec3(0.,0.,1.-smoothstep(${slot === 'shirt' ? '.16,.38' : '.24,.52'},garmentLuma));
+            ` : ''}
             ${hairSurface ? `${key === 'male' ? 'dyeMask.g = 0.;' : ''} dyeMask = mix(dyeMask, vec3(0., 1., 0.), smoothstep(.2, .8, vAvatarHair));` : ''}
             ${skinSurface ? `
             // Dense generated UV islands bleed dark hair and cloth into skin.
@@ -1057,8 +1046,16 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
             }
           #endif`);
       };
-      material.customProgramCacheKey = () => `higgsfield-avatar-dye-v12-${covered}-${dressedOnly}-${hairSurface}-${skinSurface}`;
+      material.customProgramCacheKey = () => `higgsfield-avatar-dye-v15-${slot}-${covered}-${dressedOnly}-${hairSurface}-${skinSurface}`;
     }
+    for (const mesh of meshes) {
+      const id=String(mesh.userData.componentId??'');
+      applyAvatarPixelTexture(mesh.material as THREE.MeshStandardMaterial,id.startsWith('print-')||id==='cap-logo',
+        id==='garment-tee'||id==='garment-trousers'||id==='vest'?AVATAR_PIXEL_STYLE.clothWear:0);
+    }
+    // Mounts can arrive after scene admission. Chain grain only after the
+    // avatar's final dye/skin hooks, without altering their PBR or rigging.
+    applyWorldFilmGrain(model);
     const meta = META[key];
     return {
       key, model, meshes, body: bodyMesh, links, hands, fingerRigs, soles, calibrateBareFeet, uniforms, slots, moveRest, moveAlign, moveHome, moveLeg,
@@ -1117,31 +1114,39 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     const atlas = outfit === '3' && vest ? vest : mounted.atlas ?? null;
     const native = META[mounted.key].native;
     // A slot the model has no class for (her swim model's hair) never dyes.
-    const dyed = (slot: DyeSlot) => current[slot] && native[slot] && hexDistance(current[slot] as string, native[slot]) > .03
-      && hexDistance(current[slot] as string, AVATAR_NATIVE[sex][slot]) > .03
-      && !(LEGACY_NATIVE[mounted.key]?.[slot] ?? []).some(old => hexDistance(current[slot] as string, old) <= .03) ? 1 : 0;
+    const dyed = (slot: DyeSlot) => {
+      if(slot==='shirt'||slot==='shoes')return current[slot]?1:0;
+      if(!current[slot]||!native[slot])return 0;
+      // Swimwear is an explicit current picker choice on both bodies. Old
+      // profile fallback colours must not disable a new selection, either.
+      if(slot==='swimwear')return hexDistance(current[slot] as string,native[slot])>.0003?1:0;
+      return hexDistance(current[slot] as string,native[slot])>.03
+        &&hexDistance(current[slot] as string,AVATAR_NATIVE[sex][slot])>.03
+        &&!(LEGACY_NATIVE[mounted.key]?.[slot]??[]).some(old=>hexDistance(current[slot] as string,old)<=.03)?1:0;
+    };
     for (const [mesh, own] of mounted.uniforms) {
       const material = mesh.material as THREE.MeshStandardMaterial;
+      const slot = mounted.slots.get(mesh)!;
       // The regenerated body's UVs belong to its original Higgsfield image.
       // Clothes retain their own atlas; only the tee uses the vest variant.
       const separate = mounted.body.userData.separateTexture === true;
-      const map = separate ? (mesh.userData.componentId === 'garment-tee' && outfit === '3' && vest
+      const map = separate || slot==='shoes' ? (mesh.userData.componentId === 'garment-tee' && outfit === '3' && vest
         ? vest : mounted.originalMaps.get(mesh) ?? null) : atlas;
       if (material.map !== map) { material.map = map; material.needsUpdate = true; }
       own.avatarDye.value = separate && mesh === mounted.body ? template?.bodyDye ?? null : template?.dye ?? null;
-      const slot = mounted.slots.get(mesh)!;
       own.avatarCover.value = mesh === mounted.body && on ? 1 : 0;
       own.avatarSwim.value = mesh === mounted.body && !on ? 1 : 0;
-      // His swim shorts retain the agreed black cloth and white side stripes,
-      // even when an older saved profile contains a different swimsuit dye.
-      const fixedSwimwear = mounted.key === 'male' && slot === 'swimwear';
-      (own.avatarDyeOn.value as THREE.Vector3).set(dyed('skin'), dyed('hair'), fixedSwimwear ? 0 : dyed(slot));
-      (own.avatarGarment.value as THREE.Color).set(fixedSwimwear ? native.swimwear! : current[slot] ?? '#808080');
+      // The same saved swimsuit slot dyes either body. White piping stays
+      // outside the authored blue cloth mask, including on his shorts.
+      const garmentOnly=slot==='shirt'||slot==='shoes';
+      (own.avatarDyeOn.value as THREE.Vector3).set(garmentOnly?0:dyed('skin'),garmentOnly?0:dyed('hair'),dyed(slot));
+      (own.avatarGarment.value as THREE.Color).set(current[slot] ?? '#808080');
     }
     const shared = mounted.uniforms.get(mounted.body)!;
     (shared.avatarSkin.value as THREE.Color).set(current.skin ?? '#808080');
     (shared.avatarHair.value as THREE.Color).set(current.hair ?? '#808080');
     shared.avatarHideHead.value = headHidden ? 1 : 0;
+    shared.avatarStaffMask.value = staffMasked ? 1 : 0;
     root.userData.sculptRuntime.parts = mounted.meshes.reduce((parts: Record<string, THREE.Mesh[]>, m) => {
       (parts[String(m.userData.componentId)] ??= []).push(m); return parts;
     }, {});
@@ -1311,6 +1316,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
   };
   /** Take the head off (in a headset) or put it back. A body mounted later follows. */
   root.userData.setImportedHeadHidden = (hidden: boolean) => { headHidden = hidden; refresh(); };
+  root.userData.setImportedStaffMask = (on: boolean) => { staffMasked=on;headHidden=on;refresh(); };
   root.userData.setImportedFists = (closed: boolean) => { fists.Left = fists.Right = closed; };
   /** Close one hand part way round something held (0 opens it). */
   root.userData.setImportedGrip = (right: boolean, amount: number) => { grips[right ? 'Left' : 'Right'] = amount; };
@@ -1426,21 +1432,23 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       root.userData.syncImportedAvatar();
     }
   };
-  root.userData.supportImportedSeat = (floor: (x: number, z: number, y: number) => number) => {
-    if (root.userData.wearingSwimwear) return;
-    for (let iteration = 0; iteration < 3; iteration++) {
-      root.userData.syncImportedAvatar();
-      updateSkeletons();
-      for (const [side, hip, knee] of [['Right', rig.leftLeg, rig.leftKnee], ['Left', rig.rightLeg, rig.rightKnee]] as const) {
-        if (!knee) continue;
-        const rise = soleHeight(side, floor, 0);
-        if (!Number.isFinite(rise)) continue;
-        const angle = THREE.MathUtils.clamp(hip.rotation.x - THREE.MathUtils.clamp(rise / .55, -.13, .13), -1.85, -1.2);
-        knee.rotation.x -= angle - hip.rotation.x;
-        hip.rotation.x = angle;
-      }
+  const seatedSupport = createImportedSeatSupport(root, rig, {
+    body: () => mounted, clothed, available: () => !culled && !root.userData.cullThrottle,
+    sync: () => root.userData.syncImportedAvatar(), soles: activeSoles,
+  });
+  root.userData.supportImportedSeat = (floor: (x: number, z: number, y: number) => number, pad?: THREE.Box3) => {
+    // A just-finished dance/punch may still hold its native clip for 100ms.
+    // Sitting owns the legs and pelvis immediately; arm gestures use the rig.
+    move = null;
+    // Clear a standing sole correction before evaluating the seated chain.
+    for (const side of ['Left', 'Right']) {
+      const bone = mounted.model.getObjectByName(side + 'UpLeg') as THREE.Bone;
+      const rest = groundedLegRest.get(bone);
+      if (rest) bone.position.copy(rest);
     }
+    seatedSupport.support(floor, pad);
   };
+  root.userData.importedSeatContactPoints = seatedSupport.snapshot;
 
   // Anything measured against the head is kept in the rig's head frame, so it
   // follows every animated nod without being measured again.

@@ -1,0 +1,32 @@
+import * as THREE from 'three';
+import { createGanganStatue } from './world/GanganStatue';
+import { createCoastalPamphletStand } from './world/CoastalProps';
+import { EnvironmentAssets, environmentModelAssetsFromUrls, type EnvironmentAssetKind } from './world/EnvironmentAssets';
+import { prepareEnvironmentReflections } from './world/EnvironmentReflections';
+import { applyEnvironmentArt } from './world/EnvironmentArt';
+import { polishPamphletSurface } from './world/PamphletSurface';
+if (!['localhost','127.0.0.1'].includes(location.hostname)) throw Error('Local review only');
+const q=new URLSearchParams(location.search), kind=q.get('asset')??'statue';
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0xe8e5df);
+const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(1);renderer.toneMapping=THREE.ACESFilmicToneMapping;document.body.prepend(renderer.domElement);
+const camera=new THREE.PerspectiveCamera(34,innerWidth/innerHeight,.1,100);
+scene.add(new THREE.HemisphereLight(0xf0f3ff,0xb6a68a,2.4)); const sun=new THREE.DirectionalLight(0xfff2de,3);sun.position.set(7,12,9);scene.add(sun);
+const root=new THREE.Group(); scene.add(root);
+let assets: EnvironmentAssets | undefined;
+if(q.get('source')==='new') {
+  const urls=environmentModelAssetsFromUrls(import.meta.glob<string>('./assets/environment/*.glb',{eager:true,query:'?url',import:'default'}),q.get('mobile')==='1');
+  if(q.get('before')==='1'&&kind==='pamphlet-stand')urls['pamphlet-stand']='/art/pamphlet-polish-20261019/before/pamphlet-stand'+(q.get('mobile')==='1'?'-mobile':'')+'.glb';
+  if(q.get('candidate')==='albedo'&&kind==='pamphlet-stand')urls['pamphlet-stand']='/art/pamphlet-polish-20261019/pamphlet-stand'+(q.get('mobile')==='1'?'-mobile':'')+'-albedo-candidate.glb';
+  assets=new EnvironmentAssets({assets:urls,mobile:q.get('mobile')==='1'});
+  const sizes: Record<string,[number,number,number]>={statue:[6,9.8,6.8],'pamphlet-stand':[2.05,1.9,1.12],'street-lamp':[.84,5.35,.84],'cinema-pilaster':[1,8,.24]};
+  if(!await assets.attach(kind as EnvironmentAssetKind,root,{exactSize:sizes[kind],yaw:Number(q.get('yaw')??0)})) throw Error(JSON.stringify(assets.snapshot()));
+} else root.add(kind==='pamphlet'?createCoastalPamphletStand():createGanganStatue());
+const pamphletPolish=q.get('before')!=='1'&&kind==='pamphlet-stand'?polishPamphletSurface(scene):undefined;
+const reflections=q.get('source')==='new'?prepareEnvironmentReflections(renderer,scene):undefined;
+if(q.get('source')==='new')applyEnvironmentArt(scene);
+const bounds=new THREE.Box3().setFromObject(root),center=bounds.getCenter(new THREE.Vector3()),size=bounds.getSize(new THREE.Vector3());const distance=Math.max(size.y,size.x,size.z)*1.9;
+function view(yaw:number){camera.position.set(center.x+Math.sin(yaw)*distance,center.y+size.y*.11,center.z+Math.cos(yaw)*distance);camera.lookAt(center);renderer.render(scene,camera);}
+document.getElementById('front')!.onclick=()=>view(.9);document.getElementById('side')!.onclick=()=>view(Math.PI/2);document.getElementById('back')!.onclick=()=>view(Math.PI+.8);document.getElementById('status')!.textContent=kind;
+view(Number(q.get('angle')??.9));
+Object.assign(window,{__environmentReview:{kind,bounds:{min:bounds.min.toArray(),max:bounds.max.toArray()},view}});
+window.addEventListener('pagehide',()=>{reflections?.dispose();pamphletPolish?.dispose();renderer.dispose();assets?.dispose();});

@@ -8,6 +8,8 @@ import legacySource from '../../docs/js/allData.js';
 import { verifyCheckMacValue } from './ecpay.mjs';
 import { STAFF_OFFERING_LIMIT, offeringExpired, offeringTime, trimOfferingHistory } from './offering-history.mjs';
 import { StateDelta } from './state-delta.mjs';
+import { createWishStore, createWishPersistence } from './wish-store.mjs';
+import { ArcadePreviewAccess, arcadeDeviceKey, ARCADE_PREVIEW_END } from './arcade-preview.mjs';
 import {
   DONATION_PRESETS, MAX_DONATION, MIN_DONATION,
   buildInvoice, buildOrder, ecpayConfig, readInvoiceReply,
@@ -17,6 +19,7 @@ import {
 
 /** The room remembers this many lines; older ones fall off the top. */
 const CHAT_HISTORY_LIMIT = 50;
+const arcadePreview = new ArcadePreviewAccess();
 /**
  * How long each work runs, learned from the players that watch it. The
  * catalogue comes from the site's video list and carries no durations, so
@@ -307,6 +310,33 @@ const fetchYoutubeTitle = async (youtubeId) => {
  */
 /** Tests stand in for YouTube here; nothing else sets it. */
 const youtubePages = (process.env.FESTIVAL_YOUTUBE_ORIGIN ?? 'https://www.youtube.com').replace(/\/$/, '');
+/**
+ * Whether YouTube itself refuses to embed a video anywhere: taken down,
+ * private, or embedding switched off by its owner. oEmbed answers 401, 403 or
+ * 404 for exactly those. A refusal one listener's player meets for its own
+ * reasons (a blocked address, a flaky connection) is not this, and must not
+ * skip the record for the whole festival — so only YouTube's word counts.
+ */
+// Every listener's player reports the same refusal; YouTube is asked once a minute per record.
+const embedChecks = new Map();
+const youtubeRefusesEmbed = async (youtubeId) => {
+  if (!youtubeTitleLookup) return false;
+  const known = embedChecks.get(youtubeId);
+  if (known && Date.now() - known.at < 60_000) return known.answer;
+  const answer = (async () => {
+  try {
+    const target = `https://www.youtube.com/watch?v=${encodeURIComponent(youtubeId)}`;
+    const response = await fetch(`${youtubePages}/oembed?url=${encodeURIComponent(target)}&format=json`,
+      { signal: AbortSignal.timeout(4_000) });
+    return [401, 403, 404].includes(response.status);
+  } catch {
+    return false;
+  }
+  })();
+  embedChecks.set(youtubeId, { at: Date.now(), answer });
+  if (embedChecks.size > 200) embedChecks.delete(embedChecks.keys().next().value);
+  return answer;
+};
 const fetchYoutubeLength = async (youtubeId) => {
   if (!youtubeTitleLookup) return 0;
   try {
@@ -412,7 +442,7 @@ const defaultNpcNames = {
   SEBINE: 'SEBINE',
   ZC: 'ZC',
   LOUI: 'LOUI',
-  MINYUN: 'MINYUN',
+  MINYUN: 'MIN YUN LEE',
   VIOLA: 'VIOLA',
   XIEHGAN: 'XIEH GAN',
   DRBEAUTY: 'DR.BEAUTY',
@@ -420,22 +450,22 @@ const defaultNpcNames = {
 };
 const npcNames = { ...defaultNpcNames };
 const npcTitles = {
-  MENTOR: 'Video Editor',
-  KENNY: 'Director',
-  NUNO: 'Sound Engineer',
-  MICHAEL: 'Director',
-  SEBINE: 'Director',
-  ZC: 'Director',
-  LOUI: 'Director',
-  MINYUN: 'Director Manager',
-  VIOLA: 'Project Manager',
-  XIEHGAN: 'Resident DJ',
-  DRBEAUTY: 'Rooftop DJ',
+  MENTOR: 'VIDEO EDITOR',
+  KENNY: 'DIRECTOR',
+  NUNO: 'SOUND ENGINEER',
+  MICHAEL: 'DIRECTOR',
+  SEBINE: 'DIRECTOR',
+  ZC: 'DIRECTOR',
+  LOUI: 'DIRECTOR',
+  MINYUN: 'ADMINISTRATOR',
+  VIOLA: 'PROJECT MANAGER',
+  XIEHGAN: 'BOSS',
+  DRBEAUTY: 'Artist',
   // The roster lives here as well as in the world. The world draws the crowd;
   // this is what the attendee list and the STAFF panel read, and what STAFF
   // renames persist against — so a resident added to only one of the two is in
   // the festival but not on its books, which is how YO arrived.
-  YO: 'Festival Videographer',
+  YO: 'SOCIAL',
 };
 /**
  * What a resident says about themselves, held against their NPC id, in each
@@ -716,7 +746,7 @@ const safeLimbs = (value) => {
   return Object.keys(limbs).length ? limbs : undefined;
 };
 const safePalette = (value = {}) => {
-  const color = (slot, fallback) => /^#[0-9a-f]{6}$/i.test(value[slot] ?? '') ? value[slot] : fallback;
+  const color = (slot, fallback) => typeof value[slot] === 'string' && /^#[0-9a-f]{6}$/i.test(value[slot]) ? value[slot] : fallback;
   const palette = {
     skin: color('skin', '#9d5f43'),
     hair: color('hair', '#171315'),
@@ -724,6 +754,12 @@ const safePalette = (value = {}) => {
     bottoms: color('bottoms', '#20242c'),
     swimwear: color('swimwear', '#d5b23f'),
   };
+  // The top slot identifies an outfit/body. Optional garment dyes are
+  // separate, so older passes retain their original cloth and shoe textures.
+  for (const slot of ['shirt', 'shoes']) {
+    const dye = color(slot, '');
+    if (dye) palette[slot] = dye;
+  }
   // Accessories. A colour means worn, absent means not — so these are carried
   // through only when they are actually set, and an older client that sends
   // none simply has none. Validated the same way as the rest: whatever a
@@ -768,15 +804,17 @@ const persistedSnapshot = () => ({
   // Offerings outlive the process now that a payment can be finished at a
   // convenience store three days after it was started. See `donationForDisk`.
   donations: [...donations.values()].map(donationForDisk),
+  // Private browser-bound preview tickets never enter /api/config, broadcasts or the deployment seed.
+  arcadePreview: arcadePreview.snapshot(),
 });
 
 let persistTimer;
 let persistQueue = Promise.resolve();
 let unsavedSettings = false;
 
-const writeStateFile = (payload) => {
+const writeStateFile = (payload, flush = false) => {
   const temporaryFile = `${STATE_FILE}.${process.pid}.tmp`;
-  return writeFile(temporaryFile, payload, 'utf8').then(() => rename(temporaryFile, STATE_FILE));
+  return writeFile(temporaryFile, payload, { encoding: 'utf8', flush }).then(() => rename(temporaryFile, STATE_FILE));
 };
 
 // Settings changes are debounced and written through a temporary file so an
@@ -796,6 +834,20 @@ const persist = () => {
         console.error('Festival settings could not be saved:', error.message);
       });
   }, 200);
+};
+
+/** A checkout key, paid preview ticket or redemption must reach retained storage before acknowledgement. */
+const persistCritical = async () => {
+  if (!persistenceEnabled) return true;
+  if (persistTimer) { clearTimeout(persistTimer); persistTimer = undefined; }
+  unsavedSettings = false;
+  // Serialize with older writes: an older debounced snapshot must never replace this newer checkpoint.
+  const checkpoint = persistQueue.then(() => writeStateFile(JSON.stringify(persistedSnapshot(), null, 2), true));
+  persistQueue = checkpoint.catch(error => {
+    unsavedSettings = true;
+    console.error('Festival payment access could not be saved:', error.message);
+  });
+  try { await checkpoint; return true; } catch { return false; }
 };
 
 // Only a shutdown that would otherwise lose a STAFF edit writes the file, so a
@@ -918,8 +970,10 @@ const restoreNpcs = (saved) => {
     if (Object.keys(npcNames).length >= 24 && !(id in npcNames)) continue;
     const safeName = safeText(name, 16);
     if (!safeName) continue;
-    npcNames[id] = safeName;
-    npcTitles[id] = safeText(saved.npcTitles?.[id], 40) || npcTitles[id] || 'Director';
+    // This exact value was the old built-in name. Other STAFF wording remains
+    // an edit and wins over the corrected full default.
+    npcNames[id] = id==='MINYUN'&&safeName==='MINYUN'?defaultNpcNames.MINYUN:safeName;
+    npcTitles[id] = safeText(saved.npcTitles?.[id], 40) || npcTitles[id] || 'DIRECTOR';
     // No seed edition to guard here, unlike the DJ profiles: the defaults are
     // empty, so a stored value is always somebody's writing and always wins.
     // Only set a key when there is something in it, so an id with no
@@ -1101,6 +1155,7 @@ const restorePersistedState = () => {
   restoreCustomVideos(saved.customVideos);
   restoreSchedule(saved.schedule);
   restoreDonations(saved.donations);
+  arcadePreview.restore(saved.arcadePreview);
   migrateVenues(saved.version);
 };
 
@@ -1308,15 +1363,17 @@ const canSeeMessage = (viewer, message) => {
  * The temple's wish wall: notes left with an offering, shown once the
  * payment is confirmed (the owner, 2026-10-08).
  *
- * Memory only, as the owner asked — never written to disk, so a restart or a
- * redeploy clears the wall. Memory is not the limit (thirty notes are a few
- * kilobytes of the instance's 512 MB); legibility is. The wall shows the
- * newest WISH_LIMIT and the oldest falls off as a new one goes up.
+ * Kept until a newer note pushes them off (the owner, 2026-10-22): the newest
+ * WISH_LIMIT live in Upstash when it is configured (see wish-store.mjs), so a
+ * restart, a deploy or the free plan's sleep no longer clears the wall. Never
+ * in the state file. Legibility, not memory, is the limit, and the oldest
+ * falls off as a new one goes up.
  */
 const WISH_LIMIT = 30;
 const WISH_LENGTH = 60;
 const WISH_NAME_LENGTH = 24;
 const wishes = [];
+const wishStore = createWishStore();
 /**
  * A note as written. Not `safeText`: its NFKC folds full-width Chinese
  * punctuation (！，。) to ASCII, which would change how a Chinese note reads.
@@ -1337,11 +1394,24 @@ const postWish = (donation) => {
   });
   while (wishes.length > WISH_LIMIT) wishes.shift();
   donation.wish = '';
+  wishPersistence.changed();
   scheduleBroadcast();
 };
+/** A saved note, re-checked on the way in: storage is outside this process. */
+const savedWish = (entry) => {
+  const message = wishText(entry?.message, WISH_LENGTH);
+  const id = typeof entry?.id === 'string' ? entry.id.slice(0, 80) : '';
+  const at = Number(entry?.at);
+  return id && message ? { id, name: wishText(entry.name, WISH_NAME_LENGTH), message, at: Number.isFinite(at) && at >= 0 ? at : 0 } : null;
+};
+const wishPersistence = createWishPersistence({ store: wishStore, wishes, limit: WISH_LIMIT, clean: savedWish, onChange: () => scheduleBroadcast() });
 
+// A short anonymous visual event. Payment details stay in their existing private routes.
+let donationCelebration = null;
 const stateFor = (visitor) => ({
   serverTime: Date.now(),
+  donationCelebration: donationCelebration && Date.now() < donationCelebration.startedAt + donationCelebration.durationMs
+    ? donationCelebration : null,
   selfId: visitor.id,
   visitors: [...visitors.values()].map(publicVisitor),
   seats: [...seats.entries()].map(([seatId, visitorId]) => ({ seatId, visitorId })),
@@ -1594,6 +1664,7 @@ const donationForDisk = (donation) => ({
   invoiceTriedAt: donation.invoiceTriedAt ?? null,
   invoiceNoticeSent: donation.invoiceNoticeSent ?? null,
   invoiceNoticeError: String(donation.invoiceNoticeError ?? '').slice(0, 300),
+  ...(arcadeDeviceKey(donation.arcadeDeviceKey) ? { arcadeDeviceKey: arcadeDeviceKey(donation.arcadeDeviceKey).jwk } : {}),
 });
 
 const restoreDonations = (saved) => {
@@ -2003,6 +2074,21 @@ const server = createServer(async (request, response) => {
 
     const visitor = sessionFor(request);
 
+    if (request.method === 'POST' && url.pathname.startsWith('/api/arcade-preview/')) {
+      const action = url.pathname.slice('/api/arcade-preview/'.length);
+      if (!['challenge', 'status', 'redeem'].includes(action)) return apiError(response, 404, 'Unknown arcade request.');
+      const payload = await body(request);
+      try {
+        if (action === 'challenge') return json(response, 200,
+          arcadePreview.challenge(payload.publicKey, payload.action, clientAddress(request)));
+        if (Date.now() >= ARCADE_PREVIEW_END) return json(response, 200, arcadePreview.status(''));
+        const deviceId = arcadePreview.authenticate(payload, action);
+        const result = action === 'redeem' ? arcadePreview.redeem(deviceId, payload.code) : arcadePreview.status(deviceId);
+        if (action === 'redeem' && !await persistCritical()) return apiError(response, 503, 'Arcade access could not be saved. Please try again.');
+        return json(response, 200, result);
+      } catch (error) { return apiError(response, error.status ?? 400, error.message); }
+    }
+
     // Placed after the session is resolved, because two of these read it.
     // Reading a `const` before its own declaration throws, and the catch at
     // the bottom of this handler turns that into a bare 400 that looks
@@ -2033,6 +2119,7 @@ const server = createServer(async (request, response) => {
         // 'fallback-unusable' is one somebody set wrongly, and the two look
         // identical from a sheet with no tick box on it.
         receiptBlockedBy: receiptBlockedBy(),
+        arcadePreviewUntil: ARCADE_PREVIEW_END,
       });
     }
 
@@ -2044,12 +2131,14 @@ const server = createServer(async (request, response) => {
       // has nobody inside to thank; ECPay and the invoice work the same.
       if (!ECPAY.ready) return apiError(response, 503, 'Offerings are not accepting payment yet.');
       const payload = await body(request);
+      const previewKey = payload.arcadeDeviceKey === undefined ? undefined : arcadeDeviceKey(payload.arcadeDeviceKey);
+      if (payload.arcadeDeviceKey !== undefined && !previewKey) return apiError(response, 400, 'Invalid arcade browser key.');
       const amount = safeAmount(payload.amount);
       if (!amount) return apiError(response, 400, `An offering is between ${MIN_DONATION} and ${MAX_DONATION} TWD.`);
       // A receipt is only declinable where somewhere else has been arranged
       // for the invoice to go. Without that the answer is the old one: an
       // address, or no payment.
-      const wantsReceipt = receiptOptional() ? payload.receipt !== false : true;
+      const wantsReceipt = ECPAY.invoiceEnabled && (receiptOptional() ? payload.receipt !== false : true);
       const given = safeEmail(payload.email);
       if (wantsReceipt && !given) {
         return apiError(response, 400, 'An email address is needed for the invoice.');
@@ -2104,6 +2193,7 @@ const server = createServer(async (request, response) => {
         carrierNum: phoneCarrier ? barcode : '',
         visitorId: visitor?.id ?? '',
         visitorName: visitor?.name ?? wishName,
+        ...(Date.now() < ARCADE_PREVIEW_END && previewKey ? { arcadeDeviceKey: previewKey.jwk } : {}),
         // Held in memory only, to count a guest's open checkouts.
         ...(visitor ? {} : { guestAddress: address }),
         createdAt: Date.now(),
@@ -2114,6 +2204,10 @@ const server = createServer(async (request, response) => {
       // only ever existed in this process's memory is a payment nobody can
       // invoice — see the note above `donations`.
       persist();
+      if (previewKey && !await persistCritical()) {
+        donations.delete(id);
+        return apiError(response, 503, 'The checkout could not be saved. Please try again before paying.');
+      }
       // Render keeps its log across restarts; this service does not keep its
       // records (no disk). So every step of an offering is written there too
       // — the trade number, never the address (2026-10-08).
@@ -2196,6 +2290,9 @@ const server = createServer(async (request, response) => {
         persist();
         console.log(`Offering ${donation.tradeNo} ${paid ? 'paid' : 'not paid'}: NT$${donation.paidAmount} by ${donation.paymentType || 'unknown'} (ECPay ${donation.ecpayTradeNo})`);
         if (paid) {
+          arcadePreview.issue(donation);
+          donationCelebration = { id: randomUUID(), startedAt: Date.now(), durationMs: 24_000 };
+          scheduleBroadcast();
           postWish(donation);
           tellVisitor(donation.visitorId, 'donation', {
             id: donation.id,
@@ -2210,6 +2307,11 @@ const server = createServer(async (request, response) => {
           }
         }
         forgetOldDonations();
+      }
+      if (paid && donation && arcadePreview.grants.has(donation.id) && !await persistCritical()) {
+        // Do not acknowledge the paid ticket until it is recoverable. A duplicate callback retries this checkpoint.
+        response.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' });
+        return response.end('0|Storage unavailable');
       }
       response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
       return response.end('1|OK');
@@ -2479,6 +2581,24 @@ a{color:#e8b64a}</style>
       advanceJukebox();
       scheduleBroadcast();
       return json(response, 200, { ok: true, jukebox: jukeboxSnapshot() });
+    }
+
+    // A listener's player says it cannot play the record on the deck. If
+    // YouTube confirms the record cannot be embedded anywhere, the jukebox
+    // moves on to the next one (the owner, 2026-10-22); otherwise nothing
+    // changes for anyone else.
+    if (request.method === 'POST' && url.pathname === '/api/jukebox/unplayable') {
+      if (!visitor) return apiError(response, 401, 'Invalid festival session.');
+      const payload = await body(request);
+      const youtubeId = safeText(payload.youtubeId, 24);
+      const playing = jukeboxNowPlaying;
+      if (!validYoutubeId(youtubeId) || playing?.youtubeId !== youtubeId) return json(response, 202, { ok: true, skipped: false });
+      if (!(await youtubeRefusesEmbed(youtubeId)) || jukeboxNowPlaying !== playing) return json(response, 202, { ok: true, skipped: false });
+      // Expire the record now; advanceJukebox puts the next one on.
+      jukeboxNowPlaying = { ...playing, startedAt: Date.now() - jukeboxLength(youtubeId) * 1000 - 1 };
+      advanceJukebox();
+      scheduleBroadcast();
+      return json(response, 202, { ok: true, skipped: true });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/jukebox/duration') {
@@ -3064,6 +3184,7 @@ a{color:#e8b64a}</style>
         const index = wishes.findIndex((entry) => entry.id === safeText(payload.id, 80));
         if (index < 0) return apiError(response, 404, 'That note is no longer on the wall.');
         wishes.splice(index, 1);
+        wishPersistence.changed(safeText(payload.id, 80));
         scheduleBroadcast();
         return json(response, 200, { ok: true, wishes });
       }
@@ -3144,6 +3265,22 @@ a{color:#e8b64a}</style>
         return json(response, 200, { ok: true, templeSign });
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/jukebox') {
+        // Catalogue order is the persistent shelf, independent of requests
+        // already waiting or playing. A complete permutation is atomic and
+        // refuses a stale STAFF view rather than dropping a newly added song.
+        if (Object.prototype.hasOwnProperty.call(payload, 'stockOrder')) {
+          const order=payload.stockOrder;
+          if(!Array.isArray(order)||order.length>120||!order.every(id=>typeof id==='string'&&validYoutubeId(id))||new Set(order).size!==order.length) {
+            return apiError(response,400,'The record order must contain each record ID once.');
+          }
+          if(order.length!==jukeboxTracks.length||order.some(id=>!jukeboxTracks.some(track=>track.id===id))) {
+            return apiError(response,409,'The jukebox shelf changed. Refresh STAFF and try again.');
+          }
+          const byId=new Map(jukeboxTracks.map(track=>[track.id,track]));
+          jukeboxTracks.splice(0,jukeboxTracks.length,...order.map(id=>byId.get(id)));
+          scheduleBroadcast();persist();
+          return json(response,200,{ok:true,jukebox:jukeboxSnapshot()});
+        }
         // Running order first: these act on what is waiting, not on the stock.
         const reorder = safeText(payload.reorder, 24);
         if (reorder) {
@@ -3364,7 +3501,13 @@ const shutdown = () => {
   if (broadcastTimer) clearTimeout(broadcastTimer);
   persistNow();
   for (const visitor of [...visitors.values()]) removeVisitor(visitor, 'shutdown');
-  server.close(() => process.exit(0));
+  server.close(async () => {
+    // Render gives SIGTERM a grace period. Finish an outstanding wall write
+    // without letting an unavailable Redis hold shutdown or payment handling.
+    await wishPersistence.flush(2_000);
+    wishPersistence.dispose();
+    process.exit(0);
+  });
 };
 
 process.once('SIGINT', shutdown);

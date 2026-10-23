@@ -141,10 +141,13 @@ test('leaving before the GLB loads cannot attach a stale locked model or leak it
 const appSource = await readFile('src/ui/App.ts', 'utf8');
 const appTree = ts.createSourceFile('App.ts', appSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 const appClass = appTree.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'App');
-const methodNames = new Set(['openArcadeGame', 'syncArcadeRelease', 'showArcadeReleaseNotice']);
+const methodNames = new Set(['openArcadeGame', 'syncArcadeRelease', 'showArcadeReleaseNotice', 'arcadePreviewActive', 'syncArcadePreviewButtons']);
 const methods = appClass.members.filter(node => node.name && methodNames.has(node.name.getText(appTree)));
 assert.equal(methods.length, methodNames.size);
-const appCode = ts.transpileModule(`class ArcadeReleaseFixture { ${methods.map(node => node.getText(appTree)).join('\n')} }`, {
+const noticeSource=await readFile('src/ui/ArcadePreviewNotice.ts','utf8');
+const noticeTree=ts.createSourceFile('ArcadePreviewNotice.ts',noticeSource,ts.ScriptTarget.Latest,true);
+const noticeFunction=noticeTree.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='createArcadePreviewNotice').getText(noticeTree).replace(/^export /,'');
+const appCode = ts.transpileModule(`${noticeFunction}\nclass ArcadeReleaseFixture { ${methods.map(node => node.getText(appTree)).join('\n')} }`, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
 }).outputText + '\nArcadeReleaseFixture;';
 
@@ -152,7 +155,8 @@ class ReleaseDialog extends EventTarget {
   button = new EventTarget();
   attributes = {}; open = false; removed = false;
   setAttribute(name, value) { this.attributes[name] = value; }
-  querySelector(selector) { assert.equal(selector, 'button'); return this.button; }
+  nodes=new Map();
+  querySelector(selector) { if(selector==='[data-arcade-preview-close]')return this.button;if(!this.nodes.has(selector)){const node=new EventTarget();Object.assign(node,{value:'',replaceChildren(){},append(){}});this.nodes.set(selector,node);}return this.nodes.get(selector); }
   showModal() { this.open = true; }
   close() { this.open = false; this.dispatchEvent(new Event('close')); }
   remove() { this.removed = true; }
@@ -175,11 +179,13 @@ function releaseApp({ now = ARCADE_UNLOCK_AT - 5_000, offset = 0, mobile = false
   const app = new App();
   app.serverClockOffset = offset; app.language = language; app.vrActive = false; app.audioMuted = false;
   app.arcadePlaying = false; app.arcadeLockedViewing = false;
+  app.arcadePreview={state:{unlocked:false,released:false,codes:[]},status:()=>new Promise(()=>{})};
   const fullscreen = { hidden: false };
   const shell = { dataset: {} }, hud = { style: {}, hidden: true, setAttribute() {}, querySelector: () => fullscreen }, css = { removeAttribute() {} };
   app.root = {
     querySelector(selector) { return selector === '.world-shell' ? shell : selector === '#moth-arcade-hud' ? hud : selector === '#world-css3d' ? css : null; },
     append(node) { node.parent = this; },
+    querySelectorAll(){return [];},
   };
   app.world = {
     setArcadeLocked(...args) { calls.locks.push(args); },
@@ -207,8 +213,8 @@ test('mobile E keeps its availability dialog without any game URL, iframe or pop
     assert.deepEqual(fixture.calls.lockViews, [], 'phones never enter the cabinet camera');
     assert.equal(fixture.dialogs.length, 1, 'repeated E presses cannot stack modal notices');
     const dialog = fixture.dialogs[0];
-    assert.equal(dialog.open, true); assert.match(dialog.innerHTML, /遊戲尚未開放/);
-    assert.match(dialog.innerHTML, /2026 年 11 月 2 日/); assert.match(dialog.innerHTML, /凌晨 12:00（台灣時間）/);
+    assert.equal(dialog.open, true); assert.match(dialog.innerHTML, /提前解鎖 M\.O\.T\.H 遊戲機/);assert.match(dialog.innerHTML,/影展裡的 M\.O\.T\.H 遊戲機/,'says which game the code unlocks');assert.doesNotMatch(dialog.innerHTML,/捐款/,'an offering, not a donation');assert.match(dialog.innerHTML,/data-arcade-code-form/);
+    assert.match(dialog.innerHTML,/2026 年 11 月 2 日 00:00（台灣時間）/);
     assert.equal(fixture.app.arcadeNotice, dialog);
     assert.deepEqual(fixture.calls.locks.at(-1), [true, 'zh-TW']);
     dialog.button.dispatchEvent(new Event('click'));
@@ -256,7 +262,7 @@ test('release timer uses the festival clock and automatically unlocks the physic
   const fixture = releaseApp({ now: ARCADE_UNLOCK_AT - 35_000, offset: 30_000, mobile: true, language: 'en' });
   fixture.app.openArcadeGame();
   assert.equal(fixture.timers.size, 1); assert.equal([...fixture.timers.values()][0].delay, 5_000);
-  const dialog = fixture.dialogs[0]; assert.match(dialog.innerHTML, /12:00 AM Taiwan time \(UTC\+8\)/);
+  const dialog = fixture.dialogs[0]; assert.match(dialog.innerHTML, /00:00 Taiwan time/);
   fixture.app.syncArcadeRelease();
   assert.equal(fixture.timers.size, 1, 'service-clock refreshes replace rather than accumulate timers');
   fixture.clock.now += 5_000; fixture.fireTimer();
@@ -320,4 +326,15 @@ test('the world independently refuses a locked session and forwards state to the
   assert.equal(created, 1); assert.equal(mounted, 1); assert.equal(world.keys.size, 0);
   world.setArcadeLocked(true, 'zh-TW');
   assert.equal(stopped, 1); assert.equal(world.arcadeSession, undefined);
+});
+
+
+test('only a verified browser entitlement unlocks before release and redemption preserves the next manual Play gesture',()=>{
+ const desktop=releaseApp();desktop.app.openArcadeGame();assert.equal(desktop.app.arcadeLockedViewing,true);
+ desktop.app.arcadePreview.state.unlocked=true;desktop.app.syncArcadeRelease();
+ assert.equal(desktop.calls.gameCloses,1);assert.deepEqual(desktop.calls.starts,[],'redemption itself cannot launch a game');
+ desktop.app.openArcadeGame();assert.deepEqual(desktop.calls.starts,['embedded-live-game']);
+ const mobile=releaseApp({mobile:true});mobile.app.arcadePreview.state.unlocked=true;mobile.app.syncArcadeRelease();
+ assert.deepEqual(mobile.calls.popups,[]);mobile.app.openArcadeGame();assert.deepEqual(mobile.calls.popups,[['standalone-live-game','M.O.T.H']]);
+ const other=releaseApp();other.app.openArcadeGame();assert.equal(other.app.arcadeLockedViewing,true,'another browser retains its locked entry');
 });

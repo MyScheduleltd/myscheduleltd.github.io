@@ -1,0 +1,11 @@
+{
+  "requestedAt": "2026-10-22T13:40Z",
+  "owner": "Regenerate the square statue with Higgsfield so it matches the reference, web-ready for three.js, refine in Blender. Budget about 8,000 triangles; two candidates, Claude picks.",
+  "reference": { "jobId": "6440ad70-a9d8-4e27-864a-5302c4b2ef94", "file": "../victory-statue-blocky-20261022/reference.png", "model": "nano_banana_pro" },
+  "candidates": [
+    { "label": "tripo", "jobId": "b1b642d7-5c73-46af-a641-643643caf431", "model": "tripo_h3_1_image_to_3d", "credits": 18,
+      "params": { "texture": true, "pbr": false, "texture_quality": "detailed", "geometry_quality": "detailed", "texture_alignment": "original_image", "orientation": "align_image" } },
+    { "label": "meshy", "jobId": "f0b83dca-c23a-48fa-b028-ddebddf27eea", "model": "meshy_v7_image_to_3d", "credits": 44,
+      "params": { "model_type": "standard", "target_polycount": 30000, "topology": "triangle", "should_remesh": true, "should_texture": true, "enable_pbr": false, "symmetry_mode": "off", "ultra_mode": true, "seed": 221025 } }
+  ]
+}

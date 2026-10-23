@@ -82,9 +82,11 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 test('gate admission persists the token and a reloaded tab recovers before claiming its own name', async t => {
   const items = storage(t), requests = [];
   const session = { id: 'visitor-owned-by-tab', token: 'test-token' };
+  const palette = { top: '#291a1c', shirt: '#b34335', shoes: '#3579bc', bottoms: '#536342', swimwear: '#a73687' };
   const fetch = async (url, options) => {
     requests.push(new URL(url).pathname);
     if (new URL(url).pathname === '/api/events') return liveResponse();
+    assert.deepEqual(JSON.parse(options.body).palette, palette, 'both garment dyes travel with the selected outfit');
     if (url.endsWith('/api/session/recover')) {
       assert.deepEqual(JSON.parse(options.body).session, session);
       return Response.json({ session, state: {} });
@@ -92,12 +94,12 @@ test('gate admission persists the token and a reloaded tab recovers before claim
     return Response.json({ session, state: {} }, { status: 201 });
   };
   const first = await client(fetch);
-  assert.deepEqual(await first.requestPlace('test', {}), { admitted: true });
+  assert.deepEqual(await first.requestPlace('test', palette), { admitted: true });
   assert.deepEqual(JSON.parse(items.get(SESSION_KEY)), { session, name: 'test' });
   first.suspend();
   requests.length = 0;
   const restored = await client(fetch);
-  assert.deepEqual(await restored.requestPlace('test', {}), { admitted: true });
+  assert.deepEqual(await restored.requestPlace('test', palette), { admitted: true });
   assert.deepEqual(requests, ['/api/session/recover', '/api/events']);
   restored.suspend();
   await settle();
@@ -145,4 +147,23 @@ test('slow presence requests cannot queue overlapping outdated positions', async
   visitor.lastPresenceAt=-10000;await visitor.publishPresence({moving:true,x:2},{});
   assert.equal(posts,1);release();await first;
   visitor.lastPresenceAt=-10000;const next=visitor.publishPresence({moving:true,x:3},{});assert.equal(posts,2);release();await next;
+});
+
+test('a stationary garment colour change publishes and survives a remote compact update', async () => {
+  const posted = [], states = [];
+  const visitor = await client(async (_url, options) => {
+    posted.push(JSON.parse(options.body)); return Response.json({ ok: true });
+  }, { onState: state => states.push(state) });
+  visitor.session = { id: 'a', token: 'test' };
+  const presence = { moving: false, state: 'walking', x: 3, z: 4 };
+  const original = { top: '#191a1c', shirt: '#a43439', shoes: '#297dbc', bottoms: '#536342', swimwear: '#a73687' };
+  visitor.lastPresenceAt = -10000; await visitor.publishPresence(presence, original);
+  const changed = { ...original, shirt: '#239459', shoes: '#bc6842' };
+  visitor.lastPresenceAt = -10000; await visitor.publishPresence(presence, changed);
+  assert.equal(posted.length, 2); assert.deepEqual(posted[1], { ...presence, palette: changed });
+  const emit = (event, data) => visitor.handleEventBlock(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  emit('state', { visitors: [{ id: 'b', palette: original }], messages: [] });
+  emit('state-patch', { visitors: [{ id: 'b', palette: changed }] });
+  assert.deepEqual(states.at(-1).visitors[0].palette, changed);
+  assert.equal(states.at(-1).visitors[0].palette.top, original.top);
 });

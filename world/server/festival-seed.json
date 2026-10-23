@@ -239,33 +239,20 @@
     "YO": "YO"
   },
   "npcTitles": {
-    "MENTOR": "Divine Beast",
-    "KENNY": "Toilet Paper",
-    "NUNO": "Chief Researcher",
-    "MICHAEL": "Alchemist",
-    "SEBINE": "Zoo Director",
-    "ZC": "PE Teacher",
-    "LOUI": "Soup Dumpling Master",
-    "MINYUN": "School Nurse",
-    "VIOLA": "Bard",
-    "XIEHGAN": "Mr. Security Guard",
-    "DRBEAUTY": "Bobi the Immortal",
-    "YO": "Friend of MY SCHEDULE"
+    "DRBEAUTY": "Artist",
+    "KENNY": "DIRECTOR",
+    "LOUI": "DIRECTOR",
+    "MENTOR": "VIDEO EDITOR",
+    "MICHAEL": "DIRECTOR",
+    "MINYUN": "ADMINISTRATOR",
+    "NUNO": "SOUND ENGINEER",
+    "SEBINE": "DIRECTOR",
+    "VIOLA": "PROJECT MANAGER",
+    "XIEHGAN": "BOSS",
+    "YO": "SOCIAL",
+    "ZC": "DIRECTOR"
   },
-  "npcTitlesZh": {
-    "MENTOR": "神獸",
-    "KENNY": "衛生紙",
-    "NUNO": "首席研究員",
-    "MICHAEL": "煉金術士",
-    "SEBINE": "動物園園長",
-    "ZC": "體育老師",
-    "LOUI": "小籠包師傅",
-    "MINYUN": "保健室阿姨",
-    "VIOLA": "吟遊詩人",
-    "XIEHGAN": "警衛先生",
-    "DRBEAUTY": "李包比仙人",
-    "YO": "檔期之友"
-  },
+  "npcTitlesZh": {},
   "npcIntroductions": {
     "MENTOR": "Woof woof, woof woof woof.",
     "KENNY": "Everyone loves to yank me out hard, then wipe hard with me. Treated this roughly, and I still don't mind.",
@@ -467,6 +454,23 @@
       "id": "58RgLQ_0Ars",
       "youtubeId": "58RgLQ_0Ars",
       "title": "I Just Called To Say I Love You · Stevie Wonder"
+    },
+    {
+      "id": "XcKvndexQYE",
+      "youtubeId": "XcKvndexQYE",
+      "title": "DOUDOU - A Rusty Dream"
+    },
+    {
+      "id": "KvMY1uzSC1E",
+      "youtubeId": "KvMY1uzSC1E",
+      "title": "Rosa Walton - I Really Want to Stay At Your House"
+    },
+    {
+      "id": "jLXTBbMRxK8",
+      "youtubeId": "jLXTBbMRxK8",
+      "title": "Rat Boy & IBDY - WHO'S READY FOR TOMORROW"
     }
-  ]
+  ],
+  "jukeboxCapturedAt": "2026-10-22T06:57:04.053Z",
+  "jukeboxCapturedFrom": "https://myschedule-festival.onrender.com"
 }

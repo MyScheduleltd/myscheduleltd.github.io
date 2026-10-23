@@ -4,6 +4,12 @@ export const SCREENING_SITES = {
   'drive-in': { dx:-35, dz:-10, grade:-.8, approach:[0,-26] as const },
 } as const;
 
+/** Authored drive-in plan, before SCREENING_SITES' relocation. Units ≈ .5m. */
+export const DRIVE_IN_PARKING = {
+  backRowZ: -20.5, rowSpacing: 5.76 + 3, columnSpacing: 7.2,
+  carWidth: 4.02, carLength: 5.76,
+} as const;
+
 /** The Shore's entrance board, clear of the service road and seating rows. */
 export const SHORE_SIGN = {
   x: 50.5,
