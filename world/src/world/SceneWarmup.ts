@@ -1,5 +1,24 @@
 import * as THREE from 'three';
 
+/** Wait for live shader programs without retaining a removed visitor's material. */
+export async function compileScenePrograms(
+  renderer: THREE.WebGLRenderer, surfaces: THREE.Object3D, camera: THREE.Camera, scene: THREE.Scene,
+): Promise<void> {
+  const pending = renderer.compile(surfaces, camera, scene);
+  // Three 0.179's compileAsync assumes every material survives each timer.
+  // Presence can remove/re-dress a visitor during admission, disposing that
+  // material and its renderer properties. Its timer then throws at isReady(),
+  // leaving the admission promise unresolved. Only still-live programs wait.
+  while (pending.size) {
+    for (const material of pending) {
+      const properties = renderer.properties.get(material) as { currentProgram?: { isReady(): boolean } };
+      const program = properties.currentProgram;
+      if (!program || program.isReady()) pending.delete(material);
+    }
+    if (pending.size) await new Promise<void>(resolve => setTimeout(resolve, 16));
+  }
+}
+
 /** Compile visible surfaces, including those outside the entrance camera's frustum. */
 export async function warmScenePrograms(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera): Promise<void> {
   const surfaces = new THREE.Group();
@@ -11,11 +30,13 @@ export async function warmScenePrograms(renderer: THREE.WebGLRenderer, scene: TH
       surfaces.add(object.clone(false));
     }
   });
-  await renderer.compileAsync(surfaces, camera, scene);
+  await compileScenePrograms(renderer, surfaces, camera, scene);
 }
 
 /** Upload fixed maps while admission still covers expensive driver work. */
-export async function uploadSceneTextures(renderer: THREE.WebGLRenderer, scene: THREE.Scene, extra: THREE.Texture[] = []): Promise<void> {
+export async function uploadSceneTextures(
+  renderer: THREE.WebGLRenderer, scene: THREE.Scene, extra: THREE.Texture[] = [], active: () => boolean = () => true,
+): Promise<void> {
   const textures = new Set(extra);
   scene.traverseVisible(object => {
     const material = (object as THREE.Mesh).material;
@@ -25,6 +46,7 @@ export async function uploadSceneTextures(renderer: THREE.WebGLRenderer, scene: 
   });
   // Keep one upload per browser task so the loading animation remains responsive.
   for (const texture of textures) {
+    if (!active()) return;
     renderer.initTexture(texture);
     await new Promise<void>(resolve => setTimeout(resolve, 0));
   }
@@ -53,7 +75,7 @@ const drawable = (object: THREE.Object3D): boolean =>
  */
 export async function warmByDrawing(
   renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera,
-  onProgress?: (progress: number) => void, batchSize = 24,
+  onProgress?: (progress: number) => void, batchSize = 24, active: () => boolean = () => true,
 ): Promise<{ kinds: number; programs: number }> {
   const drawables: THREE.Object3D[] = [];
   scene.traverse(object => { if (drawable(object)) drawables.push(object); });
@@ -79,6 +101,7 @@ export async function warmByDrawing(
   try {
     for (const object of representatives) object.frustumCulled = false;
     for (let start = 0; start < representatives.length; start += batchSize) {
+      if (!active()) break;
       for (const object of drawables) object.visible = false;
       for (const object of representatives.slice(start, start + batchSize)) {
         for (let node: THREE.Object3D | null = object; node; node = node.parent) node.visible = true;

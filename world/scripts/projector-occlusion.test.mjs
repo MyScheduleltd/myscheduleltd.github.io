@@ -242,7 +242,7 @@ test('warmup includes off-camera surfaces but skips hidden fallback bodies and p
   const scene=new THREE.Scene(),hidden=new THREE.Group(),camera=new THREE.PerspectiveCamera();hidden.visible=false;scene.add(hidden);
   const surface=new THREE.SkinnedMesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial());surface.position.x=1000;scene.add(surface);
   hidden.add(new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial()));
-  const calls=[];await warmScenePrograms({async compileAsync(root,cam,target){calls.push(root);assert.equal(cam,camera);assert.equal(target,scene);}},scene,camera);
+  const calls=[];await warmScenePrograms({compile(root,cam,target){calls.push(root);assert.equal(cam,camera);assert.equal(target,scene);return new Set();}},scene,camera);
   assert.equal(calls.length,1);assert.equal(calls[0].children.length,1);assert.equal(calls[0].children[0].isSkinnedMesh,true);
   assert.equal(calls[0].children[0].material,surface.material);assert.equal(calls[0].children[0].geometry,surface.geometry);
   assert.equal(surface.parent,scene);assert.equal(scene.children.length,2);
@@ -573,7 +573,7 @@ test('admission prepares the existing room before GPU warmup, without starting t
     // The warm-up stand of every body is the avatar code's to build; here it is an empty group.
     // Object.create bypasses field initializers. Supply the texture-preparation
     // resource explicitly, while keeping the real architectural placement.
-    Object.assign(world,{scene,camera,preview:false,disposed:false,environmentMaterials:{async prepare(root){assert.equal(root,scene);assert.ok(root.userData.environmentArchitectureReport.triangles>0);environmentReady=true;}},pendingRemoteVisitors:new Map([['a',1],['b',2],['c',3]]),projectors:new Map(),cullDecorativeLights(){},warmAvatarVariants(){const stand=new THREE.Group();scene.add(stand);return stand;},flushRemoteVisitor(){this.pendingRemoteVisitors.delete(this.pendingRemoteVisitors.keys().next().value);const body=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial());body.name='Admission test body';scene.add(body);created++;},renderer:{shadowMap:{},info:{programs:[]},render(root,cam){assert.equal(compiled,1,'drawn after compiling');assert.equal(root,scene);assert.equal(cam,camera);drawn++;},async compileAsync(root,cam,target){compiled++;assert.equal(environmentReady,true,'environment maps settle before GPU compilation');assert.equal(created,3);assert.equal(root.children.filter(child=>child.name==='Admission test body').length,3);assert.equal(root.children.filter(child=>child.userData.environmentArchitecture).length,scene.userData.environmentArchitectureReport.meshes);assert.equal(cam,camera);assert.equal(target,scene);},setAnimationLoop(){throw Error('admission started gameplay before preparation completed');}}});
+    Object.assign(world,{scene,camera,preview:false,disposed:false,environmentMaterials:{async prepare(root){assert.equal(root,scene);assert.ok(root.userData.environmentArchitectureReport.triangles>0);environmentReady=true;}},pendingRemoteVisitors:new Map([['a',1],['b',2],['c',3]]),projectors:new Map(),cullDecorativeLights(){},warmAvatarVariants(){const stand=new THREE.Group();scene.add(stand);return stand;},flushRemoteVisitor(){this.pendingRemoteVisitors.delete(this.pendingRemoteVisitors.keys().next().value);const body=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial());body.name='Admission test body';scene.add(body);created++;},renderer:{shadowMap:{},info:{programs:[]},render(root,cam){assert.equal(compiled,1,'drawn after compiling');assert.equal(root,scene);assert.equal(cam,camera);drawn++;},compile(root,cam,target){compiled++;assert.equal(environmentReady,true,'environment maps settle before GPU compilation');assert.equal(created,3);assert.equal(root.children.filter(child=>child.name==='Admission test body').length,3);assert.equal(root.children.filter(child=>child.userData.environmentArchitecture).length,scene.userData.environmentArchitectureReport.meshes);assert.equal(cam,camera);assert.equal(target,scene);return new Set();},setAnimationLoop(){throw Error('admission started gameplay before preparation completed');}}});
     await world.prepareForPlay();assert.equal(created,3);assert.equal(compiled,1);assert.equal(world.pendingRemoteVisitors.size,0);
     assert.ok(drawn>=1,'then every kind of draw is drawn once under the loading view');
     assert.equal(scene.children.some(child=>child.type==='Group'),false,'and the stand of bodies is gone again');
@@ -592,7 +592,7 @@ test('admission disposes temporary avatar instances after a successful or failed
    Object.assign(world,{scene,camera:new THREE.PerspectiveCamera(),graphicsMode,preview:false,disposed:false,
     async prepareAssets(){},pendingRemoteVisitors:new Map(),projectors:new Map(),cullDecorativeLights(){},warmScreenPlayer(){},
     warmAvatarVariants(){scene.add(stand);return stand;},
-    renderer:{shadowMap:{},info:{programs:[]},async compileAsync(){},initTexture(){},render(){drawn++;if(failDraw)throw Error('driver warm-up failed');}}});
+    renderer:{shadowMap:{},info:{programs:[]},compile(){return new Set();},initTexture(){},render(){drawn++;if(failDraw)throw Error('driver warm-up failed');}}});
    if(failDraw)await assert.rejects(world.prepareForPlay(),/driver warm-up failed/);else await world.prepareForPlay();
    assert.ok(drawn>0,'the failure happens after a temporary avatar was prepared for drawing');
    assert.equal(disposed,1,`${graphicsMode}: warm-up ownership is released even when the driver throws`);
@@ -601,13 +601,50 @@ test('admission disposes temporary avatar instances after a successful or failed
  } finally {globalThis.window=savedWindow;}
 });
 
+test('stopping admission after compilation, during uploads or during drawing performs no later GPU work', async () => {
+  const savedWindow = globalThis.window;
+  globalThis.window = { setTimeout: run => setTimeout(run, 0), setInterval, clearInterval, location: { hostname: '127.0.0.1', search: '?nobatch' } };
+  try {
+    for (const stage of ['compile', 'upload', 'draw']) {
+      const world = Object.create(FestivalWorld.prototype), scene = new THREE.Scene(), stand = new THREE.Group();
+      let uploads = 0, draws = 0, stands = 0, disposed = 0;
+      // More than one batch proves cancellation is checked between draws.
+      for (let i = 0; i < 25; i++) {
+        const material = new THREE.MeshStandardMaterial({ map: new THREE.Texture(), normalMap: new THREE.Texture() });
+        scene.add(new THREE.Mesh(new THREE.BoxGeometry(), material));
+      }
+      stand.userData.disposeImportedAvatar = () => { disposed++; };
+      Object.assign(world, {
+        scene, camera: new THREE.PerspectiveCamera(), preview: false, disposed: false,
+        async prepareAssets() {}, pendingRemoteVisitors: new Map(), projectors: new Map(), cullDecorativeLights() {}, warmScreenPlayer() {},
+        warmAvatarVariants() { stands++; scene.add(stand); return stand; },
+        renderer: {
+          shadowMap: {}, info: { programs: [] },
+          compile() { if (stage === 'compile') queueMicrotask(() => { world.disposed = true; }); return new Set(); },
+          initTexture() { uploads++; if (stage === 'upload') world.disposed = true; },
+          render() { draws++; if (stage === 'draw') world.disposed = true; },
+        },
+      });
+      await world.prepareForPlay();
+      if (stage === 'compile') {
+        assert.equal(uploads, 0); assert.equal(stands, 0); assert.equal(draws, 0);
+      } else if (stage === 'upload') {
+        assert.equal(uploads, 1, 'the next texture is not uploaded after teardown'); assert.equal(stands, 0); assert.equal(draws, 0);
+      } else {
+        assert.equal(draws, 1, 'the next draw batch is not rendered after teardown');
+        assert.equal(disposed, 1, 'the temporary stand still releases its owned instances'); assert.equal(stand.parent, null);
+      }
+    }
+  } finally { globalThis.window = savedWindow; }
+});
+
 
 test('a slow film player gets its own stretch of the loading bar, which keeps moving while it waits',async()=>{
   const savedWindow=globalThis.window;globalThis.window={setTimeout:(run,ms)=>setTimeout(run,ms),setInterval:(run,ms)=>setInterval(run,ms),clearInterval:id=>clearInterval(id),location:{hostname:'127.0.0.1',search:'?nobatch'}};
   try{
     const world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene();
     Object.assign(world,{scene,camera:new THREE.PerspectiveCamera(),environmentMaterials:{async prepare(){}},pendingRemoteVisitors:new Map(),projectors:new Map(),cullDecorativeLights(){},warmAvatarVariants(){return new THREE.Group();},
-      renderer:{shadowMap:{},info:{programs:[]},render(){},async compileAsync(){}},warmScreenPlayer(){},screenPlayer:{iframe:{},ready:false}});
+      renderer:{shadowMap:{},info:{programs:[]},render(){},compile(){return new Set();}},warmScreenPlayer(){},screenPlayer:{iframe:{},ready:false}});
     setTimeout(()=>{world.screenPlayer.ready=true;},1100);
     const seen=[];await world.prepareForPlay((progress,stage)=>seen.push([progress,stage]));
     const waiting=seen.filter(([,stage])=>stage==='screens').map(([progress])=>progress);
@@ -629,7 +666,7 @@ test('admission cannot compile or finish before fixed assets are placed', async 
     const scenery=new Promise(resolve=>finishScenery=resolve),band=new Promise(resolve=>finishBand=resolve),arcade=new Promise(resolve=>finishArcade=resolve);
     const environment=new Promise(resolve=>finishEnvironment=resolve);
     const progress=[];
-    Object.assign(world,{scene,camera:new THREE.PerspectiveCamera(),environmentMaterials:{prepare(root){environmentStarted=true;assert.equal(root,scene);assert.ok(scene.userData.environmentArchitectureReport.triangles>0,'geometry precedes environment maps');return environment;}},pendingRemoteVisitors:new Map(),projectors:new Map(),venueSceneryAssets:{ready:()=>scenery},bandLoad:band,rooftopBand:{ready:true},arcadeCabinet:{ready:arcade,status:'ready'},cullDecorativeLights(){},warmAvatarVariants(){return new THREE.Group();},renderer:{shadowMap:{},info:{programs:[]},render(){},async compileAsync(){compiled++;}}});
+    Object.assign(world,{scene,camera:new THREE.PerspectiveCamera(),environmentMaterials:{prepare(root){environmentStarted=true;assert.equal(root,scene);assert.ok(scene.userData.environmentArchitectureReport.triangles>0,'geometry precedes environment maps');return environment;}},pendingRemoteVisitors:new Map(),projectors:new Map(),venueSceneryAssets:{ready:()=>scenery},bandLoad:band,rooftopBand:{ready:true},arcadeCabinet:{ready:arcade,status:'ready'},cullDecorativeLights(){},warmAvatarVariants(){return new THREE.Group();},renderer:{shadowMap:{},info:{programs:[]},render(){},compile(){compiled++;return new Set();}}});
     const prepared=world.prepareForPlay(p=>progress.push(p)).then(()=>complete=true);
     await new Promise(resolve=>setImmediate(resolve));assert.equal(compiled,0);assert.equal(environmentStarted,false);
     finishScenery();finishArcade();await new Promise(resolve=>setImmediate(resolve));assert.equal(complete,false);assert.equal(compiled,0);assert.equal(environmentStarted,false);
