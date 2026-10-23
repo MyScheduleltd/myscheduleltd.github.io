@@ -25,6 +25,7 @@ import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer
 import type { VenueKey } from '../data/catalogue';
 import { AmbientAudio } from './AmbientAudio';
 import { createWorldRenderer } from './WorldRenderer';
+import { acquireGpuTextures, gpuTexturesEnabled, type GpuTextureLease } from './GpuTextureRuntime';
 import masterOfTheHouseLogo from '../assets/master-of-the-house.png';
 import { DayNightCycle, nightAmountAt, type DayNightState } from './DayNightCycle';
 import { createStylizedWaterMaterial, tintStylizedWater } from './StylizedWater';
@@ -1655,6 +1656,7 @@ export class FestivalWorld {
   private readonly canvas: HTMLCanvasElement;
   private readonly foregroundCanvas: HTMLCanvasElement;
   private readonly renderer: THREE.WebGLRenderer;
+  private gpuTextures?: GpuTextureLease;
   private readonly conservesMobileGpu: boolean;
   private readonly mobileCameraControls=shouldConserveMobileGpu();
   private readonly cssRenderer: CSS3DRenderer;
@@ -1676,6 +1678,11 @@ export class FestivalWorld {
   private readonly npcs: NpcAvatar[] = [];
   private readonly venueSceneryAssets = new VenueSceneryAssets();
   private readonly environmentMaterials = new EnvironmentMaterials({ assets: environmentAssetsFromUrls(
+    {
+      ...import.meta.glob<string>('../assets/environment/*.webp', { eager: true, query: '?url', import: 'default' }),
+      ...import.meta.glob<string>('../assets/environment/compressed/*.ktx2', { eager: true, query: '?url', import: 'default' }),
+    }, gpuTexturesEnabled(),
+  ), fallbackAssets: environmentAssetsFromUrls(
     import.meta.glob<string>('../assets/environment/*.webp', { eager: true, query: '?url', import: 'default' }),
   ) });
   // Only the models the world places. A wildcard published every GLB in the
@@ -2166,6 +2173,10 @@ export class FestivalWorld {
       canvas, normalGraphics: graphicsMode === 'normal', pixelRatio: this.mainPixelRatio(),
       checkShaderErrors: checkShaders, inactiveClipPlane: this.inactiveProjectorClipPlane,
     });
+    if (!preview && gpuTexturesEnabled()) {
+      this.gpuTextures = acquireGpuTextures(this.renderer);
+      this.environmentMaterials.useGpuTextures(this.gpuTextures);
+    }
     // The first desktop screening used to wake a second WebGL context and
     // upload/compile the entire foreground world (including its shadows).
     // Open the video through the existing canvas instead, just as on phones;
@@ -2510,6 +2521,7 @@ export class FestivalWorld {
     this.driveInLicensePlates?.dispose();
     this.venueSceneryAssets.dispose();
     this.environmentMaterials.dispose();
+    this.gpuTextures?.release();
     this.environmentModels?.dispose();
     this.stopArcadeGame(); this.arcadeCabinet?.dispose();
     this.renderer.setAnimationLoop(null);
@@ -9890,7 +9902,7 @@ export class FestivalWorld {
   }
 
   environmentReviewSnapshot(): unknown {
-    return { materials: this.environmentMaterials.snapshot(), models: this.environmentModels?.snapshot(), architecture: this.scene.userData.environmentArchitectureReport,
+    return { materials: this.environmentMaterials.snapshot(), gpuTextures: this.gpuTextures?.snapshot(), models: this.environmentModels?.snapshot(), architecture: this.scene.userData.environmentArchitectureReport,
       art:this.scene.userData.environmentArtReport,reflections:this.environmentReflections?.report,cars:this.driveInCarArt?.report,plates:this.driveInLicensePlates?.report,
       palacePilasters:this.palacePilasterFinish?.report,filmGrain:this.scene.userData.worldFilmGrainReport,lightAnchors:this.scene.userData.planetLightAnchors,temple:this.templeArchitecture?.report,templeTrim:this.templeTrimAtlas?.report,wishWall:this.wishWallFrame?.report,pamphlet:this.pamphletSurface?.report };
   }
