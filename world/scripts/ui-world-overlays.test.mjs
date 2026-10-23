@@ -6,7 +6,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 const compiled = await build({ stdin: { contents: "export * from './src/ui/FloatingChat';export * from './src/ui/OverlayPreferences';", resolveDir: process.cwd(), loader: 'ts' }, bundle: true, write: false, platform: 'node', format: 'esm' });
 const helpers = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
-const { boundChatRect, readChatRect, installFloatingChat, CHAT_LAYOUT_KEY, readDesktopActions, saveDesktopActions, DESKTOP_ACTIONS_KEY, jukeboxPromptVisible, drinkStatusText } = helpers;
+const { boundChatRect, readChatRect, installFloatingChat, CHAT_LAYOUT_KEY, readDesktopActions, saveDesktopActions, DESKTOP_ACTIONS_KEY, dropBeatAction, drinkStatusText } = helpers;
 
 test('saved chat geometry stays bounded on desktop, phone, landscape and an on-screen keyboard viewport', () => {
   for (const viewport of [{ width: 1280, height: 800 }, { width: 402, height: 874 }, { width: 874, height: 402 }, { width: 402, height: 280, top: 110 }, { width: 320, height: 90 }]) {
@@ -56,32 +56,26 @@ test('real chat pointer/keyboard handles save bounded geometry, restore after a 
   dispose(); assert.equal(header.handlers.size, 0); assert.equal(handle.handlers.size, 0); assert.equal(windowEvents.size, 0); assert.equal(viewportEvents.size, 0); assert.equal(handle.removed, true); assert.equal(style.width, undefined); assert.equal(style.maxHeight, undefined);
 });
 
-test('DROP THE BEAT survives transient unmute reports and gives a rebuilt stream its own six-second recovery window', () => {
-  const state = {};
-  assert.equal(jukeboxPromptVisible(state, 'song:1', true, false, 0), true);
-  for (const now of [200, 1600, 3000, 5999]) assert.equal(jukeboxPromptVisible(state, 'song:1', true, true, now), true);
-  assert.equal(jukeboxPromptVisible(state, 'song:1', true, true, 6000), false);
-  assert.equal(jukeboxPromptVisible(state, undefined, false, false, 6100), false, 'film exit tears down the prior player');
-  assert.equal(jukeboxPromptVisible(state, 'song:2', true, true, 7000), true);
-  assert.equal(jukeboxPromptVisible(state, 'song:2', true, false, 12000), true, 'buffering never counts as audible playback');
-  assert.equal(jukeboxPromptVisible(state, 'song:2', true, true, 13000), true);
-  assert.equal(jukeboxPromptVisible(state, 'song:2', true, true, 14499), true);
-  assert.equal(jukeboxPromptVisible(state, 'song:2', true, true, 14500), false);
-  assert.equal(jukeboxPromptVisible(state, 'song:2', false, false, 15000), false, 'muted attendee never gets a recovery request');
+test('DROP THE BEAT in the PASS menu: says when nothing is on, points outdoors in venues, does nothing when heard, starts the sound otherwise', () => {
+  assert.equal(dropBeatAction({ recordOn: false, silentHere: false, audible: false }), 'no-music');
+  assert.equal(dropBeatAction({ recordOn: false, silentHere: true, audible: true }), 'no-music', 'no record outranks everything');
+  assert.equal(dropBeatAction({ recordOn: true, silentHere: true, audible: false }), 'outdoors-only', 'a theatre, the club, the deck or a film on a phone');
+  assert.equal(dropBeatAction({ recordOn: true, silentHere: false, audible: true }), 'already-playing');
+  assert.equal(dropBeatAction({ recordOn: true, silentHere: false, audible: false }), 'start');
 });
 
 const source = await readFile('src/ui/App.ts', 'utf8'), tree = ts.createSourceFile('App.ts', source, ts.ScriptTarget.Latest, true);
 const app = tree.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'App');
-const methods = ['syncDrinkStatus', 'syncMenuCapture', 'hideSeatMenu', 'prepareSeatMenu', 'globalShortcut', 'updateJukeboxSoundPrompt', 'jukeboxMessage', 'usesSingleFilmPlayer', 'preparePhoneFilmPlayback', 'stopJukebox', 'renderScreen', 'releaseVenueFilmFrame'].map(name => {
+const methods = ['syncDrinkStatus', 'syncMenuCapture', 'hideSeatMenu', 'prepareSeatMenu', 'globalShortcut', 'dropTheBeat', 'jukeboxMessage', 'usesSingleFilmPlayer', 'preparePhoneFilmPlayback', 'stopJukebox', 'renderScreen', 'releaseVenueFilmFrame'].map(name => {
   const method = app.members.find(node => node.name?.getText(tree) === name); assert.ok(method, name); return method.getText(tree);
 }).join('\n');
 const script = ts.transpileModule(`class OverlayHarness { ${methods} }; globalThis.OverlayHarness=OverlayHarness;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-const globals = { URL, drinkStatusText, jukeboxPromptVisible, performance: { now: () => 0 }, window: { location: { hostname: '127.0.0.1', origin: 'http://127.0.0.1', href: 'http://127.0.0.1/beta/' } } };
+const globals = { URL, drinkStatusText, dropBeatAction, DEFAULT_JUKEBOX_VOLUME: .4, JUKEBOX_VOLUME_KEY: 'jukebox-volume', performance: { now: () => 0 }, window: { location: { hostname: '127.0.0.1', origin: 'http://127.0.0.1', href: 'http://127.0.0.1/beta/' } } };
 runInNewContext(script, globals); const { OverlayHarness } = globals;
 const fixture = () => {
   const menu = { dataset: { menuOwner: 'npc' }, hidden: false, classList: { remove() {} }, removeAttribute() {} }, badge = { hidden: true, textContent: '' }, pass = { hidden: true }, prompt = { hidden: false };
-  const root = { dataset: {}, querySelector: selector => ({ '#seat-menu': menu, '#drink-status': badge, '#festival-pass': pass, '[data-jukebox-sound]': prompt })[selector] };
-  const calls = [], ui = new OverlayHarness(); Object.assign(ui, { root, world: { closeNpcDialogue() { calls.push('close-dialogue'); }, setMenuOpen(value) { calls.push(['menu', value]); } }, language: 'en', drinkCount: 4, jukeboxPromptMemory: {}, jukeboxVolume: .5, audioMuted: false, jukeboxSilenced: false, jukeboxPlayingId: 'song', jukeboxPromptGeneration: 1 });
+  const root = { dataset: {}, querySelector: selector => ({ '#seat-menu': menu, '#drink-status': badge, '#festival-pass': pass })[selector] };
+  const calls = [], ui = new OverlayHarness(); Object.assign(ui, { root, world: { closeNpcDialogue() { calls.push('close-dialogue'); }, setMenuOpen(value) { calls.push(['menu', value]); } }, language: 'en', drinkCount: 4, jukeboxVolume: .5, audioMuted: false, jukeboxSilenced: false, jukeboxPlayingId: 'song', jukeboxPromptGeneration: 1 });
   return { ui, menu, badge, calls, prompt };
 };
 
@@ -98,9 +92,31 @@ test('the actual App keeps drink status separate from transient alerts and relea
 test('the actual jukebox message path requires real playing state as well as unmuted volume', () => {
   const { ui, prompt } = fixture(), frameWindow = {}; ui.jukeboxFrame = { contentWindow: frameWindow }; ui.jukeboxReportedDurations = new Map();
   ui.jukeboxMessage({ source: frameWindow, data: JSON.stringify({ event: 'infoDelivery', info: { muted: false, volume: 50, playerState: 3 } }) });
-  assert.equal(ui.jukeboxReportedState, 3); assert.equal(prompt.hidden, false);
+  assert.equal(ui.jukeboxReportedState, 3); assert.equal(ui.jukeboxReportedMuted, false);
   ui.jukeboxMessage({ source: frameWindow, data: JSON.stringify({ event: 'onStateChange', info: 1 }) });
-  assert.equal(ui.jukeboxReportedState, 1); assert.equal(prompt.hidden, false, 'six-second minimum still applies to the genuine playing acknowledgement');
+  assert.equal(ui.jukeboxReportedState, 1);
+});
+
+test('the actual DROP THE BEAT: no record says so, a venue points outdoors, a heard record is left alone, a muted visitor gets sound', () => {
+  globals.window.setTimeout = () => 0; globals.window.localStorage = { setItem() {} };
+  const run = (state) => {
+    const { ui } = fixture(), calls = [];
+    Object.assign(ui, { networkState: { jukebox: { nowPlaying: state.record ? { youtubeId: 'abcdefghijk' } : null } }, audioMuted: Boolean(state.muted), jukeboxVolume: state.volume ?? .5,
+      jukeboxSilentHere: Boolean(state.silentHere), jukeboxReportedMuted: state.audible ? false : true, jukeboxReportedVolume: state.audible ? 50 : 0, jukeboxReportedState: state.audible ? 1 : 2,
+      setFestivalMuted(muted) { calls.push(['muted', muted]); this.audioMuted = muted; }, syncAudioResumeUi() {}, syncJukebox() { calls.push('sync'); }, closeFestivalPass() { calls.push('close'); },
+      showWorldAlert(text) { calls.push(['alert', text]); }, applyJukeboxVolume() { calls.push('apply'); } });
+    ui.world = { ...ui.world, audio: { start: () => Promise.resolve() } };
+    ui.dropTheBeat(); return { calls, ui };
+  };
+  assert.deepEqual(run({ record: false }).calls, ['sync', 'close', ['alert', 'THERE IS NO MUSIC CURRENTLY PLAYING IN THE JUKEBOX']]);
+  assert.deepEqual(run({ record: true, silentHere: true }).calls, ['sync', 'close', ['alert', 'THE JUKEBOX PLAYS OUTDOORS · STEP OUTSIDE TO HEAR IT']]);
+  assert.deepEqual(run({ record: true, audible: true }).calls, ['sync'], 'already heard: nothing happens');
+  const quiet = run({ record: true });
+  assert.deepEqual(quiet.calls, ['sync', 'close', 'apply'], 'heard nothing: the press starts the sound');
+  const muted = run({ record: true, muted: true, volume: 0 });
+  assert.deepEqual(muted.calls.slice(0, 2), [['muted', false], 'sync'], 'a muted visitor has the festival sound turned on first');
+  assert.equal(muted.ui.jukeboxVolume, .4, 'a jukebox slider left at nothing comes back to its default');
+  delete globals.window.setTimeout; delete globals.window.localStorage;
 });
 
 test('the actual phone film handoff stops and blanks its record synchronously while desktop retains playback', () => {
