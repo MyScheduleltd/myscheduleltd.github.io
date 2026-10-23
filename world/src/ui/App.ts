@@ -534,7 +534,11 @@ export class App {
   private chatChannel: ChatChannel = 'NEARBY';
   private chatMessages: ChatMessage[];
   /** Said here, not yet echoed by the service. Kept so it shows straight away. */
-  private pendingChat: ChatMessage[] = [];
+  private pendingChat: { message: ChatMessage; seenIds: Set<string> }[] = [];
+  /** Shared by every rendering of the chat form, including channel changes. */
+  private chatSending = false;
+  private chatSequence = 0;
+  private chatDrafts: Partial<Record<ChatChannel, string>> = {};
   private chatStreamElement?: HTMLElement;
   private chatStreamSignature = '';
   private npcTimer?: number;
@@ -4987,6 +4991,7 @@ export class App {
   }
 
   private openWishWall = false;
+  private wishWallRendered = '';
 
   /**
    * The temple's wish wall, read properly: every note in full, newest first,
@@ -4998,6 +5003,21 @@ export class App {
     if (!menu) return;
     const zh = this.language === 'zh-TW';
     const wishes = [...(this.networkState?.wishes ?? [])].reverse();
+    const signature = JSON.stringify([this.language, wishes.map(({ name, message }) => [name, message])]);
+    const notes = menu.dataset.menuOwner === 'wishes' && !menu.hidden
+      ? menu.querySelector<HTMLElement>('[data-wish-wall-notes]') : null;
+    // Presence updates arrive while the pointer is resting on CLOSE. Replacing
+    // that button on each tick drops its hover/focus and makes it flash. Only
+    // changed notes need repainting; keep the panel and its controls in place.
+    if (notes && this.wishWallRendered === signature) return;
+    const content = wishes.length
+      ? `<ul class="wish-list">${wishes.map((wish) => `<li><strong>${this.escapeHtml(wish.name || (zh ? '訪客' : 'GUEST'))}</strong><p>${this.escapeHtml(wish.message)}</p></li>`).join('')}</ul>`
+      : `<p class="panel-note">${zh ? '還沒有人留言。到廟內的美麗仙人像前供養，或在登入頁按 Donate，即可留下祈福留言。' : 'No notes yet. Leave a note with an offering in front of the statue inside the temple, or through Donate on the sign-in page.'}</p>`;
+    this.wishWallRendered = signature;
+    if (notes && notes.dataset.language === this.language) {
+      notes.innerHTML = content;
+      return;
+    }
     this.openWishWall = true;
     this.prepareSeatMenu(menu, 'wishes');
     menu.hidden = false;
@@ -5008,9 +5028,7 @@ export class App {
       <p class="dj-about__hint">${zh
         ? '供養時留下的話，付款完成後掛上這面牆。只保留最新 30 則。'
         : 'Notes left with offerings, hung here once paid. The newest 30 are kept.'}</p>
-      ${wishes.length
-        ? `<ul class="wish-list">${wishes.map((wish) => `<li><strong>${this.escapeHtml(wish.name || (zh ? '訪客' : 'GUEST'))}</strong><p>${this.escapeHtml(wish.message)}</p></li>`).join('')}</ul>`
-        : `<p class="panel-note">${zh ? '還沒有人留言。到廟內的美麗仙人像前供養，或在登入頁按 Donate，即可留下祈福留言。' : 'No notes yet. Leave a note with an offering in front of the statue inside the temple, or through Donate on the sign-in page.'}</p>`}`;
+      <div data-wish-wall-notes data-language="${this.language}">${content}</div>`;
     const close = (): void => {
       this.openWishWall = false;
       menu.hidden = true;
@@ -5439,16 +5457,7 @@ export class App {
       }
       return;
     }
-    // Anything said here and not yet come back from the service is kept on the
-    // end, so a line does not vanish between being sent and being echoed. Each
-    // is dropped the moment the service's own copy of it arrives.
-    const arrived = new Set(state.messages.map((message) => `${message.author}|${message.text}`));
-    this.pendingChat = this.pendingChat.filter((message) => !arrived.has(`${message.author}|${message.text}`));
-    this.chatMessages = [
-      ...initialChat,
-      ...state.messages.map((message) => ({ ...message, npc: false })),
-      ...this.pendingChat,
-    ].slice(-100);
+    this.reconcileChatMessages(state.messages);
     this.renderChatStream();
     this.refreshOpenChatFeed();
     this.syncClubBeat();
@@ -7286,93 +7295,7 @@ export class App {
     }
 
     if (panelId === 'chat') {
-      panel.querySelectorAll<HTMLButtonElement>('[data-chat-channel]').forEach((button) => {
-        setButtonPressed(button, button.dataset.chatChannel === this.chatChannel);
-        button.addEventListener('click', () => {
-          this.chatChannel = button.dataset.chatChannel as ChatChannel;
-          this.openPanel('chat');
-        });
-      });
-      const chatInput = panel.querySelector<HTMLInputElement>('#chat-message');
-      // Writing Chinese puts an input method between the keyboard and the
-      // field: the keys type a reading, the IME offers characters, and ENTER
-      // accepts the one wanted. In several browsers that accepting keystroke
-      // reaches the form as an ordinary ENTER, so every time somebody chose a
-      // character the half-written line was sent and the field was emptied of
-      // its meaning — which is what being cut off constantly is. Nobody typing
-      // English ever saw it, because English never presses ENTER mid-word.
-      //
-      // Nothing is sent while a composition is open, nor in the moment after
-      // one closes: the order of compositionend against the keystroke that
-      // ended it is not the same in every browser, so the flag alone is not
-      // enough to catch it.
-      let composing = false;
-      let composedAt = 0;
-      chatInput?.addEventListener('compositionstart', () => { composing = true; });
-      chatInput?.addEventListener('compositionend', () => {
-        composing = false;
-        composedAt = performance.now();
-      });
-      panel.querySelector<HTMLFormElement>('#chat-form')?.addEventListener('submit', (event) => {
-        event.preventDefault();
-        if (composing || performance.now() - composedAt < 250) return;
-        const input = chatInput;
-        const text = input?.value.trim() ?? '';
-        if (!text) return;
-        if (this.festivalClient.online) {
-          // readOnly, not disabled. Disabling a focused field blurs it, which
-          // drops the caret and closes the IME, so the line after every line
-          // had to be started by clicking back into the box.
-          if (input) input.readOnly = true;
-          // Shown at once rather than waited for. It used to be sent and then
-          // waited on, so your own line only appeared once the service had taken
-          // it, broadcast it, and sent it back — which on a phone is long enough
-          // to believe it was lost and say it again.
-          const said = text.slice(0, 160);
-          const pending: ChatMessage = {
-            id: `pending-${Date.now()}`,
-            author: this.currentId,
-            channel: this.chatChannel,
-            text: said,
-            timestamp: Date.now(),
-          };
-          this.pendingChat = [...this.pendingChat, pending].slice(-8);
-          this.addChatMessage(pending);
-          void this.festivalClient.sendMessage(this.chatChannel, said).then((result) => {
-            if (!result.ok) {
-              // It never got there, so it should stop looking as though it had.
-              this.pendingChat = this.pendingChat.filter((message) => message !== pending);
-              this.chatMessages = this.chatMessages.filter((message) => message.id !== pending.id);
-              this.renderChatStream();
-              this.refreshOpenChatFeed();
-              this.showWorldAlert(result.message ?? 'MESSAGE COULD NOT BE SENT');
-            } else {
-              // Sent lines used to stay in the box, so the next one was typed
-              // onto the end of the last.
-              if (input) input.value = '';
-              this.completeQuest('chat');
-            }
-            if (input) {
-              input.readOnly = false;
-              input.focus();
-            }
-          });
-        } else {
-          this.addChatMessage({
-            id: `visitor-${Date.now()}`,
-            author: this.currentId,
-            channel: this.chatChannel,
-            text: text.slice(0, 160),
-            timestamp: Date.now(),
-          });
-          this.completeQuest('chat');
-          // Redraw the stream rather than the panel: rebuilding the panel threw
-          // away the very field being typed into, focus and all.
-          if (input) input.value = '';
-          this.renderChatStream();
-          input?.focus();
-        }
-      });
+      this.bindChatPanel(panel);
     }
 
     if (panelId === 'admin') {
@@ -7716,12 +7639,128 @@ export class App {
     }
   }
 
-  /**
-   * Just the messages, so they can be redrawn on their own. Rebuilding the
-   * whole panel to show one new line takes the box you are typing in with it,
-   * which is what it used to do and why those rebuilds were taken out — leaving
-   * the panel showing everything except what you had just said.
-   */
+  private bindChatPanel(panel: HTMLElement): void {
+    const channel = this.chatChannel;
+    panel.querySelectorAll<HTMLButtonElement>('[data-chat-channel]').forEach((button) => {
+      setButtonPressed(button, button.dataset.chatChannel === channel);
+      button.addEventListener('click', () => {
+        this.chatChannel = button.dataset.chatChannel as ChatChannel;
+        this.openPanel('chat');
+      });
+    });
+    const input = panel.querySelector<HTMLInputElement>('#chat-message');
+    input?.addEventListener('input', () => { this.chatDrafts[channel] = input.value; });
+    // The accepting Enter can arrive just after compositionend on some IMEs.
+    // Keep the field focused and allow that keystroke to accept its characters.
+    let composing = false;
+    let composedAt = -Infinity;
+    input?.addEventListener('compositionstart', () => { composing = true; });
+    input?.addEventListener('compositionend', () => {
+      composing = false;
+      composedAt = performance.now();
+    });
+    input?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && (event.repeat || event.isComposing || event.keyCode === 229
+        || composing || performance.now() - composedAt < 250)) event.preventDefault();
+    });
+    panel.querySelector<HTMLFormElement>('#chat-form')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (!input || composing || performance.now() - composedAt < 250) return;
+      void this.submitChatMessage(input, channel);
+    });
+    this.syncChatSendingControls();
+  }
+
+  private syncChatSendingControls(): void {
+    const form = this.root.querySelector<HTMLFormElement>('#chat-form');
+    const input = form?.querySelector<HTMLInputElement>('#chat-message');
+    const button = form?.querySelector<HTMLButtonElement>('button[type="submit"]');
+    // Disabling the field blurs it and closes the phone's keyboard/IME.
+    if (input) input.readOnly = this.chatSending;
+    if (button) button.disabled = this.chatSending;
+  }
+
+  private async submitChatMessage(input: HTMLInputElement, channel: ChatChannel): Promise<void> {
+    const text = input.value.trim().slice(0, 160);
+    if (this.chatSending || !text) return;
+    this.chatDrafts[channel] = input.value;
+    const pending: ChatMessage = {
+      id: `pending-${Date.now()}-${++this.chatSequence}`,
+      authorId: this.networkState?.selfId,
+      author: this.currentId,
+      channel,
+      text,
+      timestamp: Date.now(),
+    };
+    if (!this.festivalClient.online) {
+      this.addChatMessage(pending);
+      delete this.chatDrafts[channel];
+      input.value = '';
+      this.completeQuest('chat');
+      this.renderChatStream();
+      this.refreshOpenChatFeed();
+      input.focus();
+      return;
+    }
+    // Lock synchronously before calling the service. readOnly alone never
+    // stopped another Enter/click from submitting the same still-visible text.
+    this.chatSending = true;
+    this.syncChatSendingControls();
+    this.pendingChat = [...this.pendingChat, {
+      message: pending,
+      seenIds: new Set(this.networkState?.messages.map((message) => message.id) ?? []),
+    }].slice(-8);
+    this.addChatMessage(pending);
+    this.refreshOpenChatFeed();
+    try {
+      const result = await this.festivalClient.sendMessage(channel, text);
+      if (!result.ok) throw new Error(result.message ?? 'MESSAGE COULD NOT BE SENT');
+      delete this.chatDrafts[channel];
+      input.value = '';
+      this.completeQuest('chat');
+    } catch (error) {
+      this.pendingChat = this.pendingChat.filter((entry) => entry.message !== pending);
+      this.chatMessages = this.chatMessages.filter((message) => message.id !== pending.id);
+      this.renderChatStream();
+      this.refreshOpenChatFeed();
+      this.showWorldAlert(error instanceof Error ? error.message : 'MESSAGE COULD NOT BE SENT');
+    } finally {
+      this.chatSending = false;
+      this.syncChatSendingControls();
+      // The panel may have been closed, translated or switched to a different
+      // channel while the request was outstanding. Update only its own draft.
+      const current = this.root.querySelector<HTMLInputElement>('#chat-message');
+      if (current && this.activePanel === 'chat' && this.chatChannel === channel) {
+        current.value = this.chatDrafts[channel] ?? '';
+        current.focus();
+      }
+    }
+  }
+
+  private reconcileChatMessages(messages: FestivalState['messages']): void {
+    const claimed = new Set<string>();
+    this.pendingChat = this.pendingChat.filter((entry) => {
+      const pending = entry.message;
+      // Match the service's safeText(): full-width punctuation and repeated
+      // whitespace change on arrival, but still acknowledge this same line.
+      const echoedText = pending.text.normalize('NFKC').trim().replace(/\s+/g, ' ').slice(0, 160);
+      const echo = messages.find((message) => !entry.seenIds.has(message.id) && !claimed.has(message.id)
+        && (pending.authorId ? message.authorId === pending.authorId : message.author === pending.author)
+        && message.channel === pending.channel && message.text === echoedText);
+      if (echo) { claimed.add(echo.id); return false; }
+      // An old line with the same words cannot acknowledge a later send, and
+      // one new echo cannot acknowledge two separately sent identical lines.
+      entry.seenIds = new Set(messages.map((message) => message.id));
+      return true;
+    });
+    this.chatMessages = [
+      ...initialChat,
+      ...messages.map((message) => ({ ...message, npc: false })),
+      ...this.pendingChat.map((entry) => entry.message),
+    ].slice(-100);
+  }
+
+  /** Update messages without replacing the form, its draft, caret or IME. */
   private chatFeedContent(): string {
     const visible = this.chatMessages.filter((message) => message.channel === this.chatChannel).slice(-100);
     if (!visible.length) return `<p class="chat-empty">${this.language === 'zh-TW' ? '尚無訊息' : 'No messages yet.'}</p>`;
@@ -7757,7 +7796,7 @@ export class App {
       <p class="connection-note" data-status="${this.connectionStatus}">${this.connectionStatus === 'online' ? (this.language === 'zh-TW' ? '即時聊天 · 伺服器管理' : 'LIVE CHAT · MODERATED') : (this.language === 'zh-TW' ? '離線聊天 · 僅此裝置' : 'OFFLINE CHAT · THIS DEVICE')}</p>
       <form class="chat-form" id="chat-form">
         <label for="chat-message">${this.language === 'zh-TW' ? '訊息' : 'MESSAGE'} · ${channelLabel[this.chatChannel]}</label>
-        <div><input id="chat-message" maxlength="160" autocomplete="off" placeholder="${this.language === 'zh-TW' ? '最多 160 字' : '160 characters'}" /><button type="submit">${this.language === 'zh-TW' ? '傳送' : 'SEND'}</button></div>
+        <div><input id="chat-message" maxlength="160" autocomplete="off" value="${this.escapeAttribute(this.chatDrafts[this.chatChannel] ?? '')}" placeholder="${this.language === 'zh-TW' ? '最多 160 字' : '160 characters'}" ${this.chatSending ? 'readonly' : ''} /><button type="submit" ${this.chatSending ? 'disabled' : ''}>${this.language === 'zh-TW' ? '傳送' : 'SEND'}</button></div>
       </form>`;
   }
 

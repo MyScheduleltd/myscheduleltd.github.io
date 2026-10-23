@@ -6,12 +6,59 @@ import { build } from 'esbuild';
 // (WebKit probe, 2026-10-18). These pin the two causes that were fixed.
 const bundle = await build({
   stdin: {
-    contents: "export { DayNightCycle } from './src/world/DayNightCycle'; export { warmByDrawing } from './src/world/SceneWarmup'; export { applyWornStyle } from './src/world/WornStyle'; export * as THREE from 'three';",
+    contents: "export { DayNightCycle } from './src/world/DayNightCycle'; export { compileScenePrograms, warmByDrawing } from './src/world/SceneWarmup'; export { applyWornStyle } from './src/world/WornStyle'; export * as THREE from 'three';",
     resolveDir: process.cwd(), loader: 'ts',
   },
   bundle: true, platform: 'node', format: 'esm', write: false,
 });
-const { DayNightCycle, warmByDrawing, applyWornStyle, THREE } = await import('data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+const { DayNightCycle, compileScenePrograms, warmByDrawing, applyWornStyle, THREE } = await import('data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+
+test('admission waits for live programs but finishes if a visitor material is disposed between readiness polls', async () => {
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera();
+  const leaves = new THREE.MeshStandardMaterial(), stays = new THREE.MeshStandardMaterial();
+  const properties = new WeakMap();
+  let checks = 0, ready = false, complete = false;
+  const renderer = {
+    compile(root, cam, target) {
+      assert.equal(root, scene); assert.equal(cam, camera); assert.equal(target, scene);
+      properties.set(leaves, { currentProgram: { isReady: () => false } });
+      properties.set(stays, { currentProgram: { isReady() { checks++; return ready; } } });
+      leaves.addEventListener('dispose', () => properties.delete(leaves));
+      return new Set([leaves, stays]);
+    },
+    properties: { get: material => properties.get(material) ?? {} },
+  };
+  const compiled = compileScenePrograms(renderer, scene, camera, scene).then(() => { complete = true; });
+  leaves.dispose();
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(complete, false, 'a removed visitor cannot bypass the remaining live shader');
+  assert.ok(checks >= 2, 'live shader readiness is polled after a browser task');
+  ready = true; await compiled;
+  assert.equal(complete, true, 'no uncaught timer or unresolved admission after removal');
+});
+
+test('admission checks a replacement shader and resolves when renderer disposal removes all programs', async () => {
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(), material = new THREE.MeshBasicMaterial();
+  let current = { currentProgram: { isReady: () => false } }, replacementChecks = 0;
+  const renderer = { compile: () => new Set([material]), properties: { get: () => current } };
+  const pending = compileScenePrograms(renderer, scene, camera, scene);
+  current = { currentProgram: { isReady() { replacementChecks++; return replacementChecks > 1; } } };
+  await pending; assert.ok(replacementChecks >= 2, 'the replacement stays pending until it is ready');
+  current = { currentProgram: { isReady: () => false } };
+  const stopped = compileScenePrograms(renderer, scene, camera, scene);
+  current = {}; await stopped;
+});
+
+test('shader compilation and readiness failures reject admission instead of escaping a timer', async () => {
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(), material = new THREE.MeshBasicMaterial();
+  await assert.rejects(compileScenePrograms({ compile() { throw Error('compile failed'); } }, scene, camera, scene), /compile failed/);
+  let checks = 0;
+  const renderer = {
+    compile: () => new Set([material]),
+    properties: { get: () => ({ currentProgram: { isReady() { if (++checks > 1) throw Error('driver failed'); return false; } } }) },
+  };
+  await assert.rejects(compileScenePrograms(renderer, scene, camera, scene), /driver failed/);
+});
 
 test('the authored sky gradient survives the real worn-style traversal while ordinary world shaders retain their dither', () => {
   const paint = new Proxy({ createRadialGradient: () => ({ addColorStop() {} }),

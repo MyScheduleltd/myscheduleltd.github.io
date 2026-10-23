@@ -17,7 +17,7 @@ import { ShadowCasterCulling, shareShadowDepthMaterials } from './ShadowCasters'
 import { mobileAssetBudgetSnapshot } from './MobileAssetBudget';
 import { FrameTimings } from './FrameTimings';
 import { selectDecorativeLights } from './LightBudget';
-import { warmScenePrograms, uploadSceneTextures, warmByDrawing } from './SceneWarmup';
+import { compileScenePrograms, warmScenePrograms, uploadSceneTextures, warmByDrawing } from './SceneWarmup';
 import { GamepadInput, type GamepadActionId, type GamepadFrame } from './GamepadInput';
 import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
 import { dressBuildings, dressInteriors } from './WornArchitecture';
@@ -2416,24 +2416,27 @@ export class FestivalWorld {
     this.cullDecorativeLights();
     onProgress?.(.65);
     await warmScenePrograms(this.renderer, this.scene, this.camera);
-    await uploadSceneTextures(this.renderer, this.scene, importedAvatarTextures());
+    if (this.disposed) return;
+    await uploadSceneTextures(this.renderer, this.scene, importedAvatarTextures(), () => !this.disposed);
+    if (this.disposed) return;
     onProgress?.(.7);
     // Every body anybody can arrive in, so the first of each is not compiled
     // in the middle of the festival; then one of each kind of draw.
     const stand = this.warmAvatarVariants();
     try {
-      this.warmupReport = await warmByDrawing(this.renderer, this.scene, this.camera, progress => onProgress?.(.7 + progress * .25));
+      this.warmupReport = await warmByDrawing(this.renderer, this.scene, this.camera, progress => onProgress?.(.7 + progress * .25), 24, () => !this.disposed);
     } finally {
       disposeImportedAvatars(stand);
       stand.removeFromParent();
     }
+    if (this.disposed) return;
     onProgress?.(.95);
     // The aperture meshes are hidden between draws, but their shared material
     // must be prepared before the first video opens.
     const aperture = this.projectors.values().next().value?.aperture as THREE.Mesh | undefined;
     if (!this.disposed && aperture) {
       const surface = new THREE.Group(); surface.add(aperture.clone(false));
-      await this.renderer.compileAsync(surface, this.camera, this.projectorApertureScene);
+      await compileScenePrograms(this.renderer, surface, this.camera, this.projectorApertureScene);
     }
     // The programme may only have arrived during the warm-up.
     this.warmScreenPlayer();
