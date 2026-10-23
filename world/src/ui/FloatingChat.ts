@@ -30,7 +30,8 @@ export function installFloatingChat(panel: HTMLElement, zh: boolean): () => void
   header.dataset.chatDrag = ''; header.tabIndex = 0; header.setAttribute('role', 'button');
   header.setAttribute('aria-label', zh ? '移動聊天視窗，方向鍵可移動' : 'Move chat window; use arrow keys');
   const handle = document.createElement('button'); handle.type = 'button'; handle.className = 'chat-resize'; handle.dataset.chatResize = '';
-  handle.setAttribute('aria-label', zh ? '調整聊天視窗大小，方向鍵可調整' : 'Resize chat window; use arrow keys'); handle.textContent = '↘'; panel.append(handle);
+  // The corner grip is drawn in CSS so iOS cannot substitute an emoji glyph.
+  handle.setAttribute('aria-label', zh ? '調整聊天視窗大小，方向鍵可調整' : 'Resize chat window; use arrow keys'); panel.append(handle);
   // This viewport solver owns the floating panel's height. The older mobile
   // sheet cap otherwise clamps its rendered box below the saved height and
   // makes the first part of a resize drag appear to do nothing.

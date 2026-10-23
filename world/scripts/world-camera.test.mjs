@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
-const compiled=await build({stdin:{contents:"export * from './src/world/WorldCamera';export * from './src/world/CutawayLens';export {FestivalWorld} from './src/world/FestivalWorld';export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',loader:{'.png':'dataurl'}});
-const {THREE,WorldCamera,FestivalWorld,WORLD_CAMERA_MODES,ISOMETRIC_VIEW,isometricExtraDepth,mobileFollowYaw,CutawayLens,CUTAWAY_LENS,cutawayUniforms}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
+const compiled=await build({stdin:{contents:"export * from './src/world/WorldCamera';export * from './src/world/CutawayLens';export {terrainHeightAt} from './src/world/CoastalTerrain';export {FestivalWorld} from './src/world/FestivalWorld';export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',loader:{'.png':'dataurl'}});
+const {THREE,WorldCamera,FestivalWorld,WORLD_CAMERA_MODES,ISOMETRIC_VIEW,isometricExtraDepth,mobileFollowYaw,CutawayLens,CUTAWAY_LENS,cutawayUniforms,terrainHeightAt}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 
 function fixture(mode='follow'){
  const w=Object.create(FestivalWorld.prototype);Object.assign(w,{camera:new WorldCamera(58,1,.1,300),player:new THREE.Group(),cameraMode:mode,cameraZoom:1,cameraReach:0,cameraOrbit:{follow:{yaw:.2,pitch:.32}},playerState:'walking',lookTarget:new THREE.Vector3(),moveVector:new THREE.Vector3(),cameraDirection:new THREE.Vector3(),stickX:0,stickY:0,lastManualLookAt:-Infinity,colliders:[],scene:new THREE.Scene(),wallAvoidance:{side:0,offset:0},cameraProbe:new THREE.Vector3(),cameraScratch:new THREE.Vector3(),settlePunchImpact(){},applyCameraShake(){},applyDrunkenView(){},confineCameraOverWater(){},pullCameraClearOfWalls(){},cameraClearReach:(a,b)=>a.distanceTo(b),lookSensitivity:1,occupiedSeats:new Set(),nearArcade:()=>false,nearClubBar:()=>false,nearJukebox:()=>false,nearShopCounter:()=>false,nearWishWall:()=>false,nearbyDj:()=>undefined,nearbyMentor:()=>undefined,mentorFollowsActiveAvatar:()=>false,nearestSocialTarget:()=>undefined,drinkUntil:0,eatingUntil:0,npcs:[],remoteAvatars:new Map(),onAction(){}});return w;
@@ -123,6 +123,7 @@ test('indoors in the isometric view a lens opens round the attendee, cutting the
  const w=fixture('isometric');w.cutawayLens=new CutawayLens();let floor=0;w.groundHeightAt=()=>floor+.28;
  const lens=cutawayUniforms.cutawayLens.value,near=cutawayUniforms.cutawayNear.value,levels=cutawayUniforms.cutawayLevels.value;
  const frame=(n=1)=>{for(let i=0;i<n;i++){w.updateCamera(1/60,0);w.updateIsometricCutaway(1/60);}};
+ const groundOut=(x,z)=>Math.max(...[0,4,8,12].flatMap(dx=>[0,4,8,12].map(dz=>terrainHeightAt(x+dx,z+dz))));
  w.player.position.set(0,.28,3);frame();
  assert.equal(lens.z,0,'outdoors the lens is shut');
  // Into the pop-up shop under the deck: the lens opens like an iris, round the attendee's middle.
@@ -139,17 +140,23 @@ test('indoors in the isometric view a lens opens round the attendee, cutting the
  assert.deepEqual([near.x,near.y],[1,1]);
  assert.ok(Math.abs(near.z-(58-CUTAWAY_LENS.wall))<1e-9&&Math.abs(near.w-(19-CUTAWAY_LENS.wall))<1e-9);
  // The roof is cut just under the deck slab over the shop (its underside is at 6.35).
- assert.ok(Math.abs(levels.x-CUTAWAY_LENS.sill)<1e-9&&Math.abs(levels.y-6.3)<1e-9);
+ const shopSill=Math.max(0,groundOut(40,12))+CUTAWAY_LENS.sill;
+ assert.ok(Math.abs(levels.x-shopSill)<1e-9&&Math.abs(levels.y-6.3)<1e-9);
  // A jump lifts the body, not the floor, so the cut stays where it is.
  w.player.position.y=2.4;frame();
- assert.ok(Math.abs(levels.x-CUTAWAY_LENS.sill)<1e-9&&Math.abs(levels.y-6.3)<1e-9);
+ assert.ok(Math.abs(levels.x-shopSill)<1e-9&&Math.abs(levels.y-6.3)<1e-9);
  // On the deck over the shop the attendee is outdoors again, and the lens closes.
  w.player.position.set(40,7.28,12);frame(120);
  assert.equal(lens.z,0);
  // The club's floor is below the street: the near walls are cut to the street, never the ground outside,
- // and the roof just under the club's ceiling, fifteen over its floor.
+ // and the roof under its tie beams, which cross the room from 12 up.
  floor=-1;w.player.position.set(-70,-.72,21);frame(120);
- assert.ok(Math.abs(levels.x-CUTAWAY_LENS.sill)<1e-9&&Math.abs(levels.y-13.9)<1e-9);
+ assert.ok(levels.x>=CUTAWAY_LENS.sill-1e-9&&Math.abs(levels.y-11.8)<1e-9);
+ // At the lobby's door the pavement outside is higher than the lobby floor: the near walls stop at it.
+ floor=-.15;w.player.position.set(-23,.13,26);frame();
+ const outside=groundOut(-23,26);
+ assert.ok(outside>.3,'the street at the door stands above the lobby floor');
+ assert.ok(Math.abs(levels.x-(outside+CUTAWAY_LENS.sill))<1e-9,'cut no lower than the ground outside');
  // The temple: cut under its ceiling, ten over the floor, well over the lanterns, which reach 11.55.
  floor=6;w.player.position.set(90,6.28,4);frame(120);
  assert.ok(Math.abs(levels.y-16)<1e-9&&levels.y>11.55+.2);assert.deepEqual([near.x,near.y],[1,1]);

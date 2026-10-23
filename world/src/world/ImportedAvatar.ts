@@ -1086,6 +1086,19 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     mounted.model.visible = !next;
   };
   root.userData.importedCulled = () => culled;
+  // Far off, the body casts no shadow (owner, 2026-10-23: far players simpler).
+  // A skinned body is skinned again for the shadow map, so this is the whole of
+  // its second pass. Close up it is exactly as before.
+  let farShadowless = false;
+  const castsShadow = (mesh: THREE.SkinnedMesh) => {
+    const component = String(mesh.userData.componentId ?? '');
+    return !farShadowless && !component.startsWith('print-') && component !== 'cap-logo';
+  };
+  root.userData.setImportedFarShadowless = (next: boolean) => {
+    if (next === farShadowless) return;
+    farShadowless = next;
+    for (const mesh of mounted.meshes) mesh.castShadow = castsShadow(mesh);
+  };
   const clothed = () => dressed();
   const morph = (mesh: THREE.SkinnedMesh, name: string, value: number) => {
     const index = mesh.morphTargetDictionary?.[name];
@@ -1547,7 +1560,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
   const settle = () => {
     const want = resolve(wanted());
     const changed = mounted.key !== want;
-    if (changed) { unmount(mounted); mounted = mount(want); mounted.model.visible = !culled; }
+    if (changed) { unmount(mounted); mounted = mount(want); mounted.model.visible = !culled; for (const mesh of mounted.meshes) mesh.castShadow = castsShadow(mesh); }
     refresh();
     if (changed) { measureHead(); root.userData.syncImportedAvatar(); }
   };
@@ -1596,6 +1609,18 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
  * objects every frame.
  */
 export const importedAvatarRoots = new Set<THREE.Object3D>();
+
+/** Release owned avatar instances in a temporary stand without touching the
+ * template geometry/maps shared with the player and resident avatars. Collect
+ * first: unmounting removes model children from the hierarchy. */
+export function disposeImportedAvatars(root: THREE.Object3D): void {
+  const disposers: Array<() => void> = [];
+  root.traverse(object => {
+    const dispose = object.userData.disposeImportedAvatar as (() => void) | undefined;
+    if (dispose) disposers.push(dispose);
+  });
+  for (const dispose of disposers) dispose();
+}
 
 const inScene = (node: THREE.Object3D, scene: THREE.Object3D): boolean => {
   for (let p: THREE.Object3D | null = node; p; p = p.parent) if (p === scene) return true;

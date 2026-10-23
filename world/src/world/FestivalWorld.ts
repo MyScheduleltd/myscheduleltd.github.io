@@ -60,7 +60,7 @@ import { ROOFTOP_STAIR_OPEN_GUARD, rooftopStairGuardCameraTop, rooftopStairCamer
 import { createRooftopStairGuard } from './RooftopStairGuard';
 import { applyDriveInCarArt, type DriveInCarArtHandle } from './DriveInCarArt';
 import { createCoastalAvatar } from './CoastalAvatar';
-import { importedAvatarTextures, attachImportedAvatar, syncImportedAvatars, importedAvatarRoots, AVATAR_NATIVE, MOVE_SECONDS, PUNCH_CONTACT_SECONDS } from './ImportedAvatar';
+import { importedAvatarTextures, attachImportedAvatar, syncImportedAvatars, disposeImportedAvatars, importedAvatarRoots, AVATAR_NATIVE, MOVE_SECONDS, PUNCH_CONTACT_SECONDS } from './ImportedAvatar';
 import { createCoastalSkateboard } from './CoastalSkateboard';
 import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, setCoastalFists, releaseCoastalGrips, walkCoastalPose, plantedFoot, passOutCoastalPose, danceCoastalPose, COASTAL_STRIDE_LENGTH, skateCoastalPose, levelCoastalFeet, supportCoastalPose, seatCoastalLegs, coastalFootHeights } from './CoastalPose';
 import { coastalRoof, createCoastalSedan, CONVERTIBLE } from './CoastalGeometry';
@@ -539,6 +539,8 @@ interface WorldOptions {
   onProjectorAdvance?: (venue: VenueKey, youtubeId: string) => void;
   /** How long the work on a venue's screen runs, as the player reports it. */
   onProjectorDuration?: (venue: VenueKey, youtubeId: string, seconds: number) => void;
+  /** Synchronous ownership handoff before a film starts loading or playing. */
+  onBeforeFilmPlayback?: () => void;
 }
 
 const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
@@ -672,6 +674,8 @@ const OCEAN_SILENT_AT = 36;
 const INDOORS = { palace: 0.2, clubLobby: 0.4, clubRoom: 0.1 } as const;
 /** The sign-in globe's sky fill: the night fill before 2026-10-21, which lit it evenly. */
 const GATE_GLOBE_FILL = 1.45;
+/** Distances in world units from the attendee past which bodies are simpler. */
+const FAR_PLAYER = { simpler: 20, slower: 40 } as const;
 /**
  * Seconds from the start of the gesture to its sound: the drink reaches the
  * straw at about 0.55 s of its 1.8 s, the popcorn the lips at about 1.0 s of
@@ -1798,6 +1802,8 @@ export class FestivalWorld {
   private privatePanel?: { mesh: THREE.Mesh; video: HTMLVideoElement; texture: THREE.VideoTexture };
   private readonly onProjectorAdvance?: WorldOptions['onProjectorAdvance'];
   private readonly onProjectorDuration?: WorldOptions['onProjectorDuration'];
+  private readonly onBeforeFilmPlayback?: WorldOptions['onBeforeFilmPlayback'];
+  private externalFilmPlayback = false;
   private readonly lookTarget = new THREE.Vector3();
   private readonly moveVector = new THREE.Vector3();
   private readonly npcControlTarget = new THREE.Vector3();
@@ -2125,7 +2131,7 @@ export class FestivalWorld {
    */
   private baseFov = 58;
 
-  constructor({ audio, canvas, foregroundCanvas, cssLayer, graphicsMode, palette, preview = false, previewAvatar = true, xrPreferred = false, lookSensitivity, gamepadBindings, hudRoot, isChinese, paintHudInSimulation = false, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration }: WorldOptions) {
+  constructor({ audio, canvas, foregroundCanvas, cssLayer, graphicsMode, palette, preview = false, previewAvatar = true, xrPreferred = false, lookSensitivity, gamepadBindings, hudRoot, isChinese, paintHudInSimulation = false, onSnapshot, onAction, onXrSessionChange, onProjectorAdvance, onProjectorDuration, onBeforeFilmPlayback }: WorldOptions) {
     this.preview = preview;
     this.audio = audio ?? new AmbientAudio();
     this.canvas = canvas;
@@ -2142,6 +2148,7 @@ export class FestivalWorld {
     this.onXrSessionChange = onXrSessionChange;
     this.onProjectorAdvance = onProjectorAdvance;
     this.onProjectorDuration = onProjectorDuration;
+    this.onBeforeFilmPlayback = onBeforeFilmPlayback;
     this.conservesMobileGpu = xrPreferred || shouldConserveMobileGpu();
     canvas.closest('.world-shell')?.classList.toggle(
       'world-shell--single-context-projectors',
@@ -2414,6 +2421,7 @@ export class FestivalWorld {
     try {
       this.warmupReport = await warmByDrawing(this.renderer, this.scene, this.camera, progress => onProgress?.(.7 + progress * .25));
     } finally {
+      disposeImportedAvatars(stand);
       stand.removeFromParent();
     }
     onProgress?.(.95);
@@ -6473,6 +6481,23 @@ export class FestivalWorld {
    * the most expensive thing on the page, so screens the attendee cannot see do
    * not keep one running.
    */
+  /** A screen's film is on, in the one shared player. */
+  screenFilmShowing(): boolean {
+    return this.externalFilmPlayback || this.screenPlayer?.venue !== undefined;
+  }
+
+  /** A phone's personal/fullscreen film temporarily owns its one decoder.
+   * Stop the venue film without discarding its reusable iframe or programme. */
+  setExternalFilmPlayback(active: boolean): void {
+    if (this.externalFilmPlayback === active) return;
+    this.externalFilmPlayback = active;
+    if (active) {
+      for (const venue of this.projectors.keys()) this.releaseProjector(venue);
+      this.mountedProjectorVenue = undefined;
+      this.projectorLeaveAt = undefined;
+    } else if (!this.disposed) this.updateProjectorMounts();
+  }
+
   private releaseProjector(venue: VenueKey): void {
     const projector = this.projectors.get(venue);
     if (!projector?.iframe) return;
@@ -7645,6 +7670,7 @@ export class FestivalWorld {
    * only then for the player to load — two waits stacked on each other.
    */
   private updateProjectorMounts(): void {
+    if (this.externalFilmPlayback) return;
     const wanted = this.projectorVenue();
     // Keep the single muted player through a short step outside a room. Crossing
     // a door edge must not repeatedly rebuild a cross-origin media pipeline.
@@ -7699,6 +7725,7 @@ export class FestivalWorld {
     const projector = this.projectors.get(venue);
     if (!projector) return;
     projector.pending = { film, offsetSeconds, reloadToken };
+    if (this.externalFilmPlayback) return;
     // The first programme to arrive while the loading view is still up starts
     // the shared player, so its start-up has as long as possible to finish
     // before anybody is walking about.
@@ -7801,6 +7828,7 @@ export class FestivalWorld {
     startSeconds: number,
     autoplay: boolean,
   ): HTMLIFrameElement {
+    this.onBeforeFilmPlayback?.();
     const playerUrl = new URL(film.embedUrl.replace('youtube-nocookie.com', 'youtube.com'));
     playerUrl.searchParams.set('autoplay', autoplay ? '1' : '0');
     playerUrl.searchParams.set('mute', '1');
@@ -7873,6 +7901,7 @@ export class FestivalWorld {
   private commandProjector(projector: ProjectorSurface, func: string, args: unknown[] = []): void {
     const iframe = projector.iframe;
     if (!iframe) return;
+    if (func === 'loadVideoById' || func === 'cueVideoById' || func === 'playVideo') this.onBeforeFilmPlayback?.();
     const message = JSON.stringify({ event: 'command', func, args });
     const player = this.screenPlayer;
     if (player?.iframe === iframe && !player.ready) {
@@ -7967,6 +7996,7 @@ export class FestivalWorld {
 
   /** A command straight to the shared player, for when no screen holds it. */
   private tellScreenPlayer(player: ScreenPlayer, func: string): void {
+    if (func === 'playVideo') this.onBeforeFilmPlayback?.();
     try {
       player.iframe?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args: [] }), '*');
     } catch { /* a cross-origin frame that has already gone */ }
@@ -10201,7 +10231,10 @@ export class FestivalWorld {
       }
     }
     this.createVenueEntrances();
-    this.paving=this.scene.children.filter(object=>object.userData.groundFootprint).map(object=>({polygon:object.userData.groundFootprint,lift:object.userData.groundLift,exclusions:object.userData.groundExclusions}));
+    this.paving=this.scene.children.filter(object=>object.userData.groundFootprint).map(object=>{
+      const polygon=object.userData.groundFootprint as PlanPoint[],xs=polygon.map(p=>p[0]),zs=polygon.map(p=>p[1]);
+      return {polygon,lift:object.userData.groundLift,exclusions:object.userData.groundExclusions,bounds:[Math.min(...xs),Math.max(...xs),Math.min(...zs),Math.max(...zs)] as [number,number,number,number]};
+    });
     this.seatArcadeOnGround();
     this.createBeachPlanting();
 
@@ -13705,10 +13738,14 @@ export class FestivalWorld {
    * drawn — and drawn again into the shadow map — wherever the camera looked,
    * and re-posed every frame (2026-10-07). A body whose sphere, at the place
    * the planet curve draws it, is outside the view is now neither drawn nor
-   * re-posed; four metres of margin keep a shadow cast into view from popping.
-   * A body seen but more than 35 m away is re-posed every other frame, which
-   * the owner accepted for distant residents. From last frame's camera, which
-   * has barely moved. Off in a headset, where the eyes are other cameras.
+   * re-posed; four world units of margin keep a shadow in view from popping.
+   * From last frame's camera, which has barely moved. Off in a headset, where
+   * the eyes are other cameras.
+   *
+   * Far players simpler (owner, 2026-10-23), measured from the attendee rather
+   * than the camera, which in the isometric view stands 34 world units back:
+   * past 20 world units a body casts no shadow and is re-posed every other
+   * frame; past 40 world units, every fourth. Up close nothing changes.
    */
   private cullAvatars(): void {
     this.avatarFrame += 1;
@@ -13716,25 +13753,43 @@ export class FestivalWorld {
     this.camera.updateMatrixWorld();
     this.avatarViewProjection.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
     this.avatarFrustum.setFromProjectionMatrix(this.avatarViewProjection);
+    const controlled = this.npcs?.find(npc => npc.id === this.controlledNpcId)?.group;
     let index = 0;
     for (const root of importedAvatarRoots) {
+      // The registry is shared with entrance previews and other world
+      // instances. This camera only owns culling for bodies in its scene.
+      if (this.scene) {
+        let owner: THREE.Object3D | null = root;
+        while (owner && owner !== this.scene) owner = owner.parent;
+        if (!owner) continue;
+      }
       index += 1;
       const setCulled = root.userData.setImportedCulled as ((culled: boolean) => void) | undefined;
       if (!setCulled) continue;
-      if (headset || root === this.player) {
+      if (headset || root === this.player || root === controlled) {
         setCulled(false);
         root.userData.cullThrottle = false;
+        root.matrixWorldAutoUpdate = true;
+        (root.userData.setImportedFarShadowless as ((far: boolean) => void) | undefined)?.(false);
         continue;
       }
       root.getWorldPosition(this.avatarCentre);
+      // Proximity belongs to the flat navigation space. The bend below is
+      // exclusively for testing whether the rendered body is in the picture.
+      const away = Math.hypot(this.avatarCentre.x - this.player.position.x, this.avatarCentre.z - this.player.position.z);
       this.avatarCentre.y += 0.9;
       if (PLANET.on) planetBendPoint(this.avatarCentre, this.avatarCentre);
       this.avatarSphere.set(this.avatarCentre, 4);
       const seen = this.avatarFrustum.intersectsSphere(this.avatarSphere);
       setCulled(!seen);
-      root.userData.cullThrottle = seen
-        && this.avatarCentre.distanceToSquared(this.cameraWorldPosition) > 35 * 35
-        && (this.avatarFrame + index) % 2 === 1;
+      // Nor are its hundred-odd bones and parts carried through the scene's
+      // matrix update while it is out of view; the frame it comes back, it is
+      // updated before it is drawn. Its own position still moves, and is read
+      // above through `getWorldPosition`, which updates it regardless.
+      root.matrixWorldAutoUpdate = seen;
+      const every = away > FAR_PLAYER.slower ? 4 : away > FAR_PLAYER.simpler ? 2 : 1;
+      root.userData.cullThrottle = seen && (this.avatarFrame + index) % every !== 0;
+      (root.userData.setImportedFarShadowless as ((far: boolean) => void) | undefined)?.(away > FAR_PLAYER.simpler);
     }
   }
 
@@ -14869,8 +14924,9 @@ export class FestivalWorld {
    */
   private isometricRoom(): Omit<CutawayRoom, 'floor'> | undefined {
     const { x, z, y } = this.player.position, c = clubBounds, r = rooftopBounds, s = TEMPLE_STAIRS;
-    // The club's ceiling, room and ground floor alike.
-    const clubCeiling = CLUB_FLOOR_Y + CLUB_ROOM_HEIGHT - .1;
+    // The club, room and ground floor alike: under the roof's tie beams, which
+    // run across the room from 12 up and read as railings (owner, 2026-10-23).
+    const clubCeiling = 11.8;
     if (this.inClubRoom(x, z)) return { minX: c.roomMinX, maxX: c.roomMaxX, minZ: c.roomMinZ, maxZ: c.roomMaxZ, ceiling: clubCeiling };
     if (this.inClubLobby(x, z) || this.onClubStairs(x, z)) return { minX: c.lobbyMinX, maxX: c.lobbyMaxX, minZ: c.lobbyMinZ, maxZ: c.lobbyMaxZ, ceiling: clubCeiling };
     // The Palace's hall: the same box its screening and ambience use. Its roof's
@@ -14894,6 +14950,14 @@ export class FestivalWorld {
     return undefined;
   }
 
+  /** The highest terrain between the attendee and the isometric camera, within the lens's reach. */
+  private groundTowardCamera(x: number, z: number): number {
+    const sx = Math.sin(ISOMETRIC_VIEW.yaw) < 0 ? -1 : 1, sz = Math.cos(ISOMETRIC_VIEW.yaw) < 0 ? -1 : 1;
+    let highest = -Infinity;
+    for (const dx of [0, 4, 8, 12]) for (const dz of [0, 4, 8, 12]) highest = Math.max(highest, terrainHeightAt(x + sx * dx, z + sz * dz));
+    return highest;
+  }
+
   /**
    * Indoors in the isometric view the attendee is seen through a lens (owner,
    * 2026-10-23): inside a soft-edged circle round them the roof, and the walls
@@ -14905,7 +14969,7 @@ export class FestivalWorld {
     const room = this.isometricRoom(), { x, z } = this.player.position;
     // The floor, not the body: a jump must not lift the cut with it.
     const floor = room && this.groundHeightAt(x, z) - AVATAR_GROUND_Y;
-    this.cutawayLens.update(this.camera as WorldCamera, this.player.position, room && { ...room, floor: floor! }, delta);
+    this.cutawayLens.update(this.camera as WorldCamera, this.player.position, room && { ...room, floor: floor!, ground: this.groundTowardCamera(x, z) }, delta);
   }
 
   /** True while the position is anywhere inside the club building. */
@@ -15083,10 +15147,18 @@ export class FestivalWorld {
   /** Where the pavement actually got laid, rather than where it was meant to. */
   private kerbStones: Array<{ minX: number; maxX: number; z: number }> = [];
 
-  private paving: Array<{polygon:PlanPoint[];lift:number;exclusions?:PlanPoint[][]}>=[];
+  private paving: Array<{polygon:PlanPoint[];lift:number;exclusions?:PlanPoint[][];bounds:[number,number,number,number]}>=[];
 
   private pavingLiftAt(x:number,z:number):number {
-    let lift=0;for(const surface of this.paving)if(surface.lift>lift&&insidePaving(x,z,surface.polygon)&&!surface.exclusions?.some(p=>insidePaving(x,z,p)))lift=surface.lift;return lift;
+    // Asked for every body, every frame: the bounds turn away most surfaces
+    // before the polygon test (2026-10-23, a crowd's largest world-side cost).
+    let lift=0;
+    for(const surface of this.paving){
+      const [minX,maxX,minZ,maxZ]=surface.bounds;
+      if(surface.lift<=lift||x<minX||x>maxX||z<minZ||z>maxZ)continue;
+      if(insidePaving(x,z,surface.polygon)&&!surface.exclusions?.some(p=>insidePaving(x,z,p)))lift=surface.lift;
+    }
+    return lift;
   }
 
   /** Actual tread tops for ankle support; locomotion retains its continuous pitch line. */

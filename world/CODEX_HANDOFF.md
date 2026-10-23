@@ -1,3 +1,11 @@
+# Codex takeover — round6, 2026-10-23
+
+The latest owner requested finishing Claude's mobile/performance work, hiding desktop actions in mobile PASS, replacing the chat resize emoji and publishing when done. The verified client changes and production package are on `codex/festival-round6-20261023`, from published main `d9486a5`. See `QA_ROUND6_20261023.md` for acceptance evidence and limits.
+
+**829/829** full tests and production build pass; UI 28 desktop/27 phone, targeted 14, repeat-entry 88 and crowd 64 checks pass. Entry `main-DuutfnLG.js`; 61 integrity hashes verified. Main requires macakinTT's independent approval and merge; auto-merge is disabled. This candidate is **not live until review/merge and Pages verification**. Prior assets retained for the owner's one-day window; prune is report-only. No server changes, database deletion or claim of physical-iPhone validation.
+
+---
+
 # Claude pick-up 4 — owner round 5 and the release, 2026-10-23 10:45 (Asia/Taipei)
 
 **Owner approved publishing** ("Everything else looks good so far. Please go ahead to publish when you are done"), after these five fixes:
@@ -496,7 +504,7 @@ Local preview: http://localhost:4183/?era=ps2&island&review=mobile-memory&cycleM
 
 Owner manually redeployed Render; no account sign-in needed. Live /api/config build4c1ee8e matches merge4c1ee8e67d6d564eb036d42cc5bff825b338eb24; /health200. Single short-lived QA session verified initial fullstate, negotiated state-patch carrying only serverTime/changedvisitors for its move, ferry z93.5 preserved, and legacy fullstate compatibility. QA session left200. No public20client load or crowd bots. Saved art/crowd-performance-20261016/{backend-verification.json,live-stream-verification.json}. Previous Pages receipt117/117livehashes and unversionedmain-B2bYxq_y.js remains valid. Both deployments confirmed; owner can test https://myscheduleltd.com/beta/?release=4c1ee8e on iPhone. Do not keep reporting prior Render approval blocker; it is superseded by manual deployment.
 
-564tests/TS/Vite build passed before release; tested tree equals merge. Physical iPhone16Pro Safari Normal/Lite full-room performance remains owner acceptance, not a zero-lag guarantee. Final deployment receipts/handoff local only; no newpush merely to clean dirty state. Prior unrelated local work remains intact.
+564tests/TS/Vite build passed before release; tested tree equals merge. Physical iPhone 16 Pro Safari Normal/Lite full-room performance remains owner acceptance, not a zero-lag guarantee. Final deployment receipts/handoff local only; no newpush merely to clean dirty state. Prior unrelated local work remains intact.
 
 # PR41 partial publication verified — 2026-10-16T14:18Z
 
@@ -516,7 +524,7 @@ Render dashboard in temporary IAB tab26 reached login. Clicking GitHub sign-in w
 
 Owner explicitly requested publication because iPhone cannot reach the Mac Wi-Fi. Prepared both BETA/PS2 packages plus backend changes; 564/564 tests and strictTS/Vite build passed. All55 files/channel match dist,20asset hashes/channel pass,7standalone M.O.T.H files unchanged. Package receipt world/art/crowd-performance-20261016/package-verification.json; entry main-B2bYxq_y.js. Release branch codex/crowd-performance-release-20261016, commit873214af7ef9d54514cce5582dfbfc1cbf7fe33f pushed; PR41 https://github.com/MyScheduleltd/myscheduleltd.github.io/pull/41 attached to chat. Current GitHub OPEN/BLOCKED/REVIEW_REQUIRED; no required checks configured. Main enforces1approving review plus last-push approval and dismisses stale reviews; never bypass or self-approve.
 
-NOT PUBLISHED. Current main remains eef3c90/PR40. Live multiplayer health returned200 and /api/config build eef3c90 at preflight, confirming the prior stale Render report is historical. After owner approval/merge: recheck head/merge, compare merge tree to tested commit, verify Pages all110 current package files plus7preserved M.O.T.H hashes, then Render /health and /api/config build against merge. This release REQUIRES both client and Render service; verify negotiated delta-v1 full/patch stream with one short-lived QA session, no public crowd bots/load. Physical iPhone16Pro Safari Normal/Lite full-room acceptance remains owner work after deployment; no zero-lag guarantee.
+NOT PUBLISHED. Current main remains eef3c90/PR40. Live multiplayer health returned200 and /api/config build eef3c90 at preflight, confirming the prior stale Render report is historical. After owner approval/merge: recheck head/merge, compare merge tree to tested commit, verify Pages all110 current package files plus7preserved M.O.T.H hashes, then Render /health and /api/config build against merge. This release REQUIRES both client and Render service; verify negotiated delta-v1 full/patch stream with one short-lived QA session, no public crowd bots/load. Physical iPhone 16 Pro Safari Normal/Lite full-room acceptance remains owner work after deployment; no zero-lag guarantee.
 
 Unrelated dirty historical receipts/art and local CODEX_HANDOFF were excluded from commit. No cleanup/reset; assets outside BETA and M.O.T.H untouched. Temporary LAN phone preview on192.168.1.171:4182 was prepared but owner cannot use sameWiFi; do not confuse its HTTP address with published BETA.
 
@@ -542,7 +550,7 @@ Evidence world/art/crowd-performance-20261016/REVIEW.md,verification.json,browse
 
 Owner approved and merged at11:42:12Z. Merge eef3c907f888d188718cf4d4240db1fd58e99cf6; Pages built11:43:56Z. Release branch fast-forwarded; merge tree identical to tested head b5a025b. All110 live BETA/PS2 package files and7preserved M.O.T.H entry files match approved hashes as of11:46:01Z; both unversioned entry URLs also match main-BhyaGUQ2.js.554tests and strictTS/Vite build previously passed. No backend update needed.
 
-Publication complete. Physical iPhone16Pro Safari normal-quality crash acceptance remains with owner, who is away from Mac and will test manually. Do not claim proven crash resolution, native Safari validation or a fresh live browser-play check. Memory reduction is decodedRGBA estimate, not total process/GPU memory. If failure recurs, request updated quality/imgMb/imgMax black-box sample. Evidence art/ios-normal-memory-20261016/{public-verification.json,live-entry-verification.json,package-verification.json,RELEASE.md}. Final receipts/handoff local only; do not push solely to clean dirt. Preserve unrelated historical dirty work and existing tabs/services.
+Publication complete. Physical iPhone 16 Pro Safari normal-quality crash acceptance remains with owner, who is away from Mac and will test manually. Do not claim proven crash resolution, native Safari validation or a fresh live browser-play check. Memory reduction is decodedRGBA estimate, not total process/GPU memory. If failure recurs, request updated quality/imgMb/imgMax black-box sample. Evidence art/ios-normal-memory-20261016/{public-verification.json,live-entry-verification.json,package-verification.json,RELEASE.md}. Final receipts/handoff local only; do not push solely to clean dirt. Preserve unrelated historical dirty work and existing tabs/services.
 
 # iPhone memory release PR40 — review required, 2026-10-16
 

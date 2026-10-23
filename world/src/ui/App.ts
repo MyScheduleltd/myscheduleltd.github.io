@@ -1824,6 +1824,7 @@ export class App {
       paintHudInSimulation: this.paintedHudReview,
       onSnapshot: (snapshot) => this.updateSnapshot(snapshot),
       onAction: (action) => this.handleWorldAction(action),
+      onBeforeFilmPlayback: () => this.preparePhoneFilmPlayback(),
       onXrSessionChange: (active) => this.handleVrSessionChange(active),
       lookSensitivity: this.lookSensitivity,
       gamepadBindings: this.gamepadBindings,
@@ -4460,6 +4461,8 @@ export class App {
     if (!screen || !frame || !modeLabel || !title || !actions) return;
 
     this.screenMode = mode;
+    this.preparePhoneFilmPlayback();
+    if (this.usesSingleFilmPlayer()) this.world?.setExternalFilmPlayback(true);
     const playerUrl = new URL(film.embedUrl.replace('youtube-nocookie.com', 'youtube.com'));
     playerUrl.searchParams.set('autoplay', '1');
     playerUrl.searchParams.set('mute', this.audioMuted ? '1' : '0');
@@ -4477,6 +4480,7 @@ export class App {
     }
     if (window.location.origin !== 'null') playerUrl.searchParams.set('origin', window.location.origin);
     playerUrl.searchParams.set('widget_referrer', window.location.href);
+    this.releaseVenueFilmFrame(frame);
     frame.innerHTML = `<iframe title="${this.escapeAttribute(film.title)}" src="${this.escapeAttribute(playerUrl.toString())}" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
     modeLabel.textContent = mode === 'public'
       ? (this.language === 'zh-TW' ? '公開放映 · 同步播放' : 'PUBLIC SCREENING · SYNCHRONIZED')
@@ -4670,8 +4674,18 @@ export class App {
     this.screenNativeFullscreen = false;
     this.root.querySelector<HTMLElement>('.world-shell')?.removeAttribute('data-screen-mode');
     this.screenMaximized = false;
-    if (frame) frame.innerHTML = '';
+    if (frame) this.releaseVenueFilmFrame(frame);
+    this.world?.setExternalFilmPlayback(false);
     if (resetMode) this.screenMode = undefined;
+  }
+
+  /** A film switch has the same decoder teardown as closing the screen. */
+  private releaseVenueFilmFrame(frame: HTMLElement): void {
+    for (const iframe of frame.querySelectorAll<HTMLIFrameElement>('iframe')) {
+      try { iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'stopVideo', args: [] }), '*'); } catch { /* already gone */ }
+      iframe.src = 'about:blank';
+    }
+    frame.innerHTML = '';
   }
 
   private showPublicSeatHud(): void {
@@ -5780,7 +5794,11 @@ export class App {
     // A tab nobody is looking at lets go of the record too: with the festival
     // open in two tabs or windows, both played it, a beat apart, and it came
     // across as the same song twice (the owner, October 3).
-    const silenced = this.audioMuted || this.arcadePlaying || inItsOwnRoom || document.hidden;
+    // On a phone one YouTube player at a time (owner, 2026-10-23): wherever a
+    // screen's film is on — the Shore's open-air screen as much as a theatre —
+    // the record lets go. Both together were the tab iOS killed.
+    const phoneFilm = this.usesSingleFilmPlayer() && Boolean(this.world?.screenFilmShowing());
+    const silenced = this.audioMuted || this.arcadePlaying || inItsOwnRoom || document.hidden || phoneFilm;
     if (silenced !== this.jukeboxSilenced) {
       this.jukeboxSilenced = silenced;
       this.applyJukeboxVolume();
@@ -5972,6 +5990,18 @@ export class App {
     this.jukeboxReportedMuted = undefined;
     this.jukeboxReportedVolume = undefined;
     this.updateJukeboxSoundPrompt();
+  }
+
+  private usesSingleFilmPlayer(): boolean {
+    return window.matchMedia?.('(pointer: coarse) and (hover: none)').matches === true;
+  }
+
+  /** Called synchronously before the next film decoder is asked to start,
+   * rather than waiting for the world's next 200 ms HUD snapshot. */
+  private preparePhoneFilmPlayback(): void {
+    if (!this.usesSingleFilmPlayer()) return;
+    this.jukeboxSilenced = true;
+    this.stopJukebox();
   }
 
   /**
@@ -6166,7 +6196,7 @@ export class App {
       void this.arcadePreview.checkoutKey().then(key=>{
         if(!sheet.isConnected)return;arcadeDeviceKey=key;delete go.dataset.arcadePreparing;go.disabled=false;
         const note=sheet.querySelector<HTMLElement>('[data-arcade-preparation]');
-        if(note)note.textContent=zh?'完成這筆供養後，你會拿到一組 M.O.T.H 序號，在 11 月 2 日開放前就能解鎖影展裡的遊戲機，任何裝置都能用。序號只會顯示在這個瀏覽器上，請抄下保存。':'Once this offering is paid, you receive a M.O.T.H code that unlocks the cabinet in the festival before it opens on November 2, on any device. It is only shown in this browser, so keep a copy.';
+        if(note)note.textContent=zh?'完成這筆供養後，你會拿到一組 M.O.T.H 序號，在 11 月 2 日開放前就能解鎖影展裡的遊戲機。序號只會顯示在這個瀏覽器上，請抄下保存。':'Once this offering is paid, you receive a M.O.T.H code that unlocks the arcade machine in the festival before it opens on November 2. It is only shown in this browser, so keep a copy.';
       }).catch(()=>{
         if(!sheet.isConnected)return;
         complain(zh?'此瀏覽器無法儲存遊戲機金鑰。請允許瀏覽器儲存資料後再付款。':'This browser could not save its arcade key. Allow browser storage and try again before paying.');
