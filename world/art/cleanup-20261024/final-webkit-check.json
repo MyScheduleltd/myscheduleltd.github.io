@@ -1,0 +1,67 @@
+{
+  "engine": "webkit",
+  "mode": "lite",
+  "entryMs": 10574,
+  "lateAssets": [],
+  "private": {
+    "frames": 1,
+    "shared": false,
+    "screen": true
+  },
+  "returned": {
+    "up": 27,
+    "venue": "rooftop",
+    "mounts": 6,
+    "releases": 5,
+    "live": 1,
+    "frames": 1,
+    "playerReady": true,
+    "playerW": 800,
+    "playerH": 450,
+    "warmFilm": "stopped",
+    "draws": 282,
+    "fgdraws": 31,
+    "ctx": 1,
+    "progs": 74,
+    "fgprogs": 0,
+    "tex": 356,
+    "geo": 464,
+    "mats": 1549,
+    "repaints": 10,
+    "x": 29,
+    "z": 35,
+    "lost": false,
+    "quality": "lite",
+    "imgMb": 142,
+    "imgMax": 1024
+  },
+  "error": null,
+  "entryAsset": "main-CtjenACD.js",
+  "restoration": true,
+  "unhandledRejections": [],
+  "fetchRejectionSources": [
+    {
+      "phase": "opening",
+      "frameOrigin": "www.youtube.com",
+      "request": "https://www.youtube.com/pagead/viewthroughconversion/962985656/",
+      "reason": "TypeError: Load failed"
+    },
+    {
+      "phase": "opening",
+      "frameOrigin": "www.youtube.com",
+      "request": "https://www.youtube.com/pagead/viewthroughconversion/962985656/",
+      "reason": "TypeError: Load failed"
+    }
+  ],
+  "externalWarnings": {
+    "count": 2,
+    "source": "YouTube iframe / DoubleClick advertising CORS",
+    "appUnhandledRejections": 0
+  },
+  "intentionalReloadCanceledOldEventStream": true,
+  "recovery": {
+    "sameSession": true,
+    "tabProfile": true,
+    "deviceRememberMe": false
+  }
+}

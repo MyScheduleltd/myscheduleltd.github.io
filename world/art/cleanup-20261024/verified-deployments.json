@@ -1,0 +1,185 @@
+{
+  "deployments": [
+    {
+      "entry": "main-BBsMXUP8.js",
+      "deployedAt": "2026-10-23T17:21:28Z",
+      "headSha": "45e5828764ac6a33c0abdd7bce436334c361a6f2",
+      "runId": 39994226203
+    },
+    {
+      "entry": "main-C-ceVTVR.js",
+      "deployedAt": "2026-10-23T12:01:19Z",
+      "headSha": "4ef355ca7626cbf66f105f5af7097ecd2ae97883",
+      "runId": 39950006403
+    },
+    {
+      "entry": "main-BPYk7ocK.js",
+      "deployedAt": "2026-10-23T08:52:40Z",
+      "headSha": "1ddd629d9b61b0ad324ea86b730f0e7e3b42c254",
+      "runId": 39927558960
+    },
+    {
+      "entry": "main-BSuuuACe.js",
+      "deployedAt": "2026-10-23T07:31:28Z",
+      "headSha": "8af7a94aa6dbbcaff6a4f6fe85648394e38c721b",
+      "runId": 39918189090
+    },
+    {
+      "entry": "main-DuutfnLG.js",
+      "deployedAt": "2026-10-23T07:14:42Z",
+      "headSha": "9f940f8c5d4fef6a7dbb1cc73351642bd0325da1",
+      "runId": 39916019847
+    },
+    {
+      "entry": "main-5wJel4-a.js",
+      "deployedAt": "2026-10-23T04:09:24Z",
+      "headSha": "d9486a5494f308c216d1f762ea091f454a7f7bc3",
+      "runId": 39898695519
+    },
+    {
+      "entry": "main-B4ExJkeK.js",
+      "deployedAt": "2026-10-22T09:59:00Z",
+      "headSha": "7c16e57695d22709748491f067241e6a2bff9a4e",
+      "runId": 39759461304
+    },
+    {
+      "entry": "main-B4ExJkeK.js",
+      "deployedAt": "2026-10-21T17:47:52Z",
+      "headSha": "bff88982c562f46a4cbff0890941b51d98390ad5",
+      "runId": 39646755878
+    },
+    {
+      "entry": "main-B4ExJkeK.js",
+      "deployedAt": "2026-10-21T12:08:02Z",
+      "headSha": "7c45cbbe47d559b0f45476494c24611b93300cdd",
+      "runId": 39597041882
+    },
+    {
+      "entry": "main-B4ExJkeK.js",
+      "deployedAt": "2026-10-18T15:05:18Z",
+      "headSha": "9d21b82d23e11cfe5db968a442c6ad890f6bd12f",
+      "runId": 39138793647
+    },
+    {
+      "entry": "main-B4ExJkeK.js",
+      "deployedAt": "2026-10-18T14:40:57Z",
+      "headSha": "8de6e7de556b3f578938bba681d8038792893d8b",
+      "runId": 39137000421
+    },
+    {
+      "entry": "main-DFrI7-ap.js",
+      "deployedAt": "2026-10-18T09:54:55Z",
+      "headSha": "4e4d59a3425b6a4683029df3f25b83a977aebc96",
+      "runId": 39117127414
+    },
+    {
+      "entry": "main-DFrI7-ap.js",
+      "deployedAt": "2026-10-18T05:34:55Z",
+      "headSha": "23142dbf40f4cd2e5e6c09cd3e1a6255f05a5991",
+      "runId": 39100975415
+    },
+    {
+      "entry": "main-DFrI7-ap.js",
+      "deployedAt": "2026-10-18T04:31:58Z",
+      "headSha": "d157a6d48827d5fe804ea3a714d725db3ae438bc",
+      "runId": 39097343020
+    },
+    {
+      "entry": "main-eGbTzrFJ.js",
+      "deployedAt": "2026-10-18T04:26:46Z",
+      "headSha": "5dc2fbc348da95edc4188f946d37f28417b0ad7e",
+      "runId": 39097008585
+    },
+    {
+      "entry": "main-eGbTzrFJ.js",
+      "deployedAt": "2026-10-16T21:18:42Z",
+      "headSha": "ceeabfa4de7e545e03ff8db911e09cdcc78aee31",
+      "runId": 38968176005
+    },
+    {
+      "entry": "main-eGbTzrFJ.js",
+      "deployedAt": "2026-10-16T21:15:55Z",
+      "headSha": "4c236fcf5349f2273e0c13fe1fbc7e9c82dd3a80",
+      "runId": 38967934378
+    },
+    {
+      "entry": "main-BmX57-7z.js",
+      "deployedAt": "2026-10-16T20:18:02Z",
+      "headSha": "80cc74b800b07c5fc00f1490cef05d437aeca7e4",
+      "runId": 38960935168
+    },
+    {
+      "entry": "main-B2bYxq_y.js",
+      "deployedAt": "2026-10-16T14:07:07Z",
+      "headSha": "4c1ee8e67d6d564eb036d42cc5bff825b338eb24",
+      "runId": 38912943852
+    },
+    {
+      "entry": "main-BhyaGUQ2.js",
+      "deployedAt": "2026-10-16T11:44:02Z",
+      "headSha": "eef3c907f888d188718cf4d4240db1fd58e99cf6",
+      "runId": 38895523600
+    },
+    {
+      "entry": "main-dYE3Si4K.js",
+      "deployedAt": "2026-10-16T10:37:34Z",
+      "headSha": "d8414c4609899dc8c4e4d53dfe4248577efaf159",
+      "runId": 38888226262
+    },
+    {
+      "entry": "main-DIw2Phe-.js",
+      "deployedAt": "2026-10-16T09:43:41Z",
+      "headSha": "7a497cd2004729e53ad2292fbed29b8180114466",
+      "runId": 38882182369
+    },
+    {
+      "entry": "main-uUXgEu9A.js",
+      "deployedAt": "2026-10-15T12:48:01Z",
+      "headSha": "04c95bad598f25ebdaff804b84d98dbc8b9e9fa3",
+      "runId": 38737149413
+    },
+    {
+      "entry": "main-Rrj72fTR.js",
+      "deployedAt": "2026-10-15T09:41:48Z",
+      "headSha": "db8b2c093c9f6f0bbdf3b09e74881f5d2a8b9e5c",
+      "runId": 38714576750
+    },
+    {
+      "entry": "main-Rrj72fTR.js",
+      "deployedAt": "2026-10-14T15:23:05Z",
+      "headSha": "fc60637496c670e06b5b8e36e74f3dffbbbf3e53",
+      "runId": 38588443780
+    },
+    {
+      "entry": "main-DvyUK1HM.js",
+      "deployedAt": "2026-10-14T10:38:10Z",
+      "headSha": "6f927d8998e7e7f8cf9b6a5ce3fb5209b989d1b0",
+      "runId": 38550740192
+    },
+    {
+      "entry": "main-BoMZQ2dt.js",
+      "deployedAt": "2026-10-14T08:18:02Z",
+      "headSha": "2f355a9a723251b14002d0a5164f98246f2e2243",
+      "runId": 38533822396
+    },
+    {
+      "entry": "main-BoMZQ2dt.js",
+      "deployedAt": "2026-10-13T20:33:11Z",
+      "headSha": "90289fd27442bfec9362c875bcacc4b44a44d26b",
+      "runId": 38463371266
+    },
+    {
+      "entry": "main-BoMZQ2dt.js",
+      "deployedAt": "2026-10-13T16:37:29Z",
+      "headSha": "8c4d930dd87989aa22753b45d45762f67d609c1d",
+      "runId": 38431792010
+    },
+    {
+      "entry": "main-BoMZQ2dt.js",
+      "deployedAt": "2026-10-13T14:09:31Z",
+      "headSha": "ce3fe45c5b20042bf782c8441d7564cc4fdb3de1",
+      "runId": 38410655849
+    }
+  ],
+  "unresolvedCommits": []
+}

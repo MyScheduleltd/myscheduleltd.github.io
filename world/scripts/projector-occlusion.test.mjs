@@ -365,18 +365,39 @@ test('film ownership is handed off synchronously before an iframe loads and befo
  assert.equal(iframes.length,1,'handoff retains the reusable shared film iframe');
 }));
 
-test('a phone personal/fullscreen film stops the venue decoder and resumes its latest programme in the same iframe',()=>withFakeDom((iframes)=>{
+test('a phone personal/fullscreen film releases the hidden YouTube document and resumes the latest public programme',()=>withFakeDom((iframes)=>{
  const {world,say}=playerWorld();world.place='palace';world.setPublicScreening('palace',FILM_A,0);world.mountedProjectorVenue='palace';
- const [frame]=iframes;say(frame,{event:'initialDelivery',info:{videoData:{video_id:FILM_A.youtubeId},duration:100}});
+ const [frame]=iframes,player=world.screenPlayer;say(frame,{event:'initialDelivery',info:{videoData:{video_id:FILM_A.youtubeId},duration:100}});
  world.setExternalFilmPlayback(true);
  assert.equal(frame.posted.at(-1).func,'stopVideo');assert.equal(world.projectors.get('palace').iframe,undefined);
- assert.equal(world.screenPlayer.iframe,frame,'the stopped reusable iframe is retained');assert.equal(world.screenFilmShowing(),true,'the external film retains exclusive phone ownership');
+ assert.equal(frame.src,'about:blank','the hidden media page is unloaded, not merely paused');
+ assert.equal(player.element.children.length,0,'the former iframe is detached');
+ assert.equal(player.iframe,undefined);assert.equal(player.ready,false);assert.deepEqual(player.queued,[]);
+ assert.equal(world.screenFilmShowing(),true,'the external film retains exclusive phone ownership');
  const stoppedCommands=frame.posted.length;
  world.setPublicScreening('palace',FILM_B,32,'new-programme');world.updateProjectorMounts();world.nudgeProjectorsToPlay();
  assert.equal(frame.posted.length,stoppedCommands,'programme refreshes and touch nudges cannot restart the underlying movie');
  world.setExternalFilmPlayback(false);
- assert.equal(iframes.length,1);assert.equal(world.projectors.get('palace').iframe,frame);
- const load=frame.posted.findLast(message=>message.func==='loadVideoById');assert.equal(load.args[0].videoId,FILM_B.youtubeId);assert.equal(load.args[0].startSeconds,32);
+ assert.equal(iframes.length,2,'one fresh media document is built only after the external panel closes');
+ assert.equal(world.screenPlayer,player,'the same CSS world panel is reused');
+ const resumed=iframes[1];assert.equal(world.projectors.get('palace').iframe,resumed);
+ assert.match(resumed.src,/embed\/bbbbbbbbbbb\?/);assert.equal(new URL(resumed.src).searchParams.get('start'),'32');
+ assert.equal(frame.src,'about:blank','the former document cannot play after public playback resumes');
+ say(frame,{event:'initialDelivery',info:{videoData:{video_id:FILM_A.youtubeId},duration:100}});
+ assert.equal(player.ready,false,'a late response from the discarded document cannot ready the replacement');
+ say(resumed,{event:'initialDelivery',info:{videoData:{video_id:FILM_B.youtubeId},duration:120}});
+ assert.equal(player.ready,true);
+}));
+
+test('an external film also unloads a hidden admission player that no venue has claimed',()=>withFakeDom((iframes)=>{
+ const {world}=playerWorld();world.admitting=true;world.setPublicScreening('palace',FILM_A,0);
+ const [frame]=iframes,player=world.screenPlayer;
+ assert.equal(player.venue,undefined);assert.ok(frame);
+ world.setExternalFilmPlayback(true);world.setExternalFilmPlayback(true);
+ assert.equal(frame.src,'about:blank');assert.equal(player.iframe,undefined);assert.equal(player.element.children.length,0);
+ assert.deepEqual(frame.posted.map(message=>message.func),['stopVideo']);
+ world.place=undefined;world.setExternalFilmPlayback(false);
+ assert.equal(iframes.length,1,'leaving a personal film outside every venue does not build another hidden media page');
 }));
 
 test('the shared panel turns to face each screen and back again',()=>withFakeDom(()=>{
@@ -390,6 +411,30 @@ test('the shared panel turns to face each screen and back again',()=>withFakeDom
   assert.ok(Math.abs(player.object.position.z-19.9)<1e-6);
   world.aimScreenPlayer(player,'shore');
   assert.ok(Math.abs(player.object.scale.x-0.0095)<1e-9,'each screen keeps its own size');
+}));
+
+test('phone players use a quarter-area viewport while preserving the complete picture and frame footprint at every venue',()=>withFakeDom((iframes)=>{
+  const venues=['shore','palace','drive-in','club','rooftop'];
+  const {world:desktop}=playerWorld(venues),{world:phone}=playerWorld(venues);
+  desktop.mobileCameraControls=false;phone.mobileCameraControls=true;
+  const large=desktop.ensureScreenPlayer(),small=phone.ensureScreenPlayer();
+  assert.deepEqual([small.viewport.width,small.viewport.height],[800,450]);
+  assert.equal(small.viewport.width*small.viewport.height,large.viewport.width*large.viewport.height/4);
+  assert.equal(small.element.style.borderWidth,'11px');
+  assert.equal(small.element.style.boxShadow,'inset 0 0 32.5px rgba(0,0,0,.55)');
+  for(const venue of venues){
+    desktop.aimScreenPlayer(large,venue);phone.aimScreenPlayer(small,venue);
+    assert.deepEqual(small.object.position.toArray(),large.object.position.toArray(),`${venue}: same screen centre`);
+    assert.deepEqual(small.object.rotation.toArray(),large.object.rotation.toArray(),`${venue}: same screen facing`);
+    for(const axis of ['width','height']){
+      assert.equal(small.viewport[axis]*small.object.scale.x,large.viewport[axis]*large.object.scale.x,`${venue}: same picture ${axis}`);
+      assert.equal((small.viewport[axis]+small.viewport.border*2)*small.object.scale.x,(large.viewport[axis]+large.viewport.border*2)*large.object.scale.x,`${venue}: same framed ${axis}`);
+    }
+    assert.equal(phone.ensureScreenPlayer(),small,'venue changes retain the original player object');
+    phone.place=venue;phone.setPublicScreening(venue,FILM_A,0);phone.mountedProjectorVenue=venue;
+    assert.equal(iframes.length,1,'all five venues reuse a single phone iframe');
+  }
+  assert.match(iframes[0].src,/embed\/aaaaaaaaaaa/);
 }));
 
 test('reports still about the previous film are not credited to the new one',()=>withFakeDom((iframes)=>{
@@ -485,13 +530,16 @@ test('under the loading view the warm player plays its first film muted, stops o
   say(frame,{event:'initialDelivery',info:{videoData:{video_id:'aaaaaaaaaaa'},playerState:5}});
   assert.deepEqual(frame.posted.map(c=>c.func),['mute','playVideo'],'played, muted, as soon as it answers');
   assert.equal(player.firstFilm,'playing');
+  assert.equal(player.warmFilm,'requested','a sent play command is not evidence of actual decoding');
   say(frame,{event:'onStateChange',info:3});
   assert.equal(frame.posted.length,2,'still buffering: left to start');
   say(frame,{event:'infoDelivery',info:{duration:100,currentTime:0.2,playerState:1}});
   assert.deepEqual(frame.posted.map(c=>c.func),['mute','playVideo','stopVideo'],'and stopped the moment it plays');
   assert.equal(player.firstFilm,'stopping');
+  assert.equal(player.warmFilm,'played','only a playing response confirms playback');
   say(frame,{event:'onStateChange',info:5});
   assert.equal(player.firstFilm,'done');
+  assert.equal(player.warmFilm,'stopped','the player also acknowledged the stop');
   assert.deepEqual(reports.durations,[],'no screen holds it, so its length goes nowhere');
   assert.equal(world.projectors.get('palace').currentTime,undefined);
   // Then the first doorway is an ordinary swap, and the first film is not repeated.
@@ -500,6 +548,15 @@ test('under the loading view the warm player plays its first film muted, stops o
   say(frame,{event:'onStateChange',info:1});
   assert.deepEqual(frame.posted.slice(3).map(c=>c.func),['loadVideoById','mute']);
   assert.equal(iframes.length,1);
+}));
+
+test('a phone choosing Normal prepares its first decoder before admission too',()=>withFakeDom(iframes=>{
+  const {world,say}=playerWorld();
+  world.graphicsMode='normal';world.conservesMobileGpu=true;world.admitting=true;world.firstFilmWindow=true;
+  world.setPublicScreening('palace',FILM_A,0,'p1');
+  say(iframes[0],{event:'initialDelivery',info:{videoData:{video_id:'aaaaaaaaaaa'}}});
+  assert.equal(world.screenPlayer.firstFilm,'playing');
+  assert.equal(world.screenPlayer.warmFilm,'requested');
 }));
 
 test('the first film waits for the fixed downloads, never starts once admission is over, and leaves a screen\'s film alone',()=>withFakeDom((iframes)=>{
@@ -553,6 +610,7 @@ test('admission gives the first film a bounded moment, and stops it before the w
     t=Date.now();await world.screenPlayerFirstFilm(250);const capped=Date.now()-t;
     assert.deepEqual(posted,['mute','playVideo','stopVideo']);
     assert.ok(capped>=200&&capped<1100,`bounded: the start, then the stop (${capped} ms)`);
+    assert.equal(world.screenPlayer.warmFilm,'timed-out','a blocked/slow first play stays distinguishable from actual playback');
   }finally{globalThis.window=savedWindow;}
 });
 
@@ -569,11 +627,11 @@ test('asset notifications settle one body per paint, coalesce repeats, and cance
 test('admission prepares the existing room before GPU warmup, without starting the gameplay loop',async()=>{
   const savedWindow=globalThis.window;globalThis.window={setTimeout:run=>setTimeout(run,0),setInterval:(run,ms)=>setInterval(run,ms),clearInterval:id=>clearInterval(id),location:{hostname:'127.0.0.1',search:'?nobatch'}};
   try{
-    const world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera();let created=0,compiled=0,drawn=0,environmentReady=false;
+    const world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera();let created=0,compiled=0,drawn=0,environmentReady=false,decoderRetired=0;
     // The warm-up stand of every body is the avatar code's to build; here it is an empty group.
     // Object.create bypasses field initializers. Supply the texture-preparation
     // resource explicitly, while keeping the real architectural placement.
-    Object.assign(world,{scene,camera,preview:false,disposed:false,environmentMaterials:{async prepare(root){assert.equal(root,scene);assert.ok(root.userData.environmentArchitectureReport.triangles>0);environmentReady=true;}},pendingRemoteVisitors:new Map([['a',1],['b',2],['c',3]]),projectors:new Map(),cullDecorativeLights(){},warmAvatarVariants(){const stand=new THREE.Group();scene.add(stand);return stand;},flushRemoteVisitor(){this.pendingRemoteVisitors.delete(this.pendingRemoteVisitors.keys().next().value);const body=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial());body.name='Admission test body';scene.add(body);created++;},renderer:{shadowMap:{},info:{programs:[]},render(root,cam){assert.equal(compiled,1,'drawn after compiling');assert.equal(root,scene);assert.equal(cam,camera);drawn++;},compile(root,cam,target){compiled++;assert.equal(environmentReady,true,'environment maps settle before GPU compilation');assert.equal(created,3);assert.equal(root.children.filter(child=>child.name==='Admission test body').length,3);assert.equal(root.children.filter(child=>child.userData.environmentArchitecture).length,scene.userData.environmentArchitectureReport.meshes);assert.equal(cam,camera);assert.equal(target,scene);return new Set();},setAnimationLoop(){throw Error('admission started gameplay before preparation completed');}}});
+    Object.assign(world,{scene,camera,preview:false,disposed:false,environmentMaterials:{async prepare(root){assert.equal(root,scene);assert.ok(root.userData.environmentArchitectureReport.triangles>0);environmentReady=true;}},gpuTextures:{release(){assert.equal(environmentReady,true,'no decoder release while fixed maps are still loading');assert.notEqual(world.firstFilmWindow,true,'decoder is retired before admission asks its first film to decode');decoderRetired++;}},pendingRemoteVisitors:new Map([['a',1],['b',2],['c',3]]),projectors:new Map(),cullDecorativeLights(){},warmAvatarVariants(){const stand=new THREE.Group();scene.add(stand);return stand;},flushRemoteVisitor(){this.pendingRemoteVisitors.delete(this.pendingRemoteVisitors.keys().next().value);const body=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial());body.name='Admission test body';scene.add(body);created++;},renderer:{shadowMap:{},info:{programs:[]},render(root,cam){assert.equal(compiled,1,'drawn after compiling');assert.equal(root,scene);assert.equal(cam,camera);drawn++;},compile(root,cam,target){compiled++;assert.equal(environmentReady,true,'environment maps settle before GPU compilation');assert.equal(decoderRetired,1,'startup decoder is gone before GPU warm-up and gameplay');assert.equal(created,3);assert.equal(root.children.filter(child=>child.name==='Admission test body').length,3);assert.equal(root.children.filter(child=>child.userData.environmentArchitecture).length,scene.userData.environmentArchitectureReport.meshes);assert.equal(cam,camera);assert.equal(target,scene);return new Set();},setAnimationLoop(){throw Error('admission started gameplay before preparation completed');}}});
     await world.prepareForPlay();assert.equal(created,3);assert.equal(compiled,1);assert.equal(world.pendingRemoteVisitors.size,0);
     assert.ok(drawn>=1,'then every kind of draw is drawn once under the loading view');
     assert.equal(scene.children.some(child=>child.type==='Group'),false,'and the stand of bodies is gone again');

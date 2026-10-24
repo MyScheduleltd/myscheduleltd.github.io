@@ -3,7 +3,7 @@ import data from './allData.js';
 $(function async(){
     
 
-    const {aboutVideos , memberData} = data;
+    const {aboutVideos} = data;
     $('.videos-wrapper').append(`
         <div class="iframe-videos">
             <iframe  class="video" src="${aboutVideos[0].url.split('?')[0]}?rel=0&autoplay=1&mute=1&playsinline=1&enablejsapi=1&showinfo=0&loop=1&playlist=${youtube_parser(aboutVideos[0].url)}"  allow='autoplay' allowfullscreen  frameborder="0" ></iframe>

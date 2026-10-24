@@ -1,0 +1,92 @@
+{
+  "archivedAt": "2026-10-24",
+  "sourceCommit": "45e5828764ac6a33c0abdd7bce436334c361a6f2",
+  "archiveRoot": "/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world/art/retired-public-assets-20261024",
+  "reason": "The team board is paused; all image creation is disabled and no current HTML/CSS uses the portraits. Preserve reference originals outside the published docs tree.",
+  "disabledMarkupCommit": "ff814f77",
+  "explicitDisabledLoopCommit": "70fdcf45",
+  "bytesRemovedFromPublication": 118391458,
+  "currentRuntimeDownloadsRemovedBytes": 0,
+  "files": [
+    {
+      "publishedPath": "docs/assets/member/202308230080.jpg",
+      "archivePath": "/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world/art/retired-public-assets-20261024/member/202308230080.jpg",
+      "bytes": 1765225,
+      "sha256": "f804fa9b59745f52a1e4636a5fad9490ffa6b5d2a823fcd2d02f07307bbfa387"
+    },
+    {
+      "publishedPath": "docs/assets/member/202308230119.jpg",
+      "archivePath": "/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world/art/retired-public-assets-20261024/member/202308230119.jpg",
+      "bytes": 2260156,
+      "sha256": "a4ad9a5c9c67209221539b08b39a3274cef2dbeda46a0d0c2cc59d8fbf0eefa6"
+    },
+    {
+      "publishedPath": "docs/assets/member/202308230238.jpg",
+      "archivePath": "/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world/art/retired-public-assets-20261024/member/202308230238.jpg",
+      "bytes": 11823217,
+      "sha256": "899a4c58d529f571878af2e9f316bb69e709951cf151daaf5c07a47bfd6c2b9b"
+    },
+    {
+      "publishedPath": "docs/assets/member/202308238795.jpg",
+      "archivePath": "/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world/art/retired-public-assets-20261024/member/202308238795.jpg",
+      "bytes": 10453962,
+      "sha256": "3a120bc0282577aae9daf45703b84ac644219b89f5a0a85162f4ffcbb1500a8c"
+    },
+    {
+      "publishedPath": "docs/assets/member/202308238969.jpg",
+      "archivePath": "/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world/art/retired-public-assets-20261024/member/202308238969.jpg",
+      "bytes": 4875112,
+      "sha256": "5ca0cc99d7e97da10c2426206efd91759cdba2ab796e162680b54e062fee3df6"
+    },
+    {
+      "publishedPath": "docs/assets/member/202308238993.jpg",
+      "archivePath": "/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world/art/retired-public-assets-20261024/member/202308238993.jpg",
+      "bytes": 17289932,
+      "sha256": "817ef7b407f040abf979081b648b66d75ddf5fd38bda4b3e8e03fab086aebb73"
+    },
+    {
+      "publishedPath": "docs/assets/member/202308239180.jpg",
+      "archivePath": "/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world/art/retired-public-assets-20261024/member/202308239180.jpg",
+      "bytes": 6432252,
+      "sha256": "a2cdadc47570cbb3e147350afe852b25cb11f77a93406b9f6d7180092ff15d86"
+    },
+    {
+      "publishedPath": "docs/assets/member/202308239341.jpg",
+      "archivePath": "/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world/art/retired-public-assets-20261024/member/202308239341.jpg",
+      "bytes": 11824768,
+      "sha256": "c589d3ec41c4a4c4c4747b64d04849a58230536b12f860513de516ad110fe567"
+    },
+    {
+      "publishedPath": "docs/assets/member/202308239405.jpg",
+      "archivePath": "/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world/art/retired-public-assets-20261024/member/202308239405.jpg",
+      "bytes": 3537225,
+      "sha256": "fb2dc4ac11b473dc434ef5dd2020f7b7ed6a32c5c8c39fe7fb1726e7b4204973"
+    },
+    {
+      "publishedPath": "docs/assets/member/202308239547.jpg",
+      "archivePath": "/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world/art/retired-public-assets-20261024/member/202308239547.jpg",
+      "bytes": 14792607,
+      "sha256": "90fe5cb964b9ff5fd08e2b90faba4754e458ab2222306097b2bc4423b0d53197"
+    },
+    {
+      "publishedPath": "docs/assets/member/202308239575.jpg",
+      "archivePath": "/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world/art/retired-public-assets-20261024/member/202308239575.jpg",
+      "bytes": 16138430,
+      "sha256": "f49787e903251f111464e895ce468f88cf6a67ce6804b249671c8f123e73156d"
+    },
+    {
+      "publishedPath": "docs/assets/member/202308239744.jpg",
+      "archivePath": "/Users/myscheduleai/Desktop/myschedule-pivot/release-sfx-20261018/world/art/retired-public-assets-20261024/member/202308239744.jpg",
+      "bytes": 17198572,
+      "sha256": "cfb224ff83ced0af4b6a422888d4120d29a3b0416f68ca785ee14e801db4ecef"
+    }
+  ],
+  "remainingSiteDataSha256": "418f5e46d92cce6b65f0cb4415b6c19d2e9874659ae5a7af08ad0f63a2e27699",
+  "remainingSiteDataKeys": [
+    "homeVideos",
+    "aboutVideos",
+    "drBeautyVideos",
+    "contactVideos",
+    "profilo"
+  ]
+}

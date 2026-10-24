@@ -3,7 +3,7 @@ import data from './allData.js';
 $(function async(){
     
 
-    const {aboutVideos , memberData} = data;
+    const {aboutVideos} = data;
     $('.aboutVideos1').append(`
         <div class="iframe-videos">
             <iframe  class="video" src="${aboutVideos[0].url.split('?')[0]}?rel=0&autoplay=1&mute=1&playsinline=1&enablejsapi=1&showinfo=0&loop=1&playlist=${youtube_parser(aboutVideos[0].url)}"  allow='autoplay' allowfullscreen  frameborder="0" ></iframe>
@@ -45,32 +45,6 @@ $(function async(){
           iframe.contentWindow.postMessage('{"event":"command","func":"' + 'pauseVideo' + '","args":""}', '*');
        });
     }
-    // The team board is on hold. Its markup lives in the page now, so nothing
-    // is appended here; memberData is left in place for when it comes back.
-    for(let i = 0; i < 0; i++) {
-
-        // $('.member-container').append(`
-        //     <div class="member">
-        //         <div class="flip_wrap">
-        //             <!--实现容器翻转-->
-        //             <div class="flip">
-        //                 <!--正面-->
-        //                 <div class="side front">
-        //                     <img src="${memberData[i].member}" />
-        //                 </div>
-        //                 <!--反面-->
-        //                 <div class="side back">
-        //                     <p class="title">${memberData[i].title}</p>
-        //                     <p>${memberData[i].jobPos}</p>
-        //                 </div>
-        //             </div>
-        //         </div>
-               
-        //     </div>`)
-
-
-    }
-    
     $('.videos-wrapper').on('click', '.button', function(){
         stopAllYouTubeVideos();
         const set  = $(this).data('set')

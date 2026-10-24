@@ -33,7 +33,8 @@ class Source extends AudioNode {
   stop() { this.stopped = true; }
 }
 const decoded = (url) => ({ url, duration: /night|ocean/.test(url) ? 46 : /day/.test(url) ? 61 : /skate/.test(url) ? 6.4 : 0.08 });
-globalThis.OfflineAudioContext = class { decodeAudioData(bytes) { return Promise.resolve(decoded(fileOf.get(bytes))); } };
+let decodeAudio = url => Promise.resolve(decoded(url));
+globalThis.OfflineAudioContext = class { decodeAudioData(bytes) { return decodeAudio(fileOf.get(bytes)); } };
 const contexts = [];
 globalThis.AudioContext = class {
   constructor() { this.state = 'suspended'; this.currentTime = 0; this.destination = {}; this.started = []; contexts.push(this); }
@@ -125,6 +126,7 @@ test('the beds loop inside their padding, start silent, and follow the mix', asy
     'avatar-drink.wav', 'avatar-eat-popcorn.wav', 'avatar-skate.mp3', 'avatar-step-left.wav', 'avatar-step-right.wav',
     // The fireworks' bursts load with the world, so a show never waits on a download.
     'fireworks-peony.mp3', 'fireworks-ring.mp3', 'fireworks-willow.mp3',
+    'ui-click.wav', 'ui-hover.wav',
   ]);
   const { bySource } = graph(context);
   const day = bySource('ambience-day'), night = bySource('ambience-night'), ocean = bySource('ambience-ocean');
@@ -173,6 +175,60 @@ test('phones decode mono copies of the beds', async () => {
   } finally {
     coarsePointer = false;
   }
+});
+
+test('one failed sound cannot release admission while another fixed sound is still decoding, and retries only request missing buffers', async () => {
+  const original = decodeAudio;
+  try {
+    for (const [failed, delayed] of [
+      ['ambience-day.mp3', 'avatar-drink.wav'],
+      ['fireworks-willow.mp3', 'fireworks-ring.mp3'],
+      ['ui-click.wav', 'ui-hover.wav'],
+    ]) {
+      fetched.length = 0;
+      let finish, done = false;
+      decodeAudio = url => url.endsWith(failed) ? Promise.reject(new Error('Unavailable test sound'))
+        : url.endsWith(delayed) ? new Promise(resolve => { finish = () => resolve(decoded(url)); })
+          : original(url);
+      const audio = new AmbientAudio(), first = audio.preloadWorldSounds();
+      first.then(() => { done = true; });
+      await settle();
+      assert.equal(typeof finish, 'function', 'the delayed sound is actually being decoded');
+      assert.equal(done, false, `${failed}: a different failure must not abandon pending fixed sounds`);
+      assert.equal(audio.worldSoundsReady(), false);
+      assert.equal(audio.preloadWorldSounds(), first, 'another ask shares the entire unsettled batch');
+      const files = fetched.map(url => url.split('/').pop());
+      assert.equal(files.length, 13);
+      assert.equal(new Set(files).size, 13, 'no duplicated interface, firework or world downloads');
+      finish(); await first;
+      assert.equal(done, true);
+      assert.equal(audio.worldSoundsReady(), false, 'missing optional buffers are not reported ready');
+      const beforeRetry = fetched.length;
+      decodeAudio = original;
+      await audio.preloadWorldSounds();
+      assert.equal(audio.worldSoundsReady(), true);
+      assert.deepEqual(fetched.slice(beforeRetry).map(url => url.split('/').pop()), [failed]);
+    }
+  } finally { decodeAudio = original; }
+});
+
+test('stalled native audio decoding has a bounded wait and cannot install its late buffer after admission', async () => {
+  const originalDecode = decodeAudio, originalTimer = globalThis.setTimeout;
+  let finish;
+  // Exercise the production deadline quickly without changing download limits.
+  globalThis.setTimeout = (callback, duration, ...args) => originalTimer(callback, duration === 30_000 ? 10 : duration, ...args);
+  try {
+    decodeAudio = url => url.endsWith('ui-hover.wav') ? new Promise(resolve => { finish = () => resolve(decoded(url)); }) : originalDecode(url);
+    const audio = new AmbientAudio();
+    await audio.preloadWorldSounds();
+    assert.equal(audio.worldSoundsReady(), false);
+    assert.equal(audio.snapshot().cuesReady, 1);
+    finish(); await settle();
+    assert.equal(audio.snapshot().cuesReady, 1, 'timed-out decode is never installed after the loading barrier');
+    decodeAudio = originalDecode;
+    await audio.preloadWorldSounds();
+    assert.equal(audio.worldSoundsReady(), true, 'a fresh attempt can still recover the missing sound');
+  } finally { decodeAudio = originalDecode; globalThis.setTimeout = originalTimer; }
 });
 
 test('interface sounds: their own volume, silent when muted, a hover never starts sound', async () => {

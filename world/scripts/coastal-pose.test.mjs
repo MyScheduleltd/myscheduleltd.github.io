@@ -380,6 +380,43 @@ function importedCharacter(palette={}){
   attachImportedAvatar(root,rig,{...BASE_PALETTE,...palette});
   return {root,rig};
 }
+
+test('stopping and recreating a real world releases avatar bindings without evicting shared art or another scene',()=>{
+  const originalWindow=globalThis.window, originalDocument=globalThis.document;
+  const noop=()=>{}, renderer={setAnimationLoop:noop,dispose:noop};
+  globalThis.window={removeEventListener:noop,clearInterval:noop};
+  globalThis.document={...originalDocument,removeEventListener:noop};
+  const baseline=importedAvatarRoots.size, other=importedCharacter();
+  const otherScene=new THREE.Scene();otherScene.add(other.root);
+  const shared=other.root.userData.importedAvatar.meshes.find(mesh=>mesh.userData.componentId==='body'), disposedArt=[];
+  shared.geometry.addEventListener('dispose',()=>disposedArt.push('geometry'));
+  shared.material.map?.addEventListener('dispose',()=>disposedArt.push('map'));
+  try {
+    for(let cycle=0;cycle<3;cycle++){
+      const world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene();
+      const residents=[importedCharacter(),importedCharacter({top:'#28191b'}),importedCharacter()];
+      const hidden=new THREE.Group();hidden.visible=false;scene.add(hidden);hidden.add(residents[2].root);
+      scene.add(residents[0].root,residents[1].root);
+      const materials=new Set(residents.flatMap(({root})=>root.userData.importedAvatar.meshes.map(mesh=>mesh.material)));
+      let disposedMaterials=0;for(const material of materials)material.addEventListener('dispose',()=>disposedMaterials++);
+      Object.assign(world,{scene,renderer,preview:false,neonFrames:[],npcs:[],projectors:new Map(),
+        venueSceneryAssets:{dispose:noop},environmentMaterials:{dispose:noop},
+        audio:{setAmbientMix:noop,setSkating:noop},gamepad:{stop:noop},headTracking:{release:noop},
+        canvas:{removeEventListener:noop},closeNpcDialogue:noop,stopArcadeGame:noop,applyDrunkScreen:noop,
+        stopPhoneOrientation:noop,releaseHeadCoupledView:noop,stopFireworks:noop});
+      assert.equal(importedAvatarRoots.size,baseline+4);
+      world.stop();world.stop();
+      assert.equal(importedAvatarRoots.size,baseline+1,'a stopped scene must leave no process-wide body references');
+      assert.equal(disposedMaterials,materials.size,'each owned avatar material is released exactly once');
+      assert.ok(importedAvatarRoots.has(other.root),'another live scene keeps its body');
+      assert.deepEqual(disposedArt,[],'shared source geometry and maps remain valid');
+    }
+  } finally {
+    other.root.userData.disposeImportedAvatar();
+    globalThis.window=originalWindow;globalThis.document=originalDocument;
+  }
+  assert.equal(importedAvatarRoots.size,baseline);
+});
 const shown=o=>o.visible&&(!o.parent||shown(o.parent));
 const shownMeshes=root=>root.userData.importedAvatar.meshes.filter(shown);
 const bodyMesh=root=>shownMeshes(root).find(m=>m.userData.componentId==='body');
