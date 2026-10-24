@@ -26,6 +26,7 @@ import { requestWithDeadline } from '../network/RequestDeadline';
 import { watchAssetDownloads } from '../world/AssetMirror';
 import type { GatePreview } from '../world/GatePreview';
 import { GateLoadMeter } from './GateLoadMeter';
+import { EntryRecovery, ENTRY_PHASE_KEY } from './EntryRecovery';
 import { readNoirPreference, saveNoirPreference, applyNoirMode, noirButtonMarkup, syncNoirButton } from './NoirMode';
 import { installFloatingChat } from './FloatingChat';
 import { readDesktopActions, saveDesktopActions, dropBeatAction, drinkStatusText } from './OverlayPreferences';
@@ -398,10 +399,11 @@ const readSession = <T>(key: string, fallback: T): T => {
   }
 };
 
-/** Recover only this tab's admitted visit; a fresh tab uses the saved preference. */
+/** Keep an interrupted entrance's identity in this tab without auto-admitting it. */
 const readActiveProfile = (): SavedProfile | null => {
   try {
-    if (sessionStorage.getItem(INSIDE_KEY) === '1') {
+    const phase = sessionStorage.getItem(ENTRY_PHASE_KEY);
+    if (sessionStorage.getItem(INSIDE_KEY) === '1' || phase === 'loading' || phase === 'interrupted') {
       const tab = readSession<SavedProfile | null>(TAB_PROFILE_KEY, null);
       if (typeof tab?.id === 'string' && isValidId(tab.id)) return tab;
     }
@@ -582,6 +584,7 @@ export class App {
   private readonly programmeClock = new ProgrammeClock();
   private waitTimer?: number;
   private openingWorld=false;
+  private readonly entryRecovery = new EntryRecovery({ storage: () => sessionStorage });
   private waitingForPlace=false;
   private gateCopy?: GateCopy;
   private controlledNpcId?: string;
@@ -821,7 +824,23 @@ export class App {
   private rejoinAfterDiscard(): void {
     // Keep the local entrance review at the form even when its browser tab
     // inherited an already admitted session from another preview.
-    if (this.reviewsGateMotion()) return;
+    if (this.reviewsGateMotion() || this.openingWorld || this.waitingForPlace || this.world) return;
+    // A browser process crash cannot run the entry promise's catch handler.
+    // Its loading marker must stop automatic rebuilding before heavy work.
+    if (!this.entryRecovery.allowAutomaticRejoin()) {
+      this.disposeGatePreview();
+      try { sessionStorage.removeItem(INSIDE_KEY); } catch { /* blocked storage */ }
+      if (this.entryRecovery.phase() === 'interrupted') {
+        const notice = this.root.querySelector<HTMLElement>('#gate-waiting');
+        if (notice) {
+          notice.hidden = false;
+          notice.textContent = this.language === 'zh-TW'
+            ? '上次未能完成進入影展。請點選進入重試。'
+            : 'Your last entry did not finish. Select enter to try again.';
+        }
+      }
+      return;
+    }
     if (sessionStorage.getItem(INSIDE_KEY) !== '1') return;
     const saved = readActiveProfile();
     if (!saved?.id || !isValidId(saved.id)) return;
@@ -841,6 +860,8 @@ export class App {
     // tab nobody can use.
     const tries = Number(sessionStorage.getItem(REJOIN_TRIES_KEY) ?? '0');
     if (tries >= 2) {
+      this.entryRecovery.fail();
+      this.disposeGatePreview();
       sessionStorage.removeItem(REJOIN_TRIES_KEY);
       sessionStorage.removeItem(INSIDE_KEY);
       return;
@@ -896,7 +917,13 @@ export class App {
   private renderGate(): void {
     const text = this.gateText();
     const previous = this.root.querySelector<HTMLFormElement>('#gate-form');
-    const remember = previous?.querySelector<HTMLInputElement>('#remember-profile')?.checked ?? true;
+    const phase = this.entryRecovery.phase();
+    const interruptedEntry = phase === 'loading' || phase === 'interrupted';
+    const remember = previous?.querySelector<HTMLInputElement>('#remember-profile')?.checked
+      ?? (interruptedEntry ? Boolean(readProfile()) : true);
+    const retryNotice = interruptedEntry ? (this.language === 'zh-TW'
+      ? '上次未能完成進入影展。請點選進入重試。'
+      : 'Your last entry did not finish. Select enter to try again.') : '';
     const appearanceOpen = previous?.querySelector<HTMLDetailsElement>('.gate-appearance')?.open ?? false;
     const optionsOpen = previous?.querySelector<HTMLDetailsElement>('.gate-options')?.open ?? false;
     document.documentElement.lang = this.language;
@@ -914,7 +941,7 @@ export class App {
         <div class="gate__layout">
         <form class="gate-card" id="gate-form">
           <h1 id="gate-title">${text.gateTitle}</h1>
-          <p class="gate-card__waiting" id="gate-waiting" role="status" hidden></p>
+          <p class="gate-card__waiting" id="gate-waiting" role="status"${retryNotice ? '' : ' hidden'}>${retryNotice}</p>
 
           <label class="field-label" for="festival-id">${text.festivalId}</label>
           <input
@@ -1260,6 +1287,8 @@ export class App {
     });
     window.removeEventListener('keydown', this.gateEntryKeyCapture, true);
     window.removeEventListener('keyup', this.gateEntryKeyCapture, true);
+    this.entryRecovery.finish();
+    this.recordBlackBox('entry-complete');
   }
 
   private cancelGateEntry(): void {
@@ -1284,6 +1313,10 @@ export class App {
   private mountGatePreview(): Promise<void> {
     const host = this.root.querySelector<HTMLElement>('[data-gate-backdrop]');
     if (!host || this.world) return Promise.resolve();
+    // After a process died during entry, keep even the optional 3D preview
+    // unloaded until an explicit retry. The form/backdrop need no GPU scene.
+    const phase = this.entryRecovery.phase();
+    if (!this.openingWorld && (phase === 'loading' || phase === 'interrupted')) return Promise.resolve();
     const region = this.root.querySelector<HTMLElement>('[data-gate-avatar]') ?? undefined;
     if (this.gatePreviewFailed) this.disposeGatePreview();
     this.followGateLoad();
@@ -1528,6 +1561,7 @@ export class App {
   private enterWorldAfterGateFeedback(): void {
     if(this.openingWorld)return;
     this.openingWorld=true;
+    this.entryRecovery.begin();
     this.beginGateEntry();
     const previewReady = this.prepareGateEntry();
     this.root.querySelectorAll<HTMLButtonElement>('#gate-form button[type="submit"]').forEach(b=>b.disabled=true);
@@ -1560,9 +1594,11 @@ export class App {
         this.openingWorld=false;
       }).catch((error: unknown) => {
         stopProgress();
+        this.entryRecovery.fail();
         this.openingWorld=false;
         this.world?.stop();
         this.world = undefined;
+        this.disposeGatePreview();
         this.cancelGateEntry();
         this.entryAudio.setMuted(true);
         console.error('Festival entry failed', error);
@@ -1631,16 +1667,29 @@ export class App {
     const { loadImportedAvatar } = await import('../world/ImportedAvatar');
     await loadImportedAvatar(undefined, ['male', 'female'], false);
     this.setGateEntryProgress(.5, this.language === 'zh-TW' ? '正在準備世界…' : 'PREPARING THE WORLD…');
+    // Finish the original entrance flight before allocating the playable
+    // world. A small still frame keeps its imagery and the real loading bar,
+    // while phones own only one GPU scene/context at a time.
+    // Coarse-pointer devices keep this path after rotating into landscape,
+    // including phones/tablets wider than the graphics-default heuristic.
+    if (window.matchMedia('(max-width: 800px), (pointer: coarse)').matches && this.gatePreview) {
+      try {
+        await requestWithDeadline(() => this.gatePreview!.freezeEntryForWorld(), 12_000, 'Entrance handoff');
+      } catch {
+        // Optional imagery cannot keep admission blocked or retain its GPU.
+        this.disposeGatePreview();
+      }
+      // Let the old context-loss/disposal task drain before the new renderer.
+      await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+    }
     this.retainGateEntry();
     this.lockPageZoomForWorld();
     // Marked as soon as somebody is inside, so that if the phone throws this
     // tab away while it is locked, the restored tab knows it was already in
     // and walks back rather than presenting a sign-in page.
     sessionStorage.setItem(INSIDE_KEY, '1');
-    // Retain the guard through gameplay, beyond the completed entry work.
-    // Clearing after eight seconds allowed a phone failing at 49 seconds to
-    // auto-rejoin forever. Keep the guard through two minutes of gameplay.
-    window.setTimeout(() => sessionStorage.removeItem(REJOIN_TRIES_KEY), 120_000);
+    // The stability interval starts only after completeGateEntry hands over
+    // control. Slow loading must never erase the automatic-rejoin budget.
     this.startBlackBox();
     const zh = this.language === 'zh-TW';
     const vrPreview = this.usesVrSimulation();
@@ -1864,6 +1913,7 @@ export class App {
         if (this.festivalClient.online) void this.festivalClient.reportTrackDuration(venue, youtubeId, seconds);
       },
     });
+    this.recordBlackBox('world-constructed');
     // The programme as it stands, before the downloads: the world starts its
     // one YouTube player as soon as it knows a film, and every second of the
     // loading view it gets is a second less of start-up inside the festival.
@@ -2833,6 +2883,7 @@ export class App {
     // Wait for every fixed sound job to finish, including failures. An early
     // timeout used to leave network and decode work running inside the world.
     await Promise.all([ambience, this.entryAudio.loadInterfaceSounds()]);
+    this.recordBlackBox('world-ready');
     this.world.start();
     this.setGateEntryProgress(.9, this.language === 'zh-TW' ? '正在準備入口…' : 'PREPARING THE ENTRANCE…');
     await this.completeGateEntry();

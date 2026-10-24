@@ -3,18 +3,22 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {runInNewContext} from 'node:vm';
 import ts from 'typescript';
+import { EntryRecovery } from '../src/ui/EntryRecovery.ts';
 const source=await readFile('src/ui/App.ts','utf8');
 const tree=ts.createSourceFile('App.ts',source,ts.ScriptTarget.Latest,true);
 const app=tree.statements.find(n=>ts.isClassDeclaration(n)&&n.name?.text==='App');
 const helperNames=['normalizeIdForSafety','isValidId','readProfile','readSession','readActiveProfile','saveProfile'];
 const helpers=tree.statements.filter(n=>ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>helperNames.includes(d.name.getText(tree)))).map(n=>n.getText(tree)).join('\n');
 const methods=['rejoinAfterDiscard','recordBlackBox','preparePhoneFilmPlayback','rememberPalette'].map(name=>app.members.find(n=>n.name?.getText(tree)===name).getText(tree)).join('\n');
-const keys={PROFILE_KEY:'profile',TAB_PROFILE_KEY:'tab-profile',INSIDE_KEY:'inside',REJOIN_TRIES_KEY:'tries',AUDIO_MUTED_KEY:'muted',BLACK_BOX_KEY:'blackbox'};
+const keys={PROFILE_KEY:'profile',TAB_PROFILE_KEY:'tab-profile',INSIDE_KEY:'inside',REJOIN_TRIES_KEY:'tries',AUDIO_MUTED_KEY:'muted',BLACK_BOX_KEY:'blackbox',ENTRY_PHASE_KEY:'entry-phase'};
 function store(){const values=new Map();return{getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,String(v)),removeItem:k=>values.delete(k)};}
 function harness(overrides={}){
  const globals={...keys,sessionStorage:store(),localStorage:store(),performance:{now:()=>1000},...overrides};
  runInNewContext(ts.transpileModule(`${helpers}; class Harness { lastFilmCheckpointAt=-Infinity; ${methods} }; globalThis.api={readActiveProfile,saveProfile,Harness};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,globals);
- return{...globals,...globals.api};
+ const entryRecovery=new EntryRecovery({storage:()=>globals.sessionStorage,phaseKey:keys.ENTRY_PHASE_KEY,retryKey:keys.REJOIN_TRIES_KEY,setTimeout:()=>0,clearTimeout(){}});
+ globals.api.Harness.prototype.entryRecovery=entryRecovery;
+ globals.api.Harness.prototype.disposeGatePreview=()=>{};
+ return{...globals,...globals.api,entryRecovery};
 }
 const profile={id:'Visitor',language:'zh-TW',graphicsMode:'lite',palette:{top:'#123456'}};
 test('blocked tab storage cannot prevent the sign-in screen or saved-device fallback',()=>{
@@ -46,6 +50,27 @@ test('a different remembered profile cannot replace this tabs active identity',(
  assert.equal(h.readActiveProfile().id,'Visitor');
  h.sessionStorage.removeItem('inside');assert.equal(h.readActiveProfile(),null);
 });
+test('an interrupted entrance stops before auto-admission and keeps its tab identity and credentials',()=>{
+ const h=harness();h.saveProfile(profile,false);h.sessionStorage.setItem('inside','1');
+ h.sessionStorage.setItem('server-session','same-visitor');h.entryRecovery.begin();
+ const ui=new h.Harness(),notice={hidden:true,textContent:''};
+ ui.root={querySelector:()=>notice};ui.language='en';ui.reviewsGateMotion=()=>false;
+ ui.enterWhenThereIsRoom=()=>assert.fail('must not automatically allocate the crashed world again');
+ ui.rejoinAfterDiscard();
+ assert.equal(h.entryRecovery.phase(),'interrupted');assert.equal(h.sessionStorage.getItem('inside'),null);
+ assert.equal(h.readActiveProfile().id,'Visitor');assert.equal(h.localStorage.getItem('profile'),null);
+ assert.equal(h.sessionStorage.getItem('server-session'),'same-visitor');assert.equal(notice.hidden,false);
+ ui.rejoinAfterDiscard();assert.equal(h.entryRecovery.phase(),'interrupted');
+});
+test('a delayed support probe cannot classify a current manual entry as a previous crash',()=>{
+ const h=harness();h.saveProfile(profile,false);h.sessionStorage.setItem('inside','1');h.entryRecovery.begin();
+ const ui=new h.Harness();ui.reviewsGateMotion=()=>false;ui.openingWorld=true;
+ ui.enterWhenThereIsRoom=()=>assert.fail('must not enter twice while admission is active');
+ ui.rejoinAfterDiscard();assert.equal(h.entryRecovery.phase(),'loading');
+ assert.equal(h.sessionStorage.getItem('inside'),'1');
+ ui.openingWorld=false;ui.world={};ui.rejoinAfterDiscard();assert.equal(h.entryRecovery.phase(),'loading');
+ h.entryRecovery.finish();assert.equal(h.entryRecovery.phase(),'ready');
+});
 test('the phone writes a pre-decoder checkpoint even between periodic samples, and silences jukebox',()=>{
  const h=harness(),ui=new h.Harness();let stops=0,samples=0;
  ui.usesSingleFilmPlayer=()=>true;ui.stopJukebox=()=>stops++;
@@ -61,6 +86,18 @@ test('fixed audio completes under the entry overlay before gameplay starts',()=>
  assert.ok(barrier>0&&barrier<method.indexOf('this.world.start()'));
  assert.ok(barrier<method.indexOf('await this.completeGateEntry()'));
  assert.doesNotMatch(method,/AMBIENCE_ENTRY_WAIT_MS|Promise\.race\(\[ambience/);
+});
+test('mobile entrance retires its preview before construction and starts stability only after handoff',()=>{
+ const enter=app.members.find(n=>n.name?.getText(tree)==='enterWorld').getText(tree);
+ assert.ok(enter.indexOf('freezeEntryForWorld()')<enter.indexOf('new FestivalWorld('));
+ assert.match(enter,/matchMedia\('\(max-width: 800px\), \(pointer: coarse\)'\)\.matches && this\.gatePreview/);
+ assert.doesNotMatch(enter,/setTimeout\(\(\) => sessionStorage\.removeItem\(REJOIN_TRIES_KEY\)/);
+ const finish=app.members.find(n=>n.name?.getText(tree)==='completeGateEntry').getText(tree);
+ assert.ok(finish.indexOf('this.entryRecovery.finish()')>finish.indexOf('this.world?.setEntryHandoffPaused(false)'));
+ assert.ok(finish.indexOf('this.entryRecovery.finish()')>finish.indexOf('this.gateEntryOverlay?.remove()'));
+ const begin=app.members.find(n=>n.name?.getText(tree)==='enterWorldAfterGateFeedback').getText(tree);
+ assert.ok(begin.indexOf('this.entryRecovery.begin()')<begin.indexOf('this.beginGateEntry()'));
+ assert.match(begin,/this\.entryRecovery\.fail\(\)/);
 });
 
 test('tab recovery keeps later outfit and quality changes without enabling device remembering',()=>{

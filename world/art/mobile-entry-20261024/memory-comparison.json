@@ -1,0 +1,223 @@
+{
+  "entry": "main-CIVNmyJE.js",
+  "physicalDevice": false,
+  "measurement": "WebGL API storage payload estimates; excludes CPU/browser/driver overhead; not process RAM",
+  "runs": [
+    {
+      "mode": "lite",
+      "orientation": "portrait",
+      "comparison": {
+        "baselinePeakMiB": 422.39812088012695,
+        "fixedPeakMiB": 304.8811569213867,
+        "reductionMiB": 117.51696395874023
+      },
+      "checks": {
+        "mainCreatedWithOneLiveContext": true,
+        "snapshotNonblank": true,
+        "cameraEndpoint": true,
+        "barHalfwayAtSnapshot": true,
+        "noAppErrors": true
+      },
+      "snapshots": [
+        {
+          "at": 4517,
+          "sourceContext": 1,
+          "sourceLost": false,
+          "sourceDraws": 16242,
+          "width": 321,
+          "height": 544,
+          "bar": "50",
+          "label": "\u6b63\u5728\u6e96\u5099\u4e16\u754c\u2026",
+          "camera": {
+            "preview": [
+              1.1999999999999886,
+              2.9585264456231926,
+              96.7368424871272
+            ],
+            "entry": [
+              1.2,
+              2.9585264456232494,
+              96.7368424871272
+            ],
+            "previewFov": 74,
+            "entryFov": 74,
+            "positionDelta": 5.796044745074226e-14
+          },
+          "pixels": {
+            "min": 0,
+            "max": 208,
+            "opaque": 4096,
+            "total": 4096,
+            "mean": 48.61271158854165
+          }
+        }
+      ],
+      "mainContextCreations": [
+        {
+          "at": 4539,
+          "canvas": "world-canvas",
+          "live": 1,
+          "contexts": [
+            {
+              "id": 1,
+              "canvas": "gate__world",
+              "connected": false,
+              "lost": true,
+              "width": 0,
+              "height": 0,
+              "textures": 32,
+              "textureBytes": 37864800,
+              "buffers": 1094,
+              "bufferBytes": 34761220,
+              "renderbuffers": 0,
+              "renderbufferBytes": 0,
+              "draws": 16242
+            },
+            {
+              "id": 2,
+              "canvas": "world-canvas",
+              "connected": true,
+              "lost": false,
+              "width": 300,
+              "height": 150,
+              "textures": 0,
+              "textureBytes": 0,
+              "buffers": 0,
+              "bufferBytes": 0,
+              "renderbuffers": 0,
+              "renderbufferBytes": 0,
+              "draws": 0
+            }
+          ],
+          "bar": "60"
+        }
+      ],
+      "publicVenuesChecked": [
+        "shore",
+        "palace",
+        "drive-in",
+        "club",
+        "rooftop"
+      ],
+      "private": {
+        "frames": 1,
+        "shared": false,
+        "screen": true
+      },
+      "publicReturnedToOneIframe": true,
+      "lateFixedAssets": [],
+      "contextRestored": true,
+      "appErrors": [],
+      "siteFailures": [],
+      "firstFilmDiagnostic": "timed-out"
+    },
+    {
+      "mode": "normal",
+      "orientation": "portrait",
+      "comparison": {
+        "baselinePeakMiB": 435.0965805053711,
+        "fixedPeakMiB": 321.3885688781738,
+        "reductionMiB": 113.70801162719727
+      },
+      "checks": {
+        "mainCreatedWithOneLiveContext": true,
+        "snapshotNonblank": true,
+        "cameraEndpoint": true,
+        "barHalfwayAtSnapshot": true,
+        "noAppErrors": true
+      },
+      "snapshots": [
+        {
+          "at": 4112,
+          "sourceContext": 1,
+          "sourceLost": false,
+          "sourceDraws": 16668,
+          "width": 321,
+          "height": 544,
+          "bar": "50",
+          "label": "\u6b63\u5728\u6e96\u5099\u4e16\u754c\u2026",
+          "camera": {
+            "preview": [
+              1.1999999999999886,
+              2.9585264456231926,
+              96.7368424871272
+            ],
+            "entry": [
+              1.2,
+              2.9585264456232494,
+              96.7368424871272
+            ],
+            "previewFov": 74,
+            "entryFov": 74,
+            "positionDelta": 5.796044745074226e-14
+          },
+          "pixels": {
+            "min": 0,
+            "max": 208,
+            "opaque": 4096,
+            "total": 4096,
+            "mean": 47.61360677083317
+          }
+        }
+      ],
+      "mainContextCreations": [
+        {
+          "at": 4132,
+          "canvas": "world-canvas",
+          "live": 1,
+          "contexts": [
+            {
+              "id": 1,
+              "canvas": "gate__world",
+              "connected": false,
+              "lost": true,
+              "width": 0,
+              "height": 0,
+              "textures": 32,
+              "textureBytes": 37864800,
+              "buffers": 1094,
+              "bufferBytes": 34761220,
+              "renderbuffers": 0,
+              "renderbufferBytes": 0,
+              "draws": 16668
+            },
+            {
+              "id": 2,
+              "canvas": "world-canvas",
+              "connected": true,
+              "lost": false,
+              "width": 300,
+              "height": 150,
+              "textures": 0,
+              "textureBytes": 0,
+              "buffers": 0,
+              "bufferBytes": 0,
+              "renderbuffers": 0,
+              "renderbufferBytes": 0,
+              "draws": 0
+            }
+          ],
+          "bar": "60"
+        }
+      ],
+      "publicVenuesChecked": [
+        "shore",
+        "palace",
+        "drive-in",
+        "club",
+        "rooftop"
+      ],
+      "private": {
+        "frames": 1,
+        "shared": false,
+        "screen": true
+      },
+      "publicReturnedToOneIframe": true,
+      "lateFixedAssets": [],
+      "contextRestored": true,
+      "appErrors": [],
+      "siteFailures": [],
+      "firstFilmDiagnostic": "timed-out"
+    }
+  ]
+}
