@@ -31,6 +31,8 @@ const script = ts.transpileModule(`${tipsSource}\n${deadline}\n${meterSource}\nc
   palette = { hair: '#402a2a' };
   graphicsMode = 'normal';
   language = 'en';
+  entryRecovery = { finish() {}, phase() { return undefined; } };
+  recordBlackBox = () => {};
   ${methods}
 }; globalThis.GateLifecycle = GateLifecycle; globalThis.TipRotation = TipRotation; globalThis.entryTips = entryTips;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
@@ -104,6 +106,18 @@ test('a late preview download cannot construct WebGL after the actual world or t
     await settle();
     assert.equal(f.instances.length, 0);
     assert.equal(f.app.gatePreviewMount, undefined);
+  }
+});
+
+test('interrupted entry keeps the recovery gate free of automatic 3D until manual retry', async () => {
+  for (const phase of ['loading', 'interrupted']) {
+    const f = fixture(); f.app.entryRecovery.phase = () => phase;
+    await f.app.mountGatePreview(); await settle();
+    assert.equal(f.imports(), 0); assert.equal(f.instances.length, 0);
+    f.app.openingWorld = true;
+    const retry = f.app.mountGatePreview(); await settle(); f.resolve(); await retry;
+    assert.equal(f.instances.length, 1, 'an explicit retry retains the original entrance preview');
+    f.app.disposeGatePreview();
   }
 });
 

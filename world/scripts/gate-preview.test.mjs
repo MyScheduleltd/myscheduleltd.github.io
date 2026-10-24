@@ -13,7 +13,7 @@ const bundle = await build({ entryPoints: ['src/world/GatePreview.ts'], bundle: 
     builder.onLoad({ filter: /.*/, namespace: 'preview-test' }, ({ path }) => ({ contents: path === 'world' ? `
       export class FestivalWorld {
         constructor(options) { this.options=options; this.frames=[]; this.palettes=[]; this.stopped=0; globalThis.__gatePreviewTestWorlds.push(this); }
-        renderGatePreview(frame) { if(this.shouldFail) throw new Error('preview draw failed'); this.frames.push(frame); return {position:[1,2,3],fov:46}; }
+        renderGatePreview(frame) { if(this.shouldFail) throw new Error('preview draw failed'); this.frames.push(frame); this.options.canvas.width=Math.round(frame.width*frame.pixelRatio); this.options.canvas.height=Math.round(frame.height*frame.pixelRatio); this.options.canvas.lastPaint=this.frames.length; return {position:[1,2,3],fov:46}; }
         setAvatarPalette(palette) { this.palettes.push(palette); }
         cancelGateEntry() { this.cancelled=(this.cancelled??0)+1; }
         stop() { this.stopped++; }
@@ -38,6 +38,8 @@ class Element extends EventTarget {
   removeEventListener(type, listener, options) { super.removeEventListener(type, listener, options); this.listeners.delete(listener); }
   prepend(element) { element.remove(); this.children.unshift(element); element.parent = this; }
   remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); this.parent = undefined; }
+  replaceWith(element) { const parent=this.parent,index=parent?.children.indexOf(this);if(parent&&index>=0){element.remove();parent.children[index]=element;element.parent=parent;this.parent=undefined;} }
+  getContext(kind) { if(kind!=='2d'||captureFailure==='unavailable')return null;return {drawImage:(source)=>{if(captureFailure==='throws')throw Error('snapshot failed');assert.ok(source.lastPaint,'snapshot must read the fresh drawing buffer synchronously, before the browser clears it');this.copiedPaint=source.lastPaint;this.copiedSource=source;}}; }
   setAttribute(name, value) { this.attributes[name] = value; }
   getBoundingClientRect() { return { ...this.rect }; }
   setPointerCapture(id) { this.captured.add(id); }
@@ -45,6 +47,7 @@ class Element extends EventTarget {
   releasePointerCapture(id) { this.captured.delete(id); }
   focus() { this.focused = true; }
 }
+let captureFailure;
 const documentMock = new Element();
 documentMock.hidden = false;
 documentMock.createElement = () => new Element();
@@ -60,7 +63,7 @@ Object.defineProperty(globalThis, 'performance', { configurable: true, value: { 
 const pendingFrames = new Map();
 globalThis.requestAnimationFrame = callback => { pendingFrames.set(++nextRaf, callback); return nextRaf; };
 globalThis.cancelAnimationFrame = id => pendingFrames.delete(id);
-const step = now => { clockNow = now; const callbacks = [...pendingFrames.values()]; pendingFrames.clear(); callbacks.forEach(callback => callback(now)); };
+const step = now => { clockNow = now; const callbacks = [...pendingFrames.values()]; pendingFrames.clear(); callbacks.forEach(callback => callback(now));for(const world of previewWorlds)world.options.canvas.lastPaint=undefined; };
 const flush = async () => { await new Promise(resolve => setImmediate(resolve)); };
 const palette = { skin: '#e6bd9d', hair: '#443332', top: '#18191b', bottoms: '#535644', swimwear: '#18191b' };
 const pointer = (type, values) => { const event = new Event(type, { cancelable: true }); Object.assign(event, values); return event; };
@@ -76,7 +79,47 @@ const gateIslandProbes = () => {
 const host = () => new Element();
 const avatarRegion = () => new Element({ x: 700, y: 100, width: 450, height: 580 });
 
-function reset() { clockNow = 0; previewWorlds.length = 0; loads.length = 0; loadModel = () => Promise.resolve(); media.matches = false; motion.matches = false; documentMock.hidden = false; pendingFrames.clear(); }
+function reset() { clockNow = 0; previewWorlds.length = 0; loads.length = 0; loadModel = () => Promise.resolve(); captureFailure=undefined;media.matches = false; motion.matches = false; documentMock.hidden = false; pendingFrames.clear(); }
+
+test('mobile finishes the full flight, copies the just-rendered frame in 2D, and releases its GPU before permitting the real world', async()=>{
+ reset();media.matches=true;
+ const target=host(),controller=new GatePreview({palette});controller.mount(target,avatarRegion());await flush();step(1000);
+ const world=previewWorlds[0],original=target.children[0];
+ controller.beginEntry();controller.setEntryProgress(.45);step(1050);
+ const before=world.frames.at(-1).entry;
+ let result;const freeze=controller.freezeEntryForWorld();freeze.then(value=>{assert.equal(world.stopped,1,'GPU owner stops before resolving admission');result=value;});
+ assert.equal(controller.freezeEntryForWorld(),freeze,'concurrent asks share the same terminal handoff');
+ for(let now=1100;now<1500;now+=50)step(now);
+ assert.equal(result,undefined,'the original full flight remains animated, rather than snapping to its endpoint');
+ for(let now=1500;now<3000&&pendingFrames.size;now+=50)step(now);
+ assert.equal(await freeze,true);assert.ok(before<1);assert.equal(world.frames.at(-1).entry,1);
+ const snapshot=target.children[0];assert.notEqual(snapshot,original);assert.equal(snapshot.className,'gate__world');
+ assert.equal(snapshot.copiedSource,original);assert.equal(snapshot.copiedPaint,world.frames.length);
+ assert.deepEqual([snapshot.width,snapshot.height],[original.width,original.height]);
+ assert.equal(world.stopped,1);assert.equal(pendingFrames.size,0);
+ controller.setPalette({...palette,hair:'#123456'});controller.mount(host(),avatarRegion());media.dispatchEvent(new Event('change'));
+ assert.equal(previewWorlds.length,1,'retired preview cannot recreate a GPU through redraw/resize/late appearance');
+ assert.equal(await controller.freezeEntryForWorld(),true,'the retained snapshot is idempotent');
+ controller.dispose();controller.dispose();assert.equal(target.children.length,0);assert.deepEqual([snapshot.width,snapshot.height],[1,1]);
+});
+
+test('hidden, disposed, failed or uncapturable entrance handoffs settle safely after releasing the preview',async()=>{
+ for(const outcome of ['hidden-before','hidden-during','dispose','draw-failed','no-2d','capture-failed']){
+  reset();media.matches=true;motion.matches=true;
+  const target=host(),controller=new GatePreview({palette});controller.mount(target,avatarRegion());await flush();step(1000);
+  const world=previewWorlds[0];controller.beginEntry();
+  if(outcome==='hidden-before')documentMock.hidden=true;
+  const freeze=controller.freezeEntryForWorld();
+  if(outcome==='hidden-during'){documentMock.hidden=true;documentMock.dispatchEvent(new Event('visibilitychange'));}
+  if(outcome==='dispose')controller.dispose();
+  if(outcome==='draw-failed')world.shouldFail=true;
+  if(outcome==='no-2d')captureFailure='unavailable';
+  if(outcome==='capture-failed')captureFailure='throws';
+  step(1100);
+  assert.equal(await freeze,false,outcome);assert.equal(world.stopped,1,outcome+' releases the GPU before admission can proceed');
+  assert.equal(pendingFrames.size,0);assert.equal(target.children.length,0);controller.dispose();
+ }
+});
 
 test('gate uses one input-free world across redraws and applies the latest appearance without rebuilding', async () => {
   reset();

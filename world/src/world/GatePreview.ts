@@ -26,6 +26,8 @@ export class GatePreview {
   private readonly canvas = document.createElement('canvas');
   private readonly cssLayer = document.createElement('div');
   private readonly unusedForeground = document.createElement('canvas');
+  private frozenCanvas?: HTMLCanvasElement;
+  private freezePending?: { promise: Promise<boolean>; resolve: (captured: boolean) => void };
   private world?: FestivalWorld;
   private host?: HTMLElement;
   private avatarRegion?: HTMLElement;
@@ -154,6 +156,51 @@ export class GatePreview {
     this.schedule();
   }
 
+  /** Finish the original flight, keep its final pixels, and retire its GPU
+   * before the real world is built. App's loading bar keeps its own progress. */
+  freezeEntryForWorld(): Promise<boolean> {
+    if (this.frozenCanvas) return Promise.resolve(true);
+    if (this.disposed || this.failed || document.hidden) {
+      this.dispose();
+      return Promise.resolve(false);
+    }
+    if (this.freezePending) return this.freezePending.promise;
+    let resolve!: (captured: boolean) => void;
+    const promise = new Promise<boolean>(done => { resolve = done; });
+    this.freezePending = { promise, resolve };
+    this.beginEntry();
+    this.setEntryProgress(1);
+    return promise;
+  }
+
+  /** Called synchronously after rendering: an unpreserved GL drawing buffer
+   * may already be cleared by the next animation frame or promise callback. */
+  private freezePaintedEntry(): void {
+    let frozen: HTMLCanvasElement | undefined;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = this.canvas.width; canvas.height = this.canvas.height;
+      const context = canvas.getContext('2d');
+      if (!context || !canvas.width || !canvas.height) throw new Error('Entrance snapshot is unavailable.');
+      context.drawImage(this.canvas, 0, 0);
+      canvas.className = this.canvas.className;
+      canvas.setAttribute('aria-hidden', 'true');
+      this.canvas.replaceWith(canvas);
+      frozen = canvas;
+    } catch { /* Optional imagery: admission proceeds after releasing this GPU. */ }
+    this.finishFreeze(frozen);
+  }
+
+  private finishFreeze(frozen?: HTMLCanvasElement): void {
+    const request = this.freezePending;
+    this.freezePending = undefined;
+    // `dispose()` releases the preview world/context before this promise can
+    // permit construction of the real world. Retain only the small 2D copy.
+    this.dispose();
+    this.frozenCanvas = frozen;
+    request?.resolve(Boolean(frozen));
+  }
+
   cancelEntry(): void {
     if (this.disposed) return;
     this.entry = undefined;
@@ -202,6 +249,11 @@ export class GatePreview {
   }
 
   dispose(): void {
+    if (this.frozenCanvas) {
+      this.frozenCanvas.remove();
+      this.frozenCanvas.width = this.frozenCanvas.height = 1;
+      this.frozenCanvas = undefined;
+    }
     if (this.disposed) return;
     this.disposed = true;
     cancelAnimationFrame(this.animation);
@@ -221,6 +273,8 @@ export class GatePreview {
     this.cssLayer.remove();
     this.host = undefined;
     this.avatarRegion = undefined;
+    const freeze = this.freezePending; this.freezePending = undefined;
+    freeze?.resolve(false);
   }
 
   private initialize(): Promise<void> {
@@ -307,6 +361,10 @@ export class GatePreview {
             elapsedMs: Math.max(0, now - entry.startedAt), progress: entry.current, target: entry.target,
             camera, avatarViewport, avatarScissor: avatar,
           });
+          if (this.freezePending && entry?.current === 1) {
+            this.freezePaintedEntry();
+            return;
+          }
           if (entry && !this.stagePaint && this.stageWaiters.some(stage => entry.current >= stage.value - .01)) {
             this.stagePaint = requestAnimationFrame(() => {
               this.stagePaint = 0;
@@ -337,6 +395,7 @@ export class GatePreview {
           this.failed = true;
           this.finishReadyWaiters(false);
           this.finishEntryWaiters();
+          if (this.freezePending) this.finishFreeze();
           this.options.onError?.(error);
           return;
         }
@@ -347,6 +406,7 @@ export class GatePreview {
 
   private readonly visibilityChanged = (): void => {
     if (document.hidden) {
+      if (this.freezePending) { this.finishFreeze(); return; }
       cancelAnimationFrame(this.animation); this.animation = 0;
       this.finishReadyWaiters(false);
       this.finishStageWaiters();

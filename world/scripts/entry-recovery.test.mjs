@@ -1,6 +1,92 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
+import { EntryRecovery, ENTRY_PHASE_KEY, ENTRY_RETRY_KEY } from '../src/ui/EntryRecovery.ts';
+
+function entryLifecycle(initial = {}) {
+  const values = new Map(Object.entries(initial));
+  const pending = new Map(), callbacks = new Map(), canceled = [];
+  let now = 0, serial = 0;
+  const storage = {
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: key => values.delete(key),
+  };
+  const options = { storage,
+    setTimeout(callback, milliseconds) { const id=++serial; pending.set(id,{callback,at:now+milliseconds});callbacks.set(id,callback);return id; },
+    clearTimeout(id) { canceled.push(id);pending.delete(id); },
+  };
+  const advance = milliseconds => {
+    now += milliseconds;
+    for (const [id, task] of [...pending]) if (task.at <= now) { pending.delete(id); task.callback(); }
+  };
+  return { recovery:new EntryRecovery(options),options,storage,values,pending,callbacks,canceled,advance };
+}
+
+test('an interrupted native loading phase blocks automatic world allocation and preserves the visitor records', () => {
+  const visitor = { inside:'1', profile:'saved tab outfit', session:'existing server session', [ENTRY_RETRY_KEY]:'1' };
+  const h=entryLifecycle(visitor);
+  assert.equal(h.recovery.allowAutomaticRejoin(),true,'legacy visits retain the existing bounded rejoin path');
+  h.recovery.begin();
+  const afterDiscard=new EntryRecovery(h.options);
+  assert.equal(afterDiscard.phase(),'loading');
+  assert.equal(afterDiscard.allowAutomaticRejoin(),false);
+  assert.equal(afterDiscard.phase(),'interrupted');
+  assert.equal(afterDiscard.allowAutomaticRejoin(),false,'another reload cannot restart heavy entry');
+  for (const [key,value] of Object.entries(visitor)) assert.equal(h.values.get(key),value,'identity/session/retry data must survive');
+  assert.equal(h.pending.size,0,'an unfinished entrance starts no stability timer');
+  afterDiscard.begin();
+  assert.equal(afterDiscard.phase(),'loading','an explicit manual retry can enter again');
+});
+
+test('only completed handoff starts the stability interval, even after a very slow entrance', () => {
+  const h=entryLifecycle({[ENTRY_RETRY_KEY]:'2'});
+  h.recovery.begin();h.advance(300_000);
+  assert.equal(h.recovery.phase(),'loading');assert.equal(h.values.get(ENTRY_RETRY_KEY),'2');
+  assert.equal(h.pending.size,0);
+  h.recovery.finish();
+  assert.equal(h.recovery.phase(),'ready');assert.equal(h.pending.size,1);
+  assert.equal(new EntryRecovery(h.options).allowAutomaticRejoin(),true);
+  h.advance(119_999);assert.equal(h.recovery.phase(),'ready');assert.equal(h.values.get(ENTRY_RETRY_KEY),'2');
+  h.advance(1);assert.equal(h.recovery.phase(),'stable');assert.equal(h.values.has(ENTRY_RETRY_KEY),false);
+  assert.equal(new EntryRecovery(h.options).allowAutomaticRejoin(),true);
+});
+
+test('a new attempt or failed world cancels its prior timer and rejects late timer callbacks', () => {
+  const h=entryLifecycle({[ENTRY_RETRY_KEY]:'1'});
+  h.recovery.begin();h.recovery.finish();
+  const oldCallback=h.callbacks.get(1);
+  h.recovery.begin();assert.deepEqual(h.canceled,[1]);
+  oldCallback();assert.equal(h.recovery.phase(),'loading');assert.equal(h.values.get(ENTRY_RETRY_KEY),'1');
+  h.recovery.finish();const nextCallback=h.callbacks.get(2);
+  h.recovery.fail();assert.deepEqual(h.canceled,[1,2]);
+  nextCallback();assert.equal(h.recovery.phase(),'interrupted');assert.equal(h.values.get(ENTRY_RETRY_KEY),'1');
+  assert.equal(h.pending.size,0);assert.equal(h.recovery.allowAutomaticRejoin(),false);
+});
+
+test('duplicate completion or completion without entry cannot allocate extra stability timers', () => {
+  const h=entryLifecycle();h.recovery.finish();assert.equal(h.pending.size,0);
+  h.recovery.begin();h.recovery.finish();h.recovery.finish();assert.equal(h.pending.size,1);
+  h.recovery.fail();h.recovery.finish();assert.equal(h.pending.size,0);
+});
+
+test('blocked storage property, operations and malformed phase fail safely before automatic admission', () => {
+  let reads=0;
+  const blocked=new EntryRecovery({storage:()=>{reads++;throw Error('blocked storage property');}});
+  assert.equal(reads,0,'constructing the lifecycle must not access browser storage');
+  assert.equal(blocked.phase(),undefined);assert.equal(blocked.allowAutomaticRejoin(),false);
+  assert.doesNotThrow(()=>{blocked.begin();blocked.finish();blocked.fail();});
+  const operations=new EntryRecovery({storage:{getItem(){throw Error('blocked read');},setItem(){throw Error('blocked write');},removeItem(){throw Error('blocked removal');}}});
+  assert.equal(operations.allowAutomaticRejoin(),false);assert.doesNotThrow(()=>{operations.begin();operations.finish();operations.fail();});
+  const malformed=entryLifecycle({[ENTRY_PHASE_KEY]:'not-a-real-phase'});
+  assert.equal(malformed.recovery.phase(),'interrupted');assert.equal(malformed.recovery.allowAutomaticRejoin(),false);
+});
+
+test('a late timer cannot overwrite an externally recorded interrupted entrance', () => {
+  const h=entryLifecycle({[ENTRY_RETRY_KEY]:'2'});
+  h.recovery.begin();h.recovery.finish();h.storage.setItem(ENTRY_PHASE_KEY,'interrupted');h.advance(120_000);
+  assert.equal(h.recovery.phase(),'interrupted');assert.equal(h.values.get(ENTRY_RETRY_KEY),'2');
+});
 
 const compiled = await build({ entryPoints: ['src/network/FestivalClient.ts'], bundle: true,
   write: false, format: 'esm', define: { 'import.meta.env': JSON.stringify({ DEV: false, VITE_FESTIVAL_SERVER_URL: 'https://festival.test' }) } });

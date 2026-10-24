@@ -1,0 +1,106 @@
+{
+  "entry": "main-CIVNmyJE.js",
+  "physicalDevice": false,
+  "runs": [
+    {
+      "mode": "lite",
+      "scenario": "interrupted",
+      "passed": true,
+      "error": null,
+      "afterVrResolution": null,
+      "afterInterruption": {
+        "phase": "interrupted",
+        "world": false,
+        "preview": false,
+        "glContexts": 0,
+        "glActive": 0,
+        "glPeak": 0,
+        "enabled": true,
+        "remember": false,
+        "persistent": false,
+        "notice": "\u4e0a\u6b21\u672a\u80fd\u5b8c\u6210\u9032\u5165\u5f71\u5c55\u3002\u8acb\u9ede\u9078\u9032\u5165\u91cd\u8a66\u3002"
+      },
+      "sameSessionPreserved": true,
+      "sameOutfitAndDyes": true,
+      "newAdmissions": 1,
+      "recoveries": 1,
+      "pageErrors": [],
+      "rejections": [],
+      "httpFailures": [],
+      "providerFailureCount": 3
+    },
+    {
+      "mode": "lite",
+      "scenario": "late-vr",
+      "passed": true,
+      "error": null,
+      "afterVrResolution": {
+        "phase": "loading",
+        "world": false,
+        "preview": true,
+        "glContexts": 1,
+        "glActive": 1,
+        "glPeak": 1,
+        "resolved": true
+      },
+      "sameSessionPreserved": true,
+      "sameOutfitAndDyes": true,
+      "newAdmissions": 1,
+      "recoveries": 0,
+      "pageErrors": [],
+      "rejections": [],
+      "httpFailures": [],
+      "providerFailureCount": 2
+    },
+    {
+      "mode": "normal",
+      "scenario": "interrupted",
+      "passed": true,
+      "error": null,
+      "afterVrResolution": null,
+      "afterInterruption": {
+        "phase": "interrupted",
+        "world": false,
+        "preview": false,
+        "glContexts": 0,
+        "glActive": 0,
+        "glPeak": 0,
+        "enabled": true,
+        "remember": false,
+        "persistent": false,
+        "notice": "\u4e0a\u6b21\u672a\u80fd\u5b8c\u6210\u9032\u5165\u5f71\u5c55\u3002\u8acb\u9ede\u9078\u9032\u5165\u91cd\u8a66\u3002"
+      },
+      "sameSessionPreserved": true,
+      "sameOutfitAndDyes": true,
+      "newAdmissions": 1,
+      "recoveries": 1,
+      "pageErrors": [],
+      "rejections": [],
+      "httpFailures": [],
+      "providerFailureCount": 6
+    },
+    {
+      "mode": "normal",
+      "scenario": "late-vr",
+      "passed": true,
+      "error": null,
+      "afterVrResolution": {
+        "phase": "loading",
+        "world": false,
+        "preview": true,
+        "glContexts": 1,
+        "glActive": 1,
+        "glPeak": 1,
+        "resolved": true
+      },
+      "sameSessionPreserved": true,
+      "sameOutfitAndDyes": true,
+      "newAdmissions": 1,
+      "recoveries": 0,
+      "pageErrors": [],
+      "rejections": [],
+      "httpFailures": [],
+      "providerFailureCount": 2
+    }
+  ]
+}
