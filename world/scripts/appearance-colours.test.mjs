@@ -12,7 +12,7 @@ const imports = await import('data:text/javascript;base64,' + Buffer.from(helper
 const source = await readFile('src/ui/App.ts', 'utf8');
 const tree = ts.createSourceFile('App.ts', source, ts.ScriptTarget.Latest, true);
 const app = tree.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'App');
-const constants = ['PROFILE_KEY', 'defaultPalette', 'OLD_DEFAULTS', 'paletteInputs', 'paletteLabels', 'readProfile'].map(name => {
+const constants = ['PROFILE_KEY', 'TAB_PROFILE_KEY', 'readSession', 'defaultPalette', 'OLD_DEFAULTS', 'paletteInputs', 'paletteLabels', 'readProfile'].map(name => {
   const statement = tree.statements.find(node => ts.isVariableStatement(node) && node.declarationList.declarations.some(declaration => declaration.name.getText(tree) === name));
   assert.ok(statement, name); return statement.getText(tree);
 }).join('\n');
@@ -26,7 +26,7 @@ const plain = value => JSON.parse(JSON.stringify(value));
 
 function fixture() {
   const saved = new Map();
-  const context = { ...imports, localStorage: { getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value) } };
+  const context = { ...imports, sessionStorage: { getItem: () => null, setItem() {} }, localStorage: { getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value) } };
   runInNewContext(javascript, context);
   const ui = new context.AppearanceHarness();
   return { ui, saved, restore: context.readSaved };

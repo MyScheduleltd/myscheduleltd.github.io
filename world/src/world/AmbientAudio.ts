@@ -1,4 +1,5 @@
 import { fetchAsset } from './AssetMirror';
+import { requestWithDeadline } from '../network/RequestDeadline';
 
 /**
  * The festival's own sounds: three recorded beds under the world and the click
@@ -71,6 +72,9 @@ const cueFile = (kind: InterfaceSound): string => (kind === 'click'
   : new URL('../assets/audio/ui-hover.wav', import.meta.url)).href;
 
 const CUE_KINDS: readonly InterfaceSound[] = ['click', 'hover'];
+const FIREWORK_KINDS = ['willow', 'peony', 'ring'] as const;
+/** Downloads already have a no-progress deadline; native decoding needs one too. */
+const AUDIO_DECODE_WAIT_MS = 30_000;
 
 const avatarFile = (kind: AvatarSound): string => ({
   'step-left': new URL('../assets/audio/avatar-step-left.wav', import.meta.url),
@@ -124,7 +128,9 @@ async function decode(url: string, fallback?: AudioContext): Promise<AudioBuffer
   const bytes = await fetchAsset(url);
   const context = decoderContext(fallback);
   if (!context) throw new Error('Audio decoding is unavailable.');
-  return context.decodeAudioData(bytes);
+  // Native decoding cannot be cancelled. A late result after this deadline
+  // is ignored, rather than being installed into a world already admitted.
+  return requestWithDeadline(() => context.decodeAudioData(bytes), AUDIO_DECODE_WAIT_MS, 'Sound decoding');
 }
 
 export class AmbientAudio {
@@ -230,9 +236,11 @@ export class AmbientAudio {
 
   /** The two menu sounds: small enough to fetch with the sign-in page itself. */
   loadInterfaceSounds(): Promise<void> {
-    this.cuesLoading ??= Promise.all(CUE_KINDS.map(async (kind) => {
-      this.cueBuffers.set(kind, await decode(cueFile(kind), this.context));
-    })).then(() => undefined).catch(() => { this.cuesLoading = undefined; });
+    this.cuesLoading ??= Promise.allSettled(CUE_KINDS.map(async (kind) => {
+      if (!this.cueBuffers.has(kind)) this.cueBuffers.set(kind, await decode(cueFile(kind), this.context));
+    })).then(results => {
+      if (results.some(result => result.status === 'rejected')) this.cuesLoading = undefined;
+    });
     return this.cuesLoading;
   }
 
@@ -243,7 +251,7 @@ export class AmbientAudio {
    */
   preloadWorldSounds(): Promise<void> {
     const mono = phone();
-    this.bedsLoading ??= Promise.all([
+    this.bedsLoading ??= Promise.allSettled([
       ...(Object.keys(BEDS) as BedKey[]).map(async (key) => {
         if (this.bedBuffers.has(key)) return;
         this.bedBuffers.set(key, await decode(bedFile(key, mono), this.context));
@@ -259,20 +267,28 @@ export class AmbientAudio {
       // The fireworks' three short bursts too (46 KB), so a show never starts
       // with a download (owner, 2026-10-23: everything loads at the gate).
       this.prepareFireworks(),
-    ]).then(() => undefined).catch(() => { this.bedsLoading = undefined; });
+      this.loadInterfaceSounds(),
+    ]).then(() => {
+      // Failed sounds remain optional. Drain every other requested sound
+      // before admission continues or a retry can duplicate pending work.
+      if (!this.worldSoundsReady()) this.bedsLoading = undefined;
+    });
     return this.bedsLoading;
   }
 
   worldSoundsReady(): boolean {
     return this.bedBuffers.size === Object.keys(BEDS).length
-      && this.avatarBuffers.size === AVATAR_KINDS.length && Boolean(this.skateBuffer);
+      && this.avatarBuffers.size === AVATAR_KINDS.length && Boolean(this.skateBuffer)
+      && this.fireworkBuffers.size === FIREWORK_KINDS.length && this.cueBuffers.size === CUE_KINDS.length;
   }
 
   /** Small burst excerpts from the owner's recording, never the 31 MB master; loaded with the world's sounds. */
   prepareFireworks(): Promise<void> {
-    this.fireworksLoading ??= Promise.all(['willow', 'peony', 'ring'].map(async kind => {
+    this.fireworksLoading ??= Promise.allSettled(FIREWORK_KINDS.map(async kind => {
       if (!this.fireworkBuffers.has(kind)) this.fireworkBuffers.set(kind, await decode(fireworkFile(kind), this.context));
-    })).then(() => undefined).catch(() => { this.fireworksLoading = undefined; });
+    })).then(results => {
+      if (results.some(result => result.status === 'rejected')) this.fireworksLoading = undefined;
+    });
     return this.fireworksLoading;
   }
 

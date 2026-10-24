@@ -138,6 +138,8 @@ const CAMERA_CORNER_CUE_MS = 1_100;
 const WORLD_VIEWPORT_CONTENT = 'width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
 
 const PROFILE_KEY = 'myschedule-festival-profile-v1';
+/** This tab can recover after Safari discards it, even without Remember Me. */
+const TAB_PROFILE_KEY = 'myschedule-festival-tab-profile-v1';
 /** Set once a visitor is inside, so a discarded tab knows it was already in. */
 const AUDIO_MUTED_KEY = 'festival-audio-muted';
 const INSIDE_KEY = 'myschedule-festival-inside-v1';
@@ -284,12 +286,6 @@ const readStoredVolume = (key: string): number | undefined => {
   }
 };
 /**
- * How long admission waits on the world's sounds once everything else is
- * ready. They are fetched from the sign-in page on, so this only runs out on a
- * very slow line — and then the beds fade in when they arrive.
- */
-const AMBIENCE_ENTRY_WAIT_MS = 8_000;
-/**
  * How far the view turns for a given drag, everywhere. 1 is the rate the world
  * was built around; VR applies a comfort factor of its own on top, so the
  * headset is gentler than the flat world at the same setting.
@@ -400,6 +396,23 @@ const readSession = <T>(key: string, fallback: T): T => {
   } catch {
     return fallback;
   }
+};
+
+/** Recover only this tab's admitted visit; a fresh tab uses the saved preference. */
+const readActiveProfile = (): SavedProfile | null => {
+  try {
+    if (sessionStorage.getItem(INSIDE_KEY) === '1') {
+      const tab = readSession<SavedProfile | null>(TAB_PROFILE_KEY, null);
+      if (typeof tab?.id === 'string' && isValidId(tab.id)) return tab;
+    }
+  } catch { /* blocked browser storage must not prevent the sign-in screen */ }
+  return readProfile();
+};
+
+const saveProfile = (profile: SavedProfile, remember: boolean): void => {
+  sessionStorage.setItem(TAB_PROFILE_KEY, JSON.stringify(profile));
+  if (remember) localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+  else localStorage.removeItem(PROFILE_KEY);
 };
 
 const setButtonPressed = (button: HTMLButtonElement, pressed: boolean) => {
@@ -590,7 +603,7 @@ export class App {
     if (ambientVolume !== undefined) this.entryAudio.setAmbientVolume(ambientVolume);
     if (interfaceVolume !== undefined) this.entryAudio.setInterfaceVolume(interfaceVolume);
     if (avatarVolume !== undefined) this.entryAudio.setAvatarVolume(avatarVolume);
-    const saved = readProfile();
+    const saved = readActiveProfile();
     const browserLanguage: Language = navigator.language.toLowerCase().startsWith('zh') ? 'zh-TW' : 'en';
     this.language = saved?.language ?? browserLanguage;
     // A phone defaulted to the heaviest setting the world has: shadows on,
@@ -810,7 +823,7 @@ export class App {
     // inherited an already admitted session from another preview.
     if (this.reviewsGateMotion()) return;
     if (sessionStorage.getItem(INSIDE_KEY) !== '1') return;
-    const saved = readProfile();
+    const saved = readActiveProfile();
     if (!saved?.id || !isValidId(saved.id)) return;
 
     // Never more than twice in a row without the world having settled.
@@ -869,13 +882,15 @@ export class App {
 
   /** Writes what the world is doing, once a second, where a crash cannot erase it. */
   private startBlackBox(): void {
-    window.setInterval(() => {
-      const sample = this.world?.diagnosticSample();
-      if (!sample) return;
-      try {
-        localStorage.setItem(BLACK_BOX_KEY, JSON.stringify({ ...sample, clean: false }));
-      } catch { /* private browsing */ }
-    }, 1_000);
+    window.setInterval(() => this.recordBlackBox(), 1_000);
+  }
+
+  private recordBlackBox(checkpoint = 'world'): void {
+    const sample = this.world?.diagnosticSample();
+    if (!sample) return;
+    try {
+      localStorage.setItem(BLACK_BOX_KEY, JSON.stringify({ ...sample, checkpoint, clean: false }));
+    } catch { /* private browsing */ }
   }
 
   private renderGate(): void {
@@ -1074,8 +1089,7 @@ export class App {
       if (this.vrRequested) sessionStorage.setItem(VR_MODE_KEY, '1');
       else sessionStorage.removeItem(VR_MODE_KEY);
       const profile: SavedProfile = { id, language: this.language, graphicsMode: this.graphicsMode, palette: this.palette };
-      if (remember) localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-      else localStorage.removeItem(PROFILE_KEY);
+      saveProfile(profile, remember);
       this.currentId = id;
       const muted = submitter?.dataset.audio === 'muted';
       // Unlock synchronously while the visitor’s submit gesture is active.
@@ -2815,11 +2829,10 @@ export class App {
       this.language === 'zh-TW' ? (stage === 'screens' ? '正在準備放映…' : progress < .6 ? '正在準備場景資源…' : '正在準備畫面…')
         : (stage === 'screens' ? 'PREPARING THE SCREENS…' : progress < .6 ? 'PREPARING WORLD ASSETS…' : 'PREPARING GRAPHICS…')));
     // The sounds belong to the entrance, so nobody waits for them inside.
-    if (!this.entryAudio.worldSoundsReady()) {
-      let timer = 0;
-      await Promise.race([ambience, new Promise<void>((resolve) => { timer = window.setTimeout(resolve, AMBIENCE_ENTRY_WAIT_MS); })]);
-      window.clearTimeout(timer);
-    }
+    this.setGateEntryProgress(.89, this.language === 'zh-TW' ? '正在準備音效…' : 'PREPARING THE SOUND…');
+    // Wait for every fixed sound job to finish, including failures. An early
+    // timeout used to leave network and decode work running inside the world.
+    await Promise.all([ambience, this.entryAudio.loadInterfaceSounds()]);
     this.world.start();
     this.setGateEntryProgress(.9, this.language === 'zh-TW' ? '正在準備入口…' : 'PREPARING THE ENTRANCE…');
     await this.completeGateEntry();
@@ -5937,8 +5950,17 @@ export class App {
 
   /** Called synchronously before the next film decoder is asked to start,
    * rather than waiting for the world's next 200 ms HUD snapshot. */
+  private lastFilmCheckpointAt = -Infinity;
+
   private preparePhoneFilmPlayback(): void {
     if (!this.usesSingleFilmPlayer()) return;
+    // A crash between one-second samples used to report "no player" even
+    // when the very next decoder start killed the page. Record before it.
+    const now = performance.now();
+    if (now - this.lastFilmCheckpointAt >= 250) {
+      this.lastFilmCheckpointAt = now;
+      this.recordBlackBox('film-start');
+    }
     this.jukeboxSilenced = true;
     this.stopJukebox();
   }
@@ -6967,6 +6989,7 @@ export class App {
       button.addEventListener('click', () => {
         this.graphicsMode = button.dataset.worldGraphics as GraphicsMode;
         this.world?.setGraphicsMode(this.graphicsMode);
+        this.rememberPalette();
         // The grain is CSS, so it reads the mode off the shell rather than
         // through the world.
         const shell = this.root.querySelector<HTMLElement>('.world-shell');
@@ -8390,10 +8413,12 @@ export class App {
    */
   private rememberPalette(): void {
     try {
+      const next = (profile: SavedProfile): SavedProfile => ({ ...profile,
+        palette: this.palette, language: this.language, graphicsMode: this.graphicsMode });
+      const tab = readSession<SavedProfile | null>(TAB_PROFILE_KEY, null);
+      if (tab) sessionStorage.setItem(TAB_PROFILE_KEY, JSON.stringify(next(tab)));
       const saved = localStorage.getItem(PROFILE_KEY);
-      if (!saved) return;
-      const profile = JSON.parse(saved) as SavedProfile;
-      localStorage.setItem(PROFILE_KEY, JSON.stringify({ ...profile, palette: this.palette }));
+      if (saved) localStorage.setItem(PROFILE_KEY, JSON.stringify(next(JSON.parse(saved) as SavedProfile)));
     } catch { /* private mode, or a profile we did not write */ }
   }
 

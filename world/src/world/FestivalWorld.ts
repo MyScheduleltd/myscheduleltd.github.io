@@ -88,6 +88,7 @@ import { PreviewResourceLease } from './PreviewResourceLease';
 import { CutawayLens, CUTAWAY_LENS, type CutawayRoom } from './CutawayLens';
 import { PlanGrid } from './PlanGrid';
 import { fitGateAerialCamera, fitGateAvatarCamera, gateAerialTarget, blendGateEntryCamera, type GateEntryCameraPose, type GatePreviewFrame, type GatePreviewCameraSnapshot } from './GatePreviewLayout';
+import { publicProjectorViewport } from './ProjectorViewport';
 import { arcadeIsNearest, arcadeIsLocked, ARCADE_WIDTH, ARCADE_DEPTH, cabinetPairPositions, arcadeAgainstWallX } from './ArcadeRules';
 
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & {
@@ -263,6 +264,8 @@ interface Seat {
 interface ScreenPlayer {
   element: HTMLDivElement;
   object: CSS3DObject;
+  /** Smaller phone document pixels, scaled back to the same physical screen. */
+  viewport?: ReturnType<typeof publicProjectorViewport>;
   iframe?: HTMLIFrameElement;
   /** The screen it is on, if any. Only that venue's `iframe` is set. */
   venue?: VenueKey;
@@ -280,6 +283,8 @@ interface ScreenPlayer {
   reportedVideoId?: string;
   /** The muted first play under the loading view (`playFirstFilm`). */
   firstFilm?: 'playing' | 'stopping' | 'done';
+  /** Playback acknowledgement, separate from merely sending playVideo. */
+  warmFilm?: 'requested' | 'played' | 'stopped' | 'timed-out';
 }
 
 interface ProjectorSurface {
@@ -2382,6 +2387,10 @@ export class FestivalWorld {
         mesh.userData.environmentAllowProjectorBackground = true;
       });
       await this.environmentMaterials.prepare(this.scene);
+      // Fixed tiles are now texture-owned mip arrays. Context restoration
+      // uses those arrays, never the decoder. Retire its worker/WASM heap
+      // before a film starts rather than retaining startup-only work in play.
+      this.gpuTextures?.release();
       if (this.disposed) return;
       this.driveInCarArt=applyDriveInCarArt(this.scene);
       this.pamphletSurface=polishPamphletSurface(this.scene);
@@ -2501,6 +2510,12 @@ export class FestivalWorld {
     this.closeNpcDialogue();
     this.disposed = true;
     this.renderer.setAnimationLoop(null);
+    // ImportedAvatar keeps a process-wide set of mounted bodies and arrival
+    // listeners. A retained body also retains its parent scene: dropping the
+    // world alone left a complete former festival alive after a retry/re-entry.
+    // Release per-instance skeletons/materials only; template maps/geometry
+    // remain shared with any current world or entrance preview.
+    disposeImportedAvatars(this.scene);
     disposePlanetLightAnchors(this.scene);
     disposeNeonSignTextures(this.scene);
     for(const frame of this.neonFrames)disposeNeonSignFrame(frame);
@@ -6504,8 +6519,9 @@ export class FestivalWorld {
     return this.externalFilmPlayback || this.screenPlayer?.venue !== undefined;
   }
 
-  /** A phone's personal/fullscreen film temporarily owns its one decoder.
-   * Stop the venue film without discarding its reusable iframe or programme. */
+  /** A phone's personal/fullscreen film temporarily owns its one media page.
+   * Keep the venue panel/programme, but release the hidden YouTube document:
+   * stopVideo alone still leaves that page's scripts and media state resident. */
   setExternalFilmPlayback(active: boolean): void {
     if (this.externalFilmPlayback === active) return;
     this.externalFilmPlayback = active;
@@ -6513,6 +6529,22 @@ export class FestivalWorld {
       for (const venue of this.projectors.keys()) this.releaseProjector(venue);
       this.mountedProjectorVenue = undefined;
       this.projectorLeaveAt = undefined;
+      const player = this.screenPlayer;
+      if (player) {
+        window.clearInterval(player.listenTimer);
+        if (player.iframe) {
+          this.tellScreenPlayer(player, 'stopVideo');
+          player.iframe.src = 'about:blank';
+          player.iframe.removeAttribute('allow');
+          player.element.replaceChildren();
+          player.iframe = undefined;
+        }
+        player.ready = false;
+        player.queued = [];
+        player.reportedVideoId = undefined;
+        player.venue = undefined;
+        player.element.style.visibility = 'hidden';
+      }
     } else if (!this.disposed) this.updateProjectorMounts();
   }
 
@@ -7816,11 +7848,16 @@ export class FestivalWorld {
     if (this.screenPlayer) return this.screenPlayer;
     const element = document.createElement('div');
     element.className = 'public-projector';
+    const viewport = publicProjectorViewport(this.mobileCameraControls ?? shouldConserveMobileGpu());
+    element.style.width = `${viewport.width}px`;
+    element.style.height = `${viewport.height}px`;
+    element.style.borderWidth = `${viewport.border}px`;
+    element.style.boxShadow = `inset 0 0 ${viewport.shadow}px rgba(0,0,0,.55)`;
     element.style.pointerEvents = 'none';
     element.style.visibility = 'hidden';
     const object = new CSS3DObject(element);
     this.cssScene.add(object);
-    this.screenPlayer = { element, object, ready: false, queued: [] };
+    this.screenPlayer = { element, object, viewport, ready: false, queued: [] };
     return this.screenPlayer;
   }
 
@@ -7829,7 +7866,7 @@ export class FestivalWorld {
     const screen = venueScreens[venue];
     player.object.position.set(...screen.position);
     player.object.rotation.set(0, screen.facing === -1 ? Math.PI : 0, 0);
-    player.object.scale.setScalar(screen.scale);
+    player.object.scale.setScalar(screen.scale * (player.viewport?.worldScale ?? 1));
     player.element.className = `public-projector public-projector--${venue}`;
     player.element.setAttribute('aria-label', `${screen.label} public projector screen`);
     player.venue = venue;
@@ -7970,17 +8007,19 @@ export class FestivalWorld {
    * unloads the media, so a phone holds one decoder for that moment and none
    * after it.
    *
-   * 精簡 only, which is what a phone gets. There it took the first venue's
+   * Phones in either mode, plus desktop 精簡. In 精簡 it took the first venue's
    * worst frame from 66 to 44 ms (median of 5). In 一般 the first doorway's
    * worst frames are the view itself, and the same with or without this, so
    * it would only add its 1–2 s to admission (and desktop Chrome runs the
-   * player in another process anyway).
+   * player in another process anyway). A phone that explicitly chooses 一般
+   * still prepares its first decoder under the entry animation.
    */
   private playFirstFilm(player: ScreenPlayer): void {
-    if (this.graphicsMode === 'normal') return;
+    if (this.graphicsMode === 'normal' && !this.conservesMobileGpu) return;
     if (!this.firstFilmWindow || !this.admitting || this.disposed || this.screenPlayer !== player) return;
     if (!player.iframe || !player.ready || player.venue || player.firstFilm) return;
     player.firstFilm = 'playing';
+    player.warmFilm = 'requested';
     this.tellScreenPlayer(player, 'mute');
     this.tellScreenPlayer(player, 'playVideo');
   }
@@ -8009,6 +8048,7 @@ export class FestivalWorld {
     await waitWhile('playing', performance.now() + limitMs);
     if (player) this.stopFirstFilm(player);
     await waitWhile('stopping', performance.now() + SCREEN_PLAYER_FIRST_STOP_WAIT_MS);
+    if (player?.warmFilm === 'requested') player.warmFilm = 'timed-out';
     this.firstFilmWindow = false;
   }
 
@@ -9266,8 +9306,13 @@ export class FestivalWorld {
       this.screenPlayerReady(player);
       // The first film under the loading view: stopped once it is playing.
       const state = payload.event === 'onStateChange' && typeof payload.info === 'number' ? payload.info : info?.playerState;
-      if (state === 1) this.stopFirstFilm(player);
-      else if (state === 5 && player.firstFilm === 'stopping') player.firstFilm = 'done';
+      if (state === 1) {
+        if (player.firstFilm === 'playing') player.warmFilm = 'played';
+        this.stopFirstFilm(player);
+      } else if (state === 5 && player.firstFilm === 'stopping') {
+        player.firstFilm = 'done';
+        player.warmFilm = player.warmFilm === 'played' ? 'stopped' : 'timed-out';
+      }
     }
     // One player serves every screen. A report still about the film it had
     // before the latest switch must not be credited to the new one: a wrong
@@ -9682,6 +9727,10 @@ export class FestivalWorld {
       releases: this.playerReleases,
       live: [...this.projectors.values()].filter((projector) => Boolean(projector.iframe)).length,
       frames: document.querySelectorAll('iframe').length,
+      playerReady: this.screenPlayer?.ready ?? false,
+      playerW: this.screenPlayer?.viewport?.width ?? 0,
+      playerH: this.screenPlayer?.viewport?.height ?? 0,
+      warmFilm: this.screenPlayer?.warmFilm ?? 'idle',
       draws: this.mainDrawCalls,
       fgdraws: this.singleContextForegroundDrawCalls,
       ctx: 1,
