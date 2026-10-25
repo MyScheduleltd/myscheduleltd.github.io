@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applyAvatarShadeLighting } from './AvatarShadeLighting';
 
 /** Shared in the sign-in preview, world, fixed staff and roof musicians. */
 export const AVATAR_PIXEL_STYLE=Object.freeze({textureEdge:256,printEdge:512,lightBands:5,bandMix:.65,clothWear:.12});
@@ -15,10 +16,12 @@ export function avatarLightBands(shader:THREE.WebGLProgramParametersWithUniforms
     float avatarBanded=floor(avatarIrradiance*${AVATAR_PIXEL_STYLE.lightBands.toFixed(1)}+.5)/${AVATAR_PIXEL_STYLE.lightBands.toFixed(1)};
     float avatarBandGain=clamp(avatarBanded/max(avatarIrradiance,.0001),.55,1.45);
     reflectedLight.directDiffuse=avatarLitDiffuse*mix(1.,avatarBandGain,mix(.8,.45,avatarEven));
+    // AVATAR_SHADE_BOUNCE_SLOT
     reflectedLight.indirectDiffuse=vec3(0.);
     reflectedLight.directSpecular*=.12;
     reflectedLight.indirectSpecular*=.12;
   `);
+  applyAvatarShadeLighting(shader);
 }
 
 /** Pixel sampling and restrained cloth wear add no maps, geometry or draws. */
@@ -54,6 +57,6 @@ export function applyAvatarPixelTexture(material:THREE.MeshStandardMaterial,prin
       diffuseColor.rgb*=1.-${clothWear.toFixed(3)}*avatarFabricMask*(.35+.65*avatarFabricWear);
       #endif`);
   };
-  material.customProgramCacheKey=()=>priorKey+':avatar-pixel-v1:'+print+':'+clothWear;
+  material.customProgramCacheKey=()=>priorKey+':avatar-pixel-v2-shade:'+print+':'+clothWear;
   material.needsUpdate=true;
 }

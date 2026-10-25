@@ -155,6 +155,8 @@ export class DayNightCycle {
   private readonly moonMaterial = new THREE.MeshBasicMaterial({ color: 0xe5edff, fog: false, transparent: true });
   private readonly moonHaloMaterial: THREE.SpriteMaterial;
   private shadowsEnabled = true;
+  private weatherCloud=0;
+  setWeatherCloud(value:number):void {this.weatherCloud=THREE.MathUtils.clamp(value,0,1);this.atmosphere.setCloudiness(this.weatherCloud);}
   private state: DayNightState = {
     cycleMinute: 0,
     progress: 0,
@@ -361,6 +363,8 @@ export class DayNightCycle {
     );
     const sky = from.sky.clone().lerp(to.sky, mix);
     const fog = from.fog.clone().lerp(to.fog, mix);
+    const overcast=new THREE.Color(0x71828e).multiplyScalar(.45+.55*(1-nightAmountAt(cycleMinute)));
+    sky.lerp(overcast,this.weatherCloud*.9);fog.lerp(overcast,this.weatherCloud*.75);
     const sun = from.sun.clone().lerp(to.sun, mix);
     const sunIntensity = THREE.MathUtils.lerp(from.sunIntensity, to.sunIntensity, mix);
     const ambientIntensity = THREE.MathUtils.lerp(
@@ -395,12 +399,12 @@ export class DayNightCycle {
     const sunPosition = new THREE.Vector3(sunOrbit.x,sunOrbit.y,sunOrbit.z);
     this.sunObject.position.copy(sunPosition);
     this.atmosphere.setSky(fog,
-      gradientFrom.horizon.clone().lerp(gradientTo.horizon, mix), sky,
-      gradientFrom.zenith.clone().lerp(gradientTo.zenith, mix),
+      gradientFrom.horizon.clone().lerp(gradientTo.horizon, mix).lerp(overcast,this.weatherCloud*.8), sky,
+      gradientFrom.zenith.clone().lerp(gradientTo.zenith, mix).lerp(overcast,this.weatherCloud*.9),
       gradientFrom.glow.clone().lerp(gradientTo.glow, mix),
-      THREE.MathUtils.lerp(gradientFrom.glowStrength, gradientTo.glowStrength, mix), sunPosition);
+      THREE.MathUtils.lerp(gradientFrom.glowStrength, gradientTo.glowStrength, mix)*(1-this.weatherCloud), sunPosition);
     this.sunObject.visible = sunPosition.y > CELESTIAL_HORIZON_Y - SUN_RADIUS;
-    this.sunMaterial.opacity = 1;
+    this.sunMaterial.opacity = 1-this.weatherCloud*.92;
     this.sunMaterial.color.copy(sun);
     this.sunHaloMaterial.color.copy(sun);
     const sunAboveHorizon = THREE.MathUtils.smoothstep(sunElevation, -0.04, 0.08);
@@ -408,7 +412,8 @@ export class DayNightCycle {
     this.sunHaloMaterial.opacity = sunPosition.y >= CELESTIAL_HORIZON_Y
       ? THREE.MathUtils.lerp(0.82, 0.42, visibleSunElevation)
       : 0;
-    this.directionalLight.intensity = sunIntensity * sunAboveHorizon;
+    this.directionalLight.intensity = sunIntensity * sunAboveHorizon*(1-this.weatherCloud*.65);
+    this.sunHaloMaterial.opacity*=1-this.weatherCloud;
     this.castsShadowWhileLit(this.directionalLight);
     this.directionalLight.position.copy(sunPosition).multiplyScalar(0.48);
     this.directionalLight.target.position.set(0, 0, 0);
@@ -419,14 +424,15 @@ export class DayNightCycle {
     const moonPosition = new THREE.Vector3(moonOrbit.x,moonOrbit.y,moonOrbit.z);
     this.moonObject.position.copy(moonPosition);
     this.moonObject.visible = moonPosition.y > CELESTIAL_HORIZON_Y - MOON_RADIUS;
-    this.moonMaterial.opacity = 1;
+    this.moonMaterial.opacity = 1-this.weatherCloud*.92;
     const visibleMoonElevation = THREE.MathUtils.clamp(moonElevation, 0, 1);
     this.moonMaterial.color.set(0xe5edff).lerp(new THREE.Color(0x91a7d7), 1 - visibleMoonElevation);
     const moonAboveHorizon = THREE.MathUtils.smoothstep(moonElevation, -0.04, 0.08);
     this.moonHaloMaterial.opacity = moonPosition.y >= CELESTIAL_HORIZON_Y
       ? THREE.MathUtils.lerp(0.76, 0.42, visibleMoonElevation)
       : 0;
-    this.moonLight.intensity = moonIntensity * moonAboveHorizon;
+    this.moonLight.intensity = moonIntensity * moonAboveHorizon*(1-this.weatherCloud*.6);
+    this.moonHaloMaterial.opacity*=1-this.weatherCloud;
     this.castsShadowWhileLit(this.moonLight);
     this.moonLight.position.copy(moonPosition).multiplyScalar(0.5);
     this.moonLight.target.position.set(0, 0, 0);

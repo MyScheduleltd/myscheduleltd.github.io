@@ -4,10 +4,10 @@ import { readFile } from 'node:fs/promises';
 import { build } from 'esbuild';
 
 const output = await build({
-  stdin: { contents: "export { lightEarlyOutChunk, installLightEarlyOut } from './src/world/LightLoop'; export { shareShadowDepthMaterials, ShadowCasterCulling } from './src/world/ShadowCasters'; export { STATIC_PROP_NAMES, batchStaticScenery } from './src/world/StaticBatch'; export * as THREE from 'three';", resolveDir: process.cwd(), loader: 'ts' },
+  stdin: { contents: "export { lightEarlyOutChunk, installLightEarlyOut } from './src/world/LightLoop'; export { shareShadowDepthMaterials, ShadowCasterCulling } from './src/world/ShadowCasters'; export { STATIC_PROP_NAMES, batchStaticScenery } from './src/world/StaticBatch'; export { WebGLShadowMap } from 'three/src/renderers/webgl/WebGLShadowMap.js'; export * as THREE from 'three';", resolveDir: process.cwd(), loader: 'ts' },
   bundle: true, platform: 'node', format: 'esm', write: false,
 });
-const { lightEarlyOutChunk, installLightEarlyOut, shareShadowDepthMaterials, ShadowCasterCulling, STATIC_PROP_NAMES, batchStaticScenery, THREE } = await import('data:text/javascript;base64,' + Buffer.from(output.outputFiles[0].text).toString('base64'));
+const { lightEarlyOutChunk, installLightEarlyOut, shareShadowDepthMaterials, ShadowCasterCulling, STATIC_PROP_NAMES, batchStaticScenery, WebGLShadowMap, THREE } = await import('data:text/javascript;base64,' + Buffer.from(output.outputFiles[0].text).toString('base64'));
 
 // three.js's own loop unroller (WebGLProgram.js): the patched chunk must still
 // unroll into one block per light, or every lit material fails to compile.
@@ -65,17 +65,77 @@ test('skinned and morphing casters get one depth material per kind, never a shar
   const notCasting = new THREE.SkinnedMesh(box(), material);
   for (const mesh of [skinnedA, skinnedB, morphing, plain, cutOut, custom]) mesh.castShadow = true;
   scene.add(skinnedA, skinnedB, morphing, plain, cutOut, custom, notCasting);
-  assert.equal(shareShadowDepthMaterials(scene), 3);
+  assert.equal(shareShadowDepthMaterials(scene), 4);
   assert.ok(skinnedA.customDepthMaterial?.isMeshDepthMaterial);
   assert.equal(skinnedA.customDepthMaterial, skinnedB.customDepthMaterial, 'one per kind');
   assert.notEqual(morphing.customDepthMaterial, skinnedA.customDepthMaterial);
   // three.js's own shadow depth material, exactly (WebGLShadowMap.js).
   assert.equal(skinnedA.customDepthMaterial.depthPacking, THREE.RGBADepthPacking);
-  assert.equal(plain.customDepthMaterial, undefined, 'plain meshes stay on three.js\'s shared material');
+  assert.ok(plain.customDepthMaterial?.isMeshDepthMaterial, 'untextured plain meshes have a stable map-free owner');
+  assert.notEqual(plain.customDepthMaterial, skinnedA.customDepthMaterial);
   assert.equal(cutOut.customDepthMaterial, undefined, 'cut-outs keep three.js\'s per-material variant');
   assert.equal(custom.customDepthMaterial, ownDepth);
   assert.equal(notCasting.customDepthMaterial, undefined);
   assert.equal(shareShadowDepthMaterials(scene), 0, 'idempotent');
+});
+
+test('Three shadow draws keep geometry, map channels and side variants separate through body changes and source disposal', () => {
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera();
+  const sun = new THREE.DirectionalLight(); sun.position.set(1, 10, 3); scene.add(sun, sun.target);
+  const caster = material => { const mesh = new THREE.Mesh(new THREE.BoxGeometry(), material); mesh.castShadow = true; mesh.frustumCulled = false; scene.add(mesh); return mesh; };
+  const mapped = caster(new THREE.MeshStandardMaterial({ map: new THREE.Texture() }));
+  const plain = caster(new THREE.MeshStandardMaterial());
+  const twoSided = caster(new THREE.MeshStandardMaterial({ map: mapped.material.map, side: THREE.DoubleSide }));
+  const secondUV = new THREE.Texture(); secondUV.channel = 1;
+  const mappedUV2 = caster(new THREE.MeshStandardMaterial({ map: secondUV }));
+  const alpha = caster(new THREE.MeshStandardMaterial({ alphaMap: mapped.material.map }));
+  const cutout = caster(new THREE.MeshStandardMaterial({ map: new THREE.Texture(), alphaTest: .5 }));
+  assert.equal(shareShadowDepthMaterials(scene), 5);
+  const owner = plain.customDepthMaterial;
+  let ownerDisposals = 0; owner.addEventListener('dispose', () => ownerDisposals++);
+  const draws = [], noop = () => {};
+  const renderer = {
+    getRenderTarget: () => null, getActiveCubeFace: () => 0, getActiveMipmapLevel: () => 0,
+    setRenderTarget: noop, clear: noop,
+    state: { setBlending: noop, setScissorTest: noop, viewport: noop,
+      buffers: { depth: { getReversed: () => false, setTest: noop }, color: { setClear: noop } } },
+    renderBufferDirect(camera, scene, geometry, material, object) {
+      // Copy these at submission; Three changes its default owner's map again.
+      draws.push({ object, material, map: material.map, alphaTest: material.alphaTest, side: material.side });
+    },
+  };
+  const shadow = new WebGLShadowMap(renderer, { update: object => object.geometry }, { maxTextureSize: 2048 });
+  shadow.enabled = true; scene.updateMatrixWorld(true); shadow.render([sun], scene, camera);
+  const gate = draws.find(draw => draw.object === plain);
+  assert.equal(gate.material, owner); assert.equal(gate.map, null); assert.equal(gate.side, THREE.BackSide);
+  assert.equal(gate.material.depthPacking, THREE.RGBADepthPacking);
+  assert.notEqual(draws.find(draw => draw.object === mapped).material, owner);
+  assert.notEqual(draws.find(draw => draw.object === cutout).material, owner);
+  const byObject = new Map(draws.map(draw => [draw.object, draw]));
+  assert.equal(new Set([plain, mapped, twoSided, mappedUV2, alpha].map(object => byObject.get(object).material)).size, 5,
+    'plain mapped/unmapped, two-sided and alternate UV/alpha maps cannot poison another owner');
+  assert.equal(byObject.get(twoSided).side, THREE.DoubleSide);
+  assert.equal(byObject.get(mappedUV2).map.channel, 1);
+  const shader = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  assert.equal(owner.onBeforeCompile, shader.onBeforeCompile); assert.equal(owner.customProgramCacheKey(), shader.customProgramCacheKey(), 'no shadow shader/style patch');
+
+  // A first female body can change the shadow submission order; the earlier
+  // static caster must retain the exact map-free owner prepared at the gate.
+  scene.remove(mapped, plain); scene.add(plain, mapped);
+  const skinned = new THREE.SkinnedMesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
+  skinned.castShadow = true; skinned.frustumCulled = false; scene.add(skinned); shareShadowDepthMaterials(scene);
+  const mappedSkin = new THREE.SkinnedMesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ map: mapped.material.map }));
+  mappedSkin.castShadow = true; mappedSkin.frustumCulled = false; scene.add(mappedSkin); shareShadowDepthMaterials(scene);
+  assert.notEqual(mappedSkin.customDepthMaterial, skinned.customDepthMaterial, 'skinned kinds also partition texture features');
+  mapped.material.dispose(); cutout.material.dispose(); skinned.material.dispose();
+  assert.equal(ownerDisposals, 0, 'temporary/source material cleanup never disposes a shared depth owner');
+  draws.length = 0; scene.updateMatrixWorld(true); shadow.render([sun], scene, camera);
+  const later = draws.find(draw => draw.object === plain);
+  assert.equal(later.material, gate.material); assert.equal(later.map, null); assert.equal(later.side, gate.side);
+  const nextScene = new THREE.Scene(), next = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
+  next.castShadow = true; nextScene.add(next); shareShadowDepthMaterials(nextScene);
+  assert.equal(next.customDepthMaterial, owner, 'a retry/world does not allocate a new CPU owner');
+  sun.shadow.map.dispose(); shader.dispose();
 });
 
 // The flat map: no planet curve, the floor is a plane.

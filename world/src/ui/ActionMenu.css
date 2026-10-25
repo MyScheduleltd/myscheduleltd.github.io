@@ -1,0 +1,28 @@
+/* Keep the original four-part DanceWheel. Only the two authored moves are
+   buttons; the remaining sectors are decoration rather than empty choices. */
+.action-menu { --action-wheel-size:min(340px,72vw,calc(100svh - 205px)); padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left)); overflow-y:auto; }
+.action-menu .action-menu__card { width:min(460px,100%); padding:0; background:transparent; border:0; box-shadow:none; }
+.action-menu .action-menu__wheel { width:var(--action-wheel-size); }
+.action-menu .dance-wheel__centre { z-index:1; pointer-events:none; }
+.action-menu .dance-wheel__centre strong { font-size:clamp(12px,calc(var(--action-wheel-size) * .053),18px); }
+.action-menu__unused { position:absolute; inset:0; border-radius:50%; pointer-events:none; transform:rotate(var(--angle)); clip-path:polygon(14.65% 14.65%,50% -21%,85.35% 14.65%,61.3% 38.7%,59% 36.5%,56% 35%,50% 34%,44% 35%,41% 36.5%,38.7% 38.7%); }
+.action-menu .action-menu__move { background:transparent; }
+.action-menu .action-menu__move.is-selected { background:var(--red); }
+.action-menu .action-menu__move:focus-visible { background:#c32731; outline:none; }
+.action-menu .action-menu__move:disabled { opacity:.4; cursor:default; background:transparent; }
+/* Rotate each hit sector, then turn its icon and label back upright together. */
+.action-menu .action-menu__move .action-menu__move-content { position:absolute; inset:auto; left:32%; top:5%; width:36%; height:28%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; transform:rotate(calc(-1 * var(--angle))); transform-origin:center; white-space:normal; }
+.action-menu .action-menu__move--sit .action-menu__move-content { left:36%; width:28%; }
+.action-menu .action-menu__move svg { position:static; flex:none; width:calc(var(--action-wheel-size) * .15); height:calc(var(--action-wheel-size) * .135); }
+.action-menu .action-menu__move .action-menu__label { position:static; display:block; width:auto; line-height:1.1; font-size:clamp(13px,calc(var(--action-wheel-size) * .061),21px); white-space:nowrap; }
+.action-menu .action-menu__move--sit .action-menu__label { font-size:clamp(10px,calc(var(--action-wheel-size) * .045),15px); }
+.action-menu .action-menu__note,.action-menu .action-menu__hint { margin:14px 0; font-size:14px; line-height:1.4; letter-spacing:.03em; }
+.action-menu .action-menu__note { opacity:.75; }
+.action-menu .action-menu__footer { justify-content:center; }
+@media(max-height:480px) {
+  .action-menu { --action-wheel-size:min(250px,72vw,calc(100svh - 195px)); }
+  .action-menu h2 { margin-bottom:10px; font-size:24px; }
+  .action-menu .action-menu__note,.action-menu .action-menu__hint { margin:8px 0; font-size:12px; }
+  .action-menu .action-menu__footer { gap:8px; }
+  .action-menu .action-menu__footer button { padding:7px 12px; font-size:16px; }
+}

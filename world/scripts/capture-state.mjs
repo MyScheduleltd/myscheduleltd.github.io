@@ -85,6 +85,9 @@ const seed = {
   }])),
   customVideos: live.customVideos ?? {},
   siteStyle: live.siteStyle,
+  // Absolute weather windows and bounded shared brushes outlive redeploys.
+  // Preserve a prior seed when capturing from an older server without weather.
+  ...(live.weather ? { weather: live.weather } : previous.weather ? { weather: previous.weather } : {}),
   // Older services still return the retired video/kicker/intro settings.
   // A capture must not reintroduce controls removed from the live entrance.
   gateCopy: live.gateCopy ? Object.fromEntries(['title', 'titleZh', 'nameLabel', 'nameLabelZh', 'updatedAt']

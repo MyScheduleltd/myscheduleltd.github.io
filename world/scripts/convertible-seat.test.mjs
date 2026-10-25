@@ -5,26 +5,27 @@ import { build } from 'esbuild';
 const context = new Proxy({ measureText: text => ({ width: text.length * 40 }) }, { get: (object, key) => key in object ? object[key] : () => {} });
 globalThis.document = { createElement: () => ({ getContext: () => context }) };
 const compiled = await build({
-  stdin: { contents: "export {FestivalWorld} from './src/world/FestivalWorld';export {EnvironmentAssets} from './src/world/EnvironmentAssets';export {CONVERTIBLE} from './src/world/CoastalGeometry';export {createConvertibleSeatProxy} from './src/world/ConvertibleSeat';export {batchStaticScenery} from './src/world/StaticBatch';export {createCoastalAvatar} from './src/world/CoastalAvatar';export {coastalFootHeights} from './src/world/CoastalPose';export {SCREENING_SITES} from './src/world/CoastalVenues';export * as THREE from 'three';", resolveDir: process.cwd(), loader: 'ts' },
+  stdin: { contents: "export {FestivalWorld} from './src/world/FestivalWorld';export {EnvironmentAssets} from './src/world/EnvironmentAssets';export {CONVERTIBLE} from './src/world/CoastalGeometry';export {createConvertibleSeatProxy,driveInSeatLayoutSnapshot} from './src/world/ConvertibleSeat';export {batchStaticScenery} from './src/world/StaticBatch';export {createCoastalAvatar} from './src/world/CoastalAvatar';export {coastalFootHeights} from './src/world/CoastalPose';export {SCREENING_SITES} from './src/world/CoastalVenues';export * as THREE from 'three';", resolveDir: process.cwd(), loader: 'ts' },
   bundle: true, write: false, format: 'esm', platform: 'node', loader: { '.png': 'dataurl' },
 });
-const { THREE, FestivalWorld, EnvironmentAssets, CONVERTIBLE, createConvertibleSeatProxy, batchStaticScenery, createCoastalAvatar, coastalFootHeights, SCREENING_SITES } =
+const { THREE, FestivalWorld, EnvironmentAssets, CONVERTIBLE, createConvertibleSeatProxy, driveInSeatLayoutSnapshot, batchStaticScenery, createCoastalAvatar, coastalFootHeights, SCREENING_SITES } =
   await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 const near = (actual, expected, tolerance = 1e-6) => assert.ok(Math.abs(actual - expected) < tolerance, `${actual} != ${expected}`);
 
-test('all six real relocated car seats retain pad contact and foot support after real static batching', () => {
+test('all twelve real relocated car seats retain pad contact and foot support after real static batching', () => {
   const world = Object.create(FestivalWorld.prototype);
   Object.assign(world, { scene: new THREE.Scene(), colliders: [], seats: [], projectors: new Map(), venueSignMaterials: new Map(), graphicsMode: 'normal', createProjectorSurface() {} });
   const site = SCREENING_SITES['drive-in'];
   world.buildOnGrade(() => world.createDriveIn(), site.grade, site.dx, site.dz);
   world.scene.updateMatrixWorld(true);
-  assert.equal(world.seats.length, 6);
+  assert.equal(world.seats.length, 12);
+  const layout=driveInSeatLayoutSnapshot(world.seats);assert.equal(layout.complete,true);assert.equal(layout.cars,6);assert.equal(layout.seats,12);layout.pairs.forEach(pair=>near(pair.separation,1.7));
   const before = world.seats.map(seat => ({ seat, proxy: seat.cushion, car: seat.cushion.parent, pad: new THREE.Box3().setFromObject(seat.cushion) }));
   for (const { seat, proxy, pad } of before) {
     assert.equal(proxy.visible, false); assert.equal(proxy.userData.convertibleSeatAnchor, true);
     near(pad.max.y, .16); near(seat.footFloor, -.32);
     // The proxy initially describes exactly the visible authored driver pad.
-    const original = new THREE.Box3().setFromObject(proxy.parent.userData.cushion);
+    const original = new THREE.Box3().setFromObject(proxy.parent.userData[proxy.userData.convertibleSeatRole === 'passenger' ? 'passengerCushion' : 'cushion']);
     assert.ok(pad.min.distanceTo(original.min) < 1e-6); assert.ok(pad.max.distanceTo(original.max) < 1e-6);
   }
   const batch = batchStaticScenery(world.scene);
@@ -78,7 +79,7 @@ async function originalDriveIn(t) {
   const site = SCREENING_SITES['drive-in'];
   world.buildOnGrade(() => world.createDriveIn(), site.grade, site.dx, site.dz);
   world.scene.updateMatrixWorld(true);
-  const cars = world.seats.map(seat => seat.cushion.parent);
+  const cars = [...new Set(world.seats.map(seat => seat.cushion.parent))];
   await world.prepareAssets();
   return { world, assets, cars, requests };
 }
@@ -101,7 +102,7 @@ test('restored original cars schedule no GLB request and retain their colours, n
   assert.equal(assets.snapshot().status['drive-in-car'], undefined);
   assert.deepEqual(cars.map(car => car.userData.driveInPaint), [0xc74935,0xd4b24a,0x38678e,0xd4d1b8,0x745b90,0x3b7657]);
   assert.deepEqual(cars.map(car => car.userData.driveInSeatNumber), [1,2,3,4,5,6]);
-  assert.deepEqual(world.seats.map(seat => seat.id), ['DRIVE-1-1','DRIVE-1-2','DRIVE-1-3','DRIVE-2-1','DRIVE-2-2','DRIVE-2-3']);
+  assert.deepEqual(world.seats.map(seat => seat.id), ['DRIVE-1-1','DRIVE-1-2','DRIVE-1-3','DRIVE-2-1','DRIVE-2-2','DRIVE-2-3',...Array.from({length:6},(_,i)=>`DRIVE-${i+1}-PASSENGER`)]);
   const visibleBounds = cars.map(car => {
     const bounds = new THREE.Box3();
     car.traverseVisible(part => { if (part.isMesh && part.material.visible !== false) bounds.union(new THREE.Box3().setFromObject(part)); });
@@ -119,18 +120,18 @@ test('restored original cars schedule no GLB request and retain their colours, n
   for (let x=-11;x<=11;x+=.25) assert.equal(world.staticCollides(x,aisleZ,-.7,FestivalWorld.BODY_RADIUS),false,'the full cross-row aisle must clear a standing visitor');
 });
 
-test('actual original cushion and footwell surfaces still support all six seats through admission and static batching', async t => {
+test('actual original cushion and footwell surfaces still support all twelve seats through admission and static batching', async t => {
   const { world, cars, requests } = await originalDriveIn(t);
   batchStaticScenery(world.scene); world.scene.updateMatrixWorld(true);
   world.player = new THREE.Group();
   world.playerRig = createCoastalAvatar(world.player, { skin: '#dfb590', hair: '#3b3633', top: '#d0cbc1', bottoms: '#44464a', swimwear: '#577467' }, true, new THREE.Group());
   world.scene.add(world.player);
   world.seats.forEach((seat, i) => {
-    const car=cars[i],pad=new THREE.Box3().setFromObject(seat.cushion);
+    const car=cars[i%6],pad=new THREE.Box3().setFromObject(seat.cushion);
     assert.equal(seat.cushion.parent,car);assert.equal(seat.cushion.visible,false);
     near(pad.max.y-car.position.y,CONVERTIBLE.cushionTop);
     near(seat.footFloor-car.position.y,CONVERTIBLE.footFloor);
-    const driverX=car.position.x+CONVERTIBLE.seatX;
+    const driverX=seat.position.x;
     const hip=visibleSurfaceAt(world.scene,driverX,car.position.z+CONVERTIBLE.seatZ-.3,5,world.player);
     // Authored stitching rises 12mm above the pad, rather than a generated
     // sloping cushion; preserve that small actual relief after batching.

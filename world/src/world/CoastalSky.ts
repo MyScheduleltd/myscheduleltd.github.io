@@ -76,6 +76,9 @@ export class CoastalSky {
   private readonly sunset=new THREE.Color(0xefb393);
   private readonly moonlight=new THREE.Color(0x64799f);
   private lastMinute=0;
+  private cloudiness=0;
+  private readonly weatherClouds: THREE.MeshBasicMaterial[]=[];
+  private readonly weatherBanks:THREE.Mesh[]=[];
   /** Drawn first and behind everything; follows the observer, never turns with the stars. */
   readonly dome: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
 
@@ -94,6 +97,13 @@ export class CoastalSky {
       mat.userData.wornNoGrain=true;mat.userData.wornNoMasonry=true;this.clouds.push(mat);
       const mesh=new THREE.Mesh(mergeGeometries(geometries)!,mat);mesh.name='cumulus-bank-'+variant;mesh.renderOrder=-2;
       this.root.add(mesh);geometries.forEach(g=>g.dispose());
+      // Reuse the four tiny authored pixel maps, with a denser upper layer.
+      // The geometry and shader exist at sign-in even on a clear day.
+      const overcast=mat.clone();overcast.map=mat.map;overcast.opacity=0;overcast.alphaTest=.01;overcast.depthWrite=false;
+      this.weatherClouds.push(overcast);
+      const bank=new THREE.Mesh(mesh.geometry.clone(),overcast);bank.rotation.y=.37;
+      bank.scale.set(1.03,.8,1.03);bank.position.y=30;bank.renderOrder=-2;
+      bank.name='overcast-bank-'+variant;this.weatherBanks.push(bank);this.root.add(bank);
     }
     const positions:number[]=[],colours:number[]=[];
     // Stable quasi-uniform sky points; keep the horizon clear of stars below land/sea.
@@ -129,6 +139,8 @@ export class CoastalSky {
     u.glowStrength.value=glowStrength;u.sunDirection.value.copy(sunDirection);
   }
 
+  setCloudiness(value:number): void {this.cloudiness=THREE.MathUtils.clamp(value,0,1);}
+
   update(minute:number,observer:THREE.Vector3,now=Date.now()): void {
     this.lastMinute=minute;
     this.root.position.set(observer.x,0,observer.z);
@@ -138,11 +150,12 @@ export class CoastalSky {
     // Sunset and sunrise both colour the clouds; dawn is the start of the cycle.
     const dusk=THREE.MathUtils.smoothstep(minute,21,28)*(1-THREE.MathUtils.smoothstep(minute,30,37))
       +(1-THREE.MathUtils.smoothstep(minute,2,8))+THREE.MathUtils.smoothstep(minute,56,60);
-    for(const m of this.clouds){m.color.copy(this.daylight).lerp(this.sunset,dusk).lerp(this.moonlight,night);m.opacity=1;}
-    this.starMaterial.opacity=night*.95;this.stars.visible=night>.001;
+    for(const m of this.clouds){m.color.copy(this.daylight).lerp(this.sunset,dusk).lerp(this.moonlight,night).lerp(new THREE.Color(0x87959c),this.cloudiness*.8);m.opacity=1;}
+    for(const [i,m] of this.weatherClouds.entries()){m.color.set(0x8c999e).lerp(this.moonlight,night*.55);m.opacity=this.cloudiness;this.weatherBanks[i].visible=this.cloudiness>.001;}
+    this.starMaterial.opacity=night*.95*(1-this.cloudiness);this.stars.visible=night>.001;
   }
 
   snapshot(): unknown {
-    return {cloudBanks:4,cloudCards:20,cloudTextures:this.clouds.length,stars:260,starOpacity:this.starMaterial.opacity,starsVisible:this.stars.visible,cycleMinute:this.lastMinute};
+    return {cloudBanks:4,cloudCards:20,cloudTextures:this.clouds.length,weatherCloudBanks:4,cloudiness:this.cloudiness,stars:260,starOpacity:this.starMaterial.opacity,starsVisible:this.stars.visible,cycleMinute:this.lastMinute};
   }
 }

@@ -1,0 +1,100 @@
+{
+  "sampleRate": 48000,
+  "channels": 1,
+  "files": [
+    {
+      "file": "weather-rain-mono.mp3",
+      "bytes": 136556,
+      "sha256": "badaf8a172dd9bf0232c9392b1dbe22349144c44e6de88a3f0c273572a42e4c5",
+      "sampleRate": 48000,
+      "channels": 1,
+      "decodedSamples": 816000,
+      "decodedFloatBytes": 3264000,
+      "duration": 17.0,
+      "rmsDb": -24.0,
+      "peakDb": -3.54,
+      "source": "ES_Rain, Concrete, Rain Water, Intense On Cement, Soft - Epidemic Sound.wav",
+      "sourceStart": 19,
+      "loopStart": 0.5,
+      "loopEnd": 16.5,
+      "crossfadeSeconds": 3,
+      "gainDb": 19.41,
+      "seamStep": 0.0330882,
+      "actualDecodedSamples": 816000,
+      "actualDecodedFloatBytes": 3264000,
+      "encodedSeamStep": 0.0255589
+    },
+    {
+      "file": "weather-snow-mono.mp3",
+      "bytes": 136556,
+      "sha256": "b2bc451e8e5625766225c45a78c79e4b85b5e0f0a631d9f66717ff099ecaceb0",
+      "sampleRate": 48000,
+      "channels": 1,
+      "decodedSamples": 816000,
+      "decodedFloatBytes": 3264000,
+      "duration": 17.0,
+      "rmsDb": -24.0,
+      "peakDb": -10.27,
+      "source": "ES_Ambience, Forest, Winter, Calm, Light Wind, Oslo, Ostmarka 02 - Epidemic Sound.wav",
+      "sourceStart": 66,
+      "loopStart": 0.5,
+      "loopEnd": 16.5,
+      "crossfadeSeconds": 3,
+      "gainDb": 19.53,
+      "seamStep": 0.0038705,
+      "actualDecodedSamples": 816000,
+      "actualDecodedFloatBytes": 3264000,
+      "encodedSeamStep": 0.0039658
+    },
+    {
+      "file": "avatar-step-snow-left.wav",
+      "bytes": 46158,
+      "sha256": "32f6c8a4541bf1d50ecb678875288d78dcb3d015f9e40e4039e9712652e0dc64",
+      "sampleRate": 48000,
+      "channels": 1,
+      "decodedSamples": 23040,
+      "decodedFloatBytes": 92160,
+      "duration": 0.48,
+      "rmsDb": -23.0,
+      "peakDb": -2.24,
+      "source": "ES_Footsteps, Human, Snow, Walk 02 - Epidemic Sound.wav",
+      "sourceStart": 4.35,
+      "gainDb": 23.22,
+      "actualDecodedSamples": 23040,
+      "actualDecodedFloatBytes": 92160
+    },
+    {
+      "file": "avatar-step-snow-right.wav",
+      "bytes": 45910,
+      "sha256": "e3deb53feb33a7ca9e06279ce6ad6ba91011b7e3380bd5927e5c6dbf2cad7b8e",
+      "sampleRate": 48000,
+      "channels": 1,
+      "decodedSamples": 22916,
+      "decodedFloatBytes": 91664,
+      "duration": 0.47741666666666666,
+      "rmsDb": -23.0,
+      "peakDb": -4.28,
+      "source": "ES_Footsteps, Human, Snow, Walk 02 - Epidemic Sound.wav",
+      "sourceStart": 4.962583,
+      "gainDb": 20.97,
+      "actualDecodedSamples": 22916,
+      "actualDecodedFloatBytes": 91664
+    }
+  ],
+  "runtimeBytes": 365180,
+  "decodedBytesAt48k": 6711824,
+  "sourceFiles": {
+    "rain": {
+      "name": "ES_Rain, Concrete, Rain Water, Intense On Cement, Soft - Epidemic Sound.wav",
+      "bytes": 48268980
+    },
+    "snow": {
+      "name": "ES_Ambience, Forest, Winter, Calm, Light Wind, Oslo, Ostmarka 02 - Epidemic Sound.wav",
+      "bytes": 120854302
+    },
+    "steps": {
+      "name": "ES_Footsteps, Human, Snow, Walk 02 - Epidemic Sound.wav",
+      "bytes": 21313696
+    }
+  }
+}

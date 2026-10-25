@@ -1,4 +1,5 @@
 import './style.css';
+import './ui/ActionMenu.css';
 import { canOpenArtPreview } from './artPreviewPolicy';
 
 const root = document.querySelector<HTMLElement>('#app');

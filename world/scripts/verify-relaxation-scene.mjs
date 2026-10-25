@@ -1,0 +1,31 @@
+import {createRequire} from 'node:module';
+import {mkdir,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+import assert from 'node:assert/strict';
+const require=createRequire('/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/package.json');const {chromium}=require('playwright');
+const base=process.argv[2]??'http://127.0.0.1:4194';if(!/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(base))throw Error('Local preview only');
+const carsOnly=process.argv.includes('--cars-only');
+const out=process.argv[3]??'art/weather-actions-20261024/pose-qa/final';await mkdir(out,{recursive:true});
+const report={physicalDevice:false,base,scope:carsOnly?'cars-only':'beach-and-cars',errors:[],blockedProduction:[],blockedNonlocalWrites:[],spots:[],cars:[]};const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',args:['--use-angle=metal','--ignore-gpu-blocklist']});
+try{const context=await browser.newContext({viewport:{width:1280,height:900}});await context.route('**/*',route=>{const request=route.request(),url=new URL(request.url());if(url.hostname==='myschedule-festival.onrender.com'){report.blockedProduction.push(url.origin+url.pathname);return route.abort();}if(!['GET','HEAD','OPTIONS'].includes(request.method())&&!['127.0.0.1','localhost'].includes(url.hostname)){report.blockedNonlocalWrites.push(url.origin+url.pathname);return route.abort();}return route.continue();});const page=await context.newPage();page.on('pageerror',e=>report.errors.push(String(e)));
+await page.goto(base+'/?era=ps2&island&review=perf&cycleMinute=1035');await page.waitForSelector('#festival-id',{timeout:120000});await page.fill('#festival-id','BeachReview');await page.click('[data-graphics=lite]');await page.click('[data-audio=muted]');await page.waitForFunction(()=>window.__islandWorld?.admitting===false&&!document.querySelector('.gate--handoff'),null,{timeout:180000});
+report.initial=await page.evaluate(()=>window.__islandWorld.weatherReviewSnapshot());assert.equal(report.initial.spots.length,10,'all authored spots survive actual full-world clearance');assert.deepEqual(report.initial.rejected,[]);
+// Only review screenshots hide transient comments, so every contact point is visible.
+await page.addStyleTag({content:'.chat-stream{visibility:hidden!important}'});
+if(!carsOnly)for(const sex of ['male','female']){
+ await page.evaluate(sex=>{const w=window.__islandWorld;w.setAvatarPalette({...w.palette,top:sex==='male'?'#18191b':'#28191b'});},sex);
+ for(const spot of report.initial.spots){await page.evaluate(id=>window.__islandWorld.focusRelaxationForReview(id,true),spot.id);await page.waitForTimeout(700);const snapshot=await page.evaluate(()=>{const w=window.__islandWorld;return {state:w.playerState,pose:w.relaxationPose(),at:w.player.position.toArray(),body:w.playerRig.visualRoot.position.toArray(),contexts:w.diagnosticSample().ctx};});report.spots.push({sex,id:spot.id,...snapshot});assert.equal(snapshot.state,'seated',sex+' '+spot.id);assert.equal(snapshot.pose,spot.kind==='chair'?'chair-sit':'recline');await page.screenshot({path:join(out,sex+'-'+spot.id+'.png')});}
+ await page.evaluate(()=>{const w=window.__islandWorld;w.standUp();w.player.position.set(70,w.groundHeightAt(70,-40,0),-40);w.selectAction('sit-ground');});await page.waitForTimeout(350);await page.screenshot({path:join(out,sex+'-ground-sit.png')});
+}
+if(!carsOnly){await page.keyboard.press('b');await page.waitForSelector('.action-menu');await page.screenshot({path:join(out,'actual-world-action-menu.png')});await page.keyboard.press('Escape');}
+// Leave the real seat UI lifecycle running while exposing both bodies in the image.
+await page.addStyleTag({content:'#seat-menu{visibility:hidden!important}'});
+// A static second native body uses the same already-loaded rig and exact seat
+// fitting as multiplayer, without creating another attendee or network session.
+await page.evaluate(async()=>{const {createCoastalAvatar}=await import('/src/world/CoastalAvatar.ts');const {attachImportedAvatar,syncImportedAvatars}=await import('/src/world/ImportedAvatar.ts');window.reviewPair={createCoastalAvatar,attachImportedAvatar,syncImportedAvatars};});
+for(const sex of ['male','female'])for(let index=0;index<6;index++){
+ const car=await page.evaluate(({sex,index})=>{const w=window.__islandWorld,p=window.reviewPair;w.standUp();w.setAvatarPalette({...w.palette,top:sex==='male'?'#18191b':'#28191b'});const driver=w.seats.find(s=>s.id===`DRIVE-${Math.floor(index/3)+1}-${index%3+1}`),passenger=w.seats.find(s=>s.id===`DRIVE-${index+1}-PASSENGER`);w.takeSeat(driver);w.cameraMode='follow';w.cameraZoom=.75;w.cameraOrbit.follow.yaw=Math.PI+.55;w.cameraOrbit.follow.pitch=.22;if(p.root){p.root.userData.disposeImportedAvatar?.();p.root.removeFromParent();}p.root=new w.player.constructor();p.rig=p.createCoastalAvatar(p.root,{...w.palette,top:sex==='male'?'#28191b':'#18191b'},true,new w.player.constructor());p.attachImportedAvatar(p.root,p.rig,{...w.palette,top:sex==='male'?'#28191b':'#18191b'});w.scene.add(p.root);p.root.position.copy(w.seatAnchor(passenger));p.root.rotation.y=passenger.facing??Math.PI;w.poseRigSeated(p.rig);p.syncImportedAvatars(p.root);return {driver:driver.id,passenger:passenger.id,at:driver.position.toArray(),separation:driver.position.distanceTo(passenger.position),driverOrigin:w.player.position.toArray(),passengerOrigin:p.root.position.toArray()};},{sex,index});
+ assert.ok(Math.abs(car.separation-1.7)<1e-6);report.cars.push({sex,...car});await page.waitForTimeout(700);await page.screenshot({path:join(out,`${sex}-driver-car-${index+1}.png`)});
+}
+assert.deepEqual(report.errors,[]);assert.deepEqual(report.blockedProduction,[]);report.passed=true;await writeFile(join(out,'report.json'),JSON.stringify(report,null,2)+'\n');console.log(`${report.spots.length} actual-world prop poses +${carsOnly?0:2} ground rests +${report.cars.length} native two-person cars captured; no app errors or production festival requests`);await context.close();
+}catch(e){report.error=String(e.stack??e);await writeFile(join(out,'report.json'),JSON.stringify(report,null,2)+'\n');throw e;}finally{await browser.close();}

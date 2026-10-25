@@ -22,6 +22,24 @@ const target = (scene, id) => {
 };
 const nearly = (a, b) => assert.ok(a.distanceTo(b) < 1e-7, `${a.toArray()} != ${b.toArray()}`);
 
+test('admission finalizes resident identity sprite flags before compiling any world or later first-use programs',async()=>{
+ const savedWindow=globalThis.window;
+ globalThis.window={setTimeout:run=>setTimeout(run,0),setInterval,clearInterval,location:{hostname:'127.0.0.1',search:'?nobatch'}};
+ try{
+  const scene=new THREE.Scene(),resident=target(scene,'A'),view=camera(),world=Object.create(FestivalWorld.prototype);
+  const badge=new THREE.Sprite(new THREE.SpriteMaterial({map:createNpcIdentityTexture('KENNY','DIRECTOR')}));
+  Object.assign(badge.material,{defines:{WORN_STYLE:''},toneMapped:true});resident.group.add(badge);
+  Object.assign(world,{scene,camera:view,preview:false,disposed:false,graphicsMode:'lite',npcs:[{id:'A',group:resident.group,rig:{head:resident.head},badge}],
+   remoteNpcControls:new Map(),pendingRemoteVisitors:new Map(),projectors:new Map(),prepareAssets:async()=>{},cullDecorativeLights(){},warmScreenPlayer(){},warmAvatarVariants(){const stand=new THREE.Group();scene.add(stand);return stand;},
+   renderer:{shadowMap:{},info:{programs:[]},initTexture(){},render(){},compile(){assert.ok(world.npcIndicators,'cards cannot first mount in play');assert.deepEqual(badge.material.defines,{PLANET_FLAT:''});assert.equal(badge.material.toneMapped,false);assert.equal(badge.material.fog,false);return new Set();}}});
+  await world.prepareForPlay();
+  const version=badge.material.version,flags={...badge.material.defines};
+  for(let i=0;i<20;i++)world.updateNpcIndicators();
+  assert.deepEqual(badge.material.defines,flags);assert.equal(badge.material.version,version,'first runtime visibility changes cannot request another material variant');
+  world.releaseWarmAvatarPrograms();world.disposeDoubleVision();world.npcIndicators.dispose();badge.material.map.dispose();badge.material.dispose();
+ }finally{globalThis.window=savedWindow;}
+});
+
 test('resident tickets hide for both local and remote player-controlled identities, hidden bodies and detached bodies', () => {
   const scene = new THREE.Scene(), locals = target(scene, 'A'), remotes = target(scene, 'B'), dog = target(scene, 'MENTOR');
   const pool = new NpcIndicators(scene, [locals, remotes, dog]);

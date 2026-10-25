@@ -2993,7 +2993,7 @@ test('a note left with an offering goes on the wish wall once paid, never to dis
 });
 
 test('with Upstash configured, the wish wall survives a restart and keeps the newest thirty', async () => {
-  // A stand-in for Upstash's REST API: GET and SET of one key, bearer token checked.
+  // Both optional stores share credentials, but retain their own independent keys.
   const stored = new Map(), seen = [];
   const upstash = createHttpServer((request, response) => {
     let body = '';
@@ -3043,7 +3043,9 @@ test('with Upstash configured, the wish wall survives a restart and keeps the ne
     await fetch(`${url}/api/admin/wishes/remove`, { method: 'POST', headers: staff, body: JSON.stringify({ id: full[5].id }) });
     await settled();
     assert.equal(JSON.parse(stored.get('festival:wishes')).length, 29, 'a STAFF removal is saved too');
-    assert.ok(seen.every(([, key, auth]) => key === 'festival:wishes' && auth === 'Bearer wish-token'));
+    assert.ok(seen.every(([, key, auth]) => ['festival:wishes', 'festival:weather:v1'].includes(key) && auth === 'Bearer wish-token'));
+    assert.ok(seen.some(([command, key]) => command === 'GET' && key === 'festival:weather:v1'), 'weather hydrates its own key');
+    assert.ok(seen.filter(([command]) => command === 'SET').every(([, key]) => key === 'festival:wishes'), 'wish changes never write the weather key');
   } finally {
     await stopServer(instance);
     await new Promise((resolve) => upstash.close(resolve));

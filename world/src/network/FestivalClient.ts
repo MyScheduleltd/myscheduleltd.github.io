@@ -1,3 +1,5 @@
+import type { SharedWeather, WeatherPeriod } from '../weather/WeatherModel.mjs';
+import type { CoastalRelaxationPose } from '../world/CoastalRelaxationPose';
 import { requestWithDeadline } from './RequestDeadline';
 import type { AvatarGesture, AvatarPalette, CarriedItem, NpcId, NpcNames, NpcProfile, PlayerState } from '../world/FestivalWorld';
 import type { VenueKey } from '../data/catalogue';
@@ -15,6 +17,7 @@ export interface NetworkPresence {
   rotation: number;
   location: string;
   state: PlayerState;
+  relaxation?:CoastalRelaxationPose;
   moving: boolean;
   running: boolean;
   venue: VenueKey;
@@ -131,6 +134,7 @@ export interface MentorFeedCounts {
 }
 
 export interface FestivalState {
+  weather?:SharedWeather;
   serverTime: number;
   donationCelebration?: { id: string; startedAt: number; durationMs: number } | null;
   selfId: string;
@@ -204,6 +208,7 @@ export interface StaffOffering {
 }
 
 export interface AdminState {
+  weather?:SharedWeather;
   visitors: NetworkVisitor[];
   seats: Array<{ seatId: string; visitorId: string }>;
   messages: NetworkMessage[];
@@ -362,6 +367,7 @@ export interface ShopLink {
 }
 
 export interface PublicConfig {
+  weather?:SharedWeather;
   schedule: ProgrammeSchedule;
   siteStyle: SiteStyle;
   customVideos: CustomVideos;
@@ -802,8 +808,16 @@ export class FestivalClient {
     }
   }
 
-  async claimSeat(seatId: string): Promise<{ ok: boolean; message?: string }> {
-    return this.action(`/api/seats/${encodeURIComponent(seatId)}/claim`);
+  async claimSeat(seatId: string, snowAction?:'brush'|'sit'): Promise<{ ok: boolean; message?: string; snowCleared?: boolean }> {
+    try {
+      const response = await this.request(`/api/seats/${encodeURIComponent(seatId)}/claim`, {
+        method: 'POST', body: JSON.stringify({ snowAction }),
+      });
+      const payload = await response.json() as { snowCleared?: boolean };
+      return { ok: true, snowCleared: payload.snowCleared === true };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Seat could not be claimed.' };
+    }
   }
 
   async releaseSeat(seatId: string): Promise<void> {
@@ -812,6 +826,10 @@ export class FestivalClient {
 
   async sendMessage(channel: ChatChannel, text: string): Promise<{ ok: boolean; message?: string }> {
     return this.action('/api/chat', { channel, text });
+  }
+
+  async updateWeather(key:string,schedule:Array<Omit<WeatherPeriod,'id'>&{id?:string}>):Promise<void> {
+    await this.adminRequest('/api/admin/weather',key,{method:'POST',body:JSON.stringify({schedule})});
   }
 
   async adminState(key: string): Promise<AdminState> {

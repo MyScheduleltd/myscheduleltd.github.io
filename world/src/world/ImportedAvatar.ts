@@ -1065,10 +1065,14 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     };
   };
 
-  const unmount = (mounted?: Mounted) => {
+  const unmount = (mounted?: Mounted, retainedMaterials?: Set<THREE.Material>) => {
     if (!mounted) return;
     mounted.model.removeFromParent();
-    for (const mesh of mounted.meshes) (mesh.material as THREE.Material).dispose();
+    for (const mesh of mounted.meshes) {
+      const material = mesh.material as THREE.Material;
+      if (retainedMaterials) retainedMaterials.add(material);
+      else material.dispose();
+    }
     for (const skeleton of new Set(mounted.meshes.map(mesh => mesh.skeleton))) skeleton.dispose();
   };
 
@@ -1588,13 +1592,13 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
   };
   arrivals.add(onArrival);
   let disposed = false;
-  root.userData.disposeImportedAvatar = () => {
+  root.userData.disposeImportedAvatar = (retainedMaterials?: Set<THREE.Material>) => {
     if (disposed) return;
     disposed = true;
     arrivals.delete(onArrival);
     arrivalWork.delete(settleArrival);
     importedAvatarRoots.delete(root);
-    unmount(mounted);
+    unmount(mounted, retainedMaterials);
   };
 
   root.userData.sculptRuntime.parts = {};
@@ -1610,16 +1614,18 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
  */
 export const importedAvatarRoots = new Set<THREE.Object3D>();
 
-/** Release owned avatar instances in a temporary stand without touching the
- * template geometry/maps shared with the player and resident avatars. Collect
- * first: unmounting removes model children from the hierarchy. */
-export function disposeImportedAvatars(root: THREE.Object3D): void {
-  const disposers: Array<() => void> = [];
+/** Release owned avatar instances without touching shared template art.
+ * Admission can transfer only their exact drawn materials to a world-owned
+ * set: Three keeps those ordinary material/program references until stop,
+ * while skeletons, mounted-root entries and arrival listeners are released.
+ * Collect first: unmounting removes model children from the hierarchy. */
+export function disposeImportedAvatars(root: THREE.Object3D, retainedMaterials?: Set<THREE.Material>): void {
+  const disposers: Array<(retainedMaterials?: Set<THREE.Material>) => void> = [];
   root.traverse(object => {
-    const dispose = object.userData.disposeImportedAvatar as (() => void) | undefined;
+    const dispose = object.userData.disposeImportedAvatar as ((retainedMaterials?: Set<THREE.Material>) => void) | undefined;
     if (dispose) disposers.push(dispose);
   });
-  for (const dispose of disposers) dispose();
+  for (const dispose of disposers) dispose(retainedMaterials);
 }
 
 const inScene = (node: THREE.Object3D, scene: THREE.Object3D): boolean => {

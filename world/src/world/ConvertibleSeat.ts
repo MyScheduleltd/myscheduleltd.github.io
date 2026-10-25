@@ -9,14 +9,15 @@ const anchorMaterial = new THREE.MeshBasicMaterial({ visible: false });
  * Each box retains the source mesh's car-local transform, so nested/scaled
  * future cushion models and later buildOnGrade relocation keep the same bounds.
  */
-export function createConvertibleSeatProxy(car: THREE.Object3D, cushion: THREE.Object3D): THREE.Mesh {
+export function createConvertibleSeatProxy(car: THREE.Object3D, cushion: THREE.Object3D, role: 'driver' | 'passenger' = 'driver'): THREE.Mesh {
   car.updateWorldMatrix(true, true);
   const toCar = new THREE.Matrix4().copy(car.matrixWorld).invert();
   const proxy = new THREE.Mesh(new THREE.BufferGeometry(), anchorMaterial);
-  proxy.name = 'Convertible driver seat anchor';
+  proxy.name = `Convertible ${role} seat anchor`;
   proxy.visible = false;
   proxy.userData.environmentExclude = true;
   proxy.userData.convertibleSeatAnchor = true;
+  proxy.userData.convertibleSeatRole = role;
   proxy.raycast = () => {};
   cushion.traverseVisible(object => {
     const source = object as THREE.Mesh;
@@ -42,4 +43,36 @@ export function createConvertibleSeatProxy(car: THREE.Object3D, cushion: THREE.O
   if (!proxy.children.length) throw new Error('Convertible seat needs finite visible cushion bounds');
   car.add(proxy);
   return proxy;
+}
+
+export interface ConvertibleReviewSeat {
+  id: string;
+  position: THREE.Vector3;
+  forward?: number;
+  footFloor?: number;
+  cushion?: THREE.Mesh;
+}
+
+/** Loopback review data only; callers decide how to expose this snapshot. */
+export function driveInSeatLayoutSnapshot<T extends ConvertibleReviewSeat>(seats: readonly T[], anchorFor?: (seat: T) => THREE.Vector3) {
+  const describe = (seat: T | undefined) => {
+    if (!seat?.cushion) return undefined;
+    const pad = new THREE.Box3().setFromObject(seat.cushion);
+    return { id: seat.id, position: seat.position.toArray(), anchor: anchorFor?.(seat).toArray(),
+      footFloor: seat.footFloor, pad: { min: pad.min.toArray(), max: pad.max.toArray() },
+      proxyVisible: seat.cushion.visible, role: seat.cushion.userData.convertibleSeatRole };
+  };
+  const pairs = Array.from({ length: 6 }, (_, index) => {
+    const driverId = `DRIVE-${Math.floor(index / 3) + 1}-${index % 3 + 1}`;
+    const passengerId = `DRIVE-${index + 1}-PASSENGER`;
+    const driver = seats.find(seat => seat.id === driverId), passenger = seats.find(seat => seat.id === passengerId);
+    const driverPad = driver?.cushion && new THREE.Box3().setFromObject(driver.cushion);
+    const passengerPad = passenger?.cushion && new THREE.Box3().setFromObject(passenger.cushion);
+    return { number: index + 1, driver: describe(driver), passenger: describe(passenger),
+      sameCar: Boolean(driver?.cushion?.parent && driver.cushion.parent === passenger?.cushion?.parent),
+      independentPads: Boolean(driver?.cushion && passenger?.cushion && driver.cushion !== passenger.cushion && !driverPad!.intersectsBox(passengerPad!)),
+      separation: driver && passenger ? driver.position.distanceTo(passenger.position) : undefined };
+  });
+  return { cars: pairs.length, seats: pairs.filter(pair => pair.driver).length + pairs.filter(pair => pair.passenger).length,
+    complete: pairs.every(pair => pair.sameCar && pair.independentPads), pairs };
 }

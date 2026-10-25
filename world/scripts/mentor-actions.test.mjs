@@ -97,12 +97,12 @@ test('shared donation fireworks align to service time once, expire without repla
   world.fireworksShow=new FireworksShow(scene,{seaY:0});world.fireworksShow.start(performance.now());
   const now=1_000_000,event={id:'anonymous-test-event',startedAt:now-5_000,durationMs:24_000};
   world.syncDonationCelebration(event,now);world.templeFireworks.update(0,performance.now());
-  assert.equal(prepared,1);assert.equal(world.templeFireworks.snapshot().active,true);
+  assert.equal(prepared,0,'shared celebrations use gate-prepared audio without new downloads');assert.equal(world.templeFireworks.snapshot().active,true);
   const started=world.templeFireworks.startedAt;assert.ok(Math.abs(performance.now()-started-5_000)<30);
-  world.syncDonationCelebration(event,now+1000);assert.equal(world.templeFireworks.startedAt,started);assert.equal(prepared,1);
+  world.syncDonationCelebration(event,now+1000);assert.equal(world.templeFireworks.startedAt,started);assert.equal(prepared,0);
   world.syncDonationCelebration(event,now+25_000);assert.equal(world.templeFireworks.snapshot().active,false);
   world.syncDonationCelebration(event,now);assert.equal(world.templeFireworks.snapshot().active,false,'same expired ID cannot restart');
   for(const invalid of [undefined,{...event,id:'bad',durationMs:999999},{...event,id:'future',startedAt:now+60000}])world.syncDonationCelebration(invalid,now);
-  assert.equal(prepared,1);assert.equal(world.fireworksShow.snapshot().active,true);
+  assert.equal(prepared,0);assert.equal(world.fireworksShow.snapshot().active,true);
   world.templeFireworks.dispose();world.fireworksShow.dispose();
 });

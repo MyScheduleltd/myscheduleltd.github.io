@@ -631,22 +631,32 @@ test('admission prepares the existing room before GPU warmup, without starting t
     // The warm-up stand of every body is the avatar code's to build; here it is an empty group.
     // Object.create bypasses field initializers. Supply the texture-preparation
     // resource explicitly, while keeping the real architectural placement.
-    Object.assign(world,{scene,camera,preview:false,disposed:false,environmentMaterials:{async prepare(root){assert.equal(root,scene);assert.ok(root.userData.environmentArchitectureReport.triangles>0);environmentReady=true;}},gpuTextures:{release(){assert.equal(environmentReady,true,'no decoder release while fixed maps are still loading');assert.notEqual(world.firstFilmWindow,true,'decoder is retired before admission asks its first film to decode');decoderRetired++;}},pendingRemoteVisitors:new Map([['a',1],['b',2],['c',3]]),projectors:new Map(),cullDecorativeLights(){},warmAvatarVariants(){const stand=new THREE.Group();scene.add(stand);return stand;},flushRemoteVisitor(){this.pendingRemoteVisitors.delete(this.pendingRemoteVisitors.keys().next().value);const body=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial());body.name='Admission test body';scene.add(body);created++;},renderer:{shadowMap:{},info:{programs:[]},render(root,cam){assert.equal(compiled,1,'drawn after compiling');assert.equal(root,scene);assert.equal(cam,camera);drawn++;},compile(root,cam,target){compiled++;assert.equal(environmentReady,true,'environment maps settle before GPU compilation');assert.equal(decoderRetired,1,'startup decoder is gone before GPU warm-up and gameplay');assert.equal(created,3);assert.equal(root.children.filter(child=>child.name==='Admission test body').length,3);assert.equal(root.children.filter(child=>child.userData.environmentArchitecture).length,scene.userData.environmentArchitectureReport.meshes);assert.equal(cam,camera);assert.equal(target,scene);return new Set();},setAnimationLoop(){throw Error('admission started gameplay before preparation completed');}}});
-    await world.prepareForPlay();assert.equal(created,3);assert.equal(compiled,1);assert.equal(world.pendingRemoteVisitors.size,0);
+    Object.assign(world,{scene,camera,preview:false,disposed:false,environmentMaterials:{async prepare(root){assert.equal(root,scene);assert.ok(root.userData.environmentArchitectureReport.triangles>0);environmentReady=true;}},gpuTextures:{release(){assert.equal(environmentReady,true,'no decoder release while fixed maps are still loading');assert.notEqual(world.firstFilmWindow,true,'decoder is retired before admission asks its first film to decode');decoderRetired++;}},pendingRemoteVisitors:new Map([['a',1],['b',2],['c',3]]),projectors:new Map(),cullDecorativeLights(){},warmAvatarVariants(){const stand=new THREE.Group();scene.add(stand);return stand;},flushRemoteVisitor(){this.pendingRemoteVisitors.delete(this.pendingRemoteVisitors.keys().next().value);const body=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial());body.name='Admission test body';scene.add(body);created++;},renderer:{shadowMap:{},info:{programs:[]},render(root,cam){
+      if(root===scene){assert.equal(compiled,1,'world drawn after compiling');assert.equal(cam,camera);}
+      else{assert.equal(compiled,2,'isolated fixed effect drawn after its own compile');assert.equal(root,world.doubleVision.scene);assert.equal(cam,world.doubleVision.camera);}
+      drawn++;
+    },compile(root,cam,target){
+      compiled++;assert.equal(environmentReady,true,'environment maps settle before GPU compilation');assert.equal(decoderRetired,1,'startup decoder is gone before GPU warm-up and gameplay');assert.equal(created,3);
+      if(target===scene){assert.equal(root.children.filter(child=>child.name==='Admission test body').length,3);assert.equal(root.children.filter(child=>child.userData.environmentArchitecture).length,scene.userData.environmentArchitectureReport.meshes);assert.equal(cam,camera);}
+      else{assert.equal(root,world.doubleVision.scene);assert.equal(target,root);assert.equal(cam,world.doubleVision.camera);}
+      return new Set();
+    },setAnimationLoop(){throw Error('admission started gameplay before preparation completed');}}});
+    await world.prepareForPlay();assert.equal(created,3);assert.equal(compiled,2);assert.equal(world.pendingRemoteVisitors.size,0);
     assert.ok(drawn>=1,'then every kind of draw is drawn once under the loading view');
     assert.equal(scene.children.some(child=>child.type==='Group'),false,'and the stand of bodies is gone again');
   }finally{globalThis.window=savedWindow;}
 });
 
-test('admission disposes temporary avatar instances after a successful or failed warm-up in both graphics modes',async()=>{
+test('admission releases temporary rigs but retains only successfully drawn material owners until stop in both modes',async()=>{
  const savedWindow=globalThis.window;
  globalThis.window={setTimeout:run=>setTimeout(run,0),setInterval,clearInterval,location:{hostname:'127.0.0.1',search:'?nobatch'}};
  try {
   for(const graphicsMode of ['normal','lite'])for(const failDraw of [false,true]){
    const scene=new THREE.Scene(),world=Object.create(FestivalWorld.prototype),stand=new THREE.Group();
-   let disposed=0,drawn=0;
-   const body=new THREE.Group();body.userData.disposeImportedAvatar=()=>disposed++;
-   body.add(new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial()));stand.add(body);
+   let disposed=0,drawn=0,materialsDisposed=0;
+   const material=new THREE.MeshStandardMaterial();material.addEventListener('dispose',()=>materialsDisposed++);
+   const body=new THREE.Group();body.userData.disposeImportedAvatar=retained=>{disposed++;if(retained)retained.add(material);else material.dispose();};
+   body.add(new THREE.Mesh(new THREE.BoxGeometry(),material));stand.add(body);
    Object.assign(world,{scene,camera:new THREE.PerspectiveCamera(),graphicsMode,preview:false,disposed:false,
     async prepareAssets(){},pendingRemoteVisitors:new Map(),projectors:new Map(),cullDecorativeLights(){},warmScreenPlayer(){},
     warmAvatarVariants(){scene.add(stand);return stand;},
@@ -655,8 +665,33 @@ test('admission disposes temporary avatar instances after a successful or failed
    assert.ok(drawn>0,'the failure happens after a temporary avatar was prepared for drawing');
    assert.equal(disposed,1,`${graphicsMode}: warm-up ownership is released even when the driver throws`);
    assert.equal(stand.parent,null,'temporary stand leaves the live scene');
+   if(failDraw){assert.equal(materialsDisposed,1);assert.equal(world.warmAvatarMaterials,undefined,'a failed warm-up retains no new owners');}
+   else{assert.ok(world.warmAvatarMaterials.has(material));assert.ok(world.warmAvatarMaterials.size>1,'exact first-use carried surfaces retain owners too');assert.equal(materialsDisposed,0,'prepared programs retain an ordinary material owner');world.releaseWarmAvatarPrograms();world.releaseWarmAvatarPrograms();assert.equal(materialsDisposed,1);}
   }
  } finally {globalThis.window=savedWindow;}
+});
+
+test('fixed feature warmup preserves the exact runtime drink shader without keeping geometry',async()=>{
+ const world=Object.create(FestivalWorld.prototype);world.graphicsMode='normal';
+ const stand=new THREE.Group(),runtime=new THREE.Group();world.populateDrinkProp(runtime);
+ const runtimeLiquid=runtime.getObjectByName('Drink surface').material;
+ const fixed=world.warmFixedFeatureVariants(stand),liquid=stand.getObjectByName('Drink surface').material;
+ assert.notEqual(liquid,runtimeLiquid,'the prepared owner cannot dispose an ordinary cup or shared scenery material');
+ const source=material=>{const shader={uniforms:{},vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};material.onBeforeCompile(shader,{});return shader;};
+ assert.equal(liquid.customProgramCacheKey(),runtimeLiquid.customProgramCacheKey());
+ assert.deepEqual(liquid.defines,runtimeLiquid.defines);assert.equal(liquid.side,runtimeLiquid.side);
+ assert.equal(source(liquid).fragmentShader,source(runtimeLiquid).fragmentShader,'no grain or cel style is added/removed to avoid a program');
+ let ownedGeometryDisposed=0,sharedGeometryDisposed=0;
+ const food=new THREE.Group();world.populateFoodProp(food,0xd8642c,0xf0d8a8);
+ food.children[0].geometry.addEventListener('dispose',()=>sharedGeometryDisposed++);
+ for(const geometry of fixed.geometries)geometry.addEventListener('dispose',()=>ownedGeometryDisposed++);
+ assert.ok(fixed.materials.has(liquid));assert.ok(fixed.geometries.size>0);
+ const scene=new THREE.Scene();scene.add(stand);const drawn=[];
+ await (await import('data:text/javascript;base64,'+Buffer.from((await build({entryPoints:['src/world/SceneWarmup.ts'],bundle:true,write:false,format:'esm',platform:'node'})).outputFiles[0].text).toString('base64'))).warmByDrawing({shadowMap:{},info:{programs:[]},render(root){root.traverseVisible(object=>{if(object.material)drawn.push(object.name);});}},scene,new THREE.PerspectiveCamera());
+ assert.ok(drawn.includes('Drink surface'));
+ for(const geometry of fixed.geometries)geometry.dispose();
+ assert.equal(ownedGeometryDisposed,fixed.geometries.size);assert.equal(sharedGeometryDisposed,0,'the reusable food cube is never freed by temporary feature cleanup');
+ for(const material of fixed.materials)material.dispose();
 });
 
 test('stopping admission after compilation, during uploads or during drawing performs no later GPU work', async () => {
@@ -729,7 +764,7 @@ test('admission cannot compile or finish before fixed assets are placed', async 
     await new Promise(resolve=>setImmediate(resolve));assert.equal(compiled,0);assert.equal(environmentStarted,false);
     finishScenery();finishArcade();await new Promise(resolve=>setImmediate(resolve));assert.equal(complete,false);assert.equal(compiled,0);assert.equal(environmentStarted,false);
     finishBand();await new Promise(resolve=>setImmediate(resolve));assert.equal(environmentStarted,true);assert.equal(compiled,0);assert.equal(complete,false,'environment preparation is part of admission');
-    finishEnvironment();await prepared;assert.equal(compiled,1);assert.equal(progress.at(-1),1);assert.equal(complete,true);
+    finishEnvironment();await prepared;assert.equal(compiled,2,'the world and its isolated fixed effect both compile before admission');assert.equal(progress.at(-1),1);assert.equal(complete,true);
   }finally{globalThis.window=savedWindow;}
 });
 
