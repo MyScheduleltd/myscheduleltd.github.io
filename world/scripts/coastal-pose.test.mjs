@@ -2060,6 +2060,54 @@ test('both graphics modes release every warm-up avatar on repeated entry without
  } finally {live.root.userData.disposeImportedAvatar();}
 });
 
+test('warm material ownership preserves variant programs while retiring every cloned rig, bone texture and update binding',()=>{
+ const live=importedCharacter(),scene=new THREE.Scene();scene.add(live.root);
+ const baseline=new Set(importedAvatarRoots),world=Object.create(FestivalWorld.prototype);
+ Object.assign(world,{scene,player:live.root,palette:{...BASE_PALETTE},preview:true,graphicsMode:'normal'});
+ const stand=world.warmAvatarVariants(),roots=[...stand.children],materials=new Set(),skeletons=new Set();
+ stand.traverse(object=>{if(object.isSkinnedMesh){materials.add(object.material);skeletons.add(object.skeleton);}});
+ let materialsDisposed=0,boneTexturesDisposed=0,linked=0;
+ // Model the renderer's ordinary material -> program references. Disposing
+ // its final owner releases the program; transferring owners must not do so.
+ const programs=new Map(),acquired=new WeakMap();
+ const acquire=material=>{
+  if(acquired.has(material))return;
+  const key=[material.type,material.customProgramCacheKey(),material.side,material.transparent,material.alphaTest,Boolean(material.map)].join('|');
+  let owners=programs.get(key);if(!owners){programs.set(key,owners=new Set());linked++;}
+  owners.add(material);acquired.set(material,key);
+  material.addEventListener('dispose',()=>{owners.delete(material);if(!owners.size)programs.delete(key);});
+ };
+ for(const material of materials){
+  material.addEventListener('dispose',()=>materialsDisposed++);acquire(material);
+  const shader={uniforms:{},vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};
+  material.onBeforeCompile(shader,{});
+  for(const uniform of Object.values(shader.uniforms)){
+   assert.ok(!uniform.value?.isObject3D&&!uniform.value?.isSkeleton,'retained dye/grain uniforms hold no rig or scene node');
+   if(Array.isArray(uniform.value))assert.ok(uniform.value.every(value=>!value?.isObject3D&&!value?.isSkeleton));
+  }
+ }
+ for(const skeleton of skeletons){skeleton.computeBoneTexture();skeleton.boneTexture.addEventListener('dispose',()=>boneTexturesDisposed++);}
+ const retained=new Set();
+ disposeImportedAvatars(stand,retained);disposeImportedAvatars(stand,retained);stand.removeFromParent();
+ assert.equal(retained.size,materials.size);assert.equal(materialsDisposed,0,'no prepared program owner is prematurely released');
+ assert.equal(boneTexturesDisposed,skeletons.size,'all per-clone GPU bone storage is released immediately');
+ assert.deepEqual(new Set(importedAvatarRoots),baseline,'the retired stand adds no ongoing animation/update work');
+ assert.ok(roots.every(root=>!importedAvatarRoots.has(root)));
+ assert.ok([...retained].every(material=>material.isMaterial&&!material.isObject3D));
+ const linkedAtGate=linked;
+ for(const top of ['#18191b','#191a1c','#1a1b1d','#1b1c1e','#28191b','#291a1c','#2a1b1d','#2b1c1e']){
+  const next=importedCharacter({top});
+  next.root.traverse(object=>{if(object.isSkinnedMesh)acquire(object.material);});
+  assert.equal(linked,linkedAtGate,'first body/wardrobe arrival reuses the retained program keys');
+  next.root.userData.disposeImportedAvatar();
+ }
+ world.warmAvatarMaterials=retained;
+ world.releaseWarmAvatarPrograms();world.releaseWarmAvatarPrograms();
+ assert.equal(materialsDisposed,materials.size);assert.equal(programs.size,0,'the final world owner releases each prepared program');
+ assert.equal(world.warmAvatarMaterials,undefined);assert.equal(retained.size,0);
+ live.root.userData.disposeImportedAvatar();
+});
+
 test('globe culling uses flat proximity and restores full shadows for self, a controlled NPC and headset views',()=>{
  const {root}=importedCharacter(),world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene(),player=new THREE.Group();
  scene.add(root,player);

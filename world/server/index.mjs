@@ -10,6 +10,8 @@ import { STAFF_OFFERING_LIMIT, offeringExpired, offeringTime, trimOfferingHistor
 import { StateDelta } from './state-delta.mjs';
 import { createWishStore, createWishPersistence } from './wish-store.mjs';
 import { ArcadePreviewAccess, arcadeDeviceKey, ARCADE_PREVIEW_END } from './arcade-preview.mjs';
+import { FestivalWeather, OUTDOOR_SNOW_SEATS, weatherAt } from './weather.mjs';
+import { createWeatherStore, createWeatherPersistence } from './weather-store.mjs';
 import {
   DONATION_PRESETS, MAX_DONATION, MIN_DONATION,
   buildInvoice, buildOrder, ecpayConfig, readInvoiceReply,
@@ -618,6 +620,9 @@ let broadcastTimer;
 const validSeats = new Set([
   ...Array.from({ length: 3 }, (_, row) => Array.from({ length: 5 }, (_, column) => `PALACE-${row + 1}-${column + 1}`)).flat(),
   ...Array.from({ length: 2 }, (_, row) => Array.from({ length: 3 }, (_, column) => `DRIVE-${row + 1}-${column + 1}`)).flat(),
+  // Passenger number follows the existing six-car row/column order. Driver
+  // IDs remain unchanged so either side of a car can be claimed separately.
+  ...Array.from({ length: 6 }, (_, index) => `DRIVE-${index + 1}-PASSENGER`),
   ...Array.from({ length: 3 }, (_, row) => Array.from({ length: 7 }, (_, column) => `SHORE-${row + 1}-${column + 1}`)).flat(),
   // Bar stools in the club.
   ...Array.from({ length: 6 }, (_, column) => `CLUB-1-${column + 1}`),
@@ -625,7 +630,14 @@ const validSeats = new Set([
   // being registered here, so every attempt to sit on one was turned away as an
   // unknown seat.
   ...Array.from({ length: 3 }, (_, index) => `ROOFTOP-BENCH-${index + 1}`),
+  ...Array.from({ length: 6 }, (_, index) => `BEACH-CHAIR-${index + 1}`),
+  ...Array.from({ length: 4 }, (_, index) => `BEACH-MAT-${index + 1}`),
 ]);
+const weather = new FestivalWeather();
+const weatherStore = createWeatherStore();
+let weatherPersistence;
+const beachRelaxation = seatId => /^BEACH-CHAIR-[1-6]$/.test(seatId ?? '') ? 'chair-sit'
+  : /^BEACH-MAT-[1-4]$/.test(seatId ?? '') ? 'recline' : undefined;
 
 const json = (response, status, payload) => {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -806,6 +818,7 @@ const persistedSnapshot = () => ({
   donations: [...donations.values()].map(donationForDisk),
   // Private browser-bound preview tickets never enter /api/config, broadcasts or the deployment seed.
   arcadePreview: arcadePreview.snapshot(),
+  weather: weather.snapshot(),
 });
 
 let persistTimer;
@@ -1010,6 +1023,7 @@ const restorePersistedState = () => {
     }
   }
   if (!saved || typeof saved !== 'object') return;
+  weather.restore(saved.weather);
 
   if (saved.siteStyle) {
     siteStyle.brandFontSize = clampNumber(saved.siteStyle.brandFontSize, 12, 42, siteStyle.brandFontSize);
@@ -1410,6 +1424,7 @@ const wishPersistence = createWishPersistence({ store: wishStore, wishes, limit:
 let donationCelebration = null;
 const stateFor = (visitor) => ({
   serverTime: Date.now(),
+  weather: weather.snapshot(),
   donationCelebration: donationCelebration && Date.now() < donationCelebration.startedAt + donationCelebration.durationMs
     ? donationCelebration : null,
   selfId: visitor.id,
@@ -1555,9 +1570,13 @@ const scheduleBroadcast = () => {
 };
 
 const releaseSeat = (visitor) => {
-  if (!visitor.seatedAt) return;
-  if (seats.get(visitor.seatedAt) === visitor.id) seats.delete(visitor.seatedAt);
+  const wasSeated = Boolean(visitor.seatedAt);
+  if (visitor.seatedAt && seats.get(visitor.seatedAt) === visitor.id) seats.delete(visitor.seatedAt);
   visitor.seatedAt = undefined;
+  if (visitor.presence) {
+    visitor.presence.relaxation = undefined;
+    if (wasSeated) visitor.presence.state = 'walking';
+  }
 };
 
 const removeVisitor = (visitor, reason = 'left') => {
@@ -1995,7 +2014,7 @@ const server = createServer(async (request, response) => {
       // DJ profiles dropped at boot, so every STAFF edit to a DJ card was lost
       // at the next deploy. It sat on `/api/admin/state` until 2026-10-12, where
       // the capture never looked.
-      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), schedule: programmeSchedule, siteStyle, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, djProfileSeed: DJ_PROFILE_SEED, shopLink, templeSign, entranceSign, gateCopy, trackTempos, trackDurations, immersiveSources, videoTitles, clubRequest, venueQueues, jukebox: jukeboxSnapshot(), wishes });
+      return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), serverTime: Date.now(), weather: weather.snapshot(), schedule: programmeSchedule, siteStyle, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, djProfileSeed: DJ_PROFILE_SEED, shopLink, templeSign, entranceSign, gateCopy, trackTempos, trackDurations, immersiveSources, videoTitles, clubRequest, venueQueues, jukebox: jukeboxSnapshot(), wishes });
     }
 
     if (request.method === 'POST' && url.pathname === '/api/session') {
@@ -2431,6 +2450,9 @@ a{color:#e8b64a}</style>
     if (request.method === 'POST' && url.pathname === '/api/presence') {
       if (!visitor) return apiError(response, 401, 'Invalid festival session.');
       const payload = await body(request);
+      const claimedBeachPose = beachRelaxation(visitor.seatedAt);
+      const state = claimedBeachPose ? 'seated' : ['walking', 'seated', 'swimming'].includes(payload.state) ? payload.state : 'walking';
+      const relaxation = claimedBeachPose ?? (state === 'seated' && !visitor.seatedAt && ['ground-sit', 'recline'].includes(payload.relaxation) ? payload.relaxation : undefined);
       visitor.presence = {
         // These bounds have to cover every venue or attendees are dragged to
         // the edge of them and drawn somewhere they are not — and, because the
@@ -2454,7 +2476,8 @@ a{color:#e8b64a}</style>
         z: Math.max(-80, Math.min(101, Number(payload.z) || 0)),
         rotation: Number(payload.rotation) || 0,
         location: safeText(payload.location, 40) || 'FESTIVAL GATE',
-        state: ['walking', 'seated', 'swimming'].includes(payload.state) ? payload.state : 'walking',
+        state,
+        relaxation,
         moving: payload.moving === true,
         running: payload.running === true,
         venue: isVenue(payload.venue) ? payload.venue : 'shore',
@@ -2555,7 +2578,7 @@ a{color:#e8b64a}</style>
         struck.presence = { ...struck.presence, carriedItem: undefined };
       }
       // A body on the floor is not sitting in a seat.
-      if (died && struck.seatedAt) struck.seatedAt = undefined;
+      if (died) releaseSeat(struck);
       scheduleBroadcast();
       return json(response, 200, { ok: true, hit: { id: struck.id, name: struck.name, droppedMentor, died } });
     }
@@ -2763,9 +2786,39 @@ a{color:#e8b64a}</style>
       if (seatMatch[2] === 'claim') {
         const owner = seats.get(seatId);
         if (owner && owner !== visitor.id) return apiError(response, 409, 'That seat is occupied.');
+        const payload = await body(request);
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+          || (payload.snowAction !== undefined && !['brush', 'sit'].includes(payload.snowAction))) {
+          return apiError(response, 400, 'Unknown snow seat action.');
+        }
+        // Another attendee can finish a claim while this request body is still
+        // arriving. Keep this final check and the brush/assignment synchronous.
+        if (visitors.get(visitor.id) !== visitor) return apiError(response, 401, 'Invalid festival session.');
+        const currentOwner = seats.get(seatId);
+        if (currentOwner && currentOwner !== visitor.id) return apiError(response, 409, 'That seat is occupied.');
+        let snowCleared = false;
+        if (payload.snowAction === 'brush') {
+          if (!OUTDOOR_SNOW_SEATS.has(seatId)) return apiError(response, 404, 'That seat does not collect outdoor snow.');
+          const now = Date.now();
+          const sample = weatherAt(weather.snapshot().schedule, now);
+          if (sample.snowCoverage > 0 && sample.occurrenceId) {
+            visitor.weatherBrushTimes = (visitor.weatherBrushTimes ?? []).filter(at => at > now - 10_000);
+            const alreadyCleared = weather.snapshot().clearedSeats.some(record => record.seatId === seatId && record.occurrenceId === sample.occurrenceId);
+            if (!alreadyCleared && visitor.weatherBrushTimes.length >= 6) return apiError(response, 429, 'Please wait before brushing another seat.');
+            if (payload.occurrenceId !== undefined && payload.occurrenceId !== sample.occurrenceId) return apiError(response, 409, 'That snowfall has changed.');
+            const cleared = weather.clearSeat(seatId, sample.occurrenceId);
+            snowCleared = cleared.cleared;
+            if (snowCleared) { visitor.weatherBrushTimes.push(now); persist(); weatherPersistence?.changed(); }
+          }
+        }
         releaseSeat(visitor);
         seats.set(seatId, visitor.id);
         visitor.seatedAt = seatId;
+        visitor.presence = { ...visitor.presence, state: 'seated', moving: false, running: false,
+          relaxation: beachRelaxation(seatId) };
+        visitor.lastSeen = Date.now();
+        scheduleBroadcast();
+        return json(response, 200, { ok: true, seatId, snowCleared, weather: weather.snapshot() });
       } else if (seats.get(seatId) === visitor.id) {
         releaseSeat(visitor);
       }
@@ -2864,6 +2917,9 @@ a{color:#e8b64a}</style>
         return json(response, 200, {
           visitors: [...visitors.values()].map(publicVisitor),
           seats: [...seats.entries()].map(([seatId, visitorId]) => ({ seatId, visitorId })),
+          serverTime: Date.now(),
+          weather: weather.snapshot(),
+          weatherPersistence: weatherPersistence?.status() ?? { enabled: weatherStore.enabled, loaded: !weatherStore.enabled, dirty: false },
           messages: messages.slice(-CHAT_HISTORY_LIMIT),
           schedule: programmeSchedule,
           siteStyle,
@@ -2909,6 +2965,13 @@ a{color:#e8b64a}</style>
         });
       }
       const payload = await body(request);
+      if (request.method === 'POST' && url.pathname === '/api/admin/weather') {
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+          || Object.keys(payload).some(key => key !== 'schedule')) return apiError(response, 400, 'A weather schedule is required.');
+        const next = weather.replace(payload.schedule);
+        persist(); weatherPersistence?.changed(); scheduleBroadcast();
+        return json(response, 200, { ok: true, serverTime: Date.now(), weather: next });
+      }
       if (request.method === 'POST' && url.pathname === '/api/admin/schedule') {
         const venue = String(payload.venue ?? '');
         if (!isVenue(venue)) return apiError(response, 400, 'Unknown venue.');
@@ -3125,11 +3188,10 @@ a{color:#e8b64a}</style>
         if (npcId && !(npcId in npcNames)) return apiError(response, 400, 'Unknown NPC.');
         if (npcId && !visitor.npcId) {
           visitor.impersonationOrigin = { ...visitor.presence, gesture: undefined };
-          if (visitor.seatedAt) seats.delete(visitor.seatedAt);
-          visitor.seatedAt = undefined;
+          releaseSeat(visitor);
         }
         if (!npcId && visitor.npcId && visitor.impersonationOrigin) {
-          visitor.presence = { ...visitor.impersonationOrigin, gesture: undefined, state: 'walking', moving: false };
+          visitor.presence = { ...visitor.impersonationOrigin, gesture: undefined, state: 'walking', moving: false, relaxation: undefined };
           visitor.impersonationOrigin = undefined;
         }
         visitor.npcId = npcId || undefined;
@@ -3459,6 +3521,7 @@ a{color:#e8b64a}</style>
 
 const heartbeat = setInterval(() => {
   const now = Date.now();
+  if (weather.prune()) { persist(); weatherPersistence?.changed(); scheduleBroadcast(); }
   // A venue's programme moves on whether or not anybody is standing in it.
   if (settleAllSchedules()) scheduleBroadcast();
   for (const responseSet of streams.values()) {
@@ -3488,6 +3551,8 @@ const heartbeat = setInterval(() => {
 }, 10_000);
 
 restorePersistedState();
+weatherPersistence = createWeatherPersistence({ store: weatherStore, weather,
+  onChange: () => { persist(); scheduleBroadcast(); } });
 
 server.listen(PORT, HOST, () => {
   console.log(`myschedule festival server listening on http://${HOST}:${PORT}`);
@@ -3506,6 +3571,8 @@ const shutdown = () => {
     // without letting an unavailable Redis hold shutdown or payment handling.
     await wishPersistence.flush(2_000);
     wishPersistence.dispose();
+    await weatherPersistence.flush(2_000);
+    weatherPersistence.dispose();
     process.exit(0);
   });
 };

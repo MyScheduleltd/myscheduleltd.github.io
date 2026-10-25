@@ -126,3 +126,32 @@ test('the actual remote-controlled resident updater uses each seat height, inclu
  const npc=w.npcs[0];w.remoteNpcControls.set('KENNY',{x:100,y:4.2,z:100,rotation:0,state:'seated',moving:false});
  w.updateNpcs(2,3);near(w.npcControlTarget.y,4.2);
 });
+
+test('each actual convertible supports two independent native occupants and clear exits',()=>{
+ const w=fixture();batchStaticScenery(w.scene);w.scene.updateMatrixWorld(true);
+ const renderedBounds=root=>{
+  syncImportedAvatars(root);root.updateMatrixWorld(true);const bounds=new THREE.Box3(),p=new THREE.Vector3();
+  const clothed=root.userData.importedAvatar.meshes.some(m=>m.visible&&m.userData.componentId==='garment-trousers');
+  for(const mesh of root.userData.importedAvatar.meshes){if(!mesh.visible)continue;mesh.skeleton.update();const positions=mesh.geometry.getAttribute('position'),hidden=mesh.userData.componentId==='body'?mesh.geometry.getAttribute(clothed?'_covered':'_dressed'):undefined;
+   for(let vertex=0;vertex<positions.count;vertex++){if((hidden?.getX(vertex)??0)>.5)continue;p.fromBufferAttribute(positions,vertex);mesh.applyBoneTransform(vertex,p);p.applyMatrix4(mesh.matrixWorld);bounds.expandByPoint(p);}
+  }return bounds;
+ };
+ for(const sexes of [['male','female'],['female','male']]){
+  const occupants=sexes.map(sex=>character(sex));occupants.forEach(({root})=>w.scene.add(root));
+  for(let number=1;number<=6;number++){
+   const driver=w.seats.find(s=>s.id===`DRIVE-${Math.floor((number-1)/3)+1}-${(number-1)%3+1}`),passenger=w.seats.find(s=>s.id===`DRIVE-${number}-PASSENGER`);assert.ok(driver&&passenger);
+   assert.equal(driver.cushion.parent,passenger.cushion.parent);assert.notEqual(driver.cushion,passenger.cushion);
+   const driverPad=new THREE.Box3().setFromObject(driver.cushion),passengerPad=new THREE.Box3().setFromObject(passenger.cushion);assert.equal(driverPad.intersectsBox(passengerPad),false);
+   const boxes=[];
+   for(const [index,seat]of [driver,passenger].entries()){
+    const {root,rig}=occupants[index];w.player=root;w.playerRig=rig;root.position.copy(w.seatAnchor(seat));root.rotation.y=Math.PI;w.poseRigSeated(rig);syncImportedAvatars(root);root.updateMatrixWorld(true);
+    const pad=new THREE.Box3().setFromObject(seat.cushion),gap=visibleContact(root,pad).bottom-pad.max.y;assert.ok(gap>-.012&&gap<.012,sexes[index]+' '+seat.id+' cushion gap '+gap);
+    assert.ok(root.userData.importedSolePoints().every(p=>p.y>=seat.footFloor-.012),'both soles stay above the actual floorpan');boxes.push(renderedBounds(root));
+    const side=index===0?-1:1,x=seat.position.x+side*2,z=seat.position.z,y=w.groundHeightAt(x,z,root.position.y);assert.equal(w.staticCollides(x,z,y,FestivalWorld.BODY_RADIUS),false,seat.id+' outside-door exit blocked');
+    w.activeSeat=seat;w.playerState='seated';w.onAction=()=>{};w.standUp();assert.equal(w.playerState,'walking');assert.equal(w.activeSeat,undefined);assert.equal(w.staticCollides(root.position.x,root.position.z,root.position.y,FestivalWorld.BODY_RADIUS),false,'natural get-up destination clears the car');
+   }
+   assert.equal(boxes[0].intersectsBox(boxes[1]),false,'two rendered bodies overlap in car '+number+' '+sexes.join('/'));
+  }
+  occupants.forEach(({root})=>root.removeFromParent());
+ }
+});

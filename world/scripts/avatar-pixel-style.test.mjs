@@ -60,6 +60,7 @@ test('all visible avatar materials keep real scene light/shadows and crisp map s
    const material=mesh.material,map=material.map,shader=shaderOf(material);
    assert.equal(material.toneMapped,true);assert.equal(material.emissiveIntensity,0);
    assert.match(shader.fragmentShader,/AVATAR_SCENE_LIGHT_BANDS_V1/);assert.match(shader.fragmentShader,/reflectedLight.directDiffuse\+reflectedLight.indirectDiffuse/);
+   assert.match(shader.fragmentShader,/AVATAR_SHADE_BOUNCE_V1/);assert.ok(shader.uniforms.avatarShadeFloor);
    assert.ok(!shader.fragmentShader.includes('evenIrradiance'),'must not substitute uniform albedo for directional face shading');
    assert.equal(material.map,map);if(map)assert.equal(map.magFilter,THREE.NearestFilter);
    assert.ok(shader.uniforms.avatarPixelGrid.value.x<=512&&shader.uniforms.avatarPixelGrid.value.y<=512);
@@ -104,6 +105,7 @@ test('all four actual musician files keep the scene-lit pixel materials througho
    model.traverse(mesh=>{if(!mesh.isMesh)return;for(const material of Array.isArray(mesh.material)?mesh.material:[mesh.material]){
     assert.equal(material.isMeshStandardMaterial,true);assert.equal(material.toneMapped,true);assert.equal(material.emissiveIntensity,0);assert.equal(mesh.receiveShadow,true);
     const shader=shaderOf(material);assert.match(shader.fragmentShader,/AVATAR_SCENE_LIGHT_BANDS_V1/);assert.ok(shader.uniforms.avatarPixelGrid);
+    assert.match(shader.fragmentShader,/AVATAR_SHADE_BOUNCE_V1/);assert.ok(shader.uniforms.avatarShadeFloor);
     assert.equal(material.userData.worldFilmGrain,!material.transparent);if(hooks.has(material))assert.equal(material.onBeforeCompile,hooks.get(material));else hooks.set(material,material.onBeforeCompile);
    }});
   }

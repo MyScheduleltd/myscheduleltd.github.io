@@ -1,7 +1,10 @@
+import { SeatCommands } from '../network/SeatCommands';
 import { createTipRotation, entryTips, type TipRotation } from './EntryTips';
 import { AmbientAudio } from '../world/AmbientAudio';
 import { installInterfaceSounds } from './InterfaceSounds';
-import { DanceWheel } from './DanceWheel';
+import { ActionMenu } from './ActionMenu';
+import { SnowSeatChoice } from './SnowSeatChoice';
+import { weatherStaffContent, bindWeatherStaff } from './WeatherStaff';
 import { TOP_OUTFITS, AVATAR_CLOTHING_DEFAULTS, topOutfit, avatarSex, outfitWire, type AvatarSex } from '../world/CoastalOutfits';
 import { avatarVariantsFor, AVATAR_NATIVE } from '../world/NativeAvatarPalette';
 import {
@@ -437,7 +440,10 @@ export class App {
   private palette: AvatarPalette;
   private snapshot?: WorldSnapshot;
   private activePanel?: PanelId;
-  private danceWheel?: DanceWheel;
+  private danceWheel?: ActionMenu;
+  private snowSeatChoice?:SnowSeatChoice;
+  private readonly seatCommands=new SeatCommands();
+  private seatAttempt=0;
   private currentId = '';
   private audioMuted = true;
   private readonly entryAudio = new AmbientAudio();
@@ -1850,7 +1856,7 @@ export class App {
             <button type="button" class="touch-ring__hit" data-touch-act="punch" aria-label="${zh ? '出拳' : 'Punch'}">${zh ? '拳' : 'HIT'}</button>
             <button type="button" class="touch-ring__key touch-ring__key--a" data-touch-act="jump" aria-label="${zh ? '跳躍' : 'Jump'}">${zh ? '跳' : 'JUMP'}</button>
             <button type="button" class="touch-ring__key touch-ring__key--b" data-touch-act="run" aria-label="${zh ? '奔跑' : 'Run'}">${zh ? '跑' : 'RUN'}</button>
-            <button type="button" class="touch-ring__key touch-ring__key--c" data-touch-act="dance" aria-label="${zh ? '選擇舞步' : 'Choose a dance'}">${zh ? '舞' : 'DANCE'}</button>
+            <button type="button" class="touch-ring__key touch-ring__key--c" data-touch-act="dance" aria-label="${zh ? '選擇動作' : 'Choose an action'}">${zh ? '動' : 'ACTIONS'}</button>
             <button type="button" class="touch-ring__key touch-ring__key--d" data-touch-act="offer" aria-label="${zh ? '供養' : 'Offer'}">${zh ? '供' : 'OFFER'}</button>
             <button type="button" class="touch-ring__key touch-ring__key--e" data-touch-act="photo" aria-label="${zh ? '拍照' : 'Photo'}">${zh ? '影' : 'PHOTO'}</button>
           </div>
@@ -1862,7 +1868,7 @@ export class App {
           aria-live="polite"
           aria-atomic="false"
         ></section>
-          <div class="controls-hint"><span>${zh ? '移動' : 'MOVE'}</span> WASD / ARROWS <span>${zh ? '奔跑' : 'RUN'}</span> SHIFT <span>${zh ? '互動' : 'INTERACT'}</span> E · SHIFT+E ${zh ? '抱起 MENTOR' : 'PICK UP MENTOR'} <span>${zh ? '跳躍' : 'JUMP'}</span> SPACE <span>${zh ? '舞步' : 'DANCE MOVES'}</span> B <span>${zh ? '供養' : 'OFFER'}</span> O <span>${zh ? '視角' : 'LOOK'}</span> ${zh ? '拖曳滑鼠' : 'DRAG MOUSE'} · T <span>${zh ? '拍照' : 'PHOTO'}</span> C</div>
+          <div class="controls-hint"><span>${zh ? '移動' : 'MOVE'}</span> WASD / ARROWS <span>${zh ? '奔跑' : 'RUN'}</span> SHIFT <span>${zh ? '互動' : 'INTERACT'}</span> E · SHIFT+E ${zh ? '抱起 MENTOR' : 'PICK UP MENTOR'} <span>${zh ? '跳躍' : 'JUMP'}</span> SPACE <span>${zh ? '動作' : 'ACTIONS'}</span> B <span>${zh ? '供養' : 'OFFER'}</span> O <span>${zh ? '視角' : 'LOOK'}</span> ${zh ? '拖曳滑鼠' : 'DRAG MOUSE'} · T <span>${zh ? '拍照' : 'PHOTO'}</span> C</div>
       </section>
     `;
 
@@ -1923,6 +1929,7 @@ export class App {
     this.world.setNpcProfiles(this.npcProfiles);
     if (this.networkState) this.world.setRemoteVisitors(this.remoteVisitorVisuals(this.networkState));
     this.world.setWishes(this.networkState?.wishes ?? []);
+    this.world.setWeather(this.networkState?.weather,this.networkState?.serverTime);
     if (this.networkState) this.world.syncDonationCelebration(this.networkState.donationCelebration, this.networkState.serverTime);
     this.syncArcadeRelease();
     this.syncPublicProjectors();
@@ -1969,6 +1976,8 @@ export class App {
     // — walking it into the sea, for instance — is from whichever page the walk
     // started on.
     if (['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      (window as Window & {__festivalWeather?:()=>unknown}).__festivalWeather=()=>this.world?.weatherReviewSnapshot();
+      (window as Window & {__festivalBeach?:(id?:string,sit?:boolean)=>void}).__festivalBeach=(id,sit)=>this.world?.focusRelaxationForReview(id,sit);
       // How the visitor's own body meets the ground, on every loopback page.
       (window as Window & { __festivalFeet?: () => unknown }).__festivalFeet = () => this.world?.feetReviewSnapshot();
       (window as Window & { __festivalGround?: (x0: number, x1: number, z0: number, z1: number, step?: number) => unknown }).__festivalGround =
@@ -2968,7 +2977,7 @@ export class App {
     }
     if (inventory) {
       const chips = [
-        this.language === 'zh-TW'
+        snapshot.relaxation ? (this.language === 'zh-TW'?'休息中':'RESTING') : this.language === 'zh-TW'
           ? ({ walking: '步行', seated: '已入座', swimming: '游泳中' } as const)[snapshot.playerState]
           : snapshot.playerState.toUpperCase(),
         snapshot.outfit === 'swimwear' ? (this.language === 'zh-TW' ? '泳裝' : 'SWIMWEAR') : undefined,
@@ -3007,6 +3016,7 @@ export class App {
       rotation: snapshot.rotation,
       location: snapshot.location,
       state: snapshot.playerState,
+      relaxation:snapshot.relaxation,
       moving: snapshot.moving,
       running: snapshot.running,
       venue: snapshot.screeningVenue,
@@ -3230,13 +3240,26 @@ export class App {
   }
 
   private handleWorldAction(action: WorldAction): void {
+    if(action.type==='snowSeat'){
+      if(this.snowSeatChoice)return;
+      this.snowSeatChoice=new SnowSeatChoice(this.root,this.language==='zh-TW',choice=>{
+        this.snowSeatChoice?.close();this.snowSeatChoice=undefined;this.syncMenuCapture();
+        if(choice)this.world?.takeSnowSeat(action.seatId,choice);
+      });this.syncMenuCapture();return;
+    }
+    if(action.type==='relaxed'){
+      this.closeFestivalPass();this.hideSeatMenu();this.hidePublicSeatHud();this.hideVenueScreen();
+      if(action.seatId){this.activeSeatId=action.seatId;if(this.festivalClient.online)void this.confirmSeatClaim(action.seatId,action.snowAction);}
+      return;
+    }
     if (action.type === 'arcade') { this.openArcadeGame(); return; }
     if (action.type === 'danceSelection') {
       if (this.activePanel || this.viewMode !== 'normal') return;
       this.closeFestivalPass();
       const close = () => { this.danceWheel?.close(); this.danceWheel = undefined; this.syncMenuCapture(); };
-      this.danceWheel = new DanceWheel(this.root, this.language === 'zh-TW', action.active,
-        move => { close(); this.world?.selectDance(move); }, close);
+      const pose=this.world?.relaxationPose();
+      this.danceWheel = new ActionMenu(this.root, this.language === 'zh-TW', {active:pose==='ground-sit'?'sit-ground':pose??(action.active?'groove':undefined),canGroundSit:this.world?.canSitOnGround()??false},
+        move => { close(); this.world?.selectAction(move); }, close);
       this.syncMenuCapture();
       return;
     }
@@ -3309,7 +3332,7 @@ export class App {
     if (action.type === 'seated' && action.seatId.startsWith('CLUB-')) {
       this.activeSeatId = action.seatId;
       this.closeFestivalPass();
-      if (this.festivalClient.online) void this.confirmSeatClaim(action.seatId);
+      if (this.festivalClient.online) void this.confirmSeatClaim(action.seatId,action.snowAction);
       // No reminder here. Sitting down always puts a prompt on screen — the
       // seated branch of the world's own labelling has no path that returns
       // nothing — so this said, in a second box a moment later, whatever the
@@ -3327,7 +3350,7 @@ export class App {
       const panel = this.root.querySelector<HTMLElement>('#panel');
       if (panel) panel.hidden = true;
       this.openSeatMenu(action.seatId, action.venue);
-      if (this.festivalClient.online) void this.confirmSeatClaim(action.seatId);
+      if (this.festivalClient.online) void this.confirmSeatClaim(action.seatId,action.snowAction);
       return;
     }
     if (action.type === 'seatUnavailable') {
@@ -3336,13 +3359,14 @@ export class App {
     }
     if (action.type === 'stood') {
       const releasedSeat = this.activeSeatId;
+      this.seatAttempt++;
       this.pausePrivateScreening();
       this.hideSeatMenu();
       this.hidePublicSeatHud();
       if (this.snapshot?.inTheater) this.startPublicScreening(false);
       else this.hideVenueScreen();
       if (this.festivalClient.online && releasedSeat !== 'CURRENT SEAT') {
-        void this.festivalClient.releaseSeat(releasedSeat);
+        void this.seatCommands.run(()=>this.festivalClient.releaseSeat(releasedSeat)).catch(()=>undefined);
       }
       this.activeSeatId = 'CURRENT SEAT';
       return;
@@ -3787,6 +3811,7 @@ export class App {
    * the ring is painted with a class instead.
    */
   private handleGamepadMenu(nav: 'up' | 'down' | 'confirm' | 'back' | 'toggle'): void {
+    if(this.snowSeatChoice){this.snowSeatChoice.navigate(nav);return;}
     if (this.danceWheel) { this.danceWheel.navigate(nav); return; }
     if (nav === 'toggle') {
       if (this.activePanel) this.closePanel();
@@ -4163,7 +4188,7 @@ export class App {
       // Ended from inside the world, by the prompt on the panel.
       this.screenMode = undefined;
     }
-    const seated = snapshot.playerState === 'seated';
+    const seated = snapshot.playerState === 'seated'&&!snapshot.relaxation;
     // A private screening drawn *in the world* must not take the seat bar away
     // with it. The flat player has a close button of its own; a painted one
     // does not, so the bar is the only way to end a screening without standing
@@ -5405,6 +5430,7 @@ export class App {
         z: visitor.presence.z,
         rotation: visitor.presence.rotation,
         state: visitor.presence.state,
+        relaxation:visitor.presence.relaxation,seatedAt:visitor.seatedAt,
         moving: visitor.presence.moving,
         running: visitor.presence.running,
         gesture: visitor.hitAt && Date.now() - visitor.hitAt < 620 ? 'hit' : visitor.presence.gesture,
@@ -5434,6 +5460,7 @@ export class App {
       if (this.world) this.syncArcadeRelease();
     }
     this.networkState = state;
+    this.world?.setWeather(state.weather,state.serverTime);
     this.siteStyle = { ...this.siteStyle, ...state.siteStyle };
     if (sharedChanged) this.npcProfiles = this.normalizeNpcProfiles(state.npcProfiles, state.npcNames);
     this.pamphlet = { ...this.pamphlet, ...state.pamphlet };
@@ -5630,9 +5657,14 @@ export class App {
     }
   }
 
-  private async confirmSeatClaim(seatId: string): Promise<void> {
-    const result = await this.festivalClient.claimSeat(seatId);
-    if (result.ok) return;
+  private async confirmSeatClaim(seatId: string,snowAction?:'brush'|'sit'): Promise<void> {
+    const attempt=++this.seatAttempt,world=this.world;
+    const result = await this.seatCommands.run(()=>this.festivalClient.claimSeat(seatId,snowAction));
+    if (attempt!==this.seatAttempt||world!==this.world||this.activeSeatId!==seatId) return;
+    if (result.ok) {
+      if(snowAction==='brush'&&result.snowCleared)world?.snowBrushed();
+      return;
+    }
     this.hideSeatMenu();
     this.hidePublicSeatHud();
     this.world?.forceStand();
@@ -6679,7 +6711,7 @@ export class App {
    */
   private syncMenuCapture(): void {
     const pass = this.root.querySelector<HTMLElement>('#festival-pass');
-    const captured=this.arcadePlaying || Boolean(this.arcadeNotice) || Boolean(this.danceWheel) || Boolean(this.activePanel) || this.root.querySelector<HTMLElement>('#seat-menu')?.dataset.menuOwner === 'npc' || (pass ? !pass.hidden : false);
+    const captured=this.arcadePlaying || Boolean(this.arcadeNotice) || Boolean(this.danceWheel||this.snowSeatChoice) || Boolean(this.activePanel) || this.root.querySelector<HTMLElement>('#seat-menu')?.dataset.menuOwner === 'npc' || (pass ? !pass.hidden : false);
     this.world?.setMenuOpen(captured);
     if (['127.0.0.1','localhost'].includes(window.location.hostname)) this.root.dataset.menuCapture=String(captured);
   }
@@ -6909,7 +6941,7 @@ export class App {
           ['SPACE', zh ? '跳躍（可從高處跳下）' : 'Jump — and drop from high places'],
           ['E', zh ? '互動／餵 MENTOR 吃點心' : 'Interact / give MENTOR a treat'],
           ['SHIFT + E', zh ? '抱起 MENTOR' : 'Pick up MENTOR'],
-          ['B', zh ? '選擇舞步' : 'Choose a dance'],
+          ['B', zh ? '選擇動作' : 'Choose an action'],
           ['O', zh ? '供養／佈施：在神像前或 NPC 旁' : 'Make an offering — at the altar or beside an NPC'],
           ['T', zh ? '切換鏡頭' : 'Change camera'],
           ['C', zh ? '拍照模式／明信片模式／離開' : 'Camera mode / postcard mode / exit'],
@@ -6925,7 +6957,7 @@ export class App {
         const touch = [
           [zh ? '左側搖桿' : 'LEFT STICK', zh ? '移動' : 'Move'],
           [zh ? '拖曳畫面' : 'DRAG THE VIEW', zh ? '轉動視角' : 'Turn the view'],
-          [zh ? '按鈕環' : 'BUTTON RING', zh ? '跑、跳、舞、供養、拍照' : 'Run, jump, dance, offer, photo'],
+          [zh ? '按鈕環' : 'BUTTON RING', zh ? '跑、跳、動作、供養、拍照' : 'Run, jump, actions, offer, photo'],
           [zh ? '通行證' : 'PASS', zh ? '開啟選單' : 'Open the menu'],
         ].map(([k, v]) => row(k, v)).join('');
 
@@ -6938,7 +6970,7 @@ export class App {
           camera: ['Change camera', '切換鏡頭'],
           photo: ['Photo mode', '拍照模式'],
           run: ['Run (hold)', '奔跑（按住）'],
-          dance: ['Dance', '跳舞'],
+          dance: ['Actions', '動作'],
           menuToggle: ['Open / close the menu', '開關選單'],
           menuUp: ['Menu: up', '選單：上'],
           menuDown: ['Menu: down', '選單：下'],
@@ -7373,6 +7405,7 @@ export class App {
     }
 
     if (panelId === 'admin') {
+      bindWeatherStaff(panel,this.language==='zh-TW',async schedule=>{await this.festivalClient.updateWeather(this.staffKey,schedule);await this.refreshAdminState();});
       panel.querySelector<HTMLFormElement>('#staff-login')?.addEventListener('submit', (event) => {
         event.preventDefault();
         const input = panel.querySelector<HTMLInputElement>('#staff-key');
@@ -8147,6 +8180,7 @@ export class App {
       </div>
       ${controlledNpcId ? `<div class="staff-identity"><span>${this.language === 'zh-TW' ? '目前扮演' : 'PLAYING AS'} · ${this.escapeHtml(this.npcProfiles.find((profile) => profile.id === controlledNpcId)?.name ?? controlledNpcId)}${mentorCarrierName ? ` · ${this.language === 'zh-TW' ? '由' : 'CARRIED BY'} ${this.escapeHtml(mentorCarrierName)}` : ''}</span><button type="button" data-npc-play="">${this.language === 'zh-TW' ? '回復本人' : 'RETURN TO SELF'}</button></div>` : ''}
       ${this.adminError ? `<p class="staff-error" role="alert">${this.escapeHtml(this.adminError)}</p>` : ''}
+      ${this.staffSection('weather',this.language==='zh-TW'?'天氣排程':'WEATHER',weatherStaffContent(this.adminState.weather,this.language==='zh-TW',Date.now()+this.serverClockOffset))}
       ${this.staffSection('gate', this.language === 'zh-TW' ? '登入頁文字' : 'SIGN-IN PAGE', `
       <form class="staff-form" id="gate-copy-editor">
         <p class="staff-note">${this.language === 'zh-TW'
@@ -8677,6 +8711,9 @@ export class App {
         .replace(' — private viewing pauses if active', '')
         .replaceAll('MENTOR', mentorName);
     }
+    if(value==='E / LIE DOWN')return 'E／躺下休息';
+    if(value==='E / RELAX IN CHAIR')return 'E／坐下休息';
+    if(value==='E / GET UP')return 'E／起身';
     if (value.startsWith('E / STAND UP')) return 'E／起身';
     if (value.includes('· OCCUPIED')) return value.replace('· OCCUPIED', '· 已有人');
     if (value.startsWith('E / TAKE SEAT')) return value.replace('E / TAKE SEAT', 'E／入座');

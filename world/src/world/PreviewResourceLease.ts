@@ -14,6 +14,7 @@ const listeners = (resource: Disposable): DisposeListener[] => [...((resource as
 export class PreviewResourceLease {
   private readonly owned: Set<DisposeListener>;
   private readonly registrations = new Map<Disposable, Set<DisposeListener>>();
+  private readonly cleanup = new Map<Disposable, DisposeListener>();
 
   constructor(owners: readonly DisposeListener[]) { this.owned = new Set(owners); }
 
@@ -45,11 +46,19 @@ export class PreviewResourceLease {
     }
   }
 
+  /** A restored Three context recreates its renderer-specific callbacks.
+   * Retain earlier generations too until their remaining registrations retire. */
+  includeRenderer(renderer: THREE.WebGLRenderer): void {
+    const next = PreviewResourceLease.forRenderer(renderer);
+    for (const listener of next.owned) this.owned.add(listener);
+    next.dispose();
+  }
+
   /** renderer.render() is synchronous; the original method is always restored. */
-  capture(render: () => void): void {
+  capture<T>(render: () => T): T {
     const prototype = THREE.EventDispatcher.prototype;
     const original = prototype.addEventListener;
-    const registrations = this.registrations, owned = this.owned;
+    const registrations = this.registrations, owned = this.owned, cleanup = this.cleanup;
     prototype.addEventListener = function (type, listener): void {
       Reflect.apply(original, this, [type, listener]);
       if (type !== 'dispose' || !owned.has(listener as DisposeListener)) return;
@@ -57,16 +66,41 @@ export class PreviewResourceLease {
       const recorded = registrations.get(resource) ?? new Set<DisposeListener>();
       recorded.add(listener as DisposeListener);
       registrations.set(resource, recorded);
+      if (!cleanup.has(resource)) {
+        // A world lease outlives many visitors. Normal resource disposal must
+        // retire its record immediately, rather than retaining departed rigs.
+        const forget: DisposeListener = () => {
+          registrations.delete(resource); cleanup.delete(resource);
+          resource.removeEventListener('dispose', forget);
+        };
+        cleanup.set(resource, forget);
+        resource.addEventListener('dispose', forget);
+      }
     };
-    try { render(); }
+    try { return render(); }
     finally { prototype.addEventListener = original; }
+  }
+
+  /** Free only this renderer's GPU allocations, without dispatching a shared
+   * resource's disposal into another live renderer. Call before renderer.dispose(). */
+  release(): void {
+    try {
+      for (const [resource, recorded] of this.registrations) {
+        for (const listener of recorded) {
+          if (resource.hasEventListener('dispose', listener)) listener.call(resource, { type: 'dispose', target: resource });
+        }
+      }
+    } finally { this.dispose(); }
   }
 
   dispose(): void {
     for (const [resource, recorded] of this.registrations) {
       for (const listener of recorded) resource.removeEventListener('dispose', listener);
+      const forget = this.cleanup.get(resource);
+      if (forget) resource.removeEventListener('dispose', forget);
     }
     this.registrations.clear();
+    this.cleanup.clear();
     this.owned.clear();
   }
 }

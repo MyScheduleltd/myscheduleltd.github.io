@@ -9,6 +9,7 @@ import { requestWithDeadline } from '../network/RequestDeadline';
  * - day: a quiet seaside promenade, people walking and talking;
  * - night: a quiet rural evening, which takes over as the light goes;
  * - ocean: waves on a beach, which rise as the visitor nears the water.
+ * - weather: short mono rain/winter-wind beds, using that same ambient bus.
  *
  * Each bed is a loop cut from the owner's master with an equal-power crossfade
  * baked into its head, padded with half a second of its own tail before and
@@ -24,13 +25,13 @@ import { requestWithDeadline } from '../network/RequestDeadline';
  *
  * The visitor's own avatar has a channel of its own, 角色音效 (owner,
  * 2026-10-17): footsteps on each foot plant, a crunch for popcorn, a sip for a
- * drink, and the board rolling while it rides. Only the visitor's own body
+ * drink, a snow brush, a recorded punch impact, and the board rolling while it rides. Only the visitor's own body
  * sounds, and it is never muffled: walls are around it, not between it and the
  * visitor.
  */
 
 export type InterfaceSound = 'click' | 'hover';
-export type AvatarSound = 'step-left' | 'step-right' | 'eat' | 'drink';
+export type AvatarSound = 'step-left' | 'step-right' | 'eat' | 'drink' | 'snow-brush' | 'punch';
 
 /** Where the visitor is, as far as the beds care. Each 0–1. */
 export interface AmbientMix {
@@ -40,9 +41,18 @@ export interface AmbientMix {
   ocean: number;
   /** How much of the outside reaches the visitor: 1 outdoors, low indoors. */
   outdoors: number;
+  /** Existing ambient bus, muffled by the same walls; 0–1 crossfade weights. */
+  rain?: number;
+  snow?: number;
+  /** The visitor is actually walking on snow, rather than indoors/under cover. */
+  snowFootsteps?: boolean;
 }
 
-type BedKey = 'day' | 'night' | 'ocean';
+type BedKey = 'day' | 'night' | 'ocean' | 'rain' | 'snow';
+type StepKey = 'step-left' | 'step-right';
+const WEATHER_BEDS: readonly BedKey[] = ['rain', 'snow'];
+const LAND_BEDS: readonly BedKey[] = ['day', 'night', 'ocean'];
+const STEP_KEYS: readonly StepKey[] = ['step-left', 'step-right'];
 
 interface Bed {
   loopStart: number;
@@ -55,6 +65,8 @@ const BEDS: Record<BedKey, Bed> = {
   day: { loopStart: 0.5, loopEnd: 60.5, level: 0.9 },
   night: { loopStart: 0.5, loopEnd: 45.5, level: 0.8 },
   ocean: { loopStart: 0.5, loopEnd: 45.5, level: 1.1 },
+  rain: { loopStart: 0.5, loopEnd: 16.5, level: .85 },
+  snow: { loopStart: 0.5, loopEnd: 16.5, level: .65 },
 };
 
 /**
@@ -65,7 +77,14 @@ const bedFile = (key: BedKey, mono: boolean): string => ({
   day: mono ? new URL('../assets/audio/ambience-day-mono.mp3', import.meta.url) : new URL('../assets/audio/ambience-day.mp3', import.meta.url),
   night: mono ? new URL('../assets/audio/ambience-night-mono.mp3', import.meta.url) : new URL('../assets/audio/ambience-night.mp3', import.meta.url),
   ocean: mono ? new URL('../assets/audio/ambience-ocean-mono.mp3', import.meta.url) : new URL('../assets/audio/ambience-ocean.mp3', import.meta.url),
+  // Weather is always mono: the two 17-second buffers together are 6.23 MiB
+  // at the existing 48 kHz offline decoder, including the seam-padding.
+  rain: new URL('../assets/audio/weather-rain-mono.mp3', import.meta.url),
+  snow: new URL('../assets/audio/weather-snow-mono.mp3', import.meta.url),
 })[key].href;
+const snowStepFile = (key: StepKey): string => (key === 'step-left'
+  ? new URL('../assets/audio/avatar-step-snow-left.wav', import.meta.url)
+  : new URL('../assets/audio/avatar-step-snow-right.wav', import.meta.url)).href;
 
 const cueFile = (kind: InterfaceSound): string => (kind === 'click'
   ? new URL('../assets/audio/ui-click.wav', import.meta.url)
@@ -81,6 +100,8 @@ const avatarFile = (kind: AvatarSound): string => ({
   'step-right': new URL('../assets/audio/avatar-step-right.wav', import.meta.url),
   eat: new URL('../assets/audio/avatar-eat-popcorn.wav', import.meta.url),
   drink: new URL('../assets/audio/avatar-drink.wav', import.meta.url),
+  'snow-brush': new URL('../assets/audio/avatar-snow-brush.wav', import.meta.url),
+  punch: new URL('../assets/audio/avatar-punch.wav', import.meta.url),
 })[kind].href;
 const skateFile = (): string => new URL('../assets/audio/avatar-skate.mp3', import.meta.url).href;
 const fireworkFile = (kind: string): string => ({
@@ -89,9 +110,9 @@ const fireworkFile = (kind: string): string => ({
   ring: new URL('../assets/audio/fireworks-ring.mp3', import.meta.url),
 })[kind as 'willow' | 'peony' | 'ring'].href;
 
-const AVATAR_KINDS: readonly AvatarSound[] = ['step-left', 'step-right', 'eat', 'drink'];
+const AVATAR_KINDS: readonly AvatarSound[] = ['step-left', 'step-right', 'eat', 'drink', 'snow-brush', 'punch'];
 /** Balance within the avatar's channel; the one-shots share one loudness. */
-const AVATAR_LEVEL: Record<AvatarSound, number> = { 'step-left': 0.5, 'step-right': 0.5, eat: 0.9, drink: 0.9 };
+const AVATAR_LEVEL: Record<AvatarSound, number> = { 'step-left': 0.5, 'step-right': 0.5, eat: 0.9, drink: 0.9, 'snow-brush': .75, punch: .9 };
 /** The board's loop, cut like the beds (tools/build-sfx.py). */
 const SKATE = { loopStart: 0.5, loopEnd: 5.9, level: 0.75 } as const;
 /** Each step a shade different, so a long walk is not one sample repeating (owner chose ±3%). */
@@ -148,6 +169,7 @@ export class AmbientAudio {
   private readonly cueBuffers = new Map<InterfaceSound, AudioBuffer>();
   private readonly cueAt = new Map<InterfaceSound, number>();
   private readonly avatarBuffers = new Map<AvatarSound, AudioBuffer>();
+  private readonly snowStepBuffers = new Map<StepKey, AudioBuffer>();
   private avatar?: GainNode;
   private skateGain?: GainNode;
   private skateBuffer?: AudioBuffer;
@@ -169,10 +191,12 @@ export class AmbientAudio {
   private screeningVolume = 0.85;
   private uiVolume = 0.6;
   private avatarVolume = 0.6;
+  private disposed = false;
   /** Stands in for Math.random, so tests can pin the step variation. */
   random: () => number = Math.random;
 
   async start(muted: boolean): Promise<void> {
+    if (this.disposed) return;
     this.muted = muted;
     if (!this.context) this.createGraph();
     this.applyVolumes();
@@ -184,6 +208,7 @@ export class AmbientAudio {
    * page start audio from inside one, and a menu click is usually the first.
    */
   unlock(): void {
+    if (this.disposed) return;
     if (!this.context) {
       try { this.createGraph(); } catch { return; }
     }
@@ -236,8 +261,11 @@ export class AmbientAudio {
 
   /** The two menu sounds: small enough to fetch with the sign-in page itself. */
   loadInterfaceSounds(): Promise<void> {
+    if (this.disposed) return Promise.resolve();
     this.cuesLoading ??= Promise.allSettled(CUE_KINDS.map(async (kind) => {
-      if (!this.cueBuffers.has(kind)) this.cueBuffers.set(kind, await decode(cueFile(kind), this.context));
+      if (this.cueBuffers.has(kind)) return;
+      const buffer = await decode(cueFile(kind), this.context);
+      if (!this.disposed) this.cueBuffers.set(kind, buffer);
     })).then(results => {
       if (results.some(result => result.status === 'rejected')) this.cuesLoading = undefined;
     });
@@ -245,23 +273,54 @@ export class AmbientAudio {
   }
 
   /**
-   * The three beds and the avatar's sounds, fetched and decoded while the
+   * The landscape/weather beds and the avatar's sounds, fetched and decoded while the
    * entry is loading so nobody waits for them in the world. Each loop starts,
    * silent, as soon as it is ready; the world decides what is heard.
    */
   preloadWorldSounds(): Promise<void> {
+    if (this.disposed) return Promise.resolve();
     const mono = phone();
     this.bedsLoading ??= Promise.allSettled([
-      ...(Object.keys(BEDS) as BedKey[]).map(async (key) => {
+      ...LAND_BEDS.map(async (key) => {
         if (this.bedBuffers.has(key)) return;
-        this.bedBuffers.set(key, await decode(bedFile(key, mono), this.context));
+        const buffer = await decode(bedFile(key, mono), this.context);
+        if (this.disposed) return;
+        this.bedBuffers.set(key, buffer);
         this.startBed(key);
       }),
+      // The short weather additions decode serially, rather than creating
+      // two more native decode peaks together. They still join this barrier.
+      (async () => {
+        const jobs: Array<() => Promise<void>> = [
+          ...WEATHER_BEDS.map(key => async () => {
+            if (this.bedBuffers.has(key)) return;
+            const buffer = await decode(bedFile(key, true), this.context);
+            if (this.disposed) return;
+            this.bedBuffers.set(key, buffer); this.startBed(key);
+          }),
+          ...STEP_KEYS.map(key => async () => {
+            if (this.snowStepBuffers.has(key)) return;
+            const buffer = await decode(snowStepFile(key), this.context);
+            if (!this.disposed) this.snowStepBuffers.set(key, buffer);
+          }),
+        ];
+        // An optional missing rain bed must not skip the snow/footstep jobs.
+        for (const job of jobs) {
+          if (this.disposed) break;
+          try { await job(); } catch { /* settled missing buffers retry at the gate */ }
+        }
+      })(),
       ...AVATAR_KINDS.map(async (kind) => {
-        if (!this.avatarBuffers.has(kind)) this.avatarBuffers.set(kind, await decode(avatarFile(kind), this.context));
+        if (this.avatarBuffers.has(kind)) return;
+        const buffer = await decode(avatarFile(kind), this.context);
+        if (!this.disposed) this.avatarBuffers.set(kind, buffer);
       }),
       (async () => {
-        this.skateBuffer ??= await decode(skateFile(), this.context);
+        if (!this.skateBuffer) {
+          const buffer = await decode(skateFile(), this.context);
+          if (this.disposed) return;
+          this.skateBuffer = buffer;
+        }
         this.startSkate();
       })(),
       // The fireworks' three short bursts too (46 KB), so a show never starts
@@ -279,13 +338,17 @@ export class AmbientAudio {
   worldSoundsReady(): boolean {
     return this.bedBuffers.size === Object.keys(BEDS).length
       && this.avatarBuffers.size === AVATAR_KINDS.length && Boolean(this.skateBuffer)
+      && this.snowStepBuffers.size === STEP_KEYS.length
       && this.fireworkBuffers.size === FIREWORK_KINDS.length && this.cueBuffers.size === CUE_KINDS.length;
   }
 
   /** Small burst excerpts from the owner's recording, never the 31 MB master; loaded with the world's sounds. */
   prepareFireworks(): Promise<void> {
+    if (this.disposed) return Promise.resolve();
     this.fireworksLoading ??= Promise.allSettled(FIREWORK_KINDS.map(async kind => {
-      if (!this.fireworkBuffers.has(kind)) this.fireworkBuffers.set(kind, await decode(fireworkFile(kind), this.context));
+      if (this.fireworkBuffers.has(kind)) return;
+      const buffer = await decode(fireworkFile(kind), this.context);
+      if (!this.disposed) this.fireworkBuffers.set(kind, buffer);
     })).then(results => {
       if (results.some(result => result.status === 'rejected')) this.fireworksLoading = undefined;
     });
@@ -322,12 +385,13 @@ export class AmbientAudio {
    */
   playAvatarSound(kind: AvatarSound, delay = 0): void {
     const context = this.context;
-    const buffer = this.avatarBuffers.get(kind);
+    const step = kind === 'step-left' || kind === 'step-right';
+    const buffer = step && this.mix?.snowFootsteps
+      ? this.snowStepBuffers.get(kind) ?? this.avatarBuffers.get(kind) : this.avatarBuffers.get(kind);
     if (!context || context.state !== 'running' || !buffer || !this.avatar || this.muted) return;
     const source = context.createBufferSource();
     const level = context.createGain();
     source.buffer = buffer;
-    const step = kind === 'step-left' || kind === 'step-right';
     if (step) source.playbackRate.value = 1 + (this.random() * 2 - 1) * STEP_PITCH_SPREAD;
     level.gain.value = AVATAR_LEVEL[kind] * (step ? 1 - this.random() * STEP_LEVEL_SPREAD : 1);
     source.connect(level);
@@ -345,7 +409,11 @@ export class AmbientAudio {
 
   /** The world's report of where the visitor is. `undefined` fades the beds out. */
   setAmbientMix(mix: AmbientMix | undefined): void {
-    this.mix = mix && { night: clamp01(mix.night), ocean: clamp01(mix.ocean), outdoors: clamp01(mix.outdoors) };
+    this.mix = mix && { night: clamp01(mix.night), ocean: clamp01(mix.ocean), outdoors: clamp01(mix.outdoors),
+      ...(mix.rain === undefined ? {} : { rain: clamp01(mix.rain) }),
+      ...(mix.snow === undefined ? {} : { snow: clamp01(mix.snow) }),
+      ...(mix.snowFootsteps === undefined ? {} : { snowFootsteps: mix.snowFootsteps === true }),
+    };
     this.applyMix();
   }
 
@@ -384,11 +452,16 @@ export class AmbientAudio {
       bedsReady: [...this.bedBuffers.keys()],
       bedsPlaying: [...this.bedSources.keys()],
       bedChannels: Object.fromEntries([...this.bedBuffers].map(([key, buffer]) => [key, buffer.numberOfChannels])),
+      weather: { snowStepsReady: this.snowStepBuffers.size, footstepSurface: this.mix?.snowFootsteps ? 'snow' : 'default',
+        decodedBytes: [...WEATHER_BEDS.map(key => this.bedBuffers.get(key)), ...this.snowStepBuffers.values()]
+          .reduce((bytes, buffer) => bytes + (buffer?.length ?? 0) * (buffer?.numberOfChannels ?? 0) * 4, 0) },
       mix: this.mix,
       levels: {
         day: level(this.bedGains.get('day')?.gain),
         night: level(this.bedGains.get('night')?.gain),
         ocean: level(this.bedGains.get('ocean')?.gain),
+        rain: level(this.bedGains.get('rain')?.gain),
+        snow: level(this.bedGains.get('snow')?.gain),
         outdoors: level(this.outdoors?.gain),
         muffleHz: Math.round(level(this.muffle?.frequency) ?? 0),
       },
@@ -488,11 +561,15 @@ export class AmbientAudio {
     const day = Math.cos(night * Math.PI / 2);
     const dark = Math.sin(night * Math.PI / 2);
     // At the water's edge the waves cover some of the promenade.
-    const land = 1 - 0.3 * ocean;
+    const weatherTotal = Math.max(1, (mix?.rain ?? 0) + (mix?.snow ?? 0));
+    const rain = (mix?.rain ?? 0) / weatherTotal, snow = (mix?.snow ?? 0) / weatherTotal;
+    const land = (1 - 0.3 * ocean) * (1 - .42 * Math.max(rain, snow * .65));
     const on = mix ? 1 : 0;
     this.glide(this.bedGains.get('day')?.gain, on * day * land * BEDS.day.level, BED_GLIDE);
     this.glide(this.bedGains.get('night')?.gain, on * dark * land * BEDS.night.level, BED_GLIDE);
     this.glide(this.bedGains.get('ocean')?.gain, on * ocean * BEDS.ocean.level, BED_GLIDE);
+    this.glide(this.bedGains.get('rain')?.gain, on * rain * BEDS.rain.level, BED_GLIDE);
+    this.glide(this.bedGains.get('snow')?.gain, on * snow * BEDS.snow.level, BED_GLIDE);
     const outdoors = mix?.outdoors ?? 1;
     this.glide(this.outdoors?.gain, outdoors, DOOR_GLIDE);
     this.glide(this.muffle?.frequency, this.muffleFrequency(outdoors), DOOR_GLIDE);
@@ -506,5 +583,23 @@ export class AmbientAudio {
     this.screening.gain.setTargetAtTime(this.screeningVolume, now, 0.08);
     this.ui.gain.setTargetAtTime(this.uiVolume, now, 0.03);
     this.avatar?.gain.setTargetAtTime(this.avatarVolume, now, 0.03);
+  }
+
+  /** Terminal page teardown, not an ordinary indoor/hidden transition. Beds
+   * otherwise retain their graph/buffers and simply crossfade or suspend. */
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.mix = undefined;
+    this.stopFireworks();
+    for (const source of this.bedSources.values()) { try { source.stop(); } catch { /* already stopped */ } source.disconnect(); }
+    this.bedSources.clear(); this.bedBuffers.clear(); this.snowStepBuffers.clear();
+    try { this.skateSource?.stop(); } catch { /* already stopped */ }
+    this.skateSource?.disconnect(); this.skateSource = undefined; this.skateBuffer = undefined;
+    this.avatarBuffers.clear(); this.cueBuffers.clear(); this.fireworkBuffers.clear(); this.targets.clear();
+    for (const node of [...this.bedGains.values(), this.master, this.ambient, this.outdoors, this.muffle, this.screening, this.ui, this.avatar, this.skateGain]) node?.disconnect();
+    this.bedGains.clear(); this.bedsLoading = this.cuesLoading = this.fireworksLoading = undefined;
+    const context = this.context; this.context = undefined;
+    if (context) { context.onstatechange = null; void context.close().catch(() => {}); }
   }
 }

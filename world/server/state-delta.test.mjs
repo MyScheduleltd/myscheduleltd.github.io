@@ -7,3 +7,13 @@ test('movement sends only the changed attendee and clock, keeping static data of
 test('join, departure, palette and shared programme changes are not lost',()=>{const s=state(),delta=new StateDelta();delta.encode(s);s.visitors=[{...s.visitors[0],palette:{skin:'blue'}},{id:'c'}];s.schedule.shore.index=1;const {data}=delta.encode(s);assert.deepEqual(data.removedVisitors,['b']);assert.deepEqual(data.visitors,s.visitors);assert.deepEqual(data.schedule,s.schedule);});
 test('viewer-specific chat caches cannot leak across connections',()=>{const a=state(), b=state(), da=new StateDelta(),db=new StateDelta();a.messages=[{text:'near a'}];da.encode(a);db.encode(b);a.messages=[];assert.deepEqual(da.encode(a).data.messages,[]);assert.equal(db.encode(b).data.messages,undefined);});
 test('a new stream after reconnect receives full state even if another stream has cached it',()=>{const s=state(),a=new StateDelta();a.encode(s);assert.equal(a.encode(s).event,'state-patch');assert.equal(new StateDelta().encode(s).event,'state');});
+test('unchanged weather stays off movement deltas while brush records and relaxation reach every connection',()=>{
+ const s=state(),a=new StateDelta(),b=new StateDelta();
+ s.weather={version:1,updatedAt:1,schedule:[{id:'snow-1',type:'snow',startsAt:0,endsAt:100}],clearedSeats:[]};
+ a.encode(s);b.encode(s);s.serverTime=2;s.visitors[0].presence.x=4;
+ assert.equal(a.encode(s).data.weather,undefined);b.encode(s);
+ s.weather.clearedSeats.push({seatId:'BEACH-MAT-1',occurrenceId:'snow-1',clearedAt:2});s.weather.updatedAt=2;
+ s.visitors[0].presence={...s.visitors[0].presence,state:'seated',relaxation:'recline'};
+ for(const delta of[a,b]){const patch=delta.encode(s).data;assert.deepEqual(patch.weather,s.weather);assert.equal(patch.visitors[0].presence.relaxation,'recline');}
+ assert.deepEqual(new StateDelta().encode(s).data.weather,s.weather,'new or reconnected attendees receive the shared brush');
+});

@@ -1,0 +1,73 @@
+{
+  "sampleRate": 48000,
+  "channels": 1,
+  "files": [
+    {
+      "kind": "snow-brush",
+      "file": "avatar-snow-brush.wav",
+      "bytes": 49998,
+      "sha256": "205dcbce75a57c11140ecac1ba7075d6848392c59db5b5dc799bc9cad1009311",
+      "source": "ES_Snow, Movement, Raise Up From Snow 02 - Epidemic Sound.wav",
+      "sourceStart": 0.6,
+      "sourceEnd": 1.12,
+      "sampleRate": 48000,
+      "channels": 1,
+      "pcmBits": 16,
+      "duration": 0.52,
+      "decodedSamples": 24960,
+      "actualDecodedFloatBytes": 99840,
+      "gainDb": 15.856,
+      "rmsDb": -23.0,
+      "peakDb": -3.025,
+      "attackFadeSeconds": 0.003,
+      "releaseFadeSeconds": 0.035,
+      "firstAudibleAtSeconds": 0.001813,
+      "peakAtSeconds": 0.078437,
+      "recommendedSchedulingDelaySeconds": 0
+    },
+    {
+      "kind": "punch",
+      "file": "avatar-punch.wav",
+      "bytes": 39918,
+      "sha256": "3de6285976d17a9301b186f431a9f1343db7b13475103b13138acb1fe93a48c3",
+      "source": "ES_Fight, Impact, Punch, Bright, Clean, Meaty x5 02 - Epidemic Sound - 0000-0811.wav",
+      "sourceStart": 0.195,
+      "sourceEnd": 0.61,
+      "sampleRate": 48000,
+      "channels": 1,
+      "pcmBits": 16,
+      "duration": 0.415,
+      "decodedSamples": 19920,
+      "actualDecodedFloatBytes": 79680,
+      "gainDb": -2.584,
+      "rmsDb": -23.0,
+      "peakDb": -4.816,
+      "attackFadeSeconds": 0.0015,
+      "releaseFadeSeconds": 0.03,
+      "firstAudibleAtSeconds": 0.00075,
+      "peakAtSeconds": 0.024208,
+      "recommendedSchedulingDelaySeconds": 0,
+      "sourceCleanHits": 1
+    }
+  ],
+  "runtimeBytes": 89916,
+  "decodedBytesAt48k": 179520,
+  "sourceFiles": {
+    "snow-brush": {
+      "name": "ES_Snow, Movement, Raise Up From Snow 02 - Epidemic Sound.wav",
+      "bytes": 1302694,
+      "sha256": "9254ba47e1401fe7d4a09cf81eab00220bec817553702e014f0efe76b9d1d862",
+      "duration": 2.261333,
+      "sampleRate": 96000,
+      "channels": 2
+    },
+    "punch": {
+      "name": "ES_Fight, Impact, Punch, Bright, Clean, Meaty x5 02 - Epidemic Sound - 0000-0811.wav",
+      "bytes": 467180,
+      "sha256": "ff967c999e5da6c913d57604bd87c8b6749084f7fcc75e0b7370023138a3261e",
+      "duration": 0.811,
+      "sampleRate": 96000,
+      "channels": 2
+    }
+  }
+}

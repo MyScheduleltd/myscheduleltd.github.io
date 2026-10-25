@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { PLANET, planetBendPoint } from './PlanetCurve';
 
 /**
- * Skinned and morphing shadow casters get their own depth material.
+ * Casters with the same geometry and surface features share stable depth owners.
  *
  * three.js draws every caster into a shadow map with one shared depth
  * material. Skinning and morph targets are part of that material's program, so
@@ -12,7 +12,11 @@ import { PLANET, planetBendPoint } from './PlanetCurve';
  * that was an eighth of the shadow pass (2026-10-17).
  *
  * A caster of each kind keeps one depth material of its own, so no shared one
- * ever changes kind. It is the same material three.js would have used, with
+ * ever changes kind, texture features or side. Three's shared depth material
+ * changes maps/sides between draws without always checking its program again,
+ * leaving a valid variant cold until a later body change forces that check.
+ * Preparing each actual owner at admission avoids those late compilations.
+ * It is the same material three.js would have used, with
  * the same settings, and three.js still copies each object's side and maps
  * onto it before drawing, so the shadow maps are unchanged. Casters that need
  * a private depth variant (cut-out textures, displacement) are left to
@@ -37,12 +41,12 @@ export function shareShadowDepthMaterials(root: THREE.Object3D): number {
     const material = mesh.material;
     if (!material || Array.isArray(material) || needsOwnVariant(material)) return;
     const morph = mesh.geometry.morphAttributes;
+    const surface = material as THREE.MeshStandardMaterial;
     const kind = [
       (mesh as THREE.SkinnedMesh).isSkinnedMesh ? 1 : 0, (mesh as THREE.InstancedMesh).isInstancedMesh ? 1 : 0,
       morph.position?.length ?? 0, morph.normal ? 1 : 0, morph.color ? 1 : 0,
+      surface.map?.channel ?? '-', surface.alphaMap?.channel ?? '-', surface.side, surface.shadowSide ?? 'auto',
     ].join('|');
-    // Plain meshes are what three.js's own shared material is left drawing.
-    if (kind === '0|0|0|0|0') return;
     let depth = depthByKind.get(kind);
     if (!depth) {
       depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });

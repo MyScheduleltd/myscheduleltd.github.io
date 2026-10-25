@@ -32,7 +32,11 @@ class Source extends AudioNode {
   start(when = 0, offset = 0) { this.started = { when, offset }; this.context.started.push(this); }
   stop() { this.stopped = true; }
 }
-const decoded = (url) => ({ url, duration: /night|ocean/.test(url) ? 46 : /day/.test(url) ? 61 : /skate/.test(url) ? 6.4 : 0.08 });
+const decoded = (url) => {
+  const name = url.split('/').pop();
+  const duration = /^weather-/.test(name) ? 17 : /snow-brush/.test(name) ? .52 : /punch/.test(name) ? .415 : /step-snow/.test(name) ? .48 : /night|ocean/.test(name) ? 46 : /day/.test(name) ? 61 : /skate/.test(name) ? 6.4 : .08;
+  return { url, duration, numberOfChannels: /^weather-|step-snow|snow-brush|punch|-mono/.test(name) ? 1 : 2, length: Math.round(duration * 48_000) };
+};
 let decodeAudio = url => Promise.resolve(decoded(url));
 globalThis.OfflineAudioContext = class { decodeAudioData(bytes) { return decodeAudio(fileOf.get(bytes)); } };
 const contexts = [];
@@ -42,6 +46,7 @@ globalThis.AudioContext = class {
   createBiquadFilter() { return new Filter(); }
   createBufferSource() { return new Source(this); }
   resume() { this.state = 'running'; return Promise.resolve(); }
+  close() { this.state = 'closed'; return Promise.resolve(); }
 };
 
 const source = new URL('../src/world/AmbientAudio.ts', import.meta.url);
@@ -123,10 +128,12 @@ test('the beds loop inside their padding, start silent, and follow the mix', asy
   assert.ok(audio.worldSoundsReady());
   assert.deepEqual(fetched.map((url) => url.split('/').pop()).sort(), [
     'ambience-day.mp3', 'ambience-night.mp3', 'ambience-ocean.mp3',
-    'avatar-drink.wav', 'avatar-eat-popcorn.wav', 'avatar-skate.mp3', 'avatar-step-left.wav', 'avatar-step-right.wav',
+    'avatar-drink.wav', 'avatar-eat-popcorn.wav', 'avatar-punch.wav', 'avatar-skate.mp3', 'avatar-snow-brush.wav', 'avatar-step-left.wav', 'avatar-step-right.wav',
+    'avatar-step-snow-left.wav', 'avatar-step-snow-right.wav',
     // The fireworks' bursts load with the world, so a show never waits on a download.
     'fireworks-peony.mp3', 'fireworks-ring.mp3', 'fireworks-willow.mp3',
     'ui-click.wav', 'ui-hover.wav',
+    'weather-rain-mono.mp3', 'weather-snow-mono.mp3',
   ]);
   const { bySource } = graph(context);
   const day = bySource('ambience-day'), night = bySource('ambience-night'), ocean = bySource('ambience-ocean');
@@ -184,6 +191,7 @@ test('one failed sound cannot release admission while another fixed sound is sti
       ['ambience-day.mp3', 'avatar-drink.wav'],
       ['fireworks-willow.mp3', 'fireworks-ring.mp3'],
       ['ui-click.wav', 'ui-hover.wav'],
+      ['avatar-punch.wav', 'avatar-snow-brush.wav'],
     ]) {
       fetched.length = 0;
       let finish, done = false;
@@ -198,8 +206,8 @@ test('one failed sound cannot release admission while another fixed sound is sti
       assert.equal(audio.worldSoundsReady(), false);
       assert.equal(audio.preloadWorldSounds(), first, 'another ask shares the entire unsettled batch');
       const files = fetched.map(url => url.split('/').pop());
-      assert.equal(files.length, 13);
-      assert.equal(new Set(files).size, 13, 'no duplicated interface, firework or world downloads');
+      assert.equal(files.length, 19);
+      assert.equal(new Set(files).size, 19, 'no duplicated interface, firework, weather, action or world downloads');
       finish(); await first;
       assert.equal(done, true);
       assert.equal(audio.worldSoundsReady(), false, 'missing optional buffers are not reported ready');
@@ -324,6 +332,39 @@ test("the avatar's sounds: steps vary a little, bites and sips land late, the bo
   assert.equal(played().length, before, 'never late and never while muted');
 });
 
+test('recorded brushing and punch cues preload at admission and use only the existing character/master graph', async()=>{
+  fetched.length=0;
+  const contextsBefore=contexts.length,audio=new AmbientAudio();await audio.start(false);
+  const context=contexts.at(-1),startedBefore=context.started.length;
+  audio.playAvatarSound('snow-brush');audio.playAvatarSound('punch');
+  assert.equal(context.started.length,startedBefore,'actions before decoding are dropped rather than queued');
+  assert.equal(fetched.length,0,'pressing an action can never start a late download');
+  await audio.preloadWorldSounds();const fetches=fetched.length;
+  assert.equal(audio.worldSoundsReady(),true);assert.equal(audio.snapshot().avatarReady,7);
+  audio.setAmbientMix({night:0,ocean:0,outdoors:.1,snow:1,snowFootsteps:true});
+  context.currentTime=12;
+  audio.playAvatarSound('snow-brush');audio.playAvatarSound('punch',.02);
+  const [brush,punch]=context.started.slice(-2);
+  assert.ok(brush.buffer.url.endsWith('avatar-snow-brush.wav'));assert.ok(punch.buffer.url.endsWith('avatar-punch.wav'));
+  assert.equal(brush.buffer.duration,.52);assert.equal(punch.buffer.duration,.415);
+  assert.equal(brush.started.when,12);assert.equal(punch.started.when,12.02);
+  assert.equal(brush.playbackRate.value,1);assert.equal(punch.playbackRate.value,1);
+  assert.equal(brush.output.gain.value,.75);assert.equal(punch.output.gain.value,.9);
+  const brushLevel=brush.output,character=brushLevel.output,master=character.output;
+  assert.equal(punch.output.output,character);assert.equal(master.output,context.destination,'no outdoors lowpass on character actions');
+  audio.setAvatarVolume(.25);audio.setMasterVolume(.5);
+  assert.equal(character.gain.target,.25);assert.equal(master.gain.target,.5);
+  audio.setAvatarVolume(0);assert.equal(character.gain.target,0);
+  audio.setAvatarVolume(.25);audio.setMasterVolume(0);assert.equal(master.gain.target,0);
+  audio.setMasterVolume(.5);audio.setMuted(true);
+  const played=context.started.length;audio.playAvatarSound('snow-brush');audio.playAvatarSound('punch');
+  audio.setMuted(false);context.state='suspended';audio.playAvatarSound('snow-brush');audio.playAvatarSound('punch');
+  assert.equal(context.started.length,played,'muted or suspended actions never queue a stale impact');
+  assert.equal(fetched.length,fetches);assert.equal(contexts.length,contextsBefore+1);
+  brush.onended();assert.equal(brush.output,undefined);assert.equal(brushLevel.output,undefined);
+  audio.dispose();assert.equal(audio.snapshot().avatarReady,0);
+});
+
 // The smallest DOM the listener needs: elements that know whether they are a
 // control, a disabled one, or inside something inert.
 class Element {
@@ -384,4 +425,94 @@ test('the menus click and hover from one delegated listener', async () => {
   fire('click', { target: button });
   assert.equal(played.length, 3);
   await settle();
+});
+
+test('weather is fully preloaded into the existing graph, crossfades with land beds and passes through the same walls and volume controls', async () => {
+  fetched.length = 0;
+  const audio = new AmbientAudio();
+  const contextCount = contexts.length;
+  await audio.preloadWorldSounds();
+  assert.equal(contexts.length, contextCount, 'the sign-in decode uses the existing offline decoder, never another running AudioContext');
+  await audio.start(false);
+  const context = contexts.at(-1), before = fetched.length;
+  const { bySource } = graph(context);
+  const rain = bySource('weather-rain'), snow = bySource('weather-snow'), day = bySource('ambience-day');
+  for (const bed of [rain, snow]) {
+    assert.equal(bed.buffer.numberOfChannels, 1); assert.equal(bed.loopStart, .5); assert.equal(bed.loopEnd, 16.5);
+    assert.equal(bed.output.gain.target, 0); assert.equal(bed.output.output, day.output.output, 'weather uses the same low-pass/walls chain');
+  }
+  audio.setAmbientMix({ night: 0, ocean: 0, outdoors: 1, rain: 1 });
+  assert.equal(rain.output.gain.target, .85); assert.equal(snow.output.gain.target, 0);
+  assert.ok(Math.abs(day.output.gain.target - .9 * .58) < 1e-9, 'rain gently covers the promenade');
+  audio.setAmbientMix({ night: 0, ocean: 0, outdoors: .1, snow: 1, snowFootsteps: true });
+  assert.equal(rain.output.gain.target, 0); assert.equal(snow.output.gain.target, .65);
+  assert.equal(snow.output.output.output.gain.target, .1); assert.ok(snow.output.output.frequency.target < 1000);
+  const sharedAmbient = snow.output.output.output.output;
+  audio.setAmbientVolume(.19); assert.equal(sharedAmbient.gain.target, .19);
+  audio.setMuted(true); assert.equal(sharedAmbient.output.gain.target, 0, 'master mute reaches the weather');
+  audio.setMuted(false); audio.setAmbientMix({ night: 1, ocean: 0, outdoors: 1, rain: 1, snow: 1 });
+  assert.equal(rain.output.gain.target, .425); assert.equal(snow.output.gain.target, .325, 'overlapping weather weights cannot double full beds');
+  audio.setAmbientMix(undefined);
+  assert.equal(rain.output.gain.target, 0); assert.equal(snow.output.gain.target, 0);
+  assert.equal(fetched.length, before, 'weather changes never request another asset');
+  assert.equal(contexts.length, contextCount + 1, 'one gesture creates only the original shared playback context');
+  assert.ok(audio.snapshot().weather.decodedBytes < 8 * 1048576);
+});
+
+test('snow plants replace only footsteps on snow and retain the character slider, pitch variation and suspension behavior', async () => {
+  const audio = new AmbientAudio(); await audio.start(false); await audio.preloadWorldSounds();
+  const context = contexts.at(-1), count = fetched.length;
+  audio.random = () => 0;
+  audio.setAmbientMix({ night: 0, ocean: 0, outdoors: 1, snow: 1, snowFootsteps: true });
+  audio.playAvatarSound('step-left'); audio.playAvatarSound('step-right'); audio.playAvatarSound('drink');
+  const last = context.started.slice(-3);
+  assert.ok(last[0].buffer.url.endsWith('avatar-step-snow-left.wav'));
+  assert.ok(last[1].buffer.url.endsWith('avatar-step-snow-right.wav'));
+  assert.ok(last[2].buffer.url.endsWith('avatar-drink.wav'));
+  assert.equal(last[0].playbackRate.value, .97);
+  audio.setAvatarVolume(.24); assert.equal(last[0].output.output.gain.target, .24);
+  audio.setAmbientMix({ night: 0, ocean: 0, outdoors: .1, snow: 1, snowFootsteps: false });
+  audio.playAvatarSound('step-left'); assert.ok(context.started.at(-1).buffer.url.endsWith('avatar-step-left.wav'));
+  context.state = 'suspended'; const played = context.started.length; audio.playAvatarSound('step-right'); assert.equal(context.started.length, played);
+  assert.equal(fetched.length, count);
+});
+
+test('weather decoding is serial, drains before admission, and retries only failed weather buffers', async () => {
+  const original = decodeAudio;
+  let releaseSnow, completed = false;
+  const weatherDecodeOrder = [];
+  decodeAudio = url => {
+    if (/^weather-|step-snow/.test(url.split('/').pop())) weatherDecodeOrder.push(url.split('/').pop());
+    if (url.endsWith('weather-rain-mono.mp3')) return Promise.reject(Error('optional rain unavailable'));
+    if (url.endsWith('weather-snow-mono.mp3')) return new Promise(resolve => { releaseSnow = () => resolve(decoded(url)); });
+    return original(url);
+  };
+  try {
+    const audio = new AmbientAudio(), first = audio.preloadWorldSounds(); first.then(() => { completed = true; });
+    await settle(); assert.equal(completed, false); assert.equal(audio.preloadWorldSounds(), first);
+    assert.deepEqual(weatherDecodeOrder, ['weather-rain-mono.mp3', 'weather-snow-mono.mp3']);
+    releaseSnow(); await first;
+    assert.equal(completed, true); assert.equal(audio.snapshot().weather.snowStepsReady, 2);
+    assert.equal(audio.worldSoundsReady(), false);
+    const beforeRetry = fetched.length; decodeAudio = original; await audio.preloadWorldSounds();
+    assert.equal(audio.worldSoundsReady(), true);
+    assert.deepEqual(fetched.slice(beforeRetry).map(url => url.split('/').pop()), ['weather-rain-mono.mp3']);
+  } finally { decodeAudio = original; }
+});
+
+test('terminal audio disposal clears weather/native buffers and prevents late decodes from reinstalling or reopening a graph', async () => {
+  const original = decodeAudio;
+  let release;
+  decodeAudio = url => url.endsWith('weather-rain-mono.mp3') ? new Promise(resolve => { release = () => resolve(decoded(url)); }) : original(url);
+  try {
+    const audio = new AmbientAudio(); await audio.start(false);
+    const context = contexts.at(-1), loading = audio.preloadWorldSounds(); await settle();
+    assert.equal(typeof release, 'function'); audio.dispose(); release(); await loading;
+    assert.equal(context.state, 'closed'); assert.equal(audio.worldSoundsReady(), false);
+    const state = audio.snapshot(); assert.deepEqual(state.bedsReady, []); assert.equal(state.avatarReady, 0); assert.equal(state.weather.snowStepsReady, 0);
+    assert.ok(context.started.filter(source => source.loop).every(source => source.stopped));
+    const before = fetched.length, contextsBefore = contexts.length;
+    await audio.preloadWorldSounds(); audio.unlock(); await audio.start(false); audio.dispose();
+    assert.equal(fetched.length, before); assert.equal(contexts.length, contextsBefore);
+  } finally { decodeAudio = original; }
 });

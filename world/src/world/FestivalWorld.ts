@@ -1,3 +1,7 @@
+import { FestivalWeather } from './FestivalWeather';
+import type { SharedWeather } from '../weather/WeatherModel.mjs';
+import { createBeachRelaxation, type BeachRelaxationSpot } from './BeachRelaxation';
+import { poseRelaxedCoastal, clearRelaxedCoastal, prepareCoastalReclines, type CoastalRelaxationPose } from './CoastalRelaxationPose';
 import { FireworksShow } from './FireworksShow';
 import { NpcIndicators, createNpcIdentityTexture, NPC_INDICATOR } from './NpcIndicator';
 import { WorldCamera, ISOMETRIC_VIEW, isometricExtraDepth, WORLD_CAMERA_MODES, nextWorldCameraMode, mobileFollowYaw, type WorldCameraMode } from './WorldCamera';
@@ -47,6 +51,7 @@ import { ROAD_POLYGONS, streetLampObstructsRoute } from './CoastalCirculation';
 import { CoastalScenery } from './CoastalScenery';
 import { VenueSceneryAssets } from './VenueSceneryAssets';
 import { createFestivalAttendant } from './FestivalAttendant';
+import { createConcessionContactShadow } from './ConcessionShadow';
 import { EnvironmentMaterials, environmentAssetsFromUrls, tagEnvironmentSurface, type EnvironmentFamily, type EnvironmentSurface } from './EnvironmentMaterials';
 import { applyEnvironmentArchitecture } from './EnvironmentArchitecture';
 import { EnvironmentAssets, environmentModelAssetsFromUrls, ENVIRONMENT_ASSET_ROOT } from './EnvironmentAssets';
@@ -85,6 +90,7 @@ import { pinchZoom, pinchSpread, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX } from './Came
 import { planRenderScale, RENDER_SCALE_FLOOR } from './RenderScale';
 import { ARCADE_LOCK_KEYHOLE, MothArcadeCabinet, MothArcadeSession, MothArcadeView } from './MothArcade';
 import { PreviewResourceLease } from './PreviewResourceLease';
+import { RendererResourceLease } from './RendererResourceLease';
 import { CutawayLens, CUTAWAY_LENS, type CutawayRoom } from './CutawayLens';
 import { PlanGrid } from './PlanGrid';
 import { fitGateAerialCamera, fitGateAvatarCamera, gateAerialTarget, blendGateEntryCamera, type GateEntryCameraPose, type GatePreviewFrame, type GatePreviewCameraSnapshot } from './GatePreviewLayout';
@@ -109,7 +115,9 @@ export {
 } from './NpcRoster';
 
 export type WorldAction =
-  | { type: 'seated'; seatId: string; venue: VenueKey }
+  | { type: 'seated'; seatId: string; venue: VenueKey; snowAction?: 'brush'|'sit' }
+  | { type: 'relaxed'; seatId?: string; snowAction?: 'brush'|'sit' }
+  | { type: 'snowSeat'; seatId: string }
   | { type: 'seatUnavailable'; seatId: string }
   | { type: 'stood' }
   | { type: 'food'; item: CarriedItem }
@@ -183,6 +191,7 @@ export interface WorldSnapshot {
   location: string;
   dayNight: DayNightState;
   playerState: PlayerState;
+  relaxation?: CoastalRelaxationPose;
   inTheater: boolean;
   /** Which kind of seat, when seated. A bar stool is a seat the screens forgot. */
   seatKind?: 'screening' | 'bar' | 'bench';
@@ -219,6 +228,8 @@ export interface RemoteVisitorVisual {
   z: number;
   rotation: number;
   state: PlayerState;
+  relaxation?: CoastalRelaxationPose;
+  seatedAt?: string;
   moving: boolean;
   running?: boolean;
   gesture?: AvatarGesture;
@@ -424,6 +435,8 @@ interface RemoteAvatar {
   targetRotation: number;
   previousRotation: number;
   state: PlayerState;
+  relaxation?: CoastalRelaxationPose;
+  seatedAt?: string;
   rig: AvatarRig;
   carriedProp: THREE.Group;
   carriedItem?: CarriedItem;
@@ -1657,6 +1670,7 @@ export class FestivalWorld {
   private gateEntryFrom?: GateEntryCameraPose;
   private gateEntryElapsed?: number;
   private gateResourceLease?: PreviewResourceLease;
+  private rendererResourceLease?: RendererResourceLease;
 
   private readonly canvas: HTMLCanvasElement;
   private readonly foregroundCanvas: HTMLCanvasElement;
@@ -1768,7 +1782,8 @@ export class FestivalWorld {
   private nextDrunkStumbleAt = 0;
   private drunkPhase = 0;
   private readonly doubleVisionSize = new THREE.Vector2();
-  private doubleVision?: { texture: THREE.FramebufferTexture; scene: THREE.Scene; camera: THREE.OrthographicCamera; material: THREE.ShaderMaterial };
+  private doubleVision?: { texture: THREE.FramebufferTexture; scene: THREE.Scene; camera: THREE.OrthographicCamera;
+    material: THREE.ShaderMaterial; quad: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial> };
   private drunkScreen = -1;
   private reviewFrameCount = 0;
   private reviewLastDelta = 0;
@@ -2081,6 +2096,9 @@ export class FestivalWorld {
   private stowedItem?: 'POPCORN';
   private hasPamphlet = false;
   private activeSeat?: Seat;
+  private activeRelaxation?: {pose:CoastalRelaxationPose;spot?:BeachRelaxationSpot};
+  private beachRelaxation?: ReturnType<typeof createBeachRelaxation>;
+  private weather?: FestivalWeather;
   private npcDialogue?: {npc:NpcAvatar; transition:DialogueCameraTransition};
   private npcDialogueClock?: NpcDialogueClock;
   private playerGestureUntil = 0;
@@ -2178,6 +2196,7 @@ export class FestivalWorld {
       canvas, normalGraphics: graphicsMode === 'normal', pixelRatio: this.mainPixelRatio(),
       checkShaderErrors: checkShaders, inactiveClipPlane: this.inactiveProjectorClipPlane,
     });
+    if (!preview) this.rendererResourceLease = new RendererResourceLease(this.renderer);
     if (!preview && gpuTexturesEnabled()) {
       this.gpuTextures = acquireGpuTextures(this.renderer);
       this.environmentMaterials.useGpuTextures(this.gpuTextures);
@@ -2228,6 +2247,16 @@ export class FestivalWorld {
     this.xrRig.add(this.camera);
     if (!preview) this.createXrControllers();
     this.createEnvironment();
+    if(!preview) {
+      this.beachRelaxation=createBeachRelaxation({heightAt:(x,z)=>this.groundHeightAt(x,z,0)-AVATAR_GROUND_Y,
+        clear:b=>!this.colliders.some(c=>b.minX<c.maxX+.15&&b.maxX>c.minX-.15&&b.minZ<c.maxZ+.15&&b.maxZ>c.minZ-.15&&b.minY<(c.maxY??Infinity)&&b.maxY>(c.minY??-Infinity))});
+      this.scene.add(this.beachRelaxation.root);
+      this.colliders.push(...this.beachRelaxation.colliders);
+      this.weather=new FestivalWeather(this.scene,{heightAt:(x,z)=>this.groundHeightAt(x,z,0)-AVATAR_GROUND_Y,
+        dryAt:(x,z)=>!this.isOverWater(z,x),shelteredAt:(x,z,y)=>this.weatherShelteredAt(x,z,y)},window.matchMedia('(pointer: coarse) and (hover: none)').matches);
+      this.weather.addSupports(this.seats.filter(s=>!s.id.startsWith('PALACE-')&&!s.id.startsWith('CLUB-')).map(s=>({id:s.id,x:s.position.x,z:s.position.z,y:s.cushion? s.cushion.getWorldPosition(new THREE.Vector3()).y+.08:s.position.y-.15,width:1.35,depth:1.1,facing:s.facing})));
+      this.weather.addSupports(this.beachRelaxation.spots.map(s=>({id:s.id,x:s.anchor.x,z:s.anchor.z,y:s.anchor.y,width:s.kind==='mat'?2.25:1.65,depth:s.kind==='mat'?4.3:1.6,facing:s.facing,groundMask:s.kind==='mat',heightAt:s.kind==='mat'?s.surfaceHeightAt:undefined})));
+    }
     this.keepSkyFlat();
     if (PLANET.on) subdivideSceneForPlanet(this.scene);
     // No delayed dressing or imported scenery runs in this scene, so static
@@ -2412,6 +2441,10 @@ export class FestivalWorld {
     // finish placement before subdivision, batching and GPU preparation.
     await this.prepareAssets(progress => onProgress?.(progress * .55));
     if (this.disposed) return;
+    // Moving identity cards to their CPU-bent sprite layer also finalizes
+    // their flat/unlit material flags. Do that after all art passes and before
+    // compilation, rather than changing those flags on the first play frame.
+    if (this.npcs?.length) this.updateNpcIndicators();
     // The fixed downloads are done, so the player's first film may run as soon
     // as it answers, alongside the work below (`playFirstFilm`).
     this.firstFilmWindow = true;
@@ -2435,7 +2468,9 @@ export class FestivalWorld {
     shareShadowDepthMaterials(this.scene);
     this.cullDecorativeLights();
     onProgress?.(.65);
-    await warmScenePrograms(this.renderer, this.scene, this.camera);
+    this.weather?.setWarmup(true);
+    try {await warmScenePrograms(this.renderer, this.scene, this.camera);}
+    finally {this.weather?.setWarmup(false);}
     if (this.disposed) return;
     await uploadSceneTextures(this.renderer, this.scene, importedAvatarTextures(), () => !this.disposed);
     if (this.disposed) return;
@@ -2443,10 +2478,27 @@ export class FestivalWorld {
     // Every body anybody can arrive in, so the first of each is not compiled
     // in the middle of the festival; then one of each kind of draw.
     const stand = this.warmAvatarVariants();
+    let warmed = false;
+    let fixedFeatures: ReturnType<FestivalWorld['warmFixedFeatureVariants']> | undefined;
     try {
+      fixedFeatures = this.warmFixedFeatureVariants(stand);
       this.warmupReport = await warmByDrawing(this.renderer, this.scene, this.camera, progress => onProgress?.(.7 + progress * .25), 24, () => !this.disposed);
+      warmed = !this.disposed;
     } finally {
-      disposeImportedAvatars(stand);
+      if (warmed) {
+        // Disposing every temporary material also released its program in
+        // Three, so the first female/swimsuit rebuilt programs in play. Keep
+        // only those owners; no clone rig, skeleton or live update survives.
+        const materials = new Set<THREE.Material>();
+        disposeImportedAvatars(stand, materials);
+        for (const material of fixedFeatures?.materials ?? []) materials.add(material);
+        this.releaseWarmAvatarPrograms();
+        this.warmAvatarMaterials = materials;
+      } else {
+        disposeImportedAvatars(stand);
+        for (const material of fixedFeatures?.materials ?? []) material.dispose();
+      }
+      for (const geometry of fixedFeatures?.geometries ?? []) geometry.dispose();
       stand.removeFromParent();
     }
     if (this.disposed) return;
@@ -2458,6 +2510,9 @@ export class FestivalWorld {
       const surface = new THREE.Group(); surface.add(aperture.clone(false));
       await compileScenePrograms(this.renderer, surface, this.camera, this.projectorApertureScene);
     }
+    if (this.disposed) return;
+    await this.prepareDoubleVision();
+    if (this.disposed) return;
     // The programme may only have arrived during the warm-up.
     this.warmScreenPlayer();
     // Waiting on the film player can take five seconds on a slow phone. Past
@@ -2478,15 +2533,71 @@ export class FestivalWorld {
   }
 
   private warmupReport?: { kinds: number; programs: number };
+  private warmAvatarMaterials?: Set<THREE.Material>;
+
+  private releaseWarmAvatarPrograms(): void {
+    const materials = this.warmAvatarMaterials;
+    this.warmAvatarMaterials = undefined;
+    for (const material of materials ?? []) material.dispose();
+    materials?.clear();
+  }
+
+  /** Exact first-use carried surfaces, including the fresh cup's ungrained
+   * liquid. Copies preserve every runtime hook/define and leave shared art
+   * ownership untouched. Only their materials survive admission. */
+  private warmFixedFeatureVariants(stand: THREE.Group): { materials: Set<THREE.Material>; geometries: Set<THREE.BufferGeometry> } {
+    const props = new THREE.Group(); props.name = 'Warm-up carried surfaces';
+    for (const kind of ['POPCORN', 'DRINK', 'HOTDOG', 'PIZZA', 'CHICKEN']) {
+      const prop = new THREE.Group(); props.add(prop);
+      if (kind === 'POPCORN') this.populatePopcornProp(prop);
+      else if (kind === 'DRINK') this.populateDrinkProp(prop);
+      else if (kind === 'HOTDOG') this.populateFoodProp(prop, 0xd8642c, 0xf0d8a8);
+      else if (kind === 'PIZZA') this.populateFoodProp(prop, 0xe0a52e, 0xc4482a);
+      else this.populateFoodProp(prop, 0xc4842a, 0xe8d6a8);
+    }
+    const materials = new Set<THREE.Material>(), geometries = new Set<THREE.BufferGeometry>();
+    const copies = new Map<THREE.Material, THREE.Material>();
+    props.traverse(object => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      if (mesh.geometry !== boxGeometry) geometries.add(mesh.geometry);
+      const copy = (source: THREE.Material) => {
+        let material = copies.get(source);
+        if (!material) {
+          material = source.clone();
+          material.onBeforeCompile = source.onBeforeCompile;
+          material.customProgramCacheKey = source.customProgramCacheKey;
+          copies.set(source, material); materials.add(material);
+        }
+        return material;
+      };
+      mesh.material = Array.isArray(mesh.material) ? mesh.material.map(copy) : copy(mesh.material);
+    });
+    stand.add(props);
+    return { materials, geometries };
+  }
   /** Every sex and outfit, posed out of sight of nothing, for the warm-up only. */
   private warmAvatarVariants(): THREE.Group {
     const stand = new THREE.Group();
     stand.name = 'Warm-up avatars';
+    const mats = this.beachRelaxation?.spots.filter(spot => spot.kind === 'mat') ?? [];
+    // Fit every fixed mat/body/outfit under the same loading view as its GPU
+    // preparation. Later first reclines reuse only bounded scalar results.
+    if (this.playerRig) prepareCoastalReclines(this.playerRig, mats, AVATAR_GROUND_Y);
     for (const outfit of TOP_OUTFITS) {
       for (const top of [outfit.wire, outfit.wireFemale]) {
         const body = new THREE.Group();
-        this.createAvatarRig(body, { ...this.palette, top });
+        const palette = { ...this.palette, top };
+        const rig = this.createAvatarRig(body, palette);
         stand.add(body);
+        for (const cap of [undefined, palette.cap ?? '#24262a']) {
+          const variation = { ...palette, cap };
+          body.userData.setImportedPalette?.(variation);
+          applyAvatarAccessories(body, variation);
+          prepareCoastalReclines(rig, mats, AVATAR_GROUND_Y);
+        }
+        body.userData.setImportedPalette?.(palette);
+        applyAvatarAccessories(body, palette);
       }
     }
     stand.position.copy(this.player.position);
@@ -2516,12 +2627,15 @@ export class FestivalWorld {
     // Release per-instance skeletons/materials only; template maps/geometry
     // remain shared with any current world or entrance preview.
     disposeImportedAvatars(this.scene);
+    this.releaseWarmAvatarPrograms();
     disposePlanetLightAnchors(this.scene);
     disposeNeonSignTextures(this.scene);
     for(const frame of this.neonFrames)disposeNeonSignFrame(frame);
     this.neonFrames=[];
     this.npcIndicators?.dispose();
     for(const npc of this.npcs){const map=npc.badge.material.map;if(map?.userData.npcIdentity){map.dispose();npc.badge.material.dispose();}}
+    this.weather?.dispose();this.weather=undefined;
+    this.disposeDoubleVision();
     this.fireworksShow?.dispose();
     this.templeFireworks?.dispose();
     this.environmentReflections?.dispose();
@@ -2575,6 +2689,8 @@ export class FestivalWorld {
     this.stopFireworks();
     for (const venue of this.projectors.keys()) this.stopImmersiveVideo(venue);
     if (this.preview) this.releaseGatePreview();
+    this.rendererResourceLease?.dispose();
+    this.rendererResourceLease = undefined;
     this.renderer.dispose();
     if (this.preview) this.renderer.forceContextLoss();
     // The page is going, so this is the one place the shared player is torn
@@ -3522,7 +3638,7 @@ export class FestivalWorld {
 
   /** What the trigger does when it is not pointing at the interface. */
   private xrSelectWorld(): void {
-    if (this.playerState === 'seated' && this.activeSeat?.kind !== 'bar') {
+    if (this.playerState === 'seated' && !this.activeRelaxation && this.activeSeat?.kind !== 'bar') {
       this.onAction({ type: 'vrWatch', venue: this.activeSeat?.venue ?? this.screeningVenue() });
       return;
     }
@@ -3883,7 +3999,6 @@ export class FestivalWorld {
    */
   startFireworks(durationMs = 125_000): void {
     this.audio.stopFireworks();
-    void this.audio.prepareFireworks();
     this.fireworksShow?.start(performance.now(), durationMs);
   }
 
@@ -3902,7 +4017,6 @@ export class FestivalWorld {
     if (elapsed < -2_000 || elapsed >= event.durationMs) { this.templeFireworks?.stop(); return; }
     if (this.templeCelebrationId === event.id) return;
     this.templeCelebrationId = event.id;
-    void this.audio.prepareFireworks();
     this.templeFireworks?.start(performance.now() - Math.max(0, elapsed), event.durationMs);
   }
 
@@ -6225,8 +6339,69 @@ export class FestivalWorld {
   }
 
   requestDanceSelection(): void {
-    if (this.playerState === 'seated' || this.isMentorControlLocked() || this.menuOpen) return;
+    if ((this.playerState === 'seated'&&!this.activeRelaxation) || this.isMentorControlLocked() || this.menuOpen) return;
     this.onAction({ type: 'danceSelection', active: this.dancing });
+  }
+
+  canSitOnGround():boolean { const {x,y,z}=this.player.position;const floor=this.groundHeightAt(x,z,y)-AVATAR_GROUND_Y;return !this.isMentorControlLocked()&&!this.isOverWater(z,x)&&!(terrainHeightAt(x,z)<SEA_Y&&floor<SEA_Y+.015)&&!this.airborne&&!this.arcadeView; }
+  relaxationPose():CoastalRelaxationPose|undefined {return this.activeRelaxation?.pose;}
+  selectAction(move:'groove'|'sit-ground'|'stop'):void {
+    if(move==='stop'){if(this.activeRelaxation)this.standUp();this.selectDance('stop');return;}
+    if(move==='groove'){if(this.activeRelaxation)this.standUp();this.selectDance('groove');return;}
+    if(!this.canSitOnGround())return;
+    if(this.playerState==='seated')this.standUp();
+    this.dancing=false;this.playerGesture=undefined;this.playerGestureUntil=0;
+    this.player.position.y=this.groundHeightAt(this.player.position.x,this.player.position.z,this.player.position.y);
+    this.activeRelaxation={pose:'ground-sit'};this.playerState='seated';
+    this.onAction({type:'relaxed'});
+  }
+  setWeather(weather:SharedWeather|undefined,serverTime?:number):void {this.weather?.setShared(weather,serverTime);}
+  weatherReviewSnapshot():unknown {return {weather:this.weather?.snapshot(),spots:this.beachRelaxation?.spots.map(s=>({id:s.id,kind:s.kind,at:s.position.toArray(),facing:s.facing,footprint:s.footprint,exits:s.exitPoints.map(p=>p.toArray())})),rejected:this.beachRelaxation?.rejected,relaxation:this.activeRelaxation?.pose,state:this.playerState,position:this.player.position.toArray(),nearest:this.nearestRelaxation()?.id,shadeFloor:true};}
+  focusRelaxationForReview(id='BEACH-CHAIR-4',sit=false):void {
+    if(!['localhost','127.0.0.1'].includes(window.location.hostname))return;
+    const spot=this.beachRelaxation?.spots.find(s=>s.id===id);if(!spot)return;
+    this.activeSeat=undefined;this.activeRelaxation=undefined;this.playerState='walking';
+    const at=spot.exitPoints[0];this.player.position.set(at.x,at.y+AVATAR_GROUND_Y,at.z);
+    this.player.rotation.y=spot.facing;this.cameraMode='follow';this.cameraZoom=.75;
+    this.cameraOrbit.follow.yaw=spot.facing+.5;this.cameraOrbit.follow.pitch=.18;
+    if(sit)this.takeRelaxation(spot);
+  }
+  private weatherShelteredAt(x:number,z:number,y:number):boolean {
+    const r=rooftopBounds,c=clubBounds;
+    if(x>TEMPLE.minX-1&&x<TEMPLE.maxX+1&&z>TEMPLE.minZ-1&&z<TEMPLE.maxZ+1&&y<TEMPLE_FLOOR_Y+10)return true;
+    if(x>-47&&x<-23&&z>-50&&z<-30&&y<10.5)return true;
+    if(x>r.minX&&x<r.maxX&&z>r.minZ&&z<r.bayMaxZ&&y<ROOF_Y)return true;
+    if(x>c.buildingMinX&&x<c.buildingMaxX&&z>c.buildingMinZ&&z<c.buildingMaxZ&&y<14)return true;
+    if(Math.abs(x-concessionPosition.x)<1.95&&Math.abs(z-concessionPosition.z)<1.6&&y<concessionPosition.y+2.8)return true;
+    return false;
+  }
+  private nearestRelaxation():BeachRelaxationSpot|undefined {
+    if(this.playerState==='swimming')return;
+    return this.beachRelaxation?.spots.filter(s=>Math.abs(s.position.y+AVATAR_GROUND_Y-this.player.position.y)<2&&s.position.distanceTo(new THREE.Vector3(this.player.position.x,s.position.y,this.player.position.z))<3.7)
+      .sort((a,b)=>a.position.distanceToSquared(this.player.position)-b.position.distanceToSquared(this.player.position))[0];
+  }
+  snowBrushed():void { if(!this.disposed)this.audio.playAvatarSound('snow-brush'); }
+  takeSnowSeat(id:string,snowAction:'brush'|'sit'):void {
+    const spot=this.beachRelaxation?.spots.find(s=>s.id===id);
+    if(spot&&this.nearestRelaxation()?.id===id){this.takeRelaxation(spot,snowAction);return;}
+    const seat=this.seats.find(s=>s.id===id);
+    if(seat&&this.nearestSeat()?.id===id)this.takeSeat(seat,snowAction);
+  }
+  private takeRelaxation(spot:BeachRelaxationSpot,snowAction?:'brush'|'sit'):void {
+    if(this.occupiedSeats.has(spot.id)){this.onAction({type:'seatUnavailable',seatId:spot.id});return;}
+    this.dancing=false;this.activeSeat=undefined;
+    this.activeRelaxation={pose:spot.kind==='chair'?'chair-sit':'recline',spot};this.playerState='seated';
+    this.player.position.copy(spot.anchor);this.player.position.y=spot.position.y+AVATAR_GROUND_Y;
+    this.player.rotation.y=spot.facing;this.onAction({type:'relaxed',seatId:spot.id,snowAction});
+  }
+  private takeSeat(seat:Seat,snowAction?:'brush'|'sit'):void {
+    if(this.occupiedSeats.has(seat.id)){this.onAction({type:'seatUnavailable',seatId:seat.id});return;}
+    this.dancing=false;this.activeRelaxation=undefined;this.activeSeat=seat;this.playerState='seated';
+    this.player.position.copy(this.seatAnchor(seat));this.player.rotation.y=seat.facing??Math.PI;
+    this.onAction({type:'seated',seatId:seat.id,venue:seat.venue,snowAction});
+  }
+  private poseRelaxation(rig:AvatarRig,pose:CoastalRelaxationPose,spot?:BeachRelaxationSpot):void {
+    poseRelaxedCoastal(rig,pose,pose==='recline'&&spot?spot.surfaceHeightAt:((x,z)=>this.groundHeightAt(x,z,rig.visualRoot?.parent?.position.y??this.player.position.y)-AVATAR_GROUND_Y),spot?.support);
   }
 
   selectDance(move: 'groove' | 'stop'): void {
@@ -6449,7 +6624,9 @@ export class FestivalWorld {
       // way: from what is on screen now to the new reading.
       if (sinceLast > 20) avatar.previousLimbs = avatar.shownLimbs;
       avatar.limbs = cleanLimbs(displayVisitor.limbs);
+      if(avatar.relaxation&&(displayVisitor.relaxation!==avatar.relaxation||displayVisitor.state!=='seated'))clearRelaxedCoastal(avatar.rig);
       avatar.state = displayVisitor.state;
+      avatar.relaxation=displayVisitor.relaxation;avatar.seatedAt=displayVisitor.seatedAt;
       setCoastalSwimwear(avatar.group,displayVisitor.state==='swimming');
       avatar.group.userData.setImportedPalette?.(displayVisitor.palette);
       avatar.moving = displayVisitor.moving;
@@ -8399,20 +8576,20 @@ export class FestivalWorld {
       }
     }
 
+    const relaxation=this.nearestRelaxation();
+    if(relaxation){
+      if((this.weather?.seatCoverage(relaxation.id)??0)>.03)this.onAction({type:'snowSeat',seatId:relaxation.id});
+      else this.takeRelaxation(relaxation);
+      return;
+    }
     const seat = this.nearestSeat();
     if (seat) {
       if (this.occupiedSeats.has(seat.id)) {
         this.onAction({ type: 'seatUnavailable', seatId: seat.id });
         return;
       }
-      this.activeSeat = seat;
-      this.playerState = 'seated';
-      // A bar stool is not a seat in an auditorium: it keeps the orbit camera,
-      // so dragging still looks around the room rather than locking onto a
-      // screen nobody sat down to watch.
-          this.player.position.copy(this.seatAnchor(seat));
-      this.player.rotation.y = seat.facing ?? Math.PI;
-      this.onAction({ type: 'seated', seatId: seat.id, venue: seat.venue });
+      if((this.weather?.seatCoverage(seat.id)??0)>.03){this.onAction({type:'snowSeat',seatId:seat.id});return;}
+      this.takeSeat(seat);
       return;
     }
 
@@ -9804,6 +9981,10 @@ export class FestivalWorld {
     root.traverse((object) => {
       const mesh = object as THREE.Mesh;
       if (!mesh.isMesh) return;
+      // The painted floor blob already represents contact with the ground.
+      // Casting it again produces a solid disc shadow and an unused depth
+      // variant when a wardrobe switch exposes the blob to a shadow camera.
+      if (mesh.userData.avatarContactShadow) { mesh.castShadow = false; return; }
       if (!on) { mesh.castShadow = false; return; }
       // Asked of the geometry as well as the scale. The world's own meshes are
       // a unit cube stretched by scale, but the restyled rig sizes its parts in
@@ -10691,6 +10872,7 @@ export class FestivalWorld {
     // The fitted car is 5.76 long. Leave a 3-unit (~1.5m) aisle between bumpers.
     // Keep the back row fixed so the existing arrival at world (0,-26) is clear.
     let carIndex = 0;
+    const passengerSeats: Seat[] = [];
     for (let row = 0; row < 2; row += 1) {
       for (let column = -1; column <= 1; column += 1) {
         const x = centerX + column * DRIVE_IN_PARKING.columnSpacing;
@@ -10703,6 +10885,9 @@ export class FestivalWorld {
         this.scene.add(car);
         this.addCollider(x, z, 3.75, 5.7, 0.08, { minY: .1, maxY: 2.16, physical:true },'convertible-car',2.16);
         const cushion=createConvertibleSeatProxy(car,car.userData.cushion as THREE.Mesh);
+        const passengerSource = car.getObjectByName('passenger-cushion') as THREE.Mesh;
+        car.userData.passengerCushion = passengerSource;
+        const passengerCushion = createConvertibleSeatProxy(car, passengerSource, 'passenger');
         this.seats.push({
           id: `DRIVE-${row + 1}-${column + 2}`,
           venue: 'drive-in',
@@ -10711,9 +10896,20 @@ export class FestivalWorld {
           footFloor:.10+CONVERTIBLE.footFloor,
           position: new THREE.Vector3(x+CONVERTIBLE.seatX, 0, z+CONVERTIBLE.seatZ),
         });
+        passengerSeats.push({
+          id: `DRIVE-${carIndex + 1}-PASSENGER`,
+          venue: 'drive-in',
+          cushion: passengerCushion,
+          forward: -.3,
+          footFloor: .10 + CONVERTIBLE.footFloor,
+          position: new THREE.Vector3(x - CONVERTIBLE.seatX, 0, z + CONVERTIBLE.seatZ),
+        });
         carIndex += 1;
       }
     }
+    // Driver IDs and their original order survive; each co-pilot has its own
+    // real cushion and reservation rather than sharing the driver's anchor.
+    this.seats.push(...passengerSeats);
   }
 
   private createClub(): void {
@@ -11721,10 +11917,17 @@ export class FestivalWorld {
     booth.name = 'Popcorn concession';
     booth.position.copy(concessionPosition);
     this.mesh([3.1,.18,2.5],[0,.09,0],material(0x3b4540),booth).userData.wornNoMasonry=true;
-    this.mesh([3.2,2.25,2.6],[0,1.305,0],material(0x9e4b3c),booth).userData.wornNoMasonry=true;
+    const boothBody=this.mesh([3.2,2.25,2.6],[0,1.305,0],material(0x9e4b3c),booth);
+    boothBody.userData.wornNoMasonry=true;
+    // Only the two large masses earn new shadow draws. Keep these roles for
+    // quality changes: Lite disables shadow maps, Normal uses this silhouette.
+    boothBody.castShadow=true;boothBody.receiveShadow=true;
     for(const x of [-1.45,1.45])this.mesh([.14,2.25,.12],[x,1.305,1.34],material(0xdecbaa),booth).userData.wornNoMasonry=true;
     for(const x of [-1,-.5,0,.5,1])this.mesh([.18,.78,.06],[x,.69,1.34],material(0xdecbaa),booth).userData.wornNoMasonry=true;
-    this.mesh([3.8,.22,3.1],[0,2.54,0],material(0x796046),booth).userData.wornNoMasonry=true;
+    const boothCanopy=this.mesh([3.8,.22,3.1],[0,2.54,0],material(0x796046),booth);
+    boothCanopy.userData.wornNoMasonry=true;
+    boothCanopy.castShadow=true;boothCanopy.receiveShadow=true;
+    booth.add(createConcessionContactShadow(this.groundHeightAt(concessionPosition.x,concessionPosition.z,concessionPosition.y)-AVATAR_GROUND_Y-concessionPosition.y));
     const signTexture = createTextTexture(['POP!', 'TAKE ONE'], '#f5efe2', '#a91c24',2,'popcorn');
     const sign = new THREE.Mesh(
       new THREE.PlaneGeometry(2.5, 1.25),
@@ -11989,6 +12192,7 @@ export class FestivalWorld {
     this.playerShadow.rotation.x = -Math.PI / 2;
     this.playerShadow.position.y = -AVATAR_GROUND_Y + 0.02;
     this.playerShadow.userData.projectorBackground = true;
+    this.playerShadow.userData.avatarContactShadow = true;
     this.player.add(this.playerShadow);
     this.markAvatarForProjectorForeground(this.player);
     this.scene.add(this.player);
@@ -12001,6 +12205,7 @@ export class FestivalWorld {
     idleShadow.rotation.x = -Math.PI / 2;
     idleShadow.position.y = -AVATAR_GROUND_Y + 0.02;
     idleShadow.userData.projectorBackground = true;
+    idleShadow.userData.avatarContactShadow = true;
     this.originalPlayerIdle.add(idleShadow);
     this.originalPlayerIdle.visible = false;
     this.markAvatarForProjectorForeground(this.originalPlayerIdle);
@@ -12934,6 +13139,8 @@ export class FestivalWorld {
     // wins.
     this.updateXrArms();
     this.updateTrackedBody(delta);
+    this.weather?.update(delta,this.player.position);
+    this.dayNight.setWeatherCloud(this.weather?.cloudiness()??0);
     const dayNight = this.dayNight.update();
     this.updateAmbience(frameStartedAt, dayNight.cycleMinute);
     // After the day-night cycle has set the lamps: the bonfire wavers its own.
@@ -13121,6 +13328,7 @@ export class FestivalWorld {
         location: this.locationName(),
         dayNight,
         playerState: this.playerState,
+        relaxation:this.activeRelaxation?.pose,
         inTheater: this.inTheater(),
         seatKind: this.activeSeat?.kind,
         screeningVenue: this.screeningVenue(),
@@ -13304,6 +13512,7 @@ export class FestivalWorld {
     // stool, and checking only once the attendee had walked off meant nobody
     // went down until they stood up. updatePassOut stands them up itself.
     if (this.updatePassOut()) return;
+    if(this.activeRelaxation&&!this.menuOpen&&(Math.abs(this.stickX)+Math.abs(this.stickY)>.15||['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].some(k=>this.keys.has(k))))this.standUp();
     if (this.playerState === 'seated') {
       this.moveVector.set(0, 0, 0);
       this.player.visible = !this.xrActive && !this.controlledNpcId && this.cameraMode !== 'first-person';
@@ -13320,7 +13529,8 @@ export class FestivalWorld {
           false,
           this.gestureProgress(seatedGesture, this.playerGestureUntil),
         );
-        this.poseRigSeated(this.playerRig, seatedGesture);
+        if(this.activeRelaxation)this.poseRelaxation(this.playerRig,this.activeRelaxation.pose,this.activeRelaxation.spot);
+        else this.poseRigSeated(this.playerRig, seatedGesture);
       }
       return;
     }
@@ -14425,7 +14635,10 @@ export class FestivalWorld {
         supportCoastalPose(avatar.rig,(x,z,y)=>this.footSurfaceAt(x,z,y));
       }
       if (avatar.state === 'swimming' && moving && !gesture) this.poseRigSwimming(avatar.rig, elapsed);
-      if (avatar.state === 'seated') this.poseRigSeated(avatar.rig, gesture);
+      if (avatar.state === 'seated') {
+        if(avatar.relaxation)this.poseRelaxation(avatar.rig,avatar.relaxation,this.beachRelaxation?.spots.find(s=>s.id===avatar.seatedAt));
+        else this.poseRigSeated(avatar.rig, gesture);
+      }
       const playedLimbs = THREE.MathUtils.clamp((performance.now() - avatar.targetAt) / (avatar.updateInterval * .8), 0, 1);
       avatar.shownLimbs = mixLimbs(avatar.previousLimbs, avatar.limbs, playedLimbs);
       this.applyLimbs(avatar, avatar.shownLimbs);
@@ -14949,7 +15162,7 @@ export class FestivalWorld {
     if (this.preview || now - this.ambienceAt < AMBIENCE_UPDATE_MS) return;
     this.ambienceAt = now;
     const { x, z } = this.player.position;
-    this.audio.setAmbientMix({ night: nightAmountAt(cycleMinute), ocean: this.oceanNearness(x, z), outdoors: this.outdoorsAt(x, z) });
+    this.audio.setAmbientMix({ night: nightAmountAt(cycleMinute), ocean: this.oceanNearness(x, z), outdoors: this.outdoorsAt(x, z), ...this.weather?.audioMix(), snowFootsteps:(this.weather?.current().snowCoverage??0)>.12&&!this.weatherShelteredAt(x,z,this.player.position.y)&&this.playerState!=='swimming' });
   }
 
   /** The mix the beds would be given at a point, for loopback review. */
@@ -15613,6 +15826,7 @@ export class FestivalWorld {
   private settlePunchImpact(): void {
     if (!this.punchImpactAt || performance.now() < this.punchImpactAt) return;
     this.punchImpactAt = 0;
+    this.audio?.playAvatarSound('punch');
     this.cameraShake = Math.min(1.8, this.cameraShake + this.punchImpactPower);
     const npc = this.punchImpactNpc;
     this.punchImpactNpc = undefined;
@@ -15962,44 +16176,66 @@ export class FestivalWorld {
     if (lift > 0) rig.visualRoot.position.y += Math.min(lift, 1.5);
   }
 
+  /** Prepare the fixed postprocess under sign-in, including its first real
+   * driver draw. A one-pixel placeholder keeps sober visitors from retaining
+   * a full-screen frame copy; the live image is allocated only when needed. */
+  private async prepareDoubleVision(): Promise<void> {
+    if (this.preview || this.disposed) return;
+    if (!this.doubleVision) {
+      const texture = new THREE.FramebufferTexture(1, 1);
+      const material = new THREE.ShaderMaterial({
+        uniforms: { map: { value: texture }, opacity: { value: 0 }, offset: { value: new THREE.Vector2() } },
+        vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+        fragmentShader: 'uniform sampler2D map; uniform float opacity; uniform vec2 offset; varying vec2 vUv;'
+          + ' void main() { gl_FragColor = vec4(texture2D(map, vUv - offset).rgb, opacity); }',
+        transparent: true, depthTest: false, depthWrite: false,
+      });
+      const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+      quad.frustumCulled = false;
+      const scene = new THREE.Scene(); scene.add(quad);
+      this.doubleVision = { texture, scene, camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), material, quad };
+    }
+    const view = this.doubleVision;
+    await compileScenePrograms(this.renderer, view.scene, view.camera, view.scene);
+    if (this.disposed || this.doubleVision !== view) return;
+    const autoClear = this.renderer.autoClear;
+    try {
+      this.renderer.autoClear = false;
+      this.renderer.render(view.scene, view.camera);
+    } finally { this.renderer.autoClear = autoClear; }
+  }
+
+  private disposeDoubleVision(): void {
+    const view = this.doubleVision;
+    this.doubleVision = undefined;
+    if (!view) return;
+    view.texture.dispose(); view.material.dispose(); view.quad.geometry.dispose();
+    view.scene.clear();
+  }
+
   /**
    * The drink, on the screen itself: from the third drink the picture doubles
    * (a copy of the frame drifting beside it) and softens, and from the sixth
-   * the edges darken in. One copy of the finished frame and one quad, only
-   * while drunk; nothing at all when sober. A headset gets its haze instead.
+   * the edges darken in. The prepared quad draws only while drunk; a headset
+   * gets its haze instead.
    */
   private drawDoubleVision(): void {
     const level = this.drinkLevel();
     const ghost = this.xrActive && !this.xrSimulated ? 0 : THREE.MathUtils.clamp((level - 2) / 6, 0, 1);
     this.applyDrunkScreen(level);
-    if (ghost <= 0.01) return;
+    const view = this.doubleVision;
+    if (ghost <= 0.01 || !view || this.disposed) return;
     const size = this.renderer.getDrawingBufferSize(this.doubleVisionSize);
-    const width = Math.floor(size.x), height = Math.floor(size.y);
-    if (!this.doubleVision || this.doubleVision.texture.image.width !== width || this.doubleVision.texture.image.height !== height) {
-      this.doubleVision?.texture.dispose();
+    const width = Math.max(1, Math.floor(size.x)), height = Math.max(1, Math.floor(size.y));
+    if (view.texture.image.width !== width || view.texture.image.height !== height) {
+      view.texture.dispose();
       // Plain RGBA, the drawing buffer's own format: a copy into an sRGB
       // texture is refused. Its values are already display-encoded, so the
       // shader hands them straight back without converting them again.
       const texture = new THREE.FramebufferTexture(width, height);
-      if (this.doubleVision) {
-        this.doubleVision.material.uniforms.map!.value = texture;
-        this.doubleVision.texture = texture;
-      } else {
-        const material = new THREE.ShaderMaterial({
-          uniforms: { map: { value: texture }, opacity: { value: 0 }, offset: { value: new THREE.Vector2() } },
-          vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-          fragmentShader: 'uniform sampler2D map; uniform float opacity; uniform vec2 offset; varying vec2 vUv;'
-            + ' void main() { gl_FragColor = vec4(texture2D(map, vUv - offset).rgb, opacity); }',
-          transparent: true, depthTest: false, depthWrite: false,
-        });
-        const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
-        quad.frustumCulled = false;
-        const scene = new THREE.Scene();
-        scene.add(quad);
-        this.doubleVision = { texture, scene, camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), material };
-      }
+      view.material.uniforms.map!.value = texture;
+      view.texture = texture;
     }
-    const view = this.doubleVision!;
     this.renderer.copyFramebufferToTexture(view.texture);
     // The copy drifts out to one side and back, never quite settling.
     const drift = 0.004 + 0.012 * ghost;
@@ -16007,9 +16243,10 @@ export class FestivalWorld {
       Math.sin(this.drunkPhase * 0.9) * drift + drift * 0.6, Math.sin(this.drunkPhase * 0.6) * drift * 0.35);
     view.material.uniforms.opacity!.value = 0.2 + 0.25 * ghost;
     const autoClear = this.renderer.autoClear;
-    this.renderer.autoClear = false;
-    this.renderer.render(view.scene, view.camera);
-    this.renderer.autoClear = autoClear;
+    try {
+      this.renderer.autoClear = false;
+      this.renderer.render(view.scene, view.camera);
+    } finally { this.renderer.autoClear = autoClear; }
   }
 
   /**
@@ -16529,6 +16766,7 @@ export class FestivalWorld {
       return `O / WORSHIP ${this.templeSignText.name}`;
     }
     if (this.playerState === 'seated') {
+      if(this.activeRelaxation)return 'E / GET UP';
       if (this.carriedItem === 'DRINK') {
         this.promptAction = 'shift';
         return 'SHIFT+E / DRINK UP';
@@ -16538,6 +16776,11 @@ export class FestivalWorld {
     }
     // A seat within reach outranks putting MENTOR down, so the prompt has to
     // offer the seat as well. MENTOR stays on the attendee's head once seated.
+    const relaxation=this.nearestRelaxation();
+    if(relaxation){
+      if(this.occupiedSeats.has(relaxation.id)){this.promptActionable=false;return `${relaxation.id} · OCCUPIED`;}
+      return relaxation.kind==='mat'?'E / LIE DOWN':'E / RELAX IN CHAIR';
+    }
     const seat = this.nearestSeat();
     if (seat) {
       if (this.occupiedSeats.has(seat.id)) {
@@ -16794,6 +17037,7 @@ export class FestivalWorld {
   }
 
   private inTheater(): boolean {
+    if(this.activeRelaxation)return false;
     const x = this.player.position.x;
     const z = this.player.position.z;
     if (this.inClub(this.player.position.x, this.player.position.z)) return true;
@@ -16852,6 +17096,13 @@ export class FestivalWorld {
   }
 
   private standUp(): void {
+    if(this.activeRelaxation){
+      const spot=this.activeRelaxation.spot;
+      if(spot){const exit=spot.exitPoints.find(p=>!this.staticCollides(p.x,p.z,p.y+AVATAR_GROUND_Y,FestivalWorld.BODY_RADIUS));if(exit)this.player.position.set(exit.x,exit.y+AVATAR_GROUND_Y,exit.z);}
+      this.activeRelaxation=undefined;this.playerState='walking';
+      if(this.playerRig)clearRelaxedCoastal(this.playerRig);
+      this.onAction({type:'stood'});return;
+    }
     const seatPosition = this.activeSeat?.position ?? this.player.position;
     const fromY=this.player.position.y;
     // Exit into a clear aisle or beside the door, never through the car body.
