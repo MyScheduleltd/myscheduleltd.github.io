@@ -25,9 +25,15 @@ export interface SnowSurfaceSource {
   /** Imported fixed shells replace a fallback after admission downloads.
    * Proxies intentionally keep the default, which also reads hidden objects. */
   visibleOnly?:boolean;
+  /** Exact midpoint refinement for broad faces below a dense sculpture.
+   * Bounds local clipping work without changing its surface or global caps. */
+  maximumFaceSpan?:number;
+  /** Detailed outdoor props catch snow without acting as a building roof.
+   * Keep the surrounding ground blanket and particle shelter query unchanged. */
+  sheltersGround?:boolean;
 }
 type Point = { x: number; y: number; z: number };
-type Triangle = { a: Point; b: Point; c: Point; index: number; sourceId:string; terrainMask:boolean; minX: number; maxX: number; minZ: number; maxZ: number; minY: number; maxY: number; plane: [number, number, number] };
+type Triangle = { a: Point; b: Point; c: Point; index: number; sourceId:string; terrainMask:boolean; sheltersGround:boolean; minX: number; maxX: number; minZ: number; maxZ: number; minY: number; maxY: number; plane: [number, number, number] };
 export interface SnowSurfaceReport {sourceTriangles:number;topTriangles:number;triangles:number;sources:Array<{id:string;sourceTriangles:number;topTriangles:number}>}
 type Face = readonly [Point, Point, Point];
 const EPS = 1e-7;
@@ -118,9 +124,10 @@ export function buildSnowTerrain(query: SnowTerrainQuery): { geometry: THREE.Buf
 }
 
 function sourceTriangles(sources: readonly SnowSurfaceSource[],minimumUp=.5): Triangle[] {
-  const result:Triangle[]=[];let inspected=0;
+  const result:Triangle[]=[];let inspected=0,refinements=0;
   const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3(),normal=new THREE.Vector3(),ab=new THREE.Vector3(),ac=new THREE.Vector3();
   for(const source of sources){
+    if(source.maximumFaceSpan!==undefined&&(!Number.isFinite(source.maximumFaceSpan)||source.maximumFaceSpan<=0))throw new Error('Snow source face span must be finite and positive');
     const excluded=new Set(source.exclude??[]);source.object.updateWorldMatrix(true,true);
     const visit=(object:THREE.Object3D)=>{
       if(excluded.has(object)||(source.visibleOnly&&!object.visible))return;
@@ -138,9 +145,29 @@ function sourceTriangles(sources: readonly SnowSurfaceSource[],minimumUp=.5): Tr
             if(source.minimumHeight!==undefined&&Math.min(a.y,b.y,c.y)<source.minimumHeight)continue;
             const pa={x:a.x,y:a.y,z:a.z},pb={x:b.x,y:b.y,z:b.z},pc={x:c.x,y:c.y,z:c.z};
             const nx=normal.x,ny=normal.y,nz=normal.z;
-            result.push({a:pa,b:pb,c:pc,index:result.length,sourceId:source.id,terrainMask:!!source.terrainMask,minX:Math.min(a.x,b.x,c.x),maxX:Math.max(a.x,b.x,c.x),
-              minZ:Math.min(a.z,b.z,c.z),maxZ:Math.max(a.z,b.z,c.z),minY:Math.min(a.y,b.y,c.y),maxY:Math.max(a.y,b.y,c.y),
-              plane:[-nx/ny,-nz/ny,(nx*a.x+ny*a.y+nz*a.z)/ny]});
+            const plane:[number,number,number]=[-nx/ny,-nz/ny,(nx*a.x+ny*a.y+nz*a.z)/ny];
+            const append=(a:Point,b:Point,c:Point)=>{
+              if(result.length>=SNOW_SURFACE_BUDGET.sourceTriangles)throw new Error('Authored snow refinement exceeds the fixed triangle inspection budget');
+              result.push({a,b,c,index:result.length,sourceId:source.id,terrainMask:!!source.terrainMask,sheltersGround:source.sheltersGround!==false,minX:Math.min(a.x,b.x,c.x),maxX:Math.max(a.x,b.x,c.x),
+                minZ:Math.min(a.z,b.z,c.z),maxZ:Math.max(a.z,b.z,c.z),minY:Math.min(a.y,b.y,c.y),maxY:Math.max(a.y,b.y,c.y),plane});
+            };
+            // The existing roofs and terrain retain their unrefined path.
+            if(source.maximumFaceSpan===undefined){append(pa,pb,pc);continue;}
+            const pending:Array<[Point,Point,Point,number]>=[[pa,pb,pc,0]];
+            while(pending.length){
+              const[a,b,c,depth]=pending.pop()!;
+              if(Math.max(Math.max(a.x,b.x,c.x)-Math.min(a.x,b.x,c.x),Math.max(a.z,b.z,c.z)-Math.min(a.z,b.z,c.z))>source.maximumFaceSpan){
+                if(depth>=32)throw new Error('Authored snow refinement exceeds the fixed subdivision depth');
+                if(++refinements>SNOW_SURFACE_BUDGET.sourceTriangles)throw new Error('Authored snow refinement exceeds the fixed triangle inspection budget');
+                const face=[a,b,c];
+                const length=(a:Point,b:Point)=>(a.x-b.x)**2+(a.z-b.z)**2;
+                let edge=0;if(length(face[1],face[2])>length(face[0],face[1]))edge=1;
+                if(length(face[2],face[0])>length(face[edge],face[(edge+1)%3]))edge=2;
+                const start=face[edge],end=face[(edge+1)%3],opposite=face[(edge+2)%3],middle={x:(start.x+end.x)/2,y:(start.y+end.y)/2,z:(start.z+end.z)/2};
+                pending.push([start,middle,opposite,depth+1],[middle,end,opposite,depth+1]);continue;
+              }
+              append(a,b,c);
+            }
           }
         }
       }
@@ -190,8 +217,9 @@ function subtractAbove(polygon:Point[],cover:Triangle,subject:Triangle,terrainSu
 function shelterQuery(bins:Map<string,Triangle[]>,size:number):(x:number,z:number,y:number)=>boolean {
   const columns=new Map<number,Map<number,Triangle[]>>();
   for(const [key,triangles]of bins){
+    const overhead=triangles.filter(t=>t.sheltersGround);if(!overhead.length)continue;
     const [x,z]=key.split(',').map(Number),column=columns.get(x)??new Map<number,Triangle[]>();
-    column.set(z,triangles.sort((a,b)=>b.maxY-a.maxY));columns.set(x,column);
+    column.set(z,overhead.sort((a,b)=>b.maxY-a.maxY));columns.set(x,column);
   }
   return(x,z,y)=>{
     const candidates=columns.get(Math.floor(x/size))?.get(Math.floor(z/size));
@@ -211,7 +239,7 @@ function shelterQuery(bins:Map<string,Triangle[]>,size:number):(x:number,z:numbe
 /** The exact exposed upward envelope of the explicit fixed registry. No
  * bounding rectangle can spill over a kicked roof, coat an interior floor,
  * bridge a gap between dock planks, or rise above a real car cushion. */
-export function buildSnowSurfaceMeshes(sources: readonly SnowSurfaceSource[],terrain?:THREE.BufferGeometry): SnowSurfaceReport&{geometry:THREE.BufferGeometry; terrainGeometry?:THREE.BufferGeometry; shelteredAt:(x:number,z:number,y:number)=>boolean} {
+export function buildSnowSurfaceMeshes(sources: readonly SnowSurfaceSource[],terrain?:THREE.BufferGeometry,separateRefined=false): SnowSurfaceReport&{geometry:THREE.BufferGeometry; detailGeometry?:THREE.BufferGeometry; terrainGeometry?:THREE.BufferGeometry; shelteredAt:(x:number,z:number,y:number)=>boolean} {
   const triangles=sourceTriangles(sources),terrainTriangles:Triangle[]=[];
   if(terrain&&triangles.length){
     // The terrain's input already has the tiny contact lift. Compare its true
@@ -232,13 +260,14 @@ export function buildSnowSurfaceMeshes(sources: readonly SnowSurfaceSource[],ter
       const key=x+','+z,list=bins.get(key)??[];list.push(t);bins.set(key,list);
     }
   }
-  const faces:Face[]=[],terrainFaces:Face[]=[],counts=new Map(sources.map(s=>[s.id,{id:s.id,sourceTriangles:0,topTriangles:0}]));
+  const faces:Face[]=[],detailFaces:Face[]=[],terrainFaces:Face[]=[],counts=new Map(sources.map(s=>[s.id,{id:s.id,sourceTriangles:0,topTriangles:0}]));
+  const refinedIds=new Set(separateRefined?sources.filter(s=>s.maximumFaceSpan!==undefined).map(s=>s.id):[]);
   for(const t of triangles)counts.get(t.sourceId)!.sourceTriangles++;
   for(const subject of [...triangles,...terrainTriangles]){
     const terrainSubject=subject.index>=triangles.length;
     const candidates=new Set<Triangle>();
     for(let z=Math.floor(subject.minZ/size);z<=Math.floor(subject.maxZ/size);z++)for(let x=Math.floor(subject.minX/size);x<=Math.floor(subject.maxX/size);x++)for(const candidate of bins.get(x+','+z)??[]) {
-      if(candidate!==subject&&((terrainSubject&&candidate.terrainMask)||candidate.maxY>=subject.minY-1e-5)&&candidate.maxX>subject.minX+EPS&&candidate.minX<subject.maxX-EPS&&candidate.maxZ>subject.minZ+EPS&&candidate.minZ<subject.maxZ-EPS)candidates.add(candidate);
+      if(candidate!==subject&&(!terrainSubject||candidate.sheltersGround)&&((terrainSubject&&candidate.terrainMask)||candidate.maxY>=subject.minY-1e-5)&&candidate.maxX>subject.minX+EPS&&candidate.minX<subject.maxX-EPS&&candidate.maxZ>subject.minZ+EPS&&candidate.minZ<subject.maxZ-EPS)candidates.add(candidate);
     }
     let pieces:Point[][]=[[subject.a,subject.b,subject.c]];
     // A broad roof should erase covered floor pieces before fine trim can
@@ -250,14 +279,15 @@ export function buildSnowSurfaceMeshes(sources: readonly SnowSurfaceSource[],ter
       if(pieces.length>SNOW_SURFACE_BUDGET.clippingPieces)throw new Error(`Authored snow occlusion exceeds the fixed clipping budget (${subject.sourceId}: ${pieces.length}; y=${subject.minY.toFixed(3)}..${subject.maxY.toFixed(3)}; cover=${cover.sourceId})`);
       if(!pieces.length)break;
     }
-    const output=subject.index<triangles.length?faces:terrainFaces;
+    const output=terrainSubject?terrainFaces:refinedIds.has(subject.sourceId)?detailFaces:faces;
     for(const piece of pieces)for(let i=1;i+1<piece.length;i++)if(Math.abs(area(piece[0],piece[i],piece[i+1]))>1e-7){
       output.push([piece[0],piece[i],piece[i+1]]);
-      if(output===faces)counts.get(subject.sourceId)!.topTriangles++;
+      if(output!==terrainFaces)counts.get(subject.sourceId)!.topTriangles++;
     }
-    if(faces.length>SNOW_SURFACE_BUDGET.surfaceTriangles)throw new Error('Authored snow surface exceeds the fixed output budget');
+    if(faces.length+detailFaces.length>SNOW_SURFACE_BUDGET.surfaceTriangles)throw new Error('Authored snow surface exceeds the fixed output budget');
     if(terrainFaces.length>SNOW_SURFACE_BUDGET.terrainTriangles)throw new Error('Clipped snow terrain exceeds the fixed output budget');
   }
   const geometry=geometryFromFaces(faces,true);
-  return {geometry,...(terrainTriangles.length?{terrainGeometry:geometryFromFaces(terrainFaces,false)}:{}),shelteredAt:shelterQuery(bins,size),sourceTriangles:triangles.length,topTriangles:faces.length,triangles:(geometry.index?.count??0)/3,sources:[...counts.values()]};
+  const detailGeometry=detailFaces.length?geometryFromFaces(detailFaces,true):undefined;
+  return {geometry,...(detailGeometry?{detailGeometry}:{}),...(terrainTriangles.length?{terrainGeometry:geometryFromFaces(terrainFaces,false)}:{}),shelteredAt:shelterQuery(bins,size),sourceTriangles:triangles.length,topTriangles:faces.length+detailFaces.length,triangles:((geometry.index?.count??0)+(detailGeometry?.index?.count??0))/3,sources:[...counts.values()]};
 }

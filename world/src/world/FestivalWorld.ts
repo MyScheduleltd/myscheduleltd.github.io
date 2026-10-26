@@ -10740,6 +10740,9 @@ export class FestivalWorld {
     statue.position.set(statuePosition.x, 0, statuePosition.z);
     statue.rotation.y = 0;
     this.scene.add(statue);
+    // Read the final visible sculpture and its original stepped base after
+    // fixed-model placement finishes, under the entry loading barrier.
+    this.registerSnowSurface('square-statue-and-plinth', statue, { visibleOnly: true, maximumFaceSpan: 1, sheltersGround: false });
     const prototype = new THREE.Group(); prototype.name = 'Victory portrait fallback'; statue.add(prototype);
     void this.venueSceneryAssets.attachVictoryStatue(prototype);
     if (this.environmentModels && this.environmentUpgradeEnabled()) {
