@@ -11,7 +11,7 @@ const period = (start, end, id = 'rain-1', type = 'rain') => ({ id, type, starts
 // This fixture calls the real delegated handlers. It models only DOM operations
 // those handlers use, so duplicate submission and errors can be exercised in Node.
 class Element {
-  listeners = new Map(); dataset = {}; textContent = ''; disabled = false;
+  listeners = new Map(); dataset = {}; textContent = ''; disabled = false; hidden = false;
   addEventListener(type, handler) { const handlers = this.listeners.get(type) ?? []; handlers.push(handler); this.listeners.set(type, handlers); }
   fire(type, target = this) { const event = { target, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } }; for (const handler of this.listeners.get(type) ?? []) handler(event); return event; }
 }
@@ -25,6 +25,7 @@ const makeRow = (start, end, id, type = 'rain') => {
 };
 function fixture(rows, save, zh = false) {
   const root = new Element(), form = new Element(), list = new Element(), add = new Element(), submit = new Element(), error = new Element();
+  error.hidden = true;
   list.children = rows;
   for (const row of rows) row.remove = () => { list.children = list.children.filter(child => child !== row); };
   list.querySelectorAll = () => list.children;
@@ -57,6 +58,7 @@ test('only current/future schedule is editable and a saved id cannot inject DOM 
   assert.ok(!content.includes('data-period-id="x" onfocus=')); assert.ok(!content.includes('<img'));
   assert.ok(content.includes('data-period-id="x&quot; onfocus=&quot;alert(1)&#39;&gt;&lt;img src=x onerror=alert(2)&gt;&amp;"'));
   assert.match(content, /UTC\+8/); assert.match(content, /value="snow" selected/);
+  assert.match(content, /data-weather-error role="alert" hidden>/, 'an untouched form has no empty error strip');
   assert.match(weatherStaffContent(undefined, true), /尚未啟用/);
   assert.ok(!weatherStaffContent(undefined, false).includes('<form'));
 });
@@ -65,14 +67,14 @@ test('invalid dates, backwards windows and overlaps stay local; adjacent windows
   const saved = [], row = makeRow('2026-02-30T12:00', '2026-03-01T12:00', 'a');
   const f = fixture([row], async periods => { saved.push(periods); });
   assert.equal(f.form.fire('submit').defaultPrevented, true); await tick();
-  assert.equal(saved.length, 0); assert.match(f.error.textContent, /Check each/);
+  assert.equal(saved.length, 0); assert.match(f.error.textContent, /Check each/); assert.equal(f.error.hidden, false);
   row.inputs['[name="weatherStart"]'].value = '2026-10-24T14:00'; row.inputs['[name="weatherEnd"]'].value = '2026-10-24T13:00';
   f.form.fire('submit'); await tick(); assert.equal(saved.length, 0);
   row.inputs['[name="weatherStart"]'].value = '2026-10-24T12:00'; row.inputs['[name="weatherEnd"]'].value = '2026-10-24T14:00';
   const second = makeRow('2026-10-24T13:59', '2026-10-24T15:00', 'b', 'snow'); f.list.children.push(second);
   f.form.fire('submit'); await tick(); assert.match(f.error.textContent, /cannot overlap/); assert.equal(saved.length, 0);
   second.inputs['[name="weatherStart"]'].value = '2026-10-24T14:00';
-  f.form.fire('submit'); await tick(); assert.equal(saved.length, 1); assert.equal(f.error.textContent, '');
+  f.form.fire('submit'); await tick(); assert.equal(saved.length, 1); assert.equal(f.error.textContent, ''); assert.equal(f.error.hidden, true);
   assert.deepEqual(saved[0], [period('2026-10-24T12:00', '2026-10-24T14:00', 'a'), period('2026-10-24T14:00', '2026-10-24T15:00', 'b', 'snow')]);
   assert.equal(f.submit.disabled, false);
 });
@@ -86,10 +88,10 @@ test('a pending save suppresses repeated submit and both asynchronous and synchr
   });
   f.form.fire('submit'); f.form.fire('submit'); await tick();
   assert.equal(calls, 1); assert.equal(f.submit.disabled, true);
-  rejectSave(new Error(errorText)); await tick(); assert.equal(f.error.textContent, errorText); assert.equal(f.submit.disabled, false);
+  rejectSave(new Error(errorText)); await tick(); assert.equal(f.error.textContent, errorText); assert.equal(f.submit.disabled, false); assert.equal(f.error.hidden, false);
   assert.equal(f.error.innerHTML, undefined, 'server error is placed in textContent, never interpreted as markup');
   f.form.fire('submit'); await tick(); assert.equal(calls, 2); assert.equal(f.error.textContent, 'sync failure'); assert.equal(f.submit.disabled, false);
-  f.form.fire('submit'); await tick(); assert.equal(calls, 3); assert.equal(f.error.textContent, ''); assert.equal(f.submit.disabled, false);
+  f.form.fire('submit'); await tick(); assert.equal(calls, 3); assert.equal(f.error.textContent, ''); assert.equal(f.submit.disabled, false); assert.equal(f.error.hidden, true);
 });
 
 test('staff rows are bounded to 24 and delegated remove supports a nested icon target', () => {

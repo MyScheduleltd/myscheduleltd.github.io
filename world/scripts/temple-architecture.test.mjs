@@ -92,8 +92,8 @@ test('the local dressing plan matches createTemple and does not duplicate the ea
   const source = readFileSync('src/world/FestivalWorld.ts', 'utf8');
   assert.match(source, /const TEMPLE = \{\s*minX: 76,\s*maxX: 106,\s*minZ: -14,\s*maxZ: 22,/);
   assert.match(source, /const wallHeight = 10\.5;/); assert.match(source, /const doorHeight = 7\.2;/);
-  assert.match(source, /tier\(t\.podium \+ wallHeight \+ 0\.5, 7, 7, 0\.9\)/);
-  assert.match(source, /tier\(t\.podium \+ wallHeight \+ 4\.1, 1\.5, 1\.5, 0\.8\)/);
+  assert.match(source, /tier\('temple-roof-lower',t\.podium \+ wallHeight \+ 0\.5, 7, 7, 0\.9\)/);
+  assert.match(source, /tier\('temple-roof-upper',t\.podium \+ wallHeight \+ 4\.1, 1\.5, 1\.5, 0\.8\)/);
   const scene = new THREE.Scene(), { report } = applyTempleArchitecture(scene);
   const legacyWestShoes = [-10, -3, 11, 18].map(z => new THREE.Box3(
     new THREE.Vector3(75.0, L.floorY + 9.48, z - .21), new THREE.Vector3(75.76, L.floorY + 9.96, z + .21),

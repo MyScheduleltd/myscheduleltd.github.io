@@ -19,9 +19,20 @@ export function weatherAt(schedule, now) {
     snowCoverage: snow.reduce((amount, entry) => Math.max(amount, snowAt(entry, now)), 0) };
 }
 
-/** A brush remains effective through the occurrence's snowfall and melt. */
+/** A cleared surface collects fresh snow over the same ten-minute buildup.
+ * Once precipitation ends, only the layer rebuilt before that time can melt.
+ * Reuse the caller's authoritative sample and cached record for support caps.
+ */
+export function seatSnowCoverageFromSample(sample, schedule, record, now) {
+  if (!record || record.occurrenceId !== sample.occurrenceId) return sample.snowCoverage;
+  const period = schedule.find(entry => entry.id === record.occurrenceId && entry.type === 'snow');
+  if (!period || !Number.isFinite(record.clearedAt)) return sample.snowCoverage;
+  const rebuilt = clamp01((Math.min(now, period.endsAt) - Math.max(record.clearedAt, period.startsAt)) / SNOW_BUILDUP_MS);
+  const melt = now < period.endsAt ? 1 : clamp01(1 - (now - period.endsAt) / SNOW_MELT_MS);
+  return Math.min(sample.snowCoverage, rebuilt * melt);
+}
+
 export function seatSnowCoverage(weather, seatId, now) {
-  const sample = weatherAt(weather.schedule, now);
-  return weather.clearedSeats.some(record => record.seatId === seatId && record.occurrenceId === sample.occurrenceId)
-    ? 0 : sample.snowCoverage;
+  return seatSnowCoverageFromSample(weatherAt(weather.schedule, now), weather.schedule,
+    weather.clearedSeats.find(record => record.seatId === seatId), now);
 }

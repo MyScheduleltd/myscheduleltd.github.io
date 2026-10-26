@@ -21,8 +21,8 @@ globalThis.fetch = async (url) => {
   return { ok: true, status: 200, body: null, headers: new Map(), arrayBuffer: async () => bytes };
 };
 class Param {
-  constructor(value) { this.value = value; this.target = value; }
-  setTargetAtTime(value) { this.target = value; }
+  constructor(value) { this.value = value; this.target = value; this.events=[]; }
+  setTargetAtTime(value,time,seconds) { this.target = value; this.events.push({value,time,seconds}); }
 }
 class AudioNode { connect(node) { this.output = node; return node; } disconnect() { this.output = undefined; } }
 class Gain extends AudioNode { gain = new Param(1); }
@@ -34,7 +34,7 @@ class Source extends AudioNode {
 }
 const decoded = (url) => {
   const name = url.split('/').pop();
-  const duration = /^weather-/.test(name) ? 17 : /snow-brush/.test(name) ? .52 : /punch/.test(name) ? .415 : /step-snow/.test(name) ? .48 : /night|ocean/.test(name) ? 46 : /day/.test(name) ? 61 : /skate/.test(name) ? 6.4 : .08;
+  const duration = /^weather-snow-wind/.test(name) ? 7 : /^weather-/.test(name) ? 17 : /snow-brush/.test(name) ? .52 : /punch/.test(name) ? .415 : /step-snow/.test(name) ? .48 : /night|ocean/.test(name) ? 46 : /day/.test(name) ? 61 : /skate/.test(name) ? 6.4 : .08;
   return { url, duration, numberOfChannels: /^weather-|step-snow|snow-brush|punch|-mono/.test(name) ? 1 : 2, length: Math.round(duration * 48_000) };
 };
 let decodeAudio = url => Promise.resolve(decoded(url));
@@ -133,7 +133,7 @@ test('the beds loop inside their padding, start silent, and follow the mix', asy
     // The fireworks' bursts load with the world, so a show never waits on a download.
     'fireworks-peony.mp3', 'fireworks-ring.mp3', 'fireworks-willow.mp3',
     'ui-click.wav', 'ui-hover.wav',
-    'weather-rain-mono.mp3', 'weather-snow-mono.mp3',
+    'weather-rain-mono.mp3', 'weather-snow-mono.mp3', 'weather-snow-wind-mono.mp3',
   ]);
   const { bySource } = graph(context);
   const day = bySource('ambience-day'), night = bySource('ambience-night'), ocean = bySource('ambience-ocean');
@@ -192,6 +192,8 @@ test('one failed sound cannot release admission while another fixed sound is sti
       ['fireworks-willow.mp3', 'fireworks-ring.mp3'],
       ['ui-click.wav', 'ui-hover.wav'],
       ['avatar-punch.wav', 'avatar-snow-brush.wav'],
+      ['weather-snow-wind-mono.mp3', 'avatar-drink.wav'],
+      ['ui-hover.wav', 'weather-snow-wind-mono.mp3'],
     ]) {
       fetched.length = 0;
       let finish, done = false;
@@ -206,9 +208,9 @@ test('one failed sound cannot release admission while another fixed sound is sti
       assert.equal(audio.worldSoundsReady(), false);
       assert.equal(audio.preloadWorldSounds(), first, 'another ask shares the entire unsettled batch');
       const files = fetched.map(url => url.split('/').pop());
-      assert.equal(files.length, 19);
-      assert.equal(new Set(files).size, 19, 'no duplicated interface, firework, weather, action or world downloads');
+      assert.equal(new Set(files).size, files.length, 'pending jobs never duplicate interface, firework, weather, action or world downloads');
       finish(); await first;
+      assert.equal(fetched.length,20);assert.equal(new Set(fetched).size,20,'all serial weather jobs drain before admission settles');
       assert.equal(done, true);
       assert.equal(audio.worldSoundsReady(), false, 'missing optional buffers are not reported ready');
       const beforeRetry = fetched.length;
@@ -436,27 +438,69 @@ test('weather is fully preloaded into the existing graph, crossfades with land b
   await audio.start(false);
   const context = contexts.at(-1), before = fetched.length;
   const { bySource } = graph(context);
-  const rain = bySource('weather-rain'), snow = bySource('weather-snow'), day = bySource('ambience-day');
+  const rain = bySource('weather-rain'), snow = bySource('weather-snow-mono'), wind=bySource('weather-snow-wind'), day = bySource('ambience-day');
   for (const bed of [rain, snow]) {
     assert.equal(bed.buffer.numberOfChannels, 1); assert.equal(bed.loopStart, .5); assert.equal(bed.loopEnd, 16.5);
     assert.equal(bed.output.gain.target, 0); assert.equal(bed.output.output, day.output.output, 'weather uses the same low-pass/walls chain');
   }
+  assert.equal(wind.buffer.numberOfChannels,1);assert.equal(wind.loopStart,.5);assert.equal(wind.loopEnd,6.5);
+  assert.equal(wind.output.gain.target,0);assert.equal(wind.output.output,day.output.output);
   audio.setAmbientMix({ night: 0, ocean: 0, outdoors: 1, rain: 1 });
   assert.equal(rain.output.gain.target, .85); assert.equal(snow.output.gain.target, 0);
   assert.ok(Math.abs(day.output.gain.target - .9 * .58) < 1e-9, 'rain gently covers the promenade');
   audio.setAmbientMix({ night: 0, ocean: 0, outdoors: .1, snow: 1, snowFootsteps: true });
   assert.equal(rain.output.gain.target, 0); assert.equal(snow.output.gain.target, .65);
+  assert.equal(wind.output.gain.target,.32);assert.equal(day.output.gain.target,0);
   assert.equal(snow.output.output.output.gain.target, .1); assert.ok(snow.output.output.frequency.target < 1000);
   const sharedAmbient = snow.output.output.output.output;
   audio.setAmbientVolume(.19); assert.equal(sharedAmbient.gain.target, .19);
   audio.setMuted(true); assert.equal(sharedAmbient.output.gain.target, 0, 'master mute reaches the weather');
   audio.setMuted(false); audio.setAmbientMix({ night: 1, ocean: 0, outdoors: 1, rain: 1, snow: 1 });
-  assert.equal(rain.output.gain.target, .425); assert.equal(snow.output.gain.target, .325, 'overlapping weather weights cannot double full beds');
+  assert.equal(rain.output.gain.target, .425); assert.ok(Math.abs(snow.output.gain.target-.65*Math.SQRT1_2)<1e-9,'overlapping weather weights cannot double full beds');
   audio.setAmbientMix(undefined);
-  assert.equal(rain.output.gain.target, 0); assert.equal(snow.output.gain.target, 0);
+  assert.equal(rain.output.gain.target, 0); assert.equal(snow.output.gain.target, 0);assert.equal(wind.output.gain.target,0);
   assert.equal(fetched.length, before, 'weather changes never request another asset');
   assert.equal(contexts.length, contextCount + 1, 'one gesture creates only the original shared playback context');
   assert.ok(audio.snapshot().weather.decodedBytes < 8 * 1048576);
+});
+
+test('snow replaces day, night and surf with a smooth two-bed winter transition and reverses without new sources or downloads',async()=>{
+ const audio=new AmbientAudio();await audio.preloadWorldSounds();await audio.start(false);
+ const context=contexts.at(-1),{bySource}=graph(context);
+ const day=bySource('ambience-day'),night=bySource('ambience-night'),ocean=bySource('ambience-ocean');
+ const snow=bySource('weather-snow-mono'),wind=bySource('weather-snow-wind');
+ const beforeFetch=fetched.length,beforeSources=context.started.length;
+ for(const phase of [0,.5,1]){
+  audio.setAmbientMix({night:phase,ocean:1,outdoors:1,snow:0});
+  const ordinary=[day,night,ocean].map(s=>s.output.gain.target);
+  audio.setAmbientMix({night:phase,ocean:1,outdoors:1,snow:.5});
+  for(let i=0;i<ordinary.length;i++)assert.ok(Math.abs([day,night,ocean][i].output.gain.target-ordinary[i]*Math.SQRT1_2)<1e-9);
+  assert.ok(Math.abs(snow.output.gain.target/.65-Math.SQRT1_2)<1e-9);
+  assert.ok(Math.abs(wind.output.gain.target/.32-Math.SQRT1_2)<1e-9);
+  audio.setAmbientMix({night:phase,ocean:1,outdoors:1,snow:1});
+  for(const source of[day,night,ocean])assert.equal(source.output.gain.target,0,'steady snow has no day/night or ocean bed');
+  assert.equal(snow.output.gain.target,.65);assert.equal(wind.output.gain.target,.32);
+  const counts=[day,night,ocean,snow,wind].map(s=>s.output.gain.events.length);
+  for(let frame=0;frame<600;frame++)audio.setAmbientMix({night:phase,ocean:1,outdoors:1,snow:1});
+  assert.deepEqual([day,night,ocean,snow,wind].map(s=>s.output.gain.events.length),counts,'steady frames do not restart gain automation');
+  for(const source of[day,night,ocean,snow,wind]){
+   const event=source.output.gain.events.at(-1);assert.equal(event.seconds,1.2,'all sides share the slow seamless glide');
+   assert.ok(Number.isFinite(event.value));
+  }
+  audio.setAmbientMix({night:phase,ocean:1,outdoors:1,snow:0});
+  for(let i=0;i<ordinary.length;i++)assert.ok(Math.abs([day,night,ocean][i].output.gain.target-ordinary[i])<1e-9);
+  assert.equal(snow.output.gain.target,0);assert.equal(wind.output.gain.target,0);
+ }
+ audio.setAmbientMix({night:1,ocean:1,outdoors:.1,snow:.9995});
+ for(const source of[day,night,ocean])assert.equal(source.output.gain.target,0,'the inaudible end of the visual weather ease reaches an exact zero target');
+ const master=wind.output.output.output.output.output;
+ audio.setMuted(true);assert.equal(master.gain.target,0);
+ context.state='suspended';audio.setAmbientMix(undefined);
+ for(const source of[day,night,ocean,snow,wind])assert.equal(source.output.gain.target,0);
+ await audio.start(false);audio.setAmbientMix({night:1,ocean:0,outdoors:1,snow:1});
+ assert.equal(wind.output.gain.target,.32);assert.equal(context.started.length,beforeSources);
+ assert.equal(fetched.length,beforeFetch);assert.equal(audio.worldSoundsReady(),true);
+ audio.dispose();assert.ok([day,night,ocean,snow,wind].every(source=>source.stopped));
 });
 
 test('snow plants replace only footsteps on snow and retain the character slider, pitch variation and suspension behavior', async () => {
@@ -470,9 +514,15 @@ test('snow plants replace only footsteps on snow and retain the character slider
   assert.ok(last[1].buffer.url.endsWith('avatar-step-snow-right.wav'));
   assert.ok(last[2].buffer.url.endsWith('avatar-drink.wav'));
   assert.equal(last[0].playbackRate.value, .97);
+  assert.equal(last[0].output.gain.value,.25,'snow crunch is reduced6dB before the unchanged character slider');
+  assert.equal(last[1].output.gain.value,.25);
   audio.setAvatarVolume(.24); assert.equal(last[0].output.output.gain.target, .24);
   audio.setAmbientMix({ night: 0, ocean: 0, outdoors: .1, snow: 1, snowFootsteps: false });
   audio.playAvatarSound('step-left'); assert.ok(context.started.at(-1).buffer.url.endsWith('avatar-step-left.wav'));
+  assert.equal(context.started.at(-1).output.gain.value,.5,'ordinary ground footsteps retain their level');
+  audio.setAmbientMix({night:0,ocean:0,outdoors:1,snow:1,snowFootsteps:true});audio.snowStepBuffers.delete('step-left');
+  audio.playAvatarSound('step-left');assert.ok(context.started.at(-1).buffer.url.endsWith('avatar-step-left.wav'));
+  assert.equal(context.started.at(-1).output.gain.value,.5,'missing optional snow audio does not turn the dry fallback down');
   context.state = 'suspended'; const played = context.started.length; audio.playAvatarSound('step-right'); assert.equal(context.started.length, played);
   assert.equal(fetched.length, count);
 });

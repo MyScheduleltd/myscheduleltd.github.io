@@ -154,6 +154,7 @@ export class DayNightCycle {
   private readonly sunHaloMaterial: THREE.SpriteMaterial;
   private readonly moonMaterial = new THREE.MeshBasicMaterial({ color: 0xe5edff, fog: false, transparent: true });
   private readonly moonHaloMaterial: THREE.SpriteMaterial;
+  private readonly shadowFocus = new THREE.Vector3();
   private shadowsEnabled = true;
   private weatherCloud=0;
   setWeatherCloud(value:number):void {this.weatherCloud=THREE.MathUtils.clamp(value,0,1);this.atmosphere.setCloudiness(this.weatherCloud);}
@@ -184,8 +185,10 @@ export class DayNightCycle {
     this.directionalLight.shadow.camera.right = 70;
     this.directionalLight.shadow.camera.top = 70;
     this.directionalLight.shadow.camera.bottom = -70;
-    this.directionalLight.shadow.camera.far = 140;
-    this.directionalLight.shadow.bias = -0.00035;
+    // Keep the existing texel density around the visitor. At a low sun angle
+    // the far side of that local volume extends behind the old 140-unit end.
+    this.directionalLight.shadow.camera.far = 240;
+    this.directionalLight.shadow.bias = -0.00035 * (140 - .5) / (240 - .5);
     this.directionalLight.shadow.normalBias = 0.045;
 
     this.moonLight.castShadow = true;
@@ -195,8 +198,8 @@ export class DayNightCycle {
     this.moonLight.shadow.camera.top = 65;
     this.moonLight.shadow.camera.bottom = -65;
     this.moonLight.shadow.camera.near = 1;
-    this.moonLight.shadow.camera.far = 150;
-    this.moonLight.shadow.bias = -0.00045;
+    this.moonLight.shadow.camera.far = 240;
+    this.moonLight.shadow.bias = -0.00045 * (150 - 1) / (240 - 1);
     this.moonLight.shadow.normalBias = 0.065;
     const sun = new THREE.Mesh(new THREE.IcosahedronGeometry(6.8, 2), this.sunMaterial);
     const haloCanvas = document.createElement('canvas');
@@ -289,6 +292,14 @@ export class DayNightCycle {
       this.directionalLight.castShadow = false;
       this.moonLight.castShadow = false;
     }
+  }
+
+  /** Shadow maps cover the part of the island the visitor can inspect, rather
+   * than an origin-centred square that cuts off both beach wings. Translating
+   * each light and its target equally preserves its illumination direction;
+   * the celestial artwork and map dimensions stay unchanged. */
+  setShadowFocus(point: THREE.Vector3): void {
+    if (Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z)) this.shadowFocus.copy(point);
   }
 
   /**
@@ -415,8 +426,8 @@ export class DayNightCycle {
     this.directionalLight.intensity = sunIntensity * sunAboveHorizon*(1-this.weatherCloud*.65);
     this.sunHaloMaterial.opacity*=1-this.weatherCloud;
     this.castsShadowWhileLit(this.directionalLight);
-    this.directionalLight.position.copy(sunPosition).multiplyScalar(0.48);
-    this.directionalLight.target.position.set(0, 0, 0);
+    this.directionalLight.position.copy(sunPosition).multiplyScalar(0.48).add(this.shadowFocus);
+    this.directionalLight.target.position.copy(this.shadowFocus);
 
     // The moon runs the same continuous orbit half a cycle behind the sun: it
     // rises as the sun sets, crosses the night sky, and sets as dawn arrives.
@@ -434,8 +445,8 @@ export class DayNightCycle {
     this.moonLight.intensity = moonIntensity * moonAboveHorizon*(1-this.weatherCloud*.6);
     this.moonHaloMaterial.opacity*=1-this.weatherCloud;
     this.castsShadowWhileLit(this.moonLight);
-    this.moonLight.position.copy(moonPosition).multiplyScalar(0.5);
-    this.moonLight.target.position.set(0, 0, 0);
+    this.moonLight.position.copy(moonPosition).multiplyScalar(0.5).add(this.shadowFocus);
+    this.moonLight.target.position.copy(this.shadowFocus);
 
     // Reflections follow the actual celestial positions and fade in as each
     // light moves over the sea. This avoids a uniform highlight that appears

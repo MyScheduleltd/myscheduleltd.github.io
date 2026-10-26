@@ -221,9 +221,13 @@ export class EnvironmentMaterials {
   private material(source: THREE.MeshStandardMaterial, surface: EnvironmentSurface, maps: TextureSet): THREE.MeshStandardMaterial {
     const defaults = SURFACES[surface.family];
     const tint = surface.tint === undefined || surface.tint === 'source' ? source.color : new THREE.Color(surface.tint);
+    // Ceiling structure can hang below the room's numerical roof cut. This
+    // explicit rendering role survives tile replacement, but no source cel,
+    // worn or arbitrary shader define is carried into the PBR tile material.
+    const overhead=(source as THREE.MeshStandardMaterial & {defines?:Record<string,unknown>}).defines?.CUTAWAY_OVERHEAD!==undefined;
     // Match the source's intentional indoor fill as well as its tint/render
     // side. No cel/worn onBeforeCompile hooks or per-mesh uniforms follow it.
-    const key = `${surface.family}:${tint.getHexString()}:${source.side}:${source.emissive.toArray().join(',')}:${source.emissiveIntensity}`;
+    const key = `${surface.family}:${tint.getHexString()}:${source.side}:${source.emissive.toArray().join(',')}:${source.emissiveIntensity}:${overhead?'overhead':''}`;
     let material = this.materials.get(key);
     if (!material) {
       material = new THREE.MeshStandardMaterial({
@@ -238,6 +242,7 @@ export class EnvironmentMaterials {
       material.name = `Environment ${surface.family} ${tint.getHexString()}`;
       material.userData.preserveAuthoredSurface = true;
       material.userData.environmentFamily = surface.family;
+      if(overhead)(material as THREE.MeshStandardMaterial & {defines:Record<string,string>}).defines={CUTAWAY_OVERHEAD:''};
       this.materials.set(key, material);
     }
     return material;

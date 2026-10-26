@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { AvatarRig } from './FestivalWorld';
-import type { WalkingFloor } from './CoastalPose';
+import type { WalkingFloor, CoastalSeatLegPose } from './CoastalPose';
 
 type Probe = { mesh: THREE.SkinnedMesh; vertex: number };
 type SeatBody = { model: THREE.Object3D; meshes: THREE.SkinnedMesh[] };
@@ -11,6 +11,10 @@ type SeatSupportOptions = {
   sync: () => void;
   soles: () => Array<Probe & { side: 'Left' | 'Right' }>;
 };
+type FittedSeat={worldBodyY:number;knees:number[]};
+// Only fixed optional beach postures opt in. Store scalar fits by shared
+// native geometry, never a body, skeleton, material or retired avatar object.
+const preparedBeachSeats=new Map<string,FittedSeat>();
 
 /** Contact is read from the rendered trousers/skin, never the hidden control rig. */
 export function createImportedSeatSupport(root: THREE.Group, rig: AvatarRig, options: SeatSupportOptions) {
@@ -18,6 +22,7 @@ export function createImportedSeatSupport(root: THREE.Group, rig: AvatarRig, opt
   const p = new THREE.Vector3(), local = new THREE.Vector3(), turn = new THREE.Quaternion();
   const selected = new WeakMap<THREE.Object3D, Map<boolean, Probe[]>>();
   let cached: { key: string; worldBodyY: number; knees: number[] } | undefined;
+  let hipPitch=-Math.PI/2,kneeMaximum=Math.PI/2,padClearance=.004;
   const point = ({ mesh, vertex }: Probe) => {
     p.fromBufferAttribute(mesh.geometry.getAttribute('position'), vertex);
     return mesh.localToWorld(mesh.applyBoneTransform(vertex, p));
@@ -29,7 +34,7 @@ export function createImportedSeatSupport(root: THREE.Group, rig: AvatarRig, opt
   ] as const;
   const pose = (angles: readonly number[]) => {
     parts.forEach(([hip, knee, ankle], i) => {
-      hip.rotation.set(-Math.PI / 2, 0, 0);
+      hip.rotation.set(hipPitch, 0, 0);
       knee?.rotation.set(angles[i], 0, 0);
       if (knee && ankle) ankle.quaternion.copy(turn.copy(hip.quaternion).multiply(knee.quaternion).invert());
     });
@@ -90,7 +95,7 @@ export function createImportedSeatSupport(root: THREE.Group, rig: AvatarRig, opt
       const gapAt = (angle: number) => { angles[i] = angle; pose(angles); refresh(); return footGap(side, floor); };
       // The shin hangs vertically on a tall stool; a reachable floor lifts it
       // forward at the knee, without tipping the supporting thigh downward.
-      let low = 0, high = Math.PI / 2;
+      let low = 0, high = kneeMaximum;
       if (gapAt(high) < 0) {
         for (let iteration = 0; iteration < 12; iteration++) {
           const middle = (low + high) / 2;
@@ -102,7 +107,8 @@ export function createImportedSeatSupport(root: THREE.Group, rig: AvatarRig, opt
     pose(angles);
     return angles;
   };
-  const support = (floor: WalkingFloor, pad?: THREE.Box3) => {
+  const support = (floor: WalkingFloor, pad?: THREE.Box3,posture?:CoastalSeatLegPose) => {
+    hipPitch=posture?.hipPitch??-Math.PI/2;kneeMaximum=posture?.kneeMaximum??Math.PI/2;padClearance=posture?.padClearance??.004;
     const anchor = root.getWorldPosition(new THREE.Vector3());
     const padTop = pad?.max.y ?? anchor.y + rig.leftLeg.position.y - .23;
     const bounds = pad ? [...pad.min.toArray(), ...pad.max.toArray()] : [padTop];
@@ -114,22 +120,30 @@ export function createImportedSeatSupport(root: THREE.Group, rig: AvatarRig, opt
     // The rendered seat and foot supports are fixed, so reuse their solved
     // world height while compensating that origin instead of solving again.
     const transform=root.matrixWorld.elements.map((v,i)=>i===13?0:v);
-    const key = [options.body().model.uuid, options.clothed(), ...transform, ...bounds, ...floorSamples]
+    const native=options.body();
+    const identity=posture?native.meshes.filter(mesh=>mesh.visible).map(mesh=>mesh.geometry.uuid).join('|'):native.model.uuid;
+    const key = [identity, options.clothed(),hipPitch,kneeMaximum,padClearance, ...transform, ...bounds, ...floorSamples]
       .map(v => typeof v === 'number' ? Math.round(v * 1e5) / 1e5 : v).join(',');
     if (cached?.key === key) { body.position.y = cached.worldBodyY-anchor.y; pose(cached.knees); return; }
     if (!options.available()) return;
-    body.position.y = 0; pose([Math.PI / 2, Math.PI / 2]); refresh();
-    let angles = [Math.PI / 2, Math.PI / 2];
+    const prepared=posture?preparedBeachSeats.get(key):undefined;
+    if(prepared){body.position.y=prepared.worldBodyY-anchor.y;pose(prepared.knees);cached={key,worldBodyY:prepared.worldBodyY,knees:[...prepared.knees]};refresh();return;}
+    body.position.y = 0; pose([kneeMaximum,kneeMaximum]); refresh();
+    let angles = [kneeMaximum,kneeMaximum];
     // Knee weights can softly affect the front of the trousers. Recheck the
     // visible support after the foot solve, rather than assuming a joint size.
     for (let iteration = 0; iteration < 3; iteration++) {
       refresh();
       const bottom = Math.min(...contacts(pad).map(at => at.y));
-      const correction = padTop + .004 - bottom;
+      const correction = padTop + padClearance - bottom;
       if (Number.isFinite(correction) && (pad || Math.abs(correction) < .5)) body.position.y += correction;
       angles = solveKnees(floor);
     }
     cached = { key, worldBodyY: body.position.y+anchor.y, knees: angles };
+    if(posture){
+      if(preparedBeachSeats.size>=256&&!preparedBeachSeats.has(key))preparedBeachSeats.delete(preparedBeachSeats.keys().next().value!);
+      preparedBeachSeats.set(key,{worldBodyY:cached.worldBodyY,knees:[...angles]});
+    }
     refresh();
   };
   const snapshot = (pad?: THREE.Box3) => { refresh(); return contacts(pad); };

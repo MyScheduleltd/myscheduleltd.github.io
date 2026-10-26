@@ -4,6 +4,7 @@ import walkCycle from '../data/walk-cycle.json';
 import type { AvatarRig } from './FestivalWorld';
 
 export type WalkingFloor = (x: number, z: number, referenceY: number) => number;
+export interface CoastalSeatLegPose { hipPitch:number; kneeMaximum:number; padClearance?:number; }
 const up=new THREE.Vector3(0,1,0);
 const chain=new THREE.Matrix4(), next=new THREE.Matrix4();
 const combined=new THREE.Quaternion(), target=new THREE.Quaternion();
@@ -78,26 +79,26 @@ export function skateCoastalPose(rig:AvatarRig,phase:number):void {
 }
 
 /** Solve each seated shin against its real floor; tall stools leave legs naturally hanging. */
-export function seatCoastalLegs(rig:AvatarRig,floor:WalkingFloor,pad?:THREE.Box3):void {
+export function seatCoastalLegs(rig:AvatarRig,floor:WalkingFloor,pad?:THREE.Box3,posture?:CoastalSeatLegPose):void {
   const body=rig.visualRoot,root=body?.parent;
   if(!body||!root)return;
   body.position.y=0;root.updateWorldMatrix(true,false);
   for(const [hip,knee,ankle] of legParts(rig)){
     if(!knee||!ankle)continue;
-    hip.rotation.set(-Math.PI/2,0,0);
+    hip.rotation.set(posture?.hipPitch??-Math.PI/2,0,0);
     const gap=(angle:number)=>{
       knee.rotation.set(angle,0,0);
       ankle.quaternion.copy(combined.copy(hip.quaternion).multiply(knee.quaternion).invert());
       point.set(0,-.20,.1).applyMatrix4(footMatrix(hip,knee,ankle)).applyMatrix4(root.matrixWorld);
       return point.y-floor(point.x,point.z,point.y);
     };
-    let low=0,high=1.5;
+    let low=0,high=posture?.kneeMaximum??1.5;
     if(gap(high)<0){
       for(let i=0;i<14;i++){const middle=(low+high)/2;if(gap(middle)>0)low=middle;else high=middle;}
     }else low=high;
     gap((low+high)/2);
   }
-  root.userData.supportImportedSeat?.(floor,pad);
+  root.userData.supportImportedSeat?.(floor,pad,posture);
 }
 
 export function coastalFootHeights(rig:AvatarRig):number[] {

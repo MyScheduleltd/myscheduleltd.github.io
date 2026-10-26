@@ -1453,7 +1453,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     body: () => mounted, clothed, available: () => !culled && !root.userData.cullThrottle,
     sync: () => root.userData.syncImportedAvatar(), soles: activeSoles,
   });
-  root.userData.supportImportedSeat = (floor: (x: number, z: number, y: number) => number, pad?: THREE.Box3) => {
+  root.userData.supportImportedSeat = (floor: (x: number, z: number, y: number) => number, pad?: THREE.Box3,posture?:import('./CoastalPose').CoastalSeatLegPose) => {
     // A just-finished dance/punch may still hold its native clip for 100ms.
     // Sitting owns the legs and pelvis immediately; arm gestures use the rig.
     move = null;
@@ -1463,7 +1463,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       const rest = groundedLegRest.get(bone);
       if (rest) bone.position.copy(rest);
     }
-    seatedSupport.support(floor, pad);
+    seatedSupport.support(floor, pad,posture);
   };
   root.userData.importedSeatContactPoints = seatedSupport.snapshot;
 

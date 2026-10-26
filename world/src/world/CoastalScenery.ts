@@ -6,6 +6,7 @@ import { coastalMaterial } from './CoastalAvatar';
 import { tagEnvironmentSurface, type EnvironmentFamily } from './EnvironmentMaterials';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TEMPLE_STAIR_FOOTPRINT, SHORE_GRADE, INLAND_HOUSES, terrainHeightAt, createGroundRibbon, groundRibbonEdges, type PlanPoint } from './CoastalTerrain';
+import type { SnowSurfaceSource } from './SnowSurfaceCoverage';
 
 type Solid = (x:number,z:number,w:number,d:number,base:number,top:number,label:string)=>void;
 type Clear = (x:number,z:number,radius:number)=>boolean;
@@ -14,7 +15,9 @@ const colours = {shell:0xc7baa0,red:0x863632,teal:0x52736a,concrete:0x928d7c,ink
 /** Shared authored materials and merged details keep silhouettes affordable on phones. */
 export class CoastalScenery {
   private batches=new Map<THREE.Material,THREE.BufferGeometry[]>();
+  private shadowBatches=new Map<THREE.Material,THREE.BufferGeometry[]>();
   private detailBounds:Array<{min:number[];max:number[];contact:number[];geometry:string}>=[];
+  private snowSurfaceSources:SnowSurfaceSource[]=[];
   readonly mats=Object.fromEntries(Object.entries(colours).map(([key,color])=>[
     key,key==='iron'||key==='ink'
       ? new THREE.MeshStandardMaterial({color,roughness:key==='iron'?.74:.86,metalness:.12})
@@ -33,16 +36,29 @@ export class CoastalScenery {
     this.mats.shell.map=pixelSurface('plaster');this.mats.brick.map=pixelSurface('brick');
     this.mats.teal.map=pixelSurface('ceramic');this.mats.concrete.map=pixelSurface('plaster');
   }
-  private put(geometry:THREE.BufferGeometry,at:[number,number,number],mat:THREE.Material,rotation?:THREE.Euler):void {
+  private put(geometry:THREE.BufferGeometry,at:[number,number,number],mat:THREE.Material,rotation?:THREE.Euler,castShadow=false):void {
     if(rotation) geometry.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(rotation));
     geometry.translate(...at);
     geometry.computeBoundingBox();const p=geometry.getAttribute('position');let lowest=0;
     for(let i=1;i<p.count;i++)if(p.getY(i)<p.getY(lowest))lowest=i;
     this.detailBounds.push({min:geometry.boundingBox!.min.toArray(),max:geometry.boundingBox!.max.toArray(),contact:[p.getX(lowest),p.getY(lowest),p.getZ(lowest)],geometry:geometry.type});
-    const list=this.batches.get(mat)??[];list.push(geometry);this.batches.set(mat,list);
+    const batches=castShadow?this.shadowBatches:this.batches;
+    const list=batches.get(mat)??[];list.push(geometry);batches.set(mat,list);
   }
   box(size:[number,number,number],at:[number,number,number],mat:THREE.Material,rotation?:THREE.Euler):void{
     this.put(new THREE.BoxGeometry(...size),at,mat,rotation);
+  }
+  /** Capture the same baked source geometry before town details are merged.
+   * These detached CPU references never draw or own another material/buffer.
+   * finish() disposes the source's unused GPU state, leaving its vertex arrays
+   * readable until the world extracts snow and releases this short registry. */
+  private snowBox(id:string,size:[number,number,number],at:[number,number,number],mat:THREE.Material,rotation?:THREE.Euler):void{
+    const geometry=new THREE.BoxGeometry(...size);this.put(geometry,at,mat,rotation);
+    const object=new THREE.Mesh(geometry,mat);object.name=id;
+    this.snowSurfaceSources.push({id,object});
+  }
+  takeSnowSurfaceSources():SnowSurfaceSource[]{
+    const sources=this.snowSurfaceSources;this.snowSurfaceSources=[];return sources;
   }
   private beam(a:THREE.Vector3,b:THREE.Vector3,width:number,mat:THREE.Material,collisionLabel?:string):void{
     const geometry=new THREE.CylinderGeometry(width,width,a.distanceTo(b),5);
@@ -60,7 +76,7 @@ export class CoastalScenery {
   }
   private canopy(x:number,z:number,w:number,d:number,y:number):void{
     const angle=-.16;
-    this.box([w,.18,d],[x,y,z],this.mats.teal,new THREE.Euler(angle,0,0));
+    this.snowBox('coastal-shop-canopy',[w,.18,d],[x,y,z],this.mats.teal,new THREE.Euler(angle,0,0));
     this.box([w,.55,.16],[x,y-.3,z+d*.49],this.mats.shell);
 
   }
@@ -68,10 +84,11 @@ export class CoastalScenery {
     const m=this.mats;
     this.box([21.8,2.5,1.2],[-35,7.4,-31.6],m.shell);
     // Mirrored Art Deco wings flank a centred crown and supported marquee.
+    let crownIndex=0;
     for(const [x,w,h] of [[-44.4,3.2,11.4],[-35,15.6,11.8],[-25.6,3.2,11.4]] as const){
       const base=x===-35?8:0;
       this.box([x===-35?w:w+.24,h-base,1.2],[x,base+(h-base)/2,-31.6],m.shell);
-      this.box([w+.3,.28,1.5],[x,h+.14,-31.6],m.red);
+      this.snowBox(`coastal-palace-crown-${++crownIndex}`,[w+.3,.28,1.5],[x,h+.14,-31.6],m.red);
     }
     for(const x of [-45,-25]){
       this.box([1.3,8.1,2.1],[x,4.05,-31.7],m.shell);
@@ -79,7 +96,7 @@ export class CoastalScenery {
       this.box([1.45,1.8,2.2],[x,.9,-31.7],m.teal);
     }
     this.box([21.5,.55,5.4],[-35,6,-28.7],m.red);
-    this.box([22,.22,5.7],[-35,6.39,-28.7],m.shell);
+    this.snowBox('coastal-palace-marquee',[22,.22,5.7],[-35,6.39,-28.7],m.shell);
     for(const x of [-44,-26]){
       this.beam(new THREE.Vector3(x,0,-26.2),new THREE.Vector3(x,5.75,-26.2),.12,m.iron);
       this.solid(x,-26.2,.25,.25,0,6,'palace-marquee-support');
@@ -142,10 +159,11 @@ export class CoastalScenery {
       }
     }
     // A few long-established neighbouring houses frame the arrival; each has its own roofline.
-    for(const [x,z,w,d,h,base] of INLAND_HOUSES){
+    for(const [index,[x,z,w,d,h,base]] of INLAND_HOUSES.entries()){
+      const snowId=`coastal-dorm-${index+1}`;
       this.box([w,h,d],[x,base+h/2,z],x<0?m.shell:m.brick);
       this.solid(x,z,w,d,base,base+h,'inland-house');
-      this.box([w+.8,.4,d+.8],[x,base+h+.2,z],m.teal);
+      this.snowBox(`${snowId}-roof`,[w+.8,.4,d+.8],[x,base+h+.2,z],m.teal);
       // Set masonry down to the lowest corner so the building is founded, not balanced on a point.
       const low=Math.min(...[-1,1].flatMap(a=>[-1,1].map(b=>terrainHeightAt(x+a*w/2,z+b*d/2))));
       this.box([w,base-low+.5,d],[x,(base+low)/2-.25,z],m.concrete);
@@ -157,14 +175,14 @@ export class CoastalScenery {
       this.box([2.8,3.7,.22],[x,base+1.85,z-d/2-.12],m.ink);
       this.box([2.25,3.35,.12],[x,base+1.725,z-d/2-.27],m.wood);
       this.box([.09,.4,.14],[x+.75,base+1.7,z-d/2-.37],m.shell);
-      this.box([3.1,.16,1.1],[x,base+.08,z-d/2-.45],m.concrete);
-      this.box([3.2,.15,1.15],[x,base+3.9,z-d/2-.46],m.teal);
+      this.snowBox(`${snowId}-doorstep`,[3.1,.16,1.1],[x,base+.08,z-d/2-.45],m.concrete);
+      this.snowBox(`${snowId}-doorhood`,[3.2,.15,1.15],[x,base+3.9,z-d/2-.46],m.teal);
       this.sign('員工宿舍','STAFF DORMITORY',[x,base+3.53,z-d/2-.35],1.2,.25,Math.PI);
       const front=z-d/2;
       // Deep balcony slab, metal balustrade and air conditioners with readable vents.
-      for(const dx of [-w*.3,w*.3]) {
+      for(const [balcony,dx] of [-w*.3,w*.3].entries()) {
         const bx=x+dx,deck=base+3.94,railTop=deck+1.15,edge=front-1.5;
-        this.box([3.4,.22,1.5],[bx,deck-.11,front-.75],m.concrete);
+        this.snowBox(`${snowId}-balcony-${balcony+1}`,[3.4,.22,1.5],[bx,deck-.11,front-.75],m.concrete);
         this.box([3.25,.10,.10],[bx,railTop,edge+.08],m.iron);
         this.box([3.25,.07,.07],[bx,deck+.16,edge+.08],m.iron);
         for(let n=0;n<7;n++)this.box([.055,.95,.055],[bx-1.5+n*.5,deck+.635,edge+.08],m.iron);
@@ -187,10 +205,10 @@ export class CoastalScenery {
       for(let j=1;j<=8;j++){const t=j/8;const next=new THREE.Vector3(THREE.MathUtils.lerp(a[0],b[0],t)+offset,THREE.MathUtils.lerp(terrainHeightAt(...a),terrainHeightAt(...b),t)+8.25-Math.sin(t*Math.PI)*.65,THREE.MathUtils.lerp(a[1],b[1],t));this.beam(prev,next,.018,m.ink);prev=next;}
     }
     // Gateway: low masonry pylons anchor the existing brand arch.
-    for(const x of [-14,14]){
+    for(const [index,x] of [-14,14].entries()){
       const base=terrainHeightAt(x,62);
       this.box([2.3,4.8,2.1],[x,base+2.4,62],m.shell);
-      this.box([2.5,.25,2.3],[x,base+5.12,62],m.red);
+      this.snowBox(`coastal-gate-pylon-${index+1}`,[2.5,.25,2.3],[x,base+5.12,62],m.red);
       this.solid(x,62,2.3,2.1,base,base+5,'gate-pylon');
     }
   }
@@ -202,11 +220,11 @@ export class CoastalScenery {
       if(!this.clear(x,z,3.8*s))continue;
       (this.scene.userData.treeCanopies??=[]).push({x,z,radius:3.8*s});
       const base=terrainHeightAt(x,z),m=this.mats;
-      this.put(new THREE.CylinderGeometry(.21*s,.43*s,5*s,6),[x,base+2.5*s,z],m.wood);
+      this.put(new THREE.CylinderGeometry(.21*s,.43*s,5*s,6),[x,base+2.5*s,z],m.wood,undefined,true);
       this.solid(x,z,.85*s,.85*s,base,base+6*s,'coastal-almond-tree');
       for(let level=0;level<3;level++){
         const geometry=new THREE.IcosahedronGeometry(1,0);geometry.scale((3-level*.5)*s,.8*s,(2.5-level*.35)*s);
-        geometry.rotateY(level*.6);this.put(geometry,[x+level*.3*s,base+(3.6+level*1.15)*s,z],this.leaves[level]);
+        geometry.rotateY(level*.6);this.put(geometry,[x+level*.3*s,base+(3.6+level*1.15)*s,z],this.leaves[level],undefined,true);
       }
     }
     for(const [x,z,scale] of [[-103,-42,4],[-93,-51,2.7],[-87,-59,2],[-73,-50,1.7],[93,-57,3],[107,-50,4],[78,-55,1.6],[116,36,3],[-109,53,3]] ){
@@ -214,7 +232,7 @@ export class CoastalScenery {
       g.scale(scale,scale*.62,scale*.8);g.rotateY(x*.1);g.rotateZ(.13);
       g.computeBoundingBox();const bounds=g.boundingBox!;
       this.solid(x+(bounds.min.x+bounds.max.x)/2,z+(bounds.min.z+bounds.max.z)/2,bounds.max.x-bounds.min.x,bounds.max.z-bounds.min.z,base+scale*.18+bounds.min.y,base+scale*.18+bounds.max.y,'embedded-coastal-rock');
-      this.put(g,[x,base+scale*.18,z],this.mats.concrete);
+      this.put(g,[x,base+scale*.18,z],this.mats.concrete,undefined,true);
     }
     for(const [x,z] of [[-60,-27],[-73,-28],[-81,-35],[-62,-46],[-95,-31],[58,-39],[82,-44],[91,-36],[68,-49],[113,35],[73,40],[-107,45]]){
       if(!this.clear(x,z,2))continue;
@@ -235,7 +253,7 @@ export class CoastalScenery {
       g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),to.clone().sub(from).normalize()));
       const center=from.clone().add(to).multiplyScalar(.5);g.computeBoundingBox();const bounds=g.boundingBox!;
       this.solid(center.x+(bounds.min.x+bounds.max.x)/2,center.z+(bounds.min.z+bounds.max.z)/2,bounds.max.x-bounds.min.x,bounds.max.z-bounds.min.z,center.y+bounds.min.y,center.y+bounds.max.y,'bent-palm-trunk');
-      this.put(g,from.clone().add(to).multiplyScalar(.5).toArray() as [number,number,number],this.mats.wood);from=to;
+      this.put(g,from.clone().add(to).multiplyScalar(.5).toArray() as [number,number,number],this.mats.wood,undefined,true);from=to;
     }
     for(let leaf=0;leaf<8;leaf++){
       const a=leaf*Math.PI/4+.21,length=3.1+(leaf%3)*.43,positions:number[]=[];
@@ -249,7 +267,7 @@ export class CoastalScenery {
       }
       const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.computeVertexNormals();
       // Every batch uses non-indexed geometry with position and normal only.
-      this.put(g,from.toArray() as [number,number,number],this.leaves[leaf%3]);
+      this.put(g,from.toArray() as [number,number,number],this.leaves[leaf%3],undefined,true);
     }
   }
   buildCirculation():void{
@@ -297,7 +315,9 @@ export class CoastalScenery {
       [this.mats.shell,'plaster'],[this.mats.brick,'brick'],[this.mats.teal,'ceramic'],
       [this.mats.concrete,'stone'],[this.mats.wood,'wood'],
     ]);
-    for(const [mat,geometries] of this.batches){
+    // Only large planting silhouettes cast. Keep that role separate when the
+    // same wood/stone/leaf materials also draw grass and town trim.
+    for(const [batches,castShadow] of [[this.batches,false],[this.shadowBatches,true]] as const)for(const [mat,geometries] of batches){
       const clean=geometries.map(g=>{
         const next=g.index?g.toNonIndexed():g;
         for(const key of Object.keys(next.attributes)) if(key!=='position'&&key!=='normal')next.deleteAttribute(key);
@@ -306,11 +326,12 @@ export class CoastalScenery {
       });
       const combined=mergeGeometries(clean,false);clean.forEach(g=>g.dispose());
       if(!combined)throw new Error('Coastal geometry batch mismatch');
-      const mesh=new THREE.Mesh(combined,mat);mesh.receiveShadow=true;
+      const mesh=new THREE.Mesh(combined,mat);mesh.receiveShadow=true;mesh.castShadow=castShadow;
       mesh.name='Authored coastal town details';mesh.userData.coastalAuthored=true;mesh.userData.wornNoMasonry=true;
       const family=families.get(mat);if(family)tagEnvironmentSurface(mesh,family);
       this.scene.add(mesh);
     }
     this.batches.clear();
+    this.shadowBatches.clear();
   }
 }

@@ -49,8 +49,12 @@ test('brushing is shared, idempotent and limited to registered outdoor seats for
   assert.throws(()=>f.weather.clearSeat('SHORE-999-999',event.id),error=>error.status===404);
   assert.throws(()=>f.weather.clearSeat('SHORE-1-1','different-occurrence'),error=>error.status===409);
   const first=f.weather.clearSeat('SHORE-1-1',event.id);assert.equal(first.cleared,true);
-  f.now(START+6*60_000);
   assert.deepEqual(f.weather.clearSeat('SHORE-1-1',event.id),{cleared:false,record:first.record});
+  f.now(START+6*60_000);
+  assert.equal(seatSnowCoverage(f.weather.snapshot(),'SHORE-1-1',START+6*60_000),.1);
+  const again=f.weather.clearSeat('SHORE-1-1',event.id);assert.equal(again.cleared,true);
+  assert.equal(again.record.clearedAt,START+6*60_000);
+  assert.deepEqual(f.weather.clearSeat('SHORE-1-1',event.id),{cleared:false,record:again.record});
   for(const seatId of OUTDOOR_SNOW_SEATS)f.weather.clearSeat(seatId,event.id);
   assert.equal(f.weather.snapshot().clearedSeats.length,46);
   for(let index=1;index<=6;index++)assert.ok(OUTDOOR_SNOW_SEATS.has(`DRIVE-${index}-PASSENGER`));
@@ -106,4 +110,28 @@ test('malformed restore does not throw or admit arbitrary unbounded seat identif
   const saved={...f.weather.snapshot(),clearedSeats:Array.from({length:10000},(_,i)=>({seatId:`unknown-${i}`,occurrenceId:event.id,clearedAt:START+1}))};
   assert.equal(f.weather.restore(saved),true);assert.equal(f.weather.snapshot().clearedSeats.length,0);
   const publicState=f.weather.snapshot();publicState.schedule[0].type='rain';assert.equal(f.weather.snapshot().schedule[0].type,'snow','returned state does not mutate the server');
+});
+
+test('a wiped seat rebuilds from its shared timestamp, can be wiped again, and restores without resetting',()=>{
+ const f=fixture(),event=f.weather.replace([snow(START,START+40*60_000)]).schedule[0],seat='DRIVE-1-PASSENGER';
+ f.now(START+10*60_000);f.weather.clearSeat(seat,event.id);const saved=f.weather.snapshot();
+ assert.equal(seatSnowCoverage(saved,seat,START+10*60_000),0);
+ assert.equal(seatSnowCoverage(saved,seat,START+15*60_000),.5);
+ assert.equal(seatSnowCoverage(saved,seat,START+20*60_000),1);
+ const other=fixture();other.now(START+15*60_000);assert.equal(other.weather.restore(saved),true);
+ assert.equal(seatSnowCoverage(other.weather.snapshot(),seat,START+15*60_000),.5);
+ const fresh=other.weather.clearSeat(seat,event.id);assert.equal(fresh.cleared,true);
+ assert.equal(seatSnowCoverage(other.weather.snapshot(),seat,START+15*60_000),0);
+ assert.equal(seatSnowCoverage(other.weather.snapshot(),seat,START+20*60_000),.5);
+ assert.equal(other.weather.snapshot().clearedSeats.length,1,'repeated wiping replaces the bounded per-seat timestamp');
+});
+
+test('regrowth stops with snowfall and only its rebuilt depth melts; wiping during melt leaves no fresh flakes',()=>{
+ const f=fixture(),event=f.weather.replace([snow()]).schedule[0],seat='SHORE-1-1';
+ f.now(event.endsAt-2*60_000);f.weather.clearSeat(seat,event.id);const state=f.weather.snapshot();
+ assert.equal(seatSnowCoverage(state,seat,event.endsAt),.2);
+ assert.equal(seatSnowCoverage(state,seat,event.endsAt+SNOW_MELT_MS/2),.1);
+ assert.equal(seatSnowCoverage(state,seat,event.endsAt+SNOW_MELT_MS),0);
+ f.now(event.endsAt+60_000);assert.equal(f.weather.clearSeat(seat,event.id).cleared,true);
+ assert.equal(seatSnowCoverage(f.weather.snapshot(),seat,event.endsAt+5*60_000),0);
 });

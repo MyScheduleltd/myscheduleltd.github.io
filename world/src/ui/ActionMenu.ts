@@ -28,7 +28,7 @@ export class ActionMenu {
         ${ACTION_MOVES.map((move, i) => `<button type="button" class="dance-wheel__move action-menu__move action-menu__move--${move.icon}" style="--angle:${i * 90}deg" data-action="${i}" aria-label="${zh ? move.zh : move.en}" ${move.id === 'sit-ground' && !this.options.canGroundSit ? 'disabled aria-describedby="action-water-note"' : ''} aria-pressed="false">
           <span class="action-menu__move-content"><svg viewBox="0 0 64 56" aria-hidden="true">${move.icon === 'dance'
             ? '<circle cx="24" cy="37" r="4"/><path d="M30 30L39 22L46 10L57 7M39 22L28 16L22 5M30 30L38 37L36 48L43 48M30 30L19 25L10 30M5 50H59"/>'
-            : '<circle cx="29" cy="12" r="5"/><path d="M29 21L25 35L37 35L45 45L57 45M25 35L16 43L6 43M28 24L39 29L45 23M5 50H59"/>'}</svg>
+            : '<circle cx="20" cy="12" r="5"/><path d="M21 21L17 40L24 44M24 43L38 29L48 47H56M21 44L31 28L40 47H48M21 24L27 34L36 31M5 50H59"/>'}</svg>
           <span class="action-menu__label">${zh ? move.zh : move.id === 'sit-ground' ? 'SIT ON<br>THE GROUND' : move.en}</span></span>
         </button>`).join('')}
       </div>
@@ -69,7 +69,11 @@ export class ActionMenu {
     event.preventDefault();
     if (event.repeat) return;
     if (key === 'b' || key === 'escape') this.dismiss();
-    else if (key === 'enter' || key === ' ') (document.activeElement as HTMLElement)?.click();
+    else if (key === 'enter' || key === ' ') {
+      const focused = document.activeElement as HTMLElement | null;
+      if (focused?.hasAttribute('data-action')) this.navigate('confirm');
+      else focused?.click();
+    }
     else if (key.startsWith('arrow')) this.navigate(key === 'arrowleft' || key === 'arrowup' ? 'up' : 'down');
     else if (key === 'tab') {
       const buttons = [...this.overlay.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];

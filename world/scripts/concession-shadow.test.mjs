@@ -16,7 +16,7 @@ function fixture(mode) {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(), material);
       mesh.scale.set(...size); mesh.position.set(...at); mesh.castShadow = false; mesh.receiveShadow = mode === 'normal'; parent.add(mesh); return mesh;
     },
-    mountNeonFrame() {}, addCollider() {}, groundHeightAt: () => .28,
+    mountNeonFrame() {}, addCollider() {}, registerSnowSurface(id,object){ return object; }, groundHeightAt: () => .28,
   };
   create.call(owner); scene.updateMatrixWorld(true); return scene;
 }

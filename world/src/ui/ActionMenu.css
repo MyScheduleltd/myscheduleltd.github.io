@@ -7,8 +7,10 @@
 .action-menu .dance-wheel__centre strong { font-size:clamp(12px,calc(var(--action-wheel-size) * .053),18px); }
 .action-menu__unused { position:absolute; inset:0; border-radius:50%; pointer-events:none; transform:rotate(var(--angle)); clip-path:polygon(14.65% 14.65%,50% -21%,85.35% 14.65%,61.3% 38.7%,59% 36.5%,56% 35%,50% 34%,44% 35%,41% 36.5%,38.7% 38.7%); }
 .action-menu .action-menu__move { background:transparent; }
+/* Hover/controller selection owns the fill. A former keyboard focus must not
+   leave Breaking lit after the pointer has moved onto the sit sector. */
+.action-menu .action-menu__move:focus-visible { background:transparent; outline:none; box-shadow:none; }
 .action-menu .action-menu__move.is-selected { background:var(--red); }
-.action-menu .action-menu__move:focus-visible { background:#c32731; outline:none; }
 .action-menu .action-menu__move:disabled { opacity:.4; cursor:default; background:transparent; }
 /* Rotate each hit sector, then turn its icon and label back upright together. */
 .action-menu .action-menu__move .action-menu__move-content { position:absolute; inset:auto; left:32%; top:5%; width:36%; height:28%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; transform:rotate(calc(-1 * var(--angle))); transform-origin:center; white-space:normal; }

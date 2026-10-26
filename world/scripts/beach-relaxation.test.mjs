@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {readFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 globalThis.self=globalThis;
 globalThis.createImageBitmap=async blob=>{const bytes=await blob.arrayBuffer(),v=new DataView(bytes);return {width:v.getUint32(16),height:v.getUint32(20),close(){}};};
 globalThis.document={createElement:()=>({width:64,height:64,getContext:()=>({fillRect(){}})})};
 const output=await build({stdin:{contents:"export {FestivalWorld} from './src/world/FestivalWorld';export * from './src/world/BeachRelaxation';export * from './src/world/CoastalRelaxationPose';export * from './src/world/CoastalTerrain';export * from './src/world/CoastalAvatar';export * from './src/world/ImportedAvatar';export {setPlanetCentre,planetBendPoint} from './src/world/PlanetCurve';export {CoastalScenery} from './src/world/CoastalScenery';export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'esm',write:false,loader:{'.png':'dataurl'}});
-const {THREE,FestivalWorld,createBeachRelaxation,BEACH_RELAXATION_LAYOUT,setIslandTerrain,terrainHeightAt,SEA_Y,isSwimmingDepth,CoastalScenery,createCoastalAvatar,setCoastalSwimwear,loadImportedAvatar,attachImportedAvatar,syncImportedAvatars,poseRelaxedCoastal,prepareCoastalReclines,clearRelaxedCoastal,relaxedCoastalContactSnapshot,setPlanetCentre,planetBendPoint}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
+const {THREE,FestivalWorld,createBeachRelaxation,BEACH_RELAXATION_LAYOUT,setIslandTerrain,terrainHeightAt,SEA_Y,isSwimmingDepth,CoastalScenery,createCoastalAvatar,setCoastalSwimwear,loadImportedAvatar,attachImportedAvatar,syncImportedAvatars,poseRelaxedCoastal,prepareCoastalChairs,prepareCoastalReclines,clearRelaxedCoastal,relaxedCoastalContactSnapshot,setPlanetCentre,planetBendPoint}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
 setIslandTerrain(true);
 const solids=[];new CoastalScenery(new THREE.Scene(),(x,z,w,d,minY,maxY,label)=>solids.push({minX:x-w/2,maxX:x+w/2,minZ:z-d/2,maxZ:z+d/2,minY,maxY,label}),()=>true).buildPlanting();
 const overlaps=(a,b)=>a.minX<b.maxX&&a.maxX>b.minX&&a.minZ<b.maxZ&&a.maxZ>b.minZ&&a.minY<b.maxY&&a.maxY>b.minY;
@@ -47,9 +48,138 @@ for(const female of [false,true]){
   const {root,rig}=character(female);for(const spot of props.spots.filter(s=>s.kind==='mat')){root.position.copy(spot.position).add(new THREE.Vector3(0,.28,0));root.rotation.y=spot.facing;const before=root.position.clone();poseRelaxedCoastal(rig,'recline',spot.surfaceHeightAt,spot.support);const vertices=visibleVertices(root),gaps=vertices.map(p=>p.y-spot.surfaceHeightAt(p.x,p.z));assert.ok(Math.min(...gaps)>.004,spot.id+' clipping: '+Math.min(...gaps));assert.ok(Math.min(...gaps)<.03,spot.id+' floating');const inverse=spot.support.matrixWorld.clone().invert();const local=vertices.map(p=>p.clone().applyMatrix4(inverse));assert.ok(Math.max(...local.map(p=>Math.abs(p.x)))<1.25,spot.id+' body exceeds mat width');assert.ok(Math.max(...local.map(p=>Math.abs(p.z)))<2.3,spot.id+' body exceeds mat length: '+Math.max(...local.map(p=>Math.abs(p.z))));assert.ok(root.position.equals(before));}
  });
  test(`${female?'female':'male'} chairs use real visible cushion contact at every ocean heading`,()=>{
-  const {root,rig}=character(female);for(const spot of props.spots.filter(s=>s.kind==='chair')){root.position.copy(spot.position).add(new THREE.Vector3(0,.28,0));root.rotation.y=spot.facing;const before=root.position.clone();poseRelaxedCoastal(rig,'chair-sit',terrainHeightAt,spot.support);syncImportedAvatars(root);const pad=new THREE.Box3().setFromObject(spot.support),contacts=root.userData.importedSeatContactPoints(pad);assert.ok(contacts.length>20);const gap=Math.min(...contacts.map(p=>p.y))-pad.max.y;assert.ok(gap>-.005&&gap<.015,spot.id+' cushion gap '+gap);assert.ok(root.userData.importedSolePoints().every(p=>p.y-terrainHeightAt(p.x,p.z)>-.025),spot.id+' shoe below ground');assert.ok(root.position.equals(before));}
+  const {root,rig}=character(female);for(const spot of props.spots.filter(s=>s.kind==='chair')){root.position.copy(spot.position).add(new THREE.Vector3(0,.28,0));root.rotation.y=spot.facing;const before=root.position.clone();poseRelaxedCoastal(rig,'chair-sit',terrainHeightAt,spot.support);syncImportedAvatars(root);const pad=new THREE.Box3().setFromObject(spot.support),contacts=root.userData.importedSeatContactPoints(pad);assert.ok(contacts.length>20);const gap=Math.min(...contacts.map(p=>p.y))-pad.max.y;assert.ok(gap>.015&&gap<.03,spot.id+' cushion gap '+gap);assert.ok(root.userData.importedSolePoints().every(p=>p.y-terrainHeightAt(p.x,p.z)>-.025),spot.id+' shoe below ground');assert.ok(root.position.equals(before));}
  });
 }
+
+// Recover the actual merged chair boxes, not the generous collision envelope
+// or a second hand-written list of rail positions. Every authored chair piece
+// starts as a BoxGeometry, retaining24 consecutive vertices per piece. Test
+// its real face planes, including the leaning back, rather than a broad box.
+function actualChairSolids(spot){
+ props.root.updateMatrixWorld(true);const inverse=spot.support.matrixWorld.clone().invert(),solids=[];
+ props.root.traverseVisible(mesh=>{
+  if(!mesh.isMesh)return;const p=mesh.geometry.attributes.position;
+  for(let start=0;start<p.count;start+=24){
+   const vertices=[];for(let i=start;i<Math.min(start+24,p.count);i++)vertices.push(new THREE.Vector3().fromBufferAttribute(p,i).applyMatrix4(mesh.matrixWorld).applyMatrix4(inverse));
+   const bounds=new THREE.Box3().setFromPoints(vertices);
+   if(bounds.min.x>-1.2&&bounds.max.x<1.2&&bounds.min.z>-1.7&&bounds.max.z<1.7&&bounds.min.y>-1.6&&bounds.max.y<2){
+    const centre=vertices.reduce((v,p)=>v.add(p),new THREE.Vector3()).divideScalar(vertices.length),planes=[];
+    for(let face=0;face<6;face++){const plane=new THREE.Plane().setFromCoplanarPoints(vertices[face*4],vertices[face*4+1],vertices[face*4+2]);if(plane.distanceToPoint(centre)>0)plane.negate();plane.constant+=.005;planes.push(plane);}
+    solids.push({bounds:bounds.expandByScalar(-.005),planes});
+   }
+  }
+ });
+ assert.equal(solids.length,16,'original canvas, four stripes, back, arms, legs and uprights must all be measured');return{inverse,solids};
+}
+function triangleInSolid(triangle,solid){
+ let polygon=[triangle.a,triangle.b,triangle.c];
+ for(const plane of solid.planes){
+  const clipped=[];for(let i=0;i<polygon.length;i++){
+   const a=polygon[i],b=polygon[(i+1)%polygon.length],da=plane.distanceToPoint(a),db=plane.distanceToPoint(b),inside=da<=0;
+   if(inside)clipped.push(a);if(inside!==(db<=0))clipped.push(a.clone().lerp(b,da/(da-db)));
+  }
+  polygon=clipped;if(polygon.length<3)return false;
+ }
+ return polygon.some((p,i)=>i>1&&new THREE.Triangle(polygon[0],polygon[i-1],p).getArea()>1e-9);
+}
+
+// Owner selected "Small leg-angle change only" on2026-10-26, retaining the
+// original chair and its visible canvas intersection. These measured limits
+// preserve that reviewed pose without pretending the remaining clip is zero.
+// Depth is measured inside the real convex pieces with a.005 contact margin.
+const APPROVED_CHAIR_CONTACT_LIMITS={
+ 'male-dressed':{triangles:204,vertices:155,depth:.0724},
+ 'male-swim':{triangles:29,vertices:11,depth:.0141},
+ 'female-dressed':{triangles:501,vertices:468,depth:.0738},
+ 'female-swim':{triangles:240,vertices:97,depth:.0724},
+};
+function furnitureGeometryHash(){
+ const hash=createHash('sha256');
+ props.root.traverse(mesh=>{
+  if(!mesh.isMesh)return;for(const a of Object.values(mesh.geometry.attributes))hash.update(Buffer.from(a.array.buffer,a.array.byteOffset,a.array.byteLength));
+  const index=mesh.geometry.index;if(index)hash.update(Buffer.from(index.array.buffer,index.array.byteOffset,index.array.byteLength));
+ });return hash.digest('hex');
+}
+test('the accepted small-angle beach-chair pose keeps original furniture, contact and bounded residual canvas clipping across120variants',()=>{
+ const chairs=props.spots.filter(s=>s.kind==='chair'),supports=new Map(chairs.map(s=>[s.id,actualChairSolids(s)])),failures=[];
+ const furnitureBefore=furnitureGeometryHash(),anchors=chairs.map(spot=>spot.anchor.toArray());let checkedTriangles=0,cases=0;
+ for(const spot of chairs){
+  spot.support.geometry.computeBoundingBox();const size=spot.support.geometry.boundingBox.getSize(new THREE.Vector3());
+  assert.ok(Math.abs(size.x-1.68)<1e-6&&Math.abs(size.y-.16)<1e-6&&Math.abs(size.z-1.6)<1e-6,'original canvas size must remain unchanged');
+  assert.ok(spot.anchor.distanceTo(spot.support.localToWorld(new THREE.Vector3(0,.08,0)))<1e-8,'the original centre anchor cannot move forward');
+ }
+ for(const female of[false,true])for(const outfit of[1,2,3,4,'forced-swim'])for(const cap of[false,true]){
+  const {root,rig}=character(female,outfit==='forced-swim'?1:outfit,cap,outfit==='forced-swim');
+  for(const spot of chairs){
+   root.position.copy(spot.anchor);root.position.y=spot.position.y+.28;root.rotation.y=spot.facing;
+   const before=root.position.clone(),rotation=root.quaternion.clone(),scale=root.scale.clone();poseRelaxedCoastal(rig,'chair-sit',terrainHeightAt,spot.support);syncImportedAvatars(root);root.updateMatrixWorld(true);
+   const {inverse,solids}=supports.get(spot.id);let overlaps=0,frameOverlaps=0,intersectingVertices=0,maxDepth=0;
+   for(const mesh of root.userData.importedAvatar.meshes){
+    if(!mesh.visible)continue;mesh.skeleton.update();const g=mesh.geometry,p=g.attributes.position,indices=g.attributes.skinIndex,weights=g.attributes.skinWeight;
+    const hidden=mesh.userData.componentId==='body'?g.getAttribute(root.userData.importedAvatar.variant.endsWith('-swim')?'_dressed':'_covered'):undefined;
+    const vertices=[],leg=[];
+    for(let i=0;i<p.count;i++){
+     let limb=0;for(let k=0;k<4;k++)if(/Leg|Foot|Toe/.test(mesh.skeleton.bones[indices.getComponent(i,k)].name))limb+=weights.getComponent(i,k);
+     leg.push(limb>.5&&!(hidden&&hidden.getX(i)>.5));
+     const at=mesh.localToWorld(mesh.applyBoneTransform(i,new THREE.Vector3().fromBufferAttribute(p,i))).applyMatrix4(inverse);vertices.push(at);
+     if(leg[i])for(const solid of solids){
+      if(!solid.bounds.containsPoint(at))continue;const depth=Math.min(...solid.planes.map(plane=>-plane.distanceToPoint(at)));
+      if(depth>0){intersectingVertices++;maxDepth=Math.max(maxDepth,depth);}
+     }
+    }
+    const triangle=new THREE.Triangle(),bounds=new THREE.Box3(),count=g.index?.count??p.count;
+    for(let start=0;start<count;start+=3){
+     const ids=[0,1,2].map(k=>g.index?g.index.getX(start+k):start+k);if(!ids.every(i=>leg[i]))continue;
+     triangle.set(...ids.map(i=>vertices[i]));bounds.setFromPoints([triangle.a,triangle.b,triangle.c]);checkedTriangles++;
+     let hit=false,frameHit=false;
+     for(const [part,solid]of solids.entries())if(bounds.intersectsBox(solid.bounds)&&triangleInSolid(triangle,solid)){hit=true;if(part>0&&part<12)frameHit=true;}
+     if(hit)overlaps++;if(frameHit)frameOverlaps++;
+    }
+   }
+   const family=`${female?'female':'male'}-${outfit===4||outfit==='forced-swim'?'swim':'dressed'}`,limit=APPROVED_CHAIR_CONTACT_LIMITS[family];
+   if(overlaps>limit.triangles||intersectingVertices>limit.vertices||maxDepth>limit.depth+1e-6||frameOverlaps)failures.push({family,cap,chair:spot.id,triangles:overlaps,vertices:intersectingVertices,maxDepth,frameOverlaps,limit});
+   const pad=new THREE.Box3().setFromObject(spot.support),contact=root.userData.importedSeatContactPoints(pad);
+   assert.ok(contact.length>10,'the original seat still supports the rendered pelvis/thigh');assert.ok(Math.abs(Math.min(...contact.map(p=>p.y))-pad.max.y-.022)<.001);
+   assert.ok(root.position.equals(before)&&root.quaternion.equals(rotation)&&root.scale.equals(scale),'only the normal native support fit and leg rotations may change; no root shift or scale');
+   for(const[hip,knee,ankle]of[[rig.leftLeg,rig.leftKnee,rig.leftAnkle],[rig.rightLeg,rig.rightKnee,rig.rightAnkle]]){
+    assert.ok(Math.abs(hip.rotation.x-(-Math.PI/2-.3))<1e-9&&hip.rotation.y===0&&hip.rotation.z===0,'same owner-selected thigh angle');
+    assert.ok(Math.abs(knee.rotation.x-1.3)<1e-9&&knee.rotation.y===0&&knee.rotation.z===0,'same owner-selected knee angle');
+    assert.ok(ankle.quaternion.angleTo(hip.quaternion.clone().multiply(knee.quaternion).invert())<1e-7,'ankles retain the selected level-foot orientation');
+   }
+   cases++;
+  }
+  root.userData.disposeImportedAvatar();
+ }
+ assert.ok(checkedTriangles>100_000,'the check includes full rendered leg and shoe triangles, not sparse pose probes');
+ assert.equal(cases,120);assert.deepEqual(chairs.map(spot=>spot.anchor.toArray()),anchors);assert.equal(furnitureGeometryHash(),furnitureBefore,'posing cannot alter chair/mat geometry');
+ assert.deepEqual(failures,[],'the accepted residual canvas clip must not deepen or grow, and frame/rail clearance must remain intact');
+});
+
+test('entry prepares every original chair posture and fresh wardrobe/cap bodies use its fit with zero first-use vertex reads',()=>{
+ const targets=props.spots.filter(s=>s.kind==='chair').map(spot=>{
+  const support=spot.support.clone();support.position.y+=.137;support.updateMatrixWorld(true);
+  return{...spot,support,position:spot.position.clone().add(new THREE.Vector3(0,.137,0)),anchor:spot.anchor.clone().add(new THREE.Vector3(0,.137,0))};
+ }),floor=(x,z)=>terrainHeightAt(x,z)+.137;
+ for(const female of[false,true])for(const outfit of[1,2,3,4,'forced-swim'])for(const cap of[false,true]){
+  const warm=character(female,outfit==='forced-swim'?1:outfit,cap,outfit==='forced-swim');
+  warm.root.position.set(5,.28,8);warm.root.rotation.y=.8;warm.rig.head.rotation.y=.17;
+  warm.rig.visualRoot.position.set(.03,.08,.11);warm.root.visible=false;warm.root.userData.cullThrottle=true;warm.root.userData.setImportedCulled(true);
+  const objects=[...new Set([warm.root,...Object.values(warm.rig).filter(v=>v instanceof THREE.Object3D)])],saved=objects.map(o=>[o.position.toArray(),o.quaternion.toArray(),o.scale.toArray(),o.visible]);
+  assert.equal(prepareCoastalChairs(warm.rig,targets,floor),6);
+  assert.deepEqual(objects.map(o=>[o.position.toArray(),o.quaternion.toArray(),o.scale.toArray(),o.visible]),saved);
+  assert.equal(warm.root.userData.cullThrottle,true);assert.equal(warm.root.userData.importedCulled(),true);assert.equal(warm.root.userData.coastalRelaxation,undefined);
+  const other=character(female,outfit==='forced-swim'?1:outfit,cap,outfit==='forced-swim');let reads=0;
+  for(const mesh of other.root.userData.importedAvatar.meshes){const original=mesh.applyBoneTransform;mesh.applyBoneTransform=function(...args){reads++;return original.apply(this,args);};}
+  for(const target of targets){
+   other.root.position.copy(target.anchor);other.root.position.y=target.position.y+.28;other.root.rotation.y=target.facing;
+   poseRelaxedCoastal(other.rig,'chair-sit',floor,target.support);assert.equal(reads,0,`${female?'female':'male'} ${outfit} cap${cap}: first chair use must reuse the admission fit`);
+   const height=other.root.position.y+other.rig.visualRoot.position.y;other.root.position.y+=.11;
+   poseRelaxedCoastal(other.rig,'chair-sit',floor,target.support);assert.equal(reads,0);assert.ok(Math.abs(other.root.position.y+other.rig.visualRoot.position.y-height)<1e-9,'remote Y settling preserves the same physical support');
+  }
+  warm.root.userData.disposeImportedAvatar();other.root.userData.disposeImportedAvatar();
+ }
+});
 
 test('leaving a recline clears all visual offsets and throttled skins cannot cache a stale fit',()=>{
  const {root,rig}=character();const spot=props.spots.find(s=>s.kind==='mat');root.position.copy(spot.position).add(new THREE.Vector3(0,.28,0));root.rotation.y=spot.facing;poseRelaxedCoastal(rig,'recline',spot.surfaceHeightAt,spot.support);assert.equal(rig.visualRoot.position.z,1.4);const held=rig.visualRoot.position.clone();root.userData.cullThrottle=true;poseRelaxedCoastal(rig,'ground-sit',terrainHeightAt);assert.ok(rig.visualRoot.position.equals(held),'held skin is left intact');root.userData.cullThrottle=false;clearRelaxedCoastal(rig);assert.equal(rig.visualRoot.position.length(),0);assert.equal(rig.visualRoot.rotation.x,0);assert.equal(root.userData.coastalRelaxation,undefined);assert.equal(relaxedCoastalContactSnapshot(rig,terrainHeightAt),undefined);

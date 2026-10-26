@@ -923,6 +923,10 @@ export class App {
   private renderGate(): void {
     const text = this.gateText();
     const previous = this.root.querySelector<HTMLFormElement>('#gate-form');
+    // Public settings can arrive while someone is typing. A late copy/style
+    // refresh must carry their current name into the replacement form.
+    const typedId = previous?.querySelector<HTMLInputElement>('#festival-id');
+    if (typedId) this.currentId = typedId.value;
     const phase = this.entryRecovery.phase();
     const interruptedEntry = phase === 'loading' || phase === 'interrupted';
     const remember = previous?.querySelector<HTMLInputElement>('#remember-profile')?.checked
@@ -1856,7 +1860,7 @@ export class App {
             <button type="button" class="touch-ring__hit" data-touch-act="punch" aria-label="${zh ? '出拳' : 'Punch'}">${zh ? '拳' : 'HIT'}</button>
             <button type="button" class="touch-ring__key touch-ring__key--a" data-touch-act="jump" aria-label="${zh ? '跳躍' : 'Jump'}">${zh ? '跳' : 'JUMP'}</button>
             <button type="button" class="touch-ring__key touch-ring__key--b" data-touch-act="run" aria-label="${zh ? '奔跑' : 'Run'}">${zh ? '跑' : 'RUN'}</button>
-            <button type="button" class="touch-ring__key touch-ring__key--c" data-touch-act="dance" aria-label="${zh ? '選擇動作' : 'Choose an action'}">${zh ? '動' : 'ACTIONS'}</button>
+            <button type="button" class="touch-ring__key touch-ring__key--c" data-touch-act="dance" lang="${zh ? 'zh-Hant' : 'en'}" aria-label="${zh ? '選擇動作' : 'Choose an action'}">${zh ? '動' : 'ACTION'}</button>
             <button type="button" class="touch-ring__key touch-ring__key--d" data-touch-act="offer" aria-label="${zh ? '供養' : 'Offer'}">${zh ? '供' : 'OFFER'}</button>
             <button type="button" class="touch-ring__key touch-ring__key--e" data-touch-act="photo" aria-label="${zh ? '拍照' : 'Photo'}">${zh ? '影' : 'PHOTO'}</button>
           </div>
@@ -3242,10 +3246,13 @@ export class App {
   private handleWorldAction(action: WorldAction): void {
     if(action.type==='snowSeat'){
       if(this.snowSeatChoice)return;
+      // A delayed prompt must not offer brushing for a sheltered/indoor seat.
+      // The World validates the same physical seat again before taking it.
+      if(!this.world?.canBrushSnowSeat(action.seatId)){this.world?.takeSnowSeat(action.seatId,'sit');return;}
       this.snowSeatChoice=new SnowSeatChoice(this.root,this.language==='zh-TW',choice=>{
         this.snowSeatChoice?.close();this.snowSeatChoice=undefined;this.syncMenuCapture();
         if(choice)this.world?.takeSnowSeat(action.seatId,choice);
-      });this.syncMenuCapture();return;
+      },/^BEACH-MAT-[1-4]$/.test(action.seatId)?'mat':'seat');this.syncMenuCapture();return;
     }
     if(action.type==='relaxed'){
       this.closeFestivalPass();this.hideSeatMenu();this.hidePublicSeatHud();this.hideVenueScreen();

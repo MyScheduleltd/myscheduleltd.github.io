@@ -13,6 +13,7 @@ test('the lens rides in the clip test every world material already runs, and lea
  assert.equal((lensFragment.match(/NUM_CLIPPING_PLANES > 0 && !defined\( CUTAWAY_KEEP \)/g)??[]).length,1);
  assert.ok(lensFragment.includes('if ( cutawayLens.z > 0.0 )'),'a closed lens costs one uniform test');
  assert.ok(lensFragment.includes('gl_FragCoord.xy'),'the soft edge is a fixed screen-space dither');
+ assert.ok(lensFragment.includes('#ifdef CUTAWAY_OVERHEAD\n\t\t\t\tcutawayOverhead = true;'),'authored ceiling ties clip completely without moving the screen cut height');
  assert.deepEqual(cutawayLensChunks(lensPars,lensFragment),[lensPars,lensFragment],'idempotent');
  assert.equal(cutawayLensChunks('uniform vec4 somethingElse;',fragment),undefined,'leaves a changed three.js alone');
  assert.equal(installCutawayLens(),true);assert.equal(installCutawayLens(),true);

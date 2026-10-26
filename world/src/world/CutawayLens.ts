@@ -101,7 +101,11 @@ const TEST = /* glsl */ `
 		if ( cutawayReach < 1.0 ) {
 			vec3 cutawayWorld = cutawayUnbend( ( cutawayToWorld * vec4( - vClipPosition, 1.0 ) ).xyz );
 			bool cutawayNearSide = cutawayWorld.x * cutawayNear.x > cutawayNear.z || cutawayWorld.z * cutawayNear.y > cutawayNear.w;
-			if ( cutawayWorld.y > cutawayLevels.y || ( cutawayNearSide && cutawayWorld.y > cutawayLevels.x ) ) {
+			bool cutawayOverhead = cutawayWorld.y > cutawayLevels.y;
+			#ifdef CUTAWAY_OVERHEAD
+				cutawayOverhead = true;
+			#endif
+			if ( cutawayOverhead || ( cutawayNearSide && cutawayWorld.y > cutawayLevels.x ) ) {
 				// Fixed interleaved-gradient dither: kept more often towards the rim.
 				float cutawayKeep = smoothstep( 1.0 - cutawayLens.w, 1.0, cutawayReach );
 				if ( fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) ) >= cutawayKeep ) discard;
