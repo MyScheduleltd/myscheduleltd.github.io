@@ -1,3 +1,31 @@
+# Statue snow follow-up — ready for protected PR, 2026-10-26 (Asia/Taipei)
+
+Continue in `/Users/myscheduleai/Desktop/myschedule-pivot/festival-weather-actions-20261024/world`, branch `codex/statue-snow-20261026`, from merged/live PR63 `ba2cb44148776fecb01ee9e63e4da8ca38716be9`. The owner asks for snow on the square statue and its base. This follow-up is verified and packaged for the established protected review/merge flow; it is not live until merge/Pages verification. Main's independent latest-push approval remains required; no bypass/self-approval. No Render redeploy is needed for this frontend-only change.
+
+The 96th fixed source is `square-statue-and-plinth`: the original complete group, visible geometry only, after final-model downloads/placement and before weather/GPU preparation. Real desktop/mobile sculptures and the actual portrait fallback receive snow on exposed head/arms/footwear/plinth ledges. No art, source asset, transform, collider, footprint or entrance change. Existing .12 cap,10-minute buildup/15-minute melt remain.
+
+Dense sculpture occlusion is bounded by exact midpoint refinement of its broad plinth faces (`maximumFaceSpan:1`); default other sources remain unchanged. Finite-positive/depth32/input/output/spatial limits and256-piece clipping limit remain enforced. `sheltersGround:false` treats the statue as an outdoor prop, preserving ground snow and existing per-particle roof lookups. Its indexed detail snow has a separate small draw sharing the existing snow material, avoiding large-roof planet conversion into repeated vertices. Adds9155triangles/276610B; complete live weather4798498B (4.576MiB), below existing5MiB. No new texture/light/shader variant/audio/download; all preparation stays behind entry.
+
+Checks: **1082/1082** full Node suite, TS/local+production builds and authored diff checks pass. Nine new real-geometry/fallback/admission/refinement/ground/disposal tests. Focused browser48/48 plus16 inspected captures, Chrome desktop and iPhone16Pro-profile WebKit, Normal/Lite. Strict loading572/572: all20 native audio decodes before entry, including a deliberately held wind file; no late fixed files/audio decode/new contexts/GL compile-link/errors or measured>100ms pauses. Exact weather resources stay constant through buildup/melt/repeats. Physical-phone/thermal/crowd/live-media validation is not claimed.
+
+Candidate `docs/beta/assets/main-BiEnk6oX.js`, production API,89 verified hashes/111 exact build-package files/103 reachable/zero missing;208 packaged assets retained, no pruning/deletions. Sources/QA are mirrored to canonical `release-sfx-20261018/world` with backups and preserved distinct handoff histories. Evidence: `QA_STATUE_SNOW_20261026.md` and local `art/statue-snow-20261026/` (index.html, browser, loading, test/build/package/mirror reports). Keep local screenshots/tools/reports out of Git. Find the follow-up PR by its branch; independent review/merge and Pages verification remain. Disposable API8796/dev4194 remain local; preview4196 is stopped and dist now points at production API.
+
+PR63 was already merged and Render manually redeployed, as independently verified below. Its manual deploy step is complete and should not be requested again for this follow-up. The owner's original chair/selected leg-only pose and accepted slight canvas contact remain unchanged.
+
+---
+
+# LIVE release verified — PR63, 2026-10-26 (Asia/Taipei)
+
+**COMPLETE / LIVE.** The owner approved, merged and manually redeployed PR63. GitHub confirms merge `ba2cb44148776fecb01ee9e63e4da8ca38716be9` from reviewed head `4cc2acb91d718477da568e7be1bc626018e476e1`; Pages workflow `40312771069` succeeded. Public `/beta/` serves `main-BIhS5Klo.js`, and all **111 current release files match the approved package byte-for-byte**, including the new wind/SFX. No missing/mismatched files were found.
+
+Public Render `/health` returns HTTP200/ok and `/api/config` reports build **ba2cb44**, matching the merged release, with valid weather-v1 schema. The merge's server/index.mjs, server/weather.mjs and WeatherModel.mjs blobs match the reviewed head, confirming the deployed regrowth code identity. The owner has completed the manual Render step; do not leave it listed as pending. Actual production brushing/regrowth was deliberately not exercised: verification used public GETs only, with no attendee sessions, admin changes, weather scheduling or record mutations.
+
+All requested fixes in this batch are released. The chair remains exactly original with the owner's chosen small leg-angle pose and accepted slight canvas contact. Prior full-suite/build/1,292-check loading/weather evidence and physical-device/thermal/crowd/live-media limits remain as recorded below. Live asset availability confirms publication; it is not physical-iPhone gameplay certification.
+
+Evidence: local `art/weather-coverage-20261025/live-release-{summary,index,assets,backend}.json`. Canonical handoffs in `release-sfx-20261018/world` and this checkout have matching current headers with their distinct historical bodies preserved. This status update is local documentation only; no new code/package/deployment changes were made after merge. For new implementation work, fetch current main and use a fresh appropriate branch/worktree; the merged `codex/weather-coverage-20261025` release branch is finished. Older READY/REVIEW_REQUIRED/manual-deploy-pending notes below are historical and superseded.
+
+---
+
 # Current follow-up — island snow, seating and audio, 2026-10-26 (Asia/Taipei)
 
 **OWNER-AUTHORIZED RELEASE; READY FOR PROTECTED PR.** Worktree: `/Users/myscheduleai/Desktop/myschedule-pivot/festival-weather-actions-20261024/world`, branch `codex/weather-coverage-20261025`, base/main `29b1ea191d2483496e667b534c160ace50f4363a` (PR62 merged). This entry supersedes historical LOCAL ONLY/additional-approval instructions for this follow-up. Main requires one independent approval of the latest push, with admin enforcement. Do not bypass or self-approve. The owner alone handles Render deployment and settings.

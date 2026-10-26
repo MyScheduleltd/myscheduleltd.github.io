@@ -1,0 +1,20 @@
+# Square statue and plinth snow — 2026-10-26
+
+Based on merged PR63 / `ba2cb44148776fecb01ee9e63e4da8ca38716be9`, branch `codex/statue-snow-20261026`. The follow-up adds snow accumulation to the square sculpture and original stepped base. The existing .12 maximum depth, 10-minute buildup and 15-minute melt apply. Artwork, transforms, assets, collision/entrances and backend are unchanged.
+
+The complete statue group is registered as the 96th fixed snow source. Extraction waits for final model placement under sign-in and reads only visible geometry, so a retired fallback cannot leave phantom snow. The real desktop/mobile GLBs and portrait fallback are covered. Exposed top surfaces of the head, raised arms, footwear and both visible plinth ledges receive the same textured/dithered snow material as the world.
+
+The broad plinth faces are refined by exact midpoint subdivision, with a maximum one-unit XZ span. Other source geometry retains its default path. Finite-positive validation, subdivision-depth 32, existing triangle/spatial/output caps and the 256-piece clipping limit bound preparation. The sculpture is an outdoor prop, so it does not cut roof-like holes into surrounding ground or add its dense faces to per-particle overhead queries. Existing roof/deck shelter behavior remains the default.
+
+Detailed prop snow uses a separate indexed mesh sharing the existing snow material. This avoids expanding its vertices during large-roof planet subdivision. It adds **9,155 snow triangles / 276,610 bytes** and one small draw, with no new texture, light, shader variant, audio or asset download. Complete prepared weather is **4,798,498 bytes (4.576 MiB)**, below the unchanged 5 MiB cap. Exact geometry/material/buffer objects persist through weather changes and melt. Both meshes warm under entry and release through existing disposal.
+
+Verification:
+
+- **1,082/1,082** Node tests, TypeScript, local/production builds and authored whitespace checks pass.
+- Nine new CPU regressions load real model geometry (images omitted only in the CPU fixture), raycast snow contact, preserve source attributes/materials/transforms/colliders, exclude hidden fallbacks, delay final-model admission, validate refinement bounds, retain ground coverage and indexed geometry, and check shared material/warmup/reuse/disposal.
+- **48/48** focused built-world checks and 16 inspected front/opposite/overview/base captures across Chrome desktop and iPhone16Pro-profile WebKit, Normal/Lite. Full depth, isolated five-minute buildup and completed melt pass. Local clock samples isolate the current period from legitimate retained test-snow melt history.
+- **572/572** actual GL/native-audio/loading assertions across the same four profiles. All 20 fixed sounds finish native decoding under entry; deliberately withheld wind keeps the loading screen visible. No late fixed downloads, audio decode/new contexts, GL compile/link, page/shader errors or >100 ms measured pauses. Clear/rain/snow rolling CPU-work p95 (ms): Chrome Normal 5.4/6.1/6.9, Lite 5.1/5.6/6.4; WebKit Normal 6/6/6, Lite 5/5/6. These are Mac/emulation observations, not physical-device/thermal/crowd/live-video certification.
+
+Local evidence: `art/statue-snow-20261026/` contains the owner reference, review gallery, geometry/contact reports, full-test/build logs, browser captures, loading report and package/mirror manifests. Early whole-world checks correctly rejected a larger non-indexed candidate; only the bounded indexed result is packaged. Screenshots, local tools, reports and backups remain untracked.
+
+Production candidate: `docs/beta/assets/main-BiEnk6oX.js`, real festival API. All 89 integrity hashes and 111 build/package copies match, with 103 reachable assets and zero missing/local review markers. All 208 packaged asset files remain; cached generations are retained and pruning is report-only. M.O.T.H/retired PS2 and production records/settings are untouched. Independent latest-push review/merge and Pages verification remain before this follow-up is live. **No backend redeploy is required.**

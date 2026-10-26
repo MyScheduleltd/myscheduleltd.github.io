@@ -33,6 +33,7 @@ export class FestivalWeather {
   private readonly snow: THREE.Points;
   private readonly ground: THREE.Mesh;
   private fixedSurfaces?:THREE.Mesh;
+  private fixedDetail?:THREE.Mesh;
   private authoredShelter?: (x:number,z:number,y:number)=>boolean;
   private surfaceReport:SnowSurfaceReport={sourceTriangles:0,topTriangles:0,triangles:0,sources:[]};
   private readonly terrainReport:{samples:number;cells:number};
@@ -174,7 +175,7 @@ export class FestivalWeather {
     // roofs exist they must not leave permanent holes outside their eaves.
     const terrain=buildSnowTerrain({heightAt:(x,z)=>this.groundQuery.heightAt(x,z),dryAt:(x,z)=>this.groundQuery.dryAt(x,z),shelteredAt:()=>false});
     let built:ReturnType<typeof buildSnowSurfaceMeshes>;
-    try{built=buildSnowSurfaceMeshes(sources,terrain.geometry);}
+    try{built=buildSnowSurfaceMeshes(sources,terrain.geometry,true);}
     catch(error){terrain.geometry.dispose();throw error;}
     const previous=this.ground.geometry;
     this.ground.geometry=built.terrainGeometry??terrain.geometry;
@@ -184,7 +185,15 @@ export class FestivalWeather {
     this.surfaceReport={sourceTriangles:built.sourceTriangles,topTriangles:built.topTriangles,triangles:built.triangles,sources:built.sources};
     const mesh=new THREE.Mesh(built.geometry,this.snowMaterial(this.coverage));
     mesh.name='authored-outdoor-snow';mesh.receiveShadow=true;mesh.userData.dynamic=true;
-    this.root.add(mesh);this.fixedSurfaces=mesh;this.applyVisibility();
+    this.root.add(mesh);this.fixedSurfaces=mesh;
+    if(built.detailGeometry){
+      // Keep dense prop vertices indexed. Mixing them with large roofs would
+      // expand every prop triangle during the roofs' planet subdivision.
+      const detail=new THREE.Mesh(built.detailGeometry,mesh.material);
+      detail.name='authored-detail-snow';detail.receiveShadow=true;detail.userData.dynamic=true;
+      this.root.add(detail);this.fixedDetail=detail;
+    }
+    this.applyVisibility();
   }
 
   /** Undefined until the fixed architecture registry is prepared under gate. */
@@ -267,6 +276,7 @@ export class FestivalWeather {
     if(surfaces){
       this.ground.visible=this.warming||this.coverage.value>.001;
       if(this.fixedSurfaces)this.fixedSurfaces.visible=this.warming||this.coverage.value>.001;
+      if(this.fixedDetail)this.fixedDetail.visible=this.warming||this.coverage.value>.001;
       for(const cap of this.caps)cap.mesh.visible=this.warming||cap.uniform.value>.001;
     }
     this.rain.visible=this.warming||this.rainMix>.005;
@@ -347,6 +357,6 @@ export class FestivalWeather {
     });
     for(const geometry of geometries){geometry.dispose();for(const key of Object.keys(geometry.attributes))geometry.deleteAttribute(key);geometry.setIndex(null);}
     for(const material of materials)material.dispose();
-    this.root.clear();this.caps.length=0;this.maskCount.value=0;this.clearedBySeat.clear();this.fixedSurfaces=undefined;this.authoredShelter=undefined;
+    this.root.clear();this.caps.length=0;this.maskCount.value=0;this.clearedBySeat.clear();this.fixedSurfaces=undefined;this.fixedDetail=undefined;this.authoredShelter=undefined;
   }
 }
