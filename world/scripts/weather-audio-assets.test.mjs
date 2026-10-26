@@ -35,3 +35,19 @@ test('published weather excerpts retain their verified mono/48kHz recipe, compac
     }
   }
 });
+
+test('snow gusts retain their supplied master provenance, seam padding and combined eight-MiB weather/action budget',async()=>{
+ const wind=JSON.parse(await readFile('art/weather-coverage-20261025/wind-audio-build.json','utf8'));
+ const weather=JSON.parse(await readFile('art/weather-actions-20261024/weather-audio-build.json','utf8'));
+ const action=JSON.parse(await readFile('art/weather-actions-20261024/action-audio-build.json','utf8'));
+ assert.equal(wind.files.length,1);const file=wind.files[0],bytes=await readFile(`src/assets/audio/${file.file}`);
+ assert.equal(file.file,'weather-snow-wind-mono.mp3');assert.equal(bytes.length,file.bytes);
+ assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256);
+ assert.equal(file.source,'ES_Wind, General, Heavy, Gusts, Sand Storm 03 - Epidemic Sound.wav');
+ assert.equal(file.channels,1);assert.equal(file.sampleRate,48000);assert.equal(file.duration,7);
+ assert.equal(file.loopStart,.5);assert.equal(file.loopEnd,6.5);assert.equal(file.crossfadeSeconds,2);
+ assert.equal(file.actualDecodedSamples,336000);assert.equal(file.actualDecodedFloatBytes,1_344_000);
+ assert.ok(file.encodedSeamStep<.04);assert.ok(Math.abs(file.rmsDb+24)<.05);
+ assert.ok(wind.runtimeBytes<60_000);assert.equal(wind.decodedBytesAt48k,file.actualDecodedFloatBytes);
+ assert.ok(wind.decodedBytesAt48k+weather.decodedBytesAt48k+action.decodedBytesAt48k<8*1048576);
+});

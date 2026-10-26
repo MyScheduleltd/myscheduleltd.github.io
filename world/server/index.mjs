@@ -11,6 +11,7 @@ import { StateDelta } from './state-delta.mjs';
 import { createWishStore, createWishPersistence } from './wish-store.mjs';
 import { ArcadePreviewAccess, arcadeDeviceKey, ARCADE_PREVIEW_END } from './arcade-preview.mjs';
 import { FestivalWeather, OUTDOOR_SNOW_SEATS, weatherAt } from './weather.mjs';
+import { seatSnowCoverage } from '../src/weather/WeatherModel.mjs';
 import { createWeatherStore, createWeatherPersistence } from './weather-store.mjs';
 import {
   DONATION_PRESETS, MAX_DONATION, MIN_DONATION,
@@ -2803,7 +2804,7 @@ a{color:#e8b64a}</style>
           const sample = weatherAt(weather.snapshot().schedule, now);
           if (sample.snowCoverage > 0 && sample.occurrenceId) {
             visitor.weatherBrushTimes = (visitor.weatherBrushTimes ?? []).filter(at => at > now - 10_000);
-            const alreadyCleared = weather.snapshot().clearedSeats.some(record => record.seatId === seatId && record.occurrenceId === sample.occurrenceId);
+            const alreadyCleared = seatSnowCoverage(weather.snapshot(), seatId, now) <= .001;
             if (!alreadyCleared && visitor.weatherBrushTimes.length >= 6) return apiError(response, 429, 'Please wait before brushing another seat.');
             if (payload.occurrenceId !== undefined && payload.occurrenceId !== sample.occurrenceId) return apiError(response, 409, 'That snowfall has changed.');
             const cleared = weather.clearSeat(seatId, sample.occurrenceId);

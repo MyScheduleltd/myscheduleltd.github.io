@@ -36,11 +36,12 @@ test('snow cells reject water, roofs, cliffs and non-finite terrain instead of b
     shelteredAt: (x, z) => roof(x, z) };
   const f = fixture(groundQuery), p = f.ground.geometry.attributes.position;
   let valid = true, rejected = '';
-  for (let i = 0; i < p.count; i += 6) {
+  const index=f.ground.geometry.index;
+  for (let i = 0; i < (index?.count??p.count); i += 3) {
     const xs = [], zs = [], ys = [];
-    for (let j = 0; j < 6; j++) { xs.push(p.getX(i + j)); ys.push(p.getY(i + j)); zs.push(p.getZ(i + j)); }
-    for (let j = 0; j < 6; j++) {
-      if (!Number.isFinite(ys[j]) || !groundQuery.dryAt(xs[j], zs[j]) || roof(xs[j], zs[j]) || Math.abs(ys[j] - groundQuery.heightAt(xs[j], zs[j]) - .03) > 1e-6) { valid = false; rejected = 'invalid corner'; }
+    for (let j = 0; j < 3; j++) { const n=index?index.getX(i+j):i+j;xs.push(p.getX(n)); ys.push(p.getY(n)); zs.push(p.getZ(n)); }
+    for (let j = 0; j < 3; j++) {
+      if (!Number.isFinite(ys[j]) || !groundQuery.dryAt(xs[j], zs[j]) || roof(xs[j], zs[j]) || Math.abs(ys[j] - groundQuery.heightAt(xs[j], zs[j]) - .006) > 1e-6) { valid = false; rejected = 'invalid corner'; }
     }
     if (Math.max(...ys) - Math.min(...ys) > 1.20001) { valid = false; rejected = 'cliff bridge'; }
   }
@@ -49,18 +50,20 @@ test('snow cells reject water, roofs, cliffs and non-finite terrain instead of b
   f.weather.dispose();
 });
 
-test('cold construction samples shared corners once and retains the pre-optimization terrain, roof and water geometry exactly',()=>{
-  let queries=0;
-  const ground={heightAt:(x,z)=>{queries++;return x>=30&&x<=34?NaN:x>=18&&x<=20?3:.001*z;},
+test('cold adaptive construction samples each shared point once and is deterministic without duplicate GPU corners',()=>{
+  let queries=0;const seen=new Set();
+  const ground={heightAt:(x,z)=>{const key=x+','+z;assert.equal(seen.has(key),false,'shared adaptive points are queried once');seen.add(key);queries++;return x>=30&&x<=34?NaN:x>=18&&x<=20?3:.001*z;},
     dryAt:(x,z)=>x>=-20&&x<=40&&z>=-20&&z<=40&&!(x>=-4&&x<=2),
     shelteredAt:(x,z)=>x>=8&&x<=14&&z>=8&&z<=14};
   const f=fixture(ground),hash=createHash('sha256');
   for(const attribute of Object.values(f.ground.geometry.attributes))hash.update(Buffer.from(attribute.array.buffer,attribute.array.byteOffset,attribute.array.byteLength));
-  // Captured from the prior four-queries-per-cell constructor for this same
-  // mixed terrain fixture: positions, vertex colours and normals together.
-  assert.equal(hash.digest('hex'),'8753c07e1ca4d732494eac0b85090de13560a38abc8e3300377c86fa3d295634');
-  assert.equal(f.ground.geometry.attributes.position.count,3270);
-  assert.equal(queries,11264,'exact shared grid vertices replace the prior 44,196 terrain queries');
+  const measured=hash.digest('hex');seen.clear();
+  const again=fixture(ground),repeat=createHash('sha256');
+  for(const attribute of Object.values(again.ground.geometry.attributes))repeat.update(Buffer.from(attribute.array.buffer,attribute.array.byteOffset,attribute.array.byteLength));
+  assert.equal(repeat.digest('hex'),measured);
+  assert.ok(f.ground.geometry.index.count>f.ground.geometry.attributes.position.count,'indexed corners must not repeat every triangle');
+  assert.ok(queries/2<50_000,'midpoint/error refinement remains a bounded sign-in task');
+  assert.equal(queries/2,f.weather.snapshot().terrain.samples);again.weather.dispose();
   f.weather.dispose();
 });
 
@@ -69,7 +72,7 @@ test('caps and ground use the same explicit server clock, including brush and me
   const capA = f.weather.root.getObjectByName('seat-snow-bench-a');
   const capB = f.weather.root.getObjectByName('seat-snow-bench-b');
   const groundShader = shaderFor(f.ground.material), a = shaderFor(capA.material), b = shaderFor(capB.material);
-  const state = schedule('snow'); state.clearedSeats = [{ seatId: 'bench-a', occurrenceId: 'snow-1', clearedAt: now - 1000 }];
+  const state = schedule('snow'); state.clearedSeats = [{ seatId: 'bench-a', occurrenceId: 'snow-1', clearedAt: now }];
   f.weather.setShared(state); f.weather.update(.016, observer, now);
   assert.equal(groundShader.uniforms.snowCoverage.value, .5);
   assert.equal(a.uniforms.snowCoverage.value, 0);
@@ -79,10 +82,29 @@ test('caps and ground use the same explicit server clock, including brush and me
   assert.equal(f.weather.current().type, 'clear');
   assert.equal(groundShader.uniforms.snowCoverage.value, .5);
   assert.equal(b.uniforms.snowCoverage.value, .5);
-  assert.equal(a.uniforms.snowCoverage.value, 0);
+  assert.equal(a.uniforms.snowCoverage.value, .25,'only the half-layer rebuilt before snowfall ended melts during the following 7.5 minutes');
   f.weather.update(.016, observer, now + 1_200_000);
   assert.equal(groundShader.uniforms.snowCoverage.value, 0); assert.equal(capB.visible, false);
   f.weather.dispose();
+});
+
+test('a brushed support regrows over ten minutes, can be brushed again, and stops rebuilding when precipitation ends',()=>{
+  const f=fixture();f.weather.addSupports([support]);
+  const cap=f.weather.root.getObjectByName('seat-snow-bench-a'),uniform=shaderFor(cap.material).uniforms.snowCoverage;
+  const positions=cap.geometry.attributes.position.array,materialVersion=cap.material.version;
+  const record={seatId:'bench-a',occurrenceId:'snow-1',clearedAt:now};
+  const state=schedule('snow',now-600_000,now+1_200_000);state.clearedSeats=[record];f.weather.setShared(state);
+  assert.equal(f.weather.clearedBySeat.get('bench-a'),record,'the record lookup is cached; no per-seat resampling or record-array scan is required');
+  for(const [time,expected]of[[now,0],[now+300_000,.5],[now+600_000,1]]){
+    f.weather.update(.016,observer,time);assert.equal(uniform.value,expected);
+  }
+  const next={...state,updatedAt:now+1,clearedSeats:[{...record,clearedAt:now+900_000}]};f.weather.setShared(next);
+  for(const [time,expected]of[[now+900_000,0],[now+1_200_000,.5],[now+1_650_000,.25],[now+2_100_000,0]]){
+    f.weather.update(.016,observer,time);assert.equal(uniform.value,expected);
+  }
+  f.weather.setShared({...next,updatedAt:now+2,clearedSeats:[{...record,clearedAt:now+1_500_000}]});
+  f.weather.update(.016,observer,now+1_650_000);assert.equal(uniform.value,0,'brushing during melt does not start new accumulation');
+  assert.equal(cap.geometry.attributes.position.array,positions);assert.equal(cap.material.version,materialVersion);f.weather.dispose();
 });
 
 test('settled snow reaches a bounded 0.12-unit lift on ground and sloped supports without changing contact geometry',()=>{
@@ -168,6 +190,17 @@ test('weather changes retain bounded buffers and material variants; phone draws 
   f.weather.dispose();
 });
 
+test('audio weather targets change at the shared boundary independently of the visual ease and lingering snow melt',()=>{
+ const f=fixture();f.weather.setShared(schedule('snow'));f.weather.update(1/60,observer,now);
+ assert.deepEqual(f.weather.audioMix(),{rain:0,snow:1,snowFootsteps:true});
+ assert.ok(f.weather.snapshot().snow<.01,'visual snowfall still eases in independently');
+ f.weather.update(1/60,observer,now+300_001);
+ assert.equal(f.weather.current().type,'clear');assert.ok(f.weather.current().snowCoverage>.9,'settled snow remains while it melts');
+ assert.deepEqual(f.weather.audioMix(),{rain:0,snow:0,snowFootsteps:true},'land ambience returns as soon as active snow ends, using AmbientAudio own glide');
+ f.weather.setShared(schedule('rain'));f.weather.update(1/60,observer,now);
+ assert.deepEqual(f.weather.audioMix(),{rain:1,snow:0,snowFootsteps:false});f.weather.dispose();
+});
+
 test('precipitation falls above roofs but its below-roof particles are suppressed without new geometry', () => {
   const f = fixture({ ...flat, shelteredAt: (_x, _z, y) => y < 8 });
   f.weather.setShared(schedule('rain')); f.weather.update(.1, observer, now);
@@ -233,7 +266,7 @@ test('movement-only clock updates retain the surface cadence while a shared brus
   assert.ok(writes>=7&&writes<=8,'unchanged movement SSE must not rescan/rewrite every seat on each frame: '+writes);
   state.clearedSeats=[{seatId:'bench-a',occurrenceId:'snow-1',clearedAt:now+1920}];
   f.weather.setShared(state,now+1921);f.weather.update(1/60,observer,now+1921);
-  assert.equal(value,0);assert.equal(cap.visible,false);assert.equal(f.weather.seatCoverage('bench-a'),0);
+  assert.equal(value,1/600_000);assert.equal(cap.visible,false);assert.ok(f.weather.seatCoverage('bench-a')<.001);
   const prior=writes;
   state.updatedAt++;state.schedule=[{...state.schedule[0],id:'snow-2'}];
   f.weather.setShared(state,now+1922);f.weather.update(1/60,observer,now+1922);
@@ -313,7 +346,7 @@ test('brushing a mat clears only its cap while its fixed ground cutout survives 
   assert.equal(cap.uniforms.snowCoverage.value,.5);assert.equal(mesh.visible,true);
   state.clearedSeats=[{seatId:'mat-a',occurrenceId:'snow-1',clearedAt:now}];
   f.weather.setShared(state);f.weather.update(.1,observer,now+16);
-  assert.equal(cap.uniforms.snowCoverage.value,0);assert.equal(mesh.visible,false);
+  assert.equal(cap.uniforms.snowCoverage.value,16/600_000);assert.equal(mesh.visible,false);
   assert.equal(ground.uniforms.snowCoverage.value,.5000266666666666);
   assert.equal(ground.uniforms.snowMaskCount.value,1,'the terrain must not reveal a raised snow blanket under brushed cloth');
   f.weather.update(.1,observer,now+1_200_000);
@@ -378,7 +411,7 @@ test('island and worst-case geometry stay under the same phone allocation cap, m
   finally { setIslandTerrain(false); }
   const worst = measure('full rectangular dry flat terrain', flat);
   assert.equal(worst.groundTriangles, 22_098);
-  assert.ok(island.groundTriangles > 10_000 && island.groundTriangles < worst.groundTriangles);
+  assert.ok(island.groundTriangles > 10_000 && island.groundTriangles < 100_000,'shorelines and hills may refine beyond flat ground while retaining an explicit triangle cap');
   assert.ok(worst.groundBufferBytes + worst.precipitationBufferBytes < 2.5 * 1024 ** 2);
   assert.equal(worst.precipitationBufferBytes, 42_240);
   assert.ok(worst.precipitationBufferBytes<50*1024,'all rain and layered-snow attributes stay below 50 KiB');

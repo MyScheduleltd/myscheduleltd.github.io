@@ -9,7 +9,7 @@ import { requestWithDeadline } from '../network/RequestDeadline';
  * - day: a quiet seaside promenade, people walking and talking;
  * - night: a quiet rural evening, which takes over as the light goes;
  * - ocean: waves on a beach, which rise as the visitor nears the water.
- * - weather: short mono rain/winter-wind beds, using that same ambient bus.
+ * - weather: short mono rain/winter beds, with a separate quiet snow-gust layer.
  *
  * Each bed is a loop cut from the owner's master with an equal-power crossfade
  * baked into its head, padded with half a second of its own tail before and
@@ -48,9 +48,9 @@ export interface AmbientMix {
   snowFootsteps?: boolean;
 }
 
-type BedKey = 'day' | 'night' | 'ocean' | 'rain' | 'snow';
+type BedKey = 'day' | 'night' | 'ocean' | 'rain' | 'snow' | 'snowWind';
 type StepKey = 'step-left' | 'step-right';
-const WEATHER_BEDS: readonly BedKey[] = ['rain', 'snow'];
+const WEATHER_BEDS: readonly BedKey[] = ['rain', 'snow', 'snowWind'];
 const LAND_BEDS: readonly BedKey[] = ['day', 'night', 'ocean'];
 const STEP_KEYS: readonly StepKey[] = ['step-left', 'step-right'];
 
@@ -67,6 +67,7 @@ const BEDS: Record<BedKey, Bed> = {
   ocean: { loopStart: 0.5, loopEnd: 45.5, level: 1.1 },
   rain: { loopStart: 0.5, loopEnd: 16.5, level: .85 },
   snow: { loopStart: 0.5, loopEnd: 16.5, level: .65 },
+  snowWind: { loopStart: 0.5, loopEnd: 6.5, level: .32 },
 };
 
 /**
@@ -77,10 +78,11 @@ const bedFile = (key: BedKey, mono: boolean): string => ({
   day: mono ? new URL('../assets/audio/ambience-day-mono.mp3', import.meta.url) : new URL('../assets/audio/ambience-day.mp3', import.meta.url),
   night: mono ? new URL('../assets/audio/ambience-night-mono.mp3', import.meta.url) : new URL('../assets/audio/ambience-night.mp3', import.meta.url),
   ocean: mono ? new URL('../assets/audio/ambience-ocean-mono.mp3', import.meta.url) : new URL('../assets/audio/ambience-ocean.mp3', import.meta.url),
-  // Weather is always mono: the two 17-second buffers together are 6.23 MiB
-  // at the existing 48 kHz offline decoder, including the seam-padding.
+  // Weather stays mono. Wind adds only a seven-second padded buffer, keeping
+  // all weather/action additions together below eight MiB at48kHz.
   rain: new URL('../assets/audio/weather-rain-mono.mp3', import.meta.url),
   snow: new URL('../assets/audio/weather-snow-mono.mp3', import.meta.url),
+  snowWind: new URL('../assets/audio/weather-snow-wind-mono.mp3', import.meta.url),
 })[key].href;
 const snowStepFile = (key: StepKey): string => (key === 'step-left'
   ? new URL('../assets/audio/avatar-step-snow-left.wav', import.meta.url)
@@ -118,6 +120,8 @@ const SKATE = { loopStart: 0.5, loopEnd: 5.9, level: 0.75 } as const;
 /** Each step a shade different, so a long walk is not one sample repeating (owner chose ±3%). */
 const STEP_PITCH_SPREAD = 0.03;
 const STEP_LEVEL_SPREAD = 0.15;
+/** Crunch transients sit beneath ordinary footsteps on the same avatar bus. */
+const SNOW_STEP_LEVEL = 0.5;
 
 /** One sound per this many milliseconds: a label and its control, or a fast sweep across a menu. */
 const CUE_SPACING: Record<InterfaceSound, number> = { click: 30, hover: 45 };
@@ -289,7 +293,7 @@ export class AmbientAudio {
         this.startBed(key);
       }),
       // The short weather additions decode serially, rather than creating
-      // two more native decode peaks together. They still join this barrier.
+      // more native decode peaks together. They still join this barrier.
       (async () => {
         const jobs: Array<() => Promise<void>> = [
           ...WEATHER_BEDS.map(key => async () => {
@@ -386,14 +390,14 @@ export class AmbientAudio {
   playAvatarSound(kind: AvatarSound, delay = 0): void {
     const context = this.context;
     const step = kind === 'step-left' || kind === 'step-right';
-    const buffer = step && this.mix?.snowFootsteps
-      ? this.snowStepBuffers.get(kind) ?? this.avatarBuffers.get(kind) : this.avatarBuffers.get(kind);
+    const snowBuffer = step && this.mix?.snowFootsteps ? this.snowStepBuffers.get(kind) : undefined;
+    const buffer = snowBuffer ?? this.avatarBuffers.get(kind);
     if (!context || context.state !== 'running' || !buffer || !this.avatar || this.muted) return;
     const source = context.createBufferSource();
     const level = context.createGain();
     source.buffer = buffer;
     if (step) source.playbackRate.value = 1 + (this.random() * 2 - 1) * STEP_PITCH_SPREAD;
-    level.gain.value = AVATAR_LEVEL[kind] * (step ? 1 - this.random() * STEP_LEVEL_SPREAD : 1);
+    level.gain.value = AVATAR_LEVEL[kind] * (snowBuffer ? SNOW_STEP_LEVEL : 1) * (step ? 1 - this.random() * STEP_LEVEL_SPREAD : 1);
     source.connect(level);
     level.connect(this.avatar);
     source.onended = () => { source.disconnect(); level.disconnect(); };
@@ -462,6 +466,7 @@ export class AmbientAudio {
         ocean: level(this.bedGains.get('ocean')?.gain),
         rain: level(this.bedGains.get('rain')?.gain),
         snow: level(this.bedGains.get('snow')?.gain),
+        snowWind: level(this.bedGains.get('snowWind')?.gain),
         outdoors: level(this.outdoors?.gain),
         muffleHz: Math.round(level(this.muffle?.frequency) ?? 0),
       },
@@ -542,7 +547,7 @@ export class AmbientAudio {
   private glide(param: AudioParam | undefined, value: number, seconds: number): void {
     if (!param || !this.context) return;
     const previous = this.targets.get(param);
-    if (previous !== undefined && Math.abs(previous - value) < 1e-3) return;
+    if (previous === value || (value !== 0 && previous !== undefined && Math.abs(previous - value) < 1e-3)) return;
     this.targets.set(param, value);
     param.setTargetAtTime(value, this.context.currentTime, seconds);
   }
@@ -563,13 +568,20 @@ export class AmbientAudio {
     // At the water's edge the waves cover some of the promenade.
     const weatherTotal = Math.max(1, (mix?.rain ?? 0) + (mix?.snow ?? 0));
     const rain = (mix?.rain ?? 0) / weatherTotal, snow = (mix?.snow ?? 0) / weatherTotal;
-    const land = (1 - 0.3 * ocean) * (1 - .42 * Math.max(rain, snow * .65));
+    // Snow replaces the ordinary outdoors instead of layering winter on top
+    // of promenade voices, night wildlife and ocean surf. Equal-power weights
+    // carry both directions through the existing slow gain glide. Snap only
+    // the inaudible end of the visual weather ease to a true zero target.
+    const ordinary = snow >= .999 ? 0 : Math.cos(snow * Math.PI / 2);
+    const winter = snow >= .999 ? 1 : Math.sin(snow * Math.PI / 2);
+    const land = (1 - 0.3 * ocean) * (1 - .42 * rain) * ordinary;
     const on = mix ? 1 : 0;
     this.glide(this.bedGains.get('day')?.gain, on * day * land * BEDS.day.level, BED_GLIDE);
     this.glide(this.bedGains.get('night')?.gain, on * dark * land * BEDS.night.level, BED_GLIDE);
-    this.glide(this.bedGains.get('ocean')?.gain, on * ocean * BEDS.ocean.level, BED_GLIDE);
+    this.glide(this.bedGains.get('ocean')?.gain, on * ocean * ordinary * BEDS.ocean.level, BED_GLIDE);
     this.glide(this.bedGains.get('rain')?.gain, on * rain * BEDS.rain.level, BED_GLIDE);
-    this.glide(this.bedGains.get('snow')?.gain, on * snow * BEDS.snow.level, BED_GLIDE);
+    this.glide(this.bedGains.get('snow')?.gain, on * winter * BEDS.snow.level, BED_GLIDE);
+    this.glide(this.bedGains.get('snowWind')?.gain, on * winter * BEDS.snowWind.level, BED_GLIDE);
     const outdoors = mix?.outdoors ?? 1;
     this.glide(this.outdoors?.gain, outdoors, DOOR_GLIDE);
     this.glide(this.muffle?.frequency, this.muffleFrequency(outdoors), DOOR_GLIDE);

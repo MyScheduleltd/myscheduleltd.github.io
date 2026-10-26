@@ -1,0 +1,35 @@
+{
+  "sampleRate": 48000,
+  "channels": 1,
+  "files": [
+    {
+      "file": "weather-snow-wind-mono.mp3",
+      "bytes": 56492,
+      "sha256": "94ec5e84610f769afb1b91c992368f819990e793ee843281fac93ade49fb1a65",
+      "source": "ES_Wind, General, Heavy, Gusts, Sand Storm 03 - Epidemic Sound.wav",
+      "sourceStart": 24,
+      "sampleRate": 48000,
+      "channels": 1,
+      "duration": 7.0,
+      "loopStart": 0.5,
+      "loopEnd": 6.5,
+      "crossfadeSeconds": 2,
+      "gainDb": 5.356,
+      "rmsDb": -24.0,
+      "encodedRmsDb": -24.452,
+      "peakDb": -9.378,
+      "actualDecodedSamples": 336000,
+      "actualDecodedFloatBytes": 1344000,
+      "encodedSeamStep": 0.0005687
+    }
+  ],
+  "runtimeBytes": 56492,
+  "decodedBytesAt48k": 1344000,
+  "sourceFiles": {
+    "wind": {
+      "name": "ES_Wind, General, Heavy, Gusts, Sand Storm 03 - Epidemic Sound.wav",
+      "bytes": 39628972,
+      "sha256": "6aef99478e3c5ae04fa2f9d34ed9502823e05ae1db6c7ad5c7f2210485fe3722"
+    }
+  }
+}

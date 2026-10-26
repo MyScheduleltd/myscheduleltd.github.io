@@ -58,6 +58,22 @@ test('brush and claim are atomic: an occupied seat cannot be cleared, and all vi
  assert.equal((await request('/api/seats/BEACH-MAT-1/claim',{session:alice,body:{snowAction:'unknown'}})).status,400);
 });
 
+test('fresh snow after a shared wipe allows another authoritative wipe, with retries still silent',async()=>{
+ const seat='SHORE-2-6';
+ const first=await request(`/api/seats/${seat}/claim`,{session:alice,body:{snowAction:'brush'}});
+ assert.equal(first.status,200);assert.equal(first.data.snowCleared,true);
+ const firstMark=first.data.weather.clearedSeats.find(row=>row.seatId===seat);
+ const immediate=await request(`/api/seats/${seat}/claim`,{session:alice,body:{snowAction:'brush'}});
+ assert.equal(immediate.data.snowCleared,false);
+ await delay(750);
+ const again=await request(`/api/seats/${seat}/claim`,{session:alice,body:{snowAction:'brush'}});
+ assert.equal(again.status,200);assert.equal(again.data.snowCleared,true);
+ const mark=again.data.weather.clearedSeats.find(row=>row.seatId===seat);assert.ok(mark.clearedAt>firstMark.clearedAt);
+ assert.equal(again.data.weather.clearedSeats.filter(row=>row.seatId===seat).length,1);
+ const shared=await sharedState(bob);assert.deepEqual(shared.weather.clearedSeats.find(row=>row.seatId===seat),mark);
+ await request(`/api/seats/${seat}/release`,{session:alice,method:'POST'});
+});
+
 test('physical beach claims own their relaxation pose; unclaimed floor rest requires seated state and release clears posture',async()=>{
  await request('/api/presence',{session:alice,body:{state:'walking',relaxation:'recline'}});
  let own=(await sharedState(alice)).visitors.find(visitor=>visitor.id===alice.id);assert.equal(own.presence.relaxation,undefined);

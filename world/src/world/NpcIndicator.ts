@@ -18,6 +18,8 @@ export interface NpcIndicatorTarget {
 
 export interface NpcIndicatorControls {
   localPlayerNpcId?: string;
+  /** Carried residents need no floating labels over the carrier's camera. */
+  carriedNpcId?: string;
   /** A Set or the existing remoteNpcControls Map, without copying it each frame. */
   remotePlayerNpcIds?: { has(id: string): boolean };
 }
@@ -220,7 +222,7 @@ export class NpcIndicators {
         if (!parent.visible) visible = false;
         if (parent === this.scene) { attached = true; break; }
       }
-      if (!attached || !visible || target.id === controls.localPlayerNpcId || controls.remotePlayerNpcIds?.has(target.id)) {
+      if (!attached || !visible || target.id === controls.localPlayerNpcId || target.id === controls.carriedNpcId || controls.remotePlayerNpcIds?.has(target.id)) {
         sprite.visible = false;entry.allowed=false;if(target.identity)target.identity.visible=false;
         continue;
       }

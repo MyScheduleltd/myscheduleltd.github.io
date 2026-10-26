@@ -15,6 +15,8 @@ const reclineFits = new Map<string, FittedRest>();
 // contain only vertex indices: no retired avatar/material is kept alive here.
 const reclineSurfaces = new WeakMap<THREE.BufferGeometry, Map<string, Array<Pick<Probe, 'vertex' | 'head'>>>>();
 const point = new THREE.Vector3(), local = new THREE.Vector3();
+// Original printed cloth stripes stand .018 above the supporting pad.
+const BEACH_CHAIR_LEG_POSE=Object.freeze({hipPitch:-Math.PI/2-.3,kneeMaximum:1.3,padClearance:.022});
 
 function wearingSwimwear(root: THREE.Object3D): boolean {
   // Selected outfit 4 and water-forced swimwear share the same visible body.
@@ -125,7 +127,9 @@ export function poseRelaxedCoastal(rig: AvatarRig, pose: CoastalRelaxationPose, 
     rig.leftArm.rotation.set(-.45, 0, -.23); rig.rightArm.rotation.set(-.45, 0, .23);
     rig.leftElbow?.rotation.set(-.7, 0, 0); rig.rightElbow?.rotation.set(-.7, 0, 0);
     if (!ground && root.userData.supportImportedSeat && support) {
-      seatCoastalLegs(rig, floor, new THREE.Box3().setFromObject(support));
+      // Owner-selected small leg bend, with the original canvas and anchor.
+      // This reduces front-edge clipping; it is not a full-clearance pose.
+      seatCoastalLegs(rig, floor, new THREE.Box3().setFromObject(support),BEACH_CHAIR_LEG_POSE);
       return;
     }
   }
@@ -207,6 +211,31 @@ export interface CoastalReclineTarget {
   facing: number;
   surfaceHeightAt: WalkingFloor;
   support: THREE.Mesh;
+}
+
+/** Fixed beach chairs prepare the same native seat support while entry owns
+ * input. Equivalent bodies later need only the scalar fit and joint angles. */
+export function prepareCoastalChairs(rig:AvatarRig,targets:readonly Omit<CoastalReclineTarget,'surfaceHeightAt'>[],floor:WalkingFloor,groundOffset=.28):number {
+  const root=rig.visualRoot?.parent;if(!root||root.userData.importedMoveActive?.())return 0;
+  const objects=[...new Set([root,...Object.values(rig).filter((value):value is THREE.Object3D=>value instanceof THREE.Object3D)])];
+  const saved=objects.map(object=>({object,position:object.position.clone(),quaternion:object.quaternion.clone(),scale:object.scale.clone(),visible:object.visible}));
+  const marker=root.userData.coastalRelaxation,throttle=root.userData.cullThrottle,culled=root.userData.importedCulled?.();
+  let prepared=0;
+  try{
+    root.visible=true;if(rig.visualRoot)rig.visualRoot.visible=true;
+    root.userData.cullThrottle=false;root.userData.setImportedCulled?.(false);
+    for(const target of targets){
+      root.position.copy(target.anchor??target.position);root.position.y=target.position.y+groundOffset;root.rotation.set(0,target.facing,0);
+      poseRelaxedCoastal(rig,'chair-sit',floor,target.support);prepared++;
+    }
+  }finally{
+    for(const{object,position,quaternion,scale,visible}of saved){object.position.copy(position);object.quaternion.copy(quaternion);object.scale.copy(scale);object.visible=visible;}
+    if(marker===undefined)delete root.userData.coastalRelaxation;else root.userData.coastalRelaxation=marker;
+    root.userData.syncImportedAvatar?.();
+    if(throttle===undefined)delete root.userData.cullThrottle;else root.userData.cullThrottle=throttle;
+    if(culled!==undefined)root.userData.setImportedCulled?.(culled);
+  }
+  return prepared;
 }
 
 /** Entry-loading CPU preparation only: no render, decoder, texture or new rig.

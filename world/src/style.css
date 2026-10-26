@@ -1432,6 +1432,8 @@ button:active { filter: brightness(.88); scale: .96; }
 .controls-hint { position: fixed; z-index: 3; left: 22px; bottom: 22px; font: 700 11px var(--condensed); letter-spacing: .07em; text-shadow: 0 2px 8px black; }.controls-hint span { color: #ed434d; margin-right: 3px; }.controls-hint span:nth-child(2) { margin-left: 12px; }
 .touch-controls { display: none; }
 .touch-stick, .touch-ring__hit, .touch-ring__key { touch-action: none; -webkit-user-select: none; user-select: none; }
+/* Fit the complete English label in the same thumb target in every font. */
+.touch-ring__key[data-touch-act='dance']:lang(en) { padding:0 2px; font-size:9.5px; letter-spacing:0; white-space:nowrap; }
 /* The introduction sits under the name and title rather than beside them: it
    is a paragraph, and a paragraph in a row of short inputs squeezes them all
    down to nothing. Full width of the form, which is a grid. */
@@ -2792,19 +2794,17 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .gate-avatar { height: calc(100dvh - 115px); min-height: 280px; }
 }
 
-/* Shared snow seating choice and staff weather dates use the world's ticket palette. */
-.snow-seat-choice {position:fixed;inset:0;z-index:70;display:grid;place-items:center;padding:20px;background:#10131090;}
-.snow-seat-choice__card {max-width:500px;width:100%;background:#f1ecde;color:#171816;border:2px solid #faf5e8;padding:28px;box-shadow:12px 12px 0 #111b;}
-.snow-seat-choice__card h2 {margin:4px 0 12px;font-size:32px;}
-.snow-seat-choice__buttons {display:grid;gap:10px;margin-top:24px;}
-.snow-seat-choice__buttons button {background:#222622;color:#f5efdf;padding:16px;border:1px solid #8d8b80;}
-.snow-seat-choice__buttons button:first-child {background:#b3202d;}
+/* The snow choice reuses .seat-menu rather than a separate ticket treatment. */
+.snow-seat-choice {position:fixed;inset:0;z-index:70;background:#10131090;}
+.snow-seat-choice__card {max-height:calc(100dvh - 60px);}
 .weather-periods {display:grid;gap:18px;}
 .weather-period {display:grid;grid-template-columns:1fr 2fr 2fr auto;gap:12px;padding:15px;border:1px solid #7776;align-items:end;}
 .weather-period label {display:grid;gap:6px;min-width:0;}
 .weather-period input,.weather-period select {min-width:0;width:100%;}
-@media(max-width:700px){.weather-period {grid-template-columns:1fr;}.snow-seat-choice__card{padding:20px;}}
+.weather-period select {box-sizing:border-box;height:46px;min-height:46px;border:2px solid var(--ink);border-radius:0;padding:0 32px 0 12px;color:var(--ink);background-color:var(--paper);font:700 14px/1.35 sans-serif;appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--ink) 50%),linear-gradient(135deg,var(--ink) 50%,transparent 50%);background-position:calc(100% - 16px) 50%,calc(100% - 12px) 50%;background-size:4px 4px;background-repeat:no-repeat;}
+.weather-period select:focus-visible {outline:2px solid var(--red);outline-offset:1px;}
+@media(max-width:700px){.weather-period {grid-template-columns:1fr;}}
 
 /* Keep STAFF weather controls on the right at every viewport width. */
-#staff-weather-form > button { justify-self:end; max-width:100%; }
+#staff-weather-form > button { justify-self:end; width:min(180px,100%); max-width:100%; }
 #staff-weather-form .weather-period > button { grid-column:-2 / -1; justify-self:end; max-width:100%; }

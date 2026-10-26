@@ -6,3 +6,4 @@ export interface SharedWeather { version: 1; updatedAt: number; schedule: Weathe
 export interface WeatherSample { type: 'clear' | 'rain' | 'snow'; occurrenceId: string | null; snowCoverage: number }
 export function weatherAt(schedule: readonly WeatherPeriod[], now: number): WeatherSample;
 export function seatSnowCoverage(weather: Pick<SharedWeather, 'schedule' | 'clearedSeats'>, seatId: string, now: number): number;
+export function seatSnowCoverageFromSample(sample: WeatherSample, schedule: readonly WeatherPeriod[], record: ClearedSnowSeat | undefined, now: number): number;

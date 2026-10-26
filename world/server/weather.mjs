@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { weatherAt, SNOW_BUILDUP_MS, SNOW_MELT_MS } from '../src/weather/WeatherModel.mjs';
+import { weatherAt, seatSnowCoverage, SNOW_BUILDUP_MS, SNOW_MELT_MS } from '../src/weather/WeatherModel.mjs';
 export { weatherAt, SNOW_BUILDUP_MS, SNOW_MELT_MS } from '../src/weather/WeatherModel.mjs';
 
 export const WEATHER_VERSION = 1;
@@ -118,7 +118,9 @@ export class FestivalWeather {
       throw new WeatherError('That snowfall is no longer on this seat.', 409);
     }
     const existing = this.clearedSeats.get(seatId);
-    if (existing?.occurrenceId === occurrenceId) return { cleared: false, record: { ...existing } };
+    if (existing?.occurrenceId === occurrenceId && seatSnowCoverage({ schedule: this.schedule, clearedSeats: [existing] }, seatId, this.now()) <= .001) {
+      return { cleared: false, record: { ...existing } };
+    }
     const record = { seatId, occurrenceId, clearedAt: this.now() };
     this.clearedSeats.set(seatId, record);
     this.updatedAt = Math.max(this.updatedAt + 1, this.now());

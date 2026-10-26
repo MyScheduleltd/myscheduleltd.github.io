@@ -244,3 +244,15 @@ test('in the isometric view tickets fade across the picture from the attendee, n
   assert.ok(farTicket.material.opacity < 1, 'a resident far across the picture still fades');
   pool.dispose();
 });
+
+test('World hides both carried MENTOR labels for local and remote carriers and restores them after release',()=>{
+ const scene=new THREE.Scene(),dog=identityTarget(scene,'MENTOR','MENTOR','VIDEO EDITOR'),resident=identityTarget(scene,'KENNY','KENNY','DIRECTOR'),view=camera();
+ const world=Object.create(FestivalWorld.prototype);let locallyCarried=false;
+ Object.assign(world,{scene,camera:view,npcs:[{id:'MENTOR',group:dog.group,rig:{head:dog.head},badge:dog.identity},{id:'KENNY',group:resident.group,rig:{head:resident.head},badge:resident.identity}],remoteNpcControls:new Map(),isCarryingMentor:()=>locallyCarried});
+ for(const [local,remote,visible]of[[false,undefined,true],[true,undefined,false],[false,'another-player',false],[false,undefined,true]]){
+  locallyCarried=local;world.mentorCarrierId=remote;dog.identity.userData.npcLabelRequested=true;resident.identity.userData.npcLabelRequested=true;
+  world.updateNpcIndicators();assert.equal(world.npcIndicators.root.getObjectByName('npc-ticket:MENTOR').visible,visible);assert.equal(dog.identity.visible,visible);
+  assert.equal(resident.identity.visible,true,'other resident labels keep their existing behavior');
+ }
+ world.npcIndicators.dispose();
+});

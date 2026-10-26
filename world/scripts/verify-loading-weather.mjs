@@ -180,11 +180,20 @@ async function main() {
         browser = await profile.engine.launch(profile.launch);
         context = await browser.newContext({ ...profile.options, serviceWorkers: 'block' });
         await context.addInitScript(installGLAudit);
-        await context.route('**/*', route => {
+        let releaseSettings, markSettingsHeld;
+        const settingsBarrier = new Promise(resolve => { releaseSettings = resolve; });
+        const settingsHeld = new Promise(resolve => { markSettingsHeld = resolve; });
+        await context.route('**/*', async route => {
           const request = route.request(), url = new URL(request.url());
           if (!networkAllowed(url.href)) {
             run.blockedRequests.push({ url: requestLabel(url.href), method: request.method(), resource: request.resourceType() });
             return route.abort('blockedbyclient');
+          }
+          if (url.origin === API && url.pathname === '/api/config') {
+            const response = await route.fetch({ maxRedirects: 0 });
+            markSettingsHeld();
+            await settingsBarrier;
+            return route.fulfill({ response });
           }
           return route.continue();
         });
@@ -251,7 +260,15 @@ async function main() {
         const stage = async label => { const state = await snapshot(label); run.stages.push(state); return state; };
 
         await page.goto(base + '/?era=ps2&island&review=perf&cycleMinute=12', { waitUntil: 'domcontentloaded' });
-        await page.locator('#festival-id').fill(`LoadingQA-${profile.name.startsWith('chrome') ? 'C' : 'W'}-${quality[0]}-${Date.now() % 100000}`);
+        const attendeeId = `Load${profile.name.startsWith('chrome') ? 'C' : 'W'}${quality[0]}-${Date.now() % 100000}`;
+        await page.locator('#festival-id').fill(attendeeId);
+        await page.evaluate(() => { window.__qaTypedGateInput = document.querySelector('#festival-id'); });
+        await Promise.race([settingsHeld, new Promise((_, reject) => setTimeout(() => reject(Error('Missing local public settings request')), 15_000))]);
+        const settingsResponse = page.waitForResponse(response => response.url() === API + '/api/config');
+        releaseSettings(); await settingsResponse;
+        await page.waitForFunction(() => document.querySelector('#festival-id') !== window.__qaTypedGateInput);
+        check(await page.locator('#festival-id').inputValue() === attendeeId, 'a delayed public-settings redraw preserves the name already typed into sign-in');
+        await page.evaluate(() => { delete window.__qaTypedGateInput; });
         await page.locator(`[data-graphics="${quality}"]`).click();
         await page.locator('button[data-audio="sound"]').click();
         await page.waitForFunction(() => window.__islandWorld?.admitting === false && window.__festivalPerf?.().drawCalls > 0
@@ -263,6 +280,7 @@ async function main() {
         run.baseline = await stage('gate-handoff-complete');
         check(run.baseline.perf.mode === quality, 'requested quality is active after ordinary sign-in');
         check(run.baseline.audio.avatarReady === 7, 'all seven fixed avatar cues loaded during sign-in');
+        check(['day', 'night', 'ocean', 'rain', 'snow', 'snowWind'].every(key => run.baseline.audio.bedsReady.includes(key)), 'all landscape, weather and new snow-wind beds decode during sign-in');
         check(run.apiPaths.some(request => request.origin.endsWith(':' + API_PORT) && request.path !== '/api/config'), 'the world actually joined the disposable local API');
         check(run.baseline.gl.linkProgram > 0 && run.baseline.gl.compileShader > 0, 'instrumentation observed actual driver compilation/linking before admission');
         check(run.blockedRequests.every(request => !/\/api\//.test(new URL(request.url).pathname)), 'no attempted production/nonlocal API calls');
@@ -284,6 +302,49 @@ async function main() {
             w.setAvatarPalette({ ...window.__qaSavedPalette, top, shirt: '#25232b', shoes: '#c5beae', swimwear: '#375d76' });
           }, top);
           await frames(2); await stage(`wardrobe/${top}`);
+          await page.evaluate(() => {
+            const w = window.__islandWorld;
+            window.__qaChairReads = 0;
+            window.__qaChairAllReads = 0;
+            window.__qaChairSupport = w.player.userData.supportImportedSeat;
+            w.player.userData.supportImportedSeat = function (...args) {
+              window.__qaInChairSupport = true;
+              try { return Reflect.apply(window.__qaChairSupport, this, args); }
+              finally { window.__qaInChairSupport = false; }
+            };
+            window.__qaChairMethods = w.player.userData.importedAvatar.meshes.map(mesh => {
+              const original = mesh.applyBoneTransform;
+              mesh.applyBoneTransform = function (...args) {
+                window.__qaChairAllReads++;
+                if (window.__qaInChairSupport) window.__qaChairReads++;
+                return Reflect.apply(original, this, args);
+              };
+              return { mesh, original };
+            });
+          });
+          try {
+            for (let chair = 1; chair <= 6; chair++) {
+              await page.evaluate(id => { window.__qaChairReads = 0; window.__qaChairAllReads = 0; window.__islandWorld.focusRelaxationForReview(id, true); }, `BEACH-CHAIR-${chair}`);
+              await frames(3);
+              const pose = await page.evaluate(() => {
+                const w = window.__islandWorld;
+                return { reads: window.__qaChairReads, pose: w.relaxationPose(), hip: w.playerRig.leftLeg.rotation.x,
+                  knee: w.playerRig.leftKnee.rotation.x, bodyZ: w.playerRig.visualRoot.position.z, existingSoleReads: window.__qaChairAllReads - window.__qaChairReads };
+              });
+              (run.chairContacts ??= []).push({top, chair, ...pose});
+              check(pose.pose === 'chair-sit' && pose.reads === 0 && Math.abs(pose.hip + Math.PI / 2 + .3) < 1e-6
+                && pose.knee <= 1.300001 && pose.bodyZ === 0,
+              `${top}: original beach chair ${chair} uses the accepted angle-only pose and gate-prepared contact with zero seat-contact vertex reads`);
+            }
+          } finally {
+            await page.evaluate(() => {
+              for (const { mesh, original } of window.__qaChairMethods ?? []) mesh.applyBoneTransform = original;
+              window.__islandWorld.player.userData.supportImportedSeat = window.__qaChairSupport;
+              delete window.__qaChairMethods; delete window.__qaChairReads; delete window.__qaChairAllReads;
+              delete window.__qaChairSupport; delete window.__qaInChairSupport;
+              window.__islandWorld.forceStand();
+            });
+          }
         }
         for (const top of [OUTFITS[0], OUTFITS[4]]) {
           await page.evaluate(top => {
@@ -331,13 +392,18 @@ async function main() {
           check(timing.frames > 0 && ['fps', 'gapP95Ms', 'gapMaxMs', 'workP95Ms', 'workMaxMs', 'lifetimeGapMaxMs', 'over100Ms'].every(key => Number.isFinite(timing[key]) && timing[key] >= 0), `${state.label}: live frames and finite measured work`);
           check(state.weather.maximumSettledDepth === .12 && state.weather.settledDepth >= 0 && state.weather.settledDepth <= .1200001, `${state.label}: settled snow respects the approved 0.12 cap`);
           check(state.weather.snowfall.flakes === profile.flakes && state.weather.snowfall.depthBands === 3, `${state.label}: the accepted strong snowfall keeps its device budget`);
-          check(state.weather.groundTriangles > 0 && state.weather.groundTriangles <= 30_000 && state.weather.seatCaps <= 46 && state.weather.extraLights === 0, `${state.label}: ground/caps/lights remain bounded`);
+          check(state.weather.groundTriangles > 0 && state.weather.groundTriangles <= 100_000 && state.weather.seatCaps <= 46 && state.weather.extraLights === 0, `${state.label}: adaptive ground/caps/lights remain bounded`);
+          check(state.weather.authoredSurfaces.sources.length === 95 && state.weather.authoredSurfaces.triangles > 0
+            && state.weather.authoredSurfaces.triangles <= 40_000, `${state.label}: all 95 authored roof/stair/dock sources are prepared and bounded`);
           check(state.weatherResources.bufferBytes <= 5 * 1024 * 1024 && state.weatherResources.bufferBytes === run.baseline.weatherResources.bufferBytes,
             `${state.label}: the complete weather geometry retains the gate's bounded buffer allocation`);
           check(Object.values(state.precipitation).every(value => value.finite), `${state.label}: every exposed rain/snow position is finite`);
           check(state.weatherResources.geometries.join(',') === run.baseline.weatherResources.geometries.join(',')
             && state.weatherResources.materials.join(',') === run.baseline.weatherResources.materials.join(','), `${state.label}: weather reuses its exact gate-prepared geometry/material objects`);
           if (type === 'snow') check(state.weather.snowCoverage === 1, `${state.label}: the measured snowfall includes full accumulation`);
+          if (type === 'snow' && !repeat) check(state.audio.levels.day === 0 && state.audio.levels.night === 0
+            && state.audio.levels.ocean === 0 && state.audio.levels.snow > 0 && state.audio.levels.snowWind > 0,
+            `${state.label}: snowfall replaces landscape ambience with the preloaded winter and wind layers`);
           if (type === 'snow') check(state.precipitation['paper-snow-flakes'].count === profile.flakes && state.precipitation['paper-snow-flakes'].visible,
             `${state.label}: all accepted flakes are actually submitted for drawing`);
           if (type === 'rain') check(state.precipitation['ink-rain-streaks'].count === (profile.flakes === 420 ? 440 : 1280) && state.precipitation['ink-rain-streaks'].visible,

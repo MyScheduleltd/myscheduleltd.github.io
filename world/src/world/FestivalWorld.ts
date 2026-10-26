@@ -1,7 +1,8 @@
 import { FestivalWeather } from './FestivalWeather';
+import type { SnowSurfaceSource } from './SnowSurfaceCoverage';
 import type { SharedWeather } from '../weather/WeatherModel.mjs';
 import { createBeachRelaxation, type BeachRelaxationSpot } from './BeachRelaxation';
-import { poseRelaxedCoastal, clearRelaxedCoastal, prepareCoastalReclines, type CoastalRelaxationPose } from './CoastalRelaxationPose';
+import { poseRelaxedCoastal, clearRelaxedCoastal, prepareCoastalReclines, prepareCoastalChairs, type CoastalRelaxationPose } from './CoastalRelaxationPose';
 import { FireworksShow } from './FireworksShow';
 import { NpcIndicators, createNpcIdentityTexture, NPC_INDICATOR } from './NpcIndicator';
 import { WorldCamera, ISOMETRIC_VIEW, isometricExtraDepth, WORLD_CAMERA_MODES, nextWorldCameraMode, mobileFollowYaw, type WorldCameraMode } from './WorldCamera';
@@ -68,7 +69,7 @@ import { applyDriveInCarArt, type DriveInCarArtHandle } from './DriveInCarArt';
 import { createCoastalAvatar } from './CoastalAvatar';
 import { importedAvatarTextures, attachImportedAvatar, syncImportedAvatars, disposeImportedAvatars, importedAvatarRoots, AVATAR_NATIVE, MOVE_SECONDS, PUNCH_CONTACT_SECONDS } from './ImportedAvatar';
 import { createCoastalSkateboard } from './CoastalSkateboard';
-import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, setCoastalFists, releaseCoastalGrips, walkCoastalPose, plantedFoot, passOutCoastalPose, danceCoastalPose, COASTAL_STRIDE_LENGTH, skateCoastalPose, levelCoastalFeet, supportCoastalPose, seatCoastalLegs, coastalFootHeights } from './CoastalPose';
+import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, setCoastalFists, releaseCoastalGrips, walkCoastalPose, plantedFoot, passOutCoastalPose, danceCoastalPose, COASTAL_STRIDE_LENGTH, skateCoastalPose, levelCoastalFeet, supportCoastalPose, seatCoastalLegs, coastalFootHeights, type WalkingFloor } from './CoastalPose';
 import { coastalRoof, createCoastalSedan, CONVERTIBLE } from './CoastalGeometry';
 import { createConvertibleSeatProxy } from './ConvertibleSeat';
 import { TempleTrimAtlas } from './TempleTrimAtlas';
@@ -2099,6 +2100,7 @@ export class FestivalWorld {
   private activeRelaxation?: {pose:CoastalRelaxationPose;spot?:BeachRelaxationSpot};
   private beachRelaxation?: ReturnType<typeof createBeachRelaxation>;
   private weather?: FestivalWeather;
+  private snowSurfaceSources: SnowSurfaceSource[] = [];
   private npcDialogue?: {npc:NpcAvatar; transition:DialogueCameraTransition};
   private npcDialogueClock?: NpcDialogueClock;
   private playerGestureUntil = 0;
@@ -2254,11 +2256,10 @@ export class FestivalWorld {
       this.colliders.push(...this.beachRelaxation.colliders);
       this.weather=new FestivalWeather(this.scene,{heightAt:(x,z)=>this.groundHeightAt(x,z,0)-AVATAR_GROUND_Y,
         dryAt:(x,z)=>!this.isOverWater(z,x),shelteredAt:(x,z,y)=>this.weatherShelteredAt(x,z,y)},window.matchMedia('(pointer: coarse) and (hover: none)').matches);
-      this.weather.addSupports(this.seats.filter(s=>!s.id.startsWith('PALACE-')&&!s.id.startsWith('CLUB-')).map(s=>({id:s.id,x:s.position.x,z:s.position.z,y:s.cushion? s.cushion.getWorldPosition(new THREE.Vector3()).y+.08:s.position.y-.15,width:1.35,depth:1.1,facing:s.facing})));
-      this.weather.addSupports(this.beachRelaxation.spots.map(s=>({id:s.id,x:s.anchor.x,z:s.anchor.z,y:s.anchor.y,width:s.kind==='mat'?2.25:1.65,depth:s.kind==='mat'?4.3:1.6,facing:s.facing,groundMask:s.kind==='mat',heightAt:s.kind==='mat'?s.surfaceHeightAt:undefined})));
+      this.prepareWeatherSupports();
     }
     this.keepSkyFlat();
-    if (PLANET.on) subdivideSceneForPlanet(this.scene);
+    if (preview && PLANET.on) subdivideSceneForPlanet(this.scene);
     // No delayed dressing or imported scenery runs in this scene, so static
     // meshes can be batched immediately instead of paying thousands of draws
     // on every frame while someone is typing into the entrance form.
@@ -2441,6 +2442,11 @@ export class FestivalWorld {
     // finish placement before subdivision, batching and GPU preparation.
     await this.prepareAssets(progress => onProgress?.(progress * .55));
     if (this.disposed) return;
+    this.weather?.addSurfaceMeshes(this.snowSurfaceSources ?? []);
+    if(this.weather)applyWorldFilmGrain(this.weather.root);
+    // Extraction owns its finished geometry. Do not retain source meshes that
+    // static batching is about to retire for the rest of the session.
+    this.snowSurfaceSources = [];
     // Moving identity cards to their CPU-bent sprite layer also finalizes
     // their flat/unlit material flags. Do that after all art passes and before
     // compilation, rather than changing those flags on the first play frame.
@@ -2581,9 +2587,14 @@ export class FestivalWorld {
     const stand = new THREE.Group();
     stand.name = 'Warm-up avatars';
     const mats = this.beachRelaxation?.spots.filter(spot => spot.kind === 'mat') ?? [];
+    const chairs = this.beachRelaxation?.spots.filter(spot => spot.kind === 'chair') ?? [];
+    const chairFloor: WalkingFloor = (x,z,y) => this.groundHeightAt(x,z,y)-AVATAR_GROUND_Y;
     // Fit every fixed mat/body/outfit under the same loading view as its GPU
     // preparation. Later first reclines reuse only bounded scalar results.
-    if (this.playerRig) prepareCoastalReclines(this.playerRig, mats, AVATAR_GROUND_Y);
+    if (this.playerRig) {
+      prepareCoastalReclines(this.playerRig, mats, AVATAR_GROUND_Y);
+      prepareCoastalChairs(this.playerRig, chairs, chairFloor, AVATAR_GROUND_Y);
+    }
     for (const outfit of TOP_OUTFITS) {
       for (const top of [outfit.wire, outfit.wireFemale]) {
         const body = new THREE.Group();
@@ -2595,6 +2606,7 @@ export class FestivalWorld {
           body.userData.setImportedPalette?.(variation);
           applyAvatarAccessories(body, variation);
           prepareCoastalReclines(rig, mats, AVATAR_GROUND_Y);
+          prepareCoastalChairs(rig, chairs, chairFloor, AVATAR_GROUND_Y);
         }
         body.userData.setImportedPalette?.(palette);
         applyAvatarAccessories(body, palette);
@@ -2725,6 +2737,12 @@ export class FestivalWorld {
       const size = this.renderer.getSize(new THREE.Vector2());
       if (this.renderer.getPixelRatio() !== pixelRatio) this.renderer.setPixelRatio(pixelRatio);
       if (size.x !== width || size.y !== height) this.renderer.setSize(width, height, false);
+      const shadowFocus=gateAerialTarget();
+      if(frame.entry!==undefined){
+        const x=this.islandDock?DOCK_ARRIVAL.x:0,z=this.islandDock?DOCK_ARRIVAL.z:22;
+        shadowFocus.lerp(new THREE.Vector3(x,this.groundHeightAt(x,z),z),Math.min(1,frame.entry/.92));
+      }
+      this.dayNight.setShadowFocus(shadowFocus);
       const dayNight = this.dayNight.update();
       this.renderer.toneMappingExposure = dayNight.exposure;
       this.dayNight.atmosphere.update(dayNight.cycleMinute, new THREE.Vector3(0, 0, 10));
@@ -6367,6 +6385,8 @@ export class FestivalWorld {
     if(sit)this.takeRelaxation(spot);
   }
   private weatherShelteredAt(x:number,z:number,y:number):boolean {
+    const exact=this.weather?.shelteredAt(x,z,y);
+    if(exact!==undefined)return exact;
     const r=rooftopBounds,c=clubBounds;
     if(x>TEMPLE.minX-1&&x<TEMPLE.maxX+1&&z>TEMPLE.minZ-1&&z<TEMPLE.maxZ+1&&y<TEMPLE_FLOOR_Y+10)return true;
     if(x>-47&&x<-23&&z>-50&&z<-30&&y<10.5)return true;
@@ -6381,7 +6401,18 @@ export class FestivalWorld {
       .sort((a,b)=>a.position.distanceToSquared(this.player.position)-b.position.distanceToSquared(this.player.position))[0];
   }
   snowBrushed():void { if(!this.disposed)this.audio.playAvatarSound('snow-brush'); }
+  /** The physical seat decides whether snow is possible. A cut-away roof is
+   * still a roof, and an arbitrary indoor id must never inherit global snow. */
+  canBrushSnowSeat(id:string):boolean {
+    const spot=this.beachRelaxation?.spots.find(s=>s.id===id);
+    if(spot)return !this.weatherShelteredAt(spot.anchor.x,spot.anchor.z,spot.anchor.y+.08);
+    const seat=this.seats.find(s=>s.id===id);
+    if(!seat||!this.isOutdoorSnowSeat(seat))return false;
+    const at=seat.cushion?new THREE.Box3().setFromObject(seat.cushion).getCenter(new THREE.Vector3()):seat.position;
+    return !this.weatherShelteredAt(at.x,at.z,at.y+.08);
+  }
   takeSnowSeat(id:string,snowAction:'brush'|'sit'):void {
+    if(snowAction==='brush'&&!this.canBrushSnowSeat(id))snowAction='sit';
     const spot=this.beachRelaxation?.spots.find(s=>s.id===id);
     if(spot&&this.nearestRelaxation()?.id===id){this.takeRelaxation(spot,snowAction);return;}
     const seat=this.seats.find(s=>s.id===id);
@@ -8578,7 +8609,7 @@ export class FestivalWorld {
 
     const relaxation=this.nearestRelaxation();
     if(relaxation){
-      if((this.weather?.seatCoverage(relaxation.id)??0)>.03)this.onAction({type:'snowSeat',seatId:relaxation.id});
+      if(this.canBrushSnowSeat(relaxation.id)&&(this.weather?.seatCoverage(relaxation.id)??0)>.03)this.onAction({type:'snowSeat',seatId:relaxation.id});
       else this.takeRelaxation(relaxation);
       return;
     }
@@ -8588,7 +8619,7 @@ export class FestivalWorld {
         this.onAction({ type: 'seatUnavailable', seatId: seat.id });
         return;
       }
-      if((this.weather?.seatCoverage(seat.id)??0)>.03){this.onAction({type:'snowSeat',seatId:seat.id});return;}
+      if(this.canBrushSnowSeat(seat.id)&&(this.weather?.seatCoverage(seat.id)??0)>.03){this.onAction({type:'snowSeat',seatId:seat.id});return;}
       this.takeSeat(seat);
       return;
     }
@@ -10225,6 +10256,7 @@ export class FestivalWorld {
     for(const object of this.scene.children) {
       if(previous.has(object) || [...this.projectors.values()].some(p=>p.xrPoster===object)) continue;
       object.position.add(new THREE.Vector3(dx,lift,dz));
+      object.updateWorldMatrix(true,true);
     }
     for(const seat of this.seats.slice(seatStart)) {seat.position.add(new THREE.Vector3(dx,lift,dz));if(seat.footFloor!==undefined)seat.footFloor+=lift;}
     for(const collider of this.colliders.slice(solidStart)) {
@@ -10233,6 +10265,32 @@ export class FestivalWorld {
       if(collider.maxY!==undefined)collider.maxY+=lift;
       if(collider.viewTop!==undefined)collider.viewTop+=lift;
     }
+  }
+
+  /** Capture authored support meshes while they are constructed, before any
+   * planet subdivision or scenery merge. No per-frame world search is needed. */
+  private registerSnowSurface<T extends THREE.Object3D>(id:string,object:T,options:Omit<SnowSurfaceSource,'id'|'object'>={}):T {
+    if(this.preview)return object;
+    (this.snowSurfaceSources ??= []).push({id,object,...options});
+    return object;
+  }
+
+  private prepareWeatherSupports():void {
+    if(!this.weather)return;
+    this.scene.updateWorldMatrix(true,true);
+    this.weather.addSupports(this.seats.filter(s=>this.isOutdoorSnowSeat(s)).flatMap(seat=>{
+      const pad=seat.cushion?new THREE.Box3().setFromObject(seat.cushion):this.seatPad(seat.position.x,seat.position.z+this.seatForward(seat),seat.position.y);
+      if(!pad)return [];
+      const size=pad.getSize(new THREE.Vector3()),centre=pad.getCenter(new THREE.Vector3());
+      return [{id:seat.id,x:centre.x,z:centre.z,y:pad.max.y,width:size.x,depth:size.z,object:seat.cushion}];
+    }));
+    this.weather.addSupports((this.beachRelaxation?.spots??[]).map(spot=>({id:spot.id,x:spot.anchor.x,z:spot.anchor.z,y:spot.anchor.y,
+      width:spot.kind==='mat'?2.25:1.65,depth:spot.kind==='mat'?4.3:1.6,facing:spot.facing,
+      object:spot.kind==='chair'?spot.support:undefined,groundMask:spot.kind==='mat',heightAt:spot.kind==='mat'?spot.surfaceHeightAt:undefined})));
+  }
+
+  private isOutdoorSnowSeat(seat:Seat):boolean {
+    return seat.venue!=='palace'&&seat.venue!=='club'&&!seat.id.startsWith('PALACE-')&&!seat.id.startsWith('CLUB-');
   }
 
   /**
@@ -10274,6 +10332,7 @@ export class FestivalWorld {
     if (['127.0.0.1', 'localhost'].includes(window.location.hostname)) Object.assign(window, { __islandScene: this.scene, __islandWorld: this });
     this.islandDock = new IslandDock();
     this.scene.add(this.islandDock.group);
+    this.registerSnowSurface('island-dock',this.islandDock.group,{exclude:[this.islandDock.boat],minimumHeight:SEA_Y+.02,terrainMask:true});
     for (const [x, z, width, depth] of this.islandDock.barriers()) this.addCollider(x, z, width, depth, 0, undefined, 'island-landing-edge');
   }
 
@@ -10452,10 +10511,7 @@ export class FestivalWorld {
     this.createWishWall();
 
     // Only the western block remains: the eastern one is the temple now.
-    const buildingMat = environmentMaterial('plaster',0x26262a);
-    this.mesh([8, 15, 27], [-99, 7.5, 4], buildingMat);
-    this.mesh([7.2, 1.2, 0.3], [-99, 10.2, 17.65], material(0xa31820));
-    this.addCollider(-99, 4, 8, 27, 0.2, { minY: -0.4, maxY: 40 });
+    this.createWesternBlock();
     this.buildOnGrade(() => this.createTemple(), TEMPLE_GRADE);
 
     const scenery = new CoastalScenery(this.scene,
@@ -10469,6 +10525,8 @@ export class FestivalWorld {
     scenery.buildCirculation();
     scenery.buildPlanting();
     scenery.finish();
+    const townSnow=scenery.takeSnowSurfaceSources();
+    if(!this.preview)(this.snowSurfaceSources ??= []).push(...townSnow);
     if (this.environmentModels && this.environmentUpgradeEnabled()) {
       // Generated shallow Art Deco fluting sits within the existing Palace
       // pier padding. The 20-unit entrance and live marquee stay clear.
@@ -10787,8 +10845,10 @@ export class FestivalWorld {
     carpet.userData.projectorBackground = true;
 
     const wallMaterial = environmentMaterial('plaster',0xb5ab92, 0.94, 0);
-    this.mesh([1, 10, 18], [centerX - 10.5, 5, centerZ], wallMaterial);
-    this.mesh([1, 10, 18], [centerX + 10.5, 5, centerZ], wallMaterial);
+    for(const side of [-1,1]){
+      const wall=this.mesh([1,10,18],[centerX+side*10.5,5,centerZ],wallMaterial);
+      wall.name=`Palace main ${side<0?'west':'east'} wall`;wall.castShadow=true;
+    }
     this.addCollider(centerX - 10.5, centerZ, 1, 18, 0.16);
     this.addCollider(centerX + 10.5, centerZ, 1, 18, 0.16);
     const palaceSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['THE PALACE', 'COMMERCIAL'],undefined,undefined,15.8/3.3,'palace') });
@@ -10810,13 +10870,23 @@ export class FestivalWorld {
 
     // Close the rear behind the projector so the new roof belongs to an enclosed hall.
     this.mesh([22,.6,1],[centerX,9.8,-49.05],wallMaterial).userData.wornNoMasonry=true;
-    this.mesh([22,9.8,.6],[centerX,4.9,-49.05],wallMaterial).userData.wornNoMasonry=true;
+    const rearWall=this.mesh([22,9.8,.6],[centerX,4.9,-49.05],wallMaterial);rearWall.userData.wornNoMasonry=true;
+    rearWall.name='Palace main rear wall';rearWall.castShadow=true;
     this.addCollider(centerX,-49.05,22,.6,.05,{minY:0,maxY:10.1,physical:true},'palace-rear-wall',10.1);
-    const roof=this.mesh([22.4,.42,17.1],[centerX,10.25,-40.75],environmentMaterial('stone',0x4f5957));
+    const roof=this.registerSnowSurface('palace-roof',this.mesh([22.4,.42,17.1],[centerX,10.25,-40.75],environmentMaterial('stone',0x4f5957)));
+    roof.castShadow=true;
     roof.name='Palace auditorium roof';roof.userData.wornNoMasonry=true;
     for(const x of [centerX-10.9,centerX+10.9])this.mesh([.25,.45,17.1],[x,10.65,-40.75],wallMaterial).userData.wornNoMasonry=true;
     for(const z of [-49.2,-32.3])this.mesh([22.4,.45,.25],[centerX,10.65,z],wallMaterial).userData.wornNoMasonry=true;
-    for(const z of [-45,-39,-33])this.mesh([21,.3,.25],[centerX,9.91,z],environmentMaterial('wood',0x4b4440)).userData.wornNoMasonry=true;
+    // Tie beams hang just below the roof and straddle the room's cut height.
+    // Treat their entire silhouette as overhead, preserving the screen's top
+    // edge and the real seating/safety rails below it.
+    const ceilingBeamMaterial=environmentMaterial('wood',0x4b4440);
+    (ceilingBeamMaterial as THREE.MeshStandardMaterial & {defines:Record<string,string>}).defines={CUTAWAY_OVERHEAD:''};
+    for(const z of [-45,-39,-33]){
+      const beam=this.mesh([21,.3,.25],[centerX,9.91,z],ceilingBeamMaterial);
+      beam.name='Palace ceiling tie beam';beam.userData.wornNoMasonry=true;
+    }
     this.addCollider(centerX,-40.75,22.4,17.1,0,{minY:10.04,maxY:10.91,physical:true},'palace-roof',10.91);
 
     const seatMaterial = material(0x9a2028);
@@ -10991,6 +11061,7 @@ export class FestivalWorld {
       }
       const roof=this.mesh([10.5,.38,43],[x,ceiling+.5,21],concrete);
       roof.rotation.z=.12;
+      this.registerSnowSurface(`club-roof-${bay+1}`,roof);
       this.mesh([.25,1.45,42],[x-5,ceiling+.1,21],iron);
       this.mesh([.28,.7,35],[x-4.96,ceiling+.6,21],material(0x658484,.8,0));
     }
@@ -11016,6 +11087,7 @@ export class FestivalWorld {
     sign.position.set(-19.12,8.1,opening);sign.rotation.y=Math.PI/2;this.scene.add(sign);this.mountNeonFrame(sign,11,2.8,'club');
     const entranceCanopy=this.mesh([4,.3,9],[-18.3,6.2,opening],iron);
     entranceCanopy.userData.wornNoMasonry=true;
+    this.registerSnowSurface('club-entry-canopy',entranceCanopy);
     this.clubNeon=this.mesh([.16,.16,9.5],[-16.2,6.1,opening],new THREE.MeshBasicMaterial({color:0xe39865}));
     // The owner removed the warehouse wall bulkheads and their light pools.
     // Back wall screen.
@@ -11245,6 +11317,7 @@ export class FestivalWorld {
     podium.name='Temple foundation below finish';podium.userData.wornNoMasonry=true;
     const templeFloor=this.mesh([width+3,.12,depth+3],[centerX,t.podium-.06,centerZ],paleStone);
     templeFloor.name='Temple single floor finish';templeFloor.userData.wornNoMasonry=true;
+    this.registerSnowSurface('temple-podium',templeFloor,{terrainMask:true});
     // Equal 0.24 rises continue to the hall; longer upper treads meet the contour walk.
     const flight=TEMPLE_STAIRS;
     for(let i=0;i<flight.count;i++){
@@ -11258,6 +11331,7 @@ export class FestivalWorld {
         [x,(top+bottom)/2-TEMPLE_GRADE,flight.centerZ],stone,
       );
       stair.name='Temple hill approach step '+i;stair.userData.wornNoMasonry=true;
+      this.registerSnowSurface(`temple-step-${i+1}`,stair,{terrainMask:true});
     }
 
     // Raised from 6.4. At that height the eaves came down to about six units
@@ -11306,20 +11380,21 @@ export class FestivalWorld {
 
     // Two tiers of roof. Each is a slab with a deeper slab under its eaves, and
     // four kicked corners — the upturn is the whole silhouette of the thing.
-    const tier = (y: number, overhangX: number, overhangZ: number, thickness: number): void => {
+    const tier = (id:string,y: number, overhangX: number, overhangZ: number, thickness: number): void => {
       const w = width + overhangX;
       const d = depth + overhangZ;
       const roof = new THREE.Mesh(coastalRoof(w, d, thickness * 2.6), tile);
       roof.position.set(centerX, y, centerZ); roof.castShadow = true; roof.receiveShadow = true;
       roof.userData.coastalAuthored = true; roof.userData.wornNoMasonry = true;
       this.scene.add(roof);
+      this.registerSnowSurface(id,roof);
       this.mesh([w - 2, .35, d - 2], [centerX, y - thickness / 2 - .15, centerZ], timber);
     };
-    tier(t.podium + wallHeight + 0.5, 7, 7, 0.9);
-    this.mesh([width - 6, 2.6, depth - 6], [centerX, t.podium + wallHeight + 2.3, centerZ], lacquer);
-    tier(t.podium + wallHeight + 4.1, 1.5, 1.5, 0.8);
+    tier('temple-roof-lower',t.podium + wallHeight + 0.5, 7, 7, 0.9);
+    this.registerSnowSurface('temple-roof-connector',this.mesh([width - 6, 2.6, depth - 6], [centerX, t.podium + wallHeight + 2.3, centerZ], lacquer));
+    tier('temple-roof-upper',t.podium + wallHeight + 4.1, 1.5, 1.5, 0.8);
     // Finial.
-    this.mesh([1.2, 1.8, 1.2], [centerX, t.podium + wallHeight + 5.4, centerZ], gold);
+    this.registerSnowSurface('temple-finial',this.mesh([1.2, 1.8, 1.2], [centerX, t.podium + wallHeight + 5.4, centerZ], gold));
 
     // The name over the door.
     this.templeSignMaterial = new THREE.MeshBasicMaterial({
@@ -11483,6 +11558,7 @@ export class FestivalWorld {
     const slabWest = r.minX + 0.16;
     const slabEast = r.maxX + 0.6;
     const shopRoof = this.mesh([slabEast - slabWest, 0.6, depth + 1.2], [(slabWest + slabEast) / 2, ROOF_Y - 0.35, (r.minZ + r.maxZ) / 2], warmConcrete);
+    this.registerSnowSurface('shop-roof',shopRoof);
     // In the sun's shadow map, as the deck is: the band plays and sits on it,
     // and without it their shadows fell through onto the shop's back wall
     // below (the owner, October 2).
@@ -11558,6 +11634,7 @@ export class FestivalWorld {
 
     // Deck and parapet.
     const deck = this.mesh([width, 0.5, deckDepth], [centerX, ROOF_Y - 0.25, deckCenterZ], material(0x54463c, 0.7, 0.15));
+    this.registerSnowSurface('rooftop-deck',deck,{terrainMask:true});
     deck.receiveShadow = true;
     // And it casts, which is not the default here — casting is opt-in because
     // every caster is redrawn into the sun's shadow map each frame. The deck
@@ -11762,7 +11839,7 @@ export class FestivalWorld {
       mesh.userData.wornNoMasonry = true;
       return mesh;
     };
-    const flight = (footZ: number, footY: number): void => {
+    const flight = (id:string,footZ: number, footY: number): void => {
       for (let step = 0; step < 9; step += 1) {
         const top = footY + ROOF_RISER * (step + 1);
         const treadZ = footZ + ROOF_GOING * (step + 0.5);
@@ -11777,29 +11854,29 @@ export class FestivalWorld {
           [massCenterX, (top + ground - .06) / 2, treadZ],
           wallMaterial,
         ));
-        keepAsBuilt(this.mesh([stairWidth,.06,ROOF_GOING],[centerX,top-.03,treadZ],treadFinish));
+        this.registerSnowSurface(`${id}-tread-${step+1}`,keepAsBuilt(this.mesh([stairWidth,.06,ROOF_GOING],[centerX,top-.03,treadZ],treadFinish)),{terrainMask:true});
         // Kerb along the open edge, low enough to leave the steps in view.
         keepAsBuilt(this.mesh([kerbWidth, 0.42, ROOF_GOING], [railX, top + 0.15, treadZ], wallMaterial));
       }
     };
 
-    const landing = (minZ: number, maxZ: number, surfaceY: number, maxX: number): void => {
+    const landing = (id:string,minZ: number, maxZ: number, surfaceY: number, maxX: number): void => {
       const depth = maxZ - minZ;
       const width = maxX - massMinX;
       const cx = (massMinX + maxX) / 2;
       this.mesh([width, surfaceY - ground - .06, depth], [cx, (surfaceY + ground - .06) / 2, (minZ + maxZ) / 2], treadMaterial);
-      this.mesh([width,.06,depth],[cx,surfaceY-.03,(minZ+maxZ)/2],treadFinish);
+      this.registerSnowSurface(id,this.mesh([width,.06,depth],[cx,surfaceY-.03,(minZ+maxZ)/2],treadFinish),{terrainMask:true});
       this.addCollider(cx, (minZ + maxZ) / 2, width, depth, 0.16, { minY: -0.4, maxY: surfaceY - 1.5 });
       this.mesh([kerbWidth, 0.36, depth], [railX, surfaceY + 0.18, (minZ + maxZ) / 2], wallMaterial);
     };
 
-    flight(r.stairMinZ, 0);
-    landing(r.stairLandingMinZ, r.stairLandingMaxZ, halfHeight, r.stairMaxX);
-    flight(r.stairLandingMaxZ, halfHeight);
+    flight('rooftop-stair-lower',r.stairMinZ, 0);
+    landing('rooftop-stair-middle-landing',r.stairLandingMinZ, r.stairLandingMaxZ, halfHeight, r.stairMaxX);
+    flight('rooftop-stair-upper',r.stairLandingMaxZ, halfHeight);
     // The top landing runs east only as far as the deck edge, filling the gap
     // left in the parapet. Sizing it to the deck's own width once walled the
     // roof in half.
-    landing(r.stairTopZ, r.stairMaxZ, ROOF_Y, r.minX);
+    landing('rooftop-stair-top-landing',r.stairTopZ, r.stairMaxZ, ROOF_Y, r.minX);
 
     // Every base plate sits inside one actual tread or landing. The two
     // continuous rails use mitred joints at the exact flight boundaries.
@@ -11818,6 +11895,7 @@ export class FestivalWorld {
     );
     seamBridge.name = 'Rooftop stair-to-deck seam bridge';
     seamBridge.userData.wornNoMasonry = true;
+    this.registerSnowSurface('rooftop-stair-deck-seam',seamBridge,{terrainMask:true});
     // Parapet closing the north end of that landing, and nothing further east.
     const landingWidth = r.minX - massMinX;
     const landingCenterX = (massMinX + r.minX) / 2;
@@ -11858,7 +11936,7 @@ export class FestivalWorld {
       r.minX - r.stairMaxX, stringerDepth, 0.16, { minY: -0.4, maxY: stringerHeight },
     );
     // A kerb across the foot of the run, so the bottom step reads as a step.
-    this.mesh([stairWidth + 1, 0.16, 2.4], [centerX, 0.08, r.stairMinZ - 1.2], treadMaterial);
+    this.registerSnowSurface('rooftop-stair-foot',this.mesh([stairWidth + 1, 0.16, 2.4], [centerX, 0.08, r.stairMinZ - 1.2], treadMaterial),{terrainMask:true});
 
     // Lights on the building face, opposite the handrail. Fixed to the one
     // side of the run that is a solid wall, washing the treads across it.
@@ -11911,6 +11989,13 @@ export class FestivalWorld {
     this.addCollider(60.5, -31.5, 4.6, 4.0, 0.1, undefined, undefined, 1.1);
   }
 
+  private createWesternBlock():void {
+    const buildingMat=environmentMaterial('plaster',0x26262a);
+    this.registerSnowSurface('western-block-roof',this.mesh([8,15,27],[-99,7.5,4],buildingMat));
+    this.mesh([7.2,1.2,.3],[-99,10.2,17.65],material(0xa31820));
+    this.addCollider(-99,4,8,27,.2,{minY:-.4,maxY:40});
+  }
+
   private createConcession(): void {
     const booth = new THREE.Group();
     // Named for the static batch: nothing on it moves (StaticBatch.ts).
@@ -11925,6 +12010,7 @@ export class FestivalWorld {
     for(const x of [-1.45,1.45])this.mesh([.14,2.25,.12],[x,1.305,1.34],material(0xdecbaa),booth).userData.wornNoMasonry=true;
     for(const x of [-1,-.5,0,.5,1])this.mesh([.18,.78,.06],[x,.69,1.34],material(0xdecbaa),booth).userData.wornNoMasonry=true;
     const boothCanopy=this.mesh([3.8,.22,3.1],[0,2.54,0],material(0x796046),booth);
+    this.registerSnowSurface('concession-canopy',boothCanopy);
     boothCanopy.userData.wornNoMasonry=true;
     boothCanopy.castShadow=true;boothCanopy.receiveShadow=true;
     booth.add(createConcessionContactShadow(this.groundHeightAt(concessionPosition.x,concessionPosition.z,concessionPosition.y)-AVATAR_GROUND_Y-concessionPosition.y));
@@ -11995,6 +12081,9 @@ export class FestivalWorld {
       const staff=createFestivalAttendant(clerk,3.25);
       this.venueSceneryAssets.registerFestivalAttendant(staff.rig);
     }
+    // Extraction happens after the asset's final visibility swap. A hidden
+    // fallback and the animated clerk must never become another snow roof.
+    this.registerSnowSurface('drive-in-box-office-roof',booth,{exclude:[clerk],visibleOnly:true});
 
     const palace = new THREE.Group();
     palace.name = 'THE PALACE ticket inspection stand';
@@ -12030,6 +12119,7 @@ export class FestivalWorld {
   private createWishWall(): void {
     this.wishWallFrame=createWishWallFrame(this.templeTrimAtlas?.material);
     const group = this.wishWallFrame.root;
+    this.registerSnowSurface('wish-wall-roof',group);
     const ground = terrainHeightAt(WISH_WALL.x, WISH_WALL.z);
     group.position.set(WISH_WALL.x, ground, WISH_WALL.z);
     group.scale.setScalar(WISH_WALL.scale);
@@ -13141,6 +13231,7 @@ export class FestivalWorld {
     this.updateTrackedBody(delta);
     this.weather?.update(delta,this.player.position);
     this.dayNight.setWeatherCloud(this.weather?.cloudiness()??0);
+    this.dayNight.setShadowFocus(this.player.position);
     const dayNight = this.dayNight.update();
     this.updateAmbience(frameStartedAt, dayNight.cycleMinute);
     // After the day-night cycle has set the lamps: the bonfire wavers its own.
@@ -13472,6 +13563,7 @@ export class FestivalWorld {
       })));
     }
     this.npcIndicators.update(this.camera, { localPlayerNpcId: this.controlledNpcId,
+      carriedNpcId: this.isCarryingMentor() || this.mentorCarrierId ? 'MENTOR' : undefined,
       remotePlayerNpcIds: this.remoteNpcControls });
   }
 
@@ -14560,12 +14652,13 @@ export class FestivalWorld {
       }
     }
     for (const npc of this.npcs) {
-      if (npc.id === this.controlledNpcId || this.remoteNpcControls.has(npc.id)) {
+      if (npc.id === this.controlledNpcId || this.remoteNpcControls.has(npc.id) ||
+        (npc.id === 'MENTOR' && (this.isCarryingMentor() || Boolean(this.mentorCarrierId)))) {
         npc.badge.visible = false;
         npc.badge.userData.npcLabelRequested=false;
         continue;
       }
-      npc.badge.visible = npc === nearestNpc || npc.gestureUntil > now ||(npc.id==='MENTOR'&&(this.isCarryingMentor()||Boolean(this.mentorCarrierId)));
+      npc.badge.visible = npc === nearestNpc || npc.gestureUntil > now;
       npc.badge.userData.npcLabelRequested=npc.badge.visible;
     }
   }

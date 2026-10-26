@@ -127,6 +127,28 @@ test('source emissive colour and intensity remain independent cached material va
   library.dispose();
 });
 
+test('only the explicit overhead cutaway role survives tile replacement and stays separate through style and batching',async t=>{
+  const network=installNetwork(t),scene=new THREE.Scene(),meshes=[];
+  for(let i=0;i<4;i++){
+    const source=new THREE.MeshStandardMaterial({color:0x4b4440});
+    source.defines={WORN_STYLE:'',UNRELATED_SOURCE_PATCH:'',...(i<2?{CUTAWAY_OVERHEAD:''}:{})};
+    const mesh=tagEnvironmentSurface(new THREE.Mesh(new THREE.BoxGeometry(21,.3,.25),source),'wood');
+    mesh.position.set(0,9.91,i*3);mesh.userData.wornNoMasonry=true;meshes.push(mesh);scene.add(mesh);
+  }
+  const library=new EnvironmentMaterials({assets:{wood:urls},mobile:true});
+  const report=await library.prepare(scene);assert.equal(report.materialVariants,2);assert.equal(network.requested.length,3,'the variants still share one tile set');
+  assert.equal(meshes[0].material,meshes[1].material);assert.equal(meshes[2].material,meshes[3].material);assert.notEqual(meshes[0].material,meshes[2].material);
+  for(const [i,mesh]of meshes.entries()){
+    assert.equal(mesh.material.defines?.CUTAWAY_OVERHEAD,i<2?'':undefined);
+    assert.equal(mesh.material.defines?.WORN_STYLE,undefined);assert.equal(mesh.material.defines?.UNRELATED_SOURCE_PATCH,undefined);
+  }
+  applyWornStyle(scene);batchStaticScenery(scene);
+  const batches=scene.children.filter(o=>o.isMesh);assert.equal(batches.length,2);
+  assert.equal(batches.filter(o=>o.material.defines?.CUTAWAY_OVERHEAD!==undefined).length,1);
+  assert.ok(batches.every(o=>o.geometry.attributes.position.count>0&&o.material.map));
+  library.dispose();
+});
+
 test('desktop tiles use the same image-row orientation and normal convention as budgeted bitmaps', async t => {
   const network = installNetwork(t), loaded = [];
   const oldLoad = THREE.TextureLoader.prototype.loadAsync;

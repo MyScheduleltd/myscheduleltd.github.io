@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { weatherAt, type SharedWeather, type WeatherSample } from '../weather/WeatherModel.mjs';
+import { weatherAt, seatSnowCoverageFromSample, type SharedWeather, type WeatherSample, type ClearedSnowSeat } from '../weather/WeatherModel.mjs';
+import { buildSnowTerrain, buildSnowSurfaceMeshes, SNOW_SURFACE_BUDGET, type SnowSurfaceSource, type SnowSurfaceReport } from './SnowSurfaceCoverage';
 
 export const WEATHER_BUDGET = Object.freeze({ rain: 640, snow: 960, phoneRain: 220, phoneSnow: 420, snowBands: 3,
   snowNearRadius: 10, snowMidRadius: 18, snowFarRadius: 29, snowPointSize: .18,
@@ -7,13 +8,14 @@ export const WEATHER_BUDGET = Object.freeze({ rain: 640, snow: 960, phoneRain: 2
 const EMPTY: SharedWeather = { version: 1, updatedAt: 0, schedule: [], clearedSeats: [] };
 const CLEAR:WeatherSample=Object.freeze({type:'clear',occurrenceId:null,snowCoverage:0});
 const wrapParticle=(value:number,span:number)=>((value%span)+span)%span;
-const SNOW_TRIANGLE=[0,1,2,2,1,3] as const;
 export interface SnowSupport {
   id: string; x: number; z: number; y: number; width: number; depth: number; facing?: number;
   /** Keep the ground blanket out from under a low cloth surface. */
   groundMask?: boolean;
   /** Finished world-space surface, including a mat's slope and pillow. */
   heightAt?: (x: number, z: number) => number;
+  /** Exact authored cushion/proxy; replaces a guessed rectangular plane. */
+  object?: THREE.Object3D;
 }
 export interface WeatherGround { heightAt(x: number, z: number): number; shelteredAt(x: number, z: number, y: number): boolean; dryAt(x: number, z: number): boolean }
 
@@ -24,12 +26,16 @@ export class FestivalWeather {
   private sharedStamp=EMPTY.updatedAt;
   private scheduleRef=EMPTY.schedule;
   private clearRef=EMPTY.clearedSeats;
-  private readonly clearedBySeat=new Map<string,string>();
+  private readonly clearedBySeat=new Map<string,ClearedSnowSeat>();
   private offset = 0;
   private sample: WeatherSample = weatherAt([], 0);
   private readonly rain: THREE.LineSegments;
   private readonly snow: THREE.Points;
   private readonly ground: THREE.Mesh;
+  private fixedSurfaces?:THREE.Mesh;
+  private authoredShelter?: (x:number,z:number,y:number)=>boolean;
+  private surfaceReport:SnowSurfaceReport={sourceTriangles:0,topTriangles:0,triangles:0,sources:[]};
+  private readonly terrainReport:{samples:number;cells:number};
   private readonly coverage = { value: 0 };
   private readonly masks = { value: Array.from({length:WEATHER_BUDGET.groundMasks},()=>new THREE.Vector4()) };
   private readonly maskRotations = { value: Array.from({length:WEATHER_BUDGET.groundMasks},()=>new THREE.Vector2(1,0)) };
@@ -51,42 +57,8 @@ export class FestivalWeather {
     this.groundQuery = ground; this.phone = phone;
     this.root.name = 'festival-weather'; this.root.userData.dynamic = true;
     this.coverMaterial = this.snowMaterial(this.coverage,true);
-    const points: number[] = [], colors: number[] = [];
-    const step = WEATHER_BUDGET.grid;
-    const west=-126,east=128,north=-74,south=100,columns=Math.ceil((east-west)/step)+1;
-    let upper=new Float64Array(columns),lower=new Float64Array(columns);
-    let upperAllowed=new Uint8Array(columns),lowerAllowed=new Uint8Array(columns);
-    const sampleRow=(heights:Float64Array,allowed:Uint8Array,z:number)=>{
-      for(let column=0;column<columns;column++){
-        const x=west+column*step,y=ground.heightAt(x,z);heights[column]=y;
-        allowed[column]=Number.isFinite(y)&&ground.dryAt(x,z)&&!ground.shelteredAt(x,z,y+.1)?1:0;
-      }
-    };
-    sampleRow(upper,upperAllowed,north);
-    // Sample the same finished ground the attendee stands on. Reject entire
-    // cells at roof/water boundaries instead of bridging a snowy triangle indoors.
-    // Adjacent cells share corners. Two short rows retain exact samples without
-    // four terrain queries per cell or a temporary array/object for each one.
-    for (let z=north;z<south;z+=step) {
-      sampleRow(lower,lowerAllowed,z+step);
-      for(let column=0;column<columns-1;column++){
-        if(!upperAllowed[column]||!upperAllowed[column+1]||!lowerAllowed[column]||!lowerAllowed[column+1])continue;
-        const a=upper[column],b=lower[column],c=upper[column+1],d=lower[column+1];
-        if(Math.max(a,b,c,d)-Math.min(a,b,c,d)>1.2)continue;
-        const x=west+column*step;
-        const v = .91 + .08 * ((Math.sin(x*3.1+z*2.4)*437.2)%1+1)/2;
-        for(const corner of SNOW_TRIANGLE){
-          const right=corner>=2,next=corner%2===1;
-          const y=right?(next?d:c):(next?b:a);
-          points.push(x+(right?step:0),y+.03,z+(next?step:0));colors.push(v,v,v);
-        }
-      }
-      const oldHeights=upper;upper=lower;lower=oldHeights;
-      const oldAllowed=upperAllowed;upperAllowed=lowerAllowed;lowerAllowed=oldAllowed;
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position',new THREE.Float32BufferAttribute(points,3));
-    geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3)); geometry.computeVertexNormals();
+    const terrain=buildSnowTerrain(ground),geometry=terrain.geometry;
+    this.terrainReport={samples:terrain.samples,cells:terrain.cells};
     this.ground = new THREE.Mesh(geometry,this.coverMaterial);
     this.ground.name='thin-ground-snow'; this.ground.receiveShadow=true;
     this.ground.userData.dynamic=true; this.root.add(this.ground);
@@ -168,8 +140,8 @@ export class FestivalWeather {
       shader.uniforms.snowMasks=this.masks;
       shader.uniforms.snowMaskRotations=this.maskRotations;
       shader.uniforms.snowMaskCount=this.maskCount;
-      shader.vertexShader='uniform float snowCoverage; varying vec3 snowPosition;\n'+shader.vertexShader;
-      shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nsnowPosition=position; transformed.y += snowCoverage * '+WEATHER_BUDGET.thickness+';');
+      shader.vertexShader='uniform float snowCoverage; attribute float snowLift; varying vec3 snowPosition;\n'+shader.vertexShader;
+      shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nsnowPosition=position; transformed.y += snowCoverage * '+WEATHER_BUDGET.thickness+' * snowLift;');
       shader.fragmentShader=`uniform float snowCoverage;
         uniform float snowGroundMask;
         uniform vec4 snowMasks[${WEATHER_BUDGET.groundMasks}];
@@ -191,7 +163,33 @@ export class FestivalWeather {
         }
         vec2 snowCell=floor(snowPosition.xz*5.0); float snowPatch=fract(sin(dot(snowCell,vec2(12.9898,78.233)))*43758.5453); if(snowCoverage <= snowPatch) discard;`);
     };
-    material.customProgramCacheKey=()=> 'festival-settled-snow-v3-depth12-masked-surfaces'; return material;
+    material.customProgramCacheKey=()=> 'festival-settled-snow-v4-authored-contact-surfaces'; return material;
+  }
+
+  /** Once, after fixed architecture is finished and before admission warmup.
+   * One exact, exposed, world-space mesh is shared by roofs/dock/steps. */
+  addSurfaceMeshes(sources:readonly SnowSurfaceSource[]):void {
+    if(this.disposed||this.fixedSurfaces)return;
+    // Constructor shelter boxes are a safe provisional fallback. Once real
+    // roofs exist they must not leave permanent holes outside their eaves.
+    const terrain=buildSnowTerrain({heightAt:(x,z)=>this.groundQuery.heightAt(x,z),dryAt:(x,z)=>this.groundQuery.dryAt(x,z),shelteredAt:()=>false});
+    let built:ReturnType<typeof buildSnowSurfaceMeshes>;
+    try{built=buildSnowSurfaceMeshes(sources,terrain.geometry);}
+    catch(error){terrain.geometry.dispose();throw error;}
+    const previous=this.ground.geometry;
+    this.ground.geometry=built.terrainGeometry??terrain.geometry;
+    if(built.terrainGeometry)terrain.geometry.dispose();
+    previous.dispose();Object.assign(this.terrainReport,{samples:terrain.samples,cells:terrain.cells});
+    this.authoredShelter=built.shelteredAt;
+    this.surfaceReport={sourceTriangles:built.sourceTriangles,topTriangles:built.topTriangles,triangles:built.triangles,sources:built.sources};
+    const mesh=new THREE.Mesh(built.geometry,this.snowMaterial(this.coverage));
+    mesh.name='authored-outdoor-snow';mesh.receiveShadow=true;mesh.userData.dynamic=true;
+    this.root.add(mesh);this.fixedSurfaces=mesh;this.applyVisibility();
+  }
+
+  /** Undefined until the fixed architecture registry is prepared under gate. */
+  shelteredAt(x:number,z:number,y:number):boolean|undefined {
+    return this.authoredShelter?.(x,z,y);
   }
 
   addSupports(supports: SnowSupport[]): void {
@@ -208,8 +206,10 @@ export class FestivalWeather {
       const uniform={value:0},mat=this.snowMaterial(uniform);
       // Colour attribute keeps ground/caps on a single stable shader variant.
       const segments=(size:number)=>s.heightAt?Math.min(WEATHER_BUDGET.capSegments,Math.max(1,Math.ceil(size/WEATHER_BUDGET.capGrid))):1;
-      const g=new THREE.PlaneGeometry(s.width,s.depth,segments(s.width),segments(s.depth));g.rotateX(-Math.PI/2);
-      if(s.heightAt) {
+      let g:THREE.BufferGeometry;
+      if(s.object)g=buildSnowSurfaceMeshes([{id:s.id,object:s.object}]).geometry;
+      else {g=new THREE.PlaneGeometry(s.width,s.depth,segments(s.width),segments(s.depth));g.rotateX(-Math.PI/2);}
+      if(s.heightAt&&!s.object) {
         const positions=g.attributes.position;
         for(let i=0;i<positions.count;i++) {
           const x=positions.getX(i),z=positions.getZ(i);
@@ -218,8 +218,13 @@ export class FestivalWeather {
         }
         positions.needsUpdate=true;g.computeVertexNormals();
       }
-      g.setAttribute('color',new THREE.Float32BufferAttribute(Array(g.attributes.position.count*3).fill(1),3));
-      const mesh=new THREE.Mesh(g,mat);mesh.position.set(s.x,s.y+.025,s.z);mesh.rotation.y=facing;
+      if(!s.object){
+        g.deleteAttribute('uv');
+        g.setAttribute('color',new THREE.Float32BufferAttribute(Array(g.attributes.position.count*3).fill(1),3));
+        g.setAttribute('snowLift',new THREE.Float32BufferAttribute(Array(g.attributes.position.count).fill(1),1));
+      }
+      const mesh=new THREE.Mesh(g,mat);
+      if(!s.object){mesh.position.set(s.x,s.y+.025,s.z);mesh.rotation.y=facing;}
       mesh.name='seat-snow-'+s.id;mesh.receiveShadow=true;mesh.userData.dynamic=true;
       this.root.add(mesh);this.caps.push({id:s.id,mesh,uniform});
     }
@@ -234,7 +239,7 @@ export class FestivalWeather {
     if(next.updatedAt!==this.sharedStamp||next.schedule!==this.scheduleRef||next.clearedSeats!==this.clearRef){
       this.sharedStamp=next.updatedAt;this.scheduleRef=next.schedule;this.clearRef=next.clearedSeats;
       this.clearedBySeat.clear();
-      for(const record of next.clearedSeats)this.clearedBySeat.set(record.seatId,record.occurrenceId);
+      for(const record of next.clearedSeats)this.clearedBySeat.set(record.seatId,record);
       this.lastSurface=-Infinity;
     }
     this.shared=next;
@@ -242,12 +247,15 @@ export class FestivalWeather {
   }
   now(): number { return Date.now()+this.offset; }
   seatCoverage(id: string): number {
-    const sample=this.shared.schedule.length?weatherAt(this.shared.schedule,this.now()):CLEAR;
-    return this.clearedBySeat.get(id)===sample.occurrenceId?0:sample.snowCoverage;
+    const now=this.now(),sample=this.shared.schedule.length?weatherAt(this.shared.schedule,now):CLEAR;
+    return seatSnowCoverageFromSample(sample,this.shared.schedule,this.clearedBySeat.get(id),now);
   }
   current(): WeatherSample { return this.sample; }
   cloudiness(): number { return this.cloud; }
-  audioMix(): { rain:number; snow:number; snowFootsteps:boolean } { return {rain:this.rainMix,snow:this.snowMix,snowFootsteps:this.sample.snowCoverage>.12}; }
+  /** Audio owns its short gain glide. Feeding the four-second visual ease
+   * through that glide too would leave ordinary ambience under snow for tens
+   * of seconds; settled melt must not keep the winter sound playing either. */
+  audioMix(): { rain:number; snow:number; snowFootsteps:boolean } { return {rain:this.sample.type==='rain'?1:0,snow:this.sample.type==='snow'?1:0,snowFootsteps:this.sample.snowCoverage>.12}; }
   /** Wrap the existing compile/draw warmup. Coverage stays an ordinary
    * uniform: clear-day startup must still prepare every later weather kind. */
   setWarmup(enabled: boolean): void {
@@ -258,6 +266,7 @@ export class FestivalWeather {
   private applyVisibility(surfaces=true): void {
     if(surfaces){
       this.ground.visible=this.warming||this.coverage.value>.001;
+      if(this.fixedSurfaces)this.fixedSurfaces.visible=this.warming||this.coverage.value>.001;
       for(const cap of this.caps)cap.mesh.visible=this.warming||cap.uniform.value>.001;
     }
     this.rain.visible=this.warming||this.rainMix>.005;
@@ -283,7 +292,7 @@ export class FestivalWeather {
     const surfacesDue=now-this.lastSurface>250||now<this.lastSurface;
     if(surfacesDue) {
       this.coverage.value=this.sample.snowCoverage;
-      for(const cap of this.caps)cap.uniform.value=this.clearedBySeat.get(cap.id)===this.sample.occurrenceId?0:this.sample.snowCoverage;
+      for(const cap of this.caps)cap.uniform.value=seatSnowCoverageFromSample(this.sample,this.shared.schedule,this.clearedBySeat.get(cap.id),now);
       this.lastSurface=now;
     }
     this.applyVisibility(surfacesDue);
@@ -299,7 +308,7 @@ export class FestivalWeather {
         const z=observer.z-24+((i*21.371+Math.sin(time*.22+i)*1.2)%48+48)%48;
         const floor=this.groundQuery.heightAt(x,z);
         const y=floor+((seed*22-time*14)%22+22)%22;
-        const sheltered=!Number.isFinite(y)||this.groundQuery.shelteredAt(x,z,y);
+        const sheltered=!Number.isFinite(y)||(this.authoredShelter?.(x,z,y)??this.groundQuery.shelteredAt(x,z,y));
         const py=sheltered?-100:y;
         a.setXYZ(i*2,x,py,z);a.setXYZ(i*2+1,x-.09,py+.65,z+.02);
       }
@@ -319,13 +328,13 @@ export class FestivalWeather {
         // Larger/heavier clusters fall faster. Small sideways oscillations
         // keep the volume alive without a uniform screen-space noise sheet.
         const y=floor+wrapParticle(seed*height-time*(1.55+seed*1.9+band*.2),height);
-        const sheltered=!Number.isFinite(y)||this.groundQuery.shelteredAt(x,z,y);
+        const sheltered=!Number.isFinite(y)||(this.authoredShelter?.(x,z,y)??this.groundQuery.shelteredAt(x,z,y));
         a.setXYZ(i,x,sheltered?-100:y,z);
       }
       a.needsUpdate=true;this.snow.geometry.setDrawRange(0,count);
     }
   }
-  snapshot(): unknown { return {...this.sample,cloudiness:this.cloud,rain:this.rainMix,snow:this.snowMix,settledDepth:this.coverage.value*WEATHER_BUDGET.thickness,maximumSettledDepth:WEATHER_BUDGET.thickness,groundTriangles:(this.ground.geometry.attributes.position?.count??0)/3,seatCaps:this.caps.length,groundMasks:this.maskCount.value,
+  snapshot(): unknown { return {...this.sample,cloudiness:this.cloud,rain:this.rainMix,snow:this.snowMix,settledDepth:this.coverage.value*WEATHER_BUDGET.thickness,maximumSettledDepth:WEATHER_BUDGET.thickness,groundTriangles:(this.ground.geometry.index?.count??this.ground.geometry.attributes.position?.count??0)/3,terrain:this.terrainReport,authoredSurfaces:this.surfaceReport,contactLift:SNOW_SURFACE_BUDGET.contactLift,seatCaps:this.caps.length,groundMasks:this.maskCount.value,
     snowfall:{depthBands:WEATHER_BUDGET.snowBands,flakes:this.phone?WEATHER_BUDGET.phoneSnow:WEATHER_BUDGET.snow,pointSize:WEATHER_BUDGET.snowPointSize},extraLights:0}; }
   dispose(): void {
     if(this.disposed)return;
@@ -338,6 +347,6 @@ export class FestivalWeather {
     });
     for(const geometry of geometries){geometry.dispose();for(const key of Object.keys(geometry.attributes))geometry.deleteAttribute(key);geometry.setIndex(null);}
     for(const material of materials)material.dispose();
-    this.root.clear();this.caps.length=0;this.maskCount.value=0;this.clearedBySeat.clear();
+    this.root.clear();this.caps.length=0;this.maskCount.value=0;this.clearedBySeat.clear();this.fixedSurfaces=undefined;this.authoredShelter=undefined;
   }
 }
