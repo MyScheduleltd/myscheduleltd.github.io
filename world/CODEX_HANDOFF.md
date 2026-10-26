@@ -22,6 +22,8 @@ Evidence: `QA_WEATHER_COVERAGE_20261026.md` and local `art/weather-coverage-2026
 
 Disposable API8796 has state/seed/external storage disabled. Dev4194 remains the Mac playable wrapper against that API. Preview4196 is stopped; `dist` now contains the production API package and must not be served for local testing. Canonical mirror is `release-sfx-20261018/world`; preserve its unrelated changes and never publish its stale dist.
 
+Owner pre-merge loading assurance: **1,292 additional browser checks pass** over eight Chrome/WebKit × Normal/Lite × sound/muted-entry combinations. Native audio instrumentation confirms all 20 fixed sounds finish decoding before entry. Deliberately withholding wind until graphics are ready keeps the loading animation up; muted entry then unmute needs no new download/decode/context. Four sound-on profiles also pass 24 rapid weather switches each, a 30-second mixed rain/snow fade, venue/camera travel and a full-melt clock jump. Exact weather resources stay at 4,521,888 B, with no post-entry fixed download, audio decode/new context, GL compile/link, page/shader error or >100 ms pause observed. The verifier correctly permits global renderer totals to decrease when disconnected visitors expire while keeping exact weather resource equality. Evidence: QA addendum and local loading-assurance-summary.json / loading-stress / loading-stress-webkit / loading-muted. Runtime code/package remain unchanged from 1662e1b; only verification/docs were strengthened. Physical-device/thermal/crowded/live-media guarantees are not claimed; unavailable sounds may remain silent instead of retrying in play.
+
 ---
 
 # Current release candidate — weather, resting contact and entry readiness, 2026-10-25 (Asia/Taipei)

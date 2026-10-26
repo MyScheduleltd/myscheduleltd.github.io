@@ -4,6 +4,12 @@
  *
  *   PLAYWRIGHT_PACKAGE_JSON=/path/to/playwright/package.json CHROMIUM_EXECUTABLE=/path/to/chrome node scripts/verify-loading-weather.mjs
  *
+ * Optional checks: --hold-audio holds the new wind file until the world is
+ * waiting behind its sound-loading screen; --muted verifies silent entry and
+ * later unmute; --stress adds 24 rapid changes, a 30-second mixed-fade snow
+ * run and a completed-melt clock jump. --profile=chrome-desktop or
+ * --profile=webkit-iphone16pro selects one browser, still in both quality modes.
+ *
  * No production requests, accounts or weather writes are permitted. Browser
  * emulation reports timing evidence; it is not a physical iPhone benchmark.
  * `--self-test` verifies the audit instrumentation/safety guards without
@@ -99,6 +105,42 @@ export function installGLAudit() {
   }));
 }
 
+/** Observe real native decode completion and context construction. This does
+ * not substitute an application-ready flag for a finished audio decode. */
+export function installAudioAudit() {
+  const audit = { contexts: [], decodes: [], pending: 0, baselineAt: null, afterAdmission: [] };
+  window.__loadingWeatherAudioAudit = audit;
+  const wrappers = new WeakSet();
+  for (const Constructor of [globalThis.BaseAudioContext, globalThis.AudioContext, globalThis.OfflineAudioContext]) {
+    const original = Constructor?.prototype?.decodeAudioData;
+    if (typeof original !== 'function' || wrappers.has(original)) continue;
+    const wrapped = function (...args) {
+      const record = { startedAt: performance.now(), bytes: args[0]?.byteLength, status: 'pending' };
+      audit.decodes.push(record); audit.pending++;
+      if (audit.baselineAt !== null) audit.afterAdmission.push({ kind: 'decode', at: record.startedAt });
+      const done = (status, buffer) => {
+        record.status = status; record.finishedAt = performance.now(); audit.pending--;
+        if (buffer) { record.channels = buffer.numberOfChannels; record.samples = buffer.length; }
+      };
+      try {
+        return Reflect.apply(original, this, args).then(buffer => { done('fulfilled', buffer); return buffer; },
+          error => { done('rejected'); throw error; });
+      } catch (error) { done('threw'); throw error; }
+    };
+    wrappers.add(wrapped); Constructor.prototype.decodeAudioData = wrapped;
+  }
+  for (const name of ['AudioContext', 'OfflineAudioContext']) {
+    const Constructor = globalThis[name];
+    if (typeof Constructor !== 'function') continue;
+    globalThis[name] = new Proxy(Constructor, { construct(target, args, newTarget) {
+      const context = Reflect.construct(target, args, newTarget);
+      const record = { kind: name, at: performance.now() }; audit.contexts.push(record);
+      if (audit.baselineAt !== null) audit.afterAdmission.push({ kind: name, at: record.at });
+      return context;
+    } });
+  }
+}
+
 async function selfTest() {
   for (const url of [`http://127.0.0.1:${UI_PORT}/assets/world.js`, `http://localhost:${API_PORT}/api/admin/weather`, 'data:text/plain,test', 'blob:http://127.0.0.1:4196/fake']) assert.ok(networkAllowed(url), url);
   for (const url of ['https://myscheduleltd.com/', 'https://myschedule-festival.onrender.com/api/join', 'http://127.0.0.1:8787/api/admin/weather', 'http://127.0.0.1:4197/', 'https://127.0.0.1:4196/', 'http://localhost.evil.test:8796/', 'http://user:pass@127.0.0.1:8796/']) assert.equal(networkAllowed(url), false, url);
@@ -127,20 +169,41 @@ async function selfTest() {
   assert.equal(audit.linkProgram, nativeLinks); assert.equal(audit.compileShader, 2);
   assert.equal(audit.afterAdmission.length, 2); assert.equal(audit.contextLost.length, 1);
   assert.ok(audit.afterAdmission.every(event => event.context === 2));
-  console.log('QA safety and actual GL-call instrumentation self-test passed; no browsers or network were used.');
+  class AudioBase { decodeAudioData() { return Promise.resolve({ numberOfChannels: 1, length: 48 }); } }
+  class LiveAudio extends AudioBase {}
+  class OfflineAudio extends AudioBase {}
+  const audioWindow = {};
+  const audioSandbox = { window: audioWindow, BaseAudioContext: AudioBase, AudioContext: LiveAudio,
+    OfflineAudioContext: OfflineAudio, performance: { now: () => tick++ } };
+  runInNewContext(`(${installAudioAudit.toString()})()`, audioSandbox);
+  const offline = new audioSandbox.OfflineAudioContext();
+  await offline.decodeAudioData(new ArrayBuffer(8));
+  const sound = audioWindow.__loadingWeatherAudioAudit;
+  assert.equal(sound.contexts.length, 1); assert.equal(sound.decodes.length, 1);
+  assert.equal(sound.pending, 0); assert.equal(sound.decodes[0].status, 'fulfilled');
+  sound.baselineAt = tick;
+  const realtime = new audioSandbox.AudioContext(); await realtime.decodeAudioData(new ArrayBuffer(16));
+  assert.equal(sound.contexts.length, 2); assert.equal(sound.decodes.length, 2);
+  assert.deepEqual([...sound.afterAdmission.map(event => event.kind)], ['AudioContext', 'decode']);
+  console.log('QA safety and actual GL/audio-call instrumentation self-test passed; no browsers or network were used.');
 }
 
 async function main() {
+  const stress = process.argv.includes('--stress');
+  const muted = process.argv.includes('--muted');
+  const holdAudio = process.argv.includes('--hold-audio');
+  const selectedProfile = process.argv.find(value => value.startsWith('--profile='))?.slice('--profile='.length);
+  assert.ok(!selectedProfile || ['chrome-desktop', 'webkit-iphone16pro'].includes(selectedProfile), 'Unknown browser profile');
   const positional = process.argv.slice(2).filter(value => !value.startsWith('--'));
   const base = validateBase(positional[0] ?? `http://127.0.0.1:${UI_PORT}`);
   const out = resolve(positional[1] ?? DEFAULT_OUT);
   await mkdir(out, { recursive: true });
   const report = {
     startedAt: new Date().toISOString(), base, api: API, physicalDevice: false,
-    testDescription: 'Serial actual GL call + loading barrier + weather resource/timing QA on a local production build and disposable API only.',
+    testDescription: 'Serial native GL/audio calls + loading barrier + weather resource/timing QA on a local production build and disposable API only.',
     timingLimitations: 'Mac headless browser / iPhone emulation; frame timing is measured, not a physical-device FPS guarantee.',
     weatherSampling: 'Six-second real play samples include the production fades. Clear stops precipitation and retains the real 15-minute snow melt tail; mixtures/coverage and submitted draws are reported.',
-    samplesMs: SAMPLE_MS, runs: [],
+    samplesMs: SAMPLE_MS, stress, mutedEntry: muted, heldWindDownload: holdAudio, runs: [],
   };
   const writeReport = () => writeFile(join(out, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   const fetchLocal = async (url, options = {}) => {
@@ -168,10 +231,12 @@ async function main() {
         launch: { headless: true, ...(process.env.CHROMIUM_EXECUTABLE ? { executablePath: process.env.CHROMIUM_EXECUTABLE } : {}) }, flakes: 960 },
       { name: 'webkit-iphone16pro', engine: webkit, options: phone, launch: { headless: true }, flakes: 420 },
     ]) for (const quality of ['normal', 'lite']) {
+      if (selectedProfile && profile.name !== selectedProfile) continue;
       const run = { profile: profile.name, quality, startedAt: new Date().toISOString(), assertions: [], errors: [], shaderErrors: [],
         consoleErrors: [], lateAssets: [], blockedRequests: [], localRequestFailures: [], localHttpErrors: [], apiPaths: [], stages: [], timings: [] };
       report.runs.push(run);
       let admitted = false, auditing = true;
+      let releaseWind = () => {};
       const started = performance.now();
       const check = (condition, label) => { assert.ok(condition, label); run.assertions.push(label); };
       const log = message => console.log(`[${profile.name}/${quality}] ${message}`);
@@ -180,9 +245,11 @@ async function main() {
         browser = await profile.engine.launch(profile.launch);
         context = await browser.newContext({ ...profile.options, serviceWorkers: 'block' });
         await context.addInitScript(installGLAudit);
+        await context.addInitScript(installAudioAudit);
         let releaseSettings, markSettingsHeld;
         const settingsBarrier = new Promise(resolve => { releaseSettings = resolve; });
         const settingsHeld = new Promise(resolve => { markSettingsHeld = resolve; });
+        const windBarrier = new Promise(resolve => { releaseWind = resolve; });
         await context.route('**/*', async route => {
           const request = route.request(), url = new URL(request.url());
           if (!networkAllowed(url.href)) {
@@ -194,6 +261,10 @@ async function main() {
             markSettingsHeld();
             await settingsBarrier;
             return route.fulfill({ response });
+          }
+          if (holdAudio && /\/weather-snow-wind-[^/]+\.mp3$/.test(url.pathname)) {
+            run.windRequestHeld = true;
+            await windBarrier;
           }
           return route.continue();
         });
@@ -245,12 +316,16 @@ async function main() {
             for (const material of Array.isArray(object.material) ? object.material : object.material ? [object.material] : []) materials.add(material.uuid);
           });
           return { label, atMs: performance.now(), cameraMode: w.cameraMode, position: w.player.position.toArray(), state: w.playerState,
+            remoteVisitorIds: [...w.remoteAvatars.keys()],
             gl: { compileShader: gl.compileShader, linkProgram: gl.linkProgram, contexts: gl.contexts.length, lost: gl.contextLost.length },
             renderer: { textures: info.memory.textures, geometries: info.memory.geometries, programs: info.programs.length, ...info.render },
             weatherResources: { geometries: [...geometries].sort(), materials: [...materials].sort(),
               bufferBytes: [...buffers].reduce((sum, buffer) => sum + buffer.byteLength, 0), buffers: buffers.size }, precipitation,
             weather: w.weather.snapshot(), timings: w.frameTimings.snapshot(),
             perf: window.__festivalPerf(), audio: window.__festivalAudio(), fireworks: w.fireworksReviewSnapshot(),
+            allSoundsReady: w.audio.worldSoundsReady(),
+            nativeAudio: { contexts: window.__loadingWeatherAudioAudit.contexts.length,
+              pending: window.__loadingWeatherAudioAudit.pending, decodes: window.__loadingWeatherAudioAudit.decodes.length },
           };
         }, label);
         const frames = async (count = 2) => page.evaluate(count => new Promise(resolve => {
@@ -270,16 +345,40 @@ async function main() {
         check(await page.locator('#festival-id').inputValue() === attendeeId, 'a delayed public-settings redraw preserves the name already typed into sign-in');
         await page.evaluate(() => { delete window.__qaTypedGateInput; });
         await page.locator(`[data-graphics="${quality}"]`).click();
-        await page.locator('button[data-audio="sound"]').click();
+        await page.locator(`button[data-audio="${muted ? 'muted' : 'sound'}"]`).click();
+        if (holdAudio) {
+          await page.waitForFunction(() => /PREPARING THE SOUND|正在準備音效/.test(document.querySelector('[data-gate-entry-label]')?.textContent ?? ''),
+            null, { timeout: 90_000 });
+          await page.waitForTimeout(1000);
+          check(run.windRequestHeld && await page.evaluate(() => window.__islandWorld.admitting === true
+            && Boolean(document.querySelector('.gate--entering')) && !window.__islandWorld.audio.worldSoundsReady()
+            && !window.__festivalAudio().bedsReady.includes('snowWind')),
+          'a deliberately delayed wind SFX keeps the sign-in animation covering the world until its download/decode completes');
+          releaseWind();
+        }
         await page.waitForFunction(() => window.__islandWorld?.admitting === false && window.__festivalPerf?.().drawCalls > 0
           && !document.querySelector('.gate--handoff') && !document.querySelector('.gate--entering'), null, { timeout: 90_000 });
         await frames();
-        await page.evaluate(() => { window.__loadingWeatherGLAudit.baselineAt = performance.now(); });
+        await page.evaluate(() => {
+          window.__loadingWeatherGLAudit.baselineAt = performance.now();
+          window.__loadingWeatherAudioAudit.baselineAt = performance.now();
+        });
         admitted = true;
         run.admissionMs = Math.round(performance.now() - started);
         run.baseline = await stage('gate-handoff-complete');
         check(run.baseline.perf.mode === quality, 'requested quality is active after ordinary sign-in');
         check(run.baseline.audio.avatarReady === 7, 'all seven fixed avatar cues loaded during sign-in');
+        check(run.baseline.allSoundsReady && run.baseline.nativeAudio.pending === 0
+          && run.baseline.nativeAudio.decodes === 20 && run.baseline.audio.cuesReady === 2
+          && run.baseline.audio.fireworks.ready === 3 && run.baseline.audio.weather.snowStepsReady === 2,
+        'all 20 fixed SFX finish actual native decoding before the sign-in animation releases input');
+        check(run.baseline.audio.muted === muted, 'the requested initial audio mode is retained');
+        if (muted) {
+          await page.evaluate(() => window.__islandWorld.audio.setMuted(false));
+          await frames(2);
+          check(await page.evaluate(() => !window.__festivalAudio().muted && window.__islandWorld.audio.worldSoundsReady()),
+            'unmuting after silent entry uses already-decoded fixed sounds');
+        }
         check(['day', 'night', 'ocean', 'rain', 'snow', 'snowWind'].every(key => run.baseline.audio.bedsReady.includes(key)), 'all landscape, weather and new snow-wind beds decode during sign-in');
         check(run.apiPaths.some(request => request.origin.endsWith(':' + API_PORT) && request.path !== '/api/config'), 'the world actually joined the disposable local API');
         check(run.baseline.gl.linkProgram > 0 && run.baseline.gl.compileShader > 0, 'instrumentation observed actual driver compilation/linking before admission');
@@ -414,14 +513,56 @@ async function main() {
         await sample('clear', SAMPLE_MS);
         const rain = await sample('rain', SAMPLE_MS);
         const snow = await sample('snow', SAMPLE_MS);
+        let repeatReference = snow;
+        await page.evaluate(() => {
+          const audio = window.__islandWorld.audio;
+          for (const cue of ['step-left', 'step-right', 'snow-brush', 'punch', 'eat', 'drink']) audio.playAvatarSound(cue);
+          audio.playInterfaceSound('click'); audio.playInterfaceSound('hover');
+        });
+        if (stress) {
+          log('stress: 24 rapid weather changes, then 30 seconds of mixed-fade/settled snow');
+          run.weatherStress = [];
+          for (let index = 0; index < 24; index++) {
+            await setWeather(['clear', 'rain', 'snow'][index % 3]);
+            await page.evaluate(index => {
+              const w = window.__islandWorld; w.focusCoastalForReview(['square', 'shore', 'temple', 'palace'][index % 4]);
+              w.cameraMode = ['follow', 'isometric', 'first-person'][index % 3];
+            }, index);
+            await page.waitForTimeout(300);
+            const state = await stage(`rapid-weather-${index}`); run.weatherStress.push(state);
+            check(state.weatherResources.bufferBytes === run.baseline.weatherResources.bufferBytes
+              && state.weatherResources.geometries.join(',') === run.baseline.weatherResources.geometries.join(',')
+              && state.weatherResources.materials.join(',') === run.baseline.weatherResources.materials.join(','),
+            `rapid weather change ${index} retains the same gate-prepared buffers, geometry and materials`);
+          }
+          await page.evaluate(() => { const w = window.__islandWorld; w.focusCoastalForReview('square'); w.cameraMode = 'isometric'; });
+          repeatReference = await sample('snow', 30_000);
+          await page.evaluate(() => {
+            const weather = window.__islandWorld.weather; window.__qaOriginalWeatherOffset = weather.offset;
+            weather.offset += 3_600_000 + 16 * 60_000;
+          });
+          await frames(3);
+          const melted = await stage('after-full-snow-melt-clock-jump');
+          check(melted.weather.snowCoverage === 0 && melted.weather.settledDepth === 0
+            && melted.weatherResources.bufferBytes === run.baseline.weatherResources.bufferBytes,
+          'completed snowfall/melt changes coverage without rebuilding the prepared weather resources');
+          await page.evaluate(() => {
+            window.__islandWorld.weather.offset = window.__qaOriginalWeatherOffset; delete window.__qaOriginalWeatherOffset;
+          });
+        }
         await sample('clear', 1000, true);
         const repeatedSnow = await sample('snow', 1000, true);
-        check(repeatedSnow.renderer.geometries === snow.renderer.geometries && repeatedSnow.renderer.textures === snow.renderer.textures,
-          'the clear→snow repeat retains exactly the first snow renderer geometry/texture counts');
-        check(snow.renderer.geometries === rain.renderer.geometries && snow.renderer.textures === rain.renderer.textures,
-          'changing rain to full snow creates no renderer geometry/textures');
+        // A long stress run can legitimately expire disconnected test visitors.
+        // Compare this adjacent repeat against the snow directly before it;
+        // exact weather resource identities remain checked at every transition.
+        run.repeatReference = repeatReference.label;
+        check(repeatedSnow.renderer.geometries <= repeatReference.renderer.geometries && repeatedSnow.renderer.textures <= repeatReference.renderer.textures,
+          'the adjacent clear→snow repeat causes no renderer allocation growth (departed visitors may release resources)');
+        check(snow.renderer.geometries <= rain.renderer.geometries && snow.renderer.textures <= rain.renderer.textures,
+          'changing rain to full snow causes no renderer geometry/texture growth');
         run.final = await stage('final-snow');
         run.glAudit = await page.evaluate(() => window.__loadingWeatherGLAudit);
+        run.audioAudit = await page.evaluate(() => window.__loadingWeatherAudioAudit);
         run.expectedBlockedConsoleErrors = run.consoleErrors.filter(message => {
           const url = message.location.url;
           return url && !networkAllowed(url) && /Failed to load|blocked|cancelled|canceled|Load failed/i.test(message.text);
@@ -430,6 +571,10 @@ async function main() {
         check(run.glAudit.afterAdmission.length === 0 && run.final.gl.linkProgram === run.baseline.gl.linkProgram
           && run.final.gl.compileShader === run.baseline.gl.compileShader, 'all first locations/cameras/wardrobe/swimming/fireworks/drinks/weather reuse gate-linked driver programs');
         check(run.final.gl.contexts === run.baseline.gl.contexts, 'play creates no additional WebGL context');
+        check(run.audioAudit.afterAdmission.length === 0 && run.audioAudit.pending === 0
+          && run.final.nativeAudio.contexts === run.baseline.nativeAudio.contexts
+          && run.audioAudit.decodes.every(decode => decode.status === 'fulfilled'),
+        'first actions, unmute and repeated weather cause no native audio decoding or new audio contexts after admission');
         check(!run.glAudit.contextLost.some(event => event.at >= run.glAudit.baselineAt), 'no context is lost after the completed gate handoff');
         check(run.lateAssets.length === 0, 'no fixed files download after the sign-in loading animation');
         check(run.localHttpErrors.length === 0 && run.localRequestFailures.length === 0, 'all local assets and API traffic complete without HTTP/network errors');
@@ -449,6 +594,7 @@ async function main() {
         }
         log('FAILED; evidence saved to ' + join(out, 'report.json')); throw error;
       } finally {
+        releaseWind();
         auditing = false; run.elapsedMs = Math.round(performance.now() - started);
         if (context) { await context.close(); context = undefined; page = undefined; }
         if (browser) { await browser.close(); browser = undefined; }
