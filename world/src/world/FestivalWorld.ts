@@ -10740,9 +10740,15 @@ export class FestivalWorld {
     statue.position.set(statuePosition.x, 0, statuePosition.z);
     statue.rotation.y = 0;
     this.scene.add(statue);
-    // Read the final visible sculpture and its original stepped base after
-    // fixed-model placement finishes, under the entry loading barrier.
-    this.registerSnowSurface('square-statue-and-plinth', statue, { visibleOnly: true, maximumFaceSpan: 1, sheltersGround: false });
+    // Keep each original base tier fully coated, including beneath the
+    // sculpture and cap overhangs. Actual solid meshes hide internal tops.
+    const plinth = statue.children.filter(child => child.name.startsWith('plinth-'));
+    for (const tier of plinth) this.registerSnowSurface(`square-statue-${tier.name}`, tier, {
+      maximumFaceSpan: 1, sheltersGround: false, occlusion: false,
+    });
+    // Read the final visible sculpture after fixed-model placement, under
+    // entry. Its exposed surfaces retain the normal occlusion policy.
+    this.registerSnowSurface('square-statue', statue, { exclude: plinth, visibleOnly: true, maximumFaceSpan: 1, sheltersGround: false });
     const prototype = new THREE.Group(); prototype.name = 'Victory portrait fallback'; statue.add(prototype);
     void this.venueSceneryAssets.attachVictoryStatue(prototype);
     if (this.environmentModels && this.environmentUpgradeEnabled()) {

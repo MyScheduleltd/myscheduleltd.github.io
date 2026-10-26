@@ -492,10 +492,12 @@ async function main() {
           check(state.weather.maximumSettledDepth === .12 && state.weather.settledDepth >= 0 && state.weather.settledDepth <= .1200001, `${state.label}: settled snow respects the approved 0.12 cap`);
           check(state.weather.snowfall.flakes === profile.flakes && state.weather.snowfall.depthBands === 3, `${state.label}: the accepted strong snowfall keeps its device budget`);
           check(state.weather.groundTriangles > 0 && state.weather.groundTriangles <= 100_000 && state.weather.seatCaps <= 46 && state.weather.extraLights === 0, `${state.label}: adaptive ground/caps/lights remain bounded`);
-          const statueSnow = state.weather.authoredSurfaces.sources.find(source => source.id === 'square-statue-and-plinth');
-          check(state.weather.authoredSurfaces.sources.length === 96 && statueSnow?.sourceTriangles > 0 && statueSnow.topTriangles > 0
+          const statueSnow = state.weather.authoredSurfaces.sources.find(source => source.id === 'square-statue');
+          const plinthSnow = state.weather.authoredSurfaces.sources.filter(source => source.id.startsWith('square-statue-plinth-'));
+          check(state.weather.authoredSurfaces.sources.length === 99 && statueSnow?.sourceTriangles > 0 && statueSnow.topTriangles > 0
+            && plinthSnow.length === 3 && plinthSnow.every(source => source.topTriangles === source.sourceTriangles)
             && state.weather.authoredSurfaces.triangles > 0 && state.weather.authoredSurfaces.triangles <= 40_000,
-          `${state.label}: all 96 authored surfaces, including the final visible statue/plinth, are prepared and bounded`);
+          `${state.label}: all 99 authored surfaces, including the final statue and complete plinth tiers, are prepared and bounded`);
           check(state.weatherResources.bufferBytes <= 5 * 1024 * 1024 && state.weatherResources.bufferBytes === run.baseline.weatherResources.bufferBytes,
             `${state.label}: the complete weather geometry retains the gate's bounded buffer allocation`);
           check(Object.values(state.precipitation).every(value => value.finite), `${state.label}: every exposed rain/snow position is finite`);

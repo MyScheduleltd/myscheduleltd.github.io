@@ -31,6 +31,9 @@ export interface SnowSurfaceSource {
   /** Detailed outdoor props catch snow without acting as a building roof.
    * Keep the surrounding ground blanket and particle shelter query unchanged. */
   sheltersGround?:boolean;
+  /** Coat every real upward face of a solid support, including under
+   * overhangs. Its original solid geometry conceals any internal coverage. */
+  occlusion?:boolean;
 }
 type Point = { x: number; y: number; z: number };
 type Triangle = { a: Point; b: Point; c: Point; index: number; sourceId:string; terrainMask:boolean; sheltersGround:boolean; minX: number; maxX: number; minZ: number; maxZ: number; minY: number; maxY: number; plane: [number, number, number] };
@@ -262,11 +265,12 @@ export function buildSnowSurfaceMeshes(sources: readonly SnowSurfaceSource[],ter
   }
   const faces:Face[]=[],detailFaces:Face[]=[],terrainFaces:Face[]=[],counts=new Map(sources.map(s=>[s.id,{id:s.id,sourceTriangles:0,topTriangles:0}]));
   const refinedIds=new Set(separateRefined?sources.filter(s=>s.maximumFaceSpan!==undefined).map(s=>s.id):[]);
+  const completeIds=new Set(sources.filter(s=>s.occlusion===false).map(s=>s.id));
   for(const t of triangles)counts.get(t.sourceId)!.sourceTriangles++;
   for(const subject of [...triangles,...terrainTriangles]){
     const terrainSubject=subject.index>=triangles.length;
     const candidates=new Set<Triangle>();
-    for(let z=Math.floor(subject.minZ/size);z<=Math.floor(subject.maxZ/size);z++)for(let x=Math.floor(subject.minX/size);x<=Math.floor(subject.maxX/size);x++)for(const candidate of bins.get(x+','+z)??[]) {
+    if(terrainSubject||!completeIds.has(subject.sourceId))for(let z=Math.floor(subject.minZ/size);z<=Math.floor(subject.maxZ/size);z++)for(let x=Math.floor(subject.minX/size);x<=Math.floor(subject.maxX/size);x++)for(const candidate of bins.get(x+','+z)??[]) {
       if(candidate!==subject&&(!terrainSubject||candidate.sheltersGround)&&((terrainSubject&&candidate.terrainMask)||candidate.maxY>=subject.minY-1e-5)&&candidate.maxX>subject.minX+EPS&&candidate.minX<subject.maxX-EPS&&candidate.maxZ>subject.minZ+EPS&&candidate.minZ<subject.maxZ-EPS)candidates.add(candidate);
     }
     let pieces:Point[][]=[[subject.a,subject.b,subject.c]];

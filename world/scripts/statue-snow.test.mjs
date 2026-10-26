@@ -11,7 +11,7 @@ globalThis.Image=class{addEventListener(){}removeEventListener(){}set src(v){}};
 globalThis.window={location:new URL('http://127.0.0.1/'),setTimeout,clearTimeout};
 const compiled=await build({stdin:{contents:"export {FestivalWorld} from './src/world/FestivalWorld';export {FestivalWeather} from './src/world/FestivalWeather';export {buildSnowSurfaceMeshes,SNOW_SURFACE_BUDGET} from './src/world/SnowSurfaceCoverage';export {fitEnvironmentModel} from './src/world/EnvironmentAssets';export {createVictoryStatue} from './src/world/VictoryStatue';export {PLANET,subdivideSceneForPlanet} from './src/world/PlanetCurve';export {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';export {MeshoptDecoder} from 'three/addons/libs/meshopt_decoder.module.js';export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,loader:{'.png':'dataurl'},platform:'node',format:'esm',write:false,plugins:[{name:'statue-snow-cpu-only',setup(b){b.onLoad({filter:/FestivalAttendant\.ts$/},()=>({contents:'export function createFestivalAttendant(parent){return {root:parent,rig:{}};}',loader:'js'}));}}]});
 const {FestivalWorld,FestivalWeather,buildSnowSurfaceMeshes,SNOW_SURFACE_BUDGET,fitEnvironmentModel,createVictoryStatue,PLANET,subdivideSceneForPlanet,GLTFLoader,MeshoptDecoder,THREE}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text+'\n//# sourceURL=statue-snow-fixture.mjs').toString('base64'));
-const ART='art/statue-snow-20261026';
+const ART='art/even-plinth-snow-20261027';
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 const near=(a,b,t=.00025)=>assert.ok(Math.abs(a-b)<t,`${a} != ${b}`);
 const geometryBytes=g=>Object.values(g.attributes).reduce((sum,a)=>sum+a.array.byteLength,g.index?.array.byteLength??0);
@@ -43,11 +43,38 @@ function fixture(model=desktop,{deferred,generated=true}={}){
   });attachments.push(job);return job;},ready:()=>Promise.all(attachments),
  };
  w.createGanganStatue();w.scene.updateMatrixWorld(true);
- return{w,events,attachments,fallbacks,root:w.scene.getObjectByName('gangan-statue'),source:w.snowSurfaceSources?.find(s=>s.id==='square-statue-and-plinth')};
+ return{w,events,attachments,fallbacks,root:w.scene.getObjectByName('gangan-statue'),sources:w.snowSurfaceSources,source:w.snowSurfaceSources?.find(s=>s.id==='square-statue')};
 }
 function visibleMeshes(root){const result=[];root.traverseVisible(o=>{if(o.isMesh)result.push(o);});return result;}
 function snapshot(root){return visibleMeshes(root).map(mesh=>({id:mesh.uuid,geometry:mesh.geometry.uuid,material:Array.isArray(mesh.material)?mesh.material.map(m=>m.uuid):mesh.material.uuid,position:mesh.position.toArray(),quaternion:mesh.quaternion.toArray(),scale:mesh.scale.toArray(),attributes:Object.fromEntries(Object.entries(mesh.geometry.attributes).map(([k,a])=>[k,sha(new Uint8Array(a.array.buffer,a.array.byteOffset,a.array.byteLength))])),index:mesh.geometry.index?sha(new Uint8Array(mesh.geometry.index.array.buffer,mesh.geometry.index.array.byteOffset,mesh.geometry.index.array.byteLength)):null}));}
 function topAt(meshes,x,z){return new THREE.Raycaster(new THREE.Vector3(x,100,z),new THREE.Vector3(0,-1,0)).intersectObjects(meshes,false)[0]?.point.y;}
+/** Look only around this tier. A ray from the sky would hit the sculpture
+ * instead, masking exactly the bare patches beneath its arms and feet. */
+function coatingAt(meshes,x,z,supportY){
+ const hits=new THREE.Raycaster(new THREE.Vector3(x,supportY+.05,z),new THREE.Vector3(0,-1,0),0,.1).intersectObjects(meshes,false);
+ return hits.find(hit=>Math.abs(hit.point.y-supportY-SNOW_SURFACE_BUDGET.contactLift)<.00025)?.point.y;
+}
+function checkPlinthBlanket(mesh,label){
+ let capSamples=0,ledgeSamples=0,edgeSamples=0;
+ const check=(x,z,y,kind)=>assert.ok(Number.isFinite(coatingAt([mesh],x,z,y)),`${label}: missing ${kind} snow at ${x.toFixed(4)},${z.toFixed(4)} / y=${y}`);
+ // Offset from the regular subdivision grid; test every part of the top cap,
+ // without excluding points underneath the overhanging imported sculpture.
+ for(let x=-1.975;x<2;x+=.125)for(let dz=-2.675;dz<2.7;dz+=.125){check(x,dz-6.2,2.32,'cap');capSamples++;}
+ // The visible base surrounds the die, including the thin strips beneath
+ // the cap overhang. Its full footprint is wider than the cap footprint.
+ for(let x=-2.275;x<2.3;x+=.125)for(let dz=-2.975;dz<3;dz+=.125){
+  if(Math.abs(x)<1.8&&Math.abs(dz)<2.5)continue;
+  check(x,dz-6.2,.5,'lower ledge');ledgeSamples++;
+ }
+ for(const [halfX,halfZ,y]of[[2,2.7,2.32],[2.3,3,.5]]){
+  const inset=.0005;
+  for(let x=-halfX+inset;x<=halfX-inset;x+=.137)for(const dz of[-halfZ+inset,halfZ-inset]){check(x,dz-6.2,y,'outer edge');edgeSamples++;}
+  for(let dz=-halfZ+inset;dz<=halfZ-inset;dz+=.137)for(const x of[-halfX+inset,halfX-inset]){check(x,dz-6.2,y,'outer edge');edgeSamples++;}
+  for(const [x,dz]of[[halfX+.01,0],[-halfX-.01,0],[0,halfZ+.01],[0,-halfZ-.01]])assert.equal(coatingAt([mesh],x,dz-6.2,y),undefined,`${label}: snow must not extend past its real ${y} tier`);
+ }
+ for(const x of[-1.9,1.9]){check(x,-6.2,.5,'lower ledge beneath cap overhang');ledgeSamples++;}
+ return{capSamples,ledgeSamples,edgeSamples};
+}
 function upwardCentres(root){
  root.updateWorldMatrix(true,true);const points=[],a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3(),n=new THREE.Vector3();
  for(const mesh of visibleMeshes(root)){const p=mesh.geometry.attributes.position,index=mesh.geometry.index;
@@ -68,6 +95,23 @@ test('optional refinement preserves exact sloping surfaces and rejects invalid o
  plain.geometry.dispose();refined.geometry.dispose();snow.material.dispose();object.geometry.dispose();object.material.dispose();
 });
 
+test('complete coating bypasses higher-face clipping only for the opted-in source',()=>{
+ const material=new THREE.MeshBasicMaterial({side:THREE.DoubleSide}),objects=[];
+ const box=(x,y,width)=>{const mesh=new THREE.Mesh(new THREE.BoxGeometry(width,.2,width),material);mesh.position.set(x,y,0);objects.push(mesh);return mesh;};
+ const complete=box(0,0,4),overhang=box(0,1,2),ordinary=box(10,0,4),roof=box(10,1,2);
+ const sources=[{id:'complete-base',object:complete,occlusion:false},{id:'sculpture-overhang',object:overhang},{id:'ordinary-floor',object:ordinary},{id:'ordinary-roof',object:roof}];
+ const baseline=buildSnowSurfaceMeshes(sources.map(({occlusion,...source})=>source)),coated=buildSnowSurfaceMeshes(sources);
+ const before=new THREE.Mesh(baseline.geometry,material),after=new THREE.Mesh(coated.geometry,material);before.updateMatrixWorld(true);after.updateMatrixWorld(true);
+ assert.equal(coatingAt([before],0,0,.1),undefined,'default higher surfaces remove the covered lower face');
+ for(const x of[-1.9995,-1.5,-.9,-.2,0,.2,.9,1.5,1.9995])for(const z of[-1.9995,-1.5,-.9,0,.9,1.5,1.9995])near(coatingAt([after],x,z,.1),.1+SNOW_SURFACE_BUDGET.contactLift);
+ assert.equal(coatingAt([after],10,0,.1),undefined,'an ordinary indoor floor remains uncoated beneath its roof');
+ near(coatingAt([after],11.5,0,.1),.1+SNOW_SURFACE_BUDGET.contactLift);
+ near(topAt([after],0,0),1.1+SNOW_SURFACE_BUDGET.contactLift);
+ assert.equal(coatingAt([after],2.01,0,.1),undefined,'full coverage still follows the original real surface outline');
+ assert.equal(coated.shelteredAt(10,0,0),true,'default roof shelter behavior remains intact');
+ baseline.geometry.dispose();coated.geometry.dispose();for(const mesh of objects)mesh.geometry.dispose();material.dispose();
+});
+
 test('World registers the whole final statue and original stepped plinth without moving art or its collider',async()=>{
  const f=fixture();assert.ok(f.source);assert.equal(f.source.object,f.root);assert.equal(f.source.visibleOnly,true);
  assert.ok(f.source.maximumFaceSpan>0&&f.source.maximumFaceSpan<=2,'dense sculpture uses bounded exact refinement of its broad base faces');
@@ -75,6 +119,13 @@ test('World registers the whole final statue and original stepped plinth without
  await Promise.all(f.attachments);await Promise.resolve();
  assert.deepEqual(f.root.position.toArray(),[0,0,-6.2]);assert.equal(f.root.rotation.y,0);
  const plinth=f.root.children.filter(o=>o.name.startsWith('plinth-'));assert.equal(plinth.length,3);
+ assert.equal(f.sources.length,4);assert.deepEqual(f.source.exclude,plinth);
+ for(const tier of plinth){
+  const source=f.sources.find(source=>source.id===`square-statue-${tier.name}`);assert.ok(source);assert.equal(source.object,tier);
+  assert.equal(source.occlusion,false,'every actual base tier is completely covered beneath sculpture and cap overhangs');
+  assert.equal(source.sheltersGround,false);assert.equal(source.maximumFaceSpan,1);
+ }
+ assert.notEqual(f.source.occlusion,false,'the sculpture retains normal exposed-surface clipping');
  assert.deepEqual(plinth.map(o=>({name:o.name,position:o.position.toArray(),scale:o.scale.toArray(),yaw:o.rotation.y})),[
   {name:'plinth-base',position:[0,.25,0],scale:[6,.5,4.6],yaw:-Math.PI/2},
   {name:'plinth-die',position:[0,1.25,0],scale:[5,1.5,3.6],yaw:-Math.PI/2},
@@ -90,7 +141,7 @@ test('statue surface snow leaves existing ground coverage and overhead particle 
  const floor=new THREE.PlaneGeometry(20,20);floor.rotateX(-Math.PI/2);floor.translate(0,0,-6.2);
  const distantRoof=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshBasicMaterial());distantRoof.position.set(100,10,100);
  const defaultSource={id:'distant-normal-roof',object:distantRoof};
- const baseline=buildSnowSurfaceMeshes([defaultSource],floor),withStatue=buildSnowSurfaceMeshes([defaultSource,f.source],floor);
+ const baseline=buildSnowSurfaceMeshes([defaultSource],floor),withStatue=buildSnowSurfaceMeshes([defaultSource,...f.sources],floor);
  assert.deepEqual([...withStatue.terrainGeometry.attributes.position.array],[...baseline.terrainGeometry.attributes.position.array]);
  assert.deepEqual([...withStatue.terrainGeometry.index.array],[...baseline.terrainGeometry.index.array]);
  for(const [x,z]of[[0,-6.2],[-2,-6],[2,-6]])assert.equal(withStatue.shelteredAt(x,z,0),false,'the statue must not add dense sculpture faces to per-particle overhead checks');
@@ -100,9 +151,9 @@ test('statue surface snow leaves existing ground coverage and overhead particle 
 
 for(const [label,model]of[['desktop',desktop],['mobile',mobile]])test(`${label}: snow contacts the real head, both raised arms, footwear and exposed base steps within the fixed geometry allowance`,async()=>{
  const f=fixture(model);await Promise.all(f.attachments);await Promise.resolve();f.root.updateWorldMatrix(true,true);
- const before=snapshot(f.root),colliders=structuredClone(f.w.colliders),start=performance.now(),built=buildSnowSurfaceMeshes([f.source]),extractionMs=performance.now()-start;
- assert.equal(built.sources.length,1);assert.equal(built.sources[0].id,'square-statue-and-plinth');assert.ok(built.sources[0].sourceTriangles>=2085);
- assert.ok(built.sources[0].topTriangles>1000);assert.ok(built.triangles<SNOW_SURFACE_BUDGET.surfaceTriangles);
+ const before=snapshot(f.root),colliders=structuredClone(f.w.colliders),start=performance.now(),built=buildSnowSurfaceMeshes(f.sources),extractionMs=performance.now()-start;
+ const sculptureReport=built.sources.find(source=>source.id==='square-statue');assert.equal(built.sources.length,4);assert.ok(sculptureReport.sourceTriangles>=2000);
+ assert.ok(sculptureReport.topTriangles>1000);assert.ok(built.triangles<SNOW_SURFACE_BUDGET.surfaceTriangles);
  const material=new THREE.MeshBasicMaterial({side:THREE.DoubleSide}),snow=new THREE.Mesh(built.geometry,material);snow.updateMatrixWorld(true);
  const actual=visibleMeshes(f.root),sculpture=f.root.getObjectByName('Higgsfield victory statue mount'),bounds=new THREE.Box3().setFromObject(sculpture),size=bounds.getSize(new THREE.Vector3()),centre=bounds.getCenter(new THREE.Vector3());
  const regions={head:p=>(p.y-bounds.min.y)/size.y>.68&&(p.y-bounds.min.y)/size.y<.88&&Math.abs(p.x-centre.x)/size.x<.18,
@@ -118,20 +169,21 @@ for(const [label,model]of[['desktop',desktop],['mobile',mobile]])test(`${label}:
   assert.ok(checked.length>=3,`${label} ${name} has ${checked.length} tested exposed contact points`);samples[name]=checked;
  }
  for(const [x,z,top]of[[2.15,-3.35,.5],[-2.15,-3.35,.5],[1.8,-3.7,2.32],[-1.8,-3.7,2.32]]){near(topAt(actual,x,z),top);near(topAt([snow],x,z),top+SNOW_SURFACE_BUDGET.contactLift);}
+ const completePlinth=checkPlinthBlanket(snow,label);
  assert.equal(topAt([snow],2.5,-3.05),undefined,'snow does not replace the real stepped silhouette with a bounding rectangle');
  assert.deepEqual(snapshot(f.root),before,'extraction/refinement cannot reshape, recolour or move existing statue geometry');assert.deepEqual(f.w.colliders,colliders);
  const scene=new THREE.Scene();snow.userData.dynamic=true;scene.add(snow);const on=PLANET.on;PLANET.on=true;try{subdivideSceneForPlanet(scene);}finally{PLANET.on=on;}
  const bytes=geometryBytes(snow.geometry);assert.ok(bytes<512*1024,`${label} statue snow adds ${bytes} B, beyond its 512 KiB allowance`);
- profiles.push({profile:label,sourceTriangles:built.sourceTriangles,topTriangles:built.topTriangles,snowTriangles:built.triangles,planetTriangles:(snow.geometry.index?.count??snow.geometry.attributes.position.count)/3,planetBytes:bytes,extractionMs:Math.round(extractionMs*100)/100,samples});
+ profiles.push({profile:label,sourceTriangles:built.sourceTriangles,topTriangles:built.topTriangles,snowTriangles:built.triangles,planetTriangles:(snow.geometry.index?.count??snow.geometry.attributes.position.count)/3,planetBytes:bytes,extractionMs:Math.round(extractionMs*100)/100,samples,completePlinth});
  snow.geometry.dispose();material.dispose();
 });
 
 test('hidden fallback geometry never contributes phantom snow outside the final sculpture',async()=>{
  const f=fixture();await Promise.all(f.attachments);await Promise.resolve();
- const clean=buildSnowSurfaceMeshes([f.source]);
+ const clean=buildSnowSurfaceMeshes(f.sources);
  const hidden=new THREE.Group();hidden.name='Hidden fallback sentinel';hidden.visible=false;
  const poison=new THREE.Mesh(new THREE.BoxGeometry(10,2,10),new THREE.MeshStandardMaterial());poison.position.set(100,70,100);hidden.add(poison);f.root.add(hidden);
- const guarded=buildSnowSurfaceMeshes([f.source]);assert.equal(guarded.sourceTriangles,clean.sourceTriangles);assert.equal(guarded.triangles,clean.triangles);
+ const guarded=buildSnowSurfaceMeshes(f.sources);assert.equal(guarded.sourceTriangles,clean.sourceTriangles);assert.equal(guarded.triangles,clean.triangles);
  assert.deepEqual([...guarded.geometry.attributes.position.array],[...clean.geometry.attributes.position.array]);
  clean.geometry.dispose();guarded.geometry.dispose();poison.geometry.dispose();poison.material.dispose();
 });
@@ -140,7 +192,7 @@ test('real weather keeps detailed statue snow indexed through planet preparation
  const f=fixture();await Promise.all(f.attachments);await Promise.resolve();
  const scene=new THREE.Scene(),roof=new THREE.Mesh(new THREE.BoxGeometry(20,.3,20),new THREE.MeshStandardMaterial());roof.position.set(35,8,0);
  const weather=new FestivalWeather(scene,{heightAt:()=>0,dryAt:(x,z)=>Math.abs(x)<10&&Math.abs(z)<10,shelteredAt:()=>false},true);
- weather.addSurfaceMeshes([{id:'normal-large-roof',object:roof},f.source]);
+ weather.addSurfaceMeshes([{id:'normal-large-roof',object:roof},...f.sources]);
  const detail=weather.root.getObjectByName('authored-detail-snow'),coarse=weather.root.getObjectByName('authored-outdoor-snow');
  assert.ok(detail&&coarse);assert.equal(detail.material,coarse.material,'the additional draw reuses the existing snow material/program');
  const detailGeometry=detail.geometry,coarseGeometry=coarse.geometry;assert.ok(detailGeometry.index);
@@ -160,9 +212,10 @@ test('real weather keeps detailed statue snow indexed through planet preparation
 test('a failed generated model still permits snow on the real code portrait fallback and original plinth',async()=>{
  const f=fixture(desktop,{generated:false});await Promise.all(f.attachments);f.root.updateMatrixWorld(true,true);
  assert.ok(f.root.getObjectByName('GANGAN victory portrait'));
- const built=buildSnowSurfaceMeshes([f.source]);assert.ok(built.sources[0].topTriangles>1000);assert.ok(built.triangles<SNOW_SURFACE_BUDGET.surfaceTriangles);
+ const built=buildSnowSurfaceMeshes(f.sources);assert.ok(built.sources.find(source=>source.id==='square-statue').topTriangles>1000);assert.ok(built.triangles<SNOW_SURFACE_BUDGET.surfaceTriangles);
  const snow=new THREE.Mesh(built.geometry,new THREE.MeshBasicMaterial({side:THREE.DoubleSide}));snow.updateMatrixWorld(true);
  near(topAt([snow],2.15,-3.35),.5+SNOW_SURFACE_BUDGET.contactLift);
+ checkPlinthBlanket(snow,'portrait fallback');
  const head=f.root.getObjectByName('Exact temple portrait head'),headBox=new THREE.Box3().setFromObject(head),p=headBox.getCenter(new THREE.Vector3());
  const real=topAt(visibleMeshes(f.root),p.x,p.z);assert.ok(real>7);near(topAt([snow],p.x,p.z),real+SNOW_SURFACE_BUDGET.contactLift);
  built.geometry.dispose();snow.material.dispose();
@@ -177,5 +230,5 @@ test('actual World admission waits for final model placement before extracting s
  release();await preparing;assert.ok(extraction);assert.ok(f.events.indexOf('generated-installed')<f.events.indexOf('extract'));assert.ok(f.events.indexOf('fallback-retired')<f.events.indexOf('extract'));
  assert.deepEqual(f.w.snowSurfaceSources,[],'source objects are not retained after the admission extraction');
  await f.w.prepareForPlay();assert.equal(f.events.filter(e=>e==='extract').length,1);extraction.geometry.dispose();
- await mkdir(ART,{recursive:true});await writeFile(ART+'/statue-snow-test-report.json',JSON.stringify({profiles,actualModelVariants:2,contactRegions:['head','leftArm','rightArm','footwear','base-step','cap-step'],hiddenFallbackExcluded:true,placementAndColliderUnchanged:true,deferredAdmission:true},null,2)+'\n');
+ await mkdir(ART,{recursive:true});await writeFile(ART+'/statue-snow-test-report.json',JSON.stringify({profiles,actualModelVariants:2,contactRegions:['head','leftArm','rightArm','footwear','base-step','cap-step','cap-under-sculpture','base-under-cap-overhang','outer-edges'],hiddenFallbackExcluded:true,placementAndColliderUnchanged:true,deferredAdmission:true},null,2)+'\n');
 });
