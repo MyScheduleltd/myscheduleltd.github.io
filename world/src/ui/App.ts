@@ -3075,7 +3075,7 @@ export class App {
     if (hud) {
       hud.hidden = false;
       hud.setAttribute('aria-label', locked
-        ? (this.language === 'zh-TW' ? 'M.O.T.H 尚未開放 · 2026 年 11 月 2 日 00:00 台灣時間' : 'M.O.T.H locked until November 2, 2026, 00:00 Taiwan time')
+        ? (this.language === 'zh-TW' ? 'M.O.T.H 尚未開放 · 2026 年 11 月 16 日 00:00 台灣時間' : 'M.O.T.H locked until November 16, 2026, 00:00 Taiwan time')
         : (this.language === 'zh-TW' ? '遊戲控制' : 'Game controls'));
       const fullscreen = hud.querySelector<HTMLButtonElement>('[data-arcade-fullscreen]');
       if (fullscreen) fullscreen.hidden = locked;
@@ -6299,7 +6299,7 @@ export class App {
       void this.arcadePreview.checkoutKey().then(key=>{
         if(!sheet.isConnected)return;arcadeDeviceKey=key;delete go.dataset.arcadePreparing;go.disabled=false;
         const note=sheet.querySelector<HTMLElement>('[data-arcade-preparation]');
-        if(note)note.textContent=zh?'完成這筆供養後，你會拿到一組 M.O.T.H 序號，在 11 月 2 日開放前就能解鎖影展裡的遊戲機。序號只會顯示在這個瀏覽器上，請抄下保存。':'Once this offering is paid, you receive a M.O.T.H code that unlocks the arcade machine in the festival before it opens on November 2. It is only shown in this browser, so keep a copy.';
+        if(note)note.textContent=zh?'完成這筆供養後，你會拿到一組 M.O.T.H 序號，在 11 月 16 日開放前就能解鎖影展裡的遊戲機。序號只會顯示在這個瀏覽器上，請抄下保存。':'Once this offering is paid, you receive a M.O.T.H code that unlocks the arcade machine in the festival before it opens on November 16. It is only shown in this browser, so keep a copy.';
       }).catch(()=>{
         if(!sheet.isConnected)return;
         complain(zh?'此瀏覽器無法儲存遊戲機金鑰。請允許瀏覽器儲存資料後再付款。':'This browser could not save its arcade key. Allow browser storage and try again before paying.');

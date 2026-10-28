@@ -14,6 +14,35 @@ const proof = (service, owner, action, code = '') => {
       { key: owner.privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url') };
 };
 
+test('the arcade stays locked on November 2 and releases exactly at November 16 midnight in Taiwan', () => {
+  const previousRelease = Date.parse('2026-11-02T00:00:00+08:00');
+  const release = Date.parse('2026-11-16T00:00:00+08:00');
+  assert.equal(ARCADE_PREVIEW_END, release, 'the release instant is fixed independently of relative-time fixtures');
+  let now = previousRelease - 100_000;
+  const service = new ArcadePreviewAccess({ now: () => now }), owner = key(), visitor = key();
+  const grant = service.issue({ id: randomUUID(), state: 'paid', arcadeDeviceKey: owner.jwk });
+  const ownerId = service.authenticate(proof(service, owner, 'redeem', grant.code), 'redeem');
+  service.redeem(ownerId, grant.code);
+  const visitorId = arcadeDeviceKey(visitor.jwk).id;
+  now = previousRelease;
+  const restored = new ArcadePreviewAccess({ now: () => now });
+  restored.restore(service.snapshot());
+  assert.deepEqual(restored.status(visitorId), { released: false, expiresAt: release, unlocked: false, codes: [] });
+  assert.equal(restored.status(ownerId).unlocked, true, 'redeemed donor access survives the old release date');
+  assert.equal(restored.status(ownerId).codes[0].code, grant.code, 'the existing donor code is preserved on restore');
+  assert.ok(restored.issue({ id: randomUUID(), state: 'paid', arcadeDeviceKey: visitor.jwk }), 'new successful donations still issue codes after November 2');
+  now = release - 1;
+  assert.equal(restored.status(visitorId).released, false);
+  assert.equal(restored.status(visitorId).unlocked, false, 'a donation still requires redemption until the release');
+  assert.equal(restored.status(ownerId).unlocked, true);
+  const challenge = restored.challenge(visitor.jwk, 'status', 'release-boundary');
+  assert.ok(challenge.nonce);assert.equal(challenge.expiresAt, release);
+  now = release;
+  assert.deepEqual(restored.status(visitorId), { released: true, expiresAt: release, unlocked: true, codes: [] });
+  assert.deepEqual(restored.challenge(visitor.jwk, 'status', 'release-boundary'), { released: true, expiresAt: release });
+  assert.deepEqual(restored.snapshot(), [], 'preview grants expire at the new public release, not the old one');
+});
+
 test('only new verified paid donations with an actual public browser key issue distinct random tickets', () => {
   const service = new ArcadePreviewAccess({ now: () => ARCADE_PREVIEW_END - 100_000 });
   const owner = key();

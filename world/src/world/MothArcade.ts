@@ -183,7 +183,7 @@ function paintArcadeLock(context: CanvasRenderingContext2D, language: 'en' | 'zh
   context.fillStyle = cream; context.font = 'bold 58px sans-serif';
   context.fillText(language === 'en' ? 'CURRENTLY LOCKED' : '遊戲 COMING SOON', width / 2, 516);
   context.fillStyle = orange; context.font = 'bold 51px sans-serif';
-  context.fillText('2026.11.02  00:00', width / 2, 618);
+  context.fillText('2026.11.16  00:00', width / 2, 618);
   context.fillStyle = cream; context.font = '28px sans-serif';
   context.fillText(language === 'en' ? 'TAIWAN TIME (UTC+8)' : '台灣時間（UTC+8）', width / 2, 680);
   // Keep the lower screen band clear for the in-world Exit control.

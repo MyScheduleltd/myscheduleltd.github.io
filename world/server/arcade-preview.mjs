@@ -1,7 +1,7 @@
 import { createHash, createPublicKey, randomBytes, timingSafeEqual, verify } from 'node:crypto';
 
-/** The arcade's public release, 2 November 2026 at midnight in Taiwan. */
-export const ARCADE_PREVIEW_END = Date.parse('2026-11-01T16:00:00.000Z');
+/** The arcade's public release, 16 November 2026 at midnight in Taiwan. */
+export const ARCADE_PREVIEW_END = Date.parse('2026-11-15T16:00:00.000Z');
 const ACTIONS = new Set(['status', 'redeem']);
 const digest = value => createHash('sha256').update(value).digest('hex');
 const normalizeCode = value => typeof value === 'string' ? value.toUpperCase().replace(/[\s-]/g, '').slice(0, 40) : '';
