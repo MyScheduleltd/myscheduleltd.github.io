@@ -1,3 +1,25 @@
+# Arcade release moved to November 16 — ready for protected PR, 2026-10-28 (Asia/Taipei)
+
+Continue in `/Users/myscheduleai/Desktop/myschedule-pivot/festival-weather-actions-20261024/world`, branch `codex/arcade-release-20261116`, based on main `1c65f8b`. Owner requests M.O.T.H arcade release **2026-11-16 00:00 Taiwan time**, keeping the previous midnight/timezone. Browser/server deadline is `2026-11-15T16:00:00.000Z`. CRT, bilingual access notice/HUD label and offering copy are updated. Donor-code behavior/new-successful-payments eligibility, sharing and direct `/moth/` remain unchanged. No renderer/loading/weather/audio/art changes or new fixed assets.
+
+**READY FOR REQUIRED INDEPENDENT REVIEW/MERGE; NOT LIVE YET.** Main's enforced latest-push approval remains required; do not bypass/self-approve. **After merge, the owner must manually redeploy Render BEFORE 2026-11-02 00:00 Taiwan time.** The old backend otherwise releases publicly and prunes grants at the old deadline; the frontend trusts `released:true`. Owner alone handles Render deploys/settings. No production record/API/deployment mutation occurred. Existing grant persistence has no stored release expiry to migrate; tests preserve issued/redeemed codes through extension and reload/restore.
+
+Validation:1086/1086 full Node tests, TS/local/production builds,16/16 local Chrome/WebKit assertions/eight captures. Tests cover equal browser/server dates, old Nov2 remaining locked, new Nov16 minus1ms/exact/after boundaries, signed guest status, donor code survival and post-old-deadline issuance. Fixed only a test clock injection bug alongside the deadline regression. Actual bilingual notices and physical CRT show the date; physical-phone testing is not claimed. Existing asset/loading preparation is unchanged.
+
+BETA candidate `docs/beta/assets/main-DfLBVDCN.js`: production API,89 integrity hashes/111 exact copies/103 reachable/zero missing/local API markers,222 cached assets retained/no deletion. QA: `QA_ARCADE_RELEASE_20261116.md`; local evidence `art/arcade-release-20261116/`. Eight source/test files/QA mirrored with backups and unrelated canonical edits preserved; handoff histories stay distinct. Disposable API8796 (state/seed/KV disabled) and preview4196 are stopped after verification; dist now points to production and must not be served for local QA. Screenshots/tools/logs/backups stay out of Git. Find the follow-up PR by this branch; website publication and the owner's manual Render deploy remain before live completion.
+
+---
+
+# LIVE release verified — PR65, 2026-10-27 (Asia/Taipei)
+
+**COMPLETE / LIVE.** Owner approved and merged PR65. GitHub confirms merge `a8caa7063e670a9f9efcc01e1f95a0c148d1ba5e` from reviewed head `d505b1e31815ff5987fc8a12570c7426e669e50b`; the merged tree matches the reviewed head exactly. Pages workflow `40370113092` succeeded. Public `https://myscheduleltd.com/beta/` serves `main-D0R6QskY.js`. All **111 current release files match the approved package byte-for-byte** (48,191,598 B), with zero missing or mismatched files.
+
+The even statue-base snow fix and prior loading/performance checks are released. At full accumulation, the original plinth tiers are continuously coated, including beneath sculpture/cap overhangs. Whole weather remains 4,717,344B (4.499MiB), below the unchanged5MiB cap. No backend change: **no Render redeploy is required**. The owner alone handles Render deployment/settings. Verification used public GETs only, with no attendee sessions, weather scheduling, record or deployment-setting mutations. Physical-device/thermal/crowd/live-video validation remains separate from publication verification.
+
+Evidence: local `art/even-plinth-snow-20261027/live-release-{summary,assets}.json`; implementation and QA: `QA_EVEN_PLINTH_SNOW_20261027.md`. Current headers match in this checkout and canonical `release-sfx-20261018/world`, with distinct historical bodies preserved. This is a local documentation receipt; no source, package or deployment changes were made after merge. The merged `codex/even-plinth-snow-20261027` branch is finished. For new implementation, fetch current main and use a fresh appropriate branch; all older READY/approval/merge-pending notes below are historical and superseded.
+
+---
+
 # Continuous statue-base snow — ready for protected PR, 2026-10-27 (Asia/Taipei)
 
 Continue in `/Users/myscheduleai/Desktop/myschedule-pivot/festival-weather-actions-20261024/world`, branch `codex/even-plinth-snow-20261027`, based on merged PR64/main `5c4b2e4c1243af9aea3ab42c19d7fb46c258e25c`. GitHub confirms PR64 merged and Pages run `40362103854` succeeded. The owner then requested even base coverage with no bare patches. This follow-up is verified and packaged; independent latest-push approval and merge remain required by main's enforced protection. Do not bypass/self-approve. No Render redeploy is needed; owner alone handles backend deployment/settings.

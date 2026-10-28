@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { build } from 'esbuild';
 import { ARCADE_UNLOCK_AT, arcadeIsLocked, externalArcadeRequired } from '../src/world/ArcadeRules.ts';
+import { ARCADE_PREVIEW_END } from '../server/arcade-preview.mjs';
 
 // Keep the real cabinet, GLTF decoder, UVs and material lifecycle. Only network
 // transport and canvas painting need substitutes in this non-WebGL fixture.
@@ -38,20 +39,23 @@ const bundle = await build({
 });
 const { MothArcadeCabinet, THREE } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
 
-test('the cabinet unlocks at exactly midnight on 2 November 2026 in Taiwan', () => {
-  assert.equal(ARCADE_UNLOCK_AT, Date.parse('2026-11-02T00:00:00+08:00'));
-  assert.equal(new Date(ARCADE_UNLOCK_AT).toISOString(), '2026-11-01T16:00:00.000Z');
+test('the cabinet and preview server unlock at exactly midnight on 16 November 2026 in Taiwan', () => {
+  assert.equal(ARCADE_UNLOCK_AT, Date.parse('2026-11-16T00:00:00+08:00'));
+  assert.equal(ARCADE_PREVIEW_END, ARCADE_UNLOCK_AT, 'the server must enforce the same extended preview deadline');
+  assert.equal(new Date(ARCADE_UNLOCK_AT).toISOString(), '2026-11-15T16:00:00.000Z');
   assert.equal(arcadeIsLocked(ARCADE_UNLOCK_AT - 1), true);
   assert.equal(arcadeIsLocked(ARCADE_UNLOCK_AT), false);
   assert.equal(arcadeIsLocked(ARCADE_UNLOCK_AT + 1), false);
   assert.equal(arcadeIsLocked(Date.parse('2026-10-16T12:00:00+08:00')), true);
+  assert.equal(arcadeIsLocked(Date.parse('2026-11-02T00:00:00+08:00')), true, 'the old release date remains locked');
+  assert.equal(arcadeIsLocked(Date.parse('2026-11-15T23:59:59.999+08:00')), true);
   assert.equal(arcadeIsLocked(Date.parse('2027-01-01T00:00:00Z')), false);
   const date = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
   }).formatToParts(ARCADE_UNLOCK_AT);
   const parts = Object.fromEntries(date.map(part => [part.type, part.value]));
-  assert.deepEqual([parts.year, parts.month, parts.day, parts.hour, parts.minute, parts.second], ['2026', '11', '02', '00', '00', '00']);
+  assert.deepEqual([parts.year, parts.month, parts.day, parts.hour, parts.minute, parts.second], ['2026', '11', '16', '00', '00', '00']);
 });
 
 test('late cabinet load paints only the latest lock language, upright on its real CRT', async () => {
@@ -72,7 +76,7 @@ test('late cabinet load paints only the latest lock language, upright on its rea
   assert.equal(map.colorSpace, THREE.SRGBColorSpace);
   assert.equal(map.flipY, true, 'canvas top must remain the top of the local screen');
   assert.ok(map.image.labels.includes('遊戲 COMING SOON'));
-  assert.ok(map.image.labels.includes('2026.11.02  00:00'));
+  assert.ok(map.image.labels.includes('2026.11.16  00:00'));
   assert.ok(map.image.labels.includes('台灣時間（UTC+8）'));
   assert.equal(map.image.labels.includes('CURRENTLY LOCKED'), false, 'a late GLB must not resurrect an old locale');
   const position = screen.geometry.getAttribute('position'), uv = screen.geometry.getAttribute('uv');
@@ -214,7 +218,7 @@ test('mobile E keeps its availability dialog without any game URL, iframe or pop
     assert.equal(fixture.dialogs.length, 1, 'repeated E presses cannot stack modal notices');
     const dialog = fixture.dialogs[0];
     assert.equal(dialog.open, true); assert.match(dialog.innerHTML, /提前解鎖 M\.O\.T\.H 遊戲機/);assert.match(dialog.innerHTML,/影展裡的 M\.O\.T\.H 遊戲機/,'says which game the code unlocks');assert.doesNotMatch(dialog.innerHTML,/捐款/,'an offering, not a donation');assert.match(dialog.innerHTML,/data-arcade-code-form/);
-    assert.match(dialog.innerHTML,/2026 年 11 月 2 日 00:00（台灣時間）/);
+    assert.match(dialog.innerHTML,/2026 年 11 月 16 日 00:00（台灣時間）/);
     assert.equal(fixture.app.arcadeNotice, dialog);
     assert.deepEqual(fixture.calls.locks.at(-1), [true, 'zh-TW']);
     dialog.button.dispatchEvent(new Event('click'));
@@ -236,6 +240,16 @@ test('locked desktop E opens the actual cabinet view with Exit and no popup or l
   assert.equal(fixture.hud.style.maxWidth, '576px');
   fixture.app.syncArcadeRelease();
   assert.equal(fixture.calls.gameCloses, 0, 'clock refreshes must not eject a locked camera visit');
+});
+
+test('the English mobile notice keeps the cabinet locked on the old release date and shows November 16', () => {
+  const fixture = releaseApp({ mobile: true, language: 'en', now: Date.parse('2026-11-02T00:00:00+08:00') });
+  fixture.app.openArcadeGame();
+  assert.equal(fixture.dialogs.length, 1);
+  assert.match(fixture.dialogs[0].innerHTML, /November 16, 2026, 00:00 Taiwan time/);
+  assert.deepEqual(fixture.calls.urls, []);
+  assert.deepEqual(fixture.calls.starts, []);
+  assert.deepEqual(fixture.calls.popups, []);
 });
 
 test('a desktop viewer sees the same cabinet unlock into the live game at the exact deadline', () => {
