@@ -1282,5 +1282,11 @@
  },
  "alert": {
   "duration": 2.669
+ },
+ "cctv_zoom_in": {
+  "duration": 2.287
+ },
+ "cctv_zoom_out": {
+  "duration": 2.1935
  }
 }
