@@ -1288,5 +1288,17 @@
  },
  "cctv_zoom_out": {
   "duration": 2.1935
+ },
+ "boygrunt": {
+  "duration": 0.1767
+ },
+ "girlgrunt": {
+  "duration": 0.2776
+ },
+ "throwswoosh": {
+  "duration": 0.1614
+ },
+ "beautygrunt": {
+  "duration": 0.519
  }
 }
