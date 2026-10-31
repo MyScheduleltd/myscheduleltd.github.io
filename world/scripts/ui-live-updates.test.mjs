@@ -91,3 +91,52 @@ test('wish-wall language changes and reopening rebuild the relevant labels and c
   assert.equal(replacements(), 3);
   assert.notEqual(menu.querySelector('[data-seat-close]'), button);
 });
+
+for (const language of ['en', 'zh-TW']) {
+  test(`${language}: the initial offline notice and final refresh notice each appear only once per visit`, () => {
+    const names = ['offlineNoticeShown', 'offlineRefreshNoticeShown', 'handleConnectionStatus', 'showWorldAlert'];
+    const members = names.map(name => app.members.find(n => n.name?.getText(tree) === name).getText(tree)).join('\n');
+    const pending = [], context = { window: { setTimeout(callback, delay) { pending.push({ callback, delay }); } } };
+    runInNewContext(ts.transpileModule(`class ConnectionHarness { ${members} }; globalThis.ConnectionHarness = ConnectionHarness;`, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText, context);
+    const alert = { textContent: '', hidden: true }, label = { textContent: '' };
+    const badge = { dataset: {}, title: '', querySelector: () => label };
+    let mounted = true, stops = 0;
+    const ui = Object.assign(new context.ConnectionHarness(), {
+      language, currentId: 'Visitor', festivalClient: { reconnectStopped: false },
+      root: { querySelector: s => s === '#world-alert' ? mounted && alert : s === '#connection-status' ? badge : null },
+      world: { stop() { stops++; } },
+    });
+    ui.handleConnectionStatus('offline', 'Retrying');
+    assert.equal(pending.length, 1);
+    assert.match(alert.textContent, language === 'zh-TW' ? /正在重新連線/ : /OFFLINE MODE/);
+    assert.equal(pending[0].delay, 2200);
+    pending.shift().callback();
+    for (let attempt = 0; attempt < 20; attempt++) {
+      ui.handleConnectionStatus('connecting');
+      ui.handleConnectionStatus('reconnecting', 'Retrying');
+      ui.handleConnectionStatus('offline', 'Retry failed');
+    }
+    assert.equal(alert.hidden, true);
+    assert.equal(pending.length, 0);
+    ui.festivalClient.reconnectStopped = true;
+    mounted = false;
+    ui.handleConnectionStatus('offline', 'Refresh the page');
+    assert.equal(ui.offlineRefreshNoticeShown, false, 'a gate without an alert must not consume the notice');
+    mounted = true;
+    ui.handleConnectionStatus('offline', 'Refresh the page');
+    assert.match(alert.textContent, language === 'zh-TW' ? /已停止，請重新整理網頁/ : /RECONNECTION STOPPED\. REFRESH THE PAGE/);
+    assert.equal(alert.hidden, false);
+    assert.equal(pending.length, 1);
+    pending.shift().callback();
+    for (let refresh = 0; refresh < 20; refresh++) ui.handleConnectionStatus('offline', 'Refresh the page');
+    assert.equal(alert.hidden, true);
+    assert.equal(pending.length, 0, 'the refresh prompt must never restart its display timer');
+    assert.equal(badge.dataset.status, 'offline');
+    ui.handleConnectionStatus('kicked', 'Session ended');
+    assert.equal(stops, 1);
+    assert.equal(alert.hidden, false, 'staff notices remain available');
+    assert.equal(new context.ConnectionHarness().offlineRefreshNoticeShown, false);
+  });
+}

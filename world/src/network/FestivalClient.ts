@@ -7,6 +7,8 @@ import type { TrackedLimbs } from '../world/TrackedLimbs';
 import type { CatalogueEntry } from '../data/catalogue';
 
 export type ConnectionStatus = 'connecting' | 'online' | 'reconnecting' | 'offline' | 'kicked';
+export const MAX_AUTOMATIC_RETRIES = 5;
+const RECONNECT_STOPPED_DETAIL = 'Automatic reconnection stopped. Refresh the page to try again.';
 export type ChatChannel = 'NEARBY' | 'VENUE' | 'FESTIVAL';
 
 export interface NetworkPresence {
@@ -441,6 +443,9 @@ export class FestivalClient {
   private abortController?: AbortController;
   private reconnectTimer?: number;
   private reconnectAttempt = 0;
+  private automaticRetryAttempts = 0;
+  private retriesExhausted = false;
+  private connecting = false;
   private lastPresenceAt = 0;
   private lastPresence = '';
   private presenceInFlight = false;
@@ -474,16 +479,20 @@ export class FestivalClient {
     // fact rather than an inference. Forty seconds of it means the socket is
     // gone whatever the fetch believes.
     window.setInterval(() => {
-      if (this.closed || this.suspended || !this.session || !this.streamAlive) return;
+      if (this.closed || this.retriesExhausted || this.suspended || !this.session || !this.streamAlive) return;
       if (Date.now() - this.lastStreamAt < 40_000) return;
       this.streamAlive = false;
       this.abortController?.abort();
-      void this.openEventStream();
+      this.scheduleReconnect();
     }, 15_000);
   }
 
   get online(): boolean {
-    return Boolean(this.session) && !this.closed;
+    return Boolean(this.session) && !this.closed && !this.retriesExhausted;
+  }
+
+  get reconnectStopped(): boolean {
+    return this.retriesExhausted;
   }
 
   /**
@@ -554,6 +563,21 @@ export class FestivalClient {
   }
 
   async connect(name: string, palette: AvatarPalette): Promise<void> {
+    if (this.retriesExhausted) {
+      // The gate can finish loading after the retry budget was exhausted.
+      this.onStatus('offline', RECONNECT_STOPPED_DETAIL);
+      return;
+    }
+    if (this.connecting) return;
+    this.connecting = true;
+    try {
+      await this.connectSession(name, palette);
+    } finally {
+      this.connecting = false;
+    }
+  }
+
+  private async connectSession(name: string, palette: AvatarPalette): Promise<void> {
     // requestPlace may already have taken the place and opened the stream.
     if (this.session) {
       this.identity = { name, palette };
@@ -584,12 +608,16 @@ export class FestivalClient {
     // which is what sessionStorage is for.
     if (await this.reclaimStoredSession(name, palette)) return;
     try {
-      const response = await fetch(`${this.baseUrl}/api/session`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name, palette }),
-      });
-      const payload = await response.json() as { session?: Session; state?: FestivalState; error?: string };
+      const { response, payload } = await requestWithDeadline(async signal => {
+        const response = await fetch(`${this.baseUrl}/api/session`, {
+          method: 'POST', signal,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name, palette }),
+        });
+        const payload = await response.json() as { session?: Session; state?: FestivalState; error?: string };
+        return { response, payload };
+      }, 15_000, 'Festival connection');
+      if (this.closed || this.retriesExhausted) return;
       if (!response.ok || !payload.session || !payload.state) throw new Error(payload.error ?? 'Festival server is unavailable.');
       this.session = payload.session;
       this.reconnectAttempt = 0;
@@ -599,15 +627,8 @@ export class FestivalClient {
       this.onStatus('online');
       void this.openEventStream();
     } catch (error) {
-      // Keep trying. This used to report offline and stop there, and stopping
-      // there was the whole of it: with no session, scheduleReconnect() and
-      // wake() both refuse to act, so a single failed join was permanent until
-      // somebody reloaded the page by hand.
-      //
-      // It is the likeliest failure on a phone and the rejoin-after-discard
-      // made it likelier still, because that fires the moment a restored tab
-      // loads — which on a waking handset is before the radio has data. One
-      // unlucky moment and the festival was offline for good.
+      if (this.closed || this.retriesExhausted) return;
+      // Keep local play available while a bounded set of retries runs.
       this.onStatus('offline', error instanceof Error ? error.message : 'Festival server is unavailable.');
       this.scheduleJoinRetry();
     }
@@ -649,6 +670,7 @@ export class FestivalClient {
         const payload = await response.json() as { session?: Session; state?: FestivalState };
         return { response, payload };
       }, 15_000, 'Festival session recovery');
+      if (this.closed || this.retriesExhausted) return false;
       if (!response.ok || !payload.session || !payload.state) return false;
       this.identity = { name, palette };
       this.session = payload.session;
@@ -667,27 +689,40 @@ export class FestivalClient {
   private joinRetryTimer: number | undefined;
   private joinAttempt = 0;
 
-  /**
-   * Tries the join again, backing off, and never gives up.
-   *
-   * Backing off matters as much as retrying: a handset that has just woken can
-   * take a few seconds to have a route, and hammering the server through it
-   * helps nobody. Ten seconds is the ceiling, which is a long time to look at
-   * an offline badge but short enough that nobody reaches for reload.
-   */
+  /** Initial joins and live-stream recovery share one retry budget. */
+  private takeAutomaticRetry(): boolean {
+    if (this.retriesExhausted) return false;
+    if (this.automaticRetryAttempts < MAX_AUTOMATIC_RETRIES) {
+      this.automaticRetryAttempts += 1;
+      return true;
+    }
+    this.retriesExhausted = true;
+    if (this.joinRetryTimer) window.clearTimeout(this.joinRetryTimer);
+    if (this.reconnectTimer) window.clearTimeout(this.reconnectTimer);
+    this.joinRetryTimer = undefined;
+    this.reconnectTimer = undefined;
+    this.streamAlive = false;
+    this.streamGeneration += 1;
+    this.abortController?.abort();
+    this.onStatus('offline', RECONNECT_STOPPED_DETAIL);
+    return false;
+  }
+
+  /** Back off between attempts; only a working stream renews the budget. */
   private scheduleJoinRetry(): void {
-    if (this.closed || this.session || !this.identity || this.joinRetryTimer) return;
+    if (this.closed || this.suspended || this.session || !this.identity || this.joinRetryTimer) return;
+    if (!this.takeAutomaticRetry()) return;
     const delay = Math.min(10_000, 700 * 2 ** this.joinAttempt);
     this.joinAttempt += 1;
     this.joinRetryTimer = window.setTimeout(() => {
       this.joinRetryTimer = undefined;
-      if (this.closed || this.session || !this.identity) return;
+      if (this.closed || this.suspended || this.retriesExhausted || this.session || !this.identity) return;
       void this.connect(this.identity.name, this.identity.palette);
     }, delay);
   }
 
   async publishPresence(presence: NetworkPresence, palette: AvatarPalette): Promise<void> {
-    if (!this.session || this.closed || this.presenceInFlight) return;
+    if (!this.online || this.presenceInFlight) return;
     if (this.identity) this.identity.palette = palette;
     const payload = JSON.stringify({ ...presence, palette });
     const now = performance.now();
@@ -1082,6 +1117,9 @@ export class FestivalClient {
     this.forgetSession();
     this.suspended = false;
     if (this.reconnectTimer) window.clearTimeout(this.reconnectTimer);
+    if (this.joinRetryTimer) window.clearTimeout(this.joinRetryTimer);
+    this.reconnectTimer = undefined;
+    this.joinRetryTimer = undefined;
     this.abortController?.abort();
     if (this.session) await this.request('/api/session/leave', { method: 'POST', keepalive: true }, false);
     this.session = undefined;
@@ -1092,14 +1130,16 @@ export class FestivalClient {
     this.suspended = true;
     this.streamAlive = false;
     if (this.reconnectTimer) window.clearTimeout(this.reconnectTimer);
+    if (this.joinRetryTimer) window.clearTimeout(this.joinRetryTimer);
     this.reconnectTimer = undefined;
+    this.joinRetryTimer = undefined;
     this.abortController?.abort();
   }
 
   resume(): void {
-    if (this.closed || !this.suspended) return;
+    if (this.closed || this.retriesExhausted || !this.suspended) return;
     this.suspended = false;
-    if (this.session) void this.openEventStream();
+    this.wake();
   }
 
   /**
@@ -1116,6 +1156,7 @@ export class FestivalClient {
    * desktop tab coming back into focus is untouched.
    */
   wake(): void {
+    if (this.retriesExhausted || this.connecting || this.recovering) return;
     // A page that is still running was not closed, whatever it was told.
     //
     // disconnect() sets a terminal flag, and pagehide calls it whenever the
@@ -1134,31 +1175,15 @@ export class FestivalClient {
       this.streamAlive = false;
     }
     if (this.closed) return;
-    // Never joined, or joined and lost the session entirely. Picking the phone
-    // up is the best moment to try again, so the backoff starts over.
+    this.suspended = false;
+    // Waking the tab shares the remaining budget and any pending retry.
     if (!this.session) {
       if (!this.identity) return;
-      if (this.joinRetryTimer) window.clearTimeout(this.joinRetryTimer);
-      this.joinRetryTimer = undefined;
-      this.joinAttempt = 0;
+      if (this.joinRetryTimer || !this.takeAutomaticRetry()) return;
       void this.connect(this.identity.name, this.identity.palette);
       return;
     }
-    if (this.streamAlive) return;
-    this.suspended = false;
-    // Take the pending retry with us rather than racing it.
-    //
-    // Without this, unlocking a phone opened a stream immediately while the
-    // backoff timer from the drop was still armed — and when it fired it
-    // aborted the stream that was already working, whose own error path then
-    // marked the connection dead. Every trip to the home screen added another
-    // one of these. It reads as a connection that will not settle, and it was
-    // one, caused by the fix for the last problem.
-    if (this.reconnectTimer) window.clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = undefined;
-    // Somebody has just picked the phone up. That is the moment to try hardest,
-    // not to carry over a ten-second backoff earned while it was in a pocket.
-    this.reconnectAttempt = 0;
+    if (this.streamAlive || this.reconnectTimer || !this.takeAutomaticRetry()) return;
     void this.openEventStream();
   }
 
@@ -1195,7 +1220,7 @@ export class FestivalClient {
     try {
       response = await fetch(`${this.baseUrl}${path}`, { ...init, headers });
     } catch (error) {
-      if (!this.closed) this.onStatus('reconnecting', 'Connection interrupted. Retrying…');
+      if (!this.closed && !this.retriesExhausted) this.onStatus('reconnecting', 'Connection interrupted. Retrying…');
       throw error;
     }
     if (throwOnError && !response.ok) {
@@ -1235,7 +1260,7 @@ export class FestivalClient {
   }
 
   private async openEventStream(): Promise<void> {
-    if (!this.session || this.closed || this.suspended) return;
+    if (!this.session || this.closed || this.retriesExhausted || this.suspended) return;
     const generation = this.streamGeneration + 1;
     this.streamGeneration = generation;
     this.streamAlive = true;
@@ -1255,11 +1280,11 @@ export class FestivalClient {
         return;
       }
       if (response.status === 401) {
+        this.streamAlive = false;
         await this.recoverSession();
         return;
       }
       if (!response.ok || !response.body) throw new Error('Live festival stream is unavailable.');
-      this.reconnectAttempt = 0;
       this.onStatus('online');
       reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -1275,6 +1300,11 @@ export class FestivalClient {
           const block = buffer.slice(0, boundary);
           buffer = buffer.slice(boundary + 2);
           this.handleEventBlock(block);
+          if (block.trim() && !this.closed) {
+            this.automaticRetryAttempts = 0;
+            this.reconnectAttempt = 0;
+            this.joinAttempt = 0;
+          }
           boundary = buffer.indexOf('\n\n');
         }
       }
@@ -1331,23 +1361,26 @@ export class FestivalClient {
   }
 
   private async recoverSession(): Promise<void> {
-    if (this.closed || this.suspended || this.recovering || !this.session || !this.identity) return;
+    if (this.closed || this.retriesExhausted || this.suspended || this.recovering || !this.session || !this.identity) return;
     this.recovering = true;
     this.onStatus('reconnecting', 'Restoring your festival session…');
     try {
-      const response = await fetch(`${this.baseUrl}/api/session/recover`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ session: this.session, ...this.identity }),
-      });
-      const payload = await response.json() as { session?: Session; state?: FestivalState; error?: string };
+      const { response, payload } = await requestWithDeadline(async signal => {
+        const response = await fetch(`${this.baseUrl}/api/session/recover`, {
+          method: 'POST', signal,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ session: this.session, ...this.identity }),
+        });
+        const payload = await response.json() as { session?: Session; state?: FestivalState; error?: string };
+        return { response, payload };
+      }, 15_000, 'Festival session recovery');
+      if (this.closed || this.retriesExhausted || this.suspended) return;
       if (!response.ok || !payload.session || !payload.state) throw new Error(payload.error ?? 'Session recovery failed.');
       this.session = payload.session;
       this.reconnectAttempt = 0;
       if (this.identity) this.rememberSession(this.identity.name);
       this.onState(payload.state);
-      this.onStatus('online');
-      void this.openEventStream();
+      this.scheduleReconnect();
     } catch {
       this.scheduleReconnect();
     } finally {
@@ -1357,6 +1390,7 @@ export class FestivalClient {
 
   private scheduleReconnect(): void {
     if (this.closed || this.suspended || !this.session || this.reconnectTimer) return;
+    if (!this.takeAutomaticRetry()) return;
     this.onStatus('reconnecting', 'Live connection interrupted. Retrying…');
     const delay = Math.min(10_000, 500 * 2 ** this.reconnectAttempt);
     this.reconnectAttempt += 1;

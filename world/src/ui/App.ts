@@ -567,6 +567,9 @@ export class App {
   /** Public config is the lightweight wake-up request sent while the gate is drawn. */
   private festivalServiceReady = false;
   private connectionStatus: ConnectionStatus = 'offline';
+  /** Show the offline alert once per visit, including across reconnect attempts. */
+  private offlineNoticeShown = false;
+  private offlineRefreshNoticeShown = false;
   private networkState?: FestivalState;
   private sharedNetworkKey = '';
   private staffKey = sessionStorage.getItem(STAFF_KEY) ?? '';
@@ -5654,7 +5657,19 @@ export class App {
       }
       cluster.title = detail ?? '';
     }
-    if (status === 'offline' && detail) this.showWorldAlert(this.language === 'zh-TW' ? '離線模式 · 正在重新連線' : `OFFLINE MODE · ${detail}`);
+    if (status === 'offline' && detail && this.root.querySelector('#world-alert')) {
+      if (this.festivalClient.reconnectStopped) {
+        if (!this.offlineRefreshNoticeShown) {
+          this.offlineRefreshNoticeShown = true;
+          this.showWorldAlert(this.language === 'zh-TW'
+            ? '離線模式 · 自動重新連線已停止，請重新整理網頁再試一次'
+            : 'OFFLINE MODE · RECONNECTION STOPPED. REFRESH THE PAGE TO TRY AGAIN.');
+        }
+      } else if (!this.offlineNoticeShown) {
+        this.offlineNoticeShown = true;
+        this.showWorldAlert(this.language === 'zh-TW' ? '離線模式 · 正在重新連線' : `OFFLINE MODE · ${detail}`);
+      }
+    }
     if (status === 'kicked') {
       if (this.arcadePlaying) this.closeArcadeGame();
       if (this.root.querySelector<HTMLElement>('#seat-menu')?.dataset.menuOwner === 'npc') this.hideSeatMenu();
@@ -6813,7 +6828,9 @@ export class App {
         return `
           <p class="panel-intro">${this.connectionStatus === 'online'
             ? (this.language === 'zh-TW' ? `${remoteVisitors.length + 1} 位線上觀影者` : `${remoteVisitors.length + 1} LIVE VISITOR${remoteVisitors.length ? 'S' : ''}`)
-            : (this.language === 'zh-TW' ? '離線模式 · 正在重新連線' : 'OFFLINE · RECONNECTING')}</p>
+            : this.festivalClient.reconnectStopped
+              ? (this.language === 'zh-TW' ? '離線模式 · 請重新整理網頁以再次連線' : 'OFFLINE · REFRESH THE PAGE TO RECONNECT')
+              : (this.language === 'zh-TW' ? '離線模式 · 正在重新連線' : 'OFFLINE · RECONNECTING')}</p>
           <ul class="attendee-list">
             <li><span class="status-dot"></span><span class="attendee-about-gap" aria-hidden="true"></span><strong>${this.escapeHtml(this.currentId)}</strong><small>${this.localizeLocation(this.snapshot?.location ?? 'FESTIVAL GATE')}${window.innerWidth < 780 ? ` · ${this.language === 'zh-TW' ? '手機' : 'PHONE'}` : ''}${selfVisitor?.npcId === 'MENTOR' ? '' : feedLabel(selfFeedCount)}</small></li>
             ${remoteVisitors.map((visitor) => {
