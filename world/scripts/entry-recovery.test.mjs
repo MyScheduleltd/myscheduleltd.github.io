@@ -91,8 +91,8 @@ test('a late timer cannot overwrite an externally recorded interrupted entrance'
 const compiled = await build({ entryPoints: ['src/network/FestivalClient.ts'], bundle: true,
   write: false, format: 'esm', define: { 'import.meta.env': JSON.stringify({ DEV: false, VITE_FESTIVAL_SERVER_URL: 'https://festival.test' }) } });
 let visit = 0;
-async function client(fetch, options = {}) {
-  globalThis.window = { location: new URL('https://myscheduleltd.com/beta/'), setTimeout, clearTimeout, setInterval: () => 0 };
+async function client(fetch, options = {}, browser = {}) {
+  globalThis.window = { location: new URL('https://myscheduleltd.com/beta/'), setTimeout, clearTimeout, setInterval: () => 0, ...browser };
   globalThis.fetch = fetch;
   const { FestivalClient } = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputFiles[0].text + `\n// visit ${++visit}`).toString('base64')}`);
   return new FestivalClient({ onState() {}, onStatus() {}, ...options });
@@ -252,4 +252,138 @@ test('a stationary garment colour change publishes and survives a remote compact
   emit('state-patch', { visitors: [{ id: 'b', palette: changed }] });
   assert.deepEqual(states.at(-1).visitors[0].palette, changed);
   assert.equal(states.at(-1).visitors[0].palette.top, original.top);
+});
+
+async function retryFixture(t, fetch) {
+  storage(t);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const statuses = [], watchdogs = [];
+  const visitor = await client(fetch, { onStatus: (status, detail) => statuses.push({ status, detail }) }, {
+    setInterval: callback => { watchdogs.push(callback); return 0; },
+  });
+  return { visitor, statuses, watchdogs, async advance(milliseconds = 10_000) {
+    t.mock.timers.tick(milliseconds);
+    await settle();
+  } };
+}
+
+test('an offline join stops after five retries and requires a fresh page to try again', async t => {
+  let calls = 0;
+  const fetch = async () => { calls++; throw new Error('Offline'); };
+  const h = await retryFixture(t, fetch);
+  await h.visitor.connect('Visitor', {});
+  assert.equal(calls, 1);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    assert.equal(h.visitor.reconnectStopped, false);
+    for (let wake = 0; wake < 10; wake++) h.visitor.wake();
+    await h.advance();
+  }
+  assert.equal(calls, 6, 'one initial connection and five retries');
+  assert.equal(h.visitor.reconnectStopped, true);
+  assert.equal(h.visitor.online, false);
+  assert.equal(h.statuses.filter(s => s.detail?.includes('Refresh the page')).length, 1);
+  for (let wake = 0; wake < 10; wake++) {
+    h.visitor.wake(); h.visitor.suspend(); h.visitor.resume();
+    for (const watchdog of h.watchdogs) watchdog();
+  }
+  await h.visitor.connect('Visitor', {});
+  await h.advance(600_000);
+  assert.equal(calls, 6, 'focus, resume, heartbeat and explicit connect cannot bypass exhaustion');
+  const refreshed = await client(fetch);
+  assert.equal(refreshed.reconnectStopped, false);
+  await refreshed.connect('Visitor', {});
+  assert.equal(calls, 7, 'refresh creates a new retry budget');
+  refreshed.suspend();
+});
+
+test('a stalled join times out, aborts and stops after five timed retries', async t => {
+  const signals = [];
+  const h = await retryFixture(t, (_url, options) => {
+    signals.push(options.signal); return new Promise(() => {});
+  });
+  const connecting = h.visitor.connect('Visitor', {});
+  await settle();
+  for (let attempt = 0; attempt < 6; attempt++) {
+    await h.advance(15_001);
+    assert.equal(signals[attempt].aborted, true);
+    if (attempt < 5) await h.advance();
+  }
+  await connecting;
+  assert.equal(signals.length, 6);
+  assert.equal(h.visitor.reconnectStopped, true);
+});
+
+for (const failure of ['network', 'empty-stream', 'expired-session', 'failed-session-recovery']) {
+  test(`live reconnection remains bounded for ${failure}, including successful recovery responses`, async t => {
+    let events = 0, recoveries = 0, requests = 0;
+    const session = { id: 'owned', token: 'test' };
+    const h = await retryFixture(t, async url => {
+      requests++;
+      const path = new URL(url).pathname;
+      if (path === '/api/session/recover') {
+        recoveries++;
+        return failure === 'failed-session-recovery'
+          ? Response.json({ error: 'Unavailable' }, { status: 503 })
+          : Response.json({ session, state: {} });
+      }
+      if (path !== '/api/events') return Response.json({ session, state: {} });
+      events++;
+      if (failure === 'network') throw new Error('Offline');
+      if (failure === 'empty-stream') return new Response(new ReadableStream({ start(c) { c.close(); } }));
+      return new Response(null, { status: 401 });
+    });
+    await h.visitor.connect('Visitor', {}); await settle();
+    for (let attempt = 0; attempt < 5; attempt++) await h.advance();
+    assert.equal(events, 6);
+    assert.equal(h.visitor.reconnectStopped, true);
+    assert.equal(h.visitor.online, false);
+    if (failure.includes('session')) assert.equal(recoveries, 6);
+    assert.equal(h.statuses.at(-1).status, 'offline');
+    assert.equal(h.statuses.filter(s => s.detail?.includes('Refresh the page')).length, 1);
+    const before = requests;
+    h.visitor.lastStreamAt = 0;
+    for (let wake = 0; wake < 10; wake++) {
+      h.visitor.wake(); h.visitor.suspend(); h.visitor.resume();
+      for (const watchdog of h.watchdogs) watchdog();
+    }
+    await h.visitor.publishPresence({ moving: true }, {});
+    await h.advance(600_000);
+    assert.equal(requests, before, 'exhaustion also stops automatic presence requests');
+  });
+}
+
+test('joining and stream recovery share a budget until live data actually arrives', async t => {
+  let joins = 0, events = 0;
+  const h = await retryFixture(t, async url => {
+    if (new URL(url).pathname === '/api/events') { events++; throw new Error('Stream unavailable'); }
+    joins++;
+    if (joins < 3) throw new Error('Join unavailable');
+    return Response.json({ session: { id: 'owned', token: 'test' }, state: {} });
+  });
+  await h.visitor.connect('Visitor', {});
+  for (let attempt = 0; attempt < 5; attempt++) await h.advance();
+  assert.equal(joins, 3);
+  assert.equal(events, 4, 'successful HTTP admission cannot renew the remaining stream retries');
+  assert.equal(h.visitor.reconnectStopped, true);
+});
+
+test('a working stream renews the budget for a later interruption', async t => {
+  let events = 0, working;
+  const h = await retryFixture(t, async url => {
+    if (new URL(url).pathname !== '/api/events') return Response.json({ session: { id: 'owned', token: 'test' }, state: {} });
+    events++;
+    if (events !== 4) throw new Error('Stream unavailable');
+    return new Response(new ReadableStream({ start(c) {
+      working = c;
+      c.enqueue(new TextEncoder().encode(': heartbeat\n\n'));
+    } }));
+  });
+  await h.visitor.connect('Visitor', {}); await settle();
+  for (let attempt = 0; attempt < 3; attempt++) await h.advance();
+  assert.equal(events, 4);
+  assert.equal(h.visitor.reconnectStopped, false);
+  working.error(new Error('Later interruption')); await settle();
+  for (let attempt = 0; attempt < 5; attempt++) await h.advance();
+  assert.equal(events, 9, 'a confirmed working stream earns five new retries');
+  assert.equal(h.visitor.reconnectStopped, true);
 });

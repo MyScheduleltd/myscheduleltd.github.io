@@ -43,7 +43,7 @@ This runs the authoritative service tests, TypeScript validation, and the produc
 - Synchronized NEARBY, VENUE, and FESTIVAL chat
 - Distance-aware NEARBY delivery and venue-aware VENUE delivery
 - Plain-text normalization, 160-character messages, and chat rate limiting
-- Reconnecting event stream with automatic offline-mode fallback
+- Reconnecting event stream with up to five automatic retries per interruption, then offline play until a manual page refresh
 - Stale-session cleanup and automatic seat release
 - Session-scoped staff console with visitor, seat, and chat monitoring
 - Staff mute, end-session, and message-removal controls
