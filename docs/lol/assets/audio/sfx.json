@@ -1300,5 +1300,33 @@
  },
  "beautygrunt": {
   "duration": 0.519
+ },
+ "pa_chime": {
+  "duration": 3.4189
+ },
+ "monkey_toy": {
+  "duration": 7.9197
+ },
+ "music_box": {
+  "duration": 9.4106
+ },
+ "beauty_scream": {
+  "duration": 3.4196
+ },
+ "power_down": {
+  "duration": 0.622
+ },
+ "power_up": {
+  "duration": 3.3411
+ },
+ "shutter": {
+  "duration": 2.8812
+ },
+ "pickup": {
+  "duration": 1.2539
+ },
+ "zone_hum": {
+  "duration": 7.4203,
+  "loop": true
  }
 }
