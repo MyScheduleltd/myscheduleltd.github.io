@@ -1328,5 +1328,8 @@
  "zone_hum": {
   "duration": 7.4203,
   "loop": true
+ },
+ "beauty_arrive": {
+  "duration": 0.37
  }
 }
