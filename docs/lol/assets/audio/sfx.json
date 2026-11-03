@@ -1331,5 +1331,8 @@
  },
  "beauty_arrive": {
   "duration": 0.37
+ },
+ "sale_notify": {
+  "duration": 0.1688
  }
 }
