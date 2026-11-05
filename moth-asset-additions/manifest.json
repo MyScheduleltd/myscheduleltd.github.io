@@ -32,14 +32,15 @@
       "bytes": 95100,
       "source": "Owner-supplied 美麗起床鈴聲.m4a, unchanged",
       "use": "Level 4 basement chest: A private message from Dr.Beauty / 一段來自美麗本人的錄音",
-      "mirrorCommit": null
+      "mirrorCommit": "f51cccdc2d116bd5749ce9a2b4a655d23583f664"
     },
     "assets/audio/fight-cuts/level6-river-verse1-chorus2.m4a": {
       "sha256": "ec826c9d266831735009bef410a3c27aa2d9364210d0eb4d7db98eca48c2cbd7",
       "bytes": 3833842,
       "source": "6 - 更年期 ft. 手天使 & 謝乾.wav; verse 1 through chorus 2, original master 10.000–164.000 seconds",
       "use": "Level 6 river fight: verse 1 through the end of chorus 2, as requested by the owner",
-      "mirrorCommit": null
+      "mirrorCommit": null,
+      "mirrorNote": "Served from Pages: jsDelivr rejects this new file under its 50 MB repository-size limit (checked 2026-11-06)."
     }
   }
 }

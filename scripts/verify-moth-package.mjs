@@ -98,7 +98,13 @@ assert.deepEqual(Object.keys(integrity).sort(), media.sort(), 'Integrity list co
 for (const file of media) assert.equal(integrity[file], hash(await fs.readFile(path.join(dir, file))), `Integrity hash: ${file}`);
 for (const page of ['index.html', 'staff/index.html']) {
   const policy = (await fs.readFile(path.join(dir, page), 'utf8')).match(/connect-src ([^;]+);/)[1];
-  const expected = "'self' " + [MOTH_MIRROR_COMMIT, ...new Set(MOTH_MIRROR_PINS.map(pin => pin.commit).filter(Boolean))].map(mirrorPath).join(' ') + ' https://beauty-boy.vercel.app/api/moth-scoreboard';
+  const mirrors = [MOTH_MIRROR_COMMIT, ...new Set(MOTH_MIRROR_PINS.map(pin => pin.commit).filter(Boolean))].map(commit => {
+    assert.match(commit, /^[0-9a-f]{40}$/, 'Every mirror pin is an immutable commit');
+    const url = mirrorPath(commit);
+    assert.match(url, /^https:\/\/cdn\.jsdelivr\.net\/gh\/MyScheduleltd\/myscheduleltd\.github\.io@[0-9a-f]{40}\/docs\/moth\/$/, 'Mirror access stays inside the pinned game paths');
+    return url;
+  });
+  const expected = "'self' " + mirrors.join(' ') + ' https://beauty-boy.vercel.app/api/moth-scoreboard';
   assert.equal(policy, expected, 'Only the exact configured mirror paths and the scoreboard API may be fetched');
 }
 assert(!/createDebugPanel|toggleDebugPanel|data-debug-action|debug-panel-toggle|window\.bobbyGame\s*=/.test(publicCode));

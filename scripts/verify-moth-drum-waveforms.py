@@ -21,7 +21,7 @@ BANDS = {'kick': (35,150), 'snare': (150,6000), 'hat': (5000,16000), 'other': (1
 REVIEWED_BOUNDARIES = {
     ('level2BathroomRhythm', 2.191): 'First amplitude rise confirmed in both filters and full drum waveform; secondary detector chose later bass cycle',
     ('level2BathroomRhythm', 13.391): 'First amplitude rise confirmed in both filters and full drum waveform; secondary detector chose later bass cycle',
-    ('level5RiverRhythm', 123.116): 'First amplitude rise and concurrent snare transient confirmed; secondary detector chose later bass cycle; outside the shortened runtime cut',
+    ('level5RiverRhythm', 123.116): 'First amplitude rise and concurrent snare transient confirmed; secondary detector chose later bass cycle',
 }
 
 REVIEWED_STEM_SHA256 = {'level2BathroomRhythm': 'd814499fa95fcb60ec9a555ab1c15470ecfa646edc3b1e433f5ac16e22393782', 'level5RiverRhythm': 'dc8bad34b3388b7223ea8648a530a9d6fc75a8f349a6ca60b4c0ceab45829891'}
