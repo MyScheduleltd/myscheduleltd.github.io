@@ -2,12 +2,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
-import {rewriteCssArtwork} from './moth-runtime-patches.mjs';
+import {rewriteCssArtwork, MOTH_MIRROR_COMMIT, MOTH_MIRROR_PINS, mirrorPath} from './moth-runtime-patches.mjs';
 import {patchCharts} from './moth-chart-patches.mjs';
 import {TRIMMED_FILES} from './moth-asset-trim.mjs';
 import {KEY_FRINGE_MANIFEST} from './moth-sprite-fringe.mjs';
-import {ADDED_ASSETS} from './moth-asset-additions.mjs';
+import {ADDED_ASSETS, RETIRED_ADDED_ASSETS} from './moth-asset-additions.mjs';
 import {patchDeckCss} from './moth-deck-art.mjs';
+import {patchScreenFrameCss} from './moth-screen-frame.mjs';
 const root = path.resolve(import.meta.dirname, '..');
 const dir = path.join(root, 'docs/moth');
 const snapshot = JSON.parse(await fs.readFile(path.join(root, '.qa/moth/published-snapshot.json'), 'utf8'));
@@ -41,7 +42,7 @@ for (const file of snapshot.files) {
     // mirror.
     const releaseCss = await fs.readFile(path.join(root, '.qa/moth/published/styles.css'));
     assert.equal(hash(releaseCss), file.sha256);
-    assert(data.toString().startsWith(rewriteCssArtwork(patchDeckCss(releaseCss.toString())).css), 'Original game styles preserved');
+    assert(data.toString().startsWith(rewriteCssArtwork(patchScreenFrameCss(patchDeckCss(releaseCss.toString()))).css), 'Game styles preserved with a separate clipping aperture');
     assert(!/url\("assets\//.test(data.toString()), 'No artwork fetched straight from Pages by the stylesheet');
     assert(data.toString().includes('.load-recovery section'));
     continue;
@@ -58,6 +59,7 @@ for (const file of snapshot.files) {
 }
 // Files beyond the release, as listed (moth-asset-additions.mjs).
 let added = 0;
+for (const file of RETIRED_ADDED_ASSETS) await assert.rejects(fs.access(path.join(dir, file)), `Retired reward published: ${file}`);
 for (const [file, entry] of Object.entries(ADDED_ASSETS)) {
   assert(!snapshot.files.some(release => release.path === file), `An addition replaces no release file: ${file}`);
   assert.equal(hash(await fs.readFile(path.join(dir, file))), entry.sha256, `Addition: ${file}`);
@@ -96,7 +98,14 @@ assert.deepEqual(Object.keys(integrity).sort(), media.sort(), 'Integrity list co
 for (const file of media) assert.equal(integrity[file], hash(await fs.readFile(path.join(dir, file))), `Integrity hash: ${file}`);
 for (const page of ['index.html', 'staff/index.html']) {
   const policy = (await fs.readFile(path.join(dir, page), 'utf8')).match(/connect-src ([^;]+);/)[1];
-  assert.match(policy, /^'self' (https:\/\/cdn\.jsdelivr\.net\/gh\/MyScheduleltd\/myscheduleltd\.github\.io@[0-9a-f]{40}\/docs\/moth\/ ){1,3}https:\/\/beauty-boy\.vercel\.app\/api\/moth-scoreboard$/, 'Only the pinned mirror paths and the scoreboard API may be fetched');
+  const mirrors = [MOTH_MIRROR_COMMIT, ...new Set(MOTH_MIRROR_PINS.map(pin => pin.commit).filter(Boolean))].map(commit => {
+    assert.match(commit, /^[0-9a-f]{40}$/, 'Every mirror pin is an immutable commit');
+    const url = mirrorPath(commit);
+    assert.match(url, /^https:\/\/cdn\.jsdelivr\.net\/gh\/MyScheduleltd\/myscheduleltd\.github\.io@[0-9a-f]{40}\/docs\/moth\/$/, 'Mirror access stays inside the pinned game paths');
+    return url;
+  });
+  const expected = "'self' " + mirrors.join(' ') + ' https://beauty-boy.vercel.app/api/moth-scoreboard';
+  assert.equal(policy, expected, 'Only the exact configured mirror paths and the scoreboard API may be fetched');
 }
 assert(!/createDebugPanel|toggleDebugPanel|data-debug-action|debug-panel-toggle|window\.bobbyGame\s*=/.test(publicCode));
 assert(staffCode.includes('createDebugPanel'));

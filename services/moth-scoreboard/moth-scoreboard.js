@@ -25,18 +25,23 @@
 'use strict';
 const crypto = require('node:crypto');
 
-// Highest score each fight's chart allows: 1000 x (notes + holds), read from
-// the game's own note lists (release mobile-deck-20261012a, with level 2's
-// drum break charted on 2026-10-13: scripts/moth-chart-patches.mjs).
-const MAX_FIGHT_SCORE = {
+// Legacy callers retain their original score limits and Redis keys. New
+// charts use separate boards, so scores from different note lists never mix.
+const LEGACY_MAX_FIGHT_SCORE = {
   chill: { 'level1-stage1': 126000, 'level2-stage2': 127000, 'level3-stage2': 155000, 'level4-stage1': 182000, 'studio-stage1': 192000, 'level5-stage2': 245000, 'level6-stage2': 263000 },
   shoot: { 'level1-stage1': 203000, 'level2-stage2': 209000, 'level3-stage2': 263000, 'level4-stage1': 194000, 'studio-stage1': 295000, 'level5-stage2': 336000, 'level6-stage2': 341000 }
 };
+const CHART_LIMITS = require('./chart-limits.json');
+const CHART_VERSION = CHART_LIMITS.version;
+const MAX_FIGHT_SCORE = { chill: CHART_LIMITS.chill, shoot: CHART_LIMITS.shoot };
 const FIGHTS = Object.keys(MAX_FIGHT_SCORE.chill);
-// Each fight ends when its song does, and the seven songs last 836 s. The
-// game asks for its ticket again until the first fight is cleared, which
-// leaves 751 s of songs; 12 minutes is below both.
+const versionOf = raw => raw == null ? null : raw === CHART_VERSION ? CHART_VERSION : false;
+const storageKey = (kind, version, suffix) => `${version ? 'moth:chart:' + version : 'moth'}:${kind}:${suffix}`;
+const versionFields = version => version ? { chartVersion: version } : {};
+// Older clients keep the original twelve-minute bound. Current charts use
+// the build-generated duration bound for the current Level 6 song excerpt.
 const MIN_RUN_SECONDS = 720;
+const CURRENT_MIN_RUN_SECONDS = CHART_LIMITS.minRunSeconds;
 const TICKET_SECONDS = 60 * 60 * 24 * 60;
 const TOP = 10;
 const ALLOWED_ORIGINS = new Set(['https://myscheduleltd.com', 'https://www.myscheduleltd.com', 'https://beauty-boy.vercel.app']);
@@ -53,8 +58,8 @@ function cleanId(raw) {
   return { id };
 }
 
-function checkRun(mode, scores) {
-  const limits = MAX_FIGHT_SCORE[mode];
+function checkRun(mode, scores, version = CHART_VERSION) {
+  const limits = (version === CHART_VERSION ? MAX_FIGHT_SCORE : version === null ? LEGACY_MAX_FIGHT_SCORE : {})[mode];
   if (!limits || !scores || typeof scores !== 'object') return { error: 'scores' };
   const keys = Object.keys(scores);
   if (keys.length !== FIGHTS.length || !FIGHTS.every(stage => keys.includes(stage))) return { error: 'scores' };
@@ -98,16 +103,17 @@ async function overLimit(store, key, seconds, most) {
 
 // A burst of board views costs one storage read per board every few seconds.
 const boardCache = new Map();
-async function readBoard(store, mode, { fresh = false } = {}) {
-  const cached = boardCache.get(mode);
+async function readBoard(store, mode, version, { fresh = false } = {}) {
+  const key = storageKey('board', version, mode);
+  const cached = boardCache.get(key);
   if (!fresh && cached && Date.now() - cached.at < 5000) return cached.entries;
-  const entries = await readStoredBoard(store, mode);
-  boardCache.set(mode, { at: Date.now(), entries });
+  const entries = await readStoredBoard(store, mode, version);
+  boardCache.set(key, { at: Date.now(), entries });
   return entries;
 }
 
-async function readStoredBoard(store, mode) {
-  const raw = await store.command('ZREVRANGE', `moth:board:${mode}`, 0, TOP - 1);
+async function readStoredBoard(store, mode, version) {
+  const raw = await store.command('ZREVRANGE', storageKey('board', version, mode), 0, TOP - 1);
   return (raw || []).map((member, index) => {
     const entry = JSON.parse(member);
     return { rank: index + 1, id: entry.id, total: entry.total, at: entry.at };
@@ -152,43 +158,48 @@ async function handler(req, res, env = process.env) {
   try {
     if (req.method === 'GET') {
       const mode = url.searchParams.get('mode');
+      const version = versionOf(url.searchParams.get('chartVersion'));
+      if (version === false) return send(res, 400, { error: 'chart-version' }, origin);
       if (!MAX_FIGHT_SCORE[mode]) return send(res, 400, { error: 'mode' }, origin);
-      return send(res, 200, { mode, entries: await readBoard(store, mode) }, origin);
+      return send(res, 200, { mode, ...versionFields(version), entries: await readBoard(store, mode, version) }, origin);
     }
     if (req.method !== 'POST') return send(res, 405, { error: 'method' }, origin);
     const body = await readBody(req);
     const mode = body.mode;
+    const version = versionOf(body.chartVersion);
+    if (version === false) return send(res, 400, { error: 'chart-version' }, origin);
     if (!MAX_FIGHT_SCORE[mode]) return send(res, 400, { error: 'mode' }, origin);
     const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
     if (body.action === 'start') {
       if (await overLimit(store, `moth:starts:${ip}`, 3600, 20)) return send(res, 429, { error: 'rate' }, origin);
       const run = crypto.randomUUID();
-      await store.command('SET', `moth:ticket:${run}`, JSON.stringify({ mode, at: Date.now() }), 'EX', TICKET_SECONDS);
-      return send(res, 201, { run }, origin);
+      await store.command('SET', storageKey('ticket', version, run), JSON.stringify({ mode, ...versionFields(version), at: Date.now() }), 'EX', TICKET_SECONDS);
+      return send(res, 201, { run, ...versionFields(version) }, origin);
     }
     const name = cleanId(body.id);
     if (name.error) return send(res, 400, { error: name.error }, origin);
-    const run = checkRun(mode, body.scores);
+    const run = checkRun(mode, body.scores, version);
     if (run.error) return send(res, 400, { error: run.error }, origin);
     const runId = String(body.run || '');
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(runId)) return send(res, 400, { error: 'run' }, origin);
     if (await overLimit(store, `moth:rate:${ip}`, 600, 5)) return send(res, 429, { error: 'rate' }, origin);
-    const [ticketJson, posted] = await store.pipeline([['GET', `moth:ticket:${runId}`], ['EXISTS', `moth:run:${runId}`]]);
-    if (posted) return send(res, 409, { error: 'posted', entries: await readBoard(store, mode) }, origin);
+    const ticketKey = storageKey('ticket', version, runId), runKey = storageKey('run', version, runId);
+    const [ticketJson, posted] = await store.pipeline([['GET', ticketKey], ['EXISTS', runKey]]);
+    if (posted) return send(res, 409, { error: 'posted', ...versionFields(version), entries: await readBoard(store, mode, version) }, origin);
     const ticket = ticketJson ? JSON.parse(ticketJson) : null;
-    if (ticket?.mode !== mode) return send(res, 400, { error: 'run' }, origin);
-    if (Date.now() - ticket.at < MIN_RUN_SECONDS * 1000) return send(res, 400, { error: 'too-fast' }, origin);
-    const board = `moth:board:${mode}`;
+    if (ticket?.mode !== mode || (ticket.chartVersion || null) !== version) return send(res, 400, { error: 'run' }, origin);
+    if (Date.now() - ticket.at < (version ? CURRENT_MIN_RUN_SECONDS : MIN_RUN_SECONDS) * 1000) return send(res, 400, { error: 'too-fast' }, origin);
+    const board = storageKey('board', version, mode);
     const [count, lowest] = await store.pipeline([['ZCARD', board], ['ZRANGE', board, 0, 0, 'WITHSCORES']]);
-    if (count >= TOP && lowest?.length && run.total <= Math.floor(Number(lowest[1]))) return send(res, 409, { error: 'not-top', entries: await readBoard(store, mode, { fresh: true }) }, origin);
+    if (count >= TOP && lowest?.length && run.total <= Math.floor(Number(lowest[1]))) return send(res, 409, { error: 'not-top', ...versionFields(version), entries: await readBoard(store, mode, version, { fresh: true }) }, origin);
     // One post per story run.
-    if (await store.command('SET', `moth:run:${runId}`, '1', 'NX', 'EX', 60 * 60 * 24 * 90) !== 'OK') return send(res, 409, { error: 'posted', entries: await readBoard(store, mode) }, origin);
+    if (await store.command('SET', runKey, '1', 'NX', 'EX', 60 * 60 * 24 * 90) !== 'OK') return send(res, 409, { error: 'posted', ...versionFields(version), entries: await readBoard(store, mode, version) }, origin);
     const at = Date.now();
-    const member = JSON.stringify({ id: name.id, total: run.total, at, run: runId, scores: body.scores });
-    await store.pipeline([['ZADD', board, rankScore(run.total, at), member], ['ZREMRANGEBYRANK', board, 0, -(TOP + 1)], ['DEL', `moth:ticket:${runId}`]]);
-    const entries = await readBoard(store, mode, { fresh: true });
+    const member = JSON.stringify({ id: name.id, total: run.total, at, run: runId, scores: body.scores, ...versionFields(version) });
+    await store.pipeline([['ZADD', board, rankScore(run.total, at), member], ['ZREMRANGEBYRANK', board, 0, -(TOP + 1)], ['DEL', ticketKey]]);
+    const entries = await readBoard(store, mode, version, { fresh: true });
     const mine = entries.find(entry => entry.at === at && entry.id === name.id);
-    return send(res, mine ? 201 : 409, mine ? { mode, rank: mine.rank, entries } : { error: 'not-top', entries }, origin);
+    return send(res, mine ? 201 : 409, mine ? { mode, ...versionFields(version), rank: mine.rank, entries } : { error: 'not-top', ...versionFields(version), entries }, origin);
   } catch (error) {
     return send(res, error instanceof SyntaxError ? 400 : 500, { error: error instanceof SyntaxError ? 'json' : 'server' }, origin);
   }
@@ -197,6 +208,9 @@ async function handler(req, res, env = process.env) {
 module.exports = handler;
 module.exports.default = handler;
 module.exports.MAX_FIGHT_SCORE = MAX_FIGHT_SCORE;
+module.exports.LEGACY_MAX_FIGHT_SCORE = LEGACY_MAX_FIGHT_SCORE;
+module.exports.CHART_VERSION = CHART_VERSION;
 module.exports.MIN_RUN_SECONDS = MIN_RUN_SECONDS;
+module.exports.CURRENT_MIN_RUN_SECONDS = CURRENT_MIN_RUN_SECONDS;
 module.exports.cleanId = cleanId;
 module.exports.checkRun = checkRun;

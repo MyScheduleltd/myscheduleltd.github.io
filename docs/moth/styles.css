@@ -48,7 +48,7 @@ body {
     max(12px, env(safe-area-inset-left));
 }
 
-#game {
+#game-viewport {
   grid-area: 1 / 1;
   position: relative;
   z-index: 1;
@@ -174,7 +174,7 @@ body[data-device-mode="phone"] .game-shell {
     max(6px, env(safe-area-inset-left));
 }
 
-body[data-device-mode="phone"] #game {
+body[data-device-mode="phone"] #game-viewport {
   width: min(calc(100dvw - 12px), calc((var(--app-h, 100dvh) - 18px) * 16 / 9));
   height: min(calc(var(--app-h, 100dvh) - 18px), calc((100dvw - 12px) * 9 / 16));
   max-width: none;
@@ -224,13 +224,13 @@ body[data-device-mode="phone"] .film-grain-overlay {
     pointer-events: none;
   }
 
-  #game,
+  #game-viewport,
   .film-grain-overlay {
     width: min(calc(100vw - 72px), calc((100vh - 72px) * 16 / 9), 1280px);
     height: min(calc(100vh - 72px), calc((100vw - 72px) * 9 / 16), 720px);
   }
 
-  #game {
+  #game-viewport {
     border: 4px solid #090b0d;
     border-radius: 14px;
     box-shadow:
@@ -499,7 +499,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
     overflow: hidden;
   }
 
-  body[data-touch-controls="1"][data-device-mode="desktop"] #game,
+  body[data-touch-controls="1"][data-device-mode="desktop"] #game-viewport,
   body[data-touch-controls="1"][data-device-mode="desktop"] .film-grain-overlay {
     grid-row: 1;
     grid-column: 1;
@@ -578,7 +578,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
     pointer-events: none;
   }
 
-  body[data-device-mode="phone"] #game {
+  body[data-device-mode="phone"] #game-viewport {
     position: relative;
     z-index: 2;
     grid-row: 1;
@@ -938,7 +938,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
     bottom: max(28px, env(safe-area-inset-bottom));
   }
 
-  body[data-device-mode="phone"] #game {
+  body[data-device-mode="phone"] #game-viewport {
     width: 84dvw;
     margin-top: max(4px, env(safe-area-inset-top));
   }
@@ -1739,7 +1739,7 @@ body[data-device-mode="phone"] .film-grain-overlay {
    margin of orange on every side. Both MODE settings, same as the deck.
 --------------------------------------------------------------------------- */
 @media (orientation: landscape) {
-  body[data-touch-controls="1"] #game,
+  body[data-touch-controls="1"] #game-viewport,
   body[data-touch-controls="1"] .film-grain-overlay {
     /* Each gutter has to hold the canvas's own 21px moulded bezel, a 118px
        control column, and a margin either side of it. 180px per side is the
@@ -1952,11 +1952,11 @@ body[data-touch-controls="1"] .mobile-controls .mobile-control-group--system {
 
    A 16:9 picture can be no taller than a portrait phone is wide, which left
    the game in a fifth of the screen. In portrait the game draws a taller
-   canvas (#portraitFight, 720x776 - see renderTallScreen in src/game.js) for
+   canvas (#portrait-viewport, 720x776 - see renderTallScreen in src/game.js) for
    every screen, and the handheld gives it the top of the phone: no bezel, the
    full width where the deck leaves room, and one deck position throughout.
 --------------------------------------------------------------------------- */
-#portraitFight {
+#portrait-viewport {
   display: none;
 }
 
@@ -1979,13 +1979,13 @@ body[data-touch-controls="1"] .mobile-controls .mobile-control-group--system {
     display: none;
   }
 
-  body[data-device-mode="phone"][data-tall-screen="1"] #game {
+  body[data-device-mode="phone"][data-tall-screen="1"] #game-viewport {
     position: absolute;
     visibility: hidden;
     pointer-events: none;
   }
 
-  body[data-device-mode="phone"][data-tall-screen="1"] #portraitFight {
+  body[data-device-mode="phone"][data-tall-screen="1"] #portrait-viewport {
     display: block;
     position: fixed;
     z-index: 2;
@@ -2427,6 +2427,40 @@ html, body, .mobile-controls, .mobile-controls * {
   user-select: none;
 }
 
+
+/* Live pictures are behind the cabinet aperture, including portrait mode. */
+#game-viewport,
+#portrait-viewport {
+  overflow: hidden;
+  isolation: isolate;
+  /* Gesture policy stays on the input canvas. A restrictive ancestor would
+     override the game's runtime pinch-zoom allowance outside rhythm fights. */
+  touch-action: auto;
+}
+#game,
+#portraitFight {
+  display: block;
+  position: relative;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: #07080f;
+  image-rendering: pixelated;
+  touch-action: none;
+}
+@media (orientation: landscape), (min-width: 921px) {
+  .film-grain-overlay {
+    --film-edge: 4px;
+    clip-path: inset(var(--film-edge) round calc(14px - var(--film-edge)));
+  }
+}
+
 .load-recovery { background: #1216134d; }
 .load-recovery section { background: repeating-linear-gradient(#242b28 0 3px, #202623 3px 4px); color: #f7f2de; border: 4px solid #ce3f49; box-shadow: 8px 8px 0 #111613; }
 .load-recovery small { color: #8fe8ff; }
@@ -2471,12 +2505,14 @@ html, body, .mobile-controls, .mobile-controls * {
   padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
   background: #0d110ed9; touch-action: manipulation; color: #f7f2de; font: 700 16px/1.45 "Courier New", "PingFang TC", "Noto Sans TC", monospace; }
 .moth-meme section { box-sizing: border-box; width: min(520px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: 12px; padding: 18px;
-  background: repeating-linear-gradient(#2c3b30 0 3px, #28362c 3px 4px); border: 4px solid #d8d2b4; outline: 3px solid #141a16; box-shadow: 8px 8px 0 #0b0e0c; }
+  background: repeating-linear-gradient(#2c3b30 0 3px, #28362c 3px 4px); border: 4px solid #d8d2b4; outline: 3px solid #141a16; box-shadow: 8px 8px 0 #0b0e0c; overflow-y: auto; overscroll-behavior: contain; }
 .moth-meme h2 { margin: 0; padding-left: 12px; border-left: 6px solid #ffd36c; font-size: clamp(20px, 5vw, 26px); letter-spacing: .06em; }
-.moth-meme img { display: block; width: 100%; min-height: 0; flex: 1 1 auto; object-fit: contain; background: #141a16; border: 2px solid #5b6f5e;
-  -webkit-touch-callout: default; -webkit-user-select: auto; user-select: auto; }
+.moth-meme audio { display: block; width: 100%; min-height: 54px; }
+.moth-meme h2, .moth-meme p { overflow-wrap: anywhere; }
 .moth-meme p { margin: 0; color: #8fe8ff; font-size: 13px; }
 .moth-meme-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .moth-meme button { font: inherit; font-weight: 900; font-size: 18px; padding: 12px; background: #344439; color: #f7f2de; border: 3px solid #dcd8bd; box-shadow: 4px 5px 0 #141a16; }
 .moth-meme button[data-meme-save] { background: #ffd36c; color: #1b2130; }
+.moth-meme button:disabled { opacity: .5; }
+.moth-meme [hidden] { display: none !important; }
 .moth-meme button:focus-visible { outline: 3px solid #ffd36c; outline-offset: 4px; }

@@ -10,7 +10,12 @@ import { patchStorySave } from './moth-story-save.mjs';
 import { patchWalkScenes, WALK_SCENE_METHODS } from './moth-walk-scenes.mjs';
 import { patchDeckTouch } from './moth-deck-art.mjs';
 import { patchCredits } from './moth-credits.mjs';
-import { ADDED_ASSETS, MOTH_MIRROR_ADDITIONS_COMMIT } from './moth-asset-additions.mjs';
+import { patchTutorial } from './moth-tutorial-patches.mjs';
+import { patchGamepad, GAMEPAD_METHODS } from './moth-gamepad.mjs';
+import { patchChartPlayability, RHYTHM_RAIL_METHODS } from './moth-chart-playability.mjs';
+import { patchCinematicLook, CINEMATIC_LOOK_METHODS } from './moth-cinematic-look.mjs';
+import { patchScreenFrame } from './moth-screen-frame.mjs';
+import { ADDITION_MIRROR_PINS } from './moth-asset-additions.mjs';
 
 // Keep the selected published game as the input. Both audiences get identical
 // loading/audio repairs before the public debug tools are stripped.
@@ -92,7 +97,7 @@ export function patchMothRuntime(source, ts) {
   // Definitions precede closures, but the registry must exist for secret jobs.
   const registry = `  createSceneAssetJobs() {\n    this.sceneAssetJobs = [];\n    ${definitions.join('\n    ')}\n    this.sceneAssetJobs.push(\n${jobs.map(job => `      {key:${JSON.stringify(job.key)}, group:${JSON.stringify(job.group)}, run:async () => {${job.run}}, release:() => {delete this.refs.${job.key};}}`).join(',\n')}\n    );\n    this.loadedSceneGroups = new Set();\n  }\n`;
   source = source.slice(0, start) + '      this.createSceneAssetJobs();\n' + source.slice(end);
-  once('  async loadLayeredMapConfig() {', registry + RUNTIME_METHODS + SCOREBOARD_METHODS + FIGHT_RESUME_METHODS + MENU_SFX_METHODS + FIGHT_HUD_METHODS + WALK_SCENE_METHODS + '\n  async loadLayeredMapConfig() {');
+  once('  async loadLayeredMapConfig() {', registry + RUNTIME_METHODS + SCOREBOARD_METHODS + FIGHT_RESUME_METHODS + MENU_SFX_METHODS + FIGHT_HUD_METHODS + WALK_SCENE_METHODS + GAMEPAD_METHODS + RHYTHM_RAIL_METHODS + CINEMATIC_LOOK_METHODS + '\n  async loadLayeredMapConfig() {');
   once('const response = await fetch("./data/level1.json", { cache: "no-store" });\n      this.config = await response.json();', 'this.config = await fetchGameJson("./data/level1.json");');
   once('const response = await fetch(source, { cache: "no-store" });\n    if (!response.ok) throw new Error(`Could not load layered map data: ${source}`);\n    const layeredMap = await response.json();', 'const layeredMap = await fetchGameJson(source);');
   once('this.loadError = error instanceof Error ? error.message : String(error);\n      this.state = "failure";', 'this.showLoadRecovery(error);');
@@ -251,6 +256,25 @@ export function patchMothRuntime(source, ts) {
   patchDeckTouch(once);
   // The game credits: who made it, the production lines (scripts/moth-credits.mjs).
   patchCredits(once);
+  patchTutorial(once, edit);
+  patchGamepad(once);
+  patchChartPlayability(once, edit);
+  patchCinematicLook(once, edit);
+  patchScreenFrame(once);
+  // Speaker latency is independent of the selected screen layout. A manual
+  // calibration already includes it; otherwise compensate routed audio on
+  // desktop and phone alike.
+  once('if (this.deviceMode !== "phone" || !rhythm || rhythm.skipAudio || this.getAudioOffsetSeconds() !== 0) return 0;',
+    'if (!rhythm || rhythm.skipAudio || this.getAudioOffsetSeconds() !== 0) return 0;');
+  once('    if (Number.isFinite(rhythm.outputDelay)) return rhythm.outputDelay;\n', '');
+  once('    rhythm.outputDelay = delay;\n', '');
+  // Do not restore an older saved fight's note judgments onto revised rows.
+  // CONTINUE keeps the story checkpoint and restarts that fight on its new chart.
+  once('v: 1, at: Date.now(), stageId:', 'v: 1, chartVersion: this.config.rhythmChartVersion, at: Date.now(), stageId:');
+  once('if (!start || kept.v !== 1 || !(Date.now() - kept.at < 7 * 864e5)',
+    'if (!start || kept.v !== 1 || kept.chartVersion !== this.config.rhythmChartVersion || !(Date.now() - kept.at < 7 * 864e5)');
+  once('// the verified grid; Level 5 also charts its instrumental opening accents.',
+    '// measured drum waveform attacks, retaining the record\'s microtiming.');
   // A fight's clock is the playhead less the output delay, so it stops just
   // short of the track's end. The hidden levels' charts run to the very end of
   // their songs, so they never finished: the results never came, and a tap
@@ -787,7 +811,7 @@ export const MOTH_MIRROR_PATCH_COMMIT = 'd04046c3aba8dcef69d486205a5267d53c998f3
 // this site.
 export const MOTH_MIRROR_PINS = [
   { commit: MOTH_MIRROR_PATCH_COMMIT, files: KEY_FRINGE_SPRITES },
-  { commit: MOTH_MIRROR_ADDITIONS_COMMIT, files: Object.keys(ADDED_ASSETS) }
+  ...ADDITION_MIRROR_PINS
 ];
 export const mirrorPath = commit => `${MOTH_MIRROR_ORIGIN}/gh/MyScheduleltd/myscheduleltd.github.io@${commit}/docs/moth/`;
 export const MOTH_MIRROR_ORIGIN = 'https://cdn.jsdelivr.net';

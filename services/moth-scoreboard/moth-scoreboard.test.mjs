@@ -7,7 +7,7 @@ import {fakeUpstash} from './fake-upstash.mjs';
 import {createRequire} from 'node:module';
 const require = createRequire(import.meta.url);
 const handler = require('./moth-scoreboard.js');
-const {MAX_FIGHT_SCORE, MIN_RUN_SECONDS} = handler;
+const {LEGACY_MAX_FIGHT_SCORE: MAX_FIGHT_SCORE, MIN_RUN_SECONDS, CHART_VERSION} = handler;
 
 async function call(env, {method = 'GET', path = '/api/moth-scoreboard?mode=chill', body, origin = 'https://myscheduleltd.com', ip = '1.2.3.4'} = {}) {
   const headers = {'x-forwarded-for': ip}; if (origin) headers.origin = origin;
@@ -115,6 +115,56 @@ test('scoreboard', async t => {
   });
   await t.test('finds the storage under any integration prefix', async () => {
     assert.equal((await call({STORAGE_REST_API_URL: url, STORAGE_REST_API_TOKEN: 'test-token', VERCEL_ENV: 'production'})).status, 200);
+  });
+  await t.test('new charts use separate limits, tickets, storage and cached boards; legacy remains intact', async () => {
+    const chartVersion = CHART_VERSION;
+    const prefix = 'moth:chart:' + chartVersion;
+    const currentScores = Object.fromEntries(Object.entries(handler.MAX_FIGHT_SCORE.chill).map(([stage, max]) => [stage, max]));
+    const legacyBefore = data.get('moth:board:chill');
+    const currentGet = () => call(env, {path: '/api/moth-scoreboard?mode=chill&chartVersion=' + chartVersion});
+    const empty = await currentGet();
+    assert.deepEqual(empty.json, {mode: 'chill', chartVersion, entries: []}, 'Legacy board cache cannot populate the new board');
+    const start = await call(env, {method: 'POST', ip: '18.1.1.1', body: {action: 'start', mode: 'chill', chartVersion}});
+    assert.equal(start.status, 201); assert.equal(start.json.chartVersion, chartVersion);
+    const run = start.json.run, ticketKey = prefix + ':ticket:' + run;
+    const saved = JSON.parse(data.get(ticketKey));
+    assert.equal(saved.chartVersion, chartVersion);
+    data.set(ticketKey, JSON.stringify({...saved, at: Date.now() - 15 * 60000}));
+    assert.equal((await call(env, {method: 'POST', ip: '18.1.1.2', body: {mode: 'chill', id: 'OLDPOST', run, scores: scores('chill', .1)}})).json.error, 'run', 'A new ticket cannot post to the legacy board');
+    const oldRun = await ticket('chill');
+    assert.equal((await call(env, {method: 'POST', ip: '18.1.1.3', body: {mode: 'chill', id: 'NEWPOST', run: oldRun, chartVersion, scores: currentScores}})).json.error, 'run', 'A legacy ticket cannot post to the new board');
+    const over = {...currentScores, 'level1-stage1': currentScores['level1-stage1'] + 200};
+    assert.equal((await call(env, {method: 'POST', ip: '18.1.1.4', body: {mode: 'chill', id: 'OVER', run, chartVersion, scores: over}})).json.error, 'scores', 'New per-fight caps are enforced');
+    const posted = await call(env, {method: 'POST', ip: '18.1.1.5', body: {mode: 'chill', id: 'NEWCHART', run, chartVersion, scores: currentScores}});
+    assert.equal(posted.status, 201); assert.equal(posted.json.chartVersion, chartVersion);
+    assert.equal(posted.json.entries[0].id, 'NEWCHART');
+    assert.equal(data.get('moth:board:chill'), legacyBefore, 'Legacy board bytes never changed');
+    assert(!data.has(ticketKey)); assert(data.has(prefix + ':run:' + run));
+    assert.deepEqual((await currentGet()).json.entries.map(e => e.id), ['NEWCHART']);
+    assert(!(await call(env)).json.entries.some(e => e.id === 'NEWCHART'), 'New score cannot enter the old board or its cache');
+    assert.deepEqual(handler.checkRun('chill', currentScores), {total: Object.values(currentScores).reduce((a,b) => a+b, 0)});
+  });
+  await t.test('unknown chart versions are refused instead of falling back to legacy', async () => {
+    for (const chartVersion of ['', 'future-chart', CHART_VERSION + '-typo']) {
+      assert.equal((await call(env, {path: '/api/moth-scoreboard?mode=chill&chartVersion=' + encodeURIComponent(chartVersion)})).json.error, 'chart-version');
+      assert.equal((await call(env, {method: 'POST', ip: '18.2.1.1', body: {action: 'start', mode: 'chill', chartVersion}})).json.error, 'chart-version');
+    }
+  });
+  await t.test('shortened charts have their own duration bound; legacy retains twelve minutes', async () => {
+    const minimum = handler.CURRENT_MIN_RUN_SECONDS;
+    assert(minimum > 500 && minimum < MIN_RUN_SECONDS, 'Build-derived bound fits the shorter river run');
+    const chartVersion = CHART_VERSION;
+    const start = await call(env, {method: 'POST', ip: '18.3.1.1', body: {action: 'start', mode: 'shoot', chartVersion}});
+    const run = start.json.run, key = 'moth:chart:' + chartVersion + ':ticket:' + run;
+    const saved = JSON.parse(data.get(key));
+    const currentScores = Object.fromEntries(Object.entries(handler.MAX_FIGHT_SCORE.shoot).map(([stage, max]) => [stage, max]));
+    const post = ip => call(env, {method: 'POST', ip, body: {mode: 'shoot', chartVersion, id: 'SHORT', run, scores: currentScores}});
+    data.set(key, JSON.stringify({...saved, at: Date.now() - (minimum - 1) * 1000}));
+    assert.equal((await post('18.3.1.2')).json.error, 'too-fast');
+    data.set(key, JSON.stringify({...saved, at: Date.now() - (minimum + 1) * 1000}));
+    assert.equal((await post('18.3.1.3')).status, 201, 'A complete shorter run can submit before the legacy bound');
+    const oldRun = await ticket('shoot', (minimum + 1) / 60);
+    assert.equal((await call(env, {method: 'POST', ip: '18.3.1.4', body: {mode: 'shoot', id: 'OLD', run: oldRun, scores: scores('shoot')}})).json.error, 'too-fast');
   });
   await t.test('no storage configured -> 503', async () => {
     assert.equal((await call({})).status, 503);
