@@ -4,14 +4,15 @@ import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { patchMothRuntime, rewriteCssArtwork, cssArtworkLoader, MOTH_MIRROR_COMMIT, MOTH_MIRROR_PINS, mirrorPath } from './moth-runtime-patches.mjs';
-import { SCOREBOARD_API, SCOREBOARD_CSS } from './moth-scoreboard-client.mjs';
+import { SCOREBOARD_API, SCOREBOARD_CSS, SCOREBOARD_CHART_VERSION } from './moth-scoreboard-client.mjs';
 import { patchCharts } from './moth-chart-patches.mjs';
 import { TRIMMED_FILES } from './moth-asset-trim.mjs';
 import { KEY_FRINGE_MANIFEST, patchedAsset } from './moth-sprite-fringe.mjs';
-import { ADDED_ASSETS, addedAsset } from './moth-asset-additions.mjs';
+import { ADDED_ASSETS, addedAsset, RETIRED_ADDED_ASSETS } from './moth-asset-additions.mjs';
 import { trimRetiredCode } from './moth-code-trim.mjs';
 import { patchDeckCss, DECK_ART_KEPT } from './moth-deck-art.mjs';
 import { MEME_CSS } from './moth-walk-scenes.mjs';
+import { patchScreenFrameCss, wrapScreenFrameHtml } from './moth-screen-frame.mjs';
 const require = createRequire(import.meta.url);
 const ts = require(process.env.MOTH_TYPESCRIPT_PATH || 'typescript');
 const root = path.resolve(import.meta.dirname, '..');
@@ -20,7 +21,7 @@ const output = path.join(root, 'docs/moth');
 const snapshot = JSON.parse(await fs.readFile(path.join(root, '.qa/moth/published-snapshot.json'), 'utf8'));
 const sha = (data) => crypto.createHash('sha256').update(data).digest('hex');
 // The deck in the pad's colours, without the art of earlier decks (moth-deck-art.mjs).
-const cssArtwork = rewriteCssArtwork(patchDeckCss(await fs.readFile(path.join(sourceRoot, 'styles.css'), 'utf8')));
+const cssArtwork = rewriteCssArtwork(patchScreenFrameCss(patchDeckCss(await fs.readFile(path.join(sourceRoot, 'styles.css'), 'utf8'))));
 assert.equal(cssArtwork.assets.length, DECK_ART_KEPT);
 // The release with its patches, and without the code of its retired parts
 // (moth-code-trim.mjs; MOTH_TRIM_AUDIT=1 keeps that code and records calls).
@@ -55,12 +56,34 @@ for (const file of snapshot.files) {
     // compact: the game fetches it fresh at every start-up, and the release's
     // indentation was more than half its size.
     const release = await fs.readFile(path.join(sourceRoot, file.path), 'utf8');
-    await fs.writeFile(dest, JSON.stringify(patchCharts(JSON.parse(release))) + '\n');
+    const config = patchCharts(JSON.parse(release));
+    assert.equal(config.rhythmChartVersion, SCOREBOARD_CHART_VERSION, 'Client and generated score limits use the same chart version');
+    await fs.writeFile(dest, JSON.stringify(config) + '\n');
+    // The API validates the exact same charts. A changed chart gets its own
+    // board version; existing scores and older clients remain on their board.
+    const storyCharts = {
+      'level1-stage1': config.level1OfficeRhythm, 'level2-stage2': config.level2BathroomRhythm,
+      'level3-stage2': config.level3MassageRhythm, 'level4-stage1': config.level4ArcadeRhythm,
+      'studio-stage1': config.level5StudioRhythm, 'level5-stage2': config.level5RiverRhythm,
+      'level6-stage2': config.level6ConcertRhythm
+    };
+    // Tickets can arrive as late as the end of the first fight. Leave a
+    // 30-second margin below the remaining music, including the shorter river.
+    const remainingSeconds = Object.values(storyCharts).slice(1).reduce((sum, spec) => sum + spec.duration, 0);
+    const limits = { version: config.rhythmChartVersion, minRunSeconds: Math.floor((remainingSeconds - 30) / 30) * 30 };
+    for (const [mode, difficulty] of [['chill', 'easy'], ['shoot', 'hard']]) {
+      limits[mode] = Object.fromEntries(Object.entries(storyCharts).map(([id, spec]) => {
+        const rows = spec.chart[difficulty];
+        return [id, 1000 * (rows.length + rows.filter(row => row[2] > 0).length)];
+      }));
+    }
+    await fs.writeFile(path.join(root, 'services/moth-scoreboard/chart-limits.json'), JSON.stringify(limits, null, 2) + '\n');
     continue;
   }
   await fs.copyFile(path.join(sourceRoot, file.path), dest);
 }
 // Files beyond the release (moth-asset-additions.mjs).
+for (const file of RETIRED_ADDED_ASSETS) await fs.rm(path.join(output, file), {force: true});
 for (const [file, added] of Object.entries(ADDED_ASSETS)) {
   assert(!published.has(file), `An addition replaces no release file: ${file}`);
   assert.equal(sha(await fs.readFile(addedAsset(file))), added.sha256, `Addition as listed: ${file}`);
@@ -145,9 +168,10 @@ for (const audience of ['public', 'staff']) {
   let html = await fs.readFile(path.join(sourceRoot, 'index.html'), 'utf8');
   html = html.replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />\n    <meta name="referrer" content="strict-origin-when-cross-origin" />${staff ? '\n    <meta name="robots" content="noindex, nofollow, noarchive" />\n    <base href="/moth/" />' : ''}`);
   html = html.replace('<html lang="en">', '<html lang="zh-Hant-TW">');
+  html = wrapScreenFrameHtml(html);
   html = html.replace('./manifest.json', staff ? '/moth/staff/manifest.json' : './manifest.json');
-  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-loading-20261022b' : 'moth-cabinet-20261022b'}" integrity="${sri}" crossorigin="anonymous"></script>`);
-  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261022b');
+  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-loading-20261105e' : 'moth-cabinet-20261105e'}" integrity="${sri}" crossorigin="anonymous"></script>`);
+  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261105e');
   await fs.writeFile(path.join(output, staff ? 'staff/index.html' : 'index.html'), html);
   const manifest = JSON.parse(await fs.readFile(path.join(sourceRoot, 'manifest.json'), 'utf8'));
   manifest.start_url = staff ? '/moth/staff/' : '/moth/';

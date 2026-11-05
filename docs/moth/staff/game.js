@@ -177,6 +177,193 @@ const DIFFICULTY_KEY = "moth.staff_difficulty_v1";
 // The step spacing is deliberately NOT shortened: at these tempos halving it
 // would put consecutive notes closer together than the miss window, which makes
 // a single press ambiguous between two notes rather than making the fight hard.
+function calculateRhythmRailGeometry(notes = []) {
+  const gaps = notes.slice(1).map((note, index) => note.time - notes[index].time);
+  const positive = gaps.filter(gap => gap > 0.001);
+  const minGap = positive.length ? Math.min(...positive) : Infinity;
+  // About 50 px between the closest heads, with at least 1.45 s of preview
+  // in the phone's 260 px half-track. Reserve a narrow halo around dense
+  // heads so every timing cue can remain a complete shrinking circle.
+  const pixelsPerSecond = Math.min(180, Math.max(140, Math.ceil(50 / minGap)));
+  const heads = notes.map((note, index) => {
+    const before = index > 0 ? note.time - notes[index - 1].time : Infinity;
+    const after = index + 1 < notes.length ? notes[index + 1].time - note.time : Infinity;
+    const distance = Math.max(0, Math.min(before, after)) * pixelsPerSecond;
+    return {
+      radius: Math.max(11.75, Math.min(21, (distance - 18.5) / 2)),
+      // A thinner outline preserves the same usable colored interior around
+      // a 16 px letter while leaving at least 5 px of visible cue travel.
+      lineWidth: distance < 54 ? 3 : 5,
+      maxRingRadius: Math.max(14.5, Math.min(59, distance / 2 - 1.75))
+    };
+  });
+  return { pixelsPerSecond, minGap, heads };
+}
+
+function calculateRhythmTimingCue(note, renderTime, geometry, fullLead, perfectWindow, goodWindow) {
+  if (note?.status !== 'pending' || !Number.isFinite(note.time) || !Number.isFinite(renderTime)) return null;
+  const targetRadius = geometry.radius + (geometry.lineWidth || 5) / 2;
+  const maxRadius = Math.max(targetRadius, geometry.maxRingRadius);
+  const expansion = maxRadius - targetRadius;
+  const lead = Math.min(Math.max(.01, fullLead), Math.max(.35, expansion / 28));
+  const until = note.time - renderTime;
+  if (until > lead + 1e-9 || until < -goodWindow) return null;
+  const remaining = Math.min(1, Math.max(0, until / lead));
+  const stage = until < -perfectWindow ? 'LATE' : Math.abs(until) <= perfectWindow ? 'NOW' : 'HIT';
+  return {radius: targetRadius + expansion * remaining, targetRadius, maxRadius, lead,
+    progress: 1 - remaining, until, stage, color: stage === 'LATE' ? '#ff315a' : '#ffffff',
+    lineWidth: stage === 'NOW' ? 3 : 2};
+}
+
+function createMothCinematicRenderer() {
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl', {
+    alpha: false, antialias: false, depth: false, stencil: false,
+    premultipliedAlpha: false, preserveDrawingBuffer: true,
+    powerPreference: 'low-power', failIfMajorPerformanceCaveat: true
+  });
+  if (!gl) return null;
+  const vertex = `
+    attribute vec2 aPosition;
+    varying vec2 vUV;
+    void main() { vUV = aPosition * .5 + .5; gl_Position = vec4(aPosition, 0., 1.); }
+  `;
+  const fragment = `
+    precision mediump float;
+    uniform sampler2D uImage;
+    uniform vec2 uSourceScale;
+    uniform vec2 uSize;
+    uniform vec3 uShadow;
+    uniform vec3 uHighlight;
+    uniform vec3 uHaze;
+    uniform float uVignette;
+    uniform vec4 uPool0;
+    uniform vec4 uPool1;
+    uniform vec4 uPool2;
+    uniform vec4 uColour0;
+    uniform vec4 uColour1;
+    uniform vec4 uColour2;
+    varying vec2 vUV;
+    float bayer(vec2 pixel) {
+      vec2 p = mod(floor(pixel / 2.), 4.);
+      float row0 = p.x < 1. ? 0. : p.x < 2. ? 8. : p.x < 3. ? 2. : 10.;
+      float row1 = p.x < 1. ? 12. : p.x < 2. ? 4. : p.x < 3. ? 14. : 6.;
+      float row2 = p.x < 1. ? 3. : p.x < 2. ? 11. : p.x < 3. ? 1. : 9.;
+      float row3 = p.x < 1. ? 15. : p.x < 2. ? 7. : p.x < 3. ? 13. : 5.;
+      return ((p.y < 1. ? row0 : p.y < 2. ? row1 : p.y < 3. ? row2 : row3) + .5) / 16.;
+    }
+    vec3 pool(vec2 uv, vec4 shape, vec4 colour, vec3 base) {
+      vec2 delta = (uv - shape.xy) / max(shape.zw, vec2(.01));
+      float falloff = exp(-dot(delta, delta) * 2.);
+      // Reflected illumination retains painted shading and skin detail.
+      float material = smoothstep(0., .14, dot(base, vec3(.2126, .7152, .0722)));
+      return colour.rgb * colour.a * falloff * (vec3(1.) - base) * (.15 + base * .65) * material;
+    }
+    void main() {
+      vec2 uv = vec2(vUV.x, 1. - vUV.y);
+      vec2 sourceUV = vec2(vUV.x * uSourceScale.x, 1. - uv.y * uSourceScale.y);
+      vec3 base = texture2D(uImage, sourceUV).rgb;
+      float luma = dot(base, vec3(.2126, .7152, .0722));
+      float shadow = 1. - smoothstep(.06, .55, luma);
+      float highlight = smoothstep(.3, .88, luma);
+      // A small black lift avoids crushing the original pixel-art shadows.
+      // A visible midtone contrast curve retains both black ink and highlight
+      // headroom instead of lifting the entire painting with a pale wash.
+      vec3 contrastWeight = min(base * 4., vec3(1.)) * min((vec3(1.) - base) * 4., vec3(1.));
+      vec3 colour = base + (base - .5) * contrastWeight * .14 * smoothstep(.045, .20, luma);
+      colour = mix(vec3(luma), colour, 1.06);
+      colour += vec3(.009 * shadow) * smoothstep(0., .12, luma);
+      colour += uShadow * shadow * (.18 + luma);
+      colour += uHighlight * highlight;
+      colour += pool(uv, uPool0, uColour0, base);
+      colour += pool(uv, uPool1, uColour1, base);
+      colour += pool(uv, uPool2, uColour2, base);
+      float depth = exp(-abs(uv.y - .44) * 12.) * (1. - luma);
+      colour += uHaze * depth;
+      vec2 edge = (uv - vec2(.5, .47)) * vec2(1., .85);
+      float vignette = smoothstep(.11, .55, dot(edge, edge));
+      // Dark painted pipework/cloth keeps its original separation. Midtone
+      // walls and the stage perimeter still receive the full framing shade.
+      colour *= 1. - vignette * uVignette * smoothstep(.02, .15, luma);
+      // Ten levels/channel make the ordered palette texture visible at play
+      // size. Native 2 px thresholds stay fixed instead of crawling like noise.
+      colour = clamp(colour, 0., .99);
+      vec3 quantized = floor(colour * 10. + bayer(uv * uSize)) / 10.;
+      // Keep ink and very dark painted detail continuous; the visible
+      // palette pattern reaches full strength through the midtones.
+      colour = mix(colour, quantized, .92 * smoothstep(.025, .20, luma));
+      gl_FragColor = vec4(clamp(colour, 0., 1.), 1.);
+    }
+  `;
+  const compile = (kind, source) => {
+    const shader = gl.createShader(kind);
+    gl.shaderSource(shader, source); gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      const reason = gl.getShaderInfoLog(shader); gl.deleteShader(shader);
+      throw new Error(reason || 'Cinematic shader compilation failed');
+    }
+    return shader;
+  };
+  let program;
+  try {
+    const vs = compile(gl.VERTEX_SHADER, vertex), fs = compile(gl.FRAGMENT_SHADER, fragment);
+    program = gl.createProgram(); gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program);
+    gl.deleteShader(vs); gl.deleteShader(fs);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+  } catch {
+    if (program) gl.deleteProgram(program);
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return null;
+  }
+  gl.useProgram(program);
+  const positions = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, positions);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+  const position = gl.getAttribLocation(program, 'aPosition');
+  gl.enableVertexAttribArray(position); gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+  const texture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  const names = ['uImage','uSourceScale','uSize','uShadow','uHighlight','uHaze','uVignette',
+    'uPool0','uPool1','uPool2','uColour0','uColour1','uColour2'];
+  const uniforms = Object.fromEntries(names.map(name => [name, gl.getUniformLocation(program, name)]));
+  gl.uniform1i(uniforms.uImage, 0);
+  let sourceWidth = 0, sourceHeight = 0;
+  const renderer = { canvas, backend: 'webgl', failed: false, passes: 0,
+    draw(source, width, height, profile) {
+      if (renderer.failed || gl.isContextLost()) return false;
+      if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+      gl.viewport(0, 0, width, height);
+      gl.uniform2f(uniforms.uSourceScale, width / source.width, height / source.height);
+      gl.uniform2f(uniforms.uSize, width, height);
+      gl.uniform3fv(uniforms.uShadow, profile.shadow);
+      gl.uniform3fv(uniforms.uHighlight, profile.highlight);
+      gl.uniform3fv(uniforms.uHaze, profile.haze);
+      gl.uniform1f(uniforms.uVignette, profile.vignette);
+      for (let i = 0; i < 3; i++) {
+        const light = profile.lights[i] || { shape: [0,0,1,1], colour: [0,0,0,0] };
+        gl.uniform4fv(uniforms['uPool' + i], light.shape);
+        gl.uniform4fv(uniforms['uColour' + i], light.colour);
+      }
+      if (sourceWidth !== source.width || sourceHeight !== source.height) {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+        sourceWidth = source.width; sourceHeight = source.height;
+      } else {
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, source);
+      }
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      renderer.passes++;
+      return true;
+    }
+  };
+  canvas.addEventListener('webglcontextlost', event => { event.preventDefault(); renderer.failed = true; });
+  return renderer;
+}
+
+const MOTH_CINEMATIC_PROFILES = {"office":{"shadow":[-0.0288,0.0192,0.06],"highlight":[0.0216,0.0054,-0.0095],"haze":[0.0072,0.0144,0.0216],"vignette":0.28,"lights":[{"shape":[0.38,0.2,0.5,0.65],"colour":[1,0.65,0.32,0.475]},{"shape":[0.88,0.25,0.45,0.7],"colour":[0.32,0.57,1,0.25]}]},"bathroom":{"shadow":[-0.0288,0.0288,0.048],"highlight":[0.0162,0.0135,0.0027],"haze":[0.0036,0.0162,0.018],"vignette":0.315,"lights":[{"shape":[0.52,0.18,0.6,0.8],"colour":[0.75,0.9,1,0.425]},{"shape":[0.87,0.6,0.33,0.65],"colour":[1,0.57,0.32,0.2]}]},"massage":{"shadow":[0.0144,-0.0096,0.0384],"highlight":[0.0243,0.0027,-0.0081],"haze":[0.0216,0.0054,0.0216],"vignette":0.2975,"lights":[{"shape":[0.29,0.32,0.52,0.65],"colour":[1,0.56,0.28,0.475]},{"shape":[0.86,0.35,0.35,0.6],"colour":[0.68,0.35,1,0.25]}]},"arcade":{"shadow":[-0.0192,0.0096,0.072],"highlight":[0.0162,-0.0041,0.0162],"haze":[0.009,0.009,0.0414],"vignette":0.3325,"lights":[{"shape":[0.32,0.5,0.38,0.7],"colour":[0.23,0.62,1,0.5]},{"shape":[0.78,0.38,0.35,0.7],"colour":[1,0.24,0.58,0.45]}]},"studio":{"shadow":[-0.0192,0.0096,0.06],"highlight":[0.0243,0.0041,-0.0081],"haze":[0.0054,0.0126,0.0252],"vignette":0.28,"lights":[{"shape":[0.28,0.23,0.44,0.78],"colour":[1,0.67,0.34,0.5]},{"shape":[0.77,0.4,0.43,0.65],"colour":[0.25,0.53,1,0.3]}]},"river":{"shadow":[-0.024,0.0144,0.0768],"highlight":[0.0243,0.0095,-0.0108],"haze":[0.0108,0.0234,0.0522],"vignette":0.2625,"lights":[{"shape":[0.72,0.64,0.6,0.48],"colour":[1,0.58,0.23,0.5]},{"shape":[0.28,0.25,0.68,0.85],"colour":[0.28,0.52,1,0.35]},{"shape":[0.82,0.63,0.17,0.42],"colour":[0.2,0.82,1,0.3]}]},"concert":{"shadow":[-0.024,-0.0048,0.06],"highlight":[0.0243,0.0068,-0.0068],"haze":[0.0054,0.0108,0.0468],"vignette":0.3675,"lights":[{"shape":[0.43,0.39,0.35,0.76],"colour":[1,0.75,0.42,0.78]},{"shape":[0.76,0.46,0.33,0.72],"colour":[0.29,0.51,1,0.525]},{"shape":[0.42,0.08,0.75,0.34],"colour":[0.45,0.24,1,0.25]}]},"secretLaugh":{"shadow":[0.012,-0.0096,0.048],"highlight":[0.0243,0.0068,-0.0068],"haze":[0.0198,0.0072,0.027],"vignette":0.2975,"lights":[{"shape":[0.33,0.33,0.55,0.75],"colour":[1,0.61,0.36,0.5]},{"shape":[0.85,0.43,0.39,0.7],"colour":[0.51,0.39,1,0.35]}]},"secretSquat":{"shadow":[-0.0192,0.0336,0.0504],"highlight":[0.0189,0.0121,-0.0081],"haze":[0.0054,0.0216,0.0306],"vignette":0.2975,"lights":[{"shape":[0.44,0.2,0.72,0.72],"colour":[1,0.8,0.53,0.475]},{"shape":[0.88,0.53,0.34,0.7],"colour":[0.23,0.72,0.9,0.325]}]},"bedroom":{"shadow":[-0.0192,0.0168,0.0672],"highlight":[0.023,0.0095,-0.0068],"haze":[0.0072,0.0162,0.0288],"vignette":0.245,"lights":[{"shape":[0.49,0.28,0.3,0.48],"colour":[0.3,0.58,1,0.475]},{"shape":[0.17,0.43,0.27,0.47],"colour":[1,0.62,0.25,0.525]},{"shape":[0.87,0.82,0.4,0.45],"colour":[1,0.65,0.29,0.425]}]},"drive":{"shadow":[-0.024,0.012,0.0624],"highlight":[0.0243,0.0081,-0.0108],"haze":[0.0108,0.018,0.0432],"vignette":0.2625,"lights":[{"shape":[0.55,0.6,0.65,0.5],"colour":[1,0.58,0.27,0.45]},{"shape":[0.3,0.22,0.65,0.6],"colour":[0.25,0.48,1,0.325]}]}};
+
 const RHYTHM_DIFFICULTIES = {
   chill: { id: "chill", en: "SLACKER MODE", zh: "摸魚模式" },
   shoot: {
@@ -206,34 +393,44 @@ const TOTAL_LIVES = 3;
 
 const LEVEL1_OFFICE_TUTORIAL_DIALOGUE = [
   {
-    speaker: "GANGAN",
-    en: "First, a little background: this game was made to accompany Dr. Beauty's album, MASTER OF THE HOUSE.",
-    zh: "前情提要，這部遊戲是為美麗本人這張音樂專輯MASTER OF THE HOUSE所誕生的小品。"
+    "speaker": "GANGAN",
+    "en": "First, a little background: this game was made to accompany Dr. Beauty's album, MASTER OF THE HOUSE.",
+    "zh": "先說個前情提要：這款遊戲是為美麗本人的音樂專輯《MASTER OF THE HOUSE》而誕生的小品。"
   },
   {
-    speaker: "GANGAN",
-    en: "The songs say it all. So let's get straight to how to play.",
-    zh: "想說的都在歌曲裡面。所以接下來廢話少說，請看遊戲操作說明。"
+    "speaker": "GANGAN",
+    "en": "The songs say it all. So let's get straight to how to play.",
+    "zh": "想說的都在歌曲裡。所以接下來廢話少說，直接看遊戲操作說明。"
   },
   {
-    speaker: "GANGAN",
-    en: "Watch the lower timing track. When the moving ring closes on a note, press its key.",
-    zh: "看下方的節奏軌道。移動中的圓環縮到音符上時，就按下對應按鍵。"
+    "speaker": "GANGAN",
+    "en": "Watch the timing track below. Press the matching button as a note reaches the white hit line. The ring helps you follow the drum timing.",
+    "zh": "看下方的節奏軌道。音符到達白色判定線時，跟著鼓點按下對應按鍵；圓環會提示時機。"
   },
   {
-    speaker: "GANGAN",
-    en: "All four buttons follow the drums: M for hi-hat, O for snare, T for kick, and H for other percussion. Tap the button shown on each note. Hold notes with tails until the tail ends.",
-    zh: "四個按鍵都跟著鼓點：M 是 hi-hat、O 是小鼓、T 是大鼓、H 是其他打擊樂。跟著音符上的按鍵按下；有尾巴的音符，要按住到尾巴結束。"
+    "speaker": "GANGAN",
+    "en": "All four buttons follow the drums: M for hi-hat, O for snare, T for kick, and H for other percussion. Hold notes with tails until the tail ends.",
+    "zh": "四個按鍵都跟著鼓點：M 是踩鈸、O 是小鼓、T 是大鼓、H 是其他打擊樂。有尾巴的音符，要按住到尾巴結束。"
   },
   {
-    speaker: "GANGAN",
-    en: "Match four practice notes - one of each button - and I will start the shift.",
-    zh: "先跟準四個練習音符，每個按鍵各一個，我就讓正式輪班開始。"
+    "speaker": "GANGAN",
+    "en": "First, hit four practice notes, one for each button. Then we'll start the real shift.",
+    "zh": "先跟準四個練習音符，每個按鍵各一個，接著就開始正式輪班。"
   },
   {
-    speaker: "GANGAN",
-    en: "You have five hearts. Miss a note or press the wrong button and you lose one. Extra taps between notes are safe. Beat each level to unlock the next. Clear every level to unlock two hidden stages.",
-    zh: "你有五顆心。只有漏掉真正的音符才會扣心；音符之間多按不會受罰。通過每一關，才能繼續攻克下一關。全部通關後，將會解鎖兩首隱藏關卡。"
+    "speaker": "GANGAN",
+    "en": "Missing a note, pressing the wrong button near a note, or releasing a hold early counts as a miss and breaks your combo. Extra taps away from notes are safe.",
+    "zh": "漏掉音符、在音符附近按錯鍵，或提早放開長按音符，都算失誤，並會中斷連擊。音符之間沒有判定時，多按不會受罰。"
+  },
+  {
+    "speaker": "GANGAN",
+    "en": "Your number of misses affects your final rating. Follow the drums and aim for a higher score!",
+    "zh": "失誤次數會影響最終評級。跟上鼓點，挑戰更高分！"
+  },
+  {
+    "speaker": "GANGAN",
+    "en": "In story mode, finish each fight to continue to the next level. Complete the story to unlock two hidden songs.",
+    "zh": "故事模式中，完成每場戰鬥就能繼續前往下一關。完成故事後，會解鎖兩首隱藏歌曲。"
   }
 ];
 // After the first fight (user's script, 2026-09-30). The unlock card follows.
@@ -263,12 +460,14 @@ const LEVEL1_OFFICE_VICTORY_DIALOGUE = [
     portraitFrame: 4
   }
 ];
-const LEVEL1_OFFICE_TUTORIAL_COMPLETE_DIALOGUE = [{
-  speaker: "GANGAN",
-  en: "Good. The real shift starts now - keep at least one heart until the song ends.",
-  zh: "很好。正式輪班現在開始——歌曲結束前，至少保住一顆心。",
-  portraitFrame: 5
-}];
+const LEVEL1_OFFICE_TUTORIAL_COMPLETE_DIALOGUE = [
+  {
+    "speaker": "GANGAN",
+    "en": "Good. The real shift starts now. Follow the drums through to the end of the song!",
+    "zh": "很好，正式輪班現在開始。跟著鼓點，一路玩到歌曲結束！",
+    "portraitFrame": 5
+  }
+];
 const LEVEL1_OFFICE_TIMING_SCORE = Object.freeze({ perfect: 1000, good: 600, miss: 0 });
 // GANGAN coaches the office and bathroom fights. Each result has several
 // lines, rotated so he rarely repeats himself; a streak of 10 / 25 / 50 and a
@@ -463,7 +662,7 @@ const HIT_SFX = {
   "arcade-miss": "assets/sfx/arcade-miss.wav"
 };
 const HIT_SFX_GAIN = 0.95;
-const MEME_CHEST = {"sheet":"assets/sprites/level4_meme_chest/sheet.webp","picture":"assets/memes/level4-meme.png","x":450,"y":655,"size":67};
+const MEME_CHEST = {"sheet":"assets/sprites/level4_meme_chest/sheet.webp","audio":"assets/audio/easter-eggs/dr-beauty-private-message.m4a","sha256":"d734a67a01b1e73f45e90cf0887590da3ad921cc23c3000896b68a60e55a2ebe","downloadName":"A private message from Dr.Beauty.m4a","titleEn":"A private message from Dr.Beauty","titleZh":"一段來自美麗本人的錄音","x":450,"y":655,"size":67};
 const MENU_SFX = {"menu-tick":"assets/sfx/menu/menu-tick.wav","menu-click":"assets/sfx/menu/menu-click.wav"};
 // What an input asks for: arrows and the d-pad move a selection, O / Enter /
 // SPACE confirm, H / Esc go back.
@@ -1841,7 +2040,9 @@ const HOME_SONG_TRACK_NUMBERS = {
   "home-finale-ending": 12
 };
 // 設定: the device's own settings - timing offset and haptics.
+const MOTH_GAMEPAD_ACTIONS = [["M","KeyM","M / HEAVY","M／重攻擊",3],["O","KeyO","O / CONFIRM / INTERACT","O／確認／互動",1],["T","KeyT","T / BLOCK","T／格擋",0],["H","KeyH","H / BACK / LIGHT","H／返回／輕攻擊",2],["up","KeyW","UP","上",12],["down","KeyS","DOWN","下",13],["left","KeyA","LEFT","左",14],["right","KeyD","RIGHT","右",15],["space","Space","SPACE / JUMP","SPACE／跳躍",5],["pause","Escape","PAUSE","暫停",9],["pocket","KeyC","POCKET","口袋",8],["mount","KeyR","RIDE / DISMOUNT","上車／下車",4]];
 const HOME_SETTINGS_MENU_ITEMS = [
+  { id: "controller", label: "CONTROLLER" },
   { id: "calibrate", label: "TIMING" },
   { id: "haptics", label: "HAPTICS: ON" },
   { id: "sfxTest", label: "SOUND TEST" }
@@ -2224,6 +2425,7 @@ class BobbyGame {
     this.resetRuntime();
     this.createPortraitFightCanvas();
     this.syncAppHeight();
+    this.installGamepadInput();
     this.bindInput();
     this.loadMenuSfx();
   }
@@ -3032,7 +3234,7 @@ for (const level of this.config.secretLevels || []) {
     if (!this.progress) this.progress = this.createDefaultProgress();
     const random = () => Math.random().toString(36).slice(2, 10);
     const id = globalThis.crypto?.randomUUID?.() || ('run-' + Date.now().toString(36) + '-' + random() + random());
-    const run = this.progress.storyRun = { id, difficulty, scores: {}, startedAt: Date.now(), ticket: null };
+    const run = this.progress.storyRun = { id, difficulty, chartVersion: "drums-readable-20261105b", scores: {}, startedAt: Date.now(), ticket: null };
     this.startNewStory();
     this.registerStoryRun(run);
   }
@@ -3042,14 +3244,14 @@ for (const level of this.config.secretLevels || []) {
   // that never gets one cannot be posted.
   async registerStoryRun(run, attempt = 0) {
     clearTimeout(this.storyTicketTimer);
-    if (!run || run.ticket || run.legacy || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
+    if (!run || run.ticket || run.legacy || run.chartVersion !== "drums-readable-20261105b" || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', chartVersion: "drums-readable-20261105b", mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
       const data = await response.json().catch(() => ({}));
-      if (response.status !== 201 || typeof data.run !== 'string') throw new Error(String(response.status));
+      if (response.status !== 201 || typeof data.run !== 'string' || data.chartVersion !== "drums-readable-20261105b") throw new Error(String(response.status));
       if (this.progress?.storyRun !== run || run.ticket) return;
       run.ticket = data.run;
       this.saveProgress();
@@ -3064,6 +3266,7 @@ for (const level of this.config.secretLevels || []) {
     const run = this.progress?.storyRun;
     const rhythm = this.level1OfficeRhythm;
     if (this.freePlay || !run || !rhythm || !["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"].includes(stageId)) return;
+    if (run.chartVersion !== "drums-readable-20261105b") run.legacy = true;
     if (this.difficultyId !== run.difficulty) run.mixed = true;
     run.scores[stageId] = Math.max(0, Math.round(rhythm.roundScore || 0));
   }
@@ -3072,7 +3275,7 @@ for (const level of this.config.secretLevels || []) {
     if (!run) return null;
     const fights = ["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"];
     const total = fights.reduce((sum, id) => sum + (run.scores?.[id] || 0), 0);
-    const blocked = run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
+    const blocked = run.chartVersion !== "drums-readable-20261105b" ? 'chart-version' : run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
     const complete = !blocked && fights.every(id => Number.isFinite(run.scores?.[id]));
     return { run, total, complete, blocked, mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' };
   }
@@ -3154,9 +3357,10 @@ for (const level of this.config.secretLevels || []) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch(this.scoreboardApi() + '?mode=' + mode, { cache: 'no-store', signal: controller.signal });
+      const response = await fetch(this.scoreboardApi() + '?mode=' + mode + '&chartVersion=' + encodeURIComponent("drums-readable-20261105b"), { cache: 'no-store', signal: controller.signal });
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
+      if (data.chartVersion !== "drums-readable-20261105b") throw new Error('chart-version');
       if (this.scoreboard !== board) return;
       board.entries[mode] = Array.isArray(data.entries) ? data.entries : [];
       board.status[mode] = 'ready';
@@ -3214,6 +3418,10 @@ for (const level of this.config.secretLevels || []) {
       const status = {
         ineligible: standing?.why === 'offline'
           ? tr('This story run cannot enter the scoreboard: it could not reach the scoreboard when it began. Start a new story online to compete.', '這次的故事無法登上排行榜：開始時沒有連上排行榜。連上網路後從故事模式重新開始，即可挑戰排名。')
+          : standing?.why === 'chart-version'
+          ? tr('This story began with an earlier note chart. Your progress is kept; start a new story to compete on the updated scoreboard.', '這次故事使用過舊版譜面。進度會保留；從故事模式重新開始，即可挑戰新版排行榜。')
+          : standing?.why === 'mixed'
+          ? tr('This story used more than one difficulty. Start a new story on one difficulty to compete.', '這次故事使用過不同難度。以同一難度重新開始故事，即可挑戰排名。')
           : tr('This story run cannot enter the scoreboard (it began before the scoreboard opened). Start a new story to compete.', '這次的故事無法登上排行榜（在排行榜開放前就開始了）。從故事模式重新開始即可挑戰排名。'),
         posted: result.run.posted?.rank ? tr('You are #' + result.run.posted.rank + ' on the ' + this.scoreboardModeLabel(result.mode) + ' board!', '你在' + this.scoreboardModeLabel(result.mode) + '排行榜第 ' + result.run.posted.rank + ' 名！') : tr('This run is already on the scoreboard.', '這次的成績已經登上排行榜。'),
         qualifies: tr('Top 10! Enter an ID to join the scoreboard.', '進入前十名！輸入 ID 登上排行榜。'),
@@ -3309,6 +3517,7 @@ for (const level of this.config.secretLevels || []) {
     if (error === 'id-blocked') return tr('Please choose a different ID.', '這個 ID 不能使用，請換一個。');
     if (error === 'not-top') return tr('So close! Others posted higher scores first.', '差一點！其他玩家剛搶先登上前十。');
     if (error === 'posted') return tr('This run is already on the scoreboard.', '這次的成績已經登上排行榜。');
+    if (error === 'chart-version') return tr('The scoreboard is updating. Please try again later.', '排行榜正在更新，請稍後再試。');
     if (error === 'too-fast' || error === 'run') return tr('The scoreboard could not verify this story run, so it cannot be posted.', '排行榜無法驗證這次的故事進度，因此無法登上排行榜。');
     if (error === 'rate' || status === 429) return tr('Too many tries. Please wait a few minutes.', '嘗試太多次了，請稍等幾分鐘再試。');
     return tr('The scoreboard cannot be reached right now.', '排行榜暫時無法連線。');
@@ -3329,8 +3538,9 @@ for (const level of this.config.secretLevels || []) {
     this.renderScoreboard();
     try {
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: result.mode, id, run: result.run.ticket, scores: result.run.scores }) });
+        body: JSON.stringify({ mode: result.mode, chartVersion: "drums-readable-20261105b", id, run: result.run.ticket, scores: result.run.scores }) });
       const data = await response.json().catch(() => ({}));
+      if (response.status === 201 && data.chartVersion !== "drums-readable-20261105b") throw new Error('chart-version');
       if (Array.isArray(data.entries)) { board.entries[result.mode] = data.entries; board.status[result.mode] = 'ready'; }
       if (response.status === 201) {
         result.run.posted = { rank: data.rank, id, at: Date.now() };
@@ -3585,7 +3795,7 @@ for (const level of this.config.secretLevels || []) {
       item && typeof item === "object" && !Array.isArray(item) && Object.getPrototypeOf(item) !== Object.prototype ? undefined : item));
     const { notes, ...state } = rhythm;
     for (const key of Object.keys(state)) if (/Telemetry$|Rects$/.test(key)) delete state[key];
-    const kept = { v: 1, at: Date.now(), stageId: this.currentStageId, theme: rhythm.theme,
+    const kept = { v: 1, chartVersion: this.config.rhythmChartVersion, at: Date.now(), stageId: this.currentStageId, theme: rhythm.theme,
       checkpoint: this.progress?.storyCheckpoint || null, run: this.progress?.storyRun?.id || null,
       difficulty: this.difficultyId, songTime, trackTime, state: plain(state), notes: plain(notes) };
     try { window.localStorage?.setItem(FIGHT_RESUME_KEY, JSON.stringify(kept)); } catch {}
@@ -3609,7 +3819,7 @@ for (const level of this.config.secretLevels || []) {
       river: () => this.startLevel5RiverFight({ deferSong: true }),
       concert: () => this.startLevel6ConcertFight({ deferSong: true })
     }[kept?.theme];
-    if (!start || kept.v !== 1 || !(Date.now() - kept.at < 7 * 864e5) || typeof kept.stageId !== "string"
+    if (!start || kept.v !== 1 || kept.chartVersion !== this.config.rhythmChartVersion || !(Date.now() - kept.at < 7 * 864e5) || typeof kept.stageId !== "string"
       || kept.checkpoint !== (this.progress?.storyCheckpoint || null) || kept.run !== (this.progress?.storyRun?.id || null)) return false;
     if (RHYTHM_DIFFICULTIES[kept.difficulty] && kept.difficulty !== this.difficultyId) this.setDifficulty(kept.difficulty, { persist: false, announce: false });
     this.freePlay = false;
@@ -3929,7 +4139,7 @@ for (const level of this.config.secretLevels || []) {
     this.saveProgress();
   }
 
-  // The lid lifts for half a second, then the picture comes up.
+  // The lid lifts for half a second, then the recording appears.
   updateLevel4MemeChest() {
     const chest = this.memeChest;
     if (chest?.state === "opening" && (this.time || 0) - chest.at >= 0.5) {
@@ -3941,7 +4151,7 @@ for (const level of this.config.secretLevels || []) {
   // Closed, with a glint on the lock now and then; lifting; open. A soft
   // shadow sets it on the floor.
   drawLevel4MemeChest() {
-    this.getMemePicture();
+    this.getMemeRecording();
     const sheet = this.memeChestSheet;
     if (!sheet) return;
     const chest = this.memeChest || { state: "closed", at: 0 };
@@ -3963,16 +4173,19 @@ for (const level of this.config.secretLevels || []) {
       MEME_CHEST.size, MEME_CHEST.size, { x: 0.5, y: 252 / 256 });
   }
 
-  // The picture, read once through the hash-checked mirror like the game's
-  // other files (this site's copy if that fails), from when the chest comes
-  // into view: Pages is slow from Taiwan. One copy is shown and shared, as
-  // iPhone shares only a file already in hand when 儲存 is tapped.
-  getMemePicture() {
-    this.memePicture ||= fetchGameAsset(MEME_CHEST.picture).then(({ data, type }) => {
-      const file = new File([data], "dr-beauty-meme.png", { type: type.startsWith("image/") ? type : "image/png" });
+  // Fetch and hash-check the original bytes before the save gesture. Native
+  // sharing needs its File already in hand while the user activates the button.
+  getMemeRecording() {
+    this.memeRecording ||= fetchGameAsset(MEME_CHEST.audio).then(async ({ data }) => {
+      // Mirror copies are checked by the shared loader. Also verify the
+      // same-origin copy, including while this newly added file is unpinned.
+      const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", data));
+      const hash = Array.from(digest, byte => byte.toString(16).padStart(2, "0")).join("");
+      if (hash !== MEME_CHEST.sha256) throw new Error("Recording integrity mismatch");
+      const file = new File([data], MEME_CHEST.downloadName, { type: "audio/mp4" });
       return { file, url: URL.createObjectURL(file) };
     }).catch(() => null);
-    return this.memePicture;
+    return this.memeRecording;
   }
 
   showMeme() {
@@ -3981,60 +4194,155 @@ for (const level of this.config.secretLevels || []) {
     root.className = "moth-meme";
     root.setAttribute("role", "dialog");
     root.setAttribute("aria-modal", "true");
+    root.setAttribute("aria-labelledby", "moth-recording-title");
+    root.setAttribute("aria-describedby", "moth-recording-help");
     const phone = this.usesTouchControls();
-    root.innerHTML = `<section><h2>${this.tr("BONITA'S CHEST", "BONITA 的寶箱")}</h2><img alt="">`
-      + (phone ? `<p>${this.tr("Or press and hold the picture to save it.", "也可以長按圖片儲存。")}</p>` : "")
-      + `<div class="moth-meme-actions"><button type="button" data-meme-save>${this.tr("SAVE", "儲存")}</button><button type="button" data-meme-close>${this.tr("CLOSE", "關閉")}</button></div></section>`;
+    root.innerHTML = '<section><h2 id="moth-recording-title"></h2><p id="moth-recording-help"></p>'
+      + '<audio controls preload="metadata"></audio><p role="status" aria-live="polite"></p>'
+      + '<button type="button" data-meme-retry hidden></button>'
+      + '<div class="moth-meme-actions"><button type="button" data-meme-save disabled></button><button type="button" data-meme-close></button></div></section>';
+    const title = this.tr(MEME_CHEST.titleEn, MEME_CHEST.titleZh);
+    root.querySelector("h2").textContent = title;
+    root.querySelector("#moth-recording-help").textContent = phone
+      ? this.tr("Listen here, then save the recording. If a share menu opens, choose a save option there.", "可以先在這裡聆聽，再儲存錄音。若開啟分享選單，請在選單中選擇儲存方式。")
+      : this.tr("Listen here or download the recording to keep it.", "可以在這裡聆聽，或下載錄音收藏。");
+    root.querySelector("audio").setAttribute("aria-label", title);
+    root.querySelector("[data-meme-save]").textContent = phone ? this.tr("SAVE AUDIO", "儲存錄音") : this.tr("DOWNLOAD AUDIO", "下載錄音");
+    root.querySelector("[data-meme-close]").textContent = this.tr("CLOSE", "關閉");
+    root.querySelector("[data-meme-retry]").textContent = this.tr("RETRY", "重試");
     // Its taps are its own, as the scoreboard's are.
     for (const type of ["pointerdown", "pointerup", "touchstart", "touchend", "click"]) root.addEventListener(type, event => event.stopPropagation());
     root.querySelector("[data-meme-save]").addEventListener("click", () => this.saveMeme());
     root.querySelector("[data-meme-close]").addEventListener("click", () => this.closeMeme());
-    document.body.append(root);
-    const view = this.memeView = { root, file: null };
-    const image = root.querySelector("img");
-    this.getMemePicture().then(picture => {
-      view.file = picture?.file || null;
-      image.src = picture?.url || MEME_CHEST.picture;
+    root.querySelector("[data-meme-retry]").addEventListener("click", () => {
+      this.memeRecording = null;
+      this.loadMemeRecording(this.memeView);
     });
-    root.querySelector("[data-meme-save]").focus({ preventScroll: true });
+    document.body.append(root);
+    const audio = root.querySelector("audio");
+    const view = this.memeView = { root, file: null, audio, sharing: false, forceDownload: false, state: this.state };
+    // Use the existing preview music ownership, which also survives an audio
+    // engine rebuild. Pause immediately so the voice never competes with BGM.
+    const alreadyPaused = this.pausedBgm;
+    this.pauseCurrentBgmForSong();
+    view.pausedBgm = !alreadyPaused ? this.pausedBgm : null;
+    if (view.pausedBgm?.audio) {
+      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== view.pausedBgm.audio);
+      view.pausedBgm.audio.pause();
+    }
+    // Keep the native player out of routed BGM ownership. Engine recovery
+    // replaces routed Audio objects; replacing this one would orphan its
+    // visible controls. Pause it on a hidden page and let native Play resume.
+    view.pauseOnHide = () => { if (document.hidden) audio.pause(); };
+    view.pauseOnPageHide = () => audio.pause();
+    document.addEventListener("visibilitychange", view.pauseOnHide);
+    window.addEventListener("pagehide", view.pauseOnPageHide);
+    audio.addEventListener("error", () => {
+      if (this.memeView === view && view.file) root.querySelector('[role="status"]').textContent = this.tr("This browser cannot preview the recording. You can still download it.", "此瀏覽器無法預覽這段錄音，仍可下載收藏。");
+    });
+    this.loadMemeRecording(view);
+    root.querySelector("[data-meme-close]").focus({ preventScroll: true });
     this.releaseHeldInputs?.();
     this.updateMobileControls(true);
   }
 
-  // A phone's share sheet (儲存影像 keeps it in Photos); otherwise a download.
+  loadMemeRecording(view) {
+    if (!view || this.memeView !== view) return;
+    const status = view.root.querySelector('[role="status"]');
+    const save = view.root.querySelector("[data-meme-save]");
+    const retry = view.root.querySelector("[data-meme-retry]");
+    view.file = null; save.disabled = true; retry.hidden = true;
+    status.textContent = this.tr("Loading recording…", "正在載入錄音…");
+    this.getMemeRecording().then(recording => {
+      if (this.memeView !== view) return;
+      if (!recording) {
+        status.textContent = this.tr("The recording could not load. Please try again.", "錄音載入失敗，請重試。");
+        retry.hidden = false;
+        return;
+      }
+      view.file = recording.file;
+      view.audio.src = recording.url;
+      save.disabled = false;
+      status.textContent = this.tr("Ready to listen or save.", "可以聆聽或儲存錄音了。");
+    });
+  }
+
+  // Keep share() in the original gesture, with no fetch/await in between.
   saveMeme() {
     const view = this.memeView;
-    if (!view) return;
+    if (!view || !view.file || view.sharing) return;
     this.playMenuSfx?.("click");
     const file = view.file;
-    if (file && this.usesTouchControls() && navigator.canShare?.({ files: [file] })) {
-      navigator.share({ files: [file], title: "MASTER OF THE HOUSE" }).catch(() => {});
+    let shareable = false;
+    try { shareable = !view.forceDownload && this.usesTouchControls() && typeof navigator.share === "function" && Boolean(navigator.canShare?.({ files: [file] })); } catch {}
+    if (shareable) {
+      const status = view.root.querySelector('[role="status"]');
+      const save = view.root.querySelector("[data-meme-save]");
+      view.sharing = true; save.disabled = true;
+      const failed = error => {
+        if (this.memeView !== view || error?.name === "AbortError") return;
+        view.forceDownload = true;
+        save.textContent = this.tr("DOWNLOAD AUDIO", "下載錄音");
+        save.setAttribute("data-meme-download", "");
+        status.textContent = this.tr("The share menu could not open. Tap DOWNLOAD AUDIO to save the file instead.", "無法開啟分享選單，請點「下載錄音」儲存檔案。");
+      };
+      const finished = () => { view.sharing = false; if (this.memeView === view) save.disabled = false; };
+      try {
+        Promise.resolve(navigator.share({ files: [file], title: this.tr(MEME_CHEST.titleEn, MEME_CHEST.titleZh) })).catch(failed).finally(finished);
+      } catch (error) { failed(error); finished(); }
       return;
     }
-    const url = file ? URL.createObjectURL(file) : MEME_CHEST.picture;
+    const url = URL.createObjectURL(file);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "dr-beauty-meme.png";
+    link.download = MEME_CHEST.downloadName;
+    link.target = "_blank"; link.rel = "noopener";
     document.body.append(link);
     link.click();
     link.remove();
-    if (file) setTimeout(() => URL.revokeObjectURL(url), 30000);
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
 
-  closeMeme() {
-    if (!this.memeView) return;
+  closeMeme({ resumeBgm = true } = {}) {
+    const view = this.memeView;
+    if (!view) return;
     this.playMenuSfx?.("click");
-    this.memeView.root.remove();
+    document.removeEventListener("visibilitychange", view.pauseOnHide);
+    window.removeEventListener("pagehide", view.pauseOnPageHide);
+    view.audio.pause();
+    view.audio.removeAttribute("src"); view.audio.load();
+    view.root.remove();
     this.memeView = null;
+    if (view.pausedBgm && this.pausedBgm === view.pausedBgm) {
+      if (!resumeBgm || this.state !== view.state) this.pausedBgm = null;
+      else if (this.walkPause) {
+        // A controller disconnect (or share-sheet blur) can pause the walk
+        // while the dialog already owns its music. Hand that ownership to the
+        // pause menu so its Continue action can restore the same track.
+        this.walkPause.bgm ||= view.pausedBgm.audio;
+        this.pausedBgm = null;
+      } else if (!document.hidden) this.resumePausedBgm();
+    }
     this.updateMobileControls(true);
   }
 
   handleMemeKey(event) {
     const code = event.code;
+    if (event.target?.closest?.("audio") && !["Escape", "KeyH", "Tab"].includes(code)) return;
+    if (["Enter", "NumpadEnter", "Space"].includes(code) && event.target?.closest?.("button")) return;
     if (["Enter", "NumpadEnter", "Space", "KeyO"].includes(code)) {
-      if (!event.repeat) this.saveMeme();
+      if (!event.repeat) {
+        const retry = this.memeView.root.querySelector("[data-meme-retry]");
+        if (!retry.hidden) retry.click(); else this.saveMeme();
+      }
     } else if (["Escape", "KeyH"].includes(code)) {
       this.closeMeme();
+    } else if (code === "Tab") {
+      const controls = [...this.memeView.root.querySelectorAll("audio,button:not(:disabled)")].filter(control => !control.hidden);
+      const index = controls.indexOf(document.activeElement);
+      if (event.shiftKey && index <= 0 || !event.shiftKey && index === controls.length - 1) {
+        controls[event.shiftKey ? controls.length - 1 : 0]?.focus();
+      } else return;
     } else return;
     event.preventDefault();
   }
@@ -4044,6 +4352,464 @@ for (const level of this.config.secretLevels || []) {
   getLevel3FightSpot() {
     const boss = this.config?.level3?.stage1?.boss || {};
     return this.level3FightSpot || { x: (boss.x ?? 1026) - (boss.triggerRadius ?? 168) * 0.6, facing: 1 };
+  }
+
+  installGamepadInput() {
+    this.controllerInput = { profiles: {}, down: new Set(), physical: new Set(), previous: new Map(), neutral: true, index: null, id: null };
+    try {
+      const saved = JSON.parse(localStorage.getItem(PROGRESS_KEY + '.controllers_v1') || '{}');
+      if (saved && typeof saved === 'object' && !Array.isArray(saved)) this.controllerInput.profiles = saved;
+    } catch {}
+    // Capture before bindInput's game listeners: releasing either source must
+    // not release a key that the other source still holds.
+    const keyboard = event => {
+      const input = this.controllerInput;
+      if (event.mothControllerInput) return;
+      if (this.controllerPanel) {
+        if (event.type === 'keyup') input.physical.delete(event.code);
+        event.stopImmediatePropagation();
+        this.handleControllerPanelKey(event);
+        return;
+      }
+      if (event.type === 'keydown') {
+        input.physical.add(event.code);
+        if (input.down.has(event.code)) event.stopImmediatePropagation();
+      } else {
+        input.physical.delete(event.code);
+        if (input.down.has(event.code)) event.stopImmediatePropagation();
+      }
+    };
+    window.addEventListener('keydown', keyboard, true);
+    window.addEventListener('keyup', keyboard, true);
+    const suspend = () => {
+      if (this.controllerInput.index != null) this.pauseForControllerDisconnect();
+      this.resetGamepadInput();
+      this.controllerInput.physical.clear();
+    };
+    window.addEventListener('blur', suspend);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) suspend(); });
+    window.addEventListener('pagehide', suspend);
+    window.addEventListener('gamepadconnected', () => this.pollGamepadInput());
+    window.addEventListener('gamepaddisconnected', () => this.pollGamepadInput());
+  }
+
+  readControllers() {
+    try { return [...(navigator.getGamepads?.() || [])].filter(pad => pad && pad.connected); }
+    catch { return []; }
+  }
+
+  controllerProfileKey(pad) {
+    return JSON.stringify([pad.id, pad.mapping || '', pad.buttons.length, pad.axes.length]);
+  }
+
+  controllerDefaults(pad) {
+    const bindings = {};
+    for (const [id, , , , button] of MOTH_GAMEPAD_ACTIONS) {
+      bindings[id] = button < pad.buttons.length ? ['b:' + button] : [];
+    }
+    // Axis assumptions apply only after the browser normalizes the layout.
+    if (pad.mapping === 'standard' && pad.axes.length >= 2) {
+      bindings.left.push('a:0:-1'); bindings.right.push('a:0:1');
+      bindings.up.push('a:1:-1'); bindings.down.push('a:1:1');
+    }
+    return bindings;
+  }
+
+  controllerBindings(pad) {
+    const key = this.controllerProfileKey(pad), input = this.controllerInput;
+    const saved = input.profiles[key], defaults = this.controllerDefaults(pad);
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return defaults;
+    for (const [id] of MOTH_GAMEPAD_ACTIONS) {
+      if (Array.isArray(saved[id])) defaults[id] = saved[id].filter(token => {
+        if (typeof token !== 'string') return false;
+        const parts = token.split(':'), index = Number(parts[1]);
+        return Number.isInteger(index) && index >= 0 && (parts[0] === 'b' && parts.length === 2 && index < pad.buttons.length
+          || parts[0] === 'a' && parts.length === 3 && index < pad.axes.length && ['-1', '1'].includes(parts[2]));
+      }).slice(0, 4);
+    }
+    return defaults;
+  }
+
+  controllerRawDown(pad) {
+    const raw = new Set(), prior = this.controllerInput.previous.get(pad.index) || new Set();
+    pad.buttons.forEach((button, index) => {
+      const token = 'b:' + index;
+      if (button.pressed || button.value >= (prior.has(token) ? 0.35 : 0.55)) raw.add(token);
+    });
+    pad.axes.forEach((axis, index) => {
+      for (const sign of [-1, 1]) {
+        const token = 'a:' + index + ':' + sign;
+        if (axis * sign >= (prior.has(token) ? 0.35 : 0.65)) raw.add(token);
+      }
+    });
+    return raw;
+  }
+
+  sendControllerKey(code, down) {
+    const input = this.controllerInput;
+    if (down) input.down.add(code); else input.down.delete(code);
+    if (input.physical.has(code)) return;
+    // Cabinet Escape belongs to the outer shell. A controller's pause is an
+    // in-game action and must not accidentally exit the embedded cabinet.
+    if (code === 'Escape') {
+      if (down) {
+        if (this.state === 'level1OfficePaused') this.resumeLevel1Office();
+        else if (this.walkPause) this.resumeWalk();
+        else if (this.state === 'title') this.backHomeMenu();
+        else this.pauseForControllerDisconnect();
+      }
+      return;
+    }
+    const event = new KeyboardEvent(down ? 'keydown' : 'keyup', { code, key: code, bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'mothControllerInput', { value: true });
+    window.dispatchEvent(event);
+  }
+
+  resetGamepadInput() {
+    const input = this.controllerInput;
+    if (!input) return;
+    for (const code of [...input.down]) this.sendControllerKey(code, false);
+    input.neutral = true;
+    input.context = null;
+    input.repeatAt = 0;
+  }
+
+  pauseForControllerDisconnect() {
+    if (this.state === 'playing' && this.canPauseLevel1Office()) this.pauseLevel1Office();
+    else if (!this.walkPause && this.canPauseWalk?.()) this.pauseWalk();
+  }
+
+  pollGamepadInput() {
+    const input = this.controllerInput;
+    if (!input) return;
+    const pads = this.readControllers(), rawByIndex = new Map(pads.map(pad => [pad.index, this.controllerRawDown(pad)]));
+    let pad = pads.find(pad => pad.index === input.index && this.controllerProfileKey(pad) === input.id);
+    if (!pad && input.index != null) {
+      // Pause before keyup: releasing a held note while still in the playing
+      // state would count a disconnected controller as an early release.
+      this.pauseForControllerDisconnect();
+      this.resetGamepadInput();
+      input.index = null; input.id = null;
+      if (this.controllerCapture) this.cancelControllerCapture(this.tr('Controller disconnected. Reconnect and try again.', '控制器已中斷連線。請重新連線後再試。'));
+    }
+    // A new edge on a second controller selects it automatically. Merely
+    // leaving a stick held on an unused controller never steals control.
+    const used = pads.find(other => other.index !== input.index && [...rawByIndex.get(other.index)].some(token => !input.previous.get(other.index)?.has(token)));
+    if (used && !this.controllerCapture && input.down.size === 0) pad = used;
+    if (!pad) pad = pads[0];
+    if (pad && (input.index !== pad.index || input.id !== this.controllerProfileKey(pad))) {
+      this.resetGamepadInput();
+      input.index = pad.index; input.id = this.controllerProfileKey(pad);
+    }
+    const raw = pad ? rawByIndex.get(pad.index) : new Set();
+    if (this.controllerPanel) this.refreshControllerPanel(pads, pad);
+    if (document.hidden || !document.hasFocus() || this.levelLoadingPresentation || this.audioInterruption || this.audioRecoveryVisible()) {
+      this.resetGamepadInput();
+    } else if (this.controllerCapture) {
+      const capture = this.controllerCapture;
+      if (performance.now() > capture.expires) this.cancelControllerCapture(this.tr('No input received. Select a control to try again.', '未收到輸入。請選擇按鍵後再試。'));
+      else if (!raw.size) capture.ready = true;
+      else if (capture.ready) {
+        const fresh = [...raw].filter(token => !input.previous.get(pad?.index)?.has(token));
+        if (fresh.length === 1) this.assignControllerBinding(pad, fresh[0]);
+        else if (fresh.length > 1) this.setControllerPanelMessage(this.tr('Use one button or one stick direction at a time.', '一次請只按一個按鈕，或推動一個搖桿方向。'));
+      }
+    } else if (pad) {
+      const context = this.controllerPanel ? 'controller-settings' : [this.state, this.homeMenu?.view, Boolean(this.homeMenu?.difficultyPick), Boolean(this.walkPause), Boolean(this.pocketOpen), Boolean(this.scoreboard), Boolean(this.memeView)].join('|');
+      if (context !== input.context) { this.resetGamepadInput(); input.context = context; }
+      if (input.neutral) { if (!raw.size) input.neutral = false; }
+      else {
+        const bindings = this.controllerBindings(pad), next = new Set();
+        for (const [id, code] of MOTH_GAMEPAD_ACTIONS) if (bindings[id].some(token => raw.has(token))) next.add(code);
+        const old = new Set(input.down);
+        for (const code of old) if (!next.has(code)) this.sendControllerKey(code, false);
+        for (const code of next) if (!old.has(code)) {
+          if (this.controllerPanel) this.handleControllerPanelAction(code);
+          else this.sendControllerKey(code, true);
+          // An action may change the screen or open the panel. The remaining
+          // controls must await a fresh press in that screen.
+          const after = this.controllerPanel ? 'controller-settings' : [this.state, this.homeMenu?.view, Boolean(this.homeMenu?.difficultyPick), Boolean(this.walkPause), Boolean(this.pocketOpen), Boolean(this.scoreboard), Boolean(this.memeView)].join('|');
+          if (after !== context) { this.resetGamepadInput(); break; }
+        }
+        if (this.controllerPanel) input.down = next;
+        const direction = [...next].find(code => ['KeyW', 'KeyS', 'KeyA', 'KeyD'].includes(code));
+        const menu = this.controllerPanel || this.state === 'title' || this.walkPause || this.pocketOpen || this.state === 'level1OfficePaused';
+        if (direction !== input.repeatCode) { input.repeatCode = direction; input.repeatAt = performance.now() + 420; }
+        else if (direction && menu && performance.now() >= input.repeatAt && !input.neutral) {
+          input.repeatAt = performance.now() + 160;
+          if (this.controllerPanel) this.handleControllerPanelAction(direction);
+          else this.sendControllerKey(direction, true);
+        }
+      }
+    }
+    input.previous = rawByIndex;
+  }
+
+  controllerBindingLabel(pad, tokens) {
+    if (!tokens?.length) return this.tr('UNASSIGNED', '未設定');
+    const standard = [this.tr('SOUTH', '下方'), this.tr('EAST', '右方'), this.tr('WEST', '左方'), this.tr('NORTH', '上方'), 'L1 / LB', 'R1 / RB', 'L2 / LT', 'R2 / RT', 'SELECT', 'START', 'L3', 'R3', 'D-PAD ↑', 'D-PAD ↓', 'D-PAD ←', 'D-PAD →'];
+    return tokens.map(token => {
+      const [kind, index, sign] = token.split(':');
+      if (kind === 'b') return pad.mapping === 'standard' && standard[index] || this.tr('BUTTON ', '按鈕 ') + (Number(index) + 1);
+      return this.tr('AXIS ', '軸 ') + (Number(index) + 1) + (sign === '-1' ? ' −' : ' +');
+    }).join(' / ');
+  }
+
+  openControllerSettings() {
+    if (this.controllerPanel) return;
+    this.releaseHeldInputs();
+    this.controllerInput.physical.clear();
+    const panel = document.createElement('section');
+    panel.className = 'moth-controller-panel'; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true');
+    panel.setAttribute('aria-labelledby', 'moth-controller-title');
+    // Scoped styles follow the game's cream/green home screen. The panel
+    // scrolls independently on small phones without covering the close button.
+    if (!document.getElementById('moth-controller-style')) {
+      const style = document.createElement('style'); style.id = 'moth-controller-style';
+      style.textContent = '.moth-controller-panel{position:fixed;inset:0;z-index:2147483000;background:rgba(4,9,7,.96);color:#efe3c4;overflow:auto;padding:20px max(14px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom));box-sizing:border-box;font:700 16px "Courier New","PingFang TC",monospace;text-align:left;touch-action:pan-y}.moth-controller-panel>div{max-width:760px;margin:auto}.moth-controller-panel h2{font-size:25px}.moth-controller-panel p{line-height:1.55;overflow-wrap:anywhere}.moth-controller-panel select,.moth-controller-panel button{font:inherit;min-height:44px;color:#efe3c4;background:#22372a;border:2px solid #b8aa87;border-radius:4px;padding:8px;cursor:pointer}.moth-controller-panel select{width:100%;margin:8px 0}.moth-controller-panel button:focus-visible,.moth-controller-panel select:focus-visible{outline:4px solid #f1c62d;outline-offset:2px}.moth-controller-panel button:disabled{opacity:.5;cursor:default}.moth-controller-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(130px,1fr);gap:8px;align-items:center;margin:9px 0}.moth-controller-row button{overflow-wrap:anywhere}.moth-controller-tools{display:flex;gap:12px;flex-wrap:wrap;position:sticky;bottom:0;background:#07110c;padding:12px 0}.moth-controller-message{color:#f1c62d;min-height:3.1em}';
+      document.head.appendChild(style);
+    }
+    const content = document.createElement('div'); panel.appendChild(content);
+    const title = document.createElement('h2'); title.id = 'moth-controller-title'; title.textContent = this.tr('CONTROLLER SETTINGS', '控制器設定'); content.appendChild(title);
+    const status = document.createElement('p'); status.className = 'moth-controller-status'; status.setAttribute('role', 'status'); content.appendChild(status);
+    const select = document.createElement('select'); select.setAttribute('aria-label', this.tr('Active controller', '目前使用的控制器')); content.appendChild(select);
+    select.addEventListener('change', () => {
+      const pad = this.readControllers().find(pad => pad.index === Number(select.value));
+      if (!pad) return;
+      this.cancelControllerCapture(); this.resetGamepadInput();
+      this.controllerInput.index = pad.index; this.controllerInput.id = this.controllerProfileKey(pad);
+      this.refreshControllerPanel(this.readControllers(), pad, true);
+    });
+    const hint = document.createElement('p');
+    hint.textContent = this.tr('Connect by USB or Bluetooth, then press a controller button. Select a control below, release all controls, then press its new button or move one stick direction. An occupied input swaps controls. M/O/T/H use the same keys as the deck; O confirms and H goes back in menus. Settings are saved for each controller model on this browser. If audio is blocked, tap the screen or press a keyboard key once.', '以 USB 或藍牙連線後，按一下控制器按鈕。選擇下方功能，放開所有按鍵，再按新的按鈕或推動一個搖桿方向。若按鍵已有用途，將交換兩個功能。M／O／T／H 對應遊戲面板；選單中 O 確認、H 返回。設定會依控制器型號儲存在此瀏覽器。若無法播放聲音，請先輕觸螢幕或按一次鍵盤。'); content.appendChild(hint);
+    for (const [id, , en, zh] of MOTH_GAMEPAD_ACTIONS) {
+      const row = document.createElement('div'); row.className = 'moth-controller-row';
+      const label = document.createElement('label'); label.htmlFor = 'moth-bind-' + id; label.textContent = this.tr(en, zh);
+      const button = document.createElement('button'); button.id = label.htmlFor; button.type = 'button'; button.dataset.controllerAction = id;
+      button.addEventListener('click', () => this.beginControllerCapture(id)); row.append(label, button); content.appendChild(row);
+    }
+    const message = document.createElement('p'); message.className = 'moth-controller-message'; message.setAttribute('role', 'status'); message.setAttribute('aria-live', 'polite'); content.appendChild(message);
+    const tools = document.createElement('div'); tools.className = 'moth-controller-tools';
+    for (const [id, en, zh, action] of [
+      ['cancel', 'CANCEL ASSIGNMENT', '取消設定', () => this.cancelControllerCapture()],
+      ['reset', 'RESTORE DEFAULTS', '恢復預設', () => this.restoreControllerDefaults()],
+      ['close', 'BACK', '返回', () => this.closeControllerSettings()]
+    ]) {
+      const button = document.createElement('button'); button.type = 'button'; button.dataset.controllerTool = id; button.textContent = this.tr(en, zh); button.addEventListener('click', action); tools.appendChild(button);
+    }
+    content.appendChild(tools);
+    panel.addEventListener('pointerdown', event => event.stopPropagation());
+    this.controllerPanel = panel; document.body.appendChild(panel);
+    this.refreshControllerPanel(this.readControllers(), null, true);
+    panel.querySelector('[data-controller-tool="close"]').focus();
+  }
+
+  setControllerPanelMessage(text) {
+    const target = this.controllerPanel?.querySelector('.moth-controller-message');
+    if (target) target.textContent = text || '';
+  }
+
+  refreshControllerPanel(pads, pad, force = false) {
+    const panel = this.controllerPanel;
+    if (!panel) return;
+    pad ||= pads.find(p => p.index === this.controllerInput.index);
+    const signature = JSON.stringify([pads.map(p => [p.index, p.id, p.mapping]), pad?.index, this.controllerInput.profiles, this.controllerCapture?.action]);
+    if (!force && signature === panel.dataset.signature) return;
+    panel.dataset.signature = signature;
+    panel.querySelector('.moth-controller-status').textContent = pad
+      ? this.tr('DETECTED: ', '已偵測：') + pad.id + ' · ' + (pad.mapping === 'standard' ? this.tr('STANDARD LAYOUT', '標準配置') : this.tr('CUSTOM LAYOUT — configure buttons below', '自訂配置－請設定下方按鍵'))
+      : typeof navigator.getGamepads !== 'function' ? this.tr('This browser does not expose controllers. Use a browser with Gamepad API support.', '此瀏覽器無法讀取控制器。請使用支援 Gamepad API 的瀏覽器。')
+        : this.tr('No controller detected. Connect it and press a button while this page is focused.', '尚未偵測到控制器。連線後，請在此頁面按一下控制器按鈕。');
+    const select = panel.querySelector('select'); select.replaceChildren(); select.disabled = !pads.length || Boolean(this.controllerCapture);
+    for (const item of pads) {
+      const option = document.createElement('option'); option.value = String(item.index); option.textContent = item.id + ' (#' + (item.index + 1) + ')'; option.selected = item.index === pad?.index; select.appendChild(option);
+    }
+    const bindings = pad ? this.controllerBindings(pad) : {};
+    for (const button of panel.querySelectorAll('[data-controller-action]')) {
+      const id = button.dataset.controllerAction;
+      button.disabled = !pad || Boolean(this.controllerCapture && this.controllerCapture.action !== id);
+      button.textContent = this.controllerCapture?.action === id ? this.tr('PRESS NEW INPUT…', '請按新的按鍵…') : pad ? this.controllerBindingLabel(pad, bindings[id]) : '—';
+    }
+    panel.querySelector('[data-controller-tool="cancel"]').disabled = !this.controllerCapture;
+    panel.querySelector('[data-controller-tool="reset"]').disabled = !pad || Boolean(this.controllerCapture);
+  }
+
+  beginControllerCapture(action) {
+    const pad = this.readControllers().find(p => p.index === this.controllerInput.index);
+    if (!pad) return;
+    this.resetGamepadInput();
+    this.controllerCapture = { action, ready: false, expires: performance.now() + 15000 };
+    this.setControllerPanelMessage(this.tr('Release all controls, then press the new button or stick direction. Esc cancels.', '請先放開所有按鍵，再按新的按鈕或推動搖桿。Esc 可取消。'));
+    this.refreshControllerPanel(this.readControllers(), pad, true);
+  }
+
+  assignControllerBinding(pad, token) {
+    const action = this.controllerCapture?.action;
+    if (!pad || !action) return;
+    const bindings = this.controllerBindings(pad), conflict = MOTH_GAMEPAD_ACTIONS.find(([id]) => id !== action && bindings[id].includes(token));
+    // Swap an occupied input with this action's previous inputs. This also
+    // lets a four-button controller swap its face buttons without needing an
+    // unused fifth button, while every physical input still has one action.
+    if (conflict) bindings[conflict[0]] = [...bindings[conflict[0]].filter(item => item !== token), ...bindings[action]];
+    bindings[action] = [token]; this.controllerInput.profiles[this.controllerProfileKey(pad)] = bindings;
+    const saved = this.saveControllerProfiles();
+    this.controllerCapture = null; this.resetGamepadInput();
+    const swap = conflict ? this.tr(' Swapped with ', ' 已交換：') + this.tr(conflict[2], conflict[3]) + '.' : '';
+    this.setControllerPanelMessage((saved ? this.tr('Saved. Release the button before continuing.', '已儲存。請放開按鈕後再繼續。') : this.tr('Applied for this session. Browser storage is unavailable.', '已套用於本次遊戲。瀏覽器無法儲存設定。')) + swap);
+    this.refreshControllerPanel(this.readControllers(), pad, true);
+  }
+
+  saveControllerProfiles() {
+    try { localStorage.setItem(PROGRESS_KEY + '.controllers_v1', JSON.stringify(this.controllerInput.profiles)); return true; }
+    catch { return false; }
+  }
+
+  cancelControllerCapture(message = '') {
+    this.controllerCapture = null; this.resetGamepadInput(); this.setControllerPanelMessage(message);
+    if (this.controllerPanel) this.refreshControllerPanel(this.readControllers(), null, true);
+  }
+
+  restoreControllerDefaults() {
+    const pad = this.readControllers().find(p => p.index === this.controllerInput.index);
+    if (!pad) return;
+    delete this.controllerInput.profiles[this.controllerProfileKey(pad)];
+    const saved = this.saveControllerProfiles(); this.resetGamepadInput();
+    this.setControllerPanelMessage(saved ? this.tr('Defaults restored.', '已恢復預設。') : this.tr('Defaults restored for this session. Browser storage is unavailable.', '本次遊戲已恢復預設。瀏覽器無法儲存設定。'));
+    this.refreshControllerPanel(this.readControllers(), pad, true);
+  }
+
+  closeControllerSettings() {
+    this.cancelControllerCapture();
+    this.controllerPanel?.remove(); this.controllerPanel = null; this.resetGamepadInput();
+    this.homeMenu.index = Math.max(0, this.getHomeMenuItems().findIndex(item => item.id === 'controller'));
+    canvas.focus?.();
+  }
+
+  handleControllerPanelKey(event) {
+    if (event.type !== 'keydown') return;
+    if (event.code === 'Escape') {
+      event.preventDefault(); if (this.controllerCapture) this.cancelControllerCapture(); else this.closeControllerSettings();
+      return;
+    }
+    if (event.code === 'Tab') {
+      const controls = [...this.controllerPanel.querySelectorAll('button:not(:disabled),select:not(:disabled)')];
+      const index = controls.indexOf(document.activeElement);
+      if (event.shiftKey && index <= 0 || !event.shiftKey && index === controls.length - 1) {
+        event.preventDefault(); controls[event.shiftKey ? controls.length - 1 : 0]?.focus();
+      }
+      return;
+    }
+    if (this.controllerCapture) { event.preventDefault(); return; }
+    const map = { ArrowUp: 'KeyW', ArrowDown: 'KeyS', KeyW: 'KeyW', KeyS: 'KeyS', KeyO: 'KeyO', KeyH: 'KeyH' };
+    if (map[event.code]) { event.preventDefault(); this.handleControllerPanelAction(map[event.code]); }
+    // Enter and Space retain native button/select keyboard behavior.
+  }
+
+  handleControllerPanelAction(code) {
+    if (!this.controllerPanel || this.controllerCapture) return;
+    const controls = [...this.controllerPanel.querySelectorAll('button:not(:disabled),select:not(:disabled)')];
+    if (code === 'KeyH' || code === 'Escape') { this.closeControllerSettings(); return; }
+    const active = document.activeElement;
+    if (code === 'KeyO' || code === 'Space') { active?.click?.(); return; }
+    if (['KeyW', 'KeyS', 'KeyA', 'KeyD'].includes(code)) {
+      const delta = ['KeyW', 'KeyA'].includes(code) ? -1 : 1;
+      const index = controls.indexOf(active);
+      const next = controls[(index + delta + controls.length) % controls.length];
+      next?.focus(); next?.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  getRhythmTimingCue(note, renderTime, geometry = null) {
+    const spec = this.getActiveRhythmSpec();
+    const head = geometry || this.getRhythmRailGeometry().byNote.get(note) || {radius: 21, maxRingRadius: 59};
+    const fullLead = Math.min(rhythmRingLeadSeconds(spec), Math.max(.01, note.time - note.cueAt));
+    return calculateRhythmTimingCue(note, renderTime, head, fullLead, spec.perfectWindow || .085, spec.goodWindow || .19);
+  }
+
+  getRhythmRailGeometry() {
+    const rhythm = this.level1OfficeRhythm;
+    const tutorial = rhythm?.tutorial;
+    // Tutorial notes may move after a miss. Its one visible note has no
+    // neighboring head to collide with and retains the familiar large ring.
+    if (tutorial?.mode === "practice") return { pixelsPerSecond: 140, byNote: new Map() };
+    const notes = rhythm?.notes || [];
+    if (rhythm?.railGeometry?.notes === notes) return rhythm.railGeometry;
+    const geometry = calculateRhythmRailGeometry(notes);
+    geometry.notes = notes;
+    geometry.byNote = new Map(notes.map((note, index) => [note, geometry.heads[index]]));
+    if (rhythm) rhythm.railGeometry = geometry;
+    return geometry;
+  }
+
+  renderCinematicScene(target, width, height, name = this.level1OfficeRhythm?.theme || "office") {
+    if (this.cinematicLookEnabled === false || !target?.canvas || width <= 0 || height <= 0) return;
+    const profile = MOTH_CINEMATIC_PROFILES[name] || MOTH_CINEMATIC_PROFILES.office;
+    width = Math.min(target.canvas.width, Math.round(width));
+    height = Math.min(target.canvas.height, Math.round(height));
+    const started = performance.now();
+    if (this.cinematicRenderer === undefined) {
+      try { this.cinematicRenderer = createMothCinematicRenderer(); }
+      catch { this.cinematicRenderer = null; }
+    }
+    target.save();
+    // The source already contains camera shake/scene transforms; replacing
+    // those pixels in device space avoids applying a camera transform twice.
+    target.setTransform(1, 0, 0, 1, 0, 0);
+    target.globalAlpha = 1;
+    target.globalCompositeOperation = "source-over";
+    let gpu = false;
+    if (this.cinematicRenderer && !this.cinematicRenderer.failed) {
+      try {
+        gpu = this.cinematicRenderer.draw(target.canvas, width, height, profile);
+        if (gpu) target.drawImage(this.cinematicRenderer.canvas, 0, 0, width, height);
+      } catch { this.cinematicRenderer.failed = true; }
+    }
+    if (!gpu) this.renderCinematicFallback(target, width, height, profile);
+    target.restore();
+    this.cinematicTelemetry = { profile: name, backend: gpu ? "webgl" : "canvas2d",
+      width, height, ditherPixelSize: 2, paletteLevels: 10, ditherMix: .92, animatedNoise: false, cpuPixelReadback: false,
+      passMs: performance.now() - started, passes: this.cinematicRenderer?.passes || 0 };
+  }
+
+  renderCinematicFallback(target, width, height, profile) {
+    // Canvas-only devices still get fixed ordered texture and the same light
+    // placement. Patterns are built once, without getImageData/readPixels.
+    if (!this.cinematicDitherPatterns) {
+      const bayer = [0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5];
+      const make = (light) => {
+        // Keep independent immutable sources even on engines that retain a
+        // live canvas as a CanvasPattern source.
+        const tile = document.createElement("canvas"); tile.width = tile.height = 8;
+        const ink = tile.getContext("2d");
+        bayer.forEach((value, index) => {
+          const alpha = Math.abs((value + .5) / 16 - .5) * .26;
+          if ((value >= 8) !== light) return;
+          ink.fillStyle = light ? "rgba(245,237,218," + alpha + ")" : "rgba(9,14,25," + alpha + ")";
+          ink.fillRect(index % 4 * 2, Math.floor(index / 4) * 2, 2, 2);
+        });
+        return target.createPattern(tile, "repeat");
+      };
+      this.cinematicDitherPatterns = [make(false), make(true)];
+    }
+    target.globalCompositeOperation = "screen";
+    for (const light of profile.lights) {
+      const [x,y,rx,ry] = light.shape, [r,g,b,strength] = light.colour;
+      target.save(); target.translate(x * width, y * height); target.scale(rx * width, ry * height);
+      const gradient = target.createRadialGradient(0, 0, 0, 0, 0, 1);
+      gradient.addColorStop(0, "rgba(" + Math.round(r * 255) + "," + Math.round(g * 255) + "," + Math.round(b * 255) + "," + strength * .85 + ")");
+      gradient.addColorStop(1, "rgba(0,0,0,0)");
+      target.fillStyle = gradient; target.fillRect(-1, -1, 2, 2); target.restore();
+    }
+    // Overlay retains true black linework and highlight headroom instead
+    // of stamping pale dots onto the painting's ink outlines.
+    target.globalCompositeOperation = "overlay";
+    for (const pattern of this.cinematicDitherPatterns) { target.fillStyle = pattern; target.fillRect(0, 0, width, height); }
+    target.globalCompositeOperation = "source-over";
+    const vignette = target.createRadialGradient(width * .5, height * .47, width * .16,
+      width * .5, height * .47, width * .61);
+    vignette.addColorStop(0, "rgba(4,8,19,0)");
+    vignette.addColorStop(1, "rgba(4,8,19," + profile.vignette * .7 + ")");
+    target.fillStyle = vignette; target.fillRect(0, 0, width, height);
   }
 
   async loadLayeredMapConfig() {
@@ -6446,6 +7212,7 @@ for (const level of this.config.secretLevels || []) {
   }
 
   releaseHeldInputs() {
+    this.resetGamepadInput();
     [...this.mobileHeldActions].forEach((action) => this.handleMobileControlUp(action));
     this.mobileHeldActions.clear();
     this.mobileButtonPressResetters?.forEach((reset) => reset());
@@ -9151,6 +9918,7 @@ for (const level of this.config.secretLevels || []) {
   returnToTitle() {
     this.levelLoadingPresentation = null;
     this.debugLevel4Won = false;
+    if (this.memeView) this.closeMeme({ resumeBgm: false });
     this.recordLatestProgressLoadout();
     // A stage-select run's difficulty was for that run only.
     if (this.storyDifficultyId != null) {
@@ -9992,6 +10760,7 @@ for (const level of this.config.secretLevels || []) {
       calibrate: `${this.tr("TIMING", "節拍校正")}: ${formatOffsetMs(this.getAudioOffsetSeconds())}`,
       haptics: `${this.tr("HAPTICS", "震動")}: ${this.isHapticsEnabled() ? this.tr("ON", "開") : this.tr("OFF", "關")}`,
       sfxTest: this.getSfxTestLabel(),
+      controller: this.tr("CONTROLLER", "控制器"),
       settings: this.tr("SETTINGS", "設定")
     };
     return (this.homeMenu?.view === "settings" ? HOME_SETTINGS_MENU_ITEMS : HOME_ROOT_MENU_ITEMS).map((item) => ({
@@ -10084,7 +10853,9 @@ for (const level of this.config.secretLevels || []) {
       return;
     }
     if (this.homeMenu.view === "settings") {
-      if (item.id === "calibrate") {
+      if (item.id === "controller") {
+        this.openControllerSettings();
+      } else if (item.id === "calibrate") {
         this.openTimingCalibration();
       } else if (item.id === "sfxTest") {
         this.runSfxTest();
@@ -10808,6 +11579,7 @@ for (const level of this.config.secretLevels || []) {
   }
 
   update(dt) {
+    this.pollGamepadInput();
     this.noteMusicActivity();
     if (document.hidden || this.audioInterruption || this.audioRecoveryVisible()) return;
     if (this.level1OfficeRhythm?.audioStartPending || this.audioRecovering) return;
@@ -11608,7 +12380,10 @@ for (const level of this.config.secretLevels || []) {
     element.width = PORTRAIT_FIGHT.width;
     element.height = PORTRAIT_FIGHT.height;
     element.setAttribute("aria-label", "Master of the House");
-    canvas.insertAdjacentElement("afterend", element);
+    const viewport = document.createElement("div");
+    viewport.id = "portrait-viewport";
+    viewport.appendChild(element);
+    document.getElementById("game-viewport").insertAdjacentElement("afterend", viewport);
     this.portraitCanvas = element;
     this.portraitCtx = element.getContext("2d", { alpha: false, desynchronized: DESYNC_CANVAS });
     // Every pointer event on the tall view is handed to the game canvas at
@@ -12755,7 +13530,7 @@ for (const level of this.config.secretLevels || []) {
       }
     });
     // The measured chart replaces the fallback phrases. Drum attacks follow
-    // the verified grid; Level 5 also charts its instrumental opening accents.
+    // measured drum waveform attacks, retaining the record's microtiming.
     const chart = spec.chart?.[this.getDifficulty().hardPhrases ? "hard" : "easy"];
     if (Array.isArray(chart) && chart.length) {
       notes.length = 0;
@@ -13531,7 +14306,7 @@ for (const level of this.config.secretLevels || []) {
     const root = this.audioRecoveryPrompt;
     root.querySelector("h2").textContent = reason === "resume"
       ? this.tr("READY TO RESUME", "準備繼續遊戲") : this.tr("ENABLE SOUND", "開啟音樂與音效");
-    root.querySelector("p").textContent = reason === "resume" ? this.tr("Your progress and hearts are saved here.", "目前進度與生命已保留。") : this.tr("Tap below to enable music and sound effects.", "點擊下方按鈕，開啟音樂與音效。");
+    root.querySelector("p").textContent = reason === "resume" ? this.tr("Your progress, combo and score are saved here.", "目前進度、連擊與分數已保留。") : this.tr("Tap below to enable music and sound effects.", "點擊下方按鈕，開啟音樂與音效。");
     root.querySelector("button").textContent = reason === "resume"
       ? this.tr("TAP TO RESUME", "點一下，繼續遊戲") : this.tr("ENABLE SOUND", "開啟音效");
     root.hidden = false;
@@ -13690,8 +14465,7 @@ for (const level of this.config.secretLevels || []) {
   getRhythmOutputDelay() {
     const rhythm = this.level1OfficeRhythm;
     // An existing manual calibration already includes the phone's delay.
-    if (this.deviceMode !== "phone" || !rhythm || rhythm.skipAudio || this.getAudioOffsetSeconds() !== 0) return 0;
-    if (Number.isFinite(rhythm.outputDelay)) return rhythm.outputDelay;
+    if (!rhythm || rhythm.skipAudio || this.getAudioOffsetSeconds() !== 0) return 0;
     const track = this.getActiveLevel1OfficeRhythmAudio();
     const context = this.musicAudioRoutes?.get(track)?.context;
     if (!context || context.state !== "running" || !Number.isFinite(context.outputLatency)) return 0;
@@ -13699,7 +14473,6 @@ for (const level of this.config.secretLevels || []) {
     // is not a reliable latency measurement (Web Audio specification).
     const delay = context.outputLatency + (Number(context.baseLatency) || 0);
     if (!(delay > 0 && delay <= 0.25)) return 0;
-    rhythm.outputDelay = delay;
     return delay;
   }
 
@@ -17155,6 +17928,7 @@ for (const level of this.config.secretLevels || []) {
       micRect, consoleRect, consoleCrop, layers: ["room", "gangan", "console", "drBeauty", "microphone"] };
     target.restore();
     if (tallFight) target.restore();
+    if (dialogue) this.renderCinematicScene(target, width, sceneHeight, "studio");
   }
 
   enterLevel5Stage1() {
@@ -17298,6 +18072,7 @@ for (const level of this.config.secretLevels || []) {
       }
       target.restore();
     }
+    this.renderCinematicScene(target, W, H, "bedroom");
   }
 
   renderLevel6WakeDialogue() {
@@ -17377,6 +18152,7 @@ for (const level of this.config.secretLevels || []) {
       target.fillText("Z", bed.faceX + bed.scale * 100 + k * 60, bed.faceY + bed.scale * 35 - k * 90);
     }
     target.restore();
+    this.renderCinematicScene(target, W, H, "bedroom");
   }
 
   getLevel6BedLayout(W, H, t) {
@@ -20629,6 +21405,9 @@ for (const level of this.config.secretLevels || []) {
     }
 
     if (!frozen) this.renderHitBursts(target);
+    // River grades before its in-scene measuring board; every other arena
+    // grades here, before the timing rail, pause button and dialogue.
+    if (!this.isRiverRhythm()) this.renderCinematicScene(target, VIEW_W, sceneHeight);
 
     // A dialogue box covers this whole band. Drawing the ribbon underneath left
     // the life chip's border poking out past the dialogue panel's edges, which
@@ -20679,6 +21458,7 @@ for (const level of this.config.secretLevels || []) {
     }
 
     if (failedCard && rhythm) rhythm.failureOptionRects = this.getLevel1OfficeFailureOptionRects();
+    const noteTimingCues = [];
     target.fillStyle = haunted ? "#281328" : "#f1c62d";
     target.fillRect(ribbonBounds.x, ribbonBounds.y, ribbonBounds.w, ribbonBounds.h);
     target.strokeStyle = haunted ? "#9a3ea7" : groovePulse > 0 ? "#fff2a3" : "#f7f2de";
@@ -20709,7 +21489,8 @@ for (const level of this.config.secretLevels || []) {
     } else {
       const cursorX = 760;
       const railY = ribbonBounds.y + 96;
-      const pixelsPerSecond = 140;
+      const railGeometry = this.getRhythmRailGeometry();
+      const pixelsPerSecond = railGeometry.pixelsPerSecond;
       target.strokeStyle = "rgba(35, 28, 13, 0.46)";
       target.lineWidth = 3;
       target.beginPath();
@@ -20746,6 +21527,12 @@ for (const level of this.config.secretLevels || []) {
         const tailX = note.holdEnd ? cursorX + (note.holdEnd - renderTime) * pixelsPerSecond : x;
         return tailX >= trackLeft && x <= trackRight;
       });
+      // Clip heads and rings as a whole at the rail's edges (including the
+      // phone's copied strip), rather than letting partial circles escape it.
+      target.save();
+      target.beginPath();
+      target.rect(trackLeft, ribbonBounds.y + 32, trackRight - trackLeft, ribbonBounds.h - 52);
+      target.clip();
       // Hold tails first, under every head: a bar out to where the hold ends,
       // its button's colour; while held it is eaten up at the hit line.
       visibleNotes.forEach((note) => {
@@ -20783,43 +21570,31 @@ for (const level of this.config.secretLevels || []) {
             : MOTH_NOTE_COLOURS[button] || "#ef3f78";
         target.strokeStyle = "#16171b";
         target.lineWidth = 5;
-        target.arc(x, railY, 21, 0, TAU);
+        const noteGeometry = railGeometry.byNote.get(note) || { radius: 21, maxRingRadius: 59 };
+        const noteRadius = noteGeometry.radius;
+        target.lineWidth = noteGeometry.lineWidth || 5;
+        target.arc(x, railY, noteRadius, 0, TAU);
         target.fill();
         target.stroke();
         target.fillStyle = missed ? "#747982" : completed ? "#16171b" : "#ffffff";
-        drawCentredGlyph(target, button, x, railY, "900 18px 'Courier New', monospace");
+        drawCentredGlyph(target, button, x, railY, `900 ${Math.max(16, Math.min(18, Math.floor(noteRadius * 0.9)))}px 'Courier New', monospace`);
         // Every note carries its own ring, closing on it over its last
         // stretch to the hit line. (Only the next note used to have one, so
         // in a run of notes the rest arrived without a timing ring.)
-        const noteUntil = note.time - renderTime;
-        const ringLead = Math.min(rhythmRingLeadSeconds(this.getActiveRhythmSpec()), Math.max(0.01, note.time - note.cueAt));
-        const ringed = !frozen && !haunted && !rhythm?.ending && note.status === "pending"
-          && noteUntil <= ringLead && noteUntil >= -goodWindow;
-        if (ringed) {
-          const remainingRatio = clamp(Math.max(0, noteUntil) / ringLead, 0, 1);
-          const approachRadius = 27 + remainingRatio * 32;
-          const noteStage = noteUntil < -perfectWindow
-            ? "LATE"
-            : Math.abs(noteUntil) <= perfectWindow ? "NOW" : "HIT";
-          const cueColor = noteStage === "NOW"
-            ? "#ffef63"
-            : noteStage === "LATE"
-              ? "#ff315a"
-              : "#ffffff";
+        const timing = !frozen && !haunted && !rhythm?.ending
+          ? this.getRhythmTimingCue(note, renderTime, noteGeometry) : null;
+        if (timing) {
           target.save();
-          target.strokeStyle = "rgba(255,255,255,0.9)";
-          target.lineWidth = 4;
+          target.strokeStyle = timing.color;
+          target.lineWidth = timing.lineWidth;
           target.beginPath();
-          target.arc(x, railY, 27, 0, TAU);
-          target.stroke();
-          target.strokeStyle = cueColor;
-          target.lineWidth = noteStage === "NOW" ? 9 : 6;
-          target.beginPath();
-          target.arc(x, railY, approachRadius, 0, TAU);
+          target.arc(x, railY, timing.radius, 0, TAU);
           target.stroke();
           target.restore();
+          noteTimingCues.push({ id: note.id, time: note.time, button, x, y: railY, ...timing });
         }
       });
+      target.restore();
 
       target.font = "900 13px 'Courier New', monospace";
       target.textAlign = "left";
@@ -20914,13 +21689,17 @@ for (const level of this.config.secretLevels || []) {
         cueStage,
         activeAction: activeCue?.action || null,
         timeUntilCue,
-        approachRadius: activeCue ? 27 + clamp(Math.max(0, timeUntilCue) / cueLeadDuration, 0, 1) * 48 : null,
+        approachRadius: activeCue ? this.getRhythmTimingCue(activeCue, renderTime)?.radius ?? null : null,
+        noteTimingCues,
         cueRing: activeCue
           ? {
-              x: 760 + (activeCue.time - renderTime) * 140,
-              y: ribbonBounds.y + 96
+              x: 760 + (activeCue.time - renderTime) * this.getRhythmRailGeometry().pixelsPerSecond,
+              y: ribbonBounds.y + 96,
+              visible: Boolean(this.getRhythmTimingCue(activeCue, renderTime)),
+              radius: this.getRhythmTimingCue(activeCue, renderTime)?.radius ?? null
             }
           : null,
+        railPixelsPerSecond: this.getRhythmRailGeometry().pixelsPerSecond,
         phaseIntroVisible,
         haunted,
         impactKick: impactKick ? { miss: Boolean(impactKick.miss), strength: impactKick.strength || 0 } : null,
@@ -21143,10 +21922,10 @@ for (const level of this.config.secretLevels || []) {
       target,
       `${this.tr("PERFECT +1000 · GOOD +600", "完美 +1000 · 良好 +600")}  ·  ${this.tr(
         result.healthless
-          ? "NO HEART LIMIT HERE - MISSES ONLY COST THE RANK"
+          ? "MISS = 0 · S = ALL PERFECT"
           : "S RANK REQUIRES EVERY NOTE TO BE PERFECT",
         result.healthless
-          ? "此處不限血量 — 失誤只會扣評級"
+          ? "失誤得 0 分；全數完美才能獲得 S"
           : "S 評級必須每一個音符都是完美判定"
       )}`,
       panel.x + panel.w / 2,
@@ -21817,6 +22596,7 @@ for (const level of this.config.secretLevels || []) {
       }
     }
     target.restore();
+    this.renderCinematicScene(target, W, H, "drive");
   }
 
   // Where the road layer's warm light pools are this frame (they sit at 22.5%
@@ -22477,6 +23257,7 @@ for (const level of this.config.secretLevels || []) {
     // How far each reaches: a riverside scoreboard (2026-10-05, user: in the
     // level's own look) - a navy enamel plate in the game's cream frame with
     // corner rivets, a measuring tape per man.
+    this.renderCinematicScene(target, VIEW_W, sceneHeight, "river");
     if (!context.aftermath) this.drawLevel5RiverScoreboard(target, people, motionTime);
     target.textAlign = "start";
     target.restore();
@@ -22904,51 +23685,7 @@ for (const level of this.config.secretLevels || []) {
     this.renderLevel1OfficeFilmGrain(target, motionTime, sceneHeight);
   }
 
-  renderLevel1OfficeFilmGrain(target, motionTime, sceneHeight = VIEW_H, vignetteHeight = sceneHeight) {
-    const frame = Math.floor(motionTime * 12);
-    this.filmGrainCache ||= new Map();
-    let cached = this.filmGrainCache.get(`${sceneHeight}/${vignetteHeight}`);
-    if (!cached) {
-      const layer = document.createElement("canvas"); layer.width = VIEW_W; layer.height = sceneHeight;
-      cached = { layer, frame: null }; this.filmGrainCache.set(`${sceneHeight}/${vignetteHeight}`, cached);
-    }
-    if (cached.frame === frame) { target.drawImage(cached.layer, 0, 0); return; }
-    const output = target; target = cached.layer.getContext("2d");
-    target.clearRect(0, 0, VIEW_W, sceneHeight);
-    cached.frame = frame;
-    const hash = (seed) => {
-      const value = Math.sin(seed * 12.9898 + frame * 78.233) * 43758.5453;
-      return value - Math.floor(value);
-    };
-    target.save();
-    target.fillStyle = "rgba(188, 104, 48, 0.075)";
-    target.fillRect(0, 0, VIEW_W, sceneHeight);
-    target.globalCompositeOperation = "screen";
-    for (let speck = 0; speck < 140; speck += 1) {
-      const x = Math.floor(hash(speck * 3 + 1) * VIEW_W);
-      const y = Math.floor(hash(speck * 3 + 2) * sceneHeight);
-      const bright = hash(speck * 3 + 3) > 0.54;
-      target.fillStyle = bright ? "rgba(255, 240, 190, 0.21)" : "rgba(95, 39, 26, 0.18)";
-      target.fillRect(x, y, hash(speck + 33) > 0.82 ? 2 : 1, hash(speck + 51) > 0.8 ? 3 : 1);
-    }
-    if (frame % 29 < 8) {
-      const scratchX = 80 + hash(frame + 911) * (VIEW_W - 160);
-      target.strokeStyle = "rgba(255, 244, 210, 0.16)";
-      target.lineWidth = 1;
-      target.beginPath();
-      target.moveTo(scratchX, 104);
-      target.lineTo(scratchX + Math.sin(frame) * 4, VIEW_H - 18);
-      target.stroke();
-    }
-    target.globalCompositeOperation = "source-over";
-    const vignette = target.createRadialGradient(VIEW_W / 2, 398, 180, VIEW_W / 2, 398, 720);
-    vignette.addColorStop(0, "rgba(0, 0, 0, 0)");
-    vignette.addColorStop(1, "rgba(29, 8, 5, 0.3)");
-    target.fillStyle = vignette;
-    target.fillRect(0, 0, VIEW_W, vignetteHeight);
-    target.restore();
-    output.drawImage(cached.layer, 0, 0);
-  }
+  renderLevel1OfficeFilmGrain() {}
 
   renderGameplay(frozen = false) {
     const bobbySpec = this.player.mounted === false
@@ -23692,6 +24429,7 @@ for (const level of this.config.secretLevels || []) {
     drawables.sort((a, b) => a.y - b.y).forEach((item) => item.draw());
     this.sewerFx.forEach((fx) => drawSewerSprayFx(this.ctx, fx, this.time));
     this.floaters.forEach((floater) => drawFloater(this.ctx, floater));
+    this.renderCinematicScene(this.ctx, VIEW_W, VIEW_H, "massage");
     this.renderLevel3Hud();
     if (!frozen) {
       const canExitRight = this.canExitLevel3ToLevel4();
@@ -23919,6 +24657,7 @@ for (const level of this.config.secretLevels || []) {
     drawables.sort((a, b) => a.y - b.y).forEach((item) => item.draw());
     this.sewerFx.forEach((fx) => drawSewerSprayFx(this.ctx, fx, this.time));
     this.floaters.forEach((floater) => drawFloater(this.ctx, floater));
+    this.renderCinematicScene(this.ctx, VIEW_W, VIEW_H, "bedroom");
     this.renderLevel4Hud();
     if (!frozen) {
       const nearLadder = this.isLevel4NearLadder();
@@ -23943,9 +24682,9 @@ for (const level of this.config.secretLevels || []) {
           ? "找梯子回房間"
           // Like Level 3's: who to go to, then the way out.
           : (this.progress?.flags?.level4BossDefeated || this.debugLevel4Won) && this.level4BossEncountered
-            ? (this.hasLevel4MemeChest() && this.memeChest?.state === "closed" ? "地下室出現了寶箱 · 往左離開" : "往左離開")
+            ? (this.hasLevel4MemeChest() && this.memeChest?.state === "closed" ? this.tr("A chest appeared in the basement", "地下室出現了寶箱") : "")
             : "靠近Bonita";
-      drawObjectivePrompt(
+      if (prompt) drawObjectivePrompt(
         this.ctx,
         prompt,
         nearMemeChest || nearChest || nearLadder || nearLeftDoor || this.chest?.state === "revealing" ? "#ffd36c" : "#8fe8ff",
@@ -26348,7 +27087,7 @@ const imageRequests = new Map();
 // configuration always come from this site.
 const MIRROR_BASE = ['myscheduleltd.com', 'www.myscheduleltd.com'].includes(location.hostname)
   ? 'https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@4a1cae2472c9fbece153cc1dbd0f0c1593dd9997/docs/moth/' : '';
-const MIRROR_PINNED = new Map([["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/drb-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/gg-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/spa-tickle.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_idle/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sfx/menu/menu-tick.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/sfx/menu/menu-click.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/ui/mobile_moth_buttons_20261017/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/sprites/level4_meme_chest/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/memes/level4-meme.png","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"]]);
+const MIRROR_PINNED = new Map([["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/drb-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/gg-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/spa-tickle.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_idle/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sfx/menu/menu-tick.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/sfx/menu/menu-click.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/ui/mobile_moth_buttons_20261017/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/sprites/level4_meme_chest/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/audio/easter-eggs/dr-beauty-private-message.m4a",""],["assets/audio/fight-cuts/level6-river-verse1-chorus2.m4a",""]]);
 const MIRROR_ROOT = '/moth/';
 let assetIntegrity = null;
 

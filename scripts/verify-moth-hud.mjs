@@ -6,7 +6,7 @@
 //     from the row's left edge and as wide as its line;
 //  2. the phone's track is centred on its hit line and its row of notes, and
 //     the notes are in the pad's colours (every letter cream), where they are
-//     drawn, out to 1.5 s ahead;
+//     drawn, with at least 1.4 s of preview even for the densest phrases;
 //  3. on a computer Dr. Beauty's box stays beside the track, his misses in it.
 // Each frame is drawn on demand (render, then renderTallScreen) and read in
 // the same step, so what is read is what that frame drew.
@@ -19,17 +19,10 @@ import {MOTH_NOTE_COLOURS} from './moth-fight-hud.mjs';
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const browser = await chromium.launch({executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--no-sandbox']});
 const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
-// The film grain over the frame moves each pixel a little.
+// Allow small raster variation when sampling glyphs and antialiased edges.
 const near = (got, want, slack = 34) => got.every((v, c) => Math.abs(v - want[c]) <= slack);
 // The track's yellow, the release's own.
 const TRACK = rgb('#f1c62d');
-// The film over the fight (renderLevel1OfficeFilmGrain): a 7.5% warm tint,
-// then, where the vignette reaches, up to 30% dark brown between 180 and
-// 720 px from (640, 398).
-const filmed = (colour, x, y, vignette = true) => {
-  const shade = vignette ? 0.3 * Math.min(1, Math.max(0, (Math.hypot(x - 640, y - 398) - 180) / 540)) : 0;
-  return colour.map((v, c) => (v * 0.925 + [188, 104, 48][c] * 0.075) * (1 - shade) + [29, 8, 5][c] * shade);
-};
 
 async function fight(viewport, stage, freePlay, phone = true) {
   const context = await browser.newContext({viewport, deviceScaleFactor: 2, isMobile: phone, hasTouch: phone});
@@ -86,11 +79,14 @@ const frame = page => page.evaluate(() => {
   // Where this frame put the notes: the active cue's ring gives its clock.
   const ring = rhythm.renderTelemetry?.cueRing;
   const cue = g.getLevel1OfficeActiveCue();
-  const clock = cue && ring ? cue.time - (ring.x - 760) / 140 : null;
+  const railSpeed = g.getRhythmRailGeometry().pixelsPerSecond;
+  const clock = cue && ring ? cue.time - (ring.x - 760) / railSpeed : null;
   const notes = clock == null ? [] : g.getLevel1OfficeRenderNotes().filter(note => note.status === 'pending' && !note.holdEnd)
-    .map(note => ({button: note.button, ahead: note.time - clock, x: 760 + (note.time - clock) * 140}));
+    .map(note => ({button: note.button, ahead: note.time - clock, x: 760 + (note.time - clock) * railSpeed}));
   const wide = g.ctx;
-  const out = {tall: Boolean(tall), notes, tallies, pink: 0, hype: 0, hitLine: tallX(760) - (dest.x + dest.w / 2), rail: railY - (dest.y + dest.h / 2)};
+  const out = {tall: Boolean(tall), notes, tallies, pink: 0, hype: 0,
+    previewSeconds: (src.x + src.w - 760) / railSpeed,
+    hitLine: tallX(760) - (dest.x + dest.w / 2), rail: railY - (dest.y + dest.h / 2)};
   if (tall) {
     // The row above the track, and the track's band under its legend.
     const row = {x: 8, y: 520, w: 704, h: 46};
@@ -100,7 +96,11 @@ const frame = page => page.evaluate(() => {
     out.hype = count(tall, row, (r, g, b) => (r === 0x3f && g === 0x6f && b === 0xb8) || (r === 0x9c && g === 0xcf && b === 0x6a));
     out.trackBand = [30, 150, 270, 390, 510, 630, 690].map(x => read(tall, x, 760));
     out.noteSamples = notes.map(note => ({...note, tallX: tallX(note.x),
-      colour: read(tall, tallX(note.x) - 12, railY), centre: read(tall, tallX(note.x), railY + 3)}));
+      colour: read(tall, tallX(note.x) - 12, railY), centre: read(tall, tallX(note.x), railY + 3),
+      // Adaptive heads use a smaller glyph, so a single coordinate may land
+      // on an antialiased edge. Inspect its central stem, inside the cue arc.
+      creamStemPixels: count(tall, {x: Math.round(tallX(note.x)) - 2, y: Math.round(railY) - 4, w: 5, h: 10},
+        (r, g, b) => r > 210 && g > 200 && b > 170)}));
   } else {
     out.trackBand = [300, 500, 900, 1150].map(x => ({x, y: 696, colour: read(wide, x, 696)}));
     out.lifeBox = read(wide, 30, 600);
@@ -118,8 +118,8 @@ for (const run of [
   const shot = await frame(page);
   assert(shot.tall, `${run.name}: the tall view is drawn`);
   // Level 7 dims its track while the band sound-checks; it still spans the width.
-  const trackColour = run.row === 'hype' ? shot.trackBand[0] : filmed(TRACK, 0, 0, false);
-  for (const sample of shot.trackBand) assert(near(sample, trackColour, 16), `${run.name}: the track spans the width, its yellow even ${JSON.stringify(shot.trackBand)}`);
+  const trackColour = run.row === 'hype' ? shot.trackBand[0] : TRACK;
+  for (const sample of shot.trackBand) assert(near(sample, trackColour, 2), `${run.name}: the track spans the width, its yellow even ${JSON.stringify(shot.trackBand)}`);
   if (run.row === 'strip') {
     assert(near(shot.rowPaper, [0xef, 0xe6, 0xcc], 12), `${run.name}: the staff ID strip's paper ${shot.rowPaper}`);
     assert(near(shot.rowLeft, rgb(run.band), 12), `${run.name}: the strip's band in the fight's colour ${shot.rowLeft}`);
@@ -137,9 +137,10 @@ for (const run of [
     for (const note of visible) {
       assert(near(note.colour, rgb(MOTH_NOTE_COLOURS[note.button]), 40), `${run.name}: ${note.button} note in its colour ${JSON.stringify(note)}`);
       // T's stem is at the note's centre: cream, like the other letters (owner, 2026-10-18).
-      if (note.button === 'T') assert(Math.min(...note.centre) > 170, `${run.name}: T's letter is cream ${JSON.stringify(note)}`);
+      if (note.button === 'T') assert(note.creamStemPixels >= 2, `${run.name}: T's letter is cream ${JSON.stringify(note)}`);
     }
-    const far = shot.noteSamples.find(note => note.ahead > 1.2 && note.ahead < 1.75);
+    assert(shot.previewSeconds >= 1.4, `${run.name}: at least 1.4 seconds of readable preview`);
+    const far = shot.noteSamples.find(note => note.ahead > 1.2 && note.ahead < Math.min(1.75, shot.previewSeconds - .1));
     if (far) assert(far.tallX < 712 && near(far.colour, rgb(MOTH_NOTE_COLOURS[far.button]), 40), `${run.name}: a note ${far.ahead.toFixed(2)} s ahead is on the track ${JSON.stringify(far)}`);
   }
   // GANGAN's feedback (a missed note brings it) above the row, clear of the track.
@@ -156,9 +157,9 @@ for (const run of [
   const {context, page, errors} = await fight({width: 1280, height: 800}, 'level1-stage1', false, false);
   const shot = await frame(page);
   assert(!shot.tall);
-  // The frame keeps the film's vignette over its lower panel here.
-  for (const {x, y, colour} of shot.trackBand) assert(near(colour, filmed(TRACK, x, y), 14), `desktop: the track's yellow at ${x}: ${colour}`);
-  assert(near(shot.lifeBox, filmed([8, 9, 13], 30, 600), 8), `desktop: Dr. Beauty's box beside the track ${shot.lifeBox}`);
+  // The scene grade ends above the HUD: its actual palette stays exact.
+  for (const {x, colour} of shot.trackBand) assert(near(colour, TRACK, 2), `desktop: the track's yellow at ${x}: ${colour}`);
+  assert(near(shot.lifeBox, [8, 9, 13], 2), `desktop: Dr. Beauty's box beside the track ${shot.lifeBox}`);
   assert(shot.tallies.some(t => !t.tall && t.misses === 7 && t.tally === '#ef3f78'), `desktop: his misses in the box ${JSON.stringify(shot.tallies)}`);
   assert.deepEqual(errors, []);
   console.log('desktop PASS', JSON.stringify(shot.trackBand.map(sample => sample.colour)));

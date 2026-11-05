@@ -10,7 +10,7 @@
 //  5. a touch on the deck beside its buttons is not left to Safari (no iPhone
 //     magnifier), and one on a button is;
 //  6. level 4: Dr. Beauty is back where Bonita's game began; after the win
-//     the basement chest opens with O, its picture saves (a download here)
+//     the basement chest opens with O, its recording saves (a download here)
 //     and closes with H; the instruction bar sits at the top, clear of 暫停,
 //     on a computer and on a phone.
 // usage: node scripts/verify-moth-story.mjs http://127.0.0.1:5286/
@@ -236,29 +236,82 @@ for (const phone of [false, true]) {
   await page.waitForFunction(() => /^level4/.test(bobbyGame.state) && bobbyGame.sewerPlayer, undefined, {timeout: 30000});
   const back = await page.evaluate(() => ({state: bobbyGame.state, x: bobbyGame.sewerPlayer.x, facing: bobbyGame.sewerPlayer.facing, won: bobbyGame.progress.flags.level4BossDefeated}));
   assert.deepEqual(back, {state: 'level4PostBossDialogue', x: took.x, facing: -1, won: true}, 'Back where the game began');
-  // The basement chest: O opens it, O saves the picture, H closes it. The
-  // picture is read once, through the game's file loader, as the chest comes
-  // into view; that copy is shown and saved.
-  const pictureRequests = [];
-  page.on('request', request => { if (request.url().includes('level4-meme.png')) pictureRequests.push(request.url()); });
+  // The basement chest: O opens it, O saves the recording, H closes it.
+  // The audio is read once through the hash-checked loader as the chest comes
+  // into view; the same bytes are previewed and saved.
+  const recordingRequests = [];
+  page.on('request', request => { if (request.url().includes('dr-beauty-private-message.m4a')) recordingRequests.push(request.url()); });
   await page.evaluate(() => { const g = bobbyGame; g.state = 'level4'; g.sewerPlayer.x = 1082; g.tryLevel4LadderInteract(); g.sewerPlayer.x = 500; });
   const near = await page.evaluate(() => ({near: bobbyGame.isLevel4NearMemeChest(), interact: bobbyGame.isMobileInteractAvailable()}));
   assert.deepEqual(near, {near: true, interact: true}, 'The chest is in reach in the basement');
-  await page.waitForFunction(() => bobbyGame.memePicture, undefined, {timeout: 10000});
-  assert(await page.evaluate(async () => Boolean(await bobbyGame.memePicture)), 'The picture is read before the chest opens');
+  await page.waitForFunction(() => bobbyGame.memeRecording, undefined, {timeout: 10000});
+  assert(await page.evaluate(async () => Boolean(await bobbyGame.memeRecording)), 'The recording is read before the chest opens');
   await page.keyboard.press('KeyO');
-  await page.waitForFunction(() => bobbyGame.memeView && document.querySelector('.moth-meme img')?.naturalWidth > 0, undefined, {timeout: 10000});
-  assert(await page.evaluate(() => document.querySelector('.moth-meme img').src.startsWith('blob:')), 'The picture shown is the copy read ahead');
+  await page.waitForFunction(() => bobbyGame.memeView && document.querySelector('.moth-meme audio')?.readyState > 0 && !document.querySelector('[data-meme-save]')?.disabled, undefined, {timeout: 10000});
+  assert(await page.evaluate(() => document.querySelector('.moth-meme audio').src.startsWith('blob:')), 'The audio preview uses the verified copy read ahead');
   const [download] = await Promise.all([page.waitForEvent('download', {timeout: 10000}), page.keyboard.press('KeyO')]);
-  assert.equal(download.suggestedFilename(), 'dr-beauty-meme.png');
+  assert.equal(download.suggestedFilename(), 'A private message from Dr.Beauty.m4a');
   const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-  assert.equal(sha(await download.path()), sha(new URL('../moth-asset-additions/assets/memes/level4-meme.png', import.meta.url)), 'The saved picture is the published one');
-  assert.equal(pictureRequests.length, 1, JSON.stringify(pictureRequests));
+  assert.equal(sha(await download.path()), sha(new URL('../moth-asset-additions/assets/audio/easter-eggs/dr-beauty-private-message.m4a', import.meta.url)), 'The saved recording is the published one');
+  assert.equal(recordingRequests.length, 1, JSON.stringify(recordingRequests));
   await page.keyboard.press('KeyH');
   const after = await page.evaluate(() => ({open: Boolean(bobbyGame.memeView), chest: bobbyGame.memeChest.state, opened: bobbyGame.progress.flags.level4MemeChestOpened, kept: JSON.parse(localStorage.getItem('moth.staff_progress_v1')).flags.level4MemeChestOpened}));
   assert.deepEqual(after, {open: false, chest: 'open', opened: true, kept: true}, 'Closed, the chest stays open and remembered');
   assert.deepEqual(errors, []);
   console.log('level 4 PASS', JSON.stringify({upstairs, took, back, after}));
+  await context.close();
+}
+// Level 4's post-win top bar: announce the uncollected reward in either
+// language, then leave the scene clear instead of drawing an exit-left bar.
+for (const phone of [false, true]) {
+  const context = await browser.newContext({viewport: phone ? {width: 393, height: 852} : {width: 1280, height: 800}, isMobile: phone, hasTouch: phone});
+  await stubScoreboard(context);
+  const {page, errors} = await open(context, staff + (phone ? '?device=phone' : '?device=desktop'));
+  await page.evaluate(async () => {
+    const g = bobbyGame;
+    await g.loadSceneAssets('level4-stage1');
+    g.progress ||= g.createDefaultProgress();
+    g.progress.flags = {...g.progress.flags, level4BossDefeated: true, level4MemeChestOpened: false};
+    g.freePlay = false;
+    g.enterLevel4Stage1({spawnX: 700});
+    g.level4BossEncountered = true;
+    const draw = window.drawObjectivePrompt;
+    window.__barPrompts = [];
+    window.drawObjectivePrompt = (...args) => { window.__barPrompts.push(String(args[1])); return draw(...args); };
+  });
+  await page.waitForFunction(() => bobbyGame.state === 'level4' && !bobbyGame.levelLoadingPresentation, undefined, {timeout: 60000});
+  for (const language of ['zh-TW', 'en']) {
+    for (const opened of [false, true]) {
+      const result = await page.evaluate(({language, opened}) => {
+        const g = bobbyGame;
+        g.setLanguage(language, {persist: false, announce: false});
+        g.level4Rail = 'upper'; g.sewerPlayer.x = 700;
+        g.memeChest = {state: opened ? 'open' : 'closed', at: 0};
+        window.__barPrompts = [];
+        g.render(); g.renderTallScreen();
+        return {prompts: [...window.__barPrompts], tall: g.tallPrompt?.frame === g.renderFrame ? g.tallPrompt.text : null};
+      }, {language, opened});
+      assert(!result.prompts.some(text => /往左離開|leave.*left|exit.*left/i.test(text)), 'No exit-left top-bar instruction');
+      if (opened) {
+        assert.deepEqual(result.prompts, [], 'No empty default top-bar frame after collection');
+        if (phone) assert.equal(result.tall, null, 'No stale phone top-bar text');
+      } else {
+        const expected = language === 'en' ? 'A chest appeared in the basement' : '地下室出現了寶箱';
+        assert.deepEqual(result.prompts, [expected], 'Bilingual chest announcement without an exit direction');
+        if (phone) assert.equal(result.tall, expected);
+      }
+      await page.screenshot({path: `.qa/moth/level4-top-bar-${phone ? 'phone' : 'desktop'}-${language}-${opened ? 'collected' : 'chest'}.png`});
+    }
+  }
+  const contextPrompt = await page.evaluate(() => {
+    const g = bobbyGame;
+    g.level4Rail = 'lower'; g.sewerPlayer.x = 500;
+    window.__barPrompts = []; g.render(); g.renderTallScreen();
+    return [...window.__barPrompts];
+  });
+  assert(contextPrompt.some(text => /O OPEN THE CHEST|O 打開寶箱/.test(text)), 'Actual chest interaction prompt stays available');
+  assert.deepEqual(errors, []);
+  console.log(phone ? 'phone' : 'desktop', 'post-win bar PASS: bilingual chest-only announcement, collected bar hidden, contextual chest action retained');
   await context.close();
 }
 // 7. The staff tools' previews (practice runs): the chest is in the basement after 'L4
@@ -285,7 +338,7 @@ for (const phone of [false, true]) {
   const straight = await page.evaluate(() => ({near: bobbyGame.isLevel4NearMemeChest(), chest: bobbyGame.memeChest.state}));
   assert.deepEqual(straight, {near: true, chest: 'closed'}, 'L4 Basement Chest: beside the closed chest');
   await page.keyboard.press('KeyO');
-  await page.waitForFunction(() => bobbyGame.memeView && document.querySelector('.moth-meme img')?.naturalWidth > 0, undefined, {timeout: 10000});
+  await page.waitForFunction(() => bobbyGame.memeView && document.querySelector('.moth-meme audio')?.readyState > 0 && !document.querySelector('[data-meme-save]')?.disabled, undefined, {timeout: 10000});
   await page.keyboard.press('KeyH');
   const preview = await page.evaluate(() => ({open: Boolean(bobbyGame.memeView), chest: bobbyGame.memeChest.state, saved: Boolean(bobbyGame.progress?.flags?.level4MemeChestOpened)}));
   assert.deepEqual(preview, {open: false, chest: 'open', saved: false}, 'Opened in a preview, not saved');

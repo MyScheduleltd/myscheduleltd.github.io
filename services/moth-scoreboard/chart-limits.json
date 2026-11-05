@@ -1,0 +1,22 @@
+{
+  "version": "drums-readable-20261105b",
+  "minRunSeconds": 630,
+  "chill": {
+    "level1-stage1": 126000,
+    "level2-stage2": 112000,
+    "level3-stage2": 155000,
+    "level4-stage1": 179000,
+    "studio-stage1": 192000,
+    "level5-stage2": 179000,
+    "level6-stage2": 254000
+  },
+  "shoot": {
+    "level1-stage1": 150000,
+    "level2-stage2": 133000,
+    "level3-stage2": 183000,
+    "level4-stage1": 181000,
+    "studio-stage1": 229000,
+    "level5-stage2": 208000,
+    "level6-stage2": 254000
+  }
+}

@@ -14,6 +14,7 @@
 // once the songs could have been played.
 
 export const SCOREBOARD_API = 'https://beauty-boy.vercel.app/api/moth-scoreboard';
+export const SCOREBOARD_CHART_VERSION = 'drums-readable-20261105b';
 export const STORY_FIGHTS = ['level1-stage1', 'level2-stage2', 'level3-stage2', 'level4-stage1', 'studio-stage1', 'level5-stage2', 'level6-stage2'];
 
 export function patchScoreboard(once) {
@@ -47,7 +48,7 @@ export const SCOREBOARD_METHODS = String.raw`
     if (!this.progress) this.progress = this.createDefaultProgress();
     const random = () => Math.random().toString(36).slice(2, 10);
     const id = globalThis.crypto?.randomUUID?.() || ('run-' + Date.now().toString(36) + '-' + random() + random());
-    const run = this.progress.storyRun = { id, difficulty, scores: {}, startedAt: Date.now(), ticket: null };
+    const run = this.progress.storyRun = { id, difficulty, chartVersion: ${JSON.stringify(SCOREBOARD_CHART_VERSION)}, scores: {}, startedAt: Date.now(), ticket: null };
     this.startNewStory();
     this.registerStoryRun(run);
   }
@@ -57,14 +58,14 @@ export const SCOREBOARD_METHODS = String.raw`
   // that never gets one cannot be posted.
   async registerStoryRun(run, attempt = 0) {
     clearTimeout(this.storyTicketTimer);
-    if (!run || run.ticket || run.legacy || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
+    if (!run || run.ticket || run.legacy || run.chartVersion !== ${JSON.stringify(SCOREBOARD_CHART_VERSION)} || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', chartVersion: ${JSON.stringify(SCOREBOARD_CHART_VERSION)}, mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
       const data = await response.json().catch(() => ({}));
-      if (response.status !== 201 || typeof data.run !== 'string') throw new Error(String(response.status));
+      if (response.status !== 201 || typeof data.run !== 'string' || data.chartVersion !== ${JSON.stringify(SCOREBOARD_CHART_VERSION)}) throw new Error(String(response.status));
       if (this.progress?.storyRun !== run || run.ticket) return;
       run.ticket = data.run;
       this.saveProgress();
@@ -79,6 +80,7 @@ export const SCOREBOARD_METHODS = String.raw`
     const run = this.progress?.storyRun;
     const rhythm = this.level1OfficeRhythm;
     if (this.freePlay || !run || !rhythm || !${JSON.stringify(STORY_FIGHTS)}.includes(stageId)) return;
+    if (run.chartVersion !== ${JSON.stringify(SCOREBOARD_CHART_VERSION)}) run.legacy = true;
     if (this.difficultyId !== run.difficulty) run.mixed = true;
     run.scores[stageId] = Math.max(0, Math.round(rhythm.roundScore || 0));
   }
@@ -87,7 +89,7 @@ export const SCOREBOARD_METHODS = String.raw`
     if (!run) return null;
     const fights = ${JSON.stringify(STORY_FIGHTS)};
     const total = fights.reduce((sum, id) => sum + (run.scores?.[id] || 0), 0);
-    const blocked = run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
+    const blocked = run.chartVersion !== ${JSON.stringify(SCOREBOARD_CHART_VERSION)} ? 'chart-version' : run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
     const complete = !blocked && fights.every(id => Number.isFinite(run.scores?.[id]));
     return { run, total, complete, blocked, mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' };
   }
@@ -169,9 +171,10 @@ export const SCOREBOARD_METHODS = String.raw`
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch(this.scoreboardApi() + '?mode=' + mode, { cache: 'no-store', signal: controller.signal });
+      const response = await fetch(this.scoreboardApi() + '?mode=' + mode + '&chartVersion=' + encodeURIComponent(${JSON.stringify(SCOREBOARD_CHART_VERSION)}), { cache: 'no-store', signal: controller.signal });
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
+      if (data.chartVersion !== ${JSON.stringify(SCOREBOARD_CHART_VERSION)}) throw new Error('chart-version');
       if (this.scoreboard !== board) return;
       board.entries[mode] = Array.isArray(data.entries) ? data.entries : [];
       board.status[mode] = 'ready';
@@ -229,6 +232,10 @@ export const SCOREBOARD_METHODS = String.raw`
       const status = {
         ineligible: standing?.why === 'offline'
           ? tr('This story run cannot enter the scoreboard: it could not reach the scoreboard when it began. Start a new story online to compete.', '這次的故事無法登上排行榜：開始時沒有連上排行榜。連上網路後從故事模式重新開始，即可挑戰排名。')
+          : standing?.why === 'chart-version'
+          ? tr('This story began with an earlier note chart. Your progress is kept; start a new story to compete on the updated scoreboard.', '這次故事使用過舊版譜面。進度會保留；從故事模式重新開始，即可挑戰新版排行榜。')
+          : standing?.why === 'mixed'
+          ? tr('This story used more than one difficulty. Start a new story on one difficulty to compete.', '這次故事使用過不同難度。以同一難度重新開始故事，即可挑戰排名。')
           : tr('This story run cannot enter the scoreboard (it began before the scoreboard opened). Start a new story to compete.', '這次的故事無法登上排行榜（在排行榜開放前就開始了）。從故事模式重新開始即可挑戰排名。'),
         posted: result.run.posted?.rank ? tr('You are #' + result.run.posted.rank + ' on the ' + this.scoreboardModeLabel(result.mode) + ' board!', '你在' + this.scoreboardModeLabel(result.mode) + '排行榜第 ' + result.run.posted.rank + ' 名！') : tr('This run is already on the scoreboard.', '這次的成績已經登上排行榜。'),
         qualifies: tr('Top 10! Enter an ID to join the scoreboard.', '進入前十名！輸入 ID 登上排行榜。'),
@@ -324,6 +331,7 @@ export const SCOREBOARD_METHODS = String.raw`
     if (error === 'id-blocked') return tr('Please choose a different ID.', '這個 ID 不能使用，請換一個。');
     if (error === 'not-top') return tr('So close! Others posted higher scores first.', '差一點！其他玩家剛搶先登上前十。');
     if (error === 'posted') return tr('This run is already on the scoreboard.', '這次的成績已經登上排行榜。');
+    if (error === 'chart-version') return tr('The scoreboard is updating. Please try again later.', '排行榜正在更新，請稍後再試。');
     if (error === 'too-fast' || error === 'run') return tr('The scoreboard could not verify this story run, so it cannot be posted.', '排行榜無法驗證這次的故事進度，因此無法登上排行榜。');
     if (error === 'rate' || status === 429) return tr('Too many tries. Please wait a few minutes.', '嘗試太多次了，請稍等幾分鐘再試。');
     return tr('The scoreboard cannot be reached right now.', '排行榜暫時無法連線。');
@@ -344,8 +352,9 @@ export const SCOREBOARD_METHODS = String.raw`
     this.renderScoreboard();
     try {
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: result.mode, id, run: result.run.ticket, scores: result.run.scores }) });
+        body: JSON.stringify({ mode: result.mode, chartVersion: ${JSON.stringify(SCOREBOARD_CHART_VERSION)}, id, run: result.run.ticket, scores: result.run.scores }) });
       const data = await response.json().catch(() => ({}));
+      if (response.status === 201 && data.chartVersion !== ${JSON.stringify(SCOREBOARD_CHART_VERSION)}) throw new Error('chart-version');
       if (Array.isArray(data.entries)) { board.entries[result.mode] = data.entries; board.status[result.mode] = 'ready'; }
       if (response.status === 201) {
         result.run.posted = { rank: data.rank, id, at: Date.now() };

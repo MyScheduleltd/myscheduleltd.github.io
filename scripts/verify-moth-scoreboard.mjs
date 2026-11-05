@@ -8,7 +8,7 @@ import path from 'node:path';
 import {createRequire} from 'node:module';
 import {chromium} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import {fakeUpstash} from '../services/moth-scoreboard/fake-upstash.mjs';
-import {SCOREBOARD_API, STORY_FIGHTS} from './moth-scoreboard-client.mjs';
+import {SCOREBOARD_API, SCOREBOARD_CHART_VERSION, STORY_FIGHTS} from './moth-scoreboard-client.mjs';
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
 
 const require = createRequire(import.meta.url);
@@ -32,12 +32,12 @@ async function bridge(route) {
 }
 const api = async (body, ip) => {
   const res = {statusCode: 0, text: '', setHeader() {}, end(t) { this.text = t || ''; }};
-  await handler({method: 'POST', url: '/api/moth-scoreboard', headers: {'x-forwarded-for': ip}, body}, res, env);
+  await handler({method: 'POST', url: '/api/moth-scoreboard', headers: {'x-forwarded-for': ip}, body: {chartVersion: SCOREBOARD_CHART_VERSION, ...body}}, res, env);
   return {status: res.statusCode, json: JSON.parse(res.text)};
 };
 // A ticket as if its story had started 15 minutes ago.
 const age = run => {
-  const key = 'moth:ticket:' + run;
+  const key = 'moth:chart:' + SCOREBOARD_CHART_VERSION + ':ticket:' + run;
   store.data.set(key, JSON.stringify({...JSON.parse(store.data.get(key)), at: Date.now() - 15 * 60000}));
 };
 const seed = async (mode, count, scale) => {
@@ -73,7 +73,9 @@ for (const [label, viewport, device] of [['phone', {width: 390, height: 844}, 'p
   await page.waitForFunction(() => bobbyGame.progress?.storyRun?.difficulty === 'shoot' && bobbyGame.difficultyId === 'shoot', undefined, {timeout: 20000});
   // The server issued the run's ticket; the songs take ~14 minutes, so age it.
   const ticket = await page.waitForFunction(() => bobbyGame.progress.storyRun.ticket, undefined, {timeout: 15000}).then(handle => handle.jsonValue());
-  assert.equal(JSON.parse(store.data.get('moth:ticket:' + ticket)).mode, 'shoot');
+  const storedTicket = JSON.parse(store.data.get('moth:chart:' + SCOREBOARD_CHART_VERSION + ':ticket:' + ticket));
+  assert.equal(storedTicket.mode, 'shoot');
+  assert.equal(storedTicket.chartVersion, SCOREBOARD_CHART_VERSION);
   age(ticket);
 
   // Cleared story fights record their scores (here, with the fight's result in place).
@@ -165,13 +167,22 @@ for (const [label, viewport, device] of [['phone', {width: 390, height: 844}, 'p
   assert.equal(await page.evaluate(() => bobbyGame.state), 'title');
 
   // A run that never reached the server for its ticket can't be posted, and says why.
-  await page.evaluate(scores => { bobbyGame.progress.storyRun = {id: 'offline-run', difficulty: 'chill', scores, startedAt: Date.now(), ticket: null}; bobbyGame.startFinaleEnding(); }, runScores('chill', 0.5));
+  await page.evaluate(({scores, chartVersion}) => { bobbyGame.progress.storyRun = {id: 'offline-run', difficulty: 'chill', chartVersion, scores, startedAt: Date.now(), ticket: null}; bobbyGame.startFinaleEnding(); }, {scores: runScores('chill', 0.5), chartVersion: SCOREBOARD_CHART_VERSION});
   await page.locator('.moth-board').waitFor();
   await page.waitForFunction(() => performance.now() >= bobbyGame.scoreboard.quietUntil);
   assert.match(await page.locator('.moth-board-run p').innerText(), /could not reach the scoreboard|開始時沒有連上排行榜/);
   assert.equal(await page.locator('.moth-board-post input').count(), 0, 'No ID entry for an unverified run');
   await page.locator('[data-board-close]').click();
   await page.waitForFunction(() => bobbyGame.state === 'finaleEnding');
+  // Old saves keep their story progress and totals, but cannot mix old chart
+  // scores into the revised chart's board.
+  const older = await page.evaluate(scores => {
+    const g = bobbyGame, checkpoint = g.progress.storyCheckpoint;
+    g.progress.storyRun = {id: 'old-chart-run', difficulty: 'chill', scores, ticket: 'old-ticket'};
+    const result = g.storyRunResult();
+    return {blocked: result.blocked, complete: result.complete, total: result.total, checkpointSame: g.progress.storyCheckpoint === checkpoint};
+  }, runScores('chill', .5));
+  assert.deepEqual(older, {blocked: 'chart-version', complete: false, total: Object.values(runScores('chill', .5)).reduce((a,b) => a+b,0), checkpointSame: true});
   assert.deepEqual(errors, []);
   console.log(label, 'PASS', JSON.stringify({rank, total, scrollable}));
   await context.close();

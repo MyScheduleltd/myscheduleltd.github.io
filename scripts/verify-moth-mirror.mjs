@@ -124,8 +124,8 @@ async function enterOffice(page) {
   await context.close();
 }
 
-// 1c. Level 4's basement chest after the win: its art, and the picture in it
-// (read as the chest comes into view), from the commit that added them.
+// 1c. Level 4's basement chest after the win: existing art from its pin;
+// the new recording stays on this site until its asset commit is published.
 {
   const {context, page, requests, errors} = await livePage();
   await page.goto('https://myscheduleltd.com/moth/staff/?device=desktop', {waitUntil: 'domcontentloaded'});
@@ -138,12 +138,17 @@ async function enterOffice(page) {
   });
   await page.waitForFunction(() => bobbyGame.state === 'level4' && bobbyGame.memeChestSheet, undefined, {timeout: 120000});
   await page.evaluate(() => { const g = bobbyGame; g.sewerPlayer.x = 1082; g.tryLevel4LadderInteract(); g.sewerPlayer.x = 500; });
-  await page.waitForFunction(() => bobbyGame.memePicture, undefined, {timeout: 10000});
-  assert(await page.evaluate(async () => Boolean(await bobbyGame.memePicture)), 'The picture is read before the chest opens');
-  const chest = requests.filter(url => /level4_meme_chest|level4-meme/.test(url));
-  const pin = MOTH_MIRROR_PINS.find(entry => entry.files.includes('assets/memes/level4-meme.png'));
+  await page.waitForFunction(() => bobbyGame.memeRecording, undefined, {timeout: 10000});
+  assert(await page.evaluate(async () => Boolean(await bobbyGame.memeRecording)), 'The recording is read before the chest opens');
+  const chest = requests.filter(url => /level4_meme_chest|dr-beauty-private-message/.test(url));
+  const pin = MOTH_MIRROR_PINS.find(entry => entry.files.includes('assets/sprites/level4_meme_chest/sheet.webp'));
+  const recordingPin = MOTH_MIRROR_PINS.find(entry => entry.files.includes('assets/audio/easter-eggs/dr-beauty-private-message.m4a'));
   assert.equal(chest.length, 2, JSON.stringify(chest));
-  assert(chest.every(url => MIRROR.test(url) && url.includes('@' + pin.commit + '/')), 'Chest art and picture from their commit ' + JSON.stringify(chest));
+  assert(chest.filter(url => /level4_meme_chest/.test(url)).every(url => MIRROR.test(url) && url.includes('@' + pin.commit + '/')), 'Chest art from its existing commit');
+  const recording = chest.filter(url => /dr-beauty-private-message/.test(url));
+  assert.equal(recording.length, 1);
+  assert(recording.every(url => recordingPin?.commit ? MIRROR.test(url) && url.includes('@' + recordingPin.commit + '/') : url.startsWith('https://myscheduleltd.com/moth/assets/audio/easter-eggs/')), 'Recording uses only its own published pin, or this site while unpinned');
+  assert(!requests.some(url => /level4-meme\.png/.test(url)), 'Retired PNG is not requested');
   assert.deepEqual(errors, []);
   console.log('chest PASS', {files: chest.length, commit: pin.commit.slice(0, 7)});
   await context.close();
