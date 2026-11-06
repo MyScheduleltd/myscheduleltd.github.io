@@ -12,6 +12,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { cleanRetiredHighwayConfig } from './moth-retired-highway.mjs';
 
 // Measured separately from the game's runtime. The build only consumes these
 // versioned rows; it does not need Python, Demucs or the original audio stems.
@@ -60,5 +61,5 @@ export function patchCharts(config) {
   crowd.accuracyTarget = { ...CONCERT_HYPE_TARGET };
   assert(crowd.note.includes(CONCERT_NOTE[0]));
   crowd.note = crowd.note.replace(CONCERT_NOTE[0], CONCERT_NOTE[1]);
-  return config;
+  return cleanRetiredHighwayConfig(config);
 }

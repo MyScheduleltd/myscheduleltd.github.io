@@ -13,6 +13,8 @@
 // art (drawn in the fight's other desk layout).
 
 import { RETIRED_DECK_ART } from './moth-deck-art.mjs';
+import { RETIRED_HIGHWAY_LAYERS } from './moth-retired-highway.mjs';
+import { RETIRED_UI_IMAGES } from './moth-retired-ui.mjs';
 
 export const TRIMMED_GROUPS = [
   { title: "Level 1: the old road chase and tutorial ride (and their HUD, map and dialogue frame)", jobs: ["boss", "ganganSheet", "ganganAttackSheet", "ganganCandySheet", "ganganDefeatExitSheet", "ganganBikeExitSheet", "ganganHealthBarSheet", "levelMap", "tutorialStage0Map", "mapProps", "bobbyRideSheet", "bobbyAttackSheet", "bobbyTutorialIntroSheet", "loadingTransitionSheet", "dialogueFrameSheet"],
@@ -25,12 +27,14 @@ export const TRIMMED_GROUPS = [
     files: ["assets/maps/level4_boss/level4-boss-arena.webp", "assets/sprites/bobby_vs_intro/processed-v3/sheet-transparent.webp", "assets/sprites/bonita_boss_ground_wave/processed/sheet-transparent.webp", "assets/sprites/bonita_boss_placeholder/processed/sheet-transparent.webp", "assets/sprites/bonita_boss_star_shot/processed/sheet-transparent.webp", "assets/sprites/bonita_game_avatar_boss/processed/sheet-transparent.webp", "assets/sprites/level4_hidden_wall_chest/processed/sheet-transparent.webp"] },
   { title: "Level 5: the old highway walk and highway boss (the night drive goes straight to the river)", jobs: ["level5Stage1Map", "level5BossMap", "level5DaytonaSheet", "level5BossDaytonaSheet", "level5GanGanCarSheet", "level5GanGanIdleSheet", "level5HighwayChestSheet", "level5UndergroundWaterSheet", "level5BossRoadObjectsSheet", "level5GoatRunSheet", "level5PoopObstacleSheet", "level5RhythmHitFxSheet"],
     files: ["assets/maps/level5_boss/level5-boss-previous-style-layered-preview-20260624.webp", "assets/maps/level5_highway/level5-highway-regenerated-20260616.webp", "assets/sprites/level5_boss_daytona_v2/processed/sheet-transparent.webp", "assets/sprites/level5_boss_road_objects/processed/sheet-transparent.webp", "assets/sprites/level5_daytona_v2/processed/sheet-transparent.webp", "assets/sprites/level5_gangan_car_v2/processed/sheet-transparent.webp", "assets/sprites/level5_gangan_idle_v2/processed/sheet-transparent.webp", "assets/sprites/level5_goat_run/processed/sheet-transparent.webp", "assets/sprites/level5_highway_chest/processed/sheet-transparent.webp", "assets/sprites/level5_poop_obstacle/processed/sheet-transparent.webp", "assets/sprites/level5_rhythm_hit_fx/processed/sheet-transparent.webp", "assets/sprites/level5_underground_water/processed/sheet-transparent.webp"] },
+  { title: "Unused highway layers after legacy entries route to the current river fight", jobs: [], files: RETIRED_HIGHWAY_LAYERS },
   { title: "Level 6: the old Taipei Dome walk and lane fight (stand-ins behind the concert art)", jobs: ["level6Stage1Map", "level6BossMap", "level6BobbyPerformerSheet", "level6GanGanExitSheet", "level6FansProfileSheet"],
     files: ["assets/maps/level6_boss/level6-boss-taipei-dome-stage-20260624.webp", "assets/maps/level6_taipei_dome/level6-taipei-dome-arrival-20260624.webp", "assets/sprites/bobby_level6_performer/processed-v3/sheet-transparent.webp", "assets/sprites/level6_fans_profile/processed/sheet-transparent.webp", "assets/sprites/level6_gangan_exit/processed/sheet-transparent.webp"] },
   { title: "The old finale: backstage, forge and chest", jobs: ["finaleBackstageMap", "finaleEndingMap", "finaleDuoSingingSheet", "finaleEndingFilmOverlaySheet", "finaleChestSheet", "finaleForgeMachineSheet", "finaleForgeRewardIconsSheet", "finaleForgeMenuTexture"],
     files: ["assets/maps/finale_backstage/finale-backstage-private-room-loop-20260626.webp", "assets/maps/finale_backstage/finale-ending-taipei-dome-stage-20260627.webp", "assets/sprites/finale_chest/processed/sheet-transparent.webp", "assets/sprites/finale_duo_singing_refined/processed-v2/sheet-transparent.webp", "assets/sprites/finale_ending_film_overlay/processed-v1/sheet-transparent.webp", "assets/sprites/finale_forge_machine_v2/processed/sheet-transparent.webp", "assets/sprites/finale_forge_rewards/processed-v2/sheet-transparent.webp", "assets/ui/finale-forge-menu-texture-higgsfield-20260626.webp"] },
   { title: "The old home menu device", jobs: ["homeMp3MenuSheet"],
     files: ["assets/sprites/home_mp3_menu_industrial/processed/sheet-transparent.webp"] },
+  { title: "Unused forge shell and retired pocket-button icons", jobs: [], files: RETIRED_UI_IMAGES },
   // Files the release lists that no code loads (owner, 2026-10-14: "delete the
   // ones that are no longer needed"). Found by recording every request across
   // every scene, fight, song and menu, then checked against the code: the

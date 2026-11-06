@@ -2674,13 +2674,6 @@ class BobbyGame {
             this.pocketSelectedIndex = 0;
           }
         }, 120);
-        if (params.get("debugLevel5Boss") === "1") {
-          window.setTimeout(async () => {
-            if (this.state !== "title") return;
-            await this.startLevel({ skipAudio: true });
-            this.enterLevel5BossFight({ fromDebug: true });
-          }, 900);
-        }
         if (params.get("debugLevel6Boss") === "1") {
           window.setTimeout(async () => {
             if (this.state !== "title") return;
@@ -2700,7 +2693,6 @@ class BobbyGame {
   createSceneAssetJobs() {
     this.sceneAssetJobs = [];
     const bobbySpec = this.config.sprites.bobby;
-    const ganganSpec = this.config.sprites.gangan;
     const level2BundleSpec = this.config.sprites.level2Bundle;
     const bathingSuitSpec = bobbySpec.outfits?.bathingSuit?.onFoot;
     const summerFitSpec = bobbySpec.outfits?.summerFit?.onFoot;
@@ -2709,32 +2701,15 @@ class BobbyGame {
     const underwearSpec = bobbySpec.outfits?.underwear?.onFoot;
     const finaleBikiniSpec = bobbySpec.outfits?.finaleBikini?.onFoot;
     const mosquitoBossSpec = this.config.sprites.level2MosquitoBoss;
-    const mosquitoMinionSpec = this.config.sprites.level2MosquitoMinion;
-    const stage3PropsSpec = this.config.sprites.level2Stage3Props;
     const level3BossSpec = this.config.sprites.level3BossZuxian;
     const level3BossExitRightSpec = this.config.sprites.level3BossZuxianExitRight;
-    const level3RhythmFightSpec = this.config.sprites.level3RhythmFightLoop;
-    const level3RhythmFightBathingSuitSpec = this.config.sprites.level3RhythmFightLoopBathingSuit;
-    const level3RhythmFightSummerFitSpec = this.config.sprites.level3RhythmFightLoopSummerFit;
-    const level3RhythmHpBottleNoteSpec = this.config.sprites.level3RhythmHpBottleNote;
-    const level3RhythmSatisfactionReactionsSpec = this.config.sprites.level3RhythmSatisfactionReactions;
-    const level3RhythmSuccessNotificationSpec = this.config.sprites.level3RhythmSuccessNotification;
-    const homeMp3MenuSpec = this.config.sprites.homeMp3Menu;
     const homeMp3WaveformSpecs = this.config.sprites.homeMp3Waveforms || {};
     const dialogueProfilesSpec = this.config.sprites.dialogueProfiles;
-    const dialogueFrameSpec = this.config.sprites.dialogueFrame;
-    const loadingTransitionSpec = this.config.sprites.loadingTransition;
-    const bobbyTutorialIntroSpec = this.config.sprites.bobbyTutorialIntro;
     const level4BonitaSpec = this.config.sprites.level4BonitaBlanketIdle;
-    const level4BonitaBossPlaceholderSpec = this.config.sprites.level4BonitaBossPlaceholder;
-    const level4HiddenChestSpec = this.config.sprites.level4HiddenWallChest;
-    const tutorialStage0Spec = this.config.tutorial?.stage0;
     const level3Stage1Spec = this.config.level3?.stage1;
     const level4Stage1Spec = this.config.level4?.stage1;
     const level5Stage1Spec = this.config.level5?.stage1;
     const level5Stage2Spec = this.config.level5?.stage2;
-    const level6Stage1Spec = this.config.level6?.stage1;
-    const level6Stage2Spec = this.config.level6?.stage2;
     this.refs.secretLevels = {};
 for (const level of this.config.secretLevels || []) {
   const entry = () => (this.refs.secretLevels[level.id] ||= {background: null, actors: []});
@@ -2813,6 +2788,16 @@ for (const level of this.config.secretLevels || []) {
       {key:"level2BathroomMosquitoSheet", group:"level2", run:async () => {this.refs.level2BathroomMosquitoSheet = await loadOptionalSheet(this.config?.sprites?.level2BathroomMosquito?.source);}, release:() => {delete this.refs.level2BathroomMosquitoSheet;}},
       {key:"level2BathroomPortraitsSheet", group:"common", run:async () => {this.refs.level2BathroomPortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level2BathroomDialoguePortraits?.source);}, release:() => {delete this.refs.level2BathroomPortraitsSheet;}}
     );
+    this.sceneAssetJobs.push({key: 'level4RecordingChest', group: 'level4',
+      run: async () => { this.memeChestSheet = await loadImage(MEME_CHEST.sheet); },
+      release: () => { this.memeChestSheet = null; }});
+    this.sceneAssetJobs.push({key: 'level4Recording', group: 'level4',
+      run: async () => { if (!await this.getMemeRecording()) { this.memeRecording = null; throw new Error('A required recording could not be downloaded'); } },
+      release: () => {
+        if (this.memeView) this.closeMeme({resumeBgm: false});
+        const recording = this.memeRecording; this.memeRecording = null;
+        Promise.resolve(recording).then(value => { if (value?.url) URL.revokeObjectURL(value.url); });
+      }});
     this.loadedSceneGroups = new Set();
   }
 
@@ -2846,49 +2831,153 @@ for (const level of this.config.secretLevels || []) {
     return ready;
   }
 
+
   async loadChapterAssets(stageId) {
     const groups = this.sceneGroups(stageId);
-    // A loading screen draws no outgoing scene artwork. Release it before
-    // decoding the next chapter so mobile Safari does not hold the whole game.
+    let released = false;
     for (const group of this.loadedSceneGroups) {
       if (groups.includes(group)) continue;
       for (const job of this.sceneAssetJobs.filter(job => job.group === group)) job.release();
       this.loadedSceneGroups.delete(group);
+      released = true;
     }
+    if (released) this.rhythmBackdropCache = [];
+    const tracks = this.chapterTracks(groups);
+    const sources = [...new Set(tracks.map(track => this.canonicalAudioSource(track)).filter(Boolean))];
+    this.sceneAudioSources = new Set(sources);
     const jobs = this.sceneAssetJobs.filter(job => groups.includes(job.group) && !this.loadedSceneGroups.has(job.group));
-    const songs = this.chapterSongs(groups).filter(src => !this.mirroredAudioUrl(src));
-    this.sceneLoadProgress = {done:0, total:jobs.length + songs.length};
-    const songsReady = Promise.all(songs.map(src => this.songCopy(src).then(() => { this.sceneLoadProgress && this.sceneLoadProgress.done++; })));
-    let next = 0;
-    let failure;
-    await Promise.all(Array.from({length:Math.min(3, jobs.length)}, async () => {
-      while (next < jobs.length) {
-        if (failure) return;
-        const job = jobs[next++];
-        try { await job.run(); } catch (error) { failure = error; return; }
-        this.sceneLoadProgress.done++;
+    const songs = sources.filter(src => !this.mirroredAudioUrl(src));
+    const progress = this.sceneLoadProgress = {done: 0, total: jobs.length + songs.length + 2};
+    let next = 0, failure;
+    const images = Promise.all(Array.from({length: Math.min(3, jobs.length)}, async () => {
+      while (next < jobs.length && !failure) {
+        try { await jobs[next++].run(); progress.done++; }
+        catch (error) { failure = error; }
       }
+    })).then(() => { if (failure) throw failure; });
+    const music = Promise.all(songs.map(async src => {
+      const copy = await this.songCopy(src);
+      if (!copy) throw new Error('A required song could not be downloaded');
+      progress.done++;
     }));
-    if (failure) throw failure;
-    await songsReady;
-    await Promise.all(this.chapterTracks(groups).map(track => this.adoptSongCopy(track)));
+    const sounds = Promise.allSettled([this.loadHitSfx(), this.prepareMenuSfx()]).then(results => {
+      const failed = results.find(result => result.status === 'rejected');
+      if (failed) throw failed.reason;
+      progress.done++;
+    });
+    // Settle the whole batch before reporting an error: a failed scene may
+    // not leave downloads writing refs while the next entry starts.
+    const results = await Promise.allSettled([images, music, sounds]);
+    const rejected = results.find(result => result.status === 'rejected');
+    if (rejected) throw rejected.reason;
+    for (const track of tracks) {
+      await this.adoptSongCopy(track);
+      const source = this.canonicalAudioSource(track);
+      if (source && track.getAttribute('src') !== this.mirroredAudioUrl(source)) {
+        throw new Error('A required song is not ready for playback');
+      }
+    }
+    await this.prepareChapterGraphics();
+    progress.done++;
     groups.forEach(group => this.loadedSceneGroups.add(group));
-    this.sceneLoadProgress = null;
-    this.prefetchHitSfx();
-    // The next chapter's fight song, in the background.
-    const following = {office: 'level2', level2: 'level3', level3: 'level4', level4: 'studio', studio: 'level5', level5: 'level6'};
-    for (const group of groups) if (following[group]) this.chapterSongs([following[group]]).forEach(src => this.songCopy(src));
+    if (this.sceneLoadProgress === progress) this.sceneLoadProgress = null;
+    this.trimAudioMirror();
+  }
+
+  canonicalAudioSource(track) {
+    if (!track) return null;
+    const source = track.getAttribute('src');
+    if (!source?.startsWith('blob:')) {
+      if (source) track.mothAudioSource = source;
+      return source || track.mothAudioSource || null;
+    }
+    for (const [original, entry] of this.audioMirror || []) {
+      if (entry.url === source) { track.mothAudioSource = original; return original; }
+    }
+    return track.mothAudioSource || null;
+  }
+
+  async prepareMenuSfx() {
+    const context = this.ensureToneContext();
+    this.loadMenuSfx();
+    await Promise.all(Object.values(this.menuSfxLoading || {}));
+    // Title inputs may load these optimistically. Dialogue and pause controls
+    // need both buffers before entering a level, even if that earlier attempt
+    // failed silently or is still downloading.
+    if (context && Object.keys(MENU_SFX).some(name => !this.sfxBuffers?.[name])) {
+      throw new Error('Required menu sound effects are not decoded');
+    }
+  }
+
+  async prepareChapterGraphics() {
+    await Promise.all(interfaceAssetRequests);
+    const images = new Set(), seen = new Set();
+    const collect = value => {
+      if (!value || typeof value !== 'object' || seen.has(value)) return;
+      seen.add(value);
+      if (value instanceof HTMLImageElement) { images.add(value); return; }
+      if (Array.isArray(value) || Object.getPrototypeOf(value) === Object.prototype) Object.values(value).forEach(collect);
+    };
+    collect(this.refs);
+    collect(this.memeChestSheet);
+    this.decodedSceneImages ||= new WeakSet();
+    const warm = this.getScratchLayer('rhythm-warm', VIEW_W, VIEW_H);
+    warm.clearRect(0, 0, VIEW_W, VIEW_H);
+    for (const image of images) {
+      if (this.decodedSceneImages.has(image)) continue;
+      if (typeof image.decode === 'function') {
+        try { await image.decode(); }
+        catch (error) { if (!image.complete || !image.naturalWidth) throw error; }
+      }
+      if (!image.complete || !image.naturalWidth) throw new Error('A required image is not ready');
+      warm.drawImage(image, 0, 0, 64, 64);
+      this.decodedSceneImages.add(image);
+    }
+    // Compile the shared grading pass and upload its first surface under the
+    // loading screen; the first visible gameplay frame does no shader setup.
+    if (this.cinematicRenderer === undefined) this.renderCinematicScene(warm, VIEW_W, VIEW_H, 'office');
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  }
+
+  replaceIdleAudioPlayer(track, source) {
+    const fresh = new Audio(source);
+    fresh.preload = 'none';
+    fresh.loop = track.loop;
+    fresh.playbackRate = track.playbackRate;
+    fresh.volume = track.volume;
+    fresh.mothAudioSource = source;
+    for (const name of ['audio', 'sewerAudio', 'level2BossAudio', 'level3RhythmAudio', 'level4ArcadeAudio',
+      'level6RhythmAudio', 'dialogueOverlayAudio', 'dialogueBgmTrack']) if (this[name] === track) this[name] = fresh;
+    for (const name of Object.keys(this.fightCutAudio || {})) if (this.fightCutAudio[name] === track) this.fightCutAudio[name] = fresh;
+    for (const [id, cached] of this.homePlaylistAudioCache || []) if (cached === track) this.homePlaylistAudioCache.delete(id);
+    this.gameAudioRegistry?.delete(track);
+    const route = this.musicAudioRoutes?.get(track);
+    try { route?.source.disconnect(); route?.gain.disconnect(); } catch {}
+    this.musicAudioRoutes?.delete(track);
+    // A routed/played iOS element keeps its source for its entire lifetime.
+    // Detach it only after every owner has released it, then use a fresh
+    // element on a future visit, instead of switching the old player's song.
+    track.pause();
+    track.removeAttribute('src');
+    track.load();
   }
 
   // The fight songs a chapter's fights play: their players, and their files.
   chapterTracks(groups) {
     const themes = {office: 'office', level2: 'bathroom', level3: 'massage', level4: 'arcade', studio: 'studio', level5: 'river', level6: 'concert'};
-    return groups.map(group => themes[group] || this.getSecretLevel(group)?.theme).filter(Boolean)
+    const tracks = groups.map(group => themes[group] || this.getSecretLevel(group)?.theme).filter(Boolean)
       .map(theme => this.getRhythmAudioFor(theme)).filter(Boolean);
+    // Walking maps and dialogue share this BGM. Its two players get the same
+    // already-downloaded bytes, including an overlay created after a fight.
+    if (groups.some(group => Object.hasOwn(themes, group)) && this.getSewerExploreBgmSrc()) {
+      if (this.sewerAudio) tracks.push(this.sewerAudio);
+      tracks.push(this.ensureDialogueOverlayAudio());
+    }
+    return [...new Set(tracks)];
   }
 
   chapterSongs(groups) {
-    return this.chapterTracks(groups).map(track => track.getAttribute('src')).filter(Boolean);
+    return [...new Set(this.chapterTracks(groups).map(track => this.canonicalAudioSource(track)).filter(Boolean))];
   }
 
   // The fights' sound files, fetched with the first chapter and again for any
@@ -2898,9 +2987,15 @@ for (const level of this.config.secretLevels || []) {
     if (this.hitSfxPrefetch) return this.hitSfxPrefetch;
     const missing = Object.keys(HIT_SFX).filter(name => !this.sfxRaw[name]);
     if (!missing.length) return Promise.resolve();
-    const prefetch = this.hitSfxPrefetch = Promise.allSettled(missing.map(async name => {
-      this.sfxRaw[name] ||= (await fetchGameAsset(HIT_SFX[name])).data.buffer;
-    })).finally(() => { if (this.hitSfxPrefetch === prefetch) this.hitSfxPrefetch = null; });
+    let next = 0, failure;
+    const prefetch = this.hitSfxPrefetch = Promise.all(Array.from({length: Math.min(3, missing.length)}, async () => {
+      while (next < missing.length && !failure) {
+        const name = missing[next++];
+        try { this.sfxRaw[name] ||= (await fetchGameAsset(HIT_SFX[name])).data.buffer; }
+        catch (error) { failure = error; }
+      }
+    })).then(() => { if (failure) throw failure; })
+      .finally(() => { if (this.hitSfxPrefetch === prefetch) this.hitSfxPrefetch = null; });
     return prefetch;
   }
 
@@ -2925,6 +3020,7 @@ for (const level of this.config.secretLevels || []) {
   showFightWhilePreparing(rhythm, options = {}) {
     if (this.freePlay || options.deferSong || options.fromDialogue || this.levelLoadingPresentation || rhythm.countdownDuringGraphicsPreparation
       || rhythm.theme === 'office') return;
+    // Required bytes and decodes have already completed at the chapter gate.
     rhythm.countdownDuringGraphicsPreparation = true;
     this.state = 'playing';
     this.updateMobileControls(true);
@@ -3027,17 +3123,19 @@ for (const level of this.config.secretLevels || []) {
   async adoptSongCopy(track) {
     const src = track?.getAttribute('src');
     const copy = src && !src.startsWith('blob:') && this.mirroredAudioUrl(src);
-    if (!copy || !track.paused) return;
+    if (!copy) return;
     await this.rhythmTrackPriming?.get(track);
     const route = this.musicAudioRoutes?.get(track);
     if (!track.paused || track.getAttribute('src') !== src) return;
     if (!route) {
+      track.mothAudioSource = src;
       track.src = copy;
       return;
     }
     const level = track.volume;
     track.volume = 0;
     track.muted = true;
+    track.mothAudioSource = src;
     track.src = copy;
     try {
       await Promise.race([track.play(), new Promise((_, reject) => setTimeout(() => reject(new Error('Warm-up timed out')), 3000))]);
@@ -3101,19 +3199,25 @@ for (const level of this.config.secretLevels || []) {
   // copies the oldest are released, and idle song players using one are
   // dropped so the next play rebuilds them.
   audioUsing(url) {
-    const held = [...this.getKnownBgmTracks(), this.songPreview?.audio, this.pausedBgm?.audio, this.walkPause?.bgm,
+    for (const source of this.sceneAudioSources || []) if (this.audioMirror?.get(source)?.url === url) return true;
+    const held = [this.songPreview?.audio, this.pausedBgm?.audio, this.walkPause?.bgm, this.dialogueBgmResume,
+      this.memeView?.pausedBgm?.audio, ...(this.audioFades || []).map(fade => fade.audio),
       ...[this.audioInterruption, this.fullscreenGuideResume].flatMap(owner => (owner?.tracks || []).map(saved => saved.track))];
-    const playing = [...(this.gameAudioRegistry || []), ...(this.homePlaylistAudioCache?.values() || [])].filter(track => !track.paused);
-    return [...held, ...playing].some(track => track?.getAttribute('src') === url);
+    const players = [...this.getKnownBgmTracks(), ...(this.gameAudioRegistry || []), ...(this.homePlaylistAudioCache?.values() || [])];
+    return [...held, ...players.filter(track => !track.paused || this.rhythmTrackPriming?.has(track))]
+      .some(track => track?.getAttribute('src') === url);
   }
 
   trimAudioMirror() {
+    if (!this.audioMirror) return;
     const idle = [...this.audioMirror].filter(([, entry]) => entry.url && !this.audioUsing(entry.url)).sort((a, b) => a[1].used - b[1].used);
-    for (const [src, entry] of idle.slice(0, Math.max(0, idle.length - 8))) {
-      for (const [id, track] of this.homePlaylistAudioCache || []) if (track.getAttribute('src') === entry.url) this.homePlaylistAudioCache.delete(id);
-      for (const track of this.gameAudioRegistry || []) if (track.getAttribute('src') === entry.url) this.gameAudioRegistry.delete(track);
+    // Retain only two recently used idle songs; active and resumable players
+    // are always exempt. Old chapter audio is not pinned by paused aliases.
+    for (const [source, entry] of idle.slice(0, Math.max(0, idle.length - 2))) {
+      const players = new Set([...this.getKnownBgmTracks(), ...(this.gameAudioRegistry || []), ...(this.homePlaylistAudioCache?.values() || [])]);
+      for (const track of players) if (track.getAttribute('src') === entry.url) this.replaceIdleAudioPlayer(track, source);
       URL.revokeObjectURL(entry.url);
-      this.audioMirror.delete(src);
+      this.audioMirror.delete(source);
     }
   }
 
@@ -3122,7 +3226,7 @@ for (const level of this.config.secretLevels || []) {
       'level1-stage1': 'office', 'level2-stage2': 'bathroom', 'level3-stage2': 'massage',
       'level4-stage1': 'arcade', 'studio-stage1': 'studio', 'level5-stage2': 'river', 'level6-stage2': 'concert'
     }[stageId];
-    return theme ? this.getRhythmAudioFor(theme)?.getAttribute('src') : null;
+    return theme ? this.canonicalAudioSource(this.getRhythmAudioFor(theme)) : null;
   }
 
   prefetchTitleAudio() {
@@ -9159,15 +9263,6 @@ for (const level of this.config.secretLevels || []) {
     this.saveProgress();
   }
 
-  saveLevel5ChestProgress() {
-    if (!this.chest) return;
-    if (!this.progress) this.progress = this.createDefaultProgress();
-    this.progress.level5ChestContents = this.normalizeChestContents(this.chest.contents, {});
-    this.progress.latestInventory = this.normalizeInventory(this.inventory);
-    this.progress.latestCollectedSongs = this.normalizeCollectedSongs(this.collectedSongs);
-    this.saveProgress();
-  }
-
   triggerLevel4HiddenChest() {
     return; // removed with the backpack; the Level 4 song comes with the Bonita win
     if (this.state !== "level4" || this.level4Rail !== "lower" || !this.chest || this.chest.revealed) return;
@@ -9995,7 +10090,8 @@ for (const level of this.config.secretLevels || []) {
     if (changed) {
       this.audioFades = (this.audioFades || []).filter((fade) => fade.audio !== this.sewerAudio);
       this.sewerAudio.pause();
-      this.sewerAudio.src = audioSrc;
+      this.sewerAudio.src = this.mirroredAudioUrl(audioSrc) || audioSrc;
+      this.sewerAudio.mothAudioSource = audioSrc;
       this.sewerAudio.load();
       this.sewerAudioSrc = audioSrc;
       this.sewerSongTime = 0;
@@ -10279,7 +10375,8 @@ for (const level of this.config.secretLevels || []) {
       this.dialogueOverlayAudio.preload = "none";
     }
     if (this.dialogueOverlayAudioSrc !== src) {
-      this.dialogueOverlayAudio.src = src;
+      this.dialogueOverlayAudio.src = this.mirroredAudioUrl(src) || src;
+      this.dialogueOverlayAudio.mothAudioSource = src;
       this.dialogueOverlayAudioSrc = src;
     }
     return this.dialogueOverlayAudio;
@@ -10560,7 +10657,9 @@ for (const level of this.config.secretLevels || []) {
       this.pausedBgm = null;
     }
     this.applyPlaybackAudioSession();
-    return this.playMusicAudio(audio);
+    const started = this.playMusicAudio(audio);
+    this.trimAudioMirror();
+    return started;
   }
 
   resumePausedBgm() {
@@ -12034,8 +12133,9 @@ for (const level of this.config.secretLevels || []) {
     if (!context) return Promise.resolve();
     this.ensureFeedbackOutput(context);
     const loading = this.hitSfxLoading = this.prefetchHitSfx()
-      .then(() => Promise.allSettled(Object.keys(HIT_SFX).filter(name => !this.sfxBuffers[name])
+      .then(() => Promise.all(Object.keys(HIT_SFX).filter(name => !this.sfxBuffers[name])
         .map(name => this.decodeHitSfx(name, this.level1OfficeAudioContext))))
+      .then(() => { if (Object.keys(HIT_SFX).some(name => !this.sfxBuffers[name])) throw new Error("Required sound effects are not decoded"); })
       .finally(() => { if (this.hitSfxLoading === loading) this.hitSfxLoading = null; });
     this.hitSfxReady = loading;
     return loading;
@@ -17632,7 +17732,6 @@ for (const level of this.config.secretLevels || []) {
     this.level4Boss = null;
     this.level4BossShots = [];
     this.memeChest = { state: this.progress?.flags?.level4MemeChestOpened ? "open" : "closed", at: 0 };
-    if (!this.memeChestSheet) loadImage(MEME_CHEST.sheet).then(image => { this.memeChestSheet = image; }).catch(() => {});
     const side = this.getLevel4ActiveSideView();
     const hiddenChest = stage.hiddenChest || {};
     this.chest = {
@@ -17752,42 +17851,12 @@ for (const level of this.config.secretLevels || []) {
     });
   }
 
-  getLevel5Stage1Config() {
-    return this.config?.level5?.stage1 || {};
-  }
-
-  getLevel5Stage2Config() {
-    return this.config?.level5?.stage2 || {};
-  }
-
   getLevel6Stage1Config() {
     return this.config?.level6?.stage1 || {};
   }
 
   getLevel6Stage2Config() {
     return this.config?.level6?.stage2 || {};
-  }
-
-  getLevel5RoadPoint(worldX, depth) {
-    const stage = this.getLevel5Stage1Config();
-    const road = stage.roadBounds || {};
-    const d = clamp(depth ?? 0.62, 0, 1);
-    return {
-      x: worldX - (this.level5CameraX || 0),
-      y: lerp(road.topY ?? 552, road.bottomY ?? 664, d),
-      scale: lerp(road.farScale ?? 0.78, road.nearScale ?? 1.08, d)
-    };
-  }
-
-  getLevel5BossRoadPoint(x, depth) {
-    const stage = this.getLevel5Stage2Config();
-    const road = stage.roadBounds || {};
-    const d = clamp(depth ?? 0.5, road.depthMin ?? 0, road.depthMax ?? 1);
-    return {
-      x,
-      y: lerp(road.topY ?? 392, road.bottomY ?? 516, d),
-      scale: lerp(road.farScale ?? 0.86, road.nearScale ?? 1.08, d)
-    };
   }
 
   // Level 5 since 2026-10-05 (user): no highway walk and no chest - the black
@@ -18419,100 +18488,6 @@ for (const level of this.config.secretLevels || []) {
     this.countInFightSong();
   }
 
-  isLevel5NearChest() {
-    if (this.state !== "level5" || !this.sewerPlayer) return false;
-    const chest = this.getLevel5Stage1Config().chest || {};
-    return Math.abs(this.sewerPlayer.x - (chest.x ?? 1530)) <= (chest.interactionRadiusX ?? 112)
-      && Math.abs((this.sewerPlayer.depth ?? 0.62) - (chest.depth ?? 0.69)) <= (chest.interactionDepthRadius ?? 0.2);
-  }
-
-  tryLevel5ChestInteract() {
-    const chest = this.getLevel5Stage1Config().chest || {};
-    if (!this.isLevel5NearChest()) {
-      this.floaters.push({
-        text: "寶箱就在車旁",
-        x: this.sewerPlayer.x - (this.level5CameraX || 0) - 76,
-        y: this.sewerPlayer.y - 112,
-        life: 0.9,
-        color: "#ffd36c"
-      });
-      return;
-    }
-    this.level5ChestInspected = true;
-    if (!this.chest) {
-      this.chest = {
-        contents: this.normalizeChestContents(chest.contents || {}, chest.contents || {}),
-        state: "closed",
-        animTimer: 0,
-        menuOpen: false,
-        scroll: 0,
-        scrollDragging: false,
-        scrollPointerId: null,
-        scrollDragOffset: 0
-      };
-    }
-    this.openChestMenu();
-  }
-
-  isLevel5NearGanGan() {
-    if (this.state !== "level5" || !this.sewerPlayer || this.level5GanGanInCar) return false;
-    const gangan = this.getLevel5Stage1Config().gangan || {};
-    return Math.abs(this.sewerPlayer.x - (gangan.x ?? 1412)) <= (gangan.interactionRadiusX ?? 110)
-      && Math.abs((this.sewerPlayer.depth ?? 0.62) - (gangan.depth ?? 0.6)) <= (gangan.interactionDepthRadius ?? 0.18);
-  }
-
-  isLevel5NearCar() {
-    if (this.state !== "level5" || !this.sewerPlayer) return false;
-    const car = this.getLevel5Stage1Config().car || {};
-    return Math.abs(this.sewerPlayer.x - (car.x ?? 1240)) <= (car.boardRadiusX ?? car.collisionRadiusX ?? 210)
-      && Math.abs((this.sewerPlayer.depth ?? 0.62) - (car.depth ?? 0.58)) <= (car.boardDepthRadius ?? car.collisionDepthRadius ?? 0.2);
-  }
-
-  tryLevel5Stage1Interact() {
-    if (!this.level5GanGanInCar && this.isLevel5NearGanGan()) {
-      this.startLevel5GanGanDialogue();
-      return;
-    }
-    if (this.level5GanGanInCar && !this.level5CarBoarded && this.isLevel5NearCar()) {
-      this.boardLevel5Car();
-      return;
-    }
-    if (!this.level5GanGanInCar && this.isLevel5NearCar()) {
-      this.floaters.push({
-        text: "先找 Gan Gan",
-        x: this.sewerPlayer.x - (this.level5CameraX || 0) - 68,
-        y: this.sewerPlayer.y - 112,
-        life: 0.9,
-        color: "#ffd36c"
-      });
-      return;
-    }
-    if (this.isLevel5NearChest()) {
-      this.tryLevel5ChestInteract();
-      return;
-    }
-    const hint = this.level5GanGanInCar ? "靠近車子按 O" : "靠近 Gan Gan 按 O";
-    this.floaters.push({
-      text: hint,
-      x: this.sewerPlayer.x - (this.level5CameraX || 0) - 78,
-      y: this.sewerPlayer.y - 112,
-      life: 0.9,
-      color: "#8fe8ff"
-    });
-  }
-
-  startLevel5GanGanDialogue() {
-    this.level5GanGanDialogueIndex = 0;
-    this.state = "level5Dialogue";
-    this.pocketOpen = false;
-    if (this.chest) this.chest.menuOpen = false;
-    if (this.sewerPlayer) {
-      this.sewerPlayer.vx = 0;
-      this.sewerPlayer.depthV = 0;
-      this.sewerPlayer.facing = 1;
-    }
-  }
-
   advanceLevel5GanGanDialogue() {
     const lines = this.getDialogueLines("level5GanGan");
     if (this.level5GanGanDialogueIndex < lines.length - 1) {
@@ -18523,54 +18498,8 @@ for (const level of this.config.secretLevels || []) {
   }
 
   finishLevel5GanGanDialogue() {
-    if (this.level5Drive) {
-      // The night drive ends at the river: the contest starts.
-      this.level5Drive = null;
-      this.startLevel5RiverFight();
-      return;
-    }
-    this.level5GanGanInCar = true;
-    this.level5CarBoarded = false;
-    this.state = "level5";
-    if (this.sewerPlayer) {
-      const car = this.getLevel5Stage1Config().car || {};
-      this.sewerPlayer.facing = -1;
-      this.floaters.push({
-        text: car.boardPrompt || "O 上車",
-        x: (car.x ?? this.sewerPlayer.x) - (this.level5CameraX || 0) - 42,
-        y: this.sewerPlayer.y - 118,
-        life: 1.2,
-        color: "#ffd36c"
-      });
-    }
-  }
-
-  boardLevel5Car() {
-    const car = this.getLevel5Stage1Config().car || {};
-    this.level5CarBoarded = true;
-    this.level5GanGanInCar = true;
-    this.pocketOpen = false;
-    if (this.chest) this.chest.menuOpen = false;
-    if (!this.sewerPlayer) return;
-    this.sewerPlayer.x = car.x ?? this.sewerPlayer.x;
-    this.sewerPlayer.depth = car.depth ?? this.sewerPlayer.depth ?? 0.58;
-    this.sewerPlayer.vx = 0;
-    this.sewerPlayer.depthV = 0;
-    this.sewerPlayer.vy = 0;
-    this.sewerPlayer.grounded = true;
-    this.sewerPlayer.action = "idle";
-    this.sewerPlayer.facing = -1;
-    const point = this.getLevel5RoadPoint(this.sewerPlayer.x, this.sewerPlayer.depth);
-    this.sewerPlayer.y = point.y;
-    this.sewerPlayer.scale = point.scale;
-    const exit = this.getLevel5Stage1Config().stage2Exit || {};
-    this.floaters.push({
-      text: exit.prompt || "往左開離開台北夜行",
-      x: point.x - 98,
-      y: point.y - 128,
-      life: 1.2,
-      color: "#8fe8ff"
-    });
+    this.level5Drive = null;
+    return this.startLevel5RiverFight();
   }
 
   enterLevel6Stage1(options = {}) {
@@ -18847,744 +18776,10 @@ for (const level of this.config.secretLevels || []) {
     return true;
   }
 
-  getLevel5BossDrivingConfig() {
-    return this.getLevel5Stage2Config().driving || {};
-  }
-
-  getLevel5BossChaseConfig() {
-    return this.getLevel5Stage2Config().chase || {};
-  }
-
-  getLevel5BossChaseGroundY() {
-    const chase = this.getLevel5BossChaseConfig();
-    return chase.groundY ?? 446;
-  }
-
-  randomLevel5BossChaseInterval() {
-    const chase = this.getLevel5BossChaseConfig();
-    const min = chase.poopSpawnMin ?? 1.65;
-    const max = chase.poopSpawnMax ?? 3.1;
-    return min + Math.random() * Math.max(0.001, max - min);
-  }
-
-  tryLevel5BossJump() {
-    const boss = this.level5Boss;
-    const chase = boss?.chase;
-    if (!boss || !chase) return;
-    if (this.sewerAudio?.paused && !this.songPreview) {
-      this.playSewerBgm(false);
-    }
-    const config = chase.config || {};
-    if ((boss.jumpY || 0) > 1) return;
-    boss.jumpY = 1;
-    boss.jumpVY = config.jumpVelocity ?? 650;
-    this.floaters.push({
-      text: "JUMP",
-      x: boss.x - 32,
-      y: (boss.groundY || this.getLevel5BossChaseGroundY()) - 118,
-      life: 0.42,
-      color: "#8fe8ff"
-    });
-  }
-
-  spawnLevel5BossPoop() {
-    const boss = this.level5Boss;
-    const chase = boss?.chase;
-    if (!boss || !chase) return;
-    const config = chase.config || {};
-    if (chase.poops.length >= (config.maxPoops ?? 7)) return;
-    chase.poopId = (chase.poopId || 0) + 1;
-    chase.poops.push({
-      id: chase.poopId,
-      distance: Math.max(
-        (config.catchDistance ?? 132) + 80,
-        (chase.goatDistance ?? config.startDistance ?? 560) - (config.poopDropBehindGoat ?? 72)
-      ),
-      hit: false,
-      wobble: Math.random() * TAU
-    });
-  }
-
-  damageLevel5BossChasePoop(poop) {
-    const boss = this.level5Boss;
-    const chase = boss?.chase;
-    if (!boss || !chase || poop.hit) return;
-    const config = chase.config || {};
-    poop.hit = true;
-    boss.slowTimer = Math.max(boss.slowTimer || 0, config.slowDuration ?? 1.45);
-    this.player.hearts = Math.max(0, (this.player.hearts ?? this.config?.player?.maxHearts ?? 5) - 1);
-    boss.hitFlash = 0.32;
-    this.screenShake = Math.max(this.screenShake, 8);
-    this.flash = Math.max(this.flash || 0, 0.22);
-    this.floaters.push({
-      text: "-1 HEART",
-      x: boss.x - 24,
-      y: (boss.groundY || this.getLevel5BossChaseGroundY()) - 122,
-      life: 0.78,
-      color: "#ff6f6f"
-    });
-    if (this.hasRunOutOfHearts()) this.failLevel5BossFight("Dr. Beauty ran out of hearts before catching the goat. Press Enter to retry.");
-  }
-
-  updateLevel5BossChase(dt) {
-    const boss = this.level5Boss;
-    const chase = boss?.chase;
-    if (!boss || !chase) return;
-    const config = chase.config || {};
-    // The goat has slipped too far ahead: sprint it off the right edge, then lose.
-    if (chase.escaping) {
-      chase.escapeX = (chase.escapeX ?? (boss.x + (chase.goatDistance || 0)))
-        + (config.escapeBoltSpeed ?? 680) * dt;
-      if (chase.escapeX > VIEW_W + 200) {
-        this.failLevel5BossFight("山羊逃走了！Press Enter to retry.");
-      }
-      return;
-    }
-    // Opening countdown: the goat waits for "GO" so first-timers can read
-    // the controls before the gap starts growing (it used to escape within
-    // ~1 second of inaction).
-    if ((chase.countdown || 0) > 0 && !this.pocketOpen && this.state === "level5Boss") {
-      chase.countdown = Math.max(0, chase.countdown - dt);
-      return;
-    }
-    const locked = this.pocketOpen || this.state !== "level5Boss";
-    const accelerating = !locked && (this.keys.has("KeyD") || this.keys.has("ArrowRight"));
-    const braking = !locked && (this.keys.has("KeyA") || this.keys.has("ArrowLeft"));
-    let targetSpeed = config.cruiseSpeed ?? 300;
-    if (accelerating) targetSpeed = config.maxSpeed ?? 520;
-    if (braking) targetSpeed = config.minSpeed ?? 80;
-    boss.slowTimer = Math.max(0, (boss.slowTimer || 0) - dt);
-    if ((boss.slowTimer || 0) > 0) targetSpeed *= config.slowMultiplier ?? 0.52;
-    boss.carSpeed = approachValue(
-      boss.carSpeed || targetSpeed,
-      targetSpeed,
-      (targetSpeed > (boss.carSpeed || 0) ? (config.acceleration ?? 720) : (config.brake ?? 860)) * dt
-    );
-    const baseCarX = config.carX ?? 460;
-    const backUpCarX = config.backUpMinX ?? Math.max(170, baseCarX - 200);
-    const carTargetX = braking ? backUpCarX : baseCarX;
-    boss.x = approachValue(
-      boss.x ?? baseCarX,
-      carTargetX,
-      (braking ? (config.backUpMoveSpeed ?? 260) : (config.forwardSettleSpeed ?? 210)) * dt
-    );
-    boss.cameraX = (boss.cameraX || 0) + (boss.carSpeed || 0) * dt;
-
-    if ((boss.jumpY || 0) > 0 || (boss.jumpVY || 0) > 0) {
-      boss.jumpY = Math.max(0, (boss.jumpY || 0) + (boss.jumpVY || 0) * dt);
-      boss.jumpVY = (boss.jumpVY || 0) - (config.gravity ?? 1750) * dt;
-      if ((boss.jumpY || 0) <= 0) {
-        boss.jumpY = 0;
-        boss.jumpVY = 0;
-      }
-    }
-
-    const distance = chase.goatDistance ?? config.startDistance ?? 560;
-    const panicBoost = distance < (config.goatPanicDistance ?? 245) ? 78 : 0;
-    const relaxDrag = distance > (config.goatRelaxDistance ?? 650) ? -48 : 0;
-    const jitter = Math.sin(this.time * 2.7) * 22 + Math.sin(this.time * 5.1) * 9;
-    chase.goatSpeed = clamp(
-      (config.goatBaseSpeed ?? 346) + panicBoost + relaxDrag + jitter,
-      160,
-      config.goatMaxSpeed ?? 482
-    );
-    const backUpDistanceRate = braking ? (config.backUpDistanceRate ?? 145) : 0;
-    const escapeDistance = config.escapeDistance ?? 930;
-    chase.goatDistance = clamp(
-      distance + ((chase.goatSpeed || 0) - (boss.carSpeed || 0) + backUpDistanceRate) * dt,
-      0,
-      escapeDistance
-    );
-    // Reached the max gap → the goat breaks away and bolts off the right edge.
-    if (chase.goatDistance >= escapeDistance - 0.5) {
-      chase.escaping = true;
-      chase.escapeX = boss.x + chase.goatDistance;
-      this.floaters.push({
-        text: "山羊逃走了！",
-        x: VIEW_W - 280,
-        y: (boss.groundY || this.getLevel5BossChaseGroundY()) - 150,
-        life: 1.1,
-        color: "#ff6f6f"
-      });
-      return;
-    }
-    boss.score = clamp(
-      ((config.startDistance ?? 560) - chase.goatDistance) / Math.max(1, (config.startDistance ?? 560) - (config.catchDistance ?? 132)) * (boss.maxScore || 100),
-      0,
-      boss.maxScore || 100
-    );
-
-    chase.poopTimer = Math.max(0, (chase.poopTimer || 0) - dt);
-    if (chase.poopTimer <= 0 && chase.goatDistance > (config.catchDistance ?? 132) + 90) {
-      this.spawnLevel5BossPoop();
-      chase.poopTimer = this.randomLevel5BossChaseInterval();
-    }
-    const carHitRadiusX = config.carHitRadiusX ?? 110;
-    const poopHitRadiusX = config.poopHitRadiusX ?? 34;
-    const jumpClearHeight = config.jumpClearHeight ?? 44;
-    chase.poops.forEach((poop) => {
-      poop.distance -= (boss.carSpeed || 0) * dt;
-      poop.wobble += dt * 5.2;
-      const overlapsX = Math.abs(poop.distance) <= carHitRadiusX + poopHitRadiusX;
-      if (!poop.hit && !poop.dodged && overlapsX) {
-        if ((boss.jumpY || 0) >= jumpClearHeight) {
-          poop.dodged = true;
-          this.floaters.push({
-            text: "DODGED",
-            x: boss.x + 24,
-            y: (boss.groundY || this.getLevel5BossChaseGroundY()) - 128,
-            life: 0.58,
-            color: "#8fe8ff"
-          });
-        } else {
-          this.damageLevel5BossChasePoop(poop);
-        }
-      }
-    });
-    chase.poops = chase.poops.filter((poop) => poop.distance > -180);
-    if (chase.goatDistance <= (config.catchDistance ?? 132)) {
-      this.floaters.push({
-        text: "CAUGHT!",
-        x: boss.x + (config.catchDistance ?? 132),
-        y: (boss.groundY || this.getLevel5BossChaseGroundY()) - 118,
-        life: 0.8,
-        color: "#ffd36c"
-      });
-      this.winLevel5BossFight();
-      return;
-    }
-    const duration = config.duration ?? this.getLevel5Stage2Config().rhythm?.duration ?? 230.3847;
-    if ((this.sewerSongTime || 0) >= duration) {
-      this.failLevel5BossFight("The goat got away before the song finished. Press Enter to retry.");
-    }
-  }
-
-  randomLevel5BossInterval(minKey, maxKey, fallbackMin, fallbackMax) {
-    const driving = this.getLevel5BossDrivingConfig();
-    const min = driving[minKey] ?? fallbackMin;
-    const max = driving[maxKey] ?? fallbackMax;
-    return min + Math.random() * Math.max(0.001, max - min);
-  }
-
-  getLevel5BossRhythmConfig() {
-    return this.getLevel5Stage2Config().rhythm || {};
-  }
-
-  getLevel5BossLaneDepths() {
-    const driving = this.getLevel5BossDrivingConfig();
-    return Array.isArray(driving.laneDepths) && driving.laneDepths.length
-      ? driving.laneDepths
-      : [0.24, 0.5, 0.76];
-  }
-
-  getLevel5BossCurrentLaneIndex() {
-    const boss = this.level5Boss;
-    const laneDepths = this.getLevel5BossLaneDepths();
-    const depth = boss?.depth ?? laneDepths[Math.floor(laneDepths.length / 2)] ?? 0.5;
-    let bestIndex = 0;
-    let bestDistance = Infinity;
-    laneDepths.forEach((laneDepth, index) => {
-      const distance = Math.abs(depth - laneDepth);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestIndex = index;
-      }
-    });
-    return bestIndex;
-  }
-
-  getLevel5BossHitLineX() {
-    const rhythm = this.level5Boss?.rhythm?.config || this.getLevel5BossRhythmConfig();
-    return rhythm.hitLineX ?? 420;
-  }
-
-  createLevel5BossRhythmChart(stage = this.getLevel5Stage2Config()) {
-    const rhythm = stage.rhythm || {};
-    const driving = stage.driving || {};
-    const laneDepths = this.getLevel5BossLaneDepths();
-    const laneCount = Math.max(1, laneDepths.length);
-    const bpm = rhythm.bpm ?? 92;
-    const beatSeconds = 60 / Math.max(1, bpm);
-    const introOffset = rhythm.introOffset ?? 2.15;
-    const duration = rhythm.duration ?? 150;
-    const baseValue = rhythm.hitValue ?? driving.pickupValue ?? 5;
-    const patterns = [
-      [1, 2, 1, 0, 1, 0, 2, 1],
-      [0, 1, 2, 1, 2, 1, 0, 1],
-      [2, 1, 0, 1, 0, 1, 2, 1]
-    ];
-    const chart = [];
-    const addObject = (kind, beatIndex, laneIndex, frameName, extra = {}) => {
-      const time = introOffset + beatIndex * beatSeconds;
-      if (time < 0 || time > duration - 1.1) return;
-      const clampedLane = ((laneIndex % laneCount) + laneCount) % laneCount;
-      chart.push({
-        id: chart.length + 1,
-        kind,
-        frameName,
-        time,
-        beat: Number(beatIndex.toFixed(2)),
-        laneIndex: clampedLane,
-        depth: laneDepths[clampedLane] ?? 0.5,
-        wobble: (chart.length * 1.37) % TAU,
-        ...extra
-      });
-    };
-    const stepForBeat = (beatIndex) => {
-      if (beatIndex < 32) return 2;
-      if (beatIndex < 84) return 1;
-      if (beatIndex < 144) return Math.floor(beatIndex / 16) % 2 === 0 ? 1 : 0.5;
-      if (beatIndex < 190) return 1;
-      return 2;
-    };
-
-    for (let beatIndex = 4; introOffset + beatIndex * beatSeconds < duration - 2.5;) {
-      const section = Math.floor(beatIndex / 32);
-      const slot = Math.round(beatIndex * 2);
-      const pattern = patterns[section % patterns.length];
-      const laneIndex = pattern[(slot + section) % pattern.length] ?? 1;
-      const accent = slot % 16 === 0;
-      addObject("rhythmNote", beatIndex, laneIndex, accent ? "notebook" : "note", {
-        value: baseValue + (accent ? (rhythm.notebookBonus ?? 2) : 0)
-      });
-      if (beatIndex > 20 && slot % 24 === 8) {
-        addObject("rhythmObstacle", beatIndex + 0.5, laneIndex + (section % 2 === 0 ? 1 : -1), section % 2 === 0 ? "cone" : "oil");
-      }
-      if (beatIndex > 88 && slot % 32 === 20) {
-        addObject("rhythmObstacle", beatIndex + 0.25, laneIndex + 1, "oil");
-      }
-      beatIndex += stepForBeat(beatIndex);
-    }
-    return chart.sort((a, b) => a.time - b.time).map((note, index) => ({ ...note, id: index + 1 }));
-  }
-
-  addLevel5BossRhythmFx(x, depth) {
-    const rhythm = this.level5Boss?.rhythm;
-    if (!rhythm) return;
-    rhythm.fxId = (rhythm.fxId || 0) + 1;
-    rhythm.fx.push({
-      id: rhythm.fxId,
-      x,
-      depth,
-      life: 0.28,
-      maxLife: 0.28
-    });
-  }
-
-  awardLevel5BossRhythmHit(note, timingError) {
-    const boss = this.level5Boss;
-    if (!boss?.rhythm) return;
-    const config = boss.rhythm.config || {};
-    const absError = Math.abs(timingError);
-    const perfectWindow = config.perfectWindow ?? 0.08;
-    const goodWindow = config.goodWindow ?? 0.14;
-    const grade = absError <= perfectWindow ? "PERFECT" : absError <= goodWindow ? "GOOD" : "HIT";
-    const baseAmount = grade === "PERFECT"
-      ? (config.perfectValue ?? 6)
-      : grade === "GOOD"
-        ? (config.goodValue ?? 4)
-        : (config.hitValue ?? 5);
-    boss.combo = (boss.combo || 0) + 1;
-    boss.bestCombo = Math.max(boss.bestCombo || 0, boss.combo);
-    const comboEvery = config.comboBonusEvery ?? 8;
-    const comboBonus = comboEvery > 0 && boss.combo % comboEvery === 0 ? 2 : 0;
-    const amount = Math.max(note.value || baseAmount, baseAmount) + comboBonus;
-    boss.score = clamp((boss.score || 0) + amount, 0, boss.maxScore || 100);
-    boss.hitFlash = 0.08;
-    boss.rhythm.beatFlash = 0.18;
-    this.addLevel5BossRhythmFx(this.getLevel5BossHitLineX(), note.depth);
-    const point = this.getLevel5BossRoadPoint(this.getLevel5BossHitLineX(), note.depth);
-    this.floaters.push({
-      text: `${grade} +${amount}`,
-      x: point.x - 34,
-      y: point.y - 92,
-      life: 0.65,
-      color: grade === "PERFECT" ? "#ffd36c" : "#8fe8ff"
-    });
-  }
-
-  penalizeLevel5BossRhythm(amount, text, x, depth, color = "#ff6f6f") {
-    const boss = this.level5Boss;
-    if (!boss) return;
-    boss.score = clamp((boss.score || 0) - amount, 0, boss.maxScore || 100);
-    boss.combo = 0;
-    boss.hitFlash = Math.max(boss.hitFlash || 0, 0.22);
-    this.screenShake = Math.max(this.screenShake, 4);
-    const point = this.getLevel5BossRoadPoint(x, depth);
-    this.floaters.push({
-      text,
-      x: point.x - 30,
-      y: point.y - 78,
-      life: 0.68,
-      color
-    });
-  }
-
-  handleLevel5BossRhythmHit() {
-    const boss = this.level5Boss;
-    const rhythm = boss?.rhythm;
-    if (!boss || !rhythm) return;
-    if (this.sewerAudio?.paused && !this.songPreview) {
-      this.playSewerBgm(false);
-      return;
-    }
-    const config = rhythm.config || {};
-    const songTime = this.sewerSongTime || 0;
-    const hitWindow = config.hitWindow ?? 0.2;
-    const laneTolerance = config.laneTolerance ?? 0.16;
-    let best = null;
-    (boss.objects || []).forEach((object) => {
-      if (object.kind !== "rhythmNote" || object.hit) return;
-      if (Math.abs((boss.depth ?? 0.5) - (object.depth ?? 0.5)) > laneTolerance) return;
-      const timingError = songTime - object.time;
-      const absError = Math.abs(timingError);
-      if (absError > hitWindow) return;
-      if (!best || absError < best.absError) best = { object, timingError, absError };
-    });
-    if (best) {
-      best.object.hit = true;
-      this.awardLevel5BossRhythmHit(best.object, best.timingError);
-      return;
-    }
-    if ((rhythm.badHitCooldown || 0) <= 0) {
-      rhythm.badHitCooldown = 0.14;
-      this.penalizeLevel5BossRhythm(
-        config.badHitPenalty ?? 3,
-        "OFF BEAT",
-        this.getLevel5BossHitLineX(),
-        this.getLevel5BossLaneDepths()[this.getLevel5BossCurrentLaneIndex()] ?? boss.depth ?? 0.5,
-        "#ff9a6f"
-      );
-    }
-  }
-
-  updateLevel5BossRhythmObjects(dt) {
-    const boss = this.level5Boss;
-    const rhythm = boss?.rhythm;
-    if (!boss || !rhythm) return;
-    const config = rhythm.config || {};
-    const songTime = this.sewerSongTime || 0;
-    const hitLineX = this.getLevel5BossHitLineX();
-    const travelTime = config.travelTime ?? 2.25;
-    const noteSpeed = config.noteSpeed ?? ((VIEW_W - hitLineX + 160) / Math.max(0.1, travelTime));
-    const hitWindow = config.hitWindow ?? 0.2;
-    const missWindow = config.missWindow ?? 0.3;
-    if (Number.isFinite(rhythm.lastSongTime) && songTime + 0.5 < rhythm.lastSongTime) {
-      rhythm.nextIndex = 0;
-      boss.objects = [];
-      rhythm.fx = [];
-    }
-    rhythm.lastSongTime = songTime;
-    rhythm.badHitCooldown = Math.max(0, (rhythm.badHitCooldown || 0) - dt);
-    rhythm.beatFlash = Math.max(0, (rhythm.beatFlash || 0) - dt);
-    rhythm.fx.forEach((fx) => {
-      fx.life -= dt;
-    });
-    rhythm.fx = rhythm.fx.filter((fx) => fx.life > 0);
-
-    const chart = rhythm.chart || [];
-    while (chart[rhythm.nextIndex] && chart[rhythm.nextIndex].time < songTime - missWindow) {
-      rhythm.nextIndex += 1;
-    }
-    const maxActive = config.maxActiveObjects ?? 46;
-    while (
-      chart[rhythm.nextIndex]
-      && chart[rhythm.nextIndex].time - songTime <= travelTime
-      && boss.objects.length < maxActive
-    ) {
-      const source = chart[rhythm.nextIndex];
-      boss.objects.push({
-        ...source,
-        x: hitLineX + (source.time - songTime) * noteSpeed,
-        hit: false
-      });
-      rhythm.nextIndex += 1;
-    }
-
-    const carPoint = this.getLevel5BossRoadPoint(boss.x, boss.depth);
-    const driving = this.getLevel5BossDrivingConfig();
-    const carRadiusX = driving.carHitRadiusX ?? 112;
-    const carRadiusY = driving.carHitRadiusY ?? 36;
-    boss.objects.forEach((object) => {
-      object.x = hitLineX + (object.time - songTime) * noteSpeed;
-      object.wobble = (object.wobble || 0) + dt * (object.kind === "rhythmNote" ? 5.6 : 4.2);
-      if (object.hit) return;
-      if (object.kind === "rhythmNote" && songTime - object.time > missWindow) {
-        object.hit = true;
-        this.penalizeLevel5BossRhythm(config.missPenalty ?? 4, "MISS", hitLineX, object.depth, "#ff6f6f");
-        return;
-      }
-      if (object.kind !== "rhythmObstacle") return;
-      const objectPoint = this.getLevel5BossRoadPoint(object.x, object.depth);
-      const radiusX = driving.obstacleHitRadiusX ?? 46;
-      const radiusY = driving.obstacleHitRadiusY ?? 30;
-      const overlaps = Math.abs(object.x - boss.x) <= carRadiusX + radiusX
-        && Math.abs(objectPoint.y - carPoint.y) <= carRadiusY + radiusY;
-      if (overlaps && Math.abs(songTime - object.time) <= hitWindow + 0.22) {
-        object.hit = true;
-        this.penalizeLevel5BossRhythm(config.obstaclePenalty ?? 10, `-${config.obstaclePenalty ?? 10}`, object.x, object.depth);
-      } else if (songTime - object.time > missWindow + 0.5) {
-        object.hit = true;
-      }
-    });
-    boss.objects = boss.objects.filter((object) => !object.hit && object.x > -180 && object.x < VIEW_W + 260);
-  }
-
   enterLevel5BossFight(options = {}) {
-    if (this.deferSceneAssets("level5-stage2", () => this.enterLevel5BossFight(options))) return;
-    const stage = this.getLevel5Stage2Config();
-    const driving = stage.driving || {};
-    const chaseConfig = stage.chase || {};
-    const useChase = chaseConfig.enabled !== false;
-    const rhythmConfig = stage.rhythm || {};
-    const rhythmChart = useChase || rhythmConfig.enabled === false ? [] : this.createLevel5BossRhythmChart(stage);
-    if (!options.fromDebug) this.completeStage("level5-stage1");
-    this.state = "level5Boss";
-    this.currentStageId = "level5-stage2";
-    this.level5BossVictoryTimer = 0;
-    this.enemyShots = [];
-    this.playerShots = [];
-    this.sewerFx = [];
-    this.floaters = [];
-    this.shootHeld = false;
-    this.pointerMoveTarget = null;
-    this.pocketOpen = false;
-    if (this.chest) this.chest.menuOpen = false;
-    this.level5Boss = {
-      x: useChase ? (chaseConfig.carX ?? 308) : (driving.spawnX ?? 320),
-      depth: driving.spawnDepth ?? 0.58,
-      vx: 0,
-      depthV: 0,
-      cameraX: 0,
-      score: 0,
-      maxScore: driving.scoreMax ?? 100,
-      objects: [],
-      objectId: 0,
-      pickupTimer: 0.35,
-      obstacleTimer: 1.05,
-      hitFlash: 0,
-      groundY: chaseConfig.groundY ?? this.getLevel5BossChaseGroundY(),
-      carSpeed: chaseConfig.cruiseSpeed ?? 300,
-      jumpY: 0,
-      jumpVY: 0,
-      slowTimer: 0,
-      combo: 0,
-      bestCombo: 0,
-	      chase: useChase ? {
-	        config: chaseConfig,
-	        goatDistance: chaseConfig.startDistance ?? 560,
-	        goatSpeed: chaseConfig.goatBaseSpeed ?? 346,
-	        poopTimer: chaseConfig.initialPoopDelay ?? this.randomLevel5BossChaseInterval(),
-	        poopId: 0,
-	        poops: [],
-	        countdown: chaseConfig.countdownSeconds ?? 3
-	      } : null,
-	      rhythm: rhythmChart.length ? {
-        config: rhythmConfig,
-        chart: rhythmChart,
-        nextIndex: 0,
-        lastSongTime: 0,
-        badHitCooldown: 0,
-        beatFlash: 0,
-        fxId: 0,
-        fx: []
-      } : null
-    };
-	    this.player.hearts = this.config?.player?.maxHearts || 5;
-    this.stopLevel3RhythmAudio(true);
-    this.ensureSewerBgmSource(stage.audioSrc || this.getSewerExploreBgmSrc());
-    if (this.sewerAudio) this.sewerAudio.loop = !useChase;
-    this.playSewerBgm(true);
-  }
-
-  spawnLevel5BossObject(kind = "pickup") {
-    const boss = this.level5Boss;
-    if (!boss) return;
-    const driving = this.getLevel5BossDrivingConfig();
-    if (boss.objects.length >= (driving.maxObjects ?? 16)) return;
-    const laneDepths = Array.isArray(driving.laneDepths) && driving.laneDepths.length
-      ? driving.laneDepths
-      : [0.24, 0.5, 0.76];
-    const depth = laneDepths[Math.floor(Math.random() * laneDepths.length)] ?? 0.5;
-    const pickup = kind === "pickup";
-    const frameName = pickup
-      ? (Math.random() < 0.58 ? "note" : "notebook")
-      : (Math.random() < 0.56 ? "cone" : "oil");
-    boss.objectId += 1;
-    boss.objects.push({
-      id: boss.objectId,
-      kind,
-      frameName,
-      x: VIEW_W + 92 + Math.random() * 180,
-      depth,
-      wobble: Math.random() * TAU,
-      hit: false
-    });
-  }
-
-  updateLevel5Boss(dt) {
-    if (!this.level5Boss) {
-      this.enterLevel5BossFight({ fromDebug: true });
-      return;
-    }
-    const boss = this.level5Boss;
-    // Pocket pauses the whole Level 5 boss (goat, poop, and the song clock).
-    if (this.pocketOpen) return;
-    const stage = this.getLevel5Stage2Config();
-    const driving = stage.driving || {};
-    const liveAudioTime = this.sewerAudio && !this.sewerAudio.paused ? this.sewerAudio.currentTime : null;
-    const debugBossClock = (boss.chase || boss.rhythm?.chart?.length)
-      && this.sewerAudio?.paused
-      && new URLSearchParams(window.location.search).get("debugLevel5Boss") === "1";
-    if (liveAudioTime !== null && (liveAudioTime > this.sewerSongTime || liveAudioTime + 0.5 < this.sewerSongTime)) {
-      this.sewerSongTime = liveAudioTime;
-    } else if (debugBossClock || !this.sewerAudio || (!this.sewerAudio.paused && this.pausedBgm?.audio !== this.sewerAudio && !this.songPreview)) {
-      this.sewerSongTime += dt;
-    }
-
-    boss.hitFlash = Math.max(0, (boss.hitFlash || 0) - dt);
-    if (boss.chase) {
-      this.updateLevel5BossChase(dt);
-      return;
-    }
-    const locked = this.pocketOpen;
-    const inputX = locked ? 0 : (this.keys.has("KeyD") ? 1 : 0) - (this.keys.has("KeyA") ? 1 : 0);
-    const inputDepth = locked ? 0 : (this.keys.has("KeyS") || this.keys.has("ArrowDown") ? 1 : 0)
-      - (this.keys.has("KeyW") || this.keys.has("ArrowUp") ? 1 : 0);
-    const targetVx = inputX * (driving.moveSpeed ?? 420);
-    const targetDepthV = inputDepth * (driving.depthSpeed ?? 0.94);
-    boss.vx = approachValue(
-      boss.vx || 0,
-      targetVx,
-      (Math.abs(targetVx) > Math.abs(boss.vx || 0)
-        ? (driving.acceleration ?? 2400)
-        : (driving.brake ?? 3000)) * dt
-    );
-    boss.depthV = approachValue(
-      boss.depthV || 0,
-      targetDepthV,
-      (Math.abs(targetDepthV) > Math.abs(boss.depthV || 0)
-        ? (driving.depthAcceleration ?? 5.8)
-        : (driving.depthBrake ?? 8.6)) * dt
-    );
-    boss.x = clamp(boss.x + (boss.vx || 0) * dt, driving.minX ?? 168, driving.maxX ?? 568);
-    const road = stage.roadBounds || {};
-    boss.depth = clamp(
-      (boss.depth ?? 0.58) + (boss.depthV || 0) * dt,
-      road.depthMin ?? 0.12,
-      road.depthMax ?? 0.88
-    );
-    boss.cameraX = (boss.cameraX || 0) + (driving.scrollSpeed ?? 265) * dt;
-
-    if (boss.rhythm?.chart?.length) {
-      this.updateLevel5BossRhythmObjects(dt);
-    } else {
-      boss.pickupTimer -= dt;
-      if (boss.pickupTimer <= 0) {
-        this.spawnLevel5BossObject("pickup");
-        boss.pickupTimer = this.randomLevel5BossInterval("pickupSpawnMin", "pickupSpawnMax", 0.6, 1.05);
-      }
-      boss.obstacleTimer -= dt;
-      if (boss.obstacleTimer <= 0) {
-        this.spawnLevel5BossObject("obstacle");
-        boss.obstacleTimer = this.randomLevel5BossInterval("obstacleSpawnMin", "obstacleSpawnMax", 0.95, 1.55);
-      }
-
-      const objectSpeed = driving.objectSpeed ?? 326;
-      const carPoint = this.getLevel5BossRoadPoint(boss.x, boss.depth);
-      const carRadiusX = driving.carHitRadiusX ?? 112;
-      const carRadiusY = driving.carHitRadiusY ?? 36;
-      boss.objects.forEach((object) => {
-        object.x -= objectSpeed * dt;
-        object.wobble += dt * 4.8;
-        if (object.hit) return;
-        const objectPoint = this.getLevel5BossRoadPoint(object.x, object.depth);
-        const isPickup = object.kind === "pickup";
-        const radiusX = isPickup ? (driving.pickupHitRadius ?? 42) : (driving.obstacleHitRadiusX ?? 58);
-        const radiusY = isPickup ? (driving.pickupHitRadius ?? 42) : (driving.obstacleHitRadiusY ?? 34);
-        const overlaps = Math.abs(object.x - boss.x) <= carRadiusX + radiusX
-          && Math.abs(objectPoint.y - carPoint.y) <= carRadiusY + radiusY;
-        if (!overlaps) return;
-        object.hit = true;
-        if (isPickup) {
-          const amount = driving.pickupValue ?? 14;
-          boss.score = clamp((boss.score || 0) + amount, 0, boss.maxScore || 100);
-          this.floaters.push({
-            text: `+${amount}`,
-            x: object.x - 12,
-            y: objectPoint.y - 82,
-            life: 0.65,
-            color: "#8fe8ff"
-          });
-        } else {
-          const amount = driving.obstaclePenalty ?? 18;
-          boss.score = clamp((boss.score || 0) - amount, 0, boss.maxScore || 100);
-          boss.hitFlash = 0.28;
-          this.screenShake = Math.max(this.screenShake, 5);
-          this.floaters.push({
-            text: `-${amount}`,
-            x: object.x - 12,
-            y: objectPoint.y - 72,
-            life: 0.7,
-            color: "#ff6f6f"
-          });
-        }
-      });
-      boss.objects = boss.objects.filter((object) => object.x > -180 && !object.hit);
-    }
-    if ((boss.score || 0) >= (boss.maxScore || 100)) this.winLevel5BossFight();
-  }
-
-  updateLevel5BossVictory(dt) {
-    const boss = this.level5Boss;
-    this.level5BossVictoryTimer = (this.level5BossVictoryTimer || 0) + dt;
-    if (!boss) {
-      this.startSewerTransition("level6");
-      return;
-    }
-    boss.hitFlash = Math.max(0, (boss.hitFlash || 0) - dt);
-    const driving = this.getLevel5BossDrivingConfig();
-    const chaseConfig = boss.chase?.config || this.getLevel5BossChaseConfig();
-    const exitSpeed = chaseConfig.victoryExitSpeed ?? 430;
-    const accelerating = this.keys.has("KeyD") || this.keys.has("ArrowRight");
-    if (accelerating) {
-      boss.carSpeed = approachValue(boss.carSpeed || exitSpeed, exitSpeed, 760 * dt);
-      boss.x += (boss.carSpeed || exitSpeed) * dt;
-      boss.cameraX = (boss.cameraX || 0) + (driving.scrollSpeed ?? 265) * dt;
-    }
-    if (boss.x > VIEW_W + 220) {
-      this.startSewerTransition("level6");
-    }
-  }
-
-  winLevel5BossFight() {
-    if (!this.level5Boss || this.state === "level5BossVictory" || this.state === "level5BossFailure") return;
-    // Land the car immediately so it stays grounded through the victory drive-off
-    // (catching the goat mid-jump used to freeze it floating in the air).
-    this.level5Boss.jumpY = 0;
-    this.level5Boss.jumpVY = 0;
-    this.level5Boss.score = this.level5Boss.maxScore || 100;
-    this.collectSong("level5");
-    this.completeStage("level5-stage2");
-    this.restockChestConsumablesAfterFight();
-    if (this.sewerAudio) this.sewerAudio.loop = false;
-    this.level5BossVictoryTimer = 0;
-    this.state = "level5BossVictory";
-    this.saveToast = "LEVEL COMPLETE";
-    this.saveToastTimer = 1.5;
-  }
-
-  failLevel5BossFight(message) {
-    if (!this.level5Boss || this.state === "level5BossVictory" || this.state === "level5BossFailure") return;
-    this.level5BossFailMessage = message;
-    if (this.sewerAudio) this.sewerAudio.loop = false;
-    this.level5BossVictoryTimer = 0;
-    this.registerStageFailure();
-    this.state = "level5BossFailure";
-    this.stopFailedRhythmTrack(this.sewerAudio);
-    this.screenShake = Math.max(this.screenShake, 8);
-    this.saveToast = "GOAT ESCAPED";
-    this.saveToastTimer = 1.5;
+    if (options.fromDebug) this.freePlay = true;
+    else if (!this.freePlay) this.completeStage("level5-stage1");
+    return this.startLevel5RiverFight(options);
   }
 
   enterSewerBossScene(options = {}) {
@@ -19903,128 +19098,6 @@ for (const level of this.config.secretLevels || []) {
     ) {
       this.startLevel4Dialogue();
     }
-  }
-
-  updateLevel5(dt) {
-    const stage = this.getLevel5Stage1Config();
-    const movement = stage.movement || {};
-    const activeMovement = this.level5CarBoarded
-      ? { ...movement, ...(stage.carDrive || {}) }
-      : movement;
-    const road = stage.roadBounds || {};
-    const car = stage.car || {};
-    const liveAudioTime = this.sewerAudio && !this.sewerAudio.paused ? this.sewerAudio.currentTime : null;
-    if (liveAudioTime !== null && liveAudioTime > this.sewerSongTime) {
-      this.sewerSongTime = liveAudioTime;
-    } else if (!this.sewerAudio || (!this.sewerAudio.paused && this.pausedBgm?.audio !== this.sewerAudio && !this.songPreview)) {
-      this.sewerSongTime += dt;
-    }
-
-    this.sewerFx = this.sewerFx
-      .map((fx) => ({ ...fx, life: fx.life - dt }))
-      .filter((fx) => fx.life > 0);
-    this.sewerPlayer.actionTimer = Math.max(0, (this.sewerPlayer.actionTimer || 0) - dt);
-    this.sewerPlayer.weaponCooldown = Math.max(0, (this.sewerPlayer.weaponCooldown || 0) - dt);
-    if (this.sewerPlayer.actionTimer <= 0 && ["spray", "lightPunch", "heavyPunch"].includes(this.sewerPlayer.action)) {
-      this.sewerPlayer.action = "idle";
-      this.sewerPlayer.attackHitDone = false;
-    }
-
-    const locked = this.pocketOpen || this.chest?.menuOpen;
-    const inputX = locked ? 0 : (this.keys.has("KeyD") ? 1 : 0) - (this.keys.has("KeyA") ? 1 : 0);
-    const inputDepth = locked ? 0 : (this.keys.has("KeyS") || this.keys.has("ArrowDown") ? 1 : 0)
-      - (this.keys.has("KeyW") || this.keys.has("ArrowUp") ? 1 : 0);
-    const targetVx = inputX * (activeMovement.moveSpeed ?? 285);
-    const targetDepthV = inputDepth * (activeMovement.depthSpeed ?? 0.7);
-    this.sewerPlayer.vx = approachValue(
-      this.sewerPlayer.vx,
-      targetVx,
-      (Math.abs(targetVx) > Math.abs(this.sewerPlayer.vx)
-        ? (activeMovement.acceleration ?? 1580)
-        : (activeMovement.brake ?? 2300)) * dt
-    );
-    this.sewerPlayer.depthV = approachValue(
-      this.sewerPlayer.depthV || 0,
-      targetDepthV,
-      (Math.abs(targetDepthV) > Math.abs(this.sewerPlayer.depthV || 0)
-        ? (activeMovement.depthAcceleration ?? 4.6)
-        : (activeMovement.depthBrake ?? 7.0)) * dt
-    );
-
-    const previousX = this.sewerPlayer.x;
-    const previousDepth = this.sewerPlayer.depth ?? 0.62;
-    const minX = road.minX ?? 72;
-    const maxX = road.maxX ?? 2328;
-    const minDepth = road.depthMin ?? 0;
-    const maxDepth = road.depthMax ?? 1;
-    const nextX = this.sewerPlayer.x + this.sewerPlayer.vx * dt;
-    const nextDepth = previousDepth + (this.sewerPlayer.depthV || 0) * dt;
-    this.sewerPlayer.x = clamp(nextX, minX, maxX);
-    if (nextX < minX || nextX > maxX) this.sewerPlayer.vx = 0;
-    this.sewerPlayer.depth = clamp(nextDepth, minDepth, maxDepth);
-    if (nextDepth < minDepth || nextDepth > maxDepth) this.sewerPlayer.depthV = 0;
-
-    if (!this.level5CarBoarded) {
-      const carRadiusX = car.collisionRadiusX ?? 224;
-      const carDepthRadius = car.collisionDepthRadius ?? 0.2;
-      const insideCar = Math.abs(this.sewerPlayer.x - (car.x ?? 1240)) < carRadiusX
-        && Math.abs(this.sewerPlayer.depth - (car.depth ?? 0.58)) < carDepthRadius;
-      if (insideCar) {
-        const enteredFromSide = Math.abs(previousX - (car.x ?? 1240)) >= carRadiusX;
-        if (enteredFromSide) {
-          this.sewerPlayer.x = previousX < (car.x ?? 1240)
-            ? (car.x ?? 1240) - carRadiusX
-            : (car.x ?? 1240) + carRadiusX;
-          this.sewerPlayer.vx = 0;
-        } else {
-          this.sewerPlayer.depth = previousDepth < (car.depth ?? 0.58)
-            ? (car.depth ?? 0.58) - carDepthRadius
-            : (car.depth ?? 0.58) + carDepthRadius;
-          this.sewerPlayer.depth = clamp(this.sewerPlayer.depth, minDepth, maxDepth);
-          this.sewerPlayer.depthV = 0;
-        }
-      }
-    }
-
-    const worldWidth = stage.worldWidth ?? 2400;
-    const maxCameraX = Math.max(0, worldWidth - VIEW_W);
-    const targetCameraX = clamp(
-      this.sewerPlayer.x - (stage.cameraFollowX ?? 850),
-      0,
-      maxCameraX
-    );
-    this.level5CameraX = lerp(this.level5CameraX || targetCameraX, targetCameraX, clamp(dt * 5.5, 0, 1));
-    const screen = this.getLevel5RoadPoint(this.sewerPlayer.x, this.sewerPlayer.depth);
-    this.sewerPlayer.scale = screen.scale;
-    const groundY = screen.y;
-    if (this.sewerPlayer.grounded) {
-      this.sewerPlayer.y = groundY;
-      this.sewerPlayer.vy = 0;
-    } else {
-      const gravity = activeMovement.gravity ?? 1400;
-      this.sewerPlayer.vy = (this.sewerPlayer.vy || 0) + gravity * dt;
-      this.sewerPlayer.y += this.sewerPlayer.vy * dt;
-      if (this.sewerPlayer.y >= groundY) {
-        this.sewerPlayer.y = groundY;
-        this.sewerPlayer.vy = 0;
-        this.sewerPlayer.grounded = true;
-        if (this.sewerPlayer.action === "jump") this.sewerPlayer.action = "idle";
-      } else if (!["spray", "lightPunch", "heavyPunch"].includes(this.sewerPlayer.action)) {
-        this.sewerPlayer.action = "jump";
-      }
-    }
-    this.sewerPlayer.crouching = false;
-    if (!locked && Math.abs(this.sewerPlayer.vx) > 12) this.sewerPlayer.facing = this.sewerPlayer.vx > 0 ? 1 : -1;
-    if (this.level5CarBoarded) {
-      const exit = stage.stage2Exit || {};
-      const withinExitDepth = (this.sewerPlayer.depth ?? 0.58) >= (exit.depthMin ?? road.depthMin ?? 0)
-        && (this.sewerPlayer.depth ?? 0.58) <= (exit.depthMax ?? road.depthMax ?? 1);
-      if (withinExitDepth && this.sewerPlayer.x <= (exit.x ?? (road.minX ?? 72) + 6)) {
-        this.startSewerTransition("level5Boss");
-        return;
-      }
-    }
-    this.updateSewerFxFollow();
   }
 
   updateLevel3Rhythm(dt) {
@@ -22525,7 +21598,7 @@ for (const level of this.config.secretLevels || []) {
     // The road layer's rows: the wall's top at 536, the road's edge at 703
     // (of 1072), drawn at 0.92 so the car's wheels sit on the lane at groundY.
     const road = {
-      image: this.refs.level5ParallaxLayers?.[1],
+      image: this.refs.level5ParallaxLayers?.[0],
       speed: 420,
       height: 1072 * 0.92,
       top: groundY - 622
@@ -24699,406 +23772,6 @@ for (const level of this.config.secretLevels || []) {
     this.ctx.restore();
   }
 
-  getLevel5BackgroundCrop(image, parallaxFactor = 1) {
-    if (!image) return null;
-    const stage = this.getLevel5Stage1Config();
-    const maxCameraX = Math.max(1, (stage.worldWidth ?? 2400) - VIEW_W);
-    const progress = clamp((this.level5CameraX || 0) / maxCameraX, 0, 1);
-    const sourceW = image.naturalWidth || image.width;
-    const sourceH = image.naturalHeight || image.height;
-    const cropW = Math.min(sourceW, sourceH * (VIEW_W / VIEW_H));
-    const maxShift = Math.max(0, sourceW - cropW);
-    return {
-      x: clamp(maxShift * progress * parallaxFactor, 0, maxShift),
-      w: cropW,
-      h: sourceH
-    };
-  }
-
-  drawLevel5ParallaxLayer(image, parallaxFactor = 1, alpha = 1) {
-    const crop = this.getLevel5BackgroundCrop(image, parallaxFactor);
-    if (!crop) return false;
-    this.ctx.save();
-    this.ctx.globalAlpha *= alpha;
-    this.ctx.drawImage(
-      image,
-      crop.x,
-      0,
-      crop.w,
-      crop.h,
-      0,
-      0,
-      VIEW_W,
-      VIEW_H
-    );
-    this.ctx.restore();
-    return true;
-  }
-
-  renderLevel5Background() {
-    const image = this.refs.level5Stage1Map;
-    const stage = this.getLevel5Stage1Config();
-    const layerSpecs = stage.parallaxLayers || [];
-    const layerImages = this.refs.level5ParallaxLayers || [];
-    const hasParallaxLayers = layerSpecs.length > 0 && layerImages.some(Boolean);
-    if (!image && !hasParallaxLayers) {
-      this.ctx.fillStyle = "#06101f";
-      this.ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-      return;
-    }
-    if (hasParallaxLayers) {
-      this.ctx.fillStyle = "#030710";
-      this.ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-      layerSpecs.forEach((layer, index) => {
-        this.drawLevel5ParallaxLayer(
-          layerImages[index],
-          layer.parallaxFactor ?? 1,
-          layer.alpha ?? 1
-        );
-      });
-    } else {
-      this.drawLevel5ParallaxLayer(image, 0.9, 1);
-    }
-
-    const glow = this.ctx.createLinearGradient(0, 270, 0, VIEW_H);
-    glow.addColorStop(0, "rgba(20, 79, 126, 0.04)");
-    glow.addColorStop(0.64, "rgba(255, 180, 96, 0.035)");
-    glow.addColorStop(1, "rgba(3, 7, 14, 0.2)");
-    this.ctx.fillStyle = glow;
-    this.ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-  }
-
-  drawLevel5UndergroundWater() {
-    const sheet = this.refs.level5UndergroundWaterSheet;
-    const spec = this.config?.sprites?.level5UndergroundWater || {};
-    const water = this.getLevel5Stage1Config().undergroundWater || {};
-    if (!sheet || water.enabled === false) return;
-    const frames = spec.animations?.idle || [0, 1, 2, 3];
-    const frameIndex = frames[Math.floor(this.time * (spec.fps || 5.6)) % frames.length] ?? 0;
-    const frameWidth = spec.frameWidth || 512;
-    const frameHeight = spec.frameHeight || 512;
-    const cols = spec.cols || Math.max(1, Math.floor(sheet.width / frameWidth));
-    const col = frameIndex % cols;
-    const row = Math.floor(frameIndex / cols);
-    const crop = spec.frameCrop || { x: 0, y: 0, w: frameWidth, h: frameHeight };
-    const w = water.displayWidth ?? spec.displayWidth ?? 560;
-    const h = water.displayHeight ?? spec.displayHeight ?? 94;
-    const spacing = Math.max(1, water.spacing ?? Math.round(w * 0.78));
-    const y = water.y ?? 657;
-    const scroll = (this.level5CameraX || 0) * (water.scrollFactor ?? 0.18) + this.time * (water.driftSpeed ?? 0);
-    let x = -(((scroll % spacing) + spacing) % spacing) - spacing;
-    this.ctx.save();
-    this.ctx.globalAlpha *= water.alpha ?? 0.46;
-    for (; x < VIEW_W + spacing; x += spacing) {
-      this.ctx.drawImage(
-        sheet,
-        col * frameWidth + crop.x,
-        row * frameHeight + crop.y,
-        crop.w,
-        crop.h,
-        Math.round(x),
-        Math.round(y - h * 0.5),
-        w,
-        h
-      );
-    }
-    this.ctx.restore();
-  }
-
-  drawLevel5Daytona() {
-    const car = this.getLevel5Stage1Config().car || {};
-    const spec = this.config?.sprites?.level5Daytona || {};
-    const frames = spec.animations?.idle || [0];
-    const frame = frames[0] ?? 0;
-    const point = this.getLevel5RoadPoint(car.x ?? 1240, car.depth ?? 0.58);
-    const w = (car.displayWidth ?? spec.displayWidth ?? 400) * point.scale;
-    const h = (car.displayHeight ?? spec.displayHeight ?? 330) * point.scale;
-    drawVehicleGroundShadow(this.ctx, point.x, point.y + 2, point.scale, 182, 18, []);
-    drawBundleFrame(
-      this.ctx,
-      this.refs.level5DaytonaSheet,
-      spec,
-      frame,
-      point.x,
-      point.y,
-      w,
-      h,
-      spec.anchor || { x: 0.5, y: 0.967 }
-    );
-  }
-
-  drawLevel5OccupiedDaytona(worldX, depth, options = {}) {
-    const spec = this.config?.sprites?.level5BossDaytona || {};
-    const sheet = this.refs.level5BossDaytonaSheet;
-    if (!sheet) {
-      this.drawLevel5Daytona();
-      return false;
-    }
-    const point = options.point || this.getLevel5RoadPoint(worldX, depth);
-    const frames = spec.animations?.drive || [0, 1, 2, 3];
-    const frame = frames[Math.floor(this.time * (spec.fps || 8)) % frames.length] ?? 0;
-    const w = (options.displayWidth ?? spec.displayWidth ?? 400) * point.scale;
-    const h = (options.displayHeight ?? spec.displayHeight ?? 330) * point.scale;
-    drawVehicleGroundShadow(this.ctx, point.x, point.y + 4, point.scale, 188, 18, []);
-    // v2 art faces right natively; mirror only when the car points left.
-    const gameFacing = options.facing ?? -1;
-    const spriteFacing = gameFacing;
-    drawBundleFrame(
-      this.ctx,
-      sheet,
-      spec,
-      frame,
-      point.x,
-      point.y,
-      w,
-      h,
-      spec.anchor || { x: 0.5, y: 0.967 },
-      { facing: spriteFacing }
-    );
-    return true;
-  }
-
-  drawLevel5GanGanCar(worldX, depth, options = {}) {
-    const spec = this.config?.sprites?.level5GanGanCar || {};
-    const sheet = this.refs.level5GanGanCarSheet;
-    if (!sheet) {
-      this.drawLevel5Daytona();
-      return false;
-    }
-    const point = options.point || this.getLevel5RoadPoint(worldX, depth);
-    const frames = spec.animations?.idle || [0, 1, 2, 3];
-    const frame = frames[Math.floor(this.time * (spec.fps || 6)) % frames.length] ?? 0;
-    const w = (options.displayWidth ?? spec.displayWidth ?? 400) * point.scale;
-    const h = (options.displayHeight ?? spec.displayHeight ?? 330) * point.scale;
-    drawVehicleGroundShadow(this.ctx, point.x, point.y + 2, point.scale, 182, 18, []);
-    const gameFacing = options.facing ?? -1;
-    const spriteFacing = gameFacing < 0 ? 1 : -1;
-    drawBundleFrame(
-      this.ctx,
-      sheet,
-      spec,
-      frame,
-      point.x,
-      point.y,
-      w,
-      h,
-      spec.anchor || { x: 0.5, y: 0.967 },
-      { facing: spriteFacing }
-    );
-    return true;
-  }
-
-  drawLevel5GanGanIdle() {
-    const gangan = this.getLevel5Stage1Config().gangan || {};
-    if (gangan.enabled === false || this.level5GanGanInCar) return;
-    const spec = this.config?.sprites?.level5GanGanIdle || {};
-    const frames = spec.animations?.idle || [0];
-    const frame = frames[Math.floor(this.time * (spec.fps || 6)) % frames.length] ?? 0;
-    const point = this.getLevel5RoadPoint(gangan.x ?? 1450, gangan.depth ?? 0.61);
-    const w = (gangan.displayWidth ?? spec.displayWidth ?? 188) * point.scale;
-    const h = (gangan.displayHeight ?? spec.displayHeight ?? 260) * point.scale;
-    drawVehicleGroundShadow(
-      this.ctx,
-      point.x,
-      point.y + 1,
-      point.scale,
-      gangan.shadowWidth ?? 42,
-      gangan.shadowHeight ?? 12,
-      []
-    );
-    drawBundleFrame(
-      this.ctx,
-      this.refs.level5GanGanIdleSheet,
-      spec,
-      frame,
-      point.x,
-      point.y,
-      w,
-      h,
-      spec.anchor || { x: 0.5, y: 0.965 }
-    );
-  }
-
-  drawLevel5HighwayChest() {
-    const chest = this.getLevel5Stage1Config().chest || {};
-    const spec = this.config?.sprites?.level5HighwayChest || {};
-    const frames = spec.animations?.idle || [0];
-    const frame = frames[Math.floor(this.time * (spec.fps || 4.5)) % frames.length] ?? 0;
-    const point = this.getLevel5RoadPoint(chest.x ?? 1530, chest.depth ?? 0.69);
-    const w = (chest.displayWidth ?? spec.displayWidth ?? 96) * point.scale;
-    const h = (chest.displayHeight ?? spec.displayHeight ?? 96) * point.scale;
-    const near = this.isLevel5NearChest();
-    this.ctx.save();
-    if (near) {
-      const pulse = 0.16 + (Math.sin(this.time * 6) * 0.5 + 0.5) * 0.16;
-      this.ctx.fillStyle = `rgba(104, 236, 255, ${pulse})`;
-      this.ctx.beginPath();
-      this.ctx.ellipse(point.x, point.y - 4, 48 * point.scale, 15 * point.scale, 0, 0, TAU);
-      this.ctx.fill();
-    }
-    drawVehicleGroundShadow(this.ctx, point.x, point.y + 1, point.scale, 42, 12, []);
-    drawBundleFrame(
-      this.ctx,
-      this.refs.level5HighwayChestSheet,
-      spec,
-      frame,
-      point.x,
-      point.y,
-      w,
-      h,
-      spec.anchor || { x: 0.5, y: 0.91 }
-    );
-    this.ctx.restore();
-  }
-
-  renderLevel5Scene() {
-    this.ctx.save();
-    this.ctx.fillStyle = "#030710";
-    this.ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    this.renderLevel5Background();
-    this.drawLevel5UndergroundWater();
-
-    const playerPoint = this.getLevel5RoadPoint(this.sewerPlayer.x, this.sewerPlayer.depth);
-    const bobby = {
-      x: playerPoint.x,
-      y: this.sewerPlayer.y ?? playerPoint.y,
-      vx: this.sewerPlayer.vx,
-      depthV: this.sewerPlayer.depthV || 0,
-      scale: playerPoint.scale,
-      mounted: false,
-      facing: this.sewerPlayer.facing,
-      invuln: this.player.invuln,
-      hitPulse: this.player.hitPulse,
-      action: this.sewerPlayer.action,
-      actionTimer: this.sewerPlayer.actionTimer,
-      crouching: false,
-      grounded: this.sewerPlayer.grounded,
-      punchTimer: ["lightPunch", "heavyPunch"].includes(this.sewerPlayer.action) ? this.sewerPlayer.actionTimer : 0,
-      punchKind: this.sewerPlayer.punchKind || "light",
-      floorY: playerPoint.y
-    };
-    const stage = this.getLevel5Stage1Config();
-    const carConfig = stage.car || {};
-    const carPoint = this.getLevel5RoadPoint(
-      carConfig.x ?? 1240,
-      carConfig.depth ?? 0.58
-    );
-    const ganGanConfig = stage.gangan || {};
-    const ganGanPoint = this.getLevel5RoadPoint(
-      ganGanConfig.x ?? 1450,
-      ganGanConfig.depth ?? 0.61
-    );
-    const chestPoint = this.getLevel5RoadPoint(
-      stage.chest?.x ?? 1530,
-      stage.chest?.depth ?? 0.69
-    );
-    const drawables = [];
-    if (this.level5CarBoarded) {
-      drawables.push({
-        y: playerPoint.y,
-        draw: () => this.drawLevel5OccupiedDaytona(this.sewerPlayer.x, this.sewerPlayer.depth, {
-          facing: this.sewerPlayer.facing ?? -1,
-          displayWidth: carConfig.driveDisplayWidth ?? carConfig.displayWidth ?? 400,
-          displayHeight: carConfig.driveDisplayHeight ?? carConfig.displayHeight ?? 330
-        })
-      });
-    } else {
-      drawables.push({
-        y: carPoint.y,
-        draw: () => {
-          if (this.level5GanGanInCar) {
-            this.drawLevel5GanGanCar(carConfig.x ?? 1240, carConfig.depth ?? 0.58, {
-              facing: -1,
-              displayWidth: carConfig.driveDisplayWidth ?? carConfig.displayWidth ?? 400,
-              displayHeight: carConfig.driveDisplayHeight ?? carConfig.displayHeight ?? 330
-            });
-          } else {
-            this.drawLevel5Daytona();
-          }
-        }
-      });
-      if (!this.level5GanGanInCar) {
-        drawables.push({ y: ganGanPoint.y, draw: () => this.drawLevel5GanGanIdle() });
-      }
-      drawables.push({
-        y: playerPoint.y,
-        draw: () => {
-          const outfitId = this.getEquippedOutfitId();
-          const actionFrame = outfitId === "orangeSuit" ? this.getSewerBobbyActionFrame() : -1;
-          if (actionFrame >= 0) {
-            drawLevel2BobbyAction(this.ctx, this.refs.level2BundleSheet, this.config?.sprites?.level2Bundle, actionFrame, bobby, this.time);
-          } else {
-            const outfitSpec = { ...this.config.sprites.bobby, onFoot: this.getEquippedBobbyFootSpec() };
-            drawBobby(this.ctx, bobby, this.time, false, this.getEquippedBobbyRefs(), outfitSpec);
-          }
-        }
-      });
-    }
-    drawables.push({ y: chestPoint.y, draw: () => this.drawLevel5HighwayChest() });
-    drawables.sort((a, b) => a.y - b.y).forEach((item) => item.draw());
-    this.sewerFx.forEach((fx) => drawSewerSprayFx(this.ctx, { ...fx, x: fx.x - (this.level5CameraX || 0) }, this.time));
-    this.floaters.forEach((floater) => drawFloater(this.ctx, floater));
-    this.renderLevel5Hud();
-
-    const chest = this.getLevel5Stage1Config().chest || {};
-    const gangan = this.getLevel5Stage1Config().gangan || {};
-    const car = this.getLevel5Stage1Config().car || {};
-    const exit = this.getLevel5Stage1Config().stage2Exit || {};
-    let prompt = "A/D 移動   W/S 切換車道深度   往左探索";
-    let promptNear = false;
-    if (!this.level5GanGanInCar && this.isLevel5NearGanGan()) {
-      prompt = gangan.prompt || "O 與 Gan Gan 對話";
-      promptNear = true;
-    } else if (this.level5GanGanInCar && !this.level5CarBoarded && this.isLevel5NearCar()) {
-      prompt = car.boardPrompt || "O 上車";
-      promptNear = true;
-    } else if (this.level5CarBoarded) {
-      prompt = exit.prompt || "往左開離開台北夜行";
-      promptNear = true;
-    } else if (this.isLevel5NearChest()) {
-      prompt = chest.prompt || "O 查看路邊寶箱";
-      promptNear = true;
-    }
-    drawObjectivePrompt(
-      this.ctx,
-      prompt,
-      promptNear ? "#ffd36c" : "#8fe8ff",
-      this.time,
-      VIEW_H - 132
-    );
-    this.renderPocketInterface();
-    if (this.chest?.menuOpen) this.renderChestMenu();
-    this.renderHotbarInterface();
-    this.renderDraggedItem();
-    this.ctx.restore();
-  }
-
-  renderLevel5Hud() {
-    if (this.isCleanView()) return;
-    const level = this.getLevel5Stage1Config();
-    this.ctx.save();
-    this.ctx.textBaseline = "top";
-    drawHudBackdrop(this.ctx, this.time);
-    drawHudPanel(this.ctx, 48, 18, 356, 74, "#2d7ec2");
-    drawPortrait(this.ctx, this.refs.bobby, 62, 28, 48, true);
-    this.ctx.font = "900 24px 'Courier New', monospace";
-    this.ctx.fillStyle = "#f7f2de";
-    this.ctx.fillText(HERO_TAG, 122, 28, 168);
-    drawCompactHearts(this.ctx, 122, 62, this.config.player.maxHearts, this.player.hearts, "#ff4866");
-    { // MP powers BLOCK as well as the spray, so the bar always shows.
-      drawHudResourceBar(this.ctx, 122, 84, 198, 8, this.player.mp || 0, this.player.maxMp || 100, "#4bb7ff", "MP");
-    }
-    drawHudSongChip(this.ctx, 448, 18, 384, 74, level.label || "LEVEL 6", level.title || "台北夜行", "#8fe8ff");
-    drawHudPanel(this.ctx, 876, 18, 356, 74, "#ffd36c");
-    this.ctx.font = "900 13px 'Courier New', monospace";
-    this.ctx.fillStyle = "#ffbd6e";
-    this.ctx.fillText("AREA", 902, 25);
-    this.ctx.font = "900 21px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace";
-    this.ctx.fillStyle = "#f7f2de";
-    this.ctx.fillText("台北高架道路", 902, 43);
-    this.ctx.restore();
-  }
-
   drawLevel6ArrivalCar() {
     const stage = this.getLevel6Stage1Config();
     const car = stage.car || {};
@@ -25405,484 +24078,6 @@ for (const level of this.config.secretLevels || []) {
     }
     this.finaleAlbumTelemetry = { ...timing, newest, finalOnly, drawn };
     target.restore();
-  }
-
-  getLevel5BossBackgroundCrop(image, parallaxFactor = 1) {
-    if (!image) return null;
-    const stage = this.getLevel5Stage2Config();
-    const maxCameraX = Math.max(1, (stage.worldWidth ?? 2560) - VIEW_W);
-    const progress = clamp(((this.level5Boss?.cameraX || 0) / maxCameraX) * parallaxFactor, 0, 1);
-    const sourceW = image.naturalWidth || image.width;
-    const sourceH = image.naturalHeight || image.height;
-    const cropW = Math.min(sourceW, sourceH * (VIEW_W / VIEW_H));
-    const maxShift = Math.max(0, sourceW - cropW);
-    return {
-      x: clamp(maxShift * progress, 0, maxShift),
-      w: cropW,
-      h: sourceH
-    };
-  }
-
-  drawLevel5BossBackgroundLayer(parallaxFactor, clipY = 0, clipH = VIEW_H, alpha = 1) {
-    const image = this.refs.level5BossMap;
-    const crop = this.getLevel5BossBackgroundCrop(image, parallaxFactor);
-    if (!image || !crop) return false;
-    this.ctx.save();
-    this.ctx.globalAlpha *= alpha;
-    this.ctx.beginPath();
-    this.ctx.rect(0, clipY, VIEW_W, clipH);
-    this.ctx.clip();
-    this.ctx.drawImage(
-      image,
-      crop.x,
-      0,
-      crop.w,
-      crop.h,
-      0,
-      0,
-      VIEW_W,
-      VIEW_H
-    );
-    this.ctx.restore();
-    return true;
-  }
-
-  drawLevel5BossInfiniteParallaxLayer(image, layer = {}) {
-    if (!image) return false;
-    const sourceW = image.naturalWidth || image.width;
-    const sourceH = image.naturalHeight || image.height;
-    if (!sourceW || !sourceH) return false;
-    const scale = VIEW_H / sourceH;
-    const drawW = sourceW * scale;
-    const drawH = VIEW_H;
-    const cameraX = this.level5Boss?.cameraX || 0;
-    const offset = cameraX * (layer.parallaxFactor ?? 1) + this.time * (layer.driftSpeed ?? 0);
-    const firstTile = Math.floor(offset / drawW) - 1;
-    const lastTile = Math.ceil((offset + VIEW_W) / drawW) + 1;
-    const mirror = layer.repeatMode === "mirror";
-
-    this.ctx.save();
-    this.ctx.globalAlpha *= layer.alpha ?? 1;
-    for (let tile = firstTile; tile <= lastTile; tile += 1) {
-      const x = Math.round(tile * drawW - offset);
-      if (mirror && Math.abs(tile % 2) === 1) {
-        this.ctx.save();
-        this.ctx.translate(Math.round(x + drawW), 0);
-        this.ctx.scale(-1, 1);
-        this.ctx.drawImage(image, 0, 0, Math.ceil(drawW), drawH);
-        this.ctx.restore();
-      } else {
-        this.ctx.drawImage(image, x, 0, Math.ceil(drawW), drawH);
-      }
-    }
-    this.ctx.restore();
-    return true;
-  }
-
-  renderLevel5BossBackground() {
-    this.ctx.fillStyle = "#030710";
-    this.ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    const stage = this.getLevel5Stage2Config();
-    const layerSpecs = stage.parallaxLayers || [];
-    const layerImages = this.refs.level5BossParallaxLayers || [];
-    const hasInfiniteParallax = layerSpecs.length > 0
-      && layerImages.length >= layerSpecs.length
-      && layerImages.every(Boolean);
-    if (!this.refs.level5BossMap && !hasInfiniteParallax) {
-      const sky = this.ctx.createLinearGradient(0, 0, 0, VIEW_H);
-      sky.addColorStop(0, "#07123a");
-      sky.addColorStop(0.58, "#111827");
-      sky.addColorStop(1, "#05070d");
-      this.ctx.fillStyle = sky;
-      this.ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-      return;
-    }
-    if (hasInfiniteParallax) {
-      layerSpecs.forEach((layer, index) => {
-        this.drawLevel5BossInfiniteParallaxLayer(layerImages[index], layer);
-      });
-    } else {
-      this.drawLevel5BossBackgroundLayer(0.96, 0, VIEW_H, 1);
-    }
-    const glow = this.ctx.createLinearGradient(0, 260, 0, VIEW_H);
-    glow.addColorStop(0, "rgba(42, 178, 255, 0.05)");
-    glow.addColorStop(0.64, "rgba(255, 190, 94, 0.04)");
-    glow.addColorStop(1, "rgba(3, 7, 14, 0.22)");
-    this.ctx.fillStyle = glow;
-    this.ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-  }
-
-  drawLevel5BossObject(object) {
-    const spec = this.config?.sprites?.level5BossRoadObjects || {};
-    const sheet = this.refs.level5BossRoadObjectsSheet;
-    const point = this.getLevel5BossRoadPoint(object.x, object.depth);
-    const isPickup = object.kind === "pickup" || object.kind === "rhythmNote";
-    const frame = bundleFrameIndex(spec, object.frameName);
-    const wobbleY = isPickup ? Math.sin(object.wobble || 0) * 5 : 0;
-    const objectOffsetY = (isPickup ? (spec.pickupOffsetY ?? -34) : (spec.obstacleOffsetY ?? -18)) * point.scale;
-    const drawY = point.y + objectOffsetY;
-    const rhythmPulse = object.kind === "rhythmNote"
-      ? 1 + Math.max(0, 1 - Math.abs((this.sewerSongTime || 0) - object.time) / 0.28) * 0.12
-      : 1;
-    const w = (isPickup ? (spec.pickupDisplayWidth ?? 82) : (spec.obstacleDisplayWidth ?? 86)) * point.scale * rhythmPulse;
-    const h = (isPickup ? (spec.pickupDisplayHeight ?? 82) : (spec.obstacleDisplayHeight ?? 76)) * point.scale * rhythmPulse;
-    this.ctx.save();
-    if (isPickup) {
-      if (spec.pickupGlow !== false) {
-        const pulse = 0.18 + (Math.sin(this.time * 7 + object.id) * 0.5 + 0.5) * 0.12;
-        this.ctx.fillStyle = `rgba(105, 238, 255, ${pulse})`;
-        this.ctx.beginPath();
-        this.ctx.ellipse(point.x, drawY - 28 * point.scale, 46 * point.scale, 22 * point.scale, 0, 0, TAU);
-        this.ctx.fill();
-      }
-    } else {
-      drawVehicleGroundShadow(this.ctx, point.x, drawY + 4 * point.scale, point.scale, 52, 8, []);
-    }
-    if (!drawBundleFrame(
-      this.ctx,
-      sheet,
-      spec,
-      frame,
-      point.x,
-      drawY + wobbleY,
-      w,
-      h,
-      spec.anchors?.[object.frameName] || spec.anchor || { x: 0.5, y: 0.78 }
-    )) {
-      this.ctx.fillStyle = isPickup ? "#ffd36c" : "#ff6f6f";
-      this.ctx.beginPath();
-      this.ctx.arc(point.x, drawY - 22, isPickup ? 24 : 18, 0, TAU);
-      this.ctx.fill();
-    }
-    this.ctx.restore();
-  }
-
-  drawLevel5BossRhythmTrack() {
-    const boss = this.level5Boss;
-    const rhythm = boss?.rhythm;
-    if (!boss || !rhythm) return;
-    const config = rhythm.config || {};
-    const laneDepths = this.getLevel5BossLaneDepths();
-    const hitLineX = this.getLevel5BossHitLineX();
-    const markerOffsetY = config.markerOffsetY ?? -30;
-    const activeLane = this.getLevel5BossCurrentLaneIndex();
-    const bpm = config.bpm ?? 92;
-    const intro = config.introOffset ?? 0;
-    const beatPhaseRaw = ((this.sewerSongTime || 0) - intro) * bpm / 60;
-    const beatPhase = ((beatPhaseRaw % 1) + 1) % 1;
-    const beatPulse = Math.max(0, 1 - beatPhase * 3);
-    const hitPulse = clamp((rhythm.beatFlash || 0) * 5, 0, 1);
-    this.ctx.save();
-    this.ctx.globalCompositeOperation = "screen";
-    laneDepths.forEach((depth, index) => {
-      const point = this.getLevel5BossRoadPoint(hitLineX, depth);
-      const markerY = point.y + markerOffsetY * point.scale;
-      const active = index === activeLane;
-      const radiusX = (active ? 34 : 27) * point.scale + (beatPulse + hitPulse) * 8;
-      const radiusY = (active ? 12 : 9) * point.scale + (beatPulse + hitPulse) * 3;
-      this.ctx.strokeStyle = active ? "rgba(255, 211, 108, 0.95)" : "rgba(143, 232, 255, 0.62)";
-      this.ctx.lineWidth = active ? 3 : 2;
-      this.ctx.beginPath();
-      this.ctx.ellipse(point.x, markerY, radiusX, radiusY, 0, 0, TAU);
-      this.ctx.stroke();
-      this.ctx.fillStyle = active ? "rgba(255, 211, 108, 0.18)" : "rgba(95, 220, 255, 0.1)";
-      this.ctx.beginPath();
-      this.ctx.ellipse(point.x, markerY, radiusX * 0.74, radiusY * 0.72, 0, 0, TAU);
-      this.ctx.fill();
-    });
-    this.ctx.strokeStyle = `rgba(143, 232, 255, ${0.22 + beatPulse * 0.16 + hitPulse * 0.22})`;
-    this.ctx.lineWidth = 2;
-    this.ctx.beginPath();
-    this.ctx.moveTo(hitLineX, 385);
-    this.ctx.lineTo(hitLineX, 534);
-    this.ctx.stroke();
-    this.ctx.restore();
-  }
-
-  drawLevel5RhythmHitFx(fx) {
-    const spec = this.config?.sprites?.level5RhythmHitFx || {};
-    const sheet = this.refs.level5RhythmHitFxSheet;
-    const frames = spec.animations?.hit || [0, 1, 2, 3];
-    const age = 1 - clamp((fx.life || 0) / Math.max(0.001, fx.maxLife || 0.28), 0, 1);
-    const frame = frames[Math.min(frames.length - 1, Math.floor(age * frames.length))] ?? 0;
-    const point = this.getLevel5BossRoadPoint(fx.x, fx.depth);
-    const config = this.level5Boss?.rhythm?.config || {};
-    const fxY = point.y + (config.hitFxOffsetY ?? -54) * point.scale;
-    const w = (spec.displayWidth || 106) * point.scale;
-    const h = (spec.displayHeight || 106) * point.scale;
-    this.ctx.save();
-    this.ctx.globalCompositeOperation = "screen";
-    this.ctx.globalAlpha *= clamp((fx.life || 0) / Math.max(0.001, fx.maxLife || 0.28), 0, 1);
-    if (!drawBundleFrame(
-      this.ctx,
-      sheet,
-      spec,
-      frame,
-      point.x,
-      fxY,
-      w,
-      h,
-      spec.anchor || { x: 0.5, y: 0.5 }
-    )) {
-      this.ctx.strokeStyle = "#8fe8ff";
-      this.ctx.lineWidth = 3;
-      this.ctx.beginPath();
-      this.ctx.arc(point.x, fxY, 28 * point.scale, 0, TAU);
-      this.ctx.stroke();
-    }
-    this.ctx.restore();
-  }
-
-	  drawLevel5BossPoop(poop) {
-	    const boss = this.level5Boss;
-	    const chase = boss?.chase;
-	    if (!boss || !chase) return;
-	    if (poop.hit) return;
-	    const config = chase.config || {};
-	    const spec = this.config?.sprites?.level5PoopObstacle || {};
-	    const sheet = this.refs.level5PoopObstacleSheet;
-	    const x = boss.x + (poop.distance || 0);
-	    const y = (boss.groundY || this.getLevel5BossChaseGroundY()) + (config.poopGroundOffsetY ?? config.goatGroundOffsetY ?? 0);
-	    if (x < -90 || x > VIEW_W + 90) return;
-    this.ctx.save();
-    drawVehicleGroundShadow(this.ctx, x, y + 4, 1, 40, 7, []);
-    if (!drawBundleFrame(
-      this.ctx,
-      sheet,
-      spec,
-      0,
-      x,
-      y + Math.sin(poop.wobble || 0) * 1.5,
-      spec.displayWidth || 46,
-      spec.displayHeight || 34,
-      spec.anchor || { x: 0.5, y: 0.88 }
-    )) {
-      this.ctx.fillStyle = "#5b341d";
-      this.ctx.beginPath();
-      this.ctx.ellipse(x, y - 12, 21, 12, 0, 0, TAU);
-      this.ctx.fill();
-    }
-    this.ctx.restore();
-  }
-
-	  drawLevel5BossGoat() {
-	    const boss = this.level5Boss;
-	    const chase = boss?.chase;
-	    if (!boss || !chase) return;
-	    const config = chase.config || {};
-	    const spec = this.config?.sprites?.level5GoatRun || {};
-	    const sheet = this.refs.level5GoatRunSheet;
-	    const frames = spec.animations?.run || [0, 1, 2, 3];
-	    const frame = frames[Math.floor(this.time * (spec.fps || 12)) % frames.length] ?? 0;
-	    // The goat's screen X reflects the real gap: it recedes to the right as you
-	    // fall behind and approaches the car as you catch up. When it fully escapes
-	    // it bolts off the right edge (chase.escapeX, set in updateLevel5BossChase).
-	    const x = chase.escaping
-	      ? (chase.escapeX ?? (boss.x + (chase.goatDistance || 0)))
-	      : (boss.x + (chase.goatDistance || 0));
-	    const y = (boss.groundY || this.getLevel5BossChaseGroundY()) + (config.goatGroundOffsetY ?? 0);
-	    if (x < -160 || x > VIEW_W + 220) return;
-    this.ctx.save();
-    drawVehicleGroundShadow(this.ctx, x, y + 4, 1, 58, 8, []);
-    if (!drawBundleFrame(
-      this.ctx,
-      sheet,
-      spec,
-      frame,
-      x,
-      y,
-      spec.displayWidth || 142,
-      spec.displayHeight || 96,
-      spec.anchor || { x: 0.5, y: 0.92 }
-    )) {
-      this.ctx.fillStyle = "#d8dde1";
-      this.ctx.fillRect(x - 52, y - 54, 104, 46);
-      this.ctx.fillStyle = "#111318";
-      this.ctx.fillRect(x + 28, y - 76, 30, 26);
-    }
-    this.ctx.restore();
-  }
-
-	  drawLevel5BossCar() {
-	    const boss = this.level5Boss;
-	    if (!boss) return;
-	    const driving = this.getLevel5BossDrivingConfig();
-	    const spec = this.config?.sprites?.level5BossDaytona || {};
-	    const sheet = this.refs.level5BossDaytonaSheet;
-	    const chaseGroundY = boss.chase ? (boss.groundY || this.getLevel5BossChaseGroundY()) : null;
-	    const chaseConfig = boss.chase?.config || {};
-	    const carDrawOffsetY = boss.chase
-	      ? (chaseConfig.carDrawOffsetY ?? driving.carDrawOffsetY ?? -24)
-	      : (driving.carDrawOffsetY ?? -24);
-	    const point = boss.chase
-	      ? { x: boss.x, y: chaseGroundY - (boss.jumpY || 0), scale: 1 }
-	      : this.getLevel5BossRoadPoint(boss.x, boss.depth);
-	    const drawY = point.y + carDrawOffsetY * point.scale;
-    const frames = spec.animations?.drive || [0, 1, 2, 3];
-    const frame = frames[Math.floor(this.time * (spec.fps || 8)) % frames.length] ?? 0;
-    const w = (driving.carDisplayWidth ?? spec.displayWidth ?? 330) * point.scale;
-    const h = (driving.carDisplayHeight ?? spec.displayHeight ?? 170) * point.scale;
-    // The v2 duo-car art natively faces RIGHT (toward the goat); facing > 0
-    // draws it as-is, facing < 0 mirrors it (e.g. hard reverse).
-    const gameFacing = (boss.vx || 0) < -70 ? -1 : 1;
-    const spriteFacing = gameFacing;
-    this.ctx.save();
-	    const shadowY = boss.chase ? chaseGroundY + carDrawOffsetY * point.scale + 5 * point.scale : drawY + 5 * point.scale;
-    const shadowScale = boss.chase ? clamp(1 - (boss.jumpY || 0) / 360, 0.54, 1) : 1;
-    drawVehicleGroundShadow(this.ctx, point.x, shadowY, point.scale * shadowScale, 150, 16, []);
-    if ((boss.hitFlash || 0) > 0) {
-      this.ctx.globalAlpha *= clamp((boss.hitFlash || 0) * 3, 0, 0.8);
-      this.ctx.fillStyle = "#ff4866";
-      this.ctx.beginPath();
-      this.ctx.ellipse(point.x, drawY - 36 * point.scale, 168 * point.scale, 58 * point.scale, 0, 0, TAU);
-      this.ctx.fill();
-      this.ctx.globalAlpha = 1;
-    }
-    if (!drawBundleFrame(
-      this.ctx,
-      sheet,
-      spec,
-      frame,
-      point.x,
-      drawY,
-      w,
-      h,
-      spec.anchor || { x: 0.5, y: 0.82 },
-      { facing: spriteFacing }
-    )) {
-      this.ctx.fillStyle = "#cfd3d6";
-      this.ctx.fillRect(point.x - 92 * point.scale, drawY - 52 * point.scale, 184 * point.scale, 58 * point.scale);
-      this.ctx.fillStyle = "#05070d";
-      this.ctx.fillRect(point.x - 72 * point.scale, drawY - 82 * point.scale, 120 * point.scale, 42 * point.scale);
-    }
-    this.ctx.restore();
-  }
-
-  renderLevel5BossHud() {
-    if (this.isCleanView()) return;
-    const stage = this.getLevel5Stage2Config();
-    const boss = this.level5Boss || {};
-    this.ctx.save();
-    this.ctx.textBaseline = "top";
-    drawHudBackdrop(this.ctx, this.time);
-    drawHudPanel(this.ctx, 48, 18, 356, 74, "#2d7ec2");
-    drawPortrait(this.ctx, this.refs.bobby, 62, 28, 48, true);
-    this.ctx.font = "900 24px 'Courier New', monospace";
-    this.ctx.fillStyle = "#f7f2de";
-    this.ctx.fillText(HERO_TAG, 122, 28, 168);
-    this.ctx.font = "900 13px 'Courier New', monospace";
-    this.ctx.fillStyle = "#ffbd6e";
-    this.ctx.fillText(boss.chase ? "GOAT CHASER" : "DRIVER + GAN GAN", 122, 61);
-    if (boss.chase) {
-      drawCompactHearts(this.ctx, 268, 58, this.config.player.maxHearts, this.player.hearts, "#ff4866");
-    }
-    drawHudSongChip(this.ctx, 448, 18, 384, 74, stage.label || "LEVEL 6", SONG_TITLES.level5, "#ffd36c");
-    drawHudPanel(this.ctx, 876, 18, 356, 74, "#ffd36c");
-    this.ctx.font = "900 13px 'Courier New', monospace";
-    this.ctx.fillStyle = "#ffbd6e";
-    this.ctx.fillText(boss.chase ? "GOAT DISTANCE" : "INSPIRATION", 902, 25);
-    if (boss.chase) {
-      const config = boss.chase.config || {};
-      const catchDistance = config.catchDistance ?? 132;
-      const startDistance = config.startDistance ?? 560;
-      const distance = boss.chase.goatDistance ?? startDistance;
-      const progress = clamp(startDistance - distance, 0, Math.max(1, startDistance - catchDistance));
-      drawHudResourceBar(this.ctx, 902, 58, 206, 14, progress, Math.max(1, startDistance - catchDistance), "#ffd36c", "CATCH");
-      this.ctx.font = "900 11px 'Courier New', monospace";
-      this.ctx.fillStyle = "#f7f2de";
-      this.ctx.fillText(`${Math.max(0, Math.round(distance - catchDistance))}m TO GO`, 1044, 26);
-    } else if (boss.rhythm) {
-      this.ctx.fillStyle = "#8fe8ff";
-      this.ctx.fillText(`COMBO ${boss.combo || 0}`, 1112, 25);
-      drawHudResourceBar(this.ctx, 902, 58, 206, 14, boss.score || 0, boss.maxScore || 100, "#ffd36c", "POINTS");
-    } else {
-      drawHudResourceBar(this.ctx, 902, 58, 206, 14, boss.score || 0, boss.maxScore || 100, "#ffd36c", "POINTS");
-    }
-    this.ctx.restore();
-  }
-
-  renderLevel5BossScene(frozen = false) {
-    this.ctx.save();
-    this.renderLevel5BossBackground();
-    const boss = this.level5Boss;
-    if (boss) {
-      if (boss.chase) {
-        const poops = [...(boss.chase.poops || [])].sort((a, b) => a.distance - b.distance);
-        poops.forEach((poop) => this.drawLevel5BossPoop(poop));
-        if (this.state !== "level5BossVictory") this.drawLevel5BossGoat();
-        this.drawLevel5BossCar();
-      } else {
-        this.drawLevel5BossRhythmTrack();
-        const objects = [...(boss.objects || [])].sort((a, b) => (
-          this.getLevel5BossRoadPoint(a.x, a.depth).y - this.getLevel5BossRoadPoint(b.x, b.depth).y
-        ));
-        const carY = this.getLevel5BossRoadPoint(boss.x, boss.depth).y;
-        let carDrawn = false;
-        objects.forEach((object) => {
-          const objectY = this.getLevel5BossRoadPoint(object.x, object.depth).y;
-          if (!carDrawn && carY <= objectY) {
-            this.drawLevel5BossCar();
-            carDrawn = true;
-          }
-          this.drawLevel5BossObject(object);
-        });
-        if (!carDrawn) this.drawLevel5BossCar();
-        (boss.rhythm?.fx || []).forEach((fx) => this.drawLevel5RhythmHitFx(fx));
-      }
-    }
-    this.floaters.forEach((floater) => drawFloater(this.ctx, floater));
-    this.renderLevel5BossHud();
-    const countdown = boss?.chase?.countdown || 0;
-    if (countdown > 0 && this.state === "level5Boss") {
-      const count = Math.ceil(countdown);
-      const frac = countdown - Math.floor(countdown);
-      this.ctx.save();
-      this.ctx.textAlign = "center";
-      this.ctx.textBaseline = "middle";
-      this.ctx.font = `900 ${Math.round(96 + frac * 40)}px 'Courier New', monospace`;
-      this.ctx.globalAlpha = clamp(0.45 + frac * 0.55, 0, 1);
-      this.ctx.fillStyle = "#05070d";
-      this.ctx.fillText(String(count), VIEW_W / 2 + 5, 336 + 6);
-      this.ctx.fillStyle = count === 1 ? "#ffd36c" : "#f7f2de";
-      this.ctx.fillText(String(count), VIEW_W / 2, 336);
-      this.ctx.globalAlpha = 1;
-      this.ctx.font = "900 26px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace";
-      this.ctx.fillStyle = "#8fe8ff";
-      this.ctx.fillText("準備追羊！ D 加速", VIEW_W / 2, 416);
-      this.ctx.restore();
-    } else if (boss?.chase && !boss.chase.goPulseShown && this.state === "level5Boss") {
-      boss.chase.goPulseShown = true;
-      this.floaters.push({ text: "GO!", x: VIEW_W / 2 - 30, y: 330, life: 0.7, color: "#ffd36c" });
-    }
-    if (!frozen) {
-      // Mobile buttons carry the same key names (A/SPACE/D), so one wording
-      // works for both keyboard and touch; drawObjectivePrompt lifts itself
-      // above the phone control pads.
-      const prompt = boss?.chase
-        ? (this.state === "level5BossVictory"
-          ? "D 往右離開 Level 5"
-          : "A 拉開距離   D 加速   SPACE 跳躍   追上山羊避開便便")
-        : "A/D 微調   W/S 切換車道   SPACE 抓節奏   避開障礙";
-      drawObjectivePrompt(this.ctx, prompt, "#8fe8ff", this.time, VIEW_H - 132);
-    }
-    if (this.state === "level5Boss") {
-      this.renderPocketInterface();
-      this.renderDraggedItem();
-    }
-    this.ctx.restore();
-  }
-
-  renderLevel5BossVictory() {
-    this.ctx.save();
-    this.ctx.textAlign = "center";
-    this.ctx.textBaseline = "top";
-    this.ctx.font = "900 22px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace";
-    this.ctx.fillStyle = "#ffd36c";
-    this.ctx.fillText("抓到山羊", VIEW_W / 2, 152);
-    this.ctx.font = "900 14px 'Courier New', monospace";
-    this.ctx.fillStyle = "#8fe8ff";
-    this.ctx.fillText("DRIVE RIGHT TO TAIPEI DOME", VIEW_W / 2, 183);
-    this.ctx.restore();
   }
 
   getLevel3RhythmLaneLayout() {
@@ -27082,6 +25277,7 @@ for (const level of this.config.secretLevels || []) {
 const BOOT_LOAD = { started: 0, settled: 0 };
 
 const imageRequests = new Map();
+const interfaceAssetRequests = [];
 // Images and sound effects come from the mirror only on the live site, and
 // only when their bytes match the SHA-256 this site publishes. Code and
 // configuration always come from this site.
@@ -27172,10 +25368,25 @@ async function fetchGameAsset(src) {
 // An Image created at load time (device shells, pocket icons), given the
 // verified mirror copy, or this site's file if both downloads fail.
 function mirrorImageSource(image, src) {
-  fetchGameAsset(src)
-    .then(({data, type}) => URL.createObjectURL(new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'})))
-    .catch(() => src)
-    .then(url => { image.src = url; });
+  const ready = fetchGameAsset(src).then(({data, type}) => new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'}));
+    image.onload = async () => {
+      try {
+        if (typeof image.decode === 'function') await image.decode();
+        resolve(image);
+      } catch (error) {
+        if (image.complete && image.naturalWidth) resolve(image);
+        else reject(error);
+      } finally { URL.revokeObjectURL(url); }
+    };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Interface artwork could not be decoded')); };
+    image.src = url;
+  }));
+  // The inventory shell is still reachable in staff previews. Retired forge
+  // and icon initializers are stripped separately and never gate a chapter.
+  if (src.includes('/pocket_device_shell/')) interfaceAssetRequests.push(ready);
+  ready.catch(() => {});
+  return ready;
 }
 
 function loadImage(src) {
@@ -29855,15 +28066,9 @@ const POCKET_SHELL_IMAGE = new Image();
 mirrorImageSource(POCKET_SHELL_IMAGE, "assets/sprites/pocket_device_shell/processed/sheet-transparent.webp?v=pocket-shell-20260705");
 // Forge machine face plate in the same device family: thin cream bezel
 // around one full-size olive LCD.
-const FORGE_SHELL_IMAGE = new Image();
-mirrorImageSource(FORGE_SHELL_IMAGE, "assets/sprites/forge_device_shell/processed/sheet-transparent.webp?v=forge-shell-20260705");
 
 // Higgsfield retro-MP3 backpack button (normal + pressed/active states);
 // the procedural drawing below stays as the fallback while it loads.
-const POCKET_ICON_IMAGE = new Image();
-mirrorImageSource(POCKET_ICON_IMAGE, "assets/sprites/mobile_round_button_kit/ui/pocket-icon.webp?v=roundpad-20260703");
-const POCKET_ICON_ACTIVE_IMAGE = new Image();
-mirrorImageSource(POCKET_ICON_ACTIVE_IMAGE, "assets/sprites/mobile_round_button_kit/ui/pocket-icon-active.webp?v=roundpad-20260703");
 
 function getHotbarItemCount(itemId, inventory, collectedSongs = []) {
   const item = ITEM_DEFS[itemId];
@@ -31139,9 +29344,26 @@ game.init();
 
 // Deck artwork from styles.css (rewriteCssArtwork in moth-runtime-patches.mjs).
 for (const [index, src] of ["assets/sprites/ui/film-grain.png","assets/ui/mobile_dpad_20260901/processed/sheet-transparent.webp?v=retro-arrows-20260901a","assets/sprites/mobile_round_button_kit/ui/round-dark.webp?v=roundpad-20260703","assets/sprites/mobile_round_button_kit/ui/round-dark-pressed.webp?v=roundpad-20260703","assets/ui/mobile_flat_buttons_20260902/processed/pills-transparent.webp?v=flat-buttons-20260902a","assets/ui/mobile_start_cap_20260908/processed/start-transparent.webp?v=start-cap-20260908a","assets/ui/mobile_moth_buttons_20261017/sheet.webp?v=snes-20261018a"].entries()) {
-  fetchGameAsset(src)
+  const ready = fetchGameAsset(src)
     .then(({data, type}) => new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'}))
     .then(blob => URL.createObjectURL(blob))
-    .catch(() => new URL(src, document.baseURI).href)
+    .then(url => new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = async () => {
+        try {
+          if (typeof image.decode === 'function') await image.decode();
+          resolve(url);
+        } catch (error) {
+          if (image.complete && image.naturalWidth) resolve(url);
+          else { URL.revokeObjectURL(url); reject(error); }
+        }
+      };
+      image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Interface artwork could not be decoded')); };
+      image.src = url;
+    }))
     .then(url => document.documentElement.style.setProperty('--moth-art-' + index, 'url("' + url + '")'));
+  // The title can render immediately; entering a level waits for these
+  // essential deck textures, including their first image decode.
+  interfaceAssetRequests.push(ready);
+  ready.catch(() => {});
 }

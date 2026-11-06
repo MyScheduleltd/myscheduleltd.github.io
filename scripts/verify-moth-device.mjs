@@ -133,19 +133,35 @@ const rows = page => page.evaluate(() => {
 }
 
 // 4. A minute on the title before any fight rebuilds the engine first; the
-// fights still get every hit sound, and one that failed to download is
-// fetched again by the next fight.
+// fights still get every hit sound. A missing required sound holds entry at
+// recovery; after the asset recovers, refresh loads all sounds before play.
 {
   const page = await browser.newPage({viewport: {width: 393, height: 852}});
   await stubScoreboard(page);
-  // O's sound cannot be downloaded (even retried) until the first fight is under way.
-  let failing = true;
-  await page.route('**/assets/sfx/player-feedback/button-o.wav*', route => failing ? route.fulfill({status: 503, body: ''}) : route.fallback());
+  const errors = []; page.on('pageerror', error => errors.push(String(error)));
+  let failing = true, failedRequests = 0;
+  await page.route('**/assets/sfx/player-feedback/button-o.wav*', route => {
+    if (failing) { failedRequests++; return route.fulfill({status: 503, body: ''}); }
+    return route.fallback();
+  });
   await page.goto(new URL('moth/staff/?device=phone', base).href, {waitUntil: 'domcontentloaded'});
   await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
   await page.keyboard.press('Shift');
   await page.evaluate(() => { bobbyGame.lastMusicAt = performance.now() - 61000; });
   await page.keyboard.press('ArrowDown');
+  await page.evaluate(() => { bobbyGame.returnToTitle(); bobbyGame.startStage('level4-stage1'); });
+  await page.locator('.load-recovery').waitFor({state:'visible',timeout:120000});
+  const blocked = await page.evaluate(() => ({state:bobbyGame.state, refreshes:bobbyGame.audioEngineRefreshes||0,
+    ready:bobbyGame.loadedSceneGroups.has('level4'), entered:Boolean(bobbyGame.level1OfficeRhythm),
+    playing:bobbyGame.getKnownBgmTracks().some(track=>!track.paused)}));
+  assert(blocked.refreshes >= 1, 'The engine was rebuilt before the first fight');
+  assert(failedRequests >= 3, 'The required sound was retried before recovery');
+  assert.equal(blocked.state,'failure');assert(!blocked.ready&&!blocked.entered&&!blocked.playing,
+    'A missing hit sound cannot release the chapter gate '+JSON.stringify(blocked));
+  failing = false;
+  await page.locator('.load-recovery button').click();
+  await page.waitForFunction(()=>window.bobbyGame?.bootDone&&bobbyGame.state==='title',undefined,{timeout:60000});
+  await page.keyboard.press('Shift');
   const sounds = async id => {
     await page.evaluate(id => { bobbyGame.returnToTitle(); bobbyGame.startStage(id); }, id);
     await page.waitForFunction(() => bobbyGame.state === 'playing' && !bobbyGame.levelLoadingPresentation && !bobbyGame.level1OfficeRhythm?.graphicsLoading, undefined, {timeout: 120000});
@@ -154,12 +170,11 @@ const rows = page => page.evaluate(() => {
       m: bobbyGame.playRhythmHitSfx('do', false, 'M'), o: bobbyGame.playRhythmHitSfx('do', false, 'O')}));
   };
   const first = await sounds('level4-stage1');
-  assert(first.refreshes >= 1, 'The engine was rebuilt before the first fight');
-  assert.deepEqual([first.loaded, first.m, first.o], [26, true, false], 'Every sound but the failed one ' + JSON.stringify(first));
-  failing = false;
+  assert.deepEqual([first.loaded, first.m, first.o], [27, true, true], 'All required sounds are ready before the first fight '+JSON.stringify(first));
   const second = await sounds('level3-stage2');
-  assert.deepEqual([second.loaded, second.o], [27, true], 'The failed sound is fetched again ' + JSON.stringify(second));
-  console.log('hit sounds PASS', JSON.stringify({first, second}));
+  assert.deepEqual([second.loaded, second.o], [27, true], 'The next chapter keeps every decoded sound '+JSON.stringify(second));
+  assert.deepEqual(errors,[]);
+  console.log('hit sounds PASS', JSON.stringify({blocked,failedRequests,first,second}));
 }
 // 5. Sprites cut from a magenta background arrive with that fringe cleaned
 // (baked into the files: moth-sprite-fringe.mjs), and retired parts of the

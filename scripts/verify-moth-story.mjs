@@ -192,8 +192,47 @@ for (const phone of [false, true]) {
   const context = await browser.newContext({...(phone ? {viewport: {width: 393, height: 852}, deviceScaleFactor: 2, isMobile: true, hasTouch: true} : {viewport: {width: 1280, height: 800}}), acceptDownloads: true});
   await stubScoreboard(context);
   const {page, errors} = await open(context, staff + (phone ? '?device=phone' : ''));
+  const recordingRequests = [], chapterAssetRequests = [];
+  // Watch before the chapter starts. The recording must finish under its
+  // loading screen, rather than being fetched when the basement is reached.
+  page.on('request', request => {
+    const url = request.url();
+    if (url.includes('dr-beauty-private-message.m4a')) recordingRequests.push(url);
+    if (/^https?:/.test(url) && /\.(?:webp|png|jpe?g|wav|m4a|mp3|ogg)(?:\?|$)/.test(url)) chapterAssetRequests.push(url);
+  });
+  await page.evaluate(() => {
+    const game = bobbyGame, getRecording = game.getMemeRecording;
+    window.__recordingPrepared = null;
+    window.__level4AssetEntries = [];
+    game.getMemeRecording = function(...args) {
+      const promise = getRecording.apply(this, args);
+      promise.then(recording => {
+        if (recording && !window.__recordingPrepared) window.__recordingPrepared = {
+          state: this.state, loading: Boolean(this.levelLoadingPresentation || this.sewerTransition?.loading),
+          bytes: recording.file.size, filename: recording.file.name, blob: recording.url.startsWith('blob:')
+        };
+      });
+      return promise;
+    };
+    let state = game.state;
+    Object.defineProperty(game, 'state', {configurable: true, get: () => state, set: next => {
+      if (next === 'level4' && state !== next) window.__level4AssetEntries.push({
+        recordingReady: Boolean(window.__recordingPrepared?.blob),
+        chestReady: Boolean(game.memeChestSheet?.complete && game.memeChestSheet.naturalWidth)
+      });
+      state = next;
+    }});
+  });
   await page.evaluate(() => { bobbyGame.debugUnlockAllStages(); bobbyGame.startStoryRun('chill'); bobbyGame.startStage('level4-stage1', {freePlay: false}); });
-  await page.waitForFunction(() => bobbyGame.state === 'level4' && bobbyGame.sewerPlayer, undefined, {timeout: 90000});
+  await page.waitForFunction(() => bobbyGame.state === 'level4' && bobbyGame.sewerPlayer && !bobbyGame.levelLoadingPresentation, undefined, {timeout: 90000});
+  const recordingAtEntry = await page.evaluate(() => ({prepared: window.__recordingPrepared, entry: window.__level4AssetEntries[0]}));
+  assert.equal(recordingRequests.length, 1, 'The recording is fetched once during chapter loading: ' + JSON.stringify(recordingRequests));
+  assert(recordingAtEntry.prepared?.loading, 'The recording finishes while the loading screen is active');
+  assert.deepEqual(recordingAtEntry.entry, {recordingReady: true, chestReady: true}, 'The recording and chest art are ready before the first Level 4 state');
+  assert.equal(recordingAtEntry.prepared.bytes, 95100);
+  assert.equal(recordingAtEntry.prepared.filename, 'A private message from Dr.Beauty.m4a');
+  const assetsAtEntry = chapterAssetRequests.length;
+  const noNewChapterAssets = action => assert.deepEqual(chapterAssetRequests.slice(assetsAtEntry), [], action + ': no media downloads after chapter entry');
   // The bar's frame, read where it is drawn: the wide frame on a computer, the tall view on a phone.
   const bar = () => page.evaluate(phone => {
     const g = bobbyGame;
@@ -216,6 +255,7 @@ for (const phone of [false, true]) {
     return {top: accent(read(g.ctx, 640, 19)), bottom: accent(read(g.ctx, 640, 720 - 132 + 3))};
   }, phone);
   const upstairs = await bar();
+  noNewChapterAssets('Walking upstairs');
   assert(upstairs.top && !upstairs.bottom, `${phone ? 'phone' : 'computer'}: the bar at the top ${JSON.stringify(upstairs)}`);
   if (phone) {
     assert.equal(upstairs.besidePause, 0, `phone: nothing of the bar in 暫停's row ${JSON.stringify(upstairs)}`);
@@ -237,28 +277,30 @@ for (const phone of [false, true]) {
   const back = await page.evaluate(() => ({state: bobbyGame.state, x: bobbyGame.sewerPlayer.x, facing: bobbyGame.sewerPlayer.facing, won: bobbyGame.progress.flags.level4BossDefeated}));
   assert.deepEqual(back, {state: 'level4PostBossDialogue', x: took.x, facing: -1, won: true}, 'Back where the game began');
   // The basement chest: O opens it, O saves the recording, H closes it.
-  // The audio is read once through the hash-checked loader as the chest comes
-  // into view; the same bytes are previewed and saved.
-  const recordingRequests = [];
-  page.on('request', request => { if (request.url().includes('dr-beauty-private-message.m4a')) recordingRequests.push(request.url()); });
+  // The hash-checked bytes were loaded before chapter entry; ladder, preview
+  // and save gestures must reuse them without another media request.
   await page.evaluate(() => { const g = bobbyGame; g.state = 'level4'; g.sewerPlayer.x = 1082; g.tryLevel4LadderInteract(); g.sewerPlayer.x = 500; });
+  noNewChapterAssets('Taking the basement ladder');
   const near = await page.evaluate(() => ({near: bobbyGame.isLevel4NearMemeChest(), interact: bobbyGame.isMobileInteractAvailable()}));
   assert.deepEqual(near, {near: true, interact: true}, 'The chest is in reach in the basement');
   await page.waitForFunction(() => bobbyGame.memeRecording, undefined, {timeout: 10000});
   assert(await page.evaluate(async () => Boolean(await bobbyGame.memeRecording)), 'The recording is read before the chest opens');
   await page.keyboard.press('KeyO');
   await page.waitForFunction(() => bobbyGame.memeView && document.querySelector('.moth-meme audio')?.readyState > 0 && !document.querySelector('[data-meme-save]')?.disabled, undefined, {timeout: 10000});
+  noNewChapterAssets('Opening and preparing the recording preview');
   assert(await page.evaluate(() => document.querySelector('.moth-meme audio').src.startsWith('blob:')), 'The audio preview uses the verified copy read ahead');
   const [download] = await Promise.all([page.waitForEvent('download', {timeout: 10000}), page.keyboard.press('KeyO')]);
   assert.equal(download.suggestedFilename(), 'A private message from Dr.Beauty.m4a');
   const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
   assert.equal(sha(await download.path()), sha(new URL('../moth-asset-additions/assets/audio/easter-eggs/dr-beauty-private-message.m4a', import.meta.url)), 'The saved recording is the published one');
-  assert.equal(recordingRequests.length, 1, JSON.stringify(recordingRequests));
+  assert.equal(recordingRequests.length, 1, 'Preview and saving reuse the preloaded recording: ' + JSON.stringify(recordingRequests));
+  noNewChapterAssets('Saving the recording');
   await page.keyboard.press('KeyH');
   const after = await page.evaluate(() => ({open: Boolean(bobbyGame.memeView), chest: bobbyGame.memeChest.state, opened: bobbyGame.progress.flags.level4MemeChestOpened, kept: JSON.parse(localStorage.getItem('moth.staff_progress_v1')).flags.level4MemeChestOpened}));
   assert.deepEqual(after, {open: false, chest: 'open', opened: true, kept: true}, 'Closed, the chest stays open and remembered');
+  noNewChapterAssets('Closing the recording');
   assert.deepEqual(errors, []);
-  console.log('level 4 PASS', JSON.stringify({upstairs, took, back, after}));
+  console.log('level 4 PASS', JSON.stringify({recordingAtEntry, recordingRequests: recordingRequests.length, newMediaRequests: chapterAssetRequests.length - assetsAtEntry, upstairs, took, back, after}));
   await context.close();
 }
 // Level 4's post-win top bar: announce the uncollected reward in either

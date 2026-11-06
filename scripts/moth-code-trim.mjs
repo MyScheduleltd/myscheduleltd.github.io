@@ -22,6 +22,23 @@ export const RETIRED_METHOD_GROUPS = {
     'level4BossBodyCenter', 'getLevel4BossFightConfig', 'drawLevel4BossShots', 'drawLevel4GameBoss', 'renderLevel4BossIntro',
     'renderLevel4BossScene', 'renderLevel4BossHud', 'renderLevel4BossVictory'],
   'Level 5: the old highway walk': ['enterLevel5Stage1Walk'],
+  // patchRetiredHighway closes the remaining old-state entry points before
+  // this pass. The reachability assertion below proves these helpers cannot
+  // run; the night drive, river fight, dialogue and compatibility alias stay.
+  'Level 5: retired highway exploration and goat chase': [
+    'saveLevel5ChestProgress', 'getLevel5Stage1Config', 'getLevel5Stage2Config', 'getLevel5RoadPoint', 'getLevel5BossRoadPoint',
+    'isLevel5NearChest', 'tryLevel5ChestInteract', 'isLevel5NearGanGan', 'isLevel5NearCar', 'tryLevel5Stage1Interact',
+    'startLevel5GanGanDialogue', 'boardLevel5Car', 'getLevel5BossDrivingConfig', 'getLevel5BossChaseConfig', 'getLevel5BossChaseGroundY',
+    'randomLevel5BossChaseInterval', 'tryLevel5BossJump', 'spawnLevel5BossPoop', 'damageLevel5BossChasePoop', 'updateLevel5BossChase',
+    'randomLevel5BossInterval', 'getLevel5BossRhythmConfig', 'getLevel5BossLaneDepths', 'getLevel5BossCurrentLaneIndex', 'getLevel5BossHitLineX',
+    'createLevel5BossRhythmChart', 'addLevel5BossRhythmFx', 'awardLevel5BossRhythmHit', 'penalizeLevel5BossRhythm', 'handleLevel5BossRhythmHit',
+    'updateLevel5BossRhythmObjects', 'spawnLevel5BossObject', 'updateLevel5Boss', 'updateLevel5BossVictory', 'winLevel5BossFight',
+    'failLevel5BossFight', 'updateLevel5', 'getLevel5BackgroundCrop', 'drawLevel5ParallaxLayer', 'renderLevel5Background',
+    'drawLevel5UndergroundWater', 'drawLevel5Daytona', 'drawLevel5OccupiedDaytona', 'drawLevel5GanGanCar', 'drawLevel5GanGanIdle',
+    'drawLevel5HighwayChest', 'renderLevel5Scene', 'renderLevel5Hud', 'getLevel5BossBackgroundCrop', 'drawLevel5BossBackgroundLayer',
+    'drawLevel5BossInfiniteParallaxLayer', 'renderLevel5BossBackground', 'drawLevel5BossObject', 'drawLevel5BossRhythmTrack', 'drawLevel5RhythmHitFx',
+    'drawLevel5BossPoop', 'drawLevel5BossGoat', 'drawLevel5BossCar', 'renderLevel5BossHud', 'renderLevel5BossScene', 'renderLevel5BossVictory'
+  ],
   'The old finale: backstage walk, forge and chest': ['startFinaleDialogue', 'advanceFinaleDialogue', 'renderFinaleDialogue', 'updateFinale',
     'renderFinaleScene', 'renderFinaleHud', 'getFinalePrompt', 'getFinaleWorldPoint', 'tryFinaleInteract', 'tryFinaleJump',
     'isFinaleNearChest', 'isFinaleNearForge', 'isFinaleNearGanGan', 'isFinaleReadyForFinalConversation', 'drawFinaleBackstageMap',

@@ -13,6 +13,10 @@ import { trimRetiredCode } from './moth-code-trim.mjs';
 import { patchDeckCss, DECK_ART_KEPT } from './moth-deck-art.mjs';
 import { MEME_CSS } from './moth-walk-scenes.mjs';
 import { patchScreenFrameCss, wrapScreenFrameHtml } from './moth-screen-frame.mjs';
+import { cleanRuntimeData } from './moth-data-cleanup.mjs';
+import { SNAPSHOT_EXCLUDED_FILES, packageFiles, prunePackageArtifacts } from './moth-package-layout.mjs';
+import { patchRetiredHighway } from './moth-retired-highway.mjs';
+import { patchRetiredUiImages } from './moth-retired-ui.mjs';
 const require = createRequire(import.meta.url);
 const ts = require(process.env.MOTH_TYPESCRIPT_PATH || 'typescript');
 const root = path.resolve(import.meta.dirname, '..');
@@ -25,15 +29,15 @@ const cssArtwork = rewriteCssArtwork(patchScreenFrameCss(patchDeckCss(await fs.r
 assert.equal(cssArtwork.assets.length, DECK_ART_KEPT);
 // The release with its patches, and without the code of its retired parts
 // (moth-code-trim.mjs; MOTH_TRIM_AUDIT=1 keeps that code and records calls).
-const trim = trimRetiredCode(patchMothRuntime(await fs.readFile(path.join(sourceRoot, 'src/game.js'), 'utf8'), ts) + cssArtworkLoader(cssArtwork.assets), ts,
+const trim = trimRetiredCode(patchRetiredHighway(patchMothRuntime(await fs.readFile(path.join(sourceRoot, 'src/game.js'), 'utf8'), ts)) + cssArtworkLoader(cssArtwork.assets), ts,
   { audit: process.env.MOTH_TRIM_AUDIT === '1' });
-const original = trim.source;
+const original = patchRetiredUiImages(trim.source, {audit: process.env.MOTH_TRIM_AUDIT === '1', ts});
 assert.match(await fs.readFile(path.join(sourceRoot, 'index.html'), 'utf8'), /mobile-deck-20261012a/);
 for (const file of snapshot.files) assert.equal(sha(await fs.readFile(path.join(sourceRoot, file.path))), file.sha256);
 await fs.mkdir(output, { recursive: true });
 const published = new Map(snapshot.files.map(file => [file.path, file.sha256]));
 for (const file of snapshot.files) {
-  if (['index.html', 'src/game.js', 'manifest.json', 'haptics-test.html', 'haptics-test2.html', 'sfx-test.html'].includes(file.path)) continue;
+  if (SNAPSHOT_EXCLUDED_FILES.has(file.path)) continue;
   const dest = path.join(output, file.path);
   // Retired parts of the game are not published (moth-asset-trim.mjs).
   if (TRIMMED_FILES.has(file.path)) {
@@ -56,7 +60,7 @@ for (const file of snapshot.files) {
     // compact: the game fetches it fresh at every start-up, and the release's
     // indentation was more than half its size.
     const release = await fs.readFile(path.join(sourceRoot, file.path), 'utf8');
-    const config = patchCharts(JSON.parse(release));
+    const config = cleanRuntimeData(patchCharts(JSON.parse(release)), original);
     assert.equal(config.rhythmChartVersion, SCOREBOARD_CHART_VERSION, 'Client and generated score limits use the same chart version');
     await fs.writeFile(dest, JSON.stringify(config) + '\n');
     // The API validates the exact same charts. A changed chart gets its own
@@ -138,7 +142,6 @@ const listenerEnd = publicCode.indexOf('    }, { capture: true });', listenerSta
 assert(listenerStart > 0 && listenerEnd > listenerStart);
 publicCode = publicCode.slice(0, listenerStart) + publicCode.slice(listenerEnd);
 publicCode = publicCode.replace('this.toggleDebugPanel(false);', 'this.debugPanelOpen = false;');
-publicCode = replaceOnce(publicCode, '&& new URLSearchParams(window.location.search).get("debugLevel5Boss") === "1"', '&& false');
 publicCode = replaceOnce(publicCode, 'const DEBUG_TEXT_AUDIT = typeof window !== "undefined"\n  && new URLSearchParams(window.location.search).get("debugTextAudit") === "1";', 'const DEBUG_TEXT_AUDIT = false;');
 // The public game is not a window global, but several drawing helpers outside
 // the class read it (dialogue text and portraits, the hotbar, the pocket icon,
@@ -170,8 +173,8 @@ for (const audience of ['public', 'staff']) {
   html = html.replace('<html lang="en">', '<html lang="zh-Hant-TW">');
   html = wrapScreenFrameHtml(html);
   html = html.replace('./manifest.json', staff ? '/moth/staff/manifest.json' : './manifest.json');
-  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-loading-20261106a' : 'moth-cabinet-20261106a'}" integrity="${sri}" crossorigin="anonymous"></script>`);
-  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261106a');
+  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-loading-20261106c' : 'moth-cabinet-20261106c'}" integrity="${sri}" crossorigin="anonymous"></script>`);
+  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261106c');
   await fs.writeFile(path.join(output, staff ? 'staff/index.html' : 'index.html'), html);
   const manifest = JSON.parse(await fs.readFile(path.join(sourceRoot, 'manifest.json'), 'utf8'));
   manifest.start_url = staff ? '/moth/staff/' : '/moth/';
@@ -191,5 +194,6 @@ const headerFile = path.join(root, 'pug/_header.pug');
 let header = await fs.readFile(headerFile, 'utf8');
 if (!header.includes('a.moth-link')) header = header.replace(' BETA\n', ' BETA\n            a.moth-link(href="/moth/") M.O.T.H\n');
 await fs.writeFile(headerFile, header);
-await fs.writeFile(path.join(root, '.qa/moth/build-report.json'), JSON.stringify({sourceRelease: 'mobile-deck-20261012a', publicSha256: sha(publicCode), staffSha256: sha(staffCode), removedDebugMethods: edits.length, csp, publicRuntimeGlobal: false, isolatedStorage: true}, null, 2) + '\n');
+const packageReport = await prunePackageArtifacts(output, packageFiles(snapshot));
+await fs.writeFile(path.join(root, '.qa/moth/build-report.json'), JSON.stringify({sourceRelease: 'mobile-deck-20261012a', publicSha256: sha(publicCode), staffSha256: sha(staffCode), removedDebugMethods: edits.length, csp, publicRuntimeGlobal: false, isolatedStorage: true, auditBuild: process.env.MOTH_TRIM_AUDIT === '1', package: packageReport}, null, 2) + '\n');
 console.log(`Built M.O.T.H public/staff pages from published release; removed ${trim.removedMethods} retired methods and ${trim.removedHelpers.length} helpers${process.env.MOTH_TRIM_AUDIT === '1' ? ' (AUDIT BUILD: kept, recording calls)' : ''}, and ${edits.length} public debug methods.`);

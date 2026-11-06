@@ -15,6 +15,7 @@ import { patchGamepad, GAMEPAD_METHODS } from './moth-gamepad.mjs';
 import { patchChartPlayability, RHYTHM_RAIL_METHODS } from './moth-chart-playability.mjs';
 import { patchCinematicLook, CINEMATIC_LOOK_METHODS } from './moth-cinematic-look.mjs';
 import { patchScreenFrame } from './moth-screen-frame.mjs';
+import { patchLevelAssetLoading } from './moth-level-assets.mjs';
 import { ADDITION_MIRROR_PINS } from './moth-asset-additions.mjs';
 
 // Keep the selected published game as the input. Both audiences get identical
@@ -37,7 +38,22 @@ export function patchMothRuntime(source, ts) {
   const block = source.slice(start, end);
   const tree = ts.createSourceFile('assets.js', `async function setup() {\n${block}\n}`, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const statements = tree.statements[0].body.statements;
-  const definitions = [], jobs = [], variables = new Map();
+  const definitions = [], jobs = [], variables = new Map(), pureDefinitions = new Map();
+  const configAccess = node => {
+    if (ts.isPropertyAccessExpression(node)) return node.expression.kind === ts.SyntaxKind.ThisKeyword
+      ? node.name.text === 'config' : configAccess(node.expression);
+    if (ts.isElementAccessExpression(node)) return configAccess(node.expression)
+      && (ts.isStringLiteral(node.argumentExpression) || ts.isNumericLiteral(node.argumentExpression));
+    return false;
+  };
+  const pureSpec = node => {
+    if (!node) return false;
+    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) return configAccess(node);
+    if (ts.isParenthesizedExpression(node)) return pureSpec(node.expression);
+    if (ts.isBinaryExpression(node) && [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken].includes(node.operatorToken.kind)) return pureSpec(node.left) && pureSpec(node.right);
+    if (ts.isObjectLiteralExpression(node)) return node.properties.length === 0;
+    return ts.isLiteralExpression(node) || [ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(node.kind);
+  };
   let trimmed = 0;
   // Named after one chapter but drawn in others (found by drawing every fight,
   // hidden level and story entry with a probe on refs): the GANGAN coach chip in
@@ -66,7 +82,10 @@ export function patchMothRuntime(source, ts) {
       if (ts.isArrayBindingPattern(declaration.name)) {
         const calls = declaration.initializer.expression.arguments[0].elements;
         declaration.name.elements.forEach((element, index) => variables.set(element.name.getText(tree), calls[index].getText(tree)));
-      } else definitions.push(text);
+      } else {
+        definitions.push(text);
+        if (ts.isIdentifier(declaration.name) && pureSpec(declaration.initializer)) pureDefinitions.set(text, declaration.name.text);
+      }
       continue;
     }
     if (text === 'this.loadHitSfx();') continue;
@@ -94,6 +113,19 @@ export function patchMothRuntime(source, ts) {
     jobs.push({key, group:group(key), run:`this.refs.${key} = ${value};`});
   }
   assert.equal(trimmed, TRIMMED_JOBS.size, 'Every retired job found');
+  // Retiring a load job also retires its unused pure JSON-spec declarations.
+  // Keep effectful setup and anything referenced by another live definition.
+  let pruned;
+  do {
+    pruned = false;
+    for (let index = definitions.length - 1; index >= 0; index--) {
+      const text = definitions[index], name = pureDefinitions.get(text);
+      if (!name) continue;
+      const referenced = new RegExp('\\b' + name + '\\b');
+      if (jobs.some(job => referenced.test(job.run)) || definitions.some(other => other !== text && referenced.test(other))) continue;
+      definitions.splice(index, 1); pruned = true;
+    }
+  } while (pruned);
   // Definitions precede closures, but the registry must exist for secret jobs.
   const registry = `  createSceneAssetJobs() {\n    this.sceneAssetJobs = [];\n    ${definitions.join('\n    ')}\n    this.sceneAssetJobs.push(\n${jobs.map(job => `      {key:${JSON.stringify(job.key)}, group:${JSON.stringify(job.group)}, run:async () => {${job.run}}, release:() => {delete this.refs.${job.key};}}`).join(',\n')}\n    );\n    this.loadedSceneGroups = new Set();\n  }\n`;
   source = source.slice(0, start) + '      this.createSceneAssetJobs();\n' + source.slice(end);
@@ -380,6 +412,7 @@ function makeLayer(width, height, painter) {`);
   const imageEnd = source.indexOf('\nfunction loadOptionalSheet(src)', imageStart);
   assert(imageStart > 0 && imageEnd > imageStart);
   source = source.slice(0,imageStart) + IMAGE_LOADER + source.slice(imageEnd);
+  patchLevelAssetLoading(once, edit);
   return source;
 }
 
@@ -817,6 +850,7 @@ export const mirrorPath = commit => `${MOTH_MIRROR_ORIGIN}/gh/MyScheduleltd/mysc
 export const MOTH_MIRROR_ORIGIN = 'https://cdn.jsdelivr.net';
 
 const IMAGE_LOADER = `const imageRequests = new Map();
+const interfaceAssetRequests = [];
 // Images and sound effects come from the mirror only on the live site, and
 // only when their bytes match the SHA-256 this site publishes. Code and
 // configuration always come from this site.
@@ -907,10 +941,25 @@ async function fetchGameAsset(src) {
 // An Image created at load time (device shells, pocket icons), given the
 // verified mirror copy, or this site's file if both downloads fail.
 function mirrorImageSource(image, src) {
-  fetchGameAsset(src)
-    .then(({data, type}) => URL.createObjectURL(new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'})))
-    .catch(() => src)
-    .then(url => { image.src = url; });
+  const ready = fetchGameAsset(src).then(({data, type}) => new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'}));
+    image.onload = async () => {
+      try {
+        if (typeof image.decode === 'function') await image.decode();
+        resolve(image);
+      } catch (error) {
+        if (image.complete && image.naturalWidth) resolve(image);
+        else reject(error);
+      } finally { URL.revokeObjectURL(url); }
+    };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Interface artwork could not be decoded')); };
+    image.src = url;
+  }));
+  // The inventory shell is still reachable in staff previews. Retired forge
+  // and icon initializers are stripped separately and never gate a chapter.
+  if (src.includes('/pocket_device_shell/')) interfaceAssetRequests.push(ready);
+  ready.catch(() => {});
+  return ready;
 }
 
 function loadImage(src) {
@@ -947,11 +996,28 @@ export function cssArtworkLoader(assets) {
   return `
 // Deck artwork from styles.css (rewriteCssArtwork in moth-runtime-patches.mjs).
 for (const [index, src] of ${JSON.stringify(assets)}.entries()) {
-  fetchGameAsset(src)
+  const ready = fetchGameAsset(src)
     .then(({data, type}) => new Blob([data], {type: type.startsWith('image/') ? type : 'image/webp'}))
     .then(blob => URL.createObjectURL(blob))
-    .catch(() => new URL(src, document.baseURI).href)
+    .then(url => new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = async () => {
+        try {
+          if (typeof image.decode === 'function') await image.decode();
+          resolve(url);
+        } catch (error) {
+          if (image.complete && image.naturalWidth) resolve(url);
+          else { URL.revokeObjectURL(url); reject(error); }
+        }
+      };
+      image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Interface artwork could not be decoded')); };
+      image.src = url;
+    }))
     .then(url => document.documentElement.style.setProperty('--moth-art-' + index, 'url("' + url + '")'));
+  // The title can render immediately; entering a level waits for these
+  // essential deck textures, including their first image decode.
+  interfaceAssetRequests.push(ready);
+  ready.catch(() => {});
 }
 `;
 }

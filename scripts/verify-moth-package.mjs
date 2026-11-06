@@ -9,11 +9,14 @@ import {KEY_FRINGE_MANIFEST} from './moth-sprite-fringe.mjs';
 import {ADDED_ASSETS, RETIRED_ADDED_ASSETS} from './moth-asset-additions.mjs';
 import {patchDeckCss} from './moth-deck-art.mjs';
 import {patchScreenFrameCss} from './moth-screen-frame.mjs';
+import {cleanRuntimeData} from './moth-data-cleanup.mjs';
+import {packageFiles} from './moth-package-layout.mjs';
 const root = path.resolve(import.meta.dirname, '..');
 const dir = path.join(root, 'docs/moth');
 const snapshot = JSON.parse(await fs.readFile(path.join(root, '.qa/moth/published-snapshot.json'), 'utf8'));
 const publicCode = await fs.readFile(path.join(dir, 'src/game.js'), 'utf8');
 const staffCode = await fs.readFile(path.join(dir, 'staff/game.js'), 'utf8');
+for (const code of [publicCode, staffCode]) assert.equal(code.includes('window.__retiredCalls'), process.env.MOTH_TRIM_AUDIT === '1', 'Retired-code audit builds require an explicit audit verification mode');
 const config = await fs.readFile(path.join(dir, 'data/level1.json'), 'utf8');
 const hash = data => crypto.createHash('sha256').update(data).digest('hex');
 const excluded = new Set(['index.html','src/game.js','manifest.json','haptics-test.html','haptics-test2.html','sfx-test.html']);
@@ -51,7 +54,7 @@ for (const file of snapshot.files) {
     // The release's game data plus only the chart additions.
     const release = await fs.readFile(path.join(root, '.qa/moth/published/data/level1.json'));
     assert.equal(hash(release), file.sha256);
-    assert.deepEqual(JSON.parse(data), patchCharts(JSON.parse(release)), 'Game data is the release plus the chart additions');
+    assert.deepEqual(JSON.parse(data), cleanRuntimeData(patchCharts(JSON.parse(release)), staffCode), 'Game data preserves active content and drops only audited retired metadata');
     continue;
   }
   assert.equal(hash(data),file.sha256,`Published release asset changed: ${file.path}`);
@@ -75,6 +78,7 @@ async function walk(dir) {
   return results;
 }
 const files = await walk(dir);
+assert.deepEqual(files.map(file => path.relative(dir, file)).sort(), [...packageFiles(snapshot)].sort(), 'No obsolete or unregistered files remain in the game package');
 for (const file of files) {
   assert(!/\.(zip|exe|dmg|pkg|apk|sh|command|php|py|map)$|\/\.env|\/\.git\//.test(file),'No development/archive/secret artifacts');
   if (/\.(html|js|json|css)$/.test(file)) {
