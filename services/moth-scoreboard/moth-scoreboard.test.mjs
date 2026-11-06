@@ -51,6 +51,32 @@ test('scoreboard', async t => {
     // A 拍片 score that is fine on 拍片 is too high for 摸魚.
     assert.equal((await call(env, {method: 'POST', ip: '9.9.8.2', body: {mode: 'chill', id: 'ABC', run: await ticket('chill'), scores: scores('shoot', 0.9)}})).json.error, 'scores');
   });
+  await t.test('invalid difficulties cannot create tickets, rate keys or board namespaces', async () => {
+    const strings = ['constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty', '', 'CHILL', 'hard'];
+    const malformed = [...strings, ['chill'], ['shoot'], ['constructor'], [], {}, null, true, 0];
+    const oversized = Object.fromEntries(Object.keys(MAX_FIGHT_SCORE.chill).map(stage => [stage, 2000000000]));
+    const before = [...data.keys()].sort();
+    for (const chartVersion of [undefined, CHART_VERSION]) {
+      const versionQuery = chartVersion ? '&chartVersion=' + encodeURIComponent(chartVersion) : '';
+      for (const mode of strings) {
+        const r = await call(env, {path: '/api/moth-scoreboard?mode=' + encodeURIComponent(mode) + versionQuery});
+        assert.equal(r.status, 400, 'GET mode ' + JSON.stringify(mode));
+        assert.equal(r.json.error, 'mode');
+      }
+      for (const mode of malformed) {
+        for (const body of [
+          {action: 'start', mode, chartVersion},
+          {mode, chartVersion, id: 'BADMODE', run: '00000000-0000-4000-8000-000000000000', scores: oversized}
+        ]) {
+          const r = await call(env, {method: 'POST', ip: '19.1.1.1', body});
+          assert.equal(r.status, 400, 'POST mode ' + JSON.stringify(mode));
+          assert.equal(r.json.error, 'mode');
+        }
+        assert.deepEqual(handler.checkRun(mode, oversized, chartVersion || null), {error: 'scores'}, 'Direct score validation refuses inherited/coerced modes');
+      }
+    }
+    assert.deepEqual([...data.keys()].sort(), before, 'Rejected modes leave persistent storage untouched');
+  });
   await t.test('a run needs a ticket from its story start, on its difficulty, old enough to have played the songs', async () => {
     const post = (run, {mode = 'chill', ip = '2.2.' + (++n) + '.1'} = {}) => call(env, {method: 'POST', ip, body: {mode, id: 'TICKET', run, scores: scores(mode, 0.4)}});
     // Made up by the player: refused.

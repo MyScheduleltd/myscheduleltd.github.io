@@ -34,6 +34,7 @@ const LEGACY_MAX_FIGHT_SCORE = {
 const CHART_LIMITS = require('./chart-limits.json');
 const CHART_VERSION = CHART_LIMITS.version;
 const MAX_FIGHT_SCORE = { chill: CHART_LIMITS.chill, shoot: CHART_LIMITS.shoot };
+const isMode = mode => typeof mode === 'string' && Object.hasOwn(MAX_FIGHT_SCORE, mode);
 const FIGHTS = Object.keys(MAX_FIGHT_SCORE.chill);
 const versionOf = raw => raw == null ? null : raw === CHART_VERSION ? CHART_VERSION : false;
 const storageKey = (kind, version, suffix) => `${version ? 'moth:chart:' + version : 'moth'}:${kind}:${suffix}`;
@@ -59,7 +60,8 @@ function cleanId(raw) {
 }
 
 function checkRun(mode, scores, version = CHART_VERSION) {
-  const limits = (version === CHART_VERSION ? MAX_FIGHT_SCORE : version === null ? LEGACY_MAX_FIGHT_SCORE : {})[mode];
+  const table = version === CHART_VERSION ? MAX_FIGHT_SCORE : version === null ? LEGACY_MAX_FIGHT_SCORE : null;
+  const limits = isMode(mode) && table ? table[mode] : null;
   if (!limits || !scores || typeof scores !== 'object') return { error: 'scores' };
   const keys = Object.keys(scores);
   if (keys.length !== FIGHTS.length || !FIGHTS.every(stage => keys.includes(stage))) return { error: 'scores' };
@@ -160,7 +162,7 @@ async function handler(req, res, env = process.env) {
       const mode = url.searchParams.get('mode');
       const version = versionOf(url.searchParams.get('chartVersion'));
       if (version === false) return send(res, 400, { error: 'chart-version' }, origin);
-      if (!MAX_FIGHT_SCORE[mode]) return send(res, 400, { error: 'mode' }, origin);
+      if (!isMode(mode)) return send(res, 400, { error: 'mode' }, origin);
       return send(res, 200, { mode, ...versionFields(version), entries: await readBoard(store, mode, version) }, origin);
     }
     if (req.method !== 'POST') return send(res, 405, { error: 'method' }, origin);
@@ -168,7 +170,7 @@ async function handler(req, res, env = process.env) {
     const mode = body.mode;
     const version = versionOf(body.chartVersion);
     if (version === false) return send(res, 400, { error: 'chart-version' }, origin);
-    if (!MAX_FIGHT_SCORE[mode]) return send(res, 400, { error: 'mode' }, origin);
+    if (!isMode(mode)) return send(res, 400, { error: 'mode' }, origin);
     const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
     if (body.action === 'start') {
       if (await overLimit(store, `moth:starts:${ip}`, 3600, 20)) return send(res, 429, { error: 'rate' }, origin);
