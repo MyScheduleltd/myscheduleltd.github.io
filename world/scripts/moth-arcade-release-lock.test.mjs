@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { build } from 'esbuild';
-import { ARCADE_UNLOCK_AT, arcadeIsLocked, externalArcadeRequired } from '../src/world/ArcadeRules.ts';
+import { ARCADE_UNLOCK_AT, ARCADE_TITLES, arcadeIsLocked, externalArcadeRequired } from '../src/world/ArcadeRules.ts';
 import { ARCADE_PREVIEW_END } from '../server/arcade-preview.mjs';
 
 // Keep the real cabinet, GLTF decoder, UVs and material lifecycle. Only network
@@ -177,7 +177,7 @@ function releaseApp({ now = ARCADE_UNLOCK_AT - 5_000, offset = 0, mobile = false
   const document = { createElement(tag) { assert.equal(tag, 'dialog'); const dialog = new ReleaseDialog(); dialogs.push(dialog); return dialog; } };
   const App = runInNewContext(appCode, {
     Date: class extends Date { static now() { return clock.now; } },
-    window, document, ARCADE_UNLOCK_AT, arcadeIsLocked, externalArcadeRequired,
+    window, document, ARCADE_UNLOCK_AT, ARCADE_TITLES, arcadeIsLocked, externalArcadeRequired,
     arcadeGameUrl(embedded = true) { calls.urls.push(embedded); return embedded ? 'embedded-live-game' : 'standalone-live-game'; },
   });
   const app = new App();
@@ -322,11 +322,11 @@ test('the world independently refuses a locked session and forwards state to the
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText + '\nWorldReleaseFixture;';
   let created = 0, mounted = 0, stopped = 0;
-  const World = runInNewContext(code, { MothArcadeSession: class {
+  const World = runInNewContext(code, { ARCADE_TITLES, MothArcadeSession: class {
     constructor() { created++; } mount() { mounted++; }
   } });
   const world = new World(), locks = [];
-  world.arcadeCabinet = { screen: {}, setLocked: (...args) => locks.push(args) };
+  world.arcadeCabinet = { screen: {}, setLocked: (...args) => locks.push(args), setControlsHidden() {} };
   world.stopArcadeGame = () => { stopped++; world.arcadeSession = undefined; world.arcadeView = undefined; };
   world.setArcadeLocked(true, 'en');
   assert.deepEqual(locks.at(-1), [true, 'en']);
@@ -351,4 +351,36 @@ test('only a verified browser entitlement unlocks before release and redemption 
  const mobile=releaseApp({mobile:true});mobile.app.arcadePreview.state.unlocked=true;mobile.app.syncArcadeRelease();
  assert.deepEqual(mobile.calls.popups,[]);mobile.app.openArcadeGame();assert.deepEqual(mobile.calls.popups,[['standalone-live-game','M.O.T.H']]);
  const other=releaseApp();other.app.openArcadeGame();assert.equal(other.app.arcadeLockedViewing,true,'another browser retains its locked entry');
+});
+
+test('M.O.T.H\'s lock never closes 逃脫我的美麗, in the interface or in the world (2026-11-10)', async () => {
+  const fixture = releaseApp({ now: ARCADE_UNLOCK_AT - 60_000 });
+  fixture.app.openArcadeGame('escape');
+  assert.equal(fixture.app.arcadePlaying, true, '逃脫我的美麗 is public and plays while M.O.T.H is locked');
+  assert.equal(fixture.app.arcadeLockedViewing, false);
+  assert.equal(fixture.calls.starts.length, 1);
+  assert.equal(fixture.app.syncArcadeRelease(), true, 'M.O.T.H is still locked');
+  assert.equal(fixture.calls.gameCloses, 0, 'the next network update must not close the other game');
+  assert.equal(fixture.app.arcadePlaying, true);
+
+  const source = await readFile('src/world/FestivalWorld.ts', 'utf8');
+  const tree = ts.createSourceFile('FestivalWorld.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const worldClass = tree.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'FestivalWorld');
+  const names = new Set(['setArcadeLocked', 'startArcadeGame', 'beginArcadeView']);
+  const code = ts.transpileModule(`class EscapeFixture { ${worldClass.members.filter(node => node.name && names.has(node.name.getText(tree))).map(node => node.getText(tree)).join('\n')} }`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText + '\nEscapeFixture;';
+  const World = runInNewContext(code, { ARCADE_TITLES, MothArcadeSession: class { mount() {} } });
+  const world = new World();
+  let stopped = 0;
+  const hidden = [];
+  Object.assign(world, { arcadeCabinet: { screen: {}, setLocked() {}, setControlsHidden() {} }, escapeCabinet: { screen: {}, setControlsHidden: h => hidden.push(h) }, keys: new Set(), player: { visible: true },
+    cssRenderer: { domElement: {} }, conservesMobileGpu: false, cameraPointerReset() {}, setMovementVector() {},
+    stopArcadeGame() { stopped++; this.arcadeSession = this.arcadeView = this.arcadeGame = undefined; } });
+  world.setArcadeLocked(true);
+  assert.equal(world.startArcadeGame('moth', () => {}), false, 'locked M.O.T.H still refuses');
+  assert.equal(world.startArcadeGame('escape', () => {}, undefined, 'escape'), true);
+  world.setArcadeLocked(true);
+  assert.equal(stopped, 0, 'locking M.O.T.H leaves 逃脫我的美麗 running');
+  assert.deepEqual(hidden, [true], 'its joystick and buttons hide while it is played');
 });

@@ -56,11 +56,12 @@ function bandBytes(name: BandFile): Promise<ArrayBuffer> {
  * 2026-10-07). Called once the world's own files are in. Safe to call more
  * than once, and after the world has started loading the band itself.
  */
-export function prefetchBand(): void {
-  for (const name of BAND_FILES) {
-    if (!used.has(name)) void bandBytes(name).catch(() => undefined);
-  }
+export function prefetchBand(): Promise<unknown> {
+  return Promise.allSettled(BAND_FILES.filter(name => !used.has(name)).map(name => bandBytes(name)));
 }
+
+/** The band's files, for the sign-in page's loading bar. */
+export const bandUrls = (): string[] => BAND_FILES.map(name => urls()[name]);
 
 /** Files the world has already built the band from: never fetched again by a late prefetch. */
 const used = new Set<BandFile>();

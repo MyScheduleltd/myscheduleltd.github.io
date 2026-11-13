@@ -1,3 +1,4 @@
+import type { VisitSummary } from '../ui/VisitStaff';
 import type { SharedWeather, WeatherPeriod } from '../weather/WeatherModel.mjs';
 import type { CoastalRelaxationPose } from '../world/CoastalRelaxationPose';
 import { requestWithDeadline } from './RequestDeadline';
@@ -435,6 +436,11 @@ const readStoredSession = (): { session: Session; name: string } | undefined => 
 
 export class FestivalClient {
   private readonly baseUrl = (import.meta.env.VITE_FESTIVAL_SERVER_URL || defaultServerUrl).replace(/\/$/, '');
+
+  /** Where the sign-in page and world send anonymous visit reports. */
+  visitEndpoint(): string {
+    return `${this.baseUrl}/api/visit`;
+  }
   private readonly onState: ClientOptions['onState'];
   private readonly onStatus: ClientOptions['onStatus'];
   private readonly onDonation: ClientOptions['onDonation'];
@@ -871,8 +877,13 @@ export class FestivalClient {
     return this.adminRequest('/api/admin/state', key, { method: 'GET' }) as Promise<AdminState>;
   }
 
-  async publicConfig(): Promise<PublicConfig> {
-    const response = await fetch(`${this.baseUrl}/api/config`, { headers: { accept: 'application/json' } });
+  /** The server this page talks to, for whether it can be asleep (ServiceWake). */
+  get serviceUrl(): string {
+    return this.baseUrl;
+  }
+
+  async publicConfig(signal?: AbortSignal): Promise<PublicConfig> {
+    const response = await fetch(`${this.baseUrl}/api/config`, { headers: { accept: 'application/json' }, signal });
     if (!response.ok) throw new Error('Festival configuration is unavailable.');
     return response.json() as Promise<PublicConfig>;
   }
@@ -1054,6 +1065,11 @@ export class FestivalClient {
   }
 
   /** Read-only: ECPay lists the invoice number ranges, proving (or not) the invoice keys. */
+  /** The anonymous visit tallies for the last `days` Taiwan days (STAFF only). */
+  async adminVisits(key: string, days = 14): Promise<VisitSummary> {
+    return await this.adminRequest(`/api/admin/visits?days=${Math.max(1, Math.min(60, Math.floor(days)))}`, key, { method: 'GET' }) as VisitSummary;
+  }
+
   async checkInvoice(key: string): Promise<InvoiceCheck> {
     return await this.adminRequest('/api/admin/invoice-check', key, { method: 'POST', body: '{}' }) as InvoiceCheck;
   }

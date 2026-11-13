@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 const compiled=await build({stdin:{contents:"export * from './src/world/WorldFilmGrain';export * from './src/world/PlanetCurve';export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node'});
-const {THREE,applyWorldFilmGrain,setWorldFilmGrainFrame,WORLD_FILM_GRAIN_SETTINGS,WORLD_DITHER_SETTINGS,PLANET,installPlanetCurve,materialCompileHookIdentity}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
+const {THREE,applyWorldFilmGrain,setWorldFilmGrainFrame,WORLD_FILM_GRAIN_SETTINGS,PS1_DITHER_SETTINGS,PLANET,installPlanetCurve,materialCompileHookIdentity}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 const shaderFor=material=>{const source=material.isMeshStandardMaterial?THREE.ShaderLib.standard:THREE.ShaderLib.basic;return {uniforms:{},vertexShader:source.vertexShader,fragmentShader:source.fragmentShader};};
 const mesh=material=>new THREE.Mesh(new THREE.BoxGeometry(),material);
 
@@ -19,7 +19,10 @@ test('film chains after existing dye, print and fog hooks without changing maps,
   assert.ok(source.indexOf('// WORLD_FILM_GRAIN_V1')>source.indexOf('#include <fog_fragment>'));
   assert.ok(source.indexOf('// WORLD_FILM_GRAIN_V1')<source.indexOf('#include <premultiplied_alpha_fragment>'));
   assert.equal(material.map,before.map);assert.equal(material.normalMap,before.normal);assert.ok(material.color.equals(before.color));assert.equal(material.roughness,before.roughness);assert.equal(material.metalness,before.metalness);assert.equal(material.transparent,before.transparent);
-  assert.equal(material.customProgramCacheKey(),'avatar-dye-key:world-film-grain-v1');
+  // The PS1 look is part of the program key (ScreenLook.ts).
+  assert.equal(material.customProgramCacheKey(),'avatar-dye-key:world-film-grain-v1:ps1');
+  assert.ok(source.indexOf('// PS1_ORDERED_DITHER_V1')>source.indexOf('// WORLD_FILM_GRAIN_V1'),'the PS1 dither is the last word on colour, after grain');
+  assert.match(source,/floor\(gl_FragColor\.rgb \* 31\.0 \+ ps1Threshold\) \/ 31\.0/,'five bits per channel');
 });
 
 test('real hook identity protects idempotence and copied flags cannot leave cloned avatars without grain',()=>{
@@ -56,8 +59,8 @@ test('all draws share one 18 Hz seed; dense monochrome grain stays bounded witho
   for(const value of [NaN,Infinity,-1,Number.MAX_VALUE,1e12]){setWorldFilmGrainFrame(value);assert.ok(Number.isInteger(uniform.value)&&uniform.value>=0&&uniform.value<WORLD_FILM_GRAIN_SETTINGS.period);}
   assert.ok(WORLD_FILM_GRAIN_SETTINGS.strength>=.12&&WORLD_FILM_GRAIN_SETTINGS.strength<=.14);assert.equal(WORLD_FILM_GRAIN_SETTINGS.hz,18);
   assert.ok(WORLD_FILM_GRAIN_SETTINGS.clumpPixels<2.5);assert.ok(WORLD_FILM_GRAIN_SETTINGS.clump<.18);
-  assert.equal(WORLD_DITHER_SETTINGS.levels,12);assert.equal(WORLD_DITHER_SETTINGS.amount,.65);
-  assert.ok(first.fragmentShader.indexOf('// WORLD_ORDERED_DITHER_V1')<first.fragmentShader.indexOf('// WORLD_FILM_GRAIN_V1'));
+  assert.equal(PS1_DITHER_SETTINGS.bitsPerChannel,5);assert.equal(PS1_DITHER_SETTINGS.grainStrength,.04);
+  assert.ok(first.fragmentShader.indexOf('// WORLD_FILM_GRAIN_V1')<first.fragmentShader.indexOf('// PS1_ORDERED_DITHER_V1'));
   const film=first.fragmentShader.slice(first.fragmentShader.indexOf('// WORLD_FILM_GRAIN_V1'),first.fragmentShader.indexOf('#include <premultiplied_alpha_fragment>'));
   assert.match(film,/mix\(worldFilmFine, worldFilmClump, 0\.12\)/);assert.match(film,/gl_FragColor\.rgb = clamp\(gl_FragColor\.rgb \+ vec3\(/);
   assert.doesNotMatch(film,/\bdiscard\b|\bstep\s*\(|gl_FragColor\.a\s*=/);assert.equal((film.match(/worldFilmHash\(/g)??[]).length,2);

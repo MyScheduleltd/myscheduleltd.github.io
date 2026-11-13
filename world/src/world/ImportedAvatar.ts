@@ -47,7 +47,6 @@ const MOVE_INHERIT: Record<string, string> = {
 };
 export type ImportedMove = 'punch' | 'dance';
 const MOVES = movesData as unknown as { fps: number } & Record<ImportedMove, MoveClip>;
-export const MOVE_FPS = MOVES.fps;
 /** How long a move runs, in seconds; the dance loops. */
 export const MOVE_SECONDS: Record<ImportedMove, number> = {
   punch: (MOVES.punch.frames - 1) / MOVES.fps,
@@ -154,13 +153,15 @@ function bodyDyeUrl(): string {
   return new URL('../assets/avatars/male-body-dye.png', import.meta.url).href;
 }
 
-declare const __AVATAR_BYTES__: Record<string, number> | undefined;
-/** Each avatar file's size by its source name, from the build (vite.config.ts); none in tests. */
-const AVATAR_BYTES: Record<string, number> = typeof __AVATAR_BYTES__ === 'undefined' ? {} : __AVATAR_BYTES__;
+declare const __ASSET_BYTES__: Record<string, number> | undefined;
+/** Each asset's size by its source name, from the build (vite.config.ts); none in tests. */
+const AVATAR_BYTES: Record<string, number> = typeof __ASSET_BYTES__ === 'undefined' ? {} : __ASSET_BYTES__;
 /** What a body downloads, by source name and URL. */
 const avatarFiles = (key: AvatarVariant): Array<[string, () => string | undefined]> => key === 'male'
   ? [['male.glb', () => modelUrl(key)], ['male-dye.png', () => dyeUrl(key)], ['male-body-dye.png', bodyDyeUrl], ['male-vest.jpg', () => vestUrl(key)]]
   : [['female.glb', () => modelUrl(key)], ['female-dye.png', () => dyeUrl(key)], ['female-vest.jpg', () => vestUrl(key)]];
+/** A body's files, for the sign-in page's loading bar. */
+export const avatarFileUrls = (key: AvatarVariant): string[] => avatarFiles(key).map(([, url]) => url()).filter((url): url is string => Boolean(url));
 /** Bytes in so far, by published file name. */
 const arrived = new Map<string, number>();
 watchAssetDownloads(({ file, received }) => { arrived.set(file, received); });
@@ -223,6 +224,27 @@ async function loadDye(key: AvatarVariant, separateBody = false): Promise<THREE.
     // Without the mask the bodies keep their generated colours.
     return undefined;
   }
+}
+
+/**
+ * Points a body's pieces at one Skeleton wherever they were bound to the same
+ * bones in the same pose (all seven of the male's are), and returns how many
+ * were folded in. A cloned piece brings its own Skeleton, and each one is
+ * recomputed and its bone texture uploaded every frame: seven times over for
+ * the same 64 bones. Pieces bound differently (the female's) keep their own.
+ * The bone matrices are identical either way, so nothing moves.
+ */
+export function shareSkeletons(meshes: readonly THREE.SkinnedMesh[]): number {
+  const kept: THREE.Skeleton[] = [];
+  let shared = 0;
+  for (const mesh of meshes) {
+    const own = mesh.skeleton;
+    const twin = kept.find(other => other.bones.length === own.bones.length
+      && other.bones.every((bone, index) => bone === own.bones[index])
+      && other.boneInverses.every((inverse, index) => inverse.equals(own.boneInverses[index])));
+    if (twin) { mesh.skeleton = twin; shared++; } else kept.push(own);
+  }
+  return shared;
 }
 
 function sharpenBody(map?: THREE.Texture | null): void {
@@ -316,9 +338,6 @@ type Side = 'Left' | 'Right';
  * and cast shadows remain present at every setting, including on the face.
  */
 const AVATAR_EVEN = { value: .72 };
-export function setAvatarEvenness(amount: number): void {
-  AVATAR_EVEN.value = THREE.MathUtils.clamp(amount, 0, 1);
-}
 function evenLight(shader: THREE.WebGLProgramParametersWithUniforms): void {
   avatarLightBands(shader, AVATAR_EVEN);
 }
@@ -494,6 +513,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       if ((o as THREE.Bone).isBone) bones.set(o.name, o as THREE.Bone);
       if (o instanceof THREE.SkinnedMesh) meshes.push(o);
     });
+    shareSkeletons(meshes);
     const bodyMesh = meshes.find(m => m.userData.componentId === 'body')!;
     const shoes = meshes.find(m => m.userData.componentId === 'garment-shoes');
     const quat = body.getWorldQuaternion(new THREE.Quaternion()).invert();
@@ -880,6 +900,12 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
         // all fall under it: the back graphic's table simply vanished. Drawn
         // just in front of the cloth they were copied from, writing no depth.
         material.transparent = true;
+        // One pass. A blended double-sided material is otherwise drawn twice,
+        // back faces then front, and three prints a body made six draws: in
+        // a crowd of nineteen on a phone they were a quarter of the frame
+        // (2026-11-13). A print is a sheet lying on the cloth, so the order
+        // of its own faces never shows.
+        material.forceSinglePass = true;
         material.depthWrite = false;
         material.alphaTest = .02;
         material.polygonOffset = true;
@@ -1409,6 +1435,17 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
       root.userData.syncImportedAvatar();
     }
   };
+  // The thigh bones, found once per mounted body. Looked up by name they were
+  // a search of the whole skeleton, twice a frame for every body in view.
+  const upLegsOf = new WeakMap<Mounted, Record<Side, THREE.Bone>>();
+  const upLeg = (side: Side): THREE.Bone => {
+    let found = upLegsOf.get(mounted);
+    if (!found) upLegsOf.set(mounted, found = {
+      Left: mounted.model.getObjectByName('LeftUpLeg') as THREE.Bone,
+      Right: mounted.model.getObjectByName('RightUpLeg') as THREE.Bone,
+    });
+    return found[side];
+  };
   root.userData.supportImportedPose = (floor: ((x: number, z: number, y: number) => number) | undefined, localFloor: number) => {
     if (root.userData.wearingSwimwear) return;
     // The dance carries its own height: the floor work and the kicks would
@@ -1416,7 +1453,7 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     if (activeMove()?.name === 'dance') { root.userData.syncImportedAvatar(); keepAboveFloor(floor, localFloor); return; }
     // Clear the last standing correction before evaluating a new pose.
     const legs = (['Left', 'Right'] as Side[]).map(side => {
-      const bone = mounted.model.getObjectByName(side + 'UpLeg') as THREE.Bone;
+      const bone = upLeg(side);
       if (!groundedLegRest.has(bone)) groundedLegRest.set(bone, bone.position.clone());
       bone.position.copy(groundedLegRest.get(bone)!);
       return { side, bone };
@@ -1458,8 +1495,8 @@ export function attachImportedAvatar(root: THREE.Group, rig: AvatarRig, palette:
     // Sitting owns the legs and pelvis immediately; arm gestures use the rig.
     move = null;
     // Clear a standing sole correction before evaluating the seated chain.
-    for (const side of ['Left', 'Right']) {
-      const bone = mounted.model.getObjectByName(side + 'UpLeg') as THREE.Bone;
+    for (const side of ['Left', 'Right'] as Side[]) {
+      const bone = upLeg(side);
       const rest = groundedLegRest.get(bone);
       if (rest) bone.position.copy(rest);
     }

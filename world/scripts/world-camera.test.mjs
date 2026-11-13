@@ -67,7 +67,7 @@ test('mobile third-person follow waits after manual drag, then eases toward stab
  w.setMovementVector(0,0);assert.equal(w.mobileMoveYaw,undefined);
 });
 
-test('a cushion-fitted Palace attendee keeps a usable follow or isometric view over low chairs while real walls still stop the follow lens',()=>{
+test('a cushion-fitted Palace attendee keeps the full follow or isometric view over low chairs, and past a real wall too',()=>{
  for(const mode of ['follow','isometric']){
   const w=fixture(mode);delete w.pullCameraClearOfWalls;delete w.cameraClearReach;
   w.groundHeightAt=()=>.115;w.playerState='seated';w.activeSeat={id:'PALACE-1-1',venue:'palace',position:new THREE.Vector3(-40.5,0,-36.7)};
@@ -84,7 +84,9 @@ test('a cushion-fitted Palace attendee keeps a usable follow or isometric view o
   const reach=w.lookTarget.distanceTo(w.camera.position);
   // The isometric camera is never pulled in: the cutaway lens opens the hall instead.
   if(mode==='isometric')assert.ok(Math.abs(reach-ISOMETRIC_VIEW.distance)<1e-6);
-  else{assert.ok(reach>1.4,'a real wall with a clear indoor interval must leave a usable shot');assert.ok(w.cameraClearReach(w.lookTarget,w.camera.position)>=reach-.001,'ignoring chairs must not allow the lens through masonry');}
+  // Nor the follow camera, since 2026-11-11 (the owner: no "sudden pull in or
+  // pull out"): it holds its orbit and the cutaway lens cuts the wall.
+  else assert.ok(reach>10,'a real wall between pulled the follow view in');
   assert.deepEqual(w.cameraOrbit.follow,orbit);assert.equal(w.cameraMode,mode);assert.equal(w.camera.isOrthographicCamera,mode==='isometric');
  }
 });

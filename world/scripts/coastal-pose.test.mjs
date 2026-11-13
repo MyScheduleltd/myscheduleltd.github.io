@@ -11,8 +11,8 @@ import { WorldCamera, ISOMETRIC_VIEW } from '../src/world/WorldCamera.ts';
 globalThis.self=globalThis;
 globalThis.createImageBitmap=async(blob)=>{const bytes=await blob.arrayBuffer();const view=new DataView(bytes);return {width:view.getUint32(16),height:view.getUint32(20),close(){}};};
 globalThis.document = {createElement:()=>({width:64,height:64,getContext:()=>({fillRect(){}})})};
-const output=await build({stdin:{contents:"export { PLANET } from './src/world/PlanetCurve'; export {applyWornStyle} from './src/world/WornStyle'; export * from './src/world/MentorDog'; export * from './src/world/HandPose'; export * from './src/world/RooftopBand'; export { HeadTracking } from './src/world/HeadTracking'; export { FestivalWorld } from './src/world/FestivalWorld'; export { CLUB_GRADE } from './src/world/CoastalTerrain'; export * from './src/world/CoastalAvatar'; export * from './src/world/CoastalPose'; export * from './src/world/CoastalCarry'; export * from './src/world/ImportedAvatar'; export * from './src/world/CoastalSkateboard'; export * from './src/world/CoastalGeometry'; export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,loader:{'.png':'dataurl'},platform:'node',format:'esm',write:false});
-const {PLANET,disposeImportedAvatars,CLUB_GRADE,HeadTracking,RooftopBand,BAND_MEMBERS,FIST,FINGER_NAMES,handJointsFromLandmarks,handPoseFromJoints,MENTOR_NESTLE,applyWornStyle,waveCoastalPose,fallCoastalPose,landCoastalPose,djCoastalPose,hitCoastalPose,perchMentor,stepMentorGait,createMentorDog,poseCoastalCarry,loadImportedAvatar,attachImportedAvatar,importedAvatarRoots,syncImportedAvatars,COASTAL_CUP_OFFSET,COASTAL_STRAW_TIP,FestivalWorld,jumpCoastalArms,setCoastalSwimwear,punchCoastalPose,setCoastalFists,createCoastalSedan,CONVERTIBLE,walkCoastalPose,danceCoastalPose,COASTAL_STRIDE_LENGTH,THREE,createCoastalAvatar,supportCoastalPose,seatCoastalLegs,coastalFootHeights,skateCoastalPose,createCoastalSkateboard}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
+const output=await build({stdin:{contents:"export { PLANET } from './src/world/PlanetCurve'; export {applyWornStyle} from './src/world/WornStyle'; export * from './src/world/MentorDog'; export * from './src/world/HandPose'; export * from './src/world/RooftopBand'; export { HeadTracking } from './src/world/HeadTracking'; export { FestivalWorld } from './src/world/FestivalWorld'; export { CLUB_GRADE } from './src/world/CoastalTerrain'; export * from './src/world/CoastalAvatar'; export * from './src/world/CoastalPose'; export * from './src/world/CoastalCarry'; export * from './src/world/ImportedAvatar'; export * from './src/world/CoastalSkateboard'; export * from './src/world/CoastalGeometry'; export * as THREE from 'three'; export { CutawayLens, cutawayUniforms } from './src/world/CutawayLens';",resolveDir:process.cwd(),loader:'ts'},bundle:true,loader:{'.png':'dataurl'},platform:'node',format:'esm',write:false});
+const {PLANET,disposeImportedAvatars,CLUB_GRADE,HeadTracking,RooftopBand,BAND_MEMBERS,FIST,FINGER_NAMES,handJointsFromLandmarks,handPoseFromJoints,MENTOR_NESTLE,applyWornStyle,waveCoastalPose,fallCoastalPose,landCoastalPose,djCoastalPose,hitCoastalPose,perchMentor,stepMentorGait,createMentorDog,poseCoastalCarry,loadImportedAvatar,attachImportedAvatar,importedAvatarRoots,syncImportedAvatars,COASTAL_CUP_OFFSET,COASTAL_STRAW_TIP,FestivalWorld,jumpCoastalArms,setCoastalSwimwear,punchCoastalPose,setCoastalFists,createCoastalSedan,CONVERTIBLE,walkCoastalPose,danceCoastalPose,COASTAL_STRIDE_LENGTH,THREE,createCoastalAvatar,supportCoastalPose,seatCoastalLegs,coastalFootHeights,skateCoastalPose,createCoastalSkateboard,CutawayLens,cutawayUniforms}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
 function character(){
   const root=new THREE.Group();root.position.y=.28;
   const rig=createCoastalAvatar(root,{skin:'#dfb590',hair:'#3b3633',top:'#d0cbc1',bottoms:'#44464a',swimwear:'#577467'},true,new THREE.Group());
@@ -1003,60 +1003,37 @@ test('fixed isometric clearance also stays away from a wall at its side',()=>{
   assert.equal(world.wallAvoidance.offset,0,'the fixed diagonal must not swing around a wall');
 });
 
-test('approaching a building keeps the follow camera out of the face and the masonry',()=>{
+test('approaching a building, the follow camera holds its distance and cuts nothing',()=>{
+  // The owner, 2026-11-11: "the camera view would zoom in suddenly when the
+  // avatar goes near the objects in the world. I want the camera view to stay
+  // stable and consistent like when avatar enters the temple, no sudden pull
+  // in or pull out." It used to shorten its orbit to the first wall; it holds
+  // it now. And nothing is cut away in third person ("players can rotate the
+  // camera view themselves").
   const world=Object.create(FestivalWorld.prototype);
   const player=new THREE.Group();player.position.set(0,.28,-15);
-  const camera=new THREE.PerspectiveCamera();camera.position.set(0,5,-7);
+  const camera=new THREE.PerspectiveCamera(58,16/9,.1,300);camera.position.set(0,5,-7);
   Object.assign(world,{player,camera,lookTarget:new THREE.Vector3(),cameraProbe:new THREE.Vector3(),
     cameraMode:'follow',cameraZoom:1,cameraReach:0,playerState:'walking',
     cameraScratch:new THREE.Vector3(),cameraAim:new THREE.Euler(0,0,0,'YXZ'),
     cameraArcPivot:new THREE.Vector3(),cameraArcFrom:new THREE.Vector3(),cameraArcTo:new THREE.Vector3(),
-    wallAvoidance:{side:0,offset:0},
+    wallAvoidance:{side:0,offset:0},cutawayLens:new CutawayLens(),
     cameraOrbit:{follow:{yaw:0,pitch:Math.atan2(3.4,10)},perspective:{yaw:.8,pitch:.4}},
     colliders:[{minX:-5,maxX:5,minZ:2,maxZ:3,minY:-1,maxY:10}],
-    groundHeightAt:()=>0,confineCameraOverWater(){},
+    groundHeightAt:()=>.28,confineCameraOverWater(){},
     settlePunchImpact(){},applyCameraShake(){},applyDrunkenView(){},
   });
-  let closest=Infinity;
-  let biggestZoomStep=0;
-  let previousReach;
+  let nearest=Infinity,farthest=0;
   for(let frame=0;frame<310;frame++){
     player.position.z=Math.min(0,-15+frame*.06);
     world.updateCamera(1/60,frame/60);
-    const eye=player.position.clone().add(new THREE.Vector3(0,2.84,0));
-    const reach=camera.position.distanceTo(eye);
-    closest=Math.min(closest,reach);
-    // The first frame arrives from nowhere and is exempt; after that, how far
-    // the view closes in during a single frame is the whole complaint. It used
-    // to assign the shorter distance outright, so walking up to anything
-    // snapped the lens towards the back of the avatar's head in one frame.
-    if(previousReach!==undefined) biggestZoomStep=Math.max(biggestZoomStep,Math.abs(reach-previousReach));
-    previousReach=reach;
-    assert.ok(world.cameraClearReach(eye,camera.position)>=eye.distanceTo(camera.position)-.35,
-      `camera passed through the wall at frame ${frame}`);
+    world.updateIsometricCutaway(1/60);
+    const reach=camera.position.distanceTo(world.lookTarget);
+    nearest=Math.min(nearest,reach);farthest=Math.max(farthest,reach);
   }
-  /**
-   * A deliberate trade, not an oversight.
-   *
-   * Easing the lens along an *arc* about the avatar, and clamping its distance
-   * on the ray it was actually travelling, cut this to 0.183. But moving the
-   * lens angularly is precisely what turns the view when `lookAt` re-aims it
-   * every frame, and the owner reported the result as the rotation drifting and
-   * being less steady than it had been. Rotation stability was asked for three
-   * times running; a third of a unit of distance, occasionally, was not
-   * complained about once.
-   *
-   * So the straight interpolation is back and this is 0.337 again. If it is
-   * ever worth attacking, the cause is the limit cycle described in the camera
-   * code — the eased distance measured towards the *target* sits longer than
-   * the line the lens is really on — and the fix has to be one that does not
-   * move the lens sideways to get it.
-   */
-  assert.ok(biggestZoomStep<0.35,`the view closed in ${biggestZoomStep.toFixed(3)} in a single frame`);
-  // Not so close that the lens is inside the head. Below 1.4 the avatar is
-  // faded out, so that is the floor worth holding rather than a comfortable
-  // shoulder distance.
-  assert.ok(closest>1.4,`camera reached ${closest.toFixed(2)} units from the face`);
+  assert.ok(farthest-nearest<1e-6,`the view moved in and out by ${(farthest-nearest).toFixed(3)}`);
+  assert.ok(camera.position.z>3,'the camera stays behind the wall rather than coming in front of it');
+  assert.equal(cutawayUniforms.cutawayLens.value.z,0,'nothing is cut away in third person');
 });
 
 test('an authorized direct film fills and releases the immersive theater quad',async()=>{
@@ -1949,6 +1926,35 @@ test('distant avatar throttle retains the supported rendered pose while its auth
  }
 });
 
+// A crowd on a phone (the owner, 2026-11-13): past the six bodies nearest the
+// attendee in view, the rest re-pose every other frame. Not on a desk.
+test('on a phone, a crowd past the six nearest bodies in view poses every other frame',()=>{
+ const world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene();
+ const camera=new THREE.PerspectiveCamera(58,9/16,.1,300);camera.position.set(0,6,-12);camera.lookAt(0,1,10);
+ Object.assign(world,{scene,player:new THREE.Group(),camera,cameraWorldPosition:camera.position.clone(),avatarFrame:0,
+  avatarViewProjection:new THREE.Matrix4(),avatarFrustum:new THREE.Frustum(),avatarCentre:new THREE.Vector3(),
+  avatarSphere:new THREE.Sphere(),conservesMobileGpu:true,crowdRank:[]});
+ // Shuffled, so the nearest six are found by distance, not by joining order.
+ const bodies=[5,0,8,2,7,1,4,6,3].map(place=>{
+  const {root}=importedCharacter({top:place%2?'#28191b':'#18191b'});
+  root.position.set((place%3-1)*1.5,0,2+place*1.2);scene.add(root);root.userData.place=place;return root;
+ });
+ scene.add(world.player);
+ const posed=new Map(bodies.map(root=>[root.userData.place,0]));
+ for(let frame=0;frame<10;frame++){
+  world.cullAvatars();
+  for(const root of bodies){
+   assert.equal(root.userData.importedCulled(),false,'every body here is in view and drawn');
+   if(!root.userData.cullThrottle)posed.set(root.userData.place,posed.get(root.userData.place)+1);
+  }
+ }
+ for(let place=0;place<6;place++)assert.equal(posed.get(place),10,`the ${place+1}. nearest poses every frame`);
+ for(let place=6;place<9;place++)assert.equal(posed.get(place),5,`the ${place+1}. nearest poses every other frame`);
+ world.conservesMobileGpu=false;
+ for(let frame=0;frame<4;frame++){world.cullAvatars();for(const root of bodies)assert.equal(root.userData.cullThrottle,false,'on a desk everyone nearby poses every frame');}
+ for(const root of bodies)root.removeFromParent();
+});
+
 test('the production distance throttle holds a complete floor-supported pose and resumes immediately nearby',()=>{
  for(const top of ['#18191b','#28191b']){
   const {root,rig}=importedCharacter({top}),world=Object.create(FestivalWorld.prototype);
@@ -2205,7 +2211,7 @@ test('walking through the club entrance, stairs and room never overrides player 
   }
 });
 
-test('club wall avoidance preserves the selected view even at close range, and new input still rotates it',()=>{
+test('a club wall behind the attendee neither turns the selected view nor pulls it in',()=>{
   const {world,player,camera}=clubCameraFixture('follow',0,.3);player.position.set(-65,CLUB_GRADE+.28,23.5);
   world.colliders=[{minX:-75,maxX:-55,minZ:26,maxZ:27,minY:CLUB_GRADE,maxY:CLUB_GRADE+15}];
   for(const pitch of [.3,-.4,.65]){
@@ -2213,8 +2219,12 @@ test('club wall avoidance preserves the selected view even at close range, and n
     for(let frame=0;frame<60;frame++)world.updateCamera(1/60,frame/60);
     const expected=new THREE.Vector3(0,-Math.sin(pitch),-Math.cos(pitch));
     assert.ok(camera.getWorldDirection(new THREE.Vector3()).distanceTo(expected)<1e-8,'collision changed the chosen pitch');
-    const origin=world.lookTarget;
-    assert.ok(world.cameraClearReach(origin,camera.position)>=origin.distanceTo(camera.position)-.001,'camera passed through a wall');
+    // Held through the wall since 2026-11-11; the cutaway lens cuts it
+    // instead. Only the ground can shorten it (a low view), so it sits exactly
+    // where it does with no wall at all.
+    const bare=clubCameraFixture('follow',0,pitch);bare.player.position.copy(player.position);
+    for(let frame=0;frame<60;frame++)bare.world.updateCamera(1/60,frame/60);
+    assert.ok(camera.position.distanceTo(bare.camera.position)<1e-8,'the wall pulled the view in');
   }
 });
 

@@ -1,13 +1,13 @@
 import * as THREE from 'three';
-import { fetchAsset } from './AssetMirror';
-import { loadBudgetedTexture, mobileAssetBudgetEnabled } from './MobileAssetBudget';
-import type { GpuTextureLease } from './GpuTextureRuntime';
 
+/**
+ * The festival's six tiled surface families. Each is a drawn 64-pixel PS1 tile
+ * (Ps1Surfaces) laid over explicitly tagged static geometry in world metres.
+ * The photographic tiles, their normal and roughness maps, and the compressed
+ * copies were retired with the film look (the owner, 2026-11-12).
+ */
 export const ENVIRONMENT_FAMILIES = ['plaster', 'brick', 'ceramic', 'asphalt', 'wood', 'stone'] as const;
 export type EnvironmentFamily = typeof ENVIRONMENT_FAMILIES[number];
-export type EnvironmentTextureRole = 'color' | 'normal' | 'roughness';
-export type EnvironmentTextureUrls = Partial<Record<EnvironmentTextureRole, string>>;
-export type EnvironmentAssets = Partial<Record<EnvironmentFamily, EnvironmentTextureUrls>>;
 
 export interface EnvironmentSurface {
   family: EnvironmentFamily;
@@ -17,6 +17,8 @@ export interface EnvironmentSurface {
   tint?: 'source' | number;
   /** Preserve is for an already UV-authored mesh; procedural shells use world. */
   uv?: 'world' | 'preserve';
+  /** Keep this tint through the island palette pass (EnvironmentArt), for a colour chosen on purpose. */
+  keepTint?: boolean;
 }
 
 /** Explicit opt-in on a static mesh, never a traversal of its children. */
@@ -31,170 +33,58 @@ export function excludeEnvironmentObject<T extends THREE.Object3D>(object: T): T
   return object;
 }
 
-/** Accept Vite's eager ?url glob; absent optional maps produce no requests. */
-export function environmentAssetsFromUrls(files: Record<string, string>, preferCompressed = false): EnvironmentAssets {
-  const assets: EnvironmentAssets = {};
-  // Sort raster first so an installed compressed map wins only by explicit
-  // compression selection, independently of glob/object insertion order.
-  for (const [path, url] of Object.entries(files).sort(([a], [b]) => Number(a.endsWith('.ktx2')) - Number(b.endsWith('.ktx2')))) {
-    const name = path.split('/').pop() ?? '';
-    const match = /^(plaster|brick|ceramic|asphalt|wood|stone)(?:-(normal|roughness))?\.(webp|ktx2)$/.exec(name);
-    if (!match) continue;
-    if (match[3] === 'ktx2' && (!preferCompressed || !path.includes('/compressed/'))) continue;
-    const family = match[1] as EnvironmentFamily;
-    (assets[family] ??= {})[(match[2] ?? 'color') as EnvironmentTextureRole] = url;
-  }
-  return assets;
-}
-
-const SURFACES: Record<EnvironmentFamily, { metres: number; roughness: number; normal: number }> = {
-  plaster: { metres: 3, roughness: .88, normal: .20 },
-  brick: { metres: 2.4, roughness: .88, normal: .28 },
-  ceramic: { metres: 2, roughness: .55, normal: .14 },
-  asphalt: { metres: 4, roughness: .92, normal: .22 },
-  wood: { metres: 2, roughness: .76, normal: .16 },
-  stone: { metres: 3, roughness: .84, normal: .23 },
+const SURFACES: Record<EnvironmentFamily, { metres: number; roughness: number }> = {
+  plaster: { metres: 3, roughness: .88 },
+  brick: { metres: 2.4, roughness: .88 },
+  ceramic: { metres: 2, roughness: .55 },
+  asphalt: { metres: 4, roughness: .92 },
+  wood: { metres: 2, roughness: .76 },
+  stone: { metres: 3, roughness: .84 },
 };
-const ROLES: EnvironmentTextureRole[] = ['color', 'normal', 'roughness'];
-type TextureSet = Partial<Record<EnvironmentTextureRole, THREE.Texture>>;
-type FamilyState = 'unused' | 'missing' | 'loading' | 'ready' | 'partial' | 'failed';
 
 export interface EnvironmentMaterialReport {
   tagged: number;
   applied: number;
   skipped: number;
   materialVariants: number;
+  /** Drawn tiles in use (shared, never downloaded). */
   textures: number;
-  encodedBytes: number;
-  /** RGBA8 decoded allocation estimate; excludes mipmaps/driver overhead. */
-  decodedBytes: number;
   releasedGeometries: number;
   releasedMaterials: number;
-  families: Record<EnvironmentFamily, { state: FamilyState; maps: EnvironmentTextureRole[]; errors: string[] }>;
+  families: Record<EnvironmentFamily, { state: 'unused' | 'ready' }>;
 }
 
 export interface EnvironmentMaterialOptions {
-  assets: EnvironmentAssets;
-  fallbackAssets?: EnvironmentAssets;
-  mobile?: boolean;
+  /** One drawn tile per family (Ps1Surfaces), shared across worlds, so never disposed here. */
+  drawnTile: (family: EnvironmentFamily) => THREE.Texture;
 }
 
-const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error);
-
 /**
- * Six shared tile sets, with reusable material variants for existing colours.
+ * Six shared tiles, with reusable material variants for existing colours.
  * Call prepare after fixed model placement and before static batching/warmup.
  * Only explicit tags or the caller's exact selector are eligible. In particular
  * this does not guess surfaces from a name, colour, position or bounding box.
  */
 export class EnvironmentMaterials {
-  private readonly assets: EnvironmentAssets;
-  private readonly fallbackAssets: EnvironmentAssets;
-  private readonly mobile: boolean;
-  private readonly loads = new Map<EnvironmentFamily, Promise<TextureSet>>();
+  private readonly drawnTile: (family: EnvironmentFamily) => THREE.Texture;
+  private readonly tiles = new Map<EnvironmentFamily, THREE.Texture>();
   private readonly materials = new Map<string, THREE.MeshStandardMaterial>();
-  private readonly textures = new Set<THREE.Texture>();
   private readonly applied = new WeakSet<THREE.Mesh>();
   private disposed = false;
-  private gpuTextures?: GpuTextureLease;
-  private encodedBytes = 0;
-  private decodedBytes = 0;
   private taggedCount = 0;
   private appliedCount = 0;
   private skippedCount = 0;
   private releasedGeometries = 0;
   private releasedMaterials = 0;
-  private readonly families = Object.fromEntries(ENVIRONMENT_FAMILIES.map(family => [family,
-    { state: 'unused' as FamilyState, maps: [] as EnvironmentTextureRole[], errors: [] as string[] },
-  ])) as EnvironmentMaterialReport['families'];
 
   constructor(options: EnvironmentMaterialOptions) {
-    this.assets = options.assets;
-    this.fallbackAssets = options.fallbackAssets ?? {};
-    this.mobile = options.mobile ?? mobileAssetBudgetEnabled();
+    this.drawnTile = options.drawnTile;
   }
 
-  /** Set after renderer creation, before any family begins its preparation. */
-  useGpuTextures(runtime: GpuTextureLease): void {
-    if (this.loads.size) throw new Error('GPU textures must be configured before environment preparation');
-    this.gpuTextures = runtime;
-  }
-
-  private async loadTexture(url: string, role: EnvironmentTextureRole): Promise<THREE.Texture> {
-    // Match the avatar path: verified file bytes, then the shared mobile image
-    // queue and bounded decode. A blob URL is local data, never another CDN hit.
-    const bytes = await fetchAsset(url);
-    if (this.disposed) throw new Error('Environment materials disposed');
-    this.encodedBytes += bytes.byteLength;
-    let texture: THREE.Texture;
-    const ktx = /\.ktx2(?:$|[?#])/i.test(url);
-    if (ktx) {
-      if (!this.gpuTextures) throw new Error('GPU texture runtime is not configured');
-      texture = await this.gpuTextures.decode(bytes);
-    } else {
-      const objectUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/webp' }));
-      try {
-        texture = await (this.mobile && typeof createImageBitmap !== 'undefined'
-          ? loadBudgetedTexture(objectUrl)
-          : new THREE.TextureLoader().loadAsync(objectUrl));
-      } finally { URL.revokeObjectURL(objectUrl); }
-    }
-    if (this.disposed) { this.releaseTexture(texture); throw new Error('Environment materials disposed'); }
-    texture.colorSpace = role === 'color' ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    texture.magFilter = THREE.LinearFilter;
-    texture.minFilter = THREE.LinearMipmapLinearFilter;
-    texture.anisotropy = 2;
-    texture.flipY = false;
-    texture.generateMipmaps = !ktx;
-    texture.needsUpdate = true;
-    const image = texture.image as { width?: number; height?: number };
-    // KTX2 uses typed mip data rather than a retained decoded RGBA bitmap.
-    // Actual transcode format/mip allocations are reported by its runtime.
-    if (!ktx) this.decodedBytes += (image?.width ?? 0) * (image?.height ?? 0) * 4;
-    this.textures.add(texture);
-    return texture;
-  }
-
-  private loadFamily(family: EnvironmentFamily): Promise<TextureSet> {
-    let pending = this.loads.get(family);
-    if (pending) return pending;
-    const urls = this.assets[family];
-    const report = this.families[family];
-    if (!urls?.color) {
-      report.state = 'missing';
-      report.errors.push('No base-colour tile installed; original surface retained.');
-      pending = Promise.resolve({});
-    } else {
-      report.state = 'loading';
-      pending = (async () => {
-        const set: TextureSet = {};
-        // Download and decode at most one new tile at a time. The mobile
-        // decoder also shares its queue with embedded GLB/avatar images.
-        for (const role of ROLES) {
-          const url = urls[role];
-          if (!url || this.disposed) continue;
-          try { set[role] = await this.loadTexture(url, role); report.maps.push(role); }
-          catch (error) {
-            report.errors.push(`${role}: ${errorText(error)}`);
-            const fallback = this.fallbackAssets[family]?.[role];
-            // A missing/blocked decoder or corrupt compressed tile must not
-            // strip the released artwork. Keep the failure in diagnostics.
-            if (!this.disposed && /\.ktx2(?:$|[?#])/i.test(url) && fallback && fallback !== url) {
-              try {
-                set[role] = await this.loadTexture(fallback, role);
-                report.maps.push(role);
-              } catch (fallbackError) { report.errors.push(`${role} raster fallback: ${errorText(fallbackError)}`); }
-            }
-            if (role === 'color' && !set.color) break;
-          }
-        }
-        report.state = !set.color ? 'failed' : report.errors.length ? 'partial' : 'ready';
-        return set;
-      })();
-    }
-    this.loads.set(family, pending);
-    return pending;
+  private tile(family: EnvironmentFamily): THREE.Texture {
+    let tile = this.tiles.get(family);
+    if (!tile) { tile = this.drawnTile(family); this.tiles.set(family, tile); }
+    return tile;
   }
 
   /** Existing authored GLBs, characters, signs and animated props stay intact. */
@@ -218,30 +108,28 @@ export class EnvironmentMaterials {
     return true;
   }
 
-  private material(source: THREE.MeshStandardMaterial, surface: EnvironmentSurface, maps: TextureSet): THREE.MeshStandardMaterial {
+  private material(source: THREE.MeshStandardMaterial, surface: EnvironmentSurface, map: THREE.Texture): THREE.MeshStandardMaterial {
     const defaults = SURFACES[surface.family];
     const tint = surface.tint === undefined || surface.tint === 'source' ? source.color : new THREE.Color(surface.tint);
     // Ceiling structure can hang below the room's numerical roof cut. This
     // explicit rendering role survives tile replacement, but no source cel,
-    // worn or arbitrary shader define is carried into the PBR tile material.
+    // worn or arbitrary shader define is carried into the tile material.
     const overhead=(source as THREE.MeshStandardMaterial & {defines?:Record<string,unknown>}).defines?.CUTAWAY_OVERHEAD!==undefined;
     // Match the source's intentional indoor fill as well as its tint/render
     // side. No cel/worn onBeforeCompile hooks or per-mesh uniforms follow it.
-    const key = `${surface.family}:${tint.getHexString()}:${source.side}:${source.emissive.toArray().join(',')}:${source.emissiveIntensity}:${overhead?'overhead':''}`;
+    const key = `${surface.family}:${tint.getHexString()}:${source.side}:${source.emissive.toArray().join(',')}:${source.emissiveIntensity}:${overhead?'overhead':''}${surface.keepTint?':kept':''}`;
     let material = this.materials.get(key);
     if (!material) {
       material = new THREE.MeshStandardMaterial({
-        color: tint, map: maps.color ?? null, normalMap: maps.normal ?? null,
+        color: tint, map,
         emissive: source.emissive, emissiveIntensity: source.emissiveIntensity,
-        roughnessMap: maps.roughness ?? null, roughness: maps.roughness ? 1 : defaults.roughness,
-        // Both loaders upload unflipped image rows (+V points down the image).
-        // Generated OpenGL +Y maps need their green component inverted here.
-        metalness: 0, normalScale: new THREE.Vector2(defaults.normal, -defaults.normal),
+        roughness: defaults.roughness, metalness: 0,
         side: source.side, flatShading: false,
       });
       material.name = `Environment ${surface.family} ${tint.getHexString()}`;
       material.userData.preserveAuthoredSurface = true;
       material.userData.environmentFamily = surface.family;
+      if (surface.keepTint) material.userData.islandPaletteApplied = true;
       if(overhead)(material as THREE.MeshStandardMaterial & {defines:Record<string,string>}).defines={CUTAWAY_OVERHEAD:''};
       this.materials.set(key, material);
     }
@@ -284,23 +172,17 @@ export class EnvironmentMaterials {
       if (!this.eligible(mesh)) { this.skippedCount++; return; }
       candidates.push({ mesh, surface });
     });
-    // Family jobs are serial too, bounding extra decode pressure during entry.
-    for (const family of new Set(candidates.map(candidate => candidate.surface.family))) await this.loadFamily(family);
-    if (this.disposed) return this.snapshot();
     const replacedGeometries = new Set<THREE.BufferGeometry>();
     const replacedMaterials = new Set<THREE.Material>();
     for (const { mesh, surface } of candidates) {
       if (this.applied.has(mesh)) continue;
-      const maps = await this.loadFamily(surface.family);
-      if (this.disposed) break;
-      if (!maps.color) { this.skippedCount++; continue; }
       const source = mesh.material;
       if (surface.uv !== 'preserve') {
         replacedGeometries.add(mesh.geometry);
         const metres = surface.metres ?? SURFACES[surface.family].metres;
         this.projectUVs(mesh, Number.isFinite(metres) && metres > 0 ? metres : SURFACES[surface.family].metres);
       }
-      mesh.material = this.material(source, surface, maps);
+      mesh.material = this.material(source, surface, this.tile(surface.family));
       replacedMaterials.add(source);
       mesh.userData.wornNoMasonry = true;
       mesh.userData.environmentFamily = surface.family;
@@ -324,26 +206,18 @@ export class EnvironmentMaterials {
   snapshot(): EnvironmentMaterialReport {
     return {
       tagged: this.taggedCount, applied: this.appliedCount, skipped: this.skippedCount,
-      materialVariants: this.materials.size, textures: this.textures.size,
-      encodedBytes: this.encodedBytes, decodedBytes: this.decodedBytes,
+      materialVariants: this.materials.size, textures: this.tiles.size,
       releasedGeometries: this.releasedGeometries, releasedMaterials: this.releasedMaterials,
       families: Object.fromEntries(ENVIRONMENT_FAMILIES.map(family => [family,
-        { ...this.families[family], maps: [...this.families[family].maps], errors: [...this.families[family].errors] },
-      ])) as EnvironmentMaterialReport['families'],
+        { state: this.tiles.has(family) ? 'ready' : 'unused' }])) as EnvironmentMaterialReport['families'],
     };
   }
 
-  private releaseTexture(texture: THREE.Texture): void {
-    texture.dispose();
-    (texture.image as { close?: () => void } | undefined)?.close?.();
-  }
-
-  /** Call after rendering stops; materials/maps are shared by every opted-in mesh. */
+  /** Call after rendering stops; materials are shared by every opted-in mesh. The drawn tiles are shared across worlds. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     for (const material of this.materials.values()) material.dispose();
-    for (const texture of this.textures) this.releaseTexture(texture);
-    this.materials.clear(); this.textures.clear();
+    this.materials.clear(); this.tiles.clear();
   }
 }

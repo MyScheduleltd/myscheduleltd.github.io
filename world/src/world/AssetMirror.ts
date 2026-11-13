@@ -39,7 +39,7 @@ export function watchAssetDownloads(listener: (progress: DownloadProgress) => vo
   return () => { progressListeners.delete(listener); };
 }
 
-async function download(url: string, milliseconds: number, mirrored = false): Promise<ArrayBuffer | undefined> {
+async function fetchBytes(url: string, milliseconds: number, mirrored = false): Promise<ArrayBuffer | undefined> {
   return requestWithDeadline(async (signal, keepAlive) => {
     const response = await fetch(url, { signal, ...(mirrored ? { mode: 'cors' as const, credentials: 'omit' as const } : {}) });
     if (!response.ok) {
@@ -111,7 +111,7 @@ async function sha256(bytes: ArrayBuffer): Promise<string> {
 async function fromMirror(mirror: string): Promise<ArrayBuffer | undefined> {
   try {
     // A missing new file is not an outage of the whole mirror.
-    return await download(mirror, MIRROR_MS, true);
+    return await fetchBytes(mirror, MIRROR_MS, true);
   } catch {
     // Unreachable, refused or stalled: stop asking it for this visit.
     mirrorDown = true;
@@ -119,8 +119,41 @@ async function fromMirror(mirror: string): Promise<ArrayBuffer | undefined> {
   }
 }
 
-/** A heavy file's bytes: from the mirror when it has them and they check out, otherwise from Pages. */
+/**
+ * Files fetched ahead, on the sign-in page (the owner, 2026-11-12: everything
+ * loads there, so nobody waits for a download once inside). `fetchAsset`
+ * hands each later caller its own copy; `releasePrefetchedAssets` lets them go
+ * once the world is built.
+ */
+const early = new Map<string, Promise<ArrayBuffer>>();
+const earlyKey = (url: string): string => typeof window === 'undefined' ? url : new URL(url, window.location.href).href;
+
+/** Start a heavy file now; resolves to its size once it is in, rejects if it could not be had. */
+export function prefetchAsset(url: string): Promise<number> {
+  const key = earlyKey(url);
+  let pending = early.get(key);
+  if (!pending) {
+    pending = download(url);
+    early.set(key, pending);
+    const settled = pending;
+    settled.catch(() => { if (early.get(key) === settled) early.delete(key); });
+  }
+  return pending.then(bytes => bytes.byteLength);
+}
+
+/** Forget the files fetched ahead (their callers have their own copies by now). */
+export function releasePrefetchedAssets(): void { early.clear(); }
+
+/** A heavy file's bytes: fetched ahead, else from the mirror when it has them and they check out, otherwise from Pages. */
 export async function fetchAsset(url: string): Promise<ArrayBuffer> {
+  const ahead = early.get(earlyKey(url));
+  if (ahead) {
+    try { return (await ahead).slice(0); } catch { /* fetch it afresh below */ }
+  }
+  return download(url);
+}
+
+async function download(url: string): Promise<ArrayBuffer> {
   const mirror = mirrorDown || typeof crypto === 'undefined' || !crypto.subtle ? undefined : mirrorUrl(url);
   if (mirror) {
     const expected = (await hashes(url))[fileName(url)];
@@ -130,7 +163,7 @@ export async function fetchAsset(url: string): Promise<ArrayBuffer> {
       if (bytes) console.warn(`The mirror's copy of ${fileName(url)} did not match; fetching it from the site instead.`);
     }
   }
-  return (await download(url, SITE_MS))!;
+  return (await fetchBytes(url, SITE_MS))!;
 }
 
 /** A picture, by way of `fetchAsset`, as a URL an image (or a TextureLoader) can open. */

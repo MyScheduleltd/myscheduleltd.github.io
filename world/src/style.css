@@ -89,32 +89,10 @@ input:focus, input:focus-visible, textarea:focus, textarea:focus-visible, select
 }
 
 .gate__atmosphere { position: fixed; inset: 0; z-index: -2; overflow: hidden; background: #08090a; }
-.gate__video {
-  position: absolute; left: 50%; top: 50%; width: max(100vw, 177.78vh); height: max(56.25vw, 100vh);
-  transform: translate(-50%, -50%) scale(1.03); border: 0; pointer-events: none;
-}
+
 /* The default loop has a 2.4:1 picture letterboxed inside its 16:9 player.
    Size the player so the picture itself covers the viewport, then clip the bars. */
-.gate__video--cinematic {
-  width: max(100vw, 240vh); height: max(56.25vw, 135vh);
-}
-.gate__video-shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(5,6,8,.68), rgba(5,6,8,.22) 50%, rgba(5,6,8,.68)); }
-.gate__sun {
-  position: absolute; width: 30vw; height: 30vw; min-width: 260px; min-height: 260px;
-  left: 11%; top: 16%; border-radius: 50%; background: #e85339;
-  box-shadow: 0 0 80px rgba(255, 121, 73, .45);
-}
-.gate__sea {
-  position: absolute; inset: 51% 0 0; background:
-    repeating-linear-gradient(175deg, transparent 0 16px, rgba(255,255,255,.05) 17px 18px),
-    linear-gradient(#1b3c4d, #06131d 65%);
-  clip-path: polygon(0 8%, 9% 3%, 20% 7%, 33% 2%, 50% 6%, 66% 1%, 82% 6%, 100% 2%, 100% 100%, 0 100%);
-}
-.gate__city {
-  position: absolute; inset: 33% -3% auto 45%; height: 34%;
-  background: linear-gradient(115deg, transparent 0 12%, #17171a 12% 18%, transparent 18% 23%, #222226 23% 40%, transparent 40% 46%, #111115 46% 64%, transparent 64% 69%, #25252a 69% 100%);
-  opacity: .9; transform: skewX(-5deg); filter: drop-shadow(0 22px 30px rgba(0,0,0,.38));
-}
+
 .gate__grain, .world-vignette {
   position: absolute; inset: 0; pointer-events: none;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.18'/%3E%3C/svg%3E");
@@ -139,8 +117,8 @@ input:focus, input:focus-visible, textarea:focus, textarea:focus-visible, select
   display: inline-block; font-size: var(--brand-font-size); line-height: 1; letter-spacing: .07em;
   transform: scale(var(--brand-scale-x), var(--brand-scale-y)); transform-origin: left bottom;
 }
-.brand-logo { display: block; width: 42px; height: 42px; object-fit: contain; background: #000; }
 .phase-badge { margin-left: auto; border: 1px solid currentColor; padding: 7px 10px; font-size: 12px; }
+.brand-logo { display: block; width: 42px; height: 42px; object-fit: contain; background: #000; }
 
 /* A grid item keeps an automatic minimum the width of its own content, and
    that minimum outranks the width asked for here — so the card was as wide as
@@ -156,7 +134,7 @@ input:focus, input:focus-visible, textarea:focus, textarea:focus-visible, select
 }
 .eyebrow { margin: 0 0 9px; font: 800 13px/1 var(--condensed); letter-spacing: .15em; text-transform: uppercase; }
 .gate-card h1 { margin: 0; font: 900 clamp(48px, 8vw, 88px)/.84 var(--condensed); letter-spacing: -.035em; text-transform: uppercase; }
-.gate-card__intro { max-width: none; margin: 18px 0 24px; overflow: hidden; font-size: 13px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+
 .field-label, fieldset legend { display: block; margin: 0 0 8px; font: 800 12px/1 var(--condensed); letter-spacing: .14em; }
 #festival-id {
   width: 100%; border: 0; border-bottom: 3px solid var(--ink); border-radius: 0; padding: 8px 2px;
@@ -164,14 +142,11 @@ input:focus, input:focus-visible, textarea:focus, textarea:focus-visible, select
 }
 #festival-id::placeholder { color: rgba(17,17,19,.28); }
 .field-error { margin: 8px 0; color: #a60e18; font-size: 12px; }
-.gate-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 28px 0 22px; }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.gate-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 28px 0 22px; }
 .segmented { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid rgba(17,17,19,.35); }
 .segmented button { min-height: 42px; border: 0; color: var(--ink); background: transparent; font: 800 15px var(--condensed); cursor: pointer; }
 .segmented button[aria-pressed='true'], .segmented button.is-selected { color: white; background: var(--ink); }
-.palette-picker { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 8px 0 21px; }
-.palette-picker legend { grid-column: 1 / -1; }
-.palette-picker label, .panel-palette label { display: grid; grid-template-columns: 1fr 32px; align-items: center; gap: 8px; font: 700 12px var(--condensed); }
 
 /* Appearance: the same eleven controls at the gate and in the character panel.
    Two groups with a rule between them, because a flat list of colours and
@@ -197,18 +172,6 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .wearable input[type="color"]:disabled { opacity: 0.3; cursor: not-allowed; }
 
 /* The gate keeps all of it folded away: a door, not a form. */
-.gate-appearance { margin: 8px 0 18px; border: 1px solid rgba(21, 23, 26, 0.18); }
-.gate-appearance > summary {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 11px 13px; cursor: pointer; list-style: none;
-  font: 700 12px var(--condensed); letter-spacing: 0.1em; text-transform: uppercase;
-}
-.gate-appearance > summary::-webkit-details-marker { display: none; }
-.gate-appearance__sign { font-size: 16px; line-height: 1; }
-.gate-appearance[open] .gate-appearance__sign::after { content: ''; }
-.gate-appearance[open] .gate-appearance__sign { visibility: hidden; position: relative; }
-.gate-appearance[open] .gate-appearance__sign::before { content: '−'; visibility: visible; position: absolute; right: 0; }
-.gate-appearance > .appearance { padding: 0 13px 14px; }
 /* Square, everywhere. Safari draws a colour input as a rounded pill and keeps
    drawing one however the element itself is sized — at 32 by 32 that read as a
    rounded square and passed, but a wide swatch turns into an oval, which is
@@ -222,15 +185,20 @@ input[type='color'] {
 input[type='color']::-webkit-color-swatch-wrapper { padding: 0; }
 input[type='color']::-webkit-color-swatch { border: none; border-radius: 0; }
 input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
-.check-field { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; }
-/* Dressed like the rest of the card rather than left in the browser's own
-   clothes: the same ink rule under the field, the same condensed lettering, and
-   the heading given room so it stops sitting on the label beneath it. */
-.gate-staff { margin-top: 18px; border-top: 1px solid rgba(17,17,19,.18); padding-top: 14px; }
-.gate-staff > summary {
-  cursor: pointer; list-style: none; margin-bottom: 0;
-  font: 800 12px/1 var(--condensed); letter-spacing: .14em; color: var(--red);
+.gate-appearance { margin: 8px 0 18px; border: 1px solid rgba(21, 23, 26, 0.18); }
+.gate-appearance > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 13px;
+  cursor: pointer; list-style: none; font: 700 12px var(--condensed); letter-spacing: .1em; text-transform: uppercase;
 }
+.gate-appearance > summary::-webkit-details-marker { display: none; }
+.gate-appearance__sign { font-size: 16px; line-height: 1; }
+.gate-appearance[open] .gate-appearance__sign::after { content: ''; }
+.gate-appearance[open] .gate-appearance__sign { visibility: hidden; position: relative; }
+.gate-appearance[open] .gate-appearance__sign::before { content: '−'; visibility: visible; position: absolute; right: 0; }
+.gate-appearance > .appearance { padding: 0 13px 14px; }
+.check-field { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; }
+.gate-staff { margin-top: 18px; border-top: 1px solid rgba(17,17,19,.18); padding-top: 14px; }
+.gate-staff > summary { cursor: pointer; list-style: none; margin-bottom: 0; font: 800 12px/1 var(--condensed); letter-spacing: .14em; color: var(--red); }
 .gate-staff > summary::-webkit-details-marker { display: none; }
 .gate-staff > summary::after { content: ' +'; }
 .gate-staff[open] > summary::after { content: ' –'; }
@@ -241,6 +209,12 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
   color: var(--ink); background: transparent; font: 800 20px/1 var(--condensed); letter-spacing: .04em;
 }
 .gate-staff input::placeholder { color: rgba(17,17,19,.28); font-size: 15px; letter-spacing: .04em; }
+.gate-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 23px; }
+.gate-actions .gate-donate { grid-column: 1 / -1; }
+.gate-card__note { margin: 12px 0 0; overflow: hidden; color: rgba(17,17,19,.58); font: 700 10px var(--condensed); letter-spacing: .07em; text-overflow: ellipsis; white-space: nowrap; }
+/* Dressed like the rest of the card rather than left in the browser's own
+   clothes: the same ink rule under the field, the same condensed lettering, and
+   the heading given room so it stops sitting on the label beneath it. */
 
 .check-field input { accent-color: var(--red); }
 .check-field--vr {
@@ -255,14 +229,11 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
 .check-field--vr[data-vr-availability='checking'] input,
 .check-field--vr[data-vr-availability='unavailable'] input { cursor: not-allowed; opacity: .52; }
 .check-field--vr[data-vr-availability='unavailable'] small { color: rgba(17,17,19,.72); }
-.gate-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 23px; }
 /* Under the two ways in, the width of both: giving without coming in. */
-.gate-actions .gate-donate { grid-column: 1 / -1; }
 .button { min-height: 52px; border: 2px solid var(--ink); font: 800 17px var(--condensed); letter-spacing: .04em; cursor: pointer; }
 .button--primary { color: white; background: var(--red); border-color: var(--red); }
 .button--secondary { color: var(--ink); background: transparent; }
 .button:hover { transform: translateY(-2px); }
-.gate-card__note { margin: 12px 0 0; overflow: hidden; color: rgba(17,17,19,.58); font: 700 10px var(--condensed); letter-spacing: .07em; text-overflow: ellipsis; white-space: nowrap; }
 
 .world-shell, #world-canvas, #world-foreground { position: fixed; inset: 0; width: 100%; height: 100%; }
 #world-canvas { z-index: 0; display: block; background: #111; cursor: grab; touch-action: none; }
@@ -347,13 +318,9 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
 .world-shell[data-arcade-playing='true'] > .world-status,
 .world-shell[data-arcade-playing='true'] > .objective-count,
 .world-shell[data-arcade-playing='true'] > .pass-toggle,
-.world-shell[data-arcade-playing='true'] > .touch-controls,
-.world-shell[data-arcade-playing='true'] > .world-camera-controls,
-.world-shell[data-arcade-playing='true'] > .keyboard-help { visibility: hidden; }
+.world-shell[data-arcade-playing='true'] > .touch-controls { visibility: hidden; }
 .world-shell[data-arcade-playing='true'] > .chat-stream,
-.world-shell[data-arcade-playing='true'] > .world-help,
-.world-shell[data-arcade-playing='true'] > .world-clock,
-.world-shell[data-arcade-playing='true'] > .world-objectives { visibility: hidden; }
+.world-shell[data-arcade-playing='true'] > .world-clock { visibility: hidden; }
 .world-shell[data-arcade-playing='true'] > .inventory-status,
 .world-shell[data-arcade-playing='true'] .controls-hint,
 .world-shell[data-arcade-playing='true'] > .vr-preview-exit,
@@ -570,10 +537,10 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
   will-change: background-position;
 }
 .world-shell[data-world-quality='lite'] .world-grain { display: none; }
-/* 精簡 is drawn at one pixel per CSS pixel (FestivalWorld.mainPixelRatio) and
-   shown as sharp blocks rather than smoothed into a blur. */
-.world-shell[data-world-quality='lite'] #world-canvas,
-.world-shell[data-world-quality='lite'] #world-foreground { image-rendering: crisp-edges; image-rendering: pixelated; }
+/* The PS1 look (ScreenLook.ts) draws both modes at its own low resolution in
+   whole-device-pixel blocks; they are shown as hard squares, not smoothed. */
+.world-shell #world-canvas,
+.world-shell #world-foreground { image-rendering: crisp-edges; image-rendering: pixelated; }
 @media (prefers-reduced-motion: reduce) { .world-grain { animation: none; } }
 /* The jukebox's player. It is only ever a source of sound — the picture is
    irrelevant and must never be on screen — so it is parked off-canvas rather
@@ -596,6 +563,29 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
   scrollbar-gutter: stable; padding-right: 8px; align-content: start;
 }
 .staff-history-scroll:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+/* Visit tallies (the owner, 2026-11-09): six ticket cards, then tables that
+   scroll sideways on a phone rather than squeezing their columns. */
+.staff-visits { display: grid; gap: 10px; }
+.staff-visits__actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.staff-visits__actions > span { font: 700 12px var(--condensed); letter-spacing: .08em; opacity: .7; }
+.staff-visits__cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.staff-visits__card {
+  display: grid; gap: 2px; align-content: start; padding: 10px 12px;
+  background: #111113; color: var(--paper, #f4efe4); clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+}
+.staff-visits__card span { font: 700 11px var(--condensed); letter-spacing: .1em; opacity: .75; }
+.staff-visits__card strong { font: 800 24px/1.1 var(--condensed); }
+.staff-visits__card small { font-size: 11px; line-height: 1.35; opacity: .7; }
+.staff-visits__table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.staff-visits__table:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+.staff-visits table { width: 100%; border-collapse: collapse; color: inherit; font: 700 13px var(--condensed); white-space: nowrap; }
+.staff-visits th, .staff-visits td { padding: 6px 8px; text-align: right; border-bottom: 1px dashed rgba(17,17,19,.25); }
+.staff-visits th[scope="row"], .staff-visits thead th:first-child { text-align: left; }
+.staff-visits thead th { font-size: 11px; letter-spacing: .08em; opacity: .65; }
+.staff-visits tr.is-warn th, .staff-visits tr.is-warn td { color: var(--red, #a91c24); }
+.staff-visits__columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 4px 18px; }
+.staff-visits__list { margin: 0 0 6px; padding: 0; list-style: none; }
+.staff-visits__list li { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px dashed rgba(17,17,19,.2); font: 700 13px var(--condensed); }
 /* Three columns on a desk — amount and visitor, payment, invoice — and one
    stacked column on a phone, where the invoice reason needs the full width. */
 .staff-offerings__row {
@@ -1165,7 +1155,7 @@ button:active { filter: brightness(.88); scale: .96; }
 .dj-booth p { margin: 0; }
 .dj-booth__now span { display: block; color: var(--red); font: 800 10px var(--condensed); letter-spacing: .12em; }
 .dj-booth__now strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 19px var(--condensed); }
-.dj-booth__credit, .dj-booth__note { margin-top: 7px; font-size: 12px; opacity: .72; }
+.dj-booth__note { margin-top: 7px; font-size: 12px; opacity: .72; }
 .dj-tracklist { display: grid; gap: 7px; margin-bottom: 18px; }
 .dj-tracklist__row {
   display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 12px;
@@ -1193,7 +1183,7 @@ button:active { filter: brightness(.88); scale: .96; }
 .dj-queue__empty { list-style: none; margin-left: -17px; opacity: .7; }
 .dj-tracklist__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dj-tracklist__meta { white-space: nowrap; font: 800 10px var(--condensed); letter-spacing: .1em; opacity: .7; }
-.dj-tracklist__cue { white-space: nowrap; font: 800 10px var(--condensed); letter-spacing: .12em; }
+
 .staff-section { margin: 0 0 12px; border: 1px solid rgba(17,17,19,.22); background: rgba(255,255,255,.5); }
 .staff-section > summary {
   display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 15px;
@@ -1206,12 +1196,7 @@ button:active { filter: brightness(.88); scale: .96; }
 .staff-section__body { padding: 16px 15px 20px; border-top: 1px solid rgba(17,17,19,.16); }
 .staff-subheading { margin: 26px 0 10px; color: var(--red); font: 800 11px var(--condensed); letter-spacing: .12em; }
 .staff-section__body > .staff-subheading:first-child { margin-top: 0; }
-.map-branch { position: absolute; z-index: 0; top: 163px; left: 16%; right: 16%; height: 4px; background: var(--paper); }
-.map-sea { position: absolute; inset: auto 0 0; height: 95px; padding: 25px; background: #123c4d; font: 800 15px var(--condensed); letter-spacing: .1em; }
-.programme-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px; }
-.programme-summary p { margin: 0; padding: 18px; border: 1px solid rgba(17,17,19,.25); }
-.programme-summary span { display: block; color: var(--red); font: 800 11px var(--condensed); letter-spacing: .1em; }
-.programme-summary strong { display: block; margin-top: 3px; font: 900 24px/.98 var(--condensed); }
+
 .programme-focus { margin-bottom: 18px; border: 2px solid var(--ink); padding: clamp(20px, 4vw, 34px); background: #eee5d6; }
 .programme-focus h2 { max-width: 17ch; margin: 8px 0 24px; font: 900 clamp(38px, 6vw, 68px)/.92 var(--condensed); }
 .programme-focus dl { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 18px; margin: 0; }
@@ -1260,7 +1245,7 @@ button:active { filter: brightness(.88); scale: .96; }
 .pamphlet-editor input { height: 46px; }.pamphlet-editor textarea { min-height: 112px; resize: vertical; }
 .pamphlet-editor__wide { grid-column: 1 / -1; }
 .pamphlet-editor button { grid-column: 1 / -1; justify-self: start; min-height: 44px; border: 0; padding: 0 18px; color: white; background: var(--red); font: 800 12px var(--condensed); cursor: pointer; }
-.panel-palette { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; max-width: 430px; }
+
 .range-field { display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: 15px; margin: 18px 0; font: 800 14px var(--condensed); }
 .range-field input { accent-color: var(--red); }
 /* `inline-block`, and it is load-bearing. Six of these are <button>, which is
@@ -1446,7 +1431,9 @@ button:active { filter: brightness(.88); scale: .96; }
 .chat-stream {
   position: fixed; z-index: 4; left: 22px; bottom: 52px; display: grid; gap: 6px;
   width: min(520px, calc(100vw - 44px)); pointer-events: none;
-  contain: layout paint; isolation: isolate; transform: translateZ(0); backface-visibility: hidden;
+  /* Layout only, not paint: the top card fades as it rides up past the
+     stream's edge instead of being cut off there (2026-11-13). */
+  contain: layout; isolation: isolate; transform: translateZ(0); backface-visibility: hidden;
 }
 .chat-stream[hidden] { display: none; }
 .chat-stream__item {
@@ -1487,7 +1474,7 @@ button:active { filter: brightness(.88); scale: .96; }
 .staff-toolbar { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 8px; align-items: stretch; margin-bottom: 28px; }
 .staff-toolbar p { margin: 0; border: 1px solid rgba(17,17,19,.22); padding: 10px 12px; }
 .staff-toolbar span, .staff-toolbar strong { display: block; }.staff-toolbar span { color: var(--red); font: 800 10px var(--condensed); letter-spacing: .08em; }.staff-toolbar strong { font: 900 25px var(--condensed); }
-.staff-heading { margin: 24px 0 8px; font: 900 20px var(--condensed); }
+
 .staff-note { max-width: 68ch; margin: 0 0 14px; color: rgba(17,17,19,.68); font-size: 13px; line-height: 1.5; }
 .staff-programmes { display: grid; gap: 9px; }
 .staff-programmes form { display: grid; gap: 12px; border: 1px solid rgba(17,17,19,.22); padding: 16px; background: #eee5d6; }
@@ -1662,13 +1649,12 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 @media (max-width: 780px), (pointer: coarse) and (hover: none) {
   body { overflow: auto; }
   .gate { align-items: start; padding: 104px 14px 28px; }
-  .gate__sun { left: -20%; top: 12%; }
-  .gate__city { left: 18%; top: 27%; }
+
   .gate-card { margin: 0; padding: 24px 20px; box-shadow: 10px 10px 0 rgba(15,15,16,.7); }
   .gate-card h1 { font-size: 53px; }
   .phase-badge { display: none; }
   .gate-grid, .gate-actions { grid-template-columns: 1fr; }
-  .palette-picker { grid-template-columns: repeat(2, 1fr); }
+
   .vr-entry { padding: 20px; }
   .vr-entry h2 { font-size: 40px; }
   .vr-entry > div { grid-template-columns: 1fr; }
@@ -1721,9 +1707,9 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .panel--character { inset: 76px 10px auto auto; width: min(320px, calc(100vw - 20px)); }
   .panel__body { padding: 20px; }
   .map-card { display: grid; grid-template-columns: 1fr; gap: 10px; min-height: 0; padding: 18px 18px 112px; }
-  .map-card::before, .map-branch { display: none; }
+  .map-card::before { display: none; }
   .map-card .map-node { position: static; width: 100%; transform: none; }
-  .programme-summary, .catalogue-group div, .contact-list { grid-template-columns: 1fr; }
+  .catalogue-group div, .contact-list { grid-template-columns: 1fr; }
   .pamphlet-layout { grid-template-columns: 1fr; }
   .programme-focus dl { grid-template-columns: 1fr; }
   .controls-hint { display: none; }
@@ -1747,10 +1733,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
     background: linear-gradient(var(--line),var(--line)) center / 1px 100% no-repeat,
       linear-gradient(var(--line),var(--line)) center / 100% 1px no-repeat;
   }
-  .touch-stick__caption {
-    position: absolute; bottom: 5px; left: 0; right: 0; text-align: center;
-    color: var(--paper); font: 800 9px var(--condensed); letter-spacing: .12em; pointer-events: none;
-  }
+
   .touch-stick__knob {
     width: 50px; height: 50px; border-radius: 0; z-index: 1;
     background: var(--paper); border: 2px solid var(--ink);
@@ -1783,11 +1766,14 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
     font-size: 13px;
   }
   .touch-ring__key { width: 44px; height: 44px; }
-  .touch-ring__key--a { right: calc(9px + env(safe-area-inset-right)); bottom: calc(189px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--b { right: calc(57px + env(safe-area-inset-right)); bottom: calc(189px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--c { right: calc(105px + env(safe-area-inset-right)); bottom: calc(165px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--d { right: calc(136px + env(safe-area-inset-right)); bottom: calc(118px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--e { right: calc(136px + env(safe-area-inset-right)); bottom: calc(70px + env(safe-area-inset-bottom)); }
+  /* The stick runs at its edge, so a phone has no 跑 key (the owner,
+     2026-11-13): 動 takes its place beside 跳, and the cluster sits snug
+     round 拳, about 14px off it, with 聊天 just above 動 and 跳. */
+  .touch-ring__key--b { display: none; }
+  .touch-ring__key--a { right: calc(9px + env(safe-area-inset-right)); bottom: calc(162px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--c { right: calc(57px + env(safe-area-inset-right)); bottom: calc(162px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--d { right: calc(97px + env(safe-area-inset-right)); bottom: calc(114px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--e { right: calc(97px + env(safe-area-inset-right)); bottom: calc(66px + env(safe-area-inset-bottom)); }
   .touch-ring__hit.is-active, .touch-ring__key.is-active { background: var(--paper); color: var(--ink); border-color: var(--red); }
 
   /* A phone screen is mostly world. Everything that reports on the festival —
@@ -1921,7 +1907,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .gate-card { padding-block: 22px; }
   .gate-card h1 { font-size: clamp(46px, 8vh, 68px); }
   .gate-grid { margin-block: 18px 14px; }
-  .palette-picker { margin-bottom: 14px; }
+
   .gate-actions { margin-top: 15px; }
 }
 
@@ -2033,11 +2019,13 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .touch-ring__key { width: 44px; height: 44px; }
   /* The same fan, opened out to the left along the bottom edge, and lifted so
      the whole cluster clears the pass in the corner beneath it. */
+  .touch-ring__key--b { display: none; }
   .touch-ring__key--a { right: calc(6px + env(safe-area-inset-right)); bottom: calc(144px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--b { right: calc(54px + env(safe-area-inset-right)); bottom: calc(144px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--c { right: calc(102px + env(safe-area-inset-right)); bottom: calc(122px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--d { right: calc(150px + env(safe-area-inset-right)); bottom: calc(100px + env(safe-area-inset-bottom)); }
-  .touch-ring__key--e { right: calc(152px + env(safe-area-inset-right)); bottom: calc(50px + env(safe-area-inset-bottom)); }
+  /* Sideways the cluster gets more air (the owner, 2026-11-13): about 24px
+     off 拳 and 10px between neighbouring keys. */
+  .touch-ring__key--c { right: calc(60px + env(safe-area-inset-right)); bottom: calc(126px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--d { right: calc(114px + env(safe-area-inset-right)); bottom: calc(94px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--e { right: calc(114px + env(safe-area-inset-right)); bottom: calc(40px + env(safe-area-inset-bottom)); }
   /* Between the two thumbs rather than above them — there is no room above. */
   .interaction-toast { bottom: calc(16px + env(safe-area-inset-bottom)); max-width: min(46vw, 320px); height: 38px; }
   .world-camera-hint { bottom: calc(14px + env(safe-area-inset-bottom)); }
@@ -2226,7 +2214,6 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .world-alert { top: calc(96px + env(safe-area-inset-top)); }
 }
 
-
 /* ---------------------------------------------------------------------------
    A screening made fullscreen on a phone.
 
@@ -2287,28 +2274,6 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   }
 }
 
-/* The company's own faces, so the world can letter its signs in the same voice
-   the site does. Loaded here rather than fetched per sign: a canvas draws text
-   with whatever font is resolved at that instant, and a face that arrives late
-   is a face the sign never gets. */
-@font-face {
-  font-family: "BebasNeueBrand";
-  src: url("/font/BebasNeue-Regular.ttf") format("truetype");
-  font-display: block;
-}
-
-/* HanWangMingBlack, cut down to the 545 characters this world can actually
-   display and re-wrapped as WOFF2: 8.47 MB becomes 140 KB, sixty-two times
-   smaller, with nothing the world can show left out. The full file carries
-   glyphs for essentially the whole CJK range and the festival uses a few
-   hundred of them, so shipping it whole to a phone was never the trade.
-   Rebuild with tools/subset-fonts.sh if the world gains new wording. */
-@font-face {
-  font-family: "HanWangMingBrand";
-  src: url("/font/HanWangMing-subset.woff2") format("woff2");
-  font-display: swap;
-}
-
 /* The black box, shown only after a session that ended without saying goodbye.
    Deliberately plain and deliberately in the way: it exists to be read on a
    phone and photographed, by somebody who has just been thrown out of the
@@ -2320,7 +2285,6 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   letter-spacing: .04em; word-break: break-word; cursor: pointer;
   padding-top: max(10px, env(safe-area-inset-top));
 }
-
 
 /* ---- the offering sheet ---------------------------------------------------
    Opened at the altar, on both a desk and a phone. It is a sheet rather than a
@@ -2500,6 +2464,12 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   color: var(--paper); background: rgba(14,16,17,.85); text-shadow: none;
   clip-path: polygon(0 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%);
 }
+/* Each message fades out about twelve seconds after it was written (the
+   owner, 2026-11-13); App.renderChatStream slides new ones in at the bottom and
+   the oldest off the top, Twitch-style. The 聊天 page keeps the conversation. */
+.chat-stream__item { animation: chat-stream-fade 12s ease forwards; }
+@keyframes chat-stream-fade { 0%, 85% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .chat-stream__item { animation: none; } }
 /* Location is printed like a programme section, not a colour-coded badge. */
 .chat-stream__channel { color: #e8e2d5; background: transparent; border: 1px solid rgba(232,226,213,.48); padding: 1px 5px; letter-spacing: .08em; text-shadow: none; }
 .chat-stream__item strong { letter-spacing: .08em; }
@@ -2655,7 +2625,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 @media (max-width: 800px), (pointer: coarse) and (hover: none) {
   .world-quick-actions {
     right: calc(9px + env(safe-area-inset-right));
-    bottom: calc(243px + env(safe-area-inset-bottom));
+    bottom: calc(216px + env(safe-area-inset-bottom));
     width: 92px;
     max-width: calc(100vw - 18px - env(safe-area-inset-left) - env(safe-area-inset-right));
   }
@@ -2671,14 +2641,13 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .world-shell .interaction-toast, .world-shell .interaction-toast--dj {
     left: calc(14px + env(safe-area-inset-left)); right: auto; transform: none;
     max-width: calc(100vw - 124px - env(safe-area-inset-left) - env(safe-area-inset-right));
-    bottom: calc(246px + env(safe-area-inset-bottom));
+    bottom: calc(219px + env(safe-area-inset-bottom));
   }
 }
-@media (orientation: portrait) and (max-width: 800px), (orientation: portrait) and (pointer: coarse) and (hover: none) {
-}
+
 @media (orientation: landscape) and (max-height: 600px), (orientation: landscape) and (pointer: coarse) and (hover: none) {
-  .touch-ring__key--a, .touch-ring__key--b { bottom: calc(110px + env(safe-area-inset-bottom)); }
-  .world-quick-actions { right: calc(6px + env(safe-area-inset-right)); bottom: calc(164px + env(safe-area-inset-bottom)); }
+  .touch-ring__key--a { bottom: calc(126px + env(safe-area-inset-bottom)); }
+  .world-quick-actions { right: calc(6px + env(safe-area-inset-right)); bottom: calc(180px + env(safe-area-inset-bottom)); }
   .world-shell .interaction-toast, .world-shell .interaction-toast--dj { left: 50%; transform: translateX(-50%); max-width: min(46vw, 320px); bottom: calc(16px + env(safe-area-inset-bottom)); }
 }
 
@@ -2694,7 +2663,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   background: linear-gradient(90deg, rgba(7,10,12,.89) 0%, rgba(7,10,12,.74) 28%, rgba(7,10,12,.16) 62%, rgba(7,10,12,.22));
 }
 .gate--live .gate__grain { z-index: 2; opacity: .09; }
-.gate__layout { width: min(1320px, 100%); margin: auto; display: grid; grid-template-columns: minmax(330px, 450px) minmax(0, 1fr); gap: clamp(24px, 5vw, 88px); align-items: center; }
+.gate__layout { --gate-avatar-h: max(380px, min(660px, calc(100dvh - 170px))); width: min(1320px, 100%); margin: auto; display: grid; grid-template-columns: minmax(330px, 450px) minmax(0, 1fr); gap: clamp(24px, 5vw, 88px); align-items: center; }
 .gate--live .gate-card {
   width: 100%; max-height: calc(100dvh - 150px); margin: 0; padding: 12px 16px 12px 0;
   overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #f5efe24d transparent;
@@ -2734,7 +2703,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .gate--live .gate-donate { min-height: 34px; border-color: #f5efe233; font-size: 13px; }
 .gate--live .gate-card__note { min-height: 3em; color: #f5efe28c; white-space: normal; font-size: 10px; line-height: 1.5; }
 .gate--live .field-error { color: #ffb1ac; }
-.gate-avatar { position: relative; height: min(660px, calc(100dvh - 170px)); min-height: 380px; align-self: stretch; cursor: grab; touch-action: none; user-select: none; }
+.gate-avatar { grid-column: 2; grid-row: 1; position: relative; height: var(--gate-avatar-h); align-self: start; cursor: grab; touch-action: none; user-select: none; }
 .gate-avatar:active { cursor: grabbing; }
 .gate-avatar:focus-visible { outline: none; }
 /* No underline on the caption (owner, 2026-10-22): Chrome counts a click on a
@@ -2742,10 +2711,13 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .gate-avatar__caption { position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; pointer-events: none; }
 .gate-avatar__caption .eyebrow { color: var(--paper); text-shadow: 0 2px 8px #0008; }
 .gate-avatar__caption p { margin: 9px 0 0; color: #f5efe2a8; font: 700 11px var(--condensed); letter-spacing: .1em; }
-/* The sign-in page's loading bar: the globe, then the character (App.paintGateLoad). */
-.gate-scene-status { position: fixed; right: 24px; bottom: 17px; width: min(300px, 45vw); margin: 0; font: 700 11px var(--condensed); letter-spacing: .08em; color: #f5efe2b3; transition: opacity 400ms ease 300ms; }
+/* The sign-in page's loading bar: the globe, then the character (App.paintGateLoad).
+   Centred under the 你的角色 caption, in the avatar's own column (the owner,
+   2026-11-10): it shares the avatar's grid cell and starts just below it, so
+   it stays in the window whatever the card's height. */
+.gate-scene-status { grid-column: 2; grid-row: 1; align-self: start; justify-self: center; width: min(300px, 80%); margin: calc(var(--gate-avatar-h) + 12px) 0 0; font: 700 11px var(--condensed); letter-spacing: .08em; color: #f5efe2b3; transition: opacity 400ms ease 300ms; }
 .gate-scene-status[hidden] { display: none; }
-.gate-scene-status p { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 7px; }
+.gate-scene-status p { display: flex; justify-content: center; gap: 10px; margin: 0 0 7px; }
 .gate-scene-status b { color: var(--paper); font-variant-numeric: tabular-nums; }
 .gate-scene-status__track { height: 3px; background: #f5efe23d; overflow: hidden; }
 .gate-scene-status__track > span { display: block; height: 100%; background: #d5484f; transform: scaleX(var(--gate-load, 0)); transform-origin: left; transition: transform 160ms ease-out; }
@@ -2761,7 +2733,7 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
   .gate--live .gate-grid { grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0 16px; }
   .gate-avatar { display: none; }
   .gate__world-shade { background: linear-gradient(90deg, #080b0edb, #080b0ea6), linear-gradient(0deg, #080b0e8c, transparent); }
-  .gate-scene-status { position: static; width: 100%; max-width: 460px; margin: 18px auto 0; }
+  .gate-scene-status { width: 100%; max-width: 460px; margin: 18px auto 0; }
   .gate--live .gate__brand { padding: 16px 18px; }
   .gate--live .phase-badge { font-size: 10px; }
 }
@@ -2781,17 +2753,20 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .gate-entry { position: fixed; left: 50%; bottom: max(32px, env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(500px, calc(100% - 48px)); color: var(--paper); text-shadow: 0 2px 6px #000; }
 .gate-entry[hidden] { display: none; }
 .gate-entry [data-gate-entry-label] { margin: 0 0 10px; font: 700 12px var(--condensed); letter-spacing: .08em; text-align: center; }
-.gate-entry__tip { min-height: 3em; margin: 16px 0 0; font: 700 13px/1.5 var(--condensed); letter-spacing: .04em; text-align: center; text-wrap: balance; }
+.gate-entry__wake { margin: 0 auto 14px; max-width: 42ch; font: 700 13px/1.55 var(--condensed); letter-spacing: .03em; text-align: center; text-wrap: pretty; }
+.gate-entry__wake[hidden] { display: none; }
+
 .gate-entry__track { height: 3px; background: #f5efe23d; }
 .gate-entry__track > span { display: block; width: 100%; height: 100%; background: #d5484f; transform: scaleX(var(--entry-progress, 0)); transform-origin: left; transition: transform 160ms ease-out; }
+.gate-entry__tip { min-height: 3em; margin: 16px 0 0; font: 700 13px/1.5 var(--condensed); letter-spacing: .04em; text-align: center; text-wrap: balance; }
 @media (prefers-reduced-motion: reduce) {
-  .gate--live .gate-card, .gate--live .gate-avatar, .gate--live .gate__brand, .gate--entering .gate__world-shade, .gate-entry__track > span,
-  .gate-scene-status, .gate-scene-status__track > span { transition: none; }
+  .gate--live .gate-card, .gate--live .gate-avatar, .gate--live .gate__brand, .gate--entering .gate__world-shade, .gate-entry__track > span, .gate-scene-status, .gate-scene-status__track > span { transition: none; }
 }
 @media (max-height: 660px) and (min-width: 801px) and (pointer: fine) {
   .gate--live { padding-top: 86px; padding-bottom: 20px; }
   .gate--live .gate-card { max-height: calc(100dvh - 110px); }
-  .gate-avatar { height: calc(100dvh - 115px); min-height: 280px; }
+  /* Room under the avatar for the loading bar (it hangs below its caption). */
+  .gate__layout { --gate-avatar-h: max(280px, calc(100dvh - 160px)); }
 }
 
 /* The snow choice reuses .seat-menu rather than a separate ticket treatment. */

@@ -13,26 +13,14 @@
  * UPSTASH_REDIS_REST_URL and _TOKEN, or KV_REST_API_URL and _TOKEN. With
  * neither the store is off and the wall behaves exactly as it always has.
  */
+import { upstashClient } from './upstash.mjs';
+
 export const WISH_STORE_KEY = 'festival:wishes';
 
 export function createWishStore({ env = process.env, fetchImpl = globalThis.fetch, key = WISH_STORE_KEY, requestTimeoutMs = 4_000 } = {}) {
-  const url = env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL;
-  const token = env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN;
-  if (!url || !token || typeof fetchImpl !== 'function') {
-    return { enabled: false, load: async () => [], save: () => Promise.resolve() };
-  }
-  const command = async (args) => {
-    const response = await fetchImpl(url.replace(/\/$/, ''), {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(args),
-      signal: AbortSignal.timeout(requestTimeoutMs),
-    });
-    if (!response.ok) throw new Error(`wish storage ${response.status}`);
-    const body = await response.json();
-    if (body?.error) throw new Error(`wish storage: ${body.error}`);
-    return body?.result;
-  };
+  const database = upstashClient({ env, fetchImpl, requestTimeoutMs, label: 'wish storage' });
+  if (!database) return { enabled: false, load: async () => [], save: () => Promise.resolve() };
+  const { command } = database;
   // One write at a time, in order: each carries the whole wall as it was when
   // it changed, so the last one to land is always the newest.
   let queue = Promise.resolve();

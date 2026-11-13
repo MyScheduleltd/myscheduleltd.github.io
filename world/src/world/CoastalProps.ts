@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { clothLoft, coastalMaterial } from './CoastalAvatar';
 
 const cream=coastalMaterial(0xe0d4b8), red=coastalMaterial(0x9e4b3c), green=coastalMaterial(0x3b554b);
-const wood=coastalMaterial(0x705743), gold=coastalMaterial(0xb69b60), dark=coastalMaterial(0x42473d);
+const gold=coastalMaterial(0xb69b60), dark=coastalMaterial(0x42473d);
 function piece(parent:THREE.Object3D,name:string,geometry:THREE.BufferGeometry,position:number[],material:THREE.Material){
   const mesh=new THREE.Mesh(geometry,material);mesh.name=name;mesh.position.set(position[0],position[1],position[2]);
   mesh.castShadow=true;mesh.receiveShadow=true;mesh.userData.coastalAuthored=true;mesh.userData.wornNoMasonry=true;parent.add(mesh);return mesh;
@@ -74,119 +74,5 @@ export function createCoastalDeity():THREE.Group{
   return p;
 }
 
-/** Signboard geometry remains separate from the staff-editable lettering texture. */
-export function createCoastalSignFrame(width:number,height:number):THREE.Group{
-  const p=new THREE.Group();p.name='Framed enamel sign';
-  box(p,'Timber backing',[width+.26,height+.26,.22],[0,0,-.14],wood);
-  for(const y of [-1,1])box(p,'Enamel horizontal frame',[width+.22,.10,.12],[0,y*(height/2+.06),-.005],green);
-  for(const x of [-1,1])box(p,'Enamel vertical frame',[.10,height+.12,.12],[x*(width/2+.06),0,-.005],green);
-  for(const x of [-1,1])for(const y of [-1,1])box(p,'Brass fixing',[.055,.055,.018],[x*(width/2-.05),y*(height/2-.05),.025],gold);
-  return p;
-}
 
 
-/** A small timber literature rack with a recessed panel and sloping book tray. */
-export function createCoastalPamphletStand():THREE.Group {
-  const p=new THREE.Group();p.name='Festival pamphlet rack';
-  for(const x of [-.88,.88])for(const z of [-.43,.43])box(p,'Rack foot',[.18,.17,.22],[x,.085,z],dark);
-  box(p,'Timber case',[2.05,1.40,1.12],[0,.87,0],wood);
-  box(p,'Recessed enamel front',[1.77,1.03,.055],[0,.87,.584],green);
-  // The sloped tray above tilts its front edge down, and these used to stand
-  // into the space it sweeps through: the stiles topped out at 1.585 and the
-  // upper rail at 1.60, while the tray's underside passes 1.562 over them — so
-  // both pierced the tray and showed as cream cutting across the timber. They
-  // stop just under it now.
-  for(const x of [-.98,.98])box(p,'Cream frame stile',[.13,1.40,.14],[x,.855,.60],cream);
-  // 0.13 deep, not 0.14, so the rails sit *between* the stiles rather than
-  // flush with them. Flush is two faces on the same plane, and two faces on
-  // the same plane are a coin toss the depth buffer re-tosses every time the
-  // camera moves. Both are cream, so this pair never showed — but a fight
-  // that is currently invisible is still a fight, and the next material change
-  // would have made it visible. 0.535–0.665 also clears the feet at 0.54.
-  for(const y of [.20,1.49])box(p,'Cream frame rail',[2.1,.12,.13],[0,y,.60],cream);
-  /**
-   * The tray is a slab tilted towards the reader, rotated about its own centre.
-   * Getting it clear of the case has taken three goes, so the numbers are
-   * written down this time.
-   *
-   * With the tray at 1.72 its underside passed y 1.5655 at the case's front
-   * face — 4.5mm *under* the case top at 1.57. The note that used to sit here
-   * claimed the two met exactly; they did not, and 4.5mm of timber inside
-   * timber is the seam along the front edge. At 1.74 the underside crosses the
-   * front face at 1.5855, clear by 15.5mm, and everything below that line
-   * overhangs into open air.
-   *
-   * The riser had the same fault from the other side: its top at 1.71 stood
-   * 2.7cm *through* the tray, since the underside is only 1.703 above the
-   * riser's own front face. It stops at 1.69 now. It fills less of the wedge
-   * under the back than it used to, which is a gap facing away from the path
-   * rather than two pieces of wood in the same place.
-   */
-  box(p,'Tray riser',[2.03,.18,.52],[0,1.60,-.28],wood);
-  const tray=new THREE.Group();tray.position.set(0,1.74,.10);tray.rotation.x=.20;p.add(tray);
-  /**
-   * Nothing up here shares a plane with the slab any more, and that is the
-   * whole of this fix.
-   *
-   * The clipping reported before was solids inside solids, and it is gone —
-   * the tray clears the case and the riser stops under the tray. What was left
-   * is a different fault with the same look: the cheeks' outer faces sat at
-   * x = ±1.10 and so did the slab's, and the book stop's front sat at z = 0.55
-   * and so did the slab's. Two faces at one depth is a coin toss, and the
-   * depth buffer re-tosses it every time the camera moves — which is exactly
-   * "it glitches when I rotate the view", and why it never looked like a fixed
-   * seam. Three pairs, each between two different colours: cream against wood
-   * down 1.08m of both sides, red against wood across 2.2m of the front.
-   *
-   * So the cheeks now stand 10mm proud of the slab, the stop stands 10mm proud
-   * of its front edge, and the stop's ends stop 60mm short of the cheeks'
-   * outer faces — buried inside the cheek, where no face of it is visible at
-   * all. A tray with a lip standing slightly proud is also just what a tray
-   * looks like.
-   */
-  box(tray,'Sloped display tray',[2.2,.12,1.10],[0,0,0],wood);
-  /**
-   * The fascia that closes the wedge under the tray.
-   *
-   * The tray overhangs the case and its underside rises towards the back, so
-   * between the case top at 1.57 and that underside there was a real opening —
-   * 133mm at the riser, closing to 15mm at the front edge. Nothing was wrong
-   * with it; it was open air, and from a low angle you looked into the shadow
-   * inside and read it as the panel cutting into the box.
-   *
-   * It has to live in the tray's frame and tilt with it. The gap's ceiling is
-   * the tilted underside, so an upright box either stops short of it at the
-   * back — 105mm short, most of the opening still there — or pierces it at the
-   * front. Tilted, one board follows the slab the whole way.
-   *
-   * It runs the whole underside rather than just the part facing the path. The
-   * riser closed the back to 1.69 and the underside above it is 1.70 to 1.81,
-   * so there was a second opening back there of up to 119mm — out of sight of
-   * the path, which is why it was written off once, but out of sight is not
-   * the same as closed and somebody will walk round.
-   *
-   * Its bottom is 55 to 250mm inside the case, and that is the point rather
-   * than a slip: a tilted board cannot meet a level top along a line, so it is
-   * housed into it the way a real one would be. That is a different thing from
-   * the faults this stand was reported for three times — those were solids
-   * showing through each other. Every face of this one is either in open air
-   * or buried where nothing can see it. Wood, like the riser it meets, so the
-   * two read as one mass rather than as two boards fighting over a shadow.
-   */
-  box(tray,'Tray skirt',[2.02,.30,1.01],[0,-.19,-.035],wood);
-  box(tray,'Book stop',[2.08,.15,.09],[0,.105,.515],red);
-  for(const x of [-1.055,1.055])box(tray,'Tray side',[.11,.19,1.08],[x,.13,0],cream);
-  for(const x of [-.65,0,.65]) {
-    box(tray,'Cream paper stack',[.53,.11,.86],[x,.115,0],cream);
-    // Distinct surface heights keep the thin print above the paper. The old
-    // cover was only 0.009 above the stack, and the fold and lines intersected
-    // it, producing the dotted clipping across the tray at normal viewing range.
-    box(tray,'Printed booklet cover',[.55,.025,.88],[x,.205,0],x===0?red:green);
-    // The fold and the type lines cleared the cover by 3.5mm and 3.0mm, which
-    // is not clearance at a distance — it is the dotted clipping across the
-    // booklets. 15mm each now, still too thin to read as a gap.
-    box(tray,'Booklet fold',[.025,.018,.88],[x-.245,.242,0],cream);
-    for(let n=0;n<3;n++)box(tray,'Cover type line',[n===0?.30:.23,.009,.035],[x,.237,-.20+n*.10],cream);
-  }
-  return p;
-}

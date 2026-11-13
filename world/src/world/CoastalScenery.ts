@@ -10,6 +10,9 @@ import type { SnowSurfaceSource } from './SnowSurfaceCoverage';
 
 type Solid = (x:number,z:number,w:number,d:number,base:number,top:number,label:string)=>void;
 type Clear = (x:number,z:number,radius:number)=>boolean;
+/** The town's pole line along the east pavement, and its wires' height over the ground. */
+export const TOWN_POLES: ReadonlyArray<readonly [number,number]> = [[13,52],[13,34],[13,21.5]];
+export const TOWN_WIRE_Y = 8.25;
 const colours = {shell:0xc7baa0,red:0x863632,teal:0x52736a,concrete:0x928d7c,ink:0x303639,iron:0x5e6560,wood:0x72583d,brick:0x866150};
 
 /** Shared authored materials and merged details keep silhouettes affordable on phones. */
@@ -17,6 +20,8 @@ export class CoastalScenery {
   private batches=new Map<THREE.Material,THREE.BufferGeometry[]>();
   private shadowBatches=new Map<THREE.Material,THREE.BufferGeometry[]>();
   private detailBounds:Array<{min:number[];max:number[];contact:number[];geometry:string}>=[];
+  /** Every strung wire's path (x,y,z per point), for the loopback cable check. */
+  private wireRuns:number[][]=[];
   private snowSurfaceSources:SnowSurfaceSource[]=[];
   readonly mats=Object.fromEntries(Object.entries(colours).map(([key,color])=>[
     key,key==='iron'||key==='ink'
@@ -69,8 +74,9 @@ export class CoastalScenery {
       this.solid(mid.x,mid.z,Math.abs(to.x-from.x)+width*2,Math.abs(to.z-from.z)+width*2,Math.min(from.y,to.y)-width,Math.max(from.y,to.y)+width,collisionLabel);
     }
   }
-  private sign(text:string,sub:string,at:[number,number,number],w:number,h:number,angle=0):void{
-    const texture=createNeonSignTexture([text,sub],{aspect:w/h,style:'festival',maxEdge:768});
+  private sign(text:string,at:[number,number,number],w:number,h:number,angle=0):void{
+    // Chinese only (the owner, 2026-11-09).
+    const texture=createNeonSignTexture([text],{aspect:w/h,style:'festival',maxEdge:768});
     const mesh=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({map:texture,side:THREE.DoubleSide,toneMapped:false}));
     mesh.position.set(...at);mesh.rotation.y=angle;mesh.name=text;mesh.userData.coastalAuthored=true;this.scene.add(mesh);
   }
@@ -89,6 +95,10 @@ export class CoastalScenery {
       const base=x===-35?8:0;
       this.box([x===-35?w:w+.24,h-base,1.2],[x,base+(h-base)/2,-31.6],m.shell);
       this.snowBox(`coastal-palace-crown-${++crownIndex}`,[w+.3,.28,1.5],[x,h+.14,-31.6],m.red);
+      // The wings are walls down to the ground, with lit poster cases on their
+      // fronts (z -31.0). Only the piers at x -45/-25 used to stop a body, so
+      // anyone could walk half into a wing beside its poster (owner, 2026-11-11).
+      if(x!==-35)this.solid(x,-31.525,w+.24,1.35,0,h,'palace-front-wing');
     }
     for(const x of [-45,-25]){
       this.box([1.3,8.1,2.1],[x,4.05,-31.7],m.shell);
@@ -138,6 +148,8 @@ export class CoastalScenery {
     for(const x of [-9,9]){
       this.beam(new THREE.Vector3(x,-.8,-50),new THREE.Vector3(x,8.7,-46.1),.15,m.iron);
       this.solid(x,-50,1.8,1.8,-1,-.5,'screen-footing');
+      // The strut leans out over the walk and passes head height about z -48.5.
+      this.solid(x,-48.4,.6,2.6,-1,6,'screen-strut');
       this.box([1.8,.5,1.8],[x,-.75,-50],m.concrete);
     }
     // Shore: tensioned cloth and timber footings, out of the film's viewing rectangle.
@@ -146,7 +158,8 @@ export class CoastalScenery {
       this.box([1.6,.6,1.6],[x,SHORE_GRADE+.1,-36],m.concrete);
       this.solid(x,-36,1.6,1.6,SHORE_GRADE-.2,SHORE_GRADE+.4,'shore-footing');
       this.beam(new THREE.Vector3(x,SHORE_GRADE,-36),new THREE.Vector3(x,SHORE_GRADE+12.1,-36),.15,m.wood);
-      this.beam(new THREE.Vector3(x,SHORE_GRADE+11,-36),new THREE.Vector3(x+side*4,terrainHeightAt(x+side*4,-40),-40),.035,m.iron,'shore-guy-wire');
+      const guyTop=new THREE.Vector3(x,SHORE_GRADE+11,-36),guyFoot=new THREE.Vector3(x+side*4,terrainHeightAt(x+side*4,-40),-40);
+      this.beam(guyTop,guyFoot,.035,m.iron,'shore-guy-wire');this.wireRuns.push([...guyTop.toArray(),...guyFoot.toArray()]);
       this.solid(x,-36,.6,.6,SHORE_GRADE,12,'shore-mast');
     }
     this.box([22,.25,.4],[35,SHORE_GRADE+12,-36],m.wood);
@@ -173,15 +186,22 @@ export class CoastalScenery {
         this.box([.1,2.0,.1],[x+dx,base+5.1,z-d/2-.19],m.shell);
       }
       this.box([2.8,3.7,.22],[x,base+1.85,z-d/2-.12],m.ink);
+      // The door, its frame and handle stand .44 proud of the wall, and the hood
+      // over it (3.83 up, 1.15 deep) is under the 3.9 hair reaches; the house
+      // stopped bodies at the wall, so they walked into both (2026-11-11).
+      this.solid(x,z-d/2-.575,3.2,1.15,base,base+3.98,'dorm-door');
       this.box([2.25,3.35,.12],[x,base+1.725,z-d/2-.27],m.wood);
       this.box([.09,.4,.14],[x+.75,base+1.7,z-d/2-.37],m.shell);
       this.snowBox(`${snowId}-doorstep`,[3.1,.16,1.1],[x,base+.08,z-d/2-.45],m.concrete);
       this.snowBox(`${snowId}-doorhood`,[3.2,.15,1.15],[x,base+3.9,z-d/2-.46],m.teal);
-      this.sign('員工宿舍','STAFF DORMITORY',[x,base+3.53,z-d/2-.35],1.2,.25,Math.PI);
+      this.sign('員工宿舍',[x,base+3.53,z-d/2-.35],1.2,.25,Math.PI);
       const front=z-d/2;
       // Deep balcony slab, metal balustrade and air conditioners with readable vents.
       for(const [balcony,dx] of [-w*.3,w*.3].entries()) {
         const bx=x+dx,deck=base+3.94,railTop=deck+1.15,edge=front-1.5;
+        // Its slab's underside (3.72) is under the 3.9 hair reaches: nobody
+        // fits beneath, so nobody walks there (the owner, 2026-11-11).
+        this.solid(bx,front-.75,3.4,1.5,base-1,base+3.6,'dorm-balcony');
         this.snowBox(`${snowId}-balcony-${balcony+1}`,[3.4,.22,1.5],[bx,deck-.11,front-.75],m.concrete);
         this.box([3.25,.10,.10],[bx,railTop,edge+.08],m.iron);
         this.box([3.25,.07,.07],[bx,deck+.16,edge+.08],m.iron);
@@ -193,16 +213,19 @@ export class CoastalScenery {
       }
       for(const dx of [-w*.3,w*.3]) {
         this.box([1.5,.95,.7],[x+dx,base+3.1,front-.46],m.shell);
+        // At head height and .8 off the wall: heads went into it (2026-11-11).
+        this.solid(x+dx,front-.46,1.5,.7,base+2.6,base+3.6,'dorm-air-conditioner');
         this.box([1.2,.7,.04],[x+dx,base+3.1,front-.84],m.iron);
         for(let n=0;n<5;n++)this.box([1.1,.05,.05],[x+dx,base+2.83+n*.13,front-.88],m.shell);
       }
       this.beam(new THREE.Vector3(x+w*.43,base,front-.2),new THREE.Vector3(x+w*.43,base+h,front-.2),.09,m.iron);
     }
-    const poles:[[number,number],[number,number],[number,number]]=[[13,52],[13,34],[13,21.5]];
+    const poles=TOWN_POLES;
     for(const [x,z] of poles){const b=terrainHeightAt(x,z);this.box([.38,9,.38],[x,b+4.5,z],m.concrete);this.box([2.4,.15,.16],[x,b+8.1,z],m.iron);this.solid(x,z,.4,.4,b,b+9,'utility-pole');}
     for(let n=1;n<poles.length;n++)for(const offset of [-.8,0,.8]) {
-      const a=poles[n-1],b=poles[n];let prev=new THREE.Vector3(a[0]+offset,terrainHeightAt(...a)+8.25,a[1]);
-      for(let j=1;j<=8;j++){const t=j/8;const next=new THREE.Vector3(THREE.MathUtils.lerp(a[0],b[0],t)+offset,THREE.MathUtils.lerp(terrainHeightAt(...a),terrainHeightAt(...b),t)+8.25-Math.sin(t*Math.PI)*.65,THREE.MathUtils.lerp(a[1],b[1],t));this.beam(prev,next,.018,m.ink);prev=next;}
+      const a=poles[n-1],b=poles[n];let prev=new THREE.Vector3(a[0]+offset,terrainHeightAt(...a)+TOWN_WIRE_Y,a[1]);const run=prev.toArray();
+      for(let j=1;j<=8;j++){const t=j/8;const next=new THREE.Vector3(THREE.MathUtils.lerp(a[0],b[0],t)+offset,THREE.MathUtils.lerp(terrainHeightAt(...a),terrainHeightAt(...b),t)+TOWN_WIRE_Y-Math.sin(t*Math.PI)*.65,THREE.MathUtils.lerp(a[1],b[1],t));this.beam(prev,next,.018,m.ink);run.push(...next.toArray());prev=next;}
+      this.wireRuns.push(run);
     }
     // Gateway: low masonry pylons anchor the existing brand arch.
     for(const [index,x] of [-14,14].entries()){
@@ -220,11 +243,19 @@ export class CoastalScenery {
       if(!this.clear(x,z,3.8*s))continue;
       (this.scene.userData.treeCanopies??=[]).push({x,z,radius:3.8*s});
       const base=terrainHeightAt(x,z),m=this.mats;
-      this.put(new THREE.CylinderGeometry(.21*s,.43*s,5*s,6),[x,base+2.5*s,z],m.wood,undefined,true);
-      this.solid(x,z,.85*s,.85*s,base,base+6*s,'coastal-almond-tree');
+      // The lowest crown used to hang at 2.8 a unit of scale, through the head
+      // of anyone walking under it (owner, 2026-11-11). Lifted, trunk and all,
+      // so its underside clears the tallest hair (3.9) with a little to spare,
+      // measured from the highest ground under the crown (some stand on slopes).
+      const under=Math.max(base,...Array.from({length:8},(_,k)=>terrainHeightAt(x+Math.cos(k*Math.PI/4)*2.6*s,z+Math.sin(k*Math.PI/4)*2.2*s)));
+      const lift=Math.max(0,under-base+4.1-2.8*s),trunk=5*s+lift;
+      this.put(new THREE.CylinderGeometry(.21*s,.43*s,trunk,6),[x,base+trunk/2,z],m.wood,undefined,true);
+      this.solid(x,z,.85*s,.85*s,base,base+6*s+lift,'coastal-almond-tree');
+      // The crown, overhead: walked under, but a jump's head stops at it.
+      this.solid(x+.3*s,z,4.6*s,3.8*s,base+lift+2.8*s,base+lift+(6.6)*s,'coastal-almond-crown');
       for(let level=0;level<3;level++){
         const geometry=new THREE.IcosahedronGeometry(1,0);geometry.scale((3-level*.5)*s,.8*s,(2.5-level*.35)*s);
-        geometry.rotateY(level*.6);this.put(geometry,[x+level*.3*s,base+(3.6+level*1.15)*s,z],this.leaves[level],undefined,true);
+        geometry.rotateY(level*.6);this.put(geometry,[x+level*.3*s,base+lift+(3.6+level*1.15)*s,z],this.leaves[level],undefined,true);
       }
     }
     for(const [x,z,scale] of [[-103,-42,4],[-93,-51,2.7],[-87,-59,2],[-73,-50,1.7],[93,-57,3],[107,-50,4],[78,-55,1.6],[116,36,3],[-109,53,3]] ){
@@ -290,8 +321,13 @@ export class CoastalScenery {
       this.scene.add(ground);
     };
     const asphalt=coastalMaterial(0x565d67);asphalt.map=pixelSurface('asphalt');
+    // The Palace's red carpet stays red (the owner, 2026-11-11). Flat in the
+    // full sun of the PS1 look's sunnier light, the shared red went orange, so
+    // it has its own deeper crimson that the town's grade leaves alone.
+    let carpet:THREE.Material=m.red;
+    {const crimson=(m.red as THREE.MeshStandardMaterial).clone();crimson.color.setHex(0x6a1820);delete crimson.userData.environmentAccent;crimson.userData.ps1TownKeep=true;carpet=crimson;}
     for(const route of COASTAL_ROUTES) {
-      const mat=route.kind==='road'?asphalt:route.kind==='carpet'?m.red:route.kind==='crossing'?paint:m.shell;
+      const mat=route.kind==='road'?asphalt:route.kind==='carpet'?carpet:route.kind==='crossing'?paint:m.shell;
       const family=route.kind==='road'?'asphalt':route.kind==='walk'?'stone':undefined;
       ribbon(route.name,route.points,route.width,mat,route.kind==='road'?.035:route.kind==='carpet'?.075:route.kind==='crossing'?.065:.055,family);
     }
@@ -309,6 +345,7 @@ export class CoastalScenery {
   }
   finish():void{
     this.scene.userData.coastalDetailBounds=this.detailBounds;
+    this.scene.userData.townWireRuns=this.wireRuns;
     // Exact palette ownership opts in only constructed town surfaces. Leaf
     // materials are deliberately absent from this mapping.
     const families=new Map<THREE.Material,EnvironmentFamily>([

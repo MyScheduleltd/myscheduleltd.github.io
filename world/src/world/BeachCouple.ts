@@ -208,7 +208,11 @@ export const createBeachCouple = (): BeachCoupleRig => {
   parasol.position.set(-0.25, 0, -2.5);
   parasol.rotation.z = 0.13;
   root.add(parasol);
-  block([0.2, 3.5, 0.2], [0, 1.75, 0], poleWood, parasol);
+  // A unit taller than it was: at 3.26 the canopy's underside was inside the
+  // head of anyone standing under it (the owner, 2026-11-11), and hair reaches
+  // 3.9. Tilted, its low edge now clears that.
+  const lift = 1;
+  block([0.2, 3.5 + lift, 0.2], [0, (3.5 + lift) / 2, 0], poleWood, parasol);
   // Kept down to something a person would carry. At four and a half across it
   // shaded the whole scene it was meant to be part of, and read as a roof.
   // Stacked, not interleaved. The stripes were three slabs at 3.40, 3.39 and
@@ -216,10 +220,10 @@ export const createBeachCouple = (): BeachCoupleRig => {
   // space, and what a depth buffer does with coplanar faces is flicker between
   // them. They now sit on top of the canopy with clear air between, so nothing
   // is fighting anything.
-  block([3.5, 0.2, 3.5], [0, 3.36, 0], canopy, parasol);
-  block([1.6, 0.09, 3.52], [0, 3.5, 0], canopyCream, parasol);
-  block([3.52, 0.09, 1.6], [0, 3.5, 0], canopyCream, parasol);
-  block([0.72, 0.16, 0.72], [0, 3.62, 0], canopy, parasol);
+  block([3.5, 0.2, 3.5], [0, 3.36 + lift, 0], canopy, parasol);
+  block([1.6, 0.09, 3.52], [0, 3.5 + lift, 0], canopyCream, parasol);
+  block([3.52, 0.09, 1.6], [0, 3.5 + lift, 0], canopyCream, parasol);
+  block([0.72, 0.16, 0.72], [0, 3.62 + lift, 0], canopy, parasol);
 
   return { root, leftHead: left.head, rightHead: right.head, kickedLeg: right.nearLeg, people: [left.group, right.group], parasol };
 };

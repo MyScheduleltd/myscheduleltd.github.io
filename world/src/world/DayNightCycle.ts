@@ -49,6 +49,13 @@ const MOON_RADIUS = 5.2;
 export const CINEMATIC_LIGHTING = Object.freeze({
   skyFill: 0x9dbbff,
   groundBounce: 0x43516c,
+  /**
+   * The PS1 look's sunnier town (the owner, 2026-11-11: "too dark/dead… more
+   * lively and bright"): a warm bounce off sunlit paving instead of the blue
+   * one, more fill, a stronger sun. The sky's own colours are not lights and
+   * stay exactly as they were.
+   */
+  ps1: { skyFill: 0xc4d6ff, groundBounce: 0xa89c8a, fill: 1.55, sun: 1.15, nightFill: .36, exposure: 1.16 },
   nightKey: 0xffdda6,
   mobileFillAddition: .24,
   maxAmbientLift: 1,
@@ -140,7 +147,7 @@ export function nightAmountAt(minute: number): number {
 export class DayNightCycle {
   readonly atmosphere: CoastalSky;
   readonly directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-  readonly hemisphereLight = new THREE.HemisphereLight(CINEMATIC_LIGHTING.skyFill, CINEMATIC_LIGHTING.groundBounce, 1);
+  readonly hemisphereLight = new THREE.HemisphereLight(CINEMATIC_LIGHTING.ps1.skyFill, CINEMATIC_LIGHTING.ps1.groundBounce, 1);
   readonly moonLight = new THREE.DirectionalLight(CINEMATIC_LIGHTING.nightKey, 0);
   readonly sunObject = new THREE.Group();
   readonly moonObject = new THREE.Group();
@@ -403,6 +410,8 @@ export class DayNightCycle {
     // some of their visibility without doubling the entire night's fill.
     const darkness = 1 - THREE.MathUtils.clamp(sunElevationHint, 0, 1);
     this.hemisphereLight.intensity = ambientIntensity + this.ambientLift * CINEMATIC_LIGHTING.mobileFillAddition * darkness;
+    // Brighter by day, and a little more at night so the street still reads.
+    this.hemisphereLight.intensity = this.hemisphereLight.intensity * CINEMATIC_LIGHTING.ps1.fill + darkness * CINEMATIC_LIGHTING.ps1.nightFill;
     // A full civil day on the island's dock-to-beach axis: sunrise at the
     // +Z entrance, overhead near noon, sunset at the opposite -Z beach.
     // The fixed-minute override remains solely for deterministic local QA.
@@ -423,7 +432,7 @@ export class DayNightCycle {
     this.sunHaloMaterial.opacity = sunPosition.y >= CELESTIAL_HORIZON_Y
       ? THREE.MathUtils.lerp(0.82, 0.42, visibleSunElevation)
       : 0;
-    this.directionalLight.intensity = sunIntensity * sunAboveHorizon*(1-this.weatherCloud*.65);
+    this.directionalLight.intensity = sunIntensity * sunAboveHorizon*(1-this.weatherCloud*.65) * CINEMATIC_LIGHTING.ps1.sun;
     this.sunHaloMaterial.opacity*=1-this.weatherCloud;
     this.castsShadowWhileLit(this.directionalLight);
     this.directionalLight.position.copy(sunPosition).multiplyScalar(0.48).add(this.shadowFocus);
@@ -483,7 +492,7 @@ export class DayNightCycle {
       progress: cycleMinute / CYCLE_MINUTES,
       phase: phaseData.phase,
       phaseProgress,
-      exposure,
+      exposure: exposure * CINEMATIC_LIGHTING.ps1.exposure,
       localHour,
       clockSource:this.fixedCycleMinute===undefined?clock.clockSource:'review',
       timeZone:clock.timeZone,

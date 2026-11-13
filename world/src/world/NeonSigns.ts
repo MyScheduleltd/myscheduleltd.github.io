@@ -134,12 +134,6 @@ export function createNeonSignTexture(lines:readonly string[],options:NeonSignOp
   return texture;
 }
 
-/** Used only when the brand font finishes loading, never in the animation loop. */
-export function repaintNeonSignTexture(texture:THREE.Texture):void {
-  const state=states.get(texture);if(!state||state.disposed)return;
-  paint(state);texture.needsUpdate=true;
-}
-
 /** Optional in-place staff edits retain a single canvas/texture allocation. */
 export function updateNeonSignTexture(texture:THREE.Texture,lines:readonly string[]):boolean {
   const state=states.get(texture);if(!state||state.disposed)return false;

@@ -72,9 +72,6 @@ export const immersiveUrlFor = (pasted: string | undefined): string | undefined 
 const driveMedia = (fileId: string): string | undefined =>
   driveApiKey ? `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${driveApiKey}` : undefined;
 
-/** The host a screen will actually talk to, for the warm-up in index.html. */
-export const MEDIA_ORIGIN = 'https://www.googleapis.com';
-
 /**
  * YouTube id → Drive file id.
  *

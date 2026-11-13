@@ -627,16 +627,16 @@ test('asset notifications settle one body per paint, coalesce repeats, and cance
 test('admission prepares the existing room before GPU warmup, without starting the gameplay loop',async()=>{
   const savedWindow=globalThis.window;globalThis.window={setTimeout:run=>setTimeout(run,0),setInterval:(run,ms)=>setInterval(run,ms),clearInterval:id=>clearInterval(id),location:{hostname:'127.0.0.1',search:'?nobatch'}};
   try{
-    const world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera();let created=0,compiled=0,drawn=0,environmentReady=false,decoderRetired=0;
+    const world=Object.create(FestivalWorld.prototype),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera();let created=0,compiled=0,drawn=0,environmentReady=false;
     // The warm-up stand of every body is the avatar code's to build; here it is an empty group.
     // Object.create bypasses field initializers. Supply the texture-preparation
     // resource explicitly, while keeping the real architectural placement.
-    Object.assign(world,{scene,camera,preview:false,disposed:false,environmentMaterials:{async prepare(root){assert.equal(root,scene);assert.ok(root.userData.environmentArchitectureReport.triangles>0);environmentReady=true;}},gpuTextures:{release(){assert.equal(environmentReady,true,'no decoder release while fixed maps are still loading');assert.notEqual(world.firstFilmWindow,true,'decoder is retired before admission asks its first film to decode');decoderRetired++;}},pendingRemoteVisitors:new Map([['a',1],['b',2],['c',3]]),projectors:new Map(),cullDecorativeLights(){},warmAvatarVariants(){const stand=new THREE.Group();scene.add(stand);return stand;},flushRemoteVisitor(){this.pendingRemoteVisitors.delete(this.pendingRemoteVisitors.keys().next().value);const body=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial());body.name='Admission test body';scene.add(body);created++;},renderer:{shadowMap:{},info:{programs:[]},render(root,cam){
+    Object.assign(world,{scene,camera,preview:false,disposed:false,environmentMaterials:{async prepare(root){assert.equal(root,scene);assert.ok(root.userData.environmentArchitectureReport.triangles>0);environmentReady=true;}},pendingRemoteVisitors:new Map([['a',1],['b',2],['c',3]]),projectors:new Map(),cullDecorativeLights(){},warmAvatarVariants(){const stand=new THREE.Group();scene.add(stand);return stand;},flushRemoteVisitor(){this.pendingRemoteVisitors.delete(this.pendingRemoteVisitors.keys().next().value);const body=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial());body.name='Admission test body';scene.add(body);created++;},renderer:{shadowMap:{},info:{programs:[]},render(root,cam){
       if(root===scene){assert.equal(compiled,1,'world drawn after compiling');assert.equal(cam,camera);}
       else{assert.equal(compiled,2,'isolated fixed effect drawn after its own compile');assert.equal(root,world.doubleVision.scene);assert.equal(cam,world.doubleVision.camera);}
       drawn++;
     },compile(root,cam,target){
-      compiled++;assert.equal(environmentReady,true,'environment maps settle before GPU compilation');assert.equal(decoderRetired,1,'startup decoder is gone before GPU warm-up and gameplay');assert.equal(created,3);
+      compiled++;assert.equal(environmentReady,true,'environment maps settle before GPU compilation');assert.equal(created,3);
       if(target===scene){assert.equal(root.children.filter(child=>child.name==='Admission test body').length,3);assert.equal(root.children.filter(child=>child.userData.environmentArchitecture).length,scene.userData.environmentArchitectureReport.meshes);assert.equal(cam,camera);}
       else{assert.equal(root,world.doubleVision.scene);assert.equal(target,root);assert.equal(cam,world.doubleVision.camera);}
       return new Set();

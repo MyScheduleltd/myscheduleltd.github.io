@@ -455,3 +455,18 @@ test('male elbow skin follows its arm joints through actual punch and dance clip
   for(const [a,b,length] of edges)assert.ok(posed.get(a).distanceTo(posed.get(b))<length*2.2,`${move} frame ${f}: elbow surface tears into a spike`);
  }
 });
+
+// A crowd of nineteen on a phone (2026-11-13): each piece brought its own copy
+// of the same 64 bones, recomputed and uploaded every frame, and each blended
+// print was drawn twice. Bodies look exactly the same either way.
+test('a body shares one skeleton wherever its pieces were bound alike, and prints draw in one pass',()=>{
+ const male=character(),female=character('#28191b');
+ const skeletons=({parts})=>new Set(Object.values(parts).map(mesh=>mesh.skeleton));
+ assert.equal(skeletons(male).size,1,'all seven male pieces were bound to the same pose, so they share one skeleton');
+ assert.equal(skeletons(female).size,Object.keys(female.parts).length,'the female pieces were each bound differently and keep their own');
+ for(const {parts} of [male,female])for(const [component,mesh] of Object.entries(parts)){
+  if(!component.startsWith('print-'))continue;
+  assert.equal(mesh.material.transparent,true,`${component} is still blended`);
+  assert.equal(mesh.material.forceSinglePass,true,`${component} is drawn once, not back faces then front`);
+ }
+});

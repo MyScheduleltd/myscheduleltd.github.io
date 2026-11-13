@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { build } from 'esbuild';
-import { arcadeIsNearest, arcadeGameUrl, externalArcadeRequired, cabinetPairPositions, ARCADE_WIDTH } from '../src/world/ArcadeRules.ts';
+import { nearestArcade, arcadeGameUrl, externalArcadeRequired, cabinetRowPositions, ARCADE_WIDTH, ARCADE_ROW_GAP, JUKEBOX_WIDTH } from '../src/world/ArcadeRules.ts';
 
 globalThis.self = globalThis;
 globalThis.createImageBitmap = async blob => {
@@ -40,17 +40,23 @@ function nearPoint(actual, expected, tolerance = 1e-7) {
     `projected point ${JSON.stringify(actual)} must match ${JSON.stringify(expected)}`);
 }
 
-test('arcade and jukebox outer edges centre together below the venue sign', () => {
-  const {arcadeZ, jukeboxZ} = cabinetPairPositions(13.5);
-  assert.ok(Math.abs((arcadeZ - ARCADE_WIDTH / 2 + jukeboxZ + 1.2) / 2 - 13.5) < 1e-8);
-  assert.ok(jukeboxZ - 1.2 - (arcadeZ + ARCADE_WIDTH / 2) > 1);
+test('M.O.T.H, 逃脫我的美麗 and the jukebox stand side by side in one row centred below the sign', () => {
+  const { mothZ, escapeZ, jukeboxZ } = cabinetRowPositions(13.5);
+  assert.ok(mothZ < escapeZ && escapeZ < jukeboxZ, 'left to right from the road: M.O.T.H, 逃脫我的美麗, jukebox');
+  assert.ok(Math.abs((mothZ - ARCADE_WIDTH / 2 + jukeboxZ + JUKEBOX_WIDTH / 2) / 2 - 13.5) < 1e-8);
+  // Neighbours stand apart by the same reasonable space, never overlapping.
+  assert.ok(Math.abs(escapeZ - ARCADE_WIDTH / 2 - (mothZ + ARCADE_WIDTH / 2) - ARCADE_ROW_GAP) < 1e-9);
+  assert.ok(Math.abs(jukeboxZ - JUKEBOX_WIDTH / 2 - (escapeZ + ARCADE_WIDTH / 2) - ARCADE_ROW_GAP) < 1e-9);
+  assert.ok(ARCADE_ROW_GAP >= .4 && ARCADE_ROW_GAP <= .8, 'apart, but still one row under the sign');
 });
 
-test('E selects the closest cabinet instead of the overlapping jukebox prompt', () => {
-  const arcade = { x: 21, z: 13.5 }, jukebox = { x: 21, z: 16.9 };
-  assert.equal(arcadeIsNearest({ x: 18, z: 13.5 }, arcade, jukebox), true);
-  assert.equal(arcadeIsNearest({ x: 18, z: 16.9 }, arcade, jukebox), false);
-  assert.equal(arcadeIsNearest({ x: 15, z: 13.5 }, arcade, jukebox), false);
+test('E selects the closest cabinet instead of its neighbour or the overlapping jukebox prompt', () => {
+  const { mothZ, escapeZ, jukeboxZ } = cabinetRowPositions(13.5);
+  const cabinets = [{ game: 'moth', x: 20.5, z: mothZ }, { game: 'escape', x: 20.5, z: escapeZ }], jukebox = { x: 21, z: jukeboxZ };
+  assert.equal(nearestArcade({ x: 18, z: mothZ }, cabinets, jukebox), 'moth');
+  assert.equal(nearestArcade({ x: 18, z: escapeZ }, cabinets, jukebox), 'escape');
+  assert.equal(nearestArcade({ x: 18, z: jukeboxZ }, cabinets, jukebox), undefined);
+  assert.equal(nearestArcade({ x: 15, z: 13.5 }, cabinets, jukebox), undefined);
 });
 test('mobile and immersive VR use the public game; desktop and hybrid laptops embed it', () => {
   assert.equal(externalArcadeRequired(true, false, false), true);
@@ -69,9 +75,16 @@ test('every launch fetches the live public game with a fresh entry URL, never a 
   assert.notEqual(first.href, next.href, 're-entry must not reuse cached entry HTML');
   assert.equal(new URL(arcadeGameUrl(false)).searchParams.has('arcade'), false,
     'mobile and immersive VR keep the standalone public interface');
+  // 逃脫我的美麗 opens its own live public page, without M.O.T.H's bridge flag.
+  for (const embedded of [true, false]) {
+    const escape = new URL(arcadeGameUrl(embedded, undefined, 'escape'));
+    assert.equal(escape.href.split('?')[0], 'https://myscheduleltd.com/lol/');
+    assert.ok(escape.searchParams.get('arcadeLaunch'));
+    assert.equal(escape.searchParams.has('arcade'), false);
+  }
   const app = await readFile('src/ui/App.ts', 'utf8');
-  assert.match(app, /startArcadeGame\(arcadeGameUrl\(\)/);
-  assert.match(app, /openLinkAndLeaveVr\(arcadeGameUrl\(false\)/);
+  assert.match(app, /startArcadeGame\(arcadeGameUrl\(true, undefined, game\), exit, layout, game\)/);
+  assert.match(app, /openLinkAndLeaveVr\(arcadeGameUrl\(false, undefined, game\), title\)/);
   const config = await readFile('vite.config.ts', 'utf8');
   assert.doesNotMatch(config, /localMothPreview/, 'the preview server must not serve a stale bundled public game');
 });

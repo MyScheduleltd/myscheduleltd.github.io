@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
-const compiled=await build({stdin:{contents:"export * from './src/world/WishWallFrame';export * from './src/world/PamphletSurface';export * from './src/world/TempleTrimAtlas';export * from './src/world/EnvironmentMaterials';export {FestivalWorld} from './src/world/FestivalWorld';export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',loader:{'.png':'dataurl'}});
-const {THREE,createWishWallFrame,WISH_WALL_CONTENT_CLEAR,polishPamphletSurface,TempleTrimAtlas,FestivalWorld,EnvironmentMaterials,tagEnvironmentSurface}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
+const compiled=await build({stdin:{contents:"export * from './src/world/WishWallFrame';export * from './src/world/TempleTrimAtlas';export * from './src/world/EnvironmentMaterials';export {FestivalWorld} from './src/world/FestivalWorld';export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',loader:{'.png':'dataurl'}});
+const {THREE,createWishWallFrame,WISH_WALL_CONTENT_CLEAR,TempleTrimAtlas,FestivalWorld,EnvironmentMaterials,tagEnvironmentSurface}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 
 test('crafted frame leaves the entire live canvas clear and stays inside the original roof/post plan',()=>{
  const atlas=new THREE.MeshStandardMaterial(),handle=createWishWallFrame(atlas),{root,report}=handle;
@@ -45,16 +45,6 @@ test('live wishes reuse their original texture and face through empty, CJK, full
  }finally{globalThis.document=priorDocument;}
 });
 
-test('pamphlet polishing is scoped to its imported model and preserves other shared source materials',()=>{
- const scene=new THREE.Scene(),stand=new THREE.Group(),lamp=new THREE.Group();stand.userData.environmentAssetKind='pamphlet-stand';lamp.userData.environmentAssetKind='street-lamp';scene.add(stand,lamp);
- const source=new THREE.MeshStandardMaterial({map:new THREE.Texture(),normalMap:new THREE.Texture()});let prior=0;source.onBeforeCompile=()=>prior++;
- const geometry=new THREE.BoxGeometry(),bookcase=new THREE.Mesh(geometry,source),lantern=new THREE.Mesh(geometry,source);bookcase.userData.environmentImported=lantern.userData.environmentImported=true;stand.add(bookcase);lamp.add(lantern);
- const handle=polishPamphletSurface(scene);assert.deepEqual(handle.report,{meshes:1,materials:1});assert.equal(polishPamphletSurface(scene),handle);
- assert.equal(lantern.material,source);assert.equal(bookcase.material.map,source.map);assert.equal(bookcase.material.normalMap,source.normalMap);
- const shader={fragmentShader:'#include <normal_fragment_maps>'};bookcase.material.onBeforeCompile(shader,{});assert.equal(prior,1);assert.match(shader.fragmentShader,/metalnessFactor/);assert.equal(bookcase.material.userData.islandPrintStrength,.3);
- let released=0;bookcase.material.addEventListener('dispose',()=>released++);handle.dispose();handle.dispose();assert.equal(released,1);assert.equal(bookcase.material,source);
-});
-
 test('shared atlas prepares once, chooses the small phone image, and releases a late load after teardown',async()=>{
  const priorFetch=globalThis.fetch,priorLoad=THREE.TextureLoader.prototype.loadAsync,priorWindow=globalThis.window;let fetched=0,release;
  globalThis.window={location:new URL('http://127.0.0.1:4184/'),setTimeout,clearTimeout};
@@ -71,17 +61,14 @@ test('shared atlas prepares once, chooses the small phone image, and releases a 
 });
 
 
-test('frame family finishes receive shared maps while brass and the ornament atlas keep their authored surfaces',async()=>{
- const priorFetch=globalThis.fetch,priorLoad=THREE.TextureLoader.prototype.loadAsync,priorWindow=globalThis.window;
- globalThis.window={location:new URL('http://127.0.0.1:4184/'),setTimeout,clearTimeout};
- globalThis.fetch=async()=>new Response(new Uint8Array([1,2,3]));
- THREE.TextureLoader.prototype.loadAsync=async()=>new THREE.Texture({width:8,height:8});
- const atlas=new THREE.MeshStandardMaterial(),frame=createWishWallFrame(atlas),library=new EnvironmentMaterials({mobile:false,assets:Object.fromEntries(['wood','ceramic','stone'].map(f=>[f,{color:'http://127.0.0.1:4184/'+f+'.webp'}]))});
+test('frame family finishes receive shared tiles while brass and the ornament atlas keep their authored surfaces',async()=>{
+ const tiles=new Map(),drawnTile=family=>{if(!tiles.has(family))tiles.set(family,new THREE.DataTexture(new Uint8Array(4),1,1));return tiles.get(family);};
+ const atlas=new THREE.MeshStandardMaterial(),frame=createWishWallFrame(atlas),library=new EnvironmentMaterials({drawnTile});
  try{
   for(const mesh of frame.root.children){const surface=mesh.material.userData.environmentSurface;if(surface)tagEnvironmentSurface(mesh,surface.family,surface);}
   const report=await library.prepare(frame.root);assert.equal(report.applied,4);assert.equal(report.skipped,0);
   assert.equal(frame.root.children.filter(m=>m.material.map).length,4);assert.ok(frame.root.children.some(m=>m.material===atlas));
- }finally{library.dispose();frame.dispose();atlas.dispose();globalThis.fetch=priorFetch;THREE.TextureLoader.prototype.loadAsync=priorLoad;globalThis.window=priorWindow;}
+ }finally{library.dispose();frame.dispose();atlas.dispose();}
 });
 
 test('closing during material preparation prevents later art handles and play warmup from being allocated',async()=>{
@@ -90,7 +77,7 @@ test('closing during material preparation prevents later art handles and play wa
  try{
   const pending=world.prepareAssets();for(let i=0;!entered&&i<10;i++)await Promise.resolve();assert.ok(entered);
   world.disposed=true;resume();await pending;
-  for(const key of ['driveInCarArt','pamphletSurface','driveInLicensePlates','environmentReflections'])assert.equal(world[key],undefined,key);
+  for(const key of ['driveInCarArt','driveInLicensePlates','environmentReflections'])assert.equal(world[key],undefined,key);
   const play=Object.create(FestivalWorld.prototype);Object.assign(play,{disposed:false,prepareAssets:async()=>{play.disposed=true;},warmScreenPlayer:()=>assert.fail('warmup after teardown')});await play.prepareForPlay();
  }finally{world.templeArchitecture?.dispose();globalThis.window=priorWindow;}
 });

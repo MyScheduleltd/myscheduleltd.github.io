@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { build } from 'esbuild';
+import { ARCADE_TITLES } from '../src/world/ArcadeRules.ts';
 
 // The locked view must not even allocate an iframe or install game listeners.
 // Keep the actual Three projection and session; count their browser effects.
@@ -100,11 +101,11 @@ assert.equal(members.length, names.size);
 const code = ts.transpileModule(`class WorldLockedViewFixture { ${members.map(node => node.getText(tree)).join('\n')} }`, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
 }).outputText + '\nWorldLockedViewFixture;';
-const World = runInNewContext(code, { THREE, MothArcadeView, MothArcadeSession });
+const World = runInNewContext(code, { THREE, MothArcadeView, MothArcadeSession, ARCADE_TITLES });
 function worldFixture() {
   const world = new World();
   world.arcadeLocked = true;
-  world.arcadeCabinet = { screen: screen(), status: 'ready', setLocked() {} };
+  world.arcadeCabinet = { screen: screen(), status: 'ready', setLocked() {}, setControlsHidden() {} };
   world.keys = new Set(['w']); world.running = true; world.dancing = true;
   world.stickX = .5; world.stickY = -.8; world.moveVector = new THREE.Vector3(1, 0, 2);
   world.player = new THREE.Group(); world.player.position.set(17, 0, 12);
@@ -169,7 +170,7 @@ test('keyboard, gamepad, orbit, wheel, interaction and player updates cannot mov
   assert.equal(world.moveVector.lengthSq(), 0); assert.equal(world.stickX, 0); assert.equal(world.stickY, 0);
   assert.ok(position.equals(world.player.position)); assert.equal(world.player.visible, false);
   assert.equal(world.interactionLabel(), undefined); assert.equal(world.promptActionable, false);
-  assert.equal(world.nearArcade(), false);
+  assert.equal(world.nearArcade(), undefined, 'no cabinet is offered while one is in use');
   world.stopArcadeGame();
 });
 
