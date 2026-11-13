@@ -1,9 +1,5 @@
-// Lyrics changes on top of the release's HOME_SONG_LYRICS (the 歌詞 page of the
-// home playlist). Each entry swaps one song's lines, and fails the build if the
-// release's lines are not exactly what they were when the owner asked.
-//
-// 笑死 (owner, 2026-10-14): the new lyrics, as given. The blank line is the
-// page's gap between verses, like the other songs.
+// Lyrics updates from 美麗音遊文本.docx. Most lines already match the release.
+// The blank line in 笑死 marks the gap between verses.
 
 const RELEASE = {
   'home-xiaosi': ['欸等一下', '還沒準備好啦', '先不要放音樂 拜託', '先不要喔', '欸', 'Intro', '嘿嘿', '嘿嘿嘿嘿', '嘿嘿', '哼哼哼哼',
@@ -20,4 +16,7 @@ const entry = (id, lines) => `  ${JSON.stringify(id)}: [\n${lines.map(line => ` 
 
 export function patchLyrics(once) {
   for (const [id, lines] of Object.entries(LYRICS)) once(entry(id, RELEASE[id]), entry(id, lines));
+  once('    "我鑑價拍賣一百塊我立刻當你婆",', '    "我賤價拍賣一百塊我立刻當你婆",');
+  once('    "man我應該 卡認份鋪床舖携你玩",', '    "Man我應該 卡認份鋪床舖携你玩",');
+  once('    "在酒局上場之前 先給我滴薑黃",', '    "在酒局上場前 先給我滴薑黃",');
 }

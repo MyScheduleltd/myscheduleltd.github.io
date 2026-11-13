@@ -8,7 +8,14 @@
 import assert from 'node:assert/strict';
 import { analyzeReachability } from './moth-reachability.mjs';
 
+const LEGACY_LEVEL_HUDS = [
+  'renderHud', 'renderTutorialHud', 'renderLivesIndicator',
+  'renderLevel3Hud', 'renderLevel4Hud', 'renderLevel6Hud',
+  'renderSewerBossHud', 'renderLevel3RhythmHud'
+];
+
 export const RETIRED_METHOD_GROUPS = {
+  'The legacy level headers and LIFE display': LEGACY_LEVEL_HUDS,
   'Level 1: the old road tutorial ride': ['startTutorialStage0', 'updateTutorial', 'updateTutorialRideIn', 'advanceTutorialIntro',
     'renderTutorialIntroDialogue', 'renderTutorialStepDialogue'],
   'Level 1: the office before the M.O.T.H engine (old renderers, HUD and results)': ['renderLegacyLevel1OfficeScene', 'renderLevel1OfficeSceneLegacy',
@@ -73,6 +80,13 @@ function harmless(ts, node) {
 }
 
 export function trimRetiredCode(source, ts, { audit = false } = {}) {
+  // These bars were already hidden during normal exploration. Detach their
+  // draws so a frozen confirmation backdrop cannot bring them back.
+  for (const name of LEGACY_LEVEL_HUDS) {
+    const call = new RegExp(`^[ \t]+this\\.${name}\\([^\n;]*\\);\n`, 'gm');
+    assert.match(source, call, `Legacy HUD draw: ${name}`);
+    source = source.replace(call, '');
+  }
   const { methods, unreachable } = analyzeReachability(source, ts);
   for (const name of RETIRED_METHODS) {
     assert(methods.includes(name), `Retired method still in the release: ${name}`);

@@ -170,9 +170,9 @@ const rows = page => page.evaluate(() => {
       m: bobbyGame.playRhythmHitSfx('do', false, 'M'), o: bobbyGame.playRhythmHitSfx('do', false, 'O')}));
   };
   const first = await sounds('level4-stage1');
-  assert.deepEqual([first.loaded, first.m, first.o], [27, true, true], 'All required sounds are ready before the first fight '+JSON.stringify(first));
+  assert.deepEqual([first.loaded, first.m, first.o], [15, true, true], 'All required sounds are ready before the first fight '+JSON.stringify(first));
   const second = await sounds('level3-stage2');
-  assert.deepEqual([second.loaded, second.o], [27, true], 'The next chapter keeps every decoded sound '+JSON.stringify(second));
+  assert.deepEqual([second.loaded, second.o], [15, true], 'The next chapter keeps every decoded sound '+JSON.stringify(second));
   assert.deepEqual(errors,[]);
   console.log('hit sounds PASS', JSON.stringify({blocked,failedRequests,first,second}));
 }

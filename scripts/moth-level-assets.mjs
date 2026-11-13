@@ -1,3 +1,6 @@
+import assert from 'node:assert/strict';
+import { RETIRED_HIT_SFX } from './moth-asset-trim.mjs';
+
 // A chapter is ready only when its images, full audio copies and decoded hit
 // sounds are usable. Keep this gate separate from playback/latency handling.
 const CHAPTER_METHODS = String.raw`
@@ -133,6 +136,15 @@ const CHAPTER_METHODS = String.raw`
 `;
 
 export function patchLevelAssetLoading(once, edit) {
+  edit('const HIT_SFX = {\n', '\n};', block => {
+    const names = new Set(RETIRED_HIT_SFX);
+    const kept = block.split('\n').filter(line => {
+      const match = line.match(/^  "([^"]+)": "assets\/sfx\/[^"]+\.wav",?$/);
+      return !match || !names.delete(match[1]);
+    });
+    assert.equal(names.size, 0, 'Every retired hit sound had a manifest entry');
+    return kept.join('\n').replace(/,\n};$/, '\n};');
+  });
   const next = "  // The fight songs a chapter's fights play: their players, and their files.";
   edit('  async loadChapterAssets(stageId) {', next, () => CHAPTER_METHODS + '\n' + next);
   edit('  chapterTracks(groups) {', '  chapterSongs(groups) {', () => String.raw`  chapterTracks(groups) {

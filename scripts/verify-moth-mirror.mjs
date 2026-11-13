@@ -61,12 +61,12 @@ async function enterOffice(page) {
   const seconds = await enterOffice(page);
   await page.evaluate(() => bobbyGame.loadHitSfx());
   await page.waitForFunction(() => bobbyGame.sfxBuffers['menu-tick'] && bobbyGame.sfxBuffers['menu-click'], undefined, {timeout: 20000});
-  assert.equal(await page.evaluate(() => Object.keys(bobbyGame.sfxBuffers).length), 29, 'All sound effects decode (27 fight, 2 menu)');
+  assert.equal(await page.evaluate(() => Object.keys(bobbyGame.sfxBuffers).length), 17, 'All sound effects decode (15 fight, 2 menu)');
   const media = requests.filter(url => /\.(webp|png|wav)(\?|$)/.test(url));
   const mirrored = media.filter(url => MIRROR.test(url));
   const fromSite = media.filter(url => url.startsWith('https://myscheduleltd.com/moth/assets/') && OFFICE.test(url));
   assert(mirrored.some(url => /foreground\.webp/.test(url)), 'Office background came from the mirror');
-  assert(mirrored.filter(url => /\/sfx\//.test(url)).length >= 27, 'Sound effects came from the mirror');
+  assert(mirrored.filter(url => /\/sfx\//.test(url)).length >= 15, 'Sound effects came from the mirror');
   assert.deepEqual(fromSite, [], 'No office art fetched from Pages');
   // Pinned files come from the commit that published them (none yet: this
   // site), everything else from the original pin.
