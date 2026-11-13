@@ -45,7 +45,7 @@ for (const [name, type] of [['chrome', chromium], ['webkit', webkit]]) {
       await page.keyboard.press('Enter');
       await page.keyboard.press('Enter');
       await page.keyboard.press('Enter');
-      await page.waitForFunction(() => window.__qaDraws.slice(-300).some(t => /a little background|前情提要/.test(t)), undefined, {timeout:60000});
+      await page.waitForFunction(() => window.__qaDraws.slice(-300).join(' ').match(/made this little game|這款遊戲是為/), undefined, {timeout:60000});
       await page.screenshot({path:path.join(out, `${name}-story-${view}.png`)});
       report.push({engine:name, audience:'public', view, queryAndKeyboardDebugBlocked:true, storyEntry:true, violations:await page.evaluate(() => window.__qaViolations)});
     }

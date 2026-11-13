@@ -16,6 +16,14 @@ import { RETIRED_DECK_ART } from './moth-deck-art.mjs';
 import { RETIRED_HIGHWAY_LAYERS } from './moth-retired-highway.mjs';
 import { RETIRED_UI_IMAGES } from './moth-retired-ui.mjs';
 
+// The M/O/T/H button cues and shared miss sound replaced these effects.
+export const RETIRED_HIT_SFX = [
+  'office-stamp', 'office-stamp-heavy', 'office-miss',
+  'bathroom-swatter', 'bathroom-newspaper', 'bathroom-miss',
+  'massage-press', 'massage-knead', 'massage-miss',
+  'arcade-punch', 'arcade-kick', 'arcade-miss'
+];
+
 export const TRIMMED_GROUPS = [
   { title: "Level 1: the old road chase and tutorial ride (and their HUD, map and dialogue frame)", jobs: ["boss", "ganganSheet", "ganganAttackSheet", "ganganCandySheet", "ganganDefeatExitSheet", "ganganBikeExitSheet", "ganganHealthBarSheet", "levelMap", "tutorialStage0Map", "mapProps", "bobbyRideSheet", "bobbyAttackSheet", "bobbyTutorialIntroSheet", "loadingTransitionSheet", "dialogueFrameSheet"],
     files: ["assets/maps/level1_layered/level1-reference-base.webp", "assets/maps/level1_stage0/level1-stage0-tutorial.webp", "assets/sprites/bobby_orange_diaper_attack/processed-v4/sheet-transparent.webp", "assets/sprites/bobby_orange_ride/processed-v4/sheet-transparent.webp", "assets/sprites/bobby_tutorial_intro/processed-v5/sheet-transparent.webp", "assets/sprites/dialogue_ui_frame/processed/sheet-transparent.webp", "assets/sprites/gangan_bike_exit_level1/processed/sheet-transparent.webp", "assets/sprites/gangan_candy_eat/processed/sheet-transparent.webp", "assets/sprites/gangan_defeat_exit/processed/sheet-transparent.webp", "assets/sprites/gangan_health_bar_ui/processed/sheet-transparent.webp", "assets/sprites/gangan_scooter_ride/processed-v2/sheet-transparent.webp", "assets/sprites/gangan_scooter_throw_fixed/processed-v2/sheet-transparent.webp", "assets/sprites/loading_transition_level1/processed/sheet-transparent.webp", "referenceimages/ChatGPT Image 2026年5月3日 上午03_57_57.webp"] },
@@ -54,5 +62,8 @@ export const TRIMMED_GROUPS = [
 
 export const TRIMMED_JOBS = new Set(TRIMMED_GROUPS.flatMap(group => group.jobs));
 // The old lane fight's music cut, which the release preloaded at start-up.
-export const TRIMMED_AUDIO = ['assets/audio/fight-cuts/level6-lanes.m4a'];
+export const TRIMMED_AUDIO = [
+  'assets/audio/fight-cuts/level6-lanes.m4a',
+  ...RETIRED_HIT_SFX.map(name => `assets/sfx/${name}.wav`)
+];
 export const TRIMMED_FILES = new Set([...TRIMMED_GROUPS.flatMap(group => group.files), ...TRIMMED_AUDIO]);

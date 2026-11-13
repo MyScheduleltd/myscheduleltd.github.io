@@ -110,8 +110,10 @@ for (const engine of selectedEngine ? [selectedEngine] : ['chrome', 'webkit']) {
         });
         await page.waitForFunction(() => bobbyGame.state === 'studioPostDialogue' && !bobbyGame.levelLoadingPresentation,
           undefined, {timeout: 90000});
-        // Follow the real post-studio dialogue handler into the night drive.
+        // Follow the real post-studio dialogue and chapter confirmation into the night drive.
         await page.evaluate(() => { for (let i = 0; i < 30 && bobbyGame.state === 'studioPostDialogue'; i++) bobbyGame.advanceStudioDialogue(); });
+        await page.waitForFunction(() => bobbyGame.state === 'level1UnlockPrompt');
+        await page.keyboard.press('KeyO');
         await page.waitForFunction(() => bobbyGame.state === 'level5Dialogue' && bobbyGame.level5Drive
           && !bobbyGame.levelLoadingPresentation, undefined, {timeout: 90000});
         const drive = await page.evaluate(() => ({stage: bobbyGame.currentStageId,

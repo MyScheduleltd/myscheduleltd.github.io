@@ -53,7 +53,7 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
       for(let n=0;n<15;n++){const samples=new Float32Array(2048);analyser.getFloatTimeDomainData(samples);peak=Math.max(peak,...samples.map(Math.abs));await new Promise(r=>setTimeout(r,50));}
       node.disconnect(analyser);return {peak,decoded:Object.keys(g.sfxBuffers).filter(name=>!name.startsWith('menu-')).length,played:g.sfxTestResult};
     });
-    assert(effects.peak>0.001);assert(effects.played);assert.equal(effects.decoded,27);
+    assert(effects.peak>0.001);assert(effects.played);assert.equal(effects.decoded,15);
     console.log(engine,'effects PCM',effects.peak);
     await page.screenshot({path:path.join(out,`${engine}-office.png`)});
     // Enter each chapter through its normal loading gate, then check eviction.

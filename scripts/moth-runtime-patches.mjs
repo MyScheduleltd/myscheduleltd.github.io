@@ -7,10 +7,15 @@ import { patchLyrics } from './moth-lyrics-patches.mjs';
 import { patchMenuSfx, MENU_SFX_METHODS } from './moth-menu-sfx.mjs';
 import { patchFightHud, FIGHT_HUD_METHODS } from './moth-fight-hud.mjs';
 import { patchStorySave } from './moth-story-save.mjs';
+import { patchStoryConfirm } from './moth-story-confirm.mjs';
 import { patchWalkScenes, WALK_SCENE_METHODS } from './moth-walk-scenes.mjs';
 import { patchDeckTouch } from './moth-deck-art.mjs';
 import { patchCredits } from './moth-credits.mjs';
 import { patchTutorial } from './moth-tutorial-patches.mjs';
+import { patchTutorialDemo } from './moth-tutorial-demo.mjs';
+import { patchTutorialPractice } from './moth-tutorial-practice.mjs';
+import { patchNarrative } from './moth-narrative.mjs';
+import { patchStaffDialoguePreview } from './moth-staff-dialogue.mjs';
 import { patchGamepad, GAMEPAD_METHODS } from './moth-gamepad.mjs';
 import { patchChartPlayability, RHYTHM_RAIL_METHODS } from './moth-chart-playability.mjs';
 import { patchCinematicLook, CINEMATIC_LOOK_METHODS } from './moth-cinematic-look.mjs';
@@ -284,12 +289,17 @@ export function patchMothRuntime(source, ts) {
   patchStorySave(once, edit);
   // The walking scenes: the instruction bar, where fights return to (scripts/moth-walk-scenes.mjs).
   patchWalkScenes(once, edit);
+  patchStoryConfirm(once, edit);
   // No iPhone magnifier on the touch deck (scripts/moth-deck-art.mjs).
   patchDeckTouch(once);
   // The game credits: who made it, the production lines (scripts/moth-credits.mjs).
-  patchCredits(once);
+  patchCredits(once, edit);
   patchTutorial(once, edit);
+  patchTutorialDemo(once);
+  patchNarrative(once, edit);
+  patchStaffDialoguePreview(once, edit);
   patchGamepad(once);
+  patchTutorialPractice(once, edit);
   patchChartPlayability(once, edit);
   patchCinematicLook(once, edit);
   patchScreenFrame(once);
@@ -318,6 +328,15 @@ export function patchMothRuntime(source, ts) {
   // waits under 載入中… if a stream runs dry, and judges nothing meanwhile.
   once('      track.pause();\n      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);\n      track.currentTime = this.getRhythmAudioStart();', '      track.pause();\n      this.useSongCopy(track);\n      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);\n      track.currentTime = this.getRhythmAudioStart();');
   once('      rhythm.audioPriming = null;\n      track.pause();\n      track.currentTime = this.getRhythmAudioStart();', '      rhythm.audioPriming = null;\n      track.pause();\n      this.useSongCopy(track);\n      track.currentTime = this.getRhythmAudioStart();');
+  once('        body: "3 條命已用完。Press Enter 回到主畫面 — 可用 CONTINUE 從本次存檔繼續。"', `        body: this.tr(
+          "Press Enter to return to the main menu. Choose Continue to resume your save.",
+          "按 Enter 回主畫面，再選擇「繼續」讀取進度。"
+        )`);
+  once('    const hearts = "♥".repeat(Math.max(0, this.livesRemaining ?? 0));\n    return { title, body: \`${message}  剩餘生命 ${hearts} (${this.livesRemaining}/${TOTAL_LIVES})\` };',
+    '    return { title, body: message };');
+  once('      livesLeft: Math.max(0, this.livesRemaining ?? TOTAL_LIVES),\n', '');
+  once('  const livesLeft = options.livesLeft;\n', '');
+  edit('  if (Number.isFinite(livesLeft)) {\n', '\n  }\n\n', () => '');
   once('    this.renderLivesIndicator();\n    this.renderStageCountdown();\n', '    this.renderLivesIndicator();\n    this.renderStageCountdown();\n    this.renderSongStall();\n');
   once('this.playLevel1OfficeTone("hit", action, "stamp");\n    if (this.stageCountdown > 0) return true;\n', 'this.playLevel1OfficeTone("hit", action, "stamp");\n    if (this.stageCountdown > 0 || this.isFightSongStalled()) return true;\n');
   // Level 7's hype bar fills with every hit (owner, 2026-10-13): perfect 1,
@@ -403,7 +422,7 @@ function makeLayer(width, height, painter) {`);
   // "L4 After Win Talk" previews the talk without saving the win, so the door
   // stayed shut; that preview now counts Bonita as beaten until the next jump
   // or the title, so the room can be left into the next scene.
-  once('  async debugJumpToStage(stageId) {\n', '  async debugJumpToStage(stageId) {\n    const scene = /^studio/.test(stageId) ? "studio-stage1" : stageId;\n    if (!this.sceneAssetsReady(scene)) {\n      this.startLevelLoading(scene, () => this.debugJumpToStage(stageId));\n      return;\n    }\n    this.debugLevel4Won = ["level4-postboss-dialogue", "level4-meme-chest"].includes(stageId);\n');
+  once('  async debugJumpToStage(stageId) {\n', '  async debugJumpToStage(stageId) {\n    const scene = /^studio/.test(stageId) ? "studio-stage1" : stageId === "level1-practice" ? "level1-stage1" : stageId;\n    if (!this.sceneAssetsReady(scene)) {\n      this.startLevelLoading(scene, () => this.debugJumpToStage(stageId));\n      return;\n    }\n    this.debugLevel4Won = ["level4-postboss-dialogue", "level4-meme-chest"].includes(stageId);\n');
   const won = 'this.progress?.flags?.level4BossDefeated';
   assert.equal(source.split(won).length, 3, 'Level 4 exit checks');
   source = source.replaceAll(won, '(this.progress?.flags?.level4BossDefeated || this.debugLevel4Won)');

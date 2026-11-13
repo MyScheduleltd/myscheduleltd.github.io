@@ -44,4 +44,86 @@ function getRunStorage() {
     '    if (!this.level1OfficePauseConfirm && this.freePlay) {\n      // Quitting a practice run throws it away, so it asks once. A story fight\n      // is kept for the main menu\'s 繼續.');
   once('  quitLevel1OfficeToTitle() {\n    const rhythm = this.level1OfficeRhythm;\n',
     '  quitLevel1OfficeToTitle() {\n    const rhythm = this.level1OfficeRhythm;\n    if (!this.freePlay) this.keepFightForReload();\n');
+  patchSecretStageClears(once);
+}
+
+function patchSecretStageClears(once) {
+  // The game's existing storage namespace separates public and staff saves.
+  // One key per stage lets two tabs clear different songs independently.
+  once('const PROGRESS_KEY = "bobby_progress_v1";', `const PROGRESS_KEY = "bobby_progress_v1";
+const SECRET_CLEAR_STORAGE_PREFIX = PROGRESS_KEY + ".secret-clear.";`);
+
+  once('    await this.startStage(pick.stageId);',
+    '    await this.startStage(pick.stageId, { fromLevelSelection: true });');
+  once('      await this.startSecretRhythmFight(secret.id, { deferSong: true, skipAudio: options.skipAudio });',
+    `      await this.startSecretRhythmFight(secret.id, {
+        deferSong: true,
+        skipAudio: options.skipAudio,
+        fromLevelSelection: options.fromLevelSelection
+      });`);
+  once('      await this.startSecretRhythmFight(stageId, { deferSong: true, skipAudio });',
+    `      await this.startSecretRhythmFight(stageId, {
+        deferSong: true,
+        skipAudio,
+        fromLevelSelection: this.level1OfficeRhythm?.levelSelectionSecretStage === stageId
+      });`);
+  once('    this.level1OfficeRhythm = this.createLevel1OfficeRhythmState(level.theme);',
+    `    this.level1OfficeRhythm = this.createLevel1OfficeRhythmState(level.theme);
+    if (options.fromLevelSelection === true) {
+      this.level1OfficeRhythm.levelSelectionSecretStage = stageId;
+    }`);
+
+  once('  isStageCompleted(stageId) {\n', `  getSecretStageClears() {
+    if (this.secretStageClears) return this.secretStageClears;
+    this.secretStageClears = new Set();
+    try {
+      const storage = getRunStorage();
+      for (const { id } of this.config?.secretLevels || []) {
+        if (storage?.getItem(SECRET_CLEAR_STORAGE_PREFIX + id) === "1") this.secretStageClears.add(id);
+      }
+    } catch {
+      // A clear remains visible for this visit when storage is unavailable.
+    }
+    return this.secretStageClears;
+  }
+
+  recordSecretStageClear() {
+    const stageId = this.currentStageId;
+    const rhythm = this.level1OfficeRhythm;
+    if (!this.freePlay || !rhythm?.ending || rhythm.reviewResult !== "PASSED"
+      || rhythm.levelSelectionSecretStage !== stageId || this.getSecretLevel(stageId)?.theme !== rhythm.theme) return;
+    this.getSecretStageClears().add(stageId);
+    try {
+      getRunStorage()?.setItem(SECRET_CLEAR_STORAGE_PREFIX + stageId, "1");
+    } catch {
+      // The in-memory clear still updates Level Selection.
+    }
+  }
+
+  isStageCompleted(stageId) {
+    if (this.getSecretLevel(stageId)) return this.getSecretStageClears().has(stageId);
+`);
+  once('  startLevel1OfficeResults() {\n    if (!this.level1OfficeRhythm || this.state !== "playing") return;',
+    `  startLevel1OfficeResults() {
+    if (!this.level1OfficeRhythm || this.state !== "playing") return;
+    this.recordSecretStageClear();`);
+  once(`      // Every fight is open here. Stage select is a practice shelf: it is free
+      // play, so nothing is written back to the save, and STORY MODE still has
+      // to be played through for the story itself.`,
+    `      // Level Selection shows story clears for the main fights and saved
+      // practice clears for the hidden stages.`);
+  once(`        secrets: this.areSecretLevelsUnlocked()
+          ? \`笑死 + 蹲得低 · unlocked (\${this.isStageCompleted("finale-stage1") ? "story completion" : "debug / this saved session"})\`
+          : "笑死 + 蹲得低 · locked until story completion"`,
+    `        secrets: this.areSecretLevelsUnlocked()
+          ? [
+            this.isStageCompleted("finale-stage1")
+              ? this.tr("Unlocked by completing Story Mode", "已完成故事模式並解鎖")
+              : this.tr("Unlocked for staff testing", "已為測試解鎖"),
+            ...this.getSecretLevelDefs().map(stage => {
+              const status = this.isStageCompleted(stage.id) ? this.tr("CLEAR", "已通關") : this.tr("UNCLEARED", "尚未通關");
+              return stage.title + " · " + status;
+            })
+          ].join("\\n")
+          : this.tr("Hidden levels unlock after completing Story Mode", "完成故事模式後解鎖隱藏關卡")`);
 }

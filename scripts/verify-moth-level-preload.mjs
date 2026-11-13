@@ -161,7 +161,7 @@ function assertReady(snapshot, label) {
   assert(snapshot.images > 0, label + ': actual decoded scene images');
   assert.equal(snapshot.incompleteImages, 0, label + ': every required image finished');
   assert.equal(snapshot.undecodedImages, 0, label + ': image decode completed under LOADING');
-  assert.equal(snapshot.sfx, 27, label + ': all 27 fight effects decoded');
+  assert.equal(snapshot.sfx, 15, label + ': all 15 fight effects decoded');
   assert.deepEqual(snapshot.missingSfx, [], label + ': no missing decoded effects');
   assert(snapshot.copies.length && snapshot.copies.every(copy => copy.blob && copy.matches && !copy.source.startsWith('blob:')),
     label + ': complete audio copies adopted with canonical source identities: ' + JSON.stringify(snapshot.copies));
