@@ -133,11 +133,13 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
     await page.locator('.load-recovery').waitFor({state:'visible',timeout:30000});
     assert.equal(await page.locator('.debug-panel,.debug-panel-toggle').count(),0);
     assert.equal(await page.evaluate(()=>typeof window.bobbyGame),'undefined');
-    // Behind the prompt the screen says CONNECTION LOST and draws no scene or HUD.
+    const loadFailureTitle = /^(GAME COULD NOT LOAD|遊戲載入失敗)$/;
+    assert.match(await page.locator('.load-recovery h2').innerText(), loadFailureTitle);
+    // The canvas behind the prompt shows the same heading without drawing the scene or HUD.
     await page.evaluate(()=>{window.__qaText.length=0;});
     await page.waitForTimeout(500);
     const behind = await page.evaluate(()=>[...new Set(window.__qaText)]);
-    assert(behind.length&&behind.every(text=>/^(CONNECTION LOST|連線中斷)$/.test(text)),`Only CONNECTION LOST behind the prompt: ${behind}`);
+    assert(behind.length&&behind.every(text=>loadFailureTitle.test(text)),`Only the load failure heading behind the prompt: ${behind}`);
     await page.screenshot({path:path.join(out,`${engine}-public-refresh-prompt.png`)});
     await page.unroute('**/foreground.webp*');
     await page.locator('.load-recovery button').click();

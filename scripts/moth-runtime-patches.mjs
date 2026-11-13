@@ -183,10 +183,9 @@ export function patchMothRuntime(source, ts) {
   once('? this.tr("READY TO RESUME", "準備繼續遊戲") : this.tr("READY TO PLAY", "準備開始遊戲");', '? this.tr("READY TO RESUME", "準備繼續遊戲") : this.tr("ENABLE SOUND", "開啟音樂與音效");');
   once('root.querySelector("p").textContent = this.tr("Your progress and hearts are saved here.", "目前進度與生命已保留。");', 'root.querySelector("p").textContent = reason === "resume" ? this.tr("Your progress and hearts are saved here.", "目前進度與生命已保留。") : this.tr("Tap below to enable music and sound effects.", "點擊下方按鈕，開啟音樂與音效。");');
   once('? this.tr("TAP TO RESUME", "點一下，繼續遊戲") : this.tr("TAP TO START", "點一下，開始遊戲");', '? this.tr("TAP TO RESUME", "點一下，繼續遊戲") : this.tr("ENABLE SOUND", "開啟音效");');
-  // Behind the refresh prompt the screen says only CONNECTION LOST; the
-  // catch-all failure branch redrew the retired road chase and its HUD.
-  once('  renderScene() {\n    this.renderFrame = (this.renderFrame || 0) + 1;\n', '  renderScene() {\n    this.renderFrame = (this.renderFrame || 0) + 1;\n    if (this.loadError) { this.renderConnectionLost(this.ctx, VIEW_W, VIEW_H); return; }\n');
-  once('    target.fillStyle = "#08090d";\n    target.fillRect(0, 0, layout.width, layout.height);\n', '    target.fillStyle = "#08090d";\n    target.fillRect(0, 0, layout.width, layout.height);\n    if (this.loadError) { this.renderConnectionLost(target, layout.width, layout.height); return; }\n');
+  // Show the loading failure behind the refresh prompt in both layouts.
+  once('  renderScene() {\n    this.renderFrame = (this.renderFrame || 0) + 1;\n', '  renderScene() {\n    this.renderFrame = (this.renderFrame || 0) + 1;\n    if (this.loadError) { this.renderLoadFailure(this.ctx, VIEW_W, VIEW_H); return; }\n');
+  once('    target.fillStyle = "#08090d";\n    target.fillRect(0, 0, layout.width, layout.height);\n', '    target.fillStyle = "#08090d";\n    target.fillRect(0, 0, layout.width, layout.height);\n    if (this.loadError) { this.renderLoadFailure(target, layout.width, layout.height); return; }\n');
   once('    drawStageLoadingScreen(target, this.time, t,\n      `${this.tr("LOADING", "載入中")}', '    const progress = this.sceneLoadProgress;\n    const fraction = progress?.total ? progress.done / progress.total : t;\n    drawStageLoadingScreen(target, this.time, fraction,\n      `${this.tr("LOADING", "載入中")}');
   once('`${this.tr("LEVEL", "關卡")} ${level} · ${this.tr(...(places[level] || places[1]))}`, W, H);', '`${this.getSecretLevel(stageId) ? [this.tr("HIDDEN LEVEL", "隱藏關卡"), ...[{"secret-xiaosi": ["LOUNGE", "休息室"], "secret-getdown": ["GYM", "健身房"]}[stageId]].filter(Boolean).map(place => this.tr(...place))].join(" · ") : `${this.tr("LEVEL", "關卡")} ${level} · ${this.tr(...(places[level] || places[1]))}`}${progress?.total ? ` · ${progress.done}/${progress.total}` : ""}`, W, H);');
   // Sound effects gate every fight, so they share the images' mirror path
@@ -571,8 +570,8 @@ const RUNTIME_METHODS = `
       document.body.append(root);
       this.loadRecoveryPrompt = root;
     }
-    this.loadRecoveryPrompt.querySelector('h2').textContent = this.tr('CONNECTION LOST', '連線中斷');
-    this.loadRecoveryPrompt.querySelector('p').textContent = this.tr('Please refresh this page to reload the game. Your saved progress is kept for this session.', '請重新整理網頁，重新載入遊戲。本次瀏覽的已儲存進度會保留。');
+    this.loadRecoveryPrompt.querySelector('h2').textContent = this.tr('GAME COULD NOT LOAD', '遊戲載入失敗');
+    this.loadRecoveryPrompt.querySelector('p').textContent = this.tr('Refresh the page to try again. Your saved progress will be kept.', '請重新整理網頁再試一次。已儲存的進度會保留。');
     this.loadRecoveryPrompt.querySelector('button').textContent = this.tr('REFRESH PAGE', '重新整理網頁');
     this.loadRecoveryPrompt.hidden = false;
     this.loadRecoveryPrompt.querySelector('button').focus();
@@ -581,7 +580,7 @@ const RUNTIME_METHODS = `
   // The loading screen's dark ground and scanlines, with the lose card's
   // outlined heading. The prompt covers the middle of the screen on desktop
   // and the lower half on a phone, so the words sit in the band above it.
-  renderConnectionLost(target, W, H) {
+  renderLoadFailure(target, W, H) {
     const tall = W < H;
     target.save();
     target.fillStyle = '#0d0f13';
@@ -590,7 +589,7 @@ const RUNTIME_METHODS = `
     for (let y = 0; y < H; y += 7) target.fillRect(0, y, W, 1);
     target.textAlign = 'center';
     target.textBaseline = 'middle';
-    const title = fitCanvasText(target, this.tr('CONNECTION LOST', '連線中斷'), W - (tall ? 72 : 200), tall ? 60 : 72, 900, 28);
+    const title = fitCanvasText(target, this.tr('GAME COULD NOT LOAD', '遊戲載入失敗'), W - (tall ? 72 : 200), tall ? 60 : 72, 900, 28);
     drawOutlinedText(target, title.text, W / 2, Math.round(H * (tall ? 0.2 : 0.17)), {fill:'#f7f2de', shadow:'#05070d', outline:'#080b12', accent:'#ff4866', accentOffset:4});
     target.restore();
   }
@@ -870,6 +869,7 @@ export const MOTH_MIRROR_ORIGIN = 'https://cdn.jsdelivr.net';
 
 const IMAGE_LOADER = `const imageRequests = new Map();
 const interfaceAssetRequests = [];
+let tutorialDeckButtons = null;
 // Images and sound effects come from the mirror only on the live site, and
 // only when their bytes match the SHA-256 this site publishes. Code and
 // configuration always come from this site.
