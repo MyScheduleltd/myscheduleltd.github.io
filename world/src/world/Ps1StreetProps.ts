@@ -150,7 +150,7 @@ const vendingFace = () => drawnTile(16, 32, (x, row) => {
 
 export class Ps1StreetProps {
   private readonly paint: THREE.BufferGeometry[] = [];
-  /** Awnings and umbrella canopies: the pieces that shelter what is under them from snow and rain. */
+  /** Awnings: the pieces that shelter what is under them from snow and rain. */
   private readonly covers = new Set<THREE.BufferGeometry>();
   private readonly snowNames = new Map<string, number>();
   private readonly textured = new Map<THREE.Material, THREE.BufferGeometry[]>();
@@ -580,8 +580,9 @@ export class Ps1StreetProps {
     canopy.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     canopy.setAttribute('color', new THREE.Float32BufferAttribute(colours3, 3));
     canopy.computeVertexNormals();
+    // Snow on the canopy, but not a cover: the chairs and mats under beach
+    // umbrellas collect snow and offer to wipe it (the owner, 2026-11-13).
     this.paint.push(canopy);
-    this.covers.add(canopy);
     this.host.solid(x, z, .3, .3, base, apex, label);
     this.overhead(x, z, radius * 1.6, radius * 1.6, eave - .05, apex, `${label}-canopy`);
     this.report.umbrellas++;
