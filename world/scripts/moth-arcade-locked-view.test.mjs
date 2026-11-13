@@ -95,17 +95,20 @@ const tree = ts.createSourceFile('FestivalWorld.ts', source, ts.ScriptTarget.Lat
 const worldClass = tree.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'FestivalWorld');
 const names = new Set(['startArcadeLockedView', 'startArcadeGame', 'beginArcadeView', 'stopArcadeGame', 'setArcadeLocked',
   'updateCamera', 'updatePlayer', 'setMovementVector', 'updateGamepad', 'interact', 'keyDown', 'cameraPointerDown',
-  'applyLookDelta', 'cameraWheel', 'interactionLabel', 'nearArcade']);
+  'applyLookDelta', 'cameraWheel', 'interactionLabel', 'nearArcade', 'cabinetSnowAside']);
 const members = worldClass.members.filter(node => node.name && names.has(node.name.getText(tree)));
 assert.equal(members.length, names.size);
 const code = ts.transpileModule(`class WorldLockedViewFixture { ${members.map(node => node.getText(tree)).join('\n')} }`, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
 }).outputText + '\nWorldLockedViewFixture;';
-const World = runInNewContext(code, { THREE, MothArcadeView, MothArcadeSession, ARCADE_TITLES });
+const ARCADE_SNOW = { moth: 'moth-arcade-cabinet', escape: 'escape-arcade-cabinet' };
+const World = runInNewContext(code, { THREE, MothArcadeView, MothArcadeSession, ARCADE_TITLES, ARCADE_SNOW });
 function worldFixture() {
   const world = new World();
   world.arcadeLocked = true;
   world.arcadeCabinet = { screen: screen(), status: 'ready', setLocked() {}, setControlsHidden() {} };
+  world.escapeCabinet = { screen: screen(), status: 'ready', setLocked() {}, setControlsHidden() {} };
+  world.weather = { hidden: {}, setSurfaceHidden(id, hidden) { this.hidden[id] = hidden; } };
   world.keys = new Set(['w']); world.running = true; world.dancing = true;
   world.stickX = .5; world.stickY = -.8; world.moveVector = new THREE.Vector3(1, 0, 2);
   world.player = new THREE.Group(); world.player.position.set(17, 0, 12);
@@ -181,4 +184,29 @@ test('unlocked cabinets, missing CRTs and immersive VR cannot enter the locked d
   world.xrActive = false; world.arcadeCabinet.screen = undefined;
   assert.equal(world.startArcadeLockedView(() => {}), false);
   assert.equal(world.arcadeView, undefined);
+});
+
+test('the cabinet in use puts its snow aside, its neighbour keeps it, and leaving brings it back (the owner, 2026-11-13)', async () => {
+  const source = await readFile('src/world/FestivalWorld.ts', 'utf8');
+  assert.match(source, /const ARCADE_SNOW: Readonly<Record<ArcadeGame, string>> = \{ moth: 'moth-arcade-cabinet', escape: 'escape-arcade-cabinet' \};/);
+  assert.match(source, /addMovingSurface\(ARCADE_SNOW\[game\], cabinet\.root, \{ visibleOnly: true, occlusion: false, minimumArea: SNOW_DETAIL_FACE \}\)/);
+  assert.doesNotMatch(source, /snowDetail\('(moth|escape)-arcade-cabinet'/, 'the cabinets are no longer part of the shared snow');
+  const world = worldFixture();
+  assert.equal(world.startArcadeLockedView(() => {}), true);
+  assert.deepEqual(world.weather.hidden, { 'moth-arcade-cabinet': true, 'escape-arcade-cabinet': false }, 'the locked M.O.T.H view uses the same camera');
+  world.stopArcadeGame();
+  assert.deepEqual(world.weather.hidden, { 'moth-arcade-cabinet': false, 'escape-arcade-cabinet': false });
+  assert.equal(world.startArcadeGame('https://myscheduleltd.com/lol/', () => {}, undefined, 'escape'), true);
+  assert.deepEqual(world.weather.hidden, { 'moth-arcade-cabinet': false, 'escape-arcade-cabinet': true });
+  world.stopArcadeGame();
+  assert.deepEqual(world.weather.hidden, { 'moth-arcade-cabinet': false, 'escape-arcade-cabinet': false });
+  world.arcadeLocked = false;
+  assert.equal(world.startArcadeGame('https://myscheduleltd.com/moth/?arcade=1', () => {}), true);
+  assert.deepEqual(world.weather.hidden, { 'moth-arcade-cabinet': true, 'escape-arcade-cabinet': false });
+  world.stopArcadeGame();
+  world.weather = undefined;
+  assert.equal(world.startArcadeLockedView(() => {}), false, 'unlocked: no locked view');
+  world.arcadeLocked = true;
+  assert.equal(world.startArcadeLockedView(() => {}), true, 'a world without weather still opens the cabinet');
+  world.stopArcadeGame();
 });

@@ -40,8 +40,9 @@ export class FestivalWeather {
   private readonly ground: THREE.Mesh;
   private fixedSurfaces?:THREE.Mesh;
   private fixedDetail?:THREE.Mesh;
-  /** Snow riding on something that moves (the ferry), carried as its child. */
-  private readonly moving:Array<{id:string;meshes:THREE.Mesh[]}>=[];
+  /** Snow of its own, carried as its object's child: on something that moves
+   * (the ferry), or that steps aside (a cabinet while its game is played). */
+  private readonly moving:Array<{id:string;meshes:THREE.Mesh[];hidden:boolean}>=[];
   private authoredShelter?: (x:number,z:number,y:number)=>boolean;
   private surfaceReport:SnowSurfaceReport={sourceTriangles:0,topTriangles:0,triangles:0,sources:[]};
   private readonly terrainReport:{samples:number;cells:number};
@@ -212,11 +213,13 @@ export class FestivalWeather {
    * carried in its own frame as its child, so it bobs and tilts with it. It
    * shares the settled snow's material, so it builds up, melts and shows in
    * step with every other surface. After `addSurfaceMeshes`.
+   * The arcade cabinets have theirs this way too, so it can be put aside while
+   * their games are played (see `setSurfaceHidden`).
    */
-  addMovingSurface(id:string,object:THREE.Object3D):void {
+  addMovingSurface(id:string,object:THREE.Object3D,options:Omit<SnowSurfaceSource,'id'|'object'|'sheltersGround'>={}):void {
     if(this.disposed||this.moving.some(entry=>entry.id===id))return;
     object.updateWorldMatrix(true,true);
-    const built=buildSnowSurfaceMeshes([{id,object,sheltersGround:false}]);
+    const built=buildSnowSurfaceMeshes([{...options,id,object,sheltersGround:false}]);
     const toLocal=object.matrixWorld.clone().invert();
     const material=(this.fixedSurfaces?.material as THREE.Material|undefined)??this.snowMaterial(this.coverage);
     const meshes:THREE.Mesh[]=[];
@@ -228,7 +231,20 @@ export class FestivalWeather {
       mesh.name=`moving-snow-${id}`;mesh.receiveShadow=true;mesh.userData.dynamic=true;
       object.add(mesh);meshes.push(mesh);
     }
-    this.moving.push({id,meshes});
+    this.moving.push({id,meshes,hidden:false});
+    this.applyVisibility();
+  }
+
+  /**
+   * Put one object's own snow aside, or back (the owner, 2026-11-13). An
+   * arcade game is a web page laid over the 3D view, so snow on the control
+   * deck in front of the screen would be cut through by the picture; that
+   * cabinet's snow is hidden while its game is open, like its joystick.
+   */
+  setSurfaceHidden(id:string,hidden:boolean):void {
+    const entry=this.moving.find(item=>item.id===id);
+    if(this.disposed||!entry||entry.hidden===hidden)return;
+    entry.hidden=hidden;
     this.applyVisibility();
   }
 
@@ -313,7 +329,7 @@ export class FestivalWeather {
       this.ground.visible=this.warming||this.coverage.value>.001;
       if(this.fixedSurfaces)this.fixedSurfaces.visible=this.warming||this.coverage.value>.001;
       if(this.fixedDetail)this.fixedDetail.visible=this.warming||this.coverage.value>.001;
-      for(const entry of this.moving)for(const mesh of entry.meshes)mesh.visible=this.warming||this.coverage.value>.001;
+      for(const entry of this.moving)for(const mesh of entry.meshes)mesh.visible=!entry.hidden&&(this.warming||this.coverage.value>.001);
       for(const cap of this.caps)cap.mesh.visible=this.warming||cap.uniform.value>.001;
     }
     this.rain.visible=this.warming||this.rainMix>.005;

@@ -714,6 +714,8 @@ const COLLIDER_GRID_MARGIN = 1;
  * only cost memory on a phone (2026-11-13).
  */
 const SNOW_DETAIL_FACE = .03;
+/** Each arcade cabinet's own snow, put aside while its game is open. */
+const ARCADE_SNOW: Readonly<Record<ArcadeGame, string>> = { moth: 'moth-arcade-cabinet', escape: 'escape-arcade-cabinet' };
 /** Distances in world units from the attendee past which bodies are simpler. */
 const FAR_PLAYER = { simpler: 20, slower: 40 } as const;
 /**
@@ -2465,8 +2467,6 @@ export class FestivalWorld {
         // is coated without clipping the model against itself.
         this.snowDetail(`rooftop-band-prop-${index + 1}`, prop, { exclude: fire ? [fire] : [], occlusion: false, minimumArea: SNOW_DETAIL_FACE });
       }
-      if (this.arcadeCabinet) this.snowDetail('moth-arcade-cabinet', this.arcadeCabinet.root, { visibleOnly: true, occlusion: false, minimumArea: SNOW_DETAIL_FACE });
-      if (this.escapeCabinet) this.snowDetail('escape-arcade-cabinet', this.escapeCabinet.root, { visibleOnly: true, occlusion: false, minimumArea: SNOW_DETAIL_FACE });
     }
     // Fixed art is placed and uploaded under the same loading view as the
     // existing town. The comparison switch exists only on loopback.
@@ -2515,6 +2515,11 @@ export class FestivalWorld {
     this.weather?.addSurfaceMeshes(this.snowSurfaceSources ?? []);
     // The ferry bobs, so its snow rides on it (the owner, 2026-11-13).
     if (this.islandDock) this.weather?.addMovingSurface('island-ferry', this.islandDock.boat);
+    // Each cabinet's snow is its own, so it can be put aside while its game is
+    // played (the owner, 2026-11-13; see cabinetSnowAside).
+    for (const [game, cabinet] of [['moth', this.arcadeCabinet], ['escape', this.escapeCabinet]] as const) {
+      if (cabinet?.status === 'ready') this.weather?.addMovingSurface(ARCADE_SNOW[game], cabinet.root, { visibleOnly: true, occlusion: false, minimumArea: SNOW_DETAIL_FACE });
+    }
     if(this.weather)applyWorldFilmGrain(this.weather.root);
     // Extraction owns its finished geometry. Do not retain source meshes that
     // static batching is about to retire for the rest of the session.
@@ -3469,7 +3474,18 @@ export class FestivalWorld {
     const screen = this.arcadeCabinet?.screen;
     if (!this.arcadeLocked || !screen || this.arcadeView || (this.xrActive && !this.xrSimulated)) return false;
     this.beginArcadeView(new MothArcadeView(screen), screenLayout);
+    this.cabinetSnowAside('moth');
     return true;
+  }
+
+  /**
+   * Hide the snow on the cabinet being played and show every other cabinet's
+   * (the owner, 2026-11-13). The game is a web page laid over the 3D view, so
+   * snow on the deck in front of the screen would be cut through by it. The
+   * locked M.O.T.H view uses the same camera, with Exit on the same band.
+   */
+  private cabinetSnowAside(game?: ArcadeGame): void {
+    for (const key of Object.keys(ARCADE_SNOW) as ArcadeGame[]) this.weather?.setSurfaceHidden(ARCADE_SNOW[key], key === game);
   }
 
   startArcadeGame(url: string, exit: () => void, screenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number; lock?: { x: number; y: number; width: number; height: number } }) => void, game: ArcadeGame = 'moth'): boolean {
@@ -3480,6 +3496,7 @@ export class FestivalWorld {
     this.beginArcadeView(session, screenLayout);
     this.arcadeSession = session; this.arcadeGame = game;
     cabinet.setControlsHidden(true);
+    this.cabinetSnowAside(game);
     session.mount(this.cssRenderer.domElement);
     if (this.conservesMobileGpu) {
       const frame = session.frame;
@@ -3514,6 +3531,7 @@ export class FestivalWorld {
   stopArcadeGame(): void {
     this.arcadeView?.dispose(); this.arcadeView = undefined; this.arcadeSession = undefined; this.arcadeGame = undefined;
     this.escapeCabinet?.setControlsHidden(false);
+    this.cabinetSnowAside();
     this.arcadeScreenLayout = undefined;
     this.arcadeAperture?.geometry.dispose(); this.arcadeAperture?.removeFromParent(); this.arcadeAperture = undefined;
     this.xrHud?.setVisible(this.xrActive);
