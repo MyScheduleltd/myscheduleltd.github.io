@@ -15,17 +15,31 @@ for (const [name, type] of [['chrome', chromium], ['webkit', webkit]]) {
     await context.addInitScript(() => {
       window.__qaDraws = [];
       window.__qaViolations = [];
+      window.__qaTutorialButtonRows = new Set();
       const original = CanvasRenderingContext2D.prototype.fillText;
       CanvasRenderingContext2D.prototype.fillText = function(text, ...args) {
         if (window.__qaDraws.length > 3000) window.__qaDraws.splice(0,1000);
         window.__qaDraws.push(String(text));
         return original.call(this, text, ...args);
       };
+      const drawImage = CanvasRenderingContext2D.prototype.drawImage;
+      CanvasRenderingContext2D.prototype.drawImage = function(image, ...args) {
+        if (image?.naturalWidth === 1024 && image.naturalHeight === 512
+          && args[0] === 512 && args[2] === 256 && args[3] === 256) {
+          window.__qaTutorialButtonRows.add(args[1]);
+        }
+        return drawImage.call(this, image, ...args);
+      };
       document.addEventListener('securitypolicyviolation', e => window.__qaViolations.push({directive:e.effectiveDirective, blocked:e.blockedURI}));
     });
     const page = await context.newPage();
-    const errors = [], failed = [];
+    const errors = [], failed = [], loadWarnings = [];
     page.on('pageerror', e => errors.push(String(e)));
+    page.on('console', message => {
+      if (message.type() === 'warning' && message.text().startsWith('Scene resource loading failed:')) {
+        loadWarnings.push(message.text());
+      }
+    });
     page.on('response', response => {if (response.status() >= 400 && new URL(response.url()).origin === new URL(base).origin) failed.push({url:response.url(), status:response.status()});});
     for (const [view, width, height, device] of [['desktop',1440,1000,'desktop'], ['portrait',390,844,'phone'], ['small-phone',320,568,'phone'], ['landscape',844,390,'phone']]) {
       await page.setViewportSize({width, height});
@@ -45,9 +59,24 @@ for (const [name, type] of [['chrome', chromium], ['webkit', webkit]]) {
       await page.keyboard.press('Enter');
       await page.keyboard.press('Enter');
       await page.keyboard.press('Enter');
-      await page.waitForFunction(() => window.__qaDraws.slice(-300).join(' ').match(/made this little game|這款遊戲是為/), undefined, {timeout:60000});
+      await page.waitForFunction(() => document.querySelector('.load-recovery:not([hidden])')
+        || /made this little game|這款遊戲是為/.test(window.__qaDraws.slice(-300).join(' ')), undefined, {timeout:60000});
+      assert.equal(await page.locator('.load-recovery:not([hidden])').count(), 0,
+        `${name} ${view} public story failed to load. ${loadWarnings.join('\n')}`);
       await page.screenshot({path:path.join(out, `${name}-story-${view}.png`)});
-      report.push({engine:name, audience:'public', view, queryAndKeyboardDebugBlocked:true, storyEntry:true, violations:await page.evaluate(() => window.__qaViolations)});
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(() => /straight to the controls|遊戲操作說明/.test(window.__qaDraws.slice(-150).join(' ')));
+      await page.keyboard.press('Enter');
+      const waitForDemo = prompt => page.waitForFunction(prompt => {
+        const action = new RegExp(prompt);
+        return window.__qaDraws.slice(-300).some(text => action.test(text))
+          && [0, 256].every(row => window.__qaTutorialButtonRows.has(row));
+      }, prompt.source);
+      await waitForDemo(/^(輕按|TAP)$/);
+      await page.evaluate(() => window.__qaTutorialButtonRows.clear());
+      await page.keyboard.press('Enter');
+      await waitForDemo(/^(按住|HOLD)$/);
+      report.push({engine:name, audience:'public', view, queryAndKeyboardDebugBlocked:true, storyEntry:true, tutorialButtonFrames:true, violations:await page.evaluate(() => window.__qaViolations)});
     }
     await page.goto(new URL('moth/staff/?device=desktop', base).href, {waitUntil:'domcontentloaded'});
     await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout:180000});
@@ -73,6 +102,7 @@ for (const [name, type] of [['chrome', chromium], ['webkit', webkit]]) {
     assert((await page.evaluate(() => window.__qaViolations)).some(v => v.directive === 'script-src-elem' || v.directive === 'script-src'));
     assert.deepEqual(errors,[]);
     assert.deepEqual(failed,[]);
+    assert.deepEqual(loadWarnings,[]);
     await context.close();
     if (name === 'chrome') {
       const menuContext = await browser.newContext({viewport:{width:390,height:844}});

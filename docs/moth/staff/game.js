@@ -3493,8 +3493,8 @@ for (const level of this.config.secretLevels || []) {
       document.body.append(root);
       this.loadRecoveryPrompt = root;
     }
-    this.loadRecoveryPrompt.querySelector('h2').textContent = this.tr('CONNECTION LOST', '連線中斷');
-    this.loadRecoveryPrompt.querySelector('p').textContent = this.tr('Please refresh this page to reload the game. Your saved progress is kept for this session.', '請重新整理網頁，重新載入遊戲。本次瀏覽的已儲存進度會保留。');
+    this.loadRecoveryPrompt.querySelector('h2').textContent = this.tr('GAME COULD NOT LOAD', '遊戲載入失敗');
+    this.loadRecoveryPrompt.querySelector('p').textContent = this.tr('Refresh the page to try again. Your saved progress will be kept.', '請重新整理網頁再試一次。已儲存的進度會保留。');
     this.loadRecoveryPrompt.querySelector('button').textContent = this.tr('REFRESH PAGE', '重新整理網頁');
     this.loadRecoveryPrompt.hidden = false;
     this.loadRecoveryPrompt.querySelector('button').focus();
@@ -3503,7 +3503,7 @@ for (const level of this.config.secretLevels || []) {
   // The loading screen's dark ground and scanlines, with the lose card's
   // outlined heading. The prompt covers the middle of the screen on desktop
   // and the lower half on a phone, so the words sit in the band above it.
-  renderConnectionLost(target, W, H) {
+  renderLoadFailure(target, W, H) {
     const tall = W < H;
     target.save();
     target.fillStyle = '#0d0f13';
@@ -3512,7 +3512,7 @@ for (const level of this.config.secretLevels || []) {
     for (let y = 0; y < H; y += 7) target.fillRect(0, y, W, 1);
     target.textAlign = 'center';
     target.textBaseline = 'middle';
-    const title = fitCanvasText(target, this.tr('CONNECTION LOST', '連線中斷'), W - (tall ? 72 : 200), tall ? 60 : 72, 900, 28);
+    const title = fitCanvasText(target, this.tr('GAME COULD NOT LOAD', '遊戲載入失敗'), W - (tall ? 72 : 200), tall ? 60 : 72, 900, 28);
     drawOutlinedText(target, title.text, W / 2, Math.round(H * (tall ? 0.2 : 0.17)), {fill:'#f7f2de', shadow:'#05070d', outline:'#080b12', accent:'#ff4866', accentOffset:4});
     target.restore();
   }
@@ -13442,7 +13442,7 @@ for (const level of this.config.secretLevels || []) {
     target.imageSmoothingEnabled = false;
     target.fillStyle = "#08090d";
     target.fillRect(0, 0, layout.width, layout.height);
-    if (this.loadError) { this.renderConnectionLost(target, layout.width, layout.height); return; }
+    if (this.loadError) { this.renderLoadFailure(target, layout.width, layout.height); return; }
     if (this.levelLoadingPresentation || (this.level1OfficeRhythm?.graphicsLoading && !this.level1OfficeRhythm.graphicsWarming && !this.level1OfficeRhythm.countdownDuringGraphicsPreparation)) {
       this.renderLevel1Loading(target, layout.width, layout.height);
       return;
@@ -20206,7 +20206,7 @@ for (const level of this.config.secretLevels || []) {
 
   renderScene() {
     this.renderFrame = (this.renderFrame || 0) + 1;
-    if (this.loadError) { this.renderConnectionLost(this.ctx, VIEW_W, VIEW_H); return; }
+    if (this.loadError) { this.renderLoadFailure(this.ctx, VIEW_W, VIEW_H); return; }
     if (this.levelLoadingPresentation || (this.level1OfficeRhythm?.graphicsLoading && !this.level1OfficeRhythm.countdownDuringGraphicsPreparation)) {
       this.renderLevel1Loading();
       return;
@@ -25502,6 +25502,7 @@ const BOOT_LOAD = { started: 0, settled: 0 };
 
 const imageRequests = new Map();
 const interfaceAssetRequests = [];
+let tutorialDeckButtons = null;
 // Images and sound effects come from the mirror only on the live site, and
 // only when their bytes match the SHA-256 this site publishes. Code and
 // configuration always come from this site.
