@@ -51,7 +51,7 @@ function fixture() {
     currentId: 'Visitor', networkState: { selfId: 'visitor-id', messages: [] }, language: 'zh-TW', connectionStatus: 'online',
     root: { querySelector: selector => selector === '#chat-form' ? current.form : selector === '#chat-message' ? current.input : null },
     festivalClient: { online: true, sendMessage(channel, text) { const request = deferred(); requests.push(request); calls.push({ channel, text }); return request.promise; } },
-    addChatMessage(message) { this.chatMessages.push(message); }, renderChatStream() {}, refreshOpenChatFeed() {},
+    addChatMessage(message) { this.chatMessages.push(message); }, renderChatStream() {}, refreshOpenChatFeed() {}, syncChatUnread() {},
     showWorldAlert(message) { alerts.push(message); }, completeQuest() {}, chatFeedContent: () => '',
     escapeAttribute: value => value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;'),
     openPanel() { current = panel(this.chatDrafts[this.chatChannel] ?? ''); this.bindChatPanel(current); },

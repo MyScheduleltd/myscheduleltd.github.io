@@ -456,6 +456,15 @@ festival-offline-retries checkout; remove it before committing.
     (with the game page faded, counts snow-white rows inside the screen;
     `CONTROL=1` puts the snow back to show it catches it).
 
+49. New-chat badge on the phone's 聊天 button (2026-11-14; owner's picks:
+    count badge, everyone but me, all tabs + open on newest, phones only).
+    From entry on, a line from anyone but this visitor (offline stand-in
+    chatter aside) is unread until its tab is on screen. A red ticket with the
+    count (9+) sits on the button's top-left corner and pops once as it grows.
+    Tapping opens the newest unread line's tab; other tabs with news get a
+    small red mark. Desktop draws none and its button reads as before. Check:
+    `chat-unread-check.mjs` (two visitors through the local service).
+
 ## Open
 
 - Building reshapes (walls not moved yet).

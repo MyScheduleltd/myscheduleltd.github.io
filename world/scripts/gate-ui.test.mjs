@@ -40,6 +40,7 @@ const script = ts.transpileModule(`${tipsSource}\n${deadline}\n${meterSource}\n$
   language = 'en';
   entryRecovery = { finish() {}, phase() { return undefined; } };
   recordBlackBox = () => {};
+  startChatUnread = () => {};
   ${methods}
 }; globalThis.GateLifecycle = GateLifecycle; globalThis.TipRotation = TipRotation; globalThis.entryTips = entryTips; globalThis.ServiceWake = ServiceWake;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 

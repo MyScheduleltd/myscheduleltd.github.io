@@ -2612,6 +2612,9 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .world-quick-actions > button { pointer-events: auto; min-height: 44px; width: 100%; }
 .audio-resume { padding:.65rem 1rem; color:var(--paper); background:var(--red); border:1px solid var(--paper); font:800 13px/1.2 var(--condensed); letter-spacing:.08em; cursor:pointer; }
 .audio-resume[hidden] { display:none; }
+.world-chat-unread { display: none; }
+@keyframes chat-unread-pop { from { transform: scale(.4); } 65% { transform: scale(1.18); } to { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { :root .world-chat-unread.is-new { animation: none; } }
 .world-chat-shortcut { display: none; padding: 8px 6px; border: 1px solid var(--line); border-top: 2px solid var(--paper); color: var(--paper); background: rgba(17,17,19,.92); font: 800 12px/1.2 var(--condensed); letter-spacing: .08em; cursor: pointer; touch-action: manipulation; }
 .world-quick-actions > button:focus-visible { outline: 2px solid var(--paper); outline-offset: 3px; }
 .world-shell:has(> .festival-pass:not([hidden])) .world-quick-actions,
@@ -2634,6 +2637,24 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
     max-width: calc(100vw - 18px - env(safe-area-inset-left) - env(safe-area-inset-right));
   }
   .world-chat-shortcut { display: grid; place-items: center; }
+  /* New chat (the owner, 2026-11-14): the chat log is folded away on a phone,
+     so a red ticket with the count sits on the 聊天 button's top-left corner,
+     like the number on a mail icon. The button is the column's last item and
+     44px tall; the ticket straddles its clipped corner. Desktop has none. */
+  .world-chat-unread:not([hidden]) {
+    position: absolute; left: -9px; bottom: 31px; z-index: 1;
+    display: grid; place-items: center; min-width: 22px; height: 21px; padding: 0 5px; box-sizing: border-box;
+    color: var(--paper); background: var(--red); border: 2px solid var(--paper);
+    font: 800 12px/1 var(--condensed); letter-spacing: .02em; font-variant-numeric: tabular-nums;
+    box-shadow: 0 2px 0 rgba(17,17,19,.45); pointer-events: none;
+  }
+  .world-chat-unread.is-new { animation: chat-unread-pop .24s ease-out; }
+  /* The other tabs with news carry a small red mark until they are opened. */
+  .chat-channels [data-chat-channel][data-unread='true'] { position: relative; }
+  .chat-channels [data-chat-channel][data-unread='true']::after {
+    content: ''; position: absolute; top: 4px; right: 4px; width: 7px; height: 7px;
+    background: var(--red); box-shadow: 0 0 0 1.5px var(--paper); pointer-events: none;
+  }
   .world-quick-actions > button {
     padding: 8px 6px;
     font: 800 11px/1.2 var(--condensed);
