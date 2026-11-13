@@ -125,9 +125,6 @@ if (isProduction && !ADMIN_KEY) {
 const visitors = new Map();
 const seats = new Map();
 const messages = [];
-// Chat restored from a previous run has no live author to measure proximity
-// against, so it is shown to everyone rather than silently disappearing.
-const restoredMessageIds = new Set();
 const streams = new Map();
 const DISCONNECTED_SESSION_GRACE_MS = 120_000;
 const youtubeIdFromUrl = (value) => {
@@ -972,7 +969,6 @@ const restoreMessages = (saved) => {
       text,
       timestamp,
     });
-    restoredMessageIds.add(id);
   }
 };
 
@@ -1364,17 +1360,6 @@ const publicVisitor = (visitor) => ({
   npcId: visitor.npcId,
 });
 
-const canSeeMessage = (viewer, message) => {
-  if (message.authorId === viewer.id || message.channel === 'FESTIVAL') return true;
-  if (restoredMessageIds.has(message.id)) return true;
-  const author = visitors.get(message.authorId);
-  if (!author) return message.channel !== 'NEARBY';
-  if (message.channel === 'VENUE') return author.presence.venue === viewer.presence.venue;
-  const dx = author.presence.x - viewer.presence.x;
-  const dz = author.presence.z - viewer.presence.z;
-  return Math.hypot(dx, dz) <= 14;
-};
-
 /**
  * The temple's wish wall: notes left with an offering, shown once the
  * payment is confirmed (the owner, 2026-10-08).
@@ -1437,7 +1422,9 @@ const stateFor = (visitor) => ({
   selfId: visitor.id,
   visitors: [...visitors.values()].map(publicVisitor),
   seats: [...seats.entries()].map(([seatId, visitorId]) => ({ seatId, visitorId })),
-  messages: messages.filter((message) => canSeeMessage(visitor, message)).slice(-100),
+  // One chat for the whole festival (the owner, 2026-11-14): every line goes
+  // to everyone, whichever channel a page from before still sends it under.
+  messages: messages.slice(-100),
   schedule: programmeSchedule,
   siteStyle,
   mentorCarrierId,
@@ -2859,7 +2846,9 @@ a{color:#e8b64a}</style>
       if (visitor.chatTimes.length >= 5) return apiError(response, 429, 'Please wait before sending another message.');
       const payload = await body(request);
       const text = safeText(payload.text, 160);
-      const channel = ['NEARBY', 'VENUE', 'FESTIVAL'].includes(payload.channel) ? payload.channel : 'NEARBY';
+      // Kept as sent, so a page from before the single chat still recognises
+      // its own line; everyone sees it either way.
+      const channel = ['NEARBY', 'VENUE', 'FESTIVAL'].includes(payload.channel) ? payload.channel : 'FESTIVAL';
       if (!text) return apiError(response, 400, 'Message is empty.');
       visitor.chatTimes.push(now);
       messages.push({ id: randomUUID(), authorId: visitor.id, author: visitor.name, channel, text, timestamp: now });
@@ -3530,7 +3519,6 @@ a{color:#e8b64a}</style>
       if (request.method === 'POST' && url.pathname === '/api/admin/delete-message') {
         const index = messages.findIndex((message) => message.id === payload.messageId);
         if (index < 0) return apiError(response, 404, 'Message not found.');
-        restoredMessageIds.delete(payload.messageId);
         messages.splice(index, 1);
         scheduleBroadcast();
         persist();

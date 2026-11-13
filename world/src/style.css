@@ -1046,9 +1046,8 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
    you type in sat below everything else and went off the bottom, and whether it
    was reachable came down to whether a height threshold had matched. It does
    not depend on that any more: the conversation is the only part that scrolls,
-   and the tabs and the writing box hold their places at either end of it. */
+   and the writing box holds its place under it. */
 .panel--chat .panel__body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.panel--chat .panel__body > .chat-channels,
 .panel--chat .panel__body > .chat-form,
 .panel--chat .panel__body > .connection-note { flex: 0 0 auto; }
 .panel--chat .panel__body > .chat-feed {
@@ -1077,9 +1076,6 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
 }
 .panel--chat .panel__header { background: rgba(10,10,12,.78); }
 .panel--chat .panel__body { background: transparent; }
-.panel--chat .chat-channels { border-color: rgba(255,255,255,.4); }
-.panel--chat .chat-channels button { color: white; text-shadow: 0 1px 6px black; }
-.panel--chat .chat-channels button[aria-pressed='true'] { background: rgba(169,28,36,.9); }
 .panel--chat .chat-feed { border-color: rgba(255,255,255,.3); }
 .panel--chat .chat-feed article { border-color: rgba(255,255,255,.18); background: rgba(8,9,10,.12); }
 .panel--chat .chat-feed header strong { color: #ff626c; }
@@ -1446,11 +1442,7 @@ button:active { filter: brightness(.88); scale: .96; }
   color: #fff; background: linear-gradient(90deg, rgba(8,9,10,.9), rgba(8,9,10,.68));
   text-shadow: 0 2px 8px rgba(0,0,0,.9);
 }
-.chat-stream__item[data-channel='VENUE'] { --chat-accent: #e8e2d5; }
 .chat-stream__item header { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
-.chat-stream__channel {
-  flex: 0 0 auto; color: var(--chat-accent); font: 800 10px var(--condensed); letter-spacing: .1em;
-}
 .chat-stream__item strong {
   min-width: 0; overflow: hidden; font: 800 11px var(--condensed); letter-spacing: .05em; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -1460,7 +1452,6 @@ button:active { filter: brightness(.88); scale: .96; }
   -webkit-box-orient: vertical; -webkit-line-clamp: 1;
 }
 .npc-dot { min-width: 32px; border: 1px solid var(--red); padding: 3px 4px; color: var(--red); font: 800 9px var(--condensed); text-align: center; }
-.chat-channels { grid-template-columns: repeat(3, 1fr); max-width: none; margin-bottom: 14px; }
 .chat-feed { min-height: 230px; max-height: 42vh; overflow: auto; border-block: 1px solid rgba(17,17,19,.2); }
 .chat-feed article { padding: 11px 4px; border-bottom: 1px solid rgba(17,17,19,.12); }
 .chat-feed header { display: flex; justify-content: space-between; gap: 12px; }.chat-feed header strong { color: var(--red); font: 800 13px var(--condensed); }.chat-feed time { font-size: 10px; opacity: .55; }
@@ -2135,7 +2126,6 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      somewhere nobody could reach, which is not a scrolling fault but a
      disappearing one. */
   .panel--chat .panel__body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-  .panel--chat .panel__body > .chat-channels,
   .panel--chat .panel__body > .chat-form,
   .panel--chat .panel__body > .connection-note { flex: 0 0 auto; }
   /* Everything that is not the conversation scrolls, and owns the direction so
@@ -2161,24 +2151,19 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
      ninety pixel screen — one message and a half — with the rest spent on
      padding, gaps and a form that stacked its own label above itself. Lying
      down, every one of those is worth more as conversation: the body's inset
-     halves, the gaps close up, the form loses the label that only repeats the
-     channel already named in the row above it, and the messages themselves sit
-     tighter. */
+     halves, the gaps close up, the form loses its label, and the messages
+     themselves sit tighter. */
   .panel__body { padding: 8px 12px; }
   /* With the keys up there is barely a strip of screen left, so the parts that
-     are not the conversation stand aside: the channel you are writing to is
-     already chosen, and its tabs are worth more as a line of what was said. */
-  :root[data-keyboard='up'] .chat-channels { display: none; }
+     are not the conversation stand aside. */
   :root[data-keyboard='up'] .panel__header { display: none; }
   :root[data-keyboard='up'] .panel__body { padding: 6px 12px; }
-  .chat-channels { margin-bottom: 5px; }
   .chat-form { margin-top: 6px; padding-block: 0; }
   .chat-form > label { display: none; }
   /* Everything round the conversation gives up a little so the conversation
-     gets more: the tabs lose height, the panel's own title bar tightens, and a
+     gets more: the panel's own title bar tightens, and a
      message is set closer without shrinking so far that it stops being
      readable at arm's length. */
-  .chat-channels button { min-height: 0; height: 32px; padding: 0 8px; font-size: 12px; }
   .chat-feed article { padding: 5px 9px; }
   .chat-feed article + article { margin-top: 5px; }
   .chat-feed article header { font-size: 10px; }
@@ -2474,14 +2459,11 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 .chat-stream__item { animation: chat-stream-fade 12s ease forwards; }
 @keyframes chat-stream-fade { 0%, 85% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .chat-stream__item { animation: none; } }
-/* Location is printed like a programme section, not a colour-coded badge. */
-.chat-stream__channel { color: #e8e2d5; background: transparent; border: 1px solid rgba(232,226,213,.48); padding: 1px 5px; letter-spacing: .08em; text-shadow: none; }
 .chat-stream__item strong { letter-spacing: .08em; }
 .chat-stream__item p { margin-top: 6px; }
 /* Liquid glass is confined to the three comment cards, with a dark tint for text. */
 /* No hairline round the card and no dashed rule under the name (owner, 2026-10-23): the frosted glass alone. */
 .chat-stream__item { clip-path: none; border: 1px solid transparent; border-radius: 14px; background: linear-gradient(135deg,rgba(215,237,242,.15),rgba(12,23,29,.62) 50%,rgba(17,20,25,.48)); -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2); box-shadow: none; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
-.chat-stream__channel { border-color: rgba(123,227,222,.45); color: #c2fff8; border-radius: 5px; }
 .panel--chat { border-radius: 14px; background: rgba(12,21,27,.68); -webkit-backdrop-filter: blur(12px) saturate(1.15); backdrop-filter: blur(12px) saturate(1.15); box-shadow: 0 14px 45px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.18); }
 .panel--chat .panel__header { flex: 0 0 auto; border-radius: 13px 13px 0 0; }
 .panel--chat [data-chat-drag] { flex: 1; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; padding: 10px 4px; margin-block: 0; }
@@ -2649,12 +2631,6 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
     box-shadow: 0 2px 0 rgba(17,17,19,.45); pointer-events: none;
   }
   .world-chat-unread.is-new { animation: chat-unread-pop .24s ease-out; }
-  /* The other tabs with news carry a small red mark until they are opened. */
-  .chat-channels [data-chat-channel][data-unread='true'] { position: relative; }
-  .chat-channels [data-chat-channel][data-unread='true']::after {
-    content: ''; position: absolute; top: 4px; right: 4px; width: 7px; height: 7px;
-    background: var(--red); box-shadow: 0 0 0 1.5px var(--paper); pointer-events: none;
-  }
   .world-quick-actions > button {
     padding: 8px 6px;
     font: 800 11px/1.2 var(--condensed);

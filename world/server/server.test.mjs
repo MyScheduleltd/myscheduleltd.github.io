@@ -1170,6 +1170,30 @@ test('chat history survives a service restart and stays readable', async () => {
   }
 });
 
+test('one chat for the whole festival: every line reaches everyone, wherever they stand (the owner, 2026-11-14)', async () => {
+  const speaker = await join('SAYS HELLO');
+  const listener = await join('FAR AWAY');
+  const place = (session, presence) => fetch(`${baseUrl}/api/presence`, {
+    method: 'POST', headers: auth(session),
+    body: JSON.stringify({ y: 0, rotation: 0, state: 'walking', moving: false, running: false, ...presence }),
+  });
+  assert.equal((await place(speaker, { x: 6, z: -12, location: 'MY SQUARE', venue: 'shore' })).status, 202);
+  assert.equal((await place(listener, { x: -40, z: 60, location: 'THE PALACE', venue: 'palace' })).status, 202);
+  // A page from before the single chat still sends its tab's channel; a new one sends none.
+  for (const body of [{ channel: 'NEARBY', text: 'old nearby tab' }, { channel: 'VENUE', text: 'old venue tab' }, { text: 'no channel at all' }]) {
+    const sent = await fetch(`${baseUrl}/api/chat`, { method: 'POST', headers: auth(speaker), body: JSON.stringify(body) });
+    assert.equal(sent.status, 201);
+  }
+  const recovered = await fetch(`${baseUrl}/api/session/recover`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' },
+    body: JSON.stringify({ session: listener, name: 'FAR AWAY' }),
+  });
+  assert.equal(recovered.status, 200);
+  const lines = (await recovered.json()).state.messages.filter(message => message.author === 'SAYS HELLO');
+  assert.deepEqual(lines.map(message => message.text), ['old nearby tab', 'old venue tab', 'no channel at all']);
+  assert.deepEqual(lines.map(message => message.channel), ['NEARBY', 'VENUE', 'FESTIVAL'], 'kept as sent, so an old page still recognises its own echo');
+});
+
 test('a venue publishes one programme clock for every attendee', async () => {
   const session = await join('CLOCK TEST');
   const config = await (await fetch(`${baseUrl}/api/config`)).json();

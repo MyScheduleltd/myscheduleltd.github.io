@@ -5,8 +5,8 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 
 // The phone's 聊天 button counts new chat (the owner, 2026-11-14): everyone's
-// lines but this visitor's, from entry on, across all three tabs; a tab's
-// lines are read once it is on screen; tapping opens the newest one's tab.
+// lines but this visitor's, from entry on, until the chat is opened. Chat is
+// one list for the whole festival (the owner, same night): no tabs.
 const source = await readFile('src/ui/App.ts', 'utf8');
 const css = await readFile('src/style.css', 'utf8');
 const tree = ts.createSourceFile('App.ts', source, ts.ScriptTarget.Latest, true);
@@ -25,15 +25,14 @@ function fixture({ phone = true } = {}) {
     getClientRects: () => (phone && !badge.hidden ? [{}] : []) };
   const attributes = {};
   const button = { setAttribute: (k, v) => { attributes[k] = v; }, removeAttribute: k => { delete attributes[k]; } };
-  const tabs = ['NEARBY', 'VENUE', 'FESTIVAL'].map(channel => ({ dataset: { chatChannel: channel } }));
-  const panel = { hidden: true, querySelector: () => (panel.hidden ? null : {}), querySelectorAll: () => tabs };
+  const panel = { hidden: true, querySelector: () => (panel.hidden ? null : {}) };
   Object.assign(ui, {
-    chatRead: new Set(), chatUnreadShown: 0, chatMessages: [], chatChannel: 'NEARBY', activePanel: undefined,
+    chatRead: new Set(), chatUnreadShown: 0, chatMessages: [], activePanel: undefined,
     serverClockOffset: 60_000, language: 'zh-TW', currentId: 'Phone', networkState: { selfId: 'me' },
     root: { querySelector: s => ({ '[data-chat-unread]': badge, '[data-world-chat]': button, '#panel': panel })[s] ?? null },
   });
   const line = (id, channel, at, extra = {}) => ({ id, author: 'Desk', authorId: 'desk', channel, text: id, timestamp: at, ...extra });
-  return { ui, badge, classes, attributes, tabs, panel, line };
+  return { ui, badge, classes, attributes, panel, line };
 }
 
 test('nothing counts before entry, and the history there at entry is read', () => {
@@ -51,7 +50,7 @@ test('nothing counts before entry, and the history there at entry is read', () =
   assert.equal(badge.hidden, true);
 });
 
-test('other visitors and NPCs answering count across every tab; own lines and offline chatter do not', () => {
+test('other visitors and NPCs answering count, whatever channel an old page sent; own lines and offline chatter do not', () => {
   const { ui, badge, classes, attributes, line } = fixture();
   ui.startChatUnread();
   const now = Date.now();
@@ -72,25 +71,24 @@ test('other visitors and NPCs answering count across every tab; own lines and of
   assert.equal(badge.textContent, '9+');
 });
 
-test('an open tab is read at once and the other tabs with news are marked', () => {
-  const { ui, badge, tabs, panel, line } = fixture();
+test('opening the chat reads everything in it, and a line arriving while it is open is read', () => {
+  const { ui, badge, panel, line } = fixture();
   ui.startChatUnread();
   const now = Date.now();
   ui.chatMessages.push(line('f', 'FESTIVAL', now + 60_000), line('n', 'NEARBY', now + 61_000));
   ui.syncChatUnread();
-  // The 聊天 button opens on the newest line's tab.
-  ui.chatChannel = ui.unreadChat().at(-1).channel;
-  assert.equal(ui.chatChannel, 'NEARBY');
+  assert.equal(badge.textContent, '2');
   ui.activePanel = 'chat'; panel.hidden = false;
   ui.syncChatUnread();
-  assert.deepEqual(tabs.filter(t => t.dataset.unread === 'true').map(t => t.dataset.chatChannel), ['FESTIVAL']);
-  assert.equal(badge.textContent, '1');
-  ui.chatChannel = 'FESTIVAL'; ui.syncChatUnread();
-  assert.deepEqual(tabs.filter(t => t.dataset.unread === 'true'), []);
   assert.equal(badge.hidden, true);
-  ui.chatMessages.push(line('live', 'FESTIVAL', now + 62_000));
+  assert.deepEqual(ui.unreadChat(), []);
+  ui.chatMessages.push(line('live', 'VENUE', now + 62_000));
   ui.syncChatUnread();
-  assert.equal(badge.hidden, true, 'a line in the tab being read is read');
+  assert.equal(badge.hidden, true, 'a line arriving in the open chat is read');
+  ui.activePanel = undefined; panel.hidden = true;
+  ui.chatMessages.push(line('after', 'FESTIVAL', now + 63_000));
+  ui.syncChatUnread();
+  assert.equal(badge.textContent, '1', 'closed again, the next line counts');
 });
 
 test('a desktop draws no badge and its chat button reads as before', () => {
@@ -113,5 +111,8 @@ test('the badge is drawn only in the phone layout, on the button\'s corner, and 
   assert.match(body('refreshOpenChatFeed'), /this\.syncChatUnread\(\);/);
   assert.match(body('bindChatPanel'), /this\.syncChatUnread\(\);/);
   assert.match(body('completeGateEntry'), /this\.visits\?\.entered\(\);\s*this\.startChatUnread\(\);/);
-  assert.match(source, /const newest = this\.chatBadgeShown\(\) \? this\.unreadChat\(\)\.at\(-1\) : undefined;\s*if \(newest\) this\.chatChannel = newest\.channel;\s*this\.openPanel\('chat'\);/);
+  assert.doesNotMatch(source, /chatChannel\b|data-chat-channel|chat-stream__channel|chatChannelLabel/, 'no channel tabs or line tags are left');
+  assert.match(source, /const CHAT_CHANNEL: ChatChannel = 'FESTIVAL';/, 'every line is sent to everyone');
+  assert.doesNotMatch(css, /chat-channels|chat-stream__channel/);
+  assert.match(body('openPanel'), /installFloatingChat\(panel[^;]*;[\s\S]{0,400}feed\.scrollTop = feed\.scrollHeight;/, 'the one long list opens at its newest line, after the floating panel is sized');
 });

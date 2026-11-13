@@ -375,10 +375,17 @@ const paletteLabels: Record<Language, Record<(typeof paletteInputs)[number], str
   'zh-TW': { skin: '膚色', hair: '髮色', shirt: '上衣', bottoms: '下身', swimwear: '泳裝', shoes: '鞋子' },
 };
 
+/**
+ * One chat for the whole festival (the owner, 2026-11-14): no 附近 / 影廳 /
+ * 全影展 tabs, and every line goes to everyone. Lines still carry a channel
+ * because the service and pages from before speak in channels.
+ */
+const CHAT_CHANNEL: ChatChannel = 'FESTIVAL';
+
 const initialChat: ChatMessage[] = [
-  { id: 'npc-1', author: 'MENTOR', channel: 'NEARBY', text: 'The public screenings are live in all three venues.', timestamp: Date.now() - 185000, npc: true },
-  { id: 'npc-2', author: 'KENNY', channel: 'VENUE', text: 'Drive-In 88 has a clear view from the center bay.', timestamp: Date.now() - 121000, npc: true },
-  { id: 'npc-3', author: 'NUNO', channel: 'FESTIVAL', text: 'The Palace marquee is open from MY SQUARE.', timestamp: Date.now() - 64000, npc: true },
+  { id: 'npc-1', author: 'MENTOR', channel: CHAT_CHANNEL, text: 'The public screenings are live in all three venues.', timestamp: Date.now() - 185000, npc: true },
+  { id: 'npc-2', author: 'KENNY', channel: CHAT_CHANNEL, text: 'Drive-In 88 has a clear view from the center bay.', timestamp: Date.now() - 121000, npc: true },
+  { id: 'npc-3', author: 'NUNO', channel: CHAT_CHANNEL, text: 'The Palace marquee is open from MY SQUARE.', timestamp: Date.now() - 64000, npc: true },
 ];
 
 const normalizeIdForSafety = (value: string) =>
@@ -580,14 +587,13 @@ export class App {
   private impactTimer = 0;
   private deathTimer = 0;
   private privateProgress?: PrivateProgress;
-  private chatChannel: ChatChannel = 'NEARBY';
   private chatMessages: ChatMessage[];
   /** Said here, not yet echoed by the service. Kept so it shows straight away. */
   private pendingChat: { message: ChatMessage; seenIds: Set<string> }[] = [];
   /** Shared by every rendering of the chat form, including channel changes. */
   private chatSending = false;
   private chatSequence = 0;
-  private chatDrafts: Partial<Record<ChatChannel, string>> = {};
+  private chatDraft = '';
   private chatStreamElement?: HTMLElement;
   private chatStreamSignature = '';
   /** The service's id for a line this visitor sent, against the pending id its card was shown under. */
@@ -2907,10 +2913,6 @@ export class App {
     });
     this.root.querySelector<HTMLButtonElement>('[data-world-chat]')?.addEventListener('click', event => {
       event.stopPropagation();
-      // Where the badge shows (a phone), open on the tab the newest unread
-      // line is in (the owner, 2026-11-14). A desktop opens where it was.
-      const newest = this.chatBadgeShown() ? this.unreadChat().at(-1) : undefined;
-      if (newest) this.chatChannel = newest.channel;
       this.openPanel('chat');
       this.root.querySelector<HTMLInputElement>('#chat-message')?.focus({ preventScroll: true });
     });
@@ -3788,7 +3790,7 @@ export class App {
       this.chatMessages = [...this.chatMessages, {
         id: `npc-thanks-${Date.now()}`,
         author: action.target,
-        channel: 'NEARBY' as ChatChannel,
+        channel: CHAT_CHANNEL,
         text: thanks[Math.floor(Math.random() * thanks.length)],
         timestamp: Date.now(),
         npc: true,
@@ -6839,7 +6841,7 @@ export class App {
     this.chatMessages = [...this.chatMessages, {
       id: `npc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       author,
-      channel: 'NEARBY' as ChatChannel,
+      channel: CHAT_CHANNEL,
       text,
       timestamp: Date.now(),
       npc: true,
@@ -6946,7 +6948,14 @@ export class App {
     });
     this.syncMenuCapture();
     this.bindPanelActions(panelId, panel);
-    if (panelId === 'chat') this.chatFloatingDispose = installFloatingChat(panel, this.language === 'zh-TW');
+    if (panelId === 'chat') {
+      this.chatFloatingDispose = installFloatingChat(panel, this.language === 'zh-TW');
+      // One list for the whole festival (the owner, 2026-11-14) runs long, so
+      // it opens at the newest line, once the floating panel has its size;
+      // refreshOpenChatFeed keeps following there.
+      const feed = panel.querySelector<HTMLElement>('.chat-feed');
+      if (feed) feed.scrollTop = feed.scrollHeight;
+    }
     if (panelId === 'admin' && this.staffKey && !this.adminState && !this.adminError) void this.refreshAdminState();
   }
 
@@ -8023,16 +8032,8 @@ export class App {
   }
 
   private bindChatPanel(panel: HTMLElement): void {
-    const channel = this.chatChannel;
-    panel.querySelectorAll<HTMLButtonElement>('[data-chat-channel]').forEach((button) => {
-      setButtonPressed(button, button.dataset.chatChannel === channel);
-      button.addEventListener('click', () => {
-        this.chatChannel = button.dataset.chatChannel as ChatChannel;
-        this.openPanel('chat');
-      });
-    });
     const input = panel.querySelector<HTMLInputElement>('#chat-message');
-    input?.addEventListener('input', () => { this.chatDrafts[channel] = input.value; });
+    input?.addEventListener('input', () => { this.chatDraft = input.value; });
     // The accepting Enter can arrive just after compositionend on some IMEs.
     // Keep the field focused and allow that keystroke to accept its characters.
     let composing = false;
@@ -8049,7 +8050,7 @@ export class App {
     panel.querySelector<HTMLFormElement>('#chat-form')?.addEventListener('submit', (event) => {
       event.preventDefault();
       if (!input || composing || performance.now() - composedAt < 250) return;
-      void this.submitChatMessage(input, channel);
+      void this.submitChatMessage(input);
     });
     this.syncChatSendingControls();
     this.syncChatUnread();
@@ -8064,10 +8065,11 @@ export class App {
     if (button) button.disabled = this.chatSending;
   }
 
-  private async submitChatMessage(input: HTMLInputElement, channel: ChatChannel): Promise<void> {
+  private async submitChatMessage(input: HTMLInputElement): Promise<void> {
+    const channel = CHAT_CHANNEL;
     const text = input.value.trim().slice(0, 160);
     if (this.chatSending || !text) return;
-    this.chatDrafts[channel] = input.value;
+    this.chatDraft = input.value;
     const pending: ChatMessage = {
       id: `pending-${Date.now()}-${++this.chatSequence}`,
       authorId: this.networkState?.selfId,
@@ -8078,7 +8080,7 @@ export class App {
     };
     if (!this.festivalClient.online) {
       this.addChatMessage(pending);
-      delete this.chatDrafts[channel];
+      this.chatDraft = '';
       input.value = '';
       this.completeQuest('chat');
       this.renderChatStream();
@@ -8099,7 +8101,7 @@ export class App {
     try {
       const result = await this.festivalClient.sendMessage(channel, text);
       if (!result.ok) throw new Error(result.message ?? 'MESSAGE COULD NOT BE SENT');
-      delete this.chatDrafts[channel];
+      this.chatDraft = '';
       input.value = '';
       this.completeQuest('chat');
     } catch (error) {
@@ -8111,11 +8113,11 @@ export class App {
     } finally {
       this.chatSending = false;
       this.syncChatSendingControls();
-      // The panel may have been closed, translated or switched to a different
-      // channel while the request was outstanding. Update only its own draft.
+      // The panel may have been closed or translated while the request was
+      // outstanding; the field it has now shows the draft.
       const current = this.root.querySelector<HTMLInputElement>('#chat-message');
-      if (current && this.activePanel === 'chat' && this.chatChannel === channel) {
-        current.value = this.chatDrafts[channel] ?? '';
+      if (current && this.activePanel === 'chat') {
+        current.value = this.chatDraft;
         current.focus();
       }
     }
@@ -8146,7 +8148,7 @@ export class App {
 
   /** Update messages without replacing the form, its draft, caret or IME. */
   private chatFeedContent(): string {
-    const visible = this.chatMessages.filter((message) => message.channel === this.chatChannel).slice(-100);
+    const visible = this.chatMessages.slice(-100);
     if (!visible.length) return `<p class="chat-empty">${this.language === 'zh-TW' ? '尚無訊息' : 'No messages yet.'}</p>`;
     const time = new Intl.DateTimeFormat(this.language, { hour: '2-digit', minute: '2-digit' });
     return visible.map((message) => `
@@ -8185,7 +8187,7 @@ export class App {
 
   /**
    * Lines from everyone else that came after entry and have not been on screen
-   * in their tab, oldest first: other visitors, and NPCs answering this
+   * in the chat, oldest first: other visitors, and NPCs answering this
    * visitor. The offline stand-in chatter is addressed to nobody, so it is not
    * news. The service stamps its lines with its own clock.
    */
@@ -8205,11 +8207,11 @@ export class App {
     return Boolean(badge && !badge.hidden && badge.getClientRects().length);
   }
 
-  /** The count on the 聊天 button, and a mark on each other tab with news. */
+  /** The count on the 聊天 button; an open chat has read everything in it. */
   private syncChatUnread(): void {
     const panel = this.root.querySelector<HTMLElement>('#panel');
     const open = this.activePanel === 'chat' && Boolean(panel && !panel.hidden && panel.querySelector('.chat-feed'));
-    if (open) for (const message of this.chatMessages) if (message.channel === this.chatChannel) this.chatRead.add(message.id);
+    if (open) for (const message of this.chatMessages) this.chatRead.add(message.id);
     const unread = this.unreadChat(), count = unread.length;
     const badge = this.root.querySelector<HTMLElement>('[data-chat-unread]');
     if (badge) {
@@ -8229,30 +8231,16 @@ export class App {
       const label = count && this.chatBadgeShown() ? (zh ? `${name}，${count} 則新訊息` : `${name}, ${count} new message${count === 1 ? '' : 's'}`) : '';
       if (label) button.setAttribute('aria-label', label); else button.removeAttribute('aria-label');
     }
-    if (open && panel) {
-      const waiting = new Set(unread.map(message => message.channel));
-      panel.querySelectorAll<HTMLButtonElement>('[data-chat-channel]').forEach(tab => {
-        if (waiting.has(tab.dataset.chatChannel as ChatChannel)) tab.dataset.unread = 'true';
-        else delete tab.dataset.unread;
-      });
-    }
     this.chatUnreadShown = count;
   }
 
   private chatPanelContent(): string {
-    const channelLabel: Record<ChatChannel, string> = this.language === 'zh-TW'
-      ? { NEARBY: '附近', VENUE: '影廳', FESTIVAL: '全影展' }
-      : { NEARBY: 'NEARBY', VENUE: 'VENUE', FESTIVAL: 'FESTIVAL' };
     return `
-      <div class="chat-channels segmented segmented--dark">
-        ${(['NEARBY', 'VENUE', 'FESTIVAL'] as ChatChannel[]).map((channel) => `
-          <button type="button" data-chat-channel="${channel}" aria-pressed="${channel === this.chatChannel}">${channelLabel[channel]}</button>`).join('')}
-      </div>
       <div class="chat-feed" aria-live="polite">${this.chatFeedContent()}</div>
       <p class="connection-note" data-status="${this.connectionStatus}">${this.connectionStatus === 'online' ? (this.language === 'zh-TW' ? '即時聊天 · 伺服器管理' : 'LIVE CHAT · MODERATED') : (this.language === 'zh-TW' ? '離線聊天 · 僅此裝置' : 'OFFLINE CHAT · THIS DEVICE')}</p>
       <form class="chat-form" id="chat-form">
-        <label for="chat-message">${this.language === 'zh-TW' ? '訊息' : 'MESSAGE'} · ${channelLabel[this.chatChannel]}</label>
-        <div><input id="chat-message" maxlength="160" autocomplete="off" value="${this.escapeAttribute(this.chatDrafts[this.chatChannel] ?? '')}" placeholder="${this.language === 'zh-TW' ? '最多 160 字' : '160 characters'}" ${this.chatSending ? 'readonly' : ''} /><button type="submit" ${this.chatSending ? 'disabled' : ''}>${this.language === 'zh-TW' ? '傳送' : 'SEND'}</button></div>
+        <label for="chat-message">${this.language === 'zh-TW' ? '訊息' : 'MESSAGE'}</label>
+        <div><input id="chat-message" maxlength="160" autocomplete="off" value="${this.escapeAttribute(this.chatDraft)}" placeholder="${this.language === 'zh-TW' ? '最多 160 字' : '160 characters'}" ${this.chatSending ? 'readonly' : ''} /><button type="submit" ${this.chatSending ? 'disabled' : ''}>${this.language === 'zh-TW' ? '傳送' : 'SEND'}</button></div>
       </form>`;
   }
 
@@ -8533,7 +8521,7 @@ export class App {
   private staffMessagesList(): string {
     const zh = this.language === 'zh-TW';
     return `<div class="staff-list staff-history-scroll" data-staff-history="messages" tabindex="0" role="region" aria-label="${zh ? '近期聊天' : 'Recent chat'}">${(this.adminState?.messages ?? []).slice(-50).reverse().map((message) => `
-      <article><div><strong>${this.escapeHtml(message.author)} · ${this.chatChannelLabel(message.channel)}</strong><small>${this.escapeHtml(this.localizeNpcChat(message.text))}</small></div><button data-moderate="delete-message" data-message-id="${this.escapeAttribute(message.id)}">${zh ? '移除' : 'REMOVE'}</button></article>`).join('') || `<p>${zh ? '尚無聊天。' : 'No chat yet.'}</p>`}</div>`;
+      <article><div><strong>${this.escapeHtml(message.author)}</strong><small>${this.escapeHtml(this.localizeNpcChat(message.text))}</small></div><button data-moderate="delete-message" data-message-id="${this.escapeAttribute(message.id)}">${zh ? '移除' : 'REMOVE'}</button></article>`).join('') || `<p>${zh ? '尚無聊天。' : 'No chat yet.'}</p>`}</div>`;
   }
 
   private adminPanelContent(): string {
@@ -8816,8 +8804,6 @@ export class App {
     const timeFormat = new Intl.DateTimeFormat(this.language, { hour: '2-digit', minute: '2-digit' });
     const items = messages.map((message) => ({
       id: message.id,
-      channel: message.channel,
-      channelLabel: this.chatChannelLabel(message.channel),
       author: `${message.npc ? 'NPC · ' : ''}${message.npc ? this.npcNameFromAuthor(message.author) : message.author}`,
       time: timeFormat.format(message.timestamp),
       text: this.localizeNpcChat(message.text),
@@ -8864,7 +8850,6 @@ export class App {
     }
     const card = (item: typeof items[number]) => `
         <header>
-          <span class="chat-stream__channel">${this.escapeHtml(item.channelLabel)}</span>
           <strong>${this.escapeHtml(item.author)}</strong>
           <time>${item.time}</time>
         </header>
@@ -8881,7 +8866,6 @@ export class App {
       }
       node = document.createElement('article');
       node.className = 'chat-stream__item';
-      node.dataset.channel = item.channel;
       node.dataset.messageId = item.id;
       node.dataset.markup = markup;
       node.innerHTML = markup;
@@ -8924,18 +8908,18 @@ export class App {
   private startNpcChat(): void {
     if (this.npcTimer) window.clearInterval(this.npcTimer);
     const lines = [
-      ['MICHAEL', 'VENUE', 'The projector haze is beautiful tonight.'],
-      ['SEBINE', 'NEARBY', 'I am heading to the programme board.'],
-      ['ZC', 'FESTIVAL', 'Try swimming past the screen—there are buoys at the boundary.'],
-      ['LOUI', 'VENUE', 'Private viewing only changes your own screen.'],
-      ['MINYUN', 'NEARBY', 'See you by The Shore.'],
-      ['VIOLA', 'FESTIVAL', 'The Shore programme is ready for the next screening.'],
+      ['MICHAEL', 'The projector haze is beautiful tonight.'],
+      ['SEBINE', 'I am heading to the programme board.'],
+      ['ZC', 'Try swimming past the screen—there are buoys at the boundary.'],
+      ['LOUI', 'Private viewing only changes your own screen.'],
+      ['MINYUN', 'See you by The Shore.'],
+      ['VIOLA', 'The Shore programme is ready for the next screening.'],
     ] as const;
     let index = 0;
     this.npcTimer = window.setInterval(() => {
       if (this.festivalClient.online) return;
-      const [author, channel, text] = lines[index % lines.length];
-      this.addChatMessage({ id: `ambient-${Date.now()}`, author, channel, text, timestamp: Date.now(), npc: true });
+      const [author, text] = lines[index % lines.length];
+      this.addChatMessage({ id: `ambient-${Date.now()}`, author, channel: CHAT_CHANNEL, text, timestamp: Date.now(), npc: true });
       // Redraw the stream, never the panel: see the note by the other one.
       if (this.activePanel === 'chat') this.renderChatStream();
       index += 1;
@@ -9221,11 +9205,6 @@ export class App {
       'Private viewing only changes your own screen.': '私人觀影只會更改你的畫面。',
       'The Shore programme is ready for the next screening.': '海岸影廳已準備好下一場放映。',
     } as Record<string, string>)[value] ?? value;
-  }
-
-  private chatChannelLabel(channel: ChatChannel): string {
-    if (this.language !== 'zh-TW') return channel;
-    return ({ NEARBY: '附近', VENUE: '影廳', FESTIVAL: '影展' } as const)[channel];
   }
 
   private npcName(npcId: NpcId): string {
