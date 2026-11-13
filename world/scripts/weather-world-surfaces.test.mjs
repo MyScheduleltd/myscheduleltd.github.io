@@ -51,7 +51,14 @@ function actualTopAt(x,z){
 test('actual World builders register every roof, tier, stair, landing, canopy and fixed dock once',()=>{
  const ids=registry.map(s=>s.id);assert.equal(ids.length,new Set(ids).size);
  const expected=['palace-roof',...Array.from({length:7},(_,i)=>`club-roof-${i+1}`),'club-entry-canopy','temple-podium',...Array.from({length:TEMPLE_STAIRS.count},(_,i)=>`temple-step-${i+1}`),'temple-roof-lower','temple-roof-upper','temple-roof-connector','temple-finial','shop-roof','rooftop-deck',...['lower','upper'].flatMap(f=>Array.from({length:9},(_,i)=>`rooftop-stair-${f}-tread-${i+1}`)),'rooftop-stair-middle-landing','rooftop-stair-top-landing','rooftop-stair-deck-seam','rooftop-stair-foot','concession-canopy','island-dock','western-block-roof','wish-wall-roof','drive-in-box-office-roof',...Array.from({length:3},(_,i)=>`coastal-palace-crown-${i+1}`),'coastal-palace-marquee','coastal-shop-canopy',...INLAND_HOUSES.flatMap((_,i)=>['roof','doorhood','doorstep','balcony-1','balcony-2'].map(part=>`coastal-dorm-${i+1}-${part}`)),...Array.from({length:2},(_,i)=>`coastal-gate-pylon-${i+1}`)];
- assert.deepEqual([...ids].sort(),expected.sort());assert.equal(ids.length,95);
+ // The roofs, tiers, stairs and canopies, each once, as before; and, since the
+ // owner's 2026-11-13 pass, every other surface under the sky as a detail that
+ // catches snow without clipping or sheltering what lies under it.
+ for(const id of expected)assert.equal(ids.filter(x=>x===id).length,1,`${id} registered once`);
+ const details=registry.filter(s=>!expected.includes(s.id));
+ assert.ok(details.length>40,`${details.length} details`);
+ for(const s of details)assert.ok(s.sheltersGround===false&&s.occludes===false,`${s.id} is a detail`);
+ for(const id of ['rooftop-parapet-east','rooftop-booth-stage','temple-main-ridge','drive-in-car-1-1','coastal-shore-mast-crossbar'])assert.ok(ids.includes(id),`${id} catches snow`);
  for(const s of registry){assert.ok(s.object.parent||s.id.startsWith('coastal-'),'source is the authored scene object or exact premerge town geometry');assert.equal(s.object.userData.snowApproximation,undefined);}
  const booth=registry.find(s=>s.id==='drive-in-box-office-roof');assert.equal(booth.visibleOnly,true);assert.equal(booth.exclude[0].name,'Unlisted box office attendant');assert.equal(booth.object.children[0].visible,false,'the measured fixture uses the final loaded shell, not retired fallback');
  for(const s of registry.filter(s=>/step-|stair-|podium|deck|island-dock/.test(s.id)))assert.equal(s.terrainMask,true,`${s.id} must erase virtual walking ramp projections`);
@@ -113,7 +120,7 @@ test('Palace shadow silhouette adds only the three large walls and roof, not tri
 });
 
 test('gameplay and animated entry position the shadow camera before updating its light',async()=>{
- const source=await readFile('src/world/FestivalWorld.ts','utf8');const gate=source.slice(source.indexOf('renderGatePreview('),source.indexOf('private gatePreviewCamera('));const play=source.slice(source.indexOf('this.weather?.update(delta,this.player.position)'));
+ const source=await readFile('src/world/FestivalWorld.ts','utf8');const gate=source.slice(source.indexOf('renderGatePreview('),source.indexOf('private gatePreviewCamera('));const play=source.slice(source.indexOf('this.weather?.update(delta,this.player.position'));
  assert.ok(gate.indexOf('setShadowFocus(shadowFocus)')>=0&&gate.indexOf('setShadowFocus(shadowFocus)')<gate.indexOf('this.dayNight.update()'));
  assert.ok(play.indexOf('setShadowFocus(this.player.position)')<play.indexOf('this.dayNight.update()'));
  const w=Object.create(FestivalWorld.prototype);w.weather={shelteredAt:()=>false};assert.equal(w.weatherShelteredAt(-35,-40,0),false,'the final exact query overrides stale provisional Palace boxes');
@@ -150,11 +157,14 @@ test('complete actual authored registry stays within one draw and fixed CPU/geom
  const started=performance.now(),result=buildSnowSurfaceMeshes(registry),elapsed=performance.now()-started;
  assert.ok(result.triangles<SNOW_SURFACE_BUDGET.surfaceTriangles);assert.ok(bytes(result.geometry)<2_000_000);assert.ok(elapsed<3000,`authored preparation exceeded bounded CPU budget: ${elapsed}ms`);
  const before={triangles:result.triangles,geometryBytes:bytes(result.geometry)};
- const scene=new THREE.Scene(),mesh=new THREE.Mesh(result.geometry,new THREE.MeshStandardMaterial());mesh.userData.dynamic=true;scene.add(mesh);const wasPlanet=PLANET.on;PLANET.on=true;const planetStarted=performance.now();try{subdivideSceneForPlanet(scene);}finally{PLANET.on=wasPlanet;}const after={triangles:(mesh.geometry.index?.count??mesh.geometry.attributes.position.count)/3,geometryBytes:bytes(mesh.geometry),subdivisionMs:Math.round((performance.now()-planetStarted)*100)/100};assert.ok(after.geometryBytes<6_000_000);
+ const scene=new THREE.Scene(),mesh=new THREE.Mesh(result.geometry,new THREE.MeshStandardMaterial());mesh.userData.dynamic=true;scene.add(mesh);const wasPlanet=PLANET.on;PLANET.on=true;const planetStarted=performance.now();try{subdivideSceneForPlanet(scene);}finally{PLANET.on=wasPlanet;}const after={triangles:(mesh.geometry.index?.count??mesh.geometry.attributes.position.count)/3,geometryBytes:bytes(mesh.geometry),subdivisionMs:Math.round((performance.now()-planetStarted)*100)/100};assert.ok(after.geometryBytes<6_000_000,JSON.stringify({before,after}));
  const w=surfaceFixture;w.weather=undefined;w.weather=new FestivalWeather(w.scene,{heightAt:(x,z)=>w.groundHeightAt(x,z,0)-.28,dryAt:(x,z)=>!w.isOverWater(z,x),shelteredAt:(x,z,y)=>w.weatherShelteredAt(x,z,y)},true);w.prepareWeatherSupports();const allStarted=performance.now();w.weather.addSurfaceMeshes(registry);const weatherBefore={snapshot:w.weather.snapshot(),bytes:0};w.weather.root.traverse(o=>{if(o.geometry)weatherBefore.bytes+=bytes(o.geometry);});const allScene=new THREE.Scene();allScene.add(w.weather.root);PLANET.on=true;try{subdivideSceneForPlanet(allScene);}finally{PLANET.on=wasPlanet;}const weatherAfter={triangles:0,bytes:0};w.weather.root.traverse(o=>{if(o.geometry){weatherAfter.bytes+=bytes(o.geometry);if(o.isMesh)weatherAfter.triangles+=(o.geometry.index?.count??o.geometry.attributes.position.count)/3;}});
  assert.equal(weatherBefore.snapshot.seatCaps,46,'all36 outdoor venue seats plus10 beach supports are budgeted');
- assert.ok(weatherBefore.bytes<1_500_000,'all un-subdivided weather geometry stays under1.5MB');
- assert.ok(weatherAfter.bytes<5_000_000&&weatherAfter.triangles<100_000,'actual complete planet geometry stays under5MB/100ktriangles');
+ // Every surface under the sky catches snow (the owner, 2026-11-13): parapets, ledges, cars, cabinets,
+ // tree crowns and ridges joined the roofs, so the fixed allowance grew from 1.5 MB.
+ assert.ok(weatherBefore.bytes<2_000_000,`all un-subdivided weather geometry stays under 2 MB: ${weatherBefore.bytes}`);
+ // Grew with the 2026-11-13 details (5 MB before): still one draw, shown only while snow lies.
+ assert.ok(weatherAfter.bytes<6_500_000&&weatherAfter.triangles<100_000,`actual complete planet geometry stays under 6.5 MB/100k triangles: ${weatherAfter.bytes} bytes, ${weatherAfter.triangles} triangles`);
  const report={registrySources:registry.length,sourceTriangles:result.sourceTriangles,topTriangles:result.topTriangles,snowTriangles:result.triangles,geometryBytes:bytes(result.geometry),authoredExtractionMs:Math.round(elapsed*100)/100,beforePlanet:before,afterPlanet:after,weatherBefore,weatherAfter,fullPreparationMs:Math.round((performance.now()-allStarted)*100)/100,sourceDetails:result.sources,draws:1,textures:0,lights:0};w.weather.dispose();w.weather=undefined;
  await mkdir('art/weather-coverage-20261025',{recursive:true});await writeFile('art/weather-coverage-20261025/world-surfaces-budget.json',JSON.stringify(report,null,2)+'\n');result.geometry.dispose();
 });

@@ -21,7 +21,12 @@ const visualHash=scene=>scene.children.filter(o=>o.isMesh).map(mesh=>{
 test('merged town details expose exact roofs, canopies and outdoor slabs through a one-time CPU registry without changing art or shadow batches',()=>{
  const f=fixture(),baseline=fixture(false),sources=f.scenery.takeSnowSurfaceSources();
  const expected=[...Array.from({length:3},(_,i)=>`coastal-palace-crown-${i+1}`),'coastal-palace-marquee','coastal-shop-canopy',...INLAND_HOUSES.flatMap((_,i)=>['roof','doorhood','doorstep','balcony-1','balcony-2'].map(part=>`coastal-dorm-${i+1}-${part}`)),...Array.from({length:2},(_,i)=>`coastal-gate-pylon-${i+1}`)];
- assert.equal(sources.length,27);assert.deepEqual(sources.map(s=>s.id).sort(),expected.sort());assert.equal(new Set(sources.map(s=>s.id)).size,27);
+ // The roofs, canopies and slabs, exactly as before; and since 2026-11-13 the
+ // tree crowns, fronds, rocks, roof planters and the shore crossbar, as details.
+ const roofs=sources.filter(s=>expected.includes(s.id)),details=sources.filter(s=>!expected.includes(s.id));
+ assert.equal(roofs.length,27);assert.deepEqual(roofs.map(s=>s.id).sort(),expected.sort());assert.equal(new Set(sources.map(s=>s.id)).size,sources.length);
+ assert.ok(details.length>100,`${details.length} details`);
+ for(const s of details)assert.ok(s.id.startsWith('coastal-')&&s.sheltersGround===false&&s.occludes===false,`${s.id} is a town detail`);
  assert.deepEqual(f.scenery.takeSnowSurfaceSources(),[],'draining releases town-owned references');
  assert.deepEqual(visualHash(f.scene),visualHash(baseline.scene),'capturing support references changes no rendered geometry, materials or cast/receive role');
  assert.deepEqual(f.solids,baseline.solids,'collision and route footprints remain exact');
@@ -29,7 +34,7 @@ test('merged town details expose exact roofs, canopies and outdoor slabs through
   assert.equal(source.object.parent,null,'measurement is detached, never an extra scene draw');
   const p=source.object.geometry.attributes.position;assert.ok(p.count>0);assert.ok([...p.array].every(Number.isFinite),'finish must leave the original CPU arrays readable for extraction');
  }
- const result=buildSnowSurfaceMeshes(sources);assert.equal(result.sources.length,27);assert.ok(result.sources.every(s=>s.sourceTriangles>0));
+ const result=buildSnowSurfaceMeshes(roofs);assert.equal(result.sources.length,27);assert.ok(result.sources.every(s=>s.sourceTriangles>0));
  assert.deepEqual(result.sources.filter(s=>s.topTriangles===0).map(s=>s.id).sort(),INLAND_HOUSES.map((_,i)=>`coastal-dorm-${i+1}-doorstep`).sort(),'doorhoods shelter their full doorstep; every exposed roof/slab retains snow');assert.ok(result.triangles<3000);
  const snow=new THREE.Mesh(result.geometry,new THREE.MeshBasicMaterial({side:THREE.DoubleSide}));snow.updateMatrixWorld(true);
  const realTop=(source,x,z)=>new THREE.Raycaster(new THREE.Vector3(x,100,z),new THREE.Vector3(0,-1,0)).intersectObject(source.object,false)[0]?.point.y;

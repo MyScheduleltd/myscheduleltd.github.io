@@ -30,6 +30,11 @@ export interface Ps1PropHost {
   groundAt: (x: number, z: number) => number;
   /** The surface people actually walk on here (paving, road, path), not the bare terrain. */
   surfaceAt: (x: number, z: number) => number;
+  /**
+   * Somewhere for snow to settle (FestivalWeather). A cover keeps the ground
+   * under it clear and stops falling snow and rain; a detail only catches snow.
+   */
+  snowSurface?: (id: string, object: THREE.Object3D, cover: boolean) => void;
 }
 
 /**
@@ -145,6 +150,9 @@ const vendingFace = () => drawnTile(16, 32, (x, row) => {
 
 export class Ps1StreetProps {
   private readonly paint: THREE.BufferGeometry[] = [];
+  /** Awnings and umbrella canopies: the pieces that shelter what is under them from snow and rain. */
+  private readonly covers = new Set<THREE.BufferGeometry>();
+  private readonly snowNames = new Map<string, number>();
   private readonly textured = new Map<THREE.Material, THREE.BufferGeometry[]>();
   private readonly wires: number[] = [];
   private readonly report: Ps1PropReport = { airConditioners: 0, poles: 0, wireSpans: 0, scooters: 0, shutters: 0, windows: 0, lightBoxes: 0, umbrellas: 0, skipped: [], parts: [], lampMaterials: [] };
@@ -354,7 +362,9 @@ export class Ps1StreetProps {
     geometry.rotateY(Math.atan2(nx, nz));
     geometry.translate(x + nx * depth / 2, y - drop / 2, z + nz * depth / 2);
     const list = this.textured.get(this.awningMaterial) ?? [];
-    list.push(geometry.toNonIndexed());
+    const cover = geometry.toNonIndexed();
+    list.push(cover);
+    this.covers.add(cover);
     this.textured.set(this.awningMaterial, list);
     // The valance hanging from the front edge.
     this.panel(this.awningMaterial, width, .45, [x + nx * (depth + .01), y - drop - .2, z + nz * (depth + .01)], normal, width / 4, 1);
@@ -542,6 +552,9 @@ export class Ps1StreetProps {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = name; mesh.castShadow = true; mesh.receiveShadow = true;
     this.host.scene.add(mesh);
+    const count = (this.snowNames.get(name) ?? 0) + 1;
+    this.snowNames.set(name, count);
+    this.host.snowSurface?.(count > 1 ? `${name} ${count}` : name, mesh, true);
     return mesh;
   }
 
@@ -568,6 +581,7 @@ export class Ps1StreetProps {
     canopy.setAttribute('color', new THREE.Float32BufferAttribute(colours3, 3));
     canopy.computeVertexNormals();
     this.paint.push(canopy);
+    this.covers.add(canopy);
     this.host.solid(x, z, .3, .3, base, apex, label);
     this.overhead(x, z, radius * 1.6, radius * 1.6, eave - .05, apex, `${label}-canopy`);
     this.report.umbrellas++;
@@ -585,9 +599,42 @@ export class Ps1StreetProps {
     if (merged) { const mesh = new THREE.Mesh(merged, material); mesh.name = `${label} bulbs`; this.host.scene.add(mesh); }
   }
 
+  /**
+   * Snow on every prop that stands under the sky (the owner, 2026-11-13). The
+   * props are drawn merged, so the weather reads two stand-ins built from the
+   * same pieces, never drawn: the covers, which keep the ground under them
+   * clear, and everything else, which only catches snow.
+   */
+  private registerSnow(): void {
+    if (!this.host.snowSurface) return;
+    const shape = (geometry: THREE.BufferGeometry) => {
+      const flat = geometry.index ? geometry.toNonIndexed() : geometry;
+      const only = new THREE.BufferGeometry();
+      only.setAttribute('position', flat.getAttribute('position').clone());
+      if (flat !== geometry) flat.dispose();
+      return only;
+    };
+    const standIn = (pieces: THREE.BufferGeometry[], name: string) => {
+      if (!pieces.length) return undefined;
+      const shapes = pieces.map(shape), merged = mergeGeometries(shapes, false);
+      shapes.forEach(g => g.dispose());
+      if (!merged) return undefined;
+      const mesh = new THREE.Mesh(merged);
+      mesh.name = name; mesh.visible = false;
+      mesh.updateMatrixWorld(true);
+      return mesh;
+    };
+    const all = [...this.paint, ...[...this.textured.values()].flat()];
+    const covers = standIn(all.filter(g => this.covers.has(g)), 'PS1 street props snow covers');
+    const details = standIn(all.filter(g => !this.covers.has(g)), 'PS1 street props snow details');
+    if (covers) this.host.snowSurface('ps1-street-covers', covers, true);
+    if (details) this.host.snowSurface('ps1-street-details', details, false);
+  }
+
   /** Merge and add everything; call once. */
   finish(): Ps1PropReport {
     const scene = this.host.scene;
+    this.registerSnow();
     if (this.paint.length) {
       const merged = mergeGeometries(this.paint, false);
       this.paint.forEach(g => g.dispose());

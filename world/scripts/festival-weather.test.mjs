@@ -180,8 +180,9 @@ test('weather changes retain bounded buffers and material variants; phone draws 
   assert.deepEqual(materials.map(m => m.version), versions); assert.deepEqual(materials.map(m => m.customProgramCacheKey()), keys);
   assert.equal(f.rain.geometry.drawRange.count, WEATHER_BUDGET.phoneRain * 2);
   assert.equal(f.snow.geometry.drawRange.count, WEATHER_BUDGET.phoneSnow);
-  assert.equal(f.rain.geometry.attributes.position.count, WEATHER_BUDGET.rain * 2);
-  assert.equal(f.snow.geometry.attributes.position.count, WEATHER_BUDGET.snow);
+  // Allocated once for the largest view: the isometric window's caps.
+  assert.equal(f.rain.geometry.attributes.position.count, Math.max(WEATHER_BUDGET.rain, WEATHER_BUDGET.isoRain) * 2);
+  assert.equal(f.snow.geometry.attributes.position.count, Math.max(WEATHER_BUDGET.snow, WEATHER_BUDGET.isoSnow));
   assert.ok(materials.every(m => !m.map)); assert.equal(f.weather.snapshot().extraLights, 0);
   assert.equal(shaderFor(f.ground.material).vertexShader, shaderFor(objects.at(-1).material).vertexShader);
   f.weather.root.name = 'Popcorn concession';
@@ -413,8 +414,8 @@ test('island and worst-case geometry stay under the same phone allocation cap, m
   assert.equal(worst.groundTriangles, 22_098);
   assert.ok(island.groundTriangles > 10_000 && island.groundTriangles < 100_000,'shorelines and hills may refine beyond flat ground while retaining an explicit triangle cap');
   assert.ok(worst.groundBufferBytes + worst.precipitationBufferBytes < 2.5 * 1024 ** 2);
-  assert.equal(worst.precipitationBufferBytes, 42_240);
-  assert.ok(worst.precipitationBufferBytes<50*1024,'all rain and layered-snow attributes stay below 50 KiB');
+  assert.equal(worst.precipitationBufferBytes, 83_920);
+  assert.ok(worst.precipitationBufferBytes<100*1024,'all rain and layered-snow attributes, sized for the isometric caps, stay below 100 KiB');
   const mats=fixture();mats.weather.addSupports(Array.from({length:4},(_,i)=>({...support,id:'measured-mat-'+i,x:i*4,width:2.25,depth:4.3,groundMask:true,heightAt:()=>.12})));
   const caps=mats.weather.root.children.filter(object=>object.name.startsWith('seat-snow-'));
   const matBudget={mats:4,groundMasks:mats.weather.snapshot().groundMasks,maximumGroundMasks:WEATHER_BUDGET.groundMasks,triangles:caps.reduce((n,m)=>n+m.geometry.index.count/3,0),bufferBytes:caps.reduce((n,m)=>n+bytes(m.geometry),0),maskFloatPayloadBytes:WEATHER_BUDGET.groundMasks*6*4};
@@ -422,4 +423,48 @@ test('island and worst-case geometry stay under the same phone allocation cap, m
   const report = { measuredAt: new Date().toISOString(), measurements: [island, worst], matBudget, notes: ['CPU geometry/typed-array budget only; actual GPU frame time and shader linking require browser checks.', 'The production planet subdivision is included separately. Construction/subdivision timing is this Mac, not an iPhone measurement.', 'Existing buildings and roof rejection reduce island snow below this bound.', 'No collision geometry, texture maps, lights or WebGL contexts are created by FestivalWeather.'] };
   await mkdir('art/weather-actions-20261024', { recursive: true });
   await writeFile('art/weather-actions-20261024/weather-geometry-budget.json', JSON.stringify(report, null, 2) + '\n');
+});
+
+// The isometric view sees the whole window at once (the owner, 2026-11-13: snow
+// and rain stopped short of its edges). Flakes and streaks fill it at every
+// zoom, more of them as it grows, within the caps; the perspective views keep
+// their bands round the attendee.
+test('isometric snow and rain fill the whole window, grow with zoom within the caps, and leave perspective alone', () => {
+  const pitch = Math.atan(1 / Math.sqrt(2)), yaw = Math.PI / 4;
+  const camera = half => {
+    const c = new THREE.OrthographicCamera(-half * 1.6, half * 1.6, half, -half, .1, 400);
+    c.position.set(1 + Math.sin(yaw) * Math.cos(pitch) * 34, 34 * Math.sin(pitch), 1 + Math.cos(yaw) * Math.cos(pitch) * 34);
+    c.lookAt(observer); c.updateMatrixWorld(); c.updateProjectionMatrix(); return c;
+  };
+  const cells = (f, view, type) => {
+    const a = (type === 'snow' ? f.snow : f.rain).geometry, p = a.attributes.position, count = a.drawRange.count, step = type === 'snow' ? 1 : 2;
+    const grid = new Set(), point = new THREE.Vector3();
+    for (let i = 0; i < count; i += step) {
+      point.fromBufferAttribute(p, i); if (point.y < -50) continue;
+      point.project(view);
+      if (Math.abs(point.x) > 1 || Math.abs(point.y) > 1) continue;
+      grid.add(`${Math.min(5, Math.floor((point.x + 1) * 3))},${Math.min(5, Math.floor((point.y + 1) * 3))}`);
+    }
+    return { cells: grid.size, count: count / step };
+  };
+  for (const phone of [false, true]) for (const type of ['snow', 'rain']) {
+    const f = fixture(flat, phone); f.weather.setShared(schedule(type));
+    for (let frame = 0; frame < 300; frame++) f.weather.update(1 / 60, observer, now + frame * 17);
+    const near = camera(11); f.weather.update(1 / 60, observer, now + 5200, near);
+    const close = cells(f, near, type);
+    assert.equal(close.cells, 36, `${phone ? 'phone' : 'desktop'} ${type}: every sixth of the window across and down has some (${close.cells}/36)`);
+    const far = camera(33); f.weather.update(1 / 60, observer, now + 5217, far);
+    const wide = cells(f, far, type);
+    assert.equal(wide.cells, 36, `${type} still fills the window zoomed out`);
+    const plain = type === 'snow' ? (phone ? WEATHER_BUDGET.phoneSnow : WEATHER_BUDGET.snow) : (phone ? WEATHER_BUDGET.phoneRain : WEATHER_BUDGET.rain);
+    const cap = type === 'snow' ? (phone ? WEATHER_BUDGET.isoPhoneSnow : WEATHER_BUDGET.isoSnow) : (phone ? WEATHER_BUDGET.isoPhoneRain : WEATHER_BUDGET.isoRain);
+    assert.equal(close.count, plain, 'zoom 1 on a desktop-shaped window uses the plain count');
+    assert.equal(wide.count, cap, 'zoomed out three times it grows to the cap and no further');
+    // Back to a perspective view: the bands round the attendee, as before.
+    const perspective = new THREE.PerspectiveCamera(58, 1.6, .1, 300); perspective.position.set(1, 6, 12); perspective.lookAt(observer); perspective.updateMatrixWorld();
+    f.weather.update(1 / 60, observer, now + 5234, perspective);
+    assert.equal((type === 'snow' ? f.snow : f.rain).geometry.drawRange.count, plain * (type === 'snow' ? 1 : 2));
+    assert.deepEqual(f.weather.snapshot().isometric, { snow: 0, rain: 0 });
+    f.weather.dispose();
+  }
 });

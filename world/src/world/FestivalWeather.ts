@@ -4,7 +4,13 @@ import { buildSnowTerrain, buildSnowSurfaceMeshes, SNOW_SURFACE_BUDGET, type Sno
 
 export const WEATHER_BUDGET = Object.freeze({ rain: 640, snow: 960, phoneRain: 220, phoneSnow: 420, snowBands: 3,
   snowNearRadius: 10, snowMidRadius: 18, snowFarRadius: 29, snowPointSize: .18,
-  grid: 2, thickness: .12, groundMasks: 10, capGrid: .35, capSegments: 24 });
+  grid: 2, thickness: .12, groundMasks: 10, capGrid: .35, capSegments: 24,
+  // The isometric view sees the whole window at once, so precipitation is
+  // spread over it rather than round the attendee, and grows with the view
+  // when zoomed out (the owner, 2026-11-13: same density on screen), capped.
+  isoSnow: 1900, isoPhoneSnow: 800, isoRain: 1280, isoPhoneRain: 440,
+  /** The window's area, in world units, that the plain counts are made for: zoom 1 on a 16:10 desktop. */
+  isoReferenceArea: 11 * 11 * 1.6, isoMargin: .08, isoLowest: .2, isoHighest: 9 });
 const EMPTY: SharedWeather = { version: 1, updatedAt: 0, schedule: [], clearedSeats: [] };
 const CLEAR:WeatherSample=Object.freeze({type:'clear',occurrenceId:null,snowCoverage:0});
 const wrapParticle=(value:number,span:number)=>((value%span)+span)%span;
@@ -34,6 +40,8 @@ export class FestivalWeather {
   private readonly ground: THREE.Mesh;
   private fixedSurfaces?:THREE.Mesh;
   private fixedDetail?:THREE.Mesh;
+  /** Snow riding on something that moves (the ferry), carried as its child. */
+  private readonly moving:Array<{id:string;meshes:THREE.Mesh[]}>=[];
   private authoredShelter?: (x:number,z:number,y:number)=>boolean;
   private surfaceReport:SnowSurfaceReport={sourceTriangles:0,topTriangles:0,triangles:0,sources:[]};
   private readonly terrainReport:{samples:number;cells:number};
@@ -63,15 +71,16 @@ export class FestivalWeather {
     this.ground = new THREE.Mesh(geometry,this.coverMaterial);
     this.ground.name='thin-ground-snow'; this.ground.receiveShadow=true;
     this.ground.userData.dynamic=true; this.root.add(this.ground);
-    const rainPositions=new Float32Array(WEATHER_BUDGET.rain*6);
+    const rainPositions=new Float32Array(Math.max(WEATHER_BUDGET.rain,WEATHER_BUDGET.isoRain)*6);
     const rg=new THREE.BufferGeometry(); rg.setAttribute('position',new THREE.BufferAttribute(rainPositions,3).setUsage(THREE.DynamicDrawUsage));
     this.rain=new THREE.LineSegments(rg,new THREE.LineBasicMaterial({color:0xb3c9d1,transparent:true,opacity:0,depthWrite:false}));
     this.rain.name='ink-rain-streaks'; this.rain.frustumCulled=false; this.rain.userData.dynamic=true;
-    const sg=new THREE.BufferGeometry(); sg.setAttribute('position',new THREE.BufferAttribute(new Float32Array(WEATHER_BUDGET.snow*3),3).setUsage(THREE.DynamicDrawUsage));
+    const flakeCount=Math.max(WEATHER_BUDGET.snow,WEATHER_BUDGET.isoSnow);
+    const sg=new THREE.BufferGeometry(); sg.setAttribute('position',new THREE.BufferAttribute(new Float32Array(flakeCount*3),3).setUsage(THREE.DynamicDrawUsage));
     // Static per-flake variation, shared by all later snowfalls. Near/middle/far
     // bands are interleaved so the smaller phone draw retains every depth.
-    const flakes=new Float32Array(WEATHER_BUDGET.snow*4);
-    for(let i=0;i<WEATHER_BUDGET.snow;i++) {
+    const flakes=new Float32Array(flakeCount*4);
+    for(let i=0;i<flakeCount;i++) {
       const seed=(i*.61803398875)%1,band=i%WEATHER_BUDGET.snowBands;
       flakes.set([.7+seed*.95+(band===0?.45:band===1?.2:.05),seed,(i*.754877666)%1,band===0?.95:band===1?.78:.6],i*4);
     }
@@ -109,7 +118,8 @@ export class FestivalWeather {
         // Fade instead of filling the lens with a huge passing white square.
         float bandRadius=snowFlake.w>.85?${WEATHER_BUDGET.snowNearRadius.toFixed(1)}:snowFlake.w>.69?${WEATHER_BUDGET.snowMidRadius.toFixed(1)}:${WEATHER_BUDGET.snowFarRadius.toFixed(1)};
         vec2 fromObserver=abs(position.xz-snowObserver.xz);
-        float bandFade=1.0-smoothstep(bandRadius*.8,bandRadius,max(fromObserver.x,fromObserver.y));
+        // Isometric flakes fill the window and wrap off-screen: no band edge.
+        float bandFade=isPerspectiveMatrix(projectionMatrix)?1.0-smoothstep(bandRadius*.8,bandRadius,max(fromObserver.x,fromObserver.y)):1.0;
         float lensFade=isPerspectiveMatrix(projectionMatrix)?smoothstep(1.5,4.0,-mvPosition.z)*(1.0-smoothstep(38.0,65.0,-mvPosition.z)):1.0;
         vSnowDepthFade=lensFade*bandFade;
         #include <logdepthbuf_vertex>`);
@@ -128,7 +138,7 @@ export class FestivalWeather {
         diffuseColor.rgb*=iceTint*facet;
         diffuseColor.a*=vSnowShape.w*vSnowDepthFade;`);
     };
-    material.customProgramCacheKey=()=> 'festival-layered-falling-snow-v2-vertex-motion';
+    material.customProgramCacheKey=()=> 'festival-layered-falling-snow-v3-isometric-window';
     return material;
   }
 
@@ -193,6 +203,32 @@ export class FestivalWeather {
       detail.name='authored-detail-snow';detail.receiveShadow=true;detail.userData.dynamic=true;
       this.root.add(detail);this.fixedDetail=detail;
     }
+    this.applyVisibility();
+  }
+
+  /**
+   * Snow on something that moves (the owner, 2026-11-13: the ferry, bobbing).
+   * Built once from the object's sky-facing faces as it stands now, then
+   * carried in its own frame as its child, so it bobs and tilts with it. It
+   * shares the settled snow's material, so it builds up, melts and shows in
+   * step with every other surface. After `addSurfaceMeshes`.
+   */
+  addMovingSurface(id:string,object:THREE.Object3D):void {
+    if(this.disposed||this.moving.some(entry=>entry.id===id))return;
+    object.updateWorldMatrix(true,true);
+    const built=buildSnowSurfaceMeshes([{id,object,sheltersGround:false}]);
+    const toLocal=object.matrixWorld.clone().invert();
+    const material=(this.fixedSurfaces?.material as THREE.Material|undefined)??this.snowMaterial(this.coverage);
+    const meshes:THREE.Mesh[]=[];
+    for(const geometry of [built.geometry,built.detailGeometry]){
+      if(!geometry)continue;
+      if(!(geometry.index?.count??geometry.attributes.position?.count)){geometry.dispose();continue;}
+      geometry.applyMatrix4(toLocal);
+      const mesh=new THREE.Mesh(geometry,material);
+      mesh.name=`moving-snow-${id}`;mesh.receiveShadow=true;mesh.userData.dynamic=true;
+      object.add(mesh);meshes.push(mesh);
+    }
+    this.moving.push({id,meshes});
     this.applyVisibility();
   }
 
@@ -277,13 +313,48 @@ export class FestivalWeather {
       this.ground.visible=this.warming||this.coverage.value>.001;
       if(this.fixedSurfaces)this.fixedSurfaces.visible=this.warming||this.coverage.value>.001;
       if(this.fixedDetail)this.fixedDetail.visible=this.warming||this.coverage.value>.001;
+      for(const entry of this.moving)for(const mesh of entry.meshes)mesh.visible=this.warming||this.coverage.value>.001;
       for(const cap of this.caps)cap.mesh.visible=this.warming||cap.uniform.value>.001;
     }
     this.rain.visible=this.warming||this.rainMix>.005;
     this.snow.visible=this.warming||this.snowMix>.005;
   }
+  /**
+   * The isometric camera's window, as world-space axes and half extents, or
+   * nothing for a perspective view. Precipitation is laid across it.
+   */
+  private isometricWindow(view?:THREE.Camera):{origin:THREE.Vector3;right:THREE.Vector3;up:THREE.Vector3;forward:THREE.Vector3;halfWidth:number;halfHeight:number}|undefined {
+    const camera=view as (THREE.Camera&{isOrthographicCamera?:boolean;left:number;right:number;top:number;bottom:number;zoom:number})|undefined;
+    if(!camera?.isOrthographicCamera)return undefined;
+    camera.updateMatrixWorld();
+    const e=camera.matrixWorld.elements,zoom=camera.zoom||1;
+    const forward=this.isoForward.set(-e[8],-e[9],-e[10]).normalize();
+    if(forward.y>-.05)return undefined;
+    return {origin:this.isoOrigin.set(e[12],e[13],e[14]),right:this.isoRight.set(e[0],e[1],e[2]).normalize(),up:this.isoUp.set(e[4],e[5],e[6]).normalize(),forward,
+      halfWidth:Math.abs(camera.right-camera.left)/(2*zoom),halfHeight:Math.abs(camera.top-camera.bottom)/(2*zoom)};
+  }
+  private readonly isoOrigin=new THREE.Vector3();
+  private readonly isoRight=new THREE.Vector3();
+  private readonly isoUp=new THREE.Vector3();
+  private readonly isoForward=new THREE.Vector3();
+  private readonly isoPoint=new THREE.Vector3();
+  private lastIsometric={snow:0,rain:0};
+
+  /**
+   * A point on the isometric frame at height `height` above `base`. `u` and
+   * `v` run -1..1 across the frame; the depth along the view is whatever puts
+   * the point at that height, so it sits in the world among the buildings
+   * (and behind them where it should) wherever it is on screen.
+   */
+  private onWindow(frame:NonNullable<ReturnType<FestivalWeather['isometricWindow']>>,u:number,v:number,base:number,height:number):THREE.Vector3 {
+    const {origin,right,up,forward,halfWidth,halfHeight}=frame;
+    const across=u*halfWidth,rise=v*halfHeight;
+    const depth=(base+height-origin.y-right.y*across-up.y*rise)/forward.y;
+    return this.isoPoint.copy(origin).addScaledVector(right,across).addScaledVector(up,rise).addScaledVector(forward,depth);
+  }
+
   /** Kept visible through the existing sign-in shader warmup, then hidden when clear. */
-  update(delta:number,observer:THREE.Vector3,now=this.now()): void {
+  update(delta:number,observer:THREE.Vector3,now=this.now(),view?:THREE.Camera): void {
     if(this.disposed)return;
     this.sample=this.shared.schedule.length?weatherAt(this.shared.schedule,now):CLEAR;
     const active=this.shared.schedule.find(p=>p.startsAt<=now&&p.endsAt>now);
@@ -309,6 +380,9 @@ export class FestivalWeather {
     (this.rain.material as THREE.LineBasicMaterial).opacity=this.rainMix*.55;
     (this.snow.material as THREE.PointsMaterial).opacity=this.snowMix*.9;
     const time=this.snowTime.value;
+    const frame=this.isometricWindow(view);
+    if(frame&&(this.rain.visible||this.snow.visible)) { this.isometricPrecipitation(frame,observer.y,time); return; }
+    this.lastIsometric.snow=this.lastIsometric.rain=0;
     if(this.rain.visible) {
       const a=this.rain.geometry.attributes.position as THREE.BufferAttribute;
       const count=this.phone?WEATHER_BUDGET.phoneRain:WEATHER_BUDGET.rain;
@@ -344,11 +418,58 @@ export class FestivalWeather {
       a.needsUpdate=true;this.snow.geometry.setDrawRange(0,count);
     }
   }
-  snapshot(): unknown { return {...this.sample,cloudiness:this.cloud,rain:this.rainMix,snow:this.snowMix,settledDepth:this.coverage.value*WEATHER_BUDGET.thickness,maximumSettledDepth:WEATHER_BUDGET.thickness,groundTriangles:(this.ground.geometry.index?.count??this.ground.geometry.attributes.position?.count??0)/3,terrain:this.terrainReport,authoredSurfaces:this.surfaceReport,contactLift:SNOW_SURFACE_BUDGET.contactLift,seatCaps:this.caps.length,groundMasks:this.maskCount.value,
+  /**
+   * Isometric snow and rain, laid across the whole frame (the owner,
+   * 2026-11-13: in the isometric view they stopped short of the edges). Each
+   * flake keeps a place across the frame and a height above the attendee's
+   * ground; it moves down the screen at its falling speed and wraps round
+   * just outside the frame, so none appears or vanishes in view. More of
+   * them as the frame grows, up to the isometric caps.
+   */
+  private isometricPrecipitation(frame:NonNullable<ReturnType<FestivalWeather['isometricWindow']>>,base:number,time:number):void {
+    const margin=WEATHER_BUDGET.isoMargin,span=2+2*margin;
+    const scale=Math.max(1,(frame.halfWidth*frame.halfHeight)/WEATHER_BUDGET.isoReferenceArea);
+    const lift=Math.max(.2,frame.up.y);
+    const shelter=(p:THREE.Vector3)=>this.authoredShelter?.(p.x,p.z,p.y)??this.groundQuery.shelteredAt(p.x,p.z,p.y);
+    if(this.rain.visible) {
+      const a=this.rain.geometry.attributes.position as THREE.BufferAttribute;
+      const count=Math.min(this.phone?WEATHER_BUDGET.isoPhoneRain:WEATHER_BUDGET.isoRain,Math.round((this.phone?WEATHER_BUDGET.phoneRain:WEATHER_BUDGET.rain)*scale));
+      for(let i=0;i<count;i++) {
+        const seed=(i*.61803398875)%1,depth=(i*.754877666)%1;
+        const u=-1-margin+wrapParticle(i*.137+time*1.8/frame.halfWidth,span);
+        const v=-1-margin+wrapParticle(seed*span-time*14*lift/frame.halfHeight,span);
+        const p=this.onWindow(frame,u,v,base,WEATHER_BUDGET.isoLowest+depth*(WEATHER_BUDGET.isoHighest-WEATHER_BUDGET.isoLowest));
+        const hidden=shelter(p);
+        const y=hidden?-100:p.y;
+        a.setXYZ(i*2,p.x,y,p.z);a.setXYZ(i*2+1,p.x-.09,y+.65,p.z+.02);
+      }
+      a.needsUpdate=true;this.rain.geometry.setDrawRange(0,count*2);this.lastIsometric.rain=count;
+    } else this.lastIsometric.rain=0;
+    if(this.snow.visible) {
+      const a=this.snow.geometry.attributes.position as THREE.BufferAttribute;
+      const count=Math.min(this.phone?WEATHER_BUDGET.isoPhoneSnow:WEATHER_BUDGET.isoSnow,Math.round((this.phone?WEATHER_BUDGET.phoneSnow:WEATHER_BUDGET.snow)*scale));
+      const gust=Math.sin(time*.19)*1.5;
+      for(let i=0;i<count;i++) {
+        const seed=(i*.61803398875)%1,depth=(i*.754877666)%1,band=i%WEATHER_BUDGET.snowBands;
+        // The same falling speeds and sideways drift as round the attendee.
+        const fall=1.55+seed*1.9+band*.2;
+        const drift=time*(.75+band*.12)+gust+Math.sin(time*.43+seed*6.28)*.45+Math.sin(time*.7+i)*.65;
+        const u=-1-margin+wrapParticle(i*.0917+drift/frame.halfWidth,span);
+        const v=-1-margin+wrapParticle(seed*span*7.31-time*fall*lift/frame.halfHeight,span);
+        const p=this.onWindow(frame,u,v,base,WEATHER_BUDGET.isoLowest+depth*(WEATHER_BUDGET.isoHighest-WEATHER_BUDGET.isoLowest));
+        a.setXYZ(i,p.x,shelter(p)?-100:p.y,p.z);
+      }
+      a.needsUpdate=true;this.snow.geometry.setDrawRange(0,count);this.lastIsometric.snow=count;
+    } else this.lastIsometric.snow=0;
+  }
+
+  snapshot(): unknown { return {...this.sample,isometric:{...this.lastIsometric},cloudiness:this.cloud,rain:this.rainMix,snow:this.snowMix,settledDepth:this.coverage.value*WEATHER_BUDGET.thickness,maximumSettledDepth:WEATHER_BUDGET.thickness,groundTriangles:(this.ground.geometry.index?.count??this.ground.geometry.attributes.position?.count??0)/3,terrain:this.terrainReport,authoredSurfaces:this.surfaceReport,contactLift:SNOW_SURFACE_BUDGET.contactLift,seatCaps:this.caps.length,groundMasks:this.maskCount.value,
     snowfall:{depthBands:WEATHER_BUDGET.snowBands,flakes:this.phone?WEATHER_BUDGET.phoneSnow:WEATHER_BUDGET.snow,pointSize:WEATHER_BUDGET.snowPointSize},extraLights:0}; }
   dispose(): void {
     if(this.disposed)return;
     this.disposed=true;this.root.removeFromParent();
+    for(const entry of this.moving)for(const mesh of entry.meshes){mesh.removeFromParent();mesh.geometry.dispose();}
+    this.moving.length=0;
     const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>();
     this.root.traverse(object=>{
       const drawable=object as THREE.Mesh;

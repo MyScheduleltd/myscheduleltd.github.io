@@ -100,6 +100,8 @@ const yawOf = (o: THREE.Object3D) => {
 
 export class RooftopBand {
   readonly group = new THREE.Group();
+  /** The stage and the bonfire with its benches: fixed furniture, for snow to settle on (FestivalWeather). */
+  props: THREE.Object3D[] = [];
   private musicians: Musician[] = [];
   private resting: THREE.Object3D[] = [];
   private flames?: THREE.Group;
@@ -152,6 +154,7 @@ export class RooftopBand {
     };
     place(stage.scene, this.stageAt);
     place(bonfire.scene, this.fireAt);
+    this.props = [stage.scene, bonfire.scene];
     for (const scene of [stage.scene, bonfire.scene]) scene.traverse(o => {
       if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; }
       if (o.name.startsWith('rest-')) this.resting.push(o);
