@@ -104,7 +104,6 @@ export function patchNarrative(once, edit) {
     `    const normal = this.getHomeStageDefs()
       .filter(stage => STAGE_SELECT_STAGE_IDS.includes(stage.id))
       .map(stage => stage.id === "finale-stage1" ? { ...stage, title: this.tr("Ending credits", "片尾字幕") } : stage);`);
-  once('          ? "找梯子回房間"', '          ? this.tr("Find the ladder back to the bedroom", "找梯子回房間")');
   once('levelName: "Finale Ending",\n        levelLabel: "FINALE",',
     'levelName: "Finale Ending",\n        levelLabel: "BONUS",');
 }

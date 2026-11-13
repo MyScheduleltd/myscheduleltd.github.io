@@ -35,7 +35,6 @@ async function open(browser, { phone = false, language = 'en', routeAudio } = {}
   page.on('pageerror', error => errors.push(String(error)));
   page.on('request', request => requests.push(request.url()));
   page.on('download', download => downloads.push(download));
-  if (routeAudio) await page.route('**/dr-beauty-private-message.m4a*', routeAudio);
   await page.goto(new URL('moth/staff/?device=' + (phone ? 'phone' : 'desktop'), base).href, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, { timeout: 60000 });
   await page.keyboard.press('Shift');
@@ -46,6 +45,17 @@ async function open(browser, { phone = false, language = 'en', routeAudio } = {}
   }, language);
   await page.waitForFunction(() => bobbyGame.state === 'level4' && bobbyGame.level4Rail === 'lower'
     && bobbyGame.memeChestSheet && !bobbyGame.levelLoadingPresentation, undefined, { timeout: 90000 });
+  // Fault cases below exercise the reward modal's recovery. Enter the room
+  // with valid preloaded bytes first, then simulate a lost recording copy.
+  if (routeAudio) {
+    await page.route('**/dr-beauty-private-message.m4a*', routeAudio);
+    await page.evaluate(async () => {
+      const game = bobbyGame;
+      const recording = await game.memeRecording;
+      if (recording?.url) URL.revokeObjectURL(recording.url);
+      game.memeRecording = null;
+    });
+  }
   return { context, page, errors, requests, downloads };
 }
 

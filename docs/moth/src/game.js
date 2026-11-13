@@ -1307,30 +1307,16 @@ function getTutorialRhythmDemoFrame(kind, elapsed) {
   return { hold, approach, duration, time, pressed, action };
 }
 
-function drawTutorialKeycap(target, button, x, y, size, pressed) {
-  const half = size / 2;
-  const cut = size * 0.22;
-  const faceY = y + (pressed ? 2 : 0);
-  const octagon = (radius, corner, offset) => [
-    [x - radius + corner, faceY - radius + offset],
-    [x + radius - corner, faceY - radius + offset],
-    [x + radius, faceY - radius + corner + offset],
-    [x + radius, faceY + radius - corner + offset],
-    [x + radius - corner, faceY + radius + offset],
-    [x - radius + corner, faceY + radius + offset],
-    [x - radius, faceY + radius - corner + offset],
-    [x - radius, faceY - radius + corner + offset]
-  ];
-  target.fillStyle = "#0e0d11";
-  pixelPoly(target, octagon(half + 3, cut + 1, 3));
-  target.fillStyle = pressed ? "#a06b11" : "#795117";
-  pixelPoly(target, octagon(half, cut, 3));
-  target.fillStyle = pressed ? "#fff1aa" : "#edbd33";
-  pixelPoly(target, octagon(half, cut, 0));
-  target.fillStyle = pressed ? "#f5cc52" : "#bf891d";
-  pixelPoly(target, octagon(half - 3, cut - 1, 0));
-  target.fillStyle = pressed ? "#302315" : "#fff4ce";
-  drawCentredGlyph(target, button, x, faceY, MOTH_RHYTHM_HEAD.font);
+function drawTutorialKeycap(target, x, y, size, pressed) {
+  const sheet = tutorialDeckButtons;
+  if (!sheet) return;
+  const w = sheet.naturalWidth / 4;
+  const h = sheet.naturalHeight / 2;
+  // The T column and pressed row are the same frames the touch deck displays.
+  target.save();
+  target.imageSmoothingEnabled = false;
+  target.drawImage(sheet, w * 2, pressed ? h : 0, w, h, x - size / 2, y - size / 2, size, size);
+  target.restore();
 }
 
 function drawTutorialRhythmDemo(target, kind, rect, elapsed) {
@@ -1393,19 +1379,25 @@ function drawTutorialRhythmDemo(target, kind, rect, elapsed) {
     target.restore();
   }
 
-  // The demo uses the live note art, including the remaining part of a hold.
+  // Keep the spent tail attached to the head while both slide past the
+  // line and fade together. Only the unplayed section is highlighted.
   const held = hold && pressed;
   const completed = time >= 0;
-  if (hold && time < duration) {
-    drawRhythmHoldTail(target, {
-      x: headX, endX: tailX, y: railY, hitX: cursorX, button, held, completed
-    }, scale);
-  }
-  if (time < (hold ? duration + 0.28 : 0.42)) {
+  const finish = hold ? duration : 0.12;
+  const fade = Math.max(0, 1 - Math.max(0, time - finish) / 0.42);
+  if (fade > 0) {
+    target.save();
+    target.globalAlpha *= fade;
+    if (hold) {
+      drawRhythmHoldTail(target, {
+        x: headX, endX: tailX, y: railY, hitX: cursorX, button, held, completed
+      }, scale);
+    }
     drawRhythmNoteHead(target, { x: headX, y: railY, button, held, completed }, scale);
-  }
-  if (held && headX + MOTH_RHYTHM_HEAD.radius * scale < railLeft) {
-    drawRhythmHoldMarker(target, cursorX, railY, button, scale);
+    if (held && headX + MOTH_RHYTHM_HEAD.radius * scale < railLeft) {
+      drawRhythmHoldMarker(target, cursorX, railY, button, scale);
+    }
+    target.restore();
   }
   const cue = calculateRhythmTimingCue({ status: completed ? "perfect" : "pending", time: 0 }, time, 0);
   if (cue) drawRhythmTimingRing(target, headX, railY, cue, scale);
@@ -1417,7 +1409,7 @@ function drawTutorialRhythmDemo(target, kind, rect, elapsed) {
   target.lineWidth = 1;
   target.strokeRect(x + w - keyColumn + 3, y + 7, keyColumn - 10, h - 14);
   const keyX = x + w - (keyColumn + 4) / 2;
-  drawTutorialKeycap(target, button, keyX, y + h * 0.37, Math.round(h * 0.38), pressed);
+  drawTutorialKeycap(target, keyX, y + h * 0.34, Math.round(h * 0.58), pressed);
   target.fillStyle = pressed ? "#ffe8a6" : "#f3ead0";
   target.textAlign = "center";
   target.textBaseline = "middle";
@@ -4574,11 +4566,11 @@ for (const level of this.config.secretLevels || []) {
   // of the win (which run as practice).
   hasLevel4MemeChest() {
     const flags = this.progress?.flags || {};
-    return this.state === "level4" && Boolean(this.debugLevel4Won || (!this.freePlay && flags.level4BossDefeated));
+    return Boolean(this.debugLevel4Won || (!this.freePlay && flags.level4BossDefeated));
   }
 
   isLevel4NearMemeChest() {
-    return this.level4Rail === "lower" && this.hasLevel4MemeChest() && !this.memeView
+    return this.state === "level4" && this.level4Rail === "lower" && this.hasLevel4MemeChest() && !this.memeView
       && Math.abs((this.sewerPlayer?.x ?? -999) - MEME_CHEST.x) <= 96;
   }
 
@@ -23286,8 +23278,8 @@ for (const level of this.config.secretLevels || []) {
         draw: () => this.drawLevel4HiddenChest()
       });
     }
-    if (this.level4Rail === "lower" && this.hasLevel4MemeChest()) {
-      drawables.push({ y: (side.floorY ?? 650) - 1, draw: () => this.drawLevel4MemeChest() });
+    if (this.hasLevel4MemeChest()) {
+      drawables.push({ y: MEME_CHEST.y, draw: () => this.drawLevel4MemeChest() });
     }
     drawables.push({
       y: bobby.y,
@@ -23307,36 +23299,36 @@ for (const level of this.config.secretLevels || []) {
     this.floaters.forEach((floater) => drawFloater(this.ctx, floater));
     this.renderCinematicScene(this.ctx, VIEW_W, VIEW_H, "bedroom");
     if (!frozen) {
+      const lower = this.level4Rail === "lower";
       const nearLadder = this.isLevel4NearLadder();
       const nearLeftDoor = this.isLevel4NearLeftDoor();
-      const nearChest = this.level4Rail === "lower" && this.chest?.revealed && this.isNearChest();
+      const nearChest = lower && this.chest?.revealed && this.isNearChest();
       const nearMemeChest = this.isLevel4NearMemeChest();
-      const prompt = nearMemeChest
-        ? this.tr("O OPEN THE CHEST", "O 打開寶箱")
-        : this.chest?.state === "revealing"
-        ? "牆後有東西正在出現..."
-        : nearChest
-          ? "O 開啟隱藏寶箱"
-          : nearLeftDoor
-            ? (this.canExitLevel4ToLevel5()
-              ? (stage.exits?.leftDoor?.prompt || "O 離開房間")
-              : "先陪 Bonita 完成挑戰")
-          : nearLadder
-        ? (this.level4Rail === "lower"
-          ? (this.getLevel4Stage1Config().exits?.ladderUp?.prompt || "O 爬上梯子")
-          : (this.getLevel4Stage1Config().exits?.ladderDown?.prompt || "O 爬下梯子"))
-        : this.level4Rail === "lower"
-          ? this.tr("Find the ladder back to the bedroom", "找梯子回房間")
-          // Like Level 3's: who to go to, then the way out.
-          : (this.progress?.flags?.level4BossDefeated || this.debugLevel4Won) && this.level4BossEncountered
-            ? (this.hasLevel4MemeChest() && this.memeChest?.state === "closed" ? this.tr("A chest appeared in the basement", "地下室出現了寶箱") : "")
-            : "靠近Bonita";
-      if (prompt) drawObjectivePrompt(
+      const hasMemeChest = this.hasLevel4MemeChest();
+      const opened = this.memeChest?.state === "open";
+      let prompt = lower ? this.tr("Find the ladder", "找梯子回房間") : this.tr("Approach Bonita", "靠近 Bonita");
+      if (hasMemeChest) {
+        if (opened) prompt = lower ? this.tr("Climb up, then exit left", "爬上梯子，再往左離開")
+          : this.tr("Use the left door", "從左門離開");
+        else prompt = lower ? this.tr("Find the chest", "找寶箱") : this.tr("Chest in basement", "地下室有寶箱");
+      }
+      if (nearLadder && !(hasMemeChest && opened && !lower)) {
+        if (hasMemeChest && opened) prompt = this.tr("O: Climb up, then exit left", "O 爬上梯子，再往左離開");
+        else if (hasMemeChest && !lower) prompt = this.tr("O: Climb down to chest", "O 爬下梯子找寶箱");
+        else prompt = lower ? this.tr("O: Climb up", "O 爬上梯子") : this.tr("O: Climb down", "O 爬下梯子");
+      }
+      if (nearLeftDoor) {
+        const won = (this.progress?.flags?.level4BossDefeated || this.debugLevel4Won);
+        prompt = won ? this.tr("O: Leave room", "O 離開房間") : this.tr("Finish Bonita’s challenge", "先陪 Bonita 完成挑戰");
+      }
+      if (this.chest?.state === "revealing") prompt = this.tr("Something behind the wall…", "牆後有東西正在出現…");
+      else if (nearChest) prompt = this.tr("O: Open hidden chest", "O 開啟隱藏寶箱");
+      if (nearMemeChest && !opened) prompt = this.tr("O: Open chest", "O 打開寶箱");
+      drawObjectivePrompt(
         this.ctx,
         prompt,
         nearMemeChest || nearChest || nearLadder || nearLeftDoor || this.chest?.state === "revealing" ? "#ffd36c" : "#8fe8ff",
-        this.time,
-        VIEW_H - 132
+        this.time
       );
       this.renderPocketInterface();
       if (this.chest?.menuOpen) this.renderChestMenu();
@@ -28472,16 +28464,19 @@ for (const [index, src] of ["assets/sprites/ui/film-grain.png","assets/ui/mobile
       image.onload = async () => {
         try {
           if (typeof image.decode === 'function') await image.decode();
-          resolve(url);
+          resolve({ url, image });
         } catch (error) {
-          if (image.complete && image.naturalWidth) resolve(url);
+          if (image.complete && image.naturalWidth) resolve({ url, image });
           else { URL.revokeObjectURL(url); reject(error); }
         }
       };
       image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Interface artwork could not be decoded')); };
       image.src = url;
     }))
-    .then(url => document.documentElement.style.setProperty('--moth-art-' + index, 'url("' + url + '")'));
+    .then(({ url, image }) => {
+      document.documentElement.style.setProperty('--moth-art-' + index, 'url("' + url + '")');
+      if (src === "assets/ui/mobile_moth_buttons_20261017/sheet.webp?v=snes-20261018a") tutorialDeckButtons = image;
+    });
   // The title can render immediately; entering a level waits for these
   // essential deck textures, including their first image decode.
   interfaceAssetRequests.push(ready);

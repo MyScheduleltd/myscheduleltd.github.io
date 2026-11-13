@@ -60,13 +60,42 @@ try {
           assert.deepEqual(layout, { demo: index === 2 ? 'tap' : 'hold', scroll: 0 }, `${device} ${language} fits the full tutorial text above the demo`);
         }
         await page.screenshot({ path: path.join(out, `${device}-${language}-rules-${index + 1}.png`), fullPage: true });
-        if (index === 3) {
-          await page.evaluate(elapsed => {
-            const g = bobbyGame;
-            g.dialogueScroll.rhythmDemoStart = g.time - elapsed;
-            g.render(); g.renderTallScreen();
-          }, MOTH_RHYTHM_RING.lead + 0.22 + 0.4);
-          await page.screenshot({ path: path.join(out, `${device}-${language}-demo-holding.png`), fullPage: true });
+        if (index === 2 || index === 3) {
+          const demo = index === 2 ? 'tap' : 'hold';
+          const afterHit = demo === 'tap' ? 0.06 : 0.4;
+          const frames = await page.evaluate(({ demo, lead, afterHit }) => {
+            const ctx = document.createElement('canvas').getContext('2d');
+            const frames = [];
+            let sprite, tail;
+            ctx.drawImage = (image, sx, sy, sw, sh) => {
+              if (image === tutorialDeckButtons) sprite = { sx, sy, sw, sh };
+            };
+            const stroke = ctx.stroke;
+            ctx.stroke = function() {
+              if (this.lineCap === 'round' && this.lineWidth > 6 && this.strokeStyle === '#16171b') tail = true;
+              stroke.call(this);
+            };
+            for (const time of [-0.4, afterHit, demo === 'hold' ? 1.28 : 0.3]) {
+              sprite = null; tail = false;
+              drawTutorialRhythmDemo(ctx, demo, { x: 0, y: 0, w: 440, h: 75 }, lead + 0.22 + time);
+              frames.push({ sprite, tail });
+            }
+            return frames;
+          }, { demo, lead: MOTH_RHYTHM_RING.lead, afterHit });
+          assert.deepEqual(frames.map(frame => frame.sprite), [0, 256, 0].map(sy => ({ sx: 512, sy, sw: 256, sh: 256 })),
+            'Tap and hold use the touch deck T sprite in both states');
+          assert.deepEqual(frames.map(frame => frame.tail), [demo === 'hold', demo === 'hold', demo === 'hold'],
+            'The hold tail remains connected during the release animation');
+          if (demo === 'hold') {
+            for (const [name, time] of [['holding', afterHit], ['release', 1.28]]) {
+              await page.evaluate(elapsed => {
+                const g = bobbyGame;
+                g.dialogueScroll.rhythmDemoStart = g.time - elapsed;
+                g.render(); g.renderTallScreen();
+              }, MOTH_RHYTHM_RING.lead + 0.22 + time);
+              await page.screenshot({ path: path.join(out, `${device}-${language}-demo-${name}.png`), fullPage: true });
+            }
+          }
         }
       }
       await page.evaluate(() => {

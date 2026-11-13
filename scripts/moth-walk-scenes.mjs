@@ -102,15 +102,39 @@ export function patchWalkScenes(once, edit) {
     '      if (this.progress && !this.freePlay) {\n        this.progress.latestCollectedSongs = this.normalizeCollectedSongs(this.collectedSongs);\n        this.saveProgress();');
   // Level 4's basement chest.
   once('    if (this.level4Rail === "lower" && this.chest?.revealed) {\n      drawables.push({\n        y: stage.hiddenChest?.y ?? 668,\n        draw: () => this.drawLevel4HiddenChest()\n      });\n    }\n',
-    '    if (this.level4Rail === "lower" && this.chest?.revealed) {\n      drawables.push({\n        y: stage.hiddenChest?.y ?? 668,\n        draw: () => this.drawLevel4HiddenChest()\n      });\n    }\n    if (this.level4Rail === "lower" && this.hasLevel4MemeChest()) {\n      drawables.push({ y: (side.floorY ?? 650) - 1, draw: () => this.drawLevel4MemeChest() });\n    }\n');
-  once('      const prompt = this.chest?.state === "revealing"\n', '      const nearMemeChest = this.isLevel4NearMemeChest();\n      const prompt = nearMemeChest\n        ? this.tr("O OPEN THE CHEST", "O 打開寶箱")\n        : this.chest?.state === "revealing"\n');
-  // The post-win reminder announces an unopened chest, without repeating a
-  // direction to leave. Once collected there is no default instruction bar;
-  // the actual door, ladder and chest still display their contextual O action.
-  once('            ? "往左離開"\n', '            ? (this.hasLevel4MemeChest() && this.memeChest?.state === "closed" ? this.tr("A chest appeared in the basement", "地下室出現了寶箱") : "")\n');
-  once('        nearChest || nearLadder || nearLeftDoor || this.chest?.state === "revealing" ? "#ffd36c" : "#8fe8ff",',
-    '        nearMemeChest || nearChest || nearLadder || nearLeftDoor || this.chest?.state === "revealing" ? "#ffd36c" : "#8fe8ff",');
-  once('      drawObjectivePrompt(\n        this.ctx,\n        prompt,\n        nearMemeChest ||', '      if (prompt) drawObjectivePrompt(\n        this.ctx,\n        prompt,\n        nearMemeChest ||');
+    '    if (this.level4Rail === "lower" && this.chest?.revealed) {\n      drawables.push({\n        y: stage.hiddenChest?.y ?? 668,\n        draw: () => this.drawLevel4HiddenChest()\n      });\n    }\n    if (this.hasLevel4MemeChest()) {\n      drawables.push({ y: MEME_CHEST.y, draw: () => this.drawLevel4MemeChest() });\n    }\n');
+  edit('      const nearLadder = this.isLevel4NearLadder();', '      this.renderPocketInterface();', () => `      const lower = this.level4Rail === "lower";
+      const nearLadder = this.isLevel4NearLadder();
+      const nearLeftDoor = this.isLevel4NearLeftDoor();
+      const nearChest = lower && this.chest?.revealed && this.isNearChest();
+      const nearMemeChest = this.isLevel4NearMemeChest();
+      const hasMemeChest = this.hasLevel4MemeChest();
+      const opened = this.memeChest?.state === "open";
+      let prompt = lower ? this.tr("Find the ladder", "找梯子回房間") : this.tr("Approach Bonita", "靠近 Bonita");
+      if (hasMemeChest) {
+        if (opened) prompt = lower ? this.tr("Climb up, then exit left", "爬上梯子，再往左離開")
+          : this.tr("Use the left door", "從左門離開");
+        else prompt = lower ? this.tr("Find the chest", "找寶箱") : this.tr("Chest in basement", "地下室有寶箱");
+      }
+      if (nearLadder && !(hasMemeChest && opened && !lower)) {
+        if (hasMemeChest && opened) prompt = this.tr("O: Climb up, then exit left", "O 爬上梯子，再往左離開");
+        else if (hasMemeChest && !lower) prompt = this.tr("O: Climb down to chest", "O 爬下梯子找寶箱");
+        else prompt = lower ? this.tr("O: Climb up", "O 爬上梯子") : this.tr("O: Climb down", "O 爬下梯子");
+      }
+      if (nearLeftDoor) {
+        const won = this.progress?.flags?.level4BossDefeated;
+        prompt = won ? this.tr("O: Leave room", "O 離開房間") : this.tr("Finish Bonita’s challenge", "先陪 Bonita 完成挑戰");
+      }
+      if (this.chest?.state === "revealing") prompt = this.tr("Something behind the wall…", "牆後有東西正在出現…");
+      else if (nearChest) prompt = this.tr("O: Open hidden chest", "O 開啟隱藏寶箱");
+      if (nearMemeChest && !opened) prompt = this.tr("O: Open chest", "O 打開寶箱");
+      drawObjectivePrompt(
+        this.ctx,
+        prompt,
+        nearMemeChest || nearChest || nearLadder || nearLeftDoor || this.chest?.state === "revealing" ? "#ffd36c" : "#8fe8ff",
+        this.time
+      );
+      this.renderPocketInterface();`);
   once('  tryLevel4Interact() {\n', '  tryLevel4Interact() {\n    if (this.isLevel4NearMemeChest()) {\n      this.openLevel4MemeChest();\n      return;\n    }\n');
   once('      return (this.level4Rail === "lower" && this.chest?.revealed && this.isNearChest())\n', '      return this.isLevel4NearMemeChest()\n        || (this.level4Rail === "lower" && this.chest?.revealed && this.isNearChest())\n');
   once('  updateLevel4(dt) {\n', '  updateLevel4(dt) {\n    this.updateLevel4MemeChest();\n');
@@ -139,11 +163,11 @@ export const WALK_SCENE_METHODS = `
   // of the win (which run as practice).
   hasLevel4MemeChest() {
     const flags = this.progress?.flags || {};
-    return this.state === "level4" && Boolean(this.debugLevel4Won || (!this.freePlay && flags.level4BossDefeated));
+    return Boolean(this.debugLevel4Won || (!this.freePlay && flags.level4BossDefeated));
   }
 
   isLevel4NearMemeChest() {
-    return this.level4Rail === "lower" && this.hasLevel4MemeChest() && !this.memeView
+    return this.state === "level4" && this.level4Rail === "lower" && this.hasLevel4MemeChest() && !this.memeView
       && Math.abs((this.sewerPlayer?.x ?? -999) - MEME_CHEST.x) <= 96;
   }
 
