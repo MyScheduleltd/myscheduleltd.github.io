@@ -315,14 +315,14 @@ test('the world independently refuses a locked session and forwards state to the
   const source = await readFile('src/world/FestivalWorld.ts', 'utf8');
   const tree = ts.createSourceFile('FestivalWorld.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const worldClass = tree.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'FestivalWorld');
-  const names = new Set(['setArcadeLocked', 'startArcadeGame', 'beginArcadeView']);
+  const names = new Set(['setArcadeLocked', 'startArcadeGame', 'beginArcadeView', 'cabinetSnowAside']);
   const members = worldClass.members.filter(node => node.name && names.has(node.name.getText(tree)));
   assert.equal(members.length, names.size);
   const code = ts.transpileModule(`class WorldReleaseFixture { ${members.map(node => node.getText(tree)).join('\n')} }`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText + '\nWorldReleaseFixture;';
   let created = 0, mounted = 0, stopped = 0;
-  const World = runInNewContext(code, { ARCADE_TITLES, MothArcadeSession: class {
+  const World = runInNewContext(code, { ARCADE_TITLES, ARCADE_SNOW: { moth: 'moth-arcade-cabinet', escape: 'escape-arcade-cabinet' }, MothArcadeSession: class {
     constructor() { created++; } mount() { mounted++; }
   } });
   const world = new World(), locks = [];
@@ -366,11 +366,11 @@ test('M.O.T.H\'s lock never closes 逃脫我的美麗, in the interface or in th
   const source = await readFile('src/world/FestivalWorld.ts', 'utf8');
   const tree = ts.createSourceFile('FestivalWorld.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const worldClass = tree.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'FestivalWorld');
-  const names = new Set(['setArcadeLocked', 'startArcadeGame', 'beginArcadeView']);
+  const names = new Set(['setArcadeLocked', 'startArcadeGame', 'beginArcadeView', 'cabinetSnowAside']);
   const code = ts.transpileModule(`class EscapeFixture { ${worldClass.members.filter(node => node.name && names.has(node.name.getText(tree))).map(node => node.getText(tree)).join('\n')} }`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText + '\nEscapeFixture;';
-  const World = runInNewContext(code, { ARCADE_TITLES, MothArcadeSession: class { mount() {} } });
+  const World = runInNewContext(code, { ARCADE_TITLES, ARCADE_SNOW: { moth: 'moth-arcade-cabinet', escape: 'escape-arcade-cabinet' }, MothArcadeSession: class { mount() {} } });
   const world = new World();
   let stopped = 0;
   const hidden = [];

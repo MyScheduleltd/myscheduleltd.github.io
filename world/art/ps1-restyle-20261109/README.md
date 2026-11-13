@@ -444,6 +444,18 @@ festival-offline-retries checkout; remove it before committing.
     - Weather geometry after the planet pass 4.7 -> 8.4 MB live, one draw,
       shown only while snow lies. Fixture budgets raised to 2 MB / 6.5 MB.
 
+48. Arcade snow out of the game picture (2026-11-13). The game is a web page
+    laid over the 3D view, so snow on the control deck in front of the screen
+    was cut through by it: about 2% of 逃脫我的美麗's screen height and 10% of
+    M.O.T.H's (open as after its 11/16 release). Owner's pick: hide it while
+    playing. Each cabinet's snow is now its own (`addMovingSurface`, the
+    ferry's path, with the same options it had in the shared snow) and
+    `setSurfaceHidden` puts it aside while that cabinet's game, or M.O.T.H's
+    locked view (same camera), is open; the neighbour keeps its snow, and
+    leaving brings it back. Check: `arcade-snow-check.mjs <label> [snow|clear]`
+    (with the game page faded, counts snow-white rows inside the screen;
+    `CONTROL=1` puts the snow back to show it catches it).
+
 ## Open
 
 - Building reshapes (walls not moved yet).

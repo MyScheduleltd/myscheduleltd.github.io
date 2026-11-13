@@ -468,3 +468,35 @@ test('isometric snow and rain fill the whole window, grow with zoom within the c
     f.weather.dispose();
   }
 });
+
+test('an arcade cabinet keeps its own snow, which steps aside while its game is open and comes back (the owner, 2026-11-13)', () => {
+  const f = fixture(flat, false);
+  const cabinet = (x, name) => {
+    const root = new THREE.Group(); root.name = name; root.position.set(x, 0, 0);
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(1.2, .1, .6)); deck.position.y = 1.1;
+    const joystick = new THREE.Mesh(new THREE.BoxGeometry(.3, .3, .3)); joystick.position.set(.3, 1.3, 0); joystick.visible = false;
+    root.add(deck, joystick); f.scene.add(root); return root;
+  };
+  const moth = cabinet(-3, 'moth'), escape = cabinet(3, 'escape');
+  f.weather.addSurfaceMeshes([]);
+  f.weather.addMovingSurface('moth-arcade-cabinet', moth, { visibleOnly: true, occlusion: false, minimumArea: .03 });
+  f.weather.addMovingSurface('escape-arcade-cabinet', escape, { visibleOnly: true, occlusion: false, minimumArea: .03 });
+  const own = root => root.children.filter(child => child.name.startsWith('moving-snow-'));
+  assert.equal(own(moth).length, 1); assert.equal(own(escape).length, 1);
+  // visibleOnly: a hidden control at build time gets no cap of its own.
+  const top = own(escape)[0].geometry.getAttribute('position');
+  for (let i = 0; i < top.count; i++) assert.ok(top.getY(i) < 1.3, 'no snow on the hidden joystick, whose top is at 1.45');
+  f.weather.setShared(schedule('snow', now - 30 * 60_000, now + 30 * 60_000), now);
+  f.weather.update(1, observer, now);
+  assert.ok(own(moth)[0].visible && own(escape)[0].visible, 'snowing: both cabinets carry snow');
+  f.weather.setSurfaceHidden('escape-arcade-cabinet', true);
+  assert.equal(own(escape)[0].visible, false, 'the cabinet being played puts its snow aside');
+  assert.equal(own(moth)[0].visible, true, 'its neighbour keeps its snow');
+  f.weather.update(1, observer, now + 1_000);
+  assert.equal(own(escape)[0].visible, false, 'the weather does not bring it back mid-game');
+  f.weather.setSurfaceHidden('escape-arcade-cabinet', false);
+  assert.equal(own(escape)[0].visible, true, 'leaving the game brings it back');
+  f.weather.setSurfaceHidden('no-such-surface', true);
+  f.weather.dispose();
+  assert.equal(own(moth).length + own(escape).length, 0, 'disposal takes the cabinets\u2019 snow with it');
+});
