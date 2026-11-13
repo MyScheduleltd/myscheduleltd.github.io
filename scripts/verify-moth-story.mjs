@@ -21,6 +21,7 @@ import {chromium} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
 
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
+const level4Only = process.argv.includes('--level4-only');
 const staff = new URL('moth/staff/', base).href;
 const browser = await chromium.launch({executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required']});
 const open = async (context, url = staff) => {
@@ -51,6 +52,7 @@ const throughDialogue = async page => {
   }
 };
 
+if (!level4Only) {
 // 1. A story fight left for the main menu, picked up in a later tab.
 {
   const context = await browser.newContext({viewport: {width: 1280, height: 800}});
@@ -187,6 +189,7 @@ const throughDialogue = async page => {
   console.log('deck long press PASS', JSON.stringify(touched));
   await context.close();
 }
+}
 // 6. Level 4.
 for (const phone of [false, true]) {
   const context = await browser.newContext({...(phone ? {viewport: {width: 393, height: 852}, deviceScaleFactor: 2, isMobile: true, hasTouch: true} : {viewport: {width: 1280, height: 800}}), acceptDownloads: true});
@@ -262,9 +265,6 @@ for (const phone of [false, true]) {
     assert(Math.abs(upstairs.barCentre - 360) <= 2, `phone: the bar centred across the screen ${JSON.stringify(upstairs)}`);
     assert(Math.abs(upstairs.offCentre) <= 6, `phone: the line centred in its bar ${JSON.stringify(upstairs)}`);
     console.log('phone bar PASS', JSON.stringify(upstairs));
-    assert.deepEqual(errors, []);
-    await context.close();
-    continue;
   }
   // Back where Bonita's game began, facing her: here on her right, as when he
   // comes up the ladder (the talk stood him on her left whatever happened).
@@ -276,10 +276,25 @@ for (const phone of [false, true]) {
   await page.waitForFunction(() => /^level4/.test(bobbyGame.state) && bobbyGame.sewerPlayer, undefined, {timeout: 30000});
   const back = await page.evaluate(() => ({state: bobbyGame.state, x: bobbyGame.sewerPlayer.x, facing: bobbyGame.sewerPlayer.facing, won: bobbyGame.progress.flags.level4BossDefeated}));
   assert.deepEqual(back, {state: 'level4PostBossDialogue', x: took.x, facing: -1, won: true}, 'Back where the game began');
+  const firstRender = await page.evaluate(() => {
+    const g = bobbyGame, draw = g.drawLevel4MemeChest;
+    let draws = 0;
+    g.drawLevel4MemeChest = function() { draws++; return draw.call(this); };
+    try {
+      g.render();
+      return {draws, rail: g.level4Rail, closed: g.memeChest.state === 'closed', near: g.isLevel4NearMemeChest()};
+    } finally {
+      g.drawLevel4MemeChest = draw;
+    }
+  });
+  assert.deepEqual(firstRender, {draws: 1, rail: 'upper', closed: true, near: false}, 'Chest already draws in the post-fight room while upstairs');
+  while (await page.evaluate(() => bobbyGame.state === 'level4PostBossDialogue')) {
+    await page.evaluate(() => bobbyGame.advanceLevel4PostBossDialogue());
+  }
   // The basement chest: O opens it, O saves the recording, H closes it.
   // The hash-checked bytes were loaded before chapter entry; ladder, preview
   // and save gestures must reuse them without another media request.
-  await page.evaluate(() => { const g = bobbyGame; g.state = 'level4'; g.sewerPlayer.x = 1082; g.tryLevel4LadderInteract(); g.sewerPlayer.x = 500; });
+  await page.evaluate(() => { const g = bobbyGame; g.sewerPlayer.x = 1082; g.tryLevel4LadderInteract(); g.sewerPlayer.x = 500; });
   noNewChapterAssets('Taking the basement ladder');
   const near = await page.evaluate(() => ({near: bobbyGame.isLevel4NearMemeChest(), interact: bobbyGame.isMobileInteractAvailable()}));
   assert.deepEqual(near, {near: true, interact: true}, 'The chest is in reach in the basement');
@@ -289,10 +304,12 @@ for (const phone of [false, true]) {
   await page.waitForFunction(() => bobbyGame.memeView && document.querySelector('.moth-meme audio')?.readyState > 0 && !document.querySelector('[data-meme-save]')?.disabled, undefined, {timeout: 10000});
   noNewChapterAssets('Opening and preparing the recording preview');
   assert(await page.evaluate(() => document.querySelector('.moth-meme audio').src.startsWith('blob:')), 'The audio preview uses the verified copy read ahead');
-  const [download] = await Promise.all([page.waitForEvent('download', {timeout: 10000}), page.keyboard.press('KeyO')]);
-  assert.equal(download.suggestedFilename(), 'A private message from Dr.Beauty.m4a');
-  const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-  assert.equal(sha(await download.path()), sha(new URL('../moth-asset-additions/assets/audio/easter-eggs/dr-beauty-private-message.m4a', import.meta.url)), 'The saved recording is the published one');
+  if (!phone) {
+    const [download] = await Promise.all([page.waitForEvent('download', {timeout: 10000}), page.keyboard.press('KeyO')]);
+    assert.equal(download.suggestedFilename(), 'A private message from Dr.Beauty.m4a');
+    const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    assert.equal(sha(await download.path()), sha(new URL('../moth-asset-additions/assets/audio/easter-eggs/dr-beauty-private-message.m4a', import.meta.url)), 'The saved recording is the published one');
+  }
   assert.equal(recordingRequests.length, 1, 'Preview and saving reuse the preloaded recording: ' + JSON.stringify(recordingRequests));
   noNewChapterAssets('Saving the recording');
   await page.keyboard.press('KeyH');
@@ -303,8 +320,8 @@ for (const phone of [false, true]) {
   console.log('level 4 PASS', JSON.stringify({recordingAtEntry, recordingRequests: recordingRequests.length, newMediaRequests: chapterAssetRequests.length - assetsAtEntry, upstairs, took, back, after}));
   await context.close();
 }
-// Level 4's post-win top bar: announce the uncollected reward in either
-// language, then leave the scene clear instead of drawing an exit-left bar.
+// The short top prompts are driven by the earned chest, not the transient
+// encounter flag. They tell players how to leave on either floor after opening.
 for (const phone of [false, true]) {
   const context = await browser.newContext({viewport: phone ? {width: 393, height: 852} : {width: 1280, height: 800}, isMobile: phone, hasTouch: phone});
   await stubScoreboard(context);
@@ -316,44 +333,57 @@ for (const phone of [false, true]) {
     g.progress.flags = {...g.progress.flags, level4BossDefeated: true, level4MemeChestOpened: false};
     g.freePlay = false;
     g.enterLevel4Stage1({spawnX: 700});
-    g.level4BossEncountered = true;
-    const draw = window.drawObjectivePrompt;
+    // This is a render matrix. Do not let the live frame loop retrigger
+    // Bonita while moving the fixture near the ladder between cases.
+    g.updateLevel4 = () => {};
+    const drawPrompt = window.drawObjectivePrompt;
+    const drawChest = g.drawLevel4MemeChest;
     window.__barPrompts = [];
-    window.drawObjectivePrompt = (...args) => { window.__barPrompts.push(String(args[1])); return draw(...args); };
+    window.__chestDraws = 0;
+    window.drawObjectivePrompt = (...args) => { window.__barPrompts.push(String(args[1])); return drawPrompt(...args); };
+    g.drawLevel4MemeChest = function() { window.__chestDraws++; return drawChest.call(this); };
   });
   await page.waitForFunction(() => bobbyGame.state === 'level4' && !bobbyGame.levelLoadingPresentation, undefined, {timeout: 60000});
+  const cases = [
+    ['upper', 700, false, false, 'Chest in basement', '地下室有寶箱'],
+    ['upper', 500, false, false, 'Chest in basement', '地下室有寶箱'],
+    ['upper', 1082, false, false, 'O: Climb down to chest', 'O 爬下梯子找寶箱'],
+    ['lower', 500, false, true, 'O: Open chest', 'O 打開寶箱'],
+    ['lower', 500, true, true, 'Climb up, then exit left', '爬上梯子，再往左離開'],
+    ['lower', 1082, true, false, 'O: Climb up, then exit left', 'O 爬上梯子，再往左離開'],
+    ['upper', 1082, true, false, 'Use the left door', '從左門離開'],
+    ['upper', 86, true, false, 'O: Leave room', 'O 離開房間']
+  ];
   for (const language of ['zh-TW', 'en']) {
-    for (const opened of [false, true]) {
-      const result = await page.evaluate(({language, opened}) => {
+    for (const [rail, x, opened, near, en, zh] of cases) {
+      const result = await page.evaluate(({language, rail, x, opened}) => {
         const g = bobbyGame;
         g.setLanguage(language, {persist: false, announce: false});
-        g.level4Rail = 'upper'; g.sewerPlayer.x = 700;
+        g.level4Rail = rail;
+        g.sewerPlayer.x = x;
+        g.sewerPlayer.y = g.getLevel4ActiveSideView().floorY;
         g.memeChest = {state: opened ? 'open' : 'closed', at: 0};
         window.__barPrompts = [];
+        window.__chestDraws = 0;
         g.render(); g.renderTallScreen();
-        return {prompts: [...window.__barPrompts], tall: g.tallPrompt?.frame === g.renderFrame ? g.tallPrompt.text : null};
-      }, {language, opened});
-      assert(!result.prompts.some(text => /往左離開|leave.*left|exit.*left/i.test(text)), 'No exit-left top-bar instruction');
-      if (opened) {
-        assert.deepEqual(result.prompts, [], 'No empty default top-bar frame after collection');
-        if (phone) assert.equal(result.tall, null, 'No stale phone top-bar text');
-      } else {
-        const expected = language === 'en' ? 'A chest appeared in the basement' : '地下室出現了寶箱';
-        assert.deepEqual(result.prompts, [expected], 'Bilingual chest announcement without an exit direction');
-        if (phone) assert.equal(result.tall, expected);
+        const pause = g.getLevel1OfficePauseButtonRect();
+        const tall = g.tallPrompt?.frame === g.renderFrame;
+        const ctx = tall ? g.portraitCtx : g.ctx;
+        const barY = tall ? 8 + pause.h + 8 : pause.y;
+        const border = [...ctx.getImageData(ctx.canvas.width / 2, barY, 1, 7).data];
+        const top = border.some((r, index) => index % 4 === 0 && r > 120 && border[index + 1] > 150);
+        return {prompts: [...window.__barPrompts], tall: tall ? g.tallPrompt.text : null,
+          near: g.isLevel4NearMemeChest(), draws: window.__chestDraws, encountered: g.level4BossEncountered, top};
+      }, {language, rail, x, opened});
+      const expected = language === 'en' ? en : zh;
+      assert.deepEqual(result, {prompts: [expected], tall: phone ? expected : null, near, draws: 1, encountered: false, top: true});
+      if (x === 700 || (x === 500 && opened)) {
+        await page.screenshot({path: `.qa/moth/level4-top-bar-${phone ? 'phone' : 'desktop'}-${language}-${opened ? 'exit' : 'chest'}.png`});
       }
-      await page.screenshot({path: `.qa/moth/level4-top-bar-${phone ? 'phone' : 'desktop'}-${language}-${opened ? 'collected' : 'chest'}.png`});
     }
   }
-  const contextPrompt = await page.evaluate(() => {
-    const g = bobbyGame;
-    g.level4Rail = 'lower'; g.sewerPlayer.x = 500;
-    window.__barPrompts = []; g.render(); g.renderTallScreen();
-    return [...window.__barPrompts];
-  });
-  assert(contextPrompt.some(text => /O OPEN THE CHEST|O 打開寶箱/.test(text)), 'Actual chest interaction prompt stays available');
   assert.deepEqual(errors, []);
-  console.log(phone ? 'phone' : 'desktop', 'post-win bar PASS: bilingual chest-only announcement, collected bar hidden, contextual chest action retained');
+  console.log(phone ? 'phone' : 'desktop', 'post-win bar PASS: bilingual prompts, chest drawn on both floors, exit guidance and contextual actions');
   await context.close();
 }
 // 7. The staff tools' previews (practice runs): the chest is in the basement after 'L4
@@ -388,6 +418,7 @@ for (const phone of [false, true]) {
   console.log('staff tools PASS', JSON.stringify({afterTalk, straight, preview}));
   await context.close();
 }
+if (!level4Only) {
 // 8. The hidden levels end: their charts run to the very end of their songs,
 // where the fight's clock (the playhead less the output delay) never arrives.
 {
@@ -407,6 +438,8 @@ for (const phone of [false, true]) {
   console.log('hidden levels PASS', JSON.stringify(ends));
   await context.close();
 }
+}
 await browser.close();
 console.log('loading screens (s)', JSON.stringify(loadingSeconds));
-console.log('PASS story: kept on the device, 繼續 mid-fight, level 3 and 4 returns, no failing in story, deck long press, level 4 chest, bar at the top, staff chest previews, hidden levels end');
+if (level4Only) console.log('PASS Level 4 chest: preloaded audio, immediate draw, bilingual top bar, exit guidance and staff previews');
+else console.log('PASS story: kept on the device, 繼續 mid-fight, level 3 and 4 returns, no failing in story, deck long press, level 4 chest, bar at the top, staff chest previews, hidden levels end');

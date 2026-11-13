@@ -9,7 +9,7 @@ import { patchFightHud, FIGHT_HUD_METHODS } from './moth-fight-hud.mjs';
 import { patchStorySave } from './moth-story-save.mjs';
 import { patchStoryConfirm } from './moth-story-confirm.mjs';
 import { patchWalkScenes, WALK_SCENE_METHODS } from './moth-walk-scenes.mjs';
-import { patchDeckTouch } from './moth-deck-art.mjs';
+import { MOTH_BUTTON_SHEET, patchDeckTouch } from './moth-deck-art.mjs';
 import { patchCredits } from './moth-credits.mjs';
 import { patchTutorial } from './moth-tutorial-patches.mjs';
 import { patchTutorialDemo } from './moth-tutorial-demo.mjs';
@@ -1023,16 +1023,19 @@ for (const [index, src] of ${JSON.stringify(assets)}.entries()) {
       image.onload = async () => {
         try {
           if (typeof image.decode === 'function') await image.decode();
-          resolve(url);
+          resolve({ url, image });
         } catch (error) {
-          if (image.complete && image.naturalWidth) resolve(url);
+          if (image.complete && image.naturalWidth) resolve({ url, image });
           else { URL.revokeObjectURL(url); reject(error); }
         }
       };
       image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Interface artwork could not be decoded')); };
       image.src = url;
     }))
-    .then(url => document.documentElement.style.setProperty('--moth-art-' + index, 'url("' + url + '")'));
+    .then(({ url, image }) => {
+      document.documentElement.style.setProperty('--moth-art-' + index, 'url("' + url + '")');
+      if (src === ${JSON.stringify(MOTH_BUTTON_SHEET.current)}) tutorialDeckButtons = image;
+    });
   // The title can render immediately; entering a level waits for these
   // essential deck textures, including their first image decode.
   interfaceAssetRequests.push(ready);

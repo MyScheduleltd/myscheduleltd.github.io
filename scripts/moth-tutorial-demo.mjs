@@ -13,30 +13,16 @@ export function getTutorialRhythmDemoFrame(kind, elapsed) {
   return { hold, approach, duration, time, pressed, action };
 }
 
-function drawTutorialKeycap(target, button, x, y, size, pressed) {
-  const half = size / 2;
-  const cut = size * 0.22;
-  const faceY = y + (pressed ? 2 : 0);
-  const octagon = (radius, corner, offset) => [
-    [x - radius + corner, faceY - radius + offset],
-    [x + radius - corner, faceY - radius + offset],
-    [x + radius, faceY - radius + corner + offset],
-    [x + radius, faceY + radius - corner + offset],
-    [x + radius - corner, faceY + radius + offset],
-    [x - radius + corner, faceY + radius + offset],
-    [x - radius, faceY + radius - corner + offset],
-    [x - radius, faceY - radius + corner + offset]
-  ];
-  target.fillStyle = "#0e0d11";
-  pixelPoly(target, octagon(half + 3, cut + 1, 3));
-  target.fillStyle = pressed ? "#a06b11" : "#795117";
-  pixelPoly(target, octagon(half, cut, 3));
-  target.fillStyle = pressed ? "#fff1aa" : "#edbd33";
-  pixelPoly(target, octagon(half, cut, 0));
-  target.fillStyle = pressed ? "#f5cc52" : "#bf891d";
-  pixelPoly(target, octagon(half - 3, cut - 1, 0));
-  target.fillStyle = pressed ? "#302315" : "#fff4ce";
-  drawCentredGlyph(target, button, x, faceY, MOTH_RHYTHM_HEAD.font);
+function drawTutorialKeycap(target, x, y, size, pressed) {
+  const sheet = tutorialDeckButtons;
+  if (!sheet) return;
+  const w = sheet.naturalWidth / 4;
+  const h = sheet.naturalHeight / 2;
+  // The T column and pressed row are the same frames the touch deck displays.
+  target.save();
+  target.imageSmoothingEnabled = false;
+  target.drawImage(sheet, w * 2, pressed ? h : 0, w, h, x - size / 2, y - size / 2, size, size);
+  target.restore();
 }
 
 function drawTutorialRhythmDemo(target, kind, rect, elapsed) {
@@ -99,19 +85,25 @@ function drawTutorialRhythmDemo(target, kind, rect, elapsed) {
     target.restore();
   }
 
-  // The demo uses the live note art, including the remaining part of a hold.
+  // Keep the spent tail attached to the head while both slide past the
+  // line and fade together. Only the unplayed section is highlighted.
   const held = hold && pressed;
   const completed = time >= 0;
-  if (hold && time < duration) {
-    drawRhythmHoldTail(target, {
-      x: headX, endX: tailX, y: railY, hitX: cursorX, button, held, completed
-    }, scale);
-  }
-  if (time < (hold ? duration + 0.28 : 0.42)) {
+  const finish = hold ? duration : 0.12;
+  const fade = Math.max(0, 1 - Math.max(0, time - finish) / 0.42);
+  if (fade > 0) {
+    target.save();
+    target.globalAlpha *= fade;
+    if (hold) {
+      drawRhythmHoldTail(target, {
+        x: headX, endX: tailX, y: railY, hitX: cursorX, button, held, completed
+      }, scale);
+    }
     drawRhythmNoteHead(target, { x: headX, y: railY, button, held, completed }, scale);
-  }
-  if (held && headX + MOTH_RHYTHM_HEAD.radius * scale < railLeft) {
-    drawRhythmHoldMarker(target, cursorX, railY, button, scale);
+    if (held && headX + MOTH_RHYTHM_HEAD.radius * scale < railLeft) {
+      drawRhythmHoldMarker(target, cursorX, railY, button, scale);
+    }
+    target.restore();
   }
   const cue = calculateRhythmTimingCue({ status: completed ? "perfect" : "pending", time: 0 }, time, 0);
   if (cue) drawRhythmTimingRing(target, headX, railY, cue, scale);
@@ -123,7 +115,7 @@ function drawTutorialRhythmDemo(target, kind, rect, elapsed) {
   target.lineWidth = 1;
   target.strokeRect(x + w - keyColumn + 3, y + 7, keyColumn - 10, h - 14);
   const keyX = x + w - (keyColumn + 4) / 2;
-  drawTutorialKeycap(target, button, keyX, y + h * 0.37, Math.round(h * 0.38), pressed);
+  drawTutorialKeycap(target, keyX, y + h * 0.34, Math.round(h * 0.58), pressed);
   target.fillStyle = pressed ? "#ffe8a6" : "#f3ead0";
   target.textAlign = "center";
   target.textBaseline = "middle";
