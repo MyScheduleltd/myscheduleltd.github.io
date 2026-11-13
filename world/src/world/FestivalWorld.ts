@@ -708,6 +708,12 @@ const INDOORS = { palace: 0.2, clubLobby: 0.4, clubRoom: 0.1 } as const;
 const GATE_GLOBE_FILL = 1.45;
 /** Colliders are filed in the plan grid with this margin: any query radius up to it is exact. */
 const COLLIDER_GRID_MARGIN = 1;
+/**
+ * The smallest sky-facing face of a dense prop that gets its own snow, in
+ * square world units. Finer facets cannot show snow at the PS1 resolution and
+ * only cost memory on a phone (2026-11-13).
+ */
+const SNOW_DETAIL_FACE = .03;
 /** Distances in world units from the attendee past which bodies are simpler. */
 const FAR_PLAYER = { simpler: 20, slower: 40 } as const;
 /**
@@ -2090,6 +2096,7 @@ export class FestivalWorld {
   private arcadeScreenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number; lock?: { x: number; y: number; width: number; height: number } }) => void;
   /** The band on the roof over the pop-up shop; plays while the jukebox has a record on. */
   private rooftopBand?: RooftopBand;
+  private loadedSnowRegistered = false;
   /** The beach easter egg. Scenery with one loop; not a resident. */
   private beachCouple?: BeachCoupleRig;
   private lastDonationAt = 0;
@@ -2447,6 +2454,20 @@ export class FestivalWorld {
     if (this.arcadeCabinet?.status === 'failed' || this.escapeCabinet?.status === 'failed' || (this.rooftopBand && !this.rooftopBand.ready)) {
       throw new Error('World models did not finish loading. Retry admission.');
     }
+    // Downloaded furniture that stands under the sky catches snow too (the
+    // owner, 2026-11-13): the band's stage, benches and bonfire (not its
+    // flames), and both arcade cabinets. Once, before the snow is built.
+    if (!this.loadedSnowRegistered) {
+      this.loadedSnowRegistered = true;
+      for (const [index, prop] of (this.rooftopBand?.props ?? []).entries()) {
+        const fire = prop.getObjectByName('fire');
+        // Dense downloaded models standing in the open: every sky-facing face
+        // is coated without clipping the model against itself.
+        this.snowDetail(`rooftop-band-prop-${index + 1}`, prop, { exclude: fire ? [fire] : [], occlusion: false, minimumArea: SNOW_DETAIL_FACE });
+      }
+      if (this.arcadeCabinet) this.snowDetail('moth-arcade-cabinet', this.arcadeCabinet.root, { visibleOnly: true, occlusion: false, minimumArea: SNOW_DETAIL_FACE });
+      if (this.escapeCabinet) this.snowDetail('escape-arcade-cabinet', this.escapeCabinet.root, { visibleOnly: true, occlusion: false, minimumArea: SNOW_DETAIL_FACE });
+    }
     // Fixed art is placed and uploaded under the same loading view as the
     // existing town. The comparison switch exists only on loopback.
     const legacyEnvironment = ['127.0.0.1', 'localhost'].includes(window.location.hostname)
@@ -2454,6 +2475,9 @@ export class FestivalWorld {
     if (!this.environmentPrepared && !legacyEnvironment) {
       this.environmentPrepared = true;
       applyEnvironmentArchitecture(this.scene, { keepClear: this.publicScreenBoxes() });
+      // The drive-in screen's metal frame is built here, after the venue's own
+      // snow was registered; its top catches snow as well (2026-11-13).
+      this.scene.traverse(object => { if (object.name === 'Environment architecture · drive-in · metal') this.snowDetail('drive-in-screen-frame', object); });
       this.templeArchitecture=applyTempleArchitecture(this.scene,{decorativeMaterial:this.templeTrimAtlas?.material});
       this.scene.traverse(object => {
         const mesh = object as THREE.Mesh;
@@ -2489,6 +2513,8 @@ export class FestivalWorld {
     await this.prepareAssets(progress => onProgress?.(progress * .55));
     if (this.disposed) return;
     this.weather?.addSurfaceMeshes(this.snowSurfaceSources ?? []);
+    // The ferry bobs, so its snow rides on it (the owner, 2026-11-13).
+    if (this.islandDock) this.weather?.addMovingSurface('island-ferry', this.islandDock.boat);
     if(this.weather)applyWorldFilmGrain(this.weather.root);
     // Extraction owns its finished geometry. Do not retain source meshes that
     // static batching is about to retire for the rest of the session.
@@ -10266,6 +10292,16 @@ export class FestivalWorld {
     return object;
   }
 
+  /**
+   * A prop or ledge that catches snow but is no roof (the owner, 2026-11-13:
+   * snow on everything under the sky). The ground and falling snow under it
+   * stay as they are, and it does not cut the snow on a surface it stands on:
+   * the prop itself hides that, and clipping round its faces is not affordable.
+   */
+  private snowDetail<T extends THREE.Object3D>(id:string,object:T,options:Omit<SnowSurfaceSource,'id'|'object'|'sheltersGround'|'occludes'>={}):T {
+    return this.registerSnowSurface(id,object,{...options,sheltersGround:false,occludes:false});
+  }
+
   private prepareWeatherSupports():void {
     if(!this.weather)return;
     this.scene.updateWorldMatrix(true,true);
@@ -10455,9 +10491,10 @@ export class FestivalWorld {
 
     const gateStart = new Set(this.scene.children);
     const gateMat = material(0x383c36, 0.9, 0.1);
-    this.mesh([1.1, 9, 1.1], [-14, 4.5, GATE_Z], gateMat);
-    this.mesh([1.1, 9, 1.1], [14, 4.5, GATE_Z], gateMat);
-    this.mesh([29, 1.1, 1.1], [0, 8.6, GATE_Z], gateMat);
+    // Snow along the crossbar and on the posts' caps (the owner, 2026-11-13).
+    this.snowDetail('gate-post-west',this.mesh([1.1, 9, 1.1], [-14, 4.5, GATE_Z], gateMat));
+    this.snowDetail('gate-post-east',this.mesh([1.1, 9, 1.1], [14, 4.5, GATE_Z], gateMat));
+    this.snowDetail('gate-crossbar',this.mesh([29, 1.1, 1.1], [0, 8.6, GATE_Z], gateMat));
     this.addCollider(-14, GATE_Z, 1.1, 1.1);
     this.addCollider(14, GATE_Z, 1.1, 1.1);
     // One sign on each face of the crossbar, each standing a third of a unit
@@ -10484,6 +10521,7 @@ export class FestivalWorld {
       if (facing < 0) gateSign.rotation.y = Math.PI;
       // Its housing fills the gap to the crossbar (its face .55 from the bar's middle).
       const frame=lightBoxFace?createLightBoxHousing(22,3.8):this.ownNeonFrame(createNeonSignFrame(22,3.8,'entrance'));frame.position.copy(gateSign.position);frame.rotation.copy(gateSign.rotation);this.scene.add(frame);
+      this.snowDetail(`gate-sign-housing-${facing < 0 ? 'inside' : 'outside'}`,frame);
       gateSign.position.z+=facing*.035;this.scene.add(gateSign);
       // Short stubs back to the bar, so the panel reads as mounted on it.
       for (const side of [-1, 1]) {
@@ -10565,6 +10603,7 @@ export class FestivalWorld {
         clear: (x, z, radius) => !this.staticCollides(x, z, groundY(x, z), radius) && !this.onAWayThrough(x, z, groundY(x, z), radius + 1),
         groundAt: terrainHeightAt,
         surfaceAt: (x, z) => this.groundHeightAt(x, z, terrainHeightAt(x, z) + 1.5) - AVATAR_GROUND_Y,
+        snowSurface: (id, object, cover) => cover ? this.registerSnowSurface(id, object) : this.snowDetail(id, object, { minimumArea: SNOW_DETAIL_FACE }),
       }, { ...rooftopBounds, roofY: ROOF_Y }, [...PS1_LIGHT_BOXES],
       { houses: INLAND_HOUSES, lightBoxes: [...PS1_DOCK_LIGHT_BOXES], eastPoles: TOWN_POLES, eastWireY: TOWN_WIRE_Y },
       { clubWallX: clubBounds.buildingMaxX, clubMinZ: clubBounds.buildingMinZ, clubMaxZ: clubBounds.buildingMaxZ, doorMinZ: clubBounds.doorMinZ, doorMaxZ: clubBounds.doorMaxZ, posters: PS1_PALACE_POSTERS, lightBoxes: [...PS1_CLUB_LIGHT_BOXES] },
@@ -10679,6 +10718,7 @@ export class FestivalWorld {
     // Built facing -z; a quarter turn puts that front on -x, towards the road.
     cabinet.rotation.y = Math.PI / 2;
     this.scene.add(cabinet);
+    this.snowDetail('jukebox-cabinet', cabinet);
     // The Showa record jukebox in the PS1 look (the owner's pick, 2026-11-11).
     const recordCabinet=createPs1Jukebox();recordCabinet.rotation.y=Math.PI;cabinet.add(recordCabinet);
     // The one light it throws, so the foot of the stair has a warm corner.
@@ -11024,6 +11064,11 @@ export class FestivalWorld {
         const passengerSource = car.getObjectByName('passenger-cushion') as THREE.Mesh;
         car.userData.passengerCushion = passengerSource;
         const passengerCushion = createConvertibleSeatProxy(car, passengerSource, 'passenger');
+        // Bonnet, boot and floor catch snow; the two cushions keep their own
+        // brushable caps (seat snow), so they are left out here.
+        // Coated without clipping the car against itself: what lies under the
+        // bonnet or a seat is hidden by them, and the budget stays small.
+        this.snowDetail(`drive-in-car-${row + 1}-${column + 2}`,car,{exclude:[car.userData.cushion as THREE.Object3D,passengerSource].filter(Boolean),occlusion:false});
         this.seats.push({
           id: `DRIVE-${row + 1}-${column + 2}`,
           venue: 'drive-in',
@@ -11128,8 +11173,8 @@ export class FestivalWorld {
       const roof=this.mesh([10.5,.38,43],[x,ceiling+.5,21],concrete);
       roof.rotation.z=.12;
       this.registerSnowSurface(`club-roof-${bay+1}`,roof);
-      this.mesh([.25,1.45,42],[x-5,ceiling+.1,21],iron);
-      this.mesh([.28,.7,35],[x-4.96,ceiling+.6,21],material(0x658484,.8,0));
+      this.snowDetail(`club-clerestory-${bay+1}`,this.mesh([.25,1.45,42],[x-5,ceiling+.1,21],iron));
+      this.snowDetail(`club-clerestory-glass-${bay+1}`,this.mesh([.28,.7,35],[x-4.96,ceiling+.6,21],material(0x658484,.8,0)));
     }
     // One column system: a double bay frames the screen, with 10-unit bays
     // continuing on either side. A continuous wall plate carries the roof.
@@ -11546,6 +11591,8 @@ export class FestivalWorld {
       // Dark ridges: the main ridge with swallowtail ends, the four hips, and
       // the skirt's corner ridges. Decoration on the roof, so no colliders.
       const ridge = material(0x2f3b35, .7, .05);
+      // The ridges carry snow too (the owner, 2026-11-13).
+      let ridgePieces = 0;
       const beam = (from: THREE.Vector3, to: THREE.Vector3, radius: number) => {
         const length = from.distanceTo(to);
         const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 6), ridge);
@@ -11553,12 +11600,13 @@ export class FestivalWorld {
         mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
         mesh.castShadow = true;
         this.scene.add(mesh);
+        this.snowDetail(`temple-ridge-beam-${++ridgePieces}`,mesh);
       };
       const at = (v: readonly number[], y: number) => new THREE.Vector3(centerX + v[0], y + v[1], centerZ + v[2]);
       const upper = templeRoofLines(width + 1.5, depth + 1.5, PS1_UPPER_RISE, 1.4, PS1_RIDGE_HALF);
-      this.mesh([.9, .75, PS1_RIDGE_HALF * 2 + 1.4], [centerX, upperY + PS1_UPPER_RISE + .3, centerZ], ridge);
+      this.snowDetail('temple-main-ridge',this.mesh([.9, .75, PS1_RIDGE_HALF * 2 + 1.4], [centerX, upperY + PS1_UPPER_RISE + .3, centerZ], ridge));
       for (const side of [-1, 1]) {
-        const tail = this.mesh([.6, .5, 2.6], [centerX, upperY + PS1_UPPER_RISE + .95, centerZ + side * (PS1_RIDGE_HALF + 1.4)], ridge);
+        const tail = this.snowDetail(`temple-ridge-tail-${side<0?'south':'north'}`,this.mesh([.6, .5, 2.6], [centerX, upperY + PS1_UPPER_RISE + .95, centerZ + side * (PS1_RIDGE_HALF + 1.4)], ridge));
         tail.rotation.x = side * -.55;
       }
       for (const [i, corner] of upper.corners.entries()) beam(at(upper.ridge[i === 0 || i === 1 ? 0 : 1], upperY + .2), at(corner, upperY + .25), .32);
@@ -11742,7 +11790,7 @@ export class FestivalWorld {
     // Garage bay: floor, side walls, open to the south.
     const shopFloor=this.mesh([width,.5,bayDepth],[centerX,-.17,bayCenterZ],environmentMaterial('stone',0x796c59,.95));shopFloor.name="Shop finished floor";shopFloor.userData.wornNoMasonry=true;
     for (const x of [r.minX, r.maxX]) {
-      this.mesh([0.8, ROOF_Y, bayDepth], [x, ROOF_Y / 2, bayCenterZ], brick);
+      this.snowDetail(`rooftop-bay-wall-${x.toFixed(1)}-${bayCenterZ.toFixed(1)}`,this.mesh([0.8, ROOF_Y, bayDepth], [x, ROOF_Y / 2, bayCenterZ], brick));
       this.addCollider(x, bayCenterZ, 0.8, bayDepth, 0.16, aboveGround);
     }
 
@@ -11832,7 +11880,8 @@ export class FestivalWorld {
     // East parapet runs the whole depth. The west one is cut open across the
     // stair's top landing: that gap is the door onto the deck, and the reason
     // arriving at the head of the stair no longer walks into a wall.
-    this.mesh([0.6, 1.5, deckDepth], [r.maxX + 0.3, ROOF_Y + 0.75, deckCenterZ], warmConcrete);
+    // Every parapet's coping catches snow (the owner, 2026-11-13).
+    this.snowDetail('rooftop-parapet-east',this.mesh([0.6, 1.5, deckDepth], [r.maxX + 0.3, ROOF_Y + 0.75, deckCenterZ], warmConcrete));
     this.addCollider(r.maxX + 0.3, deckCenterZ, 0.6, deckDepth, 0.16, parapet);
     // Between stairMinZ and stairTopZ the stair's own stringer wall stands in
     // the parapet's place and is built with the run.
@@ -11844,24 +11893,26 @@ export class FestivalWorld {
     ] as Array<[number, number]>) {
       const span = to - from;
       if (span <= 0) continue;
-      this.mesh([0.6, 1.5, span], [r.minX - 0.3, ROOF_Y + 0.75, (from + to) / 2], warmConcrete);
+      this.snowDetail(`rooftop-parapet-west-${from.toFixed(1)}`,this.mesh([0.6, 1.5, span], [r.minX - 0.3, ROOF_Y + 0.75, (from + to) / 2], warmConcrete));
       this.addCollider(r.minX - 0.3, (from + to) / 2, 0.6, span, 0.16, parapet);
     }
-    this.mesh([width + 1.2, 1.5, 0.6], [centerX, ROOF_Y + 0.75, r.maxZ + 0.3], warmConcrete);
+    this.snowDetail('rooftop-parapet-north',this.mesh([width + 1.2, 1.5, 0.6], [centerX, ROOF_Y + 0.75, r.maxZ + 0.3], warmConcrete));
     this.addCollider(centerX, r.maxZ + 0.3, width + 1.2, 0.6, 0.16, parapet);
-    this.mesh([width + 1.2, 1.5, 0.6], [centerX, ROOF_Y + 0.75, r.deckMinZ - 0.3], warmConcrete);
+    this.snowDetail('rooftop-parapet-south',this.mesh([width + 1.2, 1.5, 0.6], [centerX, ROOF_Y + 0.75, r.deckMinZ - 0.3], warmConcrete));
     this.addCollider(centerX, r.deckMinZ - 0.3, width + 1.2, 0.6, 0.16, parapet);
 
     // Screen at the deck's south edge, back to the Drive-In, watched northward.
     this.createProjectorSurface('rooftop');
-    this.mesh([15, 8, 0.4], [ROOFTOP_CENTER_X, ROOF_Y + 6.6, r.deckMinZ + 0.6], material(0x050506, 0.72));
+    this.snowDetail('rooftop-screen-back',this.mesh([15, 8, 0.4], [ROOFTOP_CENTER_X, ROOF_Y + 6.6, r.deckMinZ + 0.6], material(0x050506, 0.72)));
     this.createRooftopScreenFrame(r.deckMinZ + 0.6, warmConcrete);
     const boothZ = r.deckMinZ + 4.4;
-    this.mesh([10, 0.7, 3.6], [centerX, ROOF_Y + 0.35, boothZ], material(0x3d2a24, 0.6, 0.3));
+    this.snowDetail('rooftop-booth-stage',this.mesh([10, 0.7, 3.6], [centerX, ROOF_Y + 0.35, boothZ], material(0x3d2a24, 0.6, 0.3)));
     const decks=createCoastalDecks(4.9);decks.position.set(centerX,ROOF_Y+.7,boothZ+.8);this.scene.add(decks);
+    this.snowDetail('rooftop-dj-console',decks);
     this.addCollider(centerX,boothZ,10,3.6,.12,onDeck,'rooftop-booth',ROOF_Y+2.3);
     for(const side of [-1,1]){
       const speaker=createCoastalSpeaker(2,2.4,1.8);speaker.position.set(centerX+side*7.4,ROOF_Y,boothZ);this.scene.add(speaker);
+      this.snowDetail(`rooftop-speaker-${side<0?'west':'east'}`,speaker);
       this.addCollider(centerX+side*7.4,boothZ,2,2.05,.12,onDeck,'rooftop-speaker',ROOF_Y+2.4);
     }
 
@@ -11944,6 +11995,8 @@ export class FestivalWorld {
     const box = (size: [number, number, number], at: [number, number, number], surface = steel): THREE.Mesh => {
       const mesh = this.mesh(size, at, surface);
       built.push(mesh);
+      // The frame, its crown and struts catch snow (the owner, 2026-11-13).
+      this.snowDetail(`rooftop-screen-frame-${built.length}`, mesh);
       return mesh;
     };
     const strut = (a: THREE.Vector3, b: THREE.Vector3, size: number): void => {
@@ -12048,7 +12101,7 @@ export class FestivalWorld {
         ));
         this.registerSnowSurface(`${id}-tread-${step+1}`,keepAsBuilt(this.mesh([stairWidth,.06,ROOF_GOING],[centerX,top-.03,treadZ],treadFinish)),{terrainMask:true});
         // Kerb along the open edge, low enough to leave the steps in view.
-        keepAsBuilt(this.mesh([kerbWidth, 0.42, ROOF_GOING], [railX, top + 0.15, treadZ], wallMaterial));
+        this.snowDetail(`${id.replace('rooftop-stair-','rooftop-flight-')}-kerb-${step+1}`,keepAsBuilt(this.mesh([kerbWidth, 0.42, ROOF_GOING], [railX, top + 0.15, treadZ], wallMaterial)));
       }
     };
 
@@ -12059,7 +12112,7 @@ export class FestivalWorld {
       this.mesh([width, surfaceY - ground - .06, depth], [cx, (surfaceY + ground - .06) / 2, (minZ + maxZ) / 2], treadMaterial);
       this.registerSnowSurface(id,this.mesh([width,.06,depth],[cx,surfaceY-.03,(minZ+maxZ)/2],treadFinish),{terrainMask:true});
       this.addCollider(cx, (minZ + maxZ) / 2, width, depth, 0.16, { minY: -0.4, maxY: surfaceY - 1.5 });
-      this.mesh([kerbWidth, 0.36, depth], [railX, surfaceY + 0.18, (minZ + maxZ) / 2], wallMaterial);
+      this.snowDetail(`${id.replace('rooftop-stair-','rooftop-flight-')}-kerb`,this.mesh([kerbWidth, 0.36, depth], [railX, surfaceY + 0.18, (minZ + maxZ) / 2], wallMaterial));
     };
 
     flight('rooftop-stair-lower',r.stairMinZ, 0);
@@ -12091,11 +12144,11 @@ export class FestivalWorld {
     // Parapet closing the north end of that landing, and nothing further east.
     const landingWidth = r.minX - massMinX;
     const landingCenterX = (massMinX + r.minX) / 2;
-    this.mesh(
+    this.snowDetail('rooftop-landing-wall',this.mesh(
       [landingWidth, 1.5, 0.5],
       [landingCenterX, ROOF_Y + 0.75, r.stairMaxZ + 0.25],
       treadMaterial,
-    );
+    ));
     this.addCollider(
       landingCenterX, r.stairMaxZ + 0.25,
       landingWidth, 0.5, 0.16, { minY: ROOF_Y - 1, maxY: ROOF_Y + 1.5 },
@@ -12114,11 +12167,11 @@ export class FestivalWorld {
     // top landing so the last step opens straight onto the deck.
     const stringerDepth = r.stairTopZ - r.stairMinZ;
     const stringerHeight = ROOF_Y + 1.5;
-    this.mesh(
+    this.snowDetail('rooftop-flight-stringer',this.mesh(
       [r.minX - r.stairMaxX, stringerHeight, stringerDepth],
       [(r.stairMaxX + r.minX) / 2, stringerHeight / 2, r.stairMinZ + stringerDepth / 2],
       treadMaterial,
-    );
+    ));
     // Blocked to the sky, though the wall itself stops at stringerHeight. It
     // runs the length of the deck's west edge, so that overshoot was the
     // invisible wall there. Held to its own height, the stair is still walled
@@ -12176,6 +12229,10 @@ export class FestivalWorld {
     couple.root.rotation.y = -0.72;
     this.scene.add(couple.root);
     this.beachCouple = couple;
+    // Their parasol is a cover like the beach umbrellas: snow on it, none under
+    // it (the owner, 2026-11-13). The pair themselves move, and stay clear.
+    couple.root.updateMatrixWorld(true);
+    this.registerSnowSurface('beach-couple-parasol', couple.parasol, { sheltersGround: true });
     // Chest height at most: walked around rather than through, without the
     // camera being shoved every time somebody passes behind the trees.
     //
@@ -12489,6 +12546,7 @@ export class FestivalWorld {
     const stand = createPs1PamphletStand();
     stand.position.copy(pamphletPosition);
     this.scene.add(stand);
+    this.snowDetail('pamphlet-rack', stand);
     // Chest height: the view rides over it rather than being stopped by it.
     this.addCollider(pamphletPosition.x, pamphletPosition.z, 2.2, 1.35, 0.12, undefined, 'pamphlet', 2.1);
   }
@@ -13468,7 +13526,8 @@ export class FestivalWorld {
     // wins.
     this.updateXrArms();
     this.updateTrackedBody(delta);
-    this.weather?.update(delta,this.player.position);
+    // The camera, so the isometric view can lay snow and rain across its whole window.
+    this.weather?.update(delta,this.player.position,undefined,this.camera);
     this.dayNight.setWeatherCloud(this.weather?.cloudiness()??0);
     this.dayNight.setShadowFocus(this.player.position);
     const dayNight = this.dayNight.update();

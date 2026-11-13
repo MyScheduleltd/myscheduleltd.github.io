@@ -53,6 +53,10 @@ export class CoastalScenery {
   box(size:[number,number,number],at:[number,number,number],mat:THREE.Material,rotation?:THREE.Euler):void{
     this.put(new THREE.BoxGeometry(...size),at,mat,rotation);
   }
+  /** A box that catches snow on top, as a detail (see `snowOn`). */
+  private detailBox(id:string,size:[number,number,number],at:[number,number,number],mat:THREE.Material,rotation?:THREE.Euler):void{
+    const geometry=new THREE.BoxGeometry(...size);this.put(geometry,at,mat,rotation);this.snowOn(id,geometry);
+  }
   /** Capture the same baked source geometry before town details are merged.
    * These detached CPU references never draw or own another material/buffer.
    * finish() disposes the source's unused GPU state, leaving its vertex arrays
@@ -61,6 +65,12 @@ export class CoastalScenery {
     const geometry=new THREE.BoxGeometry(...size);this.put(geometry,at,mat,rotation);
     const object=new THREE.Mesh(geometry,mat);object.name=id;
     this.snowSurfaceSources.push({id,object});
+  }
+  /** Snow on a piece of nature already baked in place (tree crowns, fronds, rocks), as a
+   * detail: it catches snow but leaves the ground and the falling snow as they are. */
+  private snowOn(id:string,geometry:THREE.BufferGeometry):void{
+    const object=new THREE.Mesh(geometry);object.name=id;
+    this.snowSurfaceSources.push({id,object,sheltersGround:false,occludes:false});
   }
   takeSnowSurfaceSources():SnowSurfaceSource[]{
     const sources=this.snowSurfaceSources;this.snowSurfaceSources=[];return sources;
@@ -123,9 +133,9 @@ export class CoastalScenery {
     }
     // Roof terrace: low planted corners and timber bench backs, clear of DJs/screens/routes.
     for(const x of [27,52]){
-      this.box([3.7,.7,2],[x,7.35,40.7],m.shell);
+      this.detailBox(`coastal-roof-planter-${x}`,[3.7,.7,2],[x,7.35,40.7],m.shell);
       this.solid(x,40.7,3.7,2,7,7.7,'roof-planter');
-      for(let i=0;i<3;i++)this.put(new THREE.IcosahedronGeometry(.8,0),[x-1+i,8.15,40.7],this.leaves[i]);
+      for(let i=0;i<3;i++){const leaves=new THREE.IcosahedronGeometry(.8,0);this.put(leaves,[x-1+i,8.15,40.7],this.leaves[i]);this.snowOn(`coastal-roof-planter-leaves-${x}-${i}`,leaves);}
     }
     // Converted waterfront warehouse: brick bays, high steel windows and rainwater pipes.
     // Details sit against existing walls; the entrance and pavement remain open.
@@ -162,7 +172,7 @@ export class CoastalScenery {
       this.beam(guyTop,guyFoot,.035,m.iron,'shore-guy-wire');this.wireRuns.push([...guyTop.toArray(),...guyFoot.toArray()]);
       this.solid(x,-36,.6,.6,SHORE_GRADE,12,'shore-mast');
     }
-    this.box([22,.25,.4],[35,SHORE_GRADE+12,-36],m.wood);
+    this.detailBox('coastal-shore-mast-crossbar',[22,.25,.4],[35,SHORE_GRADE+12,-36],m.wood);
     // Temple cut has a substantial stone base. Return walls end before the approach.
     for(const z of [-17.7,25.7]){
       for(let x=76;x<110;x+=4){
@@ -256,6 +266,7 @@ export class CoastalScenery {
       for(let level=0;level<3;level++){
         const geometry=new THREE.IcosahedronGeometry(1,0);geometry.scale((3-level*.5)*s,.8*s,(2.5-level*.35)*s);
         geometry.rotateY(level*.6);this.put(geometry,[x+level*.3*s,base+lift+(3.6+level*1.15)*s,z],this.leaves[level],undefined,true);
+        this.snowOn(`coastal-almond-crown-${x}-${z}-${level}`,geometry);
       }
     }
     for(const [x,z,scale] of [[-103,-42,4],[-93,-51,2.7],[-87,-59,2],[-73,-50,1.7],[93,-57,3],[107,-50,4],[78,-55,1.6],[116,36,3],[-109,53,3]] ){
@@ -264,6 +275,7 @@ export class CoastalScenery {
       g.computeBoundingBox();const bounds=g.boundingBox!;
       this.solid(x+(bounds.min.x+bounds.max.x)/2,z+(bounds.min.z+bounds.max.z)/2,bounds.max.x-bounds.min.x,bounds.max.z-bounds.min.z,base+scale*.18+bounds.min.y,base+scale*.18+bounds.max.y,'embedded-coastal-rock');
       this.put(g,[x,base+scale*.18,z],this.mats.concrete,undefined,true);
+      this.snowOn(`coastal-rock-${x}-${z}`,g);
     }
     for(const [x,z] of [[-60,-27],[-73,-28],[-81,-35],[-62,-46],[-95,-31],[58,-39],[82,-44],[91,-36],[68,-49],[113,35],[73,40],[-107,45]]){
       if(!this.clear(x,z,2))continue;
@@ -299,6 +311,7 @@ export class CoastalScenery {
       const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.computeVertexNormals();
       // Every batch uses non-indexed geometry with position and normal only.
       this.put(g,from.toArray() as [number,number,number],this.leaves[leaf%3],undefined,true);
+      this.snowOn(`coastal-palm-frond-${x}-${z}-${leaf}`,g);
     }
   }
   buildCirculation():void{

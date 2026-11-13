@@ -2784,4 +2784,6 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator { filter: bright
 
 /* Keep STAFF weather controls on the right at every viewport width. */
 #staff-weather-form > button { justify-self:end; width:min(180px,100%); max-width:100%; }
-#staff-weather-form .weather-period > button { grid-column:-2 / -1; justify-self:end; max-width:100%; }
+/* As tall as the select and date boxes beside it (46px with their borders);
+   the shared STAFF form button is 44px, which left 移除 short (2026-11-13). */
+#staff-weather-form .weather-period > button { grid-column:-2 / -1; justify-self:end; max-width:100%; box-sizing:border-box; height:46px; min-height:46px; }

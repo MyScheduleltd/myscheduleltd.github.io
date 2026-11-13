@@ -423,6 +423,27 @@ festival-offline-retries checkout; remove it before committing.
       on phones `CROWD_FULL_RATE` = 6 nearest in view pose every frame and
       the rest every other frame (owner's pick). Desktop is 60 at 19.
 
+47. Weather on everything, and in the whole isometric window (2026-11-13; the
+    owner's picks: ferry snow that bobs, every cover keeps the ground dry,
+    everything open to the sky, same density zoomed out):
+    - Isometric snow and rain are laid across the camera's window
+      (`FestivalWeather.isometricPrecipitation`): screen-placed, falling down
+      the screen, wrapping off-screen; counts grow with the window up to
+      1900/800 flakes and 1280/440 streaks (desktop/phone).
+    - Snow registered on the restyle's pieces and older bare surfaces:
+      `snowDetail()` (catches snow, `occludes: false`, no shelter), covers
+      via `registerSnowSurface` (awnings, umbrellas, parasol, tiled blocks),
+      street props through `Ps1PropHost.snowSurface` stand-ins, town nature
+      through `CoastalScenery.snowOn`, and the ferry through
+      `FestivalWeather.addMovingSurface` (child of the boat).
+    - New builder options: `occludes` and `minimumArea` (dense GLBs keep
+      faces over 0.03 m², `SNOW_DETAIL_FACE`).
+    - Audit: `snow-audit.mjs` (open-to-sky tops with snow 47% -> 83%; the
+      rest are under 6 m² each, or moving people and sea buoys). Captures:
+      `weather-tour.mjs`; cost: `weather-cost.mjs` (no fps change).
+    - Weather geometry after the planet pass 4.7 -> 8.4 MB live, one draw,
+      shown only while snow lies. Fixture budgets raised to 2 MB / 6.5 MB.
+
 ## Open
 
 - Building reshapes (walls not moved yet).

@@ -34,9 +34,18 @@ export interface SnowSurfaceSource {
   /** Coat every real upward face of a solid support, including under
    * overhangs. Its original solid geometry conceals any internal coverage. */
   occlusion?:boolean;
+  /** Clips the snow on other surfaces beneath it (the default). A detailed
+   * prop standing on a roof or deck sets this false: the prop itself hides
+   * whatever lies under it, and clipping round its many small faces would
+   * cut that surface into more pieces than the fixed budget allows. */
+  occludes?:boolean;
+  /** Leave out sky-facing faces smaller than this (square world units). A
+   * dense downloaded model has thousands of facets too small to show snow at
+   * the PS1 resolution; each would still cost a cap and its skirts. */
+  minimumArea?:number;
 }
 type Point = { x: number; y: number; z: number };
-type Triangle = { a: Point; b: Point; c: Point; index: number; sourceId:string; terrainMask:boolean; sheltersGround:boolean; minX: number; maxX: number; minZ: number; maxZ: number; minY: number; maxY: number; plane: [number, number, number] };
+type Triangle = { a: Point; b: Point; c: Point; index: number; sourceId:string; terrainMask:boolean; sheltersGround:boolean; occludes:boolean; minX: number; maxX: number; minZ: number; maxZ: number; minY: number; maxY: number; plane: [number, number, number] };
 export interface SnowSurfaceReport {sourceTriangles:number;topTriangles:number;triangles:number;sources:Array<{id:string;sourceTriangles:number;topTriangles:number}>}
 type Face = readonly [Point, Point, Point];
 const EPS = 1e-7;
@@ -146,12 +155,14 @@ function sourceTriangles(sources: readonly SnowSurfaceSource[],minimumUp=.5): Tr
             normal.crossVectors(ab.subVectors(b,a),ac.subVectors(c,a));
             if(![a.x,a.y,a.z,b.x,b.y,b.z,c.x,c.y,c.z].every(Number.isFinite)||normal.y<=0||normal.y/normal.length()<minimumUp)continue;
             if(source.minimumHeight!==undefined&&Math.min(a.y,b.y,c.y)<source.minimumHeight)continue;
+            // Horizontal footprint: what a flake lands on.
+            if(source.minimumArea!==undefined&&normal.y/2<source.minimumArea)continue;
             const pa={x:a.x,y:a.y,z:a.z},pb={x:b.x,y:b.y,z:b.z},pc={x:c.x,y:c.y,z:c.z};
             const nx=normal.x,ny=normal.y,nz=normal.z;
             const plane:[number,number,number]=[-nx/ny,-nz/ny,(nx*a.x+ny*a.y+nz*a.z)/ny];
             const append=(a:Point,b:Point,c:Point)=>{
               if(result.length>=SNOW_SURFACE_BUDGET.sourceTriangles)throw new Error('Authored snow refinement exceeds the fixed triangle inspection budget');
-              result.push({a,b,c,index:result.length,sourceId:source.id,terrainMask:!!source.terrainMask,sheltersGround:source.sheltersGround!==false,minX:Math.min(a.x,b.x,c.x),maxX:Math.max(a.x,b.x,c.x),
+              result.push({a,b,c,index:result.length,sourceId:source.id,terrainMask:!!source.terrainMask,sheltersGround:source.sheltersGround!==false,occludes:source.occludes!==false,minX:Math.min(a.x,b.x,c.x),maxX:Math.max(a.x,b.x,c.x),
                 minZ:Math.min(a.z,b.z,c.z),maxZ:Math.max(a.z,b.z,c.z),minY:Math.min(a.y,b.y,c.y),maxY:Math.max(a.y,b.y,c.y),plane});
             };
             // The existing roofs and terrain retain their unrefined path.
@@ -271,7 +282,7 @@ export function buildSnowSurfaceMeshes(sources: readonly SnowSurfaceSource[],ter
     const terrainSubject=subject.index>=triangles.length;
     const candidates=new Set<Triangle>();
     if(terrainSubject||!completeIds.has(subject.sourceId))for(let z=Math.floor(subject.minZ/size);z<=Math.floor(subject.maxZ/size);z++)for(let x=Math.floor(subject.minX/size);x<=Math.floor(subject.maxX/size);x++)for(const candidate of bins.get(x+','+z)??[]) {
-      if(candidate!==subject&&(!terrainSubject||candidate.sheltersGround)&&((terrainSubject&&candidate.terrainMask)||candidate.maxY>=subject.minY-1e-5)&&candidate.maxX>subject.minX+EPS&&candidate.minX<subject.maxX-EPS&&candidate.maxZ>subject.minZ+EPS&&candidate.minZ<subject.maxZ-EPS)candidates.add(candidate);
+      if(candidate!==subject&&(terrainSubject?candidate.sheltersGround:candidate.occludes||candidate.sourceId===subject.sourceId)&&((terrainSubject&&candidate.terrainMask)||candidate.maxY>=subject.minY-1e-5)&&candidate.maxX>subject.minX+EPS&&candidate.minX<subject.maxX-EPS&&candidate.maxZ>subject.minZ+EPS&&candidate.minZ<subject.maxZ-EPS)candidates.add(candidate);
     }
     let pieces:Point[][]=[[subject.a,subject.b,subject.c]];
     // A broad roof should erase covered floor pieces before fine trim can
