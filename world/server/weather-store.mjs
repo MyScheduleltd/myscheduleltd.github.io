@@ -1,19 +1,12 @@
+import { upstashClient } from './upstash.mjs';
+
 export const WEATHER_STORE_KEY = 'festival:weather:v1';
 
 /** Existing optional Upstash credentials, isolated from wishes and donations. */
 export function createWeatherStore({ env = process.env, fetchImpl = globalThis.fetch, requestTimeoutMs = 4_000 } = {}) {
-  const url = env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL;
-  const token = env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN;
-  if (!url || !token || typeof fetchImpl !== 'function') return { enabled: false, load: async () => null, save: async () => {} };
-  const command = async args => {
-    const response = await fetchImpl(url.replace(/\/$/, ''), { method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(args), signal: AbortSignal.timeout(requestTimeoutMs) });
-    if (!response.ok) throw new Error(`weather storage HTTP ${response.status}`);
-    const reply = await response.json();
-    if (reply?.error) throw new Error('weather storage rejected the command');
-    return reply?.result;
-  };
+  const database = upstashClient({ env, fetchImpl, requestTimeoutMs, label: 'weather storage' });
+  if (!database) return { enabled: false, load: async () => null, save: async () => {} };
+  const { command } = database;
   let queue = Promise.resolve();
   return { enabled: true,
     async load() { const raw = await command(['GET', WEATHER_STORE_KEY]); return typeof raw === 'string' && raw ? JSON.parse(raw) : null; },

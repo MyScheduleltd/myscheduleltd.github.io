@@ -47,7 +47,7 @@ function fixture() {
   const ui = new globals.ChatHarness(), calls = [], requests = [], alerts = [];
   let current = panel('hello');
   Object.assign(ui, {
-    activePanel: 'chat', chatChannel: 'FESTIVAL', chatMessages: [], pendingChat: [], chatDrafts: {}, chatSending: false, chatSequence: 0,
+    activePanel: 'chat', chatChannel: 'FESTIVAL', chatMessages: [], pendingChat: [], chatStreamAliases: new Map(), chatDrafts: {}, chatSending: false, chatSequence: 0,
     currentId: 'Visitor', networkState: { selfId: 'visitor-id', messages: [] }, language: 'zh-TW', connectionStatus: 'online',
     root: { querySelector: selector => selector === '#chat-form' ? current.form : selector === '#chat-message' ? current.input : null },
     festivalClient: { online: true, sendMessage(channel, text) { const request = deferred(); requests.push(request); calls.push({ channel, text }); return request.promise; } },

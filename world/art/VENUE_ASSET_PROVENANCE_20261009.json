@@ -1,43 +1,6 @@
 {
   "assets": [
     {
-      "asset": "attendant",
-      "model": "Meshy 7",
-      "generation": "b65f091e-4e4e-480e-9ee9-e94048d18210",
-      "original_glb_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/hf_20261009_072627_b65f091e-4e4e-480e-9ee9-e94048d18210.glb",
-      "reference_image_url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3GGRCdxKClE58ZDAQGUWtYITUfr/cffd5ead-fd5c-4302-81e5-07d2e99c84c4_resize.jpg",
-      "rigged": true,
-      "requested_polycount": 10000,
-      "bytes": 3687768,
-      "sha256": "122a55e1038104ab3f583de9bd920b40e537b9ee2957aab170180cbd187bd485",
-      "triangles": 19115,
-      "source_preserved": false,
-      "original_sha256": "64954bebd96939445591068c36e4ba137e1d2aaaff5f301f3077ee4d9f6293c5",
-      "local_repair": {
-        "shirt": 773,
-        "trousers": 4873,
-        "bytes": 8647100,
-        "sha256": "2248d11158447b6bd21866329c2ae157a760fe604a6acced046d1918032b9e1d",
-        "forearm_faces_restored": 47,
-        "forearm_repair": "Restored the original textured skin material on 23 left and 24 right inner-arm faces; use arm rig ownership to exclude skin from trouser classification. Topology, UVs and skin weights unchanged.",
-        "finger_separation": {
-          "rounded_slots": 6,
-          "source_hand_boundary_edges_closed": 14,
-          "new_inner_surface_faces": 420,
-          "skin_uv": [
-            0.6958569884300232,
-            0.8876429796218872
-          ],
-          "retained_thumb_palm_wrist": true
-        },
-        "texture_reencode_20261017": {
-          "previous_sha256": "2248d11158447b6bd21866329c2ae157a760fe604a6acced046d1918032b9e1d",
-          "previous_bytes": 8647100,
-          "note": "Image maps re-encoded as lossy WebP at the same 2048 size (EXT_texture_webp; colour q90, normal maps q96–99 or near-lossless), each kept only at PSNR >= 40 dB (normals >= 42 dB) against the previous map. Geometry, skins, UVs and materials byte-identical."
-        }
-      }
-    },
-    {
       "asset": "box-office",
       "model": "Meshy 7",
       "generation": "c19c007d-e619-4ba2-8705-fe335acdda4b",

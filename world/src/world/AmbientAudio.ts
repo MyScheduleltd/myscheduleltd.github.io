@@ -113,6 +113,15 @@ const fireworkFile = (kind: string): string => ({
 })[kind as 'willow' | 'peony' | 'ring'].href;
 
 const AVATAR_KINDS: readonly AvatarSound[] = ['step-left', 'step-right', 'eat', 'drink', 'snow-brush', 'punch'];
+
+/** Every file preloadWorldSounds fetches on this device, for the sign-in page's loading bar. */
+export function worldSoundUrls(): string[] {
+  const mono = phone();
+  return [
+    ...LAND_BEDS.map(key => bedFile(key, mono)), ...WEATHER_BEDS.map(key => bedFile(key, true)),
+    ...STEP_KEYS.map(snowStepFile), ...AVATAR_KINDS.map(avatarFile), skateFile(), ...FIREWORK_KINDS.map(fireworkFile),
+  ];
+}
 /** Balance within the avatar's channel; the one-shots share one loudness. */
 const AVATAR_LEVEL: Record<AvatarSound, number> = { 'step-left': 0.5, 'step-right': 0.5, eat: 0.9, drink: 0.9, 'snow-brush': .75, punch: .9 };
 /** The board's loop, cut like the beds (tools/build-sfx.py). */

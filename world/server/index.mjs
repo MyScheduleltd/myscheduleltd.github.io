@@ -13,6 +13,7 @@ import { ArcadePreviewAccess, arcadeDeviceKey, ARCADE_PREVIEW_END } from './arca
 import { FestivalWeather, OUTDOOR_SNOW_SEATS, weatherAt } from './weather.mjs';
 import { seatSnowCoverage } from '../src/weather/WeatherModel.mjs';
 import { createWeatherStore, createWeatherPersistence } from './weather-store.mjs';
+import { createVisitStats } from './visit-stats.mjs';
 import {
   DONATION_PRESETS, MAX_DONATION, MIN_DONATION,
   buildInvoice, buildOrder, ecpayConfig, readInvoiceReply,
@@ -1389,6 +1390,8 @@ const WISH_LENGTH = 60;
 const WISH_NAME_LENGTH = 24;
 const wishes = [];
 const wishStore = createWishStore();
+/** Anonymous per-day visit tallies for STAFF (see visit-stats.mjs). */
+const visitStats = createVisitStats();
 /**
  * A note as written. Not `safeText`: its NFKC folds full-width Chinese
  * punctuation (！，。) to ASCII, which would change how a Chinese note reads.
@@ -1399,6 +1402,9 @@ const wishText = (value, max) => [...String(value ?? '').normalize('NFC')
   .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g, ' ')
   .replace(/\s+/g, ' ')
   .trim()].slice(0, max).join('').trim();
+/** Names no visitor may join, speak or sign as (the client's isValidId keeps the same list). */
+const RESERVED_NAMES = new Set(['STAFF', 'ADMIN', 'NPC', 'MYSCHEDULE', 'SYSTEM']);
+const reservedName = (value) => RESERVED_NAMES.has(String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleUpperCase('en-US'));
 const postWish = (donation) => {
   if (!donation.wish) return;
   wishes.push({
@@ -2018,10 +2024,24 @@ const server = createServer(async (request, response) => {
       return json(response, 200, { build: (process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7), serverTime: Date.now(), weather: weather.snapshot(), schedule: programmeSchedule, siteStyle, customVideos: customVideosByVenue, npcNames, npcProfiles: publicNpcProfiles(), pamphlet: pamphletContent, djProfiles, djProfileSeed: DJ_PROFILE_SEED, shopLink, templeSign, entranceSign, gateCopy, trackTempos, trackDurations, immersiveSources, videoTitles, clubRequest, venueQueues, jukebox: jukeboxSnapshot(), wishes });
     }
 
+    // Anonymous visit tallies (the owner, 2026-11-09). No session: the
+    // sign-in page reports before anybody has one. Answered at once and
+    // counted afterwards; a slow or failed count never holds a visitor.
+    if (request.method === 'POST' && url.pathname === '/api/visit') {
+      const payload = await body(request).catch(() => undefined);
+      response.writeHead(204);
+      response.end();
+      void visitStats.record(payload, clientAddress(request));
+      return;
+    }
+
     if (request.method === 'POST' && url.pathname === '/api/session') {
       const payload = await body(request);
       const name = safeText(payload.name, 16);
       if (!name) return apiError(response, 400, 'A festival name is required.');
+      // The sign-in page refuses these too (isValidId); a crafted request must
+      // not get past it to chat or sign the wish wall as STAFF (2026-11-12).
+      if (reservedName(name)) return apiError(response, 400, 'That festival name is reserved.');
       if (!claimName(name)) return apiError(response, 409, 'That festival name is already connected.');
 
       pruneWaiting();
@@ -2063,6 +2083,7 @@ const server = createServer(async (request, response) => {
       const previousId = safeText(payload.session?.id, 64);
       const previousToken = safeText(payload.session?.token, 128);
       if (!name || !previousId || !previousToken) return apiError(response, 400, 'Session recovery details are required.');
+      if (reservedName(name)) return apiError(response, 400, 'That festival name is reserved.');
 
       const existing = visitors.get(previousId);
       if (existing) {
@@ -2198,7 +2219,9 @@ const server = createServer(async (request, response) => {
       // page with whatever they had typed at the gate, or nothing (the wall
       // then says 訪客 / GUEST).
       const wish = wishText(payload.message, WISH_LENGTH);
-      const wishName = visitor ? visitor.name : wishText(payload.displayName, WISH_NAME_LENGTH);
+      // A reserved name (STAFF, ADMIN…) is never a guest's to sign with: 訪客 instead.
+      const guestName = wishText(payload.displayName, WISH_NAME_LENGTH);
+      const wishName = visitor ? visitor.name : reservedName(guestName) ? '' : guestName;
       const id = randomUUID();
       const tradeNo = tradeNumber();
       donations.set(id, {
@@ -2914,6 +2937,9 @@ a{color:#e8b64a}</style>
     if (url.pathname.startsWith('/api/admin/')) {
       if (adminLocked(request)) return apiError(response, 429, 'Too many wrong staff keys. Try again later.');
       if (!adminAllowed(request)) return apiError(response, 401, 'Invalid staff key.');
+      if (request.method === 'GET' && url.pathname === '/api/admin/visits') {
+        return json(response, 200, await visitStats.summary(url.searchParams.get('days') ?? 14));
+      }
       if (request.method === 'GET' && url.pathname === '/api/admin/state') {
         return json(response, 200, {
           visitors: [...visitors.values()].map(publicVisitor),

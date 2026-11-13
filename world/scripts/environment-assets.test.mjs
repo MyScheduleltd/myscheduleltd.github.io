@@ -24,13 +24,12 @@ const fitSource = () => {
 test('only installed environment GLB model names enter the runtime manifest', () => {
   assert.deepEqual(environmentModelAssetsFromUrls({
     '../assets/environment/street-lamp.glb': '/lamp-A.glb',
-    '../assets/environment/pamphlet-stand.glb': '/pamphlet-B.glb',
     '../assets/environment/cinema-pilaster.glb': '/pilaster-C.glb',
     '../assets/environment/statue.glb': '/statue-D.glb',
     '../assets/environment/drive-in-car.glb': '/car-E.glb',
     '../assets/environment/brick.webp': '/brick.webp',
     '../assets/environment/avatar.glb': '/avatar.glb',
-  }), { 'street-lamp': '/lamp-A.glb', 'pamphlet-stand': '/pamphlet-B.glb', 'cinema-pilaster': '/pilaster-C.glb', statue: '/statue-D.glb', 'drive-in-car':'/car-E.glb' });
+  }), { 'street-lamp': '/lamp-A.glb', 'cinema-pilaster': '/pilaster-C.glb', statue: '/statue-D.glb', 'drive-in-car':'/car-E.glb' });
 });
 
 test('uniform fitting measures the chosen facing, honors all maxima and anchors the feet without changing source geometry', () => {

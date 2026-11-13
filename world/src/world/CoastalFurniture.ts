@@ -68,20 +68,3 @@ export function createCoastalSpeaker(width:number,height:number,depth:number):TH
   for(const x of [-1,1])box('rubber-foot',[width*.16,.1,depth*.7],[x*width*.32,.05,0],m.dark);
   return group;
 }
-export function createCoastalJukebox():THREE.Group {
-  const {group,box,disc}=builder('Record selector cabinet'),m=palette();
-  box('founded-plinth',[2.4,.5,1.5],[0,-.05,0],m.dark);
-  box('timber-case',[2.2,2.85,1.3],[0,1.6,0],m.wood);
-  box('enamel-face',[1.96,2.5,.1],[0,1.62,.69],m.green);
-  box('cream-header',[2.3,.24,1.4],[0,3.12,0],m.cream);
-  box('selector-window',[1.68,.85,.08],[0,2.2,.77],m.dark);
-  for(let row=0;row<3;row++)for(let col=0;col<3;col++){
-    box('record-title',[.42,.16,.025],[(col-1)*.5,2.45-row*.24,.825],m.cream);
-    box('selection-key',[.14,.08,.045],[(col-1)*.5,1.59-row*.13,.83],m.red);
-  }
-  disc('speaker-grille',.52,.08,[0,.73,.79],m.dark,true);
-  for(let i=0;i<7;i++)box('speaker-louvre',[1.42,.045,.08],[0,.46+i*.11,.86],m.cream);
-  for(const x of [-1,1])box('side-trim',[.09,2.75,.09],[x*1.02,1.65,.76],m.cream);
-  box('coin-slot',[.25,.055,.055],[.63,1.72,.84],m.dark);
-  return group;
-}

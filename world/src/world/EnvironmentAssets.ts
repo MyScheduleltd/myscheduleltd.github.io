@@ -4,7 +4,7 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { fetchAsset } from './AssetMirror';
 import { mobileAssetBudgetEnabled, parseGameModel } from './MobileAssetBudget';
 
-export const ENVIRONMENT_ASSET_KINDS = ['street-lamp', 'pamphlet-stand', 'cinema-pilaster', 'statue', 'victory-statue', 'drive-in-car'] as const;
+export const ENVIRONMENT_ASSET_KINDS = ['street-lamp', 'cinema-pilaster', 'statue', 'victory-statue', 'drive-in-car'] as const;
 export type EnvironmentAssetKind = typeof ENVIRONMENT_ASSET_KINDS[number];
 export const ENVIRONMENT_ASSET_ROOT = 'Higgsfield environment asset';
 export type EnvironmentModelAssets = Partial<Record<EnvironmentAssetKind, string>>;

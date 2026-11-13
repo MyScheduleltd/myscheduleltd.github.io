@@ -33,7 +33,11 @@ test('the embedded brand image is the original PNG, without a separate image dow
 test('sound-on entry unlocks audio before admission and avatar downloads', async () => {
  const code=await readFile('src/ui/App.ts','utf8');
  const submit=code.slice(code.indexOf("form?.addEventListener('submit'"),code.indexOf('private async enterWhenThereIsRoom'));
- assert.ok(submit.indexOf('entryAudio.start(muted)')<submit.indexOf('enterWhenThereIsRoom(muted)'));
+ // Unlocked in the press itself, before the entry is held for the downloads
+ // and released by tickGateLoad (the owner, 2026-11-12).
+ assert.ok(submit.indexOf('entryAudio.start(muted)')>0);
+ assert.ok(submit.indexOf('entryAudio.start(muted)')<submit.indexOf('this.queuedEntry = { muted }'));
+ assert.ok(submit.indexOf('this.queuedEntry = { muted }')<submit.indexOf('enterWhenThereIsRoom(queued.muted)'));
  assert.ok(code.includes('audio: this.entryAudio'));
  assert.ok(code.includes('enterWhenThereIsRoom(readSession<boolean>(AUDIO_MUTED_KEY, true))'));
  assert.ok(code.includes('data-audio-resume'));

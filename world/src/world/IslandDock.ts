@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ISLAND, ISLAND_COVE, SEA_Y, terrainHeightAt } from './CoastalTerrain';
 import { pixelSurface } from './CoastalSurfaces';
+import { ps1SurfaceTexture } from './Ps1Surfaces';
+import { buildPs1Ferry } from './Ps1Ferry';
 
 /**
  * The landing for the island prototype, just outside the gate: a walled
@@ -52,7 +54,7 @@ function post(put: Put, x: number, z: number, top: number, radius: number, m: TH
  * upper strakes are separate meshes so they take two colours on one crisp
  * line, the way the reference boat's paint does.
  */
-function hull(length: number, beam: number, depth: number): { lower: THREE.BufferGeometry; upper: THREE.BufferGeometry; deck: THREE.BufferGeometry } {
+function hull(length: number, beam: number, depth: number, stripeHeight = 0): { lower: THREE.BufferGeometry; upper: THREE.BufferGeometry; stripe?: THREE.BufferGeometry; deck: THREE.BufferGeometry } {
   const stations = [-.5, -.42, -.2, .05, .25, .38, .46, .5];
   const section = (t: number) => {
     const bow = Math.max(0, (t - .1) / .4);
@@ -62,10 +64,11 @@ function hull(length: number, beam: number, depth: number): { lower: THREE.Buffe
     return { z: t * length, halfBeam, keel, sheer };
   };
   const ring = (s: ReturnType<typeof section>, band: number) => {
-    // Chine to sheer, in `band` 0 (keel .. waterline stripe) or 1 (stripe .. sheer).
-    const stripe = -depth * .38;
-    const lowY = band === 0 ? s.keel : Math.max(stripe, s.keel);
-    const highY = band === 0 ? Math.max(stripe, s.keel) : s.sheer;
+    // Chine to sheer, in `band` 0 (keel .. waterline stripe), 2 (the boot-top
+    // stripe itself, when there is one) or 1 (above it .. sheer).
+    const stripe = -depth * .38, above = stripe + stripeHeight;
+    const lowY = band === 0 ? s.keel : band === 2 ? Math.max(stripe, s.keel) : Math.max(above, s.keel);
+    const highY = band === 0 ? Math.max(stripe, s.keel) : band === 2 ? Math.max(above, s.keel) : s.sheer;
     const w = (y: number) => s.halfBeam * (.72 + .28 * THREE.MathUtils.clamp((y - s.keel) / (s.sheer - s.keel + 1e-4), 0, 1));
     return [[-w(highY), highY], [-w(lowY), lowY], [w(lowY), lowY], [w(highY), highY]];
   };
@@ -100,8 +103,12 @@ function hull(length: number, beam: number, depth: number): { lower: THREE.Buffe
   }
   const deck = new THREE.BufferGeometry();
   deck.setAttribute('position', new THREE.Float32BufferAttribute(deckPos, 3));
+  // Planks run fore and aft: the tile's planks lie along U.
+  const deckUv: number[] = [];
+  for (let i = 0; i < deckPos.length; i += 3) deckUv.push(deckPos[i + 2] / 6, deckPos[i] / 2.4);
+  deck.setAttribute('uv', new THREE.Float32BufferAttribute(deckUv, 2));
   deck.computeVertexNormals();
-  return { lower: loft(0), upper: loft(1), deck };
+  return { lower: loft(0), upper: loft(1), stripe: stripeHeight > 0 ? loft(2) : undefined, deck };
 }
 
 export class IslandDock {
@@ -215,46 +222,38 @@ export class IslandDock {
       list.forEach((g) => g.dispose());
     }
 
-    // The ferry: white upper works over a blue hull, a red cabin roof, the
-    // bow pointing out to sea, tied alongside the head's east face.
-    const white = mat(0xe9e4d6, grain), blue = mat(0x2f5f86), red = mat(0xa8322c), glass = mat(0x22303a), boatDeck = mat(0x9c8a6c, grain);
+    // The ferry: white upper works over a blue hull, the bow pointing out to
+    // sea, tied alongside the head's east face. Its cabin is Ps1Ferry's.
+    const white = mat(0xe9e4d6, grain), blue = mat(0x2a4f80), boatDeck = mat(0x9c8a6c, grain);
     const length = 12, beam = 4.2, depth = 1.5;
-    const shape = hull(length, beam, depth);
-    for (const m of [blue, white, boatDeck]) m.side = THREE.DoubleSide;
-    for (const [g, m] of [[shape.lower, blue], [shape.upper, white], [shape.deck, boatDeck]] as const) {
+    // The Showa ferry (2026-11-11) has a red boot-top stripe and a planked deck.
+    const shape = hull(length, beam, depth, .22);
+    boatDeck.map = ps1SurfaceTexture('wood'); boatDeck.color.set(0xb08a62);
+    const stripe = mat(0xb3352b);
+    for (const m of [blue, white, boatDeck, stripe]) m.side = THREE.DoubleSide;
+    for (const [g, m] of [[shape.lower, blue], [shape.upper, white], [shape.deck, boatDeck], ...(shape.stripe ? [[shape.stripe, stripe]] as const : [])] as const) {
       const mesh = new THREE.Mesh(g, m);
       mesh.castShadow = mesh.receiveShadow = true;
       this.boat.add(mesh);
     }
-    const part = (size: [number, number, number], at: [number, number, number], m: THREE.Material) => {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), m);
-      mesh.position.set(...at);
-      mesh.castShadow = mesh.receiveShadow = true;
-      this.boat.add(mesh);
-      return mesh;
-    };
-    // Wheelhouse aft of midships, windows all round, a roof with an overhang.
-    part([2.9, 1.9, 3.4], [0, .12 + .95, -1.6], white);
-    part([3.02, .55, 3.52], [0, .12 + 1.45, -1.6], glass);
-    part([2.1, .5, .06], [0, .12 + 1.45, .17], glass);
-    part([3.4, .22, 4.1], [0, .12 + 2.02, -1.7], red);
-    // A stubby mast with a lamp, and a railing along each side of the fore deck.
-    const mast = new THREE.Mesh(new THREE.CylinderGeometry(.08, .1, 2.6, 6), iron);
-    mast.position.set(0, .12 + 3.3, -2.2);
-    this.boat.add(mast);
-    part([.3, .3, .3], [0, .12 + 4.6, -2.2], mat(0xf2dd9a));
-    // On the pier side the rail starts aft of where the gangway comes aboard
-    // (local z .85..1.95), so the way off the boat is open.
-    for (const side of [-1, 1]) {
-      const from = side < 0 ? 2.1 : .5;
-      for (const z of side < 0 ? [2.1, 3.0, 4.0] : [.6, 1.8, 3.0, 4.0]) part([.06, .7, .06], [side * (beam / 2 - .35 - Math.max(0, z - 2.6) * .45), .12 + .35 + (z > 3 ? .1 : 0), z], white);
-      part([.07, .07, 4.1 - from], [side * (beam / 2 - .5), .12 + .72, (from + 4.1) / 2], white);
+    {
+      // A timber rubbing strake along the sheer, either side.
+      const stations = [-.5, -.42, -.2, .05, .25, .38, .46, .5];
+      const at = (t: number) => {
+        const bow = Math.max(0, (t - .1) / .4);
+        return { z: t * length, half: beam / 2 * (t < -.42 ? .86 : 1 - bow * bow * .94), sheer: .12 + bow * bow * .55 };
+      };
+      const strake = mat(0x6b4a32);
+      for (let i = 0; i < stations.length - 2; i++) for (const side of [-1, 1]) {
+        const a = at(stations[i]), b = at(stations[i + 1]);
+        const from = new THREE.Vector3(side * (a.half + .04), a.sheer - .1, a.z), to = new THREE.Vector3(side * (b.half + .04), b.sheer - .1, b.z);
+        const piece = new THREE.Mesh(new THREE.BoxGeometry(.1, .14, from.distanceTo(to) + .04), strake);
+        piece.position.copy(from).lerp(to, .5);
+        piece.lookAt(to);
+        this.boat.add(piece);
+      }
     }
-    // A life ring on the wheelhouse side facing the pier.
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(.36, .1, 5, 10), mat(0xe8612c));
-    ring.rotation.y = Math.PI / 2;
-    ring.position.set(-1.47, .12 + 1.0, -1.1);
-    this.boat.add(ring);
+    buildPs1Ferry(this.boat, { length, beam, deck: .12, pierSide: -1 });
     this.boat.name = 'island-ferry';
     // Floating on its waterline, 0.9 below the sheer amidships: the blue
     // bottom shows as a band under the white topsides.
@@ -328,14 +327,28 @@ export class IslandDock {
     const t = .3, half = ISLAND_COVE.half;
     const out: [number, number, number, number][] = [];
     const gap = WIDTH / 2 + .7;
-    out.push([(-half - gap) / 2, QUAY_Z - .15, half - gap, t], [(half + gap) / 2, QUAY_Z - .15, half - gap, t]);
+    // As deep as the walls and their copings (the owner, 2026-11-11): a thin
+    // line at the edge let a body on the grass press its legs into the raised
+    // coping, and one in the water press into the wall below it.
+    out.push([(-half - gap) / 2, QUAY_Z + .225, half - gap, 1.05], [(half + gap) / 2, QUAY_Z + .225, half - gap, 1.05]);
     for (const side of [-1, 1]) {
-      out.push([side * (half - .15), QUAY_Z + 30, t, 60]);
+      out.push([side * (half + .075), QUAY_Z + 30, 1.65, 60]);
       out.push([PIER_X + side * (WIDTH / 2 + .15), (QUAY_Z + HEAD_Z - 3) / 2, t, HEAD_Z - 3 - QUAY_Z]);
       out.push([PIER_X + side * (HEAD_W / 2 + .15), HEAD_Z - 3 + HEAD_D / 2, t, HEAD_D]);
       out.push([PIER_X + side * (HEAD_W / 2 + WIDTH / 2) / 2, HEAD_Z - 3 - .15, (HEAD_W - WIDTH) / 2, t]);
     }
     out.push([PIER_X, HEAD_Z + HEAD_D - 3 + .15, HEAD_W + .6, t]);
+    // What stands on the walk itself (the owner, 2026-11-11: bodies went into
+    // all of these). The steps' cheek walls stand .7 over the quay beside
+    // them and .45 outside the pier's edge line; the posts down the pier and
+    // the bollards on the head are knee-high; the gangway's handrails come
+    // ashore on the head.
+    for (const side of [-1, 1]) {
+      out.push([PIER_X + side * (WIDTH / 2 + .35), QUAY_Z + STEPS * STEP_RUN / 2 - .6, .9, STEPS * STEP_RUN + 1.3]);
+      for (let z = ROOT_Z + 1; z <= HEAD_Z - 3; z += 4) out.push([PIER_X + side * (WIDTH / 2 - .15), z, .5, .5]);
+    }
+    for (const z of [HEAD_Z - 1.8, HEAD_Z + .6]) out.push([PIER_X + HEAD_W / 2 - .6, z, .66, .66]);
+    out.push([PIER_X + HEAD_W / 2 - .55, HEAD_Z + 2.6, 1.5, 1.3]);
     return out;
   }
 
@@ -349,6 +362,18 @@ export class IslandDock {
       [PIER_X - (WIDTH / 2 + 2.4), QUAY_Z - 2.2], [PIER_X + WIDTH / 2 + 2.4, QUAY_Z - 2.2],
       [PIER_X - (HEAD_W / 2 - .7), HEAD_Z + HEAD_D - 3.7], [PIER_X + 5.2, HEAD_Z + HEAD_D - 3.7],
     ];
+  }
+
+  /**
+   * Where the water washes round things in the harbour (StylizedWater): each
+   * post standing in it as [x, z, radius], and the ferry's hull as
+   * [x, z, half beam, half length].
+   */
+  washSpots(): { posts: Array<[number, number, number]>; boat: [number, number, number, number] } {
+    const posts: Array<[number, number, number]> = [];
+    for (const side of [-1, 1]) for (let z = ROOT_Z + 1; z <= HEAD_Z - 3; z += 4) posts.push([PIER_X + side * (WIDTH / 2 - .15), z, .24]);
+    for (const [x, z] of [[-HEAD_W / 2, HEAD_Z - 3], [HEAD_W / 2, HEAD_Z - 3], [-HEAD_W / 2, HEAD_Z + HEAD_D - 3], [HEAD_W / 2, HEAD_Z + HEAD_D - 3], [0, HEAD_Z + HEAD_D - 3], [-HEAD_W / 4, HEAD_Z + HEAD_D - 3], [HEAD_W / 4, HEAD_Z + HEAD_D - 3]]) posts.push([PIER_X + x, z, .28]);
+    return { posts, boat: [this.boatHome.x, this.boatHome.z, 2.15, 6.1] };
   }
 
   /** The ferry rides the swell a little: heave, roll and pitch, slow. */

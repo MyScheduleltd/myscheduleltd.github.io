@@ -11,7 +11,7 @@ import ts from 'typescript';
 const source = await readFile('src/ui/App.ts', 'utf8');
 const tree = ts.createSourceFile('App.ts', source, ts.ScriptTarget.Latest, true);
 const appClass = tree.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'App');
-const methods = ['mountGatePreview', 'disposeGatePreview', 'gateShowsCharacter', 'fetchGateCharacter', 'followGateLoad', 'tickGateLoad', 'stopGateLoad', 'paintGateLoad', 'beginGateEntry', 'startGateTips', 'showGateTip', 'stopGateTips', 'setGateEntryProgress',
+const methods = ['mountGatePreview', 'disposeGatePreview', 'gateShowsCharacter', 'fetchGateCharacter', 'followGateLoad', 'signInReady', 'tickGateLoad', 'stopGateLoad', 'paintGateLoad', 'beginGateEntry', 'startGateTips', 'showGateTip', 'stopGateTips', 'setGateEntryProgress', 'drawGateEntryProgress', 'syncGateEntryWake', 'serviceForEntry',
   'retainGateEntry', 'prepareGateEntry', 'waitForGateExit', 'completeGateEntry', 'cancelGateEntry', 'enterWhenThereIsRoom'].map(name => {
   const method = appClass.members.find(node => node.name?.getText(tree) === name);
   assert.ok(method, name);
@@ -20,10 +20,17 @@ const methods = ['mountGatePreview', 'disposeGatePreview', 'gateShowsCharacter',
 const deadline = (await readFile('src/network/RequestDeadline.ts', 'utf8')).replace('export async function', 'async function');
 const tipsSource = (await readFile('src/ui/EntryTips.ts', 'utf8')).replaceAll('export function', 'function').replaceAll('export class', 'class');
 const meterSource = (await readFile('src/ui/GateLoadMeter.ts', 'utf8')).replace(/^export /gm, '');
-const script = ts.transpileModule(`${tipsSource}\n${deadline}\n${meterSource}\nclass GateLifecycle {
+const wakeSource = (await readFile('src/network/ServiceWake.ts', 'utf8')).replace(/^export /gm, '');
+const script = ts.transpileModule(`${tipsSource}\n${deadline}\n${meterSource}\n${wakeSource}\nclass GateLifecycle {
   gatePreviewGeneration = 0;
   gatePreviewFailed = false;
   gateEntryProgress = 0;
+  gateEntryAssets = 0;
+  gateEntryLabel = '';
+  gateEntryWakeEligible = false;
+  gateEntryWakeShare = 0;
+  gateEntryWaitingForServer = false;
+  serviceCanSleep = false;
   gateEntryAttempt = 0;
   gateEntryFrames = [];
   gateEntryKeyCapture = () => {};
@@ -34,7 +41,7 @@ const script = ts.transpileModule(`${tipsSource}\n${deadline}\n${meterSource}\nc
   entryRecovery = { finish() {}, phase() { return undefined; } };
   recordBlackBox = () => {};
   ${methods}
-}; globalThis.GateLifecycle = GateLifecycle; globalThis.TipRotation = TipRotation; globalThis.entryTips = entryTips;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+}; globalThis.GateLifecycle = GateLifecycle; globalThis.TipRotation = TipRotation; globalThis.entryTips = entryTips; globalThis.ServiceWake = ServiceWake;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
 const settle = async () => { for (let n = 0; n < 10; n++) await Promise.resolve(); };
 /** The sign-in page's loading bar: its words, its percentage and its track. */
@@ -84,6 +91,8 @@ function fixture({ manualFrames = false } = {}) {
   runInNewContext(script, context);
   const app = new context.GateLifecycle();
   app.prepareWorldTopology = () => Promise.resolve();
+  // Every download behind the sign-in page (SignInDownloads), by bytes.
+  app.signInDownloads = { fraction: 0, done: false };
   app.root = { querySelector(selector) {
     return selector === '[data-gate-backdrop]' ? nodes.host
       : selector === '[data-gate-avatar]' ? nodes.avatar : nodes.status;
@@ -198,16 +207,16 @@ test('a failed renderer is replaced on redraw and its error remains visible unti
   assert.equal(f.instances.length, 2);
   assert.equal(f.nodes.status.hidden, false);
   f.instances[1].options.onReady();
-  assert.equal(f.nodes.status.hidden, false, 'the error gives way to the loading bar, still waiting for the character');
+  assert.equal(f.nodes.status.hidden, false, 'the error gives way to the loading bar, still waiting for the downloads');
   assert.equal(f.nodes.status.dataset.state, 'loading');
-  f.avatars.fraction = 1;
+  f.app.signInDownloads.done = true;
   f.advance(150);
   assert.equal(f.nodes.status.dataset.state, 'done');
   f.advance(750);
   assert.equal(f.nodes.status.hidden, true);
 });
 
-test('the sign-in bar counts the globe, then the character, and leaves once both are in', async () => {
+test('the sign-in bar counts the globe, then every download, and leaves once all are in', async () => {
   const f = fixture();
   const { status } = f.nodes;
   f.app.mountGatePreview();
@@ -219,15 +228,18 @@ test('the sign-in bar counts the globe, then the character, and leaves once both
   await settle();
   f.advance(150);
   const code = parseInt(status.percent.textContent);
-  assert.ok(code > 0 && code < 35, `the globe's code is in (${code}%)`);
+  assert.ok(code > 0 && code < 20, `the globe's code is in (${code}%)`);
   f.instances[0].options.onReady();
-  assert.equal(status.label.textContent, 'LOADING THE CHARACTER…');
-  assert.equal(status.percent.textContent, '35%');
-  f.avatars.fraction = .5;
+  assert.equal(status.label.textContent, 'DOWNLOADING THE FESTIVAL…');
+  assert.equal(status.percent.textContent, '20%');
+  f.app.signInDownloads.fraction = .5;
   f.advance(150);
-  assert.equal(status.percent.textContent, `${Math.floor((.35 + .65 * .5) * 100)}%`);
-  assert.equal(status.track.attributes['aria-valuenow'], String(Math.floor((.35 + .65 * .5) * 100)));
-  f.avatars.fraction = 1;
+  assert.equal(status.percent.textContent, '60%');
+  assert.equal(status.track.attributes['aria-valuenow'], '60');
+  f.app.signInDownloads.fraction = 1;
+  f.advance(150);
+  assert.equal(status.percent.textContent, '99%', 'nothing reads 100 until every download has settled');
+  f.app.signInDownloads.done = true;
   f.advance(150);
   assert.equal(status.percent.textContent, '100%');
   assert.equal(status.dataset.state, 'done');
@@ -241,7 +253,7 @@ test('the sign-in bar counts the globe, then the character, and leaves once both
   assert.equal(f.nodes.status.hidden, true);
 });
 
-test('a phone waits only for the globe, and a body chosen later gets the bar back', async () => {
+test('phones leave the character off but wait for the same downloads', async () => {
   const f = fixture();
   f.context.window.matchMedia = () => ({ matches: true });
   f.app.mountGatePreview();
@@ -249,30 +261,36 @@ test('a phone waits only for the globe, and a body chosen later gets the bar bac
   await settle();
   assert.deepEqual(f.avatars.loads, [], 'phones leave the character off the sign-in page');
   f.instances[0].options.onReady();
-  assert.equal(f.nodes.status.label.textContent, 'OPENING THE FESTIVAL WORLD…');
+  assert.equal(f.nodes.status.dataset.state, 'loading', 'the globe alone is not everything');
+  f.app.signInDownloads.done = true;
+  f.advance(150);
   assert.equal(f.nodes.status.dataset.state, 'done');
   f.advance(750);
   assert.equal(f.nodes.status.hidden, true);
+});
 
-  const desk = fixture();
-  desk.app.mountGatePreview();
-  desk.resolve();
+test('a press before 100% is held and goes in by itself, sound on or muted as pressed', async () => {
+  const f = fixture();
+  const buttons = [{ disabled: false }, { disabled: false }], notice = { hidden: true, textContent: '' };
+  const query = f.app.root.querySelector;
+  f.app.root = { querySelector: name => name === '#gate-waiting' ? notice : query(name), querySelectorAll: () => buttons };
+  const entered = [];
+  f.app.enterWhenThereIsRoom = muted => { entered.push(muted); return Promise.resolve(); };
+  f.app.mountGatePreview();
+  f.resolve();
   await settle();
-  desk.avatars.fraction = 1;
-  desk.instances[0].options.onReady();
-  desk.advance(750);
-  assert.equal(desk.nodes.status.hidden, true);
-  // Her body, chosen in 角色配色 before it has been downloaded.
-  desk.avatars.fraction = .3;
-  desk.app.palette = { top: '#28191b' };
-  desk.app.followGateLoad();
-  assert.equal(desk.nodes.status.hidden, false);
-  assert.equal(desk.nodes.status.label.textContent, 'LOADING THE CHARACTER…');
-  assert.equal(desk.nodes.status.percent.textContent, '30%');
-  desk.avatars.fraction = 1;
-  desk.advance(150);
-  desk.advance(750);
-  assert.equal(desk.nodes.status.hidden, true);
+  f.instances[0].options.onReady();
+  f.app.queuedEntry = { muted: true };
+  f.app.tickGateLoad();
+  assert.deepEqual(entered, [], 'nothing goes in before everything is downloaded');
+  assert.ok(buttons.every(button => button.disabled), 'the buttons say the press was taken');
+  assert.equal(notice.hidden, false);
+  f.app.signInDownloads.done = true;
+  f.advance(150);
+  assert.deepEqual(entered, [true], 'it goes in by itself, muted as pressed');
+  assert.equal(f.app.queuedEntry, undefined);
+  f.advance(150);
+  assert.deepEqual(entered, [true], 'and only once');
 });
 
 function transitionFixture({ preview: hasPreview = true, manualFrames = false } = {}) {
@@ -501,6 +519,61 @@ test('queueing and refusal retain the editable gate; only successful admission b
   }
 });
 
+
+test('a sleeping server starts the loading at once and is not asked for a place while it wakes', async () => {
+  const f = fixture(), buttons = [{ disabled: false }], notice = { hidden: true, textContent: '' };
+  let asked = 0, entries = 0;
+  f.app.root = { querySelector: name => name === '#gate-form' ? { querySelectorAll: () => buttons } : notice };
+  f.app.festivalServiceReady = false; f.app.festivalClient = { requestPlace: async () => { asked++; return {}; } };
+  f.app.enterWorldAfterGateFeedback = () => { entries++; };
+  await f.app.enterWhenThereIsRoom(true);
+  assert.equal(asked, 0, 'asking a sleeping server only spends the join retries on its wake');
+  assert.equal(entries, 1); assert.equal(f.app.waitingForPlace, false);
+});
+
+test('the bar takes a sleeping server\'s share once it is seen waking; the entrance flight follows only the world', () => {
+  const f = transitionFixture();
+  f.app.serviceCanSleep = true;
+  f.app.serviceWake = new f.context.ServiceWake(f.context.performance.now());
+  f.app.beginGateEntry();
+  f.app.setGateEntryProgress(.5, 'world');
+  assert.equal(f.app.gateEntryWakeShare, 0, 'a server that answers within a moment moves nothing');
+  assert.equal(f.track.value, 50);
+  assert.equal(f.intervals.size, 2, 'the tips and the waking clock');
+  f.advance(3_000);
+  assert.equal(f.app.gateEntryWakeShare, .3);
+  assert.equal(f.track.value, 50, 'taking the share never moves the bar backwards');
+  f.app.setGateEntryProgress(.6, 'world');
+  f.advance(60_000);
+  assert.ok(f.track.value >= 66 && f.track.value <= 68, `a minute of waking reads ${f.track.value}`);
+  f.app.gateEntryWaitingForServer = true; f.app.drawGateEntryProgress();
+  assert.equal(f.indicator.querySelector('[data-gate-entry-label]').textContent, 'PREPARING THE SERVER...');
+  f.app.serviceWake.answered(f.context.performance.now()); f.app.syncGateEntryWake();
+  assert.equal(f.track.value, 72, 'the server answered: its whole share is in');
+  assert.equal(f.intervals.size, 1, 'the waking clock stops once it answers');
+  assert.deepEqual(f.calls.filter(n => typeof n === 'number'), [.1, .5, .6], 'the flight never waited on the server');
+  f.app.setGateEntryProgress(1, 'welcome');
+  assert.equal(f.track.value, 100);
+});
+
+test('the loading page holds for a sleeping server only until it answers or the limit passes', async () => {
+  const f = fixture();
+  f.app.serviceCanSleep = true;
+  f.app.serviceWake = new f.context.ServiceWake(f.context.performance.now());
+  let answer; f.app.serviceAnswered = new Promise(resolve => { answer = resolve; });
+  let released = false; void f.app.serviceForEntry().then(() => { released = true; });
+  f.advance(60_000); await settle(); assert.equal(released, false);
+  answer(); await settle(); assert.equal(released, true);
+  const g = fixture();
+  g.app.serviceCanSleep = true; g.app.serviceWake = new g.context.ServiceWake(g.context.performance.now());
+  g.app.serviceAnswered = new Promise(() => {});
+  let gaveUp = false; void g.app.serviceForEntry().then(() => { gaveUp = true; });
+  g.advance(119_000); await settle(); assert.equal(gaveUp, false);
+  g.advance(1_000); await settle(); assert.equal(gaveUp, true, 'two minutes, then in alone');
+  const h = fixture(); h.app.serviceWake = new h.context.ServiceWake(0);
+  let local = false; void h.app.serviceForEntry().then(() => { local = true; }); await settle();
+  assert.equal(local, true, 'a local server is never waited for');
+});
 
 test('loading tips rotate through a complete shuffled round and clean up on successful entry', async()=>{
   const f=transitionFixture();f.context.window.matchMedia=()=>({matches:true});f.app.language='zh-TW';

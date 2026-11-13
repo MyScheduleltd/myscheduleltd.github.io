@@ -2,18 +2,15 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { fetchAsset } from './AssetMirror';
-import { applyAvatarColourLighting } from './ImportedAvatar';
 import { parseGameModel } from './MobileAssetBudget';
 import type { AvatarRig } from './FestivalWorld';
 import { createVictoryStatue, disposeVictoryStatue, VICTORY_STATUE_HEIGHT, VICTORY_PLINTH_TOP } from './VictoryStatue';
 
-export type ScenicAsset = 'attendant' | 'boxOffice' | 'valet' | 'statue';
+// The festival's attendants are avatar rigs (`registerFestivalAttendant`).
+// The retired Meshy attendant model was deleted on 2026-11-12.
+export type ScenicAsset = 'boxOffice' | 'valet' | 'statue';
 function assetUrl(kind: ScenicAsset): string {
-  // The Meshy attendant is retired: the festival's attendants are avatar rigs
-  // (`registerFestivalAttendant`). Not imported, so its 3.7 MB model no
-  // longer ships with every release (owner's clean-up, 2026-10-23).
-  if (kind === 'attendant') throw new Error('The Meshy attendant model is retired.');
-  const urls: Record<Exclude<ScenicAsset, 'attendant'>, string> = {
+  const urls: Record<ScenicAsset, string> = {
     boxOffice: new URL('../assets/venue-scenery/box-office.glb', import.meta.url).href,
     valet: new URL('../assets/venue-scenery/valet.glb', import.meta.url).href,
     statue: new URL('../assets/venue-scenery/temple-statue.glb', import.meta.url).href,
@@ -29,7 +26,6 @@ export class VenueSceneryAssets {
   private readonly motionEuler = new THREE.Euler();
   private loads = new Map<ScenicAsset, Promise<THREE.Group>>();
   private instances: Array<{ kind: ScenicAsset; model: THREE.Object3D }> = [];
-  private attendants: Array<{ spine?: THREE.Bone; head?: THREE.Bone; spineRest?: THREE.Quaternion; headRest?: THREE.Quaternion; phase: number }> = [];
   private nativeAttendants:Array<{rig:AvatarRig;spineRest:THREE.Quaternion;headRest:THREE.Quaternion;phase:number}>=[];
   readonly status: Partial<Record<ScenicAsset, 'loading' | 'ready' | 'failed'>> = {};
 
@@ -54,7 +50,6 @@ export class VenueSceneryAssets {
             // Keep the generated normals, maps and authored material values.
             // Global masonry/flat-shading is for procedural town geometry.
             surface.userData.preserveAuthoredSurface = true;
-            if (kind === 'attendant') applyAvatarColourLighting(surface);
           }
         });
         this.status[kind] = 'ready';
@@ -106,7 +101,6 @@ export class VenueSceneryAssets {
       const model = clone(original);
       model.traverse(node => node.layers.enable(1));
       model.name = `Meshy 7 ${kind}`;
-      if (kind === 'attendant') this.lowerAttendantArms(model);
       model.updateMatrixWorld(true);
       model.traverse((node) => {
         const mesh = node as THREE.SkinnedMesh;
@@ -124,35 +118,9 @@ export class VenueSceneryAssets {
       parent.add(model);
       this.instances.push({ kind, model });
       if (fallback) fallback.visible = false;
-      if (kind === 'attendant') this.registerAttendant(model);
     } catch {
       // Keep the visible authored fallback if a download fails.
     }
-  }
-
-  /** Lower generated A-pose arms in world space, respecting each bone's axes. */
-  private lowerAttendantArms(model: THREE.Object3D): void {
-    model.updateMatrixWorld(true);
-    for (const side of ['Left', 'Right']) {
-      const arm = model.getObjectByName(`${side}Arm`) as THREE.Bone | undefined;
-      const elbow = model.getObjectByName(`${side}ForeArm`);
-      if (!arm || !elbow || !arm.parent) continue;
-      const at = arm.getWorldPosition(new THREE.Vector3());
-      const from = elbow.getWorldPosition(new THREE.Vector3()).sub(at).normalize();
-      const down = new THREE.Vector3(Math.sign(at.x) * .18, -1, .03).normalize();
-      const world = new THREE.Quaternion().setFromUnitVectors(from, down).multiply(arm.getWorldQuaternion(new THREE.Quaternion()));
-      arm.quaternion.copy(arm.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(world));
-      model.updateMatrixWorld(true);
-    }
-  }
-
-  private registerAttendant(model: THREE.Object3D): void {
-    const bones: THREE.Bone[] = [];
-    model.traverse((node) => { if ((node as THREE.Bone).isBone) bones.push(node as THREE.Bone); });
-    const find = (pattern: RegExp): THREE.Bone | undefined => bones.find((bone) => pattern.test(bone.name));
-    const spine = find(/spine2|spine_02|chest/i) ?? find(/spine/i);
-    const head = find(/head/i);
-    this.attendants.push({ spine, head, spineRest: spine?.quaternion.clone(), headRest: head?.quaternion.clone(), phase: this.attendants.length * 2.4 });
   }
 
   registerFestivalAttendant(rig:AvatarRig):void {
@@ -161,10 +129,6 @@ export class VenueSceneryAssets {
 
   update(elapsed: number): void {
     // Small, independently phased motions keep both staff at their posts.
-    for (const rig of this.attendants) {
-      if (rig.spine && rig.spineRest) rig.spine.quaternion.copy(rig.spineRest).multiply(this.motion.setFromEuler(this.motionEuler.set(Math.sin(elapsed * 1.3 + rig.phase) * .008, 0, 0)));
-      if (rig.head && rig.headRest) rig.head.quaternion.copy(rig.headRest).multiply(this.motion.setFromEuler(this.motionEuler.set(0, Math.sin(elapsed * .35 + rig.phase) * .065, 0)));
-    }
     for(const {rig,spineRest,headRest,phase} of this.nativeAttendants){
       rig.torso.quaternion.copy(spineRest).multiply(this.motion.setFromEuler(this.motionEuler.set(Math.sin(elapsed*1.3+phase)*.008,0,0)));
       rig.head.quaternion.copy(headRest).multiply(this.motion.setFromEuler(this.motionEuler.set(0,Math.sin(elapsed*.35+phase)*.065,0)));
@@ -194,7 +158,6 @@ export class VenueSceneryAssets {
     if (this.disposed) return;
     this.disposed = true;
     for (const { model } of this.instances) if (model.userData.victoryStatue) disposeVictoryStatue(model);
-    this.attendants.length = 0;
     for(const {rig}of this.nativeAttendants)rig.visualRoot?.parent?.userData.disposeImportedAvatar?.();
     this.nativeAttendants.length=0;this.instances.length = 0;
     for (const pending of this.loads.values()) void pending.then(model => model.traverse(node => {

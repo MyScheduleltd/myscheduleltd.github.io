@@ -48,9 +48,10 @@ test('the real lower open guard no longer masquerades as a wall to the deck copi
  const physical={...guard};
  assert.equal(guard.maxY,8.5,'retain the movement barrier and jump contract');
  assert.ok(rooftopStairGuardCameraTop(22,bounds,7)<3.5);
- // Reproduce the previous code with the same real collider and camera ray.
+ // As a full-height box it used to pull the view in to under 3; since
+ // 2026-11-11 no wall pulls the follow camera in (the cutaway lens cuts it).
  guard.label=undefined;
- assert.ok(at(w,19.6,22)<3,'the old full-height open-guard box must reproduce the reported close view');
+ assert.ok(Math.abs(at(w,19.6,22)-10.56)<1e-8,'a wall pulled the follow camera in');
  guard.label=ROOFTOP_STAIR_OPEN_GUARD;w.cameraReach=0;
  assert.ok(Math.abs(at(w,19.6,22)-10.56)<1e-8,'the actual shared camera must retain its full selected orbit');
  assert.deepEqual(guard,physical,'camera correction cannot change physical collision bounds');
@@ -87,13 +88,15 @@ test('a fixed isometric view keeps orthographic scale on the real outdoor stair,
  assert.deepEqual(w.colliders,physical,'isometric probes cannot change physical stair barriers');
 });
 
-test('the real east stringer and shop masonry continue to stop the camera',()=>{
+test('the real east stringer and shop masonry no longer pull the camera in: the lens cuts them',()=>{
+ // They used to stop it, which is the "sudden pull in" the owner asked to be
+ // rid of (2026-11-11). The camera holds its orbit; the lens opens over them.
  const w=fixture('follow',Math.PI/2),guard=w.colliders.find(c=>c.label===ROOFTOP_STAIR_OPEN_GUARD);
  assert.ok(guard);
  for(const z of [20.8,22,24,26,29,31]){
   w.cameraReach=0;const reach=at(w,19.6,z);
-  assert.ok(reach<6,'the solid east stringer must retain camera occlusion');
-  assert.ok(w.cameraClearReach(w.lookTarget,w.camera.position)>=reach-.001,'final camera ray crossed masonry');
+  assert.ok(Math.abs(reach-10.56)<1e-8,`masonry pulled the view in to ${reach.toFixed(2)}`);
+  assert.ok(w.cameraClearReach(w.lookTarget,w.camera.position)<reach-.5,'the stringer still stands between, for the lens to cut');
  }
  const original={...guard};at(w,19.6,22);
  assert.deepEqual(guard,original,'probing cannot mutate the shared movement collider');
@@ -121,9 +124,9 @@ test('the actual town utility pole does not zoom the stair camera and still stop
  const pole=w.colliders.find(c=>c.label==='utility-pole'&&Math.abs((c.minZ+c.maxZ)/2-21.5)<1e-8);
  assert.ok(pole,'the real CoastalScenery builder must place the reported pole');
  const original={...pole};
- // A different solid label reproduces the previous pole-as-wall camera rule.
+ // As a solid wall it used to pull the view in to 7.8; not since 2026-11-11.
  pole.label='solid-camera-pole';
- assert.ok(at(w,19.6,21.28156)<8,'reproduce the real browser 7.835-unit close view');
+ assert.ok(Math.abs(at(w,19.6,21.28156)-10.56)<1e-8,'a solid post pulled the view in');
  pole.label='utility-pole';w.cameraReach=0;
  assert.ok(Math.abs(at(w,19.6,21.28156)-10.56)<1e-8,'a slender post must not shorten the ordinary stair orbit');
  assert.deepEqual(pole,original,'camera classification cannot alter physical bounds');

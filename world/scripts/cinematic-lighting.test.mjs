@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 const compiled = await build({ stdin: { contents: "export * from './src/world/DayNightCycle';export * from './src/world/SolarClock';export * as THREE from 'three';", resolveDir: process.cwd(), loader: 'ts' }, bundle: true, write: false, format: 'esm', platform: 'node' });
+// The PS1 look's lighting: a sunnier street (the owner, 2026-11-11). The film
+// look's darker lighting was retired on 2026-11-12.
 const { THREE, DayNightCycle, CINEMATIC_LIGHTING, solarOrbitAtHour } = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 const pixels = (width, height) => ({ width, height, data: new Uint8ClampedArray(width * height * 4) });
 const paint = new Proxy({ createRadialGradient: () => ({ addColorStop() {} }), getImageData: (_x, _y, w, h) => pixels(w, h) }, { get: (object, key) => key in object ? object[key] : () => {} });
@@ -9,21 +11,21 @@ globalThis.document = { createElement: () => ({ width: 1, height: 1, getContext:
 const atHour = hour => Date.UTC(2026, 9, 21) + hour * 3_600_000;
 const luminance = colour => colour.r * .2126 + colour.g * .7152 + colour.b * .0722;
 
-test('midnight has a warm shaping key over cool shadows, with bounded fill/exposure and a readable phone bounce floor', () => {
+test('midnight has a warm moon key over a cool sky fill and a warm bounce, with bounded fill/exposure and a readable phone floor', () => {
   const cycle = new DayNightCycle(new THREE.Scene(), undefined, { timeZone: 'UTC' }), state = cycle.update(atHour(0));
-  assert.ok(cycle.moonLight.color.r > cycle.moonLight.color.b * 1.5);
-  assert.ok(cycle.hemisphereLight.color.b > cycle.hemisphereLight.color.r * 1.5);
-  assert.ok(cycle.hemisphereLight.groundColor.b > cycle.hemisphereLight.groundColor.r);
-  assert.ok(cycle.hemisphereLight.intensity >= .75 && cycle.hemisphereLight.intensity <= .9);
-  assert.ok(cycle.moonLight.intensity > cycle.hemisphereLight.intensity * 1.8);
-  assert.ok(state.exposure >= 1.2 && state.exposure <= 1.3);
+  assert.ok(cycle.moonLight.color.r > cycle.moonLight.color.b * 1.3);
+  assert.ok(cycle.hemisphereLight.color.b > cycle.hemisphereLight.color.r, 'the sky fill is cool');
+  assert.ok(cycle.hemisphereLight.groundColor.r > cycle.hemisphereLight.groundColor.b, 'the bounce off the paving is warm');
+  assert.ok(cycle.hemisphereLight.intensity >= 1.4 && cycle.hemisphereLight.intensity <= 1.7, `fill ${cycle.hemisphereLight.intensity}`);
+  assert.ok(cycle.moonLight.intensity > cycle.hemisphereLight.intensity, 'the moon still leads');
+  assert.ok(state.exposure >= 1.35 && state.exposure <= 1.55, `exposure ${state.exposure}`);
   const normalFill = cycle.hemisphereLight.intensity;
   cycle.setAmbientLift(.85); cycle.update(atHour(0));
-  assert.ok(cycle.hemisphereLight.intensity > normalFill && cycle.hemisphereLight.intensity <= 1.05);
+  assert.ok(cycle.hemisphereLight.intensity > normalFill && cycle.hemisphereLight.intensity <= 1.95);
   assert.ok(luminance(cycle.hemisphereLight.groundColor) * cycle.hemisphereLight.intensity * state.exposure > .07,
     'linear bounce proxy protects visibility; browser QA still judges actual road pixels');
   cycle.setAmbientLift(100); cycle.update(atHour(0));
-  assert.ok(cycle.hemisphereLight.intensity <= normalFill + CINEMATIC_LIGHTING.mobileFillAddition);
+  assert.ok(cycle.hemisphereLight.intensity <= normalFill + CINEMATIC_LIGHTING.mobileFillAddition * CINEMATIC_LIGHTING.ps1.fill + 1e-9);
   cycle.setAmbientLift(NaN); cycle.update(atHour(0)); assert.equal(cycle.hemisphereLight.intensity, normalFill);
 });
 
@@ -58,4 +60,16 @@ test('phone fill does not flatten daylight, and the sunrise seam retains continu
   assert.ok(Math.abs(a.exposure - b.exposure) < .001);
   assert.ok(Math.abs(before.hemisphereLight.intensity - after.hemisphereLight.intensity) < .001);
   assert.ok(before.scene.background.distanceTo ? before.scene.background.distanceTo(after.scene.background) < .001 : before.scene.background.clone().sub(after.scene.background).toArray().every(value => Math.abs(value) < .001));
+});
+
+test('the PS1 look lights a sunnier street: more fill and sun than the base table, the same sky colours', () => {
+  const { ps1 } = CINEMATIC_LIGHTING;
+  assert.ok(ps1.fill >= 1.4 && ps1.sun >= 1.1 && ps1.exposure > 1 && ps1.nightFill > 0);
+  const cycle = new DayNightCycle(new THREE.Scene(), undefined, { timeZone: 'UTC' });
+  for (const hour of [9, 13, 17.5]) {
+    const state = cycle.update(atHour(hour));
+    assert.ok(cycle.directionalLight.intensity > 1.2, `a bright sun at ${hour}h`);
+    assert.ok(cycle.hemisphereLight.intensity > 1.3, `a bright fill at ${hour}h`);
+    assert.ok(state.exposure >= 1 && state.exposure <= 1.4, `exposure ${state.exposure} at ${hour}h`);
+  }
 });

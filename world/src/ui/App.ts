@@ -1,10 +1,10 @@
 import { SeatCommands } from '../network/SeatCommands';
-import { createTipRotation, entryTips, type TipRotation } from './EntryTips';
-import { AmbientAudio } from '../world/AmbientAudio';
+import { AmbientAudio, worldSoundUrls } from '../world/AmbientAudio';
 import { installInterfaceSounds } from './InterfaceSounds';
 import { ActionMenu } from './ActionMenu';
 import { SnowSeatChoice } from './SnowSeatChoice';
 import { weatherStaffContent, bindWeatherStaff } from './WeatherStaff';
+import { visitStaffContent, type VisitStaffState, type VisitSummary } from './VisitStaff';
 import { TOP_OUTFITS, AVATAR_CLOTHING_DEFAULTS, topOutfit, avatarSex, outfitWire, type AvatarSex } from '../world/CoastalOutfits';
 import { avatarVariantsFor, AVATAR_NATIVE } from '../world/NativeAvatarPalette';
 import {
@@ -24,12 +24,16 @@ import { ProgrammeClock } from '../data/programmeClock';
 import { QUESTS, QUEST_SECTIONS, QUEST_TOTAL, type QuestId } from '../data/quests';
 import { xrBindings, xrQuickActions, xrStickRows } from '../world/XrControls';
 import { armLeavingVr, type LeaveVrArming } from './LeaveVrConfirm';
-import { arcadeGameUrl, externalArcadeRequired, ARCADE_UNLOCK_AT, arcadeIsLocked } from '../world/ArcadeRules';
+import { arcadeGameUrl, externalArcadeRequired, ARCADE_UNLOCK_AT, ARCADE_TITLES, arcadeIsLocked, type ArcadeGame } from '../world/ArcadeRules';
 import { requestWithDeadline } from '../network/RequestDeadline';
-import { watchAssetDownloads } from '../world/AssetMirror';
+import { releasePrefetchedAssets, watchAssetDownloads } from '../world/AssetMirror';
 import type { GatePreview } from '../world/GatePreview';
+import { createTipRotation, entryTips, type TipRotation } from './EntryTips';
 import { GateLoadMeter } from './GateLoadMeter';
+import { SignInDownloads } from './SignInDownloads';
 import { EntryRecovery, ENTRY_PHASE_KEY } from './EntryRecovery';
+import { VisitReporter, type VisitCrashStage } from '../network/VisitStats';
+import { ServiceWake, WAKE_SHARE, entryProgress, serviceCanSleep } from '../network/ServiceWake';
 import { readNoirPreference, saveNoirPreference, applyNoirMode, noirButtonMarkup, syncNoirButton } from './NoirMode';
 import { installFloatingChat } from './FloatingChat';
 import { readDesktopActions, saveDesktopActions, dropBeatAction, drinkStatusText } from './OverlayPreferences';
@@ -61,6 +65,7 @@ import {
   type GateCopy,
   type PamphletContent,
   type ProgrammeMode,
+  type PublicConfig,
   type SiteStyle,
   JukeboxState,
 } from '../network/FestivalClient';
@@ -160,6 +165,8 @@ const BLACK_BOX_KEY = 'myschedule-festival-blackbox-v1';
 const PRIVATE_PROGRESS_KEY = 'myschedule-private-screening-v1';
 const CHAT_KEY = 'myschedule-local-chat-v2';
 const STAFF_KEY = 'myschedule-festival-staff-key-v1';
+/** How long the page keeps asking a silent server for its config (and so waking it). */
+const SERVICE_ASK_FOR_MS = 5 * 60_000;
 const STAFF_SECTIONS_KEY = 'myschedule-festival-staff-sections-v1';
 /** A Quest visitor's choice survives the gate and a discarded browser tab. */
 const VR_MODE_KEY = 'myschedule-festival-vr-mode-v1';
@@ -432,6 +439,25 @@ const setButtonPressed = (button: HTMLButtonElement, pressed: boolean) => {
  */
 const CREDIT_CARDS = new Set(['XIEHGAN']);
 
+/**
+ * Every face the interface letters itself in (style.css's Google Fonts
+ * import), fetched on the sign-in page. A browser only downloads a weight the
+ * first time something on screen asks for it, so a weight first used inside
+ * the world (one did, on phones) arrived after ENTER. Latin only: that is all the
+ * interface sets in these faces; the Chinese falls through to the system's.
+ */
+const INTERFACE_FACES = [
+  ...[500, 600, 700, 800, 900].map((weight) => `${weight} 16px "Barlow Condensed"`),
+  'italic 700 16px "Barlow Condensed"',
+  ...[400, 500, 600, 700].map((weight) => `${weight} 16px Inter`),
+];
+const warmInterfaceFonts = (): Promise<unknown> => {
+  if (typeof document === 'undefined' || !document.fonts) return Promise.resolve();
+  const all = Promise.allSettled(INTERFACE_FACES.map((face) => document.fonts.load(face, 'Aa0·—')));
+  // A blocked font host never holds ENTER: the system face stands in.
+  return Promise.race([all, new Promise((done) => setTimeout(done, 10_000))]);
+};
+
 export class App {
   private readonly root: HTMLElement;
   private world?: FestivalWorld;
@@ -504,6 +530,8 @@ export class App {
   private localHitAt = 0;
   private jukeboxVolume = readStoredJukeboxVolume();
   private arcadePlaying = false;
+  /** The cabinet on screen: M.O.T.H's release lock closes only M.O.T.H, never 逃脫我的美麗. */
+  private arcadeGameOpen: ArcadeGame = 'moth';
   private arcadeLockedViewing = false;
   private arcadeFullscreenPending = false;
   private arcadeNotice?: HTMLDialogElement;
@@ -562,10 +590,19 @@ export class App {
   private chatDrafts: Partial<Record<ChatChannel, string>> = {};
   private chatStreamElement?: HTMLElement;
   private chatStreamSignature = '';
+  /** The service's id for a line this visitor sent, against the pending id its card was shown under. */
+  private readonly chatStreamAliases = new Map<string, string>();
   private npcTimer?: number;
   private readonly festivalClient: FestivalClient;
+  /** Anonymous visit tallies for STAFF (the owner, 2026-11-09). */
+  private visits?: VisitReporter;
   /** Public config is the lightweight wake-up request sent while the gate is drawn. */
   private festivalServiceReady = false;
+  /** The server's waking, timed from the page's first ask (ServiceWake). */
+  private serviceWake?: ServiceWake;
+  /** Whether this page's server is one that sleeps (a hosted one). */
+  private serviceCanSleep = false;
+  private serviceAnswered?: Promise<void>;
   private connectionStatus: ConnectionStatus = 'offline';
   /** Show the offline alert once per visit, including across reconnect attempts. */
   private offlineNoticeShown = false;
@@ -649,43 +686,26 @@ export class App {
       (window as Window & { __festivalAmbienceAt?: (x?: number, z?: number) => unknown }).__festivalAmbienceAt =
         (x, z) => this.world?.ambienceReviewAt(x, z);
     }
-    // Start the download behind the usable sign-in form. Retry on entry if it fails.
-    // Both halves of the festival, fetched while the gate is on screen: the
-    // avatar model and the world's own code. Neither blocks the gate, and by
-    // the time anybody has typed a name and chosen a language they are usually
-    // both in. Failures are swallowed — `enterWorld()` asks again and reports
-    // properly if it is still not there.
-    void this.preloadAvatar().catch(() => undefined);
-    void this.preloadWorldModule().catch(() => undefined);
-    // Then the band, and the bodies nobody here is wearing yet, behind them
-    // and still at the gate: the band used to start downloading only once
-    // the world had opened, and reached the roof a minute later (the owner,
-    // 2026-10-07). Behind, not beside: the world's own files go first.
-    void Promise.all([this.preloadAvatar(), this.preloadWorldModule()])
-      .then(() => Promise.all([import('../world/RooftopBand'), import('../world/ImportedAvatar')]))
-      .then(([band, avatars]) => {
-        band.prefetchBand();
-        void avatars.loadImportedAvatar(undefined, ['male'], true).catch(() => undefined);
-        // The world's sounds, so the beds and the avatar's own are decoded
-        // before anybody is in.
-        void this.entryAudio.preloadWorldSounds();
-      })
-      .catch(() => undefined);
+    this.preloadEverything();
     this.watchForANewerBuild();
+    // Read before showLastBreath marks the black box as seen.
+    const crash = this.previousCrashStage();
     this.showLastBreath();
+    this.startVisitReports(crash);
     void this.detectVrSupport().finally(() => this.rejoinAfterDiscard());
-    void this.festivalClient.publicConfig().then((config) => {
-      this.festivalServiceReady = true;
-      this.siteStyle = { ...this.siteStyle, ...config.siteStyle };
-      this.npcProfiles = this.normalizeNpcProfiles(config.npcProfiles, config.npcNames);
-      this.pamphlet = { ...this.pamphlet, ...config.pamphlet };
-      if (config.gateCopy) {
-        this.gateCopy = config.gateCopy;
-        // The gate is already on screen by now, so it has to be redrawn.
-        if (this.root.querySelector('#gate-form') && !this.waitingForPlace && !this.openingWorld) this.renderGate();
-      }
-      this.applySiteStyle();
-    }).catch(() => undefined);
+    this.wakeFestivalService();
+  }
+
+  private applyPublicConfig(config: PublicConfig): void {
+    this.siteStyle = { ...this.siteStyle, ...config.siteStyle };
+    this.npcProfiles = this.normalizeNpcProfiles(config.npcProfiles, config.npcNames);
+    this.pamphlet = { ...this.pamphlet, ...config.pamphlet };
+    if (config.gateCopy) {
+      this.gateCopy = config.gateCopy;
+      // The gate is already on screen by now, so it has to be redrawn.
+      if (this.root.querySelector('#gate-form') && !this.waitingForPlace && !this.openingWorld) this.renderGate();
+    }
+    this.applySiteStyle();
   }
 
   /** Ask the browser instead of guessing from a user-agent. */
@@ -881,6 +901,47 @@ export class App {
   }
 
   /**
+   * Where the previous visit in this browser died, if it did: inside the
+   * world (its black box was left unclean), or during loading (the entry
+   * marker was still set when this page loaded, as after Safari reloads a
+   * crashed tab).
+   */
+  private previousCrashStage(): VisitCrashStage | undefined {
+    try {
+      const raw = localStorage.getItem(BLACK_BOX_KEY);
+      const last = raw ? JSON.parse(raw) as { clean?: unknown; checkpoint?: unknown } : undefined;
+      if (last && last.clean !== true) {
+        return last.checkpoint === 'world' || last.checkpoint === 'world-ready' ? last.checkpoint : 'other';
+      }
+    } catch { /* private browsing */ }
+    const phase = this.entryRecovery.phase();
+    return phase === 'loading' || phase === 'interrupted' ? 'loading' : undefined;
+  }
+
+  /** Report the visit's moments; see src/network/VisitStats.ts. */
+  private startVisitReports(crash: VisitCrashStage | undefined): void {
+    let storage: Storage | undefined;
+    try { storage = localStorage; } catch { storage = undefined; }
+    this.visits = new VisitReporter({
+      endpoint: this.festivalClient.visitEndpoint(),
+      userAgent: navigator.userAgent,
+      maxTouchPoints: navigator.maxTouchPoints,
+      search: window.location.search,
+      referrer: document.referrer,
+      storage,
+    });
+    this.visits.open(crash);
+    const leave = () => this.visits?.leave(this.gateEntryProgress, this.visitedAreaCount());
+    window.addEventListener('pagehide', leave);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') leave(); });
+  }
+
+  /** How many of the five venues this visit has reached. */
+  private visitedAreaCount(): number {
+    return (['palace', 'drive-in', 'shore', 'basement', 'rooftop'] as const).filter((id) => this.completedQuests.has(id)).length;
+  }
+
+  /**
    * Shows what the world was doing when it last stopped.
    *
    * A crash on somebody else's phone leaves nothing behind — no console, no
@@ -1038,12 +1099,13 @@ export class App {
             <p id="gate-avatar-hint">${this.language === 'zh-TW' ? '拖曳旋轉 · 方向鍵微調' : 'DRAG TO ROTATE · ARROW KEYS TO TURN'}</p>
           </div>
         </aside>
-        </div>
         <div class="gate-scene-status" data-gate-scene-status>
           <p><span data-gate-scene-label>${this.language === 'zh-TW' ? '正在展開影展世界…' : 'OPENING THE FESTIVAL WORLD…'}</span> <b data-gate-scene-percent>0%</b></p>
           <div class="gate-scene-status__track" role="progressbar" aria-label="${this.language === 'zh-TW' ? '世界與角色載入進度' : 'World and character loading progress'}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
         </div>
+        </div>
         <div class="gate-entry" data-gate-entry hidden>
+          <p class="gate-entry__wake" data-gate-entry-wake hidden></p>
           <p data-gate-entry-label role="status"></p>
           <div class="gate-entry__track" role="progressbar" aria-label="${this.language === 'zh-TW' ? '影展載入進度' : 'Festival loading progress'}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
           <p class="gate-entry__tip" data-gate-entry-tip></p>
@@ -1134,10 +1196,16 @@ export class App {
       const muted = submitter?.dataset.audio === 'muted';
       // Unlock synchronously while the visitor’s submit gesture is active.
       void this.entryAudio.start(muted).catch(() => {});
-      void this.enterWhenThereIsRoom(muted);
+      // Everything downloads on this page first (the owner, 2026-11-12): a
+      // press before 100% is held, and goes in by itself once it is all here.
+      this.queuedEntry = { muted };
+      this.tickGateLoad();
     });
     this.mountGatePreview();
   }
+
+  /** ENTER was pressed; it goes in, sound on or muted, as soon as everything is downloaded. */
+  private queuedEntry?: { muted: boolean };
 
   private gatePreview?: GatePreview;
   private gatePreviewFailed = false;
@@ -1147,13 +1215,25 @@ export class App {
   private gateLoad?: GateLoadMeter;
   private gateLoadTimer = 0;
   private gateLoadSettled = false;
-  /** The character module, once the sign-in page has it, for how much of a body is in. */
-  private gateAvatars?: typeof import('../world/ImportedAvatar');
   private gateEntryOverlay?: HTMLElement;
+  /** What the bar shows: the world's loading, plus the server's waking when ENTER found it asleep. */
   private gateEntryProgress = 0;
   private gateTipTimer?: number;
   private gateSignInTips?: TipRotation;
   private gateLoadingTips?: TipRotation;
+  /** The world's own loading, which the entrance flight follows. */
+  private gateEntryAssets = 0;
+  private gateEntryLabel = '';
+  /** ENTER found a server that can sleep and had not answered yet. */
+  private gateEntryWakeEligible = false;
+  /**
+   * The server's share of the bar: WAKE_SHARE from the moment it is seen to be
+   * waking, else 0, so an awake server that answers a moment late moves nothing.
+   */
+  private gateEntryWakeShare = 0;
+  /** The world is ready and only the server is left. */
+  private gateEntryWaitingForServer = false;
+  private gateWakeTimer?: number;
   private gateEntryAttempt = 0;
   private gateEntryFrames: unknown[] = [];
   private readonly gateEntryKeyCapture = (event: KeyboardEvent): void => {
@@ -1166,6 +1246,11 @@ export class App {
     this.gateEntryFrames = [];
     this.gateEntryProgress = 0;
     this.startGateTips('loading');
+    this.gateEntryAssets = 0;
+    this.gateEntryWaitingForServer = false;
+    const now = performance.now();
+    this.gateEntryWakeEligible = this.serviceCanSleep && Boolean(this.serviceWake?.holds(now));
+    this.gateEntryWakeShare = 0;
     window.addEventListener('keydown', this.gateEntryKeyCapture, true);
     window.addEventListener('keyup', this.gateEntryKeyCapture, true);
     this.gatePreview?.beginEntry();
@@ -1177,6 +1262,7 @@ export class App {
     gate?.classList.add('gate--entering');
     gate?.querySelector('.gate__layout')?.setAttribute('inert', '');
     this.setGateEntryProgress(.1, this.language === 'zh-TW' ? '正在下載角色…' : 'LOADING THE CHARACTER…');
+    this.syncGateEntryWake();
   }
 
   private startGateTips(stage: 'sign-in' | 'loading'): void {
@@ -1205,18 +1291,107 @@ export class App {
     window.clearInterval(this.gateTipTimer); this.gateTipTimer = undefined;
   }
 
+  /**
+   * The world's own loading. The entrance flight follows only this, since
+   * enterWorld waits on the flight between stages and must never wait on the
+   * server there; the bar adds the server's waking when ENTER found it asleep.
+   */
   private setGateEntryProgress(progress: number, label: string): void {
     if (!this.openingWorld) return;
-    this.gateEntryProgress = Math.max(this.gateEntryProgress, Math.min(1, Math.max(0, progress)));
-    this.gatePreview?.setEntryProgress(this.gateEntryProgress);
+    const value = Math.min(1, Math.max(0, progress));
+    this.gateEntryAssets = Math.max(this.gateEntryAssets, value);
+    this.gateEntryLabel = label;
+    // The welcome is final whatever the server did.
+    if (value >= 1) this.gateEntryProgress = 1;
+    this.gatePreview?.setEntryProgress(this.gateEntryAssets);
+    this.drawGateEntryProgress();
+  }
+
+  private drawGateEntryProgress(): void {
+    if (!this.openingWorld) return;
+    const now = performance.now();
+    const wake = this.serviceWake?.read(now);
+    if (this.gateEntryWakeEligible && wake?.state === 'waking') this.gateEntryWakeShare = WAKE_SHARE;
+    const waking = Boolean(this.gateEntryWakeShare && wake?.state === 'waking');
+    this.gateEntryProgress = Math.max(this.gateEntryProgress,
+      entryProgress(this.gateEntryAssets, wake?.progress ?? 1, this.gateEntryWakeShare));
+    const zh = this.language === 'zh-TW';
     const gate = this.gateEntryOverlay ?? this.root.querySelector<HTMLElement>('.gate--live');
     const indicator = gate?.querySelector<HTMLElement>('[data-gate-entry]');
     if (indicator) indicator.hidden = false;
+    // Short and simple (the owner, 2026-11-09): 「伺服器準備中...」. A line of its own
+    // while the world is still loading; once only the server is left it is the
+    // bar's own label instead, so it never shows twice.
+    const serverLine = zh ? '伺服器準備中...' : 'PREPARING THE SERVER...';
+    const onlyServerLeft = waking && this.gateEntryWaitingForServer;
+    const note = indicator?.querySelector<HTMLElement>('[data-gate-entry-wake]');
+    if (note) {
+      note.hidden = !waking || onlyServerLeft;
+      if (!note.hidden) note.textContent = serverLine;
+    }
+    const label = onlyServerLeft ? serverLine : this.gateEntryLabel;
     const text = indicator?.querySelector<HTMLElement>('[data-gate-entry-label]');
     if (text) text.textContent = label;
     const track = indicator?.querySelector<HTMLElement>('[role="progressbar"]');
     track?.setAttribute('aria-valuenow', String(Math.round(this.gateEntryProgress * 100)));
     track?.style.setProperty('--entry-progress', String(this.gateEntryProgress));
+  }
+
+  /** Redraws the bar while the server's share moves on its own clock. */
+  private syncGateEntryWake(): void {
+    window.clearInterval(this.gateWakeTimer);
+    this.gateWakeTimer = undefined;
+    if (!this.openingWorld || !this.gateEntryWakeEligible) return;
+    this.drawGateEntryProgress();
+    if (this.serviceWake?.awake) return;
+    this.gateWakeTimer = window.setInterval(() => {
+      if (!this.openingWorld || this.serviceWake?.awake) this.syncGateEntryWake();
+      else this.drawGateEntryProgress();
+    }, 500);
+  }
+
+  /**
+   * The loading page holds a visitor for a server that can sleep and has not
+   * answered yet, for up to ServiceWake's limit; after that they go in alone
+   * and join as soon as it answers. Nothing is held for an awake server or a
+   * local one.
+   */
+  private serviceForEntry(): Promise<void> {
+    const wake = this.serviceWake;
+    const now = performance.now();
+    if (!wake || !this.serviceCanSleep || !wake.holds(now)) return Promise.resolve();
+    return Promise.race([
+      this.serviceAnswered ?? Promise.resolve(),
+      new Promise<void>(resolve => window.setTimeout(resolve, wake.remaining(now))),
+    ]);
+  }
+
+  /**
+   * Asks for the public config until the server answers. The question is
+   * also what wakes a sleeping server, so it starts as the page opens and keeps
+   * asking, each try bounded, while anybody could still be waiting on it.
+   */
+  private wakeFestivalService(): void {
+    const started = performance.now();
+    this.serviceWake = new ServiceWake(started);
+    this.serviceCanSleep = serviceCanSleep(this.festivalClient.serviceUrl, window.location.hostname, window.location.search);
+    let answered!: () => void;
+    this.serviceAnswered = new Promise<void>(resolve => { answered = resolve; });
+    const attempt = async (): Promise<void> => {
+      try {
+        const config = await requestWithDeadline(signal => this.festivalClient.publicConfig(signal), 25_000, 'Festival configuration');
+        this.serviceWake?.answered(performance.now());
+        this.festivalServiceReady = true;
+        answered();
+        this.applyPublicConfig(config);
+        this.syncGateEntryWake();
+        // Somebody who went in alone while it slept joins now, not at the next retry.
+        if (this.world) this.festivalClient.wake();
+      } catch {
+        if (performance.now() - started < SERVICE_ASK_FOR_MS) window.setTimeout(() => { void attempt(); }, 2_000);
+      }
+    };
+    void attempt();
   }
 
   private retainGateEntry(): void {
@@ -1242,7 +1417,7 @@ export class App {
         const preview = this.gatePreview;
         if (!preview) return false;
         preview.beginEntry();
-        preview.setEntryProgress(this.gateEntryProgress);
+        preview.setEntryProgress(this.gateEntryAssets);
         return preview.ready();
       }, 12_000, 'Entrance preview');
       if (active() && !ready) this.disposeGatePreview();
@@ -1302,6 +1477,7 @@ export class App {
     window.removeEventListener('keyup', this.gateEntryKeyCapture, true);
     this.entryRecovery.finish();
     this.recordBlackBox('entry-complete');
+    this.visits?.entered();
   }
 
   private cancelGateEntry(): void {
@@ -1338,7 +1514,7 @@ export class App {
       this.gatePreview.setPalette(this.palette);
       if (this.openingWorld) {
         this.gatePreview.beginEntry();
-        this.gatePreview.setEntryProgress(this.gateEntryProgress);
+        this.gatePreview.setEntryProgress(this.gateEntryAssets);
       }
       return Promise.resolve();
     }
@@ -1386,12 +1562,14 @@ export class App {
             const label = status.querySelector<HTMLElement>('[data-gate-scene-label]') ?? status;
             label.textContent = this.language === 'zh-TW' ? '世界預覽暫時無法載入，仍可進入影展。' : 'The world preview is unavailable. You can still enter the festival.';
           }
+          // A held ENTER now waits for the downloads alone.
+          this.tickGateLoad();
         },
       });
       this.gatePreview.mount(currentHost, this.root.querySelector<HTMLElement>('[data-gate-avatar]') ?? undefined);
       if (this.openingWorld) {
         this.gatePreview.beginEntry();
-        this.gatePreview.setEntryProgress(this.gateEntryProgress);
+        this.gatePreview.setEntryProgress(this.gateEntryAssets);
       }
     }).catch((error: unknown) => {
       if (generation !== this.gatePreviewGeneration) return;
@@ -1430,34 +1608,54 @@ export class App {
   private fetchGateCharacter(generation: number): void {
     if (!this.gateShowsCharacter()) return;
     void import('../world/ImportedAvatar').then(avatars => {
-      this.gateAvatars = avatars;
       if (generation !== this.gatePreviewGeneration || this.world) return;
       void avatars.loadOwnAvatar(avatarSex(this.palette.top)).catch(() => undefined);
     }, () => undefined);
   }
 
   /**
-   * The loading bar for whatever the sign-in page is still waiting for: the
-   * globe and the character at first, and later a body chosen in 角色配色
-   * that has not been downloaded yet.
+   * The loading bar for everything the sign-in page waits for: the globe,
+   * then every download (GateLoadMeter, SignInDownloads).
    */
   private followGateLoad(): void {
-    const character = this.gateShowsCharacter();
-    const meter = this.gateLoad;
-    if (!meter || (meter.done && character && this.gateAvatars && this.gateAvatars.avatarLoadFraction(avatarSex(this.palette.top)) < 1)) {
-      this.gateLoad = new GateLoadMeter(performance.now(), { globe: !meter, character });
+    if (!this.gateLoad) {
+      this.gateLoad = new GateLoadMeter(performance.now(), { globe: true });
       this.gateLoadSettled = false;
     }
-    if (!this.gateLoad!.done && !this.gateLoadTimer) this.gateLoadTimer = window.setInterval(() => this.tickGateLoad(), 150);
+    if (!this.signInReady() && !this.gateLoadTimer) this.gateLoadTimer = window.setInterval(() => this.tickGateLoad(), 150);
     this.tickGateLoad();
   }
 
+  /** Everything is downloaded (or there is nothing left to wait for). */
+  private signInReady(): boolean {
+    const downloads = this.signInDownloads;
+    if (downloads && !downloads.done) return false;
+    return !this.gateLoad || this.gateLoad.done;
+  }
+
   private tickGateLoad(): void {
-    const meter = this.gateLoad;
-    if (!meter) return;
-    if (this.gateAvatars && this.gateShowsCharacter()) meter.characterProgress(this.gateAvatars.avatarLoadFraction(avatarSex(this.palette.top)));
+    const meter = this.gateLoad, downloads = this.signInDownloads;
+    if (meter && downloads) meter.downloads(downloads.fraction, downloads.done);
+    if (meter && this.gatePreviewFailed) meter.globe('painted', performance.now());
     this.paintGateLoad();
-    if (meter.done && this.gateLoadTimer) { window.clearInterval(this.gateLoadTimer); this.gateLoadTimer = 0; }
+    const queued = this.queuedEntry;
+    if (this.signInReady()) {
+      if (this.gateLoadTimer) { window.clearInterval(this.gateLoadTimer); this.gateLoadTimer = 0; }
+      if (queued) {
+        this.queuedEntry = undefined;
+        void this.enterWhenThereIsRoom(queued.muted);
+      }
+      return;
+    }
+    if (!this.gateLoadTimer) this.gateLoadTimer = window.setInterval(() => this.tickGateLoad(), 150);
+    if (!queued) return;
+    // A press before 100% is held: the buttons say so until it goes in.
+    this.root.querySelectorAll<HTMLButtonElement>('#gate-form button[type="submit"]').forEach(button => { button.disabled = true; });
+    const notice = this.root.querySelector<HTMLElement>('#gate-waiting');
+    if (notice) {
+      notice.hidden = false;
+      notice.textContent = this.language === 'zh-TW' ? '下載完成後會自動進入…' : 'GOING IN AS SOON AS EVERYTHING IS DOWNLOADED…';
+    }
   }
 
   private stopGateLoad(): void {
@@ -1469,16 +1667,17 @@ export class App {
   private paintGateLoad(): void {
     const meter = this.gateLoad;
     const status = this.root.querySelector<HTMLElement>('[data-gate-scene-status]');
-    if (!meter || !status || this.gatePreviewFailed) return;
-    const { percent, stage, done } = meter.read(performance.now());
+    if (!meter || !status) return;
+    const ready = this.signInReady();
+    const { percent } = ready ? { percent: 100 } : meter.read(performance.now());
     const zh = this.language === 'zh-TW';
     const label = status.querySelector<HTMLElement>('[data-gate-scene-label]');
-    if (label) label.textContent = stage === 'world' ? (zh ? '正在展開影展世界…' : 'OPENING THE FESTIVAL WORLD…') : (zh ? '正在下載角色…' : 'LOADING THE CHARACTER…');
+    if (label) label.textContent = meter.globeShown ? (zh ? '正在下載影展…' : 'DOWNLOADING THE FESTIVAL…') : (zh ? '正在展開影展世界…' : 'OPENING THE FESTIVAL WORLD…');
     const shown = status.querySelector<HTMLElement>('[data-gate-scene-percent]');
     if (shown) shown.textContent = `${percent}%`;
     status.querySelector<HTMLElement>('[role="progressbar"]')?.setAttribute('aria-valuenow', String(percent));
     status.style.setProperty('--gate-load', String(percent / 100));
-    if (!done) { status.hidden = false; status.dataset.state = 'loading'; return; }
+    if (!ready) { status.hidden = false; status.dataset.state = 'loading'; return; }
     // A redrawn page (another language) does not replay the fade.
     if (this.gateLoadSettled) { status.hidden = true; return; }
     if (status.dataset.state === 'done') return;
@@ -1529,18 +1728,17 @@ export class App {
     }
 
     const ask = async (): Promise<void> => {
-      const placeRequest = this.festivalClient.requestPlace(this.currentId, this.palette, this.staffKey);
       if (!this.festivalServiceReady) {
         // The config request is also the service wake-up call. If it has not
-        // answered yet, do not hold the visitor behind hosting infrastructure:
-        // draw the local world now and let the single admission request attach
-        // multiplayer in the background. A ready service still gets to enforce
-        // its capacity and queue below.
+        // answered yet, start loading the world now. The loading page waits
+        // for the server alongside it (serviceForEntry) and says so, and the
+        // visitor joins once it answers. Asking for a place from a sleeping
+        // server would only spend the join retries on its wake.
         stopWaiting();
         this.enterWorldAfterGateFeedback();
         return;
       }
-      const place = await placeRequest;
+      const place = await this.festivalClient.requestPlace(this.currentId, this.palette, this.staffKey);
       if ('waiting' in place && place.waiting) {
         buttons?.forEach((button) => { button.disabled = true; });
         if (notice) {
@@ -1574,6 +1772,7 @@ export class App {
   private enterWorldAfterGateFeedback(): void {
     if(this.openingWorld)return;
     this.openingWorld=true;
+    this.visits?.start();
     this.entryRecovery.begin();
     this.beginGateEntry();
     const previewReady = this.prepareGateEntry();
@@ -1650,6 +1849,32 @@ export class App {
   }
 
   private mapGraphic: (zh: boolean) => string = () => '';
+
+  /** Everything the sign-in page downloads before ENTER, and how far it has got (GateLoadMeter). */
+  private signInDownloads?: SignInDownloads;
+
+  /**
+   * Every download the world needs, behind the usable sign-in form (the
+   * owner, 2026-11-12: all of it on the sign-in page, so nobody waits for a
+   * file once inside; ENTER waits at 100%). The visitor's own body and the
+   * world's code first; then both bodies, the band, the sounds and the
+   * world's own files behind them. Failures are swallowed: `enterWorld()`
+   * asks again and reports properly if something is still missing.
+   */
+  private preloadEverything(): void {
+    const downloads = this.signInDownloads = new SignInDownloads();
+    downloads.track([], warmInterfaceFonts());
+    const own = this.preloadAvatar();
+    const afterOwn = own.catch(() => undefined);
+    void Promise.all([import('../world/ImportedAvatar'), import('../world/RooftopBand'), this.preloadWorldModule()]).then(([avatars, band, world]) => {
+      downloads.track([...avatars.avatarFileUrls('male'), ...avatars.avatarFileUrls('female')],
+        afterOwn.then(() => avatars.loadImportedAvatar(undefined, ['male', 'female'], true)));
+      downloads.track(band.bandUrls(), afterOwn.then(() => band.prefetchBand()));
+      downloads.track(worldSoundUrls(), afterOwn.then(() => this.entryAudio.preloadWorldSounds()));
+      downloads.track(world.worldAssetUrls(), afterOwn.then(() => world.prefetchWorldAssets()));
+      downloads.seal();
+    }, () => downloads.seal());
+  }
 
   private preloadAvatar(): Promise<void> {
     return requestWithDeadline(() => this.prepareWorldTopology().then(() => import('../world/ImportedAvatar')),
@@ -1858,7 +2083,7 @@ export class App {
         <button class="interaction-toast" id="interaction-toast" type="button" hidden></button>
         <div class="world-alert" id="world-alert" role="status" hidden></div>
         <div class="touch-controls" role="group" aria-label="${zh ? '角色動作' : 'Avatar actions'}">
-          <div class="touch-stick" data-stick><span class="touch-stick__knob" data-stick-knob></span><span class="touch-stick__caption">${zh ? '移動' : 'MOVE'}</span></div>
+          <div class="touch-stick" data-stick aria-label="${zh ? '移動' : 'Move'}"><span class="touch-stick__knob" data-stick-knob></span></div>
           <div class="touch-ring">
             <button type="button" class="touch-ring__hit" data-touch-act="punch" aria-label="${zh ? '出拳' : 'Punch'}">${zh ? '拳' : 'HIT'}</button>
             <button type="button" class="touch-ring__key touch-ring__key--a" data-touch-act="jump" aria-label="${zh ? '跳躍' : 'Jump'}">${zh ? '跳' : 'JUMP'}</button>
@@ -1933,6 +2158,9 @@ export class App {
     this.syncPublicProjectors();
     await this.world.prepareAssets(progress => this.setGateEntryProgress(.6 + progress * .14,
       this.language === 'zh-TW' ? '正在準備場景資源…' : 'PREPARING WORLD ASSETS…'));
+    // Built: every piece has its own copy now, so the sign-in page's copies go
+    // (tens of MB a phone otherwise carries for the whole visit).
+    releasePrefetchedAssets();
     this.world.setNpcProfiles(this.npcProfiles);
     if (this.networkState) this.world.setRemoteVisitors(this.remoteVisitorVisuals(this.networkState));
     this.world.setWishes(this.networkState?.wishes ?? []);
@@ -1957,8 +2185,6 @@ export class App {
       const steps = stepsFlag === null ? 16 : Number.parseFloat(stepsFlag);
       const grainFlag = new URLSearchParams(window.location.search).get('wornGrain');
       const grain = grainFlag === null ? .55 : Number.parseFloat(grainFlag);
-      const warpFlag = new URLSearchParams(window.location.search).get('wornWarp');
-      const warp = warpFlag === null ? 1 : Number.parseFloat(warpFlag);
       const textureFlag = new URLSearchParams(window.location.search).get('wornTexture');
       const texture = textureFlag === null ? .95 : Number.parseFloat(textureFlag);
       const dial = (nextAmount: number, nextSteps: number, nextGrain: number) =>
@@ -1966,7 +2192,6 @@ export class App {
           Number.isFinite(nextAmount) ? nextAmount : 1,
           Number.isFinite(nextSteps) ? nextSteps : 10,
           Number.isFinite(nextGrain) ? nextGrain : 1,
-          Number.isFinite(warp) ? warp : 1,
           Number.isFinite(texture) ? texture : 1,
         );
       dial(amount, steps, grain);
@@ -2184,10 +2409,6 @@ export class App {
       window.setInterval(()=>{document.documentElement.dataset.seatReview=JSON.stringify(this.world?.seatReviewSnapshot());},300);
       (window as Window & { __festivalSeat?: () => unknown }).__festivalSeat =
         () => this.world?.seatReviewSnapshot();
-    } else if (reviewTarget === 'kerb') {
-      this.world.focusKerbForReview();
-      (window as Window & { __festivalKerb?: () => unknown }).__festivalKerb =
-        () => this.world?.kerbReviewSnapshot();
     } else if (reviewTarget === 'perf') {
       const performanceReview = () => this.world?.performanceSnapshot();
       (window as Window & { __festivalPerf?: () => unknown }).__festivalPerf = performanceReview;
@@ -2445,7 +2666,8 @@ export class App {
     // Loopback review routes are deterministic visual fixtures. Keeping them
     // offline prevents a persisted STAFF impersonation from replacing the
     // controlled avatar while a carry/geometry snapshot is being inspected.
-    if (!reviewTarget) void this.festivalClient.connect(this.currentId, this.palette);
+    // A sleeping server is joined once it answers, not asked while it wakes.
+    if (!reviewTarget) void this.serviceForEntry().then(() => this.festivalClient.connect(this.currentId, this.palette));
 
     const passToggle = this.root.querySelector<HTMLButtonElement>('#pass-toggle');
     const pass = this.root.querySelector<HTMLElement>('#festival-pass');
@@ -2634,6 +2856,7 @@ export class App {
         holding = -1;
         knob.style.transform = '';
         this.world?.setMovementVector(0, 0);
+        this.world?.setRunning(false);
       };
       stick.addEventListener('pointerdown', (event) => {
         holding = event.pointerId;
@@ -2650,6 +2873,8 @@ export class App {
         const scale = distance > reach ? reach / distance : 1;
         knob.style.transform = `translate(${dx * scale}px, ${dy * scale}px)`;
         const strength = Math.min(distance / reach, 1);
+        // Pushed to its edge, the stick runs (the owner, 2026-11-12: no 跑 key).
+        this.world?.setRunning(strength > .92);
         if (strength < 0.1) {
           this.world?.setMovementVector(0, 0);
           return;
@@ -2899,6 +3124,12 @@ export class App {
     // Wait for every fixed sound job to finish, including failures. An early
     // timeout used to leave network and decode work running inside the world.
     await Promise.all([ambience, this.entryAudio.loadInterfaceSounds()]);
+    // A sleeping server is the last thing loading waits for (the owner,
+    // 2026-11-09), and for no more than ServiceWake allows.
+    this.gateEntryWaitingForServer = true;
+    this.drawGateEntryProgress();
+    await this.serviceForEntry();
+    this.gateEntryWaitingForServer = false;
     this.recordBlackBox('world-ready');
     this.world.start();
     this.setGateEntryProgress(.9, this.language === 'zh-TW' ? '正在準備入口…' : 'PREPARING THE ENTRANCE…');
@@ -3033,17 +3264,19 @@ export class App {
     }, this.palette).catch(() => undefined);
   }
 
-  private openArcadeGame(): void {
+  private openArcadeGame(game: ArcadeGame = 'moth'): void {
     // A locked desktop visit uses the actual cabinet and its fixed camera;
     // phones and immersive headsets retain the small availability dialog.
-    const locked = this.syncArcadeRelease();
+    // Only M.O.T.H has a release lock; 逃脫我的美麗 is already public.
+    const locked = this.syncArcadeRelease() && game === 'moth';
     if (this.arcadePlaying) return;
+    const title = ARCADE_TITLES[game];
     const external = externalArcadeRequired(window.matchMedia('(pointer: coarse)').matches,
       window.matchMedia('(any-pointer: fine)').matches, this.vrActive && !this.usesVrSimulation());
     if (external) {
       if (locked) { this.showArcadeReleaseNotice(); return; }
-      if (!this.confirmedLeavingVr('arcade', 'M.O.T.H')) return;
-      this.openLinkAndLeaveVr(arcadeGameUrl(false), 'M.O.T.H'); return;
+      if (!this.confirmedLeavingVr('arcade', title)) return;
+      this.openLinkAndLeaveVr(arcadeGameUrl(false, undefined, game), title); return;
     }
     this.closePanel(); this.closeFestivalPass();
     const world = this.world;
@@ -3066,10 +3299,10 @@ export class App {
     };
     const exit = () => this.leaveArcadeOnEscape();
     const started = locked ? world.startArcadeLockedView(exit, layout)
-      : world.startArcadeGame(arcadeGameUrl(), exit, layout);
+      : world.startArcadeGame(arcadeGameUrl(true, undefined, game), exit, layout, game);
     if (!started) return;
     this.arcadeLockedViewing = locked;
-    this.arcadePlaying = true;
+    this.arcadePlaying = true; this.arcadeGameOpen = game;
     const shell = this.root.querySelector<HTMLElement>('.world-shell');
     if (shell) {
       shell.dataset.arcadePlaying = 'true'; shell.dataset.arcadeLocked = String(locked);
@@ -3153,7 +3386,7 @@ export class App {
     window.clearTimeout(this.arcadeUnlockTimer);this.arcadeUnlockTimer=undefined;
     if(publicLocked){
       this.arcadeUnlockTimer=window.setTimeout(()=>this.syncArcadeRelease(),Math.min(2_147_483_647,Math.max(1,ARCADE_UNLOCK_AT-now)));
-      if(locked&&this.arcadePlaying&&!this.arcadeLockedViewing)this.closeArcadeGame();
+      if(locked&&this.arcadePlaying&&!this.arcadeLockedViewing&&this.arcadeGameOpen==='moth')this.closeArcadeGame();
       // Redeeming never launches an external tab after an await. The dialog's
       // explicit PLAY button retains the user's gesture on phone/headset.
       if(!locked&&this.arcadeLockedViewing)this.closeArcadeGame();
@@ -3262,7 +3495,7 @@ export class App {
       if(action.seatId){this.activeSeatId=action.seatId;if(this.festivalClient.online)void this.confirmSeatClaim(action.seatId,action.snowAction);}
       return;
     }
-    if (action.type === 'arcade') { this.openArcadeGame(); return; }
+    if (action.type === 'arcade') { this.openArcadeGame(action.game); return; }
     if (action.type === 'danceSelection') {
       if (this.activePanel || this.viewMode !== 'normal') return;
       this.closeFestivalPass();
@@ -6444,7 +6677,9 @@ export class App {
       if (tab) void this.leaveHeadsetForNewWindow(payment);
       // Signed in the world with the visitor's own name (the service knows it);
       // from the sign-in page with whatever is typed in the gate's name field.
-      const gateName = gate ? (this.root.querySelector<HTMLInputElement>('input[name="festivalId"]')?.value.trim() ?? '') : '';
+      const typedName = gate ? (this.root.querySelector<HTMLInputElement>('input[name="festivalId"]')?.value.trim() ?? '') : '';
+      // Only a name the gate would accept; a reserved one (STAFF…) signs as 訪客.
+      const gateName = isValidId(typedName) ? typedName : '';
       const wish = { message: message?.value.trim() ?? '', displayName: gateName };
       go.disabled=true;
       if(arcadeDeviceKey){this.arcadePreviewPending=true;this.arcadePreviewPendingCodes=new Set(this.arcadePreview.state.codes.map(entry=>entry.code));}
@@ -7361,6 +7596,8 @@ export class App {
       // 2026-10-08: "I have no idea whether ECPay has issued a receipt").
       if (panel.querySelector<HTMLDetailsElement>('[data-staff-section="offering"]')?.open) void this.refreshOfferingList();
       this.watchOfferingList();
+      this.bindVisitSummary(panel);
+      if (!this.visitSummary && panel.querySelector<HTMLDetailsElement>('[data-staff-section="visits"]')?.open) void this.refreshVisitSummary();
       const receiptEditor = panel.querySelector<HTMLFormElement>('#offering-receipt-editor');
       receiptEditor?.addEventListener('submit', (event) => {
         event.preventDefault();
@@ -7441,6 +7678,7 @@ export class App {
         section.addEventListener('toggle', () => {
           const id = section.dataset.staffSection ?? '';
           if (id === 'offering' && section.open) void this.refreshOfferingList();
+          if (id === 'visits' && section.open) void this.refreshVisitSummary();
           if (section.open) this.openStaffSections.add(id);
           else this.openStaffSections.delete(id);
           sessionStorage.setItem(STAFF_SECTIONS_KEY, JSON.stringify([...this.openStaffSections]));
@@ -7878,7 +8116,7 @@ export class App {
       const echo = messages.find((message) => !entry.seenIds.has(message.id) && !claimed.has(message.id)
         && (pending.authorId ? message.authorId === pending.authorId : message.author === pending.author)
         && message.channel === pending.channel && message.text === echoedText);
-      if (echo) { claimed.add(echo.id); return false; }
+      if (echo) { claimed.add(echo.id); this.chatStreamAliases.set(echo.id, pending.id); return false; }
       // An old line with the same words cannot acknowledge a later send, and
       // one new echo cannot acknowledge two separately sent identical lines.
       entry.seenIds = new Set(messages.map((message) => message.id));
@@ -8036,6 +8274,8 @@ export class App {
   }
 
   private invoiceCheck?: InvoiceCheck;
+  private visitSummary?: VisitSummary;
+  private visitSummaryState: VisitStaffState = { loading: false, error: '' };
   private invoiceChecking = false;
 
   /**
@@ -8123,6 +8363,36 @@ export class App {
    * Fetch the offerings again and redraw only their list, so a STAFF member
    * typing in another field of the panel loses nothing.
    */
+  /** Read the visit tallies for the STAFF panel and redraw just that block. */
+  private async refreshVisitSummary(): Promise<void> {
+    if (!this.staffKey || this.visitSummaryState.loading) return;
+    const zh = this.language === 'zh-TW';
+    this.visitSummaryState = { ...this.visitSummaryState, loading: true, error: '' };
+    this.redrawVisitSummary();
+    try {
+      this.visitSummary = await this.festivalClient.adminVisits(this.staffKey, 14);
+      this.visitSummaryState = { loading: false, error: '', checkedAt: Date.now() };
+    } catch {
+      this.visitSummaryState = { loading: false, error: zh ? '無法讀取訪客統計，請確認連線與工作人員金鑰。' : 'Could not load the visit counts. Check the connection and STAFF key.' };
+    }
+    this.redrawVisitSummary();
+  }
+
+  private redrawVisitSummary(): void {
+    const block = this.root.querySelector<HTMLElement>('[data-staff-visits]');
+    if (!block) return;
+    const holder = document.createElement('div');
+    holder.innerHTML = visitStaffContent(this.visitSummary, this.language === 'zh-TW', this.visitSummaryState);
+    const next = holder.firstElementChild;
+    if (!next) return;
+    block.replaceWith(next);
+    this.bindVisitSummary(next);
+  }
+
+  private bindVisitSummary(scope: ParentNode): void {
+    scope.querySelector<HTMLButtonElement>('[data-visits-refresh]')?.addEventListener('click', () => { void this.refreshVisitSummary(); });
+  }
+
   private async refreshOfferingList(): Promise<void> {
     if (!this.staffKey || !this.adminState) return;
     try {
@@ -8204,6 +8474,7 @@ export class App {
       </div>
       ${controlledNpcId ? `<div class="staff-identity"><span>${this.language === 'zh-TW' ? '目前扮演' : 'PLAYING AS'} · ${this.escapeHtml(this.npcProfiles.find((profile) => profile.id === controlledNpcId)?.name ?? controlledNpcId)}${mentorCarrierName ? ` · ${this.language === 'zh-TW' ? '由' : 'CARRIED BY'} ${this.escapeHtml(mentorCarrierName)}` : ''}</span><button type="button" data-npc-play="">${this.language === 'zh-TW' ? '回復本人' : 'RETURN TO SELF'}</button></div>` : ''}
       ${this.adminError ? `<p class="staff-error" role="alert">${this.escapeHtml(this.adminError)}</p>` : ''}
+      ${this.staffSection('visits', this.language === 'zh-TW' ? '訪客統計' : 'VISITS', visitStaffContent(this.visitSummary, this.language === 'zh-TW', this.visitSummaryState))}
       ${this.staffSection('weather',this.language==='zh-TW'?'天氣排程':'WEATHER',weatherStaffContent(this.adminState.weather,this.language==='zh-TW',Date.now()+this.serverClockOffset))}
       ${this.staffSection('gate', this.language === 'zh-TW' ? '登入頁文字' : 'SIGN-IN PAGE', `
       <form class="staff-form" id="gate-copy-editor">
@@ -8471,17 +8742,94 @@ export class App {
     if (!elementChanged && signature === this.chatStreamSignature) return;
     this.chatStreamSignature = signature;
     stream.dataset.renderCount = String(Number(stream.dataset.renderCount ?? 0) + 1);
-    stream.hidden = messages.length === 0;
-    stream.innerHTML = items.map((item) => `
-      <article class="chat-stream__item" data-channel="${item.channel}">
+    // Like Twitch chat (the owner, 2026-11-13): a new message slides in at the
+    // bottom and pushes the others up, the oldest slides off the top, and each
+    // fades about twelve seconds after it arrived (style.css). Cards that stay
+    // are kept, so their own fade carries on rather than starting again.
+    const motion = !window.matchMedia('(prefers-reduced-motion: reduce)').matches && typeof Element.prototype.animate === 'function';
+    const before = new Map<HTMLElement, number>();
+    for (const node of stream.querySelectorAll<HTMLElement>(':scope > .chat-stream__item:not(.is-leaving)')) before.set(node, node.getBoundingClientRect().top);
+    const wanted = new Map(items.map(item => [item.id, item]));
+    // A line this visitor sent keeps its card when the service's own copy
+    // arrives under a new id (reconcileChatMessages), rather than being
+    // swapped out and in again.
+    for (const node of before.keys()) {
+      for (const [confirmed, pending] of this.chatStreamAliases) {
+        if (node.dataset.messageId !== pending || !wanted.has(confirmed)) continue;
+        node.dataset.messageId = confirmed;
+        this.chatStreamAliases.delete(confirmed);
+      }
+    }
+    if (this.chatStreamAliases.size > 20) this.chatStreamAliases.clear();
+    // The cards on their way out: held where they stand, out of the flow, so
+    // that they move with the rest (the owner, 2026-11-13: the top one rides
+    // up and fades rather than being covered by the one below).
+    const leaving: Array<{ node: HTMLElement; top: number }> = [];
+    for (const [node, top] of before) {
+      if (wanted.has(node.dataset.messageId ?? '')) continue;
+      if (!motion) { node.remove(); continue; }
+      const box = node.getBoundingClientRect();
+      node.classList.add('is-leaving');
+      Object.assign(node.style, { position: 'absolute', left: '0px', width: `${box.width}px` });
+      leaving.push({ node, top });
+    }
+    const card = (item: typeof items[number]) => `
         <header>
           <span class="chat-stream__channel">${this.escapeHtml(item.channelLabel)}</span>
           <strong>${this.escapeHtml(item.author)}</strong>
           <time>${item.time}</time>
         </header>
-        <p>${this.escapeHtml(item.text)}</p>
-      </article>
-    `).join('');
+        <p>${this.escapeHtml(item.text)}</p>`;
+    const now = Date.now();
+    const arrived: HTMLElement[] = [];
+    for (const item of items) {
+      let node = [...before.keys()].find(candidate => candidate.dataset.messageId === item.id);
+      const markup = card(item);
+      if (node) {
+        // The same message, perhaps in another language: only its words change.
+        if (node.dataset.markup !== markup) { node.innerHTML = markup; node.dataset.markup = markup; }
+        continue;
+      }
+      node = document.createElement('article');
+      node.className = 'chat-stream__item';
+      node.dataset.channel = item.channel;
+      node.dataset.messageId = item.id;
+      node.dataset.markup = markup;
+      node.innerHTML = markup;
+      // Its fade counts from when it was written, so an old one shown on
+      // arrival in the world is already on its way out.
+      const message = messages.find(candidate => candidate.id === item.id);
+      const age = message ? Math.max(0, now - message.timestamp) : 0;
+      node.style.animationDelay = `${-Math.min(age, 12_000)}ms`;
+      stream.append(node);
+      arrived.push(node);
+    }
+    // Keep the newest at the bottom, in the order they were written.
+    for (const item of items) {
+      const node = stream.querySelector<HTMLElement>(`:scope > [data-message-id="${CSS.escape(item.id)}"]:not(.is-leaving)`);
+      if (node) stream.append(node);
+    }
+    if (motion && !elementChanged) {
+      // One conveyor: every card moves up by the same step, the new ones rise
+      // in from below and the leaving ones rise off the top, fading.
+      const frame = stream.getBoundingClientRect();
+      let step = 0;
+      for (const [node, top] of before) if (node.isConnected && !node.classList.contains('is-leaving')) step = Math.max(step, top - node.getBoundingClientRect().top);
+      if (!step && arrived.length) step = arrived.reduce((sum, node) => sum + node.getBoundingClientRect().height, 0) + parseFloat(getComputedStyle(stream).rowGap || '0');
+      const timing = { duration: 280, easing: 'cubic-bezier(.2,.7,.3,1)' };
+      for (const [node, top] of before) {
+        if (!node.isConnected || node.classList.contains('is-leaving')) continue;
+        const shift = top - node.getBoundingClientRect().top;
+        if (Math.abs(shift) > .5) node.animate([{ transform: `translateY(${shift}px)` }, { transform: 'none' }], timing);
+      }
+      for (const node of arrived) node.animate([{ opacity: 0, transform: `translateY(${step}px)` }, { opacity: 1, transform: 'none' }], timing);
+      for (const { node, top } of leaving) {
+        node.style.top = `${top - frame.top}px`;
+        node.animate([{ opacity: getComputedStyle(node).opacity, transform: 'none' }, { opacity: 0, transform: `translateY(${-step}px)` }], { ...timing, fill: 'forwards' })
+          .finished.then(() => node.remove(), () => node.remove());
+      }
+    } else for (const { node } of leaving) node.remove();
+    stream.hidden = items.length === 0 && !stream.querySelector('.is-leaving');
   }
 
   private startNpcChat(): void {

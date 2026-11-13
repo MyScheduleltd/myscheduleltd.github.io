@@ -2023,6 +2023,24 @@ test('a name is refused while somebody is actually holding it', async () => {
   await reader.cancel();
 });
 
+test('nobody joins as STAFF, ADMIN, NPC, MYSCHEDULE or SYSTEM, however it is written', async () => {
+  // The sign-in page refuses these (isValidId); a crafted request must not get
+  // past it to chat or sign the wish wall as the festival (2026-11-12).
+  const ask = (path, body) => fetch(`${baseUrl}${path}`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' }, body: JSON.stringify(body),
+  });
+  for (const name of ['STAFF', ' staff ', 'Admin', 'ＳＴＡＦＦ', 'myschedule', 'System', 'npc']) {
+    const refused = await ask('/api/session', { name });
+    assert.equal(refused.status, 400, `${JSON.stringify(name)} is refused`);
+    assert.match((await refused.json()).error, /reserved/);
+  }
+  const recovered = await ask('/api/session/recover', { name: 'STAFF', session: { id: 'someone', token: 'anything' } });
+  assert.equal(recovered.status, 400, 'nor can it be recovered into');
+  // A name that merely contains one is fine.
+  const ordinary = await ask('/api/session', { name: 'STAFFORD' });
+  assert.equal(ordinary.status, 201);
+});
+
 
 test('an offering needs an amount in range and an email, from a guest or a visitor', async () => {
   // A guest on the sign-in page may give too (the Donate button there), but
@@ -2968,6 +2986,12 @@ test('a note left with an offering goes on the wish wall once paid, never to dis
     await pay(guest.id, 30);
     assert.deepEqual((await wall()).at(-1), { ...(await wall()).at(-1), name: 'AWD', message: 'hello wall' });
 
+    // A reserved name is never a guest's to sign with (2026-11-12): the wall
+    // says 訪客 / GUEST instead, as for a guest who typed nothing.
+    const posing = await fetch(`${url}/api/donation`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:5173' }, body: JSON.stringify({ amount: 30, email: 'guest@example.com', receipt: true, message: 'official notice', displayName: ' staff ' }) }).then((r) => r.json());
+    await pay(posing.id, 30);
+    assert.notEqual((await wall()).at(-1).name.toUpperCase().trim(), 'STAFF');
+
     // Never written down.
     await new Promise((resolve) => setTimeout(resolve, 400));
     const saved = readFileSync(stateFile, 'utf8');
@@ -3151,4 +3175,29 @@ test('the island ferry entrance survives validated presence bounds',async()=>{
   assert.equal(r.status,202);
   const state=await fetch(`${baseUrl}/api/admin/state`,{headers:{'x-festival-admin-key':'test-admin-key'}}).then(r=>r.json());
   assert.equal(state.visitors.find(v=>v.id===s.id).presence.z,93.5);
+});
+
+test('the sign-in page reports a visit without a session, and only STAFF can read the tallies', async () => {
+  const report = (payload) => fetch(`${baseUrl}/api/visit`, {
+    method: 'POST',
+    // What navigator.sendBeacon sends: plain text, so the browser needs no preflight.
+    headers: { 'content-type': 'text/plain;charset=UTF-8', origin: 'http://127.0.0.1:5173' },
+    body: JSON.stringify(payload),
+  });
+  const opened = await report({ e: 'open', v: 'visitTokenAbc1', d: 'phone', b: 'instagram', s: 'instagram' });
+  assert.equal(opened.status, 204);
+  assert.equal((await report({ e: 'entered', v: 'visitTokenAbc1', d: 'phone', b: 'instagram', t: 9 })).status, 204);
+  assert.equal((await fetch(`${baseUrl}/api/visit`, { method: 'POST', headers: { origin: 'http://127.0.0.1:5173' }, body: 'not json' })).status, 204,
+    'a garbled report is ignored, never an error the visitor sees');
+  assert.equal((await fetch(`${baseUrl}/api/admin/visits`)).status, 401);
+  // The count is written after the answer; give it a moment.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const summary = await fetch(`${baseUrl}/api/admin/visits?days=3`, { headers: { 'x-festival-admin-key': 'test-admin-key' } }).then((r) => r.json());
+  assert.equal(summary.persistent, false, 'with no Redis configured the tallies are memory only');
+  assert.equal(summary.days.length, 3);
+  const today = summary.days[0];
+  assert.ok(today.opened >= 1);
+  assert.ok(today.browsers.instagram.opened >= 1);
+  assert.ok(today.entered >= 1);
+  assert.ok(!JSON.stringify(summary).includes('visitTokenAbc1'), 'browser tokens are never handed back');
 });

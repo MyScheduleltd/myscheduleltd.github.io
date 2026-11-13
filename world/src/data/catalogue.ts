@@ -104,12 +104,3 @@ export const catalogueByVenue = {
   // The rooftop spins the same DR.BEAUTY box as the basement.
   rooftop: catalogue.filter((film) => film.category === 'ORIGINALS'),
 } satisfies Record<VenueKey, CatalogueEntry[]>;
-
-export const catalogueSummary = {
-  total: catalogue.length,
-  palace: catalogueByVenue.palace.length,
-  'drive-in': catalogueByVenue['drive-in'].length,
-  shore: catalogueByVenue.shore.length,
-  club: catalogueByVenue.club.length,
-  rooftop: catalogueByVenue.rooftop.length,
-};

@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 import { fetchAsset } from './AssetMirror';
-import { ARCADE_HEIGHT, ARCADE_WIDTH, ARCADE_DEPTH } from './ArcadeRules';
+import { ARCADE_HEIGHT, ARCADE_WIDTH, ARCADE_DEPTH, ARCADE_TITLES, type ArcadeGame } from './ArcadeRules';
 import { PLANET, planetBendPoint } from './PlanetCurve';
 
 export class MothArcadeCabinet {
@@ -20,9 +20,15 @@ export class MothArcadeCabinet {
   private authoredScreenUv?: THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
   private lockMaterial?: THREE.MeshBasicMaterial;
   private lockTexture?: THREE.CanvasTexture;
+  /** 逃脫我的美麗's joystick and buttons (cabinetRole joystick/button); M.O.T.H has none. */
+  private readonly playControls: THREE.Object3D[] = [];
 
-  constructor(x: number, y: number, z: number) {
-    this.root.name = 'M.O.T.H arcade cabinet';
+  readonly game: ArcadeGame;
+
+  /** M.O.T.H's cabinet, or 逃脫我的美麗's (art/escape-arcade-20261110), which has the same footprint. */
+  constructor(x: number, y: number, z: number, game: ArcadeGame = 'moth') {
+    this.game = game;
+    this.root.name = `${ARCADE_TITLES[game]} arcade cabinet`;
     this.root.userData.dynamic = true;
     this.root.position.set(x, y, z);
     // The generated cabinet faces +Z; the road is west of the venue.
@@ -110,11 +116,16 @@ export class MothArcadeCabinet {
 
   private async load(): Promise<void> {
     try {
-      const bytes = await fetchAsset(new URL('../assets/venue-scenery/moth-arcade.glb', import.meta.url).href);
+      const bytes = await fetchAsset(this.game === 'escape'
+        ? new URL('../assets/venue-scenery/escape-arcade.glb', import.meta.url).href
+        : new URL('../assets/venue-scenery/moth-arcade.glb', import.meta.url).href);
       const gltf = await parseGameModel(new GLTFLoader().setMeshoptDecoder(MeshoptDecoder), bytes);
       if (this.disposed) { disposeCabinetModel(gltf.scene); return; }
       const model = gltf.scene;
-      const box = new THREE.Box3().setFromObject(model), size = box.getSize(new THREE.Vector3());
+      // The exact geometry, not each mesh's box turned with it: a rotated
+      // mesh's turned box overstates the cabinet, and the M.O.T.H fit used to
+      // lean on that (its coin door, fixed 2026-11-11, carried such a turn).
+      const box = new THREE.Box3().setFromObject(model, true), size = box.getSize(new THREE.Vector3());
       if (!Number.isFinite(size.y) || size.y <= 0) throw new Error('Arcade cabinet has no usable bounds');
       const scale = ARCADE_HEIGHT / size.y;
       model.scale.setScalar(scale);
@@ -128,6 +139,7 @@ export class MothArcadeCabinet {
         for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
           material.userData.preserveAuthoredSurface = true;
         }
+        if (node.userData.cabinetRole === 'joystick' || node.userData.cabinetRole === 'button') this.playControls.push(node);
         if (node.userData.arcadeScreen) {
           this.screen = node;
           this.authoredScreenMaterial = node.material;
@@ -142,8 +154,17 @@ export class MothArcadeCabinet {
       this.root.add(model); this.root.updateMatrixWorld(true); this.status = 'ready';
     } catch (error) {
       this.status = 'failed';
-      console.warn('M.O.T.H cabinet could not load', error);
+      console.warn(`${ARCADE_TITLES[this.game]} cabinet could not load`, error);
     }
+  }
+
+  /**
+   * Hide the joystick and buttons while this cabinet's game is played (the
+   * owner, 2026-11-10): where they were placed, they would show cut off at
+   * the play view's lower edge. Walking around, they are always shown.
+   */
+  setControlsHidden(hidden: boolean): void {
+    for (const control of this.playControls) control.visible = !hidden;
   }
 
   dispose(): void {
@@ -315,14 +336,14 @@ export class MothArcadeSession extends MothArcadeView {
   readonly origin: string;
   private readonly exit: () => void;
 
-  constructor(screen: THREE.Mesh, url: string, exit: () => void) {
+  constructor(screen: THREE.Mesh, url: string, exit: () => void, title = 'M.O.T.H') {
     super(screen); this.exit = exit; this.origin = new URL(url).origin;
     const element = document.createElement('div'); element.className = 'moth-arcade-screen';
     const width = 1024, height = Math.round(width * this.frame.height / this.frame.width);
     element.style.width = `${width}px`; element.style.height = `${height}px`;
-    element.setAttribute('aria-label', 'M.O.T.H arcade screen');
+    element.setAttribute('aria-label', `${title} arcade screen`);
     this.iframe = document.createElement('iframe');
-    this.iframe.title = 'M.O.T.H arcade game'; this.iframe.src = url;
+    this.iframe.title = `${title} arcade game`; this.iframe.src = url;
     this.iframe.allow = 'autoplay; fullscreen'; this.iframe.referrerPolicy = 'strict-origin';
     this.iframe.addEventListener('load', this.focusGame);
     element.append(this.iframe);

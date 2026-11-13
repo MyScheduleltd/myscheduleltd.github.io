@@ -2,10 +2,6 @@ import * as THREE from 'three';
 
 export const DRIVE_IN_PAINTS = [0xf34830, 0xffb52e, 0x10b6c5, 0xffd18a, 0x365fd1, 0x148d62] as const;
 export const CAR_PAINT_MATERIAL = 'Convertible painted panels';
-/** Audited source faces -X; the theater screen is -Z in car-local space. */
-export const DRIVE_IN_CAR_YAW = -Math.PI / 2;
-/** Loaded mesh support measured at the retained driver x/z; fallback stays .86. */
-export const DRIVE_IN_CUSHION_TOP = .76;
 
 export interface DriveInCarArtHandle {
   readonly report: { cars: number; materials: number; colors: number[] };

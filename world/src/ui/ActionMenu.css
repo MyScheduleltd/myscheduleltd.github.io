@@ -1,4 +1,4 @@
-/* Keep the original four-part DanceWheel. Only the two authored moves are
+/* Keep the original four-part dance wheel. Only the two authored moves are
    buttons; the remaining sectors are decoration rather than empty choices. */
 .action-menu { --action-wheel-size:min(340px,72vw,calc(100svh - 205px)); padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left)); overflow-y:auto; }
 .action-menu .action-menu__card { width:min(460px,100%); padding:0; background:transparent; border:0; box-shadow:none; }

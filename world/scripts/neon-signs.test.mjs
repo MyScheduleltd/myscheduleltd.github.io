@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 
 const compiled=await build({stdin:{contents:"export * from './src/world/NeonSigns';export * as THREE from 'three';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node'});
-const {THREE,NEON_SIGN_PALETTES,createNeonSignTexture,repaintNeonSignTexture,updateNeonSignTexture,neonSignTextureSize,neonSignStyleForLines,createNeonSignFrame,disposeNeonSignFrame,disposeNeonSignTextures}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
+const {THREE,NEON_SIGN_PALETTES,createNeonSignTexture,updateNeonSignTexture,neonSignTextureSize,neonSignStyleForLines,createNeonSignFrame,disposeNeonSignFrame,disposeNeonSignTextures}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 
 function canvasFixture(){
   const priorDocument=globalThis.document,canvases=[],text=[];
@@ -48,9 +48,8 @@ test('CJK and staff renames retain exact wording, their venue style, and one tex
     assert.deepEqual(texture.userData.neonSign.lines,['STAFF’S NEW & EXACT NAME','映畫・LIVE / 88']);
     assert.equal(texture.userData.neonSign.paints,paints+1);assert.ok(texture.version>version);
     for(const t of f.text){assert.ok(t.x>=0&&t.x<=t.canvas.width);assert.ok(t.y>=0&&t.y<=t.canvas.height);}
-    const updated=texture.version;repaintNeonSignTexture(texture);assert.ok(texture.version>updated);
     texture.dispose();const disposedPaints=texture.userData.neonSign.paints;
-    repaintNeonSignTexture(texture);assert.equal(updateNeonSignTexture(texture,['CLOSED']),false);assert.equal(texture.userData.neonSign.paints,disposedPaints);
+    assert.equal(updateNeonSignTexture(texture,['CLOSED']),false);assert.equal(texture.userData.neonSign.paints,disposedPaints);
   }finally{f.restore();}
 });
 

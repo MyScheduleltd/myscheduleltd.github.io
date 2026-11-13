@@ -92,16 +92,20 @@ test('building the real Shore feet cannot deform shared walls, stairs or screen 
  w.buildOnGrade(()=>w.createShoreScreen(),site.grade,site.dx,site.dz);
  assert.deepEqual(Array.from(boxGeometry.attributes.position.array),before);
  assert.deepEqual(Array.from(boxGeometry.attributes.normal.array),normals);
- const board=w.scene.children.find(n=>n.userData.neonSignFrame?.style==='shore');
- assert.ok(board,'the real Shore builder must retain its dedicated neon surround');
+ // The PS1 look (the default) houses the board in a light-box (2026-11-10);
+ // ?look=film keeps the neon surround.
+ const board=w.scene.children.find(n=>n.userData.neonSignFrame?.style==='shore'||n.userData.lightBoxSign==='shore');
+ assert.ok(board,'the real Shore builder must retain its dedicated surround');
  assert.equal(board.position.x,SHORE_SIGN.x);assert.equal(board.position.z,SHORE_SIGN.z);
  const label=board.children.find(n=>n.material===w.venueSignMaterials.get('shore'));
  assert.ok(label,'staff-editable Shore lettering remains a separate panel');
  assert.equal(label.geometry.parameters.width,SHORE_SIGN.width);assert.equal(label.position.z,.035);
- assert.equal(label.material.map.userData.neonSign.style,'shore');
- assert.deepEqual(label.material.map.userData.neonSign.lines,['THE SHORE','MUSIC VIDEO']);
- const frameMeshes=board.children.filter(n=>n.isMesh&&n!==label&&n.material.isMeshBasicMaterial);
- assert.ok(frameMeshes.length>0&&frameMeshes.length<=3,'the neon surround must keep its bounded draw cost');
+ // The PS1 look (the default since 2026-11-09) hangs the 海岸戲院 light-box
+ // face on the same panel; ?look=film keeps the neon lettering.
+ assert.equal(label.material.map.name,'PS1 board 海岸戲院');
+ const lightBox=Boolean(board.userData.lightBoxSign);
+ const frameMeshes=board.children.filter(n=>n.isMesh&&n!==label&&(lightBox?n.name==='PS1 light-box housing':n.material.isMeshBasicMaterial));
+ assert.ok(frameMeshes.length>0&&frameMeshes.length<=3,'the surround must keep its bounded draw cost');
  let frameTriangles=0;
  for(const part of frameMeshes){
   assert.equal(part.material.transparent,false,'glow is baked rather than stacked transparent cards');
@@ -113,7 +117,7 @@ test('building the real Shore feet cannot deform shared walls, stairs or screen 
    assert.ok(Math.abs(local.x)<=(SHORE_SIGN.width+.26001)/2,'the neon frame expanded the established board footprint');
   }
  }
- assert.ok(frameTriangles<=150,'the surround must remain a small prop');
+ assert.ok(frameTriangles<=(lightBox?400:150),'the surround must remain a small prop');
  assert.equal(board.children.some(n=>n.isLight),false,'the new surround must not add a real-time light');
  const feet=board.children.filter(n=>n.scale.x===.6);
  assert.equal(feet.length,2);assert.ok(feet.every(n=>n.geometry!==boxGeometry));

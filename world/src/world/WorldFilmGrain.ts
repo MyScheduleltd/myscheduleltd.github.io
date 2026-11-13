@@ -3,11 +3,15 @@ import { materialCompileHookIdentity } from './PlanetCurve';
 
 /** Dense monochrome film grain, evaluated directly in existing draw calls. */
 export const WORLD_FILM_GRAIN_SETTINGS=Object.freeze({strength:.13,clump:.12,clumpPixels:2.25,hz:18,period:4096});
-/** Hue-preserving ordered light bands; the existing PBR/colour palette stays. */
-export const WORLD_DITHER_SETTINGS=Object.freeze({levels:12,amount:.65,pixelSize:1.5});
+/**
+ * The PS1 look (ScreenLook.ts): 15-bit colour through a 4×4 ordered dither,
+ * per channel, at the drawn pixel, as the PlayStation did. Grain stays, much
+ * quieter, so the dither pattern reads and the picture does not crawl.
+ */
+export const PS1_DITHER_SETTINGS=Object.freeze({bitsPerChannel:5,grainStrength:.04});
 const frameUniform={value:0};
 const marker='// WORLD_FILM_GRAIN_V1';
-const cacheSuffix=':world-film-grain-v1';
+const cacheSuffix=':world-film-grain-v1:ps1';
 type CompileHook=THREE.Material['onBeforeCompile'];
 interface Patch { hook:CompileHook; prior:CompileHook; key:THREE.Material['customProgramCacheKey']; }
 const patched=new WeakMap<THREE.Material,Patch>();
@@ -22,23 +26,16 @@ const declaration=/* glsl */`
   float worldDitherBayer2(vec2 point) {
     return mod(2. * point.x + 3. * point.y, 4.);
   }
-  float worldDitherThreshold(vec2 pixel) {
-    vec2 point = floor(pixel / ${WORLD_DITHER_SETTINGS.pixelSize.toFixed(2)});
-    float fine = worldDitherBayer2(mod(point, 2.));
-    float middle = worldDitherBayer2(mod(floor(point / 2.), 2.));
-    float broad = worldDitherBayer2(mod(floor(point / 4.), 2.));
-    return (fine * 16. + middle * 4. + broad + .5) / 64.;
-  }
 `;
-const grain=/* glsl */`
-  // WORLD_ORDERED_DITHER_V1
-  float worldStyleLuma = dot(gl_FragColor.rgb, vec3(.2126, .7152, .0722));
-  float worldStyleBand = floor(worldStyleLuma * ${WORLD_DITHER_SETTINGS.levels.toFixed(1)} + worldDitherThreshold(gl_FragCoord.xy)) / ${WORLD_DITHER_SETTINGS.levels.toFixed(1)};
-  // Keep near-black paint dark: tiny blue components must not become bright
-  // speckles when a Bayer cell selects its first nonzero luminance band.
-  float worldStyleGain = clamp(worldStyleBand / max(worldStyleLuma, .0001), .5, 1.5);
-  vec3 worldStyleColour = gl_FragColor.rgb * worldStyleGain;
-  gl_FragColor.rgb = mix(gl_FragColor.rgb, clamp(worldStyleColour, 0., 1.), ${WORLD_DITHER_SETTINGS.amount.toFixed(2)});
+const ps1Steps=(2**PS1_DITHER_SETTINGS.bitsPerChannel-1).toFixed(1);
+const ps1Dither=/* glsl */`
+  // PS1_ORDERED_DITHER_V1
+  vec2 ps1Cell = mod(floor(gl_FragCoord.xy), 4.);
+  float ps1Threshold = (worldDitherBayer2(mod(ps1Cell, 2.)) * 4. + worldDitherBayer2(floor(ps1Cell / 2.)) + .5) / 16.;
+  gl_FragColor.rgb = clamp(floor(gl_FragColor.rgb * ${ps1Steps} + ps1Threshold) / ${ps1Steps}, 0., 1.);
+`;
+/** Monochrome grain at `strength`, after the dither; quiet in the PS1 look so the dither pattern reads. */
+const filmGrain=(strength:number)=>/* glsl */`
   ${marker}
   // Every covered world fragment receives grain. No sparse-dot threshold.
   vec2 worldFilmPixel = floor(gl_FragCoord.xy);
@@ -48,8 +45,9 @@ const grain=/* glsl */`
   float worldFilmSignal = mix(worldFilmFine, worldFilmClump, ${WORLD_FILM_GRAIN_SETTINGS.clump.toFixed(2)});
   float worldFilmLuma = clamp(dot(gl_FragColor.rgb, vec3(.2126, .7152, .0722)), 0., 1.);
   float worldFilmHeadroom = .65 + .35 * (1. - abs(worldFilmLuma * 2. - 1.));
-  gl_FragColor.rgb = clamp(gl_FragColor.rgb + vec3(worldFilmSignal * ${WORLD_FILM_GRAIN_SETTINGS.strength.toFixed(2)} * worldFilmHeadroom), 0., 1.);
+  gl_FragColor.rgb = clamp(gl_FragColor.rgb + vec3(worldFilmSignal * ${strength.toFixed(2)} * worldFilmHeadroom), 0., 1.);
 `;
+const grain=filmGrain(PS1_DITHER_SETTINGS.grainStrength)+ps1Dither;
 
 function containsVideo(material:THREE.Material):boolean {
   // Test all authored slots, including an emissive movie map rather than
@@ -103,7 +101,7 @@ function unpatchProtectedMaterial(material:THREE.Material):boolean {
   delete material.userData.worldFilmGrain;material.needsUpdate=true;patched.delete(material);return true;
 }
 
-export interface WorldFilmGrainReport { meshes:number; materials:number; added:number; alreadyPatched:number; excluded:number; restored:number; strength:number; hz:number; dither:typeof WORLD_DITHER_SETTINGS; }
+export interface WorldFilmGrainReport { meshes:number; materials:number; added:number; alreadyPatched:number; excluded:number; restored:number; strength:number; hz:number; dither:typeof PS1_DITHER_SETTINGS; }
 
 /** Apply after other art hooks and after late avatar mounting. No GPU resources
  * are allocated; material maps, PBR properties, vertex shaders and alpha stay
@@ -111,7 +109,7 @@ export interface WorldFilmGrainReport { meshes:number; materials:number; added:n
  */
 export function applyWorldFilmGrain(root:THREE.Object3D):WorldFilmGrainReport {
   const materials=new Set<THREE.Material>(),protectedMaterials=new Set<THREE.Material>();
-  const report:WorldFilmGrainReport={meshes:0,materials:0,added:0,alreadyPatched:0,excluded:0,restored:0,strength:WORLD_FILM_GRAIN_SETTINGS.strength,hz:WORLD_FILM_GRAIN_SETTINGS.hz,dither:WORLD_DITHER_SETTINGS};
+  const report:WorldFilmGrainReport={meshes:0,materials:0,added:0,alreadyPatched:0,excluded:0,restored:0,strength:WORLD_FILM_GRAIN_SETTINGS.strength,hz:WORLD_FILM_GRAIN_SETTINGS.hz,dither:PS1_DITHER_SETTINGS};
   root.traverse(object=>{
     const mesh=object as THREE.Mesh,sprite=object as THREE.Sprite;
     if(!mesh.isMesh&&!sprite.isSprite)return;

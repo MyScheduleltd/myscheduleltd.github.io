@@ -1,7 +1,7 @@
 import { FestivalWeather } from './FestivalWeather';
 import type { SnowSurfaceSource } from './SnowSurfaceCoverage';
 import type { SharedWeather } from '../weather/WeatherModel.mjs';
-import { createBeachRelaxation, type BeachRelaxationSpot } from './BeachRelaxation';
+import { BEACH_RELAXATION_LAYOUT, createBeachRelaxation, type BeachRelaxationSpot } from './BeachRelaxation';
 import { poseRelaxedCoastal, clearRelaxedCoastal, prepareCoastalReclines, prepareCoastalChairs, type CoastalRelaxationPose } from './CoastalRelaxationPose';
 import { FireworksShow } from './FireworksShow';
 import { NpcIndicators, createNpcIdentityTexture, NPC_INDICATOR } from './NpcIndicator';
@@ -12,8 +12,8 @@ import { DEFAULT_NPC_PROFILES, DOUBLE_TAP_INTRODUCTION, FEMALE_RESIDENTS,
   type NpcId, type NpcProfile, type MentorFollowerTarget } from './NpcRoster';
 import { TOP_OUTFITS, outfitWire } from './CoastalOutfits';
 import { npcSeed, sampleNpcMotion, type NpcLeg } from './SharedNpcMotion';
-import { createCoastalPopcorn, createCoastalDrink, createCoastalPamphletStand, createCoastalDeity } from './CoastalProps';
-import { createCoastalDecks, createCoastalSpeaker, createCoastalJukebox } from './CoastalFurniture';
+import { createCoastalPopcorn, createCoastalDrink, createCoastalDeity } from './CoastalProps';
+import { createCoastalDecks, createCoastalSpeaker } from './CoastalFurniture';
 import { setCoastalSwimwear } from './CoastalAvatar';
 import * as THREE from 'three';
 import { HeadTracking, type TrackedPoint } from './HeadTracking';
@@ -24,13 +24,11 @@ import { FrameTimings } from './FrameTimings';
 import { selectDecorativeLights } from './LightBudget';
 import { compileScenePrograms, warmScenePrograms, uploadSceneTextures, warmByDrawing } from './SceneWarmup';
 import { GamepadInput, type GamepadActionId, type GamepadFrame } from './GamepadInput';
-import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, warpWorldGeometry, massBuildings, setWornCheap } from './WornStyle';
-import { dressBuildings, dressInteriors } from './WornArchitecture';
+import { wornOrphanCount, applyWornStyle, setWornStyle, wornStyleSettings, wornMeshesRequested, setWornCheap } from './WornStyle';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import type { VenueKey } from '../data/catalogue';
 import { AmbientAudio } from './AmbientAudio';
 import { createWorldRenderer } from './WorldRenderer';
-import { acquireGpuTextures, gpuTexturesEnabled, type GpuTextureLease } from './GpuTextureRuntime';
 import masterOfTheHouseLogo from '../assets/master-of-the-house.png';
 import { DayNightCycle, nightAmountAt, type DayNightState } from './DayNightCycle';
 import { createStylizedWaterMaterial, tintStylizedWater } from './StylizedWater';
@@ -44,22 +42,28 @@ import { createBeachCouple, animateBeachCouple, type BeachCoupleRig } from './Be
 import { applyAvatarAccessories } from './AvatarAccessories';
 import { PLANET, keepFlat, setPlanetCentre, bendCss3d, subdivideSceneForPlanet, planetBendPoint } from './PlanetCurve';
 import { IslandDock, DOCK_ARRIVAL } from './IslandDock';
-import { ISLAND, ISLAND_COVE, islandTerrain, SEA_Y, TEMPLE_GRADE, TEMPLE_STAIRS, TEMPLE_STAIR_VISUAL_OVERLAP, templeStairPitch, templeStairX, templeTreadTop, SHORE_GRADE, CLUB_GRADE, HILL_WALK, terrainHeightAt, isSwimmingDepth, distanceToWater, createCoastalTerrain, createGroundRibbon, insidePaving, type PlanPoint } from './CoastalTerrain';
+import { INLAND_HOUSES, ISLAND, ISLAND_COVE, islandTerrain, SEA_Y, TEMPLE_GRADE, TEMPLE_STAIRS, TEMPLE_STAIR_VISUAL_OVERLAP, templeStairPitch, templeStairX, templeTreadTop, SHORE_GRADE, CLUB_GRADE, HILL_WALK, terrainHeightAt, isSwimmingDepth, distanceToWater, createCoastalTerrain, createGroundRibbon, insidePaving, type PlanPoint } from './CoastalTerrain';
 import { poseCoastalCarry } from './CoastalCarry';
 import { moveCoastalBody, overlapsBodyHeight, coastalDetour, coastalRouteAround } from './CoastalCollision';
 import { pixelSurface, worldSurfaceUV } from './CoastalSurfaces';
 import { ROAD_POLYGONS, streetLampObstructsRoute } from './CoastalCirculation';
-import { CoastalScenery } from './CoastalScenery';
+import { CoastalScenery, TOWN_POLES, TOWN_WIRE_Y } from './CoastalScenery';
 import { VenueSceneryAssets } from './VenueSceneryAssets';
+import { assetObjectUrl, prefetchAsset } from './AssetMirror';
+import { mobileAssetBudgetEnabled } from './MobileAssetBudget';
 import { createFestivalAttendant } from './FestivalAttendant';
 import { createConcessionContactShadow } from './ConcessionShadow';
-import { EnvironmentMaterials, environmentAssetsFromUrls, tagEnvironmentSurface, type EnvironmentFamily, type EnvironmentSurface } from './EnvironmentMaterials';
+import { EnvironmentMaterials, tagEnvironmentSurface, type EnvironmentFamily, type EnvironmentSurface } from './EnvironmentMaterials';
 import { applyEnvironmentArchitecture } from './EnvironmentArchitecture';
 import { EnvironmentAssets, environmentModelAssetsFromUrls, ENVIRONMENT_ASSET_ROOT } from './EnvironmentAssets';
 import { prepareEnvironmentReflections, type EnvironmentReflectionHandle } from './EnvironmentReflections';
 import { applyDriveInLicensePlates, type DriveInLicensePlateHandle } from './DriveInLicensePlates';
 import { applyEnvironmentArt } from './EnvironmentArt';
-import { createNeonSignTexture, repaintNeonSignTexture, createNeonSignFrame, disposeNeonSignFrame, disposeNeonSignTextures, type NeonSignStyle } from './NeonSigns';
+import { applyPs1TownGrade } from './Ps1TownGrade';
+import { ps1SeaHeight, ps1SeaOpenness } from './Ps1Waves';
+import { createPs1PamphletStand } from './Ps1PamphletStand';
+import { createPs1Jukebox } from './Ps1Jukebox';
+import { createNeonSignTexture, createNeonSignFrame, disposeNeonSignFrame, disposeNeonSignTextures, type NeonSignStyle } from './NeonSigns';
 import { applyWorldFilmGrain, setWorldFilmGrainFrame } from './WorldFilmGrain';
 import { applyPlanetLightAnchors, disposePlanetLightAnchors } from './PlanetLightAnchors';
 import { polishPalacePilasters, type PalacePilasterFinishHandle } from './PalacePilasterFinish';
@@ -70,12 +74,11 @@ import { createCoastalAvatar } from './CoastalAvatar';
 import { importedAvatarTextures, attachImportedAvatar, syncImportedAvatars, disposeImportedAvatars, importedAvatarRoots, AVATAR_NATIVE, MOVE_SECONDS, PUNCH_CONTACT_SECONDS } from './ImportedAvatar';
 import { createCoastalSkateboard } from './CoastalSkateboard';
 import { waveCoastalPose, fallCoastalPose, landCoastalPose, djCoastalPose, jumpCoastalArms, hitCoastalPose, punchCoastalPose, setCoastalFists, releaseCoastalGrips, walkCoastalPose, plantedFoot, passOutCoastalPose, danceCoastalPose, COASTAL_STRIDE_LENGTH, skateCoastalPose, levelCoastalFeet, supportCoastalPose, seatCoastalLegs, coastalFootHeights, type WalkingFloor } from './CoastalPose';
-import { coastalRoof, createCoastalSedan, CONVERTIBLE } from './CoastalGeometry';
+import { createCoastalSedan, CONVERTIBLE } from './CoastalGeometry';
 import { createConvertibleSeatProxy } from './ConvertibleSeat';
 import { TempleTrimAtlas } from './TempleTrimAtlas';
 import { applyTempleArchitecture, type TempleArchitectureHandle } from './TempleArchitecture';
 import { createWishWallFrame, type WishWallFrameHandle } from './WishWallFrame';
-import { polishPamphletSurface, type PamphletSurfaceHandle } from './PamphletSurface';
 import { XrHud } from './XrHud';
 import { XR_HOLD_MS, xrBindingFor, type XrAction } from './XrControls';
 import {
@@ -88,7 +91,13 @@ import { orientBody } from './BodyOrientation';
 import { videoSyncPlan, videoJoinTime, bufferedAheadOf } from './VideoSync';
 import { stepAvoidance, AVOIDANCE_OFFSETS_FINE, type AvoidanceState } from './CameraAvoidance';
 import { pinchZoom, pinchSpread, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX } from './CameraInput';
-import { planRenderScale, RENDER_SCALE_FLOOR } from './RenderScale';
+import { planRenderScale } from './RenderScale';
+import { ps1PixelRatio } from './ScreenLook';
+import { ps1SurfaceTexture } from './Ps1Surfaces';
+import { PS1_CLUB_LIGHT_BOXES, PS1_DOCK_LIGHT_BOXES, PS1_LIGHT_BOXES, PS1_PALACE_POSTERS, boardKeepsName, isPs1BoardTexture, ps1Board, ps1EntranceFace, type Ps1BoardKey } from './Ps1Signs';
+import { createLightBoxHousing } from './Ps1LightBoxHousing';
+import { dressPs1Pilot } from './Ps1StreetProps';
+import { templeRoofGeometry, templeRoofLines, templeRoofTile } from './Ps1TempleRoof';
 import { ARCADE_LOCK_KEYHOLE, MothArcadeCabinet, MothArcadeSession, MothArcadeView } from './MothArcade';
 import { PreviewResourceLease } from './PreviewResourceLease';
 import { RendererResourceLease } from './RendererResourceLease';
@@ -96,7 +105,7 @@ import { CutawayLens, CUTAWAY_LENS, type CutawayRoom } from './CutawayLens';
 import { PlanGrid } from './PlanGrid';
 import { fitGateAerialCamera, fitGateAvatarCamera, gateAerialTarget, blendGateEntryCamera, type GateEntryCameraPose, type GatePreviewFrame, type GatePreviewCameraSnapshot } from './GatePreviewLayout';
 import { publicProjectorViewport } from './ProjectorViewport';
-import { arcadeIsNearest, arcadeIsLocked, ARCADE_WIDTH, ARCADE_DEPTH, cabinetPairPositions, arcadeAgainstWallX } from './ArcadeRules';
+import { nearestArcade, arcadeIsLocked, ARCADE_WIDTH, ARCADE_DEPTH, ARCADE_TITLES, cabinetRowPositions, arcadeAgainstWallX, type ArcadeGame } from './ArcadeRules';
 
 type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>;
@@ -145,7 +154,7 @@ export type WorldAction =
   | { type: 'died'; by?: string }
   | { type: 'passedOut' }
   | { type: 'jukebox' }
-  | { type: 'arcade' }
+  | { type: 'arcade'; game: ArcadeGame }
   | { type: 'vrWatch'; venue: VenueKey }
   | { type: 'vrPhoto'; image?: string }
   | { type: 'vrArmsCalibrated' }
@@ -639,6 +648,8 @@ const WISH_BOARD_LIMIT = 6;
 // the same height, and they fought for the same pixels along the whole shore.
 const SHORE_Z = -58;
 const AVATAR_GROUND_Y = 0.28;
+/** The top of the hair over the avatar's origin (3.9 over the floor). */
+const AVATAR_HAIR_TOP = 3.62;
 // The first-person camera is this far above the avatar rig's origin. Since the
 // rig origin itself sits AVATAR_GROUND_Y above the floor, a floor-anchored XR
 // rig needs their sum to reproduce the exact same point of view.
@@ -699,6 +710,12 @@ const GATE_GLOBE_FILL = 1.45;
 const COLLIDER_GRID_MARGIN = 1;
 /** Distances in world units from the attendee past which bodies are simpler. */
 const FAR_PLAYER = { simpler: 20, slower: 40 } as const;
+/**
+ * On phones, the bodies nearest the attendee that always pose every frame.
+ * Anyone further back in view poses every other frame (the owner, 2026-11-13:
+ * a crowd of nineteen halved a phone's frame rate).
+ */
+const CROWD_FULL_RATE = 6;
 /**
  * Seconds from the start of the gesture to its sound: the drink reaches the
  * straw at about 0.55 s of its 1.8 s, the popcorn the lips at about 1.0 s of
@@ -1044,6 +1061,17 @@ const PUNCH_CONTACT_MS = Math.round(PUNCH_CONTACT_SECONDS * 1000);
 // over the eastern part of the shell; the western bay is the open garage, so
 // no column has to carry two walkable floors.
 const ROOF_Y = 7;
+/**
+ * 逃脫我的美麗's green control deck meets its bezel this far below the screen's
+ * lower edge, along the bezel, just under the cream bar
+ * (art/escape-arcade-20261110/build-cabinet.py DECK_BACK, at the cabinet's 3.8).
+ */
+const ESCAPE_DECK_BELOW_SCREEN = .063;
+/** Half the Exit/Fullscreen row's 36 px height, plus a little room, in CSS pixels. */
+const ARCADE_HUD_HALF_ROW = 20;
+/** The neon sign styles that are venue boards, which the PS1 look turns into light-boxes. */
+const PS1_BOARD_STYLES: ReadonlySet<string> = new Set<Ps1BoardKey>(['rooftop', 'club', 'palace', 'drive-in', 'shore', 'temple']);
+const arcadeDeckEdge = new THREE.Vector3(), arcadeScreenUp = new THREE.Vector3();
 const ROOF_AVATAR_Y = ROOF_Y + AVATAR_GROUND_Y;
 // The temple stands where a featureless block used to, on ground the map
 // already had but nobody was allowed to walk on. Approached from the west,
@@ -1449,56 +1477,16 @@ const material = (
 ): THREE.MeshStandardMaterial => new THREE.MeshStandardMaterial({ color, roughness, metalness });
 
 /** Explicit construction intent: shared tiles never guess from object colours. */
-const environmentMaterial = (family: EnvironmentFamily, color: number, roughness = .85, metalness = .05): THREE.MeshStandardMaterial => {
+const environmentMaterial = (family: EnvironmentFamily, color: number, roughness = .85, metalness = .05, keepTint = false): THREE.MeshStandardMaterial => {
   const surface = material(color, roughness, metalness);
-  surface.userData.environmentSurface = { family, tint: 'source', uv: 'world' } satisfies EnvironmentSurface;
+  surface.userData.environmentSurface = { family, tint: 'source', uv: 'world', ...(keepTint ? { keepTint } : {}) } satisfies EnvironmentSurface;
+  // The island palette pass leaves a deliberately chosen colour alone.
+  if (keepTint) surface.userData.islandPaletteApplied = true;
   return surface;
 };
 
-/**
- * The brand's own display face, and the one hard problem with putting a font on
- * a sign: a canvas draws with whatever font is resolved at that instant, and a
- * face still downloading is a face the sign silently never gets. Every marquee
- * in the world is painted while the world is being built, which is far too
- * early. So each sign registers how to repaint itself, and they are all redrawn
- * once the face has actually arrived.
- */
-const signRepaints = new Set<() => void>();
-let brandFontLoadStarted = false;
-let brandFontLoaded = false;
-
-const loadBrandFont = (): void => {
-  if (brandFontLoadStarted || typeof document === 'undefined' || !document.fonts) return;
-  brandFontLoadStarted = true;
-  // Both faces, and the repaint waits for both — a sign whose heading has
-  // arrived but whose subtitle has not would be redrawn once in the brand face
-  // and once in the fallback, and settle on whichever finished last.
-  Promise.allSettled([
-    document.fonts.load('400 92px "BebasNeueBrand"'),
-    document.fonts.load('400 48px "HanWangMingBrand"'),
-  ])
-    .then(() => {
-      brandFontLoaded = true;
-      for (const repaint of signRepaints) repaint();
-      // The font settles once. Keeping these closures afterwards retains every
-      // canvas they have ever painted, including textures already disposed when
-      // live multiplayer copy changed.
-      signRepaints.clear();
-    })
-    .catch(() => undefined);
-};
-
-const signFont = (size: number, heading: boolean): string => {
-  if (!brandFontLoaded) return `${heading ? 900 : 700} ${size}px sans-serif`;
-  // Bebas has no lowercase and only one weight, so a heading asks for neither.
-  // The Ming carries the subtitles, and both stacks keep a system fallback
-  // behind them: the subset holds the wording this world ships with, and a
-  // character outside it — a staff member re-lettering a sign — falls back per
-  // glyph to something readable rather than to an empty box.
-  return heading
-    ? `400 ${size}px "BebasNeueBrand", Impact, sans-serif`
-    : `400 ${size}px "HanWangMingBrand", "BebasNeueBrand", sans-serif`;
-};
+/** Lettering for a sign drawn as two lines of type (the ones without a picture). */
+const signFont = (size: number, heading: boolean): string => `${heading ? 900 : 700} ${size}px sans-serif`;
 
 /**
  * The same sign, with a picture on it instead of two lines of type.
@@ -1537,18 +1525,14 @@ const createImageSignTexture = (source: string, background = '#151517', aspect=2
     context.drawImage(art, inner.x + (inner.width - width) / 2, inner.y + (inner.height - height) / 2, width, height);
     texture.needsUpdate = true;
   };
-  art.src = source;
+  // By way of fetchAsset, so from the sign-in page's early download.
+  if (source.startsWith('data:')) art.src = source;
+  else void assetObjectUrl(source).then(url => { art.addEventListener('load', () => URL.revokeObjectURL(url), { once: true }); art.src = url; }, () => undefined);
   return texture;
 };
 
 const createTextTexture = (lines: string[], _foreground = '#eee4cc', _background = '#354842', aspect=2, style?:NeonSignStyle) => {
-  const texture=createNeonSignTexture(lines,{aspect,style,font:signFont});
-  if(!brandFontLoaded){
-    const repaint=()=>repaintNeonSignTexture(texture);
-    signRepaints.add(repaint);
-    texture.addEventListener('dispose',()=>signRepaints.delete(repaint));
-  }
-  return texture;
+  return createNeonSignTexture(lines,{aspect,style,font:signFont});
 };
 
 const createNameTexture = (name: string) => {
@@ -1600,6 +1584,50 @@ function seaAroundIsland(span: number, cells: number, centreX: number, centreZ: 
   sea.setAttribute('uv', new THREE.Float32BufferAttribute(keepUv, 2));
   sea.computeVertexNormals();
   return sea;
+}
+
+/**
+ * The PS1 look's sea round the island, with real waves (the owner,
+ * 2026-11-11). Fine (3 units) round the island, where the waves are seen up
+ * close and stand tall, coarse (15) beyond, where they die away. Each vertex
+ * carries `aSea`: how tall the waves stand there, the water's depth, and how
+ * open the water is (0 in the harbour).
+ */
+// harbourNorth: where the harbour's side walls end (IslandDock), 106.4.
+const PS1_SEA_BOUNDS = { west: ISLAND.west, east: ISLAND.east, north: ISLAND.north, south: ISLAND.south, harbourHalf: ISLAND_COVE.half, harbourSouth: ISLAND_COVE.z, harbourNorth: ISLAND.north + 6.4 };
+function seaAroundIslandWaves(span: number, centreX: number, centreZ: number): THREE.BufferGeometry {
+  const bounds = PS1_SEA_BOUNDS;
+  const fine = 3, coarse = 15, margin = 120;
+  const axis = (low: number, high: number, from: number, to: number) => {
+    const out: number[] = [];
+    for (let v = from; v < low; v += coarse) out.push(v);
+    for (let v = low; v < high; v += fine) out.push(v);
+    for (let v = high; v < to; v += coarse) out.push(v);
+    out.push(to);
+    return out;
+  };
+  const xs = axis(bounds.west - margin, bounds.east + margin, centreX - span / 2, centreX + span / 2);
+  const zs = axis(bounds.south - margin, bounds.north + margin, centreZ - span / 2, centreZ + span / 2);
+  const position: number[] = [], sea: number[] = [];
+  const corner = (x: number, z: number) => {
+    const depth = SEA_Y - terrainHeightAt(x, z), { waves, open } = ps1SeaOpenness(x, z, depth, bounds);
+    // Laid out in the mesh's own frame, which is placed at the centre.
+    position.push(x - centreX, 0, z - centreZ);
+    sea.push(waves, depth, open);
+  };
+  for (let j = 0; j < zs.length - 1; j++) for (let i = 0; i < xs.length - 1; i++) {
+    const x0 = xs[i], x1 = xs[i + 1], z0 = zs[j], z1 = zs[j + 1];
+    const dry = [[x0, z0], [x1, z0], [x0, z1], [x1, z1]].filter(([x, z]) => terrainHeightAt(x, z) > SEA_Y + .4).length;
+    if (dry === 4) continue;
+    corner(x0, z0); corner(x0, z1); corner(x1, z0);
+    corner(x1, z0); corner(x0, z1); corner(x1, z1);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+  geometry.setAttribute('aSea', new THREE.Float32BufferAttribute(sea, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(position.map((_, i) => i % 3 === 1 ? 1 : 0), 3));
+  geometry.computeBoundingSphere();
+  return geometry;
 }
 
 const createWaterTexture = (light = false) => {
@@ -1661,6 +1689,32 @@ const createWaterReflectionTexture = () => {
   return texture;
 };
 
+/**
+ * Every file the world downloads once it is built, in this device's variants:
+ * the scenery models, both arcade cabinets, the PS1 signs, posters and
+ * light-boxes, and the temple trim. The sign-in page fetches them ahead
+ * (App, SignInDownloads), so nobody waits for one after ENTER (the owner,
+ * 2026-11-12). The bodies, band and sounds have their own preloads.
+ */
+export function worldAssetUrls(mobile = mobileAssetBudgetEnabled()): string[] {
+  const pictures = {
+    ...import.meta.glob<string>('../assets/ps1/**/*.png', { eager: true, import: 'default' }),
+    ...import.meta.glob<string>('../assets/master-of-the-house.png', { eager: true, import: 'default' }),
+  };
+  const scenery = import.meta.glob<string>('../assets/venue-scenery/*.glb', { eager: true, query: '?url', import: 'default' });
+  const models = environmentModelAssetsFromUrls(
+    import.meta.glob<string>('../assets/environment/{street-lamp,cinema-pilaster,victory-statue}{,-mobile}.glb', { eager: true, query: '?url', import: 'default' }), mobile);
+  const trim = Object.entries(import.meta.glob<string>('../assets/environment/temple-trim*.webp', { eager: true, query: '?url', import: 'default' }))
+    .find(([path]) => path.endsWith(mobile ? '/temple-trim-mobile.webp' : '/temple-trim.webp'))?.[1];
+  return [...new Set([...Object.values(pictures), ...Object.values(scenery), ...Object.values(models), ...(trim ? [trim] : [])])]
+    .filter(url => !url.startsWith('data:'));
+}
+
+/** Fetch the world's files ahead (worldAssetUrls); settles when each is in or has failed. */
+export function prefetchWorldAssets(mobile?: boolean): Promise<unknown> {
+  return Promise.allSettled(worldAssetUrls(mobile).map(url => prefetchAsset(url)));
+}
+
 export class FestivalWorld {
   readonly audio: AmbientAudio;
 
@@ -1676,7 +1730,6 @@ export class FestivalWorld {
   private readonly canvas: HTMLCanvasElement;
   private readonly foregroundCanvas: HTMLCanvasElement;
   private readonly renderer: THREE.WebGLRenderer;
-  private gpuTextures?: GpuTextureLease;
   private readonly conservesMobileGpu: boolean;
   private readonly mobileCameraControls=shouldConserveMobileGpu();
   private readonly cssRenderer: CSS3DRenderer;
@@ -1697,25 +1750,18 @@ export class FestivalWorld {
   private readonly seats: Seat[] = [];
   private readonly npcs: NpcAvatar[] = [];
   private readonly venueSceneryAssets = new VenueSceneryAssets();
-  private readonly environmentMaterials = new EnvironmentMaterials({ assets: environmentAssetsFromUrls(
-    {
-      ...import.meta.glob<string>('../assets/environment/*.webp', { eager: true, query: '?url', import: 'default' }),
-      ...import.meta.glob<string>('../assets/environment/compressed/*.ktx2', { eager: true, query: '?url', import: 'default' }),
-    }, gpuTexturesEnabled(),
-  ), fallbackAssets: environmentAssetsFromUrls(
-    import.meta.glob<string>('../assets/environment/*.webp', { eager: true, query: '?url', import: 'default' }),
-  ) });
+  // The PS1 look's drawn 64-pixel tiles: nothing to download.
+  private readonly environmentMaterials = new EnvironmentMaterials({ drawnTile: (family) => ps1SurfaceTexture(family) });
   // Only the models the world places. A wildcard published every GLB in the
   // folder, the retired horse-and-rider statue and the review page's car
   // among them (owner's clean-up, 2026-10-23).
   private readonly environmentModels = new EnvironmentAssets({ assets: environmentModelAssetsFromUrls(
-    import.meta.glob<string>('../assets/environment/{street-lamp,cinema-pilaster,victory-statue,pamphlet-stand}{,-mobile}.glb', { eager: true, query: '?url', import: 'default' }),
+    import.meta.glob<string>('../assets/environment/{street-lamp,cinema-pilaster,victory-statue}{,-mobile}.glb', { eager: true, query: '?url', import: 'default' }),
   ) });
   private readonly environmentLampMaterials = new Set<THREE.MeshStandardMaterial>();
   private readonly templeTrimAtlas = new TempleTrimAtlas(import.meta.glob<string>('../assets/environment/temple-trim*.webp', { eager:true, query:'?url', import:'default' }));
   private templeArchitecture?: TempleArchitectureHandle;
   private wishWallFrame?: WishWallFrameHandle;
-  private pamphletSurface?: PamphletSurfaceHandle;
   private palacePilasterFinish?:PalacePilasterFinishHandle;
   private environmentPrepared = false;
   private environmentReflections?: EnvironmentReflectionHandle;
@@ -2031,6 +2077,10 @@ export class FestivalWorld {
   private templeAltar?: { x: number; z: number };
   private jukebox?: { x: number; z: number };
   private arcadeCabinet?: MothArcadeCabinet;
+  /** 逃脫我的美麗 · ESCAPE MY BEAUTY, between M.O.T.H and the jukebox (2026-11-10). */
+  private escapeCabinet?: MothArcadeCabinet;
+  /** Which cabinet's game is on screen; M.O.T.H's release lock closes only its own. */
+  private arcadeGame?: ArcadeGame;
   private bandLoad?: Promise<void>;
   private arcadeLocked = arcadeIsLocked();
   private arcadeLanguage: 'en' | 'zh-TW' = 'zh-TW';
@@ -2199,10 +2249,6 @@ export class FestivalWorld {
       checkShaderErrors: checkShaders, inactiveClipPlane: this.inactiveProjectorClipPlane,
     });
     if (!preview) this.rendererResourceLease = new RendererResourceLease(this.renderer);
-    if (!preview && gpuTexturesEnabled()) {
-      this.gpuTextures = acquireGpuTextures(this.renderer);
-      this.environmentMaterials.useGpuTextures(this.gpuTextures);
-    }
     // The first desktop screening used to wake a second WebGL context and
     // upload/compile the entire foreground world (including its shadows).
     // Open the video through the existing canvas instead, just as on phones;
@@ -2263,6 +2309,9 @@ export class FestivalWorld {
     // No delayed dressing or imported scenery runs in this scene, so static
     // meshes can be batched immediately instead of paying thousands of draws
     // on every frame while someone is typing into the entrance form.
+    // The sign-in globe's town takes the same sunny grade as the world (the
+    // owner, 2026-11-11: "please update the globe in the sign in page as well").
+    if (preview) applyPs1TownGrade(this.scene);
     if (preview) this.staticBatchReport = batchStaticScenery(this.scene);
 
     if (preview && previewAvatar) {
@@ -2390,12 +2439,12 @@ export class FestivalWorld {
   async prepareAssets(onProgress?: (progress: number) => void): Promise<void> {
     if (this.preview || this.disposed) return;
     const trimReady=!this.environmentPrepared&&this.environmentUpgradeEnabled()?this.templeTrimAtlas?.prepare():undefined;
-    const assets = [this.venueSceneryAssets?.ready(), this.environmentModels?.ready(), this.arcadeCabinet?.ready, this.bandLoad,trimReady,
+    const assets = [this.venueSceneryAssets?.ready(), this.environmentModels?.ready(), this.arcadeCabinet?.ready, this.escapeCabinet?.ready, this.bandLoad,trimReady,
       typeof document !== 'undefined' ? document.fonts?.ready : undefined].filter(Boolean);
     let completed = 0;
     await Promise.all(assets.map(async pending => { await pending; onProgress?.(++completed / assets.length); }));
     if (this.disposed) return;
-    if (this.arcadeCabinet?.status === 'failed' || (this.rooftopBand && !this.rooftopBand.ready)) {
+    if (this.arcadeCabinet?.status === 'failed' || this.escapeCabinet?.status === 'failed' || (this.rooftopBand && !this.rooftopBand.ready)) {
       throw new Error('World models did not finish loading. Retry admission.');
     }
     // Fixed art is placed and uploaded under the same loading view as the
@@ -2417,13 +2466,8 @@ export class FestivalWorld {
         mesh.userData.environmentAllowProjectorBackground = true;
       });
       await this.environmentMaterials.prepare(this.scene);
-      // Fixed tiles are now texture-owned mip arrays. Context restoration
-      // uses those arrays, never the decoder. Retire its worker/WASM heap
-      // before a film starts rather than retaining startup-only work in play.
-      this.gpuTextures?.release();
       if (this.disposed) return;
       this.driveInCarArt=applyDriveInCarArt(this.scene);
-      this.pamphletSurface=polishPamphletSurface(this.scene);
       this.palacePilasterFinish=polishPalacePilasters(this.scene);
       this.driveInLicensePlates=applyDriveInLicensePlates(this.scene);
       if (this.environmentModels) this.environmentReflections=prepareEnvironmentReflections(this.renderer,this.scene);
@@ -2431,6 +2475,8 @@ export class FestivalWorld {
       applyEnvironmentArt(this.scene);
       applyWorldFilmGrain(this.scene);
     }
+    // After the palette pass, once everything has arrived: the town's sunny grade.
+    this.scene.userData.ps1TownGrade = applyPs1TownGrade(this.scene);
     applyPlanetLightAnchors(this.scene);
   }
 
@@ -2652,7 +2698,6 @@ export class FestivalWorld {
     this.templeFireworks?.dispose();
     this.environmentReflections?.dispose();
     this.palacePilasterFinish?.dispose();
-    this.pamphletSurface?.dispose();
     this.templeArchitecture?.dispose();
     this.wishWallFrame?.dispose();
     this.templeTrimAtlas?.dispose();
@@ -2662,9 +2707,8 @@ export class FestivalWorld {
     this.driveInLicensePlates?.dispose();
     this.venueSceneryAssets.dispose();
     this.environmentMaterials.dispose();
-    this.gpuTextures?.release();
     this.environmentModels?.dispose();
-    this.stopArcadeGame(); this.arcadeCabinet?.dispose();
+    this.stopArcadeGame(); this.arcadeCabinet?.dispose(); this.escapeCabinet?.dispose();
     this.renderer.setAnimationLoop(null);
     if (!this.preview) { this.audio.setAmbientMix(undefined); this.audio.setSkating(false); this.applyDrunkScreen(0); }
     if (this.xrSession) void this.xrSession.end().catch(() => undefined);
@@ -2748,6 +2792,25 @@ export class FestivalWorld {
       this.dayNight.atmosphere.update(dayNight.cycleMinute, new THREE.Vector3(0, 0, 10));
       this.waterTextures[0]?.offset.set((elapsed * .004) % 1, (elapsed * .0015) % 1);
       this.waterTextures[1]?.offset.set((-elapsed * .006) % 1, (elapsed * .003) % 1);
+      // The loading flight lands on the real sea (the owner, 2026-11-10): the
+      // caustic sea fades in over the globe's baked one as the camera comes
+      // down, so nothing switches when the world takes over.
+      //
+      // And the globe itself draws that same sea (the owner, 2026-11-11), at
+      // the same size all the way down: from far off its fine detail fades
+      // in the shader, so nothing switches or dissolves (2026-11-12).
+      // Opaque, and the baked sea stays hidden throughout: brought back on
+      // landing, its own swell rose through this one in dotted patches.
+      if (this.stylizedWater && this.stylizedWaterMaterial) {
+        this.stylizedWater.visible = true;
+        const uniforms = this.stylizedWaterMaterial.uniforms;
+        uniforms.uOpacity.value = 1;
+        uniforms.uDeepOpacity.value = 1;
+        // Never faded during the flight: with the baked sea gone from under
+        // it, its faded far edge let the sandy seabed through as a pale wedge.
+        uniforms.uFadeDistance.value = frame.entry !== undefined && frame.entry >= .995 ? 900 : 1e5;
+        if (this.islandOcean) this.islandOcean.visible = false;
+      }
       this.updateStylizedWater(elapsed);
       this.updateWaterReflections(elapsed);
       this.islandDock?.update(elapsed);
@@ -2817,12 +2880,21 @@ export class FestivalWorld {
       // fill as the entry camera comes down.
       const hemisphere = this.dayNight.hemisphereLight, worldFill = hemisphere.intensity;
       hemisphere.intensity = THREE.MathUtils.lerp(Math.max(worldFill, GATE_GLOBE_FILL), worldFill, worldLight);
+      // The caustic sea fades by distance from the eye, which here is the flight camera.
+      if (frame.entry !== undefined) (this.stylizedWaterMaterial?.uniforms.uCamXZ.value as THREE.Vector2 | undefined)?.set(this.gateAerialCamera.position.x, this.gateAerialCamera.position.z);
+      // The sun and moon keep their time-of-day place round the globe but
+      // never sit behind its edge (the owner, 2026-11-10); eased back to
+      // their real place in the sky as the entry camera comes down.
+      const celestial = [this.dayNight.sunObject, this.dayNight.moonObject];
+      const celestialWere = celestial.map(object => object.position.clone());
+      if (PLANET.on && worldLight < 1) celestial.forEach(object => { if (object.visible) this.keepClearOfGlobe(object, width, height, worldLight); });
       this.gateResourceLease ??= PreviewResourceLease.forRenderer(this.renderer);
       try {
         this.gateResourceLease.capture(() => this.renderer.render(this.scene, this.gateAerialCamera));
       } finally {
         dome.visible = domeWasVisible;
         hemisphere.intensity = worldFill;
+        celestial.forEach((object, i) => object.position.copy(celestialWere[i]));
       }
       const cameraSnapshot: GatePreviewCameraSnapshot | undefined = frame.entry !== undefined ? {
         position: this.gateAerialCamera.position.toArray() as [number, number, number], fov: this.gateAerialCamera.fov,
@@ -2897,6 +2969,43 @@ export class FestivalWorld {
     const key = new THREE.DirectionalLight(0xfff1dc, 2.1);
     key.position.set(-3, 6, 7);
     this.gateAvatarScene.add(key, new THREE.HemisphereLight(0xeff2f5, 0x827567, 2));
+  }
+
+  /**
+   * Moves a sun or moon (drawn unbent, like all the sky), for this sign-in
+   * frame, outward from the globe on screen until it is clear of the globe's
+   * edge, at the globe's depth. Its side of the globe follows where it
+   * really is; `settle` (0 to 1) eases it back there during the entry flight.
+   */
+  private keepClearOfGlobe(object: THREE.Object3D, width: number, height: number, settle: number): void {
+    const camera = this.gateAerialCamera, R = PLANET.radius;
+    const globe = new THREE.Vector3(PLANET.centre.value.x, -R, PLANET.centre.value.z);
+    const distance = camera.position.distanceTo(globe);
+    if (distance <= R * 1.05) return;
+    const toScreen = (p: THREE.Vector3) => { const n = p.clone().project(camera); return new THREE.Vector2((n.x + 1) / 2 * width, (1 - n.y) / 2 * height); };
+    // The sky is drawn unbent (keepSkyFlat): what is modelled is what is seen.
+    const centre = toScreen(globe), real = toScreen(object.position);
+    // The globe's outline radius in pixels, and the disc's own margin (halo 30 across).
+    const pixelsPerUnit = height / 2 / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const edge = Math.tan(Math.asin(R / distance)) * pixelsPerUnit, margin = 22 / distance * pixelsPerUnit;
+    const away = real.clone().sub(centre);
+    if (away.lengthSq() < 1) away.set(.7, -.7);
+    const reach = Math.max(away.length(), edge + margin);
+    // Somewhere it can be seen: inside the window, below the header, and in
+    // the open sky right of the sign-in form. From its own side of the globe
+    // it slides round the edge to the nearest such spot.
+    const open = (p: THREE.Vector2) => p.x > width * .5 && p.x < width - margin - 12 && p.y > 64 + margin && p.y < height - margin - 12;
+    const angle = Math.atan2(away.y, away.x);
+    let target: THREE.Vector2 | undefined;
+    for (let step = 0; step <= 36 && !target; step++) for (const sign of step ? [1, -1] : [1]) {
+      const a = angle + sign * step * Math.PI / 36, p = new THREE.Vector2(centre.x + Math.cos(a) * reach, centre.y + Math.sin(a) * reach);
+      if (open(p)) { target = p; break; }
+    }
+    if (!target) return;
+    // Unproject at the globe's depth along that pixel's ray.
+    const ndc = new THREE.Vector3(target.x / width * 2 - 1, 1 - target.y / height * 2, .5).unproject(camera);
+    const ray = ndc.sub(camera.position).normalize();
+    object.position.lerp(camera.position.clone().addScaledVector(ray, distance), 1 - settle);
   }
 
   private releaseGatePreview(): void {
@@ -3325,7 +3434,8 @@ export class FestivalWorld {
   setArcadeLocked(locked: boolean, language: 'en' | 'zh-TW' = 'zh-TW'): void {
     this.arcadeLocked = locked; this.arcadeLanguage = language;
     this.arcadeCabinet?.setLocked(locked, language);
-    if (locked && this.arcadeSession) this.stopArcadeGame();
+    // 逃脫我的美麗 is public, so locking M.O.T.H never closes it (2026-11-10).
+    if (locked && this.arcadeSession && this.arcadeGame !== 'escape') this.stopArcadeGame();
   }
 
   /** Inspect the locked physical CRT with the same camera as an active game. */
@@ -3336,12 +3446,14 @@ export class FestivalWorld {
     return true;
   }
 
-  startArcadeGame(url: string, exit: () => void, screenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number; lock?: { x: number; y: number; width: number; height: number } }) => void): boolean {
-    const screen = this.arcadeCabinet?.screen;
-    if (this.arcadeLocked || !screen || this.arcadeView || (this.xrActive && !this.xrSimulated)) return false;
-    const session = new MothArcadeSession(screen, url, exit);
+  startArcadeGame(url: string, exit: () => void, screenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number; lock?: { x: number; y: number; width: number; height: number } }) => void, game: ArcadeGame = 'moth'): boolean {
+    // Only M.O.T.H has a release lock; 逃脫我的美麗 is already public.
+    const cabinet = game === 'escape' ? this.escapeCabinet : this.arcadeCabinet, screen = cabinet?.screen;
+    if (!cabinet || (game === 'moth' && this.arcadeLocked) || !screen || this.arcadeView || (this.xrActive && !this.xrSimulated)) return false;
+    const session = new MothArcadeSession(screen, url, exit, ARCADE_TITLES[game]);
     this.beginArcadeView(session, screenLayout);
-    this.arcadeSession = session;
+    this.arcadeSession = session; this.arcadeGame = game;
+    cabinet.setControlsHidden(true);
     session.mount(this.cssRenderer.domElement);
     if (this.conservesMobileGpu) {
       const frame = session.frame;
@@ -3351,6 +3463,17 @@ export class FestivalWorld {
       this.projectorApertureScene.add(this.arcadeAperture);
     }
     return true;
+  }
+
+  /** The middle of the control deck's visible strip under the screen, in CSS pixels. */
+  private belowArcadeScreen(frame: MothArcadeView['frame'], x: number, viewportHeight: number): { x: number; y: number } {
+    arcadeScreenUp.set(0, 1, 0).applyQuaternion(frame.quaternion);
+    arcadeDeckEdge.copy(frame.centre).addScaledVector(arcadeScreenUp, -(frame.height / 2 + ESCAPE_DECK_BELOW_SCREEN));
+    if (PLANET.on) planetBendPoint(arcadeDeckEdge, arcadeDeckEdge);
+    arcadeDeckEdge.project(this.camera);
+    const deckTop = (1 - arcadeDeckEdge.y) / 2 * viewportHeight;
+    const y = Math.min(Math.max((deckTop + viewportHeight) / 2, deckTop + ARCADE_HUD_HALF_ROW), viewportHeight - ARCADE_HUD_HALF_ROW);
+    return { x, y };
   }
 
   private beginArcadeView(view: MothArcadeView, screenLayout?: (frame: { x: number; y: number; width: number; height: number; exitX?: number; exitY?: number; lock?: { x: number; y: number; width: number; height: number } }) => void): void {
@@ -3363,7 +3486,8 @@ export class FestivalWorld {
   }
 
   stopArcadeGame(): void {
-    this.arcadeView?.dispose(); this.arcadeView = undefined; this.arcadeSession = undefined;
+    this.arcadeView?.dispose(); this.arcadeView = undefined; this.arcadeSession = undefined; this.arcadeGame = undefined;
+    this.escapeCabinet?.setControlsHidden(false);
     this.arcadeScreenLayout = undefined;
     this.arcadeAperture?.geometry.dispose(); this.arcadeAperture?.removeFromParent(); this.arcadeAperture = undefined;
     this.xrHud?.setVisible(this.xrActive);
@@ -3375,7 +3499,8 @@ export class FestivalWorld {
   focusArcadeForReview(): void {
     const p = this.arcadeCabinet?.root.position;
     if (!p) return;
-    const z = p.z + 1.35;
+    // To its left, the row's open end: 逃脫我的美麗 stands on its right.
+    const z = p.z - 1.35;
     this.player.position.set(p.x - 3.1, this.groundHeightAt(p.x - 3.1, z, 0), z);
     this.player.rotation.y = -Math.PI / 2;
     this.cameraMode = 'follow'; this.cameraZoom = .86;
@@ -4353,47 +4478,6 @@ export class FestivalWorld {
   }
 
   /**
-   * Tier one of the art direction, behind a flag. Nothing calls this unless the
-   * URL asks for it, so a visitor sees exactly the world they saw yesterday.
-   *
-   * Re-applied rather than applied once, because the world keeps building: the
-   * club's fittings, a remote visitor's avatar and the day's fireworks are all
-   * made after the opening pass, and an unpatched material in a patched world
-   * is more obvious than no patch at all.
-   */
-  /**
-   * The footprint of every public screening screen, as boxes.
-   *
-   * The screens are CSS3D objects living in their own scene, so a sweep of the
-   * world's meshes cannot see them at all — which is how an air-con unit came
-   * to be bolted across one. Their size comes from the element's own pixel
-   * dimensions taken through the object's scale, because that is what actually
-   * determines how large the picture is in the world.
-   */
-  /**
-   * The three theatres, which take no street dressing. A cinema is not a
-   * tenement and should not grow air-con and fly-posting.
-   *
-   * Only the theatres: an earlier version listed every room as well and
-   * refused all dressing inside them, which left one dressed wall out of
-   * twenty — the large blocks in this world mostly are the venues.
-   */
-  private venueVolumes(): THREE.Box3[] {
-    const box = (minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number) =>
-      new THREE.Box3(new THREE.Vector3(minX, minY, minZ), new THREE.Vector3(maxX, maxY, maxZ));
-    return [
-      // The Palace, off its carpet at (-35, -39.5), 21 by 17.
-      box(-47, -2, -50, -23, 26, -29),
-      // The Drive-In, off its asphalt at (35, -24.5), 25 by 22.
-      box(-14, -3, -47, 20, 26, -22),
-      // The Shore's screen and its two masts.
-      box(23, -2, -40, 47, 26, -31),
-      // The temple, for the same reason.
-      box(TEMPLE.stepMinX - 2, -2, TEMPLE.minZ - 2, TEMPLE.maxX + 2, 26, TEMPLE.maxZ + 2),
-    ];
-  }
-
-  /**
    * Whether a point stands on a way through.
    *
    * A crate was put down at the foot of the club stair, and the collision test
@@ -4434,6 +4518,15 @@ export class FestivalWorld {
     return false;
   }
 
+  /**
+   * The footprint of every public screening screen, as boxes.
+   *
+   * The screens are CSS3D objects living in their own scene, so a sweep of the
+   * world's meshes cannot see them at all — which is how an air-con unit came
+   * to be bolted across one. Their size comes from the element's own pixel
+   * dimensions taken through the object's scale, because that is what actually
+   * determines how large the picture is in the world.
+   */
   private publicScreenBoxes(): THREE.Box3[] {
     const boxes: THREE.Box3[] = [];
     for (const venue of this.projectors.keys()) {
@@ -4452,59 +4545,16 @@ export class FestivalWorld {
     return boxes;
   }
 
-  applyWornStyleForReview(amount: number, steps: number, grain: number, warp = 1, texture = 1): number {
-    this.wornWarpAmount = warp;
-    // Dressing first, so the clutter it hangs on the walls is picked up by the
-    // shading pass in the same sweep rather than staying smooth-shaded and
-    // ungrained among everything that is not.
-    // Accumulated, not assigned. The pass marks what it has already dressed, so
-    // the later re-runs correctly find nothing to do — and assigning their
-    // return value overwrote the real count with zero, which made a working
-    // feature look like a broken one.
-    if (new URLSearchParams(window.location.search).get('legacyDressing') === '1') {
-      // Fetched here rather than on load, so a visitor who never asks for the
-      // style never pays for the font.
-      loadBrandFont();
-      // Every screen in the festival, not a hand-written list of plots.
-      //
-      // Derived from the screens themselves rather than named one by one, so it
-      // cannot go out of step with them, and a venue added later is covered
-      // without anybody remembering to come back here.
-      const offLimits = [
-        ...this.venueVolumes(),
-        ...this.publicScreenBoxes().map((box) => box.clone().expandByScalar(4)),
-      ];
-      const dressing = dressBuildings(this.scene, this.publicScreenBoxes(), offLimits);
-      // Before the settle, which then correctly skips what has been massed —
-      // its corner-by-corner offset assumes a plain box and would tear a
-      // stepped profile open at the plinth.
-      this.wornMassed += massBuildings(this.scene, this.publicScreenBoxes());
-      this.dressKerbs();
-      // After the dressing, so the cornices and shopfronts settle with the
-      // walls they belong to rather than staying dead square against them.
-      this.wornWarped += warpWorldGeometry(this.scene, this.wornWarpAmount, offLimits);
-      // The rooms, which every pass so far has walked straight past — they are
-      // now the cleanest places in the festival, and the club is where a
-      // visitor spends the most continuous time.
-      //
-      // Once, and only once. This whole pass is re-run several times as the
-      // world finishes building itself, which is right for the walls — a mesh
-      // that did not exist yet still needs dressing — but wrong for a room:
-      // rooms are all built before the gate closes, and running again simply
-      // stacked a second duct inside the first. The count said 188 where the
-      // arithmetic said 58, which is how I found it.
-      if (!this.wornRoomsDressed) {
-        this.wornRoomsDressed = true;
-        this.wornInterior += dressInteriors(
-        this.scene,
-        this.interiorRooms(),
-            (x, z, y) => this.staticCollides(x, z, y) || this.onAWayThrough(x, z, y),
-        );
-      }
-      this.wornBuildings += dressing.walls;
-      this.wornSignsSpared += dressing.refused;
-      this.wornSigns = dressing.signs;
-    }
+  /**
+   * Tier one of the art direction, behind a flag. Nothing calls this unless the
+   * URL asks for it, so a visitor sees exactly the world they saw yesterday.
+   *
+   * Re-applied rather than applied once, because the world keeps building: the
+   * club's fittings, a remote visitor's avatar and the day's fireworks are all
+   * made after the opening pass, and an unpatched material in a patched world
+   * is more obvious than no patch at all.
+   */
+  applyWornStyleForReview(amount: number, steps: number, grain: number, texture = 1): number {
     // Decided before the pass, not during it: the cheap path is a define, so a
     // material patched under one setting keeps it until it is patched again.
     setWornCheap(this.graphicsMode !== 'normal');
@@ -4545,21 +4595,6 @@ export class FestivalWorld {
     ];
   }
 
-  private wornBuildings = 0;
-
-  private wornWarped = 0;
-  private wornMassed = 0;
-
-  private wornInterior = 0;
-
-  private wornRoomsDressed = false;
-
-  private wornWarpAmount = 1;
-
-  private wornSignsSpared = 0;
-
-  private wornSigns = 0;
-
   wornStyleReviewSnapshot(): unknown {
     const settings = wornStyleSettings();
     let materials = 0;
@@ -4583,24 +4618,10 @@ export class FestivalWorld {
         }
       }
     });
-    // How many walls are big enough to be worth dressing, against how many
-    // actually were. The two diverging is the fastest way to catch a selector
-    // that has stopped matching what the world is made of.
-    let dressable = 0;
-    this.scene.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      const size = mesh.getWorldScale(new THREE.Vector3());
-      if (size.y >= 6 && Math.max(size.x, size.z) >= 5) dressable += 1;
-    });
     return {
       ...settings,
       materials,
       flattened,
-      buildingsDressed: this.wornBuildings,
-      dressableWalls: dressable,
-      surfacesWarped: this.wornWarped,
-      interiorPieces: this.wornInterior,
       // Where the sole actually ends up, against the ground under it. The
       // arithmetic said one thing and the road said another, so this measures
       // the thing itself.
@@ -4618,15 +4639,12 @@ export class FestivalWorld {
         return box.isEmpty() ? null : Number((box.min.y - ground).toFixed(3));
       })(),
       masonrySurfaces,
-      buildingsMassed: this.wornMassed,
       masonryMaterials: masonryMaterials.size,
       // Materials the styling pass created and then left attached to nothing.
       // Should be zero; anything else is a program held on the GPU for the
       // life of the page, which is the shape of a crash on a phone rather than
       // a slowdown on a desk.
       orphanedStyleMaterials: wornOrphanCount(this.scene),
-      signsProtected: this.wornSigns,
-      placementsRefusedOverSigns: this.wornSignsSpared,
     };
   }
 
@@ -5201,39 +5219,6 @@ export class FestivalWorld {
   }
 
   /**
-   * Loopback fixture standing on the cross street, which is the only road in
-   * the festival and now the only place with a kerb to look at.
-   */
-  focusKerbForReview(): void {
-    if (!['127.0.0.1', 'localhost'].includes(window.location.hostname)) return;
-    this.player.position.set(26, this.groundHeightAt(26, -14), -14);
-    this.airborne = false;
-    this.verticalVelocity = 0;
-    this.player.rotation.y = Math.PI / 2;
-    this.cameraMode = 'follow';
-  }
-
-  /** What the kerb does to a body walking across the roadway and up onto it. */
-  kerbReviewSnapshot(): { stones: Array<Record<string, number>>; walk: Array<Record<string, number>> } {
-    return {
-      stones: this.kerbStones.map((stone) => ({
-        minX: Number(stone.minX.toFixed(1)),
-        maxX: Number(stone.maxX.toFixed(1)),
-        z: Number(stone.z.toFixed(1)),
-      })),
-      walk: this.kerbWalkProbe(),
-    };
-  }
-
-  private kerbWalkProbe(): Array<Record<string, number>> {
-    return [-24.5, -23.6, -22.5, -21.2, -20.4, -19.6, -14, -8.4, -7.6, -6.8, -5.5, -4.4].map((z) => ({
-      z,
-      y: Number(this.groundHeightAt(26, z).toFixed(3)),
-      offCarpet: Number(this.groundHeightAt(4, z).toFixed(3)),
-    }));
-  }
-
-  /**
    * Loopback fixture standing on the approach road looking north at the gate,
    * which is the one view of the sign every arrival gets.
    */
@@ -5775,7 +5760,6 @@ export class FestivalWorld {
     livePlayers: number;
     colliders: number;
     npcs: number;
-    pendingSignRepaints: number;
     mobileGpuConservation: boolean;
     shadowLights: number;
     lightTypes: { point: number; spot: number };
@@ -5841,7 +5825,6 @@ export class FestivalWorld {
       livePlayers: [...this.projectors.values()].filter((projector) => Boolean(projector.iframe)).length,
       colliders: this.colliders.length,
       npcs: this.npcs.length,
-      pendingSignRepaints: signRepaints.size,
       mobileGpuConservation: this.conservesMobileGpu,
       projectorActivation: this.projectorActivationReview ? { ...this.projectorActivationReview } : null,
       textureBudget: mobileAssetBudgetSnapshot(),
@@ -6490,7 +6473,7 @@ export class FestivalWorld {
     this.adaptiveRenderScale = 1;
     this.performanceWindowStartedAt = performance.now();
     this.performanceFrameCount = 0;
-    if (this.stylizedWater) this.stylizedWater.visible = mode === 'normal';
+    if (this.stylizedWater) this.stylizedWater.visible = this.drawsShaderSea();
     this.renderer.shadowMap.enabled = mode === 'normal';
     this.dayNight.setShadowsEnabled(mode === 'normal');
     for (const spotlight of this.shadowSpotlights) spotlight.castShadow = mode === 'normal';
@@ -6631,7 +6614,7 @@ export class FestivalWorld {
       // would have been drawn on rather than dropping it to zero.
       const reportedY = typeof displayVisitor.y === 'number' && Number.isFinite(displayVisitor.y)
         ? displayVisitor.y
-        : (displayVisitor.state === 'swimming' ? AVATAR_SWIM_Y : this.groundHeightAt(displayVisitor.x, displayVisitor.z, 0));
+        : (displayVisitor.state === 'swimming' ? AVATAR_SWIM_Y + this.seaSurfaceAt(displayVisitor.x, displayVisitor.z) : this.groundHeightAt(displayVisitor.x, displayVisitor.z, 0));
       // Play the body from where it was to where it now is, over the time the
       // next update is expected to take. Easing toward the latest position
       // instead made everyone sprint to their last known spot, stop dead, and
@@ -8300,11 +8283,20 @@ export class FestivalWorld {
     const signMaterial = this.venueSignMaterials.get(venue);
     if (!signMaterial) return;
     const ratios:Record<VenueKey,number>={palace:15.8/3.3,'drive-in':3.55/.9,shore:5.6/3.15,club:11/2.8,rooftop:7.4/2};
-    const next = createTextTexture([nextName,nextSubtitle],'#eee4cc','#354842',ratios[venue],venue);
+    // The PS1 look keeps a venue's brush-lettered board while it has its default name.
+    const board = ps1Board(venue);
+    const next = board && boardKeepsName(venue, nextName) ? board.map
+      : createTextTexture([nextName,nextSubtitle],'#eee4cc','#354842',board?.aspect ?? ratios[venue],venue);
     const previous = signMaterial.map;
     signMaterial.map = next;
     signMaterial.needsUpdate = true;
-    if (previous && previous !== next) previous.dispose();
+    if (previous && previous !== next && !isPs1BoardTexture(previous)) previous.dispose();
+  }
+
+  /** A sign's width: the PS1 board's own shape at the sign's height, or the panel it always had. */
+  private signWidth(key: Ps1BoardKey, width: number, height: number): number {
+    const board = ps1Board(key);
+    return board ? height * board.aspect : width;
   }
 
   /**
@@ -8542,9 +8534,8 @@ export class FestivalWorld {
   interact(pickUpMentor = false): void {
     if(this.npcDialogue)return;
     if (this.arcadeView) return;
-    if (this.nearArcade() && this.playerState !== 'seated') {
-      this.onAction({ type: 'arcade' }); return;
-    }
+    const arcade = this.playerState !== 'seated' ? this.nearArcade() : undefined;
+    if (arcade) { this.onAction({ type: 'arcade', game: arcade }); return; }
     if(performance.now()<this.drinkUntil||performance.now()<this.eatingUntil)return;
     if (this.playerState === 'seated') {
       // SHIFT+E drinks without leaving the stool; plain E stands up.
@@ -8882,6 +8873,8 @@ export class FestivalWorld {
       : Math.min(74, THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(29)) * PORTRAIT_ASPECT / Math.max(aspect, 0.3))));
     this.camera.fov = this.baseFov;
     this.camera.updateProjectionMatrix();
+    // The PS1 resolution follows the window's short side.
+    if (!this.preview) this.applyRenderPixelRatios();
     this.renderer.setSize(width, height, false);
     this.cssRenderer.setSize(width, height);
   };
@@ -9564,13 +9557,11 @@ export class FestivalWorld {
   }
 
   private mainPixelRatio(): number {
-    // 精簡 draws one pixel per CSS pixel and the page enlarges it without
-    // smoothing (style.css, `image-rendering: pixelated`): on a phone each one
-    // becomes a sharp 3×3 block. It used to draw at 0.7 and then lower still,
-    // and the browser's smoothing turned that into a picture that looked out of
-    // focus (owner, 2026-10-07: "crisp pixels"). A whole number of device pixels
-    // per drawn pixel is what keeps the blocks even, hence 1 and not 0.7.
-    return Math.min(window.devicePixelRatio, this.graphicsMode === 'normal' ? 1.25 : 1);
+    // The PS1 look (ScreenLook.ts) draws both modes at its own fixed low
+    // resolution, in whole-device-pixel blocks, so the blocks stay even and
+    // the page enlarges them without smoothing (style.css, `image-rendering:
+    // pixelated`).
+    return ps1PixelRatio(this.canvas.clientWidth || window.innerWidth, this.canvas.clientHeight || window.innerHeight, window.devicePixelRatio);
   }
 
   /**
@@ -9777,7 +9768,8 @@ export class FestivalWorld {
     const plan = planRenderScale(
       this.adaptiveRenderScale,
       framesPerSecond,
-      RENDER_SCALE_FLOOR[this.graphicsMode],
+      // The PS1 look holds its resolution: its blocks are already the floor.
+      1,
     );
     if (plan.changed) {
       this.adaptiveRenderScale = plan.scale;
@@ -9947,7 +9939,6 @@ export class FestivalWorld {
       tex: this.renderer.info.memory.textures,
       geo: this.renderer.info.memory.geometries,
       mats: this.materialCountForDiagnostics(),
-      repaints: signRepaints.size,
       x: Math.round(this.player.position.x),
       z: Math.round(this.player.position.z),
       lost: this.lostContexts.size > 0,
@@ -10163,9 +10154,9 @@ export class FestivalWorld {
   }
 
   environmentReviewSnapshot(): unknown {
-    return { materials: this.environmentMaterials.snapshot(), gpuTextures: this.gpuTextures?.snapshot(), models: this.environmentModels?.snapshot(), architecture: this.scene.userData.environmentArchitectureReport,
+    return { materials: this.environmentMaterials.snapshot(), models: this.environmentModels?.snapshot(), architecture: this.scene.userData.environmentArchitectureReport,
       art:this.scene.userData.environmentArtReport,reflections:this.environmentReflections?.report,cars:this.driveInCarArt?.report,plates:this.driveInLicensePlates?.report,
-      palacePilasters:this.palacePilasterFinish?.report,filmGrain:this.scene.userData.worldFilmGrainReport,lightAnchors:this.scene.userData.planetLightAnchors,temple:this.templeArchitecture?.report,templeTrim:this.templeTrimAtlas?.report,wishWall:this.wishWallFrame?.report,pamphlet:this.pamphletSurface?.report };
+      palacePilasters:this.palacePilasterFinish?.report,filmGrain:this.scene.userData.worldFilmGrainReport,lightAnchors:this.scene.userData.planetLightAnchors,temple:this.templeArchitecture?.report,templeTrim:this.templeTrimAtlas?.report,wishWall:this.wishWallFrame?.report };
   }
 
   private environmentUpgradeEnabled(): boolean {
@@ -10303,8 +10294,13 @@ export class FestivalWorld {
     const span = 1500, cells = 150;
     const centreX = (ISLAND.west + ISLAND.east) / 2, centreZ = (ISLAND.north + ISLAND.south) / 2;
     stylised.geometry.dispose();
-    stylised.geometry = seaAroundIsland(span, cells, centreX, centreZ);
+    stylised.geometry = seaAroundIslandWaves(span, centreX, centreZ);
     stylised.position.set(centreX, SEA_Y, centreZ);
+    // The wave mesh is built lying flat in its own frame.
+    stylised.rotation.set(0, 0, 0);
+    // The sign-in world's sea is painted, not lifted: its coarser seabed
+    // showed through the troughs as a pale wedge during the flight down.
+    if (sea.uniforms.uWaveLift) sea.uniforms.uWaveLift.value = this.preview ? 0 : 1;
     sea.uniforms.uFadeDistance.value = 900;
     if (PLANET.on) { sea.defines = { ...sea.defines, PLANET_ON: '' }; sea.needsUpdate = true; }
     const lite = seaAroundIsland(span, cells, centreX, centreZ);
@@ -10332,6 +10328,12 @@ export class FestivalWorld {
     if (['127.0.0.1', 'localhost'].includes(window.location.hostname)) Object.assign(window, { __islandScene: this.scene, __islandWorld: this });
     this.islandDock = new IslandDock();
     this.scene.add(this.islandDock.group);
+    // The wash round the pier's posts and the ferry, in the calm harbour.
+    if (this.stylizedWaterMaterial?.uniforms.uWashPosts) {
+      const wash = this.islandDock.washSpots(), posts = this.stylizedWaterMaterial.uniforms.uWashPosts.value as THREE.Vector3[];
+      wash.posts.slice(0, posts.length).forEach(([x, z, r], i) => posts[i].set(x, z, r));
+      (this.stylizedWaterMaterial.uniforms.uWashBoat.value as THREE.Vector4).set(...wash.boat);
+    }
     this.registerSnowSurface('island-dock',this.islandDock.group,{exclude:[this.islandDock.boat],minimumHeight:SEA_Y+.02,terrainMask:true});
     for (const [x, z, width, depth] of this.islandDock.barriers()) this.addCollider(x, z, width, depth, 0, undefined, 'island-landing-edge');
   }
@@ -10398,13 +10400,14 @@ export class FestivalWorld {
     waterVolume.userData.projectorBackground = true;
     this.waterVolume = waterVolume;
     // Cel-shaded surface for 一般 graphics. 精簡 keeps the cheaper textured
-    // water below, so the shader never costs anything on the low setting.
+    // water below, so the shader never costs anything on the low setting,
+    // except in the PS1 look (drawsShaderSea), which draws at ~360 lines.
     const stylised = createStylizedWaterMaterial();
     const stylisedWater = new THREE.Mesh(new THREE.PlaneGeometry(250, 76, 1, 1), stylised);
     stylisedWater.rotation.x = -Math.PI / 2;
     stylisedWater.position.set(0, SEA_Y, -80);
     stylisedWater.userData.projectorBackground = true;
-    stylisedWater.visible = this.graphicsMode === 'normal';
+    stylisedWater.visible = this.drawsShaderSea();
     this.scene.add(stylisedWater);
     this.stylizedWater = stylisedWater;
     this.stylizedWaterMaterial = stylised;
@@ -10468,16 +10471,19 @@ export class FestivalWorld {
     // with a band across it rather than as two. Being a plane, it was also
     // invisible from inside the festival, where the gate is seen just as often.
     for (const facing of [1, -1]) {
+      // The PS1 look's entrance is a long cream light-box (the owner, 2026-11-10).
+      const lightBoxFace = ps1EntranceFace(this.entranceSignText.title, this.entranceSignText.subtitle);
       const gateSign = new THREE.Mesh(
         new THREE.PlaneGeometry(22, 3.8),
         new THREE.MeshBasicMaterial({
-          map: createTextTexture([this.entranceSignText.title, this.entranceSignText.subtitle],'#eee4cc','#354842',22/3.8,'entrance'),
+          map: lightBoxFace ?? createTextTexture([this.entranceSignText.title, this.entranceSignText.subtitle],'#eee4cc','#354842',22/3.8,'entrance'),
         }),
       );
       this.entranceSignMaterials.push(gateSign.material as THREE.MeshBasicMaterial);
       gateSign.position.set(0, 11.2, GATE_Z + facing * 0.9);
       if (facing < 0) gateSign.rotation.y = Math.PI;
-      const frame=this.ownNeonFrame(createNeonSignFrame(22,3.8,'entrance'));frame.position.copy(gateSign.position);frame.rotation.copy(gateSign.rotation);this.scene.add(frame);
+      // Its housing fills the gap to the crossbar (its face .55 from the bar's middle).
+      const frame=lightBoxFace?createLightBoxHousing(22,3.8):this.ownNeonFrame(createNeonSignFrame(22,3.8,'entrance'));frame.position.copy(gateSign.position);frame.rotation.copy(gateSign.rotation);this.scene.add(frame);
       gateSign.position.z+=facing*.035;this.scene.add(gateSign);
       // Short stubs back to the bar, so the panel reads as mounted on it.
       for (const side of [-1, 1]) {
@@ -10543,6 +10549,29 @@ export class FestivalWorld {
     });
     this.seatArcadeOnGround();
     this.createBeachPlanting();
+    // The PS1 restyle's pilot dressing (Ps1StreetProps): air-conditioners,
+    // poles and wires, scooters, shutters and light-boxes on the rooftop
+    // building's street faces. Ground pieces only where nobody walks. The
+    // sign-in and loading flight (the preview world) shows it too (the owner,
+    // 2026-11-09: the loading animation follows the new art).
+    {
+      const groundY = (x: number, z: number) => terrainHeightAt(x, z) + AVATAR_GROUND_Y;
+      const report = dressPs1Pilot({
+        scene: this.scene,
+        solid: (x, z, w, d, base, top, label) => {
+          this.addCollider(x, z, w, d, .08, { minY: base, maxY: top }, label, top);
+          this.colliders[this.colliders.length - 1].physical = true;
+        },
+        clear: (x, z, radius) => !this.staticCollides(x, z, groundY(x, z), radius) && !this.onAWayThrough(x, z, groundY(x, z), radius + 1),
+        groundAt: terrainHeightAt,
+        surfaceAt: (x, z) => this.groundHeightAt(x, z, terrainHeightAt(x, z) + 1.5) - AVATAR_GROUND_Y,
+      }, { ...rooftopBounds, roofY: ROOF_Y }, [...PS1_LIGHT_BOXES],
+      { houses: INLAND_HOUSES, lightBoxes: [...PS1_DOCK_LIGHT_BOXES], eastPoles: TOWN_POLES, eastWireY: TOWN_WIRE_Y },
+      { clubWallX: clubBounds.buildingMaxX, clubMinZ: clubBounds.buildingMinZ, clubMaxZ: clubBounds.buildingMaxZ, doorMinZ: clubBounds.doorMinZ, doorMaxZ: clubBounds.doorMaxZ, posters: PS1_PALACE_POSTERS, lightBoxes: [...PS1_CLUB_LIGHT_BOXES] },
+      ps1Board('rooftop'), BEACH_RELAXATION_LAYOUT);
+      for (const material of report.lampMaterials) this.dayNight.addLampMaterial(material);
+      this.scene.userData.ps1Props = { ...report, lampMaterials: report.lampMaterials.length };
+    }
 
     const lampMaterial = new THREE.MeshStandardMaterial({
       color: 0xffd7a1,
@@ -10612,11 +10641,12 @@ export class FestivalWorld {
    * from, which here is the road to the west.
    */
   private createJukebox(): void {
-    // Centre both cabinet footprints under the sign, with the arcade on the
-    // left as viewed from the road. Both positions follow the venue shell.
+    // One row under the sign, left to right from the road: M.O.T.H,
+    // 逃脫我的美麗, the jukebox, side by side (the owner, 2026-11-10). The
+    // positions follow the venue shell.
     const r = rooftopBounds;
     const x = r.minX - 1;
-    const { arcadeZ, jukeboxZ: z } = cabinetPairPositions((r.minZ + r.bayMaxZ) / 2);
+    const { mothZ: arcadeZ, escapeZ, jukeboxZ: z } = cabinetRowPositions((r.minZ + r.bayMaxZ) / 2);
     const cabinet = new THREE.Group();
     cabinet.name = 'Jukebox cabinet';
     // Stood on whatever the ground actually is here rather than on y = 0. The
@@ -10649,7 +10679,8 @@ export class FestivalWorld {
     // Built facing -z; a quarter turn puts that front on -x, towards the road.
     cabinet.rotation.y = Math.PI / 2;
     this.scene.add(cabinet);
-    const recordCabinet=createCoastalJukebox();recordCabinet.rotation.y=Math.PI;cabinet.add(recordCabinet);
+    // The Showa record jukebox in the PS1 look (the owner's pick, 2026-11-11).
+    const recordCabinet=createPs1Jukebox();recordCabinet.rotation.y=Math.PI;cabinet.add(recordCabinet);
     // The one light it throws, so the foot of the stair has a warm corner.
     const glow = new THREE.PointLight(0xff7a44, 26, 15, 1.6);
     glow.position.set(x - 1.2, floorY + 2.6, z);
@@ -10668,11 +10699,20 @@ export class FestivalWorld {
     this.arcadeCabinet.setLocked(this.arcadeLocked, this.arcadeLanguage);
     this.scene.add(this.arcadeCabinet.root);
     this.addCollider(arcadeX, arcadeZ, ARCADE_DEPTH, ARCADE_WIDTH, .35, undefined, 'moth-arcade', arcadeFloor + 3.8);
+    // The same footprint, backed to the same wall.
+    const escapeFloor = terrainHeightAt(arcadeX, escapeZ);
+    this.escapeCabinet = new MothArcadeCabinet(arcadeX, escapeFloor, escapeZ, 'escape');
+    this.scene.add(this.escapeCabinet.root);
+    this.addCollider(arcadeX, escapeZ, ARCADE_DEPTH, ARCADE_WIDTH, .35, undefined, 'escape-arcade', escapeFloor + 3.8);
   }
 
   private seatArcadeOnGround(): void {
-    const arcade = this.arcadeCabinet;
-    if (!arcade) return;
+    for (const [arcade, label] of [[this.arcadeCabinet, 'moth-arcade'], [this.escapeCabinet, 'escape-arcade']] as const) {
+      if (arcade) this.seatCabinetOnGround(arcade, label);
+    }
+  }
+
+  private seatCabinetOnGround(arcade: MothArcadeCabinet, label: string): void {
     // Ground dressing is finished after the cabinets are created. Seat the
     // arcade on those rendered surfaces, including clipped paving, rather
     // than the jukebox's clearance offset (its own plinth extends below zero).
@@ -10686,7 +10726,7 @@ export class FestivalWorld {
       ray.set(new THREE.Vector3(x, 20, z), new THREE.Vector3(0, -1, 0));
       return ray.intersectObjects(surfaces, false)[0]?.point.y ?? terrainHeightAt(x, z);
     });
-    const collider = this.colliders.find(c => c.label === 'moth-arcade');
+    const collider = this.colliders.find(c => c.label === label);
     if (collider) collider.maxY = arcade.root.position.y + 3.8;
   }
 
@@ -10711,6 +10751,14 @@ export class FestivalWorld {
   }
 
   private mountNeonFrame(panel:THREE.Mesh,width:number,height:number,style:NeonSignStyle):void {
+    // The PS1 look's venue signs are light-boxes: a rounded housing behind the
+    // face instead of neon tubes (the owner, 2026-11-10).
+    if (PS1_BOARD_STYLES.has(style) && ps1Board(style as Ps1BoardKey)) {
+      const housing=createLightBoxHousing(width,height);
+      housing.position.copy(panel.position);housing.quaternion.copy(panel.quaternion);
+      (panel.parent??this.scene).add(housing);
+      return;
+    }
     const frame=this.ownNeonFrame(createNeonSignFrame(width,height,style));
     frame.position.copy(panel.position);frame.quaternion.copy(panel.quaternion);
     (panel.parent??this.scene).add(frame);
@@ -10775,7 +10823,7 @@ export class FestivalWorld {
     this.addCollider(0, -46, 19, 1.5);
 
     this.createProjectorSurface('shore');
-    const shoreSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['THE SHORE', 'MUSIC VIDEO'],undefined,undefined,5.6/3.15,'shore') });
+    const shoreSignMaterial = new THREE.MeshBasicMaterial({ map: ps1Board('shore')?.map ?? createTextTexture(['THE SHORE', 'MUSIC VIDEO'],undefined,undefined,5.6/3.15,'shore') });
     this.venueSignMaterials.set('shore', shoreSignMaterial);
     const shoreSign = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 3.15), shoreSignMaterial);
     shoreSign.userData.dynamic = true;
@@ -10783,7 +10831,10 @@ export class FestivalWorld {
     // the first seating row. Geometry, map and interaction share SHORE_SIGN.
     const shoreSignX=SHORE_SIGN.x-SCREENING_SITES.shore.dx;
     const shoreSignZ=SHORE_SIGN.z-SCREENING_SITES.shore.dz;
-    const shoreBoard=this.ownNeonFrame(createNeonSignFrame(SHORE_SIGN.width,3.15,'shore'));shoreBoard.position.set(shoreSignX,3.35,shoreSignZ);shoreBoard.rotation.y=SHORE_SIGN.rotation;
+    const shoreLightBox=ps1Board('shore');
+    const shoreBoard=shoreLightBox?new THREE.Group():this.ownNeonFrame(createNeonSignFrame(SHORE_SIGN.width,3.15,'shore'));shoreBoard.position.set(shoreSignX,3.35,shoreSignZ);shoreBoard.rotation.y=SHORE_SIGN.rotation;
+    // The PS1 look's light-box housing (2026-11-10), in place of the neon frame.
+    if(shoreLightBox){shoreBoard.userData.lightBoxSign='shore';shoreBoard.add(createLightBoxHousing(5.6,3.15,.12));}
     shoreSign.position.z=.035;shoreBoard.add(shoreSign);
     for(const x of [-2.15,2.15]){
       const ground = (dx:number,dz:number) => terrainHeightAt(
@@ -10828,7 +10879,8 @@ export class FestivalWorld {
           this.mesh([.10,.68,.10],[x+side*.64,.93,z+.65],frame);
         }
         for(const dy of [.86,1.14])this.mesh([1.3,.04,.025],[x,dy,z+.574],frame);
-        this.addCollider(x, z, 1.12, 1.15, 0.08, { minY: -0.4, maxY: 1.8 });
+        // Reaching back over the leaning back (z + .77), which stood past it.
+        this.addCollider(x, z + .1, 1.12, 1.35, 0.08, { minY: -0.4, maxY: 1.8 });
         this.seats.push({
           id: `SHORE-${row + 1}-${column + 4}`,
           venue: 'shore',
@@ -10860,15 +10912,19 @@ export class FestivalWorld {
     }
     this.addCollider(centerX - 10.5, centerZ, 1, 18, 0.16);
     this.addCollider(centerX + 10.5, centerZ, 1, 18, 0.16);
-    const palaceSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['THE PALACE', 'COMMERCIAL'],undefined,undefined,15.8/3.3,'palace') });
+    const palaceBoard = ps1Board('palace'), palaceSignWidth = palaceBoard ? 3.3 * palaceBoard.aspect : 15.8;
+    const palaceSignMaterial = new THREE.MeshBasicMaterial({ map: palaceBoard?.map ?? createTextTexture(['THE PALACE', 'COMMERCIAL'],undefined,undefined,15.8/3.3,'palace') });
     this.venueSignMaterials.set('palace', palaceSignMaterial);
     const marquee = new THREE.Mesh(
-      new THREE.PlaneGeometry(15.8, 3.3),
+      new THREE.PlaneGeometry(palaceSignWidth, 3.3),
       palaceSignMaterial,
     );
-    marquee.position.set(centerX, 8.5, -30.92);
+    // The PS1 Palace (Ps1StreetProps dressPalace) carries its name at the top of
+    // a taller front, over the giant poster, as the agreed concept has it.
+    // The PS1 light-box stands its housing's depth off the front (z -31.0).
+    marquee.position.set(centerX, palaceBoard ? 17.75 : 8.5, palaceBoard ? -30.64 : -30.92);
     this.scene.add(marquee);
-    this.mountNeonFrame(marquee,15.8,3.3,'palace');
+    this.mountNeonFrame(marquee,palaceSignWidth,3.3,'palace');
 
     const screen = this.mesh([15.3, 8.5, 0.55], [centerX, 5.7, screenZ], material(0x050506, 0.72));
     screen.castShadow = true;
@@ -10913,7 +10969,8 @@ export class FestivalWorld {
           this.mesh([.09,.45,.12],[x+side*.78,.79,z+.43],frame);
         }
         this.mesh([1.14,.035,.018],[x,1.49,z+.555],material(0xbb6257));
-        this.addCollider(x, z, 1.32, 1.25, 0.08, { minY: -0.4, maxY: 2.2 });
+        // Reaching back over the leaning back (z + .83), which stood past it.
+        this.addCollider(x, z + .1, 1.32, 1.45, 0.08, { minY: -0.4, maxY: 2.2 });
         this.seats.push({
           id: `PALACE-${row + 1}-${column + 3}`,
           venue: 'palace',
@@ -10943,7 +11000,7 @@ export class FestivalWorld {
     this.addCollider(centerX, -36, 19, 1.4);
     this.createProjectorSurface('drive-in');
 
-    const driveSignMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(['DRIVE-IN 88', 'TELEVISION'],'#eee4cc','#354842',3.55/.9,'drive-in') });
+    const driveSignMaterial = new THREE.MeshBasicMaterial({ map: ps1Board('drive-in')?.map ?? createTextTexture(['DRIVE-IN 88', 'TELEVISION'],'#eee4cc','#354842',3.55/.9,'drive-in') });
     this.venueSignMaterials.set('drive-in', driveSignMaterial);
     // The sign is mounted on the new box office by createVenueEntrances().
 
@@ -11090,10 +11147,13 @@ export class FestivalWorld {
       this.mesh([.45,2.5,to-from],[-49.8,.25,(from+to)/2],iron).userData.wornNoMasonry=true;
       this.addCollider(-49.8,(from+to)/2,.45,to-from,.1,{minY:floor-1,maxY:1.5},'gallery-balustrade',1.5);
     }
-    const signMaterial=new THREE.MeshBasicMaterial({map:createTextTexture(['SLAP AND POP','WAREHOUSE · XIEH GAN'],'#ddd0b4','#344844',11/2.8,'club')});
+    const signMaterial=new THREE.MeshBasicMaterial({map:ps1Board('club')?.map??createTextTexture(['SLAP AND POP','WAREHOUSE · XIEH GAN'],'#ddd0b4','#344844',11/2.8,'club')});
+    const clubSignWidth=this.signWidth('club',11,2.8);
     this.venueSignMaterials.set('club',signMaterial);
-    const sign=new THREE.Mesh(new THREE.PlaneGeometry(11,2.8),signMaterial);
-    sign.position.set(-19.12,8.1,opening);sign.rotation.y=Math.PI/2;this.scene.add(sign);this.mountNeonFrame(sign,11,2.8,'club');
+    const sign=new THREE.Mesh(new THREE.PlaneGeometry(clubSignWidth,2.8),signMaterial);
+    // The PS1 light-box stands its housing's depth off the cladding (x -19.14).
+    // Its housing's top stays under the PS1 front's first row of window sills (9.56).
+    sign.position.set(ps1Board('club')?-18.78:-19.12,ps1Board('club')?7.98:8.1,opening);sign.rotation.y=Math.PI/2;this.scene.add(sign);this.mountNeonFrame(sign,clubSignWidth,2.8,'club');
     const entranceCanopy=this.mesh([4,.3,9],[-18.3,6.2,opening],iron);
     entranceCanopy.userData.wornNoMasonry=true;
     this.registerSnowSurface('club-entry-canopy',entranceCanopy);
@@ -11281,9 +11341,10 @@ export class FestivalWorld {
     this.entranceSignText = next;
     for (const material of this.entranceSignMaterials) {
       const previous = material.map;
-      material.map = createTextTexture([this.entranceSignText.title, this.entranceSignText.subtitle],'#eee4cc','#354842',22/3.8,'entrance');
+      material.map = ps1EntranceFace(this.entranceSignText.title, this.entranceSignText.subtitle)
+        ?? createTextTexture([this.entranceSignText.title, this.entranceSignText.subtitle],'#eee4cc','#354842',22/3.8,'entrance');
       material.needsUpdate = true;
-      previous?.dispose();
+      if (previous && previous !== material.map && !isPs1BoardTexture(previous)) previous.dispose();
     }
   }
 
@@ -11297,9 +11358,11 @@ export class FestivalWorld {
     this.templeSignText = next;
     if (!this.templeSignMaterial) return;
     const previous = this.templeSignMaterial.map;
-    this.templeSignMaterial.map = createTextTexture([this.templeSignText.name, this.templeSignText.label],undefined,undefined,8.4/2.4,'temple');
+    const board = boardKeepsName('temple', this.templeSignText.name) ? ps1Board('temple') : undefined;
+    this.templeSignMaterial.map = board?.map
+      ?? createTextTexture([this.templeSignText.name, this.templeSignText.label],undefined,undefined,this.signWidth('temple',8.4,2.4)/2.4,'temple');
     this.templeSignMaterial.needsUpdate = true;
-    previous?.dispose();
+    if (previous && previous !== this.templeSignMaterial.map && !isPs1BoardTexture(previous)) previous.dispose();
   }
 
   /** The god the altar is dedicated to, for the offering message. */
@@ -11315,10 +11378,17 @@ export class FestivalWorld {
     const depth = t.maxZ - t.minZ;
     const stone = environmentMaterial('stone',0xa9a094, 0.9, 0.04);
     const paleStone = environmentMaterial('stone',0xc3bbae, 0.88, 0.04);
-    const lacquer = environmentMaterial('wood',0x8f1d1d, 0.6, 0.16);
+    // A bright vermilion Taiwanese temple with gold bands (the owner,
+    // 2026-11-09): painted render in a colour the palette pass keeps.
+    // Red brick, as the agreed district concept has the temple (2026-11-09).
+    const lacquer = environmentMaterial('brick', 0xe06248, .8, .04, true);
     const timber = environmentMaterial('wood',0x5d2f22, 0.75, 0.08);
-    const tile = environmentMaterial('ceramic',0x2f5a4a, 0.55, 0.28);
-    const gold = material(0xbca15c, .78, .22);
+    const gold = material(0xeac25a, .7, .3);
+    // The front faces west under deep eaves and is in shade most of the
+    // day; a little baked-in glow, as PS1-era walls had, keeps it reading
+    // as vermilion and gold rather than maroon and olive.
+    lacquer.emissive.setHex(0x5a1a10);
+    gold.emissive.setHex(0x3c2c0a);
 
     // Podium, and the three steps that climb it from the festival side.
     const foundationBottom=Math.min(...[t.minX-1.5,centerX,t.maxX+1.5].flatMap(x=>[t.minZ-1.5,centerZ,t.maxZ+1.5].map(z=>terrainHeightAt(x,z))))-TEMPLE_GRADE-.3;
@@ -11326,6 +11396,16 @@ export class FestivalWorld {
     podium.name='Temple foundation below finish';podium.userData.wornNoMasonry=true;
     const templeFloor=this.mesh([width+3,.12,depth+3],[centerX,t.podium-.06,centerZ],paleStone);
     templeFloor.name='Temple single floor finish';templeFloor.userData.wornNoMasonry=true;
+    // Behind the hall the hill falls away below the floor's edge, and a body
+    // could stand there with its legs in the foundation (the owner,
+    // 2026-11-11). Refused below the floor; anybody on it walks to the edge.
+    this.addCollider(centerX+(width+3)/2+.1,centerZ,.2,depth+3,0,{minY:-1-TEMPLE_GRADE,maxY:TEMPLE_FLOOR_Y-.3-TEMPLE_GRADE},'temple-foundation-edge');
+    // And its front either side of the flight, where the hill path runs below it.
+    {
+      const front=centerX-(width+3)/2-.1,minZ=centerZ-(depth+3)/2,maxZ=centerZ+(depth+3)/2;
+      const flightMin=TEMPLE_STAIRS.centerZ-TEMPLE_STAIRS.width/2-TEMPLE_STAIR_VISUAL_OVERLAP,flightMax=TEMPLE_STAIRS.centerZ+TEMPLE_STAIRS.width/2+TEMPLE_STAIR_VISUAL_OVERLAP;
+      for(const [from,to] of [[minZ,flightMin],[flightMax,maxZ]])this.addCollider(front,(from+to)/2,.2,to-from,0,{minY:-1-TEMPLE_GRADE,maxY:TEMPLE_FLOOR_Y-.3-TEMPLE_GRADE},'temple-foundation-edge');
+    }
     this.registerSnowSurface('temple-podium',templeFloor,{terrainMask:true});
     // Equal 0.24 rises continue to the hall; longer upper treads meet the contour walk.
     const flight=TEMPLE_STAIRS;
@@ -11341,6 +11421,17 @@ export class FestivalWorld {
       );
       stair.name='Temple hill approach step '+i;stair.userData.wornNoMasonry=true;
       this.registerSnowSurface(`temple-step-${i+1}`,stair,{terrainMask:true});
+      // Beside the flight the hill is cut well below the treads (up to two
+      // units on the south side), and nothing stopped a body walking along it
+      // into the steps' side (the owner, 2026-11-11). Each tread's two ends
+      // refuse a body standing that far below it. Anybody on the flight is
+      // higher than this even half a metre down it, so walking up near the
+      // edge is untouched.
+      // Heights here are the hall's own; buildOnGrade lifts them by TEMPLE_GRADE.
+      const sideTop=AVATAR_GROUND_Y+templeStairPitch(left)-.35;
+      if(sideTop>AVATAR_GROUND_Y+.2)for(const side of [-1,1]){
+        this.addCollider(x,flight.centerZ+side*(flight.width/2+.1),going,.2,0,{minY:-1-TEMPLE_GRADE,maxY:sideTop-TEMPLE_GRADE},'temple-stair-side');
+      }
     }
 
     // Raised from 6.4. At that height the eaves came down to about six units
@@ -11363,6 +11454,40 @@ export class FestivalWorld {
       const span = to - from;
       this.mesh([t.wallThickness, wallHeight, span], [t.minX, wallY, (from + to) / 2], lacquer);
       this.addCollider(t.minX, (from + to) / 2, t.wallThickness, span, 0.16, { minY: -0.4, maxY: 60 }, 'temple-front');
+    }
+    {
+      // Red lanterns along the front, either side of the door, lit at dusk.
+      const lantern = material(0xc42a22, .6, .05);
+      lantern.emissive.setHex(0xff3a1a);
+      lantern.emissiveIntensity = 0;
+      this.dayNight.addLampMaterial(lantern);
+      // Two units out from the wall: the front's bronze ornament stands 0.6 proud of it.
+      const lanternX = t.minX - 2.1;
+      for (const z of [t.minZ + 4, centerZ - t.doorHalfWidth - 2.5, centerZ + t.doorHalfWidth + 2.5, t.maxZ - 4]) {
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(.55, .55, 1.1, 8), lantern);
+        body.position.set(lanternX, t.podium + 7.9, z);
+        body.name = 'PS1 temple lantern';
+        this.scene.add(body);
+        this.mesh([.7, .14, .7], [lanternX, t.podium + 8.5, z], gold);
+        this.mesh([.7, .14, .7], [lanternX, t.podium + 7.3, z], gold);
+        // Hung from the lower eave (its underside is at podium + 10.55).
+        this.mesh([.06, 2.05, .06], [lanternX, t.podium + 9.525, z], timber);
+      }
+      // Gold bands round the outside: one under the eaves, one at waist
+      // height that stops at the doorway. Decoration only, no collider.
+      const out = t.wallThickness / 2 + .05, band = (size: [number, number, number], at: [number, number, number]) => {
+        this.mesh(size, at, gold).userData.wornNoMasonry = true;
+      };
+      for (const [y, h] of [[t.podium + wallHeight - .35, .4], [t.podium + 2.3, .24]] as const) {
+        band([width + .2, h, .1], [centerX, y, t.minZ - out]);
+        band([width + .2, h, .1], [centerX, y, t.maxZ + out]);
+        band([.1, h, depth + .2], [t.maxX + out, y, centerZ]);
+        if (y > t.podium + doorHeight) band([.1, h, depth + .2], [t.minX - out, y, centerZ]);
+        else for (const side of [-1, 1]) {
+          const from = side < 0 ? t.minZ - .1 : centerZ + t.doorHalfWidth, to = side < 0 ? centerZ - t.doorHalfWidth : t.maxZ + .1;
+          band([.1, h, to - from], [t.minX - out, y, (from + to) / 2]);
+        }
+      }
     }
     // Lintel over the doorway, so the opening reads as a door and not a hole.
     // It sits at the door's own height rather than the wall's: a taller hall
@@ -11389,10 +11514,22 @@ export class FestivalWorld {
 
     // Two tiers of roof. Each is a slab with a deeper slab under its eaves, and
     // four kicked corners — the upturn is the whole silhouette of the thing.
+    // The PS1 look builds them as a Taiwanese double-eave roof (Ps1TempleRoof,
+    // the owner's chosen concept, 2026-11-09): a steep hip roof on top, a skirt
+    // below rising to the connector, on the same registered meshes.
+    const PS1_UPPER_RISE = 6.2, PS1_RIDGE_HALF = 9;
+    const ps1RoofTile = new THREE.MeshStandardMaterial({ map: templeRoofTile(), color: 0x6a8a76, roughness: .72, metalness: .04 });
+    ps1RoofTile.userData.wornNoMasonry = true;
+    const tierGeometry = (id: string, w: number, d: number): THREE.BufferGeometry => {
+      return id === 'temple-roof-upper'
+        ? templeRoofGeometry(w, d, PS1_UPPER_RISE, { kick: 1.4, ridgeHalf: PS1_RIDGE_HALF })
+        // The skirt rises 3.1 to the connector's top (podium + wallHeight + 3.6).
+        : templeRoofGeometry(w, d, 3.1, { kick: 1.1, inner: [width - 5.6, depth - 5.6] });
+    };
     const tier = (id:string,y: number, overhangX: number, overhangZ: number, thickness: number): void => {
       const w = width + overhangX;
       const d = depth + overhangZ;
-      const roof = new THREE.Mesh(coastalRoof(w, d, thickness * 2.6), tile);
+      const roof = new THREE.Mesh(tierGeometry(id, w, d), ps1RoofTile);
       roof.position.set(centerX, y, centerZ); roof.castShadow = true; roof.receiveShadow = true;
       roof.userData.coastalAuthored = true; roof.userData.wornNoMasonry = true;
       this.scene.add(roof);
@@ -11402,14 +11539,42 @@ export class FestivalWorld {
     tier('temple-roof-lower',t.podium + wallHeight + 0.5, 7, 7, 0.9);
     this.registerSnowSurface('temple-roof-connector',this.mesh([width - 6, 2.6, depth - 6], [centerX, t.podium + wallHeight + 2.3, centerZ], lacquer));
     tier('temple-roof-upper',t.podium + wallHeight + 4.1, 1.5, 1.5, 0.8);
-    // Finial.
-    this.registerSnowSurface('temple-finial',this.mesh([1.2, 1.8, 1.2], [centerX, t.podium + wallHeight + 5.4, centerZ], gold));
+    // Finial: on the PS1 roof it crowns the ridge.
+    const upperY = t.podium + wallHeight + 4.1;
+    this.registerSnowSurface('temple-finial',this.mesh([1.2, 1.8, 1.2], [centerX, upperY + PS1_UPPER_RISE + 1.25, centerZ], gold));
+    {
+      // Dark ridges: the main ridge with swallowtail ends, the four hips, and
+      // the skirt's corner ridges. Decoration on the roof, so no colliders.
+      const ridge = material(0x2f3b35, .7, .05);
+      const beam = (from: THREE.Vector3, to: THREE.Vector3, radius: number) => {
+        const length = from.distanceTo(to);
+        const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 6), ridge);
+        mesh.position.copy(from).add(to).multiplyScalar(.5);
+        mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
+        mesh.castShadow = true;
+        this.scene.add(mesh);
+      };
+      const at = (v: readonly number[], y: number) => new THREE.Vector3(centerX + v[0], y + v[1], centerZ + v[2]);
+      const upper = templeRoofLines(width + 1.5, depth + 1.5, PS1_UPPER_RISE, 1.4, PS1_RIDGE_HALF);
+      this.mesh([.9, .75, PS1_RIDGE_HALF * 2 + 1.4], [centerX, upperY + PS1_UPPER_RISE + .3, centerZ], ridge);
+      for (const side of [-1, 1]) {
+        const tail = this.mesh([.6, .5, 2.6], [centerX, upperY + PS1_UPPER_RISE + .95, centerZ + side * (PS1_RIDGE_HALF + 1.4)], ridge);
+        tail.rotation.x = side * -.55;
+      }
+      for (const [i, corner] of upper.corners.entries()) beam(at(upper.ridge[i === 0 || i === 1 ? 0 : 1], upperY + .2), at(corner, upperY + .25), .32);
+      const lowerY = t.podium + wallHeight + 0.5;
+      const lower = templeRoofLines(width + 7, depth + 7, 3.1, 1.1, 0).corners;
+      const inner = [[-(width - 5.6) / 2, 3.1, -(depth - 5.6) / 2], [(width - 5.6) / 2, 3.1, -(depth - 5.6) / 2], [(width - 5.6) / 2, 3.1, (depth - 5.6) / 2], [-(width - 5.6) / 2, 3.1, (depth - 5.6) / 2]];
+      for (const [i, corner] of lower.entries()) beam(at(inner[i], lowerY + .15), at(corner, lowerY + .2), .26);
+    }
 
     // The name over the door.
     this.templeSignMaterial = new THREE.MeshBasicMaterial({
-      map: createTextTexture([this.templeSignText.name, this.templeSignText.label],undefined,undefined,8.4/2.4,'temple'),
+      map: (boardKeepsName('temple', this.templeSignText.name) ? ps1Board('temple')?.map : undefined)
+        ?? createTextTexture([this.templeSignText.name, this.templeSignText.label],undefined,undefined,this.signWidth('temple',8.4,2.4)/2.4,'temple'),
     });
-    const templeSign = new THREE.Mesh(new THREE.PlaneGeometry(8.4, 2.4), this.templeSignMaterial);
+    const templeSignWidth = this.signWidth('temple', 8.4, 2.4);
+    const templeSign = new THREE.Mesh(new THREE.PlaneGeometry(templeSignWidth, 2.4), this.templeSignMaterial);
     // Hung outside the building on a bracket, clear of the eaves. Held tight to
     // the wall it sat back under the overhanging roof, in its shadow and half
     // hidden by it; a temple banner belongs out in front where it can be read
@@ -11436,7 +11601,7 @@ export class FestivalWorld {
     this.mesh([0.3, 0.3, 8.6], [t.minX - 4.6, signY + 1.8, centerZ], signBracket);
     templeSign.rotation.y = -Math.PI / 2;
     this.scene.add(templeSign);
-    this.mountNeonFrame(templeSign,8.4,2.4,'temple');
+    this.mountNeonFrame(templeSign,templeSignWidth,2.4,'temple');
 
     // The altar, at the far end facing the door: a low offering table with the
     // god seated above it. Not a pillar — a figure, in the same blocky idiom as
@@ -11587,7 +11752,8 @@ export class FestivalWorld {
     this.mesh([30.6,.18,2.25],[centerX,.17,counterZ],material(0x35403b)).userData.wornNoMasonry=true;
     this.mesh([31,2.1,2.6],[centerX,1.31,counterZ],environmentMaterial('wood',0x544438,.95)).userData.wornNoMasonry=true;
     this.mesh([31.6,.20,3],[centerX,2.46,counterZ],environmentMaterial('wood',0xa78d67,.88,.05)).userData.wornNoMasonry=true;
-    this.addCollider(centerX, counterZ, 31, 2.6, 0.16, { minY: -0.4, maxY: ROOF_Y }, 'shop-counter');
+    // As wide as the top (31.6), which overhangs the cabinet at both ends.
+    this.addCollider(centerX, counterZ, 31.6, 2.6, 0.16, { minY: -0.4, maxY: ROOF_Y }, 'shop-counter');
     const shopTimber=environmentMaterial('wood',0x8b7054,.94),shopEnamel=material(0x354d47,.85),shopCloth=material(0xc5bea6,.98);
     for(let i=0;i<8;i++){
       const x=centerX-13.6+i*3.9;
@@ -11620,21 +11786,30 @@ export class FestivalWorld {
     this.shopSign.position.set(centerX, 4.75, 5.15);
     this.mesh([5.45,2.7,.10],[centerX,4.75,5.23],material(0x5e6560)).userData.wornNoMasonry=true;
     for(const dx of [-2,2])this.mesh([.09,.35,.09],[centerX+dx,6.13,5.25],material(0x5e6560)).userData.wornNoMasonry=true;
-    this.addCollider(centerX,5.23,5.45,.1,0,{minY:3.4,maxY:6.1,physical:true},'shop-sign',6.1);
+    // Its underside is at 3.35, under the 3.9 a head of hair reaches, and it
+    // cannot go higher without its top in the slab: walked round, not under
+    // (the owner, 2026-11-11: heads went through it).
+    this.addCollider(centerX,5.23,5.45,.1,0,{minY:-1,maxY:6.1},'shop-sign',6.1);
     this.shopSign.rotation.y = Math.PI;
     this.scene.add(this.shopSign);
     // Where an attendee stands to be served, in front of the frontage.
     this.shopCounter = { x: centerX, y: .28, z: counterZ - 4.2 };
 
     const rooftopSignMaterial = new THREE.MeshBasicMaterial({
-      map: createTextTexture(['NIMA ROOFTOP', DEFAULT_VENUE_SUBTITLES.rooftop],undefined,undefined,7.4/2,'rooftop'),
+      map: ps1Board('rooftop')?.map ?? createTextTexture(['NIMA ROOFTOP', DEFAULT_VENUE_SUBTITLES.rooftop],undefined,undefined,7.4/2,'rooftop'),
     });
     this.venueSignMaterials.set('rooftop', rooftopSignMaterial);
-    const rooftopSign = new THREE.Mesh(new THREE.PlaneGeometry(7.4, 2), rooftopSignMaterial);
-    rooftopSign.position.set(r.minX - 0.42, 5.3, bayCenterZ);
+    // The PS1 board is taller, so its five dense characters keep enough pixels
+    // to read at 360 lines; it still clears the cabinets below and the deck.
+    const rooftopSignHeight = ps1Board('rooftop') ? 2.8 : 2;
+    const rooftopSignWidth = this.signWidth('rooftop', 7.4, rooftopSignHeight);
+    const rooftopSign = new THREE.Mesh(new THREE.PlaneGeometry(rooftopSignWidth, rooftopSignHeight), rooftopSignMaterial);
+    // Its underside clear of heads (4.45, see Ps1StreetProps PS1_OVERHEAD_CLEARANCE).
+    // The PS1 light-box stands its housing's depth off the wall (its face at minX - .4).
+    rooftopSign.position.set(r.minX - (rooftopSignHeight > 2 ? .76 : .42), rooftopSignHeight > 2 ? 5.85 : 5.3, bayCenterZ);
     rooftopSign.rotation.y = -Math.PI / 2;
     this.scene.add(rooftopSign);
-    this.mountNeonFrame(rooftopSign,7.4,2,'rooftop');
+    this.mountNeonFrame(rooftopSign,rooftopSignWidth,rooftopSignHeight,'rooftop');
     const rooftopSignGlow = new THREE.PointLight(0xffcf94, 20, 16, 1.5);
     rooftopSignGlow.position.set(r.minX - 2.2, 5.2, bayCenterZ);
     this.scene.add(rooftopSignGlow);
@@ -11703,6 +11878,8 @@ export class FestivalWorld {
       const light=this.mesh(horizontal?[1.34,.36,.12]:[.12,.36,1.34],[x+(horizontal?0:inward*.14),lightY,z+(horizontal?inward*.14:0)],new THREE.MeshBasicMaterial({color:0xe5c992}));
       this.mesh(horizontal?[1.88,.1,.48]:[.48,.1,1.88],[x,lightY+.36,z],frame).userData.wornNoMasonry=true;
       this.clubLights.push(light);
+      // Their hoods reach .58 off the parapet, past its collider: hands and hips went into them.
+      this.addCollider(x,z,horizontal?1.9:.5,horizontal?.5:1.9,.1,{minY:ROOF_Y-.5,maxY:ROOF_Y+1.6},'rooftop-parapet-light',ROOF_Y+1.4);
     };
     for (let index = 0; index < 4; index += 1) {
       const x = r.minX + 4 + index * ((width - 8) / 3);
@@ -11785,6 +11962,12 @@ export class FestivalWorld {
       box([0.6, 0.3, 0.6], [foot.x, ROOF_Y + 0.15, foot.z], plinthMaterial);
       this.addCollider(x, screenZ, 1.2, 1.3, 0.1, { minY: ROOF_Y, maxY: columnTop }, 'rooftop-screen-column');
       this.addCollider(foot.x, foot.z, 0.6, 0.6, 0.08, { minY: ROOF_Y, maxY: ROOF_Y + 1.2 }, 'rooftop-screen-strut');
+      if (side > 0) {
+        // The screen's bottom rail is at head height (2.24 over the deck) and
+        // stands inside the parapet, which was the only thing stopping a body:
+        // heads went into it at the deck's south edge (the owner, 2026-11-11).
+        this.addCollider(x0, screenZ, columnX * 2 + 0.5, 0.6, 0.08, { minY: ROOF_Y, maxY: columnTop }, 'rooftop-screen-base');
+      }
     }
     // Head and sill beams frame the picture without touching it.
     box([columnX * 2 + 0.5, 0.45, 0.55], [x0, top + 0.225, screenZ]);
@@ -11995,7 +12178,27 @@ export class FestivalWorld {
     this.beachCouple = couple;
     // Chest height at most: walked around rather than through, without the
     // camera being shoved every time somebody passes behind the trees.
-    this.addCollider(60.5, -31.5, 4.6, 4.0, 0.1, undefined, undefined, 1.1);
+    //
+    // The towel, the pair and the parasol's pole cover local x -2..2,
+    // z -2.6..3.05, turned with the group. One square box about the middle
+    // left the pole and the towel's corners outside it (the owner,
+    // 2026-11-11), so it is covered in slices along the turned length. The
+    // canopy is overhead now (BeachCouple), so walking under its rim is fine.
+    const yaw = couple.root.rotation.y, c = Math.cos(yaw), sn = Math.sin(yaw);
+    const slices = 5, minZ = -2.6, maxZ = 3.05, halfX = 2;
+    for (let i = 0; i < slices; i++) {
+      const z0 = minZ + (maxZ - minZ) * i / slices, z1 = minZ + (maxZ - minZ) * (i + 1) / slices;
+      const corners = [[-halfX, z0], [halfX, z0], [-halfX, z1], [halfX, z1]].map(([lx, lz]) => [60.5 + lx * c + lz * sn, -31.5 - lx * sn + lz * c]);
+      const xs = corners.map((p) => p[0]), zs = corners.map((p) => p[1]);
+      const [x0, x1, zA, zB] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+      this.addCollider((x0 + x1) / 2, (zA + zB) / 2, x1 - x0, zB - zA, 0.05, undefined, 'beach-couple', 1.1);
+    }
+    // The parasol's canopy, overhead (local -.25, -2.5, 3.5 across): walked
+    // under, but a jump's head stops at its tilted low edge.
+    {
+      const cx = 60.5 + -.25 * c + -2.5 * sn, cz = -31.5 - -.25 * sn + -2.5 * c, ground = this.groundHeightAt(60.5, -31.5) - AVATAR_GROUND_Y;
+      this.addCollider(cx, cz, 3.2, 3.2, 0, { minY: ground + 4.0, maxY: ground + 4.9, physical: true }, 'beach-couple-canopy', ground + 4.9);
+    }
   }
 
   private createWesternBlock():void {
@@ -12023,7 +12226,8 @@ export class FestivalWorld {
     boothCanopy.userData.wornNoMasonry=true;
     boothCanopy.castShadow=true;boothCanopy.receiveShadow=true;
     booth.add(createConcessionContactShadow(this.groundHeightAt(concessionPosition.x,concessionPosition.z,concessionPosition.y)-AVATAR_GROUND_Y-concessionPosition.y));
-    const signTexture = createTextTexture(['POP!', 'TAKE ONE'], '#f5efe2', '#a91c24',2,'popcorn');
+    // Chinese only in the PS1 look (the owner, 2026-11-09).
+    const signTexture = createTextTexture(['爆米花', '請自取'], '#f5efe2', '#a91c24',2,'popcorn');
     const sign = new THREE.Mesh(
       new THREE.PlaneGeometry(2.5, 1.25),
       new THREE.MeshBasicMaterial({ map: signTexture }),
@@ -12074,13 +12278,46 @@ export class FestivalWorld {
     part([4.3,.16,.6],[0,1.5,1.6],teal);
     part([4.8,.3,4],[0,3.75,0],red);
     part([3.8,1.1,.12],[0,5.27,1.95],teal);
-    if (!this.preview) void this.venueSceneryAssets.attach('boxOffice', booth, 5.8, fallback);
-    const boothSign = new THREE.Mesh(new THREE.PlaneGeometry(3.55,.9),this.venueSignMaterials.get('drive-in')!);
+    if (!this.preview) void this.venueSceneryAssets.attach('boxOffice', booth, 5.8, fallback).then(() => {
+      // The model carries its own programme board above the roof; in the PS1
+      // look the 露天戲院 light-box replaces it (the owner, 2026-11-10: "just
+      // keep the new one"). Its thin panel is hidden, and the board's frame,
+      // part of the roof mesh, is cut out: every triangle above the roof
+      // (4.76) towards the front (z > 1.5), in the booth's own frame.
+      if (!ps1Board('drive-in')) return;
+      booth.updateWorldMatrix(true, true);
+      const inverse = booth.matrixWorld.clone().invert(), box = new THREE.Box3(), size = new THREE.Vector3(), centre = new THREE.Vector3();
+      const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), local = new THREE.Matrix4();
+      booth.traverse(node => {
+        const mesh = node as THREE.Mesh;
+        if (!mesh.isMesh || mesh === boothSign || mesh.name === 'PS1 light-box housing' || fallback.children.includes(mesh)) return;
+        mesh.geometry.computeBoundingBox();
+        box.copy(mesh.geometry.boundingBox!).applyMatrix4(mesh.matrixWorld).applyMatrix4(inverse);
+        box.getSize(size); box.getCenter(centre);
+        if (size.z < .08 && size.x > 2.4 && Math.abs(centre.y - boothSign.position.y) < .6) { mesh.visible = false; return; }
+        if (box.max.y < 4.8 || box.max.z < 1.5) return;
+        local.copy(mesh.matrixWorld).premultiply(inverse);
+        const geometry = mesh.geometry.clone(), position = geometry.getAttribute('position'), index = geometry.index;
+        const count = index ? index.count : position.count, kept: number[] = [];
+        for (let i = 0; i < count; i += 3) {
+          const at = (k: number) => index ? index.getX(i + k) : i + k;
+          a.fromBufferAttribute(position, at(0)).applyMatrix4(local);
+          b.fromBufferAttribute(position, at(1)).applyMatrix4(local);
+          c.fromBufferAttribute(position, at(2)).applyMatrix4(local);
+          if ((a.y + b.y + c.y) / 3 > 4.76 && (a.z + b.z + c.z) / 3 > 1.5) continue;
+          kept.push(at(0), at(1), at(2));
+        }
+        geometry.setIndex(kept);
+        mesh.geometry = geometry;
+      });
+    });
+    const boothSignWidth = this.signWidth('drive-in', 3.55, .9);
+    const boothSign = new THREE.Mesh(new THREE.PlaneGeometry(boothSignWidth,.9),this.venueSignMaterials.get('drive-in')!);
     boothSign.name = 'DRIVE-IN 88 box office programme sign';
     boothSign.position.set(0,5.27,2.03);
     boothSign.userData.dynamic = true;
     booth.add(boothSign);
-    this.mountNeonFrame(boothSign,3.55,.9,'drive-in');
+    this.mountNeonFrame(boothSign,boothSignWidth,.9,'drive-in');
     this.addCollider(booth.position.x, booth.position.z, 4.8, 4, .08, { minY: -.8, maxY: 5.1, physical:true }, 'drive-in-ticket-booth',5.1);
     const clerk = new THREE.Group();
     clerk.name = 'Unlisted box office attendant';
@@ -12182,13 +12419,12 @@ export class FestivalWorld {
     context.textBaseline = 'middle';
     context.textAlign = 'center';
     context.font = `900 104px ${font}`;
-    context.fillText('祈福牆  WISH WALL', canvas.width / 2, 78);
+    context.fillText('祈福牆', canvas.width / 2, 78);
     const notes = this.wishWallNotes;
     if (!notes.length) {
       context.font = `700 72px ${font}`;
       context.fillText('供養時留言，付款後會掛在這裡', canvas.width / 2, 560);
       context.font = `700 56px ${font}`;
-      context.fillText('Leave a note with your offering; it hangs here once paid.', canvas.width / 2, 660);
       this.wishWallTexture.needsUpdate = true;
       return;
     }
@@ -12249,20 +12485,10 @@ export class FestivalWorld {
   }
 
   private createPamphletStand(): void {
-    const stand=createCoastalPamphletStand();
-    const fallback = [...stand.children];
+    // The Showa timber rack with its light-box header (2026-11-11).
+    const stand = createPs1PamphletStand();
     stand.position.copy(pamphletPosition);
-    const label = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.75, 0.72),
-      new THREE.MeshBasicMaterial({ map: createTextTexture(['FESTIVAL', 'PAMPHLET'],undefined,undefined,1.75/.72,'pamphlet') }),
-    );
-    label.position.set(0, .87, .619);
-    stand.add(label);
-    this.mountNeonFrame(label,1.75,.72,'pamphlet');
     this.scene.add(stand);
-    if (this.environmentModels && this.environmentUpgradeEnabled()) void this.environmentModels.attach('pamphlet-stand',stand,{
-      exactSize:[2.05,1.9,1.12],fallback,receiveShadow:this.graphicsMode==='normal',
-    });
     // Chest height: the view rides over it rather than being stopped by it.
     this.addCollider(pamphletPosition.x, pamphletPosition.z, 2.2, 1.35, 0.12, undefined, 'pamphlet', 2.1);
   }
@@ -12930,7 +13156,7 @@ export class FestivalWorld {
       visitor.x,
       typeof visitor.y === 'number' && Number.isFinite(visitor.y)
         ? visitor.y
-        : (visitor.state === 'swimming' ? AVATAR_SWIM_Y : this.groundHeightAt(visitor.x, visitor.z, 0)),
+        : (visitor.state === 'swimming' ? AVATAR_SWIM_Y + this.seaSurfaceAt(visitor.x, visitor.z) : this.groundHeightAt(visitor.x, visitor.z, 0)),
       visitor.z,
     );
     group.rotation.y = visitor.rotation;
@@ -13228,6 +13454,10 @@ export class FestivalWorld {
     this.updateRemoteAvatars(delta, elapsed);
     this.framePhases.visitors = performance.now() - visitorsAt;
     this.updateCamera(delta, elapsed);
+    // Third person cuts nothing (the owner, 2026-11-11: "I don't want this cut
+    // away in the 3rd person perspective… players can rotate the camera view
+    // themselves"). The camera still holds its distance; only the isometric
+    // view keeps its lens indoors.
     this.updateIsometricCutaway(delta);
     // Cheap: it compares one venue key and returns, unless somebody has just
     // walked into or out of a room.
@@ -13384,7 +13614,13 @@ export class FestivalWorld {
     if (arcadeScissor) {
       const viewportHeight = this.foregroundCanvas.clientHeight || window.innerHeight;
       this.arcadeSession?.renderScreen(arcadeScissor, viewportHeight);
-      const exitPoint = this.arcadeView?.projectedScreenPoint(.5, .915);
+      // M.O.T.H keeps Exit in its screen's clear lower band. 逃脫我的美麗 uses its
+      // whole screen, so Exit and Fullscreen sit below it, centred on the
+      // strip of green control deck in view (the owner, 2026-11-10), never
+      // over the bezel above it or past the window's edge.
+      const exitPoint = this.arcadeGame === 'escape' && this.arcadeView
+        ? this.belowArcadeScreen(this.arcadeView.frame, arcadeScissor.x + arcadeScissor.width / 2, viewportHeight)
+        : this.arcadeView?.projectedScreenPoint(.5, .915);
       // Where the padlock's keyhole space lands on screen, for ENTER CODE.
       const lockA = this.arcadeView?.projectedScreenPoint(ARCADE_LOCK_KEYHOLE.left, ARCADE_LOCK_KEYHOLE.top);
       const lockB = this.arcadeView?.projectedScreenPoint(ARCADE_LOCK_KEYHOLE.right, ARCADE_LOCK_KEYHOLE.bottom);
@@ -13472,7 +13708,7 @@ export class FestivalWorld {
    * told apart are drawn.
    */
   private updateWaterLayers(): void {
-    const stylised = this.stylizedWater?.visible !== false && this.graphicsMode === 'normal';
+    const stylised = this.stylizedWater?.visible !== false && this.drawsShaderSea();
     // Height of the eye above the water, not the avatar's: the camera is what
     // decides how much of the screen these sheets cover.
     this.camera.getWorldPosition(this.cameraWorldPosition);
@@ -13492,6 +13728,9 @@ export class FestivalWorld {
       }
       const seaTime = (this.islandOcean.material as THREE.Material).userData.seaTime as { value: number } | undefined;
       if (seaTime && !stylised) seaTime.value = seconds % 3600;
+      // The PS1 phone sea's caustic lines glow at night, like the full sea's.
+      const seaGlow = (this.islandOcean.material as THREE.Material).userData.seaGlow as { value: number } | undefined;
+      if (seaGlow && !stylised) seaGlow.value = this.seaIsNight() ? 1 : 0;
     }
     if (this.waterVolume && !this.islandDock) {
       // The body below the surface. From above it gives the sea its depth;
@@ -13502,13 +13741,49 @@ export class FestivalWorld {
     if (this.waveSurface) {
       // Ripple detail that only reads under the cel-shaded top. With that in
       // place at eye level it is a second full-screen wash of the same colour.
-      this.waveSurface.visible = !(nearSurface && stylised);
+      // Never on the island: it was hidden there at build and then switched
+      // back on here every frame, and over the PS1 woodblock sea it showed
+      // as a pale see-through wedge off the south beach (2026-11-11).
+      this.waveSurface.visible = !islandTerrain() && !(nearSurface && stylised);
     }
     for (const reflection of this.waterReflections) {
       // Glitter is a highlight seen across a surface. At eye level it is a
       // full-screen additive pass and reads as haze.
       if (nearSurface) reflection.mesh.visible = false;
     }
+  }
+
+  /**
+   * Whether the sea wears its night colours. The PS1 look's night starts when
+   * the sun sets, not only once the moon is over the sea, so the bright day
+   * sea never lies under a dark sky.
+   */
+  private seaIsNight(): boolean {
+    const state = this.dayNight?.getWaterReflectionState();
+    if (!state) return false;
+    return state.moon.strength > state.sun.strength || state.sun.elevation <= 0;
+  }
+
+  /**
+   * Whether the cel-shaded sea is drawn. 一般 always; 精簡 only in the PS1
+   * look, where phones get the same caustic sea (the owner, 2026-11-10: the
+   * baked 精簡 texture was "too generic"). That look renders the world at
+   * about 360 lines, so its per-pixel cost stays small.
+   */
+  private drawsShaderSea(): boolean {
+    // The sign-in globe decides for itself each frame (renderGatePreview): in
+    // the PS1 look it draws this sea with its net enlarged; otherwise the baked one.
+    return !this.preview;
+  }
+
+  /**
+   * How far the sea's surface stands over SEA_Y at a point: the PS1 look's
+   * real waves (Ps1Waves), at the time the sea is drawn at, so a swimmer
+   * rides the very wave under them. Flat elsewhere.
+   */
+  private seaSurfaceAt(x: number, z: number): number {
+    if (!islandTerrain() || !this.stylizedWaterMaterial) return 0;
+    return ps1SeaHeight(x, z, this.stylizedWaterMaterial.uniforms.uTime.value as number, SEA_Y - terrainHeightAt(x, z), PS1_SEA_BOUNDS);
   }
 
   private updateStylizedWater(elapsed: number): void {
@@ -13519,11 +13794,15 @@ export class FestivalWorld {
     (material.uniforms.uCamXZ.value as THREE.Vector2).set(this.cameraWorldPosition.x, this.cameraWorldPosition.z);
 
     const state = this.dayNight.getWaterReflectionState();
-    const night = state.moon.strength > state.sun.strength;
+    // The PS1 look's woodblock sea (the owner, 2026-11-11, after a Great Wave
+    // print): indigo and Prussian blue with cream foam all day; by night a
+    // deeper navy, the foam still pale and glowing a little under the moon.
+    const night = this.seaIsNight();
     const body = night ? state.moon : state.sun;
+    // No glare lane on a woodblock print: it washed over the flat bands.
     tintStylizedWater(material, night
-      ? { deep: 0x101e42, mid: 0x243e6b, highlight: 0xb5c7de, glint: body.color, glintStrength: body.strength * 0.55 }
-      : { deep: 0x172d5a, mid: 0x365f91, highlight: 0xd5e3ed, glint: body.color, glintStrength: body.strength * 0.65 });
+      ? { deep: 0x0c1a2e, mid: 0x1d3b5e, highlight: 0xddd8c6, glint: body.color, glintStrength: 0, netGlow: 1 }
+      : { deep: 0x1b3657, mid: 0x2f5f8a, highlight: 0xefe6d0, glint: body.color, glintStrength: 0 });
     (material.uniforms.uGlintOrigin.value as THREE.Vector2).set(body.x, -70);
 
     // A ring follows an attendee who is in the water.
@@ -13551,7 +13830,9 @@ export class FestivalWorld {
       reflection.mesh.rotation.z = Math.sin(elapsed * 0.22 + (reflection.kind === 'moon' ? 1.8 : 0)) * 0.018;
       reflection.material.color.copy(light.color);
       reflection.material.opacity = light.strength * (0.72 + Math.sin(elapsed * 1.7) * 0.06);
-      reflection.mesh.visible = reflection.material.opacity > 0.01;
+      // No glare sheet over the PS1 look's woodblock sea: a print has no
+      // shine, and it lay over the flat bands as a pale wedge (2026-11-11).
+      reflection.mesh.visible = reflection.material.opacity > 0.01 && !islandTerrain();
     }
   }
 
@@ -13682,7 +13963,8 @@ export class FestivalWorld {
     if (this.playerState === 'swimming') {
       // Keep the head, torso, and arms clearly above the waterline. Swimming is
       // a continuous movement state; E remains available for nearby greetings.
-      this.player.position.y = AVATAR_SWIM_Y + Math.sin(this.clock.elapsedTime * 3.2) * 0.035;
+      // Riding the waves (the owner, 2026-11-11), with the old small bob on top.
+      this.player.position.y = AVATAR_SWIM_Y + this.seaSurfaceAt(this.player.position.x, this.player.position.z) + Math.sin(this.clock.elapsedTime * 3.2) * 0.035;
       this.player.rotation.x = 0;
       this.player.rotation.z = Math.sin(this.clock.elapsedTime * 2.1) * 0.025;
     } else {
@@ -13690,6 +13972,15 @@ export class FestivalWorld {
       if (this.airborne) {
         this.verticalVelocity -= GRAVITY * delta;
         this.player.position.y += this.verticalVelocity * delta;
+        // A jump's head stops at whatever is overhead (the owner, 2026-11-11:
+        // jumping under an awning put the head through it).
+        if (this.verticalVelocity > 0) {
+          const ceiling = this.ceilingAbove(this.player.position.x, this.player.position.z, ground);
+          if (this.player.position.y + AVATAR_HAIR_TOP > ceiling) {
+            this.player.position.y = Math.max(ground, ceiling - AVATAR_HAIR_TOP);
+            this.verticalVelocity = 0;
+          }
+        }
         // Past a certain speed the body stops falling and starts tumbling.
         // Below it this is a hop, and a hop wants the tuck it already has.
         if (this.verticalVelocity < -7) {
@@ -14109,6 +14400,9 @@ export class FestivalWorld {
     if(npc.dogRig)this.animateMentorDog(npc.dogRig,elapsed*2,sample.moving,gesture==='tail-wag',performance.now()<npc.eatUntil);
   }
 
+  /** The bodies in view at full rate this frame, nearest first (phones only). */
+  private readonly crowdRank: Array<{ root: THREE.Object3D; away: number; index: number }> = [];
+
   /**
    * Which bodies are worth drawing and re-posing this frame.
    *
@@ -14124,10 +14418,16 @@ export class FestivalWorld {
    * than the camera, which in the isometric view stands 34 world units back:
    * past 20 world units a body casts no shadow and is re-posed every other
    * frame; past 40 world units, every fourth. Up close nothing changes.
+   *
+   * And a crowd on a phone (owner, 2026-11-13): past the six nearest bodies in
+   * view, the rest are re-posed every other frame too. They still move across
+   * the ground every frame; only their limbs hold for one.
    */
   private cullAvatars(): void {
     this.avatarFrame += 1;
     const headset = this.xrActive && !this.xrSimulated;
+    const crowd = this.conservesMobileGpu && !headset ? this.crowdRank : undefined;
+    if (crowd) crowd.length = 0;
     this.camera.updateMatrixWorld();
     this.avatarViewProjection.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
     this.avatarFrustum.setFromProjectionMatrix(this.avatarViewProjection);
@@ -14168,6 +14468,15 @@ export class FestivalWorld {
       const every = away > FAR_PLAYER.slower ? 4 : away > FAR_PLAYER.simpler ? 2 : 1;
       root.userData.cullThrottle = seen && (this.avatarFrame + index) % every !== 0;
       (root.userData.setImportedFarShadowless as ((far: boolean) => void) | undefined)?.(away > FAR_PLAYER.simpler);
+      if (crowd && seen && every === 1) crowd.push({ root, away, index });
+    }
+    if (crowd && crowd.length > CROWD_FULL_RATE) {
+      crowd.sort((a, b) => a.away - b.away);
+      // Alternate frames by body, so half the crowd poses on each.
+      for (let rank = CROWD_FULL_RATE; rank < crowd.length; rank++) {
+        crowd[rank].root.userData.cullThrottle = (this.avatarFrame + crowd[rank].index) % 2 !== 0;
+      }
+      crowd.length = 0;
     }
   }
 
@@ -15345,8 +15654,8 @@ export class FestivalWorld {
    * 2026-10-23): inside a soft-edged circle round them the roof, and the walls
    * on the camera's side, are cut away; the building outside it stays whole.
    */
-  private updateIsometricCutaway(delta: number): void {
-    const isometric = this.cameraMode === 'isometric' && !this.xrActive && !this.arcadeView && !this.aerialReview;
+  private updateIsometricCutaway(delta: number, free = !this.xrActive && !this.arcadeView && !this.aerialReview): void {
+    const isometric = this.cameraMode === 'isometric' && free;
     if (!isometric) { this.cutawayLens.close(); return; }
     const room = this.isometricRoom(), { x, z } = this.player.position;
     // The floor, not the body: a jump must not lift the cut with it.
@@ -15407,128 +15716,6 @@ export class FestivalWorld {
     return AVATAR_GROUND_Y + half + half * progress;
   }
 
-  /**
-   * The floor under a given spot. `fromY` says which storey the body is on,
-   * which only matters where one walkable surface sits above another: the shop
-   * fills the garage bay and its roof carries on from the deck, so the same
-   * plan position is two different floors depending on who is asking.
-   */
-  /** Kerbed roadway, laid once. */
-  private kerbsRaised = false;
-
-  /**
-   * Raises the pavement along the cross street.
-   *
-   * This was asked for as "kerbs on the street", and looking for the street is
-   * where it got interesting: the main approach is 29 units wide and the red
-   * carpet laid down it is 28. There is no pavement there to raise. That
-   * approach is a ceremonial forecourt, not a road, and a kerb line running
-   * underneath the carpet would not have read as a street — it would have read
-   * as a mistake.
-   *
-   * The cross street at z = -14 is a road: 93 long, 12 deep, with a painted
-   * line down the middle of it. That is where a kerb belongs, and it is the one
-   * place in the festival where the change does what it is supposed to do.
-   *
-   * Broken where the carpet crosses, because a kerb that runs through the
-   * middle of a forecourt is a trip hazard nobody would have built.
-   *
-   * No colliders. A kerb is a step, not a wall, and giving it one would have
-   * put a 93-unit barrier across the middle of the world — the residents tour
-   * on foot through exactly here. It is raised in the ground height instead, so
-   * a body walks up onto it the way a body does.
-   */
-  private dressKerbs(): void {
-    if (this.kerbsRaised) return;
-    this.kerbsRaised = true;
-    const kerbStone = material(0x8d8578, 0.94, 0.02);
-    const venues = this.venueVolumes();
-    // Carpet is not roadway. The first pass laid a grey footway straight across
-    // the red approach to the Palace, which is the one piece of ground in the
-    // festival that exists to be walked down and looked at.
-    const carpets: THREE.Box3[] = [];
-    this.scene.traverse((object) => {
-      if (object.userData.festivalCarpet !== true) return;
-      carpets.push(new THREE.Box3().setFromObject(object).expandByScalar(1.5));
-    });
-    for (const edge of [-1, 1]) {
-      // Outboard of the roadway, not cut out of it. Laid inside the road it
-      // was a lone raised stone with a drop either side, which is a kerb
-      // island rather than a footway — and it narrowed the only road in the
-      // festival by more than half.
-      const z = -14 + edge * (6 + FestivalWorld.KERB_WIDTH / 2);
-      // Walked end to end and laid only where there is room, rather than run
-      // from one hard-coded x to another. The hard-coded version put a raised
-      // pavement straight through the middle of the Drive-In's car park —
-      // which is the same lesson as the cables and the screen exclusions: a
-      // span somebody typed out goes stale the moment the world moves, and a
-      // span the world is asked about does not.
-      let runStart: number | undefined;
-      const flush = (end: number) => {
-        if (runStart === undefined) return;
-        const width = end - runStart;
-        // Long enough to be a pavement. A four-unit run between two things it
-        // had to stop for is not a footway, it is a slab lying on the sand —
-        // which is exactly what the stub beside the Drive-In looked like.
-        if (width >= 10) {
-          const stone = this.mesh(
-            [width, 0.34, FestivalWorld.KERB_WIDTH],
-            [(runStart + end) / 2, 0.13, z],
-            kerbStone,
-          );
-          stone.receiveShadow = true;
-          this.kerbStones.push({ minX: runStart, maxX: end, z });
-        }
-        runStart = undefined;
-      };
-      for (let x = -46.5; x <= 46.5; x += 1) {
-        const clear = Math.abs(x) >= FestivalWorld.KERB_GAP
-          && !venues.some((box) => box.containsPoint(new THREE.Vector3(x, AVATAR_GROUND_Y, z)))
-          && !carpets.some((box) => x >= box.min.x && x <= box.max.x && z >= box.min.z && z <= box.max.z)
-          && !this.staticCollides(x, z, AVATAR_GROUND_Y, FestivalWorld.KERB_WIDTH / 2);
-        if (clear && runStart === undefined) runStart = x;
-        if (!clear) flush(x - 1);
-      }
-      flush(46.5);
-    }
-  }
-
-  /** Half the width of the gap left for the carpet to cross the roadway. */
-  private static readonly KERB_GAP = 15;
-  /** How deep the raised pavement strip is. */
-  private static readonly KERB_WIDTH = 3.4;
-  /** How far the pavement stands above the roadway. */
-  private static readonly KERB_RISE = 0.13;
-
-  /**
-   * How high a body stands on the kerb, and nothing if it is not on one.
-   *
-   * The rise is taken up over the last third of the strip rather than at its
-   * face, so walking onto the pavement is a step rather than a snap. A body
-   * that teleports up 13cm reads as a bug; a body that rises over half a stride
-   * reads as a kerb.
-   */
-  private kerbHeightAt(x: number, z: number): number | undefined {
-    if (!this.kerbsRaised) return undefined;
-    const from = Math.abs(z + 14);
-    if (from < 6 || from > 6 + FestivalWorld.KERB_WIDTH) return undefined;
-    // Asked of the stones that were actually laid, rather than worked out a
-    // second time from the same intentions. Two independent copies of "where
-    // the pavement is" is exactly how a body ends up standing 13cm above a
-    // road with no kerb under it.
-    const side = Math.sign(z + 14);
-    if (!this.kerbStones.some(
-      (stone) => stone.minX <= x && x <= stone.maxX && Math.sign(stone.z + 14) === side,
-    )) {
-      return undefined;
-    }
-    const climbed = THREE.MathUtils.clamp((from - 6) / 0.9, 0, 1);
-    return AVATAR_GROUND_Y + FestivalWorld.KERB_RISE * climbed;
-  }
-
-  /** Where the pavement actually got laid, rather than where it was meant to. */
-  private kerbStones: Array<{ minX: number; maxX: number; z: number }> = [];
-
   private paving: Array<{polygon:PlanPoint[];lift:number;exclusions?:PlanPoint[][];bounds:[number,number,number,number]}>=[];
 
   private pavingIndex?: PlanGrid<FestivalWorld['paving'][number]>;
@@ -15573,10 +15760,20 @@ export class FestivalWorld {
     return this.groundHeightAt(x,z,fromY)-AVATAR_GROUND_Y;
   }
 
+  /**
+   * The floor under a given spot. `fromY` says which storey the body is on,
+   * which only matters where one walkable surface sits above another: the shop
+   * fills the garage bay and its roof carries on from the deck, so the same
+   * plan position is two different floors depending on who is asking.
+   */
   private groundHeightAt(x: number, z: number, fromY = this.player.position.y): number {
     const landing = this.islandDock?.heightAt(x, z);
     if (landing !== undefined) return landing + AVATAR_GROUND_Y;
-    if(x>=TEMPLE_STAIRS.start&&x<=TEMPLE_STAIRS.end&&Math.abs(z-TEMPLE_STAIRS.centerZ)<TEMPLE_STAIRS.width/2)return AVATAR_GROUND_Y+templeStairPitch(x);
+    // Half a rise over the even ramp: on the ramp itself the feet sank up to a
+    // whole rise into the front of each tread (the owner, 2026-11-11). Lifted
+    // by half, they are never more than half a rise off the stone either way,
+    // and the climb stays one smooth line. It runs out on the top tread.
+    if(x>=TEMPLE_STAIRS.start&&x<=TEMPLE_STAIRS.end&&Math.abs(z-TEMPLE_STAIRS.centerZ)<TEMPLE_STAIRS.width/2)return AVATAR_GROUND_Y+templeStairPitch(x)+.12*THREE.MathUtils.clamp((TEMPLE_STAIRS.end-x)/.4,0,1);
     const r = rooftopBounds;
     if (x > r.minX && x < r.maxX && z >= r.deckMinZ && z < r.maxZ) return ROOF_AVATAR_Y;
     // The slab over the shop, level with the deck it continues from. Only for
@@ -15590,8 +15787,6 @@ export class FestivalWorld {
     }
     if (x > -45.5 && x < -24.5 && z > -48 && z < -31) return .25 + AVATAR_GROUND_Y;
     if (x > -12.5 && x < 12.5 && z > -45.5 && z < -23.5) return SCREENING_SITES['drive-in'].grade + .11 + AVATAR_GROUND_Y;
-    const kerb = this.kerbHeightAt(x, z);
-    if (kerb !== undefined) return kerb;
     if (this.inClubRoom(x, z)) return CLUB_AVATAR_Y;
     if (this.onClubStairs(x, z)) {
       const b = clubBounds;
@@ -16073,12 +16268,15 @@ export class FestivalWorld {
         this.player.position.y + 1.4,
         this.player.position.z - Math.cos(orbit.yaw) * lead,
       );
+      // The aim used to be pulled back onto the body's side of any wall ahead,
+      // which slid the whole orbit, camera and all, every time the attendee
+      // walked up to something. The camera holds its distance now (the owner,
+      // 2026-11-11), and what stands in the way stays drawn: the visitor turns
+      // the view. Only the ground still draws the aim back, as on a stair
+      // climbing away, where it would otherwise sit inside the treads.
       if (lead > 0) {
-        // The follow aim leads the body. Keep that pivot on the body's side
-        // of a real wall before shortening the orbit around it, or an aim
-        // across the masonry could strand the camera outside the room.
         const bodyAim = this.player.position.clone().setY(this.lookTarget.y);
-        const clearLead = this.cameraClearReach(bodyAim, this.lookTarget);
+        const clearLead = this.cameraClearReach(bodyAim, this.lookTarget, true);
         if (clearLead < lead) this.lookTarget.lerpVectors(bodyAim, this.lookTarget, clearLead / lead);
       }
       const radius = 10.56 * this.cameraZoom;
@@ -16092,7 +16290,7 @@ export class FestivalWorld {
     // Use the same orbit and physical wall avoidance as the temple. Room and
     // ramp membership must not impose a shorter camera distance or a new aim.
     this.confineCameraOverWater(cameraTarget);
-    this.pullCameraClearOfWalls(cameraTarget, delta);
+    this.keepCameraOverGround(cameraTarget, delta);
     /**
      * Sit on the orbit. Do not chase it.
      *
@@ -16115,15 +16313,7 @@ export class FestivalWorld {
     // Easing the camera position can itself carry it through a wall while the
     // target is already clear. Check the rendered position as well as the
     // target, and snap inward only when the old position is obstructed.
-    if (this.playerState !== 'swimming') {
-      const eye = this.cameraCollisionOrigin();
-      const actualReach = eye.distanceTo(this.camera.position);
-      const clearReach = this.cameraClearReach(eye, this.camera.position);
-      if (clearReach < actualReach - 0.001) {
-        this.camera.position.lerpVectors(eye, this.camera.position, clearReach / actualReach);
-      }
-      if (eye.distanceTo(this.camera.position) < 1.4) this.player.visible = false;
-    }
+    // No snap inward here any more: the camera keeps its distance through walls.
     this.camera.lookAt(this.lookTarget);
     this.applyCameraShake(delta);
     this.applyDrunkenView(delta);
@@ -16499,7 +16689,7 @@ export class FestivalWorld {
     });
   }
 
-  private cameraClearReach(eye: THREE.Vector3, target: THREE.Vector3): number {
+  private cameraClearReach(eye: THREE.Vector3, target: THREE.Vector3, groundOnly = false): number {
     const vector = target.clone().sub(eye);
     const reach = vector.length();
     if (reach < 0.001) return reach;
@@ -16511,6 +16701,7 @@ export class FestivalWorld {
       const y = eye.y + vector.y * distance;
       const z = eye.z + vector.z * distance;
       const floor=rooftopStairCameraFloor(x,z,rooftopBounds,ROOF_Y)??this.groundHeightAt(x,z,this.player.position.y);
+      if(groundOnly)return y<Math.min(floor,terrainHeightAt(x,z)+AVATAR_GROUND_Y)+.45;
       return this.blocksCamera(x,z,y)||y<floor+.45;
     };
     let previous = 0;
@@ -16554,7 +16745,13 @@ export class FestivalWorld {
     return this.lookTarget.clone();
   }
 
-  private pullCameraClearOfWalls(cameraTarget: THREE.Vector3, delta: number): void {
+  /**
+   * The old pull-in: shortens the orbit to the first wall. Third person no
+   * longer calls it (the camera holds its distance and the cutaway lens cuts
+   * the way through, 2026-11-11); kept as the measured answer to "how far is
+   * clear", which the camera tests still pin down.
+   */
+  pullCameraClearOfWalls(cameraTarget: THREE.Vector3, delta: number): void {
     if (this.playerState === 'swimming') return;
     // All three player views stay anchored to the attendee while seated too.
     // Clearance therefore starts at the same body pivot during a screening.
@@ -16605,6 +16802,45 @@ export class FestivalWorld {
      * the view as well, so every obstruction turned the camera a few degrees.
      * Anchored here, coming in past something is a pure zoom.
      */
+    cameraTarget.copy(eye).addScaledVector(this.cameraProbe, this.cameraReach);
+  }
+
+  /**
+   * The camera holds its distance (the owner, 2026-11-11: no "sudden pull in
+   * or pull out" near things): walls, poles, signs and people no longer move
+   * it, and nothing is cut away either; visitors turn the view. Only the
+   * ground can, when a low view would put the lens under it, and then along
+   * the same line, so the view never turns by itself. The ground is the lower
+   * of the floor and the bare land, so a deck or a roof passing under the
+   * lens is not ground. Closing is at once, opening eased, as it always was.
+   */
+  /**
+   * The lowest underside of anything overhead at a point: colliders that start
+   * well above the floor under it (awnings, units, light-boxes, crowns,
+   * canopies, a storey above), within a head's width.
+   */
+  private ceilingAbove(x: number, z: number, floor: number): number {
+    let ceiling = Infinity;
+    const head = .45;
+    this.colliderGrid().some(x, z, (c) => {
+      if (c.minY !== undefined && c.minY > floor + 2 && c.minY < ceiling
+        && x > c.minX - head && x < c.maxX + head && z > c.minZ - head && z < c.maxZ + head) ceiling = c.minY;
+      return false;
+    });
+    return ceiling;
+  }
+
+  private keepCameraOverGround(cameraTarget: THREE.Vector3, delta: number): void {
+    if (this.playerState === 'swimming') return;
+    const eye = this.cameraCollisionOrigin();
+    this.cameraProbe.subVectors(cameraTarget, eye);
+    const reach = this.cameraProbe.length();
+    if (reach < 0.001) return;
+    this.cameraProbe.divideScalar(reach);
+    const safe = this.cameraClearReach(eye, cameraTarget, true);
+    if (this.cameraReach <= 0 || safe < this.cameraReach) this.cameraReach = safe;
+    else this.cameraReach += (safe - this.cameraReach) * (1 - Math.exp(-delta * 8.5));
+    if (this.cameraReach >= reach - 0.01) return;
     cameraTarget.copy(eye).addScaledVector(this.cameraProbe, this.cameraReach);
   }
 
@@ -16857,7 +17093,9 @@ export class FestivalWorld {
     this.promptActionable = true;
     this.promptSecondary = false;
     if (this.arcadeView||this.npcDialogue) { this.promptActionable = false; return undefined; }
-    if (this.nearArcade() && this.playerState !== 'seated') return this.arcadeLocked ? 'E / M.O.T.H · LOCKED' : 'E / PLAY M.O.T.H';
+    const arcade = this.playerState !== 'seated' ? this.nearArcade() : undefined;
+    if (arcade === 'moth') return this.arcadeLocked ? 'E / M.O.T.H · LOCKED' : 'E / PLAY M.O.T.H';
+    if (arcade === 'escape') return 'E / PLAY 逃脫我的美麗';
     // A panel hung in front of somebody with no way to take it down is a trap:
     // the close button belongs to `#venue-screen`, which an immersive session
     // never shows. A screening on a venue's own wall does not need this —
@@ -17023,11 +17261,13 @@ export class FestivalWorld {
     ) < 4.2;
   }
 
-  private nearArcade(): boolean {
-    const arcade = this.arcadeCabinet;
-    if (!arcade || arcade.status !== 'ready' || this.arcadeView) return false;
-    if (Math.abs(this.player.position.y - this.groundHeightAt(this.player.position.x, this.player.position.z, 0)) > 2.6) return false;
-    return arcadeIsNearest(this.player.position, arcade.root.position, this.jukebox);
+  /** The arcade cabinet within reach (and nearer than the jukebox), if any. */
+  private nearArcade(): ArcadeGame | undefined {
+    if (this.arcadeView) return undefined;
+    if (Math.abs(this.player.position.y - this.groundHeightAt(this.player.position.x, this.player.position.z, 0)) > 2.6) return undefined;
+    const cabinets = [this.arcadeCabinet, this.escapeCabinet].filter((cabinet): cabinet is MothArcadeCabinet => cabinet?.status === 'ready')
+      .map(cabinet => ({ game: cabinet.game, x: cabinet.root.position.x, z: cabinet.root.position.z }));
+    return nearestArcade(this.player.position, cabinets, this.jukebox);
   }
 
   /** In front of the temple's wish wall, on the road side of it. */
@@ -17079,7 +17319,7 @@ export class FestivalWorld {
   private atAFixedPlace(): boolean {
     return this.nearClubBar()
       || this.player.position.distanceTo(concessionPosition)<2.5
-      || this.nearArcade()
+      || this.nearArcade() !== undefined
       || this.nearJukebox()
       || this.nearShopCounter()
       || this.nearbyDj() !== undefined
