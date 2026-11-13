@@ -3,52 +3,68 @@
 export const MOTH_OFFICE_TUTORIAL = [
   {
     speaker: 'GANGAN',
-    en: "First, a little background: this game was made to accompany Dr. Beauty's album, MASTER OF THE HOUSE.",
-    zh: '先說個前情提要：這款遊戲是為美麗本人的音樂專輯《MASTER OF THE HOUSE》而誕生的小品。'
+    en: "We made this little game for Dr. Beauty's album, MASTER OF THE HOUSE.",
+    zh: '這款遊戲是為美麗本人的音樂專輯《MASTER OF THE HOUSE》而誕生的小品。'
   },
   {
     speaker: 'GANGAN',
-    en: "The songs say it all. So let's get straight to how to play.",
-    zh: '想說的都在歌曲裡。所以接下來廢話少說，直接看遊戲操作說明。'
+    en: "Let's get straight to the controls!",
+    zh: '我們直接來看遊戲操作說明!!'
   },
   {
     speaker: 'GANGAN',
-    en: 'Watch the timing track below. Press the matching button as a note reaches the white hit line. The ring helps you follow the drum timing.',
-    zh: '看下方的節奏軌道。音符到達白色判定線時，跟著鼓點按下對應按鍵；圓環會提示時機。'
+    en: 'Follow the drums. Tap the matching button when the ring closes at the white hit line.',
+    zh: '音符到達白色判定線時，白色圓環會提示時機，請跟著鼓點按下對應按鍵。',
+    rhythmDemo: 'tap'
   },
   {
     speaker: 'GANGAN',
-    en: 'All four buttons follow the drums: M for hi-hat, O for snare, T for kick, and H for other percussion. Hold notes with tails until the tail ends.',
-    zh: '四個按鍵都跟著鼓點：M 是踩鈸、O 是小鼓、T 是大鼓、H 是其他打擊樂。有尾巴的音符，要按住到尾巴結束。'
+    en: 'For a hold note, keep the button pressed until the tail ends.',
+    zh: '“連續音符”則要長按至音符結束。',
+    rhythmDemo: 'hold'
   },
   {
     speaker: 'GANGAN',
-    en: "First, hit four practice notes, one for each button. Then we'll start the real shift.",
-    zh: '先跟準四個練習音符，每個按鍵各一個，接著就開始正式輪班。'
+    en: 'All four buttons follow the drums. M is cymbals, O is snare, T is kick, and H is other percussion.',
+    zh: '四個按鍵都跟著鼓點：M 是鈸、O 是小鼓、T 是大鼓、H 是其他打擊樂。'
   },
   {
     speaker: 'GANGAN',
-    en: 'Missing a note, pressing the wrong button near a note, or releasing a hold early counts as a miss and breaks your combo. Extra taps away from notes are safe.',
-    zh: '漏掉音符、在音符附近按錯鍵，或提早放開長按音符，都算失誤，並會中斷連擊。音符之間沒有判定時，多按不會受罰。'
+    en: 'Extra taps between notes are safe! Missing a note, pressing the wrong button within its timing window, or releasing a hold early counts as a miss and breaks your combo.',
+    zh: '音符之間多按不會受罰！但漏掉音符、在判定範圍內按錯鍵，或提早放開連續音符，都算失誤，並且會中斷連擊。'
   },
   {
     speaker: 'GANGAN',
-    en: 'Your number of misses affects your final rating. Follow the drums and aim for a higher score!',
-    zh: '失誤次數會影響最終評級。跟上鼓點，挑戰更高分！'
+    en: "The controls are a little brutal. We're not a game company!",
+    zh: '這設計很不人性化，因為我們不是做遊戲的公司！'
   },
   {
     speaker: 'GANGAN',
-    en: 'In story mode, finish each fight to continue to the next level. Complete the story to unlock two hidden songs.',
-    zh: '故事模式中，完成每場戰鬥就能繼續前往下一關。完成故事後，會解鎖兩首隱藏歌曲。'
+    en: "Let's give it a try!",
+    zh: '我們先來試試看吧！'
   }
 ];
 
-export const MOTH_OFFICE_READY = [{
-  speaker: 'GANGAN',
-  en: 'Good. The real shift starts now. Follow the drums through to the end of the song!',
-  zh: '很好，正式輪班現在開始。跟著鼓點，一路玩到歌曲結束！',
-  portraitFrame: 5
-}];
+export const MOTH_OFFICE_READY = [
+  {
+    speaker: 'GANGAN',
+    en: "Nice! If you made it through that, I'm sure you can nail the real thing!",
+    zh: '水唷！這樣你都玩得下去，相信你一定可以完美挑戰！',
+    portraitFrame: 5
+  },
+  {
+    speaker: 'GANGAN',
+    en: 'Finish Story Mode to unlock two hidden songs in Stage Select!',
+    zh: '對了！故事模式全破後會解鎖兩首隱藏歌曲，不要忘記去”關卡選擇”聽歌喔！',
+    portraitFrame: 5
+  },
+  {
+    speaker: 'GANGAN',
+    en: 'Now help Dr. Beauty stamp those papers. Follow the drums and aim for a higher score!',
+    zh: '現在！開始協助美麗蓋章章，跟上鼓點，贏得更高的分數吧！',
+    portraitFrame: 5
+  }
+];
 
 export function patchTutorial(once, edit) {
   edit('const LEVEL1_OFFICE_TUTORIAL_DIALOGUE = [\n', '\n];\n', () =>

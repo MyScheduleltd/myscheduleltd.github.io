@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import {rewriteCssArtwork, MOTH_MIRROR_COMMIT, MOTH_MIRROR_PINS, mirrorPath} from './moth-runtime-patches.mjs';
 import {patchCharts} from './moth-chart-patches.mjs';
-import {TRIMMED_FILES} from './moth-asset-trim.mjs';
+import {RETIRED_HIT_SFX, TRIMMED_FILES} from './moth-asset-trim.mjs';
 import {KEY_FRINGE_MANIFEST} from './moth-sprite-fringe.mjs';
 import {ADDED_ASSETS, RETIRED_ADDED_ASSETS} from './moth-asset-additions.mjs';
 import {patchDeckCss} from './moth-deck-art.mjs';
@@ -17,6 +17,12 @@ const snapshot = JSON.parse(await fs.readFile(path.join(root, '.qa/moth/publishe
 const publicCode = await fs.readFile(path.join(dir, 'src/game.js'), 'utf8');
 const staffCode = await fs.readFile(path.join(dir, 'staff/game.js'), 'utf8');
 for (const code of [publicCode, staffCode]) assert.equal(code.includes('window.__retiredCalls'), process.env.MOTH_TRIM_AUDIT === '1', 'Retired-code audit builds require an explicit audit verification mode');
+for (const name of RETIRED_HIT_SFX) {
+  const file = `assets/sfx/${name}.wav`;
+  for (const code of [publicCode, staffCode]) {
+    assert(!code.includes(file) && !code.includes(JSON.stringify(name)), `No request or playback still refers to ${file}`);
+  }
+}
 const config = await fs.readFile(path.join(dir, 'data/level1.json'), 'utf8');
 const hash = data => crypto.createHash('sha256').update(data).digest('hex');
 const excluded = new Set(['index.html','src/game.js','manifest.json','haptics-test.html','haptics-test2.html','sfx-test.html']);

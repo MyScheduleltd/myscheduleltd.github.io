@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import { stubScoreboard } from './moth-scoreboard-stub.mjs';
+import { MOTH_RHYTHM_RING } from './moth-chart-playability.mjs';
 
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const out = path.resolve(process.argv[3] || '.qa/moth/tutorial');
@@ -33,12 +34,17 @@ try {
     }
     assert.match(rules.intro[5].en, /wrong button/);
     assert.match(rules.intro[5].zh, /按錯鍵/);
-    assert.equal(rules.intro[6].en, 'Your number of misses affects your final rating. Follow the drums and aim for a higher score!');
-    assert.equal(rules.intro[6].zh, '失誤次數會影響最終評級。跟上鼓點，挑戰更高分！');
-    assert.match(rules.intro[7].en, /two hidden songs/);
+    assert.equal(rules.intro[2].rhythmDemo, 'tap');
+    assert.equal(rules.intro[3].rhythmDemo, 'hold');
+    assert.match(rules.intro[3].en, /tail ends/);
+    assert.match(rules.intro[4].en, /cymbals/);
+    assert.equal(rules.intro[7].zh, '我們先來試試看吧！');
+    assert.equal(rules.ready.length, 3);
+    assert.match(rules.ready[1].en, /two hidden songs/);
+    assert.match(rules.ready[2].zh, /協助美麗蓋章章/);
     for (const language of ['zh-TW', 'en']) {
       await page.evaluate(language => { bobbyGame.setLanguage(language, { persist: false, announce: false }); }, language);
-      for (const index of [2, 5, 6, 7]) {
+      for (const index of [2, 3, 5, 6, 7]) {
         await page.evaluate(index => {
           const g = bobbyGame;
           g.level1OfficeRhythm.tutorial.mode = 'intro';
@@ -46,16 +52,67 @@ try {
           g.render(); g.renderTallScreen();
         }, index);
         assert.equal(await page.evaluate(() => document.body.dataset.language), language, 'Dialogue helpers use the selected UI language');
+        if (index === 2 || index === 3) {
+          const layout = await page.evaluate(() => ({
+            demo: bobbyGame.activeDialogue?.rhythmDemo,
+            scroll: bobbyGame.dialogueViewport?.maxOffset
+          }));
+          assert.deepEqual(layout, { demo: index === 2 ? 'tap' : 'hold', scroll: 0 }, `${device} ${language} fits the full tutorial text above the demo`);
+        }
         await page.screenshot({ path: path.join(out, `${device}-${language}-rules-${index + 1}.png`), fullPage: true });
+        if (index === 3) {
+          await page.evaluate(elapsed => {
+            const g = bobbyGame;
+            g.dialogueScroll.rhythmDemoStart = g.time - elapsed;
+            g.render(); g.renderTallScreen();
+          }, MOTH_RHYTHM_RING.lead + 0.22 + 0.4);
+          await page.screenshot({ path: path.join(out, `${device}-${language}-demo-holding.png`), fullPage: true });
+        }
       }
       await page.evaluate(() => {
         const g = bobbyGame;
         g.level1OfficeRhythm.tutorial.mode = 'complete';
         g.level1OfficeRhythm.tutorial.readyDialogueIndex = 0;
-        g.render(); g.renderTallScreen();
       });
-      await page.screenshot({ path: path.join(out, `${device}-${language}-ready.png`), fullPage: true });
+      for (let index = 0; index < rules.ready.length; index++) {
+        assert.equal(await page.evaluate(() => bobbyGame.level1OfficeRhythm.tutorial.readyDialogueIndex), index);
+        await page.screenshot({ path: path.join(out, `${device}-${language}-ready-${index + 1}.png`), fullPage: true });
+        if (index < rules.ready.length - 1) await page.keyboard.press('KeyO');
+      }
     }
+    await page.evaluate(() => bobbyGame.debugJumpToStage('level1-practice'));
+    await page.waitForFunction(() => bobbyGame.level1OfficeRhythm?.tutorial?.mode === 'practice');
+    const setPracticeHitTime = () => page.evaluate(() => {
+      const practice = bobbyGame.level1OfficeRhythm.tutorial;
+      const note = practice.notes[practice.noteIndex];
+      practice.time = note.time;
+      return note.button;
+    });
+    for (const button of ['T', 'O', 'M', 'H']) {
+      assert.equal(await setPracticeHitTime(), button);
+      await page.keyboard.press('Key' + button);
+    }
+    assert.equal(await setPracticeHitTime(), 'T');
+    await page.keyboard.down('KeyT');
+    assert(await page.evaluate(() => bobbyGame.level1OfficeRhythm.holds.T?.holding));
+    await page.keyboard.up('KeyT');
+    const retry = await page.evaluate(() => {
+      const { tutorial, misses } = bobbyGame.level1OfficeRhythm;
+      return { index: tutorial.noteIndex, status: tutorial.notes[4].status, mistakes: tutorial.mistakes, misses };
+    });
+    assert.deepEqual(retry, { index: 4, status: 'pending', mistakes: 1, misses: 0 });
+    await setPracticeHitTime();
+    await page.keyboard.down('KeyT');
+    await page.waitForFunction(() => {
+      const practice = bobbyGame.level1OfficeRhythm.tutorial;
+      return practice.notes[4].holding && practice.time > practice.notes[4].time + 0.33;
+    });
+    await page.screenshot({ path: path.join(out, `${device}-warmup-holding.png`), fullPage: true });
+    await page.waitForFunction(() => bobbyGame.level1OfficeRhythm.tutorial.notes[4].holdDone);
+    await page.keyboard.up('KeyT');
+    await page.waitForFunction(() => bobbyGame.level1OfficeRhythm.tutorial.mode === 'complete');
+    assert.equal(await page.evaluate(() => bobbyGame.level1OfficeRhythm.roundScore), 0, 'Warm-up does not count toward the song score');
+
     // Exercise the engine rather than just asserting text: a wrong button at a
     // note counts a miss; an off-window ghost tap does not. Neither costs health.
     const behavior = await page.evaluate(() => {

@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { calculateRhythmRailGeometry, calculateRhythmTimingCue } from './moth-chart-playability.mjs';
+import { calculateRhythmRailGeometry, calculateRhythmTimingCue, MOTH_PORTRAIT_RAIL_HIT_OFFSET, MOTH_RHYTHM_HEAD, MOTH_RHYTHM_RING } from './moth-chart-playability.mjs';
 import { stubScoreboard } from './moth-scoreboard-stub.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -14,42 +14,52 @@ const reports = [];
 for (const [name, spec] of specs) {
   for (const mode of ['easy', 'hard']) {
     const step = 60 / spec.bpm * spec.chart.stepBeats;
-    const fullLead = Math.min(1.6, Math.max(1.1, 120 / spec.bpm));
     const notes = spec.chart[mode].map(([index, button, hold = 0]) => {
       const time = spec.beatOffset + index * step;
-      return {time, button, cueAt: Math.max(0, time - fullLead), status: 'pending', holdEnd: hold > 0 ? spec.beatOffset + (index + hold) * step : null};
+      return {time, button, status: 'pending', holdEnd: hold > 0 ? spec.beatOffset + (index + hold) * step : null};
     });
     const geometry = calculateRhythmRailGeometry(notes);
+    const perfectWindow = spec.perfectWindow || .075;
+    const outerRadius = MOTH_RHYTHM_RING.radius + MOTH_RHYTHM_RING.lineWidth / 2 + MOTH_RHYTHM_RING.outlineWidth;
+    const fullRingPreview = ((704 - MOTH_PORTRAIT_RAIL_HIT_OFFSET) / 1.35 - outerRadius) / geometry.pixelsPerSecond;
+    assert(fullRingPreview >= MOTH_RHYTHM_RING.lead, `${name}/${mode}: even the smallest phone shows the whole ring for its full lead`);
     let closestPixels = Infinity, closestSameKey = Infinity, maxInSecond = 0;
     const last = new Map();
     for (let i = 0; i < notes.length; i++) {
-      const note = notes[i], head = geometry.heads[i];
+      const note = notes[i];
       assert(Number.isFinite(note.time) && note.time >= 0, `${name}/${mode}: valid audible attack time`);
-      const cueAtHit = calculateRhythmTimingCue(note, note.time, head, Math.min(fullLead, note.time - note.cueAt), spec.perfectWindow || .085, spec.goodWindow || .19);
-      assert.equal(cueAtHit.radius, head.radius + head.lineWidth / 2, `${name}/${mode}: cue meets the head's painted outer border exactly at the attack`);
-      assert(cueAtHit.maxRadius - cueAtHit.targetRadius >= 5 - 1e-6, `${name}/${mode}: at least 5px of visible shrinking travel`);
+      const cueAtHit = calculateRhythmTimingCue(note, note.time, perfectWindow);
+      const headOuter = MOTH_RHYTHM_HEAD.radius + MOTH_RHYTHM_HEAD.lineWidth / 2;
+      assert.equal(cueAtHit.radius - cueAtHit.lineWidth / 2, headOuter, `${name}/${mode}: the ring's inside edge meets the head's outside edge exactly at the attack`);
+      assert.equal(cueAtHit.maxRadius, MOTH_RHYTHM_RING.radius, `${name}/${mode}: fixed starting ring size`);
+      assert.equal(cueAtHit.lead, MOTH_RHYTHM_RING.lead, `${name}/${mode}: fixed timing lead`);
       assert.equal(cueAtHit.progress, 1, `${name}/${mode}: cue reaches full progress at the attack`);
       let previousRadius = Infinity, previousProgress = -Infinity;
       for (const remaining of [1, .8, .5, .2, .05, 0, -.05]) {
-        const cue = calculateRhythmTimingCue(note, note.time - remaining * cueAtHit.lead, head, fullLead, spec.perfectWindow || .085, spec.goodWindow || .19);
+        const cue = calculateRhythmTimingCue(note, note.time - remaining * cueAtHit.lead, perfectWindow);
         assert(cue, `${name}/${mode}: cue remains visible from its lead through the hit window`);
         assert(cue.radius <= previousRadius + 1e-9 && cue.progress >= previousProgress - 1e-9, `${name}/${mode}: every cue shrinks monotonically`);
-        assert(cue.radius >= cue.targetRadius && cue.color === '#ffffff', `${name}/${mode}: white cue stays outside the glyph through the attack`);
+        assert(cue.radius - cue.lineWidth / 2 >= headOuter && cue.color === '#ffffff', `${name}/${mode}: the ring stays white and outside the head through the attack`);
+        if (remaining > 0) assert(cue.radius - cue.lineWidth / 2 > headOuter, `${name}/${mode}: the ring never touches early`);
         previousRadius = cue.radius; previousProgress = cue.progress;
       }
-      assert.equal(calculateRhythmTimingCue({...note, status: 'holding'}, note.time, head, fullLead, .085, .19), null, `${name}/${mode}: a hit hold has no misleading second cue`);
-      assert.equal(calculateRhythmTimingCue(note, note.time - cueAtHit.lead - .01, head, Math.min(fullLead, note.time - note.cueAt), .085, .19), null, `${name}/${mode}: cue is absent before its actual lead`);
+      assert.equal(calculateRhythmTimingCue({...note, status: 'perfect', holding: true}, note.time, perfectWindow), null, `${name}/${mode}: a hit hold has no misleading second cue`);
+      assert.equal(calculateRhythmTimingCue(note, note.time - cueAtHit.lead - .01, perfectWindow), null, `${name}/${mode}: cue is absent before its actual lead`);
+      assert.equal(calculateRhythmTimingCue(note, note.time + perfectWindow, perfectWindow)?.stage, 'NOW', `${name}/${mode}: closed white cue lasts through the perfect window`);
+      assert.equal(calculateRhythmTimingCue(note, note.time + perfectWindow + .001, perfectWindow), null, `${name}/${mode}: cue clears after the perfect window`);
       if (last.has(note.button)) closestSameKey = Math.min(closestSameKey, note.time - last.get(note.button));
       last.set(note.button, note.time);
       maxInSecond = Math.max(maxInSecond, notes.filter(other => other.time >= note.time - 1e-6 && other.time < note.time + 1 - 1e-6).length);
       if (i > 0) {
         const gap = note.time - notes[i - 1].time;
         assert(gap > 0, `${name}/${mode}: no simultaneous unreadable heads`);
-        const empty = gap * geometry.pixelsPerSecond - head.radius - geometry.heads[i - 1].radius - (head.lineWidth + geometry.heads[i - 1].lineWidth) / 2;
+        const empty = gap * geometry.pixelsPerSecond - 2 * MOTH_RHYTHM_HEAD.radius - MOTH_RHYTHM_HEAD.lineWidth;
         closestPixels = Math.min(closestPixels, empty);
         assert(empty >= 0.5 - 1e-6, `${name}/${mode}: heads have separate painted bounds (${empty}px)`);
-        const haloSpace = gap * geometry.pixelsPerSecond - head.maxRingRadius - geometry.heads[i - 1].maxRingRadius - 3;
-        assert(haloSpace >= .5 - 1e-6, `${name}/${mode}: even the largest complete timing circles have separate painted bounds (${haloSpace}px)`);
+        const previousCue = calculateRhythmTimingCue(notes[i - 1], note.time - MOTH_RHYTHM_RING.lead, perfectWindow);
+        const previousOuter = previousCue ? previousCue.radius + previousCue.lineWidth / 2 + previousCue.outlineWidth : headOuter;
+        const haloSpace = gap * geometry.pixelsPerSecond - outerRadius - previousOuter;
+        assert(haloSpace >= .5 - 1e-6, `${name}/${mode}: neighboring timing circles remain separate when the later ring first appears (${haloSpace}px)`);
       }
       if (note.holdEnd) {
         const next = notes[i + 1];
@@ -62,7 +72,7 @@ for (const [name, spec] of specs) {
       assert(closestSameKey >= 0.30 - 1e-6, `${name}/hard: at least 300ms between same-button attacks`);
       assert(maxInSecond <= 4, `${name}/hard: at most four attacks in any second (${maxInSecond})`);
     }
-    reports.push({name, mode, notes: notes.length, minGapMs: Math.round(geometry.minGap * 1000), closestSameKeyMs: Math.round(closestSameKey * 1000), maxInSecond, pixelsPerSecond: geometry.pixelsPerSecond, emptyPixels: Number(closestPixels.toFixed(2))});
+    reports.push({name, mode, notes: notes.length, minGapMs: Math.round(geometry.minGap * 1000), closestSameKeyMs: Math.round(closestSameKey * 1000), maxInSecond, pixelsPerSecond: geometry.pixelsPerSecond, emptyPixels: Number(closestPixels.toFixed(2)), fullRingPreview: Number(fullRingPreview.toFixed(3))});
   }
 }
 console.log('chart playability PASS', JSON.stringify(reports));
@@ -119,17 +129,30 @@ try {
       const g = bobbyGame, r = g.level1OfficeRhythm;
       // The closest allowed hard phrase, repeated across all four buttons.
       r.notes = Array.from({length: 10}, (_, index) => ({id: index, time: 10 + index * 0.224, button: 'MOTH'[index % 4], action: index % 2 ? 'accent' : 'do', task: 'stamp', cueAt: 8.4 + index * 0.224, phaseIndex: 0, status: 'pending', cuePlayed: true}));
+      const held = {id: -1, time: 9.328, holdEnd: 9.94, button: 'T', action: 'do', task: 'stamp', phaseIndex: 0, status: 'perfect', holding: true};
+      r.notes.unshift(held);
       r.frozenSongTime = 9.9; g.songTime = 9.9; r.phaseIntroTimer = 0; r.judgment = null; r.trackPulse = null;
       // Freeze updates after setup; the actual renderer and portrait copy run.
       g.update = () => {};
-      const target = g.ctx, arcs = [], clips = [], glyphs = [], stack = [];
-      const originals = Object.fromEntries(['save', 'restore', 'beginPath', 'rect', 'clip', 'arc', 'fillText'].map(key => [key, target[key]]));
-      let clip = null, pathRect = null;
+      const target = g.ctx, arcs = [], clips = [], glyphs = [], tails = [], activeTails = [], holdMarkers = [], stack = [];
+      const originals = Object.fromEntries(['save', 'restore', 'beginPath', 'rect', 'clip', 'arc', 'fillText', 'moveTo', 'lineTo', 'stroke', 'fillRect'].map(key => [key, target[key]]));
+      let clip = null, pathRect = null, line = [];
       target.save = function () { stack.push(clip); return originals.save.apply(this, arguments); };
       target.restore = function () { clip = stack.pop() || null; return originals.restore.apply(this, arguments); };
-      target.beginPath = function () { pathRect = null; return originals.beginPath.apply(this, arguments); };
+      target.beginPath = function () { pathRect = null; line = []; return originals.beginPath.apply(this, arguments); };
       target.rect = function (x, y, w, h) { pathRect = {x, y, w, h}; return originals.rect.apply(this, arguments); };
       target.clip = function () { if (pathRect?.x === 264 && pathRect.w === 952) { clip = pathRect; clips.push(clip); } return originals.clip.apply(this, arguments); };
+      target.moveTo = function (x, y) { line.push({x, y}); return originals.moveTo.apply(this, arguments); };
+      target.lineTo = function (x, y) { line.push({x, y}); return originals.lineTo.apply(this, arguments); };
+      target.stroke = function () {
+        if (clip && this.lineWidth === 22 && this.strokeStyle === '#16171b') tails.push({line, cap: this.lineCap});
+        if (clip && this.strokeStyle === '#fff3a2' && pathRect == null) activeTails.push(line);
+        return originals.stroke.apply(this, arguments);
+      };
+      target.fillRect = function (x, y, w, h) {
+        if (clip && x === 750 && y === 624 && w === 20 && h === 17) holdMarkers.push({x, y});
+        return originals.fillRect.apply(this, arguments);
+      };
       target.arc = function (x, y, radius, start, end) {
         if (Math.abs(y - 616) < .001 && radius <= 60 && x >= 264 && x <= 1216) {
           arcs.push({x, y, radius, start, end, lineWidth: this.lineWidth, stroke: this.strokeStyle, clip});
@@ -148,19 +171,27 @@ try {
       try { g.render(); g.renderTallScreen(); }
       finally { Object.assign(target, originals); }
       const layout = g.getRhythmRailGeometry();
-      return {speed: layout.pixelsPerSecond, radii: layout.heads.map(head => head.radius), headLineWidths: layout.heads.map(head => head.lineWidth), gapPixels: 0.224 * layout.pixelsPerSecond,
+      return {speed: layout.pixelsPerSecond, gapPixels: 0.224 * layout.pixelsPerSecond,
         tall: document.body.dataset.tallScreen === '1', viewportWidth: innerWidth,
         canvasBounds: g.ctx.canvas.getBoundingClientRect().toJSON(), telemetry: r.renderTelemetry.railPixelsPerSecond,
-        arcs, clips, glyphs, cues: r.renderTelemetry.noteTimingCues};
+        arcs, clips, glyphs, tails, activeTails, holdMarkers, cues: r.renderTelemetry.noteTimingCues,
+        heldX: 760 + (held.time - g.songTime) * layout.pixelsPerSecond,
+        releaseX: 760 + (held.holdEnd - g.songTime) * layout.pixelsPerSecond};
     });
-    assert(geometry.gapPixels - 2 * Math.max(...geometry.radii) - Math.max(...geometry.headLineWidths) >= 0.5, `${name}: separate rendered hard-note bounds`);
     assert.equal(geometry.telemetry, geometry.speed, `${name}: draw telemetry uses the actual rail speed`);
     assert.equal(geometry.tall, phone, `${name}: expected phone/desktop renderer`);
-    const heads = geometry.arcs.filter(arc => arc.stroke === '#16171b' && [3, 5].includes(arc.lineWidth) && arc.radius <= 21);
-    assert(heads.length >= 4, `${name}: actual renderer drew the dense phrase`);
-    const cues = geometry.arcs.filter(arc => arc.stroke === '#ffffff' || arc.stroke === '#ff315a');
+    const heads = geometry.arcs.filter(arc => arc.stroke === '#16171b');
+    assert(heads.length >= 4 && heads.every(head => head.radius === MOTH_RHYTHM_HEAD.radius && head.lineWidth === MOTH_RHYTHM_HEAD.lineWidth), `${name}: all rendered tap and hold heads have the same radius and stroke`);
+    assert(heads.some(head => Math.abs(head.x - geometry.heldX) < 1e-6) && heads.every(head => head.x !== 760), `${name}: judged hold head scrolls past the hit line instead of blocking it`);
+    assert(geometry.tails.length === 1 && geometry.tails[0].cap === 'round'
+      && Math.abs(geometry.tails[0].line[0].x - geometry.heldX) < 1e-6
+      && Math.abs(geometry.tails[0].line[1].x + 11 - geometry.releaseX) < 1e-6,
+      `${name}: one rounded hold body connects to the scrolling head and ends at the true release point`);
+    assert.equal(geometry.activeTails.length, 1, `${name}: the remaining sustain is visibly lit`);
+    assert.equal(geometry.holdMarkers.length, phone ? 1 : 0, `${name}: the key stays identified at the hit line when the hold head leaves the cropped aperture`);
+    const cues = geometry.arcs.filter(arc => arc.stroke === MOTH_RHYTHM_RING.color);
     assert(cues.length >= 1 && cues.every(cue => Math.abs(cue.end - cue.start - Math.PI * 2) < 1e-9), `${name}: timing cues are complete shrinking circles`);
-    assert(geometry.glyphs.length >= 4 && geometry.glyphs.every(glyph => Number(glyph.font.match(/([\d.]+)px/)[1]) >= 16), `${name}: dense-note letters stay at least 16px`);
+    assert(geometry.glyphs.length >= 4 && geometry.glyphs.every(glyph => Number(glyph.font.match(/([\d.]+)px/)[1]) === 18), `${name}: every note letter uses the same 18px font`);
     assert(geometry.glyphs.every(glyph => {
       const head = heads.reduce((closest, head) => Math.abs(head.x - glyph.x) < Math.abs(closest.x - glyph.x) ? head : closest);
       return glyph.inkRadius <= head.radius - head.lineWidth / 2;

@@ -97,6 +97,9 @@ export function patchWalkScenes(once, edit) {
   // Level 4: back to the spot where Bonita's game began.
   once('    this.level4DialogueIndex = 0;\n    this.state = "level4Dialogue";\n    this.pocketOpen = false;\n    if (this.chest) this.chest.menuOpen = false;\n    if (this.sewerPlayer) {\n      this.sewerPlayer.vx = 0;\n      this.sewerPlayer.facing = 1;\n    }\n',
     '    this.level4DialogueIndex = 0;\n    this.state = "level4Dialogue";\n    this.pocketOpen = false;\n    if (this.chest) this.chest.menuOpen = false;\n    if (this.sewerPlayer) {\n      this.sewerPlayer.vx = 0;\n      this.sewerPlayer.facing = 1;\n      this.level4FightX = this.sewerPlayer.x;\n    }\n');
+  // A room preview can normalize its own loadout without editing the save.
+  once('      if (this.progress) {\n        this.progress.latestCollectedSongs = this.normalizeCollectedSongs(this.collectedSongs);\n        this.saveProgress();',
+    '      if (this.progress && !this.freePlay) {\n        this.progress.latestCollectedSongs = this.normalizeCollectedSongs(this.collectedSongs);\n        this.saveProgress();');
   // Level 4's basement chest.
   once('    if (this.level4Rail === "lower" && this.chest?.revealed) {\n      drawables.push({\n        y: stage.hiddenChest?.y ?? 668,\n        draw: () => this.drawLevel4HiddenChest()\n      });\n    }\n',
     '    if (this.level4Rail === "lower" && this.chest?.revealed) {\n      drawables.push({\n        y: stage.hiddenChest?.y ?? 668,\n        draw: () => this.drawLevel4HiddenChest()\n      });\n    }\n    if (this.level4Rail === "lower" && this.hasLevel4MemeChest()) {\n      drawables.push({ y: (side.floorY ?? 650) - 1, draw: () => this.drawLevel4MemeChest() });\n    }\n');

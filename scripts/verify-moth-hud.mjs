@@ -4,9 +4,10 @@
 //     2026-10-22), combo and score in a story fight, level 7's hype bar in the misses' place, his staff ID strip in a
 //     practice run; GANGAN's feedback just above that row, off the track,
 //     from the row's left edge and as wide as its line;
-//  2. the phone's track is centred on its hit line and its row of notes, and
+//  2. the phone's hit line leaves room for incoming cues and centers the note row, and
 //     the notes are in the pad's colours (every letter cream), where they are
-//     drawn, with at least 1.4 s of preview even for the densest phrases;
+//     drawn, with the complete white circle visible from the start of its
+//     820ms cue even for the densest phrases;
 //  3. on a computer Dr. Beauty's box stays beside the track, his misses in it.
 // Each frame is drawn on demand (render, then renderTallScreen) and read in
 // the same step, so what is read is what that frame drew.
@@ -15,6 +16,7 @@ import assert from 'node:assert/strict';
 import {chromium} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
 import {MOTH_NOTE_COLOURS} from './moth-fight-hud.mjs';
+import {MOTH_PORTRAIT_RAIL_HIT_OFFSET, MOTH_RHYTHM_RING} from './moth-chart-playability.mjs';
 
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const browser = await chromium.launch({executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--no-sandbox']});
@@ -129,18 +131,19 @@ for (const run of [
     if (run.row === 'misses') assert(shot.tallies.some(t => t.tall && t.misses === 7 && t.tally === '#ef3f78') && shot.pink > 30, `${run.name}: the misses in the row (${shot.pink} px) ${JSON.stringify(shot.tallies)}`);
     else assert(shot.hype > 100 && shot.pink === 0 && !shot.tallies.some(t => t.tall), `${run.name}: the hype bar in the misses' place (${shot.hype} px)`);
   }
-  assert(Math.abs(shot.hitLine) < 1 && Math.abs(shot.rail) < 1, `${run.name}: the track centred on its hit line and notes ${shot.hitLine} ${shot.rail}`);
+  assert(Math.abs(shot.hitLine - (MOTH_PORTRAIT_RAIL_HIT_OFFSET - 352)) < 1 && Math.abs(shot.rail) < 1,
+    `${run.name}: the portrait crop gives incoming rings the intended room ${shot.hitLine} ${shot.rail}`);
   // Upcoming notes in the pad's colours, where the frame drew them.
   const visible = shot.noteSamples.filter(note => note.ahead > 0.1 && note.tallX < 700);
   if (run.row !== 'hype') {
-    assert(visible.length >= 2, `${run.name}: notes on the track ${JSON.stringify(shot.noteSamples)}`);
+    assert(visible.length >= 1, `${run.name}: notes on the track ${JSON.stringify(shot.noteSamples)}`);
     for (const note of visible) {
       assert(near(note.colour, rgb(MOTH_NOTE_COLOURS[note.button]), 40), `${run.name}: ${note.button} note in its colour ${JSON.stringify(note)}`);
       // T's stem is at the note's centre: cream, like the other letters (owner, 2026-10-18).
       if (note.button === 'T') assert(note.creamStemPixels >= 2, `${run.name}: T's letter is cream ${JSON.stringify(note)}`);
     }
-    assert(shot.previewSeconds >= 1.4, `${run.name}: at least 1.4 seconds of readable preview`);
-    const far = shot.noteSamples.find(note => note.ahead > 1.2 && note.ahead < Math.min(1.75, shot.previewSeconds - .1));
+    assert(shot.previewSeconds >= 0.9, `${run.name}: at least 900ms until an incoming head reaches the hit line`);
+    const far = shot.noteSamples.find(note => note.ahead > MOTH_RHYTHM_RING.lead - .1 && note.ahead < shot.previewSeconds - .12);
     if (far) assert(far.tallX < 712 && near(far.colour, rgb(MOTH_NOTE_COLOURS[far.button]), 40), `${run.name}: a note ${far.ahead.toFixed(2)} s ahead is on the track ${JSON.stringify(far)}`);
   }
   // GANGAN's feedback (a missed note brings it) above the row, clear of the track.
@@ -148,7 +151,7 @@ for (const run of [
   const chips = await page.evaluate(() => window.__tallChips);
   assert(chips.every(chip => chip.x === 8 && chip.y >= 400 && chip.y + chip.h <= 516 && chip.w >= 260 && chip.w <= 704), `${run.name}: feedback above the row, from its left edge ${JSON.stringify(chips.slice(0, 2))}`);
   assert.deepEqual(errors, []);
-  console.log(`phone ${run.name} PASS`, JSON.stringify({row: shot.rowLeft, pink: shot.pink, hype: shot.hype, notes: visible.length, aheadOver1s: visible.filter(n => n.ahead > 1.2).length, chipWidths: [...new Set(chips.map(chip => Math.round(chip.w)))]}));
+  console.log(`phone ${run.name} PASS`, JSON.stringify({row: shot.rowLeft, pink: shot.pink, hype: shot.hype, notes: visible.length, previewSeconds: shot.previewSeconds, chipWidths: [...new Set(chips.map(chip => Math.round(chip.w)))]}));
   await context.close();
 }
 

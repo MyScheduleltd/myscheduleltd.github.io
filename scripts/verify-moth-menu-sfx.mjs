@@ -101,7 +101,7 @@ await expectSounds('pause menu ↓', key('ArrowDown'), ['tick']);
 await expectSounds('pause menu ↑', key('ArrowUp'), ['tick']);
 await expectSounds('resume (H)', key('KeyH'), ['click']);
 assert.equal(await page.evaluate(() => bobbyGame.state), 'playing');
-assert.match(await page.evaluate(() => bobbyGame.getSfxTestLabel()), /· 27\/27/, '音效測試 counts the fights\' sounds');
+assert.match(await page.evaluate(() => bobbyGame.getSfxTestLabel()), /· 15\/15/, '音效測試 counts the fights\' sounds');
 assert.deepEqual(errors, []);
 console.log(results.join('\n'));
 console.log('PASS menu sounds:', results.length, 'inputs');

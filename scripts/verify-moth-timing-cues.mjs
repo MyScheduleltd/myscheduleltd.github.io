@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
+import {MOTH_RHYTHM_HEAD, MOTH_RHYTHM_RING} from './moth-chart-playability.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const config = JSON.parse(await fs.readFile(path.join(root, 'docs/moth/data/level1.json'), 'utf8'));
@@ -84,9 +85,11 @@ try {
           });
           const geometry = g.getRhythmRailGeometry();
           let dense = 0, sparse = 0;
-          geometry.heads.forEach((head, i) => {
-            if (head.maxRingRadius < geometry.heads[dense].maxRingRadius) dense = i;
-            if (head.maxRingRadius > geometry.heads[sparse].maxRingRadius) sparse = i;
+          const closest = i => Math.min(r.notes[i].time - (r.notes[i - 1]?.time ?? -Infinity),
+            (r.notes[i + 1]?.time ?? Infinity) - r.notes[i].time);
+          r.notes.forEach((_, i) => {
+            if (closest(i) < closest(dense)) dense = i;
+            if (closest(i) > closest(sparse)) sparse = i;
           });
           const hold = r.notes.findIndex(note => note.holdEnd);
           const indexes = [...new Set([0, r.notes.length - 1, dense, sparse, hold].filter(i => i >= 0))];
@@ -99,8 +102,8 @@ try {
               g.songTime = r.frozenSongTime = clock;
               const painted = [];
               target.arc = function (x, y, radius, start, end) {
-                if (Math.abs(y - 616) < .001 && (this.strokeStyle === '#ffffff' || this.strokeStyle === '#ff315a'))
-                  painted.push({x, radius, start, end, stroke: this.strokeStyle});
+                if (Math.abs(y - 616) < .001 && ['#ffffff', '#16171b', '#493423'].includes(this.strokeStyle))
+                  painted.push({x, radius, start, end, stroke: this.strokeStyle, lineWidth: this.lineWidth});
                 return arc.apply(this, arguments);
               };
               g.render(); g.renderTallScreen();
@@ -123,26 +126,36 @@ try {
       const previous = new Map();
       for (const sample of result.samples) {
         const label = `${viewportName}/${result.name}/${result.mode}/${sample.index}/${sample.remaining}`;
-        assert(sample.actual && sample.expected && sample.painted.length === 1, `${label}: actual renderer paints this note's cue exactly once`);
-        assert(sample.actual.maxRadius - sample.actual.targetRadius >= 5 - 1e-6, `${label}: real timing circle has at least 5px of visible shrinking travel`);
+        const [head] = sample.painted.filter(arc => arc.stroke === '#16171b');
+        const rings = sample.painted.filter(arc => arc.stroke === MOTH_RHYTHM_RING.color);
+        const outlines = sample.painted.filter(arc => arc.stroke === MOTH_RHYTHM_RING.outlineColor);
+        assert(sample.actual && sample.expected && rings.length === 1, `${label}: actual renderer paints this note's cue exactly once`);
+        assert(head?.radius === MOTH_RHYTHM_HEAD.radius && head.lineWidth === MOTH_RHYTHM_HEAD.lineWidth, `${label}: fixed head radius and outline for every song, mode and hold type`);
+        assert(sample.actual.maxRadius === MOTH_RHYTHM_RING.radius && sample.actual.lead === MOTH_RHYTHM_RING.lead, `${label}: same timing ring start and lead for dense and sparse phrases`);
         assert(Math.abs(sample.actual.radius - sample.expected.radius) < 1e-9, `${label}: telemetry matches timing calculation`);
-        assert(Math.abs(sample.painted[0].radius - sample.actual.radius) < 1e-9, `${label}: real canvas circle matches telemetry`);
-        assert(Math.abs(sample.painted[0].end - sample.painted[0].start - 2 * Math.PI) < 1e-9, `${label}: white timing cue remains a complete circle`);
-        assert.equal(sample.painted[0].stroke, '#ffffff', `${label}: white cue is visible against the rail through its attack`);
+        assert(Math.abs(rings[0].radius - sample.actual.radius) < 1e-9, `${label}: real canvas circle matches telemetry`);
+        assert(Math.abs(rings[0].end - rings[0].start - 2 * Math.PI) < 1e-9, `${label}: white timing cue remains a complete circle`);
+        assert.equal(rings[0].lineWidth, MOTH_RHYTHM_RING.lineWidth, `${label}: white cue thickness is consistent through the attack`);
         if (previous.has(sample.index)) assert(sample.actual.radius <= previous.get(sample.index) + 1e-9, `${label}: real painted radius shrinks monotonically`);
         previous.set(sample.index, sample.actual.radius);
-        if (sample.remaining === 0) assert.equal(sample.actual.radius, sample.actual.targetRadius, `${label}: actual circle reaches the head at exact target time`);
+        const ringInside = rings[0].radius - rings[0].lineWidth / 2;
+        assert.equal(outlines.length, 1, `${label}: white cue has one dark outline`);
+        assert.equal(outlines[0].radius - outlines[0].lineWidth / 2, ringInside, `${label}: outline only adds contrast outward`);
+        assert.equal(outlines[0].radius + outlines[0].lineWidth / 2, rings[0].radius + rings[0].lineWidth / 2 + MOTH_RHYTHM_RING.outlineWidth, `${label}: full contrast border is painted`);
+        const headOutside = head.radius + head.lineWidth / 2;
+        if (sample.remaining > 0) assert(ringInside > headOutside, `${label}: visible ring does not touch early`);
+        if (sample.remaining === 0) assert.equal(ringInside, headOutside, `${label}: the two painted edges touch at the exact target time`);
       }
     }
     const clockDraws = await page.evaluate(entry => {
       const g = bobbyGame, saved = Object.fromEntries(['getRhythmSpecFor', 'getDifficulty',
-        'getActiveLevel1OfficeRhythmAudio', 'getRhythmAudioStart', 'getAudioOffsetSeconds', 'getRhythmOutputDelay'].map(key => [key, g[key]]));
+        'getActiveLevel1OfficeRhythmAudio', 'getRhythmAudioStart', 'getAudioOffsetSeconds', 'getRhythmOutputDelay', 'playRhythmHitSfx'].map(key => [key, g[key]]));
       try {
         g.getRhythmSpecFor = () => entry.spec; g.getDifficulty = () => ({hardPhrases: false});
         const r = g.createLevel1OfficeRhythmState('office');
         r.skipAudio = false; r.tutorial.mode = 'done'; r.phaseIntroTimer = 0;
         g.level1OfficeRhythm = r; g.currentStageId = 'level1-stage1';
-        const note = r.notes[3], track = {currentTime: 20 + .025 + note.time - .1, paused: false};
+        const note = r.notes[3], track = {currentTime: 20 + .025 + note.time - .1, paused: false, readyState: 4};
         g.getActiveLevel1OfficeRhythmAudio = () => track;
         g.getRhythmAudioStart = () => 20; g.getAudioOffsetSeconds = () => .025; g.getRhythmOutputDelay = () => 0;
         g.songTime = 0; // Deliberately stale: drawing must sample the media clock.
@@ -153,7 +166,11 @@ try {
         const before = draw(), stalled = draw();
         g.songTime = before.clock; track.paused = true; const paused = draw();
         track.paused = false; track.currentTime = 20 + .025 + note.time; const resumedAtTarget = draw();
-        return {before, stalled, paused, resumedAtTarget, noteTime: note.time, speed: g.getRhythmRailGeometry().pixelsPerSecond};
+        g.playRhythmHitSfx = () => true;
+        g.handleLevel1OfficeRhythmPress('Key' + note.button);
+        const afterHit = draw();
+        return {before, stalled, paused, resumedAtTarget, noteTime: note.time, judged: note.status,
+          afterHitHasCue: Boolean(afterHit.cue), speed: g.getRhythmRailGeometry().pixelsPerSecond};
       } finally { Object.assign(g, saved); }
     }, cases[0]);
     assert(Math.abs(clockDraws.before.clock - (clockDraws.noteTime - .1)) < 1e-9, `${viewportName}: actual renderer reads current media time with the cut start and manual offset`);
@@ -161,6 +178,7 @@ try {
     assert.deepEqual(clockDraws.paused, clockDraws.before, `${viewportName}: the actual rendered circle holds on the saved pause clock`);
     assert(Math.abs(clockDraws.resumedAtTarget.cue.radius - clockDraws.resumedAtTarget.cue.targetRadius) < 1e-9
       && Math.abs(clockDraws.resumedAtTarget.cue.x - 760) < 1e-9, `${viewportName}: after resume, the real circle converges at the same audible target and hit line`);
+    assert(clockDraws.judged === 'perfect' && !clockDraws.afterHitHasCue, `${viewportName}: the closed circle and real input judge agree on PERFECT and a hit stops drawing the cue`);
     // Load actual river/concert arenas for before/at/after screenshots, so
     // legibility is checked in the real backgrounds and portrait layout.
     for (const density of ['sparse', 'dense']) {
@@ -182,11 +200,12 @@ try {
           r.skipAudio = true; r.tutorial.mode = 'done'; r.phaseIntroTimer = 0;
           r.judgment = r.trackPulse = null;
           r.notes.forEach(note => {note.status = 'pending';});
-          const geometry = g.getRhythmRailGeometry();
           let index = 0;
-          geometry.heads.forEach((head, i) => {
-            if ((density === 'sparse' && head.maxRingRadius > geometry.heads[index].maxRingRadius)
-              || (density === 'dense' && head.maxRingRadius < geometry.heads[index].maxRingRadius)) index = i;
+          const closest = i => Math.min(r.notes[i].time - (r.notes[i - 1]?.time ?? -Infinity),
+            (r.notes[i + 1]?.time ?? Infinity) - r.notes[i].time);
+          r.notes.forEach((_, i) => {
+            if ((density === 'sparse' && closest(i) > closest(index))
+              || (density === 'dense' && closest(i) < closest(index))) index = i;
           });
           const note = r.notes[index], cue = g.getRhythmTimingCue(note, note.time);
           g.songTime = r.frozenSongTime = note.time - remaining * cue.lead;
