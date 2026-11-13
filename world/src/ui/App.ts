@@ -592,6 +592,14 @@ export class App {
   private chatStreamSignature = '';
   /** The service's id for a line this visitor sent, against the pending id its card was shown under. */
   private readonly chatStreamAliases = new Map<string, string>();
+  /**
+   * New chat on a phone (the owner, 2026-11-14), where the chat log is folded
+   * away: from entry on, a line from anyone else is unread until its own tab
+   * has been on screen. `chatUnreadSince` is unset until the visitor is in.
+   */
+  private readonly chatRead = new Set<string>();
+  private chatUnreadSince?: number;
+  private chatUnreadShown = 0;
   private npcTimer?: number;
   private readonly festivalClient: FestivalClient;
   /** Anonymous visit tallies for STAFF (the owner, 2026-11-09). */
@@ -1478,6 +1486,7 @@ export class App {
     this.entryRecovery.finish();
     this.recordBlackBox('entry-complete');
     this.visits?.entered();
+    this.startChatUnread();
   }
 
   private cancelGateEntry(): void {
@@ -1978,6 +1987,7 @@ export class App {
         <div class="world-quick-actions" role="group" aria-label="${zh ? '聊天與聲音' : 'Chat and sound'}">
           <button class="audio-resume" type="button" data-audio-resume hidden>${zh ? '開啟聲音' : 'ENABLE SOUND'}</button>
           <button class="world-chat-shortcut" type="button" data-world-chat aria-controls="panel">${zh ? '聊天' : 'CHAT'}</button>
+          <span class="world-chat-unread" data-chat-unread hidden aria-hidden="true"></span>
         </div>
         <section class="vr-entry" data-vr-entry hidden aria-live="polite">
           <p class="eyebrow">${phoneVrPreview ? 'PHONE MOTION · VR PREVIEW' : vrPreview ? 'DESKTOP SIMULATION · WEBXR' : 'META QUEST · WEBXR'}</p>
@@ -2897,6 +2907,10 @@ export class App {
     });
     this.root.querySelector<HTMLButtonElement>('[data-world-chat]')?.addEventListener('click', event => {
       event.stopPropagation();
+      // Where the badge shows (a phone), open on the tab the newest unread
+      // line is in (the owner, 2026-11-14). A desktop opens where it was.
+      const newest = this.chatBadgeShown() ? this.unreadChat().at(-1) : undefined;
+      if (newest) this.chatChannel = newest.channel;
       this.openPanel('chat');
       this.root.querySelector<HTMLInputElement>('#chat-message')?.focus({ preventScroll: true });
     });
@@ -8038,6 +8052,7 @@ export class App {
       void this.submitChatMessage(input, channel);
     });
     this.syncChatSendingControls();
+    this.syncChatUnread();
   }
 
   private syncChatSendingControls(): void {
@@ -8150,6 +8165,78 @@ export class App {
     const wasAtBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
     feed.innerHTML = this.chatFeedContent();
     if (wasAtBottom) feed.scrollTop = feed.scrollHeight;
+    this.syncChatUnread();
+  }
+
+  /** Everything in the chat now has been seen; only what comes after can be new. */
+  private startChatUnread(): void {
+    this.chatUnreadSince = Date.now();
+    for (const message of this.chatMessages) this.chatRead.add(message.id);
+    this.chatUnreadShown = 0;
+    this.syncChatUnread();
+  }
+
+  /** A line this visitor sent, before or after the service has echoed it. */
+  private ownChatLine(message: ChatMessage): boolean {
+    if (message.npc) return false;
+    if (message.id.startsWith('pending-')) return true;
+    return message.authorId ? message.authorId === this.networkState?.selfId : message.author === this.currentId;
+  }
+
+  /**
+   * Lines from everyone else that came after entry and have not been on screen
+   * in their tab, oldest first: other visitors, and NPCs answering this
+   * visitor. The offline stand-in chatter is addressed to nobody, so it is not
+   * news. The service stamps its lines with its own clock.
+   */
+  private unreadChat(): ChatMessage[] {
+    const since = this.chatUnreadSince;
+    if (since === undefined) return [];
+    const at = (message: ChatMessage) => message.npc ? message.timestamp : message.timestamp - this.serverClockOffset;
+    return this.chatMessages
+      .filter(message => !this.chatRead.has(message.id) && !this.ownChatLine(message)
+        && !message.id.startsWith('ambient-') && at(message) >= since - 5_000)
+      .sort((first, second) => at(first) - at(second));
+  }
+
+  /** The badge is drawn only on a phone layout (style.css). */
+  private chatBadgeShown(): boolean {
+    const badge = this.root.querySelector<HTMLElement>('[data-chat-unread]');
+    return Boolean(badge && !badge.hidden && badge.getClientRects().length);
+  }
+
+  /** The count on the 聊天 button, and a mark on each other tab with news. */
+  private syncChatUnread(): void {
+    const panel = this.root.querySelector<HTMLElement>('#panel');
+    const open = this.activePanel === 'chat' && Boolean(panel && !panel.hidden && panel.querySelector('.chat-feed'));
+    if (open) for (const message of this.chatMessages) if (message.channel === this.chatChannel) this.chatRead.add(message.id);
+    const unread = this.unreadChat(), count = unread.length;
+    const badge = this.root.querySelector<HTMLElement>('[data-chat-unread]');
+    if (badge) {
+      const label = count > 9 ? '9+' : String(count);
+      if (badge.textContent !== label) badge.textContent = label;
+      badge.hidden = count === 0;
+      // A short pop when the count grows, so a new line is noticed.
+      if (count > this.chatUnreadShown) {
+        badge.classList.remove('is-new'); void badge.offsetWidth; badge.classList.add('is-new');
+      }
+    }
+    const button = this.root.querySelector<HTMLButtonElement>('[data-world-chat]');
+    if (button) {
+      const zh = this.language === 'zh-TW';
+      const name = zh ? '聊天' : 'Chat';
+      // Only where the badge is drawn: a desktop's chat log is on screen.
+      const label = count && this.chatBadgeShown() ? (zh ? `${name}，${count} 則新訊息` : `${name}, ${count} new message${count === 1 ? '' : 's'}`) : '';
+      if (label) button.setAttribute('aria-label', label); else button.removeAttribute('aria-label');
+    }
+    if (open && panel) {
+      const waiting = new Set(unread.map(message => message.channel));
+      panel.querySelectorAll<HTMLButtonElement>('[data-chat-channel]').forEach(tab => {
+        if (waiting.has(tab.dataset.chatChannel as ChatChannel)) tab.dataset.unread = 'true';
+        else delete tab.dataset.unread;
+      });
+    }
+    this.chatUnreadShown = count;
   }
 
   private chatPanelContent(): string {
@@ -8719,6 +8806,8 @@ export class App {
   }
 
   private renderChatStream(): void {
+    // Every change to the chat passes through here, so the badge follows it.
+    this.syncChatUnread();
     const stream = this.root.querySelector<HTMLElement>('#chat-stream');
     if (!stream) return;
     const messages = [...this.chatMessages]
