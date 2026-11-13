@@ -57,6 +57,14 @@ const STAY_LABELS: Record<string, [string, string]> = {
   '15-30': ['15–30 分', '15–30 MIN'], '30+': ['30 分以上', '30+ MIN'],
 };
 
+/**
+ * A browser is flagged when fewer than six in ten who started entering got in
+ * (載入率), but only once it has had enough attempts to mean anything: one
+ * failure in two is not a pattern (the owner, 2026-11-13).
+ */
+export const LOAD_RATE_FLAG = 0.6;
+export const LOAD_RATE_MIN_STARTS = 5;
+
 const sum = (days: VisitDaySummary[], read: (day: VisitDaySummary) => number) => days.reduce((total, day) => total + (read(day) || 0), 0);
 const percent = (part: number, whole: number) => (whole ? `${Math.round((part / whole) * 100)}%` : '—');
 
@@ -108,6 +116,7 @@ export function visitStaffContent(summary: VisitSummary | undefined, zh: boolean
   const totals = visitTotals(days);
   const span = days.length;
   const card = (label: string, value: string, note = '') => `<div class="staff-visits__card"><span>${label}</span><strong>${value}</strong>${note ? `<small>${note}</small>` : ''}</div>`;
+  const flagged: string[] = [];
   const browserRows = BROWSER_ROWS.map(([id, zhLabel, enLabel]) => {
     const tally = days.reduce<VisitBrowserTally>((total, day) => {
       const each = browserTally(day, id);
@@ -117,9 +126,20 @@ export function visitStaffContent(summary: VisitSummary | undefined, zh: boolean
       };
     }, { opened: 0, started: 0, entered: 0, leftLoading: 0, crashed: 0 });
     if (!tally.opened && !tally.entered) return '';
-    const failing = tally.started && tally.entered / tally.started < .6;
-    return `<tr${failing ? ' class="is-warn"' : ''}><th scope="row">${t(zhLabel, enLabel)}</th><td>${tally.opened}</td><td>${tally.started}</td><td>${tally.entered}</td><td>${percent(tally.entered, tally.started)}</td><td>${tally.leftLoading}</td><td>${tally.crashed}</td></tr>`;
+    const low = tally.started > 0 && tally.entered / tally.started < LOAD_RATE_FLAG;
+    const failing = low && tally.started >= LOAD_RATE_MIN_STARTS;
+    if (failing) flagged.push(t(zhLabel, enLabel));
+    // Said in words as well as red: the section titles are red too. A low rate
+    // from too few attempts says so instead of being flagged.
+    const mark = failing ? ` <span class="staff-visits__flag">${t('偏低', 'LOW')}</span>`
+      : low ? ` <span class="staff-visits__few">${t('樣本少', 'TOO FEW')}</span>` : '';
+    return `<tr${failing ? ' class="is-warn"' : ''}><th scope="row">${t(zhLabel, enLabel)}</th><td>${tally.opened}</td><td>${tally.started}</td><td>${tally.entered}</td><td>${percent(tally.entered, tally.started)}${mark}</td><td>${tally.leftLoading}</td><td>${tally.crashed}</td></tr>`;
   }).join('');
+  // Only when a browser is actually flagged, naming it: an explanation shown
+  // all the time read as a status (the owner, 2026-11-13).
+  const loadRateAlert = flagged.length
+    ? `<p class="staff-note staff-note--warn" role="status">${t(`${flagged.join('、')}：載入率不到六成。`, `${flagged.join(', ')}: load rate under 60%.`)}</p>`
+    : '';
   const sourceTotals = Object.keys(SOURCE_LABELS).map((id) => [id, sum(days, (day) => day.sources?.[id] ?? 0)] as const).filter(([, count]) => count);
   const deviceTotals = (['phone', 'tablet', 'desktop'] as const).map((id) => [id, sum(days, (day) => day.devices?.[id] ?? 0)] as const);
   const stayTotals = Object.keys(STAY_LABELS).map((id) => [id, sum(days, (day) => day.stay?.[id] ?? 0)] as const);
@@ -142,10 +162,10 @@ export function visitStaffContent(summary: VisitSummary | undefined, zh: boolean
       ${card(t('載入中離開', 'LEFT WHILE LOADING'), String(totals.leftLoading), t(`${totals.crashes} 次上一次造訪當機`, `${totals.crashes} previous visits crashed`))}
       ${card(t('平均停留', 'AVERAGE STAY'), totals.averageMinutes ? t(`${totals.averageMinutes} 分`, `${totals.averageMinutes} MIN`) : totals.stays ? t('不到 0.1 分', '< 0.1 MIN') : '—', t(`${totals.stays} 次離開時有紀錄`, `${totals.stays} recorded exits`))}
     </div>
-    <h4 class="staff-subheading">${t('各瀏覽器', 'BY BROWSER')}</h4>
-    <p class="staff-note">${t('紅色：按下進入的人裡，不到六成真的進得去。', 'Red: fewer than six in ten who pressed enter got in.')}</p>
-    <div class="staff-visits__table" tabindex="0" role="region" aria-label="${t('各瀏覽器', 'By browser')}"><table>
-      <thead><tr><th scope="col"></th><th scope="col">${t('開啟', 'OPENED')}</th><th scope="col">${t('按進入', 'ENTER')}</th><th scope="col">${t('進入', 'IN')}</th><th scope="col">${t('成功率', 'GOT IN')}</th><th scope="col">${t('載入中離開', 'LEFT LOADING')}</th><th scope="col">${t('當機', 'CRASHED')}</th></tr></thead>
+    <h4 class="staff-subheading">${t('載入率', 'LOAD RATE')}</h4>
+    ${loadRateAlert}
+    <div class="staff-visits__table" tabindex="0" role="region" aria-label="${t('載入率', 'Load rate')}"><table>
+      <thead><tr><th scope="col"></th><th scope="col">${t('開啟', 'OPENED')}</th><th scope="col">${t('按進入', 'ENTER')}</th><th scope="col">${t('進入', 'IN')}</th><th scope="col">${t('載入率', 'LOAD RATE')}</th><th scope="col">${t('載入中離開', 'LEFT LOADING')}</th><th scope="col">${t('當機', 'CRASHED')}</th></tr></thead>
       <tbody>${browserRows || `<tr><td colspan="7">${t('尚無資料。', 'Nothing yet.')}</td></tr>`}</tbody>
     </table></div>
     <div class="staff-visits__columns">

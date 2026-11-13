@@ -114,3 +114,38 @@ test('leaving before the world appears says how far loading got, or that ENTER w
   never.leave(0, 0);
   assert.deepEqual(sent.filter((report) => report.e === 'leave').map(({ p, g }) => ({ p, g })), [{ p: 'loading', g: 47 }, { p: 'gate', g: undefined }]);
 });
+
+// STAFF 訪客統計's browser table (the owner, 2026-11-13): titled 載入率; a
+// browser is flagged in words as well as red, only from five attempts; the
+// alert under the title appears only when something is flagged, naming it.
+const staffBundle = await build({ entryPoints: ['src/ui/VisitStaff.ts'], bundle: true, write: false, format: 'esm', platform: 'node' });
+const { visitStaffContent } = await import('data:text/javascript;base64,' + Buffer.from(staffBundle.outputFiles[0].text).toString('base64'));
+const staffDay = browsers => ({
+  day: '2026-11-13', opened: 30, uniqueBrowsers: 20, returning: 0, started: 20, entered: 14, enteredUnique: 14, enteredReturning: 0,
+  averageLoadSeconds: 12, devices: {}, sources: {}, browsers, left: {}, leftLoadingAt: {}, crashes: 0, crashStages: {}, stay: {}, averageMinutes: 0, averageAreas: 0,
+});
+const tally = (opened, started, entered) => ({ opened, started, entered, leftLoading: started - entered, crashed: 0 });
+const panel = (browsers, zh = true) => visitStaffContent({ persistent: true, timeZone: 'Asia/Taipei', days: [staffDay(browsers)] }, zh, { loading: false, error: '' });
+const row = (html, label) => html.match(new RegExp(`<tr[^>]*><th scope="row">${label}</th>.*?</tr>`))?.[0] ?? '';
+
+test('the STAFF browser table flags a low load rate in words, names it, and waits for five attempts', () => {
+  const html = panel({ threads: tally(8, 5, 2), safari: tally(12, 9, 8), line: tally(3, 2, 1) });
+  assert.match(html, /<h4 class="staff-subheading">載入率<\/h4>/);
+  assert.doesNotMatch(html, /各瀏覽器|紅色：/, 'the old title and the always-on legend are gone');
+  assert.match(row(html, 'Threads 內建瀏覽器'), /class="is-warn".*40% <span class="staff-visits__flag">偏低<\/span>/);
+  assert.match(html, /role="status">Threads 內建瀏覽器：載入率不到六成。<\/p>/);
+  assert.doesNotMatch(row(html, 'Safari'), /is-warn|偏低|樣本少/, '89% with nine attempts is fine');
+  const line = row(html, 'LINE 內建瀏覽器');
+  assert.match(line, /50% <span class="staff-visits__few">樣本少<\/span>/);
+  assert.doesNotMatch(line, /is-warn|偏低/, 'two attempts are too few to flag');
+  assert.doesNotMatch(html, /LINE 內建瀏覽器：/, 'and too few are never named in the alert');
+});
+
+test('with every browser fine the STAFF browser table says nothing alarming', () => {
+  const html = panel({ safari: tally(12, 9, 8), chrome: tally(6, 5, 5), facebook: tally(4, 4, 4) });
+  assert.doesNotMatch(html, /載入率不到六成|is-warn|偏低/);
+  assert.doesNotMatch(row(html, 'Facebook 內建瀏覽器'), /樣本少/, 'a full rate from few attempts needs no note');
+  const english = panel({ threads: tally(8, 6, 1), instagram: tally(9, 7, 3) }, false);
+  assert.match(english, />LOAD RATE<\/h4>/);
+  assert.match(english, /role="status">INSTAGRAM APP, THREADS APP: load rate under 60%\.<\/p>/);
+});

@@ -583,6 +583,8 @@ input[type='color']::-moz-color-swatch { border: none; border-radius: 0; }
 .staff-visits th[scope="row"], .staff-visits thead th:first-child { text-align: left; }
 .staff-visits thead th { font-size: 11px; letter-spacing: .08em; opacity: .65; }
 .staff-visits tr.is-warn th, .staff-visits tr.is-warn td { color: var(--red, #a91c24); }
+.staff-visits__flag { margin-left: 4px; font-weight: 800; letter-spacing: .06em; }
+.staff-visits__few { margin-left: 4px; font-weight: 600; opacity: .5; }
 .staff-visits__columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 4px 18px; }
 .staff-visits__list { margin: 0 0 6px; padding: 0; list-style: none; }
 .staff-visits__list li { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px dashed rgba(17,17,19,.2); font: 700 13px var(--condensed); }
