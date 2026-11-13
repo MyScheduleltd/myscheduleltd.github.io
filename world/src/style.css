@@ -1406,7 +1406,9 @@ button:active { filter: brightness(.88); scale: .96; }
    written after the prompt, so it won every time and buried the one element on
    screen that is actually a button. Still under the panels, which are modal and
    should cover it. */
-.interaction-toast { position: fixed; z-index: 6; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 11px 15px; border: 1px solid rgba(255,255,255,.5); color: white; background: rgba(8,9,10,.82); font: 700 13px var(--condensed); letter-spacing: .04em; }
+/* Clear of the key tips along the bottom (the owner, 2026-11-13: prompts must
+   not overlap them): their line sits at 22px and is 14px tall. */
+.interaction-toast { position: fixed; z-index: 6; left: 50%; bottom: 50px; transform: translateX(-50%); padding: 11px 15px; border: 1px solid rgba(255,255,255,.5); color: white; background: rgba(8,9,10,.82); font: 700 13px var(--condensed); letter-spacing: .04em; }
 .interaction-toast.is-actionable { cursor: pointer; border-color: #e04750; }.interaction-toast:disabled { opacity: 1; }
 /* A prompt with something behind a hold fills as it is held, so the press is
    visibly on its way somewhere rather than seeming to do nothing. */

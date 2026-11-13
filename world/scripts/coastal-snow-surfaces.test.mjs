@@ -47,3 +47,23 @@ test('merged town details expose exact roofs, canopies and outdoor slabs through
  }
  result.geometry.dispose();snow.material.dispose();
 });
+
+// Snow on the PS1 street props (the owner, 2026-11-13): awnings keep what is
+// under them dry; beach umbrellas only catch snow on top, so the chairs and
+// mats under them collect snow and offer to wipe it.
+test('street-prop awnings shelter what is under them; beach umbrellas only catch snow', async () => {
+  const bundle = await build({ stdin: { contents: "export {Ps1StreetProps} from './src/world/Ps1StreetProps';export * as THREE from 'three';", resolveDir: process.cwd(), loader: 'ts' }, bundle: true, loader: { '.png': 'dataurl' }, platform: 'node', format: 'esm', write: false });
+  const { Ps1StreetProps, THREE: T } = await import('data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+  const calls = [];
+  const props = new Ps1StreetProps({ scene: new T.Scene(), solid: () => {}, clear: () => true, groundAt: () => 0, surfaceAt: () => 0,
+    snowSurface: (id, object, cover) => calls.push({ id, object, cover }) });
+  props.umbrella(0, 0, 'test-umbrella');
+  props.awning([10, 4, 0], [0, 1], 4, 1.6, .4);
+  props.finish();
+  const covers = calls.find(c => c.id === 'ps1-street-covers'), details = calls.find(c => c.id === 'ps1-street-details');
+  assert.equal(covers.cover, true); assert.equal(details.cover, false);
+  const spanX = object => new T.Box3().setFromBufferAttribute(object.geometry.getAttribute('position'));
+  const coverBox = spanX(covers.object), detailBox = spanX(details.object);
+  assert.ok(coverBox.min.x > 7, 'only the awning (at x 10) is a cover; the umbrella (at x 0) is not');
+  assert.ok(detailBox.min.x < 0 && detailBox.max.x > 0, 'the umbrella canopy still catches snow, as a detail');
+});
