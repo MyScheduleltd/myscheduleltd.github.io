@@ -1301,9 +1301,7 @@ function getTutorialRhythmDemoFrame(kind, elapsed) {
   const duration = hold ? 1.2 : 0.16;
   const time = Math.max(0, elapsed) % (approach + duration + 0.75) - approach;
   const pressed = time >= 0 && time < duration;
-  const action = time < 0 ? "wait" : hold
-    ? (time < 0.18 ? "press" : pressed ? "hold" : "release")
-    : "tap";
+  const action = time < 0 ? "wait" : hold ? (pressed ? "hold" : "release") : "tap";
   return { hold, approach, duration, time, pressed, action };
 }
 
@@ -1324,7 +1322,6 @@ function drawTutorialRhythmDemo(target, kind, rect, elapsed) {
   const prompts = {
     wait: ["WAIT", "等待"],
     tap: ["TAP", "輕按"],
-    press: ["PRESS", "按下"],
     hold: ["HOLD", "按住"],
     release: ["RELEASE", "放開"]
   };
