@@ -465,6 +465,15 @@ festival-offline-retries checkout; remove it before committing.
     small red mark. Desktop draws none and its button reads as before. Check:
     `chat-unread-check.mjs` (two visitors through the local service).
 
+50. One chat for the whole festival (2026-11-14; owner: delete 附近 / 影廳 /
+    全影展, share everything). The panel has no tabs and opens at the newest
+    line; desktop floating lines, the VR headset chat and STAFF's list lose
+    the channel tag. Every line is sent as FESTIVAL. The server now sends every
+    line to everyone (no 14 m / same-venue filter), still storing the channel a
+    page from before sends, so that page recognises its own echo. Needs a
+    Render deploy. The badge from note 49 now clears when the chat is opened.
+    Check: `chat-unread-check.mjs` (the writer stands across the island).
+
 ## Open
 
 - Building reshapes (walls not moved yet).

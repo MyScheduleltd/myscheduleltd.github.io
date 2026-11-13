@@ -14,7 +14,7 @@ const app = tree.statements.find(node => ts.isClassDeclaration(node) && node.nam
 const methods = ['bindChatPanel', 'syncChatSendingControls', 'submitChatMessage', 'reconcileChatMessages', 'chatPanelContent']
   .map(name => { const method = app.members.find(node => node.name?.getText(tree) === name); assert.ok(method, name); return method.getText(tree); }).join('\n');
 let now = 1000;
-const globals = { initialChat: [], performance: { now: () => now }, setButtonPressed(button, pressed) { button.pressed = pressed; } };
+const globals = { initialChat: [], CHAT_CHANNEL: 'FESTIVAL', performance: { now: () => now }, setButtonPressed(button, pressed) { button.pressed = pressed; } };
 runInNewContext(ts.transpileModule(`class ChatHarness { ${methods} }; globalThis.ChatHarness = ChatHarness;`, {
   compilerOptions: { target: ts.ScriptTarget.ES2022 },
 }).outputText, globals);
@@ -40,21 +40,20 @@ function panel(value = '') {
   const input = element({ value, readOnly: false, focusCount: 0, focus() { this.focusCount++; } });
   const button = element({ disabled: false });
   const form = element({ querySelector: selector => selector === '#chat-message' ? input : button });
-  const channels = ['NEARBY', 'VENUE', 'FESTIVAL'].map(channel => element({ dataset: { chatChannel: channel } }));
-  return { input, button, form, querySelector: selector => selector === '#chat-form' ? form : input, querySelectorAll: () => channels, channels };
+  return { input, button, form, querySelector: selector => selector === '#chat-form' ? form : input, querySelectorAll: () => [] };
 }
 function fixture() {
   const ui = new globals.ChatHarness(), calls = [], requests = [], alerts = [];
   let current = panel('hello');
   Object.assign(ui, {
-    activePanel: 'chat', chatChannel: 'FESTIVAL', chatMessages: [], pendingChat: [], chatStreamAliases: new Map(), chatDrafts: {}, chatSending: false, chatSequence: 0,
+    activePanel: 'chat', chatMessages: [], pendingChat: [], chatStreamAliases: new Map(), chatDraft: '', chatSending: false, chatSequence: 0,
     currentId: 'Visitor', networkState: { selfId: 'visitor-id', messages: [] }, language: 'zh-TW', connectionStatus: 'online',
     root: { querySelector: selector => selector === '#chat-form' ? current.form : selector === '#chat-message' ? current.input : null },
     festivalClient: { online: true, sendMessage(channel, text) { const request = deferred(); requests.push(request); calls.push({ channel, text }); return request.promise; } },
     addChatMessage(message) { this.chatMessages.push(message); }, renderChatStream() {}, refreshOpenChatFeed() {}, syncChatUnread() {},
     showWorldAlert(message) { alerts.push(message); }, completeQuest() {}, chatFeedContent: () => '',
     escapeAttribute: value => value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;'),
-    openPanel() { current = panel(this.chatDrafts[this.chatChannel] ?? ''); this.bindChatPanel(current); },
+    openPanel() { current = panel(this.chatDraft); this.bindChatPanel(current); },
   });
   ui.bindChatPanel(current);
   const state = messages => { ui.networkState.messages = messages; ui.reconcileChatMessages(messages); };
@@ -67,7 +66,7 @@ test('repeated submit/Enter/click while awaiting the service makes one POST and 
   const f = fixture(), { input, button, form } = f.current();
   assert.equal(form.fire('submit').defaultPrevented, true);
   form.fire('submit');
-  await f.ui.submitChatMessage(input, 'FESTIVAL');
+  await f.ui.submitChatMessage(input);
   assert.equal(f.calls.length, 1); assert.equal(f.ui.chatMessages.length, 1);
   assert.equal(input.readOnly, true); assert.equal(button.disabled, true);
   assert.equal(input.value, 'hello', 'keep the draft until acceptance');
@@ -76,22 +75,24 @@ test('repeated submit/Enter/click while awaiting the service makes one POST and 
   assert.equal(f.ui.chatSending, false);
 });
 
-test('channel and language redraws share the send lock, and a failed draft remains retryable', async () => {
+test('a redraw shares the send lock, and a failed draft remains retryable', async () => {
   const f = fixture(), original = f.current();
   original.input.value = '  中文 <"草稿">  ';
   original.form.fire('submit');
+  assert.deepEqual(f.calls[0], { channel: 'FESTIVAL', text: '中文 <"草稿">' }, 'one chat: every line is sent to everyone');
   f.ui.language = 'en';
   const markup = f.ui.chatPanelContent();
   assert.match(markup, /value="  中文 &lt;&quot;草稿&quot;>  "/); assert.match(markup, /readonly/); assert.match(markup, /type="submit" disabled/);
-  original.channels[0].fire('click');
-  const nearby = f.current(); nearby.input.value = 'a different channel'; nearby.input.fire('input'); nearby.form.fire('submit');
-  assert.equal(nearby.button.disabled, true); assert.equal(nearby.input.readOnly, true); assert.equal(f.calls.length, 1);
+  assert.doesNotMatch(markup, /data-chat-channel|chat-channels/, 'no 附近 / 影廳 / 全影展 tabs (the owner, 2026-11-14)');
+  assert.match(markup, /<label for="chat-message">MESSAGE<\/label>/);
+  f.ui.openPanel();
+  const redrawn = f.current(); redrawn.form.fire('submit');
+  assert.equal(redrawn.button.disabled, true); assert.equal(redrawn.input.readOnly, true); assert.equal(f.calls.length, 1);
   f.requests[0].resolve({ ok: false, message: 'Please try again' }); await flush();
   assert.equal(f.ui.pendingChat.length, 0); assert.equal(f.ui.chatMessages.length, 0); assert.equal(f.alerts[0], 'Please try again');
-  assert.equal(nearby.input.value, 'a different channel', 'failure does not overwrite a different channel draft');
-  assert.equal(nearby.input.readOnly, false); assert.equal(nearby.button.disabled, false);
-  nearby.channels[2].fire('click');
-  assert.equal(f.current().input.value, original.input.value, 'the original draft survives returning to its channel');
+  assert.equal(redrawn.input.readOnly, false); assert.equal(redrawn.button.disabled, false);
+  f.ui.openPanel();
+  assert.equal(f.current().input.value, original.input.value, 'the draft survives the failure and a redraw');
   f.current().form.fire('submit'); assert.equal(f.calls.length, 2);
   f.requests[1].resolve({ ok: true }); await flush();
   assert.equal(f.current().input.value, '');

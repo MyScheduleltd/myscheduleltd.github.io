@@ -26,7 +26,8 @@ const PAPER = '#f5efe2';
 const INK = '#111113';
 const RED = '#a91c24';
 const HINT = '#ed434d';
-const CHANNEL_TINTS:Record<string,string> = {NEARBY:'#f1c560',VENUE:'#ed434d',FESTIVAL:'#6ed08a'};
+/** One chat for the whole festival (the owner, 2026-11-14): one accent for every line. */
+const CHAT_ACCENT = '#e8e2d5';
 
 /** The town is built at two world units to the metre; a HUD is sized in metres. */
 const UNITS = 2;
@@ -809,9 +810,6 @@ export class XrHud {
     // that the view was crowded, and an unreadable card is not information.
     let bottom = height;
     for(const item of [...items].reverse()){
-      const channel = item.getAttribute('data-channel') ?? 'VENUE';
-      const tint = CHANNEL_TINTS[channel] ?? HINT;
-      const tag = item.querySelector('.chat-stream__channel')?.textContent?.trim() ?? '';
       const who = item.querySelector('strong')?.textContent?.trim() ?? '';
       const when = item.querySelector('time')?.textContent?.trim() ?? '';
       const body = item.querySelector('p')?.textContent?.trim() ?? '';
@@ -825,15 +823,12 @@ export class XrHud {
       gradient.addColorStop(1,'rgba(8,9,10,.62)');
       ctx.fillStyle = gradient;
       ctx.fillRect(0,y,width,cardHeight);
-      strokeBox(ctx,0,y,6,cardHeight,tint);
+      strokeBox(ctx,0,y,6,cardHeight,CHAT_ACCENT);
       ctx.textBaseline = 'top';
       ctx.font = `800 26px ${CONDENSED}`;
       ctx.letterSpacing = '2.6px';
-      ctx.fillStyle = tint;
-      ctx.fillText(tag.toUpperCase(),26,y + 16);
-      const tagWidth = ctx.measureText(tag.toUpperCase()).width;
       ctx.fillStyle = PAPER;
-      ctx.fillText(who.toUpperCase(),26 + tagWidth + 20,y + 16);
+      ctx.fillText(who.toUpperCase(),26,y + 16);
       ctx.fillStyle = 'rgba(255,255,255,.55)';
       ctx.textAlign = 'right';
       ctx.fillText(when,width - 22,y + 16);
