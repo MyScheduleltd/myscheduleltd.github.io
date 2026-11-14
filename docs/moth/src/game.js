@@ -427,7 +427,7 @@ const DIFFICULTY_KEY = "moth.public_difficulty_v1";
 // The step spacing is deliberately NOT shortened: at these tempos halving it
 // would put consecutive notes closer together than the miss window, which makes
 // a single press ambiguous between two notes rather than making the fight hard.
-const MOTH_RHYTHM_HEAD = {"radius":21,"lineWidth":5,"font":"900 18px 'Courier New', monospace"};
+const MOTH_RHYTHM_HEAD = {"radius":21,"lineWidth":5,"fontSize":23};
 const MOTH_RHYTHM_RING = {"radius":39,"lineWidth":4,"outlineWidth":2,"lead":0.82,"color":"#ffffff","outlineColor":"#493423"};
 function calculateRhythmRailGeometry(notes = []) {
   let minGap = Infinity;
@@ -476,7 +476,7 @@ function calculateRhythmTimingCue(note, renderTime, perfectWindow) {
 }
 
 function drawRhythmNoteHead(target, {x, y, button, missed, completed, held}, scale = 1) {
-  const {radius, lineWidth, font} = MOTH_RHYTHM_HEAD;
+  const {radius, lineWidth, fontSize} = MOTH_RHYTHM_HEAD;
   const active = completed || held;
   target.save();
   target.fillStyle = missed ? "#30343a" : active ? "#fff3a2" : MOTH_NOTE_COLOURS[button] || "#ef3f78";
@@ -494,17 +494,18 @@ function drawRhythmNoteHead(target, {x, y, button, missed, completed, held}, sca
   target.arc(x, y, (radius - 6) * scale, Math.PI * 1.13, Math.PI * 1.69);
   target.stroke();
   target.fillStyle = missed ? "#747982" : active ? "#16171b" : "#ffffff";
-  drawCentredGlyph(target, button, x, y, scale === 1 ? font : font.replace("18px", Math.round(18 * scale) + "px"));
+  const font = "900 " + Math.round(fontSize * scale) + "px system-ui, sans-serif";
+  drawCentredGlyph(target, button, x, y, font, !missed && !active ? 2 * scale : 0);
   target.restore();
 }
 
-function drawRhythmHoldTail(target, {x, endX, y, hitX, button, missed, held, completed}, scale = 1) {
+function drawRhythmHoldTail(target, {x, endX, y, hitX, button, missed, held}, scale = 1) {
   if (endX <= x) return;
   // The curved cap is inside the tail's true end, so the painted right edge
   // reaches the line precisely when the sustain finishes.
   const half = Math.min(11 * scale, (endX - x) / 2);
   const center = endX - half;
-  const railColor = missed ? "#30343a" : held || completed ? "#77745d" : MOTH_NOTE_COLOURS[button] || "#ef3f78";
+  const railColor = missed ? "#30343a" : MOTH_NOTE_COLOURS[button] || "#ef3f78";
   target.save();
   target.lineCap = "round";
   target.strokeStyle = "#16171b";
@@ -1105,7 +1106,7 @@ const PORTRAIT_FIGHT = {
   // (x 760) for incoming circles. The row (y 616) stays vertically centered
   // and is scaled up for legibility.
   stats: { x: 8, y: 520, w: 704, h: 46 },
-  track: { src: { x: 760 - 226 / 1.35, y: 616 - 98 / 1.35, w: 704 / 1.35, h: 196 / 1.35 }, dest: { x: 8, y: 572, w: 704, h: 196 } },
+  track: { src: { x: 760 - 226 / 1.2, y: 616 - 98 / 1.2, w: 704 / 1.2, h: 196 / 1.2 }, dest: { x: 8, y: 572, w: 704, h: 196 } },
   letterboxY: (776 - 405) / 2
 };
 // The tall dialogue layout: the scene above the box, cropped to its middle and
@@ -1434,7 +1435,7 @@ function drawTutorialRhythmDemo(target, kind, rect, elapsed) {
     target.globalAlpha *= fade;
     if (hold) {
       drawRhythmHoldTail(target, {
-        x: headX, endX: tailX, y: railY, hitX: cursorX, button, held, completed
+        x: headX, endX: tailX, y: railY, hitX: cursorX, button, held
       }, scale);
     }
     drawRhythmNoteHead(target, { x: headX, y: railY, button, held, completed }, scale);
@@ -2533,7 +2534,7 @@ const HOME_SONG_TRACK_NUMBERS = {
   "home-finale-ending": 12
 };
 // 設定: the device's own settings - timing offset and haptics.
-const MOTH_GAMEPAD_ACTIONS = [["M","KeyM","M / HEAVY","M／重攻擊",3],["O","KeyO","O / CONFIRM / INTERACT","O／確認／互動",1],["T","KeyT","T / BLOCK","T／格擋",0],["H","KeyH","H / BACK / LIGHT","H／返回／輕攻擊",2],["up","KeyW","UP","上",12],["down","KeyS","DOWN","下",13],["left","KeyA","LEFT","左",14],["right","KeyD","RIGHT","右",15],["space","Space","SPACE / JUMP","SPACE／跳躍",5],["pause","Escape","PAUSE","暫停",9],["pocket","KeyC","POCKET","口袋",8],["mount","KeyR","RIDE / DISMOUNT","上車／下車",4]];
+const MOTH_GAMEPAD_ACTIONS = [["M","KeyM","M / CYMBALS","M／鈸",3],["O","KeyO","O / SNARE / CONFIRM / INTERACT","O／小鼓／確認／互動",1],["T","KeyT","T / KICK DRUM","T／大鼓",0],["H","KeyH","H / OTHER PERCUSSION / BACK","H／其他打擊樂／返回",2],["up","KeyW","UP","上",12],["down","KeyS","DOWN","下",13],["left","KeyA","LEFT","左",14],["right","KeyD","RIGHT","右",15],["space","Space","SPACE / JUMP","SPACE／跳躍",5],["pause","Escape","PAUSE / RESUME","暫停／繼續",9]];
 const HOME_SETTINGS_MENU_ITEMS = [
   { id: "controller", label: "CONTROLLER" },
   { id: "calibrate", label: "TIMING" },
@@ -3724,7 +3725,7 @@ for (const level of this.config.secretLevels || []) {
     if (!this.progress) this.progress = this.createDefaultProgress();
     const random = () => Math.random().toString(36).slice(2, 10);
     const id = globalThis.crypto?.randomUUID?.() || ('run-' + Date.now().toString(36) + '-' + random() + random());
-    const run = this.progress.storyRun = { id, difficulty, chartVersion: "drums-groove-20261114a", scores: {}, startedAt: Date.now(), ticket: null };
+    const run = this.progress.storyRun = { id, difficulty, chartVersion: "drums-groove-20261114b", scores: {}, startedAt: Date.now(), ticket: null };
     this.startNewStory();
     this.registerStoryRun(run);
   }
@@ -3734,14 +3735,14 @@ for (const level of this.config.secretLevels || []) {
   // that never gets one cannot be posted.
   async registerStoryRun(run, attempt = 0) {
     clearTimeout(this.storyTicketTimer);
-    if (!run || run.ticket || run.legacy || run.chartVersion !== "drums-groove-20261114a" || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
+    if (!run || run.ticket || run.legacy || run.chartVersion !== "drums-groove-20261114b" || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', chartVersion: "drums-groove-20261114a", mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', chartVersion: "drums-groove-20261114b", mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
       const data = await response.json().catch(() => ({}));
-      if (response.status !== 201 || typeof data.run !== 'string' || data.chartVersion !== "drums-groove-20261114a") throw new Error(String(response.status));
+      if (response.status !== 201 || typeof data.run !== 'string' || data.chartVersion !== "drums-groove-20261114b") throw new Error(String(response.status));
       if (this.progress?.storyRun !== run || run.ticket) return;
       run.ticket = data.run;
       this.saveProgress();
@@ -3756,7 +3757,7 @@ for (const level of this.config.secretLevels || []) {
     const run = this.progress?.storyRun;
     const rhythm = this.level1OfficeRhythm;
     if (this.freePlay || !run || !rhythm || !["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"].includes(stageId)) return;
-    if (run.chartVersion !== "drums-groove-20261114a") run.legacy = true;
+    if (run.chartVersion !== "drums-groove-20261114b") run.legacy = true;
     if (this.difficultyId !== run.difficulty) run.mixed = true;
     run.scores[stageId] = Math.max(0, Math.round(rhythm.roundScore || 0));
   }
@@ -3765,7 +3766,7 @@ for (const level of this.config.secretLevels || []) {
     if (!run) return null;
     const fights = ["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"];
     const total = fights.reduce((sum, id) => sum + (run.scores?.[id] || 0), 0);
-    const blocked = run.chartVersion !== "drums-groove-20261114a" ? 'chart-version' : run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
+    const blocked = run.chartVersion !== "drums-groove-20261114b" ? 'chart-version' : run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
     const complete = !blocked && fights.every(id => Number.isFinite(run.scores?.[id]));
     return { run, total, complete, blocked, mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' };
   }
@@ -3847,10 +3848,10 @@ for (const level of this.config.secretLevels || []) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch(this.scoreboardApi() + '?mode=' + mode + '&chartVersion=' + encodeURIComponent("drums-groove-20261114a"), { cache: 'no-store', signal: controller.signal });
+      const response = await fetch(this.scoreboardApi() + '?mode=' + mode + '&chartVersion=' + encodeURIComponent("drums-groove-20261114b"), { cache: 'no-store', signal: controller.signal });
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
-      if (data.chartVersion !== "drums-groove-20261114a") throw new Error('chart-version');
+      if (data.chartVersion !== "drums-groove-20261114b") throw new Error('chart-version');
       if (this.scoreboard !== board) return;
       board.entries[mode] = Array.isArray(data.entries) ? data.entries : [];
       board.status[mode] = 'ready';
@@ -4028,9 +4029,9 @@ for (const level of this.config.secretLevels || []) {
     this.renderScoreboard();
     try {
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: result.mode, chartVersion: "drums-groove-20261114a", id, run: result.run.ticket, scores: result.run.scores }) });
+        body: JSON.stringify({ mode: result.mode, chartVersion: "drums-groove-20261114b", id, run: result.run.ticket, scores: result.run.scores }) });
       const data = await response.json().catch(() => ({}));
-      if (response.status === 201 && data.chartVersion !== "drums-groove-20261114a") throw new Error('chart-version');
+      if (response.status === 201 && data.chartVersion !== "drums-groove-20261114b") throw new Error('chart-version');
       if (Array.isArray(data.entries)) { board.entries[result.mode] = data.entries; board.status[result.mode] = 'ready'; }
       if (response.status === 201) {
         result.run.posted = { rank: data.rank, id, at: Date.now() };
@@ -5057,15 +5058,29 @@ for (const level of this.config.secretLevels || []) {
     const panel = document.createElement('section');
     panel.className = 'moth-controller-panel'; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true');
     panel.setAttribute('aria-labelledby', 'moth-controller-title');
-    // Scoped styles follow the game's cream/green home screen. The panel
-    // scrolls independently on small phones without covering the close button.
+    // Keep the entire menu in one scroll area inside the device safe area.
     if (!document.getElementById('moth-controller-style')) {
       const style = document.createElement('style'); style.id = 'moth-controller-style';
-      style.textContent = '.moth-controller-panel{position:fixed;inset:0;z-index:2147483000;background:rgba(4,9,7,.96);color:#efe3c4;overflow:auto;padding:20px max(14px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom));box-sizing:border-box;font:700 16px "Courier New","PingFang TC",monospace;text-align:left;touch-action:pan-y}.moth-controller-panel>div{max-width:760px;margin:auto}.moth-controller-panel h2{font-size:25px}.moth-controller-panel p{line-height:1.55;overflow-wrap:anywhere}.moth-controller-panel select,.moth-controller-panel button{font:inherit;min-height:44px;color:#efe3c4;background:#22372a;border:2px solid #b8aa87;border-radius:4px;padding:8px;cursor:pointer}.moth-controller-panel select{width:100%;margin:8px 0}.moth-controller-panel button:focus-visible,.moth-controller-panel select:focus-visible{outline:4px solid #f1c62d;outline-offset:2px}.moth-controller-panel button:disabled{opacity:.5;cursor:default}.moth-controller-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(130px,1fr);gap:8px;align-items:center;margin:9px 0}.moth-controller-row button{overflow-wrap:anywhere}.moth-controller-tools{display:flex;gap:12px;flex-wrap:wrap;position:sticky;bottom:0;background:#07110c;padding:12px 0}.moth-controller-message{color:#f1c62d;min-height:3.1em}';
+      style.textContent =
+        '.moth-controller-panel{position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;background:#0b1410;color:#efe3c4;overflow:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);font:700 16px "Courier New","PingFang TC",monospace;text-align:left}' +
+        '.moth-controller-scroll{min-height:0;overflow:auto;overscroll-behavior:contain;touch-action:pan-y;padding:18px 14px 24px}' +
+        '.moth-controller-scroll>div{max-width:760px;margin:auto}' +
+        '.moth-controller-panel h2{font-size:25px;margin:0 0 16px;outline:none}' +
+        '.moth-controller-panel p{line-height:1.55;overflow-wrap:anywhere}' +
+        '.moth-controller-panel select,.moth-controller-panel button{font:inherit;min-height:44px;color:#efe3c4;background:#22372a;border:2px solid #b8aa87;border-radius:4px;padding:8px;cursor:pointer}' +
+        '.moth-controller-panel select{width:100%;margin:8px 0}' +
+        '.moth-controller-panel button:focus-visible,.moth-controller-panel select:focus-visible{outline:4px solid #f1c62d;outline-offset:2px}' +
+        '.moth-controller-panel button:disabled{opacity:.5;cursor:default}' +
+        '.moth-controller-row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:8px;align-items:center;margin:9px 0}' +
+        '.moth-controller-row label,.moth-controller-row button{overflow-wrap:anywhere}' +
+        '.moth-controller-tools{display:flex;gap:12px;flex-wrap:wrap;border-top:1px solid #526153;padding-top:16px;margin-top:16px}' +
+        '.moth-controller-message{color:#f1c62d}.moth-controller-message:empty{margin:0}';
       document.head.appendChild(style);
     }
-    const content = document.createElement('div'); panel.appendChild(content);
-    const title = document.createElement('h2'); title.id = 'moth-controller-title'; title.textContent = this.tr('CONTROLLER SETTINGS', '控制器設定'); content.appendChild(title);
+    const scroll = document.createElement('div'); scroll.className = 'moth-controller-scroll'; panel.appendChild(scroll);
+    const content = document.createElement('div'); scroll.appendChild(content);
+    const title = document.createElement('h2'); title.id = 'moth-controller-title'; title.tabIndex = -1;
+    title.textContent = this.tr('CONTROLLER SETTINGS', '控制器設定'); content.appendChild(title);
     const status = document.createElement('p'); status.className = 'moth-controller-status'; status.setAttribute('role', 'status'); content.appendChild(status);
     const select = document.createElement('select'); select.setAttribute('aria-label', this.tr('Active controller', '目前使用的控制器')); content.appendChild(select);
     select.addEventListener('change', () => {
@@ -5076,7 +5091,8 @@ for (const level of this.config.secretLevels || []) {
       this.refreshControllerPanel(this.readControllers(), pad, true);
     });
     const hint = document.createElement('p');
-    hint.textContent = this.tr('Connect by USB or Bluetooth, then press a controller button. Select a control below, release all controls, then press its new button or move one stick direction. An occupied input swaps controls. M/O/T/H use the same keys as the deck; O confirms and H goes back in menus. Settings are saved for each controller model on this browser. If audio is blocked, tap the screen or press a keyboard key once.', '以 USB 或藍牙連線後，按一下控制器按鈕。選擇下方功能，放開所有按鍵，再按新的按鈕或推動一個搖桿方向。若按鍵已有用途，將交換兩個功能。M／O／T／H 對應遊戲面板；選單中 O 確認、H 返回。設定會依控制器型號儲存在此瀏覽器。若無法播放聲音，請先輕觸螢幕或按一次鍵盤。'); content.appendChild(hint);
+    hint.textContent = this.tr('Select an action, then press a button or move the stick.', '選擇功能，再按新按鍵或推動搖桿。');
+    content.appendChild(hint);
     for (const [id, , en, zh] of MOTH_GAMEPAD_ACTIONS) {
       const row = document.createElement('div'); row.className = 'moth-controller-row';
       const label = document.createElement('label'); label.htmlFor = 'moth-bind-' + id; label.textContent = this.tr(en, zh);
@@ -5096,7 +5112,7 @@ for (const level of this.config.secretLevels || []) {
     panel.addEventListener('pointerdown', event => event.stopPropagation());
     this.controllerPanel = panel; document.body.appendChild(panel);
     this.refreshControllerPanel(this.readControllers(), null, true);
-    panel.querySelector('[data-controller-tool="close"]').focus();
+    title.focus({ preventScroll: true });
   }
 
   setControllerPanelMessage(text) {
@@ -5134,7 +5150,7 @@ for (const level of this.config.secretLevels || []) {
     if (!pad) return;
     this.resetGamepadInput();
     this.controllerCapture = { action, ready: false, expires: performance.now() + 15000 };
-    this.setControllerPanelMessage(this.tr('Release all controls, then press the new button or stick direction. Esc cancels.', '請先放開所有按鍵，再按新的按鈕或推動搖桿。Esc 可取消。'));
+    this.setControllerPanelMessage(this.tr('Release all buttons and center the sticks, then enter the new input.', '先鬆開按鍵、讓搖桿回正，再輸入。'));
     this.refreshControllerPanel(this.readControllers(), pad, true);
   }
 
@@ -5209,7 +5225,8 @@ for (const level of this.config.secretLevels || []) {
     if (['KeyW', 'KeyS', 'KeyA', 'KeyD'].includes(code)) {
       const delta = ['KeyW', 'KeyA'].includes(code) ? -1 : 1;
       const index = controls.indexOf(active);
-      const next = controls[(index + delta + controls.length) % controls.length];
+      const next = index < 0 ? controls[delta < 0 ? controls.length - 1 : 0]
+        : controls[(index + delta + controls.length) % controls.length];
       next?.focus(); next?.scrollIntoView({ block: 'nearest' });
     }
   }
@@ -10084,6 +10101,7 @@ for (const level of this.config.secretLevels || []) {
       // iOS ignores HTMLMediaElement.volume. Keep the native element at unity
       // and expose the requested volume through its GainNode on every browser.
       const descriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "volume");
+      const mixGain = Object.values(this.fightCutAudio || {}).includes(audio) ? 0.50 / BGM_VOLUME : 1;
       route = { gain, context, volume, target: volume || BGM_VOLUME };
       Object.defineProperty(audio, "volume", {
         configurable: true,
@@ -10091,13 +10109,14 @@ for (const level of this.config.secretLevels || []) {
         set: (value) => {
           route.volume = clamp(Number(value) || 0, 0, 1);
           const now = context.currentTime;
+          const level = route.volume * mixGain;
           gain.gain.cancelScheduledValues(now);
-          if (audio.paused) gain.gain.setValueAtTime(route.volume, now);
-          else gain.gain.setTargetAtTime(route.volume, now, 0.015);
+          if (audio.paused) gain.gain.setValueAtTime(level, now);
+          else gain.gain.setTargetAtTime(level, now, 0.015);
         }
       });
       descriptor.set.call(audio, 1);
-      gain.gain.value = volume;
+      gain.gain.value = volume * mixGain;
       route.source = context.createMediaElementSource(audio);
       route.source.connect(gain);
       gain.connect(context.destination);
@@ -11891,7 +11910,7 @@ for (const level of this.config.secretLevels || []) {
     return node;
   }
 
-  playFeedbackSfx(name, channel, gain = 1) {
+  playFeedbackSfx(name, channel, gain = 1, { duration, offset = 0 } = {}) {
     const buffer = this.sfxBuffers?.[name];
     const context = this.ensureToneContext();
     if (!buffer || !context) return false;
@@ -11910,9 +11929,20 @@ for (const level of this.config.secretLevels || []) {
       source.disconnect(); volume.disconnect();
       if (this.feedbackChannels.get(channel) === entry) this.feedbackChannels.delete(channel);
     };
-    source.start(context.currentTime);
+    const now = context.currentTime;
+    const level = volume.gain.value;
+    if (offset) {
+      volume.gain.setValueAtTime(0, now);
+      volume.gain.linearRampToValueAtTime(level, now + 0.003);
+    }
+    source.start(now, offset);
+    if (duration) {
+      volume.gain.setValueAtTime(level, now + duration - 0.012);
+      volume.gain.linearRampToValueAtTime(0, now + duration);
+      source.stop(now + duration);
+    }
     this.feedbackAudioHistory ||= [];
-    this.feedbackAudioHistory.push({ name, channel, at: context.currentTime, pitch: 1, gain: volume.gain.value });
+    this.feedbackAudioHistory.push({ name, channel, at: now, pitch: 1, gain: level });
     if (this.feedbackAudioHistory.length > 32) this.feedbackAudioHistory.shift();
     return true;
   }
@@ -11940,7 +11970,13 @@ for (const level of this.config.secretLevels || []) {
   playRhythmHitSfx(action, perfect, button = action === "accent" ? "H" : "T") {
     if (!["M", "O", "T", "H"].includes(button)) return false;
     const speaking = this.feedbackChannels?.has("celebration");
-    return this.playFeedbackSfx(`button-${button.toLowerCase()}`, `button-${button}`, speaking ? 1.0 : 1.4);
+    const sample = "button-" + button.toLowerCase(), channel = "button-" + button;
+    const rhythm = this.level1OfficeRhythm;
+    if (this.state === "playing" && rhythm?.tutorial?.mode === "done" && !rhythm.skipAudio && !rhythm.ending) {
+      return this.playFeedbackSfx(sample, channel, speaking ? 0.78 : 1.12,
+        { duration: 0.055, offset: button === "O" ? 0.120 : 0 });
+    }
+    return this.playFeedbackSfx(sample, channel, speaking ? 1.0 : 1.4);
   }
 
   playRhythmMissSfx(note) {
@@ -19376,8 +19412,11 @@ for (const level of this.config.secretLevels || []) {
       this.renderLevel1Loading();
       return;
     }
-    const shakeX = this.screenShake ? (Math.random() - 0.5) * this.screenShake : 0;
-    const shakeY = this.screenShake ? (Math.random() - 0.5) * this.screenShake : 0;
+    // Rhythm hit motion is already clipped inside the arena renderer.
+    // Never shake the rail or the portrait copy of it.
+    const shake = this.level1OfficeRhythm ? 0 : this.screenShake;
+    const shakeX = shake ? (Math.random() - 0.5) * shake : 0;
+    const shakeY = shake ? (Math.random() - 0.5) * shake : 0;
     this.ctx.save();
     this.ctx.translate(Math.round(shakeX), Math.round(shakeY));
     this.renderWorld();
@@ -20282,7 +20321,7 @@ for (const level of this.config.secretLevels || []) {
       // end of its sustain. The scrolling head and spent tail stay connected.
       for (const {note, x, endX, button, missed, held} of visibleNotes) {
         if (!note.holdEnd) continue;
-        drawRhythmHoldTail(target, {x, endX, y: railY, hitX: cursorX, button, missed, held, completed: note.holdDone});
+        drawRhythmHoldTail(target, {x, endX, y: railY, hitX: cursorX, button, missed, held});
         if (held && endX > cursorX && x + headRadius <= viewLeft) {
           drawRhythmHoldMarker(target, cursorX, railY, button);
         }
@@ -25956,7 +25995,7 @@ function drawTimingCalibrationPanel(target, view) {
 // Draws `text` so the glyph's own ink - not its em box - is centred on (x, y).
 // Capitals sit above the middle of a font's box, so middle-baseline text reads
 // high inside a round button.
-function drawCentredGlyph(target, text, x, y, font) {
+function drawCentredGlyph(target, text, x, y, font, outline = 0) {
   target.save();
   target.font = font;
   target.textAlign = "center";
@@ -25966,7 +26005,14 @@ function drawCentredGlyph(target, text, x, y, font) {
   const descent = metrics.actualBoundingBoxDescent || 0;
   const left = metrics.actualBoundingBoxLeft ?? metrics.width / 2;
   const right = metrics.actualBoundingBoxRight ?? metrics.width / 2;
-  target.fillText(text, x + (left - right) / 2, y + (ascent - descent) / 2);
+  const inkX = Math.round(x + (left - right) / 2);
+  const inkY = Math.round(y + (ascent - descent) / 2);
+  if (outline > 0) {
+    target.strokeStyle = "#16171b";
+    target.lineWidth = outline;
+    target.strokeText(text, inkX, inkY);
+  }
+  target.fillText(text, inkX, inkY);
   target.restore();
 }
 

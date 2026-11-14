@@ -34,16 +34,16 @@ const LEGACY_MAX_FIGHT_SCORE = {
 const CHART_LIMITS = require('./chart-limits.json');
 const CHART_VERSION = CHART_LIMITS.version;
 const MAX_FIGHT_SCORE = { chill: CHART_LIMITS.chill, shoot: CHART_LIMITS.shoot };
-// Clients already running the previous charts can still finish and post to
-// their original board after the new game ships.
+// Both previous named charts share score and duration limits. Each keeps its
+// own board for players already running that version.
 const PREVIOUS_CHART_LIMITS = {
-  version: 'drums-readable-20261105b',
   minRunSeconds: 630,
   chill: { 'level1-stage1': 126000, 'level2-stage2': 112000, 'level3-stage2': 155000, 'level4-stage1': 179000, 'studio-stage1': 192000, 'level5-stage2': 179000, 'level6-stage2': 254000 },
   shoot: { 'level1-stage1': 150000, 'level2-stage2': 133000, 'level3-stage2': 183000, 'level4-stage1': 181000, 'studio-stage1': 229000, 'level5-stage2': 208000, 'level6-stage2': 254000 }
 };
 const charts = new Map([
-  [PREVIOUS_CHART_LIMITS.version, PREVIOUS_CHART_LIMITS],
+  ['drums-readable-20261105b', PREVIOUS_CHART_LIMITS],
+  ['drums-groove-20261114a', PREVIOUS_CHART_LIMITS],
   [CHART_VERSION, CHART_LIMITS]
 ]);
 const isMode = mode => typeof mode === 'string' && Object.hasOwn(MAX_FIGHT_SCORE, mode);

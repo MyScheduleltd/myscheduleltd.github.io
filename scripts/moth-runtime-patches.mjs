@@ -302,6 +302,40 @@ export function patchMothRuntime(source, ts) {
   patchChartPlayability(once, edit);
   patchCinematicLook(once, edit);
   patchScreenFrame(once);
+  // Keep the feedback audible over the song and short enough to avoid a
+  // second accent. O's main attack follows a quiet lead-in in its source.
+  once('  playFeedbackSfx(name, channel, gain = 1) {',
+    '  playFeedbackSfx(name, channel, gain = 1, { duration, offset = 0 } = {}) {');
+  once('    source.start(context.currentTime);\n    this.feedbackAudioHistory ||= [];\n    this.feedbackAudioHistory.push({ name, channel, at: context.currentTime, pitch: 1, gain: volume.gain.value });',
+    `    const now = context.currentTime;
+    const level = volume.gain.value;
+    if (offset) {
+      volume.gain.setValueAtTime(0, now);
+      volume.gain.linearRampToValueAtTime(level, now + 0.003);
+    }
+    source.start(now, offset);
+    if (duration) {
+      volume.gain.setValueAtTime(level, now + duration - 0.012);
+      volume.gain.linearRampToValueAtTime(0, now + duration);
+      source.stop(now + duration);
+    }
+    this.feedbackAudioHistory ||= [];
+    this.feedbackAudioHistory.push({ name, channel, at: now, pitch: 1, gain: level });`);
+  once('    return this.playFeedbackSfx(`button-${button.toLowerCase()}`, `button-${button}`, speaking ? 1.0 : 1.4);',
+    `    const sample = "button-" + button.toLowerCase(), channel = "button-" + button;
+    const rhythm = this.level1OfficeRhythm;
+    if (this.state === "playing" && rhythm?.tutorial?.mode === "done" && !rhythm.skipAudio && !rhythm.ending) {
+      return this.playFeedbackSfx(sample, channel, speaking ? 0.78 : 1.12,
+        { duration: 0.055, offset: button === "O" ? 0.120 : 0 });
+    }
+    return this.playFeedbackSfx(sample, channel, speaking ? 1.0 : 1.4);`);
+  // Give the hit sounds headroom in the fight mix. Apply the trim to the
+  // music gain so every existing fade and resume keeps its shape and timing.
+  once('      route = { gain, context, volume, target: volume || BGM_VOLUME };',
+    `      const mixGain = Object.values(this.fightCutAudio || {}).includes(audio) ? 0.50 / BGM_VOLUME : 1;
+      route = { gain, context, volume, target: volume || BGM_VOLUME };`);
+  once('      gain.gain.value = volume;\n      route.source = context.createMediaElementSource(audio);',
+    '      gain.gain.value = volume * mixGain;\n      route.source = context.createMediaElementSource(audio);');
   // Speaker latency is independent of the selected screen layout. A manual
   // calibration already includes it; otherwise compensate routed audio on
   // desktop and phone alike.
@@ -442,7 +476,12 @@ function makeLayer(width, height, painter) {`);
   // track now glides to each level; a paused one takes it at once, so a
   // priming play still starts silent.
   once('          gain.gain.setValueAtTime(route.volume, context.currentTime);\n',
-    '          const now = context.currentTime;\n          gain.gain.cancelScheduledValues(now);\n          if (audio.paused) gain.gain.setValueAtTime(route.volume, now);\n          else gain.gain.setTargetAtTime(route.volume, now, 0.015);\n');
+    `          const now = context.currentTime;
+          const level = route.volume * mixGain;
+          gain.gain.cancelScheduledValues(now);
+          if (audio.paused) gain.gain.setValueAtTime(level, now);
+          else gain.gain.setTargetAtTime(level, now, 0.015);
+`);
   // Staff debug scene jumps (the staff build only; the public build drops the
   // debug panel). A jump enters its scene directly, so with the chapter loader
   // it drew placeholders where the scene's art was not loaded (user,

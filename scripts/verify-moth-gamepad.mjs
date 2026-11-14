@@ -3,7 +3,7 @@
 // compatibility or the browser/OS's controller pairing behavior.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import { chromium } from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
+import { chromium, webkit } from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import { stubScoreboard } from './moth-scoreboard-stub.mjs';
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const out = '.qa/moth/controllers';
@@ -130,6 +130,20 @@ try {
   await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, { timeout: 60000 });
   await page.evaluate(pad => { window.__pads = [pad]; bobbyGame.pollGamepadInput(); }, makePad());
   assert.deepEqual(await page.evaluate(() => bobbyGame.controllerBindings(window.__pads[0]).M), ['a:2:-1'], 'profile persists across page reload'); checks++;
+  const profile = await page.evaluate(() => {
+    const g = bobbyGame, pad = window.__pads[0];
+    const saved = g.controllerInput.profiles[g.controllerProfileKey(pad)];
+    Object.assign(saved, { pocket: ['b:8'], mount: ['b:4'], T: ['b:8'] });
+    const bindings = g.controllerBindings(pad);
+    return { remapped: bindings.M, reused: bindings.T, retired: Object.keys(bindings).filter(key => ['pocket', 'mount'].includes(key)) };
+  });
+  assert.deepEqual(profile, {remapped: ['a:2:-1'], reused: ['b:8'], retired: []}, 'Older profiles keep active remaps, including a formerly reserved input');
+  await page.evaluate(() => {
+    const g = bobbyGame;
+    const saved = g.controllerInput.profiles[g.controllerProfileKey(window.__pads[0])];
+    delete saved.T;
+  });
+  checks++;
   // Keep the song clock deterministic while retaining the actual input,
   // judgment, score and hold methods. Controller edges must score real notes,
   // not merely reach a mocked keyboard handler.
@@ -181,3 +195,52 @@ try {
   await context.close();
   console.log('PASS M.O.T.H controllers: ' + checks + ' checks; simulated standard/generic gamepads, bindings, holds, disconnect, persistence, desktop/phone UI. Physical controller validation remains required.');
 } finally { await browser.close(); }
+
+// The modal handles narrow mobile displays with the footer after its rows.
+const phoneBrowser = await webkit.launch({headless:true});
+try {
+  const context = await phoneBrowser.newContext({viewport:{width:320,height:568}, isMobile:true, hasTouch:true});
+  await stubScoreboard(context);
+  await context.addInitScript(() => Object.defineProperty(navigator, 'getGamepads', {configurable:true, value:() => []}));
+  const page = await context.newPage();
+  await page.goto(new URL('moth/staff/?device=phone', base).href, {waitUntil:'domcontentloaded'});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout:60000});
+  for (const language of ['zh-TW', 'en']) {
+    await page.evaluate(language => {
+      bobbyGame.setLanguage(language, {persist:false, announce:false});
+      bobbyGame.openControllerSettings();
+    }, language);
+    const modal = page.getByRole('dialog', {name: language === 'en' ? 'CONTROLLER SETTINGS' : '控制器設定'});
+    assert(await modal.getByText(language === 'en' ? 'Select an action, then press a button or move the stick.'
+      : '選擇功能，再按新按鍵或推動搖桿。', {exact: true}).isVisible());
+    const actions = modal.locator('[data-controller-action]');
+    assert.deepEqual(await actions.evaluateAll(nodes => nodes.map(node => node.dataset.controllerAction)),
+      ['M', 'O', 'T', 'H', 'up', 'down', 'left', 'right', 'space', 'pause']);
+    const labels = await modal.locator('.moth-controller-row label').allTextContents();
+    assert.deepEqual(labels.slice(0, 4), language === 'en'
+      ? ['M / CYMBALS', 'O / SNARE / CONFIRM / INTERACT', 'T / KICK DRUM', 'H / OTHER PERCUSSION / BACK']
+      : ['M／鈸', 'O／小鼓／確認／互動', 'T／大鼓', 'H／其他打擊樂／返回']);
+    const layout = () => modal.evaluate(panel => {
+      const scroll = panel.querySelector('.moth-controller-scroll');
+      const footer = panel.querySelector('.moth-controller-tools');
+      const lastRow = panel.querySelector('#moth-bind-pause').closest('.moth-controller-row');
+      return {top: scroll.scrollTop, width: scroll.scrollWidth, available: scroll.clientWidth,
+        footerTop: footer.getBoundingClientRect().top, footerBottom: footer.getBoundingClientRect().bottom,
+        lastRowBottom: lastRow.getBoundingClientRect().bottom, bottom: scroll.getBoundingClientRect().bottom};
+    });
+    const opening = await layout();
+    assert.equal(opening.top, 0, 'Open at the top of the menu');
+    assert.equal(opening.width, opening.available, 'No horizontal scrolling');
+    assert(opening.footerTop >= opening.bottom, 'Footer starts below the visible rows on a small screen');
+    const back = modal.locator('[data-controller-tool=close]');
+    await back.scrollIntoViewIfNeeded();
+    const scrolled = await layout();
+    assert(scrolled.top > 0 && scrolled.lastRowBottom <= scrolled.footerTop, 'Footer follows the final mapping while scrolling');
+    assert(scrolled.footerBottom <= scrolled.bottom, 'All footer controls fit after scrolling');
+    await page.screenshot({path: out + '/settings-' + language + '-webkit-footer.png'});
+    await back.tap();
+    await modal.waitFor({state:'detached'});
+  }
+  await context.close();
+  console.log('PASS WebKit phone controller menu: bilingual mapping labels, scroll flow, footer and Back');
+} finally { await phoneBrowser.close(); }
