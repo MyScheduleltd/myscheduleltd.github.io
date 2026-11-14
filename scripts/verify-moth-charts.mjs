@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
-import { DRUM_CHARTS, BASE_DRUM_CHARTS, MOTH_CHART_VERSION } from './moth-chart-patches.mjs';
+import { DRUM_CHARTS, BASE_DRUM_CHARTS, PRIOR_DRUM_CHARTS, MOTH_CHART_VERSION } from './moth-chart-patches.mjs';
 import { SCOREBOARD_CHART_VERSION } from './moth-scoreboard-client.mjs';
 
 const root = new URL('../', import.meta.url);
@@ -26,6 +26,7 @@ for (const [id, spec] of entries) {
   assert.equal(sha(await read('docs/moth/' + playing)), measured.hashes.playing, id + ': unchanged analyzed AAC/cut');
   assert.equal(spec.chart.version, MOTH_CHART_VERSION);
   assert.equal(spec.chart.timingMode, 'waveform-attacks');
+  assert.equal(spec.chart.selectionVersion, measured.selectionVersion, id + ': current drum selection');
   assert.equal(measured.refinementVersion, 'energy-boundary-v2', id + ': significant drum boundaries replace pre-noise slope picks');
   assert(!spec.chart.breakNotes && !spec.chart.introSources, id + ': no melodic/filler exception');
   assert(Math.abs(measured.tempo.measuredBpm - spec.bpm) < .02, id + ': whole-song tempo fit');
@@ -60,6 +61,20 @@ for (const [id, spec] of entries) {
     const rows = spec.chart[mode], evidence = measured.evidence[mode];
     assert.deepEqual(rows, measured[mode], id + '/' + mode + ': shipped chart');
     assert.equal(rows.length, evidence.length);
+    const prior = PRIOR_DRUM_CHARTS.songs[id];
+    const phraseCounts = events => {
+      const counts = {};
+      for (const event of events) {
+        const phrase = Math.floor((event.time - spec.beatOffset) / (unit * 32));
+        counts[phrase] = (counts[phrase] ?? 0) + 1;
+      }
+      return counts;
+    };
+    assert.deepEqual(phraseCounts(evidence), phraseCounts(prior.evidence[mode]), id + '/' + mode + ': same density in every eight-beat phrase');
+    assert.deepEqual(rows.filter(row => row[2] > 0), prior[mode].filter(row => row[2] > 0), id + '/' + mode + ': exact original hold starts and ends');
+    const priorIds = new Set(prior.evidence[mode].map(event => `${event.instrument}:${event.proposalAttack}`));
+    const accentsChanged = evidence.filter(event => !priorIds.has(`${event.instrument}:${event.proposalAttack}`)).length;
+    assert(accentsChanged > 0, id + '/' + mode + ': groove selection revisits this chart');
     let largestEncodingErrorMs = 0;
     for (let index = 0; index < rows.length; index++) {
       const [step, button, hold] = rows[index], event = evidence[index];
@@ -69,6 +84,11 @@ for (const [id, spec] of entries) {
       assert.equal(event.source, 'isolated-drums');
       assert(Number.isFinite(event.proposalAttack) && event.onsetContrast >= .5 && !event.onsetEdge,
         id + ': significant, bounded drum attack; ambiguous classifier events require review');
+      assert(event.drumRms > 0 && event.masterRiseSupport > 0, id + ': measured transient in the source drum band');
+      if (!priorIds.has(`${event.instrument}:${event.proposalAttack}`)) {
+        assert(event.drumRms >= .005 && (event.drumEnergyShare >= .02 || event.masterRiseSupport >= .25),
+          id + ': selected new accents have audible support in the mix');
+      }
       const encodingError = Math.abs(time - event.time) * 1000;
       largestEncodingErrorMs = Math.max(largestEncodingErrorMs, encodingError);
       assert(encodingError < .001, id + '/' + mode + ': waveform time retained in row encoding');
@@ -79,13 +99,23 @@ for (const [id, spec] of entries) {
       }
       assert(time >= 0 && time + hold * unit <= spec.duration, id + ': head and hold inside song');
       assert(!measured.restSections.some(([lo, hi]) => time > lo && time < hi), id + ': no head during excluded drumless passage');
-      if (index + 1 < rows.length) assert((rows[index + 1][0] - step - hold) * unit > .06, id + ': no note under a hold');
+      if (index + 1 < rows.length) {
+        const gap = (rows[index + 1][0] - step) * unit;
+        const minimum = mode === 'hard' ? Math.max(.224, Math.min(.28, unit * 4 * .45)) : .224;
+        assert(gap >= minimum - .000002, id + ': readable tap spacing');
+        if (hold) assert(gap - hold * unit >= .2 - .000002, id + ': clear hold tail and release gap');
+      }
+      if (mode === 'hard') {
+        const repeated = rows.slice(index + 1).find(next => next[1] === button);
+        if (repeated) assert((repeated[0] - step) * unit >= .30 - .000002, id + ': same-button recovery');
+        if (index + 4 < rows.length) assert((rows[index + 4][0] - step) * unit >= 1 - .000002, id + ': at most four heads per rolling second');
+      }
     }
-    report.push({id, mode, heads: rows.length, holds: rows.filter(row => row[2] > 0).length,
+    report.push({id, mode, heads: rows.length, holds: rows.filter(row => row[2] > 0).length, accentsChanged,
       bpm: spec.bpm, measuredBpm: measured.tempo.measuredBpm, maximumEncodingRoundtripMs: +largestEncodingErrorMs.toFixed(6),
       largestSampledCodecLagMs: Math.max(...measured.alignment.map(check => Math.abs(check.lagMs))), independentTranscriptionChecked: Boolean(cache)});
   }
 }
 await fs.writeFile(new URL('.qa/moth/drum-sync-20261029/note-audit.json', root), JSON.stringify(report, null, 2) + '\n');
-console.log('PASS chart audit: nine songs, eighteen charts; shipped audio hashes, broad BPM fit, sampled AAC/master alignment, isolated drum-source timestamps, cut origins, drumless rests and clear holds');
+console.log('PASS chart audit: nine songs, eighteen charts; audio hashes, BPM and AAC/master alignment, audible source attacks, preserved phrase counts and holds, cut origins, drumless rests and Hard recovery');
 console.log(JSON.stringify(report));

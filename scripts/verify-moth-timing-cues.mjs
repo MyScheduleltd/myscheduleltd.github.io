@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
-import {MOTH_RHYTHM_HEAD, MOTH_RHYTHM_RING} from './moth-chart-playability.mjs';
+import {getRhythmDrumPulse, MOTH_RHYTHM_HEAD, MOTH_RHYTHM_RING} from './moth-chart-playability.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const config = JSON.parse(await fs.readFile(path.join(root, 'docs/moth/data/level1.json'), 'utf8'));
@@ -18,6 +18,11 @@ const stages = {
   ...Object.fromEntries(config.secretLevels.map(level => [level.id, [level.id, level.theme]]))
 };
 const cases = specs.flatMap(([name, spec]) => ['easy', 'hard'].map(mode => ({name, spec, mode, stage: stages[name][0], theme: stages[name][1]})));
+const syncopated = [{time: 1.005, button: 'T'}, {time: 1.46, button: 'M'}];
+assert.equal(getRhythmDrumPulse(syncopated, 1), 0, 'No visual pulse before the drum attack');
+assert.equal(getRhythmDrumPulse(syncopated, 1.005), 1, 'Strong pulse starts at the actual kick');
+assert.equal(getRhythmDrumPulse(syncopated, 1.32), 0, 'No pulse in the drum break');
+assert.equal(getRhythmDrumPulse(syncopated, 1.46), 0.48, 'Cymbal gets a lighter pulse at its offbeat');
 const {chromium} = await import('/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const out = path.join(root, '.qa/moth/rhythm-review/timing-cues');
@@ -40,15 +45,21 @@ try {
     });
     await page.waitForFunction(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm?.tutorial?.mode === 'done' && !bobbyGame.levelLoadingPresentation && !(bobbyGame.stageCountdown > 0), undefined, {timeout: 90000});
     const clocks = await page.evaluate(() => {
-      const g = bobbyGame, track = {currentTime: 24.75, paused: false};
-      const receiver = {level1OfficeRhythm: {tutorial: {mode: 'done'}, skipAudio: false}, songTime: 4,
+      const g = bobbyGame, track = {currentTime: 24.75, paused: false, readyState: 4};
+      const receiver = {level1OfficeRhythm: {tutorial: {mode: 'done'}, skipAudio: false}, state: 'playing', songTime: 4,
+        isFightSongStalled: g.isFightSongStalled,
         audioInterruption: false, audioRecoveryVisible: () => false,
         getActiveLevel1OfficeRhythmAudio: () => track, getRhythmAudioStart: () => 20,
         getAudioOffsetSeconds: () => .025, getRhythmOutputDelay: () => 0};
       const read = () => g.getLevel1OfficeRenderTime.call(receiver);
-      const calibrated = read(), stalled = read();
+      const calibrated = read();
+      receiver.songTime = calibrated;
+      track.readyState = 2; track.currentTime += .15;
+      const stalled = read();
+      track.readyState = 4; track.currentTime -= .15;
       receiver.getAudioOffsetSeconds = () => 0; receiver.getRhythmOutputDelay = () => .053;
       const automatic = read();
+      receiver.songTime = 4;
       track.paused = true; const paused = read();
       track.paused = false; receiver.level1OfficeRhythm.frozenSongTime = 2.125;
       const frozen = read(); delete receiver.level1OfficeRhythm.frozenSongTime;
@@ -163,18 +174,26 @@ try {
           g.render(); g.renderTallScreen();
           return {clock: g.getLevel1OfficeRenderTime(), cue: r.renderTelemetry.noteTimingCues.find(cue => cue.id === note.id)};
         };
-        const before = draw(), stalled = draw();
+        const before = draw();
+        g.songTime = before.clock;
+        track.currentTime += .1;
+        track.seeking = true;
+        g.playRhythmHitSfx = () => true;
+        g.handleLevel1OfficeRhythmPress('Key' + note.button);
+        const stalled = draw(), judgedDuringSeek = note.status;
+        track.seeking = false;
         g.songTime = before.clock; track.paused = true; const paused = draw();
         track.paused = false; track.currentTime = 20 + .025 + note.time; const resumedAtTarget = draw();
         g.playRhythmHitSfx = () => true;
         g.handleLevel1OfficeRhythmPress('Key' + note.button);
         const afterHit = draw();
-        return {before, stalled, paused, resumedAtTarget, noteTime: note.time, judged: note.status,
+        return {before, stalled, paused, resumedAtTarget, noteTime: note.time, judgedDuringSeek, judged: note.status,
           afterHitHasCue: Boolean(afterHit.cue), speed: g.getRhythmRailGeometry().pixelsPerSecond};
       } finally { Object.assign(g, saved); }
     }, cases[0]);
     assert(Math.abs(clockDraws.before.clock - (clockDraws.noteTime - .1)) < 1e-9, `${viewportName}: actual renderer reads current media time with the cut start and manual offset`);
     assert.deepEqual(clockDraws.stalled, clockDraws.before, `${viewportName}: the actual rendered circle holds still on a media stall`);
+    assert.equal(clockDraws.judgedDuringSeek, 'pending', `${viewportName}: no input is judged while the media seeks`);
     assert.deepEqual(clockDraws.paused, clockDraws.before, `${viewportName}: the actual rendered circle holds on the saved pause clock`);
     assert(Math.abs(clockDraws.resumedAtTarget.cue.radius - clockDraws.resumedAtTarget.cue.targetRadius) < 1e-9
       && Math.abs(clockDraws.resumedAtTarget.cue.x - 760) < 1e-9, `${viewportName}: after resume, the real circle converges at the same audible target and hit line`);

@@ -442,6 +442,24 @@ function calculateRhythmRailGeometry(notes = []) {
   return {pixelsPerSecond, minGap};
 }
 
+function getRhythmDrumPulse(notes, time) {
+  // Sample the last charted drum attack on the same clock that draws the notes.
+  // Searching by time also works after a pause or a dropped animation frame.
+  let low = 0;
+  let high = notes.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (notes[middle].time <= time) low = middle + 1;
+    else high = middle;
+  }
+  const note = notes[low - 1];
+  if (!note) return 0;
+  const backbeat = note.button === "T" || note.button === "O";
+  const decay = backbeat ? 0.19 : 0.12;
+  const remaining = Math.max(0, 1 - (time - note.time) / decay);
+  return remaining * remaining * (backbeat ? 1 : 0.48);
+}
+
 function calculateRhythmTimingCue(note, renderTime, perfectWindow) {
   if (note?.status !== 'pending' || !Number.isFinite(note.time) || !Number.isFinite(renderTime)) return null;
   const {radius: maxRadius, lead, color, lineWidth, outlineWidth, outlineColor} = MOTH_RHYTHM_RING;
@@ -539,6 +557,35 @@ function drawRhythmTimingRing(target, x, y, cue, scale = 1) {
   target.beginPath();
   target.arc(x, y, cue.radius * scale, 0, TAU);
   target.stroke();
+  target.restore();
+}
+
+function drawRhythmHitPulse(target, x, y, pulse, age, reducedMotion) {
+  const duration = pulse.finish ? 0.28 : 0.22;
+  if (age < 0 || age >= duration) return;
+  const remaining = 1 - age / duration;
+  const progress = 1 - remaining * remaining;
+  const strong = pulse.perfect || pulse.finish;
+  const colour = MOTH_NOTE_COLOURS[pulse.button] || "#f7f2de";
+  target.save();
+  target.globalAlpha = remaining * 0.88;
+  target.lineWidth = 3;
+  target.strokeStyle = strong ? "#fff4b3" : "#c9f2ff";
+  target.beginPath();
+  target.arc(x, y, 25 + (reducedMotion ? 0 : progress * (strong ? 25 : 15)), 0, TAU);
+  target.stroke();
+  if (!reducedMotion) {
+    // Small sparks stay within the hit area and clear before the next attack.
+    const distance = 29 + progress * (strong ? 22 : 12);
+    const diagonal = Math.round(distance * 0.61);
+    const lift = Math.round(distance * 0.48);
+    const size = strong ? 5 : 4;
+    target.fillStyle = colour;
+    for (const offset of [-1, 1]) {
+      target.fillRect(x + offset * diagonal - size / 2, y - lift, size, size);
+      target.fillRect(x + offset * diagonal - size / 2, y + lift, size, size);
+    }
+  }
   target.restore();
 }
 
@@ -3570,6 +3617,7 @@ for (const level of this.config.secretLevels || []) {
     await this.rhythmTrackPriming?.get(track);
     const route = this.musicAudioRoutes?.get(track);
     if (!track.paused || track.getAttribute('src') !== src) return;
+    track.preload = "auto";
     if (!route) {
       track.mothAudioSource = src;
       track.src = copy;
@@ -3591,15 +3639,13 @@ for (const level of this.config.secretLevels || []) {
     route.playedSource = copy;
   }
 
-  // A stream that runs dry mid-song (no copy, weak connection): the fight's
-  // clock follows the song, so it waits under 載入中… and goes on the moment
-  // the song does. No note is judged meanwhile.
-  isFightSongStalled() {
+  // The full track is local, but the decoder can still briefly run dry or
+  // seek. Freeze the playhead shared by drawing and judgment until it plays.
+  isFightSongStalled(track = this.getActiveLevel1OfficeRhythmAudio()) {
     const rhythm = this.level1OfficeRhythm;
-    const track = this.getActiveLevel1OfficeRhythmAudio();
     const playing = this.state === 'playing' && rhythm && !rhythm.ending && !rhythm.skipAudio && rhythm.tutorial?.mode === 'done'
       && !(this.stageCountdown > 0) && track && !track.paused && !track.ended;
-    if (!playing || track.readyState >= 3) { if (rhythm) rhythm.stalledSince = null; return false; }
+    if (!playing || (!track.seeking && track.readyState >= 3)) { if (rhythm) rhythm.stalledSince = null; return false; }
     rhythm.stalledSince ??= performance.now();
     return true;
   }
@@ -3627,7 +3673,7 @@ for (const level of this.config.secretLevels || []) {
     const dots = '.'.repeat(1 + Math.floor(performance.now() / 400) % 3);
     drawFittedText(target, this.tr('LOADING', '載入中') + dots, centerX, centerY - 6, card.w - 60, 46, 900, 24);
     target.fillStyle = '#5d6a5f';
-    drawFittedText(target, this.tr('The song is still downloading', '歌曲仍在下載'), centerX, centerY + 34, card.w - 60, 20, 700, 14);
+    drawFittedText(target, this.tr('Waiting for song audio', '正在等待歌曲播放'), centerX, centerY + 34, card.w - 60, 20, 700, 14);
     target.restore();
   }
 
@@ -3781,7 +3827,7 @@ for (const level of this.config.secretLevels || []) {
     if (!this.progress) this.progress = this.createDefaultProgress();
     const random = () => Math.random().toString(36).slice(2, 10);
     const id = globalThis.crypto?.randomUUID?.() || ('run-' + Date.now().toString(36) + '-' + random() + random());
-    const run = this.progress.storyRun = { id, difficulty, chartVersion: "drums-readable-20261105b", scores: {}, startedAt: Date.now(), ticket: null };
+    const run = this.progress.storyRun = { id, difficulty, chartVersion: "drums-groove-20261114a", scores: {}, startedAt: Date.now(), ticket: null };
     this.startNewStory();
     this.registerStoryRun(run);
   }
@@ -3791,14 +3837,14 @@ for (const level of this.config.secretLevels || []) {
   // that never gets one cannot be posted.
   async registerStoryRun(run, attempt = 0) {
     clearTimeout(this.storyTicketTimer);
-    if (!run || run.ticket || run.legacy || run.chartVersion !== "drums-readable-20261105b" || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
+    if (!run || run.ticket || run.legacy || run.chartVersion !== "drums-groove-20261114a" || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', chartVersion: "drums-readable-20261105b", mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', chartVersion: "drums-groove-20261114a", mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
       const data = await response.json().catch(() => ({}));
-      if (response.status !== 201 || typeof data.run !== 'string' || data.chartVersion !== "drums-readable-20261105b") throw new Error(String(response.status));
+      if (response.status !== 201 || typeof data.run !== 'string' || data.chartVersion !== "drums-groove-20261114a") throw new Error(String(response.status));
       if (this.progress?.storyRun !== run || run.ticket) return;
       run.ticket = data.run;
       this.saveProgress();
@@ -3813,7 +3859,7 @@ for (const level of this.config.secretLevels || []) {
     const run = this.progress?.storyRun;
     const rhythm = this.level1OfficeRhythm;
     if (this.freePlay || !run || !rhythm || !["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"].includes(stageId)) return;
-    if (run.chartVersion !== "drums-readable-20261105b") run.legacy = true;
+    if (run.chartVersion !== "drums-groove-20261114a") run.legacy = true;
     if (this.difficultyId !== run.difficulty) run.mixed = true;
     run.scores[stageId] = Math.max(0, Math.round(rhythm.roundScore || 0));
   }
@@ -3822,7 +3868,7 @@ for (const level of this.config.secretLevels || []) {
     if (!run) return null;
     const fights = ["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"];
     const total = fights.reduce((sum, id) => sum + (run.scores?.[id] || 0), 0);
-    const blocked = run.chartVersion !== "drums-readable-20261105b" ? 'chart-version' : run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
+    const blocked = run.chartVersion !== "drums-groove-20261114a" ? 'chart-version' : run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
     const complete = !blocked && fights.every(id => Number.isFinite(run.scores?.[id]));
     return { run, total, complete, blocked, mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' };
   }
@@ -3904,10 +3950,10 @@ for (const level of this.config.secretLevels || []) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch(this.scoreboardApi() + '?mode=' + mode + '&chartVersion=' + encodeURIComponent("drums-readable-20261105b"), { cache: 'no-store', signal: controller.signal });
+      const response = await fetch(this.scoreboardApi() + '?mode=' + mode + '&chartVersion=' + encodeURIComponent("drums-groove-20261114a"), { cache: 'no-store', signal: controller.signal });
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
-      if (data.chartVersion !== "drums-readable-20261105b") throw new Error('chart-version');
+      if (data.chartVersion !== "drums-groove-20261114a") throw new Error('chart-version');
       if (this.scoreboard !== board) return;
       board.entries[mode] = Array.isArray(data.entries) ? data.entries : [];
       board.status[mode] = 'ready';
@@ -4085,9 +4131,9 @@ for (const level of this.config.secretLevels || []) {
     this.renderScoreboard();
     try {
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: result.mode, chartVersion: "drums-readable-20261105b", id, run: result.run.ticket, scores: result.run.scores }) });
+        body: JSON.stringify({ mode: result.mode, chartVersion: "drums-groove-20261114a", id, run: result.run.ticket, scores: result.run.scores }) });
       const data = await response.json().catch(() => ({}));
-      if (response.status === 201 && data.chartVersion !== "drums-readable-20261105b") throw new Error('chart-version');
+      if (response.status === 201 && data.chartVersion !== "drums-groove-20261114a") throw new Error('chart-version');
       if (Array.isArray(data.entries)) { board.entries[result.mode] = data.entries; board.status[result.mode] = 'ready'; }
       if (response.status === 201) {
         result.run.posted = { rank: data.rank, id, at: Date.now() };
@@ -4242,6 +4288,7 @@ for (const level of this.config.secretLevels || []) {
     const track = this.getActiveLevel1OfficeRhythmAudio();
     rhythm.resumeTrackTime = null;
     if (!track || rhythm.skipAudio) return;
+    rhythm.audioStarting = true;
     const refused = () => {
       if (this.level1OfficeRhythm !== rhythm) return;
       track.pause();
@@ -4256,13 +4303,13 @@ for (const level of this.config.secretLevels || []) {
       if (Number.isFinite(trackTime)) track.currentTime = trackTime;
       track.volume = BGM_VOLUME;
       let timer;
-      Promise.race([Promise.all([this.soloPlay(track), this.musicAudioContext?.resume()]), new Promise((_, reject) => {
+      return Promise.race([Promise.all([this.soloPlay(track), this.musicAudioContext?.resume()]), new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error("Resume timed out")), 2000);
       })]).then(() => {
         const route = this.musicAudioRoutes?.get(track);
         if (route && route.context.state !== "running") refused();
       }, refused).finally(() => clearTimeout(timer));
-    });
+    }).finally(() => { rhythm.audioStarting = false; });
   }
 
   // Back from the lock screen or another app (resumeAudioAfterReturn).
@@ -4682,7 +4729,11 @@ for (const level of this.config.secretLevels || []) {
     // A preview from the staff tools leaves the save as it was.
     if (this.freePlay) return;
     if (!this.progress) this.progress = this.createDefaultProgress();
-    this.progress.flags = { ...(this.progress.flags || {}), level4MemeChestOpened: true };
+    this.progress.flags = {
+      ...(this.progress.flags || {}),
+      level4MemeChestOpened: true,
+      level4MemeChestPending: false
+    };
     this.saveProgress();
   }
 
@@ -8566,7 +8617,12 @@ for (const level of this.config.secretLevels || []) {
     if (nextStageId && !this.progress.unlockedStages.includes(nextStageId)) {
       this.progress.unlockedStages.push(nextStageId);
     }
-    if (ordered.includes(stageId)) this.progress.storyCheckpoint = nextStageId || stageId;
+    if (ordered.includes(stageId)) {
+      // The results bank the fight score. Leaving Bonita's room is the
+      // checkpoint for the next chapter.
+      this.progress.storyCheckpoint = stageId === "level4-stage1" && this.isArcadeRhythm()
+        ? stageId : nextStageId || stageId;
+    }
     this.recordLatestProgressLoadout();
     this.saveProgress();
   }
@@ -10442,12 +10498,7 @@ for (const level of this.config.secretLevels || []) {
       "level6-stage2": "concert"
     }[stageId];
     if (theme) {
-      const ready = this.primeRhythmTrack(this.getRhythmAudioFor(theme), this.getRhythmAudioStart(this.getRhythmSpecFor(theme)));
-      const loading = this.levelLoadingPresentation;
-      loading.action = async () => {
-        await ready;
-        if (this.levelLoadingPresentation === loading) return action();
-      };
+      this.primeRhythmTrack(this.getRhythmAudioFor(theme), this.getRhythmAudioStart(this.getRhythmSpecFor(theme)));
     }
     this.updateMobileControls(true);
   }
@@ -11516,7 +11567,8 @@ for (const level of this.config.secretLevels || []) {
       ...(this.progress.flags || {}),
       level3PostBossReady: false,
       level3PostBossComplete: false,
-      level4BossDefeated: false
+      level4BossDefeated: false,
+      level4MemeChestPending: false
     };
     this.progress.storyCheckpoint = "level1-stage1";
     this.progress.latestInventory = this.createDefaultInventory();
@@ -12372,26 +12424,27 @@ for (const level of this.config.secretLevels || []) {
     const liveAudioTime = rhythmAudio && !rhythmAudio.paused
       ? rhythmAudio.currentTime - audioStart
       : null;
-    if (this.level1OfficeRhythm && !this.level1OfficeRhythm.skipAudio) {
-      // The media playhead is the clock, including stalls and interrupted
-      // playback. Predicting ahead consumed up to 60 ms of a 75 ms perfect
-      // window; advancing while paused let an inaudible song judge misses.
-      if (liveAudioTime !== null || rhythmAudio?.ended) {
+    const rhythm = this.level1OfficeRhythm;
+    if (rhythm && !rhythm.skipAudio) {
+      if (rhythm.tutorial?.mode === "done" && !rhythm.ending) {
+        if (rhythm.audioStarting || !rhythmAudio) return;
+        if (rhythmAudio.paused && !rhythmAudio.ended) {
+          this.retryLevel1OfficeSong(rhythmAudio, audioStart);
+          return;
+        }
+        if (this.isFightSongStalled(rhythmAudio)) return;
         const route = this.musicAudioRoutes?.get(rhythmAudio);
         if (route && route.context.state !== "running") {
           this.suspendGameAudio();
           this.showAudioRecovery("resume");
           return;
         }
-        this.songTime = Math.max(0, rhythmAudio.currentTime - audioStart - this.getRhythmOutputDelay());
-      } else {
-        this.retryLevel1OfficeSong(rhythmAudio, audioStart);
+        this.songTime = this.getLevel1OfficeRenderTime();
       }
     } else {
       this.songTime = liveAudioTime !== null && liveAudioTime > this.songTime
         ? liveAudioTime
         : this.songTime + dt;
-      if (this.level1OfficeRhythm) this.retryLevel1OfficeSong(rhythmAudio, audioStart);
     }
     const duration = this.level1OfficeRhythm ? this.getActiveRhythmDuration() : this.config.duration;
 
@@ -12583,7 +12636,9 @@ for (const level of this.config.secretLevels || []) {
     if (now - (rhythm.songRetryAt ?? -Infinity) < 1) return;
     rhythm.songRetryAt = now;
     try {
-      track.currentTime = Math.max(0, audioStart + this.songTime);
+      if (track.currentTime < this.getRhythmAudioStart() || (!track.currentTime && this.songTime > 0)) {
+        track.currentTime = Math.max(0, audioStart + this.getRhythmOutputDelay() + this.songTime);
+      }
     } catch {
       // Not seekable yet; play from where it is.
     }
@@ -13201,8 +13256,25 @@ for (const level of this.config.secretLevels || []) {
   getTallWalkLayout() {
     const worldScale = PORTRAIT_FIGHT.height / VIEW_H;
     const srcW = PORTRAIT_FIGHT.width / worldScale;
-    const srcX = clamp(this.getTallFocusX() - srcW / 2, 0, VIEW_W - srcW);
-    return { worldScale, srcW, srcX, srcY: 0, srcH: VIEW_H, worldH: PORTRAIT_FIGHT.height };
+    const focus = this.getTallFocusX();
+    let width = srcW;
+    let srcX = clamp(focus - srcW / 2, 0, VIEW_W - srcW);
+    if (["level4", "level4PostBossDialogue"].includes(this.state) && this.level4Rail !== "lower"
+      && this.hasLevel4MemeChest() && this.memeChest?.state === "closed") {
+      const x = this.sewerPlayer.x;
+      const margin = MEME_CHEST.size / 2;
+      const leftEdge = Math.max(0, Math.min(x, MEME_CHEST.x) - margin);
+      const rightEdge = Math.min(VIEW_W, Math.max(x, MEME_CHEST.x) + margin);
+      const span = rightEdge - leftEdge;
+      if (span <= srcW) srcX = clamp(srcX, Math.max(0, rightEdge - srcW), Math.min(VIEW_W - srcW, leftEdge));
+      else {
+        // On returning at the far right, use the nearest crop that fits
+        // both Bobby and the chest; the vertical crop still shows the floor.
+        width = span;
+        srcX = leftEdge;
+      }
+    }
+    return { worldScale, srcW: width, srcX, srcY: 0, srcH: VIEW_H, worldH: PORTRAIT_FIGHT.height };
   }
 
   getTallDialogueSceneLayout() {
@@ -13818,7 +13890,7 @@ for (const level of this.config.secretLevels || []) {
       if (this.canPauseWalk() && px >= 8 && px <= 8 + button.w && py >= 8 && py <= 8 + button.h) {
         return { x: button.x + button.w / 2, y: button.y + button.h / 2 };
       }
-      return { x: walk.srcX + px / walk.worldScale, y: walk.srcY + py / walk.worldScale };
+      return { x: walk.srcX + px * walk.srcW / layout.width, y: walk.srcY + py / walk.worldScale };
     }
     // The fight: the pause button where it is drawn; otherwise a press is the
     // left half for J and the right half for K.
@@ -14231,7 +14303,6 @@ for (const level of this.config.secretLevels || []) {
       bobbyReactionTimer: 0,
       stampFx: null,
       beatPulse: 0,
-      lastBeatIndex: -1,
       phaseIntroTimer: 1.05,
       impactKick: null,
       bathroomStrike: null,
@@ -14435,7 +14506,8 @@ for (const level of this.config.secretLevels || []) {
     // or hold release uses the audible beat rather than the preceding frame.
     if (tutorial?.mode === "done" && !this.level1OfficeRhythm?.skipAudio) {
       const track = this.getActiveLevel1OfficeRhythmAudio();
-      if (track && !track.paused) return Math.max(0,
+      if (track && !rhythm.audioStarting && !rhythm.songHandover && !(this.stageCountdown > 0)
+        && (!track.paused || track.ended) && !this.isFightSongStalled(track)) return Math.max(0,
         track.currentTime - this.getRhythmAudioStart() - this.getAudioOffsetSeconds() - this.getRhythmOutputDelay());
     }
     return this.songTime;
@@ -14446,7 +14518,7 @@ for (const level of this.config.secretLevels || []) {
     const rhythm = this.level1OfficeRhythm;
     if (!Number.isFinite(timeStamp) || rhythm?.skipAudio || rhythm?.tutorial?.mode !== "done") return current;
     const track = this.getActiveLevel1OfficeRhythmAudio();
-    if (!track || track.paused) return current;
+    if (!track || track.paused || this.isFightSongStalled(track)) return current;
     // Judge when the finger/key went down, rather than when a busy main
     // thread finally delivered its event. Safari may use epoch timestamps.
     const stamp = timeStamp > 1e12 ? performance.now() + timeStamp - Date.now() : timeStamp;
@@ -14544,6 +14616,7 @@ for (const level of this.config.secretLevels || []) {
     }
     if (!rhythm.skipAudio && track) {
       if (this.audioInterruption || document.hidden) return;
+      rhythm.audioStarting = true;
       try {
         if (this.hasBakedFades()) track.volume = BGM_VOLUME;
         let timer;
@@ -14579,6 +14652,8 @@ for (const level of this.config.secretLevels || []) {
         track.pause();
         track.volume = BGM_VOLUME;
         this.showAudioRecovery("start");
+      } finally {
+        if (rhythm.audioStartAttempt === startAttempt) rhythm.audioStarting = false;
       }
     }
   }
@@ -15040,7 +15115,10 @@ for (const level of this.config.secretLevels || []) {
     if (this.audioRecovering) return;
     const saved = this.audioInterruption;
     const rhythm = this.level1OfficeRhythm;
-    if (rhythm) rhythm.audioStartAttempt = null;
+    if (rhythm) {
+      rhythm.audioStartAttempt = null;
+      rhythm.audioStarting = false;
+    }
     // First try the existing, already permitted player automatically. Rebuild
     // a stuck engine only in a real tap, after automatic recovery has failed.
     if (!automatic && (saved || ["closed", "interrupted"].includes(this.musicAudioContext?.state) || this.audioRecoveryFailed)) {
@@ -15246,7 +15324,11 @@ for (const level of this.config.secretLevels || []) {
     if (this.state !== "playing" || !rhythm || rhythm.ending || !button || !["practice", "done"].includes(tutorial?.mode)) return false;
     // Sound belongs to the press, including harmless taps between notes.
     if (!this.playRhythmHitSfx(action, false, button)) this.playLevel1OfficeTone("hit", action, "stamp");
-    if (this.stageCountdown > 0 || this.isFightSongStalled()) return true;
+    if (this.stageCountdown > 0 || rhythm.audioStarting || rhythm.songHandover) return true;
+    if (tutorial.mode === "done" && !rhythm.skipAudio) {
+      const track = this.getActiveLevel1OfficeRhythmAudio();
+      if (!track || track.paused || track.ended || this.isFightSongStalled(track)) return true;
+    }
     const renderTime = this.getLevel1OfficeInputTime(inputTimeStamp);
     const activeNotes = this.getLevel1OfficeRenderNotes();
     const windowSize = spec.missWindow || 0.22;
@@ -15360,7 +15442,7 @@ for (const level of this.config.secretLevels || []) {
     rhythm.hitBurstRequest = { kind: perfect ? "perfect" : "good", perfect, action, label: perfect ? this.tr("PERFECT", "完美") : this.tr("GOOD", "很好"), spawned: false, strikeId: target.id };
     if (this.isMassageRhythm()) this.spawnMassageBurst(rhythm.hitBurstRequest);
     if (this.isArcadeRhythm()) this.spawnArcadeBurst(rhythm.hitBurstRequest);
-    rhythm.trackPulse = { at: this.time, perfect };
+    rhythm.trackPulse = { at: this.time, perfect, button: target.button };
     if (counts) this.celebrateRhythmCombo();
     this.haptic(perfect ? "perfect" : "good", { heavy: heavyHit });
     if (!counts && !target.holding) this.advanceLevel1OfficePractice();
@@ -15475,7 +15557,7 @@ for (const level of this.config.secretLevels || []) {
       color: "#d9ff62",
       timer: 0.62
     };
-    rhythm.trackPulse = { at: this.time, perfect: true };
+    rhythm.trackPulse = { at: this.time, perfect: true, button: note.button, finish: true };
     rhythm.groovePulse = 1;
     this.celebrateRhythmCombo();
     this.haptic?.("perfect");
@@ -15703,13 +15785,7 @@ for (const level of this.config.secretLevels || []) {
       return;
     }
 
-    const beatSeconds = 60 / Math.max(1, spec.bpm || 92.3);
-    const beatIndex = Math.floor((this.songTime - (spec.beatOffset || 0)) / beatSeconds);
-    if (beatIndex !== rhythm.lastBeatIndex) {
-      rhythm.lastBeatIndex = beatIndex;
-      rhythm.beatPulse = 1;
-    }
-    rhythm.beatPulse = Math.max(0, rhythm.beatPulse - dt * 4.8);
+    rhythm.beatPulse = rhythm.ending ? 0 : getRhythmDrumPulse(rhythm.notes, this.getLevel1OfficeRenderTime());
 
     const phaseIndex = phases.findIndex((phase) => this.songTime >= phase.start && this.songTime < phase.end);
     const nextPhaseIndex = phaseIndex >= 0 ? phaseIndex : Math.max(0, phases.length - 1);
@@ -16871,7 +16947,8 @@ for (const level of this.config.secretLevels || []) {
     if (!this.progress) this.progress = this.createDefaultProgress();
     this.progress.flags = {
       ...(this.progress.flags || {}),
-      level4BossDefeated: true
+      level4BossDefeated: true,
+      level4MemeChestPending: true
     };
     this.collectSong("level4");
     this.progress.latestInventory = this.normalizeInventory(this.inventory);
@@ -18277,10 +18354,12 @@ for (const level of this.config.secretLevels || []) {
     this.level4DialogueIndex = 0;
     // Per-visit guard only: approaching Bonita triggers the encounter on every
     // Level 4 entry (even after a win), but not twice within the same visit.
-    this.level4BossEncountered = false;
+    this.level4BossEncountered = !this.freePlay && this.hasLevel4MemeChest();
     this.level4Boss = null;
     this.level4BossShots = [];
-    this.memeChest = { state: this.progress?.flags?.level4MemeChestOpened ? "open" : "closed", at: 0 };
+    const flags = this.progress?.flags;
+    const opened = !this.freePlay && !flags?.level4MemeChestPending && flags?.level4MemeChestOpened;
+    this.memeChest = { state: opened ? "open" : "closed", at: 0 };
     const side = this.getLevel4ActiveSideView();
     const hiddenChest = stage.hiddenChest || {};
     this.chest = {
@@ -21083,19 +21162,10 @@ for (const level of this.config.secretLevels || []) {
       target.moveTo(cursorX, ribbonBounds.y + 44);
       target.lineTo(cursorX, ribbonBounds.y + ribbonBounds.h - 38);
       target.stroke();
-      // A shockwave off the hit line on every hit, and a bigger one with a
-      // callout every ten in a row.
-      const pulseAge = rhythm?.trackPulse ? this.time - rhythm.trackPulse.at : Infinity;
-      if (pulseAge >= 0 && pulseAge < 0.28) {
-        const ring = pulseAge / 0.28;
-        target.save();
-        target.globalAlpha = 1 - ring;
-        target.strokeStyle = rhythm.trackPulse.perfect ? "#d9ff62" : "#8fe8ff";
-        target.lineWidth = 6 * (1 - ring) + 1;
-        target.beginPath();
-        target.arc(cursorX, railY, 24 + ring * 58, 0, TAU);
-        target.stroke();
-        target.restore();
+      const pulse = !frozen && !rhythm?.ending && rhythm?.trackPulse;
+      if (pulse && motionTime - pulse.at < 0.28) {
+        drawRhythmHitPulse(target, cursorX, railY, pulse, motionTime - pulse.at,
+          window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
       }
       // No combo callout on the track: GANGAN's box calls the streaks (10 / 25 /
       // 50) and sat on top of it.
@@ -24218,14 +24288,14 @@ for (const level of this.config.secretLevels || []) {
       if (hasMemeChest) {
         if (opened) prompt = lower ? this.tr("Climb up, then exit left", "爬上梯子，再往左離開")
           : this.tr("Use the left door", "從左門離開");
-        else prompt = lower ? this.tr("Find the chest", "找寶箱") : this.tr("Chest in basement", "地下室有寶箱");
+        else prompt = lower ? this.tr("Find the chest", "找寶箱") : this.tr("Go to the basement for the chest", "去地下室找寶箱");
       }
       if (nearLadder && !(hasMemeChest && opened && !lower)) {
         if (hasMemeChest && opened) prompt = this.tr("O: Climb up, then exit left", "O 爬上梯子，再往左離開");
         else if (hasMemeChest && !lower) prompt = this.tr("O: Climb down to chest", "O 爬下梯子找寶箱");
         else prompt = lower ? this.tr("O: Climb up", "O 爬上梯子") : this.tr("O: Climb down", "O 爬下梯子");
       }
-      if (nearLeftDoor) {
+      if (nearLeftDoor && !(hasMemeChest && !opened)) {
         const won = (this.progress?.flags?.level4BossDefeated || this.debugLevel4Won);
         prompt = won ? this.tr("O: Leave room", "O 離開房間") : this.tr("Finish Bonita’s challenge", "先陪 Bonita 完成挑戰");
       }

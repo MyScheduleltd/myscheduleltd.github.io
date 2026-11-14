@@ -13,8 +13,10 @@
 // for again until the first fight is cleared), which the server accepts only
 // once the songs could have been played.
 
+import { MOTH_CHART_VERSION } from './moth-chart-patches.mjs';
+
 export const SCOREBOARD_API = 'https://beauty-boy.vercel.app/api/moth-scoreboard';
-export const SCOREBOARD_CHART_VERSION = 'drums-readable-20261105b';
+export const SCOREBOARD_CHART_VERSION = MOTH_CHART_VERSION;
 export const STORY_FIGHTS = ['level1-stage1', 'level2-stage2', 'level3-stage2', 'level4-stage1', 'studio-stage1', 'level5-stage2', 'level6-stage2'];
 
 export function patchScoreboard(once) {

@@ -175,7 +175,11 @@ export function patchLevelAssetLoading(once, edit) {
     this.loadedSceneGroups = new Set();
   }`);
   once('    if (!this.memeChestSheet) loadImage(MEME_CHEST.sheet).then(image => { this.memeChestSheet = image; }).catch(() => {});\n', '');
+  // Keep Safari's native play request in the original gesture, but let the
+  // chapter fetch run independently. Adoption already waits for priming.
+  once('      const ready = this.primeRhythmTrack(this.getRhythmAudioFor(theme), this.getRhythmAudioStart(this.getRhythmSpecFor(theme)));\n      const loading = this.levelLoadingPresentation;\n      loading.action = async () => {\n        await ready;\n        if (this.levelLoadingPresentation === loading) return action();\n      };', '      this.primeRhythmTrack(this.getRhythmAudioFor(theme), this.getRhythmAudioStart(this.getRhythmSpecFor(theme)));');
   once('    if (!copy || !track.paused) return;\n    await this.rhythmTrackPriming?.get(track);', '    if (!copy) return;\n    await this.rhythmTrackPriming?.get(track);');
+  once('    if (!track.paused || track.getAttribute(\'src\') !== src) return;\n    if (!route) {', '    if (!track.paused || track.getAttribute(\'src\') !== src) return;\n    track.preload = "auto";\n    if (!route) {');
   once('    track.src = copy;\n    try {\n      await Promise.race', '    track.mothAudioSource = src;\n    track.src = copy;\n    try {\n      await Promise.race');
   once('      track.src = copy;\n      return;\n', '      track.mothAudioSource = src;\n      track.src = copy;\n      return;\n');
   // A later dialogue must keep its prepared blob, not replace it with an

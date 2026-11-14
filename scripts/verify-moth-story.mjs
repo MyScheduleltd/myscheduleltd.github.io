@@ -226,7 +226,14 @@ for (const phone of [false, true]) {
       state = next;
     }});
   });
-  await page.evaluate(() => { bobbyGame.debugUnlockAllStages(); bobbyGame.startStoryRun('chill'); bobbyGame.startStage('level4-stage1', {freePlay: false}); });
+  await page.evaluate(() => {
+    const g = bobbyGame;
+    g.debugUnlockAllStages();
+    // Simulate an earlier story in which the recording was already opened.
+    g.progress.flags.level4MemeChestOpened = true;
+    g.startStoryRun('chill');
+    g.startStage('level4-stage1', {freePlay: false});
+  });
   await page.waitForFunction(() => bobbyGame.state === 'level4' && bobbyGame.sewerPlayer && !bobbyGame.levelLoadingPresentation, undefined, {timeout: 90000});
   const recordingAtEntry = await page.evaluate(() => ({prepared: window.__recordingPrepared, entry: window.__level4AssetEntries[0]}));
   assert.equal(recordingRequests.length, 1, 'The recording is fetched once during chapter loading: ' + JSON.stringify(recordingRequests));
@@ -272,7 +279,16 @@ for (const phone of [false, true]) {
   assert.equal(took.state, 'level4Dialogue');
   await throughDialogue(page);
   await fighting(page);
-  await page.evaluate(() => { const g = bobbyGame; g.startLevel1OfficeResults(); g.continueLevel1OfficeResults(); });
+  const freshWin = await page.evaluate(() => {
+    const g = bobbyGame;
+    g.startLevel1OfficeResults();
+    const save = JSON.parse(localStorage.getItem('moth.staff_progress_v1'));
+    g.continueLevel1OfficeResults();
+    return {checkpoint: save.storyCheckpoint, pastOpen: save.flags.level4MemeChestOpened,
+      pending: save.flags.level4MemeChestPending};
+  });
+  assert.deepEqual(freshWin, {checkpoint: 'level4-stage1', pastOpen: true, pending: true},
+    'A new win saves a fresh unopened objective despite an earlier recording unlock');
   await page.waitForFunction(() => /^level4/.test(bobbyGame.state) && bobbyGame.sewerPlayer, undefined, {timeout: 30000});
   const back = await page.evaluate(() => ({state: bobbyGame.state, x: bobbyGame.sewerPlayer.x, facing: bobbyGame.sewerPlayer.facing, won: bobbyGame.progress.flags.level4BossDefeated}));
   assert.deepEqual(back, {state: 'level4PostBossDialogue', x: took.x, facing: -1, won: true}, 'Back where the game began');
@@ -281,16 +297,26 @@ for (const phone of [false, true]) {
     let draws = 0;
     g.drawLevel4MemeChest = function() { draws++; return draw.call(this); };
     try {
-      g.render();
-      return {draws, rail: g.level4Rail, closed: g.memeChest.state === 'closed', near: g.isLevel4NearMemeChest()};
+      g.render(); g.renderTallScreen();
+      const camera = g.getTallWalkLayout();
+      const chestVisible = camera.srcX <= 450 - 33.5 && camera.srcX + camera.srcW >= 450 + 33.5;
+      return {draws, rail: g.level4Rail, closed: g.memeChest.state === 'closed', near: g.isLevel4NearMemeChest(), chestVisible};
     } finally {
       g.drawLevel4MemeChest = draw;
     }
   });
-  assert.deepEqual(firstRender, {draws: 1, rail: 'upper', closed: true, near: false}, 'Chest already draws in the post-fight room while upstairs');
+  assert.deepEqual(firstRender, {draws: 1, rail: 'upper', closed: true, near: false, chestVisible: true}, 'Chest already draws in the post-fight room while upstairs');
   while (await page.evaluate(() => bobbyGame.state === 'level4PostBossDialogue')) {
     await page.evaluate(() => bobbyGame.advanceLevel4PostBossDialogue());
   }
+  const currentPrompt = () => page.evaluate(() => {
+    const g = bobbyGame;
+    const draw = window.drawObjectivePrompt;
+    let prompt;
+    window.drawObjectivePrompt = (...args) => { prompt = args[1]; return draw(...args); };
+    try { g.render(); return prompt; } finally { window.drawObjectivePrompt = draw; }
+  });
+  assert.match(await currentPrompt(), /爬下梯子找寶箱|Climb down to chest/, 'Return from the fight directs the player downstairs');
   // The basement chest: O opens it, O saves the recording, H closes it.
   // The hash-checked bytes were loaded before chapter entry; ladder, preview
   // and save gestures must reuse them without another media request.
@@ -313,11 +339,50 @@ for (const phone of [false, true]) {
   assert.equal(recordingRequests.length, 1, 'Preview and saving reuse the preloaded recording: ' + JSON.stringify(recordingRequests));
   noNewChapterAssets('Saving the recording');
   await page.keyboard.press('KeyH');
-  const after = await page.evaluate(() => ({open: Boolean(bobbyGame.memeView), chest: bobbyGame.memeChest.state, opened: bobbyGame.progress.flags.level4MemeChestOpened, kept: JSON.parse(localStorage.getItem('moth.staff_progress_v1')).flags.level4MemeChestOpened}));
-  assert.deepEqual(after, {open: false, chest: 'open', opened: true, kept: true}, 'Closed, the chest stays open and remembered');
+  const after = await page.evaluate(() => {
+    const g = bobbyGame, save = JSON.parse(localStorage.getItem('moth.staff_progress_v1'));
+    return {open: Boolean(g.memeView), chest: g.memeChest.state, opened: save.flags.level4MemeChestOpened,
+      pending: save.flags.level4MemeChestPending, checkpoint: save.storyCheckpoint};
+  });
+  assert.deepEqual(after, {open: false, chest: 'open', opened: true, pending: false, checkpoint: 'level4-stage1'},
+    'Closing the recording preserves the open chest and the room checkpoint');
+  assert.match(await currentPrompt(), /爬上梯子，再往左離開|Climb up, then exit left/,
+    'Opening the chest switches the prompt to the exit route');
   noNewChapterAssets('Closing the recording');
+  if (!phone) {
+    const resume = async () => {
+      await page.reload({waitUntil: 'domcontentloaded'});
+      await page.waitForFunction(() => bobbyGame?.bootDone && bobbyGame.state === 'title');
+      assert.equal(await page.evaluate(() => bobbyGame.getContinueStageId()), 'level4-stage1');
+      await page.evaluate(() => bobbyGame.continueStory());
+      await page.waitForFunction(() => bobbyGame.state === 'level4' && !bobbyGame.levelLoadingPresentation);
+    };
+    await resume();
+    assert.deepEqual(await page.evaluate(() => [bobbyGame.memeChest.state, bobbyGame.level4BossEncountered]), ['open', true],
+      'Continue after opening returns to the won room with the chest still open');
+    assert.match(await currentPrompt(), /離開|left door|Leave room/);
+
+    // Put the saved story back at the exact successful-win snapshot to
+    // exercise a reload before the player had time to collect the chest.
+    await page.evaluate(() => {
+      const g = bobbyGame;
+      g.progress.flags.level4MemeChestPending = true;
+      g.saveProgress();
+    });
+    await resume();
+    assert.deepEqual(await page.evaluate(() => [bobbyGame.memeChest.state, bobbyGame.level4BossEncountered]), ['closed', true],
+      'Continue after winning returns to the unopened chest, without replaying the fight');
+    assert.match(await currentPrompt(), /去地下室找寶箱|Go to the basement for the chest/);
+    await page.evaluate(() => {
+      const g = bobbyGame;
+      g.sewerPlayer.x = g.getLevel4Stage1Config().exits.leftDoor.x;
+      g.tryLevel4Interact();
+    });
+    assert.deepEqual(await page.evaluate(() => [bobbyGame.state, bobbyGame.getContinueStageId()]), ['level4ExitMonologue', 'studio-stage1'],
+      'The existing optional exit still advances the checkpoint');
+  }
   assert.deepEqual(errors, []);
-  console.log('level 4 PASS', JSON.stringify({recordingAtEntry, recordingRequests: recordingRequests.length, newMediaRequests: chapterAssetRequests.length - assetsAtEntry, upstairs, took, back, after}));
+  console.log('level 4 PASS', JSON.stringify({recordingAtEntry, recordingRequests: 1, newMediaRequests: 0, upstairs, took, back, after}));
   await context.close();
 }
 // The short top prompts are driven by the earned chest, not the transient
@@ -345,8 +410,9 @@ for (const phone of [false, true]) {
   });
   await page.waitForFunction(() => bobbyGame.state === 'level4' && !bobbyGame.levelLoadingPresentation, undefined, {timeout: 60000});
   const cases = [
-    ['upper', 700, false, false, 'Chest in basement', '地下室有寶箱'],
-    ['upper', 500, false, false, 'Chest in basement', '地下室有寶箱'],
+    ['upper', 700, false, false, 'Go to the basement for the chest', '去地下室找寶箱'],
+    ['upper', 500, false, false, 'Go to the basement for the chest', '去地下室找寶箱'],
+    ['upper', 86, false, false, 'Go to the basement for the chest', '去地下室找寶箱'],
     ['upper', 1082, false, false, 'O: Climb down to chest', 'O 爬下梯子找寶箱'],
     ['lower', 500, false, true, 'O: Open chest', 'O 打開寶箱'],
     ['lower', 500, true, true, 'Climb up, then exit left', '爬上梯子，再往左離開'],
@@ -376,7 +442,7 @@ for (const phone of [false, true]) {
           near: g.isLevel4NearMemeChest(), draws: window.__chestDraws, encountered: g.level4BossEncountered, top};
       }, {language, rail, x, opened});
       const expected = language === 'en' ? en : zh;
-      assert.deepEqual(result, {prompts: [expected], tall: phone ? expected : null, near, draws: 1, encountered: false, top: true});
+      assert.deepEqual(result, {prompts: [expected], tall: phone ? expected : null, near, draws: 1, encountered: true, top: true});
       if (x === 700 || (x === 500 && opened)) {
         await page.screenshot({path: `.qa/moth/level4-top-bar-${phone ? 'phone' : 'desktop'}-${language}-${opened ? 'exit' : 'chest'}.png`});
       }
