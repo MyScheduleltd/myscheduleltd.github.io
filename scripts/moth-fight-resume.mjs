@@ -50,6 +50,7 @@ export const FIGHT_RESUME_METHODS = String.raw`
     const track = this.getActiveLevel1OfficeRhythmAudio();
     rhythm.resumeTrackTime = null;
     if (!track || rhythm.skipAudio) return;
+    rhythm.audioStarting = true;
     const refused = () => {
       if (this.level1OfficeRhythm !== rhythm) return;
       track.pause();
@@ -64,13 +65,13 @@ export const FIGHT_RESUME_METHODS = String.raw`
       if (Number.isFinite(trackTime)) track.currentTime = trackTime;
       track.volume = BGM_VOLUME;
       let timer;
-      Promise.race([Promise.all([this.soloPlay(track), this.musicAudioContext?.resume()]), new Promise((_, reject) => {
+      return Promise.race([Promise.all([this.soloPlay(track), this.musicAudioContext?.resume()]), new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error("Resume timed out")), 2000);
       })]).then(() => {
         const route = this.musicAudioRoutes?.get(track);
         if (route && route.context.state !== "running") refused();
       }, refused).finally(() => clearTimeout(timer));
-    });
+    }).finally(() => { rhythm.audioStarting = false; });
   }
 
   // Back from the lock screen or another app (resumeAudioAfterReturn).

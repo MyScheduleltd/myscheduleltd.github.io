@@ -176,6 +176,28 @@ test('scoreboard', async t => {
       assert.equal((await call(env, {method: 'POST', ip: '18.2.1.1', body: {action: 'start', mode: 'chill', chartVersion}})).json.error, 'chart-version');
     }
   });
+  await t.test('a run on the previous named chart can still finish on its own board', async () => {
+    const chartVersion = 'drums-readable-20261105b';
+    if (CHART_VERSION === chartVersion) return;
+    const prefix = 'moth:chart:' + chartVersion;
+    const body = {mode: 'chill', chartVersion};
+    const start = await call(env, {method: 'POST', ip: '18.4.1.1', body: {...body, action: 'start'}});
+    assert.equal(start.status, 201);
+    assert.equal(start.json.chartVersion, chartVersion);
+    const run = start.json.run;
+    const ticketKey = prefix + ':ticket:' + run;
+    data.set(ticketKey, JSON.stringify({...JSON.parse(data.get(ticketKey)), at: Date.now() - 631000}));
+    const previousScores = {
+      'level1-stage1': 126000, 'level2-stage2': 112000, 'level3-stage2': 155000,
+      'level4-stage1': 179000, 'studio-stage1': 192000, 'level5-stage2': 179000, 'level6-stage2': 254000
+    };
+    const posted = await call(env, {method: 'POST', ip: '18.4.1.2', body: {...body, id: 'OLDCHART', run, scores: previousScores}});
+    assert.equal(posted.status, 201);
+    const previous = await call(env, {path: '/api/moth-scoreboard?mode=chill&chartVersion=' + chartVersion});
+    const current = await call(env, {path: '/api/moth-scoreboard?mode=chill&chartVersion=' + CHART_VERSION});
+    assert.deepEqual(previous.json.entries.map(entry => entry.id), ['OLDCHART']);
+    assert(!current.json.entries.some(entry => entry.id === 'OLDCHART'));
+  });
   await t.test('shortened charts have their own duration bound; legacy retains twelve minutes', async () => {
     const minimum = handler.CURRENT_MIN_RUN_SECONDS;
     assert(minimum > 500 && minimum < MIN_RUN_SECONDS, 'Build-derived bound fits the shorter river run');

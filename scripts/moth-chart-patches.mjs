@@ -18,12 +18,28 @@ import { cleanRetiredHighwayConfig } from './moth-retired-highway.mjs';
 // versioned rows; it does not need Python, Demucs or the original audio stems.
 const baseBytes = readFileSync(new URL('./moth-drum-charts.json', import.meta.url));
 export const BASE_DRUM_CHARTS = JSON.parse(baseBytes);
-const riverCut = JSON.parse(readFileSync(new URL('./moth-river-cut.json', import.meta.url), 'utf8'));
+const riverBytes = readFileSync(new URL('./moth-river-cut.json', import.meta.url));
+const riverCut = JSON.parse(riverBytes);
 assert.equal(createHash('sha256').update(baseBytes).digest('hex'), riverCut.sourceSha256, 'River cut rebased from the current full-song transcription');
 const grooveBytes = readFileSync(new URL('./moth-river-groove.json', import.meta.url));
 assert.equal(createHash('sha256').update(grooveBytes).digest('hex'), riverCut.grooveSha256, 'River cut uses the reviewed audible groove');
-export const DRUM_CHARTS = { ...BASE_DRUM_CHARTS, version: riverCut.version,
+export const PRIOR_DRUM_CHARTS = { ...BASE_DRUM_CHARTS, version: riverCut.version,
   songs: { ...BASE_DRUM_CHARTS.songs, level5RiverRhythm: riverCut.song } };
+const revised = JSON.parse(readFileSync(new URL('./moth-groove-charts.json', import.meta.url)));
+assert.equal(revised.baseSha256, riverCut.sourceSha256, 'Groove selection is based on the retained source transcription');
+assert.equal(revised.riverSha256, createHash('sha256').update(riverBytes).digest('hex'), 'Groove selection uses the approved river crop');
+assert.deepEqual(Object.keys(revised.songs).sort(), Object.keys(PRIOR_DRUM_CHARTS.songs).sort(), 'Groove selection covers every story and hidden song');
+export const DRUM_CHARTS = { ...PRIOR_DRUM_CHARTS, version: revised.version, songs: Object.fromEntries(
+  Object.entries(PRIOR_DRUM_CHARTS.songs).map(([id, song]) => {
+    const {easy, hard} = revised.songs[id];
+    for (const [mode, selected] of [['easy', easy], ['hard', hard]]) {
+      assert.equal(selected.rows.length, song[mode].length, `${id}/${mode}: existing chart density`);
+      assert.equal(selected.evidence.length, selected.rows.length, `${id}/${mode}: an attack measurement for every note`);
+    }
+    return [id, { ...song, selectionVersion: revised.selectionVersion, easy: easy.rows, hard: hard.rows,
+      evidence: {easy: easy.evidence, hard: hard.evidence} }];
+  })
+) };
 export const MOTH_CHART_VERSION = DRUM_CHARTS.version;
 
 export const CONCERT_HYPE_TARGET = { easy: 0.6, hard: 0.7 };
@@ -48,12 +64,12 @@ export function patchCharts(config) {
     }
     spec.chart = {
       stepBeats: .25, version: MOTH_CHART_VERSION, timingMode: 'waveform-attacks',
-      ...(id === 'level5RiverRhythm' ? { selectionVersion: measured.selectionVersion } : {}),
+      selectionVersion: measured.selectionVersion,
       sourceRoles: Object.fromEntries([...'MOTH'].map(button => [button, 'drums'])),
       drumInstruments: { M: 'hat', O: 'snare', T: 'kick', H: 'other' },
       easy: measured.easy.map(row => [...row]), hard: measured.hard.map(row => [...row])
     };
-    spec.note = 'M/O/T/H heads follow measured isolated drum attacks. Actual swing and microtiming are preserved; no rap, melodic or silent filler. Easy retains its phrase density where drum attacks are present. Hard uses spaced fills, at least 300 ms between repeated buttons and at most four heads per second. Holds occupy clear gaps.';
+    spec.note = 'M/O/T/H heads follow measured isolated drum attacks. The charts favor audible kick, snare and cymbal accents, with the recording’s swing and syncopation intact. Both modes keep their phrase density and holds. Hard has at least 300 ms between repeated buttons and at most four heads per second.';
   }
   config.rhythmChartVersion = MOTH_CHART_VERSION;
   const crowd = config.level6ConcertRhythm.crowd;

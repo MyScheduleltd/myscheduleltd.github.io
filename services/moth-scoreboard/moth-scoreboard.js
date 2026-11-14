@@ -34,9 +34,21 @@ const LEGACY_MAX_FIGHT_SCORE = {
 const CHART_LIMITS = require('./chart-limits.json');
 const CHART_VERSION = CHART_LIMITS.version;
 const MAX_FIGHT_SCORE = { chill: CHART_LIMITS.chill, shoot: CHART_LIMITS.shoot };
+// Clients already running the previous charts can still finish and post to
+// their original board after the new game ships.
+const PREVIOUS_CHART_LIMITS = {
+  version: 'drums-readable-20261105b',
+  minRunSeconds: 630,
+  chill: { 'level1-stage1': 126000, 'level2-stage2': 112000, 'level3-stage2': 155000, 'level4-stage1': 179000, 'studio-stage1': 192000, 'level5-stage2': 179000, 'level6-stage2': 254000 },
+  shoot: { 'level1-stage1': 150000, 'level2-stage2': 133000, 'level3-stage2': 183000, 'level4-stage1': 181000, 'studio-stage1': 229000, 'level5-stage2': 208000, 'level6-stage2': 254000 }
+};
+const charts = new Map([
+  [PREVIOUS_CHART_LIMITS.version, PREVIOUS_CHART_LIMITS],
+  [CHART_VERSION, CHART_LIMITS]
+]);
 const isMode = mode => typeof mode === 'string' && Object.hasOwn(MAX_FIGHT_SCORE, mode);
 const FIGHTS = Object.keys(MAX_FIGHT_SCORE.chill);
-const versionOf = raw => raw == null ? null : raw === CHART_VERSION ? CHART_VERSION : false;
+const versionOf = raw => raw == null ? null : charts.has(raw) ? raw : false;
 const storageKey = (kind, version, suffix) => `${version ? 'moth:chart:' + version : 'moth'}:${kind}:${suffix}`;
 const versionFields = version => version ? { chartVersion: version } : {};
 // Older clients keep the original twelve-minute bound. Current charts use
@@ -60,7 +72,7 @@ function cleanId(raw) {
 }
 
 function checkRun(mode, scores, version = CHART_VERSION) {
-  const table = version === CHART_VERSION ? MAX_FIGHT_SCORE : version === null ? LEGACY_MAX_FIGHT_SCORE : null;
+  const table = version === null ? LEGACY_MAX_FIGHT_SCORE : charts.get(version);
   const limits = isMode(mode) && table ? table[mode] : null;
   if (!limits || !scores || typeof scores !== 'object') return { error: 'scores' };
   const keys = Object.keys(scores);
@@ -190,7 +202,8 @@ async function handler(req, res, env = process.env) {
     if (posted) return send(res, 409, { error: 'posted', ...versionFields(version), entries: await readBoard(store, mode, version) }, origin);
     const ticket = ticketJson ? JSON.parse(ticketJson) : null;
     if (ticket?.mode !== mode || (ticket.chartVersion || null) !== version) return send(res, 400, { error: 'run' }, origin);
-    if (Date.now() - ticket.at < (version ? CURRENT_MIN_RUN_SECONDS : MIN_RUN_SECONDS) * 1000) return send(res, 400, { error: 'too-fast' }, origin);
+    const minRunSeconds = version === null ? MIN_RUN_SECONDS : charts.get(version).minRunSeconds;
+    if (Date.now() - ticket.at < minRunSeconds * 1000) return send(res, 400, { error: 'too-fast' }, origin);
     const board = storageKey('board', version, mode);
     const [count, lowest] = await store.pipeline([['ZCARD', board], ['ZRANGE', board, 0, 0, 'WITHSCORES']]);
     if (count >= TOP && lowest?.length && run.total <= Math.floor(Number(lowest[1]))) return send(res, 409, { error: 'not-top', ...versionFields(version), entries: await readBoard(store, mode, version, { fresh: true }) }, origin);

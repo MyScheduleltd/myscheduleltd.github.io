@@ -55,12 +55,39 @@ def main():
     ap.add_argument('--charts',type=Path,default=ROOT/'scripts/moth-drum-charts.json')
     ap.add_argument('--ffmpeg',default='ffmpeg')
     ap.add_argument('--river-cut',type=Path,help='Verify the shipped short river chart rather than the complete source chart')
+    ap.add_argument('--groove',type=Path,help='Verify the current all-song groove selection and its shipped row timestamps')
+    ap.add_argument('--report',type=Path,help='Write the independent verification report here')
     args=ap.parse_args()
     charts=json.loads(args.charts.read_text())
     if args.river_cut:
         cut=json.loads(args.river_cut.read_text())
         assert hashlib.sha256(args.charts.read_bytes()).hexdigest()==cut['sourceSha256']
         charts['songs']['level5RiverRhythm']=cut['song']
+    if args.groove:
+        assert args.river_cut, 'The groove selection is for the released river cut'
+        groove = json.loads(args.groove.read_text())
+        assert hashlib.sha256(args.charts.read_bytes()).hexdigest() == groove['baseSha256']
+        assert hashlib.sha256(args.river_cut.read_bytes()).hexdigest() == groove['riverSha256']
+        shipped = json.loads((ROOT/'docs/moth/data/level1.json').read_text())
+        assert shipped['rhythmChartVersion'] == groove['version']
+        specs = {key: shipped[key] for key in groove['songs'] if key in shipped}
+        specs.update({level['id']: level['rhythm'] for level in shipped['secretLevels']})
+        for name, modes in groove['songs'].items():
+            spec = specs[name]
+            unit = 60 / spec['bpm'] * spec['chart']['stepBeats']
+            song = charts['songs'][name]
+            song['evidence'] = {}
+            for mode, selection in modes.items():
+                rows = spec['chart'][mode]
+                assert rows == selection['rows'] and len(rows) == len(selection['evidence']), (name, mode)
+                song[mode] = rows
+                song['evidence'][mode] = []
+                for row, event in zip(rows, selection['evidence']):
+                    # Measure against the timestamp decoded from the actual
+                    # built chart and its cut origin, including off-grid heads.
+                    emitted = spec['beatOffset'] + row[0] * unit + spec.get('audioStartSeconds', 0)
+                    assert abs(emitted - event['attack']) < .000002, (name, mode, event)
+                    song['evidence'][mode].append({**event, 'attack': emitted})
     baseline=json.loads((ROOT/'.qa/moth/published/data/level1.json').read_text())
     entries={k:baseline[k] for k in charts['songs'] if k in baseline}
     entries.update({a['id']:a['rhythm'] for a in baseline['secretLevels']})
@@ -83,7 +110,7 @@ def main():
                 key=(event['attack'],event['instrument'])
                 if key in events:continue
                 observed,contrast,edge=boundary(envs[event['instrument']],event['proposalAttack'])
-                events[key]={'attack':event['attack'],'instrument':event['instrument'],'independentAttack':observed,
+                events[key]={'attack':round(event['attack'], 6),'instrument':event['instrument'],'independentAttack':observed,
                              'differenceMs':round((observed-event['attack'])*1000,3),'contrast':round(contrast,4),'edge':edge}
         values=np.array([e['differenceMs'] for e in events.values()])
         review=[{**e, 'resolution': reviewed_resolution(name, e['attack'], source_sha)} for e in events.values() if abs(e['differenceMs'])>20 or e['contrast']<.5 or e['edge']]
@@ -93,7 +120,7 @@ def main():
               'largestAbsoluteDifferenceMs':float(max(abs(values))), 'reviewedBoundaries':review,'unresolved':unresolved}
         output['songs'].append(item);print(json.dumps(item),flush=True)
     assert not any(song['unresolved'] for song in output['songs']), 'Independent boundary differences require waveform review'
-    out=ROOT/'.qa/moth/drum-onset-20261105'/('independent-runtime-after.json' if args.river_cut else 'independent-after.json')
+    out=args.report or ROOT/'.qa/moth/drum-onset-20261105'/('independent-runtime-after.json' if args.river_cut else 'independent-after.json')
     out.parent.mkdir(parents=True,exist_ok=True);out.write_text(json.dumps(output,ensure_ascii=False,indent=2)+'\n')
 
 

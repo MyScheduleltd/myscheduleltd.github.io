@@ -4,6 +4,24 @@ export const MOTH_RHYTHM_HEAD = {radius: 21, lineWidth: 5, font: "900 18px 'Cour
 export const MOTH_RHYTHM_RING = {radius: 39, lineWidth: 4, outlineWidth: 2, lead: 0.82, color: '#ffffff', outlineColor: '#493423'};
 export const MOTH_PORTRAIT_RAIL_HIT_OFFSET = 226;
 
+export function getRhythmDrumPulse(notes, time) {
+  // Sample the last charted drum attack on the same clock that draws the notes.
+  // Searching by time also works after a pause or a dropped animation frame.
+  let low = 0;
+  let high = notes.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (notes[middle].time <= time) low = middle + 1;
+    else high = middle;
+  }
+  const note = notes[low - 1];
+  if (!note) return 0;
+  const backbeat = note.button === "T" || note.button === "O";
+  const decay = backbeat ? 0.19 : 0.12;
+  const remaining = Math.max(0, 1 - (time - note.time) / decay);
+  return remaining * remaining * (backbeat ? 1 : 0.48);
+}
+
 export function calculateRhythmRailGeometry(notes = []) {
   let minGap = Infinity;
   for (let index = 1; index < notes.length; index++) {
@@ -122,10 +140,41 @@ function drawRhythmTimingRing(target, x, y, cue, scale = 1) {
   target.restore();
 }
 
+function drawRhythmHitPulse(target, x, y, pulse, age, reducedMotion) {
+  const duration = pulse.finish ? 0.28 : 0.22;
+  if (age < 0 || age >= duration) return;
+  const remaining = 1 - age / duration;
+  const progress = 1 - remaining * remaining;
+  const strong = pulse.perfect || pulse.finish;
+  const colour = MOTH_NOTE_COLOURS[pulse.button] || "#f7f2de";
+  target.save();
+  target.globalAlpha = remaining * 0.88;
+  target.lineWidth = 3;
+  target.strokeStyle = strong ? "#fff4b3" : "#c9f2ff";
+  target.beginPath();
+  target.arc(x, y, 25 + (reducedMotion ? 0 : progress * (strong ? 25 : 15)), 0, TAU);
+  target.stroke();
+  if (!reducedMotion) {
+    // Small sparks stay within the hit area and clear before the next attack.
+    const distance = 29 + progress * (strong ? 22 : 12);
+    const diagonal = Math.round(distance * 0.61);
+    const lift = Math.round(distance * 0.48);
+    const size = strong ? 5 : 4;
+    target.fillStyle = colour;
+    for (const offset of [-1, 1]) {
+      target.fillRect(x + offset * diagonal - size / 2, y - lift, size, size);
+      target.fillRect(x + offset * diagonal - size / 2, y + lift, size, size);
+    }
+  }
+  target.restore();
+}
+
 export function patchChartPlayability(once, edit) {
   once('const RHYTHM_DIFFICULTIES = {', `const MOTH_RHYTHM_HEAD = ${JSON.stringify(MOTH_RHYTHM_HEAD)};
 const MOTH_RHYTHM_RING = ${JSON.stringify(MOTH_RHYTHM_RING)};
 ${calculateRhythmRailGeometry.toString()}
+
+${getRhythmDrumPulse.toString()}
 
 ${calculateRhythmTimingCue.toString()}
 
@@ -137,7 +186,28 @@ ${drawRhythmHoldMarker.toString()}
 
 ${drawRhythmTimingRing.toString()}
 
+${drawRhythmHitPulse.toString()}
+
 const RHYTHM_DIFFICULTIES = {`);
+  once('      lastBeatIndex: -1,\n', '');
+  once(`    const beatSeconds = 60 / Math.max(1, spec.bpm || 92.3);
+    const beatIndex = Math.floor((this.songTime - (spec.beatOffset || 0)) / beatSeconds);
+    if (beatIndex !== rhythm.lastBeatIndex) {
+      rhythm.lastBeatIndex = beatIndex;
+      rhythm.beatPulse = 1;
+    }
+    rhythm.beatPulse = Math.max(0, rhythm.beatPulse - dt * 4.8);`,
+    '    rhythm.beatPulse = rhythm.ending ? 0 : getRhythmDrumPulse(rhythm.notes, this.getLevel1OfficeRenderTime());');
+  once('    rhythm.trackPulse = { at: this.time, perfect };',
+    '    rhythm.trackPulse = { at: this.time, perfect, button: target.button };');
+  once('    rhythm.trackPulse = { at: this.time, perfect: true };',
+    '    rhythm.trackPulse = { at: this.time, perfect: true, button: note.button, finish: true };');
+  edit('      // A shockwave off the hit line on every hit, and a bigger one with a\n', '      // No combo callout on the track:', () => `      const pulse = !frozen && !rhythm?.ending && rhythm?.trackPulse;
+      if (pulse && motionTime - pulse.at < 0.28) {
+        drawRhythmHitPulse(target, cursorX, railY, pulse, motionTime - pulse.at,
+          window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
+      }
+      // No combo callout on the track:`);
   once('x: 760 - 352 / 1.35, y: 616 - 98 / 1.35', `x: 760 - ${MOTH_PORTRAIT_RAIL_HIT_OFFSET} / 1.35, y: 616 - 98 / 1.35`);
   once("  // width: a slice of the frame's track centred on its hit line (x 760) and\n  // its row of notes (y 616), scaled up so the notes read bigger than they do\n  // full-width.", "  // width: a slice of the track, with more room in front of the hit line\n  // (x 760) for incoming circles. The row (y 616) stays vertically centered\n  // and is scaled up for legibility.");
   once('      const pixelsPerSecond = 140;', '      const pixelsPerSecond = this.getRhythmRailGeometry().pixelsPerSecond;');

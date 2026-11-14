@@ -324,7 +324,36 @@ export function patchMothRuntime(source, ts) {
   once('      : this.songTime >= duration;\n    if (this.isConcertRhythm()) this.updateConcertCrowd(rhythm, songFinished);',
     '      : this.songTime >= duration || (!rhythm.skipAudio && this.songTime >= duration - 1 && Boolean(this.getActiveLevel1OfficeRhythmAudio()?.ended));\n    if (this.isConcertRhythm()) this.updateConcertCrowd(rhythm, songFinished);');
   // A fight's song switches to its downloaded copy before it starts (useSongCopy),
-  // waits under 載入中… if a stream runs dry, and judges nothing meanwhile.
+  // waits under 載入中… if the local media player needs samples or is seeking.
+  edit('    if (this.level1OfficeRhythm && !this.level1OfficeRhythm.skipAudio) {\n      // The media playhead is the clock', '    const duration = this.level1OfficeRhythm ?', () => `    const rhythm = this.level1OfficeRhythm;
+    if (rhythm && !rhythm.skipAudio) {
+      if (rhythm.tutorial?.mode === "done" && !rhythm.ending) {
+        if (rhythm.audioStarting || !rhythmAudio) return;
+        if (rhythmAudio.paused && !rhythmAudio.ended) {
+          this.retryLevel1OfficeSong(rhythmAudio, audioStart);
+          return;
+        }
+        if (this.isFightSongStalled(rhythmAudio)) return;
+        const route = this.musicAudioRoutes?.get(rhythmAudio);
+        if (route && route.context.state !== "running") {
+          this.suspendGameAudio();
+          this.showAudioRecovery("resume");
+          return;
+        }
+        this.songTime = this.getLevel1OfficeRenderTime();
+      }
+    } else {
+      this.songTime = liveAudioTime !== null && liveAudioTime > this.songTime
+        ? liveAudioTime
+        : this.songTime + dt;
+    }
+    const duration = this.level1OfficeRhythm ?`);
+  once('      if (track && !track.paused) return Math.max(0,\n        track.currentTime - this.getRhythmAudioStart()', '      if (track && !rhythm.audioStarting && !rhythm.songHandover && !(this.stageCountdown > 0)\n        && (!track.paused || track.ended) && !this.isFightSongStalled(track)) return Math.max(0,\n        track.currentTime - this.getRhythmAudioStart()');
+  once('    if (!track || track.paused) return current;\n    // Judge when', '    if (!track || track.paused || this.isFightSongStalled(track)) return current;\n    // Judge when');
+  once('    if (rhythm) rhythm.audioStartAttempt = null;', '    if (rhythm) {\n      rhythm.audioStartAttempt = null;\n      rhythm.audioStarting = false;\n    }');
+  once('      track.currentTime = Math.max(0, audioStart + this.songTime);', '      if (track.currentTime < this.getRhythmAudioStart() || (!track.currentTime && this.songTime > 0)) {\n        track.currentTime = Math.max(0, audioStart + this.getRhythmOutputDelay() + this.songTime);\n      }');
+  once('      if (this.audioInterruption || document.hidden) return;\n      try {\n        if (this.hasBakedFades()) track.volume = BGM_VOLUME;', '      if (this.audioInterruption || document.hidden) return;\n      rhythm.audioStarting = true;\n      try {\n        if (this.hasBakedFades()) track.volume = BGM_VOLUME;');
+  once('        track.volume = BGM_VOLUME;\n        this.showAudioRecovery("start");\n      }\n    }\n  }\n\n  advanceLevel1OfficeTutorial()', '        track.volume = BGM_VOLUME;\n        this.showAudioRecovery("start");\n      } finally {\n        if (rhythm.audioStartAttempt === startAttempt) rhythm.audioStarting = false;\n      }\n    }\n  }\n\n  advanceLevel1OfficeTutorial()');
   once('      track.pause();\n      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);\n      track.currentTime = this.getRhythmAudioStart();', '      track.pause();\n      this.useSongCopy(track);\n      this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);\n      track.currentTime = this.getRhythmAudioStart();');
   once('      rhythm.audioPriming = null;\n      track.pause();\n      track.currentTime = this.getRhythmAudioStart();', '      rhythm.audioPriming = null;\n      track.pause();\n      this.useSongCopy(track);\n      track.currentTime = this.getRhythmAudioStart();');
   once('        body: "3 條命已用完。Press Enter 回到主畫面 — 可用 CONTINUE 從本次存檔繼續。"', `        body: this.tr(
@@ -337,7 +366,7 @@ export function patchMothRuntime(source, ts) {
   once('  const livesLeft = options.livesLeft;\n', '');
   edit('  if (Number.isFinite(livesLeft)) {\n', '\n  }\n\n', () => '');
   once('    this.renderLivesIndicator();\n    this.renderStageCountdown();\n', '    this.renderLivesIndicator();\n    this.renderStageCountdown();\n    this.renderSongStall();\n');
-  once('this.playLevel1OfficeTone("hit", action, "stamp");\n    if (this.stageCountdown > 0) return true;\n', 'this.playLevel1OfficeTone("hit", action, "stamp");\n    if (this.stageCountdown > 0 || this.isFightSongStalled()) return true;\n');
+  once('this.playLevel1OfficeTone("hit", action, "stamp");\n    if (this.stageCountdown > 0) return true;\n', 'this.playLevel1OfficeTone("hit", action, "stamp");\n    if (this.stageCountdown > 0 || rhythm.audioStarting || rhythm.songHandover) return true;\n    if (tutorial.mode === "done" && !rhythm.skipAudio) {\n      const track = this.getActiveLevel1OfficeRhythmAudio();\n      if (!track || track.paused || track.ended || this.isFightSongStalled(track)) return true;\n    }\n');
   // Level 7's hype bar fills with every hit (owner, 2026-10-13): perfect 1,
   // good 0.6, a completed hold three times, as before, over the target share
   // (moth-chart-patches.mjs) of the whole song's total. It starts empty, is
@@ -669,15 +698,13 @@ const RUNTIME_METHODS = `
     route.playedSource = copy;
   }
 
-  // A stream that runs dry mid-song (no copy, weak connection): the fight's
-  // clock follows the song, so it waits under 載入中… and goes on the moment
-  // the song does. No note is judged meanwhile.
-  isFightSongStalled() {
+  // The full track is local, but the decoder can still briefly run dry or
+  // seek. Freeze the playhead shared by drawing and judgment until it plays.
+  isFightSongStalled(track = this.getActiveLevel1OfficeRhythmAudio()) {
     const rhythm = this.level1OfficeRhythm;
-    const track = this.getActiveLevel1OfficeRhythmAudio();
     const playing = this.state === 'playing' && rhythm && !rhythm.ending && !rhythm.skipAudio && rhythm.tutorial?.mode === 'done'
       && !(this.stageCountdown > 0) && track && !track.paused && !track.ended;
-    if (!playing || track.readyState >= 3) { if (rhythm) rhythm.stalledSince = null; return false; }
+    if (!playing || (!track.seeking && track.readyState >= 3)) { if (rhythm) rhythm.stalledSince = null; return false; }
     rhythm.stalledSince ??= performance.now();
     return true;
   }
@@ -705,7 +732,7 @@ const RUNTIME_METHODS = `
     const dots = '.'.repeat(1 + Math.floor(performance.now() / 400) % 3);
     drawFittedText(target, this.tr('LOADING', '載入中') + dots, centerX, centerY - 6, card.w - 60, 46, 900, 24);
     target.fillStyle = '#5d6a5f';
-    drawFittedText(target, this.tr('The song is still downloading', '歌曲仍在下載'), centerX, centerY + 34, card.w - 60, 20, 700, 14);
+    drawFittedText(target, this.tr('Waiting for song audio', '正在等待歌曲播放'), centerX, centerY + 34, card.w - 60, 20, 700, 14);
     target.restore();
   }
 

@@ -114,14 +114,14 @@ export function patchWalkScenes(once, edit) {
       if (hasMemeChest) {
         if (opened) prompt = lower ? this.tr("Climb up, then exit left", "爬上梯子，再往左離開")
           : this.tr("Use the left door", "從左門離開");
-        else prompt = lower ? this.tr("Find the chest", "找寶箱") : this.tr("Chest in basement", "地下室有寶箱");
+        else prompt = lower ? this.tr("Find the chest", "找寶箱") : this.tr("Go to the basement for the chest", "去地下室找寶箱");
       }
       if (nearLadder && !(hasMemeChest && opened && !lower)) {
         if (hasMemeChest && opened) prompt = this.tr("O: Climb up, then exit left", "O 爬上梯子，再往左離開");
         else if (hasMemeChest && !lower) prompt = this.tr("O: Climb down to chest", "O 爬下梯子找寶箱");
         else prompt = lower ? this.tr("O: Climb up", "O 爬上梯子") : this.tr("O: Climb down", "O 爬下梯子");
       }
-      if (nearLeftDoor) {
+      if (nearLeftDoor && !(hasMemeChest && !opened)) {
         const won = this.progress?.flags?.level4BossDefeated;
         prompt = won ? this.tr("O: Leave room", "O 離開房間") : this.tr("Finish Bonita’s challenge", "先陪 Bonita 完成挑戰");
       }
@@ -138,8 +138,45 @@ export function patchWalkScenes(once, edit) {
   once('  tryLevel4Interact() {\n', '  tryLevel4Interact() {\n    if (this.isLevel4NearMemeChest()) {\n      this.openLevel4MemeChest();\n      return;\n    }\n');
   once('      return (this.level4Rail === "lower" && this.chest?.revealed && this.isNearChest())\n', '      return this.isLevel4NearMemeChest()\n        || (this.level4Rail === "lower" && this.chest?.revealed && this.isNearChest())\n');
   once('  updateLevel4(dt) {\n', '  updateLevel4(dt) {\n    this.updateLevel4MemeChest();\n');
+  once('    this.level4BossEncountered = false;\n    this.level4Boss = null;\n    this.level4BossShots = [];\n    const side = this.getLevel4ActiveSideView();',
+    '    this.level4BossEncountered = !this.freePlay && this.hasLevel4MemeChest();\n    this.level4Boss = null;\n    this.level4BossShots = [];\n    const side = this.getLevel4ActiveSideView();');
   once('    this.level4BossShots = [];\n    const side = this.getLevel4ActiveSideView();\n',
-    '    this.level4BossShots = [];\n    this.memeChest = { state: this.progress?.flags?.level4MemeChestOpened ? "open" : "closed", at: 0 };\n    if (!this.memeChestSheet) loadImage(MEME_CHEST.sheet).then(image => { this.memeChestSheet = image; }).catch(() => {});\n    const side = this.getLevel4ActiveSideView();\n');
+    '    this.level4BossShots = [];\n    const flags = this.progress?.flags;\n    const opened = !this.freePlay && !flags?.level4MemeChestPending && flags?.level4MemeChestOpened;\n    this.memeChest = { state: opened ? "open" : "closed", at: 0 };\n    if (!this.memeChestSheet) loadImage(MEME_CHEST.sheet).then(image => { this.memeChestSheet = image; }).catch(() => {});\n    const side = this.getLevel4ActiveSideView();\n');
+  // A new win renews the chest objective even for a player who already
+  // opened it in an older run. Keep that lifetime record for existing saves.
+  once('      level4BossDefeated: false\n    };\n    this.progress.storyCheckpoint = "level1-stage1";',
+    '      level4BossDefeated: false,\n      level4MemeChestPending: false\n    };\n    this.progress.storyCheckpoint = "level1-stage1";');
+  once('    if (ordered.includes(stageId)) this.progress.storyCheckpoint = nextStageId || stageId;',
+    `    if (ordered.includes(stageId)) {
+      // The results bank the fight score. Leaving Bonita's room is the
+      // checkpoint for the next chapter.
+      this.progress.storyCheckpoint = stageId === "level4-stage1" && this.isArcadeRhythm()
+        ? stageId : nextStageId || stageId;
+    }`);
+  once('      level4BossDefeated: true\n    };\n    this.collectSong("level4");',
+    '      level4BossDefeated: true,\n      level4MemeChestPending: true\n    };\n    this.collectSong("level4");');
+  once('    const srcX = clamp(this.getTallFocusX() - srcW / 2, 0, VIEW_W - srcW);\n    return { worldScale, srcW, srcX, srcY: 0, srcH: VIEW_H, worldH: PORTRAIT_FIGHT.height };',
+    `    const focus = this.getTallFocusX();
+    let width = srcW;
+    let srcX = clamp(focus - srcW / 2, 0, VIEW_W - srcW);
+    if (["level4", "level4PostBossDialogue"].includes(this.state) && this.level4Rail !== "lower"
+      && this.hasLevel4MemeChest() && this.memeChest?.state === "closed") {
+      const x = this.sewerPlayer.x;
+      const margin = MEME_CHEST.size / 2;
+      const leftEdge = Math.max(0, Math.min(x, MEME_CHEST.x) - margin);
+      const rightEdge = Math.min(VIEW_W, Math.max(x, MEME_CHEST.x) + margin);
+      const span = rightEdge - leftEdge;
+      if (span <= srcW) srcX = clamp(srcX, Math.max(0, rightEdge - srcW), Math.min(VIEW_W - srcW, leftEdge));
+      else {
+        // On returning at the far right, use the nearest crop that fits
+        // both Bobby and the chest; the vertical crop still shows the floor.
+        width = span;
+        srcX = leftEdge;
+      }
+    }
+    return { worldScale, srcW: width, srcX, srcY: 0, srcH: VIEW_H, worldH: PORTRAIT_FIGHT.height };`);
+  once('return { x: walk.srcX + px / walk.worldScale, y: walk.srcY + py / walk.worldScale };',
+    'return { x: walk.srcX + px * walk.srcW / layout.width, y: walk.srcY + py / walk.worldScale };');
   // While the recording is up it has the keys and the deck (O save, H close).
   once('    window.addEventListener("keydown", (event) => {\n      if (this.scoreboard) { this.handleScoreboardKey(event); return; }\n',
     '    window.addEventListener("keydown", (event) => {\n      if (this.scoreboard) { this.handleScoreboardKey(event); return; }\n      if (this.memeView) { this.handleMemeKey(event); return; }\n');
@@ -179,7 +216,11 @@ export const WALK_SCENE_METHODS = `
     // A preview from the staff tools leaves the save as it was.
     if (this.freePlay) return;
     if (!this.progress) this.progress = this.createDefaultProgress();
-    this.progress.flags = { ...(this.progress.flags || {}), level4MemeChestOpened: true };
+    this.progress.flags = {
+      ...(this.progress.flags || {}),
+      level4MemeChestOpened: true,
+      level4MemeChestPending: false
+    };
     this.saveProgress();
   }
 

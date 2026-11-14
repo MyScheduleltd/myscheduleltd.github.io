@@ -38,10 +38,27 @@ try {
       await page.waitForFunction(stage => {
         const g = bobbyGame, r = g.level1OfficeRhythm, track = r && g.getActiveLevel1OfficeRhythmAudio();
         return g.currentStageId === stage && g.state === 'playing' && r?.tutorial?.mode === 'done'
-          && !g.levelLoadingPresentation && !(g.stageCountdown > 0) && !r.audioStartPending && !r.songHandover
+          && !g.levelLoadingPresentation && !(g.stageCountdown > 0) && !r.audioStartPending && !r.audioStarting && !r.songHandover
           && !g.audioInterruption && !g.audioRecovering && !g.audioRecoveryVisible()
           && track && !track.paused && track.readyState >= 3 && !track.seeking;
       }, stage, {timeout: 120000});
+      if (stage === 'level1-stage1' && mode === 'chill') {
+        const readClock = () => page.evaluate(() => {
+          const g = bobbyGame, track = g.getActiveLevel1OfficeRhythmAudio();
+          return {blob: track.currentSrc.startsWith('blob:'), media: track.currentTime,
+            chart: g.getLevel1OfficeRenderTime(), seeking: track.seeking, paused: track.paused};
+        });
+        const before = await readClock();
+        await context.setOffline(true);
+        try {
+          await page.waitForFunction(previous => bobbyGame.getLevel1OfficeRenderTime() > previous + .6,
+            before.chart, {timeout: 10000});
+          const after = await readClock();
+          assert(after.blob && !after.seeking && !after.paused, 'The fight keeps playing its local song after losing the connection');
+          assert(Math.abs((after.media - before.media) - (after.chart - before.chart)) < .06, 'The note clock stays with the local audio while offline');
+          console.log('PASS: active fight music and chart clock stay in sync with the network disabled');
+        } finally { await context.setOffline(false); }
+      }
       const result = await page.evaluate(async ({stage, mode}) => {
         const g = bobbyGame, r = g.level1OfficeRhythm, track = g.getActiveLevel1OfficeRhythmAudio();
         g.update = () => {}; // Keep normal judgment updates from consuming sought notes.
