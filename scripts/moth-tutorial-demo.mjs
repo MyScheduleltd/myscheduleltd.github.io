@@ -93,7 +93,7 @@ function drawTutorialRhythmDemo(target, kind, rect, elapsed) {
     target.globalAlpha *= fade;
     if (hold) {
       drawRhythmHoldTail(target, {
-        x: headX, endX: tailX, y: railY, hitX: cursorX, button, held, completed
+        x: headX, endX: tailX, y: railY, hitX: cursorX, button, held
       }, scale);
     }
     drawRhythmNoteHead(target, { x: headX, y: railY, button, held, completed }, scale);

@@ -3,16 +3,14 @@
 // browser's standard mapping supplies physical-position names; unknown devices
 // expose their actual button/axis numbers and can be configured in Settings.
 export const GAMEPAD_ACTIONS = [
-  ['M', 'KeyM', 'M / HEAVY', 'M／重攻擊', 3],
-  ['O', 'KeyO', 'O / CONFIRM / INTERACT', 'O／確認／互動', 1],
-  ['T', 'KeyT', 'T / BLOCK', 'T／格擋', 0],
-  ['H', 'KeyH', 'H / BACK / LIGHT', 'H／返回／輕攻擊', 2],
+  ['M', 'KeyM', 'M / CYMBALS', 'M／鈸', 3],
+  ['O', 'KeyO', 'O / SNARE / CONFIRM / INTERACT', 'O／小鼓／確認／互動', 1],
+  ['T', 'KeyT', 'T / KICK DRUM', 'T／大鼓', 0],
+  ['H', 'KeyH', 'H / OTHER PERCUSSION / BACK', 'H／其他打擊樂／返回', 2],
   ['up', 'KeyW', 'UP', '上', 12], ['down', 'KeyS', 'DOWN', '下', 13],
   ['left', 'KeyA', 'LEFT', '左', 14], ['right', 'KeyD', 'RIGHT', '右', 15],
   ['space', 'Space', 'SPACE / JUMP', 'SPACE／跳躍', 5],
-  ['pause', 'Escape', 'PAUSE', '暫停', 9],
-  ['pocket', 'KeyC', 'POCKET', '口袋', 8],
-  ['mount', 'KeyR', 'RIDE / DISMOUNT', '上車／下車', 4]
+  ['pause', 'Escape', 'PAUSE / RESUME', '暫停／繼續', 9]
 ];
 
 export function patchGamepad(once) {
@@ -234,15 +232,29 @@ export const GAMEPAD_METHODS = String.raw`
     const panel = document.createElement('section');
     panel.className = 'moth-controller-panel'; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true');
     panel.setAttribute('aria-labelledby', 'moth-controller-title');
-    // Scoped styles follow the game's cream/green home screen. The panel
-    // scrolls independently on small phones without covering the close button.
+    // Keep the entire menu in one scroll area inside the device safe area.
     if (!document.getElementById('moth-controller-style')) {
       const style = document.createElement('style'); style.id = 'moth-controller-style';
-      style.textContent = '.moth-controller-panel{position:fixed;inset:0;z-index:2147483000;background:rgba(4,9,7,.96);color:#efe3c4;overflow:auto;padding:20px max(14px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom));box-sizing:border-box;font:700 16px "Courier New","PingFang TC",monospace;text-align:left;touch-action:pan-y}.moth-controller-panel>div{max-width:760px;margin:auto}.moth-controller-panel h2{font-size:25px}.moth-controller-panel p{line-height:1.55;overflow-wrap:anywhere}.moth-controller-panel select,.moth-controller-panel button{font:inherit;min-height:44px;color:#efe3c4;background:#22372a;border:2px solid #b8aa87;border-radius:4px;padding:8px;cursor:pointer}.moth-controller-panel select{width:100%;margin:8px 0}.moth-controller-panel button:focus-visible,.moth-controller-panel select:focus-visible{outline:4px solid #f1c62d;outline-offset:2px}.moth-controller-panel button:disabled{opacity:.5;cursor:default}.moth-controller-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(130px,1fr);gap:8px;align-items:center;margin:9px 0}.moth-controller-row button{overflow-wrap:anywhere}.moth-controller-tools{display:flex;gap:12px;flex-wrap:wrap;position:sticky;bottom:0;background:#07110c;padding:12px 0}.moth-controller-message{color:#f1c62d;min-height:3.1em}';
+      style.textContent =
+        '.moth-controller-panel{position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;background:#0b1410;color:#efe3c4;overflow:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);font:700 16px "Courier New","PingFang TC",monospace;text-align:left}' +
+        '.moth-controller-scroll{min-height:0;overflow:auto;overscroll-behavior:contain;touch-action:pan-y;padding:18px 14px 24px}' +
+        '.moth-controller-scroll>div{max-width:760px;margin:auto}' +
+        '.moth-controller-panel h2{font-size:25px;margin:0 0 16px;outline:none}' +
+        '.moth-controller-panel p{line-height:1.55;overflow-wrap:anywhere}' +
+        '.moth-controller-panel select,.moth-controller-panel button{font:inherit;min-height:44px;color:#efe3c4;background:#22372a;border:2px solid #b8aa87;border-radius:4px;padding:8px;cursor:pointer}' +
+        '.moth-controller-panel select{width:100%;margin:8px 0}' +
+        '.moth-controller-panel button:focus-visible,.moth-controller-panel select:focus-visible{outline:4px solid #f1c62d;outline-offset:2px}' +
+        '.moth-controller-panel button:disabled{opacity:.5;cursor:default}' +
+        '.moth-controller-row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:8px;align-items:center;margin:9px 0}' +
+        '.moth-controller-row label,.moth-controller-row button{overflow-wrap:anywhere}' +
+        '.moth-controller-tools{display:flex;gap:12px;flex-wrap:wrap;border-top:1px solid #526153;padding-top:16px;margin-top:16px}' +
+        '.moth-controller-message{color:#f1c62d}.moth-controller-message:empty{margin:0}';
       document.head.appendChild(style);
     }
-    const content = document.createElement('div'); panel.appendChild(content);
-    const title = document.createElement('h2'); title.id = 'moth-controller-title'; title.textContent = this.tr('CONTROLLER SETTINGS', '控制器設定'); content.appendChild(title);
+    const scroll = document.createElement('div'); scroll.className = 'moth-controller-scroll'; panel.appendChild(scroll);
+    const content = document.createElement('div'); scroll.appendChild(content);
+    const title = document.createElement('h2'); title.id = 'moth-controller-title'; title.tabIndex = -1;
+    title.textContent = this.tr('CONTROLLER SETTINGS', '控制器設定'); content.appendChild(title);
     const status = document.createElement('p'); status.className = 'moth-controller-status'; status.setAttribute('role', 'status'); content.appendChild(status);
     const select = document.createElement('select'); select.setAttribute('aria-label', this.tr('Active controller', '目前使用的控制器')); content.appendChild(select);
     select.addEventListener('change', () => {
@@ -253,7 +265,8 @@ export const GAMEPAD_METHODS = String.raw`
       this.refreshControllerPanel(this.readControllers(), pad, true);
     });
     const hint = document.createElement('p');
-    hint.textContent = this.tr('Connect by USB or Bluetooth, then press a controller button. Select a control below, release all controls, then press its new button or move one stick direction. An occupied input swaps controls. M/O/T/H use the same keys as the deck; O confirms and H goes back in menus. Settings are saved for each controller model on this browser. If audio is blocked, tap the screen or press a keyboard key once.', '以 USB 或藍牙連線後，按一下控制器按鈕。選擇下方功能，放開所有按鍵，再按新的按鈕或推動一個搖桿方向。若按鍵已有用途，將交換兩個功能。M／O／T／H 對應遊戲面板；選單中 O 確認、H 返回。設定會依控制器型號儲存在此瀏覽器。若無法播放聲音，請先輕觸螢幕或按一次鍵盤。'); content.appendChild(hint);
+    hint.textContent = this.tr('Select an action, then press a button or move the stick.', '選擇功能，再按新按鍵或推動搖桿。');
+    content.appendChild(hint);
     for (const [id, , en, zh] of MOTH_GAMEPAD_ACTIONS) {
       const row = document.createElement('div'); row.className = 'moth-controller-row';
       const label = document.createElement('label'); label.htmlFor = 'moth-bind-' + id; label.textContent = this.tr(en, zh);
@@ -273,7 +286,7 @@ export const GAMEPAD_METHODS = String.raw`
     panel.addEventListener('pointerdown', event => event.stopPropagation());
     this.controllerPanel = panel; document.body.appendChild(panel);
     this.refreshControllerPanel(this.readControllers(), null, true);
-    panel.querySelector('[data-controller-tool="close"]').focus();
+    title.focus({ preventScroll: true });
   }
 
   setControllerPanelMessage(text) {
@@ -311,7 +324,7 @@ export const GAMEPAD_METHODS = String.raw`
     if (!pad) return;
     this.resetGamepadInput();
     this.controllerCapture = { action, ready: false, expires: performance.now() + 15000 };
-    this.setControllerPanelMessage(this.tr('Release all controls, then press the new button or stick direction. Esc cancels.', '請先放開所有按鍵，再按新的按鈕或推動搖桿。Esc 可取消。'));
+    this.setControllerPanelMessage(this.tr('Release all buttons and center the sticks, then enter the new input.', '先鬆開按鍵、讓搖桿回正，再輸入。'));
     this.refreshControllerPanel(this.readControllers(), pad, true);
   }
 
@@ -386,7 +399,8 @@ export const GAMEPAD_METHODS = String.raw`
     if (['KeyW', 'KeyS', 'KeyA', 'KeyD'].includes(code)) {
       const delta = ['KeyW', 'KeyA'].includes(code) ? -1 : 1;
       const index = controls.indexOf(active);
-      const next = controls[(index + delta + controls.length) % controls.length];
+      const next = index < 0 ? controls[delta < 0 ? controls.length - 1 : 0]
+        : controls[(index + delta + controls.length) % controls.length];
       next?.focus(); next?.scrollIntoView({ block: 'nearest' });
     }
   }

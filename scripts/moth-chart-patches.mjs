@@ -69,7 +69,7 @@ export function patchCharts(config) {
       drumInstruments: { M: 'hat', O: 'snare', T: 'kick', H: 'other' },
       easy: measured.easy.map(row => [...row]), hard: measured.hard.map(row => [...row])
     };
-    spec.note = 'M/O/T/H heads follow measured isolated drum attacks. The charts favor audible kick, snare and cymbal accents, with the recording’s swing and syncopation intact. Both modes keep their phrase density and holds. Hard has at least 300 ms between repeated buttons and at most four heads per second.';
+    spec.note = 'M/O/T/H heads follow measured drum attacks. Kick and snare reinforce the recurring pulse. Recorded swing, syncopation and fills keep their audible attack times. Both modes keep their phrase density and holds. Hard has at least 300 ms between repeated buttons and at most four heads per second.';
   }
   config.rhythmChartVersion = MOTH_CHART_VERSION;
   const crowd = config.level6ConcertRhythm.crowd;

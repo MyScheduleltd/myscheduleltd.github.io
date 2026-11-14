@@ -22,8 +22,8 @@ from scipy.sparse import coo_matrix
 import moth_drum_hits as drums
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = 'drums-groove-20261114a'
-SELECTION = 'audible-drum-phrases-v1'
+VERSION = 'drums-groove-20261114b'
+SELECTION = 'backbeat-and-fills-v2'
 BASE = ROOT / 'scripts/moth-drum-charts.json'
 RIVER = ROOT / 'scripts/moth-river-cut.json'
 CONFIG = ROOT / '.qa/moth/published/data/level1.json'
@@ -47,6 +47,34 @@ def envelope(wave, band):
 
 def attack_identity(event):
     return event['instrument'], event['proposalAttack']
+
+
+def groove_positions(source, candidates):
+    """Fit the audible pulse without moving any attacks onto the grid."""
+    beat = 60 / source['bpm']
+    base = source['beatOffset']
+    core = [event for event in candidates if event['button'] in 'TO']
+    offsets = np.asarray([(event['time'] - base + beat / 2) % beat - beat / 2 for event in core])
+    # Nearby kick/snare peaks refine the reference. Keep the verified River
+    # snare phase and keep any fitted phase within the same musical quarter.
+    nearby = offsets[np.abs(offsets) <= .10 * beat]
+    phase = base + (0 if source.get('quarterGrid') or not len(nearby) else float(np.median(nearby)))
+    # Offbeat peaks backed by the recording, including swung eighths.
+    fractions = np.asarray([((event['time'] - phase) / beat) % 1 for event in core])
+    peaks = [(.5, int(np.sum(np.abs(fractions - .5) <= .045)))]
+    for center in np.linspace(.27, .86, 60):
+        if abs(center - .5) <= .10:
+            continue
+        count = int(np.sum(np.abs(fractions - center) <= .045))
+        if count >= max(8, len(core) * .045):
+            peaks.append((float(center), count))
+    subdivisions = []
+    for center, _ in sorted(peaks, key=lambda item: (-item[1], abs(item[0] - .5))):
+        if all(abs(center - other) >= .115 for other in subdivisions):
+            subdivisions.append(center)
+        if len(subdivisions) == 3:
+            break
+    return phase, subdivisions
 
 
 def candidate_attacks(name, source, duration, measured, stem_wave, master_wave):
@@ -109,8 +137,6 @@ def candidate_attacks(name, source, duration, measured, stem_wave, master_wave):
             emphasis = .48 if instrument in ('kick', 'snare') else .06 if instrument == 'hat' else 0
             event['audibilityScore'] = (.72 * amp_rank + .75 * rise_rank + .75 * min(1, event['drumEnergyShare'] / .3)
                                          + .43 * min(1, event['masterRiseSupport'] / .6) + emphasis)
-            quarter = (event['time'] - source['beatOffset']) / beat
-            event['offbeat'] = abs(quarter - round(quarter)) >= .18
         result.extend(group)
     # Collapse repeated detector proposals of the same instrument/time while
     # retaining all distinct attacks and competing instrument labels.
@@ -189,13 +215,33 @@ def select(name, source, candidates, mode):
             hi[following] = 0
     lo[list(fixed)] = 1
     assert np.all(lo <= hi), (name, mode, 'existing hold conflict')
+    phase, subdivisions = groove_positions(source, candidates)
+
+    def metric(event):
+        beats = ((event['time'] - phase) / beat) % 1
+        return min(beats, 1 - beats), min(abs(beats - subbeat) for subbeat in subdivisions)
+
+    def anchor(event):
+        return metric(event)[0] <= .10
+
     objective = []
     for i, event in enumerate(eligible):
-        # Hard can use the sharper offbeat accents more often. No event is
-        # quantized to its metrical position; offbeats are ranked by the mix.
-        offbeat = (.26 if mode == 'hard' else .10) if event['offbeat'] else 0
+        quarter_distance, subdivision_distance = metric(event)
+        on_beat = max(0, 1 - quarter_distance / .11)
+        on_subdivision = max(0, 1 - subdivision_distance / .09)
+        # Easy gives the listener a clear recurring pulse. Hard keeps the same
+        # groove with more room for recorded syncopation and fills.
+        pulse = (2.20 if mode == 'easy' else 1.38) * on_beat
+        subdivision = (.72 if mode == 'easy' else .92) * on_subdivision
+        accent = .38 * on_beat + .24 * on_subdivision if event['button'] in 'TO' else 0
+        if name == 'level5RiverRhythm' and mode == 'easy' and event['instrument'] == 'kick':
+            # Keep some of the River's audible late swung kick pickups as
+            # an answer to the backbeat, even in the simpler chart.
+            fraction = ((event['time'] - phase) / beat) % 1
+            accent += .50 * max(0, 1 - abs(fraction - 5 / 6) / .055)
+        other = .36 if event['instrument'] == 'other' else 0
         continuity = .09 if attack_identity(event) in prior_by_key else 0
-        objective.append(-event['audibilityScore'] - offbeat - continuity + i * 1e-8)
+        objective.append(-event['audibilityScore'] - pulse - subdivision - accent + other - continuity + i * 1e-8)
     # Encourage button variety over a phrase without forcing weak attacks
     # into passages where one drum is carrying the musical pattern.
     excess_costs = []
@@ -231,7 +277,7 @@ def select(name, source, candidates, mode):
         rows.append([step, event['button'], tail])
         evidence.append({
             key: round(value, 6) if isinstance(value, float) and key in {'drumRms', 'drumEnergyShare', 'masterRiseSupport', 'audibilityScore'} else value
-            for key, value in event.items() if key not in {'rise', 'offbeat'}
+            for key, value in event.items() if key != 'rise'
         })
     assert sum(bool(row[2]) for row in rows) == len(hold_ends)
     measured = {attack_identity(event): event for event in candidates}
@@ -243,8 +289,10 @@ def select(name, source, candidates, mode):
         'instrumentsAfter': dict(Counter(event['instrument'] for event in evidence)),
         'averageAudibilityBefore': round(float(np.mean([event['audibilityScore'] for event in old_measured])), 4),
         'averageAudibilityAfter': round(float(np.mean([event['audibilityScore'] for event in evidence])), 4),
-        'offbeatsBefore': sum(event['offbeat'] for event in old_measured),
-        'offbeatsAfter': sum(eligible[index]['offbeat'] for index, _ in chosen),
+        'pulsePhase': round(phase, 6),
+        'offbeatFractions': [round(subbeat, 2) for subbeat in subdivisions],
+        'quarterNotesBefore': sum(map(anchor, old_measured)),
+        'quarterNotesAfter': sum(anchor(event) for _, event in chosen),
     }
     return {'rows': rows, 'evidence': evidence}, report
 

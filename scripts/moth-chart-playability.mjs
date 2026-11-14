@@ -1,8 +1,9 @@
 // Keep neighboring drum notes readable on the shared horizontal rail. The
 // chart owns timing; this changes only drawing, never an attack or judgment.
-export const MOTH_RHYTHM_HEAD = {radius: 21, lineWidth: 5, font: "900 18px 'Courier New', monospace"};
+export const MOTH_RHYTHM_HEAD = {radius: 21, lineWidth: 5, fontSize: 23};
 export const MOTH_RHYTHM_RING = {radius: 39, lineWidth: 4, outlineWidth: 2, lead: 0.82, color: '#ffffff', outlineColor: '#493423'};
 export const MOTH_PORTRAIT_RAIL_HIT_OFFSET = 226;
+export const MOTH_PORTRAIT_RAIL_SCALE = 1.20;
 
 export function getRhythmDrumPulse(notes, time) {
   // Sample the last charted drum attack on the same clock that draws the notes.
@@ -53,7 +54,7 @@ export function calculateRhythmTimingCue(note, renderTime, perfectWindow) {
 }
 
 function drawRhythmNoteHead(target, {x, y, button, missed, completed, held}, scale = 1) {
-  const {radius, lineWidth, font} = MOTH_RHYTHM_HEAD;
+  const {radius, lineWidth, fontSize} = MOTH_RHYTHM_HEAD;
   const active = completed || held;
   target.save();
   target.fillStyle = missed ? "#30343a" : active ? "#fff3a2" : MOTH_NOTE_COLOURS[button] || "#ef3f78";
@@ -71,17 +72,18 @@ function drawRhythmNoteHead(target, {x, y, button, missed, completed, held}, sca
   target.arc(x, y, (radius - 6) * scale, Math.PI * 1.13, Math.PI * 1.69);
   target.stroke();
   target.fillStyle = missed ? "#747982" : active ? "#16171b" : "#ffffff";
-  drawCentredGlyph(target, button, x, y, scale === 1 ? font : font.replace("18px", Math.round(18 * scale) + "px"));
+  const font = "900 " + Math.round(fontSize * scale) + "px system-ui, sans-serif";
+  drawCentredGlyph(target, button, x, y, font, !missed && !active ? 2 * scale : 0);
   target.restore();
 }
 
-function drawRhythmHoldTail(target, {x, endX, y, hitX, button, missed, held, completed}, scale = 1) {
+function drawRhythmHoldTail(target, {x, endX, y, hitX, button, missed, held}, scale = 1) {
   if (endX <= x) return;
   // The curved cap is inside the tail's true end, so the painted right edge
   // reaches the line precisely when the sustain finishes.
   const half = Math.min(11 * scale, (endX - x) / 2);
   const center = endX - half;
-  const railColor = missed ? "#30343a" : held || completed ? "#77745d" : MOTH_NOTE_COLOURS[button] || "#ef3f78";
+  const railColor = missed ? "#30343a" : MOTH_NOTE_COLOURS[button] || "#ef3f78";
   target.save();
   target.lineCap = "round";
   target.strokeStyle = "#16171b";
@@ -189,6 +191,23 @@ ${drawRhythmTimingRing.toString()}
 ${drawRhythmHitPulse.toString()}
 
 const RHYTHM_DIFFICULTIES = {`);
+  once('function drawCentredGlyph(target, text, x, y, font) {',
+    'function drawCentredGlyph(target, text, x, y, font, outline = 0) {');
+  once('  target.fillText(text, x + (left - right) / 2, y + (ascent - descent) / 2);',
+    `  const inkX = Math.round(x + (left - right) / 2);
+  const inkY = Math.round(y + (ascent - descent) / 2);
+  if (outline > 0) {
+    target.strokeStyle = "#16171b";
+    target.lineWidth = outline;
+    target.strokeText(text, inkX, inkY);
+  }
+  target.fillText(text, inkX, inkY);`);
+  once('    const shakeX = this.screenShake ? (Math.random() - 0.5) * this.screenShake : 0;\n    const shakeY = this.screenShake ? (Math.random() - 0.5) * this.screenShake : 0;',
+    `    // Rhythm hit motion is already clipped inside the arena renderer.
+    // Never shake the rail or the portrait copy of it.
+    const shake = this.level1OfficeRhythm ? 0 : this.screenShake;
+    const shakeX = shake ? (Math.random() - 0.5) * shake : 0;
+    const shakeY = shake ? (Math.random() - 0.5) * shake : 0;`);
   once('      lastBeatIndex: -1,\n', '');
   once(`    const beatSeconds = 60 / Math.max(1, spec.bpm || 92.3);
     const beatIndex = Math.floor((this.songTime - (spec.beatOffset || 0)) / beatSeconds);
@@ -208,7 +227,8 @@ const RHYTHM_DIFFICULTIES = {`);
           window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
       }
       // No combo callout on the track:`);
-  once('x: 760 - 352 / 1.35, y: 616 - 98 / 1.35', `x: 760 - ${MOTH_PORTRAIT_RAIL_HIT_OFFSET} / 1.35, y: 616 - 98 / 1.35`);
+  once('x: 760 - 352 / 1.35, y: 616 - 98 / 1.35, w: 704 / 1.35, h: 196 / 1.35',
+    `x: 760 - ${MOTH_PORTRAIT_RAIL_HIT_OFFSET} / ${MOTH_PORTRAIT_RAIL_SCALE}, y: 616 - 98 / ${MOTH_PORTRAIT_RAIL_SCALE}, w: 704 / ${MOTH_PORTRAIT_RAIL_SCALE}, h: 196 / ${MOTH_PORTRAIT_RAIL_SCALE}`);
   once("  // width: a slice of the frame's track centred on its hit line (x 760) and\n  // its row of notes (y 616), scaled up so the notes read bigger than they do\n  // full-width.", "  // width: a slice of the track, with more room in front of the hit line\n  // (x 760) for incoming circles. The row (y 616) stays vertically centered\n  // and is scaled up for legibility.");
   once('      const pixelsPerSecond = 140;', '      const pixelsPerSecond = this.getRhythmRailGeometry().pixelsPerSecond;');
   once('    target.fillStyle = haunted ? "#281328" : "#f1c62d";', '    const noteTimingCues = [];\n    target.fillStyle = haunted ? "#281328" : "#f1c62d";');
@@ -235,7 +255,7 @@ const RHYTHM_DIFFICULTIES = {`);
       // end of its sustain. The scrolling head and spent tail stay connected.
       for (const {note, x, endX, button, missed, held} of visibleNotes) {
         if (!note.holdEnd) continue;
-        drawRhythmHoldTail(target, {x, endX, y: railY, hitX: cursorX, button, missed, held, completed: note.holdDone});
+        drawRhythmHoldTail(target, {x, endX, y: railY, hitX: cursorX, button, missed, held});
         if (held && endX > cursorX && x + headRadius <= viewLeft) {
           drawRhythmHoldMarker(target, cursorX, railY, button);
         }

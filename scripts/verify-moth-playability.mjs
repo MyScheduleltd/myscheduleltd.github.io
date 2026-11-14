@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { calculateRhythmRailGeometry, calculateRhythmTimingCue, MOTH_PORTRAIT_RAIL_HIT_OFFSET, MOTH_RHYTHM_HEAD, MOTH_RHYTHM_RING } from './moth-chart-playability.mjs';
+import { calculateRhythmRailGeometry, calculateRhythmTimingCue, MOTH_PORTRAIT_RAIL_HIT_OFFSET, MOTH_PORTRAIT_RAIL_SCALE, MOTH_RHYTHM_HEAD, MOTH_RHYTHM_RING } from './moth-chart-playability.mjs';
+import { MOTH_NOTE_COLOURS } from './moth-fight-hud.mjs';
 import { stubScoreboard } from './moth-scoreboard-stub.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -21,7 +22,7 @@ for (const [name, spec] of specs) {
     const geometry = calculateRhythmRailGeometry(notes);
     const perfectWindow = spec.perfectWindow || .075;
     const outerRadius = MOTH_RHYTHM_RING.radius + MOTH_RHYTHM_RING.lineWidth / 2 + MOTH_RHYTHM_RING.outlineWidth;
-    const fullRingPreview = ((704 - MOTH_PORTRAIT_RAIL_HIT_OFFSET) / 1.35 - outerRadius) / geometry.pixelsPerSecond;
+    const fullRingPreview = ((704 - MOTH_PORTRAIT_RAIL_HIT_OFFSET) / MOTH_PORTRAIT_RAIL_SCALE - outerRadius) / geometry.pixelsPerSecond;
     assert(fullRingPreview >= MOTH_RHYTHM_RING.lead, `${name}/${mode}: even the smallest phone shows the whole ring for its full lead`);
     let closestPixels = Infinity, closestSameKey = Infinity, maxInSecond = 0;
     const last = new Map();
@@ -134,8 +135,9 @@ try {
       r.frozenSongTime = 9.9; g.songTime = 9.9; r.phaseIntroTimer = 0; r.judgment = null; r.trackPulse = null;
       // Freeze updates after setup; the actual renderer and portrait copy run.
       g.update = () => {};
-      const target = g.ctx, arcs = [], clips = [], glyphs = [], tails = [], activeTails = [], holdMarkers = [], stack = [];
-      const originals = Object.fromEntries(['save', 'restore', 'beginPath', 'rect', 'clip', 'arc', 'fillText', 'moveTo', 'lineTo', 'stroke', 'fillRect'].map(key => [key, target[key]]));
+      const target = g.ctx, arcs = [], clips = [], glyphs = [], tails = [], tailFills = [], holdMarkers = [], stack = [];
+      const originals = Object.fromEntries(['save', 'restore', 'beginPath', 'rect', 'clip', 'arc', 'fillText', 'strokeText', 'moveTo', 'lineTo', 'stroke', 'fillRect'].map(key => [key, target[key]]));
+      const outlines = [];
       let clip = null, pathRect = null, line = [];
       target.save = function () { stack.push(clip); return originals.save.apply(this, arguments); };
       target.restore = function () { clip = stack.pop() || null; return originals.restore.apply(this, arguments); };
@@ -146,7 +148,7 @@ try {
       target.lineTo = function (x, y) { line.push({x, y}); return originals.lineTo.apply(this, arguments); };
       target.stroke = function () {
         if (clip && this.lineWidth === 22 && this.strokeStyle === '#16171b') tails.push({line, cap: this.lineCap});
-        if (clip && this.strokeStyle === '#fff3a2' && pathRect == null) activeTails.push(line);
+        if (clip && Math.abs(this.lineWidth - 11 * 1.27) < .001 && line.length === 2) tailFills.push(this.strokeStyle);
         return originals.stroke.apply(this, arguments);
       };
       target.fillRect = function (x, y, w, h) {
@@ -164,17 +166,38 @@ try {
           const metrics = this.measureText(text);
           const inkRadius = Math.hypot((metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight) / 2,
             (metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) / 2);
-          glyphs.push({text, x, y, font: this.font, inkRadius});
+          const transform = this.getTransform();
+          glyphs.push({text, x, y, font: this.font, inkRadius, translate: [transform.e, transform.f]});
         }
         return originals.fillText.apply(this, arguments);
       };
-      try { g.render(); g.renderTallScreen(); }
-      finally { Object.assign(target, originals); }
+      target.strokeText = function (text, x, y) {
+        if (clip && 'MOTH'.includes(text)) outlines.push({text,x,y,width:this.lineWidth});
+        return originals.strokeText.apply(this, arguments);
+      };
+      g.screenShake = 18;
+      const random = Math.random;
+      Math.random = () => 0.9;
+      const holdColors = {};
+      try {
+        const canvas = document.createElement('canvas');
+        const strip = canvas.getContext('2d');
+        for (const [state, flags] of Object.entries({
+          pending: {}, held: {held: true}, completed: {completed: true}, missed: {missed: true}
+        })) {
+          strip.clearRect(0, 0, 300, 150);
+          drawRhythmHoldTail(strip, {x: 40, endX: 160, y: 50, hitX: 100, button: 'T', ...flags});
+          holdColors[state] = [60, 140].map(x => '#' + [...strip.getImageData(x, 50, 1, 1).data.slice(0, 3)]
+            .map(value => value.toString(16).padStart(2, '0')).join(''));
+        }
+        g.render(); g.renderTallScreen();
+      }
+      finally { Math.random = random; Object.assign(target, originals); }
       const layout = g.getRhythmRailGeometry();
       return {speed: layout.pixelsPerSecond, gapPixels: 0.224 * layout.pixelsPerSecond,
         tall: document.body.dataset.tallScreen === '1', viewportWidth: innerWidth,
         canvasBounds: g.ctx.canvas.getBoundingClientRect().toJSON(), telemetry: r.renderTelemetry.railPixelsPerSecond,
-        arcs, clips, glyphs, tails, activeTails, holdMarkers, cues: r.renderTelemetry.noteTimingCues,
+        arcs, clips, glyphs, outlines, tails, tailFills, holdColors, holdMarkers, cues: r.renderTelemetry.noteTimingCues,
         heldX: 760 + (held.time - g.songTime) * layout.pixelsPerSecond,
         releaseX: 760 + (held.holdEnd - g.songTime) * layout.pixelsPerSecond};
     });
@@ -187,11 +210,18 @@ try {
       && Math.abs(geometry.tails[0].line[0].x - geometry.heldX) < 1e-6
       && Math.abs(geometry.tails[0].line[1].x + 11 - geometry.releaseX) < 1e-6,
       `${name}: one rounded hold body connects to the scrolling head and ends at the true release point`);
-    assert.equal(geometry.activeTails.length, 1, `${name}: the remaining sustain is visibly lit`);
+    const gold = MOTH_NOTE_COLOURS.T, remaining = '#fff3a2', missed = '#30343a';
+    assert.deepEqual(geometry.tailFills, [gold, remaining], `${name}: the held strip shows the button color and remaining sustain`);
+    assert.deepEqual(geometry.holdColors, {
+      pending: [gold, gold], held: [gold, remaining], completed: [gold, gold], missed: [missed, missed]
+    }, `${name}: only a missed hold has a gray strip`);
     assert.equal(geometry.holdMarkers.length, phone ? 1 : 0, `${name}: the key stays identified at the hit line when the hold head leaves the cropped aperture`);
     const cues = geometry.arcs.filter(arc => arc.stroke === MOTH_RHYTHM_RING.color);
     assert(cues.length >= 1 && cues.every(cue => Math.abs(cue.end - cue.start - Math.PI * 2) < 1e-9), `${name}: timing cues are complete shrinking circles`);
-    assert(geometry.glyphs.length >= 4 && geometry.glyphs.every(glyph => Number(glyph.font.match(/([\d.]+)px/)[1]) === 18), `${name}: every note letter uses the same 18px font`);
+    assert(geometry.glyphs.length >= 4 && geometry.glyphs.every(glyph => Number(glyph.font.match(/([\d.]+)px/)[1]) === MOTH_RHYTHM_HEAD.fontSize), `${name}: every note uses the same larger letter size`);
+    assert(geometry.glyphs.every(glyph => Number.isInteger(glyph.x) && Number.isInteger(glyph.y)
+      && glyph.translate.every(offset => offset === 0)), `${name}: pixel-snapped note letters remain stable during a hit`);
+    assert(geometry.outlines.length >= 4 && geometry.outlines.every(glyph => glyph.width === 2), `${name}: upcoming letters have a clear dark outline`);
     assert(geometry.glyphs.every(glyph => {
       const head = heads.reduce((closest, head) => Math.abs(head.x - glyph.x) < Math.abs(closest.x - glyph.x) ? head : closest);
       return glyph.inkRadius <= head.radius - head.lineWidth / 2;
