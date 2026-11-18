@@ -2,8 +2,9 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {FUNK_CHARTS, MOTH_STAGE_THEMES, MOTH_CHART_VERSION} from './moth-chart-patches.mjs';
+import {FUNK_CHARTS, MOTH_STAGE_THEMES, MOTH_CHART_VERSION, MOTH_OPENING_LEAD_SECONDS} from './moth-chart-patches.mjs';
 import {SCOREBOARD_CHART_VERSION} from './moth-scoreboard-client.mjs';
+import {remixEasyLanes} from './moth-easy-lanes.mjs';
 
 const read = file => readFile(new URL('../' + file, import.meta.url));
 const config = JSON.parse(await read('docs/moth/data/level1.json'));
@@ -19,6 +20,9 @@ assert.deepEqual(Object.keys(limits.stages).sort(), levels.map(level => level.st
 const report = [];
 for (const {id, stage, theme, story} of levels) {
   const song = FUNK_CHARTS.songs[id];
+  const storyOrigin = story.fightCut?.fromSeconds || 0;
+  const easy = remixEasyLanes(song, {storyStart: storyOrigin,
+    storyEnd: storyOrigin + story.duration - (story.fightCut ? .08 : 0), openingLeadSeconds: MOTH_OPENING_LEAD_SECONDS});
   const selection = config.stageSelectRhythms[stage];
   assert.equal(selection.fullSong, true, id);
   assert.equal(selection.audioStartSeconds, 0, id);
@@ -37,14 +41,19 @@ for (const {id, stage, theme, story} of levels) {
     const end = start + spec.duration - (spec.fightCut ? .08 : 0);
     assert.equal(spec.bpm, song.bpm, id);
     assert.equal(spec.chart.version, MOTH_CHART_VERSION, id);
+    assert.equal(spec.openingLeadSeconds, MOTH_OPENING_LEAD_SECONDS, id);
+    assert.equal(spec.fadeInSeconds, MOTH_OPENING_LEAD_SECONDS, id);
     const sourceRoles = {easy: 'isolated-drum-stem', hard: 'lead-vocal'};
     if (id === 'level5RiverRhythm') sourceRoles.opening = 'bass-riff';
     if (song.extendedRests) sourceRoles.extendedRests = 'bass-stem';
     assert.deepEqual(spec.chart.sourceRoles, sourceRoles);
     for (const [mode, scoreMode] of [['easy', 'chill'], ['hard', 'shoot']]) {
       const rows = spec.chart[mode];
-      const expected = song[mode].filter(([time]) => time >= start && time < end);
+      const expected = (mode === 'easy' ? easy.rows : song.hard)
+        .filter(([time]) => time >= start + MOTH_OPENING_LEAD_SECONDS && time < end);
       assert.equal(rows.length, expected.length, id);
+      assert(expected[0][0] - start >= MOTH_OPENING_LEAD_SECONDS,
+        `${id}/${kind}/${mode} leaves the opening music unjudged`);
       const unit = spec.chart.stepBeats * 60 / spec.bpm;
       const minimumGap = mode === 'hard' ? .18999 : .22499;
       rows.forEach(([step, key, holdSteps], index) => {
@@ -60,13 +69,17 @@ for (const {id, stage, theme, story} of levels) {
       });
       const holds = rows.filter(row => row[2] > 0).length;
       if (id === 'level5RiverRhythm') {
+        // The short first Story vocal sustain was inside the new musical
+        // intro. The remaining opening stays on the source bass/vocal attacks.
         const openingRows = expected.filter(([time]) => time < start + 10);
-        assert(openingRows.some(row => row[2] > 0) && openingRows.some(row => row[2] === 0),
-          `Level 6 ${kind}/${mode} opening has taps and holds`);
+        assert(openingRows.some(row => row[2] === 0),
+          `Level 6 ${kind}/${mode} retains opening source attacks after the lead-in`);
+        if (kind === 'Level Select') assert(holds > 0,
+          `Level 6 ${kind}/${mode} retains source holds outside the lead-in`);
       } else assert.equal(holds, 0, id);
       const cap = kind === 'Level Select' ? limits.stages[stage][scoreMode] : limits[scoreMode][stage];
       if (cap !== undefined) assert.equal(cap, (rows.length + holds) * 1000, `${stage} ${kind} score cap`);
-      report.push({id, arrangement:kind, mode, notes:rows.length, holds, duration:spec.duration});
+      report.push({id, arrangement:kind, mode, notes:rows.length, holds, firstHit:expected[0][0] - start, duration:spec.duration});
     }
   }
 }

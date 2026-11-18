@@ -15,15 +15,55 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="MASTER OF THE HOUSE" />
-    <link rel="stylesheet" href="./styles.css?v=moth-loading-20261116b" />
+    <link id="moth-game-styles" rel="stylesheet" media="print" href="./styles.css?v=moth-loading-20261118c" />
+  <style id="moth-boot-styles">
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#ff5c21}
+body:has(> #moth-boot-loading) canvas{max-width:100%}
+#moth-boot-loading{--boot-top:max(34px,calc(env(safe-area-inset-top) + 6px));--boot-reserve:clamp(300px,40dvh,360px);--boot-width:min(calc(100dvw - 12px),calc((100dvh - var(--boot-top) - var(--boot-reserve) - 12px)/1.0778));--boot-height:calc(var(--boot-width)*1.0778);--boot-left:calc((100dvw - var(--boot-width))/2);position:fixed;inset:0;z-index:900;overflow:hidden;background:#ff5c21;color:#f7f2de;font-family:'Courier New',monospace;touch-action:none;-webkit-user-select:none;user-select:none}
+#moth-boot-loading *{box-sizing:border-box}
+.moth-boot-frame{position:absolute;left:var(--boot-left);top:var(--boot-top);width:var(--boot-width);height:var(--boot-height);border:2px solid #05070a;border-radius:6px;box-shadow:0 0 0 2px #0d1114;overflow:hidden;background:#000}
+.moth-boot-content{position:absolute;left:50%;top:50%;width:76%;transform:translate(-50%,-45%);text-align:center}
+.moth-boot-title{margin:0 0 clamp(25px,calc(var(--boot-width)*.066),52px);font-size:clamp(28px,calc(var(--boot-width)*.083),76px);font-weight:900;line-height:1;white-space:nowrap}
+.moth-boot-progress{position:relative;height:clamp(4px,calc(var(--boot-width)*.009),10px);overflow:hidden;background:#203337}
+.moth-boot-progress span{display:block;width:var(--boot-progress,24%);height:100%;background:#8fe8ff}
+#moth-boot-loading[data-indeterminate] .moth-boot-progress span{animation:moth-boot-sweep 1.5s linear infinite}
+.moth-boot-label{margin:13px 0 9px;color:#ffd36c;font-weight:900;font-size:clamp(10px,calc(var(--boot-width)*.023),20px);line-height:1.2}
+.moth-boot-hint{margin:0;color:#b2afa0;font-weight:900;font-size:clamp(8px,calc(var(--boot-width)*.018),15px);line-height:1.45}
+.moth-boot-brand{position:absolute;top:calc(var(--boot-top) + var(--boot-height) + 22px);left:24px;right:24px;display:flex;align-items:baseline;gap:7px;color:#fff3e8;white-space:nowrap}
+.moth-boot-brand::before{content:'○';font-size:12px}
+.moth-boot-brand strong{font:italic 900 clamp(12px,3.5vw,21px)/1 'Courier New',monospace;letter-spacing:-.08em}
+.moth-boot-brand small{font-weight:900;font-size:7px;letter-spacing:.08em}
+.moth-boot-brand span{margin-left:auto;font-size:9px}
+.moth-boot-deck{position:absolute;left:8px;right:8px;top:calc(var(--boot-top) + var(--boot-height) + 64px);bottom:max(44px,env(safe-area-inset-bottom));border:1px solid #a13c24;border-radius:24px}
+.moth-boot-deck::after{content:'SPACE';position:absolute;left:50%;bottom:28px;transform:translateX(-50%);font-size:10px;font-weight:900;letter-spacing:.1em}
+.moth-boot-reload{margin:16px auto 0;padding:10px 16px;border:2px solid #f7f2de;background:#344439;color:#f7f2de;font:900 16px 'Courier New',monospace;cursor:pointer}
+.moth-boot-reload[hidden]{display:none}
+#moth-boot-loading[data-error] .moth-boot-label{color:#ff6b7d}
+@keyframes moth-boot-sweep{from{transform:translateX(-100%)}to{transform:translateX(420%)}}
+@media(prefers-reduced-motion:reduce){#moth-boot-loading[data-indeterminate] .moth-boot-progress span{animation:none;margin-left:38%}}
+@media(orientation:landscape),(min-width:921px){#moth-boot-loading{--boot-width:min(calc(100vw - 72px),calc((100vh - 72px)*16/9),1280px);--boot-height:calc(var(--boot-width)*9/16);--boot-top:calc((100vh - var(--boot-height))/2);--boot-left:calc((100vw - var(--boot-width))/2)}.moth-boot-frame{border:4px solid #090b0d;border-radius:14px;box-shadow:0 0 0 5px #31373b,0 0 0 9px #4a5358,0 0 0 18px #ff5c21,0 0 0 21px #751c0eb8}.moth-boot-title{font-size:clamp(28px,calc(var(--boot-width)*.0594),76px)}.moth-boot-content{width:41%}.moth-boot-brand,.moth-boot-deck{display:none}}
+</style>
   </head>
   <body>
+    <section id="moth-boot-loading" data-indeterminate role="status" aria-live="polite">
+      <div class="moth-boot-frame"><div class="moth-boot-content">
+        <h1 class="moth-boot-title">DR.BEAUTY</h1>
+        <div class="moth-boot-progress" role="progressbar" aria-label="載入遊戲資源" aria-valuemin="0" aria-valuemax="100"><span></span></div>
+        <p class="moth-boot-label">LOADING</p>
+        <p class="moth-boot-hint">首次載入需要下載遊戲資源，請稍候</p>
+        <noscript><p class="moth-boot-hint">請啟用 JavaScript 以開始遊戲。<br>Enable JavaScript to play.</p></noscript>
+        <button class="moth-boot-reload" type="button" hidden>重新整理網頁</button>
+      </div></div>
+      <div class="moth-boot-brand" aria-hidden="true"><strong>MASTER OF THE HOUSE</strong><small>BEAUTY BOY</small><span>全螢幕</span></div>
+      <div class="moth-boot-deck" aria-hidden="true"></div>
+    </section>
     <main class="game-shell" aria-label="Master of the House game">
       <div id="game-viewport"><canvas id="game" width="1280" height="720" aria-label="Master of the House canvas"></canvas></div>
       <div class="film-grain-overlay" aria-hidden="true"></div>
       <noscript style="position:absolute;top:24px;left:24px;color:#f7f2de;font-family:monospace">JavaScript is required to play MASTER OF THE HOUSE.</noscript>
     </main>
+    <script src="/moth/src/boot-loading.js?v=moth-boot-20261118c" integrity="sha384-pMpgu0a56ow3MBJ1VuCjLEETqRgJa620u7Unv20z696SylEjKUyrssSELkSdYPyb" crossorigin="anonymous"></script>
     <script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="sha384-HKTc1/MYYJgo3wtUJH4gyAN5muR3kS3Ws1Cvm2HQHvTHmrAzMD/u9uZ28L3LlOKF" crossorigin="anonymous"></script>
-    <script src="./src/game.js?v=moth-cabinet-20261118b" integrity="sha384-znPUC2/9OuEZ9USDf8uFVshixw/DuyPVf3u0nYRwia6+W6lgxT0+lKgUUjHzMb66" crossorigin="anonymous"></script>
+    <script src="./src/game.js?v=moth-cabinet-20261118d" integrity="sha384-Y0hRxjxrOedlsW5Af5lm5Rxp/o5z4LTPmkc7zoGZPeJFVu9TQ/StT9MplSQD36Nc" crossorigin="anonymous"></script>
   </body>
 </html>

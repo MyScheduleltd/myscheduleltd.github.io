@@ -17,6 +17,7 @@ import { cleanRuntimeData } from './moth-data-cleanup.mjs';
 import { SNAPSHOT_EXCLUDED_FILES, packageFiles, prunePackageArtifacts } from './moth-package-layout.mjs';
 import { patchRetiredHighway } from './moth-retired-highway.mjs';
 import { patchRetiredUiImages } from './moth-retired-ui.mjs';
+import { BOOT_LOADING_SCRIPT, patchBootLoadingRuntime, patchBootLoadingHtml } from './moth-boot-loading.mjs';
 const require = createRequire(import.meta.url);
 const ts = require(process.env.MOTH_TYPESCRIPT_PATH || 'typescript');
 const root = path.resolve(import.meta.dirname, '..');
@@ -29,7 +30,7 @@ const cssArtwork = rewriteCssArtwork(patchScreenFrameCss(patchDeckCss(await fs.r
 assert.equal(cssArtwork.assets.length, DECK_ART_KEPT);
 // The release with its patches, and without the code of its retired parts
 // (moth-code-trim.mjs; MOTH_TRIM_AUDIT=1 keeps that code and records calls).
-const trim = trimRetiredCode(patchRetiredHighway(patchMothRuntime(await fs.readFile(path.join(sourceRoot, 'src/game.js'), 'utf8'), ts)) + cssArtworkLoader(cssArtwork.assets), ts,
+const trim = trimRetiredCode(patchBootLoadingRuntime(patchRetiredHighway(patchMothRuntime(await fs.readFile(path.join(sourceRoot, 'src/game.js'), 'utf8'), ts))) + cssArtworkLoader(cssArtwork.assets), ts,
   { audit: process.env.MOTH_TRIM_AUDIT === '1' });
 const original = patchRetiredUiImages(trim.source, {audit: process.env.MOTH_TRIM_AUDIT === '1', ts});
 assert.match(await fs.readFile(path.join(sourceRoot, 'index.html'), 'utf8'), /mobile-deck-20261012a/);
@@ -166,6 +167,8 @@ const arcadeBridge = await fs.readFile(path.join(root, 'scripts/moth-arcade-embe
 await fs.writeFile(path.join(output, 'src/arcade-embed.js'), arcadeBridge);
 const arcadeSri = 'sha384-' + crypto.createHash('sha384').update(arcadeBridge).digest('base64');
 const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: " + [MOTH_MIRROR_COMMIT, ...new Set(MOTH_MIRROR_PINS.map(pin => pin.commit).filter(Boolean))].map(mirrorPath).join(" ") + " " + SCOREBOARD_API + "; font-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; worker-src 'none'";
+await fs.writeFile(path.join(output, 'src/boot-loading.js'), BOOT_LOADING_SCRIPT);
+const bootLoadingSri = 'sha384-' + crypto.createHash('sha384').update(BOOT_LOADING_SCRIPT).digest('base64');
 for (const audience of ['public', 'staff']) {
   const staff = audience === 'staff';
   const code = staff ? staffCode : publicCode;
@@ -175,8 +178,9 @@ for (const audience of ['public', 'staff']) {
   html = html.replace('<html lang="en">', '<html lang="zh-Hant-TW">');
   html = wrapScreenFrameHtml(html);
   html = html.replace('./manifest.json', staff ? '/moth/staff/manifest.json' : './manifest.json');
-  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-staff-20261118b' : 'moth-cabinet-20261118b'}" integrity="${sri}" crossorigin="anonymous"></script>`);
-  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261116b');
+  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-staff-20261118d' : 'moth-cabinet-20261118d'}" integrity="${sri}" crossorigin="anonymous"></script>`);
+  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261118c');
+  html = patchBootLoadingHtml(html, { sri: bootLoadingSri, version: 'moth-boot-20261118c' });
   await fs.writeFile(path.join(output, staff ? 'staff/index.html' : 'index.html'), html);
   const manifest = JSON.parse(await fs.readFile(path.join(sourceRoot, 'manifest.json'), 'utf8'));
   manifest.start_url = staff ? '/moth/staff/' : '/moth/';

@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { cleanRetiredHighwayConfig } from './moth-retired-highway.mjs';
+import { remixEasyLanes } from './moth-easy-lanes.mjs';
 
 // Measured separately from the game's runtime. The build only consumes these
 // versioned rows; it does not need Python, Demucs or the original audio stems.
@@ -41,7 +42,10 @@ export const DRUM_CHARTS = { ...PRIOR_DRUM_CHARTS, version: revised.version, son
   })
 ) };
 export const FUNK_CHARTS = JSON.parse(readFileSync(new URL('./moth-funk-charts.json', import.meta.url)));
-export const MOTH_CHART_VERSION = FUNK_CHARTS.version;
+// The measured source transcription is unchanged. This arrangement leaves
+// its opening two seconds unscored so the first target can roll into view.
+export const MOTH_CHART_VERSION = 'funk-rollin-20261118b';
+export const MOTH_OPENING_LEAD_SECONDS = 2;
 export const MOTH_STAGE_THEMES = {
   level1OfficeRhythm: ['level1-stage1', 'office'],
   level2BathroomRhythm: ['level2-stage2', 'bathroom'],
@@ -61,7 +65,7 @@ function makeChart(song, {start, duration, offset}) {
   if (song.extendedRests) chart.sourceRoles.extendedRests = song.extendedRests;
   const end = start + duration;
   for (const mode of ['easy', 'hard']) {
-    chart[mode] = song[mode].filter(([time]) => time >= start && time < end)
+    chart[mode] = song[mode].filter(([time]) => time >= start + MOTH_OPENING_LEAD_SECONDS && time < end)
       .map(([time, lane, holdSeconds]) => [
         Math.round((time - start - offset) / secondsPerStep * 1e8) / 1e8,
         lane,
@@ -106,13 +110,18 @@ export function patchCharts(config) {
       // The old cut used the same two-second fade at both ends and masked
       // the opening hits. The new file keeps its cut clock and closing fade.
       spec.fightCut.src = spec.fightCut.src.replace(/\.m4a$/, '-onset.m4a');
-      spec.fadeInSeconds = .012;
     }
     assert.equal(createHash('sha256').update(readFileSync(new URL('../.qa/moth/published/' + song.audioSrc, import.meta.url))).digest('hex'),
       song.mixSha256, `Studio stems aligned to the exact shipped mix for ${id}`);
     assert.equal(spec.bpm, song.bpm, `Source tempo for ${id}`);
+    spec.openingLeadSeconds = MOTH_OPENING_LEAD_SECONDS;
+    spec.fadeInSeconds = MOTH_OPENING_LEAD_SECONDS;
     const storyOrigin = spec.fightCut?.fromSeconds || 0;
-    spec.chart = makeChart(song, {start: storyOrigin, duration: spec.duration - (spec.fightCut ? .08 : 0), offset: spec.beatOffset || 0});
+    const storyDuration = spec.duration - (spec.fightCut ? .08 : 0);
+    const lanes = remixEasyLanes(song, {storyStart: storyOrigin, storyEnd: storyOrigin + storyDuration,
+      openingLeadSeconds: MOTH_OPENING_LEAD_SECONDS});
+    const playableSong = {...song, easy: lanes.rows};
+    spec.chart = makeChart(playableSong, {start: storyOrigin, duration: storyDuration, offset: spec.beatOffset || 0});
     const easyFullSong = `assets/audio/easy-mixes/${theme}.m4a`;
     spec.easyAudioSrc = spec.fightCut ? `assets/audio/easy-mixes/${theme}-story.m4a` : easyFullSong;
     spec.note = 'Easy follows measured attacks in the isolated drum stem. Hard follows measured lead-vocal articulations.';
@@ -122,9 +131,9 @@ export function patchCharts(config) {
     const beatOffset = song.meter.firstDownbeat;
     config.stageSelectRhythms[stage] = {
       ...selection, theme, fullSong: true, audioSrc: song.audioSrc, easyAudioSrc: easyFullSong, duration: song.duration,
-      beatOffset, audioStartSeconds: 0, fadeInSeconds: 0,
+      beatOffset, audioStartSeconds: 0, fadeInSeconds: MOTH_OPENING_LEAD_SECONDS,
       phases: fullSongPhases(spec.phases || [], song.duration, song),
-      chart: makeChart(song, {start: 0, duration: song.duration, offset: beatOffset})
+      chart: makeChart(playableSong, {start: 0, duration: song.duration, offset: beatOffset})
     };
   }
   config.rhythmChartVersion = MOTH_CHART_VERSION;

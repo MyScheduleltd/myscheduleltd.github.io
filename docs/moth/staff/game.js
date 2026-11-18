@@ -432,13 +432,13 @@ function calculateRhythmRailGeometry(notes = []) {
     const gap = notes[index].time - notes[index - 1].time;
     if (gap > 0.001) minGap = Math.min(minGap, gap);
   }
-  // The previous ring is already closing when the next one appears at full
-  // size. Reserve room for both painted edges, even in the tightest pair.
-  const {radius, lineWidth, outlineWidth, lead} = MOTH_RHYTHM_RING;
-  const closed = MOTH_RHYTHM_HEAD.radius + (MOTH_RHYTHM_HEAD.lineWidth + lineWidth) / 2;
-  const previousRadius = closed + (radius - closed) * Math.max(0, 1 - minGap / lead);
-  const ringSpacing = radius + previousRadius + lineWidth + 2 * outlineWidth + 1.5;
-  const pixelsPerSecond = Math.max(140, Math.ceil(ringSpacing / minGap));
+  // Keep every full-size letter readable without rushing the approach merely
+  // to separate neighboring outer halos. Rings sit behind the opaque heads.
+  // The shared fight speed gives dense Hard phrases about 1.4 seconds of
+  // fully visible approach on the portrait rail, with three pixels between
+  // the painted heads at the chart's tightest supported 190 ms spacing.
+  const headSpacing = MOTH_RHYTHM_HEAD.radius * 2 + MOTH_RHYTHM_HEAD.lineWidth + 3;
+  const pixelsPerSecond = Math.max(306, Math.ceil(headSpacing / minGap));
   return {pixelsPerSecond, minGap};
 }
 
@@ -624,14 +624,16 @@ function drawRhythmRailNotes(target, notes, {bounds, cursorX, railY, railTime, s
       drawRhythmHoldMarker(target, cursorX, railY, head.button);
     }
   }
+  // Paint all halos first. A later note's ring must never cross the letter
+  // or coloured face of an earlier note in a fast vocal run.
   for (const head of visible) {
-    drawRhythmNoteHead(target, head);
     const timing = cueAt?.(head.note, railTime);
     if (timing) {
       drawRhythmTimingRing(target, head.x, railY, timing);
       cues.push({id: head.note.id, time: head.note.time, button: head.button, x: head.x, y: railY, ...timing});
     }
   }
+  for (const head of visible) drawRhythmNoteHead(target, head);
   target.restore();
   return cues;
 }
@@ -1173,7 +1175,7 @@ const PORTRAIT_FIGHT = {
   // (x 760) for incoming circles. The row (y 616) stays vertically centered
   // and is scaled up for legibility.
   stats: { x: 8, y: 520, w: 704, h: 46 },
-  track: { src: { x: 760 - 208 / 1.12, y: 616 - 98 / 1.12, w: 704 / 1.12, h: 196 / 1.12 }, dest: { x: 8, y: 572, w: 704, h: 196 } },
+  track: { src: { x: 760 - 160 / 1.12, y: 616 - 98 / 1.12, w: 704 / 1.12, h: 196 / 1.12 }, dest: { x: 8, y: 572, w: 704, h: 196 } },
   letterboxY: (776 - 405) / 2
 };
 // The tall dialogue layout: the scene above the box, cropped to its middle and
@@ -3033,6 +3035,9 @@ class BobbyGame {
     ctx.fillText("DR.BEAUTY", width / 2, 236);
     const total = BOOT_LOAD.started;
     const done = Math.min(BOOT_LOAD.settled, total);
+    document.dispatchEvent(new CustomEvent("moth:boot-progress", {
+      detail: { started: total, settled: done, language: this.language }
+    }));
     const frac = total > 0 ? done / total : 0;
     const barW = 520;
     const barX = width / 2 - barW / 2;
@@ -3257,6 +3262,7 @@ class BobbyGame {
     this.bootDone = true;
     this.listenForMenuSounds();
     requestAnimationFrame(this.loop);
+    requestAnimationFrame(() => document.dispatchEvent(new CustomEvent("moth:boot-complete")));
   }
 
   createSceneAssetJobs() {
@@ -3922,7 +3928,7 @@ for (const level of this.config.secretLevels || []) {
     if (!this.progress) this.progress = this.createDefaultProgress();
     const random = () => Math.random().toString(36).slice(2, 10);
     const id = globalThis.crypto?.randomUUID?.() || ('run-' + Date.now().toString(36) + '-' + random() + random());
-    const run = this.progress.storyRun = { id, difficulty, chartVersion: "funk-stems-20261117b", scores: {}, startedAt: Date.now(), ticket: null };
+    const run = this.progress.storyRun = { id, difficulty, chartVersion: "funk-rollin-20261118b", scores: {}, startedAt: Date.now(), ticket: null };
     this.startNewStory();
     this.registerStoryRun(run);
   }
@@ -3932,14 +3938,14 @@ for (const level of this.config.secretLevels || []) {
   // that never gets one cannot be posted.
   async registerStoryRun(run, attempt = 0) {
     clearTimeout(this.storyTicketTimer);
-    if (!run || run.ticket || run.legacy || run.chartVersion !== "funk-stems-20261117b" || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
+    if (!run || run.ticket || run.legacy || run.chartVersion !== "funk-rollin-20261118b" || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', chartVersion: "funk-stems-20261117b", mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', chartVersion: "funk-rollin-20261118b", mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
       const data = await response.json().catch(() => ({}));
-      if (response.status !== 201 || typeof data.run !== 'string' || data.chartVersion !== "funk-stems-20261117b") throw new Error(String(response.status));
+      if (response.status !== 201 || typeof data.run !== 'string' || data.chartVersion !== "funk-rollin-20261118b") throw new Error(String(response.status));
       if (this.progress?.storyRun !== run || run.ticket) return;
       run.ticket = data.run;
       this.saveProgress();
@@ -3954,7 +3960,7 @@ for (const level of this.config.secretLevels || []) {
     const run = this.progress?.storyRun;
     const rhythm = this.level1OfficeRhythm;
     if (this.freePlay || !run || !rhythm || !["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"].includes(stageId)) return;
-    if (run.chartVersion !== "funk-stems-20261117b") run.legacy = true;
+    if (run.chartVersion !== "funk-rollin-20261118b") run.legacy = true;
     if (this.difficultyId !== run.difficulty) run.mixed = true;
     run.scores[stageId] = Math.max(0, Math.round(rhythm.roundScore || 0));
   }
@@ -3963,7 +3969,7 @@ for (const level of this.config.secretLevels || []) {
     if (!run) return null;
     const fights = ["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"];
     const total = fights.reduce((sum, id) => sum + (run.scores?.[id] || 0), 0);
-    const blocked = run.chartVersion !== "funk-stems-20261117b" ? 'chart-version' : run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
+    const blocked = run.chartVersion !== "funk-rollin-20261118b" ? 'chart-version' : run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
     const complete = !blocked && fights.every(id => Number.isFinite(run.scores?.[id]));
     return { run, total, complete, blocked, mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' };
   }
@@ -3998,9 +4004,9 @@ for (const level of this.config.secretLevels || []) {
       const { stage, mode } = run;
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'start', mode, stage, chartVersion: "funk-stems-20261117b" }) });
+        body: JSON.stringify({ action: 'start', mode, stage, chartVersion: "funk-rollin-20261118b" }) });
       const data = await response.json();
-      if (response.status === 201 && data.chartVersion === "funk-stems-20261117b"
+      if (response.status === 201 && data.chartVersion === "funk-rollin-20261118b"
         && data.stage === stage && typeof data.run === 'string') run.ticket = data.run;
     } catch {
       // Scoreboard connectivity never interrupts a song.
@@ -4099,12 +4105,12 @@ for (const level of this.config.secretLevels || []) {
     try {
       const url = new URL(this.scoreboardApi(), location.href);
       url.searchParams.set('mode', mode);
-      url.searchParams.set('chartVersion', "funk-stems-20261117b");
+      url.searchParams.set('chartVersion', "funk-rollin-20261118b");
       if (board.stage) url.searchParams.set('stage', board.stage);
       const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
-      if (data.chartVersion !== "funk-stems-20261117b" || (data.stage || null) !== board.stage) throw new Error('chart-version');
+      if (data.chartVersion !== "funk-rollin-20261118b" || (data.stage || null) !== board.stage) throw new Error('chart-version');
       if (this.scoreboard !== board) return;
       board.entries[mode] = Array.isArray(data.entries) ? data.entries : [];
       board.status[mode] = 'ready';
@@ -4291,7 +4297,7 @@ for (const level of this.config.secretLevels || []) {
     board.message = '';
     this.renderScoreboard();
     try {
-      const chartVersion = "funk-stems-20261117b";
+      const chartVersion = "funk-rollin-20261118b";
       const score = board.stage ? { stage: board.stage, score: result.total } : { scores: result.run.scores };
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode: result.mode, chartVersion, id, run: result.run.ticket, ...score }) });
@@ -4482,7 +4488,7 @@ for (const level of this.config.secretLevels || []) {
       if (!isCurrent()) return;
       this.useSongCopy(track);
       if (Number.isFinite(trackTime)) track.currentTime = trackTime;
-      track.volume = BGM_VOLUME;
+      this.updateFightOpeningFade(track);
       let timer;
       return Promise.race([Promise.all([this.soloPlay(track), this.musicAudioContext?.resume()]), new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error("Resume timed out")), 2000);
@@ -11363,7 +11369,23 @@ for (const level of this.config.secretLevels || []) {
     return started;
   }
 
+  updateFightOpeningFade(track = this.getActiveLevel1OfficeRhythmAudio()) {
+    const rhythm = this.level1OfficeRhythm;
+    if (!track || this.state !== "playing" || rhythm?.tutorial?.mode !== "done"
+      || rhythm.skipAudio || rhythm.ending || rhythm.songHandover || this.isRhythmCountIn()) return;
+    const seconds = Math.max(0, this.getActiveRhythmSpec()?.fadeInSeconds || 0);
+    const elapsed = Math.max(0, track.currentTime - this.getRhythmAudioStart());
+    const progress = seconds ? clamp(elapsed / seconds, 0, 1) : 1;
+    // A tiny positive level lets the native-clock stall guard advance through
+    // the unscored intro. First targets begin only after the full fade ends.
+    const volume = BGM_VOLUME * Math.max(0.001, easeInOut(progress));
+    if (Math.abs(track.volume - volume) > 0.00001) track.volume = volume;
+    const route = this.musicAudioRoutes?.get(track);
+    if (route) route.target = BGM_VOLUME;
+  }
+
   updateMusicEndFades() {
+    this.updateFightOpeningFade();
     for (const audio of this.gameAudioRegistry || []) {
       if (audio.paused || audio.loop || this.isBakedMusicTrack(audio) || !Number.isFinite(audio.duration)) continue;
       const left = audio.duration - audio.currentTime;
@@ -12953,7 +12975,7 @@ for (const level of this.config.secretLevels || []) {
     } catch {
       // Not seekable yet; play from where it is.
     }
-    track.volume = BGM_VOLUME;
+    this.updateFightOpeningFade(track);
     this.soloPlay(track).catch(() => {
       if (this.level1OfficeRhythm === rhythm && this.state === "playing" && !(this.stageCountdown > 0)) this.showAudioRecovery("start");
     });
@@ -14961,9 +14983,7 @@ for (const level of this.config.secretLevels || []) {
       if (this.audioInterruption || document.hidden) return;
       rhythm.audioStarting = true;
       try {
-        // Start full mixes at an audible gain before play(). The routed gain
-        // eases the remaining 10% on the audio clock after playback starts.
-        track.volume = BGM_VOLUME * (this.hasBakedFades() ? 1 : 0.9);
+        this.updateFightOpeningFade(track);
         if (this.freePlay && this.stageSelectRhythmId && this.stageSelectRhythmId === this.currentStageId) {
           rhythm.stageSelectionPlayback = { position: 0, at: performance.now(), through: 0 };
         }
@@ -14984,7 +15004,7 @@ for (const level of this.config.secretLevels || []) {
           this.showAudioRecovery("resume");
           return;
         }
-        track.volume = BGM_VOLUME;
+        this.updateFightOpeningFade(track);
       } catch {
         if (rhythm.audioStartAttempt !== startAttempt) return;
         if (this.level1OfficeRhythm !== rhythm || rhythm.ending) {

@@ -200,6 +200,56 @@ test('scoreboard', async t => {
       assert(!current.json.entries.some(entry => entry.id === id));
     }
   });
+  await t.test('studio-stem Story and stage runs keep their original caps, tickets and boards', async () => {
+    const old = require('./chart-limits-20261117b.json');
+    assert.equal(old.version, 'funk-stems-20261117b');
+    assert.notEqual(CHART_VERSION, old.version);
+    const oldQuery = (mode, stage) => '/api/moth-scoreboard?' + new URLSearchParams({
+      mode, chartVersion: old.version, ...(stage ? {stage} : {})
+    });
+    const oldPost = body => call(env, {method: 'POST', ip: '21.1.' + (++n % 250) + '.1',
+      body: {chartVersion: old.version, ...body}});
+    const oldTicket = async (mode, stage) => {
+      const issued = await oldPost({action: 'start', mode, ...(stage ? {stage} : {})});
+      assert.equal(issued.status, 201);
+      const key = 'moth:chart:' + old.version + ':ticket:' + issued.json.run;
+      const ticket = JSON.parse(data.get(key));
+      const minimum = stage ? old.stages[stage].minRunSeconds : old.minRunSeconds;
+      data.set(key, JSON.stringify({...ticket, at: Date.now() - (minimum + 1) * 1000}));
+      return issued.json.run;
+    };
+    for (const mode of ['chill', 'shoot']) {
+      assert.deepEqual(handler.checkRun(mode, old[mode], old.version),
+        {total: Object.values(old[mode]).reduce((sum, score) => sum + score, 0)});
+      assert.deepEqual(handler.checkRun(mode, old[mode], CHART_VERSION), {error: 'scores'},
+        'Opening hits excluded from the new chart cannot inflate its score cap');
+      for (const stage of Object.keys(old.stages)) {
+        const response = await call(env, {path: oldQuery(mode, stage)});
+        assert.deepEqual(response.json, {mode, chartVersion: old.version, stage, entries: []});
+      }
+      const storyRun = await oldTicket(mode);
+      const currentScores = handler.MAX_FIGHT_SCORE[mode];
+      assert.equal((await call(env, {method: 'POST', ip: '21.2.' + (++n % 250) + '.1',
+        body: {mode, id: 'CROSS', chartVersion: CHART_VERSION, run: storyRun, scores: currentScores}})).json.error, 'run',
+      'The existing studio ticket cannot submit to the new chart');
+      const id = mode === 'chill' ? 'STEMEASY' : 'STEMHARD';
+      const posted = await oldPost({mode, id, run: storyRun, scores: old[mode]});
+      assert.equal(posted.status, 201);
+      assert.equal(posted.json.chartVersion, old.version);
+      assert.deepEqual((await call(env, {path: oldQuery(mode)})).json.entries.map(entry => entry.id), [id]);
+
+      const stage = 'secret-getdown';
+      const stageRun = await oldTicket(mode, stage);
+      assert.equal((await call(env, {method: 'POST', ip: '21.3.' + (++n % 250) + '.1',
+        body: {mode, stage, id: 'CROSS', chartVersion: CHART_VERSION, run: stageRun, score: 2000}})).json.error, 'run',
+      'Existing hidden-stage tickets stay scoped to the studio chart');
+      const stagePost = await oldPost({mode, stage, id, run: stageRun, score: old.stages[stage][mode]});
+      assert.equal(stagePost.status, 201, 'The original hidden-stage maximum remains valid');
+      assert.deepEqual((await call(env, {path: oldQuery(mode, stage)})).json.entries.map(entry => entry.id), [id]);
+      const current = await call(env, {path: '/api/moth-scoreboard?' + new URLSearchParams({mode, stage, chartVersion: CHART_VERSION})});
+      assert.deepEqual(current.json.entries, [], 'Older hidden scores never enter the new board cache');
+    }
+  });
   await t.test('Stage Select keeps a top five for each level and difficulty', async () => {
     const stages = [...Object.keys(handler.MAX_FIGHT_SCORE.chill), 'secret-xiaosi', 'secret-getdown'];
     assert.deepEqual(Object.keys(handler.STAGE_LIMITS).sort(), stages.sort());

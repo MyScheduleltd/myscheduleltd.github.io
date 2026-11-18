@@ -49,6 +49,7 @@ async function enterOffice(page) {
   const started = Date.now();
   await page.goto('https://myscheduleltd.com/moth/staff/?device=phone', {waitUntil: 'domcontentloaded'});
   await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.locator('#moth-boot-loading').waitFor({state: 'detached', timeout: 60000});
   await page.keyboard.press('Enter'); await page.keyboard.press('Enter'); await page.keyboard.press('Enter');
   await page.waitForFunction(() => bobbyGame.loadError || (bobbyGame.state === 'playing' && !bobbyGame.level1OfficeRhythm?.graphicsLoading), undefined, {timeout: 120000});
   assert.equal(await page.evaluate(() => bobbyGame.loadError), '', 'Level 1 loads');
@@ -95,6 +96,7 @@ async function enterOffice(page) {
   const {context, page, requests, errors} = await livePage();
   await page.goto('https://myscheduleltd.com/moth/staff/?device=desktop', {waitUntil: 'domcontentloaded'});
   await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.locator('#moth-boot-loading').waitFor({state: 'detached', timeout: 60000});
   await page.waitForFunction(() => bobbyGame.audioMirror?.get(bobbyGame.stageTrackSource('level1-stage1'))?.url, undefined, {timeout: 20000});
   await page.keyboard.press('KeyP');
   await page.locator('[data-debug-fight="level1-stage1"]').click();
@@ -130,6 +132,7 @@ async function enterOffice(page) {
   const {context, page, requests, errors} = await livePage();
   await page.goto('https://myscheduleltd.com/moth/staff/?device=desktop', {waitUntil: 'domcontentloaded'});
   await page.waitForFunction(() => window.bobbyGame?.bootDone && bobbyGame.state === 'title', undefined, {timeout: 60000});
+  await page.locator('#moth-boot-loading').waitFor({state: 'detached', timeout: 60000});
   await page.evaluate(() => {
     const g = bobbyGame;
     g.debugUnlockAllStages(); g.startStoryRun('chill');
@@ -200,6 +203,7 @@ async function enterOffice(page) {
   const started = Date.now();
   await page.goto('http://127.0.0.1:5291/moth/staff/?device=phone', {waitUntil: 'domcontentloaded'});
   await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.locator('#moth-boot-loading').waitFor({state: 'detached', timeout: 60000});
   await page.keyboard.press('Enter'); await page.keyboard.press('Enter'); await page.keyboard.press('Enter');
   await page.waitForFunction(() => bobbyGame.loadError || (bobbyGame.state === 'playing' && !bobbyGame.level1OfficeRhythm?.graphicsLoading), undefined, {timeout: 240000});
   assert.equal(await page.evaluate(() => bobbyGame.loadError), '', 'Slow steady downloads are not abandoned');
