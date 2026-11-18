@@ -10,9 +10,11 @@ export function stubScoreboard(target) {
     if (request.method() === 'OPTIONS') return route.fulfill({status: 204, headers});
     if (request.method() === 'POST') {
       const body = request.postDataJSON() || {};
-      return route.fulfill({status: 201, headers, body: JSON.stringify({run: crypto.randomUUID(), ...(body.chartVersion ? {chartVersion: body.chartVersion} : {})})});
+      return route.fulfill({status: 201, headers, body: JSON.stringify({run: crypto.randomUUID(),
+        ...(body.chartVersion ? {chartVersion: body.chartVersion} : {}), ...(body.stage ? {stage: body.stage} : {})})});
     }
     const params = new URL(request.url()).searchParams;
-    return route.fulfill({status: 200, headers, body: JSON.stringify({mode: params.get('mode'), entries: [], ...(params.has('chartVersion') ? {chartVersion: params.get('chartVersion')} : {})})});
+    return route.fulfill({status: 200, headers, body: JSON.stringify({mode: params.get('mode'), entries: [],
+      ...(params.has('chartVersion') ? {chartVersion: params.get('chartVersion')} : {}), ...(params.has('stage') ? {stage: params.get('stage')} : {})})});
   });
 }

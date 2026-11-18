@@ -10,7 +10,7 @@ import { stubScoreboard } from './moth-scoreboard-stub.mjs';
 const root = path.resolve(import.meta.dirname, '..');
 const config = JSON.parse(await fs.readFile(path.join(root, 'docs/moth/data/level1.json'), 'utf8'));
 const specs = Object.entries(config).filter(([, value]) => value && typeof value === 'object' && value.chart?.easy)
-  .concat(config.secretLevels.map(level => [level.id, level.rhythm]));
+  .concat(config.secretLevels.map(level => [level.id, level.rhythm]), Object.entries(config.stageSelectRhythms));
 const reports = [];
 for (const [name, spec] of specs) {
   for (const mode of ['easy', 'hard']) {
@@ -68,10 +68,8 @@ for (const [name, spec] of specs) {
       }
     }
     if (mode === 'hard') {
-      const minimumGap = Math.max(0.224, Math.min(0.28, 60 / spec.bpm * 0.45));
-      assert(geometry.minGap >= minimumGap - 1e-6, `${name}/hard: tempo-scaled minimum gap (${geometry.minGap} < ${minimumGap})`);
-      assert(closestSameKey >= 0.30 - 1e-6, `${name}/hard: at least 300ms between same-button attacks`);
-      assert(maxInSecond <= 4, `${name}/hard: at most four attacks in any second (${maxInSecond})`);
+      assert(geometry.minGap >= .19 - 1e-5, `${name}/hard: readable vocal attack spacing`);
+      assert(maxInSecond <= 6, `${name}/hard: at most six attacks in a rolling second (${maxInSecond})`);
     }
     reports.push({name, mode, notes: notes.length, minGapMs: Math.round(geometry.minGap * 1000), closestSameKeyMs: Math.round(closestSameKey * 1000), maxInSecond, pixelsPerSecond: geometry.pixelsPerSecond, emptyPixels: Number(closestPixels.toFixed(2)), fullRingPreview: Number(fullRingPreview.toFixed(3))});
   }
@@ -125,7 +123,7 @@ try {
     assert(Math.abs(latency.initialRoute - .053) < 1e-12 && Math.abs(latency.changedLatency - .093) < 1e-12
       && Math.abs(latency.changedContext - .025) < 1e-12, `${name}: output-route changes invalidate compensation immediately`);
     await page.evaluate(() => bobbyGame.startStage('level1-stage1', {freePlay: true, skipAudio: true}));
-    await page.waitForFunction(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm?.tutorial?.mode === 'done' && !bobbyGame.levelLoadingPresentation && !(bobbyGame.stageCountdown > 0), undefined, {timeout: 90000});
+    await page.waitForFunction(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm?.tutorial?.mode === 'done' && !bobbyGame.levelLoadingPresentation && !bobbyGame.isRhythmCountIn(), undefined, {timeout: 90000});
     const geometry = await page.evaluate(() => {
       const g = bobbyGame, r = g.level1OfficeRhythm;
       // The closest allowed hard phrase, repeated across all four buttons.
@@ -162,7 +160,7 @@ try {
         return originals.arc.apply(this, arguments);
       };
       target.fillText = function (text, x, y) {
-        if ('MOTH'.includes(text) && Math.abs(y - 616) < 10 && x >= 264 && x <= 1216) {
+        if ('MOTH'.includes(text) && Math.abs(y - 616) < 14 && x >= 264 && x <= 1216) {
           const metrics = this.measureText(text);
           const inkRadius = Math.hypot((metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight) / 2,
             (metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) / 2);

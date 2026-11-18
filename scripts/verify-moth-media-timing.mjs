@@ -12,6 +12,7 @@ const stages = ['level1-stage1', 'level2-stage2', 'level3-stage2', 'level4-stage
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const smoke = process.argv.includes('--smoke');
 const riverOnly = process.argv.includes('--river');
+const fullSongs = process.argv.includes('--full-songs');
 const report = [];
 const browser = await chromium.launch({executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true,
   args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required']});
@@ -29,12 +30,12 @@ try {
   });
   for (const stage of riverOnly ? ['level5-stage2'] : smoke ? stages.slice(0, 1) : stages) {
     for (const mode of smoke ? ['chill'] : ['chill', 'shoot']) {
-      await page.evaluate(({stage, mode}) => {
+      await page.evaluate(({stage, mode, fullSongs}) => {
         const g = bobbyGame;
         g.update = window.__mediaTimingUpdate;
         g.setDifficulty(mode, {persist: false, announce: false});
-        g.startStage(stage, {freePlay: true, skipAudio: false});
-      }, {stage, mode});
+        g.startStage(stage, {freePlay: true, fromLevelSelection: fullSongs, skipAudio: false});
+      }, {stage, mode, fullSongs});
       await page.waitForFunction(stage => {
         const g = bobbyGame, r = g.level1OfficeRhythm, track = r && g.getActiveLevel1OfficeRhythmAudio();
         return g.currentStageId === stage && g.state === 'playing' && r?.tutorial?.mode === 'done'
@@ -43,6 +44,7 @@ try {
           && track && !track.paused && track.readyState >= 3 && !track.seeking;
       }, stage, {timeout: 120000});
       if (stage === 'level1-stage1' && mode === 'chill') {
+        await page.waitForFunction(() => bobbyGame.getLevel1OfficeRenderTime() > .15);
         const readClock = () => page.evaluate(() => {
           const g = bobbyGame, track = g.getActiveLevel1OfficeRhythmAudio();
           return {blob: track.currentSrc.startsWith('blob:'), media: track.currentTime,
@@ -61,10 +63,10 @@ try {
       }
       const result = await page.evaluate(async ({stage, mode}) => {
         const g = bobbyGame, r = g.level1OfficeRhythm, track = g.getActiveLevel1OfficeRhythmAudio();
+        const spec = g.getActiveRhythmSpec();
         g.update = () => {}; // Keep normal judgment updates from consuming sought notes.
         r.phaseIntroTimer = 0;
         delete r.frozenSongTime;
-        track.muted = true;
         const seek = async target => {
           const mediaTime = target + g.getRhythmAudioStart() + g.getAudioOffsetSeconds() + g.getRhythmOutputDelay();
           await new Promise((resolve, reject) => {
@@ -111,12 +113,29 @@ try {
         const stationaryEnd = g.getLevel1OfficeRenderTime();
         track.playbackRate = 1;
         track.pause();
+        track.volume = BGM_VOLUME;
+        // Let the audio graph render the scheduled gain before reading it.
+        await new Promise(resolve => setTimeout(resolve, 80));
+        const musicGain = g.musicAudioRoutes.get(track)?.gain.gain.value;
         return {stage, mode, source: track.currentSrc.startsWith('blob:') ? 'verified-blob' : track.currentSrc,
           noteCount: r.notes.length, audioStart: g.getRhythmAudioStart(), manualOffset: g.getAudioOffsetSeconds(),
-          outputDelay: g.getRhythmOutputDelay(), readyState: track.readyState, duration: track.duration, hits,
+          mediaSource: g.canonicalAudioSource(track), fullSong: spec.fullSong,
+          expectedSource: mode === 'chill' ? spec.easyAudioSrc : (spec.fightCut?.src || spec.audioSrc),
+          warmup: track.mothFightLead || 0, outputDelay: g.getRhythmOutputDelay(), readyState: track.readyState,
+          duration: track.duration, musicGain, hits,
           pausedStart, pausedEnd, stationaryStart, stationaryEnd, missesBeforePause: misses, missesAfterPause: r.misses};
       }, {stage, mode});
       assert.equal(result.source, 'verified-blob', `${stage}/${mode}: actual verified media blob is playing`);
+      assert.equal(result.mediaSource, result.expectedSource, `${stage}/${mode}: difficulty-specific audio source`);
+      assert.equal(Math.round(result.musicGain * 1000) / 1000, mode === 'chill' ? 1 : .5,
+        `${stage}/${mode}: gameplay music gain`);
+      if (fullSongs) {
+        const spec = config.stageSelectRhythms[stage];
+        assert.equal(result.fullSong, true);
+        assert.equal(result.audioStart, result.warmup);
+        assert(Math.abs(result.duration - result.warmup - spec.duration) < .05, `${stage}/${mode}: exact full mix duration after decoder preparation`);
+        assert.equal(result.noteCount, spec.chart[mode === 'shoot' ? 'hard' : 'easy'].length);
+      }
       assert(result.hits.length >= 3 && result.hits.every(hit => hit.pressed && hit.status === 'perfect'), `${stage}/${mode}: first/middle/last/hold attacks judge PERFECT on the actual media clock: ${JSON.stringify(result.hits)}`);
       assert(result.hits.every(hit => Math.abs(hit.errorMs) < 75 && hit.deltaMs < 75), `${stage}/${mode}: media-seek origin matches measured note timestamps`);
       assert(result.hits.filter(hit => hit.hold).every(hit => hit.holding && hit.released && hit.holdDone && !hit.holdBroken), `${stage}/${mode}: real hold release completes at the media tail`);

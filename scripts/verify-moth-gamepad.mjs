@@ -218,8 +218,8 @@ try {
       ['M', 'O', 'T', 'H', 'up', 'down', 'left', 'right', 'space', 'pause']);
     const labels = await modal.locator('.moth-controller-row label').allTextContents();
     assert.deepEqual(labels.slice(0, 4), language === 'en'
-      ? ['M / CYMBALS', 'O / SNARE / CONFIRM / INTERACT', 'T / KICK DRUM', 'H / OTHER PERCUSSION / BACK']
-      : ['M／鈸', 'O／小鼓／確認／互動', 'T／大鼓', 'H／其他打擊樂／返回']);
+      ? ['M / NOTE', 'O / NOTE / CONFIRM / INTERACT', 'T / NOTE', 'H / NOTE / BACK']
+      : ['M／音符', 'O／音符／確認／互動', 'T／音符', 'H／音符／返回']);
     const layout = () => modal.evaluate(panel => {
       const scroll = panel.querySelector('.moth-controller-scroll');
       const footer = panel.querySelector('.moth-controller-tools');

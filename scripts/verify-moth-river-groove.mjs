@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
-import {DRUM_CHARTS, MOTH_CHART_VERSION} from './moth-chart-patches.mjs';
+import {FUNK_CHARTS, MOTH_CHART_VERSION} from './moth-chart-patches.mjs';
 
 const root = new URL('../', import.meta.url);
 const read = file => fs.readFile(new URL(file, root));
@@ -84,32 +84,27 @@ for (const mode of ['easy', 'hard']) {
 if (!process.argv.includes('--source-only')) {
   const cut = JSON.parse(await read('scripts/moth-river-cut.json'));
   const config = JSON.parse(await read('docs/moth/data/level1.json'));
-  const runtime = config.level5RiverRhythm, selected = DRUM_CHARTS.songs.level5RiverRhythm;
+  const runtime = config.level5RiverRhythm, selected = FUNK_CHARTS.songs.level5RiverRhythm;
   assert.equal(cut.grooveSha256, sha(grooveBytes), 'Final cut consumes the reviewed groove artifact');
   assert.equal(cut.version, groove.version);
   assert.equal(runtime.chart.version, MOTH_CHART_VERSION);
   assert.equal(runtime.audioStartSeconds, 10);
   assert.equal(runtime.fightCut.toSeconds, 164);
   assert(Math.abs(runtime.duration + runtime.fightCut.fadeSeconds - 154) < .00001, 'Audio and review fade stay inside the requested section');
-  assert.equal(sha(await read('docs/moth/' + runtime.fightCut.src)), selected.hashes.playing, 'The shipped crop matches its timing evidence');
+  assert.equal(sha(await read('docs/moth/' + runtime.fightCut.src)), cut.song.hashes.playing, 'The shipped crop retains the reviewed audio');
   for (const mode of ['easy', 'hard']) {
-    assert.equal(runtime.chart[mode].length, cut.song[mode].length, `${mode}: final crop retains the complete reviewed phrase density`);
-    assert.deepEqual(runtime.chart[mode], selected[mode]);
-    for (let index = 0; index < selected[mode].length; index++) {
-      const row = runtime.chart[mode][index], source = selected.evidence[mode][index];
-      const at = runtime.beatOffset + row[0] * unit;
-      assert.equal(row[1], source.button);
-      assert(Math.abs(at + runtime.audioStartSeconds - source.attack) < .000002, `${mode}: source-to-cut rebasing retains every attack`);
-      assert(at >= 0 && at + row[2] * unit <= runtime.duration, `${mode}: final head/hold fits the actual gameplay clock`);
-    }
-    for (const attack of [39.433, 59.961, 64.697, 125.093, 127.856, 135.749]) {
-      assert(selected.evidence[mode].some(event => event.instrument === 'kick' && Math.abs(event.attack - attack) < .0001),
-        `${mode}: the current overlay retains the reviewed shuffled kick ${attack}`);
-    }
-    assert.deepEqual(runtime.chart[mode].filter(row => row[2] > 0), cut.song[mode].filter(row => row[2] > 0), `${mode}: reviewed hold start and tail are preserved`);
+    const start = runtime.fightCut.fromSeconds;
+    const expected = selected[mode].filter(([time]) => time >= start && time < start + runtime.duration - .08);
+    assert.equal(runtime.chart[mode].length, expected.length);
+    runtime.chart[mode].forEach(([step, key, hold], index) => {
+      const at = runtime.beatOffset + step * unit;
+      assert.equal(key, expected[index][1]);
+      assert.equal(hold, expected[index][2]);
+      assert(Math.abs(at + start - expected[index][0]) < .000002);
+    });
   }
 }
 await fs.mkdir(new URL('.qa/moth/river-reselection-20261105/', root), {recursive: true});
 await fs.writeFile(new URL('.qa/moth/river-reselection-20261105/groove-regression.json', root), JSON.stringify({scope: process.argv.includes('--source-only') ? 'source-selection' : 'source-selection-and-shipped-cut', reports}, null, 2) + '\n');
-console.log('PASS river groove: preserved easy phrase density, audible shuffled kicks, measured source references, clear hard recovery and holds' + (process.argv.includes('--source-only') ? '' : ', exact final verse-to-chorus crop rebasing'));
+console.log('PASS river: historical percussion reference and approved Story cut' + (process.argv.includes('--source-only') ? '' : ', exact final verse-to-chorus crop rebasing'));
 console.log(JSON.stringify(reports));

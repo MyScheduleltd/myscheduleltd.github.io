@@ -87,30 +87,26 @@ for (const [label, viewport, device] of [['phone', {width: 390, height: 844}, 'p
   // Others are already on the board (11 posted; the top 10 remain).
   if (label === 'phone') { await seed('shoot', 11, 0.9); await seed('chill', 4, 0.8); }
 
-  // Before the credits: the board, the run's total, and its standing. It opens on
-  // the press that ends the wake-up scene, and players press on: the presses
-  // straight after, and a tap on its own close button (a phone's tap clicks what
-  // comes up under the finger), must not close it.
+  // The wake-up scene leads straight to the credits. The completed result is
+  // saved for the main-menu scoreboard, which can still post the score.
   await page.evaluate(() => bobbyGame.startLevel6WakeUp());
-  // Run against the live site, the wake-up scene's chapter can take a minute to load (58 s on 2026-10-18).
-  await page.waitForFunction(() => bobbyGame.state === 'level6WakeUp' && bobbyGame.level6WakeTimer >= 5.6, undefined, {timeout: 240000});
-  for (let i = 0; i < 12 && !(await page.evaluate(() => Boolean(bobbyGame.scoreboard))); i++) {
-    if (label === 'phone') await page.locator('.mobile-moth__button--o').tap();
-    else await page.keyboard.press('KeyO');
-    await page.waitForTimeout(150);
+  await page.waitForFunction(() => bobbyGame.state === 'level6WakeUp' || bobbyGame.state === 'finaleEnding', undefined, {timeout: 240000});
+  await page.evaluate(() => { bobbyGame.level6WakeTimer = 30; });
+  for (let i = 0; i < 2; i++) {
+    await page.evaluate(() => { if (bobbyGame.state === 'level6WakeUp') bobbyGame.advanceLevel6WakeUp(); });
   }
+  await page.waitForFunction(() => bobbyGame.state === 'finaleEnding' && bobbyGame.finaleEndingPhase === 'credits');
+  assert.equal(await page.locator('.moth-board').count(), 0, 'No leaderboard interrupts the transition to credits');
+  assert(await page.evaluate(() => bobbyGame.progress.storyRun.finishedAt > 0));
+  const enterStoryBoard = () => page.evaluate(() => {
+    const game = bobbyGame;
+    game.returnToTitle();
+    game.homeMenu.index = game.getHomeMenuItems().findIndex(item => item.id === 'scoreboard');
+    game.activateHomeMenuSelection();
+  });
+  await enterStoryBoard();
   await page.locator('.moth-board').waitFor();
-  const close = await page.locator('[data-board-close]').boundingBox();
-  for (let i = 0; i < 3; i++) {
-    await page.keyboard.press(['KeyO', 'Enter', 'Space'][i]);
-    if (label === 'phone') await page.touchscreen.tap(close.x + close.width / 2, close.y + close.height / 2);
-    else await page.mouse.click(close.x + close.width / 2, close.y + close.height / 2);
-  }
-  const held = await page.evaluate(() => ({board: Boolean(document.querySelector('.moth-board')), state: bobbyGame.state, focused: document.activeElement?.dataset?.focusKey || document.activeElement?.tagName}));
-  assert.equal(held.board, true, 'The board stays through the presses that follow it ' + JSON.stringify(held));
-  assert.notEqual(held.state, 'finaleEnding', 'The credits wait for the board');
-  // After its first second, one O selects the ID box rather than closing it.
-  await page.waitForFunction(() => performance.now() >= bobbyGame.scoreboard.quietUntil);
+  await page.locator('.moth-board-post input').waitFor();
   await page.keyboard.press('KeyO');
   assert.deepEqual(await page.evaluate(() => ({board: Boolean(bobbyGame.scoreboard), focused: document.activeElement?.tagName})), {board: true, focused: 'INPUT'}, 'One O selects the ID box');
   await page.waitForFunction(() => !document.querySelector('.moth-board-list .state'), undefined, {timeout: 15000});
@@ -139,11 +135,9 @@ for (const [label, viewport, device] of [['phone', {width: 390, height: 844}, 'p
   assert.match(copied, new RegExp('第 ' + rank + ' 名|#' + rank));
   assert.match(copied, /myscheduleltd\.com\/moth\//);
 
-  // Continue: the credits roll, and the board does not come back.
+  // Back returns to the main menu rather than reopening the credits.
   await page.locator('[data-board-close]').click();
-  await page.waitForFunction(() => bobbyGame.state === 'finaleEnding' && !document.querySelector('.moth-board'));
-  await page.evaluate(() => bobbyGame.startFinaleEnding());
-  assert.equal(await page.locator('.moth-board').count(), 0);
+  await page.waitForFunction(() => bobbyGame.state === 'title' && !document.querySelector('.moth-board'));
 
   // From the main menu: both boards, keyboard tabs and scrolling, Escape back.
   await page.evaluate(() => { bobbyGame.returnToTitle(); bobbyGame.resetHomeMenu?.('root'); });
@@ -167,13 +161,17 @@ for (const [label, viewport, device] of [['phone', {width: 390, height: 844}, 'p
   assert.equal(await page.evaluate(() => bobbyGame.state), 'title');
 
   // A run that never reached the server for its ticket can't be posted, and says why.
-  await page.evaluate(({scores, chartVersion}) => { bobbyGame.progress.storyRun = {id: 'offline-run', difficulty: 'chill', chartVersion, scores, startedAt: Date.now(), ticket: null}; bobbyGame.startFinaleEnding(); }, {scores: runScores('chill', 0.5), chartVersion: SCOREBOARD_CHART_VERSION});
+  await page.evaluate(({scores, chartVersion}) => {
+    bobbyGame.progress.storyRun = {id: 'offline-run', difficulty: 'chill', chartVersion, scores, startedAt: Date.now(), ticket: null};
+    bobbyGame.finishStoryScoreRun();
+  }, {scores: runScores('chill', 0.5), chartVersion: SCOREBOARD_CHART_VERSION});
+  await enterStoryBoard();
   await page.locator('.moth-board').waitFor();
   await page.waitForFunction(() => performance.now() >= bobbyGame.scoreboard.quietUntil);
   assert.match(await page.locator('.moth-board-run p').innerText(), /could not reach the scoreboard|開始時沒有連上排行榜/);
   assert.equal(await page.locator('.moth-board-post input').count(), 0, 'No ID entry for an unverified run');
   await page.locator('[data-board-close]').click();
-  await page.waitForFunction(() => bobbyGame.state === 'finaleEnding');
+  await page.waitForFunction(() => bobbyGame.state === 'title');
   // Old saves keep their story progress and totals, but cannot mix old chart
   // scores into the revised chart's board.
   const older = await page.evaluate(scores => {
@@ -183,6 +181,77 @@ for (const [label, viewport, device] of [['phone', {width: 390, height: 844}, 'p
     return {blocked: result.blocked, complete: result.complete, total: result.total, checkpointSame: g.progress.storyCheckpoint === checkpoint};
   }, runScores('chill', .5));
   assert.deepEqual(older, {blocked: 'chart-version', complete: false, total: Object.values(runScores('chill', .5)).reduce((a,b) => a+b,0), checkpointSame: true});
+
+  // Stage Select exposes the rank list before playing and also offers a
+  // submission when the selected song has ended.
+  const stage = label === 'phone' ? 'secret-getdown' : 'level6-stage2';
+  const stageMode = label === 'phone' ? 'chill' : 'shoot';
+  await page.evaluate(stage => {
+    const game = bobbyGame;
+    game.debugUnlockAllStages();
+    game.progress.flags.debugSecretLevelsUnlocked = true;
+    game.resetHomeMenu('stageSelect');
+    game.homeMenu.index = game.getHomeMenuItems().findIndex(item => item.id === stage);
+  }, stage);
+  await page.keyboard.press('Enter');
+  const pick = await page.evaluate(() => bobbyGame.homeMenu.difficultyPick);
+  assert.equal(pick.stageId, stage);
+  assert(pick.hasLeaderboard);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await page.locator('.moth-board-list').waitFor();
+  assert.equal(await page.evaluate(() => bobbyGame.scoreboard.stage), stage);
+  assert.match(await page.locator('.moth-board-list').getAttribute('aria-label'), /^Top 5$|^前五名$/);
+  assert.equal(await page.locator('.moth-board-stage').innerText(), pick.title);
+  await page.keyboard.press('ArrowLeft');
+  await page.waitForFunction(() => bobbyGame.scoreboard.status.chill === 'ready');
+  assert.equal(await page.locator('.moth-board-list li[data-rank]').count(), 0, 'The stage board is separate from the seeded Story board');
+  await page.keyboard.press('ArrowRight');
+  await page.waitForFunction(() => bobbyGame.scoreboard.status.shoot === 'ready');
+  await page.locator('[data-board-close]').click();
+  await page.keyboard.press('ArrowUp');
+  if (stageMode === 'chill') await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => {
+    const game = bobbyGame;
+    const track = game.getActiveLevel1OfficeRhythmAudio();
+    return game.state === 'playing' && game.songTime > 0 && !game.stageCountdown
+      && game.level1OfficeRhythm?.stageScoreRun?.ticket && track && track.duration > 0 && !track.paused;
+  }, undefined, {timeout: 120000});
+  const ranked = await page.evaluate(() => {
+    const game = bobbyGame, rhythm = game.level1OfficeRhythm, spec = game.getActiveRhythmSpec();
+    return { ticket: rhythm.stageScoreRun.ticket, mode: rhythm.stageScoreRun.mode,
+      stage: rhythm.stageScoreRun.stage, fullSong: spec.fullSong, duration: spec.duration,
+      max: (rhythm.notes.length + rhythm.notes.filter(note => note.holdEnd).length) * 1000 };
+  });
+  assert.equal(ranked.stage, stage);
+  assert.equal(ranked.mode, stageMode);
+  assert(ranked.fullSong);
+  assert.equal(ranked.max, handler.STAGE_LIMITS[stage][stageMode]);
+  assert.equal(Math.max(1, Math.floor(ranked.duration) - 2), handler.STAGE_LIMITS[stage].minRunSeconds);
+  age(ranked.ticket);
+  await page.evaluate(() => {
+    const game = bobbyGame, rhythm = game.level1OfficeRhythm;
+    const track = game.getActiveLevel1OfficeRhythmAudio();
+    // A low score still enters the stage board when the full song ends,
+    // even if it does not clear a scene-specific challenge.
+    rhythm.roundScore = 2000;
+    track.currentTime = track.duration - .075;
+  });
+  await page.waitForFunction(() => bobbyGame.scoreboard?.result?.run?.finished, undefined, {timeout: 20000});
+  if (stage === 'level6-stage2') assert.equal(await page.evaluate(() => bobbyGame.state), 'failure');
+  await page.waitForFunction(() => performance.now() >= bobbyGame.scoreboard.quietUntil && bobbyGame.scoreboard.status[bobbyGame.scoreboard.mode] === 'ready');
+  await page.locator('.moth-board-post input').fill('LOCAL');
+  await page.locator('.moth-board-post button').click();
+  await page.waitForFunction(() => bobbyGame.scoreboard?.result?.run?.posted?.rank === 1);
+  assert.equal(await page.locator('.moth-board-list li.is-mine .score').innerText(), '2,000');
+  await page.locator('[data-board-close]').click();
+  await page.evaluate(() => bobbyGame.replayFreePlayStage());
+  await page.waitForFunction(old => {
+    const ticket = bobbyGame.level1OfficeRhythm?.stageScoreRun?.ticket;
+    return bobbyGame.state === 'playing' && ticket && ticket !== old;
+  }, ranked.ticket, {timeout: 120000});
   assert.deepEqual(errors, []);
   console.log(label, 'PASS', JSON.stringify({rank, total, scrollable}));
   await context.close();
@@ -205,4 +274,4 @@ for (const [label, viewport, device] of [['phone', {width: 390, height: 844}, 'p
 }
 await browser.close();
 store.server.close();
-console.log('PASS scoreboard: story difficulty, recorded fights, board before credits, post, share, menu, server limits');
+console.log('PASS scoreboard: story difficulty, recorded fights, direct credits, post from menu, share, server limits');

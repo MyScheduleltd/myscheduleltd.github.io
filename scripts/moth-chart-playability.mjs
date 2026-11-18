@@ -1,9 +1,20 @@
 // Keep neighboring drum notes readable on the shared horizontal rail. The
 // chart owns timing; this changes only drawing, never an attack or judgment.
-export const MOTH_RHYTHM_HEAD = {radius: 21, lineWidth: 5, fontSize: 23};
+export const MOTH_RHYTHM_HEAD = {radius: 25, lineWidth: 5, fontSize: 28};
 export const MOTH_RHYTHM_RING = {radius: 39, lineWidth: 4, outlineWidth: 2, lead: 0.82, color: '#ffffff', outlineColor: '#493423'};
-export const MOTH_PORTRAIT_RAIL_HIT_OFFSET = 226;
-export const MOTH_PORTRAIT_RAIL_SCALE = 1.20;
+export const MOTH_PORTRAIT_RAIL_HIT_OFFSET = 208;
+export const MOTH_PORTRAIT_RAIL_SCALE = 1.12;
+
+function firstRhythmNoteAt(notes, time, includeTails = false) {
+  let low = 0, high = notes.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    const note = notes[middle];
+    if ((includeTails ? note.holdEnd || note.time : note.time) < time) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
 
 export function getRhythmDrumPulse(notes, time) {
   // Sample the last charted drum attack on the same clock that draws the notes.
@@ -142,6 +153,70 @@ function drawRhythmTimingRing(target, x, y, cue, scale = 1) {
   target.restore();
 }
 
+function drawRhythmTrackFrame(target, bounds, {haunted = false, pulse = 0} = {}) {
+  target.fillStyle = haunted ? "#281328" : "#f1c62d";
+  target.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
+  target.strokeStyle = haunted ? "#9a3ea7" : pulse > 0 ? "#fff2a3" : "#f7f2de";
+  target.lineWidth = haunted ? 5 : 5 + pulse * 3;
+  target.strokeRect(bounds.x, bounds.y, bounds.w, bounds.h);
+}
+
+function drawRhythmRailLines(target, bounds, cursorX, railY, pulse = 0) {
+  target.strokeStyle = "rgba(35, 28, 13, 0.46)";
+  target.lineWidth = 3;
+  target.beginPath();
+  target.moveTo(bounds.x + 24, railY);
+  target.lineTo(bounds.x + bounds.w - 24, railY);
+  target.stroke();
+  target.strokeStyle = "#f7f2de";
+  target.lineWidth = 4 + pulse * 2;
+  target.beginPath();
+  target.moveTo(cursorX, bounds.y + 44);
+  target.lineTo(cursorX, bounds.y + bounds.h - 38);
+  target.stroke();
+}
+
+function drawRhythmRailNotes(target, notes, {bounds, cursorX, railY, railTime, speed, cueAt, viewLeft}) {
+  const trackLeft = bounds.x + 36;
+  const trackRight = bounds.x + bounds.w - 36;
+  const headRadius = MOTH_RHYTHM_HEAD.radius + MOTH_RHYTHM_HEAD.lineWidth / 2;
+  const visible = [];
+  const cues = [];
+  const from = firstRhythmNoteAt(notes, railTime + (trackLeft - cursorX - headRadius) / speed, true);
+  for (let i = from; i < notes.length; i++) {
+    const note = notes[i];
+    const x = cursorX + (note.time - railTime) * speed;
+    if (x - headRadius > trackRight) break;
+    const endX = note.holdEnd ? cursorX + (note.holdEnd - railTime) * speed : x;
+    visible.push({note, x, endX, y: railY, button: note.button || LEVEL1_OFFICE_ACTION_KEYS[note.action],
+      missed: note.status === "miss" || note.holdBroken,
+      completed: note.status === "perfect" || note.status === "good",
+      held: note.holding});
+  }
+  target.save();
+  target.imageSmoothingEnabled = false;
+  target.beginPath();
+  target.rect(trackLeft, bounds.y + 32, trackRight - trackLeft, bounds.h - 52);
+  target.clip();
+  for (const head of visible) {
+    if (!head.note.holdEnd) continue;
+    drawRhythmHoldTail(target, {...head, hitX: cursorX});
+    if (head.held && head.endX > cursorX && head.x + headRadius <= (viewLeft ?? trackLeft)) {
+      drawRhythmHoldMarker(target, cursorX, railY, head.button);
+    }
+  }
+  for (const head of visible) {
+    drawRhythmNoteHead(target, head);
+    const timing = cueAt?.(head.note, railTime);
+    if (timing) {
+      drawRhythmTimingRing(target, head.x, railY, timing);
+      cues.push({id: head.note.id, time: head.note.time, button: head.button, x: head.x, y: railY, ...timing});
+    }
+  }
+  target.restore();
+  return cues;
+}
+
 function drawRhythmHitPulse(target, x, y, pulse, age, reducedMotion) {
   const duration = pulse.finish ? 0.28 : 0.22;
   if (age < 0 || age >= duration) return;
@@ -176,6 +251,8 @@ export function patchChartPlayability(once, edit) {
 const MOTH_RHYTHM_RING = ${JSON.stringify(MOTH_RHYTHM_RING)};
 ${calculateRhythmRailGeometry.toString()}
 
+${firstRhythmNoteAt.toString()}
+
 ${getRhythmDrumPulse.toString()}
 
 ${calculateRhythmTimingCue.toString()}
@@ -187,6 +264,12 @@ ${drawRhythmHoldTail.toString()}
 ${drawRhythmHoldMarker.toString()}
 
 ${drawRhythmTimingRing.toString()}
+
+${drawRhythmTrackFrame.toString()}
+
+${drawRhythmRailLines.toString()}
+
+${drawRhythmRailNotes.toString()}
 
 ${drawRhythmHitPulse.toString()}
 
@@ -231,45 +314,22 @@ const RHYTHM_DIFFICULTIES = {`);
     `x: 760 - ${MOTH_PORTRAIT_RAIL_HIT_OFFSET} / ${MOTH_PORTRAIT_RAIL_SCALE}, y: 616 - 98 / ${MOTH_PORTRAIT_RAIL_SCALE}, w: 704 / ${MOTH_PORTRAIT_RAIL_SCALE}, h: 196 / ${MOTH_PORTRAIT_RAIL_SCALE}`);
   once("  // width: a slice of the frame's track centred on its hit line (x 760) and\n  // its row of notes (y 616), scaled up so the notes read bigger than they do\n  // full-width.", "  // width: a slice of the track, with more room in front of the hit line\n  // (x 760) for incoming circles. The row (y 616) stays vertically centered\n  // and is scaled up for legibility.");
   once('      const pixelsPerSecond = 140;', '      const pixelsPerSecond = this.getRhythmRailGeometry().pixelsPerSecond;');
-  once('    target.fillStyle = haunted ? "#281328" : "#f1c62d";', '    const noteTimingCues = [];\n    target.fillStyle = haunted ? "#281328" : "#f1c62d";');
-  edit('      const trackLeft = ribbonBounds.x + 36;\n', '      target.font = "900 13px \'Courier New\', monospace";', () => `      const trackLeft = ribbonBounds.x + 36;
-      const trackRight = ribbonBounds.x + ribbonBounds.w - 36;
-      const viewLeft = this.isTallScreenView() ? PORTRAIT_FIGHT.track.src.x : trackLeft;
-      const headRadius = MOTH_RHYTHM_HEAD.radius + MOTH_RHYTHM_HEAD.lineWidth / 2;
-      const visibleNotes = [];
-      for (const note of this.getLevel1OfficeRenderNotes()) {
-        const x = cursorX + (note.time - renderTime) * pixelsPerSecond;
-        const endX = note.holdEnd ? cursorX + (note.holdEnd - renderTime) * pixelsPerSecond : x;
-        if (endX + headRadius < trackLeft || x - headRadius > trackRight) continue;
-        visibleNotes.push({note, x, endX,
-          button: note.button || LEVEL1_OFFICE_ACTION_KEYS[note.action],
-          missed: note.status === "miss" || note.holdBroken,
-          completed: note.status === "perfect" || note.status === "good",
-          held: note.holding});
-      }
-      target.save();
-      target.beginPath();
-      target.rect(trackLeft, ribbonBounds.y + 32, trackRight - trackLeft, ribbonBounds.h - 52);
-      target.clip();
-      // Paint tails underneath every head, with the release cap at the real
-      // end of its sustain. The scrolling head and spent tail stay connected.
-      for (const {note, x, endX, button, missed, held} of visibleNotes) {
-        if (!note.holdEnd) continue;
-        drawRhythmHoldTail(target, {x, endX, y: railY, hitX: cursorX, button, missed, held});
-        if (held && endX > cursorX && x + headRadius <= viewLeft) {
-          drawRhythmHoldMarker(target, cursorX, railY, button);
-        }
-      }
-      for (const {note, x, button, missed, completed, held} of visibleNotes) {
-        drawRhythmNoteHead(target, {x, y: railY, button, missed, completed, held});
-        const timing = !frozen && !haunted && !rhythm?.ending
-          ? this.getRhythmTimingCue(note, renderTime) : null;
-        if (timing) {
-          drawRhythmTimingRing(target, x, railY, timing);
-          noteTimingCues.push({id: note.id, time: note.time, button, x, y: railY, ...timing});
-        }
-      }
-      target.restore();
+  once('  renderLevel1OfficeScene(frozen = false) {\n    const target = this.ctx;',
+    '  renderLevel1OfficeScene(frozen = false) {\n    frozen = frozen || this.stageCountdown > 0;\n    const target = this.ctx;');
+  once('    const phaseIntroVisible = Boolean(tutorialMode === "done" && rhythm?.phaseIntroTimer > 0 && !rhythm?.ending);',
+    '    const phaseIntroVisible = Boolean(tutorialMode === "done" && rhythm?.phaseIntroTimer > 0 && !rhythm?.ending\n      && !this.isRhythmCountIn() && !rhythm?.songHandover && !rhythm?.audioStarting);');
+  once('    target.fillStyle = haunted ? "#281328" : "#f1c62d";\n    target.fillRect(ribbonBounds.x, ribbonBounds.y, ribbonBounds.w, ribbonBounds.h);\n    target.strokeStyle = haunted ? "#9a3ea7" : groovePulse > 0 ? "#fff2a3" : "#f7f2de";\n    target.lineWidth = haunted ? 5 : 5 + groovePulse * 3;\n    target.strokeRect(ribbonBounds.x, ribbonBounds.y, ribbonBounds.w, ribbonBounds.h);',
+    `    let noteTimingCues = [];
+    drawRhythmTrackFrame(target, ribbonBounds, {haunted, pulse: groovePulse});`);
+  edit('      target.strokeStyle = "rgba(35, 28, 13, 0.46)";\n', '      const pulse = !frozen', () =>
+    '      drawRhythmRailLines(target, ribbonBounds, cursorX, railY, groovePulse);\n      const pulse = !frozen');
+  edit('      const trackLeft = ribbonBounds.x + 36;\n', '      target.font = "900 13px \'Courier New\', monospace";', () => `      const railTime = renderTime;
+      const cueAt = !frozen && !rhythm?.ending && !rhythm?.songHandover && !rhythm?.audioStarting
+        ? (note, time) => this.getRhythmTimingCue(note, time) : null;
+      noteTimingCues = drawRhythmRailNotes(target, this.getLevel1OfficeRenderNotes(), {
+        bounds: ribbonBounds, cursorX, railY, railTime, speed: pixelsPerSecond, cueAt,
+        viewLeft: this.isTallScreenView() ? PORTRAIT_FIGHT.track.src.x : undefined
+      });
 
       target.font = "900 13px 'Courier New', monospace";`);
   once('        approachRadius: activeCue ? 27 + clamp(Math.max(0, timeUntilCue) / cueLeadDuration, 0, 1) * 48 : null,',

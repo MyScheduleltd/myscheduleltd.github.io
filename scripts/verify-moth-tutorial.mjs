@@ -27,24 +27,24 @@ try {
       return { intro, ready, healthless: g.isHealthlessRun() };
     });
     assert.equal(rules.healthless, true);
-    assert.equal(rules.intro.length, 8, 'Short rule pages replace the old heart paragraph');
+    assert.equal(rules.intro.length, 7, 'The outdated drum-to-button page was removed');
     for (const line of [...rules.intro, ...rules.ready]) {
       assert(line.en?.trim() && line.zh?.trim(), 'Each tutorial page is bilingual');
       assert(!/five hearts|lose one|at least one heart|五顆心|扣心|保住一顆心/i.test(line.en + line.zh), 'No retired heart rule');
     }
-    assert.match(rules.intro[5].en, /wrong button/);
-    assert.match(rules.intro[5].zh, /按錯鍵/);
+    assert.match(rules.intro[4].en, /wrong button/);
+    assert.match(rules.intro[4].zh, /按錯鍵/);
     assert.equal(rules.intro[2].rhythmDemo, 'tap');
     assert.equal(rules.intro[3].rhythmDemo, 'hold');
     assert.match(rules.intro[3].en, /tail ends/);
-    assert.match(rules.intro[4].en, /cymbals/);
-    assert.equal(rules.intro[7].zh, '我們先來試試看吧！');
+    assert(!rules.intro.some(line => /cymbals|其他打擊樂/.test(line.en + line.zh)), 'Retired drum labels are absent');
+    assert.equal(rules.intro[6].zh, '我們先來試試看吧！');
     assert.equal(rules.ready.length, 3);
     assert.match(rules.ready[1].en, /two hidden songs/);
     assert.match(rules.ready[2].zh, /協助美麗蓋章章/);
     for (const language of ['zh-TW', 'en']) {
       await page.evaluate(language => { bobbyGame.setLanguage(language, { persist: false, announce: false }); }, language);
-      for (const index of [2, 3, 5, 6, 7]) {
+      for (const index of [2, 3, 4, 5, 6]) {
         await page.evaluate(index => {
           const g = bobbyGame;
           g.level1OfficeRhythm.tutorial.mode = 'intro';

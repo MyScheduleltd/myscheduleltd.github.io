@@ -413,7 +413,7 @@ const LEVEL_6_WAKE_DIALOGUE = [
 ];
 const SAVE_KEY = "moth.public_save_v1";
 const PROGRESS_KEY = "moth.public_progress_v1";
-const SECRET_CLEAR_STORAGE_PREFIX = PROGRESS_KEY + ".secret-clear.";
+const STAGE_SELECTION_CLEAR_PREFIX = PROGRESS_KEY + ".level-select-clear-v1.";
 const FIGHT_RESUME_KEY = "moth.public_fight_resume_v1";
 const DEVICE_MODE_KEY = "moth.public_device_mode_v1";
 const LANGUAGE_KEY = "moth.public_language_v1";
@@ -427,7 +427,7 @@ const DIFFICULTY_KEY = "moth.public_difficulty_v1";
 // The step spacing is deliberately NOT shortened: at these tempos halving it
 // would put consecutive notes closer together than the miss window, which makes
 // a single press ambiguous between two notes rather than making the fight hard.
-const MOTH_RHYTHM_HEAD = {"radius":21,"lineWidth":5,"fontSize":23};
+const MOTH_RHYTHM_HEAD = {"radius":25,"lineWidth":5,"fontSize":28};
 const MOTH_RHYTHM_RING = {"radius":39,"lineWidth":4,"outlineWidth":2,"lead":0.82,"color":"#ffffff","outlineColor":"#493423"};
 function calculateRhythmRailGeometry(notes = []) {
   let minGap = Infinity;
@@ -443,6 +443,17 @@ function calculateRhythmRailGeometry(notes = []) {
   const ringSpacing = radius + previousRadius + lineWidth + 2 * outlineWidth + 1.5;
   const pixelsPerSecond = Math.max(140, Math.ceil(ringSpacing / minGap));
   return {pixelsPerSecond, minGap};
+}
+
+function firstRhythmNoteAt(notes, time, includeTails = false) {
+  let low = 0, high = notes.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    const note = notes[middle];
+    if ((includeTails ? note.holdEnd || note.time : note.time) < time) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }
 
 function getRhythmDrumPulse(notes, time) {
@@ -562,6 +573,70 @@ function drawRhythmTimingRing(target, x, y, cue, scale = 1) {
   target.arc(x, y, cue.radius * scale, 0, TAU);
   target.stroke();
   target.restore();
+}
+
+function drawRhythmTrackFrame(target, bounds, {haunted = false, pulse = 0} = {}) {
+  target.fillStyle = haunted ? "#281328" : "#f1c62d";
+  target.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
+  target.strokeStyle = haunted ? "#9a3ea7" : pulse > 0 ? "#fff2a3" : "#f7f2de";
+  target.lineWidth = haunted ? 5 : 5 + pulse * 3;
+  target.strokeRect(bounds.x, bounds.y, bounds.w, bounds.h);
+}
+
+function drawRhythmRailLines(target, bounds, cursorX, railY, pulse = 0) {
+  target.strokeStyle = "rgba(35, 28, 13, 0.46)";
+  target.lineWidth = 3;
+  target.beginPath();
+  target.moveTo(bounds.x + 24, railY);
+  target.lineTo(bounds.x + bounds.w - 24, railY);
+  target.stroke();
+  target.strokeStyle = "#f7f2de";
+  target.lineWidth = 4 + pulse * 2;
+  target.beginPath();
+  target.moveTo(cursorX, bounds.y + 44);
+  target.lineTo(cursorX, bounds.y + bounds.h - 38);
+  target.stroke();
+}
+
+function drawRhythmRailNotes(target, notes, {bounds, cursorX, railY, railTime, speed, cueAt, viewLeft}) {
+  const trackLeft = bounds.x + 36;
+  const trackRight = bounds.x + bounds.w - 36;
+  const headRadius = MOTH_RHYTHM_HEAD.radius + MOTH_RHYTHM_HEAD.lineWidth / 2;
+  const visible = [];
+  const cues = [];
+  const from = firstRhythmNoteAt(notes, railTime + (trackLeft - cursorX - headRadius) / speed, true);
+  for (let i = from; i < notes.length; i++) {
+    const note = notes[i];
+    const x = cursorX + (note.time - railTime) * speed;
+    if (x - headRadius > trackRight) break;
+    const endX = note.holdEnd ? cursorX + (note.holdEnd - railTime) * speed : x;
+    visible.push({note, x, endX, y: railY, button: note.button || LEVEL1_OFFICE_ACTION_KEYS[note.action],
+      missed: note.status === "miss" || note.holdBroken,
+      completed: note.status === "perfect" || note.status === "good",
+      held: note.holding});
+  }
+  target.save();
+  target.imageSmoothingEnabled = false;
+  target.beginPath();
+  target.rect(trackLeft, bounds.y + 32, trackRight - trackLeft, bounds.h - 52);
+  target.clip();
+  for (const head of visible) {
+    if (!head.note.holdEnd) continue;
+    drawRhythmHoldTail(target, {...head, hitX: cursorX});
+    if (head.held && head.endX > cursorX && head.x + headRadius <= (viewLeft ?? trackLeft)) {
+      drawRhythmHoldMarker(target, cursorX, railY, head.button);
+    }
+  }
+  for (const head of visible) {
+    drawRhythmNoteHead(target, head);
+    const timing = cueAt?.(head.note, railTime);
+    if (timing) {
+      drawRhythmTimingRing(target, head.x, railY, timing);
+      cues.push({id: head.note.id, time: head.note.time, button: head.button, x: head.x, y: railY, ...timing});
+    }
+  }
+  target.restore();
+  return cues;
 }
 
 function drawRhythmHitPulse(target, x, y, pulse, age, reducedMotion) {
@@ -782,8 +857,8 @@ const LEVEL1_OFFICE_TUTORIAL_DIALOGUE = [
   },
   {
     "speaker": "GANGAN",
-    "en": "Follow the drums. Tap the matching button when the ring closes at the white hit line.",
-    "zh": "音符到達白色判定線時，白色圓環會提示時機，請跟著鼓點按下對應按鍵。",
+    "en": "Tap the matching button when the ring closes at the white hit line.",
+    "zh": "音符到達白色判定線、圓環收合時，按下對應按鍵。",
     "rhythmDemo": "tap"
   },
   {
@@ -791,11 +866,6 @@ const LEVEL1_OFFICE_TUTORIAL_DIALOGUE = [
     "en": "For a hold note, keep the button pressed until the tail ends.",
     "zh": "“連續音符”則要長按至音符結束。",
     "rhythmDemo": "hold"
-  },
-  {
-    "speaker": "GANGAN",
-    "en": "All four buttons follow the drums. M is cymbals, O is snare, T is kick, and H is other percussion.",
-    "zh": "四個按鍵都跟著鼓點：M 是鈸、O 是小鼓、T 是大鼓、H 是其他打擊樂。"
   },
   {
     "speaker": "GANGAN",
@@ -855,8 +925,8 @@ const LEVEL1_OFFICE_TUTORIAL_COMPLETE_DIALOGUE = [
   },
   {
     "speaker": "GANGAN",
-    "en": "Now help Dr. Beauty stamp those papers. Follow the drums and aim for a higher score!",
-    "zh": "現在！開始協助美麗蓋章章，跟上鼓點，贏得更高的分數吧！",
+    "en": "Now help Dr. Beauty stamp those papers. Stay on time and aim for a higher score!",
+    "zh": "現在！開始協助美麗蓋章章，跟上節奏，挑戰更高分！",
     "portraitFrame": 5
   }
 ];
@@ -1106,7 +1176,7 @@ const PORTRAIT_FIGHT = {
   // (x 760) for incoming circles. The row (y 616) stays vertically centered
   // and is scaled up for legibility.
   stats: { x: 8, y: 520, w: 704, h: 46 },
-  track: { src: { x: 760 - 226 / 1.2, y: 616 - 98 / 1.2, w: 704 / 1.2, h: 196 / 1.2 }, dest: { x: 8, y: 572, w: 704, h: 196 } },
+  track: { src: { x: 760 - 208 / 1.12, y: 616 - 98 / 1.12, w: 704 / 1.12, h: 196 / 1.12 }, dest: { x: 8, y: 572, w: 704, h: 196 } },
   letterboxY: (776 - 405) / 2
 };
 // The tall dialogue layout: the scene above the box, cropped to its middle and
@@ -2534,7 +2604,7 @@ const HOME_SONG_TRACK_NUMBERS = {
   "home-finale-ending": 12
 };
 // 設定: the device's own settings - timing offset and haptics.
-const MOTH_GAMEPAD_ACTIONS = [["M","KeyM","M / CYMBALS","M／鈸",3],["O","KeyO","O / SNARE / CONFIRM / INTERACT","O／小鼓／確認／互動",1],["T","KeyT","T / KICK DRUM","T／大鼓",0],["H","KeyH","H / OTHER PERCUSSION / BACK","H／其他打擊樂／返回",2],["up","KeyW","UP","上",12],["down","KeyS","DOWN","下",13],["left","KeyA","LEFT","左",14],["right","KeyD","RIGHT","右",15],["space","Space","SPACE / JUMP","SPACE／跳躍",5],["pause","Escape","PAUSE / RESUME","暫停／繼續",9]];
+const MOTH_GAMEPAD_ACTIONS = [["M","KeyM","M / NOTE","M／音符",3],["O","KeyO","O / NOTE / CONFIRM / INTERACT","O／音符／確認／互動",1],["T","KeyT","T / NOTE","T／音符",0],["H","KeyH","H / NOTE / BACK","H／音符／返回",2],["up","KeyW","UP","上",12],["down","KeyS","DOWN","下",13],["left","KeyA","LEFT","左",14],["right","KeyD","RIGHT","右",15],["space","Space","SPACE / JUMP","SPACE／跳躍",5],["pause","Escape","PAUSE / RESUME","暫停／繼續",9]];
 const HOME_SETTINGS_MENU_ITEMS = [
   { id: "controller", label: "CONTROLLER" },
   { id: "calibrate", label: "TIMING" },
@@ -2634,7 +2704,6 @@ const DIALOGUE_BGM_FADE_SECONDS = 1.1;
 // musical terms, so it is done in sequence - the dialogue track fades out
 // completely, then the song fades in. The two never sound at once.
 const SONG_HANDOVER_OUT_SECONDS = 0.55;
-const SONG_HANDOVER_IN_SECONDS = 0.4;
 const POTION_CARRY_LIMIT = 10;
 const HOTBAR_SLOT_COUNT = 9;
 const HOTBAR_SLOT_SIZE = 50;
@@ -3050,6 +3119,15 @@ class BobbyGame {
       if (this.fightCutAudio.bathroom) this.level2BossAudio = this.fightCutAudio.bathroom;
       if (this.fightCutAudio.arcade) this.level4ArcadeAudio = this.fightCutAudio.arcade;
       if (this.fightCutAudio.level6) this.level6RhythmAudio = this.fightCutAudio.level6;
+      this.fullSongAudio = {};
+      for (const spec of Object.values(this.config.stageSelectRhythms || {})) {
+        if (this.fightCutAudio[spec.theme]?.getAttribute("src") === spec.audioSrc
+          || this.config.secretLevels?.some(level => level.theme === spec.theme)) continue;
+        const track = new Audio(spec.audioSrc);
+        track.preload = "none";
+        track.volume = BGM_VOLUME;
+        this.fullSongAudio[spec.theme] = track;
+      }
       // Secret songs use the same exclusive audio registry as the normal fights.
       for (const level of this.config.secretLevels || []) {
         const track = new Audio(level.rhythm.audioSrc);
@@ -3168,10 +3246,7 @@ for (const level of this.config.secretLevels || []) {
       {key:"level3MassageFacesSheet", group:"level3", run:async () => {this.refs.level3MassageFacesSheet = await loadOptionalSheet(this.config?.sprites?.level3MassageFaces?.source);}, release:() => {delete this.refs.level3MassageFacesSheet;}},
       {key:"level3MassageHandSheet", group:"level3", run:async () => {this.refs.level3MassageHandSheet = await loadOptionalSheet(this.config?.sprites?.level3MassageHand?.source);}, release:() => {delete this.refs.level3MassageHandSheet;}},
       {key:"level4ArcadeRoom", group:"level4", run:async () => {this.refs.level4ArcadeRoom = await loadOptionalSheet(this.config?.sprites?.level4ArcadeRoom?.source);}, release:() => {delete this.refs.level4ArcadeRoom;}},
-      {key:"level4ArcadeArena", group:"level4", run:async () => {this.refs.level4ArcadeArena = await loadOptionalSheet(this.config?.sprites?.level4ArcadeArena?.source);}, release:() => {delete this.refs.level4ArcadeArena;}},
       {key:"level4ArcadePlayersSheet", group:"level4", run:async () => {this.refs.level4ArcadePlayersSheet = await loadOptionalSheet(this.config?.sprites?.level4ArcadePlayers?.source);}, release:() => {delete this.refs.level4ArcadePlayersSheet;}},
-      {key:"level4BobbyFighterSheet", group:"level4", run:async () => {this.refs.level4BobbyFighterSheet = await loadOptionalSheet(this.config?.sprites?.level4BobbyFighter?.source);}, release:() => {delete this.refs.level4BobbyFighterSheet;}},
-      {key:"level4BonitaFighterSheet", group:"level4", run:async () => {this.refs.level4BonitaFighterSheet = await loadOptionalSheet(this.config?.sprites?.level4BonitaFighter?.source);}, release:() => {delete this.refs.level4BonitaFighterSheet;}},
       {key:"comboCelebrations", group:"common", run:async () => {this.refs.comboCelebrations = await Promise.all(COMBO_CELEBRATIONS.map(item => loadOptionalSheet(item.photo)));}, release:() => {delete this.refs.comboCelebrations;}},
       {key:"level2BathroomMosquitoSheet", group:"level2", run:async () => {this.refs.level2BathroomMosquitoSheet = await loadOptionalSheet(this.config?.sprites?.level2BathroomMosquito?.source);}, release:() => {delete this.refs.level2BathroomMosquitoSheet;}},
       {key:"level2BathroomPortraitsSheet", group:"common", run:async () => {this.refs.level2BathroomPortraitsSheet = await loadOptionalSheet(this.config?.sprites?.level2BathroomDialoguePortraits?.source);}, release:() => {delete this.refs.level2BathroomPortraitsSheet;}}
@@ -3186,6 +3261,15 @@ for (const level of this.config.secretLevels || []) {
         const recording = this.memeRecording; this.memeRecording = null;
         Promise.resolve(recording).then(value => { if (value?.url) URL.revokeObjectURL(value.url); });
       }});
+    this.sceneAssetJobs.push({
+      key: "level4MusicVideo", group: "level4",
+      run: () => this.loadArcadeMusicVideo(),
+      release: () => this.releaseArcadeMusicVideo()
+    }, {
+      key: "riverGoddess", group: "level5",
+      run: async () => { this.refs.riverGoddess = await loadImage("assets/sprites/river-goddess.webp"); },
+      release: () => { this.refs.riverGoddess = null; }
+    });
     this.loadedSceneGroups = new Set();
   }
 
@@ -3260,8 +3344,9 @@ for (const level of this.config.secretLevels || []) {
     if (rejected) throw rejected.reason;
     for (const track of tracks) {
       await this.adoptSongCopy(track);
+      await this.prepareFightAudioStart(track);
       const source = this.canonicalAudioSource(track);
-      if (source && track.getAttribute('src') !== this.mirroredAudioUrl(source)) {
+      if (source && track.getAttribute('src') !== (track.mothFightCopy || this.mirroredAudioUrl(source))) {
         throw new Error('A required song is not ready for playback');
       }
     }
@@ -3328,6 +3413,7 @@ for (const level of this.config.secretLevels || []) {
   }
 
   replaceIdleAudioPlayer(track, source) {
+    this.releaseFightAudioStart(track);
     const fresh = new Audio(source);
     fresh.preload = 'none';
     fresh.loop = track.loop;
@@ -3336,7 +3422,9 @@ for (const level of this.config.secretLevels || []) {
     fresh.mothAudioSource = source;
     for (const name of ['audio', 'sewerAudio', 'level2BossAudio', 'level3RhythmAudio', 'level4ArcadeAudio',
       'level6RhythmAudio', 'dialogueOverlayAudio', 'dialogueBgmTrack']) if (this[name] === track) this[name] = fresh;
-    for (const name of Object.keys(this.fightCutAudio || {})) if (this.fightCutAudio[name] === track) this.fightCutAudio[name] = fresh;
+    for (const players of [this.fightCutAudio, this.fullSongAudio, this.easyMusicAudio]) {
+      for (const name of Object.keys(players || {})) if (players[name] === track) players[name] = fresh;
+    }
     for (const [id, cached] of this.homePlaylistAudioCache || []) if (cached === track) this.homePlaylistAudioCache.delete(id);
     this.gameAudioRegistry?.delete(track);
     const route = this.musicAudioRoutes?.get(track);
@@ -3543,7 +3631,13 @@ for (const level of this.config.secretLevels || []) {
     const rhythm = this.level1OfficeRhythm;
     const playing = this.state === 'playing' && rhythm && !rhythm.ending && !rhythm.skipAudio && rhythm.tutorial?.mode === 'done'
       && !(this.stageCountdown > 0) && track && !track.paused && !track.ended;
-    if (!playing || (!track.seeking && track.readyState >= 3)) { if (rhythm) rhythm.stalledSince = null; return false; }
+    const context = this.musicAudioRoutes?.get(track)?.context;
+    if (playing && track.currentTime < (track.mothFightLead || 0)) {
+      rhythm.stalledSince = performance.now();
+      return true;
+    }
+    if (!playing || (!track.seeking && track.readyState >= 3 && !track.muted && track.volume > 0
+      && (!context || context.state === "running"))) { if (rhythm) rhythm.stalledSince = null; return false; }
     rhythm.stalledSince ??= performance.now();
     return true;
   }
@@ -3725,7 +3819,7 @@ for (const level of this.config.secretLevels || []) {
     if (!this.progress) this.progress = this.createDefaultProgress();
     const random = () => Math.random().toString(36).slice(2, 10);
     const id = globalThis.crypto?.randomUUID?.() || ('run-' + Date.now().toString(36) + '-' + random() + random());
-    const run = this.progress.storyRun = { id, difficulty, chartVersion: "drums-groove-20261114b", scores: {}, startedAt: Date.now(), ticket: null };
+    const run = this.progress.storyRun = { id, difficulty, chartVersion: "funk-stems-20261117b", scores: {}, startedAt: Date.now(), ticket: null };
     this.startNewStory();
     this.registerStoryRun(run);
   }
@@ -3735,14 +3829,14 @@ for (const level of this.config.secretLevels || []) {
   // that never gets one cannot be posted.
   async registerStoryRun(run, attempt = 0) {
     clearTimeout(this.storyTicketTimer);
-    if (!run || run.ticket || run.legacy || run.chartVersion !== "drums-groove-20261114b" || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
+    if (!run || run.ticket || run.legacy || run.chartVersion !== "funk-stems-20261117b" || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', chartVersion: "drums-groove-20261114b", mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', chartVersion: "funk-stems-20261117b", mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
       const data = await response.json().catch(() => ({}));
-      if (response.status !== 201 || typeof data.run !== 'string' || data.chartVersion !== "drums-groove-20261114b") throw new Error(String(response.status));
+      if (response.status !== 201 || typeof data.run !== 'string' || data.chartVersion !== "funk-stems-20261117b") throw new Error(String(response.status));
       if (this.progress?.storyRun !== run || run.ticket) return;
       run.ticket = data.run;
       this.saveProgress();
@@ -3757,7 +3851,7 @@ for (const level of this.config.secretLevels || []) {
     const run = this.progress?.storyRun;
     const rhythm = this.level1OfficeRhythm;
     if (this.freePlay || !run || !rhythm || !["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"].includes(stageId)) return;
-    if (run.chartVersion !== "drums-groove-20261114b") run.legacy = true;
+    if (run.chartVersion !== "funk-stems-20261117b") run.legacy = true;
     if (this.difficultyId !== run.difficulty) run.mixed = true;
     run.scores[stageId] = Math.max(0, Math.round(rhythm.roundScore || 0));
   }
@@ -3766,23 +3860,76 @@ for (const level of this.config.secretLevels || []) {
     if (!run) return null;
     const fights = ["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"];
     const total = fights.reduce((sum, id) => sum + (run.scores?.[id] || 0), 0);
-    const blocked = run.chartVersion !== "drums-groove-20261114b" ? 'chart-version' : run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
+    const blocked = run.chartVersion !== "funk-stems-20261117b" ? 'chart-version' : run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
     const complete = !blocked && fights.every(id => Number.isFinite(run.scores?.[id]));
     return { run, total, complete, blocked, mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' };
   }
 
-  maybeShowFinalScoreboard() {
-    if (this.freePlay || this.scoreboard) return false;
+  finishStoryScoreRun() {
+    if (this.freePlay) return;
     if (!this.progress) this.progress = this.createDefaultProgress();
     let run = this.progress.storyRun;
-    // A story begun before the scoreboard existed still sees it once.
     if (!run) run = this.progress.storyRun = { id: 'legacy-' + Date.now().toString(36), legacy: true, difficulty: this.difficultyId, scores: {} };
-    if (run.boardShown) return false;
-    run.boardShown = true;
+    if (run.finishedAt) return;
     run.finishedAt = Date.now();
     this.saveProgress();
-    this.openScoreboard({ final: true, onClose: () => this.startFinaleEnding() });
-    return true;
+  }
+
+  moveStageDifficultyChoice(delta) {
+    const pick = this.homeMenu.difficultyPick;
+    pick.choice = pick.hasLeaderboard ? clamp(pick.choice + delta, 0, 2) : delta < 0 ? 0 : 1;
+  }
+
+  startStageScoreRun(rhythm) {
+    const stage = this.stageSelectRhythmId;
+    if (!this.freePlay || !stage || rhythm.stageScoreRun || rhythm.skipAudio
+      || !this.config?.stageSelectRhythms?.[stage]) return;
+    const run = rhythm.stageScoreRun = { stage, mode: this.difficultyId === 'shoot' ? 'shoot' : 'chill', ticket: null, finished: false };
+    this.registerStageScoreRun(run);
+  }
+
+  async registerStageScoreRun(run) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const { stage, mode } = run;
+      const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', signal: controller.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start', mode, stage, chartVersion: "funk-stems-20261117b" }) });
+      const data = await response.json();
+      if (response.status === 201 && data.chartVersion === "funk-stems-20261117b"
+        && data.stage === stage && typeof data.run === 'string') run.ticket = data.run;
+    } catch {
+      // Scoreboard connectivity never interrupts a song.
+    } finally {
+      clearTimeout(timer);
+      const result = this.lastStageScoreResults?.get(run.stage + ':' + run.mode);
+      if (result?.run === run) {
+        result.complete = Boolean(run.ticket);
+        result.blocked = run.ticket ? null : 'offline';
+        if (this.scoreboard?.result === result) {
+          this.renderScoreboard();
+          this.prepareScoreCard();
+        }
+      }
+    }
+  }
+
+  showFinishedStageScoreboard() {
+    const rhythm = this.level1OfficeRhythm;
+    const run = rhythm?.stageScoreRun;
+    if (!run?.finished || run.shown) return;
+    const total = Math.max(0, Math.round(rhythm.roundScore || 0));
+    const stageTitle = this.stageScoreboardTitle(run.stage);
+    const result = { run, total, stageTitle, mode: run.mode, complete: Boolean(run.ticket), blocked: run.ticket ? null : 'offline' };
+    run.shown = true;
+    this.lastStageScoreResults ||= new Map();
+    this.lastStageScoreResults.set(run.stage + ':' + run.mode, result);
+    this.openScoreboard({ stage: run.stage, stageResult: result });
+  }
+
+  stageScoreboardTitle(stage) {
+    return this.getStageTitle(stage) || this.tr('STAGE LEADERBOARD', '關卡排行榜');
   }
 
   scoreboardModeLabel(mode) {
@@ -3790,17 +3937,19 @@ for (const level of this.config.secretLevels || []) {
     return this.tr(spec.en, spec.zh);
   }
 
-  openScoreboard({ final = false, onClose = null } = {}) {
-    this.closeScoreboard({ silent: true });
+  openScoreboard({ stage = null, stageResult = null } = {}) {
+    this.closeScoreboard();
     const run = this.progress?.storyRun;
-    const result = final || run?.boardShown ? this.storyRunResult(run) : null;
-    const board = { final, onClose, result, mode: result?.mode || (this.difficultyId === 'shoot' ? 'shoot' : 'chill'),
+    const defaultMode = stage && this.homeMenu?.difficultyPick ? this.stageSelectDifficultyId || this.difficultyId : this.difficultyId;
+    const mode = defaultMode === 'shoot' ? 'shoot' : 'chill';
+    const result = stage
+      ? stageResult || this.lastStageScoreResults?.get(stage + ':' + mode) || null
+      : (run?.finishedAt || run?.boardShown) ? this.storyRunResult(run) : null;
+    const board = { stage, stageTitle: stage ? this.stageScoreboardTitle(stage) : null,
+      result, mode: result?.mode || mode, top: stage ? 5 : 10,
       entries: {}, status: { chill: 'loading', shoot: 'loading' }, draftId: result?.run.posted?.id || '', message: '', posting: false,
-      // The final board opens on the press that ends the wake-up scene. Players
-      // tap on through it, and a phone's tap also clicks whatever comes up under
-      // the finger (its buttons sit over the deck's): owner, 2026-10-18, it
-      // closed before anyone saw it. For a second it takes no presses at all.
-      quietUntil: final ? performance.now() + 1000 : 0 };
+      // Keep the last inputs of the song from dismissing the result board.
+      quietUntil: stageResult ? performance.now() + 750 : 0 };
     this.scoreboard = board;
     this.releaseHeldInputs?.();
     const root = document.createElement('div');
@@ -3823,20 +3972,17 @@ for (const level of this.config.secretLevels || []) {
     document.body.append(root);
     board.root = root;
     this.renderScoreboard();
-    // The final board starts with nothing selected, so no single press closes
-    // it: O or Enter first selects the ID box (or the close button).
-    if (!final) root.querySelector('[data-board-close]')?.focus({ preventScroll: true });
+    if (!result) root.querySelector('[data-board-close]')?.focus({ preventScroll: true });
     else document.activeElement?.blur?.();
     for (const mode of ['chill', 'shoot']) this.fetchScoreboard(mode);
     this.prepareScoreCard();
   }
 
-  closeScoreboard({ silent = false } = {}) {
+  closeScoreboard() {
     const board = this.scoreboard;
     if (!board) return;
     board.root?.remove();
     this.scoreboard = null;
-    if (!silent) board.onClose?.();
     this.updateMobileControls?.(true);
   }
 
@@ -3848,10 +3994,14 @@ for (const level of this.config.secretLevels || []) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch(this.scoreboardApi() + '?mode=' + mode + '&chartVersion=' + encodeURIComponent("drums-groove-20261114b"), { cache: 'no-store', signal: controller.signal });
+      const url = new URL(this.scoreboardApi(), location.href);
+      url.searchParams.set('mode', mode);
+      url.searchParams.set('chartVersion', "funk-stems-20261117b");
+      if (board.stage) url.searchParams.set('stage', board.stage);
+      const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
-      if (data.chartVersion !== "drums-groove-20261114b") throw new Error('chart-version');
+      if (data.chartVersion !== "funk-stems-20261117b" || (data.stage || null) !== board.stage) throw new Error('chart-version');
       if (this.scoreboard !== board) return;
       board.entries[mode] = Array.isArray(data.entries) ? data.entries : [];
       board.status[mode] = 'ready';
@@ -3864,6 +4014,8 @@ for (const level of this.config.secretLevels || []) {
   }
 
   scoreboardApi() {
+    if ((location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+      && new URLSearchParams(location.search).get('previewScores') === '1') return '/api/moth-scoreboard';
     return 'https://beauty-boy.vercel.app/api/moth-scoreboard';
   }
 
@@ -3875,7 +4027,7 @@ for (const level of this.config.secretLevels || []) {
     if (result.run.posted) return { kind: 'posted', rank: result.run.posted.rank };
     if (board.status[result.mode] !== 'ready') return { kind: board.status[result.mode] };
     const entries = board.entries[result.mode] || [];
-    if (entries.length < 10 || result.total > entries[entries.length - 1].total) return { kind: 'qualifies' };
+    if (entries.length < board.top || result.total > entries[entries.length - 1].total) return { kind: 'qualifies' };
     return { kind: 'short', gap: entries[entries.length - 1].total - result.total + 200 };
   }
 
@@ -3903,11 +4055,14 @@ for (const level of this.config.secretLevels || []) {
     const section = el('section');
     section.append(
       el('small', { text: 'M.O.T.H · DR. BEAUTY' }),
-      el('h2', { id: 'moth-board-title', text: board.final ? tr('FINAL SCORE', '最終成績') : tr('SCOREBOARD', '排行榜') })
+      el('h2', { id: 'moth-board-title', text: board.stage ? tr('STAGE LEADERBOARD', '關卡排行榜') : tr('SCOREBOARD', '排行榜') })
     );
+    if (board.stageTitle) section.append(el('strong', { class: 'moth-board-stage', text: board.stageTitle }));
     if (result) {
       const status = {
-        ineligible: standing?.why === 'offline'
+        ineligible: board.stage
+          ? tr('Play the full song online to post a score.', '連上網路並玩完整首歌，即可上傳成績。')
+          : standing?.why === 'offline'
           ? tr('This story run cannot enter the scoreboard: it could not reach the scoreboard when it began. Start a new story online to compete.', '這次的故事無法登上排行榜：開始時沒有連上排行榜。連上網路後從故事模式重新開始，即可挑戰排名。')
           : standing?.why === 'chart-version'
           ? tr('This story began with an earlier note chart. Your progress is kept; start a new story to compete on the updated scoreboard.', '這次故事使用過舊版譜面。進度會保留；從故事模式重新開始，即可挑戰新版排行榜。')
@@ -3915,13 +4070,16 @@ for (const level of this.config.secretLevels || []) {
           ? tr('This story used more than one difficulty. Start a new story on one difficulty to compete.', '這次故事使用過不同難度。以同一難度重新開始故事，即可挑戰排名。')
           : tr('This story run cannot enter the scoreboard (it began before the scoreboard opened). Start a new story to compete.', '這次的故事無法登上排行榜（在排行榜開放前就開始了）。從故事模式重新開始即可挑戰排名。'),
         posted: result.run.posted?.rank ? tr('You are #' + result.run.posted.rank + ' on the ' + this.scoreboardModeLabel(result.mode) + ' board!', '你在' + this.scoreboardModeLabel(result.mode) + '排行榜第 ' + result.run.posted.rank + ' 名！') : tr('This run is already on the scoreboard.', '這次的成績已經登上排行榜。'),
-        qualifies: tr('Top 10! Enter an ID to join the scoreboard.', '進入前十名！輸入 ID 登上排行榜。'),
-        short: standing?.kind === 'short' ? tr(number(standing.gap) + ' more points would have reached the top 10.', '還差 ' + number(standing.gap) + ' 分就能擠進前十名，再接再厲！') : '',
+        qualifies: board.stage
+          ? tr('Top 5! Enter an ID to post your score.', '進入前五名！輸入 ID 上傳成績。')
+          : tr('Top 10! Enter an ID to join the scoreboard.', '進入前十名！輸入 ID 登上排行榜。'),
+        short: standing?.kind === 'short' ? tr(number(standing.gap) + ' more points would have reached the top ' + board.top + '.',
+          '還差 ' + number(standing.gap) + ' 分就能進入前' + (board.stage ? '五' : '十') + '名。') : '',
         loading: tr('Loading the scoreboard…', '正在讀取排行榜…'),
         error: tr('The scoreboard cannot be reached right now.', '排行榜暫時無法連線。')
       }[standing?.kind] || '';
       section.append(el('div', { class: 'moth-board-run' },
-        el('span', { text: this.scoreboardModeLabel(result.mode) + ' · ' + tr('7 FIGHTS TOTAL', '七場戰鬥總分') }),
+        el('span', { text: this.scoreboardModeLabel(result.mode) + ' · ' + (board.stage ? tr('STAGE SCORE', '關卡成績') : tr('7 FIGHTS TOTAL', '七場戰鬥總分')) }),
         el('strong', { text: number(result.total) }),
         el('p', { text: status })));
     }
@@ -3931,7 +4089,8 @@ for (const level of this.config.secretLevels || []) {
         onclick: () => { board.mode = mode; this.renderScoreboard(); } }));
     }
     section.append(tabs);
-    const list = el('ol', { class: 'moth-board-list', tabindex: '0', 'aria-label': tr('Top 10', '前十名'), 'data-focus-key': 'list' });
+    const list = el('ol', { class: 'moth-board-list', tabindex: '0',
+      'aria-label': board.stage ? tr('Top 5', '前五名') : tr('Top 10', '前十名'), 'data-focus-key': 'list' });
     const entries = board.entries[board.mode] || [];
     if (board.status[board.mode] === 'loading' && !entries.length) list.append(el('li', { class: 'state', text: tr('Loading…', '讀取中…') }));
     else if (board.status[board.mode] === 'error' && !entries.length) list.append(el('li', { class: 'state' }, tr('Cannot reach the scoreboard.', '無法連線到排行榜。'), ' ', el('button', { type: 'button', class: 'moth-board-retry', 'data-focus-key': 'retry', text: tr('RETRY', '重試'), onclick: () => this.fetchScoreboard(board.mode) })));
@@ -3946,7 +4105,7 @@ for (const level of this.config.secretLevels || []) {
         el('span', { class: 'date', text: Number.isFinite(date.getTime()) ? date.getFullYear() + '/' + String(date.getMonth() + 1).padStart(2, '0') + '/' + String(date.getDate()).padStart(2, '0') : '' })));
     }
     section.append(list);
-    if (board.final && standing?.kind === 'qualifies') {
+    if (standing?.kind === 'qualifies') {
       const input = el('input', { type: 'text', inputmode: 'text', autocomplete: 'nickname', enterkeyhint: 'send', maxlength: '8', 'data-focus-key': 'id',
         'aria-label': tr('Your ID', '你的 ID'), placeholder: tr('Up to 8 characters', '最多 8 個字'), value: board.draftId });
       input.value = board.draftId;
@@ -3962,7 +4121,7 @@ for (const level of this.config.secretLevels || []) {
     actions.append(el('button', { type: 'button', 'data-focus-key': 'copy', text: tr('COPY LINK', '複製連結'), onclick: () => this.copyScoreLink() }));
     section.append(actions);
     section.append(el('button', { type: 'button', class: 'moth-board-close is-primary', 'data-board-close': true, 'data-focus-key': 'close',
-      text: board.final ? tr('CONTINUE · CREDITS', '繼續 · 片尾名單') : tr('BACK', '返回'), onclick: () => this.closeScoreboard() }));
+      text: tr('BACK', '返回'), onclick: () => this.closeScoreboard() }));
     const scroll = board.root.querySelector('.moth-board-list')?.scrollTop || 0;
     board.root.replaceChildren(section);
     board.root.querySelector('.moth-board-list').scrollTop = scroll;
@@ -4006,10 +4165,11 @@ for (const level of this.config.secretLevels || []) {
     const tr = (en, zh) => this.tr(en, zh);
     if (error === 'id') return tr('IDs are 1–8 characters: Chinese, English letters or numbers.', 'ID 只能用中文、英文或數字，最多 8 個字。');
     if (error === 'id-blocked') return tr('Please choose a different ID.', '這個 ID 不能使用，請換一個。');
-    if (error === 'not-top') return tr('So close! Others posted higher scores first.', '差一點！其他玩家剛搶先登上前十。');
+    if (error === 'not-top') return tr('Higher scores were posted first.', '已有玩家搶先上傳更高的成績。');
     if (error === 'posted') return tr('This run is already on the scoreboard.', '這次的成績已經登上排行榜。');
     if (error === 'chart-version') return tr('The scoreboard is updating. Please try again later.', '排行榜正在更新，請稍後再試。');
-    if (error === 'too-fast' || error === 'run') return tr('The scoreboard could not verify this story run, so it cannot be posted.', '排行榜無法驗證這次的故事進度，因此無法登上排行榜。');
+    if (error === 'too-fast' || error === 'run') return tr('The scoreboard could not verify this run.', '排行榜無法驗證這次的成績。');
+    if (error === 'stage') return tr('The stage leaderboard is not available yet.', '此關卡的排行榜尚未開放。');
     if (error === 'rate' || status === 429) return tr('Too many tries. Please wait a few minutes.', '嘗試太多次了，請稍等幾分鐘再試。');
     return tr('The scoreboard cannot be reached right now.', '排行榜暫時無法連線。');
   }
@@ -4017,7 +4177,7 @@ for (const level of this.config.secretLevels || []) {
   async postScore() {
     const board = this.scoreboard;
     const result = board?.result;
-    if (!board || board.posting || !result?.complete || result.run.posted) return;
+    if (!board || board.posting || this.scoreboardStanding(board)?.kind !== 'qualifies') return;
     const id = String(board.draftId || '').normalize('NFKC').trim();
     if (!/^[\p{Script=Han}A-Za-z0-9]{1,8}$/u.test(id)) {
       board.message = this.scoreboardMessage('id');
@@ -4028,26 +4188,28 @@ for (const level of this.config.secretLevels || []) {
     board.message = '';
     this.renderScoreboard();
     try {
+      const chartVersion = "funk-stems-20261117b";
+      const score = board.stage ? { stage: board.stage, score: result.total } : { scores: result.run.scores };
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: result.mode, chartVersion: "drums-groove-20261114b", id, run: result.run.ticket, scores: result.run.scores }) });
+        body: JSON.stringify({ mode: result.mode, chartVersion, id, run: result.run.ticket, ...score }) });
       const data = await response.json().catch(() => ({}));
-      if (response.status === 201 && data.chartVersion !== "drums-groove-20261114b") throw new Error('chart-version');
+      if (response.status === 201 && (data.chartVersion !== chartVersion || (data.stage || null) !== board.stage)) throw new Error('chart-version');
       if (Array.isArray(data.entries)) { board.entries[result.mode] = data.entries; board.status[result.mode] = 'ready'; }
       if (response.status === 201) {
         result.run.posted = { rank: data.rank, id, at: Date.now() };
         board.mode = result.mode;
         board.message = '';
-        this.prepareScoreCard();
+        if (this.scoreboard === board) this.prepareScoreCard();
       } else {
         if (data.error === 'posted') result.run.posted = { rank: null, id };
         board.message = this.scoreboardMessage(data.error, response.status);
       }
-      this.saveProgress();
+      if (!board.stage) this.saveProgress();
     } catch {
       board.message = this.scoreboardMessage(null);
     }
     board.posting = false;
-    this.renderScoreboard();
+    if (this.scoreboard === board) this.renderScoreboard();
   }
 
   scoreShareText(result = this.scoreboard?.result) {
@@ -4055,6 +4217,9 @@ for (const level of this.config.secretLevels || []) {
     if (!result?.complete) return this.tr('Play MASTER OF THE HOUSE: ' + url, '來玩《MASTER OF THE HOUSE》：' + url);
     const total = Number(result.total).toLocaleString('en-US');
     const rank = result.run.posted?.rank;
+    if (result.stageTitle) return this.tr(
+      'I scored ' + total + ' on ' + result.stageTitle + ' (' + this.scoreboardModeLabel(result.mode) + ')' + (rank ? ', #' + rank : '') + ' in MASTER OF THE HOUSE. ' + url,
+      '我在《MASTER OF THE HOUSE》的「' + result.stageTitle + '」' + this.scoreboardModeLabel(result.mode) + '拿到 ' + total + ' 分' + (rank ? '，排名第 ' + rank + '！' : '！') + url);
     return this.tr('I scored ' + total + ' on MASTER OF THE HOUSE (' + this.scoreboardModeLabel(result.mode) + ')' + (rank ? ', #' + rank + ' on the scoreboard' : '') + '! Beat it: ' + url,
       '我在《MASTER OF THE HOUSE》' + this.scoreboardModeLabel(result.mode) + '拿到 ' + total + ' 分' + (rank ? '，排行榜第 ' + rank + ' 名' : '') + '！來挑戰：' + url);
   }
@@ -4146,13 +4311,18 @@ for (const level of this.config.secretLevels || []) {
     drawOutlinedText(g, fitted.text, W / 2, 760, { fill: '#f7f2de', shadow: '#0b0e0c', outline: '#141a16', accent: '#ce3f49', accentOffset: 6 });
     const rank = result.run.posted?.rank;
     g.fillStyle = rank ? '#ffd36c' : '#b9c7b4';
-    drawFittedText(g, rank ? tr('#' + rank + ' ON THE SCOREBOARD', '排行榜第 ' + rank + ' 名') : tr('7 FIGHTS TOTAL', '七場戰鬥總分'), W / 2, 880, W - 220, 44, 900, 24);
+    drawFittedText(g, rank ? tr('#' + rank + ' ON THE SCOREBOARD', '排行榜第 ' + rank + ' 名')
+      : result.stageTitle ? tr('STAGE SCORE', '關卡成績') : tr('7 FIGHTS TOTAL', '七場戰鬥總分'), W / 2, 880, W - 220, 44, 900, 24);
     if (result.run.posted?.id) {
       g.fillStyle = '#f7f2de';
       drawFittedText(g, 'ID · ' + result.run.posted.id, W / 2, 944, W - 260, 36, 900, 22);
     }
     // The seven fights, two columns.
-    const fights = ["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"];
+    if (result.stageTitle) {
+      g.fillStyle = '#f7f2de';
+      drawFittedText(g, result.stageTitle, W / 2, 1050, W - 220, 46, 900, 28);
+    }
+    const fights = result.stageTitle ? [] : ["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"];
     g.font = '900 28px ' + CANVAS_UI_FONT;
     fights.forEach((id, index) => {
       const col = index < 4 ? 0 : 1, row = index < 4 ? index : index - 4;
@@ -4167,6 +4337,10 @@ for (const level of this.config.secretLevels || []) {
     return card;
   }
 
+  isRhythmCountIn() {
+    return this.stageCountdown > 0;
+  }
+
   // ---- Fights pick up where they stopped (scripts/moth-fight-resume.mjs) ----
   // Frozen at the song's place under 3 · 2 · 1 · 開始！, then on from there.
   resumeFightAt(rhythm, trackTime) {
@@ -4174,21 +4348,27 @@ for (const level of this.config.secretLevels || []) {
     const track = this.getActiveLevel1OfficeRhythmAudio();
     if (track && Number.isFinite(trackTime)) { track.pause(); track.currentTime = trackTime; }
     rhythm.resumeTrackTime = trackTime;
-    this.releaseHeldInputs();
     this.armStageCountdown(() => {
       // 暫停 during the count holds it; that 繼續 counts in again.
       if (this.level1OfficeRhythm !== rhythm || this.state !== "playing" || rhythm.ending) return;
       this.playResumedFight(rhythm, trackTime);
     });
+    this.releaseHeldInputs();
   }
 
   playResumedFight(rhythm, trackTime) {
     const track = this.getActiveLevel1OfficeRhythmAudio();
-    rhythm.resumeTrackTime = null;
-    if (!track || rhythm.skipAudio) return;
+    if (!track || rhythm.skipAudio) {
+      rhythm.resumeTrackTime = null;
+      return;
+    }
+    const attempt = {};
+    rhythm.audioStartAttempt = attempt;
     rhythm.audioStarting = true;
+    const isCurrent = () => this.level1OfficeRhythm === rhythm && rhythm.audioStartAttempt === attempt
+      && this.state === "playing" && !this.isRhythmCountIn() && !rhythm.ending && !document.hidden && !this.audioInterruption;
     const refused = () => {
-      if (this.level1OfficeRhythm !== rhythm) return;
+      if (!isCurrent()) return;
       track.pause();
       // iPhone wants a tap: the resume card's tap grants it and counts in again.
       this.audioInterruption = { fromHidden: true, rhythm, songTime: this.songTime, tracks: [{ track, time: trackTime, volume: BGM_VOLUME }] };
@@ -4196,7 +4376,7 @@ for (const level of this.config.secretLevels || []) {
     };
     // A priming play still under way would pause this one when it lands.
     (this.rhythmTrackPriming?.get(track) || Promise.resolve()).then(() => {
-      if (this.level1OfficeRhythm !== rhythm || this.state !== "playing") return;
+      if (!isCurrent()) return;
       this.useSongCopy(track);
       if (Number.isFinite(trackTime)) track.currentTime = trackTime;
       track.volume = BGM_VOLUME;
@@ -4204,10 +4384,16 @@ for (const level of this.config.secretLevels || []) {
       return Promise.race([Promise.all([this.soloPlay(track), this.musicAudioContext?.resume()]), new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error("Resume timed out")), 2000);
       })]).then(() => {
+        if (!isCurrent()) return;
         const route = this.musicAudioRoutes?.get(track);
         if (route && route.context.state !== "running") refused();
       }, refused).finally(() => clearTimeout(timer));
-    }).finally(() => { rhythm.audioStarting = false; });
+    }).finally(() => {
+      if (rhythm.audioStartAttempt === attempt) {
+        rhythm.resumeTrackTime = null;
+        rhythm.audioStarting = false;
+      }
+    });
   }
 
   // Back from the lock screen or another app (resumeAudioAfterReturn).
@@ -4217,15 +4403,14 @@ for (const level of this.config.secretLevels || []) {
     if (!saved?.fromHidden || !rhythm || saved.rhythm !== rhythm || this.state !== "playing" || rhythm.ending
       || rhythm.songHandover || rhythm.tutorial?.mode !== "done") return false;
     // The count-in before the song (or a resume's own count) simply runs again.
-    const pending = this.stageCountdown > 0 ? this.stageCountdownAction : null;
     this.audioInterruption = null;
     // The song is tested when the count ends; a tap meanwhile must not swap
     // the engine (refreshStaleAudioEngine) for one that was never granted.
     this.audioEngineStale = null;
     this.lastMusicAt = performance.now();
     this.songTime = saved.songTime;
-    if (pending) {
-      this.armStageCountdown(pending);
+    if (this.isRhythmCountIn()) {
+      this.armStageCountdown(this.stageCountdownAction);
       return true;
     }
     const track = this.getActiveLevel1OfficeRhythmAudio();
@@ -4266,7 +4451,8 @@ for (const level of this.config.secretLevels || []) {
       this.audioRecoveryFailed = false;
       this.lastMusicAt = performance.now();
       this.songTime = saved.songTime;
-      this.resumeFightAt(rhythm, trackTime);
+      if (this.isRhythmCountIn()) this.armStageCountdown(this.stageCountdownAction);
+      else this.resumeFightAt(rhythm, trackTime);
     });
     return true;
   }
@@ -4289,7 +4475,8 @@ for (const level of this.config.secretLevels || []) {
     for (const key of Object.keys(state)) if (/Telemetry$|Rects$/.test(key)) delete state[key];
     const kept = { v: 1, chartVersion: this.config.rhythmChartVersion, at: Date.now(), stageId: this.currentStageId, theme: rhythm.theme,
       checkpoint: this.progress?.storyCheckpoint || null, run: this.progress?.storyRun?.id || null,
-      difficulty: this.difficultyId, songTime, trackTime, state: plain(state), notes: plain(notes) };
+      difficulty: this.difficultyId, songTime, trackTime, trackLead: track?.mothFightLead || 0,
+      state: plain(state), notes: plain(notes) };
     try { window.localStorage?.setItem(FIGHT_RESUME_KEY, JSON.stringify(kept)); } catch {}
   }
 
@@ -4333,7 +4520,7 @@ for (const level of this.config.secretLevels || []) {
     if (!rhythm || rhythm.theme !== kept.theme || this.state !== "playing") return;
     // The fight's own numbers and every note's result; not its loading,
     // audio or effect bookkeeping, which belong to this page.
-    const skip = /^(notes|theme|tutorial|skipAudio|ending|result|review.*|graphics.*|audio.*|songHandover|outputDelay|frozenSongTime|resumeTrackTime|celebration.*|countdownDuringGraphicsPreparation|countedInEarly|hitBurstRequest|arcadeEvent|impactKick|bathroomStrike|stampFx)$/;
+    const skip = /^(notes|theme|tutorial|skipAudio|ending|result|review.*|graphics.*|audio.*|songHandover|outputDelay|frozenSongTime|resumeTrackTime|openingRailLead|celebration.*|countdownDuringGraphicsPreparation|countedInEarly|hitBurstRequest|arcadeEvent|impactKick|bathroomStrike|stampFx)$/;
     const same = (a, b) => a !== null && b !== null && typeof a === typeof b && Array.isArray(a) === Array.isArray(b);
     for (const [key, value] of Object.entries(kept.state || {})) {
       if (skip.test(key) || !(key in rhythm) || !same(rhythm[key], value)) continue;
@@ -4345,7 +4532,8 @@ for (const level of this.config.secretLevels || []) {
       for (const [key, value] of Object.entries(saved)) if (value === null || typeof value !== "object") note[key] = value;
     });
     this.songTime = kept.songTime;
-    this.resumeFightAt(rhythm, kept.trackTime);
+    const lead = this.getActiveLevel1OfficeRhythmAudio()?.mothFightLead || 0;
+    this.resumeFightAt(rhythm, kept.trackTime - (kept.trackLead || 0) + lead);
   }
 
   // Fetched like every sound (the verified jsDelivr copy, else this site) and
@@ -4439,8 +4627,11 @@ for (const level of this.config.secretLevels || []) {
     return clamp(Math.ceil(line + 6 * k), Math.round(240 * k), PORTRAIT_FIGHT.stats.w);
   }
 
-  // The practice badge's colour: the fight's.
-  getPracticeBadgeAccent() {
+  getFightBadgeModeLabel(stamp = false) {
+    return this.freePlay ? this.tr(stamp ? "DRILL" : "PRACTICE", "練習") : this.tr("OFFICIAL", "正式");
+  }
+
+  getFightBadgeAccent() {
     return this.isConcertRhythm() ? "#8a3fb0" : this.isRiverRhythm() ? "#2f6f8f" : this.isArcadeRhythm() ? "#3552a8"
       : this.isMassageRhythm() ? "#c0506a" : this.isBathroomRhythm() ? "#3a9a8a" : "#2d7ec2";
   }
@@ -4457,6 +4648,7 @@ for (const level of this.config.secretLevels || []) {
     target.fillStyle = ink;
     target.font = `900 ${row.font}px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace`;
     target.fillText(this.tr("MISS", "失誤"), x, y);
+    if (!misses) return;
     let tallyX = x + row.indent;
     target.fillStyle = row.tally || "#b3202c";
     for (let group = 0; group < shownGroups; group += 1) {
@@ -4467,9 +4659,8 @@ for (const level of this.config.secretLevels || []) {
       target.font = `900 ${row.font}px 'Courier New', monospace`;
       const mark = `×${fullGroups}`;
       if (tallyX + target.measureText(mark).width <= right - target.measureText(String(misses)).width - 8) target.fillText(mark, tallyX, y);
-    } else if (misses % 5 || !misses) {
-      if (misses % 5) drawTallyZheng(target, tallyX, y - glyph / 2, glyph, misses % 5);
-      else target.fillText("—", tallyX, y);
+    } else if (misses % 5) {
+      drawTallyZheng(target, tallyX, y - glyph / 2, glyph, misses % 5);
     }
     target.textAlign = "right";
     target.fillStyle = ink;
@@ -4477,9 +4668,8 @@ for (const level of this.config.secretLevels || []) {
     target.fillText(String(misses), right, y);
   }
 
-  // A practice run's combo and score on a small green screen, like the
-  // handheld's own.
-  drawPracticeLcd(target, lcd, rhythm, ink) {
+  // The combo and score on a small green screen, like the handheld's own.
+  drawFightBadgeLcd(target, lcd, rhythm, ink) {
     target.fillStyle = ink;
     target.fillRect(lcd.x - 2, lcd.y - 2, lcd.w + 4, lcd.h + 4);
     target.fillStyle = "#2a3a22";
@@ -4500,51 +4690,10 @@ for (const level of this.config.secretLevels || []) {
     target.fillText(String(rhythm?.roundScore || 0).padStart(6, "0"), lcd.x + lcd.w - 7, lcd.y + 25);
   }
 
-  // The phone's row above the track (PORTRAIT_FIGHT.stats): Dr. Beauty's
-  // name, misses (level 7: the hype bar), combo and score in a line; in a
-  // practice run, his staff ID as a strip.
+  // The phone lays the staff badge on its side above the track.
   drawTallFightStats(target, rhythm) {
     const box = PORTRAIT_FIGHT.stats;
     target.save();
-    if (this.freePlay) {
-      this.drawTallPracticeStrip(target, box, rhythm);
-      target.restore();
-      return;
-    }
-    target.fillStyle = "#08090d";
-    target.fillRect(box.x, box.y, box.w, box.h);
-    target.strokeStyle = "#f4f0dc";
-    target.lineWidth = 4;
-    target.strokeRect(box.x + 2, box.y + 2, box.w - 4, box.h - 4);
-    const mid = box.y + box.h / 2 + 1;
-    target.textBaseline = "middle";
-    target.font = "900 22px 'Courier New', monospace";
-    target.textAlign = "left";
-    target.fillStyle = "#f4f0dc";
-    target.fillText(HERO_TAG, box.x + 16, mid);
-    const nameEnd = box.x + 16 + target.measureText(HERO_TAG).width;
-    target.textAlign = "right";
-    target.fillStyle = "#f7f2de";
-    const score = `SCORE ${String(rhythm?.roundScore || 0).padStart(6, "0")}`;
-    target.fillText(score, box.x + box.w - 16, mid);
-    const comboEnd = box.x + box.w - 16 - target.measureText(score).width - 22;
-    const combo = `COMBO ${rhythm?.combo || 0}`;
-    target.fillStyle = "#8fe8ff";
-    target.fillText(combo, comboEnd, mid);
-    const left = nameEnd + 22, right = comboEnd - target.measureText(combo).width - 22;
-    if (this.isConcertRhythm()) {
-      this.drawConcertCrowdMeter(target, box, rhythm, this.time || 0, { x: left, y: box.y + 9, w: right - left, h: box.h - 18 });
-    } else {
-      // The count just after the tally, clear of COMBO.
-      this.drawMissTally(target, { x: left, y: mid, right: Math.min(right, left + 165), indent: 50, glyph: 20, font: 18, maxGroups: 3, tally: "#ef3f78" }, Math.max(0, rhythm?.misses || 0), "#f4f0dc");
-    }
-    target.restore();
-  }
-
-  // The practice badge laid on its side: the fight's colour band with
-  // 員工證 · 練習, his ID photo and name, the 練習 stamp, the miss tally and
-  // the green screen.
-  drawTallPracticeStrip(target, box, rhythm) {
     const ink = "#1b2130";
     const paper = "#efe6cc";
     const card = { x: box.x, y: box.y, w: box.w - 4, h: box.h - 4 };
@@ -4561,7 +4710,7 @@ for (const level of this.config.secretLevels || []) {
 
     // The colour band, with the card's title in two lines.
     const band = { x: card.x + 3, y: card.y + 3, w: 92, h: card.h - 6 };
-    target.fillStyle = this.getPracticeBadgeAccent();
+    target.fillStyle = this.getFightBadgeAccent();
     target.fillRect(band.x, band.y, band.w, band.h);
     target.fillStyle = ink;
     target.fillRect(band.x + band.w, band.y, 2, band.h);
@@ -4569,7 +4718,7 @@ for (const level of this.config.secretLevels || []) {
     target.textAlign = "center";
     target.font = "900 13px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace";
     target.fillText(this.tr("STAFF ID", "員工證"), band.x + band.w / 2, mid - 8);
-    target.fillText(this.tr("PRACTICE", "練習"), band.x + band.w / 2, mid + 9);
+    target.fillText(this.getFightBadgeModeLabel(), band.x + band.w / 2, mid + 9);
 
     // ID photo and name.
     let at = band.x + band.w + 12;
@@ -4583,7 +4732,7 @@ for (const level of this.config.secretLevels || []) {
     target.fillText(HERO_NAME_ZH, at, mid + 10);
     at += 108;
 
-    // The practice stamp: red ink, knocked a few degrees off square.
+    // The mode stamp: red ink, knocked a few degrees off square.
     target.save();
     target.translate(at + 22, mid);
     target.rotate(-0.21);
@@ -4595,15 +4744,77 @@ for (const level of this.config.secretLevels || []) {
     target.strokeRect(-18, -8, 36, 16);
     target.fillStyle = "#c8323c";
     target.textAlign = "center";
-    target.font = "900 13px 'PingFang TC', 'Noto Sans TC', 'Courier New', sans-serif";
-    target.fillText(this.tr("DRILL", "練習"), 0, 1);
+    drawFittedText(target, this.getFightBadgeModeLabel(true), 0, 1, 34, 13, 900, 5);
     target.restore();
     at += 58;
 
     // The misses, and the counters on the green screen at the right end.
     const lcd = { x: card.x + card.w - 3 - 8 - 196, y: card.y + 5, w: 196, h: card.h - 10 };
-    this.drawMissTally(target, { x: at, y: mid + 1, right: lcd.x - 14, indent: 40, glyph: 17, font: 14 }, Math.max(0, rhythm?.misses || 0), ink);
-    this.drawPracticeLcd(target, lcd, rhythm, ink);
+    const concert = this.isConcertRhythm();
+    this.drawMissTally(target, { x: at, y: mid + (concert ? -10 : 1), right: lcd.x - 14, indent: 40, glyph: 17, font: 14 }, Math.max(0, rhythm?.misses || 0), ink);
+    if (concert) {
+      this.drawConcertCrowdMeter(target, { x: at, y: mid + 2, w: lcd.x - at - 14, h: 14 }, rhythm, this.time || 0);
+    }
+    this.drawFightBadgeLcd(target, lcd, rhythm, ink);
+    target.restore();
+  }
+
+  getWalkRouteArrow() {
+    if (this.walkPause || this.memeView) return null;
+    if (this.state === "level3") {
+      const side = this.config?.level3?.stage1?.sideView || {};
+      const floor = side.floorY ?? 455;
+      if (this.canExitLevel3ToLevel4()) return { x: (side.exitRight?.x ?? side.maxX ?? 1216) - 26, y: floor - 90, direction: "right" };
+      const boss = this.level3Boss;
+      return boss && !boss.active ? { x: boss.x, y: (boss.y ?? floor) - 210, direction: "down" } : null;
+    }
+    if (this.state !== "level4") return null;
+    const stage = this.getLevel4Stage1Config();
+    const side = this.getLevel4ActiveSideView();
+    const lower = this.level4Rail === "lower";
+    const earned = this.hasLevel4MemeChest();
+    const floor = side.floorY ?? (lower ? 650 : 466);
+    if (earned && this.memeChest?.state !== "open") {
+      if (lower) return { x: MEME_CHEST.x, y: MEME_CHEST.y - 78, direction: "down" };
+      return { x: side.ladderX, y: floor - 54, direction: "down" };
+    }
+    if (lower) return { x: side.ladderX, y: floor - 92, direction: "up" };
+    if (earned) return { x: stage.exits?.leftDoor?.x ?? 86, y: floor - 90, direction: "left" };
+    if (!stage.bonita) return null;
+    return { x: stage.bonita.x ?? 960, y: (stage.bonita.y ?? floor) - 154, direction: "down" };
+  }
+
+  renderWalkRouteArrow(target, walk = null) {
+    const route = this.getWalkRouteArrow();
+    if (!route) return;
+    const width = walk ? PORTRAIT_FIGHT.width : VIEW_W;
+    const worldX = walk ? (route.x - walk.srcX) * width / walk.srcW : route.x;
+    const y = walk ? (route.y - walk.srcY) * walk.worldH / walk.srcH : route.y;
+    const margin = 32;
+    // A target outside the portrait crop is represented at the nearest edge
+    // until the player reaches that part of the map.
+    const x = clamp(worldX, margin, width - margin);
+    const direction = worldX < margin ? "left" : worldX > width - margin ? "right" : route.direction;
+    const directionAngle = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 };
+    target.save();
+    target.translate(Math.round(x), Math.round(y));
+    target.rotate(directionAngle[direction]);
+    target.beginPath();
+    target.moveTo(20, 0);
+    target.lineTo(1, 15);
+    target.lineTo(1, 7);
+    target.lineTo(-19, 7);
+    target.lineTo(-19, -7);
+    target.lineTo(1, -7);
+    target.lineTo(1, -15);
+    target.closePath();
+    target.lineJoin = "round";
+    target.strokeStyle = "#131520";
+    target.lineWidth = 7;
+    target.stroke();
+    target.fillStyle = "#ffd36c";
+    target.fill();
+    target.restore();
   }
 
   // ---- Level 4's basement chest ----
@@ -5623,11 +5834,11 @@ for (const level of this.config.secretLevels || []) {
       const code = menuMode && event.code === "KeyO" ? "Enter" : menuMode && event.code === "KeyH" ? "Escape" : event.code;
       if (this.state === "title" && this.homeMenu?.difficultyPick) {
         if (["ArrowUp", "ArrowLeft", "KeyW", "KeyA"].includes(code)) {
-          this.homeMenu.difficultyPick.choice = 0;
+          this.moveStageDifficultyChoice(-1);
           return;
         }
         if (["ArrowDown", "ArrowRight", "KeyS", "KeyD"].includes(code)) {
-          this.homeMenu.difficultyPick.choice = 1;
+          this.moveStageDifficultyChoice(1);
           return;
         }
         if (code === "Enter" || code === "Space") {
@@ -7338,7 +7549,8 @@ for (const level of this.config.secretLevels || []) {
       // a tap outside the card closes it.
       const hit = (pick.rects || []).find((rect) => pointInRect(point, rect));
       if (hit) {
-        if (pick.choice === hit.choice) this.startStageWithPickedDifficulty();
+        if (hit.choice === 2) this.openScoreboard({ stage: pick.stageId });
+        else if (pick.choice === hit.choice) this.startStageWithPickedDifficulty();
         else pick.choice = hit.choice;
       } else if (pick.card && !pointInRect(point, pick.card)) {
         this.homeMenu.difficultyPick = null;
@@ -7680,35 +7892,54 @@ for (const level of this.config.secretLevels || []) {
     return Boolean(this.progress?.unlockedStages?.includes(stageId));
   }
 
-  getSecretStageClears() {
-    if (this.secretStageClears) return this.secretStageClears;
-    this.secretStageClears = new Set();
+  getStageSelectionClears() {
+    if (this.stageSelectionClears) return this.stageSelectionClears;
+    this.stageSelectionClears = new Set();
     try {
       const storage = getRunStorage();
-      for (const { id } of this.config?.secretLevels || []) {
-        if (storage?.getItem(SECRET_CLEAR_STORAGE_PREFIX + id) === "1") this.secretStageClears.add(id);
+      for (const id of Object.keys(this.config?.stageSelectRhythms || {})) {
+        if (storage?.getItem(STAGE_SELECTION_CLEAR_PREFIX + id) === "1") this.stageSelectionClears.add(id);
       }
     } catch {
       // A clear remains visible for this visit when storage is unavailable.
     }
-    return this.secretStageClears;
+    return this.stageSelectionClears;
   }
 
-  recordSecretStageClear() {
+  observeStageSelectionPlayback(rhythm, track) {
+    const played = rhythm.stageSelectionPlayback;
+    if (!played || !track || rhythm.ending || track.seeking || (track.paused && !track.ended)) return;
+    const position = track.currentTime;
+    if (position === played.position) return;
+    // Count only continuous movement from the beginning. Pause, buffering and
+    // replacing the media element can keep the same place in the track, while
+    // a seek to results cannot certify the intervening song as played.
+    const at = performance.now();
+    const advance = position - played.position;
+    const elapsed = Math.max(0, at - played.at) / 1000 * Math.max(1, track.playbackRate);
+    if (advance >= 0 && advance <= elapsed + 0.20 && played.position <= played.through + 0.12) {
+      played.through = Math.max(played.through, position);
+    }
+    played.position = position;
+    played.at = at;
+  }
+
+  recordStageSelectionClear() {
     const stageId = this.currentStageId;
     const rhythm = this.level1OfficeRhythm;
-    if (!this.freePlay || !rhythm?.ending || rhythm.reviewResult !== "PASSED"
-      || rhythm.levelSelectionSecretStage !== stageId || this.getSecretLevel(stageId)?.theme !== rhythm.theme) return;
-    this.getSecretStageClears().add(stageId);
+    if (!this.freePlay || !stageId || this.stageSelectRhythmId !== stageId
+      || !rhythm?.ending || !rhythm.stageSelectionSongFinished
+      || rhythm.reviewResult !== "PASSED") return;
+    this.getStageSelectionClears().add(stageId);
     try {
-      getRunStorage()?.setItem(SECRET_CLEAR_STORAGE_PREFIX + stageId, "1");
+      getRunStorage()?.setItem(STAGE_SELECTION_CLEAR_PREFIX + stageId, "1");
     } catch {
       // The in-memory clear still updates Level Selection.
     }
   }
 
   isStageCompleted(stageId) {
-    if (this.getSecretLevel(stageId)) return this.getSecretStageClears().has(stageId);
+    if (this.getSecretLevel(stageId)) return this.getStageSelectionClears().has(stageId);
     return Boolean(this.progress?.completedStages?.includes(stageId));
   }
 
@@ -9685,6 +9916,7 @@ for (const level of this.config.secretLevels || []) {
   }
 
   returnToTitle() {
+    this.stageSelectRhythmId = null;
     this.levelLoadingPresentation = null;
     this.debugLevel4Won = false;
     if (this.memeView) this.closeMeme({ resumeBgm: false });
@@ -10101,7 +10333,10 @@ for (const level of this.config.secretLevels || []) {
       // iOS ignores HTMLMediaElement.volume. Keep the native element at unity
       // and expose the requested volume through its GainNode on every browser.
       const descriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "volume");
-      const mixGain = Object.values(this.fightCutAudio || {}).includes(audio) ? 0.50 / BGM_VOLUME : 1;
+      const easyMix = Object.values(this.easyMusicAudio || {}).includes(audio);
+      const fightTrack = Object.values(this.fightCutAudio || {}).includes(audio) || Object.values(this.fullSongAudio || {}).includes(audio);
+      // Easy files already include the normal gameplay music gain.
+      const mixGain = easyMix ? 1 / BGM_VOLUME : (fightTrack ? 0.50 / BGM_VOLUME : 1);
       route = { gain, context, volume, target: volume || BGM_VOLUME };
       Object.defineProperty(audio, "volume", {
         configurable: true,
@@ -10132,7 +10367,54 @@ for (const level of this.config.secretLevels || []) {
     }
   }
 
+
+  getRhythmPlaybackStart() {
+    return this.getRhythmAudioStart() - (this.getActiveLevel1OfficeRhythmAudio()?.mothFightLead || 0);
+  }
+
+  releaseFightAudioStart(track) {
+    if (!track?.mothFightCopy) return;
+    const source = this.canonicalAudioSource(track);
+    track.pause();
+    this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);
+    URL.revokeObjectURL(track.mothFightCopy);
+    track.mothFightCopy = null;
+    track.mothFightLead = 0;
+    track.preload = "none";
+    track.src = this.mirroredAudioUrl(source) || source;
+    this.primedRhythmTracks?.delete(track);
+    if (this.preparedFightAudioTrack === track) this.preparedFightAudioTrack = null;
+  }
+
+  async prepareFightAudioStart(track) {
+    if (!track?.mothFightAudio || track.mothFightCopy) return;
+    if (track.mothFightPreparing) return track.mothFightPreparing;
+    const source = this.canonicalAudioSource(track);
+    const ready = track.mothFightPreparing = (async () => {
+      const copy = await this.songCopy(source);
+      if (!copy) throw new Error("The fight song could not be prepared");
+      await this.rhythmTrackPriming?.get(track);
+      track.pause();
+      if (this.preparedFightAudioTrack && this.preparedFightAudioTrack !== track) {
+        this.releaseFightAudioStart(this.preparedFightAudioTrack);
+      }
+      const bytes = await fetch(copy).then(response => response.arrayBuffer());
+      const padded = prependAudioSilence(bytes);
+      track.mothAudioSource = source;
+      track.mothFightLead = padded.lead;
+      track.mothFightCopy = URL.createObjectURL(new Blob([padded.data], { type: "audio/mp4" }));
+      this.preparedFightAudioTrack = track;
+      track.src = track.mothFightCopy;
+      const route = this.musicAudioRoutes?.get(track);
+      if (route) route.playedSource = track.mothFightCopy;
+      track.load();
+    })();
+    try { await ready; }
+    finally { if (track.mothFightPreparing === ready) track.mothFightPreparing = null; }
+  }
+
   isBakedMusicTrack(audio) {
+    if (this.easyBakedSources?.has(this.canonicalAudioSource(audio))) return true;
     return Object.entries(this.fightCutAudio || {}).some(([theme, track]) =>
       track === audio && !this.getRhythmSpecFor(theme)?.fullSong && Boolean(this.getRhythmSpecFor(theme)?.fightCut?.src));
   }
@@ -10145,15 +10427,18 @@ for (const level of this.config.secretLevels || []) {
     if (route && audio.volume > 0 && (audio.currentTime < 0.05 || audio.duration - audio.currentTime > 2)) {
       route.target = audio.volume;
     }
-    const fresh = audio.currentTime < 0.05 && audio.volume > 0 && !this.isBakedMusicTrack(audio);
+    const fightSong = audio.volume > 0 && this.state === "playing" && this.level1OfficeRhythm
+      && audio === this.getActiveLevel1OfficeRhythmAudio();
+    const fresh = !fightSong && audio.currentTime < 0.05 && audio.volume > 0 && !this.isBakedMusicTrack(audio);
     const target = audio.volume;
     if (fresh) audio.volume = 0;
     const source = audio.getAttribute("src") || audio.src;
     const newSource = Boolean(route?.playedSource) && route.playedSource !== source;
     if (route) route.playedSource = source;
-    if (newSource) audio.muted = true;
+    if (fightSong) audio.muted = false;
+    else if (newSource) audio.muted = true;
     const started = audio.play();
-    if (newSource) {
+    if (newSource && !fightSong) {
       const unmute = () => { audio.muted = false; };
       started?.then(() => setTimeout(unmute, 250), unmute) ?? unmute();
     }
@@ -10298,7 +10583,7 @@ for (const level of this.config.secretLevels || []) {
   }
 
   getKnownBgmTracks() {
-    return [...new Set([this.audio, this.sewerAudio, this.level2BossAudio, this.level3RhythmAudio, this.level4ArcadeAudio, this.level6RhythmAudio, this.dialogueOverlayAudio, ...Object.values(this.fightCutAudio || {})].filter(Boolean))];
+    return [...new Set([this.audio, this.sewerAudio, this.level2BossAudio, this.level3RhythmAudio, this.level4ArcadeAudio, this.level6RhythmAudio, this.dialogueOverlayAudio, ...Object.values(this.fightCutAudio || {}), ...Object.values(this.fullSongAudio || {}), ...Object.values(this.easyMusicAudio || {})].filter(Boolean))];
   }
 
   pauseCurrentBgmForSong() {
@@ -10498,12 +10783,11 @@ for (const level of this.config.secretLevels || []) {
 
   getHomeMenuItems() {
     if (this.homeMenu?.view === "stageSelect") {
-      // Level Selection shows story clears for the main fights and saved
-      // practice clears for the hidden stages.
+      // Full-song clears in Level Selection stay separate from Story Mode.
       return this.getStageSelectDefs().map((stage) => ({
         ...stage,
         locked: false,
-        completed: this.isStageCompleted(stage.id)
+        completed: this.getStageSelectionClears().has(stage.id)
       }));
     }
     if (this.homeMenu?.view === "playlist") {
@@ -10546,7 +10830,7 @@ for (const level of this.config.secretLevels || []) {
 
   moveHomeMenuSelection(delta) {
     if (this.homeMenu?.difficultyPick) {
-      this.homeMenu.difficultyPick.choice = delta < 0 ? 0 : 1;
+      this.moveStageDifficultyChoice(delta);
       return;
     }
     if (this.homeMenu?.view === "calibrate") {
@@ -10581,6 +10865,7 @@ for (const level of this.config.secretLevels || []) {
       this.startStoryRun(pick.choice === 1 ? "shoot" : "chill");
       return;
     }
+    if (pick.hasLeaderboard && pick.choice === 2) { this.openScoreboard({ stage: pick.stageId }); return; }
     const chosen = pick.choice === 1 ? "shoot" : "chill";
     this.homeMenu.difficultyPick = null;
     this.stageSelectDifficultyId = chosen;
@@ -10645,6 +10930,7 @@ for (const level of this.config.secretLevels || []) {
         this.homeMenu.difficultyPick = {
           stageId: item.id,
           title: item.title || "",
+          hasLeaderboard: Boolean(this.config?.stageSelectRhythms?.[item.id]),
           choice: (this.stageSelectDifficultyId || this.difficultyId) === "shoot" ? 1 : 0
         };
         return;
@@ -10667,6 +10953,7 @@ for (const level of this.config.secretLevels || []) {
   }
 
   startNewStory() {
+    this.stageSelectRhythmId = null;
     this.freePlay = false;
     if (!this.progress) this.progress = this.createDefaultProgress();
     // These flags describe the current route through the living room and
@@ -10854,6 +11141,8 @@ for (const level of this.config.secretLevels || []) {
     if (secret && !this.isStageUnlocked(stageId)) return false;
     const freePlay = Boolean(secret) || options.freePlay !== false;
     if (!freePlay && !this.isStageUnlocked(stageId)) return false;
+    const selection = freePlay && options.fromLevelSelection && this.config.stageSelectRhythms?.[stageId];
+    this.stageSelectRhythmId = selection ? stageId : null;
     if (!options.skipLoading && (freePlay || (stageId !== "level1-stage1" && stageId !== "finale-stage1"))) {
       this.startLevelLoading(stageId, () => this.startStage(stageId, { ...options, skipLoading: true }));
       return true;
@@ -10873,11 +11162,7 @@ for (const level of this.config.secretLevels || []) {
       this.audio.currentTime = 0;
     }
     if (secret) {
-      await this.startSecretRhythmFight(secret.id, {
-        deferSong: true,
-        skipAudio: options.skipAudio,
-        fromLevelSelection: options.fromLevelSelection
-      });
+      await this.startSecretRhythmFight(secret.id, { deferSong: true, skipAudio: options.skipAudio });
       this.countInFightSong();
       return true;
     }
@@ -10992,7 +11277,7 @@ for (const level of this.config.secretLevels || []) {
       track.pause();
       this.useSongCopy(track);
       this.audioFades = (this.audioFades || []).filter(fade => fade.audio !== track);
-      track.currentTime = this.getRhythmAudioStart();
+      track.currentTime = this.getRhythmPlaybackStart();
       track.volume = 0;
     }
     this.fadeOutDialogueBgmForSong();
@@ -11057,13 +11342,14 @@ for (const level of this.config.secretLevels || []) {
   }
 
   updateStageCountdown(dt) {
-    if (!(this.stageCountdown > 0)) return false;
+    if (this.state === "level1OfficePaused" || !(this.stageCountdown > 0)) return false;
+    if (this.level1OfficeRhythm?.audioPriming) return true;
     this.stageCountdown = Math.max(0, this.stageCountdown - dt);
     if (this.stageCountdown > 0) return true;
     const action = this.stageCountdownAction;
     this.stageCountdownAction = null;
     if (action) action();
-    return false;
+    return true;
   }
 
   applyConfigDefaults() {
@@ -11335,6 +11621,7 @@ for (const level of this.config.secretLevels || []) {
     // deck never switched on. Now the rest of the frame, and the next, still run.
     for (const step of [
       () => this.update(dt),
+      () => this.syncArcadeMusicVideo(),
       () => this.render(),
       () => this.renderTallScreen(),
       () => this.updateDebugPanel(),
@@ -11540,13 +11827,13 @@ for (const level of this.config.secretLevels || []) {
           this.retryLevel1OfficeSong(rhythmAudio, audioStart);
           return;
         }
-        if (this.isFightSongStalled(rhythmAudio)) return;
         const route = this.musicAudioRoutes?.get(rhythmAudio);
         if (route && route.context.state !== "running") {
           this.suspendGameAudio();
           this.showAudioRecovery("resume");
           return;
         }
+        if (this.isFightSongStalled(rhythmAudio)) return;
         this.songTime = this.getLevel1OfficeRenderTime();
       }
     } else {
@@ -11579,6 +11866,8 @@ for (const level of this.config.secretLevels || []) {
   // so everything below resolves through the active theme instead of being
   // duplicated per level.
   getRhythmSpecFor(theme) {
+    const selection = this.config?.stageSelectRhythms?.[this.stageSelectRhythmId];
+    if (selection && selection.theme === theme) return this.applyRhythmDifficulty(selection);
     const secret = this.config?.secretLevels?.find(level => level.theme === theme);
     if (secret) return this.applyRhythmDifficulty(secret.rhythm);
     const spec = theme === "bathroom"
@@ -11627,9 +11916,10 @@ for (const level of this.config.secretLevels || []) {
   // with. Every reader of song time goes through this or the level is playing
   // one part of the record against another part's chart.
   getRhythmAudioStart(spec = null) {
-    if (this.hasBakedFades(spec)) return 0;
+    const lead = this.getActiveLevel1OfficeRhythmAudio()?.mothFightLead || 0;
+    if (this.hasBakedFades(spec)) return lead;
     const start = Number((spec || this.getActiveRhythmSpec())?.audioStartSeconds);
-    return Number.isFinite(start) && start > 0 ? start : 0;
+    return (Number.isFinite(start) && start > 0 ? start : 0) + lead;
   }
 
   // The fight plays a cut with its fades in the file (see `fightCutAudio`).
@@ -11744,19 +12034,15 @@ for (const level of this.config.secretLevels || []) {
     if (now - (rhythm.songRetryAt ?? -Infinity) < 1) return;
     rhythm.songRetryAt = now;
     try {
-      if (track.currentTime < this.getRhythmAudioStart() || (!track.currentTime && this.songTime > 0)) {
+      if (track.currentTime < this.getRhythmPlaybackStart() || (!track.currentTime && this.songTime > 0)) {
         track.currentTime = Math.max(0, audioStart + this.getRhythmOutputDelay() + this.songTime);
       }
     } catch {
       // Not seekable yet; play from where it is.
     }
-    // Restarted inside the fade-in bar: pick the fade up where it would be.
-    const fadeIn = this.hasBakedFades() ? 0 : Number(this.getActiveRhythmSpec()?.fadeInSeconds) || 0;
-    const left = fadeIn - this.songTime;
-    track.volume = left > 0 ? BGM_VOLUME * clamp(this.songTime / fadeIn, 0, 1) : BGM_VOLUME;
-    if (left > 0) this.fadeAudio(track, BGM_VOLUME, left);
+    track.volume = BGM_VOLUME;
     this.soloPlay(track).catch(() => {
-      if (this.level1OfficeRhythm === rhythm && this.state === "playing") this.showAudioRecovery("start");
+      if (this.level1OfficeRhythm === rhythm && this.state === "playing" && !(this.stageCountdown > 0)) this.showAudioRecovery("start");
     });
   }
 
@@ -12214,6 +12500,7 @@ for (const level of this.config.secretLevels || []) {
 
   // Which tall layout this frame gets.
   getTallScreenMode() {
+    if (this.state === "level5PostDialogue" && this.riverGoddessAge() < 2.6) return "riverReveal";
     if (this.state === "loading" || this.state === "sewerTransition") return "loading";
     if (this.state === "title") return this.homeCanvas ? "home" : "letterbox";
     // A dialogue drawn this frame wins: the recorded line is re-set in the
@@ -12520,6 +12807,7 @@ for (const level of this.config.secretLevels || []) {
   drawTallWalk(target) {
     const walk = this.getTallWalkLayout();
     target.drawImage(canvas, walk.srcX, walk.srcY, walk.srcW, walk.srcH, 0, 0, PORTRAIT_FIGHT.width, walk.worldH);
+    this.renderWalkRouteArrow(target, walk);
     // The pause button, in the corner of this view rather than the frame's.
     if (this.canPauseWalk()) {
       const button = this.getLevel1OfficePauseButtonRect();
@@ -12642,6 +12930,10 @@ for (const level of this.config.secretLevels || []) {
       return;
     }
     const mode = this.getTallScreenMode();
+    if (mode === "riverReveal") {
+      this.renderRiverReveal(target, layout.width, layout.height);
+      return;
+    }
     if (mode === "ending") {
       this.renderFinaleEndingScene(target, layout.width, layout.height);
       return;
@@ -12691,19 +12983,6 @@ for (const level of this.config.secretLevels || []) {
     // Beauty's row, so the track holds only the notes.
     const rhythm = this.level1OfficeRhythm;
     const coachPrompt = rhythm ? this.getLevel1OfficeGanganJudgmentPrompt(rhythm.judgment) : null;
-    // The tall track crops out both ends of the wide footer. Draw its
-    // musical roles here so phone players can read them during the song.
-    if (rhythm && !rhythm.ending) {
-      target.save();
-      target.font = `900 18px ${CANVAS_UI_FONT}`;
-      target.fillStyle = "#17130c";
-      target.textBaseline = "bottom";
-      target.textAlign = "left";
-      target.fillText(this.tr("M O T H = DRUMS", "M O T H = 鼓點"), track.dest.x + 16, track.dest.y + track.dest.h - 12);
-      target.textAlign = "right";
-      target.fillText(this.tr("TAP / HOLD", "輕按 / 長按"), track.dest.x + track.dest.w - 16, track.dest.y + track.dest.h - 12);
-      target.restore();
-    }
     if (coachPrompt) {
       const chip = { x: layout.stats.x, y: layout.stats.y - 64, w: this.getTallCoachChipWidth(target, coachPrompt, 58), h: 58 };
       this.drawGanganCoachChip(target, chip, coachPrompt, clamp(rhythm.judgment.timer / 0.18, 0, 1), this.time || 0);
@@ -13229,6 +13508,27 @@ for (const level of this.config.secretLevels || []) {
   }
 
   getRhythmAudioFor(theme) {
+    const track = this.getFightAudioPlayer(theme);
+    if (theme && track) track.mothFightAudio = true;
+    return track;
+  }
+
+  getFightAudioPlayer(theme) {
+    const easy = theme && !this.getDifficulty().hardPhrases ? this.getRhythmSpecFor(theme) : null;
+    if (easy?.easyAudioSrc) {
+      this.easyMusicAudio ||= {};
+      let track = this.easyMusicAudio[easy.easyAudioSrc];
+      if (!track) {
+        track = new Audio(easy.easyAudioSrc);
+        track.preload = "none";
+        track.volume = BGM_VOLUME;
+        this.easyMusicAudio[easy.easyAudioSrc] = track;
+        if (easy.fightCut) (this.easyBakedSources ||= new Set()).add(easy.easyAudioSrc);
+      }
+      return track;
+    }
+    const full = this.config?.stageSelectRhythms?.[this.stageSelectRhythmId];
+    if (full && full.theme === theme && this.fullSongAudio?.[theme]) return this.fullSongAudio[theme];
     const cut = this.fightCutAudio?.[theme];
     if (cut) return cut;
     if (theme === "arcade") return this.level4ArcadeAudio;
@@ -13240,7 +13540,7 @@ for (const level of this.config.secretLevels || []) {
     const spec = this.getActiveRhythmSpec();
     const audio = spec.fullSong && this.getActiveLevel1OfficeRhythmAudio();
     return audio && Number.isFinite(audio.duration) && audio.duration > 0
-      ? audio.duration : spec.duration || this.config?.duration || 120;
+      ? audio.duration - (audio.mothFightLead || 0) : spec.duration || this.config?.duration || 120;
   }
 
   // A phrase does not know the song: laid on the grid as authored, about a
@@ -13355,7 +13655,7 @@ for (const level of this.config.secretLevels || []) {
     // The measured chart replaces the fallback phrases. Drum attacks follow
     // measured drum waveform attacks, retaining the record's microtiming.
     const chart = spec.chart?.[this.getDifficulty().hardPhrases ? "hard" : "easy"];
-    if (Array.isArray(chart) && chart.length) {
+    if (Array.isArray(chart)) {
       notes.length = 0;
       const stepSeconds = (spec.chart.stepBeats || 0.5) * beatSeconds;
       chart.forEach(([step, key, holdSteps]) => {
@@ -13624,14 +13924,15 @@ for (const level of this.config.secretLevels || []) {
   getLevel1OfficeRenderTime() {
     const rhythm = this.level1OfficeRhythm;
     if (Number.isFinite(rhythm?.frozenSongTime)) return rhythm.frozenSongTime;
-    if (this.audioInterruption || this.audioRecoveryVisible()) return this.songTime;
+    if (this.state === "level1OfficePaused" || this.isRhythmCountIn()
+      || this.audioInterruption || this.audioRecoveryVisible()) return this.songTime;
     const tutorial = rhythm?.tutorial;
     if (tutorial?.mode === "practice") return tutorial.time;
     // Sample again for an input event between animation frames, so a hit
     // or hold release uses the audible beat rather than the preceding frame.
     if (tutorial?.mode === "done" && !this.level1OfficeRhythm?.skipAudio) {
       const track = this.getActiveLevel1OfficeRhythmAudio();
-      if (track && !rhythm.audioStarting && !rhythm.songHandover && !(this.stageCountdown > 0)
+      if (track && !rhythm.audioStarting && !rhythm.songHandover
         && (!track.paused || track.ended) && !this.isFightSongStalled(track)) return Math.max(0,
         track.currentTime - this.getRhythmAudioStart() - this.getAudioOffsetSeconds() - this.getRhythmOutputDelay());
     }
@@ -13717,7 +14018,8 @@ for (const level of this.config.secretLevels || []) {
   async startLevel1OfficeSong() {
     const rhythm = this.level1OfficeRhythm;
     if (!rhythm) return;
-    if (rhythm.songHandover) return;
+    this.startStageScoreRun(rhythm);
+    if (rhythm.songHandover || this.isRhythmCountIn() || this.state !== "playing") return;
     rhythm.songHandover = true;
     // Empty the room first. The chart is pinned while the tutorial is not
     // "done", so holding here does not let the notes run ahead of the music.
@@ -13736,14 +14038,22 @@ for (const level of this.config.secretLevels || []) {
       rhythm.audioPriming = null;
       track.pause();
       this.useSongCopy(track);
-      track.currentTime = this.getRhythmAudioStart();
+      const start = this.getRhythmPlaybackStart();
+      // The loading screen and countdown have already rewound this track.
+      // Another same-position seek at GO can stall the first WebKit samples.
+      if (Math.abs(track.currentTime - start) > 0.001) track.currentTime = start;
       track.volume = 0;
     }
     if (!rhythm.skipAudio && track) {
       if (this.audioInterruption || document.hidden) return;
       rhythm.audioStarting = true;
       try {
-        if (this.hasBakedFades()) track.volume = BGM_VOLUME;
+        // Start full mixes at an audible gain before play(). The routed gain
+        // eases the remaining 10% on the audio clock after playback starts.
+        track.volume = BGM_VOLUME * (this.hasBakedFades() ? 1 : 0.9);
+        if (this.freePlay && this.stageSelectRhythmId && this.stageSelectRhythmId === this.currentStageId) {
+          rhythm.stageSelectionPlayback = { position: 0, at: performance.now(), through: 0 };
+        }
         let timer;
         try {
           await Promise.race([this.soloPlay(track), new Promise((_, reject) => {
@@ -13761,13 +14071,7 @@ for (const level of this.config.secretLevels || []) {
           this.showAudioRecovery("resume");
           return;
         }
-        // A window that opens on a phrase's pickup bar fades up across that
-        // bar (fadeInSeconds), so the first note lands as the song arrives
-        // rather than the song cutting in mid-phrase. A cut has its fade in
-        // the file.
-        if (!this.hasBakedFades()) {
-          this.fadeAudio(track, BGM_VOLUME, Math.max(SONG_HANDOVER_IN_SECONDS, Number(this.getActiveRhythmSpec()?.fadeInSeconds) || 0));
-        }
+        track.volume = BGM_VOLUME;
       } catch {
         if (rhythm.audioStartAttempt !== startAttempt) return;
         if (this.level1OfficeRhythm !== rhythm || rhythm.ending) {
@@ -13898,7 +14202,7 @@ for (const level of this.config.secretLevels || []) {
   canPauseLevel1Office() {
     return this.state === "playing"
       && Boolean(this.level1OfficeRhythm)
-      && !this.level1OfficeRhythm.ending
+      && !this.level1OfficeRhythm.ending && !this.level1OfficeRhythm.graphicsLoading && !this.level1OfficeRhythm.songHandover
       && this.level1OfficeRhythm.tutorial?.mode === "done";
   }
 
@@ -13906,13 +14210,16 @@ for (const level of this.config.secretLevels || []) {
     if (!this.canPauseLevel1Office()) return false;
     this.level1OfficePauseChoice = 0;
     this.level1OfficePauseConfirm = false;
-    this.state = "level1OfficePaused";
-    this.stopRhythmFeedback();
-    // Hold the chart exactly where it stands; songTime is driven off the audio
-    // element, so pausing the track is what actually freezes the fight.
+    const rhythm = this.level1OfficeRhythm;
     const track = this.getActiveLevel1OfficeRhythmAudio();
-    this.level1OfficePausedAt = track?.currentTime;
-    if (track) track.pause();
+    // Freeze at the same audible time the rail just used, including calibration.
+    this.songTime = this.getLevel1OfficeRenderTime();
+    this.level1OfficePausedAt = rhythm.resumeTrackTime ?? track?.currentTime;
+    this.state = "level1OfficePaused";
+    rhythm.audioStartAttempt = null;
+    rhythm.audioStarting = false;
+    this.stopRhythmFeedback();
+    track?.pause();
     this.releaseHeldInputs();
     this.updateMobileControls(true);
     return true;
@@ -13926,7 +14233,10 @@ for (const level of this.config.secretLevels || []) {
     const pausedAt = Number.isFinite(this.level1OfficePausedAt) ? this.level1OfficePausedAt : resumeTrack?.currentTime;
     // In the tap: keep (or regain) iPhone's permission to play after the count.
     if (resumeTrack && !this.level1OfficeRhythm?.skipAudio) this.primeRhythmTrack(resumeTrack, pausedAt);
-    this.resumeFightAt(this.level1OfficeRhythm, pausedAt);
+    // A pause can interrupt the original count as well as a resume count.
+    // Keep its action so the first song start still initializes the round.
+    if (this.isRhythmCountIn()) this.armStageCountdown(this.stageCountdownAction);
+    else this.resumeFightAt(this.level1OfficeRhythm, pausedAt);
     this.updateMobileControls(true);
     return true;
   }
@@ -14044,11 +14354,7 @@ for (const level of this.config.secretLevels || []) {
     const stageId = this.currentStageId || "level1-stage1";
     const skipAudio = Boolean(options.skipAudio);
     if (this.getSecretLevel(stageId)) {
-      await this.startSecretRhythmFight(stageId, {
-        deferSong: true,
-        skipAudio,
-        fromLevelSelection: this.level1OfficeRhythm?.levelSelectionSecretStage === stageId
-      });
+      await this.startSecretRhythmFight(stageId, { deferSong: true, skipAudio });
     } else if (stageId === "level2-stage2") {
       await this.startLevel2BathroomFight({ deferSong: true, skipAudio });
     } else if (stageId === "level3-stage2") {
@@ -14187,6 +14493,10 @@ for (const level of this.config.secretLevels || []) {
       // Only the selected player should download after an engine rebuild.
       fresh.preload = "none";
       fresh.loop = track.loop;
+      fresh.mothAudioSource = track.mothAudioSource;
+      fresh.mothFightAudio = track.mothFightAudio;
+      fresh.mothFightLead = track.mothFightLead;
+      fresh.mothFightCopy = track.mothFightCopy;
       fresh.playbackRate = track.playbackRate;
       fresh.volume = route.volume;
       // Seeking an unloaded replacement can strand WebKit's range loader.
@@ -14218,8 +14528,11 @@ for (const level of this.config.secretLevels || []) {
     const replace = track => replacements.get(track) || track;
     for (const name of ["audio", "sewerAudio", "level2BossAudio", "level3RhythmAudio", "level4ArcadeAudio",
       "level6RhythmAudio", "dialogueOverlayAudio", "dialogueBgmTrack"]) this[name] = replace(this[name]);
-    for (const name of Object.keys(this.fightCutAudio || {})) this.fightCutAudio[name] = replace(this.fightCutAudio[name]);
+    for (const players of [this.fightCutAudio, this.fullSongAudio, this.easyMusicAudio]) {
+      for (const name of Object.keys(players || {})) players[name] = replace(players[name]);
+    }
     for (const [name, track] of this.homePlaylistAudioCache || []) this.homePlaylistAudioCache.set(name, replace(track));
+    if (this.preparedFightAudioTrack) this.preparedFightAudioTrack = replace(this.preparedFightAudioTrack);
     if (this.gameAudioRegistry) this.gameAudioRegistry = new Set([...this.gameAudioRegistry].map(replace));
     for (const owner of [this.songPreview, this.pausedBgm]) if (owner?.audio) owner.audio = replace(owner.audio);
     for (const fade of this.audioFades || []) fade.audio = replace(fade.audio);
@@ -14252,8 +14565,11 @@ for (const level of this.config.secretLevels || []) {
     } else this.ensureToneContext();
     this.audioUnlockSettled = true;
     this.applyPlaybackAudioSession();
-    const track = saved?.tracks[0]?.track || (this.state === "playing" && rhythm?.tutorial?.mode === "done"
-      && !(this.stageCountdown > 0) && !rhythm.skipAudio && !rhythm.songHandover
+    const savedTrack = saved?.tracks[0]?.track;
+    const rhythmCountingIn = this.isRhythmCountIn();
+    const track = (rhythmCountingIn && savedTrack === this.getActiveLevel1OfficeRhythmAudio() ? null : savedTrack)
+      || (this.state === "playing" && rhythm?.tutorial?.mode === "done"
+      && !rhythmCountingIn && !rhythm.skipAudio && !rhythm.songHandover
       && this.fullscreenGuide?.hidden && !this.walkPause ? this.getActiveLevel1OfficeRhythmAudio() : null);
     const position = saved?.tracks.find(item => item.track === track);
     if (position) { track.currentTime = position.time; track.volume = position.volume; }
@@ -14337,14 +14653,15 @@ for (const level of this.config.secretLevels || []) {
     return ready;
   }
 
-  primeRhythmSong(rhythm, track) {
+  async primeRhythmSong(rhythm, track) {
+    await this.prepareFightAudioStart(track);
     if (!track?.paused || rhythm.audioPriming || rhythm.audioPrimed || rhythm.skipAudio) return rhythm.audioPrimeReady || Promise.resolve();
     const token = {};
     rhythm.audioPriming = token;
     // Prime only the selected song, unmuted through a zero GainNode. Wait for
     // an actual successful play before pausing: cancelling play immediately
     // did not grant iPhone playback permission for the later countdown.
-    rhythm.audioPrimeReady = this.primeRhythmTrack(track, this.getRhythmAudioStart()).then(() => {
+    rhythm.audioPrimeReady = this.primeRhythmTrack(track, this.getRhythmPlaybackStart()).then(() => {
       rhythm.audioPrimed = this.primedRhythmTracks.has(track);
       if (rhythm.audioPriming !== token || this.level1OfficeRhythm !== rhythm) return;
     }).catch(() => {}).finally(() => {
@@ -14357,6 +14674,10 @@ for (const level of this.config.secretLevels || []) {
   // call, a route change, or the audio-session switch above. Playback that was
   // refused outside a gesture is legal again here.
   primeAudioOnGesture() {
+    if (this.arcadeVideoRefused) {
+      this.arcadeVideoRefused = false;
+      this.syncArcadeMusicVideo();
+    }
     this.refreshStaleAudioEngine();
     if (this.audioRecoveryVisible()) return;
     if (this.audioInterruption || this.level1OfficeRhythm?.audioStartPending) {
@@ -14379,15 +14700,15 @@ for (const level of this.config.secretLevels || []) {
     }
     const rhythm = this.level1OfficeRhythm;
     const track = this.getActiveLevel1OfficeRhythmAudio();
-    if (rhythm && track && (rhythm.graphicsLoading || this.stageCountdown > 0) && !rhythm.ending) {
+    if (this.state !== "level1OfficePaused" && rhythm && track && (rhythm.graphicsLoading || this.stageCountdown > 0) && !rhythm.ending) {
       this.primeRhythmSong(rhythm, track);
     }
     if (this.state === "playing" && rhythm?.tutorial?.mode === "done" && !rhythm.skipAudio
-      && !rhythm.ending && !rhythm.songHandover && !(this.stageCountdown > 0) && track?.paused) {
+      && !rhythm.ending && !rhythm.songHandover && !this.isRhythmCountIn() && track?.paused) {
       // This call must precede any promise/timeout so Safari sees the tap.
       track.volume = BGM_VOLUME;
       this.soloPlay(track).catch(() => {
-        if (this.level1OfficeRhythm === rhythm) this.showAudioRecovery("start");
+        if (this.level1OfficeRhythm === rhythm && this.state === "playing" && !(this.stageCountdown > 0)) this.showAudioRecovery("start");
       });
     }
     if ((this.fullscreenGuide && !this.fullscreenGuide.hidden) || !this.sewerAudio || this.songPreview) return;
@@ -14447,9 +14768,10 @@ for (const level of this.config.secretLevels || []) {
     const action = MOTH_ACTION_OF_BUTTON[button];
     const tutorial = rhythm?.tutorial;
     if (this.state !== "playing" || !rhythm || rhythm.ending || !button || !["practice", "done"].includes(tutorial?.mode)) return false;
+    if (this.isRhythmCountIn()) return true;
     // Sound belongs to the press, including harmless taps between notes.
     if (!this.playRhythmHitSfx(action, false, button)) this.playLevel1OfficeTone("hit", action, "stamp");
-    if (this.stageCountdown > 0 || rhythm.audioStarting || rhythm.songHandover) return true;
+    if (rhythm.audioStarting || rhythm.songHandover) return true;
     if (tutorial.mode === "done" && !rhythm.skipAudio) {
       const track = this.getActiveLevel1OfficeRhythmAudio();
       if (!track || track.paused || track.ended || this.isFightSongStalled(track)) return true;
@@ -14642,7 +14964,7 @@ for (const level of this.config.secretLevels || []) {
 
   // Letting go of a button: a hold let go before its tail ends is broken.
   handleLevel1OfficeRhythmRelease(keyCode, inputTimeStamp) {
-    if (this.audioInterruption || this.audioRecoveryVisible()) return false;
+    if (this.state !== "playing" || this.isRhythmCountIn() || this.audioInterruption || this.audioRecoveryVisible()) return false;
     const rhythm = this.level1OfficeRhythm;
     const button = this.getLevel1OfficeActionForKey(keyCode);
     const note = rhythm?.holds?.[button];
@@ -14824,6 +15146,7 @@ for (const level of this.config.secretLevels || []) {
         "美麗本人的心用完了。按 Enter 或點擊畫面重試。"
       );
     this.failReason = "rhythmHealth";
+    this.showFinishedStageScoreboard();
     this.enemyShots = [];
     this.playerShots = [];
     this.shootHeld = false;
@@ -14934,14 +15257,23 @@ for (const level of this.config.secretLevels || []) {
     });
 
     const fullSongTrack = spec.fullSong && !rhythm.skipAudio && this.getActiveLevel1OfficeRhythmAudio();
+    this.observeStageSelectionPlayback(rhythm, fullSongTrack);
     const songFinished = fullSongTrack
       ? fullSongTrack.ended || (Number.isFinite(fullSongTrack.duration) && fullSongTrack.currentTime >= fullSongTrack.duration)
       : this.songTime >= duration || (!rhythm.skipAudio && this.songTime >= duration - 1 && Boolean(this.getActiveLevel1OfficeRhythmAudio()?.ended));
     if (this.isConcertRhythm()) this.updateConcertCrowd(rhythm, songFinished);
     if (songFinished && !rhythm.ending) {
+      rhythm.stageSelectionSongFinished = Boolean(fullSongTrack
+        && Math.abs(fullSongTrack.duration - (fullSongTrack.mothFightLead || 0) - spec.duration) <= 0.25
+        && rhythm.stageSelectionPlayback?.through >= fullSongTrack.duration - 0.20);
+      if (rhythm.stageScoreRun) rhythm.stageScoreRun.finished = true;
       this.stopRhythmFeedback();
       rhythm.ending = true;
       rhythm.reviewTimer = spec.reviewDelay || 1.85;
+      if (this.isRiverRhythm() && this.freePlay) {
+        rhythm.riverRevealAt = this.time;
+        rhythm.reviewTimer = Math.max(2.6, rhythm.reviewTimer);
+      }
       // Nobody is knocked out of a free-play run; the song ending is simply
       // the end.
       rhythm.reviewResult = rhythm.health > 0 || this.isHealthlessRun() ? "PASSED" : "HEALTH DEPLETED";
@@ -14981,7 +15313,7 @@ for (const level of this.config.secretLevels || []) {
 
   startLevel1OfficeResults() {
     if (!this.level1OfficeRhythm || this.state !== "playing") return;
-    this.recordSecretStageClear();
+    this.recordStageSelectionClear();
     this.level1ResultsChoice = 0;
     this.stopRhythmFeedback();
     const track = this.getActiveLevel1OfficeRhythmAudio();
@@ -14995,6 +15327,7 @@ for (const level of this.config.secretLevels || []) {
     this.level1OfficeRhythm.reactionTimer = Number.POSITIVE_INFINITY;
     this.state = "level1OfficeResults";
     this.updateMobileControls(true);
+    this.showFinishedStageScoreboard();
   }
 
   continueLevel1OfficeResults() {
@@ -15815,9 +16148,8 @@ for (const level of this.config.secretLevels || []) {
 
   // The concert's life bar, where the hearts are in the other fights: the
   // crowd's heat, cold blue to red hot, ten pixel cells; CLIMAX once full.
-  drawConcertCrowdMeter(target, bounds, rhythm, motionTime = 0, row = null) {
+  drawConcertCrowdMeter(target, bar, rhythm, motionTime) {
     const hype = clamp(rhythm?.hype ?? 0.3, 0, 1);
-    const bar = row || { x: bounds.x + 22, y: bounds.y + 56, w: bounds.w - 44, h: 26 };
     target.save();
     target.fillStyle = "#14161e";
     target.fillRect(bar.x, bar.y, bar.w, bar.h);
@@ -15846,16 +16178,12 @@ for (const level of this.config.secretLevels || []) {
     const label = rhythm?.climax
       ? this.tr("PEAK HYPE!", "嗨到最高點！")
       : this.freePlay ? this.tr("FILL THE HYPE TO WIN", "熱度填滿就過關") : this.tr("FILL THE HYPE", "把熱度填滿");
-    if (row) {
-      target.font = "900 15px 'Courier New', 'PingFang TC', monospace";
-      target.lineJoin = "round";
-      target.lineWidth = 4;
-      target.strokeStyle = "#08090d";
-      target.strokeText(label, bar.x + bar.w / 2, bar.y + bar.h / 2 + 1, bar.w - 16);
-      target.fillText(label, bar.x + bar.w / 2, bar.y + bar.h / 2 + 1, bar.w - 16);
-    } else {
-      drawFittedText(target, label, bar.x + bar.w / 2, bar.y + bar.h + 13, bounds.w - 16, 12, 900, 8);
-    }
+    target.font = `900 ${bar.h - 3}px 'Courier New', 'PingFang TC', monospace`;
+    target.lineJoin = "round";
+    target.lineWidth = 3;
+    target.strokeStyle = "#08090d";
+    target.strokeText(label, bar.x + bar.w / 2, bar.y + bar.h / 2 + 1, bar.w - 12);
+    target.fillText(label, bar.x + bar.w / 2, bar.y + bar.h / 2 + 1, bar.w - 12);
     target.restore();
   }
 
@@ -16095,14 +16423,9 @@ for (const level of this.config.secretLevels || []) {
     const x = VIEW_W / 2 - (screen.x + screen.w / 2) * w;
     const y = (spec.screenTop ?? 30) - screen.y * h;
     const glass = { x: x + screen.x * w, y: y + screen.y * h, w: screen.w * w, h: screen.h * h };
-    const groundY = glass.y + glass.h * (this.config?.sprites?.level4ArcadeArena?.groundY ?? 0.9);
     return {
       room: { x, y, w, h },
-      glass,
-      groundY,
-      fighterHeight: glass.h * 0.46,
-      bobbyX: glass.x + glass.w * 0.35,
-      bonitaX: glass.x + glass.w * 0.65
+      glass
     };
   }
 
@@ -17778,12 +18101,14 @@ for (const level of this.config.secretLevels || []) {
   startLevel5PostDialogue() {
     this.level1OfficeRhythm = null;
     this.level5PostIndex = 0;
+    this.riverRevealAt = this.time;
     this.state = "level5PostDialogue";
     this.pocketOpen = false;
     this.updateMobileControls(true);
   }
 
   advanceLevel5PostDialogue() {
+    if (this.riverGoddessAge() < 2.6) return;
     const lines = this.getDialogueLines("level5Post");
     if ((this.level5PostIndex || 0) < lines.length - 1) {
       this.level5PostIndex = (this.level5PostIndex || 0) + 1;
@@ -18160,9 +18485,6 @@ for (const level of this.config.secretLevels || []) {
     this.shootHeld = false;
     this.level1ResultsChoice = 0;
     this.level1OfficeRhythm = this.createLevel1OfficeRhythmState(level.theme);
-    if (options.fromLevelSelection === true) {
-      this.level1OfficeRhythm.levelSelectionSecretStage = stageId;
-    }
     this.level1OfficeRhythm.skipAudio = Boolean(options.skipAudio);
     const preparingRhythm = this.level1OfficeRhythm;
     this.showFightWhilePreparing(preparingRhythm, options);
@@ -18424,7 +18746,7 @@ for (const level of this.config.secretLevels || []) {
   }
 
   startFinaleEnding() {
-    if (this.maybeShowFinalScoreboard()) return;
+    this.finishStoryScoreRun();
     if (this.deferSceneAssets("finale-stage1", () => this.startFinaleEnding())) return;
     this.currentStageId = "finale-stage1";
     this.state = "finaleEnding";
@@ -19577,8 +19899,11 @@ for (const level of this.config.secretLevels || []) {
     } else if (this.state === "level5PostDialogue") {
       this.ctx.fillStyle = "#05070d";
       this.ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-      this.renderLevel5RiverScene(this.ctx, { frozen: false, motionTime: this.time || 0, sceneHeight: 508, renderTime: 0, rhythm: null, aftermath: true });
-      this.renderLevel5PostDialogue();
+      if (this.riverGoddessAge() < 2.6) this.renderRiverReveal(this.ctx, VIEW_W, VIEW_H);
+      else {
+        this.renderLevel5RiverScene(this.ctx, { frozen: false, motionTime: this.time || 0, sceneHeight: 508, renderTime: 0, rhythm: null, aftermath: true });
+        this.renderLevel5PostDialogue();
+      }
     } else if (this.state === "level6Dream") {
       this.renderLevel6DreamScene(this.ctx, VIEW_W, VIEW_H);
       this.renderNarrationBox("level6Dream", this.level6DreamIndex);
@@ -19656,7 +19981,7 @@ for (const level of this.config.secretLevels || []) {
   // Free play's breather: the stage is already drawn and frozen underneath, so
   // this only has to count it in.
   renderStageCountdown() {
-    if (!(this.stageCountdown > 0)) return;
+    if (this.walkPause || this.state === "level1OfficePaused" || !(this.stageCountdown > 0)) return;
     const target = this.ctx;
     const remaining = this.stageCountdown;
     // 3, 2, 1 a second each, then 開始！ for the last 0.6 s (it used to fall
@@ -19756,6 +20081,7 @@ for (const level of this.config.secretLevels || []) {
   }
 
   renderLevel1OfficeScene(frozen = false) {
+    frozen = frozen || this.stageCountdown > 0;
     const target = this.ctx;
     const rhythm = this.level1OfficeRhythm;
     if (rhythm?.graphicsLoading && !rhythm.graphicsWarming && !rhythm.countdownDuringGraphicsPreparation) {
@@ -19770,7 +20096,8 @@ for (const level of this.config.secretLevels || []) {
     const ribbonTop = sceneHeight;
     const tutorialMode = rhythm?.tutorial?.mode || "done";
     const renderTime = this.getLevel1OfficeRenderTime();
-    const phaseIntroVisible = Boolean(tutorialMode === "done" && rhythm?.phaseIntroTimer > 0 && !rhythm?.ending);
+    const phaseIntroVisible = Boolean(tutorialMode === "done" && rhythm?.phaseIntroTimer > 0 && !rhythm?.ending
+      && !this.isRhythmCountIn() && !rhythm?.songHandover && !rhythm?.audioStarting);
     // The lose card (state "failure") sits over the fight as it was - the
     // real timing track, Dr. Beauty slumped, GAN GAN laughing - not the purple
     // "haunted" ribbon, which read as the track gone missing (user,
@@ -20211,47 +20538,14 @@ for (const level of this.config.secretLevels || []) {
       return;
     }
 
-    // The lower ribbon carries only the information needed to play: the hearts,
-    // the compact upcoming call sequence, and keyboard/touch mappings.
+    // Draw the matching staff badge beside the beat track.
     target.fillStyle = "#08090d";
     target.fillRect(0, ribbonTop, VIEW_W, VIEW_H - ribbonTop);
-    // Stage select plays without hearts, so its profile is Bobby's staff ID
-    // badge instead: the practice stamp, a tally of misses and the counters.
-    if (this.freePlay) {
-      this.renderLevel1OfficePracticeBadge(target, lifeBounds, rhythm);
-    } else {
-      target.strokeStyle = "#f4f0dc";
-      target.lineWidth = 4;
-      target.strokeRect(lifeBounds.x, lifeBounds.y, lifeBounds.w, lifeBounds.h);
-      target.textAlign = "center";
-      target.textBaseline = "middle";
-      target.font = "900 18px 'Courier New', monospace";
-      target.fillStyle = "#f4f0dc";
-      target.fillText(HERO_TAG, lifeBounds.x + lifeBounds.w / 2, lifeBounds.y + 28, lifeBounds.w - 24);
-      const maxHearts = this.isConcertRhythm() ? 0 : Math.max(1, rhythm?.maxHealth || 3);
-      const currentHearts = clamp(rhythm?.health ?? maxHearts, 0, maxHearts);
-      if (this.isConcertRhythm()) this.drawConcertCrowdMeter(target, lifeBounds, rhythm, motionTime);
-      if (!this.isConcertRhythm()) {
-        target.save();
-        this.drawMissTally(target, { x: lifeBounds.x + 22, y: lifeBounds.y + 72, right: lifeBounds.x + lifeBounds.w - 22, indent: 50, glyph: 18, font: 17, maxGroups: 3, tally: "#ef3f78" }, Math.max(0, rhythm?.misses || 0), "#f4f0dc");
-        target.restore();
-      }
-      // The hearts row is the count; no "HEARTS n/5" line under it (user,
-      // 2026-09-30), so the three rows spread over the box.
-      target.font = "900 16px 'Courier New', monospace";
-      target.fillStyle = "#8fe8ff";
-      target.fillText(`COMBO ${rhythm?.combo || 0}`, lifeBounds.x + lifeBounds.w / 2, lifeBounds.y + 118);
-      target.fillStyle = "#f7f2de";
-      target.fillText(`SCORE ${String(rhythm?.roundScore || 0).padStart(6, "0")}`, lifeBounds.x + lifeBounds.w / 2, lifeBounds.y + 152);
-    }
+    this.renderLevel1OfficeProfileBadge(target, lifeBounds, rhythm, motionTime);
 
     if (failedCard && rhythm) rhythm.failureOptionRects = this.getLevel1OfficeFailureOptionRects();
-    const noteTimingCues = [];
-    target.fillStyle = haunted ? "#281328" : "#f1c62d";
-    target.fillRect(ribbonBounds.x, ribbonBounds.y, ribbonBounds.w, ribbonBounds.h);
-    target.strokeStyle = haunted ? "#9a3ea7" : groovePulse > 0 ? "#fff2a3" : "#f7f2de";
-    target.lineWidth = haunted ? 5 : 5 + groovePulse * 3;
-    target.strokeRect(ribbonBounds.x, ribbonBounds.y, ribbonBounds.w, ribbonBounds.h);
+    let noteTimingCues = [];
+    drawRhythmTrackFrame(target, ribbonBounds, {haunted, pulse: groovePulse});
 
     if (haunted) {
       target.font = "900 31px 'Courier New', monospace";
@@ -20278,18 +20572,7 @@ for (const level of this.config.secretLevels || []) {
       const cursorX = 760;
       const railY = ribbonBounds.y + 96;
       const pixelsPerSecond = this.getRhythmRailGeometry().pixelsPerSecond;
-      target.strokeStyle = "rgba(35, 28, 13, 0.46)";
-      target.lineWidth = 3;
-      target.beginPath();
-      target.moveTo(ribbonBounds.x + 24, railY);
-      target.lineTo(ribbonBounds.x + ribbonBounds.w - 24, railY);
-      target.stroke();
-      target.strokeStyle = "#f7f2de";
-      target.lineWidth = 4 + groovePulse * 2;
-      target.beginPath();
-      target.moveTo(cursorX, ribbonBounds.y + 44);
-      target.lineTo(cursorX, ribbonBounds.y + ribbonBounds.h - 38);
-      target.stroke();
+      drawRhythmRailLines(target, ribbonBounds, cursorX, railY, groovePulse);
       const pulse = !frozen && !rhythm?.ending && rhythm?.trackPulse;
       if (pulse && motionTime - pulse.at < 0.28) {
         drawRhythmHitPulse(target, cursorX, railY, pulse, motionTime - pulse.at,
@@ -20298,57 +20581,20 @@ for (const level of this.config.secretLevels || []) {
       // No combo callout on the track: GANGAN's box calls the streaks (10 / 25 /
       // 50) and sat on top of it.
 
-      const trackLeft = ribbonBounds.x + 36;
-      const trackRight = ribbonBounds.x + ribbonBounds.w - 36;
-      const viewLeft = this.isTallScreenView() ? PORTRAIT_FIGHT.track.src.x : trackLeft;
-      const headRadius = MOTH_RHYTHM_HEAD.radius + MOTH_RHYTHM_HEAD.lineWidth / 2;
-      const visibleNotes = [];
-      for (const note of this.getLevel1OfficeRenderNotes()) {
-        const x = cursorX + (note.time - renderTime) * pixelsPerSecond;
-        const endX = note.holdEnd ? cursorX + (note.holdEnd - renderTime) * pixelsPerSecond : x;
-        if (endX + headRadius < trackLeft || x - headRadius > trackRight) continue;
-        visibleNotes.push({note, x, endX,
-          button: note.button || LEVEL1_OFFICE_ACTION_KEYS[note.action],
-          missed: note.status === "miss" || note.holdBroken,
-          completed: note.status === "perfect" || note.status === "good",
-          held: note.holding});
-      }
-      target.save();
-      target.beginPath();
-      target.rect(trackLeft, ribbonBounds.y + 32, trackRight - trackLeft, ribbonBounds.h - 52);
-      target.clip();
-      // Paint tails underneath every head, with the release cap at the real
-      // end of its sustain. The scrolling head and spent tail stay connected.
-      for (const {note, x, endX, button, missed, held} of visibleNotes) {
-        if (!note.holdEnd) continue;
-        drawRhythmHoldTail(target, {x, endX, y: railY, hitX: cursorX, button, missed, held});
-        if (held && endX > cursorX && x + headRadius <= viewLeft) {
-          drawRhythmHoldMarker(target, cursorX, railY, button);
-        }
-      }
-      for (const {note, x, button, missed, completed, held} of visibleNotes) {
-        drawRhythmNoteHead(target, {x, y: railY, button, missed, completed, held});
-        const timing = !frozen && !haunted && !rhythm?.ending
-          ? this.getRhythmTimingCue(note, renderTime) : null;
-        if (timing) {
-          drawRhythmTimingRing(target, x, railY, timing);
-          noteTimingCues.push({id: note.id, time: note.time, button, x, y: railY, ...timing});
-        }
-      }
-      target.restore();
+      const railTime = renderTime;
+      const cueAt = !frozen && !rhythm?.ending && !rhythm?.songHandover && !rhythm?.audioStarting
+        ? (note, time) => this.getRhythmTimingCue(note, time) : null;
+      noteTimingCues = drawRhythmRailNotes(target, this.getLevel1OfficeRenderNotes(), {
+        bounds: ribbonBounds, cursorX, railY, railTime, speed: pixelsPerSecond, cueAt,
+        viewLeft: this.isTallScreenView() ? PORTRAIT_FIGHT.track.src.x : undefined
+      });
 
       target.font = "900 13px 'Courier New', monospace";
       target.textAlign = "left";
       target.fillStyle = "#17130c";
       target.textBaseline = "bottom";
-      // The legend identifies the musical source the player listens for. The
-      // phone draws its own under its slice of the track (renderTallScreen).
       if (!this.isTallScreenView()) {
-        target.fillText(this.tr("M O T H = DRUMS", "M O T H = 鼓點"), ribbonBounds.x + 22, ribbonBounds.y + ribbonBounds.h - 12);
         target.textAlign = "right";
-        target.fillText(this.tr("TAP / HOLD", "輕按 / 長按"), ribbonBounds.x + ribbonBounds.w - 22, ribbonBounds.y + ribbonBounds.h - 12);
-        target.textAlign = "right";
-        target.fillStyle = "#17130c";
         target.fillText(
           tutorialMode === "practice"
             ? `${this.tr("PRACTICE", "練習")} ${Math.min(rhythm.tutorial.noteIndex + 1, rhythm.tutorial.notes.length)}/${rhythm.tutorial.notes.length}`
@@ -20943,8 +21189,8 @@ for (const level of this.config.secretLevels || []) {
   // outline, one accent colour per level. Misses are counted the way an office
   // counts anything, in 正 tally marks, and the practice run is a red rubber
   // stamp across the card - the same stamp Bobby is hitting the paperwork with.
-  renderLevel1OfficePracticeBadge(target, bounds, rhythm) {
-    const accent = this.getPracticeBadgeAccent();
+  renderLevel1OfficeProfileBadge(target, bounds, rhythm, motionTime) {
+    const accent = this.getFightBadgeAccent();
     const ink = "#1b2130";
     const paper = "#efe6cc";
     const x = bounds.x;
@@ -20981,7 +21227,7 @@ for (const level of this.config.secretLevels || []) {
     target.fillStyle = "#f7f2de";
     target.textAlign = "center";
     target.font = "900 12px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace";
-    target.fillText(this.tr("STAFF ID  ·  PRACTICE", "員工證 · 練習"), x + w / 2 - 3, y + 26);
+    target.fillText(this.tr("STAFF ID", "員工證") + " · " + this.getFightBadgeModeLabel(), x + w / 2 - 3, y + 26);
 
     // ID photo and name.
     drawPortrait(target, this.refs.bobby, x + 17, y + 49, 38, true);
@@ -21008,7 +21254,7 @@ for (const level of this.config.secretLevels || []) {
     target.fillStyle = "#c8323c";
     target.textAlign = "center";
     target.font = "900 15px 'PingFang TC', 'Noto Sans TC', 'Courier New', sans-serif";
-    target.fillText(this.tr("DRILL", "練習"), 0, 1);
+    drawFittedText(target, this.getFightBadgeModeLabel(true), 0, 1, 40, 15, 900, 5);
     target.restore();
 
     // Miss tally, drawn stroke by stroke in 正's own order: the top bar, the
@@ -21016,13 +21262,18 @@ for (const level of this.config.secretLevels || []) {
     // the bottom bar. Font glyphs cannot do this - the 4-stroke stage is not a
     // character (止 has the bottom bar and no top one).
     const misses = Math.max(0, rhythm?.misses || 0);
-    const rowY = y + 110;
-    target.fillStyle = ink;
-    target.fillRect(x + 12, rowY + 11, w - 26, 1);
+    const concert = this.isConcertRhythm();
+    const rowY = y + (concert ? 102 : 110);
     this.drawMissTally(target, { x: x + 14, y: rowY, right: x + w - 16, indent: 38, glyph: 15, font: 12 }, misses, ink);
+    if (concert) {
+      this.drawConcertCrowdMeter(target, { x: x + 12, y: y + 114, w: w - 26, h: 14 }, rhythm, motionTime);
+    } else {
+      target.fillStyle = ink;
+      target.fillRect(x + 12, rowY + 11, w - 26, 1);
+    }
 
     // Counters on a small green LCD, like the handheld's own screen.
-    this.drawPracticeLcd(target, { x: x + 12, y: y + h - 50, w: w - 26, h: 36 }, rhythm, ink);
+    this.drawFightBadgeLcd(target, { x: x + 12, y: y + h - 50, w: w - 26, h: 36 }, rhythm, ink);
     target.restore();
   }
 
@@ -21053,159 +21304,172 @@ for (const level of this.config.secretLevels || []) {
     glow.addColorStop(1, "rgba(130, 175, 255, 0)");
     target.fillStyle = glow;
     target.fillRect(0, 0, VIEW_W, sceneHeight);
-    this.renderLevel4ArcadeGame(target, layout, poses, context);
+    this.renderLevel4ArcadeGame(target, layout, context);
     this.renderLevel4ArcadePlayers(target, layout, poses, context);
     if (rhythm) rhythm.arcadeTelemetry = { bobby: poses.bobby.frame, bonita: poses.bonita.frame, bobbyPlayer: poses.bobbyPlayer, bonitaPlayer: poses.bonitaPlayer };
   }
 
-  // The fighting game on the TV: the night-market stage, the two fighters,
-  // health bars and the round clock, behind CRT scanlines.
-  renderLevel4ArcadeGame(target, layout, poses, context) {
-    const { frozen, motionTime, renderTime, rhythm } = context;
-    const { glass } = layout;
-    const centerX = glass.x + glass.w / 2;
+
+  async loadArcadeMusicVideo() {
+    if (this.arcadeMusicVideo) return;
+    const file = await fetchGameAsset("assets/video/level4-bad-daddy.mp4");
+    const video = document.createElement("video");
+    const url = URL.createObjectURL(new Blob([file.data], {type: "video/mp4"}));
+    video.muted = true;
+    video.defaultMuted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    try {
+      await new Promise((resolve, reject) => {
+        const cleanup = () => {
+          clearTimeout(timeout);
+          video.removeEventListener("loadeddata", ready);
+          video.removeEventListener("error", failed);
+        };
+        const ready = () => { cleanup(); resolve(); };
+        const failed = () => { cleanup(); reject(new Error("Level 4 video could not be decoded")); };
+        const timeout = setTimeout(failed, 12000);
+        video.addEventListener("loadeddata", ready);
+        video.addEventListener("error", failed);
+        video.src = url;
+      });
+      this.arcadeMusicVideo = video;
+    } catch (error) {
+      video.removeAttribute("src");
+      video.load();
+      URL.revokeObjectURL(url);
+      throw error;
+    }
+  }
+
+  releaseArcadeMusicVideo() {
+    const video = this.arcadeMusicVideo;
+    if (!video) return;
+    this.arcadeMusicVideo = null;
+    this.arcadeVideoRefused = false;
+    const url = video.getAttribute("src");
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    URL.revokeObjectURL(url);
+  }
+
+  syncArcadeMusicVideo() {
+    const video = this.arcadeMusicVideo;
+    if (!video) return;
+    const rhythm = this.level1OfficeRhythm;
+    const arcade = rhythm?.theme === "arcade";
+    const song = arcade && this.getActiveLevel1OfficeRhythmAudio();
+    const active = arcade && this.state === "playing" && !rhythm.ending && rhythm.tutorial?.mode === "done"
+      && !rhythm.skipAudio && !this.isRhythmCountIn() && !this.levelLoadingPresentation && !document.hidden
+      && song && !song.paused && !song.seeking && !this.isFightSongStalled(song);
+    if (!active) {
+      if (!video.paused) video.pause();
+      return;
+    }
+    // A given attack lands 151 ms later on the supplied video's timeline.
+    const sourceOrigin = this.hasBakedFades() ? this.getActiveRhythmSpec().fightCut.fromSeconds : 0;
+    const time = Math.min(video.duration - .02,
+      song.currentTime - (song.mothFightLead || 0) + sourceOrigin + .151);
+    if (!video.seeking && Math.abs(video.currentTime - time) > .11) video.currentTime = time;
+    if (video.paused && !video.seeking && !this.arcadeVideoStarting && !this.arcadeVideoRefused) {
+      this.arcadeVideoStarting = video.play().catch(() => { this.arcadeVideoRefused = true; })
+        .finally(() => { this.arcadeVideoStarting = null; });
+    }
+  }
+
+  renderLevel4ArcadeGame(target, layout, context) {
+    const {glass} = layout;
+    const {rhythm, renderTime, frozen, motionTime} = context;
+    const video = this.arcadeMusicVideo;
     target.save();
     target.beginPath();
-    target.roundRect(glass.x, glass.y, glass.w, glass.h, glass.w * 0.035);
+    target.roundRect(glass.x, glass.y, glass.w, glass.h, glass.w * .035);
     target.clip();
-    const arena = this.refs.level4ArcadeArena;
-    if (arena) {
-      const scale = Math.max(glass.w / arena.width, glass.h / arena.height);
-      target.drawImage(
-        arena,
-        Math.round(glass.x + (glass.w - arena.width * scale) / 2),
-        Math.round(glass.y + glass.h - arena.height * scale),
-        Math.round(arena.width * scale),
-        Math.round(arena.height * scale)
-      );
-    } else {
-      target.fillStyle = "#2a1a3a";
-      target.fillRect(glass.x, glass.y, glass.w, glass.h);
-    }
-    const drawFighter = (who) => {
-      const sheet = who === "bobby" ? this.refs.level4BobbyFighterSheet : this.refs.level4BonitaFighterSheet;
-      const spec = this.config?.sprites?.[who === "bobby" ? "level4BobbyFighter" : "level4BonitaFighter"];
-      if (!sheet || !spec) return;
-      const pose = poses[who];
-      const k = layout.fighterHeight * (spec.scale || 1) / (spec.idleHeight || spec.frameHeight);
-      const w = spec.frameWidth * k;
-      const h = spec.frameHeight * k;
-      const x = (who === "bobby" ? layout.bobbyX : layout.bonitaX) + pose.dx;
-      target.fillStyle = "rgba(0, 0, 0, 0.35)";
-      target.beginPath();
-      target.ellipse(x, layout.groundY - 2, w * 0.3, 7, 0, 0, TAU);
-      target.fill();
-      const frame = bundleFrameIndex(spec, pose.frame);
-      drawBundleFrame(target, sheet, spec, frame, x, layout.groundY, w, h, { x: 0.5, y: 1 });
-      if (pose.flash) {
-        // The frame a hit lands, the fighter flashes white.
-        target.save();
-        target.globalCompositeOperation = "lighter";
-        target.globalAlpha = 0.7;
-        drawBundleFrame(target, sheet, spec, frame, x, layout.groundY, w, h, { x: 0.5, y: 1 });
-        target.restore();
-      }
-    };
-    drawFighter("bonita");
-    drawFighter("bobby");
-    if (poses.spark) {
-      // A star of impact where the blow lands: high for a punch, at the waist for a kick.
-      const spark = poses.spark;
-      const x = (spark.who === "bobby" ? layout.bobbyX + 14 : layout.bonitaX - 14) + poses[spark.who].dx;
-      const y = layout.groundY - layout.fighterHeight * (spark.action === "accent" ? 0.48 : 0.72);
-      const grow = clamp(spark.age / 0.16, 0, 1);
-      const radius = (spark.perfect ? 30 : 22) * (0.5 + grow * 0.8);
-      target.save();
-      target.globalAlpha = 1 - grow * 0.7;
-      target.fillStyle = spark.perfect ? "#fff27a" : "#ffffff";
-      target.strokeStyle = "#ff8a1f";
-      target.lineWidth = 3;
-      target.beginPath();
-      for (let point = 0; point < 16; point += 1) {
-        const angle = (point / 16) * TAU + grow * 0.6;
-        const r = point % 2 ? radius * 0.42 : radius;
-        target.lineTo(x + Math.cos(angle) * r, y + Math.sin(angle) * r);
-      }
-      target.closePath();
-      target.fill();
-      target.stroke();
-      target.restore();
-    }
-
-    // Health bars: Dr. Beauty's is his hearts; Bonita's drains with the hits he
-    // lands, and is empty when he wins.
-    const spec = this.getActiveRhythmSpec();
-    const maxHealth = Math.max(1, spec.maxHealth || 5);
-    const bobbyLife = poses.lost ? 0 : clamp((rhythm?.health ?? maxHealth) / maxHealth, 0, 1);
-    const totalNotes = Math.max(1, rhythm?.notes?.length || 1);
-    const bonitaLife = poses.won ? 0 : clamp(1 - (rhythm?.correct || 0) / (totalNotes * 0.92), 0.04, 1);
-    const barW = glass.w * 0.36;
-    const barH = 13;
-    const barY = glass.y + 18;
-    const drawBar = (x, life, fromRight, name) => {
-      target.fillStyle = "#1a1030";
-      target.fillRect(x - 2, barY - 2, barW + 4, barH + 4);
-      target.fillStyle = "#c42a2e";
-      target.fillRect(x, barY, barW, barH);
-      target.fillStyle = life > 0.3 ? "#ffd93d" : "#ff7a3d";
-      const fill = barW * life;
-      target.fillRect(fromRight ? x + barW - fill : x, barY, fill, barH);
-      target.fillStyle = "rgba(255, 255, 255, 0.35)";
-      target.fillRect(fromRight ? x + barW - fill : x, barY, fill, 3);
-      target.font = "900 13px 'Courier New', monospace";
-      target.textAlign = fromRight ? "right" : "left";
-      target.textBaseline = "top";
-      target.lineWidth = 4;
-      target.strokeStyle = "#140c24";
-      target.strokeText(name, fromRight ? x + barW : x, barY + barH + 4);
-      target.fillStyle = "#f7f2de";
-      target.fillText(name, fromRight ? x + barW : x, barY + barH + 4);
-    };
-    drawBar(glass.x + 14, bobbyLife, false, "DR. BEAUTY");
-    drawBar(glass.x + glass.w - 14 - barW, bonitaLife, true, "BONITA");
-    // The round clock counts down the round being played.
-    const phase = spec.phases?.[rhythm?.phaseIndex || 0];
-    const clock = phase ? Math.max(0, Math.ceil((phase.end ?? 0) - Math.max(phase.start ?? 0, renderTime))) : 99;
-    target.font = "900 24px 'Courier New', monospace";
-    target.textAlign = "center";
-    target.textBaseline = "middle";
-    target.lineWidth = 5;
-    target.strokeStyle = "#140c24";
-    target.strokeText(String(Math.min(99, clock)).padStart(2, "0"), centerX, barY + barH / 2 + 2);
-    target.fillStyle = "#ffe45c";
-    target.fillText(String(Math.min(99, clock)).padStart(2, "0"), centerX, barY + barH / 2 + 2);
-    if (poses.won || poses.lost) {
-      target.font = "900 64px 'Courier New', monospace";
-      target.lineWidth = 9;
-      target.strokeStyle = "#140c24";
-      target.strokeText("K.O.", centerX, glass.y + glass.h * 0.4);
-      target.fillStyle = "#ff4b5c";
-      target.fillText("K.O.", centerX, glass.y + glass.h * 0.4);
-    }
-
-    // The CRT: scanlines, a curved-glass vignette and a reflection.
-    target.fillStyle = "rgba(0, 0, 0, 0.16)";
-    for (let y = Math.floor(glass.y); y < glass.y + glass.h; y += 3) target.fillRect(glass.x, y, glass.w, 1);
-    const vignette = target.createRadialGradient(centerX, glass.y + glass.h / 2, glass.h * 0.35, centerX, glass.y + glass.h / 2, glass.w * 0.62);
-    vignette.addColorStop(0, "rgba(0, 0, 0, 0)");
-    vignette.addColorStop(1, "rgba(0, 0, 0, 0.5)");
-    target.fillStyle = vignette;
+    target.fillStyle = "#080b16";
     target.fillRect(glass.x, glass.y, glass.w, glass.h);
-    const shine = target.createLinearGradient(glass.x, glass.y, glass.x + glass.w * 0.5, glass.y + glass.h);
-    shine.addColorStop(0, "rgba(255, 255, 255, 0.1)");
-    shine.addColorStop(0.4, "rgba(255, 255, 255, 0)");
-    target.fillStyle = shine;
-    target.fillRect(glass.x, glass.y, glass.w, glass.h);
-    if (!frozen && Math.sin(motionTime * 3.1) > 0.995) {
-      target.fillStyle = "rgba(255, 255, 255, 0.05)";
-      target.fillRect(glass.x, glass.y, glass.w, glass.h);
+    const width = glass.w - 26;
+    const scale = width / 1024;
+    const bounds = {x: 0, y: 0, w: 1024, h: 184};
+    const bottom = glass.y + glass.h - 13;
+    const trackTop = bottom - bounds.h * scale;
+    const videoTop = glass.y + 13;
+    if (video?.readyState >= 2 && video.videoWidth > 0) {
+      const availableHeight = (rhythm ? trackTop - 6 : bottom) - videoTop;
+      const factor = Math.min(width / video.videoWidth, availableHeight / video.videoHeight);
+      const w = video.videoWidth * factor, h = video.videoHeight * factor;
+      target.drawImage(video, glass.x + (glass.w - w) / 2, videoTop + (availableHeight - h) / 2, w, h);
+    }
+    if (rhythm) {
+      const cursorX = 532, railY = 96;
+      const groovePulse = frozen ? 0 : (rhythm.groovePulse || 0);
+      const railTime = renderTime;
+      const speed = this.getRhythmRailGeometry().pixelsPerSecond;
+      const cueAt = !frozen && !rhythm.ending && !rhythm.songHandover && !rhythm.audioStarting
+        ? (note, time) => this.getRhythmTimingCue(note, time) : null;
+      target.translate(glass.x + 13, trackTop);
+      target.scale(scale, scale);
+      drawRhythmTrackFrame(target, bounds, {pulse: groovePulse});
+      drawRhythmRailLines(target, bounds, cursorX, railY, groovePulse);
+      const pulse = !frozen && !rhythm.ending && rhythm.trackPulse;
+      if (pulse && motionTime - pulse.at < 0.28) {
+        drawRhythmHitPulse(target, cursorX, railY, pulse, motionTime - pulse.at,
+          window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
+      }
+      drawRhythmRailNotes(target, this.getLevel1OfficeRenderNotes(), {bounds, cursorX, railY, railTime, speed, cueAt});
     }
     target.restore();
   }
 
-  // Dr. Beauty and Bonita on the floor in front of the TV, from behind, waist up
-  // (the HUD cuts them off): mashing when a blow is thrown, his arms up on
-  // every tenth hit in a row, whoever just got hit holding their head.
+  riverGoddessAge() {
+    return this.riverRevealAt == null ? Infinity : this.time - this.riverRevealAt;
+  }
+
+  renderRiverReveal(target, width, height) {
+    const sceneHeight = 508;
+    const scene = this.getScratchLayer("river-reveal", VIEW_W, sceneHeight);
+    if (this.riverRevealFrame !== this.time) {
+      this.riverRevealFrame = this.time;
+      this.renderLevel5RiverScene(scene, {
+        frozen: false, motionTime: this.time, sceneHeight, renderTime: 0, rhythm: null, aftermath: true
+      });
+    }
+    const crop = Math.min(VIEW_W, sceneHeight * width / height);
+    target.save();
+    target.imageSmoothingEnabled = false;
+    target.drawImage(scene.canvas, (VIEW_W - crop) / 2, 0, crop, sceneHeight, 0, 0, width, height);
+    target.restore();
+  }
+
+  drawRiverGoddess(target, farY, bankY, age) {
+    const sprite = this.refs.riverGoddess;
+    if (!sprite || age < 0) return;
+    const x = VIEW_W * .5;
+    const water = Math.round(farY + (bankY - farY) * .67);
+    const t = clamp(age / 1.75, 0, 1);
+    const rise = 1 - Math.pow(1 - t, 3);
+    const h = 232;
+    const w = Math.round(h * sprite.width / sprite.height);
+    const y = Math.round(water - h * rise + (t === 1 ? Math.sin(age * 2.1) * 2 : 0));
+    target.save();
+    target.beginPath();
+    target.rect(x - w, 0, w * 2, water + 2);
+    target.clip();
+    target.imageSmoothingEnabled = false;
+    target.drawImage(sprite, Math.round(x - w / 2), y, w, h);
+    target.restore();
+    target.save();
+    target.lineWidth = 2;
+    for (let ring = 0; ring < 3; ring++) {
+      const phase = (age * .75 + ring / 3) % 1;
+      target.strokeStyle = "rgba(126,224,239," + ((1 - phase) * rise * .65) + ")";
+      target.beginPath();
+      target.ellipse(x, water + 2, 12 + phase * 104, 2 + phase * 9, 0, 0, TAU);
+      target.stroke();
+    }
+    target.restore();
+  }
+
   renderLevel4ArcadePlayers(target, layout, poses, context) {
     const { frozen, motionTime, beatPulse } = context;
     const sheet = this.refs.level4ArcadePlayersSheet;
@@ -21811,6 +22075,9 @@ for (const level of this.config.secretLevels || []) {
       target.fillRect(0, bankY, VIEW_W, 6);
     }
 
+    const revealAge = context.aftermath ? this.riverGoddessAge() : (rhythm?.riverRevealAt == null ? -1 : this.time - rhythm.riverRevealAt);
+    if (revealAge >= 0) this.drawRiverGoddess(target, farY, bankY, revealAge);
+
     // Reach: Dr. Beauty's follows his timing, eased; a hit surges it, a miss
     // drops it to a dribble for a moment.
     const reach = this.getRiverReach(rhythm);
@@ -21865,7 +22132,7 @@ for (const level of this.config.secretLevels || []) {
     const waterLevel = -0.1;
     const project = (wx, wy, wz) => [VIEW_W / 2 + (focal * wx) / wz, horizonY + (focal * (camH - wy)) / wz, focal / wz];
     // After the contest (the talk by the river) there are no streams.
-    (context.aftermath ? [] : people).forEach((p) => {
+    (context.aftermath || rhythm?.ending ? [] : people).forEach((p) => {
       const range = 1.5 + clamp(p.reach, 0, 1) * 6;
       const baseX = ((p.x - VIEW_W / 2) * camZ) / focal;
       const wobble = p.wiggle ? Math.sin(motionTime * 26) * 0.1 : 0;
@@ -23178,6 +23445,7 @@ for (const level of this.config.secretLevels || []) {
     this.floaters.forEach((floater) => drawFloater(this.ctx, floater));
     this.renderCinematicScene(this.ctx, VIEW_W, VIEW_H, "massage");
     if (!frozen) {
+      if (!this.isTallScreenView()) this.renderWalkRouteArrow(this.ctx);
       const canExitRight = this.canExitLevel3ToLevel4();
       const nearBoss = this.isLevel3NearBoss();
       const hasWaitingBoss = this.state === "level3" && this.level3Boss && !this.level3Boss.active;
@@ -23186,13 +23454,15 @@ for (const level of this.config.secretLevels || []) {
         : this.state === "level3ExitRight"
           ? "前往孩子的房間..."
         : canExitRight
-          ? (side.exitRight?.prompt || "往右離開")
+          ? this.tr("Exit right to the bedroom", side.exitRight?.prompt || "往右離開")
         : hasWaitingBoss
-          ? (nearBoss ? "O 與祖賢對話" : "靠近祖賢")
+          ? (nearBoss ? this.tr("O: Talk to Zuxian", "O 與祖賢對話") : this.tr("Approach Zuxian", "靠近祖賢"))
           : this.state === "level3Boss"
         ? "祖賢 BOSS PLACEHOLDER"
         : this.getExplorationControlHint(true);
-      drawObjectivePrompt(this.ctx, prompt, canExitRight || nearBoss || this.state === "level3Boss" ? "#ffd36c" : "#8fe8ff", this.time, VIEW_H - 132);
+      const instruction = this.state === "level3" && !this.usesTouchControls()
+        ? prompt + "  ·  " + this.tr("WASD to move Dr. Beauty", "WASD 移動美麗本人") : prompt;
+      drawObjectivePrompt(this.ctx, instruction, canExitRight || nearBoss || this.state === "level3Boss" ? "#ffd36c" : "#8fe8ff", this.time, VIEW_H - 132);
       this.renderPocketInterface();
       this.renderHotbarInterface();
       this.renderDraggedItem();
@@ -23405,6 +23675,7 @@ for (const level of this.config.secretLevels || []) {
     this.floaters.forEach((floater) => drawFloater(this.ctx, floater));
     this.renderCinematicScene(this.ctx, VIEW_W, VIEW_H, "bedroom");
     if (!frozen) {
+      if (!this.isTallScreenView()) this.renderWalkRouteArrow(this.ctx);
       const lower = this.level4Rail === "lower";
       const nearLadder = this.isLevel4NearLadder();
       const nearLeftDoor = this.isLevel4NearLeftDoor();
@@ -24703,7 +24974,7 @@ let tutorialDeckButtons = null;
 // configuration always come from this site.
 const MIRROR_BASE = ['myscheduleltd.com', 'www.myscheduleltd.com'].includes(location.hostname)
   ? 'https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@4a1cae2472c9fbece153cc1dbd0f0c1593dd9997/docs/moth/' : '';
-const MIRROR_PINNED = new Map([["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/drb-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/gg-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/spa-tickle.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_idle/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sfx/menu/menu-tick.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/sfx/menu/menu-click.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/ui/mobile_moth_buttons_20261017/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/sprites/level4_meme_chest/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/audio/easter-eggs/dr-beauty-private-message.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f51cccdc2d116bd5749ce9a2b4a655d23583f664/docs/moth/"],["assets/audio/fight-cuts/level6-river-verse1-chorus2.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d847823e571f216d483c9ba024facc9e22ca61c7/docs/moth/"]]);
+const MIRROR_PINNED = new Map([["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/drb-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/gg-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/spa-tickle.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_idle/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sfx/menu/menu-tick.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/sfx/menu/menu-click.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/ui/mobile_moth_buttons_20261017/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/sprites/level4_meme_chest/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/audio/easter-eggs/dr-beauty-private-message.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f51cccdc2d116bd5749ce9a2b4a655d23583f664/docs/moth/"],["assets/audio/fight-cuts/level6-river-verse1-chorus2.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d847823e571f216d483c9ba024facc9e22ca61c7/docs/moth/"],["assets/video/level4-bad-daddy.mp4","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/sprites/river-goddess.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/easy-mixes/arcade-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/arcade.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/bathroom-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/bathroom.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/concert.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/massage-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/massage.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/office-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/office.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/river-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/river.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/secretLaugh.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/secretSquat.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/studio-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/studio.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/fight-cuts/level1-office-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level2-bathroom-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level3-massage-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level4-arcade-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level5-studio-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"]]);
 const MIRROR_ROOT = '/moth/';
 let assetIntegrity = null;
 
@@ -26122,7 +26393,7 @@ function homeGeometry() {
 // the dark green board, cream paper on the picked option with its red bar.
 function drawStageDifficultyCard(target, W, H, pick, time = 0) {
   const w = Math.min(W - 60, 720);
-  const h = 400;
+  const h = pick.hasLeaderboard ? 502 : 400;
   const card = { x: (W - w) / 2, y: (H - h) / 2, w, h };
   target.save();
   target.fillStyle = "rgba(2, 6, 4, 0.72)";
@@ -26148,6 +26419,7 @@ function drawStageDifficultyCard(target, W, H, pick, time = 0) {
     { choice: 0, label: uiText(RHYTHM_DIFFICULTIES.chill.en, RHYTHM_DIFFICULTIES.chill.zh), meta: uiText("EASY · FEWER NOTES", "簡單 · 音符較少") },
     { choice: 1, label: uiText(RHYTHM_DIFFICULTIES.shoot.en, RHYTHM_DIFFICULTIES.shoot.zh), meta: uiText("HARD · MORE NOTES", "困難 · 音符較多") }
   ];
+  if (pick.hasLeaderboard) options.push({ choice: 2, label: uiText("LEADERBOARD", "排行榜"), meta: uiText("TOP 5 · EASY & HARD", "前五名 · 簡單與困難") });
   pick.card = card;
   pick.rects = options.map((option, index) => {
     const rect = { x: card.x + 40, y: card.y + 120 + index * 104, w: card.w - 80, h: 84, choice: option.choice };
@@ -26171,7 +26443,7 @@ function drawStageDifficultyCard(target, W, H, pick, time = 0) {
   });
   target.textAlign = "center";
   target.fillStyle = "#b6d9c2";
-  drawFittedText(target, uiText("▲▼ CHOOSE   O START   H BACK", "▲▼ 選擇   O 開始   H 返回"), card.x + card.w / 2, card.y + card.h - 44, card.w - 80, 16, 900);
+  drawFittedText(target, pick.hasLeaderboard ? uiText("▲▼ MOVE   O SELECT   H BACK", "▲▼ 移動   O 選擇   H 返回") : uiText("▲▼ CHOOSE   O START   H BACK", "▲▼ 選擇   O 開始   H 返回"), card.x + card.w / 2, card.y + card.h - 44, card.w - 80, 16, 900);
   target.restore();
 }
 
@@ -28567,6 +28839,125 @@ mothGame = game;
 // Same string the GAME CREDITS page prints, for the verification suites.
 window.bobbyBuildId = BUILD_ID;
 game.init();
+
+function prependAudioSilence(data, seconds = .35) {
+  const bytes = new Uint8Array(data);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const containers = new Set(['moov', 'trak', 'edts', 'mdia', 'minf', 'stbl']);
+  const boxes = [];
+  const read = (from, end) => {
+    for (let at = from; at < end;) {
+      const size = view.getUint32(at) || end - at;
+      const type = String.fromCharCode(...bytes.subarray(at + 4, at + 8));
+      if (size < 8 || at + size > end) throw new Error("Invalid audio container");
+      const box = { at, size, type };
+      boxes.push(box);
+      if (containers.has(type)) read(at + 8, at + size);
+      at += size;
+    }
+  };
+  read(0, bytes.length);
+  const find = type => {
+    const matching = boxes.filter(box => box.type === type);
+    if (matching.length !== 1) throw new Error("Unsupported audio track layout");
+    return matching[0];
+  };
+  const movie = find('mvhd'), header = find('tkhd'), media = find('mdhd');
+  const edit = find('elst'), chunks = find('stco'), samples = find('stsz');
+  const timing = find('stts'), chunkSamples = find('stsc'), movieBox = find('moov'), payload = find('mdat');
+  const sampleRate = view.getUint32(media.at + 20);
+  if ([movie, header, media, edit].some(box => view.getUint8(box.at + 8) !== 0)
+    || ![44100, 96000].includes(sampleRate) || view.getUint32(samples.at + 12) !== 0
+    || movieBox.at > payload.at) throw new Error("Unsupported fight audio format");
+  // A stereo AAC-LC silent frame, verified at both source sample rates. Actual
+  // packets keeps one continuous media timeline through the silent lead.
+  const silent = new Uint8Array([33, 16, 4, 96, 140, 28]);
+  const frames = Math.ceil(seconds * sampleRate / 1024);
+  const lead = frames * 1024 / sampleRate;
+  const units = Math.round(lead * view.getUint32(movie.at + 20));
+  const replacements = new Map();
+  const clone = box => {
+    const result = bytes.slice(box.at, box.at + box.size);
+    replacements.set(box.at, result);
+    return new DataView(result.buffer);
+  };
+  for (const [box, duration, extra] of [[movie, 24, units], [header, 28, units], [media, 24, frames * 1024]]) {
+    clone(box).setUint32(duration, view.getUint32(box.at + duration) + extra);
+  }
+  clone(edit).setUint32(16, view.getUint32(edit.at + 16) + units);
+  clone(timing).setUint32(16, view.getUint32(timing.at + 16) + frames);
+  const originalCount = view.getUint32(samples.at + 16);
+  const sizes = new Uint8Array(samples.size + frames * 4);
+  sizes.set(bytes.subarray(samples.at, samples.at + 20));
+  sizes.set(bytes.subarray(samples.at + 20, samples.at + samples.size), 20 + frames * 4);
+  const sizeView = new DataView(sizes.buffer);
+  sizeView.setUint32(0, sizes.length);
+  sizeView.setUint32(16, originalCount + frames);
+  for (let index = 0; index < frames; index++) sizeView.setUint32(20 + index * 4, silent.length);
+  replacements.set(samples.at, sizes);
+
+  const chunkCount = view.getUint32(chunks.at + 12);
+  const rules = [];
+  const ruleCount = view.getUint32(chunkSamples.at + 12);
+  for (let index = 0; index < ruleCount; index++) {
+    const at = chunkSamples.at + 16 + index * 12;
+    rules.push([view.getUint32(at), view.getUint32(at + 4), view.getUint32(at + 8)]);
+  }
+  const revised = [];
+  let rule = 0;
+  for (let chunk = 1; chunk <= chunkCount; chunk++) {
+    if (rules[rule + 1]?.[0] === chunk) rule++;
+    const count = rules[rule][1] + (chunk === 1 ? frames : 0);
+    const description = rules[rule][2];
+    if (revised.at(-1)?.[1] !== count || revised.at(-1)?.[2] !== description) revised.push([chunk, count, description]);
+  }
+  const mapping = new Uint8Array(16 + revised.length * 12);
+  mapping.set(bytes.subarray(chunkSamples.at, chunkSamples.at + 16));
+  const mappingView = new DataView(mapping.buffer);
+  mappingView.setUint32(0, mapping.length);
+  mappingView.setUint32(12, revised.length);
+  revised.forEach((entry, index) => entry.forEach((value, column) => mappingView.setUint32(16 + index * 12 + column * 4, value)));
+  replacements.set(chunkSamples.at, mapping);
+  const groups = boxes.find(box => box.type === 'sbgp');
+  if (groups && view.getUint8(groups.at + 8) === 0) clone(groups).setUint32(20, view.getUint32(groups.at + 20) + frames);
+
+  const join = parts => {
+    const result = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));
+    let at = 0;
+    for (const part of parts) { result.set(part, at); at += part.length; }
+    return result;
+  };
+  const rebuild = box => {
+    if (replacements.has(box.at)) return replacements.get(box.at);
+    if (!containers.has(box.type)) return bytes.subarray(box.at, box.at + box.size);
+    const children = [];
+    for (let at = box.at + 8; at < box.at + box.size;) {
+      const child = boxes.find(candidate => candidate.at === at);
+      children.push(rebuild(child));
+      at += child.size;
+    }
+    const result = join([bytes.subarray(box.at, box.at + 8), ...children]);
+    new DataView(result.buffer).setUint32(0, result.length);
+    return result;
+  };
+  const headerGrowth = rebuild(movieBox).length - movieBox.size;
+  const offsets = clone(chunks);
+  for (let index = 0; index < chunkCount; index++) {
+    const at = 16 + index * 4, offset = view.getUint32(chunks.at + at);
+    offsets.setUint32(at, offset + headerGrowth + (index > 0 ? frames * silent.length : 0));
+  }
+  const prefix = join(Array.from({ length: frames }, () => silent));
+  const mediaBytes = join([bytes.subarray(payload.at, payload.at + 8), prefix, bytes.subarray(payload.at + 8, payload.at + payload.size)]);
+  new DataView(mediaBytes.buffer).setUint32(0, mediaBytes.length);
+  replacements.set(payload.at, mediaBytes);
+  const top = [];
+  for (let at = 0; at < bytes.length;) {
+    const box = boxes.find(candidate => candidate.at === at);
+    top.push(rebuild(box));
+    at += box.size;
+  }
+  return { data: join(top), lead, sampleRate };
+}
 
 // Deck artwork from styles.css (rewriteCssArtwork in moth-runtime-patches.mjs).
 for (const [index, src] of ["assets/sprites/ui/film-grain.png","assets/ui/mobile_dpad_20260901/processed/sheet-transparent.webp?v=retro-arrows-20260901a","assets/sprites/mobile_round_button_kit/ui/round-dark.webp?v=roundpad-20260703","assets/sprites/mobile_round_button_kit/ui/round-dark-pressed.webp?v=roundpad-20260703","assets/ui/mobile_flat_buttons_20260902/processed/pills-transparent.webp?v=flat-buttons-20260902a","assets/ui/mobile_start_cap_20260908/processed/start-transparent.webp?v=start-cap-20260908a","assets/ui/mobile_moth_buttons_20261017/sheet.webp?v=snes-20261018a"].entries()) {

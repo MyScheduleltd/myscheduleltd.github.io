@@ -22,15 +22,64 @@ export function patchFightResume(once) {
   once('event.preventDefault(); event.stopPropagation(); this.recoverGameAudio();', 'event.preventDefault(); event.stopPropagation(); if (!this.countDownFightAfterTap()) this.recoverGameAudio();');
   once('    window.addEventListener("pageshow", () => this.resumeAudioAfterReturn());', '    window.addEventListener("pageshow", () => this.resumeAudioAfterReturn());\n    // Kept while hidden: a page that comes back to its fight was not reloaded.\n    // (One kept on the way to the main menu waits there for 繼續.)\n    document.addEventListener("visibilitychange", () => { if (document.hidden) this.keepFightForReload(); else if (this.level1OfficeRhythm) this.forgetKeptFight(); });\n    window.addEventListener("pagehide", () => this.keepFightForReload());\n    window.addEventListener("pageshow", event => { if (event.persisted && this.level1OfficeRhythm) this.forgetKeptFight(); });');
   // 暫停 → 繼續.
-  once('    const track = this.getActiveLevel1OfficeRhythmAudio();\n    if (track) track.pause();\n    this.releaseHeldInputs();', '    const track = this.getActiveLevel1OfficeRhythmAudio();\n    this.level1OfficePausedAt = track?.currentTime;\n    if (track) track.pause();\n    this.releaseHeldInputs();');
-  once('    this.state = "playing";\n    const resumeTrack = this.getActiveLevel1OfficeRhythmAudio();\n    if (resumeTrack && !this.level1OfficeRhythm?.skipAudio) {\n      const resumed = this.playMusicAudio(resumeTrack);\n      if (resumed?.catch) resumed.catch(() => {});\n    }', '    this.state = "playing";\n    const resumeTrack = this.getActiveLevel1OfficeRhythmAudio();\n    const pausedAt = Number.isFinite(this.level1OfficePausedAt) ? this.level1OfficePausedAt : resumeTrack?.currentTime;\n    // In the tap: keep (or regain) iPhone\'s permission to play after the count.\n    if (resumeTrack && !this.level1OfficeRhythm?.skipAudio) this.primeRhythmTrack(resumeTrack, pausedAt);\n    this.resumeFightAt(this.level1OfficeRhythm, pausedAt);');
+  once('      && !this.level1OfficeRhythm.ending\n      && this.level1OfficeRhythm.tutorial?.mode === "done";',
+    '      && !this.level1OfficeRhythm.ending && !this.level1OfficeRhythm.graphicsLoading && !this.level1OfficeRhythm.songHandover\n      && this.level1OfficeRhythm.tutorial?.mode === "done";');
+  once('    this.state = "level1OfficePaused";\n    this.stopRhythmFeedback();\n    // Hold the chart exactly where it stands; songTime is driven off the audio\n    // element, so pausing the track is what actually freezes the fight.\n    const track = this.getActiveLevel1OfficeRhythmAudio();\n    if (track) track.pause();',
+    `    const rhythm = this.level1OfficeRhythm;
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    // Freeze at the same audible time the rail just used, including calibration.
+    this.songTime = this.getLevel1OfficeRenderTime();
+    this.level1OfficePausedAt = rhythm.resumeTrackTime ?? track?.currentTime;
+    this.state = "level1OfficePaused";
+    rhythm.audioStartAttempt = null;
+    rhythm.audioStarting = false;
+    this.stopRhythmFeedback();
+    track?.pause();`);
+  once('    this.state = "playing";\n    const resumeTrack = this.getActiveLevel1OfficeRhythmAudio();\n    if (resumeTrack && !this.level1OfficeRhythm?.skipAudio) {\n      const resumed = this.playMusicAudio(resumeTrack);\n      if (resumed?.catch) resumed.catch(() => {});\n    }',
+    `    this.state = "playing";
+    const resumeTrack = this.getActiveLevel1OfficeRhythmAudio();
+    const pausedAt = Number.isFinite(this.level1OfficePausedAt) ? this.level1OfficePausedAt : resumeTrack?.currentTime;
+    // In the tap: keep (or regain) iPhone's permission to play after the count.
+    if (resumeTrack && !this.level1OfficeRhythm?.skipAudio) this.primeRhythmTrack(resumeTrack, pausedAt);
+    // A pause can interrupt the original count as well as a resume count.
+    // Keep its action so the first song start still initializes the round.
+    if (this.isRhythmCountIn()) this.armStageCountdown(this.stageCountdownAction);
+    else this.resumeFightAt(this.level1OfficeRhythm, pausedAt);`);
+  once('    if (this.audioInterruption || this.audioRecoveryVisible()) return this.songTime;',
+    '    if (this.state === "level1OfficePaused" || this.isRhythmCountIn()\n      || this.audioInterruption || this.audioRecoveryVisible()) return this.songTime;');
+  once('  updateStageCountdown(dt) {\n    if (!(this.stageCountdown > 0)) return false;',
+    `  updateStageCountdown(dt) {
+    if (this.state === "level1OfficePaused" || !(this.stageCountdown > 0)) return false;
+    if (this.level1OfficeRhythm?.audioPriming) return true;`);
+  once('    if (action) action();\n    return false;\n  }\n\n  applyConfigDefaults()',
+    '    if (action) action();\n    return true;\n  }\n\n  applyConfigDefaults()');
+  once('    if (rhythm.songHandover) return;',
+    '    if (rhythm.songHandover || this.isRhythmCountIn() || this.state !== "playing") return;');
+  once('  renderStageCountdown() {\n    if (!(this.stageCountdown > 0)) return;',
+    '  renderStageCountdown() {\n    if (this.walkPause || this.state === "level1OfficePaused" || !(this.stageCountdown > 0)) return;');
+  once('    if (rhythm && track && (rhythm.graphicsLoading || this.stageCountdown > 0) && !rhythm.ending) {',
+    '    if (this.state !== "level1OfficePaused" && rhythm && track && (rhythm.graphicsLoading || this.stageCountdown > 0) && !rhythm.ending) {');
+  once('    if (this.audioInterruption || this.audioRecoveryVisible()) return false;',
+    '    if (this.state !== "playing" || this.isRhythmCountIn() || this.audioInterruption || this.audioRecoveryVisible()) return false;');
+  once('&& !rhythm.ending && !rhythm.songHandover && !(this.stageCountdown > 0) && track?.paused)',
+    '&& !rhythm.ending && !rhythm.songHandover && !this.isRhythmCountIn() && track?.paused)');
+  once('    const track = saved?.tracks[0]?.track || (this.state === "playing" && rhythm?.tutorial?.mode === "done"\n      && !(this.stageCountdown > 0) && !rhythm.skipAudio && !rhythm.songHandover',
+    '    const savedTrack = saved?.tracks[0]?.track;\n    const rhythmCountingIn = this.isRhythmCountIn();\n    const track = (rhythmCountingIn && savedTrack === this.getActiveLevel1OfficeRhythmAudio() ? null : savedTrack)\n      || (this.state === "playing" && rhythm?.tutorial?.mode === "done"\n      && !rhythmCountingIn && !rhythm.skipAudio && !rhythm.songHandover');
+  for (const condition of ['this.level1OfficeRhythm === rhythm && this.state === "playing"', 'this.level1OfficeRhythm === rhythm']) {
+    once(`if (${condition}) this.showAudioRecovery("start");`,
+      'if (this.level1OfficeRhythm === rhythm && this.state === "playing" && !(this.stageCountdown > 0)) this.showAudioRecovery("start");');
+  }
   // The main menu's 繼續 restores a kept fight first (after patchScoreboard's continueStory).
   once('    if (this.progress?.storyRun) this.registerStoryRun(this.progress.storyRun);\n', '    if (this.progress?.storyRun) this.registerStoryRun(this.progress.storyRun);\n    if (this.resumeKeptFight()) return true;\n');
-  // A press during a count still sounds, but judges nothing.
+  // Every rhythm input stays held while the countdown is visible.
   once('    if (!this.playRhythmHitSfx(action, false, button)) this.playLevel1OfficeTone("hit", action, "stamp");\n', '    if (!this.playRhythmHitSfx(action, false, button)) this.playLevel1OfficeTone("hit", action, "stamp");\n    if (this.stageCountdown > 0) return true;\n');
 }
 
 export const FIGHT_RESUME_METHODS = String.raw`
+  isRhythmCountIn() {
+    return this.stageCountdown > 0;
+  }
+
   // ---- Fights pick up where they stopped (scripts/moth-fight-resume.mjs) ----
   // Frozen at the song's place under 3 · 2 · 1 · 開始！, then on from there.
   resumeFightAt(rhythm, trackTime) {
@@ -38,21 +87,27 @@ export const FIGHT_RESUME_METHODS = String.raw`
     const track = this.getActiveLevel1OfficeRhythmAudio();
     if (track && Number.isFinite(trackTime)) { track.pause(); track.currentTime = trackTime; }
     rhythm.resumeTrackTime = trackTime;
-    this.releaseHeldInputs();
     this.armStageCountdown(() => {
       // 暫停 during the count holds it; that 繼續 counts in again.
       if (this.level1OfficeRhythm !== rhythm || this.state !== "playing" || rhythm.ending) return;
       this.playResumedFight(rhythm, trackTime);
     });
+    this.releaseHeldInputs();
   }
 
   playResumedFight(rhythm, trackTime) {
     const track = this.getActiveLevel1OfficeRhythmAudio();
-    rhythm.resumeTrackTime = null;
-    if (!track || rhythm.skipAudio) return;
+    if (!track || rhythm.skipAudio) {
+      rhythm.resumeTrackTime = null;
+      return;
+    }
+    const attempt = {};
+    rhythm.audioStartAttempt = attempt;
     rhythm.audioStarting = true;
+    const isCurrent = () => this.level1OfficeRhythm === rhythm && rhythm.audioStartAttempt === attempt
+      && this.state === "playing" && !this.isRhythmCountIn() && !rhythm.ending && !document.hidden && !this.audioInterruption;
     const refused = () => {
-      if (this.level1OfficeRhythm !== rhythm) return;
+      if (!isCurrent()) return;
       track.pause();
       // iPhone wants a tap: the resume card's tap grants it and counts in again.
       this.audioInterruption = { fromHidden: true, rhythm, songTime: this.songTime, tracks: [{ track, time: trackTime, volume: BGM_VOLUME }] };
@@ -60,7 +115,7 @@ export const FIGHT_RESUME_METHODS = String.raw`
     };
     // A priming play still under way would pause this one when it lands.
     (this.rhythmTrackPriming?.get(track) || Promise.resolve()).then(() => {
-      if (this.level1OfficeRhythm !== rhythm || this.state !== "playing") return;
+      if (!isCurrent()) return;
       this.useSongCopy(track);
       if (Number.isFinite(trackTime)) track.currentTime = trackTime;
       track.volume = BGM_VOLUME;
@@ -68,10 +123,16 @@ export const FIGHT_RESUME_METHODS = String.raw`
       return Promise.race([Promise.all([this.soloPlay(track), this.musicAudioContext?.resume()]), new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error("Resume timed out")), 2000);
       })]).then(() => {
+        if (!isCurrent()) return;
         const route = this.musicAudioRoutes?.get(track);
         if (route && route.context.state !== "running") refused();
       }, refused).finally(() => clearTimeout(timer));
-    }).finally(() => { rhythm.audioStarting = false; });
+    }).finally(() => {
+      if (rhythm.audioStartAttempt === attempt) {
+        rhythm.resumeTrackTime = null;
+        rhythm.audioStarting = false;
+      }
+    });
   }
 
   // Back from the lock screen or another app (resumeAudioAfterReturn).
@@ -81,15 +142,14 @@ export const FIGHT_RESUME_METHODS = String.raw`
     if (!saved?.fromHidden || !rhythm || saved.rhythm !== rhythm || this.state !== "playing" || rhythm.ending
       || rhythm.songHandover || rhythm.tutorial?.mode !== "done") return false;
     // The count-in before the song (or a resume's own count) simply runs again.
-    const pending = this.stageCountdown > 0 ? this.stageCountdownAction : null;
     this.audioInterruption = null;
     // The song is tested when the count ends; a tap meanwhile must not swap
     // the engine (refreshStaleAudioEngine) for one that was never granted.
     this.audioEngineStale = null;
     this.lastMusicAt = performance.now();
     this.songTime = saved.songTime;
-    if (pending) {
-      this.armStageCountdown(pending);
+    if (this.isRhythmCountIn()) {
+      this.armStageCountdown(this.stageCountdownAction);
       return true;
     }
     const track = this.getActiveLevel1OfficeRhythmAudio();
@@ -130,7 +190,8 @@ export const FIGHT_RESUME_METHODS = String.raw`
       this.audioRecoveryFailed = false;
       this.lastMusicAt = performance.now();
       this.songTime = saved.songTime;
-      this.resumeFightAt(rhythm, trackTime);
+      if (this.isRhythmCountIn()) this.armStageCountdown(this.stageCountdownAction);
+      else this.resumeFightAt(rhythm, trackTime);
     });
     return true;
   }
@@ -153,7 +214,8 @@ export const FIGHT_RESUME_METHODS = String.raw`
     for (const key of Object.keys(state)) if (/Telemetry$|Rects$/.test(key)) delete state[key];
     const kept = { v: 1, at: Date.now(), stageId: this.currentStageId, theme: rhythm.theme,
       checkpoint: this.progress?.storyCheckpoint || null, run: this.progress?.storyRun?.id || null,
-      difficulty: this.difficultyId, songTime, trackTime, state: plain(state), notes: plain(notes) };
+      difficulty: this.difficultyId, songTime, trackTime, trackLead: track?.mothFightLead || 0,
+      state: plain(state), notes: plain(notes) };
     try { window.localStorage?.setItem(FIGHT_RESUME_KEY, JSON.stringify(kept)); } catch {}
   }
 
@@ -197,7 +259,7 @@ export const FIGHT_RESUME_METHODS = String.raw`
     if (!rhythm || rhythm.theme !== kept.theme || this.state !== "playing") return;
     // The fight's own numbers and every note's result; not its loading,
     // audio or effect bookkeeping, which belong to this page.
-    const skip = /^(notes|theme|tutorial|skipAudio|ending|result|review.*|graphics.*|audio.*|songHandover|outputDelay|frozenSongTime|resumeTrackTime|celebration.*|countdownDuringGraphicsPreparation|countedInEarly|hitBurstRequest|arcadeEvent|impactKick|bathroomStrike|stampFx)$/;
+    const skip = /^(notes|theme|tutorial|skipAudio|ending|result|review.*|graphics.*|audio.*|songHandover|outputDelay|frozenSongTime|resumeTrackTime|openingRailLead|celebration.*|countdownDuringGraphicsPreparation|countedInEarly|hitBurstRequest|arcadeEvent|impactKick|bathroomStrike|stampFx)$/;
     const same = (a, b) => a !== null && b !== null && typeof a === typeof b && Array.isArray(a) === Array.isArray(b);
     for (const [key, value] of Object.entries(kept.state || {})) {
       if (skip.test(key) || !(key in rhythm) || !same(rhythm[key], value)) continue;
@@ -209,6 +271,7 @@ export const FIGHT_RESUME_METHODS = String.raw`
       for (const [key, value] of Object.entries(saved)) if (value === null || typeof value !== "object") note[key] = value;
     });
     this.songTime = kept.songTime;
-    this.resumeFightAt(rhythm, kept.trackTime);
+    const lead = this.getActiveLevel1OfficeRhythmAudio()?.mothFightLead || 0;
+    this.resumeFightAt(rhythm, kept.trackTime - (kept.trackLead || 0) + lead);
   }
 `;

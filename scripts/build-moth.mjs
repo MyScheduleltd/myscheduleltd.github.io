@@ -75,12 +75,14 @@ for (const file of snapshot.files) {
     // 30-second margin below the remaining music, including the shorter river.
     const remainingSeconds = Object.values(storyCharts).slice(1).reduce((sum, spec) => sum + spec.duration, 0);
     const limits = { version: config.rhythmChartVersion, minRunSeconds: Math.floor((remainingSeconds - 30) / 30) * 30 };
+    const maxScore = rows => 1000 * (rows.length + rows.filter(row => row[2] > 0).length);
     for (const [mode, difficulty] of [['chill', 'easy'], ['shoot', 'hard']]) {
-      limits[mode] = Object.fromEntries(Object.entries(storyCharts).map(([id, spec]) => {
-        const rows = spec.chart[difficulty];
-        return [id, 1000 * (rows.length + rows.filter(row => row[2] > 0).length)];
-      }));
+      limits[mode] = Object.fromEntries(Object.entries(storyCharts).map(([id, spec]) => [id, maxScore(spec.chart[difficulty])]));
     }
+    limits.stages = Object.fromEntries(Object.entries(config.stageSelectRhythms).map(([id, spec]) => [id, {
+      minRunSeconds: Math.max(1, Math.floor(spec.duration) - 2),
+      chill: maxScore(spec.chart.easy), shoot: maxScore(spec.chart.hard)
+    }]));
     await fs.writeFile(path.join(root, 'services/moth-scoreboard/chart-limits.json'), JSON.stringify(limits, null, 2) + '\n');
     continue;
   }
@@ -98,7 +100,7 @@ for (const [file, added] of Object.entries(ADDED_ASSETS)) {
 // The game takes images and sound effects from jsDelivr only when they hash
 // to these values (moth-runtime-patches.mjs, fetchGameAsset).
 assert(TRIMMED_FILES.size + Object.keys(KEY_FRINGE_MANIFEST).length > 0 && [...TRIMMED_FILES].every(file => !published.has(file)));
-const integrity = Object.fromEntries([...published].filter(([file]) => /\.(webp|png|jpe?g|wav|m4a|mp3|ogg)$/.test(file)));
+const integrity = Object.fromEntries([...published].filter(([file]) => /\.(webp|png|jpe?g|wav|m4a|mp3|ogg|mp4)$/.test(file)));
 await fs.writeFile(path.join(output, 'asset-integrity.json'), JSON.stringify(integrity) + '\n');
 const recoveryCss = `
 .load-recovery { background: #1216134d; }
@@ -163,7 +165,7 @@ await fs.writeFile(path.join(output, 'staff/game.js'), staffCode);
 const arcadeBridge = await fs.readFile(path.join(root, 'scripts/moth-arcade-embed.js'), 'utf8');
 await fs.writeFile(path.join(output, 'src/arcade-embed.js'), arcadeBridge);
 const arcadeSri = 'sha384-' + crypto.createHash('sha384').update(arcadeBridge).digest('base64');
-const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' " + [MOTH_MIRROR_COMMIT, ...new Set(MOTH_MIRROR_PINS.map(pin => pin.commit).filter(Boolean))].map(mirrorPath).join(" ") + " " + SCOREBOARD_API + "; font-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; worker-src 'none'";
+const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: " + [MOTH_MIRROR_COMMIT, ...new Set(MOTH_MIRROR_PINS.map(pin => pin.commit).filter(Boolean))].map(mirrorPath).join(" ") + " " + SCOREBOARD_API + "; font-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; worker-src 'none'";
 for (const audience of ['public', 'staff']) {
   const staff = audience === 'staff';
   const code = staff ? staffCode : publicCode;
@@ -173,8 +175,8 @@ for (const audience of ['public', 'staff']) {
   html = html.replace('<html lang="en">', '<html lang="zh-Hant-TW">');
   html = wrapScreenFrameHtml(html);
   html = html.replace('./manifest.json', staff ? '/moth/staff/manifest.json' : './manifest.json');
-  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-staff-20261115a' : 'moth-cabinet-20261115a'}" integrity="${sri}" crossorigin="anonymous"></script>`);
-  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261113b');
+  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-staff-20261118b' : 'moth-cabinet-20261118b'}" integrity="${sri}" crossorigin="anonymous"></script>`);
+  html = html.replace('mobile-deck-20261012a', 'moth-loading-20261116b');
   await fs.writeFile(path.join(output, staff ? 'staff/index.html' : 'index.html'), html);
   const manifest = JSON.parse(await fs.readFile(path.join(sourceRoot, 'manifest.json'), 'utf8'));
   manifest.start_url = staff ? '/moth/staff/' : '/moth/';

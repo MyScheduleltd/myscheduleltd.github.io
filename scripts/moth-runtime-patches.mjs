@@ -21,6 +21,9 @@ import { patchChartPlayability, RHYTHM_RAIL_METHODS } from './moth-chart-playabi
 import { patchCinematicLook, CINEMATIC_LOOK_METHODS } from './moth-cinematic-look.mjs';
 import { patchScreenFrame } from './moth-screen-frame.mjs';
 import { patchLevelAssetLoading } from './moth-level-assets.mjs';
+import { patchFunkRuntime } from './moth-funk-runtime.mjs';
+import { patchFightAudio } from './moth-fight-audio.mjs';
+import { patchSceneMedia } from './moth-scene-media.mjs';
 import { ADDITION_MIRROR_PINS } from './moth-asset-additions.mjs';
 
 // Keep the selected published game as the input. Both audiences get identical
@@ -367,13 +370,13 @@ export function patchMothRuntime(source, ts) {
           this.retryLevel1OfficeSong(rhythmAudio, audioStart);
           return;
         }
-        if (this.isFightSongStalled(rhythmAudio)) return;
         const route = this.musicAudioRoutes?.get(rhythmAudio);
         if (route && route.context.state !== "running") {
           this.suspendGameAudio();
           this.showAudioRecovery("resume");
           return;
         }
+        if (this.isFightSongStalled(rhythmAudio)) return;
         this.songTime = this.getLevel1OfficeRenderTime();
       }
     } else {
@@ -382,7 +385,7 @@ export function patchMothRuntime(source, ts) {
         : this.songTime + dt;
     }
     const duration = this.level1OfficeRhythm ?`);
-  once('      if (track && !track.paused) return Math.max(0,\n        track.currentTime - this.getRhythmAudioStart()', '      if (track && !rhythm.audioStarting && !rhythm.songHandover && !(this.stageCountdown > 0)\n        && (!track.paused || track.ended) && !this.isFightSongStalled(track)) return Math.max(0,\n        track.currentTime - this.getRhythmAudioStart()');
+  once('      if (track && !track.paused) return Math.max(0,\n        track.currentTime - this.getRhythmAudioStart()', '      if (track && !rhythm.audioStarting && !rhythm.songHandover\n        && (!track.paused || track.ended) && !this.isFightSongStalled(track)) return Math.max(0,\n        track.currentTime - this.getRhythmAudioStart()');
   once('    if (!track || track.paused) return current;\n    // Judge when', '    if (!track || track.paused || this.isFightSongStalled(track)) return current;\n    // Judge when');
   once('    if (rhythm) rhythm.audioStartAttempt = null;', '    if (rhythm) {\n      rhythm.audioStartAttempt = null;\n      rhythm.audioStarting = false;\n    }');
   once('      track.currentTime = Math.max(0, audioStart + this.songTime);', '      if (track.currentTime < this.getRhythmAudioStart() || (!track.currentTime && this.songTime > 0)) {\n        track.currentTime = Math.max(0, audioStart + this.getRhythmOutputDelay() + this.songTime);\n      }');
@@ -400,7 +403,7 @@ export function patchMothRuntime(source, ts) {
   once('  const livesLeft = options.livesLeft;\n', '');
   edit('  if (Number.isFinite(livesLeft)) {\n', '\n  }\n\n', () => '');
   once('    this.renderLivesIndicator();\n    this.renderStageCountdown();\n', '    this.renderLivesIndicator();\n    this.renderStageCountdown();\n    this.renderSongStall();\n');
-  once('this.playLevel1OfficeTone("hit", action, "stamp");\n    if (this.stageCountdown > 0) return true;\n', 'this.playLevel1OfficeTone("hit", action, "stamp");\n    if (this.stageCountdown > 0 || rhythm.audioStarting || rhythm.songHandover) return true;\n    if (tutorial.mode === "done" && !rhythm.skipAudio) {\n      const track = this.getActiveLevel1OfficeRhythmAudio();\n      if (!track || track.paused || track.ended || this.isFightSongStalled(track)) return true;\n    }\n');
+  once('    // Sound belongs to the press, including harmless taps between notes.\n    if (!this.playRhythmHitSfx(action, false, button)) this.playLevel1OfficeTone("hit", action, "stamp");\n    if (this.stageCountdown > 0) return true;\n', '    if (this.isRhythmCountIn()) return true;\n    // Sound belongs to the press, including harmless taps between notes.\n    if (!this.playRhythmHitSfx(action, false, button)) this.playLevel1OfficeTone("hit", action, "stamp");\n    if (rhythm.audioStarting || rhythm.songHandover) return true;\n    if (tutorial.mode === "done" && !rhythm.skipAudio) {\n      const track = this.getActiveLevel1OfficeRhythmAudio();\n      if (!track || track.paused || track.ended || this.isFightSongStalled(track)) return true;\n    }\n');
   // Level 7's hype bar fills with every hit (owner, 2026-10-13): perfect 1,
   // good 0.6, a completed hold three times, as before, over the target share
   // (moth-chart-patches.mjs) of the whole song's total. It starts empty, is
@@ -499,6 +502,10 @@ function makeLayer(width, height, painter) {`);
   assert(imageStart > 0 && imageEnd > imageStart);
   source = source.slice(0,imageStart) + IMAGE_LOADER + source.slice(imageEnd);
   patchLevelAssetLoading(once, edit);
+  patchFunkRuntime(once, edit);
+  const fightAudioHelper = patchFightAudio(once);
+  source += fightAudioHelper;
+  patchSceneMedia(once, edit);
   return source;
 }
 

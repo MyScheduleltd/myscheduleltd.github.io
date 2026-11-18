@@ -177,7 +177,7 @@ test('scoreboard', async t => {
     }
   });
   await t.test('runs on previous named charts can still finish on their own boards', async () => {
-    for (const [index, chartVersion] of ['drums-readable-20261105b', 'drums-groove-20261114a'].entries()) {
+    for (const [index, chartVersion] of ['drums-readable-20261105b', 'drums-groove-20261114a', 'drums-groove-20261114b'].entries()) {
       if (CHART_VERSION === chartVersion) continue;
       const prefix = 'moth:chart:' + chartVersion;
       const body = {mode: 'chill', chartVersion};
@@ -199,6 +199,61 @@ test('scoreboard', async t => {
       assert.deepEqual(previous.json.entries.map(entry => entry.id), [id]);
       assert(!current.json.entries.some(entry => entry.id === id));
     }
+  });
+  await t.test('Stage Select keeps a top five for each level and difficulty', async () => {
+    const stages = [...Object.keys(handler.MAX_FIGHT_SCORE.chill), 'secret-xiaosi', 'secret-getdown'];
+    assert.deepEqual(Object.keys(handler.STAGE_LIMITS).sort(), stages.sort());
+    const board = (stage, mode, chartVersion = CHART_VERSION) => call(env, {
+      path: '/api/moth-scoreboard?' + new URLSearchParams({stage, mode, chartVersion})
+    });
+    const post = (body, ip = '20.0.0.' + (++n % 250)) => call(env, {method: 'POST', ip, body: {chartVersion: CHART_VERSION, ...body}});
+    const start = async (stage, mode, play = true) => {
+      const r = await post({action: 'start', mode, stage});
+      assert.equal(r.status, 201);
+      assert.equal(r.json.stage, stage);
+      const key = 'moth:chart:' + CHART_VERSION + ':ticket:' + r.json.run;
+      const issued = JSON.parse(data.get(key));
+      assert.equal(issued.stage, stage);
+      assert.equal(issued.mode, mode);
+      if (play) data.set(key, JSON.stringify({...issued, at: Date.now() - (handler.STAGE_LIMITS[stage].minRunSeconds + 1) * 1000}));
+      return r.json.run;
+    };
+    for (const stage of stages) for (const mode of ['chill', 'shoot']) {
+      assert.deepEqual((await board(stage, mode)).json, {mode, chartVersion: CHART_VERSION, stage, entries: []});
+    }
+    const before = [...data.keys()].sort();
+    for (const stage of ['finale-stage1', '__proto__', '', ['secret-getdown']]) {
+      assert.equal((await post({action: 'start', mode: 'chill', stage})).json.error, 'stage');
+    }
+    assert.deepEqual([...data.keys()].sort(), before, 'Invalid stages leave storage untouched');
+    assert.equal((await board('secret-getdown', 'chill', 'drums-readable-20261105b')).json.error, 'stage');
+
+    const stage = 'secret-getdown', other = 'secret-xiaosi', mode = 'chill';
+    const storyBefore = (await call(env, {path: '/api/moth-scoreboard?mode=chill&chartVersion=' + CHART_VERSION})).json.entries;
+    const valid = {stage, mode, id: 'GROOVE', score: 2000};
+    assert.equal((await post({...valid, run: await start(stage, mode, false)})).json.error, 'too-fast');
+    assert.equal((await post({...valid, run: await start(other, mode)})).json.error, 'run');
+    assert.equal((await post({...valid, run: await start(stage, 'shoot')})).json.error, 'run');
+    const validTicket = await start(stage, mode);
+    const storyTicket = await post({action: 'start', mode});
+    assert.equal((await post({...valid, run: storyTicket.json.run})).json.error, 'run');
+    assert.equal((await post({mode, id: valid.id, run: validTicket, scores: handler.MAX_FIGHT_SCORE.chill})).json.error, 'run');
+    for (const score of [199, -200, '2000', handler.STAGE_LIMITS[stage][mode] + 200]) {
+      assert.equal((await post({...valid, run: validTicket, score})).json.error, 'scores');
+    }
+    for (let i = 0; i < 6; i++) {
+      const r = await post({stage, mode, id: 'RANK' + i, run: await start(stage, mode), score: 2000 + i * 200});
+      assert.equal(r.status, 201);
+      assert.equal(r.json.rank, 1);
+    }
+    const r = await board(stage, mode);
+    assert.deepEqual(r.json.entries.map(entry => [entry.rank, entry.id]), [[1,'RANK5'],[2,'RANK4'],[3,'RANK3'],[4,'RANK2'],[5,'RANK1']]);
+    assert.equal((await post({...valid, run: validTicket})).json.error, 'not-top');
+    assert.equal((await post({...valid, run: validTicket, score: 3200})).status, 201);
+    assert.equal((await post({...valid, run: validTicket, score: 3400})).json.error, 'posted');
+    assert.deepEqual((await board(stage, 'shoot')).json.entries, []);
+    assert.deepEqual((await board(other, mode)).json.entries, []);
+    assert.deepEqual((await call(env, {path: '/api/moth-scoreboard?mode=chill&chartVersion=' + CHART_VERSION})).json.entries, storyBefore);
   });
   await t.test('shortened charts have their own duration bound; legacy retains twelve minutes', async () => {
     const minimum = handler.CURRENT_MIN_RUN_SECONDS;

@@ -8,19 +8,16 @@
 //
 // The phone (the tall view, renderTallScreen): the timing track runs the whole
 // width at the same size as before, its hit line and row of notes in the
-// middle of it, 1.9 s of notes either side. Dr. Beauty's box beside it is now
-// one row above it, drawn at the phone's own resolution: his misses, combo and
-// score, or level 7's hype bar in the misses' place, or in practice runs his
-// staff ID as a strip (the badge's ID photo, 練習 stamp, 正 miss tally and green
-// screen). GANGAN's feedback moves off the track to just above that row, as
-// wide as its line. Computers keep the box beside the track.
+// middle of it, 1.9 s of notes either side. Dr. Beauty's staff badge sits
+// beside the track on desktop and above it as a strip on phones. Both runs
+// show his portrait, mode stamp, miss tally and green screen. Level 7 adds
+// its crowd meter. The phone draws GANGAN's feedback above the badge.
 //
 // No hearts (owner, 2026-10-22): story fights can no longer be lost. Misses
 // cost nothing but the rank, as in practice; level 5's reach and level 7's
-// hype are shown but no longer fail a story fight. In the hearts' place,
-// Dr. Beauty's box and the phone's row show the misses, the practice badge's
-// 失誤 tally in his box's colours. (The heart back every 10 in a row went with
-// them.)
+// hype are shown but no longer fail a story fight. Dr. Beauty's badge shows
+// the 失誤 tally once he misses. (The heart back every 10 in a row went away
+// with the hearts.)
 
 export const MOTH_NOTE_COLOURS = { M: "#2457c5", O: "#e0463e", T: "#ecb300", H: "#2ea878" };
 
@@ -97,25 +94,25 @@ ${block.split('\n').slice(1, -1).map(line => '  ' + line).join('\n')}
       }
 `);
 
-  // Level 7's hype bar, also drawn into the phone's row with its label inside.
+  // Level 7's compact hype bar fits beneath the miss tally in either badge.
   once('  drawConcertCrowdMeter(target, bounds, rhythm, motionTime = 0) {\n    const hype = clamp(rhythm?.hype ?? 0.3, 0, 1);\n    const bar = { x: bounds.x + 22, y: bounds.y + 56, w: bounds.w - 44, h: 26 };',
-    '  drawConcertCrowdMeter(target, bounds, rhythm, motionTime = 0, row = null) {\n    const hype = clamp(rhythm?.hype ?? 0.3, 0, 1);\n    const bar = row || { x: bounds.x + 22, y: bounds.y + 56, w: bounds.w - 44, h: 26 };');
-  once('    drawFittedText(target, label, bar.x + bar.w / 2, bar.y + bar.h + 13, bounds.w - 16, 12, 900, 8);\n', `    if (row) {
-      target.font = "900 15px 'Courier New', 'PingFang TC', monospace";
-      target.lineJoin = "round";
-      target.lineWidth = 4;
-      target.strokeStyle = "#08090d";
-      target.strokeText(label, bar.x + bar.w / 2, bar.y + bar.h / 2 + 1, bar.w - 16);
-      target.fillText(label, bar.x + bar.w / 2, bar.y + bar.h / 2 + 1, bar.w - 16);
-    } else {
-      drawFittedText(target, label, bar.x + bar.w / 2, bar.y + bar.h + 13, bounds.w - 16, 12, 900, 8);
-    }
+    '  drawConcertCrowdMeter(target, bar, rhythm, motionTime) {\n    const hype = clamp(rhythm?.hype ?? 0.3, 0, 1);');
+  once('    drawFittedText(target, label, bar.x + bar.w / 2, bar.y + bar.h + 13, bounds.w - 16, 12, 900, 8);\n', `    target.font = \`900 \${bar.h - 3}px 'Courier New', 'PingFang TC', monospace\`;
+    target.lineJoin = "round";
+    target.lineWidth = 3;
+    target.strokeStyle = "#08090d";
+    target.strokeText(label, bar.x + bar.w / 2, bar.y + bar.h / 2 + 1, bar.w - 12);
+    target.fillText(label, bar.x + bar.w / 2, bar.y + bar.h / 2 + 1, bar.w - 12);
 `);
 
-  // No hearts: every run is healthless, and the practice look keys off
-  // practice itself.
+  // No hearts: every run is healthless and uses the same staff badge layout.
   once('  isHealthlessRun() {\n    return Boolean(this.freePlay);\n  }', '  // No fight is lost on hearts, in story mode either (owner, 2026-10-22).\n  isHealthlessRun() {\n    return true;\n  }');
-  once('    if (this.isHealthlessRun()) {\n      this.renderLevel1OfficePracticeBadge(target, lifeBounds, rhythm);', '    if (this.freePlay) {\n      this.renderLevel1OfficePracticeBadge(target, lifeBounds, rhythm);');
+  edit('    // The lower ribbon carries only the information needed to play: the hearts,\n', '    if (failedCard && rhythm) rhythm.failureOptionRects = this.getLevel1OfficeFailureOptionRects();', () => `    // Draw the matching staff badge beside the beat track.
+    target.fillStyle = "#08090d";
+    target.fillRect(0, ribbonTop, VIEW_W, VIEW_H - ribbonTop);
+    this.renderLevel1OfficeProfileBadge(target, lifeBounds, rhythm, motionTime);
+
+    if (failedCard && rhythm) rhythm.failureOptionRects = this.getLevel1OfficeFailureOptionRects();`);
   // Level 5's reach and level 7's hype no longer fail a story fight.
   once('      if (this.isConcertRhythm()) rhythm.reviewResult = rhythm.hype >= 1 - 1e-9 ? "PASSED" : "COLD";',
     '      if (this.isConcertRhythm()) rhythm.reviewResult = rhythm.hype >= 1 - 1e-9 || !this.freePlay ? "PASSED" : "COLD";');
@@ -127,26 +124,27 @@ ${block.split('\n').slice(1, -1).map(line => '  ' + line).join('\n')}
     '      ? (passed && rhythm.hype >= 1 - 1e-9 ? this.tr("THE CROWD WENT WILD", "全場嗨翻") : this.tr("THE CROWD WENT COLD", "全場冷掉了"))');
   once('      ? (passed ? this.tr("FURTHEST STREAM", "尿得最遠") : outReached ? this.tr("GAN GAN WINS", "GAN GAN 尿得比較遠") : this.tr("RAN DRY", "尿不出來了"))',
     '      ? (passed && !ganganAhead ? this.tr("FURTHEST STREAM", "尿得最遠") : outReached || ganganAhead ? this.tr("GAN GAN WINS", "GAN GAN 尿得比較遠") : this.tr("RAN DRY", "尿不出來了"))');
-  // His box: the misses in the hearts' row.
-  edit('      target.font = "900 30px \'Courier New\', monospace";\n      for (let heartIndex = 0; heartIndex < maxHearts; heartIndex += 1) {\n', '          lifeBounds.y + 72\n        );\n      }\n', () =>
-    `      if (!this.isConcertRhythm()) {
-        target.save();
-        this.drawMissTally(target, { x: lifeBounds.x + 22, y: lifeBounds.y + 72, right: lifeBounds.x + lifeBounds.w - 22, indent: 50, glyph: 18, font: 17, maxGroups: 3, tally: "#ef3f78" }, Math.max(0, rhythm?.misses || 0), "#f4f0dc");
-        target.restore();
-      }
-`);
-
-  // The practice badge's parts the phone's strip shares.
+  // The staff badge's parts the phone's strip shares.
+  once('  renderLevel1OfficePracticeBadge(target, bounds, rhythm) {', '  renderLevel1OfficeProfileBadge(target, bounds, rhythm, motionTime) {');
   once('    const bathroom = this.isBathroomRhythm();\n    const accent = this.isConcertRhythm() ? "#8a3fb0" : this.isRiverRhythm() ? "#2f6f8f" : this.isArcadeRhythm() ? "#3552a8" : this.isMassageRhythm() ? "#c0506a" : bathroom ? "#3a9a8a" : "#2d7ec2";',
-    '    const accent = this.getPracticeBadgeAccent();');
+    '    const accent = this.getFightBadgeAccent();');
+  once('    target.fillText(this.tr("STAFF ID  ·  PRACTICE", "員工證 · 練習"), x + w / 2 - 3, y + 26);',
+    '    target.fillText(this.tr("STAFF ID", "員工證") + " · " + this.getFightBadgeModeLabel(), x + w / 2 - 3, y + 26);');
+  once('    target.fillText(this.tr("DRILL", "練習"), 0, 1);\n    target.restore();',
+    '    drawFittedText(target, this.getFightBadgeModeLabel(true), 0, 1, 40, 15, 900, 5);\n    target.restore();');
   edit('    const misses = Math.max(0, rhythm?.misses || 0);\n', '    target.fillText(String(misses), x + w - 16, rowY);\n', () => `    const misses = Math.max(0, rhythm?.misses || 0);
-    const rowY = y + 110;
-    target.fillStyle = ink;
-    target.fillRect(x + 12, rowY + 11, w - 26, 1);
+    const concert = this.isConcertRhythm();
+    const rowY = y + (concert ? 102 : 110);
     this.drawMissTally(target, { x: x + 14, y: rowY, right: x + w - 16, indent: 38, glyph: 15, font: 12 }, misses, ink);
+    if (concert) {
+      this.drawConcertCrowdMeter(target, { x: x + 12, y: y + 114, w: w - 26, h: 14 }, rhythm, motionTime);
+    } else {
+      target.fillStyle = ink;
+      target.fillRect(x + 12, rowY + 11, w - 26, 1);
+    }
 `);
   edit('    const lcd = { x: x + 12, y: y + h - 50, w: w - 26, h: 36 };\n', '    target.fillText(String(rhythm?.roundScore || 0).padStart(6, "0"), lcd.x + lcd.w - 7, lcd.y + 25);\n', () =>
-    '    this.drawPracticeLcd(target, { x: x + 12, y: y + h - 50, w: w - 26, h: 36 }, rhythm, ink);\n');
+    '    this.drawFightBadgeLcd(target, { x: x + 12, y: y + h - 50, w: w - 26, h: 36 }, rhythm, ink);\n');
 }
 
 export const FIGHT_HUD_METHODS = `
@@ -167,8 +165,11 @@ export const FIGHT_HUD_METHODS = `
     return clamp(Math.ceil(line + 6 * k), Math.round(240 * k), PORTRAIT_FIGHT.stats.w);
   }
 
-  // The practice badge's colour: the fight's.
-  getPracticeBadgeAccent() {
+  getFightBadgeModeLabel(stamp = false) {
+    return this.freePlay ? this.tr(stamp ? "DRILL" : "PRACTICE", "練習") : this.tr("OFFICIAL", "正式");
+  }
+
+  getFightBadgeAccent() {
     return this.isConcertRhythm() ? "#8a3fb0" : this.isRiverRhythm() ? "#2f6f8f" : this.isArcadeRhythm() ? "#3552a8"
       : this.isMassageRhythm() ? "#c0506a" : this.isBathroomRhythm() ? "#3a9a8a" : "#2d7ec2";
   }
@@ -185,6 +186,7 @@ export const FIGHT_HUD_METHODS = `
     target.fillStyle = ink;
     target.font = \`900 \${row.font}px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace\`;
     target.fillText(this.tr("MISS", "失誤"), x, y);
+    if (!misses) return;
     let tallyX = x + row.indent;
     target.fillStyle = row.tally || "#b3202c";
     for (let group = 0; group < shownGroups; group += 1) {
@@ -195,9 +197,8 @@ export const FIGHT_HUD_METHODS = `
       target.font = \`900 \${row.font}px 'Courier New', monospace\`;
       const mark = \`×\${fullGroups}\`;
       if (tallyX + target.measureText(mark).width <= right - target.measureText(String(misses)).width - 8) target.fillText(mark, tallyX, y);
-    } else if (misses % 5 || !misses) {
-      if (misses % 5) drawTallyZheng(target, tallyX, y - glyph / 2, glyph, misses % 5);
-      else target.fillText("—", tallyX, y);
+    } else if (misses % 5) {
+      drawTallyZheng(target, tallyX, y - glyph / 2, glyph, misses % 5);
     }
     target.textAlign = "right";
     target.fillStyle = ink;
@@ -205,9 +206,8 @@ export const FIGHT_HUD_METHODS = `
     target.fillText(String(misses), right, y);
   }
 
-  // A practice run's combo and score on a small green screen, like the
-  // handheld's own.
-  drawPracticeLcd(target, lcd, rhythm, ink) {
+  // The combo and score on a small green screen, like the handheld's own.
+  drawFightBadgeLcd(target, lcd, rhythm, ink) {
     target.fillStyle = ink;
     target.fillRect(lcd.x - 2, lcd.y - 2, lcd.w + 4, lcd.h + 4);
     target.fillStyle = "#2a3a22";
@@ -228,51 +228,10 @@ export const FIGHT_HUD_METHODS = `
     target.fillText(String(rhythm?.roundScore || 0).padStart(6, "0"), lcd.x + lcd.w - 7, lcd.y + 25);
   }
 
-  // The phone's row above the track (PORTRAIT_FIGHT.stats): Dr. Beauty's
-  // name, misses (level 7: the hype bar), combo and score in a line; in a
-  // practice run, his staff ID as a strip.
+  // The phone lays the staff badge on its side above the track.
   drawTallFightStats(target, rhythm) {
     const box = PORTRAIT_FIGHT.stats;
     target.save();
-    if (this.freePlay) {
-      this.drawTallPracticeStrip(target, box, rhythm);
-      target.restore();
-      return;
-    }
-    target.fillStyle = "#08090d";
-    target.fillRect(box.x, box.y, box.w, box.h);
-    target.strokeStyle = "#f4f0dc";
-    target.lineWidth = 4;
-    target.strokeRect(box.x + 2, box.y + 2, box.w - 4, box.h - 4);
-    const mid = box.y + box.h / 2 + 1;
-    target.textBaseline = "middle";
-    target.font = "900 22px 'Courier New', monospace";
-    target.textAlign = "left";
-    target.fillStyle = "#f4f0dc";
-    target.fillText(HERO_TAG, box.x + 16, mid);
-    const nameEnd = box.x + 16 + target.measureText(HERO_TAG).width;
-    target.textAlign = "right";
-    target.fillStyle = "#f7f2de";
-    const score = \`SCORE \${String(rhythm?.roundScore || 0).padStart(6, "0")}\`;
-    target.fillText(score, box.x + box.w - 16, mid);
-    const comboEnd = box.x + box.w - 16 - target.measureText(score).width - 22;
-    const combo = \`COMBO \${rhythm?.combo || 0}\`;
-    target.fillStyle = "#8fe8ff";
-    target.fillText(combo, comboEnd, mid);
-    const left = nameEnd + 22, right = comboEnd - target.measureText(combo).width - 22;
-    if (this.isConcertRhythm()) {
-      this.drawConcertCrowdMeter(target, box, rhythm, this.time || 0, { x: left, y: box.y + 9, w: right - left, h: box.h - 18 });
-    } else {
-      // The count just after the tally, clear of COMBO.
-      this.drawMissTally(target, { x: left, y: mid, right: Math.min(right, left + 165), indent: 50, glyph: 20, font: 18, maxGroups: 3, tally: "#ef3f78" }, Math.max(0, rhythm?.misses || 0), "#f4f0dc");
-    }
-    target.restore();
-  }
-
-  // The practice badge laid on its side: the fight's colour band with
-  // 員工證 · 練習, his ID photo and name, the 練習 stamp, the miss tally and
-  // the green screen.
-  drawTallPracticeStrip(target, box, rhythm) {
     const ink = "#1b2130";
     const paper = "#efe6cc";
     const card = { x: box.x, y: box.y, w: box.w - 4, h: box.h - 4 };
@@ -289,7 +248,7 @@ export const FIGHT_HUD_METHODS = `
 
     // The colour band, with the card's title in two lines.
     const band = { x: card.x + 3, y: card.y + 3, w: 92, h: card.h - 6 };
-    target.fillStyle = this.getPracticeBadgeAccent();
+    target.fillStyle = this.getFightBadgeAccent();
     target.fillRect(band.x, band.y, band.w, band.h);
     target.fillStyle = ink;
     target.fillRect(band.x + band.w, band.y, 2, band.h);
@@ -297,7 +256,7 @@ export const FIGHT_HUD_METHODS = `
     target.textAlign = "center";
     target.font = "900 13px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace";
     target.fillText(this.tr("STAFF ID", "員工證"), band.x + band.w / 2, mid - 8);
-    target.fillText(this.tr("PRACTICE", "練習"), band.x + band.w / 2, mid + 9);
+    target.fillText(this.getFightBadgeModeLabel(), band.x + band.w / 2, mid + 9);
 
     // ID photo and name.
     let at = band.x + band.w + 12;
@@ -311,7 +270,7 @@ export const FIGHT_HUD_METHODS = `
     target.fillText(HERO_NAME_ZH, at, mid + 10);
     at += 108;
 
-    // The practice stamp: red ink, knocked a few degrees off square.
+    // The mode stamp: red ink, knocked a few degrees off square.
     target.save();
     target.translate(at + 22, mid);
     target.rotate(-0.21);
@@ -323,14 +282,18 @@ export const FIGHT_HUD_METHODS = `
     target.strokeRect(-18, -8, 36, 16);
     target.fillStyle = "#c8323c";
     target.textAlign = "center";
-    target.font = "900 13px 'PingFang TC', 'Noto Sans TC', 'Courier New', sans-serif";
-    target.fillText(this.tr("DRILL", "練習"), 0, 1);
+    drawFittedText(target, this.getFightBadgeModeLabel(true), 0, 1, 34, 13, 900, 5);
     target.restore();
     at += 58;
 
     // The misses, and the counters on the green screen at the right end.
     const lcd = { x: card.x + card.w - 3 - 8 - 196, y: card.y + 5, w: 196, h: card.h - 10 };
-    this.drawMissTally(target, { x: at, y: mid + 1, right: lcd.x - 14, indent: 40, glyph: 17, font: 14 }, Math.max(0, rhythm?.misses || 0), ink);
-    this.drawPracticeLcd(target, lcd, rhythm, ink);
+    const concert = this.isConcertRhythm();
+    this.drawMissTally(target, { x: at, y: mid + (concert ? -10 : 1), right: lcd.x - 14, indent: 40, glyph: 17, font: 14 }, Math.max(0, rhythm?.misses || 0), ink);
+    if (concert) {
+      this.drawConcertCrowdMeter(target, { x: at, y: mid + 2, w: lcd.x - at - 14, h: 14 }, rhythm, this.time || 0);
+    }
+    this.drawFightBadgeLcd(target, lcd, rhythm, ink);
+    target.restore();
   }
 `;

@@ -182,6 +182,16 @@ for (const [name, launch] of Object.entries(browsers)) {
   await page.waitForTimeout(3000);
   await page.evaluate(() => window.__lock());
   const kept = await fight(page);
+  // Older saves measured native media time before the decoder lead existed.
+  // Translate such a record into the current player while keeping judgments.
+  await page.evaluate(() => {
+    const key = 'moth.staff_fight_resume_v1';
+    const saved = JSON.parse(localStorage.getItem(key));
+    if (!(saved?.trackLead > 0)) throw new Error('The saved fight must record its audio preparation');
+    saved.trackTime -= saved.trackLead;
+    delete saved.trackLead;
+    localStorage.setItem(key, JSON.stringify(saved));
+  });
   await page.reload({waitUntil: 'domcontentloaded'});
   await page.waitForFunction(() => window.bobbyGame?.bootDone && bobbyGame.state === 'title', undefined, {timeout: 60000});
   await page.keyboard.press('Shift');
