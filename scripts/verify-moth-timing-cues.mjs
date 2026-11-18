@@ -43,11 +43,11 @@ try {
       window.__cueOriginalUpdate = bobbyGame.update;
       bobbyGame.startStage('level1-stage1', {freePlay: true, skipAudio: true});
     });
-    await page.waitForFunction(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm?.tutorial?.mode === 'done' && !bobbyGame.levelLoadingPresentation && !(bobbyGame.stageCountdown > 0), undefined, {timeout: 90000});
+    await page.waitForFunction(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm?.tutorial?.mode === 'done' && !bobbyGame.levelLoadingPresentation && !bobbyGame.isRhythmCountIn(), undefined, {timeout: 90000});
     const clocks = await page.evaluate(() => {
-      const g = bobbyGame, track = {currentTime: 24.75, paused: false, readyState: 4};
+      const g = bobbyGame, track = {currentTime: 24.75, paused: false, readyState: 4, volume: 1, muted: false};
       const receiver = {level1OfficeRhythm: {tutorial: {mode: 'done'}, skipAudio: false}, state: 'playing', songTime: 4,
-        isFightSongStalled: g.isFightSongStalled,
+        isFightSongStalled: g.isFightSongStalled, isRhythmCountIn: g.isRhythmCountIn,
         audioInterruption: false, audioRecoveryVisible: () => false,
         getActiveLevel1OfficeRhythmAudio: () => track, getRhythmAudioStart: () => 20,
         getAudioOffsetSeconds: () => .025, getRhythmOutputDelay: () => 0};
@@ -64,13 +64,18 @@ try {
       track.paused = false; receiver.level1OfficeRhythm.frozenSongTime = 2.125;
       const frozen = read(); delete receiver.level1OfficeRhythm.frozenSongTime;
       receiver.audioInterruption = true; const interrupted = read(); receiver.audioInterruption = false;
+      receiver.stageCountdown = .2; const countingIn = read(); receiver.stageCountdown = 0;
+      track.muted = true; const muted = read(); track.muted = false;
+      track.volume = 0; const silent = read(); track.volume = 1;
       receiver.level1OfficeRhythm.tutorial = {mode: 'practice', time: 1.25}; const practice = read();
-      return {calibrated, stalled, automatic, paused, frozen, interrupted, practice};
+      return {calibrated, stalled, automatic, paused, frozen, interrupted, countingIn, muted, silent, practice};
     });
     assert(Math.abs(clocks.calibrated - 4.725) < 1e-12 && clocks.stalled === clocks.calibrated, `${viewportName}: cue clock samples media time and holds on a media stall`);
     assert(Math.abs(clocks.automatic - 4.697) < 1e-12, `${viewportName}: cue clock subtracts reported output delay`);
-    assert.deepEqual({paused: clocks.paused, frozen: clocks.frozen, interrupted: clocks.interrupted, practice: clocks.practice},
-      {paused: 4, frozen: 2.125, interrupted: 4, practice: 1.25}, `${viewportName}: pause, interruption and tutorial clocks`);
+    assert.deepEqual({paused: clocks.paused, frozen: clocks.frozen, interrupted: clocks.interrupted,
+      countingIn: clocks.countingIn, muted: clocks.muted, silent: clocks.silent, practice: clocks.practice},
+    {paused: 4, frozen: 2.125, interrupted: 4, countingIn: 4, muted: 4, silent: 4, practice: 1.25},
+    `${viewportName}: pause, interruption, count-in, silent-track and tutorial clocks`);
     const results = await page.evaluate(cases => {
       const g = bobbyGame, target = g.ctx, arc = target.arc;
       g.update = () => {};
@@ -166,7 +171,7 @@ try {
         const r = g.createLevel1OfficeRhythmState('office');
         r.skipAudio = false; r.tutorial.mode = 'done'; r.phaseIntroTimer = 0;
         g.level1OfficeRhythm = r; g.currentStageId = 'level1-stage1';
-        const note = r.notes[3], track = {currentTime: 20 + .025 + note.time - .1, paused: false, readyState: 4};
+        const note = r.notes[3], track = {currentTime: 20 + .025 + note.time - .1, paused: false, readyState: 4, volume: 1};
         g.getActiveLevel1OfficeRhythmAudio = () => track;
         g.getRhythmAudioStart = () => 20; g.getAudioOffsetSeconds = () => .025; g.getRhythmOutputDelay = () => 0;
         g.songTime = 0; // Deliberately stale: drawing must sample the media clock.
@@ -211,7 +216,7 @@ try {
       }, entry);
       await page.waitForFunction(stage => bobbyGame.currentStageId === stage && bobbyGame.state === 'playing'
         && bobbyGame.level1OfficeRhythm?.tutorial?.mode === 'done' && !bobbyGame.levelLoadingPresentation
-        && !(bobbyGame.stageCountdown > 0) && !bobbyGame.level1OfficeRhythm?.graphicsLoading, entry.stage, {timeout: 90000});
+        && !bobbyGame.isRhythmCountIn() && !bobbyGame.level1OfficeRhythm?.graphicsLoading, entry.stage, {timeout: 90000});
       for (const [phase, remaining] of [['before', .9], ['at', 0], ['after', -.05]]) {
         const screenshot = await page.evaluate(({entry, density, remaining}) => {
           const g = bobbyGame, r = g.level1OfficeRhythm;

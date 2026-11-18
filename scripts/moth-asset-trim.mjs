@@ -35,6 +35,11 @@ export const TRIMMED_GROUPS = [
     files: ["assets/maps/level4_boss/level4-boss-arena.webp", "assets/sprites/bobby_vs_intro/processed-v3/sheet-transparent.webp", "assets/sprites/bonita_boss_ground_wave/processed/sheet-transparent.webp", "assets/sprites/bonita_boss_placeholder/processed/sheet-transparent.webp", "assets/sprites/bonita_boss_star_shot/processed/sheet-transparent.webp", "assets/sprites/bonita_game_avatar_boss/processed/sheet-transparent.webp", "assets/sprites/level4_hidden_wall_chest/processed/sheet-transparent.webp"] },
   { title: "Level 5: the old highway walk and highway boss (the night drive goes straight to the river)", jobs: ["level5Stage1Map", "level5BossMap", "level5DaytonaSheet", "level5BossDaytonaSheet", "level5GanGanCarSheet", "level5GanGanIdleSheet", "level5HighwayChestSheet", "level5UndergroundWaterSheet", "level5BossRoadObjectsSheet", "level5GoatRunSheet", "level5PoopObstacleSheet", "level5RhythmHitFxSheet"],
     files: ["assets/maps/level5_boss/level5-boss-previous-style-layered-preview-20260624.webp", "assets/maps/level5_highway/level5-highway-regenerated-20260616.webp", "assets/sprites/level5_boss_daytona_v2/processed/sheet-transparent.webp", "assets/sprites/level5_boss_road_objects/processed/sheet-transparent.webp", "assets/sprites/level5_daytona_v2/processed/sheet-transparent.webp", "assets/sprites/level5_gangan_car_v2/processed/sheet-transparent.webp", "assets/sprites/level5_gangan_idle_v2/processed/sheet-transparent.webp", "assets/sprites/level5_goat_run/processed/sheet-transparent.webp", "assets/sprites/level5_highway_chest/processed/sheet-transparent.webp", "assets/sprites/level5_poop_obstacle/processed/sheet-transparent.webp", "assets/sprites/level5_rhythm_hit_fx/processed/sheet-transparent.webp", "assets/sprites/level5_underground_water/processed/sheet-transparent.webp"] },
+  { title: "The fighting-game backdrop and fighters replaced by the TV rhythm game",
+    jobs: ["level4ArcadeArena", "level4BobbyFighterSheet", "level4BonitaFighterSheet"],
+    files: ["assets/sprites/level4_arcade_fight/processed/l4-arena.webp",
+      "assets/sprites/level4_arcade_fight/processed/l4-bobby-fighter.webp",
+      "assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp"] },
   { title: "Unused highway layers after legacy entries route to the current river fight", jobs: [], files: RETIRED_HIGHWAY_LAYERS },
   { title: "Level 6: the old Taipei Dome walk and lane fight (stand-ins behind the concert art)", jobs: ["level6Stage1Map", "level6BossMap", "level6BobbyPerformerSheet", "level6GanGanExitSheet", "level6FansProfileSheet"],
     files: ["assets/maps/level6_boss/level6-boss-taipei-dome-stage-20260624.webp", "assets/maps/level6_taipei_dome/level6-taipei-dome-arrival-20260624.webp", "assets/sprites/bobby_level6_performer/processed-v3/sheet-transparent.webp", "assets/sprites/level6_fans_profile/processed/sheet-transparent.webp", "assets/sprites/level6_gangan_exit/processed/sheet-transparent.webp"] },
@@ -61,9 +66,11 @@ export const TRIMMED_GROUPS = [
 ];
 
 export const TRIMMED_JOBS = new Set(TRIMMED_GROUPS.flatMap(group => group.jobs));
-// The old lane fight's music cut, which the release preloaded at start-up.
+// Replaced fight cuts and the old lane fight's unused music.
 export const TRIMMED_AUDIO = [
   'assets/audio/fight-cuts/level6-lanes.m4a',
+  ...['level1-office', 'level2-bathroom', 'level3-massage', 'level4-arcade', 'level5-studio']
+    .map(name => `assets/audio/fight-cuts/${name}.m4a`),
   ...RETIRED_HIT_SFX.map(name => `assets/sfx/${name}.wav`)
 ];
 export const TRIMMED_FILES = new Set([...TRIMMED_GROUPS.flatMap(group => group.files), ...TRIMMED_AUDIO]);

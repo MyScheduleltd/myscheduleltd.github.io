@@ -102,8 +102,8 @@ async function enterOffice(page) {
   await page.evaluate(() => document.activeElement?.blur());
   await page.keyboard.press('KeyP');
   const fightStarted = Date.now();
-  await page.waitForFunction(() => { const a = bobbyGame.fightCutAudio.office; return !a.paused && a.currentTime > 1; }, undefined, {timeout: 40000});
-  const fight = await page.evaluate(() => ({src: bobbyGame.fightCutAudio.office.getAttribute('src').slice(0, 5), t: bobbyGame.fightCutAudio.office.currentTime}));
+  await page.waitForFunction(() => { const a = bobbyGame.getActiveLevel1OfficeRhythmAudio(); return !a.paused && a.currentTime > 1; }, undefined, {timeout: 40000});
+  const fight = await page.evaluate(() => ({src: bobbyGame.getActiveLevel1OfficeRhythmAudio().getAttribute('src').slice(0, 5), t: bobbyGame.getActiveLevel1OfficeRhythmAudio().currentTime}));
   assert.equal(fight.src, 'blob:', 'Fight music plays the verified mirror copy');
   assert(!requests.some(url => /myscheduleltd\.com\/moth\/assets\/audio\/fight-cuts\/level1-office/.test(url)), 'Fight music not streamed from Pages');
   // The playlist: highlight a song, give it a moment, then play it.

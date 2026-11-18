@@ -41,6 +41,182 @@
       "use": "Level 6 river fight: verse 1 through the end of chorus 2, as requested by the owner",
       "mirrorCommit": "d847823e571f216d483c9ba024facc9e22ca61c7",
       "mirrorNote": "Compact asset-only commit for the existing jsDelivr loader; keep codex/moth-cdn-assets-20261106 reachable and never merge that asset-only branch into main."
+    },
+    "assets/video/level4-bad-daddy.mp4": {
+      "sha256": "c8c757512065649a5b968d69237867d2aad28a8b5605fea1d8d28d564194fba4",
+      "bytes": 5360717,
+      "source": "Owner-supplied Bad Daddy official music video, video stream only, H.264 remux",
+      "use": "Background inside the Level 4 rhythm game TV",
+      "mirrorCommit": "6557c0a4e009fb9b9e21b29a1abc2d57108ca764",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-scenes-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/sprites/river-goddess.webp": {
+      "sha256": "a045c68ba0a1628d1d2f113995b217a7c0dbc19bc3ec16d00d126c410892852a",
+      "bytes": 303180,
+      "source": "Newly generated river goddess sprite with two open five-digit hands, keyed to transparent WebP",
+      "use": "Level 6 silent river reveal",
+      "mirrorCommit": "6557c0a4e009fb9b9e21b29a1abc2d57108ca764",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-scenes-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/easy-mixes/arcade-story.m4a": {
+      "sha256": "46cf6130aed15460e395b21ced262aebbc2c7a067bd329252a628c43948340e8",
+      "bytes": 1657579,
+      "source": "Updated Story cut with time-aligned drum stem and baked gameplay gain",
+      "use": "Drum-forward Easy Story gameplay",
+      "mirrorCommit": "142b6bd60459b3ce2fb1bc7c89db272e48ce59b6",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-easy-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/easy-mixes/arcade.m4a": {
+      "sha256": "c458ba50aaaa66fe1fd2c13c6330707399ef9f26dfdddd48087c7d4089a20458",
+      "bytes": 2580136,
+      "source": "Game mix with the owner-supplied aligned drum stem blended in using scripts/mix-moth-easy.py",
+      "use": "Easy full-song fight mix",
+      "mirrorCommit": "142b6bd60459b3ce2fb1bc7c89db272e48ce59b6",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-easy-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/easy-mixes/bathroom-story.m4a": {
+      "sha256": "805058dd667a37ec9d08fba1629a79108f18cc249369fa2c9fcc08e6ef4b5601",
+      "bytes": 1520734,
+      "source": "Updated Story cut with time-aligned drum stem and baked gameplay gain",
+      "use": "Drum-forward Easy Story gameplay",
+      "mirrorCommit": "142b6bd60459b3ce2fb1bc7c89db272e48ce59b6",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-easy-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/easy-mixes/bathroom.m4a": {
+      "sha256": "9343d16160309bd10e5b024196a4f2a70c1fe10f610ccb13de6e01bfba14f857",
+      "bytes": 2993133,
+      "source": "Game mix with the owner-supplied aligned drum stem blended in using scripts/mix-moth-easy.py",
+      "use": "Easy full-song fight mix",
+      "mirrorCommit": "142b6bd60459b3ce2fb1bc7c89db272e48ce59b6",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-easy-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/easy-mixes/concert.m4a": {
+      "sha256": "08089c4fb6a1778cf4a7364630a9f3d390af9ade7d4b7c0a2612f4ef61ac640b",
+      "bytes": 2713079,
+      "source": "Game mix with the owner-supplied aligned drum stem blended in using scripts/mix-moth-easy.py",
+      "use": "Easy full-song fight mix",
+      "mirrorCommit": "142b6bd60459b3ce2fb1bc7c89db272e48ce59b6",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-easy-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/easy-mixes/massage-story.m4a": {
+      "sha256": "f9b39c046592bc2da40c8f9ba791cc810f667fcd31be720e397bbcba7ecbc82b",
+      "bytes": 1495600,
+      "source": "Updated Story cut with time-aligned drum stem and baked gameplay gain",
+      "use": "Drum-forward Easy Story gameplay",
+      "mirrorCommit": "142b6bd60459b3ce2fb1bc7c89db272e48ce59b6",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-easy-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/easy-mixes/massage.m4a": {
+      "sha256": "7925e8e8d9f55f46e071813f19aa22a51cb9ea214278c5d557687e309c1d2a40",
+      "bytes": 2772029,
+      "source": "Game mix with the owner-supplied aligned drum stem blended in using scripts/mix-moth-easy.py",
+      "use": "Easy full-song fight mix",
+      "mirrorCommit": "142b6bd60459b3ce2fb1bc7c89db272e48ce59b6",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-easy-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/easy-mixes/office-story.m4a": {
+      "sha256": "4e9f20d810b9a895f6d4f6104483c52784d16bc8c966bc40d51e8e8b45917617",
+      "bytes": 1450135,
+      "source": "Updated Story cut with time-aligned drum stem and baked gameplay gain",
+      "use": "Drum-forward Easy Story gameplay",
+      "mirrorCommit": "142b6bd60459b3ce2fb1bc7c89db272e48ce59b6",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-easy-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/easy-mixes/office.m4a": {
+      "sha256": "9a2a5f01372b607d4d9ce79fdaca00ae2e7d1a8d6244a869b12d175faebcd3b8",
+      "bytes": 2018923,
+      "source": "Game mix with the owner-supplied aligned drum stem blended in using scripts/mix-moth-easy.py",
+      "use": "Easy full-song fight mix",
+      "mirrorCommit": "142b6bd60459b3ce2fb1bc7c89db272e48ce59b6",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-easy-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/easy-mixes/river-story.m4a": {
+      "sha256": "28081da546af3c2658976fa5dc8cd5ae6b0136ce6c2ee039d2e2880095ea5fee",
+      "bytes": 2558850,
+      "source": "Game mix with the owner-supplied aligned drum stem blended in using scripts/mix-moth-easy.py",
+      "use": "Easy Story fight mix",
+      "mirrorCommit": "142b6bd60459b3ce2fb1bc7c89db272e48ce59b6",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-easy-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/easy-mixes/river.m4a": {
+      "sha256": "b7b50d2b4115703751c44aed35d490f7ffb7f561368c8310a1d7f558c2c75233",
+      "bytes": 3741297,
+      "source": "Game mix with the owner-supplied aligned drum stem blended in using scripts/mix-moth-easy.py",
+      "use": "Easy full-song fight mix",
+      "mirrorCommit": "142b6bd60459b3ce2fb1bc7c89db272e48ce59b6",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-easy-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/easy-mixes/secretLaugh.m4a": {
+      "sha256": "595293fc69a4b308809fc50c3cbc5c1692962aa40f2b38edce8680af279d1a45",
+      "bytes": 971512,
+      "source": "Game mix with the owner-supplied aligned drum stem blended in using scripts/mix-moth-easy.py",
+      "use": "Easy full-song fight mix",
+      "mirrorCommit": "142b6bd60459b3ce2fb1bc7c89db272e48ce59b6",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-easy-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/easy-mixes/secretSquat.m4a": {
+      "sha256": "bbbbc34e658b720e466a0d9aa3957f6b06bf3dc46831a35b4f3f7a09cc716ae1",
+      "bytes": 2452343,
+      "source": "Game mix with the owner-supplied aligned drum stem blended in using scripts/mix-moth-easy.py",
+      "use": "Easy full-song fight mix",
+      "mirrorCommit": "142b6bd60459b3ce2fb1bc7c89db272e48ce59b6",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-easy-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/easy-mixes/studio-story.m4a": {
+      "sha256": "8c6a78e503ede476d50166ae554cc0c136e054979b78042b79a92bc7b7f7fecc",
+      "bytes": 1442559,
+      "source": "Updated Story cut with time-aligned drum stem and baked gameplay gain",
+      "use": "Drum-forward Easy Story gameplay",
+      "mirrorCommit": "142b6bd60459b3ce2fb1bc7c89db272e48ce59b6",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-easy-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/easy-mixes/studio.m4a": {
+      "sha256": "255e0a8f535821d4f35891a3e1a1b53179a9a31a66927478321648362d152111",
+      "bytes": 2829069,
+      "source": "Game mix with the owner-supplied aligned drum stem blended in using scripts/mix-moth-easy.py",
+      "use": "Easy full-song fight mix",
+      "mirrorCommit": "142b6bd60459b3ce2fb1bc7c89db272e48ce59b6",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-easy-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/fight-cuts/level1-office-onset.m4a": {
+      "sha256": "e705508996f8702c7644c5a2b77fee3e0cd7c139b67524d6acd37fd7d8baaab0",
+      "bytes": 2158122,
+      "source": "Exact game full mix on the existing Story cut clock, with a 12 ms opening fade",
+      "use": "Story gameplay cut with its original endpoint and closing fade",
+      "mirrorCommit": "6557c0a4e009fb9b9e21b29a1abc2d57108ca764",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-scenes-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/fight-cuts/level2-bathroom-onset.m4a": {
+      "sha256": "ad7c1319b89dbf9c1d339e647fffd98ab31c0c02816d89434eea4a30e9c02a12",
+      "bytes": 2263385,
+      "source": "Exact game full mix on the existing Story cut clock, with a 12 ms opening fade",
+      "use": "Story gameplay cut with its original endpoint and closing fade",
+      "mirrorCommit": "6557c0a4e009fb9b9e21b29a1abc2d57108ca764",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-scenes-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/fight-cuts/level3-massage-onset.m4a": {
+      "sha256": "1c9955a8a3af277b37ada906f0b6eaade5e9a5e4dc4e7098b0538f89f2424182",
+      "bytes": 2223811,
+      "source": "Exact game full mix on the existing Story cut clock, with a 12 ms opening fade",
+      "use": "Story gameplay cut with its original endpoint and closing fade",
+      "mirrorCommit": "6557c0a4e009fb9b9e21b29a1abc2d57108ca764",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-scenes-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/fight-cuts/level4-arcade-onset.m4a": {
+      "sha256": "7dd68f5acca8ecb801cbfbe3c4b7e01c94175fe54c9455d71963e9894e5278e8",
+      "bytes": 2480149,
+      "source": "Exact game full mix on the existing Story cut clock, with a 12 ms opening fade",
+      "use": "Story gameplay cut with its original endpoint and closing fade",
+      "mirrorCommit": "6557c0a4e009fb9b9e21b29a1abc2d57108ca764",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-scenes-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/audio/fight-cuts/level5-studio-onset.m4a": {
+      "sha256": "c90dabfdbe30e11676586a2571cd819278a8ccfddbe1e8520a6da309ac77151e",
+      "bytes": 2153278,
+      "source": "Exact game full mix on the existing Story cut clock, with a 12 ms opening fade",
+      "use": "Story gameplay cut with its original endpoint and closing fade",
+      "mirrorCommit": "6557c0a4e009fb9b9e21b29a1abc2d57108ca764",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-scenes-20261118 reachable and never merge this asset-only branch into main."
     }
   }
 }

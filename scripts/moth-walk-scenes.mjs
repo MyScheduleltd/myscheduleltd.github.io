@@ -81,6 +81,8 @@ export function patchWalkScenes(once, edit) {
       const y = 8 + pause.h + 8;`);
   once('      drawFittedText(target, String(prompt.text), PORTRAIT_FIGHT.width / 2, y + h / 2 + 1, w - 28, 24, 900, 13);',
     '      drawFittedText(target, String(prompt.text), x + w / 2, y + h / 2 + 1, w - 28, 24, 900, 13);');
+  once('    target.drawImage(canvas, walk.srcX, walk.srcY, walk.srcW, walk.srcH, 0, 0, PORTRAIT_FIGHT.width, walk.worldH);',
+    '    target.drawImage(canvas, walk.srcX, walk.srcY, walk.srcW, walk.srcH, 0, 0, PORTRAIT_FIGHT.width, walk.worldH);\n    this.renderWalkRouteArrow(target, walk);');
   // The staff tools' previews run as practice: the chest shows after 'L4
   // After Win Talk', and 'L4 Basement Chest' goes straight to it (both set
   // debugLevel4Won, in moth-runtime-patches.mjs).
@@ -94,6 +96,16 @@ export function patchWalkScenes(once, edit) {
     '    if (this.level3Boss.phase !== "postBoss" && this.sewerPlayer) this.level3FightSpot = { x: this.sewerPlayer.x, facing: this.sewerPlayer.facing };\n    this.startLevel3Dialogue(this.level3Boss.phase === "postBoss" ? "level3PostBoss" : "level3PreBoss");');
   once("      // Back to the living room, where 祖賢's post-fight exchange waits.\n      this.level1OfficeRhythm = null;\n      this.enterLevel3Stage1({ postBossReady: true });\n",
     "      // Back to the living room, where 祖賢's post-fight exchange waits, at\n      // the spot where the massage began.\n      this.level1OfficeRhythm = null;\n      const spot = this.getLevel3FightSpot();\n      this.enterLevel3Stage1({ postBossReady: true, spawnX: spot.x });\n      if (this.sewerPlayer) this.sewerPlayer.facing = spot.facing;\n");
+  once('      const canExitRight = this.canExitLevel3ToLevel4();',
+    '      if (!this.isTallScreenView()) this.renderWalkRouteArrow(this.ctx);\n      const canExitRight = this.canExitLevel3ToLevel4();');
+  once('          ? (side.exitRight?.prompt || "往右離開")\n        : hasWaitingBoss\n          ? (nearBoss ? "O 與祖賢對話" : "靠近祖賢")',
+    `          ? this.tr("Exit right to the bedroom", side.exitRight?.prompt || "往右離開")
+        : hasWaitingBoss
+          ? (nearBoss ? this.tr("O: Talk to Zuxian", "O 與祖賢對話") : this.tr("Approach Zuxian", "靠近祖賢"))`);
+  once('      drawObjectivePrompt(this.ctx, prompt, canExitRight || nearBoss || this.state === "level3Boss" ? "#ffd36c" : "#8fe8ff", this.time, VIEW_H - 132);',
+    `      const instruction = this.state === "level3" && !this.usesTouchControls()
+        ? prompt + "  ·  " + this.tr("WASD to move Dr. Beauty", "WASD 移動美麗本人") : prompt;
+      drawObjectivePrompt(this.ctx, instruction, canExitRight || nearBoss || this.state === "level3Boss" ? "#ffd36c" : "#8fe8ff", this.time, VIEW_H - 132);`);
   // Level 4: back to the spot where Bonita's game began.
   once('    this.level4DialogueIndex = 0;\n    this.state = "level4Dialogue";\n    this.pocketOpen = false;\n    if (this.chest) this.chest.menuOpen = false;\n    if (this.sewerPlayer) {\n      this.sewerPlayer.vx = 0;\n      this.sewerPlayer.facing = 1;\n    }\n',
     '    this.level4DialogueIndex = 0;\n    this.state = "level4Dialogue";\n    this.pocketOpen = false;\n    if (this.chest) this.chest.menuOpen = false;\n    if (this.sewerPlayer) {\n      this.sewerPlayer.vx = 0;\n      this.sewerPlayer.facing = 1;\n      this.level4FightX = this.sewerPlayer.x;\n    }\n');
@@ -103,7 +115,8 @@ export function patchWalkScenes(once, edit) {
   // Level 4's basement chest.
   once('    if (this.level4Rail === "lower" && this.chest?.revealed) {\n      drawables.push({\n        y: stage.hiddenChest?.y ?? 668,\n        draw: () => this.drawLevel4HiddenChest()\n      });\n    }\n',
     '    if (this.level4Rail === "lower" && this.chest?.revealed) {\n      drawables.push({\n        y: stage.hiddenChest?.y ?? 668,\n        draw: () => this.drawLevel4HiddenChest()\n      });\n    }\n    if (this.hasLevel4MemeChest()) {\n      drawables.push({ y: MEME_CHEST.y, draw: () => this.drawLevel4MemeChest() });\n    }\n');
-  edit('      const nearLadder = this.isLevel4NearLadder();', '      this.renderPocketInterface();', () => `      const lower = this.level4Rail === "lower";
+  edit('      const nearLadder = this.isLevel4NearLadder();', '      this.renderPocketInterface();', () => `      if (!this.isTallScreenView()) this.renderWalkRouteArrow(this.ctx);
+      const lower = this.level4Rail === "lower";
       const nearLadder = this.isLevel4NearLadder();
       const nearLeftDoor = this.isLevel4NearLeftDoor();
       const nearChest = lower && this.chest?.revealed && this.isNearChest();
@@ -195,6 +208,64 @@ const MEME_CHEST = ${JSON.stringify(MEME_CHEST)};`);
 }
 
 export const WALK_SCENE_METHODS = `
+  getWalkRouteArrow() {
+    if (this.walkPause || this.memeView) return null;
+    if (this.state === "level3") {
+      const side = this.config?.level3?.stage1?.sideView || {};
+      const floor = side.floorY ?? 455;
+      if (this.canExitLevel3ToLevel4()) return { x: (side.exitRight?.x ?? side.maxX ?? 1216) - 26, y: floor - 90, direction: "right" };
+      const boss = this.level3Boss;
+      return boss && !boss.active ? { x: boss.x, y: (boss.y ?? floor) - 210, direction: "down" } : null;
+    }
+    if (this.state !== "level4") return null;
+    const stage = this.getLevel4Stage1Config();
+    const side = this.getLevel4ActiveSideView();
+    const lower = this.level4Rail === "lower";
+    const earned = this.hasLevel4MemeChest();
+    const floor = side.floorY ?? (lower ? 650 : 466);
+    if (earned && this.memeChest?.state !== "open") {
+      if (lower) return { x: MEME_CHEST.x, y: MEME_CHEST.y - 78, direction: "down" };
+      return { x: side.ladderX, y: floor - 54, direction: "down" };
+    }
+    if (lower) return { x: side.ladderX, y: floor - 92, direction: "up" };
+    if (earned) return { x: stage.exits?.leftDoor?.x ?? 86, y: floor - 90, direction: "left" };
+    if (!stage.bonita) return null;
+    return { x: stage.bonita.x ?? 960, y: (stage.bonita.y ?? floor) - 154, direction: "down" };
+  }
+
+  renderWalkRouteArrow(target, walk = null) {
+    const route = this.getWalkRouteArrow();
+    if (!route) return;
+    const width = walk ? PORTRAIT_FIGHT.width : VIEW_W;
+    const worldX = walk ? (route.x - walk.srcX) * width / walk.srcW : route.x;
+    const y = walk ? (route.y - walk.srcY) * walk.worldH / walk.srcH : route.y;
+    const margin = 32;
+    // A target outside the portrait crop is represented at the nearest edge
+    // until the player reaches that part of the map.
+    const x = clamp(worldX, margin, width - margin);
+    const direction = worldX < margin ? "left" : worldX > width - margin ? "right" : route.direction;
+    const directionAngle = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 };
+    target.save();
+    target.translate(Math.round(x), Math.round(y));
+    target.rotate(directionAngle[direction]);
+    target.beginPath();
+    target.moveTo(20, 0);
+    target.lineTo(1, 15);
+    target.lineTo(1, 7);
+    target.lineTo(-19, 7);
+    target.lineTo(-19, -7);
+    target.lineTo(1, -7);
+    target.lineTo(1, -15);
+    target.closePath();
+    target.lineJoin = "round";
+    target.strokeStyle = "#131520";
+    target.lineWidth = 7;
+    target.stroke();
+    target.fillStyle = "#ffd36c";
+    target.fill();
+    target.restore();
+  }
+
   // ---- Level 4's basement chest ----
   // Once Bonita's game is won in story mode, or in the staff tools' previews
   // of the win (which run as practice).

@@ -2,8 +2,8 @@
 // (build-moth.mjs publishes the result, compact; verify-moth-package.mjs checks
 // nothing else changed).
 //
-// All nine playable songs use measured drum-only rows. Silent drum breaks
-// contain no filler; Level 6 uses verse 1 through the end of chorus 2.
+// New charts use supplied studio stems. Story retains its edits, including
+// Level 6's verse-through-chorus section. Level Select plays whole mixes.
 //
 // Level 7 (the concert): full hype at the song's end needed 75% / 85% weighted
 // accuracy (easy / hard), too thin a margin (owner, 2026-10-13: a 72% run on
@@ -40,7 +40,44 @@ export const DRUM_CHARTS = { ...PRIOR_DRUM_CHARTS, version: revised.version, son
       evidence: {easy: easy.evidence, hard: hard.evidence} }];
   })
 ) };
-export const MOTH_CHART_VERSION = DRUM_CHARTS.version;
+export const FUNK_CHARTS = JSON.parse(readFileSync(new URL('./moth-funk-charts.json', import.meta.url)));
+export const MOTH_CHART_VERSION = FUNK_CHARTS.version;
+export const MOTH_STAGE_THEMES = {
+  level1OfficeRhythm: ['level1-stage1', 'office'],
+  level2BathroomRhythm: ['level2-stage2', 'bathroom'],
+  level3MassageRhythm: ['level3-stage2', 'massage'],
+  level4ArcadeRhythm: ['level4-stage1', 'arcade'],
+  level5StudioRhythm: ['studio-stage1', 'studio'],
+  level5RiverRhythm: ['level5-stage2', 'river'],
+  level6ConcertRhythm: ['level6-stage2', 'concert']
+};
+
+function makeChart(song, {start, duration, offset}) {
+  const stepBeats = .25;
+  const secondsPerStep = stepBeats * 60 / song.bpm;
+  const chart = {stepBeats, version: MOTH_CHART_VERSION, timingMode: 'studio-stems',
+    sourceRoles: {easy: 'isolated-drum-stem', hard: 'lead-vocal'}};
+  if (song.opening) chart.sourceRoles.opening = song.opening;
+  if (song.extendedRests) chart.sourceRoles.extendedRests = song.extendedRests;
+  const end = start + duration;
+  for (const mode of ['easy', 'hard']) {
+    chart[mode] = song[mode].filter(([time]) => time >= start && time < end)
+      .map(([time, lane, holdSeconds]) => [
+        Math.round((time - start - offset) / secondsPerStep * 1e8) / 1e8,
+        lane,
+        time + holdSeconds < end ? Math.round(holdSeconds / secondsPerStep * 1e8) / 1e8 : 0
+      ]);
+    assert(chart[mode].length > 0, `Empty chart ${song.audioSrc}/${mode}`);
+  }
+  return chart;
+}
+
+function fullSongPhases(phases, duration, song) {
+  const bar = 60 / song.bpm * song.meter.beatsPerBar;
+  const boundaries = phases.map((_, index) => index === 0 ? 0 :
+    song.meter.firstDownbeat + Math.round((duration * index / phases.length - song.meter.firstDownbeat) / bar) * bar);
+  return phases.map((phase, index) => ({...phase, start: boundaries[index], end: boundaries[index + 1] ?? duration}));
+}
 
 export const CONCERT_HYPE_TARGET = { easy: 0.6, hard: 0.7 };
 const CONCERT_NOTE = ['Hype grows with song progress; full hype requires 75%/85% weighted accuracy when the song ends. No early failure or secured climax.',
@@ -48,33 +85,53 @@ const CONCERT_NOTE = ['Hype grows with song progress; full hype requires 75%/85%
 
 export function patchCharts(config) {
   const entries = Object.entries(config).filter(([, spec]) => spec?.chart?.easy)
-    .concat(config.secretLevels.map(level => [level.id, level.rhythm]));
+    .map(([id, spec]) => [id, spec, ...MOTH_STAGE_THEMES[id]])
+    .concat(config.secretLevels.map(level => [level.id, level.rhythm, level.id, level.theme]));
   assert.equal(entries.length, 9, 'All seven story fights and both hidden songs');
-  for (const [id, spec] of entries) {
-    const measured = DRUM_CHARTS.songs[id];
-    assert(measured, `Measured chart for ${id}`);
+  assert.deepEqual(Object.keys(FUNK_CHARTS.songs).sort(), entries.map(([id]) => id).sort());
+  config.stageSelectRhythms = {};
+  for (const [id, spec, stage, theme] of entries) {
+    const song = FUNK_CHARTS.songs[id];
     const original = BASE_DRUM_CHARTS.songs[id];
     for (const key of ['bpm', 'beatOffset', 'audioStartSeconds']) assert.equal(spec[key] || 0, original[key], `${id}: original audio clock ${key}`);
     if (id === 'level5RiverRhythm') {
+      const measured = PRIOR_DRUM_CHARTS.songs[id];
       for (const key of ['beatOffset', 'audioStartSeconds', 'duration', 'fullSong', 'fadeInSeconds', 'fightCut']) spec[key] = measured[key];
       spec.phases.forEach((phase, index) => {
         phase.start = measured.phaseBoundaries[index];
         phase.end = measured.phaseBoundaries[index + 1];
       });
     }
-    spec.chart = {
-      stepBeats: .25, version: MOTH_CHART_VERSION, timingMode: 'waveform-attacks',
-      selectionVersion: measured.selectionVersion,
-      sourceRoles: Object.fromEntries([...'MOTH'].map(button => [button, 'drums'])),
-      drumInstruments: { M: 'hat', O: 'snare', T: 'kick', H: 'other' },
-      easy: measured.easy.map(row => [...row]), hard: measured.hard.map(row => [...row])
+    if (spec.fightCut?.fadeSeconds === 2) {
+      // The old cut used the same two-second fade at both ends and masked
+      // the opening hits. The new file keeps its cut clock and closing fade.
+      spec.fightCut.src = spec.fightCut.src.replace(/\.m4a$/, '-onset.m4a');
+      spec.fadeInSeconds = .012;
+    }
+    assert.equal(createHash('sha256').update(readFileSync(new URL('../.qa/moth/published/' + song.audioSrc, import.meta.url))).digest('hex'),
+      song.mixSha256, `Studio stems aligned to the exact shipped mix for ${id}`);
+    assert.equal(spec.bpm, song.bpm, `Source tempo for ${id}`);
+    const storyOrigin = spec.fightCut?.fromSeconds || 0;
+    spec.chart = makeChart(song, {start: storyOrigin, duration: spec.duration - (spec.fightCut ? .08 : 0), offset: spec.beatOffset || 0});
+    const easyFullSong = `assets/audio/easy-mixes/${theme}.m4a`;
+    spec.easyAudioSrc = spec.fightCut ? `assets/audio/easy-mixes/${theme}-story.m4a` : easyFullSong;
+    spec.note = 'Easy follows measured attacks in the isolated drum stem. Hard follows measured lead-vocal articulations.';
+    if (song.opening === 'bass-riff') spec.note += ' The opening taps and holds use the bass riff.';
+    if (song.extendedRests === 'bass-stem') spec.note += ' Audible bass fills extended rests.';
+    const {fightCut, ...selection} = spec;
+    const beatOffset = song.meter.firstDownbeat;
+    config.stageSelectRhythms[stage] = {
+      ...selection, theme, fullSong: true, audioSrc: song.audioSrc, easyAudioSrc: easyFullSong, duration: song.duration,
+      beatOffset, audioStartSeconds: 0, fadeInSeconds: 0,
+      phases: fullSongPhases(spec.phases || [], song.duration, song),
+      chart: makeChart(song, {start: 0, duration: song.duration, offset: beatOffset})
     };
-    spec.note = 'M/O/T/H heads follow measured drum attacks. Kick and snare reinforce the recurring pulse. Recorded swing, syncopation and fills keep their audible attack times. Both modes keep their phrase density and holds. Hard has at least 300 ms between repeated buttons and at most four heads per second.';
   }
   config.rhythmChartVersion = MOTH_CHART_VERSION;
   const crowd = config.level6ConcertRhythm.crowd;
   assert.deepEqual(crowd.accuracyTarget, { easy: 0.75, hard: 0.85 }, 'Concert hype target');
   crowd.accuracyTarget = { ...CONCERT_HYPE_TARGET };
+  config.stageSelectRhythms['level6-stage2'].crowd = crowd;
   assert(crowd.note.includes(CONCERT_NOTE[0]));
   crowd.note = crowd.note.replace(CONCERT_NOTE[0], CONCERT_NOTE[1]);
   return cleanRetiredHighwayConfig(config);

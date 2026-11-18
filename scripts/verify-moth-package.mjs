@@ -91,7 +91,7 @@ for (const file of files) {
     const text = await fs.readFile(file,'utf8');
     assert(!/sk-(?:proj-)?[A-Za-z0-9_-]{24,}|(?:ghp_|github_pat_)[A-Za-z0-9_]{25,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|AIza[0-9A-Za-z_-]{30,}|(?:AKIA|ASIA)[A-Z0-9]{16}/.test(text),'No recognized credential patterns in M.O.T.H');
   }
-  if (/\.(wav|m4a|mp3|ogg)$/.test(file)) assert((publicCode+staffCode+config).includes(path.relative(dir,file)),'Only referenced runtime audio is packaged');
+  if (/\.(wav|m4a|mp3|ogg|mp4)$/.test(file)) assert((publicCode+staffCode+config).includes(path.relative(dir,file)),'Only referenced runtime media is packaged');
 }
 for (const [page, code] of [['index.html',publicCode],['staff/index.html',staffCode]]) {
   const html = await fs.readFile(path.join(dir,page),'utf8');
@@ -103,7 +103,7 @@ for (const [page, code] of [['index.html',publicCode],['staff/index.html',staffC
 // Every image and sound file is listed with its real hash, so a mirror copy is
 // accepted only when it is byte-identical to the file this site serves.
 const integrity = JSON.parse(await fs.readFile(path.join(dir, 'asset-integrity.json'), 'utf8'));
-const media = files.filter(f => /\.(webp|png|jpe?g|wav|m4a|mp3|ogg)$/.test(f)).map(f => path.relative(dir, f));
+const media = files.filter(f => /\.(webp|png|jpe?g|wav|m4a|mp3|ogg|mp4)$/.test(f)).map(f => path.relative(dir, f));
 assert.deepEqual(Object.keys(integrity).sort(), media.sort(), 'Integrity list covers exactly the packaged media');
 for (const file of media) assert.equal(integrity[file], hash(await fs.readFile(path.join(dir, file))), `Integrity hash: ${file}`);
 for (const page of ['index.html', 'staff/index.html']) {
@@ -114,8 +114,8 @@ for (const page of ['index.html', 'staff/index.html']) {
     assert.match(url, /^https:\/\/cdn\.jsdelivr\.net\/gh\/MyScheduleltd\/myscheduleltd\.github\.io@[0-9a-f]{40}\/docs\/moth\/$/, 'Mirror access stays inside the pinned game paths');
     return url;
   });
-  const expected = "'self' " + mirrors.join(' ') + ' https://beauty-boy.vercel.app/api/moth-scoreboard';
-  assert.equal(policy, expected, 'Only the exact configured mirror paths and the scoreboard API may be fetched');
+  const expected = "'self' blob: " + mirrors.join(' ') + ' https://beauty-boy.vercel.app/api/moth-scoreboard';
+  assert.equal(policy, expected, 'Only verified local Blobs, configured mirrors and the scoreboard API may be fetched');
 }
 assert(!/createDebugPanel|toggleDebugPanel|data-debug-action|debug-panel-toggle|window\.bobbyGame\s*=/.test(publicCode));
 assert(staffCode.includes('createDebugPanel'));

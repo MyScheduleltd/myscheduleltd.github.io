@@ -7,6 +7,8 @@
 //        -> 201 { run }        a ticket for a new story run
 //   POST /api/moth-scoreboard  { mode, id, run, scores: { <stageId>: n, ... } }
 //        -> 201 { mode, rank, entries } | 4xx { error }
+// Stage Select passes stage and chartVersion for GET and POST. Its POST
+// submits one score, with a ticket issued for that stage and difficulty.
 //
 // The total is the sum of the score of the attempt that cleared each of the
 // seven story fights. Scores come from the player's browser, so the server
@@ -44,6 +46,7 @@ const PREVIOUS_CHART_LIMITS = {
 const charts = new Map([
   ['drums-readable-20261105b', PREVIOUS_CHART_LIMITS],
   ['drums-groove-20261114a', PREVIOUS_CHART_LIMITS],
+  ['drums-groove-20261114b', PREVIOUS_CHART_LIMITS],
   [CHART_VERSION, CHART_LIMITS]
 ]);
 const isMode = mode => typeof mode === 'string' && Object.hasOwn(MAX_FIGHT_SCORE, mode);
@@ -51,12 +54,21 @@ const FIGHTS = Object.keys(MAX_FIGHT_SCORE.chill);
 const versionOf = raw => raw == null ? null : charts.has(raw) ? raw : false;
 const storageKey = (kind, version, suffix) => `${version ? 'moth:chart:' + version : 'moth'}:${kind}:${suffix}`;
 const versionFields = version => version ? { chartVersion: version } : {};
+const scopeFields = (version, stage) => stage ? { ...versionFields(version), stage } : versionFields(version);
+const stageOf = (raw, version) => {
+  if (raw == null) return null;
+  const stages = charts.get(version)?.stages;
+  return typeof raw === 'string' && stages && Object.hasOwn(stages, raw) ? raw : false;
+};
+const boardKey = (mode, version, stage) => storageKey('board', version, stage ? 'stage:' + stage + ':' + mode : mode);
 // Older clients keep the original twelve-minute bound. Current charts use
 // the build-generated duration bound for the current Level 6 song excerpt.
 const MIN_RUN_SECONDS = 720;
 const CURRENT_MIN_RUN_SECONDS = CHART_LIMITS.minRunSeconds;
 const TICKET_SECONDS = 60 * 60 * 24 * 60;
 const TOP = 10;
+const TOP_STAGE = 5;
+const rankLimit = stage => stage ? TOP_STAGE : TOP;
 const ALLOWED_ORIGINS = new Set(['https://myscheduleltd.com', 'https://www.myscheduleltd.com', 'https://beauty-boy.vercel.app']);
 // Up to 8 characters of Chinese, English letters or digits.
 const ID_PATTERN = /^[\p{Script=Han}A-Za-z0-9]{1,8}$/u;
@@ -84,6 +96,13 @@ function checkRun(mode, scores, version = CHART_VERSION) {
     total += value;
   }
   return { total };
+}
+
+function checkStageRun(mode, score, version, stage) {
+  const limit = charts.get(version)?.stages?.[stage]?.[mode];
+  return Number.isInteger(limit) && Number.isInteger(score) && score >= 0 && score % 200 === 0 && score <= limit
+    ? { total: score }
+    : { error: 'scores' };
 }
 
 // Equal totals: the earlier post ranks higher. The fraction (below 1, so it
@@ -117,17 +136,17 @@ async function overLimit(store, key, seconds, most) {
 
 // A burst of board views costs one storage read per board every few seconds.
 const boardCache = new Map();
-async function readBoard(store, mode, version, { fresh = false } = {}) {
-  const key = storageKey('board', version, mode);
+async function readBoard(store, mode, version, stage, { fresh = false } = {}) {
+  const key = boardKey(mode, version, stage);
   const cached = boardCache.get(key);
   if (!fresh && cached && Date.now() - cached.at < 5000) return cached.entries;
-  const entries = await readStoredBoard(store, mode, version);
+  const entries = await readStoredBoard(store, key, rankLimit(stage));
   boardCache.set(key, { at: Date.now(), entries });
   return entries;
 }
 
-async function readStoredBoard(store, mode, version) {
-  const raw = await store.command('ZREVRANGE', storageKey('board', version, mode), 0, TOP - 1);
+async function readStoredBoard(store, key, top) {
+  const raw = await store.command('ZREVRANGE', key, 0, top - 1);
   return (raw || []).map((member, index) => {
     const entry = JSON.parse(member);
     return { rank: index + 1, id: entry.id, total: entry.total, at: entry.at };
@@ -175,46 +194,54 @@ async function handler(req, res, env = process.env) {
       const version = versionOf(url.searchParams.get('chartVersion'));
       if (version === false) return send(res, 400, { error: 'chart-version' }, origin);
       if (!isMode(mode)) return send(res, 400, { error: 'mode' }, origin);
-      return send(res, 200, { mode, ...versionFields(version), entries: await readBoard(store, mode, version) }, origin);
+      const stage = stageOf(url.searchParams.get('stage'), version);
+      if (stage === false) return send(res, 400, { error: 'stage' }, origin);
+      return send(res, 200, { mode, ...scopeFields(version, stage), entries: await readBoard(store, mode, version, stage) }, origin);
     }
     if (req.method !== 'POST') return send(res, 405, { error: 'method' }, origin);
     const body = await readBody(req);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return send(res, 400, { error: 'json' }, origin);
     const mode = body.mode;
     const version = versionOf(body.chartVersion);
     if (version === false) return send(res, 400, { error: 'chart-version' }, origin);
     if (!isMode(mode)) return send(res, 400, { error: 'mode' }, origin);
+    const stage = stageOf(body.stage, version);
+    if (stage === false) return send(res, 400, { error: 'stage' }, origin);
+    const fields = scopeFields(version, stage);
     const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
     if (body.action === 'start') {
-      if (await overLimit(store, `moth:starts:${ip}`, 3600, 20)) return send(res, 429, { error: 'rate' }, origin);
+      const rate = stage ? `moth:stage:starts:${ip}` : `moth:starts:${ip}`;
+      if (await overLimit(store, rate, 3600, stage ? 60 : 20)) return send(res, 429, { error: 'rate' }, origin);
       const run = crypto.randomUUID();
-      await store.command('SET', storageKey('ticket', version, run), JSON.stringify({ mode, ...versionFields(version), at: Date.now() }), 'EX', TICKET_SECONDS);
-      return send(res, 201, { run, ...versionFields(version) }, origin);
+      await store.command('SET', storageKey('ticket', version, run), JSON.stringify({ mode, ...fields, at: Date.now() }), 'EX', TICKET_SECONDS);
+      return send(res, 201, { run, ...fields }, origin);
     }
     const name = cleanId(body.id);
     if (name.error) return send(res, 400, { error: name.error }, origin);
-    const run = checkRun(mode, body.scores, version);
+    const run = stage ? checkStageRun(mode, body.score, version, stage) : checkRun(mode, body.scores, version);
     if (run.error) return send(res, 400, { error: run.error }, origin);
     const runId = String(body.run || '');
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(runId)) return send(res, 400, { error: 'run' }, origin);
-    if (await overLimit(store, `moth:rate:${ip}`, 600, 5)) return send(res, 429, { error: 'rate' }, origin);
+    const rate = stage ? `moth:stage:rate:${ip}` : `moth:rate:${ip}`;
+    if (await overLimit(store, rate, 600, 5)) return send(res, 429, { error: 'rate' }, origin);
     const ticketKey = storageKey('ticket', version, runId), runKey = storageKey('run', version, runId);
     const [ticketJson, posted] = await store.pipeline([['GET', ticketKey], ['EXISTS', runKey]]);
-    if (posted) return send(res, 409, { error: 'posted', ...versionFields(version), entries: await readBoard(store, mode, version) }, origin);
+    if (posted) return send(res, 409, { error: 'posted', ...fields, entries: await readBoard(store, mode, version, stage) }, origin);
     const ticket = ticketJson ? JSON.parse(ticketJson) : null;
-    if (ticket?.mode !== mode || (ticket.chartVersion || null) !== version) return send(res, 400, { error: 'run' }, origin);
-    const minRunSeconds = version === null ? MIN_RUN_SECONDS : charts.get(version).minRunSeconds;
+    if (ticket?.mode !== mode || (ticket.chartVersion || null) !== version || (ticket.stage || null) !== stage) return send(res, 400, { error: 'run' }, origin);
+    const minRunSeconds = stage ? charts.get(version).stages[stage].minRunSeconds : version === null ? MIN_RUN_SECONDS : charts.get(version).minRunSeconds;
     if (Date.now() - ticket.at < minRunSeconds * 1000) return send(res, 400, { error: 'too-fast' }, origin);
-    const board = storageKey('board', version, mode);
+    const board = boardKey(mode, version, stage), top = rankLimit(stage);
     const [count, lowest] = await store.pipeline([['ZCARD', board], ['ZRANGE', board, 0, 0, 'WITHSCORES']]);
-    if (count >= TOP && lowest?.length && run.total <= Math.floor(Number(lowest[1]))) return send(res, 409, { error: 'not-top', ...versionFields(version), entries: await readBoard(store, mode, version, { fresh: true }) }, origin);
-    // One post per story run.
-    if (await store.command('SET', runKey, '1', 'NX', 'EX', 60 * 60 * 24 * 90) !== 'OK') return send(res, 409, { error: 'posted', ...versionFields(version), entries: await readBoard(store, mode, version) }, origin);
+    if (count >= top && lowest?.length && run.total <= Math.floor(Number(lowest[1]))) return send(res, 409, { error: 'not-top', ...fields, entries: await readBoard(store, mode, version, stage, { fresh: true }) }, origin);
+    // One post per ticket.
+    if (await store.command('SET', runKey, '1', 'NX', 'EX', 60 * 60 * 24 * 90) !== 'OK') return send(res, 409, { error: 'posted', ...fields, entries: await readBoard(store, mode, version, stage) }, origin);
     const at = Date.now();
-    const member = JSON.stringify({ id: name.id, total: run.total, at, run: runId, scores: body.scores, ...versionFields(version) });
-    await store.pipeline([['ZADD', board, rankScore(run.total, at), member], ['ZREMRANGEBYRANK', board, 0, -(TOP + 1)], ['DEL', ticketKey]]);
-    const entries = await readBoard(store, mode, version, { fresh: true });
+    const member = JSON.stringify({ id: name.id, total: run.total, at, run: runId, ...(stage ? {} : { scores: body.scores }), ...fields });
+    await store.pipeline([['ZADD', board, rankScore(run.total, at), member], ['ZREMRANGEBYRANK', board, 0, -(top + 1)], ['DEL', ticketKey]]);
+    const entries = await readBoard(store, mode, version, stage, { fresh: true });
     const mine = entries.find(entry => entry.at === at && entry.id === name.id);
-    return send(res, mine ? 201 : 409, mine ? { mode, ...versionFields(version), rank: mine.rank, entries } : { error: 'not-top', ...versionFields(version), entries }, origin);
+    return send(res, mine ? 201 : 409, mine ? { mode, ...fields, rank: mine.rank, entries } : { error: 'not-top', ...fields, entries }, origin);
   } catch (error) {
     return send(res, error instanceof SyntaxError ? 400 : 500, { error: error instanceof SyntaxError ? 'json' : 'server' }, origin);
   }
@@ -227,5 +254,6 @@ module.exports.LEGACY_MAX_FIGHT_SCORE = LEGACY_MAX_FIGHT_SCORE;
 module.exports.CHART_VERSION = CHART_VERSION;
 module.exports.MIN_RUN_SECONDS = MIN_RUN_SECONDS;
 module.exports.CURRENT_MIN_RUN_SECONDS = CURRENT_MIN_RUN_SECONDS;
+module.exports.STAGE_LIMITS = CHART_LIMITS.stages;
 module.exports.cleanId = cleanId;
 module.exports.checkRun = checkRun;

@@ -9,6 +9,7 @@ export const UNUSED_MAP_POINTERS = [
 ];
 export const UNUSED_SPRITE_METADATA = [
   'level1HealthFx', 'level2Stage3Props', 'homeMp3Menu',
+  'level4ArcadeArena', 'level4BobbyFighter', 'level4BonitaFighter',
   'homeLyricsWindowIcon', 'homeLyricsWindowControls', 'loadingTransition',
   'level4BobbyVsIntro', 'level4BonitaGameBoss', 'level4BossStarShot',
   'level4BossGroundWave', 'finaleDuoSinging', 'finaleEndingFilmOverlay',

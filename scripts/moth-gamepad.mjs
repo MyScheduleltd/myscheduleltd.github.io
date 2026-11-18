@@ -3,10 +3,10 @@
 // browser's standard mapping supplies physical-position names; unknown devices
 // expose their actual button/axis numbers and can be configured in Settings.
 export const GAMEPAD_ACTIONS = [
-  ['M', 'KeyM', 'M / CYMBALS', 'M／鈸', 3],
-  ['O', 'KeyO', 'O / SNARE / CONFIRM / INTERACT', 'O／小鼓／確認／互動', 1],
-  ['T', 'KeyT', 'T / KICK DRUM', 'T／大鼓', 0],
-  ['H', 'KeyH', 'H / OTHER PERCUSSION / BACK', 'H／其他打擊樂／返回', 2],
+  ['M', 'KeyM', 'M / NOTE', 'M／音符', 3],
+  ['O', 'KeyO', 'O / NOTE / CONFIRM / INTERACT', 'O／音符／確認／互動', 1],
+  ['T', 'KeyT', 'T / NOTE', 'T／音符', 0],
+  ['H', 'KeyH', 'H / NOTE / BACK', 'H／音符／返回', 2],
   ['up', 'KeyW', 'UP', '上', 12], ['down', 'KeyS', 'DOWN', '下', 13],
   ['left', 'KeyA', 'LEFT', '左', 14], ['right', 'KeyD', 'RIGHT', '右', 15],
   ['space', 'Space', 'SPACE / JUMP', 'SPACE／跳躍', 5],

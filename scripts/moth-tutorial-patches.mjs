@@ -13,8 +13,8 @@ export const MOTH_OFFICE_TUTORIAL = [
   },
   {
     speaker: 'GANGAN',
-    en: 'Follow the drums. Tap the matching button when the ring closes at the white hit line.',
-    zh: '音符到達白色判定線時，白色圓環會提示時機，請跟著鼓點按下對應按鍵。',
+    en: 'Tap the matching button when the ring closes at the white hit line.',
+    zh: '音符到達白色判定線、圓環收合時，按下對應按鍵。',
     rhythmDemo: 'tap'
   },
   {
@@ -22,11 +22,6 @@ export const MOTH_OFFICE_TUTORIAL = [
     en: 'For a hold note, keep the button pressed until the tail ends.',
     zh: '“連續音符”則要長按至音符結束。',
     rhythmDemo: 'hold'
-  },
-  {
-    speaker: 'GANGAN',
-    en: 'All four buttons follow the drums. M is cymbals, O is snare, T is kick, and H is other percussion.',
-    zh: '四個按鍵都跟著鼓點：M 是鈸、O 是小鼓、T 是大鼓、H 是其他打擊樂。'
   },
   {
     speaker: 'GANGAN',
@@ -60,8 +55,8 @@ export const MOTH_OFFICE_READY = [
   },
   {
     speaker: 'GANGAN',
-    en: 'Now help Dr. Beauty stamp those papers. Follow the drums and aim for a higher score!',
-    zh: '現在！開始協助美麗蓋章章，跟上鼓點，贏得更高的分數吧！',
+    en: 'Now help Dr. Beauty stamp those papers. Stay on time and aim for a higher score!',
+    zh: '現在！開始協助美麗蓋章章，跟上節奏，挑戰更高分！',
     portraitFrame: 5
   }
 ];

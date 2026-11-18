@@ -10,6 +10,7 @@ import {chromium} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
 
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
+const arcadeOpening = '**/fight-cuts/level4-arcade-onset.m4a*';
 const browser = await chromium.launch({executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required']});
 const open = async () => {
   const context = await browser.newContext({viewport: {width: 393, height: 852}});
@@ -18,6 +19,7 @@ const open = async () => {
   const errors = []; page.on('pageerror', e => errors.push(String(e)));
   await page.goto(new URL('moth/staff/?device=phone', base).href, {waitUntil: 'domcontentloaded'});
   await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.evaluate(() => bobbyGame.setDifficulty('shoot', {persist: false, announce: false}));
   await page.keyboard.press('Shift');
   return {context, page, errors};
 };
@@ -31,7 +33,7 @@ const song = page => page.evaluate(() => {
 {
   const {context, page, errors} = await open();
   let released = 0;
-  await page.route('**/fight-cuts/level4-arcade.m4a*', async route => { await new Promise(r => setTimeout(r, 4000)); released = Date.now(); await route.continue(); });
+  await page.route(arcadeOpening, async route => { await new Promise(r => setTimeout(r, 4000)); released = Date.now(); await route.continue(); });
   const started = Date.now();
   await page.evaluate(() => bobbyGame.startStage('level4-stage1'));
   await page.waitForFunction(() => bobbyGame.levelLoadingPresentation, undefined, {timeout: 10000});
@@ -51,7 +53,7 @@ const song = page => page.evaluate(() => {
 {
   const {context, page, errors} = await open();
   let attempts=0;
-  await page.route('**/fight-cuts/level4-arcade.m4a*',route=>{attempts++;return route.fulfill({status:503,body:'unavailable'});});
+  await page.route(arcadeOpening,route=>{attempts++;return route.fulfill({status:503,body:'unavailable'});});
   await page.evaluate(() => bobbyGame.startStage('level4-stage1'));
   await page.locator('.load-recovery').waitFor({state:'visible',timeout:60000});
   const blocked=await page.evaluate(()=>({state:bobbyGame.state,ready:bobbyGame.loadedSceneGroups.has('level4'),
