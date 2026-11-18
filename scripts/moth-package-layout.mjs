@@ -11,7 +11,7 @@ export const SNAPSHOT_EXCLUDED_FILES = new Set([
   'haptics-test.html', 'haptics-test2.html', 'sfx-test.html'
 ]);
 const GENERATED_FILES = [
-  'index.html', 'src/game.js', 'src/arcade-embed.js', 'manifest.json',
+  'index.html', 'src/game.js', 'src/arcade-embed.js', 'src/boot-loading.js', 'manifest.json',
   'staff/index.html', 'staff/game.js', 'staff/manifest.json', 'asset-integrity.json'
 ];
 export function packageFiles(snapshot) {

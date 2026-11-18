@@ -58,8 +58,8 @@ export function patchFunkRuntime(once, edit) {
   once('  isBakedMusicTrack(audio) {\n', `  isBakedMusicTrack(audio) {
     if (this.easyBakedSources?.has(this.canonicalAudioSource(audio))) return true;
 `);
-  // Fight audio is already primed during loading. The general BGM fade and
-  // source-switch mute would mask the first hits while its media clock moves.
+  // Fight audio is already primed during loading. Its opening envelope uses
+  // the source playhead, so buffering and pause freeze the fade with the song.
   once('    const fresh = audio.currentTime < 0.05 && audio.volume > 0 && !this.isBakedMusicTrack(audio);',
     `    const fightSong = audio.volume > 0 && this.state === "playing" && this.level1OfficeRhythm
       && audio === this.getActiveLevel1OfficeRhythmAudio();
@@ -78,14 +78,32 @@ export function patchFunkRuntime(once, edit) {
       if (Math.abs(track.currentTime - start) > 0.001) track.currentTime = start;
       track.volume = 0;`);
   once('        if (this.hasBakedFades()) track.volume = BGM_VOLUME;\n        if (this.freePlay',
-    `        // Start full mixes at an audible gain before play(). The routed gain
-        // eases the remaining 10% on the audio clock after playback starts.
-        track.volume = BGM_VOLUME * (this.hasBakedFades() ? 1 : 0.9);
+    `        this.updateFightOpeningFade(track);
         if (this.freePlay`);
   edit('        // A window that opens on a phrase\'s pickup bar', '      } catch {\n        if (rhythm.audioStartAttempt !== startAttempt)',
-    () => '        track.volume = BGM_VOLUME;\n      } catch {\n        if (rhythm.audioStartAttempt !== startAttempt)');
+    () => '        this.updateFightOpeningFade(track);\n      } catch {\n        if (rhythm.audioStartAttempt !== startAttempt)');
   edit('    // Restarted inside the fade-in bar', '    this.soloPlay(track).catch(() => {',
-    () => '    track.volume = BGM_VOLUME;\n    this.soloPlay(track).catch(() => {');
+    () => '    this.updateFightOpeningFade(track);\n    this.soloPlay(track).catch(() => {');
+  once('      track.volume = BGM_VOLUME;\n      let timer;',
+    '      this.updateFightOpeningFade(track);\n      let timer;');
+  once('  updateMusicEndFades() {\n', `  updateFightOpeningFade(track = this.getActiveLevel1OfficeRhythmAudio()) {
+    const rhythm = this.level1OfficeRhythm;
+    if (!track || this.state !== "playing" || rhythm?.tutorial?.mode !== "done"
+      || rhythm.skipAudio || rhythm.ending || rhythm.songHandover || this.isRhythmCountIn()) return;
+    const seconds = Math.max(0, this.getActiveRhythmSpec()?.fadeInSeconds || 0);
+    const elapsed = Math.max(0, track.currentTime - this.getRhythmAudioStart());
+    const progress = seconds ? clamp(elapsed / seconds, 0, 1) : 1;
+    // A tiny positive level lets the native-clock stall guard advance through
+    // the unscored intro. First targets begin only after the full fade ends.
+    const volume = BGM_VOLUME * Math.max(0.001, easeInOut(progress));
+    if (Math.abs(track.volume - volume) > 0.00001) track.volume = volume;
+    const route = this.musicAudioRoutes?.get(track);
+    if (route) route.target = BGM_VOLUME;
+  }
+
+  updateMusicEndFades() {
+    this.updateFightOpeningFade();
+`);
   once('if (!playing || (!track.seeking && track.readyState >= 3))',
     `const context = this.musicAudioRoutes?.get(track)?.context;
     if (!playing || (!track.seeking && track.readyState >= 3 && !track.muted && track.volume > 0

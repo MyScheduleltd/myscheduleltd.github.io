@@ -2,7 +2,7 @@
 // chart owns timing; this changes only drawing, never an attack or judgment.
 export const MOTH_RHYTHM_HEAD = {radius: 25, lineWidth: 5, fontSize: 28};
 export const MOTH_RHYTHM_RING = {radius: 39, lineWidth: 4, outlineWidth: 2, lead: 0.82, color: '#ffffff', outlineColor: '#493423'};
-export const MOTH_PORTRAIT_RAIL_HIT_OFFSET = 208;
+export const MOTH_PORTRAIT_RAIL_HIT_OFFSET = 160;
 export const MOTH_PORTRAIT_RAIL_SCALE = 1.12;
 
 function firstRhythmNoteAt(notes, time, includeTails = false) {
@@ -40,13 +40,13 @@ export function calculateRhythmRailGeometry(notes = []) {
     const gap = notes[index].time - notes[index - 1].time;
     if (gap > 0.001) minGap = Math.min(minGap, gap);
   }
-  // The previous ring is already closing when the next one appears at full
-  // size. Reserve room for both painted edges, even in the tightest pair.
-  const {radius, lineWidth, outlineWidth, lead} = MOTH_RHYTHM_RING;
-  const closed = MOTH_RHYTHM_HEAD.radius + (MOTH_RHYTHM_HEAD.lineWidth + lineWidth) / 2;
-  const previousRadius = closed + (radius - closed) * Math.max(0, 1 - minGap / lead);
-  const ringSpacing = radius + previousRadius + lineWidth + 2 * outlineWidth + 1.5;
-  const pixelsPerSecond = Math.max(140, Math.ceil(ringSpacing / minGap));
+  // Keep every full-size letter readable without rushing the approach merely
+  // to separate neighboring outer halos. Rings sit behind the opaque heads.
+  // The shared fight speed gives dense Hard phrases about 1.4 seconds of
+  // fully visible approach on the portrait rail, with three pixels between
+  // the painted heads at the chart's tightest supported 190 ms spacing.
+  const headSpacing = MOTH_RHYTHM_HEAD.radius * 2 + MOTH_RHYTHM_HEAD.lineWidth + 3;
+  const pixelsPerSecond = Math.max(306, Math.ceil(headSpacing / minGap));
   return {pixelsPerSecond, minGap};
 }
 
@@ -205,14 +205,16 @@ function drawRhythmRailNotes(target, notes, {bounds, cursorX, railY, railTime, s
       drawRhythmHoldMarker(target, cursorX, railY, head.button);
     }
   }
+  // Paint all halos first. A later note's ring must never cross the letter
+  // or coloured face of an earlier note in a fast vocal run.
   for (const head of visible) {
-    drawRhythmNoteHead(target, head);
     const timing = cueAt?.(head.note, railTime);
     if (timing) {
       drawRhythmTimingRing(target, head.x, railY, timing);
       cues.push({id: head.note.id, time: head.note.time, button: head.button, x: head.x, y: railY, ...timing});
     }
   }
+  for (const head of visible) drawRhythmNoteHead(target, head);
   target.restore();
   return cues;
 }

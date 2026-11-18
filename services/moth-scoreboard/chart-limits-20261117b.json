@@ -1,0 +1,69 @@
+{
+  "version": "funk-stems-20261117b",
+  "minRunSeconds": 630,
+  "chill": {
+    "level1-stage1": 198000,
+    "level2-stage2": 176000,
+    "level3-stage2": 201000,
+    "level4-stage1": 175000,
+    "studio-stage1": 198000,
+    "level5-stage2": 287000,
+    "level6-stage2": 317000
+  },
+  "shoot": {
+    "level1-stage1": 259000,
+    "level2-stage2": 237000,
+    "level3-stage2": 278000,
+    "level4-stage1": 285000,
+    "studio-stage1": 248000,
+    "level5-stage2": 438000,
+    "level6-stage2": 403000
+  },
+  "stages": {
+    "level1-stage1": {
+      "minRunSeconds": 119,
+      "chill": 285000,
+      "shoot": 358000
+    },
+    "level2-stage2": {
+      "minRunSeconds": 176,
+      "chill": 360000,
+      "shoot": 484000
+    },
+    "level3-stage2": {
+      "minRunSeconds": 164,
+      "chill": 397000,
+      "shoot": 508000
+    },
+    "level4-stage1": {
+      "minRunSeconds": 154,
+      "chill": 281000,
+      "shoot": 417000
+    },
+    "level5-stage2": {
+      "minRunSeconds": 224,
+      "chill": 394000,
+      "shoot": 598000
+    },
+    "level6-stage2": {
+      "minRunSeconds": 162,
+      "chill": 317000,
+      "shoot": 403000
+    },
+    "studio-stage1": {
+      "minRunSeconds": 169,
+      "chill": 347000,
+      "shoot": 427000
+    },
+    "secret-xiaosi": {
+      "minRunSeconds": 55,
+      "chill": 117000,
+      "shoot": 176000
+    },
+    "secret-getdown": {
+      "minRunSeconds": 144,
+      "chill": 315000,
+      "shoot": 432000
+    }
+  }
+}

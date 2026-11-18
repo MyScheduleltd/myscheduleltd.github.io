@@ -1,6 +1,6 @@
 // Check every song/difficulty opening through the normal loading/countdown
-// paths. The rail waits through GO and starts with the routed music gain
-// already audible. Covers pauses, replays, and the Level 1 tutorial entry.
+// paths. The rail waits through GO, then approaches during a musical fade.
+// Measure visible reaction time and full gain at the first real attack.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -47,12 +47,18 @@ async function mount(page, device) {
         audio: !!track && !track.paused && !track.muted && track.volume > .0001,
         source: track?.currentSrc, movie: !!this.arcadeMusicVideo && !this.arcadeMusicVideo.paused,
         native: track?.currentTime, gain: route?.gain.gain.value ?? 0, notes: [], counters: [],
+        firstTime: rhythm.notes[0]?.time,
         judgments: [rhythm.roundScore, rhythm.misses, rhythm.perfects, rhythm.goods, rhythm.combo]
       };
       audit.frame = frame;
       try { return render.apply(this, args); }
       finally {
         audit.frame = null;
+        if (!audit.firstHit && frame.clock >= rhythm.notes[0]?.time - .025 && !this.isRhythmCountIn()) {
+          const first = rhythm.notes[0];
+          this.handleLevel1OfficeRhythmPress(first.button, performance.now());
+          frame.firstHit = audit.firstHit = {time: first.time, clock: frame.clock, status: first.status, delta: first.delta};
+        }
         if (!audit.checkedCountInput && frame.counters.includes('GO!')) {
           audit.checkedCountInput = true;
           const note = rhythm.notes.find(note => note.status === 'pending');
@@ -75,7 +81,10 @@ async function mount(page, device) {
     };
     window.drawRhythmRailNotes = function (target, list, layout) {
       const captured = audit.frame && target === game.ctx ? {
-        x: layout.cursorX, y: layout.railY, time: layout.railTime, heads: [], rings: 0
+        x: layout.cursorX, y: layout.railY, time: layout.railTime, heads: [], rings: 0,
+        firstX: layout.cursorX + (list[0].time - layout.railTime) * layout.speed,
+        right: Math.min(layout.bounds.x + layout.bounds.w - 36,
+          layout.viewLeft == null ? Infinity : layout.viewLeft + 704 / 1.12)
       } : null;
       if (captured) {
         audit.frame.notes.push(captured);
@@ -109,6 +118,7 @@ async function act(page, action, data) {
       audit.frames = [];
       audit.stage = data.stage;
       audit.checkedCountInput = false;
+      audit.firstHit = null;
       if (action === 'resume') { if (!game.resumeLevel1Office()) throw Error('Resume rejected'); return; }
       if (action === 'replay') { void game.replayFreePlayStage(); return; }
       game.returnToTitle();
@@ -136,7 +146,8 @@ async function collect(page, label, capture = false) {
     const frames = audit.frames;
     const go = frames.findIndex(frame => frame.counters.includes('GO!'));
     const live = frames.at(-1);
-    return go >= 0 && live.audio && !live.countdown && !live.counters.length && live.clock > frames[go].clock + .24;
+    return go >= 0 && live.audio && !live.countdown && !live.counters.length
+      && live.clock > Math.max(frames[go].clock + .24, live.firstTime + .1);
   }, undefined, { timeout: 25000 });
   return page.evaluate(() => window.__countAudit.frames);
 }
@@ -174,10 +185,32 @@ function check(frames, label) {
   const gain = Math.max(...moving.map(frame => frame.gain));
   assert(firstRail.time >= 0, label + ' drew an artificial silent note approach');
   assert(gain >= .48, label + ' never reached audible gain');
-  assert(moving.every(frame => frame.audio && frame.gain >= gain * .87),
-    label + ' moved while the song was muted or faded below its audible starting level: ' + JSON.stringify(moving.slice(0, 4)));
+  assert(moving.every(frame => frame.audio), label + ' moved with its music paused or muted');
+  const fresh = reference.clock < .05;
+  const firstTime = reference.firstTime;
+  assert(firstTime >= 2, label + ' puts a target in the unscored musical introduction');
+  const approach = post.filter(frame => frame.notes[0]?.firstX + 27.5 <= frame.notes[0]?.right
+    && frame.clock < firstTime);
+  if (fresh) {
+    assert(railFrames.every(frame => frame.notes.every(rail => rail.heads.length === 0)),
+      label + ' places a target under the fresh countdown');
+    assert(approach.length >= 8, label + ' never showed a first-note approach');
+    const visibleLead = firstTime - approach[0].clock;
+    assert(visibleLead >= 1.25, label + ' gives less than 1.25 seconds of complete-note reaction time: ' + visibleLead);
+    assert(approach[0].gain >= gain * .04, label + ' approaches before the music has faded into audibility');
+    assert(moving.some(frame => frame.clock < 1.5 && frame.gain < gain * .65),
+      label + ' opening music never fades in');
+    for (let i = 1; i < approach.length; i++) {
+      assert(approach[i].notes[0].firstX <= approach[i - 1].notes[0].firstX + .01,
+        label + ' first note does not roll continuously from right to left');
+    }
+  }
+  const atFirst = post.find(frame => frame.clock >= firstTime - .03);
+  assert(atFirst?.gain >= gain * .95, label + ' first target arrives before the fade finishes');
+  assert(post.some(frame => frame.firstHit?.status === 'perfect'), label + ' first real attack cannot be hit PERFECT');
   console.log('PASS', label, JSON.stringify({ countFrames: visible.length, rails: railFrames[0].notes.length,
-    openingGain: moving[0].gain, firstPlayable: moving[0].clock }));
+    openingGain: moving[0].gain, firstPlayable: firstTime,
+    visibleLead: approach.length ? firstTime - approach[0].clock : null }));
 }
 
 async function finishOfficeTutorial(page) {

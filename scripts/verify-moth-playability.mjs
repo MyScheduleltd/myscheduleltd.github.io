@@ -22,8 +22,16 @@ for (const [name, spec] of specs) {
     const geometry = calculateRhythmRailGeometry(notes);
     const perfectWindow = spec.perfectWindow || .075;
     const outerRadius = MOTH_RHYTHM_RING.radius + MOTH_RHYTHM_RING.lineWidth / 2 + MOTH_RHYTHM_RING.outlineWidth;
-    const fullRingPreview = ((704 - MOTH_PORTRAIT_RAIL_HIT_OFFSET) / MOTH_PORTRAIT_RAIL_SCALE - outerRadius) / geometry.pixelsPerSecond;
+    const headOuter = MOTH_RHYTHM_HEAD.radius + MOTH_RHYTHM_HEAD.lineWidth / 2;
+    // The crop may include the rail's right padding. Count only pixels that
+    // survive both the wide rail clip and the portrait crop, not empty space.
+    const phoneRight = Math.min(1252 - 36, 760 + (704 - MOTH_PORTRAIT_RAIL_HIT_OFFSET) / MOTH_PORTRAIT_RAIL_SCALE);
+    const fullRingPreview = (phoneRight - 760 - outerRadius) / geometry.pixelsPerSecond;
+    const phoneHeadPreview = (phoneRight - 760 - headOuter) / geometry.pixelsPerSecond;
+    const desktopHeadPreview = (1252 - 36 - 760 - headOuter) / geometry.pixelsPerSecond;
     assert(fullRingPreview >= MOTH_RHYTHM_RING.lead, `${name}/${mode}: even the smallest phone shows the whole ring for its full lead`);
+    assert(phoneHeadPreview >= 1.35, `${name}/${mode}: a complete phone note has time to approach before its attack (${phoneHeadPreview}s)`);
+    assert(desktopHeadPreview >= 1.35, `${name}/${mode}: a complete desktop note has time to approach before its attack (${desktopHeadPreview}s)`);
     let closestPixels = Infinity, closestSameKey = Infinity, maxInSecond = 0;
     const last = new Map();
     for (let i = 0; i < notes.length; i++) {
@@ -57,10 +65,7 @@ for (const [name, spec] of specs) {
         const empty = gap * geometry.pixelsPerSecond - 2 * MOTH_RHYTHM_HEAD.radius - MOTH_RHYTHM_HEAD.lineWidth;
         closestPixels = Math.min(closestPixels, empty);
         assert(empty >= 0.5 - 1e-6, `${name}/${mode}: heads have separate painted bounds (${empty}px)`);
-        const previousCue = calculateRhythmTimingCue(notes[i - 1], note.time - MOTH_RHYTHM_RING.lead, perfectWindow);
-        const previousOuter = previousCue ? previousCue.radius + previousCue.lineWidth / 2 + previousCue.outlineWidth : headOuter;
-        const haloSpace = gap * geometry.pixelsPerSecond - outerRadius - previousOuter;
-        assert(haloSpace >= .5 - 1e-6, `${name}/${mode}: neighboring timing circles remain separate when the later ring first appears (${haloSpace}px)`);
+        assert(empty >= 3 - 1e-6, `${name}/${mode}: separate full-size heads preserve the letter faces in fast runs (${empty}px)`);
       }
       if (note.holdEnd) {
         const next = notes[i + 1];
@@ -71,17 +76,19 @@ for (const [name, spec] of specs) {
       assert(geometry.minGap >= .19 - 1e-5, `${name}/hard: readable vocal attack spacing`);
       assert(maxInSecond <= 6, `${name}/hard: at most six attacks in a rolling second (${maxInSecond})`);
     }
-    reports.push({name, mode, notes: notes.length, minGapMs: Math.round(geometry.minGap * 1000), closestSameKeyMs: Math.round(closestSameKey * 1000), maxInSecond, pixelsPerSecond: geometry.pixelsPerSecond, emptyPixels: Number(closestPixels.toFixed(2)), fullRingPreview: Number(fullRingPreview.toFixed(3))});
+    reports.push({name, mode, notes: notes.length, minGapMs: Math.round(geometry.minGap * 1000), closestSameKeyMs: Math.round(closestSameKey * 1000), maxInSecond, pixelsPerSecond: geometry.pixelsPerSecond, emptyPixels: Number(closestPixels.toFixed(2)), fullRingPreview: Number(fullRingPreview.toFixed(3)), phoneHeadPreview: Number(phoneHeadPreview.toFixed(3)), desktopHeadPreview: Number(desktopHeadPreview.toFixed(3))});
   }
 }
 console.log('chart playability PASS', JSON.stringify(reports));
 if (process.argv.includes('--static')) process.exit(0);
 
-const { chromium } = await import('/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
+const { chromium, webkit } = await import('/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
-const out = path.join(root, '.qa/moth/rhythm-review');
+const safari = process.argv.includes('--webkit');
+const out = path.join(root, '.qa/moth/rhythm-review', safari ? 'webkit' : '');
 await fs.mkdir(out, {recursive: true});
-const browser = await chromium.launch({executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--no-sandbox']});
+const browser = safari ? await webkit.launch({headless: true})
+  : await chromium.launch({executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--no-sandbox']});
 try {
   for (const [name, viewport, phone] of [
     ['phone-small', {width: 320, height: 568}, true],
@@ -123,17 +130,21 @@ try {
     assert(Math.abs(latency.initialRoute - .053) < 1e-12 && Math.abs(latency.changedLatency - .093) < 1e-12
       && Math.abs(latency.changedContext - .025) < 1e-12, `${name}: output-route changes invalidate compensation immediately`);
     await page.evaluate(() => bobbyGame.startStage('level1-stage1', {freePlay: true, skipAudio: true}));
-    await page.waitForFunction(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm?.tutorial?.mode === 'done' && !bobbyGame.levelLoadingPresentation && !bobbyGame.isRhythmCountIn(), undefined, {timeout: 90000});
+    await page.waitForFunction(() => {
+      const g = bobbyGame, r = g.level1OfficeRhythm;
+      return g.state === 'playing' && r?.tutorial?.mode === 'done' && !g.levelLoadingPresentation
+        && !g.isRhythmCountIn() && !r.songHandover && !r.audioStarting && !r.graphicsLoading;
+    }, undefined, {timeout: 90000});
     const geometry = await page.evaluate(() => {
       const g = bobbyGame, r = g.level1OfficeRhythm;
       // The closest allowed hard phrase, repeated across all four buttons.
-      r.notes = Array.from({length: 10}, (_, index) => ({id: index, time: 10 + index * 0.224, button: 'MOTH'[index % 4], action: index % 2 ? 'accent' : 'do', task: 'stamp', cueAt: 8.4 + index * 0.224, phaseIndex: 0, status: 'pending', cuePlayed: true}));
+      r.notes = Array.from({length: 10}, (_, index) => ({id: index, time: 10 + index * 0.19, button: 'MOTH'[index % 4], action: index % 2 ? 'accent' : 'do', task: 'stamp', cueAt: 8.4 + index * 0.19, phaseIndex: 0, status: 'pending', cuePlayed: true}));
       const held = {id: -1, time: 9.328, holdEnd: 9.94, button: 'T', action: 'do', task: 'stamp', phaseIndex: 0, status: 'perfect', holding: true};
       r.notes.unshift(held);
       r.frozenSongTime = 9.9; g.songTime = 9.9; r.phaseIntroTimer = 0; r.judgment = null; r.trackPulse = null;
       // Freeze updates after setup; the actual renderer and portrait copy run.
       g.update = () => {};
-      const target = g.ctx, arcs = [], clips = [], glyphs = [], tails = [], tailFills = [], holdMarkers = [], stack = [];
+      const target = g.ctx, arcs = [], clips = [], glyphs = [], tails = [], tailFills = [], holdMarkers = [], stack = [], paintOrder = [];
       const originals = Object.fromEntries(['save', 'restore', 'beginPath', 'rect', 'clip', 'arc', 'fillText', 'strokeText', 'moveTo', 'lineTo', 'stroke', 'fillRect'].map(key => [key, target[key]]));
       const outlines = [];
       let clip = null, pathRect = null, line = [];
@@ -156,6 +167,8 @@ try {
       target.arc = function (x, y, radius, start, end) {
         if (Math.abs(y - 616) < .001 && radius <= 60 && x >= 264 && x <= 1216) {
           arcs.push({x, y, radius, start, end, lineWidth: this.lineWidth, stroke: this.strokeStyle, clip});
+          if (this.strokeStyle === '#ffffff') paintOrder.push('ring');
+          if (this.strokeStyle === '#16171b' && radius === 25) paintOrder.push('head');
         }
         return originals.arc.apply(this, arguments);
       };
@@ -166,6 +179,7 @@ try {
             (metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) / 2);
           const transform = this.getTransform();
           glyphs.push({text, x, y, font: this.font, inkRadius, translate: [transform.e, transform.f]});
+          paintOrder.push('letter');
         }
         return originals.fillText.apply(this, arguments);
       };
@@ -192,10 +206,10 @@ try {
       }
       finally { Math.random = random; Object.assign(target, originals); }
       const layout = g.getRhythmRailGeometry();
-      return {speed: layout.pixelsPerSecond, gapPixels: 0.224 * layout.pixelsPerSecond,
+      return {speed: layout.pixelsPerSecond, gapPixels: 0.19 * layout.pixelsPerSecond,
         tall: document.body.dataset.tallScreen === '1', viewportWidth: innerWidth,
         canvasBounds: g.ctx.canvas.getBoundingClientRect().toJSON(), telemetry: r.renderTelemetry.railPixelsPerSecond,
-        arcs, clips, glyphs, outlines, tails, tailFills, holdColors, holdMarkers, cues: r.renderTelemetry.noteTimingCues,
+        arcs, clips, glyphs, outlines, tails, tailFills, holdColors, holdMarkers, paintOrder, cues: r.renderTelemetry.noteTimingCues,
         heldX: 760 + (held.time - g.songTime) * layout.pixelsPerSecond,
         releaseX: 760 + (held.holdEnd - g.songTime) * layout.pixelsPerSecond};
     });
@@ -226,12 +240,15 @@ try {
     }), `${name}: every letter's measured ink fits inside its colored head without touching the outline`);
     assert(geometry.cues.length === cues.length && geometry.cues.every(cue => cues.some(arc => Math.abs(arc.x - cue.x) < 1e-9 && Math.abs(arc.radius - cue.radius) < 1e-9)), `${name}: telemetry reports the painted cue radii`);
     assert(geometry.clips.length > 0 && geometry.arcs.every(arc => arc.clip), `${name}: all note heads and timing arcs obey rail clipping`);
+    assert(geometry.paintOrder.lastIndexOf('ring') < geometry.paintOrder.indexOf('head')
+      && geometry.paintOrder.lastIndexOf('ring') < geometry.paintOrder.indexOf('letter'),
+      `${name}: all timing rings are painted behind opaque heads and letters`);
     const painted = new Map();
-    for (const arc of geometry.arcs) painted.set(arc.x, Math.max(painted.get(arc.x) || 0, arc.radius + arc.lineWidth / 2));
+    for (const arc of heads) painted.set(arc.x, Math.max(painted.get(arc.x) || 0, arc.radius + arc.lineWidth / 2));
     const bounds = [...painted].sort((a, b) => a[0] - b[0]);
     for (let i = 1; i < bounds.length; i++) {
       assert(bounds[i][0] - bounds[i - 1][0] - bounds[i][1] - bounds[i - 1][1] >= .5 - 1e-6,
-        `${name}: actual head and timing-arc painted bounds never touch`);
+        `${name}: actual full-size head painted bounds never touch`);
     }
     assert(geometry.clips.every(clip => clip.y <= 555 && clip.y + clip.h >= 679.5), `${name}: sparse timing rings fit vertically`);
     await page.screenshot({path: path.join(out, `hard-rail-${name}.png`)});
