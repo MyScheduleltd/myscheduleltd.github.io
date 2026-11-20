@@ -2,9 +2,9 @@
 """Bake single-stream Easy mixes without shifting the chart clock.
 
 Use the measured mapping from the supplied drum stems to the game's songs.
-Keep each arrangement's original PCM length and closing fade. Export the
-revised full-mix Story cuts alongside their Easy counterparts. Easy output
-already includes the regular gameplay music gain.
+Keep each arrangement's original PCM length and closing fade. Correct drum
+stems are blended into the existing verified mix/cut; Hard audio stays intact.
+Easy output already includes the regular gameplay music gain.
 """
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -63,14 +63,6 @@ def write_mix(path, base, drums, added_gain):
     raise ValueError(f'{path} still has decoded peaks above the target')
 
 
-def write_story_cut(path, segment):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-f', 'f32le', '-ar', str(RATE),
-                    '-ac', '2', '-i', '-', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', str(path)],
-                   input=segment.astype('<f4', copy=False).tobytes(), check=True)
-    assert len(author.decode(path, rate=RATE, stereo=True)) == len(segment), path
-
-
 def build_song(identity, config, analysis, stems, out, story_only):
     prefix, filename, *_ = author.SONGS[identity]
     source = 'songs/2026-09-28/' + filename + '.m4a'
@@ -92,22 +84,11 @@ def build_song(identity, config, analysis, stems, out, story_only):
 
     if cut:
         fade_out = round(cut['fadeSeconds'] * RATE)
-        fade_in = round((story['fadeInSeconds'] if revised else cut['fadeSeconds']) * RATE)
+        # The runtime owns the two-second musical fade. Match only the short
+        # physical cut fade here, without baking that envelope a second time.
+        fade_in = round((.012 if revised else cut['fadeSeconds']) * RATE)
         start = round(cut['fromSeconds']*RATE)
-        if revised:
-            original = author.ROOT/'.qa/moth/published'/cut['src'].replace('-onset.m4a', '.m4a')
-            base = author.decode(original, rate=RATE, stereo=True).copy()
-            # Replace only the old two-second intro. Blend back into the
-            # verified cut on the same samples, keeping its original ending.
-            blend = round(.10 * RATE)
-            lead = full[start:start+fade_out+blend]
-            assert len(lead) == fade_out + blend, (identity, 'full mix covers intro')
-            base[:fade_out] = lead[:fade_out]
-            region = slice(fade_out, fade_out+blend)
-            weight = np.linspace(0, 1, blend, dtype=np.float32)[:, None]
-            base[region] = weight * base[region] + (1 - weight) * lead[region]
-        else:
-            base = author.decode(author.ROOT/'docs/moth'/cut['src'],rate=RATE,stereo=True)
+        base = author.decode(author.ROOT/'docs/moth'/cut['src'],rate=RATE,stereo=True)
         segment = drums[start:start+len(base)].copy()
         assert len(segment) == len(base), (identity, 'drum stem covers cut')
         opening = np.linspace(0, 1, fade_in, dtype=np.float32)[:, None]
@@ -116,9 +97,6 @@ def build_song(identity, config, analysis, stems, out, story_only):
         closing = np.linspace(1, 0, fade_out, dtype=np.float32)[:, None]
         segment[:fade_in] *= opening
         segment[-fade_out:] *= closing
-        if revised:
-            base[:fade_in] *= opening
-            write_story_cut(out/cut['src'], base)
         write_mix(out/ASSET_DIR/f'{theme}-story.m4a',base,segment,added_gain)
     print(identity, 'fitted kit gain', round(kit_gain,3), flush=True)
 

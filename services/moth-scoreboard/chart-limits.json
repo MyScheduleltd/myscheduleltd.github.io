@@ -1,69 +1,69 @@
 {
-  "version": "funk-rollin-20261118b",
+  "version": "funk-patterns-20261119b",
   "minRunSeconds": 630,
   "chill": {
-    "level1-stage1": 191000,
-    "level2-stage2": 173000,
-    "level3-stage2": 195000,
-    "level4-stage1": 171000,
-    "studio-stage1": 193000,
-    "level5-stage2": 285000,
-    "level6-stage2": 316000
+    "level1-stage1": 153000,
+    "level2-stage2": 138000,
+    "level3-stage2": 156000,
+    "level4-stage1": 137000,
+    "studio-stage1": 154000,
+    "level5-stage2": 228000,
+    "level6-stage2": 253000
   },
   "shoot": {
-    "level1-stage1": 259000,
-    "level2-stage2": 234000,
-    "level3-stage2": 272000,
-    "level4-stage1": 278000,
-    "studio-stage1": 248000,
-    "level5-stage2": 436000,
-    "level6-stage2": 399000
+    "level1-stage1": 303000,
+    "level2-stage2": 260000,
+    "level3-stage2": 320000,
+    "level4-stage1": 308000,
+    "studio-stage1": 265000,
+    "level5-stage2": 490000,
+    "level6-stage2": 418000
   },
   "stages": {
     "level1-stage1": {
       "minRunSeconds": 119,
-      "chill": 278000,
-      "shoot": 358000
+      "chill": 222000,
+      "shoot": 406000
     },
     "level2-stage2": {
       "minRunSeconds": 176,
-      "chill": 357000,
-      "shoot": 481000
+      "chill": 286000,
+      "shoot": 523000
     },
     "level3-stage2": {
       "minRunSeconds": 164,
-      "chill": 391000,
-      "shoot": 502000
+      "chill": 313000,
+      "shoot": 557000
     },
     "level4-stage1": {
       "minRunSeconds": 154,
-      "chill": 277000,
-      "shoot": 412000
+      "chill": 222000,
+      "shoot": 448000
     },
     "level5-stage2": {
       "minRunSeconds": 224,
-      "chill": 392000,
-      "shoot": 596000
+      "chill": 313000,
+      "shoot": 673000
     },
     "level6-stage2": {
       "minRunSeconds": 162,
-      "chill": 316000,
-      "shoot": 399000
+      "chill": 253000,
+      "shoot": 418000
     },
     "studio-stage1": {
       "minRunSeconds": 169,
-      "chill": 345000,
-      "shoot": 427000
+      "chill": 276000,
+      "shoot": 455000
     },
     "secret-xiaosi": {
       "minRunSeconds": 55,
-      "chill": 115000,
-      "shoot": 170000
+      "chill": 92000,
+      "shoot": 203000
     },
     "secret-getdown": {
       "minRunSeconds": 144,
-      "chill": 309000,
-      "shoot": 428000
+      "chill": 247000,
+      "shoot": 437000
     }
   }
 }

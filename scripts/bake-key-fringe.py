@@ -52,8 +52,11 @@ def clean(image):
     return Image.fromarray(out), int(fix.sum() + stray.sum())
 
 sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
-files = {}
-for rel in json.loads((OUT / 'key-fringe.json').read_text()):
+fringe_files = json.loads((OUT / 'key-fringe.json').read_text())
+# Preserve separately approved sprite repairs when rebaking the old key fringe.
+previous = json.loads((OUT / 'manifest.json').read_text()).get('files', {})
+files = {name: entry for name, entry in previous.items() if name not in fringe_files}
+for rel in fringe_files:
     source = RELEASE / rel
     cleaned, changed = clean(Image.open(source))
     target = OUT / rel

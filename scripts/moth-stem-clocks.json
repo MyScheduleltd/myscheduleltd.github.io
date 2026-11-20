@@ -1,0 +1,788 @@
+{
+  "method": "Independent +/-12s normalized shared-waveform consensus, chronological energetic windows; prior-near tempo plus independent spectral candidates",
+  "checkedAtUtc": "2026-11-19T09:09:38Z",
+  "songs": {
+    "level5RiverRhythm": {
+      "mix": {
+        "sha256": "1a32f0eb1a46af27a112abc43b3b5ae218725ffea7d76eda1985e4843979512d"
+      },
+      "meter": {
+        "priorBpm": 76,
+        "measuredPriorNearBpm": 75.999,
+        "differenceBpm": -0.001,
+        "independentSpectralCandidates": [
+          {
+            "bpm": 152.0004,
+            "power": 1.0
+          },
+          {
+            "bpm": 75.9888,
+            "power": 0.9736
+          },
+          {
+            "bpm": 114.006,
+            "power": 0.2108
+          },
+          {
+            "bpm": 94.986,
+            "power": 0.1651
+          },
+          {
+            "bpm": 152.7786,
+            "power": 0.0946
+          },
+          {
+            "bpm": 75.2335,
+            "power": 0.0815
+          },
+          {
+            "bpm": 76.767,
+            "power": 0.0806
+          },
+          {
+            "bpm": 151.2222,
+            "power": 0.0735
+          },
+          {
+            "bpm": 133.0032,
+            "power": 0.0668
+          },
+          {
+            "bpm": 56.9916,
+            "power": 0.0638
+          }
+        ],
+        "strongestDrumEnergyBeatPhaseSeconds": 0.095,
+        "priorDownbeatSeconds": 0.089,
+        "energyPhaseMinusPriorMs": 6.0,
+        "barPhaseStatus": "Percussion energy cannot uniquely label beat one; the four 4/4 rotations need musical review. Energy phase is not an onset timestamp."
+      },
+      "stems": {
+        "Vocals": {
+          "sha256": "d469aaabb774fcded9bbfc582357acc4d0c22cb79121c733f53601c38bc3d3a1",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 18,
+            "medianCorrelation": 0.8364,
+            "minimumCorrelation": 0.6333,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        },
+        "Drums": {
+          "sha256": "97c619353a199d2976299e11a4c0d36f9cb6f6b9356974b36762a07ee840b697",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 17,
+            "medianCorrelation": 0.8002,
+            "minimumCorrelation": 0.6879,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        },
+        "Bass": {
+          "sha256": "9bc660a1769d87e43df40886940a7ac37448d99a73c9a6bdbb1db2281997ff8d",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0018,
+            "driftMsPerMinute": 0.0158,
+            "matchingWindows": 18,
+            "medianCorrelation": 0.7344,
+            "minimumCorrelation": 0.524,
+            "fitP90Ms": 0.0848,
+            "outsideOld240msSearch": false
+          }
+        }
+      }
+    },
+    "level1OfficeRhythm": {
+      "mix": {
+        "sha256": "49cae1d398a91cf16a4c91142669a5ba6284ade2d0f30cfc017c2f6a5dd0a6e2"
+      },
+      "meter": {
+        "priorBpm": 93,
+        "measuredPriorNearBpm": 92.9782,
+        "differenceBpm": -0.0218,
+        "independentSpectralCandidates": [
+          {
+            "bpm": 92.9718,
+            "power": 1.0
+          },
+          {
+            "bpm": 91.7358,
+            "power": 0.1566
+          },
+          {
+            "bpm": 97.229,
+            "power": 0.0594
+          },
+          {
+            "bpm": 96.0388,
+            "power": 0.0469
+          },
+          {
+            "bpm": 119.4305,
+            "power": 0.043
+          },
+          {
+            "bpm": 138.1531,
+            "power": 0.042
+          },
+          {
+            "bpm": 139.4806,
+            "power": 0.0402
+          },
+          {
+            "bpm": 116.2262,
+            "power": 0.04
+          },
+          {
+            "bpm": 140.9454,
+            "power": 0.0358
+          },
+          {
+            "bpm": 102.951,
+            "power": 0.0336
+          }
+        ],
+        "strongestDrumEnergyBeatPhaseSeconds": 0.01,
+        "priorDownbeatSeconds": 0.015,
+        "energyPhaseMinusPriorMs": -5.0,
+        "barPhaseStatus": "Percussion energy cannot uniquely label beat one; the four 4/4 rotations need musical review. Energy phase is not an onset timestamp."
+      },
+      "stems": {
+        "Vocals": {
+          "sha256": "3d44926f5b8621aee4c885247dfc7dfd82b51056f84c182d6d5636de4c073d15",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 16,
+            "medianCorrelation": 0.8238,
+            "minimumCorrelation": 0.7278,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        },
+        "Drums": {
+          "sha256": "25e6246ac3e9d7612cb663b46c2cf48376686ee2b1059764e587075311a7ac5a",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 18,
+            "medianCorrelation": 0.622,
+            "minimumCorrelation": 0.3964,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        }
+      }
+    },
+    "level2BathroomRhythm": {
+      "mix": {
+        "sha256": "b5a9b552623b4d5f1df90de2f228542ce2ccf8fc8cd44a96ee90b6a2f77d0974"
+      },
+      "meter": {
+        "priorBpm": 75,
+        "measuredPriorNearBpm": 75.04697,
+        "differenceBpm": 0.04697,
+        "independentSpectralCandidates": [
+          {
+            "bpm": 149.9863,
+            "power": 1.0
+          },
+          {
+            "bpm": 93.7271,
+            "power": 0.3598
+          },
+          {
+            "bpm": 75.0504,
+            "power": 0.2288
+          },
+          {
+            "bpm": 84.3658,
+            "power": 0.1312
+          },
+          {
+            "bpm": 79.6967,
+            "power": 0.1251
+          },
+          {
+            "bpm": 103.1113,
+            "power": 0.1246
+          },
+          {
+            "bpm": 131.2866,
+            "power": 0.1157
+          },
+          {
+            "bpm": 168.6859,
+            "power": 0.1103
+          },
+          {
+            "bpm": 109.2224,
+            "power": 0.0984
+          },
+          {
+            "bpm": 107.7805,
+            "power": 0.0972
+          }
+        ],
+        "strongestDrumEnergyBeatPhaseSeconds": 0.65,
+        "priorDownbeatSeconds": 2.173,
+        "energyPhaseMinusPriorMs": 75.999,
+        "barPhaseStatus": "Percussion energy cannot uniquely label beat one; the four 4/4 rotations need musical review. Energy phase is not an onset timestamp."
+      },
+      "stems": {
+        "Vocals": {
+          "sha256": "18a712c7012f6fa627dd6452e87aaf57bb20d9ec79dd2faa8f1dfd050000652e",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 18,
+            "medianCorrelation": 0.8788,
+            "minimumCorrelation": 0.6629,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        },
+        "Drums": {
+          "sha256": "d8e5ddefaa93d029cb69c107730106633872daca80d931dd6631be83fc5ba38f",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 18,
+            "medianCorrelation": 0.9247,
+            "minimumCorrelation": 0.6433,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        }
+      }
+    },
+    "level3MassageRhythm": {
+      "mix": {
+        "sha256": "7d9dde848ec235916157ec53fa3a5c7223a842b747de79c634d87bc68b78b434"
+      },
+      "meter": {
+        "priorBpm": 105,
+        "measuredPriorNearBpm": 105.02455,
+        "differenceBpm": 0.02455,
+        "independentSpectralCandidates": [
+          {
+            "bpm": 105.0339,
+            "power": 1.0
+          },
+          {
+            "bpm": 118.1717,
+            "power": 0.251
+          },
+          {
+            "bpm": 144.4473,
+            "power": 0.1555
+          },
+          {
+            "bpm": 91.0263,
+            "power": 0.0798
+          },
+          {
+            "bpm": 130.2567,
+            "power": 0.0791
+          },
+          {
+            "bpm": 131.3095,
+            "power": 0.0733
+          },
+          {
+            "bpm": 125.4044,
+            "power": 0.0521
+          },
+          {
+            "bpm": 65.6662,
+            "power": 0.0506
+          },
+          {
+            "bpm": 98.4879,
+            "power": 0.0498
+          },
+          {
+            "bpm": 91.8045,
+            "power": 0.0432
+          }
+        ],
+        "strongestDrumEnergyBeatPhaseSeconds": 0.065,
+        "priorDownbeatSeconds": 0.034,
+        "energyPhaseMinusPriorMs": 31.0,
+        "barPhaseStatus": "Percussion energy cannot uniquely label beat one; the four 4/4 rotations need musical review. Energy phase is not an onset timestamp."
+      },
+      "stems": {
+        "Vocals": {
+          "sha256": "7d77025c4fb4cd5f15955db7d133f2307ce0091070024e856b5aef3e2b024365",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 18,
+            "medianCorrelation": 0.8012,
+            "minimumCorrelation": 0.7014,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        },
+        "Drums": {
+          "sha256": "0f695da2e426b7c43115343ccb45ca87d88f94ea2e42f7fa6f968acb39f88df4",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 18,
+            "medianCorrelation": 0.8709,
+            "minimumCorrelation": 0.6673,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        }
+      }
+    },
+    "level4ArcadeRhythm": {
+      "mix": {
+        "sha256": "e76f49e08107aaa4dc6aea0ea5d277aa9957a3f0377c1c31d465cbb265c103ff"
+      },
+      "meter": {
+        "priorBpm": 100,
+        "measuredPriorNearBpm": 100.00439,
+        "differenceBpm": 0.00439,
+        "independentSpectralCandidates": [
+          {
+            "bpm": 100.0214,
+            "power": 1.0
+          },
+          {
+            "bpm": 98.3734,
+            "power": 0.0284
+          },
+          {
+            "bpm": 93.7958,
+            "power": 0.0258
+          },
+          {
+            "bpm": 101.5778,
+            "power": 0.0253
+          },
+          {
+            "bpm": 106.1554,
+            "power": 0.0239
+          },
+          {
+            "bpm": 87.5702,
+            "power": 0.0145
+          },
+          {
+            "bpm": 112.4268,
+            "power": 0.0128
+          },
+          {
+            "bpm": 97.1832,
+            "power": 0.0124
+          },
+          {
+            "bpm": 103.0426,
+            "power": 0.0081
+          },
+          {
+            "bpm": 90.8203,
+            "power": 0.0072
+          }
+        ],
+        "strongestDrumEnergyBeatPhaseSeconds": 0.055,
+        "priorDownbeatSeconds": 0.048,
+        "energyPhaseMinusPriorMs": 7.0,
+        "barPhaseStatus": "Percussion energy cannot uniquely label beat one; the four 4/4 rotations need musical review. Energy phase is not an onset timestamp."
+      },
+      "stems": {
+        "Vocals": {
+          "sha256": "e2135b00c95b78c9519795d7345f55b49a10715e60e513bfdf378cce41e5a404",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 18,
+            "medianCorrelation": 0.8404,
+            "minimumCorrelation": 0.458,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        },
+        "Drums": {
+          "sha256": "e21bff85db5dc39ef8027c7e697fcd7e675d4687c8e28962c8db36fa6c875cb0",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 17,
+            "medianCorrelation": 0.7214,
+            "minimumCorrelation": 0.279,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        },
+        "Bass": {
+          "sha256": "f34268ebfba852fb314c730d4ffdbf2303fd376a9a35f379138b84af64653b23",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0236,
+            "driftMsPerMinute": 0.0287,
+            "matchingWindows": 18,
+            "medianCorrelation": 0.7154,
+            "minimumCorrelation": 0.4983,
+            "fitP90Ms": 0.1168,
+            "outsideOld240msSearch": false
+          }
+        }
+      }
+    },
+    "level5StudioRhythm": {
+      "mix": {
+        "sha256": "7cff1ca41928d5aad0a7ae6ca51aee21bbdf593e7cd36fd7051c6798a18ae726"
+      },
+      "meter": {
+        "priorBpm": 113,
+        "measuredPriorNearBpm": 112.99553,
+        "differenceBpm": -0.00447,
+        "independentSpectralCandidates": [
+          {
+            "bpm": 112.999,
+            "power": 1.0
+          },
+          {
+            "bpm": 116.3635,
+            "power": 0.0194
+          },
+          {
+            "bpm": 169.5328,
+            "power": 0.018
+          },
+          {
+            "bpm": 109.6573,
+            "power": 0.0177
+          },
+          {
+            "bpm": 105.9494,
+            "power": 0.0125
+          },
+          {
+            "bpm": 120.0256,
+            "power": 0.0102
+          },
+          {
+            "bpm": 98.8998,
+            "power": 0.0097
+          },
+          {
+            "bpm": 102.5162,
+            "power": 0.0092
+          },
+          {
+            "bpm": 56.5567,
+            "power": 0.0086
+          },
+          {
+            "bpm": 123.436,
+            "power": 0.0071
+          }
+        ],
+        "strongestDrumEnergyBeatPhaseSeconds": 0.02,
+        "priorDownbeatSeconds": 0.014,
+        "energyPhaseMinusPriorMs": 6.0,
+        "barPhaseStatus": "Percussion energy cannot uniquely label beat one; the four 4/4 rotations need musical review. Energy phase is not an onset timestamp."
+      },
+      "stems": {
+        "Vocals": {
+          "sha256": "95146870f825befb807cffd931325d22ba575bcffab3f575d864c49e7627e29e",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 17,
+            "medianCorrelation": 0.7764,
+            "minimumCorrelation": 0.376,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        },
+        "Drums": {
+          "sha256": "92cb7995f8332663764eb535339ac246742fdf83119d986b856318a29adf4dc5",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 17,
+            "medianCorrelation": 0.7674,
+            "minimumCorrelation": 0.6652,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        }
+      }
+    },
+    "level6ConcertRhythm": {
+      "mix": {
+        "sha256": "0b3931d722ed4a775fab89dcd9c2d35919acfeb1829e05339be2ca8544f725e0"
+      },
+      "meter": {
+        "priorBpm": 134,
+        "measuredPriorNearBpm": 133.99898,
+        "differenceBpm": -0.00102,
+        "independentSpectralCandidates": [
+          {
+            "bpm": 134.0103,
+            "power": 1.0
+          },
+          {
+            "bpm": 83.7479,
+            "power": 0.7551
+          },
+          {
+            "bpm": 100.502,
+            "power": 0.1968
+          },
+          {
+            "bpm": 167.4728,
+            "power": 0.1855
+          },
+          {
+            "bpm": 66.9937,
+            "power": 0.1087
+          },
+          {
+            "bpm": 150.7416,
+            "power": 0.0777
+          },
+          {
+            "bpm": 137.3749,
+            "power": 0.0773
+          },
+          {
+            "bpm": 80.3604,
+            "power": 0.045
+          },
+          {
+            "bpm": 135.2692,
+            "power": 0.0436
+          },
+          {
+            "bpm": 132.7057,
+            "power": 0.0434
+          }
+        ],
+        "strongestDrumEnergyBeatPhaseSeconds": 0.095,
+        "priorDownbeatSeconds": 0.082,
+        "energyPhaseMinusPriorMs": 13.0,
+        "barPhaseStatus": "Percussion energy cannot uniquely label beat one; the four 4/4 rotations need musical review. Energy phase is not an onset timestamp."
+      },
+      "stems": {
+        "Vocals": {
+          "sha256": "5f57b4d5ad3209e1b542de7e675dda8c9896c7bd0a14e132e105ef43401c7319",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 18,
+            "medianCorrelation": 0.8307,
+            "minimumCorrelation": 0.6588,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        },
+        "Drums": {
+          "sha256": "85203679f8eb42364ff52ef0052ed5fb8da75fb70dbc547f5c198076fc6c27a8",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 18,
+            "medianCorrelation": 0.891,
+            "minimumCorrelation": 0.7441,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        }
+      }
+    },
+    "secret-xiaosi": {
+      "mix": {
+        "sha256": "db9910c470fda00f6e94cd748d5326d976dc65088d40a7b69cdc61e53835176d"
+      },
+      "meter": {
+        "priorBpm": 117.98,
+        "measuredPriorNearBpm": 117.90012,
+        "differenceBpm": -0.07988,
+        "independentSpectralCandidates": [
+          {
+            "bpm": 117.9199,
+            "power": 1.0
+          },
+          {
+            "bpm": 114.3494,
+            "power": 0.0791
+          },
+          {
+            "bpm": 124.6033,
+            "power": 0.0654
+          },
+          {
+            "bpm": 111.2366,
+            "power": 0.0617
+          },
+          {
+            "bpm": 58.4106,
+            "power": 0.0613
+          },
+          {
+            "bpm": 121.3989,
+            "power": 0.0591
+          },
+          {
+            "bpm": 55.5725,
+            "power": 0.0532
+          },
+          {
+            "bpm": 130.4626,
+            "power": 0.0284
+          },
+          {
+            "bpm": 132.7515,
+            "power": 0.0262
+          },
+          {
+            "bpm": 66.1011,
+            "power": 0.0199
+          }
+        ],
+        "strongestDrumEnergyBeatPhaseSeconds": 0.26,
+        "priorDownbeatSeconds": 0.776,
+        "energyPhaseMinusPriorMs": -7.095,
+        "barPhaseStatus": "Percussion energy cannot uniquely label beat one; the four 4/4 rotations need musical review. Energy phase is not an onset timestamp."
+      },
+      "stems": {
+        "Vocals": {
+          "sha256": "bff53c7cdb96a5de2de3329f65bbaa861ab0f7361d8ad916cb38c0b860caa0a7",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 18,
+            "medianCorrelation": 0.9112,
+            "minimumCorrelation": 0.7627,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        },
+        "Drums": {
+          "sha256": "837d2d8cada877ac4a1ad6380af3c0f878eee654a71aa71885cb5748c20cc7dc",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 18,
+            "medianCorrelation": 0.69,
+            "minimumCorrelation": 0.4863,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        }
+      }
+    },
+    "secret-getdown": {
+      "mix": {
+        "sha256": "5ccaa6af18d1608086530ccd6ae1524c19a49d3f4c27ef1dbe9f59aaf3e0a6cc"
+      },
+      "meter": {
+        "priorBpm": 128,
+        "measuredPriorNearBpm": 128.00099,
+        "differenceBpm": 0.00099,
+        "independentSpectralCandidates": [
+          {
+            "bpm": 127.9907,
+            "power": 1.0
+          },
+          {
+            "bpm": 80.0171,
+            "power": 0.2681
+          },
+          {
+            "bpm": 63.9954,
+            "power": 0.067
+          },
+          {
+            "bpm": 95.993,
+            "power": 0.058
+          },
+          {
+            "bpm": 159.9884,
+            "power": 0.0494
+          },
+          {
+            "bpm": 126.7548,
+            "power": 0.025
+          },
+          {
+            "bpm": 129.364,
+            "power": 0.0214
+          },
+          {
+            "bpm": 124.9237,
+            "power": 0.0179
+          },
+          {
+            "bpm": 120.0256,
+            "power": 0.0154
+          },
+          {
+            "bpm": 67.9779,
+            "power": 0.0154
+          }
+        ],
+        "strongestDrumEnergyBeatPhaseSeconds": 0.12,
+        "priorDownbeatSeconds": 0.106,
+        "energyPhaseMinusPriorMs": 14.0,
+        "barPhaseStatus": "Percussion energy cannot uniquely label beat one; the four 4/4 rotations need musical review. Energy phase is not an onset timestamp."
+      },
+      "stems": {
+        "Vocals": {
+          "sha256": "ed1ecd29a333aabb5751aa378cc442b9091ce725920e5b1962d7c4c2e1d9e080",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 18,
+            "medianCorrelation": 0.8436,
+            "minimumCorrelation": 0.6877,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        },
+        "Drums": {
+          "sha256": "7122382e5df5f0ebc1531cf284d93f202d340b34d3a270a84f2ba405d73a6125",
+          "alignment": {
+            "searchRadiusSeconds": 12,
+            "offsetMs": -0.0,
+            "driftMsPerMinute": 0.0,
+            "matchingWindows": 18,
+            "medianCorrelation": 0.8895,
+            "minimumCorrelation": 0.8028,
+            "fitP90Ms": 0.0,
+            "outsideOld240msSearch": false
+          }
+        }
+      }
+    }
+  }
+}

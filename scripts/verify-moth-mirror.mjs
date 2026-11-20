@@ -104,6 +104,12 @@ async function enterOffice(page) {
   await page.evaluate(() => document.activeElement?.blur());
   await page.keyboard.press('KeyP');
   const fightStarted = Date.now();
+  // Real CDN art can take longer than the playback-start budget on a cold
+  // connection. Wait for level preparation before timing the audio handoff.
+  await page.waitForFunction(() => bobbyGame.loadError || (bobbyGame.state === 'playing'
+    && bobbyGame.level1OfficeRhythm && !bobbyGame.levelLoadingPresentation
+    && !bobbyGame.level1OfficeRhythm.graphicsLoading), undefined, {timeout: 120000});
+  assert.equal(await page.evaluate(() => bobbyGame.loadError), '', 'Fight assets load before music starts');
   await page.waitForFunction(() => { const a = bobbyGame.getActiveLevel1OfficeRhythmAudio(); return !a.paused && a.currentTime > 1; }, undefined, {timeout: 40000});
   const fight = await page.evaluate(() => ({src: bobbyGame.getActiveLevel1OfficeRhythmAudio().getAttribute('src').slice(0, 5), t: bobbyGame.getActiveLevel1OfficeRhythmAudio().currentTime}));
   assert.equal(fight.src, 'blob:', 'Fight music plays the verified mirror copy');
@@ -194,14 +200,14 @@ async function enterOffice(page) {
     }, 100);
     request.on('close', () => clearInterval(timer));
   });
-  await new Promise(resolve => server.listen(5291, '127.0.0.1', resolve));
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const context = await browser.newContext({viewport: {width: 390, height: 844}});
   await stubScoreboard(context);
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', error => errors.push(String(error)));
   const started = Date.now();
-  await page.goto('http://127.0.0.1:5291/moth/staff/?device=phone', {waitUntil: 'domcontentloaded'});
+  await page.goto(`http://127.0.0.1:${server.address().port}/moth/staff/?device=phone`, {waitUntil: 'domcontentloaded'});
   await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
   await page.locator('#moth-boot-loading').waitFor({state: 'detached', timeout: 60000});
   await page.keyboard.press('Enter'); await page.keyboard.press('Enter'); await page.keyboard.press('Enter');

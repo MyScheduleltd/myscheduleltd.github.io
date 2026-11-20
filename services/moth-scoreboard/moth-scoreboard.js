@@ -37,6 +37,7 @@ const CHART_LIMITS = require('./chart-limits.json');
 // Keep the published studio-stem boards and their tickets valid after the
 // readable-opening revision changes the current chart's attainable scores.
 const STUDIO_STEM_LIMITS = require('./chart-limits-20261117b.json');
+const ROLLIN_LIMITS = require('./chart-limits-20261118b.json');
 const CHART_VERSION = CHART_LIMITS.version;
 const MAX_FIGHT_SCORE = { chill: CHART_LIMITS.chill, shoot: CHART_LIMITS.shoot };
 // Both previous named charts share score and duration limits. Each keeps its
@@ -51,6 +52,7 @@ const charts = new Map([
   ['drums-groove-20261114a', PREVIOUS_CHART_LIMITS],
   ['drums-groove-20261114b', PREVIOUS_CHART_LIMITS],
   [STUDIO_STEM_LIMITS.version, STUDIO_STEM_LIMITS],
+  [ROLLIN_LIMITS.version, ROLLIN_LIMITS],
   [CHART_VERSION, CHART_LIMITS]
 ]);
 const isMode = mode => typeof mode === 'string' && Object.hasOwn(MAX_FIGHT_SCORE, mode);

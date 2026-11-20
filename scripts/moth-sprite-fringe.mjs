@@ -1,4 +1,4 @@
-// Key-fringe cleanup for the sprites cut from a magenta background (owner,
+// Baked sprite overrides: approved repairs and key-fringe cleanup (owner,
 // 2026-10-13: a purple outline around Dr. Beauty's portraits after level 4's
 // win talk). Every sprite with leftovers was reviewed before and after with
 // the owner, who approved them; level 3's notes were left out, and the ones

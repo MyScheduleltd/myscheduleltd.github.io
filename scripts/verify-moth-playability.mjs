@@ -64,8 +64,10 @@ for (const [name, spec] of specs) {
         assert(gap > 0, `${name}/${mode}: no simultaneous unreadable heads`);
         const empty = gap * geometry.pixelsPerSecond - 2 * MOTH_RHYTHM_HEAD.radius - MOTH_RHYTHM_HEAD.lineWidth;
         closestPixels = Math.min(closestPixels, empty);
-        assert(empty >= 0.5 - 1e-6, `${name}/${mode}: heads have separate painted bounds (${empty}px)`);
-        assert(empty >= 3 - 1e-6, `${name}/${mode}: separate full-size heads preserve the letter faces in fast runs (${empty}px)`);
+        if (gap >= .19 - 1e-5) assert(empty >= 3 - 1e-6,
+          `${name}/${mode}: normally spaced full-size faces remain separate (${empty}px)`);
+        assert(gap * geometry.pixelsPerSecond >= MOTH_RHYTHM_HEAD.fontSize + 8,
+          `${name}/${mode}: full-size final-pass letters stay separated in short vocal runs`);
       }
       if (note.holdEnd) {
         const next = notes[i + 1];
@@ -73,8 +75,8 @@ for (const [name, spec] of specs) {
       }
     }
     if (mode === 'hard') {
-      assert(geometry.minGap >= .19 - 1e-5, `${name}/hard: readable vocal attack spacing`);
-      assert(maxInSecond <= 6, `${name}/hard: at most six attacks in a rolling second (${maxInSecond})`);
+      assert(geometry.minGap >= .125 - 1e-5, `${name}/hard: bounded vocal attack spacing`);
+      assert(maxInSecond <= 7, `${name}/hard: bounded short vocal runs (${maxInSecond} attacks/second)`);
     }
     reports.push({name, mode, notes: notes.length, minGapMs: Math.round(geometry.minGap * 1000), closestSameKeyMs: Math.round(closestSameKey * 1000), maxInSecond, pixelsPerSecond: geometry.pixelsPerSecond, emptyPixels: Number(closestPixels.toFixed(2)), fullRingPreview: Number(fullRingPreview.toFixed(3)), phoneHeadPreview: Number(phoneHeadPreview.toFixed(3)), desktopHeadPreview: Number(desktopHeadPreview.toFixed(3))});
   }
@@ -138,7 +140,10 @@ try {
     const geometry = await page.evaluate(() => {
       const g = bobbyGame, r = g.level1OfficeRhythm;
       // The closest allowed hard phrase, repeated across all four buttons.
-      r.notes = Array.from({length: 10}, (_, index) => ({id: index, time: 10 + index * 0.19, button: 'MOTH'[index % 4], action: index % 2 ? 'accent' : 'do', task: 'stamp', cueAt: 8.4 + index * 0.19, phaseIndex: 0, status: 'pending', cuePlayed: true}));
+      r.notes = Array.from({length: 10}, (_, index) => ({id: index,
+        time: 10 + Math.floor(index / 3) * .44 + index % 3 * .125,
+        button: 'MOTH'[index % 4], action: index % 2 ? 'accent' : 'do', task: 'stamp',
+        cueAt: 8.4, phaseIndex: 0, status: 'pending', cuePlayed: true}));
       const held = {id: -1, time: 9.328, holdEnd: 9.94, button: 'T', action: 'do', task: 'stamp', phaseIndex: 0, status: 'perfect', holding: true};
       r.notes.unshift(held);
       r.frozenSongTime = 9.9; g.songTime = 9.9; r.phaseIntroTimer = 0; r.judgment = null; r.trackPulse = null;
@@ -206,7 +211,7 @@ try {
       }
       finally { Math.random = random; Object.assign(target, originals); }
       const layout = g.getRhythmRailGeometry();
-      return {speed: layout.pixelsPerSecond, gapPixels: 0.19 * layout.pixelsPerSecond,
+      return {speed: layout.pixelsPerSecond, gapPixels: layout.minGap * layout.pixelsPerSecond,
         tall: document.body.dataset.tallScreen === '1', viewportWidth: innerWidth,
         canvasBounds: g.ctx.canvas.getBoundingClientRect().toJSON(), telemetry: r.renderTelemetry.railPixelsPerSecond,
         arcs, clips, glyphs, outlines, tails, tailFills, holdColors, holdMarkers, paintOrder, cues: r.renderTelemetry.noteTimingCues,
@@ -246,10 +251,10 @@ try {
     const painted = new Map();
     for (const arc of heads) painted.set(arc.x, Math.max(painted.get(arc.x) || 0, arc.radius + arc.lineWidth / 2));
     const bounds = [...painted].sort((a, b) => a[0] - b[0]);
-    for (let i = 1; i < bounds.length; i++) {
-      assert(bounds[i][0] - bounds[i - 1][0] - bounds[i][1] - bounds[i - 1][1] >= .5 - 1e-6,
-        `${name}: actual full-size head painted bounds never touch`);
-    }
+    assert(geometry.paintOrder.lastIndexOf('head') < geometry.paintOrder.indexOf('letter'),
+      `${name}: every letter is painted after all faces, so a neighboring face cannot cover it`);
+    for (let i = 1; i < bounds.length; i++) assert(bounds[i][0] - bounds[i - 1][0] >= MOTH_RHYTHM_HEAD.fontSize + 8,
+      `${name}: actual full-size glyphs have breathing room at the closest supported vocal pair`);
     assert(geometry.clips.every(clip => clip.y <= 555 && clip.y + clip.h >= 679.5), `${name}: sparse timing rings fit vertically`);
     await page.screenshot({path: path.join(out, `hard-rail-${name}.png`)});
     assert.deepEqual(errors, []);
@@ -259,4 +264,4 @@ try {
 } finally {
   await browser.close();
 }
-console.log('PASS playability: all nine songs/both modes; hard spacing/repetition/density; separate note heads; four viewport renders');
+console.log('PASS playability: all nine songs/both modes; bounded vocal runs; full-size clear letters; four viewport renders');

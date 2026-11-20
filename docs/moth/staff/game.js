@@ -434,11 +434,10 @@ function calculateRhythmRailGeometry(notes = []) {
   }
   // Keep every full-size letter readable without rushing the approach merely
   // to separate neighboring outer halos. Rings sit behind the opaque heads.
-  // The shared fight speed gives dense Hard phrases about 1.4 seconds of
-  // fully visible approach on the portrait rail, with three pixels between
-  // the painted heads at the chart's tightest supported 190 ms spacing.
-  const headSpacing = MOTH_RHYTHM_HEAD.radius * 2 + MOTH_RHYTHM_HEAD.lineWidth + 3;
-  const pixelsPerSecond = Math.max(306, Math.ceil(headSpacing / minGap));
+  // Preserve the musical approach time even for a short vocal run. Full-size
+  // faces may touch in those runs; letters are painted in a separate final
+  // pass, with at least ten pixels between their centers' ink bounds.
+  const pixelsPerSecond = 306;
   return {pixelsPerSecond, minGap};
 }
 
@@ -483,7 +482,7 @@ function calculateRhythmTimingCue(note, renderTime, perfectWindow) {
     progress: 1 - remaining, until, stage, color, lineWidth, outlineWidth, outlineColor};
 }
 
-function drawRhythmNoteHead(target, {x, y, button, missed, completed, held}, scale = 1) {
+function drawRhythmNoteHead(target, {x, y, button, missed, completed, held, hideGlyph}, scale = 1) {
   const {radius, lineWidth, fontSize} = MOTH_RHYTHM_HEAD;
   const active = completed || held;
   target.save();
@@ -501,8 +500,15 @@ function drawRhythmNoteHead(target, {x, y, button, missed, completed, held}, sca
   target.beginPath();
   target.arc(x, y, (radius - 6) * scale, Math.PI * 1.13, Math.PI * 1.69);
   target.stroke();
+  target.restore();
+  if (!hideGlyph) drawRhythmNoteGlyph(target, {x, y, button, missed, completed, held}, scale);
+}
+
+function drawRhythmNoteGlyph(target, {x, y, button, missed, completed, held}, scale = 1) {
+  const active = completed || held;
+  target.save();
   target.fillStyle = missed ? "#747982" : active ? "#16171b" : "#ffffff";
-  const font = "900 " + Math.round(fontSize * scale) + "px system-ui, sans-serif";
+  const font = "900 " + Math.round(MOTH_RHYTHM_HEAD.fontSize * scale) + "px system-ui, sans-serif";
   drawCentredGlyph(target, button, x, y, font, !missed && !active ? 2 * scale : 0);
   target.restore();
 }
@@ -633,7 +639,8 @@ function drawRhythmRailNotes(target, notes, {bounds, cursorX, railY, railTime, s
       cues.push({id: head.note.id, time: head.note.time, button: head.button, x: head.x, y: railY, ...timing});
     }
   }
-  for (const head of visible) drawRhythmNoteHead(target, head);
+  for (const head of visible) drawRhythmNoteHead(target, {...head, hideGlyph: true});
+  for (const head of visible) drawRhythmNoteGlyph(target, head);
   target.restore();
   return cues;
 }
@@ -3928,7 +3935,7 @@ for (const level of this.config.secretLevels || []) {
     if (!this.progress) this.progress = this.createDefaultProgress();
     const random = () => Math.random().toString(36).slice(2, 10);
     const id = globalThis.crypto?.randomUUID?.() || ('run-' + Date.now().toString(36) + '-' + random() + random());
-    const run = this.progress.storyRun = { id, difficulty, chartVersion: "funk-rollin-20261118b", scores: {}, startedAt: Date.now(), ticket: null };
+    const run = this.progress.storyRun = { id, difficulty, chartVersion: "funk-patterns-20261119b", scores: {}, startedAt: Date.now(), ticket: null };
     this.startNewStory();
     this.registerStoryRun(run);
   }
@@ -3938,14 +3945,14 @@ for (const level of this.config.secretLevels || []) {
   // that never gets one cannot be posted.
   async registerStoryRun(run, attempt = 0) {
     clearTimeout(this.storyTicketTimer);
-    if (!run || run.ticket || run.legacy || run.chartVersion !== "funk-rollin-20261118b" || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
+    if (!run || run.ticket || run.legacy || run.chartVersion !== "funk-patterns-20261119b" || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', chartVersion: "funk-rollin-20261118b", mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', chartVersion: "funk-patterns-20261119b", mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
       const data = await response.json().catch(() => ({}));
-      if (response.status !== 201 || typeof data.run !== 'string' || data.chartVersion !== "funk-rollin-20261118b") throw new Error(String(response.status));
+      if (response.status !== 201 || typeof data.run !== 'string' || data.chartVersion !== "funk-patterns-20261119b") throw new Error(String(response.status));
       if (this.progress?.storyRun !== run || run.ticket) return;
       run.ticket = data.run;
       this.saveProgress();
@@ -3960,7 +3967,7 @@ for (const level of this.config.secretLevels || []) {
     const run = this.progress?.storyRun;
     const rhythm = this.level1OfficeRhythm;
     if (this.freePlay || !run || !rhythm || !["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"].includes(stageId)) return;
-    if (run.chartVersion !== "funk-rollin-20261118b") run.legacy = true;
+    if (run.chartVersion !== "funk-patterns-20261119b") run.legacy = true;
     if (this.difficultyId !== run.difficulty) run.mixed = true;
     run.scores[stageId] = Math.max(0, Math.round(rhythm.roundScore || 0));
   }
@@ -3969,7 +3976,7 @@ for (const level of this.config.secretLevels || []) {
     if (!run) return null;
     const fights = ["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"];
     const total = fights.reduce((sum, id) => sum + (run.scores?.[id] || 0), 0);
-    const blocked = run.chartVersion !== "funk-rollin-20261118b" ? 'chart-version' : run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
+    const blocked = run.chartVersion !== "funk-patterns-20261119b" ? 'chart-version' : run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
     const complete = !blocked && fights.every(id => Number.isFinite(run.scores?.[id]));
     return { run, total, complete, blocked, mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' };
   }
@@ -4004,9 +4011,9 @@ for (const level of this.config.secretLevels || []) {
       const { stage, mode } = run;
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'start', mode, stage, chartVersion: "funk-rollin-20261118b" }) });
+        body: JSON.stringify({ action: 'start', mode, stage, chartVersion: "funk-patterns-20261119b" }) });
       const data = await response.json();
-      if (response.status === 201 && data.chartVersion === "funk-rollin-20261118b"
+      if (response.status === 201 && data.chartVersion === "funk-patterns-20261119b"
         && data.stage === stage && typeof data.run === 'string') run.ticket = data.run;
     } catch {
       // Scoreboard connectivity never interrupts a song.
@@ -4105,12 +4112,12 @@ for (const level of this.config.secretLevels || []) {
     try {
       const url = new URL(this.scoreboardApi(), location.href);
       url.searchParams.set('mode', mode);
-      url.searchParams.set('chartVersion', "funk-rollin-20261118b");
+      url.searchParams.set('chartVersion', "funk-patterns-20261119b");
       if (board.stage) url.searchParams.set('stage', board.stage);
       const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
-      if (data.chartVersion !== "funk-rollin-20261118b" || (data.stage || null) !== board.stage) throw new Error('chart-version');
+      if (data.chartVersion !== "funk-patterns-20261119b" || (data.stage || null) !== board.stage) throw new Error('chart-version');
       if (this.scoreboard !== board) return;
       board.entries[mode] = Array.isArray(data.entries) ? data.entries : [];
       board.status[mode] = 'ready';
@@ -4297,7 +4304,7 @@ for (const level of this.config.secretLevels || []) {
     board.message = '';
     this.renderScoreboard();
     try {
-      const chartVersion = "funk-rollin-20261118b";
+      const chartVersion = "funk-patterns-20261119b";
       const score = board.stage ? { stage: board.stage, score: result.total } : { scores: result.run.scores };
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode: result.mode, chartVersion, id, run: result.run.ticket, ...score }) });
@@ -17419,8 +17426,8 @@ for (const level of this.config.secretLevels || []) {
     return poses;
   }
 
-  // The callout pops up in the game's sky over the fighter who took the hit;
-  // every tenth hit in a row, Dr. Beauty throws his arms up.
+  // Per-hit grades belong to the TV rhythm game, just above its rail.
+  // Every tenth hit in a row, Dr. Beauty throws his arms up.
   spawnArcadeBurst(request) {
     const rhythm = this.level1OfficeRhythm;
     if (!rhythm || !request || request.spawned) return;
@@ -17428,18 +17435,14 @@ for (const level of this.config.secretLevels || []) {
     if (request.kind !== "miss" && rhythm.combo > 0 && rhythm.combo % 10 === 0) {
       rhythm.arcadeCheer = { until: this.getLevel1OfficeRenderTime() + 0.9 };
     }
-    const layout = this.getLevel4ArcadeLayout();
-    const x = request.kind === "miss" ? layout.bobbyX : layout.bonitaX;
-    const y = layout.glass.y + layout.glass.h * 0.32;
-    this.spawnHitBurst(x, y, {
-      theme: "arcade",
-      action: request.action,
-      perfect: request.perfect,
-      label: request.label,
-      kind: request.kind,
-      quiet: true,
-      stampAt: { x, y }
-    });
+    const born = this.getLevel1OfficeRenderTime();
+    if (!request.label || !Number.isFinite(born)) return;
+    // graphics* is deliberately omitted from saved fight snapshots. The
+    // transient canvas cannot be serialized or restored as a live image.
+    rhythm.graphicsArcadeFeedback = {
+      born, life: 0.7, kind: request.kind,
+      stamp: makeJudgmentStamp(request.kind, "arcade", request.label, this.language === "zh-TW")
+    };
   }
 
   startLevel4BossPlaceholder() {
@@ -22340,6 +22343,7 @@ for (const level of this.config.secretLevels || []) {
       const speed = this.getRhythmRailGeometry().pixelsPerSecond;
       const cueAt = !frozen && !rhythm.ending && !rhythm.songHandover && !rhythm.audioStarting
         ? (note, time) => this.getRhythmTimingCue(note, time) : null;
+      target.save();
       target.translate(glass.x + 13, trackTop);
       target.scale(scale, scale);
       drawRhythmTrackFrame(target, bounds, {pulse: groovePulse});
@@ -22350,8 +22354,37 @@ for (const level of this.config.secretLevels || []) {
           window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
       }
       drawRhythmRailNotes(target, this.getLevel1OfficeRenderNotes(), {bounds, cursorX, railY, railTime, speed, cueAt});
+      target.restore();
+      this.renderArcadeTvFeedback(target, {glass, trackTop, scale, cursorX}, context);
     }
     target.restore();
+  }
+
+  renderArcadeTvFeedback(target, {glass, trackTop, scale, cursorX}, {rhythm, renderTime}) {
+    if (rhythm) rhythm.graphicsArcadeFeedbackTelemetry = null;
+    const feedback = rhythm?.graphicsArcadeFeedback;
+    if (!feedback || rhythm.ending || !feedback.stamp) return;
+    const age = renderTime - feedback.born;
+    if (!Number.isFinite(age) || age < 0 || age >= feedback.life) return;
+    const stamp = feedback.stamp;
+    const availableHeight = trackTop - glass.y - 26;
+    if (!(availableHeight > 0 && stamp.width > 0 && stamp.height > 0)) return;
+    const slam = age < 0.09 ? 1.12 - age / 0.09 * 0.12 : 1;
+    const width = Math.min(glass.w * 0.42, 212 * slam,
+      availableHeight * stamp.width / stamp.height);
+    const height = width * stamp.height / stamp.width;
+    const hitX = glass.x + 13 + cursorX * scale;
+    const x = clamp(hitX - width / 2, glass.x + 13, glass.x + glass.w - 13 - width);
+    const y = trackTop - 8 - height;
+    const alpha = Math.min(1, age / 0.035, (feedback.life - age) / 0.18);
+    target.save();
+    // This helper is called inside the TV's glass clip and before its viewers
+    // are drawn. The rail stays clear and the callout belongs to the TV game.
+    target.globalAlpha = Math.max(0, alpha);
+    target.drawImage(stamp, x, y, width, height);
+    target.restore();
+    rhythm.graphicsArcadeFeedbackTelemetry = {kind: feedback.kind, age, alpha,
+      bounds: {x, y, w: width, h: height}, glass: {...glass}, trackTop, hitX};
   }
 
   riverGoddessAge() {
@@ -25907,7 +25940,7 @@ let tutorialDeckButtons = null;
 // configuration always come from this site.
 const MIRROR_BASE = ['myscheduleltd.com', 'www.myscheduleltd.com'].includes(location.hostname)
   ? 'https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@4a1cae2472c9fbece153cc1dbd0f0c1593dd9997/docs/moth/' : '';
-const MIRROR_PINNED = new Map([["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/drb-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/gg-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/spa-tickle.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_idle/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sfx/menu/menu-tick.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/sfx/menu/menu-click.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/ui/mobile_moth_buttons_20261017/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/sprites/level4_meme_chest/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/audio/easter-eggs/dr-beauty-private-message.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f51cccdc2d116bd5749ce9a2b4a655d23583f664/docs/moth/"],["assets/audio/fight-cuts/level6-river-verse1-chorus2.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d847823e571f216d483c9ba024facc9e22ca61c7/docs/moth/"],["assets/video/level4-bad-daddy.mp4","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/sprites/river-goddess.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/easy-mixes/arcade-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/arcade.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/bathroom-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/bathroom.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/concert.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/massage-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/massage.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/office-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/office.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/river-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/river.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/secretLaugh.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/secretSquat.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/studio-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/easy-mixes/studio.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@142b6bd60459b3ce2fb1bc7c89db272e48ce59b6/docs/moth/"],["assets/audio/fight-cuts/level1-office-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level2-bathroom-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level3-massage-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level4-arcade-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level5-studio-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"]]);
+const MIRROR_PINNED = new Map([["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/drb-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/gg-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/spa-tickle.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_idle/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_studio/hand-20261011g/dr-beauty/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/sfx/menu/menu-tick.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/sfx/menu/menu-click.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/ui/mobile_moth_buttons_20261017/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/sprites/level4_meme_chest/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/audio/easter-eggs/dr-beauty-private-message.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f51cccdc2d116bd5749ce9a2b4a655d23583f664/docs/moth/"],["assets/audio/fight-cuts/level6-river-verse1-chorus2.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d847823e571f216d483c9ba024facc9e22ca61c7/docs/moth/"],["assets/video/level4-bad-daddy.mp4","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/sprites/river-goddess.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/easy-mixes/arcade-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/arcade.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/bathroom-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/bathroom.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/concert.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/massage-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/massage.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/office-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/office.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/river-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/river.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/secretLaugh.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/secretSquat.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/studio-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/studio.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/fight-cuts/level1-office-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level2-bathroom-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level3-massage-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level4-arcade-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level5-studio-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"]]);
 const MIRROR_ROOT = '/moth/';
 let assetIntegrity = null;
 

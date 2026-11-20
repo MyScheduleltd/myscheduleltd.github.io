@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { patchScoreboard, SCOREBOARD_METHODS } from './moth-scoreboard-client.mjs';
 import { patchFightResume, FIGHT_RESUME_METHODS } from './moth-fight-resume.mjs';
 import { TRIMMED_JOBS } from './moth-asset-trim.mjs';
-import { KEY_FRINGE_SPRITES } from './moth-sprite-fringe.mjs';
+import { KEY_FRINGE_SPRITES, KEY_FRINGE_MANIFEST } from './moth-sprite-fringe.mjs';
 import { patchLyrics } from './moth-lyrics-patches.mjs';
 import { patchMenuSfx, MENU_SFX_METHODS } from './moth-menu-sfx.mjs';
 import { patchFightHud, FIGHT_HUD_METHODS } from './moth-fight-hud.mjs';
@@ -934,7 +934,9 @@ export const MOTH_MIRROR_PATCH_COMMIT = 'd04046c3aba8dcef69d486205a5267d53c998f3
 // comes from MOTH_MIRROR_COMMIT. A group without its commit yet loads from
 // this site.
 export const MOTH_MIRROR_PINS = [
-  { commit: MOTH_MIRROR_PATCH_COMMIT, files: KEY_FRINGE_SPRITES },
+  { commit: MOTH_MIRROR_PATCH_COMMIT, files: KEY_FRINGE_SPRITES.filter(file => !Object.hasOwn(KEY_FRINGE_MANIFEST[file], 'mirrorCommit')) },
+  ...Object.entries(KEY_FRINGE_MANIFEST).filter(([, entry]) => Object.hasOwn(entry, 'mirrorCommit'))
+    .map(([file, entry]) => ({commit: entry.mirrorCommit, files: [file]})),
   ...ADDITION_MIRROR_PINS
 ];
 export const mirrorPath = commit => `${MOTH_MIRROR_ORIGIN}/gh/MyScheduleltd/myscheduleltd.github.io@${commit}/docs/moth/`;

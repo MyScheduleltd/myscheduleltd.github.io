@@ -42,11 +42,10 @@ export function calculateRhythmRailGeometry(notes = []) {
   }
   // Keep every full-size letter readable without rushing the approach merely
   // to separate neighboring outer halos. Rings sit behind the opaque heads.
-  // The shared fight speed gives dense Hard phrases about 1.4 seconds of
-  // fully visible approach on the portrait rail, with three pixels between
-  // the painted heads at the chart's tightest supported 190 ms spacing.
-  const headSpacing = MOTH_RHYTHM_HEAD.radius * 2 + MOTH_RHYTHM_HEAD.lineWidth + 3;
-  const pixelsPerSecond = Math.max(306, Math.ceil(headSpacing / minGap));
+  // Preserve the musical approach time even for a short vocal run. Full-size
+  // faces may touch in those runs; letters are painted in a separate final
+  // pass, with at least ten pixels between their centers' ink bounds.
+  const pixelsPerSecond = 306;
   return {pixelsPerSecond, minGap};
 }
 
@@ -64,7 +63,16 @@ export function calculateRhythmTimingCue(note, renderTime, perfectWindow) {
     progress: 1 - remaining, until, stage, color, lineWidth, outlineWidth, outlineColor};
 }
 
-function drawRhythmNoteHead(target, {x, y, button, missed, completed, held}, scale = 1) {
+function drawRhythmNoteGlyph(target, {x, y, button, missed, completed, held}, scale = 1) {
+  const active = completed || held;
+  target.save();
+  target.fillStyle = missed ? "#747982" : active ? "#16171b" : "#ffffff";
+  const font = "900 " + Math.round(MOTH_RHYTHM_HEAD.fontSize * scale) + "px system-ui, sans-serif";
+  drawCentredGlyph(target, button, x, y, font, !missed && !active ? 2 * scale : 0);
+  target.restore();
+}
+
+function drawRhythmNoteHead(target, {x, y, button, missed, completed, held, hideGlyph}, scale = 1) {
   const {radius, lineWidth, fontSize} = MOTH_RHYTHM_HEAD;
   const active = completed || held;
   target.save();
@@ -82,10 +90,8 @@ function drawRhythmNoteHead(target, {x, y, button, missed, completed, held}, sca
   target.beginPath();
   target.arc(x, y, (radius - 6) * scale, Math.PI * 1.13, Math.PI * 1.69);
   target.stroke();
-  target.fillStyle = missed ? "#747982" : active ? "#16171b" : "#ffffff";
-  const font = "900 " + Math.round(fontSize * scale) + "px system-ui, sans-serif";
-  drawCentredGlyph(target, button, x, y, font, !missed && !active ? 2 * scale : 0);
   target.restore();
+  if (!hideGlyph) drawRhythmNoteGlyph(target, {x, y, button, missed, completed, held}, scale);
 }
 
 function drawRhythmHoldTail(target, {x, endX, y, hitX, button, missed, held}, scale = 1) {
@@ -214,7 +220,8 @@ function drawRhythmRailNotes(target, notes, {bounds, cursorX, railY, railTime, s
       cues.push({id: head.note.id, time: head.note.time, button: head.button, x: head.x, y: railY, ...timing});
     }
   }
-  for (const head of visible) drawRhythmNoteHead(target, head);
+  for (const head of visible) drawRhythmNoteHead(target, {...head, hideGlyph: true});
+  for (const head of visible) drawRhythmNoteGlyph(target, head);
   target.restore();
   return cues;
 }
@@ -260,6 +267,8 @@ ${getRhythmDrumPulse.toString()}
 ${calculateRhythmTimingCue.toString()}
 
 ${drawRhythmNoteHead.toString()}
+
+${drawRhythmNoteGlyph.toString()}
 
 ${drawRhythmHoldTail.toString()}
 

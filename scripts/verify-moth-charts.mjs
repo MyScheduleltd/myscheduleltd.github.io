@@ -55,7 +55,7 @@ for (const {id, stage, theme, story} of levels) {
       assert(expected[0][0] - start >= MOTH_OPENING_LEAD_SECONDS,
         `${id}/${kind}/${mode} leaves the opening music unjudged`);
       const unit = spec.chart.stepBeats * 60 / spec.bpm;
-      const minimumGap = mode === 'hard' ? .18999 : .22499;
+      const minimumGap = mode === 'hard' ? .12499 : .18999;
       rows.forEach(([step, key, holdSteps], index) => {
         const time = start + spec.beatOffset + step * unit;
         const [onset, button, holdSeconds] = expected[index];
@@ -65,7 +65,29 @@ for (const {id, stage, theme, story} of levels) {
         const tail = onset + holdSeconds;
         assert(Math.abs(time + holdSteps * unit - (tail < end ? tail : onset)) < .000002,
           `${id}/${kind}/${mode} release ${index}`);
-        if (index) assert(onset - expected[index - 1][0] - expected[index - 1][2] >= minimumGap, id);
+        if (index) {
+          const previous = expected[index - 1];
+          const gap = onset - previous[0] - previous[2];
+          assert(gap >= minimumGap, id);
+          if (mode === 'hard' && gap < .18999) {
+            const evidence = song.hardTimingExceptions?.find(pair => Math.abs(pair.previousTime - previous[0]) < .00001
+              && Math.abs(pair.time - onset) < .00001);
+            assert(evidence, id + ' short vocal pair has independent source evidence');
+            for (const support of [evidence.before, evidence.after]) {
+              assert(support.strong && support.depth < .35 && support.energy > .16,
+                id + ' both fast syllables have a real voiced-body reset');
+            }
+          }
+          if (mode === 'easy' && gap < .22499) {
+            const evidence = song.easyTimingExceptions?.find(pair => Math.abs(pair.previousTime - previous[0]) < .00001
+              && Math.abs(pair.time - onset) < .00001);
+            assert(evidence, id + ' quick drum fill has measured source evidence');
+            assert(evidence.before.drumFillAccent || evidence.after.drumFillAccent, id + ' source burst accent');
+            for (const support of [evidence.before,evidence.after]) assert(
+              ['kick','snare','percussion'].includes(support.drumVoice) && support.drumSalience >= .65,
+              id + ' quick fill retains two strong physical drum strokes');
+          }
+        }
       });
       const holds = rows.filter(row => row[2] > 0).length;
       if (id === 'level5RiverRhythm') {

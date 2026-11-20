@@ -122,7 +122,7 @@ def render(identity, score, report, stems, bass_directory, out):
             title += ' + bass passages'
         filename = f'{identity}-{mode}.m4a'
         write_mix(out/filename,clip,notes)
-        players.append(f'<label>{title}<audio controls preload="none" src="{filename}"></audio></label>')
+        players.append(f'<label>{title}<audio controls preload="metadata" src="{filename}"></audio></label>')
     print(identity, len(score['easy']),len(score['hard']),flush=True)
     title = escape(label.split(' - ',1)[-1])
     return f"<section><h2>{title}</h2>{''.join(players)}</section>"
