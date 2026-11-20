@@ -42,9 +42,19 @@ export const DRUM_CHARTS = { ...PRIOR_DRUM_CHARTS, version: revised.version, son
   })
 ) };
 export const FUNK_CHARTS = JSON.parse(readFileSync(new URL('./moth-funk-charts.json', import.meta.url)));
+// Charts you play like the band (owner, 2026-11-20; scripts/author-moth-feel.py):
+// Easy is the drum kit (kick T, snare O, hi-hat M, fills and big moments H),
+// Hard follows the lead vocal's melody with holds on sustained notes. Songs
+// listed here replace their stem-pattern rows and keep their letters as
+// authored (no lane remix: the same drum is always the same button).
+export const FEEL_CHARTS = JSON.parse(readFileSync(new URL('./moth-feel-charts.json', import.meta.url)));
+for (const [id, feel] of Object.entries(FEEL_CHARTS.songs)) {
+  assert(FUNK_CHARTS.songs[id], `Feel chart for a known song: ${id}`);
+  FUNK_CHARTS.songs[id] = {...FUNK_CHARTS.songs[id], easy: feel.easy, hard: feel.hard, feel: FEEL_CHARTS.version};
+}
 // Corrected studio exports measured on the shipped full-mix clock. Keep the
 // opening two seconds unscored so the first target can roll into view.
-export const MOTH_CHART_VERSION = 'funk-patterns-20261119b';
+export const MOTH_CHART_VERSION = 'feel-20261120b';
 export const MOTH_OPENING_LEAD_SECONDS = 2;
 export const MOTH_STAGE_THEMES = {
   level1OfficeRhythm: ['level1-stage1', 'office'],
@@ -118,7 +128,7 @@ export function patchCharts(config) {
     spec.fadeInSeconds = MOTH_OPENING_LEAD_SECONDS;
     const storyOrigin = spec.fightCut?.fromSeconds || 0;
     const storyDuration = spec.duration - (spec.fightCut ? .08 : 0);
-    const lanes = remixEasyLanes(song, {storyStart: storyOrigin, storyEnd: storyOrigin + storyDuration,
+    const lanes = song.feel ? {rows: song.easy} : remixEasyLanes(song, {storyStart: storyOrigin, storyEnd: storyOrigin + storyDuration,
       openingLeadSeconds: MOTH_OPENING_LEAD_SECONDS});
     const playableSong = {...song, easy: lanes.rows};
     spec.chart = makeChart(playableSong, {start: storyOrigin, duration: storyDuration, offset: spec.beatOffset || 0});

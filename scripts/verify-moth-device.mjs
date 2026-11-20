@@ -16,6 +16,8 @@ import {chromium} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
 import {DECK_ART_KEPT, RETIRED_DECK_ART, MOTH_BUTTON_SHEET} from './moth-deck-art.mjs';
 import {MOTH_NOTE_COLOURS} from './moth-fight-hud.mjs';
+// Ready = booted and the loading card gone: the card swallows every key until
+// it leaves (~20 ms after bootDone), so a press inside that gap never lands.
 
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const browser = await chromium.launch({executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--no-sandbox']});
@@ -92,7 +94,7 @@ const rows = page => page.evaluate(() => {
   await stubScoreboard(page);
   const errors = []; page.on('pageerror', e => errors.push(String(e)));
   await page.goto(new URL('moth/staff/?device=desktop', base).href, {waitUntil: 'domcontentloaded'});
-  await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading"), undefined, {timeout: 60000});
   const heard = () => page.evaluate(async () => {
     const g = bobbyGame, track = g.getActiveLevel1OfficeRhythmAudio(), route = g.musicAudioRoutes.get(track);
     const a = route.context.createAnalyser(); a.fftSize = 2048; route.gain.connect(a);
@@ -145,7 +147,7 @@ const rows = page => page.evaluate(() => {
     return route.fallback();
   });
   await page.goto(new URL('moth/staff/?device=phone', base).href, {waitUntil: 'domcontentloaded'});
-  await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading"), undefined, {timeout: 60000});
   await page.keyboard.press('Shift');
   await page.evaluate(() => { bobbyGame.lastMusicAt = performance.now() - 61000; });
   await page.keyboard.press('ArrowDown');
@@ -160,7 +162,7 @@ const rows = page => page.evaluate(() => {
     'A missing hit sound cannot release the chapter gate '+JSON.stringify(blocked));
   failing = false;
   await page.locator('.load-recovery button').click();
-  await page.waitForFunction(()=>window.bobbyGame?.bootDone&&bobbyGame.state==='title',undefined,{timeout:60000});
+  await page.waitForFunction(()=>window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading")&&bobbyGame.state==='title',undefined,{timeout:60000});
   await page.keyboard.press('Shift');
   const sounds = async id => {
     await page.evaluate(id => { bobbyGame.returnToTitle(); bobbyGame.startStage(id); }, id);
@@ -184,7 +186,7 @@ const rows = page => page.evaluate(() => {
   await stubScoreboard(page);
   const errors = []; page.on('pageerror', e => errors.push(String(e)));
   await page.goto(new URL('moth/staff/?device=phone', base).href, {waitUntil: 'domcontentloaded'});
-  await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading"), undefined, {timeout: 60000});
   await page.evaluate(() => bobbyGame.loadSceneAssets('level5-stage2'));
   const sprites = await page.evaluate(() => {
     const sheet = bobbyGame.refs.level2BathroomPortraitsSheet;

@@ -17,6 +17,8 @@ import {chromium} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
 import {MOTH_NOTE_COLOURS} from './moth-fight-hud.mjs';
 import {MOTH_PORTRAIT_RAIL_HIT_OFFSET, MOTH_RHYTHM_RING} from './moth-chart-playability.mjs';
+// Ready = booted and the loading card gone: the card swallows every key until
+// it leaves (~20 ms after bootDone), so a press inside that gap never lands.
 
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const browser = await chromium.launch({executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--no-sandbox']});
@@ -25,6 +27,13 @@ const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
 const near = (got, want, slack = 34) => got.every((v, c) => Math.abs(v - want[c]) <= slack);
 // The track's yellow, the release's own.
 const TRACK = rgb('#f1c62d');
+// Pixels of a note's own colour in the 28 x 28 box around its head (of 784).
+const filledPixels = note => {
+  const want = rgb(MOTH_NOTE_COLOURS[note.button]);
+  let n = 0;
+  for (let i = 0; i < note.fill.length; i += 4) if (near([note.fill[i], note.fill[i + 1], note.fill[i + 2]], want, 40)) n++;
+  return n;
+};
 
 async function fight(viewport, stage, freePlay, phone = true) {
   const context = await browser.newContext({viewport, deviceScaleFactor: 2, isMobile: phone, hasTouch: phone});
@@ -33,7 +42,7 @@ async function fight(viewport, stage, freePlay, phone = true) {
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   await page.goto(new URL(`moth/staff/${phone ? '?device=phone' : ''}`, base).href, {waitUntil: 'domcontentloaded'});
-  await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading"), undefined, {timeout: 60000});
   await page.evaluate(stage => {
     const g = bobbyGame, draw = g.drawGanganCoachChip;
     // Where the phone's view puts GANGAN's feedback.
@@ -114,6 +123,9 @@ const frame = page => page.evaluate(() => {
     out.trackBand = [30, 150, 270, 390, 510, 630, 690].map(x => read(tall, x, 760));
     out.noteSamples = notes.map(note => ({...note, tallX: tallX(note.x),
       colour: read(tall, tallX(note.x) - 12, railY), centre: read(tall, tallX(note.x), railY + 3),
+      // The head's fill around its letter: one pixel can land on a letter's edge
+      // (O's ring sits 12 px left of centre), so count the box.
+      fill: Array.from(tall.getImageData(Math.round(tallX(note.x)) - 14, Math.round(railY) - 14, 28, 28).data),
       // Adaptive heads use a smaller glyph, so a single coordinate may land
       // on an antialiased edge. Inspect its central stem, inside the cue arc.
       creamStemPixels: count(tall, {x: Math.round(tallX(note.x)) - 2, y: Math.round(railY) - 4, w: 5, h: 10},
@@ -155,15 +167,16 @@ for (const run of [
   // Upcoming notes in the pad's colours, where the frame drew them.
   const visible = shot.noteSamples.filter(note => note.ahead > 0.1 && note.tallX < 700);
   if (!run.concert) {
-    assert(visible.length >= 1, `${run.name}: notes on the track ${JSON.stringify(shot.noteSamples)}`);
+    assert(visible.length >= 1, `${run.name}: notes on the track ${JSON.stringify(shot.noteSamples.map(({fill, ...note}) => note))}`);
     for (const note of visible) {
-      assert(near(note.colour, rgb(MOTH_NOTE_COLOURS[note.button]), 40), `${run.name}: ${note.button} note in its colour ${JSON.stringify(note)}`);
+      const {fill, ...seen} = note, filled = filledPixels(note);
+      assert(filled >= 60, `${run.name}: ${note.button} note in its colour (${filled} of 784 px) ${JSON.stringify(seen)}`);
       // T's stem is at the note's centre: cream, like the other letters (owner, 2026-10-18).
-      if (note.button === 'T') assert(note.creamStemPixels >= 2, `${run.name}: T's letter is cream ${JSON.stringify(note)}`);
+      if (note.button === 'T') assert(note.creamStemPixels >= 2, `${run.name}: T's letter is cream ${JSON.stringify(seen)}`);
     }
     assert(shot.previewSeconds >= 0.9, `${run.name}: at least 900ms until an incoming head reaches the hit line`);
     const far = shot.noteSamples.find(note => note.ahead > MOTH_RHYTHM_RING.lead - .1 && note.ahead < shot.previewSeconds - .12);
-    if (far) assert(far.tallX < 712 && near(far.colour, rgb(MOTH_NOTE_COLOURS[far.button]), 40), `${run.name}: a note ${far.ahead.toFixed(2)} s ahead is on the track ${JSON.stringify(far)}`);
+    if (far) { const {fill, ...seen} = far; assert(far.tallX < 712 && filledPixels(far) >= 60, `${run.name}: a note ${far.ahead.toFixed(2)} s ahead is on the track ${JSON.stringify(seen)}`); }
   }
   // GANGAN's feedback (a missed note brings it) above the row, clear of the track.
   await page.waitForFunction(() => window.__tallChips.length > 0, undefined, {timeout: 30000});

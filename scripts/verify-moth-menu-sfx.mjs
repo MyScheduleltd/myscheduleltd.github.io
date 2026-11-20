@@ -6,6 +6,8 @@
 import assert from 'node:assert/strict';
 import {chromium} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
+// Ready = booted and the loading card gone: the card swallows every key until
+// it leaves (~20 ms after bootDone), so a press inside that gap never lands.
 
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const browser = await chromium.launch({executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required']});
@@ -14,7 +16,7 @@ await stubScoreboard(context);
 const page = await context.newPage();
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
 await page.goto(new URL('moth/staff/?device=phone', base).href, {waitUntil: 'domcontentloaded'});
-await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+await page.waitForFunction(() => window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading"), undefined, {timeout: 60000});
 
 // Ready before any input: read straight into sound buffers.
 await page.waitForFunction(() => bobbyGame.sfxBuffers?.['menu-tick'] && bobbyGame.sfxBuffers?.['menu-click'], undefined, {timeout: 20000});

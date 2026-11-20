@@ -50,6 +50,12 @@ export function patchStaffDialoguePreview(once, edit) {
       const practice = stageId === "level1-practice";
       const index = practice ? this.getDialogueLines("officeTutorial").length - 1 : 0;
       if (await this.previewDebugConversationScene("officeTutorial", index) && practice) this.advanceLevel1OfficeTutorial();`);
+  once('            <button type="button" data-debug-stage="finale-stage1">Finale Wake-up</button>',
+    '            <button type="button" data-debug-stage="finale-stage1">Ending flow · Cutscene → board → credits</button>');
+  once('      this.startLevel6WakeUp();\n      this.level6WakeTimer = 5.6;',
+    '      this.endingScoreboardPreview = true;\n      this.startLevel6WakeUp();\n      this.level6WakeTimer = 5.6;');
+  once('      this.startLevel6WakeUp();\n    } else if (["finale-ending", "finale-thanks", "finale-unlocks", "finale-the-end"].includes(stageId)) {',
+    '      this.endingScoreboardPreview = true;\n      this.startLevel6WakeUp();\n    } else if (["finale-ending", "finale-thanks", "finale-unlocks", "finale-the-end"].includes(stageId)) {');
   once('            <button type="button" data-debug-stage="finale-ending">Credits & album</button>',
     '            <button type="button" data-debug-stage="level6-streak-break">L7 · Gan Gan combo-break line</button>\n            <button type="button" data-debug-stage="finale-ending">Ending credits</button>');
   once('    } else if (stageId === "level6-stage2") {\n      await this.startLevel6ConcertFight();\n    } else if (stageId === "finale-stage1") {',

@@ -11,13 +11,15 @@
 import assert from 'node:assert/strict';
 import {chromium, webkit} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
+// Ready = booted and the loading card gone: the card swallows every key until
+// it leaves (~20 ms after bootDone), so a press inside that gap never lands.
 
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const staff = new URL('moth/staff/?device=phone', base).href;
 const boot = async (page, errors) => {
   page.on('pageerror', e => errors.push(String(e)));
   await page.goto(staff, {waitUntil: 'domcontentloaded'});
-  await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading"), undefined, {timeout: 60000});
 };
 
 // 1. A blank first copy of each fight backdrop a story scene leads into
@@ -89,6 +91,9 @@ for (const fight of [
   const errors = [];
   await boot(page, errors);
   await page.keyboard.press('Shift');
+  // Hard: its fight plays level4ArcadeAudio. Easy plays its own mix
+  // (assets/audio/easy-mixes/arcade-story.m4a), which this case does not watch.
+  await page.evaluate(() => bobbyGame.setDifficulty('shoot', {persist: false, announce: false}));
   await page.evaluate(() => bobbyGame.enterLevel3Stage1());
   await page.waitForFunction(() => bobbyGame.state === 'level3' && !bobbyGame.levelLoadingPresentation, undefined, {timeout: 90000});
   await page.waitForFunction(() => !bobbyGame.sewerAudio.paused && bobbyGame.sewerAudio.currentTime > 1.5, undefined, {timeout: 30000});
@@ -97,14 +102,16 @@ for (const fight of [
   await page.waitForTimeout(1500);
   await page.evaluate(() => { const g = bobbyGame; g.startLevel4Dialogue(); for (let i = 0; i < 40 && g.state === 'level4Dialogue'; i++) g.advanceLevel4Dialogue(); });
   await page.waitForFunction(() => { const t = bobbyGame.level4ArcadeAudio; return !t.paused && t.currentTime > 1; }, undefined, {timeout: 30000});
-  await page.waitForTimeout(1000);
+  // Fight songs sit at 0.50 overall since 2026-11-15 (moth-runtime-patches:
+  // headroom for the hit sounds); let the fade-in settle there.
+  await page.waitForFunction(() => Math.abs(bobbyGame.musicAudioRoutes.get(bobbyGame.level4ArcadeAudio).gain.gain.value - 0.50) < 0.01, undefined, {timeout: 15000}).catch(() => {});
   const result = await page.evaluate(() => ({plays: window.__plays.filter(p => p.fight), gain: window.__gain, level: bobbyGame.musicAudioRoutes.get(bobbyGame.level4ArcadeAudio).gain.gain.value}));
   const priming = result.plays.find(p => p.state === 'loading');
   assert(priming, 'The fight song was primed on the loading screen ' + JSON.stringify(result.plays));
   assert.equal(priming.gain, 0, 'The priming play starts silent');
   assert(result.gain.glides > 20, 'Fades glide ' + JSON.stringify(result.gain));
   assert.equal(result.gain.stepsWhilePlaying, 0, 'No step of a playing track');
-  assert(Math.abs(result.level - 0.72) < 0.01, 'The fight song plays at the music level: ' + result.level);
+  assert(Math.abs(result.level - 0.50) < 0.01, 'The fight song plays at the fight-mix level: ' + result.level);
   assert.deepEqual(errors, []);
   console.log('volume PASS', JSON.stringify({priming, gain: result.gain, fightLevel: +result.level.toFixed(3)}));
   await browser.close();
@@ -125,7 +132,9 @@ for (const fight of [
       const played = new WeakSet();
       const src = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
       Object.defineProperty(HTMLMediaElement.prototype, 'src', {configurable: true, get() { return src.get.call(this); }, set(value) {
-        if (played.has(this) && this === window.__fight) window.__changes.push({muted: this.muted, state: window.bobbyGame?.state, loading: Boolean(window.bobbyGame?.levelLoadingPresentation)});
+        // padded: the fight copy that opens with silence (moth-fight-audio.mjs), set while paused.
+        if (played.has(this) && this === window.__fight) window.__changes.push({muted: this.muted, state: window.bobbyGame?.state, loading: Boolean(window.bobbyGame?.levelLoadingPresentation),
+          paused: this.paused, padded: value === this.mothFightCopy && this.mothFightLead > 0});
         src.set.call(this, value);
       }});
       const play = HTMLMediaElement.prototype.play;
@@ -142,7 +151,8 @@ for (const fight of [
     await page.evaluate(([stage, theme]) => { const g = bobbyGame; window.__fight = g.getRhythmAudioFor(theme); g.freePlay = true; g.startStage(stage); }, [stage, theme]);
     await page.waitForFunction(() => { const t = window.__fight; return t && !t.paused && t.currentTime > 1; }, undefined, {timeout: 60000});
     const seen = await page.evaluate(() => ({changes: window.__changes, start: window.__start}));
-    assert(seen.changes.every(change => change.muted && change.loading), `${stage}: a played song changes source only muted, on the loading screen ${JSON.stringify(seen.changes)}`);
+    // Muted, or paused onto the silence-padded copy: either way its start cannot burst.
+    assert(seen.changes.every(change => change.loading && (change.muted || (change.paused && change.padded))), `${stage}: a played song changes source only muted or onto its silent-lead copy, on the loading screen ${JSON.stringify(seen.changes)}`);
     assert.deepEqual(seen.start, {muted: false, src: 'blob:'}, `${stage}: the fight starts on its downloaded copy, unmuted`);
     assert.deepEqual(errors, []);
     report[theme] = seen.changes.length;

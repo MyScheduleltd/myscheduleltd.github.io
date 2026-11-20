@@ -24,6 +24,10 @@ import { patchLevelAssetLoading } from './moth-level-assets.mjs';
 import { patchFunkRuntime } from './moth-funk-runtime.mjs';
 import { patchFightAudio } from './moth-fight-audio.mjs';
 import { patchSceneMedia } from './moth-scene-media.mjs';
+import { patchConcertMedia } from './moth-concert-media.mjs';
+import { patchDebugStory } from './moth-debug-story.mjs';
+import { patchOutputTiming } from './moth-output-timing.mjs';
+import { patchHitSoundStart } from './moth-hit-sound-start.mjs';
 import { ADDITION_MIRROR_PINS } from './moth-asset-additions.mjs';
 
 // Keep the selected published game as the input. Both audiences get identical
@@ -506,6 +510,10 @@ function makeLayer(width, height, painter) {`);
   const fightAudioHelper = patchFightAudio(once);
   source += fightAudioHelper;
   patchSceneMedia(once, edit);
+  patchConcertMedia(once, edit);
+  patchDebugStory(once);
+  patchOutputTiming(once, edit);
+  patchHitSoundStart(once);
   return source;
 }
 

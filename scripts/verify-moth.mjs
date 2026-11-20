@@ -3,6 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { chromium, webkit } from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
+// Ready = booted and the loading card gone: the card swallows every key until
+// it leaves (~20 ms after bootDone), so a press inside that gap never lands.
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const out = path.resolve(process.argv[3] || '.qa/moth/browser');
 await fs.mkdir(out, { recursive: true });
@@ -79,14 +81,14 @@ for (const [name, type] of [['chrome', chromium], ['webkit', webkit]]) {
       report.push({engine:name, audience:'public', view, queryAndKeyboardDebugBlocked:true, storyEntry:true, tutorialButtonFrames:true, violations:await page.evaluate(() => window.__qaViolations)});
     }
     await page.goto(new URL('moth/staff/?device=desktop', base).href, {waitUntil:'domcontentloaded'});
-    await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout:180000});
+    await page.waitForFunction(() => window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading"), undefined, {timeout:180000});
     assert.equal(await page.evaluate(() => Boolean(window.bobbyGame.loadError)), false);
     assert(await page.locator('.debug-panel-toggle').isVisible());
     await page.keyboard.press('KeyP');
     assert(await page.locator('.debug-panel').isVisible());
     await page.locator('[data-debug-action="unlockSecrets"]').click();
     assert(await page.evaluate(() => window.bobbyGame.isStageUnlocked('secret-xiaosi')));
-    await page.locator('[data-debug-fight="level1-stage1"]').click();
+    await page.locator('[data-debug-fight="level1-stage1"][data-debug-mode="chill"]').click();
     await page.waitForFunction(() => window.bobbyGame?.state === 'playing', undefined, {timeout:60000});
     await page.screenshot({path:path.join(out, `${name}-staff.png`)});
     // Story progress is kept on the device (moth-story-save.mjs), each build

@@ -217,6 +217,18 @@
       "use": "Story gameplay cut with its original endpoint and closing fade",
       "mirrorCommit": "6557c0a4e009fb9b9e21b29a1abc2d57108ca764",
       "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-scenes-20261118 reachable and never merge this asset-only branch into main."
+    },
+    "assets/video/level7-make-some-noise.mp4": {
+      "sha256": "b82ee6b95e45dfd8fc1e81e41c89cf81d3e7ac2705794a68d2bf3c636b2aa3cd",
+      "bytes": 15715319,
+      "source": "Owner-supplied 美麗本人 尖叫聲 Make Some Noise Official Music Video.mp4; H.264854x480, audio removed, trimmed to song timeline",
+      "sourceSha256": "d0b9fc10df50b171618d21a43c795b991128de579c6c8f69529046916bb39c55",
+      "use": "Level7 large background LED wall in Story and LevelSelection, synchronized to game music",
+      "mirrorCommit": "f72e5f3a1f069411e098a07eb1cecde768b2735c",
+      "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-concert-20261120 reachable and never merge this asset-only branch into main.",
+      "sourceFrameStartSeconds": 8,
+      "songToVideoOffsetSeconds": -0.005375,
+      "alignment": "Nine8kHz full-mix windows match source audio at +7.994625s with no measured drift; see local video-sync.json."
     }
   }
 }

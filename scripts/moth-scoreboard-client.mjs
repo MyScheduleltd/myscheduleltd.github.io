@@ -36,7 +36,11 @@ export function patchScoreboard(once) {
   once('      storyCheckpoint: validStages.has(progress.storyCheckpoint) ? progress.storyCheckpoint : null,', '      storyCheckpoint: validStages.has(progress.storyCheckpoint) ? progress.storyCheckpoint : null,\n      storyRun: progress.storyRun && typeof progress.storyRun === "object" && typeof progress.storyRun.id === "string" && progress.storyRun.scores && typeof progress.storyRun.scores === "object" ? progress.storyRun : null,');
   // Each cleared story fight records its score.
   once('  completeStage(stageId) {\n    if (this.freePlay) return;', '  completeStage(stageId) {\n    if (this.freePlay) return;\n    this.recordStoryFightScore(stageId);');
-  // Save the result for the main-menu board as the credits begin.
+  // The wake-up cutscene ends at the Story leaderboard. A successful post
+  // or the board's close control continues directly into the credits.
+  once('    this.startFinaleEnding();\n  }\n\n  renderLevel6WakeUpScene(target, W, H) {',
+    '    this.showStoryEndingScoreboard({ preview: Boolean(this.freePlay && this.endingScoreboardPreview) });\n  }\n\n  renderLevel6WakeUpScene(target, W, H) {');
+  // Direct credits replays still save the run without opening a board.
   once('  startFinaleEnding() {\n', '  startFinaleEnding() {\n    this.finishStoryScoreRun();\n');
   once('          title: item.title || "",\n          choice: (this.stageSelectDifficultyId || this.difficultyId) === "shoot" ? 1 : 0',
     '          title: item.title || "",\n          hasLeaderboard: Boolean(this.config?.stageSelectRhythms?.[item.id]),\n          choice: (this.stageSelectDifficultyId || this.difficultyId) === "shoot" ? 1 : 0');
@@ -192,19 +196,35 @@ export const SCOREBOARD_METHODS = String.raw`
     return this.tr(spec.en, spec.zh);
   }
 
-  openScoreboard({ stage = null, stageResult = null } = {}) {
-    this.closeScoreboard();
+  showStoryEndingScoreboard({ preview = false } = {}) {
+    this.endingScoreboardPreview = false;
+    if (this.freePlay && !preview) return this.startFinaleEnding();
+    if (this.scoreboard?.ending) return;
+    if (!preview) this.finishStoryScoreRun();
+    // Staff previews must neither finish a saved run nor submit invented
+    // scores. They show the same closing transition with an ineligible result.
+    const mode = this.difficultyId === 'shoot' ? 'shoot' : 'chill';
+    const storyResult = preview ? {
+      run: { id: 'debug-ending-preview', difficulty: mode, scores: {} },
+      total: 0, complete: false, blocked: 'preview', mode
+    } : null;
+    this.openScoreboard({ ending: true, storyResult, onClose: () => this.startFinaleEnding() });
+  }
+
+  openScoreboard({ stage = null, stageResult = null, storyResult = null, ending = false, onClose = null } = {}) {
+    // Replacing a board is not the player's decision to continue the ending.
+    this.closeScoreboard({ continueStory: false });
     const run = this.progress?.storyRun;
     const defaultMode = stage && this.homeMenu?.difficultyPick ? this.stageSelectDifficultyId || this.difficultyId : this.difficultyId;
     const mode = defaultMode === 'shoot' ? 'shoot' : 'chill';
     const result = stage
       ? stageResult || this.lastStageScoreResults?.get(stage + ':' + mode) || null
-      : (run?.finishedAt || run?.boardShown) ? this.storyRunResult(run) : null;
-    const board = { stage, stageTitle: stage ? this.stageScoreboardTitle(stage) : null,
+      : storyResult || ((run?.finishedAt || run?.boardShown) ? this.storyRunResult(run) : null);
+    const board = { ending, onClose, stage, stageTitle: stage ? this.stageScoreboardTitle(stage) : null,
       result, mode: result?.mode || mode, top: stage ? 5 : 10,
       entries: {}, status: { chill: 'loading', shoot: 'loading' }, draftId: result?.run.posted?.id || '', message: '', posting: false,
       // Keep the last inputs of the song from dismissing the result board.
-      quietUntil: stageResult ? performance.now() + 750 : 0 };
+      quietUntil: stageResult || ending ? performance.now() + 750 : 0 };
     this.scoreboard = board;
     this.releaseHeldInputs?.();
     const root = document.createElement('div');
@@ -233,12 +253,15 @@ export const SCOREBOARD_METHODS = String.raw`
     this.prepareScoreCard();
   }
 
-  closeScoreboard() {
+  closeScoreboard({ continueStory = true } = {}) {
     const board = this.scoreboard;
     if (!board) return;
     board.root?.remove();
     this.scoreboard = null;
     this.updateMobileControls?.(true);
+    const advance = continueStory && board.onClose;
+    board.onClose = null;
+    if (typeof advance === 'function') advance();
   }
 
   async fetchScoreboard(mode) {
@@ -269,8 +292,11 @@ export const SCOREBOARD_METHODS = String.raw`
   }
 
   scoreboardApi() {
-    if ((location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-      && new URLSearchParams(location.search).get('previewScores') === '1') return '/api/moth-scoreboard';
+    // Local previews keep their scores to themselves, on this Mac or a phone
+    // reaching it over the home network (.qa/tools/preview-lan.mjs).
+    const host = location.hostname;
+    const local = host === 'localhost' || host === '127.0.0.1' || /^(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.test(host);
+    if (local && new URLSearchParams(location.search).get('previewScores') === '1') return '/api/moth-scoreboard';
     return '${SCOREBOARD_API}';
   }
 
@@ -317,6 +343,8 @@ export const SCOREBOARD_METHODS = String.raw`
       const status = {
         ineligible: board.stage
           ? tr('Play the full song online to post a score.', '連上網路並玩完整首歌，即可上傳成績。')
+          : standing?.why === 'preview'
+          ? tr('Debug preview. Scores are not submitted.', '除錯預覽，不會上傳成績。')
           : standing?.why === 'offline'
           ? tr('This story run cannot enter the scoreboard: it could not reach the scoreboard when it began. Start a new story online to compete.', '這次的故事無法登上排行榜：開始時沒有連上排行榜。連上網路後從故事模式重新開始，即可挑戰排名。')
           : standing?.why === 'chart-version'
@@ -376,7 +404,7 @@ export const SCOREBOARD_METHODS = String.raw`
     actions.append(el('button', { type: 'button', 'data-focus-key': 'copy', text: tr('COPY LINK', '複製連結'), onclick: () => this.copyScoreLink() }));
     section.append(actions);
     section.append(el('button', { type: 'button', class: 'moth-board-close is-primary', 'data-board-close': true, 'data-focus-key': 'close',
-      text: tr('BACK', '返回'), onclick: () => this.closeScoreboard() }));
+      text: board.ending ? tr('CONTINUE TO CREDITS', '播放片尾字幕') : tr('BACK', '返回'), onclick: () => this.closeScoreboard() }));
     const scroll = board.root.querySelector('.moth-board-list')?.scrollTop || 0;
     board.root.replaceChildren(section);
     board.root.querySelector('.moth-board-list').scrollTop = scroll;
@@ -411,7 +439,10 @@ export const SCOREBOARD_METHODS = String.raw`
     } else if (code === 'Enter' || code === 'Space' || code === 'KeyO') {
       if (event.repeat) return event.preventDefault();
       const focused = board.root.contains(document.activeElement) && document.activeElement.tagName === 'BUTTON' ? document.activeElement : null;
-      (focused || board.root.querySelector('.moth-board-post input') || board.root.querySelector('[data-board-close]'))?.[focused ? 'click' : 'focus']?.();
+      const input = board.root.querySelector('.moth-board-post input');
+      const close = board.root.querySelector('[data-board-close]');
+      if (board.ending && !focused && !input) close?.click();
+      else (focused || input || close)?.[focused ? 'click' : 'focus']?.();
     } else return;
     event.preventDefault();
   }
@@ -464,7 +495,10 @@ export const SCOREBOARD_METHODS = String.raw`
       board.message = this.scoreboardMessage(null);
     }
     board.posting = false;
-    if (this.scoreboard === board) this.renderScoreboard();
+    if (this.scoreboard === board) {
+      if (board.ending && result.run.posted) this.closeScoreboard();
+      else this.renderScoreboard();
+    }
   }
 
   scoreShareText(result = this.scoreboard?.result) {

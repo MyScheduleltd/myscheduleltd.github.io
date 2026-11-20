@@ -3,6 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {chromium, webkit} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
+// Ready = booted and the loading card gone: the card swallows every key until
+// it leaves (~20 ms after bootDone), so a press inside that gap never lands.
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const out = path.resolve('.qa/moth/loading-audio');
 await fs.mkdir(out, {recursive:true});
@@ -18,7 +20,7 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
     page.on('request', request => requests.push(request.url()));
     const started = Date.now();
     await page.goto(new URL('moth/staff/?device=phone',base).href, {waitUntil:'domcontentloaded'});
-    await page.waitForFunction(()=>window.bobbyGame?.bootDone);
+    await page.waitForFunction(()=>window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading"));
     assert.equal(await page.evaluate(()=>bobbyGame.state), 'title');
     const initialArt = requests.filter(url=>/\.(webp|m4a|wav)(\?|$)/.test(url));
     // The deck, the device shells and the menu sounds (moth-menu-sfx.mjs) only.
@@ -48,7 +50,7 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
     assert.deepEqual(await page.evaluate(()=>[...bobbyGame.loadedSceneGroups].sort()),['common','office','player']);
     const effects = await page.evaluate(async()=>{
       const g=bobbyGame, context=g.level1OfficeAudioContext, analyser=context.createAnalyser();
-      analyser.fftSize=2048;const node=g.ensureFeedbackOutput(context);node.connect(analyser);
+      analyser.fftSize=2048;g.ensureFeedbackOutput(context);const node=g.feedbackOutput.safety;node.connect(analyser);
       g.runSfxTest();let peak=0;
       for(let n=0;n<15;n++){const samples=new Float32Array(2048);analyser.getFloatTimeDomainData(samples);peak=Math.max(peak,...samples.map(Math.abs));await new Promise(r=>setTimeout(r,50));}
       node.disconnect(analyser);return {peak,decoded:Object.keys(g.sfxBuffers).filter(name=>!name.startsWith('menu-')).length,played:g.sfxTestResult};
@@ -87,7 +89,7 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
     assert(!await page.evaluate(()=>bobbyGame.loadedSceneGroups.has('level6')));
     // An earlier download must not reopen its scene after the target changes.
     await page.goto(new URL('moth/staff/?device=phone',base).href,{waitUntil:'domcontentloaded'});
-    await page.waitForFunction(()=>window.bobbyGame?.bootDone);
+    await page.waitForFunction(()=>window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading"));
     await page.route('**/foreground.webp*',async route=>{await new Promise(r=>setTimeout(r,1000));await route.continue();});
     await page.evaluate(()=>bobbyGame.startStage('level1-stage1',{skipAudio:true}));
     await page.waitForFunction(()=>bobbyGame.sceneLoadProgress?.total>0);
@@ -98,7 +100,7 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
     await page.unroute('**/foreground.webp*');
     // A recoverable network failure retries instead of aborting the whole boot.
     await page.goto(new URL('moth/staff/?device=phone',base).href,{waitUntil:'domcontentloaded'});
-    await page.waitForFunction(()=>window.bobbyGame?.bootDone);
+    await page.waitForFunction(()=>window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading"));
     let transient = 0;
     await page.route('**/foreground.webp*', route => {if (++transient===1) return route.fulfill({status:503,body:'temporary'});return route.continue();});
     await page.keyboard.press('Enter');await page.keyboard.press('Enter');await page.keyboard.press('Enter');
@@ -106,7 +108,7 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
     assert.equal(transient,2);assert.equal(await page.locator('.load-recovery').count(),0);
     await page.unroute('**/foreground.webp*');
     await page.goto(new URL('moth/staff/?device=phone',base).href,{waitUntil:'domcontentloaded'});
-    await page.waitForFunction(()=>window.bobbyGame?.bootDone);
+    await page.waitForFunction(()=>window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading"));
     let permanent=0;
     await page.route('**/foreground.webp*', route=>{permanent++;return route.fulfill({status:503,body:'unavailable'});});
     await page.keyboard.press('Enter');await page.keyboard.press('Enter');await page.keyboard.press('Enter');
@@ -117,7 +119,7 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
     await page.evaluate(()=>sessionStorage.setItem('moth.qa-refresh','preserved'));
     await page.unroute('**/foreground.webp*');
     await page.locator('.load-recovery button').click();
-    await page.waitForFunction(()=>window.bobbyGame?.bootDone&&bobbyGame.state==='title');
+    await page.waitForFunction(()=>window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading")&&bobbyGame.state==='title');
     assert.equal(await page.evaluate(()=>sessionStorage.getItem('moth.qa-refresh')),'preserved');
     // A blocked audio start has a real button, rather than an invisible pause.
     await page.evaluate(()=>bobbyGame.showAudioRecovery('start'));
@@ -127,7 +129,7 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
     // The same recovery art and refresh control must work in the public build.
     await context.addInitScript(()=>{window.__qaText=[];const fill=CanvasRenderingContext2D.prototype.fillText;CanvasRenderingContext2D.prototype.fillText=function(text,...args){window.__qaText.push(String(text));if(window.__qaText.length>3000)window.__qaText.splice(0,1000);return fill.call(this,text,...args);};});
     await page.goto(new URL('moth/?device=phone',base).href,{waitUntil:'domcontentloaded'});
-    await page.waitForFunction(()=>window.__qaText.some(text=>/STORY MODE|故事模式/.test(text)));
+    await page.waitForFunction(()=>window.__qaText.some(text=>/STORY MODE|故事模式/.test(text))&&!document.getElementById('moth-boot-loading'));
     await page.route('**/foreground.webp*',route=>route.fulfill({status:503,body:'unavailable'}));
     await page.keyboard.press('Enter');await page.keyboard.press('Enter');await page.keyboard.press('Enter');
     await page.locator('.load-recovery').waitFor({state:'visible',timeout:30000});
@@ -143,7 +145,7 @@ for (const [engine,type] of [['chrome',chromium],['webkit',webkit]]) {
     await page.screenshot({path:path.join(out,`${engine}-public-refresh-prompt.png`)});
     await page.unroute('**/foreground.webp*');
     await page.locator('.load-recovery button').click();
-    await page.waitForFunction(()=>window.__qaText.some(text=>/STORY MODE|故事模式/.test(text)));
+    await page.waitForFunction(()=>window.__qaText.some(text=>/STORY MODE|故事模式/.test(text))&&!document.getElementById('moth-boot-loading'));
     assert.deepEqual(errors,[]);
     assert.deepEqual(frameErrors,[]);
     report.push({engine,titleMs,initialChapterDownloads:0,music,effects,chapterEntries:10,cancelledEntryIgnored:true,transientRetry:true,permanentRetries:permanent,refreshRetainsSession:true,publicRefreshPrompt:true,audioRecoveryButton:true,errors,frameErrors});

@@ -21,7 +21,8 @@ const report = [];
 for (const {id, stage, theme, story} of levels) {
   const song = FUNK_CHARTS.songs[id];
   const storyOrigin = story.fightCut?.fromSeconds || 0;
-  const easy = remixEasyLanes(song, {storyStart: storyOrigin,
+  // Feel charts (author-moth-feel.py) keep their authored letters: the same drum is always the same button.
+  const easy = song.feel ? {rows: song.easy} : remixEasyLanes(song, {storyStart: storyOrigin,
     storyEnd: storyOrigin + story.duration - (story.fightCut ? .08 : 0), openingLeadSeconds: MOTH_OPENING_LEAD_SECONDS});
   const selection = config.stageSelectRhythms[stage];
   assert.equal(selection.fullSong, true, id);
@@ -55,7 +56,7 @@ for (const {id, stage, theme, story} of levels) {
       assert(expected[0][0] - start >= MOTH_OPENING_LEAD_SECONDS,
         `${id}/${kind}/${mode} leaves the opening music unjudged`);
       const unit = spec.chart.stepBeats * 60 / spec.bpm;
-      const minimumGap = mode === 'hard' ? .12499 : .18999;
+      const minimumGap = mode === 'hard' ? .12499 : song.feel ? .11999 : .18999;
       rows.forEach(([step, key, holdSteps], index) => {
         const time = start + spec.beatOffset + step * unit;
         const [onset, button, holdSeconds] = expected[index];
@@ -78,7 +79,12 @@ for (const {id, stage, theme, story} of levels) {
                 id + ' both fast syllables have a real voiced-body reset');
             }
           }
-          if (mode === 'easy' && gap < .22499) {
+          if (mode === 'easy' && song.feel) {
+            // Easy as the drum kit: quick pairs, never three in a row, the same button at least 160 ms apart.
+            const before = expected[index - 2];
+            assert(!(before && gap < .18999 && previous[0] - before[0] - before[2] < .18999), id + ' no three quick notes in a row');
+            if (previous[1] === button) assert(onset - previous[0] >= .15999, id + ' same button again too soon');
+          } else if (mode === 'easy' && gap < .22499) {
             const evidence = song.easyTimingExceptions?.find(pair => Math.abs(pair.previousTime - previous[0]) < .00001
               && Math.abs(pair.time - onset) < .00001);
             assert(evidence, id + ' quick drum fill has measured source evidence');
@@ -98,6 +104,8 @@ for (const {id, stage, theme, story} of levels) {
           `Level 6 ${kind}/${mode} retains opening source attacks after the lead-in`);
         if (kind === 'Level Select') assert(holds > 0,
           `Level 6 ${kind}/${mode} retains source holds outside the lead-in`);
+      } else if (song.feel) {
+        assert(rows.every(row => row[2] === 0 || mode === 'hard' || row[1] === 'H'), id + ' Easy holds are big moments or bass on H');
       } else assert.equal(holds, 0, id);
       const cap = kind === 'Level Select' ? limits.stages[stage][scoreMode] : limits[scoreMode][stage];
       if (cap !== undefined) assert.equal(cap, (rows.length + holds) * 1000, `${stage} ${kind} score cap`);

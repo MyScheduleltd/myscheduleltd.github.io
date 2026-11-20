@@ -58,6 +58,7 @@ for (const [label, viewport, device] of [['phone', {width: 390, height: 844}, 'p
   const errors = []; page.on('pageerror', e => errors.push(String(e)));
   await page.goto(new URL('moth/staff/?device=' + device, base).href, {waitUntil: 'domcontentloaded'});
   await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.locator('#moth-boot-loading').waitFor({state:'detached',timeout:60000});
 
   // Menu: no DIFFICULTY, a SCOREBOARD after LYRICS.
   const ids = await page.evaluate(() => bobbyGame.getHomeMenuItems().map(item => item.id));
@@ -87,16 +88,20 @@ for (const [label, viewport, device] of [['phone', {width: 390, height: 844}, 'p
   // Others are already on the board (11 posted; the top 10 remain).
   if (label === 'phone') { await seed('shoot', 11, 0.9); await seed('chill', 4, 0.8); }
 
-  // The wake-up scene leads straight to the credits. The completed result is
-  // saved for the main-menu scoreboard, which can still post the score.
+  // The final dialogue opens the Story board before credits. Closing it
+  // continues automatically; the same completed run remains in the home board.
   await page.evaluate(() => bobbyGame.startLevel6WakeUp());
   await page.waitForFunction(() => bobbyGame.state === 'level6WakeUp' || bobbyGame.state === 'finaleEnding', undefined, {timeout: 240000});
   await page.evaluate(() => { bobbyGame.level6WakeTimer = 30; });
   for (let i = 0; i < 2; i++) {
     await page.evaluate(() => { if (bobbyGame.state === 'level6WakeUp') bobbyGame.advanceLevel6WakeUp(); });
   }
+  await page.waitForFunction(() => bobbyGame.scoreboard?.ending === true);
+  assert.equal(await page.evaluate(() => bobbyGame.state), 'level6WakeUp', 'Credits wait while the Story board is open');
+  await page.waitForFunction(() => performance.now() >= bobbyGame.scoreboard.quietUntil);
+  await page.locator('[data-board-close]').click();
   await page.waitForFunction(() => bobbyGame.state === 'finaleEnding' && bobbyGame.finaleEndingPhase === 'credits');
-  assert.equal(await page.locator('.moth-board').count(), 0, 'No leaderboard interrupts the transition to credits');
+  assert.equal(await page.locator('.moth-board').count(), 0, 'Closing the Story board starts credits directly');
   assert(await page.evaluate(() => bobbyGame.progress.storyRun.finishedAt > 0));
   const enterStoryBoard = () => page.evaluate(() => {
     const game = bobbyGame;
@@ -263,6 +268,7 @@ for (const [label, viewport, device] of [['phone', {width: 390, height: 844}, 'p
   await stubScoreboard(page);
   await page.goto(new URL('moth/staff/?device=desktop', base).href, {waitUntil: 'domcontentloaded'});
   await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.locator('#moth-boot-loading').waitFor({state:'detached',timeout:60000});
   for (const mode of ['chill', 'shoot']) for (const id of STORY_FIGHTS) {
     await page.evaluate(([id, mode]) => { bobbyGame.returnToTitle(); bobbyGame.setDifficulty(mode, {persist: false, announce: false}); bobbyGame.startStage(id, {skipAudio: true}); }, [id, mode]);
     await page.waitForFunction(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm?.notes?.length && !bobbyGame.levelLoadingPresentation, undefined, {timeout: 120000});

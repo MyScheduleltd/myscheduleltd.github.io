@@ -1,21 +1,28 @@
 // Grade the finished scene before any dialogue, timing rail or other interface.
 // Bayer thresholds are fixed in native pixels: no crawling grain, flicker or
 // CPU pixel readback. One reusable GPU pass, with a cached Canvas2D fallback.
-export function createMothCinematicRenderer() {
+export function createMothCinematicRenderer({ alpha = false, opaqueOutput = false } = {}) {
   const canvas = document.createElement('canvas');
   const gl = canvas.getContext('webgl', {
-    alpha: false, antialias: false, depth: false, stencil: false,
+    alpha, antialias: false, depth: false, stencil: false,
     premultipliedAlpha: false, preserveDrawingBuffer: true,
     powerPreference: 'low-power', failIfMajorPerformanceCaveat: true
   });
   if (!gl) return null;
+  // At 1280 native pixels, mediump UVs can select a neighbouring transparent
+  // texel along cutout edges. Use exact sampling for alpha composites; a
+  // device without fragment highp keeps the alpha-safe Canvas fallback.
+  if (alpha && !gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT)?.precision) {
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return null;
+  }
   const vertex = `
     attribute vec2 aPosition;
     varying vec2 vUV;
     void main() { vUV = aPosition * .5 + .5; gl_Position = vec4(aPosition, 0., 1.); }
   `;
   const fragment = `
-    precision mediump float;
+    precision ${alpha ? 'highp' : 'mediump'} float;
     uniform sampler2D uImage;
     uniform vec2 uSourceScale;
     uniform vec2 uSize;
@@ -48,7 +55,8 @@ export function createMothCinematicRenderer() {
     void main() {
       vec2 uv = vec2(vUV.x, 1. - vUV.y);
       vec2 sourceUV = vec2(vUV.x * uSourceScale.x, 1. - uv.y * uSourceScale.y);
-      vec3 base = texture2D(uImage, sourceUV).rgb;
+      vec4 source = texture2D(uImage, sourceUV);
+      vec3 base = source.rgb;
       float luma = dot(base, vec3(.2126, .7152, .0722));
       float shadow = 1. - smoothstep(.06, .55, luma);
       float highlight = smoothstep(.3, .88, luma);
@@ -78,7 +86,7 @@ export function createMothCinematicRenderer() {
       // Keep ink and very dark painted detail continuous; the visible
       // palette pattern reaches full strength through the midtones.
       colour = mix(colour, quantized, .92 * smoothstep(.025, .20, luma));
-      gl_FragColor = vec4(clamp(colour, 0., 1.), 1.);
+      gl_FragColor = vec4(clamp(colour, 0., 1.), ${alpha && !opaqueOutput ? 'source.a' : '1.'});
     }
   `;
   const compile = (kind, source) => {
@@ -740,6 +748,15 @@ export function patchCinematicLook(once, edit) {
     '    target.restore();\n    this.renderCinematicScene(target, W, H, "bedroom");\n  }\n\n  getLevel6BedLayout(W, H, t)');
   once('    }\n  }\n\n  renderLevel6WakeDialogue()',
     '    }\n    this.renderCinematicScene(target, W, H, "bedroom");\n  }\n\n  renderLevel6WakeDialogue()');
+  // Combo photographs and their callout stamp draw after the scene pass.
+  // Grade their transparent composite separately, leaving the timing rail
+  // and every other interface pixel out of the shader.
+  once('    target.globalAlpha = Math.max(0, alpha);\n    if (photo) target.drawImage(photo, crop.x, crop.y, crop.w, crop.h, photoBounds.x, photoBounds.y, photoBounds.w, photoBounds.h);\n    if (celebration.stamp) target.drawImage(celebration.stamp, captionBounds.x, captionBounds.y + lift, captionBounds.w, captionBounds.h);',
+    `    target.globalAlpha = Math.max(0, alpha);
+    const graphic = this.getCinematicComboGraphic({celebration, photo, crop, photoBounds, captionBounds, lift, scene});
+    target.drawImage(graphic, 0, 0);`);
+  once('captionTextSize: 96 * captionWidth / 640, faceBounds, trackOuterEdge, trackBorderWidth, age, alpha };',
+    'captionTextSize: 96 * captionWidth / 640, faceBounds, trackOuterEdge, trackBorderWidth, age, alpha, dither: this.cinematicComboTelemetry };');
   // Retain the old method for callers in the original bathroom renderer.
   // The scene pass replaces the tint/grain/vignette that used to cover HUD.
   edit('  renderLevel1OfficeFilmGrain(target, motionTime, sceneHeight = VIEW_H, vignetteHeight = sceneHeight) {',
@@ -747,6 +764,63 @@ export function patchCinematicLook(once, edit) {
 }
 
 export const CINEMATIC_LOOK_METHODS = `
+  getCinematicComboGraphic({celebration, photo, crop, photoBounds, captionBounds, lift, scene}) {
+    const width = VIEW_W, height = Math.max(1, Math.ceil(scene.h));
+    const enabled = this.cinematicLookEnabled !== false;
+    if (enabled && this.cinematicComboRenderer === undefined) {
+      try { this.cinematicComboRenderer = createMothCinematicRenderer({alpha: true, opaqueOutput: true}); }
+      catch { this.cinematicComboRenderer = null; }
+    }
+    const renderer = enabled && this.cinematicComboRenderer;
+    const key = [width, height, scene.x, scene.w, ...Object.values(crop),
+      ...Object.values(photoBounds), ...Object.values(captionBounds), lift, enabled, Boolean(renderer?.failed)].join(":");
+    const cached = this.cinematicComboCache;
+    // The photo and lettering are static once the short entrance lift ends.
+    // Fade opacity is applied by the caller, so a frozen popup or its fade
+    // reuses the same native-pixel dither rather than uploading every frame.
+    if (cached?.celebration === celebration && cached.photo === photo
+      && cached.stamp === celebration.stamp && cached.key === key) {
+      this.cinematicComboTelemetry = {...cached.telemetry, cached: true};
+      return cached.layer;
+    }
+    const source = this.getScratchLayer("cinematic-combo", width, height);
+    source.setTransform(1, 0, 0, 1, 0, 0);
+    source.globalAlpha = 1;
+    source.globalCompositeOperation = "source-over";
+    source.clearRect(0, 0, width, height);
+    source.save();
+    source.beginPath(); source.rect(scene.x, 0, scene.w, scene.h); source.clip();
+    source.imageSmoothingEnabled = false;
+    if (photo) source.drawImage(photo, crop.x, crop.y, crop.w, crop.h, photoBounds.x, photoBounds.y, photoBounds.w, photoBounds.h);
+    if (celebration.stamp) source.drawImage(celebration.stamp, captionBounds.x, captionBounds.y + lift, captionBounds.w, captionBounds.h);
+    source.restore();
+    const profile = {shadow: [0,0,0], highlight: [0,0,0], haze: [0,0,0], vignette: 0, lights: []};
+    let gpu = false, layer = source.canvas;
+    if (renderer && !renderer.failed) {
+      try { gpu = renderer.draw(source.canvas, width, height, profile); }
+      catch { renderer.failed = true; }
+      if (gpu) {
+        const masked = this.getScratchLayer("cinematic-combo-masked", width, height);
+        masked.setTransform(1, 0, 0, 1, 0, 0);
+        masked.globalAlpha = 1;
+        masked.globalCompositeOperation = "source-over";
+        masked.clearRect(0, 0, width, height);
+        masked.drawImage(source.canvas, 0, 0);
+        masked.globalCompositeOperation = "source-in";
+        masked.drawImage(renderer.canvas, 0, 0);
+        masked.globalCompositeOperation = "source-over";
+        layer = masked.canvas;
+      }
+    }
+    if (enabled && !gpu) this.renderCinematicFallback(source, width, height, profile, {preserveAlpha: true});
+    const telemetry = {backend: !enabled ? "disabled" : gpu ? "webgl" : "canvas2d", width, height,
+      preserveAlpha: true, ditherPixelSize: 2, paletteLevels: 10, ditherMix: enabled ? .92 : 0,
+      animatedNoise: false, cpuPixelReadback: false, cached: false, passes: renderer?.passes || 0};
+    this.cinematicComboCache = {celebration, photo, stamp: celebration.stamp, key, layer, telemetry};
+    this.cinematicComboTelemetry = telemetry;
+    return layer;
+  }
+
   renderCinematicScene(target, width, height, name = this.level1OfficeRhythm?.theme || "office") {
     if (this.cinematicLookEnabled === false || !target?.canvas || width <= 0 || height <= 0) return;
     const profile = MOTH_CINEMATIC_PROFILES[name] || MOTH_CINEMATIC_PROFILES.office;
@@ -777,7 +851,7 @@ export const CINEMATIC_LOOK_METHODS = `
       passMs: performance.now() - started, passes: this.cinematicRenderer?.passes || 0 };
   }
 
-  renderCinematicFallback(target, width, height, profile) {
+  renderCinematicFallback(target, width, height, profile, {preserveAlpha = false} = {}) {
     // Canvas-only devices still get fixed ordered texture and the same light
     // placement. Patterns are built once, without getImageData/readPixels.
     if (!this.cinematicDitherPatterns) {
@@ -808,7 +882,7 @@ export const CINEMATIC_LOOK_METHODS = `
     }
     // Overlay retains true black linework and highlight headroom instead
     // of stamping pale dots onto the painting's ink outlines.
-    target.globalCompositeOperation = "overlay";
+    target.globalCompositeOperation = preserveAlpha ? "source-atop" : "overlay";
     for (const pattern of this.cinematicDitherPatterns) { target.fillStyle = pattern; target.fillRect(0, 0, width, height); }
     target.globalCompositeOperation = "source-over";
     const vignette = target.createRadialGradient(width * .5, height * .47, width * .16,
