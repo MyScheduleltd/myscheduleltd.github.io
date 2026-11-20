@@ -12,6 +12,8 @@
 import assert from 'node:assert/strict';
 import {chromium, webkit} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
+// Ready = booted and the loading card gone: the card swallows every key until
+// it leaves (~20 ms after bootDone), so a press inside that gap never lands.
 
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const near = (a, b, tolerance, label) => assert(Math.abs(a - b) <= tolerance, `${label}: ${a} vs ${b}`);
@@ -129,7 +131,7 @@ for (const [name, launch] of Object.entries(browsers)) {
   const page = await context.newPage();
   const errors = []; page.on('pageerror', e => errors.push(String(e)));
   await page.goto(new URL('moth/staff/?device=phone', base).href, {waitUntil: 'domcontentloaded'});
-  await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading"), undefined, {timeout: 60000});
   await page.keyboard.press('Shift');
 
   // The deck's O confirms STORY MODE's difficulty card (and starts the story).
@@ -193,7 +195,7 @@ for (const [name, launch] of Object.entries(browsers)) {
     localStorage.setItem(key, JSON.stringify(saved));
   });
   await page.reload({waitUntil: 'domcontentloaded'});
-  await page.waitForFunction(() => window.bobbyGame?.bootDone && bobbyGame.state === 'title', undefined, {timeout: 60000});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading") && bobbyGame.state === 'title', undefined, {timeout: 60000});
   await page.keyboard.press('Shift');
   await page.evaluate(() => { const g = bobbyGame; g.homeMenu.index = g.getHomeMenuItems().findIndex(item => item.id === 'continue'); });
   await page.keyboard.press('Enter');
@@ -226,7 +228,7 @@ for (const [name, launch] of Object.entries(browsers)) {
     ['studio-stage1', 'startStudioFight', 'studioPostDialogue'], ['level5-stage2', 'startLevel5RiverFight', null], ['level6-stage2', 'startLevel6ConcertFight', null]];
   for (const [stageId, start, next] of fights) {
     await page.goto(new URL('moth/staff/?device=phone', base).href, {waitUntil: 'domcontentloaded'});
-    await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+    await page.waitForFunction(() => window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading"), undefined, {timeout: 60000});
     await page.keyboard.press('Shift');
     await page.evaluate(stageId => { const g = bobbyGame; g.progress ||= g.createDefaultProgress(); g.progress.storyCheckpoint = stageId; g.saveProgress(); }, stageId);
     await page.evaluate(start => { bobbyGame.freePlay = false; bobbyGame[start]({ skipTutorial: true }); }, start);
@@ -236,7 +238,7 @@ for (const [name, launch] of Object.entries(browsers)) {
     await page.evaluate(() => window.__lock());
     const kept = await fight(page);
     await page.reload({waitUntil: 'domcontentloaded'});
-    await page.waitForFunction(() => window.bobbyGame?.bootDone && bobbyGame.state === 'title', undefined, {timeout: 60000});
+    await page.waitForFunction(() => window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading") && bobbyGame.state === 'title', undefined, {timeout: 60000});
     await page.keyboard.press('Shift');
     await page.evaluate(() => { const g = bobbyGame; g.homeMenu.index = g.getHomeMenuItems().findIndex(item => item.id === 'continue'); g.activateHomeMenuSelection(); });
     await page.waitForFunction(() => bobbyGame.state === 'playing' && bobbyGame.stageCountdown > 0, undefined, {timeout: 60000});
@@ -274,7 +276,7 @@ for (const [name, launch] of Object.entries(browsers)) {
   const page = await browser.newPage({viewport: {width: 393, height: 852}});
   await stubScoreboard(page);
   await page.goto(new URL('moth/staff/?device=phone', base).href, {waitUntil: 'domcontentloaded'});
-  await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading"), undefined, {timeout: 60000});
   await page.keyboard.press('Shift');
   await page.evaluate(() => { bobbyGame.freePlay = false; bobbyGame.enterLevel3Stage1(); });
   await page.waitForFunction(() => bobbyGame.state === 'level3', undefined, {timeout: 60000});
@@ -305,7 +307,7 @@ for (const mode of ['chill', 'shoot']) {
   await context.addInitScript(phoneRules);
   const page = await context.newPage();
   await page.goto(new URL('moth/staff/?device=phone', base).href, {waitUntil: 'domcontentloaded'});
-  await page.waitForFunction(() => window.bobbyGame?.bootDone, undefined, {timeout: 60000});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading"), undefined, {timeout: 60000});
   await page.keyboard.press('Shift');
   await page.evaluate(mode => { bobbyGame.setDifficulty(mode, {persist: false, announce: false}); bobbyGame.startStage('level6-stage2'); }, mode);
   await page.waitForFunction(() => { const t = bobbyGame.getActiveLevel1OfficeRhythmAudio?.(); return bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm?.theme === 'concert' && t && !t.paused; }, undefined, {timeout: 90000});

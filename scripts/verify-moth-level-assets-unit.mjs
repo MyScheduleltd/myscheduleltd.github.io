@@ -11,7 +11,9 @@ const source = patchMothRuntime(fs.readFileSync(new URL('../.qa/moth/published/s
 const ast = ts.createSourceFile('runtime.js', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 const game = ast.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'BobbyGame');
 const names = new Set(['loadChapterAssets', 'canonicalAudioSource', 'prepareChapterGraphics', 'chapterTracks', 'chapterSongs',
-  'audioUsing', 'trimAudioMirror', 'replaceIdleAudioPlayer', 'prefetchHitSfx', 'loadHitSfx', 'prepareMenuSfx']);
+  'audioUsing', 'trimAudioMirror', 'replaceIdleAudioPlayer', 'prefetchHitSfx', 'loadHitSfx', 'prepareMenuSfx',
+  // Fight-song start (moth-fight-audio.mjs): no-ops for these stub players, which are not fight songs.
+  'prepareFightAudioStart', 'releaseFightAudioStart']);
 const methods = game.members.filter(node => names.has(node.name?.getText(ast))).map(node => node.getText(ast));
 assert.equal(methods.length, names.size);
 const deferred = () => { let resolve, reject; const ready = new Promise((a,b) => {resolve=a;reject=b;}); return {ready,resolve,reject}; };

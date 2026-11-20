@@ -19,6 +19,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import {chromium} from '/Users/myscheduleai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import {stubScoreboard} from './moth-scoreboard-stub.mjs';
+// Ready = booted and the loading card gone: the card swallows every key until
+// it leaves (~20 ms after bootDone), so a press inside that gap never lands.
 
 const base = process.argv[2] || 'http://127.0.0.1:5286/';
 const level4Only = process.argv.includes('--level4-only');
@@ -29,7 +31,7 @@ const open = async (context, url = staff) => {
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   await page.goto(url, {waitUntil: 'domcontentloaded'});
-  await page.waitForFunction(() => window.bobbyGame?.bootDone && bobbyGame.state === 'title', undefined, {timeout: 60000});
+  await page.waitForFunction(() => window.bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading") && bobbyGame.state === 'title', undefined, {timeout: 60000});
   return {page, errors};
 };
 const fighting = (page, label = '') => page.waitForFunction(() => bobbyGame.state === 'playing' && bobbyGame.level1OfficeRhythm && !bobbyGame.level1OfficeRhythm.graphicsLoading
@@ -352,7 +354,7 @@ for (const phone of [false, true]) {
   if (!phone) {
     const resume = async () => {
       await page.reload({waitUntil: 'domcontentloaded'});
-      await page.waitForFunction(() => bobbyGame?.bootDone && bobbyGame.state === 'title');
+      await page.waitForFunction(() => bobbyGame?.bootDone&&!document.getElementById("moth-boot-loading") && bobbyGame.state === 'title');
       assert.equal(await page.evaluate(() => bobbyGame.getContinueStageId()), 'level4-stage1');
       await page.evaluate(() => bobbyGame.continueStory());
       await page.waitForFunction(() => bobbyGame.state === 'level4' && !bobbyGame.levelLoadingPresentation);

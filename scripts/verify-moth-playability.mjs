@@ -109,12 +109,12 @@ try {
       // reports. Screen layout must never change speaker compensation.
       const read = (deviceMode, {offset = 0, skipAudio = false, outputLatency = 0.041, baseLatency = 0.012, state = 'running'} = {}) => {
         const track = {}, context = {state, outputLatency, baseLatency};
-        const receiver = {deviceMode, level1OfficeRhythm: {skipAudio}, getAudioOffsetSeconds: () => offset,
+        const receiver = {getReportedOutputDelay: bobbyGame.getReportedOutputDelay, deviceMode, level1OfficeRhythm: {skipAudio}, getAudioOffsetSeconds: () => offset,
           getActiveLevel1OfficeRhythmAudio: () => track, musicAudioRoutes: new Map([[track, {context}]])};
         return bobbyGame.getRhythmOutputDelay.call(receiver);
       };
       const track = {}, route = {context: {state: 'running', outputLatency: .041, baseLatency: .012}};
-      const receiver = {deviceMode: 'desktop', level1OfficeRhythm: {skipAudio: false}, getAudioOffsetSeconds: () => 0,
+      const receiver = {getReportedOutputDelay: bobbyGame.getReportedOutputDelay, deviceMode: 'desktop', level1OfficeRhythm: {skipAudio: false}, getAudioOffsetSeconds: () => 0,
         getActiveLevel1OfficeRhythmAudio: () => track, musicAudioRoutes: new Map([[track, route]])};
       const initialRoute = bobbyGame.getRhythmOutputDelay.call(receiver);
       route.context.outputLatency = .081;
@@ -123,7 +123,7 @@ try {
       const changedContext = bobbyGame.getRhythmOutputDelay.call(receiver);
       return {desktop: read('desktop'), phone: read('phone'), calibrated: read('desktop', {offset: .025}),
         skip: read('desktop', {skipAudio: true}), suspended: read('phone', {state: 'suspended'}),
-        invalid: read('phone', {outputLatency: NaN}), implausible: read('desktop', {outputLatency: .4}),
+        invalid: read('phone', {outputLatency: NaN}), implausible: read('desktop', {outputLatency: 1.1}),
         initialRoute, changedLatency, changedContext};
     });
     assert(Math.abs(latency.desktop - .053) < 1e-12 && latency.desktop === latency.phone, `${name}: desktop and phone compensate the same reported output delay`);

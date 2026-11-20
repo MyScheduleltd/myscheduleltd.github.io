@@ -45,11 +45,8 @@ export function patchStoryConfirm(once, edit) {
     '    if (post) this.showStoryAdvance("level5-stage1", () => this.startLevelLoading("level5-stage1", () => this.enterLevel5Stage1()));');
   once('    this.startLevelLoading("level6-stage1", () => this.startLevel6Dream());',
     '    this.showStoryAdvance("level6-stage1", () => this.startLevelLoading("level6-stage1", () => this.startLevel6Dream()));');
-  once('      this.level1OfficeRhythm = null;\n      this.startLevel6WakeUp();\n      this.updateMobileControls(true);',
-    `      this.showStoryAdvance("finale-stage1", () => {
-        this.level1OfficeRhythm = null;
-        this.startLevel6WakeUp();
-      });`);
+  // The final concert's result continues directly to the wake-up cutscene.
+  // Only the earlier chapters ask whether to advance or return to the title.
 
   once('    if (this.walkPause) return "card";',
     '    if (this.walkPause || this.state === "level1UnlockPrompt") return "card";');

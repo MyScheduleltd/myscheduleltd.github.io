@@ -99,7 +99,7 @@ async function enterOffice(page) {
   await page.locator('#moth-boot-loading').waitFor({state: 'detached', timeout: 60000});
   await page.waitForFunction(() => bobbyGame.audioMirror?.get(bobbyGame.stageTrackSource('level1-stage1'))?.url, undefined, {timeout: 20000});
   await page.keyboard.press('KeyP');
-  await page.locator('[data-debug-fight="level1-stage1"]').click();
+  await page.locator('[data-debug-fight="level1-stage1"][data-debug-mode="chill"]').click();
   // Chrome leaves the clicked debug button focused; a later Enter would press it again.
   await page.evaluate(() => document.activeElement?.blur());
   await page.keyboard.press('KeyP');

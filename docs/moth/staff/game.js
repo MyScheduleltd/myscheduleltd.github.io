@@ -674,21 +674,28 @@ function drawRhythmHitPulse(target, x, y, pulse, age, reducedMotion) {
   target.restore();
 }
 
-function createMothCinematicRenderer() {
+function createMothCinematicRenderer({ alpha = false, opaqueOutput = false } = {}) {
   const canvas = document.createElement('canvas');
   const gl = canvas.getContext('webgl', {
-    alpha: false, antialias: false, depth: false, stencil: false,
+    alpha, antialias: false, depth: false, stencil: false,
     premultipliedAlpha: false, preserveDrawingBuffer: true,
     powerPreference: 'low-power', failIfMajorPerformanceCaveat: true
   });
   if (!gl) return null;
+  // At 1280 native pixels, mediump UVs can select a neighbouring transparent
+  // texel along cutout edges. Use exact sampling for alpha composites; a
+  // device without fragment highp keeps the alpha-safe Canvas fallback.
+  if (alpha && !gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT)?.precision) {
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return null;
+  }
   const vertex = `
     attribute vec2 aPosition;
     varying vec2 vUV;
     void main() { vUV = aPosition * .5 + .5; gl_Position = vec4(aPosition, 0., 1.); }
   `;
   const fragment = `
-    precision mediump float;
+    precision ${alpha ? 'highp' : 'mediump'} float;
     uniform sampler2D uImage;
     uniform vec2 uSourceScale;
     uniform vec2 uSize;
@@ -721,7 +728,8 @@ function createMothCinematicRenderer() {
     void main() {
       vec2 uv = vec2(vUV.x, 1. - vUV.y);
       vec2 sourceUV = vec2(vUV.x * uSourceScale.x, 1. - uv.y * uSourceScale.y);
-      vec3 base = texture2D(uImage, sourceUV).rgb;
+      vec4 source = texture2D(uImage, sourceUV);
+      vec3 base = source.rgb;
       float luma = dot(base, vec3(.2126, .7152, .0722));
       float shadow = 1. - smoothstep(.06, .55, luma);
       float highlight = smoothstep(.3, .88, luma);
@@ -751,7 +759,7 @@ function createMothCinematicRenderer() {
       // Keep ink and very dark painted detail continuous; the visible
       // palette pattern reaches full strength through the midtones.
       colour = mix(colour, quantized, .92 * smoothstep(.025, .20, luma));
-      gl_FragColor = vec4(clamp(colour, 0., 1.), 1.);
+      gl_FragColor = vec4(clamp(colour, 0., 1.), ${alpha && !opaqueOutput ? 'source.a' : '1.'});
     }
   `;
   const compile = (kind, source) => {
@@ -3386,6 +3394,11 @@ for (const level of this.config.secretLevels || []) {
       run: async () => { this.refs.riverGoddess = await loadImage("assets/sprites/river-goddess.webp"); },
       release: () => { this.refs.riverGoddess = null; }
     });
+    this.sceneAssetJobs.push({
+      key: "concertMusicVideo", group: "level6",
+      run: () => this.loadConcertMusicVideo(),
+      release: () => this.releaseConcertMusicVideo()
+    });
     this.loadedSceneGroups = new Set();
   }
 
@@ -3935,7 +3948,7 @@ for (const level of this.config.secretLevels || []) {
     if (!this.progress) this.progress = this.createDefaultProgress();
     const random = () => Math.random().toString(36).slice(2, 10);
     const id = globalThis.crypto?.randomUUID?.() || ('run-' + Date.now().toString(36) + '-' + random() + random());
-    const run = this.progress.storyRun = { id, difficulty, chartVersion: "funk-patterns-20261119b", scores: {}, startedAt: Date.now(), ticket: null };
+    const run = this.progress.storyRun = { id, difficulty, chartVersion: "feel-20261120b", scores: {}, startedAt: Date.now(), ticket: null };
     this.startNewStory();
     this.registerStoryRun(run);
   }
@@ -3945,14 +3958,14 @@ for (const level of this.config.secretLevels || []) {
   // that never gets one cannot be posted.
   async registerStoryRun(run, attempt = 0) {
     clearTimeout(this.storyTicketTimer);
-    if (!run || run.ticket || run.legacy || run.chartVersion !== "funk-patterns-20261119b" || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
+    if (!run || run.ticket || run.legacy || run.chartVersion !== "feel-20261120b" || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', chartVersion: "funk-patterns-20261119b", mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', chartVersion: "feel-20261120b", mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
       const data = await response.json().catch(() => ({}));
-      if (response.status !== 201 || typeof data.run !== 'string' || data.chartVersion !== "funk-patterns-20261119b") throw new Error(String(response.status));
+      if (response.status !== 201 || typeof data.run !== 'string' || data.chartVersion !== "feel-20261120b") throw new Error(String(response.status));
       if (this.progress?.storyRun !== run || run.ticket) return;
       run.ticket = data.run;
       this.saveProgress();
@@ -3967,7 +3980,7 @@ for (const level of this.config.secretLevels || []) {
     const run = this.progress?.storyRun;
     const rhythm = this.level1OfficeRhythm;
     if (this.freePlay || !run || !rhythm || !["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"].includes(stageId)) return;
-    if (run.chartVersion !== "funk-patterns-20261119b") run.legacy = true;
+    if (run.chartVersion !== "feel-20261120b") run.legacy = true;
     if (this.difficultyId !== run.difficulty) run.mixed = true;
     run.scores[stageId] = Math.max(0, Math.round(rhythm.roundScore || 0));
   }
@@ -3976,7 +3989,7 @@ for (const level of this.config.secretLevels || []) {
     if (!run) return null;
     const fights = ["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"];
     const total = fights.reduce((sum, id) => sum + (run.scores?.[id] || 0), 0);
-    const blocked = run.chartVersion !== "funk-patterns-20261119b" ? 'chart-version' : run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
+    const blocked = run.chartVersion !== "feel-20261120b" ? 'chart-version' : run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
     const complete = !blocked && fights.every(id => Number.isFinite(run.scores?.[id]));
     return { run, total, complete, blocked, mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' };
   }
@@ -4011,9 +4024,9 @@ for (const level of this.config.secretLevels || []) {
       const { stage, mode } = run;
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'start', mode, stage, chartVersion: "funk-patterns-20261119b" }) });
+        body: JSON.stringify({ action: 'start', mode, stage, chartVersion: "feel-20261120b" }) });
       const data = await response.json();
-      if (response.status === 201 && data.chartVersion === "funk-patterns-20261119b"
+      if (response.status === 201 && data.chartVersion === "feel-20261120b"
         && data.stage === stage && typeof data.run === 'string') run.ticket = data.run;
     } catch {
       // Scoreboard connectivity never interrupts a song.
@@ -4053,19 +4066,35 @@ for (const level of this.config.secretLevels || []) {
     return this.tr(spec.en, spec.zh);
   }
 
-  openScoreboard({ stage = null, stageResult = null } = {}) {
-    this.closeScoreboard();
+  showStoryEndingScoreboard({ preview = false } = {}) {
+    this.endingScoreboardPreview = false;
+    if (this.freePlay && !preview) return this.startFinaleEnding();
+    if (this.scoreboard?.ending) return;
+    if (!preview) this.finishStoryScoreRun();
+    // Staff previews must neither finish a saved run nor submit invented
+    // scores. They show the same closing transition with an ineligible result.
+    const mode = this.difficultyId === 'shoot' ? 'shoot' : 'chill';
+    const storyResult = preview ? {
+      run: { id: 'debug-ending-preview', difficulty: mode, scores: {} },
+      total: 0, complete: false, blocked: 'preview', mode
+    } : null;
+    this.openScoreboard({ ending: true, storyResult, onClose: () => this.startFinaleEnding() });
+  }
+
+  openScoreboard({ stage = null, stageResult = null, storyResult = null, ending = false, onClose = null } = {}) {
+    // Replacing a board is not the player's decision to continue the ending.
+    this.closeScoreboard({ continueStory: false });
     const run = this.progress?.storyRun;
     const defaultMode = stage && this.homeMenu?.difficultyPick ? this.stageSelectDifficultyId || this.difficultyId : this.difficultyId;
     const mode = defaultMode === 'shoot' ? 'shoot' : 'chill';
     const result = stage
       ? stageResult || this.lastStageScoreResults?.get(stage + ':' + mode) || null
-      : (run?.finishedAt || run?.boardShown) ? this.storyRunResult(run) : null;
-    const board = { stage, stageTitle: stage ? this.stageScoreboardTitle(stage) : null,
+      : storyResult || ((run?.finishedAt || run?.boardShown) ? this.storyRunResult(run) : null);
+    const board = { ending, onClose, stage, stageTitle: stage ? this.stageScoreboardTitle(stage) : null,
       result, mode: result?.mode || mode, top: stage ? 5 : 10,
       entries: {}, status: { chill: 'loading', shoot: 'loading' }, draftId: result?.run.posted?.id || '', message: '', posting: false,
       // Keep the last inputs of the song from dismissing the result board.
-      quietUntil: stageResult ? performance.now() + 750 : 0 };
+      quietUntil: stageResult || ending ? performance.now() + 750 : 0 };
     this.scoreboard = board;
     this.releaseHeldInputs?.();
     const root = document.createElement('div');
@@ -4094,12 +4123,15 @@ for (const level of this.config.secretLevels || []) {
     this.prepareScoreCard();
   }
 
-  closeScoreboard() {
+  closeScoreboard({ continueStory = true } = {}) {
     const board = this.scoreboard;
     if (!board) return;
     board.root?.remove();
     this.scoreboard = null;
     this.updateMobileControls?.(true);
+    const advance = continueStory && board.onClose;
+    board.onClose = null;
+    if (typeof advance === 'function') advance();
   }
 
   async fetchScoreboard(mode) {
@@ -4112,12 +4144,12 @@ for (const level of this.config.secretLevels || []) {
     try {
       const url = new URL(this.scoreboardApi(), location.href);
       url.searchParams.set('mode', mode);
-      url.searchParams.set('chartVersion', "funk-patterns-20261119b");
+      url.searchParams.set('chartVersion', "feel-20261120b");
       if (board.stage) url.searchParams.set('stage', board.stage);
       const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
-      if (data.chartVersion !== "funk-patterns-20261119b" || (data.stage || null) !== board.stage) throw new Error('chart-version');
+      if (data.chartVersion !== "feel-20261120b" || (data.stage || null) !== board.stage) throw new Error('chart-version');
       if (this.scoreboard !== board) return;
       board.entries[mode] = Array.isArray(data.entries) ? data.entries : [];
       board.status[mode] = 'ready';
@@ -4130,8 +4162,11 @@ for (const level of this.config.secretLevels || []) {
   }
 
   scoreboardApi() {
-    if ((location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-      && new URLSearchParams(location.search).get('previewScores') === '1') return '/api/moth-scoreboard';
+    // Local previews keep their scores to themselves, on this Mac or a phone
+    // reaching it over the home network (.qa/tools/preview-lan.mjs).
+    const host = location.hostname;
+    const local = host === 'localhost' || host === '127.0.0.1' || /^(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.test(host);
+    if (local && new URLSearchParams(location.search).get('previewScores') === '1') return '/api/moth-scoreboard';
     return 'https://beauty-boy.vercel.app/api/moth-scoreboard';
   }
 
@@ -4178,6 +4213,8 @@ for (const level of this.config.secretLevels || []) {
       const status = {
         ineligible: board.stage
           ? tr('Play the full song online to post a score.', '連上網路並玩完整首歌，即可上傳成績。')
+          : standing?.why === 'preview'
+          ? tr('Debug preview. Scores are not submitted.', '除錯預覽，不會上傳成績。')
           : standing?.why === 'offline'
           ? tr('This story run cannot enter the scoreboard: it could not reach the scoreboard when it began. Start a new story online to compete.', '這次的故事無法登上排行榜：開始時沒有連上排行榜。連上網路後從故事模式重新開始，即可挑戰排名。')
           : standing?.why === 'chart-version'
@@ -4237,7 +4274,7 @@ for (const level of this.config.secretLevels || []) {
     actions.append(el('button', { type: 'button', 'data-focus-key': 'copy', text: tr('COPY LINK', '複製連結'), onclick: () => this.copyScoreLink() }));
     section.append(actions);
     section.append(el('button', { type: 'button', class: 'moth-board-close is-primary', 'data-board-close': true, 'data-focus-key': 'close',
-      text: tr('BACK', '返回'), onclick: () => this.closeScoreboard() }));
+      text: board.ending ? tr('CONTINUE TO CREDITS', '播放片尾字幕') : tr('BACK', '返回'), onclick: () => this.closeScoreboard() }));
     const scroll = board.root.querySelector('.moth-board-list')?.scrollTop || 0;
     board.root.replaceChildren(section);
     board.root.querySelector('.moth-board-list').scrollTop = scroll;
@@ -4272,7 +4309,10 @@ for (const level of this.config.secretLevels || []) {
     } else if (code === 'Enter' || code === 'Space' || code === 'KeyO') {
       if (event.repeat) return event.preventDefault();
       const focused = board.root.contains(document.activeElement) && document.activeElement.tagName === 'BUTTON' ? document.activeElement : null;
-      (focused || board.root.querySelector('.moth-board-post input') || board.root.querySelector('[data-board-close]'))?.[focused ? 'click' : 'focus']?.();
+      const input = board.root.querySelector('.moth-board-post input');
+      const close = board.root.querySelector('[data-board-close]');
+      if (board.ending && !focused && !input) close?.click();
+      else (focused || input || close)?.[focused ? 'click' : 'focus']?.();
     } else return;
     event.preventDefault();
   }
@@ -4304,7 +4344,7 @@ for (const level of this.config.secretLevels || []) {
     board.message = '';
     this.renderScoreboard();
     try {
-      const chartVersion = "funk-patterns-20261119b";
+      const chartVersion = "feel-20261120b";
       const score = board.stage ? { stage: board.stage, score: result.total } : { scores: result.run.scores };
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode: result.mode, chartVersion, id, run: result.run.ticket, ...score }) });
@@ -4325,7 +4365,10 @@ for (const level of this.config.secretLevels || []) {
       board.message = this.scoreboardMessage(null);
     }
     board.posting = false;
-    if (this.scoreboard === board) this.renderScoreboard();
+    if (this.scoreboard === board) {
+      if (board.ending && result.run.posted) this.closeScoreboard();
+      else this.renderScoreboard();
+    }
   }
 
   scoreShareText(result = this.scoreboard?.result) {
@@ -5573,6 +5616,63 @@ for (const level of this.config.secretLevels || []) {
     return this.rhythmRailLayout;
   }
 
+  getCinematicComboGraphic({celebration, photo, crop, photoBounds, captionBounds, lift, scene}) {
+    const width = VIEW_W, height = Math.max(1, Math.ceil(scene.h));
+    const enabled = this.cinematicLookEnabled !== false;
+    if (enabled && this.cinematicComboRenderer === undefined) {
+      try { this.cinematicComboRenderer = createMothCinematicRenderer({alpha: true, opaqueOutput: true}); }
+      catch { this.cinematicComboRenderer = null; }
+    }
+    const renderer = enabled && this.cinematicComboRenderer;
+    const key = [width, height, scene.x, scene.w, ...Object.values(crop),
+      ...Object.values(photoBounds), ...Object.values(captionBounds), lift, enabled, Boolean(renderer?.failed)].join(":");
+    const cached = this.cinematicComboCache;
+    // The photo and lettering are static once the short entrance lift ends.
+    // Fade opacity is applied by the caller, so a frozen popup or its fade
+    // reuses the same native-pixel dither rather than uploading every frame.
+    if (cached?.celebration === celebration && cached.photo === photo
+      && cached.stamp === celebration.stamp && cached.key === key) {
+      this.cinematicComboTelemetry = {...cached.telemetry, cached: true};
+      return cached.layer;
+    }
+    const source = this.getScratchLayer("cinematic-combo", width, height);
+    source.setTransform(1, 0, 0, 1, 0, 0);
+    source.globalAlpha = 1;
+    source.globalCompositeOperation = "source-over";
+    source.clearRect(0, 0, width, height);
+    source.save();
+    source.beginPath(); source.rect(scene.x, 0, scene.w, scene.h); source.clip();
+    source.imageSmoothingEnabled = false;
+    if (photo) source.drawImage(photo, crop.x, crop.y, crop.w, crop.h, photoBounds.x, photoBounds.y, photoBounds.w, photoBounds.h);
+    if (celebration.stamp) source.drawImage(celebration.stamp, captionBounds.x, captionBounds.y + lift, captionBounds.w, captionBounds.h);
+    source.restore();
+    const profile = {shadow: [0,0,0], highlight: [0,0,0], haze: [0,0,0], vignette: 0, lights: []};
+    let gpu = false, layer = source.canvas;
+    if (renderer && !renderer.failed) {
+      try { gpu = renderer.draw(source.canvas, width, height, profile); }
+      catch { renderer.failed = true; }
+      if (gpu) {
+        const masked = this.getScratchLayer("cinematic-combo-masked", width, height);
+        masked.setTransform(1, 0, 0, 1, 0, 0);
+        masked.globalAlpha = 1;
+        masked.globalCompositeOperation = "source-over";
+        masked.clearRect(0, 0, width, height);
+        masked.drawImage(source.canvas, 0, 0);
+        masked.globalCompositeOperation = "source-in";
+        masked.drawImage(renderer.canvas, 0, 0);
+        masked.globalCompositeOperation = "source-over";
+        layer = masked.canvas;
+      }
+    }
+    if (enabled && !gpu) this.renderCinematicFallback(source, width, height, profile, {preserveAlpha: true});
+    const telemetry = {backend: !enabled ? "disabled" : gpu ? "webgl" : "canvas2d", width, height,
+      preserveAlpha: true, ditherPixelSize: 2, paletteLevels: 10, ditherMix: enabled ? .92 : 0,
+      animatedNoise: false, cpuPixelReadback: false, cached: false, passes: renderer?.passes || 0};
+    this.cinematicComboCache = {celebration, photo, stamp: celebration.stamp, key, layer, telemetry};
+    this.cinematicComboTelemetry = telemetry;
+    return layer;
+  }
+
   renderCinematicScene(target, width, height, name = this.level1OfficeRhythm?.theme || "office") {
     if (this.cinematicLookEnabled === false || !target?.canvas || width <= 0 || height <= 0) return;
     const profile = MOTH_CINEMATIC_PROFILES[name] || MOTH_CINEMATIC_PROFILES.office;
@@ -5603,7 +5703,7 @@ for (const level of this.config.secretLevels || []) {
       passMs: performance.now() - started, passes: this.cinematicRenderer?.passes || 0 };
   }
 
-  renderCinematicFallback(target, width, height, profile) {
+  renderCinematicFallback(target, width, height, profile, {preserveAlpha = false} = {}) {
     // Canvas-only devices still get fixed ordered texture and the same light
     // placement. Patterns are built once, without getImageData/readPixels.
     if (!this.cinematicDitherPatterns) {
@@ -5634,7 +5734,7 @@ for (const level of this.config.secretLevels || []) {
     }
     // Overlay retains true black linework and highlight headroom instead
     // of stamping pale dots onto the painting's ink outlines.
-    target.globalCompositeOperation = "overlay";
+    target.globalCompositeOperation = preserveAlpha ? "source-atop" : "overlay";
     for (const pattern of this.cinematicDitherPatterns) { target.fillStyle = pattern; target.fillRect(0, 0, width, height); }
     target.globalCompositeOperation = "source-over";
     const vignette = target.createRadialGradient(width * .5, height * .47, width * .16,
@@ -5975,6 +6075,10 @@ for (const level of this.config.secretLevels || []) {
       }
       if (this.state === "title") {
         if (this.homeMenu?.view === "calibrate") {
+          if (code === "KeyM") {
+            if (!event.repeat && this.homeMenu.calibration?.phase !== "running") this.setTimingMode("auto");
+            return;
+          }
           if (["Enter", "Space", "ArrowRight", "KeyD"].includes(code)) {
             if (!event.repeat) this.handleTimingCalibrationTap();
             return;
@@ -6573,6 +6677,12 @@ for (const level of this.config.secretLevels || []) {
     }
     if (this.state === "title") {
       if (this.homeMenu?.view === "calibrate") {
+        const panel = homeGeometry().panel;
+        if (this.homeMenu.calibration?.phase !== "running" && point.x >= panel.x + panel.w / 2 - 140
+          && point.x <= panel.x + panel.w / 2 + 140 && point.y >= panel.y + 416 && point.y <= panel.y + 458) {
+          this.setTimingMode("auto");
+          return;
+        }
         this.handleTimingCalibrationTap();
         return;
       }
@@ -6658,6 +6768,10 @@ for (const level of this.config.secretLevels || []) {
             <dt>Systems</dt><dd data-debug-field="systems">—</dd>
             <dt>Progress</dt><dd data-debug-field="progress">—</dd>
             <dt>Hidden</dt><dd data-debug-field="secrets">—</dd>
+            <dt>Story mode</dt><dd data-debug-field="storyRun">—</dd>
+            <dt>Chart arrangement</dt><dd data-debug-field="arrangement">—</dd>
+            <dt>Concert LED</dt><dd data-debug-field="concertVideo">—</dd>
+            <dt>Combo texture</dt><dd data-debug-field="comboTexture">—</dd>
           </dl>
           <div class="debug-actions debug-actions--grid debug-unlock-controls">
             <button type="button" data-debug-action="unlockSecrets" class="debug-button--stamp">Unlock hidden levels</button>
@@ -6666,23 +6780,59 @@ for (const level of this.config.secretLevels || []) {
           <p class="debug-status" data-debug-field="status" role="status">Ready.</p>
         </section>
         <section>
-          <h2>02 / Rhythm fights</h2>
-          <p class="debug-hint">M O T H taps & holds · score runs · no story progress saved</p>
+          <h2>02 / Level Selection · Full songs / 選關・完整歌曲</h2>
+          <p class="debug-hint">Full-song charts · Easy / Hard · No Story progress / 完整歌曲譜面，不推進故事。</p>
           <div class="debug-actions debug-actions--grid">
-            <button type="button" data-debug-fight="level1-stage1">L1 · Office</button>
-            <button type="button" data-debug-fight="level2-stage2">L2 · Bathroom</button>
-            <button type="button" data-debug-fight="level3-stage2">L3 · Okay Okay</button>
-            <button type="button" data-debug-fight="level4-stage1">L4 · Arcade</button>
-            <button type="button" data-debug-fight="studio-stage1">L5 · Studio</button>
-            <button type="button" data-debug-fight="level5-stage2">L6 · River</button>
-            <button type="button" data-debug-fight="level6-stage2">L7 · Concert</button>
-            <button type="button" data-debug-fight="secret-xiaosi">Hidden · 笑死</button>
-            <button type="button" data-debug-fight="secret-getdown">Hidden · 蹲得低</button>
+            <button type="button" data-debug-fight="level1-stage1" data-debug-mode="chill">L1 · Office · Easy / 簡單</button>
+            <button type="button" data-debug-fight="level1-stage1" data-debug-mode="shoot">L1 · Office · Hard / 困難</button>
+            <button type="button" data-debug-fight="level2-stage2" data-debug-mode="chill">L2 · Bathroom · Easy / 簡單</button>
+            <button type="button" data-debug-fight="level2-stage2" data-debug-mode="shoot">L2 · Bathroom · Hard / 困難</button>
+            <button type="button" data-debug-fight="level3-stage2" data-debug-mode="chill">L3 · Okay Okay · Easy / 簡單</button>
+            <button type="button" data-debug-fight="level3-stage2" data-debug-mode="shoot">L3 · Okay Okay · Hard / 困難</button>
+            <button type="button" data-debug-fight="level4-stage1" data-debug-mode="chill">L4 · Arcade · Easy / 簡單</button>
+            <button type="button" data-debug-fight="level4-stage1" data-debug-mode="shoot">L4 · Arcade · Hard / 困難</button>
+            <button type="button" data-debug-fight="studio-stage1" data-debug-mode="chill">L5 · Studio · Easy / 簡單</button>
+            <button type="button" data-debug-fight="studio-stage1" data-debug-mode="shoot">L5 · Studio · Hard / 困難</button>
+            <button type="button" data-debug-fight="level5-stage2" data-debug-mode="chill">L6 · River · Easy / 簡單</button>
+            <button type="button" data-debug-fight="level5-stage2" data-debug-mode="shoot">L6 · River · Hard / 困難</button>
+            <button type="button" data-debug-fight="level6-stage2" data-debug-mode="chill">L7 · Concert · Easy / 簡單</button>
+            <button type="button" data-debug-fight="level6-stage2" data-debug-mode="shoot">L7 · Concert · Hard / 困難</button>
+            <button type="button" data-debug-fight="secret-xiaosi" data-debug-mode="chill">Hidden · 笑死 · Easy / 簡單</button>
+            <button type="button" data-debug-fight="secret-xiaosi" data-debug-mode="shoot">Hidden · 笑死 · Hard / 困難</button>
+            <button type="button" data-debug-fight="secret-getdown" data-debug-mode="chill">Hidden · 蹲得低 · Easy / 簡單</button>
+            <button type="button" data-debug-fight="secret-getdown" data-debug-mode="shoot">Hidden · 蹲得低 · Hard / 困難</button>
           </div>
         </section>
         <section>
-          <h2>03 / Story & ending previews</h2>
-          <p class="debug-hint">Preview scenes without completing the story.</p>
+          <h2>Story mode / 故事模式</h2>
+          <p class="debug-hint">Full dialogue, fights and ending · Staff save / 完整劇情、關卡與片尾，使用工作人員存檔。</p>
+          <div class="debug-actions debug-actions--grid">
+            <button type="button" data-debug-action="storyEasy">New Story · Easy / 新故事・簡單</button>
+            <button type="button" data-debug-action="storyHard">New Story · Hard / 新故事・困難</button>
+            <button type="button" data-debug-action="storyContinue">Continue Story / 繼續故事</button>
+            <button type="button" data-debug-stage="finale-stage1">Ending flow / 片尾流程</button>
+          </div>
+          <p class="debug-hint">Chapter entry → dialogue, exploration, Story fight and next chapter. Jumps are unranked. / 從章節開頭遊玩，接續劇情與故事譜面；跳關不計排名。</p>
+          <div class="debug-actions debug-actions--grid">
+            <button type="button" data-debug-story="level1-stage1" data-debug-mode="chill">L1 · Intro / 辦公室 · Easy / 簡單</button>
+            <button type="button" data-debug-story="level1-stage1" data-debug-mode="shoot">L1 · Intro / 辦公室 · Hard / 困難</button>
+            <button type="button" data-debug-story="level2-stage2" data-debug-mode="chill">L2 · Bathroom / 浴室 · Easy / 簡單</button>
+            <button type="button" data-debug-story="level2-stage2" data-debug-mode="shoot">L2 · Bathroom / 浴室 · Hard / 困難</button>
+            <button type="button" data-debug-story="level3-stage1" data-debug-mode="chill">L3 · Home / 客廳 · Easy / 簡單</button>
+            <button type="button" data-debug-story="level3-stage1" data-debug-mode="shoot">L3 · Home / 客廳 · Hard / 困難</button>
+            <button type="button" data-debug-story="level4-stage1" data-debug-mode="chill">L4 · Bedroom / 房間 · Easy / 簡單</button>
+            <button type="button" data-debug-story="level4-stage1" data-debug-mode="shoot">L4 · Bedroom / 房間 · Hard / 困難</button>
+            <button type="button" data-debug-story="studio-stage1" data-debug-mode="chill">L5 · Recording / 錄音室 · Easy / 簡單</button>
+            <button type="button" data-debug-story="studio-stage1" data-debug-mode="shoot">L5 · Recording / 錄音室 · Hard / 困難</button>
+            <button type="button" data-debug-story="level5-stage1" data-debug-mode="chill">L6 · Night drive / 夜遊 · Easy / 簡單</button>
+            <button type="button" data-debug-story="level5-stage1" data-debug-mode="shoot">L6 · Night drive / 夜遊 · Hard / 困難</button>
+            <button type="button" data-debug-story="level6-stage1" data-debug-mode="chill">L7 · Dream / 夢境 · Easy / 簡單</button>
+            <button type="button" data-debug-story="level6-stage1" data-debug-mode="shoot">L7 · Dream / 夢境 · Hard / 困難</button>
+          </div>
+        </section>
+        <section>
+          <h2>03 / Scene previews only / 單一場景預覽</h2>
+          <p class="debug-hint">Single scenes only. Use Story mode above to play the chapter. / 僅預覽單一場景；遊玩完整章節請用上方故事模式。</p>
           <div class="debug-actions debug-actions--grid">
             <button type="button" data-debug-stage="level1-stage1">L1 · Intro & tutorial</button>
             <button type="button" data-debug-stage="level1-practice">L1 · Tap and hold practice</button>
@@ -6703,7 +6853,6 @@ for (const level of this.config.secretLevels || []) {
             <button type="button" data-debug-stage="level5-stage1">L6 · Night drive</button>
             <button type="button" data-debug-stage="level5-post">L6 · After the river</button>
             <button type="button" data-debug-stage="level6-stage1">L7 · Dream cutscene</button>
-            <button type="button" data-debug-stage="finale-stage1">Finale Wake-up</button>
             <button type="button" data-debug-stage="level6-streak-break">L7 · Gan Gan combo-break line</button>
             <button type="button" data-debug-stage="finale-ending">Ending credits</button>
             <button type="button" data-debug-stage="finale-thanks">Thank you</button>
@@ -7170,6 +7319,7 @@ for (const level of this.config.secretLevels || []) {
     } else if (sceneId === "level6Dream") {
       this.startLevel6Dream();
     } else if (sceneId === "level6Wake") {
+      this.endingScoreboardPreview = true;
       this.startLevel6WakeUp();
       this.level6WakeTimer = 5.6;
     }
@@ -7181,6 +7331,43 @@ for (const level of this.config.secretLevels || []) {
     this.updateMobileControls(true);
     this.updateDebugPanel(true);
     return true;
+  }
+
+  drawTimingReadout(target, panel, rhythm) {
+    const offsets = rhythm?.hitOffsets || [];
+    const ms = value => (value >= 0 ? "+" : "") + Math.round(value * 1000);
+    let line;
+    if (offsets.length < 8) {
+      line = "計時 TIMING · " + offsets.length + " 次 hits · 次數太少 too few to measure";
+    } else {
+      const sorted = [...offsets].sort((a, b) => a - b);
+      const mean = offsets.reduce((sum, value) => sum + value, 0) / offsets.length;
+      const median = sorted[Math.floor(sorted.length / 2)];
+      const side = Math.abs(mean) < 0.012 ? "準 on time" : mean > 0 ? "偏晚 late" : "偏早 early";
+      line = "計時 TIMING · " + offsets.length + " 次 hits · 平均 avg " + ms(mean) + " ms " + side + " · 中位 median " + ms(median) + " ms";
+    }
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    const context = this.musicAudioRoutes?.get(track)?.context || this.level1OfficeAudioContext;
+    const output = Number(context?.outputLatency) || 0, base = Number(context?.baseLatency) || 0;
+    const comp = this.getTimingMode() === "manual"
+      ? "補償 手動 manual " + ms(this.getManualAudioOffsetSeconds()) + " ms"
+      : "補償 自動 auto " + ms(this.getRhythmOutputDelay()) + " ms (out " + Math.round(output * 1000) + " + base " + Math.round(base * 1000) + " ms)";
+    // Press to sound: how long a press waited for the game, the median and the
+    // slowest tenth; the engine's own delay is the out + base above.
+    const waits = [...(rhythm?.inputWaits || [])].sort((a, b) => a - b);
+    const tap = waits.length < 8 ? "" : " · 按鍵等待 tap wait " + Math.round(waits[Math.floor(waits.length / 2)])
+      + " ms (p90 " + Math.round(waits[Math.min(waits.length - 1, Math.floor(waits.length * 0.9))]) + ")";
+    // Under the buttons (which end at y 614), inside what the phone's card view shows (to 670).
+    target.save();
+    target.textAlign = "center";
+    target.textBaseline = "middle";
+    target.fillStyle = "#1b2130";
+    target.fillRect(panel.x + 40, 620, panel.w - 80, 48);
+    target.fillStyle = "#ffd36c";
+    drawFittedText(target, line, panel.x + panel.w / 2, 633, panel.w - 110, 17, 900, 11);
+    target.fillStyle = "#f7f2de";
+    drawFittedText(target, comp + tap, panel.x + panel.w / 2, 655, panel.w - 110, 15, 900, 10);
+    target.restore();
   }
 
   loadDeviceModePreference() {
@@ -8129,7 +8316,7 @@ for (const level of this.config.secretLevels || []) {
       await this.handleDebugConversationAction(conversationButton.dataset.debugConversationAction);
       return;
     }
-    const button = event.target.closest?.("[data-debug-action], [data-debug-stage], [data-debug-fight]");
+    const button = event.target.closest?.("[data-debug-action], [data-debug-stage], [data-debug-fight], [data-debug-story]");
     if (!button || !this.debugPanel?.contains(button)) return;
     event.preventDefault();
     if (button.dataset.debugFight) {
@@ -8138,9 +8325,33 @@ for (const level of this.config.secretLevels || []) {
         this.setDebugStatus("Use Unlock hidden levels first to open 笑死 and 蹲得低.");
         return;
       }
-      await this.startStage(id);
-      this.setDebugStatus(`Score run: ${this.getStageTitle(id)} · M O T H.`);
+      this.endingScoreboardPreview = false;
+      this.setDifficulty(button.dataset.debugMode === "shoot" ? "shoot" : "chill", {persist: false, announce: false});
+      this.toggleDebugPanel(false);
+      await this.startStage(id, {freePlay: true, fromLevelSelection: true});
+      this.setDebugStatus(`Full song / 完整歌曲: ${this.getStageTitle(id)} · ${this.getDifficultyLabel()}`);
       this.updateDebugPanel(true);
+      return;
+    }
+    if (button.dataset.debugStory) {
+      const id = button.dataset.debugStory;
+      const mode = button.dataset.debugMode === "shoot" ? "shoot" : "chill";
+      this.debugUnlockAllStages();
+      // A chapter jump follows real Story transitions but cannot submit an
+      // incomplete, staff-selected run to the public Story leaderboard.
+      this.progress.storyRun = {id: "debug-story-" + Date.now(), difficulty: mode,
+        chartVersion: this.config?.rhythmChartVersion || "debug", scores: {}, startedAt: Date.now(), legacy: true};
+      this.progress.storyCheckpoint = id;
+      this.progress.flags = {...this.progress.flags, level3PostBossReady: false,
+        level3PostBossComplete: false, level4BossDefeated: false, level4MemeChestPending: false};
+      this.storyDifficultyId = null;
+      this.endingScoreboardPreview = false;
+      this.stageSelectRhythmId = null;
+      this.setDifficulty(mode, {persist: false, announce: false});
+      this.toggleDebugPanel(false);
+      await this.startStage(id, {freePlay: false});
+      this.saveProgress({debugOverride: true});
+      this.setDebugStatus("Story chapter / 故事章節: " + this.getStageTitle(id));
       return;
     }
     const stageId = button.dataset.debugStage;
@@ -8150,7 +8361,22 @@ for (const level of this.config.secretLevels || []) {
     }
     const action = button.dataset.debugAction;
     if (action === "close") this.toggleDebugPanel(false);
-    else if (action === "title") {
+    else if (action === "storyEasy" || action === "storyHard") {
+      this.endingScoreboardPreview = false;
+      this.toggleDebugPanel(false);
+      this.startStoryRun(action === "storyHard" ? "shoot" : "chill");
+      this.setDebugStatus("Started full Story Mode / 已開始完整故事模式。");
+      return;
+    } else if (action === "storyContinue") {
+      if (!this.getContinueStageId()) {
+        this.setDebugStatus("No saved Story checkpoint / 尚無故事進度。");
+        return;
+      }
+      this.endingScoreboardPreview = false;
+      this.toggleDebugPanel(false);
+      this.continueStory();
+      return;
+    } else if (action === "title") {
       this.returnToTitle();
       this.setDebugStatus("Returned to title.");
     } else if (action === "stageSelect") {
@@ -8269,6 +8495,7 @@ for (const level of this.config.secretLevels || []) {
     } else if (stageId === "finale-stage1") {
       this.collectSong("level5");
       this.collectSong("level6");
+      this.endingScoreboardPreview = true;
       this.startLevel6WakeUp();
     } else if (["finale-ending", "finale-thanks", "finale-unlocks", "finale-the-end"].includes(stageId)) {
       this.collectSong("level5");
@@ -8289,6 +8516,32 @@ for (const level of this.config.secretLevels || []) {
   }
 
   updateDebugPanel(force = false) {
+    const storyDebugRun = this.progress?.storyRun;
+    const storyDebugVideo = this.concertMusicVideo;
+    const storyDebugCombo = this.cinematicComboTelemetry;
+    const storyDebugFields = {
+      arrangement: this.level1OfficeRhythm
+        ? (this.stageSelectRhythmId ? "Level Selection · full song / 選關・完整歌曲" : "Story chart / 故事譜面")
+          + " · " + this.scoreboardModeLabel(this.difficultyId)
+        : (this.freePlay ? "Scene preview / 場景預覽" : "Story route / 故事流程"),
+      storyRun: storyDebugRun
+        ? this.scoreboardModeLabel(storyDebugRun.difficulty) + " · "
+          + Object.keys(storyDebugRun.scores || {}).length + "/7 · "
+          + (storyDebugRun.finishedAt ? "finished / 完成" : "in progress / 進行中")
+        : "No active run / 尚未開始",
+      concertVideo: storyDebugVideo
+        ? (storyDebugVideo.paused ? "paused" : "playing") + " · muted · "
+          + Math.round((storyDebugVideo.currentTime - this.getConcertVideoTime()) * 1000) + "ms"
+        : "Not loaded / 尚未載入",
+      comboTexture: storyDebugCombo
+        ? storyDebugCombo.backend + " · 2px fixed dither · " + (storyDebugCombo.cached ? "cached" : "composed")
+        : "Ready / 待命"
+    };
+    for (const [field, value] of Object.entries(storyDebugFields)) {
+      const label = this.debugPanel?.querySelector('[data-debug-field="' + field + '"]');
+      if (label) label.textContent = value;
+    }
+
     if (!this.debugPanelOpen || !this.debugPanel) return;
     if (!force && this.time - (this.debugPanelLastUpdate || 0) < 0.18) return;
     this.debugPanelLastUpdate = this.time;
@@ -11757,7 +12010,7 @@ for (const level of this.config.secretLevels || []) {
       deviceMode: `${this.tr("MODE", "模式")}: ${this.getDeviceModeLabel()}`,
       language: `${this.tr("LANGUAGE", "語言")}: ${this.tr("ENGLISH", "繁體中文")}`,
       credits: this.tr("GAME CREDITS", "遊戲製作名單"),
-      calibrate: `${this.tr("TIMING", "節拍校正")}: ${formatOffsetMs(this.getAudioOffsetSeconds())}`,
+      calibrate: `${this.tr("TIMING", "節拍校正")}: ${this.getTimingMode() === "auto" ? this.tr("AUTO", "自動") : formatOffsetMs(this.getAudioOffsetSeconds())}`,
       haptics: `${this.tr("HAPTICS", "震動")}: ${this.isHapticsEnabled() ? this.tr("ON", "開") : this.tr("OFF", "關")}`,
       sfxTest: this.getSfxTestLabel(),
       controller: this.tr("CONTROLLER", "控制器"),
@@ -11778,7 +12031,7 @@ for (const level of this.config.secretLevels || []) {
     if (this.homeMenu?.view === "calibrate") {
       // Up plays the notes later, down earlier, five milliseconds a press.
       if (this.homeMenu.calibration?.phase !== "running") {
-        this.setAudioOffsetSeconds(this.getAudioOffsetSeconds() - delta * 0.005);
+        this.setAudioOffsetSeconds((this.getTimingMode() === "auto" ? this.getReportedOutputDelay() : this.getAudioOffsetSeconds()) - delta * 0.005);
       }
       return;
     }
@@ -12564,6 +12817,7 @@ for (const level of this.config.secretLevels || []) {
     for (const step of [
       () => this.update(dt),
       () => this.syncArcadeMusicVideo(),
+      () => this.syncConcertMusicVideo(),
       () => this.render(),
       () => this.renderTallScreen(),
       () => this.updateDebugPanel(),
@@ -12961,7 +13215,8 @@ for (const level of this.config.secretLevels || []) {
       taps: calibration.taps.length,
       hits: calibration.hits,
       message: calibration.message,
-      offset: this.getAudioOffsetSeconds()
+      offset: this.getTimingMode() === "auto" ? this.getReportedOutputDelay() : this.getAudioOffsetSeconds(),
+      timingMode: this.getTimingMode()
     };
   }
 
@@ -13133,9 +13388,47 @@ for (const level of this.config.secretLevels || []) {
     node.ratio.value = 20;
     node.attack.value = 0.001;
     node.release.value = 0.08;
-    node.connect(context.destination);
-    this.feedbackOutput = { context, node };
+    // Voices pass a gain a hit can dip (duckFeedbackVoices).
+    const duck = context.createGain();
+    node.connect(duck);
+    duck.connect(context.destination);
+    // Button hits skip the compressor (its lookahead is 6 ms). The curve
+    // spans two full-scale hits and is exact below -3 dBFS.
+    const hits = context.createGain();
+    hits.gain.value = 0.5;
+    const safety = context.createWaveShaper();
+    if (!this.hitSafetyCurve) {
+      const curve = new Float32Array(4097), knee = 0.708;
+      for (let i = 0; i < curve.length; i++) {
+        const x = (i / 2048 - 1) * 2, a = Math.abs(x);
+        curve[i] = Math.sign(x) * (a <= knee ? a : knee + (1 - knee) * Math.tanh((a - knee) / (1 - knee)));
+      }
+      this.hitSafetyCurve = curve;
+    }
+    safety.curve = this.hitSafetyCurve;
+    safety.oversample = "none";
+    hits.connect(safety);
+    safety.connect(context.destination);
+    this.feedbackOutput = { context, node, duck, hits, safety };
     return node;
+  }
+
+  ensureHitOutput(context) {
+    this.ensureFeedbackOutput(context);
+    return this.feedbackOutput.hits;
+  }
+
+  // A hit over a praise voice: the voice dips 5 dB for the hit's length so the
+  // two never sum past full scale (what the compressor did, 6 ms late).
+  duckFeedbackVoices(context, now, length) {
+    const duck = this.feedbackOutput?.context === context ? this.feedbackOutput.duck : null;
+    if (!duck || ![...this.feedbackChannels.keys()].some(channel => !channel.startsWith("button-"))) return;
+    const gain = duck.gain, until = now + Math.min(Math.max(length, 0.02), 0.4);
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(gain.value, now);
+    gain.linearRampToValueAtTime(0.56, now + 0.002);
+    gain.setValueAtTime(0.56, until);
+    gain.linearRampToValueAtTime(1, until + 0.04);
   }
 
   playFeedbackSfx(name, channel, gain = 1, { duration, offset = 0 } = {}) {
@@ -13150,7 +13443,8 @@ for (const level of this.config.secretLevels || []) {
     source.playbackRate.value = 1;
     volume.gain.value = gain * HIT_SFX_GAIN;
     source.connect(volume);
-    volume.connect(this.ensureFeedbackOutput(context));
+    const hit = name.startsWith("button-");
+    volume.connect(hit ? this.ensureHitOutput(context) : this.ensureFeedbackOutput(context));
     const entry = { source, volume, context };
     this.feedbackChannels.set(channel, entry);
     source.onended = () => {
@@ -13161,7 +13455,7 @@ for (const level of this.config.secretLevels || []) {
     const level = volume.gain.value;
     if (offset) {
       volume.gain.setValueAtTime(0, now);
-      volume.gain.linearRampToValueAtTime(level, now + 0.003);
+      volume.gain.linearRampToValueAtTime(level, now + 0.001);
     }
     source.start(now, offset);
     if (duration) {
@@ -13169,6 +13463,7 @@ for (const level of this.config.secretLevels || []) {
       volume.gain.linearRampToValueAtTime(0, now + duration);
       source.stop(now + duration);
     }
+    if (hit) this.duckFeedbackVoices(context, now, duration || buffer.duration - offset);
     this.feedbackAudioHistory ||= [];
     this.feedbackAudioHistory.push({ name, channel, at: now, pitch: 1, gain: level });
     if (this.feedbackAudioHistory.length > 32) this.feedbackAudioHistory.shift();
@@ -13199,12 +13494,13 @@ for (const level of this.config.secretLevels || []) {
     if (!["M", "O", "T", "H"].includes(button)) return false;
     const speaking = this.feedbackChannels?.has("celebration");
     const sample = "button-" + button.toLowerCase(), channel = "button-" + button;
+    // Where each file's attack begins (scripts/moth-hit-sound-start.mjs).
+    const offset = {"M":0.016,"O":0.13,"T":0.007,"H":0.009}[button];
     const rhythm = this.level1OfficeRhythm;
     if (this.state === "playing" && rhythm?.tutorial?.mode === "done" && !rhythm.skipAudio && !rhythm.ending) {
-      return this.playFeedbackSfx(sample, channel, speaking ? 0.78 : 1.12,
-        { duration: 0.055, offset: button === "O" ? 0.120 : 0 });
+      return this.playFeedbackSfx(sample, channel, speaking ? 0.78 : 1.12, { duration: 0.055, offset });
     }
-    return this.playFeedbackSfx(sample, channel, speaking ? 1.0 : 1.4);
+    return this.playFeedbackSfx(sample, channel, speaking ? 1.0 : 1.4, { offset });
   }
 
   playRhythmMissSfx(note) {
@@ -13268,10 +13564,10 @@ for (const level of this.config.secretLevels || []) {
     target.save();
     target.beginPath(); target.rect(scene.x, 0, scene.w, scene.h); target.clip();
     target.globalAlpha = Math.max(0, alpha);
-    if (photo) target.drawImage(photo, crop.x, crop.y, crop.w, crop.h, photoBounds.x, photoBounds.y, photoBounds.w, photoBounds.h);
-    if (celebration.stamp) target.drawImage(celebration.stamp, captionBounds.x, captionBounds.y + lift, captionBounds.w, captionBounds.h);
+    const graphic = this.getCinematicComboGraphic({celebration, photo, crop, photoBounds, captionBounds, lift, scene});
+    target.drawImage(graphic, 0, 0);
     target.restore();
-    rhythm.celebrationTelemetry = { caption: item.caption, combo: celebration.combo, photo: item.photo, bounds, photoBounds, photoCrop: crop, captionBounds, captionTextSize: 96 * captionWidth / 640, faceBounds, trackOuterEdge, trackBorderWidth, age, alpha };
+    rhythm.celebrationTelemetry = { caption: item.caption, combo: celebration.combo, photo: item.photo, bounds, photoBounds, photoCrop: crop, captionBounds, captionTextSize: 96 * captionWidth / 640, faceBounds, trackOuterEdge, trackBorderWidth, age, alpha, dither: this.cinematicComboTelemetry };
   }
 
   // Paper shards and red ink in the office, sparks and a splat in the
@@ -14342,26 +14638,63 @@ for (const level of this.config.secretLevels || []) {
     this.deckHapticWanted = false;
   }
 
-  getAudioOffsetSeconds() {
+
+  getManualAudioOffsetSeconds() {
     if (this.audioOffsetSeconds === undefined) {
       let stored = 0;
-      try {
-        stored = Number(localStorage.getItem(AUDIO_OFFSET_STORAGE_KEY));
-      } catch {
-        stored = 0;
-      }
+      try { stored = Number(localStorage.getItem(AUDIO_OFFSET_STORAGE_KEY)); } catch {}
       this.audioOffsetSeconds = Number.isFinite(stored) ? clamp(stored, AUDIO_OFFSET_RANGE[0], AUDIO_OFFSET_RANGE[1]) : 0;
     }
     return this.audioOffsetSeconds;
   }
 
+  getTimingMode() {
+    if (!this.audioTimingMode) {
+      let stored, reset;
+      try {
+        stored = localStorage.getItem(AUDIO_OFFSET_STORAGE_KEY + ".mode");
+        reset = localStorage.getItem(AUDIO_OFFSET_STORAGE_KEY + ".reset");
+      } catch {}
+      // Calibrations from before the stem-timed charts are cleared once.
+      if (reset !== "20261120") {
+        stored = "auto";
+        this.audioOffsetSeconds = 0;
+        try {
+          localStorage.removeItem(AUDIO_OFFSET_STORAGE_KEY);
+          localStorage.setItem(AUDIO_OFFSET_STORAGE_KEY + ".mode", "auto");
+          localStorage.setItem(AUDIO_OFFSET_STORAGE_KEY + ".reset", "20261120");
+        } catch {}
+      }
+      this.audioTimingMode = stored === "manual" ? "manual" : "auto";
+    }
+    return this.audioTimingMode;
+  }
+
+  setTimingMode(mode) {
+    this.audioTimingMode = mode === "auto" ? "auto" : "manual";
+    try { localStorage.setItem(AUDIO_OFFSET_STORAGE_KEY + ".mode", this.audioTimingMode); } catch {}
+  }
+
+  getAudioOffsetSeconds() {
+    return this.getTimingMode() === "auto" ? 0 : this.getManualAudioOffsetSeconds();
+  }
+
   setAudioOffsetSeconds(seconds) {
     this.audioOffsetSeconds = clamp(Math.round(seconds * 1000) / 1000, AUDIO_OFFSET_RANGE[0], AUDIO_OFFSET_RANGE[1]);
-    try {
-      localStorage.setItem(AUDIO_OFFSET_STORAGE_KEY, String(this.audioOffsetSeconds));
-    } catch {
-      // Private mode: the offset still holds for this session.
-    }
+    this.setTimingMode("manual");
+    try { localStorage.setItem(AUDIO_OFFSET_STORAGE_KEY, String(this.audioOffsetSeconds)); } catch {}
+  }
+
+  getReportedOutputDelay() {
+    const track = this.getActiveLevel1OfficeRhythmAudio();
+    const context = this.musicAudioRoutes?.get(track)?.context || this.level1OfficeAudioContext;
+    if (!context || context.state !== "running") return 0;
+    // outputLatency is the destination-to-device delay; baseLatency is the
+    // graph-to-destination processing delay. Neither has a 250ms API limit.
+    const output = Number(context.outputLatency), base = Number(context.baseLatency) || 0;
+    if (!Number.isFinite(output) || output < 0 || !Number.isFinite(base) || base < 0) return 0;
+    const delay = output + base;
+    return delay > 0 && delay <= 1 ? delay : 0;
   }
 
   isBathroomRhythm() {
@@ -15554,16 +15887,9 @@ for (const level of this.config.secretLevels || []) {
 
   getRhythmOutputDelay() {
     const rhythm = this.level1OfficeRhythm;
-    // An existing manual calibration already includes the phone's delay.
-    if (!rhythm || rhythm.skipAudio || this.getAudioOffsetSeconds() !== 0) return 0;
-    const track = this.getActiveLevel1OfficeRhythmAudio();
-    const context = this.musicAudioRoutes?.get(track)?.context;
-    if (!context || context.state !== "running" || !Number.isFinite(context.outputLatency)) return 0;
-    // Use the device's reported latency; currentTime minus outputTimestamp
-    // is not a reliable latency measurement (Web Audio specification).
-    const delay = context.outputLatency + (Number(context.baseLatency) || 0);
-    if (!(delay > 0 && delay <= 0.25)) return 0;
-    return delay;
+    if (!rhythm || rhythm.skipAudio || this.getAudioOffsetSeconds() !== 0
+      || this.getTimingMode?.() === "manual") return 0;
+    return this.getReportedOutputDelay();
   }
 
   primeRhythmTrack(track, start = 0) {
@@ -15614,6 +15940,10 @@ for (const level of this.config.secretLevels || []) {
   // call, a route change, or the audio-session switch above. Playback that was
   // refused outside a gesture is legal again here.
   primeAudioOnGesture() {
+    if (this.concertVideoRefused) {
+      this.concertVideoRefused = false;
+      this.syncConcertMusicVideo();
+    }
     if (this.arcadeVideoRefused) {
       this.arcadeVideoRefused = false;
       this.syncArcadeMusicVideo();
@@ -15709,6 +16039,10 @@ for (const level of this.config.secretLevels || []) {
     const tutorial = rhythm?.tutorial;
     if (this.state !== "playing" || !rhythm || rhythm.ending || !button || !["practice", "done"].includes(tutorial?.mode)) return false;
     if (this.isRhythmCountIn()) return true;
+    if (tutorial.mode === "done" && Number.isFinite(inputTimeStamp)) {
+      const wait = performance.now() - inputTimeStamp;
+      if (wait >= 0 && wait < 1000) (rhythm.inputWaits ||= []).push(wait);
+    }
     // Sound belongs to the press, including harmless taps between notes.
     if (!this.playRhythmHitSfx(action, false, button)) this.playLevel1OfficeTone("hit", action, "stamp");
     if (rhythm.audioStarting || rhythm.songHandover) return true;
@@ -15750,6 +16084,7 @@ for (const level of this.config.secretLevels || []) {
     }
 
     const signedDelta = renderTime - target.time;
+    if (tutorial.mode !== "practice") (rhythm.hitOffsets ||= []).push(signedDelta);
     const delta = Math.abs(signedDelta);
     const perfect = delta <= (spec.perfectWindow || 0.075);
     target.status = perfect ? "perfect" : "good";
@@ -16279,10 +16614,9 @@ for (const level of this.config.secretLevels || []) {
     }
     if (this.isConcertRhythm()) {
       // The dream is over: he wakes up before the album credits.
-      this.showStoryAdvance("finale-stage1", () => {
-        this.level1OfficeRhythm = null;
-        this.startLevel6WakeUp();
-      });
+      this.level1OfficeRhythm = null;
+      this.startLevel6WakeUp();
+      this.updateMobileControls(true);
       return;
     }
     if (this.isStudioRhythm()) {
@@ -19119,7 +19453,7 @@ for (const level of this.config.secretLevels || []) {
       this.level6WakeIndex += 1;
       return;
     }
-    this.startFinaleEnding();
+    this.showStoryEndingScoreboard({ preview: Boolean(this.freePlay && this.endingScoreboardPreview) });
   }
 
   renderLevel6WakeUpScene(target, W, H) {
@@ -21862,6 +22196,7 @@ for (const level of this.config.secretLevels || []) {
       900,
       11
     );
+    if (this.debugPanel) this.drawTimingReadout?.(target, panel, rhythm);
 
     if (passed) {
       const optionRects = this.getLevel1OfficeResultsOptionRects();
@@ -22760,6 +23095,159 @@ for (const level of this.config.secretLevels || []) {
     target.restore();
   }
 
+
+  getConcertStageLayout(stageY = 352) {
+    const bg = this.refs.level6ConcertBgSheet;
+    const scale = VIEW_W / (bg?.width || 1280);
+    const cropY = Math.max(0, (bg?.height || 853)
+      * (this.config?.sprites?.level6ConcertBg?.stageEdgeRatio ?? .647) - stageY / scale);
+    // Landmarks measured on the original1280x853 map. One transform keeps
+    // both the LED and the existing booth attached during portrait framing.
+    const k = (bg?.width || 1280) / 1280;
+    return {
+      led: {x: 294 * k * scale, y: (198 * k - cropY) * scale,
+        w: 692 * k * scale, h: 296 * k * scale},
+      booth: {centerX: 1005 * k * scale, deckY: (451 * k - cropY) * scale}
+    };
+  }
+
+  async loadConcertMusicVideo() {
+    if (this.concertMusicVideo) return;
+    const file = await fetchGameAsset("assets/video/level7-make-some-noise.mp4");
+    const url = URL.createObjectURL(new Blob([file.data], {type: "video/mp4"}));
+    const video = document.createElement("video");
+    video.muted = video.defaultMuted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    try {
+      await new Promise((resolve, reject) => {
+        const cleanup = () => {clearTimeout(timer); video.removeEventListener("loadeddata", ready); video.removeEventListener("error", fail);};
+        const ready = () => {cleanup(); resolve();};
+        const fail = () => {cleanup(); reject(new Error("Concert video could not be decoded"));};
+        const timer = setTimeout(fail, 12000);
+        video.addEventListener("loadeddata", ready);
+        video.addEventListener("error", fail);
+        video.src = url;
+        video.load();
+      });
+      this.concertMusicVideo = video;
+    } catch (error) {
+      video.removeAttribute("src"); video.load(); URL.revokeObjectURL(url); throw error;
+    }
+  }
+
+  releaseConcertMusicVideo() {
+    const video = this.concertMusicVideo;
+    if (!video) return;
+    this.concertMusicVideo = null;
+    this.concertLedFrameCache = null;
+    this.concertLedFrameVideo = null;
+    this.concertVideoRefused = false;
+    this.concertVideoStarting = null;
+    const url = video.getAttribute("src");
+    video.pause(); video.removeAttribute("src"); video.load();
+    URL.revokeObjectURL(url);
+  }
+
+  getConcertVideoTime() {
+    const song = this.getActiveLevel1OfficeRhythmAudio();
+    if (!song || this.level1OfficeRhythm?.theme !== "concert") return 0;
+    const spec = this.getActiveRhythmSpec();
+    const origin = this.hasBakedFades() ? (spec.fightCut?.fromSeconds || 0) : 0;
+    // AAC decoder warm-up belongs to the music player, not the recording.
+    return Math.max(0, song.currentTime - (song.mothFightLead || 0) + origin - .005375);
+  }
+
+  syncConcertMusicVideo() {
+    const video = this.concertMusicVideo;
+    if (!video) return;
+    const rhythm = this.level1OfficeRhythm;
+    const concert = rhythm?.theme === "concert";
+    const song = concert && this.getActiveLevel1OfficeRhythmAudio();
+    const active = concert && this.state === "playing" && !rhythm.ending && rhythm.tutorial?.mode === "done"
+      && !rhythm.skipAudio && !this.isRhythmCountIn() && !this.levelLoadingPresentation && !document.hidden
+      && song && !song.paused && !song.seeking && song.playbackRate > 0
+      && song.currentTime >= (song.mothFightLead || 0) && !this.isFightSongStalled(song);
+    if (!active) {if (!video.paused) video.pause(); return;}
+    const desired = this.getConcertVideoTime();
+    const time = Math.min(video.duration - .05, desired);
+    const rate = clamp(song.playbackRate, .0625, 16);
+    if (video.playbackRate !== rate) video.playbackRate = rate;
+    if (!video.seeking && Math.abs(video.currentTime - time) > .085) video.currentTime = time;
+    if (desired >= video.duration - .05) {video.pause(); return;}
+    if (video.paused && !video.seeking && !this.concertVideoStarting && !this.concertVideoRefused) {
+      const starting = video.play().catch(error => {
+        if (this.concertMusicVideo === video && error?.name === "NotAllowedError") this.concertVideoRefused = true;
+      }).finally(() => {if (this.concertVideoStarting === starting) this.concertVideoStarting = null;});
+      this.concertVideoStarting = starting;
+    }
+    this.concertVideoTelemetry = {desired, current: video.currentTime, error: video.currentTime - desired,
+      muted: video.muted, blob: video.currentSrc.startsWith("blob:"), active};
+  }
+
+  renderConcertLedVideo(target, stageY) {
+    const video = this.concertMusicVideo;
+    if (!video || video.readyState < 2 || !video.videoWidth) return;
+    const led = this.getConcertStageLayout(stageY).led;
+    const W = Math.round(led.w), H = Math.round(led.h);
+    const frame = Math.floor(video.currentTime * 24);
+    const layer = this.getScratchLayer("concert-led", W, H);
+    if (!this.concertLedMask || this.concertLedMask.width !== W || this.concertLedMask.height !== H) {
+      const mask = document.createElement("canvas"); mask.width = W; mask.height = H;
+      const ink = mask.getContext("2d");
+      ink.fillStyle = "#fff"; ink.fillRect(0, 0, W, H);
+      ink.globalCompositeOperation = "destination-in";
+      const horizontal = ink.createLinearGradient(0, 0, W, 0);
+      horizontal.addColorStop(0, "transparent"); horizontal.addColorStop(12 / W, "white");
+      horizontal.addColorStop(1 - 12 / W, "white"); horizontal.addColorStop(1, "transparent");
+      ink.fillStyle = horizontal; ink.fillRect(0, 0, W, H);
+      const vertical = ink.createLinearGradient(0, 0, 0, H);
+      vertical.addColorStop(0, "transparent"); vertical.addColorStop(10 / H, "white");
+      vertical.addColorStop(1 - 10 / H, "white"); vertical.addColorStop(1, "transparent");
+      ink.fillStyle = vertical; ink.fillRect(0, 0, W, H);
+      // The painted booth is in front of the LED. Remove its silhouette
+      // from the video mask instead of painting over the original map face.
+      ink.globalCompositeOperation = "destination-out";
+      ink.fillStyle = "white";
+      const front = [[858,460],[884,451],[1134,451],[1134,499],[1141,499],[1141,518],[848,518],[848,499],[858,499]];
+      ink.beginPath();
+      front.forEach(([x,y],i)=>ink[i?"lineTo":"moveTo"]((x-294)*W/692,(y-198)*H/296));
+      ink.closePath(); ink.fill();
+      // Keep the thin rail and posts while allowing the video behind the gaps.
+      ink.strokeStyle = "white"; ink.lineWidth = 2;
+      ink.beginPath(); ink.moveTo((895-294)*W/692,(442-198)*H/296);
+      ink.lineTo((1125-294)*W/692,(442-198)*H/296);
+      ink.moveTo((895-294)*W/692,(442-198)*H/296); ink.lineTo((895-294)*W/692,(452-198)*H/296);
+      ink.moveTo((1125-294)*W/692,(442-198)*H/296); ink.lineTo((1125-294)*W/692,(452-198)*H/296);
+      ink.stroke();
+      this.concertLedMask = mask;
+      const tile = document.createElement("canvas"); tile.width = tile.height = 4;
+      const dot = tile.getContext("2d");
+      dot.fillStyle = "rgba(2,6,20,.24)"; dot.fillRect(0, 0, 4, 1); dot.fillRect(0, 0, 1, 4);
+      dot.fillStyle = "rgba(100,150,255,.12)"; dot.fillRect(2, 2, 1, 1);
+      this.concertLedPattern = layer.createPattern(tile, "repeat");
+      this.concertLedFrameCache = null;
+    }
+    const fit = Math.max(W / video.videoWidth, H / video.videoHeight);
+    const w = video.videoWidth * fit, h = video.videoHeight * fit;
+    if (!video.seeking && (this.concertLedFrameCache !== frame || this.concertLedFrameVideo !== video)) {
+      layer.setTransform(1, 0, 0, 1, 0, 0); layer.globalAlpha = 1;
+      layer.globalCompositeOperation = "source-over"; layer.clearRect(0, 0, W, H);
+      layer.fillStyle = "#071326"; layer.fillRect(0, 0, W, H);
+      layer.globalAlpha = .91;
+      layer.drawImage(video, (W - w) / 2, (H - h) / 2, w, h);
+      layer.globalAlpha = 1;
+      layer.fillStyle = this.concertLedPattern; layer.fillRect(0, 0, W, H);
+      layer.globalCompositeOperation = "destination-in";
+      layer.drawImage(this.concertLedMask, 0, 0);
+      layer.globalCompositeOperation = "source-over";
+      this.concertLedFrameCache = frame; this.concertLedFrameVideo = video;
+    }
+    target.drawImage(layer.canvas, led.x, led.y, led.w, led.h);
+    this.concertLedTelemetry = {...led, frameWidth: w, frameHeight: h, behindActors: true,
+      featherPixels: 12, ledMatrix: true, occludedByBooth: true, nativeVideoFrame: frame};
+  }
+
   renderLevel6ConcertScene(target, context) {
     const { frozen, motionTime, beatPulse = 0, sceneHeight, rhythm } = context;
     const hype = clamp(rhythm?.hype ?? 0.3, 0, 1);
@@ -22767,6 +23255,7 @@ for (const level of this.config.secretLevels || []) {
     const pulse = frozen ? 0 : beatPulse;
     const stageY = 352;
     target.save();
+    if (this.isTallScreenView()) target.translate(-150, 0);
     target.imageSmoothingEnabled = false;
     target.fillStyle = "#05060c";
     target.fillRect(0, 0, VIEW_W, sceneHeight);
@@ -22783,6 +23272,7 @@ for (const level of this.config.secretLevels || []) {
       const srcY = Math.max(0, 690 - stageY / scale);
       target.drawImage(old, 0, srcY, old.width, sceneHeight / scale, 0, 0, VIEW_W, sceneHeight);
     }
+    this.renderConcertLedVideo(target, stageY);
     // Darker while the crowd is cold.
     target.fillStyle = `rgba(4, 6, 16, ${0.45 * (1 - hype)})`;
     target.fillRect(0, 0, VIEW_W, sceneHeight);
@@ -22842,7 +23332,8 @@ for (const level of this.config.secretLevels || []) {
   }
 
   drawLevel6ConcertDrBeauty(target, row, motionTime, pulse, stageY) {
-    const x = 560;
+    // Portrait framing keeps the singer centered while the DJ stays visible.
+    const x = this.isTallScreenView() ? 790 : 560;
     const sheet = this.refs.level6ConcertDrBeautySheet;
     const spec = this.config?.sprites?.level6ConcertDrBeauty;
     if (sheet && spec) {
@@ -22886,51 +23377,22 @@ for (const level of this.config.secretLevels || []) {
   drawLevel6ConcertGangan(target, row, motionTime, pulse, stageY) {
     const sheet = this.refs.level6ConcertGanganSheet;
     const spec = this.config?.sprites?.level6ConcertGangan;
-    const x = spec?.stageX ?? 830;
-    if (sheet && spec) {
-      const rows = spec.rowNames || [];
-      const rowIndex = Math.max(0, rows.indexOf(row));
-      const frame = rowIndex * (spec.cols || 4) + (Math.floor(motionTime * (row === "idle" ? 4 : 7)) % (spec.cols || 4));
-      const h = spec.displayHeight || 190;
-      drawBundleFrame(target, sheet, spec, frame, x, stageY + (spec.stageOffsetY ?? 4), h * (spec.frameWidth / spec.frameHeight), h, { x: 0.5, y: 1 });
-      return;
-    }
-    // Stand-in: GAN GAN drawn behind a DJ table.
-    const bob = Math.round(pulse * 3 + (row === "cheer" ? Math.abs(Math.sin(motionTime * 8)) * -10 : 0));
-    const top = stageY - 150 + bob;
-    target.fillStyle = "#101014";
-    target.fillRect(x - 34, top + 40, 68, 80); // the black tee
-    target.fillStyle = "#c58f68";
-    target.fillRect(x - 20, top + 6, 40, 38); // face
-    target.fillStyle = "#121212";
-    target.fillRect(x - 24, top + 24, 8, 34); // hair
-    target.fillRect(x + 16, top + 24, 8, 34);
-    target.fillStyle = "#7a5230";
-    target.fillRect(x - 24, top - 6, 48, 18); // beanie
-    target.fillStyle = "#1a1a1a";
-    target.fillRect(x - 8, top + 34, 16, 6); // goatee
-    const armsUp = row === "cheer" || row === "hype";
-    target.fillStyle = "#101014";
-    if (armsUp) {
-      target.fillRect(x - 52, top - 10 + (Math.floor(motionTime * 6) % 2) * 6, 14, 60);
-      target.fillRect(x + 38, top - 10 + (Math.floor(motionTime * 6 + 1) % 2) * 6, 14, 60);
-    } else {
-      target.fillRect(x - 48, top + 60, 14, 50);
-      target.fillRect(x + 34, top + 60, 14, 50);
-    }
-    // The deck.
-    target.fillStyle = "#16171d";
-    target.fillRect(x - 110, stageY - 60, 220, 66);
-    target.fillStyle = "#2b2e3a";
-    target.fillRect(x - 110, stageY - 66, 220, 8);
-    target.fillStyle = "#3a3f52";
-    [[-70, 0], [70, 0]].forEach(([dx]) => {
-      target.beginPath();
-      target.arc(x + dx, stageY - 68, 22, Math.PI, 0);
-      target.fill();
-    });
-    target.fillStyle = `rgba(${row === "worried" ? "255, 90, 90" : "120, 220, 255"}, ${0.5 + 0.5 * pulse})`;
-    for (let i = 0; i < 8; i += 1) target.fillRect(x - 96 + i * 26, stageY - 30, 14, 4);
+    if (!sheet || !spec) return;
+    const rows = spec.rowNames || [];
+    const rowIndex = Math.max(0, rows.indexOf(row));
+    const cols = spec.cols || 4;
+    const frame = rowIndex * cols + Math.floor(motionTime * (row === "idle" ? 4 : 7)) % cols;
+    const h = spec.displayHeight || 205, scale = h / spec.frameHeight;
+    const layout = this.getConcertStageLayout(stageY);
+    // Keep the actor and equipment, but discard the duplicate tablecloth.
+    // The remaining console rests on the booth already painted into the map.
+    const cropHeight = 224;
+    const width = spec.frameWidth * scale, height = cropHeight * scale;
+    const x = layout.booth.centerX - width / 2, y = layout.booth.deckY - height;
+    target.drawImage(sheet, frame % cols * spec.frameWidth, Math.floor(frame / cols) * spec.frameHeight,
+      spec.frameWidth, cropHeight, x, y, width, height);
+    this.concertBoothTelemetry = {frame, cropHeight, x, y, width, height,
+      deckY: layout.booth.deckY, centerX: layout.booth.centerX, duplicateBooth: false};
   }
 
   drawLevel6ConcertCrowd(target, hype, climax, motionTime, pulse, sceneHeight, frozen) {
@@ -25940,7 +26402,7 @@ let tutorialDeckButtons = null;
 // configuration always come from this site.
 const MIRROR_BASE = ['myscheduleltd.com', 'www.myscheduleltd.com'].includes(location.hostname)
   ? 'https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@4a1cae2472c9fbece153cc1dbd0f0c1593dd9997/docs/moth/' : '';
-const MIRROR_PINNED = new Map([["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/drb-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/gg-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/spa-tickle.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_idle/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_studio/hand-20261011g/dr-beauty/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/sfx/menu/menu-tick.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/sfx/menu/menu-click.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/ui/mobile_moth_buttons_20261017/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/sprites/level4_meme_chest/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/audio/easter-eggs/dr-beauty-private-message.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f51cccdc2d116bd5749ce9a2b4a655d23583f664/docs/moth/"],["assets/audio/fight-cuts/level6-river-verse1-chorus2.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d847823e571f216d483c9ba024facc9e22ca61c7/docs/moth/"],["assets/video/level4-bad-daddy.mp4","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/sprites/river-goddess.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/easy-mixes/arcade-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/arcade.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/bathroom-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/bathroom.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/concert.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/massage-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/massage.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/office-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/office.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/river-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/river.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/secretLaugh.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/secretSquat.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/studio-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/studio.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/fight-cuts/level1-office-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level2-bathroom-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level3-massage-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level4-arcade-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level5-studio-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"]]);
+const MIRROR_PINNED = new Map([["assets/sprites/bobby_bathing_suit_level2/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_black_hood_level5/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_champion_fit_level4/processed-v5/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_finale_bikini/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_orange_onfoot/processed-v6/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_summer_fit_level2/processed-v7/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bobby_underwear_level1/processed-v4/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/bonita_blanket_idle_v5/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_dialogue/processed-defringed-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan/processed-gpt-20261001/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_gangan_coach/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-deskpaper-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level1_office_props/processed-stampfx-20260901/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_dialogue/processed-bust-20260904/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_hands/processed-chop-20260928/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_bathroom_mosquito/processed-20260902/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_boss_mosquito/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level2_chest_bundle/processed-bobby-aligned/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/bonita-left-20261009/processed/l4-players-left.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level4_arcade_fight/processed/l4-bonita-fighter.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/drive-car.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_river/processed-gpt-20261005/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/crowd.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dr-beauty.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/dream-bubble.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level6_concert/processed-gpt-20261006/gangan.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/drb-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/gg-squat.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/secret_levels/processed/spa-tickle.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_exit_right/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/zuxian_idle/processed/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d04046c3aba8dcef69d486205a5267d53c998f31/docs/moth/"],["assets/sprites/level5_studio/hand-20261011g/dr-beauty/sheet-transparent.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/sfx/menu/menu-tick.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/sfx/menu/menu-click.wav","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/ui/mobile_moth_buttons_20261017/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/sprites/level4_meme_chest/sheet.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@b130e49d02b4dc44af7ff7a4285a6a796fffb012/docs/moth/"],["assets/audio/easter-eggs/dr-beauty-private-message.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f51cccdc2d116bd5749ce9a2b4a655d23583f664/docs/moth/"],["assets/audio/fight-cuts/level6-river-verse1-chorus2.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@d847823e571f216d483c9ba024facc9e22ca61c7/docs/moth/"],["assets/video/level4-bad-daddy.mp4","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/sprites/river-goddess.webp","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/easy-mixes/arcade-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/arcade.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/bathroom-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/bathroom.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/concert.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/massage-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/massage.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/office-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/office.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/river-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/river.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/secretLaugh.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/secretSquat.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/studio-story.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/easy-mixes/studio.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f87c4deef479a787caedc5157d02f2227f984457/docs/moth/"],["assets/audio/fight-cuts/level1-office-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level2-bathroom-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level3-massage-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level4-arcade-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/audio/fight-cuts/level5-studio-onset.m4a","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@6557c0a4e009fb9b9e21b29a1abc2d57108ca764/docs/moth/"],["assets/video/level7-make-some-noise.mp4","https://cdn.jsdelivr.net/gh/MyScheduleltd/myscheduleltd.github.io@f72e5f3a1f069411e098a07eb1cecde768b2735c/docs/moth/"]]);
 const MIRROR_ROOT = '/moth/';
 let assetIntegrity = null;
 
@@ -27219,13 +27681,22 @@ function drawTimingCalibrationPanel(target, view) {
   target.textAlign = "center";
   target.fillStyle = ink;
   target.font = "900 18px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace";
-  target.fillText(uiText("THIS DEVICE'S OFFSET", "這台裝置的延遲"), panel.x + panel.w / 2, panel.y + 300);
+  target.fillText(view.timingMode === "auto" ? uiText("AUTOMATIC OUTPUT DELAY", "自動音訊延遲") : uiText("MANUAL TOTAL DELAY", "手動總延遲"), panel.x + panel.w / 2, panel.y + 300);
   target.font = "900 56px 'Courier New', monospace";
   target.fillStyle = red;
   target.fillText(formatOffsetMs(view.offset), panel.x + panel.w / 2, panel.y + 362);
   target.fillStyle = "#6c6552";
   target.font = "900 15px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace";
   target.fillText(uiText("+ MEANS YOU HEAR THE MUSIC LATE (SPEAKERS, BLUETOOTH)", "＋ 代表聲音比畫面晚到（喇叭、藍牙耳機）"), panel.x + panel.w / 2, panel.y + 398);
+  if (view.phase !== "running") {
+    target.fillStyle = view.timingMode === "auto" ? "#edcb58" : "#efe3c4";
+    target.fillRect(panel.x + panel.w / 2 - 140, panel.y + 416, 280, 42);
+    target.strokeStyle = ink; target.lineWidth = 3;
+    target.strokeRect(panel.x + panel.w / 2 - 140, panel.y + 416, 280, 42);
+    target.fillStyle = ink;
+    target.font = "900 18px 'Courier New', 'PingFang TC', 'Noto Sans TC', monospace";
+    target.fillText(uiText("M · USE AUTOMATIC", "M・使用自動校正"), panel.x + panel.w / 2, panel.y + 443);
+  }
   target.restore();
 }
 

@@ -205,7 +205,7 @@ async function staffClears(browser) {
     // The staff fight button can preview an unlocked secret without granting
     // the Level Selection clear, even in an already completed story save.
     await page.keyboard.press('KeyP');
-    await page.locator(`[data-debug-fight="${second}"]`).click();
+    await page.locator(`[data-debug-fight="${second}"][data-debug-mode="chill"]`).click();
     await closeDebugPanel(page);
     await finishStaffSong(page, second, {seek: true});
     assert.equal(await page.evaluate(stage => bobbyGame.isStageCompleted(stage), second), false);

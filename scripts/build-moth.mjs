@@ -178,7 +178,7 @@ for (const audience of ['public', 'staff']) {
   html = html.replace('<html lang="en">', '<html lang="zh-Hant-TW">');
   html = wrapScreenFrameHtml(html);
   html = html.replace('./manifest.json', staff ? '/moth/staff/manifest.json' : './manifest.json');
-  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-staff-20261119b' : 'moth-cabinet-20261119b'}" integrity="${sri}" crossorigin="anonymous"></script>`);
+  html = html.replace('<script src="./src/game.js?v=mobile-deck-20261012a"></script>', `${staff ? '' : `<script src="./src/arcade-embed.js?v=moth-arcade-input-20261014a" integrity="${arcadeSri}" crossorigin="anonymous"></script>\n    `}<script src="${staff ? '/moth/staff/game.js' : './src/game.js'}?v=${staff ? 'moth-staff-20261120e' : 'moth-cabinet-20261120e'}" integrity="${sri}" crossorigin="anonymous"></script>`);
   html = html.replace('mobile-deck-20261012a', 'moth-loading-20261118c');
   html = patchBootLoadingHtml(html, { sri: bootLoadingSri, version: 'moth-boot-20261118c' });
   await fs.writeFile(path.join(output, staff ? 'staff/index.html' : 'index.html'), html);
