@@ -23,12 +23,14 @@ from scipy.ndimage import maximum_filter1d, median_filter, uniform_filter1d
 from scipy.signal import butter, correlate, find_peaks, resample_poly, sosfiltfilt, stft
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = 'funk-stems-20261117b'
+VERSION = 'funk-patterns-20261119b'
 SAMPLE_RATE = 16000
 HOP = 80
 FPS = SAMPLE_RATE / HOP
 MIN_HARD_GAP = .190
+MIN_HARD_RUN_GAP = .125
 MIN_EASY_GAP = .225
+MIN_EASY_FILL_GAP = .190
 BUTTONS = 'MOTH'
 SONGS = {
     # Stem prefix, shipped mix suffix, BPM, downbeat in mix seconds, riff bars.
@@ -40,26 +42,9 @@ SONGS = {
     'level5StudioRhythm': ('Level 5 - ', '8 - 愛上我的美麗', 113, .014, 4),
     'level5RiverRhythm': ('Level 6 - ', '6 - 更年期 ft. 手天使 & 謝乾', 76, .089, 2),
     'level6ConcertRhythm': ('Level 7 - ', '9 - 尖叫聲', 134, .082, 4),
-    'secret-xiaosi': ('Hidden level - lol', '7 - 笑死', 117.98, .776, 4),
+    'secret-xiaosi': ('Hidden level - 笑死', '7 - 笑死', 117.98, .776, 4),
     'secret-getdown': ('Hidden level - Get Down', '12 - Get Down 蹲得低 ft. 謝乾', 128, .106, 2),
 }
-
-# Absolute times in the shipped mix. The drum kit is silent through this
-# passage. The bass riff supplies the attacks, including the release beats.
-# Story slices the same timeline at 10 s and starts with the sustained bass
-# at 11.870. From the first vocal onward Hard keeps its syllable pattern.
-RIVER_BASS_INTRO = (
-    (.080, 'M', None), (1.665, 'T', None), (3.250, 'O', None), (4.815, 'H', None),
-    (5.605, 'T', 6.010), (6.395, 'M', None), (7.965, 'H', None), (9.560, 'O', None),
-)
-RIVER_OPENINGS = {
-    'easy': (*RIVER_BASS_INTRO, (11.870, 'T', 12.715), (14.295, 'H', None),
-             (15.885, 'O', None), (17.465, 'T', None), (19.040, 'M', None),
-             (20.630, 'T', None), (21.810, 'O', None), (23.365, 'M', None),
-             (23.765, 'H', None), (24.175, 'T', None), (24.955, 'H', None)),
-    'hard': (*RIVER_BASS_INTRO, (5.215, 'O', None)),
-}
-
 
 @dataclass
 class Attack:
@@ -67,6 +52,7 @@ class Attack:
     strength: float
     band: int = 0
     frame: int = 0
+    features: dict = None
 
 
 def decode(path, rate=SAMPLE_RATE, stereo=False):
@@ -136,6 +122,19 @@ def align(reference, stem, low_hz):
               'matchingWindows': len(offsets), 'medianCorrelation': round(float(np.median(offsets[:, 2])), 3),
               'fitP90Ms': round(float(np.percentile(residual, 90)*1000), 3)}
     return lambda t: t * (1 + slope) + start, report
+
+
+def audited_clock(audit, role, path):
+    """Consume a fresh, independent broad-search fit only for its exact bytes."""
+    record = audit['stems'][role]
+    if digest(path) != record['sha256']:
+        raise ValueError(f'{role} stem differs from the independently audited source')
+    report = record['alignment']
+    if report.get('error') or report['matchingWindows'] < 6 or report['fitP90Ms'] > 1.5:
+        raise ValueError(f'{role} has no trustworthy shared full-mix clock: {report}')
+    start = report['offsetMs']/1000
+    slope = report['driftMsPerMinute']/60000
+    return lambda time: time*(1+slope)+start, report
 
 
 def bands(wave, ranges, *, hop=HOP, envelope=121):
@@ -232,21 +231,6 @@ def describe(time, button, source, **details):
     return {'time':round(float(time), 5), 'button':button, 'source':source, **details}
 
 
-def add_river_openings(mix, drum, bass, bass_clock, easy, hard):
-    mix_attacks = [event.time for event in percussive_attacks(mix, lambda time: time)]
-    bass_attacks = [event.time for event in percussive_attacks(bass, bass_clock)]
-    assert np.max(np.abs(drum[:25*SAMPLE_RATE])) < .002, 'River opening has a silent drum stem'
-
-    for mode, events in [('easy', easy), ('hard', hard)]:
-        for time, button, tail in RIVER_OPENINGS[mode]:
-            for onset in (time,) if tail is None else (time, tail):
-                assert min(abs(hit-onset) for hit in bass_attacks) <= .025, (mode, 'bass', onset)
-                assert min(abs(hit-onset) for hit in mix_attacks) <= .025, (mode, 'mix', onset)
-            end = {'holdEnd':tail} if tail is not None else {}
-            events.append(describe(time, button, 'bass-stem', role='opening', **end))
-        events.sort(key=lambda event: event['time'])
-
-
 def sustained_stem_rests(wave, to_mix, duration, beat):
     """Measure uninterrupted quiet, leaving room for the next instrument entry."""
     hop = SAMPLE_RATE//40
@@ -307,6 +291,62 @@ def fill_stem_rests(events, windows, bass_attacks, gap):
             if any(onset['source'] == 'bass-stem' and start <= onset['time'] < end for onset in events)]
 
 
+def measure_bass_holds(events, wave, clock, windows, gap):
+    """Give sustained opening bass notes tails measured from this stem's decay."""
+    filtered = sosfiltfilt(butter(2, (32, 700), btype='bandpass', fs=SAMPLE_RATE, output='sos'), wave)
+    rms = np.sqrt(np.maximum(0, uniform_filter1d(filtered**2, round(.035*SAMPLE_RATE))[::HOP]))
+    origin, scale = clock(0), clock(1)-clock(0)
+    count = 0
+    for index, event in enumerate(events):
+        if event['source'] != 'bass-stem' or event['time'] >= 26:
+            continue
+        start = round((event['time']-origin)/scale*FPS)
+        peak_end = min(len(rms), start+round(.16*FPS))
+        if peak_end <= start:
+            continue
+        peak = start + int(np.argmax(rms[start:peak_end]))
+        floor = max(.004, float(rms[peak])*.20)
+        tail = peak
+        while tail+1 < len(rms) and rms[tail+1] >= floor:
+            tail += 1
+        end = clock(tail/FPS)
+        if index+1 < len(events):
+            end = min(end, events[index+1]['time']-gap)
+        window_end = next((right for left,right in windows if left <= event['time'] < right), event['time'])
+        end = min(end, window_end, event['time']+1.3)
+        if end-event['time'] >= .38:
+            event['holdEnd'] = round(end, 5)
+            event['holdEvidence'] = 'correct bass stem sustained body decay'
+            count += 1
+    return count
+
+
+def tag_drum_fill_accents(events, beat, first):
+    """Label strong late-bar clusters for easier selection; never move a hit."""
+    if any('drumVoice' in event for event in events):
+        # A loud last beat alone is a backbeat. New rows carry the evidence
+        # from actual local bursts, measured before readability thinning.
+        for event in events:
+            if event.get('drumFillAccent') and event['role'] != 'downbeat':
+                event['role'] = 'fill-accent'
+        return
+    bars = {}
+    for event in events:
+        if event['source'] != 'drum-stem':
+            continue
+        bar = int(np.floor(((event['time']-first)/beat+.09)/4))
+        bars.setdefault(bar, []).append(event)
+    typical = float(np.median([len(group) for group in bars.values()])) if bars else 0
+    for bar, group in bars.items():
+        varied = len({event['button'] for event in group}) >= 3
+        crowded = len(group) >= typical+1
+        strong = float(np.percentile([event.get('confidence',0) for event in group], 60))
+        for event in group:
+            within = (event['time']-first)/beat-bar*4
+            if within >= 2.5 and (crowded or varied) and event.get('confidence',0) >= strong:
+                event['role'] = 'fill-accent'
+
+
 def chart_row(event):
     time = event['time']
     return [time, event['button'], round(event.get('holdEnd', time)-time, 5)]
@@ -355,12 +395,13 @@ def dominant_drum_stroke(group, drum, window, bands):
 
 
 def refine_drum_attack_edges(drum, clock, events, gap):
-    """Recover the initial click from kicks and cymbals with slower body energy."""
+    """Measure every kit voice's leading edge, including snare/percussion."""
     env = bands(drum, ((32, 155), (160, 520), (550, 2100), (2150, 7400)),
                 hop=SAMPLE_RATE//1000, envelope=65)
     level = env / np.maximum(np.percentile(env, 92, axis=1)[:, None], .002)
     rise = np.minimum(level, 1) * np.maximum(0, level - preceding(level, 5))
-    voice_weights = {'T': (1, .78, .84, .78), 'M': (.17, .26, .60, 1)}
+    voice_weights = {'T': (1, .78, .84, .78), 'M': (.17, .26, .60, 1),
+                     'O': (.12, .75, 1, .70), 'H': (.65, 1, .90, .65)}
     attacks = {voice:(rise * np.array(weights)[:, None]).max(axis=0)
                for voice, weights in voice_weights.items()}
     origin = clock(0)
@@ -382,11 +423,73 @@ def refine_drum_attack_edges(drum, clock, events, gap):
         while edge > 0 and window[edge-1] >= .21 * window[crest]:
             edge -= 1
         onset = round(float(clock((left+edge)/1000)), 5)
-        if left+edge >= center-1 or onset < 0 or (index and onset-events[index-1]['time'] < gap):
+        if left+edge >= center-1 or onset < 0 or (gap > 0 and index and onset-events[index-1]['time'] < gap):
             continue
         event['time'] = onset
         refined += 1
     return refined
+
+
+def measured_drum_strokes(drum, clock):
+    """Attach physical kit salience without clipping all loud strokes equally.
+
+    A kick's ringing body can trigger the low-band detector again 25–100 ms
+    after its real attack. It is not a new drum stroke when the upper bands
+    have no new attack and a stronger broadband stroke already explains it.
+    """
+    env = bands(drum, ((36, 155), (160, 520), (550, 2300), (2800, 7400)),
+                hop=SAMPLE_RATE//1000, envelope=33)
+    origin, scale = clock(0), clock(1)-clock(0)
+    measured = []
+    ringing = 0
+    for hit, button in drum_strokes(drum, clock):
+        at = max(16, round((hit.time-origin)*1000/scale))
+        if at+35 >= env.shape[1]:
+            continue
+        floor = np.median(env[:, at-15:at-4], axis=1)
+        attack = np.maximum(0, env[:, at:at+35].max(axis=1)-floor)
+        low, body, snap, bright = attack
+        upper = np.hypot(body, snap)
+        if measured and hit.time-measured[-1]['time'] < .120 and hit.band == 0:
+            previous = measured[-1]
+            # Compare fresh upper-band energy, not the still loud kick decay.
+            if previous['drumVoice'] != 'hat' and (snap+.5*bright < .35*(previous['_snap']+.5*previous['_bright'])
+                    or upper < .22*previous['_upper'] and bright < .25*previous['_bright']):
+                ringing += 1
+                continue
+        voice = ('kick' if low >= .60*upper and low > .012 else
+                 'snare' if upper >= .70*bright and upper > .008 else
+                 'hat' if bright > 1.5*upper else 'percussion')
+        amplitude = (low if voice == 'kick' else upper if voice in ('snare','percussion') else bright)
+        measured.append(dict(time=hit.time, button=button, hit=hit, drumVoice=voice,
+                             _amplitude=float(amplitude), _upper=float(upper),
+                             _snap=float(snap), _bright=float(bright)))
+    # Normalize within the estimated physical voice: a kick and snare can be
+    # equally important even when one occupies much more spectral bandwidth.
+    scales = {voice:max(.004, float(np.percentile([e['_amplitude'] for e in measured
+               if e['drumVoice']==voice], 70))) for voice in {e['drumVoice'] for e in measured}}
+    for event in measured:
+        event['drumSalience'] = round(float(np.sqrt(event['_amplitude']/scales[event['drumVoice']])), 4)
+    # Refine independently before spacing. Otherwise an existing proposal of
+    # the same physical hit blocks the low band's recovery to its real edge.
+    refined = refine_drum_attack_edges(drum, clock, measured, 0)
+    merged = []
+    for event in sorted(measured, key=lambda e:e['time']):
+        if merged and event['time']-merged[-1]['time'] < .035:
+            previous = merged[-1]
+            if event['drumSalience'] > previous['drumSalience']:
+                event['time'] = previous['time']
+                merged[-1] = event
+        else:
+            merged.append(event)
+    return merged, {'rejectedDrumBodyRetriggers':ringing, 'refinedDrumCandidates':refined}
+
+
+def supported_drum_fill_pair(left, right):
+    return (left.get('drumVoice') in ('kick','snare','percussion')
+            and right.get('drumVoice') in ('kick','snare','percussion')
+            and min(left.get('drumSalience',0),right.get('drumSalience',0)) >= .65
+            and (left.get('drumFillAccent') or right.get('drumFillAccent')))
 
 
 def easy_chart(mix, drum, drum_clock, beat, grid, period):
@@ -394,11 +497,14 @@ def easy_chart(mix, drum, drum_clock, beat, grid, period):
     profile = harmonic_bar_profiles(mix, grid, 4*beat)
     riff, anchor = riff_positions(profile, period)
     bar_length = 4*beat
-    bar_limit = max(5, round(bar_length*2.55))
-    min_gap = max(MIN_EASY_GAP, min(.275, .39*beat))
+    bar_limit = max(5, round(bar_length*2.9))
+    min_gap = MIN_EASY_GAP
     bars = {}
     pattern = {}
-    for hit, button in drum_strokes(drum, drum_clock):
+    strokes, detection_report = measured_drum_strokes(drum, drum_clock)
+    for event in strokes:
+        hit, button = event['hit'], event['button']
+        hit.time = event['time']
         if hit.time < 0 or hit.time >= len(mix)/SAMPLE_RATE-.09 or hit.strength < (.24 if button == 'M' else .30):
             continue
         beat_position = (hit.time-grid[0])/beat
@@ -406,39 +512,66 @@ def easy_chart(mix, drum, drum_clock, beat, grid, period):
         within_bar = beat_position - bar*4
         phase = riff[min(bar, len(riff)-1)] if bar >= 0 else (bar-anchor)%period
         slot = round(within_bar*4)
-        key = (phase, slot, button)
+        key = (phase, slot, event['drumVoice'])
         pattern.setdefault(key, set()).add(bar)
         # Strong recurring downbeats and backbeats carry the groove, while a
         # bright cymbal or a close syncopation can be selected between them.
         pulse = abs(within_bar-round(within_bar)) <= .12
         one = pulse and abs(within_bar) <= .12
-        grid_bonus = .20 if one else .12 if pulse else .05
-        voice_bonus = .14 if button in ('T', 'O') else 0
-        weight = hit.strength + grid_bonus + voice_bonus
-        bars.setdefault(bar, []).append((hit, button, key, weight, one))
+        grid_bonus = .24 if one else .12 if pulse else 0
+        voice_bonus = .40 if event['drumVoice'] in ('kick', 'snare') else 0
+        weight = event['drumSalience'] + grid_bonus + voice_bonus
+        event.update(bar=bar, phase=phase, slot=slot, one=one, pulse=pulse, pattern=key,
+                     weight=weight, within=within_bar)
+        bars.setdefault(bar, []).append(event)
+
+    # A fill requires an actual burst of body strokes with a changed rhythm,
+    # rather than a loud routine note near the end of every bar.
+    bar_support = {phase:len({e['bar'] for e in strokes if e.get('phase')==phase})
+                   for phase in range(period)}
+    for group in bars.values():
+        for event in group:
+            support = len(pattern[event['pattern']])/max(1, bar_support[event['phase']])
+            event['drumRecurrence'] = round(support, 4)
+            event['drumGrooveAnchor'] = bool(event['pulse'] and support >= .45
+                and event['drumVoice'] == 'snare' and event['drumSalience'] >= .70)
+        kit = [e for e in group if e['drumVoice']!='hat' and e['drumSalience']>=.65]
+        for index in range(max(0, len(kit)-2)):
+            burst = kit[index:index+3]
+            if (burst[0]['within'] < 1.5 or burst[-1]['time']-burst[0]['time'] > .75*beat
+                    or all(e['drumRecurrence']>=.55 for e in burst)):
+                continue
+            for accent in (burst[0], max(burst[1:], key=lambda e:e['drumSalience'])):
+                accent['drumFillAccent'] = True
 
     # Rank accents before spacing them. The modest recurrence bonus favours
     # the same kit pattern when the riff returns, without making a single
     # quiet subdivision a note or moving a stroke to a calculated beat.
-    ranked = sorted(((weight + .09*min(3, len(pattern[key])-1), bar, hit, button, one)
-                     for bar, hits in bars.items() for hit, button, key, weight, one in hits),
-                    key=lambda stroke: (-stroke[0], stroke[2].time))
+    ranked = sorted((e for group in bars.values() for e in group),
+                    key=lambda e: (-(e['weight']+.65*e['drumRecurrence']
+                         +(2 if e['one'] else 1 if e['drumGrooveAnchor'] else 0)
+                         +.3*e.get('drumFillAccent',False)),e['time']))
     counts = {}
     picked = []
     times = []
-    for weight, bar, hit, button, one in ranked:
+    for event in ranked:
+        bar, hit, button, one = event['bar'], event['hit'], event['button'], event['one']
         if counts.get(bar, 0) >= bar_limit:
             continue
         index = bisect_right(times, hit.time)
-        if (index and hit.time-times[index-1] < min_gap) or (index < len(times) and times[index]-hit.time < min_gap):
+        left_gap = (MIN_EASY_FILL_GAP if index and supported_drum_fill_pair(picked[index-1],event) else min_gap)
+        right_gap = (MIN_EASY_FILL_GAP if index < len(times) and supported_drum_fill_pair(event,picked[index]) else min_gap)
+        if (index and hit.time-times[index-1] < left_gap-1e-8) or (index < len(times) and times[index]-hit.time < right_gap-1e-8):
             continue
         counts[bar] = counts.get(bar, 0)+1
         times.insert(index, hit.time)
         picked.insert(index, describe(hit.time, button, 'drum-stem', bar=bar+1,
                                       role='downbeat' if one else 'groove', band=hit.band,
-                                      confidence=round(weight, 3)))
-    refined = refine_drum_attack_edges(drum, drum_clock, picked, min_gap)
-    return picked, {'riffAnchorBar':anchor+1, 'drumHeads':len(picked), 'refinedDrumHeads':refined}
+                                      confidence=round(event['weight'], 3),
+                                      **{key:event[key] for key in ('drumVoice','drumSalience','drumRecurrence',
+                                           'drumGrooveAnchor','drumFillAccent') if key in event}))
+    return picked, {'riffAnchorBar':anchor+1, 'drumHeads':len(picked),
+                    'refinedDrumHeads':detection_report['refinedDrumCandidates'], **detection_report}
 
 
 def vocal_features(wave):
@@ -489,6 +622,83 @@ def voiced_articulation_support(wave):
     return times, body / max(np.percentile(body, 94), 1e-9), np.array(edges)
 
 
+def vocal_reset_features(wave, times):
+    """Separate voiced-body measurement; timbre motion alone is not a syllable."""
+    filtered = sosfiltfilt(butter(3, (180, 3600), btype='bandpass', fs=SAMPLE_RATE, output='sos'), wave)
+    body = np.sqrt(np.maximum(0, uniform_filter1d(filtered**2, 129)))[::32]
+    body = uniform_filter1d(body, 4)
+    rate = SAMPLE_RATE/32
+    reference = max(float(np.percentile(body, 94)), 1e-9)
+    result = []
+    for time in times:
+        at = round(time*rate)
+        valley = float(body[max(0, at-22):min(len(body), at+7)].min())
+        after = float(body[max(0, at):min(len(body), at+38)].max())
+        depth, energy = valley/max(after, 1e-9), after/reference
+        score = max(0, 1-depth/.62)*min(1, energy/.4)
+        result.append({'depth':round(depth, 4), 'energy':round(energy, 4),
+                       'resetScore':round(score, 4), 'strong':bool(depth < .35 and energy > .16)})
+    return result
+
+
+def select_vocal_articulations(attacks, wave, clock):
+    """Prefer real voiced resets; allow only source-supported short word runs."""
+    attacks.sort(key=lambda row: row[0].time)
+    offset, speed = clock(0), clock(1)-clock(0)
+    # A spectral edge followed only by broadband hiss has no voiced syllable.
+    # Inspect several following windows so a real consonant may lead into its
+    # vowel; one unvoiced consonant frame alone cannot reject the articulation.
+    frequencies = np.fft.rfftfreq(1024, 1/SAMPLE_RATE)
+    voiced_band = (frequencies >= 150) & (frequencies < 6000)
+    pitched = []
+    for event, tone in attacks:
+        on = (event.time-offset)/speed
+        flatness = []
+        for delay in (.010, .045, .075):
+            start = round((on+delay)*SAMPLE_RATE)
+            frame = wave[start:start+1024]
+            if len(frame) < 1024:
+                continue
+            power = abs(np.fft.rfft(frame*np.hanning(1024)))[voiced_band]**2
+            flatness.append(float(np.exp(np.log(np.maximum(power, 1e-15)).mean())/max(power.mean(),1e-15)))
+        if flatness and min(flatness) < .45:
+            pitched.append((event,tone))
+    attacks = pitched
+    times = [event.time for event,_ in attacks]
+    features = vocal_reset_features(wave, [(time-offset)/speed for time in times])
+    for (event,_), feature in zip(attacks, features):
+        event.features = feature
+    scores = [event.strength+1.5*feature['resetScore'] for (event,_),feature in zip(attacks,features)]
+    # States count consecutive short intervals. A run has at most three heads;
+    # normal spacing resets it. Fast pairs need BOTH genuine voiced resets.
+    ending = [[float('-inf')]*3 for _ in attacks]
+    links = [[None]*3 for _ in attacks]
+    best = [(0., None)]
+    for index, ((event,_), feature) in enumerate(zip(attacks, features)):
+        before = bisect_right(times, event.time-MIN_HARD_GAP+1e-9, 0, index)
+        ending[index][0] = best[before][0]+scores[index]
+        links[index][0] = best[before][1]
+        if feature['strong'] and event.strength >= 1.8:
+            start = bisect_right(times, event.time-MIN_HARD_GAP, 0, index)
+            for earlier in range(start, index):
+                if (event.time-times[earlier] < MIN_HARD_RUN_GAP-1e-9
+                        or not features[earlier]['strong'] or attacks[earlier][0].strength < 1.8):
+                    continue
+                for run in (1, 2):
+                    value = ending[earlier][run-1]+scores[index]-.75
+                    if value > ending[index][run]:
+                        ending[index][run], links[index][run] = value, (earlier, run-1)
+        run = int(np.argmax(ending[index]))
+        value = ending[index][run]
+        best.append((value, (index, run)) if value >= best[-1][0] else best[-1])
+    selected, node = [], best[-1][1]
+    while node is not None:
+        index, run = node
+        selected.append(attacks[index])
+        node = links[index][run]
+    return selected[::-1]
+
+
 def vocal_attacks(wave, to_mix, duration):
     env, magnitude, flux = vocal_features(wave)
     edges = short_vocal_edges(wave)
@@ -509,12 +719,17 @@ def vocal_attacks(wave, to_mix, duration):
     for i, prominence in zip(candidates, raw['prominences']):
         if i < 5 or i+14 >= len(total) or next_voice[i] < voiced_floor:
             continue
-        if flux[i] < max(.044, flux_base[i]*1.65):
-            continue
+        ordinary_flux = flux[i] >= max(.044, flux_base[i]*1.65)
         before = float(np.median(total[i-11:i-4])) if i >= 11 else 0
         body = float(np.max(total[i:i+14]))
         gain = body / max(before, voiced_floor*.55)
         shape = float(np.max(change[i-4:i+6]))
+        # A quiet but distinct syllable can have a small absolute flux peak.
+        # Require a strong rise and timbral change for that narrow exception;
+        # the independent vocal-body/edge checks below still reject noise.
+        if not ordinary_flux and not (flux[i] >= max(.026, flux_base[i]*1.35)
+                                      and gain >= 1.8 and shape >= .15 and prominence >= .024):
+            continue
         silent_entry = before < voiced_floor*.50 and gain >= 1.8
         consonant = float(np.max(env[2,i-2:i+5])) > max(.003, .63*float(np.max(total[i:i+12])))
         # Reject fluctuations in a sustained vowel, breaths, and isolated
@@ -548,40 +763,18 @@ def vocal_attacks(wave, to_mix, duration):
         tone = magnitude[:, min(i+8, magnitude.shape[1]-1)]
         tone = tone / max(np.linalg.norm(tone), .0001)
         out.append((Attack(float(time),float(strength)), tone))
-    # Weighted interval selection keeps real syllable timestamps. Preserve
-    # quick runs while allowing heads to remain separately readable.
-    out.sort(key=lambda row: row[0].time)
-    times = [event.time for event,_ in out]
-    best = [0.]*(len(out)+1)
-    links = [0]*len(out)
-    used = [False]*len(out)
-    for i,(event,_) in enumerate(out):
-        j = bisect_right(times, event.time-MIN_HARD_GAP, 0, i)
-        selected = best[j]+event.strength
-        used[i] = selected >= best[i]
-        links[i] = j
-        best[i+1] = max(best[i],selected)
-    selected = []
-    i=len(out)
-    while i:
-        if used[i-1]:
-            selected.append(out[i-1])
-            i=links[i-1]
-        else:
-            i-=1
-    return selected[::-1]
+    return select_vocal_articulations(out, wave, to_mix)
 
 
 def vocal_phrases(attacks, first, beat):
     phrases = []
     current = []
-    bar = beat*4
     for event, tone in attacks:
         if current:
             previous = current[-1][0].time
             gap = event.time-previous
-            crosses = int((event.time-first+.04)//bar) != int((previous-first+.04)//bar)
-            if gap > beat*.92 or crosses and len(current) >= 3 or len(current) >= 12:
+            # A bar boundary does not end a sung phrase or reset its letters.
+            if gap > max(.46, min(.85, beat)):
                 phrases.append(current)
                 current = []
         current.append((event,tone))
@@ -675,8 +868,40 @@ def lock_copied_vocal_lanes(wave, clock, notes, beat):
     return copied
 
 
+def vocal_delivery_lanes(attacks):
+    """Stable acoustic delivery classes, rather than an ordinal key counter.
+
+    These describe vocal timbre/contour, not recognized words or absolute
+    musical pitches. Repeated articulation spectra keep their natural class.
+    """
+    if not attacks:
+        return {}
+    sounds = np.asarray([tone for _,tone in attacks])
+    centers = [sounds[int(np.argmin(sounds @ np.arange(sounds.shape[1])))]]
+    for _ in range(3):
+        distances = 1-sounds @ np.asarray(centers).T
+        centers.append(sounds[int(np.argmax(distances.min(axis=1)))])
+    centers = np.asarray(centers)
+    assigned = np.zeros(len(sounds), dtype=int)-1
+    for _ in range(24):
+        updated = (sounds @ centers.T).argmax(axis=1)
+        if np.array_equal(updated, assigned):
+            break
+        assigned = updated
+        for group in range(4):
+            subset = sounds[assigned == group]
+            if len(subset):
+                center = subset.mean(axis=0)
+                centers[group] = center/max(np.linalg.norm(center), .0001)
+    order = np.argsort(centers @ np.arange(sounds.shape[1]))
+    keys = {int(group):BUTTONS[index] for index,group in enumerate(order)}
+    return {id(event):keys[int(group)] for (event,_),group in zip(attacks,assigned)}
+
+
 def hard_chart(wave, clock, duration, first, beat):
-    phrases = vocal_phrases(vocal_attacks(wave, clock, duration), first, beat)
+    attacks = vocal_attacks(wave, clock, duration)
+    phrases = vocal_phrases(attacks, first, beat)
+    delivery = vocal_delivery_lanes(attacks)
     history = []
     output = []
     for group, phrase in enumerate(phrases, 1):
@@ -685,23 +910,29 @@ def hard_chart(wave, clock, duration, first, beat):
         repeat = most_similar_phrase(rhythm, sounds, history)
         _, reused, assigned = repeat or (0, None, {})
         buttons = []
-        pattern = (0, 2, 1, 3, 1, 0, 2, 3, 0, 3, 2, 1)
-        for index,k in enumerate(pattern[:len(rhythm)]):
-            lane = (k+group-1) % 4
-            choices = (BUTTONS[(lane+offset) % 4] for offset in range(4))
-            button = assigned.get(index) or next(choice for choice in choices
-                if (not buttons or choice != buttons[-1]) and choice != assigned.get(index+1))
-            buttons.append(button)
+        for index,(event,_) in enumerate(phrase):
+            # Same-key re-articulations are intentional when the delivery
+            # repeats. A sustained vowel still supplied only its one onset.
+            buttons.append(assigned.get(index, delivery[id(event)]))
         history.append((group,rhythm,sounds,buttons))
         for index,((event,_),button) in enumerate(zip(phrase,buttons)):
             output.append(describe(event.time,button,'lead-vocal',role='syllable',phrase=group,
-                                   repeatsPhrase=reused if index in assigned else None, confidence=round(event.strength,3)))
+                                   repeatsPhrase=reused if index in assigned else None, confidence=round(event.strength,3),
+                                   vocalReset=event.features))
     exact_repeats = lock_copied_vocal_lanes(wave, clock, output, beat)
     repeats = len({event['phrase'] for event in output if event['repeatsPhrase'] is not None})
-    return output, {'vocalPhrases':len(phrases),'repeatedVocalPhrases':repeats,'copiedVocalHeads':exact_repeats}
+    exceptions = []
+    for previous, note in zip(output, output[1:]):
+        if note['time']-previous['time'] < MIN_HARD_GAP-.00001:
+            assert note['time']-previous['time'] >= MIN_HARD_RUN_GAP-.00001
+            assert all(event['vocalReset']['strong'] and event['confidence'] >= 1.8 for event in (previous,note))
+            exceptions.append({'previousTime':previous['time'],'time':note['time'],
+                'before':previous['vocalReset'],'after':note['vocalReset']})
+    return output, {'vocalPhrases':len(phrases),'repeatedVocalPhrases':repeats,'copiedVocalHeads':exact_repeats,
+                    'hardTimingExceptions':exceptions,'vocalLaneMethod':'source-delivery-clusters-and-phrase-repeats'}
 
 
-def create(identity, stems, bass_directory):
+def create(identity, stems, bass_directory, audits):
     prefix, filename, bpm, first, riff_bars = SONGS[identity]
     relative = 'songs/2026-09-28/' + filename + '.m4a'
     mix_path = ROOT/'docs/moth'/relative
@@ -711,8 +942,10 @@ def create(identity, stems, bass_directory):
     duration = len(mix)/SAMPLE_RATE
     beat = 60/bpm
     grid = np.arange(first, duration-.09, 4*beat)
-    drum_clock, drum_alignment = align(mix, drum, 42)
-    vocal_clock, vocal_alignment = align(mix, vocal, 85)
+    audit = audits[identity]
+    assert digest(mix_path) == audit['mix']['sha256'], 'Full mix differs from the independently audited recording'
+    drum_clock, drum_alignment = audited_clock(audit, 'Drums', drum_path)
+    vocal_clock, vocal_alignment = audited_clock(audit, 'Vocals', vocal_path)
     easy, riff_report = easy_chart(mix, drum, drum_clock, beat, grid, riff_bars)
     hard, vocal_report = hard_chart(vocal, vocal_clock, duration, first, beat)
     assert len(easy) >= len(grid) and len(hard) >= 20, identity
@@ -721,7 +954,7 @@ def create(identity, stems, bass_directory):
     bass_path = provided_bass[0] if provided_bass else bass_directory/f'{identity}.wav'
     bass = decode(bass_path)
     if provided_bass:
-        bass_clock, bass_alignment = align(mix, bass, 35)
+        bass_clock, bass_alignment = audited_clock(audit, 'Bass', bass_path)
     else:
         # Offline separation uses the shipped mix itself with no trim.
         assert abs(len(bass)-len(mix)) <= .025*SAMPLE_RATE, (identity, 'separated bass duration')
@@ -729,14 +962,6 @@ def create(identity, stems, bass_directory):
         bass_alignment = {'offsetMs':0, 'driftMsPerMinute':0}
 
     river = identity == 'level5RiverRhythm'
-    if river:
-        add_river_openings(mix, drum, bass, bass_clock, easy, hard)
-        # The first sung syllable has continuous voice energy through 11.785.
-        # Give it one head on its articulation and a tail on its own decay.
-        first_vocal = next(event for event in hard if event['source'] == 'lead-vocal')
-        assert abs(first_vocal['time']-11.49933) < .06, first_vocal
-        first_vocal['holdEnd'] = 11.785
-
     easy_rests = sustained_stem_rests(drum, drum_clock, duration, beat)
     hard_rests = sustained_stem_rests(vocal, vocal_clock, duration, beat)
     bass_attacks = list(measure_bass_attacks(bass, bass_clock, easy_rests+hard_rests))
@@ -744,11 +969,23 @@ def create(identity, stems, bass_directory):
         'easy':fill_stem_rests(easy, easy_rests, bass_attacks, max(.32, .46*beat)),
         'hard':fill_stem_rests(hard, hard_rests, bass_attacks, max(.28, .38*beat)),
     }
+    tag_drum_fill_accents(easy, beat, first)
+    bass_holds = {mode:measure_bass_holds(events,bass,bass_clock,bass_windows[mode],
+        MIN_EASY_GAP if mode=='easy' else MIN_HARD_GAP) if river else 0
+        for mode,events in [('easy',easy),('hard',hard)]}
     for mode, events in [('easy', easy), ('hard', hard)]:
         assert all(any(start <= event['time'] <= event.get('holdEnd', event['time']) <= end
                        for start,end in bass_windows[mode]) for event in events if event['source'] == 'bass-stem'), (identity, mode)
     result = {'bpm':bpm, 'duration':round(duration,5), 'audioSrc':relative, 'mixSha256':digest(mix_path),
               'meter': {'beatsPerBar':4, 'firstDownbeat':first, 'barCount':len(grid), 'riffBars':riff_bars}}
+    result['hardTimingExceptions'] = vocal_report['hardTimingExceptions']
+    result['easyTimingExceptions'] = [{'previousTime':previous['time'],'time':note['time'],
+        'before':{key:previous.get(key) for key in ('drumVoice','drumSalience','drumFillAccent')},
+        'after':{key:note.get(key) for key in ('drumVoice','drumSalience','drumFillAccent')}}
+        for previous,note in zip(easy,easy[1:]) if note['time']-previous['time'] < MIN_EASY_GAP-.00001]
+    for previous,note in zip(easy,easy[1:]):
+        if note['time']-previous['time'] < MIN_EASY_GAP-.00001:
+            assert supported_drum_fill_pair(previous,note), (identity,'unsupported short drum fill')
     if river:
         result['opening'] = 'bass-riff'
     if any(bass_windows.values()):
@@ -756,11 +993,17 @@ def create(identity, stems, bass_directory):
     report = {'drumSha256':digest(drum_path),'vocalSha256':digest(vocal_path),
               'drumAlignment':drum_alignment,'vocalAlignment':vocal_alignment, **riff_report, **vocal_report,
               'bassSha256':digest(bass_path), 'bassSource':'provided' if provided_bass else 'separated',
-              'bassAlignment':bass_alignment, 'bassWindows':bass_windows, 'easy':easy,'hard':hard}
+              'bassAlignment':bass_alignment, 'bassWindows':bass_windows, 'bassHolds':bass_holds,
+              'meterAudit':audit['meter'], 'easy':easy,'hard':hard}
     for mode, events in [('easy',easy),('hard',hard)]:
         rows = [chart_row(event) for event in events]
         gap = min(right[0] - left[0] - left[2] for left, right in zip(rows, rows[1:]))
-        assert 0 <= rows[0][0] < rows[-1][0]+rows[-1][2] < duration and gap >= (MIN_HARD_GAP if mode=='hard' else MIN_EASY_GAP)-.00005, (identity, mode, gap)
+        assert 0 <= rows[0][0] < rows[-1][0]+rows[-1][2] < duration and gap >= (MIN_HARD_RUN_GAP if mode=='hard' else MIN_EASY_FILL_GAP)-.00005, (identity, mode, gap)
+        if mode == 'hard':
+            supported = {(item['previousTime'],item['time']) for item in result['hardTimingExceptions']}
+            for previous,note in zip(events,events[1:]):
+                if note['time']-previous.get('holdEnd',previous['time']) < MIN_HARD_GAP-.00001:
+                    assert (previous['time'],note['time']) in supported, (identity, 'unsupported short vocal gap')
         result[mode] = rows
         report[mode+'MinGapMs'] = round(float(gap)*1000, 3)
     bass_counts = [sum(event['source']=='bass-stem' for event in events) for events in (easy, hard)]
@@ -772,13 +1015,18 @@ def create(identity, stems, bass_directory):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--stems', required=True, type=Path, help='Directory containing the original drum and vocal WAV exports')
+    parser.add_argument('--stems', required=True, type=Path, help='Directory containing the supplied drum and vocal WAV exports')
     parser.add_argument('--bass-directory', required=True, type=Path, help='Directory containing mix-aligned bass files for songs without a supplied bass stem')
     parser.add_argument('--output', type=Path, default=ROOT/'scripts/moth-funk-charts.json')
     parser.add_argument('--report', required=True, type=Path, help='Local-only per-note analysis report')
+    parser.add_argument('--alignment-audit', type=Path, default=ROOT/'scripts/moth-stem-clocks.json',
+                        help='Independent source hash/clock audit; defaults to the pinned corrected exports')
+    parser.add_argument('--songs', nargs='*', default=list(SONGS))
+    parser.add_argument('--workers', type=int, default=2)
     args = parser.parse_args()
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        results = list(pool.map(lambda identity: create(identity,args.stems,args.bass_directory), SONGS))
+    audits = json.loads(args.alignment_audit.read_text())['songs']
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        results = list(pool.map(lambda identity: create(identity,args.stems,args.bass_directory,audits), args.songs))
     args.output.write_text(json.dumps({'version':VERSION, 'songs':{name:chart for name,chart,_ in results}},
                                       ensure_ascii=False,separators=(',',':'))+'\n')
     args.report.parent.mkdir(parents=True,exist_ok=True)

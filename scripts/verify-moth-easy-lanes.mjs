@@ -5,13 +5,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {remixEasyLanes, summarizeEasyLanes} from './moth-easy-lanes.mjs';
+import {measureEasyLaneChanges} from './moth-easy-difficulty.mjs';
 import {FUNK_CHARTS, MOTH_STAGE_THEMES, MOTH_OPENING_LEAD_SECONDS, MOTH_CHART_VERSION} from './moth-chart-patches.mjs';
 
 const sourceOnly = process.argv.includes('--source-only');
 const root = path.resolve(import.meta.dirname, '..');
 const config = JSON.parse(await fs.readFile(path.join(root, 'docs/moth/data/level1.json')));
-const baseline = await fs.readFile(path.join(root, '.qa/moth/easy-lanes-20261118/before-config.json'), 'utf8')
-  .then(JSON.parse).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
 const sourceBefore = JSON.stringify(FUNK_CHARTS);
 const report = [];
 const levels = Object.entries(MOTH_STAGE_THEMES).map(([id, [stage]]) => ({id, stage, story: config[id]}))
@@ -56,9 +55,15 @@ for (const {id, stage, story} of levels) {
     assert(Object.values(after.counts).every(count => count >= after.notes * .15 && count <= after.notes * .35),
       id + '/' + arrangement + ' every letter stays within15–35%');
     assert(after.maxRun <= 3, id + '/' + arrangement + ' no long single-key run');
-    assert.equal(after.narrow8, 0, id + '/' + arrangement + ' every8 heads use at least3 letters');
-    assert.equal(after.missing16, 0, id + '/' + arrangement + ' every16 heads use all4 letters');
+    assert.equal(after.narrow8, 0, id + '/' + arrangement + ' every8 heads use at least2 letters');
+    assert.equal(after.missing24, 0, id + '/' + arrangement + ' every24 heads use all4 letters');
     assert(after.max16 <= 8, id + '/' + arrangement + ' no single key dominates a16-head passage');
+    const ease = measureEasyLaneChanges(rows);
+    assert(ease.longestRapidChangeRun <= 2, id + '/' + arrangement + ' no extended rapid button-change run');
+    const density = song.easyDifficulty.windows[arrangement === 'Story' ? 'story' : 'full'];
+    assert.equal(rows.length, density.selected, id + '/' + arrangement + ' measured Easy selection count');
+    assert(Math.abs(rows.length - density.baseline * .8) <= .5,
+      id + '/' + arrangement + ' about20% fewer playable heads than the published chart');
     if (!sourceOnly) {
       const nativeStart = arrangement === 'Story' ? start : 0;
       const unit = spec.chart.stepBeats * 60 / spec.bpm;
@@ -78,22 +83,14 @@ for (const {id, stage, story} of levels) {
         assert(Math.abs(nativeStart + spec.beatOffset + step * unit - time) < .000002);
         assert(Math.abs(holdSteps * unit - hold) < .000002 || time + hold >= to);
       });
-      if (baseline) {
-        const previous = arrangement === 'Level Select' ? baseline.stageSelectRhythms[stage]
-          : baseline[id] || baseline.secretLevels.find(level => level.id === id).rhythm;
-        assert.deepEqual(spec.chart.hard, previous.chart.hard, id + '/' + arrangement + ' Hard rows match pre-remix build');
-        assert.deepEqual(spec.chart.easy.map(([time, , hold]) => [time, hold]),
-          previous.chart.easy.map(([time, , hold]) => [time, hold]),
-          id + '/' + arrangement + ' Easy time, hold and count match pre-remix build');
-      }
     }
-    report.push({id, arrangement, before, after, recurrentHeads});
+    report.push({id, arrangement, before, after, laneChanges: ease, density, recurrentHeads});
   }
 }
 assert.equal(JSON.stringify(FUNK_CHARTS), sourceBefore, 'Raw source transcription was not mutated');
-const out = path.join(root, '.qa/moth/easy-lanes-20261118');
+const out = path.join(root, '.qa/moth/correct-stems-20261119');
 await fs.mkdir(out, {recursive: true});
 await fs.writeFile(path.join(out, 'lane-verification.json'), JSON.stringify({version: MOTH_CHART_VERSION,
   sourceSha256: createHash('sha256').update(sourceBefore).digest('hex'), sourceOnly, charts: report}, null, 2) + '\n');
-console.log('PASS', report.length, 'Easy arrangements: balanced letters, recurring riffs, exact timing/holds and unchanged Hard');
+console.log('PASS', report.length, 'Easy arrangements:20% fewer heads, manageable gestures, balanced letters, exact source timing/holds and fresh Hard');
 for (const row of report) console.log(row.id, row.arrangement, JSON.stringify(row.after));

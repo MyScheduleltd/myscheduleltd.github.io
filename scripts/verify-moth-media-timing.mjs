@@ -94,8 +94,10 @@ try {
           return mediaTime;
         };
         const holdIndex = r.notes.findIndex(note => note.holdEnd);
+        const rapidIndex = r.notes.findIndex((note, index) => index > 0 && note.time - r.notes[index - 1].time < .19 - 1e-5);
         const indexes = [...new Set([0, ...'MOTH'.split('').map(button => r.notes.findIndex(note => note.button === button)),
-          Math.floor(r.notes.length / 2), r.notes.length - 1, holdIndex].filter(i => i >= 0))];
+          Math.floor(r.notes.length / 2), r.notes.length - 1, holdIndex,
+          ...(rapidIndex > 0 ? [rapidIndex - 1, rapidIndex] : [])].filter(i => i >= 0))];
         const hits = [];
         for (const index of indexes) {
           const note = r.notes[index];
@@ -119,9 +121,14 @@ try {
         const pausedEnd = g.getLevel1OfficeRenderTime();
         await track.play();
         track.playbackRate = 0; // A deliberately stationary real-media playhead.
+        // WebKit applies a playback-rate change asynchronously. Let that
+        // update reach the media pipeline before sampling the frozen clock.
+        await new Promise(resolve => setTimeout(resolve, 100));
         const stationaryStart = g.getLevel1OfficeRenderTime();
+        const stationaryMediaStart = track.currentTime;
         await new Promise(resolve => setTimeout(resolve, 100));
         const stationaryEnd = g.getLevel1OfficeRenderTime();
+        const stationaryMediaEnd = track.currentTime;
         track.playbackRate = 1;
         track.pause();
         track.volume = BGM_VOLUME;
@@ -135,7 +142,8 @@ try {
           expectedSource: mode === 'chill' ? spec.easyAudioSrc : (spec.fightCut?.src || spec.audioSrc),
           warmup: track.mothFightLead || 0, outputDelay: g.getRhythmOutputDelay(), readyState: track.readyState,
           duration: track.duration, musicGain, hits,
-          pausedStart, pausedEnd, stationaryStart, stationaryEnd, missesBeforePause: misses, missesAfterPause: r.misses};
+          pausedStart, pausedEnd, stationaryStart, stationaryEnd, stationaryMediaStart, stationaryMediaEnd,
+          missesBeforePause: misses, missesAfterPause: r.misses};
       }, {stage, mode});
       result.arrangement = fullSongs ? 'level-select' : 'story';
       assert.equal(result.source, 'verified-blob', `${stage}/${mode}: actual verified media blob is playing`);
@@ -172,7 +180,9 @@ try {
       assert(result.hits.every(hit => Math.abs(hit.errorMs) < 75 && hit.deltaMs < 75), `${stage}/${mode}: media-seek origin matches measured note timestamps`);
       assert(result.hits.filter(hit => hit.hold).every(hit => hit.holding && hit.released && hit.holdDone && !hit.holdBroken), `${stage}/${mode}: real hold release completes at the media tail`);
       assert.equal(result.pausedEnd, result.pausedStart, `${stage}/${mode}: paused media does not advance the cue clock`);
-      assert(Math.abs(result.stationaryEnd - result.stationaryStart) < .000001, `${stage}/${mode}: a stationary media clock does not advance the cue clock`);
+      assert(Math.abs(result.stationaryEnd - result.stationaryStart) < .000001,
+        `${stage}/${mode}: a stationary media clock does not advance the cue clock: ` +
+        JSON.stringify({cue: [result.stationaryStart, result.stationaryEnd], media: [result.stationaryMediaStart, result.stationaryMediaEnd]}));
       assert.equal(result.missesAfterPause, result.missesBeforePause, `${stage}/${mode}: paused/stationary media consumes no notes`);
       report.push(result);
       console.log(stage, fullSongs ? 'full-song' : 'story', mode, 'PASS', JSON.stringify({notes: result.noteCount, source: result.source, hits: result.hits.map(hit => ({index: hit.index, button: hit.button, deltaMs: +hit.deltaMs.toFixed(3), hold: hit.hold})), audioStart: result.audioStart, outputDelay: result.outputDelay}));

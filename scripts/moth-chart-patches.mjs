@@ -42,9 +42,9 @@ export const DRUM_CHARTS = { ...PRIOR_DRUM_CHARTS, version: revised.version, son
   })
 ) };
 export const FUNK_CHARTS = JSON.parse(readFileSync(new URL('./moth-funk-charts.json', import.meta.url)));
-// The measured source transcription is unchanged. This arrangement leaves
-// its opening two seconds unscored so the first target can roll into view.
-export const MOTH_CHART_VERSION = 'funk-rollin-20261118b';
+// Corrected studio exports measured on the shipped full-mix clock. Keep the
+// opening two seconds unscored so the first target can roll into view.
+export const MOTH_CHART_VERSION = 'funk-patterns-20261119b';
 export const MOTH_OPENING_LEAD_SECONDS = 2;
 export const MOTH_STAGE_THEMES = {
   level1OfficeRhythm: ['level1-stage1', 'office'],

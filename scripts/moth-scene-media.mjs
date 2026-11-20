@@ -21,6 +21,30 @@ export function patchSceneMedia(once, edit) {
   once('    this.renderLevel4ArcadeGame(target, layout, poses, context);', '    this.renderLevel4ArcadeGame(target, layout, context);');
   once('    const groundY = glass.y + glass.h * (this.config?.sprites?.level4ArcadeArena?.groundY ?? 0.9);\n', '');
   once('      glass,\n      groundY,\n      fighterHeight: glass.h * 0.46,\n      bobbyX: glass.x + glass.w * 0.35,\n      bonitaX: glass.x + glass.w * 0.65', '      glass');
+  // The TV no longer has fighters or their old x coordinates. Keep its
+  // feedback with the rhythm track instead of sending undefined positions to
+  // Canvas.translate(), which silently left stamps at the canvas origin.
+  once('  // The callout pops up in the game\'s sky over the fighter who took the hit;\n  // every tenth hit in a row, Dr. Beauty throws his arms up.',
+    '  // Per-hit grades belong to the TV rhythm game, just above its rail.\n  // Every tenth hit in a row, Dr. Beauty throws his arms up.');
+  edit('  spawnArcadeBurst(request) {\n', '  startLevel4BossPlaceholder() {\n', () => `  spawnArcadeBurst(request) {
+    const rhythm = this.level1OfficeRhythm;
+    if (!rhythm || !request || request.spawned) return;
+    request.spawned = true;
+    if (request.kind !== "miss" && rhythm.combo > 0 && rhythm.combo % 10 === 0) {
+      rhythm.arcadeCheer = { until: this.getLevel1OfficeRenderTime() + 0.9 };
+    }
+    const born = this.getLevel1OfficeRenderTime();
+    if (!request.label || !Number.isFinite(born)) return;
+    // graphics* is deliberately omitted from saved fight snapshots. The
+    // transient canvas cannot be serialized or restored as a live image.
+    rhythm.graphicsArcadeFeedback = {
+      born, life: 0.7, kind: request.kind,
+      stamp: makeJudgmentStamp(request.kind, "arcade", request.label, this.language === "zh-TW")
+    };
+  }
+
+  startLevel4BossPlaceholder() {
+`);
   once('    this.level5PostIndex = 0;\n    this.state = "level5PostDialogue";',
     '    this.level5PostIndex = 0;\n    this.riverRevealAt = this.time;\n    this.state = "level5PostDialogue";');
   once('  advanceLevel5PostDialogue() {\n', '  advanceLevel5PostDialogue() {\n    if (this.riverGoddessAge() < 2.6) return;\n');
@@ -151,6 +175,7 @@ const MEDIA_METHODS = String.raw`
       const speed = this.getRhythmRailGeometry().pixelsPerSecond;
       const cueAt = !frozen && !rhythm.ending && !rhythm.songHandover && !rhythm.audioStarting
         ? (note, time) => this.getRhythmTimingCue(note, time) : null;
+      target.save();
       target.translate(glass.x + 13, trackTop);
       target.scale(scale, scale);
       drawRhythmTrackFrame(target, bounds, {pulse: groovePulse});
@@ -161,8 +186,37 @@ const MEDIA_METHODS = String.raw`
           window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
       }
       drawRhythmRailNotes(target, this.getLevel1OfficeRenderNotes(), {bounds, cursorX, railY, railTime, speed, cueAt});
+      target.restore();
+      this.renderArcadeTvFeedback(target, {glass, trackTop, scale, cursorX}, context);
     }
     target.restore();
+  }
+
+  renderArcadeTvFeedback(target, {glass, trackTop, scale, cursorX}, {rhythm, renderTime}) {
+    if (rhythm) rhythm.graphicsArcadeFeedbackTelemetry = null;
+    const feedback = rhythm?.graphicsArcadeFeedback;
+    if (!feedback || rhythm.ending || !feedback.stamp) return;
+    const age = renderTime - feedback.born;
+    if (!Number.isFinite(age) || age < 0 || age >= feedback.life) return;
+    const stamp = feedback.stamp;
+    const availableHeight = trackTop - glass.y - 26;
+    if (!(availableHeight > 0 && stamp.width > 0 && stamp.height > 0)) return;
+    const slam = age < 0.09 ? 1.12 - age / 0.09 * 0.12 : 1;
+    const width = Math.min(glass.w * 0.42, 212 * slam,
+      availableHeight * stamp.width / stamp.height);
+    const height = width * stamp.height / stamp.width;
+    const hitX = glass.x + 13 + cursorX * scale;
+    const x = clamp(hitX - width / 2, glass.x + 13, glass.x + glass.w - 13 - width);
+    const y = trackTop - 8 - height;
+    const alpha = Math.min(1, age / 0.035, (feedback.life - age) / 0.18);
+    target.save();
+    // This helper is called inside the TV's glass clip and before its viewers
+    // are drawn. The rail stays clear and the callout belongs to the TV game.
+    target.globalAlpha = Math.max(0, alpha);
+    target.drawImage(stamp, x, y, width, height);
+    target.restore();
+    rhythm.graphicsArcadeFeedbackTelemetry = {kind: feedback.kind, age, alpha,
+      bounds: {x, y, w: width, h: height}, glass: {...glass}, trackTop, hitX};
   }
 
   riverGoddessAge() {

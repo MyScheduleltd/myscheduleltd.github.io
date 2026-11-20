@@ -200,9 +200,9 @@ test('scoreboard', async t => {
       assert(!current.json.entries.some(entry => entry.id === id));
     }
   });
-  await t.test('studio-stem Story and stage runs keep their original caps, tickets and boards', async () => {
-    const old = require('./chart-limits-20261117b.json');
-    assert.equal(old.version, 'funk-stems-20261117b');
+  for (const archive of ['20261117b', '20261118b']) await t.test(archive + ' Story and stage runs keep their original caps, tickets and boards', async () => {
+    const old = require('./chart-limits-' + archive + '.json');
+    assert.equal(old.version, archive === '20261117b' ? 'funk-stems-20261117b' : 'funk-rollin-20261118b');
     assert.notEqual(CHART_VERSION, old.version);
     const oldQuery = (mode, stage) => '/api/moth-scoreboard?' + new URLSearchParams({
       mode, chartVersion: old.version, ...(stage ? {stage} : {})
@@ -221,8 +221,10 @@ test('scoreboard', async t => {
     for (const mode of ['chill', 'shoot']) {
       assert.deepEqual(handler.checkRun(mode, old[mode], old.version),
         {total: Object.values(old[mode]).reduce((sum, score) => sum + score, 0)});
-      assert.deepEqual(handler.checkRun(mode, old[mode], CHART_VERSION), {error: 'scores'},
-        'Opening hits excluded from the new chart cannot inflate its score cap');
+      const inflated = {...handler.MAX_FIGHT_SCORE[mode]};
+      inflated[Object.keys(inflated)[0]] += 1000;
+      assert.deepEqual(handler.checkRun(mode, inflated, CHART_VERSION), {error: 'scores'},
+        'Archived score caps cannot inflate the corrected chart maximum');
       for (const stage of Object.keys(old.stages)) {
         const response = await call(env, {path: oldQuery(mode, stage)});
         assert.deepEqual(response.json, {mode, chartVersion: old.version, stage, entries: []});

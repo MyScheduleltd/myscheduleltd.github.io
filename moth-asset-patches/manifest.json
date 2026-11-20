@@ -287,6 +287,18 @@
     62482,
     59728
    ]
+  },
+  "assets/sprites/level5_studio/hand-20261011g/dr-beauty/sheet-transparent.webp": {
+   "release": "509150c237438e4674f7e2941dc339fc3f75ee98ce89610633fd7f42ea84c142",
+   "sha256": "7da564fc4c70472632b9bfe2ddacb43724313e7b7bf81d2d410efbcb43abb103",
+   "bytes": [
+    900092,
+    1039710
+   ],
+   "purpose": "Owner-selected studio headphone-hand animation repair, 2026-11-19",
+   "approvedSourceSha256": "c71717aa3b4ff54ec5817046af54ac7c31ca5376b0a24b53d20c85507867ee89",
+   "mirrorCommit": "f87c4deef479a787caedc5157d02f2227f984457",
+   "mirrorNote": "Compact asset-only CDN commit; keep codex/moth-cdn-patterns-20261119 reachable and never merge this asset-only branch into main."
   }
  }
 }
