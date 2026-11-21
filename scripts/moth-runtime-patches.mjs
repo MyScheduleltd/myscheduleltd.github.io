@@ -28,6 +28,7 @@ import { patchConcertMedia } from './moth-concert-media.mjs';
 import { patchDebugStory } from './moth-debug-story.mjs';
 import { patchOutputTiming } from './moth-output-timing.mjs';
 import { patchHitSoundStart } from './moth-hit-sound-start.mjs';
+import { patchBarLines } from './moth-bar-lines.mjs';
 import { ADDITION_MIRROR_PINS } from './moth-asset-additions.mjs';
 
 // Keep the selected published game as the input. Both audiences get identical
@@ -514,6 +515,13 @@ function makeLayer(width, height, painter) {`);
   patchDebugStory(once);
   patchOutputTiming(once, edit);
   patchHitSoundStart(once);
+  patchBarLines(once);
+  // A fight that has already ended (the results opened while its song and art
+  // were still being prepared) is not put back into play when that preparation
+  // finishes: it overwrote the post-fight dialogue with the fight again.
+  const preparedGuard = '    if (this.level1OfficeRhythm !== preparingRhythm) return;\n';
+  assert.equal(source.split(preparedGuard).length, 8, 'Seven fight starts wait on their preparation');
+  source = source.replaceAll(preparedGuard, '    if (this.level1OfficeRhythm !== preparingRhythm || preparingRhythm.ending) return;\n');
   return source;
 }
 

@@ -40,6 +40,8 @@ const STUDIO_STEM_LIMITS = require('./chart-limits-20261117b.json');
 const ROLLIN_LIMITS = require('./chart-limits-20261118b.json');
 // The stem-pattern charts (published 2026-11-20), kept for their boards and tickets.
 const PATTERNS_LIMITS = require('./chart-limits-20261119b.json');
+// The feel charts (published 2026-11-20), kept for their boards and tickets.
+const FEEL_LIMITS = require('./chart-limits-20261120b.json');
 const CHART_VERSION = CHART_LIMITS.version;
 const MAX_FIGHT_SCORE = { chill: CHART_LIMITS.chill, shoot: CHART_LIMITS.shoot };
 // Both previous named charts share score and duration limits. Each keeps its
@@ -56,6 +58,7 @@ const charts = new Map([
   [STUDIO_STEM_LIMITS.version, STUDIO_STEM_LIMITS],
   [ROLLIN_LIMITS.version, ROLLIN_LIMITS],
   [PATTERNS_LIMITS.version, PATTERNS_LIMITS],
+  [FEEL_LIMITS.version, FEEL_LIMITS],
   [CHART_VERSION, CHART_LIMITS]
 ]);
 const isMode = mode => typeof mode === 'string' && Object.hasOwn(MAX_FIGHT_SCORE, mode);

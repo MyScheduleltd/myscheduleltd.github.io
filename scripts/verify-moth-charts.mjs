@@ -57,12 +57,40 @@ for (const {id, stage, theme, story} of levels) {
         `${id}/${kind}/${mode} leaves the opening music unjudged`);
       const unit = spec.chart.stepBeats * 60 / spec.bpm;
       const minimumGap = mode === 'hard' ? .12499 : song.feel ? .11999 : .18999;
+      // Grid charts (author-moth-feel.py): every note on the song's beat grid,
+      // 16ths (swung 16ths in the measured swung bars) and in Hard triplets, as
+      // rhythm games chart; Easy's main hits at least an 8th apart (owner, 2026-11-21).
+      const swingAt = time => {
+        const g = song.grid, k = Math.floor((time - g.first) * g.bpm / 60 + 1e-6);
+        return g.swing && g.swingBars.includes(Math.floor((k + .5) / 4)) ? g.swing : .5;
+      };
+      // Easy sits on the grid, or exactly on a drum hit more than 15 ms off it
+      // (grid.drumTimed); Hard follows the singer exactly (grid.hard 'sung').
+      const onGrid = time => {
+        const g = song.grid, beat = 60 / g.bpm, position = (time - g.first) / beat, d = g.division || 4;
+        const k = Math.floor(position + 1e-6), frac = position - k, s = swingAt(time);
+        const straight = s !== .5 ? [0, s / 2, s, (1 + s) / 2, 1] : Array.from({length: d + 1}, (_, i) => i / d);
+        const triplet = Array.from({length: d * 3 / 4 + 1}, (_, i) => i / (d * 3 / 4));
+        const sets = mode === 'easy' ? [straight] : [straight, triplet];
+        return sets.some(set => set.some(p => Math.abs(frac - p) * beat < .00002))
+          || (mode === 'easy' && (g.drumTimed || []).some(t => Math.abs(t - time) < .00002));
+      };
+      const gridded = song.grid && !(mode === 'hard' && song.grid.hard === 'sung');
+      const easyGap = time => {
+        const s = swingAt(time), beat = 60 / song.grid.bpm;
+        return s === .5 && beat / 4 >= .19 - 1e-9 ? beat / 4 : Math.min(s, 1 - s) * beat;
+      };
       rows.forEach(([step, key, holdSteps], index) => {
         const time = start + spec.beatOffset + step * unit;
         const [onset, button, holdSeconds] = expected[index];
         assert(Math.abs(time - onset) < .000002, `${id}/${kind}/${mode} onset ${index}`);
         assert.equal(key, button);
         assert.match(key, /^[MOTH]$/);
+        if (gridded) assert(onGrid(onset), `${id}/${mode} note ${index} at ${onset} sits on the song's grid or its drum hit`);
+        if (song.grid && mode === 'easy' && index) {
+          assert(onset - expected[index - 1][0] >= Math.max(.12, easyGap(onset) - .065) - .00002,
+            `${id}/easy note ${index}: main hits an 8th apart (a 16th in slow songs), less a drum's own timing`);
+        }
         const tail = onset + holdSeconds;
         assert(Math.abs(time + holdSteps * unit - (tail < end ? tail : onset)) < .000002,
           `${id}/${kind}/${mode} release ${index}`);
@@ -70,7 +98,7 @@ for (const {id, stage, theme, story} of levels) {
           const previous = expected[index - 1];
           const gap = onset - previous[0] - previous[2];
           assert(gap >= minimumGap, id);
-          if (mode === 'hard' && gap < .18999) {
+          if (mode === 'hard' && gap < .18999 && !song.grid) {
             const evidence = song.hardTimingExceptions?.find(pair => Math.abs(pair.previousTime - previous[0]) < .00001
               && Math.abs(pair.time - onset) < .00001);
             assert(evidence, id + ' short vocal pair has independent source evidence');

@@ -50,11 +50,12 @@ export const FUNK_CHARTS = JSON.parse(readFileSync(new URL('./moth-funk-charts.j
 export const FEEL_CHARTS = JSON.parse(readFileSync(new URL('./moth-feel-charts.json', import.meta.url)));
 for (const [id, feel] of Object.entries(FEEL_CHARTS.songs)) {
   assert(FUNK_CHARTS.songs[id], `Feel chart for a known song: ${id}`);
-  FUNK_CHARTS.songs[id] = {...FUNK_CHARTS.songs[id], easy: feel.easy, hard: feel.hard, feel: FEEL_CHARTS.version};
+  FUNK_CHARTS.songs[id] = {...FUNK_CHARTS.songs[id], easy: feel.easy, hard: feel.hard, feel: FEEL_CHARTS.version, grid: feel.grid};
+  if (feel.grid) assert.equal(feel.grid.bpm, FUNK_CHARTS.songs[id].bpm, `Grid tempo for ${id}`);
 }
 // Corrected studio exports measured on the shipped full-mix clock. Keep the
 // opening two seconds unscored so the first target can roll into view.
-export const MOTH_CHART_VERSION = 'feel-20261120b';
+export const MOTH_CHART_VERSION = 'grid-20261121c';
 export const MOTH_OPENING_LEAD_SECONDS = 2;
 export const MOTH_STAGE_THEMES = {
   level1OfficeRhythm: ['level1-stage1', 'office'],
@@ -83,6 +84,10 @@ function makeChart(song, {start, duration, offset}) {
       ]);
     assert(chart[mode].length > 0, `Empty chart ${song.audioSrc}/${mode}`);
   }
+  // The song's bar lines (author-moth-feel.py's grid): the first bar, in steps
+  // like the notes, then one every bar.
+  if (song.grid) chart.grid = {firstStep: Math.round((song.grid.first - start - offset) / secondsPerStep * 1e8) / 1e8,
+    stepsPerBar: 4 / stepBeats};
   return chart;
 }
 
