@@ -604,6 +604,28 @@ function drawRhythmRailLines(target, bounds, cursorX, railY, pulse = 0) {
   target.stroke();
 }
 
+function drawRhythmBarLines(target, lines, {bounds, cursorX, railTime, speed}) {
+  if (!lines?.length) return;
+  const left = bounds.x + 36, right = bounds.x + bounds.w - 36;
+  target.save();
+  for (const bar of [false, true]) {
+    target.strokeStyle = bar ? "rgba(35, 28, 13, 0.46)" : "rgba(35, 28, 13, 0.2)";
+    target.lineWidth = bar ? 3 : 2;
+    const top = bounds.y + (bar ? 48 : 60), bottom = bounds.y + bounds.h - (bar ? 42 : 54);
+    target.beginPath();
+    for (const line of lines) {
+      if (line.bar !== bar) continue;
+      const x = Math.round(cursorX + (line.time - railTime) * speed);
+      if (x < left) continue;
+      if (x > right) break;
+      target.moveTo(x, top);
+      target.lineTo(x, bottom);
+    }
+    target.stroke();
+  }
+  target.restore();
+}
+
 function drawRhythmRailNotes(target, notes, {bounds, cursorX, railY, railTime, speed, cueAt, viewLeft}) {
   const trackLeft = bounds.x + 36;
   const trackRight = bounds.x + bounds.w - 36;
@@ -3845,7 +3867,7 @@ for (const level of this.config.secretLevels || []) {
     if (!this.progress) this.progress = this.createDefaultProgress();
     const random = () => Math.random().toString(36).slice(2, 10);
     const id = globalThis.crypto?.randomUUID?.() || ('run-' + Date.now().toString(36) + '-' + random() + random());
-    const run = this.progress.storyRun = { id, difficulty, chartVersion: "feel-20261120b", scores: {}, startedAt: Date.now(), ticket: null };
+    const run = this.progress.storyRun = { id, difficulty, chartVersion: "grid-20261121c", scores: {}, startedAt: Date.now(), ticket: null };
     this.startNewStory();
     this.registerStoryRun(run);
   }
@@ -3855,14 +3877,14 @@ for (const level of this.config.secretLevels || []) {
   // that never gets one cannot be posted.
   async registerStoryRun(run, attempt = 0) {
     clearTimeout(this.storyTicketTimer);
-    if (!run || run.ticket || run.legacy || run.chartVersion !== "feel-20261120b" || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
+    if (!run || run.ticket || run.legacy || run.chartVersion !== "grid-20261121c" || this.progress?.storyRun !== run || Object.keys(run.scores || {}).length) return;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', chartVersion: "feel-20261120b", mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', chartVersion: "grid-20261121c", mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' }) });
       const data = await response.json().catch(() => ({}));
-      if (response.status !== 201 || typeof data.run !== 'string' || data.chartVersion !== "feel-20261120b") throw new Error(String(response.status));
+      if (response.status !== 201 || typeof data.run !== 'string' || data.chartVersion !== "grid-20261121c") throw new Error(String(response.status));
       if (this.progress?.storyRun !== run || run.ticket) return;
       run.ticket = data.run;
       this.saveProgress();
@@ -3877,7 +3899,7 @@ for (const level of this.config.secretLevels || []) {
     const run = this.progress?.storyRun;
     const rhythm = this.level1OfficeRhythm;
     if (this.freePlay || !run || !rhythm || !["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"].includes(stageId)) return;
-    if (run.chartVersion !== "feel-20261120b") run.legacy = true;
+    if (run.chartVersion !== "grid-20261121c") run.legacy = true;
     if (this.difficultyId !== run.difficulty) run.mixed = true;
     run.scores[stageId] = Math.max(0, Math.round(rhythm.roundScore || 0));
   }
@@ -3886,7 +3908,7 @@ for (const level of this.config.secretLevels || []) {
     if (!run) return null;
     const fights = ["level1-stage1","level2-stage2","level3-stage2","level4-stage1","studio-stage1","level5-stage2","level6-stage2"];
     const total = fights.reduce((sum, id) => sum + (run.scores?.[id] || 0), 0);
-    const blocked = run.chartVersion !== "feel-20261120b" ? 'chart-version' : run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
+    const blocked = run.chartVersion !== "grid-20261121c" ? 'chart-version' : run.legacy ? 'legacy' : run.mixed ? 'mixed' : !run.ticket ? 'offline' : null;
     const complete = !blocked && fights.every(id => Number.isFinite(run.scores?.[id]));
     return { run, total, complete, blocked, mode: run.difficulty === 'shoot' ? 'shoot' : 'chill' };
   }
@@ -3921,9 +3943,9 @@ for (const level of this.config.secretLevels || []) {
       const { stage, mode } = run;
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'start', mode, stage, chartVersion: "feel-20261120b" }) });
+        body: JSON.stringify({ action: 'start', mode, stage, chartVersion: "grid-20261121c" }) });
       const data = await response.json();
-      if (response.status === 201 && data.chartVersion === "feel-20261120b"
+      if (response.status === 201 && data.chartVersion === "grid-20261121c"
         && data.stage === stage && typeof data.run === 'string') run.ticket = data.run;
     } catch {
       // Scoreboard connectivity never interrupts a song.
@@ -4041,12 +4063,12 @@ for (const level of this.config.secretLevels || []) {
     try {
       const url = new URL(this.scoreboardApi(), location.href);
       url.searchParams.set('mode', mode);
-      url.searchParams.set('chartVersion', "feel-20261120b");
+      url.searchParams.set('chartVersion', "grid-20261121c");
       if (board.stage) url.searchParams.set('stage', board.stage);
       const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
-      if (data.chartVersion !== "feel-20261120b" || (data.stage || null) !== board.stage) throw new Error('chart-version');
+      if (data.chartVersion !== "grid-20261121c" || (data.stage || null) !== board.stage) throw new Error('chart-version');
       if (this.scoreboard !== board) return;
       board.entries[mode] = Array.isArray(data.entries) ? data.entries : [];
       board.status[mode] = 'ready';
@@ -4241,7 +4263,7 @@ for (const level of this.config.secretLevels || []) {
     board.message = '';
     this.renderScoreboard();
     try {
-      const chartVersion = "feel-20261120b";
+      const chartVersion = "grid-20261121c";
       const score = board.stage ? { stage: board.stage, score: result.total } : { scores: result.run.scores };
       const response = await fetch(this.scoreboardApi(), { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode: result.mode, chartVersion, id, run: result.run.ticket, ...score }) });
@@ -10016,7 +10038,7 @@ for (const level of this.config.secretLevels || []) {
     this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
-    if (this.level1OfficeRhythm !== preparingRhythm) return;
+    if (this.level1OfficeRhythm !== preparingRhythm || preparingRhythm.ending) return;
     if (options.deferSong) {
       // Free play holds the song until its countdown ends, but the arena has to
       // be on screen behind that countdown, so the tutorial is closed out here.
@@ -12045,6 +12067,26 @@ for (const level of this.config.secretLevels || []) {
         cueLeadBeats: (phase.cueLeadBeats || 1) * (difficulty.cueLeadScale ?? 1)
       }))
     };
+  }
+
+  // Every beat on the fight's clock, each marked when it begins a bar, worked
+  // out once per fight from the chart's grid. None while practice notes play.
+  getRhythmGridLines() {
+    const rhythm = this.level1OfficeRhythm;
+    if (!rhythm || rhythm.tutorial?.mode !== "done") return null;
+    if (rhythm.gridLines !== undefined) return rhythm.gridLines;
+    const spec = this.getActiveRhythmSpec(), grid = spec?.chart?.grid;
+    if (!grid || !Number.isFinite(grid.firstStep) || !(spec.bpm > 0)) return (rhythm.gridLines = null);
+    const stepBeats = spec.chart.stepBeats || 0.5;
+    const beat = 60 / spec.bpm, beatsPerBar = Math.round((grid.stepsPerBar || 16) * stepBeats);
+    const first = (Number.isFinite(spec.beatOffset) ? spec.beatOffset : 0) + grid.firstStep * stepBeats * beat;
+    let end = 0;
+    for (const note of rhythm.notes || []) end = Math.max(end, note.time + (note.duration || 0));
+    const lines = [];
+    for (let k = Math.ceil(-first / beat); first + k * beat <= end + 2 * beatsPerBar * beat; k++) {
+      lines.push({time: first + k * beat, bar: ((k % beatsPerBar) + beatsPerBar) % beatsPerBar === 0});
+    }
+    return (rhythm.gridLines = lines);
   }
 
   getActiveRhythmSpec() {
@@ -16355,7 +16397,7 @@ for (const level of this.config.secretLevels || []) {
     }
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
-    if (this.level1OfficeRhythm !== preparingRhythm) return;
+    if (this.level1OfficeRhythm !== preparingRhythm || preparingRhythm.ending) return;
     this.state = "playing";
     this.updateMobileControls(true);
     if (options.deferSong) {
@@ -16434,7 +16476,7 @@ for (const level of this.config.secretLevels || []) {
     this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
-    if (this.level1OfficeRhythm !== preparingRhythm) return;
+    if (this.level1OfficeRhythm !== preparingRhythm || preparingRhythm.ending) return;
     this.state = "playing";
     this.updateMobileControls(true);
     if (options.deferSong) {
@@ -16601,7 +16643,7 @@ for (const level of this.config.secretLevels || []) {
     this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
-    if (this.level1OfficeRhythm !== preparingRhythm) return;
+    if (this.level1OfficeRhythm !== preparingRhythm || preparingRhythm.ending) return;
     this.state = "playing";
     this.updateMobileControls(true);
     if (options.deferSong) {
@@ -18706,7 +18748,7 @@ for (const level of this.config.secretLevels || []) {
     this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
-    if (this.level1OfficeRhythm !== preparingRhythm) return;
+    if (this.level1OfficeRhythm !== preparingRhythm || preparingRhythm.ending) return;
     this.state = "playing";
     this.updateMobileControls(true);
     if (!options.deferSong) this.countInFightSong();
@@ -18736,7 +18778,7 @@ for (const level of this.config.secretLevels || []) {
     this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
-    if (this.level1OfficeRhythm !== preparingRhythm) return;
+    if (this.level1OfficeRhythm !== preparingRhythm || preparingRhythm.ending) return;
     this.level1OfficeRhythm.hype = 0;
     this.level1OfficeRhythm.climax = false;
     this.state = "playing";
@@ -18772,7 +18814,7 @@ for (const level of this.config.secretLevels || []) {
     this.showFightWhilePreparing(preparingRhythm, options);
     await this.primeRhythmSong(preparingRhythm, this.getActiveLevel1OfficeRhythmAudio());
     await this.prepareRhythmGraphics(preparingRhythm);
-    if (this.level1OfficeRhythm !== preparingRhythm) return;
+    if (this.level1OfficeRhythm !== preparingRhythm || preparingRhythm.ending) return;
     this.state = "playing";
     this.updateMobileControls(true);
     if (options.deferSong) {
@@ -20800,6 +20842,7 @@ for (const level of this.config.secretLevels || []) {
       const railTime = renderTime;
       const cueAt = !frozen && !rhythm?.ending && !rhythm?.songHandover && !rhythm?.audioStarting
         ? (note, time) => this.getRhythmTimingCue(note, time) : null;
+      drawRhythmBarLines(target, this.getRhythmGridLines(), {bounds: ribbonBounds, cursorX, railTime, speed: pixelsPerSecond});
       noteTimingCues = drawRhythmRailNotes(target, this.getLevel1OfficeRenderNotes(), {
         bounds: ribbonBounds, cursorX, railY, railTime, speed: pixelsPerSecond, cueAt,
         viewLeft: this.isTallScreenView() ? PORTRAIT_FIGHT.track.src.x : undefined
@@ -21634,6 +21677,7 @@ for (const level of this.config.secretLevels || []) {
         drawRhythmHitPulse(target, cursorX, railY, pulse, motionTime - pulse.at,
           window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
       }
+      drawRhythmBarLines(target, this.getRhythmGridLines(), {bounds, cursorX, railTime, speed});
       drawRhythmRailNotes(target, this.getLevel1OfficeRenderNotes(), {bounds, cursorX, railY, railTime, speed, cueAt});
       target.restore();
       this.renderArcadeTvFeedback(target, {glass, trackTop, scale, cursorX}, context);
